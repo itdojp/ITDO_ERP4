@@ -1,0 +1,528 @@
+// Draft Prisma schema for ERP4 MVP
+// Provider: PostgreSQL (set DATABASE_URL in env)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum ProjectStatus {
+  draft
+  active
+  on_hold
+  closed
+}
+
+enum DocStatus {
+  draft
+  pending_qa
+  pending_exec
+  approved
+  rejected
+  sent
+  paid
+  cancelled
+  received
+  acknowledged
+}
+
+enum TimeStatus {
+  submitted
+  approved
+  rejected
+}
+
+enum LeaveStatus {
+  draft
+  pending_manager
+  approved
+  rejected
+}
+
+enum FlowType {
+  estimate
+  invoice
+  expense
+  leave
+  time
+  purchase_order
+  vendor_invoice
+  vendor_quote
+}
+
+enum AlertType {
+  budget_overrun
+  overtime
+  approval_delay
+}
+
+model Customer {
+  id                   String    @id @default(uuid())
+  code                 String    @unique
+  name                 String
+  invoiceRegistrationId String?
+  taxRegion            String?
+  billingAddress       String?
+  status               String
+  externalSource       String?
+  externalId           String?
+  contacts             Contact[]
+  projects             Project[]
+  createdAt            DateTime  @default(now())
+  createdBy            String?
+  updatedAt            DateTime  @updatedAt
+  updatedBy            String?
+}
+
+model Vendor {
+  id             String    @id @default(uuid())
+  code           String    @unique
+  name           String
+  bankInfo       String?
+  taxRegion      String?
+  status         String
+  externalSource String?
+  externalId     String?
+  contacts       Contact[]
+  purchaseOrders PurchaseOrder[]
+  vendorQuotes   VendorQuote[]
+  vendorInvoices VendorInvoice[]
+  createdAt      DateTime  @default(now())
+  createdBy      String?
+  updatedAt      DateTime  @updatedAt
+  updatedBy      String?
+}
+
+model Contact {
+  id          String   @id @default(uuid())
+  customer    Customer? @relation(fields: [customerId], references: [id])
+  customerId  String?
+  vendor      Vendor?  @relation(fields: [vendorId], references: [id])
+  vendorId    String?
+  name        String
+  email       String?
+  phone       String?
+  role        String?
+  isPrimary   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  createdBy   String?
+  updatedAt   DateTime @updatedAt
+  updatedBy   String?
+}
+
+model Project {
+  id           String       @id @default(uuid())
+  code         String       @unique
+  name         String
+  status       ProjectStatus @default(draft)
+  projectType  String?
+  parent       Project?     @relation("ProjectToProject", fields: [parentId], references: [id])
+  parentId     String?
+  children     Project[]    @relation("ProjectToProject")
+  customer     Customer?    @relation(fields: [customerId], references: [id])
+  customerId   String?
+  ownerUserId  String?
+  orgUnitId    String?
+  startDate    DateTime?
+  endDate      DateTime?
+  currency     String?
+  recurringTemplate RecurringProjectTemplate?
+  tasks        ProjectTask[]
+  milestones   ProjectMilestone[]
+  estimates    Estimate[]
+  invoices     Invoice[]
+  timeEntries  TimeEntry[]
+  expenses     Expense[]
+  purchaseOrders PurchaseOrder[]
+  vendorQuotes   VendorQuote[]
+  vendorInvoices VendorInvoice[]
+  createdAt    DateTime     @default(now())
+  createdBy    String?
+  updatedAt    DateTime     @updatedAt
+  updatedBy    String?
+}
+
+model ProjectTask {
+  id           String      @id @default(uuid())
+  project      Project     @relation(fields: [projectId], references: [id])
+  projectId    String
+  parentTask   ProjectTask? @relation("TaskToTask", fields: [parentTaskId], references: [id])
+  parentTaskId String?
+  children     ProjectTask[] @relation("TaskToTask")
+  name         String
+  wbsCode      String?
+  assigneeId   String?
+  status       String?
+  planStart    DateTime?
+  planEnd      DateTime?
+  actualStart  DateTime?
+  actualEnd    DateTime?
+  baselineId   String?
+  createdAt    DateTime    @default(now())
+  createdBy    String?
+  updatedAt    DateTime    @updatedAt
+  updatedBy    String?
+}
+
+model ProjectMilestone {
+  id        String   @id @default(uuid())
+  project   Project  @relation(fields: [projectId], references: [id])
+  projectId String
+  name      String
+  amount    Decimal
+  billUpon  String   // enum候補: date/acceptance/time
+  dueDate   DateTime?
+  taxRate   Decimal?
+  invoiceTemplateId String?
+  createdAt DateTime @default(now())
+  createdBy String?
+  updatedAt DateTime @updatedAt
+  updatedBy String?
+}
+
+model RecurringProjectTemplate {
+  id           String   @id @default(uuid())
+  project      Project  @relation(fields: [projectId], references: [id])
+  projectId    String
+  frequency    String   // monthly/quarterly/semiannual/annual
+  defaultAmount Decimal?
+  defaultTerms  String?
+  nextRunAt     DateTime?
+  timezone      String?
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  createdBy     String?
+  updatedAt     DateTime @updatedAt
+  updatedBy     String?
+}
+
+model Estimate {
+  id        String   @id @default(uuid())
+  project   Project  @relation(fields: [projectId], references: [id])
+  projectId String
+  version   Int
+  totalAmount Decimal
+  currency  String
+  status    DocStatus @default(draft)
+  validUntil DateTime?
+  notes     String?
+  numberingSerial Int?
+  lines     EstimateLine[]
+  createdAt DateTime @default(now())
+  createdBy String?
+  updatedAt DateTime @updatedAt
+  updatedBy String?
+}
+
+model EstimateLine {
+  id          String    @id @default(uuid())
+  estimate    Estimate  @relation(fields: [estimateId], references: [id])
+  estimateId  String
+  description String
+  quantity    Decimal   @default(1)
+  unitPrice   Decimal
+  taxRate     Decimal?
+  taskId      String?
+}
+
+model Invoice {
+  id        String   @id @default(uuid())
+  project   Project  @relation(fields: [projectId], references: [id])
+  projectId String
+  estimate  Estimate? @relation(fields: [estimateId], references: [id])
+  estimateId String?
+  milestone ProjectMilestone? @relation(fields: [milestoneId], references: [id])
+  milestoneId String?
+  invoiceNo String  @unique
+  issueDate DateTime?
+  dueDate   DateTime?
+  currency  String
+  totalAmount Decimal
+  status    DocStatus @default(draft)
+  pdfUrl    String?
+  emailMessageId String?
+  numberingSerial Int?
+  lines     BillingLine[]
+  createdAt DateTime @default(now())
+  createdBy String?
+  updatedAt DateTime @updatedAt
+  updatedBy String?
+}
+
+model BillingLine {
+  id          String   @id @default(uuid())
+  invoice     Invoice  @relation(fields: [invoiceId], references: [id])
+  invoiceId   String
+  description String
+  quantity    Decimal  @default(1)
+  unitPrice   Decimal
+  taxRate     Decimal?
+  taskId      String?
+  timeEntryRange String?
+}
+
+model PurchaseOrder {
+  id        String   @id @default(uuid())
+  project   Project  @relation(fields: [projectId], references: [id])
+  projectId String
+  vendor    Vendor   @relation(fields: [vendorId], references: [id])
+  vendorId  String
+  poNo      String   @unique
+  issueDate DateTime?
+  dueDate   DateTime?
+  currency  String
+  totalAmount Decimal
+  status    DocStatus @default(draft)
+  pdfUrl    String?
+  numberingSerial Int?
+  lines     PurchaseOrderLine[]
+  createdAt DateTime @default(now())
+  createdBy String?
+  updatedAt DateTime @updatedAt
+  updatedBy String?
+}
+
+model PurchaseOrderLine {
+  id        String   @id @default(uuid())
+  purchaseOrder PurchaseOrder @relation(fields: [purchaseOrderId], references: [id])
+  purchaseOrderId String
+  description String
+  quantity    Decimal @default(1)
+  unitPrice   Decimal
+  taxRate     Decimal?
+  taskId      String?
+  expenseId   String?
+}
+
+model VendorQuote {
+  id        String   @id @default(uuid())
+  project   Project  @relation(fields: [projectId], references: [id])
+  projectId String
+  vendor    Vendor   @relation(fields: [vendorId], references: [id])
+  vendorId  String
+  quoteNo   String?
+  issueDate DateTime?
+  currency  String
+  totalAmount Decimal
+  status    DocStatus @default(received)
+  documentUrl String?
+  createdAt DateTime @default(now())
+  createdBy String?
+  updatedAt DateTime @updatedAt
+  updatedBy String?
+}
+
+model VendorInvoice {
+  id        String   @id @default(uuid())
+  project   Project  @relation(fields: [projectId], references: [id])
+  projectId String
+  vendor    Vendor   @relation(fields: [vendorId], references: [id])
+  vendorId  String
+  vendorInvoiceNo String?
+  receivedDate DateTime?
+  dueDate   DateTime?
+  currency  String
+  totalAmount Decimal
+  status    DocStatus @default(received)
+  documentUrl String?
+  numberingSerial Int?
+  createdAt DateTime @default(now())
+  createdBy String?
+  updatedAt DateTime @updatedAt
+  updatedBy String?
+}
+
+model TimeEntry {
+  id        String   @id @default(uuid())
+  project   Project  @relation(fields: [projectId], references: [id])
+  projectId String
+  task      ProjectTask? @relation(fields: [taskId], references: [id])
+  taskId    String?
+  userId    String
+  workDate  DateTime
+  minutes   Int
+  workType  String?
+  location  String?
+  notes     String?
+  status    TimeStatus @default(submitted)
+  approvedBy String?
+  approvedAt DateTime?
+  createdAt DateTime @default(now())
+  createdBy String?
+  updatedAt DateTime @updatedAt
+  updatedBy String?
+  @@index([projectId, workDate])
+  @@index([userId, workDate])
+  @@index([status])
+}
+
+model RateCard {
+  id        String   @id @default(uuid())
+  project   Project? @relation(fields: [projectId], references: [id])
+  projectId String?
+  role      String
+  workType  String?
+  unitPrice Decimal
+  validFrom DateTime
+  validTo   DateTime?
+  currency  String
+}
+
+model Expense {
+  id        String   @id @default(uuid())
+  project   Project  @relation(fields: [projectId], references: [id])
+  projectId String
+  userId    String
+  category  String
+  amount    Decimal
+  currency  String
+  incurredOn DateTime
+  isShared  Boolean  @default(false)
+  status    DocStatus @default(draft)
+  receiptUrl String?
+  createdAt DateTime @default(now())
+  createdBy String?
+  updatedAt DateTime @updatedAt
+  updatedBy String?
+  @@index([projectId])
+  @@index([userId, incurredOn])
+  @@index([status])
+}
+
+model LeaveRequest {
+  id        String   @id @default(uuid())
+  userId    String
+  leaveType String
+  startDate DateTime
+  endDate   DateTime
+  hours     Int?
+  status    LeaveStatus @default(draft)
+  notes     String?
+  createdAt DateTime @default(now())
+  createdBy String?
+  updatedAt DateTime @updatedAt
+  updatedBy String?
+  @@index([userId, startDate])
+  @@index([status])
+}
+
+model ApprovalRule {
+  id        String   @id @default(uuid())
+  flowType  FlowType
+  conditions Json
+  steps     Json
+  createdAt DateTime @default(now())
+  createdBy String?
+  updatedAt DateTime @updatedAt
+  updatedBy String?
+}
+
+model ApprovalInstance {
+  id        String   @id @default(uuid())
+  flowType  FlowType
+  targetTable String
+  targetId  String
+  status    DocStatus @default(pending_qa)
+  currentStep Int?
+  rule      ApprovalRule @relation(fields: [ruleId], references: [id])
+  ruleId    String
+  steps     ApprovalStep[]
+  createdAt DateTime @default(now())
+  createdBy String?
+  updatedAt DateTime @updatedAt
+  updatedBy String?
+}
+
+model ApprovalStep {
+  id        String   @id @default(uuid())
+  instance  ApprovalInstance @relation(fields: [instanceId], references: [id])
+  instanceId String
+  stepOrder Int
+  approverGroupId String?
+  approverUserId  String?
+  status    DocStatus @default(pending_qa)
+  actedBy   String?
+  actedAt   DateTime?
+  createdAt DateTime @default(now())
+  createdBy String?
+  updatedAt DateTime @updatedAt
+  updatedBy String?
+  @@index([instanceId])
+  @@index([status])
+}
+
+model AlertSetting {
+  id        String   @id @default(uuid())
+  type      AlertType
+  threshold Decimal
+  period    String   // day/week/month
+  scopeProjectId String?
+  recipients Json   // emails/roles/users
+  channels  Json    // email/dashboard/ext_future
+  isEnabled Boolean @default(true)
+  createdAt DateTime @default(now())
+  createdBy String?
+  updatedAt DateTime @updatedAt
+  updatedBy String?
+}
+
+model Alert {
+  id        String   @id @default(uuid())
+  setting   AlertSetting @relation(fields: [settingId], references: [id])
+  settingId String
+  targetRef String
+  triggeredAt DateTime @default(now())
+  status    String @default("open")
+  sentChannels Json?
+  sentResult  Json?
+  createdAt DateTime @default(now())
+  createdBy String?
+  updatedAt DateTime @updatedAt
+  updatedBy String?
+  @@index([settingId])
+}
+
+model DailyReport {
+  id        String   @id @default(uuid())
+  userId    String
+  reportDate DateTime
+  content   String
+  linkedProjectIds Json?
+  status    String?
+  createdAt DateTime @default(now())
+  createdBy String?
+  updatedAt DateTime @updatedAt
+  updatedBy String?
+}
+
+model WellbeingEntry {
+  id        String   @id @default(uuid())
+  userId    String
+  entryDate DateTime
+  status    String   // good/not_good
+  helpRequested Boolean @default(false)
+  notes     String?
+  visibilityGroupId String
+  createdAt DateTime @default(now())
+  createdBy String?
+  updatedAt DateTime @updatedAt
+  updatedBy String?
+  @@index([userId, entryDate])
+}
+
+model NumberSequence {
+  id            String  @id @default(uuid())
+  kind          String  // estimate/invoice/delivery/purchase_order/vendor_quote/vendor_invoice
+  year          Int
+  month         Int
+  currentSerial Int
+  version       Int     @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  @@unique([kind, year, month])
+}
+
