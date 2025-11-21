@@ -9,7 +9,7 @@ export async function triggerAlert(settingId: string, metric: number, threshold:
   const emailResult = await sendEmailStub(['alert@example.com'], `Alert ${settingId}`, `metric ${metric} > ${threshold}`);
   const otherChannels = ['dashboard'];
   const sentResult = [emailResult, ...buildStubResults(otherChannels)];
-  const channels = ['email', ...otherChannels];
+  const channels = sentResult.map((r) => r.channel);
   return prisma.alert.create({
     data: {
       settingId,
