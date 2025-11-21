@@ -6,12 +6,12 @@
 ## 現状
 - .github/workflows/ci.yml: backend build, frontend build のみ
 
-## 追加したい項目
-- lint/format: prettier/eslint（backend/frontend）
-- prisma: `prisma format`, `prisma validate`
-- frontend: `npm run build`（既存）、将来的にE2E（Playwright/Cypress）
-- backend: 単純な smoke test (ts-node で supertest 相当) を検討
-- data-quality: SQL/Node スクリプトで基本チェッカーを走らせ、警告として出す
+## 実施項目（PoC用CI）
+- lint/format: prettier/eslint（後続で追加）
+- prisma: `prisma format`, `prisma validate`（追加済み）
+- frontend: `npm run build`
+- backend: `npm run build`
+- data-quality: Nodeスクリプトを optional で実行（失敗しても job は継続）
 
 ## ブランチ/PR
 - PRテンプレート: 主要ユースケースが通る/CIパスをチェックリストに含める
