@@ -2,35 +2,97 @@
 
 ## 11/21 週（～12/10ステージングまでに着手）
 - [ ] Prisma/SQL 詳細化（enum/型/FK/削除ポリシー）とスキーマPR作成（#5）
+  - [ ] DocStatus/TimeStatus/LeaveStatus/FlowType のenum見直しと日本語注釈追加
+  - [ ] FK/ON DELETE/ON UPDATE方針をテーブルごとに列挙（Project/Estimate/Invoice/Expense/TimeEntry）
+  - [ ] 請求・発注・仕入系のnullable列を精査（estimateId/milestoneId/taskIdなど）
+  - [ ] 監査メタ createdBy/updatedBy の扱いを統一し TODO記載
+  - [ ] PRにschema.prisma + docs/requirements/schema-prisma-sketch.md 対応をまとめる
 - [ ] 発番/定期案件/アラート計算のバッチ擬似コード・シーケンスを追加（#6, batch-jobs.md）
+  - [ ] 採番サービスに月跨ぎリセット/オーバーフロー処理コメント追加
+  - [ ] 定期案件テンプレから案件生成、請求ドラフト自動作成のシーケンス図
+  - [ ] アラート（予算/残業/承認遅延）の擬似コードと発火→通知→サプレッションフロー
 - [ ] バックエンドPoCスケルトン（APIサーバ: プロジェクト/見積/請求/タイムシート/経費登録と発番・承認フック）
+  - [ ] prisma clientをDI化またはモジュール共有に寄せる（現状各route new PrismaClient）
+  - [ ] `/projects/:id/estimates`起案→`/estimates/:id/submit`→`/invoices/:id/submit/send`のhappyパス通し
+  - [ ] タイムエントリ・経費のPOST/GETと簡易フィルタ（projectId/userId/date範囲）
+  - [ ] タイム修正時に承認インスタンスを起動するhookのスタブ
 - [ ] フロントPoCスケルトン（Web: 日報入力、工数入力、請求ドラフト閲覧）
+  - [ ] APIクライアントラッパ（fetch + JSON/エラー処理）を作る
+  - [ ] 日報+WBフォームのモック（入力→POST→トースト表示）
+  - [ ] 工数入力フォーム（project/task選択、日付、時間、残業区分）と一覧リロード
+  - [ ] 請求ドラフト一覧+詳細モック（番号/ステータス/送信ボタン）
 - [ ] データ移行マッピング初版（PO im_*/acs_* → 新スキーマ、キー/シーケンス整合）
+  - [ ] im_project/acs_project 等のカラムと Project との対応表
+  - [ ] 見積/請求/発注/仕入の番号マッピングと連番採番方針
+  - [ ] ユーザーID/チームID→UUIDの紐付けサンプルSQL
 - [ ] CI足場（lint/format/docリンクチェック）とテンプレート（Issue/PR）
+  - [ ] backend: eslint+prettierの最小設定と`npm run lint`
+  - [ ] frontend: eslint+prettierの最小設定と`npm run lint`
+  - [ ] markdownリンクチェック(or lychee) のJob追記
+  - [ ] .github/ISSUE_TEMPLATE / PULL_REQUEST_TEMPLATE 追加
 - [ ] バックエンド: 番号採番サービス（number_sequencesラッパ）とメール送信Stubをユーティリティ化
+  - [ ] numberSequencesテーブル用のupsertエラー処理（シリアル上限、月跨ぎ）
+  - [ ] メール送信stub（sendInvoiceEmail/sendPurchaseOrderEmail）をservices/notifier.tsに切り出し
+  - [ ] send routesからstubを呼び出すよう整理
 - [ ] バックエンド: 承認ルールマッチャー（条件→ステップ生成）の雛形実装
+  - [ ] approvalRules.conditionsの構造サンプル（金額閾値/定期案件判定/小額スキップ）
+  - [ ] matcher関数: 入力(FlowType, payload)→steps[] を返すスタブをservices/approval.tsへ
 - [ ] バックエンド: ダッシュボード用アラートフィードAPI（メール送信Stubと同時に発報履歴保存）
+  - [ ] GET /alerts?projectId/&status= などの簡易フィルタ
+  - [ ] POST /jobs/alerts/run 内でAlertレコード保存＋notifier呼び出し
 - [ ] フロント: 認証モック（Google OIDC想定のセッション+BFFダミー）
+  - [ ] `/me`へのfetchとロール/グループ保持、未ログイン時の簡易ログインボタン
+  - [ ] fetchラッパで Authorization ヘッダの付与を集約
 - [ ] フロント: ダッシュボードでアラート表示（初期はダミーデータorAPI連携）
+  - [ ] アラートカードコンポーネント（type/対象/日時/ステータス）
+  - [ ] ダッシュボードで上位5件表示＋「すべて表示」リンク
 - [ ] フロント: ウェルビーイング Not Good 時のタグ/短文と「ヘルプ/相談」モーダル導線実装（相談先候補・緊急案内表示）
+  - [ ] モーダルの固定テキスト（相談先候補3件、緊急案内）を配置
+  - [ ] Not Good選択時のみタグ/コメント入力欄を表示
 - [ ] 移行: 旧ID→新UUIDマッピングテーブル設計とサンプルスクリプト
+  - [ ] mapping_users, mapping_projects, mapping_vendors のDDLと例データ
+  - [ ] 移行後に参照切れを検出するクエリテンプレート
 - [ ] 監査ログ設計: 主要操作（承認/発番/ウェルビーイング閲覧）のログ項目サマリ
+  - [ ] audit_logテーブル案（who/when/action/target/from/to/meta）
+  - [ ] 発番・承認・閲覧(Wellbeing)で記録する項目を列挙
 - [ ] バックエンド: シンプルなバリデーション (zod / fastify schema) を主要エンドポイントに付与
+  - [ ] time/expense/estimate/invoice/PO/leave の schema で必須/型/最小値を整理
+  - [ ] バリデーション失敗時のエラーレスポンスを揃える
 - [ ] バックエンド: `/me` にロール/グループ等のモックデータを返す
+  - [ ] roleに応じたownerOrgId/projectsフィルタのモックを追加
 - [ ] バックエンド: タイムシート修正時の承認ルール適用（変更時のみ approval 起動）
+  - [ ] PATCH /time-entries/:id 追加、変更点判定でApprovalInstance作成スタブ
 - [ ] バックエンド: 承認ステップの監査ログ（who/when/from/to/reason）保存
+  - [ ] ApprovalStep更新時にaudit_logへINSERTするhookスタブ
 - [ ] バックエンド: 送信Stub（請求書メール/発注書メール）とPDF生成枠のダミー関数
+  - [ ] services/notifier.ts に sendInvoiceEmail/sendPurchaseOrderEmail
+  - [ ] services/notifier.ts に PDF生成スタブ（テンプレ名を受け取る）
 - [ ] バックエンド: RBAC簡易チェック（role + projectId で閲覧をフィルタ）
+  - [ ] requireRoleにprojectIdチェックのオプションを追加し、time/expenseに適用
 - [ ] フロント: APIクライアントの共通ラッパ（fetch + エラーハンドリング）
+  - [ ] ヘッダ付与・エラー時トースト表示・リトライなしのベーシック版
 - [ ] フロント: 請求ドラフト詳細画面モック（明細、承認状態、送信ボタン）
+  - [ ] ダミーデータで明細テーブルと承認ステータス表示
 - [ ] フロント: 工数入力フォーム（プロジェクト/タスク/日付/時間/場所/残業区分）
+  - [ ] 入力→POST→一覧再取得のハッピーパス
 - [ ] フロント: ヘルプモーダルの内容（相談先ラベル/説明/緊急案内）を表示
+  - [ ] 単体コンポーネント化して日報画面に組み込み
 - [ ] テスト: バックエンド簡易ハッピーパス (contracts/invoices/time/expenses) のスモーク
+  - [ ] supertest等で /projects→/estimates→/invoices→/send の一連
+  - [ ] /time-entries, /expenses のPOST/GET
 - [ ] テスト: フロントの手動確認手順（ダッシュボード→日報→工数→請求送信Stub）
+  - [ ] READMEに手順と期待結果を書き出し
 - [ ] CI: lint/format のジョブ追加 (GH Actions)、prisma format/validate を走らせる
+  - [ ] eslint/prettierが失敗した場合にfailさせる
 - [ ] CI: Vite build テストのジョブ追加
+  - [ ] `npm run build --prefix packages/frontend` を既存ジョブとは別に明示
 - [ ] 移行: 抽出→変換→ロードのスクリプト雛形 (Python or SQL) を docs に追加
+  - [ ] 抽出SQLサンプル（プロジェクト/見積/請求/工数/経費）
+  - [ ] 変換スクリプト雛形（python/pandas or SQL）
+  - [ ] ロード手順と検証チェックリスト
 - [ ] 移行: 重複コード/欠損データの検出ルールと簡易レポート草案
+  - [ ] コード重複（project code/invoice no/po no）の検出SQL
+  - [ ] 欠損（工数のprojectId/userId無し、請求の金額0）の検出SQL
 
 ## 12/1 週（ステージング前の仕上げ）
 - [ ] 発番と承認の実装PoC（API + バッチジョブで連携）
