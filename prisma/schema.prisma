@@ -140,6 +140,7 @@ model Project {
   purchaseOrders PurchaseOrder[]
   vendorQuotes   VendorQuote[]
   vendorInvoices VendorInvoice[]
+  rateCards    RateCard[]
   createdAt    DateTime     @default(now())
   createdBy    String?
   updatedAt    DateTime     @updatedAt
@@ -162,6 +163,7 @@ model ProjectTask {
   actualStart  DateTime?
   actualEnd    DateTime?
   baselineId   String?
+  timeEntries  TimeEntry[]
   createdAt    DateTime    @default(now())
   createdBy    String?
   updatedAt    DateTime    @updatedAt
@@ -178,6 +180,7 @@ model ProjectMilestone {
   dueDate   DateTime?
   taxRate   Decimal?
   invoiceTemplateId String?
+  invoices Invoice[]
   createdAt DateTime @default(now())
   createdBy String?
   updatedAt DateTime @updatedAt
@@ -212,6 +215,7 @@ model Estimate {
   notes     String?
   numberingSerial Int?
   lines     EstimateLine[]
+  invoices  Invoice[]
   createdAt DateTime @default(now())
   createdBy String?
   updatedAt DateTime @updatedAt
@@ -415,6 +419,7 @@ model ApprovalRule {
   flowType  FlowType
   conditions Json
   steps     Json
+  instances ApprovalInstance[]
   createdAt DateTime @default(now())
   createdBy String?
   updatedAt DateTime @updatedAt
@@ -464,6 +469,7 @@ model AlertSetting {
   recipients Json   // emails/roles/users
   channels  Json    // email/dashboard/ext_future
   isEnabled Boolean @default(true)
+  alerts    Alert[]
   createdAt DateTime @default(now())
   createdBy String?
   updatedAt DateTime @updatedAt
