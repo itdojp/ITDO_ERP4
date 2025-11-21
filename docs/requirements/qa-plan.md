@@ -16,6 +16,9 @@
 - 日報+WB: Good/Not Good入力＋タグ/短文（Not Good時）→ 送信 → 成功メッセージ
 - 工数: 追加→一覧に反映
 - 請求ドラフト: 一覧に番号/ステータスが出る（送信Stubボタン押下でUI反応すること）
+- ヘルプモーダル: 日報画面から開閉でき、相談先リストと緊急案内が表示される
+- シードデータ: scripts/seed-demo.sql をロード後、フロントに反映されることを確認（プロジェクト/請求/工数/経費のダミー）
+- RateCard: minutes×単価の計算結果が想定通りかカルク（calcAmount)に沿って簡易確認\n*** End Patch
 
 ## 管理系
 - アラート設定: GET/POST/PATCH /alert-settings でCRUD動作
