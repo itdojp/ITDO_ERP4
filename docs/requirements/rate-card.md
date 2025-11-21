@@ -10,7 +10,7 @@
 3. それでも見つからない場合はデフォルト単価（設定値）を適用
 4. 金額 = minutes/60 * unit_price を四捨五入（小数第2位）
 
-## 示例コード（擬似）
+## 例コード（擬似）
 ```ts
 function calcAmount(minutes, unitPrice) {
   const hours = minutes / 60;
