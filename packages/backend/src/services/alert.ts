@@ -6,9 +6,10 @@ const prisma = new PrismaClient();
 type MetricFetcher = (settingId: string) => Promise<number>;
 
 export async function triggerAlert(settingId: string, metric: number, threshold: number, targetRef: string) {
-  const channels = ['email', 'dashboard'];
-  const sentResult = buildStubResults(channels);
-  await sendEmailStub(['alert@example.com'], `Alert ${settingId}`, `metric ${metric} > ${threshold}`);
+  const emailResult = await sendEmailStub(['alert@example.com'], `Alert ${settingId}`, `metric ${metric} > ${threshold}`);
+  const otherChannels = ['dashboard'];
+  const sentResult = [emailResult, ...buildStubResults(otherChannels)];
+  const channels = ['email', ...otherChannels];
   return prisma.alert.create({
     data: {
       settingId,
