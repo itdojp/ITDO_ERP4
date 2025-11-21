@@ -2,11 +2,12 @@ import { FastifyInstance } from 'fastify';
 import { PrismaClient } from '@prisma/client';
 import { sendEmailStub, recordPdfStub } from '../services/notifier.js';
 import { DocStatusValue } from '../types.js';
+import { requireRole } from '../services/rbac.js';
 
 const prisma = new PrismaClient();
 
 export async function registerSendRoutes(app: FastifyInstance) {
-  app.post('/invoices/:id/send', async (req) => {
+  app.post('/invoices/:id/send', { preHandler: requireRole(['admin', 'mgmt']) }, async (req) => {
     const { id } = req.params as { id: string };
     const invoice = await prisma.invoice.update({ where: { id }, data: { status: DocStatusValue.sent } });
     await recordPdfStub('invoice', { id });
@@ -14,7 +15,7 @@ export async function registerSendRoutes(app: FastifyInstance) {
     return invoice;
   });
 
-  app.post('/purchase-orders/:id/send', async (req) => {
+  app.post('/purchase-orders/:id/send', { preHandler: requireRole(['admin', 'mgmt']) }, async (req) => {
     const { id } = req.params as { id: string };
     const po = await prisma.purchaseOrder.update({ where: { id }, data: { status: DocStatusValue.sent } });
     await recordPdfStub('purchase_order', { id });
