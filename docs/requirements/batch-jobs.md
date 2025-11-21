@@ -1,0 +1,62 @@
+# バッチ/ジョブ仕様たたき台
+
+## 発番ジョブ（number_sequences）
+- 対象: 見積(Q)/納品(D)/請求(I)、発注書(PO)、業者見積(VQ)、業者請求(VI)。
+- 方式: kind+year+month の row に対して `current_serial` を楽観ロックで+1し、`PYYYY-MM-NNNN` を生成。アプリ側トランザクション内で実行。
+- エラー: 楽観ロック失敗時はリトライ。桁あふれは 9999 で検出しアラート。
+
+### 擬似コード
+```
+tx {
+  seq = select ... for update where kind=? and year=? and month=?
+  if not exists -> insert current_serial=0 return row
+  if seq.current_serial >= 9999 -> raise error
+  new_serial = seq.current_serial + 1
+  update seq set current_serial=new_serial where version=seq.version
+  number = format("%s%04d-%02d-%04d", prefix, year, month, new_serial)
+  insert target with number
+}
+retry on conflict up to N times
+```
+
+## 定期案件テンプレ生成
+- 対象: recurring_project_templates (frequency: monthly/quarterly/semiannual/annual)。
+- 処理: next_run_at <= now のテンプレを取得し、案件に紐づく見積/請求ドラフトを自動起案。起案時にテンプレのデフォルト金額/条件をコピーし、番号は発番ジョブで採番。
+- スケジュール: 1日1回（タイムゾーン考慮）。
+- ログ/リカバリ: 生成結果を記録し、失敗時は再実行可能にする（idempotentに同月重複を防ぐ）。
+
+### 擬似コード
+```
+jobs = select templates where is_active and next_run_at <= now()
+for each t:
+  period_key = (project_id, year, month)
+  if exists generated where key=period_key -> skip
+  create estimate/invoice draft from template defaults
+  mark generated with key
+  t.next_run_at = calc_next(t.frequency, t.next_run_at)
+  save
+```
+
+## アラート計算
+- 対象: alert_settings (type: budget_overrun/overtime/approval_delay)。
+- 入力データ: 工数集計/予算値、残業時間（time_entries）、承認待ち経過時間（approval_instances）。
+- 処理: 設定の閾値・期間に基づき集計し、超過時に alerts レコードを作成し通知をトリガ。通知はメール/ダッシュボード（将来拡張: webhook/Slack）。
+- スケジュール: 日次〜時間単位。初期は1日1回でスタート。
+- 再送/抑止: 同一条件で既に open 状態のアラートがあれば再送抑止し、一定期間後のリマインドは別設定とする。
+
+### 擬似コード
+```
+for setting in alert_settings where is_enabled:
+  metric = compute(setting.type, setting.scope, setting.period)
+  if metric > threshold and not existing_open(setting, scope):
+     alert = insert alerts(...)
+     send email/dashboard
+```
+
+## 承認タイムアウト（将来）
+- 設定された承認期限を超過した approval_step を検出し、エスカレーション先へ通知。初期スコープでは未実装、後続で追加。
+
+## バッチ共通
+- ログ: 成功/失敗をジョブログに記録し、監査用途で保持。
+- 冪等性: 発番以外のジョブも同日再実行しても重複作成しないようキーを持つ（例: recurring生成は project_id+period でユニーク性チェック）。
+- 監視: 失敗時はアラート発報（メール）し、ダッシュボードに表示。

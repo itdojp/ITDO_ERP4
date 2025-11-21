@@ -1,0 +1,36 @@
+import { FastifyInstance } from 'fastify';
+import { registerAlertRoutes } from './alerts.js';
+import { registerDailyReportRoutes } from './dailyReports.js';
+import { registerWellbeingRoutes } from './wellbeing.js';
+import { registerProjectRoutes } from './projects.js';
+import { registerEstimateRoutes } from './estimates.js';
+import { registerInvoiceRoutes } from './invoices.js';
+import { registerTimeEntryRoutes } from './timeEntries.js';
+import { registerExpenseRoutes } from './expenses.js';
+import { registerPurchaseOrderRoutes } from './purchaseOrders.js';
+import { registerVendorDocRoutes } from './vendorDocs.js';
+import { registerLeaveRoutes } from './leave.js';
+import { registerAuthRoutes } from './auth.js';
+import { registerAlertSettingRoutes } from './alertSettings.js';
+import { registerApprovalRuleRoutes } from './approvalRules.js';
+import { registerSendRoutes } from './send.js';
+import { registerMetricJobRoutes } from './metricsJobs.js';
+
+export async function registerRoutes(app: FastifyInstance) {
+  await registerAuthRoutes(app);
+  await registerAlertSettingRoutes(app);
+  await registerApprovalRuleRoutes(app);
+  await registerSendRoutes(app);
+  await registerMetricJobRoutes(app);
+  await registerAlertRoutes(app);
+  await registerDailyReportRoutes(app);
+  await registerWellbeingRoutes(app);
+  await registerProjectRoutes(app);
+  await registerEstimateRoutes(app);
+  await registerInvoiceRoutes(app);
+  await registerTimeEntryRoutes(app);
+  await registerExpenseRoutes(app);
+  await registerPurchaseOrderRoutes(app);
+  await registerVendorDocRoutes(app);
+  await registerLeaveRoutes(app);
+}
