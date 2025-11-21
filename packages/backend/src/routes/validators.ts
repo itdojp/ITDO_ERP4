@@ -36,16 +36,6 @@ export const expenseSchema = {
   }),
 };
 
-export const projectSchema = {
-  body: Type.Object({
-    code: Type.String(),
-    name: Type.String(),
-    status: Type.Optional(Type.String()),
-    customerId: Type.Optional(Type.String()),
-    parentId: Type.Optional(Type.String()),
-  }),
-};
-
 export const estimateSchema = {
   body: Type.Object({
     lines: Type.Optional(Type.Array(Type.Any())),
