@@ -1,9 +1,7 @@
 import { FastifyInstance } from 'fastify';
-import { PrismaClient } from '@prisma/client';
 import { wellbeingSchema } from './validators.js';
 import { requireRole } from '../services/rbac.js';
-
-const prisma = new PrismaClient();
+import { prisma } from '../services/db.js';
 
 export async function registerWellbeingRoutes(app: FastifyInstance) {
   app.post('/wellbeing-entries', { schema: wellbeingSchema, preHandler: requireRole(['admin', 'mgmt', 'user']) }, async (req) => {

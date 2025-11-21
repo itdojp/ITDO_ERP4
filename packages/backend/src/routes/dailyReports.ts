@@ -1,9 +1,7 @@
 import { FastifyInstance } from 'fastify';
-import { PrismaClient } from '@prisma/client';
 import { dailyReportSchema } from './validators.js';
 import { requireRole } from '../services/rbac.js';
-
-const prisma = new PrismaClient();
+import { prisma } from '../services/db.js';
 
 export async function registerDailyReportRoutes(app: FastifyInstance) {
   app.post('/daily-reports', { schema: dailyReportSchema, preHandler: requireRole(['admin', 'mgmt', 'user']) }, async (req) => {

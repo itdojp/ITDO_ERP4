@@ -1,12 +1,10 @@
 import { FastifyInstance } from 'fastify';
-import { PrismaClient } from '@prisma/client';
 import { nextNumber } from '../services/numbering.js';
 import { createApproval } from '../services/approval.js';
 import { FlowTypeValue, DocStatusValue } from '../types.js';
 import { purchaseOrderSchema } from './validators.js';
 import { requireRole } from '../services/rbac.js';
-
-const prisma = new PrismaClient();
+import { prisma } from '../services/db.js';
 
 export async function registerPurchaseOrderRoutes(app: FastifyInstance) {
   app.post('/projects/:projectId/purchase-orders', { preHandler: requireRole(['admin', 'mgmt']), schema: purchaseOrderSchema }, async (req) => {

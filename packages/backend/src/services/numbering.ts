@@ -1,6 +1,4 @@
-import { PrismaClient } from '@prisma/client';
-
-const prisma = new PrismaClient();
+import { prisma } from './db.js';
 
 // prefixMap maps kind to prefix used in numbering
 const prefixMap: Record<string, string> = {

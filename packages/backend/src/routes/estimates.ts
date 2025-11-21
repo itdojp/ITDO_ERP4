@@ -1,12 +1,10 @@
 import { FastifyInstance } from 'fastify';
-import { PrismaClient } from '@prisma/client';
 import { nextNumber } from '../services/numbering.js';
 import { createApproval } from '../services/approval.js';
 import { DocStatusValue, FlowTypeValue } from '../types.js';
 import { estimateSchema } from './validators.js';
 import { requireRole } from '../services/rbac.js';
-
-const prisma = new PrismaClient();
+import { prisma } from '../services/db.js';
 
 export async function registerEstimateRoutes(app: FastifyInstance) {
   app.post('/projects/:projectId/estimates', { preHandler: requireRole(['admin', 'mgmt']), schema: estimateSchema }, async (req) => {

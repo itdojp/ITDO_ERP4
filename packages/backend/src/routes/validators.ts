@@ -23,6 +23,10 @@ export const timeEntrySchema = {
   }),
 };
 
+export const timeEntryPatchSchema = {
+  body: Type.Partial(timeEntrySchema.body),
+};
+
 export const expenseSchema = {
   body: Type.Object({
     projectId: Type.String(),
