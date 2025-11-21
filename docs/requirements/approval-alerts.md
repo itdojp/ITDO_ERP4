@@ -52,6 +52,7 @@
 - 申請の状態遷移ログ: from/to, user, timestamp, reason。
 - ルール変更ログ: 変更者、変更箇所、旧値/新値。
 - アラート発火ログ: 条件、対象、送信結果。
+- (追記) 承認ステップ単位の監査: approval_steps に acted_by/acted_at を残し、変更理由(reason)をパラメータで受けられるようにする。申請単位の change_log テーブルを用意し、from_state/to_state/reason/user/timestamp を保存。
 
 ## 今後の詰めポイント
 - 請求書の `sent` → `paid` 入力の権限/責務（経理ロール前提）。
