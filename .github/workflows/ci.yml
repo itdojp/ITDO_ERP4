@@ -14,7 +14,12 @@ jobs:
         with:
           node-version: 18
       - run: npm install --prefix packages/backend
+      - run: npx prisma generate --schema=prisma/schema.prisma
+        env:
+          DATABASE_URL: postgresql://user:pass@localhost:5432/postgres?schema=public
       - run: npm run build --prefix packages/backend
+        env:
+          DATABASE_URL: postgresql://user:pass@localhost:5432/postgres?schema=public
       - run: npx prisma format --schema=prisma/schema.prisma
       - run: npx prisma validate --schema=prisma/schema.prisma
   frontend:
