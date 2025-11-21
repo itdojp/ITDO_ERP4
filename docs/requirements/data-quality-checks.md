@@ -6,6 +6,9 @@
 - 税率不整合: billing_lines.tax_rate が null か 0 かを検知し報告
 - 通貨未設定: invoices/estimates の currency 欠損
 - 日付不正: work_date/incurred_on の未来日/過去許容範囲外
+- 番号整合: invoice_no/po_no がフォーマット `PYYYY-MM-NNNN` になっているか
+- 重複ID: mapping_* に同一 legacy_id が複数 new_id に紐づいていないか
+- 金額整合: project 単位で invoices.totalAmount と billing_lines の合計が一致するか
 
 ## 出力形式
 - CSV or Markdown レポート: 「種別, 対象ID, 詳細」
@@ -22,6 +25,19 @@ select code, count(*) c from projects group by code having count(*) > 1;
 
 -- time_entries の参照切れ
 select id from time_entries te where not exists (select 1 from projects p where p.id = te.project_id);
+
+-- invoice_no フォーマット確認
+select id, invoice_no from invoices where invoice_no !~ '^P[DIQ]?[0-9]{4}-[0-9]{2}-[0-9]{4}$';
+
+-- mapping_projects 重複
+select legacy_id, count(*) c from mapping_projects group by legacy_id having count(*) > 1;
+
+-- 請求ヘッダと明細の金額差分
+select i.id, i.total_amount, sum(bl.quantity * bl.unit_price) as calc_total
+from invoices i
+join billing_lines bl on bl.invoice_id = i.id
+group by i.id, i.total_amount
+having abs(i.total_amount - sum(bl.quantity * bl.unit_price)) > 0.01;
 ```
 
 ## 将来拡張

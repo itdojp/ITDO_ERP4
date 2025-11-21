@@ -57,6 +57,35 @@
 - シーケンス不整合（例: t_sec_security_token_id_seq）の解消: 今回は一方向移行のため、旧シーケンスは参照のみ。新環境では独立した発番を使用。
 - ユーザIDマッピング: `legacy_user_id -> new_user_uuid` のCSV/テーブルを作成し、time_entries/expenses/daily_reports 等で参照。メールアドレス/社員コードをキーにマッピングし、変換時にJOINで埋め込む。
 
+### マッピングテーブルDDL（サンプル）
+```sql
+create table if not exists mapping_projects(
+  legacy_id text primary key,
+  new_id uuid not null,
+  legacy_code text,
+  created_at timestamptz default now()
+);
+
+create table if not exists mapping_users(
+  legacy_id text primary key,
+  new_id uuid not null,
+  legacy_login text,
+  created_at timestamptz default now()
+);
+
+create table if not exists mapping_vendors(
+  legacy_id text primary key,
+  new_id uuid not null,
+  legacy_code text,
+  created_at timestamptz default now()
+);
+```
+
+### マッピング手順
+- ユーザ: メール または 社員コードで重複を解消し、欠損は手動で紐付け。マッピング未解決の行は別ファイルに出力する。
+- プロジェクト: code が重複する場合はサフィックス（-1,-2）を付与し、元コードは legacy_code に残す。
+- ベンダ/顧客: 旧の company type を見て vendors/customers に振り分け、コードが無い場合は連番を付与。
+
 ## ETL手順（サンプル）
 1. 抽出: FDW または CSV でプロジェクト/工数/請求/経費/取引先を取得。
 2. 変換: Python/DBT などでコード正規化、税率/通貨デフォルト付与、旧ID→新IDマッピングを適用。
