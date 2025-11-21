@@ -88,6 +88,7 @@ export const dailyReportSchema = {
   body: Type.Object({
     content: Type.String(),
     reportDate: Type.String(),
+    userId: Type.String(),
     linkedProjectIds: Type.Optional(Type.Array(Type.String())),
     status: Type.Optional(Type.String()),
   }),
@@ -97,6 +98,7 @@ export const wellbeingSchema = {
   body: Type.Object({
     entryDate: Type.String(),
     status: Type.String(),
+    userId: Type.String(),
     notes: Type.Optional(Type.String()),
     helpRequested: Type.Optional(Type.Boolean()),
     visibilityGroupId: Type.String(),
