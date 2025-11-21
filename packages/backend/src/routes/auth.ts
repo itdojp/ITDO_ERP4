@@ -2,9 +2,7 @@ import { FastifyInstance } from 'fastify';
 
 const demoUser = {
   userId: 'demo-user',
-  roles: ['admin', 'mgmt'],
-  groups: ['hr-group', 'manager-group'],
-  email: 'demo@example.com',
+  roles: ['user'],
 };
 
 export async function registerAuthRoutes(app: FastifyInstance) {
