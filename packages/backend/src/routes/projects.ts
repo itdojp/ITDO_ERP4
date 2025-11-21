@@ -1,5 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import { PrismaClient } from '@prisma/client';
+import { requireRole } from '../services/rbac.js';
 
 const prisma = new PrismaClient();
 
@@ -9,7 +10,7 @@ export async function registerProjectRoutes(app: FastifyInstance) {
     return { items: projects };
   });
 
-  app.post('/projects', async (req) => {
+  app.post('/projects', { preHandler: requireRole(['admin', 'mgmt']) }, async (req) => {
     const body = req.body as any;
     const project = await prisma.project.create({ data: body });
     return project;

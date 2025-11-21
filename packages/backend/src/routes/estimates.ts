@@ -3,11 +3,13 @@ import { PrismaClient } from '@prisma/client';
 import { nextNumber } from '../services/numbering.js';
 import { createApproval } from '../services/approval.js';
 import { DocStatusValue, FlowTypeValue } from '../types.js';
+import { estimateSchema } from './validators.js';
+import { requireRole } from '../services/rbac.js';
 
 const prisma = new PrismaClient();
 
 export async function registerEstimateRoutes(app: FastifyInstance) {
-  app.post('/projects/:projectId/estimates', async (req) => {
+  app.post('/projects/:projectId/estimates', { preHandler: requireRole(['admin', 'mgmt']), schema: estimateSchema }, async (req) => {
     const { projectId } = req.params as { projectId: string };
     const body = req.body as any;
     const now = new Date();
@@ -29,7 +31,7 @@ export async function registerEstimateRoutes(app: FastifyInstance) {
     return { number, estimate };
   });
 
-  app.post('/estimates/:id/submit', async (req) => {
+  app.post('/estimates/:id/submit', { preHandler: requireRole(['admin', 'mgmt']) }, async (req) => {
     const { id } = req.params as { id: string };
     const estimate = await prisma.estimate.update({ where: { id }, data: { status: DocStatusValue.pending_qa } });
     await createApproval(FlowTypeValue.estimate, 'estimates', id, [{ approverGroupId: 'mgmt' }, { approverGroupId: 'exec' }]);
