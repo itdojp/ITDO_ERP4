@@ -55,6 +55,7 @@
 ## シーケンス/ID整合
 - IDは新規UUIDを発行。旧IDは external_source/id として保持し、リレーションは旧ID→新UUIDのマップテーブルで解決。
 - シーケンス不整合（例: t_sec_security_token_id_seq）の解消: 今回は一方向移行のため、旧シーケンスは参照のみ。新環境では独立した発番を使用。
+- ユーザIDマッピング: `legacy_user_id -> new_user_uuid` のCSV/テーブルを作成し、time_entries/expenses/daily_reports 等で参照。メールアドレス/社員コードをキーにマッピングし、変換時にJOINで埋め込む。
 
 ## ETL手順（サンプル）
 1. 抽出: FDW または CSV でプロジェクト/工数/請求/経費/取引先を取得。

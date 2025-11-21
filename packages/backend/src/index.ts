@@ -5,7 +5,7 @@ import authPlugin from './plugins/auth.js';
 
 async function main() {
   const server = Fastify({ logger: true });
-  await server.register(cors, { origin: true });
+  await server.register(cors, { origin: true, maxAge: 86400 });
   await server.register(authPlugin);
 
   // health
