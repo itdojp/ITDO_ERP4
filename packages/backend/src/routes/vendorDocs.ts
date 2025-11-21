@@ -1,11 +1,9 @@
 import { FastifyInstance } from 'fastify';
-import { PrismaClient } from '@prisma/client';
 import { createApproval } from '../services/approval.js';
 import { FlowTypeValue, DocStatusValue } from '../types.js';
 import { vendorInvoiceSchema, vendorQuoteSchema } from './validators.js';
 import { requireRole } from '../services/rbac.js';
-
-const prisma = new PrismaClient();
+import { prisma } from '../services/db.js';
 
 export async function registerVendorDocRoutes(app: FastifyInstance) {
   app.post('/vendor-quotes', { preHandler: requireRole(['admin', 'mgmt']), schema: vendorQuoteSchema }, async (req) => {

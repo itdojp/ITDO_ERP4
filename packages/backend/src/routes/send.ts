@@ -1,10 +1,8 @@
 import { FastifyInstance } from 'fastify';
-import { PrismaClient } from '@prisma/client';
 import { sendEmailStub, recordPdfStub } from '../services/notifier.js';
 import { DocStatusValue } from '../types.js';
 import { requireRole } from '../services/rbac.js';
-
-const prisma = new PrismaClient();
+import { prisma } from '../services/db.js';
 
 export async function registerSendRoutes(app: FastifyInstance) {
   app.post('/invoices/:id/send', { preHandler: requireRole(['admin', 'mgmt']) }, async (req) => {

@@ -1,8 +1,6 @@
 import { FastifyInstance } from 'fastify';
-import { PrismaClient } from '@prisma/client';
 import { requireRole } from '../services/rbac.js';
-
-const prisma = new PrismaClient();
+import { prisma } from '../services/db.js';
 
 export async function registerApprovalRuleRoutes(app: FastifyInstance) {
   app.get('/approval-rules', { preHandler: requireRole(['admin', 'mgmt']) }, async () => {

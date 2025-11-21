@@ -1,7 +1,5 @@
-import { PrismaClient } from '@prisma/client';
 import { buildStubResults, sendEmailStub } from './notifier.js';
-
-const prisma = new PrismaClient();
+import { prisma } from './db.js';
 
 type MetricFetcher = (settingId: string) => Promise<number>;
 

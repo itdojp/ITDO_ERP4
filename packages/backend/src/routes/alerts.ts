@@ -1,7 +1,5 @@
 import { FastifyInstance } from 'fastify';
-import { PrismaClient } from '@prisma/client';
-
-const prisma = new PrismaClient();
+import { prisma } from '../services/db.js';
 
 export async function registerAlertRoutes(app: FastifyInstance) {
   app.get('/alerts', async () => {

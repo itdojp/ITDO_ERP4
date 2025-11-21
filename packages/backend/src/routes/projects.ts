@@ -1,9 +1,7 @@
 import { FastifyInstance } from 'fastify';
-import { PrismaClient } from '@prisma/client';
 import { requireRole } from '../services/rbac.js';
 import { projectSchema } from './validators.js';
-
-const prisma = new PrismaClient();
+import { prisma } from '../services/db.js';
 
 export async function registerProjectRoutes(app: FastifyInstance) {
   app.get('/projects', async () => {
