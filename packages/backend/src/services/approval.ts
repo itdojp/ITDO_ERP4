@@ -41,12 +41,14 @@ export async function act(instanceId: string, userId: string, action: 'approve' 
       where: { id: current.id },
       data: { status: action === 'approve' ? DocStatusValue.approved : DocStatusValue.rejected, actedBy: userId, actedAt: new Date() },
     });
-    let newStatus = instance.status;
+    let newStatus;
     let newCurrentStep = instance.currentStep;
     if (action === 'reject') {
       newStatus = DocStatusValue.rejected;
     } else {
-      const nextStep = instance.steps.find((s: any) => s.stepOrder === instance.currentStep! + 1);
+      const nextStep = instance.currentStep
+        ? instance.steps.find((s: any) => s.stepOrder === instance.currentStep + 1)
+        : null;
       if (nextStep) {
         newCurrentStep = nextStep.stepOrder;
         newStatus = DocStatusValue.pending_qa;

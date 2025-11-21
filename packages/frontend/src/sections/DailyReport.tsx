@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { api } from '../api';
+import { HelpModal } from './HelpModal';
 
 const tags = ['仕事量が多い', '役割/進め方', '人間関係', '体調', '私生活', '特になし'];
 
@@ -9,6 +10,7 @@ export const DailyReport: React.FC = () => {
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [helpRequested, setHelpRequested] = useState(false);
   const [message, setMessage] = useState('');
+  const [showHelp, setShowHelp] = useState(false);
 
   const toggleTag = (tag: string) => {
     setSelectedTags((prev) => (prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]));
@@ -25,10 +27,9 @@ export const DailyReport: React.FC = () => {
         body: JSON.stringify({
           entryDate: new Date().toISOString(),
           status,
-          notes,
+          notes: selectedTags.length ? `${notes}\nTags:${selectedTags.join(',')}` : notes,
           helpRequested,
           visibilityGroupId: 'hr-group',
-          notGoodTags: selectedTags,
         }),
       });
       setMessage('送信しました');
@@ -44,7 +45,7 @@ export const DailyReport: React.FC = () => {
         <span>今日のコンディション:</span>
         <button className="button secondary" onClick={() => setStatus('good')} aria-pressed={status === 'good'}>Good</button>
         <button className="button secondary" onClick={() => setStatus('not_good')} aria-pressed={status === 'not_good'}>Not Good</button>
-        <button className="button" style={{ marginLeft: 'auto' }}>ヘルプ / 相談したい</button>
+        <button className="button" style={{ marginLeft: 'auto' }} onClick={() => setShowHelp(true)}>ヘルプ / 相談したい</button>
       </div>
       {status === 'not_good' && (
         <div style={{ marginTop: 12 }}>
@@ -82,6 +83,7 @@ export const DailyReport: React.FC = () => {
       <p style={{ fontSize: 12, color: '#475569', marginTop: 8 }}>
         この入力は評価に使われません。職場環境の改善とサポートのためにのみ利用します。
       </p>
+      {showHelp && <HelpModal onClose={() => setShowHelp(false)} />}
     </div>
   );
 };

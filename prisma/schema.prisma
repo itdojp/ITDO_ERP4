@@ -187,7 +187,7 @@ model ProjectMilestone {
 model RecurringProjectTemplate {
   id           String   @id @default(uuid())
   project      Project  @relation(fields: [projectId], references: [id])
-  projectId    String
+  projectId    String   @unique
   frequency    String   // monthly/quarterly/semiannual/annual
   defaultAmount Decimal?
   defaultTerms  String?
@@ -525,4 +525,3 @@ model NumberSequence {
   updatedAt     DateTime @updatedAt
   @@unique([kind, year, month])
 }
-

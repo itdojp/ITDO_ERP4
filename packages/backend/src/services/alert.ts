@@ -10,6 +10,7 @@ export async function triggerAlert(settingId: string, metric: number, threshold:
       settingId,
       targetRef,
       status: 'open',
+      // PoC stub: pretend email/dashboard were attempted; replace with real notifier results later
       sentChannels: { set: ['email', 'dashboard'] },
       sentResult: { set: [{ channel: 'email', status: 'stub' }] },
     },
