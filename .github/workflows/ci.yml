@@ -15,8 +15,8 @@ jobs:
           node-version: 18
       - run: npm install --prefix packages/backend
       - run: npm run build --prefix packages/backend
-      - run: npx prisma format
-      - run: npx prisma validate
+      - run: npx prisma format --schema=prisma/schema.prisma
+      - run: npx prisma validate --schema=prisma/schema.prisma
   frontend:
     runs-on: ubuntu-latest
     steps:
@@ -36,4 +36,4 @@ jobs:
           node-version: 18
       - run: npm install --prefix packages/backend
       - run: npm install --prefix packages/frontend
-      - run: npx ts-node scripts/data-quality-check.ts || true
+      - run: npx --prefix packages/backend ts-node --project packages/backend/tsconfig.json scripts/data-quality-check.ts || true
