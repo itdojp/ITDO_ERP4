@@ -1,18 +1,21 @@
 import { PrismaClient } from '@prisma/client';
+import { buildStubResults, sendEmailStub } from './notifier.js';
 
 const prisma = new PrismaClient();
 
 type MetricFetcher = (settingId: string) => Promise<number>;
 
 export async function triggerAlert(settingId: string, metric: number, threshold: number, targetRef: string) {
+  const channels = ['email', 'dashboard'];
+  const sentResult = buildStubResults(channels);
+  await sendEmailStub(['alert@example.com'], `Alert ${settingId}`, `metric ${metric} > ${threshold}`);
   return prisma.alert.create({
     data: {
       settingId,
       targetRef,
       status: 'open',
-      // PoC stub: pretend email/dashboard were attempted; replace with real notifier results later
-      sentChannels: { set: ['email', 'dashboard'] },
-      sentResult: { set: [{ channel: 'email', status: 'stub' }] },
+      sentChannels: { set: channels },
+      sentResult: { set: sentResult },
     },
   });
 }
