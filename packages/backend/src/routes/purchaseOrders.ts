@@ -3,11 +3,13 @@ import { PrismaClient } from '@prisma/client';
 import { nextNumber } from '../services/numbering.js';
 import { createApproval } from '../services/approval.js';
 import { FlowTypeValue, DocStatusValue } from '../types.js';
+import { purchaseOrderSchema } from './validators.js';
+import { requireRole } from '../services/rbac.js';
 
 const prisma = new PrismaClient();
 
 export async function registerPurchaseOrderRoutes(app: FastifyInstance) {
-  app.post('/projects/:projectId/purchase-orders', async (req) => {
+  app.post('/projects/:projectId/purchase-orders', { preHandler: requireRole(['admin', 'mgmt']), schema: purchaseOrderSchema }, async (req) => {
     const { projectId } = req.params as { projectId: string };
     const body = req.body as any;
     const now = new Date();
@@ -30,7 +32,7 @@ export async function registerPurchaseOrderRoutes(app: FastifyInstance) {
     return po;
   });
 
-  app.post('/purchase-orders/:id/submit', async (req) => {
+  app.post('/purchase-orders/:id/submit', { preHandler: requireRole(['admin', 'mgmt']) }, async (req) => {
     const { id } = req.params as { id: string };
     const po = await prisma.purchaseOrder.update({ where: { id }, data: { status: DocStatusValue.pending_qa } });
     await createApproval(FlowTypeValue.purchase_order, 'purchase_orders', id, [{ approverGroupId: 'mgmt' }]);

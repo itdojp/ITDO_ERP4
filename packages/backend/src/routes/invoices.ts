@@ -3,11 +3,13 @@ import { PrismaClient } from '@prisma/client';
 import { nextNumber } from '../services/numbering.js';
 import { createApproval } from '../services/approval.js';
 import { FlowTypeValue, DocStatusValue } from '../types.js';
+import { invoiceSchema } from './validators.js';
+import { requireRole } from '../services/rbac.js';
 
 const prisma = new PrismaClient();
 
 export async function registerInvoiceRoutes(app: FastifyInstance) {
-  app.post('/projects/:projectId/invoices', async (req) => {
+  app.post('/projects/:projectId/invoices', { preHandler: requireRole(['admin', 'mgmt']), schema: invoiceSchema }, async (req) => {
     const { projectId } = req.params as { projectId: string };
     const body = req.body as any;
     const now = new Date();
@@ -31,7 +33,7 @@ export async function registerInvoiceRoutes(app: FastifyInstance) {
     return invoice;
   });
 
-  app.post('/invoices/:id/submit', async (req) => {
+  app.post('/invoices/:id/submit', { preHandler: requireRole(['admin', 'mgmt']) }, async (req) => {
     const { id } = req.params as { id: string };
     const invoice = await prisma.invoice.update({ where: { id }, data: { status: DocStatusValue.pending_qa } });
     await createApproval(FlowTypeValue.invoice, 'invoices', id, [{ approverGroupId: 'mgmt' }, { approverGroupId: 'exec' }]);
