@@ -9,6 +9,8 @@
 - 番号整合: invoice_no/po_no がフォーマット `PYYYY-MM-NNNN` になっているか
 - 重複ID: mapping_* に同一 legacy_id が複数 new_id に紐づいていないか
 - 金額整合: project 単位で invoices.totalAmount と billing_lines の合計が一致するか
+- 欠損: time_entries/expenses で user_id/project_id/currency が null のもの
+- 工数/休暇の整合: 同一日で minutes が 1440 を超えていないか、休暇と重複していないか
 
 ## 出力形式
 - CSV or Markdown レポート: 「種別, 対象ID, 詳細」
@@ -38,6 +40,15 @@ from invoices i
 join billing_lines bl on bl.invoice_id = i.id
 group by i.id, i.total_amount
 having abs(i.total_amount - sum(bl.quantity * bl.unit_price)) > 0.01;
+
+-- 欠損（通貨なし）
+select id from invoices where currency is null or currency = '';
+
+-- 工数の1日合計超過
+select user_id, work_date::date, sum(minutes) as total_min
+from time_entries
+group by user_id, work_date::date
+having sum(minutes) > 1440;
 ```
 
 ## 将来拡張
