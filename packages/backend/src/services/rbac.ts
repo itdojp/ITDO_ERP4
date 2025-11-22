@@ -22,3 +22,16 @@ export function requireRoleOrSelf(allowed: string[], getTargetUserId?: (req: Fas
     }
   };
 }
+
+// 管理ロールは全許可。そうでない場合、projectId がユーザの projectIds に含まれているかをチェック
+export function requireProjectAccess(getProjectId: (req: FastifyRequest) => string | undefined) {
+  return async (req: FastifyRequest, reply: FastifyReply) => {
+    const roles = req.user?.roles || [];
+    if (roles.includes('admin') || roles.includes('mgmt')) return;
+    const userProjects = req.user?.projectIds || [];
+    const targetProject = getProjectId(req);
+    if (targetProject && !userProjects.includes(targetProject)) {
+      return reply.code(403).send({ error: 'forbidden_project' });
+    }
+  };
+}
