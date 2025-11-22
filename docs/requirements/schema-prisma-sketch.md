@@ -18,6 +18,13 @@ enum LeaveStatus { draft pending_manager approved rejected }
 enum FlowType { estimate invoice expense leave time purchase_order vendor_invoice vendor_quote }
 enum AlertType { budget_overrun overtime approval_delay }
 
+// FK/削除ポリシー（案）
+// - Project 起点: child/estimate/invoice/time/expense/PO/VQ/VI は ON DELETE RESTRICT（論理削除で対応）
+// - Estimate→Invoice, Milestone→Invoice: NULL 許容（見積なし請求を許可）、ON DELETE SET NULL
+// - ProjectTask→Time/Billing/Expense: task削除時は参照をNULL（履歴保全）
+// - User参照（userId/ownerUserIdなど）は外部ID想定のためFKなし、値はIDaaS連携時に整合
+// - createdBy/updatedBy はアプリ層で設定し、将来 audit_log と突き合わせ可能にする
+
 // 備考: DocStatus は用途によりサブセットのみを使用（vendor_quote は received/approved/rejected 等）
 
 // マスタ
