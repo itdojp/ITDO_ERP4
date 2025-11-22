@@ -4,11 +4,13 @@ import { DailyReport } from '../sections/DailyReport';
 import { TimeEntries } from '../sections/TimeEntries';
 import { Invoices } from '../sections/Invoices';
 import { HRAnalytics } from '../sections/HRAnalytics';
+import { CurrentUser } from '../sections/CurrentUser';
 
 export const App: React.FC = () => {
   return (
     <div className="container">
       <h1>ERP4 MVP PoC</h1>
+      <CurrentUser />
       <div className="card"><Dashboard /></div>
       <div className="card"><DailyReport /></div>
       <div className="card"><TimeEntries /></div>
