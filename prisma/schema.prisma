@@ -11,29 +11,29 @@ datasource db {
 }
 
 enum ProjectStatus {
-  draft
-  active
-  on_hold
-  closed
+  draft      // 起案中
+  active     // 進行中
+  on_hold    // 保留
+  closed     // 完了
 }
 
 enum DocStatus {
-  draft
-  pending_qa
-  pending_exec
-  approved
-  rejected
-  sent
-  paid
-  cancelled
-  received
-  acknowledged
+  draft          // 下書き/未送信
+  pending_qa     // 管理部レビュー待ち
+  pending_exec   // 経営承認待ち
+  approved       // 承認済み
+  rejected       // 却下
+  sent           // 送付済み
+  paid           // 支払/入金済み
+  cancelled      // 取り消し
+  received       // 受領済み（仕入/業者系）
+  acknowledged   // 確認済み
 }
 
 enum TimeStatus {
-  submitted
-  approved
-  rejected
+  submitted   // 提出
+  approved    // 承認
+  rejected    // 差戻し
 }
 
 enum LeaveStatus {
@@ -44,20 +44,20 @@ enum LeaveStatus {
 }
 
 enum FlowType {
-  estimate
-  invoice
-  expense
-  leave
-  time
-  purchase_order
-  vendor_invoice
-  vendor_quote
+  estimate         // 見積
+  invoice          // 請求
+  expense          // 経費
+  leave            // 休暇
+  time             // 工数/残業
+  purchase_order   // 発注書
+  vendor_invoice   // 業者請求
+  vendor_quote     // 業者見積
 }
 
 enum AlertType {
-  budget_overrun
-  overtime
-  approval_delay
+  budget_overrun   // 予算超過
+  overtime         // 残業超過
+  approval_delay   // 承認遅延
 }
 
 model Customer {
