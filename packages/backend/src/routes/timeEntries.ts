@@ -31,6 +31,16 @@ export async function registerTimeEntryRoutes(app: FastifyInstance) {
       const entry = await prisma.timeEntry.update({ where: { id }, data });
       if (changed) {
         await createApproval(FlowTypeValue.time, 'time_entries', id, [{ approverGroupId: 'mgmt' }]);
+        // 監査ログ: 修正が承認待ちになったことを記録
+        const userId = req.user?.userId;
+        const { logAudit } = await import('../services/audit.js');
+        await logAudit({
+          action: 'time_entry_modified',
+          userId,
+          targetTable: 'time_entries',
+          targetId: id,
+          metadata: { changedFields: Object.keys(body) },
+        });
       }
       return entry;
     },

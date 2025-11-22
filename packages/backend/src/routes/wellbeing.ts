@@ -2,6 +2,7 @@ import { FastifyInstance } from 'fastify';
 import { wellbeingSchema } from './validators.js';
 import { requireRole } from '../services/rbac.js';
 import { prisma } from '../services/db.js';
+import { logAudit } from '../services/audit.js';
 
 export async function registerWellbeingRoutes(app: FastifyInstance) {
   app.post('/wellbeing-entries', { schema: wellbeingSchema, preHandler: requireRole(['admin', 'mgmt', 'user']) }, async (req) => {
@@ -12,6 +13,7 @@ export async function registerWellbeingRoutes(app: FastifyInstance) {
 
   app.get('/wellbeing-entries', { preHandler: requireRole(['hr', 'admin']) }, async () => {
     const items = await prisma.wellbeingEntry.findMany({ orderBy: { entryDate: 'desc' }, take: 50 });
+    await logAudit({ action: 'wellbeing_view', targetTable: 'wellbeing_entries' });
     return { items };
   });
 }

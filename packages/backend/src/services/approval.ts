@@ -1,5 +1,6 @@
 import { DocStatusValue } from '../types.js';
 import { prisma } from './db.js';
+import { logAudit } from './audit.js';
 
 type Step = { approverGroupId?: string; approverUserId?: string };
 
@@ -56,6 +57,13 @@ export async function act(instanceId: string, userId: string, action: 'approve' 
       }
     }
     await tx.approvalInstance.update({ where: { id: instance.id }, data: { status: newStatus, currentStep: newCurrentStep } });
+    await logAudit({
+      action: `approval_${action}`,
+      userId,
+      targetTable: 'approval_instances',
+      targetId: instance.id,
+      metadata: { fromStatus: instance.status, toStatus: newStatus, step: current.stepOrder },
+    });
     return { status: newStatus, currentStep: newCurrentStep };
   });
 }
