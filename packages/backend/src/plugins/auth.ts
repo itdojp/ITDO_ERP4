@@ -3,6 +3,8 @@ import fp from 'fastify-plugin';
 export type UserContext = {
   userId: string;
   roles: string[];
+  orgId?: string;
+  projectIds?: string[];
 };
 
 declare module 'fastify' {
@@ -16,7 +18,12 @@ async function authMock(fastify: any) {
     const userId = (req.headers['x-user-id'] as string) || 'demo-user';
     const rolesHeader = (req.headers['x-roles'] as string) || 'user';
     const roles = rolesHeader.split(',').map((r: string) => r.trim()).filter(Boolean);
-    req.user = { userId, roles };
+    const projectIdsHeader = (req.headers['x-project-ids'] as string) || '';
+    const projectIds = projectIdsHeader
+      .split(',')
+      .map((p: string) => p.trim())
+      .filter(Boolean);
+    req.user = { userId, roles, projectIds };
   });
 }
 
