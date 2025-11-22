@@ -25,7 +25,7 @@ export async function nextNumber(kind: keyof typeof prefixMap, date: Date) {
       });
       const current = seq.currentSerial;
       if (current > 9999) {
-        throw new Error('Serial overflow');
+        throw new Error('Serial overflow (>=10000)');
       }
       const number = `${prefix}${year}-${`${month}`.padStart(2, '0')}-${`${current}`.padStart(4, '0')}`;
       return { number, serial: current };

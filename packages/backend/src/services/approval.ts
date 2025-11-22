@@ -4,6 +4,20 @@ import { logAudit } from './audit.js';
 
 type Step = { approverGroupId?: string; approverUserId?: string };
 
+export function matchApprovalSteps(flowType: string, payload: Record<string, unknown>): Step[] {
+  // 簡易マッチャー: 金額/定期/小額スキップなどの条件に応じてステップを返すスタブ
+  const amount = Number(payload.totalAmount || 0);
+  const isRecurring = Boolean(payload.recurring);
+  const isSmall = amount > 0 && amount < 50000;
+  if (isRecurring && isSmall) {
+    return [{ approverGroupId: 'mgmt' }];
+  }
+  return [
+    { approverGroupId: 'mgmt' },
+    ...(amount >= 100000 ? [{ approverGroupId: 'exec' }] : []),
+  ];
+}
+
 export async function createApproval(flowType: string, targetTable: string, targetId: string, steps: Step[]) {
   const ruleId = 'manual';
   return prisma.$transaction(async (tx: any) => {
