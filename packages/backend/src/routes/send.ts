@@ -1,5 +1,5 @@
 import { FastifyInstance } from 'fastify';
-import { sendEmailStub, recordPdfStub } from '../services/notifier.js';
+import { sendInvoiceEmail, sendPurchaseOrderEmail, recordPdfStub } from '../services/notifier.js';
 import { DocStatusValue } from '../types.js';
 import { requireRole } from '../services/rbac.js';
 import { prisma } from '../services/db.js';
@@ -9,7 +9,7 @@ export async function registerSendRoutes(app: FastifyInstance) {
     const { id } = req.params as { id: string };
     const invoice = await prisma.invoice.update({ where: { id }, data: { status: DocStatusValue.sent } });
     await recordPdfStub('invoice', { id });
-    await sendEmailStub(['fin@example.com'], `Invoice ${invoice.invoiceNo}`, 'Stub send');
+    await sendInvoiceEmail(['fin@example.com'], invoice.invoiceNo);
     return invoice;
   });
 
@@ -17,7 +17,7 @@ export async function registerSendRoutes(app: FastifyInstance) {
     const { id } = req.params as { id: string };
     const po = await prisma.purchaseOrder.update({ where: { id }, data: { status: DocStatusValue.sent } });
     await recordPdfStub('purchase_order', { id });
-    await sendEmailStub(['vendor@example.com'], `PO ${po.poNo}`, 'Stub send');
+    await sendPurchaseOrderEmail(['vendor@example.com'], po.poNo);
     return po;
   });
 }
