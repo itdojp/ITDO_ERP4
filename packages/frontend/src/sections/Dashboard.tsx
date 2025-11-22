@@ -5,6 +5,7 @@ type Alert = { id: string; type: string; targetRef?: string; status: string; tri
 
 export const Dashboard: React.FC = () => {
   const [alerts, setAlerts] = useState<Alert[]>([]);
+  const [showAll, setShowAll] = useState(false);
 
   useEffect(() => {
     api<{ items: Alert[] }>('/alerts').then((data) => setAlerts(data.items)).catch(() => setAlerts([]));
@@ -13,9 +14,14 @@ export const Dashboard: React.FC = () => {
   return (
     <div>
       <h2>Dashboard</h2>
-      <p className="badge">Alerts (最新5件)</p>
+      <div className="row" style={{ alignItems: 'center' }}>
+        <p className="badge">Alerts {showAll ? '(全件)' : '(最新5件)'}</p>
+        <button className="button secondary" style={{ marginLeft: 'auto' }} onClick={() => setShowAll((v) => !v)}>
+          {showAll ? '最新のみ' : 'すべて表示'}
+        </button>
+      </div>
       <div className="list" style={{ display: 'grid', gap: 8 }}>
-        {alerts.slice(0, 5).map((a) => (
+        {(showAll ? alerts : alerts.slice(0, 5)).map((a) => (
           <div key={a.id} className="card" style={{ padding: 12 }}>
             <div className="row" style={{ justifyContent: 'space-between' }}>
               <div>
