@@ -4,6 +4,14 @@ import { logAudit } from './audit.js';
 
 type Step = { approverGroupId?: string; approverUserId?: string };
 
+// 条件サンプル: amount閾値 / recurring判定 / 小額スキップ
+export type ApprovalCondition = {
+  minAmount?: number;
+  requireExec?: boolean;
+  skipSmall?: boolean;
+  isRecurring?: boolean;
+};
+
 export function matchApprovalSteps(flowType: string, payload: Record<string, unknown>): Step[] {
   // 簡易マッチャー: 金額/定期/小額スキップなどの条件に応じてステップを返すスタブ
   const amount = Number(payload.totalAmount || 0);
