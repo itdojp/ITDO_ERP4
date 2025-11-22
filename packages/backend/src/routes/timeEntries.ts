@@ -71,22 +71,27 @@ export async function registerTimeEntryRoutes(app: FastifyInstance) {
       ],
     },
     async (req) => {
-      const { projectId, userId } = req.query as { projectId?: string; userId?: string };
-    const roles = req.user?.roles || [];
-    const currentUserId = req.user?.userId;
-    const where: any = {};
-    if (projectId) where.projectId = projectId;
-    if (!roles.includes('admin') && !roles.includes('mgmt')) {
-      where.userId = currentUserId;
-    } else if (userId) {
-      where.userId = userId;
-    }
-    const entries = await prisma.timeEntry.findMany({
-      where,
-      orderBy: { workDate: 'desc' },
-      take: 200,
-    });
-    return { items: entries };
+      const { projectId, userId, from, to } = req.query as { projectId?: string; userId?: string; from?: string; to?: string };
+      const roles = req.user?.roles || [];
+      const currentUserId = req.user?.userId;
+      const where: any = {};
+      if (projectId) where.projectId = projectId;
+      if (!roles.includes('admin') && !roles.includes('mgmt')) {
+        where.userId = currentUserId;
+      } else if (userId) {
+        where.userId = userId;
+      }
+      if (from || to) {
+        where.workDate = {};
+        if (from) where.workDate.gte = new Date(from);
+        if (to) where.workDate.lte = new Date(to);
+      }
+      const entries = await prisma.timeEntry.findMany({
+        where,
+        orderBy: { workDate: 'desc' },
+        take: 200,
+      });
+      return { items: entries };
     },
   );
 
