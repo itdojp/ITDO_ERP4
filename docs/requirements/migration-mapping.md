@@ -12,6 +12,7 @@
 - PO: `im_projects` → ERP4: `projects`
   - code/name/status/parent: 直接マッピング。階層は parent_id で5階層まで許容。
   - budget/計画日はあれば `project_milestones`/`project_tasks` に分配。
+  - IDは mapping_projects で UUID を発行し、元IDは legacy_id / legacy_code に保持。
 - PO: `im_proj_phases` → ERP4: `project_milestones`
   - phase名/期間/金額相当をマイルストーンに転記（bill_upon=acceptance をデフォルト）。
 - PO: `im_timesheet_tasks` ほか → ERP4: `project_tasks`
@@ -20,6 +21,7 @@
 ### 見積/請求
 - PO: `im_invoices` → ERP4: `invoices`
   - invoice_no は再発番（PYYYY-MM-NNNN）。旧番号は `external_id` 相当カラムに保持（後で追加）。
+  - project_id は mapping_projects をJOINして新UUIDに置換。
   - ステータス: closed/paid → paid, open → approved/sent, draft → draft。
 - PO: `im_invoice_items` → ERP4: `billing_lines`
   - 課税/非課税は tax_rate で表現。task_id があれば紐付け。

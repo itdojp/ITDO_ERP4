@@ -54,6 +54,7 @@ for setting in alert_settings where is_enabled:
   if metric > threshold and not existing_open(setting, scope):
      alert = insert alerts(...)
      send email/dashboard
+     mark reminder_at = now + setting.remind_after_hours (optional)
 ```
 
 ## 承認タイムアウト（将来）
@@ -64,3 +65,10 @@ for setting in alert_settings where is_enabled:
 - 冪等性: 発番以外のジョブも同日再実行しても重複作成しないようキーを持つ（例: recurring生成は project_id+period でユニーク性チェック）。
 - 監視: 失敗時はアラート発報（メール）し、ダッシュボードに表示。
 - 設定: ジョブスケジュール/閾値は DB の設定値から取得し、管理画面から変更可能にする前提。ジョブは設定を走査して動的に動くように設計。
+
+### 定期案件テンプレ生成シーケンス（簡易）
+1. cron起動 → `recurring_project_templates` で `is_active` かつ `next_run_at <= now` を取得
+2. project_id + year-month で既存生成履歴がないか確認（重複防止）
+3. Project/Milestone/Estimate/Invoice のドラフトを作成（テンプレのdefaultAmount/termsをコピー、採番は number_sequences で生成）
+4. 成功時に生成履歴を記録し、テンプレの `next_run_at` を frequency に基づき更新
+5. 失敗時はジョブログに記録し、再実行で重複しないようキーで制御
