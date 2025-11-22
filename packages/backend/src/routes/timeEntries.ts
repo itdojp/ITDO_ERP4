@@ -1,21 +1,37 @@
 import { FastifyInstance } from 'fastify';
 import { timeEntryPatchSchema, timeEntrySchema } from './validators.js';
 import { TimeStatusValue } from '../types.js';
-import { requireRole, requireRoleOrSelf } from '../services/rbac.js';
+import { requireProjectAccess, requireRole, requireRoleOrSelf } from '../services/rbac.js';
 import { prisma } from '../services/db.js';
 import { createApproval } from '../services/approval.js';
 import { FlowTypeValue } from '../types.js';
 
 export async function registerTimeEntryRoutes(app: FastifyInstance) {
-  app.post('/time-entries', { schema: timeEntrySchema, preHandler: requireRole(['admin', 'mgmt', 'user']) }, async (req) => {
-    const body = req.body as any;
-    const entry = await prisma.timeEntry.create({ data: { ...body, status: TimeStatusValue.submitted } });
-    return entry;
-  });
+  app.post(
+    '/time-entries',
+    {
+      schema: timeEntrySchema,
+      preHandler: [
+        requireRole(['admin', 'mgmt', 'user']),
+        requireProjectAccess((req) => (req.body as any)?.projectId),
+      ],
+    },
+    async (req) => {
+      const body = req.body as any;
+      const entry = await prisma.timeEntry.create({ data: { ...body, status: TimeStatusValue.submitted } });
+      return entry;
+    },
+  );
 
   app.patch(
     '/time-entries/:id',
-    { schema: timeEntryPatchSchema, preHandler: requireRoleOrSelf(['admin', 'mgmt'], (req) => (req.body as any)?.userId) },
+    {
+      schema: timeEntryPatchSchema,
+      preHandler: [
+        requireRoleOrSelf(['admin', 'mgmt'], (req) => (req.body as any)?.userId),
+        requireProjectAccess((req) => (req.body as any)?.projectId),
+      ],
+    },
     async (req) => {
       const { id } = req.params as { id: string };
       const body = req.body as any;
@@ -46,8 +62,16 @@ export async function registerTimeEntryRoutes(app: FastifyInstance) {
     },
   );
 
-  app.get('/time-entries', { preHandler: requireRole(['admin', 'mgmt', 'user']) }, async (req) => {
-    const { projectId, userId } = req.query as { projectId?: string; userId?: string };
+  app.get(
+    '/time-entries',
+    {
+      preHandler: [
+        requireRole(['admin', 'mgmt', 'user']),
+        requireProjectAccess((req) => (req.query as any)?.projectId),
+      ],
+    },
+    async (req) => {
+      const { projectId, userId } = req.query as { projectId?: string; userId?: string };
     const roles = req.user?.roles || [];
     const currentUserId = req.user?.userId;
     const where: any = {};
@@ -63,7 +87,8 @@ export async function registerTimeEntryRoutes(app: FastifyInstance) {
       take: 200,
     });
     return { items: entries };
-  });
+    },
+  );
 
   app.post('/time-entries/:id/submit', { preHandler: requireRole(['admin', 'mgmt']) }, async (req) => {
     const { id } = req.params as { id: string };
