@@ -1,5 +1,5 @@
 import { FastifyInstance } from 'fastify';
-import { createApproval } from '../services/approval.js';
+import { createApproval, createApprovalFor } from '../services/approval.js';
 import { expenseSchema } from './validators.js';
 import { DocStatusValue, FlowTypeValue } from '../types.js';
 import { requireProjectAccess, requireRole, requireRoleOrSelf } from '../services/rbac.js';
@@ -54,7 +54,7 @@ export async function registerExpenseRoutes(app: FastifyInstance) {
   app.post('/expenses/:id/submit', { preHandler: requireRoleOrSelf(['admin', 'mgmt'], (req) => req.user?.userId) }, async (req) => {
     const { id } = req.params as { id: string };
     const exp = await prisma.expense.update({ where: { id }, data: { status: DocStatusValue.pending_qa } });
-    await createApproval(FlowTypeValue.expense, 'expenses', id, [{ approverGroupId: 'mgmt' }]);
+    await createApprovalFor(FlowTypeValue.expense, 'expenses', id, { amount: exp.amount });
     return exp;
   });
 }
