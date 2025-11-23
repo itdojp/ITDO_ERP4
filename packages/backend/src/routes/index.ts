@@ -15,6 +15,7 @@ import { registerAlertSettingRoutes } from './alertSettings.js';
 import { registerApprovalRuleRoutes } from './approvalRules.js';
 import { registerSendRoutes } from './send.js';
 import { registerMetricJobRoutes } from './metricsJobs.js';
+import { registerReportRoutes } from './reports.js';
 
 export async function registerRoutes(app: FastifyInstance) {
   await registerAuthRoutes(app);
@@ -33,4 +34,5 @@ export async function registerRoutes(app: FastifyInstance) {
   await registerPurchaseOrderRoutes(app);
   await registerVendorDocRoutes(app);
   await registerLeaveRoutes(app);
+  await registerReportRoutes(app);
 }
