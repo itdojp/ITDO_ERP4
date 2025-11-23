@@ -7,27 +7,34 @@ type Step = { approverGroupId?: string; approverUserId?: string };
 // 条件サンプル: amount閾値 / recurring判定 / 小額スキップ
 export type ApprovalCondition = {
   minAmount?: number;
-  requireExec?: boolean;
-  skipSmall?: boolean;
+  execThreshold?: number;
+  skipSmallUnder?: number;
   isRecurring?: boolean;
 };
 
-export function matchApprovalSteps(flowType: string, payload: Record<string, unknown>): Step[] {
-  // 簡易マッチャー: 金額/定期/小額スキップなどの条件に応じてステップを返すスタブ
-  const amount = Number(payload.totalAmount || 0);
-  const isRecurring = Boolean(payload.recurring);
-  const isSmall = amount > 0 && amount < 50000;
-  if (isRecurring && isSmall) {
+export function matchApprovalSteps(flowType: string, payload: Record<string, unknown>, conditions?: ApprovalCondition): Step[] {
+  const amount = Number(payload.totalAmount || payload.amount || 0);
+  const isRecurring = Boolean(payload.recurring || conditions?.isRecurring);
+  const execThreshold = conditions?.execThreshold ?? 100000;
+  const smallUnder = conditions?.skipSmallUnder ?? 50000;
+
+  if (amount > 0 && amount < smallUnder) {
+    return [{ approverGroupId: 'mgmt' }];
+  }
+  if (isRecurring && amount < execThreshold) {
     return [{ approverGroupId: 'mgmt' }];
   }
   return [
     { approverGroupId: 'mgmt' },
-    ...(amount >= 100000 ? [{ approverGroupId: 'exec' }] : []),
+    ...(amount >= execThreshold ? [{ approverGroupId: 'exec' }] : []),
   ];
 }
 
-export async function createApproval(flowType: string, targetTable: string, targetId: string, steps: Step[]) {
-  const ruleId = 'manual';
+async function resolveRule(flowType: string) {
+  return prisma.approvalRule.findFirst({ where: { flowType }, orderBy: { createdAt: 'desc' } });
+}
+
+export async function createApproval(flowType: string, targetTable: string, targetId: string, steps: Step[], ruleId = 'manual') {
   return prisma.$transaction(async (tx: any) => {
     const instance = await tx.approvalInstance.create({
       data: {
@@ -50,6 +57,12 @@ export async function createApproval(flowType: string, targetTable: string, targ
     });
     return instance;
   });
+}
+
+export async function createApprovalFor(flowType: string, targetTable: string, targetId: string, payload: Record<string, unknown>) {
+  const rule = await resolveRule(flowType);
+  const steps = matchApprovalSteps(flowType, payload, (rule?.conditions as ApprovalCondition) || undefined);
+  return createApproval(flowType, targetTable, targetId, steps, rule?.id || 'auto');
 }
 
 export async function act(instanceId: string, userId: string, action: 'approve' | 'reject') {
