@@ -11,6 +11,7 @@ export const DailyReport: React.FC = () => {
   const [helpRequested, setHelpRequested] = useState(false);
   const [message, setMessage] = useState('');
   const [showHelp, setShowHelp] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const toggleTag = (tag: string) => {
     setSelectedTags((prev) => (prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]));
@@ -18,6 +19,7 @@ export const DailyReport: React.FC = () => {
 
   const submit = async () => {
     try {
+      setIsSubmitting(true);
       await api('/daily-reports', {
         method: 'POST',
         body: JSON.stringify({ content: '日報本文', reportDate: new Date().toISOString(), linkedProjectIds: [], status: 'submitted' }),
@@ -33,8 +35,14 @@ export const DailyReport: React.FC = () => {
         }),
       });
       setMessage('送信しました');
+      setNotes('');
+      setSelectedTags([]);
+      setHelpRequested(false);
+      setStatus('');
     } catch (e) {
       setMessage('送信に失敗しました');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -77,7 +85,7 @@ export const DailyReport: React.FC = () => {
         </div>
       )}
       <div style={{ marginTop: 8 }}>
-        <button className="button" onClick={submit}>送信</button>
+        <button className="button" onClick={submit} disabled={isSubmitting}>送信</button>
       </div>
       {message && <p>{message}</p>}
       <p style={{ fontSize: 12, color: '#475569', marginTop: 8 }}>
