@@ -28,7 +28,10 @@ export async function reportGroupEffort(userIds: string[], from?: Date, to?: Dat
     _sum: { minutes: true },
     where,
   });
-  return agg.map((g) => ({ userId: g.userId, totalMinutes: g._sum.minutes || 0 }));
+  return agg.map((g: { userId: string; _sum: { minutes: number | null } }) => ({
+    userId: g.userId,
+    totalMinutes: g._sum.minutes || 0,
+  }));
 }
 
 export async function reportOvertime(userId: string, from?: Date, to?: Date) {
