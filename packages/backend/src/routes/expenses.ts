@@ -31,19 +31,25 @@ export async function registerExpenseRoutes(app: FastifyInstance) {
       ],
     },
     async (req) => {
-      const { projectId, userId } = req.query as { projectId?: string; userId?: string };
+      const { projectId, userId, from, to } = req.query as { projectId?: string; userId?: string; from?: string; to?: string };
       const roles = req.user?.roles || [];
       const currentUserId = req.user?.userId;
       const where: any = {};
-    if (projectId) where.projectId = projectId;
-    if (!roles.includes('admin') && !roles.includes('mgmt')) {
-      where.userId = currentUserId;
-    } else if (userId) {
-      where.userId = userId;
-    }
-    const items = await prisma.expense.findMany({ where, orderBy: { incurredOn: 'desc' }, take: 200 });
-    return { items };
-  });
+      if (projectId) where.projectId = projectId;
+      if (!roles.includes('admin') && !roles.includes('mgmt')) {
+        where.userId = currentUserId;
+      } else if (userId) {
+        where.userId = userId;
+      }
+      if (from || to) {
+        where.incurredOn = {};
+        if (from) where.incurredOn.gte = new Date(from);
+        if (to) where.incurredOn.lte = new Date(to);
+      }
+      const items = await prisma.expense.findMany({ where, orderBy: { incurredOn: 'desc' }, take: 200 });
+      return { items };
+    },
+  );
 
   app.post('/expenses/:id/submit', { preHandler: requireRoleOrSelf(['admin', 'mgmt'], (req) => req.user?.userId) }, async (req) => {
     const { id } = req.params as { id: string };
