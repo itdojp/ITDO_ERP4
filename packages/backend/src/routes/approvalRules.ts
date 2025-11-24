@@ -20,4 +20,26 @@ export async function registerApprovalRuleRoutes(app: FastifyInstance) {
     const updated = await prisma.approvalRule.update({ where: { id }, data: body });
     return updated;
   });
+
+  app.get('/approval-instances', { preHandler: requireRole(['admin', 'mgmt']) }, async (req) => {
+    const { flowType, status, approverGroupId, projectId, approverUserId, requesterId } = req.query as any;
+    const stepsFilter: any = {};
+    if (approverGroupId) stepsFilter.approverGroupId = approverGroupId;
+    if (approverUserId) stepsFilter.approverUserId = approverUserId;
+
+    const where: any = {
+      ...(flowType ? { flowType } : {}),
+      ...(status ? { status } : {}),
+      ...(projectId ? { targetId: projectId } : {}),
+      ...(requesterId ? { createdBy: requesterId } : {}),
+      ...(approverGroupId || approverUserId ? { steps: { some: stepsFilter } } : {}),
+    };
+    const items = await prisma.approvalInstance.findMany({
+      where,
+      include: { steps: true, rule: true },
+      orderBy: { createdAt: 'desc' },
+      take: 100,
+    });
+    return { items };
+  });
 }

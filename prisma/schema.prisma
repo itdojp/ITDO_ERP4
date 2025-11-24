@@ -420,13 +420,14 @@ model LeaveRequest {
 model ApprovalRule {
   id         String             @id @default(uuid())
   flowType   FlowType
-  conditions Json
-  steps      Json
+  conditions Json   // amountMin/amountMax/isRecurring/skipUnder/projectType/customerId/orgUnitId/flowFlags
+  steps      Json   // [{stepOrder, approverGroupId?, approverUserId?, parallelKey?}]
   instances  ApprovalInstance[]
   createdAt  DateTime           @default(now())
   createdBy  String?
   updatedAt  DateTime           @updatedAt
   updatedBy  String?
+  @@index([flowType])
 }
 
 model ApprovalInstance {
