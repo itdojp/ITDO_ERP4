@@ -48,12 +48,15 @@ export async function reportOvertime(userId: string, from?: Date, to?: Date) {
 }
 
 export async function reportDeliveryDue(from?: Date, to?: Date, projectId?: string) {
-  const where: any = { deletedAt: null };
+  const where: any = { deletedAt: null, invoices: { none: { deletedAt: null } } };
   if (projectId) where.projectId = projectId;
-  const dueDate: any = { not: null };
-  if (from) dueDate.gte = from;
-  if (to) dueDate.lte = to;
-  where.dueDate = dueDate;
+  if (from || to) {
+    where.dueDate = {};
+    if (from) where.dueDate.gte = from;
+    if (to) where.dueDate.lte = to;
+  } else {
+    where.dueDate = { not: null };
+  }
   const items = await prisma.projectMilestone.findMany({
     where: {
       ...where,
