@@ -10,8 +10,9 @@
 - 外部通知: Slack/Webhook チャネルを追加できる設計にする
 
 ## 仕様メモ
-- AlertSetting: type (budget_overrun/overtime/approval_delay), threshold, scope, recipients (emails/roles/users), channels
+- AlertSetting: type (budget_overrun/overtime/approval_delay/delivery_due), threshold, scope, recipients (emails/roles/users), channels
 - Alert: 発火時に status=open を保存、確認/クローズ操作は後続
+- delivery_due: project_milestones.due_date を基準に未請求を検知
 
 ## バッチ/同期
 - 日次で computeAndTrigger を実行。将来は時間単位に拡張

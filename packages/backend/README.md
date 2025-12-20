@@ -22,6 +22,7 @@ npm run dev
 - leave: GET/POST /leave-requests
 - daily reports & wellbeing: POST /daily-reports, /wellbeing-entries; GET wellbeing (HR only想定)
 - alerts: GET /alerts, manual job: POST /jobs/alerts/run
+- reports: GET /reports/project-effort, /reports/group-effort, /reports/overtime, /reports/delivery-due
 - settings: alert-settings CRUD, approval-rules CRUD
 
 ## Notes

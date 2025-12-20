@@ -16,7 +16,7 @@ enum DocStatus { draft pending_qa pending_exec approved rejected sent paid cance
 enum TimeStatus { submitted approved rejected }
 enum LeaveStatus { draft pending_manager approved rejected }
 enum FlowType { estimate invoice expense leave time purchase_order vendor_invoice vendor_quote }
-enum AlertType { budget_overrun overtime approval_delay }
+enum AlertType { budget_overrun overtime approval_delay delivery_due }
 
 // FK/削除ポリシー（案）
 // - 物理削除は原則禁止。deletedAt/deletedReason で論理削除（理由コード）
@@ -24,7 +24,7 @@ enum AlertType { budget_overrun overtime approval_delay }
 // - 子が論理削除済みで残なしの場合のみ親を論理削除可能
 // - 子は projectId の付け替えを許容（承認WF中は解除後に移動/削除）
 // - Estimate→Invoice, Milestone→Invoice: NULL 許容（見積なし請求を許可、マイルストーン紐付けは任意）、ON DELETE SET NULL
-// - マイルストーン未紐付け/未請求の検知はアラート/レポートで対応
+// - マイルストーン未紐付け/未請求の検知はアラート/レポートで対応（納期ベース）
 // - 経費は必ず projectId 必須（共通経費は社内/管理案件のプロジェクトで扱う）
 // - User参照（userId/ownerUserIdなど）は外部ID想定のためFKなし、値はIDaaS連携時に整合
 // - createdBy/updatedBy はアプリ層で設定し、将来 audit_log と突き合わせ可能にする
