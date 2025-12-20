@@ -7,18 +7,24 @@ import { prisma } from '../services/db.js';
 export async function registerSendRoutes(app: FastifyInstance) {
   app.post('/invoices/:id/send', { preHandler: requireRole(['admin', 'mgmt']) }, async (req) => {
     const { id } = req.params as { id: string };
-    const invoice = await prisma.invoice.update({ where: { id }, data: { status: DocStatusValue.sent } });
+    const invoice = await prisma.invoice.findUnique({ where: { id } });
+    if (!invoice) {
+      return { error: 'not_found' };
+    }
     const pdf = await generatePdfStub('invoice', { id, invoiceNo: invoice.invoiceNo });
-    const updated = await prisma.invoice.update({ where: { id }, data: { pdfUrl: pdf.url } });
+    const updated = await prisma.invoice.update({ where: { id }, data: { status: DocStatusValue.sent, pdfUrl: pdf.url } });
     await sendInvoiceEmail(['fin@example.com'], invoice.invoiceNo);
     return updated;
   });
 
   app.post('/purchase-orders/:id/send', { preHandler: requireRole(['admin', 'mgmt']) }, async (req) => {
     const { id } = req.params as { id: string };
-    const po = await prisma.purchaseOrder.update({ where: { id }, data: { status: DocStatusValue.sent } });
+    const po = await prisma.purchaseOrder.findUnique({ where: { id } });
+    if (!po) {
+      return { error: 'not_found' };
+    }
     const pdf = await generatePdfStub('purchase_order', { id, poNo: po.poNo });
-    const updated = await prisma.purchaseOrder.update({ where: { id }, data: { pdfUrl: pdf.url } });
+    const updated = await prisma.purchaseOrder.update({ where: { id }, data: { status: DocStatusValue.sent, pdfUrl: pdf.url } });
     await sendPurchaseOrderEmail(['vendor@example.com'], po.poNo);
     return updated;
   });

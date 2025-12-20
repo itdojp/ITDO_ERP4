@@ -18,6 +18,7 @@ export async function nextNumber(kind: keyof typeof prefixMap, date: Date) {
   if (!prefix) throw new Error(`Unsupported kind: ${kind}`);
 
   const maxRetries = 3;
+  let lastError: unknown;
   for (let attempt = 0; attempt < maxRetries; attempt += 1) {
     try {
       return await prisma.$transaction(
@@ -37,12 +38,16 @@ export async function nextNumber(kind: keyof typeof prefixMap, date: Date) {
         { isolationLevel: 'Serializable' },
       );
     } catch (err) {
+      if (err instanceof Error && err.message === 'Serial overflow (>=10000)') {
+        throw err;
+      }
       const retryable = err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2034';
       if (retryable && attempt < maxRetries - 1) {
+        lastError = err;
         continue;
       }
       throw err;
     }
   }
-  throw new Error('Failed to allocate number');
+  throw lastError || new Error('Failed to allocate number');
 }
