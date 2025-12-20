@@ -10,6 +10,10 @@ export type ApprovalCondition = {
   execThreshold?: number;
   skipSmallUnder?: number;
   isRecurring?: boolean;
+  projectType?: string;
+  customerId?: string;
+  orgUnitId?: string;
+  appliesTo?: string[]; // flowType フラグ
 };
 
 export function matchApprovalSteps(flowType: string, payload: Record<string, unknown>, conditions?: ApprovalCondition): Step[] {
