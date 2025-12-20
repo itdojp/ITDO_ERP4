@@ -31,7 +31,7 @@
   - [x] markdownリンクチェック(or lychee) のJob追記
   - [x] .github/ISSUE_TEMPLATE / PULL_REQUEST_TEMPLATE 追加
 - [ ] バックエンド: 番号採番サービス（number_sequencesラッパ）とメール送信Stubをユーティリティ化
-  - [ ] numberSequencesテーブル用のupsertエラー処理（シリアル上限、月跨ぎ）
+  - [x] numberSequencesテーブル用のupsertエラー処理（シリアル上限、月跨ぎ）
   - [x] メール送信stub（sendInvoiceEmail/sendPurchaseOrderEmail）をservices/notifier.tsに切り出し
   - [x] send routesからstubを呼び出すよう整理
 - [ ] バックエンド: 承認ルールマッチャー（条件→ステップ生成）の雛形実装

@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client';
 import { prisma } from './db.js';
 
 // prefixMap maps kind to prefix used in numbering
@@ -16,20 +17,32 @@ export async function nextNumber(kind: keyof typeof prefixMap, date: Date) {
   const prefix = prefixMap[kind];
   if (!prefix) throw new Error(`Unsupported kind: ${kind}`);
 
-  return await prisma.$transaction(
-    async (tx: any) => {
-      const seq = await tx.numberSequence.upsert({
-        where: { kind_year_month: { kind, year, month } },
-        create: { kind, year, month, currentSerial: 1 },
-        update: { currentSerial: { increment: 1 } },
-      });
-      const current = seq.currentSerial;
-      if (current > 9999) {
-        throw new Error('Serial overflow (>=10000)');
+  const maxRetries = 3;
+  for (let attempt = 0; attempt < maxRetries; attempt += 1) {
+    try {
+      return await prisma.$transaction(
+        async (tx: any) => {
+          const seq = await tx.numberSequence.upsert({
+            where: { kind_year_month: { kind, year, month } },
+            create: { kind, year, month, currentSerial: 1 },
+            update: { currentSerial: { increment: 1 } },
+          });
+          const current = seq.currentSerial;
+          if (current > 9999) {
+            throw new Error('Serial overflow (>=10000)');
+          }
+          const number = `${prefix}${year}-${`${month}`.padStart(2, '0')}-${`${current}`.padStart(4, '0')}`;
+          return { number, serial: current };
+        },
+        { isolationLevel: 'Serializable' },
+      );
+    } catch (err) {
+      const retryable = err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2034';
+      if (retryable && attempt < maxRetries - 1) {
+        continue;
       }
-      const number = `${prefix}${year}-${`${month}`.padStart(2, '0')}-${`${current}`.padStart(4, '0')}`;
-      return { number, serial: current };
-    },
-    { isolationLevel: 'Serializable' },
-  );
+      throw err;
+    }
+  }
+  throw new Error('Failed to allocate number');
 }
