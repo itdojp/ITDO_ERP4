@@ -3,7 +3,7 @@
 ## 11/21 週（～12/10ステージングまでに着手）
 - [ ] Prisma/SQL 詳細化（enum/型/FK/削除ポリシー）とスキーマPR作成（#5）
   - [x] DocStatus/TimeStatus/LeaveStatus/FlowType のenum見直しと日本語注釈追加
-  - [ ] FK/ON DELETE/ON UPDATE方針をテーブルごとに列挙（Project/Estimate/Invoice/Expense/TimeEntry）
+  - [x] FK/ON DELETE/ON UPDATE方針をテーブルごとに列挙（Project/Estimate/Invoice/Expense/TimeEntry）
   - [ ] 請求・発注・仕入系のnullable列を精査（estimateId/milestoneId/taskIdなど）
   - [ ] 監査メタ createdBy/updatedBy の扱いを統一し TODO記載
   - [ ] PRにschema.prisma + docs/requirements/schema-prisma-sketch.md 対応をまとめる
@@ -35,7 +35,7 @@
   - [x] メール送信stub（sendInvoiceEmail/sendPurchaseOrderEmail）をservices/notifier.tsに切り出し
   - [x] send routesからstubを呼び出すよう整理
 - [ ] バックエンド: 承認ルールマッチャー（条件→ステップ生成）の雛形実装
-  - [ ] approvalRules.conditionsの構造サンプル（金額閾値/定期案件判定/小額スキップ）
+  - [x] approvalRules.conditionsの構造サンプル（金額閾値/定期案件判定/小額スキップ）
   - [x] matcher関数: 入力(FlowType, payload)→steps[] を返すスタブをservices/approval.tsへ
 - [ ] バックエンド: ダッシュボード用アラートフィードAPI（メール送信Stubと同時に発報履歴保存）
   - [x] GET /alerts?projectId/&status= などの簡易フィルタ
