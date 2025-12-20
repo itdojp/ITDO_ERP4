@@ -29,7 +29,7 @@
 ### 承認ルール条件サンプル（JSON）
 ```json
 {
-  "flowType": "invoice",
+  "flow_type": "invoice",
   "conditions": {
     "minAmount": 0,
     "execThreshold": 300000,
