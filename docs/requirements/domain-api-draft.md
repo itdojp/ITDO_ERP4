@@ -21,7 +21,7 @@
 - **expenses**: `id`, `project_id`, `user_id`, `category`, `amount`, `currency`, `incurred_on`, `is_shared`(共通経費), `status`(draft/pending_qa/pending_exec/approved/rejected), `receipt_url?`。
 - **leave_requests**: `id`, `user_id`, `leave_type`, `start_date`, `end_date`, `status`(draft/pending_manager/approved/rejected), `hours`, `notes`。
 - **approval_rules**: `id`, `flow_type`(estimate/invoice/expense/leave/time), `conditions`(min/max amount, recurring flag), `steps`(ordered approver groups/users, allow_skip) stored as JSON。
-- **alert_settings**: `id`, `type`(budget_overrun/overtime/approval_delay), `threshold`, `period`, `recipients`(emails/roles/users), `channels`(email,dashboard,ext_future)。
+- **alert_settings**: `id`, `type`(budget_overrun/overtime/approval_delay/delivery_due), `threshold`, `period`, `recipients`(emails/roles/users), `channels`(email,dashboard,ext_future)。
 - **wellbeing_entries**: `id`, `user_id`, `entry_date`, `status`(good/not_good), `help_requested`, `notes?` (非必須), 閲覧は人事グループのみ。
 
 ## 関係メモ
@@ -56,6 +56,8 @@
   - `POST /time-entries` {project_id, task_id?, work_date, minutes, work_type, location, notes}
   - `POST /time-entries/:id/submit` / `POST /time-entries/:id/approve`
   - `GET /reports/time` filters {user, group, project, period}
+- Reports
+  - `GET /reports/delivery-due` filters {from, to, project_id}
 - Expense
   - `POST /expenses` {project_id, category, amount, currency, incurred_on, is_shared, receipt_url?}
   - `POST /expenses/:id/submit` / `POST /expenses/:id/approve`

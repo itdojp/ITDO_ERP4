@@ -8,6 +8,9 @@
 ## dashboard
 - GET `/alerts` → ダッシュボード表示
 
+## reports
+- GET `/reports/delivery-due?from=YYYY-MM-DD&to=YYYY-MM-DD&projectId?`
+
 ## daily report / wellbeing
 - POST `/daily-reports` { content, reportDate, linkedProjectIds?, status }
 - POST `/wellbeing-entries` { entryDate, status, notes?, helpRequested?, notGoodTags?, visibilityGroupId }

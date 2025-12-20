@@ -1,7 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { prisma } from '../services/db.js';
 import { computeAndTrigger } from '../services/alert.js';
-import { computeApprovalDelay, computeBudgetOverrun, computeOvertime } from '../services/metrics.js';
+import { computeApprovalDelay, computeBudgetOverrun, computeDeliveryDue, computeOvertime } from '../services/metrics.js';
 import { AlertTypeValue } from '../types.js';
 
 export async function registerAlertRoutes(app: FastifyInstance) {
@@ -23,6 +23,7 @@ export async function registerAlertRoutes(app: FastifyInstance) {
       [AlertTypeValue.budget_overrun]: () => computeBudgetOverrun('demo-project'),
       [AlertTypeValue.overtime]: () => computeOvertime('demo-user'),
       [AlertTypeValue.approval_delay]: () => computeApprovalDelay('demo-instance'),
+      [AlertTypeValue.delivery_due]: () => computeDeliveryDue(),
     });
     return { ok: true };
   });

@@ -58,6 +58,7 @@ enum AlertType {
   budget_overrun   // 予算超過
   overtime         // 残業超過
   approval_delay   // 承認遅延
+  delivery_due     // 納期超過の未請求
 }
 
 model Customer {
