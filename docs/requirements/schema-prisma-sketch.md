@@ -19,9 +19,13 @@ enum FlowType { estimate invoice expense leave time purchase_order vendor_invoic
 enum AlertType { budget_overrun overtime approval_delay }
 
 // FK/削除ポリシー（案）
-// - Project 起点: child/estimate/invoice/time/expense/PO/VQ/VI は ON DELETE RESTRICT（論理削除で対応）
-// - Estimate→Invoice, Milestone→Invoice: NULL 許容（見積なし請求を許可）、ON DELETE SET NULL
-// - ProjectTask→Time/Billing/Expense: task削除時は参照をNULL（履歴保全）
+// - 物理削除は原則禁止。deletedAt/deletedReason で論理削除（理由コード）
+// - Project 起点: child/estimate/invoice/time/expense/PO/VQ/VI は ON DELETE RESTRICT
+// - 子が論理削除済みで残なしの場合のみ親を論理削除可能
+// - 子は projectId の付け替えを許容（承認WF中は解除後に移動/削除）
+// - Estimate→Invoice, Milestone→Invoice: NULL 許容（見積なし請求を許可、マイルストーン紐付けは任意）、ON DELETE SET NULL
+// - マイルストーン未紐付け/未請求の検知はアラート/レポートで対応
+// - 経費は必ず projectId 必須（共通経費は社内/管理案件のプロジェクトで扱う）
 // - User参照（userId/ownerUserIdなど）は外部ID想定のためFKなし、値はIDaaS連携時に整合
 // - createdBy/updatedBy はアプリ層で設定し、将来 audit_log と突き合わせ可能にする
 
@@ -97,6 +101,8 @@ model Project {
   purchaseOrders PurchaseOrder[]
   vendorQuotes VendorQuote[]
   vendorInvoices VendorInvoice[]
+  deletedAt DateTime?
+  deletedReason String?
 }
 
 model ProjectTask {
@@ -115,6 +121,8 @@ model ProjectTask {
   actualStart DateTime?
   actualEnd DateTime?
   baselineId String?
+  deletedAt DateTime?
+  deletedReason String?
 }
 
 model ProjectMilestone {
@@ -127,6 +135,8 @@ model ProjectMilestone {
   dueDate   DateTime?
   taxRate   Decimal?
   invoiceTemplateId String?
+  deletedAt DateTime?
+  deletedReason String?
 }
 
 model RecurringProjectTemplate {
@@ -154,6 +164,8 @@ model Estimate {
   notes     String?
   numberingSerial Int?
   lines     EstimateLine[]
+  deletedAt DateTime?
+  deletedReason String?
 }
 
 model EstimateLine {
@@ -172,9 +184,9 @@ model Invoice {
   project   Project @relation(fields: [projectId], references: [id])
   projectId String
   estimate  Estimate? @relation(fields: [estimateId], references: [id])
-  estimateId String?
+  estimateId String? // 見積なし請求を許容
   milestone ProjectMilestone? @relation(fields: [milestoneId], references: [id])
-  milestoneId String?
+  milestoneId String? // 任意。未紐付けは納品請求漏れチェック対象
   invoiceNo String @unique
   issueDate DateTime?
   dueDate   DateTime?
@@ -185,6 +197,8 @@ model Invoice {
   emailMessageId String?
   numberingSerial Int?
   lines     BillingLine[]
+  deletedAt DateTime?
+  deletedReason String?
 }
 
 model BillingLine {
@@ -215,6 +229,8 @@ model PurchaseOrder {
   pdfUrl    String?
   numberingSerial Int?
   lines     PurchaseOrderLine[]
+  deletedAt DateTime?
+  deletedReason String?
 }
 
 model PurchaseOrderLine {
@@ -241,6 +257,8 @@ model VendorQuote {
   totalAmount Decimal
   status    DocStatus @default(received) // 実使用: received/approved/rejected
   documentUrl String?
+  deletedAt DateTime?
+  deletedReason String?
 }
 
 model VendorInvoice {
@@ -257,6 +275,8 @@ model VendorInvoice {
   status    DocStatus @default(received) // 実使用: received/pending_qa/approved/paid/rejected
   documentUrl String?
   numberingSerial Int?
+  deletedAt DateTime?
+  deletedReason String?
 }
 
 // タイムシート/レート
@@ -275,6 +295,8 @@ model TimeEntry {
   status    TimeStatus @default(submitted)
   approvedBy String?
   approvedAt DateTime?
+  deletedAt DateTime?
+  deletedReason String?
 }
 
 model RateCard {
@@ -302,6 +324,8 @@ model Expense {
   isShared  Boolean @default(false)
   status    DocStatus @default(draft)
   receiptUrl String?
+  deletedAt DateTime?
+  deletedReason String?
 }
 
 model LeaveRequest {
