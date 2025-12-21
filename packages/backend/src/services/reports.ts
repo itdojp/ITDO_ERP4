@@ -57,6 +57,17 @@ export async function reportDeliveryDue(from?: Date, to?: Date, projectId?: stri
   } else {
     where.dueDate = { not: null };
   }
+  type DeliveryDueInvoice = { id: string; invoiceNo: string | null; status: string | null };
+  type DeliveryDueItem = {
+    id: string;
+    projectId: string;
+    name: string | null;
+    amount: unknown;
+    dueDate: Date | null;
+    project: { code: string | null; name: string | null } | null;
+    invoices: DeliveryDueInvoice[];
+  };
+
   const items = await prisma.projectMilestone.findMany({
     where: {
       ...where,
@@ -75,8 +86,8 @@ export async function reportDeliveryDue(from?: Date, to?: Date, projectId?: stri
       },
     },
     orderBy: { dueDate: 'asc' },
-  });
-  return items.map((item) => ({
+  }) as DeliveryDueItem[];
+  return items.map((item: DeliveryDueItem) => ({
     milestoneId: item.id,
     projectId: item.projectId,
     projectCode: item.project?.code || null,
@@ -85,7 +96,7 @@ export async function reportDeliveryDue(from?: Date, to?: Date, projectId?: stri
     amount: item.amount,
     dueDate: item.dueDate,
     invoiceCount: item.invoices.length,
-    invoiceNos: item.invoices.map((inv) => inv.invoiceNo),
-    invoiceStatuses: item.invoices.map((inv) => inv.status),
+    invoiceNos: item.invoices.map((inv: DeliveryDueInvoice) => inv.invoiceNo),
+    invoiceStatuses: item.invoices.map((inv: DeliveryDueInvoice) => inv.status),
   }));
 }

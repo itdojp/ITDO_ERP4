@@ -1,4 +1,3 @@
-import { Prisma } from '@prisma/client';
 import { prisma } from './db.js';
 
 // prefixMap maps kind to prefix used in numbering
@@ -10,6 +9,12 @@ const prefixMap: Record<string, string> = {
   vendor_quote: 'VQ',
   vendor_invoice: 'VI',
 };
+
+type RetryableError = { code?: string };
+
+function isRetryableError(err: unknown): err is RetryableError {
+  return !!err && typeof err === 'object' && 'code' in err;
+}
 
 export async function nextNumber(kind: keyof typeof prefixMap, date: Date) {
   const year = date.getUTCFullYear();
@@ -41,7 +46,7 @@ export async function nextNumber(kind: keyof typeof prefixMap, date: Date) {
       if (err instanceof Error && err.message === 'Serial overflow (>=10000)') {
         throw err;
       }
-      const retryable = err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2034';
+      const retryable = isRetryableError(err) && err.code === 'P2034';
       if (retryable && attempt < maxRetries - 1) {
         lastError = err;
         continue;
