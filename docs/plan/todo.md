@@ -16,7 +16,7 @@
   - [ ] `/projects/:id/estimates`起案→`/estimates/:id/submit`→`/invoices/:id/submit/send`のhappyパス通し
   - [ ] タイムエントリ・経費のPOST/GETと簡易フィルタ（projectId/userId/date範囲）
   - [ ] タイム修正時に承認インスタンスを起動するhookのスタブ
-- [ ] フロントPoCスケルトン（Web: 日報入力、工数入力、請求ドラフト閲覧）
+- [x] フロントPoCスケルトン（Web: 日報入力、工数入力、請求ドラフト閲覧）
   - [x] APIクライアントラッパ（fetch + JSON/エラー処理）
   - [x] 日報+WBフォームのモック（入力→POST→トースト表示）
   - [x] 工数入力フォーム（project/task選択、日付、時間、場所、残業区分）と一覧リロード
@@ -25,37 +25,37 @@
   - [x] im_project/acs_project 等のカラムと Project との対応表
   - [x] 見積/請求/発注/仕入の番号マッピングと連番採番方針
   - [x] ユーザーID/チームID→UUIDの紐付けサンプルSQL
-- [ ] CI足場（lint/format/docリンクチェック）とテンプレート（Issue/PR）
+- [x] CI足場（lint/format/docリンクチェック）とテンプレート（Issue/PR）
   - [x] backend: eslint+prettierの最小設定と`npm run lint`
   - [x] frontend: eslint+prettierの最小設定と`npm run lint`
   - [x] markdownリンクチェック(or lychee) のJob追記
   - [x] .github/ISSUE_TEMPLATE / PULL_REQUEST_TEMPLATE 追加
-- [ ] バックエンド: 番号採番サービス（number_sequencesラッパ）とメール送信Stubをユーティリティ化
+- [x] バックエンド: 番号採番サービス（number_sequencesラッパ）とメール送信Stubをユーティリティ化
   - [x] numberSequencesテーブル用のupsertエラー処理（シリアル上限、月跨ぎ）
   - [x] メール送信stub（sendInvoiceEmail/sendPurchaseOrderEmail）をservices/notifier.tsに切り出し
   - [x] send routesからstubを呼び出すよう整理
-- [ ] バックエンド: 承認ルールマッチャー（条件→ステップ生成）の雛形実装
+- [x] バックエンド: 承認ルールマッチャー（条件→ステップ生成）の雛形実装
   - [x] approvalRules.conditionsの構造サンプル（金額閾値/定期案件判定/小額スキップ）
   - [x] matcher関数: 入力(FlowType, payload)→steps[] を返すスタブをservices/approval.tsへ
-- [ ] バックエンド: ダッシュボード用アラートフィードAPI（メール送信Stubと同時に発報履歴保存）
+- [x] バックエンド: ダッシュボード用アラートフィードAPI（メール送信Stubと同時に発報履歴保存）
   - [x] GET /alerts?projectId/&status= などの簡易フィルタ
   - [x] POST /jobs/alerts/run 内でAlertレコード保存＋notifier呼び出し
-- [ ] フロント: 認証モック（Google OIDC想定のセッション+BFFダミー）
-  - [ ] `/me`へのfetchとロール/グループ保持、未ログイン時の簡易ログインボタン
-  - [ ] fetchラッパで Authorization ヘッダの付与を集約
-- [ ] フロント: ダッシュボードでアラート表示（初期はダミーデータorAPI連携）
+- [x] フロント: 認証モック（Google OIDC想定のセッション+BFFダミー）
+  - [x] `/me`へのfetchとロール/グループ保持、未ログイン時の簡易ログインボタン
+  - [x] fetchラッパで Authorization ヘッダの付与を集約
+- [x] フロント: ダッシュボードでアラート表示（初期はダミーデータorAPI連携）
   - [x] アラートカードコンポーネント（type/対象/日時/ステータス）
-  - [ ] ダッシュボードで上位5件表示＋「すべて表示」リンク
-- [ ] フロント: ウェルビーイング Not Good 時のタグ/短文と「ヘルプ/相談」モーダル導線実装（相談先候補・緊急案内表示）
+  - [x] ダッシュボードで上位5件表示＋「すべて表示」リンク
+- [x] フロント: ウェルビーイング Not Good 時のタグ/短文と「ヘルプ/相談」モーダル導線実装（相談先候補・緊急案内表示）
   - [x] モーダルの固定テキスト（相談先候補3件、緊急案内）を配置
   - [x] Not Good選択時のみタグ/コメント入力欄を表示
 - [x] 移行: 旧ID→新UUIDマッピングテーブル設計とサンプルスクリプト
   - [x] mapping_users, mapping_projects, mapping_vendors のDDLと例データ
   - [x] 移行後に参照切れを検出するクエリテンプレート
-- [ ] 監査ログ設計: 主要操作（承認/発番/ウェルビーイング閲覧）のログ項目サマリ
+- [x] 監査ログ設計: 主要操作（承認/発番/ウェルビーイング閲覧）のログ項目サマリ
   - [x] audit_logテーブル案（who/when/action/target/from/to/meta）
   - [x] 発番・承認・閲覧(Wellbeing)で記録する項目を列挙
-- [ ] バックエンド: シンプルなバリデーション (zod / fastify schema) を主要エンドポイントに付与
+- [x] バックエンド: シンプルなバリデーション (zod / fastify schema) を主要エンドポイントに付与
   - [x] time/expense/estimate/invoice/PO/leave の schema で必須/型/最小値を整理
   - [x] バリデーション失敗時のエラーレスポンスを揃える
 - [x] バックエンド: `/me` にロール/グループ等のモックデータを返す
@@ -67,15 +67,15 @@
 - [ ] バックエンド: 送信Stub（請求書メール/発注書メール）とPDF生成枠のダミー関数
   - [x] services/notifier.ts に sendInvoiceEmail/sendPurchaseOrderEmail
   - [ ] services/notifier.ts に PDF生成スタブ（テンプレ名を受け取る）
-- [ ] バックエンド: RBAC簡易チェック（role + projectId で閲覧をフィルタ）
+- [x] バックエンド: RBAC簡易チェック（role + projectId で閲覧をフィルタ）
   - [x] requireRoleにprojectIdチェックのオプションを追加し、time/expenseに適用
-- [ ] フロント: APIクライアントの共通ラッパ（fetch + エラーハンドリング）
+- [x] フロント: APIクライアントの共通ラッパ（fetch + エラーハンドリング）
   - [x] ヘッダ付与・エラー時トースト表示・リトライなしのベーシック版
 - [x] フロント: 請求ドラフト詳細画面モック（明細、承認状態、送信ボタン）
   - [x] ダミーデータで明細テーブルと承認ステータス表示
-- [ ] フロント: 工数入力フォーム（プロジェクト/タスク/日付/時間/場所/残業区分）
+- [x] フロント: 工数入力フォーム（プロジェクト/タスク/日付/時間/場所/残業区分）
   - [x] 入力→POST→一覧再取得のハッピーパス
-- [ ] フロント: ヘルプモーダルの内容（相談先ラベル/説明/緊急案内）を表示
+- [x] フロント: ヘルプモーダルの内容（相談先ラベル/説明/緊急案内）を表示
   - [x] 単体コンポーネント化して日報画面に組み込み
 - [ ] テスト: バックエンド簡易ハッピーパス (contracts/invoices/time/expenses) のスモーク
   - [ ] supertest等で /projects→/estimates→/invoices→/send の一連
@@ -84,7 +84,7 @@
   - [ ] READMEに手順と期待結果を書き出し
 - [ ] CI: lint/format のジョブ追加 (GH Actions)、prisma format/validate を走らせる
   - [x] eslint/prettierが失敗した場合にfailさせる
-- [ ] CI: Vite build テストのジョブ追加
+- [x] CI: Vite build テストのジョブ追加
   - [x] `npm run build --prefix packages/frontend` を既存ジョブとは別に明示
 - [x] 移行: 抽出→変換→ロードのスクリプト雛形 (Python or SQL) を docs に追加
   - [x] 抽出SQLサンプル（プロジェクト/見積/請求/工数/経費）
