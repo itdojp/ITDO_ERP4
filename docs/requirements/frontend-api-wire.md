@@ -2,8 +2,8 @@
 
 ## auth
 - GET `/me`
-  - headers: `x-user-id`, `x-roles`
-  - res: `{ user: { userId, roles } }`
+  - headers: `x-user-id`, `x-roles`, `x-org-id`, `x-project-ids`
+  - res: `{ user: { userId, roles, orgId, ownerOrgId, ownerProjects } }`
 
 ## dashboard
 - GET `/alerts` → ダッシュボード表示
