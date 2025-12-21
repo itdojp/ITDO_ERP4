@@ -10,6 +10,9 @@
 
 ## reports
 - GET `/reports/delivery-due?from=YYYY-MM-DD&to=YYYY-MM-DD&projectId?`
+- GET `/reports/project-effort/:projectId?from=YYYY-MM-DD&to=YYYY-MM-DD`
+- GET `/reports/group-effort?userIds=a,b,c&from=YYYY-MM-DD&to=YYYY-MM-DD`
+- GET `/reports/overtime/:userId?from=YYYY-MM-DD&to=YYYY-MM-DD`
 
 ## daily report / wellbeing
 - POST `/daily-reports` { content, reportDate, linkedProjectIds?, status }
