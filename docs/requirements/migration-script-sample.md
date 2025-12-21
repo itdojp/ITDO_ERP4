@@ -58,6 +58,7 @@ PostgreSQL 同士の場合のサンプル。旧DBを`legacy` FDWで参照し、�
 -- 1) 旧→新のIDマップ用テーブル
 create table if not exists mapping_projects(legacy_id text primary key, new_id uuid not null);
 create table if not exists mapping_users(legacy_id text primary key, new_id uuid not null);
+create table if not exists mapping_groups(legacy_id text primary key, new_id uuid not null);
 
 -- 2) IDマッピングを生成
 insert into mapping_projects(legacy_id, new_id)
@@ -68,6 +69,11 @@ on conflict do nothing;
 insert into mapping_users(legacy_id, new_id)
 select u.user_id, gen_random_uuid()
 from legacy.cc_users u
+on conflict do nothing;
+
+insert into mapping_groups(legacy_id, new_id)
+select g.group_id, gen_random_uuid()
+from legacy.acs_groups g
 on conflict do nothing;
 
 -- 3) プロジェクトをロード

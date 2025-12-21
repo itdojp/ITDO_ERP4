@@ -27,6 +27,8 @@
   - 課税/非課税は tax_rate で表現。task_id があれば紐付け。
 - PO: 見積テーブル（もしあれば）→ ERP4: `estimates`
   - 無い場合はスキップ、または `invoices` をコピーして作成しない。
+- PO: 発注/業者請求/業者見積 → ERP4: `purchase_orders` / `vendor_invoices` / `vendor_quotes`
+  - いずれも番号は再発番（PO/VQ/VI + YYYY-MM-####）。旧番号は legacy_code または external_id で保存。
 
 ### 工数
 - PO: `im_timesheet`, `im_hours` など → ERP4: `time_entries`
@@ -41,6 +43,7 @@
 ### ユーザ/ロール
 - PO: `cc_users`, `acs_rels` 等 → ERP4: `users` 相当（まだ未定義）
   - ロール/プロジェクトアサインは参照用にダンプし、RBACは新設計に合わせて再付与。
+- チーム/グループ: 旧組織・プロジェクトグループは mapping_groups に保持し、グループ設計確定後に紐付け。
 
 ### 業者/発注/仕入
 - PO: 取引先テーブル（例: `im_companies`）→ ERP4: `vendors`/`customers`（区分で分岐）
@@ -81,6 +84,13 @@ create table if not exists mapping_vendors(
   legacy_code text,
   created_at timestamptz default now()
 );
+
+create table if not exists mapping_groups(
+  legacy_id text primary key,
+  new_id uuid not null,
+  legacy_code text,
+  created_at timestamptz default now()
+);
 ```
 
 ### マッピング手順
@@ -93,6 +103,22 @@ create table if not exists mapping_vendors(
 2. 変換: Python/DBT などでコード正規化、税率/通貨デフォルト付与、旧ID→新IDマッピングを適用。
 3. ロード: 依存順にロード（customers/vendors → projects/tasks/milestones → estimates/invoices → time_entries/expenses）。発番は新環境の number_sequences を使用。
 4. 検証: プロジェクト単位で件数・金額整合をチェック（工数合計、請求合計、経費合計）。
+
+### 参照切れ検出SQL（例）
+```sql
+-- time_entries の projectId/userId が解決できていない
+select t.id, t.project_id, t.user_id
+from time_entries t
+left join projects p on p.id = t.project_id
+left join users u on u.id = t.user_id
+where p.id is null or u.id is null;
+
+-- expenses の projectId が解決できていない
+select e.id, e.project_id
+from expenses e
+left join projects p on p.id = e.project_id
+where p.id is null;
+```
 
 ## リスク/未決
 - 旧システムに業者系テーブルが無い場合、仕入/発注は手入力での移行が必要。
