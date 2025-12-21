@@ -6,6 +6,8 @@ type Alert = { id: string; type: string; targetRef?: string; status: string; tri
 export const Dashboard: React.FC = () => {
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [showAll, setShowAll] = useState(false);
+  const hasMore = alerts.length > 5;
+  const visibleAlerts = showAll ? alerts : alerts.slice(0, 5);
 
   useEffect(() => {
     api<{ items: Alert[] }>('/alerts').then((data) => setAlerts(data.items)).catch(() => setAlerts([]));
@@ -15,13 +17,17 @@ export const Dashboard: React.FC = () => {
     <div>
       <h2>Dashboard</h2>
       <div className="row" style={{ alignItems: 'center' }}>
-        <p className="badge">Alerts {showAll ? '(全件)' : '(最新5件)'}</p>
-        <button className="button secondary" style={{ marginLeft: 'auto' }} onClick={() => setShowAll((v) => !v)}>
-          {showAll ? '最新のみ' : 'すべて表示'}
-        </button>
+        <p className="badge">
+          Alerts {showAll ? `(全${alerts.length}件)` : `(最新${Math.min(alerts.length, 5)}件)`}
+        </p>
+        {hasMore && (
+          <button className="button secondary" style={{ marginLeft: 'auto' }} onClick={() => setShowAll((v) => !v)}>
+            {showAll ? '最新のみ' : 'すべて表示'}
+          </button>
+        )}
       </div>
       <div className="list" style={{ display: 'grid', gap: 8 }}>
-        {(showAll ? alerts : alerts.slice(0, 5)).map((a) => (
+        {visibleAlerts.map((a) => (
           <div key={a.id} className="card" style={{ padding: 12 }}>
             <div className="row" style={{ justifyContent: 'space-between' }}>
               <div>
