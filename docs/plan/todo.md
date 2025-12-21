@@ -21,10 +21,10 @@
   - [x] 日報+WBフォームのモック（入力→POST→トースト表示）
   - [x] 工数入力フォーム（project/task選択、日付、時間、場所、残業区分）と一覧リロード
   - [x] 請求ドラフト一覧+詳細モック（番号/ステータス/送信ボタン）
-- [ ] データ移行マッピング初版（PO im_*/acs_* → 新スキーマ、キー/シーケンス整合）
-  - [ ] im_project/acs_project 等のカラムと Project との対応表
-  - [ ] 見積/請求/発注/仕入の番号マッピングと連番採番方針
-  - [ ] ユーザーID/チームID→UUIDの紐付けサンプルSQL
+- [x] データ移行マッピング初版（PO im_*/acs_* → 新スキーマ、キー/シーケンス整合）
+  - [x] im_project/acs_project 等のカラムと Project との対応表
+  - [x] 見積/請求/発注/仕入の番号マッピングと連番採番方針
+  - [x] ユーザーID/チームID→UUIDの紐付けサンプルSQL
 - [ ] CI足場（lint/format/docリンクチェック）とテンプレート（Issue/PR）
   - [x] backend: eslint+prettierの最小設定と`npm run lint`
   - [x] frontend: eslint+prettierの最小設定と`npm run lint`
@@ -49,9 +49,9 @@
 - [ ] フロント: ウェルビーイング Not Good 時のタグ/短文と「ヘルプ/相談」モーダル導線実装（相談先候補・緊急案内表示）
   - [x] モーダルの固定テキスト（相談先候補3件、緊急案内）を配置
   - [x] Not Good選択時のみタグ/コメント入力欄を表示
-- [ ] 移行: 旧ID→新UUIDマッピングテーブル設計とサンプルスクリプト
-  - [ ] mapping_users, mapping_projects, mapping_vendors のDDLと例データ
-  - [ ] 移行後に参照切れを検出するクエリテンプレート
+- [x] 移行: 旧ID→新UUIDマッピングテーブル設計とサンプルスクリプト
+  - [x] mapping_users, mapping_projects, mapping_vendors のDDLと例データ
+  - [x] 移行後に参照切れを検出するクエリテンプレート
 - [ ] 監査ログ設計: 主要操作（承認/発番/ウェルビーイング閲覧）のログ項目サマリ
   - [ ] audit_logテーブル案（who/when/action/target/from/to/meta）
   - [ ] 発番・承認・閲覧(Wellbeing)で記録する項目を列挙
@@ -86,11 +86,11 @@
   - [x] eslint/prettierが失敗した場合にfailさせる
 - [ ] CI: Vite build テストのジョブ追加
   - [x] `npm run build --prefix packages/frontend` を既存ジョブとは別に明示
-- [ ] 移行: 抽出→変換→ロードのスクリプト雛形 (Python or SQL) を docs に追加
+- [x] 移行: 抽出→変換→ロードのスクリプト雛形 (Python or SQL) を docs に追加
   - [x] 抽出SQLサンプル（プロジェクト/見積/請求/工数/経費）
   - [x] 変換スクリプト雛形（python/pandas or SQL）
   - [x] ロード手順と検証チェックリスト
-- [ ] 移行: 重複コード/欠損データの検出ルールと簡易レポート草案
+- [x] 移行: 重複コード/欠損データの検出ルールと簡易レポート草案
   - [x] コード重複（project code/invoice no/po no）の検出SQL
   - [x] 欠損（工数のprojectId/userId無し、請求の金額0）の検出SQL
 
