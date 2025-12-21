@@ -12,6 +12,25 @@ async function main() {
   server.get('/health', async () => ({ ok: true }));
   await registerRoutes(server);
 
+  server.setErrorHandler((err: any, _req, reply) => {
+    const status = err.statusCode || 500;
+    if (err.validation) {
+      return reply.status(status).send({
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'Validation failed',
+          details: err.validation,
+        },
+      });
+    }
+    return reply.status(status).send({
+      error: {
+        code: 'INTERNAL_ERROR',
+        message: status >= 500 ? 'Internal server error' : err.message,
+      },
+    });
+  });
+
   const port = Number(process.env.PORT || 3001);
   server.listen({ port, host: '0.0.0.0' }).catch((err) => {
     server.log.error(err);

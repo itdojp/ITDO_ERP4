@@ -53,11 +53,11 @@
   - [x] mapping_users, mapping_projects, mapping_vendors のDDLと例データ
   - [x] 移行後に参照切れを検出するクエリテンプレート
 - [ ] 監査ログ設計: 主要操作（承認/発番/ウェルビーイング閲覧）のログ項目サマリ
-  - [ ] audit_logテーブル案（who/when/action/target/from/to/meta）
-  - [ ] 発番・承認・閲覧(Wellbeing)で記録する項目を列挙
+  - [x] audit_logテーブル案（who/when/action/target/from/to/meta）
+  - [x] 発番・承認・閲覧(Wellbeing)で記録する項目を列挙
 - [ ] バックエンド: シンプルなバリデーション (zod / fastify schema) を主要エンドポイントに付与
   - [x] time/expense/estimate/invoice/PO/leave の schema で必須/型/最小値を整理
-  - [ ] バリデーション失敗時のエラーレスポンスを揃える
+  - [x] バリデーション失敗時のエラーレスポンスを揃える
 - [ ] バックエンド: `/me` にロール/グループ等のモックデータを返す
   - [ ] roleに応じたownerOrgId/projectsフィルタのモックを追加
 - [ ] バックエンド: タイムシート修正時の承認ルール適用（変更時のみ approval 起動）
