@@ -1,6 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import { nextNumber } from '../services/numbering.js';
-import { createApproval } from '../services/approval.js';
+import { createApprovalFor } from '../services/approval.js';
 import { FlowTypeValue, DocStatusValue } from '../types.js';
 import { purchaseOrderSchema } from './validators.js';
 import { requireRole } from '../services/rbac.js';
@@ -33,7 +33,11 @@ export async function registerPurchaseOrderRoutes(app: FastifyInstance) {
   app.post('/purchase-orders/:id/submit', { preHandler: requireRole(['admin', 'mgmt']) }, async (req) => {
     const { id } = req.params as { id: string };
     const po = await prisma.purchaseOrder.update({ where: { id }, data: { status: DocStatusValue.pending_qa } });
-    await createApproval(FlowTypeValue.purchase_order, 'purchase_orders', id, [{ approverGroupId: 'mgmt' }]);
+    await createApprovalFor(FlowTypeValue.purchase_order, 'purchase_orders', id, {
+      totalAmount: po.totalAmount,
+      projectId: po.projectId,
+      vendorId: po.vendorId,
+    });
     return po;
   });
 }
