@@ -6,6 +6,7 @@ import { Invoices } from '../sections/Invoices';
 import { HRAnalytics } from '../sections/HRAnalytics';
 import { CurrentUser } from '../sections/CurrentUser';
 import { Reports } from '../sections/Reports';
+import { AdminSettings } from '../sections/AdminSettings';
 
 export const App: React.FC = () => {
   return (
@@ -17,6 +18,7 @@ export const App: React.FC = () => {
       <div className="card"><TimeEntries /></div>
       <div className="card"><Invoices /></div>
       <div className="card"><Reports /></div>
+      <div className="card"><AdminSettings /></div>
       <div className="card"><HRAnalytics /></div>
     </div>
   );
