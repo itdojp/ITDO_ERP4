@@ -58,8 +58,8 @@
 - [ ] バックエンド: シンプルなバリデーション (zod / fastify schema) を主要エンドポイントに付与
   - [x] time/expense/estimate/invoice/PO/leave の schema で必須/型/最小値を整理
   - [x] バリデーション失敗時のエラーレスポンスを揃える
-- [ ] バックエンド: `/me` にロール/グループ等のモックデータを返す
-  - [ ] roleに応じたownerOrgId/projectsフィルタのモックを追加
+- [x] バックエンド: `/me` にロール/グループ等のモックデータを返す
+  - [x] roleに応じたownerOrgId/projectsフィルタのモックを追加
 - [ ] バックエンド: タイムシート修正時の承認ルール適用（変更時のみ approval 起動）
   - [ ] PATCH /time-entries/:id 追加、変更点判定でApprovalInstance作成スタブ
 - [ ] バックエンド: 承認ステップの監査ログ（who/when/from/to/reason）保存

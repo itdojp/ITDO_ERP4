@@ -19,6 +19,7 @@ async function authMock(fastify: any) {
     const userId = (req.headers['x-user-id'] as string) || 'demo-user';
     const rolesHeader = (req.headers['x-roles'] as string) || 'user';
     const roles = rolesHeader.split(',').map((r: string) => r.trim()).filter(Boolean);
+    const orgId = (req.headers['x-org-id'] as string) || undefined;
     const projectIdsHeader = (req.headers['x-project-ids'] as string) || '';
     const projectIds = projectIdsHeader
       .split(',')
@@ -29,7 +30,7 @@ async function authMock(fastify: any) {
       .split(',')
       .map((g: string) => g.trim())
       .filter(Boolean);
-    req.user = { userId, roles, projectIds, groupIds };
+    req.user = { userId, roles, orgId, projectIds, groupIds };
   });
 }
 
