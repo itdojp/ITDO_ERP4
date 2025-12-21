@@ -118,3 +118,10 @@ export const wellbeingSchema = {
     visibilityGroupId: Type.String(),
   }),
 };
+
+export const approvalActionSchema = {
+  body: Type.Object({
+    action: Type.Union([Type.Literal('approve'), Type.Literal('reject')]),
+    reason: Type.Optional(Type.String()),
+  }),
+};

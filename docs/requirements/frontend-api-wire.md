@@ -50,6 +50,7 @@
 ## settings (admin/mgmt)
 - GET/POST/PATCH `/alert-settings`, `/alert-settings/:id/enable|disable`
 - GET/POST/PATCH `/approval-rules`
+- POST `/approval-instances/:id/act` { action: approve|reject, reason? }
 - POST `/jobs/alerts/run` (手動トリガー)
 
 ## role/permission policy (PoC)
