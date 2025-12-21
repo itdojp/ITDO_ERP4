@@ -93,6 +93,20 @@ create table if not exists mapping_groups(
 );
 ```
 
+### マッピング例（サンプルデータ）
+```sql
+insert into mapping_projects(legacy_id, new_id, legacy_code) values
+  ('im_projects:1001', '11111111-1111-1111-1111-111111111111', 'PRJ-001'),
+  ('im_projects:1002', '22222222-2222-2222-2222-222222222222', 'PRJ-002');
+
+insert into mapping_users(legacy_id, new_id, legacy_login) values
+  ('cc_users:501', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'taro@example.com'),
+  ('cc_users:502', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'hanako@example.com');
+
+insert into mapping_vendors(legacy_id, new_id, legacy_code) values
+  ('im_companies:801', 'cccccccc-cccc-cccc-cccc-cccccccccccc', 'VND-001');
+```
+
 ### マッピング手順
 - ユーザ: メール または 社員コードで重複を解消し、欠損は手動で紐付け。マッピング未解決の行は別ファイルに出力する。
 - プロジェクト: code が重複する場合はサフィックス（-1,-2）を付与し、元コードは legacy_code に残す。
@@ -106,20 +120,30 @@ create table if not exists mapping_groups(
 
 ### 参照切れ検出SQL（例）
 ```sql
--- time_entries の projectId/userId が解決できていない
-select t.id, t.project_id, t.user_id
-from time_entries t
-left join projects p on p.id = t.project_id
-left join users u on u.id = t.user_id
-where p.id is null or u.id is null;
+-- time_entries: project_id の参照切れ
+select te.id
+from time_entries te
+left join projects p on p.id = te.project_id
+where p.id is null;
 
--- expenses の projectId が解決できていない
-select e.id, e.project_id
+-- time_entries: user_id の参照切れ（mapping_users で解決できていない）
+select te.id, te.user_id
+from time_entries te
+left join mapping_users mu on mu.new_id::text = te.user_id
+where mu.new_id is null;
+
+-- expenses: project_id の参照切れ
+select e.id
 from expenses e
 left join projects p on p.id = e.project_id
 where p.id is null;
-```
 
+-- invoices: project_id の参照切れ
+select i.id
+from invoices i
+left join projects p on p.id = i.project_id
+where p.id is null;
+```
 ## リスク/未決
 - 旧システムに業者系テーブルが無い場合、仕入/発注は手入力での移行が必要。
 - 見積データが無い場合、請求のみを移行し、見積は今後作成運用とするか要判断。
