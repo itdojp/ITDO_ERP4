@@ -201,9 +201,24 @@ export async function act(instanceId: string, userId: string, action: 'approve' 
       || currentSteps.find((s: any) => s.status === DocStatusValue.pending_qa)
       || currentSteps[0];
     if (!current) throw new Error('No current step');
+    const nextStepStatus = action === 'approve' ? DocStatusValue.approved : DocStatusValue.rejected;
     await tx.approvalStep.update({
       where: { id: current.id },
-      data: { status: action === 'approve' ? DocStatusValue.approved : DocStatusValue.rejected, actedBy: userId, actedAt: new Date() },
+      data: { status: nextStepStatus, actedBy: userId, actedAt: new Date() },
+    });
+    await logAudit({
+      action: `approval_step_${action}`,
+      userId,
+      targetTable: 'approval_steps',
+      targetId: current.id,
+      metadata: {
+        instanceId: instance.id,
+        fromStatus: current.status,
+        toStatus: nextStepStatus,
+        step: current.stepOrder,
+        reason: options.reason,
+        actorGroupId: options.actorGroupId,
+      },
     });
     let newStatus;
     let newCurrentStep = instance.currentStep;

@@ -3,7 +3,7 @@ import { timeEntryPatchSchema, timeEntrySchema } from './validators.js';
 import { TimeStatusValue } from '../types.js';
 import { requireProjectAccess, requireRole, requireRoleOrSelf } from '../services/rbac.js';
 import { prisma } from '../services/db.js';
-import { createApproval } from '../services/approval.js';
+import { createApprovalFor } from '../services/approval.js';
 import { FlowTypeValue } from '../types.js';
 
 export async function registerTimeEntryRoutes(app: FastifyInstance) {
@@ -46,7 +46,7 @@ export async function registerTimeEntryRoutes(app: FastifyInstance) {
       }
       const entry = await prisma.timeEntry.update({ where: { id }, data });
       if (changed) {
-        await createApproval(FlowTypeValue.time, 'time_entries', id, [{ approverGroupId: 'mgmt' }]);
+        await createApprovalFor(FlowTypeValue.time, 'time_entries', id, entry as Record<string, unknown>);
         // 監査ログ: 修正が承認待ちになったことを記録
         const userId = req.user?.userId;
         const { logAudit } = await import('../services/audit.js');
