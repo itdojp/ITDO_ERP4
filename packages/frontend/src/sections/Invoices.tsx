@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { api } from '../api';
+import { api, getAuthState } from '../api';
 import { InvoiceDetail } from './InvoiceDetail';
 
 interface Invoice {
@@ -11,11 +11,12 @@ interface Invoice {
   lines?: { description: string; quantity: number; unitPrice: number }[];
 }
 
-const initialForm = { projectId: 'demo-project', totalAmount: 100000 };
+const buildInitialForm = (projectId?: string) => ({ projectId: projectId || 'demo-project', totalAmount: 100000 });
 
 export const Invoices: React.FC = () => {
   const [items, setItems] = useState<Invoice[]>([]);
-  const [form, setForm] = useState(initialForm);
+  const auth = getAuthState();
+  const [form, setForm] = useState(() => buildInitialForm(auth?.projectIds?.[0]));
   const [selected, setSelected] = useState<Invoice | null>(null);
   const [message, setMessage] = useState('');
 
