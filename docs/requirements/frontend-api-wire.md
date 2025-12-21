@@ -46,6 +46,7 @@
 ## leave
 - GET `/leave-requests?userId?`
 - POST `/leave-requests` { userId, leaveType, startDate, endDate, hours?, notes }
+- POST `/leave-requests/:id/submit`
 
 ## settings (admin/mgmt)
 - GET/POST/PATCH `/alert-settings`, `/alert-settings/:id/enable|disable`

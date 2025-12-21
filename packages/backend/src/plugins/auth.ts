@@ -5,6 +5,7 @@ export type UserContext = {
   roles: string[];
   orgId?: string;
   projectIds?: string[];
+  groupIds?: string[];
 };
 
 declare module 'fastify' {
@@ -23,7 +24,12 @@ async function authMock(fastify: any) {
       .split(',')
       .map((p: string) => p.trim())
       .filter(Boolean);
-    req.user = { userId, roles, projectIds };
+    const groupIdsHeader = (req.headers['x-group-ids'] as string) || '';
+    const groupIds = groupIdsHeader
+      .split(',')
+      .map((g: string) => g.trim())
+      .filter(Boolean);
+    req.user = { userId, roles, projectIds, groupIds };
   });
 }
 
