@@ -26,6 +26,27 @@
 - approval_rules: `flow_type`, `conditions`(min/max, recurring flag, project tags), `steps`(group/user, allow_skip)。
 - approval_instances: 申請ごとにステップを生成し、状態・担当・期限を保持。監査ログに遷移を記録。
 
+### 承認ルール条件サンプル（JSON）
+```json
+{
+  "flow_type": "invoice",
+  "conditions": {
+    "minAmount": 0,
+    "execThreshold": 300000,
+    "skipSmallUnder": 50000,
+    "isRecurring": false,
+    "projectType": "maintenance",
+    "customerId": "uuid-customer",
+    "orgUnitId": "uuid-org",
+    "appliesTo": ["invoice", "estimate"]
+  },
+  "steps": [
+    { "approverGroupId": "mgmt" },
+    { "approverGroupId": "exec" }
+  ]
+}
+```
+
 ## アラート設定
 - 対象: `budget_overrun`, `overtime`, `approval_delay`, `delivery_due`。
 - 設定項目: `threshold`(金額/率/時間), `period`(day/week/month), `scope`(全体/プロジェクト), `recipients`(emails/roles/users), `channels`(email, dashboard; 将来: slack/webhook)。

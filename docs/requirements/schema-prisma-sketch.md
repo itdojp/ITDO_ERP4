@@ -2,6 +2,31 @@
 
 目的: data-model-sketch を具体的な型/enum/制約に落としたラフ案。実装時は Prisma/DDL で整合させる。
 
+## FK/削除ポリシー詳細（MVP）
+物理削除は原則禁止。以下はアプリ設計上の論理削除/参照の方針。
+
+### Project 周辺
+- Project.parentId: ON DELETE RESTRICT。子が残る場合は親を論理削除できない
+- Project.customerId: ON DELETE RESTRICT。顧客は論理削除のみ、参照は保持
+- ProjectTask.projectId: ON DELETE RESTRICT。承認WF外で projectId の付け替えを許容
+- ProjectTask.parentTaskId: ON DELETE RESTRICT。親削除時は子を移動または論理削除
+- ProjectMilestone.projectId: ON DELETE RESTRICT
+- TimeEntry.projectId / Expense.projectId: ON DELETE RESTRICT（必須）
+
+### 見積/請求
+- Estimate.projectId: ON DELETE RESTRICT
+- Invoice.projectId: ON DELETE RESTRICT
+- Invoice.estimateId / Invoice.milestoneId: ON DELETE SET NULL（見積なし請求/マイルストーン任意）
+- EstimateLine.taskId / BillingLine.taskId / PurchaseOrderLine.taskId / TimeEntry.taskId: ON DELETE SET NULL（履歴保全）
+
+### 発注/仕入
+- PurchaseOrder.projectId / VendorQuote.projectId / VendorInvoice.projectId: ON DELETE RESTRICT
+- PurchaseOrder.vendorId / VendorQuote.vendorId / VendorInvoice.vendorId: ON DELETE RESTRICT
+
+### 参照のみ（FKなし）
+- ApprovalInstance.targetId: polymorphic 参照のため FK を持たない
+- userId/ownerUserId/createdBy/updatedBy: 外部ID前提で FK なし
+
 ```prisma
 // 共通
 model AuditFields { // 擬似: 実際は全modelにmixin
