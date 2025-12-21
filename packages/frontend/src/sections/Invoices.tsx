@@ -8,6 +8,7 @@ interface Invoice {
   projectId: string;
   totalAmount: number;
   status: string;
+  lines?: { description: string; quantity: number; unitPrice: number }[];
 }
 
 const initialForm = { projectId: 'demo-project', totalAmount: 100000 };
@@ -22,12 +23,28 @@ export const Invoices: React.FC = () => {
     try {
       const res = await api<Invoice>(`/projects/${form.projectId}/invoices`, {
         method: 'POST',
-        body: JSON.stringify({ totalAmount: form.totalAmount, currency: 'JPY', lines: [] }),
+        body: JSON.stringify({
+          totalAmount: form.totalAmount,
+          currency: 'JPY',
+          lines: [
+            { description: '作業費', quantity: 1, unitPrice: form.totalAmount },
+          ],
+        }),
       });
       setMessage('作成しました');
       setItems((prev) => [...prev, res]);
     } catch (e) {
       setMessage('作成に失敗');
+    }
+  };
+
+  const load = async () => {
+    try {
+      const res = await api<{ items: Invoice[] }>(`/projects/${form.projectId}/invoices`);
+      setItems(res.items);
+      setMessage('読み込みました');
+    } catch (e) {
+      setMessage('読み込みに失敗');
     }
   };
 
@@ -38,6 +55,13 @@ export const Invoices: React.FC = () => {
     } catch (e) {
       setMessage('送信失敗');
     }
+  };
+
+  const buildApproval = (status: string) => {
+    if (status === 'pending_exec') return { step: 2, total: 2, status: 'pending_exec' };
+    if (status === 'pending_qa') return { step: 1, total: 2, status: 'pending_qa' };
+    if (status === 'approved' || status === 'sent' || status === 'paid') return { step: 2, total: 2, status: 'approved' };
+    return { step: 0, total: 2, status: 'draft' };
   };
 
   return (
@@ -57,6 +81,7 @@ export const Invoices: React.FC = () => {
           placeholder="金額"
         />
         <button className="button" onClick={create}>作成</button>
+        <button className="button secondary" onClick={load}>読み込み</button>
       </div>
       {message && <p>{message}</p>}
       <ul className="list">
@@ -73,7 +98,7 @@ export const Invoices: React.FC = () => {
       </ul>
       {selected && (
         <div className="card">
-          <InvoiceDetail {...selected} onSend={() => send(selected.id)} />
+          <InvoiceDetail {...selected} approval={buildApproval(selected.status)} onSend={() => send(selected.id)} />
           <button className="button secondary" onClick={() => setSelected(null)}>閉じる</button>
         </div>
       )}

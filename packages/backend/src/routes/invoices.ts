@@ -7,6 +7,25 @@ import { requireRole } from '../services/rbac.js';
 import { prisma } from '../services/db.js';
 
 export async function registerInvoiceRoutes(app: FastifyInstance) {
+  app.get('/projects/:projectId/invoices', { preHandler: requireRole(['admin', 'mgmt']) }, async (req) => {
+    const { projectId } = req.params as { projectId: string };
+    const { status, from, to } = req.query as { status?: string; from?: string; to?: string };
+    const where: any = { projectId };
+    if (status) where.status = status;
+    if (from || to) {
+      where.issueDate = {};
+      if (from) where.issueDate.gte = new Date(from);
+      if (to) where.issueDate.lte = new Date(to);
+    }
+    const items = await prisma.invoice.findMany({
+      where,
+      include: { lines: true },
+      orderBy: { createdAt: 'desc' },
+      take: 100,
+    });
+    return { items };
+  });
+
   app.post('/projects/:projectId/invoices', { preHandler: requireRole(['admin', 'mgmt']), schema: invoiceSchema }, async (req) => {
     const { projectId } = req.params as { projectId: string };
     const body = req.body as any;
