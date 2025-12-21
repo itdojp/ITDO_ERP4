@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { api } from '../api';
+import { api, getAuthState } from '../api';
 
 type TimeEntry = { id: string; projectId: string; workDate: string; minutes: number; status: string; workType?: string; location?: string; taskId?: string };
 type FormState = {
@@ -21,9 +21,11 @@ const defaultForm: FormState = {
 };
 
 export const TimeEntries: React.FC = () => {
+  const auth = getAuthState();
+  const defaultProjectId = auth?.projectIds?.[0] || defaultForm.projectId;
   const [items, setItems] = useState<TimeEntry[]>([]);
   const [message, setMessage] = useState('');
-  const [form, setForm] = useState<FormState>(defaultForm);
+  const [form, setForm] = useState<FormState>({ ...defaultForm, projectId: defaultProjectId });
 
   useEffect(() => {
     api<{ items: TimeEntry[] }>('/time-entries').then((res) => setItems(res.items)).catch(() => setItems([]));
@@ -31,11 +33,12 @@ export const TimeEntries: React.FC = () => {
 
   const add = async () => {
     try {
-      await api('/time-entries', { method: 'POST', body: JSON.stringify({ ...form, userId: 'demo-user' }) });
+      const userId = getAuthState()?.userId || 'demo-user';
+      await api('/time-entries', { method: 'POST', body: JSON.stringify({ ...form, userId }) });
       setMessage('保存しました');
       const updated = await api<{ items: TimeEntry[] }>('/time-entries');
       setItems(updated.items);
-      setForm(defaultForm);
+      setForm({ ...defaultForm, projectId: defaultProjectId });
     } catch (e) {
       setMessage('保存に失敗しました');
     }

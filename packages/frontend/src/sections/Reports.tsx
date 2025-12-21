@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { api } from '../api';
+import { api, getAuthState } from '../api';
 
 type ProjectEffort = { projectId: string; totalMinutes: number; totalExpenses: number };
 type GroupEffort = { userId: string; totalMinutes: number };
@@ -14,9 +14,12 @@ function buildQuery(from?: string, to?: string) {
 }
 
 export const Reports: React.FC = () => {
-  const [projectId, setProjectId] = useState('demo-project');
-  const [groupUserIds, setGroupUserIds] = useState('demo-user');
-  const [overtimeUserId, setOvertimeUserId] = useState('demo-user');
+  const auth = getAuthState();
+  const defaultProjectId = auth?.projectIds?.[0] || 'demo-project';
+  const defaultUserId = auth?.userId || 'demo-user';
+  const [projectId, setProjectId] = useState(defaultProjectId);
+  const [groupUserIds, setGroupUserIds] = useState(defaultUserId);
+  const [overtimeUserId, setOvertimeUserId] = useState(defaultUserId);
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
   const [projectReport, setProjectReport] = useState<ProjectEffort | null>(null);

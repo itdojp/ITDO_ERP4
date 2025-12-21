@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { api } from '../api';
+import { api, getAuthState } from '../api';
 import { HelpModal } from './HelpModal';
 
 const tags = ['仕事量が多い', '役割/進め方', '人間関係', '体調', '私生活', '特になし'];
@@ -12,6 +12,7 @@ export const DailyReport: React.FC = () => {
   const [message, setMessage] = useState('');
   const [showHelp, setShowHelp] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const userId = getAuthState()?.userId || 'demo-user';
 
   const toggleTag = (tag: string) => {
     setSelectedTags((prev) => (prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]));
@@ -22,11 +23,18 @@ export const DailyReport: React.FC = () => {
       setIsSubmitting(true);
       await api('/daily-reports', {
         method: 'POST',
-        body: JSON.stringify({ content: '日報本文', reportDate: new Date().toISOString(), linkedProjectIds: [], status: 'submitted' }),
+        body: JSON.stringify({
+          userId,
+          content: '日報本文',
+          reportDate: new Date().toISOString(),
+          linkedProjectIds: [],
+          status: 'submitted',
+        }),
       });
       await api('/wellbeing-entries', {
         method: 'POST',
         body: JSON.stringify({
+          userId,
           entryDate: new Date().toISOString(),
           status,
           notes: selectedTags.length ? `${notes}\nTags:${selectedTags.join(',')}` : notes,
