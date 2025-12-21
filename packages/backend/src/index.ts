@@ -1,11 +1,13 @@
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
+import helmet from '@fastify/helmet';
 import { registerRoutes } from './routes/index.js';
 import authPlugin from './plugins/auth.js';
 
 async function main() {
-  const server = Fastify({ logger: true });
+  const server = Fastify({ logger: true, bodyLimit: 1024 * 1024 });
   await server.register(cors, { origin: true, maxAge: 86400 });
+  await server.register(helmet, { contentSecurityPolicy: false });
   await server.register(authPlugin);
 
   // health
