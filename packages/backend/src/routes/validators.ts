@@ -130,6 +130,17 @@ export const wellbeingSchema = {
   }),
 };
 
+export const leaveRequestSchema = {
+  body: Type.Object({
+    userId: Type.String(),
+    leaveType: Type.String(),
+    startDate: Type.String({ format: 'date' }),
+    endDate: Type.String({ format: 'date' }),
+    hours: Type.Optional(Type.Number({ minimum: 0 })),
+    notes: Type.Optional(Type.String()),
+  }),
+};
+
 export const approvalActionSchema = {
   body: Type.Object({
     action: Type.Union([Type.Literal('approve'), Type.Literal('reject')]),
