@@ -56,7 +56,7 @@
   - [ ] audit_logテーブル案（who/when/action/target/from/to/meta）
   - [ ] 発番・承認・閲覧(Wellbeing)で記録する項目を列挙
 - [ ] バックエンド: シンプルなバリデーション (zod / fastify schema) を主要エンドポイントに付与
-  - [ ] time/expense/estimate/invoice/PO/leave の schema で必須/型/最小値を整理
+  - [x] time/expense/estimate/invoice/PO/leave の schema で必須/型/最小値を整理
   - [ ] バリデーション失敗時のエラーレスポンスを揃える
 - [ ] バックエンド: `/me` にロール/グループ等のモックデータを返す
   - [ ] roleに応じたownerOrgId/projectsフィルタのモックを追加
