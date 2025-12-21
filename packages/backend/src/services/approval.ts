@@ -111,7 +111,7 @@ export function matchApprovalSteps(flowType: string, payload: Record<string, unk
 async function resolveRule(flowType: string, payload: Record<string, unknown>) {
   const rules = await prisma.approvalRule.findMany({ where: { flowType }, orderBy: { createdAt: 'desc' } });
   if (!rules.length) return null;
-  const matched = rules.find((r) => matchesRuleCondition(flowType, payload, r.conditions as ApprovalCondition));
+  const matched = rules.find((r: { conditions?: unknown }) => matchesRuleCondition(flowType, payload, r.conditions as ApprovalCondition));
   return matched || rules[0];
 }
 
