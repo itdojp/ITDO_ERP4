@@ -10,8 +10,8 @@
 ```
 tx {
   seq = select ... for update where kind=? and year=? and month=?
-  if not exists -> insert current_serial=0 return row
-  if seq.current_serial >= 9999 -> raise error
+  if not exists -> insert current_serial=0 return row // 月跨ぎは新規row
+  if seq.current_serial >= 9999 -> raise error       // オーバーフロー検知
   new_serial = seq.current_serial + 1
   update seq set current_serial=new_serial where version=seq.version
   number = format("%s%04d-%02d-%04d", prefix, year, month, new_serial)
@@ -38,6 +38,25 @@ for each t:
   save
 ```
 
+### シーケンス図（Mermaid）
+```mermaid
+sequenceDiagram
+  participant Cron
+  participant Job
+  participant DB
+  Cron->>Job: 起動
+  Job->>DB: テンプレ取得(is_active, next_run_at<=now)
+  loop テンプレごと
+    Job->>DB: 生成履歴チェック(project_id+period)
+    alt 未生成
+      Job->>DB: ドラフト作成(Project/Milestone/Estimate/Invoice)
+      Job->>DB: 生成履歴INSERT + next_run_at更新
+    else 既存
+      Job-->>DB: skip
+    end
+  end
+```
+
 ## アラート計算
 - 対象: alert_settings (type: budget_overrun/overtime/approval_delay/delivery_due)。
 - 入力データ: 工数集計/予算値、残業時間（time_entries）、承認待ち経過時間（approval_instances）。
@@ -52,10 +71,16 @@ for each t:
 ```
 for setting in alert_settings where is_enabled:
   metric = compute(setting.type, setting.scope, setting.period)
-  if metric > threshold and not existing_open(setting, scope):
-     alert = insert alerts(...)
+  key = (setting.id, scope)
+  open = find open alert by key
+  if open exists:
+     if open.reminder_at <= now:
+        send reminder
+        update reminder_at
+     continue
+  if metric > threshold:
+     alert = insert alerts(status=open, suppression_key=key, reminder_at=now+remind_after)
      send email/dashboard
-     mark reminder_at = now + setting.remind_after_hours (optional)
 ```
 
 ## 承認タイムアウト（将来）
