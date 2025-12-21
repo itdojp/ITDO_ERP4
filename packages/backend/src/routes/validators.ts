@@ -161,3 +161,45 @@ export const approvalRuleSchema = {
 export const approvalRulePatchSchema = {
   body: Type.Partial(approvalRuleSchema.body),
 };
+
+const alertTypeSchema = Type.Union([
+  Type.Literal('budget_overrun'),
+  Type.Literal('overtime'),
+  Type.Literal('approval_delay'),
+  Type.Literal('delivery_due'),
+]);
+
+const alertChannelSchema = Type.Union([
+  Type.Literal('email'),
+  Type.Literal('dashboard'),
+  Type.Literal('slack'),
+  Type.Literal('webhook'),
+]);
+
+const alertRecipientsSchema = Type.Object(
+  {
+    emails: Type.Optional(Type.Array(Type.String())),
+    roles: Type.Optional(Type.Array(Type.String())),
+    users: Type.Optional(Type.Array(Type.String())),
+  },
+  { additionalProperties: true },
+);
+
+export const alertSettingSchema = {
+  body: Type.Object(
+    {
+      type: alertTypeSchema,
+      threshold: Type.Number({ minimum: 0 }),
+      period: Type.String(),
+      scopeProjectId: Type.Optional(Type.String()),
+      recipients: alertRecipientsSchema,
+      channels: Type.Array(alertChannelSchema, { minItems: 1 }),
+      isEnabled: Type.Optional(Type.Boolean()),
+    },
+    { additionalProperties: false },
+  ),
+};
+
+export const alertSettingPatchSchema = {
+  body: Type.Partial(alertSettingSchema.body),
+};
