@@ -1,5 +1,16 @@
 import { Type } from '@sinclair/typebox';
 
+const flowTypeSchema = Type.Union([
+  Type.Literal('estimate'),
+  Type.Literal('invoice'),
+  Type.Literal('expense'),
+  Type.Literal('leave'),
+  Type.Literal('time'),
+  Type.Literal('purchase_order'),
+  Type.Literal('vendor_invoice'),
+  Type.Literal('vendor_quote'),
+]);
+
 export const projectSchema = {
   body: Type.Object({
     code: Type.String(),
@@ -124,4 +135,29 @@ export const approvalActionSchema = {
     action: Type.Union([Type.Literal('approve'), Type.Literal('reject')]),
     reason: Type.Optional(Type.String()),
   }),
+};
+
+const approvalStepSchema = Type.Object(
+  {
+    stepOrder: Type.Optional(Type.Number({ minimum: 1 })),
+    approverGroupId: Type.Optional(Type.String()),
+    approverUserId: Type.Optional(Type.String()),
+    parallelKey: Type.Optional(Type.String()),
+  },
+  { additionalProperties: false },
+);
+
+export const approvalRuleSchema = {
+  body: Type.Object(
+    {
+      flowType: flowTypeSchema,
+      conditions: Type.Optional(Type.Object({}, { additionalProperties: true })),
+      steps: Type.Array(approvalStepSchema, { minItems: 1 }),
+    },
+    { additionalProperties: false },
+  ),
+};
+
+export const approvalRulePatchSchema = {
+  body: Type.Partial(approvalRuleSchema.body),
 };
