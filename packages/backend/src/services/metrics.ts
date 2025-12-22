@@ -1,10 +1,11 @@
-import type { AlertSetting } from '@prisma/client';
+import type { AlertSetting, Prisma } from '@prisma/client';
 import { prisma } from './db.js';
 import { calcTimeAmount, resolveRateCard } from './rateCard.js';
 
 type MetricResult = { metric: number; targetRef: string };
 
 function toNumber(value: unknown): number {
+  if (value == null) return 0;
   if (typeof value === 'number') return value;
   if (typeof value === 'string') {
     const parsed = Number(value);
@@ -23,7 +24,7 @@ function toNumber(value: unknown): number {
 
 function startOfDay(date: Date) {
   const result = new Date(date);
-  result.setHours(0, 0, 0, 0);
+  result.setUTCHours(0, 0, 0, 0);
   return result;
 }
 
@@ -55,12 +56,19 @@ async function resolveProjectBudget(projectId: string): Promise<number> {
     orderBy: { createdAt: 'desc' },
     select: { totalAmount: true },
   });
-  const estimateBudget = toNumber(estimate?.totalAmount);
-  if (estimateBudget > 0) return estimateBudget;
+  const estimateBudgetRaw = estimate?.totalAmount;
+  if (estimateBudgetRaw != null) {
+    const estimateValue = toNumber(estimateBudgetRaw);
+    if (estimateValue > 0) return estimateValue;
+  }
   const milestoneSum = await prisma.projectMilestone.aggregate({
     where: { projectId, deletedAt: null },
     _sum: { amount: true },
   });
+  if (milestoneSum._sum.amount == null) {
+    console.warn('[metrics] budget missing for project', projectId);
+    return 0;
+  }
   return toNumber(milestoneSum._sum.amount);
 }
 
@@ -73,13 +81,31 @@ async function sumTimeCost(projectId: string): Promise<number> {
     },
     select: { minutes: true, workDate: true, workType: true },
   });
+  if (!entries.length) return 0;
+  const uniqueCombos = new Map<string, { workDate: Date; workType?: string }>();
+  for (const entry of entries) {
+    const workType = entry.workType ?? undefined;
+    const key = `${dateKey(entry.workDate)}|${workType ?? ''}`;
+    if (!uniqueCombos.has(key)) {
+      uniqueCombos.set(key, { workDate: entry.workDate, workType });
+    }
+  }
+  const rateCardCache = new Map<string, Awaited<ReturnType<typeof resolveRateCard>>>();
+  await Promise.all(
+    Array.from(uniqueCombos.entries()).map(async ([key, combo]) => {
+      const rateCard = await resolveRateCard({
+        projectId,
+        workDate: combo.workDate,
+        workType: combo.workType,
+      });
+      rateCardCache.set(key, rateCard);
+    }),
+  );
   let total = 0;
   for (const entry of entries) {
-    const rateCard = await resolveRateCard({
-      projectId,
-      workDate: entry.workDate,
-      workType: entry.workType ?? undefined,
-    });
+    const workType = entry.workType ?? undefined;
+    const key = `${dateKey(entry.workDate)}|${workType ?? ''}`;
+    const rateCard = rateCardCache.get(key);
     if (!rateCard) continue;
     total += calcTimeAmount(entry.minutes, toNumber(rateCard.unitPrice));
   }
@@ -125,6 +151,7 @@ export async function computeBudgetOverrun(setting: AlertSetting): Promise<Metri
       sumTimeCost(projectId),
     ]);
     const actual = expenseCost + vendorCost + timeCost;
+    // metric is percent over budget (0 when <= 100% utilization)
     const overPercent = Math.max(0, ((actual / budget) - 1) * 100);
     const metric = Math.round(overPercent * 100) / 100;
     if (!best || metric > best.metric) {
@@ -136,7 +163,7 @@ export async function computeBudgetOverrun(setting: AlertSetting): Promise<Metri
 
 export async function computeOvertime(setting: AlertSetting): Promise<MetricResult | null> {
   const { start, end } = resolvePeriodRange(setting.period);
-  const where: any = {
+  const where: Prisma.TimeEntryWhereInput = {
     workDate: { gte: start, lte: end },
     deletedAt: null,
     status: { not: 'rejected' },
@@ -172,7 +199,9 @@ export async function computeOvertime(setting: AlertSetting): Promise<MetricResu
   return { metric: hours, targetRef: maxUserId };
 }
 
-export async function computeApprovalDelay(_setting: AlertSetting): Promise<MetricResult | null> {
+export async function computeApprovalDelay(setting: AlertSetting): Promise<MetricResult | null> {
+  // ApprovalInstance does not store projectId yet, so scopeProjectId is not applied.
+  void setting;
   const pending = await prisma.approvalInstance.findMany({
     where: { status: { in: ['pending_qa', 'pending_exec'] } },
     select: { id: true, createdAt: true },
@@ -194,7 +223,7 @@ export async function computeApprovalDelay(_setting: AlertSetting): Promise<Metr
 
 export async function computeDeliveryDue(setting: AlertSetting): Promise<MetricResult | null> {
   const now = new Date();
-  const where: any = {
+  const where: Prisma.ProjectMilestoneWhereInput = {
     dueDate: { lte: now },
     deletedAt: null,
     project: { deletedAt: null },
@@ -204,5 +233,5 @@ export async function computeDeliveryDue(setting: AlertSetting): Promise<MetricR
     where.projectId = setting.scopeProjectId;
   }
   const count = await prisma.projectMilestone.count({ where });
-  return { metric: count, targetRef: setting.scopeProjectId || 'global' };
+  return { metric: count, targetRef: setting.scopeProjectId ?? 'global' };
 }

@@ -56,7 +56,7 @@ export async function computeAndTrigger(fetchers: Record<string, MetricFetcher>)
         { id: s.id, recipients: s.recipients, channels: s.channels },
         result.metric,
         Number(s.threshold),
-        result.targetRef || s.scopeProjectId || 'global',
+        result.targetRef ?? s.scopeProjectId ?? 'global',
       );
     }
   }
