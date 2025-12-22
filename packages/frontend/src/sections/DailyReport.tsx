@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { api, getAuthState } from '../api';
 import { HelpModal } from './HelpModal';
 
@@ -14,11 +14,21 @@ export const DailyReport: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const userId = getAuthState()?.userId || 'demo-user';
 
+  useEffect(() => {
+    if (!message) return;
+    const timer = setTimeout(() => setMessage(''), 4000);
+    return () => clearTimeout(timer);
+  }, [message]);
+
   const toggleTag = (tag: string) => {
     setSelectedTags((prev) => (prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]));
   };
 
   const submit = async () => {
+    if (!status) {
+      setMessage('Good / Not Good を選択してください');
+      return;
+    }
     try {
       setIsSubmitting(true);
       await api('/daily-reports', {
@@ -36,11 +46,11 @@ export const DailyReport: React.FC = () => {
         body: JSON.stringify({
           userId,
           entryDate: new Date().toISOString(),
-          status,
-          notes: selectedTags.length ? `${notes}\nTags:${selectedTags.join(',')}` : notes,
-          helpRequested,
-          visibilityGroupId: 'hr-group',
-        }),
+        status,
+        notes: selectedTags.length ? `${notes}\nTags:${selectedTags.join(',')}` : notes,
+        helpRequested,
+        visibilityGroupId: 'hr-group',
+      }),
       });
       setMessage('送信しました');
       setNotes('');

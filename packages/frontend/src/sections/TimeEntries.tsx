@@ -26,21 +26,46 @@ export const TimeEntries: React.FC = () => {
   const [items, setItems] = useState<TimeEntry[]>([]);
   const [message, setMessage] = useState('');
   const [form, setForm] = useState<FormState>({ ...defaultForm, projectId: defaultProjectId });
+  const [isSaving, setIsSaving] = useState(false);
+  const isValid = Boolean(form.projectId.trim()) && Boolean(form.workDate) && form.minutes > 0;
 
   useEffect(() => {
     api<{ items: TimeEntry[] }>('/time-entries').then((res) => setItems(res.items)).catch(() => setItems([]));
   }, []);
 
+  useEffect(() => {
+    if (!message) return;
+    const timer = setTimeout(() => setMessage(''), 4000);
+    return () => clearTimeout(timer);
+  }, [message]);
+
   const add = async () => {
+    if (!isValid) {
+      setMessage('必須項目を入力してください');
+      return;
+    }
     try {
+      setIsSaving(true);
       const userId = getAuthState()?.userId || 'demo-user';
-      await api('/time-entries', { method: 'POST', body: JSON.stringify({ ...form, userId }) });
+      await api('/time-entries', {
+        method: 'POST',
+        body: JSON.stringify({
+          ...form,
+          projectId: form.projectId.trim(),
+          taskId: form.taskId.trim() || undefined,
+          workType: form.workType.trim() || undefined,
+          location: form.location.trim() || undefined,
+          userId,
+        }),
+      });
       setMessage('保存しました');
       const updated = await api<{ items: TimeEntry[] }>('/time-entries');
       setItems(updated.items);
       setForm({ ...defaultForm, projectId: defaultProjectId });
     } catch (e) {
       setMessage('保存に失敗しました');
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -52,10 +77,18 @@ export const TimeEntries: React.FC = () => {
           <input type="text" value={form.projectId} onChange={(e) => setForm({ ...form, projectId: e.target.value })} placeholder="Project ID" />
           <input type="text" value={form.taskId} onChange={(e) => setForm({ ...form, taskId: e.target.value })} placeholder="Task ID (任意)" />
           <input type="date" value={form.workDate} onChange={(e) => setForm({ ...form, workDate: e.target.value })} />
-          <input type="number" value={form.minutes} onChange={(e) => setForm({ ...form, minutes: Number(e.target.value) })} style={{ width: 100 }} />
+          <input
+            type="number"
+            min={1}
+            max={1440}
+            step={15}
+            value={form.minutes}
+            onChange={(e) => setForm({ ...form, minutes: Number(e.target.value) })}
+            style={{ width: 100 }}
+          />
           <input type="text" value={form.workType} onChange={(e) => setForm({ ...form, workType: e.target.value })} placeholder="作業種別" />
           <input type="text" value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} placeholder="場所" />
-          <button className="button" onClick={add}>追加</button>
+          <button className="button" onClick={add} disabled={!isValid || isSaving}>追加</button>
         </div>
       </div>
       <ul className="list">
