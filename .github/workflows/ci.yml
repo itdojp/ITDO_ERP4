@@ -44,8 +44,10 @@ jobs:
           node-version: 18
       - run: npm install --prefix packages/backend
       - run: npm run lint --prefix packages/backend
+      - run: npm run format:check --prefix packages/backend
       - run: npm install --prefix packages/frontend
       - run: npm run lint --prefix packages/frontend
+      - run: npm run format:check --prefix packages/frontend
   data-quality:
     runs-on: ubuntu-latest
     continue-on-error: true

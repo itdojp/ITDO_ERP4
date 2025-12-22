@@ -77,9 +77,9 @@
   - [x] 入力→POST→一覧再取得のハッピーパス
 - [x] フロント: ヘルプモーダルの内容（相談先ラベル/説明/緊急案内）を表示
   - [x] 単体コンポーネント化して日報画面に組み込み
-- [ ] テスト: バックエンド簡易ハッピーパス (contracts/invoices/time/expenses) のスモーク
-  - [ ] supertest等で /projects→/estimates→/invoices→/send の一連
-  - [ ] /time-entries, /expenses のPOST/GET
+- [x] テスト: バックエンド簡易ハッピーパス (contracts/invoices/time/expenses) のスモーク
+  - [x] scripts/smoke-backend.sh で /projects→/estimates→/invoices→/send の一連
+  - [x] /time-entries, /expenses のPOST/GET を同スクリプトで確認
 - [x] テスト: フロントの手動確認手順（ダッシュボード→日報→工数→請求送信Stub）
   - [x] READMEに手順と期待結果を書き出し
 - [x] CI: lint/format のジョブ追加 (GH Actions)、prisma format/validate を走らせる
@@ -105,7 +105,7 @@
 - [x] フロント: 請求ドラフトの一覧/詳細で番号・ステータスを表示、送信Stub連携
 - [ ] バックエンド: PDF生成Stub（請求書/発注書）とテンプレAPIの枠
 - [ ] バックエンド: 休暇/経費/タイムシート修正承認の統一ハンドラ
-- [ ] QA: 簡易E2Eまたは手順書（ハッピーパス）
+- [x] QA: 簡易E2Eまたは手順書（ハッピーパス）
 - [x] フロント: 人事向け匿名集計ビューの骨組み（5人未満非表示）※簡易でもよい
 - [x] バックエンド: metrics計算関数のスタブ（予算消化率、残業時間、承認遅延計測）
 - [x] バックエンド: AlertSettingのCRUDと有効/無効切替API
@@ -113,9 +113,9 @@
 - [x] バックエンド: RateCard 適用ロジック（工数×単価計算の枠）
 - [x] フロント: アラート設定と承認ルールの簡易設定画面モック（保存は後続でも可）
 - [ ] 移行: サンプルデータを使ったPoCロード＆整合チェック（工数件数、請求合計）
-- [ ] CI: prettier/eslint 設定と整合性チェック
+- [x] CI: prettier/eslint 設定と整合性チェック
 - [x] セキュリティ: CORS/ヘッダ/基本的な入力サイズ制限設定
-- [ ] プロダクト: アラート再送/サプレッションの設計メモ追加
+- [x] プロダクト: アラート再送/サプレッションの設計メモ追加
 - [ ] プロダクト: QA用シードデータセット（プロジェクト/見積/請求/工数/経費）の作成
 
 ## 12/10 以降（MVP後続拡張）
