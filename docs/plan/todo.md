@@ -7,10 +7,10 @@
   - [x] 請求・発注・仕入系のnullable列を精査（estimateId/milestoneId/taskIdなど）
   - [x] 監査メタ createdBy/updatedBy の扱いを統一し TODO記載
   - [x] PRにschema.prisma + docs/requirements/schema-prisma-sketch.md 対応をまとめる
-- [ ] 発番/定期案件/アラート計算のバッチ擬似コード・シーケンスを追加（#6, batch-jobs.md）
-  - [ ] 採番サービスに月跨ぎリセット/オーバーフロー処理コメント追加
-  - [ ] 定期案件テンプレから案件生成、請求ドラフト自動作成のシーケンス図
-  - [ ] アラート（予算/残業/承認遅延/納期未請求）の擬似コードと発火→通知→サプレッションフロー
+- [x] 発番/定期案件/アラート計算のバッチ擬似コード・シーケンスを追加（#6, batch-jobs.md）
+  - [x] 採番サービスに月跨ぎリセット/オーバーフロー処理コメント追加
+  - [x] 定期案件テンプレから案件生成、請求ドラフト自動作成のシーケンス図
+  - [x] アラート（予算/残業/承認遅延/納期未請求）の擬似コードと発火→通知→サプレッションフロー
 - [x] バックエンドPoCスケルトン（APIサーバ: プロジェクト/見積/請求/タイムシート/経費登録と発番・承認フック）
   - [x] prisma clientをDI化またはモジュール共有に寄せる
   - [x] `/projects/:id/estimates`起案→`/estimates/:id/submit`→`/invoices/:id/submit/send`のhappyパス通し
