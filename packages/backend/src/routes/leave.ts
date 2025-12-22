@@ -1,6 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import { prisma } from '../services/db.js';
-import { createApprovalFor } from '../services/approval.js';
+import { submitApprovalWithUpdate } from '../services/approval.js';
 import { FlowTypeValue } from '../types.js';
 import { requireRole, requireRoleOrSelf } from '../services/rbac.js';
 import { leaveRequestSchema } from './validators.js';
@@ -27,8 +27,13 @@ export async function registerLeaveRoutes(app: FastifyInstance) {
     if (!roles.includes('admin') && !roles.includes('mgmt') && leave.userId !== userId) {
       return reply.code(403).send({ error: 'forbidden' });
     }
-    const updated = await prisma.leaveRequest.update({ where: { id }, data: { status: 'pending_manager' } });
-    await createApprovalFor(FlowTypeValue.leave, 'leave_requests', id, { hours: leave.hours || 0 });
+    const { updated } = await submitApprovalWithUpdate({
+      flowType: FlowTypeValue.leave,
+      targetTable: 'leave_requests',
+      targetId: id,
+      update: (tx) => tx.leaveRequest.update({ where: { id }, data: { status: 'pending_manager' } }),
+      payload: { hours: leave.hours || 0 },
+    });
     return updated;
   });
 

@@ -3,7 +3,7 @@ import { timeEntryPatchSchema, timeEntrySchema } from './validators.js';
 import { TimeStatusValue } from '../types.js';
 import { requireProjectAccess, requireRole, requireRoleOrSelf } from '../services/rbac.js';
 import { prisma } from '../services/db.js';
-import { createApprovalFor } from '../services/approval.js';
+import { submitApprovalWithUpdate } from '../services/approval.js';
 import { FlowTypeValue } from '../types.js';
 
 export async function registerTimeEntryRoutes(app: FastifyInstance) {
@@ -40,13 +40,15 @@ export async function registerTimeEntryRoutes(app: FastifyInstance) {
         return { error: 'not_found' };
       }
       const changed = ['minutes', 'workDate', 'taskId', 'projectId'].some((k) => body[k] !== undefined && (body as any)[k] !== (before as any)[k]);
-      const data = { ...before, ...body } as any;
+      const data = { ...body } as any;
       if (changed) {
         data.status = TimeStatusValue.submitted;
-      }
-      const entry = await prisma.timeEntry.update({ where: { id }, data });
-      if (changed) {
-        await createApprovalFor(FlowTypeValue.time, 'time_entries', id, entry as Record<string, unknown>);
+        const { updated } = await submitApprovalWithUpdate({
+          flowType: FlowTypeValue.time,
+          targetTable: 'time_entries',
+          targetId: id,
+          update: (tx) => tx.timeEntry.update({ where: { id }, data }),
+        });
         // 監査ログ: 修正が承認待ちになったことを記録
         const userId = req.user?.userId;
         const { logAudit } = await import('../services/audit.js');
@@ -57,7 +59,9 @@ export async function registerTimeEntryRoutes(app: FastifyInstance) {
           targetId: id,
           metadata: { changedFields: Object.keys(body) },
         });
+        return updated;
       }
+      const entry = await prisma.timeEntry.update({ where: { id }, data });
       return entry;
     },
   );
