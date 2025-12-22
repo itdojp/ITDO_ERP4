@@ -48,12 +48,16 @@ export const AdminSettings: React.FC = () => {
   });
 
   const channels = useMemo(() => Array.from(alertForm.channels), [alertForm.channels]);
+  const logError = (label: string, err: unknown) => {
+    console.error(`[AdminSettings] ${label}`, err);
+  };
 
   const loadAlertSettings = async () => {
     try {
       const res = await api<{ items: AlertSetting[] }>('/alert-settings');
       setAlertItems(res.items || []);
     } catch (err) {
+      logError('loadAlertSettings failed', err);
       setAlertItems([]);
     }
   };
@@ -63,6 +67,7 @@ export const AdminSettings: React.FC = () => {
       const res = await api<{ items: ApprovalRule[] }>('/approval-rules');
       setRuleItems(res.items || []);
     } catch (err) {
+      logError('loadApprovalRules failed', err);
       setRuleItems([]);
     }
   };
@@ -71,6 +76,12 @@ export const AdminSettings: React.FC = () => {
     loadAlertSettings();
     loadApprovalRules();
   }, []);
+
+  useEffect(() => {
+    if (!message) return;
+    const timer = setTimeout(() => setMessage(''), 4000);
+    return () => clearTimeout(timer);
+  }, [message]);
 
   const toggleChannel = (ch: string) => {
     const next = new Set(alertForm.channels);
@@ -105,6 +116,7 @@ export const AdminSettings: React.FC = () => {
       setMessage('アラート設定を作成しました');
       await loadAlertSettings();
     } catch (err) {
+      logError('createAlertSetting failed', err);
       setMessage('作成に失敗しました');
     }
   };
@@ -114,6 +126,7 @@ export const AdminSettings: React.FC = () => {
       await api(`/alert-settings/${id}/${enabled ? 'disable' : 'enable'}`, { method: 'POST' });
       await loadAlertSettings();
     } catch (err) {
+      logError('toggleAlert failed', err);
       setMessage('状態変更に失敗しました');
     }
   };
@@ -123,6 +136,7 @@ export const AdminSettings: React.FC = () => {
     try {
       return JSON.parse(raw);
     } catch (err) {
+      logError(`parseJson ${label} failed`, err);
       setMessage(`${label} のJSONが不正です`);
       return null;
     }
@@ -132,6 +146,11 @@ export const AdminSettings: React.FC = () => {
     const conditions = parseJson('conditions', ruleForm.conditionsJson);
     if (conditions === null) return;
     const steps = parseJson('steps', ruleForm.stepsJson);
+    if (steps === null) return;
+    if (steps === undefined) {
+      setMessage('steps を入力してください');
+      return;
+    }
     if (!Array.isArray(steps)) {
       setMessage('steps は配列で入力してください');
       return;
@@ -150,6 +169,7 @@ export const AdminSettings: React.FC = () => {
       setMessage('承認ルールを作成しました');
       await loadApprovalRules();
     } catch (err) {
+      logError('createApprovalRule failed', err);
       setMessage('作成に失敗しました');
     }
   };
