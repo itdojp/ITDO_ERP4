@@ -11,9 +11,9 @@ export async function recordPdfStub(kind: string, payload: Record<string, unknow
   return { url: `stub://${kind}/${payload['id'] || 'unknown'}` };
 }
 
-export async function generatePdfStub(templateName: string, payload: Record<string, unknown>): Promise<{ url: string }> {
-  console.log('[pdf generate stub]', { templateName, payload });
-  return { url: `stub://pdf/${templateName}/${payload['id'] || 'unknown'}` };
+export async function generatePdfStub(templateId: string, payload: Record<string, unknown>): Promise<{ url: string }> {
+  console.log('[pdf generate stub]', { templateId, payload });
+  return { url: `stub://pdf/${templateId}/${payload['id'] || 'unknown'}` };
 }
 
 export function buildStubResults(channels: string[]): NotifyResult[] {

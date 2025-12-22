@@ -37,7 +37,7 @@ export async function registerPurchaseOrderRoutes(app: FastifyInstance) {
       totalAmount: po.totalAmount,
       projectId: po.projectId,
       vendorId: po.vendorId,
-    });
+    }, { createdBy: req.user?.userId });
     return po;
   });
 }

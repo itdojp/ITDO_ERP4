@@ -6,10 +6,10 @@ import { AlertTypeValue } from '../types.js';
 export async function registerMetricJobRoutes(app: FastifyInstance) {
   app.post('/jobs/alerts/run', async () => {
     await computeAndTrigger({
-      [AlertTypeValue.budget_overrun]: () => computeBudgetOverrun('demo-project'),
-      [AlertTypeValue.overtime]: () => computeOvertime('demo-user'),
-      [AlertTypeValue.approval_delay]: () => computeApprovalDelay('demo-instance'),
-      [AlertTypeValue.delivery_due]: () => computeDeliveryDue(),
+      [AlertTypeValue.budget_overrun]: (setting) => computeBudgetOverrun(setting),
+      [AlertTypeValue.overtime]: (setting) => computeOvertime(setting),
+      [AlertTypeValue.approval_delay]: (setting) => computeApprovalDelay(setting),
+      [AlertTypeValue.delivery_due]: (setting) => computeDeliveryDue(setting),
     });
     return { ok: true };
   });

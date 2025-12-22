@@ -15,14 +15,18 @@ import { registerAlertSettingRoutes } from './alertSettings.js';
 import { registerApprovalRuleRoutes } from './approvalRules.js';
 import { registerSendRoutes } from './send.js';
 import { registerMetricJobRoutes } from './metricsJobs.js';
+import { registerRecurringJobRoutes } from './recurringJobs.js';
 import { registerReportRoutes } from './reports.js';
+import { registerPdfTemplateRoutes } from './pdfTemplates.js';
 
 export async function registerRoutes(app: FastifyInstance) {
   await registerAuthRoutes(app);
   await registerAlertSettingRoutes(app);
   await registerApprovalRuleRoutes(app);
+  await registerPdfTemplateRoutes(app);
   await registerSendRoutes(app);
   await registerMetricJobRoutes(app);
+  await registerRecurringJobRoutes(app);
   await registerAlertRoutes(app);
   await registerDailyReportRoutes(app);
   await registerWellbeingRoutes(app);
