@@ -162,7 +162,9 @@ export const approvalRuleSchema = {
   body: Type.Object(
     {
       flowType: flowTypeSchema,
-      conditions: Type.Optional(Type.Object({}, { additionalProperties: true })),
+      conditions: Type.Optional(
+        Type.Object({}, { additionalProperties: true }),
+      ),
       steps: Type.Array(approvalStepSchema, { minItems: 1 }),
     },
     { additionalProperties: false },

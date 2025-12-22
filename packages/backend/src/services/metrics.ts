@@ -1,8 +1,30 @@
-import type { AlertSetting, Prisma } from '@prisma/client';
 import { prisma } from './db.js';
 import { calcTimeAmount, resolveRateCard } from './rateCard.js';
 
+type AlertSetting = {
+  id: string;
+  type: string;
+  threshold: number | string;
+  period: string;
+  scopeProjectId?: string | null;
+  recipients?: unknown;
+  channels?: unknown;
+  isEnabled?: boolean;
+};
 type MetricResult = { metric: number; targetRef: string };
+type TimeEntryWhereInput = {
+  workDate: { gte: Date; lte: Date };
+  deletedAt: null;
+  status: { not: string };
+  projectId?: string;
+};
+type ProjectMilestoneWhereInput = {
+  dueDate: { lte: Date };
+  deletedAt: null;
+  project: { deletedAt: null };
+  invoices: { none: { deletedAt: null } };
+  projectId?: string;
+};
 
 function toNumber(value: unknown): number {
   if (value == null) return 0;
@@ -12,8 +34,12 @@ function toNumber(value: unknown): number {
     return Number.isFinite(parsed) ? parsed : 0;
   }
   if (value && typeof value === 'object') {
-    const maybeDecimal = value as { toNumber?: () => number; toString?: () => string };
-    if (typeof maybeDecimal.toNumber === 'function') return maybeDecimal.toNumber();
+    const maybeDecimal = value as {
+      toNumber?: () => number;
+      toString?: () => string;
+    };
+    if (typeof maybeDecimal.toNumber === 'function')
+      return maybeDecimal.toNumber();
     if (typeof maybeDecimal.toString === 'function') {
       const parsed = Number(maybeDecimal.toString());
       return Number.isFinite(parsed) ? parsed : 0;
@@ -32,10 +58,7 @@ function resolvePeriodRange(period: string, now = new Date()) {
   const normalized = period?.toLowerCase();
   const end = new Date(now);
   const start = startOfDay(end);
-  const days =
-    normalized === 'day' ? 0
-      : normalized === 'month' ? 29
-        : 6;
+  const days = normalized === 'day' ? 0 : normalized === 'month' ? 29 : 6;
   if (days > 0) {
     start.setDate(start.getDate() - days);
   }
@@ -90,7 +113,10 @@ async function sumTimeCost(projectId: string): Promise<number> {
       uniqueCombos.set(key, { workDate: entry.workDate, workType });
     }
   }
-  const rateCardCache = new Map<string, Awaited<ReturnType<typeof resolveRateCard>>>();
+  const rateCardCache = new Map<
+    string,
+    Awaited<ReturnType<typeof resolveRateCard>>
+  >();
   await Promise.all(
     Array.from(uniqueCombos.entries()).map(async ([key, combo]) => {
       const rateCard = await resolveRateCard({
@@ -136,10 +162,17 @@ async function sumVendorInvoiceCost(projectId: string): Promise<number> {
   return toNumber(sum._sum.totalAmount);
 }
 
-export async function computeBudgetOverrun(setting: AlertSetting): Promise<MetricResult | null> {
+export async function computeBudgetOverrun(
+  setting: AlertSetting,
+): Promise<MetricResult | null> {
   const projectIds = setting.scopeProjectId
     ? [setting.scopeProjectId]
-    : (await prisma.project.findMany({ where: { deletedAt: null }, select: { id: true } })).map((p) => p.id);
+    : (
+        await prisma.project.findMany({
+          where: { deletedAt: null },
+          select: { id: true },
+        })
+      ).map((project: { id: string }) => project.id);
   if (!projectIds.length) return null;
   let best: MetricResult | null = null;
   for (const projectId of projectIds) {
@@ -152,7 +185,7 @@ export async function computeBudgetOverrun(setting: AlertSetting): Promise<Metri
     ]);
     const actual = expenseCost + vendorCost + timeCost;
     // metric is percent over budget (0 when <= 100% utilization)
-    const overPercent = Math.max(0, ((actual / budget) - 1) * 100);
+    const overPercent = Math.max(0, (actual / budget - 1) * 100);
     const metric = Math.round(overPercent * 100) / 100;
     if (!best || metric > best.metric) {
       best = { metric, targetRef: projectId };
@@ -161,9 +194,11 @@ export async function computeBudgetOverrun(setting: AlertSetting): Promise<Metri
   return best;
 }
 
-export async function computeOvertime(setting: AlertSetting): Promise<MetricResult | null> {
+export async function computeOvertime(
+  setting: AlertSetting,
+): Promise<MetricResult | null> {
   const { start, end } = resolvePeriodRange(setting.period);
-  const where: Prisma.TimeEntryWhereInput = {
+  const where: TimeEntryWhereInput = {
     workDate: { gte: start, lte: end },
     deletedAt: null,
     status: { not: 'rejected' },
@@ -185,7 +220,10 @@ export async function computeOvertime(setting: AlertSetting): Promise<MetricResu
   for (const [key, totalMinutes] of dailyTotals.entries()) {
     const userId = key.split(':')[0];
     const overtimeMinutes = Math.max(0, totalMinutes - 480);
-    overtimeByUser.set(userId, (overtimeByUser.get(userId) ?? 0) + overtimeMinutes);
+    overtimeByUser.set(
+      userId,
+      (overtimeByUser.get(userId) ?? 0) + overtimeMinutes,
+    );
   }
   let maxMinutes = 0;
   let maxUserId = 'global';
@@ -199,7 +237,9 @@ export async function computeOvertime(setting: AlertSetting): Promise<MetricResu
   return { metric: hours, targetRef: maxUserId };
 }
 
-export async function computeApprovalDelay(setting: AlertSetting): Promise<MetricResult | null> {
+export async function computeApprovalDelay(
+  setting: AlertSetting,
+): Promise<MetricResult | null> {
   // ApprovalInstance does not store projectId yet, so scopeProjectId is not applied.
   void setting;
   const pending = await prisma.approvalInstance.findMany({
@@ -221,9 +261,11 @@ export async function computeApprovalDelay(setting: AlertSetting): Promise<Metri
   return { metric, targetRef };
 }
 
-export async function computeDeliveryDue(setting: AlertSetting): Promise<MetricResult | null> {
+export async function computeDeliveryDue(
+  setting: AlertSetting,
+): Promise<MetricResult | null> {
   const now = new Date();
-  const where: Prisma.ProjectMilestoneWhereInput = {
+  const where: ProjectMilestoneWhereInput = {
     dueDate: { lte: now },
     deletedAt: null,
     project: { deletedAt: null },

@@ -1,14 +1,24 @@
 import { prisma } from './db.js';
 
-export async function reportProjectEffort(projectId: string, from?: Date, to?: Date) {
+export async function reportProjectEffort(
+  projectId: string,
+  from?: Date,
+  to?: Date,
+) {
   const where: any = { projectId };
   if (from || to) {
     where.workDate = {};
     if (from) where.workDate.gte = from;
     if (to) where.workDate.lte = to;
   }
-  const minutes = await prisma.timeEntry.aggregate({ _sum: { minutes: true }, where });
-  const expenses = await prisma.expense.aggregate({ _sum: { amount: true }, where: { projectId } });
+  const minutes = await prisma.timeEntry.aggregate({
+    _sum: { minutes: true },
+    where,
+  });
+  const expenses = await prisma.expense.aggregate({
+    _sum: { amount: true },
+    where: { projectId },
+  });
   return {
     projectId,
     totalMinutes: minutes._sum.minutes || 0,
@@ -16,7 +26,11 @@ export async function reportProjectEffort(projectId: string, from?: Date, to?: D
   };
 }
 
-export async function reportGroupEffort(userIds: string[], from?: Date, to?: Date) {
+export async function reportGroupEffort(
+  userIds: string[],
+  from?: Date,
+  to?: Date,
+) {
   const where: any = { userId: { in: userIds } };
   if (from || to) {
     where.workDate = {};
@@ -41,14 +55,24 @@ export async function reportOvertime(userId: string, from?: Date, to?: Date) {
     if (from) where.workDate.gte = from;
     if (to) where.workDate.lte = to;
   }
-  const agg = await prisma.timeEntry.aggregate({ _sum: { minutes: true }, where });
+  const agg = await prisma.timeEntry.aggregate({
+    _sum: { minutes: true },
+    where,
+  });
   const totalMinutes = agg._sum.minutes || 0;
   const dailyHours = totalMinutes / 60;
   return { userId, totalMinutes, dailyHours };
 }
 
-export async function reportDeliveryDue(from?: Date, to?: Date, projectId?: string) {
-  const where: any = { deletedAt: null, invoices: { none: { deletedAt: null } } };
+export async function reportDeliveryDue(
+  from?: Date,
+  to?: Date,
+  projectId?: string,
+) {
+  const where: any = {
+    deletedAt: null,
+    invoices: { none: { deletedAt: null } },
+  };
   if (projectId) where.projectId = projectId;
   if (from || to) {
     where.dueDate = {};
@@ -57,7 +81,11 @@ export async function reportDeliveryDue(from?: Date, to?: Date, projectId?: stri
   } else {
     where.dueDate = { not: null };
   }
-  type DeliveryDueInvoice = { id: string; invoiceNo: string | null; status: string | null };
+  type DeliveryDueInvoice = {
+    id: string;
+    invoiceNo: string | null;
+    status: string | null;
+  };
   type DeliveryDueItem = {
     id: string;
     projectId: string;
@@ -68,7 +96,7 @@ export async function reportDeliveryDue(from?: Date, to?: Date, projectId?: stri
     invoices: DeliveryDueInvoice[];
   };
 
-  const items = await prisma.projectMilestone.findMany({
+  const items = (await prisma.projectMilestone.findMany({
     where: {
       ...where,
       project: { deletedAt: null },
@@ -86,7 +114,7 @@ export async function reportDeliveryDue(from?: Date, to?: Date, projectId?: stri
       },
     },
     orderBy: { dueDate: 'asc' },
-  }) as DeliveryDueItem[];
+  })) as DeliveryDueItem[];
   return items.map((item: DeliveryDueItem) => ({
     milestoneId: item.id,
     projectId: item.projectId,

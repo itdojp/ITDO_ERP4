@@ -31,7 +31,12 @@ export async function registerExpenseRoutes(app: FastifyInstance) {
       ],
     },
     async (req) => {
-      const { projectId, userId, from, to } = req.query as { projectId?: string; userId?: string; from?: string; to?: string };
+      const { projectId, userId, from, to } = req.query as {
+        projectId?: string;
+        userId?: string;
+        from?: string;
+        to?: string;
+      };
       const roles = req.user?.roles || [];
       const currentUserId = req.user?.userId;
       const where: any = {};
@@ -46,29 +51,45 @@ export async function registerExpenseRoutes(app: FastifyInstance) {
         if (from) where.incurredOn.gte = new Date(from);
         if (to) where.incurredOn.lte = new Date(to);
       }
-      const items = await prisma.expense.findMany({ where, orderBy: { incurredOn: 'desc' }, take: 200 });
+      const items = await prisma.expense.findMany({
+        where,
+        orderBy: { incurredOn: 'desc' },
+        take: 200,
+      });
       return { items };
     },
   );
 
-  app.post('/expenses/:id/submit', { preHandler: requireRole(['admin', 'mgmt', 'user']) }, async (req, reply) => {
-    const { id } = req.params as { id: string };
-    const expense = await prisma.expense.findUnique({ where: { id } });
-    if (!expense) {
-      return reply.code(404).send({ error: 'not_found' });
-    }
-    const roles = req.user?.roles || [];
-    const userId = req.user?.userId;
-    if (!roles.includes('admin') && !roles.includes('mgmt') && expense.userId !== userId) {
-      return reply.code(403).send({ error: 'forbidden' });
-    }
-    const { updated } = await submitApprovalWithUpdate({
-      flowType: FlowTypeValue.expense,
-      targetTable: 'expenses',
-      targetId: id,
-      update: (tx) => tx.expense.update({ where: { id }, data: { status: DocStatusValue.pending_qa } }),
-      createdBy: userId,
-    });
-    return updated;
-  });
+  app.post(
+    '/expenses/:id/submit',
+    { preHandler: requireRole(['admin', 'mgmt', 'user']) },
+    async (req, reply) => {
+      const { id } = req.params as { id: string };
+      const expense = await prisma.expense.findUnique({ where: { id } });
+      if (!expense) {
+        return reply.code(404).send({ error: 'not_found' });
+      }
+      const roles = req.user?.roles || [];
+      const userId = req.user?.userId;
+      if (
+        !roles.includes('admin') &&
+        !roles.includes('mgmt') &&
+        expense.userId !== userId
+      ) {
+        return reply.code(403).send({ error: 'forbidden' });
+      }
+      const { updated } = await submitApprovalWithUpdate({
+        flowType: FlowTypeValue.expense,
+        targetTable: 'expenses',
+        targetId: id,
+        update: (tx) =>
+          tx.expense.update({
+            where: { id },
+            data: { status: DocStatusValue.pending_qa },
+          }),
+        createdBy: userId,
+      });
+      return updated;
+    },
+  );
 }

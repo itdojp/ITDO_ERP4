@@ -55,7 +55,11 @@ export const FlowTypeValue: Record<FlowType, FlowType> = {
   vendor_quote: 'vendor_quote',
 };
 
-export type AlertType = 'budget_overrun' | 'overtime' | 'approval_delay' | 'delivery_due';
+export type AlertType =
+  | 'budget_overrun'
+  | 'overtime'
+  | 'approval_delay'
+  | 'delivery_due';
 export const AlertTypeValue: Record<AlertType, AlertType> = {
   budget_overrun: 'budget_overrun',
   overtime: 'overtime',

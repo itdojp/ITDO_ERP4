@@ -19,8 +19,12 @@ function toNumber(value: unknown): number {
     return Number.isFinite(parsed) ? parsed : 0;
   }
   if (value && typeof value === 'object') {
-    const maybeDecimal = value as { toNumber?: () => number; toString?: () => string };
-    if (typeof maybeDecimal.toNumber === 'function') return maybeDecimal.toNumber();
+    const maybeDecimal = value as {
+      toNumber?: () => number;
+      toString?: () => string;
+    };
+    if (typeof maybeDecimal.toNumber === 'function')
+      return maybeDecimal.toNumber();
     if (typeof maybeDecimal.toString === 'function') {
       const parsed = Number(maybeDecimal.toString());
       return Number.isFinite(parsed) ? parsed : 0;
@@ -42,7 +46,11 @@ function addMonths(base: Date, months: number) {
   const targetMonth = result.getMonth() + months;
   result.setDate(1);
   result.setMonth(targetMonth);
-  const lastDayOfTargetMonth = new Date(result.getFullYear(), result.getMonth() + 1, 0).getDate();
+  const lastDayOfTargetMonth = new Date(
+    result.getFullYear(),
+    result.getMonth() + 1,
+    0,
+  ).getDate();
   result.setDate(Math.min(originalDay, lastDayOfTargetMonth));
   return result;
 }
@@ -50,16 +58,22 @@ function addMonths(base: Date, months: number) {
 function nextRunAt(frequency: string | null | undefined, current: Date) {
   const normalized = (frequency ?? 'monthly').toLowerCase();
   const step =
-    normalized === 'quarterly' ? 3
-      : normalized === 'semiannual' ? 6
-        : normalized === 'annual' ? 12
+    normalized === 'quarterly'
+      ? 3
+      : normalized === 'semiannual'
+        ? 6
+        : normalized === 'annual'
+          ? 12
           : 1;
   return addMonths(current, step);
 }
 
 export async function runRecurringTemplates(now = new Date()) {
   const templates = await prisma.recurringProjectTemplate.findMany({
-    where: { isActive: true, OR: [{ nextRunAt: { lte: now } }, { nextRunAt: null }] },
+    where: {
+      isActive: true,
+      OR: [{ nextRunAt: { lte: now } }, { nextRunAt: null }],
+    },
     include: { project: true },
   });
   const results: RunResult[] = [];
@@ -90,71 +104,86 @@ export async function runRecurringTemplates(now = new Date()) {
         where: { id: template.id },
         data: { nextRunAt: nextRunAt(template.frequency, runAt) },
       });
-      results.push({ templateId: template.id, projectId: template.projectId, status: 'skipped', message: 'already_generated' });
+      results.push({
+        templateId: template.id,
+        projectId: template.projectId,
+        status: 'skipped',
+        message: 'already_generated',
+      });
       continue;
     }
     const amount = toNumber(template.defaultAmount);
     if (amount <= 0) {
-      results.push({ templateId: template.id, projectId: template.projectId, status: 'error', message: 'default_amount_missing' });
+      results.push({
+        templateId: template.id,
+        projectId: template.projectId,
+        status: 'error',
+        message: 'default_amount_missing',
+      });
       continue;
     }
     try {
       const { serial: estimateSerial } = await nextNumber('estimate', runAt);
-      const { number: invoiceNo, serial: invoiceSerial } = await nextNumber('invoice', runAt);
+      const { number: invoiceNo, serial: invoiceSerial } = await nextNumber(
+        'invoice',
+        runAt,
+      );
       const currency = template.project?.currency || 'JPY';
       const lineDescription = template.defaultTerms || 'Recurring project';
-      const created = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-        const estimate = await tx.estimate.create({
-          data: {
-            projectId: template.projectId,
-            version: estimateSerial,
-            totalAmount: amount,
-            currency,
-            status: DocStatusValue.draft,
-            notes: template.defaultTerms || undefined,
-            numberingSerial: estimateSerial,
-            createdBy: 'recurring-job',
-            lines: {
-              create: [
-                {
-                  description: lineDescription,
-                  quantity: 1,
-                  unitPrice: amount,
-                },
-              ],
+      const created = await prisma.$transaction(
+        async (tx: Prisma.TransactionClient) => {
+          const estimate = await tx.estimate.create({
+            data: {
+              projectId: template.projectId,
+              version: estimateSerial,
+              totalAmount: amount,
+              currency,
+              status: DocStatusValue.draft,
+              notes: template.defaultTerms || undefined,
+              numberingSerial: estimateSerial,
+              createdBy: 'recurring-job',
+              lines: {
+                create: [
+                  {
+                    description: lineDescription,
+                    quantity: 1,
+                    unitPrice: amount,
+                  },
+                ],
+              },
             },
-          },
-        });
-        const invoice = await tx.invoice.create({
-          data: {
-            projectId: template.projectId,
-            estimateId: estimate.id,
-            milestoneId: null,
-            invoiceNo,
-            issueDate: runAt,
-            dueDate: null,
-            currency,
-            totalAmount: amount,
-            status: DocStatusValue.draft,
-            numberingSerial: invoiceSerial,
-            createdBy: 'recurring-job',
-            lines: {
-              create: [
-                {
-                  description: lineDescription,
-                  quantity: 1,
-                  unitPrice: amount,
-                },
-              ],
+          });
+          const invoice = await tx.invoice.create({
+            data: {
+              projectId: template.projectId,
+              estimateId: estimate.id,
+              milestoneId: null,
+              invoiceNo,
+              issueDate: runAt,
+              dueDate: null,
+              currency,
+              totalAmount: amount,
+              status: DocStatusValue.draft,
+              numberingSerial: invoiceSerial,
+              createdBy: 'recurring-job',
+              lines: {
+                create: [
+                  {
+                    description: lineDescription,
+                    quantity: 1,
+                    unitPrice: amount,
+                  },
+                ],
+              },
             },
-          },
-        });
-        await tx.recurringProjectTemplate.update({
-          where: { id: template.id },
-          data: { nextRunAt: nextRunAt(template.frequency, runAt) },
-        });
-        return { estimateId: estimate.id, invoiceId: invoice.id, estimateNo };
-      });
+          });
+          await tx.recurringProjectTemplate.update({
+            where: { id: template.id },
+            data: { nextRunAt: nextRunAt(template.frequency, runAt) },
+          });
+          return { estimateId: estimate.id, invoiceId: invoice.id };
+        },
+      );
       results.push({
         templateId: template.id,
         projectId: template.projectId,
