@@ -1,7 +1,11 @@
 import { FastifyInstance } from 'fastify';
 import { timeEntryPatchSchema, timeEntrySchema } from './validators.js';
 import { TimeStatusValue } from '../types.js';
-import { requireProjectAccess, requireRole, requireRoleOrSelf } from '../services/rbac.js';
+import {
+  requireProjectAccess,
+  requireRole,
+  requireRoleOrSelf,
+} from '../services/rbac.js';
 import { prisma } from '../services/db.js';
 import { submitApprovalWithUpdate } from '../services/approval.js';
 import { FlowTypeValue } from '../types.js';
@@ -18,7 +22,9 @@ export async function registerTimeEntryRoutes(app: FastifyInstance) {
     },
     async (req) => {
       const body = req.body as any;
-      const entry = await prisma.timeEntry.create({ data: { ...body, status: TimeStatusValue.submitted } });
+      const entry = await prisma.timeEntry.create({
+        data: { ...body, status: TimeStatusValue.submitted },
+      });
       return entry;
     },
   );
@@ -28,7 +34,10 @@ export async function registerTimeEntryRoutes(app: FastifyInstance) {
     {
       schema: timeEntryPatchSchema,
       preHandler: [
-        requireRoleOrSelf(['admin', 'mgmt'], (req) => (req.body as any)?.userId),
+        requireRoleOrSelf(
+          ['admin', 'mgmt'],
+          (req) => (req.body as any)?.userId,
+        ),
         requireProjectAccess((req) => (req.body as any)?.projectId),
       ],
     },
@@ -40,7 +49,9 @@ export async function registerTimeEntryRoutes(app: FastifyInstance) {
         return { error: 'not_found' };
       }
       const userId = req.user?.userId;
-      const changed = ['minutes', 'workDate', 'taskId', 'projectId'].some((k) => body[k] !== undefined && (body as any)[k] !== (before as any)[k]);
+      const changed = ['minutes', 'workDate', 'taskId', 'projectId'].some(
+        (k) => body[k] !== undefined && (body as any)[k] !== (before as any)[k],
+      );
       const data = { ...body } as any;
       if (changed) {
         data.status = TimeStatusValue.submitted;
@@ -76,7 +87,12 @@ export async function registerTimeEntryRoutes(app: FastifyInstance) {
       ],
     },
     async (req) => {
-      const { projectId, userId, from, to } = req.query as { projectId?: string; userId?: string; from?: string; to?: string };
+      const { projectId, userId, from, to } = req.query as {
+        projectId?: string;
+        userId?: string;
+        from?: string;
+        to?: string;
+      };
       const roles = req.user?.roles || [];
       const currentUserId = req.user?.userId;
       const where: any = {};
@@ -100,9 +116,16 @@ export async function registerTimeEntryRoutes(app: FastifyInstance) {
     },
   );
 
-  app.post('/time-entries/:id/submit', { preHandler: requireRole(['admin', 'mgmt']) }, async (req) => {
-    const { id } = req.params as { id: string };
-    const entry = await prisma.timeEntry.update({ where: { id }, data: { status: TimeStatusValue.submitted } });
-    return entry;
-  });
+  app.post(
+    '/time-entries/:id/submit',
+    { preHandler: requireRole(['admin', 'mgmt']) },
+    async (req) => {
+      const { id } = req.params as { id: string };
+      const entry = await prisma.timeEntry.update({
+        where: { id },
+        data: { status: TimeStatusValue.submitted },
+      });
+      return entry;
+    },
+  );
 }

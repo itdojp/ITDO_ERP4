@@ -1,17 +1,27 @@
 export type NotifyResult = { channel: string; status: string; error?: string };
 
 // stub implementations
-export async function sendEmailStub(to: string[], subject: string, body: string): Promise<NotifyResult> {
+export async function sendEmailStub(
+  to: string[],
+  subject: string,
+  body: string,
+): Promise<NotifyResult> {
   console.log('[email stub]', { to, subject, body });
   return { status: 'stub', channel: 'email' };
 }
 
-export async function recordPdfStub(kind: string, payload: Record<string, unknown>): Promise<{ url: string }> {
+export async function recordPdfStub(
+  kind: string,
+  payload: Record<string, unknown>,
+): Promise<{ url: string }> {
   console.log('[pdf stub]', { kind, payload });
   return { url: `stub://${kind}/${payload['id'] || 'unknown'}` };
 }
 
-export async function generatePdfStub(templateId: string, payload: Record<string, unknown>): Promise<{ url: string }> {
+export async function generatePdfStub(
+  templateId: string,
+  payload: Record<string, unknown>,
+): Promise<{ url: string }> {
   console.log('[pdf generate stub]', { templateId, payload });
   return { url: `stub://pdf/${templateId}/${payload['id'] || 'unknown'}` };
 }

@@ -9,6 +9,7 @@
 - 経費: POST /expenses → submit
 - アラートジョブ: POST /jobs/alerts/run → GET /alerts で履歴確認
 - ウェルビーイング: POST /wellbeing-entries → GET (HRのみ)
+- スモーク: scripts/smoke-backend.sh を実行してハッピーパスが通ることを確認
 
 ## フロント PoC
 - 起動: `cd packages/frontend && npm run dev`

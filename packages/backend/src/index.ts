@@ -6,12 +6,12 @@ import authPlugin from './plugins/auth.js';
 
 async function main() {
   const server = Fastify({ logger: true, bodyLimit: 1024 * 1024 });
-  const allowedOrigins = process.env.ALLOWED_ORIGINS
-    ?.split(',')
+  const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',')
     .map((origin) => origin.trim())
     .filter((origin) => origin.length > 0);
   await server.register(cors, {
-    origin: allowedOrigins && allowedOrigins.length > 0 ? allowedOrigins : false,
+    origin:
+      allowedOrigins && allowedOrigins.length > 0 ? allowedOrigins : false,
     maxAge: 86400,
   });
   await server.register(helmet, {

@@ -11,7 +11,10 @@ export function requireRole(allowed: string[]) {
 }
 
 // admin/管理ロールを優先し、そうでなければ userId が一致するかで許可する簡易チェック
-export function requireRoleOrSelf(allowed: string[], getTargetUserId?: (req: FastifyRequest) => string | undefined) {
+export function requireRoleOrSelf(
+  allowed: string[],
+  getTargetUserId?: (req: FastifyRequest) => string | undefined,
+) {
   return async (req: FastifyRequest, reply: FastifyReply) => {
     const roles = req.user?.roles || [];
     const userId = req.user?.userId;
@@ -24,7 +27,9 @@ export function requireRoleOrSelf(allowed: string[], getTargetUserId?: (req: Fas
 }
 
 // 管理ロールは全許可。そうでない場合、projectId がユーザの projectIds に含まれているかをチェック
-export function requireProjectAccess(getProjectId: (req: FastifyRequest) => string | undefined) {
+export function requireProjectAccess(
+  getProjectId: (req: FastifyRequest) => string | undefined,
+) {
   return async (req: FastifyRequest, reply: FastifyReply) => {
     const roles = req.user?.roles || [];
     if (roles.includes('admin') || roles.includes('mgmt')) return;

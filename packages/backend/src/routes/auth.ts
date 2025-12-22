@@ -10,9 +10,14 @@ const demoUser = {
 export async function registerAuthRoutes(app: FastifyInstance) {
   app.get('/me', async (req) => {
     const user = req.user || demoUser;
-    const isPrivileged = user.roles.includes('admin') || user.roles.includes('mgmt');
-    const ownerProjects = isPrivileged ? 'all' : user.projectIds || demoUser.projectIds;
-    const ownerOrgId = isPrivileged ? user.orgId || 'all' : user.orgId || demoUser.orgId;
+    const isPrivileged =
+      user.roles.includes('admin') || user.roles.includes('mgmt');
+    const ownerProjects = isPrivileged
+      ? 'all'
+      : user.projectIds || demoUser.projectIds;
+    const ownerOrgId = isPrivileged
+      ? user.orgId || 'all'
+      : user.orgId || demoUser.orgId;
     return { user: { ...user, ownerOrgId, ownerProjects } };
   });
 }
