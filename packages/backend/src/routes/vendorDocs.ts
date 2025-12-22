@@ -25,7 +25,7 @@ export async function registerVendorDocRoutes(app: FastifyInstance) {
       totalAmount: vi.totalAmount,
       projectId: vi.projectId,
       vendorId: vi.vendorId,
-    });
+    }, { createdBy: req.user?.userId });
     return vi;
   });
 }

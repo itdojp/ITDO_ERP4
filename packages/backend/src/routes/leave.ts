@@ -33,6 +33,7 @@ export async function registerLeaveRoutes(app: FastifyInstance) {
       targetId: id,
       update: (tx) => tx.leaveRequest.update({ where: { id }, data: { status: 'pending_manager' } }),
       payload: { hours: leave.hours || 0 },
+      createdBy: userId,
     });
     return updated;
   });

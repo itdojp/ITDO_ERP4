@@ -53,11 +53,13 @@ export async function registerExpenseRoutes(app: FastifyInstance) {
 
   app.post('/expenses/:id/submit', { preHandler: requireRoleOrSelf(['admin', 'mgmt'], (req) => req.user?.userId) }, async (req) => {
     const { id } = req.params as { id: string };
+    const userId = req.user?.userId;
     const { updated } = await submitApprovalWithUpdate({
       flowType: FlowTypeValue.expense,
       targetTable: 'expenses',
       targetId: id,
       update: (tx) => tx.expense.update({ where: { id }, data: { status: DocStatusValue.pending_qa } }),
+      createdBy: userId,
     });
     return updated;
   });

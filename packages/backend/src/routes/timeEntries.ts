@@ -39,6 +39,7 @@ export async function registerTimeEntryRoutes(app: FastifyInstance) {
       if (!before) {
         return { error: 'not_found' };
       }
+      const userId = req.user?.userId;
       const changed = ['minutes', 'workDate', 'taskId', 'projectId'].some((k) => body[k] !== undefined && (body as any)[k] !== (before as any)[k]);
       const data = { ...body } as any;
       if (changed) {
@@ -48,9 +49,9 @@ export async function registerTimeEntryRoutes(app: FastifyInstance) {
           targetTable: 'time_entries',
           targetId: id,
           update: (tx) => tx.timeEntry.update({ where: { id }, data }),
+          createdBy: userId,
         });
         // 監査ログ: 修正が承認待ちになったことを記録
-        const userId = req.user?.userId;
         const { logAudit } = await import('../services/audit.js');
         await logAudit({
           action: 'time_entry_modified',

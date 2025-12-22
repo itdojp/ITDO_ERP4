@@ -5,12 +5,14 @@ import { logAudit } from './audit.js';
 type Step = { approverGroupId?: string; approverUserId?: string; stepOrder?: number };
 type RuleStep = { approverGroupId?: string; approverUserId?: string; stepOrder?: number; parallelKey?: string };
 type ActOptions = { reason?: string; actorGroupId?: string };
+type CreateApprovalOptions = { client?: any; createdBy?: string };
 type SubmitApprovalOptions = {
   flowType: string;
   targetTable: string;
   targetId: string;
   update: (tx: any) => Promise<any>;
   payload?: Record<string, unknown>;
+  createdBy?: string;
 };
 
 // 条件サンプル: amount閾値 / recurring判定 / 小額スキップ
@@ -122,7 +124,15 @@ async function resolveRule(flowType: string, payload: Record<string, unknown>, c
   return matched || rules[0];
 }
 
-async function createApprovalWithClient(client: any, flowType: string, targetTable: string, targetId: string, steps: Step[], ruleId = 'manual') {
+async function createApprovalWithClient(
+  client: any,
+  flowType: string,
+  targetTable: string,
+  targetId: string,
+  steps: Step[],
+  ruleId = 'manual',
+  createdBy?: string,
+) {
   const normalizedSteps = steps.map((s, idx) => ({ ...s, stepOrder: s.stepOrder ?? idx + 1 }));
   const currentStep = normalizedSteps.length
     ? Math.min(...normalizedSteps.map((s) => s.stepOrder || 1))
@@ -135,6 +145,7 @@ async function createApprovalWithClient(client: any, flowType: string, targetTab
       status: DocStatusValue.pending_qa,
       currentStep,
       ruleId,
+      createdBy,
       steps: {
         create: normalizedSteps.map((s: any) => ({
           stepOrder: s.stepOrder,
@@ -149,8 +160,15 @@ async function createApprovalWithClient(client: any, flowType: string, targetTab
   return instance;
 }
 
-export async function createApproval(flowType: string, targetTable: string, targetId: string, steps: Step[], ruleId = 'manual') {
-  return prisma.$transaction(async (tx: any) => createApprovalWithClient(tx, flowType, targetTable, targetId, steps, ruleId));
+export async function createApproval(
+  flowType: string,
+  targetTable: string,
+  targetId: string,
+  steps: Step[],
+  ruleId = 'manual',
+  createdBy?: string,
+) {
+  return prisma.$transaction(async (tx: any) => createApprovalWithClient(tx, flowType, targetTable, targetId, steps, ruleId, createdBy));
 }
 
 export async function createApprovalFor(
@@ -158,22 +176,26 @@ export async function createApprovalFor(
   targetTable: string,
   targetId: string,
   payload: Record<string, unknown>,
-  client: any = prisma,
+  options: CreateApprovalOptions = {},
 ) {
+  const client = options.client ?? prisma;
   const rule = await resolveRule(flowType, payload, client);
   const ruleSteps = normalizeRuleSteps(rule?.steps);
   const steps = ruleSteps || matchApprovalSteps(flowType, payload, (rule?.conditions as ApprovalCondition) || undefined);
   if (client === prisma) {
-    return createApproval(flowType, targetTable, targetId, steps, rule?.id || 'auto');
+    return createApproval(flowType, targetTable, targetId, steps, rule?.id || 'auto', options.createdBy);
   }
-  return createApprovalWithClient(client, flowType, targetTable, targetId, steps, rule?.id || 'auto');
+  return createApprovalWithClient(client, flowType, targetTable, targetId, steps, rule?.id || 'auto', options.createdBy);
 }
 
 export async function submitApprovalWithUpdate(options: SubmitApprovalOptions) {
   return prisma.$transaction(async (tx: any) => {
     const updated = await options.update(tx);
     const approvalPayload = options.payload ?? (updated as Record<string, unknown>);
-    const approval = await createApprovalFor(options.flowType, options.targetTable, options.targetId, approvalPayload, tx);
+    const approval = await createApprovalFor(options.flowType, options.targetTable, options.targetId, approvalPayload, {
+      client: tx,
+      createdBy: options.createdBy,
+    });
     return { updated, approval };
   });
 }
