@@ -1,6 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import { nextNumber } from '../services/numbering.js';
-import { createApprovalFor } from '../services/approval.js';
+import { submitApprovalWithUpdate } from '../services/approval.js';
 import { DocStatusValue, FlowTypeValue } from '../types.js';
 import { estimateSchema } from './validators.js';
 import { requireRole } from '../services/rbac.js';
@@ -56,18 +56,18 @@ export async function registerEstimateRoutes(app: FastifyInstance) {
     { preHandler: requireRole(['admin', 'mgmt']) },
     async (req) => {
       const { id } = req.params as { id: string };
-      const estimate = await prisma.estimate.update({
-        where: { id },
-        data: { status: DocStatusValue.pending_qa },
+      const { updated } = await submitApprovalWithUpdate({
+        flowType: FlowTypeValue.estimate,
+        targetTable: 'estimates',
+        targetId: id,
+        update: (tx) =>
+          tx.estimate.update({
+            where: { id },
+            data: { status: DocStatusValue.pending_qa },
+          }),
+        createdBy: req.user?.userId,
       });
-      await createApprovalFor(
-        FlowTypeValue.estimate,
-        'estimates',
-        id,
-        { totalAmount: estimate.totalAmount },
-        { createdBy: req.user?.userId },
-      );
-      return estimate;
+      return updated;
     },
   );
 }

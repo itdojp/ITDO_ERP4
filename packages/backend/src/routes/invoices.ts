@@ -1,6 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import { nextNumber } from '../services/numbering.js';
-import { createApprovalFor } from '../services/approval.js';
+import { submitApprovalWithUpdate } from '../services/approval.js';
 import { FlowTypeValue, DocStatusValue } from '../types.js';
 import { invoiceSchema } from './validators.js';
 import { requireRole } from '../services/rbac.js';
@@ -67,18 +67,18 @@ export async function registerInvoiceRoutes(app: FastifyInstance) {
     { preHandler: requireRole(['admin', 'mgmt']) },
     async (req) => {
       const { id } = req.params as { id: string };
-      const invoice = await prisma.invoice.update({
-        where: { id },
-        data: { status: DocStatusValue.pending_qa },
+      const { updated } = await submitApprovalWithUpdate({
+        flowType: FlowTypeValue.invoice,
+        targetTable: 'invoices',
+        targetId: id,
+        update: (tx) =>
+          tx.invoice.update({
+            where: { id },
+            data: { status: DocStatusValue.pending_qa },
+          }),
+        createdBy: req.user?.userId,
       });
-      await createApprovalFor(
-        FlowTypeValue.invoice,
-        'invoices',
-        id,
-        { totalAmount: invoice.totalAmount },
-        { createdBy: req.user?.userId },
-      );
-      return invoice;
+      return updated;
     },
   );
 }
