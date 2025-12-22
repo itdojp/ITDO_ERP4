@@ -52,7 +52,7 @@ sequenceDiagram
       Job->>DB: ドラフト作成(Project/Milestone/Estimate/Invoice)
       Job->>DB: 生成履歴INSERT + next_run_at更新
     else 既存
-      Job-->>DB: skip
+      Note right of Job: skip
     end
   end
 ```
@@ -71,15 +71,15 @@ sequenceDiagram
 ```
 for setting in alert_settings where is_enabled:
   metric = compute(setting.type, setting.scope, setting.period)
-  key = (setting.id, scope)
-  open = find open alert by key
+  suppression_key = (setting.id, scope)
+  open = find open alert by suppression_key
   if open exists:
      if open.reminder_at <= now:
         send reminder
         update reminder_at
      continue
   if metric > threshold:
-     alert = insert alerts(status=open, suppression_key=key, reminder_at=now+remind_after)
+     alert = insert alerts(status=open, suppression_key=suppression_key, reminder_at=now+setting.remind_after)
      send email/dashboard
 ```
 
