@@ -6,6 +6,11 @@ type Step = { approverGroupId?: string; approverUserId?: string; stepOrder?: num
 type RuleStep = { approverGroupId?: string; approverUserId?: string; stepOrder?: number; parallelKey?: string };
 type ActOptions = { reason?: string; actorGroupId?: string };
 type CreateApprovalOptions = { client?: any; createdBy?: string };
+/**
+ * Options for submitApprovalWithUpdate.
+ * update() runs in a transaction and should return the updated entity.
+ * payload is optional when approval matching needs fields not in the update result.
+ */
 type SubmitApprovalOptions = {
   flowType: string;
   targetTable: string;
@@ -188,6 +193,9 @@ export async function createApprovalFor(
   return createApprovalWithClient(client, flowType, targetTable, targetId, steps, rule?.id || 'auto', options.createdBy);
 }
 
+/**
+ * Atomically update a target and create an approval instance in one transaction.
+ */
 export async function submitApprovalWithUpdate(options: SubmitApprovalOptions) {
   return prisma.$transaction(async (tx: any) => {
     const updated = await options.update(tx);
