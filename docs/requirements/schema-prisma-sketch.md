@@ -27,6 +27,19 @@
 - ApprovalInstance.targetId: polymorphic 参照のため FK を持たない
 - userId/ownerUserId/createdBy/updatedBy: 外部ID前提で FK なし
 
+## NULL許容の整理（MVP）
+- Invoice.estimateId / milestoneId: NULL許容（見積なし請求/マイルストーン任意、FK は ON DELETE SET NULL）
+- Invoice.issueDate / dueDate, Estimate.validUntil: 起案時未確定のため NULL 許容
+- VendorQuote.quoteNo / VendorInvoice.vendorInvoiceNo: 書類番号が無いケースを許容して NULL 可
+- EstimateLine/BillingLine/PurchaseOrderLine の taskId/expenseId/timeEntryRange: 関連付け無しを許容、タスク削除時も NULL で履歴保持
+- TimeEntry.taskId: 任意。タスク削除時は NULL（工数履歴は保持）
+- Project.parentId / ProjectTask.parentTaskId: 最上位は NULL
+
+## createdBy / updatedBy の運用方針
+- API経由: 認証ヘッダの userId を createdBy/updatedBy に保存
+- バッチ/移行: `system` もしくは NULL（由来を metadata/audit_log に記録）
+- 論理削除時: deletedAt/deletedReason を更新し、updatedBy に操作ユーザを保存
+
 ```prisma
 // 共通
 model AuditFields { // 擬似: 実際は全modelにmixin
@@ -88,7 +101,7 @@ model Vendor {
 
 model Contact {
   id        String  @id @default(uuid())
-  customer  Customer? @relation(fields: [customerId], references: [id])
+  customer  Customer? @relation(fields: [customerId], references: [id], onDelete: Restrict)
   customerId String?
   vendor    Vendor?   @relation(fields: [vendorId], references: [id])
   vendorId  String?
@@ -106,7 +119,7 @@ model Project {
   name      String
   status    ProjectStatus @default(draft)
   projectType String?
-  parent    Project? @relation("ProjectToProject", fields: [parentId], references: [id])
+  parent    Project? @relation("ProjectToProject", fields: [parentId], references: [id], onDelete: Restrict)
   parentId  String?
   children  Project[] @relation("ProjectToProject")
   customer  Customer? @relation(fields: [customerId], references: [id])
@@ -132,9 +145,9 @@ model Project {
 
 model ProjectTask {
   id        String  @id @default(uuid())
-  project   Project @relation(fields: [projectId], references: [id])
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Restrict)
   projectId String
-  parentTask ProjectTask? @relation("TaskToTask", fields: [parentTaskId], references: [id])
+  parentTask ProjectTask? @relation("TaskToTask", fields: [parentTaskId], references: [id], onDelete: Restrict)
   parentTaskId String?
   children  ProjectTask[] @relation("TaskToTask")
   name      String
@@ -152,7 +165,7 @@ model ProjectTask {
 
 model ProjectMilestone {
   id        String  @id @default(uuid())
-  project   Project @relation(fields: [projectId], references: [id])
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Restrict)
   projectId String
   name      String
   amount    Decimal
@@ -166,7 +179,7 @@ model ProjectMilestone {
 
 model RecurringProjectTemplate {
   id        String  @id @default(uuid())
-  project   Project @relation(fields: [projectId], references: [id])
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Restrict)
   projectId String
   frequency String // monthly/quarterly/semiannual/annual
   defaultAmount Decimal?
@@ -179,7 +192,7 @@ model RecurringProjectTemplate {
 // 見積/請求
 model Estimate {
   id        String  @id @default(uuid())
-  project   Project @relation(fields: [projectId], references: [id])
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Restrict)
   projectId String
   version   Int
   totalAmount Decimal
@@ -206,11 +219,11 @@ model EstimateLine {
 
 model Invoice {
   id        String  @id @default(uuid())
-  project   Project @relation(fields: [projectId], references: [id])
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Restrict)
   projectId String
-  estimate  Estimate? @relation(fields: [estimateId], references: [id])
+  estimate  Estimate? @relation(fields: [estimateId], references: [id], onDelete: SetNull)
   estimateId String? // 見積なし請求を許容
-  milestone ProjectMilestone? @relation(fields: [milestoneId], references: [id])
+  milestone ProjectMilestone? @relation(fields: [milestoneId], references: [id], onDelete: SetNull)
   milestoneId String? // 任意。未紐付けは納品請求漏れチェック対象
   invoiceNo String @unique
   issueDate DateTime?
@@ -241,9 +254,9 @@ model BillingLine {
 // 発注/仕入
 model PurchaseOrder {
   id        String  @id @default(uuid())
-  project   Project @relation(fields: [projectId], references: [id])
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Restrict)
   projectId String
-  vendor    Vendor @relation(fields: [vendorId], references: [id])
+  vendor    Vendor @relation(fields: [vendorId], references: [id], onDelete: Restrict)
   vendorId  String
   poNo      String @unique
   issueDate DateTime?
@@ -272,9 +285,9 @@ model PurchaseOrderLine {
 
 model VendorQuote {
   id        String @id @default(uuid())
-  project   Project @relation(fields: [projectId], references: [id])
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Restrict)
   projectId String
-  vendor    Vendor @relation(fields: [vendorId], references: [id])
+  vendor    Vendor @relation(fields: [vendorId], references: [id], onDelete: Restrict)
   vendorId  String
   quoteNo   String?
   issueDate DateTime?
@@ -288,9 +301,9 @@ model VendorQuote {
 
 model VendorInvoice {
   id        String @id @default(uuid())
-  project   Project @relation(fields: [projectId], references: [id])
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Restrict)
   projectId String
-  vendor    Vendor @relation(fields: [vendorId], references: [id])
+  vendor    Vendor @relation(fields: [vendorId], references: [id], onDelete: Restrict)
   vendorId  String
   vendorInvoiceNo String?
   receivedDate DateTime?
@@ -307,9 +320,9 @@ model VendorInvoice {
 // タイムシート/レート
 model TimeEntry {
   id        String @id @default(uuid())
-  project   Project @relation(fields: [projectId], references: [id])
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Restrict)
   projectId String
-  task      ProjectTask? @relation(fields: [taskId], references: [id])
+  task      ProjectTask? @relation(fields: [taskId], references: [id], onDelete: SetNull)
   taskId    String?
   userId    String
   workDate  DateTime
@@ -339,7 +352,7 @@ model RateCard {
 // 経費/休暇
 model Expense {
   id        String @id @default(uuid())
-  project   Project @relation(fields: [projectId], references: [id])
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Restrict)
   projectId String
   userId    String
   category  String

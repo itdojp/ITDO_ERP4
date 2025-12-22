@@ -1,21 +1,21 @@
 # TODO リスト（短期ドライブ用）
 
 ## 11/21 週（～12/10ステージングまでに着手）
-- [ ] Prisma/SQL 詳細化（enum/型/FK/削除ポリシー）とスキーマPR作成（#5）
+- [x] Prisma/SQL 詳細化（enum/型/FK/削除ポリシー）とスキーマPR作成（#5）
   - [x] DocStatus/TimeStatus/LeaveStatus/FlowType のenum見直しと日本語注釈追加
   - [x] FK/ON DELETE/ON UPDATE方針をテーブルごとに列挙（Project/Estimate/Invoice/Expense/TimeEntry）
-  - [ ] 請求・発注・仕入系のnullable列を精査（estimateId/milestoneId/taskIdなど）
-  - [ ] 監査メタ createdBy/updatedBy の扱いを統一し TODO記載
-  - [ ] PRにschema.prisma + docs/requirements/schema-prisma-sketch.md 対応をまとめる
-- [ ] 発番/定期案件/アラート計算のバッチ擬似コード・シーケンスを追加（#6, batch-jobs.md）
-  - [ ] 採番サービスに月跨ぎリセット/オーバーフロー処理コメント追加
-  - [ ] 定期案件テンプレから案件生成、請求ドラフト自動作成のシーケンス図
-  - [ ] アラート（予算/残業/承認遅延/納期未請求）の擬似コードと発火→通知→サプレッションフロー
-- [ ] バックエンドPoCスケルトン（APIサーバ: プロジェクト/見積/請求/タイムシート/経費登録と発番・承認フック）
+  - [x] 請求・発注・仕入系のnullable列を精査（estimateId/milestoneId/taskIdなど）
+  - [x] 監査メタ createdBy/updatedBy の扱いを統一し TODO記載
+  - [x] PRにschema.prisma + docs/requirements/schema-prisma-sketch.md 対応をまとめる
+- [x] 発番/定期案件/アラート計算のバッチ擬似コード・シーケンスを追加（#6, batch-jobs.md）
+  - [x] 採番サービスに月跨ぎリセット/オーバーフロー処理コメント追加
+  - [x] 定期案件テンプレから案件生成、請求ドラフト自動作成のシーケンス図
+  - [x] アラート（予算/残業/承認遅延/納期未請求）の擬似コードと発火→通知→サプレッションフロー
+- [x] バックエンドPoCスケルトン（APIサーバ: プロジェクト/見積/請求/タイムシート/経費登録と発番・承認フック）
   - [x] prisma clientをDI化またはモジュール共有に寄せる
-  - [ ] `/projects/:id/estimates`起案→`/estimates/:id/submit`→`/invoices/:id/submit/send`のhappyパス通し
-  - [ ] タイムエントリ・経費のPOST/GETと簡易フィルタ（projectId/userId/date範囲）
-  - [ ] タイム修正時に承認インスタンスを起動するhookのスタブ
+  - [x] `/projects/:id/estimates`起案→`/estimates/:id/submit`→`/invoices/:id/submit/send`のhappyパス通し
+  - [x] タイムエントリ・経費のPOST/GETと簡易フィルタ（projectId/userId/date範囲）
+  - [x] タイム修正時に承認インスタンスを起動するhookのスタブ
 - [x] フロントPoCスケルトン（Web: 日報入力、工数入力、請求ドラフト閲覧）
   - [x] APIクライアントラッパ（fetch + JSON/エラー処理）
   - [x] 日報+WBフォームのモック（入力→POST→トースト表示）
@@ -60,13 +60,13 @@
   - [x] バリデーション失敗時のエラーレスポンスを揃える
 - [x] バックエンド: `/me` にロール/グループ等のモックデータを返す
   - [x] roleに応じたownerOrgId/projectsフィルタのモックを追加
-- [ ] バックエンド: タイムシート修正時の承認ルール適用（変更時のみ approval 起動）
-  - [ ] PATCH /time-entries/:id 追加、変更点判定でApprovalInstance作成スタブ
-- [ ] バックエンド: 承認ステップの監査ログ（who/when/from/to/reason）保存
-  - [ ] ApprovalStep更新時にaudit_logへINSERTするhookスタブ
-- [ ] バックエンド: 送信Stub（請求書メール/発注書メール）とPDF生成枠のダミー関数
+- [x] バックエンド: タイムシート修正時の承認ルール適用（変更時のみ approval 起動）
+  - [x] PATCH /time-entries/:id 追加、変更点判定でApprovalInstance作成スタブ
+- [x] バックエンド: 承認ステップの監査ログ（who/when/from/to/reason）保存
+  - [x] ApprovalStep更新時にaudit_logへINSERTするhookスタブ
+- [x] バックエンド: 送信Stub（請求書メール/発注書メール）とPDF生成枠のダミー関数
   - [x] services/notifier.ts に sendInvoiceEmail/sendPurchaseOrderEmail
-  - [ ] services/notifier.ts に PDF生成スタブ（テンプレ名を受け取る）
+  - [x] services/notifier.ts に PDF生成スタブ（テンプレ名を受け取る）
 - [x] バックエンド: RBAC簡易チェック（role + projectId で閲覧をフィルタ）
   - [x] requireRoleにprojectIdチェックのオプションを追加し、time/expenseに適用
 - [x] フロント: APIクライアントの共通ラッパ（fetch + エラーハンドリング）
@@ -82,7 +82,7 @@
   - [ ] /time-entries, /expenses のPOST/GET
 - [x] テスト: フロントの手動確認手順（ダッシュボード→日報→工数→請求送信Stub）
   - [x] READMEに手順と期待結果を書き出し
-- [ ] CI: lint/format のジョブ追加 (GH Actions)、prisma format/validate を走らせる
+- [x] CI: lint/format のジョブ追加 (GH Actions)、prisma format/validate を走らせる
   - [x] eslint/prettierが失敗した場合にfailさせる
 - [x] CI: Vite build テストのジョブ追加
   - [x] `npm run build --prefix packages/frontend` を既存ジョブとは別に明示
