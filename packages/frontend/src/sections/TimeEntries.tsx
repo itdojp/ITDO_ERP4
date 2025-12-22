@@ -11,6 +11,8 @@ type FormState = {
   location: string;
 };
 
+type MessageState = { text: string; type: 'success' | 'error' } | null;
+
 const defaultForm: FormState = {
   projectId: 'demo-project',
   taskId: '',
@@ -24,24 +26,35 @@ export const TimeEntries: React.FC = () => {
   const auth = getAuthState();
   const defaultProjectId = auth?.projectIds?.[0] || defaultForm.projectId;
   const [items, setItems] = useState<TimeEntry[]>([]);
-  const [message, setMessage] = useState('');
+  const [message, setMessage] = useState<MessageState>(null);
   const [form, setForm] = useState<FormState>({ ...defaultForm, projectId: defaultProjectId });
   const [isSaving, setIsSaving] = useState(false);
-  const isValid = Boolean(form.projectId.trim()) && Boolean(form.workDate) && form.minutes > 0;
+  const minutesValue = Number.isFinite(form.minutes) ? form.minutes : 0;
+  const minutesError =
+    minutesValue <= 0
+      ? '工数は1分以上で入力してください'
+      : minutesValue > 1440
+        ? '工数は1440分以内で入力してください'
+        : minutesValue % 15 !== 0
+          ? '工数は15分単位で入力してください'
+          : '';
+  const baseValid = Boolean(form.projectId.trim()) && Boolean(form.workDate);
+  const isValid = baseValid && !minutesError;
+  const validationHint = !baseValid ? 'Project ID と日付は必須です' : minutesError;
 
   useEffect(() => {
     api<{ items: TimeEntry[] }>('/time-entries').then((res) => setItems(res.items)).catch(() => setItems([]));
   }, []);
 
   useEffect(() => {
-    if (!message) return;
-    const timer = setTimeout(() => setMessage(''), 4000);
+    if (!message || message.type !== 'success') return;
+    const timer = setTimeout(() => setMessage(null), 4000);
     return () => clearTimeout(timer);
   }, [message]);
 
   const add = async () => {
     if (!isValid) {
-      setMessage('必須項目を入力してください');
+      setMessage(null);
       return;
     }
     try {
@@ -58,12 +71,12 @@ export const TimeEntries: React.FC = () => {
           userId,
         }),
       });
-      setMessage('保存しました');
+      setMessage({ text: '保存しました', type: 'success' });
       const updated = await api<{ items: TimeEntry[] }>('/time-entries');
       setItems(updated.items);
       setForm({ ...defaultForm, projectId: defaultProjectId });
     } catch (e) {
-      setMessage('保存に失敗しました');
+      setMessage({ text: '保存に失敗しました', type: 'error' });
     } finally {
       setIsSaving(false);
     }
@@ -90,6 +103,7 @@ export const TimeEntries: React.FC = () => {
           <input type="text" value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} placeholder="場所" />
           <button className="button" onClick={add} disabled={!isValid || isSaving}>追加</button>
         </div>
+        {validationHint && <p style={{ color: '#dc2626', margin: '8px 0 0' }}>{validationHint}</p>}
       </div>
       <ul className="list">
         {items.map((e) => (
@@ -101,7 +115,7 @@ export const TimeEntries: React.FC = () => {
         ))}
         {items.length === 0 && <li>データなし</li>}
       </ul>
-      {message && <p>{message}</p>}
+      {message && <p style={{ color: message.type === 'error' ? '#dc2626' : undefined }}>{message.text}</p>}
     </div>
   );
 };
