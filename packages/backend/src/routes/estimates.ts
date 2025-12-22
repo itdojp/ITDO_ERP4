@@ -46,7 +46,7 @@ export async function registerEstimateRoutes(app: FastifyInstance) {
   app.post('/estimates/:id/submit', { preHandler: requireRole(['admin', 'mgmt']) }, async (req) => {
     const { id } = req.params as { id: string };
     const estimate = await prisma.estimate.update({ where: { id }, data: { status: DocStatusValue.pending_qa } });
-    await createApprovalFor(FlowTypeValue.estimate, 'estimates', id, { totalAmount: estimate.totalAmount });
+    await createApprovalFor(FlowTypeValue.estimate, 'estimates', id, { totalAmount: estimate.totalAmount }, { createdBy: req.user?.userId });
     return estimate;
   });
 }

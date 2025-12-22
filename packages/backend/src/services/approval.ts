@@ -5,6 +5,20 @@ import { logAudit } from './audit.js';
 type Step = { approverGroupId?: string; approverUserId?: string; stepOrder?: number };
 type RuleStep = { approverGroupId?: string; approverUserId?: string; stepOrder?: number; parallelKey?: string };
 type ActOptions = { reason?: string; actorGroupId?: string };
+type CreateApprovalOptions = { client?: any; createdBy?: string };
+/**
+ * Options for submitApprovalWithUpdate.
+ * update() runs in a transaction and should return the updated entity.
+ * payload is optional when approval matching needs fields not in the update result.
+ */
+type SubmitApprovalOptions = {
+  flowType: string;
+  targetTable: string;
+  targetId: string;
+  update: (tx: any) => Promise<any>;
+  payload?: Record<string, unknown>;
+  createdBy?: string;
+};
 
 // 条件サンプル: amount閾値 / recurring判定 / 小額スキップ
 export type ApprovalCondition = {
@@ -108,47 +122,90 @@ export function matchApprovalSteps(flowType: string, payload: Record<string, unk
   ];
 }
 
-async function resolveRule(flowType: string, payload: Record<string, unknown>) {
-  const rules = await prisma.approvalRule.findMany({ where: { flowType }, orderBy: { createdAt: 'desc' } });
+async function resolveRule(flowType: string, payload: Record<string, unknown>, client: any = prisma) {
+  const rules = await client.approvalRule.findMany({ where: { flowType }, orderBy: { createdAt: 'desc' } });
   if (!rules.length) return null;
   const matched = rules.find((r: { conditions?: unknown }) => matchesRuleCondition(flowType, payload, r.conditions as ApprovalCondition));
   return matched || rules[0];
 }
 
-export async function createApproval(flowType: string, targetTable: string, targetId: string, steps: Step[], ruleId = 'manual') {
+async function createApprovalWithClient(
+  client: any,
+  flowType: string,
+  targetTable: string,
+  targetId: string,
+  steps: Step[],
+  ruleId = 'manual',
+  createdBy?: string,
+) {
   const normalizedSteps = steps.map((s, idx) => ({ ...s, stepOrder: s.stepOrder ?? idx + 1 }));
   const currentStep = normalizedSteps.length
     ? Math.min(...normalizedSteps.map((s) => s.stepOrder || 1))
     : null;
-  return prisma.$transaction(async (tx: any) => {
-    const instance = await tx.approvalInstance.create({
-      data: {
-        flowType,
-        targetTable,
-        targetId,
-        status: DocStatusValue.pending_qa,
-        currentStep,
-        ruleId,
-        steps: {
-          create: normalizedSteps.map((s: any) => ({
-            stepOrder: s.stepOrder,
-            approverGroupId: s.approverGroupId,
-            approverUserId: s.approverUserId,
-            status: DocStatusValue.pending_qa,
-          })),
-        },
+  const instance = await client.approvalInstance.create({
+    data: {
+      flowType,
+      targetTable,
+      targetId,
+      status: DocStatusValue.pending_qa,
+      currentStep,
+      ruleId,
+      createdBy,
+      steps: {
+        create: normalizedSteps.map((s: any) => ({
+          stepOrder: s.stepOrder,
+          approverGroupId: s.approverGroupId,
+          approverUserId: s.approverUserId,
+          status: DocStatusValue.pending_qa,
+        })),
       },
-      include: { steps: true },
-    });
-    return instance;
+    },
+    include: { steps: true },
   });
+  return instance;
 }
 
-export async function createApprovalFor(flowType: string, targetTable: string, targetId: string, payload: Record<string, unknown>) {
-  const rule = await resolveRule(flowType, payload);
+export async function createApproval(
+  flowType: string,
+  targetTable: string,
+  targetId: string,
+  steps: Step[],
+  ruleId = 'manual',
+  createdBy?: string,
+) {
+  return prisma.$transaction(async (tx: any) => createApprovalWithClient(tx, flowType, targetTable, targetId, steps, ruleId, createdBy));
+}
+
+export async function createApprovalFor(
+  flowType: string,
+  targetTable: string,
+  targetId: string,
+  payload: Record<string, unknown>,
+  options: CreateApprovalOptions = {},
+) {
+  const client = options.client ?? prisma;
+  const rule = await resolveRule(flowType, payload, client);
   const ruleSteps = normalizeRuleSteps(rule?.steps);
   const steps = ruleSteps || matchApprovalSteps(flowType, payload, (rule?.conditions as ApprovalCondition) || undefined);
-  return createApproval(flowType, targetTable, targetId, steps, rule?.id || 'auto');
+  if (client === prisma) {
+    return createApproval(flowType, targetTable, targetId, steps, rule?.id || 'auto', options.createdBy);
+  }
+  return createApprovalWithClient(client, flowType, targetTable, targetId, steps, rule?.id || 'auto', options.createdBy);
+}
+
+/**
+ * Atomically update a target and create an approval instance in one transaction.
+ */
+export async function submitApprovalWithUpdate(options: SubmitApprovalOptions) {
+  return prisma.$transaction(async (tx: any) => {
+    const updated = await options.update(tx);
+    const approvalPayload = options.payload ?? (updated as Record<string, unknown>);
+    const approval = await createApprovalFor(options.flowType, options.targetTable, options.targetId, approvalPayload, {
+      client: tx,
+      createdBy: options.createdBy,
+    });
+    return { updated, approval };
+  });
 }
 
 async function updateTargetStatus(tx: any, targetTable: string, targetId: string, newStatus: string) {
