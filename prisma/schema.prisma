@@ -124,7 +124,7 @@ model Project {
   parent            Project?                  @relation("ProjectToProject", fields: [parentId], references: [id], onDelete: Restrict)
   parentId          String?
   children          Project[]                 @relation("ProjectToProject")
-  customer          Customer?                 @relation(fields: [customerId], references: [id])
+  customer          Customer?                 @relation(fields: [customerId], references: [id], onDelete: Restrict)
   customerId        String?
   ownerUserId       String?
   orgUnitId         String?
@@ -152,7 +152,7 @@ model Project {
 
 model ProjectTask {
   id           String        @id @default(uuid())
-  project      Project       @relation(fields: [projectId], references: [id])
+  project      Project       @relation(fields: [projectId], references: [id], onDelete: Restrict)
   projectId    String
   parentTask   ProjectTask?  @relation("TaskToTask", fields: [parentTaskId], references: [id], onDelete: Restrict)
   parentTaskId String?
@@ -177,7 +177,7 @@ model ProjectTask {
 
 model ProjectMilestone {
   id                String    @id @default(uuid())
-  project           Project   @relation(fields: [projectId], references: [id])
+  project           Project   @relation(fields: [projectId], references: [id], onDelete: Restrict)
   projectId         String
   name              String
   amount            Decimal
@@ -196,7 +196,7 @@ model ProjectMilestone {
 
 model RecurringProjectTemplate {
   id            String    @id @default(uuid())
-  project       Project   @relation(fields: [projectId], references: [id])
+  project       Project   @relation(fields: [projectId], references: [id], onDelete: Restrict)
   projectId     String    @unique
   frequency     String // monthly/quarterly/semiannual/annual
   defaultAmount Decimal?
@@ -212,7 +212,7 @@ model RecurringProjectTemplate {
 
 model Estimate {
   id              String         @id @default(uuid())
-  project         Project        @relation(fields: [projectId], references: [id])
+  project         Project        @relation(fields: [projectId], references: [id], onDelete: Restrict)
   projectId       String
   version         Int
   totalAmount     Decimal
@@ -244,7 +244,7 @@ model EstimateLine {
 
 model Invoice {
   id              String            @id @default(uuid())
-  project         Project           @relation(fields: [projectId], references: [id])
+  project         Project           @relation(fields: [projectId], references: [id], onDelete: Restrict)
   projectId       String
   estimate        Estimate?         @relation(fields: [estimateId], references: [id], onDelete: SetNull)
   estimateId      String?           // 見積なし請求を許容
@@ -282,9 +282,9 @@ model BillingLine {
 
 model PurchaseOrder {
   id              String              @id @default(uuid())
-  project         Project             @relation(fields: [projectId], references: [id])
+  project         Project             @relation(fields: [projectId], references: [id], onDelete: Restrict)
   projectId       String
-  vendor          Vendor              @relation(fields: [vendorId], references: [id])
+  vendor          Vendor              @relation(fields: [vendorId], references: [id], onDelete: Restrict)
   vendorId        String
   poNo            String              @unique
   issueDate       DateTime?
@@ -317,9 +317,9 @@ model PurchaseOrderLine {
 
 model VendorQuote {
   id          String    @id @default(uuid())
-  project     Project   @relation(fields: [projectId], references: [id])
+  project     Project   @relation(fields: [projectId], references: [id], onDelete: Restrict)
   projectId   String
-  vendor      Vendor    @relation(fields: [vendorId], references: [id])
+  vendor      Vendor    @relation(fields: [vendorId], references: [id], onDelete: Restrict)
   vendorId    String
   quoteNo     String?
   issueDate   DateTime?
@@ -337,9 +337,9 @@ model VendorQuote {
 
 model VendorInvoice {
   id              String    @id @default(uuid())
-  project         Project   @relation(fields: [projectId], references: [id])
+  project         Project   @relation(fields: [projectId], references: [id], onDelete: Restrict)
   projectId       String
-  vendor          Vendor    @relation(fields: [vendorId], references: [id])
+  vendor          Vendor    @relation(fields: [vendorId], references: [id], onDelete: Restrict)
   vendorId        String
   vendorInvoiceNo String?
   receivedDate    DateTime?
@@ -359,7 +359,7 @@ model VendorInvoice {
 
 model TimeEntry {
   id         String       @id @default(uuid())
-  project    Project      @relation(fields: [projectId], references: [id])
+  project    Project      @relation(fields: [projectId], references: [id], onDelete: Restrict)
   projectId  String
   task       ProjectTask? @relation(fields: [taskId], references: [id], onDelete: SetNull)
   taskId     String?
@@ -398,7 +398,7 @@ model RateCard {
 
 model Expense {
   id         String    @id @default(uuid())
-  project    Project   @relation(fields: [projectId], references: [id])
+  project    Project   @relation(fields: [projectId], references: [id], onDelete: Restrict)
   projectId  String
   userId     String
   category   String
