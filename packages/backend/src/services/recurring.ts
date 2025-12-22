@@ -1,3 +1,4 @@
+import type { Prisma } from '@prisma/client';
 import { prisma } from './db.js';
 import { nextNumber } from './numbering.js';
 import { DocStatusValue } from '../types.js';
@@ -37,16 +38,17 @@ function startOfMonth(date: Date) {
 
 function addMonths(base: Date, months: number) {
   const result = new Date(base);
-  const day = result.getDate();
-  result.setMonth(result.getMonth() + months);
-  if (result.getDate() < day) {
-    result.setDate(0);
-  }
+  const originalDay = result.getDate();
+  const targetMonth = result.getMonth() + months;
+  result.setDate(1);
+  result.setMonth(targetMonth);
+  const lastDayOfTargetMonth = new Date(result.getFullYear(), result.getMonth() + 1, 0).getDate();
+  result.setDate(Math.min(originalDay, lastDayOfTargetMonth));
   return result;
 }
 
-function nextRunAt(frequency: string, current: Date) {
-  const normalized = frequency?.toLowerCase();
+function nextRunAt(frequency: string | null | undefined, current: Date) {
+  const normalized = (frequency ?? 'monthly').toLowerCase();
   const step =
     normalized === 'quarterly' ? 3
       : normalized === 'semiannual' ? 6
@@ -65,7 +67,7 @@ export async function runRecurringTemplates(now = new Date()) {
     const runAt = template.nextRunAt ?? now;
     const periodStart = startOfMonth(runAt);
     const periodEnd = addMonths(periodStart, 1);
-    const existing = await prisma.invoice.findFirst({
+    const existingInvoice = await prisma.invoice.findFirst({
       where: {
         projectId: template.projectId,
         createdBy: 'recurring-job',
@@ -74,7 +76,16 @@ export async function runRecurringTemplates(now = new Date()) {
       },
       select: { id: true },
     });
-    if (existing) {
+    const existingEstimate = await prisma.estimate.findFirst({
+      where: {
+        projectId: template.projectId,
+        createdBy: 'recurring-job',
+        deletedAt: null,
+        createdAt: { gte: periodStart, lt: periodEnd },
+      },
+      select: { id: true },
+    });
+    if (existingInvoice || existingEstimate) {
       await prisma.recurringProjectTemplate.update({
         where: { id: template.id },
         data: { nextRunAt: nextRunAt(template.frequency, runAt) },
@@ -92,7 +103,7 @@ export async function runRecurringTemplates(now = new Date()) {
       const { number: invoiceNo, serial: invoiceSerial } = await nextNumber('invoice', runAt);
       const currency = template.project?.currency || 'JPY';
       const lineDescription = template.defaultTerms || 'Recurring project';
-      const created = await prisma.$transaction(async (tx: any) => {
+      const created = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
         const estimate = await tx.estimate.create({
           data: {
             projectId: template.projectId,
