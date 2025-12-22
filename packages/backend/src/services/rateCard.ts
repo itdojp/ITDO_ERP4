@@ -1,4 +1,5 @@
 import { prisma } from './db.js';
+import { applyRate } from './rate.js';
 
 type RateCardMatch = {
   projectId?: string | null;
@@ -15,13 +16,14 @@ function buildDateRange(workDate: Date) {
 
 export async function resolveRateCard(match: RateCardMatch) {
   const base = buildDateRange(match.workDate);
-  const workType = match.workType || undefined;
+  const workType = match.workType?.trim();
+  const workTypeFilter = workType ? { workType } : { workType: null };
   if (match.projectId) {
     const project = await prisma.rateCard.findFirst({
       where: {
         ...base,
         projectId: match.projectId,
-        ...(workType ? { workType } : {}),
+        ...workTypeFilter,
       },
       orderBy: { validFrom: 'desc' },
     });
@@ -31,13 +33,12 @@ export async function resolveRateCard(match: RateCardMatch) {
     where: {
       ...base,
       projectId: null,
-      ...(workType ? { workType } : {}),
+      ...workTypeFilter,
     },
     orderBy: { validFrom: 'desc' },
   });
 }
 
 export function calcTimeAmount(minutes: number, unitPrice: number) {
-  const hours = minutes / 60;
-  return Math.round(hours * unitPrice * 100) / 100;
+  return applyRate(minutes, unitPrice);
 }
