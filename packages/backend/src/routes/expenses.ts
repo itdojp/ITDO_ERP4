@@ -1,8 +1,8 @@
 import { FastifyInstance } from 'fastify';
-import { createApproval, createApprovalFor } from '../services/approval.js';
+import { submitApprovalWithUpdate } from '../services/approval.js';
 import { expenseSchema } from './validators.js';
 import { DocStatusValue, FlowTypeValue } from '../types.js';
-import { requireProjectAccess, requireRole, requireRoleOrSelf } from '../services/rbac.js';
+import { requireProjectAccess, requireRole } from '../services/rbac.js';
 import { prisma } from '../services/db.js';
 
 export async function registerExpenseRoutes(app: FastifyInstance) {
@@ -51,10 +51,24 @@ export async function registerExpenseRoutes(app: FastifyInstance) {
     },
   );
 
-  app.post('/expenses/:id/submit', { preHandler: requireRoleOrSelf(['admin', 'mgmt'], (req) => req.user?.userId) }, async (req) => {
+  app.post('/expenses/:id/submit', { preHandler: requireRole(['admin', 'mgmt', 'user']) }, async (req, reply) => {
     const { id } = req.params as { id: string };
-    const exp = await prisma.expense.update({ where: { id }, data: { status: DocStatusValue.pending_qa } });
-    await createApprovalFor(FlowTypeValue.expense, 'expenses', id, { amount: exp.amount });
-    return exp;
+    const expense = await prisma.expense.findUnique({ where: { id } });
+    if (!expense) {
+      return reply.code(404).send({ error: 'not_found' });
+    }
+    const roles = req.user?.roles || [];
+    const userId = req.user?.userId;
+    if (!roles.includes('admin') && !roles.includes('mgmt') && expense.userId !== userId) {
+      return reply.code(403).send({ error: 'forbidden' });
+    }
+    const { updated } = await submitApprovalWithUpdate({
+      flowType: FlowTypeValue.expense,
+      targetTable: 'expenses',
+      targetId: id,
+      update: (tx) => tx.expense.update({ where: { id }, data: { status: DocStatusValue.pending_qa } }),
+      createdBy: userId,
+    });
+    return updated;
   });
 }

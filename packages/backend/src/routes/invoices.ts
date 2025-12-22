@@ -53,7 +53,7 @@ export async function registerInvoiceRoutes(app: FastifyInstance) {
   app.post('/invoices/:id/submit', { preHandler: requireRole(['admin', 'mgmt']) }, async (req) => {
     const { id } = req.params as { id: string };
     const invoice = await prisma.invoice.update({ where: { id }, data: { status: DocStatusValue.pending_qa } });
-    await createApprovalFor(FlowTypeValue.invoice, 'invoices', id, { totalAmount: invoice.totalAmount });
+    await createApprovalFor(FlowTypeValue.invoice, 'invoices', id, { totalAmount: invoice.totalAmount }, { createdBy: req.user?.userId });
     return invoice;
   });
 }
