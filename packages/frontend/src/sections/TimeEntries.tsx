@@ -11,6 +11,8 @@ type FormState = {
   location: string;
 };
 
+type MessageState = { text: string; type: 'success' | 'error' } | null;
+
 const defaultForm: FormState = {
   projectId: 'demo-project',
   taskId: '',
@@ -24,23 +26,59 @@ export const TimeEntries: React.FC = () => {
   const auth = getAuthState();
   const defaultProjectId = auth?.projectIds?.[0] || defaultForm.projectId;
   const [items, setItems] = useState<TimeEntry[]>([]);
-  const [message, setMessage] = useState('');
+  const [message, setMessage] = useState<MessageState>(null);
   const [form, setForm] = useState<FormState>({ ...defaultForm, projectId: defaultProjectId });
+  const [isSaving, setIsSaving] = useState(false);
+  const minutesValue = Number.isFinite(form.minutes) ? form.minutes : 0;
+  const minutesError =
+    minutesValue <= 0
+      ? '工数は1分以上で入力してください'
+      : minutesValue > 1440
+        ? '工数は1440分以内で入力してください'
+        : minutesValue % 15 !== 0
+          ? '工数は15分単位で入力してください'
+          : '';
+  const baseValid = Boolean(form.projectId.trim()) && Boolean(form.workDate);
+  const isValid = baseValid && !minutesError;
+  const validationHint = !baseValid ? 'Project ID と日付は必須です' : minutesError;
 
   useEffect(() => {
     api<{ items: TimeEntry[] }>('/time-entries').then((res) => setItems(res.items)).catch(() => setItems([]));
   }, []);
 
+  useEffect(() => {
+    if (!message || message.type !== 'success') return;
+    const timer = setTimeout(() => setMessage(null), 4000);
+    return () => clearTimeout(timer);
+  }, [message]);
+
   const add = async () => {
+    if (!isValid) {
+      setMessage(null);
+      return;
+    }
     try {
+      setIsSaving(true);
       const userId = getAuthState()?.userId || 'demo-user';
-      await api('/time-entries', { method: 'POST', body: JSON.stringify({ ...form, userId }) });
-      setMessage('保存しました');
+      await api('/time-entries', {
+        method: 'POST',
+        body: JSON.stringify({
+          ...form,
+          projectId: form.projectId.trim(),
+          taskId: form.taskId.trim() || undefined,
+          workType: form.workType.trim() || undefined,
+          location: form.location.trim() || undefined,
+          userId,
+        }),
+      });
+      setMessage({ text: '保存しました', type: 'success' });
       const updated = await api<{ items: TimeEntry[] }>('/time-entries');
       setItems(updated.items);
       setForm({ ...defaultForm, projectId: defaultProjectId });
     } catch (e) {
-      setMessage('保存に失敗しました');
+      setMessage({ text: '保存に失敗しました', type: 'error' });
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -52,11 +90,20 @@ export const TimeEntries: React.FC = () => {
           <input type="text" value={form.projectId} onChange={(e) => setForm({ ...form, projectId: e.target.value })} placeholder="Project ID" />
           <input type="text" value={form.taskId} onChange={(e) => setForm({ ...form, taskId: e.target.value })} placeholder="Task ID (任意)" />
           <input type="date" value={form.workDate} onChange={(e) => setForm({ ...form, workDate: e.target.value })} />
-          <input type="number" value={form.minutes} onChange={(e) => setForm({ ...form, minutes: Number(e.target.value) })} style={{ width: 100 }} />
+          <input
+            type="number"
+            min={1}
+            max={1440}
+            step={15}
+            value={form.minutes}
+            onChange={(e) => setForm({ ...form, minutes: Number(e.target.value) })}
+            style={{ width: 100 }}
+          />
           <input type="text" value={form.workType} onChange={(e) => setForm({ ...form, workType: e.target.value })} placeholder="作業種別" />
           <input type="text" value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} placeholder="場所" />
-          <button className="button" onClick={add}>追加</button>
+          <button className="button" onClick={add} disabled={!isValid || isSaving}>追加</button>
         </div>
+        {validationHint && <p style={{ color: '#dc2626', margin: '8px 0 0' }}>{validationHint}</p>}
       </div>
       <ul className="list">
         {items.map((e) => (
@@ -68,7 +115,7 @@ export const TimeEntries: React.FC = () => {
         ))}
         {items.length === 0 && <li>データなし</li>}
       </ul>
-      {message && <p>{message}</p>}
+      {message && <p style={{ color: message.type === 'error' ? '#dc2626' : undefined }}>{message.text}</p>}
     </div>
   );
 };

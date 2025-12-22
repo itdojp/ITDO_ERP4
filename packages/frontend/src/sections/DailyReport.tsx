@@ -1,24 +1,36 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { api, getAuthState } from '../api';
 import { HelpModal } from './HelpModal';
 
 const tags = ['仕事量が多い', '役割/進め方', '人間関係', '体調', '私生活', '特になし'];
+
+type MessageState = { text: string; type: 'success' | 'error' } | null;
 
 export const DailyReport: React.FC = () => {
   const [status, setStatus] = useState<'good' | 'not_good' | ''>('');
   const [notes, setNotes] = useState('');
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [helpRequested, setHelpRequested] = useState(false);
-  const [message, setMessage] = useState('');
+  const [message, setMessage] = useState<MessageState>(null);
   const [showHelp, setShowHelp] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const userId = getAuthState()?.userId || 'demo-user';
+
+  useEffect(() => {
+    if (!message || message.type !== 'success') return;
+    const timer = setTimeout(() => setMessage(null), 4000);
+    return () => clearTimeout(timer);
+  }, [message]);
 
   const toggleTag = (tag: string) => {
     setSelectedTags((prev) => (prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]));
   };
 
   const submit = async () => {
+    if (!status) {
+      setMessage({ text: 'Good / Not Good を選択してください', type: 'error' });
+      return;
+    }
     try {
       setIsSubmitting(true);
       await api('/daily-reports', {
@@ -36,19 +48,19 @@ export const DailyReport: React.FC = () => {
         body: JSON.stringify({
           userId,
           entryDate: new Date().toISOString(),
-          status,
-          notes: selectedTags.length ? `${notes}\nTags:${selectedTags.join(',')}` : notes,
-          helpRequested,
-          visibilityGroupId: 'hr-group',
+        status,
+        notes: selectedTags.length ? `${notes}\nTags:${selectedTags.join(',')}` : notes,
+        helpRequested,
+        visibilityGroupId: 'hr-group',
         }),
       });
-      setMessage('送信しました');
+      setMessage({ text: '送信しました', type: 'success' });
       setNotes('');
       setSelectedTags([]);
       setHelpRequested(false);
       setStatus('');
     } catch (e) {
-      setMessage('送信に失敗しました');
+      setMessage({ text: '送信に失敗しました', type: 'error' });
     } finally {
       setIsSubmitting(false);
     }
@@ -95,7 +107,7 @@ export const DailyReport: React.FC = () => {
       <div style={{ marginTop: 8 }}>
         <button className="button" onClick={submit} disabled={isSubmitting}>送信</button>
       </div>
-      {message && <p>{message}</p>}
+      {message && <p style={{ color: message.type === 'error' ? '#dc2626' : undefined }}>{message.text}</p>}
       <p style={{ fontSize: 12, color: '#475569', marginTop: 8 }}>
         この入力は評価に使われません。職場環境の改善とサポートのためにのみ利用します。
       </p>
