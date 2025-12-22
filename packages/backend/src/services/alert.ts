@@ -1,7 +1,9 @@
+import type { AlertSetting } from '@prisma/client';
 import { buildStubResults, sendEmailStub } from './notifier.js';
 import { prisma } from './db.js';
 
-type MetricFetcher = (settingId: string) => Promise<number>;
+type MetricResult = { metric: number; targetRef: string };
+type MetricFetcher = (setting: AlertSetting) => Promise<MetricResult | null>;
 
 type AlertRecipients = {
   emails?: string[];
@@ -47,13 +49,14 @@ export async function computeAndTrigger(fetchers: Record<string, MetricFetcher>)
   for (const s of settings) {
     const fetcher = fetchers[s.type as string];
     if (!fetcher) continue;
-    const metric = await fetcher(s.id);
-    if (metric > Number(s.threshold)) {
+    const result = await fetcher(s);
+    if (!result) continue;
+    if (result.metric > Number(s.threshold)) {
       await triggerAlert(
         { id: s.id, recipients: s.recipients, channels: s.channels },
-        metric,
+        result.metric,
         Number(s.threshold),
-        s.scopeProjectId || 'global',
+        result.targetRef || s.scopeProjectId || 'global',
       );
     }
   }
