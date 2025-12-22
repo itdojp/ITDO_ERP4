@@ -80,8 +80,8 @@
 - [ ] テスト: バックエンド簡易ハッピーパス (contracts/invoices/time/expenses) のスモーク
   - [ ] supertest等で /projects→/estimates→/invoices→/send の一連
   - [ ] /time-entries, /expenses のPOST/GET
-- [ ] テスト: フロントの手動確認手順（ダッシュボード→日報→工数→請求送信Stub）
-  - [ ] READMEに手順と期待結果を書き出し
+- [x] テスト: フロントの手動確認手順（ダッシュボード→日報→工数→請求送信Stub）
+  - [x] READMEに手順と期待結果を書き出し
 - [x] CI: lint/format のジョブ追加 (GH Actions)、prisma format/validate を走らせる
   - [x] eslint/prettierが失敗した場合にfailさせる
 - [x] CI: Vite build テストのジョブ追加
