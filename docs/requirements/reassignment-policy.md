@@ -19,7 +19,7 @@
 
 ## 基本方針（MVP）
 - 実行権限は admin/mgmt のみ
-- 承認フロー中のデータは移動不可（WF解除/取消後に実施）
+- 承認フロー中のデータは移動不可（ワークフロー（WF）解除/取消後に実施）
 - approved/sent/paid/closed など確定状態は移動不可
 - 請求/発注/仕入に紐づく工数・経費は移動不可
 - 付け替え理由を必須入力（理由コード + 自由記述）
@@ -29,7 +29,7 @@
 - ProjectTask: 子タスク/工数がある場合は一括移動のみ
 - TimeEntry: 請求・発注・承認済みでなければ可
 - Expense: 承認済み/仕訳済み/請求連動済みは不可
-- Invoice/PO/VendorInvoice/VendorQuote: 送信/承認後は不可
+- Invoice/PurchaseOrder/VendorInvoice/VendorQuote: 送信/承認後は不可
 
 ## 期間ロック
 - 月次/四半期の締め済み期間は移動不可
