@@ -25,6 +25,10 @@ type ProjectMilestoneWhereInput = {
   invoices: { none: { deletedAt: null } };
   projectId?: string;
 };
+type ApprovalInstanceWhereInput = {
+  status: { in: string[] };
+  projectId?: string;
+};
 
 function toNumber(value: unknown): number {
   if (value == null) return 0;
@@ -240,10 +244,14 @@ export async function computeOvertime(
 export async function computeApprovalDelay(
   setting: AlertSetting,
 ): Promise<MetricResult | null> {
-  // ApprovalInstance does not store projectId yet, so scopeProjectId is not applied.
-  void setting;
+  const where: ApprovalInstanceWhereInput = {
+    status: { in: ['pending_qa', 'pending_exec'] },
+  };
+  if (setting.scopeProjectId) {
+    where.projectId = setting.scopeProjectId;
+  }
   const pending = await prisma.approvalInstance.findMany({
-    where: { status: { in: ['pending_qa', 'pending_exec'] } },
+    where,
     select: { id: true, createdAt: true },
   });
   if (!pending.length) return null;

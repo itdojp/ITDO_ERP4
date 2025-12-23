@@ -25,6 +25,7 @@
 
 ### 参照のみ（FKなし）
 - ApprovalInstance.targetId: polymorphic 参照のため FK を持たない
+- ApprovalInstance.projectId: 対象が案件に紐づく場合は projectId を保持（一覧/アラートの絞り込み用）
 - userId/ownerUserId/createdBy/updatedBy: 外部ID前提で FK なし
 
 ## NULL許容の整理（MVP）
@@ -390,11 +391,15 @@ model ApprovalInstance {
   flowType  FlowType
   targetTable String
   targetId  String
+  project   Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  projectId String?
   status    DocStatus @default(pending_qa)
   currentStep Int?
   rule      ApprovalRule @relation(fields: [ruleId], references: [id])
   ruleId    String
   steps     ApprovalStep[]
+
+  @@index([projectId])
 }
 
 model ApprovalStep {
