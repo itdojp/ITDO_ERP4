@@ -25,6 +25,10 @@ type ProjectMilestoneWhereInput = {
   invoices: { none: { deletedAt: null } };
   projectId?: string;
 };
+type ApprovalInstanceWhereInput = {
+  status: { in: string[] };
+  projectId?: string;
+};
 
 function toNumber(value: unknown): number {
   if (value == null) return 0;
@@ -240,7 +244,7 @@ export async function computeOvertime(
 export async function computeApprovalDelay(
   setting: AlertSetting,
 ): Promise<MetricResult | null> {
-  const where: { status: { in: string[] }; projectId?: string } = {
+  const where: ApprovalInstanceWhereInput = {
     status: { in: ['pending_qa', 'pending_exec'] },
   };
   if (setting.scopeProjectId) {

@@ -142,6 +142,7 @@ model Project {
   vendorQuotes      VendorQuote[]
   vendorInvoices    VendorInvoice[]
   rateCards         RateCard[]
+  approvalInstances ApprovalInstance[]
   createdAt         DateTime                  @default(now())
   createdBy         String?
   updatedAt         DateTime                  @updatedAt

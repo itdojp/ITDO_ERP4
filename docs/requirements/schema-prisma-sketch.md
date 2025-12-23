@@ -391,12 +391,15 @@ model ApprovalInstance {
   flowType  FlowType
   targetTable String
   targetId  String
+  project   Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
   projectId String?
   status    DocStatus @default(pending_qa)
   currentStep Int?
   rule      ApprovalRule @relation(fields: [ruleId], references: [id])
   ruleId    String
   steps     ApprovalStep[]
+
+  @@index([projectId])
 }
 
 model ApprovalStep {
