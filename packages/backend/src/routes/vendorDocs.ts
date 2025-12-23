@@ -1,5 +1,5 @@
 import { FastifyInstance } from 'fastify';
-import { createApprovalFor } from '../services/approval.js';
+import { submitApprovalWithUpdate } from '../services/approval.js';
 import { FlowTypeValue, DocStatusValue } from '../types.js';
 import { vendorInvoiceSchema, vendorQuoteSchema } from './validators.js';
 import { requireRole } from '../services/rbac.js';
@@ -31,22 +31,18 @@ export async function registerVendorDocRoutes(app: FastifyInstance) {
     { preHandler: requireRole(['admin', 'mgmt']) },
     async (req) => {
       const { id } = req.params as { id: string };
-      const vi = await prisma.vendorInvoice.update({
-        where: { id },
-        data: { status: DocStatusValue.pending_qa },
+      const { updated } = await submitApprovalWithUpdate({
+        flowType: FlowTypeValue.vendor_invoice,
+        targetTable: 'vendor_invoices',
+        targetId: id,
+        update: (tx) =>
+          tx.vendorInvoice.update({
+            where: { id },
+            data: { status: DocStatusValue.pending_qa },
+          }),
+        createdBy: req.user?.userId,
       });
-      await createApprovalFor(
-        FlowTypeValue.vendor_invoice,
-        'vendor_invoices',
-        id,
-        {
-          totalAmount: vi.totalAmount,
-          projectId: vi.projectId,
-          vendorId: vi.vendorId,
-        },
-        { createdBy: req.user?.userId },
-      );
-      return vi;
+      return updated;
     },
   );
 }

@@ -7,9 +7,47 @@
 - 見積→請求: POST /projects/:id/estimates → submit → POST /projects/:id/invoices → submit → send
 - タイムエントリ: POST /time-entries → GET /time-entries → submit
 - 経費: POST /expenses → submit
+- 承認フロー: 見積/請求/発注/経費/休暇の submit → /approval-instances で作成確認 → /approval-instances/:id/act で承認/却下 → 対象ステータス更新
 - アラートジョブ: POST /jobs/alerts/run → GET /alerts で履歴確認
+- 定期案件ジョブ: recurring_project_templates を作成 → POST /jobs/recurring-projects/run → 月次/四半期のドラフト生成と重複防止を確認
 - ウェルビーイング: POST /wellbeing-entries → GET (HRのみ)
 - スモーク: scripts/smoke-backend.sh を実行してハッピーパスが通ることを確認
+
+### 定期案件テンプレ投入例（手動）
+```sql
+WITH monthly_project AS (
+  INSERT INTO "Project" (id, code, name, status, currency, "createdAt", "updatedAt")
+  VALUES (gen_random_uuid(), 'REC-MONTH', 'Recurring Monthly', 'active', 'JPY', now(), now())
+  ON CONFLICT (code) DO UPDATE
+    SET name = EXCLUDED.name,
+        "updatedAt" = now()
+  RETURNING id
+),
+quarterly_project AS (
+  INSERT INTO "Project" (id, code, name, status, currency, "createdAt", "updatedAt")
+  VALUES (gen_random_uuid(), 'REC-QUARTER', 'Recurring Quarterly', 'active', 'JPY', now(), now())
+  ON CONFLICT (code) DO UPDATE
+    SET name = EXCLUDED.name,
+        "updatedAt" = now()
+  RETURNING id
+)
+INSERT INTO "RecurringProjectTemplate"
+  (id, "projectId", frequency, "defaultAmount", "defaultTerms", "nextRunAt", "isActive", "createdAt", "updatedAt")
+SELECT gen_random_uuid(), id, 'monthly', 100000, 'Monthly retainer', now(), true, now(), now()
+FROM monthly_project
+UNION ALL
+SELECT gen_random_uuid(), id, 'quarterly', 300000, 'Quarterly retainer', now(), true, now(), now()
+FROM quarterly_project
+ON CONFLICT ("projectId") DO UPDATE
+  SET frequency = EXCLUDED.frequency,
+      "defaultAmount" = EXCLUDED."defaultAmount",
+      "defaultTerms" = EXCLUDED."defaultTerms",
+      "nextRunAt" = EXCLUDED."nextRunAt",
+      "isActive" = EXCLUDED."isActive",
+      "updatedAt" = now();
+```
+実行後に `POST /jobs/recurring-projects/run` を叩き、同月内で二重作成されないことを確認。
+UUID生成関数は環境に合わせて置き換え（`gen_random_uuid()`/`uuid_generate_v4()` など）。
 
 ## フロント PoC
 - 起動: `cd packages/frontend && npm run dev`
