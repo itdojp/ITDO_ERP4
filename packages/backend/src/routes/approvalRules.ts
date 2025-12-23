@@ -80,6 +80,7 @@ export async function registerApprovalRuleRoutes(app: FastifyInstance) {
         projectId,
         approverUserId,
         requesterId,
+        currentStep,
       } = req.query as any;
       const stepsFilter: any = {};
       if (approverGroupId) stepsFilter.approverGroupId = approverGroupId;
@@ -88,8 +89,11 @@ export async function registerApprovalRuleRoutes(app: FastifyInstance) {
       const where: any = {
         ...(flowType ? { flowType } : {}),
         ...(status ? { status } : {}),
-        ...(projectId ? { targetId: projectId } : {}),
+        ...(projectId ? { projectId } : {}),
         ...(requesterId ? { createdBy: requesterId } : {}),
+        ...(currentStep !== undefined && currentStep !== ''
+          ? { currentStep: Number(currentStep) }
+          : {}),
         ...(approverGroupId || approverUserId
           ? { steps: { some: stepsFilter } }
           : {}),

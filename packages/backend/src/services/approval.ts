@@ -179,6 +179,7 @@ async function createApprovalWithClient(
   steps: Step[],
   ruleId = 'manual',
   createdBy?: string,
+  projectId?: string,
 ) {
   const normalizedSteps = steps.map((s, idx) => ({
     ...s,
@@ -192,6 +193,7 @@ async function createApprovalWithClient(
       flowType,
       targetTable,
       targetId,
+      projectId,
       status: DocStatusValue.pending_qa,
       currentStep,
       ruleId,
@@ -217,6 +219,7 @@ export async function createApproval(
   steps: Step[],
   ruleId = 'manual',
   createdBy?: string,
+  projectId?: string,
 ) {
   return prisma.$transaction(async (tx: any) =>
     createApprovalWithClient(
@@ -227,6 +230,7 @@ export async function createApproval(
       steps,
       ruleId,
       createdBy,
+      projectId,
     ),
   );
 }
@@ -248,6 +252,8 @@ export async function createApprovalFor(
       payload,
       (rule?.conditions as ApprovalCondition) || undefined,
     );
+  const projectId =
+    typeof payload.projectId === 'string' ? payload.projectId : undefined;
   if (client === prisma) {
     return createApproval(
       flowType,
@@ -256,6 +262,7 @@ export async function createApprovalFor(
       steps,
       rule?.id || 'auto',
       options.createdBy,
+      projectId,
     );
   }
   return createApprovalWithClient(
@@ -266,6 +273,7 @@ export async function createApprovalFor(
     steps,
     rule?.id || 'auto',
     options.createdBy,
+    projectId,
   );
 }
 
