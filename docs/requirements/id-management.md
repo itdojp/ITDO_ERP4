@@ -1,0 +1,41 @@
+# ID管理/Google連携方針（たたき台）
+
+## 目的
+- SSOでのログインとアカウントライフサイクル管理を実現する
+- ERP側のユーザ情報とIDaaS（Google/MS等）を整合させる
+- 監査・権限管理の基盤としてユーザ属性を安定化させる
+
+## 連携方式（想定）
+- 認証: OIDC（Google Workspace / Microsoft Entra ID）
+- プロビジョニング: まずはCSV/手動同期、将来SCIM
+- 中間: IDaaS（Okta/Google Cloud Identity 等）を経由可能にする
+
+## ユーザ情報の持ち方
+- ERP側の userId は外部IDと紐づける（IDaaSのsubject/immutable ID）
+- email/name は同期可能な属性として保持
+- 組織/部門/グループはERP側の権限制御に利用
+
+### 例（論理モデル）
+- users: id, externalId, email, name, orgUnitId, status, roleCodes, groupIds
+- user_profiles: employmentType, managerUserId, joinedAt（任意）
+
+## ロール/グループ付与方針
+- IdPグループ → ERPロール/承認グループへマッピング
+- 例外はERP側で手動付与（監査ログに記録）
+- プロジェクト所属はERP側で管理（IdPとは別管理）
+
+## プロビジョニング/退職
+- 退職/無効化はIdPの状態を優先（ログイン不可）
+- 過去データは保持し、監査ログの整合性を優先
+- 代理/兼務などはERP側の属性で表現
+
+## PoC段階
+- ヘッダ認証のモック（x-user-id/x-roles/x-group-ids）
+- 手動でユーザ/ロール/グループを設定
+- 将来のOIDC導入時に置換できる構造を維持
+
+## 次のTODO
+- 採用IdPの決定（Google/MS/IDaaS）
+- SCIM導入の可否、同期頻度・責任分界の定義
+- ユーザ属性の正式スキーマ確定
+- 監査ログ/権限変更ログの要件整理
