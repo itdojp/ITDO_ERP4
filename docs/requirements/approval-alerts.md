@@ -25,6 +25,7 @@
 ### 共通要素
 - approval_rules: `flow_type`, `conditions`(min/max, recurring flag, project tags), `steps`(group/user, allow_skip)。
 - approval_instances: 申請ごとにステップを生成し、状態・担当・期限を保持。監査ログに遷移を記録。
+- 閲覧範囲: mgmt/exec + 申請者本人 + プロジェクトメンバー。
 
 ### conditions / steps のJSON例
 - conditions: `amountMin`/`amountMax`/`skipUnder`/`execThreshold`/`isRecurring`/`projectType`/`customerId`/`orgUnitId`/`flowFlags`。

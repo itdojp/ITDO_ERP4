@@ -71,8 +71,15 @@ export async function registerApprovalRuleRoutes(app: FastifyInstance) {
 
   app.get(
     '/approval-instances',
-    { preHandler: requireRole(['admin', 'mgmt']) },
-    async (req) => {
+    { preHandler: requireRole(['admin', 'mgmt', 'exec', 'user']) },
+    async (req, reply) => {
+      const roles = req.user?.roles || [];
+      const userId = req.user?.userId;
+      const userProjectIds = req.user?.projectIds || [];
+      const isPrivileged =
+        roles.includes('admin') ||
+        roles.includes('mgmt') ||
+        roles.includes('exec');
       const {
         flowType,
         status,
@@ -98,6 +105,22 @@ export async function registerApprovalRuleRoutes(app: FastifyInstance) {
           ? { steps: { some: stepsFilter } }
           : {}),
       };
+      if (!isPrivileged) {
+        if (!userId) {
+          return reply.code(403).send({ error: 'forbidden' });
+        }
+        if (projectId && !userProjectIds.includes(projectId)) {
+          return reply.code(403).send({ error: 'forbidden_project' });
+        }
+        if (requesterId && requesterId !== userId) {
+          return reply.code(403).send({ error: 'forbidden' });
+        }
+        const accessFilters: any[] = [{ createdBy: userId }];
+        if (userProjectIds.length) {
+          accessFilters.push({ projectId: { in: userProjectIds } });
+        }
+        where.AND = [...(where.AND || []), { OR: accessFilters }];
+      }
       const items = await prisma.approvalInstance.findMany({
         where,
         include: { steps: true, rule: true },
