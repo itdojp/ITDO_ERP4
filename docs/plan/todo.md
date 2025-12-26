@@ -139,7 +139,7 @@
 - [x] Prisma migration 方針の文書化（dev/staging/prod の使い分け）
 - [x] Podman を使った検証手順の記載（DB起動/seed/チェック）
 - [x] seed/検証手順の更新（updatedAt 必須反映）
-- [ ] DB初期化/検証の簡易スクリプト案の整理
+- [x] DB初期化/検証の簡易スクリプト案の整理
 
 ### 承認・権限制御の本番化
 - [ ] 承認ルール条件の拡張（projectType/customerId/orgUnitId 等の入力整理）

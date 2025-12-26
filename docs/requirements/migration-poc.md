@@ -22,6 +22,10 @@ This note describes a minimal PoC load using demo seed data and a basic integrit
 5. 後片付け:
    - `podman stop erp4-pg-poc && podman rm erp4-pg-poc`
 
+### まとめて実行する場合
+`scripts/podman-poc.sh` を使うと、開始/反映/seed/check を一括で実行可能。
+例: `./scripts/podman-poc.sh reset`
+
 ## Output to Record
 - project/estimate/invoice/time/expense counts
 - invoice totals per project
