@@ -29,16 +29,16 @@
   - `moved`（移動済み/付け替え）
   - `cancelled`（中止）
   - `scope_change`（スコープ変更）
+- 付け替え（reassign）の reasonCode も、特段の理由がない限り deletedReason と同一コード体系を用いる。
 
 ## 編集フロー（MVP）
 ### Project（案件）
 - 作成: name, customerId, status=draft を必須。parentProjectId は任意。
 - 変更:
   - name/status/customer/owner は admin/mgmt/PM が変更可。
-  - parentProjectId 変更は理由必須。承認中の伝票がある場合は変更不可（承認解除/取消後に実施）。
+  - parentProjectId 変更は理由必須。承認中の伝票（見積/請求/発注）がある場合は変更不可（承認解除/取消後に実施）。
 - 削除:
-  - 子案件/タスク/マイルストーンが無い場合のみ論理削除可。
-  - 伝票（見積/請求/発注）に紐づく場合は削除不可。
+  - 子案件/タスク/マイルストーンが無く、伝票（見積/請求/発注）に紐づいていない場合のみ論理削除可。
 
 ### ProjectTask（タスク）
 - 作成: projectId, name を必須。parentTaskId は任意。
@@ -49,7 +49,8 @@
   - `docs/requirements/reassignment-policy.md` に従う。
   - time_entries/expenses などの紐付けがある場合は一括移動か移動不可。
 - 削除:
-  - time_entries がある場合は削除不可（必要なら taskId を NULL にした上で削除）。
+  - 子タスクがある場合は削除不可（先に移動/削除を完了させる）。
+  - time_entries がある場合は削除不可。廃止する場合は `docs/requirements/reassignment-policy.md` に従い別タスクへ付け替える。
   - 請求/発注明細に紐づく場合は削除不可。
 
 ### ProjectMilestone（マイルストーン）
@@ -59,12 +60,13 @@
   - invoice が pending_qa 以降の場合は変更不可（請求取消後に修正）。
 - 付け替え:
   - projectId 変更は原則不可（必要なら新規作成 + 旧マイルストーンは論理削除）。
+  - 旧マイルストーンは deletedReason=`moved` とし、新マイルストーンIDを監査ログまたは詳細メモに記録する。
 - 削除:
   - invoice が紐づく場合は削除不可。
 
 ## UIの想定（要件）
 - Project詳細: 階層ツリー表示 + 子案件/タスク/マイルストーンの一覧。
-- Task: WBS/ツリー表示、ドラッグ移動は「理由入力 + 権限チェック」付き。
+- Task: WBS（Work Breakdown Structure）/ツリー表示、ドラッグ移動は「理由入力 + 権限チェック」付き。
 - Milestone: 期限/金額/請求状態の一覧、未請求アラートの視認性を重視。
 
 ## API想定（ドラフト）
