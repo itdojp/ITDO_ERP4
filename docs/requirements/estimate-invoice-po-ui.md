@@ -42,22 +42,22 @@
 - 連動: PO と紐付け可能（任意）。
 
 ## 採番ルール
-- 見積/納品/請求: `PYYYY-MM-NNNN`（P=Q/D/I）。
+- 見積/納品/請求: `PYYYY-MM-NNNN`（P=Q（見積/Quote）/D（納品）/I（請求））。
 - 仕入関連: `POYYYY-MM-NNNN` / `VQYYYY-MM-NNNN` / `VIYYYY-MM-NNNN` を想定。
 - 採番タイミング: submit 時に採番（draft では空で可）。
 
 ## 承認ルールとの接続
-- approval_rules.conditions.isRecurring + amount でスキップ判定。
+- approval_rules の conditions に含まれる isRecurring と amount でスキップ判定。
 - 並列承認/二重チェックは stepOrder/parallelKey で表現。
 
 ## APIマッピング（ドラフト）
 - `POST /projects/:id/estimates`
 - `POST /projects/:id/invoices`
-- `POST /purchase-orders`
+- `POST /projects/:id/purchase-orders`
 - `POST /vendor-quotes`
 - `POST /vendor-invoices`
 - `POST /approval-instances/:id/act`
 
 ## 未決定/確認事項
-- 納品(D)ドキュメントのUI扱い（請求に統合 or 独立作成）
+- 納品(D)ドキュメントのUI扱い（本MVPでは画面/API対象外。番号プレフィックスDのみ採番ルール上で予約済み。将来、請求に統合 or 独立作成とするか判断）
 - VendorInvoice の承認フロー要否
