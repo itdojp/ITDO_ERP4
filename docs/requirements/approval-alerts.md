@@ -31,6 +31,7 @@
 - conditions: `amountMin`/`amountMax`/`skipUnder`/`execThreshold`/`isRecurring`/`projectType`/`customerId`/`orgUnitId`/`flowFlags`。
 - flowFlags はフロー横断ルール向けのフラグ（未設定なら flow_type のみで適用）。
 - steps は `stepOrder` 明示で順序固定、`parallelKey` が同じものは並列承認（同一 stepOrder 扱い）。
+- projectType/customerId/orgUnitId は projectId から参照して評価する（payloadに無い場合は補完）。
 
 ```json
 {

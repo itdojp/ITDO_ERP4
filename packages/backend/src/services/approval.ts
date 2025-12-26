@@ -128,6 +128,29 @@ function normalizeRuleSteps(raw: unknown): Step[] | null {
   }));
 }
 
+async function enrichProjectFields(
+  payload: Record<string, unknown>,
+  client: any,
+): Promise<Record<string, unknown>> {
+  const projectId =
+    typeof payload.projectId === 'string' ? payload.projectId : undefined;
+  if (!projectId) return payload;
+  if (payload.projectType || payload.customerId || payload.orgUnitId) {
+    return payload;
+  }
+  const project = await client.project.findUnique({
+    where: { id: projectId },
+    select: { projectType: true, customerId: true, orgUnitId: true },
+  });
+  if (!project) return payload;
+  return {
+    ...payload,
+    projectType: payload.projectType ?? project.projectType ?? undefined,
+    customerId: payload.customerId ?? project.customerId ?? undefined,
+    orgUnitId: payload.orgUnitId ?? project.orgUnitId ?? undefined,
+  };
+}
+
 export function matchApprovalSteps(
   flowType: string,
   payload: Record<string, unknown>,
@@ -243,17 +266,20 @@ export async function createApprovalFor(
   options: CreateApprovalOptions = {},
 ) {
   const client = options.client ?? prisma;
-  const rule = await resolveRule(flowType, payload, client);
+  const enrichedPayload = await enrichProjectFields(payload, client);
+  const rule = await resolveRule(flowType, enrichedPayload, client);
   const ruleSteps = normalizeRuleSteps(rule?.steps);
   const steps =
     ruleSteps ||
     matchApprovalSteps(
       flowType,
-      payload,
+      enrichedPayload,
       (rule?.conditions as ApprovalCondition) || undefined,
     );
   const projectId =
-    typeof payload.projectId === 'string' ? payload.projectId : undefined;
+    typeof enrichedPayload.projectId === 'string'
+      ? enrichedPayload.projectId
+      : undefined;
   if (client === prisma) {
     return createApproval(
       flowType,
