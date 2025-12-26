@@ -158,13 +158,35 @@ const approvalStepSchema = Type.Object(
   { additionalProperties: false },
 );
 
+const flowFlagsSchema = Type.Union([
+  Type.Array(Type.String()),
+  Type.Record(Type.String(), Type.Boolean()),
+]);
+
+const approvalConditionSchema = Type.Object(
+  {
+    amountMin: Type.Optional(Type.Number({ minimum: 0 })),
+    amountMax: Type.Optional(Type.Number({ minimum: 0 })),
+    skipUnder: Type.Optional(Type.Number({ minimum: 0 })),
+    execThreshold: Type.Optional(Type.Number({ minimum: 0 })),
+    isRecurring: Type.Optional(Type.Boolean()),
+    projectType: Type.Optional(Type.String()),
+    customerId: Type.Optional(Type.String()),
+    orgUnitId: Type.Optional(Type.String()),
+    flowFlags: Type.Optional(flowFlagsSchema),
+    minAmount: Type.Optional(Type.Number({ minimum: 0 })),
+    maxAmount: Type.Optional(Type.Number({ minimum: 0 })),
+    skipSmallUnder: Type.Optional(Type.Number({ minimum: 0 })),
+    appliesTo: Type.Optional(Type.Array(Type.String())),
+  },
+  { additionalProperties: true },
+);
+
 export const approvalRuleSchema = {
   body: Type.Object(
     {
       flowType: flowTypeSchema,
-      conditions: Type.Optional(
-        Type.Object({}, { additionalProperties: true }),
-      ),
+      conditions: Type.Optional(approvalConditionSchema),
       steps: Type.Array(approvalStepSchema, { minItems: 1 }),
     },
     { additionalProperties: false },
