@@ -135,9 +135,6 @@ async function enrichProjectFields(
   const projectId =
     typeof payload.projectId === 'string' ? payload.projectId : undefined;
   if (!projectId) return payload;
-  if (payload.projectType || payload.customerId || payload.orgUnitId) {
-    return payload;
-  }
   const project = await client.project.findUnique({
     where: { id: projectId },
     select: { projectType: true, customerId: true, orgUnitId: true },
