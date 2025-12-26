@@ -410,6 +410,15 @@ export async function act(
     const currentSteps = instance.steps.filter(
       (s: any) => s.stepOrder === instance.currentStep,
     );
+    const alreadyActed = currentSteps.some(
+      (s: any) =>
+        s.actedBy === userId && s.status !== DocStatusValue.pending_qa,
+    );
+    if (alreadyActed) {
+      throw new Error(
+        'User has already acted on another step in this parallel approval stage',
+      );
+    }
     const current =
       currentSteps.find(
         (s: any) =>
