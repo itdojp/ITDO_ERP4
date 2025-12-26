@@ -14,6 +14,12 @@ function hasValidSteps(
   return steps.every((s) => Boolean(s.approverGroupId || s.approverUserId));
 }
 
+const privilegedRoles = new Set(['admin', 'mgmt', 'exec']);
+type ApprovalInstanceAccessFilter = {
+  createdBy?: string;
+  projectId?: { in: string[] };
+};
+
 export async function registerApprovalRuleRoutes(app: FastifyInstance) {
   app.get(
     '/approval-rules',
@@ -76,10 +82,7 @@ export async function registerApprovalRuleRoutes(app: FastifyInstance) {
       const roles = req.user?.roles || [];
       const userId = req.user?.userId;
       const userProjectIds = req.user?.projectIds || [];
-      const isPrivileged =
-        roles.includes('admin') ||
-        roles.includes('mgmt') ||
-        roles.includes('exec');
+      const isPrivileged = roles.some((role) => privilegedRoles.has(role));
       const {
         flowType,
         status,
@@ -109,13 +112,9 @@ export async function registerApprovalRuleRoutes(app: FastifyInstance) {
         if (!userId) {
           return reply.code(403).send({ error: 'forbidden' });
         }
-        if (projectId && !userProjectIds.includes(projectId)) {
-          return reply.code(403).send({ error: 'forbidden_project' });
-        }
-        if (requesterId && requesterId !== userId) {
-          return reply.code(403).send({ error: 'forbidden' });
-        }
-        const accessFilters: any[] = [{ createdBy: userId }];
+        const accessFilters: ApprovalInstanceAccessFilter[] = [
+          { createdBy: userId },
+        ];
         if (userProjectIds.length) {
           accessFilters.push({ projectId: { in: userProjectIds } });
         }
