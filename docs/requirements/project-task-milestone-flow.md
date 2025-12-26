@@ -1,0 +1,79 @@
+# 案件/タスク/マイルストーン編集フロー（ドラフト）
+
+## 目的
+- 案件階層/タスク/マイルストーンの編集・付け替え・削除のルールを明確化する
+- 見積/請求/工数/経費と連動する際の制約を整理する
+
+## 対象
+- Project（案件）
+- ProjectTask（タスク）
+- ProjectMilestone（マイルストーン）
+
+## 参照
+- `docs/requirements/reassignment-policy.md`
+- `docs/requirements/access-control.md`
+- `docs/requirements/approval-alerts.md`
+
+## 前提/基本ルール
+- 工数/経費/見積/請求/発注は必ず projectId を持つ（管理業務/社内案件は専用Projectで扱う）。
+- 見積なし請求を許容。マイルストーン紐付けは任意。
+- 納期超過未請求は due_date ベースのアラート/レポートで検知する。
+- 付け替え・削除は理由必須。監査ログに記録する。
+
+## 論理削除ルール
+- 物理削除は行わず、deletedAt + deletedReason をセットする。
+- deletedReason は以下のコードを初期セットとする（必要に応じて拡張）。
+  - `mistake`（誤登録）
+  - `duplicate`（重複）
+  - `merged`（統合）
+  - `moved`（移動済み/付け替え）
+  - `cancelled`（中止）
+  - `scope_change`（スコープ変更）
+
+## 編集フロー（MVP）
+### Project（案件）
+- 作成: name, customerId, status=draft を必須。parentProjectId は任意。
+- 変更:
+  - name/status/customer/owner は admin/mgmt/PM が変更可。
+  - parentProjectId 変更は理由必須。承認中の伝票がある場合は変更不可（承認解除/取消後に実施）。
+- 削除:
+  - 子案件/タスク/マイルストーンが無い場合のみ論理削除可。
+  - 伝票（見積/請求/発注）に紐づく場合は削除不可。
+
+### ProjectTask（タスク）
+- 作成: projectId, name を必須。parentTaskId は任意。
+- 変更:
+  - name/status/assignee/dates の更新は project メンバー以上。
+  - parentTaskId の変更は理由必須。子タスクがある場合は一括移動のみ。
+- 付け替え（Project間移動）:
+  - `docs/requirements/reassignment-policy.md` に従う。
+  - time_entries/expenses などの紐付けがある場合は一括移動か移動不可。
+- 削除:
+  - time_entries がある場合は削除不可（必要なら taskId を NULL にした上で削除）。
+  - 請求/発注明細に紐づく場合は削除不可。
+
+### ProjectMilestone（マイルストーン）
+- 作成: projectId, name, amount, due_date を必須。
+- 変更:
+  - name/amount/due_date は draft or 未請求状態のみ変更可。
+  - invoice が pending_qa 以降の場合は変更不可（請求取消後に修正）。
+- 付け替え:
+  - projectId 変更は原則不可（必要なら新規作成 + 旧マイルストーンは論理削除）。
+- 削除:
+  - invoice が紐づく場合は削除不可。
+
+## UIの想定（要件）
+- Project詳細: 階層ツリー表示 + 子案件/タスク/マイルストーンの一覧。
+- Task: WBS/ツリー表示、ドラッグ移動は「理由入力 + 権限チェック」付き。
+- Milestone: 期限/金額/請求状態の一覧、未請求アラートの視認性を重視。
+
+## API想定（ドラフト）
+- `POST /projects` / `PATCH /projects/:id`
+- `POST /projects/:id/tasks` / `PATCH /projects/:id/tasks/:taskId`
+- `POST /projects/:id/milestones` / `PATCH /projects/:id/milestones/:milestoneId`
+- `POST /projects/:id/tasks/:taskId/reassign`（理由必須）
+
+## 未決定/確認事項
+- Project の parent 変更を許可する際の承認/ログの粒度
+- Task 移動時に time_entries を一括移動する操作のUI設計
+- Milestone の amount 変更を請求ドラフトにどう反映するか
