@@ -5,6 +5,11 @@
 - metadata に from_status / to_status / reason / step_order / actor_group などを格納
 - 参照用途: 監査・履歴確認。UI での表示は後続スコープ
 
+## 保存/閲覧方針（案）
+- 保存期間: 原則無期限（法務判断で変更可能）
+- 閲覧権限: admin/mgmt/監査担当のみ
+- エクスポート: CSV/JSON を将来提供
+
 ## ログ項目
 - instance_id, step_id, from_state, to_state
 - acted_by, acted_at
@@ -18,6 +23,8 @@
 ## 記録対象（MVP）
 - 発番: action=number_sequence_allocated, metadata={kind, year, month, serial}
 - 承認: action=approval_created/approval_approved/approval_rejected, metadata={from_status,to_status,step_order}
+- 承認（ステップ）: action=approval_step_approved/approval_step_rejected, metadata={instance_id, step_id, actor_group, reason}
+- 付け替え: action=reassignment, metadata={from_project_id,to_project_id,from_task_id,to_task_id,reason}
 - Wellbeing閲覧: action=wellbeing_viewed, metadata={target_user_id, entry_date, viewer_role}
 
 ## 利用
