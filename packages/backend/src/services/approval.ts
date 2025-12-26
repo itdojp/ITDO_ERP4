@@ -415,7 +415,9 @@ export async function act(
         s.actedBy === userId && s.status !== DocStatusValue.pending_qa,
     );
     if (alreadyActed) {
-      throw new Error('Already acted on this step');
+      throw new Error(
+        'User has already acted on another step in this parallel approval stage',
+      );
     }
     const current =
       currentSteps.find(

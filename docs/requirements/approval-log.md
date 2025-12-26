@@ -22,8 +22,8 @@
 
 ## 記録対象（MVP）
 - 発番: action=number_sequence_allocated, metadata={kind, year, month, serial}
-- 承認: action=approval_created/approval_approved/approval_rejected, metadata={from_status,to_status,step_order}
-- 承認（ステップ）: action=approval_step_approved/approval_step_rejected, metadata={instance_id, step_id, actor_group, reason}
+- 承認: action=approval_created/approval_approve/approval_reject, metadata={from_status,to_status,step_order}
+- 承認（ステップ）: action=approval_step_approve/approval_step_reject, metadata={instance_id, step_id, actor_group, reason}
 - 付け替え: action=reassignment, metadata={from_project_id,to_project_id,from_task_id,to_task_id,reason}
 - Wellbeing閲覧: action=wellbeing_viewed, metadata={target_user_id, entry_date, viewer_role}
 
