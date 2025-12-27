@@ -17,10 +17,21 @@ function parseDateParam(value?: string) {
   return parsed;
 }
 
+function validateFormat(format: string | undefined, reply: any) {
+  if (!format) return true;
+  if (format !== 'csv') {
+    reply.status(400).send({
+      error: { code: 'INVALID_FORMAT', message: 'format must be csv' },
+    });
+    return false;
+  }
+  return true;
+}
+
 function formatCsvValue(value: unknown) {
   if (value == null) return '';
   const text = String(value);
-  if (/[",\n]/.test(text)) {
+  if (/[",\n\r]/.test(text)) {
     return `"${text.replace(/"/g, '""')}"`;
   }
   return text;
@@ -34,6 +45,13 @@ function toCsv(headers: string[], rows: unknown[][]) {
   return `${lines.join('\n')}\n`;
 }
 
+function sendCsv(reply: any, filename: string, csv: string) {
+  return reply
+    .header('Content-Disposition', `attachment; filename="${filename}"`)
+    .type('text/csv; charset=utf-8')
+    .send(csv);
+}
+
 export async function registerReportRoutes(app: FastifyInstance) {
   app.get(
     '/reports/project-effort/:projectId',
@@ -45,6 +63,7 @@ export async function registerReportRoutes(app: FastifyInstance) {
         to?: string;
         format?: string;
       };
+      if (!validateFormat(format, reply)) return;
       const fromDate = parseDateParam(from);
       const toDate = parseDateParam(to);
       if (from && !fromDate) {
@@ -67,7 +86,7 @@ export async function registerReportRoutes(app: FastifyInstance) {
           ['projectId', 'totalMinutes', 'totalExpenses'],
           [[res.projectId, res.totalMinutes, res.totalExpenses]],
         );
-        return reply.type('text/csv; charset=utf-8').send(csv);
+        return sendCsv(reply, `project-${projectId}-effort.csv`, csv);
       }
       return res;
     },
@@ -83,6 +102,7 @@ export async function registerReportRoutes(app: FastifyInstance) {
         to?: string;
         format?: string;
       };
+      if (!validateFormat(format, reply)) return;
       const fromDate = parseDateParam(from);
       const toDate = parseDateParam(to);
       if (from && !fromDate) {
@@ -131,7 +151,7 @@ export async function registerReportRoutes(app: FastifyInstance) {
             ],
           ],
         );
-        return reply.type('text/csv; charset=utf-8').send(csv);
+        return sendCsv(reply, `project-${projectId}-profit.csv`, csv);
       }
       return res;
     },
@@ -148,6 +168,7 @@ export async function registerReportRoutes(app: FastifyInstance) {
         userIds?: string;
         format?: string;
       };
+      if (!validateFormat(format, reply)) return;
       const fromDate = parseDateParam(from);
       const toDate = parseDateParam(to);
       if (from && !fromDate) {
@@ -208,7 +229,7 @@ export async function registerReportRoutes(app: FastifyInstance) {
           item.minutes,
         ]);
         const csv = toCsv(headers, rows);
-        return reply.type('text/csv; charset=utf-8').send(csv);
+        return sendCsv(reply, `project-${projectId}-profit-by-user.csv`, csv);
       }
       return res;
     },
@@ -226,6 +247,7 @@ export async function registerReportRoutes(app: FastifyInstance) {
         label?: string;
         format?: string;
       };
+      if (!validateFormat(format, reply)) return;
       const fromDate = parseDateParam(from);
       const toDate = parseDateParam(to);
       if (from && !fromDate) {
@@ -298,7 +320,7 @@ export async function registerReportRoutes(app: FastifyInstance) {
           res.userIds.join('|'),
         ];
         const csv = toCsv(headers, [row]);
-        return reply.type('text/csv; charset=utf-8').send(csv);
+        return sendCsv(reply, `project-${projectId}-profit-by-group.csv`, csv);
       }
       return res;
     },
@@ -314,6 +336,7 @@ export async function registerReportRoutes(app: FastifyInstance) {
         to?: string;
         format?: string;
       };
+      if (!validateFormat(format, reply)) return;
       const fromDate = parseDateParam(from);
       const toDate = parseDateParam(to);
       if (from && !fromDate) {
@@ -340,7 +363,7 @@ export async function registerReportRoutes(app: FastifyInstance) {
           ['userId', 'totalMinutes'],
           res.map((item) => [item.userId, item.totalMinutes]),
         );
-        return reply.type('text/csv; charset=utf-8').send(csv);
+        return sendCsv(reply, 'group-effort-report.csv', csv);
       }
       return { items: res };
     },
@@ -356,6 +379,7 @@ export async function registerReportRoutes(app: FastifyInstance) {
         to?: string;
         format?: string;
       };
+      if (!validateFormat(format, reply)) return;
       const fromDate = parseDateParam(from);
       const toDate = parseDateParam(to);
       if (from && !fromDate) {
@@ -378,7 +402,7 @@ export async function registerReportRoutes(app: FastifyInstance) {
           ['userId', 'totalMinutes', 'dailyHours'],
           [[res.userId, res.totalMinutes, res.dailyHours]],
         );
-        return reply.type('text/csv; charset=utf-8').send(csv);
+        return sendCsv(reply, `overtime-${userId}.csv`, csv);
       }
       return res;
     },
@@ -394,6 +418,7 @@ export async function registerReportRoutes(app: FastifyInstance) {
         projectId?: string;
         format?: string;
       };
+      if (!validateFormat(format, reply)) return;
       const fromDate = parseDateParam(from);
       const toDate = parseDateParam(to);
       if (from && !fromDate) {
@@ -437,7 +462,7 @@ export async function registerReportRoutes(app: FastifyInstance) {
           item.invoiceStatuses.join('|'),
         ]);
         const csv = toCsv(headers, rows);
-        return reply.type('text/csv; charset=utf-8').send(csv);
+        return sendCsv(reply, 'delivery-due-report.csv', csv);
       }
       return { items: res };
     },
