@@ -464,9 +464,9 @@ export async function reportProjectProfitByUser(
     const laborItem = labor.items.get(userId) ?? { cost: 0, minutes: 0 };
     const expenseCost = expenseByUser.get(userId) ?? 0;
     const share =
-      allocationMethod === 'labor_cost'
+      allocationMethod === 'labor_cost' && totalLaborCost > 0
         ? laborItem.cost / totalLaborCost
-        : allocationMethod === 'minutes'
+        : allocationMethod === 'minutes' && totalMinutes > 0
           ? laborItem.minutes / totalMinutes
           : 0;
     const allocatedRevenue = revenue * share;

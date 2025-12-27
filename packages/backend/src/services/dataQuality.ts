@@ -1,4 +1,5 @@
 import { prisma } from './db.js';
+import { Prisma } from '@prisma/client';
 
 type DataQualityItem = {
   key: string;
@@ -11,13 +12,40 @@ function buildSample(values: string[], limit = 5) {
 }
 
 async function detectDuplicateCodes(model: 'project' | 'customer' | 'vendor') {
-  const base =
-    model === 'project'
-      ? prisma.project
-      : model === 'customer'
-        ? prisma.customer
-        : prisma.vendor;
-  const grouped = await base.groupBy({
+  if (model === 'project') {
+    const grouped = await prisma.project.groupBy({
+      by: ['code'],
+      where: { deletedAt: null },
+      _count: { _all: true },
+      having: {
+        _count: {
+          _all: { gt: 1 },
+        },
+      },
+    });
+    const codes = grouped.map((row) => row.code);
+    return {
+      count: grouped.length,
+      sample: buildSample(codes),
+    };
+  }
+  if (model === 'customer') {
+    const grouped = await prisma.customer.groupBy({
+      by: ['code'],
+      _count: { _all: true },
+      having: {
+        _count: {
+          _all: { gt: 1 },
+        },
+      },
+    });
+    const codes = grouped.map((row) => row.code);
+    return {
+      count: grouped.length,
+      sample: buildSample(codes),
+    };
+  }
+  const grouped = await prisma.vendor.groupBy({
     by: ['code'],
     _count: { _all: true },
     having: {
@@ -57,17 +85,29 @@ export async function runDataQualityChecks() {
     sample: vendorDupes.sample,
   });
 
-  const invoiceCurrencyMissing = await prisma.invoice.count({
-    where: { currency: '' },
-  });
+  const invoiceCurrencyMissingRows = await prisma.$queryRaw<
+    { count: bigint }[]
+  >(Prisma.sql`
+    SELECT COUNT(*)::bigint AS count
+    FROM "Invoice"
+    WHERE "currency" IS NULL OR "currency" = ''
+  `);
+  const invoiceCurrencyMissing = Number(invoiceCurrencyMissingRows[0]?.count ?? 0);
   results.push({
     key: 'invoice_currency_missing',
     count: invoiceCurrencyMissing,
   });
 
-  const estimateCurrencyMissing = await prisma.estimate.count({
-    where: { currency: '' },
-  });
+  const estimateCurrencyMissingRows = await prisma.$queryRaw<
+    { count: bigint }[]
+  >(Prisma.sql`
+    SELECT COUNT(*)::bigint AS count
+    FROM "Estimate"
+    WHERE "currency" IS NULL OR "currency" = ''
+  `);
+  const estimateCurrencyMissing = Number(
+    estimateCurrencyMissingRows[0]?.count ?? 0,
+  );
   results.push({
     key: 'estimate_currency_missing',
     count: estimateCurrencyMissing,
@@ -75,7 +115,7 @@ export async function runDataQualityChecks() {
 
   const billingTaxMissing = await prisma.billingLine.count({
     where: {
-      OR: [{ taxRate: null }, { taxRate: 0 }],
+      taxRate: null,
     },
   });
   results.push({
@@ -84,43 +124,75 @@ export async function runDataQualityChecks() {
   });
 
   const invoiceNoRegex = /^I[0-9]{4}-[0-9]{2}-[0-9]{4}$/;
-  const invoiceNos = await prisma.invoice.findMany({
-    select: { id: true, invoiceNo: true },
-  });
-  const invalidInvoiceNos = invoiceNos.filter(
-    (inv) => !invoiceNoRegex.test(inv.invoiceNo),
-  );
+  const invoicePageSize = 1000;
+  let invalidInvoiceCount = 0;
+  const invalidInvoiceSample: string[] = [];
+  let invoiceCursor: { id: string } | undefined = undefined;
+  while (true) {
+    const invoiceBatch = await prisma.invoice.findMany({
+      select: { id: true, invoiceNo: true },
+      orderBy: { id: 'asc' },
+      take: invoicePageSize,
+      ...(invoiceCursor ? { skip: 1, cursor: invoiceCursor } : {}),
+    });
+    if (invoiceBatch.length === 0) break;
+    for (const inv of invoiceBatch) {
+      if (!invoiceNoRegex.test(inv.invoiceNo)) {
+        invalidInvoiceCount += 1;
+        if (invalidInvoiceSample.length < 5) {
+          invalidInvoiceSample.push(inv.invoiceNo);
+        }
+      }
+    }
+    invoiceCursor = { id: invoiceBatch[invoiceBatch.length - 1].id };
+  }
   results.push({
     key: 'invoice_number_format_invalid',
-    count: invalidInvoiceNos.length,
-    sample: buildSample(invalidInvoiceNos.map((inv) => inv.invoiceNo)),
+    count: invalidInvoiceCount,
+    sample: buildSample(invalidInvoiceSample),
   });
 
   const poNoRegex = /^PO[0-9]{4}-[0-9]{2}-[0-9]{4}$/;
-  const poNos = await prisma.purchaseOrder.findMany({
-    select: { id: true, poNo: true },
-  });
-  const invalidPoNos = poNos.filter((po) => !poNoRegex.test(po.poNo));
+  const poPageSize = 1000;
+  let invalidPoCount = 0;
+  const invalidPoSample: string[] = [];
+  let poCursor: { id: string } | undefined = undefined;
+  while (true) {
+    const poBatch = await prisma.purchaseOrder.findMany({
+      select: { id: true, poNo: true },
+      orderBy: { id: 'asc' },
+      take: poPageSize,
+      ...(poCursor ? { skip: 1, cursor: poCursor } : {}),
+    });
+    if (poBatch.length === 0) break;
+    for (const po of poBatch) {
+      if (!poNoRegex.test(po.poNo)) {
+        invalidPoCount += 1;
+        if (invalidPoSample.length < 5) {
+          invalidPoSample.push(po.poNo);
+        }
+      }
+    }
+    poCursor = { id: poBatch[poBatch.length - 1].id };
+  }
   results.push({
     key: 'purchase_order_number_format_invalid',
-    count: invalidPoNos.length,
-    sample: buildSample(invalidPoNos.map((po) => po.poNo)),
+    count: invalidPoCount,
+    sample: buildSample(invalidPoSample),
   });
 
-  const timeEntries = await prisma.timeEntry.findMany({
-    where: { deletedAt: null },
-    select: { userId: true, workDate: true, minutes: true },
-  });
-  const dailyTotals = new Map<string, number>();
-  for (const entry of timeEntries) {
-    const dateKey = entry.workDate.toISOString().slice(0, 10);
-    const key = `${entry.userId}:${dateKey}`;
-    const current = dailyTotals.get(key) ?? 0;
-    dailyTotals.set(key, current + (entry.minutes || 0));
-  }
-  const overLimit = Array.from(dailyTotals.entries())
-    .filter(([, total]) => total > 1440)
-    .map(([key]) => key);
+  const timeOverLimitRows = await prisma.$queryRaw<
+    { userId: string; workDate: string }[]
+  >(Prisma.sql`
+    SELECT "userId", DATE("workDate") AS "workDate"
+    FROM "TimeEntry"
+    WHERE "deletedAt" IS NULL
+    GROUP BY "userId", DATE("workDate")
+    HAVING SUM("minutes") > 1440
+  `);
+  const overLimit = timeOverLimitRows.map(
+    (row) => `${row.userId}:${row.workDate}`,
+  );
   results.push({
     key: 'time_entries_daily_over_1440',
     count: overLimit.length,
