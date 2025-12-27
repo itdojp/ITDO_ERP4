@@ -72,7 +72,6 @@ async function sendPdf(
   const { url } = await generatePdfStub(templateId, payload);
   return reply.send({ format: 'pdf', templateId, url });
 }
-
 export async function registerReportRoutes(app: FastifyInstance) {
   app.get(
     '/reports/project-effort/:projectId',
