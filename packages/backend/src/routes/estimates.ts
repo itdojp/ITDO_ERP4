@@ -1,3 +1,4 @@
+import type { Prisma } from '@prisma/client';
 import { FastifyInstance } from 'fastify';
 import { nextNumber } from '../services/numbering.js';
 import { submitApprovalWithUpdate } from '../services/approval.js';
@@ -15,13 +16,14 @@ export async function registerEstimateRoutes(app: FastifyInstance) {
         projectId?: string;
         status?: string;
       };
-      const where: any = {};
+      const where: Prisma.EstimateWhereInput = {};
       if (projectId) where.projectId = projectId;
       if (status) where.status = status;
       const items = await prisma.estimate.findMany({
         where,
+        include: { lines: true },
         orderBy: { createdAt: 'desc' },
-        take: 200,
+        take: 100,
       });
       return { items };
     },
@@ -51,7 +53,7 @@ export async function registerEstimateRoutes(app: FastifyInstance) {
     async (req) => {
       const { projectId } = req.params as { projectId: string };
       const { status } = req.query as { status?: string };
-      const where: any = { projectId };
+      const where: Prisma.EstimateWhereInput = { projectId };
       if (status) where.status = status;
       const items = await prisma.estimate.findMany({
         where,

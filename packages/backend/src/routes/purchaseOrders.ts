@@ -1,3 +1,4 @@
+import type { Prisma } from '@prisma/client';
 import { FastifyInstance } from 'fastify';
 import { nextNumber } from '../services/numbering.js';
 import { submitApprovalWithUpdate } from '../services/approval.js';
@@ -16,14 +17,14 @@ export async function registerPurchaseOrderRoutes(app: FastifyInstance) {
         vendorId?: string;
         status?: string;
       };
-      const where: any = {};
+      const where: Prisma.PurchaseOrderWhereInput = {};
       if (projectId) where.projectId = projectId;
       if (vendorId) where.vendorId = vendorId;
       if (status) where.status = status;
       const items = await prisma.purchaseOrder.findMany({
         where,
         orderBy: { createdAt: 'desc' },
-        take: 200,
+        take: 100,
       });
       return { items };
     },

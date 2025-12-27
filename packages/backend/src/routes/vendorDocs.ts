@@ -1,3 +1,4 @@
+import type { Prisma } from '@prisma/client';
 import { FastifyInstance } from 'fastify';
 import { submitApprovalWithUpdate } from '../services/approval.js';
 import { FlowTypeValue, DocStatusValue } from '../types.js';
@@ -15,14 +16,14 @@ export async function registerVendorDocRoutes(app: FastifyInstance) {
         vendorId?: string;
         status?: string;
       };
-      const where: any = {};
+      const where: Prisma.VendorQuoteWhereInput = {};
       if (projectId) where.projectId = projectId;
       if (vendorId) where.vendorId = vendorId;
       if (status) where.status = status;
       const items = await prisma.vendorQuote.findMany({
         where,
         orderBy: { createdAt: 'desc' },
-        take: 200,
+        take: 100,
       });
       return { items };
     },
@@ -54,14 +55,14 @@ export async function registerVendorDocRoutes(app: FastifyInstance) {
         vendorId?: string;
         status?: string;
       };
-      const where: any = {};
+      const where: Prisma.VendorInvoiceWhereInput = {};
       if (projectId) where.projectId = projectId;
       if (vendorId) where.vendorId = vendorId;
       if (status) where.status = status;
       const items = await prisma.vendorInvoice.findMany({
         where,
         orderBy: { createdAt: 'desc' },
-        take: 200,
+        take: 100,
       });
       return { items };
     },
