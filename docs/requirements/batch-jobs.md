@@ -58,14 +58,15 @@ sequenceDiagram
 ```
 
 ## アラート計算
-- 対象: alert_settings (type: budget_overrun/overtime/approval_delay/delivery_due)。
+- 対象: alert_settings (type: budget_overrun/overtime/approval_delay/approval_escalation/delivery_due)。
 - 入力データ: 工数集計/予算値、残業時間（time_entries）、承認待ち経過時間（approval_instances）。
 - 処理: 設定の閾値・期間に基づき集計し、超過時に alerts レコードを作成し通知をトリガ。通知はメール/ダッシュボード（将来拡張: webhook/Slack）。
 - スケジュール: 日次〜時間単位。初期は1日1回でスタート。
 - 再送/抑止: 同一条件で open 状態のアラートがあれば再送抑止し、remindAfterHours が設定されている場合は reminderAt で再送する。
-- 承認遅延判定: approval_instances.current_step に紐づく approval_steps.createdAt から24h超過をデフォルトとし、ルールごとに可変。通知は設定 recipients/approverGroupId に送る（エスカレーションは後続）。
+- 承認遅延判定: approval_instances.current_step に紐づく approval_steps.createdAt から24h超過をデフォルトとし、ルールごとに可変。通知は設定 recipients/approverGroupId に送る。
 - 予算超過: project_id ごとに time_entries × rate で累計し、project.budget 比で判定。+10%閾値は設定から取得。
 - 納期超過未請求: project_milestones.due_date <= now かつ invoices が紐付いていないものをカウントし、閾値超過で発火。
+- 承認期限エスカレーション: approval_steps の currentStep が閾値超過の場合に発火（/jobs/approval-escalations/run）。
 
 ### 擬似コード
 ```

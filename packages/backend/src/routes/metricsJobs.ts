@@ -1,5 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import { computeAndTrigger } from '../services/alert.js';
+import { runApprovalEscalations } from '../services/approvalEscalation.js';
 import {
   computeApprovalDelay,
   computeBudgetOverrun,
@@ -18,6 +19,11 @@ export async function registerMetricJobRoutes(app: FastifyInstance) {
         computeApprovalDelay(setting),
       [AlertTypeValue.delivery_due]: (setting) => computeDeliveryDue(setting),
     });
+    return { ok: true };
+  });
+
+  app.post('/jobs/approval-escalations/run', async () => {
+    await runApprovalEscalations();
     return { ok: true };
   });
 }

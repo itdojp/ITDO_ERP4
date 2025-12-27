@@ -9,6 +9,7 @@
 - 経費: POST /expenses → submit
 - 承認フロー: 見積/請求/発注/経費/休暇の submit → /approval-instances で作成確認 → /approval-instances/:id/act で承認/却下 → 対象ステータス更新
 - アラートジョブ: POST /jobs/alerts/run → GET /alerts で履歴確認
+- 承認期限エスカレーション: POST /jobs/approval-escalations/run → GET /alerts で履歴確認
 - 定期案件ジョブ: recurring_project_templates を作成 → POST /jobs/recurring-projects/run → 月次/四半期のドラフト生成と重複防止を確認
 - ウェルビーイング: POST /wellbeing-entries → GET (HRのみ)
 - スモーク: scripts/smoke-backend.sh を実行してハッピーパスが通ることを確認

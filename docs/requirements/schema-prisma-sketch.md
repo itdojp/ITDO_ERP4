@@ -55,7 +55,7 @@ enum DocStatus { draft pending_qa pending_exec approved rejected sent paid cance
 enum TimeStatus { submitted approved rejected }
 enum LeaveStatus { draft pending_manager approved rejected }
 enum FlowType { estimate invoice expense leave time purchase_order vendor_invoice vendor_quote }
-enum AlertType { budget_overrun overtime approval_delay delivery_due }
+enum AlertType { budget_overrun overtime approval_delay approval_escalation delivery_due }
 
 // FK/削除ポリシー（案）
 // - 物理削除は原則禁止。deletedAt/deletedReason で論理削除（理由コード）

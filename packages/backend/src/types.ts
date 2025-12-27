@@ -59,10 +59,12 @@ export type AlertType =
   | 'budget_overrun'
   | 'overtime'
   | 'approval_delay'
+  | 'approval_escalation'
   | 'delivery_due';
 export const AlertTypeValue: Record<AlertType, AlertType> = {
   budget_overrun: 'budget_overrun',
   overtime: 'overtime',
   approval_delay: 'approval_delay',
+  approval_escalation: 'approval_escalation',
   delivery_due: 'delivery_due',
 };

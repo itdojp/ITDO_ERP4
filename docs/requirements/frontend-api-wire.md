@@ -62,6 +62,7 @@
 - GET/POST/PATCH `/approval-rules`
 - POST `/approval-instances/:id/act` { action: approve|reject, reason? }
 - POST `/jobs/alerts/run` (手動トリガー)
+- POST `/jobs/approval-escalations/run` (承認期限エスカレーション)
 
 ## role/permission policy (PoC)
 - headers: `x-roles` = admin, mgmt, user, hr を想定

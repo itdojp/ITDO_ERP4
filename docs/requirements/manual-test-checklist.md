@@ -5,6 +5,7 @@
 - [ ] POST/GET /time-entries （非管理ロールなら自分のデータのみ取得）
 - [ ] POST/GET /expenses （非管理ロールなら自分のデータのみ取得）
 - [ ] /alert-settings CRUD と /jobs/alerts/run で alert が保存される
+- [ ] /jobs/approval-escalations/run で承認期限エスカレーションが保存される
 - [ ] /approval-rules CRUD のハッピーパス
 - [ ] /wellbeing-entries POST → HR/AdminでGETできる
 
