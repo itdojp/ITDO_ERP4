@@ -8,6 +8,51 @@ import { prisma } from '../services/db.js';
 
 export async function registerInvoiceRoutes(app: FastifyInstance) {
   app.get(
+    '/invoices',
+    { preHandler: requireRole(['admin', 'mgmt']) },
+    async (req) => {
+      const { projectId, status, from, to } = req.query as {
+        projectId?: string;
+        status?: string;
+        from?: string;
+        to?: string;
+      };
+      const where: any = {};
+      if (projectId) where.projectId = projectId;
+      if (status) where.status = status;
+      if (from || to) {
+        where.issueDate = {};
+        if (from) where.issueDate.gte = new Date(from);
+        if (to) where.issueDate.lte = new Date(to);
+      }
+      const items = await prisma.invoice.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        take: 200,
+      });
+      return { items };
+    },
+  );
+
+  app.get(
+    '/invoices/:id',
+    { preHandler: requireRole(['admin', 'mgmt']) },
+    async (req, reply) => {
+      const { id } = req.params as { id: string };
+      const invoice = await prisma.invoice.findUnique({
+        where: { id },
+        include: { lines: true },
+      });
+      if (!invoice) {
+        return reply.status(404).send({
+          error: { code: 'NOT_FOUND', message: 'Invoice not found' },
+        });
+      }
+      return invoice;
+    },
+  );
+
+  app.get(
     '/projects/:projectId/invoices',
     { preHandler: requireRole(['admin', 'mgmt']) },
     async (req) => {

@@ -8,6 +8,44 @@ import { prisma } from '../services/db.js';
 
 export async function registerEstimateRoutes(app: FastifyInstance) {
   app.get(
+    '/estimates',
+    { preHandler: requireRole(['admin', 'mgmt']) },
+    async (req) => {
+      const { projectId, status } = req.query as {
+        projectId?: string;
+        status?: string;
+      };
+      const where: any = {};
+      if (projectId) where.projectId = projectId;
+      if (status) where.status = status;
+      const items = await prisma.estimate.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        take: 200,
+      });
+      return { items };
+    },
+  );
+
+  app.get(
+    '/estimates/:id',
+    { preHandler: requireRole(['admin', 'mgmt']) },
+    async (req, reply) => {
+      const { id } = req.params as { id: string };
+      const estimate = await prisma.estimate.findUnique({
+        where: { id },
+        include: { lines: true },
+      });
+      if (!estimate) {
+        return reply.status(404).send({
+          error: { code: 'NOT_FOUND', message: 'Estimate not found' },
+        });
+      }
+      return estimate;
+    },
+  );
+
+  app.get(
     '/projects/:projectId/estimates',
     { preHandler: requireRole(['admin', 'mgmt']) },
     async (req) => {

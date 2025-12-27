@@ -7,6 +7,46 @@ import { requireRole } from '../services/rbac.js';
 import { prisma } from '../services/db.js';
 
 export async function registerPurchaseOrderRoutes(app: FastifyInstance) {
+  app.get(
+    '/purchase-orders',
+    { preHandler: requireRole(['admin', 'mgmt']) },
+    async (req) => {
+      const { projectId, vendorId, status } = req.query as {
+        projectId?: string;
+        vendorId?: string;
+        status?: string;
+      };
+      const where: any = {};
+      if (projectId) where.projectId = projectId;
+      if (vendorId) where.vendorId = vendorId;
+      if (status) where.status = status;
+      const items = await prisma.purchaseOrder.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        take: 200,
+      });
+      return { items };
+    },
+  );
+
+  app.get(
+    '/purchase-orders/:id',
+    { preHandler: requireRole(['admin', 'mgmt']) },
+    async (req, reply) => {
+      const { id } = req.params as { id: string };
+      const po = await prisma.purchaseOrder.findUnique({
+        where: { id },
+        include: { lines: true },
+      });
+      if (!po) {
+        return reply.status(404).send({
+          error: { code: 'NOT_FOUND', message: 'Purchase order not found' },
+        });
+      }
+      return po;
+    },
+  );
+
   app.post(
     '/projects/:projectId/purchase-orders',
     { preHandler: requireRole(['admin', 'mgmt']), schema: purchaseOrderSchema },
