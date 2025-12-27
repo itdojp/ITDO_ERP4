@@ -54,6 +54,50 @@ export const recurringTemplateSchema = {
   }),
 };
 
+export const projectTaskSchema = {
+  body: Type.Object({
+    name: Type.String(),
+    parentTaskId: Type.Optional(Type.String()),
+    assigneeId: Type.Optional(Type.String()),
+    status: Type.Optional(Type.String()),
+    planStart: Type.Optional(Type.String({ format: 'date' })),
+    planEnd: Type.Optional(Type.String({ format: 'date' })),
+    actualStart: Type.Optional(Type.String({ format: 'date' })),
+    actualEnd: Type.Optional(Type.String({ format: 'date' })),
+  }),
+};
+
+export const projectTaskPatchSchema = {
+  body: Type.Partial(projectTaskSchema.body),
+};
+
+export const projectMilestoneSchema = {
+  body: Type.Object({
+    name: Type.String(),
+    amount: Type.Number({ minimum: 0 }),
+    billUpon: Type.Optional(Type.String()),
+    dueDate: Type.Optional(Type.String({ format: 'date' })),
+    taxRate: Type.Optional(Type.Number({ minimum: 0 })),
+  }),
+};
+
+export const projectMilestonePatchSchema = {
+  body: Type.Partial(projectMilestoneSchema.body),
+};
+
+export const deleteReasonSchema = {
+  body: Type.Object({
+    reason: Type.String(),
+  }),
+};
+
+export const reassignSchema = {
+  body: Type.Object({
+    toProjectId: Type.String(),
+    reason: Type.String(),
+  }),
+};
+
 export const timeEntrySchema = {
   body: Type.Object({
     projectId: Type.String(),

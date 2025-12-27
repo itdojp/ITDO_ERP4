@@ -1,6 +1,15 @@
 import { FastifyInstance } from 'fastify';
 import { requireRole } from '../services/rbac.js';
-import { projectSchema, recurringTemplateSchema } from './validators.js';
+import {
+  projectSchema,
+  recurringTemplateSchema,
+  projectTaskSchema,
+  projectTaskPatchSchema,
+  projectMilestoneSchema,
+  projectMilestonePatchSchema,
+  deleteReasonSchema,
+  reassignSchema,
+} from './validators.js';
 import { prisma } from '../services/db.js';
 
 type RecurringFrequency = 'monthly' | 'quarterly' | 'semiannual' | 'annual';
@@ -38,6 +47,351 @@ export async function registerProjectRoutes(app: FastifyInstance) {
       const body = req.body as any;
       const project = await prisma.project.create({ data: body });
       return project;
+    },
+  );
+
+  app.get(
+    '/projects/:projectId/tasks',
+    { preHandler: requireRole(['admin', 'mgmt']) },
+    async (req) => {
+      const { projectId } = req.params as { projectId: string };
+      const items = await prisma.projectTask.findMany({
+        where: { projectId, deletedAt: null },
+        orderBy: { createdAt: 'desc' },
+        take: 200,
+      });
+      return { items };
+    },
+  );
+
+  app.post(
+    '/projects/:projectId/tasks',
+    { preHandler: requireRole(['admin', 'mgmt']), schema: projectTaskSchema },
+    async (req) => {
+      const { projectId } = req.params as { projectId: string };
+      const body = req.body as any;
+      const task = await prisma.projectTask.create({
+        data: {
+          projectId,
+          name: body.name,
+          parentTaskId: body.parentTaskId,
+          assigneeId: body.assigneeId,
+          status: body.status,
+          planStart: body.planStart ? new Date(body.planStart) : null,
+          planEnd: body.planEnd ? new Date(body.planEnd) : null,
+          actualStart: body.actualStart ? new Date(body.actualStart) : null,
+          actualEnd: body.actualEnd ? new Date(body.actualEnd) : null,
+        },
+      });
+      return task;
+    },
+  );
+
+  app.patch(
+    '/projects/:projectId/tasks/:taskId',
+    { preHandler: requireRole(['admin', 'mgmt']), schema: projectTaskPatchSchema },
+    async (req, reply) => {
+      const { projectId, taskId } = req.params as {
+        projectId: string;
+        taskId: string;
+      };
+      const body = req.body as any;
+      const current = await prisma.projectTask.findUnique({
+        where: { id: taskId },
+      });
+      if (!current || current.projectId !== projectId) {
+        return reply.status(404).send({
+          error: { code: 'NOT_FOUND', message: 'Task not found' },
+        });
+      }
+      if (current.deletedAt) {
+        return reply.status(400).send({
+          error: { code: 'ALREADY_DELETED', message: 'Task already deleted' },
+        });
+      }
+      const task = await prisma.projectTask.update({
+        where: { id: taskId },
+        data: {
+          name: body.name,
+          parentTaskId: body.parentTaskId,
+          assigneeId: body.assigneeId,
+          status: body.status,
+          planStart: body.planStart ? new Date(body.planStart) : undefined,
+          planEnd: body.planEnd ? new Date(body.planEnd) : undefined,
+          actualStart: body.actualStart ? new Date(body.actualStart) : undefined,
+          actualEnd: body.actualEnd ? new Date(body.actualEnd) : undefined,
+        },
+      });
+      return task;
+    },
+  );
+
+  app.post(
+    '/projects/:projectId/tasks/:taskId/reassign',
+    { preHandler: requireRole(['admin', 'mgmt']), schema: reassignSchema },
+    async (req, reply) => {
+      const { projectId, taskId } = req.params as {
+        projectId: string;
+        taskId: string;
+      };
+      const body = req.body as any;
+      const task = await prisma.projectTask.findUnique({
+        where: { id: taskId },
+      });
+      if (!task || task.projectId !== projectId) {
+        return reply.status(404).send({
+          error: { code: 'NOT_FOUND', message: 'Task not found' },
+        });
+      }
+      if (task.deletedAt) {
+        return reply.status(400).send({
+          error: { code: 'ALREADY_DELETED', message: 'Task already deleted' },
+        });
+      }
+      const targetProject = await prisma.project.findUnique({
+        where: { id: body.toProjectId },
+        select: { id: true },
+      });
+      if (!targetProject) {
+        return reply.status(404).send({
+          error: { code: 'NOT_FOUND', message: 'Target project not found' },
+        });
+      }
+      const [childCount, timeCount, estimateCount, invoiceCount, poCount] =
+        await Promise.all([
+          prisma.projectTask.count({
+            where: { parentTaskId: taskId, deletedAt: null },
+          }),
+          prisma.timeEntry.count({
+            where: { taskId, deletedAt: null },
+          }),
+          prisma.estimateLine.count({ where: { taskId } }),
+          prisma.billingLine.count({ where: { taskId } }),
+          prisma.purchaseOrderLine.count({ where: { taskId } }),
+        ]);
+      if (
+        childCount > 0 ||
+        timeCount > 0 ||
+        estimateCount > 0 ||
+        invoiceCount > 0 ||
+        poCount > 0
+      ) {
+        return reply.status(400).send({
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'Task has linked records and cannot be reassigned',
+          },
+        });
+      }
+      const updated = await prisma.projectTask.update({
+        where: { id: taskId },
+        data: {
+          projectId: body.toProjectId,
+        },
+      });
+      return updated;
+    },
+  );
+
+  app.post(
+    '/projects/:projectId/tasks/:taskId/delete',
+    { preHandler: requireRole(['admin', 'mgmt']), schema: deleteReasonSchema },
+    async (req, reply) => {
+      const { projectId, taskId } = req.params as {
+        projectId: string;
+        taskId: string;
+      };
+      const body = req.body as any;
+      const task = await prisma.projectTask.findUnique({
+        where: { id: taskId },
+      });
+      if (!task || task.projectId !== projectId) {
+        return reply.status(404).send({
+          error: { code: 'NOT_FOUND', message: 'Task not found' },
+        });
+      }
+      if (task.deletedAt) {
+        return reply.status(400).send({
+          error: { code: 'ALREADY_DELETED', message: 'Task already deleted' },
+        });
+      }
+      const [childCount, timeCount, estimateCount, invoiceCount, poCount] =
+        await Promise.all([
+          prisma.projectTask.count({
+            where: { parentTaskId: taskId, deletedAt: null },
+          }),
+          prisma.timeEntry.count({
+            where: { taskId, deletedAt: null },
+          }),
+          prisma.estimateLine.count({ where: { taskId } }),
+          prisma.billingLine.count({ where: { taskId } }),
+          prisma.purchaseOrderLine.count({ where: { taskId } }),
+        ]);
+      if (
+        childCount > 0 ||
+        timeCount > 0 ||
+        estimateCount > 0 ||
+        invoiceCount > 0 ||
+        poCount > 0
+      ) {
+        return reply.status(400).send({
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'Task has linked records and cannot be deleted',
+          },
+        });
+      }
+      const updated = await prisma.projectTask.update({
+        where: { id: taskId },
+        data: {
+          deletedAt: new Date(),
+          deletedReason: body.reason,
+        },
+      });
+      return updated;
+    },
+  );
+
+  app.post(
+    '/projects/:projectId/milestones',
+    { preHandler: requireRole(['admin', 'mgmt']), schema: projectMilestoneSchema },
+    async (req) => {
+      const { projectId } = req.params as { projectId: string };
+      const body = req.body as any;
+      const milestone = await prisma.projectMilestone.create({
+        data: {
+          projectId,
+          name: body.name,
+          amount: body.amount,
+          billUpon: body.billUpon || 'date',
+          dueDate: body.dueDate ? new Date(body.dueDate) : null,
+          taxRate: body.taxRate,
+        },
+      });
+      return milestone;
+    },
+  );
+
+  app.get(
+    '/projects/:projectId/milestones',
+    { preHandler: requireRole(['admin', 'mgmt']) },
+    async (req) => {
+      const { projectId } = req.params as { projectId: string };
+      const items = await prisma.projectMilestone.findMany({
+        where: { projectId, deletedAt: null },
+        orderBy: { createdAt: 'desc' },
+        take: 200,
+      });
+      return { items };
+    },
+  );
+
+  app.patch(
+    '/projects/:projectId/milestones/:milestoneId',
+    {
+      preHandler: requireRole(['admin', 'mgmt']),
+      schema: projectMilestonePatchSchema,
+    },
+    async (req, reply) => {
+      const { projectId, milestoneId } = req.params as {
+        projectId: string;
+        milestoneId: string;
+      };
+      const body = req.body as any;
+      const milestone = await prisma.projectMilestone.findUnique({
+        where: { id: milestoneId },
+      });
+      if (!milestone || milestone.projectId !== projectId) {
+        return reply.status(404).send({
+          error: { code: 'NOT_FOUND', message: 'Milestone not found' },
+        });
+      }
+      if (milestone.deletedAt) {
+        return reply.status(400).send({
+          error: {
+            code: 'ALREADY_DELETED',
+            message: 'Milestone already deleted',
+          },
+        });
+      }
+      const lockedInvoice = await prisma.invoice.findFirst({
+        where: {
+          milestoneId,
+          deletedAt: null,
+          status: { not: 'draft' },
+        },
+        select: { id: true },
+      });
+      if (lockedInvoice) {
+        return reply.status(400).send({
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'Milestone has submitted invoices and cannot be updated',
+          },
+        });
+      }
+      const updated = await prisma.projectMilestone.update({
+        where: { id: milestoneId },
+        data: {
+          name: body.name,
+          amount: body.amount,
+          billUpon: body.billUpon,
+          dueDate: body.dueDate ? new Date(body.dueDate) : undefined,
+          taxRate: body.taxRate,
+        },
+      });
+      return updated;
+    },
+  );
+
+  app.post(
+    '/projects/:projectId/milestones/:milestoneId/delete',
+    { preHandler: requireRole(['admin', 'mgmt']), schema: deleteReasonSchema },
+    async (req, reply) => {
+      const { projectId, milestoneId } = req.params as {
+        projectId: string;
+        milestoneId: string;
+      };
+      const body = req.body as any;
+      const milestone = await prisma.projectMilestone.findUnique({
+        where: { id: milestoneId },
+      });
+      if (!milestone || milestone.projectId !== projectId) {
+        return reply.status(404).send({
+          error: { code: 'NOT_FOUND', message: 'Milestone not found' },
+        });
+      }
+      if (milestone.deletedAt) {
+        return reply.status(400).send({
+          error: {
+            code: 'ALREADY_DELETED',
+            message: 'Milestone already deleted',
+          },
+        });
+      }
+      const linkedInvoice = await prisma.invoice.findFirst({
+        where: {
+          milestoneId,
+          deletedAt: null,
+        },
+        select: { id: true },
+      });
+      if (linkedInvoice) {
+        return reply.status(400).send({
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'Milestone has linked invoices and cannot be deleted',
+          },
+        });
+      }
+      const updated = await prisma.projectMilestone.update({
+        where: { id: milestoneId },
+        data: {
+          deletedAt: new Date(),
+          deletedReason: body.reason,
+        },
+      });
+      return updated;
     },
   );
 
