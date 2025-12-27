@@ -1,4 +1,9 @@
-export type NotifyResult = { channel: string; status: string; error?: string };
+export type NotifyResult = {
+  channel: string;
+  status: string;
+  error?: string;
+  target?: string;
+};
 
 // stub implementations
 export async function sendEmailStub(
@@ -8,6 +13,35 @@ export async function sendEmailStub(
 ): Promise<NotifyResult> {
   console.log('[email stub]', { to, subject, body });
   return { status: 'stub', channel: 'email' };
+}
+
+function redactUrl(raw: string): string {
+  try {
+    const parsed = new URL(raw);
+    const path = parsed.pathname.split('/').filter(Boolean);
+    const hint = path.length ? `/${path[0]}/...` : '';
+    return `${parsed.protocol}//${parsed.host}${hint}`;
+  } catch {
+    return '<invalid-url>';
+  }
+}
+
+export async function sendSlackWebhookStub(
+  url: string,
+  payload: Record<string, unknown>,
+): Promise<NotifyResult> {
+  const safeUrl = redactUrl(url);
+  console.log('[slack webhook stub]', { url: safeUrl, payload });
+  return { status: 'stub', channel: 'slack', target: safeUrl };
+}
+
+export async function sendWebhookStub(
+  url: string,
+  payload: Record<string, unknown>,
+): Promise<NotifyResult> {
+  const safeUrl = redactUrl(url);
+  console.log('[webhook stub]', { url: safeUrl, payload });
+  return { status: 'stub', channel: 'webhook', target: safeUrl };
 }
 
 export async function recordPdfStub(
