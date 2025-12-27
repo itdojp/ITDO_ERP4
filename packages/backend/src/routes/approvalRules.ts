@@ -38,12 +38,10 @@ export async function registerApprovalRuleRoutes(app: FastifyInstance) {
     async (req, reply) => {
       const body = req.body as any;
       if (!hasValidSteps(body.steps || [])) {
-        return reply
-          .code(400)
-          .send({
-            error: 'invalid_steps',
-            message: 'approverGroupId or approverUserId is required per step',
-          });
+        return reply.code(400).send({
+          error: 'invalid_steps',
+          message: 'approverGroupId or approverUserId is required per step',
+        });
       }
       const created = await prisma.approvalRule.create({ data: body });
       return created;
@@ -60,12 +58,10 @@ export async function registerApprovalRuleRoutes(app: FastifyInstance) {
       const { id } = req.params as { id: string };
       const body = req.body as any;
       if (body.steps && !hasValidSteps(body.steps || [])) {
-        return reply
-          .code(400)
-          .send({
-            error: 'invalid_steps',
-            message: 'approverGroupId or approverUserId is required per step',
-          });
+        return reply.code(400).send({
+          error: 'invalid_steps',
+          message: 'approverGroupId or approverUserId is required per step',
+        });
       }
       const updated = await prisma.approvalRule.update({
         where: { id },
@@ -151,12 +147,10 @@ export async function registerApprovalRuleRoutes(app: FastifyInstance) {
         });
         return result;
       } catch (err: any) {
-        return reply
-          .code(400)
-          .send({
-            error: 'approval_action_failed',
-            message: err?.message || 'failed',
-          });
+        return reply.code(400).send({
+          error: 'approval_action_failed',
+          message: err?.message || 'failed',
+        });
       }
     },
   );

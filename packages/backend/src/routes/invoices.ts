@@ -1,4 +1,3 @@
-import type { Prisma } from '@prisma/client';
 import { FastifyInstance } from 'fastify';
 import { nextNumber } from '../services/numbering.js';
 import { submitApprovalWithUpdate } from '../services/approval.js';
@@ -25,7 +24,7 @@ export async function registerInvoiceRoutes(app: FastifyInstance) {
         from?: string;
         to?: string;
       };
-      const where: Prisma.InvoiceWhereInput = {};
+      const where: Record<string, unknown> = {};
       if (projectId) where.projectId = projectId;
       if (status) where.status = status;
       if (from || to) {
@@ -41,7 +40,7 @@ export async function registerInvoiceRoutes(app: FastifyInstance) {
             error: { code: 'INVALID_DATE', message: 'Invalid to date' },
           });
         }
-        const issueDate: Prisma.DateTimeFilter = {};
+        const issueDate: { gte?: Date; lte?: Date } = {};
         if (fromDate) issueDate.gte = fromDate;
         if (toDate) issueDate.lte = toDate;
         where.issueDate = issueDate;
@@ -84,7 +83,7 @@ export async function registerInvoiceRoutes(app: FastifyInstance) {
         from?: string;
         to?: string;
       };
-      const where: Prisma.InvoiceWhereInput = { projectId };
+      const where: Record<string, unknown> = { projectId };
       if (status) where.status = status;
       if (from || to) {
         const fromDate = parseDate(from);
@@ -99,7 +98,7 @@ export async function registerInvoiceRoutes(app: FastifyInstance) {
             error: { code: 'INVALID_DATE', message: 'Invalid to date' },
           });
         }
-        const issueDate: Prisma.DateTimeFilter = {};
+        const issueDate: { gte?: Date; lte?: Date } = {};
         if (fromDate) issueDate.gte = fromDate;
         if (toDate) issueDate.lte = toDate;
         where.issueDate = issueDate;

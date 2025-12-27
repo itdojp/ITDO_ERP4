@@ -31,7 +31,6 @@ type ApprovalInstanceWhereInput = {
   projectId?: string;
 };
 
-
 function startOfDay(date: Date) {
   const result = new Date(date);
   result.setUTCHours(0, 0, 0, 0);
@@ -48,7 +47,6 @@ function resolvePeriodRange(period: string, now = new Date()) {
   }
   return { start, end };
 }
-
 
 async function resolveProjectBudget(projectId: string): Promise<number> {
   const estimate = await prisma.estimate.findFirst({

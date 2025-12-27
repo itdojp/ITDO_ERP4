@@ -1,4 +1,3 @@
-import type { Prisma } from '@prisma/client';
 import { FastifyInstance } from 'fastify';
 import { submitApprovalWithUpdate } from '../services/approval.js';
 import { FlowTypeValue, DocStatusValue } from '../types.js';
@@ -16,7 +15,7 @@ export async function registerVendorDocRoutes(app: FastifyInstance) {
         vendorId?: string;
         status?: string;
       };
-      const where: Prisma.VendorQuoteWhereInput = {};
+      const where: Record<string, unknown> = {};
       if (projectId) where.projectId = projectId;
       if (vendorId) where.vendorId = vendorId;
       if (status) where.status = status;
@@ -55,7 +54,7 @@ export async function registerVendorDocRoutes(app: FastifyInstance) {
         vendorId?: string;
         status?: string;
       };
-      const where: Prisma.VendorInvoiceWhereInput = {};
+      const where: Record<string, unknown> = {};
       if (projectId) where.projectId = projectId;
       if (vendorId) where.vendorId = vendorId;
       if (status) where.status = status;

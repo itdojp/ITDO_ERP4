@@ -32,7 +32,10 @@ function endOfMonth(date: Date) {
   return new Date(date.getFullYear(), date.getMonth() + 1, 0, 23, 59, 59, 999);
 }
 
-export function computeDueDate(runAt: Date, rule: DueDateRule | null): Date | null {
+export function computeDueDate(
+  runAt: Date,
+  rule: DueDateRule | null,
+): Date | null {
   if (!rule) return null;
   const base = endOfMonth(runAt);
   const result = new Date(base);

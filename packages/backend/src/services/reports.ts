@@ -116,7 +116,9 @@ async function sumTimeCostByUser(
     const rateCard = rateCardCache.get(key);
     const minutes = entry.minutes || 0;
     totalMinutes += minutes;
-    const cost = rateCard ? calcTimeAmount(minutes, toNumber(rateCard.unitPrice)) : 0;
+    const cost = rateCard
+      ? calcTimeAmount(minutes, toNumber(rateCard.unitPrice))
+      : 0;
     totalCost += cost;
     const current = items.get(entry.userId) ?? { cost: 0, minutes: 0 };
     current.cost += cost;
@@ -440,7 +442,8 @@ export async function reportProjectProfitByUser(
   const totalLaborCost = labor.totalCost;
   const totalMinutes = labor.totalMinutes;
   const totalExpenseCost = expenseAgg.reduce(
-    (sum, row) => sum + toNumber(row._sum.amount),
+    (sum: number, row: { _sum: { amount: unknown } }) =>
+      sum + toNumber(row._sum.amount),
     0,
   );
 
