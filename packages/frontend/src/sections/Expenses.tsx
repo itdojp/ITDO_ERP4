@@ -50,9 +50,19 @@ export const Expenses: React.FC = () => {
       : amountValue > 10000000
         ? '金額が大きすぎます'
         : '';
-  const baseValid = Boolean(form.projectId.trim()) && Boolean(form.category.trim()) && Boolean(form.incurredOn);
-  const isValid = baseValid && !amountError;
-  const validationHint = !baseValid ? 'Project ID / 区分 / 日付は必須です' : amountError;
+  const currencyValue = form.currency.trim();
+  const currencyError = currencyValue && !/^[A-Z]{3}$/.test(currencyValue)
+    ? '通貨は3文字の英大文字で入力してください'
+    : '';
+  const baseValid =
+    Boolean(form.projectId.trim()) &&
+    Boolean(form.category.trim()) &&
+    Boolean(form.incurredOn) &&
+    Boolean(currencyValue);
+  const isValid = baseValid && !amountError && !currencyError;
+  const validationHint = !baseValid
+    ? 'Project ID / 区分 / 日付 / 通貨は必須です'
+    : amountError || currencyError;
 
   useEffect(() => {
     api<{ items: Expense[] }>('/expenses').then((res) => setItems(res.items)).catch(() => setItems([]));
@@ -94,8 +104,12 @@ export const Expenses: React.FC = () => {
         }),
       });
       setMessage({ text: '経費を保存しました', type: 'success' });
-      const updated = await api<{ items: Expense[] }>('/expenses');
-      setItems(updated.items);
+      try {
+        const updated = await api<{ items: Expense[] }>('/expenses');
+        setItems(updated.items);
+      } catch (e) {
+        setMessage({ text: '保存しましたが一覧の更新に失敗しました', type: 'error' });
+      }
       setForm({ ...defaultForm, projectId: defaultProjectId });
     } catch (e) {
       setMessage({ text: '保存に失敗しました', type: 'error' });
@@ -119,7 +133,18 @@ export const Expenses: React.FC = () => {
             onChange={(e) => setForm({ ...form, amount: Number(e.target.value) })}
             style={{ width: 120 }}
           />
-          <input type="text" value={form.currency} onChange={(e) => setForm({ ...form, currency: e.target.value })} placeholder="通貨" style={{ width: 80 }} />
+          <input
+            type="text"
+            value={form.currency}
+            onChange={(e) => {
+              const value = e.target.value.toUpperCase().slice(0, 3);
+              setForm({ ...form, currency: value });
+            }}
+            placeholder="通貨"
+            style={{ width: 80 }}
+            maxLength={3}
+            pattern="[A-Z]{3}"
+          />
           <input type="date" value={form.incurredOn} onChange={(e) => setForm({ ...form, incurredOn: e.target.value })} />
           <label className="badge" style={{ cursor: 'pointer' }}>
             <input
@@ -133,7 +158,7 @@ export const Expenses: React.FC = () => {
         </div>
         <div className="row" style={{ gap: 8, marginTop: 8 }}>
           <input
-            type="text"
+            type="url"
             value={form.receiptUrl}
             onChange={(e) => setForm({ ...form, receiptUrl: e.target.value })}
             placeholder="領収書URL (任意)"
@@ -155,7 +180,7 @@ export const Expenses: React.FC = () => {
             <span className="badge">{item.status}</span> {item.incurredOn.slice(0, 10)} / {item.projectId} / {item.category} / {item.amount} {item.currency}
             {item.isShared && <> / 共通</>}
             {item.receiptUrl ? (
-              <> / <a href={item.receiptUrl} target="_blank" rel="noreferrer">領収書</a></>
+              <> / <a href={item.receiptUrl} target="_blank" rel="noopener noreferrer">領収書</a></>
             ) : (
               <> / <span className="badge" style={{ background: '#fee2e2', color: '#991b1b' }}>領収書未登録</span></>
             )}
