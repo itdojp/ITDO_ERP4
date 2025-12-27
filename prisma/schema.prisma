@@ -201,7 +201,14 @@ model RecurringProjectTemplate {
   projectId     String    @unique
   frequency     String // monthly/quarterly/semiannual/annual
   defaultAmount Decimal?
+  defaultCurrency String?
+  defaultTaxRate Decimal?
   defaultTerms  String?
+  defaultMilestoneName String?
+  billUpon      String?
+  dueDateRule   Json?
+  shouldGenerateEstimate Boolean @default(true)
+  shouldGenerateInvoice  Boolean @default(true)
   nextRunAt     DateTime?
   timezone      String?
   isActive      Boolean   @default(true)

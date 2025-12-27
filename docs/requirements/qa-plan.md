@@ -32,16 +32,23 @@ quarterly_project AS (
   RETURNING id
 )
 INSERT INTO "RecurringProjectTemplate"
-  (id, "projectId", frequency, "defaultAmount", "defaultTerms", "nextRunAt", "isActive", "createdAt", "updatedAt")
-SELECT gen_random_uuid(), id, 'monthly', 100000, 'Monthly retainer', now(), true, now(), now()
+  (id, "projectId", frequency, "defaultAmount", "defaultCurrency", "defaultTaxRate", "defaultTerms", "defaultMilestoneName", "billUpon", "dueDateRule", "shouldGenerateEstimate", "shouldGenerateInvoice", "nextRunAt", "isActive", "createdAt", "updatedAt")
+SELECT gen_random_uuid(), id, 'monthly', 100000, 'JPY', 0.1, 'Monthly retainer', 'Monthly milestone', 'date', '{"type":"periodEndPlusOffset","offsetDays":30}', true, true, now(), true, now(), now()
 FROM monthly_project
 UNION ALL
-SELECT gen_random_uuid(), id, 'quarterly', 300000, 'Quarterly retainer', now(), true, now(), now()
+SELECT gen_random_uuid(), id, 'quarterly', 300000, 'JPY', 0.1, 'Quarterly retainer', 'Quarterly milestone', 'date', '{"type":"periodEndPlusOffset","offsetDays":30}', true, true, now(), true, now(), now()
 FROM quarterly_project
 ON CONFLICT ("projectId") DO UPDATE
   SET frequency = EXCLUDED.frequency,
       "defaultAmount" = EXCLUDED."defaultAmount",
+      "defaultCurrency" = EXCLUDED."defaultCurrency",
+      "defaultTaxRate" = EXCLUDED."defaultTaxRate",
       "defaultTerms" = EXCLUDED."defaultTerms",
+      "defaultMilestoneName" = EXCLUDED."defaultMilestoneName",
+      "billUpon" = EXCLUDED."billUpon",
+      "dueDateRule" = EXCLUDED."dueDateRule",
+      "shouldGenerateEstimate" = EXCLUDED."shouldGenerateEstimate",
+      "shouldGenerateInvoice" = EXCLUDED."shouldGenerateInvoice",
       "nextRunAt" = EXCLUDED."nextRunAt",
       "isActive" = EXCLUDED."isActive",
       "updatedAt" = now();
