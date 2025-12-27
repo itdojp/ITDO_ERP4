@@ -16,5 +16,7 @@
    POST `/expenses` -> GET `/expenses`
 8. アラートジョブ実行  
    `curl -X POST http://localhost:3001/jobs/alerts/run`
+9. 損益レポート取得  
+   `curl -X GET http://localhost:3001/reports/project-profit/<projectId> -H ...`
 
 期待結果: 5xxエラーなく、status=200/201が返ること。請求・工数・経費が取得できること。

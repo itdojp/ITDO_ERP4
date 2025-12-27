@@ -3,6 +3,7 @@ import {
   reportDeliveryDue,
   reportGroupEffort,
   reportOvertime,
+  reportProjectProfit,
   reportProjectEffort,
 } from '../services/reports.js';
 import { requireRole } from '../services/rbac.js';
@@ -15,6 +16,21 @@ export async function registerReportRoutes(app: FastifyInstance) {
       const { projectId } = req.params as { projectId: string };
       const { from, to } = req.query as { from?: string; to?: string };
       const res = await reportProjectEffort(
+        projectId,
+        from ? new Date(from) : undefined,
+        to ? new Date(to) : undefined,
+      );
+      return res;
+    },
+  );
+
+  app.get(
+    '/reports/project-profit/:projectId',
+    { preHandler: requireRole(['admin', 'mgmt']) },
+    async (req) => {
+      const { projectId } = req.params as { projectId: string };
+      const { from, to } = req.query as { from?: string; to?: string };
+      const res = await reportProjectProfit(
         projectId,
         from ? new Date(from) : undefined,
         to ? new Date(to) : undefined,

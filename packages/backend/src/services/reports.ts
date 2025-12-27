@@ -1,4 +1,118 @@
 import { prisma } from './db.js';
+import { calcTimeAmount, resolveRateCard } from './rateCard.js';
+
+function toNumber(value: unknown): number {
+  if (value == null) return 0;
+  if (typeof value === 'number') return value;
+  if (typeof value === 'string') {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+  if (value && typeof value === 'object') {
+    const maybeDecimal = value as {
+      toNumber?: () => number;
+      toString?: () => string;
+    };
+    if (typeof maybeDecimal.toNumber === 'function')
+      return maybeDecimal.toNumber();
+    if (typeof maybeDecimal.toString === 'function') {
+      const parsed = Number(maybeDecimal.toString());
+      return Number.isFinite(parsed) ? parsed : 0;
+    }
+  }
+  return 0;
+}
+
+function dateKey(date: Date) {
+  return date.toISOString().slice(0, 10);
+}
+
+async function sumTimeCost(
+  projectId: string,
+  from?: Date,
+  to?: Date,
+): Promise<{ cost: number; minutes: number }> {
+  const where: any = {
+    projectId,
+    deletedAt: null,
+    status: { in: ['submitted', 'approved'] },
+  };
+  if (from || to) {
+    where.workDate = {};
+    if (from) where.workDate.gte = from;
+    if (to) where.workDate.lte = to;
+  }
+  const entries = await prisma.timeEntry.findMany({
+    where,
+    select: { minutes: true, workDate: true, workType: true },
+  });
+  if (!entries.length) return { cost: 0, minutes: 0 };
+  const uniqueCombos = new Map<string, { workDate: Date; workType?: string }>();
+  for (const entry of entries) {
+    const workType = entry.workType ?? undefined;
+    const key = `${dateKey(entry.workDate)}|${workType ?? ''}`;
+    if (!uniqueCombos.has(key)) {
+      uniqueCombos.set(key, { workDate: entry.workDate, workType });
+    }
+  }
+  const rateCardCache = new Map<
+    string,
+    Awaited<ReturnType<typeof resolveRateCard>>
+  >();
+  await Promise.all(
+    Array.from(uniqueCombos.entries()).map(async ([key, combo]) => {
+      const rateCard = await resolveRateCard({
+        projectId,
+        workDate: combo.workDate,
+        workType: combo.workType,
+      });
+      rateCardCache.set(key, rateCard);
+    }),
+  );
+  let total = 0;
+  let minutes = 0;
+  for (const entry of entries) {
+    const workType = entry.workType ?? undefined;
+    const key = `${dateKey(entry.workDate)}|${workType ?? ''}`;
+    const rateCard = rateCardCache.get(key);
+    minutes += entry.minutes || 0;
+    if (!rateCard) continue;
+    total += calcTimeAmount(entry.minutes, toNumber(rateCard.unitPrice));
+  }
+  return { cost: total, minutes };
+}
+
+async function resolveRevenueBudget(
+  projectId: string,
+  from?: Date,
+  to?: Date,
+): Promise<number> {
+  const estimate = await prisma.estimate.findFirst({
+    where: {
+      projectId,
+      deletedAt: null,
+      status: { notIn: ['cancelled', 'rejected'] },
+    },
+    orderBy: { createdAt: 'desc' },
+    select: { totalAmount: true },
+  });
+  const estimateBudgetRaw = estimate?.totalAmount;
+  if (estimateBudgetRaw != null) {
+    const estimateValue = toNumber(estimateBudgetRaw);
+    if (estimateValue > 0) return estimateValue;
+  }
+  const milestoneWhere: any = { projectId, deletedAt: null };
+  if (from || to) {
+    milestoneWhere.dueDate = {};
+    if (from) milestoneWhere.dueDate.gte = from;
+    if (to) milestoneWhere.dueDate.lte = to;
+  }
+  const milestoneSum = await prisma.projectMilestone.aggregate({
+    where: milestoneWhere,
+    _sum: { amount: true },
+  });
+  return toNumber(milestoneSum._sum.amount);
+}
 
 export async function reportProjectEffort(
   projectId: string,
@@ -127,4 +241,81 @@ export async function reportDeliveryDue(
     invoiceNos: item.invoices.map((inv: DeliveryDueInvoice) => inv.invoiceNo),
     invoiceStatuses: item.invoices.map((inv: DeliveryDueInvoice) => inv.status),
   }));
+}
+
+export async function reportProjectProfit(
+  projectId: string,
+  from?: Date,
+  to?: Date,
+) {
+  const invoiceWhere: any = {
+    projectId,
+    deletedAt: null,
+    status: { in: ['approved', 'sent', 'paid'] },
+  };
+  if (from || to) {
+    invoiceWhere.issueDate = {};
+    if (from) invoiceWhere.issueDate.gte = from;
+    if (to) invoiceWhere.issueDate.lte = to;
+  }
+  const vendorWhere: any = {
+    projectId,
+    deletedAt: null,
+    status: { in: ['received', 'approved', 'paid'] },
+  };
+  if (from || to) {
+    vendorWhere.receivedDate = {};
+    if (from) vendorWhere.receivedDate.gte = from;
+    if (to) vendorWhere.receivedDate.lte = to;
+  }
+  const expenseWhere: any = {
+    projectId,
+    deletedAt: null,
+    status: 'approved',
+  };
+  if (from || to) {
+    expenseWhere.incurredOn = {};
+    if (from) expenseWhere.incurredOn.gte = from;
+    if (to) expenseWhere.incurredOn.lte = to;
+  }
+
+  const [invoiceSum, vendorSum, expenseSum, time] = await Promise.all([
+    prisma.invoice.aggregate({
+      where: invoiceWhere,
+      _sum: { totalAmount: true },
+    }),
+    prisma.vendorInvoice.aggregate({
+      where: vendorWhere,
+      _sum: { totalAmount: true },
+    }),
+    prisma.expense.aggregate({
+      where: expenseWhere,
+      _sum: { amount: true },
+    }),
+    sumTimeCost(projectId, from, to),
+  ]);
+  const revenue = toNumber(invoiceSum._sum.totalAmount);
+  const vendorCost = toNumber(vendorSum._sum.totalAmount);
+  const expenseCost = toNumber(expenseSum._sum.amount);
+  const laborCost = time.cost;
+  const directCost = vendorCost + expenseCost + laborCost;
+  const grossProfit = revenue - directCost;
+  const grossMargin = revenue > 0 ? grossProfit / revenue : 0;
+  const budgetRevenue = await resolveRevenueBudget(projectId, from, to);
+  const varianceRevenue = revenue - budgetRevenue;
+  return {
+    projectId,
+    revenue,
+    budgetRevenue,
+    varianceRevenue,
+    directCost,
+    costBreakdown: {
+      vendorCost,
+      expenseCost,
+      laborCost,
+    },
+    grossProfit,
+    grossMargin,
+    totalMinutes: time.minutes,
+  };
 }
