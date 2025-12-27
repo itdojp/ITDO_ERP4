@@ -60,6 +60,7 @@
   - idx: (instance_id), (status)
 - **alert_settings**: type (budget_overrun/overtime/approval_delay/approval_escalation/delivery_due), threshold, period, scope (global/project_id), recipients (emails/roles/users), channels (email/dashboard/ext_future), remind_after_hours, is_enabled
 - **alerts**: setting_id, target_ref, triggered_at, reminder_at, status (open/ack/closed), sent_channels, sent_result
+- **doc_template_settings**: kind (estimate/invoice/purchase_order), template_id, number_rule, layout_config, logo_url, signature_text, is_default
 
 ## 日報/ウェルビーイング
 - **reports_daily** (日報): user_id, report_date, content, linked_project_ids?, status

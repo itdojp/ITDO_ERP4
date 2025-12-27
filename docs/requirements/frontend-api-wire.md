@@ -60,6 +60,8 @@
 ## settings (admin/mgmt)
 - GET/POST/PATCH `/alert-settings`, `/alert-settings/:id/enable|disable`
 - GET/POST/PATCH `/approval-rules`
+- GET `/pdf-templates?kind=`
+- GET/POST/PATCH `/template-settings`
 - POST `/approval-instances/:id/act` { action: approve|reject, reason? }
 - POST `/jobs/alerts/run` (手動トリガー)
 - POST `/jobs/approval-escalations/run` (承認期限エスカレーション)

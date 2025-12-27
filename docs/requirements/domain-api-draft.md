@@ -22,6 +22,7 @@
 - **leave_requests**: `id`, `user_id`, `leave_type`, `start_date`, `end_date`, `status`(draft/pending_manager/approved/rejected), `hours`, `notes`。
 - **approval_rules**: `id`, `flow_type`(estimate/invoice/expense/leave/time), `conditions`(min/max amount, recurring flag), `steps`(ordered approver groups/users, allow_skip) stored as JSON。
 - **alert_settings**: `id`, `type`(budget_overrun/overtime/approval_delay/approval_escalation/delivery_due), `threshold`, `period`, `recipients`(emails/roles/users), `channels`(email,dashboard,ext_future), `remindAfterHours`。
+- **doc_template_settings**: `id`, `kind`(estimate/invoice/purchase_order), `templateId`, `numberRule`, `layoutConfig`, `logoUrl`, `signatureText`, `isDefault`。
 - **wellbeing_entries**: `id`, `user_id`, `entry_date`, `status`(good/not_good), `help_requested`, `notes?` (非必須), 閲覧は人事グループのみ。
 
 ## 関係メモ
@@ -29,6 +30,7 @@
 - Recurring Template は Project に紐づき、生成時に Estimate/Invoice を起案。
 - Approval Rules は flow_type + 条件でマッチングし Approval Instance を生成。状態遷移はログに保存。
 - Alert Settings は各プロジェクトまたは全体スコープで有効化。通知先はメール+ダッシュボード（初期）。
+- Template Settings は管理画面から CRUD。kind ごとに default を1件に保つ。
 - Wellbeing は User と 1:n。閲覧は人事グループ限定。監査ログ必須。
 
 ## API I/O たたき台（REST想定）

@@ -62,6 +62,12 @@ enum AlertType {
   delivery_due     // 納期超過の未請求
 }
 
+enum TemplateKind {
+  estimate       // 見積
+  invoice        // 請求
+  purchase_order // 発注書
+}
+
 model Customer {
   id                    String    @id @default(uuid())
   code                  String    @unique
@@ -554,6 +560,23 @@ model Alert {
   updatedBy    String?
 
   @@index([settingId])
+}
+
+model DocTemplateSetting {
+  id           String       @id @default(uuid())
+  kind         TemplateKind
+  templateId   String
+  numberRule   String
+  layoutConfig Json?
+  logoUrl      String?
+  signatureText String?
+  isDefault    Boolean      @default(false)
+  createdAt    DateTime     @default(now())
+  createdBy    String?
+  updatedAt    DateTime     @updatedAt
+  updatedBy    String?
+
+  @@index([kind])
 }
 
 model DailyReport {
