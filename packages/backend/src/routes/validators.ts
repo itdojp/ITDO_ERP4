@@ -11,6 +11,21 @@ const flowTypeSchema = Type.Union([
   Type.Literal('vendor_quote'),
 ]);
 
+const recurringFrequencySchema = Type.Union([
+  Type.Literal('monthly'),
+  Type.Literal('quarterly'),
+  Type.Literal('semiannual'),
+  Type.Literal('annual'),
+]);
+
+const billUponSchema = Type.Union([
+  Type.Literal('date'),
+  Type.Literal('acceptance'),
+  Type.Literal('time'),
+]);
+
+const currencySchema = Type.String({ pattern: '^[A-Z]{3}$' });
+
 export const projectSchema = {
   body: Type.Object({
     code: Type.String(),
@@ -18,6 +33,24 @@ export const projectSchema = {
     status: Type.Optional(Type.String()),
     customerId: Type.Optional(Type.String()),
     parentId: Type.Optional(Type.String()),
+  }),
+};
+
+export const recurringTemplateSchema = {
+  body: Type.Object({
+    frequency: recurringFrequencySchema,
+    nextRunAt: Type.Optional(Type.String({ format: 'date-time' })),
+    timezone: Type.Optional(Type.String()),
+    defaultAmount: Type.Optional(Type.Number({ minimum: 0 })),
+    defaultCurrency: Type.Optional(currencySchema),
+    defaultTaxRate: Type.Optional(Type.Number({ minimum: 0 })),
+    defaultTerms: Type.Optional(Type.String()),
+    defaultMilestoneName: Type.Optional(Type.String()),
+    billUpon: Type.Optional(billUponSchema),
+    dueDateRule: Type.Optional(Type.Any()),
+    shouldGenerateEstimate: Type.Optional(Type.Boolean()),
+    shouldGenerateInvoice: Type.Optional(Type.Boolean()),
+    isActive: Type.Optional(Type.Boolean()),
   }),
 };
 
