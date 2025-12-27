@@ -71,6 +71,7 @@ UUID生成関数は環境に合わせて置き換え（`gen_random_uuid()`/`uuid
 - アラート設定: GET/POST/PATCH /alert-settings でCRUD動作
 - 承認ルール: GET/POST/PATCH /approval-rules でCRUD動作
 - 送信Stub: /invoices/:id/send, /purchase-orders/:id/send で status=sent になる
+- テンプレ設定: /pdf-templates で一覧取得 → /template-settings でCRUD動作
 
 ## 既知リスク/欠落（PoC）
 - RBACは簡易、エラーハンドリング/バリデーションも基本のみ

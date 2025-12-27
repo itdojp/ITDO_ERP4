@@ -19,12 +19,14 @@ import { registerRecurringJobRoutes } from './recurringJobs.js';
 import { registerDataQualityJobRoutes } from './dataQualityJobs.js';
 import { registerReportRoutes } from './reports.js';
 import { registerPdfTemplateRoutes } from './pdfTemplates.js';
+import { registerTemplateSettingRoutes } from './templateSettings.js';
 
 export async function registerRoutes(app: FastifyInstance) {
   await registerAuthRoutes(app);
   await registerAlertSettingRoutes(app);
   await registerApprovalRuleRoutes(app);
   await registerPdfTemplateRoutes(app);
+  await registerTemplateSettingRoutes(app);
   await registerSendRoutes(app);
   await registerMetricJobRoutes(app);
   await registerRecurringJobRoutes(app);

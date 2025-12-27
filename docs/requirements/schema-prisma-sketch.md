@@ -56,6 +56,7 @@ enum TimeStatus { submitted approved rejected }
 enum LeaveStatus { draft pending_manager approved rejected }
 enum FlowType { estimate invoice expense leave time purchase_order vendor_invoice vendor_quote }
 enum AlertType { budget_overrun overtime approval_delay approval_escalation delivery_due }
+enum TemplateKind { estimate invoice purchase_order }
 
 // FK/削除ポリシー（案）
 // - 物理削除は原則禁止。deletedAt/deletedReason で論理削除（理由コード）
@@ -443,6 +444,17 @@ model Alert {
   status    String @default("open") // open/ack/closed
   sentChannels Json?
   sentResult  Json?
+}
+
+model DocTemplateSetting {
+  id           String @id @default(uuid())
+  kind         TemplateKind
+  templateId   String
+  numberRule   String
+  layoutConfig Json?
+  logoUrl      String?
+  signatureText String?
+  isDefault    Boolean @default(false)
 }
 
 // 日報/ウェルビーイング

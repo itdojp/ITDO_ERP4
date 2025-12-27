@@ -331,3 +331,30 @@ export const alertSettingSchema = {
 export const alertSettingPatchSchema = {
   body: Type.Partial(alertSettingSchema.body),
 };
+
+const templateKindSchema = Type.Union([
+  Type.Literal('estimate'),
+  Type.Literal('invoice'),
+  Type.Literal('purchase_order'),
+]);
+
+export const templateSettingSchema = {
+  body: Type.Object(
+    {
+      kind: templateKindSchema,
+      templateId: Type.String({ minLength: 1 }),
+      numberRule: Type.String({
+        pattern: '^(?=.*YYYY)(?=.*MM)(?=.*NNNN)[A-Za-z0-9_\\-\\/]+$',
+      }),
+      layoutConfig: Type.Optional(Type.Any()),
+      logoUrl: Type.Optional(Type.String()),
+      signatureText: Type.Optional(Type.String()),
+      isDefault: Type.Optional(Type.Boolean()),
+    },
+    { additionalProperties: false },
+  ),
+};
+
+export const templateSettingPatchSchema = {
+  body: Type.Partial(templateSettingSchema.body),
+};

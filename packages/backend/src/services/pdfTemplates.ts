@@ -1,13 +1,21 @@
 export type PdfTemplate = {
   id: string;
   name: string;
-  kind: 'invoice' | 'purchase_order';
+  kind: 'estimate' | 'invoice' | 'purchase_order';
   version: string;
   description?: string;
   isDefault?: boolean;
 };
 
 const templates: PdfTemplate[] = [
+  {
+    id: 'estimate-default',
+    name: 'Estimate Default',
+    kind: 'estimate',
+    version: 'v1',
+    description: 'Default estimate template',
+    isDefault: true,
+  },
   {
     id: 'invoice-default',
     name: 'Invoice Default',
