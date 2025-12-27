@@ -336,8 +336,10 @@ export const templateSettingSchema = {
   body: Type.Object(
     {
       kind: templateKindSchema,
-      templateId: Type.String(),
-      numberRule: Type.String(),
+      templateId: Type.String({ minLength: 1 }),
+      numberRule: Type.String({
+        pattern: '^(?=.*YYYY)(?=.*MM)(?=.*NNNN)[A-Za-z0-9_\\-\\/]+$',
+      }),
       layoutConfig: Type.Optional(Type.Any()),
       logoUrl: Type.Optional(Type.String()),
       signatureText: Type.Optional(Type.String()),

@@ -1,6 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { prisma } from '../services/db.js';
 import { requireRole } from '../services/rbac.js';
+import { getPdfTemplate } from '../services/pdfTemplates.js';
 import { templateSettingPatchSchema, templateSettingSchema } from './validators.js';
 
 type TemplateSettingBody = {
@@ -24,6 +25,11 @@ async function ensureDefault(
   });
 }
 
+function isValidTemplate(kind: string, templateId: string) {
+  const template = getPdfTemplate(templateId);
+  return Boolean(template && template.kind === kind);
+}
+
 export async function registerTemplateSettingRoutes(app: FastifyInstance) {
   app.get(
     '/template-settings',
@@ -41,11 +47,19 @@ export async function registerTemplateSettingRoutes(app: FastifyInstance) {
   app.post(
     '/template-settings',
     { preHandler: requireRole(['admin', 'mgmt']), schema: templateSettingSchema },
-    async (req) => {
+    async (req, reply) => {
       const body = req.body as TemplateSettingBody;
+      if (!isValidTemplate(body.kind, body.templateId)) {
+        return reply.status(400).send({
+          error: { code: 'INVALID_TEMPLATE', message: 'templateId not found' },
+        });
+      }
+      const userId = req.user?.userId;
       return prisma.$transaction(async (tx) => {
-        const created = await tx.docTemplateSetting.create({ data: body });
-        if (body.isDefault) {
+        const created = await tx.docTemplateSetting.create({
+          data: { ...body, createdBy: userId, updatedBy: userId },
+        });
+        if (body.isDefault === true) {
           await ensureDefault(tx, created.kind, created.id);
         }
         return created;
@@ -59,15 +73,29 @@ export async function registerTemplateSettingRoutes(app: FastifyInstance) {
       preHandler: requireRole(['admin', 'mgmt']),
       schema: templateSettingPatchSchema,
     },
-    async (req) => {
+    async (req, reply) => {
       const { id } = req.params as { id: string };
       const body = req.body as Partial<TemplateSettingBody>;
+      const current = await prisma.docTemplateSetting.findUnique({
+        where: { id },
+      });
+      if (!current) {
+        return reply.code(404).send({ error: 'not_found' });
+      }
+      const targetKind = body.kind ?? current.kind;
+      const targetTemplateId = body.templateId ?? current.templateId;
+      if (!isValidTemplate(targetKind, targetTemplateId)) {
+        return reply.status(400).send({
+          error: { code: 'INVALID_TEMPLATE', message: 'templateId not found' },
+        });
+      }
+      const userId = req.user?.userId;
       return prisma.$transaction(async (tx) => {
         const updated = await tx.docTemplateSetting.update({
           where: { id },
-          data: body,
+          data: { ...body, updatedBy: userId },
         });
-        if (body.isDefault) {
+        if (body.isDefault === true) {
           await ensureDefault(tx, updated.kind, updated.id);
         }
         return updated;

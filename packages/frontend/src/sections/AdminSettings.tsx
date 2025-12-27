@@ -87,6 +87,10 @@ export const AdminSettings: React.FC = () => {
     () => pdfTemplates.filter((template) => template.kind === templateForm.kind),
     [pdfTemplates, templateForm.kind],
   );
+  const templateNameMap = useMemo(
+    () => new Map(pdfTemplates.map((template) => [template.id, template.name])),
+    [pdfTemplates],
+  );
   const logError = (label: string, err: unknown) => {
     console.error(`[AdminSettings] ${label}`, err);
   };
@@ -147,12 +151,15 @@ export const AdminSettings: React.FC = () => {
   useEffect(() => {
     if (templatesForKind.length === 0) return;
     setTemplateForm((prev) => {
+      if (editingTemplateId != null) {
+        return prev;
+      }
       if (prev.templateId && templatesForKind.some((t) => t.id === prev.templateId)) {
         return prev;
       }
       return { ...prev, templateId: templatesForKind[0].id };
     });
-  }, [templatesForKind]);
+  }, [templatesForKind, editingTemplateId]);
 
   const toggleChannel = (ch: string) => {
     const next = new Set(alertForm.channels);
@@ -231,12 +238,20 @@ export const AdminSettings: React.FC = () => {
   };
 
   const submitTemplateSetting = async () => {
+    if (!templatesForKind.length) {
+      setMessage('テンプレートを先に登録してください');
+      return;
+    }
     if (!templateForm.numberRule.trim()) {
       setMessage('番号ルールを入力してください');
       return;
     }
     if (!templateForm.templateId.trim()) {
       setMessage('テンプレートを選択してください');
+      return;
+    }
+    if (!templatesForKind.some((template) => template.id === templateForm.templateId)) {
+      setMessage('テンプレートが存在しません');
       return;
     }
     const layoutConfig = parseJson('layoutConfig', templateForm.layoutConfigJson);
@@ -593,7 +608,8 @@ export const AdminSettings: React.FC = () => {
               <div key={item.id} className="card" style={{ padding: 12 }}>
                 <div className="row" style={{ justifyContent: 'space-between' }}>
                   <div>
-                    <strong>{item.kind}</strong> / {item.templateId} / {item.numberRule}
+                    <strong>{item.kind}</strong> / {item.templateId}
+                    {templateNameMap.has(item.templateId) && ` (${templateNameMap.get(item.templateId)})`} / {item.numberRule}
                   </div>
                   <span className="badge">{item.isDefault ? 'default' : 'custom'}</span>
                 </div>
@@ -602,7 +618,13 @@ export const AdminSettings: React.FC = () => {
                 </div>
                 <div className="row" style={{ marginTop: 6 }}>
                   <button className="button secondary" onClick={() => startEditTemplate(item)}>編集</button>
-                  <button className="button secondary" onClick={() => setTemplateDefault(item.id)}>デフォルト化</button>
+                  <button
+                    className="button secondary"
+                    disabled={item.isDefault}
+                    onClick={() => setTemplateDefault(item.id)}
+                  >
+                    デフォルト化
+                  </button>
                 </div>
               </div>
             ))}
