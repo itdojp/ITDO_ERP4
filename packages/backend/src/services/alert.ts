@@ -164,6 +164,7 @@ export async function computeAndTrigger(
     const result = await fetcher(s);
     if (!result) continue;
     const threshold = Number(s.threshold);
+    const targetRef = result.targetRef ?? s.scopeProjectId ?? 'global';
     if (result.metric > threshold) {
       await triggerAlert(
         {
@@ -174,12 +175,12 @@ export async function computeAndTrigger(
         },
         result.metric,
         threshold,
-        result.targetRef ?? s.scopeProjectId ?? 'global',
+        targetRef,
       );
       continue;
     }
     await prisma.alert.updateMany({
-      where: { settingId: s.id, status: 'open' },
+      where: { settingId: s.id, status: 'open', targetRef },
       data: { status: 'closed' },
     });
   }
