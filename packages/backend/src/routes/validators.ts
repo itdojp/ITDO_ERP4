@@ -302,6 +302,8 @@ const alertRecipientsSchema = Type.Object(
     emails: Type.Optional(Type.Array(Type.String())),
     roles: Type.Optional(Type.Array(Type.String())),
     users: Type.Optional(Type.Array(Type.String())),
+    slackWebhooks: Type.Optional(Type.Array(Type.String())),
+    webhooks: Type.Optional(Type.Array(Type.String())),
   },
   { additionalProperties: true },
 );

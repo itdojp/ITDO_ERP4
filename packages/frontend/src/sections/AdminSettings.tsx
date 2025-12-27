@@ -7,7 +7,13 @@ type AlertSetting = {
   threshold: number;
   period: string;
   scopeProjectId?: string | null;
-  recipients?: { emails?: string[]; roles?: string[]; users?: string[] } | null;
+  recipients?: {
+    emails?: string[];
+    roles?: string[];
+    users?: string[];
+    slackWebhooks?: string[];
+    webhooks?: string[];
+  } | null;
   channels?: string[] | null;
   remindAfterHours?: number | null;
   isEnabled?: boolean | null;
@@ -41,6 +47,8 @@ export const AdminSettings: React.FC = () => {
     emails: 'alert@example.com',
     roles: 'mgmt',
     users: '',
+    slackWebhooks: '',
+    webhooks: '',
     channels: new Set<string>(['email', 'dashboard']),
   });
   const [ruleForm, setRuleForm] = useState({
@@ -113,6 +121,8 @@ export const AdminSettings: React.FC = () => {
         emails: parseCsv(alertForm.emails),
         roles: parseCsv(alertForm.roles),
         users: parseCsv(alertForm.users),
+        slackWebhooks: parseCsv(alertForm.slackWebhooks),
+        webhooks: parseCsv(alertForm.webhooks),
       },
       channels,
       isEnabled: true,
@@ -260,6 +270,24 @@ export const AdminSettings: React.FC = () => {
                 placeholder="userId1,userId2"
               />
             </label>
+            <label>
+              slack webhooks
+              <input
+                type="text"
+                value={alertForm.slackWebhooks}
+                onChange={(e) => setAlertForm({ ...alertForm, slackWebhooks: e.target.value })}
+                placeholder="https://hooks.slack.com/..."
+              />
+            </label>
+            <label>
+              webhooks
+              <input
+                type="text"
+                value={alertForm.webhooks}
+                onChange={(e) => setAlertForm({ ...alertForm, webhooks: e.target.value })}
+                placeholder="https://example.com/notify"
+              />
+            </label>
           </div>
           <div className="row" style={{ marginTop: 8 }}>
             {alertChannels.map((ch) => (
@@ -293,6 +321,9 @@ export const AdminSettings: React.FC = () => {
                 </div>
                 <div style={{ fontSize: 12, color: '#475569', marginTop: 4 }}>
                   remindAfterHours: {item.remindAfterHours ?? '-'}
+                </div>
+                <div style={{ fontSize: 12, color: '#475569', marginTop: 4 }}>
+                  slack: {(item.recipients?.slackWebhooks || []).join(', ') || '-'} / webhook: {(item.recipients?.webhooks || []).join(', ') || '-'}
                 </div>
                 <div className="row" style={{ marginTop: 6 }}>
                   <button className="button secondary" onClick={() => toggleAlert(item.id, item.isEnabled)}>

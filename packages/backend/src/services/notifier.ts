@@ -1,4 +1,9 @@
-export type NotifyResult = { channel: string; status: string; error?: string };
+export type NotifyResult = {
+  channel: string;
+  status: string;
+  error?: string;
+  target?: string;
+};
 
 // stub implementations
 export async function sendEmailStub(
@@ -8,6 +13,22 @@ export async function sendEmailStub(
 ): Promise<NotifyResult> {
   console.log('[email stub]', { to, subject, body });
   return { status: 'stub', channel: 'email' };
+}
+
+export async function sendSlackWebhookStub(
+  url: string,
+  payload: Record<string, unknown>,
+): Promise<NotifyResult> {
+  console.log('[slack webhook stub]', { url, payload });
+  return { status: 'stub', channel: 'slack', target: url };
+}
+
+export async function sendWebhookStub(
+  url: string,
+  payload: Record<string, unknown>,
+): Promise<NotifyResult> {
+  console.log('[webhook stub]', { url, payload });
+  return { status: 'stub', channel: 'webhook', target: url };
 }
 
 export async function recordPdfStub(
