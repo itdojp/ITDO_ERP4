@@ -41,6 +41,13 @@
 - 単価が未設定の場合は 0 として扱い、警告ログを出す
 - 端数処理は rounding ルールを後続で定義（MVPは小数点そのまま）
 
+## グループ/ユーザ別の配賦（MVP）
+- 収支を user/group 軸で出す場合は、**労務コスト比率**で売上と外注費を配賦する
+  - 配賦率 = user.laborCost / totalLaborCost
+  - totalLaborCost が 0 の場合は minutes 比率、minutes も 0 の場合は 0 とする
+- 経費は userId が明確なため、配賦せず user に直接紐づける
+- 返却値に allocationMethod を含め、配賦方法を明示する
+
 ## 指標（MVP）
 - 売上実績: sum(invoices.totalAmount)
 - 直接コスト: sum(expenses + vendor_invoices + laborCost)
