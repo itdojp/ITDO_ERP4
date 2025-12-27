@@ -57,6 +57,7 @@
   - shouldGenerateEstimate/shouldGenerateInvoice の選択
   - dueDateRule の設定
 - 生成履歴（period, 作成日時, 作成者, 生成物）を一覧表示
+  - 参照: `docs/requirements/recurring-generation-log.md`
 
 ## 変更/停止ルール
 - テンプレ変更は「今後の生成」にのみ反映する（過去のドラフトは更新しない）。
@@ -66,4 +67,3 @@
 ## 未決定/確認事項
 - shouldGenerateEstimate/shouldGenerateInvoice の初期値（請求のみ or 両方）
 - dueDateRule の最小粒度（日付固定 or 月末 + offset のみ）
-- 生成履歴テーブルの仕様（recurring_generation_logs を追加するか）
