@@ -1,3 +1,4 @@
+import type { Prisma } from '@prisma/client';
 import { FastifyInstance } from 'fastify';
 import { submitApprovalWithUpdate } from '../services/approval.js';
 import { FlowTypeValue, DocStatusValue } from '../types.js';
@@ -6,6 +7,84 @@ import { requireRole } from '../services/rbac.js';
 import { prisma } from '../services/db.js';
 
 export async function registerVendorDocRoutes(app: FastifyInstance) {
+  app.get(
+    '/vendor-quotes',
+    { preHandler: requireRole(['admin', 'mgmt']) },
+    async (req) => {
+      const { projectId, vendorId, status } = req.query as {
+        projectId?: string;
+        vendorId?: string;
+        status?: string;
+      };
+      const where: Prisma.VendorQuoteWhereInput = {};
+      if (projectId) where.projectId = projectId;
+      if (vendorId) where.vendorId = vendorId;
+      if (status) where.status = status;
+      const items = await prisma.vendorQuote.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        take: 100,
+      });
+      return { items };
+    },
+  );
+
+  app.get(
+    '/vendor-quotes/:id',
+    { preHandler: requireRole(['admin', 'mgmt']) },
+    async (req, reply) => {
+      const { id } = req.params as { id: string };
+      const quote = await prisma.vendorQuote.findUnique({
+        where: { id },
+      });
+      if (!quote) {
+        return reply.status(404).send({
+          error: { code: 'NOT_FOUND', message: 'Vendor quote not found' },
+        });
+      }
+      return quote;
+    },
+  );
+
+  app.get(
+    '/vendor-invoices',
+    { preHandler: requireRole(['admin', 'mgmt']) },
+    async (req) => {
+      const { projectId, vendorId, status } = req.query as {
+        projectId?: string;
+        vendorId?: string;
+        status?: string;
+      };
+      const where: Prisma.VendorInvoiceWhereInput = {};
+      if (projectId) where.projectId = projectId;
+      if (vendorId) where.vendorId = vendorId;
+      if (status) where.status = status;
+      const items = await prisma.vendorInvoice.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        take: 100,
+      });
+      return { items };
+    },
+  );
+
+  app.get(
+    '/vendor-invoices/:id',
+    { preHandler: requireRole(['admin', 'mgmt']) },
+    async (req, reply) => {
+      const { id } = req.params as { id: string };
+      const invoice = await prisma.vendorInvoice.findUnique({
+        where: { id },
+      });
+      if (!invoice) {
+        return reply.status(404).send({
+          error: { code: 'NOT_FOUND', message: 'Vendor invoice not found' },
+        });
+      }
+      return invoice;
+    },
+  );
+
   app.post(
     '/vendor-quotes',
     { preHandler: requireRole(['admin', 'mgmt']), schema: vendorQuoteSchema },
