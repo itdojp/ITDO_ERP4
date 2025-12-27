@@ -84,6 +84,11 @@ export async function registerProjectRoutes(app: FastifyInstance) {
           error: { code: 'NOT_FOUND', message: 'Task not found' },
         });
       }
+      if (current.deletedAt) {
+        return reply.status(400).send({
+          error: { code: 'ALREADY_DELETED', message: 'Task already deleted' },
+        });
+      }
       const task = await prisma.projectTask.update({
         where: { id: taskId },
         data: {
@@ -116,6 +121,20 @@ export async function registerProjectRoutes(app: FastifyInstance) {
       if (!task || task.projectId !== projectId) {
         return reply.status(404).send({
           error: { code: 'NOT_FOUND', message: 'Task not found' },
+        });
+      }
+      if (task.deletedAt) {
+        return reply.status(400).send({
+          error: { code: 'ALREADY_DELETED', message: 'Task already deleted' },
+        });
+      }
+      const targetProject = await prisma.project.findUnique({
+        where: { id: body.toProjectId },
+        select: { id: true },
+      });
+      if (!targetProject) {
+        return reply.status(404).send({
+          error: { code: 'NOT_FOUND', message: 'Target project not found' },
         });
       }
       const [childCount, timeCount, estimateCount, invoiceCount, poCount] =
@@ -169,6 +188,11 @@ export async function registerProjectRoutes(app: FastifyInstance) {
       if (!task || task.projectId !== projectId) {
         return reply.status(404).send({
           error: { code: 'NOT_FOUND', message: 'Task not found' },
+        });
+      }
+      if (task.deletedAt) {
+        return reply.status(400).send({
+          error: { code: 'ALREADY_DELETED', message: 'Task already deleted' },
         });
       }
       const [childCount, timeCount, estimateCount, invoiceCount, poCount] =
@@ -262,6 +286,14 @@ export async function registerProjectRoutes(app: FastifyInstance) {
           error: { code: 'NOT_FOUND', message: 'Milestone not found' },
         });
       }
+      if (milestone.deletedAt) {
+        return reply.status(400).send({
+          error: {
+            code: 'ALREADY_DELETED',
+            message: 'Milestone already deleted',
+          },
+        });
+      }
       const lockedInvoice = await prisma.invoice.findFirst({
         where: {
           milestoneId,
@@ -307,6 +339,14 @@ export async function registerProjectRoutes(app: FastifyInstance) {
       if (!milestone || milestone.projectId !== projectId) {
         return reply.status(404).send({
           error: { code: 'NOT_FOUND', message: 'Milestone not found' },
+        });
+      }
+      if (milestone.deletedAt) {
+        return reply.status(400).send({
+          error: {
+            code: 'ALREADY_DELETED',
+            message: 'Milestone already deleted',
+          },
         });
       }
       const linkedInvoice = await prisma.invoice.findFirst({
