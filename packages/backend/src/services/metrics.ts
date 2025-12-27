@@ -1,5 +1,6 @@
 import { prisma } from './db.js';
 import { calcTimeAmount, resolveRateCard } from './rateCard.js';
+import { dateKey, toNumber } from './utils.js';
 
 type AlertSetting = {
   id: string;
@@ -30,27 +31,6 @@ type ApprovalInstanceWhereInput = {
   projectId?: string;
 };
 
-function toNumber(value: unknown): number {
-  if (value == null) return 0;
-  if (typeof value === 'number') return value;
-  if (typeof value === 'string') {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : 0;
-  }
-  if (value && typeof value === 'object') {
-    const maybeDecimal = value as {
-      toNumber?: () => number;
-      toString?: () => string;
-    };
-    if (typeof maybeDecimal.toNumber === 'function')
-      return maybeDecimal.toNumber();
-    if (typeof maybeDecimal.toString === 'function') {
-      const parsed = Number(maybeDecimal.toString());
-      return Number.isFinite(parsed) ? parsed : 0;
-    }
-  }
-  return 0;
-}
 
 function startOfDay(date: Date) {
   const result = new Date(date);
@@ -69,9 +49,6 @@ function resolvePeriodRange(period: string, now = new Date()) {
   return { start, end };
 }
 
-function dateKey(date: Date) {
-  return date.toISOString().slice(0, 10);
-}
 
 async function resolveProjectBudget(projectId: string): Promise<number> {
   const estimate = await prisma.estimate.findFirst({

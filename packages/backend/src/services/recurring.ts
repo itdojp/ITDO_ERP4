@@ -2,6 +2,7 @@ import type { Prisma } from '@prisma/client';
 import { prisma } from './db.js';
 import { nextNumber } from './numbering.js';
 import { DocStatusValue } from '../types.js';
+import { toNumber } from './utils.js';
 
 type RunResult = {
   templateId: string;
@@ -12,27 +13,6 @@ type RunResult = {
   invoiceId?: string;
   milestoneId?: string;
 };
-
-function toNumber(value: unknown): number {
-  if (typeof value === 'number') return value;
-  if (typeof value === 'string') {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : 0;
-  }
-  if (value && typeof value === 'object') {
-    const maybeDecimal = value as {
-      toNumber?: () => number;
-      toString?: () => string;
-    };
-    if (typeof maybeDecimal.toNumber === 'function')
-      return maybeDecimal.toNumber();
-    if (typeof maybeDecimal.toString === 'function') {
-      const parsed = Number(maybeDecimal.toString());
-      return Number.isFinite(parsed) ? parsed : 0;
-    }
-  }
-  return 0;
-}
 
 function startOfMonth(date: Date) {
   const result = new Date(date);
