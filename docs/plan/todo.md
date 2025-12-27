@@ -162,7 +162,7 @@
 - [x] 見積/請求/発注/仕入の一覧・詳細 API（フィルタ/承認状態）実装
 - [x] 損益・工数予実の集計 API とテスト（期間/単位）
 - [x] ドキュメント整合（domain-api-draft/data-model-sketch/schema-prisma-sketch の更新）
-- [ ] 定期案件生成履歴テーブルの実装（recurring_generation_logs）
-- [ ] dueDateRule のバリデーション/変換ユーティリティ追加
-- [ ] Project/Task/Milestone の親子整合チェック（親タスクの同一project検証）
+- [x] 定期案件生成履歴テーブルの実装（recurring_generation_logs）
+- [x] dueDateRule のバリデーション/変換ユーティリティ追加
+- [x] Project/Task/Milestone の親子整合チェック（親タスクの同一project検証）
 - [ ] 収支レポートの集計軸拡張（group/user単位）

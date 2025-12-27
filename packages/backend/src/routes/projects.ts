@@ -11,6 +11,7 @@ import {
   reassignSchema,
 } from './validators.js';
 import { prisma } from '../services/db.js';
+import { parseDueDateRule } from '../services/dueDateRule.js';
 
 type RecurringFrequency = 'monthly' | 'quarterly' | 'semiannual' | 'annual';
 type BillUpon = 'date' | 'acceptance' | 'time';
@@ -67,9 +68,28 @@ export async function registerProjectRoutes(app: FastifyInstance) {
   app.post(
     '/projects/:projectId/tasks',
     { preHandler: requireRole(['admin', 'mgmt']), schema: projectTaskSchema },
-    async (req) => {
+    async (req, reply) => {
       const { projectId } = req.params as { projectId: string };
       const body = req.body as any;
+      if (body.parentTaskId) {
+        const parent = await prisma.projectTask.findUnique({
+          where: { id: body.parentTaskId },
+          select: { projectId: true, deletedAt: true },
+        });
+        if (!parent || parent.deletedAt) {
+          return reply.status(404).send({
+            error: { code: 'NOT_FOUND', message: 'Parent task not found' },
+          });
+        }
+        if (parent.projectId !== projectId) {
+          return reply.status(400).send({
+            error: {
+              code: 'VALIDATION_ERROR',
+              message: 'Parent task belongs to another project',
+            },
+          });
+        }
+      }
       const task = await prisma.projectTask.create({
         data: {
           projectId,
@@ -108,6 +128,35 @@ export async function registerProjectRoutes(app: FastifyInstance) {
         return reply.status(400).send({
           error: { code: 'ALREADY_DELETED', message: 'Task already deleted' },
         });
+      }
+      if (Object.prototype.hasOwnProperty.call(body, 'parentTaskId')) {
+        if (body.parentTaskId === taskId) {
+          return reply.status(400).send({
+            error: {
+              code: 'VALIDATION_ERROR',
+              message: 'Parent task cannot be self',
+            },
+          });
+        }
+        if (body.parentTaskId) {
+          const parent = await prisma.projectTask.findUnique({
+            where: { id: body.parentTaskId },
+            select: { projectId: true, deletedAt: true },
+          });
+          if (!parent || parent.deletedAt) {
+            return reply.status(404).send({
+              error: { code: 'NOT_FOUND', message: 'Parent task not found' },
+            });
+          }
+          if (parent.projectId !== projectId) {
+            return reply.status(400).send({
+              error: {
+                code: 'VALIDATION_ERROR',
+                message: 'Parent task belongs to another project',
+              },
+            });
+          }
+        }
       }
       const task = await prisma.projectTask.update({
         where: { id: taskId },
@@ -420,6 +469,19 @@ export async function registerProjectRoutes(app: FastifyInstance) {
       if (!project) {
         return reply.code(404).send({ error: 'not_found' });
       }
+      let dueDateRule: unknown | undefined | null = undefined;
+      if (Object.prototype.hasOwnProperty.call(body, 'dueDateRule')) {
+        try {
+          dueDateRule = parseDueDateRule(body.dueDateRule);
+        } catch {
+          return reply.code(400).send({
+            error: {
+              code: 'INVALID_DUE_DATE_RULE',
+              message: 'dueDateRule is invalid',
+            },
+          });
+        }
+      }
       const data = {
         frequency: body.frequency,
         nextRunAt: body.nextRunAt ? new Date(body.nextRunAt) : undefined,
@@ -430,7 +492,7 @@ export async function registerProjectRoutes(app: FastifyInstance) {
         defaultTerms: body.defaultTerms,
         defaultMilestoneName: body.defaultMilestoneName,
         billUpon: body.billUpon,
-        dueDateRule: body.dueDateRule,
+        dueDateRule,
         shouldGenerateEstimate: body.shouldGenerateEstimate,
         shouldGenerateInvoice: body.shouldGenerateInvoice,
         isActive: body.isActive,

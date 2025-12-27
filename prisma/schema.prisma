@@ -199,6 +199,7 @@ model RecurringProjectTemplate {
   id            String    @id @default(uuid())
   project       Project   @relation(fields: [projectId], references: [id], onDelete: Restrict)
   projectId     String    @unique
+  logs          RecurringGenerationLog[]
   frequency     String // monthly/quarterly/semiannual/annual
   defaultAmount Decimal?
   defaultCurrency String?
@@ -216,6 +217,26 @@ model RecurringProjectTemplate {
   createdBy     String?
   updatedAt     DateTime  @updatedAt
   updatedBy     String?
+}
+
+model RecurringGenerationLog {
+  id          String   @id @default(uuid())
+  template    RecurringProjectTemplate @relation(fields: [templateId], references: [id], onDelete: Restrict)
+  templateId  String
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  projectId   String
+  periodKey   String
+  runAt       DateTime
+  status      String
+  message     String?
+  estimateId  String?
+  invoiceId   String?
+  milestoneId String?
+  createdAt   DateTime @default(now())
+  createdBy   String?
+
+  @@unique([templateId, periodKey])
+  @@index([projectId, periodKey])
 }
 
 model Estimate {

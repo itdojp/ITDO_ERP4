@@ -24,6 +24,14 @@ const billUponSchema = Type.Union([
   Type.Literal('time'),
 ]);
 
+const dueDateRuleSchema = Type.Object(
+  {
+    type: Type.Literal('periodEndPlusOffset'),
+    offsetDays: Type.Number({ minimum: 0, maximum: 365 }),
+  },
+  { additionalProperties: false },
+);
+
 const currencySchema = Type.String({ pattern: '^[A-Z]{3}$' });
 
 export const projectSchema = {
@@ -47,7 +55,7 @@ export const recurringTemplateSchema = {
     defaultTerms: Type.Optional(Type.String()),
     defaultMilestoneName: Type.Optional(Type.String()),
     billUpon: Type.Optional(billUponSchema),
-    dueDateRule: Type.Optional(Type.Any()),
+    dueDateRule: Type.Optional(dueDateRuleSchema),
     shouldGenerateEstimate: Type.Optional(Type.Boolean()),
     shouldGenerateInvoice: Type.Optional(Type.Boolean()),
     isActive: Type.Optional(Type.Boolean()),

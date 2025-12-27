@@ -16,10 +16,12 @@
 - invoice_id?
 - milestone_id?
 - created_at
+- created_by
 
 ## ルール
 - 冪等性: template_id + period_key を一意キーとし、同一期間の重複生成を防止する。
 - スキップ/失敗も記録し、再実行時の原因確認に使う。
+- 既に status=created のログがある場合は、以降の skipped/error で上書きしない。
 
 ## 参照用途
 - 定期案件テンプレ画面の「生成履歴」一覧

@@ -28,6 +28,19 @@
 - 工数予算: 現状は未定義（後続で planHours を持たせる）
 - コスト予算: 現状は未定義（後続で budgetCost を持たせる）
 
+## 期間指定時の扱い
+- 期間指定がある場合:
+  - 売上予算: 期間内に作成された estimate を優先（最新1件）。存在しない場合は milestone.dueDate の期間合計にフォールバック
+  - 売上実績: invoice.issueDate の期間合計
+  - コスト: expense.incurredOn / vendor_invoice.receivedDate / time_entry.workDate で期間合計
+- 期間指定がない場合:
+  - 売上予算: 最新の estimate を優先（無ければ milestone 合計）
+
+## 単価の決め方（工数）
+- rate_cards は projectId + workType + 期間で最適一致を解決
+- 単価が未設定の場合は 0 として扱い、警告ログを出す
+- 端数処理は rounding ルールを後続で定義（MVPは小数点そのまま）
+
 ## 指標（MVP）
 - 売上実績: sum(invoices.totalAmount)
 - 直接コスト: sum(expenses + vendor_invoices + laborCost)
