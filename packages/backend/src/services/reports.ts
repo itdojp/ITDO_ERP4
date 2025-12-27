@@ -57,6 +57,75 @@ async function sumTimeCost(
   return { cost: total, minutes };
 }
 
+type LaborCostByUser = {
+  totalCost: number;
+  totalMinutes: number;
+  items: Map<string, { cost: number; minutes: number }>;
+};
+
+async function sumTimeCostByUser(
+  projectId: string,
+  from?: Date,
+  to?: Date,
+): Promise<LaborCostByUser> {
+  const where: any = {
+    projectId,
+    deletedAt: null,
+    status: { in: ['submitted', 'approved'] },
+  };
+  if (from || to) {
+    where.workDate = {};
+    if (from) where.workDate.gte = from;
+    if (to) where.workDate.lte = to;
+  }
+  const entries = await prisma.timeEntry.findMany({
+    where,
+    select: { userId: true, minutes: true, workDate: true, workType: true },
+  });
+  if (!entries.length) {
+    return { totalCost: 0, totalMinutes: 0, items: new Map() };
+  }
+  const uniqueCombos = new Map<string, { workDate: Date; workType?: string }>();
+  for (const entry of entries) {
+    const workType = entry.workType ?? undefined;
+    const key = `${dateKey(entry.workDate)}|${workType ?? ''}`;
+    if (!uniqueCombos.has(key)) {
+      uniqueCombos.set(key, { workDate: entry.workDate, workType });
+    }
+  }
+  const rateCardCache = new Map<
+    string,
+    Awaited<ReturnType<typeof resolveRateCard>>
+  >();
+  await Promise.all(
+    Array.from(uniqueCombos.entries()).map(async ([key, combo]) => {
+      const rateCard = await resolveRateCard({
+        projectId,
+        workDate: combo.workDate,
+        workType: combo.workType,
+      });
+      rateCardCache.set(key, rateCard);
+    }),
+  );
+  const items = new Map<string, { cost: number; minutes: number }>();
+  let totalCost = 0;
+  let totalMinutes = 0;
+  for (const entry of entries) {
+    const workType = entry.workType ?? undefined;
+    const key = `${dateKey(entry.workDate)}|${workType ?? ''}`;
+    const rateCard = rateCardCache.get(key);
+    const minutes = entry.minutes || 0;
+    totalMinutes += minutes;
+    const cost = rateCard ? calcTimeAmount(minutes, toNumber(rateCard.unitPrice)) : 0;
+    totalCost += cost;
+    const current = items.get(entry.userId) ?? { cost: 0, minutes: 0 };
+    current.cost += cost;
+    current.minutes += minutes;
+    items.set(entry.userId, current);
+  }
+  return { totalCost, totalMinutes, items };
+}
+
 async function resolveRevenueBudget(
   projectId: string,
   from?: Date,
@@ -298,5 +367,187 @@ export async function reportProjectProfit(
     grossProfit,
     grossMargin,
     totalMinutes: time.minutes,
+  };
+}
+
+type ProfitBreakdownItem = {
+  userId: string;
+  laborCost: number;
+  expenseCost: number;
+  allocatedVendorCost: number;
+  allocatedRevenue: number;
+  totalCost: number;
+  grossProfit: number;
+  grossMargin: number;
+  minutes: number;
+};
+
+export async function reportProjectProfitByUser(
+  projectId: string,
+  from?: Date,
+  to?: Date,
+  userIds?: string[],
+) {
+  const invoiceWhere: any = {
+    projectId,
+    deletedAt: null,
+    status: { in: ['approved', 'sent', 'paid'] },
+  };
+  if (from || to) {
+    invoiceWhere.issueDate = {};
+    if (from) invoiceWhere.issueDate.gte = from;
+    if (to) invoiceWhere.issueDate.lte = to;
+  }
+  const vendorWhere: any = {
+    projectId,
+    deletedAt: null,
+    status: { in: ['received', 'approved', 'paid'] },
+  };
+  if (from || to) {
+    vendorWhere.receivedDate = {};
+    if (from) vendorWhere.receivedDate.gte = from;
+    if (to) vendorWhere.receivedDate.lte = to;
+  }
+  const expenseWhere: any = {
+    projectId,
+    deletedAt: null,
+    status: 'approved',
+  };
+  if (from || to) {
+    expenseWhere.incurredOn = {};
+    if (from) expenseWhere.incurredOn.gte = from;
+    if (to) expenseWhere.incurredOn.lte = to;
+  }
+
+  const [invoiceSum, vendorSum, expenseAgg, labor] = await Promise.all([
+    prisma.invoice.aggregate({
+      where: invoiceWhere,
+      _sum: { totalAmount: true },
+    }),
+    prisma.vendorInvoice.aggregate({
+      where: vendorWhere,
+      _sum: { totalAmount: true },
+    }),
+    prisma.expense.groupBy({
+      by: ['userId'],
+      where: expenseWhere,
+      _sum: { amount: true },
+    }),
+    sumTimeCostByUser(projectId, from, to),
+  ]);
+  const revenue = toNumber(invoiceSum._sum.totalAmount);
+  const vendorCost = toNumber(vendorSum._sum.totalAmount);
+  const totalLaborCost = labor.totalCost;
+  const totalMinutes = labor.totalMinutes;
+  const totalExpenseCost = expenseAgg.reduce(
+    (sum, row) => sum + toNumber(row._sum.amount),
+    0,
+  );
+
+  const allocationMethod =
+    totalLaborCost > 0 ? 'labor_cost' : totalMinutes > 0 ? 'minutes' : 'none';
+
+  const expenseByUser = new Map<string, number>();
+  for (const row of expenseAgg) {
+    expenseByUser.set(row.userId, toNumber(row._sum.amount));
+  }
+
+  const userIdSet = new Set<string>([
+    ...labor.items.keys(),
+    ...expenseByUser.keys(),
+  ]);
+  const filteredUserIds = userIds?.length
+    ? Array.from(userIdSet).filter((id) => userIds.includes(id))
+    : Array.from(userIdSet);
+
+  const items: ProfitBreakdownItem[] = filteredUserIds.map((userId) => {
+    const laborItem = labor.items.get(userId) ?? { cost: 0, minutes: 0 };
+    const expenseCost = expenseByUser.get(userId) ?? 0;
+    const share =
+      allocationMethod === 'labor_cost' && totalLaborCost > 0
+        ? laborItem.cost / totalLaborCost
+        : allocationMethod === 'minutes' && totalMinutes > 0
+          ? laborItem.minutes / totalMinutes
+          : 0;
+    const allocatedRevenue = revenue * share;
+    const allocatedVendorCost = vendorCost * share;
+    const totalCost = laborItem.cost + expenseCost + allocatedVendorCost;
+    const grossProfit = allocatedRevenue - totalCost;
+    const grossMargin =
+      allocatedRevenue > 0 ? grossProfit / allocatedRevenue : 0;
+    return {
+      userId,
+      laborCost: laborItem.cost,
+      expenseCost,
+      allocatedVendorCost,
+      allocatedRevenue,
+      totalCost,
+      grossProfit,
+      grossMargin,
+      minutes: laborItem.minutes,
+    };
+  });
+
+  return {
+    projectId,
+    revenue,
+    vendorCost,
+    laborCost: totalLaborCost,
+    expenseCost: totalExpenseCost,
+    totalMinutes,
+    allocationMethod,
+    items,
+  };
+}
+
+export async function reportProjectProfitByGroup(
+  projectId: string,
+  userIds: string[],
+  from?: Date,
+  to?: Date,
+  label?: string,
+) {
+  const res = await reportProjectProfitByUser(projectId, from, to, userIds);
+  const totals = res.items.reduce(
+    (acc, item) => {
+      acc.laborCost += item.laborCost;
+      acc.expenseCost += item.expenseCost;
+      acc.allocatedVendorCost += item.allocatedVendorCost;
+      acc.allocatedRevenue += item.allocatedRevenue;
+      acc.totalCost += item.totalCost;
+      acc.grossProfit += item.grossProfit;
+      acc.minutes += item.minutes;
+      return acc;
+    },
+    {
+      laborCost: 0,
+      expenseCost: 0,
+      allocatedVendorCost: 0,
+      allocatedRevenue: 0,
+      totalCost: 0,
+      grossProfit: 0,
+      minutes: 0,
+    },
+  );
+  const grossMargin =
+    totals.allocatedRevenue > 0
+      ? totals.grossProfit / totals.allocatedRevenue
+      : 0;
+  return {
+    projectId,
+    label: label ?? null,
+    userIds,
+    allocationMethod: res.allocationMethod,
+    totals: {
+      revenue: res.revenue,
+      vendorCost: res.vendorCost,
+      laborCost: res.laborCost,
+      expenseCost: res.expenseCost,
+      totalMinutes: res.totalMinutes,
+    },
+    group: {
+      ...totals,
+      grossMargin,
+    },
   };
 }
