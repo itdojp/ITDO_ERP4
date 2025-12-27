@@ -31,6 +31,12 @@
   - `scope_change`（スコープ変更）
 - 付け替え（reassign）の reasonCode も、特段の理由がない限り deletedReason と同一コード体系を用いる。
 
+## 編集可否の共通チェック
+- deletedAt 済みのデータは更新不可（再編集には復元フローが必要）。
+- 承認ワークフロー中（ApprovalInstance が active）の伝票に紐づく場合は編集/削除不可（取消後に実施）。
+- 確定状態（approved/sent/paid/closed など）の伝票に紐づく場合は編集/削除不可。
+- 付け替えは理由必須 + 監査ログ必須（from/to/actor/理由コード/自由記述）。
+
 ## 編集フロー（MVP）
 ### Project（案件）
 - 作成: name, customerId, status=draft を必須。parentProjectId は任意。
@@ -44,7 +50,8 @@
 - 作成: projectId, name を必須。parentTaskId は任意。
 - 変更:
   - name/status/assignee/dates の更新は project メンバー以上。
-  - parentTaskId の変更は理由必須。子タスクがある場合は一括移動のみ。
+  - parentTaskId の変更は理由必須。親は同一 project 内のみ許容。
+  - 子タスクがある場合は一括移動のみ。
 - 付け替え（Project間移動）:
   - `docs/requirements/reassignment-policy.md` に従う。
   - time_entries/expenses などの紐付けがある場合は一括移動か移動不可。

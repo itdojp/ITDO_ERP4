@@ -3,6 +3,7 @@ import { prisma } from './db.js';
 import { nextNumber } from './numbering.js';
 import { DocStatusValue } from '../types.js';
 import { toNumber } from './utils.js';
+import { computeDueDate, parseDueDateRule } from './dueDateRule.js';
 
 type RunResult = {
   templateId: string;
@@ -21,6 +22,12 @@ function startOfMonth(date: Date) {
   return result;
 }
 
+function periodKey(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  return `${year}-${month}`;
+}
+
 function addMonths(base: Date, months: number) {
   const result = new Date(base);
   const originalDay = result.getDate();
@@ -36,9 +43,6 @@ function addMonths(base: Date, months: number) {
   return result;
 }
 
-function endOfMonth(date: Date) {
-  return new Date(date.getFullYear(), date.getMonth() + 1, 0, 23, 59, 59, 999);
-}
 
 function nextRunAt(frequency: string | null | undefined, current: Date) {
   const normalized = (frequency ?? 'monthly').toLowerCase();
@@ -53,18 +57,6 @@ function nextRunAt(frequency: string | null | undefined, current: Date) {
   return addMonths(current, step);
 }
 
-function computeDueDate(runAt: Date, rule: unknown): Date | null {
-  if (!rule || typeof rule !== 'object') return null;
-  const payload = rule as { type?: string; offsetDays?: number };
-  if (payload.type !== 'periodEndPlusOffset') return null;
-  const offsetDays =
-    typeof payload.offsetDays === 'number' ? payload.offsetDays : 0;
-  const base = endOfMonth(runAt);
-  const result = new Date(base);
-  result.setDate(result.getDate() + offsetDays);
-  return result;
-}
-
 export async function runRecurringTemplates(now = new Date()) {
   const templates = await prisma.recurringProjectTemplate.findMany({
     where: {
@@ -75,16 +67,29 @@ export async function runRecurringTemplates(now = new Date()) {
   });
   const results: RunResult[] = [];
   for (const template of templates) {
+    const runAt = template.nextRunAt ?? now;
+    const periodKeyValue = periodKey(runAt);
     if (template.project && template.project.status !== 'active') {
-      results.push({
+      await prisma.recurringProjectTemplate.update({
+        where: { id: template.id },
+        data: { nextRunAt: nextRunAt(template.frequency, runAt) },
+      });
+      const result: RunResult = {
         templateId: template.id,
         projectId: template.projectId,
         status: 'skipped',
         message: 'project_inactive',
+      };
+      results.push(result);
+      await recordGenerationLog({
+        templateId: template.id,
+        projectId: template.projectId,
+        periodKey: periodKeyValue,
+        runAt,
+        result,
       });
       continue;
     }
-    const runAt = template.nextRunAt ?? now;
     const periodStart = startOfMonth(runAt);
     const periodEnd = addMonths(periodStart, 1);
     const shouldGenerateEstimate = template.shouldGenerateEstimate ?? true;
@@ -103,11 +108,19 @@ export async function runRecurringTemplates(now = new Date()) {
         where: { id: template.id },
         data: { nextRunAt: nextRunAt(template.frequency, runAt) },
       });
-      results.push({
+      const result: RunResult = {
         templateId: template.id,
         projectId: template.projectId,
         status: 'skipped',
         message: 'no_generation_flags',
+      };
+      results.push(result);
+      await recordGenerationLog({
+        templateId: template.id,
+        projectId: template.projectId,
+        periodKey: periodKeyValue,
+        runAt,
+        result,
       });
       continue;
     }
@@ -149,21 +162,41 @@ export async function runRecurringTemplates(now = new Date()) {
         where: { id: template.id },
         data: { nextRunAt: nextRunAt(template.frequency, runAt) },
       });
-      results.push({
+      const result: RunResult = {
         templateId: template.id,
         projectId: template.projectId,
         status: 'skipped',
         message: 'already_generated',
+      };
+      results.push(result);
+      await recordGenerationLog({
+        templateId: template.id,
+        projectId: template.projectId,
+        periodKey: periodKeyValue,
+        runAt,
+        result,
       });
       continue;
     }
     const amount = toNumber(template.defaultAmount);
     if (amount <= 0) {
-      results.push({
+      await prisma.recurringProjectTemplate.update({
+        where: { id: template.id },
+        data: { nextRunAt: nextRunAt(template.frequency, runAt) },
+      });
+      const result: RunResult = {
         templateId: template.id,
         projectId: template.projectId,
         status: 'error',
         message: 'default_amount_missing',
+      };
+      results.push(result);
+      await recordGenerationLog({
+        templateId: template.id,
+        projectId: template.projectId,
+        periodKey: periodKeyValue,
+        runAt,
+        result,
       });
       continue;
     }
@@ -171,7 +204,8 @@ export async function runRecurringTemplates(now = new Date()) {
       const currency =
         template.defaultCurrency || template.project?.currency || 'JPY';
       const lineDescription = template.defaultTerms || 'Recurring project';
-      const milestoneDueDate = computeDueDate(runAt, template.dueDateRule);
+      const dueDateRule = parseDueDateRule(template.dueDateRule);
+      const milestoneDueDate = computeDueDate(runAt, dueDateRule);
       const milestoneName =
         template.defaultMilestoneName || 'Recurring milestone';
       const estimateNumbering = shouldGenerateEstimate
@@ -263,22 +297,90 @@ export async function runRecurringTemplates(now = new Date()) {
           };
         },
       );
-      results.push({
+      const result: RunResult = {
         templateId: template.id,
         projectId: template.projectId,
         status: 'created',
         estimateId: created.estimateId ?? undefined,
         invoiceId: created.invoiceId ?? undefined,
         milestoneId: created.milestoneId ?? undefined,
+      };
+      results.push(result);
+      await recordGenerationLog({
+        templateId: template.id,
+        projectId: template.projectId,
+        periodKey: periodKeyValue,
+        runAt,
+        result,
       });
     } catch (err: any) {
-      results.push({
+      await prisma.recurringProjectTemplate.update({
+        where: { id: template.id },
+        data: {
+          nextRunAt: new Date(now.getTime() + 60 * 60 * 1000),
+        },
+      });
+      const result: RunResult = {
         templateId: template.id,
         projectId: template.projectId,
         status: 'error',
         message: err?.message || 'failed',
+      };
+      results.push(result);
+      await recordGenerationLog({
+        templateId: template.id,
+        projectId: template.projectId,
+        periodKey: periodKeyValue,
+        runAt,
+        result,
       });
     }
   }
   return { processed: templates.length, results };
+}
+
+async function recordGenerationLog(params: {
+  templateId: string;
+  projectId: string;
+  periodKey: string;
+  runAt: Date;
+  result: RunResult;
+}) {
+  const data = {
+    templateId: params.templateId,
+    projectId: params.projectId,
+    periodKey: params.periodKey,
+    runAt: params.runAt,
+    status: params.result.status,
+    message: params.result.message ?? null,
+    estimateId: params.result.estimateId ?? null,
+    invoiceId: params.result.invoiceId ?? null,
+    milestoneId: params.result.milestoneId ?? null,
+    createdBy: 'recurring-job',
+  };
+  const existing = await prisma.recurringGenerationLog.findUnique({
+    where: {
+      templateId_periodKey: {
+        templateId: params.templateId,
+        periodKey: params.periodKey,
+      },
+    },
+    select: { status: true },
+  });
+  if (!existing) {
+    await prisma.recurringGenerationLog.create({ data });
+    return;
+  }
+  if (existing.status === 'created' && params.result.status !== 'created') {
+    return;
+  }
+  await prisma.recurringGenerationLog.update({
+    where: {
+      templateId_periodKey: {
+        templateId: params.templateId,
+        periodKey: params.periodKey,
+      },
+    },
+    data,
+  });
 }
