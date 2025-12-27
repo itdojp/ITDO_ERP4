@@ -20,9 +20,9 @@
 - targetRef: `approval_instance:{id}:step:{stepOrder}` を使用し、同一 step の重複発火を抑止。
 - 通知先: AlertSetting.recipients を優先。未設定の場合は approverGroupId / approverUserId を通知対象とする。
 - クローズ条件: step が pending_* から non-pending に遷移した時点で close。次 step 開始時は新しい targetRef で判定。
-- リマインド: 初期は再送なし。再送/エスカレーションは後続スコープ。
+- リマインド: AlertSetting.remindAfterHours がある場合に reminderAt で再送。未設定は再送なし。
 - 例外: 対象データが論理削除 or 申請取り下げの場合は判定対象から除外。
 
 ## バッチ/同期
 - 日次で computeAndTrigger を実行。将来は時間単位に拡張
-- 再送/サプレッションは未実装（後続）
+- 再送/サプレッションは remindAfterHours で制御する（Slack/Webhook は後続）

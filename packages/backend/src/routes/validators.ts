@@ -314,6 +314,7 @@ export const alertSettingSchema = {
       scopeProjectId: Type.Optional(Type.String()),
       recipients: alertRecipientsSchema,
       channels: Type.Array(alertChannelSchema, { minItems: 1 }),
+      remindAfterHours: Type.Optional(Type.Integer({ minimum: 1 })),
       isEnabled: Type.Optional(Type.Boolean()),
     },
     { additionalProperties: false },

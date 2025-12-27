@@ -430,6 +430,7 @@ model AlertSetting {
   recipients Json // emails/roles/users
   channels  Json // email/dashboard/ext_future
   isEnabled Boolean @default(true)
+  remindAfterHours Int?
 }
 
 model Alert {
@@ -438,6 +439,7 @@ model Alert {
   settingId String
   targetRef String
   triggeredAt DateTime @default(now())
+  reminderAt  DateTime?
   status    String @default("open") // open/ack/closed
   sentChannels Json?
   sentResult  Json?
