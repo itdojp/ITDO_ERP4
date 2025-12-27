@@ -3,6 +3,25 @@ import { requireRole } from '../services/rbac.js';
 import { projectSchema, recurringTemplateSchema } from './validators.js';
 import { prisma } from '../services/db.js';
 
+type RecurringFrequency = 'monthly' | 'quarterly' | 'semiannual' | 'annual';
+type BillUpon = 'date' | 'acceptance' | 'time';
+
+type RecurringTemplateBody = {
+  frequency: RecurringFrequency;
+  nextRunAt?: string;
+  timezone?: string;
+  defaultAmount?: number;
+  defaultCurrency?: string;
+  defaultTaxRate?: number;
+  defaultTerms?: string;
+  defaultMilestoneName?: string;
+  billUpon?: BillUpon;
+  dueDateRule?: unknown;
+  shouldGenerateEstimate?: boolean;
+  shouldGenerateInvoice?: boolean;
+  isActive?: boolean;
+};
+
 export async function registerProjectRoutes(app: FastifyInstance) {
   app.get('/projects', async () => {
     const projects = await prisma.project.findMany({
@@ -37,9 +56,16 @@ export async function registerProjectRoutes(app: FastifyInstance) {
   app.post(
     '/projects/:id/recurring-template',
     { preHandler: requireRole(['admin', 'mgmt']), schema: recurringTemplateSchema },
-    async (req) => {
+    async (req, reply) => {
       const params = req.params as { id: string };
-      const body = req.body as any;
+      const body = req.body as RecurringTemplateBody;
+      const project = await prisma.project.findUnique({
+        where: { id: params.id },
+        select: { id: true },
+      });
+      if (!project) {
+        return reply.code(404).send({ error: 'not_found' });
+      }
       const data = {
         frequency: body.frequency,
         nextRunAt: body.nextRunAt ? new Date(body.nextRunAt) : undefined,
