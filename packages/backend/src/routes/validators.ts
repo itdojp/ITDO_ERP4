@@ -27,7 +27,7 @@ const billUponSchema = Type.Union([
 const dueDateRuleSchema = Type.Object(
   {
     type: Type.Literal('periodEndPlusOffset'),
-    offsetDays: Type.Number({ minimum: 0, maximum: 365 }),
+    offsetDays: Type.Integer({ minimum: 0, maximum: 365 }),
   },
   { additionalProperties: false },
 );

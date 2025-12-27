@@ -32,6 +32,22 @@ type RecurringTemplateBody = {
   isActive?: boolean;
 };
 
+async function hasCircularParent(taskId: string, parentTaskId: string) {
+  const visited = new Set<string>([taskId]);
+  let currentId: string | null = parentTaskId;
+  while (currentId) {
+    if (visited.has(currentId)) return true;
+    visited.add(currentId);
+    const current = await prisma.projectTask.findUnique({
+      where: { id: currentId },
+      select: { parentTaskId: true },
+    });
+    if (!current) return false;
+    currentId = current.parentTaskId;
+  }
+  return false;
+}
+
 export async function registerProjectRoutes(app: FastifyInstance) {
   app.get('/projects', async () => {
     const projects = await prisma.project.findMany({
@@ -153,6 +169,14 @@ export async function registerProjectRoutes(app: FastifyInstance) {
               error: {
                 code: 'VALIDATION_ERROR',
                 message: 'Parent task belongs to another project',
+              },
+            });
+          }
+          if (await hasCircularParent(taskId, body.parentTaskId)) {
+            return reply.status(400).send({
+              error: {
+                code: 'VALIDATION_ERROR',
+                message: 'Parent task creates circular reference',
               },
             });
           }
@@ -473,11 +497,13 @@ export async function registerProjectRoutes(app: FastifyInstance) {
       if (Object.prototype.hasOwnProperty.call(body, 'dueDateRule')) {
         try {
           dueDateRule = parseDueDateRule(body.dueDateRule);
-        } catch {
+        } catch (err) {
+          req.log.error({ err }, 'Failed to parse dueDateRule');
           return reply.code(400).send({
             error: {
               code: 'INVALID_DUE_DATE_RULE',
               message: 'dueDateRule is invalid',
+              details: err instanceof Error ? err.message : String(err),
             },
           });
         }

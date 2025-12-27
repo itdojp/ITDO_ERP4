@@ -19,14 +19,13 @@ export function parseDueDateRule(input: unknown): DueDateRule | null {
     typeof payload.offsetDays === 'number'
       ? payload.offsetDays
       : Number(payload.offsetDays);
-  if (!Number.isFinite(parsedOffset)) {
+  if (!Number.isFinite(parsedOffset) || !Number.isInteger(parsedOffset)) {
     throw new Error('invalid_due_date_rule');
   }
-  const normalized = Math.trunc(parsedOffset);
-  if (normalized < OFFSET_MIN_DAYS || normalized > OFFSET_MAX_DAYS) {
+  if (parsedOffset < OFFSET_MIN_DAYS || parsedOffset > OFFSET_MAX_DAYS) {
     throw new Error('invalid_due_date_rule');
   }
-  return { type: 'periodEndPlusOffset', offsetDays: normalized };
+  return { type: 'periodEndPlusOffset', offsetDays: parsedOffset };
 }
 
 function endOfMonth(date: Date) {

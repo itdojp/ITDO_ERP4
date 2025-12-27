@@ -70,6 +70,10 @@ export async function runRecurringTemplates(now = new Date()) {
     const runAt = template.nextRunAt ?? now;
     const periodKeyValue = periodKey(runAt);
     if (template.project && template.project.status !== 'active') {
+      await prisma.recurringProjectTemplate.update({
+        where: { id: template.id },
+        data: { nextRunAt: nextRunAt(template.frequency, runAt) },
+      });
       const result: RunResult = {
         templateId: template.id,
         projectId: template.projectId,
@@ -176,6 +180,10 @@ export async function runRecurringTemplates(now = new Date()) {
     }
     const amount = toNumber(template.defaultAmount);
     if (amount <= 0) {
+      await prisma.recurringProjectTemplate.update({
+        where: { id: template.id },
+        data: { nextRunAt: nextRunAt(template.frequency, runAt) },
+      });
       const result: RunResult = {
         templateId: template.id,
         projectId: template.projectId,
@@ -289,22 +297,29 @@ export async function runRecurringTemplates(now = new Date()) {
           };
         },
       );
-      results.push({
+      const result: RunResult = {
         templateId: template.id,
         projectId: template.projectId,
         status: 'created',
         estimateId: created.estimateId ?? undefined,
         invoiceId: created.invoiceId ?? undefined,
         milestoneId: created.milestoneId ?? undefined,
-      });
+      };
+      results.push(result);
       await recordGenerationLog({
         templateId: template.id,
         projectId: template.projectId,
         periodKey: periodKeyValue,
         runAt,
-        result: results[results.length - 1],
+        result,
       });
     } catch (err: any) {
+      await prisma.recurringProjectTemplate.update({
+        where: { id: template.id },
+        data: {
+          nextRunAt: new Date(now.getTime() + 60 * 60 * 1000),
+        },
+      });
       const result: RunResult = {
         templateId: template.id,
         projectId: template.projectId,

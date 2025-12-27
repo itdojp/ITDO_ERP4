@@ -132,6 +132,7 @@ model Project {
   endDate           DateTime?
   currency          String?
   recurringTemplate RecurringProjectTemplate?
+  recurringGenerationLogs RecurringGenerationLog[]
   tasks             ProjectTask[]
   milestones        ProjectMilestone[]
   estimates         Estimate[]
