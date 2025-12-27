@@ -54,7 +54,11 @@ function sendCsv(reply: any, filename: string, csv: string) {
 }
 
 function buildTemplateId(reportName: string, layout?: string) {
-  const suffix = layout?.trim() ? layout.trim() : 'default';
+  const trimmedLayout = layout?.trim();
+  const isValidLayout =
+    typeof trimmedLayout === 'string' &&
+    /^[a-zA-Z0-9_-]+$/.test(trimmedLayout);
+  const suffix = isValidLayout ? trimmedLayout : 'default';
   return `report:${reportName}:${suffix}`;
 }
 
@@ -107,7 +111,7 @@ export async function registerReportRoutes(app: FastifyInstance) {
         return sendCsv(reply, `project-${projectId}-effort.csv`, csv);
       }
       if (format === 'pdf') {
-        return sendPdf(reply, 'project-effort', layout, res as any);
+        return sendPdf(reply, 'project-effort', layout, res);
       }
       return res;
     },
@@ -176,7 +180,7 @@ export async function registerReportRoutes(app: FastifyInstance) {
         return sendCsv(reply, `project-${projectId}-profit.csv`, csv);
       }
       if (format === 'pdf') {
-        return sendPdf(reply, 'project-profit', layout, res as any);
+        return sendPdf(reply, 'project-profit', layout, res);
       }
       return res;
     },
@@ -258,7 +262,7 @@ export async function registerReportRoutes(app: FastifyInstance) {
         return sendCsv(reply, `project-${projectId}-profit-by-user.csv`, csv);
       }
       if (format === 'pdf') {
-        return sendPdf(reply, 'project-profit-by-user', layout, res as any);
+        return sendPdf(reply, 'project-profit-by-user', layout, res);
       }
       return res;
     },
@@ -353,7 +357,7 @@ export async function registerReportRoutes(app: FastifyInstance) {
         return sendCsv(reply, `project-${projectId}-profit-by-group.csv`, csv);
       }
       if (format === 'pdf') {
-        return sendPdf(reply, 'project-profit-by-group', layout, res as any);
+        return sendPdf(reply, 'project-profit-by-group', layout, res);
       }
       return res;
     },
@@ -446,7 +450,7 @@ export async function registerReportRoutes(app: FastifyInstance) {
         return sendCsv(reply, `overtime-${userId}.csv`, csv);
       }
       if (format === 'pdf') {
-        return sendPdf(reply, 'overtime', layout, res as any);
+        return sendPdf(reply, 'overtime', layout, res);
       }
       return res;
     },
