@@ -20,7 +20,7 @@
   - idx: (project_id), (assignee_id), (status)
 - **project_milestones**: project_id, name, amount, bill_upon (enum: date/acceptance/time), due_date, tax_rate, invoice_template_id
   - idx: (project_id), (due_date)
-- **recurring_project_templates**: project_id, frequency (monthly/quarterly/semiannual/annual), default_amount, default_terms, next_run_at, timezone, is_active
+- **recurring_project_templates**: project_id, frequency (monthly/quarterly/semiannual/annual), default_amount, default_currency, default_tax_rate, default_terms, default_milestone_name, bill_upon, due_date_rule (json), should_generate_estimate, should_generate_invoice, next_run_at, timezone, is_active
 
 ## 見積/請求
 - **estimates**: project_id, version, total_amount, currency, status (draft/pending_qa/pending_exec/approved/rejected), valid_until, notes, numbering_serial

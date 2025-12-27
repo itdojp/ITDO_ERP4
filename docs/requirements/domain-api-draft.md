@@ -8,7 +8,7 @@
 - **projects**: `id`, `code`, `name`, `status`, `project_type`, `parent_id`, `customer_id`, `owner_user_id`, `org_unit_id`, `start/end`, `currency`, `recurring_template_id`。
 - **project_tasks**: `id`, `project_id`, `parent_task_id`, `name`, `wbs_code`, `assignee_id`, `status`, `plan_start/end`, `actual_start/end`, `baseline_id`。
 - **project_milestones**: `id`, `project_id`, `name`, `amount`, `bill_upon`(date/acceptance/time), `due_date`, `tax_rate`, `invoice_template_id`。
-- **recurring_project_templates**: `id`, `frequency`(monthly/quarterly/semiannual/annual), `default_amount`, `default_terms`, `next_run_at`, `timezone`, `is_active`。
+- **recurring_project_templates**: `id`, `frequency`(monthly/quarterly/semiannual/annual), `default_amount`, `default_currency`, `default_tax_rate`, `default_terms`, `default_milestone_name`, `bill_upon`, `due_date_rule`(json), `should_generate_estimate`, `should_generate_invoice`, `next_run_at`, `timezone`, `is_active`。
 - **estimates**: `id`, `project_id`, `version`, `total_amount`, `currency`, `status`(draft/pending_qa/pending_exec/approved/rejected), `valid_until`, `notes`。
 - **invoices**: `id`, `project_id`, `estimate_id?`, `milestone_id?`, `invoice_no`, `issue_date`, `due_date`, `currency`, `total_amount`, `status`(draft/pending_qa/pending_exec/approved/sent/paid/cancelled), `pdf_url`, `email_message_id`。
 - **billing_lines**: `id`, `invoice_id`, `description`, `quantity`, `unit_price`, `tax_rate`, `task_id?`, `time_entry_range?`。
@@ -35,7 +35,8 @@
 - Project
   - `POST /projects` {code?, name, customer_id, parent_id?, start/end, type, currency}
   - `GET /projects/:id` /list with filters (customer, status, owner, hierarchy)
-  - `PATCH /projects/:id` 更新、`POST /projects/:id/recurring-template` 作成/更新
+  - `PATCH /projects/:id` 更新
+  - `POST /projects/:id/recurring-template` 作成/更新 {frequency, next_run_at, timezone, default_amount, default_currency, default_tax_rate, default_terms, default_milestone_name, bill_upon, due_date_rule, should_generate_estimate, should_generate_invoice, is_active}
 - Task/Milestone
   - `POST /projects/:id/tasks` {parent_task_id?, name, assignee, dates, status}
   - `POST /projects/:id/milestones` {name, amount, bill_upon, due_date, tax_rate}
@@ -76,7 +77,7 @@
 - 監査: `created_at/by`, `updated_at/by`, 状態遷移ログ（who/when/from/to/reason）。
 - 金額: 通貨は必須。税率は明示的に保持。インボイス番号は連番ポリシーを別途定義。
 - 権限: RBAC + プロジェクトスコープ。Wellbeing は人事グループのみ閲覧。
-- Recurring: frequency, next_run_at, grace_period を保持し、スキップ/スライドは初期スコープ外。
+- Recurring: frequency, next_run_at, due_date_rule, should_generate_* を保持し、スキップ/スライドは初期スコープ外。
 - 性能: タイムシート月10万件想定。主要テーブルに period/user/project でインデックス。
 
 ## 番号体系（見積/納品/請求/仕入）

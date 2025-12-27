@@ -181,10 +181,17 @@ model ProjectMilestone {
 model RecurringProjectTemplate {
   id        String  @id @default(uuid())
   project   Project @relation(fields: [projectId], references: [id], onDelete: Restrict)
-  projectId String
+  projectId String @unique
   frequency String // monthly/quarterly/semiannual/annual
   defaultAmount Decimal?
+  defaultCurrency String?
+  defaultTaxRate Decimal?
   defaultTerms  String?
+  defaultMilestoneName String?
+  billUpon String? // date/acceptance/time
+  dueDateRule Json?
+  shouldGenerateEstimate Boolean?
+  shouldGenerateInvoice Boolean?
   nextRunAt  DateTime?
   timezone  String?
   isActive  Boolean @default(true)
