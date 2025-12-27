@@ -1,4 +1,3 @@
-import type { Prisma } from '@prisma/client';
 import { FastifyInstance } from 'fastify';
 import { nextNumber } from '../services/numbering.js';
 import { submitApprovalWithUpdate } from '../services/approval.js';
@@ -17,7 +16,7 @@ export async function registerPurchaseOrderRoutes(app: FastifyInstance) {
         vendorId?: string;
         status?: string;
       };
-      const where: Prisma.PurchaseOrderWhereInput = {};
+      const where: Record<string, unknown> = {};
       if (projectId) where.projectId = projectId;
       if (vendorId) where.vendorId = vendorId;
       if (status) where.status = status;

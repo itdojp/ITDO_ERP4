@@ -210,7 +210,7 @@ export async function registerReportRoutes(app: FastifyInstance) {
           'grossMargin',
           'minutes',
         ];
-        const rows = res.items.map((item) => [
+        const rows = res.items.map((item: any) => [
           res.projectId,
           res.allocationMethod,
           res.revenue,
@@ -361,7 +361,10 @@ export async function registerReportRoutes(app: FastifyInstance) {
       if (format === 'csv') {
         const csv = toCsv(
           ['userId', 'totalMinutes'],
-          res.map((item) => [item.userId, item.totalMinutes]),
+          res.map((item: { userId: string; totalMinutes: number }) => [
+            item.userId,
+            item.totalMinutes,
+          ]),
         );
         return sendCsv(reply, 'group-effort-report.csv', csv);
       }
@@ -449,7 +452,7 @@ export async function registerReportRoutes(app: FastifyInstance) {
           'invoiceNos',
           'invoiceStatuses',
         ];
-        const rows = res.map((item) => [
+        const rows = res.map((item: any) => [
           item.milestoneId,
           item.projectId,
           item.projectCode,

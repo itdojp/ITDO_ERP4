@@ -43,7 +43,6 @@ function addMonths(base: Date, months: number) {
   return result;
 }
 
-
 function nextRunAt(frequency: string | null | undefined, current: Date) {
   const normalized = (frequency ?? 'monthly').toLowerCase();
   const step =
@@ -239,7 +238,7 @@ export async function runRecurringTemplates(now = new Date()) {
             ? await tx.estimate.create({
                 data: {
                   projectId: template.projectId,
-                    version: estimateNumbering!.serial,
+                  version: estimateNumbering!.serial,
                   totalAmount: amount,
                   currency,
                   status: DocStatusValue.draft,

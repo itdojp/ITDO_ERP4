@@ -1,5 +1,4 @@
 import { prisma } from './db.js';
-import { Prisma } from '@prisma/client';
 
 type DataQualityItem = {
   key: string;
@@ -13,7 +12,7 @@ function buildSample(values: string[], limit = 5) {
 
 async function detectDuplicateCodes(model: 'project' | 'customer' | 'vendor') {
   if (model === 'project') {
-    const grouped = await prisma.project.groupBy({
+    const grouped = (await prisma.project.groupBy({
       by: ['code'],
       where: { deletedAt: null },
       _count: { _all: true },
@@ -22,15 +21,15 @@ async function detectDuplicateCodes(model: 'project' | 'customer' | 'vendor') {
           _all: { gt: 1 },
         },
       },
-    });
-    const codes = grouped.map((row) => row.code);
+    })) as Array<{ code: string }>;
+    const codes = grouped.map((row: { code: string }) => row.code);
     return {
       count: grouped.length,
       sample: buildSample(codes),
     };
   }
   if (model === 'customer') {
-    const grouped = await prisma.customer.groupBy({
+    const grouped = (await prisma.customer.groupBy({
       by: ['code'],
       _count: { _all: true },
       having: {
@@ -38,14 +37,14 @@ async function detectDuplicateCodes(model: 'project' | 'customer' | 'vendor') {
           _all: { gt: 1 },
         },
       },
-    });
-    const codes = grouped.map((row) => row.code);
+    })) as Array<{ code: string }>;
+    const codes = grouped.map((row: { code: string }) => row.code);
     return {
       count: grouped.length,
       sample: buildSample(codes),
     };
   }
-  const grouped = await prisma.vendor.groupBy({
+  const grouped = (await prisma.vendor.groupBy({
     by: ['code'],
     _count: { _all: true },
     having: {
@@ -53,8 +52,8 @@ async function detectDuplicateCodes(model: 'project' | 'customer' | 'vendor') {
         _all: { gt: 1 },
       },
     },
-  });
-  const codes = grouped.map((row) => row.code);
+  })) as Array<{ code: string }>;
+  const codes = grouped.map((row: { code: string }) => row.code);
   return {
     count: grouped.length,
     sample: buildSample(codes),
@@ -85,26 +84,24 @@ export async function runDataQualityChecks() {
     sample: vendorDupes.sample,
   });
 
-  const invoiceCurrencyMissingRows = await prisma.$queryRaw<
-    { count: bigint }[]
-  >(Prisma.sql`
+  const invoiceCurrencyMissingRows = (await prisma.$queryRaw`
     SELECT COUNT(*)::bigint AS count
     FROM "Invoice"
     WHERE "currency" IS NULL OR "currency" = ''
-  `);
-  const invoiceCurrencyMissing = Number(invoiceCurrencyMissingRows[0]?.count ?? 0);
+  `) as Array<{ count: bigint }>;
+  const invoiceCurrencyMissing = Number(
+    invoiceCurrencyMissingRows[0]?.count ?? 0,
+  );
   results.push({
     key: 'invoice_currency_missing',
     count: invoiceCurrencyMissing,
   });
 
-  const estimateCurrencyMissingRows = await prisma.$queryRaw<
-    { count: bigint }[]
-  >(Prisma.sql`
+  const estimateCurrencyMissingRows = (await prisma.$queryRaw`
     SELECT COUNT(*)::bigint AS count
     FROM "Estimate"
     WHERE "currency" IS NULL OR "currency" = ''
-  `);
+  `) as Array<{ count: bigint }>;
   const estimateCurrencyMissing = Number(
     estimateCurrencyMissingRows[0]?.count ?? 0,
   );
@@ -129,12 +126,12 @@ export async function runDataQualityChecks() {
   const invalidInvoiceSample: string[] = [];
   let invoiceCursor: { id: string } | undefined = undefined;
   while (true) {
-    const invoiceBatch = await prisma.invoice.findMany({
+    const invoiceBatch = (await prisma.invoice.findMany({
       select: { id: true, invoiceNo: true },
       orderBy: { id: 'asc' },
       take: invoicePageSize,
       ...(invoiceCursor ? { skip: 1, cursor: invoiceCursor } : {}),
-    });
+    })) as Array<{ id: string; invoiceNo: string }>;
     if (invoiceBatch.length === 0) break;
     for (const inv of invoiceBatch) {
       if (!invoiceNoRegex.test(inv.invoiceNo)) {
@@ -158,12 +155,12 @@ export async function runDataQualityChecks() {
   const invalidPoSample: string[] = [];
   let poCursor: { id: string } | undefined = undefined;
   while (true) {
-    const poBatch = await prisma.purchaseOrder.findMany({
+    const poBatch = (await prisma.purchaseOrder.findMany({
       select: { id: true, poNo: true },
       orderBy: { id: 'asc' },
       take: poPageSize,
       ...(poCursor ? { skip: 1, cursor: poCursor } : {}),
-    });
+    })) as Array<{ id: string; poNo: string }>;
     if (poBatch.length === 0) break;
     for (const po of poBatch) {
       if (!poNoRegex.test(po.poNo)) {
@@ -181,17 +178,16 @@ export async function runDataQualityChecks() {
     sample: buildSample(invalidPoSample),
   });
 
-  const timeOverLimitRows = await prisma.$queryRaw<
-    { userId: string; workDate: string }[]
-  >(Prisma.sql`
+  const timeOverLimitRows = (await prisma.$queryRaw`
     SELECT "userId", DATE("workDate") AS "workDate"
     FROM "TimeEntry"
     WHERE "deletedAt" IS NULL
     GROUP BY "userId", DATE("workDate")
     HAVING SUM("minutes") > 1440
-  `);
+  `) as Array<{ userId: string; workDate: string }>;
   const overLimit = timeOverLimitRows.map(
-    (row) => `${row.userId}:${row.workDate}`,
+    (row: { userId: string; workDate: string }) =>
+      `${row.userId}:${row.workDate}`,
   );
   results.push({
     key: 'time_entries_daily_over_1440',

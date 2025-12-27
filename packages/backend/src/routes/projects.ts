@@ -38,10 +38,11 @@ async function hasCircularParent(taskId: string, parentTaskId: string) {
   while (currentId) {
     if (visited.has(currentId)) return true;
     visited.add(currentId);
-    const current = await prisma.projectTask.findUnique({
-      where: { id: currentId },
-      select: { parentTaskId: true },
-    });
+    const current: { parentTaskId: string | null } | null =
+      await prisma.projectTask.findUnique({
+        where: { id: currentId },
+        select: { parentTaskId: true },
+      });
     if (!current) return false;
     currentId = current.parentTaskId;
   }
@@ -125,7 +126,10 @@ export async function registerProjectRoutes(app: FastifyInstance) {
 
   app.patch(
     '/projects/:projectId/tasks/:taskId',
-    { preHandler: requireRole(['admin', 'mgmt']), schema: projectTaskPatchSchema },
+    {
+      preHandler: requireRole(['admin', 'mgmt']),
+      schema: projectTaskPatchSchema,
+    },
     async (req, reply) => {
       const { projectId, taskId } = req.params as {
         projectId: string;
@@ -191,7 +195,9 @@ export async function registerProjectRoutes(app: FastifyInstance) {
           status: body.status,
           planStart: body.planStart ? new Date(body.planStart) : undefined,
           planEnd: body.planEnd ? new Date(body.planEnd) : undefined,
-          actualStart: body.actualStart ? new Date(body.actualStart) : undefined,
+          actualStart: body.actualStart
+            ? new Date(body.actualStart)
+            : undefined,
           actualEnd: body.actualEnd ? new Date(body.actualEnd) : undefined,
         },
       });
@@ -327,7 +333,10 @@ export async function registerProjectRoutes(app: FastifyInstance) {
 
   app.post(
     '/projects/:projectId/milestones',
-    { preHandler: requireRole(['admin', 'mgmt']), schema: projectMilestoneSchema },
+    {
+      preHandler: requireRole(['admin', 'mgmt']),
+      schema: projectMilestoneSchema,
+    },
     async (req) => {
       const { projectId } = req.params as { projectId: string };
       const body = req.body as any;
@@ -482,7 +491,10 @@ export async function registerProjectRoutes(app: FastifyInstance) {
 
   app.post(
     '/projects/:id/recurring-template',
-    { preHandler: requireRole(['admin', 'mgmt']), schema: recurringTemplateSchema },
+    {
+      preHandler: requireRole(['admin', 'mgmt']),
+      schema: recurringTemplateSchema,
+    },
     async (req, reply) => {
       const params = req.params as { id: string };
       const body = req.body as RecurringTemplateBody;
