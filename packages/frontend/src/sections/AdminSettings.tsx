@@ -9,6 +9,7 @@ type AlertSetting = {
   scopeProjectId?: string | null;
   recipients?: { emails?: string[]; roles?: string[]; users?: string[] } | null;
   channels?: string[] | null;
+  remindAfterHours?: number | null;
   isEnabled?: boolean | null;
 };
 
@@ -19,7 +20,7 @@ type ApprovalRule = {
   steps?: Array<Record<string, unknown>> | null;
 };
 
-const alertTypes = ['budget_overrun', 'overtime', 'approval_delay', 'delivery_due'];
+const alertTypes = ['budget_overrun', 'overtime', 'approval_delay', 'approval_escalation', 'delivery_due'];
 const alertChannels = ['email', 'dashboard', 'slack', 'webhook'];
 const flowTypes = ['estimate', 'invoice', 'expense', 'leave', 'time', 'purchase_order', 'vendor_invoice', 'vendor_quote'];
 
@@ -36,6 +37,7 @@ export const AdminSettings: React.FC = () => {
     threshold: '10',
     period: 'month',
     scopeProjectId: '',
+    remindAfterHours: '',
     emails: 'alert@example.com',
     roles: 'mgmt',
     users: '',
@@ -98,11 +100,15 @@ export const AdminSettings: React.FC = () => {
       setMessage('通知チャネルを選択してください');
       return;
     }
+    const remindAfterRaw = alertForm.remindAfterHours.trim();
+    const remindAfter =
+      remindAfterRaw.length > 0 ? Number(remindAfterRaw) : undefined;
     const payload = {
       type: alertForm.type,
       threshold: Number(alertForm.threshold),
       period: alertForm.period,
       scopeProjectId: alertForm.scopeProjectId || undefined,
+      remindAfterHours: Number.isFinite(remindAfter) ? remindAfter : undefined,
       recipients: {
         emails: parseCsv(alertForm.emails),
         roles: parseCsv(alertForm.roles),
@@ -216,6 +222,15 @@ export const AdminSettings: React.FC = () => {
                 placeholder="projectId"
               />
             </label>
+            <label>
+              再送間隔(h)
+              <input
+                type="number"
+                value={alertForm.remindAfterHours}
+                onChange={(e) => setAlertForm({ ...alertForm, remindAfterHours: e.target.value })}
+                placeholder="24"
+              />
+            </label>
           </div>
           <div className="row" style={{ marginTop: 8 }}>
             <label>
@@ -275,6 +290,9 @@ export const AdminSettings: React.FC = () => {
                 </div>
                 <div style={{ fontSize: 12, color: '#475569', marginTop: 4 }}>
                   channels: {(item.channels || []).join(', ') || '-'} / emails: {(item.recipients?.emails || []).join(', ') || '-'}
+                </div>
+                <div style={{ fontSize: 12, color: '#475569', marginTop: 4 }}>
+                  remindAfterHours: {item.remindAfterHours ?? '-'}
                 </div>
                 <div className="row" style={{ marginTop: 6 }}>
                   <button className="button secondary" onClick={() => toggleAlert(item.id, item.isEnabled)}>
