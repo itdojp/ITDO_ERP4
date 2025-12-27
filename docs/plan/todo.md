@@ -156,9 +156,13 @@
 - [x] 損益・工数予実の算出ロジック整理（データソース/期間/単価）
 
 ### 実装準備（案件/請求/工数）
-- [ ] RecurringProjectTemplate のスキーマ拡張（dueDateRule/生成フラグ/マイルストーン初期値）
-- [ ] 定期案件テンプレの CRUD API と生成履歴の仕様決定
-- [ ] Project/Task/Milestone の CRUD + 付け替え/削除制約の実装
-- [ ] 見積/請求/発注/仕入の一覧・詳細 API（フィルタ/承認状態）実装
-- [ ] 損益・工数予実の集計 API とテスト（期間/単位）
-- [ ] ドキュメント整合（domain-api-draft/data-model-sketch/schema-prisma-sketch の更新）
+- [x] RecurringProjectTemplate のスキーマ拡張（dueDateRule/生成フラグ/マイルストーン初期値）
+- [x] 定期案件テンプレの CRUD API と生成履歴の仕様決定
+- [x] Project/Task/Milestone の CRUD + 付け替え/削除制約の実装
+- [x] 見積/請求/発注/仕入の一覧・詳細 API（フィルタ/承認状態）実装
+- [x] 損益・工数予実の集計 API とテスト（期間/単位）
+- [x] ドキュメント整合（domain-api-draft/data-model-sketch/schema-prisma-sketch の更新）
+- [ ] 定期案件生成履歴テーブルの実装（recurring_generation_logs）
+- [ ] dueDateRule のバリデーション/変換ユーティリティ追加
+- [ ] Project/Task/Milestone の親子整合チェック（親タスクの同一project検証）
+- [ ] 収支レポートの集計軸拡張（group/user単位）
