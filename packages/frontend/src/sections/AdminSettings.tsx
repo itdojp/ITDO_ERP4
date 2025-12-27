@@ -7,7 +7,13 @@ type AlertSetting = {
   threshold: number;
   period: string;
   scopeProjectId?: string | null;
-  recipients?: { emails?: string[]; roles?: string[]; users?: string[] } | null;
+  recipients?: {
+    emails?: string[];
+    roles?: string[];
+    users?: string[];
+    slackWebhooks?: string[];
+    webhooks?: string[];
+  } | null;
   channels?: string[] | null;
   remindAfterHours?: number | null;
   isEnabled?: boolean | null;
@@ -28,6 +34,15 @@ function parseCsv(input: string): string[] {
   return input.split(',').map((v) => v.trim()).filter(Boolean);
 }
 
+function isValidHttpUrl(value: string): boolean {
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
 export const AdminSettings: React.FC = () => {
   const [alertItems, setAlertItems] = useState<AlertSetting[]>([]);
   const [ruleItems, setRuleItems] = useState<ApprovalRule[]>([]);
@@ -41,6 +56,8 @@ export const AdminSettings: React.FC = () => {
     emails: 'alert@example.com',
     roles: 'mgmt',
     users: '',
+    slackWebhooks: '',
+    webhooks: '',
     channels: new Set<string>(['email', 'dashboard']),
   });
   const [ruleForm, setRuleForm] = useState({
@@ -103,6 +120,15 @@ export const AdminSettings: React.FC = () => {
     const remindAfterRaw = alertForm.remindAfterHours.trim();
     const remindAfter =
       remindAfterRaw.length > 0 ? Number(remindAfterRaw) : undefined;
+    const slackWebhooks = parseCsv(alertForm.slackWebhooks);
+    const webhooks = parseCsv(alertForm.webhooks);
+    const invalidUrls = [...slackWebhooks, ...webhooks].filter(
+      (url) => !isValidHttpUrl(url),
+    );
+    if (invalidUrls.length) {
+      setMessage('Slack/Webhook のURLが不正です');
+      return;
+    }
     const payload = {
       type: alertForm.type,
       threshold: Number(alertForm.threshold),
@@ -113,6 +139,8 @@ export const AdminSettings: React.FC = () => {
         emails: parseCsv(alertForm.emails),
         roles: parseCsv(alertForm.roles),
         users: parseCsv(alertForm.users),
+        slackWebhooks,
+        webhooks,
       },
       channels,
       isEnabled: true,
@@ -260,6 +288,24 @@ export const AdminSettings: React.FC = () => {
                 placeholder="userId1,userId2"
               />
             </label>
+            <label>
+              Slack Webhooks
+              <input
+                type="text"
+                value={alertForm.slackWebhooks}
+                onChange={(e) => setAlertForm({ ...alertForm, slackWebhooks: e.target.value })}
+                placeholder="https://hooks.slack.com/..."
+              />
+            </label>
+            <label>
+              Custom Webhooks
+              <input
+                type="text"
+                value={alertForm.webhooks}
+                onChange={(e) => setAlertForm({ ...alertForm, webhooks: e.target.value })}
+                placeholder="https://example.com/notify"
+              />
+            </label>
           </div>
           <div className="row" style={{ marginTop: 8 }}>
             {alertChannels.map((ch) => (
@@ -293,6 +339,9 @@ export const AdminSettings: React.FC = () => {
                 </div>
                 <div style={{ fontSize: 12, color: '#475569', marginTop: 4 }}>
                   remindAfterHours: {item.remindAfterHours ?? '-'}
+                </div>
+                <div style={{ fontSize: 12, color: '#475569', marginTop: 4 }}>
+                  Slack: {(item.recipients?.slackWebhooks || []).join(', ') || '-'} / Webhook: {(item.recipients?.webhooks || []).join(', ') || '-'}
                 </div>
                 <div className="row" style={{ marginTop: 6 }}>
                   <button className="button secondary" onClick={() => toggleAlert(item.id, item.isEnabled)}>

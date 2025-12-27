@@ -8,6 +8,7 @@ import {
   reportProjectProfit,
   reportProjectEffort,
 } from '../services/reports.js';
+import { generatePdfStub } from '../services/notifier.js';
 import { requireRole } from '../services/rbac.js';
 
 function parseDateParam(value?: string) {
@@ -19,9 +20,9 @@ function parseDateParam(value?: string) {
 
 function validateFormat(format: string | undefined, reply: any) {
   if (!format) return true;
-  if (format !== 'csv') {
+  if (!['csv', 'pdf'].includes(format)) {
     reply.status(400).send({
-      error: { code: 'INVALID_FORMAT', message: 'format must be csv' },
+      error: { code: 'INVALID_FORMAT', message: 'format must be csv or pdf' },
     });
     return false;
   }
@@ -52,16 +53,36 @@ function sendCsv(reply: any, filename: string, csv: string) {
     .send(csv);
 }
 
+function buildTemplateId(reportName: string, layout?: string) {
+  const trimmedLayout = layout?.trim();
+  const isValidLayout =
+    typeof trimmedLayout === 'string' &&
+    /^[a-zA-Z0-9_-]+$/.test(trimmedLayout);
+  const suffix = isValidLayout ? trimmedLayout : 'default';
+  return `report:${reportName}:${suffix}`;
+}
+
+async function sendPdf(
+  reply: any,
+  reportName: string,
+  layout: string | undefined,
+  payload: Record<string, unknown>,
+) {
+  const templateId = buildTemplateId(reportName, layout);
+  const { url } = await generatePdfStub(templateId, payload);
+  return reply.send({ format: 'pdf', templateId, url });
+}
 export async function registerReportRoutes(app: FastifyInstance) {
   app.get(
     '/reports/project-effort/:projectId',
     { preHandler: requireRole(['admin', 'mgmt']) },
     async (req, reply) => {
       const { projectId } = req.params as { projectId: string };
-      const { from, to, format } = req.query as {
+      const { from, to, format, layout } = req.query as {
         from?: string;
         to?: string;
         format?: string;
+        layout?: string;
       };
       if (!validateFormat(format, reply)) return;
       const fromDate = parseDateParam(from);
@@ -88,6 +109,9 @@ export async function registerReportRoutes(app: FastifyInstance) {
         );
         return sendCsv(reply, `project-${projectId}-effort.csv`, csv);
       }
+      if (format === 'pdf') {
+        return sendPdf(reply, 'project-effort', layout, res);
+      }
       return res;
     },
   );
@@ -97,10 +121,11 @@ export async function registerReportRoutes(app: FastifyInstance) {
     { preHandler: requireRole(['admin', 'mgmt']) },
     async (req, reply) => {
       const { projectId } = req.params as { projectId: string };
-      const { from, to, format } = req.query as {
+      const { from, to, format, layout } = req.query as {
         from?: string;
         to?: string;
         format?: string;
+        layout?: string;
       };
       if (!validateFormat(format, reply)) return;
       const fromDate = parseDateParam(from);
@@ -153,6 +178,9 @@ export async function registerReportRoutes(app: FastifyInstance) {
         );
         return sendCsv(reply, `project-${projectId}-profit.csv`, csv);
       }
+      if (format === 'pdf') {
+        return sendPdf(reply, 'project-profit', layout, res);
+      }
       return res;
     },
   );
@@ -162,11 +190,12 @@ export async function registerReportRoutes(app: FastifyInstance) {
     { preHandler: requireRole(['admin', 'mgmt']) },
     async (req, reply) => {
       const { projectId } = req.params as { projectId: string };
-      const { from, to, userIds, format } = req.query as {
+      const { from, to, userIds, format, layout } = req.query as {
         from?: string;
         to?: string;
         userIds?: string;
         format?: string;
+        layout?: string;
       };
       if (!validateFormat(format, reply)) return;
       const fromDate = parseDateParam(from);
@@ -231,6 +260,9 @@ export async function registerReportRoutes(app: FastifyInstance) {
         const csv = toCsv(headers, rows);
         return sendCsv(reply, `project-${projectId}-profit-by-user.csv`, csv);
       }
+      if (format === 'pdf') {
+        return sendPdf(reply, 'project-profit-by-user', layout, res);
+      }
       return res;
     },
   );
@@ -240,12 +272,13 @@ export async function registerReportRoutes(app: FastifyInstance) {
     { preHandler: requireRole(['admin', 'mgmt']) },
     async (req, reply) => {
       const { projectId } = req.params as { projectId: string };
-      const { from, to, userIds, label, format } = req.query as {
+      const { from, to, userIds, label, format, layout } = req.query as {
         from?: string;
         to?: string;
         userIds?: string;
         label?: string;
         format?: string;
+        layout?: string;
       };
       if (!validateFormat(format, reply)) return;
       const fromDate = parseDateParam(from);
@@ -322,6 +355,9 @@ export async function registerReportRoutes(app: FastifyInstance) {
         const csv = toCsv(headers, [row]);
         return sendCsv(reply, `project-${projectId}-profit-by-group.csv`, csv);
       }
+      if (format === 'pdf') {
+        return sendPdf(reply, 'project-profit-by-group', layout, res);
+      }
       return res;
     },
   );
@@ -330,11 +366,12 @@ export async function registerReportRoutes(app: FastifyInstance) {
     '/reports/group-effort',
     { preHandler: requireRole(['admin', 'mgmt']) },
     async (req, reply) => {
-      const { userIds, from, to, format } = req.query as {
+      const { userIds, from, to, format, layout } = req.query as {
         userIds?: string;
         from?: string;
         to?: string;
         format?: string;
+        layout?: string;
       };
       if (!validateFormat(format, reply)) return;
       const fromDate = parseDateParam(from);
@@ -368,6 +405,9 @@ export async function registerReportRoutes(app: FastifyInstance) {
         );
         return sendCsv(reply, 'group-effort-report.csv', csv);
       }
+      if (format === 'pdf') {
+        return sendPdf(reply, 'group-effort', layout, { items: res });
+      }
       return { items: res };
     },
   );
@@ -377,10 +417,11 @@ export async function registerReportRoutes(app: FastifyInstance) {
     { preHandler: requireRole(['admin', 'mgmt']) },
     async (req, reply) => {
       const { userId } = req.params as { userId: string };
-      const { from, to, format } = req.query as {
+      const { from, to, format, layout } = req.query as {
         from?: string;
         to?: string;
         format?: string;
+        layout?: string;
       };
       if (!validateFormat(format, reply)) return;
       const fromDate = parseDateParam(from);
@@ -407,6 +448,9 @@ export async function registerReportRoutes(app: FastifyInstance) {
         );
         return sendCsv(reply, `overtime-${userId}.csv`, csv);
       }
+      if (format === 'pdf') {
+        return sendPdf(reply, 'overtime', layout, res);
+      }
       return res;
     },
   );
@@ -415,11 +459,12 @@ export async function registerReportRoutes(app: FastifyInstance) {
     '/reports/delivery-due',
     { preHandler: requireRole(['admin', 'mgmt']) },
     async (req, reply) => {
-      const { from, to, projectId, format } = req.query as {
+      const { from, to, projectId, format, layout } = req.query as {
         from?: string;
         to?: string;
         projectId?: string;
         format?: string;
+        layout?: string;
       };
       if (!validateFormat(format, reply)) return;
       const fromDate = parseDateParam(from);
@@ -466,6 +511,9 @@ export async function registerReportRoutes(app: FastifyInstance) {
         ]);
         const csv = toCsv(headers, rows);
         return sendCsv(reply, 'delivery-due-report.csv', csv);
+      }
+      if (format === 'pdf') {
+        return sendPdf(reply, 'delivery-due', layout, { items: res });
       }
       return { items: res };
     },
