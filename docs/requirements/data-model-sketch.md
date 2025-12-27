@@ -58,7 +58,7 @@
 - **approval_instances**: flow_type, target_table/id, status, current_step, rule_id
 - **approval_steps**: instance_id, step_order, approver_group_id?, approver_user_id?, status, acted_by, acted_at
   - idx: (instance_id), (status)
-- **alert_settings**: type (budget_overrun/overtime/approval_delay/approval_escalation/delivery_due), threshold, period, scope (global/project_id), recipients (emails/roles/users), channels (email/dashboard/ext_future), remind_after_hours, is_enabled
+- **alert_settings**: type (budget_overrun/overtime/approval_delay/approval_escalation/delivery_due), threshold, period, scope (global/project_id), recipients (emails/roles/users/slackWebhooks/webhooks), channels (email/dashboard/slack/webhook), remind_after_hours, is_enabled
 - **alerts**: setting_id, target_ref, triggered_at, reminder_at, status (open/ack/closed), sent_channels, sent_result
 - **doc_template_settings**: kind (estimate/invoice/purchase_order), template_id, number_rule, layout_config, logo_url, signature_text, is_default
 

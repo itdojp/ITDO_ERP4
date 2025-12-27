@@ -1,4 +1,9 @@
-import { buildStubResults, sendEmailStub } from './notifier.js';
+import {
+  buildStubResults,
+  sendEmailStub,
+  sendSlackWebhookStub,
+  sendWebhookStub,
+} from './notifier.js';
 import { prisma } from './db.js';
 
 type AlertSetting = {
@@ -19,11 +24,20 @@ type AlertRecipients = {
   emails?: string[];
   roles?: string[];
   users?: string[];
+  slackWebhooks?: string[];
+  webhooks?: string[];
 };
 
 type AlertNotificationResult = {
   sentChannels: string[];
   sentResult: unknown[];
+};
+
+type SendResultItem = {
+  channel?: string;
+  status?: string;
+  error?: string;
+  target?: string;
 };
 
 function normalizeChannels(raw: unknown): string[] {
@@ -43,6 +57,10 @@ function resolveEmails(
   return emails.length ? emails : ['alert@example.com'];
 }
 
+function resolveTargets(raw?: string[] | null): string[] {
+  return raw?.filter(Boolean) ?? [];
+}
+
 function toReminderAt(now: Date, remindAfterHours?: number | null) {
   if (!remindAfterHours || remindAfterHours <= 0) return null;
   return new Date(now.getTime() + remindAfterHours * 60 * 60 * 1000);
@@ -56,7 +74,10 @@ function mergeSentResults(
   const sentResult = [...current, ...next];
   const sentChannels = sentResult
     .map((item) => (item as { channel?: string })?.channel)
-    .filter((channel): channel is string => Boolean(channel));
+    .filter(
+      (channel): channel is string =>
+        typeof channel === 'string' && channel.length > 0,
+    );
   return { sentResult, sentChannels };
 }
 
@@ -67,17 +88,55 @@ async function sendAlertNotification(
   subjectPrefix: string,
 ): Promise<AlertNotificationResult> {
   const channels = normalizeChannels(setting.channels);
-  const otherChannels = channels.filter((c) => c !== 'email');
-  const sentResult = [...buildStubResults(otherChannels)];
+  const recipients = setting.recipients as AlertRecipients | null | undefined;
+  const sentResult: SendResultItem[] = [];
+  const payload = { settingId: setting.id, metric, threshold };
   if (channels.includes('email')) {
     const emailResult = await sendEmailStub(
-      resolveEmails(setting.recipients as AlertRecipients),
+      resolveEmails(recipients),
       `${subjectPrefix} ${setting.id}`,
       `metric ${metric} > ${threshold}`,
     );
     sentResult.unshift(emailResult);
   }
-  const sentChannels = sentResult.map((r) => r.channel);
+  if (channels.includes('slack')) {
+    const targets = resolveTargets(recipients?.slackWebhooks);
+    if (!targets.length) {
+      sentResult.push({
+        channel: 'slack',
+        status: 'skipped',
+        error: 'missing_slack_webhook',
+      });
+    } else {
+      for (const url of targets) {
+        sentResult.push(await sendSlackWebhookStub(url, payload));
+      }
+    }
+  }
+  if (channels.includes('webhook')) {
+    const targets = resolveTargets(recipients?.webhooks);
+    if (!targets.length) {
+      sentResult.push({
+        channel: 'webhook',
+        status: 'skipped',
+        error: 'missing_webhook',
+      });
+    } else {
+      for (const url of targets) {
+        sentResult.push(await sendWebhookStub(url, payload));
+      }
+    }
+  }
+  const otherChannels = channels.filter(
+    (c) => !['email', 'slack', 'webhook'].includes(c),
+  );
+  sentResult.push(...buildStubResults(otherChannels));
+  const sentChannels = sentResult
+    .map((r) => r.channel)
+    .filter(
+      (channel): channel is string =>
+        typeof channel === 'string' && channel.length > 0,
+    );
   return { sentChannels, sentResult };
 }
 

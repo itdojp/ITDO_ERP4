@@ -21,7 +21,7 @@
 - **expenses**: `id`, `project_id`, `user_id`, `category`, `amount`, `currency`, `incurred_on`, `is_shared`(共通経費), `status`(draft/pending_qa/pending_exec/approved/rejected), `receipt_url?`。
 - **leave_requests**: `id`, `user_id`, `leave_type`, `start_date`, `end_date`, `status`(draft/pending_manager/approved/rejected), `hours`, `notes`。
 - **approval_rules**: `id`, `flow_type`(estimate/invoice/expense/leave/time), `conditions`(min/max amount, recurring flag), `steps`(ordered approver groups/users, allow_skip) stored as JSON。
-- **alert_settings**: `id`, `type`(budget_overrun/overtime/approval_delay/approval_escalation/delivery_due), `threshold`, `period`, `recipients`(emails/roles/users), `channels`(email,dashboard,ext_future), `remindAfterHours`。
+- **alert_settings**: `id`, `type`(budget_overrun/overtime/approval_delay/approval_escalation/delivery_due), `threshold`, `period`, `recipients`(emails/roles/users/slackWebhooks/webhooks), `channels`(email,dashboard,slack,webhook), `remindAfterHours`。
 - **doc_template_settings**: `id`, `kind`(estimate/invoice/purchase_order), `templateId`, `numberRule`, `layoutConfig`, `logoUrl`, `signatureText`, `isDefault`。
 - **wellbeing_entries**: `id`, `user_id`, `entry_date`, `status`(good/not_good), `help_requested`, `notes?` (非必須), 閲覧は人事グループのみ。
 

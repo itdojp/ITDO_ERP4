@@ -9,14 +9,15 @@
 - GET `/alerts` → ダッシュボード表示
 
 ## reports
-- GET `/reports/delivery-due?from=YYYY-MM-DD&to=YYYY-MM-DD&projectId?&format=csv?`
-- GET `/reports/project-effort/:projectId?from=YYYY-MM-DD&to=YYYY-MM-DD&format=csv?`
-- GET `/reports/project-profit/:projectId?from=YYYY-MM-DD&to=YYYY-MM-DD&format=csv?`
-- GET `/reports/project-profit/:projectId/by-user?from=YYYY-MM-DD&to=YYYY-MM-DD&userIds=a,b,c&format=csv?`
-- GET `/reports/project-profit/:projectId/by-group?from=YYYY-MM-DD&to=YYYY-MM-DD&userIds=a,b,c&label=groupA&format=csv?`
-- GET `/reports/group-effort?userIds=a,b,c&from=YYYY-MM-DD&to=YYYY-MM-DD&format=csv?`
-- GET `/reports/overtime/:userId?from=YYYY-MM-DD&to=YYYY-MM-DD&format=csv?`
+- GET `/reports/delivery-due?from=YYYY-MM-DD&to=YYYY-MM-DD&projectId?&format=csv|pdf?&layout=default?`
+- GET `/reports/project-effort/:projectId?from=YYYY-MM-DD&to=YYYY-MM-DD&format=csv|pdf?&layout=default?`
+- GET `/reports/project-profit/:projectId?from=YYYY-MM-DD&to=YYYY-MM-DD&format=csv|pdf?&layout=default?`
+- GET `/reports/project-profit/:projectId/by-user?from=YYYY-MM-DD&to=YYYY-MM-DD&userIds=a,b,c&format=csv|pdf?&layout=default?`
+- GET `/reports/project-profit/:projectId/by-group?from=YYYY-MM-DD&to=YYYY-MM-DD&userIds=a,b,c&label=groupA&format=csv|pdf?&layout=default?`
+- GET `/reports/group-effort?userIds=a,b,c&from=YYYY-MM-DD&to=YYYY-MM-DD&format=csv|pdf?&layout=default?`
+- GET `/reports/overtime/:userId?from=YYYY-MM-DD&to=YYYY-MM-DD&format=csv|pdf?&layout=default?`
 - `format=csv` 指定時は `text/csv` を返す
+- `format=pdf` 指定時は `{ format, templateId, url }` を返す（stub）
 
 ## daily report / wellbeing
 - POST `/daily-reports` { content, reportDate, linkedProjectIds?, status }
