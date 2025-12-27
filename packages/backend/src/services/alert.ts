@@ -10,6 +10,7 @@ type AlertSetting = {
   recipients?: unknown;
   channels?: unknown;
   isEnabled?: boolean;
+  remindAfterHours?: number | null;
 };
 type MetricResult = { metric: number; targetRef: string };
 type MetricFetcher = (setting: AlertSetting) => Promise<MetricResult | null>;
@@ -18,6 +19,11 @@ type AlertRecipients = {
   emails?: string[];
   roles?: string[];
   users?: string[];
+};
+
+type AlertNotificationResult = {
+  sentChannels: string[];
+  sentResult: unknown[];
 };
 
 function normalizeChannels(raw: unknown): string[] {
@@ -37,31 +43,111 @@ function resolveEmails(
   return emails.length ? emails : ['alert@example.com'];
 }
 
-export async function triggerAlert(
+function toReminderAt(now: Date, remindAfterHours?: number | null) {
+  if (!remindAfterHours || remindAfterHours <= 0) return null;
+  return new Date(now.getTime() + remindAfterHours * 60 * 60 * 1000);
+}
+
+function mergeSentResults(
+  existing: unknown,
+  next: unknown[],
+): { sentResult: unknown[]; sentChannels: string[] } {
+  const current = Array.isArray(existing) ? existing : [];
+  const sentResult = [...current, ...next];
+  const sentChannels = sentResult
+    .map((item) => (item as { channel?: string })?.channel)
+    .filter((channel): channel is string => Boolean(channel));
+  return { sentResult, sentChannels };
+}
+
+async function sendAlertNotification(
   setting: { id: string; recipients: unknown; channels: unknown },
   metric: number,
   threshold: number,
-  targetRef: string,
-) {
+  subjectPrefix: string,
+): Promise<AlertNotificationResult> {
   const channels = normalizeChannels(setting.channels);
   const otherChannels = channels.filter((c) => c !== 'email');
   const sentResult = [...buildStubResults(otherChannels)];
   if (channels.includes('email')) {
     const emailResult = await sendEmailStub(
       resolveEmails(setting.recipients as AlertRecipients),
-      `Alert ${setting.id}`,
+      `${subjectPrefix} ${setting.id}`,
       `metric ${metric} > ${threshold}`,
     );
     sentResult.unshift(emailResult);
   }
   const sentChannels = sentResult.map((r) => r.channel);
+  return { sentChannels, sentResult };
+}
+
+export async function triggerAlert(
+  setting: {
+    id: string;
+    recipients: unknown;
+    channels: unknown;
+    remindAfterHours?: number | null;
+  },
+  metric: number,
+  threshold: number,
+  targetRef: string,
+  now = new Date(),
+) {
+  const existing = await prisma.alert.findFirst({
+    where: { settingId: setting.id, targetRef, status: 'open' },
+    orderBy: { createdAt: 'desc' },
+    select: {
+      id: true,
+      reminderAt: true,
+      sentResult: true,
+      sentChannels: true,
+    },
+  });
+  const remindAfterHours = setting.remindAfterHours ?? null;
+  if (existing) {
+    if (!remindAfterHours) {
+      return existing;
+    }
+    if (!existing.reminderAt) {
+      return prisma.alert.update({
+        where: { id: existing.id },
+        data: { reminderAt: toReminderAt(now, remindAfterHours) },
+      });
+    }
+    if (existing.reminderAt > now) {
+      return existing;
+    }
+    const reminderNotification = await sendAlertNotification(
+      { id: setting.id, recipients: setting.recipients, channels: setting.channels },
+      metric,
+      threshold,
+      'Alert reminder',
+    );
+    const merged = mergeSentResults(existing.sentResult, reminderNotification.sentResult);
+    return prisma.alert.update({
+      where: { id: existing.id },
+      data: {
+        reminderAt: toReminderAt(now, remindAfterHours),
+        sentChannels: { set: merged.sentChannels },
+        sentResult: { set: merged.sentResult },
+      },
+    });
+  }
+
+  const initialNotification = await sendAlertNotification(
+    { id: setting.id, recipients: setting.recipients, channels: setting.channels },
+    metric,
+    threshold,
+    'Alert',
+  );
   return prisma.alert.create({
     data: {
       settingId: setting.id,
       targetRef,
       status: 'open',
-      sentChannels: { set: sentChannels },
-      sentResult: { set: sentResult },
+      reminderAt: toReminderAt(now, remindAfterHours),
+      sentChannels: { set: initialNotification.sentChannels },
+      sentResult: { set: initialNotification.sentResult },
     },
   });
 }
@@ -77,13 +163,24 @@ export async function computeAndTrigger(
     if (!fetcher) continue;
     const result = await fetcher(s);
     if (!result) continue;
-    if (result.metric > Number(s.threshold)) {
+    const threshold = Number(s.threshold);
+    if (result.metric > threshold) {
       await triggerAlert(
-        { id: s.id, recipients: s.recipients, channels: s.channels },
+        {
+          id: s.id,
+          recipients: s.recipients,
+          channels: s.channels,
+          remindAfterHours: s.remindAfterHours,
+        },
         result.metric,
-        Number(s.threshold),
+        threshold,
         result.targetRef ?? s.scopeProjectId ?? 'global',
       );
+      continue;
     }
+    await prisma.alert.updateMany({
+      where: { settingId: s.id, status: 'open' },
+      data: { status: 'closed' },
+    });
   }
 }

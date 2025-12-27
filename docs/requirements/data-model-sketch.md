@@ -58,8 +58,8 @@
 - **approval_instances**: flow_type, target_table/id, status, current_step, rule_id
 - **approval_steps**: instance_id, step_order, approver_group_id?, approver_user_id?, status, acted_by, acted_at
   - idx: (instance_id), (status)
-- **alert_settings**: type (budget_overrun/overtime/approval_delay/delivery_due), threshold, period, scope (global/project_id), recipients (emails/roles/users), channels (email/dashboard/ext_future), is_enabled
-- **alerts**: setting_id, target_ref, triggered_at, status (open/ack/closed), sent_channels, sent_result
+- **alert_settings**: type (budget_overrun/overtime/approval_delay/delivery_due), threshold, period, scope (global/project_id), recipients (emails/roles/users), channels (email/dashboard/ext_future), remind_after_hours, is_enabled
+- **alerts**: setting_id, target_ref, triggered_at, reminder_at, status (open/ack/closed), sent_channels, sent_result
 
 ## 日報/ウェルビーイング
 - **reports_daily** (日報): user_id, report_date, content, linked_project_ids?, status

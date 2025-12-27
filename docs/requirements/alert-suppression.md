@@ -1,24 +1,25 @@
-# Alert Suppression and Reminder Notes
+# アラートのサプレッションとリマインド
 
-This memo captures the initial design for alert suppression and reminders.
+このメモは、アラートのサプレッションとリマインドの初期設計をまとめる。
 
-## Suppression Key
-- Use a stable key to avoid duplicate alerts for the same condition.
-- Key: `(alert_setting_id, target_ref)`
+## サプレッションキー
+- 同一条件の重複発報を避けるため、安定したキーを使う。
+- キー: `(alert_setting_id, target_ref)`
 
-## Open Alert Behavior
-- If an open alert exists for the same key, do not create a new alert.
-- Instead, check whether a reminder is due.
+## open アラートの挙動
+- 同一キーの open アラートが存在する場合は新規作成しない。
+- 代わりにリマインドのタイミングを判定する。
 
-## Reminder
-- Add `remindAfterHours` (setting-level or default) for reminder timing.
-- Store `reminderAt` on the alert when it is created.
-- When `now >= reminderAt` and alert is still open, resend notifications and set `reminderAt = now + remindAfterHours`.
+## リマインド
+- AlertSetting に `remindAfterHours` を追加し、未設定なら再送なし。
+- アラート作成時に `reminderAt` を記録（`remindAfterHours` が設定されている場合のみ）。
+- open 状態かつ `now >= reminderAt` の場合に再送し、`reminderAt = now + remindAfterHours` に更新する。
+- open 状態で `reminderAt` が未設定の場合は、再送せず `reminderAt` のみ設定する。
 
-## Close Conditions
-- Close an alert when the metric returns below threshold.
-- Optionally allow manual close from the dashboard.
+## クローズ条件
+- メトリクスが閾値未満に戻った時点で close する。
+- ダッシュボードから手動クローズを許容するかは後続検討。
 
-## Audit
-- Record reminder sends in `sentResult`.
-- Keep alert history for reporting.
+## 監査
+- リマインド送信結果は `sentResult` に追記する。
+- アラート履歴はレポート用に保持する。
