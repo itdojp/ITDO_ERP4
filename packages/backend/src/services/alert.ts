@@ -74,7 +74,10 @@ function mergeSentResults(
   const sentResult = [...current, ...next];
   const sentChannels = sentResult
     .map((item) => (item as { channel?: string })?.channel)
-    .filter((channel): channel is string => Boolean(channel));
+    .filter(
+      (channel): channel is string =>
+        typeof channel === 'string' && channel.length > 0,
+    );
   return { sentResult, sentChannels };
 }
 
@@ -130,7 +133,10 @@ async function sendAlertNotification(
   sentResult.push(...buildStubResults(otherChannels));
   const sentChannels = sentResult
     .map((r) => r.channel)
-    .filter((channel): channel is string => Boolean(channel));
+    .filter(
+      (channel): channel is string =>
+        typeof channel === 'string' && channel.length > 0,
+    );
   return { sentChannels, sentResult };
 }
 

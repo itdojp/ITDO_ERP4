@@ -34,6 +34,15 @@ function parseCsv(input: string): string[] {
   return input.split(',').map((v) => v.trim()).filter(Boolean);
 }
 
+function isValidHttpUrl(value: string): boolean {
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
 export const AdminSettings: React.FC = () => {
   const [alertItems, setAlertItems] = useState<AlertSetting[]>([]);
   const [ruleItems, setRuleItems] = useState<ApprovalRule[]>([]);
@@ -111,6 +120,15 @@ export const AdminSettings: React.FC = () => {
     const remindAfterRaw = alertForm.remindAfterHours.trim();
     const remindAfter =
       remindAfterRaw.length > 0 ? Number(remindAfterRaw) : undefined;
+    const slackWebhooks = parseCsv(alertForm.slackWebhooks);
+    const webhooks = parseCsv(alertForm.webhooks);
+    const invalidUrls = [...slackWebhooks, ...webhooks].filter(
+      (url) => !isValidHttpUrl(url),
+    );
+    if (invalidUrls.length) {
+      setMessage('Slack/Webhook のURLが不正です');
+      return;
+    }
     const payload = {
       type: alertForm.type,
       threshold: Number(alertForm.threshold),
@@ -121,8 +139,8 @@ export const AdminSettings: React.FC = () => {
         emails: parseCsv(alertForm.emails),
         roles: parseCsv(alertForm.roles),
         users: parseCsv(alertForm.users),
-        slackWebhooks: parseCsv(alertForm.slackWebhooks),
-        webhooks: parseCsv(alertForm.webhooks),
+        slackWebhooks,
+        webhooks,
       },
       channels,
       isEnabled: true,
@@ -271,7 +289,7 @@ export const AdminSettings: React.FC = () => {
               />
             </label>
             <label>
-              slack webhooks
+              Slack Webhooks
               <input
                 type="text"
                 value={alertForm.slackWebhooks}
@@ -280,7 +298,7 @@ export const AdminSettings: React.FC = () => {
               />
             </label>
             <label>
-              webhooks
+              Custom Webhooks
               <input
                 type="text"
                 value={alertForm.webhooks}
@@ -323,7 +341,7 @@ export const AdminSettings: React.FC = () => {
                   remindAfterHours: {item.remindAfterHours ?? '-'}
                 </div>
                 <div style={{ fontSize: 12, color: '#475569', marginTop: 4 }}>
-                  slack: {(item.recipients?.slackWebhooks || []).join(', ') || '-'} / webhook: {(item.recipients?.webhooks || []).join(', ') || '-'}
+                  Slack: {(item.recipients?.slackWebhooks || []).join(', ') || '-'} / Webhook: {(item.recipients?.webhooks || []).join(', ') || '-'}
                 </div>
                 <div className="row" style={{ marginTop: 6 }}>
                   <button className="button secondary" onClick={() => toggleAlert(item.id, item.isEnabled)}>
