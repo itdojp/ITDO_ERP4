@@ -114,7 +114,11 @@ export async function runRecurringTemplates(now = new Date()) {
         template.billUpon ||
         template.dueDateRule,
     );
-    if (!shouldGenerateEstimate && !shouldGenerateInvoice) {
+    if (
+      !shouldGenerateEstimate &&
+      !shouldGenerateInvoice &&
+      !shouldGenerateMilestone
+    ) {
       await prisma.recurringProjectTemplate.update({
         where: { id: template.id },
         data: { nextRunAt: nextRunAt(template.frequency, runAt) },
@@ -174,10 +178,7 @@ export async function runRecurringTemplates(now = new Date()) {
       continue;
     }
     const amount = toNumber(template.defaultAmount);
-    if (
-      amount <= 0 &&
-      (shouldGenerateEstimate || shouldGenerateInvoice || shouldGenerateMilestone)
-    ) {
+    if (amount <= 0) {
       results.push({
         templateId: template.id,
         projectId: template.projectId,
@@ -224,12 +225,12 @@ export async function runRecurringTemplates(now = new Date()) {
             ? await tx.estimate.create({
                 data: {
                   projectId: template.projectId,
-                  version: estimateNumbering.serial,
+                    version: estimateNumbering!.serial,
                   totalAmount: amount,
                   currency,
                   status: DocStatusValue.draft,
                   notes: template.defaultTerms || undefined,
-                  numberingSerial: estimateNumbering.serial,
+                  numberingSerial: estimateNumbering!.serial,
                   createdBy: 'recurring-job',
                   lines: {
                     create: [
@@ -250,13 +251,13 @@ export async function runRecurringTemplates(now = new Date()) {
                   projectId: template.projectId,
                   estimateId: estimate?.id ?? null,
                   milestoneId: milestone?.id ?? null,
-                  invoiceNo: invoiceNumbering.number,
+                  invoiceNo: invoiceNumbering!.number,
                   issueDate: runAt,
                   dueDate: milestoneDueDate,
                   currency,
                   totalAmount: amount,
                   status: DocStatusValue.draft,
-                  numberingSerial: invoiceNumbering.serial,
+                  numberingSerial: invoiceNumbering!.serial,
                   createdBy: 'recurring-job',
                   lines: {
                     create: [
