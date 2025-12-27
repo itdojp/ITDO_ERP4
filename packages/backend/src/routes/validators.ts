@@ -21,6 +21,24 @@ export const projectSchema = {
   }),
 };
 
+export const recurringTemplateSchema = {
+  body: Type.Object({
+    frequency: Type.String(),
+    nextRunAt: Type.Optional(Type.String({ format: 'date-time' })),
+    timezone: Type.Optional(Type.String()),
+    defaultAmount: Type.Optional(Type.Number({ minimum: 0 })),
+    defaultCurrency: Type.Optional(Type.String()),
+    defaultTaxRate: Type.Optional(Type.Number({ minimum: 0 })),
+    defaultTerms: Type.Optional(Type.String()),
+    defaultMilestoneName: Type.Optional(Type.String()),
+    billUpon: Type.Optional(Type.String()),
+    dueDateRule: Type.Optional(Type.Any()),
+    shouldGenerateEstimate: Type.Optional(Type.Boolean()),
+    shouldGenerateInvoice: Type.Optional(Type.Boolean()),
+    isActive: Type.Optional(Type.Boolean()),
+  }),
+};
+
 export const timeEntrySchema = {
   body: Type.Object({
     projectId: Type.String(),
