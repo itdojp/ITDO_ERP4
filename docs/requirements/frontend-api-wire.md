@@ -23,6 +23,8 @@
 - POST `/daily-reports` { content, reportDate, linkedProjectIds?, status }
 - POST `/wellbeing-entries` { entryDate, status, notes?, helpRequested?, notGoodTags?, visibilityGroupId }
 - (人事向け) GET `/wellbeing-entries` → HRのみ
+- (人事向け) GET `/wellbeing-analytics?from?&to?&minUsers?&groupBy=group|month?&visibilityGroupId?`
+  - 備考: `minUsers` のデフォルトは `5`、`groupBy` のデフォルトは `group`
 
 ## time entries
 - GET `/time-entries?projectId?&userId?`

@@ -10,13 +10,7 @@ import {
 } from '../services/reports.js';
 import { generatePdfStub } from '../services/notifier.js';
 import { requireRole } from '../services/rbac.js';
-
-function parseDateParam(value?: string) {
-  if (!value) return null;
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return null;
-  return parsed;
-}
+import { parseDateParam } from '../utils/date.js';
 
 function validateFormat(format: string | undefined, reply: any) {
   if (!format) return true;
