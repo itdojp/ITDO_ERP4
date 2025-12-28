@@ -76,6 +76,7 @@
 - Wellbeing
   - `POST /wellbeing-entries` {entry_date, status, help_requested, notes?}
   - `GET /wellbeing-entries` (人事のみ)
+  - `GET /wellbeing-analytics` (人事のみ) {from?, to?, minUsers?, groupBy=group|month, visibilityGroupId?}
 
 ## データモデルの注記
 - ID: 全テーブル UUID（またはCUID）。人間可読コード（project_code, customer_code, invoice_no）は別管理。
