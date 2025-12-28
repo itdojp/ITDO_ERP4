@@ -28,5 +28,14 @@ npm run dev
 ## Notes
 - Numbering: PYYYY-MM-NNNN per kind via number_sequences
 - Auth/RBAC: header mock only; extend as needed
-- Notifications/PDF: stub logging
+- Notifications/PDF: stub logging (MAIL_TRANSPORT=smtp でメール送信を有効化)
 - Validation: TypeBox for some routes; expand as needed
+
+## Email (SMTP)
+- env:
+  - MAIL_TRANSPORT=smtp
+  - MAIL_FROM=from@example.com
+  - SMTP_HOST / SMTP_PORT / SMTP_SECURE
+  - SMTP_USER / SMTP_PASS (optional)
+- 備考: メール本文は現状プレースホルダ。実運用ではテンプレート化を前提にする。
+- セキュリティ: SMTP資格情報は secrets manager 等で管理し、リポジトリにコミットしないこと。
