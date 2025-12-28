@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../api';
 
 type AnalyticsItem = {
@@ -9,6 +9,19 @@ type AnalyticsItem = {
   notGoodRate: number;
   helpRequestedCount: number;
 };
+
+function getRangeError(fromValue: string, toValue: string) {
+  if (!fromValue || !toValue) return '';
+  const fromDate = new Date(fromValue);
+  const toDate = new Date(toValue);
+  if (Number.isNaN(fromDate.getTime()) || Number.isNaN(toDate.getTime())) {
+    return '日付が不正です';
+  }
+  if (fromDate > toDate) {
+    return '開始日は終了日以前にしてください';
+  }
+  return '';
+}
 
 export const HRAnalytics: React.FC = () => {
   const [from, setFrom] = useState('');
@@ -21,6 +34,8 @@ export const HRAnalytics: React.FC = () => {
   const [monthlyError, setMonthlyError] = useState('');
   const [isLoadingGroup, setIsLoadingGroup] = useState(false);
   const [isLoadingMonthly, setIsLoadingMonthly] = useState(false);
+  const initialLoadRef = useRef(false);
+  const lastGroupRef = useRef('');
 
   const buildQuery = useCallback(
     (params: Record<string, string | number | undefined>) => {
@@ -34,14 +49,20 @@ export const HRAnalytics: React.FC = () => {
     [],
   );
 
-  const loadGroupAnalytics = useCallback(async () => {
+  const loadGroupAnalytics = useCallback(
+    async (params: { from: string; to: string; minUsers: number }) => {
+      const rangeError = getRangeError(params.from, params.to);
+      if (rangeError) {
+        setGroupError(rangeError);
+        return;
+      }
+      setGroupError('');
     try {
       setIsLoadingGroup(true);
-      setGroupError('');
       const query = buildQuery({
-        from,
-        to,
-        minUsers,
+        from: params.from,
+        to: params.to,
+        minUsers: params.minUsers,
         groupBy: 'group',
       });
       const response = await api<{ items: AnalyticsItem[] }>(`/wellbeing-analytics?${query}`);
@@ -53,21 +74,28 @@ export const HRAnalytics: React.FC = () => {
     } finally {
       setIsLoadingGroup(false);
     }
-  }, [buildQuery, from, minUsers, to]);
+    },
+    [buildQuery],
+  );
 
   const loadMonthlyAnalytics = useCallback(
-    async (groupId: string) => {
+    async (groupId: string, params: { from: string; to: string; minUsers: number }) => {
       if (!groupId) {
         setMonthlyItems([]);
+        return;
+      }
+      const rangeError = getRangeError(params.from, params.to);
+      if (rangeError) {
+        setMonthlyError(rangeError);
         return;
       }
       try {
         setIsLoadingMonthly(true);
         setMonthlyError('');
         const query = buildQuery({
-          from,
-          to,
-          minUsers,
+          from: params.from,
+          to: params.to,
+          minUsers: params.minUsers,
           groupBy: 'month',
           visibilityGroupId: groupId,
         });
@@ -80,16 +108,24 @@ export const HRAnalytics: React.FC = () => {
         setIsLoadingMonthly(false);
       }
     },
-    [buildQuery, from, minUsers, to],
+    [buildQuery],
   );
 
   useEffect(() => {
-    void loadGroupAnalytics();
-  }, [loadGroupAnalytics]);
+    if (initialLoadRef.current) return;
+    initialLoadRef.current = true;
+    void loadGroupAnalytics({ from, to, minUsers });
+  }, [loadGroupAnalytics, from, to, minUsers]);
 
   useEffect(() => {
-    void loadMonthlyAnalytics(selectedGroup);
-  }, [loadMonthlyAnalytics, selectedGroup]);
+    if (!selectedGroup) {
+      setMonthlyItems([]);
+      return;
+    }
+    if (lastGroupRef.current === selectedGroup) return;
+    lastGroupRef.current = selectedGroup;
+    void loadMonthlyAnalytics(selectedGroup, { from, to, minUsers });
+  }, [loadMonthlyAnalytics, selectedGroup, from, to, minUsers]);
 
   const groupOptions = useMemo(
     () => groupItems.map((item) => item.bucket),
@@ -133,7 +169,11 @@ export const HRAnalytics: React.FC = () => {
             style={{ width: 72, marginLeft: 6 }}
           />
         </label>
-        <button className="button secondary" onClick={loadGroupAnalytics} disabled={isLoadingGroup}>
+        <button
+          className="button secondary"
+          onClick={() => loadGroupAnalytics({ from, to, minUsers })}
+          disabled={isLoadingGroup}
+        >
           {isLoadingGroup ? '更新中...' : '更新'}
         </button>
       </div>
@@ -163,7 +203,7 @@ export const HRAnalytics: React.FC = () => {
           </select>
           <button
             className="button secondary"
-            onClick={() => loadMonthlyAnalytics(selectedGroup)}
+            onClick={() => loadMonthlyAnalytics(selectedGroup, { from, to, minUsers })}
             disabled={!selectedGroup || isLoadingMonthly}
           >
             {isLoadingMonthly ? '更新中...' : '更新'}

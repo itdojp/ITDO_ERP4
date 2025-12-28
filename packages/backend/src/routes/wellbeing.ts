@@ -3,13 +3,7 @@ import { wellbeingSchema } from './validators.js';
 import { requireRole } from '../services/rbac.js';
 import { prisma } from '../services/db.js';
 import { logAudit } from '../services/audit.js';
-
-function parseDateParam(value?: string) {
-  if (!value) return null;
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return null;
-  return parsed;
-}
+import { endOfDay, parseDateParam } from '../utils/date.js';
 
 function formatMonthKey(value: Date) {
   const year = value.getUTCFullYear();
@@ -70,6 +64,11 @@ export async function registerWellbeingRoutes(app: FastifyInstance) {
           error: { code: 'INVALID_DATE', message: 'Invalid to date' },
         });
       }
+      if (fromDate && toDate && fromDate > toDate) {
+        return reply.status(400).send({
+          error: { code: 'INVALID_RANGE', message: 'from must be before to' },
+        });
+      }
       const minUsersValue = minUsers ? Number(minUsers) : 5;
       if (!Number.isInteger(minUsersValue) || minUsersValue <= 0) {
         return reply.status(400).send({
@@ -94,7 +93,7 @@ export async function registerWellbeingRoutes(app: FastifyInstance) {
       if (fromDate || toDate) {
         where.entryDate = {};
         if (fromDate) where.entryDate.gte = fromDate;
-        if (toDate) where.entryDate.lte = toDate;
+        if (toDate) where.entryDate.lte = endOfDay(toDate);
       }
       if (visibilityGroupId) {
         where.visibilityGroupId = visibilityGroupId;
@@ -147,6 +146,19 @@ export async function registerWellbeingRoutes(app: FastifyInstance) {
         }))
         .filter((item) => item.users >= minUsersValue)
         .sort((a, b) => a.bucket.localeCompare(b.bucket));
+
+      await logAudit({
+        action: 'wellbeing_analytics_view',
+        userId: req.user?.userId,
+        targetTable: 'wellbeing_entries',
+        metadata: {
+          groupBy: groupByValue,
+          minUsers: minUsersValue,
+          from: from || null,
+          to: to || null,
+          visibilityGroupId: visibilityGroupId || null,
+        },
+      });
 
       return {
         items,
