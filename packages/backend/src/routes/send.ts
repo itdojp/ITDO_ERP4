@@ -12,11 +12,34 @@ import type { PdfTemplate } from '../services/pdfTemplates.js';
 import { DocStatusValue } from '../types.js';
 import { requireRole } from '../services/rbac.js';
 import { prisma } from '../services/db.js';
+import type { NotifyResult } from '../services/notifier.js';
 
 type TemplateResolveResult = {
   template: PdfTemplate | null;
   error?: { status: number; code: string };
 };
+
+type DocumentSendLogClient = {
+  documentSendLog: {
+    create: (args: {
+      data: {
+        kind: PdfTemplate['kind'];
+        targetTable: string;
+        targetId: string;
+        channel: string;
+        status: string;
+        recipients: string[];
+        templateId?: string;
+        pdfUrl?: string;
+        providerMessageId?: string;
+        error?: string;
+        createdBy?: string;
+      };
+    }) => Promise<unknown>;
+  };
+};
+
+const SUCCESS_NOTIFY_STATUSES = new Set(['stub', 'success']);
 
 function resolveTemplate(
   kind: PdfTemplate['kind'],
@@ -48,6 +71,50 @@ function resolveTemplate(
   return { template };
 }
 
+function shouldMarkSent(result: NotifyResult) {
+  return SUCCESS_NOTIFY_STATUSES.has(result.status);
+}
+
+async function recordSendLog(
+  db: DocumentSendLogClient,
+  params: {
+  kind: PdfTemplate['kind'];
+  targetTable: string;
+  targetId: string;
+  recipients: string[];
+  templateId: string;
+  pdfUrl: string;
+  result: NotifyResult;
+  actorId?: string;
+},
+) {
+  const {
+    kind,
+    targetTable,
+    targetId,
+    recipients,
+    templateId,
+    pdfUrl,
+    result,
+    actorId,
+  } = params;
+  await db.documentSendLog.create({
+    data: {
+      kind,
+      targetTable,
+      targetId,
+      channel: result.channel,
+      status: result.status,
+      recipients,
+      templateId,
+      pdfUrl,
+      providerMessageId: result.messageId,
+      error: result.error,
+      createdBy: actorId,
+    },
+  });
+}
+
 export async function registerSendRoutes(app: FastifyInstance) {
   app.post(
     '/invoices/:id/send',
@@ -70,12 +137,56 @@ export async function registerSendRoutes(app: FastifyInstance) {
         id,
         invoiceNo: invoice.invoiceNo,
       });
-      const updated = await prisma.invoice.update({
-        where: { id },
-        data: { status: DocStatusValue.sent, pdfUrl: pdf.url },
+      const recipients = ['fin@example.com'];
+      const notifyResult = await sendInvoiceEmail(
+        recipients,
+        invoice.invoiceNo,
+      );
+      const nextStatus = shouldMarkSent(notifyResult)
+        ? DocStatusValue.sent
+        : invoice.status;
+      const updated = await prisma.$transaction(async (tx) => {
+        const updatedInvoice = await tx.invoice.update({
+          where: { id },
+          data: {
+            status: nextStatus,
+            pdfUrl: pdf.url,
+            emailMessageId: notifyResult.messageId,
+          },
+        });
+        await recordSendLog(tx, {
+          kind: 'invoice',
+          targetTable: 'invoices',
+          targetId: id,
+          recipients,
+          templateId: template.id,
+          pdfUrl: pdf.url,
+          result: notifyResult,
+          actorId: req.user?.userId,
+        });
+        return updatedInvoice;
       });
-      await sendInvoiceEmail(['fin@example.com'], invoice.invoiceNo);
       return updated;
+    },
+  );
+
+  app.get(
+    '/invoices/:id/send-logs',
+    { preHandler: requireRole(['admin', 'mgmt']) },
+    async (req, reply) => {
+      const { id } = req.params as { id: string };
+      const invoice = await prisma.invoice.findUnique({
+        where: { id },
+        select: { id: true },
+      });
+      if (!invoice) {
+        return reply.code(404).send({ error: 'not_found' });
+      }
+      const items = await prisma.documentSendLog.findMany({
+        where: { targetTable: 'invoices', targetId: id },
+        orderBy: { createdAt: 'desc' },
+      });
+      return { items };
     },
   );
 
@@ -97,12 +208,49 @@ export async function registerSendRoutes(app: FastifyInstance) {
       }
       const template = resolved.template;
       const pdf = await generatePdfStub(template.id, { id, poNo: po.poNo });
-      const updated = await prisma.purchaseOrder.update({
-        where: { id },
-        data: { status: DocStatusValue.sent, pdfUrl: pdf.url },
+      const recipients = ['vendor@example.com'];
+      const notifyResult = await sendPurchaseOrderEmail(recipients, po.poNo);
+      const nextStatus = shouldMarkSent(notifyResult)
+        ? DocStatusValue.sent
+        : po.status;
+      const updated = await prisma.$transaction(async (tx) => {
+        const updatedPo = await tx.purchaseOrder.update({
+          where: { id },
+          data: { status: nextStatus, pdfUrl: pdf.url },
+        });
+        await recordSendLog(tx, {
+          kind: 'purchase_order',
+          targetTable: 'purchase_orders',
+          targetId: id,
+          recipients,
+          templateId: template.id,
+          pdfUrl: pdf.url,
+          result: notifyResult,
+          actorId: req.user?.userId,
+        });
+        return updatedPo;
       });
-      await sendPurchaseOrderEmail(['vendor@example.com'], po.poNo);
       return updated;
+    },
+  );
+
+  app.get(
+    '/purchase-orders/:id/send-logs',
+    { preHandler: requireRole(['admin', 'mgmt']) },
+    async (req, reply) => {
+      const { id } = req.params as { id: string };
+      const purchaseOrder = await prisma.purchaseOrder.findUnique({
+        where: { id },
+        select: { id: true },
+      });
+      if (!purchaseOrder) {
+        return reply.code(404).send({ error: 'not_found' });
+      }
+      const items = await prisma.documentSendLog.findMany({
+        where: { targetTable: 'purchase_orders', targetId: id },
+        orderBy: { createdAt: 'desc' },
+      });
+      return { items };
     },
   );
 }

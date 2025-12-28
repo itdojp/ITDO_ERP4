@@ -61,6 +61,8 @@
 - **alert_settings**: type (budget_overrun/overtime/approval_delay/approval_escalation/delivery_due), threshold, period, scope (global/project_id), recipients (emails/roles/users/slackWebhooks/webhooks), channels (email/dashboard/slack/webhook), remind_after_hours, is_enabled
 - **alerts**: setting_id, target_ref, triggered_at, reminder_at, status (open/ack/closed), sent_channels, sent_result
 - **doc_template_settings**: kind (estimate/invoice/purchase_order), template_id, number_rule, layout_config, logo_url, signature_text, is_default
+- **document_send_logs**: kind (estimate/invoice/purchase_order), target_table/id, channel, status, recipients, template_id, pdf_url, provider_message_id, error, metadata
+  - idx: (target_table, target_id), (created_at), (target_table, target_id, created_at)
 
 ## 日報/ウェルビーイング
 - **reports_daily** (日報): user_id, report_date, content, linked_project_ids?, status

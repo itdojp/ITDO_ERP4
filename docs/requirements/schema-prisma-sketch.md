@@ -457,6 +457,27 @@ model DocTemplateSetting {
   isDefault    Boolean @default(false)
 }
 
+model DocumentSendLog {
+  id               String @id @default(uuid())
+  kind             TemplateKind
+  targetTable      String
+  targetId         String
+  channel          String
+  status           String
+  recipients       Json?
+  templateId       String?
+  pdfUrl           String?
+  providerMessageId String?
+  error            String?
+  metadata         Json?
+  createdAt        DateTime @default(now())
+  createdBy        String?
+
+  @@index([targetTable, targetId])
+  @@index([createdAt])
+  @@index([targetTable, targetId, createdAt])
+}
+
 // 日報/ウェルビーイング
 model DailyReport {
   id        String @id @default(uuid())

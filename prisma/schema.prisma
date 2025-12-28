@@ -579,6 +579,27 @@ model DocTemplateSetting {
   @@index([kind])
 }
 
+model DocumentSendLog {
+  id               String       @id @default(uuid())
+  kind             TemplateKind
+  targetTable      String
+  targetId         String
+  channel          String
+  status           String
+  recipients       Json?
+  templateId       String?
+  pdfUrl           String?
+  providerMessageId String?
+  error            String?
+  metadata         Json?
+  createdAt        DateTime     @default(now())
+  createdBy        String?
+
+  @@index([targetTable, targetId])
+  @@index([createdAt])
+  @@index([targetTable, targetId, createdAt])
+}
+
 model DailyReport {
   id               String   @id @default(uuid())
   userId           String

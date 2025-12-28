@@ -38,12 +38,14 @@
 - POST `/projects/:projectId/invoices` { estimateId?, milestoneId?, lines, issueDate?, dueDate?, currency, totalAmount }
 - POST `/invoices/:id/submit`
 - POST `/invoices/:id/send` (stub)
+- GET  `/invoices/:id/send-logs`
 - GET  `/alerts` (承認遅延/予算超過の表示用)
 
 ## purchase orders / vendor docs
 - POST `/projects/:projectId/purchase-orders` { vendorId, lines, totals... }
 - POST `/purchase-orders/:id/submit`
 - POST `/purchase-orders/:id/send` (stub)
+- GET  `/purchase-orders/:id/send-logs`
 - POST `/vendor-quotes` { projectId, vendorId, quote_no?, ... }
 - POST `/vendor-invoices` { projectId, vendorId, vendor_invoice_no?, ... }
 - POST `/vendor-invoices/:id/approve`
