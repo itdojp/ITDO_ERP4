@@ -37,3 +37,5 @@ npm run dev
   - MAIL_FROM=from@example.com
   - SMTP_HOST / SMTP_PORT / SMTP_SECURE
   - SMTP_USER / SMTP_PASS (optional)
+- 備考: メール本文は現状プレースホルダ。実運用ではテンプレート化を前提にする。
+- セキュリティ: SMTP資格情報は secrets manager 等で管理し、リポジトリにコミットしないこと。
