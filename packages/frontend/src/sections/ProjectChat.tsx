@@ -7,7 +7,7 @@ type ChatMessage = {
   userId: string;
   body: string;
   tags?: string[];
-  reactions?: Record<string, number>;
+  reactions?: Record<string, number | { count: number; userIds: string[] }>;
   createdAt: string;
 };
 
@@ -18,6 +18,19 @@ function parseTags(value: string) {
     .split(',')
     .map((tag) => tag.trim())
     .filter(Boolean);
+}
+
+function getReactionCount(value: unknown) {
+  if (typeof value === 'number') return value;
+  if (
+    value &&
+    typeof value === 'object' &&
+    'count' in value &&
+    typeof (value as { count?: unknown }).count === 'number'
+  ) {
+    return (value as { count: number }).count;
+  }
+  return 0;
 }
 
 export const ProjectChat: React.FC = () => {
@@ -48,8 +61,23 @@ export const ProjectChat: React.FC = () => {
   };
 
   const postMessage = async () => {
-    if (!body.trim()) {
+    const trimmedBody = body.trim();
+    if (!trimmedBody) {
       setMessage('メッセージを入力してください');
+      return;
+    }
+    if (trimmedBody.length > 2000) {
+      setMessage('メッセージは2000文字以内で入力してください');
+      return;
+    }
+    const parsedTags = parseTags(tags);
+    if (parsedTags.length > 8) {
+      setMessage('タグは最大8件までです');
+      return;
+    }
+    const invalidTag = parsedTags.find((tag) => tag.length > 32);
+    if (invalidTag) {
+      setMessage('タグは1つあたり32文字以内で入力してください');
       return;
     }
     try {
@@ -57,8 +85,8 @@ export const ProjectChat: React.FC = () => {
       await api(`/projects/${projectId}/chat-messages`, {
         method: 'POST',
         body: JSON.stringify({
-          body: body.trim(),
-          tags: parseTags(tags),
+          body: trimmedBody,
+          tags: parsedTags,
         }),
       });
       setBody('');
@@ -75,11 +103,13 @@ export const ProjectChat: React.FC = () => {
 
   const addReaction = async (id: string, emoji: string) => {
     try {
-      await api(`/chat-messages/${id}/reactions`, {
+      const updated = await api<ChatMessage>(`/chat-messages/${id}/reactions`, {
         method: 'POST',
         body: JSON.stringify({ emoji }),
       });
-      await load();
+      setItems((prevItems) =>
+        prevItems.map((item) => (item.id === updated.id ? updated : item)),
+      );
     } catch (error) {
       console.error('リアクションに失敗しました', error);
       setMessage('リアクションに失敗しました');
@@ -105,6 +135,7 @@ export const ProjectChat: React.FC = () => {
           placeholder="メッセージを書く"
           value={body}
           onChange={(e) => setBody(e.target.value)}
+          maxLength={2000}
           style={{ width: '100%', minHeight: 80 }}
         />
         <input
@@ -125,7 +156,10 @@ export const ProjectChat: React.FC = () => {
             item.reactions && typeof item.reactions === 'object'
               ? item.reactions
               : {};
-          const reactionEntries = Object.entries(reactions);
+          const reactionEntries = Object.entries(reactions).map(([emoji, value]) => [
+            emoji,
+            getReactionCount(value),
+          ]);
           return (
             <li key={item.id}>
               <div style={{ fontSize: 12, color: '#64748b' }}>
@@ -146,7 +180,7 @@ export const ProjectChat: React.FC = () => {
                     className="button secondary"
                     onClick={() => addReaction(item.id, emoji)}
                   >
-                    {emoji} {(reactions[emoji] || 0) > 0 ? reactions[emoji] : ''}
+                    {emoji} {getReactionCount(reactions[emoji]) || ''}
                   </button>
                 ))}
                 {reactionEntries

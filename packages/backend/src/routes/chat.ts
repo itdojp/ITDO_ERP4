@@ -4,7 +4,11 @@ import {
   projectChatReactionSchema,
 } from './validators.js';
 import { prisma } from '../services/db.js';
-import { requireProjectAccess, requireRole } from '../services/rbac.js';
+import {
+  hasProjectAccess,
+  requireProjectAccess,
+  requireRole,
+} from '../services/rbac.js';
 
 function parseDateParam(value?: string) {
   if (!value) return null;
@@ -18,11 +22,6 @@ function parseLimit(value?: string, fallback = 50) {
   const parsed = Number(value);
   if (!Number.isInteger(parsed) || parsed <= 0) return null;
   return Math.min(parsed, 200);
-}
-
-function hasProjectAccess(roles: string[], projectIds: string[], projectId: string) {
-  if (roles.includes('admin') || roles.includes('mgmt')) return true;
-  return projectIds.includes(projectId);
 }
 
 export async function registerChatRoutes(app: FastifyInstance) {
@@ -112,12 +111,25 @@ export async function registerChatRoutes(app: FastifyInstance) {
       const body = req.body as { emoji: string };
       const message = await prisma.projectChatMessage.findUnique({ where: { id } });
       if (!message || message.deletedAt) {
-        return reply.status(404).send({ error: 'not_found' });
+        return reply.status(404).send({
+          error: { code: 'NOT_FOUND', message: 'Message not found' },
+        });
       }
       const roles = req.user?.roles || [];
       const projectIds = req.user?.projectIds || [];
       if (!hasProjectAccess(roles, projectIds, message.projectId)) {
-        return reply.status(403).send({ error: 'forbidden_project' });
+        return reply.status(403).send({
+          error: {
+            code: 'FORBIDDEN_PROJECT',
+            message: 'Access to this project is forbidden',
+          },
+        });
+      }
+      const userId = req.user?.userId;
+      if (!userId) {
+        return reply.status(400).send({
+          error: { code: 'MISSING_USER_ID', message: 'user id is required' },
+        });
       }
       const trimmedEmoji = body.emoji.trim();
       if (!trimmedEmoji) {
@@ -126,16 +138,39 @@ export async function registerChatRoutes(app: FastifyInstance) {
         });
       }
       const current =
-        (message.reactions as Record<string, number> | null | undefined) || {};
-      const next = {
-        ...current,
-        [trimmedEmoji]: (current[trimmedEmoji] || 0) + 1,
+        (message.reactions as Record<string, unknown> | null | undefined) || {};
+      const existingEntry = current[trimmedEmoji] as
+        | number
+        | { count: number; userIds: string[] }
+        | undefined;
+      let normalized = { count: 0, userIds: [] as string[] };
+      if (typeof existingEntry === 'number') {
+        normalized = { count: existingEntry, userIds: [] };
+      } else if (
+        existingEntry &&
+        typeof existingEntry === 'object' &&
+        'count' in existingEntry &&
+        'userIds' in existingEntry &&
+        Array.isArray((existingEntry as { userIds: unknown }).userIds)
+      ) {
+        normalized = {
+          count: (existingEntry as { count: number }).count,
+          userIds: (existingEntry as { userIds: string[] }).userIds,
+        };
+      }
+      if (normalized.userIds.includes(userId)) {
+        return message;
+      }
+      normalized = {
+        count: normalized.count + 1,
+        userIds: [...normalized.userIds, userId],
       };
+      const next = { ...current, [trimmedEmoji]: normalized };
       const updated = await prisma.projectChatMessage.update({
         where: { id },
         data: {
           reactions: next,
-          updatedBy: req.user?.userId,
+          updatedBy: userId,
         },
       });
       return updated;
