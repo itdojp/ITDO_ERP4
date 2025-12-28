@@ -7,6 +7,7 @@
 - **vendors**: `id`, `code`, `name`, `bank_info`, `tax_region`, `status`, `external_source/id`。
 - **projects**: `id`, `code`, `name`, `status`, `project_type`, `parent_id`, `customer_id`, `owner_user_id`, `org_unit_id`, `start/end`, `currency`, `recurring_template_id`。
 - **project_tasks**: `id`, `project_id`, `parent_task_id`, `name`, `wbs_code`, `assignee_id`, `status`, `plan_start/end`, `actual_start/end`, `baseline_id`。
+- **project_chat_messages**: `id`, `project_id`, `user_id`, `body`, `tags`, `reactions`, `created_at`。
 - **project_milestones**: `id`, `project_id`, `name`, `amount`, `bill_upon`(date/acceptance/time), `due_date`, `tax_rate`, `invoice_template_id`。
 - **recurring_project_templates**: `id`, `frequency`(monthly/quarterly/semiannual/annual), `default_amount`, `default_currency`, `default_tax_rate`, `default_terms`, `default_milestone_name`, `bill_upon`, `due_date_rule`(json), `should_generate_estimate`, `should_generate_invoice`, `next_run_at`, `timezone`, `is_active`。
 - **estimates**: `id`, `project_id`, `version`, `total_amount`, `currency`, `status`(draft/pending_qa/pending_exec/approved/rejected), `valid_until`, `notes`。
@@ -43,6 +44,10 @@
 - Task/Milestone
   - `POST /projects/:id/tasks` {parent_task_id?, name, assignee, dates, status}
   - `POST /projects/:id/milestones` {name, amount, bill_upon, due_date, tax_rate}
+- Project Chat
+  - `GET /projects/:id/chat-messages` {limit?, before?}
+  - `POST /projects/:id/chat-messages` {body, tags?}
+  - `POST /chat-messages/:id/reactions` {emoji}
 - Estimate/Invoice
   - `POST /projects/:id/estimates` {lines, total, valid_until}
   - `POST /estimates/:id/submit` → 承認フロー起動

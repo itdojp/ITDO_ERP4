@@ -18,6 +18,8 @@
   - idx: (customer_id), (parent_id), (status)
 - **project_tasks**: project_id, parent_task_id, name, wbs_code, assignee_id, status, plan_start/end, actual_start/end, baseline_id
   - idx: (project_id), (assignee_id), (status)
+- **project_chat_messages**: project_id, user_id, body, tags?, reactions?
+  - idx: (project_id, created_at)
 - **project_milestones**: project_id, name, amount, bill_upon (enum: date/acceptance/time), due_date, tax_rate, invoice_template_id
   - idx: (project_id), (due_date)
 - **recurring_project_templates**: project_id, frequency (monthly/quarterly/semiannual/annual), default_amount, default_currency, default_tax_rate, default_terms, default_milestone_name, bill_upon, due_date_rule (json), should_generate_estimate, should_generate_invoice, next_run_at, timezone, is_active
