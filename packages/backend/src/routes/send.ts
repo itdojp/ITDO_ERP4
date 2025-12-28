@@ -19,6 +19,28 @@ type TemplateResolveResult = {
   error?: { status: number; code: string };
 };
 
+type DocumentSendLogClient = {
+  documentSendLog: {
+    create: (args: {
+      data: {
+        kind: PdfTemplate['kind'];
+        targetTable: string;
+        targetId: string;
+        channel: string;
+        status: string;
+        recipients: string[];
+        templateId?: string;
+        pdfUrl?: string;
+        providerMessageId?: string;
+        error?: string;
+        createdBy?: string;
+      };
+    }) => Promise<unknown>;
+  };
+};
+
+const SUCCESS_NOTIFY_STATUSES = new Set(['stub', 'success']);
+
 function resolveTemplate(
   kind: PdfTemplate['kind'],
   templateId?: string,
@@ -49,7 +71,13 @@ function resolveTemplate(
   return { template };
 }
 
-async function recordSendLog(params: {
+function shouldMarkSent(result: NotifyResult) {
+  return SUCCESS_NOTIFY_STATUSES.has(result.status);
+}
+
+async function recordSendLog(
+  db: DocumentSendLogClient,
+  params: {
   kind: PdfTemplate['kind'];
   targetTable: string;
   targetId: string;
@@ -58,7 +86,8 @@ async function recordSendLog(params: {
   pdfUrl: string;
   result: NotifyResult;
   actorId?: string;
-}) {
+},
+) {
   const {
     kind,
     targetTable,
@@ -69,7 +98,7 @@ async function recordSendLog(params: {
     result,
     actorId,
   } = params;
-  await prisma.documentSendLog.create({
+  await db.documentSendLog.create({
     data: {
       kind,
       targetTable,
@@ -113,27 +142,29 @@ export async function registerSendRoutes(app: FastifyInstance) {
         recipients,
         invoice.invoiceNo,
       );
-      const nextStatus =
-        notifyResult.status === 'failed' || notifyResult.status === 'error'
-          ? invoice.status
-          : DocStatusValue.sent;
-      const updated = await prisma.invoice.update({
-        where: { id },
-        data: {
-          status: nextStatus,
+      const nextStatus = shouldMarkSent(notifyResult)
+        ? DocStatusValue.sent
+        : invoice.status;
+      const updated = await prisma.$transaction(async (tx) => {
+        const updatedInvoice = await tx.invoice.update({
+          where: { id },
+          data: {
+            status: nextStatus,
+            pdfUrl: pdf.url,
+            emailMessageId: notifyResult.messageId,
+          },
+        });
+        await recordSendLog(tx, {
+          kind: 'invoice',
+          targetTable: 'invoices',
+          targetId: id,
+          recipients,
+          templateId: template.id,
           pdfUrl: pdf.url,
-          emailMessageId: notifyResult.messageId,
-        },
-      });
-      await recordSendLog({
-        kind: 'invoice',
-        targetTable: 'invoices',
-        targetId: id,
-        recipients,
-        templateId: template.id,
-        pdfUrl: pdf.url,
-        result: notifyResult,
-        actorId: req.user?.userId,
+          result: notifyResult,
+          actorId: req.user?.userId,
+        });
+        return updatedInvoice;
       });
       return updated;
     },
@@ -142,8 +173,15 @@ export async function registerSendRoutes(app: FastifyInstance) {
   app.get(
     '/invoices/:id/send-logs',
     { preHandler: requireRole(['admin', 'mgmt']) },
-    async (req) => {
+    async (req, reply) => {
       const { id } = req.params as { id: string };
+      const invoice = await prisma.invoice.findUnique({
+        where: { id },
+        select: { id: true },
+      });
+      if (!invoice) {
+        return reply.code(404).send({ error: 'not_found' });
+      }
       const items = await prisma.documentSendLog.findMany({
         where: { targetTable: 'invoices', targetId: id },
         orderBy: { createdAt: 'desc' },
@@ -172,23 +210,25 @@ export async function registerSendRoutes(app: FastifyInstance) {
       const pdf = await generatePdfStub(template.id, { id, poNo: po.poNo });
       const recipients = ['vendor@example.com'];
       const notifyResult = await sendPurchaseOrderEmail(recipients, po.poNo);
-      const nextStatus =
-        notifyResult.status === 'failed' || notifyResult.status === 'error'
-          ? po.status
-          : DocStatusValue.sent;
-      const updated = await prisma.purchaseOrder.update({
-        where: { id },
-        data: { status: nextStatus, pdfUrl: pdf.url },
-      });
-      await recordSendLog({
-        kind: 'purchase_order',
-        targetTable: 'purchase_orders',
-        targetId: id,
-        recipients,
-        templateId: template.id,
-        pdfUrl: pdf.url,
-        result: notifyResult,
-        actorId: req.user?.userId,
+      const nextStatus = shouldMarkSent(notifyResult)
+        ? DocStatusValue.sent
+        : po.status;
+      const updated = await prisma.$transaction(async (tx) => {
+        const updatedPo = await tx.purchaseOrder.update({
+          where: { id },
+          data: { status: nextStatus, pdfUrl: pdf.url },
+        });
+        await recordSendLog(tx, {
+          kind: 'purchase_order',
+          targetTable: 'purchase_orders',
+          targetId: id,
+          recipients,
+          templateId: template.id,
+          pdfUrl: pdf.url,
+          result: notifyResult,
+          actorId: req.user?.userId,
+        });
+        return updatedPo;
       });
       return updated;
     },
@@ -197,8 +237,15 @@ export async function registerSendRoutes(app: FastifyInstance) {
   app.get(
     '/purchase-orders/:id/send-logs',
     { preHandler: requireRole(['admin', 'mgmt']) },
-    async (req) => {
+    async (req, reply) => {
       const { id } = req.params as { id: string };
+      const purchaseOrder = await prisma.purchaseOrder.findUnique({
+        where: { id },
+        select: { id: true },
+      });
+      if (!purchaseOrder) {
+        return reply.code(404).send({ error: 'not_found' });
+      }
       const items = await prisma.documentSendLog.findMany({
         where: { targetTable: 'purchase_orders', targetId: id },
         orderBy: { createdAt: 'desc' },

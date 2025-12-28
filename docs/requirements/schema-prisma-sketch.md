@@ -472,6 +472,10 @@ model DocumentSendLog {
   metadata         Json?
   createdAt        DateTime @default(now())
   createdBy        String?
+
+  @@index([targetTable, targetId])
+  @@index([createdAt])
+  @@index([targetTable, targetId, createdAt])
 }
 
 // 日報/ウェルビーイング

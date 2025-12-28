@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { api } from '../api';
 
 type SendLog = {
@@ -25,22 +25,23 @@ export const InvoiceDetail: React.FC<InvoiceDetailProps> = ({ id, invoiceNo, pro
   const [sendLogError, setSendLogError] = useState('');
   const [isLoadingLogs, setIsLoadingLogs] = useState(false);
 
-  const loadSendLogs = async () => {
+  const loadSendLogs = useCallback(async () => {
     try {
       setIsLoadingLogs(true);
       setSendLogError('');
-      const res = await api<{ items: SendLog[] }>(`/invoices/${id}/send-logs`);
-      setSendLogs(res.items || []);
-    } catch (e) {
+      const sendLogsResponse = await api<{ items: SendLog[] }>(`/invoices/${id}/send-logs`);
+      setSendLogs(sendLogsResponse.items || []);
+    } catch (error) {
+      console.error('送信履歴の取得に失敗しました', id, error);
       setSendLogError('送信履歴の取得に失敗しました');
     } finally {
       setIsLoadingLogs(false);
     }
-  };
+  }, [id]);
 
   useEffect(() => {
     void loadSendLogs();
-  }, [id]);
+  }, [loadSendLogs]);
 
   return (
     <div>
