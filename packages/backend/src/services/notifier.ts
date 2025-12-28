@@ -1,3 +1,6 @@
+import nodemailer from 'nodemailer';
+import type { Transporter } from 'nodemailer';
+
 export type NotifyResult = {
   channel: string;
   status: string;
@@ -5,6 +8,65 @@ export type NotifyResult = {
   target?: string;
   messageId?: string;
 };
+
+type MailTransportConfig = {
+  transport: 'stub' | 'smtp';
+  from: string;
+  host?: string;
+  port?: number;
+  secure?: boolean;
+  user?: string;
+  pass?: string;
+};
+
+let cachedTransporter: Transporter | null = null;
+let cachedFrom: string | null = null;
+let cachedError: string | null = null;
+
+function resolveMailConfig(): MailTransportConfig {
+  const transport =
+    (process.env.MAIL_TRANSPORT || 'stub').toLowerCase() === 'smtp'
+      ? 'smtp'
+      : 'stub';
+  const from = process.env.MAIL_FROM || 'noreply@example.com';
+  if (transport === 'stub') {
+    return { transport, from };
+  }
+  const portRaw = process.env.SMTP_PORT;
+  const port = portRaw ? Number(portRaw) : undefined;
+  return {
+    transport,
+    from,
+    host: process.env.SMTP_HOST,
+    port,
+    secure: process.env.SMTP_SECURE === 'true',
+    user: process.env.SMTP_USER,
+    pass: process.env.SMTP_PASS,
+  };
+}
+
+function getSmtpTransport() {
+  if (cachedTransporter || cachedError) {
+    return { transporter: cachedTransporter, from: cachedFrom, error: cachedError };
+  }
+  const config = resolveMailConfig();
+  if (config.transport !== 'smtp') {
+    cachedError = 'smtp_disabled';
+    return { transporter: null, from: null, error: cachedError };
+  }
+  if (!config.host || !config.port || !Number.isFinite(config.port)) {
+    cachedError = 'smtp_config_missing';
+    return { transporter: null, from: null, error: cachedError };
+  }
+  cachedFrom = config.from;
+  cachedTransporter = nodemailer.createTransport({
+    host: config.host,
+    port: config.port,
+    secure: config.secure ?? false,
+    auth: config.user ? { user: config.user, pass: config.pass || '' } : undefined,
+  });
+  return { transporter: cachedTransporter, from: cachedFrom, error: null };
+}
 
 // stub implementations
 export async function sendEmailStub(
@@ -19,6 +81,47 @@ export async function sendEmailStub(
     target: to.join(','),
     messageId: `stub-${Date.now()}`,
   };
+}
+
+export async function sendEmail(
+  to: string[],
+  subject: string,
+  body: string,
+): Promise<NotifyResult> {
+  const config = resolveMailConfig();
+  if (config.transport !== 'smtp') {
+    return sendEmailStub(to, subject, body);
+  }
+  const { transporter, from, error } = getSmtpTransport();
+  if (!transporter || !from) {
+    return {
+      status: 'failed',
+      channel: 'email',
+      target: to.join(','),
+      error: error || 'smtp_unavailable',
+    };
+  }
+  try {
+    const info = await transporter.sendMail({
+      from,
+      to: to.join(','),
+      subject,
+      text: body,
+    });
+    return {
+      status: 'success',
+      channel: 'email',
+      target: to.join(','),
+      messageId: info.messageId,
+    };
+  } catch (err) {
+    return {
+      status: 'failed',
+      channel: 'email',
+      target: to.join(','),
+      error: err instanceof Error ? err.message : 'send_failed',
+    };
+  }
 }
 
 function redactUrl(raw: string): string {
@@ -71,9 +174,9 @@ export function buildStubResults(channels: string[]): NotifyResult[] {
 }
 
 export async function sendInvoiceEmail(to: string[], invoiceNo: string) {
-  return sendEmailStub(to, `Invoice ${invoiceNo}`, 'Invoice email stub');
+  return sendEmail(to, `Invoice ${invoiceNo}`, 'Invoice email');
 }
 
 export async function sendPurchaseOrderEmail(to: string[], poNo: string) {
-  return sendEmailStub(to, `PO ${poNo}`, 'Purchase order email stub');
+  return sendEmail(to, `PO ${poNo}`, 'Purchase order email');
 }

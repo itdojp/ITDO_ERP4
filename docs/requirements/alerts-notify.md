@@ -1,11 +1,11 @@
 # アラート通知方針（PoC stub → 後続実装）
 
 ## 現状
-- channels: email, dashboard, slack, webhook を stub で記録（sendEmailStub, buildStubResults, sendSlackWebhookStub, sendWebhookStub）
-- alerts.sentChannels/sentResult に stub を保存
+- channels: email は SMTP 設定があれば実送信、それ以外は stub（sendEmail / buildStubResults / sendSlackWebhookStub / sendWebhookStub）
+- alerts.sentChannels/sentResult に送信結果を保存
 
 ## 次ステップ
-- メール実装: 実SMTP/SendGrid等に切り替え、結果を sentResult に反映
+- メール実装: SendGrid等の外部サービス連携（必要なら）
 - ダッシュボード: フロントで alerts をフェッチして表示（既存ダッシュボードを接続）
 - 外部通知: Slack/Webhook の実送信対応（現在は stub）
 

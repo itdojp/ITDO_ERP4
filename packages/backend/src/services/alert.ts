@@ -1,6 +1,6 @@
 import {
   buildStubResults,
-  sendEmailStub,
+  sendEmail,
   sendSlackWebhookStub,
   sendWebhookStub,
 } from './notifier.js';
@@ -92,7 +92,7 @@ async function sendAlertNotification(
   const sentResult: SendResultItem[] = [];
   const payload = { settingId: setting.id, metric, threshold };
   if (channels.includes('email')) {
-    const emailResult = await sendEmailStub(
+    const emailResult = await sendEmail(
       resolveEmails(recipients),
       `${subjectPrefix} ${setting.id}`,
       `metric ${metric} > ${threshold}`,

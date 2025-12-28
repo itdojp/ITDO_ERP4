@@ -28,5 +28,12 @@ npm run dev
 ## Notes
 - Numbering: PYYYY-MM-NNNN per kind via number_sequences
 - Auth/RBAC: header mock only; extend as needed
-- Notifications/PDF: stub logging
+- Notifications/PDF: stub logging (MAIL_TRANSPORT=smtp でメール送信を有効化)
 - Validation: TypeBox for some routes; expand as needed
+
+## Email (SMTP)
+- env:
+  - MAIL_TRANSPORT=smtp
+  - MAIL_FROM=from@example.com
+  - SMTP_HOST / SMTP_PORT / SMTP_SECURE
+  - SMTP_USER / SMTP_PASS (optional)
