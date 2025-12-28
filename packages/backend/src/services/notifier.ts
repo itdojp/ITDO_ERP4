@@ -3,6 +3,7 @@ export type NotifyResult = {
   status: string;
   error?: string;
   target?: string;
+  messageId?: string;
 };
 
 // stub implementations
@@ -12,7 +13,12 @@ export async function sendEmailStub(
   body: string,
 ): Promise<NotifyResult> {
   console.log('[email stub]', { to, subject, body });
-  return { status: 'stub', channel: 'email' };
+  return {
+    status: 'stub',
+    channel: 'email',
+    target: to.join(','),
+    messageId: `stub-${Date.now()}`,
+  };
 }
 
 function redactUrl(raw: string): string {

@@ -1,4 +1,13 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
+import { api } from '../api';
+
+type SendLog = {
+  id: string;
+  channel: string;
+  status: string;
+  createdAt: string;
+  error?: string | null;
+};
 
 type InvoiceDetailProps = {
   id: string;
@@ -12,6 +21,27 @@ type InvoiceDetailProps = {
 };
 
 export const InvoiceDetail: React.FC<InvoiceDetailProps> = ({ id, invoiceNo, projectId, status, totalAmount, lines = [], approval, onSend }) => {
+  const [sendLogs, setSendLogs] = useState<SendLog[]>([]);
+  const [sendLogError, setSendLogError] = useState('');
+  const [isLoadingLogs, setIsLoadingLogs] = useState(false);
+
+  const loadSendLogs = async () => {
+    try {
+      setIsLoadingLogs(true);
+      setSendLogError('');
+      const res = await api<{ items: SendLog[] }>(`/invoices/${id}/send-logs`);
+      setSendLogs(res.items || []);
+    } catch (e) {
+      setSendLogError('送信履歴の取得に失敗しました');
+    } finally {
+      setIsLoadingLogs(false);
+    }
+  };
+
+  useEffect(() => {
+    void loadSendLogs();
+  }, [id]);
+
   return (
     <div>
       <h3>請求詳細</h3>
@@ -47,6 +77,24 @@ export const InvoiceDetail: React.FC<InvoiceDetailProps> = ({ id, invoiceNo, pro
           承認 {approval.step}/{approval.total} : {approval.status}
         </div>
       )}
+      <div style={{ marginTop: 12 }}>
+        <div className="row" style={{ alignItems: 'center', gap: 8 }}>
+          <strong>送信履歴</strong>
+          <button className="button secondary" onClick={loadSendLogs} disabled={isLoadingLogs}>
+            {isLoadingLogs ? '更新中...' : '更新'}
+          </button>
+        </div>
+        {sendLogError && <div style={{ color: '#dc2626', marginTop: 4 }}>{sendLogError}</div>}
+        <ul className="list">
+          {sendLogs.map((log) => (
+            <li key={log.id}>
+              <span className="badge">{log.status}</span> {log.channel} / {new Date(log.createdAt).toLocaleString()}
+              {log.error && <div style={{ color: '#dc2626' }}>Error: {log.error}</div>}
+            </li>
+          ))}
+          {sendLogs.length === 0 && !sendLogError && <li>履歴なし</li>}
+        </ul>
+      </div>
       <button className="button" onClick={onSend}>送信 (Stub)</button>
     </div>
   );

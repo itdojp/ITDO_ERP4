@@ -12,6 +12,7 @@ import type { PdfTemplate } from '../services/pdfTemplates.js';
 import { DocStatusValue } from '../types.js';
 import { requireRole } from '../services/rbac.js';
 import { prisma } from '../services/db.js';
+import type { NotifyResult } from '../services/notifier.js';
 
 type TemplateResolveResult = {
   template: PdfTemplate | null;
@@ -48,6 +49,43 @@ function resolveTemplate(
   return { template };
 }
 
+async function recordSendLog(params: {
+  kind: PdfTemplate['kind'];
+  targetTable: string;
+  targetId: string;
+  recipients: string[];
+  templateId: string;
+  pdfUrl: string;
+  result: NotifyResult;
+  actorId?: string;
+}) {
+  const {
+    kind,
+    targetTable,
+    targetId,
+    recipients,
+    templateId,
+    pdfUrl,
+    result,
+    actorId,
+  } = params;
+  await prisma.documentSendLog.create({
+    data: {
+      kind,
+      targetTable,
+      targetId,
+      channel: result.channel,
+      status: result.status,
+      recipients,
+      templateId,
+      pdfUrl,
+      providerMessageId: result.messageId,
+      error: result.error,
+      createdBy: actorId,
+    },
+  });
+}
+
 export async function registerSendRoutes(app: FastifyInstance) {
   app.post(
     '/invoices/:id/send',
@@ -70,12 +108,47 @@ export async function registerSendRoutes(app: FastifyInstance) {
         id,
         invoiceNo: invoice.invoiceNo,
       });
+      const recipients = ['fin@example.com'];
+      const notifyResult = await sendInvoiceEmail(
+        recipients,
+        invoice.invoiceNo,
+      );
+      const nextStatus =
+        notifyResult.status === 'failed' || notifyResult.status === 'error'
+          ? invoice.status
+          : DocStatusValue.sent;
       const updated = await prisma.invoice.update({
         where: { id },
-        data: { status: DocStatusValue.sent, pdfUrl: pdf.url },
+        data: {
+          status: nextStatus,
+          pdfUrl: pdf.url,
+          emailMessageId: notifyResult.messageId,
+        },
       });
-      await sendInvoiceEmail(['fin@example.com'], invoice.invoiceNo);
+      await recordSendLog({
+        kind: 'invoice',
+        targetTable: 'invoices',
+        targetId: id,
+        recipients,
+        templateId: template.id,
+        pdfUrl: pdf.url,
+        result: notifyResult,
+        actorId: req.user?.userId,
+      });
       return updated;
+    },
+  );
+
+  app.get(
+    '/invoices/:id/send-logs',
+    { preHandler: requireRole(['admin', 'mgmt']) },
+    async (req) => {
+      const { id } = req.params as { id: string };
+      const items = await prisma.documentSendLog.findMany({
+        where: { targetTable: 'invoices', targetId: id },
+        orderBy: { createdAt: 'desc' },
+      });
+      return { items };
     },
   );
 
@@ -97,12 +170,40 @@ export async function registerSendRoutes(app: FastifyInstance) {
       }
       const template = resolved.template;
       const pdf = await generatePdfStub(template.id, { id, poNo: po.poNo });
+      const recipients = ['vendor@example.com'];
+      const notifyResult = await sendPurchaseOrderEmail(recipients, po.poNo);
+      const nextStatus =
+        notifyResult.status === 'failed' || notifyResult.status === 'error'
+          ? po.status
+          : DocStatusValue.sent;
       const updated = await prisma.purchaseOrder.update({
         where: { id },
-        data: { status: DocStatusValue.sent, pdfUrl: pdf.url },
+        data: { status: nextStatus, pdfUrl: pdf.url },
       });
-      await sendPurchaseOrderEmail(['vendor@example.com'], po.poNo);
+      await recordSendLog({
+        kind: 'purchase_order',
+        targetTable: 'purchase_orders',
+        targetId: id,
+        recipients,
+        templateId: template.id,
+        pdfUrl: pdf.url,
+        result: notifyResult,
+        actorId: req.user?.userId,
+      });
       return updated;
+    },
+  );
+
+  app.get(
+    '/purchase-orders/:id/send-logs',
+    { preHandler: requireRole(['admin', 'mgmt']) },
+    async (req) => {
+      const { id } = req.params as { id: string };
+      const items = await prisma.documentSendLog.findMany({
+        where: { targetTable: 'purchase_orders', targetId: id },
+        orderBy: { createdAt: 'desc' },
+      });
+      return { items };
     },
   );
 }
