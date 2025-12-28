@@ -142,6 +142,7 @@ model Project {
   recurringGenerationLogs RecurringGenerationLog[]
   tasks             ProjectTask[]
   milestones        ProjectMilestone[]
+  chatMessages      ProjectChatMessage[]
   estimates         Estimate[]
   invoices          Invoice[]
   timeEntries       TimeEntry[]
@@ -182,6 +183,24 @@ model ProjectTask {
   updatedBy    String?
   deletedAt    DateTime?
   deletedReason String?
+}
+
+model ProjectChatMessage {
+  id           String   @id @default(uuid())
+  project      Project  @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  projectId    String
+  userId       String
+  body         String
+  tags         Json?
+  reactions    Json?
+  createdAt    DateTime @default(now())
+  createdBy    String?
+  updatedAt    DateTime @updatedAt
+  updatedBy    String?
+  deletedAt    DateTime?
+  deletedReason String?
+
+  @@index([projectId, createdAt])
 }
 
 model ProjectMilestone {

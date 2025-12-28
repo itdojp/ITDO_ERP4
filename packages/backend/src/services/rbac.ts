@@ -10,6 +10,16 @@ export function requireRole(allowed: string[]) {
   };
 }
 
+export function hasProjectAccess(
+  roles: string[],
+  projectIds: string[],
+  projectId?: string,
+) {
+  if (roles.includes('admin') || roles.includes('mgmt')) return true;
+  if (!projectId) return false;
+  return projectIds.includes(projectId);
+}
+
 // admin/管理ロールを優先し、そうでなければ userId が一致するかで許可する簡易チェック
 export function requireRoleOrSelf(
   allowed: string[],
@@ -35,7 +45,7 @@ export function requireProjectAccess(
     if (roles.includes('admin') || roles.includes('mgmt')) return;
     const userProjects = req.user?.projectIds || [];
     const targetProject = getProjectId(req);
-    if (targetProject && !userProjects.includes(targetProject)) {
+    if (targetProject && !hasProjectAccess(roles, userProjects, targetProject)) {
       return reply.code(403).send({ error: 'forbidden_project' });
     }
   };

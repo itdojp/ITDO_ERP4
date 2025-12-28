@@ -165,6 +165,22 @@ model ProjectTask {
   deletedReason String?
 }
 
+model ProjectChatMessage {
+  id        String  @id @default(uuid())
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  projectId String
+  userId    String
+  body      String
+  tags      Json?
+  reactions Json?
+  createdAt DateTime @default(now())
+  createdBy String?
+  updatedAt DateTime @updatedAt
+  updatedBy String?
+  deletedAt DateTime?
+  deletedReason String?
+}
+
 model ProjectMilestone {
   id        String  @id @default(uuid())
   project   Project @relation(fields: [projectId], references: [id], onDelete: Restrict)

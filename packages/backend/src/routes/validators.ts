@@ -215,6 +215,19 @@ export const wellbeingSchema = {
   }),
 };
 
+export const projectChatMessageSchema = {
+  body: Type.Object({
+    body: Type.String({ minLength: 1, maxLength: 2000 }),
+    tags: Type.Optional(Type.Array(Type.String({ maxLength: 32 }), { maxItems: 8 })),
+  }),
+};
+
+export const projectChatReactionSchema = {
+  body: Type.Object({
+    emoji: Type.String({ minLength: 1, maxLength: 16 }),
+  }),
+};
+
 export const leaveRequestSchema = {
   body: Type.Object({
     userId: Type.String(),

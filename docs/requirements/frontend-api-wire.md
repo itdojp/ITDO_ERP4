@@ -50,6 +50,11 @@
 - POST `/vendor-invoices` { projectId, vendorId, vendor_invoice_no?, ... }
 - POST `/vendor-invoices/:id/approve`
 
+## project chat
+- GET `/projects/:projectId/chat-messages?limit=&before=`
+- POST `/projects/:projectId/chat-messages` { body, tags? }
+- POST `/chat-messages/:id/reactions` { emoji }
+
 ## expenses
 - GET `/expenses?projectId?&userId?`
 - POST `/expenses` { projectId, userId, category, amount, currency?, incurredOn, isShared?, receiptUrl? }

@@ -15,6 +15,7 @@
 - leave_requests: user（自分）, mgmt/admin（全体）
 - daily_reports: user（自分）
 - wellbeing_entries: user（自分の登録）, hr（閲覧: 原則個人閲覧、匿名集計は5人以上）
+- project_chat_messages: プロジェクトメンバー（user/mgmt/admin/hr）
 - alert-settings / approval-rules: admin, mgmt
 - approval-instances: admin/mgmt/exec + 申請者本人 + プロジェクトメンバー
 - alerts: admin, mgmt（全体）、user（自分関連のみを将来考慮）
