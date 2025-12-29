@@ -65,6 +65,7 @@ async function writePdfFile(
     stream.on('finish', resolve);
     stream.on('error', reject);
     doc.on('error', reject);
+    doc.pipe(stream);
 
     doc.fontSize(18).text('ERP4 Document', { align: 'left' });
     doc.moveDown(0.5);

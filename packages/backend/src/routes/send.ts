@@ -78,15 +78,15 @@ function shouldMarkSent(result: NotifyResult) {
 async function recordSendLog(
   db: DocumentSendLogClient,
   params: {
-  kind: PdfTemplate['kind'];
-  targetTable: string;
-  targetId: string;
-  recipients: string[];
-  templateId: string;
-  pdfUrl: string;
-  result: NotifyResult;
-  actorId?: string;
-},
+    kind: PdfTemplate['kind'];
+    targetTable: string;
+    targetId: string;
+    recipients: string[];
+    templateId: string;
+    pdfUrl?: string;
+    result: NotifyResult;
+    actorId?: string;
+  },
 ) {
   const {
     kind,
@@ -138,6 +138,24 @@ export async function registerSendRoutes(app: FastifyInstance) {
         invoiceNo: invoice.invoiceNo,
       }, invoice.invoiceNo);
       const recipients = ['fin@example.com'];
+      if (!pdf.filePath || !pdf.filename) {
+        const failureResult: NotifyResult = {
+          channel: 'email',
+          status: 'failed',
+          target: recipients.join(','),
+          error: 'pdf_generation_failed',
+        };
+        await recordSendLog(prisma, {
+          kind: 'invoice',
+          targetTable: 'invoices',
+          targetId: id,
+          recipients,
+          templateId: template.id,
+          result: failureResult,
+          actorId: req.user?.userId,
+        });
+        return reply.status(500).send({ error: 'pdf_generation_failed' });
+      }
       const notifyResult = await sendInvoiceEmail(
         recipients,
         invoice.invoiceNo,
@@ -214,6 +232,24 @@ export async function registerSendRoutes(app: FastifyInstance) {
       const template = resolved.template;
       const pdf = await generatePdf(template.id, { id, poNo: po.poNo }, po.poNo);
       const recipients = ['vendor@example.com'];
+      if (!pdf.filePath || !pdf.filename) {
+        const failureResult: NotifyResult = {
+          channel: 'email',
+          status: 'failed',
+          target: recipients.join(','),
+          error: 'pdf_generation_failed',
+        };
+        await recordSendLog(prisma, {
+          kind: 'purchase_order',
+          targetTable: 'purchase_orders',
+          targetId: id,
+          recipients,
+          templateId: template.id,
+          result: failureResult,
+          actorId: req.user?.userId,
+        });
+        return reply.status(500).send({ error: 'pdf_generation_failed' });
+      }
       const notifyResult = await sendPurchaseOrderEmail(recipients, po.poNo, {
         filename: pdf.filename,
         path: pdf.filePath,

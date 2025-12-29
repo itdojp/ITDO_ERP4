@@ -21,12 +21,23 @@ export async function registerPdfFileRoutes(app: FastifyInstance) {
       } catch {
         return reply.status(404).send({ error: 'not_found' });
       }
+      const safeFilename = filename.replace(/["\\\r\n]/g, '_');
       reply.header(
         'Content-Disposition',
-        `inline; filename="${filename}"`,
+        `inline; filename="${safeFilename}"`,
       );
       reply.type('application/pdf');
-      return reply.send(createReadStream(filePath));
+      const stream = createReadStream(filePath);
+      stream.on('error', (err) => {
+        stream.destroy();
+        if (req.log && typeof req.log.error === 'function') {
+          req.log.error({ err, filePath }, 'Error while streaming PDF file');
+        }
+        if (!reply.raw.headersSent) {
+          reply.status(500).send({ error: 'internal_error' });
+        }
+      });
+      return reply.send(stream);
     },
   );
 }
