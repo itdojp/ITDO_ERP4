@@ -11,29 +11,29 @@ datasource db {
 }
 
 enum ProjectStatus {
-  draft      // 起案中
-  active     // 進行中
-  on_hold    // 保留
-  closed     // 完了
+  draft // 起案中
+  active // 進行中
+  on_hold // 保留
+  closed // 完了
 }
 
 enum DocStatus {
-  draft          // 下書き/未送信
-  pending_qa     // 管理部レビュー待ち
-  pending_exec   // 経営承認待ち
-  approved       // 承認済み
-  rejected       // 却下
-  sent           // 送付済み
-  paid           // 支払/入金済み
-  cancelled      // 取り消し
-  received       // 受領済み（仕入/業者系）
-  acknowledged   // 確認済み
+  draft // 下書き/未送信
+  pending_qa // 管理部レビュー待ち
+  pending_exec // 経営承認待ち
+  approved // 承認済み
+  rejected // 却下
+  sent // 送付済み
+  paid // 支払/入金済み
+  cancelled // 取り消し
+  received // 受領済み（仕入/業者系）
+  acknowledged // 確認済み
 }
 
 enum TimeStatus {
-  submitted   // 提出
-  approved    // 承認
-  rejected    // 差戻し
+  submitted // 提出
+  approved // 承認
+  rejected // 差戻し
 }
 
 enum LeaveStatus {
@@ -44,27 +44,27 @@ enum LeaveStatus {
 }
 
 enum FlowType {
-  estimate         // 見積
-  invoice          // 請求
-  expense          // 経費
-  leave            // 休暇
-  time             // 工数/残業
-  purchase_order   // 発注書
-  vendor_invoice   // 業者請求
-  vendor_quote     // 業者見積
+  estimate // 見積
+  invoice // 請求
+  expense // 経費
+  leave // 休暇
+  time // 工数/残業
+  purchase_order // 発注書
+  vendor_invoice // 業者請求
+  vendor_quote // 業者見積
 }
 
 enum AlertType {
-  budget_overrun   // 予算超過
-  overtime         // 残業超過
-  approval_delay   // 承認遅延
+  budget_overrun // 予算超過
+  overtime // 残業超過
+  approval_delay // 承認遅延
   approval_escalation // 承認期限エスカレーション
-  delivery_due     // 納期超過の未請求
+  delivery_due // 納期超過の未請求
 }
 
 enum TemplateKind {
-  estimate       // 見積
-  invoice        // 請求
+  estimate // 見積
+  invoice // 請求
   purchase_order // 発注書
 }
 
@@ -123,81 +123,88 @@ model Contact {
 }
 
 model Project {
-  id                String                    @id @default(uuid())
-  code              String                    @unique
-  name              String
-  status            ProjectStatus             @default(draft)
-  projectType       String?
-  parent            Project?                  @relation("ProjectToProject", fields: [parentId], references: [id], onDelete: Restrict)
-  parentId          String?
-  children          Project[]                 @relation("ProjectToProject")
-  customer          Customer?                 @relation(fields: [customerId], references: [id], onDelete: Restrict)
-  customerId        String?
-  ownerUserId       String?
-  orgUnitId         String?
-  startDate         DateTime?
-  endDate           DateTime?
-  currency          String?
-  recurringTemplate RecurringProjectTemplate?
+  id                      String                    @id @default(uuid())
+  code                    String                    @unique
+  name                    String
+  status                  ProjectStatus             @default(draft)
+  projectType             String?
+  parent                  Project?                  @relation("ProjectToProject", fields: [parentId], references: [id], onDelete: Restrict)
+  parentId                String?
+  children                Project[]                 @relation("ProjectToProject")
+  customer                Customer?                 @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  customerId              String?
+  ownerUserId             String?
+  orgUnitId               String?
+  startDate               DateTime?
+  endDate                 DateTime?
+  currency                String?
+  recurringTemplate       RecurringProjectTemplate?
   recurringGenerationLogs RecurringGenerationLog[]
-  tasks             ProjectTask[]
-  milestones        ProjectMilestone[]
-  chatMessages      ProjectChatMessage[]
-  estimates         Estimate[]
-  invoices          Invoice[]
-  timeEntries       TimeEntry[]
-  expenses          Expense[]
-  purchaseOrders    PurchaseOrder[]
-  vendorQuotes      VendorQuote[]
-  vendorInvoices    VendorInvoice[]
-  rateCards         RateCard[]
-  approvalInstances ApprovalInstance[]
-  createdAt         DateTime                  @default(now())
-  createdBy         String?
-  updatedAt         DateTime                  @updatedAt
-  updatedBy         String?
-  deletedAt         DateTime?
-  deletedReason     String?
+  tasks                   ProjectTask[]
+  milestones              ProjectMilestone[]
+  chatMessages            ProjectChatMessage[]
+  estimates               Estimate[]
+  invoices                Invoice[]
+  timeEntries             TimeEntry[]
+  expenses                Expense[]
+  purchaseOrders          PurchaseOrder[]
+  vendorQuotes            VendorQuote[]
+  vendorInvoices          VendorInvoice[]
+  rateCards               RateCard[]
+  approvalInstances       ApprovalInstance[]
+  createdAt               DateTime                  @default(now())
+  createdBy               String?
+  updatedAt               DateTime                  @updatedAt
+  updatedBy               String?
+  deletedAt               DateTime?
+  deletedReason           String?
+
+  @@index([status, deletedAt])
+  @@index([customerId, deletedAt])
+  @@index([ownerUserId, deletedAt])
 }
 
 model ProjectTask {
-  id           String        @id @default(uuid())
-  project      Project       @relation(fields: [projectId], references: [id], onDelete: Restrict)
-  projectId    String
-  parentTask   ProjectTask?  @relation("TaskToTask", fields: [parentTaskId], references: [id], onDelete: Restrict)
-  parentTaskId String?
-  children     ProjectTask[] @relation("TaskToTask")
-  name         String
-  wbsCode      String?
-  assigneeId   String?
-  status       String?
-  planStart    DateTime?
-  planEnd      DateTime?
-  actualStart  DateTime?
-  actualEnd    DateTime?
-  baselineId   String?
-  timeEntries  TimeEntry[]
-  createdAt    DateTime      @default(now())
-  createdBy    String?
-  updatedAt    DateTime      @updatedAt
-  updatedBy    String?
-  deletedAt    DateTime?
+  id            String        @id @default(uuid())
+  project       Project       @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  projectId     String
+  parentTask    ProjectTask?  @relation("TaskToTask", fields: [parentTaskId], references: [id], onDelete: Restrict)
+  parentTaskId  String?
+  children      ProjectTask[] @relation("TaskToTask")
+  name          String
+  wbsCode       String?
+  assigneeId    String?
+  status        String?
+  planStart     DateTime?
+  planEnd       DateTime?
+  actualStart   DateTime?
+  actualEnd     DateTime?
+  baselineId    String?
+  timeEntries   TimeEntry[]
+  createdAt     DateTime      @default(now())
+  createdBy     String?
+  updatedAt     DateTime      @updatedAt
+  updatedBy     String?
+  deletedAt     DateTime?
   deletedReason String?
+
+  @@index([projectId, deletedAt])
+  @@index([parentTaskId, deletedAt])
 }
 
 model ProjectChatMessage {
-  id           String   @id @default(uuid())
-  project      Project  @relation(fields: [projectId], references: [id], onDelete: Restrict)
-  projectId    String
-  userId       String
-  body         String
-  tags         Json?
-  reactions    Json?
-  createdAt    DateTime @default(now())
-  createdBy    String?
-  updatedAt    DateTime @updatedAt
-  updatedBy    String?
-  deletedAt    DateTime?
+  id            String    @id @default(uuid())
+  project       Project   @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  projectId     String
+  userId        String
+  body          String
+  tags          Json?
+  reactions     Json?
+  createdAt     DateTime  @default(now())
+  createdBy     String?
+  updatedAt     DateTime  @updatedAt
+  updatedBy     String?
+  deletedAt     DateTime?
   deletedReason String?
 
   @@index([projectId, createdAt])
@@ -220,37 +227,40 @@ model ProjectMilestone {
   updatedBy         String?
   deletedAt         DateTime?
   deletedReason     String?
+
+  @@index([projectId, deletedAt])
+  @@index([deletedAt, dueDate])
 }
 
 model RecurringProjectTemplate {
-  id            String    @id @default(uuid())
-  project       Project   @relation(fields: [projectId], references: [id], onDelete: Restrict)
-  projectId     String    @unique
-  logs          RecurringGenerationLog[]
-  frequency     String // monthly/quarterly/semiannual/annual
-  defaultAmount Decimal?
-  defaultCurrency String?
-  defaultTaxRate Decimal?
-  defaultTerms  String?
-  defaultMilestoneName String?
-  billUpon      String?
-  dueDateRule   Json?
-  shouldGenerateEstimate Boolean @default(true)
-  shouldGenerateInvoice  Boolean @default(true)
-  nextRunAt     DateTime?
-  timezone      String?
-  isActive      Boolean   @default(true)
-  createdAt     DateTime  @default(now())
-  createdBy     String?
-  updatedAt     DateTime  @updatedAt
-  updatedBy     String?
+  id                     String                   @id @default(uuid())
+  project                Project                  @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  projectId              String                   @unique
+  logs                   RecurringGenerationLog[]
+  frequency              String // monthly/quarterly/semiannual/annual
+  defaultAmount          Decimal?
+  defaultCurrency        String?
+  defaultTaxRate         Decimal?
+  defaultTerms           String?
+  defaultMilestoneName   String?
+  billUpon               String?
+  dueDateRule            Json?
+  shouldGenerateEstimate Boolean                  @default(true)
+  shouldGenerateInvoice  Boolean                  @default(true)
+  nextRunAt              DateTime?
+  timezone               String?
+  isActive               Boolean                  @default(true)
+  createdAt              DateTime                 @default(now())
+  createdBy              String?
+  updatedAt              DateTime                 @updatedAt
+  updatedBy              String?
 }
 
 model RecurringGenerationLog {
-  id          String   @id @default(uuid())
+  id          String                   @id @default(uuid())
   template    RecurringProjectTemplate @relation(fields: [templateId], references: [id], onDelete: Restrict)
   templateId  String
-  project     Project  @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  project     Project                  @relation(fields: [projectId], references: [id], onDelete: Restrict)
   projectId   String
   periodKey   String
   runAt       DateTime
@@ -259,7 +269,7 @@ model RecurringGenerationLog {
   estimateId  String?
   invoiceId   String?
   milestoneId String?
-  createdAt   DateTime @default(now())
+  createdAt   DateTime                 @default(now())
   createdBy   String?
 
   @@unique([templateId, periodKey])
@@ -285,6 +295,9 @@ model Estimate {
   updatedBy       String?
   deletedAt       DateTime?
   deletedReason   String?
+
+  @@index([projectId, status, deletedAt])
+  @@index([createdAt])
 }
 
 model EstimateLine {
@@ -303,9 +316,9 @@ model Invoice {
   project         Project           @relation(fields: [projectId], references: [id], onDelete: Restrict)
   projectId       String
   estimate        Estimate?         @relation(fields: [estimateId], references: [id], onDelete: SetNull)
-  estimateId      String?           // 見積なし請求を許容
+  estimateId      String? // 見積なし請求を許容
   milestone       ProjectMilestone? @relation(fields: [milestoneId], references: [id], onDelete: SetNull)
-  milestoneId     String?           // 任意。未紐付けは納品請求漏れチェック対象
+  milestoneId     String? // 任意。未紐付けは納品請求漏れチェック対象
   invoiceNo       String            @unique
   issueDate       DateTime?
   dueDate         DateTime?
@@ -322,6 +335,10 @@ model Invoice {
   updatedBy       String?
   deletedAt       DateTime?
   deletedReason   String?
+
+  @@index([projectId, status, deletedAt])
+  @@index([issueDate])
+  @@index([dueDate])
 }
 
 model BillingLine {
@@ -357,6 +374,11 @@ model PurchaseOrder {
   updatedBy       String?
   deletedAt       DateTime?
   deletedReason   String?
+
+  @@index([projectId, status, deletedAt])
+  @@index([vendorId, status, deletedAt])
+  @@index([issueDate])
+  @@index([dueDate])
 }
 
 model PurchaseOrderLine {
@@ -372,23 +394,27 @@ model PurchaseOrderLine {
 }
 
 model VendorQuote {
-  id          String    @id @default(uuid())
-  project     Project   @relation(fields: [projectId], references: [id], onDelete: Restrict)
-  projectId   String
-  vendor      Vendor    @relation(fields: [vendorId], references: [id], onDelete: Restrict)
-  vendorId    String
-  quoteNo     String?
-  issueDate   DateTime?
-  currency    String
-  totalAmount Decimal
-  status      DocStatus @default(received)
-  documentUrl String?
-  createdAt   DateTime  @default(now())
-  createdBy   String?
-  updatedAt   DateTime  @updatedAt
-  updatedBy   String?
-  deletedAt   DateTime?
+  id            String    @id @default(uuid())
+  project       Project   @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  projectId     String
+  vendor        Vendor    @relation(fields: [vendorId], references: [id], onDelete: Restrict)
+  vendorId      String
+  quoteNo       String?
+  issueDate     DateTime?
+  currency      String
+  totalAmount   Decimal
+  status        DocStatus @default(received)
+  documentUrl   String?
+  createdAt     DateTime  @default(now())
+  createdBy     String?
+  updatedAt     DateTime  @updatedAt
+  updatedBy     String?
+  deletedAt     DateTime?
   deletedReason String?
+
+  @@index([projectId, status, deletedAt])
+  @@index([vendorId, status, deletedAt])
+  @@index([issueDate])
 }
 
 model VendorInvoice {
@@ -411,31 +437,36 @@ model VendorInvoice {
   updatedBy       String?
   deletedAt       DateTime?
   deletedReason   String?
+
+  @@index([projectId, status, deletedAt])
+  @@index([vendorId, status, deletedAt])
+  @@index([receivedDate])
+  @@index([dueDate])
 }
 
 model TimeEntry {
-  id         String       @id @default(uuid())
-  project    Project      @relation(fields: [projectId], references: [id], onDelete: Restrict)
-  projectId  String
-  task       ProjectTask? @relation(fields: [taskId], references: [id], onDelete: SetNull)
-  taskId     String?
-  userId     String
-  workDate   DateTime
-  minutes    Int
-  workType   String?
-  location   String?
-  notes      String?
-  status     TimeStatus   @default(submitted)
-  approvedBy String?
-  approvedAt DateTime?
-  createdAt  DateTime     @default(now())
-  createdBy  String?
-  updatedAt  DateTime     @updatedAt
-  updatedBy  String?
-  deletedAt  DateTime?
+  id            String       @id @default(uuid())
+  project       Project      @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  projectId     String
+  task          ProjectTask? @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  taskId        String?
+  userId        String
+  workDate      DateTime
+  minutes       Int
+  workType      String?
+  location      String?
+  notes         String?
+  status        TimeStatus   @default(submitted)
+  approvedBy    String?
+  approvedAt    DateTime?
+  createdAt     DateTime     @default(now())
+  createdBy     String?
+  updatedAt     DateTime     @updatedAt
+  updatedBy     String?
+  deletedAt     DateTime?
   deletedReason String?
 
-  @@index([projectId, workDate])
+  @@index([projectId, workDate, deletedAt])
   @@index([userId, workDate])
   @@index([status])
 }
@@ -453,25 +484,25 @@ model RateCard {
 }
 
 model Expense {
-  id         String    @id @default(uuid())
-  project    Project   @relation(fields: [projectId], references: [id], onDelete: Restrict)
-  projectId  String
-  userId     String
-  category   String
-  amount     Decimal
-  currency   String
-  incurredOn DateTime
-  isShared   Boolean   @default(false)
-  status     DocStatus @default(draft)
-  receiptUrl String?
-  createdAt  DateTime  @default(now())
-  createdBy  String?
-  updatedAt  DateTime  @updatedAt
-  updatedBy  String?
-  deletedAt  DateTime?
+  id            String    @id @default(uuid())
+  project       Project   @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  projectId     String
+  userId        String
+  category      String
+  amount        Decimal
+  currency      String
+  incurredOn    DateTime
+  isShared      Boolean   @default(false)
+  status        DocStatus @default(draft)
+  receiptUrl    String?
+  createdAt     DateTime  @default(now())
+  createdBy     String?
+  updatedAt     DateTime  @updatedAt
+  updatedBy     String?
+  deletedAt     DateTime?
   deletedReason String?
 
-  @@index([projectId])
+  @@index([projectId, deletedAt])
   @@index([userId, incurredOn])
   @@index([status])
 }
@@ -497,13 +528,14 @@ model LeaveRequest {
 model ApprovalRule {
   id         String             @id @default(uuid())
   flowType   FlowType
-  conditions Json   // amountMin/amountMax/isRecurring/skipUnder/projectType/customerId/orgUnitId/flowFlags
-  steps      Json   // [{stepOrder, approverGroupId?, approverUserId?, parallelKey?}]
+  conditions Json // amountMin/amountMax/isRecurring/skipUnder/projectType/customerId/orgUnitId/flowFlags
+  steps      Json // [{stepOrder, approverGroupId?, approverUserId?, parallelKey?}]
   instances  ApprovalInstance[]
   createdAt  DateTime           @default(now())
   createdBy  String?
   updatedAt  DateTime           @updatedAt
   updatedBy  String?
+
   @@index([flowType])
 }
 
@@ -547,20 +579,20 @@ model ApprovalStep {
 }
 
 model AlertSetting {
-  id             String    @id @default(uuid())
-  type           AlertType
-  threshold      Decimal
-  period         String // day/week/month
-  scopeProjectId String?
-  recipients     Json // emails/roles/users
-  channels       Json // email/dashboard/ext_future
+  id               String    @id @default(uuid())
+  type             AlertType
+  threshold        Decimal
+  period           String // day/week/month
+  scopeProjectId   String?
+  recipients       Json // emails/roles/users
+  channels         Json // email/dashboard/ext_future
   remindAfterHours Int?
-  isEnabled      Boolean   @default(true)
-  alerts         Alert[]
-  createdAt      DateTime  @default(now())
-  createdBy      String?
-  updatedAt      DateTime  @updatedAt
-  updatedBy      String?
+  isEnabled        Boolean   @default(true)
+  alerts           Alert[]
+  createdAt        DateTime  @default(now())
+  createdBy        String?
+  updatedAt        DateTime  @updatedAt
+  updatedBy        String?
 }
 
 model Alert {
@@ -582,37 +614,37 @@ model Alert {
 }
 
 model DocTemplateSetting {
-  id           String       @id @default(uuid())
-  kind         TemplateKind
-  templateId   String
-  numberRule   String
-  layoutConfig Json?
-  logoUrl      String?
+  id            String       @id @default(uuid())
+  kind          TemplateKind
+  templateId    String
+  numberRule    String
+  layoutConfig  Json?
+  logoUrl       String?
   signatureText String?
-  isDefault    Boolean      @default(false)
-  createdAt    DateTime     @default(now())
-  createdBy    String?
-  updatedAt    DateTime     @updatedAt
-  updatedBy    String?
+  isDefault     Boolean      @default(false)
+  createdAt     DateTime     @default(now())
+  createdBy     String?
+  updatedAt     DateTime     @updatedAt
+  updatedBy     String?
 
   @@index([kind])
 }
 
 model DocumentSendLog {
-  id               String       @id @default(uuid())
-  kind             TemplateKind
-  targetTable      String
-  targetId         String
-  channel          String
-  status           String
-  recipients       Json?
-  templateId       String?
-  pdfUrl           String?
+  id                String       @id @default(uuid())
+  kind              TemplateKind
+  targetTable       String
+  targetId          String
+  channel           String
+  status            String
+  recipients        Json?
+  templateId        String?
+  pdfUrl            String?
   providerMessageId String?
-  error            String?
-  metadata         Json?
-  createdAt        DateTime     @default(now())
-  createdBy        String?
+  error             String?
+  metadata          Json?
+  createdAt         DateTime     @default(now())
+  createdBy         String?
 
   @@index([targetTable, targetId])
   @@index([createdAt])

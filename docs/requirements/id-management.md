@@ -38,6 +38,14 @@
 - 手動でユーザ/ロール/グループを設定
 - 将来のOIDC導入時に置換できる構造を維持
 
+## JWT/OIDC 対応（バックエンド実装）
+- AUTH_MODE=jwt/hybrid で Bearer トークンを検証する
+- JWT_JWKS_URL または JWT_PUBLIC_KEY を使用
+- claim マッピングは環境変数で指定:
+  - JWT_SUB_CLAIM (userId)
+  - JWT_ROLE_CLAIM / JWT_GROUP_CLAIM / JWT_PROJECT_CLAIM / JWT_ORG_CLAIM
+- roles が無い場合は AUTH_DEFAULT_ROLE を適用
+
 ## 次のTODO
 - 採用IdP/IDaaSの決定（Google/MS/Okta等）
 - SCIM導入の可否、同期頻度・責任分界の定義

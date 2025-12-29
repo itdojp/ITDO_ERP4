@@ -27,7 +27,7 @@ npm run dev
 
 ## Notes
 - Numbering: PYYYY-MM-NNNN per kind via number_sequences
-- Auth/RBAC: header mock by default; JWT mode available
+- Auth/RBAC: header mock by default; JWT (OIDC) mode available
 - Notifications: SMTP/SendGrid 設定があればメール送信、未設定なら stub
 - PDF: ローカル生成 + `/pdf-files/:filename` で取得
 - Validation: TypeBox for some routes; expand as needed
