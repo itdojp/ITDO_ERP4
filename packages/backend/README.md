@@ -39,3 +39,8 @@ npm run dev
   - SMTP_USER / SMTP_PASS (optional)
 - 備考: メール本文は現状プレースホルダ。実運用ではテンプレート化を前提にする。
 - セキュリティ: SMTP資格情報は secrets manager 等で管理し、リポジトリにコミットしないこと。
+
+### SMTP smoke test
+```
+npx ts-node --project packages/backend/tsconfig.json scripts/smoke-email.ts
+```
