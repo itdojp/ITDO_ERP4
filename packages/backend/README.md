@@ -42,5 +42,5 @@ npm run dev
 
 ### SMTP smoke test
 ```
-npx --prefix packages/backend ts-node --project packages/backend/tsconfig.json scripts/smoke-email.ts
+npx ts-node --project packages/backend/tsconfig.json scripts/smoke-email.ts
 ```
