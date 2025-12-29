@@ -7,7 +7,7 @@
 ## 想定データ量（目安）
 - time_entries: 月10万件〜
 - expenses: 月1万件〜
-- approvals/alerts: 日数百件
+- approval_instances/alerts: 日数百件
 - invoices/purchase_orders: 月数千件
 
 ## 主要クエリプロファイル
