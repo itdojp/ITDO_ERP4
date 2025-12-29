@@ -18,7 +18,11 @@ declare module 'fastify' {
 
 type AuthMode = 'header' | 'jwt' | 'hybrid';
 
-const AUTH_MODE = (process.env.AUTH_MODE || 'header').toLowerCase();
+const AUTH_MODE_RAW = (process.env.AUTH_MODE || 'header').toLowerCase();
+const RESOLVED_AUTH_MODE: AuthMode =
+  AUTH_MODE_RAW === 'jwt' || AUTH_MODE_RAW === 'hybrid'
+    ? AUTH_MODE_RAW
+    : 'header';
 const JWT_JWKS_URL = process.env.JWT_JWKS_URL;
 const JWT_PUBLIC_KEY = process.env.JWT_PUBLIC_KEY;
 const JWT_ISSUER = process.env.JWT_ISSUER;
@@ -38,9 +42,13 @@ let cachedJwks: ReturnType<typeof createRemoteJWKSet> | null = null;
 let cachedPublicKey: CryptoKey | null = null;
 let cachedPublicKeyPromise: Promise<CryptoKey> | null = null;
 
-function resolveAuthMode(): AuthMode {
-  if (AUTH_MODE === 'jwt' || AUTH_MODE === 'hybrid') return AUTH_MODE;
-  return 'header';
+let validatedJwksUrl: URL | null = null;
+if (typeof JWT_JWKS_URL === 'string' && JWT_JWKS_URL.trim() !== '') {
+  try {
+    validatedJwksUrl = new URL(JWT_JWKS_URL);
+  } catch (err) {
+    throw new Error(`Invalid JWT_JWKS_URL configuration: ${JWT_JWKS_URL}`);
+  }
 }
 
 function parseBearerToken(req: any): string | null {
@@ -100,9 +108,9 @@ function buildUserContext(payload: JWTPayload): UserContext | null {
 }
 
 async function resolveJwtKey(): Promise<CryptoKey | JWTVerifyGetKey | null> {
-  if (JWT_JWKS_URL) {
+  if (validatedJwksUrl) {
     if (!cachedJwks) {
-      cachedJwks = createRemoteJWKSet(new URL(JWT_JWKS_URL));
+      cachedJwks = createRemoteJWKSet(validatedJwksUrl);
     }
     return cachedJwks;
   }
@@ -160,9 +168,16 @@ function applyHeaderAuth(req: any) {
   req.user = { userId, roles, orgId, projectIds, groupIds };
 }
 
-async function authMock(fastify: any) {
+function respondUnauthorized(req: any, reply: any, reason?: string) {
+  if (req.log && typeof req.log.warn === 'function') {
+    req.log.warn({ reason }, 'Unauthorized request');
+  }
+  return reply.code(401).send({ error: 'unauthorized' });
+}
+
+async function authPlugin(fastify: any) {
   fastify.addHook('onRequest', async (req: any, reply: any) => {
-    const mode = resolveAuthMode();
+    const mode = RESOLVED_AUTH_MODE;
     if (mode === 'header') {
       applyHeaderAuth(req);
       return;
@@ -170,7 +185,7 @@ async function authMock(fastify: any) {
     const token = parseBearerToken(req);
     if (!token) {
       if (mode === 'jwt') {
-        return reply.code(401).send({ error: 'missing_token' });
+        return respondUnauthorized(req, reply, 'missing_token');
       }
       applyHeaderAuth(req);
       return;
@@ -179,9 +194,9 @@ async function authMock(fastify: any) {
       req.user = await authenticateJwt(token);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'invalid_token';
-      return reply.code(401).send({ error: message });
+      return respondUnauthorized(req, reply, message);
     }
   });
 }
 
-export default fp(authMock);
+export default fp(authPlugin);

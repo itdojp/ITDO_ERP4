@@ -43,12 +43,13 @@ npm run dev
 
 ## Auth (JWT/OIDC)
 - env:
-  - AUTH_MODE=header|jwt|hybrid
+  - AUTH_MODE=jwt|hybrid|header
   - JWT_JWKS_URL or JWT_PUBLIC_KEY
   - JWT_ISSUER / JWT_AUDIENCE / JWT_ALGS
   - JWT_*_CLAIM (roles/group_ids/project_ids/org_id)
   - AUTH_DEFAULT_ROLE (rolesが無い場合のデフォルト)
 - 補足: hybridはAuthorizationが無い場合にヘッダ認証へフォールバックする。
+- 注意: headerは開発用のモック。インターネット公開環境では使用しない。
 
 ## PDF (local)
 - env:
