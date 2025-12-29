@@ -21,6 +21,7 @@ import { registerReportRoutes } from './reports.js';
 import { registerPdfTemplateRoutes } from './pdfTemplates.js';
 import { registerTemplateSettingRoutes } from './templateSettings.js';
 import { registerChatRoutes } from './chat.js';
+import { registerPdfFileRoutes } from './pdfFiles.js';
 
 export async function registerRoutes(app: FastifyInstance) {
   await registerAuthRoutes(app);
@@ -28,6 +29,7 @@ export async function registerRoutes(app: FastifyInstance) {
   await registerApprovalRuleRoutes(app);
   await registerPdfTemplateRoutes(app);
   await registerTemplateSettingRoutes(app);
+  await registerPdfFileRoutes(app);
   await registerSendRoutes(app);
   await registerMetricJobRoutes(app);
   await registerRecurringJobRoutes(app);

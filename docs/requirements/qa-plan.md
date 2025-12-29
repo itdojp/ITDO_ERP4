@@ -62,7 +62,7 @@ UUID生成関数は環境に合わせて置き換え（`gen_random_uuid()`/`uuid
 - ダッシュボード: アラート一覧が表示される（データが無ければ「なし」表示）
 - 日報+WB: Good/Not Good入力＋タグ/短文（Not Good時）→ 送信 → 成功メッセージ
 - 工数: 追加→一覧に反映
-- 請求ドラフト: 一覧に番号/ステータスが出る（送信Stubボタン押下でUI反応すること）
+- 請求ドラフト: 一覧に番号/ステータスが出る（送信でステータス更新 + pdfUrl 反映）
 - ヘルプモーダル: 日報画面から開閉でき、相談先リストと緊急案内が表示される
 - シードデータ: scripts/seed-demo.sql をロード後、フロントに反映されることを確認（プロジェクト/請求/工数/経費のダミー）
 - 整合チェック: scripts/checks/poc-integrity.sql を実行し、件数/合計が期待値と一致することを確認
@@ -70,11 +70,12 @@ UUID生成関数は環境に合わせて置き換え（`gen_random_uuid()`/`uuid
 ## 管理系
 - アラート設定: GET/POST/PATCH /alert-settings でCRUD動作
 - 承認ルール: GET/POST/PATCH /approval-rules でCRUD動作
-- 送信Stub: /invoices/:id/send, /purchase-orders/:id/send で status=sent になる
+- 送信: /invoices/:id/send, /purchase-orders/:id/send で status=sent になる
 - テンプレ設定: /pdf-templates で一覧取得 → /template-settings でCRUD動作
+- PDF取得: /pdf-files/:filename が 200 で返る
 
 ## 既知リスク/欠落（PoC）
 - RBACは簡易、エラーハンドリング/バリデーションも基本のみ
-- PDF/メールはStub
+- PDFはローカル生成、メールはSMTP設定があれば実送信
 - データ永続先は環境構築次第
 - UIは最小限でモバイル検証未完

@@ -2,8 +2,8 @@ import { FastifyInstance } from 'fastify';
 import {
   sendInvoiceEmail,
   sendPurchaseOrderEmail,
-  generatePdfStub,
 } from '../services/notifier.js';
+import { generatePdf } from '../services/pdf.js';
 import {
   getDefaultTemplate,
   getPdfTemplate,
@@ -133,14 +133,19 @@ export async function registerSendRoutes(app: FastifyInstance) {
           .send({ error: resolved.error?.code || 'invalid_template' });
       }
       const template = resolved.template;
-      const pdf = await generatePdfStub(template.id, {
+      const pdf = await generatePdf(template.id, {
         id,
         invoiceNo: invoice.invoiceNo,
-      });
+      }, invoice.invoiceNo);
       const recipients = ['fin@example.com'];
       const notifyResult = await sendInvoiceEmail(
         recipients,
         invoice.invoiceNo,
+        {
+          filename: pdf.filename,
+          path: pdf.filePath,
+          url: pdf.url,
+        },
       );
       const nextStatus = shouldMarkSent(notifyResult)
         ? DocStatusValue.sent
@@ -207,9 +212,13 @@ export async function registerSendRoutes(app: FastifyInstance) {
           .send({ error: resolved.error?.code || 'invalid_template' });
       }
       const template = resolved.template;
-      const pdf = await generatePdfStub(template.id, { id, poNo: po.poNo });
+      const pdf = await generatePdf(template.id, { id, poNo: po.poNo }, po.poNo);
       const recipients = ['vendor@example.com'];
-      const notifyResult = await sendPurchaseOrderEmail(recipients, po.poNo);
+      const notifyResult = await sendPurchaseOrderEmail(recipients, po.poNo, {
+        filename: pdf.filename,
+        path: pdf.filePath,
+        url: pdf.url,
+      });
       const nextStatus = shouldMarkSent(notifyResult)
         ? DocStatusValue.sent
         : po.status;

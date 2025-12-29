@@ -8,7 +8,7 @@ import {
   reportProjectProfit,
   reportProjectEffort,
 } from '../services/reports.js';
-import { generatePdfStub } from '../services/notifier.js';
+import { generatePdf } from '../services/pdf.js';
 import { requireRole } from '../services/rbac.js';
 import { parseDateParam } from '../utils/date.js';
 
@@ -63,7 +63,7 @@ async function sendPdf(
   payload: Record<string, unknown>,
 ) {
   const templateId = buildTemplateId(reportName, layout);
-  const { url } = await generatePdfStub(templateId, payload);
+  const { url } = await generatePdf(templateId, payload, reportName);
   return reply.send({ format: 'pdf', templateId, url });
 }
 export async function registerReportRoutes(app: FastifyInstance) {
