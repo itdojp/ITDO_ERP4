@@ -80,6 +80,13 @@
 - 経費/休暇: (project_id) + (user_id, incurred_on/start_date)
 - アラート/承認: (status), (flow_type)
 
+## 性能/正規化メモ（たたき台）
+- 大量行のテーブルは期間パーティションを検討（time_entries, alerts, document_send_logs）
+- 集計系はマテビュー/集計テーブルを用意（工数/損益レポート）
+- 参照頻度が高いコードは別カラムで保持し、外部キーと併用
+- 論理削除は `(deleted_at)` 付きの複合インデックスで最適化
+- 監査ログは保管期間/アーカイブポリシーを別途定義
+
 ## 次ステップ
 - Prisma/schema.sql に具体カラム型・enum を起こす
 - 外部キー制約と on delete/ on update の方針を整理
