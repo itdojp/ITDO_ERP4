@@ -86,6 +86,7 @@
 - 参照頻度が高いコードは別カラムで保持し、外部キーと併用
 - 論理削除は `(deleted_at)` 付きの複合インデックスで最適化
 - 監査ログは保管期間/アーカイブポリシーを別途定義
+- 詳細: `docs/requirements/performance-tuning.md`
 
 ## 次ステップ
 - Prisma/schema.sql に具体カラム型・enum を起こす
