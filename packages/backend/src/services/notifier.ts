@@ -1,4 +1,5 @@
 import { createHash } from 'crypto';
+import { promises as fs } from 'fs';
 import nodemailer from 'nodemailer';
 import type { Transporter } from 'nodemailer';
 
@@ -21,13 +22,15 @@ type EmailOptions = {
 };
 
 type MailTransportConfig = {
-  transport: 'stub' | 'smtp';
+  transport: 'stub' | 'smtp' | 'sendgrid';
   from: string;
   host?: string;
   port?: number;
   secure?: boolean;
   user?: string;
   pass?: string;
+  sendgridApiKey?: string;
+  sendgridBaseUrl?: string;
 };
 
 let cachedTransporter: Transporter | null = null;
@@ -38,13 +41,24 @@ let cachedConfigKey: string | null = null;
 const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 function resolveMailConfig(): MailTransportConfig {
+  const transportRaw = (process.env.MAIL_TRANSPORT || 'stub').toLowerCase();
   const transport =
-    (process.env.MAIL_TRANSPORT || 'stub').toLowerCase() === 'smtp'
+    transportRaw === 'smtp'
       ? 'smtp'
-      : 'stub';
+      : transportRaw === 'sendgrid'
+        ? 'sendgrid'
+        : 'stub';
   const from = process.env.MAIL_FROM || 'noreply@example.com';
   if (transport === 'stub') {
     return { transport, from };
+  }
+  if (transport === 'sendgrid') {
+    return {
+      transport,
+      from,
+      sendgridApiKey: process.env.SENDGRID_API_KEY,
+      sendgridBaseUrl: process.env.SENDGRID_BASE_URL,
+    };
   }
   const portRaw = process.env.SMTP_PORT;
   const parsedPort = portRaw ? Number(portRaw) : undefined;
@@ -148,6 +162,111 @@ function logSmtpError(err: unknown) {
   });
 }
 
+function logSendGridError(err: unknown) {
+  console.error('[sendgrid send failed]', {
+    message: err instanceof Error ? err.message : 'send_failed',
+  });
+}
+
+async function buildSendGridAttachments(options?: EmailOptions) {
+  const attachments = options?.attachments;
+  if (!attachments || attachments.length === 0) return undefined;
+  const results = await Promise.all(
+    attachments.map(async (item) => {
+      const buffer = await fs.readFile(item.path);
+      return {
+        content: buffer.toString('base64'),
+        filename: item.filename,
+        type: item.contentType || 'application/octet-stream',
+        disposition: 'attachment',
+      };
+    }),
+  );
+  return results;
+}
+
+async function sendEmailSendGrid(
+  to: string[],
+  subject: string,
+  body: string,
+  options: EmailOptions | undefined,
+  config: MailTransportConfig,
+): Promise<NotifyResult> {
+  if (!config.sendgridApiKey) {
+    return {
+      status: 'failed',
+      channel: 'email',
+      target: to.join(','),
+      error: 'sendgrid_config_missing',
+    };
+  }
+  const baseUrl = config.sendgridBaseUrl || 'https://api.sendgrid.com/v3';
+  let attachments;
+  try {
+    attachments = await buildSendGridAttachments(options);
+  } catch (err) {
+    logSendGridError(err);
+    return {
+      status: 'failed',
+      channel: 'email',
+      target: to.join(','),
+      error: 'sendgrid_attachment_failed',
+    };
+  }
+  const payload = {
+    personalizations: [
+      {
+        to: to.map((email) => ({ email })),
+      },
+    ],
+    from: { email: config.from },
+    subject,
+    content: [{ type: 'text/plain', value: body }],
+    attachments,
+  };
+  try {
+    const res = await fetch(`${baseUrl.replace(/\/$/, '')}/mail/send`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${config.sendgridApiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      console.error('[sendgrid send failed]', {
+        status: res.status,
+        body: text.slice(0, 2000),
+      });
+      return {
+        status: 'failed',
+        channel: 'email',
+        target: to.join(','),
+        error: `sendgrid_${res.status}`,
+      };
+    }
+    const messageId =
+      res.headers.get('x-message-id') ||
+      res.headers.get('x-request-id') ||
+      undefined;
+    return {
+      status: 'success',
+      channel: 'email',
+      target: to.join(','),
+      messageId,
+    };
+  } catch (err) {
+    logSendGridError(err);
+    return {
+      status: 'failed',
+      channel: 'email',
+      target: to.join(','),
+      error: err instanceof Error ? err.message : 'send_failed',
+    };
+  }
+}
+
 function registerSmtpShutdownHandlers() {
   if (typeof process === 'undefined' || typeof process.on !== 'function')
     return;
@@ -207,6 +326,9 @@ export async function sendEmail(
     };
   }
   const config = resolveMailConfig();
+  if (config.transport === 'sendgrid') {
+    return sendEmailSendGrid(valid, subject, body, options, config);
+  }
   if (config.transport !== 'smtp') {
     return sendEmailStub(valid, subject, body, options);
   }

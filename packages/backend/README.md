@@ -27,8 +27,8 @@ npm run dev
 
 ## Notes
 - Numbering: PYYYY-MM-NNNN per kind via number_sequences
-- Auth/RBAC: header mock only; extend as needed
-- Notifications: SMTP 設定があればメール送信、未設定なら stub
+- Auth/RBAC: header mock by default; JWT mode available
+- Notifications: SMTP/SendGrid 設定があればメール送信、未設定なら stub
 - PDF: ローカル生成 + `/pdf-files/:filename` で取得
 - Validation: TypeBox for some routes; expand as needed
 
@@ -40,6 +40,24 @@ npm run dev
   - SMTP_USER / SMTP_PASS (optional)
 - 備考: メール本文は現状プレースホルダ。実運用ではテンプレート化を前提にする。
 - セキュリティ: SMTP資格情報は secrets manager 等で管理し、リポジトリにコミットしないこと。
+
+## Email (SendGrid)
+- env:
+  - MAIL_TRANSPORT=sendgrid
+  - MAIL_FROM=from@example.com
+  - SENDGRID_API_KEY
+  - SENDGRID_BASE_URL (optional)
+- 備考: 添付はbase64で送信するため、ファイルサイズに注意。
+
+## Auth (JWT/OIDC)
+- env:
+  - AUTH_MODE=jwt|hybrid|header
+  - JWT_JWKS_URL or JWT_PUBLIC_KEY
+  - JWT_ISSUER / JWT_AUDIENCE / JWT_ALGS
+  - JWT_*_CLAIM (roles/group_ids/project_ids/org_id)
+  - AUTH_DEFAULT_ROLE (rolesが無い場合のデフォルト)
+- 補足: hybridはAuthorizationが無い場合にヘッダ認証へフォールバックする。
+- 注意: headerは開発用のモック。インターネット公開環境では使用しない。
 
 ## PDF (local)
 - env:
