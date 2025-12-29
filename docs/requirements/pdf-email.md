@@ -29,7 +29,14 @@
 - `/webhooks/sendgrid/events` を追加。
 - `custom_args.sendLogId` があれば送信ログに紐付け。
 - `SENDGRID_EVENT_WEBHOOK_SECRET` を設定した場合は `x-erp4-webhook-key` の一致を要求。
+- サイズ/件数制限: `SENDGRID_EVENT_MAX_BYTES`, `SENDGRID_EVENT_MAX_BATCH`。
 
 ## リトライ
 - `POST /document-send-logs/:id/retry` で再送を行う。
 - 再送時は新しい `document_send_logs` を作成し、`metadata.retryOf` に元ログIDを保存。
+- 連続再送は `SEND_LOG_RETRY_COOLDOWN_MINUTES` で制限する。
+
+## PDF/アセットの安全対策
+- 画像URLは `PDF_ASSET_ALLOWED_HOSTS` の許可リストに限定可能。
+- `PDF_ASSET_MAX_BYTES` / `PDF_DATA_URL_MAX_BYTES` でサイズ制限。
+- `PDF_EXTERNAL_MAX_BYTES` / `PDF_EXTERNAL_TIMEOUT_MS` で外部PDFの制限。

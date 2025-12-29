@@ -49,6 +49,7 @@ npm run dev
   - SENDGRID_BASE_URL (optional)
 - event webhook:
   - SENDGRID_EVENT_WEBHOOK_SECRET (optional)
+  - SENDGRID_EVENT_MAX_BYTES / SENDGRID_EVENT_MAX_BATCH (optional)
   - POST `/webhooks/sendgrid/events` with header `x-erp4-webhook-key`
 - 備考: 添付はbase64で送信するため、ファイルサイズに注意。
 
@@ -67,10 +68,15 @@ npm run dev
   - PDF_PROVIDER=local
   - PDF_STORAGE_DIR=/tmp/erp4/pdfs
   - PDF_BASE_URL=http://localhost:3001/pdf-files (未設定なら /pdf-files)
+- asset limits:
+  - PDF_ASSET_ALLOWED_HOSTS (optional)
+  - PDF_ASSET_MAX_BYTES / PDF_DATA_URL_MAX_BYTES
+  - PDF_ASSET_TIMEOUT_MS
 - env (external):
   - PDF_PROVIDER=external
   - PDF_EXTERNAL_URL
   - PDF_EXTERNAL_API_KEY (optional)
+  - PDF_EXTERNAL_MAX_BYTES / PDF_EXTERNAL_TIMEOUT_MS
 - 備考: external は PDF バイナリを返すエンドポイントを想定。
 
 ### SMTP smoke test

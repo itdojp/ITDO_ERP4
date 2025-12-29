@@ -44,6 +44,25 @@ type SendLogClient = {
 };
 
 const SUCCESS_NOTIFY_STATUSES = new Set(['stub', 'success']);
+const RETRY_BLOCK_STATUSES = new Set([
+  'success',
+  'stub',
+  'sent',
+  'delivered',
+  'opened',
+  'clicked',
+  'processed',
+]);
+const DEFAULT_RETRY_COOLDOWN_MINUTES = 5;
+
+function resolveRetryCooldownMs() {
+  const raw = process.env.SEND_LOG_RETRY_COOLDOWN_MINUTES;
+  const parsed = raw ? Number(raw) : NaN;
+  if (Number.isFinite(parsed) && parsed >= 0) {
+    return Math.floor(parsed) * 60 * 1000;
+  }
+  return DEFAULT_RETRY_COOLDOWN_MINUTES * 60 * 1000;
+}
 
 async function resolveTemplateContext(
   kind: PdfTemplate['kind'],
@@ -493,6 +512,20 @@ export async function registerSendRoutes(app: FastifyInstance) {
       });
       if (!sendLog) {
         return reply.code(404).send({ error: 'not_found' });
+      }
+      if (RETRY_BLOCK_STATUSES.has(sendLog.status)) {
+        return reply.code(400).send({ error: 'already_sent' });
+      }
+      const cooldownMs = resolveRetryCooldownMs();
+      if (cooldownMs > 0) {
+        const lastEvent = await prisma.documentSendEvent.findFirst({
+          where: { sendLogId: id },
+          orderBy: { createdAt: 'desc' },
+        });
+        const lastActivity = lastEvent?.createdAt || sendLog.updatedAt;
+        if (Date.now() - lastActivity.getTime() < cooldownMs) {
+          return reply.code(429).send({ error: 'retry_too_soon' });
+        }
       }
       const templateSettingId = extractTemplateSettingId(sendLog.metadata);
       const targetTable = sendLog.targetTable;

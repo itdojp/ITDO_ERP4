@@ -1,4 +1,5 @@
 import { FastifyInstance } from 'fastify';
+import type { DocumentSendLog, Prisma } from '@prisma/client';
 import { prisma } from '../services/db.js';
 
 type SendGridEvent = {
@@ -10,6 +11,31 @@ type SendGridEvent = {
 
 const FAILURE_EVENTS = new Set(['bounce', 'dropped', 'spamreport']);
 const FAILURE_STATUSES = new Set(['bounced', 'dropped', 'spamreport']);
+const STATUS_RANK: Record<string, number> = {
+  requested: 0,
+  processed: 10,
+  deferred: 20,
+  delivered: 30,
+  opened: 40,
+  clicked: 50,
+  spamreport: 70,
+  dropped: 80,
+  bounced: 90,
+};
+
+function resolveMaxBatchSize() {
+  const raw = process.env.SENDGRID_EVENT_MAX_BATCH;
+  const parsed = raw ? Number(raw) : NaN;
+  if (Number.isFinite(parsed) && parsed > 0) return Math.floor(parsed);
+  return 500;
+}
+
+function resolveMaxBodyBytes() {
+  const raw = process.env.SENDGRID_EVENT_MAX_BYTES;
+  const parsed = raw ? Number(raw) : NaN;
+  if (Number.isFinite(parsed) && parsed > 0) return Math.floor(parsed);
+  return 1024 * 1024;
+}
 
 function resolveSendLogId(event: SendGridEvent): string | null {
   const args = event.custom_args;
@@ -43,11 +69,9 @@ function normalizeSendLogStatus(eventType?: string) {
 }
 
 function shouldUpdateStatus(current: string, next: string) {
-  if (FAILURE_STATUSES.has(current)) {
-    return FAILURE_STATUSES.has(next);
-  }
-  if (FAILURE_STATUSES.has(next)) return true;
-  return current !== next;
+  const currentRank = STATUS_RANK[current] ?? 0;
+  const nextRank = STATUS_RANK[next] ?? 0;
+  return nextRank > currentRank;
 }
 
 function toEventDate(timestamp?: number) {
@@ -63,64 +87,165 @@ function passesWebhookKey(headers: Record<string, unknown>) {
   return typeof provided === 'string' && provided === expected;
 }
 
-export async function registerSendEventRoutes(app: FastifyInstance) {
-  app.post('/webhooks/sendgrid/events', async (req, reply) => {
-    if (!passesWebhookKey(req.headers as Record<string, unknown>)) {
-      return reply.code(401).send({ error: 'unauthorized' });
-    }
-    const payload = req.body as SendGridEvent[] | SendGridEvent | undefined;
-    const events = Array.isArray(payload)
-      ? payload
-      : payload
-        ? [payload]
-        : [];
-    if (!events.length) {
-      return reply.code(400).send({ error: 'empty_payload' });
-    }
+function resolveSendLog(
+  event: SendGridEvent,
+  logsById: Map<string, DocumentSendLog>,
+  logsBySgId: Map<string, DocumentSendLog>,
+) {
+  const sendLogId = resolveSendLogId(event);
+  if (sendLogId) {
+    const byId = logsById.get(sendLogId);
+    if (byId) return byId;
+  }
+  if (event.sg_message_id) {
+    return logsBySgId.get(event.sg_message_id) ?? null;
+  }
+  return null;
+}
 
-    let stored = 0;
-    for (const event of events) {
-      const sendLogId = resolveSendLogId(event);
-      let sendLog = sendLogId
-        ? await prisma.documentSendLog.findUnique({
-            where: { id: sendLogId },
-          })
-        : null;
-      if (!sendLog && event.sg_message_id) {
-        sendLog = await prisma.documentSendLog.findFirst({
-          where: { providerMessageId: { contains: event.sg_message_id } },
+function buildLogLookup(
+  sendLogs: DocumentSendLog[],
+  sgMessageIds: Set<string>,
+) {
+  const logsById = new Map<string, DocumentSendLog>();
+  const logsBySgId = new Map<string, DocumentSendLog>();
+  sendLogs.forEach((log) => {
+    logsById.set(log.id as string, log);
+  });
+  sgMessageIds.forEach((sgId) => {
+    const matched = sendLogs.find((log) =>
+      typeof log.providerMessageId === 'string'
+        ? log.providerMessageId.includes(sgId)
+        : false,
+    );
+    if (matched) {
+      logsBySgId.set(sgId, matched);
+    }
+  });
+  return { logsById, logsBySgId };
+}
+
+export async function registerSendEventRoutes(app: FastifyInstance) {
+  app.post(
+    '/webhooks/sendgrid/events',
+    { bodyLimit: resolveMaxBodyBytes() },
+    async (req, reply) => {
+      if (!passesWebhookKey(req.headers as Record<string, unknown>)) {
+        return reply.code(401).send({ error: 'unauthorized' });
+      }
+      const contentLength = req.headers['content-length'];
+      if (contentLength) {
+        const length = Number(contentLength);
+        if (Number.isFinite(length) && length > resolveMaxBodyBytes()) {
+          return reply.code(413).send({ error: 'payload_too_large' });
+        }
+      }
+      const payload = req.body as SendGridEvent[] | SendGridEvent | undefined;
+      const events = Array.isArray(payload)
+        ? payload
+        : payload
+          ? [payload]
+          : [];
+      if (!events.length) {
+        return reply.code(400).send({ error: 'empty_payload' });
+      }
+      const maxBatch = resolveMaxBatchSize();
+      if (events.length > maxBatch) {
+        return reply.code(413).send({ error: 'too_many_events' });
+      }
+
+      const sendLogIds = new Set<string>();
+      const sgMessageIds = new Set<string>();
+      events.forEach((event) => {
+        const sendLogId = resolveSendLogId(event);
+        if (sendLogId) {
+          sendLogIds.add(sendLogId);
+        }
+        if (event.sg_message_id) {
+          sgMessageIds.add(event.sg_message_id);
+        }
+      });
+
+      const orConditions: Prisma.DocumentSendLogWhereInput[] = [];
+      if (sendLogIds.size > 0) {
+        orConditions.push({ id: { in: Array.from(sendLogIds) } });
+      }
+      if (sgMessageIds.size > 0) {
+        sgMessageIds.forEach((sgId) => {
+          orConditions.push({ providerMessageId: { contains: sgId } });
         });
       }
-      if (!sendLog) {
-        continue;
-      }
 
-      const eventType = event.event || 'unknown';
-      await prisma.documentSendEvent.create({
-        data: {
-          sendLogId: sendLog.id,
-          provider: 'sendgrid',
-          eventType,
-          eventAt: toEventDate(event.timestamp),
-          payload: event,
-        },
-      });
-      stored += 1;
+      const sendLogs = orConditions.length
+        ? await prisma.documentSendLog.findMany({ where: { OR: orConditions } })
+        : [];
+      const { logsById, logsBySgId } = buildLogLookup(sendLogs, sgMessageIds);
 
-      const nextStatus = normalizeSendLogStatus(eventType);
-      if (nextStatus && shouldUpdateStatus(sendLog.status, nextStatus)) {
-        await prisma.documentSendLog.update({
-          where: { id: sendLog.id },
-          data: {
+      let stored = 0;
+      const txOps: Prisma.PrismaPromise<unknown>[] = [];
+      const pendingUpdates = new Map<
+        string,
+        { status: string; error?: string }
+      >();
+
+      for (const event of events) {
+        const sendLog = resolveSendLog(event, logsById, logsBySgId);
+        if (!sendLog) {
+          continue;
+        }
+        const eventType = event.event || 'unknown';
+        txOps.push(
+          prisma.documentSendEvent.create({
+            data: {
+              sendLogId: sendLog.id as string,
+              provider: 'sendgrid',
+              eventType,
+              eventAt: toEventDate(event.timestamp),
+              payload: event,
+            },
+          }),
+        );
+        stored += 1;
+
+        const nextStatus = normalizeSendLogStatus(eventType);
+        if (!nextStatus) continue;
+        const currentStatus =
+          pendingUpdates.get(sendLog.id as string)?.status ??
+          (sendLog.status as string);
+        if (shouldUpdateStatus(currentStatus, nextStatus)) {
+          pendingUpdates.set(sendLog.id as string, {
             status: nextStatus,
             error: FAILURE_EVENTS.has(eventType)
               ? `sendgrid_${eventType}`
-              : sendLog.error,
-          },
-        });
+              : undefined,
+          });
+        }
       }
-    }
 
-    return { received: events.length, stored };
-  });
+      for (const [sendLogId, update] of pendingUpdates.entries()) {
+        const original = logsById.get(sendLogId);
+        const originalStatus =
+          original && typeof original.status === 'string'
+            ? original.status
+            : undefined;
+        txOps.push(
+          prisma.documentSendLog.updateMany({
+            where: {
+              id: sendLogId,
+              ...(originalStatus ? { status: originalStatus } : {}),
+            },
+            data: {
+              status: update.status,
+              error: update.error ?? (original?.error as string | undefined),
+            },
+          }),
+        );
+      }
+
+      if (txOps.length) {
+        await prisma.$transaction(txOps);
+      }
+      return { received: events.length, stored };
+    },
+  );
 }

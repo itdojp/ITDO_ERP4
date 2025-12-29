@@ -2,6 +2,7 @@ import { createWriteStream } from 'fs';
 import { promises as fs } from 'fs';
 import path from 'path';
 import { randomUUID } from 'crypto';
+import net from 'net';
 import PDFDocument from 'pdfkit';
 
 type PdfPayload = Record<string, unknown>;
@@ -36,6 +37,50 @@ export type PdfResult = {
 };
 
 const SAFE_FILENAME_REGEX = /^[a-zA-Z0-9._-]+\.pdf$/;
+const DEFAULT_ASSET_MAX_BYTES = 2 * 1024 * 1024;
+const DEFAULT_EXTERNAL_PDF_MAX_BYTES = 10 * 1024 * 1024;
+const DEFAULT_ASSET_TIMEOUT_MS = 5000;
+const DEFAULT_EXTERNAL_TIMEOUT_MS = 10000;
+const ALLOWED_ASSET_MIME = new Set([
+  'image/png',
+  'image/jpeg',
+  'image/jpg',
+]);
+
+function parsePositiveInt(value: string | undefined, fallback: number) {
+  if (!value) return fallback;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+  return Math.floor(parsed);
+}
+
+const MAX_ASSET_BYTES = parsePositiveInt(
+  process.env.PDF_ASSET_MAX_BYTES,
+  DEFAULT_ASSET_MAX_BYTES,
+);
+const MAX_DATA_URL_BYTES = parsePositiveInt(
+  process.env.PDF_DATA_URL_MAX_BYTES,
+  MAX_ASSET_BYTES,
+);
+const MAX_DATA_URL_BASE64_LENGTH = Math.ceil((MAX_DATA_URL_BYTES * 4) / 3);
+const MAX_EXTERNAL_PDF_BYTES = parsePositiveInt(
+  process.env.PDF_EXTERNAL_MAX_BYTES,
+  DEFAULT_EXTERNAL_PDF_MAX_BYTES,
+);
+const ASSET_TIMEOUT_MS = parsePositiveInt(
+  process.env.PDF_ASSET_TIMEOUT_MS,
+  DEFAULT_ASSET_TIMEOUT_MS,
+);
+const EXTERNAL_TIMEOUT_MS = parsePositiveInt(
+  process.env.PDF_EXTERNAL_TIMEOUT_MS,
+  DEFAULT_EXTERNAL_TIMEOUT_MS,
+);
+const ALLOWED_ASSET_HOSTS = new Set(
+  (process.env.PDF_ASSET_ALLOWED_HOSTS || '')
+    .split(',')
+    .map((value) => value.trim().toLowerCase())
+    .filter(Boolean),
+);
 
 function resolvePdfStorageDir() {
   return process.env.PDF_STORAGE_DIR || '/tmp/erp4/pdfs';
@@ -111,10 +156,94 @@ function isHttpUrl(value: string) {
   }
 }
 
+function isPrivateHost(hostname: string) {
+  if (hostname === 'localhost' || hostname.endsWith('.local')) return true;
+  const ipVersion = net.isIP(hostname);
+  if (!ipVersion) return false;
+  if (ipVersion === 4) {
+    const parts = hostname.split('.').map((value) => Number(value));
+    if (parts.length !== 4 || parts.some((value) => Number.isNaN(value))) {
+      return true;
+    }
+    const [a, b] = parts;
+    if (a === 10 || a === 127) return true;
+    if (a === 169 && b === 254) return true;
+    if (a === 172 && b >= 16 && b <= 31) return true;
+    if (a === 192 && b === 168) return true;
+    return false;
+  }
+  const lowered = hostname.toLowerCase();
+  if (lowered === '::1') return true;
+  if (lowered.startsWith('fc') || lowered.startsWith('fd')) return true;
+  if (lowered.startsWith('fe80')) return true;
+  return false;
+}
+
+function isAllowedAssetHost(hostname: string) {
+  if (isPrivateHost(hostname)) return false;
+  if (ALLOWED_ASSET_HOSTS.size === 0) return true;
+  return ALLOWED_ASSET_HOSTS.has(hostname.toLowerCase());
+}
+
+function isAllowedAssetMime(value?: string | null) {
+  if (!value) return true;
+  const normalized = value.split(';')[0].trim().toLowerCase();
+  if (!normalized) return true;
+  return ALLOWED_ASSET_MIME.has(normalized);
+}
+
+async function readResponseWithLimit(
+  res: Response,
+  maxBytes: number,
+): Promise<Buffer> {
+  if (res.body && typeof res.body.getReader === 'function') {
+    const reader = res.body.getReader();
+    const chunks: Buffer[] = [];
+    let total = 0;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const chunk = Buffer.from(value);
+      total += chunk.length;
+      if (total > maxBytes) {
+        await reader.cancel();
+        throw new Error('asset_too_large');
+      }
+      chunks.push(chunk);
+    }
+    return Buffer.concat(chunks, total);
+  }
+  const arrayBuffer = await res.arrayBuffer();
+  if (arrayBuffer.byteLength > maxBytes) {
+    throw new Error('asset_too_large');
+  }
+  return Buffer.from(arrayBuffer);
+}
+
+async function fetchWithTimeout(
+  url: string,
+  timeoutMs: number,
+  init?: RequestInit,
+) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 function parseDataUrl(dataUrl: string) {
   const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
   if (!match) return null;
-  return { mime: match[1], data: Buffer.from(match[2], 'base64') };
+  const mime = match[1].toLowerCase();
+  const base64Data = match[2];
+  if (!isAllowedAssetMime(mime)) return null;
+  if (base64Data.length > MAX_DATA_URL_BASE64_LENGTH) return null;
+  const buffer = Buffer.from(base64Data, 'base64');
+  if (buffer.length > MAX_ASSET_BYTES) return null;
+  return { mime, data: buffer };
 }
 
 async function loadAssetBuffer(value?: string | null) {
@@ -125,15 +254,27 @@ async function loadAssetBuffer(value?: string | null) {
   }
   if (isHttpUrl(value)) {
     try {
-      const res = await fetch(value);
+      const parsedUrl = new URL(value);
+      if (!isAllowedAssetHost(parsedUrl.hostname)) return null;
+      const res = await fetchWithTimeout(value, ASSET_TIMEOUT_MS);
       if (!res.ok) return null;
-      const arrayBuffer = await res.arrayBuffer();
-      return Buffer.from(arrayBuffer);
+      const contentLength = res.headers.get('content-length');
+      if (contentLength) {
+        const length = Number(contentLength);
+        if (Number.isFinite(length) && length > MAX_ASSET_BYTES) {
+          return null;
+        }
+      }
+      const contentType = res.headers.get('content-type');
+      if (!isAllowedAssetMime(contentType)) return null;
+      return await readResponseWithLimit(res, MAX_ASSET_BYTES);
     } catch {
       return null;
     }
   }
   try {
+    const stat = await fs.stat(value);
+    if (stat.size > MAX_ASSET_BYTES) return null;
     return await fs.readFile(value);
   } catch {
     return null;
@@ -232,7 +373,7 @@ async function requestExternalPdf(
   if (!endpoint) {
     throw new Error('PDF_EXTERNAL_URL is required for external provider');
   }
-  const res = await fetch(endpoint, {
+  const res = await fetchWithTimeout(endpoint, EXTERNAL_TIMEOUT_MS, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -250,8 +391,15 @@ async function requestExternalPdf(
     const text = await res.text();
     throw new Error(`external_pdf_failed:${res.status}:${text.slice(0, 200)}`);
   }
-  const arrayBuffer = await res.arrayBuffer();
-  return Buffer.from(arrayBuffer);
+  const contentType = res.headers.get('content-type');
+  if (contentType && !contentType.toLowerCase().includes('application/pdf')) {
+    throw new Error('external_pdf_invalid_content_type');
+  }
+  const buffer = await readResponseWithLimit(res, MAX_EXTERNAL_PDF_BYTES);
+  if (!buffer.slice(0, 4).equals(Buffer.from('%PDF'))) {
+    throw new Error('external_pdf_invalid_signature');
+  }
+  return buffer;
 }
 
 export async function generatePdf(
