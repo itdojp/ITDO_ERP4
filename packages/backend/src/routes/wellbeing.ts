@@ -72,7 +72,10 @@ export async function registerWellbeingRoutes(app: FastifyInstance) {
       const minUsersValue = minUsers ? Number(minUsers) : 5;
       if (!Number.isInteger(minUsersValue) || minUsersValue <= 0) {
         return reply.status(400).send({
-          error: { code: 'INVALID_MIN_USERS', message: 'minUsers must be a positive integer' },
+          error: {
+            code: 'INVALID_MIN_USERS',
+            message: 'minUsers must be a positive integer',
+          },
         });
       }
       const groupByValue =
@@ -83,7 +86,10 @@ export async function registerWellbeingRoutes(app: FastifyInstance) {
             : null;
       if (!groupByValue) {
         return reply.status(400).send({
-          error: { code: 'INVALID_GROUP_BY', message: 'groupBy must be group or month' },
+          error: {
+            code: 'INVALID_GROUP_BY',
+            message: 'groupBy must be group or month',
+          },
         });
       }
       const where: {

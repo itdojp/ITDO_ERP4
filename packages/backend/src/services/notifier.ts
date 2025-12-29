@@ -10,6 +10,16 @@ export type NotifyResult = {
   messageId?: string;
 };
 
+type EmailAttachment = {
+  filename: string;
+  path: string;
+  contentType?: string;
+};
+
+type EmailOptions = {
+  attachments?: EmailAttachment[];
+};
+
 type MailTransportConfig = {
   transport: 'stub' | 'smtp';
   from: string;
@@ -104,7 +114,9 @@ function getSmtpTransport() {
     host: config.host,
     port: config.port,
     secure: config.secure ?? false,
-    auth: config.user ? { user: config.user, pass: config.pass || '' } : undefined,
+    auth: config.user
+      ? { user: config.user, pass: config.pass || '' }
+      : undefined,
   });
   cachedConfigKey = configKey;
   if (cachedTransporter && typeof cachedTransporter.verify === 'function') {
@@ -137,7 +149,8 @@ function logSmtpError(err: unknown) {
 }
 
 function registerSmtpShutdownHandlers() {
-  if (typeof process === 'undefined' || typeof process.on !== 'function') return;
+  if (typeof process === 'undefined' || typeof process.on !== 'function')
+    return;
   const shutdown = () => resetSmtpCache();
   const signals: NodeJS.Signals[] = ['SIGINT', 'SIGTERM', 'SIGQUIT'];
   signals.forEach((signal) => process.once(signal, shutdown));
@@ -151,6 +164,7 @@ export async function sendEmailStub(
   to: string[],
   subject: string,
   body: string,
+  options?: EmailOptions,
 ): Promise<NotifyResult> {
   const { valid, invalid } = normalizeRecipients(to);
   if (invalid.length) {
@@ -164,7 +178,8 @@ export async function sendEmailStub(
       error: 'invalid_recipient',
     };
   }
-  console.log('[email stub]', { to: valid, subject, body });
+  const attachmentNames = options?.attachments?.map((item) => item.filename);
+  console.log('[email stub]', { to: valid, subject, body, attachmentNames });
   return {
     status: 'stub',
     channel: 'email',
@@ -177,6 +192,7 @@ export async function sendEmail(
   to: string[],
   subject: string,
   body: string,
+  options?: EmailOptions,
 ): Promise<NotifyResult> {
   const { valid, invalid } = normalizeRecipients(to);
   if (invalid.length) {
@@ -192,7 +208,7 @@ export async function sendEmail(
   }
   const config = resolveMailConfig();
   if (config.transport !== 'smtp') {
-    return sendEmailStub(valid, subject, body);
+    return sendEmailStub(valid, subject, body, options);
   }
   const { transporter, from, error } = getSmtpTransport();
   if (!transporter || !from) {
@@ -204,11 +220,16 @@ export async function sendEmail(
     };
   }
   try {
+    const attachments =
+      options?.attachments && options.attachments.length
+        ? options.attachments
+        : undefined;
     const info = await transporter.sendMail({
       from,
       to: valid.join(','),
       subject,
       text: body,
+      attachments,
     });
     return {
       status: 'success',
@@ -256,30 +277,54 @@ export async function sendWebhookStub(
   return { status: 'stub', channel: 'webhook', target: safeUrl };
 }
 
-export async function recordPdfStub(
-  kind: string,
-  payload: Record<string, unknown>,
-): Promise<{ url: string }> {
-  console.log('[pdf stub]', { kind, payload });
-  return { url: `stub://${kind}/${payload['id'] || 'unknown'}` };
-}
-
-export async function generatePdfStub(
-  templateId: string,
-  payload: Record<string, unknown>,
-): Promise<{ url: string }> {
-  console.log('[pdf generate stub]', { templateId, payload });
-  return { url: `stub://pdf/${templateId}/${payload['id'] || 'unknown'}` };
-}
-
 export function buildStubResults(channels: string[]): NotifyResult[] {
   return channels.map((ch) => ({ channel: ch, status: 'stub' }));
 }
 
-export async function sendInvoiceEmail(to: string[], invoiceNo: string) {
-  return sendEmail(to, `Invoice ${invoiceNo}`, 'Invoice email (placeholder)');
+type PdfInfo = {
+  filename?: string;
+  path?: string;
+  url?: string;
+};
+
+export async function sendInvoiceEmail(
+  to: string[],
+  invoiceNo: string,
+  pdf?: PdfInfo,
+) {
+  const body = pdf?.url
+    ? `Invoice email (placeholder)\nPDF: ${pdf.url}`
+    : 'Invoice email (placeholder)';
+  const attachments =
+    pdf?.path && pdf.filename
+      ? [
+          {
+            filename: pdf.filename,
+            path: pdf.path,
+            contentType: 'application/pdf',
+          },
+        ]
+      : undefined;
+  return sendEmail(to, `Invoice ${invoiceNo}`, body, { attachments });
 }
 
-export async function sendPurchaseOrderEmail(to: string[], poNo: string) {
-  return sendEmail(to, `PO ${poNo}`, 'Purchase order email (placeholder)');
+export async function sendPurchaseOrderEmail(
+  to: string[],
+  poNo: string,
+  pdf?: PdfInfo,
+) {
+  const body = pdf?.url
+    ? `Purchase order email (placeholder)\nPDF: ${pdf.url}`
+    : 'Purchase order email (placeholder)';
+  const attachments =
+    pdf?.path && pdf.filename
+      ? [
+          {
+            filename: pdf.filename,
+            path: pdf.path,
+            contentType: 'application/pdf',
+          },
+        ]
+      : undefined;
+  return sendEmail(to, `PO ${poNo}`, body, { attachments });
 }

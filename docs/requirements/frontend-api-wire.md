@@ -17,7 +17,7 @@
 - GET `/reports/group-effort?userIds=a,b,c&from=YYYY-MM-DD&to=YYYY-MM-DD&format=csv|pdf?&layout=default?`
 - GET `/reports/overtime/:userId?from=YYYY-MM-DD&to=YYYY-MM-DD&format=csv|pdf?&layout=default?`
 - `format=csv` 指定時は `text/csv` を返す
-- `format=pdf` 指定時は `{ format, templateId, url }` を返す（stub）
+- `format=pdf` 指定時は `{ format, templateId, url }` を返す（`url=/pdf-files/:filename`）
 
 ## daily report / wellbeing
 - POST `/daily-reports` { content, reportDate, linkedProjectIds?, status }
@@ -39,14 +39,14 @@
 - GET `/projects/:projectId/invoices` (list)
 - POST `/projects/:projectId/invoices` { estimateId?, milestoneId?, lines, issueDate?, dueDate?, currency, totalAmount }
 - POST `/invoices/:id/submit`
-- POST `/invoices/:id/send` (stub)
+- POST `/invoices/:id/send`
 - GET  `/invoices/:id/send-logs`
 - GET  `/alerts` (承認遅延/予算超過の表示用)
 
 ## purchase orders / vendor docs
 - POST `/projects/:projectId/purchase-orders` { vendorId, lines, totals... }
 - POST `/purchase-orders/:id/submit`
-- POST `/purchase-orders/:id/send` (stub)
+- POST `/purchase-orders/:id/send`
 - GET  `/purchase-orders/:id/send-logs`
 - POST `/vendor-quotes` { projectId, vendorId, quote_no?, ... }
 - POST `/vendor-invoices` { projectId, vendorId, vendor_invoice_no?, ... }
@@ -72,6 +72,7 @@
 - GET/POST/PATCH `/approval-rules`
 - GET `/pdf-templates?kind=`
 - GET/POST/PATCH `/template-settings`
+- GET `/pdf-files/:filename`
 - POST `/approval-instances/:id/act` { action: approve|reject, reason? }
 - POST `/jobs/alerts/run` (手動トリガー)
 - POST `/jobs/approval-escalations/run` (承認期限エスカレーション)

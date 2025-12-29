@@ -28,7 +28,8 @@ npm run dev
 ## Notes
 - Numbering: PYYYY-MM-NNNN per kind via number_sequences
 - Auth/RBAC: header mock only; extend as needed
-- Notifications/PDF: stub logging (MAIL_TRANSPORT=smtp でメール送信を有効化)
+- Notifications: SMTP 設定があればメール送信、未設定なら stub
+- PDF: ローカル生成 + `/pdf-files/:filename` で取得
 - Validation: TypeBox for some routes; expand as needed
 
 ## Email (SMTP)
@@ -39,6 +40,12 @@ npm run dev
   - SMTP_USER / SMTP_PASS (optional)
 - 備考: メール本文は現状プレースホルダ。実運用ではテンプレート化を前提にする。
 - セキュリティ: SMTP資格情報は secrets manager 等で管理し、リポジトリにコミットしないこと。
+
+## PDF (local)
+- env:
+  - PDF_STORAGE_DIR=/tmp/erp4/pdfs
+  - PDF_BASE_URL=http://localhost:3001/pdf-files (未設定なら /pdf-files)
+- 備考: 生成PDFはローカル保存。将来は外部ストレージ/署名対応に置換予定。
 
 ### SMTP smoke test
 ```

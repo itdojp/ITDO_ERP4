@@ -177,12 +177,19 @@ export async function triggerAlert(
       return existing;
     }
     const reminderNotification = await sendAlertNotification(
-      { id: setting.id, recipients: setting.recipients, channels: setting.channels },
+      {
+        id: setting.id,
+        recipients: setting.recipients,
+        channels: setting.channels,
+      },
       metric,
       threshold,
       'Alert reminder',
     );
-    const merged = mergeSentResults(existing.sentResult, reminderNotification.sentResult);
+    const merged = mergeSentResults(
+      existing.sentResult,
+      reminderNotification.sentResult,
+    );
     return prisma.alert.update({
       where: { id: existing.id },
       data: {
@@ -194,7 +201,11 @@ export async function triggerAlert(
   }
 
   const initialNotification = await sendAlertNotification(
-    { id: setting.id, recipients: setting.recipients, channels: setting.channels },
+    {
+      id: setting.id,
+      recipients: setting.recipients,
+      channels: setting.channels,
+    },
     metric,
     threshold,
     'Alert',

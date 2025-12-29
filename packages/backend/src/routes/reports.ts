@@ -8,7 +8,7 @@ import {
   reportProjectProfit,
   reportProjectEffort,
 } from '../services/reports.js';
-import { generatePdfStub } from '../services/notifier.js';
+import { generatePdf } from '../services/pdf.js';
 import { requireRole } from '../services/rbac.js';
 import { parseDateParam } from '../utils/date.js';
 
@@ -50,8 +50,7 @@ function sendCsv(reply: any, filename: string, csv: string) {
 function buildTemplateId(reportName: string, layout?: string) {
   const trimmedLayout = layout?.trim();
   const isValidLayout =
-    typeof trimmedLayout === 'string' &&
-    /^[a-zA-Z0-9_-]+$/.test(trimmedLayout);
+    typeof trimmedLayout === 'string' && /^[a-zA-Z0-9_-]+$/.test(trimmedLayout);
   const suffix = isValidLayout ? trimmedLayout : 'default';
   return `report:${reportName}:${suffix}`;
 }
@@ -63,7 +62,7 @@ async function sendPdf(
   payload: Record<string, unknown>,
 ) {
   const templateId = buildTemplateId(reportName, layout);
-  const { url } = await generatePdfStub(templateId, payload);
+  const { url } = await generatePdf(templateId, payload, reportName);
   return reply.send({ format: 'pdf', templateId, url });
 }
 export async function registerReportRoutes(app: FastifyInstance) {
