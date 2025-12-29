@@ -158,6 +158,10 @@ model Project {
   updatedBy               String?
   deletedAt               DateTime?
   deletedReason           String?
+
+  @@index([status, deletedAt])
+  @@index([customerId, deletedAt])
+  @@index([ownerUserId, deletedAt])
 }
 
 model ProjectTask {
@@ -292,7 +296,7 @@ model Estimate {
   deletedAt       DateTime?
   deletedReason   String?
 
-  @@index([projectId, status])
+  @@index([projectId, status, deletedAt])
   @@index([createdAt])
 }
 
@@ -332,7 +336,7 @@ model Invoice {
   deletedAt       DateTime?
   deletedReason   String?
 
-  @@index([projectId, status])
+  @@index([projectId, status, deletedAt])
   @@index([issueDate])
   @@index([dueDate])
 }
@@ -371,8 +375,8 @@ model PurchaseOrder {
   deletedAt       DateTime?
   deletedReason   String?
 
-  @@index([projectId, status])
-  @@index([vendorId, status])
+  @@index([projectId, status, deletedAt])
+  @@index([vendorId, status, deletedAt])
   @@index([issueDate])
   @@index([dueDate])
 }
@@ -408,8 +412,8 @@ model VendorQuote {
   deletedAt     DateTime?
   deletedReason String?
 
-  @@index([projectId, status])
-  @@index([vendorId, status])
+  @@index([projectId, status, deletedAt])
+  @@index([vendorId, status, deletedAt])
   @@index([issueDate])
 }
 
@@ -434,8 +438,8 @@ model VendorInvoice {
   deletedAt       DateTime?
   deletedReason   String?
 
-  @@index([projectId, status])
-  @@index([vendorId, status])
+  @@index([projectId, status, deletedAt])
+  @@index([vendorId, status, deletedAt])
   @@index([receivedDate])
   @@index([dueDate])
 }
@@ -462,7 +466,7 @@ model TimeEntry {
   deletedAt     DateTime?
   deletedReason String?
 
-  @@index([projectId, workDate])
+  @@index([projectId, workDate, deletedAt])
   @@index([userId, workDate])
   @@index([status])
 }
@@ -498,7 +502,7 @@ model Expense {
   deletedAt     DateTime?
   deletedReason String?
 
-  @@index([projectId])
+  @@index([projectId, deletedAt])
   @@index([userId, incurredOn])
   @@index([status])
 }
