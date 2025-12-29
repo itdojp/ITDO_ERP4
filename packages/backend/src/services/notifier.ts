@@ -1,5 +1,5 @@
 import { createHash } from 'crypto';
-import { promises as fs } from 'fs';
+import * as fs from 'fs/promises';
 import nodemailer from 'nodemailer';
 import type { Transporter } from 'nodemailer';
 
@@ -53,6 +53,11 @@ function resolveMailConfig(): MailTransportConfig {
     return { transport, from };
   }
   if (transport === 'sendgrid') {
+    if (!process.env.SENDGRID_API_KEY) {
+      throw new Error(
+        "SENDGRID_API_KEY is required when MAIL_TRANSPORT is set to 'sendgrid'",
+      );
+    }
     return {
       transport,
       from,
@@ -222,7 +227,7 @@ async function sendEmailSendGrid(
     from: { email: config.from },
     subject,
     content: [{ type: 'text/plain', value: body }],
-    attachments,
+    ...(attachments ? { attachments } : {}),
   };
   try {
     const res = await fetch(`${baseUrl.replace(/\/$/, '')}/mail/send`, {
@@ -235,9 +240,11 @@ async function sendEmailSendGrid(
     });
     if (!res.ok) {
       const text = await res.text();
+      const body =
+        process.env.NODE_ENV === 'production' ? text.slice(0, 2000) : text;
       console.error('[sendgrid send failed]', {
         status: res.status,
-        body: text.slice(0, 2000),
+        body,
       });
       return {
         status: 'failed',
