@@ -44,7 +44,10 @@ export async function registerChatRoutes(app: FastifyInstance) {
       const take = parseLimit(limit);
       if (!take) {
         return reply.status(400).send({
-          error: { code: 'INVALID_LIMIT', message: 'limit must be a positive integer' },
+          error: {
+            code: 'INVALID_LIMIT',
+            message: 'limit must be a positive integer',
+          },
         });
       }
       const beforeDate = parseDateParam(before);
@@ -109,7 +112,9 @@ export async function registerChatRoutes(app: FastifyInstance) {
     async (req, reply) => {
       const { id } = req.params as { id: string };
       const body = req.body as { emoji: string };
-      const message = await prisma.projectChatMessage.findUnique({ where: { id } });
+      const message = await prisma.projectChatMessage.findUnique({
+        where: { id },
+      });
       if (!message || message.deletedAt) {
         return reply.status(404).send({
           error: { code: 'NOT_FOUND', message: 'Message not found' },

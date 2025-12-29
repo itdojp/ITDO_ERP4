@@ -22,10 +22,7 @@ export async function registerPdfFileRoutes(app: FastifyInstance) {
         return reply.status(404).send({ error: 'not_found' });
       }
       const safeFilename = filename.replace(/["\\\r\n]/g, '_');
-      reply.header(
-        'Content-Disposition',
-        `inline; filename="${safeFilename}"`,
-      );
+      reply.header('Content-Disposition', `inline; filename="${safeFilename}"`);
       reply.type('application/pdf');
       const stream = createReadStream(filePath);
       stream.on('error', (err) => {

@@ -1,4 +1,5 @@
 import { FastifyInstance } from 'fastify';
+import type { Prisma } from '@prisma/client';
 import {
   sendInvoiceEmail,
   sendPurchaseOrderEmail,
@@ -133,10 +134,14 @@ export async function registerSendRoutes(app: FastifyInstance) {
           .send({ error: resolved.error?.code || 'invalid_template' });
       }
       const template = resolved.template;
-      const pdf = await generatePdf(template.id, {
-        id,
-        invoiceNo: invoice.invoiceNo,
-      }, invoice.invoiceNo);
+      const pdf = await generatePdf(
+        template.id,
+        {
+          id,
+          invoiceNo: invoice.invoiceNo,
+        },
+        invoice.invoiceNo,
+      );
       const recipients = ['fin@example.com'];
       if (!pdf.filePath || !pdf.filename) {
         const failureResult: NotifyResult = {
@@ -168,27 +173,29 @@ export async function registerSendRoutes(app: FastifyInstance) {
       const nextStatus = shouldMarkSent(notifyResult)
         ? DocStatusValue.sent
         : invoice.status;
-      const updated = await prisma.$transaction(async (tx) => {
-        const updatedInvoice = await tx.invoice.update({
-          where: { id },
-          data: {
-            status: nextStatus,
+      const updated = await prisma.$transaction(
+        async (tx: Prisma.TransactionClient) => {
+          const updatedInvoice = await tx.invoice.update({
+            where: { id },
+            data: {
+              status: nextStatus,
+              pdfUrl: pdf.url,
+              emailMessageId: notifyResult.messageId,
+            },
+          });
+          await recordSendLog(tx, {
+            kind: 'invoice',
+            targetTable: 'invoices',
+            targetId: id,
+            recipients,
+            templateId: template.id,
             pdfUrl: pdf.url,
-            emailMessageId: notifyResult.messageId,
-          },
-        });
-        await recordSendLog(tx, {
-          kind: 'invoice',
-          targetTable: 'invoices',
-          targetId: id,
-          recipients,
-          templateId: template.id,
-          pdfUrl: pdf.url,
-          result: notifyResult,
-          actorId: req.user?.userId,
-        });
-        return updatedInvoice;
-      });
+            result: notifyResult,
+            actorId: req.user?.userId,
+          });
+          return updatedInvoice;
+        },
+      );
       return updated;
     },
   );
@@ -230,7 +237,11 @@ export async function registerSendRoutes(app: FastifyInstance) {
           .send({ error: resolved.error?.code || 'invalid_template' });
       }
       const template = resolved.template;
-      const pdf = await generatePdf(template.id, { id, poNo: po.poNo }, po.poNo);
+      const pdf = await generatePdf(
+        template.id,
+        { id, poNo: po.poNo },
+        po.poNo,
+      );
       const recipients = ['vendor@example.com'];
       if (!pdf.filePath || !pdf.filename) {
         const failureResult: NotifyResult = {
@@ -258,23 +269,25 @@ export async function registerSendRoutes(app: FastifyInstance) {
       const nextStatus = shouldMarkSent(notifyResult)
         ? DocStatusValue.sent
         : po.status;
-      const updated = await prisma.$transaction(async (tx) => {
-        const updatedPo = await tx.purchaseOrder.update({
-          where: { id },
-          data: { status: nextStatus, pdfUrl: pdf.url },
-        });
-        await recordSendLog(tx, {
-          kind: 'purchase_order',
-          targetTable: 'purchase_orders',
-          targetId: id,
-          recipients,
-          templateId: template.id,
-          pdfUrl: pdf.url,
-          result: notifyResult,
-          actorId: req.user?.userId,
-        });
-        return updatedPo;
-      });
+      const updated = await prisma.$transaction(
+        async (tx: Prisma.TransactionClient) => {
+          const updatedPo = await tx.purchaseOrder.update({
+            where: { id },
+            data: { status: nextStatus, pdfUrl: pdf.url },
+          });
+          await recordSendLog(tx, {
+            kind: 'purchase_order',
+            targetTable: 'purchase_orders',
+            targetId: id,
+            recipients,
+            templateId: template.id,
+            pdfUrl: pdf.url,
+            result: notifyResult,
+            actorId: req.user?.userId,
+          });
+          return updatedPo;
+        },
+      );
       return updated;
     },
   );

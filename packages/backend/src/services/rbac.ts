@@ -45,7 +45,10 @@ export function requireProjectAccess(
     if (roles.includes('admin') || roles.includes('mgmt')) return;
     const userProjects = req.user?.projectIds || [];
     const targetProject = getProjectId(req);
-    if (targetProject && !hasProjectAccess(roles, userProjects, targetProject)) {
+    if (
+      targetProject &&
+      !hasProjectAccess(roles, userProjects, targetProject)
+    ) {
       return reply.code(403).send({ error: 'forbidden_project' });
     }
   };

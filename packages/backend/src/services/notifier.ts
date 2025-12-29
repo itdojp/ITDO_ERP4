@@ -114,7 +114,9 @@ function getSmtpTransport() {
     host: config.host,
     port: config.port,
     secure: config.secure ?? false,
-    auth: config.user ? { user: config.user, pass: config.pass || '' } : undefined,
+    auth: config.user
+      ? { user: config.user, pass: config.pass || '' }
+      : undefined,
   });
   cachedConfigKey = configKey;
   if (cachedTransporter && typeof cachedTransporter.verify === 'function') {
@@ -147,7 +149,8 @@ function logSmtpError(err: unknown) {
 }
 
 function registerSmtpShutdownHandlers() {
-  if (typeof process === 'undefined' || typeof process.on !== 'function') return;
+  if (typeof process === 'undefined' || typeof process.on !== 'function')
+    return;
   const shutdown = () => resetSmtpCache();
   const signals: NodeJS.Signals[] = ['SIGINT', 'SIGTERM', 'SIGQUIT'];
   signals.forEach((signal) => process.once(signal, shutdown));
@@ -294,7 +297,13 @@ export async function sendInvoiceEmail(
     : 'Invoice email (placeholder)';
   const attachments =
     pdf?.path && pdf.filename
-      ? [{ filename: pdf.filename, path: pdf.path, contentType: 'application/pdf' }]
+      ? [
+          {
+            filename: pdf.filename,
+            path: pdf.path,
+            contentType: 'application/pdf',
+          },
+        ]
       : undefined;
   return sendEmail(to, `Invoice ${invoiceNo}`, body, { attachments });
 }
@@ -309,7 +318,13 @@ export async function sendPurchaseOrderEmail(
     : 'Purchase order email (placeholder)';
   const attachments =
     pdf?.path && pdf.filename
-      ? [{ filename: pdf.filename, path: pdf.path, contentType: 'application/pdf' }]
+      ? [
+          {
+            filename: pdf.filename,
+            path: pdf.path,
+            contentType: 'application/pdf',
+          },
+        ]
       : undefined;
   return sendEmail(to, `PO ${poNo}`, body, { attachments });
 }

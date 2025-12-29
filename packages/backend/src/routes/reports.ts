@@ -50,8 +50,7 @@ function sendCsv(reply: any, filename: string, csv: string) {
 function buildTemplateId(reportName: string, layout?: string) {
   const trimmedLayout = layout?.trim();
   const isValidLayout =
-    typeof trimmedLayout === 'string' &&
-    /^[a-zA-Z0-9_-]+$/.test(trimmedLayout);
+    typeof trimmedLayout === 'string' && /^[a-zA-Z0-9_-]+$/.test(trimmedLayout);
   const suffix = isValidLayout ? trimmedLayout : 'default';
   return `report:${reportName}:${suffix}`;
 }

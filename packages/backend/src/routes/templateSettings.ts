@@ -1,8 +1,12 @@
 import { FastifyInstance } from 'fastify';
+import type { Prisma } from '@prisma/client';
 import { prisma } from '../services/db.js';
 import { requireRole } from '../services/rbac.js';
 import { getPdfTemplate } from '../services/pdfTemplates.js';
-import { templateSettingPatchSchema, templateSettingSchema } from './validators.js';
+import {
+  templateSettingPatchSchema,
+  templateSettingSchema,
+} from './validators.js';
 
 type TemplateSettingBody = {
   kind: string;
@@ -15,7 +19,7 @@ type TemplateSettingBody = {
 };
 
 async function ensureDefault(
-  tx: any,
+  tx: Prisma.TransactionClient,
   kind: string,
   targetId: string,
 ) {
@@ -46,7 +50,10 @@ export async function registerTemplateSettingRoutes(app: FastifyInstance) {
 
   app.post(
     '/template-settings',
-    { preHandler: requireRole(['admin', 'mgmt']), schema: templateSettingSchema },
+    {
+      preHandler: requireRole(['admin', 'mgmt']),
+      schema: templateSettingSchema,
+    },
     async (req, reply) => {
       const body = req.body as TemplateSettingBody;
       if (!isValidTemplate(body.kind, body.templateId)) {
@@ -55,7 +62,7 @@ export async function registerTemplateSettingRoutes(app: FastifyInstance) {
         });
       }
       const userId = req.user?.userId;
-      return prisma.$transaction(async (tx) => {
+      return prisma.$transaction(async (tx: Prisma.TransactionClient) => {
         const created = await tx.docTemplateSetting.create({
           data: { ...body, createdBy: userId, updatedBy: userId },
         });
@@ -90,7 +97,7 @@ export async function registerTemplateSettingRoutes(app: FastifyInstance) {
         });
       }
       const userId = req.user?.userId;
-      return prisma.$transaction(async (tx) => {
+      return prisma.$transaction(async (tx: Prisma.TransactionClient) => {
         const updated = await tx.docTemplateSetting.update({
           where: { id },
           data: { ...body, updatedBy: userId },

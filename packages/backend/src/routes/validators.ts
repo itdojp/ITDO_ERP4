@@ -218,7 +218,9 @@ export const wellbeingSchema = {
 export const projectChatMessageSchema = {
   body: Type.Object({
     body: Type.String({ minLength: 1, maxLength: 2000 }),
-    tags: Type.Optional(Type.Array(Type.String({ maxLength: 32 }), { maxItems: 8 })),
+    tags: Type.Optional(
+      Type.Array(Type.String({ maxLength: 32 }), { maxItems: 8 }),
+    ),
   }),
 };
 
@@ -315,12 +317,8 @@ const alertRecipientsSchema = Type.Object(
     emails: Type.Optional(Type.Array(Type.String())),
     roles: Type.Optional(Type.Array(Type.String())),
     users: Type.Optional(Type.Array(Type.String())),
-    slackWebhooks: Type.Optional(
-      Type.Array(Type.String({ format: 'uri' })),
-    ),
-    webhooks: Type.Optional(
-      Type.Array(Type.String({ format: 'uri' })),
-    ),
+    slackWebhooks: Type.Optional(Type.Array(Type.String({ format: 'uri' }))),
+    webhooks: Type.Optional(Type.Array(Type.String({ format: 'uri' }))),
   },
   { additionalProperties: true },
 );
