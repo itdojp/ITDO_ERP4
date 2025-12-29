@@ -11,7 +11,7 @@
 
 ## 連携方式（想定）
 - 認証: OIDC（IdPに接続）
-- プロビジョニング: まずはCSV/手動同期、将来SCIM
+- プロビジョニング: まずはCSV/手動同期、将来SCIM (SCIM v2)
 - 中間: IDaaS を利用する場合は経由可能にする
 
 ## ユーザ情報の持ち方
@@ -32,6 +32,13 @@
 - 退職/無効化はIdP/IDaaSの状態を優先（ログイン不可）
 - 過去データは保持し、監査ログの整合性を優先
 - 代理/兼務などはERP側の属性で表現
+
+## SCIM 同期方針（概要）
+- 対象: Users / Groups / Group Membership
+- 方式: 基本は IDaaS → ERP への Push。ERP側の手動変更は監査ログに記録。
+- 競合: IdP/IDaaS を一次マスターとし、ERP側は補助属性のみ更新可。
+- 無効化/削除: SCIM `active=false` で論理無効化し、履歴は保持する。
+- 詳細は `docs/requirements/scim-sync.md` に整理。
 
 ## PoC段階
 - ヘッダ認証のモック（x-user-id/x-roles/x-group-ids）
