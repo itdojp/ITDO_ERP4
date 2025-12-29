@@ -47,6 +47,9 @@ npm run dev
   - MAIL_FROM=from@example.com
   - SENDGRID_API_KEY
   - SENDGRID_BASE_URL (optional)
+- event webhook:
+  - SENDGRID_EVENT_WEBHOOK_SECRET (optional)
+  - POST `/webhooks/sendgrid/events` with header `x-erp4-webhook-key`
 - 備考: 添付はbase64で送信するため、ファイルサイズに注意。
 
 ## Auth (JWT/OIDC)
@@ -59,11 +62,16 @@ npm run dev
 - 補足: hybridはAuthorizationが無い場合にヘッダ認証へフォールバックする。
 - 注意: headerは開発用のモック。インターネット公開環境では使用しない。
 
-## PDF (local)
-- env:
+## PDF
+- env (local):
+  - PDF_PROVIDER=local
   - PDF_STORAGE_DIR=/tmp/erp4/pdfs
   - PDF_BASE_URL=http://localhost:3001/pdf-files (未設定なら /pdf-files)
-- 備考: 生成PDFはローカル保存。将来は外部ストレージ/署名対応に置換予定。
+- env (external):
+  - PDF_PROVIDER=external
+  - PDF_EXTERNAL_URL
+  - PDF_EXTERNAL_API_KEY (optional)
+- 備考: external は PDF バイナリを返すエンドポイントを想定。
 
 ### SMTP smoke test
 ```

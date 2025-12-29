@@ -24,7 +24,8 @@
 - **approval_rules**: `id`, `flow_type`(estimate/invoice/expense/leave/time), `conditions`(min/max amount, recurring flag), `steps`(ordered approver groups/users, allow_skip) stored as JSON。
 - **alert_settings**: `id`, `type`(budget_overrun/overtime/approval_delay/approval_escalation/delivery_due), `threshold`, `period`, `recipients`(emails/roles/users/slackWebhooks/webhooks), `channels`(email,dashboard,slack,webhook), `remindAfterHours`。
 - **doc_template_settings**: `id`, `kind`(estimate/invoice/purchase_order), `templateId`, `numberRule`, `layoutConfig`, `logoUrl`, `signatureText`, `isDefault`。
-- **document_send_logs**: `id`, `kind`(estimate/invoice/purchase_order), `targetTable`, `targetId`, `channel`, `status`, `recipients`, `templateId`, `pdfUrl`, `providerMessageId`, `error`。
+- **document_send_logs**: `id`, `kind`(estimate/invoice/purchase_order), `targetTable`, `targetId`, `channel`, `status`, `recipients`, `templateId`, `pdfUrl`, `providerMessageId`, `error`, `metadata`。
+- **document_send_events**: `id`, `sendLogId`, `provider`, `eventType`, `eventAt`, `payload`。
 - **wellbeing_entries**: `id`, `user_id`, `entry_date`, `status`(good/not_good), `help_requested`, `notes?` (非必須), 閲覧は人事グループのみ。
 
 ## 関係メモ
@@ -52,11 +53,11 @@
   - `POST /projects/:id/estimates` {lines, total, valid_until}
   - `POST /estimates/:id/submit` → 承認フロー起動
   - `POST /projects/:id/invoices` {estimate_id?, milestone_id?, lines, issue_date, due_date}
-  - `POST /invoices/:id/submit` → 承認フロー / `POST /invoices/:id/send` → PDF+メール
+  - `POST /invoices/:id/submit` → 承認フロー / `POST /invoices/:id/send` → PDF+メール (`templateId?`, `templateSettingId?`)
   - `GET /invoices/:id/send-logs` → 送信履歴
 - Purchase Order
   - `POST /projects/:id/purchase-orders` {vendor_id, lines, issue_date, due_date}
-  - `POST /purchase-orders/:id/submit` → 承認フロー / `POST /purchase-orders/:id/send` → PDF+メール or 送付ログ
+  - `POST /purchase-orders/:id/submit` → 承認フロー / `POST /purchase-orders/:id/send` → PDF+メール or 送付ログ (`templateId?`, `templateSettingId?`)
   - `POST /purchase-orders/:id/acknowledge`（注文請書受領を記録）
   - `GET /purchase-orders/:id/send-logs` → 送信履歴
 - Vendor Docs
@@ -78,6 +79,11 @@
 - Alerts
   - `POST /alert-settings` {type, threshold, period, recipients, channels}
   - `GET /alerts`（発報履歴）
+- Document Send
+  - `GET /document-send-logs/:id`
+  - `GET /document-send-logs/:id/events`
+  - `POST /document-send-logs/:id/retry`
+  - `POST /webhooks/sendgrid/events`
 - Wellbeing
   - `POST /wellbeing-entries` {entry_date, status, help_requested, notes?}
   - `GET /wellbeing-entries` (人事のみ)

@@ -488,10 +488,27 @@ model DocumentSendLog {
   metadata         Json?
   createdAt        DateTime @default(now())
   createdBy        String?
+  updatedAt        DateTime @updatedAt
+  updatedBy        String?
 
   @@index([targetTable, targetId])
   @@index([createdAt])
   @@index([targetTable, targetId, createdAt])
+}
+
+model DocumentSendEvent {
+  id        String @id @default(uuid())
+  sendLog   DocumentSendLog @relation(fields: [sendLogId], references: [id], onDelete: Cascade)
+  sendLogId String
+  provider  String
+  eventType String
+  eventAt   DateTime?
+  payload   Json?
+  createdAt DateTime @default(now())
+
+  @@index([sendLogId])
+  @@index([provider, eventType])
+  @@index([createdAt])
 }
 
 // 日報/ウェルビーイング
