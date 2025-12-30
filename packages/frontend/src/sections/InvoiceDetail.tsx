@@ -20,7 +20,16 @@ type InvoiceDetailProps = {
   onSend?: () => void;
 };
 
-export const InvoiceDetail: React.FC<InvoiceDetailProps> = ({ id, invoiceNo, projectId, status, totalAmount, lines = [], approval, onSend }) => {
+export const InvoiceDetail: React.FC<InvoiceDetailProps> = ({
+  id,
+  invoiceNo,
+  projectId,
+  status,
+  totalAmount,
+  lines = [],
+  approval,
+  onSend,
+}) => {
   const [sendLogs, setSendLogs] = useState<SendLog[]>([]);
   const [sendLogError, setSendLogError] = useState('');
   const [isLoadingLogs, setIsLoadingLogs] = useState(false);
@@ -29,7 +38,9 @@ export const InvoiceDetail: React.FC<InvoiceDetailProps> = ({ id, invoiceNo, pro
     try {
       setIsLoadingLogs(true);
       setSendLogError('');
-      const sendLogsResponse = await api<{ items: SendLog[] }>(`/invoices/${id}/send-logs`);
+      const sendLogsResponse = await api<{ items: SendLog[] }>(
+        `/invoices/${id}/send-logs`,
+      );
       setSendLogs(sendLogsResponse.items || []);
     } catch (error) {
       console.error('送信履歴の取得に失敗しました', id, error);
@@ -81,22 +92,33 @@ export const InvoiceDetail: React.FC<InvoiceDetailProps> = ({ id, invoiceNo, pro
       <div style={{ marginTop: 12 }}>
         <div className="row" style={{ alignItems: 'center', gap: 8 }}>
           <strong>送信履歴</strong>
-          <button className="button secondary" onClick={loadSendLogs} disabled={isLoadingLogs}>
+          <button
+            className="button secondary"
+            onClick={loadSendLogs}
+            disabled={isLoadingLogs}
+          >
             {isLoadingLogs ? '更新中...' : '更新'}
           </button>
         </div>
-        {sendLogError && <div style={{ color: '#dc2626', marginTop: 4 }}>{sendLogError}</div>}
+        {sendLogError && (
+          <div style={{ color: '#dc2626', marginTop: 4 }}>{sendLogError}</div>
+        )}
         <ul className="list">
           {sendLogs.map((log) => (
             <li key={log.id}>
-              <span className="badge">{log.status}</span> {log.channel} / {new Date(log.createdAt).toLocaleString()}
-              {log.error && <div style={{ color: '#dc2626' }}>Error: {log.error}</div>}
+              <span className="badge">{log.status}</span> {log.channel} /{' '}
+              {new Date(log.createdAt).toLocaleString()}
+              {log.error && (
+                <div style={{ color: '#dc2626' }}>Error: {log.error}</div>
+              )}
             </li>
           ))}
           {sendLogs.length === 0 && !sendLogError && <li>履歴なし</li>}
         </ul>
       </div>
-      <button className="button" onClick={onSend}>送信 (Stub)</button>
+      <button className="button" onClick={onSend}>
+        送信 (Stub)
+      </button>
     </div>
   );
 };

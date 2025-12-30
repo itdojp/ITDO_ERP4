@@ -1,23 +1,11 @@
 import { prisma } from './db.js';
 import { triggerAlert } from './alert.js';
+import type { DocStatus } from '@prisma/client';
 
-const PENDING_STATUSES = ['pending_qa', 'pending_exec'];
-
-type EscalationSetting = {
-  id: string;
-  threshold: number | string;
-  scopeProjectId?: string | null;
-  recipients?: unknown;
-  channels?: unknown;
-  remindAfterHours?: number | null;
-};
-
-type PendingStep = {
-  instanceId: string;
-  stepOrder: number;
-  createdAt: Date;
-  instance: { currentStep: number | null };
-};
+const PENDING_STATUSES: DocStatus[] = [
+  'pending_qa',
+  'pending_exec',
+];
 
 function buildTargetRef(instanceId: string, stepOrder: number) {
   return `approval_instance:${instanceId}:step:${stepOrder}`;
@@ -32,11 +20,11 @@ export async function runApprovalEscalations() {
   const settings = await prisma.alertSetting.findMany({
     where: { isEnabled: true, type: 'approval_escalation' },
   });
-  for (const setting of settings as EscalationSetting[]) {
+  for (const setting of settings) {
     const threshold = Number(setting.threshold);
     if (!Number.isFinite(threshold)) continue;
 
-    const pendingSteps = (await prisma.approvalStep.findMany({
+    const pendingSteps = await prisma.approvalStep.findMany({
       where: {
         status: { in: PENDING_STATUSES },
         instance: {
@@ -52,7 +40,7 @@ export async function runApprovalEscalations() {
         createdAt: true,
         instance: { select: { currentStep: true } },
       },
-    })) as PendingStep[];
+    });
 
     const grouped = new Map<
       string,

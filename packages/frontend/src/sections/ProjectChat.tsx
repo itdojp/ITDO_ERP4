@@ -126,7 +126,11 @@ export const ProjectChat: React.FC = () => {
           onChange={(e) => setProjectId(e.target.value)}
           placeholder="projectId"
         />
-        <button className="button secondary" onClick={load} disabled={isLoading}>
+        <button
+          className="button secondary"
+          onClick={load}
+          disabled={isLoading}
+        >
           {isLoading ? '読み込み中...' : '読み込み'}
         </button>
       </div>
@@ -156,10 +160,9 @@ export const ProjectChat: React.FC = () => {
             item.reactions && typeof item.reactions === 'object'
               ? item.reactions
               : {};
-          const reactionEntries = Object.entries(reactions).map(([emoji, value]) => [
-            emoji,
-            getReactionCount(value),
-          ]);
+          const reactionEntries = Object.entries(reactions).map(
+            ([emoji, value]) => [emoji, getReactionCount(value)],
+          );
           return (
             <li key={item.id}>
               <div style={{ fontSize: 12, color: '#64748b' }}>
@@ -169,7 +172,9 @@ export const ProjectChat: React.FC = () => {
               {item.tags && item.tags.length > 0 && (
                 <div className="row" style={{ gap: 6, marginTop: 4 }}>
                   {item.tags.map((tag) => (
-                    <span key={tag} className="badge">#{tag}</span>
+                    <span key={tag} className="badge">
+                      #{tag}
+                    </span>
                   ))}
                 </div>
               )}

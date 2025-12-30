@@ -1,4 +1,5 @@
 import { FastifyInstance } from 'fastify';
+import type { Prisma } from '@prisma/client';
 import { requireRole } from '../services/rbac.js';
 import {
   projectSchema,
@@ -505,10 +506,12 @@ export async function registerProjectRoutes(app: FastifyInstance) {
       if (!project) {
         return reply.code(404).send({ error: 'not_found' });
       }
-      let dueDateRule: unknown | undefined | null = undefined;
+      let dueDateRule: Prisma.InputJsonValue | undefined | null = undefined;
       if (Object.prototype.hasOwnProperty.call(body, 'dueDateRule')) {
         try {
-          dueDateRule = parseDueDateRule(body.dueDateRule);
+          dueDateRule = parseDueDateRule(
+            body.dueDateRule,
+          ) as Prisma.InputJsonValue | null;
         } catch (err) {
           req.log.error({ err }, 'Failed to parse dueDateRule');
           return reply.code(400).send({

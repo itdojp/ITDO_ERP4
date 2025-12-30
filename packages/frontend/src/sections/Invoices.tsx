@@ -11,12 +11,17 @@ interface Invoice {
   lines?: { description: string; quantity: number; unitPrice: number }[];
 }
 
-const buildInitialForm = (projectId?: string) => ({ projectId: projectId || 'demo-project', totalAmount: 100000 });
+const buildInitialForm = (projectId?: string) => ({
+  projectId: projectId || 'demo-project',
+  totalAmount: 100000,
+});
 
 export const Invoices: React.FC = () => {
   const [items, setItems] = useState<Invoice[]>([]);
   const auth = getAuthState();
-  const [form, setForm] = useState(() => buildInitialForm(auth?.projectIds?.[0]));
+  const [form, setForm] = useState(() =>
+    buildInitialForm(auth?.projectIds?.[0]),
+  );
   const [selected, setSelected] = useState<Invoice | null>(null);
   const [message, setMessage] = useState('');
 
@@ -41,7 +46,9 @@ export const Invoices: React.FC = () => {
 
   const load = async () => {
     try {
-      const res = await api<{ items: Invoice[] }>(`/projects/${form.projectId}/invoices`);
+      const res = await api<{ items: Invoice[] }>(
+        `/projects/${form.projectId}/invoices`,
+      );
       setItems(res.items);
       setMessage('読み込みました');
     } catch (e) {
@@ -59,9 +66,12 @@ export const Invoices: React.FC = () => {
   };
 
   const buildApproval = (status: string) => {
-    if (status === 'pending_exec') return { step: 2, total: 2, status: 'pending_exec' };
-    if (status === 'pending_qa') return { step: 1, total: 2, status: 'pending_qa' };
-    if (status === 'approved' || status === 'sent' || status === 'paid') return { step: 2, total: 2, status: 'approved' };
+    if (status === 'pending_exec')
+      return { step: 2, total: 2, status: 'pending_exec' };
+    if (status === 'pending_qa')
+      return { step: 1, total: 2, status: 'pending_qa' };
+    if (status === 'approved' || status === 'sent' || status === 'paid')
+      return { step: 2, total: 2, status: 'approved' };
     return { step: 0, total: 2, status: 'draft' };
   };
 
@@ -78,20 +88,35 @@ export const Invoices: React.FC = () => {
         <input
           type="number"
           value={form.totalAmount}
-          onChange={(e) => setForm({ ...form, totalAmount: Number(e.target.value) })}
+          onChange={(e) =>
+            setForm({ ...form, totalAmount: Number(e.target.value) })
+          }
           placeholder="金額"
         />
-        <button className="button" onClick={create}>作成</button>
-        <button className="button secondary" onClick={load}>読み込み</button>
+        <button className="button" onClick={create}>
+          作成
+        </button>
+        <button className="button secondary" onClick={load}>
+          読み込み
+        </button>
       </div>
       {message && <p>{message}</p>}
       <ul className="list">
         {items.map((d) => (
           <li key={d.id}>
-            <span className="badge">{d.status}</span> {d.invoiceNo || '(draft)'} / {d.projectId} / ¥{(d.totalAmount || 0).toLocaleString()}
+            <span className="badge">{d.status}</span> {d.invoiceNo || '(draft)'}{' '}
+            / {d.projectId} / ¥{(d.totalAmount || 0).toLocaleString()}
             <div>
-              <button className="button secondary" style={{ marginRight: 8 }} onClick={() => setSelected(d)}>詳細</button>
-              <button className="button" onClick={() => send(d.id)}>送信 (Stub)</button>
+              <button
+                className="button secondary"
+                style={{ marginRight: 8 }}
+                onClick={() => setSelected(d)}
+              >
+                詳細
+              </button>
+              <button className="button" onClick={() => send(d.id)}>
+                送信 (Stub)
+              </button>
             </div>
           </li>
         ))}
@@ -99,8 +124,17 @@ export const Invoices: React.FC = () => {
       </ul>
       {selected && (
         <div className="card">
-          <InvoiceDetail {...selected} approval={buildApproval(selected.status)} onSend={() => send(selected.id)} />
-          <button className="button secondary" onClick={() => setSelected(null)}>閉じる</button>
+          <InvoiceDetail
+            {...selected}
+            approval={buildApproval(selected.status)}
+            onSend={() => send(selected.id)}
+          />
+          <button
+            className="button secondary"
+            onClick={() => setSelected(null)}
+          >
+            閉じる
+          </button>
         </div>
       )}
     </div>

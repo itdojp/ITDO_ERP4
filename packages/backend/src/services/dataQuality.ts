@@ -17,8 +17,8 @@ async function detectDuplicateCodes(model: 'project' | 'customer' | 'vendor') {
       where: { deletedAt: null },
       _count: { _all: true },
       having: {
-        _count: {
-          _all: { gt: 1 },
+        code: {
+          _count: { gt: 1 },
         },
       },
     })) as Array<{ code: string }>;
@@ -33,8 +33,8 @@ async function detectDuplicateCodes(model: 'project' | 'customer' | 'vendor') {
       by: ['code'],
       _count: { _all: true },
       having: {
-        _count: {
-          _all: { gt: 1 },
+        code: {
+          _count: { gt: 1 },
         },
       },
     })) as Array<{ code: string }>;
@@ -48,8 +48,8 @@ async function detectDuplicateCodes(model: 'project' | 'customer' | 'vendor') {
     by: ['code'],
     _count: { _all: true },
     having: {
-      _count: {
-        _all: { gt: 1 },
+      code: {
+        _count: { gt: 1 },
       },
     },
   })) as Array<{ code: string }>;

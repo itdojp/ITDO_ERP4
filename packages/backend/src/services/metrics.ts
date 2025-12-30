@@ -1,36 +1,8 @@
 import { prisma } from './db.js';
 import { calcTimeAmount, resolveRateCard } from './rateCard.js';
 import { dateKey, toNumber } from './utils.js';
-
-type AlertSetting = {
-  id: string;
-  type: string;
-  threshold: number | string;
-  period: string;
-  scopeProjectId?: string | null;
-  recipients?: unknown;
-  channels?: unknown;
-  isEnabled?: boolean;
-};
+import type { AlertSetting, DocStatus, Prisma, TimeStatus } from '@prisma/client';
 type MetricResult = { metric: number; targetRef: string };
-type TimeEntryWhereInput = {
-  workDate: { gte: Date; lte: Date };
-  deletedAt: null;
-  status: { not: string };
-  projectId?: string;
-};
-type ProjectMilestoneWhereInput = {
-  dueDate: { lte: Date };
-  deletedAt: null;
-  project: { deletedAt: null };
-  invoices: { none: { deletedAt: null } };
-  projectId?: string;
-};
-type ApprovalInstanceWhereInput = {
-  status: { in: string[] };
-  projectId?: string;
-};
-
 function startOfDay(date: Date) {
   const result = new Date(date);
   result.setUTCHours(0, 0, 0, 0);
@@ -53,7 +25,7 @@ async function resolveProjectBudget(projectId: string): Promise<number> {
     where: {
       projectId,
       deletedAt: null,
-      status: { notIn: ['cancelled', 'rejected'] },
+      status: { notIn: [DocStatus.cancelled, DocStatus.rejected] },
     },
     orderBy: { createdAt: 'desc' },
     select: { totalAmount: true },
@@ -79,7 +51,7 @@ async function sumTimeCost(projectId: string): Promise<number> {
     where: {
       projectId,
       deletedAt: null,
-      status: { not: 'rejected' },
+      status: { not: TimeStatus.rejected },
     },
     select: { minutes: true, workDate: true, workType: true },
   });
@@ -122,7 +94,7 @@ async function sumExpenseCost(projectId: string): Promise<number> {
     where: {
       projectId,
       deletedAt: null,
-      status: { notIn: ['cancelled', 'rejected'] },
+      status: { notIn: [DocStatus.cancelled, DocStatus.rejected] },
     },
     _sum: { amount: true },
   });
@@ -134,7 +106,7 @@ async function sumVendorInvoiceCost(projectId: string): Promise<number> {
     where: {
       projectId,
       deletedAt: null,
-      status: { notIn: ['cancelled', 'rejected'] },
+      status: { notIn: [DocStatus.cancelled, DocStatus.rejected] },
     },
     _sum: { totalAmount: true },
   });
@@ -177,10 +149,10 @@ export async function computeOvertime(
   setting: AlertSetting,
 ): Promise<MetricResult | null> {
   const { start, end } = resolvePeriodRange(setting.period);
-  const where: TimeEntryWhereInput = {
+  const where: Prisma.TimeEntryWhereInput = {
     workDate: { gte: start, lte: end },
     deletedAt: null,
-    status: { not: 'rejected' },
+    status: { not: TimeStatus.rejected },
   };
   if (setting.scopeProjectId) {
     where.projectId = setting.scopeProjectId;
@@ -219,8 +191,8 @@ export async function computeOvertime(
 export async function computeApprovalDelay(
   setting: AlertSetting,
 ): Promise<MetricResult | null> {
-  const where: ApprovalInstanceWhereInput = {
-    status: { in: ['pending_qa', 'pending_exec'] },
+  const where: Prisma.ApprovalInstanceWhereInput = {
+    status: { in: [DocStatus.pending_qa, DocStatus.pending_exec] },
   };
   if (setting.scopeProjectId) {
     where.projectId = setting.scopeProjectId;
@@ -248,7 +220,7 @@ export async function computeDeliveryDue(
   setting: AlertSetting,
 ): Promise<MetricResult | null> {
   const now = new Date();
-  const where: ProjectMilestoneWhereInput = {
+  const where: Prisma.ProjectMilestoneWhereInput = {
     dueDate: { lte: now },
     deletedAt: null,
     project: { deletedAt: null },
