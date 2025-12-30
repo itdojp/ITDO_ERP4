@@ -7,6 +7,8 @@
 - [ ] /alert-settings CRUD と /jobs/alerts/run で alert が保存される
 - [ ] /jobs/approval-escalations/run で承認期限エスカレーションが保存される
 - [ ] /pdf-templates と /template-settings CRUD が動作する
+- [ ] /document-send-logs/:id と /document-send-logs/:id/events が取得できる
+- [ ] /document-send-logs/:id/retry で再送が記録される
 - [ ] /approval-rules CRUD のハッピーパス
 - [ ] /wellbeing-entries POST → HR/AdminでGETできる
 

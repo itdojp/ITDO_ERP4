@@ -65,6 +65,8 @@
 - **doc_template_settings**: kind (estimate/invoice/purchase_order), template_id, number_rule, layout_config, logo_url, signature_text, is_default
 - **document_send_logs**: kind (estimate/invoice/purchase_order), target_table/id, channel, status, recipients, template_id, pdf_url, provider_message_id, error, metadata
   - idx: (target_table, target_id), (created_at), (target_table, target_id, created_at)
+- **document_send_events**: send_log_id, provider, event_type, event_at, payload
+  - idx: (send_log_id), (provider, event_type), (created_at)
 
 ## 日報/ウェルビーイング
 - **reports_daily** (日報): user_id, report_date, content, linked_project_ids?, status
@@ -86,6 +88,7 @@
 - 参照頻度が高いコードは別カラムで保持し、外部キーと併用
 - 論理削除は `(deleted_at)` 付きの複合インデックスで最適化
 - 監査ログは保管期間/アーカイブポリシーを別途定義
+- 詳細: `docs/requirements/performance-tuning.md`
 
 ## 次ステップ
 - Prisma/schema.sql に具体カラム型・enum を起こす
