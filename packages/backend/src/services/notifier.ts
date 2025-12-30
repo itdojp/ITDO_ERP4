@@ -19,6 +19,7 @@ type EmailAttachment = {
 
 type EmailOptions = {
   attachments?: EmailAttachment[];
+  metadata?: Record<string, string>;
 };
 
 type MailTransportConfig = {
@@ -157,6 +158,15 @@ function normalizeRecipients(to: string[]) {
   return { valid, invalid };
 }
 
+function normalizeMetadata(metadata?: Record<string, string>) {
+  if (!metadata) return undefined;
+  const entries = Object.entries(metadata).filter(([, value]) =>
+    value != null && value.trim() ? true : false,
+  );
+  if (!entries.length) return undefined;
+  return Object.fromEntries(entries.map(([key, value]) => [key, value.trim()]));
+}
+
 function logSmtpError(err: unknown) {
   console.error('[smtp send failed]', {
     message: err instanceof Error ? err.message : 'send_failed',
@@ -218,6 +228,7 @@ async function sendEmailSendGrid(
       error: 'sendgrid_attachment_failed',
     };
   }
+  const customArgs = normalizeMetadata(options?.metadata);
   const payload = {
     personalizations: [
       {
@@ -227,6 +238,7 @@ async function sendEmailSendGrid(
     from: { email: config.from },
     subject,
     content: [{ type: 'text/plain', value: body }],
+    ...(customArgs ? { custom_args: customArgs } : {}),
     ...(attachments ? { attachments } : {}),
   };
   try {
@@ -305,7 +317,13 @@ export async function sendEmailStub(
     };
   }
   const attachmentNames = options?.attachments?.map((item) => item.filename);
-  console.log('[email stub]', { to: valid, subject, body, attachmentNames });
+  console.log('[email stub]', {
+    to: valid,
+    subject,
+    body,
+    attachmentNames,
+    metadata: normalizeMetadata(options?.metadata),
+  });
   return {
     status: 'stub',
     channel: 'email',
@@ -420,6 +438,7 @@ export async function sendInvoiceEmail(
   to: string[],
   invoiceNo: string,
   pdf?: PdfInfo,
+  options?: Pick<EmailOptions, 'metadata'>,
 ) {
   const body = pdf?.url
     ? `Invoice email (placeholder)\nPDF: ${pdf.url}`
@@ -434,13 +453,17 @@ export async function sendInvoiceEmail(
           },
         ]
       : undefined;
-  return sendEmail(to, `Invoice ${invoiceNo}`, body, { attachments });
+  return sendEmail(to, `Invoice ${invoiceNo}`, body, {
+    attachments,
+    metadata: options?.metadata,
+  });
 }
 
 export async function sendPurchaseOrderEmail(
   to: string[],
   poNo: string,
   pdf?: PdfInfo,
+  options?: Pick<EmailOptions, 'metadata'>,
 ) {
   const body = pdf?.url
     ? `Purchase order email (placeholder)\nPDF: ${pdf.url}`
@@ -455,5 +478,8 @@ export async function sendPurchaseOrderEmail(
           },
         ]
       : undefined;
-  return sendEmail(to, `PO ${poNo}`, body, { attachments });
+  return sendEmail(to, `PO ${poNo}`, body, {
+    attachments,
+    metadata: options?.metadata,
+  });
 }

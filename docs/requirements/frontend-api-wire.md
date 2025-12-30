@@ -39,14 +39,14 @@
 - GET `/projects/:projectId/invoices` (list)
 - POST `/projects/:projectId/invoices` { estimateId?, milestoneId?, lines, issueDate?, dueDate?, currency, totalAmount }
 - POST `/invoices/:id/submit`
-- POST `/invoices/:id/send`
+- POST `/invoices/:id/send?templateId?&templateSettingId?`
 - GET  `/invoices/:id/send-logs`
 - GET  `/alerts` (承認遅延/予算超過の表示用)
 
 ## purchase orders / vendor docs
 - POST `/projects/:projectId/purchase-orders` { vendorId, lines, totals... }
 - POST `/purchase-orders/:id/submit`
-- POST `/purchase-orders/:id/send`
+- POST `/purchase-orders/:id/send?templateId?&templateSettingId?`
 - GET  `/purchase-orders/:id/send-logs`
 - POST `/vendor-quotes` { projectId, vendorId, quote_no?, ... }
 - POST `/vendor-invoices` { projectId, vendorId, vendor_invoice_no?, ... }
@@ -73,6 +73,9 @@
 - GET `/pdf-templates?kind=`
 - GET/POST/PATCH `/template-settings`
 - GET `/pdf-files/:filename`
+- GET `/document-send-logs/:id`
+- GET `/document-send-logs/:id/events`
+- POST `/document-send-logs/:id/retry`
 - POST `/approval-instances/:id/act` { action: approve|reject, reason? }
 - POST `/jobs/alerts/run` (手動トリガー)
 - POST `/jobs/approval-escalations/run` (承認期限エスカレーション)
