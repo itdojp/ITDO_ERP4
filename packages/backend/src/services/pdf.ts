@@ -41,11 +41,7 @@ const DEFAULT_ASSET_MAX_BYTES = 2 * 1024 * 1024;
 const DEFAULT_EXTERNAL_PDF_MAX_BYTES = 10 * 1024 * 1024;
 const DEFAULT_ASSET_TIMEOUT_MS = 5000;
 const DEFAULT_EXTERNAL_TIMEOUT_MS = 10000;
-const ALLOWED_ASSET_MIME = new Set([
-  'image/png',
-  'image/jpeg',
-  'image/jpg',
-]);
+const ALLOWED_ASSET_MIME = new Set(['image/png', 'image/jpeg', 'image/jpg']);
 
 function parsePositiveInt(value: string | undefined, fallback: number) {
   if (!value) return fallback;
@@ -415,11 +411,22 @@ export async function generatePdf(
     const filePath = path.join(storageDir, filename);
     const layout = normalizeLayoutConfig(options?.layoutConfig);
     if (resolvePdfProvider() === 'external') {
-      const externalPdf = await requestExternalPdf(templateId, payload, options);
+      const externalPdf = await requestExternalPdf(
+        templateId,
+        payload,
+        options,
+      );
       await fs.writeFile(filePath, externalPdf);
     } else {
       const assets = await resolvePdfAssets(options, layout);
-      await writePdfFile(filePath, templateId, payload, layout, assets, options);
+      await writePdfFile(
+        filePath,
+        templateId,
+        payload,
+        layout,
+        assets,
+        options,
+      );
     }
     const url = `${resolvePdfBaseUrl()}/${filename}`;
     return { url, filePath, filename };

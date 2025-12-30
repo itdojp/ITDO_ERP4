@@ -1,5 +1,4 @@
 import { FastifyInstance } from 'fastify';
-import type { DocumentSendLog, Prisma } from '@prisma/client';
 import { prisma } from '../services/db.js';
 
 type SendGridEvent = {
@@ -7,6 +6,13 @@ type SendGridEvent = {
   sg_message_id?: string;
   timestamp?: number;
   custom_args?: Record<string, string>;
+};
+
+type SendLogRecord = {
+  id: string;
+  providerMessageId?: string | null;
+  status: string;
+  error?: string | null;
 };
 
 const FAILURE_EVENTS = new Set(['bounce', 'dropped', 'spamreport']);
@@ -89,8 +95,8 @@ function passesWebhookKey(headers: Record<string, unknown>) {
 
 function resolveSendLog(
   event: SendGridEvent,
-  logsById: Map<string, DocumentSendLog>,
-  logsBySgId: Map<string, DocumentSendLog>,
+  logsById: Map<string, SendLogRecord>,
+  logsBySgId: Map<string, SendLogRecord>,
 ) {
   const sendLogId = resolveSendLogId(event);
   if (sendLogId) {
@@ -103,12 +109,9 @@ function resolveSendLog(
   return null;
 }
 
-function buildLogLookup(
-  sendLogs: DocumentSendLog[],
-  sgMessageIds: Set<string>,
-) {
-  const logsById = new Map<string, DocumentSendLog>();
-  const logsBySgId = new Map<string, DocumentSendLog>();
+function buildLogLookup(sendLogs: SendLogRecord[], sgMessageIds: Set<string>) {
+  const logsById = new Map<string, SendLogRecord>();
+  const logsBySgId = new Map<string, SendLogRecord>();
   sendLogs.forEach((log) => {
     logsById.set(log.id as string, log);
   });
@@ -166,7 +169,10 @@ export async function registerSendEventRoutes(app: FastifyInstance) {
         }
       });
 
-      const orConditions: Prisma.DocumentSendLogWhereInput[] = [];
+      const orConditions: Array<{
+        id?: { in: string[] };
+        providerMessageId?: { contains: string };
+      }> = [];
       if (sendLogIds.size > 0) {
         orConditions.push({ id: { in: Array.from(sendLogIds) } });
       }
@@ -177,12 +183,14 @@ export async function registerSendEventRoutes(app: FastifyInstance) {
       }
 
       const sendLogs = orConditions.length
-        ? await prisma.documentSendLog.findMany({ where: { OR: orConditions } })
+        ? ((await prisma.documentSendLog.findMany({
+            where: { OR: orConditions },
+          })) as SendLogRecord[])
         : [];
       const { logsById, logsBySgId } = buildLogLookup(sendLogs, sgMessageIds);
 
       let stored = 0;
-      const txOps: Prisma.PrismaPromise<unknown>[] = [];
+      const txOps: Array<Promise<unknown>> = [];
       const pendingUpdates = new Map<
         string,
         { status: string; error?: string }

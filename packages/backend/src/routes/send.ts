@@ -1,5 +1,5 @@
 import { FastifyInstance } from 'fastify';
-import type { DocTemplateSetting, Prisma } from '@prisma/client';
+import type { Prisma } from '@prisma/client';
 import {
   sendInvoiceEmail,
   sendPurchaseOrderEmail,
@@ -17,11 +17,21 @@ import type { NotifyResult } from '../services/notifier.js';
 
 type TemplateResolveResult = {
   template: PdfTemplate | null;
-  setting: DocTemplateSetting | null;
+  setting: TemplateSetting | null;
   error?: { status: number; code: string };
 };
 
 type SendLogMetadata = Record<string, string>;
+
+type TemplateSetting = {
+  id: string;
+  kind: PdfTemplate['kind'];
+  templateId: string;
+  layoutConfig?: unknown | null;
+  logoUrl?: string | null;
+  signatureText?: string | null;
+  createdAt?: Date | null;
+};
 
 type SendLogInput = {
   kind: PdfTemplate['kind'];
@@ -38,8 +48,32 @@ type SendLogInput = {
 
 type SendLogClient = {
   documentSendLog: {
-    create: (args: Prisma.DocumentSendLogCreateArgs) => Promise<{ id: string }>;
-    update: (args: Prisma.DocumentSendLogUpdateArgs) => Promise<unknown>;
+    create: (args: {
+      data: {
+        kind: PdfTemplate['kind'];
+        targetTable: string;
+        targetId: string;
+        channel: string;
+        status: string;
+        recipients: string[];
+        templateId?: string;
+        pdfUrl?: string;
+        providerMessageId?: string;
+        error?: string;
+        metadata?: SendLogMetadata;
+        createdBy?: string;
+      };
+      select: { id: true };
+    }) => Promise<{ id: string }>;
+    update: (args: {
+      where: { id: string };
+      data: {
+        status?: string;
+        providerMessageId?: string;
+        error?: string;
+        updatedBy?: string;
+      };
+    }) => Promise<unknown>;
   };
 };
 
@@ -68,12 +102,12 @@ async function resolveTemplateContext(
   kind: PdfTemplate['kind'],
   params: { templateId?: string; templateSettingId?: string },
 ): Promise<TemplateResolveResult> {
-  let setting: DocTemplateSetting | null = null;
+  let setting: TemplateSetting | null = null;
   let resolvedTemplateId = params.templateId;
   if (params.templateSettingId) {
-    setting = await prisma.docTemplateSetting.findUnique({
+    setting = (await prisma.docTemplateSetting.findUnique({
       where: { id: params.templateSettingId },
-    });
+    })) as TemplateSetting | null;
     if (!setting) {
       return {
         template: null,
@@ -92,10 +126,10 @@ async function resolveTemplateContext(
   }
 
   if (!resolvedTemplateId) {
-    const defaultSetting = await prisma.docTemplateSetting.findFirst({
+    const defaultSetting = (await prisma.docTemplateSetting.findFirst({
       where: { kind, isDefault: true },
       orderBy: { createdAt: 'desc' },
-    });
+    })) as TemplateSetting | null;
     if (defaultSetting) {
       setting = defaultSetting;
       resolvedTemplateId = defaultSetting.templateId;
@@ -131,18 +165,18 @@ async function resolveTemplateContext(
   }
 
   if (!setting) {
-    setting = await prisma.docTemplateSetting.findFirst({
+    setting = (await prisma.docTemplateSetting.findFirst({
       where: { kind, templateId: template.id },
       orderBy: { createdAt: 'desc' },
-    });
+    })) as TemplateSetting | null;
   }
 
   return { template, setting };
 }
 
-function buildPdfOptions(setting: DocTemplateSetting | null):
-  | PdfRenderOptions
-  | undefined {
+function buildPdfOptions(
+  setting: TemplateSetting | null,
+): PdfRenderOptions | undefined {
   if (!setting) return undefined;
   return {
     layoutConfig: setting.layoutConfig
@@ -155,7 +189,7 @@ function buildPdfOptions(setting: DocTemplateSetting | null):
 
 function buildSendLogMetadata(
   template: PdfTemplate,
-  setting: DocTemplateSetting | null,
+  setting: TemplateSetting | null,
   extra?: SendLogMetadata,
 ): SendLogMetadata {
   const metadata: SendLogMetadata = { templateId: template.id };
@@ -522,9 +556,15 @@ export async function registerSendRoutes(app: FastifyInstance) {
           where: { sendLogId: id },
           orderBy: { createdAt: 'desc' },
         });
-        const lastActivity = lastEvent?.createdAt || sendLog.updatedAt;
-        if (Date.now() - lastActivity.getTime() < cooldownMs) {
-          return reply.code(429).send({ error: 'retry_too_soon' });
+        const lastActivity =
+          lastEvent?.createdAt ||
+          (sendLog.updatedAt instanceof Date ? sendLog.updatedAt : null) ||
+          (sendLog.createdAt instanceof Date ? sendLog.createdAt : null);
+        if (lastActivity) {
+          const lastTime = lastActivity.getTime();
+          if (!Number.isNaN(lastTime) && Date.now() - lastTime < cooldownMs) {
+            return reply.code(429).send({ error: 'retry_too_soon' });
+          }
         }
       }
       const templateSettingId = extractTemplateSettingId(sendLog.metadata);
