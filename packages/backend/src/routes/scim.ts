@@ -105,8 +105,7 @@ function parseFilter(filterRaw?: string) {
   );
   if (!match) return null;
   const rawValue = match[2] ?? match[3];
-  const value =
-    match[2] != null ? rawValue.replace(/\\(.)/g, '$1') : rawValue;
+  const value = match[2] != null ? rawValue.replace(/\\(.)/g, '$1') : rawValue;
   return { field: match[1], value };
 }
 
@@ -139,15 +138,10 @@ function safeEqualToken(expected: string, provided: string) {
   return timingSafeEqual(expectedBuf, providedBuf);
 }
 
-function requireScimAuth(
-  req: FastifyRequest,
-  reply: FastifyReply,
-): boolean {
+function requireScimAuth(req: FastifyRequest, reply: FastifyReply): boolean {
   const expected = process.env.SCIM_BEARER_TOKEN;
   if (!expected) {
-    reply
-      .code(503)
-      .send(scimError(503, 'SCIM provisioning is not configured'));
+    reply.code(503).send(scimError(503, 'SCIM provisioning is not configured'));
     return true;
   }
   const auth = req.headers.authorization;
@@ -393,7 +387,8 @@ async function resolveMembersPayload(members?: ScimGroupPayload['members']) {
   const userIds = members
     .map((member) => member?.value)
     .filter(
-      (value): value is string => typeof value === 'string' && value.trim(),
+      (value): value is string =>
+        typeof value === 'string' && value.trim().length > 0,
     )
     .map((value) => value.trim());
   const uniqueUserIds = Array.from(new Set(userIds));
@@ -1044,9 +1039,7 @@ export async function registerScimRoutes(app: FastifyInstance) {
                 : '';
           const displayName = displayNameRaw.trim();
           if (!displayName) {
-            return reply
-              .code(400)
-              .send(scimError(400, 'displayName_required'));
+            return reply.code(400).send(scimError(400, 'displayName_required'));
           }
           update.displayName = displayName;
         }
@@ -1066,18 +1059,26 @@ export async function registerScimRoutes(app: FastifyInstance) {
         if (path === 'externalId') update.externalId = null;
       }
     }
-    if (update.displayName !== undefined) {
+    const nextDisplayName =
+      typeof update.displayName === 'string' ? update.displayName : undefined;
+    const nextExternalId =
+      typeof update.externalId === 'string'
+        ? update.externalId
+        : update.externalId === null
+          ? null
+          : undefined;
+    if (nextDisplayName !== undefined) {
       if (
-        update.displayName !== current.displayName &&
-        (await isGroupNameTaken(update.displayName, id))
+        nextDisplayName !== current.displayName &&
+        (await isGroupNameTaken(nextDisplayName, id))
       ) {
         return reply.code(409).send(scimError(409, 'group_exists'));
       }
     }
-    if (update.externalId !== undefined) {
+    if (nextExternalId !== undefined) {
       if (
-        update.externalId !== current.externalId &&
-        (await isGroupExternalIdTaken(update.externalId ?? undefined, id))
+        nextExternalId !== current.externalId &&
+        (await isGroupExternalIdTaken(nextExternalId ?? undefined, id))
       ) {
         return reply.code(409).send(scimError(409, 'externalId_exists'));
       }
