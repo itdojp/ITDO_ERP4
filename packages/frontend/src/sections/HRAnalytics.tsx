@@ -1,4 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { api } from '../api';
 
 type AnalyticsItem = {
@@ -57,29 +63,34 @@ export const HRAnalytics: React.FC = () => {
         return;
       }
       setGroupError('');
-    try {
-      setIsLoadingGroup(true);
-      const query = buildQuery({
-        from: params.from,
-        to: params.to,
-        minUsers: params.minUsers,
-        groupBy: 'group',
-      });
-      const response = await api<{ items: AnalyticsItem[] }>(`/wellbeing-analytics?${query}`);
-      setGroupItems(response.items || []);
-      setSelectedGroup((prev) => prev || response.items?.[0]?.bucket || '');
-    } catch (error) {
-      console.error('匿名集計の取得に失敗しました', error);
-      setGroupError('匿名集計の取得に失敗しました');
-    } finally {
-      setIsLoadingGroup(false);
-    }
+      try {
+        setIsLoadingGroup(true);
+        const query = buildQuery({
+          from: params.from,
+          to: params.to,
+          minUsers: params.minUsers,
+          groupBy: 'group',
+        });
+        const response = await api<{ items: AnalyticsItem[] }>(
+          `/wellbeing-analytics?${query}`,
+        );
+        setGroupItems(response.items || []);
+        setSelectedGroup((prev) => prev || response.items?.[0]?.bucket || '');
+      } catch (error) {
+        console.error('匿名集計の取得に失敗しました', error);
+        setGroupError('匿名集計の取得に失敗しました');
+      } finally {
+        setIsLoadingGroup(false);
+      }
     },
     [buildQuery],
   );
 
   const loadMonthlyAnalytics = useCallback(
-    async (groupId: string, params: { from: string; to: string; minUsers: number }) => {
+    async (
+      groupId: string,
+      params: { from: string; to: string; minUsers: number },
+    ) => {
       if (!groupId) {
         setMonthlyItems([]);
         return;
@@ -99,7 +110,9 @@ export const HRAnalytics: React.FC = () => {
           groupBy: 'month',
           visibilityGroupId: groupId,
         });
-        const response = await api<{ items: AnalyticsItem[] }>(`/wellbeing-analytics?${query}`);
+        const response = await api<{ items: AnalyticsItem[] }>(
+          `/wellbeing-analytics?${query}`,
+        );
         setMonthlyItems(response.items || []);
       } catch (error) {
         console.error('時系列集計の取得に失敗しました', error);
@@ -137,7 +150,10 @@ export const HRAnalytics: React.FC = () => {
   return (
     <div>
       <h2>匿名集計（人事向け）</h2>
-      <div className="row" style={{ gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+      <div
+        className="row"
+        style={{ gap: 8, alignItems: 'center', flexWrap: 'wrap' }}
+      >
         <label>
           開始日
           <input
@@ -177,23 +193,31 @@ export const HRAnalytics: React.FC = () => {
           {isLoadingGroup ? '更新中...' : '更新'}
         </button>
       </div>
-      <p className="badge" style={{ marginTop: 8 }}>{minUsers}人未満は非表示</p>
+      <p className="badge" style={{ marginTop: 8 }}>
+        {minUsers}人未満は非表示
+      </p>
       {groupError && <p style={{ color: '#dc2626' }}>{groupError}</p>}
       <ul className="list">
         {groupItems.map((item) => (
           <li key={item.bucket}>
             <strong>{item.bucket}</strong> ({item.users}人)
             <div>
-              Not Good: {formatRate(item.notGoodRate)} ({item.notGoodCount}/{item.entries}) / ヘルプ要請: {item.helpRequestedCount}件
+              Not Good: {formatRate(item.notGoodRate)} ({item.notGoodCount}/
+              {item.entries}) / ヘルプ要請: {item.helpRequestedCount}件
             </div>
           </li>
         ))}
-        {groupItems.length === 0 && !groupError && <li>表示可能なデータなし</li>}
+        {groupItems.length === 0 && !groupError && (
+          <li>表示可能なデータなし</li>
+        )}
       </ul>
       <div style={{ marginTop: 16 }}>
         <div className="row" style={{ gap: 8, alignItems: 'center' }}>
           <strong>時系列</strong>
-          <select value={selectedGroup} onChange={(e) => setSelectedGroup(e.target.value)}>
+          <select
+            value={selectedGroup}
+            onChange={(e) => setSelectedGroup(e.target.value)}
+          >
             <option value="">グループを選択</option>
             {groupOptions.map((groupId) => (
               <option key={groupId} value={groupId}>
@@ -203,7 +227,9 @@ export const HRAnalytics: React.FC = () => {
           </select>
           <button
             className="button secondary"
-            onClick={() => loadMonthlyAnalytics(selectedGroup, { from, to, minUsers })}
+            onClick={() =>
+              loadMonthlyAnalytics(selectedGroup, { from, to, minUsers })
+            }
             disabled={!selectedGroup || isLoadingMonthly}
           >
             {isLoadingMonthly ? '更新中...' : '更新'}
@@ -213,7 +239,9 @@ export const HRAnalytics: React.FC = () => {
         <ul className="list">
           {monthlyItems.map((item) => (
             <li key={item.bucket}>
-              <strong>{item.bucket}</strong> / Not Good: {formatRate(item.notGoodRate)} ({item.notGoodCount}/{item.entries}) / ヘルプ要請: {item.helpRequestedCount}件
+              <strong>{item.bucket}</strong> / Not Good:{' '}
+              {formatRate(item.notGoodRate)} ({item.notGoodCount}/{item.entries}
+              ) / ヘルプ要請: {item.helpRequestedCount}件
             </li>
           ))}
           {selectedGroup && monthlyItems.length === 0 && !monthlyError && (

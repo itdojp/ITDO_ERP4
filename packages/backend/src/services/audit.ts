@@ -1,3 +1,4 @@
+import type { Prisma } from '@prisma/client';
 import { prisma } from './db.js';
 
 type AuditInput = {
@@ -5,7 +6,7 @@ type AuditInput = {
   userId?: string;
   targetTable?: string;
   targetId?: string;
-  metadata?: Record<string, unknown>;
+  metadata?: Prisma.InputJsonValue;
 };
 
 export async function logAudit(entry: AuditInput) {
@@ -16,7 +17,7 @@ export async function logAudit(entry: AuditInput) {
         userId: entry.userId,
         targetTable: entry.targetTable,
         targetId: entry.targetId,
-        metadata: entry.metadata ? entry.metadata : undefined,
+        metadata: entry.metadata ?? undefined,
       },
     });
   } catch (err) {

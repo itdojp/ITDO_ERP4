@@ -1,5 +1,5 @@
 import { FastifyInstance } from 'fastify';
-import type { Prisma } from '@prisma/client';
+import type { Prisma, TemplateKind } from '@prisma/client';
 import { prisma } from '../services/db.js';
 import { requireRole } from '../services/rbac.js';
 import { getPdfTemplate } from '../services/pdfTemplates.js';
@@ -8,11 +8,17 @@ import {
   templateSettingSchema,
 } from './validators.js';
 
+const TEMPLATE_KINDS: TemplateKind[] = [
+  'estimate',
+  'invoice',
+  'purchase_order',
+];
+
 type TemplateSettingBody = {
-  kind: string;
+  kind: TemplateKind;
   templateId: string;
   numberRule: string;
-  layoutConfig?: unknown;
+  layoutConfig?: Prisma.InputJsonValue | null;
   logoUrl?: string | null;
   signatureText?: string | null;
   isDefault?: boolean | null;
@@ -20,7 +26,7 @@ type TemplateSettingBody = {
 
 async function ensureDefault(
   tx: Prisma.TransactionClient,
-  kind: string,
+  kind: TemplateKind,
   targetId: string,
 ) {
   await tx.docTemplateSetting.updateMany({
@@ -29,17 +35,31 @@ async function ensureDefault(
   });
 }
 
-function isValidTemplate(kind: string, templateId: string) {
+function isValidTemplate(kind: TemplateKind, templateId: string) {
   const template = getPdfTemplate(templateId);
   return Boolean(template && template.kind === kind);
+}
+
+function parseTemplateKind(value?: string): TemplateKind | null {
+  if (!value) return null;
+  if (TEMPLATE_KINDS.includes(value as TemplateKind)) {
+    return value as TemplateKind;
+  }
+  return null;
 }
 
 export async function registerTemplateSettingRoutes(app: FastifyInstance) {
   app.get(
     '/template-settings',
     { preHandler: requireRole(['admin', 'mgmt']) },
-    async (req) => {
-      const { kind } = req.query as { kind?: string };
+    async (req, reply) => {
+      const { kind: rawKind } = req.query as { kind?: string };
+      const kind = parseTemplateKind(rawKind);
+      if (rawKind && !kind) {
+        return reply.status(400).send({
+          error: { code: 'INVALID_KIND', message: 'kind is invalid' },
+        });
+      }
       const items = await prisma.docTemplateSetting.findMany({
         where: kind ? { kind } : undefined,
         orderBy: { createdAt: 'desc' },

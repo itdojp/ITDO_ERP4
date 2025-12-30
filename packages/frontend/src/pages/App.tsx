@@ -15,15 +15,33 @@ export const App: React.FC = () => {
     <div className="container">
       <h1>ERP4 MVP PoC</h1>
       <CurrentUser />
-      <div className="card"><Dashboard /></div>
-      <div className="card"><DailyReport /></div>
-      <div className="card"><TimeEntries /></div>
-      <div className="card"><Expenses /></div>
-      <div className="card"><Invoices /></div>
-      <div className="card"><Reports /></div>
-      <div className="card"><AdminSettings /></div>
-      <div className="card"><ProjectChat /></div>
-      <div className="card"><HRAnalytics /></div>
+      <div className="card">
+        <Dashboard />
+      </div>
+      <div className="card">
+        <DailyReport />
+      </div>
+      <div className="card">
+        <TimeEntries />
+      </div>
+      <div className="card">
+        <Expenses />
+      </div>
+      <div className="card">
+        <Invoices />
+      </div>
+      <div className="card">
+        <Reports />
+      </div>
+      <div className="card">
+        <AdminSettings />
+      </div>
+      <div className="card">
+        <ProjectChat />
+      </div>
+      <div className="card">
+        <HRAnalytics />
+      </div>
     </div>
   );
 };
