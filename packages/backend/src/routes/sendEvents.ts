@@ -145,7 +145,11 @@ export async function registerSendEventRoutes(app: FastifyInstance) {
         }
       }
       const payload = req.body as SendGridEvent[] | SendGridEvent | undefined;
-      const events = Array.isArray(payload) ? payload : payload ? [payload] : [];
+      const events = Array.isArray(payload)
+        ? payload
+        : payload
+          ? [payload]
+          : [];
       if (!events.length) {
         return reply.code(400).send({ error: 'empty_payload' });
       }
@@ -188,7 +192,10 @@ export async function registerSendEventRoutes(app: FastifyInstance) {
 
       let stored = 0;
       const txOps: Array<Prisma.PrismaPromise<unknown>> = [];
-      const pendingUpdates = new Map<string, { status: string; error?: string }>();
+      const pendingUpdates = new Map<
+        string,
+        { status: string; error?: string }
+      >();
 
       for (const event of events) {
         const sendLog = resolveSendLog(event, logsById, logsBySgId);

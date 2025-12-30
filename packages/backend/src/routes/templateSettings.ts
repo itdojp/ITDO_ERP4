@@ -48,8 +48,15 @@ function parseTemplateKind(value?: string): TemplateKind | null {
   return null;
 }
 
-function normalizeJsonInput(value: Prisma.InputJsonValue | null | undefined) {
+function normalizeJsonInput(
+  value: Prisma.InputJsonValue | null | undefined,
+): Prisma.InputJsonValue | Prisma.NullTypes.DbNull | undefined {
   if (value === null) return Prisma.DbNull;
+  return value;
+}
+
+function normalizeBoolean(value: boolean | null | undefined) {
+  if (value === null) return undefined;
   return value;
 }
 
@@ -92,6 +99,7 @@ export async function registerTemplateSettingRoutes(app: FastifyInstance) {
           data: {
             ...body,
             layoutConfig: normalizeJsonInput(body.layoutConfig),
+            isDefault: normalizeBoolean(body.isDefault),
             createdBy: userId,
             updatedBy: userId,
           },
@@ -127,14 +135,34 @@ export async function registerTemplateSettingRoutes(app: FastifyInstance) {
         });
       }
       const userId = req.user?.userId;
-      const updatePayload = { ...body };
+      const updatePayload: Prisma.DocTemplateSettingUpdateInput = {
+        updatedBy: userId,
+      };
+      if (Object.prototype.hasOwnProperty.call(body, 'kind')) {
+        updatePayload.kind = body.kind;
+      }
+      if (Object.prototype.hasOwnProperty.call(body, 'templateId')) {
+        updatePayload.templateId = body.templateId;
+      }
+      if (Object.prototype.hasOwnProperty.call(body, 'numberRule')) {
+        updatePayload.numberRule = body.numberRule;
+      }
       if (Object.prototype.hasOwnProperty.call(body, 'layoutConfig')) {
         updatePayload.layoutConfig = normalizeJsonInput(body.layoutConfig);
+      }
+      if (Object.prototype.hasOwnProperty.call(body, 'logoUrl')) {
+        updatePayload.logoUrl = body.logoUrl ?? null;
+      }
+      if (Object.prototype.hasOwnProperty.call(body, 'signatureText')) {
+        updatePayload.signatureText = body.signatureText ?? null;
+      }
+      if (Object.prototype.hasOwnProperty.call(body, 'isDefault')) {
+        updatePayload.isDefault = normalizeBoolean(body.isDefault);
       }
       return prisma.$transaction(async (tx: Prisma.TransactionClient) => {
         const updated = await tx.docTemplateSetting.update({
           where: { id },
-          data: { ...updatePayload, updatedBy: userId },
+          data: updatePayload,
         });
         if (body.isDefault === true) {
           await ensureDefault(tx, updated.kind, updated.id);
