@@ -767,7 +767,7 @@ model GroupAccount {
   externalId  String?     @unique
   displayName String
   scimMeta    Json?
-  isActive    Boolean     @default(true)
+  active      Boolean     @default(true)
   createdAt   DateTime    @default(now())
   createdBy   String?
   updatedAt   DateTime    @updatedAt

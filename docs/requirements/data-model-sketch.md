@@ -13,7 +13,7 @@
 - **vendors**: code (unique), name, bank_info, tax_region, status, external_source/id
 - **contacts**: customer_id/vendor_id, name, email, phone, role, is_primary
 - **user_accounts**: external_id, user_name(email), display_name, given_name, family_name, active, emails(json), phone_numbers(json), department, organization, manager_user_id
-- **group_accounts**: external_id, display_name, is_active
+- **group_accounts**: external_id, display_name, active
 - **user_groups**: user_id, group_id (membership)
 
 ## プロジェクト/タスク/マイルストーン

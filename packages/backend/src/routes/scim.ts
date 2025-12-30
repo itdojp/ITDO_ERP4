@@ -1,3 +1,4 @@
+import { timingSafeEqual } from 'crypto';
 import { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { Prisma } from '@prisma/client';
 import { prisma } from '../services/db.js';
@@ -7,7 +8,6 @@ const SCIM_USER_SCHEMA = 'urn:ietf:params:scim:schemas:core:2.0:User';
 const SCIM_GROUP_SCHEMA = 'urn:ietf:params:scim:schemas:core:2.0:Group';
 const SCIM_LIST_SCHEMA = 'urn:ietf:params:scim:api:messages:2.0:ListResponse';
 const SCIM_ERROR_SCHEMA = 'urn:ietf:params:scim:api:messages:2.0:Error';
-const SCIM_PATCH_SCHEMA = 'urn:ietf:params:scim:api:messages:2.0:PatchOp';
 const SCIM_ENTERPRISE_SCHEMA =
   'urn:ietf:params:scim:schemas:extension:enterprise:2.0:User';
 
@@ -70,7 +70,10 @@ type ScimPatchPayload = {
   }>;
 };
 
+// Default SCIM page size used when the client does not request `count` and
+// SCIM_PAGE_MAX is not set or invalid.
 const DEFAULT_PAGE_SIZE = 100;
+// Hard upper limit for SCIM page size to avoid overly large responses.
 const MAX_PAGE_SIZE = 500;
 
 function resolvePageSize() {
@@ -97,9 +100,14 @@ function parsePagination(query: Record<string, unknown>) {
 
 function parseFilter(filterRaw?: string) {
   if (!filterRaw) return null;
-  const match = filterRaw.match(/^([A-Za-z0-9_.]+)\s+eq\s+\"?([^"]+)\"?$/);
+  const match = filterRaw.match(
+    /^([A-Za-z0-9_.]+)\s+eq\s+(?:"((?:\\.|[^"\\])*)"|([^\s]+))$/,
+  );
   if (!match) return null;
-  return { field: match[1], value: match[2] };
+  const rawValue = match[2] ?? match[3];
+  const value =
+    match[2] != null ? rawValue.replace(/\\(.)/g, '$1') : rawValue;
+  return { field: match[1], value };
 }
 
 function scimError(
@@ -122,19 +130,37 @@ function extractScimError(err: unknown): ScimError | null {
   return null;
 }
 
-function requireScimAuth(req: FastifyRequest, reply: FastifyReply) {
+function safeEqualToken(expected: string, provided: string) {
+  const expectedBuf = Buffer.from(expected);
+  const providedBuf = Buffer.from(provided);
+  if (expectedBuf.length !== providedBuf.length) {
+    return false;
+  }
+  return timingSafeEqual(expectedBuf, providedBuf);
+}
+
+function requireScimAuth(
+  req: FastifyRequest,
+  reply: FastifyReply,
+): boolean {
   const expected = process.env.SCIM_BEARER_TOKEN;
   if (!expected) {
-    return reply.code(503).send(scimError(503, 'scim_not_configured'));
+    reply
+      .code(503)
+      .send(scimError(503, 'SCIM provisioning is not configured'));
+    return true;
   }
   const auth = req.headers.authorization;
   if (!auth || !auth.startsWith('Bearer ')) {
-    return reply.code(401).send(scimError(401, 'unauthorized'));
+    reply.code(401).send(scimError(401, 'unauthorized'));
+    return true;
   }
   const token = auth.slice('Bearer '.length).trim();
-  if (token !== expected) {
-    return reply.code(401).send(scimError(401, 'unauthorized'));
+  if (!safeEqualToken(expected, token)) {
+    reply.code(401).send(scimError(401, 'unauthorized'));
+    return true;
   }
+  return false;
 }
 
 function normalizeEmails(input?: ScimEmail[]) {
@@ -170,8 +196,9 @@ function normalizePhones(input?: ScimPhone[]) {
 }
 
 function normalizeUserPayload(input: ScimUserPayload) {
-  const userName =
-    typeof input.userName === 'string' ? input.userName.trim() : '';
+  const userNameRaw =
+    typeof input.userName === 'string' ? input.userName.trim() : undefined;
+  const userName = userNameRaw ? userNameRaw : undefined;
   const displayName =
     typeof input.displayName === 'string'
       ? input.displayName.trim()
@@ -276,10 +303,12 @@ function buildGroupResource(group: {
   updatedAt: Date;
   members?: Array<{ userId: string; displayName?: string | null }>;
 }) {
-  const members = group.members?.map((member) => ({
-    value: member.userId,
-    display: member.displayName ?? undefined,
-  }));
+  const members = Array.isArray(group.members)
+    ? group.members.map((member) => ({
+        value: member.userId,
+        display: member.displayName ?? undefined,
+      }))
+    : undefined;
   return {
     schemas: [SCIM_GROUP_SCHEMA],
     id: group.id,
@@ -307,6 +336,56 @@ function buildListResponse<T>(
     itemsPerPage,
     Resources: resources,
   };
+}
+
+async function isUserNameTaken(userName: string, excludeId?: string) {
+  const where: Prisma.UserAccountWhereInput = { userName };
+  if (excludeId) {
+    where.NOT = { id: excludeId };
+  }
+  const existing = await prisma.userAccount.findFirst({
+    where,
+    select: { id: true },
+  });
+  return Boolean(existing);
+}
+
+async function isUserExternalIdTaken(externalId?: string, excludeId?: string) {
+  if (!externalId) return false;
+  const where: Prisma.UserAccountWhereInput = { externalId };
+  if (excludeId) {
+    where.NOT = { id: excludeId };
+  }
+  const existing = await prisma.userAccount.findFirst({
+    where,
+    select: { id: true },
+  });
+  return Boolean(existing);
+}
+
+async function isGroupNameTaken(displayName: string, excludeId?: string) {
+  const where: Prisma.GroupAccountWhereInput = { displayName };
+  if (excludeId) {
+    where.NOT = { id: excludeId };
+  }
+  const existing = await prisma.groupAccount.findFirst({
+    where,
+    select: { id: true },
+  });
+  return Boolean(existing);
+}
+
+async function isGroupExternalIdTaken(externalId?: string, excludeId?: string) {
+  if (!externalId) return false;
+  const where: Prisma.GroupAccountWhereInput = { externalId };
+  if (excludeId) {
+    where.NOT = { id: excludeId };
+  }
+  const existing = await prisma.groupAccount.findFirst({
+    where,
+    select: { id: true },
+  });
+  return Boolean(existing);
 }
 
 async function resolveMembersPayload(members?: ScimGroupPayload['members']) {
@@ -464,28 +543,39 @@ export async function registerScimRoutes(app: FastifyInstance) {
     if (!normalized.userName) {
       return reply.code(400).send(scimError(400, 'userName_required'));
     }
-    const existing = await prisma.userAccount.findUnique({
-      where: { userName: normalized.userName },
-    });
-    if (existing) {
+    if (await isUserNameTaken(normalized.userName)) {
       return reply.code(409).send(scimError(409, 'user_exists'));
     }
-    const created = await prisma.userAccount.create({
-      data: {
-        externalId: normalized.externalId,
-        userName: normalized.userName,
-        displayName: normalized.displayName,
-        givenName: normalized.givenName,
-        familyName: normalized.familyName,
-        active: normalized.active ?? true,
-        emails: normalized.emails as Prisma.InputJsonValue | undefined,
-        phoneNumbers: normalized.phones as Prisma.InputJsonValue | undefined,
-        department: normalized.department,
-        organization: normalized.organization,
-        managerUserId: normalized.managerUserId,
-        scimMeta: payload as Prisma.InputJsonValue,
-      },
-    });
+    if (await isUserExternalIdTaken(normalized.externalId)) {
+      return reply.code(409).send(scimError(409, 'externalId_exists'));
+    }
+    let created;
+    try {
+      created = await prisma.userAccount.create({
+        data: {
+          externalId: normalized.externalId,
+          userName: normalized.userName,
+          displayName: normalized.displayName,
+          givenName: normalized.givenName,
+          familyName: normalized.familyName,
+          active: normalized.active ?? true,
+          emails: normalized.emails as Prisma.InputJsonValue | undefined,
+          phoneNumbers: normalized.phones as Prisma.InputJsonValue | undefined,
+          department: normalized.department,
+          organization: normalized.organization,
+          managerUserId: normalized.managerUserId,
+          scimMeta: payload as Prisma.InputJsonValue,
+        },
+      });
+    } catch (err) {
+      if (
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === 'P2002'
+      ) {
+        return reply.code(409).send(scimError(409, 'user_exists'));
+      }
+      throw err;
+    }
     await logAudit({
       action: 'scim_user_create',
       targetTable: 'UserAccount',
@@ -503,23 +593,48 @@ export async function registerScimRoutes(app: FastifyInstance) {
     if (!normalized.userName) {
       return reply.code(400).send(scimError(400, 'userName_required'));
     }
-    const updated = await prisma.userAccount.update({
-      where: { id },
-      data: {
-        externalId: normalized.externalId,
-        userName: normalized.userName,
-        displayName: normalized.displayName,
-        givenName: normalized.givenName,
-        familyName: normalized.familyName,
-        active: normalized.active ?? true,
-        emails: normalized.emails as Prisma.InputJsonValue | undefined,
-        phoneNumbers: normalized.phones as Prisma.InputJsonValue | undefined,
-        department: normalized.department,
-        organization: normalized.organization,
-        managerUserId: normalized.managerUserId,
-        scimMeta: payload as Prisma.InputJsonValue,
-      },
-    });
+    const current = await prisma.userAccount.findUnique({ where: { id } });
+    if (!current) {
+      return reply.code(404).send(scimError(404, 'user_not_found'));
+    }
+    if (normalized.userName !== current.userName) {
+      if (await isUserNameTaken(normalized.userName, id)) {
+        return reply.code(409).send(scimError(409, 'user_exists'));
+      }
+    }
+    if (normalized.externalId !== current.externalId) {
+      if (await isUserExternalIdTaken(normalized.externalId, id)) {
+        return reply.code(409).send(scimError(409, 'externalId_exists'));
+      }
+    }
+    let updated;
+    try {
+      updated = await prisma.userAccount.update({
+        where: { id },
+        data: {
+          externalId: normalized.externalId,
+          userName: normalized.userName,
+          displayName: normalized.displayName,
+          givenName: normalized.givenName,
+          familyName: normalized.familyName,
+          active: normalized.active ?? true,
+          emails: normalized.emails as Prisma.InputJsonValue | undefined,
+          phoneNumbers: normalized.phones as Prisma.InputJsonValue | undefined,
+          department: normalized.department,
+          organization: normalized.organization,
+          managerUserId: normalized.managerUserId,
+          scimMeta: payload as Prisma.InputJsonValue,
+        },
+      });
+    } catch (err) {
+      if (
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === 'P2002'
+      ) {
+        return reply.code(409).send(scimError(409, 'user_exists'));
+      }
+      throw err;
+    }
     await logAudit({
       action: 'scim_user_update',
       targetTable: 'UserAccount',
@@ -543,21 +658,37 @@ export async function registerScimRoutes(app: FastifyInstance) {
       if (opName === 'replace' || opName === 'add') {
         const value = op.value as ScimUserPayload;
         const normalized = normalizeUserPayload(value);
-        if (!path || path === 'userName') {
-          if (normalized.userName) update.userName = normalized.userName;
+        const hasUserName =
+          path === 'userName' || (!path && hasPayloadValue(value, 'userName'));
+        if (hasUserName) {
+          if (!normalized.userName) {
+            return reply.code(400).send(scimError(400, 'userName_required'));
+          }
+          update.userName = normalized.userName;
         }
-        if (!path || path === 'externalId') {
-          if (normalized.externalId) update.externalId = normalized.externalId;
+        const hasExternalId =
+          path === 'externalId' ||
+          (!path && hasPayloadValue(value, 'externalId'));
+        if (hasExternalId) {
+          update.externalId = normalized.externalId ?? null;
         }
-        if (!path || path === 'displayName') {
-          if (normalized.displayName)
-            update.displayName = normalized.displayName;
+        const hasDisplayName =
+          path === 'displayName' ||
+          (!path && hasPayloadValue(value, 'displayName'));
+        if (hasDisplayName) {
+          update.displayName = normalized.displayName ?? null;
         }
-        if (!path || path === 'name.givenName') {
-          if (normalized.givenName) update.givenName = normalized.givenName;
+        const hasGivenName =
+          path === 'name.givenName' ||
+          (!path && hasPayloadValue(value, 'name'));
+        if (hasGivenName) {
+          update.givenName = normalized.givenName ?? null;
         }
-        if (!path || path === 'name.familyName') {
-          if (normalized.familyName) update.familyName = normalized.familyName;
+        const hasFamilyName =
+          path === 'name.familyName' ||
+          (!path && hasPayloadValue(value, 'name'));
+        if (hasFamilyName) {
+          update.familyName = normalized.familyName ?? null;
         }
         if (!path || path === 'active') {
           if (typeof normalized.active === 'boolean') {
@@ -600,32 +731,57 @@ export async function registerScimRoutes(app: FastifyInstance) {
         if (path === 'active') update.active = false;
       }
     }
-    const updated = await prisma.userAccount.update({
-      where: { id },
-      data: update,
-    });
-    await logAudit({
-      action: 'scim_user_patch',
-      targetTable: 'UserAccount',
-      targetId: updated.id,
-      metadata: { externalId: updated.externalId, userName: updated.userName },
-    });
-    return buildUserResource(updated);
+    try {
+      const updated = await prisma.userAccount.update({
+        where: { id },
+        data: update,
+      });
+      await logAudit({
+        action: 'scim_user_patch',
+        targetTable: 'UserAccount',
+        targetId: updated.id,
+        metadata: {
+          externalId: updated.externalId,
+          userName: updated.userName,
+        },
+      });
+      return buildUserResource(updated);
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError) {
+        if (err.code === 'P2025') {
+          return reply.code(404).send(scimError(404, 'user_not_found'));
+        }
+        if (err.code === 'P2002') {
+          return reply.code(409).send(scimError(409, 'user_exists'));
+        }
+      }
+      throw err;
+    }
   });
 
   app.delete('/scim/v2/Users/:id', async (req, reply) => {
     if (requireScimAuth(req, reply)) return;
     const { id } = req.params as { id: string };
-    const updated = await prisma.userAccount.update({
-      where: { id },
-      data: { active: false, deletedAt: new Date() },
-    });
-    await logAudit({
-      action: 'scim_user_deactivate',
-      targetTable: 'UserAccount',
-      targetId: updated.id,
-    });
-    return reply.code(204).send();
+    try {
+      const updated = await prisma.userAccount.update({
+        where: { id },
+        data: { active: false, deletedAt: new Date() },
+      });
+      await logAudit({
+        action: 'scim_user_deactivate',
+        targetTable: 'UserAccount',
+        targetId: updated.id,
+      });
+      return reply.code(204).send();
+    } catch (err) {
+      if (
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === 'P2025'
+      ) {
+        return reply.code(404).send(scimError(404, 'user_not_found'));
+      }
+      throw err;
+    }
   });
 
   app.get('/scim/v2/Groups', async (req, reply) => {
@@ -714,11 +870,11 @@ export async function registerScimRoutes(app: FastifyInstance) {
     if (!displayName) {
       return reply.code(400).send(scimError(400, 'displayName_required'));
     }
-    const existing = await prisma.groupAccount.findFirst({
-      where: { displayName },
-    });
-    if (existing) {
+    if (await isGroupNameTaken(displayName)) {
       return reply.code(409).send(scimError(409, 'group_exists'));
+    }
+    if (await isGroupExternalIdTaken(payload.externalId)) {
+      return reply.code(409).send(scimError(409, 'externalId_exists'));
     }
     let memberIds: string[] = [];
     try {
@@ -730,13 +886,24 @@ export async function registerScimRoutes(app: FastifyInstance) {
       }
       throw err;
     }
-    const created = await prisma.groupAccount.create({
-      data: {
-        externalId: payload.externalId,
-        displayName,
-        scimMeta: payload as Prisma.InputJsonValue,
-      },
-    });
+    let created;
+    try {
+      created = await prisma.groupAccount.create({
+        data: {
+          externalId: payload.externalId,
+          displayName,
+          scimMeta: payload as Prisma.InputJsonValue,
+        },
+      });
+    } catch (err) {
+      if (
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === 'P2002'
+      ) {
+        return reply.code(409).send(scimError(409, 'group_exists'));
+      }
+      throw err;
+    }
     await syncGroupMembers(created.id, memberIds);
     const group = await prisma.groupAccount.findUnique({
       where: { id: created.id },
@@ -772,6 +939,20 @@ export async function registerScimRoutes(app: FastifyInstance) {
     if (!displayName) {
       return reply.code(400).send(scimError(400, 'displayName_required'));
     }
+    const current = await prisma.groupAccount.findUnique({ where: { id } });
+    if (!current) {
+      return reply.code(404).send(scimError(404, 'group_not_found'));
+    }
+    if (displayName !== current.displayName) {
+      if (await isGroupNameTaken(displayName, id)) {
+        return reply.code(409).send(scimError(409, 'group_exists'));
+      }
+    }
+    if (payload.externalId !== current.externalId) {
+      if (await isGroupExternalIdTaken(payload.externalId, id)) {
+        return reply.code(409).send(scimError(409, 'externalId_exists'));
+      }
+    }
     let memberIds: string[] = [];
     try {
       memberIds = await resolveMembersPayload(payload.members);
@@ -782,14 +963,31 @@ export async function registerScimRoutes(app: FastifyInstance) {
       }
       throw err;
     }
-    const updated = await prisma.groupAccount.update({
-      where: { id },
-      data: {
-        externalId: payload.externalId,
-        displayName,
-        scimMeta: payload as Prisma.InputJsonValue,
-      },
-    });
+    let updated;
+    try {
+      updated = await prisma.groupAccount.update({
+        where: { id },
+        data: {
+          externalId: payload.externalId,
+          displayName,
+          scimMeta: payload as Prisma.InputJsonValue,
+        },
+      });
+    } catch (err) {
+      if (
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === 'P2025'
+      ) {
+        return reply.code(404).send(scimError(404, 'group_not_found'));
+      }
+      if (
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === 'P2002'
+      ) {
+        return reply.code(409).send(scimError(409, 'group_exists'));
+      }
+      throw err;
+    }
     await syncGroupMembers(updated.id, memberIds);
     const group = await prisma.groupAccount.findUnique({
       where: { id: updated.id },
@@ -819,23 +1017,83 @@ export async function registerScimRoutes(app: FastifyInstance) {
     const { id } = req.params as { id: string };
     const payload = req.body as ScimPatchPayload;
     const ops = payload.Operations || [];
+    const current = await prisma.groupAccount.findUnique({ where: { id } });
+    if (!current) {
+      return reply.code(404).send(scimError(404, 'group_not_found'));
+    }
     const update: Prisma.GroupAccountUpdateInput = {
       scimMeta: payload as Prisma.InputJsonValue,
     };
     for (const op of ops) {
       const opName = (op.op || '').toLowerCase();
       const path = op.path || '';
-      if (opName === 'replace' && (path === 'displayName' || !path)) {
-        const value = op.value as ScimGroupPayload;
-        const displayName =
-          typeof value?.displayName === 'string'
-            ? value.displayName.trim()
-            : '';
-        if (displayName) update.displayName = displayName;
+      if (opName === 'replace' || opName === 'add') {
+        const value =
+          typeof op.value === 'object' && op.value !== null
+            ? (op.value as ScimGroupPayload)
+            : undefined;
+        const hasDisplayName =
+          path === 'displayName' ||
+          (!path && hasPayloadValue(value, 'displayName'));
+        if (hasDisplayName) {
+          const displayNameRaw =
+            typeof op.value === 'string'
+              ? op.value
+              : typeof value?.displayName === 'string'
+                ? value.displayName
+                : '';
+          const displayName = displayNameRaw.trim();
+          if (!displayName) {
+            return reply
+              .code(400)
+              .send(scimError(400, 'displayName_required'));
+          }
+          update.displayName = displayName;
+        }
+        const hasExternalId =
+          path === 'externalId' ||
+          (!path && hasPayloadValue(value, 'externalId'));
+        if (hasExternalId) {
+          const externalId =
+            typeof op.value === 'string'
+              ? op.value.trim()
+              : typeof value?.externalId === 'string'
+                ? value.externalId.trim()
+                : null;
+          update.externalId = externalId || null;
+        }
+      } else if (opName === 'remove') {
+        if (path === 'externalId') update.externalId = null;
       }
     }
-    if (Object.keys(update).length > 1) {
+    if (update.displayName !== undefined) {
+      if (
+        update.displayName !== current.displayName &&
+        (await isGroupNameTaken(update.displayName, id))
+      ) {
+        return reply.code(409).send(scimError(409, 'group_exists'));
+      }
+    }
+    if (update.externalId !== undefined) {
+      if (
+        update.externalId !== current.externalId &&
+        (await isGroupExternalIdTaken(update.externalId ?? undefined, id))
+      ) {
+        return reply.code(409).send(scimError(409, 'externalId_exists'));
+      }
+    }
+    try {
       await prisma.groupAccount.update({ where: { id }, data: update });
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError) {
+        if (err.code === 'P2025') {
+          return reply.code(404).send(scimError(404, 'group_not_found'));
+        }
+        if (err.code === 'P2002') {
+          return reply.code(409).send(scimError(409, 'group_exists'));
+        }
+      }
+      throw err;
     }
     for (const op of ops) {
       const opName = (op.op || '').toLowerCase();
@@ -908,15 +1166,25 @@ export async function registerScimRoutes(app: FastifyInstance) {
   app.delete('/scim/v2/Groups/:id', async (req, reply) => {
     if (requireScimAuth(req, reply)) return;
     const { id } = req.params as { id: string };
-    const updated = await prisma.groupAccount.update({
-      where: { id },
-      data: { isActive: false },
-    });
-    await logAudit({
-      action: 'scim_group_disable',
-      targetTable: 'GroupAccount',
-      targetId: updated.id,
-    });
-    return reply.code(204).send();
+    try {
+      const updated = await prisma.groupAccount.update({
+        where: { id },
+        data: { active: false },
+      });
+      await logAudit({
+        action: 'scim_group_disable',
+        targetTable: 'GroupAccount',
+        targetId: updated.id,
+      });
+      return reply.code(204).send();
+    } catch (err) {
+      if (
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === 'P2025'
+      ) {
+        return reply.code(404).send(scimError(404, 'group_not_found'));
+      }
+      throw err;
+    }
   });
 }
