@@ -34,7 +34,8 @@ function buildAuthHeaders(): Record<string, string> {
   const headers: Record<string, string> = {};
   if (auth.userId) headers['x-user-id'] = auth.userId;
   if (auth.roles?.length) headers['x-roles'] = auth.roles.join(',');
-  if (auth.projectIds?.length) headers['x-project-ids'] = auth.projectIds.join(',');
+  if (auth.projectIds?.length)
+    headers['x-project-ids'] = auth.projectIds.join(',');
   if (auth.groupIds?.length) headers['x-group-ids'] = auth.groupIds.join(',');
   if (auth.token) headers.Authorization = `Bearer ${auth.token}`;
   return headers;
@@ -73,7 +74,10 @@ async function handleResponse<T>(res: Response, path: string): Promise<T> {
   throw new Error(`Request failed: ${path} (${res.status}) ${body}`);
 }
 
-export async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
+export async function api<T>(
+  path: string,
+  options: RequestInit = {},
+): Promise<T> {
   const res = await fetch(path, {
     ...options,
     headers: mergeHeaders(options.headers),
@@ -81,7 +85,14 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
   return handleResponse<T>(res, path);
 }
 
-export async function apiWithAuth<T>(path: string, token?: string, options: RequestInit = {}): Promise<T> {
+export async function apiWithAuth<T>(
+  path: string,
+  token?: string,
+  options: RequestInit = {},
+): Promise<T> {
   const headers = token ? { Authorization: `Bearer ${token}` } : {};
-  return api<T>(path, { ...options, headers: { ...(options.headers || {}), ...headers } });
+  return api<T>(path, {
+    ...options,
+    headers: { ...(options.headers || {}), ...headers },
+  });
 }

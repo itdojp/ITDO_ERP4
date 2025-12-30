@@ -1,4 +1,5 @@
 import { FastifyInstance } from 'fastify';
+import type { Prisma } from '@prisma/client';
 import {
   projectChatMessageSchema,
   projectChatReactionSchema,
@@ -170,7 +171,10 @@ export async function registerChatRoutes(app: FastifyInstance) {
         count: normalized.count + 1,
         userIds: [...normalized.userIds, userId],
       };
-      const next = { ...current, [trimmedEmoji]: normalized };
+      const next = {
+        ...current,
+        [trimmedEmoji]: normalized,
+      } as Prisma.InputJsonValue;
       const updated = await prisma.projectChatMessage.update({
         where: { id },
         data: {

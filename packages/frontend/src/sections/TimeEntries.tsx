@@ -1,7 +1,16 @@
 import React, { useEffect, useState } from 'react';
 import { api, getAuthState } from '../api';
 
-type TimeEntry = { id: string; projectId: string; workDate: string; minutes: number; status: string; workType?: string; location?: string; taskId?: string };
+type TimeEntry = {
+  id: string;
+  projectId: string;
+  workDate: string;
+  minutes: number;
+  status: string;
+  workType?: string;
+  location?: string;
+  taskId?: string;
+};
 type FormState = {
   projectId: string;
   taskId: string;
@@ -27,7 +36,10 @@ export const TimeEntries: React.FC = () => {
   const defaultProjectId = auth?.projectIds?.[0] || defaultForm.projectId;
   const [items, setItems] = useState<TimeEntry[]>([]);
   const [message, setMessage] = useState<MessageState>(null);
-  const [form, setForm] = useState<FormState>({ ...defaultForm, projectId: defaultProjectId });
+  const [form, setForm] = useState<FormState>({
+    ...defaultForm,
+    projectId: defaultProjectId,
+  });
   const [isSaving, setIsSaving] = useState(false);
   const minutesValue = Number.isFinite(form.minutes) ? form.minutes : 0;
   const minutesError =
@@ -40,10 +52,14 @@ export const TimeEntries: React.FC = () => {
           : '';
   const baseValid = Boolean(form.projectId.trim()) && Boolean(form.workDate);
   const isValid = baseValid && !minutesError;
-  const validationHint = !baseValid ? 'Project ID と日付は必須です' : minutesError;
+  const validationHint = !baseValid
+    ? 'Project ID と日付は必須です'
+    : minutesError;
 
   useEffect(() => {
-    api<{ items: TimeEntry[] }>('/time-entries').then((res) => setItems(res.items)).catch(() => setItems([]));
+    api<{ items: TimeEntry[] }>('/time-entries')
+      .then((res) => setItems(res.items))
+      .catch(() => setItems([]));
   }, []);
 
   useEffect(() => {
@@ -87,35 +103,76 @@ export const TimeEntries: React.FC = () => {
       <h2>工数入力</h2>
       <div className="card" style={{ marginBottom: 12 }}>
         <div className="row" style={{ gap: 8, alignItems: 'center' }}>
-          <input type="text" value={form.projectId} onChange={(e) => setForm({ ...form, projectId: e.target.value })} placeholder="Project ID" />
-          <input type="text" value={form.taskId} onChange={(e) => setForm({ ...form, taskId: e.target.value })} placeholder="Task ID (任意)" />
-          <input type="date" value={form.workDate} onChange={(e) => setForm({ ...form, workDate: e.target.value })} />
+          <input
+            type="text"
+            value={form.projectId}
+            onChange={(e) => setForm({ ...form, projectId: e.target.value })}
+            placeholder="Project ID"
+          />
+          <input
+            type="text"
+            value={form.taskId}
+            onChange={(e) => setForm({ ...form, taskId: e.target.value })}
+            placeholder="Task ID (任意)"
+          />
+          <input
+            type="date"
+            value={form.workDate}
+            onChange={(e) => setForm({ ...form, workDate: e.target.value })}
+          />
           <input
             type="number"
             min={1}
             max={1440}
             step={15}
             value={form.minutes}
-            onChange={(e) => setForm({ ...form, minutes: Number(e.target.value) })}
+            onChange={(e) =>
+              setForm({ ...form, minutes: Number(e.target.value) })
+            }
             style={{ width: 100 }}
           />
-          <input type="text" value={form.workType} onChange={(e) => setForm({ ...form, workType: e.target.value })} placeholder="作業種別" />
-          <input type="text" value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} placeholder="場所" />
-          <button className="button" onClick={add} disabled={!isValid || isSaving}>追加</button>
+          <input
+            type="text"
+            value={form.workType}
+            onChange={(e) => setForm({ ...form, workType: e.target.value })}
+            placeholder="作業種別"
+          />
+          <input
+            type="text"
+            value={form.location}
+            onChange={(e) => setForm({ ...form, location: e.target.value })}
+            placeholder="場所"
+          />
+          <button
+            className="button"
+            onClick={add}
+            disabled={!isValid || isSaving}
+          >
+            追加
+          </button>
         </div>
-        {validationHint && <p style={{ color: '#dc2626', margin: '8px 0 0' }}>{validationHint}</p>}
+        {validationHint && (
+          <p style={{ color: '#dc2626', margin: '8px 0 0' }}>
+            {validationHint}
+          </p>
+        )}
       </div>
       <ul className="list">
         {items.map((e) => (
           <li key={e.id}>
-            <span className="badge">{e.status}</span> {e.workDate.slice(0, 10)} / {e.projectId} / {e.minutes} min
+            <span className="badge">{e.status}</span> {e.workDate.slice(0, 10)}{' '}
+            / {e.projectId} / {e.minutes} min
             {e.workType && <> / {e.workType}</>}
             {e.location && <> / {e.location}</>}
           </li>
         ))}
         {items.length === 0 && <li>データなし</li>}
       </ul>
-      {message && <p style={{ color: message.type === 'error' ? '#dc2626' : undefined }}>{message.text}</p>}
+      {message && (
+        <p style={{ color: message.type === 'error' ? '#dc2626' : undefined }}>
+          {message.text}
+        </p>
+      )}
     </div>
   );
 };

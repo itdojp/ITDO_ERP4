@@ -1,4 +1,5 @@
 import { FastifyInstance } from 'fastify';
+import type { Prisma } from '@prisma/client';
 import { prisma } from '../services/db.js';
 
 type SendGridEvent = {
@@ -190,7 +191,7 @@ export async function registerSendEventRoutes(app: FastifyInstance) {
       const { logsById, logsBySgId } = buildLogLookup(sendLogs, sgMessageIds);
 
       let stored = 0;
-      const txOps: Array<Promise<unknown>> = [];
+      const txOps: Array<Prisma.PrismaPromise<unknown>> = [];
       const pendingUpdates = new Map<
         string,
         { status: string; error?: string }

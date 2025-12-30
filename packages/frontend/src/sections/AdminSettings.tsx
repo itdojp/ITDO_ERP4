@@ -46,13 +46,31 @@ type TemplateSetting = {
   isDefault?: boolean | null;
 };
 
-const alertTypes = ['budget_overrun', 'overtime', 'approval_delay', 'approval_escalation', 'delivery_due'];
+const alertTypes = [
+  'budget_overrun',
+  'overtime',
+  'approval_delay',
+  'approval_escalation',
+  'delivery_due',
+];
 const alertChannels = ['email', 'dashboard', 'slack', 'webhook'];
-const flowTypes = ['estimate', 'invoice', 'expense', 'leave', 'time', 'purchase_order', 'vendor_invoice', 'vendor_quote'];
+const flowTypes = [
+  'estimate',
+  'invoice',
+  'expense',
+  'leave',
+  'time',
+  'purchase_order',
+  'vendor_invoice',
+  'vendor_quote',
+];
 const templateKinds = ['estimate', 'invoice', 'purchase_order'];
 
 function parseCsv(input: string): string[] {
-  return input.split(',').map((v) => v.trim()).filter(Boolean);
+  return input
+    .split(',')
+    .map((v) => v.trim())
+    .filter(Boolean);
 }
 
 function isValidHttpUrl(value: string): boolean {
@@ -97,11 +115,17 @@ export const AdminSettings: React.FC = () => {
     signatureText: '',
     isDefault: true,
   });
-  const [editingTemplateId, setEditingTemplateId] = useState<string | null>(null);
+  const [editingTemplateId, setEditingTemplateId] = useState<string | null>(
+    null,
+  );
 
-  const channels = useMemo(() => Array.from(alertForm.channels), [alertForm.channels]);
+  const channels = useMemo(
+    () => Array.from(alertForm.channels),
+    [alertForm.channels],
+  );
   const templatesForKind = useMemo(
-    () => pdfTemplates.filter((template) => template.kind === templateForm.kind),
+    () =>
+      pdfTemplates.filter((template) => template.kind === templateForm.kind),
     [pdfTemplates, templateForm.kind],
   );
   const templateNameMap = useMemo(
@@ -171,7 +195,10 @@ export const AdminSettings: React.FC = () => {
       if (editingTemplateId != null) {
         return prev;
       }
-      if (prev.templateId && templatesForKind.some((t) => t.id === prev.templateId)) {
+      if (
+        prev.templateId &&
+        templatesForKind.some((t) => t.id === prev.templateId)
+      ) {
         return prev;
       }
       return { ...prev, templateId: templatesForKind[0].id };
@@ -222,7 +249,10 @@ export const AdminSettings: React.FC = () => {
       isEnabled: true,
     };
     try {
-      await api('/alert-settings', { method: 'POST', body: JSON.stringify(payload) });
+      await api('/alert-settings', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
       setMessage('アラート設定を作成しました');
       await loadAlertSettings();
     } catch (err) {
@@ -231,9 +261,14 @@ export const AdminSettings: React.FC = () => {
     }
   };
 
-  const toggleAlert = async (id: string, enabled: boolean | null | undefined) => {
+  const toggleAlert = async (
+    id: string,
+    enabled: boolean | null | undefined,
+  ) => {
     try {
-      await api(`/alert-settings/${id}/${enabled ? 'disable' : 'enable'}`, { method: 'POST' });
+      await api(`/alert-settings/${id}/${enabled ? 'disable' : 'enable'}`, {
+        method: 'POST',
+      });
       await loadAlertSettings();
     } catch (err) {
       logError('toggleAlert failed', err);
@@ -278,11 +313,18 @@ export const AdminSettings: React.FC = () => {
       setMessage('テンプレートを選択してください');
       return;
     }
-    if (!templatesForKind.some((template) => template.id === templateForm.templateId)) {
+    if (
+      !templatesForKind.some(
+        (template) => template.id === templateForm.templateId,
+      )
+    ) {
       setMessage('テンプレートが存在しません');
       return;
     }
-    const layoutConfig = parseJson('layoutConfig', templateForm.layoutConfigJson);
+    const layoutConfig = parseJson(
+      'layoutConfig',
+      templateForm.layoutConfigJson,
+    );
     if (layoutConfig === null) return;
     const payload = {
       kind: templateForm.kind,
@@ -321,7 +363,9 @@ export const AdminSettings: React.FC = () => {
       kind: item.kind,
       templateId: item.templateId,
       numberRule: item.numberRule,
-      layoutConfigJson: item.layoutConfig ? JSON.stringify(item.layoutConfig, null, 2) : '',
+      layoutConfigJson: item.layoutConfig
+        ? JSON.stringify(item.layoutConfig, null, 2)
+        : '',
       logoUrl: item.logoUrl || '',
       signatureText: item.signatureText || '',
       isDefault: Boolean(item.isDefault),
@@ -365,7 +409,10 @@ export const AdminSettings: React.FC = () => {
       steps,
     };
     try {
-      await api('/approval-rules', { method: 'POST', body: JSON.stringify(payload) });
+      await api('/approval-rules', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
       setMessage('承認ルールを作成しました');
       await loadApprovalRules();
     } catch (err) {
@@ -384,9 +431,16 @@ export const AdminSettings: React.FC = () => {
           <div className="row" style={{ marginTop: 8 }}>
             <label>
               種別
-              <select value={alertForm.type} onChange={(e) => setAlertForm({ ...alertForm, type: e.target.value })}>
+              <select
+                value={alertForm.type}
+                onChange={(e) =>
+                  setAlertForm({ ...alertForm, type: e.target.value })
+                }
+              >
                 {alertTypes.map((type) => (
-                  <option key={type} value={type}>{type}</option>
+                  <option key={type} value={type}>
+                    {type}
+                  </option>
                 ))}
               </select>
             </label>
@@ -395,7 +449,9 @@ export const AdminSettings: React.FC = () => {
               <input
                 type="number"
                 value={alertForm.threshold}
-                onChange={(e) => setAlertForm({ ...alertForm, threshold: e.target.value })}
+                onChange={(e) =>
+                  setAlertForm({ ...alertForm, threshold: e.target.value })
+                }
               />
             </label>
             <label>
@@ -403,7 +459,9 @@ export const AdminSettings: React.FC = () => {
               <input
                 type="text"
                 value={alertForm.period}
-                onChange={(e) => setAlertForm({ ...alertForm, period: e.target.value })}
+                onChange={(e) =>
+                  setAlertForm({ ...alertForm, period: e.target.value })
+                }
                 placeholder="day/week/month"
               />
             </label>
@@ -412,7 +470,9 @@ export const AdminSettings: React.FC = () => {
               <input
                 type="text"
                 value={alertForm.scopeProjectId}
-                onChange={(e) => setAlertForm({ ...alertForm, scopeProjectId: e.target.value })}
+                onChange={(e) =>
+                  setAlertForm({ ...alertForm, scopeProjectId: e.target.value })
+                }
                 placeholder="projectId"
               />
             </label>
@@ -421,7 +481,12 @@ export const AdminSettings: React.FC = () => {
               <input
                 type="number"
                 value={alertForm.remindAfterHours}
-                onChange={(e) => setAlertForm({ ...alertForm, remindAfterHours: e.target.value })}
+                onChange={(e) =>
+                  setAlertForm({
+                    ...alertForm,
+                    remindAfterHours: e.target.value,
+                  })
+                }
                 placeholder="24"
               />
             </label>
@@ -432,7 +497,9 @@ export const AdminSettings: React.FC = () => {
               <input
                 type="text"
                 value={alertForm.emails}
-                onChange={(e) => setAlertForm({ ...alertForm, emails: e.target.value })}
+                onChange={(e) =>
+                  setAlertForm({ ...alertForm, emails: e.target.value })
+                }
                 placeholder="a@ex.com,b@ex.com"
               />
             </label>
@@ -441,7 +508,9 @@ export const AdminSettings: React.FC = () => {
               <input
                 type="text"
                 value={alertForm.roles}
-                onChange={(e) => setAlertForm({ ...alertForm, roles: e.target.value })}
+                onChange={(e) =>
+                  setAlertForm({ ...alertForm, roles: e.target.value })
+                }
                 placeholder="mgmt,exec"
               />
             </label>
@@ -450,7 +519,9 @@ export const AdminSettings: React.FC = () => {
               <input
                 type="text"
                 value={alertForm.users}
-                onChange={(e) => setAlertForm({ ...alertForm, users: e.target.value })}
+                onChange={(e) =>
+                  setAlertForm({ ...alertForm, users: e.target.value })
+                }
                 placeholder="userId1,userId2"
               />
             </label>
@@ -459,7 +530,9 @@ export const AdminSettings: React.FC = () => {
               <input
                 type="text"
                 value={alertForm.slackWebhooks}
-                onChange={(e) => setAlertForm({ ...alertForm, slackWebhooks: e.target.value })}
+                onChange={(e) =>
+                  setAlertForm({ ...alertForm, slackWebhooks: e.target.value })
+                }
                 placeholder="https://hooks.slack.com/..."
               />
             </label>
@@ -468,7 +541,9 @@ export const AdminSettings: React.FC = () => {
               <input
                 type="text"
                 value={alertForm.webhooks}
-                onChange={(e) => setAlertForm({ ...alertForm, webhooks: e.target.value })}
+                onChange={(e) =>
+                  setAlertForm({ ...alertForm, webhooks: e.target.value })
+                }
                 placeholder="https://example.com/notify"
               />
             </label>
@@ -487,30 +562,49 @@ export const AdminSettings: React.FC = () => {
             ))}
           </div>
           <div className="row" style={{ marginTop: 8 }}>
-            <button className="button" onClick={createAlertSetting}>作成</button>
-            <button className="button secondary" onClick={loadAlertSettings}>再読込</button>
+            <button className="button" onClick={createAlertSetting}>
+              作成
+            </button>
+            <button className="button secondary" onClick={loadAlertSettings}>
+              再読込
+            </button>
           </div>
-          <div className="list" style={{ display: 'grid', gap: 8, marginTop: 8 }}>
+          <div
+            className="list"
+            style={{ display: 'grid', gap: 8, marginTop: 8 }}
+          >
             {alertItems.length === 0 && <div className="card">設定なし</div>}
             {alertItems.map((item) => (
               <div key={item.id} className="card" style={{ padding: 12 }}>
-                <div className="row" style={{ justifyContent: 'space-between' }}>
+                <div
+                  className="row"
+                  style={{ justifyContent: 'space-between' }}
+                >
                   <div>
-                    <strong>{item.type}</strong> / {item.period} / threshold {item.threshold}
+                    <strong>{item.type}</strong> / {item.period} / threshold{' '}
+                    {item.threshold}
                   </div>
-                  <span className="badge">{item.isEnabled ? 'enabled' : 'disabled'}</span>
+                  <span className="badge">
+                    {item.isEnabled ? 'enabled' : 'disabled'}
+                  </span>
                 </div>
                 <div style={{ fontSize: 12, color: '#475569', marginTop: 4 }}>
-                  channels: {(item.channels || []).join(', ') || '-'} / emails: {(item.recipients?.emails || []).join(', ') || '-'}
+                  channels: {(item.channels || []).join(', ') || '-'} / emails:{' '}
+                  {(item.recipients?.emails || []).join(', ') || '-'}
                 </div>
                 <div style={{ fontSize: 12, color: '#475569', marginTop: 4 }}>
                   remindAfterHours: {item.remindAfterHours ?? '-'}
                 </div>
                 <div style={{ fontSize: 12, color: '#475569', marginTop: 4 }}>
-                  Slack: {(item.recipients?.slackWebhooks || []).join(', ') || '-'} / Webhook: {(item.recipients?.webhooks || []).join(', ') || '-'}
+                  Slack:{' '}
+                  {(item.recipients?.slackWebhooks || []).join(', ') || '-'} /
+                  Webhook: {(item.recipients?.webhooks || []).join(', ') || '-'}
                 </div>
                 <div className="row" style={{ marginTop: 6 }}>
-                  <button className="button secondary" onClick={() => toggleAlert(item.id, item.isEnabled)}>
+                  <button
+                    className="button secondary"
+                    onClick={() => toggleAlert(item.id, item.isEnabled)}
+                  >
                     {item.isEnabled ? '無効化' : '有効化'}
                   </button>
                 </div>
@@ -524,9 +618,16 @@ export const AdminSettings: React.FC = () => {
           <div className="row" style={{ marginTop: 8 }}>
             <label>
               flowType
-              <select value={ruleForm.flowType} onChange={(e) => setRuleForm({ ...ruleForm, flowType: e.target.value })}>
+              <select
+                value={ruleForm.flowType}
+                onChange={(e) =>
+                  setRuleForm({ ...ruleForm, flowType: e.target.value })
+                }
+              >
                 {flowTypes.map((type) => (
-                  <option key={type} value={type}>{type}</option>
+                  <option key={type} value={type}>
+                    {type}
+                  </option>
                 ))}
               </select>
             </label>
@@ -536,7 +637,9 @@ export const AdminSettings: React.FC = () => {
               conditions (JSON)
               <textarea
                 value={ruleForm.conditionsJson}
-                onChange={(e) => setRuleForm({ ...ruleForm, conditionsJson: e.target.value })}
+                onChange={(e) =>
+                  setRuleForm({ ...ruleForm, conditionsJson: e.target.value })
+                }
                 rows={3}
                 style={{ width: '100%' }}
               />
@@ -545,17 +648,26 @@ export const AdminSettings: React.FC = () => {
               steps (JSON)
               <textarea
                 value={ruleForm.stepsJson}
-                onChange={(e) => setRuleForm({ ...ruleForm, stepsJson: e.target.value })}
+                onChange={(e) =>
+                  setRuleForm({ ...ruleForm, stepsJson: e.target.value })
+                }
                 rows={3}
                 style={{ width: '100%' }}
               />
             </label>
           </div>
           <div className="row" style={{ marginTop: 8 }}>
-            <button className="button" onClick={createApprovalRule}>作成</button>
-            <button className="button secondary" onClick={loadApprovalRules}>再読込</button>
+            <button className="button" onClick={createApprovalRule}>
+              作成
+            </button>
+            <button className="button secondary" onClick={loadApprovalRules}>
+              再読込
+            </button>
           </div>
-          <div className="list" style={{ display: 'grid', gap: 8, marginTop: 8 }}>
+          <div
+            className="list"
+            style={{ display: 'grid', gap: 8, marginTop: 8 }}
+          >
             {ruleItems.length === 0 && <div className="card">ルールなし</div>}
             {ruleItems.map((rule) => (
               <div key={rule.id} className="card" style={{ padding: 12 }}>
@@ -563,7 +675,8 @@ export const AdminSettings: React.FC = () => {
                   <strong>{rule.flowType}</strong>
                 </div>
                 <div style={{ fontSize: 12, color: '#475569', marginTop: 4 }}>
-                  conditions: {rule.conditions ? JSON.stringify(rule.conditions) : '-'}
+                  conditions:{' '}
+                  {rule.conditions ? JSON.stringify(rule.conditions) : '-'}
                 </div>
                 <div style={{ fontSize: 12, color: '#475569', marginTop: 4 }}>
                   steps: {rule.steps ? JSON.stringify(rule.steps) : '-'}
@@ -578,9 +691,16 @@ export const AdminSettings: React.FC = () => {
           <div className="row" style={{ marginTop: 8, flexWrap: 'wrap' }}>
             <label>
               種別
-              <select value={templateForm.kind} onChange={(e) => setTemplateForm({ ...templateForm, kind: e.target.value })}>
+              <select
+                value={templateForm.kind}
+                onChange={(e) =>
+                  setTemplateForm({ ...templateForm, kind: e.target.value })
+                }
+              >
                 {templateKinds.map((kind) => (
-                  <option key={kind} value={kind}>{kind}</option>
+                  <option key={kind} value={kind}>
+                    {kind}
+                  </option>
                 ))}
               </select>
             </label>
@@ -588,11 +708,20 @@ export const AdminSettings: React.FC = () => {
               テンプレ
               <select
                 value={templateForm.templateId}
-                onChange={(e) => setTemplateForm({ ...templateForm, templateId: e.target.value })}
+                onChange={(e) =>
+                  setTemplateForm({
+                    ...templateForm,
+                    templateId: e.target.value,
+                  })
+                }
               >
-                {templatesForKind.length === 0 && <option value="">テンプレなし</option>}
+                {templatesForKind.length === 0 && (
+                  <option value="">テンプレなし</option>
+                )}
                 {templatesForKind.map((template) => (
-                  <option key={template.id} value={template.id}>{template.name}</option>
+                  <option key={template.id} value={template.id}>
+                    {template.name}
+                  </option>
                 ))}
               </select>
             </label>
@@ -601,7 +730,12 @@ export const AdminSettings: React.FC = () => {
               <input
                 type="text"
                 value={templateForm.numberRule}
-                onChange={(e) => setTemplateForm({ ...templateForm, numberRule: e.target.value })}
+                onChange={(e) =>
+                  setTemplateForm({
+                    ...templateForm,
+                    numberRule: e.target.value,
+                  })
+                }
                 placeholder="PYYYY-MM-NNNN"
               />
             </label>
@@ -610,7 +744,9 @@ export const AdminSettings: React.FC = () => {
               <input
                 type="text"
                 value={templateForm.logoUrl}
-                onChange={(e) => setTemplateForm({ ...templateForm, logoUrl: e.target.value })}
+                onChange={(e) =>
+                  setTemplateForm({ ...templateForm, logoUrl: e.target.value })
+                }
                 placeholder="https://..."
               />
             </label>
@@ -619,7 +755,12 @@ export const AdminSettings: React.FC = () => {
               <input
                 type="text"
                 value={templateForm.signatureText}
-                onChange={(e) => setTemplateForm({ ...templateForm, signatureText: e.target.value })}
+                onChange={(e) =>
+                  setTemplateForm({
+                    ...templateForm,
+                    signatureText: e.target.value,
+                  })
+                }
                 placeholder="代表取締役 ..."
               />
             </label>
@@ -627,7 +768,12 @@ export const AdminSettings: React.FC = () => {
               <input
                 type="checkbox"
                 checked={templateForm.isDefault}
-                onChange={(e) => setTemplateForm({ ...templateForm, isDefault: e.target.checked })}
+                onChange={(e) =>
+                  setTemplateForm({
+                    ...templateForm,
+                    isDefault: e.target.checked,
+                  })
+                }
                 style={{ marginRight: 6 }}
               />
               default
@@ -638,7 +784,12 @@ export const AdminSettings: React.FC = () => {
               layoutConfig (JSON)
               <textarea
                 value={templateForm.layoutConfigJson}
-                onChange={(e) => setTemplateForm({ ...templateForm, layoutConfigJson: e.target.value })}
+                onChange={(e) =>
+                  setTemplateForm({
+                    ...templateForm,
+                    layoutConfigJson: e.target.value,
+                  })
+                }
                 rows={3}
                 style={{ width: '100%' }}
               />
@@ -648,25 +799,45 @@ export const AdminSettings: React.FC = () => {
             <button className="button" onClick={submitTemplateSetting}>
               {editingTemplateId ? '更新' : '作成'}
             </button>
-            <button className="button secondary" onClick={resetTemplateForm}>クリア</button>
-            <button className="button secondary" onClick={loadTemplateSettings}>再読込</button>
+            <button className="button secondary" onClick={resetTemplateForm}>
+              クリア
+            </button>
+            <button className="button secondary" onClick={loadTemplateSettings}>
+              再読込
+            </button>
           </div>
-          <div className="list" style={{ display: 'grid', gap: 8, marginTop: 8 }}>
+          <div
+            className="list"
+            style={{ display: 'grid', gap: 8, marginTop: 8 }}
+          >
             {templateItems.length === 0 && <div className="card">設定なし</div>}
             {templateItems.map((item) => (
               <div key={item.id} className="card" style={{ padding: 12 }}>
-                <div className="row" style={{ justifyContent: 'space-between' }}>
+                <div
+                  className="row"
+                  style={{ justifyContent: 'space-between' }}
+                >
                   <div>
                     <strong>{item.kind}</strong> / {item.templateId}
-                    {templateNameMap.has(item.templateId) && ` (${templateNameMap.get(item.templateId)})`} / {item.numberRule}
+                    {templateNameMap.has(item.templateId) &&
+                      ` (${templateNameMap.get(item.templateId)})`}{' '}
+                    / {item.numberRule}
                   </div>
-                  <span className="badge">{item.isDefault ? 'default' : 'custom'}</span>
+                  <span className="badge">
+                    {item.isDefault ? 'default' : 'custom'}
+                  </span>
                 </div>
                 <div style={{ fontSize: 12, color: '#475569', marginTop: 4 }}>
-                  logo: {item.logoUrl || '-'} / signature: {item.signatureText || '-'}
+                  logo: {item.logoUrl || '-'} / signature:{' '}
+                  {item.signatureText || '-'}
                 </div>
                 <div className="row" style={{ marginTop: 6 }}>
-                  <button className="button secondary" onClick={() => startEditTemplate(item)}>編集</button>
+                  <button
+                    className="button secondary"
+                    onClick={() => startEditTemplate(item)}
+                  >
+                    編集
+                  </button>
                   <button
                     className="button secondary"
                     disabled={item.isDefault}

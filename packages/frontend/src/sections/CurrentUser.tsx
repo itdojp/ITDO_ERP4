@@ -1,7 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { api, AuthState, getAuthState, setAuthState } from '../api';
 
-type MeResponse = { user: { userId: string; roles: string[]; ownerProjects?: string[] | string } };
+type MeResponse = {
+  user: { userId: string; roles: string[]; ownerProjects?: string[] | string };
+};
 
 export const CurrentUser: React.FC = () => {
   const [me, setMe] = useState<MeResponse['user'] | null>(null);
@@ -29,9 +31,18 @@ export const CurrentUser: React.FC = () => {
   }, [authKey]);
 
   const login = () => {
-    const roles = form.roles.split(',').map((r) => r.trim()).filter(Boolean);
-    const projectIds = form.projectIds.split(',').map((p) => p.trim()).filter(Boolean);
-    const groupIds = form.groupIds.split(',').map((g) => g.trim()).filter(Boolean);
+    const roles = form.roles
+      .split(',')
+      .map((r) => r.trim())
+      .filter(Boolean);
+    const projectIds = form.projectIds
+      .split(',')
+      .map((p) => p.trim())
+      .filter(Boolean);
+    const groupIds = form.groupIds
+      .split(',')
+      .map((g) => g.trim())
+      .filter(Boolean);
     const next: AuthState = {
       userId: form.userId.trim() || 'demo-user',
       roles: roles.length ? roles : ['user'],
@@ -53,7 +64,9 @@ export const CurrentUser: React.FC = () => {
     <div className="card" style={{ marginBottom: 12 }}>
       <div className="row" style={{ alignItems: 'center' }}>
         <strong>現在のユーザー</strong>
-        {error && <span style={{ color: '#dc2626', marginLeft: 8 }}>{error}</span>}
+        {error && (
+          <span style={{ color: '#dc2626', marginLeft: 8 }}>{error}</span>
+        )}
       </div>
       {!auth && (
         <div style={{ fontSize: 14, marginTop: 8 }}>
@@ -71,7 +84,9 @@ export const CurrentUser: React.FC = () => {
               onChange={(e) => setForm({ ...form, roles: e.target.value })}
               placeholder="roles (admin,mgmt)"
             />
-            <button className="button" onClick={login}>簡易ログイン</button>
+            <button className="button" onClick={login}>
+              簡易ログイン
+            </button>
           </div>
           <div className="row" style={{ gap: 8, marginTop: 8 }}>
             <input
@@ -95,15 +110,26 @@ export const CurrentUser: React.FC = () => {
             <>
               <div>ID: {me.userId}</div>
               <div>Roles: {me.roles.join(', ')}</div>
-              <div>OwnerProjects: {Array.isArray(me.ownerProjects) ? me.ownerProjects.join(', ') : me.ownerProjects}</div>
+              <div>
+                OwnerProjects:{' '}
+                {Array.isArray(me.ownerProjects)
+                  ? me.ownerProjects.join(', ')
+                  : me.ownerProjects}
+              </div>
               <div>Groups: {(auth.groupIds || []).join(', ') || '-'}</div>
             </>
           ) : (
             !error && <div>読み込み中...</div>
           )}
-          <button className="button secondary" style={{ marginTop: 8 }} onClick={logout}>ログアウト</button>
+          <button
+            className="button secondary"
+            style={{ marginTop: 8 }}
+            onClick={logout}
+          >
+            ログアウト
+          </button>
         </div>
       )}
     </div>
   );
-}
+};

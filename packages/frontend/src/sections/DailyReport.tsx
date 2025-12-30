@@ -2,7 +2,14 @@ import React, { useEffect, useState } from 'react';
 import { api, getAuthState } from '../api';
 import { HelpModal } from './HelpModal';
 
-const tags = ['仕事量が多い', '役割/進め方', '人間関係', '体調', '私生活', '特になし'];
+const tags = [
+  '仕事量が多い',
+  '役割/進め方',
+  '人間関係',
+  '体調',
+  '私生活',
+  '特になし',
+];
 
 type MessageState = { text: string; type: 'success' | 'error' } | null;
 
@@ -23,7 +30,9 @@ export const DailyReport: React.FC = () => {
   }, [message]);
 
   const toggleTag = (tag: string) => {
-    setSelectedTags((prev) => (prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]));
+    setSelectedTags((prev) =>
+      prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag],
+    );
   };
 
   const submit = async () => {
@@ -48,10 +57,12 @@ export const DailyReport: React.FC = () => {
         body: JSON.stringify({
           userId,
           entryDate: new Date().toISOString(),
-        status,
-        notes: selectedTags.length ? `${notes}\nTags:${selectedTags.join(',')}` : notes,
-        helpRequested,
-        visibilityGroupId: 'hr-group',
+          status,
+          notes: selectedTags.length
+            ? `${notes}\nTags:${selectedTags.join(',')}`
+            : notes,
+          helpRequested,
+          visibilityGroupId: 'hr-group',
         }),
       });
       setMessage({ text: '送信しました', type: 'success' });
@@ -71,9 +82,27 @@ export const DailyReport: React.FC = () => {
       <h2>日報 + ウェルビーイング</h2>
       <div className="row" style={{ alignItems: 'center' }}>
         <span>今日のコンディション:</span>
-        <button className="button secondary" onClick={() => setStatus('good')} aria-pressed={status === 'good'}>Good</button>
-        <button className="button secondary" onClick={() => setStatus('not_good')} aria-pressed={status === 'not_good'}>Not Good</button>
-        <button className="button" style={{ marginLeft: 'auto' }} onClick={() => setShowHelp(true)}>ヘルプ / 相談したい</button>
+        <button
+          className="button secondary"
+          onClick={() => setStatus('good')}
+          aria-pressed={status === 'good'}
+        >
+          Good
+        </button>
+        <button
+          className="button secondary"
+          onClick={() => setStatus('not_good')}
+          aria-pressed={status === 'not_good'}
+        >
+          Not Good
+        </button>
+        <button
+          className="button"
+          style={{ marginLeft: 'auto' }}
+          onClick={() => setShowHelp(true)}
+        >
+          ヘルプ / 相談したい
+        </button>
       </div>
       {status === 'not_good' && (
         <div style={{ marginTop: 12 }}>
@@ -98,16 +127,33 @@ export const DailyReport: React.FC = () => {
               style={{ width: '100%', minHeight: 80 }}
             />
           </div>
-          <label style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 8 }}>
-            <input type="checkbox" checked={helpRequested} onChange={(e) => setHelpRequested(e.target.checked)} />
+          <label
+            style={{
+              display: 'flex',
+              gap: 8,
+              alignItems: 'center',
+              marginTop: 8,
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={helpRequested}
+              onChange={(e) => setHelpRequested(e.target.checked)}
+            />
             相談したい（人事/相談窓口へ）
           </label>
         </div>
       )}
       <div style={{ marginTop: 8 }}>
-        <button className="button" onClick={submit} disabled={isSubmitting}>送信</button>
+        <button className="button" onClick={submit} disabled={isSubmitting}>
+          送信
+        </button>
       </div>
-      {message && <p style={{ color: message.type === 'error' ? '#dc2626' : undefined }}>{message.text}</p>}
+      {message && (
+        <p style={{ color: message.type === 'error' ? '#dc2626' : undefined }}>
+          {message.text}
+        </p>
+      )}
       <p style={{ fontSize: 12, color: '#475569', marginTop: 8 }}>
         この入力は評価に使われません。職場環境の改善とサポートのためにのみ利用します。
       </p>

@@ -1,5 +1,5 @@
 import { FastifyInstance } from 'fastify';
-import type { Prisma } from '@prisma/client';
+import { Prisma, type TemplateKind } from '@prisma/client';
 import { prisma } from '../services/db.js';
 import { requireRole } from '../services/rbac.js';
 import { getPdfTemplate } from '../services/pdfTemplates.js';
@@ -8,11 +8,17 @@ import {
   templateSettingSchema,
 } from './validators.js';
 
+const TEMPLATE_KINDS: TemplateKind[] = [
+  'estimate',
+  'invoice',
+  'purchase_order',
+];
+
 type TemplateSettingBody = {
-  kind: string;
+  kind: TemplateKind;
   templateId: string;
   numberRule: string;
-  layoutConfig?: unknown;
+  layoutConfig?: Prisma.InputJsonValue | null;
   logoUrl?: string | null;
   signatureText?: string | null;
   isDefault?: boolean | null;
@@ -20,7 +26,7 @@ type TemplateSettingBody = {
 
 async function ensureDefault(
   tx: Prisma.TransactionClient,
-  kind: string,
+  kind: TemplateKind,
   targetId: string,
 ) {
   await tx.docTemplateSetting.updateMany({
@@ -29,17 +35,43 @@ async function ensureDefault(
   });
 }
 
-function isValidTemplate(kind: string, templateId: string) {
+function isValidTemplate(kind: TemplateKind, templateId: string) {
   const template = getPdfTemplate(templateId);
   return Boolean(template && template.kind === kind);
+}
+
+function parseTemplateKind(value?: string): TemplateKind | null {
+  if (!value) return null;
+  if (TEMPLATE_KINDS.includes(value as TemplateKind)) {
+    return value as TemplateKind;
+  }
+  return null;
+}
+
+function normalizeJsonInput(
+  value: Prisma.InputJsonValue | null | undefined,
+): Prisma.InputJsonValue | Prisma.NullTypes.DbNull | undefined {
+  if (value === null) return Prisma.DbNull;
+  return value;
+}
+
+function normalizeBoolean(value: boolean | null | undefined) {
+  if (value === null) return undefined;
+  return value;
 }
 
 export async function registerTemplateSettingRoutes(app: FastifyInstance) {
   app.get(
     '/template-settings',
     { preHandler: requireRole(['admin', 'mgmt']) },
-    async (req) => {
-      const { kind } = req.query as { kind?: string };
+    async (req, reply) => {
+      const { kind: rawKind } = req.query as { kind?: string };
+      const kind = parseTemplateKind(rawKind);
+      if (rawKind && !kind) {
+        return reply.status(400).send({
+          error: { code: 'INVALID_KIND', message: 'kind is invalid' },
+        });
+      }
       const items = await prisma.docTemplateSetting.findMany({
         where: kind ? { kind } : undefined,
         orderBy: { createdAt: 'desc' },
@@ -64,7 +96,13 @@ export async function registerTemplateSettingRoutes(app: FastifyInstance) {
       const userId = req.user?.userId;
       return prisma.$transaction(async (tx: Prisma.TransactionClient) => {
         const created = await tx.docTemplateSetting.create({
-          data: { ...body, createdBy: userId, updatedBy: userId },
+          data: {
+            ...body,
+            layoutConfig: normalizeJsonInput(body.layoutConfig),
+            isDefault: normalizeBoolean(body.isDefault),
+            createdBy: userId,
+            updatedBy: userId,
+          },
         });
         if (body.isDefault === true) {
           await ensureDefault(tx, created.kind, created.id);
@@ -97,10 +135,34 @@ export async function registerTemplateSettingRoutes(app: FastifyInstance) {
         });
       }
       const userId = req.user?.userId;
+      const updatePayload: Prisma.DocTemplateSettingUpdateInput = {
+        updatedBy: userId,
+      };
+      if (Object.prototype.hasOwnProperty.call(body, 'kind')) {
+        updatePayload.kind = body.kind;
+      }
+      if (Object.prototype.hasOwnProperty.call(body, 'templateId')) {
+        updatePayload.templateId = body.templateId;
+      }
+      if (Object.prototype.hasOwnProperty.call(body, 'numberRule')) {
+        updatePayload.numberRule = body.numberRule;
+      }
+      if (Object.prototype.hasOwnProperty.call(body, 'layoutConfig')) {
+        updatePayload.layoutConfig = normalizeJsonInput(body.layoutConfig);
+      }
+      if (Object.prototype.hasOwnProperty.call(body, 'logoUrl')) {
+        updatePayload.logoUrl = body.logoUrl ?? null;
+      }
+      if (Object.prototype.hasOwnProperty.call(body, 'signatureText')) {
+        updatePayload.signatureText = body.signatureText ?? null;
+      }
+      if (Object.prototype.hasOwnProperty.call(body, 'isDefault')) {
+        updatePayload.isDefault = normalizeBoolean(body.isDefault);
+      }
       return prisma.$transaction(async (tx: Prisma.TransactionClient) => {
         const updated = await tx.docTemplateSetting.update({
           where: { id },
-          data: { ...body, updatedBy: userId },
+          data: updatePayload,
         });
         if (body.isDefault === true) {
           await ensureDefault(tx, updated.kind, updated.id);

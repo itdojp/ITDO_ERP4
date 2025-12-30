@@ -12,48 +12,39 @@ function buildSample(values: string[], limit = 5) {
 
 async function detectDuplicateCodes(model: 'project' | 'customer' | 'vendor') {
   if (model === 'project') {
-    const grouped = (await prisma.project.groupBy({
+    const grouped = await prisma.project.groupBy({
       by: ['code'],
       where: { deletedAt: null },
       _count: { _all: true },
-      having: {
-        _count: {
-          _all: { gt: 1 },
-        },
-      },
-    })) as Array<{ code: string }>;
-    const codes = grouped.map((row: { code: string }) => row.code);
+    });
+    const codes = grouped
+      .filter((row) => row._count._all > 1)
+      .map((row) => row.code);
     return {
       count: grouped.length,
       sample: buildSample(codes),
     };
   }
   if (model === 'customer') {
-    const grouped = (await prisma.customer.groupBy({
+    const grouped = await prisma.customer.groupBy({
       by: ['code'],
       _count: { _all: true },
-      having: {
-        _count: {
-          _all: { gt: 1 },
-        },
-      },
-    })) as Array<{ code: string }>;
-    const codes = grouped.map((row: { code: string }) => row.code);
+    });
+    const codes = grouped
+      .filter((row) => row._count._all > 1)
+      .map((row) => row.code);
     return {
       count: grouped.length,
       sample: buildSample(codes),
     };
   }
-  const grouped = (await prisma.vendor.groupBy({
+  const grouped = await prisma.vendor.groupBy({
     by: ['code'],
     _count: { _all: true },
-    having: {
-      _count: {
-        _all: { gt: 1 },
-      },
-    },
-  })) as Array<{ code: string }>;
-  const codes = grouped.map((row: { code: string }) => row.code);
+  });
+  const codes = grouped
+    .filter((row) => row._count._all > 1)
+    .map((row) => row.code);
   return {
     count: grouped.length,
     sample: buildSample(codes),

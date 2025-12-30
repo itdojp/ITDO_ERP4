@@ -5,20 +5,15 @@ import {
   sendWebhookStub,
 } from './notifier.js';
 import { prisma } from './db.js';
+import type {
+  AlertSetting as PrismaAlertSetting,
+  Prisma,
+} from '@prisma/client';
 
-type AlertSetting = {
-  id: string;
-  type: string;
-  threshold: number | string;
-  period: string;
-  scopeProjectId?: string | null;
-  recipients?: unknown;
-  channels?: unknown;
-  isEnabled?: boolean;
-  remindAfterHours?: number | null;
-};
 type MetricResult = { metric: number; targetRef: string };
-type MetricFetcher = (setting: AlertSetting) => Promise<MetricResult | null>;
+type MetricFetcher = (
+  setting: PrismaAlertSetting,
+) => Promise<MetricResult | null>;
 
 type AlertRecipients = {
   emails?: string[];
@@ -194,8 +189,8 @@ export async function triggerAlert(
       where: { id: existing.id },
       data: {
         reminderAt: toReminderAt(now, remindAfterHours),
-        sentChannels: { set: merged.sentChannels },
-        sentResult: { set: merged.sentResult },
+        sentChannels: merged.sentChannels as Prisma.InputJsonValue,
+        sentResult: merged.sentResult as Prisma.InputJsonValue,
       },
     });
   }
@@ -216,8 +211,8 @@ export async function triggerAlert(
       targetRef,
       status: 'open',
       reminderAt: toReminderAt(now, remindAfterHours),
-      sentChannels: { set: initialNotification.sentChannels },
-      sentResult: { set: initialNotification.sentResult },
+      sentChannels: initialNotification.sentChannels as Prisma.InputJsonValue,
+      sentResult: initialNotification.sentResult as Prisma.InputJsonValue,
     },
   });
 }

@@ -1,3 +1,4 @@
+import type { Prisma } from '@prisma/client';
 import { prisma } from './db.js';
 import { applyRate } from './rate.js';
 
@@ -7,11 +8,11 @@ type RateCardMatch = {
   workDate: Date;
 };
 
-function buildDateRange(workDate: Date) {
+function buildDateRange(workDate: Date): Prisma.RateCardWhereInput {
   return {
     validFrom: { lte: workDate },
     OR: [{ validTo: null }, { validTo: { gte: workDate } }],
-  } as const;
+  };
 }
 
 export async function resolveRateCard(match: RateCardMatch) {
