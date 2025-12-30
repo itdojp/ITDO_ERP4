@@ -50,3 +50,10 @@
 3. **同期本番化**
    - 差分反映/無効化まで対応。
    - 例外運用（手動変更）を監査ログに記録。
+
+## 実装メモ（SCIM v2）
+- エンドポイント: `/scim/v2/Users`, `/scim/v2/Groups`
+- 付随: `/scim/v2/ServiceProviderConfig`, `/scim/v2/ResourceTypes`
+- 認証: `Authorization: Bearer <SCIM_BEARER_TOKEN>`
+- ページング: `startIndex`, `count`（最大 `SCIM_PAGE_MAX`）
+- フィルタ: `userName|externalId|id|active` / `displayName|externalId|id` の `eq` のみ
