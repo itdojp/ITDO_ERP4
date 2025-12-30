@@ -27,6 +27,12 @@
 - `deleted_at` を含むソフトデリート複合インデックスを維持。
 - 承認一覧は `status + approverGroupId + createdAt` を主軸。
 
+## 追加済み（初期）
+- approval_instances: (status, created_at), (status, project_id)
+- approval_steps: (status, approver_group_id), (status, approver_user_id)
+- alert_settings: (type, is_enabled)
+- alerts: (status, created_at), (target_ref, status)
+
 ## サマリテーブル案
 - project_effort_summary (project_id, period_key, user_id?, group_id?, minutes, cost)
 - project_profit_summary (project_id, period_key, revenue, cost)
