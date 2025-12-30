@@ -1,7 +1,12 @@
 import { prisma } from './db.js';
 import { calcTimeAmount, resolveRateCard } from './rateCard.js';
 import { dateKey, toNumber } from './utils.js';
-import { DocStatus, TimeStatus, type AlertSetting, type Prisma } from '@prisma/client';
+import {
+  DocStatus,
+  TimeStatus,
+  type AlertSetting,
+  type Prisma,
+} from '@prisma/client';
 type MetricResult = { metric: number; targetRef: string };
 function startOfDay(date: Date) {
   const result = new Date(date);

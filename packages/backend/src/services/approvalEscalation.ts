@@ -2,10 +2,7 @@ import { prisma } from './db.js';
 import { triggerAlert } from './alert.js';
 import type { DocStatus } from '@prisma/client';
 
-const PENDING_STATUSES: DocStatus[] = [
-  'pending_qa',
-  'pending_exec',
-];
+const PENDING_STATUSES: DocStatus[] = ['pending_qa', 'pending_exec'];
 
 function buildTargetRef(instanceId: string, stepOrder: number) {
   return `approval_instance:${instanceId}:step:${stepOrder}`;

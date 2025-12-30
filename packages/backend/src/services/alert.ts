@@ -5,7 +5,10 @@ import {
   sendWebhookStub,
 } from './notifier.js';
 import { prisma } from './db.js';
-import type { AlertSetting as PrismaAlertSetting, Prisma } from '@prisma/client';
+import type {
+  AlertSetting as PrismaAlertSetting,
+  Prisma,
+} from '@prisma/client';
 
 type MetricResult = { metric: number; targetRef: string };
 type MetricFetcher = (

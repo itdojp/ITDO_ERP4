@@ -1,5 +1,5 @@
 import { FastifyInstance } from 'fastify';
-import type { Prisma, TemplateKind } from '@prisma/client';
+import { Prisma, type TemplateKind } from '@prisma/client';
 import { prisma } from '../services/db.js';
 import { requireRole } from '../services/rbac.js';
 import { getPdfTemplate } from '../services/pdfTemplates.js';
@@ -48,6 +48,11 @@ function parseTemplateKind(value?: string): TemplateKind | null {
   return null;
 }
 
+function normalizeJsonInput(value: Prisma.InputJsonValue | null | undefined) {
+  if (value === null) return Prisma.DbNull;
+  return value;
+}
+
 export async function registerTemplateSettingRoutes(app: FastifyInstance) {
   app.get(
     '/template-settings',
@@ -84,7 +89,12 @@ export async function registerTemplateSettingRoutes(app: FastifyInstance) {
       const userId = req.user?.userId;
       return prisma.$transaction(async (tx: Prisma.TransactionClient) => {
         const created = await tx.docTemplateSetting.create({
-          data: { ...body, createdBy: userId, updatedBy: userId },
+          data: {
+            ...body,
+            layoutConfig: normalizeJsonInput(body.layoutConfig),
+            createdBy: userId,
+            updatedBy: userId,
+          },
         });
         if (body.isDefault === true) {
           await ensureDefault(tx, created.kind, created.id);
@@ -117,10 +127,14 @@ export async function registerTemplateSettingRoutes(app: FastifyInstance) {
         });
       }
       const userId = req.user?.userId;
+      const updatePayload = { ...body };
+      if (Object.prototype.hasOwnProperty.call(body, 'layoutConfig')) {
+        updatePayload.layoutConfig = normalizeJsonInput(body.layoutConfig);
+      }
       return prisma.$transaction(async (tx: Prisma.TransactionClient) => {
         const updated = await tx.docTemplateSetting.update({
           where: { id },
-          data: { ...body, updatedBy: userId },
+          data: { ...updatePayload, updatedBy: userId },
         });
         if (body.isDefault === true) {
           await ensureDefault(tx, updated.kind, updated.id);
