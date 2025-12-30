@@ -578,6 +578,8 @@ model ApprovalStep {
 
   @@index([instanceId])
   @@index([status])
+  @@index([approverGroupId])
+  @@index([approverUserId])
   @@index([status, approverGroupId])
   @@index([status, approverUserId])
 }
@@ -617,7 +619,7 @@ model Alert {
   updatedBy    String?
 
   @@index([settingId])
-  @@index([status, createdAt])
+  @@index([status, triggeredAt])
   @@index([targetRef, status])
 }
 

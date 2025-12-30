@@ -29,9 +29,9 @@
 
 ## 追加済み（初期）
 - approval_instances: (status, created_at), (status, project_id)
-- approval_steps: (status, approver_group_id), (status, approver_user_id)
+- approval_steps: (status, approver_group_id), (status, approver_user_id), (approver_group_id), (approver_user_id)
 - alert_settings: (type, is_enabled)
-- alerts: (status, created_at), (target_ref, status)
+- alerts: (status, triggered_at), (target_ref, status)
 
 ## サマリテーブル案
 - project_effort_summary (project_id, period_key, user_id?, group_id?, minutes, cost)
