@@ -73,7 +73,7 @@
 ### 観測結果（要約）
 - 承認一覧（status）: `ApprovalInstance_status_createdAt_idx` の Index Scan（OK）
 - 承認一覧（status + project）: `ApprovalInstance_status_createdAt_idx` 使用 + projectId Filter（createdAt 降順のため status+projectId より優先される）
-- 承認一覧（approverGroup）: `ApprovalStep_status_approverUserId_idx` 使用（approverGroupId の複合 index は未使用）
+- 承認一覧（approverGroup）: PoC では `ApprovalStep_status_approverUserId_idx` が選択され、`approverGroupId` は Filter（データが極小のため。staging 実測で `status + approverGroupId` の利用状況を確認）
 - アラート一覧（status）: `Alert_status_triggeredAt_idx` の Index Scan（OK）
 - アラート一覧（targetRef + status）: `Alert_status_triggeredAt_idx` 使用 + targetRef Filter（order by triggeredAt のため）
 - 工数集計（期間）: Seq Scan（全件期間条件のため。大量データでは partition/BRIN を検討）
