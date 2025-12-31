@@ -5,8 +5,9 @@
 cd packages/backend
 npm install
 cp .env.example .env  # set DATABASE_URL
-npx prisma generate
-npm run dev
+npm run prisma:generate
+npm run build
+node dist/index.js
 ```
 
 ## API (PoC)
