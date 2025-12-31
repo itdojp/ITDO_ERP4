@@ -4,6 +4,7 @@ import { expenseSchema } from './validators.js';
 import { DocStatusValue, FlowTypeValue } from '../types.js';
 import { requireProjectAccess, requireRole } from '../services/rbac.js';
 import { prisma } from '../services/db.js';
+import { parseDateParam } from '../utils/date.js';
 
 export async function registerExpenseRoutes(app: FastifyInstance) {
   app.post(
@@ -15,9 +16,17 @@ export async function registerExpenseRoutes(app: FastifyInstance) {
         requireProjectAccess((req) => (req.body as any)?.projectId),
       ],
     },
-    async (req) => {
+    async (req, reply) => {
       const body = req.body as any;
-      const expense = await prisma.expense.create({ data: body });
+      const incurredOn = parseDateParam(body.incurredOn);
+      if (!incurredOn) {
+        return reply.status(400).send({
+          error: { code: 'INVALID_DATE', message: 'Invalid incurredOn' },
+        });
+      }
+      const expense = await prisma.expense.create({
+        data: { ...body, incurredOn },
+      });
       return expense;
     },
   );

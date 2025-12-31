@@ -9,6 +9,7 @@ import {
 import { prisma } from '../services/db.js';
 import { submitApprovalWithUpdate } from '../services/approval.js';
 import { FlowTypeValue } from '../types.js';
+import { parseDateParam } from '../utils/date.js';
 
 export async function registerTimeEntryRoutes(app: FastifyInstance) {
   app.post(
@@ -20,10 +21,16 @@ export async function registerTimeEntryRoutes(app: FastifyInstance) {
         requireProjectAccess((req) => (req.body as any)?.projectId),
       ],
     },
-    async (req) => {
+    async (req, reply) => {
       const body = req.body as any;
+      const workDate = parseDateParam(body.workDate);
+      if (!workDate) {
+        return reply.status(400).send({
+          error: { code: 'INVALID_DATE', message: 'Invalid workDate' },
+        });
+      }
       const entry = await prisma.timeEntry.create({
-        data: { ...body, status: TimeStatusValue.submitted },
+        data: { ...body, workDate, status: TimeStatusValue.submitted },
       });
       return entry;
     },
@@ -41,7 +48,7 @@ export async function registerTimeEntryRoutes(app: FastifyInstance) {
         requireProjectAccess((req) => (req.body as any)?.projectId),
       ],
     },
-    async (req) => {
+    async (req, reply) => {
       const { id } = req.params as { id: string };
       const body = req.body as any;
       const before = await prisma.timeEntry.findUnique({ where: { id } });
@@ -53,6 +60,15 @@ export async function registerTimeEntryRoutes(app: FastifyInstance) {
         (k) => body[k] !== undefined && (body as any)[k] !== (before as any)[k],
       );
       const data = { ...body } as any;
+      if (body.workDate !== undefined) {
+        const parsed = parseDateParam(body.workDate);
+        if (!parsed) {
+          return reply.status(400).send({
+            error: { code: 'INVALID_DATE', message: 'Invalid workDate' },
+          });
+        }
+        data.workDate = parsed;
+      }
       if (changed) {
         data.status = TimeStatusValue.submitted;
         const { updated } = await submitApprovalWithUpdate({
