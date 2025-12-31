@@ -9,13 +9,34 @@
 --
 -- Replace the UUIDs with real IDs from staging for representative plans.
 
+\if :{?start_date}
+\else
 \set start_date '2025-01-01'
+\endif
+\if :{?end_date}
+\else
 \set end_date '2025-01-31'
+\endif
+\if :{?project_id}
+\else
 \set project_id '00000000-0000-0000-0000-000000000000'
+\endif
+\if :{?approver_group_id}
+\else
 \set approver_group_id '00000000-0000-0000-0000-000000000000'
+\endif
+\if :{?approver_user_id}
+\else
 \set approver_user_id '00000000-0000-0000-0000-000000000000'
+\endif
+\if :{?status}
+\else
 \set status 'pending_qa'
+\endif
+\if :{?alert_status}
+\else
 \set alert_status 'open'
+\endif
 
 \echo '== Approval list by status =='
 EXPLAIN (ANALYZE, BUFFERS)
