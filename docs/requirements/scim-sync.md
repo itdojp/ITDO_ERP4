@@ -33,12 +33,13 @@
 - 障害時のリカバリとして日次の整合ジョブを用意。
 
 ## 無効化・削除
-- SCIM `active=false` を ERP `isActive=false` に反映。
+- SCIM `active=false` を ERP `active=false` に反映。
 - 削除は論理削除のみ。履歴を保持し監査整合性を維持。
 
 ## 差分適用と監査ログ
 - SCIM で受け取った差分を監査ログに記録。
 - 変更対象: ユーザ属性/グループ所属/有効無効。
+- 受信ペイロードは `scimMeta` に保存（必要に応じてマスキング/削除方針を別途検討）。
 
 ## 実装計画（段階）
 1. **設計フェーズ**
@@ -50,3 +51,10 @@
 3. **同期本番化**
    - 差分反映/無効化まで対応。
    - 例外運用（手動変更）を監査ログに記録。
+
+## 実装メモ（SCIM v2）
+- エンドポイント: `/scim/v2/Users`, `/scim/v2/Groups`
+- 付随: `/scim/v2/ServiceProviderConfig`, `/scim/v2/ResourceTypes`
+- 認証: `Authorization: Bearer <SCIM_BEARER_TOKEN>`
+- ページング: `startIndex`, `count`（最大 `SCIM_PAGE_MAX`）
+- フィルタ: `userName|externalId|id|active` / `displayName|externalId|id` の `eq` のみ

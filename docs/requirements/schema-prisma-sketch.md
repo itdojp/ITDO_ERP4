@@ -27,6 +27,7 @@
 - ApprovalInstance.targetId: polymorphic 参照のため FK を持たない
 - ApprovalInstance.projectId: 対象が案件に紐づく場合は projectId を保持（一覧/アラートの絞り込み用）
 - userId/ownerUserId/createdBy/updatedBy: 外部ID前提で FK なし
+- UserAccount/GroupAccount: SCIM同期のマスタとして保持（既存の userId 参照とは段階的に整合）
 
 ## NULL許容の整理（MVP）
 - Invoice.estimateId / milestoneId: NULL許容（見積なし請求/マイルストーン任意、FK は ON DELETE SET NULL）
