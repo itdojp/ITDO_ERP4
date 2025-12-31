@@ -7,6 +7,9 @@ export type AuthState = {
 };
 
 const AUTH_STORAGE_KEY = 'erp4_auth';
+const API_BASE = (import.meta.env.VITE_API_BASE || '').trim();
+const API_BASE_VALID = API_BASE === '' || /^https?:\/\//i.test(API_BASE);
+let warnedInvalidBase = false;
 
 export function getAuthState(): AuthState | null {
   if (typeof window === 'undefined') return null;
@@ -41,11 +44,16 @@ function buildAuthHeaders(): Record<string, string> {
   return headers;
 }
 
-function mergeHeaders(extra?: HeadersInit): Record<string, string> {
+function mergeHeaders(
+  extra?: HeadersInit,
+  options?: { json?: boolean },
+): Record<string, string> {
   const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
     ...buildAuthHeaders(),
   };
+  if (options?.json) {
+    headers['Content-Type'] = 'application/json';
+  }
   if (!extra) return headers;
   if (extra instanceof Headers) {
     extra.forEach((value, key) => {
@@ -60,6 +68,23 @@ function mergeHeaders(extra?: HeadersInit): Record<string, string> {
     return headers;
   }
   return { ...headers, ...(extra as Record<string, string>) };
+}
+
+function resolveApiPath(path: string): string {
+  if (/^https?:\/\//i.test(path)) return path;
+  if (!API_BASE) return path;
+  if (!API_BASE_VALID) {
+    if (!warnedInvalidBase) {
+      console.warn(
+        '[api] VITE_API_BASE should include http:// or https://',
+      );
+      warnedInvalidBase = true;
+    }
+    return path;
+  }
+  const base = API_BASE.replace(/\/$/, '');
+  const suffix = path.startsWith('/') ? path : `/${path}`;
+  return `${base}${suffix}`;
 }
 
 async function handleResponse<T>(res: Response, path: string): Promise<T> {
@@ -78,11 +103,13 @@ export async function api<T>(
   path: string,
   options: RequestInit = {},
 ): Promise<T> {
-  const res = await fetch(path, {
+  const hasBody = options.body !== undefined && options.body !== null;
+  const url = resolveApiPath(path);
+  const res = await fetch(url, {
     ...options,
-    headers: mergeHeaders(options.headers),
+    headers: mergeHeaders(options.headers, { json: hasBody }),
   });
-  return handleResponse<T>(res, path);
+  return handleResponse<T>(res, url);
 }
 
 export async function apiWithAuth<T>(

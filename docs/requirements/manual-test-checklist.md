@@ -21,3 +21,4 @@
 ## 環境・その他
 - [ ] CI (backend/frontend/lint/lychee) が緑
 - [ ] prisma format/validate が通る（DATABASE_URL ダミー設定でOK）
+- [ ] フロント確認時は `VITE_API_BASE=http://localhost:3001` を指定して API を参照できる
