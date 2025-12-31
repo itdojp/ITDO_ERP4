@@ -557,6 +557,8 @@ model ApprovalInstance {
   updatedBy   String?
 
   @@index([projectId])
+  @@index([status, createdAt])
+  @@index([status, projectId])
 }
 
 model ApprovalStep {
@@ -576,6 +578,10 @@ model ApprovalStep {
 
   @@index([instanceId])
   @@index([status])
+  @@index([approverGroupId])
+  @@index([approverUserId])
+  @@index([status, approverGroupId])
+  @@index([status, approverUserId])
 }
 
 model AlertSetting {
@@ -593,6 +599,8 @@ model AlertSetting {
   createdBy        String?
   updatedAt        DateTime  @updatedAt
   updatedBy        String?
+
+  @@index([type, isEnabled])
 }
 
 model Alert {
@@ -611,6 +619,8 @@ model Alert {
   updatedBy    String?
 
   @@index([settingId])
+  @@index([status, triggeredAt])
+  @@index([targetRef, status])
 }
 
 model DocTemplateSetting {
