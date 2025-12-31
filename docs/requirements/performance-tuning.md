@@ -62,6 +62,7 @@
 2. `pg_stat_statements` で上位クエリの頻度/平均時間を取得。
    - 実行テンプレ: `scripts/checks/pg-stat-statements.sql`
    - podman: `scripts/podman-poc.sh stats`（コンテナ起動時に `shared_preload_libraries` に `pg_stat_statements` を含めておくと、スクリプト内の `enable_pg_stat` で自動的に有効化を試みる）
+   - PoC の場合は `scripts/podman-poc.sh stats-reset` → `podman exec ... psql -f /workspace/scripts/checks/perf-explain.sql`（下記「実測結果」のコマンド例を参照）→ `scripts/podman-poc.sh stats` の順で、DDL/seed の影響を除外して計測する
 3. index/partition/summary の再設計が必要な箇所を整理。
 4. 実行テンプレート: `scripts/checks/perf-explain.sql` を使用（psql の `-v` でID/期間を指定）。
 
