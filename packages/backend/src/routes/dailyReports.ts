@@ -2,6 +2,7 @@ import { FastifyInstance } from 'fastify';
 import { dailyReportSchema } from './validators.js';
 import { requireRole } from '../services/rbac.js';
 import { prisma } from '../services/db.js';
+import { parseDateParam } from '../utils/date.js';
 
 export async function registerDailyReportRoutes(app: FastifyInstance) {
   app.post(
@@ -10,9 +11,17 @@ export async function registerDailyReportRoutes(app: FastifyInstance) {
       schema: dailyReportSchema,
       preHandler: requireRole(['admin', 'mgmt', 'user']),
     },
-    async (req) => {
+    async (req, reply) => {
       const body = req.body as any;
-      const report = await prisma.dailyReport.create({ data: body });
+      const reportDate = parseDateParam(body.reportDate);
+      if (!reportDate) {
+        return reply.status(400).send({
+          error: { code: 'INVALID_DATE', message: 'Invalid reportDate' },
+        });
+      }
+      const report = await prisma.dailyReport.create({
+        data: { ...body, reportDate },
+      });
       return report;
     },
   );

@@ -18,9 +18,17 @@ export async function registerWellbeingRoutes(app: FastifyInstance) {
       schema: wellbeingSchema,
       preHandler: requireRole(['admin', 'mgmt', 'user']),
     },
-    async (req) => {
+    async (req, reply) => {
       const body = req.body as any;
-      const entry = await prisma.wellbeingEntry.create({ data: body });
+      const entryDate = parseDateParam(body.entryDate);
+      if (!entryDate) {
+        return reply.status(400).send({
+          error: { code: 'INVALID_DATE', message: 'Invalid entryDate' },
+        });
+      }
+      const entry = await prisma.wellbeingEntry.create({
+        data: { ...body, entryDate },
+      });
       return entry;
     },
   );
