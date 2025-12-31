@@ -13,13 +13,14 @@ POSTGRES_EXTRA_ARGS="${POSTGRES_EXTRA_ARGS:--c shared_preload_libraries=pg_stat_
 
 usage() {
   cat <<USAGE
-Usage: $0 <start|db-push|seed|check|stats|stop|reset>
+Usage: $0 <start|db-push|seed|check|stats|stats-reset|stop|reset>
 
 start   : start postgres container (if missing, create)
 db-push : apply prisma schema via node container
 seed    : run scripts/seed-demo.sql inside container
 check   : run scripts/checks/poc-integrity.sql inside container
 stats   : run scripts/checks/pg-stat-statements.sql inside container
+stats-reset : reset pg_stat_statements counters inside container
 stop    : stop and remove postgres container
 reset   : stop + start + db-push + seed + check
 USAGE
@@ -106,6 +107,13 @@ stats() {
     psql -U "$DB_USER" -d "$DB_NAME" -f /workspace/scripts/checks/pg-stat-statements.sql
 }
 
+stats_reset() {
+  start_container
+  enable_pg_stat
+  podman exec -e PGPASSWORD="$DB_PASSWORD" "$CONTAINER_NAME" \
+    psql -U "$DB_USER" -d "$DB_NAME" -f /workspace/scripts/checks/pg-stat-reset.sql
+}
+
 stop_container() {
   if container_exists; then
     podman stop "$CONTAINER_NAME" >/dev/null || true
@@ -132,6 +140,9 @@ case "$cmd" in
     ;;
   stats)
     stats
+    ;;
+  stats-reset)
+    stats_reset
     ;;
   stop)
     stop_container
