@@ -8,15 +8,18 @@ DB_PASSWORD="${DB_PASSWORD:-postgres}"
 DB_NAME="${DB_NAME:-postgres}"
 HOST_PORT="${HOST_PORT:-55432}"
 DB_URL="postgresql://${DB_USER}:${DB_PASSWORD}@localhost:5432/${DB_NAME}?schema=public"
+POSTGRES_IMAGE="${POSTGRES_IMAGE:-docker.io/library/postgres:15}"
+POSTGRES_EXTRA_ARGS="${POSTGRES_EXTRA_ARGS:--c shared_preload_libraries=pg_stat_statements -c track_io_timing=on}"
 
 usage() {
   cat <<USAGE
-Usage: $0 <start|db-push|seed|check|stop|reset>
+Usage: $0 <start|db-push|seed|check|stats|stop|reset>
 
 start   : start postgres container (if missing, create)
 db-push : apply prisma schema via node container
 seed    : run scripts/seed-demo.sql inside container
 check   : run scripts/checks/poc-integrity.sql inside container
+stats   : run scripts/checks/pg-stat-statements.sql inside container
 stop    : stop and remove postgres container
 reset   : stop + start + db-push + seed + check
 USAGE
@@ -53,7 +56,7 @@ start_container() {
       -e POSTGRES_DB="$DB_NAME" \
       -v "$ROOT_DIR":/workspace:ro \
       -p "$HOST_PORT":5432 \
-      docker.io/library/postgres:15 >/dev/null
+      "$POSTGRES_IMAGE" $POSTGRES_EXTRA_ARGS >/dev/null
   fi
   wait_ready
   echo "postgres ready: $CONTAINER_NAME"
@@ -79,6 +82,30 @@ check() {
     psql -U "$DB_USER" -d "$DB_NAME" -f /workspace/scripts/checks/poc-integrity.sql
 }
 
+pg_stat_enabled() {
+  local libs
+  libs=$(podman exec -e PGPASSWORD="$DB_PASSWORD" "$CONTAINER_NAME" \
+    psql -U "$DB_USER" -d "$DB_NAME" -tA -c "SHOW shared_preload_libraries;")
+  [[ "$libs" == *pg_stat_statements* ]]
+}
+
+enable_pg_stat() {
+  if ! pg_stat_enabled; then
+    echo "pg_stat_statements is not enabled. Run 'reset' or start the container with POSTGRES_EXTRA_ARGS='-c shared_preload_libraries=pg_stat_statements' (and any other desired flags)." >&2
+    return 1
+  fi
+  podman exec -e PGPASSWORD="$DB_PASSWORD" "$CONTAINER_NAME" \
+    psql -U "$DB_USER" -d "$DB_NAME" -v ON_ERROR_STOP=1 \
+    -c "CREATE EXTENSION IF NOT EXISTS pg_stat_statements;"
+}
+
+stats() {
+  start_container
+  enable_pg_stat
+  podman exec -e PGPASSWORD="$DB_PASSWORD" "$CONTAINER_NAME" \
+    psql -U "$DB_USER" -d "$DB_NAME" -f /workspace/scripts/checks/pg-stat-statements.sql
+}
+
 stop_container() {
   if container_exists; then
     podman stop "$CONTAINER_NAME" >/dev/null || true
@@ -102,6 +129,9 @@ case "$cmd" in
   check)
     start_container
     check
+    ;;
+  stats)
+    stats
     ;;
   stop)
     stop_container
