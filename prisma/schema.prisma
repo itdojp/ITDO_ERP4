@@ -557,6 +557,8 @@ model ApprovalInstance {
   updatedBy   String?
 
   @@index([projectId])
+  @@index([status, createdAt])
+  @@index([status, projectId])
 }
 
 model ApprovalStep {
@@ -576,6 +578,10 @@ model ApprovalStep {
 
   @@index([instanceId])
   @@index([status])
+  @@index([approverGroupId])
+  @@index([approverUserId])
+  @@index([status, approverGroupId])
+  @@index([status, approverUserId])
 }
 
 model AlertSetting {
@@ -593,6 +599,8 @@ model AlertSetting {
   createdBy        String?
   updatedAt        DateTime  @updatedAt
   updatedBy        String?
+
+  @@index([type, isEnabled])
 }
 
 model Alert {
@@ -611,6 +619,8 @@ model Alert {
   updatedBy    String?
 
   @@index([settingId])
+  @@index([status, triggeredAt])
+  @@index([targetRef, status])
 }
 
 model DocTemplateSetting {
@@ -722,4 +732,57 @@ model AuditLog {
 
   @@index([targetTable, targetId])
   @@index([action])
+}
+
+model UserAccount {
+  id            String   @id @default(uuid())
+  externalId    String?  @unique
+  userName      String   @unique
+  displayName   String?
+  givenName     String?
+  familyName    String?
+  active        Boolean  @default(true)
+  emails        Json?
+  phoneNumbers  Json?
+  department    String?
+  organization  String?
+  managerUserId String?
+  scimMeta      Json?
+  createdAt     DateTime @default(now())
+  createdBy     String?
+  updatedAt     DateTime @updatedAt
+  updatedBy     String?
+  deletedAt     DateTime?
+  deletedReason String?
+  memberships   UserGroup[]
+
+  @@index([active])
+}
+
+model UserGroup {
+  id        String       @id @default(uuid())
+  user      UserAccount  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  group     GroupAccount @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  groupId   String
+  createdAt DateTime     @default(now())
+
+  @@unique([userId, groupId])
+  @@index([groupId])
+  @@index([userId])
+}
+
+model GroupAccount {
+  id          String      @id @default(uuid())
+  externalId  String?     @unique
+  displayName String
+  scimMeta    Json?
+  active      Boolean     @default(true)
+  createdAt   DateTime    @default(now())
+  createdBy   String?
+  updatedAt   DateTime    @updatedAt
+  updatedBy   String?
+  memberships UserGroup[]
+
+  @@index([displayName])
 }

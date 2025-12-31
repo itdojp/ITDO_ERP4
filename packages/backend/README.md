@@ -63,6 +63,15 @@ npm run dev
 - 補足: hybridはAuthorizationが無い場合にヘッダ認証へフォールバックする。
 - 注意: headerは開発用のモック。インターネット公開環境では使用しない。
 
+## SCIM (Provisioning)
+- env:
+  - SCIM_BEARER_TOKEN
+  - SCIM_PAGE_MAX (optional)
+- endpoints:
+  - `/scim/v2/Users`, `/scim/v2/Groups`
+  - `/scim/v2/ServiceProviderConfig`, `/scim/v2/ResourceTypes`
+- 認証: `Authorization: Bearer <SCIM_BEARER_TOKEN>`
+
 ## PDF
 - env (local):
   - PDF_PROVIDER=local
