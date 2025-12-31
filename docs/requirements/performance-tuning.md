@@ -61,6 +61,7 @@
 1. staging にて `EXPLAIN (ANALYZE, BUFFERS)` を取得し、結果を docs に記録。
 2. `pg_stat_statements` で上位クエリの頻度/平均時間を取得。
 3. index/partition/summary の再設計が必要な箇所を整理。
+4. 実行テンプレート: `scripts/checks/perf-explain.sql` を使用（psql の `-v` でID/期間を指定）。
 
 ## サマリテーブル案
 - project_effort_summary (project_id, period_key, user_id?, group_id?, minutes, cost)
