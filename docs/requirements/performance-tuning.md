@@ -33,6 +33,35 @@
 - alert_settings: (type, is_enabled)
 - alerts: (status, triggered_at), (target_ref, status)
 
+## 実測計画（#154）
+### 対象クエリの代表例
+- 承認一覧（approval_instances + approval_steps）
+  - 条件: flowType/status/projectId/approverGroupId/approverUserId/currentStep
+  - SQL例:
+    - `SELECT ai.* FROM "ApprovalInstance" ai WHERE ai."status" = $1 ORDER BY ai."createdAt" DESC LIMIT 100;`
+    - `SELECT ai.* FROM "ApprovalInstance" ai WHERE ai."status" = $1 AND ai."projectId" = $2 ORDER BY ai."createdAt" DESC LIMIT 100;`
+    - `SELECT ai.* FROM "ApprovalInstance" ai WHERE EXISTS (SELECT 1 FROM "ApprovalStep" st WHERE st."instanceId" = ai."id" AND st."status" = $1 AND st."approverGroupId" = $2) ORDER BY ai."createdAt" DESC LIMIT 100;`
+- アラート一覧（alerts）
+  - 条件: status/targetRef/order by triggeredAt
+  - SQL例:
+    - `SELECT * FROM "Alert" WHERE "status" = $1 ORDER BY "triggeredAt" DESC LIMIT 100;`
+    - `SELECT * FROM "Alert" WHERE "targetRef" = $1 AND "status" = $2 ORDER BY "triggeredAt" DESC LIMIT 100;`
+- 工数集計（time_entries）
+  - 条件: projectId/userId/workDate
+  - SQL例:
+    - `SELECT "projectId", "userId", date_trunc('month', "workDate") AS period, SUM("minutes") FROM "TimeEntry" WHERE "workDate" BETWEEN $1 AND $2 GROUP BY 1,2,3;`
+    - `SELECT "projectId", date_trunc('month', "workDate") AS period, SUM("minutes") FROM "TimeEntry" WHERE "projectId" = $1 AND "workDate" BETWEEN $2 AND $3 GROUP BY 1,2;`
+- 収支/予実レポート（reports）
+  - 条件: projectId/period/groupId/userId
+  - SQL例:
+    - `SELECT "projectId", date_trunc('month', "workDate") AS period, SUM("minutes") FROM "TimeEntry" WHERE "projectId" = $1 GROUP BY 1,2;`
+    - `SELECT "projectId", date_trunc('month', "incurredOn") AS period, SUM("amount") FROM "Expense" WHERE "projectId" = $1 GROUP BY 1,2;`
+
+### 計測手順
+1. staging にて `EXPLAIN (ANALYZE, BUFFERS)` を取得し、結果を docs に記録。
+2. `pg_stat_statements` で上位クエリの頻度/平均時間を取得。
+3. index/partition/summary の再設計が必要な箇所を整理。
+
 ## サマリテーブル案
 - project_effort_summary (project_id, period_key, user_id?, group_id?, minutes, cost)
 - project_profit_summary (project_id, period_key, revenue, cost)
