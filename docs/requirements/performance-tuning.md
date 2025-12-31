@@ -63,6 +63,27 @@
 3. index/partition/summary の再設計が必要な箇所を整理。
 4. 実行テンプレート: `scripts/checks/perf-explain.sql` を使用（psql の `-v` でID/期間を指定）。
 
+## 実測結果（PoC/podman）
+### 実行条件
+- DB: podman のローカル Postgres（`scripts/podman-poc.sh reset` 後、`seed-demo.sql` + 最小の承認/アラート行を追加）
+- 実行日時: 2025-12-31
+- コマンド例:
+  - `podman exec -i erp4-pg-poc psql -U postgres -d postgres -v start_date='2025-01-01' -v end_date='2025-01-31' -v project_id='00000000-0000-0000-0000-000000000001' -v approver_group_id='grp-mgmt' -v approver_user_id='demo-user' -v status='pending_qa' -v alert_status='open' -f /workspace/scripts/checks/perf-explain.sql`
+
+### 観測結果（要約）
+- 承認一覧（status）: `ApprovalInstance_status_createdAt_idx` の Index Scan（OK）
+- 承認一覧（status + project）: `ApprovalInstance_status_createdAt_idx` 使用 + projectId Filter（createdAt 降順のため status+projectId より優先される）
+- 承認一覧（approverGroup）: PoC では `ApprovalStep_status_approverUserId_idx` が選択され、`approverGroupId` は Filter（データが極小のため。staging 実測で `status + approverGroupId` の利用状況を確認）
+- アラート一覧（status）: `Alert_status_triggeredAt_idx` の Index Scan（OK）
+- アラート一覧（targetRef + status）: `Alert_status_triggeredAt_idx` 使用 + targetRef Filter（order by triggeredAt のため）
+- 工数集計（期間）: Seq Scan（全件期間条件のため。大量データでは partition/BRIN を検討）
+- 工数集計（project + 期間）: `TimeEntry_projectId_workDate_deletedAt_idx` 使用
+- 経費集計（project）: `Expense_projectId_deletedAt_idx` 使用
+
+### 注意点
+- PoC データは極小のため、実運用規模ではプランが変わる可能性が高い。
+- staging で再計測し、`status + projectId + createdAt` や `targetRef + status + triggeredAt` の追加 index が必要か判断する。
+
 ## サマリテーブル案
 - project_effort_summary (project_id, period_key, user_id?, group_id?, minutes, cost)
 - project_profit_summary (project_id, period_key, revenue, cost)
