@@ -87,6 +87,11 @@
 - PoC データは極小のため、実運用規模ではプランが変わる可能性が高い。
 - staging で再計測し、`status + projectId + createdAt` や `targetRef + status + triggeredAt` の追加 index が必要か判断する。
 
+### pg_stat_statements（PoC）
+- `stats-reset` → `perf-explain` → `stats` の順で計測
+- 上位は `EXPLAIN (ANALYZE, BUFFERS)` の実行クエリが占める（PoC は計測クエリ自体が支配的）
+- 実運用のボトルネック把握は staging の実測が必須
+
 ## サマリテーブル案
 - project_effort_summary (project_id, period_key, user_id?, group_id?, minutes, cost)
 - project_profit_summary (project_id, period_key, revenue, cost)
