@@ -7,6 +7,7 @@ export type AuthState = {
 };
 
 const AUTH_STORAGE_KEY = 'erp4_auth';
+const API_BASE = import.meta.env.VITE_API_BASE || '';
 
 export function getAuthState(): AuthState | null {
   if (typeof window === 'undefined') return null;
@@ -62,6 +63,14 @@ function mergeHeaders(extra?: HeadersInit): Record<string, string> {
   return { ...headers, ...(extra as Record<string, string>) };
 }
 
+function resolveApiPath(path: string): string {
+  if (/^https?:\/\//i.test(path)) return path;
+  if (!API_BASE) return path;
+  const base = API_BASE.replace(/\/$/, '');
+  const suffix = path.startsWith('/') ? path : `/${path}`;
+  return `${base}${suffix}`;
+}
+
 async function handleResponse<T>(res: Response, path: string): Promise<T> {
   if (res.ok) {
     try {
@@ -78,11 +87,12 @@ export async function api<T>(
   path: string,
   options: RequestInit = {},
 ): Promise<T> {
-  const res = await fetch(path, {
+  const url = resolveApiPath(path);
+  const res = await fetch(url, {
     ...options,
     headers: mergeHeaders(options.headers),
   });
-  return handleResponse<T>(res, path);
+  return handleResponse<T>(res, url);
 }
 
 export async function apiWithAuth<T>(
