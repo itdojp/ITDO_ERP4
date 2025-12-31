@@ -4,6 +4,12 @@ insert into "Project" (id, code, name, status, "createdAt", "updatedAt") values
   ('00000000-0000-0000-0000-000000000001','PRJ-DEMO-1','Demo Project 1','active', now(), now()),
   ('00000000-0000-0000-0000-000000000002','PRJ-DEMO-2','Demo Project 2','active', now(), now());
 
+insert into "ApprovalRule" (id, "flowType", conditions, steps, "createdAt", "updatedAt") values
+  ('50000000-0000-0000-0000-000000000001','estimate','{}','[]', now(), now()),
+  ('50000000-0000-0000-0000-000000000002','invoice','{}','[]', now(), now()),
+  ('50000000-0000-0000-0000-000000000003','expense','{}','[]', now(), now()),
+  ('50000000-0000-0000-0000-000000000004','time','{}','[]', now(), now());
+
 insert into "Estimate" (id, "projectId", version, "totalAmount", currency, status, "createdAt", "updatedAt")
 values ('10000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-000000000001',1,120000,'JPY','approved', now(), now());
 
