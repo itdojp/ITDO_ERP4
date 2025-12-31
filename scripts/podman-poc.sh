@@ -91,7 +91,7 @@ pg_stat_enabled() {
 
 enable_pg_stat() {
   if ! pg_stat_enabled; then
-    echo "pg_stat_statements is not enabled. Run reset or set POSTGRES_EXTRA_ARGS." >&2
+    echo "pg_stat_statements is not enabled. Run 'reset' or start the container with POSTGRES_EXTRA_ARGS='-c shared_preload_libraries=pg_stat_statements' (and any other desired flags)." >&2
     return 1
   fi
   podman exec -e PGPASSWORD="$DB_PASSWORD" "$CONTAINER_NAME" \
