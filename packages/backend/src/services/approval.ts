@@ -33,6 +33,18 @@ type SubmitApprovalOptions = {
   createdBy?: string;
 };
 
+function resolvePendingStatus(
+  steps: Array<{ stepOrder?: number; approverGroupId?: string }>,
+  stepOrder: number | null,
+) {
+  if (!stepOrder) return DocStatusValue.pending_qa;
+  const isExec = steps.some(
+    (step) =>
+      step.stepOrder === stepOrder && step.approverGroupId === 'exec',
+  );
+  return isExec ? DocStatusValue.pending_exec : DocStatusValue.pending_qa;
+}
+
 // 条件サンプル: amount閾値 / recurring判定 / 小額スキップ
 export type ApprovalCondition = {
   amountMin?: number;
@@ -218,7 +230,7 @@ async function createApprovalWithClient(
       targetTable,
       targetId,
       projectId,
-      status: DocStatusValue.pending_qa,
+      status: resolvePendingStatus(normalizedSteps, currentStep),
       currentStep,
       ruleId,
       createdBy,
@@ -482,7 +494,7 @@ export async function act(
         return status === DocStatusValue.pending_qa;
       });
       if (hasPending) {
-        newStatus = DocStatusValue.pending_qa;
+        newStatus = resolvePendingStatus(instance.steps, instance.currentStep);
         newCurrentStep = instance.currentStep;
       } else {
         const nextOrders = instance.steps
@@ -493,7 +505,7 @@ export async function act(
           : null;
         if (nextStepOrder) {
           newCurrentStep = nextStepOrder;
-          newStatus = DocStatusValue.pending_qa;
+          newStatus = resolvePendingStatus(instance.steps, nextStepOrder);
         } else {
           newCurrentStep = null;
           newStatus = DocStatusValue.approved;
