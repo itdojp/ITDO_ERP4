@@ -80,6 +80,8 @@
 - [x] テスト: バックエンド簡易ハッピーパス (contracts/invoices/time/expenses) のスモーク
   - [x] scripts/smoke-backend.sh で /projects→/estimates→/invoices→/send の一連
   - [x] /time-entries, /expenses のPOST/GET を同スクリプトで確認
+- [x] テスト: 仕入/承認フローを含むスモークを追加 (#226)
+  - [x] vendor/purchase order/vendor invoice/approval-instances を同スクリプトで確認
 - [x] テスト: フロントの手動確認手順（ダッシュボード→日報→工数→請求送信Stub）
   - [x] READMEに手順と期待結果を書き出し
 - [x] CI: lint/format のジョブ追加 (GH Actions)、prisma format/validate を走らせる
