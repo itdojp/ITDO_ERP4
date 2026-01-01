@@ -44,6 +44,45 @@ export const projectSchema = {
   }),
 };
 
+export const customerSchema = {
+  body: Type.Object(
+    {
+      code: Type.String({ minLength: 1 }),
+      name: Type.String({ minLength: 1 }),
+      status: Type.String({ minLength: 1 }),
+      invoiceRegistrationId: Type.Optional(Type.String()),
+      taxRegion: Type.Optional(Type.String()),
+      billingAddress: Type.Optional(Type.String()),
+      externalSource: Type.Optional(Type.String()),
+      externalId: Type.Optional(Type.String()),
+    },
+    { additionalProperties: false },
+  ),
+};
+
+export const customerPatchSchema = {
+  body: Type.Partial(customerSchema.body),
+};
+
+export const vendorSchema = {
+  body: Type.Object(
+    {
+      code: Type.String({ minLength: 1 }),
+      name: Type.String({ minLength: 1 }),
+      status: Type.String({ minLength: 1 }),
+      bankInfo: Type.Optional(Type.String()),
+      taxRegion: Type.Optional(Type.String()),
+      externalSource: Type.Optional(Type.String()),
+      externalId: Type.Optional(Type.String()),
+    },
+    { additionalProperties: false },
+  ),
+};
+
+export const vendorPatchSchema = {
+  body: Type.Partial(vendorSchema.body),
+};
+
 export const recurringTemplateSchema = {
   body: Type.Object({
     frequency: recurringFrequencySchema,

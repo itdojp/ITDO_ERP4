@@ -9,6 +9,10 @@ insert into "Vendor" (id, code, name, status, "createdAt", "updatedAt") values
   ('00000000-0000-0000-0000-000000000010','VEND-DEMO-1','Demo Vendor 1','active', now(), now())
 on conflict do nothing;
 
+insert into "Customer" (id, code, name, status, "createdAt", "updatedAt") values
+  ('00000000-0000-0000-0000-000000000020','CUST-DEMO-1','Demo Customer 1','active', now(), now())
+on conflict do nothing;
+
 insert into "ApprovalRule" (id, "flowType", conditions, steps, "createdAt", "updatedAt") values
   ('50000000-0000-0000-0000-000000000001','estimate','{}','[]', now(), now()),
   ('50000000-0000-0000-0000-000000000002','invoice','{}','[]', now(), now()),
