@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { api, getAuthState } from '../api';
 import { useProjects } from '../hooks/useProjects';
 
@@ -46,6 +46,10 @@ export const TimeEntries: React.FC = () => {
     selectedProjectId: form.projectId,
     onSelect: handleProjectSelect,
   });
+  const projectMap = useMemo(
+    () => new Map(projects.map((project) => [project.id, project])),
+    [projects],
+  );
   const [message, setMessage] = useState<MessageState>(null);
   const [form, setForm] = useState<FormState>({
     ...defaultForm,
@@ -76,6 +80,11 @@ export const TimeEntries: React.FC = () => {
     const timer = setTimeout(() => setMessage(null), 4000);
     return () => clearTimeout(timer);
   }, [message]);
+
+  const renderProject = (projectId: string) => {
+    const project = projectMap.get(projectId);
+    return project ? `${project.code} / ${project.name}` : projectId;
+  };
 
   const add = async () => {
     if (!isValid) {
@@ -181,7 +190,7 @@ export const TimeEntries: React.FC = () => {
         {items.map((e) => (
           <li key={e.id}>
             <span className="badge">{e.status}</span> {e.workDate.slice(0, 10)}{' '}
-            / {e.projectId} / {e.minutes} min
+            / {renderProject(e.projectId)} / {e.minutes} min
             {e.workType && <> / {e.workType}</>}
             {e.location && <> / {e.location}</>}
           </li>

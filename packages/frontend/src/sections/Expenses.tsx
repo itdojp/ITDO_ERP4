@@ -50,6 +50,10 @@ export const Expenses: React.FC = () => {
     selectedProjectId: form.projectId,
     onSelect: handleProjectSelect,
   });
+  const projectMap = useMemo(
+    () => new Map(projects.map((project) => [project.id, project])),
+    [projects],
+  );
   const [message, setMessage] = useState<MessageState>(null);
   const [form, setForm] = useState<FormState>({
     ...defaultForm,
@@ -90,6 +94,11 @@ export const Expenses: React.FC = () => {
     const timer = setTimeout(() => setMessage(null), 4000);
     return () => clearTimeout(timer);
   }, [message]);
+
+  const renderProject = (projectId: string) => {
+    const project = projectMap.get(projectId);
+    return project ? `${project.code} / ${project.name}` : projectId;
+  };
 
   const missingReceiptCount = useMemo(
     () => items.filter((item) => !item.receiptUrl).length,
@@ -238,8 +247,8 @@ export const Expenses: React.FC = () => {
         {visibleItems.map((item) => (
           <li key={item.id}>
             <span className="badge">{item.status}</span>{' '}
-            {item.incurredOn.slice(0, 10)} / {item.projectId} / {item.category}{' '}
-            / {item.amount} {item.currency}
+            {item.incurredOn.slice(0, 10)} / {renderProject(item.projectId)} /{' '}
+            {item.category} / {item.amount} {item.currency}
             {item.isShared && <> / 共通</>}
             {item.receiptUrl ? (
               <>
