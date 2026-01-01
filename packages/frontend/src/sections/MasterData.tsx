@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '../api';
 
 type Customer = {
@@ -52,6 +52,18 @@ const optionalValue = (value: string) => {
   return trimmed.length > 0 ? trimmed : undefined;
 };
 
+const statusOptions = [
+  { value: 'active', label: '有効' },
+  { value: 'inactive', label: '無効' },
+];
+
+const errorDetail = (err: unknown) => {
+  if (err instanceof Error && err.message) {
+    return ` (${err.message})`;
+  }
+  return '';
+};
+
 export const MasterData: React.FC = () => {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [vendors, setVendors] = useState<Vendor[]>([]);
@@ -89,25 +101,29 @@ export const MasterData: React.FC = () => {
     };
   }, [vendorForm]);
 
-  const loadCustomers = async () => {
+  const loadCustomers = useCallback(async () => {
     try {
       const res = await api<{ items: Customer[] }>('/customers');
       setCustomers(res.items || []);
     } catch (err) {
+      console.error('Failed to load customers.', err);
       setCustomers([]);
-      setCustomerMessage('顧客一覧の取得に失敗しました');
+      setCustomerMessage(
+        `顧客一覧の取得に失敗しました${errorDetail(err)}`,
+      );
     }
-  };
+  }, []);
 
-  const loadVendors = async () => {
+  const loadVendors = useCallback(async () => {
     try {
       const res = await api<{ items: Vendor[] }>('/vendors');
       setVendors(res.items || []);
     } catch (err) {
+      console.error('Failed to load vendors.', err);
       setVendors([]);
-      setVendorMessage('業者一覧の取得に失敗しました');
+      setVendorMessage(`業者一覧の取得に失敗しました${errorDetail(err)}`);
     }
-  };
+  }, []);
 
   const saveCustomer = async () => {
     if (!customerPayload.code || !customerPayload.name) {
@@ -132,7 +148,8 @@ export const MasterData: React.FC = () => {
       setEditingCustomerId(null);
       loadCustomers();
     } catch (err) {
-      setCustomerMessage('顧客の保存に失敗しました');
+      console.error('Failed to save customer.', err);
+      setCustomerMessage(`顧客の保存に失敗しました${errorDetail(err)}`);
     }
   };
 
@@ -159,7 +176,8 @@ export const MasterData: React.FC = () => {
       setEditingVendorId(null);
       loadVendors();
     } catch (err) {
-      setVendorMessage('業者の保存に失敗しました');
+      console.error('Failed to save vendor.', err);
+      setVendorMessage(`業者の保存に失敗しました${errorDetail(err)}`);
     }
   };
 
@@ -203,7 +221,7 @@ export const MasterData: React.FC = () => {
   useEffect(() => {
     loadCustomers();
     loadVendors();
-  }, []);
+  }, [loadCustomers, loadVendors]);
 
   return (
     <div>
@@ -215,6 +233,7 @@ export const MasterData: React.FC = () => {
             <input
               type="text"
               placeholder="コード"
+              aria-label="顧客コード"
               value={customerForm.code}
               onChange={(e) =>
                 setCustomerForm({ ...customerForm, code: e.target.value })
@@ -223,24 +242,31 @@ export const MasterData: React.FC = () => {
             <input
               type="text"
               placeholder="名称"
+              aria-label="顧客名称"
               value={customerForm.name}
               onChange={(e) =>
                 setCustomerForm({ ...customerForm, name: e.target.value })
               }
             />
-            <input
-              type="text"
-              placeholder="ステータス"
+            <select
+              aria-label="顧客ステータス"
               value={customerForm.status}
               onChange={(e) =>
                 setCustomerForm({ ...customerForm, status: e.target.value })
               }
-            />
+            >
+              {statusOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
           </div>
           <div className="row" style={{ marginTop: 8 }}>
             <input
               type="text"
               placeholder="適格請求書番号"
+              aria-label="顧客適格請求書番号"
               value={customerForm.invoiceRegistrationId}
               onChange={(e) =>
                 setCustomerForm({
@@ -252,6 +278,7 @@ export const MasterData: React.FC = () => {
             <input
               type="text"
               placeholder="税区分"
+              aria-label="顧客税区分"
               value={customerForm.taxRegion}
               onChange={(e) =>
                 setCustomerForm({ ...customerForm, taxRegion: e.target.value })
@@ -262,6 +289,7 @@ export const MasterData: React.FC = () => {
             <input
               type="text"
               placeholder="請求先住所"
+              aria-label="顧客請求先住所"
               value={customerForm.billingAddress}
               onChange={(e) =>
                 setCustomerForm({
@@ -275,6 +303,7 @@ export const MasterData: React.FC = () => {
             <input
               type="text"
               placeholder="外部ソース"
+              aria-label="顧客外部ソース"
               value={customerForm.externalSource}
               onChange={(e) =>
                 setCustomerForm({
@@ -286,6 +315,7 @@ export const MasterData: React.FC = () => {
             <input
               type="text"
               placeholder="外部ID"
+              aria-label="顧客外部ID"
               value={customerForm.externalId}
               onChange={(e) =>
                 setCustomerForm({
@@ -330,6 +360,7 @@ export const MasterData: React.FC = () => {
             <input
               type="text"
               placeholder="コード"
+              aria-label="業者コード"
               value={vendorForm.code}
               onChange={(e) =>
                 setVendorForm({ ...vendorForm, code: e.target.value })
@@ -338,24 +369,31 @@ export const MasterData: React.FC = () => {
             <input
               type="text"
               placeholder="名称"
+              aria-label="業者名称"
               value={vendorForm.name}
               onChange={(e) =>
                 setVendorForm({ ...vendorForm, name: e.target.value })
               }
             />
-            <input
-              type="text"
-              placeholder="ステータス"
+            <select
+              aria-label="業者ステータス"
               value={vendorForm.status}
               onChange={(e) =>
                 setVendorForm({ ...vendorForm, status: e.target.value })
               }
-            />
+            >
+              {statusOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
           </div>
           <div className="row" style={{ marginTop: 8 }}>
             <input
               type="text"
               placeholder="振込情報"
+              aria-label="業者振込情報"
               value={vendorForm.bankInfo}
               onChange={(e) =>
                 setVendorForm({ ...vendorForm, bankInfo: e.target.value })
@@ -364,6 +402,7 @@ export const MasterData: React.FC = () => {
             <input
               type="text"
               placeholder="税区分"
+              aria-label="業者税区分"
               value={vendorForm.taxRegion}
               onChange={(e) =>
                 setVendorForm({ ...vendorForm, taxRegion: e.target.value })
@@ -374,6 +413,7 @@ export const MasterData: React.FC = () => {
             <input
               type="text"
               placeholder="外部ソース"
+              aria-label="業者外部ソース"
               value={vendorForm.externalSource}
               onChange={(e) =>
                 setVendorForm({ ...vendorForm, externalSource: e.target.value })
@@ -382,6 +422,7 @@ export const MasterData: React.FC = () => {
             <input
               type="text"
               placeholder="外部ID"
+              aria-label="業者外部ID"
               value={vendorForm.externalId}
               onChange={(e) =>
                 setVendorForm({ ...vendorForm, externalId: e.target.value })
