@@ -63,12 +63,14 @@ UUID生成関数は環境に合わせて置き換え（`gen_random_uuid()`/`uuid
 - 日報+WB: Good/Not Good入力＋タグ/短文（Not Good時）→ 送信 → 成功メッセージ
 - 工数: 追加→一覧に反映
 - 請求ドラフト: 一覧に番号/ステータスが出る（送信でステータス更新 + pdfUrl 反映）
+- 案件: 顧客を選択して保存 → 一覧に顧客名が表示される
 - ヘルプモーダル: 日報画面から開閉でき、相談先リストと緊急案内が表示される
 - シードデータ: scripts/seed-demo.sql をロード後、フロントに反映されることを確認（プロジェクト/請求/工数/経費のダミー）
 - 整合チェック: scripts/checks/poc-integrity.sql を実行し、件数/合計が期待値と一致することを確認
 
 ## 管理系
 - マスタ管理: /customers, /vendors の GET/POST/PATCH でCRUD動作
+- 連絡先管理: /contacts の GET/POST/PATCH でCRUD動作（customerId または vendorId のみ許可）
 - アラート設定: GET/POST/PATCH /alert-settings でCRUD動作
 - 承認ルール: GET/POST/PATCH /approval-rules でCRUD動作
 - 送信: /invoices/:id/send, /purchase-orders/:id/send で status=sent になる
