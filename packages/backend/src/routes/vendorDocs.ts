@@ -4,6 +4,7 @@ import { FlowTypeValue, DocStatusValue } from '../types.js';
 import { vendorInvoiceSchema, vendorQuoteSchema } from './validators.js';
 import { requireRole } from '../services/rbac.js';
 import { prisma } from '../services/db.js';
+import { checkProjectAndVendor } from '../services/entityChecks.js';
 
 export async function registerVendorDocRoutes(app: FastifyInstance) {
   app.get(
@@ -89,22 +90,16 @@ export async function registerVendorDocRoutes(app: FastifyInstance) {
     { preHandler: requireRole(['admin', 'mgmt']), schema: vendorQuoteSchema },
     async (req, reply) => {
       const body = req.body as any;
-      const [project, vendor] = await Promise.all([
-        prisma.project.findUnique({
-          where: { id: body.projectId },
-          select: { id: true },
-        }),
-        prisma.vendor.findUnique({
-          where: { id: body.vendorId },
-          select: { id: true },
-        }),
-      ]);
-      if (!project) {
+      const { projectExists, vendorExists } = await checkProjectAndVendor(
+        body.projectId,
+        body.vendorId,
+      );
+      if (!projectExists) {
         return reply.status(404).send({
           error: { code: 'NOT_FOUND', message: 'Project not found' },
         });
       }
-      if (!vendor) {
+      if (!vendorExists) {
         return reply.status(404).send({
           error: { code: 'NOT_FOUND', message: 'Vendor not found' },
         });
@@ -119,22 +114,16 @@ export async function registerVendorDocRoutes(app: FastifyInstance) {
     { preHandler: requireRole(['admin', 'mgmt']), schema: vendorInvoiceSchema },
     async (req, reply) => {
       const body = req.body as any;
-      const [project, vendor] = await Promise.all([
-        prisma.project.findUnique({
-          where: { id: body.projectId },
-          select: { id: true },
-        }),
-        prisma.vendor.findUnique({
-          where: { id: body.vendorId },
-          select: { id: true },
-        }),
-      ]);
-      if (!project) {
+      const { projectExists, vendorExists } = await checkProjectAndVendor(
+        body.projectId,
+        body.vendorId,
+      );
+      if (!projectExists) {
         return reply.status(404).send({
           error: { code: 'NOT_FOUND', message: 'Project not found' },
         });
       }
-      if (!vendor) {
+      if (!vendorExists) {
         return reply.status(404).send({
           error: { code: 'NOT_FOUND', message: 'Vendor not found' },
         });

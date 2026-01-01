@@ -5,6 +5,7 @@ import { FlowTypeValue, DocStatusValue } from '../types.js';
 import { purchaseOrderSchema } from './validators.js';
 import { requireRole } from '../services/rbac.js';
 import { prisma } from '../services/db.js';
+import { checkProjectAndVendor } from '../services/entityChecks.js';
 
 export async function registerPurchaseOrderRoutes(app: FastifyInstance) {
   app.get(
@@ -53,22 +54,16 @@ export async function registerPurchaseOrderRoutes(app: FastifyInstance) {
     async (req, reply) => {
       const { projectId } = req.params as { projectId: string };
       const body = req.body as any;
-      const [project, vendor] = await Promise.all([
-        prisma.project.findUnique({
-          where: { id: projectId },
-          select: { id: true },
-        }),
-        prisma.vendor.findUnique({
-          where: { id: body.vendorId },
-          select: { id: true },
-        }),
-      ]);
-      if (!project) {
+      const { projectExists, vendorExists } = await checkProjectAndVendor(
+        projectId,
+        body.vendorId,
+      );
+      if (!projectExists) {
         return reply.status(404).send({
           error: { code: 'NOT_FOUND', message: 'Project not found' },
         });
       }
-      if (!vendor) {
+      if (!vendorExists) {
         return reply.status(404).send({
           error: { code: 'NOT_FOUND', message: 'Vendor not found' },
         });
