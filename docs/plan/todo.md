@@ -84,6 +84,8 @@
   - [x] vendor/purchase order/vendor invoice/approval-instances を同スクリプトで確認
 - [x] シード: 発注/仕入データと承認ルールを追加 (#228)
   - [x] purchase_order/vendor_invoice のApprovalRuleとデモデータを追加
+- [x] ドキュメント: 付け替え方針の理由コード/締め期間を追記 (#234)
+  - [x] reassignment-policy に理由コードと締め期間の叩き台を追加
 - [x] テスト: フロントの手動確認手順（ダッシュボード→日報→工数→請求送信Stub）
   - [x] READMEに手順と期待結果を書き出し
 - [x] CI: lint/format のジョブ追加 (GH Actions)、prisma format/validate を走らせる

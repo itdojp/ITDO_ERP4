@@ -44,7 +44,24 @@
 - サーバ側で状態/関連チェックを実施し、違反時は 400/403
 - 付け替え履歴テーブル（例: reassignment_log）を追加
 
+## 理由コード（案）
+| code | 説明 |
+| --- | --- |
+| input_error | 誤入力の修正（担当者/工数/日付など） |
+| project_misassignment | 案件/タスクの付け間違い |
+| task_restructure | タスク再編に伴う付け替え |
+| contract_split_merge | 契約/案件の分割・統合による調整 |
+| internal_transfer | 管理部指示の内部付け替え |
+
+※ 監査ログには `reasonCode` と自由記述 `reasonText` を保存し、運用で追加可能にする。
+
+## 締め期間の扱い（案）
+- `PeriodLock` のような締めテーブルを用意し、月次/四半期の締めを記録する
+  - 例: `period`(YYYY-MM), `scope`(global/project), `projectId`, `closedAt`, `closedBy`, `reason`
+- 付け替え対象（TimeEntry/Expense/Invoice/PurchaseOrder/VendorInvoice）は、該当期間が締め済みなら原則不可
+- 例外解除は mgmt + exec の二重承認（後続スコープ）
+
 ## 次のTODO
-- 締め期間の定義（締め済みフラグの持ち方）
-- 付け替え理由コードの初期セット決定
+- 締め期間の定義（叩き台は追記済み、運用決定待ち）
+- 付け替え理由コードの初期セット決定（叩き台は追記済み、要確認）
 - 承認解除/取消の手順と権限の明確化
