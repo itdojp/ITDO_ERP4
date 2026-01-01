@@ -11,6 +11,7 @@ import { AdminSettings } from '../sections/AdminSettings';
 import { ProjectChat } from '../sections/ProjectChat';
 import { MasterData } from '../sections/MasterData';
 import { Projects } from '../sections/Projects';
+import { VendorDocuments } from '../sections/VendorDocuments';
 
 export const App: React.FC = () => {
   return (
@@ -31,6 +32,9 @@ export const App: React.FC = () => {
       </div>
       <div className="card">
         <Invoices />
+      </div>
+      <div className="card">
+        <VendorDocuments />
       </div>
       <div className="card">
         <Reports />
