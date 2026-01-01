@@ -155,9 +155,7 @@ export const MasterData: React.FC = () => {
     } catch (err) {
       console.error('Failed to load customers.', err);
       setCustomers([]);
-      setCustomerMessage(
-        `顧客一覧の取得に失敗しました${errorDetail(err)}`,
-      );
+      setCustomerMessage(`顧客一覧の取得に失敗しました${errorDetail(err)}`);
     }
   }, []);
 

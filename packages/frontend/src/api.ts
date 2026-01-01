@@ -75,9 +75,7 @@ function resolveApiPath(path: string): string {
   if (!API_BASE) return path;
   if (!API_BASE_VALID) {
     if (!warnedInvalidBase) {
-      console.warn(
-        '[api] VITE_API_BASE should include http:// or https://',
-      );
+      console.warn('[api] VITE_API_BASE should include http:// or https://');
       warnedInvalidBase = true;
     }
     return path;
