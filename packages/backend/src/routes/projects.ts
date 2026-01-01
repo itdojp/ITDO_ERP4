@@ -84,9 +84,7 @@ export async function registerProjectRoutes(app: FastifyInstance) {
           });
         }
       }
-      const data = hasCustomerIdProp
-        ? { ...body, customerId }
-        : { ...body };
+      const data = hasCustomerIdProp ? { ...body, customerId } : { ...body };
       const project = await prisma.project.create({ data });
       return project;
     },
@@ -125,9 +123,7 @@ export async function registerProjectRoutes(app: FastifyInstance) {
           });
         }
       }
-      const data = hasCustomerIdProp
-        ? { ...body, customerId }
-        : { ...body };
+      const data = hasCustomerIdProp ? { ...body, customerId } : { ...body };
       const project = await prisma.project.update({
         where: { id: projectId },
         data,
