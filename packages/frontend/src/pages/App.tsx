@@ -8,6 +8,7 @@ import { HRAnalytics } from '../sections/HRAnalytics';
 import { CurrentUser } from '../sections/CurrentUser';
 import { Reports } from '../sections/Reports';
 import { AdminSettings } from '../sections/AdminSettings';
+import { Approvals } from '../sections/Approvals';
 import { ProjectChat } from '../sections/ProjectChat';
 import { MasterData } from '../sections/MasterData';
 import { Projects } from '../sections/Projects';
@@ -38,6 +39,9 @@ export const App: React.FC = () => {
       </div>
       <div className="card">
         <Reports />
+      </div>
+      <div className="card">
+        <Approvals />
       </div>
       <div className="card">
         <Projects />
