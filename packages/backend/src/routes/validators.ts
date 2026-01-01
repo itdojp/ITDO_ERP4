@@ -83,6 +83,25 @@ export const vendorPatchSchema = {
   body: Type.Partial(vendorSchema.body),
 };
 
+export const contactSchema = {
+  body: Type.Object(
+    {
+      customerId: Type.Optional(Type.String({ minLength: 1 })),
+      vendorId: Type.Optional(Type.String({ minLength: 1 })),
+      name: Type.String({ minLength: 1 }),
+      email: Type.Optional(Type.String({ format: 'email' })),
+      phone: Type.Optional(Type.String()),
+      role: Type.Optional(Type.String()),
+      isPrimary: Type.Optional(Type.Boolean()),
+    },
+    { additionalProperties: false },
+  ),
+};
+
+export const contactPatchSchema = {
+  body: Type.Partial(contactSchema.body),
+};
+
 export const recurringTemplateSchema = {
   body: Type.Object({
     frequency: recurringFrequencySchema,

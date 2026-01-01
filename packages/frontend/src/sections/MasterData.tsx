@@ -24,6 +24,19 @@ type Vendor = {
   externalId?: string | null;
 };
 
+type Contact = {
+  id: string;
+  customerId?: string | null;
+  vendorId?: string | null;
+  name: string;
+  email?: string | null;
+  phone?: string | null;
+  role?: string | null;
+  isPrimary: boolean;
+};
+
+type ContactOwnerType = 'customer' | 'vendor';
+
 const emptyCustomer = {
   code: '',
   name: '',
@@ -45,6 +58,14 @@ const emptyVendor = {
   externalId: '',
 };
 
+const emptyContact = {
+  name: '',
+  email: '',
+  phone: '',
+  role: '',
+  isPrimary: false,
+};
+
 const trimValue = (value: string) => value.trim();
 
 const optionalValue = (value: string) => {
@@ -64,17 +85,33 @@ const errorDetail = (err: unknown) => {
   return '';
 };
 
+const hasContactDraft = (form: typeof emptyContact) =>
+  Boolean(
+    form.name.trim() ||
+      form.email.trim() ||
+      form.phone.trim() ||
+      form.role.trim() ||
+      form.isPrimary,
+  );
+
 export const MasterData: React.FC = () => {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [vendors, setVendors] = useState<Vendor[]>([]);
+  const [contacts, setContacts] = useState<Contact[]>([]);
   const [customerForm, setCustomerForm] = useState(emptyCustomer);
   const [vendorForm, setVendorForm] = useState(emptyVendor);
+  const [contactForm, setContactForm] = useState(emptyContact);
   const [editingCustomerId, setEditingCustomerId] = useState<string | null>(
     null,
   );
   const [editingVendorId, setEditingVendorId] = useState<string | null>(null);
+  const [editingContactId, setEditingContactId] = useState<string | null>(null);
   const [customerMessage, setCustomerMessage] = useState('');
   const [vendorMessage, setVendorMessage] = useState('');
+  const [contactMessage, setContactMessage] = useState('');
+  const [contactOwnerType, setContactOwnerType] =
+    useState<ContactOwnerType>('customer');
+  const [contactOwnerId, setContactOwnerId] = useState('');
 
   const customerPayload = useMemo(() => {
     return {
@@ -101,6 +138,16 @@ export const MasterData: React.FC = () => {
     };
   }, [vendorForm]);
 
+  const contactPayload = useMemo(() => {
+    return {
+      name: trimValue(contactForm.name),
+      email: optionalValue(contactForm.email),
+      phone: optionalValue(contactForm.phone),
+      role: optionalValue(contactForm.role),
+      isPrimary: contactForm.isPrimary,
+    };
+  }, [contactForm]);
+
   const loadCustomers = useCallback(async () => {
     try {
       const res = await api<{ items: Customer[] }>('/customers');
@@ -108,9 +155,7 @@ export const MasterData: React.FC = () => {
     } catch (err) {
       console.error('Failed to load customers.', err);
       setCustomers([]);
-      setCustomerMessage(
-        `顧客一覧の取得に失敗しました${errorDetail(err)}`,
-      );
+      setCustomerMessage(`顧客一覧の取得に失敗しました${errorDetail(err)}`);
     }
   }, []);
 
@@ -124,6 +169,24 @@ export const MasterData: React.FC = () => {
       setVendorMessage(`業者一覧の取得に失敗しました${errorDetail(err)}`);
     }
   }, []);
+
+  const loadContacts = useCallback(async () => {
+    if (!contactOwnerId) {
+      setContacts([]);
+      return;
+    }
+    const query =
+      contactOwnerType === 'customer'
+        ? `customerId=${contactOwnerId}`
+        : `vendorId=${contactOwnerId}`;
+    try {
+      const res = await api<{ items: Contact[] }>(`/contacts?${query}`);
+      setContacts(res.items || []);
+    } catch (err) {
+      console.error('Failed to load contacts.', err);
+      setContactMessage(`連絡先一覧の取得に失敗しました${errorDetail(err)}`);
+    }
+  }, [contactOwnerId, contactOwnerType]);
 
   const saveCustomer = async () => {
     if (!customerPayload.code || !customerPayload.name) {
@@ -181,6 +244,48 @@ export const MasterData: React.FC = () => {
     }
   };
 
+  const saveContact = async () => {
+    if (!contactOwnerId) {
+      setContactMessage('顧客または業者を選択してください');
+      return;
+    }
+    if (!contactPayload.name) {
+      setContactMessage('氏名は必須です');
+      return;
+    }
+    const ownerPayload =
+      contactOwnerType === 'customer'
+        ? { customerId: contactOwnerId }
+        : { vendorId: contactOwnerId };
+    try {
+      if (editingContactId) {
+        await api(`/contacts/${editingContactId}`, {
+          method: 'PATCH',
+          body: JSON.stringify({
+            ...contactPayload,
+            ...ownerPayload,
+          }),
+        });
+        setContactMessage('連絡先を更新しました');
+      } else {
+        await api('/contacts', {
+          method: 'POST',
+          body: JSON.stringify({
+            ...contactPayload,
+            ...ownerPayload,
+          }),
+        });
+        setContactMessage('連絡先を追加しました');
+      }
+      setContactForm(emptyContact);
+      setEditingContactId(null);
+      loadContacts();
+    } catch (err) {
+      console.error('Failed to save contact.', err);
+      setContactMessage(`連絡先の保存に失敗しました${errorDetail(err)}`);
+    }
+  };
+
   const editCustomer = (item: Customer) => {
     setEditingCustomerId(item.id);
     setCustomerForm({
@@ -208,6 +313,34 @@ export const MasterData: React.FC = () => {
     });
   };
 
+  const editContact = (item: Contact) => {
+    const hasCustomer = Boolean(item.customerId);
+    const hasVendor = Boolean(item.vendorId);
+    if (!hasCustomer && !hasVendor) {
+      console.error('Contact has no owner.', item);
+      setContactMessage(
+        'この連絡先には紐づく顧客または業者がありません。管理者にお問い合わせください。',
+      );
+      return;
+    }
+    const ownerType: ContactOwnerType = hasCustomer ? 'customer' : 'vendor';
+    const ownerId = (hasCustomer ? item.customerId : item.vendorId) ?? '';
+    if (ownerType !== contactOwnerType) {
+      setContactOwnerType(ownerType);
+    }
+    if (ownerId !== contactOwnerId) {
+      setContactOwnerId(ownerId);
+    }
+    setEditingContactId(item.id);
+    setContactForm({
+      name: item.name || '',
+      email: item.email || '',
+      phone: item.phone || '',
+      role: item.role || '',
+      isPrimary: Boolean(item.isPrimary),
+    });
+  };
+
   const resetCustomer = () => {
     setCustomerForm(emptyCustomer);
     setEditingCustomerId(null);
@@ -218,10 +351,19 @@ export const MasterData: React.FC = () => {
     setEditingVendorId(null);
   };
 
+  const resetContact = () => {
+    setContactForm(emptyContact);
+    setEditingContactId(null);
+  };
+
   useEffect(() => {
     loadCustomers();
     loadVendors();
   }, [loadCustomers, loadVendors]);
+
+  useEffect(() => {
+    loadContacts();
+  }, [loadContacts]);
 
   return (
     <div>
@@ -456,6 +598,160 @@ export const MasterData: React.FC = () => {
               </li>
             ))}
             {vendors.length === 0 && <li>データなし</li>}
+          </ul>
+        </div>
+        <div style={{ minWidth: 320, flex: 1 }}>
+          <h3>連絡先</h3>
+          <div className="row">
+            <select
+              aria-label="連絡先の紐付け種別"
+              value={contactOwnerType}
+              disabled={Boolean(editingContactId)}
+              onChange={(e) => {
+                const nextType =
+                  e.target.value === 'vendor' ? 'vendor' : 'customer';
+                if (nextType === contactOwnerType) {
+                  return;
+                }
+                if (
+                  hasContactDraft(contactForm) &&
+                  !window.confirm(
+                    '入力中の連絡先情報が破棄されます。よろしいですか？',
+                  )
+                ) {
+                  return;
+                }
+                setContactOwnerType(nextType);
+                setContactOwnerId('');
+                setContacts([]);
+                resetContact();
+              }}
+            >
+              <option value="customer">顧客</option>
+              <option value="vendor">業者</option>
+            </select>
+            <select
+              aria-label="連絡先の紐付け先"
+              value={contactOwnerId}
+              disabled={Boolean(editingContactId)}
+              onChange={(e) => {
+                const nextOwnerId = e.target.value;
+                if (nextOwnerId === contactOwnerId) {
+                  return;
+                }
+                if (
+                  hasContactDraft(contactForm) &&
+                  !window.confirm(
+                    '入力中の連絡先情報が破棄されます。よろしいですか？',
+                  )
+                ) {
+                  return;
+                }
+                setContactOwnerId(nextOwnerId);
+                resetContact();
+              }}
+            >
+              <option value="">選択してください</option>
+              {(contactOwnerType === 'customer' ? customers : vendors).map(
+                (item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.code} / {item.name}
+                  </option>
+                ),
+              )}
+            </select>
+          </div>
+          <div className="row" style={{ marginTop: 8 }}>
+            <input
+              type="text"
+              placeholder="氏名"
+              aria-label="連絡先氏名"
+              value={contactForm.name}
+              onChange={(e) =>
+                setContactForm({ ...contactForm, name: e.target.value })
+              }
+            />
+            <input
+              type="text"
+              placeholder="メール"
+              aria-label="連絡先メール"
+              value={contactForm.email}
+              onChange={(e) =>
+                setContactForm({ ...contactForm, email: e.target.value })
+              }
+            />
+          </div>
+          <div className="row" style={{ marginTop: 8 }}>
+            <input
+              type="text"
+              placeholder="電話"
+              aria-label="連絡先電話"
+              value={contactForm.phone}
+              onChange={(e) =>
+                setContactForm({ ...contactForm, phone: e.target.value })
+              }
+            />
+            <input
+              type="text"
+              placeholder="役割"
+              aria-label="連絡先役割"
+              value={contactForm.role}
+              onChange={(e) =>
+                setContactForm({ ...contactForm, role: e.target.value })
+              }
+            />
+            <label
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 4,
+                fontSize: 12,
+              }}
+            >
+              <input
+                type="checkbox"
+                aria-label="主担当"
+                checked={contactForm.isPrimary}
+                onChange={(e) =>
+                  setContactForm({
+                    ...contactForm,
+                    isPrimary: e.target.checked,
+                  })
+                }
+              />
+              主担当
+            </label>
+          </div>
+          <div className="row" style={{ marginTop: 8 }}>
+            <button className="button" onClick={saveContact}>
+              {editingContactId ? '更新' : '追加'}
+            </button>
+            <button className="button secondary" onClick={resetContact}>
+              クリア
+            </button>
+            <button className="button secondary" onClick={loadContacts}>
+              再読込
+            </button>
+          </div>
+          {contactMessage && <p>{contactMessage}</p>}
+          <ul className="list">
+            {contacts.map((item) => (
+              <li key={item.id}>
+                {item.isPrimary && <span className="badge">主担当</span>}{' '}
+                {item.name}
+                {item.role && ` / ${item.role}`}
+                {item.email && ` / ${item.email}`}
+                {item.phone && ` / ${item.phone}`}
+                <button
+                  className="button secondary"
+                  style={{ marginLeft: 8 }}
+                  onClick={() => editContact(item)}
+                >
+                  編集
+                </button>
+              </li>
+            ))}
+            {contacts.length === 0 && <li>データなし</li>}
           </ul>
         </div>
       </div>
