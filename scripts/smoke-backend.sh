@@ -3,6 +3,7 @@ set -euo pipefail
 
 BASE_URL="${BASE_URL:-http://localhost:3001}"
 USER_ID="${USER_ID:-demo-user}"
+ROLES="${ROLES:-admin,mgmt}"
 PROJECT_CODE="SMOKE-$(date +%s)"
 
 json_get() {
@@ -11,8 +12,7 @@ json_get() {
     return 1
   fi
 
-  python - "$1" <<'PY'
-import json
+  python -c 'import json
 import sys
 
 if len(sys.argv) < 2:
@@ -42,8 +42,7 @@ for key in path:
             data = None
             break
 
-print(data if data is not None else "")
-PY
+print(data if data is not None else "")' "$1"
 }
 
 require_id() {
@@ -58,7 +57,11 @@ require_id() {
 post_json() {
   local url=$1
   local body=$2
-  curl -sSf -H "Content-Type: application/json" -X POST "$url" -d "$body"
+  curl -sSf \
+    -H "Content-Type: application/json" \
+    -H "x-user-id: $USER_ID" \
+    -H "x-roles: $ROLES" \
+    -X POST "$url" -d "$body"
 }
 
 echo "[1/6] create project"
