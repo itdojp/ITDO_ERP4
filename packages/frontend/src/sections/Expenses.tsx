@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { api, getAuthState } from '../api';
 
 type Expense = {
@@ -25,6 +25,12 @@ type FormState = {
 
 type MessageState = { text: string; type: 'success' | 'error' } | null;
 
+type ProjectOption = {
+  id: string;
+  code: string;
+  name: string;
+};
+
 const defaultForm: FormState = {
   projectId: 'demo-project',
   category: '交通費',
@@ -39,6 +45,8 @@ export const Expenses: React.FC = () => {
   const auth = getAuthState();
   const defaultProjectId = auth?.projectIds?.[0] || defaultForm.projectId;
   const [items, setItems] = useState<Expense[]>([]);
+  const [projects, setProjects] = useState<ProjectOption[]>([]);
+  const [projectMessage, setProjectMessage] = useState('');
   const [message, setMessage] = useState<MessageState>(null);
   const [form, setForm] = useState<FormState>({
     ...defaultForm,
@@ -65,14 +73,40 @@ export const Expenses: React.FC = () => {
     Boolean(currencyValue);
   const isValid = baseValid && !amountError && !currencyError;
   const validationHint = !baseValid
-    ? 'Project ID / 区分 / 日付 / 通貨は必須です'
+    ? '案件 / 区分 / 日付 / 通貨は必須です'
     : amountError || currencyError;
+
+  const loadProjects = useCallback(async () => {
+    try {
+      const res = await api<{ items: ProjectOption[] }>('/projects');
+      setProjects(res.items || []);
+      setProjectMessage('');
+    } catch (err) {
+      console.error('Failed to load projects.', err);
+      setProjects([]);
+      setProjectMessage('案件一覧の取得に失敗しました');
+    }
+  }, []);
 
   useEffect(() => {
     api<{ items: Expense[] }>('/expenses')
       .then((res) => setItems(res.items))
       .catch(() => setItems([]));
   }, []);
+
+  useEffect(() => {
+    loadProjects();
+  }, [loadProjects]);
+
+  useEffect(() => {
+    if (projects.length === 0) return;
+    setForm((prev) => {
+      if (projects.some((project) => project.id === prev.projectId)) {
+        return prev;
+      }
+      return { ...prev, projectId: projects[0].id };
+    });
+  }, [projects]);
 
   useEffect(() => {
     if (!message || message.type !== 'success') return;
@@ -132,12 +166,18 @@ export const Expenses: React.FC = () => {
       <h2>経費入力</h2>
       <div className="card" style={{ marginBottom: 12 }}>
         <div className="row" style={{ gap: 8, alignItems: 'center' }}>
-          <input
-            type="text"
+          <select
+            aria-label="案件選択"
             value={form.projectId}
             onChange={(e) => setForm({ ...form, projectId: e.target.value })}
-            placeholder="Project ID"
-          />
+          >
+            <option value="">案件を選択</option>
+            {projects.map((project) => (
+              <option key={project.id} value={project.id}>
+                {project.code} / {project.name}
+              </option>
+            ))}
+          </select>
           <input
             type="text"
             value={form.category}
@@ -200,6 +240,11 @@ export const Expenses: React.FC = () => {
         {validationHint && (
           <p style={{ color: '#dc2626', margin: '8px 0 0' }}>
             {validationHint}
+          </p>
+        )}
+        {projectMessage && (
+          <p style={{ color: '#dc2626', margin: '8px 0 0' }}>
+            {projectMessage}
           </p>
         )}
       </div>

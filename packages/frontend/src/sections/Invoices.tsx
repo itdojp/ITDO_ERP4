@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { api, getAuthState } from '../api';
 import { InvoiceDetail } from './InvoiceDetail';
 
@@ -11,6 +11,12 @@ interface Invoice {
   lines?: { description: string; quantity: number; unitPrice: number }[];
 }
 
+type ProjectOption = {
+  id: string;
+  code: string;
+  name: string;
+};
+
 const buildInitialForm = (projectId?: string) => ({
   projectId: projectId || 'demo-project',
   totalAmount: 100000,
@@ -18,12 +24,40 @@ const buildInitialForm = (projectId?: string) => ({
 
 export const Invoices: React.FC = () => {
   const [items, setItems] = useState<Invoice[]>([]);
+  const [projects, setProjects] = useState<ProjectOption[]>([]);
+  const [projectMessage, setProjectMessage] = useState('');
   const auth = getAuthState();
   const [form, setForm] = useState(() =>
     buildInitialForm(auth?.projectIds?.[0]),
   );
   const [selected, setSelected] = useState<Invoice | null>(null);
   const [message, setMessage] = useState('');
+
+  const loadProjects = useCallback(async () => {
+    try {
+      const res = await api<{ items: ProjectOption[] }>('/projects');
+      setProjects(res.items || []);
+      setProjectMessage('');
+    } catch (err) {
+      console.error('Failed to load projects.', err);
+      setProjects([]);
+      setProjectMessage('案件一覧の取得に失敗しました');
+    }
+  }, []);
+
+  useEffect(() => {
+    loadProjects();
+  }, [loadProjects]);
+
+  useEffect(() => {
+    if (projects.length === 0) return;
+    setForm((prev) => {
+      if (projects.some((project) => project.id === prev.projectId)) {
+        return prev;
+      }
+      return { ...prev, projectId: projects[0].id };
+    });
+  }, [projects]);
 
   const create = async () => {
     try {
@@ -79,12 +113,18 @@ export const Invoices: React.FC = () => {
     <div>
       <h2>請求</h2>
       <div className="row" style={{ gap: 8 }}>
-        <input
-          type="text"
+        <select
+          aria-label="案件選択"
           value={form.projectId}
           onChange={(e) => setForm({ ...form, projectId: e.target.value })}
-          placeholder="projectId"
-        />
+        >
+          <option value="">案件を選択</option>
+          {projects.map((project) => (
+            <option key={project.id} value={project.id}>
+              {project.code} / {project.name}
+            </option>
+          ))}
+        </select>
         <input
           type="number"
           value={form.totalAmount}
@@ -100,6 +140,7 @@ export const Invoices: React.FC = () => {
           読み込み
         </button>
       </div>
+      {projectMessage && <p style={{ color: '#dc2626' }}>{projectMessage}</p>}
       {message && <p>{message}</p>}
       <ul className="list">
         {items.map((d) => (

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { api, getAuthState } from '../api';
 
 type ProjectEffort = {
@@ -8,6 +8,7 @@ type ProjectEffort = {
 };
 type GroupEffort = { userId: string; totalMinutes: number };
 type Overtime = { userId: string; totalMinutes: number; dailyHours: number };
+type ProjectOption = { id: string; code: string; name: string };
 
 function buildQuery(from?: string, to?: string) {
   const params = new URLSearchParams();
@@ -22,6 +23,8 @@ export const Reports: React.FC = () => {
   const defaultProjectId = auth?.projectIds?.[0] || 'demo-project';
   const defaultUserId = auth?.userId || 'demo-user';
   const [projectId, setProjectId] = useState(defaultProjectId);
+  const [projects, setProjects] = useState<ProjectOption[]>([]);
+  const [projectMessage, setProjectMessage] = useState('');
   const [groupUserIds, setGroupUserIds] = useState(defaultUserId);
   const [overtimeUserId, setOvertimeUserId] = useState(defaultUserId);
   const [from, setFrom] = useState('');
@@ -32,6 +35,32 @@ export const Reports: React.FC = () => {
   const [groupReport, setGroupReport] = useState<GroupEffort[]>([]);
   const [overtimeReport, setOvertimeReport] = useState<Overtime | null>(null);
   const [message, setMessage] = useState('');
+
+  const loadProjects = useCallback(async () => {
+    try {
+      const res = await api<{ items: ProjectOption[] }>('/projects');
+      setProjects(res.items || []);
+      setProjectMessage('');
+    } catch (err) {
+      console.error('Failed to load projects.', err);
+      setProjects([]);
+      setProjectMessage('案件一覧の取得に失敗しました');
+    }
+  }, []);
+
+  useEffect(() => {
+    loadProjects();
+  }, [loadProjects]);
+
+  useEffect(() => {
+    if (projects.length === 0) return;
+    setProjectId((prev) => {
+      if (projects.some((project) => project.id === prev)) {
+        return prev;
+      }
+      return projects[0].id;
+    });
+  }, [projects]);
 
   const loadProject = async () => {
     try {
@@ -93,12 +122,18 @@ export const Reports: React.FC = () => {
         />
       </div>
       <div className="row" style={{ gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
-        <input
-          type="text"
+        <select
+          aria-label="案件選択"
           value={projectId}
           onChange={(e) => setProjectId(e.target.value)}
-          placeholder="projectId"
-        />
+        >
+          <option value="">案件を選択</option>
+          {projects.map((project) => (
+            <option key={project.id} value={project.id}>
+              {project.code} / {project.name}
+            </option>
+          ))}
+        </select>
         <button className="button" onClick={loadProject}>
           PJ別工数
         </button>
@@ -121,6 +156,7 @@ export const Reports: React.FC = () => {
           個人別残業
         </button>
       </div>
+      {projectMessage && <p style={{ color: '#dc2626' }}>{projectMessage}</p>}
       {message && <p>{message}</p>}
       <div className="list" style={{ display: 'grid', gap: 8 }}>
         {projectReport && (
