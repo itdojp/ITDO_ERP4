@@ -44,6 +44,10 @@ export const projectSchema = {
   }),
 };
 
+export const projectPatchSchema = {
+  body: Type.Partial(projectSchema.body),
+};
+
 export const customerSchema = {
   body: Type.Object(
     {
