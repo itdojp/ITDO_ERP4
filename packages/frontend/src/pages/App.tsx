@@ -10,6 +10,7 @@ import { Reports } from '../sections/Reports';
 import { AdminSettings } from '../sections/AdminSettings';
 import { ProjectChat } from '../sections/ProjectChat';
 import { MasterData } from '../sections/MasterData';
+import { Projects } from '../sections/Projects';
 
 export const App: React.FC = () => {
   return (
@@ -33,6 +34,9 @@ export const App: React.FC = () => {
       </div>
       <div className="card">
         <Reports />
+      </div>
+      <div className="card">
+        <Projects />
       </div>
       <div className="card">
         <MasterData />

@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { requireRole } from '../services/rbac.js';
 import {
   projectSchema,
+  projectPatchSchema,
   recurringTemplateSchema,
   projectTaskSchema,
   projectTaskPatchSchema,
@@ -62,9 +63,71 @@ export async function registerProjectRoutes(app: FastifyInstance) {
   app.post(
     '/projects',
     { preHandler: requireRole(['admin', 'mgmt']), schema: projectSchema },
-    async (req) => {
+    async (req, reply) => {
       const body = req.body as any;
-      const project = await prisma.project.create({ data: body });
+      const hasCustomerIdProp = Object.prototype.hasOwnProperty.call(
+        body,
+        'customerId',
+      );
+      const customerId =
+        hasCustomerIdProp && body.customerId !== ''
+          ? (body.customerId ?? null)
+          : null;
+      if (customerId) {
+        const customer = await prisma.customer.findUnique({
+          where: { id: customerId },
+          select: { id: true },
+        });
+        if (!customer) {
+          return reply.status(404).send({
+            error: { code: 'NOT_FOUND', message: 'Customer not found' },
+          });
+        }
+      }
+      const data = hasCustomerIdProp ? { ...body, customerId } : { ...body };
+      const project = await prisma.project.create({ data });
+      return project;
+    },
+  );
+
+  app.patch(
+    '/projects/:projectId',
+    { preHandler: requireRole(['admin', 'mgmt']), schema: projectPatchSchema },
+    async (req, reply) => {
+      const { projectId } = req.params as { projectId: string };
+      const body = req.body as any;
+      const current = await prisma.project.findUnique({
+        where: { id: projectId },
+      });
+      if (!current) {
+        return reply.status(404).send({
+          error: { code: 'NOT_FOUND', message: 'Project not found' },
+        });
+      }
+      const hasCustomerIdProp = Object.prototype.hasOwnProperty.call(
+        body,
+        'customerId',
+      );
+      const customerId =
+        hasCustomerIdProp && body.customerId !== ''
+          ? (body.customerId ?? null)
+          : null;
+      if (hasCustomerIdProp && customerId) {
+        const customer = await prisma.customer.findUnique({
+          where: { id: customerId },
+          select: { id: true },
+        });
+        if (!customer) {
+          return reply.status(404).send({
+            error: { code: 'NOT_FOUND', message: 'Customer not found' },
+          });
+        }
+      }
+      const data = hasCustomerIdProp ? { ...body, customerId } : { ...body };
+      const project = await prisma.project.update({
+        where: { id: projectId },
+        data,
+      });
       return project;
     },
   );
