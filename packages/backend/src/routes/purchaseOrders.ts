@@ -5,6 +5,7 @@ import { FlowTypeValue, DocStatusValue } from '../types.js';
 import { purchaseOrderSchema } from './validators.js';
 import { requireRole } from '../services/rbac.js';
 import { prisma } from '../services/db.js';
+import { checkProjectAndVendor } from '../services/entityChecks.js';
 
 export async function registerPurchaseOrderRoutes(app: FastifyInstance) {
   app.get(
@@ -50,9 +51,23 @@ export async function registerPurchaseOrderRoutes(app: FastifyInstance) {
   app.post(
     '/projects/:projectId/purchase-orders',
     { preHandler: requireRole(['admin', 'mgmt']), schema: purchaseOrderSchema },
-    async (req) => {
+    async (req, reply) => {
       const { projectId } = req.params as { projectId: string };
       const body = req.body as any;
+      const { projectExists, vendorExists } = await checkProjectAndVendor(
+        projectId,
+        body.vendorId,
+      );
+      if (!projectExists) {
+        return reply.status(404).send({
+          error: { code: 'NOT_FOUND', message: 'Project not found' },
+        });
+      }
+      if (!vendorExists) {
+        return reply.status(404).send({
+          error: { code: 'NOT_FOUND', message: 'Vendor not found' },
+        });
+      }
       const now = new Date();
       const { number, serial } = await nextNumber('purchase_order', now);
       const po = await prisma.purchaseOrder.create({

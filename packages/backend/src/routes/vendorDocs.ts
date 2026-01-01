@@ -4,6 +4,7 @@ import { FlowTypeValue, DocStatusValue } from '../types.js';
 import { vendorInvoiceSchema, vendorQuoteSchema } from './validators.js';
 import { requireRole } from '../services/rbac.js';
 import { prisma } from '../services/db.js';
+import { checkProjectAndVendor } from '../services/entityChecks.js';
 
 export async function registerVendorDocRoutes(app: FastifyInstance) {
   app.get(
@@ -87,8 +88,22 @@ export async function registerVendorDocRoutes(app: FastifyInstance) {
   app.post(
     '/vendor-quotes',
     { preHandler: requireRole(['admin', 'mgmt']), schema: vendorQuoteSchema },
-    async (req) => {
+    async (req, reply) => {
       const body = req.body as any;
+      const { projectExists, vendorExists } = await checkProjectAndVendor(
+        body.projectId,
+        body.vendorId,
+      );
+      if (!projectExists) {
+        return reply.status(404).send({
+          error: { code: 'NOT_FOUND', message: 'Project not found' },
+        });
+      }
+      if (!vendorExists) {
+        return reply.status(404).send({
+          error: { code: 'NOT_FOUND', message: 'Vendor not found' },
+        });
+      }
       const vendorQuote = await prisma.vendorQuote.create({ data: body });
       return vendorQuote;
     },
@@ -97,8 +112,22 @@ export async function registerVendorDocRoutes(app: FastifyInstance) {
   app.post(
     '/vendor-invoices',
     { preHandler: requireRole(['admin', 'mgmt']), schema: vendorInvoiceSchema },
-    async (req) => {
+    async (req, reply) => {
       const body = req.body as any;
+      const { projectExists, vendorExists } = await checkProjectAndVendor(
+        body.projectId,
+        body.vendorId,
+      );
+      if (!projectExists) {
+        return reply.status(404).send({
+          error: { code: 'NOT_FOUND', message: 'Project not found' },
+        });
+      }
+      if (!vendorExists) {
+        return reply.status(404).send({
+          error: { code: 'NOT_FOUND', message: 'Vendor not found' },
+        });
+      }
       const vi = await prisma.vendorInvoice.create({ data: body });
       return vi;
     },
