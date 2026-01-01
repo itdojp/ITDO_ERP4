@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { api, getAuthState } from '../api';
 import { useProjects } from '../hooks/useProjects';
 
@@ -37,6 +37,10 @@ export const Reports: React.FC = () => {
     selectedProjectId: projectId,
     onSelect: setProjectId,
   });
+  const projectMap = useMemo(
+    () => new Map(projects.map((project) => [project.id, project])),
+    [projects],
+  );
 
   const loadProject = async () => {
     try {
@@ -78,6 +82,11 @@ export const Reports: React.FC = () => {
     } catch (err) {
       setMessage('取得に失敗しました');
     }
+  };
+
+  const renderProject = (id: string) => {
+    const project = projectMap.get(id);
+    return project ? `${project.code} / ${project.name}` : id;
   };
 
   return (
@@ -138,7 +147,7 @@ export const Reports: React.FC = () => {
         {projectReport && (
           <div className="card" style={{ padding: 12 }}>
             <strong>プロジェクト別工数</strong>
-            <div>Project: {projectReport.projectId}</div>
+            <div>Project: {renderProject(projectReport.projectId)}</div>
             <div>Minutes: {projectReport.totalMinutes}</div>
             <div>
               Expenses: ¥
