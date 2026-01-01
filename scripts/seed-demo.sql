@@ -39,7 +39,7 @@ values ('40000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-00000000
 on conflict do nothing;
 
 insert into "PurchaseOrder" (id, "projectId", "vendorId", "poNo", "issueDate", "dueDate", currency, "totalAmount", status, "createdAt", "updatedAt")
-values ('60000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-000000000010','P2025-11-0001', current_date, current_date, 'JPY', 80000, 'draft', now(), now())
+values ('60000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-000000000010','PO2025-11-0001', current_date, current_date, 'JPY', 80000, 'draft', now(), now())
 on conflict do nothing;
 
 insert into "PurchaseOrderLine" (id, "purchaseOrderId", description, quantity, "unitPrice")
