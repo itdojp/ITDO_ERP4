@@ -39,8 +39,7 @@ function resolvePendingStatus(
 ) {
   if (!stepOrder) return DocStatusValue.pending_qa;
   const isExec = steps.some(
-    (step) =>
-      step.stepOrder === stepOrder && step.approverGroupId === 'exec',
+    (step) => step.stepOrder === stepOrder && step.approverGroupId === 'exec',
   );
   return isExec ? DocStatusValue.pending_exec : DocStatusValue.pending_qa;
 }
