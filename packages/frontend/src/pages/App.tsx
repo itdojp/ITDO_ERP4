@@ -12,7 +12,6 @@ import { ProjectChat } from '../sections/ProjectChat';
 import { MasterData } from '../sections/MasterData';
 import { Projects } from '../sections/Projects';
 import { VendorDocuments } from '../sections/VendorDocuments';
-import { Projects } from '../sections/Projects';
 
 export const App: React.FC = () => {
   return (

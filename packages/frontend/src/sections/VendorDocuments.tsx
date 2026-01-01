@@ -42,13 +42,16 @@ type VendorInvoice = {
   status: string;
 };
 
-const formatDate = (value?: string | null) => (value ? value.slice(0, 10) : '-');
+const formatDate = (value?: string | null) =>
+  value ? value.slice(0, 10) : '-';
 
 const formatAmount = (value: number | string, currency: string) => {
   const amount =
-    typeof value === 'number' ? value : Number.isFinite(Number(value))
-      ? Number(value)
-      : null;
+    typeof value === 'number'
+      ? value
+      : Number.isFinite(Number(value))
+        ? Number(value)
+        : null;
   if (amount === null) return `- ${currency}`;
   return `${amount.toLocaleString()} ${currency}`;
 };
