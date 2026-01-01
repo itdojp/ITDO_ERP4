@@ -69,9 +69,9 @@
 ## 実測結果（PoC/podman）
 ### 実行条件
 - DB: podman のローカル Postgres（`scripts/podman-poc.sh reset` 後、`seed-demo.sql` + 最小の承認/アラート行を追加）
-- 実行日時: 2025-12-31
+- 実行日時: 2026-01-01
 - コマンド例:
-  - `podman exec -i erp4-pg-poc psql -U postgres -d postgres -v start_date='2025-01-01' -v end_date='2025-01-31' -v project_id='00000000-0000-0000-0000-000000000001' -v approver_group_id='grp-mgmt' -v approver_user_id='demo-user' -v status='pending_qa' -v alert_status='open' -f /workspace/scripts/checks/perf-explain.sql`
+  - `podman exec -i erp4-pg-poc psql -U postgres -d postgres -v start_date='2026-01-01' -v end_date='2026-01-31' -v project_id='00000000-0000-0000-0000-000000000001' -v approver_group_id='grp-mgmt' -v approver_user_id='demo-user' -v status='pending_qa' -v alert_status='open' -f /workspace/scripts/checks/perf-explain.sql`
 
 ### 観測結果（要約）
 - 承認一覧（status）: `ApprovalInstance_status_createdAt_idx` の Index Scan（OK）
