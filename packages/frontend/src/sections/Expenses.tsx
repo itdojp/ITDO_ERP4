@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { api, getAuthState } from '../api';
+import { useProjects } from '../hooks/useProjects';
 
 type Expense = {
   id: string;
@@ -25,12 +26,6 @@ type FormState = {
 
 type MessageState = { text: string; type: 'success' | 'error' } | null;
 
-type ProjectOption = {
-  id: string;
-  code: string;
-  name: string;
-};
-
 const defaultForm: FormState = {
   projectId: 'demo-project',
   category: '交通費',
@@ -45,8 +40,16 @@ export const Expenses: React.FC = () => {
   const auth = getAuthState();
   const defaultProjectId = auth?.projectIds?.[0] || defaultForm.projectId;
   const [items, setItems] = useState<Expense[]>([]);
-  const [projects, setProjects] = useState<ProjectOption[]>([]);
-  const [projectMessage, setProjectMessage] = useState('');
+  const handleProjectSelect = useCallback(
+    (projectId: string) => {
+      setForm((prev) => ({ ...prev, projectId }));
+    },
+    [setForm],
+  );
+  const { projects, projectMessage } = useProjects({
+    selectedProjectId: form.projectId,
+    onSelect: handleProjectSelect,
+  });
   const [message, setMessage] = useState<MessageState>(null);
   const [form, setForm] = useState<FormState>({
     ...defaultForm,
@@ -76,37 +79,11 @@ export const Expenses: React.FC = () => {
     ? '案件 / 区分 / 日付 / 通貨は必須です'
     : amountError || currencyError;
 
-  const loadProjects = useCallback(async () => {
-    try {
-      const res = await api<{ items: ProjectOption[] }>('/projects');
-      setProjects(res.items || []);
-      setProjectMessage('');
-    } catch (err) {
-      console.error('Failed to load projects.', err);
-      setProjects([]);
-      setProjectMessage('案件一覧の取得に失敗しました');
-    }
-  }, []);
-
   useEffect(() => {
     api<{ items: Expense[] }>('/expenses')
       .then((res) => setItems(res.items))
       .catch(() => setItems([]));
   }, []);
-
-  useEffect(() => {
-    loadProjects();
-  }, [loadProjects]);
-
-  useEffect(() => {
-    if (projects.length === 0) return;
-    setForm((prev) => {
-      if (projects.some((project) => project.id === prev.projectId)) {
-        return prev;
-      }
-      return { ...prev, projectId: projects[0].id };
-    });
-  }, [projects]);
 
   useEffect(() => {
     if (!message || message.type !== 'success') return;

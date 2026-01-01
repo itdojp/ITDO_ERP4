@@ -1,5 +1,6 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { api, getAuthState } from '../api';
+import { useProjects } from '../hooks/useProjects';
 
 type ChatMessage = {
   id: string;
@@ -9,12 +10,6 @@ type ChatMessage = {
   tags?: string[];
   reactions?: Record<string, number | { count: number; userIds: string[] }>;
   createdAt: string;
-};
-
-type ProjectOption = {
-  id: string;
-  code: string;
-  name: string;
 };
 
 const reactionOptions = ['👍', '🎉'];
@@ -43,40 +38,16 @@ export const ProjectChat: React.FC = () => {
   const auth = getAuthState();
   const defaultProjectId = auth?.projectIds?.[0] || 'demo-project';
   const [projectId, setProjectId] = useState(defaultProjectId);
-  const [projects, setProjects] = useState<ProjectOption[]>([]);
-  const [projectMessage, setProjectMessage] = useState('');
+  const { projects, projectMessage } = useProjects({
+    selectedProjectId: projectId,
+    onSelect: setProjectId,
+  });
   const [body, setBody] = useState('');
   const [tags, setTags] = useState('');
   const [items, setItems] = useState<ChatMessage[]>([]);
   const [message, setMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isPosting, setIsPosting] = useState(false);
-
-  const loadProjects = useCallback(async () => {
-    try {
-      const res = await api<{ items: ProjectOption[] }>('/projects');
-      setProjects(res.items || []);
-      setProjectMessage('');
-    } catch (err) {
-      console.error('Failed to load projects.', err);
-      setProjects([]);
-      setProjectMessage('案件一覧の取得に失敗しました');
-    }
-  }, []);
-
-  useEffect(() => {
-    loadProjects();
-  }, [loadProjects]);
-
-  useEffect(() => {
-    if (projects.length === 0) return;
-    setProjectId((prev) => {
-      if (projects.some((project) => project.id === prev)) {
-        return prev;
-      }
-      return projects[0].id;
-    });
-  }, [projects]);
 
   const load = async () => {
     try {

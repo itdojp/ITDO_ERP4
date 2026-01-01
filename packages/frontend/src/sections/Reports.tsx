@@ -1,5 +1,6 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { api, getAuthState } from '../api';
+import { useProjects } from '../hooks/useProjects';
 
 type ProjectEffort = {
   projectId: string;
@@ -8,8 +9,6 @@ type ProjectEffort = {
 };
 type GroupEffort = { userId: string; totalMinutes: number };
 type Overtime = { userId: string; totalMinutes: number; dailyHours: number };
-type ProjectOption = { id: string; code: string; name: string };
-
 function buildQuery(from?: string, to?: string) {
   const params = new URLSearchParams();
   if (from) params.set('from', from);
@@ -23,8 +22,6 @@ export const Reports: React.FC = () => {
   const defaultProjectId = auth?.projectIds?.[0] || 'demo-project';
   const defaultUserId = auth?.userId || 'demo-user';
   const [projectId, setProjectId] = useState(defaultProjectId);
-  const [projects, setProjects] = useState<ProjectOption[]>([]);
-  const [projectMessage, setProjectMessage] = useState('');
   const [groupUserIds, setGroupUserIds] = useState(defaultUserId);
   const [overtimeUserId, setOvertimeUserId] = useState(defaultUserId);
   const [from, setFrom] = useState('');
@@ -36,31 +33,10 @@ export const Reports: React.FC = () => {
   const [overtimeReport, setOvertimeReport] = useState<Overtime | null>(null);
   const [message, setMessage] = useState('');
 
-  const loadProjects = useCallback(async () => {
-    try {
-      const res = await api<{ items: ProjectOption[] }>('/projects');
-      setProjects(res.items || []);
-      setProjectMessage('');
-    } catch (err) {
-      console.error('Failed to load projects.', err);
-      setProjects([]);
-      setProjectMessage('案件一覧の取得に失敗しました');
-    }
-  }, []);
-
-  useEffect(() => {
-    loadProjects();
-  }, [loadProjects]);
-
-  useEffect(() => {
-    if (projects.length === 0) return;
-    setProjectId((prev) => {
-      if (projects.some((project) => project.id === prev)) {
-        return prev;
-      }
-      return projects[0].id;
-    });
-  }, [projects]);
+  const { projects, projectMessage } = useProjects({
+    selectedProjectId: projectId,
+    onSelect: setProjectId,
+  });
 
   const loadProject = async () => {
     try {

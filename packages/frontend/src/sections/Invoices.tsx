@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { api, getAuthState } from '../api';
 import { InvoiceDetail } from './InvoiceDetail';
+import { useProjects } from '../hooks/useProjects';
 
 interface Invoice {
   id: string;
@@ -11,12 +12,6 @@ interface Invoice {
   lines?: { description: string; quantity: number; unitPrice: number }[];
 }
 
-type ProjectOption = {
-  id: string;
-  code: string;
-  name: string;
-};
-
 const buildInitialForm = (projectId?: string) => ({
   projectId: projectId || 'demo-project',
   totalAmount: 100000,
@@ -24,40 +19,22 @@ const buildInitialForm = (projectId?: string) => ({
 
 export const Invoices: React.FC = () => {
   const [items, setItems] = useState<Invoice[]>([]);
-  const [projects, setProjects] = useState<ProjectOption[]>([]);
-  const [projectMessage, setProjectMessage] = useState('');
+  const handleProjectSelect = useCallback(
+    (projectId: string) => {
+      setForm((prev) => ({ ...prev, projectId }));
+    },
+    [setForm],
+  );
+  const { projects, projectMessage } = useProjects({
+    selectedProjectId: form.projectId,
+    onSelect: handleProjectSelect,
+  });
   const auth = getAuthState();
   const [form, setForm] = useState(() =>
     buildInitialForm(auth?.projectIds?.[0]),
   );
   const [selected, setSelected] = useState<Invoice | null>(null);
   const [message, setMessage] = useState('');
-
-  const loadProjects = useCallback(async () => {
-    try {
-      const res = await api<{ items: ProjectOption[] }>('/projects');
-      setProjects(res.items || []);
-      setProjectMessage('');
-    } catch (err) {
-      console.error('Failed to load projects.', err);
-      setProjects([]);
-      setProjectMessage('案件一覧の取得に失敗しました');
-    }
-  }, []);
-
-  useEffect(() => {
-    loadProjects();
-  }, [loadProjects]);
-
-  useEffect(() => {
-    if (projects.length === 0) return;
-    setForm((prev) => {
-      if (projects.some((project) => project.id === prev.projectId)) {
-        return prev;
-      }
-      return { ...prev, projectId: projects[0].id };
-    });
-  }, [projects]);
 
   const create = async () => {
     try {

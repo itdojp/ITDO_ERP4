@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { api, getAuthState } from '../api';
+import { useProjects } from '../hooks/useProjects';
 
 type TimeEntry = {
   id: string;
@@ -22,12 +23,6 @@ type FormState = {
 
 type MessageState = { text: string; type: 'success' | 'error' } | null;
 
-type ProjectOption = {
-  id: string;
-  code: string;
-  name: string;
-};
-
 const defaultForm: FormState = {
   projectId: 'demo-project',
   taskId: '',
@@ -41,8 +36,16 @@ export const TimeEntries: React.FC = () => {
   const auth = getAuthState();
   const defaultProjectId = auth?.projectIds?.[0] || defaultForm.projectId;
   const [items, setItems] = useState<TimeEntry[]>([]);
-  const [projects, setProjects] = useState<ProjectOption[]>([]);
-  const [projectMessage, setProjectMessage] = useState('');
+  const handleProjectSelect = useCallback(
+    (projectId: string) => {
+      setForm((prev) => ({ ...prev, projectId }));
+    },
+    [setForm],
+  );
+  const { projects, projectMessage } = useProjects({
+    selectedProjectId: form.projectId,
+    onSelect: handleProjectSelect,
+  });
   const [message, setMessage] = useState<MessageState>(null);
   const [form, setForm] = useState<FormState>({
     ...defaultForm,
@@ -60,41 +63,13 @@ export const TimeEntries: React.FC = () => {
           : '';
   const baseValid = Boolean(form.projectId.trim()) && Boolean(form.workDate);
   const isValid = baseValid && !minutesError;
-  const validationHint = !baseValid
-    ? '案件と日付は必須です'
-    : minutesError;
-
-  const loadProjects = useCallback(async () => {
-    try {
-      const res = await api<{ items: ProjectOption[] }>('/projects');
-      setProjects(res.items || []);
-      setProjectMessage('');
-    } catch (err) {
-      console.error('Failed to load projects.', err);
-      setProjects([]);
-      setProjectMessage('案件一覧の取得に失敗しました');
-    }
-  }, []);
+  const validationHint = !baseValid ? '案件と日付は必須です' : minutesError;
 
   useEffect(() => {
     api<{ items: TimeEntry[] }>('/time-entries')
       .then((res) => setItems(res.items))
       .catch(() => setItems([]));
   }, []);
-
-  useEffect(() => {
-    loadProjects();
-  }, [loadProjects]);
-
-  useEffect(() => {
-    if (projects.length === 0) return;
-    setForm((prev) => {
-      if (projects.some((project) => project.id === prev.projectId)) {
-        return prev;
-      }
-      return { ...prev, projectId: projects[0].id };
-    });
-  }, [projects]);
 
   useEffect(() => {
     if (!message || message.type !== 'success') return;
