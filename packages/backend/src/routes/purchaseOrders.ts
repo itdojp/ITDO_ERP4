@@ -50,9 +50,29 @@ export async function registerPurchaseOrderRoutes(app: FastifyInstance) {
   app.post(
     '/projects/:projectId/purchase-orders',
     { preHandler: requireRole(['admin', 'mgmt']), schema: purchaseOrderSchema },
-    async (req) => {
+    async (req, reply) => {
       const { projectId } = req.params as { projectId: string };
       const body = req.body as any;
+      const [project, vendor] = await Promise.all([
+        prisma.project.findUnique({
+          where: { id: projectId },
+          select: { id: true },
+        }),
+        prisma.vendor.findUnique({
+          where: { id: body.vendorId },
+          select: { id: true },
+        }),
+      ]);
+      if (!project) {
+        return reply.status(404).send({
+          error: { code: 'NOT_FOUND', message: 'Project not found' },
+        });
+      }
+      if (!vendor) {
+        return reply.status(404).send({
+          error: { code: 'NOT_FOUND', message: 'Vendor not found' },
+        });
+      }
       const now = new Date();
       const { number, serial } = await nextNumber('purchase_order', now);
       const po = await prisma.purchaseOrder.create({

@@ -87,8 +87,28 @@ export async function registerVendorDocRoutes(app: FastifyInstance) {
   app.post(
     '/vendor-quotes',
     { preHandler: requireRole(['admin', 'mgmt']), schema: vendorQuoteSchema },
-    async (req) => {
+    async (req, reply) => {
       const body = req.body as any;
+      const [project, vendor] = await Promise.all([
+        prisma.project.findUnique({
+          where: { id: body.projectId },
+          select: { id: true },
+        }),
+        prisma.vendor.findUnique({
+          where: { id: body.vendorId },
+          select: { id: true },
+        }),
+      ]);
+      if (!project) {
+        return reply.status(404).send({
+          error: { code: 'NOT_FOUND', message: 'Project not found' },
+        });
+      }
+      if (!vendor) {
+        return reply.status(404).send({
+          error: { code: 'NOT_FOUND', message: 'Vendor not found' },
+        });
+      }
       const vendorQuote = await prisma.vendorQuote.create({ data: body });
       return vendorQuote;
     },
@@ -97,8 +117,28 @@ export async function registerVendorDocRoutes(app: FastifyInstance) {
   app.post(
     '/vendor-invoices',
     { preHandler: requireRole(['admin', 'mgmt']), schema: vendorInvoiceSchema },
-    async (req) => {
+    async (req, reply) => {
       const body = req.body as any;
+      const [project, vendor] = await Promise.all([
+        prisma.project.findUnique({
+          where: { id: body.projectId },
+          select: { id: true },
+        }),
+        prisma.vendor.findUnique({
+          where: { id: body.vendorId },
+          select: { id: true },
+        }),
+      ]);
+      if (!project) {
+        return reply.status(404).send({
+          error: { code: 'NOT_FOUND', message: 'Project not found' },
+        });
+      }
+      if (!vendor) {
+        return reply.status(404).send({
+          error: { code: 'NOT_FOUND', message: 'Vendor not found' },
+        });
+      }
       const vi = await prisma.vendorInvoice.create({ data: body });
       return vi;
     },
