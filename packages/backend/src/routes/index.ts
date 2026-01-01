@@ -5,6 +5,7 @@ import { registerWellbeingRoutes } from './wellbeing.js';
 import { registerProjectRoutes } from './projects.js';
 import { registerCustomerRoutes } from './customers.js';
 import { registerVendorRoutes } from './vendors.js';
+import { registerContactRoutes } from './contacts.js';
 import { registerEstimateRoutes } from './estimates.js';
 import { registerInvoiceRoutes } from './invoices.js';
 import { registerTimeEntryRoutes } from './timeEntries.js';
@@ -47,6 +48,7 @@ export async function registerRoutes(app: FastifyInstance) {
   await registerProjectRoutes(app);
   await registerCustomerRoutes(app);
   await registerVendorRoutes(app);
+  await registerContactRoutes(app);
   await registerEstimateRoutes(app);
   await registerInvoiceRoutes(app);
   await registerTimeEntryRoutes(app);
