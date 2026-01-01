@@ -1,7 +1,7 @@
 # QA 手順（ハッピーパス最小）
 
 ## バックエンド API
-- 起動: `cd packages/backend && npm run dev` (環境変数 `DATABASE_URL` で任意のローカルDB)
+- 起動: `cd packages/backend && npm run prisma:generate && npm run dev` (環境変数 `DATABASE_URL` で任意のローカルDB; 本番ビルド確認が必要なら `npm run build && node dist/index.js`)
 - ヘルス: GET /health → { ok: true }
 - プロジェクト作成: POST /projects { code,name } → 201
 - 見積→請求: POST /projects/:id/estimates → submit → POST /projects/:id/invoices → submit → send

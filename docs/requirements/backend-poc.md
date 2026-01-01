@@ -5,7 +5,7 @@
 ## 技術スタック（案）
 - Node.js / TypeScript
 - Fastify or NestJS（軽量で可）
-- Prisma + PostgreSQL（スキーマは prisma/schema.prisma）
+- Prisma + PostgreSQL（スキーマは packages/backend/prisma/schema.prisma）
 - メール/通知は Stub（ログ出力）
 
 ## 最低限エンドポイント
