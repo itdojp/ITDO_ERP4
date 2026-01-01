@@ -89,7 +89,7 @@ export const contactSchema = {
       customerId: Type.Optional(Type.String({ minLength: 1 })),
       vendorId: Type.Optional(Type.String({ minLength: 1 })),
       name: Type.String({ minLength: 1 }),
-      email: Type.Optional(Type.String()),
+      email: Type.Optional(Type.String({ format: 'email' })),
       phone: Type.Optional(Type.String()),
       role: Type.Optional(Type.String()),
       isPrimary: Type.Optional(Type.Boolean()),

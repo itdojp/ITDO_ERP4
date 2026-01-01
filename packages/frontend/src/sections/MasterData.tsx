@@ -85,6 +85,15 @@ const errorDetail = (err: unknown) => {
   return '';
 };
 
+const hasContactDraft = (form: typeof emptyContact) =>
+  Boolean(
+    form.name.trim() ||
+      form.email.trim() ||
+      form.phone.trim() ||
+      form.role.trim() ||
+      form.isPrimary,
+  );
+
 export const MasterData: React.FC = () => {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [vendors, setVendors] = useState<Vendor[]>([]);
@@ -177,7 +186,6 @@ export const MasterData: React.FC = () => {
       setContacts(res.items || []);
     } catch (err) {
       console.error('Failed to load contacts.', err);
-      setContacts([]);
       setContactMessage(`連絡先一覧の取得に失敗しました${errorDetail(err)}`);
     }
   }, [contactOwnerId, contactOwnerType]);
@@ -308,10 +316,23 @@ export const MasterData: React.FC = () => {
   };
 
   const editContact = (item: Contact) => {
-    const ownerType: ContactOwnerType = item.customerId ? 'customer' : 'vendor';
-    const ownerId = item.customerId ?? item.vendorId ?? '';
-    setContactOwnerType(ownerType);
-    setContactOwnerId(ownerId);
+    const hasCustomer = Boolean(item.customerId);
+    const hasVendor = Boolean(item.vendorId);
+    if (!hasCustomer && !hasVendor) {
+      console.error('Contact has no owner.', item);
+      setContactMessage(
+        'この連絡先には紐づく顧客または業者がありません。管理者にお問い合わせください。',
+      );
+      return;
+    }
+    const ownerType: ContactOwnerType = hasCustomer ? 'customer' : 'vendor';
+    const ownerId = (hasCustomer ? item.customerId : item.vendorId) ?? '';
+    if (ownerType !== contactOwnerType) {
+      setContactOwnerType(ownerType);
+    }
+    if (ownerId !== contactOwnerId) {
+      setContactOwnerId(ownerId);
+    }
     setEditingContactId(item.id);
     setContactForm({
       name: item.name || '',
@@ -587,9 +608,21 @@ export const MasterData: React.FC = () => {
             <select
               aria-label="連絡先の紐付け種別"
               value={contactOwnerType}
+              disabled={Boolean(editingContactId)}
               onChange={(e) => {
                 const nextType =
                   e.target.value === 'vendor' ? 'vendor' : 'customer';
+                if (nextType === contactOwnerType) {
+                  return;
+                }
+                if (
+                  hasContactDraft(contactForm) &&
+                  !window.confirm(
+                    '入力中の連絡先情報が破棄されます。よろしいですか？',
+                  )
+                ) {
+                  return;
+                }
                 setContactOwnerType(nextType);
                 setContactOwnerId('');
                 setContacts([]);
@@ -602,8 +635,21 @@ export const MasterData: React.FC = () => {
             <select
               aria-label="連絡先の紐付け先"
               value={contactOwnerId}
+              disabled={Boolean(editingContactId)}
               onChange={(e) => {
-                setContactOwnerId(e.target.value);
+                const nextOwnerId = e.target.value;
+                if (nextOwnerId === contactOwnerId) {
+                  return;
+                }
+                if (
+                  hasContactDraft(contactForm) &&
+                  !window.confirm(
+                    '入力中の連絡先情報が破棄されます。よろしいですか？',
+                  )
+                ) {
+                  return;
+                }
+                setContactOwnerId(nextOwnerId);
                 resetContact();
               }}
             >
