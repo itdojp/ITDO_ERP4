@@ -13,6 +13,17 @@ type ContactBody = {
   isPrimary?: boolean;
 };
 
+type ContactUpdateBody = {
+  customerId?: string | null;
+  vendorId?: string | null;
+  name?: string;
+  email?: string;
+  phone?: string;
+  role?: string;
+  isPrimary?: boolean;
+  updatedBy?: string;
+};
+
 const hasBothOwners = (body: { customerId?: string; vendorId?: string }) =>
   Boolean(body.customerId) && Boolean(body.vendorId);
 
@@ -229,11 +240,7 @@ export async function registerContactRoutes(app: FastifyInstance) {
         }
       }
       const userId = req.user?.userId;
-      const data: Partial<ContactBody> & {
-        vendorId?: string | null;
-        customerId?: string | null;
-        updatedBy?: string;
-      } = {
+      const data: ContactUpdateBody = {
         ...body,
         updatedBy: userId,
       };
