@@ -84,6 +84,8 @@
   - [x] vendor/purchase order/vendor invoice/approval-instances を同スクリプトで確認
 - [x] シード: 発注/仕入データと承認ルールを追加 (#228)
   - [x] purchase_order/vendor_invoice のApprovalRuleとデモデータを追加
+- [x] ドキュメント: バックアップ/リストア方針の叩き台を追記 (#236)
+  - [x] 保持期間/暗号化/添付の扱いを明文化
 - [x] テスト: フロントの手動確認手順（ダッシュボード→日報→工数→請求送信Stub）
   - [x] READMEに手順と期待結果を書き出し
 - [x] CI: lint/format のジョブ追加 (GH Actions)、prisma format/validate を走らせる
