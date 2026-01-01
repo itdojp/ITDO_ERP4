@@ -68,6 +68,7 @@ UUID生成関数は環境に合わせて置き換え（`gen_random_uuid()`/`uuid
 - 整合チェック: scripts/checks/poc-integrity.sql を実行し、件数/合計が期待値と一致することを確認
 
 ## 管理系
+- マスタ管理: /customers, /vendors の GET/POST/PATCH でCRUD動作
 - アラート設定: GET/POST/PATCH /alert-settings でCRUD動作
 - 承認ルール: GET/POST/PATCH /approval-rules でCRUD動作
 - 送信: /invoices/:id/send, /purchase-orders/:id/send で status=sent になる
