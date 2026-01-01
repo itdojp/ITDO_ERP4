@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { api } from '../api';
+import { api, getAuthState } from '../api';
 
 type ProjectOption = {
   id: string;
@@ -83,6 +83,12 @@ const formatDateTime = (value?: string | null) => {
 };
 
 export const Approvals: React.FC = () => {
+  const auth = getAuthState();
+  const userId = auth?.userId ?? '';
+  const userGroupIds = auth?.groupIds ?? [];
+  const isPrivileged = (auth?.roles ?? []).some((role) =>
+    ['admin', 'mgmt', 'exec'].includes(role),
+  );
   const [projects, setProjects] = useState<ProjectOption[]>([]);
   const [projectMessage, setProjectMessage] = useState('');
   const [items, setItems] = useState<ApprovalInstance[]>([]);
@@ -156,6 +162,25 @@ export const Approvals: React.FC = () => {
     if (!projectId) return '-';
     const project = projectMap.get(projectId);
     return project ? `${project.code} / ${project.name}` : projectId;
+  };
+
+  const canActOnItem = (item: ApprovalInstance) => {
+    if (!isPrivileged) return false;
+    if (item.currentStep === null || item.currentStep === undefined) {
+      return false;
+    }
+    const currentSteps = item.steps.filter(
+      (step) =>
+        step.stepOrder === item.currentStep && step.status === 'pending_qa',
+    );
+    if (!currentSteps.length) return false;
+    return currentSteps.some((step) => {
+      if (step.approverUserId) return step.approverUserId === userId;
+      if (step.approverGroupId) {
+        return userGroupIds.includes(step.approverGroupId);
+      }
+      return true;
+    });
   };
 
   const updateReason = (id: string, value: string) => {
@@ -288,6 +313,7 @@ export const Approvals: React.FC = () => {
         {items.map((item) => {
           const isActionable =
             item.status === 'pending_qa' || item.status === 'pending_exec';
+          const canAct = isActionable && canActOnItem(item);
           const busy = actionState[item.id];
           return (
             <li key={item.id}>
@@ -313,22 +339,27 @@ export const Approvals: React.FC = () => {
                   onChange={(e) => updateReason(item.id, e.target.value)}
                   placeholder="却下理由 (任意)"
                   style={{ minWidth: 200 }}
-                  disabled={!isActionable || busy}
+                  disabled={!canAct || busy}
                 />
                 <button
                   className="button"
                   onClick={() => actOnApproval(item.id, 'approve')}
-                  disabled={!isActionable || busy}
+                  disabled={!canAct || busy}
                 >
                   承認
                 </button>
                 <button
                   className="button secondary"
                   onClick={() => actOnApproval(item.id, 'reject')}
-                  disabled={!isActionable || busy}
+                  disabled={!canAct || busy}
                 >
                   却下
                 </button>
+                {isActionable && !canAct && (
+                  <span style={{ fontSize: 12, color: '#64748b' }}>
+                    承認対象外
+                  </span>
+                )}
               </div>
             </li>
           );
