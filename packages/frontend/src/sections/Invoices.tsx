@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { api, getAuthState } from '../api';
 import { InvoiceDetail } from './InvoiceDetail';
+import { useProjects } from '../hooks/useProjects';
 
 interface Invoice {
   id: string;
@@ -18,6 +19,16 @@ const buildInitialForm = (projectId?: string) => ({
 
 export const Invoices: React.FC = () => {
   const [items, setItems] = useState<Invoice[]>([]);
+  const handleProjectSelect = useCallback(
+    (projectId: string) => {
+      setForm((prev) => ({ ...prev, projectId }));
+    },
+    [setForm],
+  );
+  const { projects, projectMessage } = useProjects({
+    selectedProjectId: form.projectId,
+    onSelect: handleProjectSelect,
+  });
   const auth = getAuthState();
   const [form, setForm] = useState(() =>
     buildInitialForm(auth?.projectIds?.[0]),
@@ -79,12 +90,18 @@ export const Invoices: React.FC = () => {
     <div>
       <h2>請求</h2>
       <div className="row" style={{ gap: 8 }}>
-        <input
-          type="text"
+        <select
+          aria-label="案件選択"
           value={form.projectId}
           onChange={(e) => setForm({ ...form, projectId: e.target.value })}
-          placeholder="projectId"
-        />
+        >
+          <option value="">案件を選択</option>
+          {projects.map((project) => (
+            <option key={project.id} value={project.id}>
+              {project.code} / {project.name}
+            </option>
+          ))}
+        </select>
         <input
           type="number"
           value={form.totalAmount}
@@ -100,6 +117,7 @@ export const Invoices: React.FC = () => {
           読み込み
         </button>
       </div>
+      {projectMessage && <p style={{ color: '#dc2626' }}>{projectMessage}</p>}
       {message && <p>{message}</p>}
       <ul className="list">
         {items.map((d) => (

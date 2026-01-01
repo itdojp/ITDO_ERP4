@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { api, getAuthState } from '../api';
+import { useProjects } from '../hooks/useProjects';
 
 type ProjectEffort = {
   projectId: string;
@@ -8,7 +9,6 @@ type ProjectEffort = {
 };
 type GroupEffort = { userId: string; totalMinutes: number };
 type Overtime = { userId: string; totalMinutes: number; dailyHours: number };
-
 function buildQuery(from?: string, to?: string) {
   const params = new URLSearchParams();
   if (from) params.set('from', from);
@@ -32,6 +32,11 @@ export const Reports: React.FC = () => {
   const [groupReport, setGroupReport] = useState<GroupEffort[]>([]);
   const [overtimeReport, setOvertimeReport] = useState<Overtime | null>(null);
   const [message, setMessage] = useState('');
+
+  const { projects, projectMessage } = useProjects({
+    selectedProjectId: projectId,
+    onSelect: setProjectId,
+  });
 
   const loadProject = async () => {
     try {
@@ -93,12 +98,18 @@ export const Reports: React.FC = () => {
         />
       </div>
       <div className="row" style={{ gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
-        <input
-          type="text"
+        <select
+          aria-label="案件選択"
           value={projectId}
           onChange={(e) => setProjectId(e.target.value)}
-          placeholder="projectId"
-        />
+        >
+          <option value="">案件を選択</option>
+          {projects.map((project) => (
+            <option key={project.id} value={project.id}>
+              {project.code} / {project.name}
+            </option>
+          ))}
+        </select>
         <button className="button" onClick={loadProject}>
           PJ別工数
         </button>
@@ -121,6 +132,7 @@ export const Reports: React.FC = () => {
           個人別残業
         </button>
       </div>
+      {projectMessage && <p style={{ color: '#dc2626' }}>{projectMessage}</p>}
       {message && <p>{message}</p>}
       <div className="list" style={{ display: 'grid', gap: 8 }}>
         {projectReport && (

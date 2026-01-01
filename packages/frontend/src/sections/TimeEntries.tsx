@@ -1,5 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { api, getAuthState } from '../api';
+import { useProjects } from '../hooks/useProjects';
 
 type TimeEntry = {
   id: string;
@@ -35,6 +36,16 @@ export const TimeEntries: React.FC = () => {
   const auth = getAuthState();
   const defaultProjectId = auth?.projectIds?.[0] || defaultForm.projectId;
   const [items, setItems] = useState<TimeEntry[]>([]);
+  const handleProjectSelect = useCallback(
+    (projectId: string) => {
+      setForm((prev) => ({ ...prev, projectId }));
+    },
+    [setForm],
+  );
+  const { projects, projectMessage } = useProjects({
+    selectedProjectId: form.projectId,
+    onSelect: handleProjectSelect,
+  });
   const [message, setMessage] = useState<MessageState>(null);
   const [form, setForm] = useState<FormState>({
     ...defaultForm,
@@ -52,9 +63,7 @@ export const TimeEntries: React.FC = () => {
           : '';
   const baseValid = Boolean(form.projectId.trim()) && Boolean(form.workDate);
   const isValid = baseValid && !minutesError;
-  const validationHint = !baseValid
-    ? 'Project ID と日付は必須です'
-    : minutesError;
+  const validationHint = !baseValid ? '案件と日付は必須です' : minutesError;
 
   useEffect(() => {
     api<{ items: TimeEntry[] }>('/time-entries')
@@ -103,12 +112,18 @@ export const TimeEntries: React.FC = () => {
       <h2>工数入力</h2>
       <div className="card" style={{ marginBottom: 12 }}>
         <div className="row" style={{ gap: 8, alignItems: 'center' }}>
-          <input
-            type="text"
+          <select
+            aria-label="案件選択"
             value={form.projectId}
             onChange={(e) => setForm({ ...form, projectId: e.target.value })}
-            placeholder="Project ID"
-          />
+          >
+            <option value="">案件を選択</option>
+            {projects.map((project) => (
+              <option key={project.id} value={project.id}>
+                {project.code} / {project.name}
+              </option>
+            ))}
+          </select>
           <input
             type="text"
             value={form.taskId}
@@ -154,6 +169,11 @@ export const TimeEntries: React.FC = () => {
         {validationHint && (
           <p style={{ color: '#dc2626', margin: '8px 0 0' }}>
             {validationHint}
+          </p>
+        )}
+        {projectMessage && (
+          <p style={{ color: '#dc2626', margin: '8px 0 0' }}>
+            {projectMessage}
           </p>
         )}
       </div>

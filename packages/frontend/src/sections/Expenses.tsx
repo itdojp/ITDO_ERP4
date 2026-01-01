@@ -1,5 +1,6 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { api, getAuthState } from '../api';
+import { useProjects } from '../hooks/useProjects';
 
 type Expense = {
   id: string;
@@ -39,6 +40,16 @@ export const Expenses: React.FC = () => {
   const auth = getAuthState();
   const defaultProjectId = auth?.projectIds?.[0] || defaultForm.projectId;
   const [items, setItems] = useState<Expense[]>([]);
+  const handleProjectSelect = useCallback(
+    (projectId: string) => {
+      setForm((prev) => ({ ...prev, projectId }));
+    },
+    [setForm],
+  );
+  const { projects, projectMessage } = useProjects({
+    selectedProjectId: form.projectId,
+    onSelect: handleProjectSelect,
+  });
   const [message, setMessage] = useState<MessageState>(null);
   const [form, setForm] = useState<FormState>({
     ...defaultForm,
@@ -65,7 +76,7 @@ export const Expenses: React.FC = () => {
     Boolean(currencyValue);
   const isValid = baseValid && !amountError && !currencyError;
   const validationHint = !baseValid
-    ? 'Project ID / 区分 / 日付 / 通貨は必須です'
+    ? '案件 / 区分 / 日付 / 通貨は必須です'
     : amountError || currencyError;
 
   useEffect(() => {
@@ -132,12 +143,18 @@ export const Expenses: React.FC = () => {
       <h2>経費入力</h2>
       <div className="card" style={{ marginBottom: 12 }}>
         <div className="row" style={{ gap: 8, alignItems: 'center' }}>
-          <input
-            type="text"
+          <select
+            aria-label="案件選択"
             value={form.projectId}
             onChange={(e) => setForm({ ...form, projectId: e.target.value })}
-            placeholder="Project ID"
-          />
+          >
+            <option value="">案件を選択</option>
+            {projects.map((project) => (
+              <option key={project.id} value={project.id}>
+                {project.code} / {project.name}
+              </option>
+            ))}
+          </select>
           <input
             type="text"
             value={form.category}
@@ -200,6 +217,11 @@ export const Expenses: React.FC = () => {
         {validationHint && (
           <p style={{ color: '#dc2626', margin: '8px 0 0' }}>
             {validationHint}
+          </p>
+        )}
+        {projectMessage && (
+          <p style={{ color: '#dc2626', margin: '8px 0 0' }}>
+            {projectMessage}
           </p>
         )}
       </div>

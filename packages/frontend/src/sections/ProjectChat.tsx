@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { api, getAuthState } from '../api';
+import { useProjects } from '../hooks/useProjects';
 
 type ChatMessage = {
   id: string;
@@ -37,6 +38,10 @@ export const ProjectChat: React.FC = () => {
   const auth = getAuthState();
   const defaultProjectId = auth?.projectIds?.[0] || 'demo-project';
   const [projectId, setProjectId] = useState(defaultProjectId);
+  const { projects, projectMessage } = useProjects({
+    selectedProjectId: projectId,
+    onSelect: setProjectId,
+  });
   const [body, setBody] = useState('');
   const [tags, setTags] = useState('');
   const [items, setItems] = useState<ChatMessage[]>([]);
@@ -120,12 +125,18 @@ export const ProjectChat: React.FC = () => {
     <div>
       <h2>プロジェクトチャット</h2>
       <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
-        <input
-          type="text"
+        <select
+          aria-label="案件選択"
           value={projectId}
           onChange={(e) => setProjectId(e.target.value)}
-          placeholder="projectId"
-        />
+        >
+          <option value="">案件を選択</option>
+          {projects.map((project) => (
+            <option key={project.id} value={project.id}>
+              {project.code} / {project.name}
+            </option>
+          ))}
+        </select>
         <button
           className="button secondary"
           onClick={load}
@@ -134,6 +145,7 @@ export const ProjectChat: React.FC = () => {
           {isLoading ? '読み込み中...' : '読み込み'}
         </button>
       </div>
+      {projectMessage && <p style={{ color: '#dc2626' }}>{projectMessage}</p>}
       <div style={{ marginTop: 8 }}>
         <textarea
           placeholder="メッセージを書く"
