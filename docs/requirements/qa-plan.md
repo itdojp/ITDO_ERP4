@@ -7,6 +7,8 @@
 - 見積→請求: POST /projects/:id/estimates → submit → POST /projects/:id/invoices → submit → send
 - タイムエントリ: POST /time-entries → GET /time-entries → submit
 - 経費: POST /expenses → submit
+- 仕入見積/請求: POST /vendor-quotes, /vendor-invoices → GET で一覧確認
+- 発注: POST /projects/:id/purchase-orders → GET /purchase-orders で一覧確認
 - 承認フロー: 見積/請求/発注/経費/休暇の submit → /approval-instances で作成確認 → /approval-instances/:id/act で承認/却下 → 対象ステータス更新
 - アラートジョブ: POST /jobs/alerts/run → GET /alerts で履歴確認
 - 承認期限エスカレーション: POST /jobs/approval-escalations/run → GET /alerts で履歴確認
@@ -63,6 +65,8 @@ UUID生成関数は環境に合わせて置き換え（`gen_random_uuid()`/`uuid
 - 日報+WB: Good/Not Good入力＋タグ/短文（Not Good時）→ 送信 → 成功メッセージ
 - 工数: 追加→一覧に反映
 - 請求ドラフト: 一覧に番号/ステータスが出る（送信でステータス更新 + pdfUrl 反映）
+- 仕入/発注: 発注書/仕入見積/仕入請求を登録 → 一覧に反映
+- 承認一覧: フィルタ表示と承認/却下の動作
 - 案件: 顧客を選択して保存 → 一覧に顧客名が表示される
 - ヘルプモーダル: 日報画面から開閉でき、相談先リストと緊急案内が表示される
 - シードデータ: scripts/seed-demo.sql をロード後、フロントに反映されることを確認（プロジェクト/請求/工数/経費のダミー）
