@@ -23,6 +23,22 @@
 - users: id, externalId, email, name, orgUnitId, status, roleCodes, groupIds
 - user_profiles: employmentType, managerUserId, joinedAt（任意）
 
+## ユーザ属性（案）
+| 項目 | 必須 | 取得元 | 備考 |
+| --- | --- | --- | --- |
+| externalId | 必須 | IdP/IDaaS | subject/immutable ID |
+| email | 必須 | IdP/IDaaS | ログインIDとして利用 |
+| name | 必須 | IdP/IDaaS | 表示名 |
+| status | 必須 | IdP/IDaaS | active/inactive |
+| orgUnitId | 任意 | IdP/IDaaS | 組織階層 |
+| departmentId | 任意 | IdP/IDaaS | 部門 |
+| roleCodes | 必須 | ERP | ロール（RBAC） |
+| groupIds | 任意 | ERP/IdP | 承認/人事などのグループ |
+| projectIds | 任意 | ERP | 所属案件 |
+| employmentType | 任意 | ERP/HR | 正社員/契約等 |
+| managerUserId | 任意 | IdP/ERP | 上長 |
+| joinedAt / leftAt | 任意 | ERP/HR | 在籍期間 |
+
 ## ロール/グループ付与方針
 - IdP/IDaaS グループ → ERPロール/承認グループへマッピング
 - 例外はERP側で手動付与（監査ログに記録）
@@ -53,8 +69,13 @@
   - JWT_ROLE_CLAIM / JWT_GROUP_CLAIM / JWT_PROJECT_CLAIM / JWT_ORG_CLAIM
 - roles が無い場合は AUTH_DEFAULT_ROLE を適用
 
+## 監査ログ（案）
+- 変更種別: role_grant / role_revoke / group_sync / user_deactivate / user_reactivate
+- 記録項目: actor, targetUserId, source(IdP/manual), before/after, reason, timestamp, correlationId
+- SCIM同期は batchId を残し、差分の追跡を可能にする
+
 ## 次のTODO
 - 採用IdP/IDaaSの決定（Google/MS/Okta等）
 - SCIM導入の可否、同期頻度・責任分界の定義
-- ユーザ属性の正式スキーマ確定
-- 監査ログ/権限変更ログの要件整理
+- ユーザ属性の正式スキーマ確定（叩き台は追記済み）
+- 監査ログ/権限変更ログの要件整理（叩き台は追記済み）
