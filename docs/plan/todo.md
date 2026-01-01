@@ -82,6 +82,8 @@
   - [x] /time-entries, /expenses のPOST/GET を同スクリプトで確認
 - [x] テスト: 仕入/承認フローを含むスモークを追加 (#226)
   - [x] vendor/purchase order/vendor invoice/approval-instances を同スクリプトで確認
+- [x] ドキュメント: 公式ロール一覧の叩き台を追記 (#232)
+  - [x] access-control にロール責務/権限のドラフトを追加
 - [x] テスト: フロントの手動確認手順（ダッシュボード→日報→工数→請求送信Stub）
   - [x] READMEに手順と期待結果を書き出し
 - [x] CI: lint/format のジョブ追加 (GH Actions)、prisma format/validate を走らせる
