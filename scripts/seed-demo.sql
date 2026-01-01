@@ -17,7 +17,9 @@ insert into "ApprovalRule" (id, "flowType", conditions, steps, "createdAt", "upd
   ('50000000-0000-0000-0000-000000000001','estimate','{}','[]', now(), now()),
   ('50000000-0000-0000-0000-000000000002','invoice','{}','[]', now(), now()),
   ('50000000-0000-0000-0000-000000000003','expense','{}','[]', now(), now()),
-  ('50000000-0000-0000-0000-000000000004','time','{}','[]', now(), now())
+  ('50000000-0000-0000-0000-000000000004','time','{}','[]', now(), now()),
+  ('50000000-0000-0000-0000-000000000005','purchase_order','{}','[]', now(), now()),
+  ('50000000-0000-0000-0000-000000000006','vendor_invoice','{}','[]', now(), now())
 on conflict do nothing;
 
 insert into "Estimate" (id, "projectId", version, "totalAmount", currency, status, "createdAt", "updatedAt")
@@ -34,4 +36,20 @@ on conflict do nothing;
 
 insert into "Expense" (id, "projectId", "userId", category, amount, currency, "incurredOn", status, "createdAt", "updatedAt")
 values ('40000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-000000000001','demo-user','travel',5000,'JPY', current_date,'approved', now(), now())
+on conflict do nothing;
+
+insert into "PurchaseOrder" (id, "projectId", "vendorId", "poNo", "issueDate", "dueDate", currency, "totalAmount", status, "createdAt", "updatedAt")
+values ('60000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-000000000010','PO2025-11-0001', current_date, current_date, 'JPY', 80000, 'draft', now(), now())
+on conflict do nothing;
+
+insert into "PurchaseOrderLine" (id, "purchaseOrderId", description, quantity, "unitPrice")
+values ('61000000-0000-0000-0000-000000000001','60000000-0000-0000-0000-000000000001','Seed PO line', 1, 80000)
+on conflict do nothing;
+
+insert into "VendorQuote" (id, "projectId", "vendorId", "quoteNo", "issueDate", currency, "totalAmount", status, "createdAt", "updatedAt")
+values ('70000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-000000000010','VQ-2025-11-0001', current_date, 'JPY', 90000, 'received', now(), now())
+on conflict do nothing;
+
+insert into "VendorInvoice" (id, "projectId", "vendorId", "vendorInvoiceNo", "receivedDate", "dueDate", currency, "totalAmount", status, "createdAt", "updatedAt")
+values ('80000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-000000000010','VI-2025-11-0001', current_date, current_date, 'JPY', 90000, 'received', now(), now())
 on conflict do nothing;
