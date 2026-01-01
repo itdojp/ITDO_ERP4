@@ -9,6 +9,7 @@ import { CurrentUser } from '../sections/CurrentUser';
 import { Reports } from '../sections/Reports';
 import { AdminSettings } from '../sections/AdminSettings';
 import { ProjectChat } from '../sections/ProjectChat';
+import { MasterData } from '../sections/MasterData';
 
 export const App: React.FC = () => {
   return (
@@ -32,6 +33,9 @@ export const App: React.FC = () => {
       </div>
       <div className="card">
         <Reports />
+      </div>
+      <div className="card">
+        <MasterData />
       </div>
       <div className="card">
         <AdminSettings />
