@@ -49,7 +49,7 @@ const formatAmount = (value: number | string, currency: string) => {
     typeof value === 'number' ? value : Number.isFinite(Number(value))
       ? Number(value)
       : null;
-  if (amount === null) return `${value} ${currency}`;
+  if (amount === null) return `- ${currency}`;
   return `${amount.toLocaleString()} ${currency}`;
 };
 
@@ -116,16 +116,23 @@ export const VendorDocuments: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    loadVendors();
-    loadPurchaseOrders();
-    loadVendorQuotes();
-    loadVendorInvoices();
+    const loadAll = async () => {
+      await loadVendors();
+      await Promise.all([
+        loadPurchaseOrders(),
+        loadVendorQuotes(),
+        loadVendorInvoices(),
+      ]);
+    };
+    loadAll();
   }, [loadVendors, loadPurchaseOrders, loadVendorQuotes, loadVendorInvoices]);
 
   const renderVendor = (vendorId: string) => {
     const vendor = vendorMap.get(vendorId);
     return vendor ? `${vendor.code} / ${vendor.name}` : vendorId;
   };
+
+  const missingNumberLabel = '(番号未設定)';
 
   return (
     <div>
@@ -142,7 +149,8 @@ export const VendorDocuments: React.FC = () => {
             {purchaseOrders.map((item) => (
               <li key={item.id}>
                 <span className="badge">{item.status}</span>{' '}
-                {item.poNo || '(draft)'} / {renderVendor(item.vendorId)} /{' '}
+                {item.poNo || missingNumberLabel} /{' '}
+                {renderVendor(item.vendorId)} /{' '}
                 {formatAmount(item.totalAmount, item.currency)}
                 <div style={{ fontSize: 12, color: '#64748b' }}>
                   発行日: {formatDate(item.issueDate)} / 納期:{' '}
@@ -163,7 +171,8 @@ export const VendorDocuments: React.FC = () => {
             {vendorQuotes.map((item) => (
               <li key={item.id}>
                 <span className="badge">{item.status}</span>{' '}
-                {item.quoteNo || '(no number)'} / {renderVendor(item.vendorId)} /{' '}
+                {item.quoteNo || missingNumberLabel} /{' '}
+                {renderVendor(item.vendorId)} /{' '}
                 {formatAmount(item.totalAmount, item.currency)}
                 <div style={{ fontSize: 12, color: '#64748b' }}>
                   発行日: {formatDate(item.issueDate)}
@@ -185,7 +194,7 @@ export const VendorDocuments: React.FC = () => {
             {vendorInvoices.map((item) => (
               <li key={item.id}>
                 <span className="badge">{item.status}</span>{' '}
-                {item.vendorInvoiceNo || '(no number)'} /{' '}
+                {item.vendorInvoiceNo || missingNumberLabel} /{' '}
                 {renderVendor(item.vendorId)} /{' '}
                 {formatAmount(item.totalAmount, item.currency)}
                 <div style={{ fontSize: 12, color: '#64748b' }}>
