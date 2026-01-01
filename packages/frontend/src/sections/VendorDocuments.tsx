@@ -152,6 +152,12 @@ export const VendorDocuments: React.FC = () => {
   const [isPoSaving, setIsPoSaving] = useState(false);
   const [isQuoteSaving, setIsQuoteSaving] = useState(false);
   const [isInvoiceSaving, setIsInvoiceSaving] = useState(false);
+  const [poActionState, setPoActionState] = useState<Record<string, boolean>>(
+    {},
+  );
+  const [invoiceActionState, setInvoiceActionState] = useState<
+    Record<string, boolean>
+  >({});
 
   const projectMap = useMemo(() => {
     return new Map(projects.map((project) => [project.id, project]));
@@ -402,6 +408,47 @@ export const VendorDocuments: React.FC = () => {
     }
   };
 
+  const setPoActionBusy = (id: string, isBusy: boolean) => {
+    setPoActionState((prev) => ({ ...prev, [id]: isBusy }));
+  };
+
+  const setInvoiceActionBusy = (id: string, isBusy: boolean) => {
+    setInvoiceActionState((prev) => ({ ...prev, [id]: isBusy }));
+  };
+
+  const submitPurchaseOrder = async (id: string) => {
+    try {
+      setPoActionBusy(id, true);
+      setPoResult(null);
+      await api(`/purchase-orders/${id}/submit`, { method: 'POST' });
+      setPoResult({ text: '発注書を承認依頼しました', type: 'success' });
+      loadPurchaseOrders();
+    } catch (err) {
+      console.error('Failed to submit purchase order.', err);
+      setPoResult({ text: '発注書の承認依頼に失敗しました', type: 'error' });
+    } finally {
+      setPoActionBusy(id, false);
+    }
+  };
+
+  const submitVendorInvoice = async (id: string) => {
+    try {
+      setInvoiceActionBusy(id, true);
+      setInvoiceResult(null);
+      await api(`/vendor-invoices/${id}/approve`, { method: 'POST' });
+      setInvoiceResult({ text: '仕入請求を承認依頼しました', type: 'success' });
+      loadVendorInvoices();
+    } catch (err) {
+      console.error('Failed to submit vendor invoice.', err);
+      setInvoiceResult({
+        text: '仕入請求の承認依頼に失敗しました',
+        type: 'error',
+      });
+    } finally {
+      setInvoiceActionBusy(id, false);
+    }
+  };
+
   return (
     <div>
       <h2>仕入/発注</h2>
@@ -512,6 +559,17 @@ export const VendorDocuments: React.FC = () => {
                   発行日: {formatDate(item.issueDate)} / 納期:{' '}
                   {formatDate(item.dueDate)}
                 </div>
+                {item.status === 'draft' && (
+                  <div style={{ marginTop: 6 }}>
+                    <button
+                      className="button secondary"
+                      onClick={() => submitPurchaseOrder(item.id)}
+                      disabled={poActionState[item.id]}
+                    >
+                      {poActionState[item.id] ? '申請中' : '承認依頼'}
+                    </button>
+                  </div>
+                )}
               </li>
             ))}
             {purchaseOrders.length === 0 && <li>データなし</li>}
@@ -769,6 +827,17 @@ export const VendorDocuments: React.FC = () => {
                   受領日: {formatDate(item.receivedDate)} / 支払期限:{' '}
                   {formatDate(item.dueDate)}
                 </div>
+                {item.status === 'draft' && (
+                  <div style={{ marginTop: 6 }}>
+                    <button
+                      className="button secondary"
+                      onClick={() => submitVendorInvoice(item.id)}
+                      disabled={invoiceActionState[item.id]}
+                    >
+                      {invoiceActionState[item.id] ? '申請中' : '承認依頼'}
+                    </button>
+                  </div>
+                )}
               </li>
             ))}
             {vendorInvoices.length === 0 && <li>データなし</li>}
