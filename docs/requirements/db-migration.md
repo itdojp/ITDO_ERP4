@@ -11,13 +11,13 @@
 - **`prisma db push`** は PoC/一時DBのみ（ステージング/本番は禁止）
 
 ## 運用ルール
-- スキーマ変更は `prisma/schema.prisma` で行い、`prisma migrate dev --name <change>` でマイグレーション作成
+- スキーマ変更は `packages/backend/prisma/schema.prisma` で行い、`prisma migrate dev --name <change>` でマイグレーション作成
 - 生成された `prisma/migrations/*` をコミット
 - データ修正が必要な場合は、マイグレーション SQL に追記するか、別途手動SQL手順を用意
 - 破壊的変更（カラム削除/型変更/制約強化）は事前に影響確認と移行手順を用意
 
 ## 推奨フロー
-1) `prisma/schema.prisma` を更新
+1) `packages/backend/prisma/schema.prisma` を更新
 2) `npx prisma migrate dev --name <change>`
 3) `npx prisma generate`（必要に応じて）
 4) PRでレビュー

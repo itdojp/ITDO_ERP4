@@ -6,9 +6,9 @@ cd packages/backend
 npm install
 cp .env.example .env  # set DATABASE_URL
 npm run prisma:generate
-npm run build
-node dist/index.js
+npm run dev
 ```
+本番ビルド確認: `npm run build && node dist/index.js`
 
 ## API (PoC)
 - health: GET /health
