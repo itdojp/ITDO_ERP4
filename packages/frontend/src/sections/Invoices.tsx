@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { api, getAuthState } from '../api';
 import { InvoiceDetail } from './InvoiceDetail';
 import { useProjects } from '../hooks/useProjects';
@@ -29,6 +29,10 @@ export const Invoices: React.FC = () => {
     selectedProjectId: form.projectId,
     onSelect: handleProjectSelect,
   });
+  const projectMap = useMemo(
+    () => new Map(projects.map((project) => [project.id, project])),
+    [projects],
+  );
   const auth = getAuthState();
   const [form, setForm] = useState(() =>
     buildInitialForm(auth?.projectIds?.[0]),
@@ -86,6 +90,11 @@ export const Invoices: React.FC = () => {
     return { step: 0, total: 2, status: 'draft' };
   };
 
+  const renderProject = (projectId: string) => {
+    const project = projectMap.get(projectId);
+    return project ? `${project.code} / ${project.name}` : projectId;
+  };
+
   return (
     <div>
       <h2>請求</h2>
@@ -123,7 +132,8 @@ export const Invoices: React.FC = () => {
         {items.map((d) => (
           <li key={d.id}>
             <span className="badge">{d.status}</span> {d.invoiceNo || '(draft)'}{' '}
-            / {d.projectId} / ¥{(d.totalAmount || 0).toLocaleString()}
+            / {renderProject(d.projectId)} / ¥
+            {(d.totalAmount || 0).toLocaleString()}
             <div>
               <button
                 className="button secondary"
