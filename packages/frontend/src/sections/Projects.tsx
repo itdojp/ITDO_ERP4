@@ -48,11 +48,12 @@ export const Projects: React.FC = () => {
   }, [customers]);
 
   const projectPayload = useMemo(() => {
+    const trimmedCustomerId = form.customerId.trim();
     return {
       code: form.code.trim(),
       name: form.name.trim(),
       status: form.status || 'draft',
-      customerId: form.customerId || undefined,
+      customerId: trimmedCustomerId.length > 0 ? trimmedCustomerId : null,
     };
   }, [form]);
 

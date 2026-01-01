@@ -39,7 +39,7 @@ export const projectSchema = {
     code: Type.String(),
     name: Type.String(),
     status: Type.Optional(Type.String()),
-    customerId: Type.Optional(Type.String()),
+    customerId: Type.Optional(Type.Union([Type.String({ minLength: 1 }), Type.Null()])),
     parentId: Type.Optional(Type.String()),
   }),
 };

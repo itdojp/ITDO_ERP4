@@ -65,9 +65,17 @@ export async function registerProjectRoutes(app: FastifyInstance) {
     { preHandler: requireRole(['admin', 'mgmt']), schema: projectSchema },
     async (req, reply) => {
       const body = req.body as any;
-      if (body.customerId) {
+      const hasCustomerIdProp = Object.prototype.hasOwnProperty.call(
+        body,
+        'customerId',
+      );
+      const customerId =
+        hasCustomerIdProp && body.customerId !== ''
+          ? (body.customerId ?? null)
+          : null;
+      if (customerId) {
         const customer = await prisma.customer.findUnique({
-          where: { id: body.customerId },
+          where: { id: customerId },
           select: { id: true },
         });
         if (!customer) {
@@ -76,7 +84,10 @@ export async function registerProjectRoutes(app: FastifyInstance) {
           });
         }
       }
-      const project = await prisma.project.create({ data: body });
+      const data = hasCustomerIdProp
+        ? { ...body, customerId }
+        : { ...body };
+      const project = await prisma.project.create({ data });
       return project;
     },
   );
@@ -95,9 +106,17 @@ export async function registerProjectRoutes(app: FastifyInstance) {
           error: { code: 'NOT_FOUND', message: 'Project not found' },
         });
       }
-      if (body.customerId) {
+      const hasCustomerIdProp = Object.prototype.hasOwnProperty.call(
+        body,
+        'customerId',
+      );
+      const customerId =
+        hasCustomerIdProp && body.customerId !== ''
+          ? (body.customerId ?? null)
+          : null;
+      if (hasCustomerIdProp && customerId) {
         const customer = await prisma.customer.findUnique({
-          where: { id: body.customerId },
+          where: { id: customerId },
           select: { id: true },
         });
         if (!customer) {
@@ -106,9 +125,12 @@ export async function registerProjectRoutes(app: FastifyInstance) {
           });
         }
       }
+      const data = hasCustomerIdProp
+        ? { ...body, customerId }
+        : { ...body };
       const project = await prisma.project.update({
         where: { id: projectId },
-        data: body,
+        data,
       });
       return project;
     },
