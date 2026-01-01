@@ -500,17 +500,14 @@ export const VendorDocuments: React.FC = () => {
           <button className="button secondary" onClick={loadPurchaseOrders}>
             再読込
           </button>
-          {poListMessage && (
-            <p style={{ color: '#dc2626' }}>{poListMessage}</p>
-          )}
+          {poListMessage && <p style={{ color: '#dc2626' }}>{poListMessage}</p>}
           <ul className="list">
             {purchaseOrders.map((item) => (
               <li key={item.id}>
                 <span className="badge">{item.status}</span>{' '}
                 {item.poNo || missingNumberLabel} /{' '}
                 {renderProject(item.projectId)} / {renderVendor(item.vendorId)}{' '}
-                /{' '}
-                {formatAmount(item.totalAmount, item.currency)}
+                / {formatAmount(item.totalAmount, item.currency)}
                 <div style={{ fontSize: 12, color: '#64748b' }}>
                   発行日: {formatDate(item.issueDate)} / 納期:{' '}
                   {formatDate(item.dueDate)}
@@ -631,8 +628,7 @@ export const VendorDocuments: React.FC = () => {
                 <span className="badge">{item.status}</span>{' '}
                 {item.quoteNo || missingNumberLabel} /{' '}
                 {renderProject(item.projectId)} / {renderVendor(item.vendorId)}{' '}
-                /{' '}
-                {formatAmount(item.totalAmount, item.currency)}
+                / {formatAmount(item.totalAmount, item.currency)}
                 <div style={{ fontSize: 12, color: '#64748b' }}>
                   発行日: {formatDate(item.issueDate)}
                 </div>
@@ -748,8 +744,7 @@ export const VendorDocuments: React.FC = () => {
             {invoiceResult && (
               <p
                 style={{
-                  color:
-                    invoiceResult.type === 'error' ? '#dc2626' : '#16a34a',
+                  color: invoiceResult.type === 'error' ? '#dc2626' : '#16a34a',
                   marginTop: 8,
                 }}
               >
@@ -769,8 +764,7 @@ export const VendorDocuments: React.FC = () => {
                 <span className="badge">{item.status}</span>{' '}
                 {item.vendorInvoiceNo || missingNumberLabel} /{' '}
                 {renderProject(item.projectId)} / {renderVendor(item.vendorId)}{' '}
-                /{' '}
-                {formatAmount(item.totalAmount, item.currency)}
+                / {formatAmount(item.totalAmount, item.currency)}
                 <div style={{ fontSize: 12, color: '#64748b' }}>
                   受領日: {formatDate(item.receivedDate)} / 支払期限:{' '}
                   {formatDate(item.dueDate)}
