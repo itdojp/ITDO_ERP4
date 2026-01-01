@@ -125,7 +125,7 @@ post_json "$BASE_URL/expenses/$expense_id/submit" '{}' >/dev/null
 echo "expense_id=$expense_id"
 
 echo "[7/9] create purchase order and submit"
-po_resp=$(post_json "$BASE_URL/projects/$project_id/purchase-orders" "{\"vendorId\":\"$vendor_id\",\"issueDate\":\"$work_date\",\"dueDate\":\"$work_date\",\"currency\":\"JPY\",\"totalAmount\":80000,\"lines\":[]}")
+po_resp=$(post_json "$BASE_URL/projects/$project_id/purchase-orders" "{\"vendorId\":\"$vendor_id\",\"issueDate\":\"$work_date\",\"dueDate\":\"$work_date\",\"currency\":\"JPY\",\"totalAmount\":80000,\"lines\":[{\"description\":\"Smoke PO line\",\"quantity\":1,\"unitPrice\":80000}]}")
 po_id=$(echo "$po_resp" | json_get "id")
 require_id "purchase_order_id" "$po_id"
 post_json "$BASE_URL/purchase-orders/$po_id/submit" '{}' >/dev/null
@@ -142,8 +142,11 @@ post_json "$BASE_URL/vendor-invoices/$vendor_invoice_id/approve" '{}' >/dev/null
 
 echo "[9/9] run alert job and approval check"
 post_json "$BASE_URL/jobs/alerts/run" '{}' >/dev/null
-approval_resp=$(get_json "$BASE_URL/approval-instances?projectId=$project_id")
-approval_id=$(echo "$approval_resp" | json_get "items.0.id")
-require_id "approval_id" "$approval_id"
+po_approval_resp=$(get_json "$BASE_URL/approval-instances?projectId=$project_id&flowType=purchase_order")
+po_approval_id=$(echo "$po_approval_resp" | json_get "items.0.id")
+require_id "purchase_order_approval_id" "$po_approval_id"
+vi_approval_resp=$(get_json "$BASE_URL/approval-instances?projectId=$project_id&flowType=vendor_invoice")
+vi_approval_id=$(echo "$vi_approval_resp" | json_get "items.0.id")
+require_id "vendor_invoice_approval_id" "$vi_approval_id"
 
 echo "smoke ok"
