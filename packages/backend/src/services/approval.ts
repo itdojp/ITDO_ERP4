@@ -13,7 +13,11 @@ type RuleStep = {
   stepOrder?: number;
   parallelKey?: string;
 };
-type ActOptions = { reason?: string; actorGroupId?: string };
+type ActOptions = {
+  reason?: string;
+  actorGroupId?: string;
+  actorGroupIds?: string[];
+};
 type CreateApprovalOptions = { client?: any; createdBy?: string };
 /**
  * Options for submitApprovalWithUpdate.
@@ -410,6 +414,19 @@ export async function act(
     const currentSteps = instance.steps.filter(
       (s: any) => s.stepOrder === instance.currentStep,
     );
+    const actorGroupIds = new Set(
+      options.actorGroupIds ??
+        (options.actorGroupId ? [options.actorGroupId] : []),
+    );
+    const isEligibleStep = (step: any) => {
+      if (step.approverUserId) {
+        return step.approverUserId === userId;
+      }
+      if (step.approverGroupId) {
+        return actorGroupIds.has(step.approverGroupId);
+      }
+      return true;
+    };
     const alreadyActed = currentSteps.some(
       (s: any) =>
         s.actedBy === userId && s.status !== DocStatusValue.pending_qa,
@@ -419,13 +436,18 @@ export async function act(
         'User has already acted on another step in this parallel approval stage',
       );
     }
+    const eligibleSteps = currentSteps.filter(
+      (s: any) => s.status === DocStatusValue.pending_qa && isEligibleStep(s),
+    );
+    if (!eligibleSteps.length) {
+      throw new Error('No actionable step for user');
+    }
     const current =
-      currentSteps.find(
-        (s: any) =>
-          s.approverUserId === userId && s.status === DocStatusValue.pending_qa,
+      eligibleSteps.find((s: any) => s.approverUserId === userId) ||
+      eligibleSteps.find((s: any) =>
+        s.approverGroupId ? actorGroupIds.has(s.approverGroupId) : false,
       ) ||
-      currentSteps.find((s: any) => s.status === DocStatusValue.pending_qa) ||
-      currentSteps[0];
+      eligibleSteps[0];
     if (!current) throw new Error('No current step');
     const nextStepStatus =
       action === 'approve' ? DocStatusValue.approved : DocStatusValue.rejected;

@@ -140,10 +140,12 @@ export async function registerApprovalRuleRoutes(app: FastifyInstance) {
       };
       const userId = req.user?.userId || 'system';
       const actorGroupId = req.user?.groupIds?.[0];
+      const actorGroupIds = req.user?.groupIds ?? [];
       try {
         const result = await act(id, userId, body.action, {
           reason: body.reason,
           actorGroupId,
+          actorGroupIds,
         });
         return result;
       } catch (err: any) {
