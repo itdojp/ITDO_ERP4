@@ -7,6 +7,8 @@ import { prisma } from '../services/db.js';
 import { checkProjectAndVendor } from '../services/entityChecks.js';
 
 export async function registerVendorDocRoutes(app: FastifyInstance) {
+  const parseDate = (value?: string) => (value ? new Date(value) : undefined);
+
   app.get(
     '/vendor-quotes',
     { preHandler: requireRole(['admin', 'mgmt']) },
@@ -104,7 +106,13 @@ export async function registerVendorDocRoutes(app: FastifyInstance) {
           error: { code: 'NOT_FOUND', message: 'Vendor not found' },
         });
       }
-      const vendorQuote = await prisma.vendorQuote.create({ data: body });
+      const vendorQuote = await prisma.vendorQuote.create({
+        data: {
+          ...body,
+          issueDate: parseDate(body.issueDate),
+          currency: body.currency ?? 'JPY',
+        },
+      });
       return vendorQuote;
     },
   );
@@ -128,7 +136,14 @@ export async function registerVendorDocRoutes(app: FastifyInstance) {
           error: { code: 'NOT_FOUND', message: 'Vendor not found' },
         });
       }
-      const vi = await prisma.vendorInvoice.create({ data: body });
+      const vi = await prisma.vendorInvoice.create({
+        data: {
+          ...body,
+          receivedDate: parseDate(body.receivedDate),
+          dueDate: parseDate(body.dueDate),
+          currency: body.currency ?? 'JPY',
+        },
+      });
       return vi;
     },
   );
