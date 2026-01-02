@@ -50,6 +50,35 @@
 - status / amount / currency
 - isConfidential（機密フラグ）
 
+## ABAC条件フォーマット（案）
+```json
+{
+  "subject": {
+    "userId": "u-123",
+    "roles": ["mgmt"],
+    "groupIds": ["hr"],
+    "projectIds": ["p-001"],
+    "orgUnitId": "ou-1"
+  },
+  "resource": {
+    "projectId": "p-001",
+    "ownerUserId": "u-123",
+    "status": "pending_qa",
+    "amount": 120000,
+    "currency": "JPY"
+  },
+  "environment": {
+    "action": "approve",
+    "now": "YYYY-MM-DDTHH:mm:ssZ"
+  }
+}
+```
+
+### ルール例（サンプル）
+- `subject.roles` に `admin/mgmt/exec` が含まれる場合は許可
+- `subject.userId == resource.ownerUserId` の場合は本人操作として許可
+- `resource.projectId` が `subject.projectIds` に含まれる場合は閲覧を許可
+
 ## ポリシー例（要約）
 - 見積/請求の作成/承認は admin/mgmt/exec
 - 工数/経費は本人または管理ロールのみ閲覧・編集
@@ -63,6 +92,6 @@
 
 ## 次のTODO
 - 公式ロール一覧の確定（役割/責務の整理）
-- ABAC条件の共通フォーマット整理
+- ABAC条件の共通フォーマット整理（叩き台は追記済み）
 - PBAC導入の可否と運用フローの決定
 - RLS対象テーブルの選定
