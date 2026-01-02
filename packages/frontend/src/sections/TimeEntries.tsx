@@ -1,6 +1,12 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api, getAuthState } from '../api';
 import { useProjects } from '../hooks/useProjects';
+import {
+  clearDraft,
+  getDraftOwnerId,
+  loadDraft,
+  saveDraft,
+} from '../utils/drafts';
 
 type TimeEntry = {
   id: string;
@@ -34,8 +40,17 @@ const defaultForm: FormState = {
 
 export const TimeEntries: React.FC = () => {
   const auth = getAuthState();
+  const userId = auth?.userId || 'demo-user';
   const defaultProjectId = auth?.projectIds?.[0] || defaultForm.projectId;
+  const draftOwnerId = getDraftOwnerId(auth?.userId);
   const [items, setItems] = useState<TimeEntry[]>([]);
+  const [form, setForm] = useState<FormState>({
+    ...defaultForm,
+    projectId: defaultProjectId,
+  });
+  const [draftProjectId, setDraftProjectId] = useState<string | null>(null);
+  const draftKey = `time-entry:${draftOwnerId}`;
+  const saveQueueRef = useRef(Promise.resolve());
   const handleProjectSelect = useCallback(
     (projectId: string) => {
       setForm((prev) => ({ ...prev, projectId }));
@@ -51,10 +66,6 @@ export const TimeEntries: React.FC = () => {
     [projects],
   );
   const [message, setMessage] = useState<MessageState>(null);
-  const [form, setForm] = useState<FormState>({
-    ...defaultForm,
-    projectId: defaultProjectId,
-  });
   const [isSaving, setIsSaving] = useState(false);
   const minutesValue = Number.isFinite(form.minutes) ? form.minutes : 0;
   const minutesError =
@@ -76,10 +87,40 @@ export const TimeEntries: React.FC = () => {
   }, []);
 
   useEffect(() => {
+    loadDraft<FormState>(draftKey).then((draft) => {
+      if (!draft) return;
+      const { projectId, ...rest } = draft;
+      setForm((prev) => ({ ...prev, ...rest }));
+      setDraftProjectId(projectId ?? null);
+    });
+  }, [draftKey]);
+
+  useEffect(() => {
+    saveQueueRef.current = Promise.resolve();
+  }, [draftKey]);
+
+  useEffect(() => {
+    if (!draftProjectId || projects.length === 0) return;
+    const exists = projects.some((project) => project.id === draftProjectId);
+    if (exists) {
+      setForm((prev) => ({ ...prev, projectId: draftProjectId }));
+    }
+    setDraftProjectId(null);
+  }, [draftProjectId, projects]);
+
+  useEffect(() => {
     if (!message || message.type !== 'success') return;
     const timer = setTimeout(() => setMessage(null), 4000);
     return () => clearTimeout(timer);
   }, [message]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      const next = saveQueueRef.current.then(() => saveDraft(draftKey, form));
+      saveQueueRef.current = next.catch(() => undefined);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [draftKey, form]);
 
   const renderProject = (projectId: string) => {
     const project = projectMap.get(projectId);
@@ -93,7 +134,6 @@ export const TimeEntries: React.FC = () => {
     }
     try {
       setIsSaving(true);
-      const userId = getAuthState()?.userId || 'demo-user';
       await api('/time-entries', {
         method: 'POST',
         body: JSON.stringify({
@@ -109,6 +149,7 @@ export const TimeEntries: React.FC = () => {
       const updated = await api<{ items: TimeEntry[] }>('/time-entries');
       setItems(updated.items);
       setForm({ ...defaultForm, projectId: defaultProjectId });
+      await clearDraft(draftKey);
     } catch (e) {
       setMessage({ text: '保存に失敗しました', type: 'error' });
     } finally {
