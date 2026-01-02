@@ -55,7 +55,7 @@
 - `SENDGRID_BASE_URL`（任意）
 
 ### SendGridイベント
-- `SENDGRID_EVENT_WEBHOOK_SECRET`（任意、設定時は `x-erp4-webhook-key` が必要）
+- `SENDGRID_EVENT_WEBHOOK_SECRET`（任意、設定時は `x-erp4-webhook-key` の値の一致が必要）
 - `SENDGRID_EVENT_MAX_BYTES` / `SENDGRID_EVENT_MAX_BATCH`（任意）
 
 ### PDF（local）
