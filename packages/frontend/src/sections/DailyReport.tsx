@@ -1,7 +1,12 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { api, getAuthState } from '../api';
 import { HelpModal } from './HelpModal';
-import { clearDraft, loadDraft, saveDraft } from '../utils/drafts';
+import {
+  clearDraft,
+  getDraftOwnerId,
+  loadDraft,
+  saveDraft,
+} from '../utils/drafts';
 
 const tags = [
   '仕事量が多い',
@@ -22,8 +27,11 @@ export const DailyReport: React.FC = () => {
   const [message, setMessage] = useState<MessageState>(null);
   const [showHelp, setShowHelp] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const userId = getAuthState()?.userId || 'demo-user';
-  const draftKey = `daily-report:${userId}`;
+  const auth = getAuthState();
+  const userId = auth?.userId || 'demo-user';
+  const draftOwnerId = getDraftOwnerId(auth?.userId);
+  const draftKey = `daily-report:${draftOwnerId}`;
+  const saveQueueRef = useRef(Promise.resolve());
 
   useEffect(() => {
     loadDraft<{
@@ -41,6 +49,10 @@ export const DailyReport: React.FC = () => {
   }, [draftKey]);
 
   useEffect(() => {
+    saveQueueRef.current = Promise.resolve();
+  }, [draftKey]);
+
+  useEffect(() => {
     if (!message || message.type !== 'success') return;
     const timer = setTimeout(() => setMessage(null), 4000);
     return () => clearTimeout(timer);
@@ -48,12 +60,15 @@ export const DailyReport: React.FC = () => {
 
   useEffect(() => {
     const timer = setTimeout(() => {
-      saveDraft(draftKey, {
-        status,
-        notes,
-        selectedTags,
-        helpRequested,
-      }).catch(() => undefined);
+      const next = saveQueueRef.current.then(() =>
+        saveDraft(draftKey, {
+          status,
+          notes,
+          selectedTags,
+          helpRequested,
+        }),
+      );
+      saveQueueRef.current = next.catch(() => undefined);
     }, 300);
     return () => clearTimeout(timer);
   }, [draftKey, status, notes, selectedTags, helpRequested]);

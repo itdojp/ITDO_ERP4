@@ -1,5 +1,6 @@
 const CACHE_NAME = 'erp4-pwa-v1';
 const CORE_ASSETS = ['/', '/index.html', '/manifest.webmanifest', '/icon.svg'];
+const OFFLINE_URL = '/index.html';
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -15,7 +16,11 @@ self.addEventListener('activate', (event) => {
     caches
       .keys()
       .then((keys) =>
-        Promise.all(keys.filter((key) => key !== CACHE_NAME).map(caches.delete)),
+        Promise.all(
+          keys
+            .filter((key) => key !== CACHE_NAME)
+            .map((key) => caches.delete(key)),
+        ),
       )
       .then(() => self.clients.claim()),
   );
@@ -28,22 +33,43 @@ self.addEventListener('fetch', (event) => {
 
   if (event.request.mode === 'navigate') {
     event.respondWith(
-      fetch(event.request).catch(() => caches.match('/index.html')),
+      (async () => {
+        try {
+          const response = await fetch(event.request);
+          if (response && response.ok) {
+            const cache = await caches.open(CACHE_NAME);
+            cache.put(OFFLINE_URL, response.clone()).catch(() => undefined);
+          }
+          return response;
+        } catch {
+          const cached = await caches.match(OFFLINE_URL);
+          return (
+            cached ||
+            new Response('offline', { status: 503, statusText: 'Offline' })
+          );
+        }
+      })(),
     );
     return;
   }
 
   event.respondWith(
-    caches.match(event.request).then(
-      (cached) =>
-        cached ||
-        fetch(event.request)
-          .then((response) => {
-            const copy = response.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
-            return response;
-          })
-          .catch(() => cached),
-    ),
+    (async () => {
+      const cached = await caches.match(event.request);
+      if (cached) return cached;
+      try {
+        const response = await fetch(event.request);
+        if (response && response.ok) {
+          const cache = await caches.open(CACHE_NAME);
+          cache.put(event.request, response.clone()).catch(() => undefined);
+        }
+        return response;
+      } catch {
+        return (
+          cached ||
+          new Response('offline', { status: 503, statusText: 'Offline' })
+        );
+      }
+    })(),
   );
 });

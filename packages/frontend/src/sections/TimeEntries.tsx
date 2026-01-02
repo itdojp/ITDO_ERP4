@@ -1,7 +1,12 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api, getAuthState } from '../api';
 import { useProjects } from '../hooks/useProjects';
-import { clearDraft, loadDraft, saveDraft } from '../utils/drafts';
+import {
+  clearDraft,
+  getDraftOwnerId,
+  loadDraft,
+  saveDraft,
+} from '../utils/drafts';
 
 type TimeEntry = {
   id: string;
@@ -37,12 +42,15 @@ export const TimeEntries: React.FC = () => {
   const auth = getAuthState();
   const userId = auth?.userId || 'demo-user';
   const defaultProjectId = auth?.projectIds?.[0] || defaultForm.projectId;
+  const draftOwnerId = getDraftOwnerId(auth?.userId);
   const [items, setItems] = useState<TimeEntry[]>([]);
   const [form, setForm] = useState<FormState>({
     ...defaultForm,
     projectId: defaultProjectId,
   });
-  const draftKey = `time-entry:${userId}`;
+  const [draftProjectId, setDraftProjectId] = useState<string | null>(null);
+  const draftKey = `time-entry:${draftOwnerId}`;
+  const saveQueueRef = useRef(Promise.resolve());
   const handleProjectSelect = useCallback(
     (projectId: string) => {
       setForm((prev) => ({ ...prev, projectId }));
@@ -81,9 +89,24 @@ export const TimeEntries: React.FC = () => {
   useEffect(() => {
     loadDraft<FormState>(draftKey).then((draft) => {
       if (!draft) return;
-      setForm((prev) => ({ ...prev, ...draft }));
+      const { projectId, ...rest } = draft;
+      setForm((prev) => ({ ...prev, ...rest }));
+      setDraftProjectId(projectId ?? null);
     });
   }, [draftKey]);
+
+  useEffect(() => {
+    saveQueueRef.current = Promise.resolve();
+  }, [draftKey]);
+
+  useEffect(() => {
+    if (!draftProjectId || projects.length === 0) return;
+    const exists = projects.some((project) => project.id === draftProjectId);
+    if (exists) {
+      setForm((prev) => ({ ...prev, projectId: draftProjectId }));
+    }
+    setDraftProjectId(null);
+  }, [draftProjectId, projects]);
 
   useEffect(() => {
     if (!message || message.type !== 'success') return;
@@ -93,7 +116,8 @@ export const TimeEntries: React.FC = () => {
 
   useEffect(() => {
     const timer = setTimeout(() => {
-      saveDraft(draftKey, form).catch(() => undefined);
+      const next = saveQueueRef.current.then(() => saveDraft(draftKey, form));
+      saveQueueRef.current = next.catch(() => undefined);
     }, 300);
     return () => clearTimeout(timer);
   }, [draftKey, form]);
