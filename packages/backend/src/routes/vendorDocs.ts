@@ -5,10 +5,9 @@ import { vendorInvoiceSchema, vendorQuoteSchema } from './validators.js';
 import { requireRole } from '../services/rbac.js';
 import { prisma } from '../services/db.js';
 import { checkProjectAndVendor } from '../services/entityChecks.js';
+import { parseDateParam } from '../utils/date.js';
 
 export async function registerVendorDocRoutes(app: FastifyInstance) {
-  const parseDate = (value?: string) => (value ? new Date(value) : undefined);
-
   app.get(
     '/vendor-quotes',
     { preHandler: requireRole(['admin', 'mgmt']) },
@@ -92,6 +91,12 @@ export async function registerVendorDocRoutes(app: FastifyInstance) {
     { preHandler: requireRole(['admin', 'mgmt']), schema: vendorQuoteSchema },
     async (req, reply) => {
       const body = req.body as any;
+      const issueDate = parseDateParam(body.issueDate);
+      if (body.issueDate && !issueDate) {
+        return reply.status(400).send({
+          error: { code: 'INVALID_DATE', message: 'Invalid issueDate' },
+        });
+      }
       const { projectExists, vendorExists } = await checkProjectAndVendor(
         body.projectId,
         body.vendorId,
@@ -109,7 +114,7 @@ export async function registerVendorDocRoutes(app: FastifyInstance) {
       const vendorQuote = await prisma.vendorQuote.create({
         data: {
           ...body,
-          issueDate: parseDate(body.issueDate),
+          issueDate,
           currency: body.currency ?? 'JPY',
         },
       });
@@ -122,6 +127,18 @@ export async function registerVendorDocRoutes(app: FastifyInstance) {
     { preHandler: requireRole(['admin', 'mgmt']), schema: vendorInvoiceSchema },
     async (req, reply) => {
       const body = req.body as any;
+      const receivedDate = parseDateParam(body.receivedDate);
+      if (body.receivedDate && !receivedDate) {
+        return reply.status(400).send({
+          error: { code: 'INVALID_DATE', message: 'Invalid receivedDate' },
+        });
+      }
+      const dueDate = parseDateParam(body.dueDate);
+      if (body.dueDate && !dueDate) {
+        return reply.status(400).send({
+          error: { code: 'INVALID_DATE', message: 'Invalid dueDate' },
+        });
+      }
       const { projectExists, vendorExists } = await checkProjectAndVendor(
         body.projectId,
         body.vendorId,
@@ -139,8 +156,8 @@ export async function registerVendorDocRoutes(app: FastifyInstance) {
       const vi = await prisma.vendorInvoice.create({
         data: {
           ...body,
-          receivedDate: parseDate(body.receivedDate),
-          dueDate: parseDate(body.dueDate),
+          receivedDate,
+          dueDate,
           currency: body.currency ?? 'JPY',
         },
       });
