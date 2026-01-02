@@ -30,6 +30,11 @@ from "PurchaseOrder"
 group by "projectId"
 order by "projectId";
 
+select "projectId", sum("totalAmount") as vendor_quote_total
+from "VendorQuote"
+group by "projectId"
+order by "projectId";
+
 select "projectId", sum("totalAmount") as vendor_invoice_total
 from "VendorInvoice"
 group by "projectId"
@@ -48,4 +53,5 @@ order by "projectId";
 -- expense_total(PRJ-DEMO-1) = 5000
 -- time_minutes(PRJ-DEMO-1) = 120
 -- purchase_order_total(PRJ-DEMO-1) = 80000
+-- vendor_quote_total(PRJ-DEMO-1) = 90000
 -- vendor_invoice_total(PRJ-DEMO-1) = 90000
