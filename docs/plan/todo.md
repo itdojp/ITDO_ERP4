@@ -86,6 +86,8 @@
   - [x] purchase_order/vendor_invoice のApprovalRuleとデモデータを追加
 - [x] チェック: PoC整合チェックに発注/仕入を追加 (#230)
   - [x] scripts/checks/poc-integrity.sql に件数/合計の確認を追加
+- [x] ドキュメント: 公式ロール一覧の叩き台を追記 (#232)
+  - [x] access-control にロール責務/権限のドラフトを追加
 - [x] テスト: フロントの手動確認手順（ダッシュボード→日報→工数→請求送信Stub）
   - [x] READMEに手順と期待結果を書き出し
 - [x] CI: lint/format のジョブ追加 (GH Actions)、prisma format/validate を走らせる
