@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { api, getAuthState } from '../api';
 import { HelpModal } from './HelpModal';
+import { clearDraft, loadDraft, saveDraft } from '../utils/drafts';
 
 const tags = [
   '仕事量が多い',
@@ -22,12 +23,40 @@ export const DailyReport: React.FC = () => {
   const [showHelp, setShowHelp] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const userId = getAuthState()?.userId || 'demo-user';
+  const draftKey = `daily-report:${userId}`;
+
+  useEffect(() => {
+    loadDraft<{
+      status: 'good' | 'not_good' | '';
+      notes: string;
+      selectedTags: string[];
+      helpRequested: boolean;
+    }>(draftKey).then((draft) => {
+      if (!draft) return;
+      setStatus(draft.status);
+      setNotes(draft.notes);
+      setSelectedTags(draft.selectedTags);
+      setHelpRequested(draft.helpRequested);
+    });
+  }, [draftKey]);
 
   useEffect(() => {
     if (!message || message.type !== 'success') return;
     const timer = setTimeout(() => setMessage(null), 4000);
     return () => clearTimeout(timer);
   }, [message]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      saveDraft(draftKey, {
+        status,
+        notes,
+        selectedTags,
+        helpRequested,
+      }).catch(() => undefined);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [draftKey, status, notes, selectedTags, helpRequested]);
 
   const toggleTag = (tag: string) => {
     setSelectedTags((prev) =>
@@ -70,6 +99,7 @@ export const DailyReport: React.FC = () => {
       setSelectedTags([]);
       setHelpRequested(false);
       setStatus('');
+      await clearDraft(draftKey);
     } catch (e) {
       setMessage({ text: '送信に失敗しました', type: 'error' });
     } finally {
