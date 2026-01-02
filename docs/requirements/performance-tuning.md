@@ -10,6 +10,29 @@
 - approval_instances/alerts: 日数百件
 - invoices/purchase_orders: 月数千件
 
+## 目標SLA（案）
+| 画面/処理 | 指標 | 目標 |
+| --- | --- | --- |
+| 承認一覧 | p50 / p95 | 200ms / 1000ms |
+| アラート一覧 | p50 / p95 | 200ms / 800ms |
+| 工数集計（月次） | p50 / p95 | 1000ms / 3000ms |
+| 収支レポート（月次） | p50 / p95 | 2000ms / 5000ms |
+| 送信ログ一覧 | p50 / p95 | 200ms / 1000ms |
+
+※ 目標値はPoC/ステージングの実測で再調整する。
+
+## ベンチマークデータ方針（案）
+- 小: time_entries 10万/月、expenses 1万/月、invoices/PO 2千/月
+- 中: time_entries 30万/月、expenses 3万/月、invoices/PO 5千/月
+- 大: time_entries 100万/月、expenses 10万/月、invoices/PO 2万/月
+- approval/alerts は time_entries に比例して増加（目安 1-3%）
+
+## 計測手順（簡略）
+1. Podman上でベンチマーク用データを投入
+2. `scripts/checks/perf-explain.sql` で EXPLAIN を取得
+3. `scripts/podman-poc.sh stats` で `pg_stat_statements` を取得
+4. 目標SLAとの差分を整理し、index/partition/summary の方針を更新
+
 ## 主要クエリプロファイル
 - 工数集計: project/user/group + 期間
 - 請求/発注一覧: project/status + 期間
