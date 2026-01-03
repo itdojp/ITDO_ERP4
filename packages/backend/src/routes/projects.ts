@@ -1,6 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import { Prisma } from '@prisma/client';
-import { requireRole } from '../services/rbac.js';
+import { requireProjectAccess, requireRole } from '../services/rbac.js';
 import {
   projectSchema,
   projectPatchSchema,
@@ -134,7 +134,12 @@ export async function registerProjectRoutes(app: FastifyInstance) {
 
   app.get(
     '/projects/:projectId/tasks',
-    { preHandler: requireRole(['admin', 'mgmt']) },
+    {
+      preHandler: [
+        requireRole(['admin', 'mgmt', 'user']),
+        requireProjectAccess((req) => (req.params as any)?.projectId),
+      ],
+    },
     async (req) => {
       const { projectId } = req.params as { projectId: string };
       const items = await prisma.projectTask.findMany({
