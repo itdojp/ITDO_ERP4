@@ -428,6 +428,11 @@ export const AdminSettings: React.FC = () => {
       resetAlertForm();
     } catch (err) {
       logError('submitAlertSetting failed', err);
+      if (editingAlertId) {
+        setMessage('更新に失敗しました。新規作成モードに戻しました');
+        resetAlertForm();
+        return;
+      }
       setMessage('保存に失敗しました');
     }
   };
@@ -483,6 +488,11 @@ export const AdminSettings: React.FC = () => {
       resetRuleForm();
     } catch (err) {
       logError('submitApprovalRule failed', err);
+      if (editingRuleId) {
+        setMessage('更新に失敗しました。新規作成モードに戻しました');
+        resetRuleForm();
+        return;
+      }
       setMessage('保存に失敗しました');
     }
   };
@@ -632,7 +642,7 @@ export const AdminSettings: React.FC = () => {
               {editingAlertId ? '更新' : '作成'}
             </button>
             <button className="button secondary" onClick={resetAlertForm}>
-              クリア
+              {editingAlertId ? 'キャンセル' : 'クリア'}
             </button>
             <button className="button secondary" onClick={loadAlertSettings}>
               再読込
@@ -736,7 +746,7 @@ export const AdminSettings: React.FC = () => {
               {editingRuleId ? '更新' : '作成'}
             </button>
             <button className="button secondary" onClick={resetRuleForm}>
-              クリア
+              {editingRuleId ? 'キャンセル' : 'クリア'}
             </button>
             <button className="button secondary" onClick={loadApprovalRules}>
               再読込
