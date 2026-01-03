@@ -576,9 +576,7 @@ export const AdminSettings: React.FC = () => {
       setMessage(`レポートを実行しました (${count}件)`);
       await loadReportSubscriptions();
       if (!reportDryRun) {
-        await loadReportDeliveries(
-          reportDeliveryFilterId ? reportDeliveryFilterId : undefined,
-        );
+        await loadReportDeliveries(reportDeliveryFilterId || undefined);
       }
     } catch (err) {
       logError('runAllReportSubscriptions failed', err);
@@ -1005,7 +1003,7 @@ export const AdminSettings: React.FC = () => {
                     className="button secondary"
                     onClick={() => toggleAlert(item.id, item.isEnabled)}
                   >
-                    {item.isEnabled ? '無効化' : '有効化'}
+                    {(item.isEnabled ?? true) ? '無効化' : '有効化'}
                   </button>
                   <button
                     className="button secondary"
