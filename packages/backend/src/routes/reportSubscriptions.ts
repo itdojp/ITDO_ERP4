@@ -32,9 +32,7 @@ type Recipients = {
 
 function normalizeStringArray(value: unknown) {
   if (!Array.isArray(value)) return [];
-  return value
-    .map((item) => String(item).trim())
-    .filter((item) => item !== '');
+  return value.map((item) => String(item).trim()).filter((item) => item !== '');
 }
 
 function normalizeRecipients(value: unknown): Recipients {
@@ -52,7 +50,11 @@ function normalizeChannels(value: unknown) {
   return channels.length ? channels : ['dashboard'];
 }
 
-function parseLimit(raw: string | undefined, defaultValue: number, maxValue: number) {
+function parseLimit(
+  raw: string | undefined,
+  defaultValue: number,
+  maxValue: number,
+) {
   if (!raw) return defaultValue;
   const parsed = Number(raw);
   if (!Number.isFinite(parsed) || parsed <= 0) return defaultValue;
@@ -201,7 +203,10 @@ export async function registerReportSubscriptionRoutes(app: FastifyInstance) {
           schedule: body.schedule?.trim() || undefined,
           params: body.params ?? undefined,
           recipients: body.recipients ?? undefined,
-          channels: body.channels && body.channels.length ? body.channels : ['dashboard'],
+          channels:
+            body.channels && body.channels.length
+              ? body.channels
+              : ['dashboard'],
           isEnabled: body.isEnabled ?? true,
           createdBy: actorId,
           updatedBy: actorId,
