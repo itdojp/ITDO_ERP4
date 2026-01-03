@@ -27,6 +27,7 @@ import { registerChatRoutes } from './chat.js';
 import { registerPdfFileRoutes } from './pdfFiles.js';
 import { registerSendEventRoutes } from './sendEvents.js';
 import { registerScimRoutes } from './scim.js';
+import { registerIntegrationRoutes } from './integrations.js';
 
 export async function registerRoutes(app: FastifyInstance) {
   await registerAuthRoutes(app);
@@ -38,6 +39,7 @@ export async function registerRoutes(app: FastifyInstance) {
   await registerSendRoutes(app);
   await registerSendEventRoutes(app);
   await registerScimRoutes(app);
+  await registerIntegrationRoutes(app);
   await registerMetricJobRoutes(app);
   await registerRecurringJobRoutes(app);
   await registerDataQualityJobRoutes(app);

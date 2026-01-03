@@ -413,6 +413,16 @@ const templateKindSchema = Type.Union([
   Type.Literal('purchase_order'),
 ]);
 
+const integrationTypeSchema = Type.Union([
+  Type.Literal('hr'),
+  Type.Literal('crm'),
+]);
+
+const integrationStatusSchema = Type.Union([
+  Type.Literal('active'),
+  Type.Literal('disabled'),
+]);
+
 export const templateSettingSchema = {
   body: Type.Object(
     {
@@ -432,4 +442,22 @@ export const templateSettingSchema = {
 
 export const templateSettingPatchSchema = {
   body: Type.Partial(templateSettingSchema.body),
+};
+
+export const integrationSettingSchema = {
+  body: Type.Object(
+    {
+      type: integrationTypeSchema,
+      name: Type.Optional(Type.String()),
+      provider: Type.Optional(Type.String()),
+      status: Type.Optional(integrationStatusSchema),
+      schedule: Type.Optional(Type.String()),
+      config: Type.Optional(Type.Any()),
+    },
+    { additionalProperties: false },
+  ),
+};
+
+export const integrationSettingPatchSchema = {
+  body: Type.Partial(integrationSettingSchema.body),
 };
