@@ -12,35 +12,37 @@ import { FlowTypeValue } from '../types.js';
 import { parseDateParam } from '../utils/date.js';
 
 async function validateTaskId(
-  taskId: string,
+  taskId: unknown,
   projectId: string | undefined,
   reply: FastifyReply,
-) {
-  const trimmed = taskId.trim();
+): Promise<string | FastifyReply> {
+  if (taskId == null) {
+    return reply.status(400).send({
+      error: { code: 'INVALID_TASK', message: 'Task id is missing' },
+    });
+  }
+  const trimmed = String(taskId).trim();
   if (!trimmed) {
-    reply.status(400).send({
+    return reply.status(400).send({
       error: { code: 'INVALID_TASK', message: 'Task id is empty' },
     });
-    return null;
   }
   const task = await prisma.projectTask.findUnique({
     where: { id: trimmed },
     select: { projectId: true, deletedAt: true },
   });
   if (!task || task.deletedAt) {
-    reply.status(400).send({
+    return reply.status(400).send({
       error: { code: 'INVALID_TASK', message: 'Task not found' },
     });
-    return null;
   }
   if (projectId && task.projectId !== projectId) {
-    reply.status(400).send({
+    return reply.status(400).send({
       error: {
         code: 'TASK_PROJECT_MISMATCH',
         message: 'Task does not belong to project',
       },
     });
-    return null;
   }
   return trimmed;
 }
@@ -65,12 +67,8 @@ export async function registerTimeEntryRoutes(app: FastifyInstance) {
       }
       let taskId = undefined as string | undefined;
       if (body.taskId !== undefined) {
-        const resolved = await validateTaskId(
-          String(body.taskId),
-          body.projectId,
-          reply,
-        );
-        if (!resolved) return;
+        const resolved = await validateTaskId(body.taskId, body.projectId, reply);
+        if (typeof resolved !== 'string') return resolved;
         taskId = resolved;
       }
       const entry = await prisma.timeEntry.create({
@@ -106,11 +104,11 @@ export async function registerTimeEntryRoutes(app: FastifyInstance) {
       const data = { ...body } as any;
       if (body.taskId !== undefined) {
         const resolved = await validateTaskId(
-          String(body.taskId),
+          body.taskId,
           body.projectId ?? before.projectId,
           reply,
         );
-        if (!resolved) return;
+        if (typeof resolved !== 'string') return resolved;
         data.taskId = resolved;
       }
       if (body.workDate !== undefined) {
