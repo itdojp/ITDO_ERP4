@@ -58,6 +58,30 @@ type IntegrationSetting = {
   lastRunStatus?: string | null;
 };
 
+type ReportSubscription = {
+  id: string;
+  name?: string | null;
+  reportKey: string;
+  format?: string | null;
+  schedule?: string | null;
+  params?: Record<string, unknown> | null;
+  recipients?: Record<string, unknown> | null;
+  channels?: string[] | null;
+  isEnabled?: boolean | null;
+  lastRunAt?: string | null;
+  lastRunStatus?: string | null;
+};
+
+type ReportDelivery = {
+  id: string;
+  subscriptionId?: string | null;
+  channel?: string | null;
+  status?: string | null;
+  target?: string | null;
+  sentAt?: string | null;
+  createdAt?: string | null;
+};
+
 const alertTypes = [
   'budget_overrun',
   'overtime',
@@ -79,6 +103,7 @@ const flowTypes = [
 const templateKinds = ['estimate', 'invoice', 'purchase_order'];
 const integrationTypes = ['hr', 'crm'];
 const integrationStatuses = ['active', 'disabled'];
+const reportFormats = ['csv', 'pdf'];
 
 function parseCsv(input: string): string[] {
   return input
@@ -132,6 +157,17 @@ const createDefaultIntegrationForm = () => ({
   configJson: '',
 });
 
+const createDefaultReportForm = () => ({
+  name: '',
+  reportKey: '',
+  format: 'csv',
+  schedule: '',
+  paramsJson: '',
+  recipientsJson: '',
+  channels: 'dashboard',
+  isEnabled: true,
+});
+
 export const AdminSettings: React.FC = () => {
   const [alertItems, setAlertItems] = useState<AlertSetting[]>([]);
   const [ruleItems, setRuleItems] = useState<ApprovalRule[]>([]);
@@ -140,12 +176,17 @@ export const AdminSettings: React.FC = () => {
   const [integrationItems, setIntegrationItems] = useState<
     IntegrationSetting[]
   >([]);
+  const [reportItems, setReportItems] = useState<ReportSubscription[]>([]);
+  const [reportDeliveries, setReportDeliveries] = useState<ReportDelivery[]>(
+    [],
+  );
   const [message, setMessage] = useState('');
   const [alertForm, setAlertForm] = useState(createDefaultAlertForm);
   const [ruleForm, setRuleForm] = useState(createDefaultRuleForm);
   const [integrationForm, setIntegrationForm] = useState(
     createDefaultIntegrationForm,
   );
+  const [reportForm, setReportForm] = useState(createDefaultReportForm);
   const [templateForm, setTemplateForm] = useState({
     kind: 'invoice',
     templateId: '',
@@ -163,6 +204,10 @@ export const AdminSettings: React.FC = () => {
   const [editingIntegrationId, setEditingIntegrationId] = useState<
     string | null
   >(null);
+  const [editingReportId, setEditingReportId] = useState<string | null>(null);
+  const [reportDeliveryFilterId, setReportDeliveryFilterId] =
+    useState<string>('');
+  const [reportRunDryRun, setReportRunDryRun] = useState(true);
 
   const channels = useMemo(
     () => Array.from(alertForm.channels),
@@ -233,12 +278,42 @@ export const AdminSettings: React.FC = () => {
     }
   };
 
+  const loadReportSubscriptions = async () => {
+    try {
+      const res = await api<{ items: ReportSubscription[] }>(
+        '/report-subscriptions',
+      );
+      setReportItems(res.items || []);
+    } catch (err) {
+      logError('loadReportSubscriptions failed', err);
+      setReportItems([]);
+    }
+  };
+
+  const loadReportDeliveries = async (subscriptionId?: string) => {
+    try {
+      const query = new URLSearchParams();
+      if (subscriptionId) {
+        query.set('subscriptionId', subscriptionId);
+      }
+      const suffix = query.toString();
+      const res = await api<{ items: ReportDelivery[] }>(
+        `/report-deliveries${suffix ? `?${suffix}` : ''}`,
+      );
+      setReportDeliveries(res.items || []);
+    } catch (err) {
+      logError('loadReportDeliveries failed', err);
+      setReportDeliveries([]);
+    }
+  };
+
   useEffect(() => {
     loadAlertSettings();
     loadApprovalRules();
     loadTemplateSettings();
     loadPdfTemplates();
     loadIntegrationSettings();
+    loadReportSubscriptions();
   }, []);
 
   useEffect(() => {
@@ -327,6 +402,11 @@ export const AdminSettings: React.FC = () => {
     setEditingIntegrationId(null);
   };
 
+  const resetReportForm = () => {
+    setReportForm(createDefaultReportForm());
+    setEditingReportId(null);
+  };
+
   const submitIntegrationSetting = async () => {
     if (!integrationForm.type.trim()) {
       setMessage('連携種別を選択してください');
@@ -385,6 +465,93 @@ export const AdminSettings: React.FC = () => {
       logError('runIntegrationSetting failed', err);
       setMessage('連携の実行に失敗しました');
     }
+  };
+
+  const submitReportSubscription = async () => {
+    const reportKey = reportForm.reportKey.trim();
+    if (!reportKey) {
+      setMessage('reportKey を入力してください');
+      return;
+    }
+    const params = parseJson('params', reportForm.paramsJson);
+    if (params === null) return;
+    const recipients = parseJson('recipients', reportForm.recipientsJson);
+    if (recipients === null) return;
+    const channels = parseCsv(reportForm.channels);
+    const payload = {
+      name: reportForm.name.trim() || undefined,
+      reportKey,
+      format: reportForm.format || undefined,
+      schedule: reportForm.schedule.trim() || undefined,
+      params: params || undefined,
+      recipients: recipients || undefined,
+      channels: channels.length ? channels : undefined,
+      isEnabled: reportForm.isEnabled,
+    };
+    try {
+      if (editingReportId) {
+        await api(`/report-subscriptions/${editingReportId}`, {
+          method: 'PATCH',
+          body: JSON.stringify(payload),
+        });
+        setMessage('レポート購読を更新しました');
+      } else {
+        await api('/report-subscriptions', {
+          method: 'POST',
+          body: JSON.stringify(payload),
+        });
+        setMessage('レポート購読を作成しました');
+      }
+      await loadReportSubscriptions();
+      resetReportForm();
+    } catch (err) {
+      logError('submitReportSubscription failed', err);
+      if (editingReportId) {
+        setMessage('更新に失敗しました。新規作成モードに戻しました');
+        resetReportForm();
+        return;
+      }
+      setMessage('保存に失敗しました');
+    }
+  };
+
+  const startEditReportSubscription = (item: ReportSubscription) => {
+    setEditingReportId(item.id);
+    setReportForm({
+      name: item.name || '',
+      reportKey: item.reportKey || '',
+      format: item.format || 'csv',
+      schedule: item.schedule || '',
+      paramsJson: item.params ? JSON.stringify(item.params, null, 2) : '',
+      recipientsJson: item.recipients
+        ? JSON.stringify(item.recipients, null, 2)
+        : '',
+      channels: (item.channels || []).join(','),
+      isEnabled: item.isEnabled ?? true,
+    });
+  };
+
+  const runReportSubscription = async (id: string) => {
+    try {
+      await api(`/report-subscriptions/${id}/run`, {
+        method: 'POST',
+        body: JSON.stringify({ dryRun: reportRunDryRun }),
+      });
+      setMessage('レポートを実行しました');
+      await loadReportSubscriptions();
+      if (!reportRunDryRun) {
+        setReportDeliveryFilterId(id);
+        await loadReportDeliveries(id);
+      }
+    } catch (err) {
+      logError('runReportSubscription failed', err);
+      setMessage('レポート実行に失敗しました');
+    }
+  };
+
+  const showReportDeliveries = async (subscriptionId?: string) => {
+    setReportDeliveryFilterId(subscriptionId || '');
+    await loadReportDeliveries(subscriptionId);
   };
 
   const submitTemplateSetting = async () => {
@@ -1061,6 +1228,230 @@ export const AdminSettings: React.FC = () => {
                 </div>
               </div>
             ))}
+          </div>
+        </div>
+
+        <div className="card" style={{ padding: 12 }}>
+          <strong>レポート購読（配信設定）</strong>
+          <div className="row" style={{ marginTop: 8, flexWrap: 'wrap' }}>
+            <label>
+              名称
+              <input
+                type="text"
+                value={reportForm.name}
+                onChange={(e) =>
+                  setReportForm({ ...reportForm, name: e.target.value })
+                }
+                placeholder="月次工数レポート"
+              />
+            </label>
+            <label>
+              reportKey
+              <input
+                type="text"
+                value={reportForm.reportKey}
+                onChange={(e) =>
+                  setReportForm({ ...reportForm, reportKey: e.target.value })
+                }
+                placeholder="project_hours_monthly"
+              />
+            </label>
+            <label>
+              format
+              <select
+                value={reportForm.format}
+                onChange={(e) =>
+                  setReportForm({ ...reportForm, format: e.target.value })
+                }
+              >
+                {reportFormats.map((format) => (
+                  <option key={format} value={format}>
+                    {format}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              スケジュール
+              <input
+                type="text"
+                value={reportForm.schedule}
+                onChange={(e) =>
+                  setReportForm({ ...reportForm, schedule: e.target.value })
+                }
+                placeholder="0 8 * * 1"
+              />
+            </label>
+            <label>
+              channels (CSV)
+              <input
+                type="text"
+                value={reportForm.channels}
+                onChange={(e) =>
+                  setReportForm({ ...reportForm, channels: e.target.value })
+                }
+                placeholder="dashboard,email"
+              />
+            </label>
+            <label className="badge" style={{ cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={reportForm.isEnabled}
+                onChange={(e) =>
+                  setReportForm({ ...reportForm, isEnabled: e.target.checked })
+                }
+                style={{ marginRight: 6 }}
+              />
+              enabled
+            </label>
+          </div>
+          <div className="row" style={{ marginTop: 8, flexWrap: 'wrap' }}>
+            <label style={{ flex: 1, minWidth: 240 }}>
+              params (JSON)
+              <textarea
+                value={reportForm.paramsJson}
+                onChange={(e) =>
+                  setReportForm({ ...reportForm, paramsJson: e.target.value })
+                }
+                rows={3}
+                style={{ width: '100%' }}
+                placeholder='{"projectId":"...","from":"2025-11-01"}'
+              />
+            </label>
+            <label style={{ flex: 1, minWidth: 240 }}>
+              recipients (JSON)
+              <textarea
+                value={reportForm.recipientsJson}
+                onChange={(e) =>
+                  setReportForm({
+                    ...reportForm,
+                    recipientsJson: e.target.value,
+                  })
+                }
+                rows={3}
+                style={{ width: '100%' }}
+                placeholder='{"roles":["mgmt"],"emails":["a@example.com"]}'
+              />
+            </label>
+          </div>
+          <div className="row" style={{ marginTop: 8 }}>
+            <label className="badge" style={{ cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={reportRunDryRun}
+                onChange={(e) => setReportRunDryRun(e.target.checked)}
+                style={{ marginRight: 6 }}
+              />
+              dry-run
+            </label>
+          </div>
+          <div className="row" style={{ marginTop: 8 }}>
+            <button className="button" onClick={submitReportSubscription}>
+              {editingReportId ? '更新' : '作成'}
+            </button>
+            <button className="button secondary" onClick={resetReportForm}>
+              {editingReportId ? 'キャンセル' : 'クリア'}
+            </button>
+            <button
+              className="button secondary"
+              onClick={loadReportSubscriptions}
+            >
+              再読込
+            </button>
+            <button
+              className="button secondary"
+              onClick={() => showReportDeliveries()}
+            >
+              配信履歴を表示
+            </button>
+          </div>
+          <div
+            className="list"
+            style={{ display: 'grid', gap: 8, marginTop: 8 }}
+          >
+            {reportItems.length === 0 && <div className="card">購読なし</div>}
+            {reportItems.map((item) => (
+              <div key={item.id} className="card" style={{ padding: 12 }}>
+                <div
+                  className="row"
+                  style={{ justifyContent: 'space-between' }}
+                >
+                  <div>
+                    <strong>{item.reportKey}</strong>
+                    {item.name ? ` / ${item.name}` : ''}
+                  </div>
+                  <span className="badge">
+                    {item.isEnabled ? 'enabled' : 'disabled'}
+                  </span>
+                </div>
+                <div style={{ fontSize: 12, color: '#475569', marginTop: 4 }}>
+                  format: {item.format || '-'} / schedule:{' '}
+                  {item.schedule || '-'} / channels:{' '}
+                  {(item.channels || []).join(', ') || '-'}
+                </div>
+                <div style={{ fontSize: 12, color: '#475569', marginTop: 4 }}>
+                  lastRun: {formatDateTime(item.lastRunAt)} / status:{' '}
+                  {item.lastRunStatus || '-'}
+                </div>
+                <div className="row" style={{ marginTop: 6 }}>
+                  <button
+                    className="button secondary"
+                    onClick={() => startEditReportSubscription(item)}
+                  >
+                    編集
+                  </button>
+                  <button
+                    className="button secondary"
+                    onClick={() => runReportSubscription(item.id)}
+                    disabled={!item.isEnabled}
+                  >
+                    実行
+                  </button>
+                  <button
+                    className="button secondary"
+                    onClick={() => showReportDeliveries(item.id)}
+                  >
+                    配信履歴
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="card" style={{ padding: 12, marginTop: 8 }}>
+            <strong>配信履歴</strong>
+            <div style={{ fontSize: 12, color: '#475569', marginTop: 4 }}>
+              filter: {reportDeliveryFilterId || 'all'}
+            </div>
+            <div
+              className="list"
+              style={{ display: 'grid', gap: 8, marginTop: 8 }}
+            >
+              {reportDeliveries.length === 0 && (
+                <div className="card">履歴なし</div>
+              )}
+              {reportDeliveries.map((delivery) => (
+                <div key={delivery.id} className="card" style={{ padding: 12 }}>
+                  <div
+                    className="row"
+                    style={{ justifyContent: 'space-between' }}
+                  >
+                    <div>
+                      <strong>{delivery.channel || '-'}</strong> /{' '}
+                      {delivery.status || '-'}
+                    </div>
+                    <span className="badge">
+                      {formatDateTime(delivery.sentAt || delivery.createdAt)}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: 12, color: '#475569', marginTop: 4 }}>
+                    target: {delivery.target || '-'}
+                  </div>
+                  <div style={{ fontSize: 12, color: '#475569', marginTop: 4 }}>
+                    subscription: {delivery.subscriptionId || '-'}
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
 
