@@ -126,7 +126,10 @@ export async function registerPushRoutes(app: FastifyInstance) {
 
   app.post(
     '/push-subscriptions/unsubscribe',
-    { preHandler: requireRole(allowedRoles), schema: pushSubscriptionDisableSchema },
+    {
+      preHandler: requireRole(allowedRoles),
+      schema: pushSubscriptionDisableSchema,
+    },
     async (req, reply) => {
       const body = req.body as { endpoint: string };
       const current = await prisma.pushSubscription.findUnique({
