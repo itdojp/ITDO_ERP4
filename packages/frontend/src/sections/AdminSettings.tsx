@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '../api';
 
 type AlertSetting = {
@@ -222,11 +222,11 @@ export const AdminSettings: React.FC = () => {
     () => new Map(pdfTemplates.map((template) => [template.id, template.name])),
     [pdfTemplates],
   );
-  const logError = (label: string, err: unknown) => {
+  const logError = useCallback((label: string, err: unknown) => {
     console.error(`[AdminSettings] ${label}`, err);
-  };
+  }, []);
 
-  const loadAlertSettings = async () => {
+  const loadAlertSettings = useCallback(async () => {
     try {
       const res = await api<{ items: AlertSetting[] }>('/alert-settings');
       setAlertItems(res.items || []);
@@ -234,9 +234,9 @@ export const AdminSettings: React.FC = () => {
       logError('loadAlertSettings failed', err);
       setAlertItems([]);
     }
-  };
+  }, [logError]);
 
-  const loadApprovalRules = async () => {
+  const loadApprovalRules = useCallback(async () => {
     try {
       const res = await api<{ items: ApprovalRule[] }>('/approval-rules');
       setRuleItems(res.items || []);
@@ -244,9 +244,9 @@ export const AdminSettings: React.FC = () => {
       logError('loadApprovalRules failed', err);
       setRuleItems([]);
     }
-  };
+  }, [logError]);
 
-  const loadTemplateSettings = async () => {
+  const loadTemplateSettings = useCallback(async () => {
     try {
       const res = await api<{ items: TemplateSetting[] }>('/template-settings');
       setTemplateItems(res.items || []);
@@ -254,9 +254,9 @@ export const AdminSettings: React.FC = () => {
       logError('loadTemplateSettings failed', err);
       setTemplateItems([]);
     }
-  };
+  }, [logError]);
 
-  const loadPdfTemplates = async () => {
+  const loadPdfTemplates = useCallback(async () => {
     try {
       const res = await api<{ items: PdfTemplate[] }>('/pdf-templates');
       setPdfTemplates(res.items || []);
@@ -264,9 +264,9 @@ export const AdminSettings: React.FC = () => {
       logError('loadPdfTemplates failed', err);
       setPdfTemplates([]);
     }
-  };
+  }, [logError]);
 
-  const loadIntegrationSettings = async () => {
+  const loadIntegrationSettings = useCallback(async () => {
     try {
       const res = await api<{ items: IntegrationSetting[] }>(
         '/integration-settings',
@@ -276,9 +276,9 @@ export const AdminSettings: React.FC = () => {
       logError('loadIntegrationSettings failed', err);
       setIntegrationItems([]);
     }
-  };
+  }, [logError]);
 
-  const loadReportSubscriptions = async () => {
+  const loadReportSubscriptions = useCallback(async () => {
     try {
       const res = await api<{ items: ReportSubscription[] }>(
         '/report-subscriptions',
@@ -288,24 +288,27 @@ export const AdminSettings: React.FC = () => {
       logError('loadReportSubscriptions failed', err);
       setReportItems([]);
     }
-  };
+  }, [logError]);
 
-  const loadReportDeliveries = async (subscriptionId?: string) => {
-    try {
-      const query = new URLSearchParams();
-      if (subscriptionId) {
-        query.set('subscriptionId', subscriptionId);
+  const loadReportDeliveries = useCallback(
+    async (subscriptionId?: string) => {
+      try {
+        const query = new URLSearchParams();
+        if (subscriptionId) {
+          query.set('subscriptionId', subscriptionId);
+        }
+        const suffix = query.toString();
+        const res = await api<{ items: ReportDelivery[] }>(
+          `/report-deliveries${suffix ? `?${suffix}` : ''}`,
+        );
+        setReportDeliveries(res.items || []);
+      } catch (err) {
+        logError('loadReportDeliveries failed', err);
+        setReportDeliveries([]);
       }
-      const suffix = query.toString();
-      const res = await api<{ items: ReportDelivery[] }>(
-        `/report-deliveries${suffix ? `?${suffix}` : ''}`,
-      );
-      setReportDeliveries(res.items || []);
-    } catch (err) {
-      logError('loadReportDeliveries failed', err);
-      setReportDeliveries([]);
-    }
-  };
+    },
+    [logError],
+  );
 
   useEffect(() => {
     loadAlertSettings();
@@ -314,7 +317,14 @@ export const AdminSettings: React.FC = () => {
     loadPdfTemplates();
     loadIntegrationSettings();
     loadReportSubscriptions();
-  }, []);
+  }, [
+    loadAlertSettings,
+    loadApprovalRules,
+    loadTemplateSettings,
+    loadPdfTemplates,
+    loadIntegrationSettings,
+    loadReportSubscriptions,
+  ]);
 
   useEffect(() => {
     if (!message) return;

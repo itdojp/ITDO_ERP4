@@ -28,7 +28,6 @@ type ApprovalInstance = {
 export const Dashboard: React.FC = () => {
   const auth = getAuthState();
   const userId = auth?.userId ?? '';
-  const userGroupIds = auth?.groupIds ?? [];
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [approvals, setApprovals] = useState<ApprovalInstance[]>([]);
   const [approvalMessage, setApprovalMessage] = useState('');
@@ -36,6 +35,7 @@ export const Dashboard: React.FC = () => {
   const hasMore = alerts.length > 5;
   const visibleAlerts = showAll ? alerts : alerts.slice(0, 5);
   const myPendingApprovals = useMemo(() => {
+    const groupIds = auth?.groupIds ?? [];
     if (!approvals.length) return 0;
     return approvals.filter((item) => {
       if (!item.currentStep) return false;
@@ -47,12 +47,12 @@ export const Dashboard: React.FC = () => {
       return currentSteps.some((step) => {
         if (step.approverUserId) return step.approverUserId === userId;
         if (step.approverGroupId) {
-          return userGroupIds.includes(step.approverGroupId);
+          return groupIds.includes(step.approverGroupId);
         }
         return true;
       });
     }).length;
-  }, [approvals, userGroupIds, userId]);
+  }, [approvals, auth?.groupIds, userId]);
 
   useEffect(() => {
     api<{ items: Alert[] }>('/alerts')
