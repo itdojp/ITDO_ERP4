@@ -207,7 +207,7 @@ export const AdminSettings: React.FC = () => {
   const [editingReportId, setEditingReportId] = useState<string | null>(null);
   const [reportDeliveryFilterId, setReportDeliveryFilterId] =
     useState<string>('');
-  const [reportRunDryRun, setReportRunDryRun] = useState(true);
+  const [reportDryRun, setReportDryRun] = useState(true);
 
   const channels = useMemo(
     () => Array.from(alertForm.channels),
@@ -506,12 +506,7 @@ export const AdminSettings: React.FC = () => {
       resetReportForm();
     } catch (err) {
       logError('submitReportSubscription failed', err);
-      if (editingReportId) {
-        setMessage('更新に失敗しました。新規作成モードに戻しました');
-        resetReportForm();
-        return;
-      }
-      setMessage('保存に失敗しました');
+      setMessage(editingReportId ? '更新に失敗しました' : '保存に失敗しました');
     }
   };
 
@@ -535,11 +530,11 @@ export const AdminSettings: React.FC = () => {
     try {
       await api(`/report-subscriptions/${id}/run`, {
         method: 'POST',
-        body: JSON.stringify({ dryRun: reportRunDryRun }),
+        body: JSON.stringify({ dryRun: reportDryRun }),
       });
       setMessage('レポートを実行しました');
       await loadReportSubscriptions();
-      if (!reportRunDryRun) {
+      if (!reportDryRun) {
         setReportDeliveryFilterId(id);
         await loadReportDeliveries(id);
       }
@@ -1338,8 +1333,8 @@ export const AdminSettings: React.FC = () => {
             <label className="badge" style={{ cursor: 'pointer' }}>
               <input
                 type="checkbox"
-                checked={reportRunDryRun}
-                onChange={(e) => setReportRunDryRun(e.target.checked)}
+                checked={reportDryRun}
+                onChange={(e) => setReportDryRun(e.target.checked)}
                 style={{ marginRight: 6 }}
               />
               dry-run
