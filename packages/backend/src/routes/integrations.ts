@@ -1,4 +1,5 @@
 import { FastifyInstance } from 'fastify';
+import { IntegrationRunStatus, IntegrationStatus } from '@prisma/client';
 import { prisma } from '../services/db.js';
 import { requireRole } from '../services/rbac.js';
 import {
@@ -14,6 +15,24 @@ type IntegrationSettingBody = {
   schedule?: string;
   config?: unknown;
 };
+
+function parseLimit(
+  raw: string | undefined,
+  defaultValue: number,
+  maxValue: number,
+) {
+  if (!raw) return defaultValue;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed <= 0) return defaultValue;
+  return Math.min(parsed, maxValue);
+}
+
+function parseOffset(raw: string | undefined) {
+  if (!raw) return 0;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed < 0) return 0;
+  return parsed;
+}
 
 export async function registerIntegrationRoutes(app: FastifyInstance) {
   app.get(
@@ -82,12 +101,15 @@ export async function registerIntegrationRoutes(app: FastifyInstance) {
       if (!setting) {
         return reply.code(404).send({ error: 'not_found' });
       }
+      if (setting.status === IntegrationStatus.disabled) {
+        return reply.code(409).send({ error: 'disabled' });
+      }
       const userId = req.user?.userId;
       const now = new Date();
       const run = await prisma.integrationRun.create({
         data: {
           settingId: id,
-          status: 'success',
+          status: IntegrationRunStatus.success,
           startedAt: now,
           finishedAt: now,
           message: 'stub',
@@ -96,7 +118,11 @@ export async function registerIntegrationRoutes(app: FastifyInstance) {
       });
       await prisma.integrationSetting.update({
         where: { id },
-        data: { lastRunAt: now, lastRunStatus: 'success', updatedBy: userId },
+        data: {
+          lastRunAt: now,
+          lastRunStatus: IntegrationRunStatus.success,
+          updatedBy: userId,
+        },
       });
       return run;
     },
@@ -106,49 +132,77 @@ export async function registerIntegrationRoutes(app: FastifyInstance) {
     '/integration-runs',
     { preHandler: requireRole(['admin', 'mgmt']) },
     async (req) => {
-      const { settingId } = req.query as { settingId?: string };
+      const { settingId, limit, offset } = req.query as {
+        settingId?: string;
+        limit?: string;
+        offset?: string;
+      };
+      const take = parseLimit(limit, 200, 1000);
+      const skip = parseOffset(offset);
       const items = await prisma.integrationRun.findMany({
         where: settingId ? { settingId } : undefined,
         orderBy: { startedAt: 'desc' },
-        take: 200,
+        take,
+        skip,
       });
-      return { items };
+      return { items, limit: take, offset: skip };
     },
   );
 
   app.get(
     '/integrations/crm/exports/customers',
     { preHandler: requireRole(['admin', 'mgmt']) },
-    async () => {
+    async (req) => {
+      const { limit, offset } = req.query as {
+        limit?: string;
+        offset?: string;
+      };
+      const take = parseLimit(limit, 500, 2000);
+      const skip = parseOffset(offset);
       const items = await prisma.customer.findMany({
         orderBy: { createdAt: 'desc' },
-        take: 500,
+        take,
+        skip,
       });
-      return { items };
+      return { items, limit: take, offset: skip };
     },
   );
 
   app.get(
     '/integrations/crm/exports/vendors',
     { preHandler: requireRole(['admin', 'mgmt']) },
-    async () => {
+    async (req) => {
+      const { limit, offset } = req.query as {
+        limit?: string;
+        offset?: string;
+      };
+      const take = parseLimit(limit, 500, 2000);
+      const skip = parseOffset(offset);
       const items = await prisma.vendor.findMany({
         orderBy: { createdAt: 'desc' },
-        take: 500,
+        take,
+        skip,
       });
-      return { items };
+      return { items, limit: take, offset: skip };
     },
   );
 
   app.get(
     '/integrations/crm/exports/contacts',
     { preHandler: requireRole(['admin', 'mgmt']) },
-    async () => {
+    async (req) => {
+      const { limit, offset } = req.query as {
+        limit?: string;
+        offset?: string;
+      };
+      const take = parseLimit(limit, 500, 2000);
+      const skip = parseOffset(offset);
       const items = await prisma.contact.findMany({
         orderBy: { createdAt: 'desc' },
-        take: 500,
+        take,
+        skip,
       });
-      return { items };
+      return { items, limit: take, offset: skip };
     },
   );
 }
