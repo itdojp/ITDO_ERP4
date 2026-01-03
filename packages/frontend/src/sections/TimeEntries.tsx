@@ -68,7 +68,11 @@ export const TimeEntries: React.FC = () => {
     selectedProjectId: form.projectId,
     onSelect: handleProjectSelect,
   });
-  const { tasks, taskMessage, isLoading: tasksLoading } = useProjectTasks({
+  const {
+    tasks,
+    taskMessage,
+    isLoading: tasksLoading,
+  } = useProjectTasks({
     projectId: form.projectId,
   });
   const projectMap = useMemo(
@@ -250,9 +254,7 @@ export const TimeEntries: React.FC = () => {
           </p>
         )}
         {taskMessage && (
-          <p style={{ color: '#dc2626', margin: '8px 0 0' }}>
-            {taskMessage}
-          </p>
+          <p style={{ color: '#dc2626', margin: '8px 0 0' }}>{taskMessage}</p>
         )}
       </div>
       <ul className="list">
