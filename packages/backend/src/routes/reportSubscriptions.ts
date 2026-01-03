@@ -112,7 +112,8 @@ function parseOffset(raw: string | undefined) {
 }
 
 function normalizeFormat(value: string | null): 'csv' | 'pdf' {
-  if (!value || value === 'csv' || value === 'pdf') return value ?? 'csv';
+  if (!value) return 'csv';
+  if (value === 'csv' || value === 'pdf') return value;
   throw new ReportParamError('INVALID_FORMAT', 'format must be csv or pdf');
 }
 
