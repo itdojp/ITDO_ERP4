@@ -526,6 +526,25 @@ export const AdminSettings: React.FC = () => {
     });
   };
 
+  const toggleReportSubscription = async (item: ReportSubscription) => {
+    const nextEnabled = !(item.isEnabled ?? true);
+    try {
+      await api(`/report-subscriptions/${item.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ isEnabled: nextEnabled }),
+      });
+      setMessage(
+        nextEnabled
+          ? 'レポート購読を有効化しました'
+          : 'レポート購読を無効化しました',
+      );
+      await loadReportSubscriptions();
+    } catch (err) {
+      logError('toggleReportSubscription failed', err);
+      setMessage('レポート購読の更新に失敗しました');
+    }
+  };
+
   const runReportSubscription = async (id: string) => {
     try {
       await api(`/report-subscriptions/${id}/run`, {
@@ -541,6 +560,29 @@ export const AdminSettings: React.FC = () => {
     } catch (err) {
       logError('runReportSubscription failed', err);
       setMessage('レポート実行に失敗しました');
+    }
+  };
+
+  const runAllReportSubscriptions = async () => {
+    try {
+      const res = await api<{ count?: number }>(
+        '/jobs/report-subscriptions/run',
+        {
+          method: 'POST',
+          body: JSON.stringify({ dryRun: reportDryRun }),
+        },
+      );
+      const count = res?.count ?? 0;
+      setMessage(`レポートを実行しました (${count}件)`);
+      await loadReportSubscriptions();
+      if (!reportDryRun) {
+        await loadReportDeliveries(
+          reportDeliveryFilterId ? reportDeliveryFilterId : undefined,
+        );
+      }
+    } catch (err) {
+      logError('runAllReportSubscriptions failed', err);
+      setMessage('一括実行に失敗しました');
     }
   };
 
@@ -1355,6 +1397,12 @@ export const AdminSettings: React.FC = () => {
             </button>
             <button
               className="button secondary"
+              onClick={runAllReportSubscriptions}
+            >
+              一括実行
+            </button>
+            <button
+              className="button secondary"
               onClick={() => showReportDeliveries()}
             >
               配信履歴を表示
@@ -1397,6 +1445,12 @@ export const AdminSettings: React.FC = () => {
                   </button>
                   <button
                     className="button secondary"
+                    onClick={() => toggleReportSubscription(item)}
+                  >
+                    {item.isEnabled ? '無効化' : '有効化'}
+                  </button>
+                  <button
+                    className="button secondary"
                     onClick={() => runReportSubscription(item.id)}
                     disabled={!item.isEnabled}
                   >
@@ -1416,6 +1470,25 @@ export const AdminSettings: React.FC = () => {
             <strong>配信履歴</strong>
             <div style={{ fontSize: 12, color: '#475569', marginTop: 4 }}>
               filter: {reportDeliveryFilterId || 'all'}
+            </div>
+            <div className="row" style={{ marginTop: 8, flexWrap: 'wrap' }}>
+              <label>
+                購読ID
+                <input
+                  type="text"
+                  value={reportDeliveryFilterId}
+                  onChange={(e) => setReportDeliveryFilterId(e.target.value)}
+                  placeholder="subscriptionId"
+                />
+              </label>
+              <button
+                className="button secondary"
+                onClick={() =>
+                  showReportDeliveries(reportDeliveryFilterId || undefined)
+                }
+              >
+                表示
+              </button>
             </div>
             <div
               className="list"
