@@ -117,8 +117,19 @@ self.addEventListener('notificationclick', (event) => {
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(
       (clientList) => {
+        const target = new URL(targetUrl, self.location.origin);
         for (const client of clientList) {
-          if (client.url.includes(targetUrl) && 'focus' in client) {
+          let clientUrl;
+          try {
+            clientUrl = new URL(client.url);
+          } catch {
+            continue;
+          }
+          if (
+            clientUrl.origin === target.origin &&
+            clientUrl.pathname === target.pathname &&
+            'focus' in client
+          ) {
             return client.focus();
           }
         }

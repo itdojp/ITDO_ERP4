@@ -30,29 +30,69 @@ function resolveExpirationTime(value?: number | null) {
   return date;
 }
 
+function parseLimit(raw: string | undefined, maxValue: number) {
+  if (!raw) return maxValue;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed <= 0) return maxValue;
+  return Math.min(parsed, maxValue);
+}
+
 export async function registerPushRoutes(app: FastifyInstance) {
   app.get(
     '/push-subscriptions',
     { preHandler: requireRole(allowedRoles) },
-    async (req) => {
+    async (req, reply) => {
       const roles = req.user?.roles || [];
-      const userId = req.user?.userId || 'demo-user';
+      const userId = req.user?.userId;
+      if (!userId) {
+        return reply.code(401).send({ error: 'unauthorized' });
+      }
       const isPrivileged = roles.includes('admin') || roles.includes('mgmt');
-      const items = await prisma.pushSubscription.findMany({
-        where: isPrivileged ? undefined : { userId },
+      const query = (req.query || {}) as {
+        cursor?: string;
+        limit?: string;
+        userId?: string;
+      };
+      const take = parseLimit(query.limit, 200);
+      const where = isPrivileged
+        ? query.userId
+          ? { userId: query.userId }
+          : undefined
+        : { userId };
+      const findArgs: {
+        where?: { userId?: string };
+        orderBy: { updatedAt: 'desc' };
+        take: number;
+        skip?: number;
+        cursor?: { id: string };
+      } = {
+        where,
         orderBy: { updatedAt: 'desc' },
-        take: 200,
-      });
-      return { items };
+        take: take + 1,
+      };
+      if (query.cursor) {
+        findArgs.cursor = { id: query.cursor };
+        findArgs.skip = 1;
+      }
+      const items = await prisma.pushSubscription.findMany(findArgs);
+      let nextCursor: string | null = null;
+      if (items.length > take) {
+        const nextItem = items.pop();
+        nextCursor = nextItem?.id ?? null;
+      }
+      return { items, nextCursor };
     },
   );
 
   app.post(
     '/push-subscriptions',
     { preHandler: requireRole(allowedRoles), schema: pushSubscriptionSchema },
-    async (req) => {
+    async (req, reply) => {
       const body = req.body as PushSubscriptionBody;
-      const userId = req.user?.userId || 'demo-user';
+      const userId = req.user?.userId;
+      if (!userId) {
+        return reply.code(401).send({ error: 'unauthorized' });
+      }
       const expirationTime = resolveExpirationTime(body.expirationTime);
       const now = new Date();
       const saved = await prisma.pushSubscription.upsert({
@@ -97,6 +137,9 @@ export async function registerPushRoutes(app: FastifyInstance) {
       }
       const roles = req.user?.roles || [];
       const userId = req.user?.userId;
+      if (!userId) {
+        return reply.code(401).send({ error: 'unauthorized' });
+      }
       const isPrivileged = roles.includes('admin') || roles.includes('mgmt');
       if (!isPrivileged && current.userId !== userId) {
         return reply.code(403).send({ error: 'forbidden' });
@@ -115,7 +158,10 @@ export async function registerPushRoutes(app: FastifyInstance) {
     async (req, reply) => {
       const body = req.body as PushTestBody;
       const roles = req.user?.roles || [];
-      const requester = req.user?.userId || 'demo-user';
+      const requester = req.user?.userId;
+      if (!requester) {
+        return reply.code(401).send({ error: 'unauthorized' });
+      }
       const isPrivileged = roles.includes('admin') || roles.includes('mgmt');
       const targetUserId = body.userId || requester;
       if (!isPrivileged && targetUserId !== requester) {
@@ -132,6 +178,7 @@ export async function registerPushRoutes(app: FastifyInstance) {
         url: body.url || '/',
       };
       return {
+        stub: true,
         payload,
         count: subscriptions.length,
         targets: subscriptions.map((sub) => ({

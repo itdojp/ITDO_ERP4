@@ -42,6 +42,11 @@ export const CurrentUser: React.FC = () => {
     useState<PushSubscription | null>(null);
   const [pushMessage, setPushMessage] = useState('');
   const [pushError, setPushError] = useState('');
+  const logPushError = (label: string, err: unknown) => {
+    if (import.meta.env.DEV) {
+      console.error(`[push] ${label}`, err);
+    }
+  };
   useEffect(() => {
     if (!auth) {
       setMe(null);
@@ -71,7 +76,8 @@ export const CurrentUser: React.FC = () => {
       setPushSubscription(subscription);
       setPushPermission(Notification.permission);
     };
-    loadSubscription().catch(() => {
+    loadSubscription().catch((err) => {
+      logPushError('loadSubscription failed', err);
       setPushError('Push購読の取得に失敗しました');
     });
   }, [auth, pushSupported]);
@@ -119,6 +125,7 @@ export const CurrentUser: React.FC = () => {
       setPushMessage('Push購読を登録しました');
       setPushSubscription(subscription);
     } catch (err) {
+      logPushError('subscribe failed', err);
       setPushError('Push購読の登録に失敗しました');
     }
   };
@@ -142,6 +149,7 @@ export const CurrentUser: React.FC = () => {
       setPushMessage('Push購読を解除しました');
       setPushSubscription(null);
     } catch (err) {
+      logPushError('unsubscribe failed', err);
       setPushError('Push購読の解除に失敗しました');
     }
   };
@@ -167,7 +175,7 @@ export const CurrentUser: React.FC = () => {
           type: 'PUSH_TEST',
           payload: res.payload,
         });
-      } else {
+      } else if (typeof registration.showNotification === 'function') {
         await registration.showNotification(res.payload.title, {
           body: res.payload.body,
           data: { url: res.payload.url },
@@ -176,6 +184,7 @@ export const CurrentUser: React.FC = () => {
       }
       setPushMessage('テスト通知を送信しました');
     } catch (err) {
+      logPushError('test notification failed', err);
       setPushError('テスト通知の送信に失敗しました');
     }
   };
