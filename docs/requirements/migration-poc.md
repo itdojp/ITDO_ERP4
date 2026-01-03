@@ -32,6 +32,25 @@ This note describes a minimal PoC load using demo seed data and a basic integrit
 - expense totals per project
 - time minutes per project
 
+## Latest Run (2026-01-03)
+- Command: `./scripts/podman-poc.sh reset`
+- Counts
+  - project_count: 2
+  - estimate_count: 1
+  - invoice_count: 1
+  - time_entry_count: 1
+  - expense_count: 1
+  - purchase_order_count: 1
+  - vendor_quote_count: 1
+  - vendor_invoice_count: 1
+- Totals (projectId: 00000000-0000-0000-0000-000000000001)
+  - invoice_total: 120000
+  - expense_total: 5000
+  - time_minutes: 120
+  - purchase_order_total: 80000
+  - vendor_quote_total: 90000
+  - vendor_invoice_total: 90000
+
 ## Notes
 - This PoC uses demo data. Replace with real migration output when ready.
 - If results do not match expectations, inspect source mapping and constraints.
