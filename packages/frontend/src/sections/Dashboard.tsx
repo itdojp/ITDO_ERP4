@@ -28,7 +28,7 @@ type ApprovalInstance = {
 export const Dashboard: React.FC = () => {
   const auth = getAuthState();
   const userId = auth?.userId ?? '';
-  const userGroupIds = auth?.groupIds ?? [];
+  const userGroupIds = useMemo(() => auth?.groupIds ?? [], [auth?.groupIds]);
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [approvals, setApprovals] = useState<ApprovalInstance[]>([]);
   const [approvalMessage, setApprovalMessage] = useState('');
