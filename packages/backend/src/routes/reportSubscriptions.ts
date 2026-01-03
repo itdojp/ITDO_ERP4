@@ -56,6 +56,10 @@ function normalizeStringArray(value: unknown) {
   return value.map((item) => String(item).trim()).filter((item) => item !== '');
 }
 
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
 function normalizeRecipients(value: unknown): Recipients {
   if (!value || typeof value !== 'object') return {};
   const raw = value as Record<string, unknown>;
@@ -77,6 +81,7 @@ function normalizeJsonValue(value: unknown): Prisma.InputJsonValue | null {
 }
 
 function toJsonValue(value: unknown): Prisma.InputJsonValue {
+  // JSON round-trip keeps payload JSON-safe while dropping unsupported values.
   return JSON.parse(JSON.stringify(value ?? null)) as Prisma.InputJsonValue;
 }
 
@@ -130,6 +135,7 @@ function toCsv(headers: string[], rows: unknown[][]) {
 
 function buildTemplateId(reportName: string, layout?: string) {
   const trimmedLayout = layout?.trim();
+  // Only allow a simple token so ":" cannot affect the templateId segments.
   const isValidLayout =
     typeof trimmedLayout === 'string' && /^[a-zA-Z0-9_-]+$/.test(trimmedLayout);
   const suffix = isValidLayout ? trimmedLayout : 'default';
@@ -177,7 +183,7 @@ function resolveTarget(channel: string, recipients: Recipients) {
 }
 
 async function buildReportPayload(subscription: ReportSubscription) {
-  const params = (subscription.params ?? {}) as Record<string, unknown>;
+  const params = isPlainObject(subscription.params) ? subscription.params : {};
   const format = normalizeFormat(subscription.format);
   const layout = typeof params.layout === 'string' ? params.layout : undefined;
   const fromDate = parseDateInput(params.from, 'from');
@@ -324,6 +330,7 @@ async function buildReportPayload(subscription: ReportSubscription) {
       const projectId = requireString(params.projectId, 'projectId');
       const ids = parseIdList(params.userIds);
       if (!ids.length) {
+        // Group allocation needs an explicit member set.
         throw new ReportParamError('MISSING_PARAM', 'userIds is required');
       }
       const label = typeof params.label === 'string' ? params.label : undefined;
@@ -724,7 +731,7 @@ export async function registerReportSubscriptionRoutes(app: FastifyInstance) {
           await updateRunStatus(subscription.id, 'failed', req.user?.userId);
         }
         if (err instanceof ReportParamError) {
-          return reply.status(400).send({
+          return reply.code(400).send({
             error: { code: err.code, message: err.message },
           });
         }
