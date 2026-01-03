@@ -17,11 +17,11 @@
 
 ### Podman（PoC）での例
 - バックアップ（SQL）
-  - `podman exec -e PGPASSWORD=postgres erp4-pg-poc pg_dump -U postgres -d postgres > /tmp/erp4-backup.sql`
+  - `podman exec -e PGPASSWORD=postgres erp4-pg-poc sh -c "pg_dump -U postgres -d postgres" > /tmp/erp4-backup.sql`
 - バックアップ（globals）
-  - `podman exec -e PGPASSWORD=postgres erp4-pg-poc pg_dumpall --globals-only -U postgres > /tmp/erp4-globals.sql`
+  - `podman exec -e PGPASSWORD=postgres erp4-pg-poc sh -c "pg_dumpall --globals-only -U postgres" > /tmp/erp4-globals.sql`
 - リストア（SQL）
-  - `podman exec -e PGPASSWORD=postgres -i erp4-pg-poc psql -U postgres -d postgres < /tmp/erp4-backup.sql`
+  - `cat /tmp/erp4-backup.sql | podman exec -e PGPASSWORD=postgres -i erp4-pg-poc psql -U postgres -d postgres`
 
 ## リストア手順（例）
 1. 空の DB を作成
