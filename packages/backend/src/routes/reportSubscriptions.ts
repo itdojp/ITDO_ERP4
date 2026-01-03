@@ -1,4 +1,5 @@
 import { FastifyInstance } from 'fastify';
+import { Prisma, type ReportSubscription } from '@prisma/client';
 import { prisma } from '../services/db.js';
 import { requireRole } from '../services/rbac.js';
 import {
@@ -50,6 +51,19 @@ function normalizeChannels(value: unknown) {
   return channels.length ? channels : ['dashboard'];
 }
 
+function normalizeJsonValue(value: unknown): Prisma.InputJsonValue | null {
+  if (value === undefined || value === null) return null;
+  return value as Prisma.InputJsonValue;
+}
+
+function normalizeJsonInput(
+  value: unknown,
+): Prisma.InputJsonValue | Prisma.NullTypes.DbNull | undefined {
+  if (value === undefined) return undefined;
+  if (value === null) return Prisma.DbNull;
+  return value as Prisma.InputJsonValue;
+}
+
 function parseLimit(
   raw: string | undefined,
   defaultValue: number,
@@ -82,14 +96,7 @@ function resolveTarget(channel: string, recipients: Recipients) {
 }
 
 async function runSubscriptionStub(
-  subscription: {
-    id: string;
-    reportKey: string;
-    format: string;
-    params: unknown;
-    recipients: unknown;
-    channels: unknown;
-  },
+  subscription: ReportSubscription,
   actorId: string | undefined,
   dryRun: boolean,
 ) {
@@ -98,10 +105,10 @@ async function runSubscriptionStub(
   if (!channels.length) {
     throw new Error('channels_required');
   }
-  const payload = {
+  const payload: Prisma.InputJsonValue = {
     reportKey: subscription.reportKey,
     format: subscription.format,
-    params: subscription.params,
+    params: normalizeJsonValue(subscription.params),
     generatedAt: new Date().toISOString(),
   };
   if (dryRun) {
@@ -195,18 +202,17 @@ export async function registerReportSubscriptionRoutes(app: FastifyInstance) {
     async (req) => {
       const body = req.body as ReportSubscriptionBody;
       const actorId = req.user?.userId;
+      const channels =
+        body.channels && body.channels.length ? body.channels : ['dashboard'];
       const created = await prisma.reportSubscription.create({
         data: {
           name: body.name?.trim() || undefined,
           reportKey: body.reportKey,
           format: body.format || 'csv',
           schedule: body.schedule?.trim() || undefined,
-          params: body.params ?? undefined,
-          recipients: body.recipients ?? undefined,
-          channels:
-            body.channels && body.channels.length
-              ? body.channels
-              : ['dashboard'],
+          params: normalizeJsonInput(body.params),
+          recipients: normalizeJsonInput(body.recipients),
+          channels: normalizeJsonInput(channels),
           isEnabled: body.isEnabled ?? true,
           createdBy: actorId,
           updatedBy: actorId,
@@ -250,22 +256,28 @@ export async function registerReportSubscriptionRoutes(app: FastifyInstance) {
         });
       }
       const actorId = req.user?.userId;
+      const data: Prisma.ReportSubscriptionUpdateInput = {
+        name: body.name?.trim() || undefined,
+        reportKey: reportKey ?? existing.reportKey,
+        format: format ?? existing.format,
+        schedule: body.schedule?.trim() || undefined,
+        updatedBy: actorId,
+      };
+      if (Object.prototype.hasOwnProperty.call(body, 'params')) {
+        data.params = normalizeJsonInput(body.params);
+      }
+      if (Object.prototype.hasOwnProperty.call(body, 'recipients')) {
+        data.recipients = normalizeJsonInput(body.recipients);
+      }
+      if (Object.prototype.hasOwnProperty.call(body, 'channels')) {
+        data.channels = normalizeJsonInput(body.channels);
+      }
+      if (typeof body.isEnabled === 'boolean') {
+        data.isEnabled = body.isEnabled;
+      }
       const updated = await prisma.reportSubscription.update({
         where: { id },
-        data: {
-          name: body.name?.trim() || undefined,
-          reportKey: reportKey ?? existing.reportKey,
-          format: format ?? existing.format,
-          schedule: body.schedule?.trim() || undefined,
-          params: body.params ?? existing.params,
-          recipients: body.recipients ?? existing.recipients,
-          channels: body.channels ?? existing.channels,
-          isEnabled:
-            typeof body.isEnabled === 'boolean'
-              ? body.isEnabled
-              : existing.isEnabled,
-          updatedBy: actorId,
-        },
+        data,
       });
       return updated;
     },
