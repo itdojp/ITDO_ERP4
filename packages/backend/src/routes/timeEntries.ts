@@ -67,7 +67,11 @@ export async function registerTimeEntryRoutes(app: FastifyInstance) {
       }
       let taskId = undefined as string | undefined;
       if (body.taskId !== undefined) {
-        const resolved = await validateTaskId(body.taskId, body.projectId, reply);
+        const resolved = await validateTaskId(
+          body.taskId,
+          body.projectId,
+          reply,
+        );
         if (typeof resolved !== 'string') return resolved;
         taskId = resolved;
       }

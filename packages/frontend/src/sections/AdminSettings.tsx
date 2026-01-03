@@ -46,6 +46,18 @@ type TemplateSetting = {
   isDefault?: boolean | null;
 };
 
+type IntegrationSetting = {
+  id: string;
+  type: string;
+  name?: string | null;
+  provider?: string | null;
+  status?: string | null;
+  schedule?: string | null;
+  config?: Record<string, unknown> | null;
+  lastRunAt?: string | null;
+  lastRunStatus?: string | null;
+};
+
 const alertTypes = [
   'budget_overrun',
   'overtime',
@@ -65,6 +77,8 @@ const flowTypes = [
   'vendor_quote',
 ];
 const templateKinds = ['estimate', 'invoice', 'purchase_order'];
+const integrationTypes = ['hr', 'crm'];
+const integrationStatuses = ['active', 'disabled'];
 
 function parseCsv(input: string): string[] {
   return input
@@ -80,6 +94,13 @@ function isValidHttpUrl(value: string): boolean {
   } catch {
     return false;
   }
+}
+
+function formatDateTime(value?: string | null): string {
+  if (!value) return '-';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString();
 }
 
 const createDefaultAlertForm = () => ({
@@ -102,14 +123,29 @@ const createDefaultRuleForm = () => ({
   stepsJson: '[{"approverGroupId":"mgmt","stepOrder":1}]',
 });
 
+const createDefaultIntegrationForm = () => ({
+  type: 'crm',
+  name: '',
+  provider: '',
+  status: 'active',
+  schedule: '',
+  configJson: '',
+});
+
 export const AdminSettings: React.FC = () => {
   const [alertItems, setAlertItems] = useState<AlertSetting[]>([]);
   const [ruleItems, setRuleItems] = useState<ApprovalRule[]>([]);
   const [templateItems, setTemplateItems] = useState<TemplateSetting[]>([]);
   const [pdfTemplates, setPdfTemplates] = useState<PdfTemplate[]>([]);
+  const [integrationItems, setIntegrationItems] = useState<
+    IntegrationSetting[]
+  >([]);
   const [message, setMessage] = useState('');
   const [alertForm, setAlertForm] = useState(createDefaultAlertForm);
   const [ruleForm, setRuleForm] = useState(createDefaultRuleForm);
+  const [integrationForm, setIntegrationForm] = useState(
+    createDefaultIntegrationForm,
+  );
   const [templateForm, setTemplateForm] = useState({
     kind: 'invoice',
     templateId: '',
@@ -124,6 +160,9 @@ export const AdminSettings: React.FC = () => {
   );
   const [editingAlertId, setEditingAlertId] = useState<string | null>(null);
   const [editingRuleId, setEditingRuleId] = useState<string | null>(null);
+  const [editingIntegrationId, setEditingIntegrationId] = useState<
+    string | null
+  >(null);
 
   const channels = useMemo(
     () => Array.from(alertForm.channels),
@@ -182,11 +221,24 @@ export const AdminSettings: React.FC = () => {
     }
   };
 
+  const loadIntegrationSettings = async () => {
+    try {
+      const res = await api<{ items: IntegrationSetting[] }>(
+        '/integration-settings',
+      );
+      setIntegrationItems(res.items || []);
+    } catch (err) {
+      logError('loadIntegrationSettings failed', err);
+      setIntegrationItems([]);
+    }
+  };
+
   useEffect(() => {
     loadAlertSettings();
     loadApprovalRules();
     loadTemplateSettings();
     loadPdfTemplates();
+    loadIntegrationSettings();
   }, []);
 
   useEffect(() => {
@@ -268,6 +320,71 @@ export const AdminSettings: React.FC = () => {
       isDefault: true,
     });
     setEditingTemplateId(null);
+  };
+
+  const resetIntegrationForm = () => {
+    setIntegrationForm(createDefaultIntegrationForm());
+    setEditingIntegrationId(null);
+  };
+
+  const submitIntegrationSetting = async () => {
+    if (!integrationForm.type.trim()) {
+      setMessage('連携種別を選択してください');
+      return;
+    }
+    const config = parseJson('config', integrationForm.configJson);
+    if (config === null) return;
+    const payload = {
+      type: integrationForm.type,
+      name: integrationForm.name.trim() || undefined,
+      provider: integrationForm.provider.trim() || undefined,
+      status: integrationForm.status || undefined,
+      schedule: integrationForm.schedule.trim() || undefined,
+      config: config || undefined,
+    };
+    try {
+      if (editingIntegrationId) {
+        await api(`/integration-settings/${editingIntegrationId}`, {
+          method: 'PATCH',
+          body: JSON.stringify(payload),
+        });
+        setMessage('連携設定を更新しました');
+      } else {
+        await api('/integration-settings', {
+          method: 'POST',
+          body: JSON.stringify(payload),
+        });
+        setMessage('連携設定を作成しました');
+      }
+      await loadIntegrationSettings();
+      resetIntegrationForm();
+    } catch (err) {
+      logError('submitIntegrationSetting failed', err);
+      setMessage('連携設定の保存に失敗しました');
+    }
+  };
+
+  const startEditIntegration = (item: IntegrationSetting) => {
+    setEditingIntegrationId(item.id);
+    setIntegrationForm({
+      type: item.type,
+      name: item.name || '',
+      provider: item.provider || '',
+      status: item.status || 'active',
+      schedule: item.schedule || '',
+      configJson: item.config ? JSON.stringify(item.config, null, 2) : '',
+    });
+  };
+
+  const runIntegrationSetting = async (id: string) => {
+    try {
+      await api(`/integration-settings/${id}/run`, { method: 'POST' });
+      setMessage('連携を実行しました');
+      await loadIntegrationSettings();
+    } catch (err) {
+      logError('runIntegrationSetting failed', err);
+      setMessage('連携の実行に失敗しました');
+    }
   };
 
   const submitTemplateSetting = async () => {
@@ -940,6 +1057,166 @@ export const AdminSettings: React.FC = () => {
                     onClick={() => setTemplateDefault(item.id)}
                   >
                     デフォルト化
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="card" style={{ padding: 12 }}>
+          <strong>外部連携設定（HR/CRM）</strong>
+          <div className="row" style={{ marginTop: 8, flexWrap: 'wrap' }}>
+            <label>
+              種別
+              <select
+                value={integrationForm.type}
+                onChange={(e) =>
+                  setIntegrationForm({
+                    ...integrationForm,
+                    type: e.target.value,
+                  })
+                }
+              >
+                {integrationTypes.map((type) => (
+                  <option key={type} value={type}>
+                    {type}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              名称
+              <input
+                type="text"
+                value={integrationForm.name}
+                onChange={(e) =>
+                  setIntegrationForm({
+                    ...integrationForm,
+                    name: e.target.value,
+                  })
+                }
+                placeholder="例: HRIS接続"
+              />
+            </label>
+            <label>
+              プロバイダ
+              <input
+                type="text"
+                value={integrationForm.provider}
+                onChange={(e) =>
+                  setIntegrationForm({
+                    ...integrationForm,
+                    provider: e.target.value,
+                  })
+                }
+                placeholder="例: azure_ad"
+              />
+            </label>
+            <label>
+              ステータス
+              <select
+                value={integrationForm.status}
+                onChange={(e) =>
+                  setIntegrationForm({
+                    ...integrationForm,
+                    status: e.target.value,
+                  })
+                }
+              >
+                {integrationStatuses.map((status) => (
+                  <option key={status} value={status}>
+                    {status}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              スケジュール
+              <input
+                type="text"
+                value={integrationForm.schedule}
+                onChange={(e) =>
+                  setIntegrationForm({
+                    ...integrationForm,
+                    schedule: e.target.value,
+                  })
+                }
+                placeholder="例: 0 3 * * *"
+              />
+            </label>
+          </div>
+          <div className="row" style={{ marginTop: 8 }}>
+            <label style={{ flex: 1, minWidth: 240 }}>
+              config (JSON)
+              <textarea
+                value={integrationForm.configJson}
+                onChange={(e) =>
+                  setIntegrationForm({
+                    ...integrationForm,
+                    configJson: e.target.value,
+                  })
+                }
+                rows={3}
+                style={{ width: '100%' }}
+                placeholder='{"tenant":"example","clientId":"..."}'
+              />
+            </label>
+          </div>
+          <div className="row" style={{ marginTop: 8 }}>
+            <button className="button" onClick={submitIntegrationSetting}>
+              {editingIntegrationId ? '更新' : '作成'}
+            </button>
+            <button className="button secondary" onClick={resetIntegrationForm}>
+              {editingIntegrationId ? 'キャンセル' : 'クリア'}
+            </button>
+            <button
+              className="button secondary"
+              onClick={loadIntegrationSettings}
+            >
+              再読込
+            </button>
+          </div>
+          <div
+            className="list"
+            style={{ display: 'grid', gap: 8, marginTop: 8 }}
+          >
+            {integrationItems.length === 0 && (
+              <div className="card">設定なし</div>
+            )}
+            {integrationItems.map((item) => (
+              <div key={item.id} className="card" style={{ padding: 12 }}>
+                <div
+                  className="row"
+                  style={{ justifyContent: 'space-between' }}
+                >
+                  <div>
+                    <strong>{item.type}</strong>
+                    {item.name ? ` / ${item.name}` : ''}
+                  </div>
+                  <span className="badge">{item.status || 'active'}</span>
+                </div>
+                <div style={{ fontSize: 12, color: '#475569', marginTop: 4 }}>
+                  provider: {item.provider || '-'} / schedule:{' '}
+                  {item.schedule || '-'}
+                </div>
+                <div style={{ fontSize: 12, color: '#475569', marginTop: 4 }}>
+                  lastRun: {formatDateTime(item.lastRunAt)} / status:{' '}
+                  {item.lastRunStatus || '-'}
+                </div>
+                <div className="row" style={{ marginTop: 6 }}>
+                  <button
+                    className="button secondary"
+                    onClick={() => startEditIntegration(item)}
+                  >
+                    編集
+                  </button>
+                  <button
+                    className="button secondary"
+                    onClick={() => runIntegrationSetting(item.id)}
+                    disabled={item.status === 'disabled'}
+                  >
+                    実行
                   </button>
                 </div>
               </div>

@@ -68,6 +68,22 @@ enum TemplateKind {
   purchase_order // 発注書
 }
 
+enum IntegrationType {
+  hr
+  crm
+}
+
+enum IntegrationStatus {
+  active
+  disabled
+}
+
+enum IntegrationRunStatus {
+  running
+  success
+  failed
+}
+
 model Customer {
   id                    String    @id @default(uuid())
   code                  String    @unique
@@ -638,6 +654,41 @@ model DocTemplateSetting {
   updatedBy     String?
 
   @@index([kind])
+}
+
+model IntegrationSetting {
+  id             String              @id @default(uuid())
+  type           IntegrationType
+  name           String?
+  provider       String?
+  status         IntegrationStatus   @default(active)
+  schedule       String?
+  config         Json?
+  lastRunAt      DateTime?
+  lastRunStatus  IntegrationRunStatus?
+  createdAt      DateTime            @default(now())
+  createdBy      String?
+  updatedAt      DateTime            @updatedAt
+  updatedBy      String?
+  runs           IntegrationRun[]
+
+  @@index([type, status])
+}
+
+model IntegrationRun {
+  id         String                @id @default(uuid())
+  setting    IntegrationSetting    @relation(fields: [settingId], references: [id], onDelete: Cascade)
+  settingId  String
+  status     IntegrationRunStatus  @default(running)
+  startedAt  DateTime              @default(now())
+  finishedAt DateTime?
+  message    String?
+  metrics    Json?
+  createdAt  DateTime              @default(now())
+  createdBy  String?
+
+  @@index([settingId, startedAt])
+  @@index([status, startedAt])
 }
 
 model DocumentSendLog {
