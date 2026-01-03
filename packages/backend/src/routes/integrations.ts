@@ -1,5 +1,9 @@
 import { FastifyInstance } from 'fastify';
-import { IntegrationRunStatus, IntegrationStatus } from '@prisma/client';
+import {
+  IntegrationRunStatus,
+  IntegrationStatus,
+  Prisma,
+} from '@prisma/client';
 import { prisma } from '../services/db.js';
 import { requireRole } from '../services/rbac.js';
 import {
@@ -15,6 +19,12 @@ type IntegrationSettingBody = {
   schedule?: string;
   config?: unknown;
 };
+
+function normalizeConfig(value: unknown) {
+  if (value === undefined) return undefined;
+  if (value === null) return Prisma.JsonNull;
+  return value as Prisma.InputJsonValue;
+}
 
 function parseLimit(
   raw: string | undefined,
@@ -55,9 +65,15 @@ export async function registerIntegrationRoutes(app: FastifyInstance) {
     async (req) => {
       const body = req.body as IntegrationSettingBody;
       const userId = req.user?.userId;
+      const config = normalizeConfig(body.config);
       const created = await prisma.integrationSetting.create({
         data: {
-          ...body,
+          type: body.type,
+          name: body.name,
+          provider: body.provider,
+          status: body.status,
+          schedule: body.schedule,
+          config,
           createdBy: userId,
           updatedBy: userId,
         },
@@ -82,9 +98,19 @@ export async function registerIntegrationRoutes(app: FastifyInstance) {
         return reply.code(404).send({ error: 'not_found' });
       }
       const userId = req.user?.userId;
+      const config =
+        body.config !== undefined ? normalizeConfig(body.config) : undefined;
       const updated = await prisma.integrationSetting.update({
         where: { id },
-        data: { ...body, updatedBy: userId },
+        data: {
+          type: body.type,
+          name: body.name,
+          provider: body.provider,
+          status: body.status,
+          schedule: body.schedule,
+          config,
+          updatedBy: userId,
+        },
       });
       return updated;
     },
