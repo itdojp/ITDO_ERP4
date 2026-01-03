@@ -12,10 +12,10 @@
   - [x] push_subscriptions の登録APIとDB
   - [x] Web Pushの送信スタブとService Workerのpush通知
   - [x] テスト手順の追記
-- [ ] 自動化ワークフロー/レポート拡張
-  - [ ] report_subscriptions のスキーマとCRUD
-  - [ ] スケジュール実行ジョブの雛形（CSV/PDF生成のstub）
-  - [ ] 通知先（メール/ダッシュボード）の配信記録
+- [x] 自動化ワークフロー/レポート拡張
+  - [x] report_subscriptions のスキーマとCRUD
+  - [x] スケジュール実行ジョブの雛形（CSV/PDF生成のstub）
+  - [x] 通知先（メール/ダッシュボード）の配信記録
 
 ## 次アクション（M1.0 検証 + Phase2 着手準備）
 - [x] 現環境（Podman）でMVP主要フローの総合確認
