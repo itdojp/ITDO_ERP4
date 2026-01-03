@@ -1,7 +1,18 @@
 import { FastifyInstance } from 'fastify';
 import { Prisma, type ReportSubscription } from '@prisma/client';
 import { prisma } from '../services/db.js';
+import {
+  reportDeliveryDue,
+  reportGroupEffort,
+  reportOvertime,
+  reportProjectEffort,
+  reportProjectProfit,
+  reportProjectProfitByGroup,
+  reportProjectProfitByUser,
+} from '../services/reports.js';
+import { generatePdf } from '../services/pdf.js';
 import { requireRole } from '../services/rbac.js';
+import { parseDateParam } from '../utils/date.js';
 import {
   reportSubscriptionPatchSchema,
   reportSubscriptionRunSchema,
@@ -31,6 +42,15 @@ type Recipients = {
   users?: string[];
 };
 
+class ReportParamError extends Error {
+  code: string;
+
+  constructor(code: string, message: string) {
+    super(message);
+    this.code = code;
+  }
+}
+
 function normalizeStringArray(value: unknown) {
   if (!Array.isArray(value)) return [];
   return value.map((item) => String(item).trim()).filter((item) => item !== '');
@@ -54,6 +74,10 @@ function normalizeChannels(value: unknown) {
 function normalizeJsonValue(value: unknown): Prisma.InputJsonValue | null {
   if (value === undefined || value === null) return null;
   return value as Prisma.InputJsonValue;
+}
+
+function toJsonValue(value: unknown): Prisma.InputJsonValue {
+  return JSON.parse(JSON.stringify(value ?? null)) as Prisma.InputJsonValue;
 }
 
 function normalizeJsonInput(
@@ -82,6 +106,63 @@ function parseOffset(raw: string | undefined) {
   return parsed;
 }
 
+function normalizeFormat(value: string | null): 'csv' | 'pdf' {
+  if (!value || value === 'csv' || value === 'pdf') return value ?? 'csv';
+  throw new ReportParamError('INVALID_FORMAT', 'format must be csv or pdf');
+}
+
+function formatCsvValue(value: unknown) {
+  if (value == null) return '';
+  const text = String(value);
+  if (/[",\n\r]/.test(text)) {
+    return `"${text.replace(/"/g, '""')}"`;
+  }
+  return text;
+}
+
+function toCsv(headers: string[], rows: unknown[][]) {
+  const lines = [headers.map(formatCsvValue).join(',')];
+  for (const row of rows) {
+    lines.push(row.map(formatCsvValue).join(','));
+  }
+  return `${lines.join('\n')}\n`;
+}
+
+function buildTemplateId(reportName: string, layout?: string) {
+  const trimmedLayout = layout?.trim();
+  const isValidLayout =
+    typeof trimmedLayout === 'string' && /^[a-zA-Z0-9_-]+$/.test(trimmedLayout);
+  const suffix = isValidLayout ? trimmedLayout : 'default';
+  return `report:${reportName}:${suffix}`;
+}
+
+function parseDateInput(value: unknown, label: string) {
+  if (value === undefined || value === null || value === '') return undefined;
+  if (typeof value !== 'string') {
+    throw new ReportParamError('INVALID_DATE', `${label} must be string`);
+  }
+  const parsed = parseDateParam(value);
+  if (!parsed) {
+    throw new ReportParamError('INVALID_DATE', `${label} is invalid`);
+  }
+  return parsed;
+}
+
+function requireString(value: unknown, label: string) {
+  if (typeof value !== 'string' || value.trim() === '') {
+    throw new ReportParamError('MISSING_PARAM', `${label} is required`);
+  }
+  return value.trim();
+}
+
+function parseIdList(value: unknown) {
+  if (Array.isArray(value)) return normalizeStringArray(value);
+  if (typeof value === 'string') {
+    return normalizeStringArray(value.split(','));
+  }
+  return [];
+}
+
 function resolveTarget(channel: string, recipients: Recipients) {
   if (channel === 'email') {
     return recipients.emails?.join(',') || '-';
@@ -95,7 +176,351 @@ function resolveTarget(channel: string, recipients: Recipients) {
   return '-';
 }
 
-async function runSubscriptionStub(
+async function buildReportPayload(subscription: ReportSubscription) {
+  const params = (subscription.params ?? {}) as Record<string, unknown>;
+  const format = normalizeFormat(subscription.format);
+  const layout = typeof params.layout === 'string' ? params.layout : undefined;
+  const fromDate = parseDateInput(params.from, 'from');
+  const toDate = parseDateInput(params.to, 'to');
+  let data: unknown;
+  let csv: string | undefined;
+  let pdf: { templateId: string; url: string } | undefined;
+
+  switch (subscription.reportKey) {
+    case 'project-effort': {
+      const projectId = requireString(params.projectId, 'projectId');
+      const result = await reportProjectEffort(
+        projectId,
+        fromDate ?? undefined,
+        toDate ?? undefined,
+      );
+      data = result;
+      if (format === 'csv') {
+        csv = toCsv(
+          ['projectId', 'totalMinutes', 'totalExpenses'],
+          [[result.projectId, result.totalMinutes, result.totalExpenses]],
+        );
+      } else {
+        const templateId = buildTemplateId('project-effort', layout);
+        const { url } = await generatePdf(
+          templateId,
+          toJsonValue(result) as Record<string, unknown>,
+          'project-effort',
+        );
+        pdf = { templateId, url };
+      }
+      break;
+    }
+    case 'project-profit': {
+      const projectId = requireString(params.projectId, 'projectId');
+      const result = await reportProjectProfit(
+        projectId,
+        fromDate ?? undefined,
+        toDate ?? undefined,
+      );
+      data = result;
+      if (format === 'csv') {
+        csv = toCsv(
+          [
+            'projectId',
+            'revenue',
+            'budgetRevenue',
+            'varianceRevenue',
+            'directCost',
+            'vendorCost',
+            'expenseCost',
+            'laborCost',
+            'grossProfit',
+            'grossMargin',
+            'totalMinutes',
+          ],
+          [
+            [
+              result.projectId,
+              result.revenue,
+              result.budgetRevenue,
+              result.varianceRevenue,
+              result.directCost,
+              result.costBreakdown.vendorCost,
+              result.costBreakdown.expenseCost,
+              result.costBreakdown.laborCost,
+              result.grossProfit,
+              result.grossMargin,
+              result.totalMinutes,
+            ],
+          ],
+        );
+      } else {
+        const templateId = buildTemplateId('project-profit', layout);
+        const { url } = await generatePdf(
+          templateId,
+          toJsonValue(result) as Record<string, unknown>,
+          'project-profit',
+        );
+        pdf = { templateId, url };
+      }
+      break;
+    }
+    case 'project-profit-by-user': {
+      const projectId = requireString(params.projectId, 'projectId');
+      const ids = parseIdList(params.userIds);
+      const result = await reportProjectProfitByUser(
+        projectId,
+        fromDate ?? undefined,
+        toDate ?? undefined,
+        ids.length ? ids : undefined,
+      );
+      data = result;
+      if (format === 'csv') {
+        const headers = [
+          'projectId',
+          'allocationMethod',
+          'revenue',
+          'vendorCost',
+          'laborCost',
+          'expenseCost',
+          'totalMinutes',
+          'userId',
+          'userLaborCost',
+          'userExpenseCost',
+          'allocatedVendorCost',
+          'allocatedRevenue',
+          'totalCost',
+          'grossProfit',
+          'grossMargin',
+          'minutes',
+        ];
+        const rows = result.items.map((item) => [
+          result.projectId,
+          result.allocationMethod,
+          result.revenue,
+          result.vendorCost,
+          result.laborCost,
+          result.expenseCost,
+          result.totalMinutes,
+          item.userId,
+          item.laborCost,
+          item.expenseCost,
+          item.allocatedVendorCost,
+          item.allocatedRevenue,
+          item.totalCost,
+          item.grossProfit,
+          item.grossMargin,
+          item.minutes,
+        ]);
+        csv = toCsv(headers, rows);
+      } else {
+        const templateId = buildTemplateId('project-profit-by-user', layout);
+        const { url } = await generatePdf(
+          templateId,
+          toJsonValue(result) as Record<string, unknown>,
+          'project-profit-by-user',
+        );
+        pdf = { templateId, url };
+      }
+      break;
+    }
+    case 'project-profit-by-group': {
+      const projectId = requireString(params.projectId, 'projectId');
+      const ids = parseIdList(params.userIds);
+      if (!ids.length) {
+        throw new ReportParamError('MISSING_PARAM', 'userIds is required');
+      }
+      const label = typeof params.label === 'string' ? params.label : undefined;
+      const result = await reportProjectProfitByGroup(
+        projectId,
+        ids,
+        fromDate ?? undefined,
+        toDate ?? undefined,
+        label,
+      );
+      data = result;
+      if (format === 'csv') {
+        const headers = [
+          'projectId',
+          'label',
+          'allocationMethod',
+          'revenue',
+          'vendorCost',
+          'laborCost',
+          'expenseCost',
+          'totalMinutes',
+          'groupAllocatedRevenue',
+          'groupAllocatedVendorCost',
+          'groupLaborCost',
+          'groupExpenseCost',
+          'groupTotalCost',
+          'groupGrossProfit',
+          'groupGrossMargin',
+          'groupMinutes',
+          'userIds',
+        ];
+        const row = [
+          result.projectId,
+          result.label,
+          result.allocationMethod,
+          result.totals.revenue,
+          result.totals.vendorCost,
+          result.totals.laborCost,
+          result.totals.expenseCost,
+          result.totals.totalMinutes,
+          result.group.allocatedRevenue,
+          result.group.allocatedVendorCost,
+          result.group.laborCost,
+          result.group.expenseCost,
+          result.group.totalCost,
+          result.group.grossProfit,
+          result.group.grossMargin,
+          result.group.minutes,
+          result.userIds.join('|'),
+        ];
+        csv = toCsv(headers, [row]);
+      } else {
+        const templateId = buildTemplateId('project-profit-by-group', layout);
+        const { url } = await generatePdf(
+          templateId,
+          toJsonValue(result) as Record<string, unknown>,
+          'project-profit-by-group',
+        );
+        pdf = { templateId, url };
+      }
+      break;
+    }
+    case 'group-effort': {
+      const ids = parseIdList(params.userIds);
+      if (!ids.length) {
+        throw new ReportParamError('MISSING_PARAM', 'userIds is required');
+      }
+      const result = await reportGroupEffort(
+        ids,
+        fromDate ?? undefined,
+        toDate ?? undefined,
+      );
+      data = { items: result };
+      if (format === 'csv') {
+        csv = toCsv(
+          ['userId', 'totalMinutes'],
+          result.map((item) => [item.userId, item.totalMinutes]),
+        );
+      } else {
+        const templateId = buildTemplateId('group-effort', layout);
+        const { url } = await generatePdf(
+          templateId,
+          toJsonValue({ items: result }) as Record<string, unknown>,
+          'group-effort',
+        );
+        pdf = { templateId, url };
+      }
+      break;
+    }
+    case 'overtime': {
+      const userId = requireString(params.userId, 'userId');
+      const result = await reportOvertime(
+        userId,
+        fromDate ?? undefined,
+        toDate ?? undefined,
+      );
+      data = result;
+      if (format === 'csv') {
+        csv = toCsv(
+          ['userId', 'totalMinutes', 'dailyHours'],
+          [[result.userId, result.totalMinutes, result.dailyHours]],
+        );
+      } else {
+        const templateId = buildTemplateId('overtime', layout);
+        const { url } = await generatePdf(
+          templateId,
+          toJsonValue(result) as Record<string, unknown>,
+          'overtime',
+        );
+        pdf = { templateId, url };
+      }
+      break;
+    }
+    case 'delivery-due': {
+      const projectId =
+        typeof params.projectId === 'string' && params.projectId.trim()
+          ? params.projectId.trim()
+          : undefined;
+      const result = await reportDeliveryDue(
+        fromDate ?? undefined,
+        toDate ?? undefined,
+        projectId,
+      );
+      data = { items: result };
+      if (format === 'csv') {
+        const headers = [
+          'milestoneId',
+          'projectId',
+          'projectCode',
+          'projectName',
+          'name',
+          'amount',
+          'dueDate',
+          'invoiceCount',
+          'invoiceNos',
+          'invoiceStatuses',
+        ];
+        const rows = result.map((item) => [
+          item.milestoneId,
+          item.projectId,
+          item.projectCode,
+          item.projectName,
+          item.name,
+          item.amount,
+          item.dueDate ? new Date(item.dueDate).toISOString() : '',
+          item.invoiceCount,
+          item.invoiceNos.join('|'),
+          item.invoiceStatuses.join('|'),
+        ]);
+        csv = toCsv(headers, rows);
+      } else {
+        const templateId = buildTemplateId('delivery-due', layout);
+        const { url } = await generatePdf(
+          templateId,
+          toJsonValue({ items: result }) as Record<string, unknown>,
+          'delivery-due',
+        );
+        pdf = { templateId, url };
+      }
+      break;
+    }
+    default:
+      throw new ReportParamError(
+        'UNKNOWN_REPORT',
+        `Unknown reportKey: ${subscription.reportKey}`,
+      );
+  }
+
+  const payload = {
+    reportKey: subscription.reportKey,
+    format,
+    params: normalizeJsonValue(subscription.params),
+    generatedAt: new Date().toISOString(),
+    data: toJsonValue(data),
+    ...(csv ? { csv } : {}),
+    ...(pdf ? { pdf } : {}),
+  } as Prisma.InputJsonValue;
+
+  return payload;
+}
+
+async function updateRunStatus(
+  subscriptionId: string,
+  status: string,
+  actorId: string | undefined,
+) {
+  await prisma.reportSubscription.update({
+    where: { id: subscriptionId },
+    data: {
+      lastRunAt: new Date(),
+      lastRunStatus: status,
+      updatedBy: actorId,
+    },
+  });
+}
+
+async function runSubscription(
   subscription: ReportSubscription,
   actorId: string | undefined,
   dryRun: boolean,
@@ -105,12 +530,7 @@ async function runSubscriptionStub(
   if (!channels.length) {
     throw new Error('channels_required');
   }
-  const payload: Prisma.InputJsonValue = {
-    reportKey: subscription.reportKey,
-    format: subscription.format,
-    params: normalizeJsonValue(subscription.params),
-    generatedAt: new Date().toISOString(),
-  };
+  const payload = await buildReportPayload(subscription);
   if (dryRun) {
     return {
       payload,
@@ -122,7 +542,7 @@ async function runSubscriptionStub(
   const deliveries = channels.map((channel) => ({
     subscriptionId: subscription.id,
     channel,
-    status: 'stubbed',
+    status: 'generated',
     target: resolveTarget(channel, recipients),
     payload,
     sentAt: new Date(),
@@ -131,14 +551,7 @@ async function runSubscriptionStub(
   if (deliveries.length) {
     await prisma.reportDelivery.createMany({ data: deliveries });
   }
-  await prisma.reportSubscription.update({
-    where: { id: subscription.id },
-    data: {
-      lastRunAt: new Date(),
-      lastRunStatus: 'success',
-      updatedBy: actorId,
-    },
-  });
+  await updateRunStatus(subscription.id, 'success', actorId);
   return {
     payload,
     channels,
@@ -298,12 +711,25 @@ export async function registerReportSubscriptionRoutes(app: FastifyInstance) {
       if (!subscription) {
         return reply.code(404).send({ error: 'not_found' });
       }
-      const result = await runSubscriptionStub(
-        subscription,
-        req.user?.userId,
-        Boolean(body.dryRun),
-      );
-      return result;
+      const dryRun = Boolean(body.dryRun);
+      try {
+        const result = await runSubscription(
+          subscription,
+          req.user?.userId,
+          dryRun,
+        );
+        return result;
+      } catch (err) {
+        if (!dryRun) {
+          await updateRunStatus(subscription.id, 'failed', req.user?.userId);
+        }
+        if (err instanceof ReportParamError) {
+          return reply.status(400).send({
+            error: { code: err.code, message: err.message },
+          });
+        }
+        throw err;
+      }
     },
   );
 
@@ -323,7 +749,7 @@ export async function registerReportSubscriptionRoutes(app: FastifyInstance) {
       const results = [];
       for (const item of items) {
         try {
-          const result = await runSubscriptionStub(
+          const result = await runSubscription(
             item,
             req.user?.userId,
             Boolean(dryRun),
@@ -338,6 +764,9 @@ export async function registerReportSubscriptionRoutes(app: FastifyInstance) {
             subscriptionId: item.id,
             error: err,
           });
+          if (!dryRun) {
+            await updateRunStatus(item.id, 'failed', req.user?.userId);
+          }
           results.push({
             id: item.id,
             reportKey: item.reportKey,
