@@ -9,9 +9,7 @@ const pushPublicKey = (import.meta.env.VITE_PUSH_PUBLIC_KEY || '').trim();
 
 function urlBase64ToUint8Array(base64String: string) {
   const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
-  const base64 = (base64String + padding)
-    .replace(/-/g, '+')
-    .replace(/_/g, '/');
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
   const rawData = atob(base64);
   const outputArray = new Uint8Array(rawData.length);
   for (let i = 0; i < rawData.length; i += 1) {
@@ -300,7 +298,10 @@ export const CurrentUser: React.FC = () => {
                   <button className="button secondary" onClick={subscribePush}>
                     購読登録
                   </button>
-                  <button className="button secondary" onClick={unsubscribePush}>
+                  <button
+                    className="button secondary"
+                    onClick={unsubscribePush}
+                  >
                     購読解除
                   </button>
                   <button className="button secondary" onClick={sendPushTest}>
