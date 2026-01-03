@@ -39,6 +39,10 @@ const defaultForm: FormState = {
 export const Expenses: React.FC = () => {
   const auth = getAuthState();
   const defaultProjectId = auth?.projectIds?.[0] || defaultForm.projectId;
+  const [form, setForm] = useState<FormState>({
+    ...defaultForm,
+    projectId: defaultProjectId,
+  });
   const [items, setItems] = useState<Expense[]>([]);
   const handleProjectSelect = useCallback(
     (projectId: string) => {
@@ -55,10 +59,6 @@ export const Expenses: React.FC = () => {
     [projects],
   );
   const [message, setMessage] = useState<MessageState>(null);
-  const [form, setForm] = useState<FormState>({
-    ...defaultForm,
-    projectId: defaultProjectId,
-  });
   const [isSaving, setIsSaving] = useState(false);
   const [showMissingOnly, setShowMissingOnly] = useState(false);
   const amountValue = Number.isFinite(form.amount) ? form.amount : 0;
