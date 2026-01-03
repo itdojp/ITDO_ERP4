@@ -1,6 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import { Prisma } from '@prisma/client';
-import { requireRole } from '../services/rbac.js';
+import { requireProjectAccess, requireRole } from '../services/rbac.js';
 import {
   projectSchema,
   projectPatchSchema,
@@ -33,6 +33,16 @@ type RecurringTemplateBody = {
   shouldGenerateInvoice?: boolean;
   isActive?: boolean;
 };
+
+function ensureProjectIdParam(req: any, reply: any) {
+  const projectId = req?.params?.projectId;
+  if (!projectId) {
+    return reply.status(400).send({
+      error: { code: 'INVALID_PROJECT', message: 'Project id is required' },
+    });
+  }
+  return undefined;
+}
 
 async function hasCircularParent(taskId: string, parentTaskId: string) {
   const visited = new Set<string>([taskId]);
@@ -134,7 +144,13 @@ export async function registerProjectRoutes(app: FastifyInstance) {
 
   app.get(
     '/projects/:projectId/tasks',
-    { preHandler: requireRole(['admin', 'mgmt']) },
+    {
+      preHandler: [
+        requireRole(['admin', 'mgmt', 'user']),
+        ensureProjectIdParam,
+        requireProjectAccess((req) => (req.params as any)?.projectId),
+      ],
+    },
     async (req) => {
       const { projectId } = req.params as { projectId: string };
       const items = await prisma.projectTask.findMany({

@@ -7,6 +7,7 @@ import React, {
 } from 'react';
 import { api, getAuthState } from '../api';
 import { useProjects } from '../hooks/useProjects';
+import { useProjectTasks } from '../hooks/useProjectTasks';
 import {
   clearDraft,
   getDraftOwnerId,
@@ -67,6 +68,9 @@ export const TimeEntries: React.FC = () => {
     selectedProjectId: form.projectId,
     onSelect: handleProjectSelect,
   });
+  const { tasks, taskMessage, isLoading: tasksLoading } = useProjectTasks({
+    projectId: form.projectId,
+  });
   const projectMap = useMemo(
     () => new Map(projects.map((project) => [project.id, project])),
     [projects],
@@ -110,6 +114,15 @@ export const TimeEntries: React.FC = () => {
     setForm((prev) => ({ ...prev, projectId: draftProjectId }));
     setDraftProjectId(null);
   }, [draftProjectId]);
+
+  useEffect(() => {
+    if (!form.taskId) return;
+    if (tasks.length === 0) return;
+    const exists = tasks.some((task) => task.id === form.taskId);
+    if (!exists) {
+      setForm((prev) => ({ ...prev, taskId: '' }));
+    }
+  }, [form.taskId, tasks]);
 
   useEffect(() => {
     if (!message || message.type !== 'success') return;
@@ -177,12 +190,19 @@ export const TimeEntries: React.FC = () => {
               </option>
             ))}
           </select>
-          <input
-            type="text"
+          <select
+            aria-label="タスク選択"
             value={form.taskId}
             onChange={(e) => setForm({ ...form, taskId: e.target.value })}
-            placeholder="Task ID (任意)"
-          />
+            disabled={!form.projectId || tasksLoading}
+          >
+            <option value="">タスク未選択</option>
+            {tasks.map((task) => (
+              <option key={task.id} value={task.id}>
+                {task.name}
+              </option>
+            ))}
+          </select>
           <input
             type="date"
             value={form.workDate}
@@ -227,6 +247,11 @@ export const TimeEntries: React.FC = () => {
         {projectMessage && (
           <p style={{ color: '#dc2626', margin: '8px 0 0' }}>
             {projectMessage}
+          </p>
+        )}
+        {taskMessage && (
+          <p style={{ color: '#dc2626', margin: '8px 0 0' }}>
+            {taskMessage}
           </p>
         )}
       </div>
