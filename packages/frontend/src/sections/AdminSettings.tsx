@@ -82,30 +82,34 @@ function isValidHttpUrl(value: string): boolean {
   }
 }
 
+const createDefaultAlertForm = () => ({
+  type: 'budget_overrun',
+  threshold: '10',
+  period: 'month',
+  scopeProjectId: '',
+  remindAfterHours: '',
+  emails: 'alert@example.com',
+  roles: 'mgmt',
+  users: '',
+  slackWebhooks: '',
+  webhooks: '',
+  channels: new Set<string>(['email', 'dashboard']),
+});
+
+const createDefaultRuleForm = () => ({
+  flowType: 'invoice',
+  conditionsJson: '{"amountMin": 0}',
+  stepsJson: '[{"approverGroupId":"mgmt","stepOrder":1}]',
+});
+
 export const AdminSettings: React.FC = () => {
   const [alertItems, setAlertItems] = useState<AlertSetting[]>([]);
   const [ruleItems, setRuleItems] = useState<ApprovalRule[]>([]);
   const [templateItems, setTemplateItems] = useState<TemplateSetting[]>([]);
   const [pdfTemplates, setPdfTemplates] = useState<PdfTemplate[]>([]);
   const [message, setMessage] = useState('');
-  const [alertForm, setAlertForm] = useState({
-    type: 'budget_overrun',
-    threshold: '10',
-    period: 'month',
-    scopeProjectId: '',
-    remindAfterHours: '',
-    emails: 'alert@example.com',
-    roles: 'mgmt',
-    users: '',
-    slackWebhooks: '',
-    webhooks: '',
-    channels: new Set<string>(['email', 'dashboard']),
-  });
-  const [ruleForm, setRuleForm] = useState({
-    flowType: 'invoice',
-    conditionsJson: '{"amountMin": 0}',
-    stepsJson: '[{"approverGroupId":"mgmt","stepOrder":1}]',
-  });
+  const [alertForm, setAlertForm] = useState(createDefaultAlertForm);
+  const [ruleForm, setRuleForm] = useState(createDefaultRuleForm);
   const [templateForm, setTemplateForm] = useState({
     kind: 'invoice',
     templateId: '',
@@ -118,6 +122,8 @@ export const AdminSettings: React.FC = () => {
   const [editingTemplateId, setEditingTemplateId] = useState<string | null>(
     null,
   );
+  const [editingAlertId, setEditingAlertId] = useState<string | null>(null);
+  const [editingRuleId, setEditingRuleId] = useState<string | null>(null);
 
   const channels = useMemo(
     () => Array.from(alertForm.channels),
@@ -215,52 +221,6 @@ export const AdminSettings: React.FC = () => {
     setAlertForm({ ...alertForm, channels: next });
   };
 
-  const createAlertSetting = async () => {
-    if (!channels.length) {
-      setMessage('通知チャネルを選択してください');
-      return;
-    }
-    const remindAfterRaw = alertForm.remindAfterHours.trim();
-    const remindAfter =
-      remindAfterRaw.length > 0 ? Number(remindAfterRaw) : undefined;
-    const slackWebhooks = parseCsv(alertForm.slackWebhooks);
-    const webhooks = parseCsv(alertForm.webhooks);
-    const invalidUrls = [...slackWebhooks, ...webhooks].filter(
-      (url) => !isValidHttpUrl(url),
-    );
-    if (invalidUrls.length) {
-      setMessage('Slack/Webhook のURLが不正です');
-      return;
-    }
-    const payload = {
-      type: alertForm.type,
-      threshold: Number(alertForm.threshold),
-      period: alertForm.period,
-      scopeProjectId: alertForm.scopeProjectId || undefined,
-      remindAfterHours: Number.isFinite(remindAfter) ? remindAfter : undefined,
-      recipients: {
-        emails: parseCsv(alertForm.emails),
-        roles: parseCsv(alertForm.roles),
-        users: parseCsv(alertForm.users),
-        slackWebhooks,
-        webhooks,
-      },
-      channels,
-      isEnabled: true,
-    };
-    try {
-      await api('/alert-settings', {
-        method: 'POST',
-        body: JSON.stringify(payload),
-      });
-      setMessage('アラート設定を作成しました');
-      await loadAlertSettings();
-    } catch (err) {
-      logError('createAlertSetting failed', err);
-      setMessage('作成に失敗しました');
-    }
-  };
-
   const toggleAlert = async (
     id: string,
     enabled: boolean | null | undefined,
@@ -285,6 +245,16 @@ export const AdminSettings: React.FC = () => {
       setMessage(`${label} のJSONが不正です`);
       return null;
     }
+  };
+
+  const resetAlertForm = () => {
+    setAlertForm(createDefaultAlertForm());
+    setEditingAlertId(null);
+  };
+
+  const resetRuleForm = () => {
+    setRuleForm(createDefaultRuleForm());
+    setEditingRuleId(null);
   };
 
   const resetTemplateForm = () => {
@@ -386,7 +356,99 @@ export const AdminSettings: React.FC = () => {
     }
   };
 
-  const createApprovalRule = async () => {
+  const startEditAlert = (item: AlertSetting) => {
+    setEditingAlertId(item.id);
+    setAlertForm({
+      type: item.type,
+      threshold: String(item.threshold ?? ''),
+      period: item.period || '',
+      scopeProjectId: item.scopeProjectId || '',
+      remindAfterHours:
+        item.remindAfterHours != null ? String(item.remindAfterHours) : '',
+      emails: (item.recipients?.emails || []).join(','),
+      roles: (item.recipients?.roles || []).join(','),
+      users: (item.recipients?.users || []).join(','),
+      slackWebhooks: (item.recipients?.slackWebhooks || []).join(','),
+      webhooks: (item.recipients?.webhooks || []).join(','),
+      channels: new Set(
+        item.channels && item.channels.length > 0
+          ? item.channels
+          : ['email', 'dashboard'],
+      ),
+    });
+  };
+
+  const submitAlertSetting = async () => {
+    if (!channels.length) {
+      setMessage('通知チャネルを選択してください');
+      return;
+    }
+    const remindAfterRaw = alertForm.remindAfterHours.trim();
+    const remindAfter =
+      remindAfterRaw.length > 0 ? Number(remindAfterRaw) : undefined;
+    const slackWebhooks = parseCsv(alertForm.slackWebhooks);
+    const webhooks = parseCsv(alertForm.webhooks);
+    const invalidUrls = [...slackWebhooks, ...webhooks].filter(
+      (url) => !isValidHttpUrl(url),
+    );
+    if (invalidUrls.length) {
+      setMessage('Slack/Webhook のURLが不正です');
+      return;
+    }
+    const payload = {
+      type: alertForm.type,
+      threshold: Number(alertForm.threshold),
+      period: alertForm.period,
+      scopeProjectId: alertForm.scopeProjectId || undefined,
+      remindAfterHours: Number.isFinite(remindAfter) ? remindAfter : undefined,
+      recipients: {
+        emails: parseCsv(alertForm.emails),
+        roles: parseCsv(alertForm.roles),
+        users: parseCsv(alertForm.users),
+        slackWebhooks,
+        webhooks,
+      },
+      channels,
+    };
+    try {
+      if (editingAlertId) {
+        await api(`/alert-settings/${editingAlertId}`, {
+          method: 'PATCH',
+          body: JSON.stringify(payload),
+        });
+        setMessage('アラート設定を更新しました');
+      } else {
+        await api('/alert-settings', {
+          method: 'POST',
+          body: JSON.stringify({ ...payload, isEnabled: true }),
+        });
+        setMessage('アラート設定を作成しました');
+      }
+      await loadAlertSettings();
+      resetAlertForm();
+    } catch (err) {
+      logError('submitAlertSetting failed', err);
+      if (editingAlertId) {
+        setMessage('更新に失敗しました。新規作成モードに戻しました');
+        resetAlertForm();
+        return;
+      }
+      setMessage('保存に失敗しました');
+    }
+  };
+
+  const startEditRule = (item: ApprovalRule) => {
+    setEditingRuleId(item.id);
+    setRuleForm({
+      flowType: item.flowType,
+      conditionsJson: item.conditions
+        ? JSON.stringify(item.conditions, null, 2)
+        : '',
+      stepsJson: item.steps ? JSON.stringify(item.steps, null, 2) : '[]',
+    });
+  };
+
+  const submitApprovalRule = async () => {
     const conditions = parseJson('conditions', ruleForm.conditionsJson);
     if (conditions === null) return;
     const steps = parseJson('steps', ruleForm.stepsJson);
@@ -409,15 +471,29 @@ export const AdminSettings: React.FC = () => {
       steps,
     };
     try {
-      await api('/approval-rules', {
-        method: 'POST',
-        body: JSON.stringify(payload),
-      });
-      setMessage('承認ルールを作成しました');
+      if (editingRuleId) {
+        await api(`/approval-rules/${editingRuleId}`, {
+          method: 'PATCH',
+          body: JSON.stringify(payload),
+        });
+        setMessage('承認ルールを更新しました');
+      } else {
+        await api('/approval-rules', {
+          method: 'POST',
+          body: JSON.stringify(payload),
+        });
+        setMessage('承認ルールを作成しました');
+      }
       await loadApprovalRules();
+      resetRuleForm();
     } catch (err) {
-      logError('createApprovalRule failed', err);
-      setMessage('作成に失敗しました');
+      logError('submitApprovalRule failed', err);
+      if (editingRuleId) {
+        setMessage('更新に失敗しました。新規作成モードに戻しました');
+        resetRuleForm();
+        return;
+      }
+      setMessage('保存に失敗しました');
     }
   };
 
@@ -562,8 +638,11 @@ export const AdminSettings: React.FC = () => {
             ))}
           </div>
           <div className="row" style={{ marginTop: 8 }}>
-            <button className="button" onClick={createAlertSetting}>
-              作成
+            <button className="button" onClick={submitAlertSetting}>
+              {editingAlertId ? '更新' : '作成'}
+            </button>
+            <button className="button secondary" onClick={resetAlertForm}>
+              {editingAlertId ? 'キャンセル' : 'クリア'}
             </button>
             <button className="button secondary" onClick={loadAlertSettings}>
               再読込
@@ -606,6 +685,12 @@ export const AdminSettings: React.FC = () => {
                     onClick={() => toggleAlert(item.id, item.isEnabled)}
                   >
                     {item.isEnabled ? '無効化' : '有効化'}
+                  </button>
+                  <button
+                    className="button secondary"
+                    onClick={() => startEditAlert(item)}
+                  >
+                    編集
                   </button>
                 </div>
               </div>
@@ -657,8 +742,11 @@ export const AdminSettings: React.FC = () => {
             </label>
           </div>
           <div className="row" style={{ marginTop: 8 }}>
-            <button className="button" onClick={createApprovalRule}>
-              作成
+            <button className="button" onClick={submitApprovalRule}>
+              {editingRuleId ? '更新' : '作成'}
+            </button>
+            <button className="button secondary" onClick={resetRuleForm}>
+              {editingRuleId ? 'キャンセル' : 'クリア'}
             </button>
             <button className="button secondary" onClick={loadApprovalRules}>
               再読込
@@ -680,6 +768,14 @@ export const AdminSettings: React.FC = () => {
                 </div>
                 <div style={{ fontSize: 12, color: '#475569', marginTop: 4 }}>
                   steps: {rule.steps ? JSON.stringify(rule.steps) : '-'}
+                </div>
+                <div className="row" style={{ marginTop: 6 }}>
+                  <button
+                    className="button secondary"
+                    onClick={() => startEditRule(rule)}
+                  >
+                    編集
+                  </button>
                 </div>
               </div>
             ))}
