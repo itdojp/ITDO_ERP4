@@ -13,10 +13,11 @@ POSTGRES_EXTRA_ARGS="${POSTGRES_EXTRA_ARGS:--c shared_preload_libraries=pg_stat_
 
 usage() {
   cat <<USAGE
-Usage: $0 <start|db-push|seed|check|stats|stats-reset|stop|reset>
+Usage: $0 <start|db-push|migrate|seed|check|stats|stats-reset|stop|reset>
 
 start   : start postgres container (if missing, create)
 db-push : apply prisma schema via node container
+migrate : apply prisma migrations via node container
 seed    : run scripts/seed-demo.sql inside container
 check   : run scripts/checks/poc-integrity.sql inside container
 stats   : run scripts/checks/pg-stat-statements.sql inside container
@@ -71,6 +72,16 @@ db_push() {
     -e DATABASE_URL="$DB_URL" \
     docker.io/library/node:20-bookworm \
     npx --prefix packages/backend prisma db push --schema=packages/backend/prisma/schema.prisma --skip-generate
+}
+
+migrate_deploy() {
+  podman run --rm \
+    --network container:"$CONTAINER_NAME" \
+    -v "$ROOT_DIR":/workspace \
+    -w /workspace \
+    -e DATABASE_URL="$DB_URL" \
+    docker.io/library/node:20-bookworm \
+    npx --prefix packages/backend prisma migrate deploy --schema=packages/backend/prisma/schema.prisma
 }
 
 seed() {
@@ -130,6 +141,10 @@ case "$cmd" in
     start_container
     db_push
     ;;
+  migrate)
+    start_container
+    migrate_deploy
+    ;;
   seed)
     start_container
     seed
@@ -150,7 +165,7 @@ case "$cmd" in
   reset)
     stop_container
     start_container
-    db_push
+    migrate_deploy
     seed
     check
     ;;

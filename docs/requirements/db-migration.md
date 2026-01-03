@@ -27,8 +27,9 @@
 ## PoC/検証用
 - 一時的な検証DBは `prisma db push` を許容
 - seed/チェックを実行して動作確認
+- Podman 環境は `./scripts/podman-poc.sh migrate` で deploy を試せるようにする
 
 ## 次のTODO
-- 最初のベースラインマイグレーション作成
-- ステージング/本番の実行権限とロールを整備
-- データ移行手順との統合
+- [x] 最初のベースラインマイグレーション作成（`packages/backend/prisma/migrations/*_init`）
+- [ ] ステージング/本番の実行権限とロールを整備
+- [ ] データ移行手順との統合
