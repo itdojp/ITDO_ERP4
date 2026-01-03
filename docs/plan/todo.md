@@ -1,13 +1,13 @@
 # TODO リスト（短期ドライブ用）
 
 ## 次アクション（Phase 2 実装開始）
-- [ ] 工数: Task ID 無効入力で500になる問題の修正 (#259)
-  - [ ] backend: taskId存在チェック or 無効値の明示エラー
+- [x] 工数: Task ID 無効入力で500になる問題の修正 (#259)
+  - [x] backend: taskId存在チェック or 無効値の明示エラー
   - [x] frontend: Task選択UI or 無効値を送信しない
-- [ ] HR/CRM 連携の実装スケルトン
-  - [ ] integration_settings / integration_runs のスキーマ追加
-  - [ ] 管理画面の設定CRUD（接続種別/スケジュール/有効無効）
-  - [ ] CRM向けエクスポートAPI（顧客/業者/連絡先）と検証
+- [x] HR/CRM 連携の実装スケルトン
+  - [x] integration_settings / integration_runs のスキーマ追加
+  - [x] 管理画面の設定CRUD（接続種別/スケジュール/有効無効）
+  - [x] CRM向けエクスポートAPI（顧客/業者/連絡先）と検証
 - [x] モバイル/Push MVP（PWA）
   - [x] push_subscriptions の登録APIとDB
   - [x] Web Pushの送信スタブとService Workerのpush通知
