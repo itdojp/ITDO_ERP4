@@ -710,7 +710,7 @@ model ReportDelivery {
   target          String?
   payload         Json?
   error           String?
-  sentAt          DateTime           @default(now())
+  sentAt          DateTime?
   createdAt       DateTime           @default(now())
   createdBy       String?
 

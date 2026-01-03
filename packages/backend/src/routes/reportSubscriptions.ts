@@ -7,7 +7,7 @@ import {
   reportSubscriptionSchema,
 } from './validators.js';
 
-const allowedRoles = ['admin', 'mgmt'];
+const reportSubscriptionRoles = ['admin', 'mgmt'];
 
 type ReportSubscriptionBody = {
   name?: string;
@@ -34,7 +34,7 @@ function normalizeStringArray(value: unknown) {
   if (!Array.isArray(value)) return [];
   return value
     .map((item) => String(item).trim())
-    .filter(Boolean);
+    .filter((item) => item !== '');
 }
 
 function normalizeRecipients(value: unknown): Recipients {
@@ -50,6 +50,20 @@ function normalizeRecipients(value: unknown): Recipients {
 function normalizeChannels(value: unknown) {
   const channels = normalizeStringArray(value);
   return channels.length ? channels : ['dashboard'];
+}
+
+function parseLimit(raw: string | undefined, defaultValue: number, maxValue: number) {
+  if (!raw) return defaultValue;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed <= 0) return defaultValue;
+  return Math.min(parsed, maxValue);
+}
+
+function parseOffset(raw: string | undefined) {
+  if (!raw) return 0;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed < 0) return 0;
+  return parsed;
 }
 
 function resolveTarget(channel: string, recipients: Recipients) {
@@ -79,6 +93,9 @@ async function runSubscriptionStub(
 ) {
   const recipients = normalizeRecipients(subscription.recipients);
   const channels = normalizeChannels(subscription.channels);
+  if (!channels.length) {
+    throw new Error('channels_required');
+  }
   const payload = {
     reportKey: subscription.reportKey,
     format: subscription.format,
@@ -124,7 +141,7 @@ async function runSubscriptionStub(
 export async function registerReportSubscriptionRoutes(app: FastifyInstance) {
   app.get(
     '/report-subscriptions',
-    { preHandler: requireRole(allowedRoles) },
+    { preHandler: requireRole(reportSubscriptionRoles) },
     async () => {
       const items = await prisma.reportSubscription.findMany({
         orderBy: { createdAt: 'desc' },
@@ -135,22 +152,42 @@ export async function registerReportSubscriptionRoutes(app: FastifyInstance) {
 
   app.get(
     '/report-deliveries',
-    { preHandler: requireRole(allowedRoles) },
+    {
+      preHandler: requireRole(reportSubscriptionRoles),
+      schema: {
+        querystring: {
+          type: 'object',
+          properties: {
+            subscriptionId: { type: 'string', format: 'uuid' },
+            limit: { type: 'string' },
+            offset: { type: 'string' },
+          },
+          additionalProperties: false,
+        },
+      },
+    },
     async (req) => {
-      const { subscriptionId } = req.query as { subscriptionId?: string };
+      const { subscriptionId, limit, offset } = req.query as {
+        subscriptionId?: string;
+        limit?: string;
+        offset?: string;
+      };
+      const take = parseLimit(limit, 50, 200);
+      const skip = parseOffset(offset);
       const items = await prisma.reportDelivery.findMany({
         where: subscriptionId ? { subscriptionId } : undefined,
         orderBy: { sentAt: 'desc' },
-        take: 200,
+        take,
+        skip,
       });
-      return { items };
+      return { items, limit: take, offset: skip };
     },
   );
 
   app.post(
     '/report-subscriptions',
     {
-      preHandler: requireRole(allowedRoles),
+      preHandler: requireRole(reportSubscriptionRoles),
       schema: reportSubscriptionSchema,
     },
     async (req) => {
@@ -164,7 +201,7 @@ export async function registerReportSubscriptionRoutes(app: FastifyInstance) {
           schedule: body.schedule?.trim() || undefined,
           params: body.params ?? undefined,
           recipients: body.recipients ?? undefined,
-          channels: body.channels ?? ['dashboard'],
+          channels: body.channels && body.channels.length ? body.channels : ['dashboard'],
           isEnabled: body.isEnabled ?? true,
           createdBy: actorId,
           updatedBy: actorId,
@@ -177,7 +214,7 @@ export async function registerReportSubscriptionRoutes(app: FastifyInstance) {
   app.patch(
     '/report-subscriptions/:id',
     {
-      preHandler: requireRole(allowedRoles),
+      preHandler: requireRole(reportSubscriptionRoles),
       schema: reportSubscriptionPatchSchema,
     },
     async (req, reply) => {
@@ -189,18 +226,39 @@ export async function registerReportSubscriptionRoutes(app: FastifyInstance) {
       if (!existing) {
         return reply.code(404).send({ error: 'not_found' });
       }
+      const reportKey =
+        body.reportKey !== undefined ? body.reportKey.trim() : undefined;
+      if (body.reportKey !== undefined && !reportKey) {
+        return reply.status(400).send({
+          error: { code: 'INVALID_REPORT_KEY', message: 'Report key is empty' },
+        });
+      }
+      const format = body.format !== undefined ? body.format.trim() : undefined;
+      if (body.format !== undefined && !format) {
+        return reply.status(400).send({
+          error: { code: 'INVALID_FORMAT', message: 'Format is empty' },
+        });
+      }
+      if (body.channels && body.channels.length === 0) {
+        return reply.status(400).send({
+          error: { code: 'INVALID_CHANNELS', message: 'Channels is empty' },
+        });
+      }
       const actorId = req.user?.userId;
       const updated = await prisma.reportSubscription.update({
         where: { id },
         data: {
           name: body.name?.trim() || undefined,
-          reportKey: body.reportKey ?? existing.reportKey,
-          format: body.format ?? existing.format,
+          reportKey: reportKey ?? existing.reportKey,
+          format: format ?? existing.format,
           schedule: body.schedule?.trim() || undefined,
           params: body.params ?? existing.params,
           recipients: body.recipients ?? existing.recipients,
           channels: body.channels ?? existing.channels,
-          isEnabled: body.isEnabled ?? existing.isEnabled,
+          isEnabled:
+            typeof body.isEnabled === 'boolean'
+              ? body.isEnabled
+              : existing.isEnabled,
           updatedBy: actorId,
         },
       });
@@ -211,7 +269,7 @@ export async function registerReportSubscriptionRoutes(app: FastifyInstance) {
   app.post(
     '/report-subscriptions/:id/run',
     {
-      preHandler: requireRole(allowedRoles),
+      preHandler: requireRole(reportSubscriptionRoles),
       schema: reportSubscriptionRunSchema,
     },
     async (req, reply) => {
@@ -234,7 +292,10 @@ export async function registerReportSubscriptionRoutes(app: FastifyInstance) {
 
   app.post(
     '/jobs/report-subscriptions/run',
-    { preHandler: requireRole(allowedRoles) },
+    {
+      preHandler: requireRole(reportSubscriptionRoles),
+      schema: reportSubscriptionRunSchema,
+    },
     async (req) => {
       const { dryRun } = (req.body || {}) as RunBody;
       const items = await prisma.reportSubscription.findMany({
@@ -244,16 +305,29 @@ export async function registerReportSubscriptionRoutes(app: FastifyInstance) {
       });
       const results = [];
       for (const item of items) {
-        const result = await runSubscriptionStub(
-          item,
-          req.user?.userId,
-          Boolean(dryRun),
-        );
-        results.push({
-          id: item.id,
-          reportKey: item.reportKey,
-          deliveries: result.deliveries.length,
-        });
+        try {
+          const result = await runSubscriptionStub(
+            item,
+            req.user?.userId,
+            Boolean(dryRun),
+          );
+          results.push({
+            id: item.id,
+            reportKey: item.reportKey,
+            deliveries: result.deliveries.length,
+          });
+        } catch (err) {
+          console.error('Failed to run report subscription', {
+            subscriptionId: item.id,
+            error: err,
+          });
+          results.push({
+            id: item.id,
+            reportKey: item.reportKey,
+            deliveries: 0,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
       }
       return { ok: true, count: results.length, items: results };
     },

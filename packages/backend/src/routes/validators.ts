@@ -429,7 +429,7 @@ const reportRecipientsSchema = Type.Object(
     roles: Type.Optional(Type.Array(Type.String())),
     users: Type.Optional(Type.Array(Type.String())),
   },
-  { additionalProperties: true },
+  { additionalProperties: false },
 );
 
 export const templateSettingSchema = {
@@ -459,7 +459,11 @@ export const reportSubscriptionSchema = {
       name: Type.Optional(Type.String()),
       reportKey: Type.String({ minLength: 1 }),
       format: Type.Optional(reportFormatSchema),
-      schedule: Type.Optional(Type.String()),
+      schedule: Type.Optional(
+        Type.String({
+          pattern: '^([\\d*/,\\-]+\\s+){4}[\\d*/,\\-]+$',
+        }),
+      ),
       params: Type.Optional(Type.Any()),
       recipients: Type.Optional(reportRecipientsSchema),
       channels: Type.Optional(Type.Array(reportChannelSchema, { minItems: 1 })),
