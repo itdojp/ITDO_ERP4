@@ -8,10 +8,10 @@
   - [ ] integration_settings / integration_runs のスキーマ追加
   - [ ] 管理画面の設定CRUD（接続種別/スケジュール/有効無効）
   - [ ] CRM向けエクスポートAPI（顧客/業者/連絡先）と検証
-- [ ] モバイル/Push MVP（PWA）
-  - [ ] push_subscriptions の登録APIとDB
-  - [ ] Web Pushの送信スタブとService Workerのpush通知
-  - [ ] テスト手順の追記
+- [x] モバイル/Push MVP（PWA）
+  - [x] push_subscriptions の登録APIとDB
+  - [x] Web Pushの送信スタブとService Workerのpush通知
+  - [x] テスト手順の追記
 - [ ] 自動化ワークフロー/レポート拡張
   - [ ] report_subscriptions のスキーマとCRUD
   - [ ] スケジュール実行ジョブの雛形（CSV/PDF生成のstub）

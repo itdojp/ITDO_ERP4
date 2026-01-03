@@ -433,3 +433,42 @@ export const templateSettingSchema = {
 export const templateSettingPatchSchema = {
   body: Type.Partial(templateSettingSchema.body),
 };
+
+export const pushSubscriptionSchema = {
+  body: Type.Object(
+    {
+      endpoint: Type.String({ minLength: 1 }),
+      expirationTime: Type.Optional(Type.Union([Type.Number(), Type.Null()])),
+      keys: Type.Object(
+        {
+          p256dh: Type.String({ minLength: 1 }),
+          auth: Type.String({ minLength: 1 }),
+        },
+        { additionalProperties: false },
+      ),
+      userAgent: Type.Optional(Type.String()),
+    },
+    { additionalProperties: false },
+  ),
+};
+
+export const pushSubscriptionDisableSchema = {
+  body: Type.Object(
+    {
+      endpoint: Type.String({ minLength: 1 }),
+    },
+    { additionalProperties: false },
+  ),
+};
+
+export const pushTestSchema = {
+  body: Type.Object(
+    {
+      userId: Type.Optional(Type.String()),
+      title: Type.Optional(Type.String()),
+      body: Type.Optional(Type.String()),
+      url: Type.Optional(Type.String()),
+    },
+    { additionalProperties: false },
+  ),
+};

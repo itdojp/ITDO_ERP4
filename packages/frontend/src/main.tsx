@@ -9,7 +9,10 @@ ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
   </React.StrictMode>,
 );
 
-if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+const enableServiceWorker =
+  import.meta.env.PROD || import.meta.env.VITE_ENABLE_SW === 'true';
+
+if (enableServiceWorker && 'serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('/sw.js').catch((error) => {
       if (import.meta.env.DEV) {
