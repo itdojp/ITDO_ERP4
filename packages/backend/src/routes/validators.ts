@@ -413,6 +413,25 @@ const templateKindSchema = Type.Union([
   Type.Literal('purchase_order'),
 ]);
 
+const reportFormatSchema = Type.Union([
+  Type.Literal('csv'),
+  Type.Literal('pdf'),
+]);
+
+const reportChannelSchema = Type.Union([
+  Type.Literal('email'),
+  Type.Literal('dashboard'),
+]);
+
+const reportRecipientsSchema = Type.Object(
+  {
+    emails: Type.Optional(Type.Array(Type.String())),
+    roles: Type.Optional(Type.Array(Type.String())),
+    users: Type.Optional(Type.Array(Type.String())),
+  },
+  { additionalProperties: false },
+);
+
 const integrationTypeSchema = Type.Union([
   Type.Literal('hr'),
   Type.Literal('crm'),
@@ -422,7 +441,6 @@ const integrationStatusSchema = Type.Union([
   Type.Literal('active'),
   Type.Literal('disabled'),
 ]);
-
 export const templateSettingSchema = {
   body: Type.Object(
     {
@@ -442,6 +460,39 @@ export const templateSettingSchema = {
 
 export const templateSettingPatchSchema = {
   body: Type.Partial(templateSettingSchema.body),
+};
+
+export const reportSubscriptionSchema = {
+  body: Type.Object(
+    {
+      name: Type.Optional(Type.String()),
+      reportKey: Type.String({ minLength: 1 }),
+      format: Type.Optional(reportFormatSchema),
+      schedule: Type.Optional(
+        Type.String({
+          pattern: '^([\\d*/,\\-]+\\s+){4}[\\d*/,\\-]+$',
+        }),
+      ),
+      params: Type.Optional(Type.Any()),
+      recipients: Type.Optional(reportRecipientsSchema),
+      channels: Type.Optional(Type.Array(reportChannelSchema, { minItems: 1 })),
+      isEnabled: Type.Optional(Type.Boolean()),
+    },
+    { additionalProperties: false },
+  ),
+};
+
+export const reportSubscriptionPatchSchema = {
+  body: Type.Partial(reportSubscriptionSchema.body),
+};
+
+export const reportSubscriptionRunSchema = {
+  body: Type.Object(
+    {
+      dryRun: Type.Optional(Type.Boolean()),
+    },
+    { additionalProperties: false },
+  ),
 };
 
 export const integrationSettingSchema = {
