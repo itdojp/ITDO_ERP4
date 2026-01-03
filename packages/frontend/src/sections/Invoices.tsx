@@ -18,6 +18,10 @@ const buildInitialForm = (projectId?: string) => ({
 });
 
 export const Invoices: React.FC = () => {
+  const auth = getAuthState();
+  const [form, setForm] = useState(() =>
+    buildInitialForm(auth?.projectIds?.[0]),
+  );
   const [items, setItems] = useState<Invoice[]>([]);
   const handleProjectSelect = useCallback(
     (projectId: string) => {
@@ -32,10 +36,6 @@ export const Invoices: React.FC = () => {
   const projectMap = useMemo(
     () => new Map(projects.map((project) => [project.id, project])),
     [projects],
-  );
-  const auth = getAuthState();
-  const [form, setForm] = useState(() =>
-    buildInitialForm(auth?.projectIds?.[0]),
   );
   const [selected, setSelected] = useState<Invoice | null>(null);
   const [message, setMessage] = useState('');

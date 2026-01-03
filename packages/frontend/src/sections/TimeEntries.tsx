@@ -106,13 +106,10 @@ export const TimeEntries: React.FC = () => {
   }, [draftKey]);
 
   useEffect(() => {
-    if (!draftProjectId || projects.length === 0) return;
-    const exists = projects.some((project) => project.id === draftProjectId);
-    if (exists) {
-      setForm((prev) => ({ ...prev, projectId: draftProjectId }));
-    }
+    if (!draftProjectId) return;
+    setForm((prev) => ({ ...prev, projectId: draftProjectId }));
     setDraftProjectId(null);
-  }, [draftProjectId, projects]);
+  }, [draftProjectId]);
 
   useEffect(() => {
     if (!message || message.type !== 'success') return;
