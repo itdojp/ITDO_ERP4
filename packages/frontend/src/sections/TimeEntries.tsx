@@ -68,7 +68,7 @@ export const TimeEntries: React.FC = () => {
     selectedProjectId: form.projectId,
     onSelect: handleProjectSelect,
   });
-  const { tasks, taskMessage } = useProjectTasks({
+  const { tasks, taskMessage, isLoading: tasksLoading } = useProjectTasks({
     projectId: form.projectId,
   });
   const projectMap = useMemo(
@@ -194,6 +194,7 @@ export const TimeEntries: React.FC = () => {
             aria-label="タスク選択"
             value={form.taskId}
             onChange={(e) => setForm({ ...form, taskId: e.target.value })}
+            disabled={!form.projectId || tasksLoading}
           >
             <option value="">タスク未選択</option>
             {tasks.map((task) => (

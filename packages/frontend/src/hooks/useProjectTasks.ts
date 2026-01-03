@@ -13,14 +13,17 @@ type UseProjectTasksOptions = {
 export const useProjectTasks = ({ projectId }: UseProjectTasksOptions) => {
   const [tasks, setTasks] = useState<ProjectTaskOption[]>([]);
   const [taskMessage, setTaskMessage] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
 
   const loadTasks = useCallback(async () => {
     if (!projectId) {
       setTasks([]);
       setTaskMessage('');
+      setIsLoading(false);
       return;
     }
     try {
+      setIsLoading(true);
       const res = await api<{ items: ProjectTaskOption[] }>(
         `/projects/${projectId}/tasks`,
       );
@@ -30,6 +33,8 @@ export const useProjectTasks = ({ projectId }: UseProjectTasksOptions) => {
       console.error('Failed to load tasks.', err);
       setTasks([]);
       setTaskMessage('タスク一覧の取得に失敗しました');
+    } finally {
+      setIsLoading(false);
     }
   }, [projectId]);
 
@@ -37,5 +42,5 @@ export const useProjectTasks = ({ projectId }: UseProjectTasksOptions) => {
     loadTasks();
   }, [loadTasks]);
 
-  return { tasks, taskMessage, loadTasks };
+  return { tasks, taskMessage, isLoading, loadTasks };
 };

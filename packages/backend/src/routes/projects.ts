@@ -34,6 +34,16 @@ type RecurringTemplateBody = {
   isActive?: boolean;
 };
 
+function ensureProjectIdParam(req: any, reply: any) {
+  const projectId = req?.params?.projectId;
+  if (!projectId) {
+    return reply.status(400).send({
+      error: { code: 'INVALID_PROJECT', message: 'Project id is required' },
+    });
+  }
+  return undefined;
+}
+
 async function hasCircularParent(taskId: string, parentTaskId: string) {
   const visited = new Set<string>([taskId]);
   let currentId: string | null = parentTaskId;
@@ -137,6 +147,7 @@ export async function registerProjectRoutes(app: FastifyInstance) {
     {
       preHandler: [
         requireRole(['admin', 'mgmt', 'user']),
+        ensureProjectIdParam,
         requireProjectAccess((req) => (req.params as any)?.projectId),
       ],
     },
