@@ -1,5 +1,22 @@
 # TODO リスト（短期ドライブ用）
 
+## 次アクション（Phase 2 実装開始）
+- [ ] 工数: Task ID 無効入力で500になる問題の修正 (#259)
+  - [ ] backend: taskId存在チェック or 無効値の明示エラー
+  - [ ] frontend: Task選択UI or 無効値を送信しない
+- [ ] HR/CRM 連携の実装スケルトン
+  - [ ] integration_settings / integration_runs のスキーマ追加
+  - [ ] 管理画面の設定CRUD（接続種別/スケジュール/有効無効）
+  - [ ] CRM向けエクスポートAPI（顧客/業者/連絡先）と検証
+- [ ] モバイル/Push MVP（PWA）
+  - [ ] push_subscriptions の登録APIとDB
+  - [ ] Web Pushの送信スタブとService Workerのpush通知
+  - [ ] テスト手順の追記
+- [ ] 自動化ワークフロー/レポート拡張
+  - [ ] report_subscriptions のスキーマとCRUD
+  - [ ] スケジュール実行ジョブの雛形（CSV/PDF生成のstub）
+  - [ ] 通知先（メール/ダッシュボード）の配信記録
+
 ## 次アクション（M1.0 検証 + Phase2 着手準備）
 - [x] 現環境（Podman）でMVP主要フローの総合確認
   - [x] 見積→請求→送信（メール/PDF）のハッピーパス
