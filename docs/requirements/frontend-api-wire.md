@@ -16,6 +16,14 @@
 - GET `/reports/project-profit/:projectId/by-group?from=YYYY-MM-DD&to=YYYY-MM-DD&userIds=a,b,c&label=groupA&format=csv|pdf?&layout=default?`
 - GET `/reports/group-effort?userIds=a,b,c&from=YYYY-MM-DD&to=YYYY-MM-DD&format=csv|pdf?&layout=default?`
 - GET `/reports/overtime/:userId?from=YYYY-MM-DD&to=YYYY-MM-DD&format=csv|pdf?&layout=default?`
+
+## report subscriptions
+- GET `/report-subscriptions`
+- POST `/report-subscriptions`
+- PATCH `/report-subscriptions/:id`
+- POST `/report-subscriptions/:id/run`
+- GET `/report-deliveries?subscriptionId?`
+- POST `/jobs/report-subscriptions/run`
 - `format=csv` 指定時は `text/csv` を返す
 - `format=pdf` 指定時は `{ format, templateId, url }` を返す（`url=/pdf-files/:filename`）
 
