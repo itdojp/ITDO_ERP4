@@ -1,10 +1,12 @@
 import { FastifyInstance } from 'fastify';
 import { submitApprovalWithUpdate } from '../services/approval.js';
-import { expenseSchema } from './validators.js';
+import { expenseReassignSchema, expenseSchema } from './validators.js';
 import { DocStatusValue, FlowTypeValue } from '../types.js';
 import { requireProjectAccess, requireRole } from '../services/rbac.js';
 import { prisma } from '../services/db.js';
+import { logAudit } from '../services/audit.js';
 import { parseDateParam } from '../utils/date.js';
+import { findPeriodLock, toPeriodKey } from '../services/periodLock.js';
 
 export async function registerExpenseRoutes(app: FastifyInstance) {
   app.post(
@@ -97,6 +99,100 @@ export async function registerExpenseRoutes(app: FastifyInstance) {
             data: { status: DocStatusValue.pending_qa },
           }),
         createdBy: userId,
+      });
+      return updated;
+    },
+  );
+
+  app.post(
+    '/expenses/:id/reassign',
+    {
+      preHandler: requireRole(['admin', 'mgmt']),
+      schema: expenseReassignSchema,
+    },
+    async (req, reply) => {
+      const { id } = req.params as { id: string };
+      const body = req.body as any;
+      const reasonText =
+        typeof body.reasonText === 'string' ? body.reasonText.trim() : '';
+      if (!reasonText) {
+        return reply.status(400).send({
+          error: { code: 'INVALID_REASON', message: 'reasonText is required' },
+        });
+      }
+      const expense = await prisma.expense.findUnique({ where: { id } });
+      if (!expense) {
+        return reply.status(404).send({
+          error: { code: 'NOT_FOUND', message: 'Expense not found' },
+        });
+      }
+      if (expense.deletedAt) {
+        return reply.status(400).send({
+          error: { code: 'ALREADY_DELETED', message: 'Expense deleted' },
+        });
+      }
+      if (
+        expense.status !== DocStatusValue.draft &&
+        expense.status !== DocStatusValue.rejected
+      ) {
+        return reply.status(400).send({
+          error: { code: 'INVALID_STATUS', message: 'Expense not editable' },
+        });
+      }
+      const pendingApproval = await prisma.approvalInstance.findFirst({
+        where: {
+          targetTable: 'expenses',
+          targetId: id,
+          status: {
+            in: [DocStatusValue.pending_qa, DocStatusValue.pending_exec],
+          },
+        },
+        select: { id: true },
+      });
+      if (pendingApproval) {
+        return reply.status(400).send({
+          error: { code: 'PENDING_APPROVAL', message: 'Approval in progress' },
+        });
+      }
+      const targetProject = await prisma.project.findUnique({
+        where: { id: body.toProjectId },
+        select: { id: true, deletedAt: true },
+      });
+      if (!targetProject || targetProject.deletedAt) {
+        return reply.status(404).send({
+          error: { code: 'NOT_FOUND', message: 'Project not found' },
+        });
+      }
+      const periodKey = toPeriodKey(expense.incurredOn);
+      const fromLock = await findPeriodLock(periodKey, expense.projectId);
+      if (fromLock) {
+        return reply.status(400).send({
+          error: { code: 'PERIOD_LOCKED', message: 'Period is locked' },
+        });
+      }
+      if (body.toProjectId !== expense.projectId) {
+        const toLock = await findPeriodLock(periodKey, body.toProjectId);
+        if (toLock) {
+          return reply.status(400).send({
+            error: { code: 'PERIOD_LOCKED', message: 'Period is locked' },
+          });
+        }
+      }
+      const updated = await prisma.expense.update({
+        where: { id },
+        data: { projectId: body.toProjectId },
+      });
+      await logAudit({
+        action: 'reassignment',
+        userId: req.user?.userId,
+        targetTable: 'expenses',
+        targetId: id,
+        metadata: {
+          fromProjectId: expense.projectId,
+          toProjectId: body.toProjectId,
+          reasonCode: body.reasonCode,
+          reasonText,
+        },
       });
       return updated;
     },

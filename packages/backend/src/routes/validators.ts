@@ -179,6 +179,31 @@ export const reassignSchema = {
   }),
 };
 
+const optionalStringOrNullSchema = Type.Union([Type.String(), Type.Null()]);
+
+export const timeEntryReassignSchema = {
+  body: Type.Object(
+    {
+      toProjectId: Type.String(),
+      toTaskId: Type.Optional(optionalStringOrNullSchema),
+      reasonCode: reassignReasonCodeSchema,
+      reasonText: Type.String({ minLength: 1 }),
+    },
+    { additionalProperties: false },
+  ),
+};
+
+export const expenseReassignSchema = {
+  body: Type.Object(
+    {
+      toProjectId: Type.String(),
+      reasonCode: reassignReasonCodeSchema,
+      reasonText: Type.String({ minLength: 1 }),
+    },
+    { additionalProperties: false },
+  ),
+};
+
 export const timeEntrySchema = {
   body: Type.Object({
     projectId: Type.String(),

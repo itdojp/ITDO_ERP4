@@ -20,6 +20,8 @@
   - [x] 付け替え理由コードを定義（input_error など）+ reasonText 必須
   - [x] Task 付け替えに reasonCode/reasonText を適用し監査ログを記録
   - [ ] 付け替えAPIの実装（TimeEntry/Expense/Task 等、締め期間/承認状態のチェック）
+  - [x] TimeEntry 付け替え（締め期間/承認中チェック + 監査ログ）
+  - [x] Expense 付け替え（締め期間/承認中チェック + 監査ログ）
   - [ ] 承認取消フローの実装（status=cancelled、権限と理由の検証）
   - [ ] 監査ログ・付け替え履歴の記録
   - [x] 仕様ドキュメント更新（reassignment-policy）
