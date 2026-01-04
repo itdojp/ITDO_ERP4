@@ -346,6 +346,15 @@ export const approvalActionSchema = {
   }),
 };
 
+export const approvalCancelSchema = {
+  body: Type.Object(
+    {
+      reason: Type.String({ minLength: 1 }),
+    },
+    { additionalProperties: false },
+  ),
+};
+
 const approvalStepSchema = Type.Object(
   {
     stepOrder: Type.Optional(Type.Number({ minimum: 1 })),
