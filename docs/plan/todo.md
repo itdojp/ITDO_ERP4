@@ -1,5 +1,39 @@
 # TODO リスト（短期ドライブ用）
 
+## 次アクション（意思決定反映の実装計画）
+- [ ] #275 Googleログイン対応 + 非Googleユーザ許容（ハイブリッド認証）
+  - [ ] AUTH_MODE=hybrid の導入方針を定義し、環境変数（JWKS/ISSUER/AUDIENCE 等）を追加
+  - [ ] ユーザ外部ID（externalId）のnullable運用に対応し、リンク規約（email/externalId）を整理
+  - [ ] Google OIDC のJWT検証とクレームマッピングを実装
+  - [ ] ヘッダ認証/ローカルユーザの併用ルートを維持（優先順位・フォールバック）
+  - [ ] 認証/ID管理ドキュメント更新（auth-architecture/id-management/README）
+- [ ] #276 アクセス制御たたき台の実装反映
+  - [ ] RBAC（admin/mgmt/exec/hr/user）をAPIに適用（requireRole + 主要エンドポイント）
+  - [ ] projectIdスコープの閲覧フィルタを実装（userは所属案件に限定）
+  - [ ] 承認中データの閲覧条件を実装（mgmt/exec + 申請者 + プロジェクトメンバー）
+  - [ ] ウェルビーイング閲覧はhr専用＋匿名集計は5人未満非表示
+  - [ ] 例外操作（付け替え/承認取消）は理由必須 + 監査ログ必須
+  - [ ] ドキュメント更新（access-control/rbac-matrix）
+- [ ] #277 付け替え運用（締め期間/理由コード/承認取消）
+  - [ ] PeriodLock テーブル追加（period/scope/projectId/closedAt/closedBy/reason）
+  - [ ] 付け替え理由コードを定義（input_error など）+ reasonText 必須
+  - [ ] 付け替えAPIの実装（TimeEntry/Expense/Task 等、締め期間/承認状態のチェック）
+  - [ ] 承認取消フローの実装（status=cancelled、権限と理由の検証）
+  - [ ] 監査ログ・付け替え履歴の記録
+  - [ ] 仕様ドキュメント更新（reassignment-policy）
+- [ ] #278 バックアップ/リストア運用の確定と実装準備
+  - [ ] 保持期間/RPO/RTO の確定（デフォルト: 日次14日/週次8週/月次12か月）
+  - [ ] 暗号化/保管先の運用手順を確定（SSE-KMS + 必要ならGPG二重化）
+  - [ ] PDF/添付のバックアップ方式を決定（local保存 or オブジェクトストレージ）
+  - [ ] バックアップ/リストア手順のスクリプト化（Podman/本番運用手順）
+  - [ ] リストア検証の運用（定期テスト）を定義
+- [x] #279 アラート再送ポリシーの実装
+  - [x] AlertSetting に remindMaxCount を追加（デフォルト3）
+  - [x] Alert に reminderCount などの管理項目を追加し、上限で停止
+  - [x] remindAfterHours をリマインド間隔として扱う実装に整理
+  - [x] 管理画面（AlertSetting）に remindMaxCount の入力/表示を追加
+  - [x] マイグレーション作成 + ドキュメント更新（ops-monitoring）
+
 ## 次アクション（基盤整備）
 - [x] DBマイグレーション基盤整備（ベースライン作成＋Podman手順）（#273）
 
