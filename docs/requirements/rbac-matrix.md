@@ -24,5 +24,5 @@
 - ヘッダ `x-roles` にロール列挙
 - preHandler で requireRole() を利用（現状一部のみ適用）
 - プロジェクトスコープ（projectId）での閲覧フィルタは段階導入中
-  - 適用済み: projects, project tasks, time_entries, expenses, estimates, invoices, approval-instances, project_chat_messages
+  - 適用済み: projects, project_tasks, time_entries, expenses, estimates, invoices, approval_instances, project_chat_messages
   - 未適用: それ以外の一覧系API（後続タスクで拡充）
