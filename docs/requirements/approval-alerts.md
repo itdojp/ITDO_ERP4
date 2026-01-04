@@ -65,7 +65,7 @@
 ```
 ## アラート設定
 - 対象: `budget_overrun`, `overtime`, `approval_delay`, `approval_escalation`, `delivery_due`。
-- 設定項目: `threshold`(金額/率/時間), `period`(day/week/month), `scope`(全体/プロジェクト), `recipients`(emails/roles/users/slackWebhooks/webhooks), `channels`(email, dashboard, slack, webhook), `remindAfterHours`(再送間隔; 未設定なら再送なし)。
+- 設定項目: `threshold`(金額/率/時間), `period`(day/week/month), `scope`(全体/プロジェクト), `recipients`(emails/roles/users/slackWebhooks/webhooks), `channels`(email, dashboard, slack, webhook), `remindAfterHours`(再送間隔), `remindMaxCount`(再送回数上限; 未設定は3)。
 - 発火例: 予算消化率 > X%、残業時間 > Yh/週、承認待ちが Z 時間超、納期超過のマイルストーンに請求が紐付いていない。
 - 通知: 初期はメール+ダッシュボード。履歴を `alerts` テーブルに保存し、確認/クローズ操作を持たせる。
 

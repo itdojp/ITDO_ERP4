@@ -71,6 +71,7 @@ export async function runApprovalEscalations() {
           recipients: setting.recipients,
           channels: setting.channels,
           remindAfterHours: setting.remindAfterHours,
+          remindMaxCount: setting.remindMaxCount,
         },
         hours,
         threshold,
