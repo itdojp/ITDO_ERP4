@@ -20,6 +20,15 @@ export async function registerWellbeingRoutes(app: FastifyInstance) {
     },
     async (req, reply) => {
       const body = req.body as any;
+      const roles = req.user?.roles || [];
+      const isPrivileged = roles.includes('admin') || roles.includes('mgmt');
+      const currentUserId = req.user?.userId;
+      if (!isPrivileged) {
+        if (!currentUserId) {
+          return reply.code(403).send({ error: 'forbidden' });
+        }
+        body.userId = currentUserId;
+      }
       const entryDate = parseDateParam(body.entryDate);
       if (!entryDate) {
         return reply.status(400).send({

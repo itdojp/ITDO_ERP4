@@ -9,14 +9,20 @@ export async function registerLeaveRoutes(app: FastifyInstance) {
   app.post(
     '/leave-requests',
     {
-      preHandler: requireRoleOrSelf(
-        ['admin', 'mgmt'],
-        (req) => (req.body as any)?.userId,
-      ),
+      preHandler: requireRole(['admin', 'mgmt', 'user']),
       schema: leaveRequestSchema,
     },
-    async (req) => {
+    async (req, reply) => {
       const body = req.body as any;
+      const roles = req.user?.roles || [];
+      const isPrivileged = roles.includes('admin') || roles.includes('mgmt');
+      const currentUserId = req.user?.userId;
+      if (!isPrivileged) {
+        if (!currentUserId) {
+          return reply.code(403).send({ error: 'forbidden' });
+        }
+        body.userId = currentUserId;
+      }
       const leave = await prisma.leaveRequest.create({ data: body });
       return leave;
     },
