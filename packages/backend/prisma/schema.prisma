@@ -845,6 +845,24 @@ model AuditLog {
   @@index([action])
 }
 
+model ReassignmentLog {
+  id            String   @id @default(uuid())
+  targetTable   String
+  targetId      String
+  fromProjectId String?
+  toProjectId   String?
+  fromTaskId    String?
+  toTaskId      String?
+  reasonCode    String
+  reasonText    String
+  createdAt     DateTime @default(now())
+  createdBy     String?
+
+  @@index([targetTable, targetId])
+  @@index([fromProjectId])
+  @@index([toProjectId])
+}
+
 model PeriodLock {
   id        String   @id @default(uuid())
   period    String

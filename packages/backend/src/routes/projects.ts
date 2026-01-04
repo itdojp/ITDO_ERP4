@@ -14,6 +14,7 @@ import {
 } from './validators.js';
 import { prisma } from '../services/db.js';
 import { logAudit } from '../services/audit.js';
+import { logReassignment } from '../services/reassignmentLog.js';
 import { parseDueDateRule } from '../services/dueDateRule.js';
 
 type RecurringFrequency = 'monthly' | 'quarterly' | 'semiannual' | 'annual';
@@ -389,6 +390,17 @@ export async function registerProjectRoutes(app: FastifyInstance) {
           reasonCode: body.reasonCode,
           reasonText,
         },
+      });
+      await logReassignment({
+        targetTable: 'project_tasks',
+        targetId: taskId,
+        fromProjectId: projectId,
+        toProjectId: body.toProjectId,
+        fromTaskId: taskId,
+        toTaskId: taskId,
+        reasonCode: body.reasonCode,
+        reasonText,
+        createdBy: req.user?.userId,
       });
       return updated;
     },

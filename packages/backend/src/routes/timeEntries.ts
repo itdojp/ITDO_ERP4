@@ -12,6 +12,7 @@ import {
 } from '../services/rbac.js';
 import { prisma } from '../services/db.js';
 import { logAudit } from '../services/audit.js';
+import { logReassignment } from '../services/reassignmentLog.js';
 import { submitApprovalWithUpdate } from '../services/approval.js';
 import { FlowTypeValue } from '../types.js';
 import { parseDateParam } from '../utils/date.js';
@@ -341,6 +342,17 @@ export async function registerTimeEntryRoutes(app: FastifyInstance) {
           reasonCode: body.reasonCode,
           reasonText,
         },
+      });
+      await logReassignment({
+        targetTable: 'time_entries',
+        targetId: id,
+        fromProjectId: entry.projectId,
+        toProjectId: body.toProjectId,
+        fromTaskId: entry.taskId,
+        toTaskId: nextTaskId,
+        reasonCode: body.reasonCode,
+        reasonText,
+        createdBy: req.user?.userId,
       });
       return updated;
     },
