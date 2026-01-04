@@ -62,13 +62,33 @@ async function hasCircularParent(taskId: string, parentTaskId: string) {
 }
 
 export async function registerProjectRoutes(app: FastifyInstance) {
-  app.get('/projects', async () => {
-    const projects = await prisma.project.findMany({
-      orderBy: { createdAt: 'desc' },
-      take: 100,
-    });
-    return { items: projects };
-  });
+  app.get(
+    '/projects',
+    { preHandler: requireRole(['admin', 'mgmt', 'user']) },
+    async (req) => {
+      const roles = req.user?.roles || [];
+      const projectIds = req.user?.projectIds || [];
+      if (
+        !roles.includes('admin') &&
+        !roles.includes('mgmt') &&
+        projectIds.length === 0
+      ) {
+        return { items: [] };
+      }
+      const where =
+        roles.includes('admin') || roles.includes('mgmt')
+          ? { deletedAt: null }
+          : projectIds.length
+            ? { id: { in: projectIds }, deletedAt: null }
+            : { id: { in: [] as string[] } };
+      const projects = await prisma.project.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        take: 100,
+      });
+      return { items: projects };
+    },
+  );
 
   app.post(
     '/projects',
