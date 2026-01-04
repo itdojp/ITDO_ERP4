@@ -13,7 +13,7 @@ POSTGRES_EXTRA_ARGS="${POSTGRES_EXTRA_ARGS:--c shared_preload_libraries=pg_stat_
 
 usage() {
   cat <<USAGE
-Usage: $0 <start|db-push|migrate|seed|check|stats|stats-reset|stop|reset>
+Usage: $0 <start|db-push|migrate|seed|check|stats|stats-reset|backup|restore|stop|reset>
 
 start   : start postgres container (if missing, create)
 db-push : apply prisma schema via node container
@@ -22,6 +22,8 @@ seed    : run scripts/seed-demo.sql inside container
 check   : run scripts/checks/poc-integrity.sql inside container
 stats   : run scripts/checks/pg-stat-statements.sql inside container
 stats-reset : reset pg_stat_statements counters inside container
+backup  : create SQL and globals dump into BACKUP_DIR (default: ./tmp/erp4-backups)
+restore : restore SQL (and globals if present). Requires RESTORE_CONFIRM=1
 stop    : stop and remove postgres container
 reset   : stop + start + db-push + seed + check
 USAGE
@@ -125,6 +127,71 @@ stats_reset() {
     psql -U "$DB_USER" -d "$DB_NAME" -f /workspace/scripts/checks/pg-stat-reset.sql
 }
 
+backup() {
+  start_container
+  local backup_dir="${BACKUP_DIR:-$ROOT_DIR/tmp/erp4-backups}"
+  local prefix="${BACKUP_PREFIX:-erp4}"
+  local timestamp="${BACKUP_TIMESTAMP:-$(date +%Y%m%d-%H%M%S)}"
+  local backup_file="${BACKUP_FILE:-$backup_dir/${prefix}-backup-${timestamp}.sql}"
+  local globals_file="${BACKUP_GLOBALS_FILE:-$backup_dir/${prefix}-globals-${timestamp}.sql}"
+  mkdir -p "$backup_dir"
+  if ! podman exec -e PGPASSWORD="$DB_PASSWORD" "$CONTAINER_NAME" \
+    pg_dump -U "$DB_USER" -d "$DB_NAME" > "$backup_file"; then
+    echo "backup failed: pg_dump command did not complete successfully" >&2
+    exit 1
+  fi
+  if [[ ! -s "$backup_file" ]]; then
+    echo "backup failed: backup file '$backup_file' is empty or missing" >&2
+    exit 1
+  fi
+  if ! podman exec -e PGPASSWORD="$DB_PASSWORD" "$CONTAINER_NAME" \
+    pg_dumpall --globals-only -U "$DB_USER" > "$globals_file"; then
+    echo "backup failed: pg_dumpall (globals) command did not complete successfully" >&2
+    exit 1
+  fi
+  if [[ ! -s "$globals_file" ]]; then
+    echo "backup failed: globals file '$globals_file' is empty or missing" >&2
+    exit 1
+  fi
+  echo "backup created: $backup_file"
+  echo "globals created: $globals_file"
+}
+
+restore() {
+  if [[ "${RESTORE_CONFIRM:-}" != "1" ]]; then
+    echo "RESTORE_CONFIRM=1 is required to run restore" >&2
+    exit 1
+  fi
+  start_container
+  local backup_dir="${BACKUP_DIR:-$ROOT_DIR/tmp/erp4-backups}"
+  local prefix="${BACKUP_PREFIX:-erp4}"
+  local backup_file="${BACKUP_FILE:-}"
+  local globals_file="${BACKUP_GLOBALS_FILE:-}"
+  if [[ -z "$backup_file" || -z "$globals_file" ]]; then
+    if [[ ! -d "$backup_dir" ]]; then
+      echo "backup directory '$backup_dir' does not exist. Set BACKUP_DIR or create a backup first." >&2
+      exit 1
+    fi
+  fi
+  if [[ -z "$backup_file" ]]; then
+    backup_file=$(ls -1t "$backup_dir"/${prefix}-backup-*.sql 2>/dev/null | head -1)
+  fi
+  if [[ -z "$globals_file" ]]; then
+    globals_file=$(ls -1t "$backup_dir"/${prefix}-globals-*.sql 2>/dev/null | head -1)
+  fi
+  if [[ -z "$backup_file" || ! -f "$backup_file" ]]; then
+    echo "backup file not found. Set BACKUP_FILE or create a backup first." >&2
+    exit 1
+  fi
+  if [[ -n "$globals_file" && -f "$globals_file" ]]; then
+    cat "$globals_file" | podman exec -e PGPASSWORD="$DB_PASSWORD" -i "$CONTAINER_NAME" \
+      psql -U "$DB_USER" -v ON_ERROR_STOP=1
+  fi
+  cat "$backup_file" | podman exec -e PGPASSWORD="$DB_PASSWORD" -i "$CONTAINER_NAME" \
+    psql -U "$DB_USER" -d "$DB_NAME" -v ON_ERROR_STOP=1
+  echo "restore completed from: $backup_file"
+}
+
 stop_container() {
   if container_exists; then
     podman stop "$CONTAINER_NAME" >/dev/null || true
@@ -158,6 +225,12 @@ case "$cmd" in
     ;;
   stats-reset)
     stats_reset
+    ;;
+  backup)
+    backup
+    ;;
+  restore)
+    restore
     ;;
   stop)
     stop_container

@@ -22,6 +22,11 @@
   - `podman exec -e PGPASSWORD=postgres erp4-pg-poc sh -c "pg_dumpall --globals-only -U postgres" > /tmp/erp4-globals.sql`
 - リストア（SQL）
   - `cat /tmp/erp4-backup.sql | podman exec -e PGPASSWORD=postgres -i erp4-pg-poc psql -U postgres -d postgres`
+- スクリプト（推奨）
+  - `./scripts/podman-poc.sh backup`
+  - `RESTORE_CONFIRM=1 ./scripts/podman-poc.sh restore`
+  - オプション: `BACKUP_DIR`, `BACKUP_FILE`, `BACKUP_GLOBALS_FILE`, `BACKUP_PREFIX`
+  - 備考: `BACKUP_FILE`/`BACKUP_GLOBALS_FILE` は任意パス指定なので、信頼できる入力のみ使用する
 
 ## リストア手順（例）
 1. 空の DB を作成
@@ -31,6 +36,7 @@
 ### Podman（PoC）での例
 - 必要に応じて `./scripts/podman-poc.sh start` でDBを起動
 - リストア後は `./scripts/podman-poc.sh check` で件数/金額の整合を確認
+- `RESTORE_CONFIRM=1` を付けた場合のみ restore が実行される
 
 ## 保持期間/世代管理（案）
 - 日次: 14日分
