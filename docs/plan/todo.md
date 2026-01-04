@@ -8,7 +8,7 @@
   - [ ] ヘッダ認証/ローカルユーザの併用ルートを維持（優先順位・フォールバック）
   - [ ] 認証/ID管理ドキュメント更新（auth-architecture/id-management/README）
 - [ ] #276 アクセス制御たたき台の実装反映
-  - [ ] RBAC（admin/mgmt/hr/user）をAPIに適用（requireRole + 主要エンドポイント）
+  - [ ] RBAC（admin/mgmt/exec/hr/user）をAPIに適用（requireRole + 主要エンドポイント）
   - [ ] projectIdスコープの閲覧フィルタを実装（userは所属案件に限定）
   - [ ] 承認中データの閲覧条件を実装（mgmt/exec + 申請者 + プロジェクトメンバー）
   - [ ] ウェルビーイング閲覧はhr専用＋匿名集計は5人未満非表示
