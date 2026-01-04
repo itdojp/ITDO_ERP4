@@ -609,6 +609,7 @@ model AlertSetting {
   recipients       Json // emails/roles/users
   channels         Json // email/dashboard/ext_future
   remindAfterHours Int?
+  remindMaxCount   Int?     @default(3)
   isEnabled        Boolean   @default(true)
   alerts           Alert[]
   createdAt        DateTime  @default(now())
@@ -626,6 +627,7 @@ model Alert {
   targetRef    String
   triggeredAt  DateTime     @default(now())
   reminderAt   DateTime?
+  reminderCount Int      @default(0)
   status       String       @default("open")
   sentChannels Json?
   sentResult   Json?

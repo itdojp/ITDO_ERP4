@@ -16,6 +16,7 @@ type AlertSetting = {
   } | null;
   channels?: string[] | null;
   remindAfterHours?: number | null;
+  remindMaxCount?: number | null;
   isEnabled?: boolean | null;
 };
 
@@ -134,6 +135,7 @@ const createDefaultAlertForm = () => ({
   period: 'month',
   scopeProjectId: '',
   remindAfterHours: '',
+  remindMaxCount: '',
   emails: 'alert@example.com',
   roles: 'mgmt',
   users: '',
@@ -694,6 +696,8 @@ export const AdminSettings: React.FC = () => {
       scopeProjectId: item.scopeProjectId || '',
       remindAfterHours:
         item.remindAfterHours != null ? String(item.remindAfterHours) : '',
+      remindMaxCount:
+        item.remindMaxCount != null ? String(item.remindMaxCount) : '',
       emails: (item.recipients?.emails || []).join(','),
       roles: (item.recipients?.roles || []).join(','),
       users: (item.recipients?.users || []).join(','),
@@ -713,8 +717,11 @@ export const AdminSettings: React.FC = () => {
       return;
     }
     const remindAfterRaw = alertForm.remindAfterHours.trim();
+    const remindMaxRaw = alertForm.remindMaxCount.trim();
     const remindAfter =
       remindAfterRaw.length > 0 ? Number(remindAfterRaw) : undefined;
+    const remindMax =
+      remindMaxRaw.length > 0 ? Number(remindMaxRaw) : undefined;
     const slackWebhooks = parseCsv(alertForm.slackWebhooks);
     const webhooks = parseCsv(alertForm.webhooks);
     const invalidUrls = [...slackWebhooks, ...webhooks].filter(
@@ -730,6 +737,7 @@ export const AdminSettings: React.FC = () => {
       period: alertForm.period,
       scopeProjectId: alertForm.scopeProjectId || undefined,
       remindAfterHours: Number.isFinite(remindAfter) ? remindAfter : undefined,
+      remindMaxCount: Number.isFinite(remindMax) ? remindMax : undefined,
       recipients: {
         emails: parseCsv(alertForm.emails),
         roles: parseCsv(alertForm.roles),
@@ -895,6 +903,21 @@ export const AdminSettings: React.FC = () => {
                 placeholder="24"
               />
             </label>
+            <label>
+              再送回数上限
+              <input
+                type="number"
+                value={alertForm.remindMaxCount}
+                onChange={(e) =>
+                  setAlertForm({
+                    ...alertForm,
+                    remindMaxCount: e.target.value,
+                  })
+                }
+                placeholder="3"
+                min={0}
+              />
+            </label>
           </div>
           <div className="row" style={{ marginTop: 8 }}>
             <label>
@@ -1001,7 +1024,8 @@ export const AdminSettings: React.FC = () => {
                   {(item.recipients?.emails || []).join(', ') || '-'}
                 </div>
                 <div style={{ fontSize: 12, color: '#475569', marginTop: 4 }}>
-                  remindAfterHours: {item.remindAfterHours ?? '-'}
+                  remindAfterHours: {item.remindAfterHours ?? '-'} / maxCount:{' '}
+                  {item.remindMaxCount ?? '-'}
                 </div>
                 <div style={{ fontSize: 12, color: '#475569', marginTop: 4 }}>
                   Slack:{' '}

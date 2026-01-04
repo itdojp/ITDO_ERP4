@@ -61,6 +61,12 @@ function toReminderAt(now: Date, remindAfterHours?: number | null) {
   return new Date(now.getTime() + remindAfterHours * 60 * 60 * 1000);
 }
 
+function normalizeRemindMaxCount(value?: number | null) {
+  if (value === undefined || value === null) return 3;
+  if (!Number.isFinite(value)) return 3;
+  return Math.max(0, Math.floor(value));
+}
+
 function mergeSentResults(
   existing: unknown,
   next: unknown[],
@@ -141,6 +147,7 @@ export async function triggerAlert(
     recipients: unknown;
     channels: unknown;
     remindAfterHours?: number | null;
+    remindMaxCount?: number | null;
   },
   metric: number,
   threshold: number,
@@ -153,13 +160,18 @@ export async function triggerAlert(
     select: {
       id: true,
       reminderAt: true,
+      reminderCount: true,
       sentResult: true,
       sentChannels: true,
     },
   });
   const remindAfterHours = setting.remindAfterHours ?? null;
+  const remindMaxCount = normalizeRemindMaxCount(setting.remindMaxCount);
   if (existing) {
-    if (!remindAfterHours) {
+    if (!remindAfterHours || remindMaxCount <= 0) {
+      return existing;
+    }
+    if (existing.reminderCount >= remindMaxCount) {
       return existing;
     }
     if (!existing.reminderAt) {
@@ -185,16 +197,26 @@ export async function triggerAlert(
       existing.sentResult,
       reminderNotification.sentResult,
     );
+    const reminderCount = existing.reminderCount + 1;
+    const reminderAt =
+      reminderCount >= remindMaxCount
+        ? null
+        : toReminderAt(now, remindAfterHours);
     return prisma.alert.update({
       where: { id: existing.id },
       data: {
-        reminderAt: toReminderAt(now, remindAfterHours),
+        reminderAt,
+        reminderCount,
         sentChannels: merged.sentChannels as Prisma.InputJsonValue,
         sentResult: merged.sentResult as Prisma.InputJsonValue,
       },
     });
   }
 
+  const reminderAt =
+    remindAfterHours && remindMaxCount > 0
+      ? toReminderAt(now, remindAfterHours)
+      : null;
   const initialNotification = await sendAlertNotification(
     {
       id: setting.id,
@@ -210,7 +232,8 @@ export async function triggerAlert(
       settingId: setting.id,
       targetRef,
       status: 'open',
-      reminderAt: toReminderAt(now, remindAfterHours),
+      reminderAt,
+      reminderCount: 0,
       sentChannels: initialNotification.sentChannels as Prisma.InputJsonValue,
       sentResult: initialNotification.sentResult as Prisma.InputJsonValue,
     },
@@ -237,6 +260,7 @@ export async function computeAndTrigger(
           recipients: s.recipients,
           channels: s.channels,
           remindAfterHours: s.remindAfterHours,
+          remindMaxCount: s.remindMaxCount,
         },
         result.metric,
         threshold,
