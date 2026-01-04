@@ -6,7 +6,6 @@ type MeResponse = {
 };
 
 const pushPublicKey = (import.meta.env.VITE_PUSH_PUBLIC_KEY || '').trim();
-const googleClientId = (import.meta.env.VITE_GOOGLE_CLIENT_ID || '').trim();
 
 let googleScriptPromise: Promise<void> | null = null;
 
@@ -50,6 +49,15 @@ function loadGoogleIdentityScript() {
       'script[data-google-identity="true"]',
     );
     if (existing) {
+      if (existing.dataset.loaded === 'true') {
+        resolve();
+        return;
+      }
+      if (existing.readyState === 'complete') {
+        existing.dataset.loaded = 'true';
+        resolve();
+        return;
+      }
       existing.addEventListener('load', () => resolve(), { once: true });
       existing.addEventListener(
         'error',
@@ -63,7 +71,10 @@ function loadGoogleIdentityScript() {
     script.async = true;
     script.defer = true;
     script.dataset.googleIdentity = 'true';
-    script.onload = () => resolve();
+    script.onload = () => {
+      script.dataset.loaded = 'true';
+      resolve();
+    };
     script.onerror = () => reject(new Error('google_identity_load_failed'));
     document.head.appendChild(script);
   });
@@ -72,8 +83,10 @@ function loadGoogleIdentityScript() {
 
 function decodeJwtPayload(token: string): Record<string, unknown> | null {
   const parts = token.split('.');
-  if (parts.length < 2) return null;
-  const raw = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+  if (parts.length !== 3) return null;
+  const payloadPart = parts[1];
+  if (!payloadPart) return null;
+  const raw = payloadPart.replace(/-/g, '+').replace(/_/g, '/');
   const padded = raw.padEnd(raw.length + ((4 - (raw.length % 4)) % 4), '=');
   try {
     return JSON.parse(atob(padded)) as Record<string, unknown>;
@@ -95,15 +108,16 @@ function normalizeJwtList(value: unknown): string[] {
   return [];
 }
 
-function resolveJwtUserId(payload: Record<string, unknown> | null): string {
+function resolveJwtUserId(payload: Record<string, unknown> | null): string | null {
   const email = payload?.email;
   if (typeof email === 'string' && email.trim()) return email.trim();
   const sub = payload?.sub;
   if (typeof sub === 'string' && sub.trim()) return sub.trim();
-  return 'google-user';
+  return null;
 }
 
 export const CurrentUser: React.FC = () => {
+  const googleClientId = (import.meta.env.VITE_GOOGLE_CLIENT_ID || '').trim();
   const [me, setMe] = useState<MeResponse['user'] | null>(null);
   const [error, setError] = useState('');
   const [auth, setAuth] = useState<AuthState | null>(() => getAuthState());
@@ -127,6 +141,8 @@ export const CurrentUser: React.FC = () => {
   const [pushError, setPushError] = useState('');
   const [googleError, setGoogleError] = useState('');
   const googleButtonRef = useRef<HTMLDivElement | null>(null);
+  const [googleReady, setGoogleReady] = useState(false);
+  const googleButtonRendered = useRef(false);
   const logPushError = (label: string, err: unknown) => {
     if (import.meta.env.DEV) {
       console.error(`[push] ${label}`, err);
@@ -169,7 +185,20 @@ export const CurrentUser: React.FC = () => {
 
   const applyTokenLogin = useCallback((token: string) => {
     const payload = decodeJwtPayload(token);
+    if (!payload) {
+      setGoogleError('トークンの解析に失敗しました');
+      return;
+    }
+    const exp = payload.exp;
+    if (typeof exp === 'number' && Date.now() >= exp * 1000) {
+      setGoogleError('トークンの有効期限が切れています');
+      return;
+    }
     const userId = resolveJwtUserId(payload);
+    if (!userId) {
+      setGoogleError('ユーザーIDを特定できませんでした');
+      return;
+    }
     const roles = normalizeJwtList(payload?.roles);
     const groupIds = normalizeJwtList(payload?.group_ids);
     const projectIds = normalizeJwtList(payload?.project_ids);
@@ -196,23 +225,19 @@ export const CurrentUser: React.FC = () => {
           setGoogleError('Googleログインの初期化に失敗しました');
           return;
         }
+        const callback = (response: GoogleCredentialResponse) => {
+          if (cancelled) return;
+          if (!response?.credential) {
+            setGoogleError('Googleログインに失敗しました');
+            return;
+          }
+          applyTokenLogin(response.credential);
+        };
         google.accounts.id.initialize({
           client_id: googleClientId,
-          callback: (response: GoogleCredentialResponse) => {
-            if (!response?.credential) {
-              setGoogleError('Googleログインに失敗しました');
-              return;
-            }
-            applyTokenLogin(response.credential);
-          },
+          callback,
         });
-        if (googleButtonRef.current) {
-          google.accounts.id.renderButton(googleButtonRef.current, {
-            theme: 'outline',
-            size: 'large',
-            text: 'signin_with',
-          });
-        }
+        setGoogleReady(true);
       })
       .catch(() => {
         if (!cancelled) {
@@ -222,7 +247,25 @@ export const CurrentUser: React.FC = () => {
     return () => {
       cancelled = true;
     };
-  }, [applyTokenLogin, auth?.token]);
+  }, [applyTokenLogin, auth?.token, googleClientId]);
+
+  useEffect(() => {
+    if (!auth?.token) {
+      googleButtonRendered.current = false;
+    }
+  }, [auth?.token]);
+
+  useEffect(() => {
+    if (!googleReady || auth?.token || googleButtonRendered.current) return;
+    const google = (window as { google?: GoogleIdentity }).google;
+    if (!google?.accounts?.id || !googleButtonRef.current) return;
+    google.accounts.id.renderButton(googleButtonRef.current, {
+      theme: 'outline',
+      size: 'large',
+      text: 'signin_with',
+    });
+    googleButtonRendered.current = true;
+  }, [auth?.token, googleReady]);
 
   const ensureRegistration = async () => {
     if (!pushSupported) {
