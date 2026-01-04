@@ -68,6 +68,13 @@ export async function registerProjectRoutes(app: FastifyInstance) {
     async (req) => {
       const roles = req.user?.roles || [];
       const projectIds = req.user?.projectIds || [];
+      if (
+        !roles.includes('admin') &&
+        !roles.includes('mgmt') &&
+        projectIds.length === 0
+      ) {
+        return { items: [] };
+      }
       const where =
         roles.includes('admin') || roles.includes('mgmt')
           ? { deletedAt: null }
