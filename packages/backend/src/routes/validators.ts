@@ -408,6 +408,23 @@ export const alertSettingPatchSchema = {
   body: Type.Partial(alertSettingSchema.body),
 };
 
+const periodLockScopeSchema = Type.Union([
+  Type.Literal('global'),
+  Type.Literal('project'),
+]);
+
+export const periodLockSchema = {
+  body: Type.Object(
+    {
+      period: Type.String({ pattern: '^\\d{4}-\\d{2}$' }),
+      scope: periodLockScopeSchema,
+      projectId: Type.Optional(Type.String()),
+      reason: Type.Optional(Type.String()),
+    },
+    { additionalProperties: false },
+  ),
+};
+
 const templateKindSchema = Type.Union([
   Type.Literal('estimate'),
   Type.Literal('invoice'),

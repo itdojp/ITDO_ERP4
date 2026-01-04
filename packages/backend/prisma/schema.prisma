@@ -168,6 +168,7 @@ model Project {
   vendorInvoices          VendorInvoice[]
   rateCards               RateCard[]
   approvalInstances       ApprovalInstance[]
+  periodLocks             PeriodLock[]
   createdAt               DateTime                  @default(now())
   createdBy               String?
   updatedAt               DateTime                  @updatedAt
@@ -842,6 +843,23 @@ model AuditLog {
 
   @@index([targetTable, targetId])
   @@index([action])
+}
+
+model PeriodLock {
+  id        String   @id @default(uuid())
+  period    String
+  scope     String   // global/project
+  project   Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  projectId String?
+  reason    String?
+  closedAt  DateTime @default(now())
+  closedBy  String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([period, scope, projectId])
+  @@index([scope, period])
+  @@index([projectId])
 }
 
 model UserAccount {
