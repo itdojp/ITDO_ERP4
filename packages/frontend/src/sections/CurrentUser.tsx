@@ -108,7 +108,9 @@ function normalizeJwtList(value: unknown): string[] {
   return [];
 }
 
-function resolveJwtUserId(payload: Record<string, unknown> | null): string | null {
+function resolveJwtUserId(
+  payload: Record<string, unknown> | null,
+): string | null {
   const email = payload?.email;
   if (typeof email === 'string' && email.trim()) return email.trim();
   const sub = payload?.sub;
