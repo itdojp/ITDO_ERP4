@@ -30,6 +30,7 @@ import { registerScimRoutes } from './scim.js';
 import { registerPushRoutes } from './push.js';
 import { registerReportSubscriptionRoutes } from './reportSubscriptions.js';
 import { registerIntegrationRoutes } from './integrations.js';
+import { registerPeriodLockRoutes } from './periodLocks.js';
 
 export async function registerRoutes(app: FastifyInstance) {
   await registerAuthRoutes(app);
@@ -44,6 +45,7 @@ export async function registerRoutes(app: FastifyInstance) {
   await registerPushRoutes(app);
   await registerReportSubscriptionRoutes(app);
   await registerIntegrationRoutes(app);
+  await registerPeriodLockRoutes(app);
   await registerMetricJobRoutes(app);
   await registerRecurringJobRoutes(app);
   await registerDataQualityJobRoutes(app);
