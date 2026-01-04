@@ -3,11 +3,7 @@ import { nextNumber } from '../services/numbering.js';
 import { submitApprovalWithUpdate } from '../services/approval.js';
 import { FlowTypeValue, DocStatusValue } from '../types.js';
 import { invoiceSchema } from './validators.js';
-import {
-  hasProjectAccess,
-  requireProjectAccess,
-  requireRole,
-} from '../services/rbac.js';
+import { requireProjectAccess, requireRole } from '../services/rbac.js';
 import { prisma } from '../services/db.js';
 
 export async function registerInvoiceRoutes(app: FastifyInstance) {
@@ -33,7 +29,7 @@ export async function registerInvoiceRoutes(app: FastifyInstance) {
       const isPrivileged = roles.includes('admin') || roles.includes('mgmt');
       if (!isPrivileged) {
         if (!projectIds.length) return { items: [] };
-        if (projectId && !hasProjectAccess(roles, projectIds, projectId)) {
+        if (projectId && !projectIds.includes(projectId)) {
           return reply.code(403).send({ error: 'forbidden_project' });
         }
       }
@@ -89,10 +85,7 @@ export async function registerInvoiceRoutes(app: FastifyInstance) {
       const roles = req.user?.roles || [];
       const projectIds = req.user?.projectIds || [];
       const isPrivileged = roles.includes('admin') || roles.includes('mgmt');
-      if (
-        !isPrivileged &&
-        !hasProjectAccess(roles, projectIds, invoice.projectId)
-      ) {
+      if (!isPrivileged && !projectIds.includes(invoice.projectId)) {
         return reply.code(403).send({ error: 'forbidden_project' });
       }
       return invoice;
