@@ -37,7 +37,10 @@ export async function registerPeriodLockRoutes(app: FastifyInstance) {
       };
       if (body.scope === 'project' && !body.projectId) {
         return reply.status(400).send({
-          error: { code: 'INVALID_PROJECT', message: 'projectId is required' },
+          error: {
+            code: 'MISSING_PROJECT_ID',
+            message: 'projectId is required',
+          },
         });
       }
       if (body.scope === 'global' && body.projectId) {
@@ -45,6 +48,22 @@ export async function registerPeriodLockRoutes(app: FastifyInstance) {
           error: {
             code: 'INVALID_SCOPE',
             message: 'projectId must be empty for global scope',
+          },
+        });
+      }
+      const existing = await prisma.periodLock.findFirst({
+        where: {
+          period: body.period,
+          scope: body.scope,
+          projectId: body.projectId ?? null,
+        },
+        select: { id: true },
+      });
+      if (existing) {
+        return reply.status(409).send({
+          error: {
+            code: 'ALREADY_EXISTS',
+            message: 'Period lock already exists',
           },
         });
       }
@@ -80,7 +99,9 @@ export async function registerPeriodLockRoutes(app: FastifyInstance) {
       const { id } = req.params as { id: string };
       const existing = await prisma.periodLock.findUnique({ where: { id } });
       if (!existing) {
-        return reply.code(404).send({ error: 'not_found' });
+        return reply.code(404).send({
+          error: { code: 'NOT_FOUND', message: 'Period lock not found' },
+        });
       }
       await prisma.periodLock.delete({ where: { id } });
       return { ok: true };
