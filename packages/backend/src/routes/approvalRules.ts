@@ -82,7 +82,9 @@ async function resetTargetStatus(
       where: { id: targetId },
       data: { status: 'draft' },
     });
+    return;
   }
+  throw new Error(`Unsupported approval target table: ${targetTable}`);
 }
 
 export async function registerApprovalRuleRoutes(app: FastifyInstance) {
