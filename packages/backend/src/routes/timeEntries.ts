@@ -311,7 +311,11 @@ export async function registerTimeEntryRoutes(app: FastifyInstance) {
         body.toProjectId,
         reply,
       );
-      if (resolvedTaskId && typeof resolvedTaskId !== 'string') {
+      if (
+        resolvedTaskId !== undefined &&
+        resolvedTaskId !== null &&
+        typeof resolvedTaskId !== 'string'
+      ) {
         return resolvedTaskId;
       }
       let nextTaskId = entry.taskId;
