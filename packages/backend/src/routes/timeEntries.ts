@@ -142,9 +142,7 @@ export async function registerTimeEntryRoutes(app: FastifyInstance) {
       const roles = req.user?.roles || [];
       const isPrivileged = roles.includes('admin') || roles.includes('mgmt');
       const userId = req.user?.userId;
-      const where = isPrivileged
-        ? { id }
-        : { id, userId: userId || 'unknown' };
+      const where = isPrivileged ? { id } : { id, userId: userId || 'unknown' };
       const before = await prisma.timeEntry.findFirst({ where });
       if (!before) {
         return reply.code(404).send({ error: 'not_found' });
