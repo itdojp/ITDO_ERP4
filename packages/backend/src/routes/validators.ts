@@ -163,10 +163,19 @@ export const deleteReasonSchema = {
   }),
 };
 
+const reassignReasonCodeSchema = Type.Union([
+  Type.Literal('input_error'),
+  Type.Literal('project_misassignment'),
+  Type.Literal('task_restructure'),
+  Type.Literal('contract_split_merge'),
+  Type.Literal('internal_transfer'),
+]);
+
 export const reassignSchema = {
   body: Type.Object({
     toProjectId: Type.String(),
-    reason: Type.String(),
+    reasonCode: reassignReasonCodeSchema,
+    reasonText: Type.String({ minLength: 1 }),
   }),
 };
 

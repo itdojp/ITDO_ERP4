@@ -13,6 +13,7 @@ import {
   reassignSchema,
 } from './validators.js';
 import { prisma } from '../services/db.js';
+import { logAudit } from '../services/audit.js';
 import { parseDueDateRule } from '../services/dueDateRule.js';
 
 type RecurringFrequency = 'monthly' | 'quarterly' | 'semiannual' | 'annual';
@@ -314,6 +315,13 @@ export async function registerProjectRoutes(app: FastifyInstance) {
         taskId: string;
       };
       const body = req.body as any;
+      const reasonText =
+        typeof body.reasonText === 'string' ? body.reasonText.trim() : '';
+      if (!reasonText) {
+        return reply.status(400).send({
+          error: { code: 'INVALID_REASON', message: 'reasonText is required' },
+        });
+      }
       const task = await prisma.projectTask.findUnique({
         where: { id: taskId },
       });
@@ -366,6 +374,20 @@ export async function registerProjectRoutes(app: FastifyInstance) {
         where: { id: taskId },
         data: {
           projectId: body.toProjectId,
+        },
+      });
+      await logAudit({
+        action: 'reassignment',
+        userId: req.user?.userId,
+        targetTable: 'project_tasks',
+        targetId: taskId,
+        metadata: {
+          fromProjectId: projectId,
+          toProjectId: body.toProjectId,
+          fromTaskId: taskId,
+          toTaskId: taskId,
+          reasonCode: body.reasonCode,
+          reasonText,
         },
       });
       return updated;
