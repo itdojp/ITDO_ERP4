@@ -13,6 +13,15 @@ export async function registerDailyReportRoutes(app: FastifyInstance) {
     },
     async (req, reply) => {
       const body = req.body as any;
+      const roles = req.user?.roles || [];
+      const isPrivileged = roles.includes('admin') || roles.includes('mgmt');
+      const currentUserId = req.user?.userId;
+      if (!isPrivileged) {
+        if (!currentUserId) {
+          return reply.code(403).send({ error: 'forbidden' });
+        }
+        body.userId = currentUserId;
+      }
       const reportDate = parseDateParam(body.reportDate);
       if (!reportDate) {
         return reply.status(400).send({
@@ -29,8 +38,22 @@ export async function registerDailyReportRoutes(app: FastifyInstance) {
   app.get(
     '/daily-reports',
     { preHandler: requireRole(['admin', 'mgmt', 'user']) },
-    async () => {
+    async (req, reply) => {
+      const { userId } = req.query as { userId?: string };
+      const roles = req.user?.roles || [];
+      const isPrivileged = roles.includes('admin') || roles.includes('mgmt');
+      const currentUserId = req.user?.userId;
+      const where: { userId?: string } = {};
+      if (!isPrivileged) {
+        if (!currentUserId) {
+          return reply.code(403).send({ error: 'forbidden' });
+        }
+        where.userId = currentUserId;
+      } else if (userId) {
+        where.userId = userId;
+      }
       const reports = await prisma.dailyReport.findMany({
+        where,
         orderBy: { reportDate: 'desc' },
         take: 50,
       });
