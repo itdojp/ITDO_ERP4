@@ -14,7 +14,7 @@
   - [x] 承認中データの閲覧条件を実装（mgmt/exec + 申請者 + プロジェクトメンバー）
   - [x] ウェルビーイング閲覧はhr専用＋匿名集計は5人未満非表示
   - [ ] 例外操作（付け替え/承認取消）は理由必須 + 監査ログ必須
-  - [ ] ドキュメント更新（access-control/rbac-matrix）
+  - [x] ドキュメント更新（access-control/rbac-matrix）
 - [ ] #277 付け替え運用（締め期間/理由コード/承認取消）
   - [x] PeriodLock テーブル追加（period/scope/projectId/closedAt/closedBy/reason）
   - [x] 付け替え理由コードを定義（input_error など）+ reasonText 必須
