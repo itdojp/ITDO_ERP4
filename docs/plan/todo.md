@@ -27,12 +27,12 @@
   - [ ] PDF/添付のバックアップ方式を決定（local保存 or オブジェクトストレージ）
   - [ ] バックアップ/リストア手順のスクリプト化（Podman/本番運用手順）
   - [ ] リストア検証の運用（定期テスト）を定義
-- [ ] #279 アラート再送ポリシーの実装
-  - [ ] AlertSetting に remindMaxCount を追加（デフォルト3）
-  - [ ] Alert に reminderCount などの管理項目を追加し、上限で停止
-  - [ ] remindAfterHours をリマインド間隔として扱う実装に整理
-  - [ ] 管理画面（AlertSetting）に remindMaxCount の入力/表示を追加
-  - [ ] マイグレーション作成 + ドキュメント更新（ops-monitoring）
+- [x] #279 アラート再送ポリシーの実装
+  - [x] AlertSetting に remindMaxCount を追加（デフォルト3）
+  - [x] Alert に reminderCount などの管理項目を追加し、上限で停止
+  - [x] remindAfterHours をリマインド間隔として扱う実装に整理
+  - [x] 管理画面（AlertSetting）に remindMaxCount の入力/表示を追加
+  - [x] マイグレーション作成 + ドキュメント更新（ops-monitoring）
 
 ## 次アクション（基盤整備）
 - [x] DBマイグレーション基盤整備（ベースライン作成＋Podman手順）（#273）
