@@ -146,11 +146,25 @@ export async function registerTimeEntryRoutes(app: FastifyInstance) {
       if (!before) {
         return { error: 'not_found' };
       }
+      const roles = req.user?.roles || [];
+      const isPrivileged = roles.includes('admin') || roles.includes('mgmt');
       const userId = req.user?.userId;
+      if (!isPrivileged) {
+        if (!userId || before.userId !== userId) {
+          return reply.code(403).send({ error: 'forbidden' });
+        }
+        const projectIds = req.user?.projectIds || [];
+        if (!projectIds.length || !projectIds.includes(before.projectId)) {
+          return reply.code(403).send({ error: 'forbidden_project' });
+        }
+      }
       const changed = ['minutes', 'workDate', 'taskId', 'projectId'].some(
         (k) => body[k] !== undefined && (body as any)[k] !== (before as any)[k],
       );
       const data = { ...body } as any;
+      if (!isPrivileged) {
+        data.userId = userId;
+      }
       if (body.taskId !== undefined) {
         const resolved = await validateTaskId(
           body.taskId,
