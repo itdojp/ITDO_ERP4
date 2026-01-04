@@ -5,7 +5,7 @@
 ## 技術スタック（案）
 - Next.js or React + Vite（SSR/SPAどちらでも可）
 - UI: シンプルなフォーム/テーブル。モバイル対応（レスポンシブ）必須。
-- 認証: デバッグモードで user/role をクエリ/ヘッダで指定（後で OIDC/BFF に差し替え）
+- 認証: デバッグモードで user/role をヘッダ指定（AUTH_MODE=hybrid）、Google OIDC のIDトークンも受け付ける
 
 ## 画面
 - ダッシュボード: 未承認/アラートを一覧。アラートはメール送信Stubと同期。
