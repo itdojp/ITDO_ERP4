@@ -69,6 +69,13 @@
   - JWT_ROLE_CLAIM / JWT_GROUP_CLAIM / JWT_PROJECT_CLAIM / JWT_ORG_CLAIM
 - roles が無い場合は AUTH_DEFAULT_ROLE を適用
 
+### Google OIDC（例）
+- JWT_JWKS_URL: `https://www.googleapis.com/oauth2/v3/certs`
+- JWT_ISSUER: `https://accounts.google.com`
+- JWT_AUDIENCE: Google の Client ID
+- フロントは `VITE_GOOGLE_CLIENT_ID` を指定してIDトークンを取得し、Authorization: Bearer で送信
+- Google IDを持たないユーザは header認証（AUTH_MODE=hybrid）やローカルユーザ運用で許容する
+
 ## 監査ログ（案）
 - 変更種別: role_grant / role_revoke / group_sync / user_deactivate / user_reactivate
 - 記録項目: actor, targetUserId, source(IdP/manual), before/after, reason, timestamp, correlationId

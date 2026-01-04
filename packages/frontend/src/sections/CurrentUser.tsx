@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { api, AuthState, getAuthState, setAuthState } from '../api';
 
 type MeResponse = {
@@ -6,6 +6,27 @@ type MeResponse = {
 };
 
 const pushPublicKey = (import.meta.env.VITE_PUSH_PUBLIC_KEY || '').trim();
+
+let googleScriptPromise: Promise<void> | null = null;
+
+type GoogleCredentialResponse = {
+  credential?: string;
+};
+
+type GoogleIdentity = {
+  accounts?: {
+    id?: {
+      initialize: (options: {
+        client_id: string;
+        callback: (response: GoogleCredentialResponse) => void;
+      }) => void;
+      renderButton: (
+        container: HTMLElement,
+        options: Record<string, unknown>,
+      ) => void;
+    };
+  };
+};
 
 function urlBase64ToUint8Array(base64String: string) {
   const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
@@ -18,7 +39,87 @@ function urlBase64ToUint8Array(base64String: string) {
   return outputArray;
 }
 
+function loadGoogleIdentityScript() {
+  if (typeof window === 'undefined') return Promise.resolve();
+  const google = (window as { google?: GoogleIdentity }).google;
+  if (google?.accounts?.id) return Promise.resolve();
+  if (googleScriptPromise) return googleScriptPromise;
+  googleScriptPromise = new Promise((resolve, reject) => {
+    const existing = document.querySelector<HTMLScriptElement>(
+      'script[data-google-identity="true"]',
+    );
+    if (existing) {
+      if (existing.dataset.loaded === 'true') {
+        resolve();
+        return;
+      }
+      if (existing.readyState === 'complete') {
+        existing.dataset.loaded = 'true';
+        resolve();
+        return;
+      }
+      existing.addEventListener('load', () => resolve(), { once: true });
+      existing.addEventListener(
+        'error',
+        () => reject(new Error('google_identity_load_failed')),
+        { once: true },
+      );
+      return;
+    }
+    const script = document.createElement('script');
+    script.src = 'https://accounts.google.com/gsi/client';
+    script.async = true;
+    script.defer = true;
+    script.dataset.googleIdentity = 'true';
+    script.onload = () => {
+      script.dataset.loaded = 'true';
+      resolve();
+    };
+    script.onerror = () => reject(new Error('google_identity_load_failed'));
+    document.head.appendChild(script);
+  });
+  return googleScriptPromise;
+}
+
+function decodeJwtPayload(token: string): Record<string, unknown> | null {
+  const parts = token.split('.');
+  if (parts.length !== 3) return null;
+  const payloadPart = parts[1];
+  if (!payloadPart) return null;
+  const raw = payloadPart.replace(/-/g, '+').replace(/_/g, '/');
+  const padded = raw.padEnd(raw.length + ((4 - (raw.length % 4)) % 4), '=');
+  try {
+    return JSON.parse(atob(padded)) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
+function normalizeJwtList(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.map((item) => String(item).trim()).filter(Boolean);
+  }
+  if (typeof value === 'string') {
+    return value
+      .split(/[\s,]+/)
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+  return [];
+}
+
+function resolveJwtUserId(
+  payload: Record<string, unknown> | null,
+): string | null {
+  const email = payload?.email;
+  if (typeof email === 'string' && email.trim()) return email.trim();
+  const sub = payload?.sub;
+  if (typeof sub === 'string' && sub.trim()) return sub.trim();
+  return null;
+}
+
 export const CurrentUser: React.FC = () => {
+  const googleClientId = (import.meta.env.VITE_GOOGLE_CLIENT_ID || '').trim();
   const [me, setMe] = useState<MeResponse['user'] | null>(null);
   const [error, setError] = useState('');
   const [auth, setAuth] = useState<AuthState | null>(() => getAuthState());
@@ -40,6 +141,10 @@ export const CurrentUser: React.FC = () => {
     useState<PushSubscription | null>(null);
   const [pushMessage, setPushMessage] = useState('');
   const [pushError, setPushError] = useState('');
+  const [googleError, setGoogleError] = useState('');
+  const googleButtonRef = useRef<HTMLDivElement | null>(null);
+  const [googleReady, setGoogleReady] = useState(false);
+  const googleButtonRendered = useRef(false);
   const logPushError = (label: string, err: unknown) => {
     if (import.meta.env.DEV) {
       console.error(`[push] ${label}`, err);
@@ -79,6 +184,90 @@ export const CurrentUser: React.FC = () => {
       setPushError('Push購読の取得に失敗しました');
     });
   }, [auth, pushSupported]);
+
+  const applyTokenLogin = useCallback((token: string) => {
+    const payload = decodeJwtPayload(token);
+    if (!payload) {
+      setGoogleError('トークンの解析に失敗しました');
+      return;
+    }
+    const exp = payload.exp;
+    if (typeof exp === 'number' && Date.now() >= exp * 1000) {
+      setGoogleError('トークンの有効期限が切れています');
+      return;
+    }
+    const userId = resolveJwtUserId(payload);
+    if (!userId) {
+      setGoogleError('ユーザーIDを特定できませんでした');
+      return;
+    }
+    const roles = normalizeJwtList(payload?.roles);
+    const groupIds = normalizeJwtList(payload?.group_ids);
+    const projectIds = normalizeJwtList(payload?.project_ids);
+    const next: AuthState = {
+      userId,
+      roles,
+      groupIds: groupIds.length ? groupIds : undefined,
+      projectIds: projectIds.length ? projectIds : undefined,
+      token,
+    };
+    setAuthState(next);
+    setAuth(next);
+    setGoogleError('');
+  }, []);
+
+  useEffect(() => {
+    if (!googleClientId || auth?.token) return;
+    let cancelled = false;
+    loadGoogleIdentityScript()
+      .then(() => {
+        if (cancelled) return;
+        const google = (window as { google?: GoogleIdentity }).google;
+        if (!google?.accounts?.id) {
+          setGoogleError('Googleログインの初期化に失敗しました');
+          return;
+        }
+        const callback = (response: GoogleCredentialResponse) => {
+          if (cancelled) return;
+          if (!response?.credential) {
+            setGoogleError('Googleログインに失敗しました');
+            return;
+          }
+          applyTokenLogin(response.credential);
+        };
+        google.accounts.id.initialize({
+          client_id: googleClientId,
+          callback,
+        });
+        setGoogleReady(true);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setGoogleError('Googleログインの初期化に失敗しました');
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [applyTokenLogin, auth?.token, googleClientId]);
+
+  useEffect(() => {
+    if (!auth?.token) {
+      googleButtonRendered.current = false;
+    }
+  }, [auth?.token]);
+
+  useEffect(() => {
+    if (!googleReady || auth?.token || googleButtonRendered.current) return;
+    const google = (window as { google?: GoogleIdentity }).google;
+    if (!google?.accounts?.id || !googleButtonRef.current) return;
+    google.accounts.id.renderButton(googleButtonRef.current, {
+      theme: 'outline',
+      size: 'large',
+      text: 'signin_with',
+    });
+    googleButtonRendered.current = true;
+  }, [auth?.token, googleReady]);
 
   const ensureRegistration = async () => {
     if (!pushSupported) {
@@ -228,6 +417,16 @@ export const CurrentUser: React.FC = () => {
       {!auth && (
         <div style={{ fontSize: 14, marginTop: 8 }}>
           <div>未ログイン</div>
+          {googleClientId && (
+            <div style={{ marginTop: 8 }}>
+              <div ref={googleButtonRef} />
+              {googleError && (
+                <div style={{ color: '#dc2626', marginTop: 4 }}>
+                  {googleError}
+                </div>
+              )}
+            </div>
+          )}
           <div className="row" style={{ gap: 8, marginTop: 8 }}>
             <input
               type="text"
