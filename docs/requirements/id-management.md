@@ -15,7 +15,8 @@
 - 中間: IDaaS を利用する場合は経由可能にする
 
 ## ユーザ情報の持ち方
-- ERP側の userId は外部IDと紐づける（IdP/IDaaSのsubject/immutable ID）
+- ERP側の userId は内部IDとして保持し、IdP/IDaaSの subject は externalId として保持する
+  - IdP連携ユーザは externalId 必須、非連携ユーザは externalId を null 許容
 - email/name は同期可能な属性として保持
 - 組織/部門/グループはERP側の権限制御に利用
 
@@ -26,7 +27,7 @@
 ## ユーザ属性（案）
 | 項目 | 必須 | 取得元 | 備考 |
 | --- | --- | --- | --- |
-| externalId | 必須 | IdP/IDaaS | subject/immutable ID |
+| externalId | 任意（IdP連携時は必須） | IdP/IDaaS | subject/immutable ID |
 | email | 必須 | IdP/IDaaS | ログインIDとして利用 |
 | name | 必須 | IdP/IDaaS | 表示名 |
 | status | 必須 | IdP/IDaaS | active/inactive |
@@ -43,6 +44,11 @@
 - IdP/IDaaS グループ → ERPロール/承認グループへマッピング
 - 例外はERP側で手動付与（監査ログに記録）
 - プロジェクト所属はERP側で管理（IdP/IDaaSとは別管理）
+
+## リンク規約（暫定）
+- `externalId` がある場合はそれを優先してユーザを同定
+- `externalId` が無い場合は `email` を主キー相当として扱う
+- `externalId` と `email` が両方ある場合、`externalId` を一次キーとして維持し、`email` は変更許容
 
 ## プロビジョニング/退職
 - 退職/無効化はIdP/IDaaSの状態を優先（ログイン不可）
@@ -75,6 +81,7 @@
 - JWT_AUDIENCE: Google の Client ID
 - フロントは `VITE_GOOGLE_CLIENT_ID` を指定してIDトークンを取得し、Authorization: Bearer で送信
 - Google IDを持たないユーザは header認証（AUTH_MODE=hybrid）やローカルユーザ運用で許容する
+- userId を email に揃える場合は `JWT_SUB_CLAIM=email` を指定（email 変更時の運用ルールは別途定義）
 
 ## 監査ログ（案）
 - 変更種別: role_grant / role_revoke / group_sync / user_deactivate / user_reactivate
@@ -86,3 +93,4 @@
 - SCIM導入の可否、同期頻度・責任分界の定義
 - ユーザ属性の正式スキーマ確定（たたき台は追記済み）
 - 監査ログ/権限変更ログの要件整理（たたき台は追記済み）
+- JWT_SUB_CLAIM=email 運用時の email 変更ルールを整理
