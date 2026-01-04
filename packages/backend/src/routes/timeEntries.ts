@@ -132,25 +132,34 @@ export async function registerTimeEntryRoutes(app: FastifyInstance) {
     {
       schema: timeEntryPatchSchema,
       preHandler: [
-        requireRoleOrSelf(
-          ['admin', 'mgmt'],
-          (req) => (req.body as any)?.userId,
-        ),
+        requireRole(['admin', 'mgmt', 'user']),
         requireProjectAccess((req) => (req.body as any)?.projectId),
       ],
     },
     async (req, reply) => {
       const { id } = req.params as { id: string };
       const body = req.body as any;
-      const before = await prisma.timeEntry.findUnique({ where: { id } });
-      if (!before) {
-        return { error: 'not_found' };
-      }
+      const roles = req.user?.roles || [];
+      const isPrivileged = roles.includes('admin') || roles.includes('mgmt');
       const userId = req.user?.userId;
+      const where = isPrivileged ? { id } : { id, userId: userId || 'unknown' };
+      const before = await prisma.timeEntry.findFirst({ where });
+      if (!before) {
+        return reply.code(404).send({ error: 'not_found' });
+      }
+      if (!isPrivileged) {
+        const projectIds = req.user?.projectIds || [];
+        if (!projectIds.length || !projectIds.includes(before.projectId)) {
+          return reply.code(403).send({ error: 'forbidden_project' });
+        }
+      }
       const changed = ['minutes', 'workDate', 'taskId', 'projectId'].some(
         (k) => body[k] !== undefined && (body as any)[k] !== (before as any)[k],
       );
       const data = { ...body } as any;
+      if (!isPrivileged) {
+        data.userId = userId;
+      }
       if (body.taskId !== undefined) {
         const resolved = await validateTaskId(
           body.taskId,
