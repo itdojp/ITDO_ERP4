@@ -7,19 +7,19 @@
   - [x] Google OIDC のJWT検証とクレームマッピングを実装
   - [x] ヘッダ認証/ローカルユーザの併用ルートを維持（優先順位・フォールバック）
   - [x] 認証/ID管理ドキュメント更新（auth-architecture/id-management/README）
-- [ ] #276 アクセス制御たたき台の実装反映
-  - [ ] RBAC（admin/mgmt/exec/hr/user）をAPIに適用（requireRole + 主要エンドポイント）
-  - [ ] projectIdスコープの閲覧フィルタを実装（userは所属案件に限定）
+- [x] #276 アクセス制御たたき台の実装反映
+  - [x] RBAC（admin/mgmt/exec/hr/user）をAPIに適用（requireRole + 主要エンドポイント）
+  - [x] projectIdスコープの閲覧フィルタを実装（userは所属案件に限定）
   - [x] 見積/請求の閲覧を user に許可し、projectId スコープで絞り込み
   - [x] 承認中データの閲覧条件を実装（mgmt/exec + 申請者 + プロジェクトメンバー）
   - [x] ウェルビーイング閲覧はhr専用＋匿名集計は5人未満非表示
   - [x] 例外操作（付け替え/承認取消）は理由必須 + 監査ログ必須
   - [x] ドキュメント更新（access-control/rbac-matrix）
-- [ ] #277 付け替え運用（締め期間/理由コード/承認取消）
+- [x] #277 付け替え運用（締め期間/理由コード/承認取消）
   - [x] PeriodLock テーブル追加（period/scope/projectId/closedAt/closedBy/reason）
   - [x] 付け替え理由コードを定義（input_error など）+ reasonText 必須
   - [x] Task 付け替えに reasonCode/reasonText を適用し監査ログを記録
-  - [ ] 付け替えAPIの実装（TimeEntry/Expense/Task 等、締め期間/承認状態のチェック）
+  - [x] 付け替えAPIの実装（TimeEntry/Expense/Task 等、締め期間/承認状態のチェック）
   - [x] TimeEntry 付け替え（締め期間/承認中チェック + 監査ログ）
   - [x] Expense 付け替え（締め期間/承認中チェック + 監査ログ）
   - [x] 承認取消フローの実装（status=cancelled、権限と理由の検証）

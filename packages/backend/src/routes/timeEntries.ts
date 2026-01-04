@@ -210,10 +210,17 @@ export async function registerTimeEntryRoutes(app: FastifyInstance) {
         to?: string;
       };
       const roles = req.user?.roles || [];
+      const isPrivileged = roles.includes('admin') || roles.includes('mgmt');
       const currentUserId = req.user?.userId;
+      const projectIds = req.user?.projectIds || [];
       const where: any = {};
-      if (projectId) where.projectId = projectId;
-      if (!roles.includes('admin') && !roles.includes('mgmt')) {
+      if (projectId) {
+        where.projectId = projectId;
+      } else if (!isPrivileged) {
+        if (!projectIds.length) return { items: [] };
+        where.projectId = { in: projectIds };
+      }
+      if (!isPrivileged) {
         where.userId = currentUserId;
       } else if (userId) {
         where.userId = userId;
