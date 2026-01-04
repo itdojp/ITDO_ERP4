@@ -75,6 +75,9 @@ export async function registerLeaveRoutes(app: FastifyInstance) {
       const where: { userId?: string } = {};
       if (!isPrivileged) {
         if (!currentUserId) {
+          return reply.code(401).send({ error: 'unauthorized' });
+        }
+        if (userId && userId !== currentUserId) {
           return reply.code(403).send({ error: 'forbidden' });
         }
         where.userId = currentUserId;
