@@ -1,12 +1,12 @@
 # TODO リスト（短期ドライブ用）
 
 ## 次アクション（意思決定反映の実装計画）
-- [ ] #275 Googleログイン対応 + 非Googleユーザ許容（ハイブリッド認証）
-  - [ ] AUTH_MODE=hybrid の導入方針を定義し、環境変数（JWKS/ISSUER/AUDIENCE 等）を追加
-  - [ ] ユーザ外部ID（externalId）のnullable運用に対応し、リンク規約（email/externalId）を整理
-  - [ ] Google OIDC のJWT検証とクレームマッピングを実装
-  - [ ] ヘッダ認証/ローカルユーザの併用ルートを維持（優先順位・フォールバック）
-  - [ ] 認証/ID管理ドキュメント更新（auth-architecture/id-management/README）
+- [x] #275 Googleログイン対応 + 非Googleユーザ許容（ハイブリッド認証）
+  - [x] AUTH_MODE=hybrid の導入方針を定義し、環境変数（JWKS/ISSUER/AUDIENCE 等）を追加
+  - [x] ユーザ外部ID（externalId）のnullable運用に対応し、リンク規約（email/externalId）を整理
+  - [x] Google OIDC のJWT検証とクレームマッピングを実装
+  - [x] ヘッダ認証/ローカルユーザの併用ルートを維持（優先順位・フォールバック）
+  - [x] 認証/ID管理ドキュメント更新（auth-architecture/id-management/README）
 - [ ] #276 アクセス制御たたき台の実装反映
   - [ ] RBAC（admin/mgmt/exec/hr/user）をAPIに適用（requireRole + 主要エンドポイント）
   - [ ] projectIdスコープの閲覧フィルタを実装（userは所属案件に限定）
