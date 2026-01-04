@@ -1,15 +1,21 @@
 import { FastifyInstance, FastifyReply } from 'fastify';
-import { timeEntryPatchSchema, timeEntrySchema } from './validators.js';
-import { TimeStatusValue } from '../types.js';
+import {
+  timeEntryPatchSchema,
+  timeEntryReassignSchema,
+  timeEntrySchema,
+} from './validators.js';
+import { DocStatusValue, TimeStatusValue } from '../types.js';
 import {
   requireProjectAccess,
   requireRole,
   requireRoleOrSelf,
 } from '../services/rbac.js';
 import { prisma } from '../services/db.js';
+import { logAudit } from '../services/audit.js';
 import { submitApprovalWithUpdate } from '../services/approval.js';
 import { FlowTypeValue } from '../types.js';
 import { parseDateParam } from '../utils/date.js';
+import { findPeriodLock, toPeriodKey } from '../services/periodLock.js';
 
 async function validateTaskId(
   taskId: unknown,
@@ -37,6 +43,35 @@ async function validateTaskId(
     });
   }
   if (projectId && task.projectId !== projectId) {
+    return reply.status(400).send({
+      error: {
+        code: 'TASK_PROJECT_MISMATCH',
+        message: 'Task does not belong to project',
+      },
+    });
+  }
+  return trimmed;
+}
+
+async function resolveReassignTaskId(
+  value: unknown,
+  projectId: string,
+  reply: FastifyReply,
+): Promise<string | null | undefined | FastifyReply> {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+  const trimmed = String(value).trim();
+  if (!trimmed) return null;
+  const task = await prisma.projectTask.findUnique({
+    where: { id: trimmed },
+    select: { projectId: true, deletedAt: true },
+  });
+  if (!task || task.deletedAt) {
+    return reply.status(400).send({
+      error: { code: 'INVALID_TASK', message: 'Task not found' },
+    });
+  }
+  if (task.projectId !== projectId) {
     return reply.status(400).send({
       error: {
         code: 'TASK_PROJECT_MISMATCH',
@@ -197,6 +232,113 @@ export async function registerTimeEntryRoutes(app: FastifyInstance) {
         data: { status: TimeStatusValue.submitted },
       });
       return entry;
+    },
+  );
+
+  app.post(
+    '/time-entries/:id/reassign',
+    {
+      preHandler: requireRole(['admin', 'mgmt']),
+      schema: timeEntryReassignSchema,
+    },
+    async (req, reply) => {
+      const { id } = req.params as { id: string };
+      const body = req.body as any;
+      const reasonText =
+        typeof body.reasonText === 'string' ? body.reasonText.trim() : '';
+      if (!reasonText) {
+        return reply.status(400).send({
+          error: { code: 'INVALID_REASON', message: 'reasonText is required' },
+        });
+      }
+      const entry = await prisma.timeEntry.findUnique({ where: { id } });
+      if (!entry) {
+        return reply.status(404).send({
+          error: { code: 'NOT_FOUND', message: 'Time entry not found' },
+        });
+      }
+      if (entry.deletedAt) {
+        return reply.status(400).send({
+          error: { code: 'ALREADY_DELETED', message: 'Time entry deleted' },
+        });
+      }
+      if (entry.status === TimeStatusValue.approved) {
+        return reply.status(400).send({
+          error: { code: 'INVALID_STATUS', message: 'Time entry approved' },
+        });
+      }
+      const pendingApproval = await prisma.approvalInstance.findFirst({
+        where: {
+          targetTable: 'time_entries',
+          targetId: id,
+          status: {
+            in: [DocStatusValue.pending_qa, DocStatusValue.pending_exec],
+          },
+        },
+        select: { id: true },
+      });
+      if (pendingApproval) {
+        return reply.status(400).send({
+          error: { code: 'PENDING_APPROVAL', message: 'Approval in progress' },
+        });
+      }
+      const targetProject = await prisma.project.findUnique({
+        where: { id: body.toProjectId },
+        select: { id: true, deletedAt: true },
+      });
+      if (!targetProject || targetProject.deletedAt) {
+        return reply.status(404).send({
+          error: { code: 'NOT_FOUND', message: 'Project not found' },
+        });
+      }
+      const periodKey = toPeriodKey(entry.workDate);
+      const fromLock = await findPeriodLock(periodKey, entry.projectId);
+      if (fromLock) {
+        return reply.status(400).send({
+          error: { code: 'PERIOD_LOCKED', message: 'Period is locked' },
+        });
+      }
+      if (body.toProjectId !== entry.projectId) {
+        const toLock = await findPeriodLock(periodKey, body.toProjectId);
+        if (toLock) {
+          return reply.status(400).send({
+            error: { code: 'PERIOD_LOCKED', message: 'Period is locked' },
+          });
+        }
+      }
+      const resolvedTaskId = await resolveReassignTaskId(
+        body.toTaskId,
+        body.toProjectId,
+        reply,
+      );
+      if (resolvedTaskId && typeof resolvedTaskId !== 'string') {
+        return resolvedTaskId;
+      }
+      let nextTaskId = entry.taskId;
+      if (resolvedTaskId !== undefined) {
+        nextTaskId = resolvedTaskId;
+      } else if (body.toProjectId !== entry.projectId) {
+        nextTaskId = null;
+      }
+      const updated = await prisma.timeEntry.update({
+        where: { id },
+        data: { projectId: body.toProjectId, taskId: nextTaskId },
+      });
+      await logAudit({
+        action: 'reassignment',
+        userId: req.user?.userId,
+        targetTable: 'time_entries',
+        targetId: id,
+        metadata: {
+          fromProjectId: entry.projectId,
+          toProjectId: body.toProjectId,
+          fromTaskId: entry.taskId,
+          toTaskId: nextTaskId,
+          reasonCode: body.reasonCode,
+          reasonText,
+        },
+      });
+      return updated;
     },
   );
 }
