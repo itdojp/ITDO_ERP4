@@ -5,6 +5,7 @@ import { DocStatusValue, FlowTypeValue } from '../types.js';
 import { requireProjectAccess, requireRole } from '../services/rbac.js';
 import { prisma } from '../services/db.js';
 import { logAudit } from '../services/audit.js';
+import { logReassignment } from '../services/reassignmentLog.js';
 import { parseDateParam } from '../utils/date.js';
 import { findPeriodLock, toPeriodKey } from '../services/periodLock.js';
 
@@ -193,6 +194,15 @@ export async function registerExpenseRoutes(app: FastifyInstance) {
           reasonCode: body.reasonCode,
           reasonText,
         },
+      });
+      await logReassignment({
+        targetTable: 'expenses',
+        targetId: id,
+        fromProjectId: expense.projectId,
+        toProjectId: body.toProjectId,
+        reasonCode: body.reasonCode,
+        reasonText,
+        createdBy: req.user?.userId,
       });
       return updated;
     },
