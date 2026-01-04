@@ -135,10 +135,24 @@ backup() {
   local backup_file="${BACKUP_FILE:-$backup_dir/${prefix}-backup-${timestamp}.sql}"
   local globals_file="${BACKUP_GLOBALS_FILE:-$backup_dir/${prefix}-globals-${timestamp}.sql}"
   mkdir -p "$backup_dir"
-  podman exec -e PGPASSWORD="$DB_PASSWORD" "$CONTAINER_NAME" \
-    sh -c "pg_dump -U $DB_USER -d $DB_NAME" > "$backup_file"
-  podman exec -e PGPASSWORD="$DB_PASSWORD" "$CONTAINER_NAME" \
-    sh -c "pg_dumpall --globals-only -U $DB_USER" > "$globals_file"
+  if ! podman exec -e PGPASSWORD="$DB_PASSWORD" "$CONTAINER_NAME" \
+    pg_dump -U "$DB_USER" -d "$DB_NAME" > "$backup_file"; then
+    echo "backup failed: pg_dump command did not complete successfully" >&2
+    exit 1
+  fi
+  if [[ ! -s "$backup_file" ]]; then
+    echo "backup failed: backup file '$backup_file' is empty or missing" >&2
+    exit 1
+  fi
+  if ! podman exec -e PGPASSWORD="$DB_PASSWORD" "$CONTAINER_NAME" \
+    pg_dumpall --globals-only -U "$DB_USER" > "$globals_file"; then
+    echo "backup failed: pg_dumpall (globals) command did not complete successfully" >&2
+    exit 1
+  fi
+  if [[ ! -s "$globals_file" ]]; then
+    echo "backup failed: globals file '$globals_file' is empty or missing" >&2
+    exit 1
+  fi
   echo "backup created: $backup_file"
   echo "globals created: $globals_file"
 }
@@ -153,6 +167,12 @@ restore() {
   local prefix="${BACKUP_PREFIX:-erp4}"
   local backup_file="${BACKUP_FILE:-}"
   local globals_file="${BACKUP_GLOBALS_FILE:-}"
+  if [[ -z "$backup_file" || -z "$globals_file" ]]; then
+    if [[ ! -d "$backup_dir" ]]; then
+      echo "backup directory '$backup_dir' does not exist. Set BACKUP_DIR or create a backup first." >&2
+      exit 1
+    fi
+  fi
   if [[ -z "$backup_file" ]]; then
     backup_file=$(ls -1t "$backup_dir"/${prefix}-backup-*.sql 2>/dev/null | head -1)
   fi
@@ -165,7 +185,7 @@ restore() {
   fi
   if [[ -n "$globals_file" && -f "$globals_file" ]]; then
     cat "$globals_file" | podman exec -e PGPASSWORD="$DB_PASSWORD" -i "$CONTAINER_NAME" \
-      psql -U "$DB_USER" -d "$DB_NAME" -v ON_ERROR_STOP=1
+      psql -U "$DB_USER" -v ON_ERROR_STOP=1
   fi
   cat "$backup_file" | podman exec -e PGPASSWORD="$DB_PASSWORD" -i "$CONTAINER_NAME" \
     psql -U "$DB_USER" -d "$DB_NAME" -v ON_ERROR_STOP=1
