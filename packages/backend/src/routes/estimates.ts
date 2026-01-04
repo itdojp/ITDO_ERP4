@@ -3,20 +3,33 @@ import { nextNumber } from '../services/numbering.js';
 import { submitApprovalWithUpdate } from '../services/approval.js';
 import { DocStatusValue, FlowTypeValue } from '../types.js';
 import { estimateSchema } from './validators.js';
-import { requireRole } from '../services/rbac.js';
+import { requireProjectAccess, requireRole } from '../services/rbac.js';
 import { prisma } from '../services/db.js';
 
 export async function registerEstimateRoutes(app: FastifyInstance) {
   app.get(
     '/estimates',
-    { preHandler: requireRole(['admin', 'mgmt']) },
-    async (req) => {
+    { preHandler: requireRole(['admin', 'mgmt', 'user']) },
+    async (req, reply) => {
       const { projectId, status } = req.query as {
         projectId?: string;
         status?: string;
       };
+      const roles = req.user?.roles || [];
+      const projectIds = req.user?.projectIds || [];
+      const isPrivileged = roles.includes('admin') || roles.includes('mgmt');
+      if (!isPrivileged) {
+        if (!projectIds.length) return { items: [] };
+        if (projectId && !projectIds.includes(projectId)) {
+          return reply.code(403).send({ error: 'forbidden_project' });
+        }
+      }
       const where: Record<string, unknown> = {};
-      if (projectId) where.projectId = projectId;
+      if (projectId) {
+        where.projectId = projectId;
+      } else if (!isPrivileged) {
+        where.projectId = { in: projectIds };
+      }
       if (status) where.status = status;
       const items = await prisma.estimate.findMany({
         where,
@@ -30,7 +43,7 @@ export async function registerEstimateRoutes(app: FastifyInstance) {
 
   app.get(
     '/estimates/:id',
-    { preHandler: requireRole(['admin', 'mgmt']) },
+    { preHandler: requireRole(['admin', 'mgmt', 'user']) },
     async (req, reply) => {
       const { id } = req.params as { id: string };
       const estimate = await prisma.estimate.findUnique({
@@ -42,13 +55,24 @@ export async function registerEstimateRoutes(app: FastifyInstance) {
           error: { code: 'NOT_FOUND', message: 'Estimate not found' },
         });
       }
+      const roles = req.user?.roles || [];
+      const projectIds = req.user?.projectIds || [];
+      const isPrivileged = roles.includes('admin') || roles.includes('mgmt');
+      if (!isPrivileged && !projectIds.includes(estimate.projectId)) {
+        return reply.code(403).send({ error: 'forbidden_project' });
+      }
       return estimate;
     },
   );
 
   app.get(
     '/projects/:projectId/estimates',
-    { preHandler: requireRole(['admin', 'mgmt']) },
+    {
+      preHandler: [
+        requireRole(['admin', 'mgmt', 'user']),
+        requireProjectAccess((req) => (req.params as any)?.projectId),
+      ],
+    },
     async (req) => {
       const { projectId } = req.params as { projectId: string };
       const { status } = req.query as { status?: string };

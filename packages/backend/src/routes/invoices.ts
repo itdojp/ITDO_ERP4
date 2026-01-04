@@ -3,7 +3,7 @@ import { nextNumber } from '../services/numbering.js';
 import { submitApprovalWithUpdate } from '../services/approval.js';
 import { FlowTypeValue, DocStatusValue } from '../types.js';
 import { invoiceSchema } from './validators.js';
-import { requireRole } from '../services/rbac.js';
+import { requireProjectAccess, requireRole } from '../services/rbac.js';
 import { prisma } from '../services/db.js';
 
 export async function registerInvoiceRoutes(app: FastifyInstance) {
@@ -16,7 +16,7 @@ export async function registerInvoiceRoutes(app: FastifyInstance) {
 
   app.get(
     '/invoices',
-    { preHandler: requireRole(['admin', 'mgmt']) },
+    { preHandler: requireRole(['admin', 'mgmt', 'user']) },
     async (req, reply) => {
       const { projectId, status, from, to } = req.query as {
         projectId?: string;
@@ -24,8 +24,21 @@ export async function registerInvoiceRoutes(app: FastifyInstance) {
         from?: string;
         to?: string;
       };
+      const roles = req.user?.roles || [];
+      const projectIds = req.user?.projectIds || [];
+      const isPrivileged = roles.includes('admin') || roles.includes('mgmt');
+      if (!isPrivileged) {
+        if (!projectIds.length) return { items: [] };
+        if (projectId && !projectIds.includes(projectId)) {
+          return reply.code(403).send({ error: 'forbidden_project' });
+        }
+      }
       const where: Record<string, unknown> = {};
-      if (projectId) where.projectId = projectId;
+      if (projectId) {
+        where.projectId = projectId;
+      } else if (!isPrivileged) {
+        where.projectId = { in: projectIds };
+      }
       if (status) where.status = status;
       if (from || to) {
         const fromDate = parseDate(from);
@@ -57,7 +70,7 @@ export async function registerInvoiceRoutes(app: FastifyInstance) {
 
   app.get(
     '/invoices/:id',
-    { preHandler: requireRole(['admin', 'mgmt']) },
+    { preHandler: requireRole(['admin', 'mgmt', 'user']) },
     async (req, reply) => {
       const { id } = req.params as { id: string };
       const invoice = await prisma.invoice.findUnique({
@@ -69,13 +82,24 @@ export async function registerInvoiceRoutes(app: FastifyInstance) {
           error: { code: 'NOT_FOUND', message: 'Invoice not found' },
         });
       }
+      const roles = req.user?.roles || [];
+      const projectIds = req.user?.projectIds || [];
+      const isPrivileged = roles.includes('admin') || roles.includes('mgmt');
+      if (!isPrivileged && !projectIds.includes(invoice.projectId)) {
+        return reply.code(403).send({ error: 'forbidden_project' });
+      }
       return invoice;
     },
   );
 
   app.get(
     '/projects/:projectId/invoices',
-    { preHandler: requireRole(['admin', 'mgmt']) },
+    {
+      preHandler: [
+        requireRole(['admin', 'mgmt', 'user']),
+        requireProjectAccess((req) => (req.params as any)?.projectId),
+      ],
+    },
     async (req, reply) => {
       const { projectId } = req.params as { projectId: string };
       const { status, from, to } = req.query as {
