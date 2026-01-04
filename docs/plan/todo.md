@@ -16,12 +16,13 @@
   - [ ] 例外操作（付け替え/承認取消）は理由必須 + 監査ログ必須
   - [ ] ドキュメント更新（access-control/rbac-matrix）
 - [ ] #277 付け替え運用（締め期間/理由コード/承認取消）
-  - [ ] PeriodLock テーブル追加（period/scope/projectId/closedAt/closedBy/reason）
-  - [ ] 付け替え理由コードを定義（input_error など）+ reasonText 必須
+  - [x] PeriodLock テーブル追加（period/scope/projectId/closedAt/closedBy/reason）
+  - [x] 付け替え理由コードを定義（input_error など）+ reasonText 必須
+  - [x] Task 付け替えに reasonCode/reasonText を適用し監査ログを記録
   - [ ] 付け替えAPIの実装（TimeEntry/Expense/Task 等、締め期間/承認状態のチェック）
   - [ ] 承認取消フローの実装（status=cancelled、権限と理由の検証）
   - [ ] 監査ログ・付け替え履歴の記録
-  - [ ] 仕様ドキュメント更新（reassignment-policy）
+  - [x] 仕様ドキュメント更新（reassignment-policy）
 - [ ] #278 バックアップ/リストア運用の確定と実装準備
   - [ ] 保持期間/RPO/RTO の確定（デフォルト: 日次14日/週次8週/月次12か月）
   - [ ] 暗号化/保管先の運用手順を確定（SSE-KMS + 必要ならGPG二重化）

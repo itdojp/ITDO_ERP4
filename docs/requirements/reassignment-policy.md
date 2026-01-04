@@ -43,6 +43,7 @@
 - APIは resource別に `POST /time-entries/:id/reassign` などを用意
 - サーバ側で状態/関連チェックを実施し、違反時は 400/403
 - 付け替え履歴テーブル（例: reassignment_log）を追加
+- reasonCode/reasonText を必須とし、監査ログに保存する
 
 ## 理由コード（案）
 | code | 説明 |
