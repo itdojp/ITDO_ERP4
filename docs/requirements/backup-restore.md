@@ -69,6 +69,7 @@
 - `GPG_RECIPIENT`（二重暗号化が必要な場合）
 - `BACKUP_FILE`/`BACKUP_GLOBALS_FILE`/`BACKUP_ASSETS_FILE`（特定バックアップを upload/restore する場合）
 - `REMOTE_HOST`/`REMOTE_DIR`/`REMOTE_PORT`/`REMOTE_SSH_KEY`（別ホスト退避）
+- `SKIP_GLOBALS=1`（restore時に globals の適用をスキップ）
 
 ## 保持期間/世代管理（案）
 - 日次: 14日分

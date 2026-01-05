@@ -24,6 +24,7 @@ Optional env:
   BACKUP_FILE, BACKUP_GLOBALS_FILE, BACKUP_ASSETS_FILE (upload/restore 用)
   REMOTE_HOST, REMOTE_USER, REMOTE_PORT, REMOTE_DIR
   REMOTE_SSH_KEY, REMOTE_SSH_OPTS, REMOTE_KEEP_DAYS
+  SKIP_GLOBALS=1 (restore時に globals の適用をスキップ)
   RESTORE_CONFIRM=1 (required for restore)
 USAGE
 }
@@ -540,22 +541,12 @@ restore() {
     echo "backup file not found. Set BACKUP_FILE or run download." >&2
     exit 1
   fi
-  if [[ -z "$globals_file" || ! -f "$globals_file" ]]; then
-    echo "globals file not found. Set BACKUP_GLOBALS_FILE or run download." >&2
-    exit 1
-  fi
 
   local gpg_args=()
   if [[ -n "${GPG_HOME:-}" ]]; then
     gpg_args+=(--homedir "$GPG_HOME")
   fi
 
-  if [[ "$globals_file" == *.gpg ]]; then
-    require_cmd gpg
-    local decrypted_globals="${globals_file%.gpg}"
-    gpg "${gpg_args[@]}" --batch --yes --output "$decrypted_globals" --decrypt "$globals_file"
-    globals_file="$decrypted_globals"
-  fi
   if [[ "$backup_file" == *.gpg ]]; then
     require_cmd gpg
     local decrypted_backup="${backup_file%.gpg}"
@@ -563,8 +554,22 @@ restore() {
     backup_file="$decrypted_backup"
   fi
 
-  log "restoring globals"
-  psql -v ON_ERROR_STOP=1 -f "$globals_file" postgres
+  if [[ "${SKIP_GLOBALS:-}" != "1" ]]; then
+    if [[ -z "$globals_file" || ! -f "$globals_file" ]]; then
+      echo "globals file not found. Set BACKUP_GLOBALS_FILE or run download." >&2
+      exit 1
+    fi
+    if [[ "$globals_file" == *.gpg ]]; then
+      require_cmd gpg
+      local decrypted_globals="${globals_file%.gpg}"
+      gpg "${gpg_args[@]}" --batch --yes --output "$decrypted_globals" --decrypt "$globals_file"
+      globals_file="$decrypted_globals"
+    fi
+    log "restoring globals"
+    psql -v ON_ERROR_STOP=1 -f "$globals_file" postgres
+  else
+    log "skipping globals restore (SKIP_GLOBALS=1)"
+  fi
   log "restoring database"
   pg_restore --clean --if-exists -d "$DB_NAME" "$backup_file"
 
