@@ -2,7 +2,7 @@ import { FastifyInstance } from 'fastify';
 import { prisma } from '../services/db.js';
 import { submitApprovalWithUpdate } from '../services/approval.js';
 import { FlowTypeValue } from '../types.js';
-import { requireRole, requireRoleOrSelf } from '../services/rbac.js';
+import { requireRole } from '../services/rbac.js';
 import { leaveRequestSchema } from './validators.js';
 
 export async function registerLeaveRoutes(app: FastifyInstance) {
@@ -65,15 +65,27 @@ export async function registerLeaveRoutes(app: FastifyInstance) {
   app.get(
     '/leave-requests',
     {
-      preHandler: requireRoleOrSelf(
-        ['admin', 'mgmt'],
-        (req) => (req.query as any)?.userId,
-      ),
+      preHandler: requireRole(['admin', 'mgmt', 'user']),
     },
-    async (req) => {
+    async (req, reply) => {
       const { userId } = req.query as { userId?: string };
+      const roles = req.user?.roles || [];
+      const isPrivileged = roles.includes('admin') || roles.includes('mgmt');
+      const currentUserId = req.user?.userId;
+      const where: { userId?: string } = {};
+      if (!isPrivileged) {
+        if (!currentUserId) {
+          return reply.code(401).send({ error: 'unauthorized' });
+        }
+        if (userId && userId !== currentUserId) {
+          return reply.code(403).send({ error: 'forbidden' });
+        }
+        where.userId = currentUserId;
+      } else if (userId) {
+        where.userId = userId;
+      }
       const items = await prisma.leaveRequest.findMany({
-        where: { userId },
+        where,
         orderBy: { startDate: 'desc' },
         take: 100,
       });
