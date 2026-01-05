@@ -47,6 +47,18 @@
   - `S3_BUCKET=erp4-backups ./scripts/backup-prod.sh download`
   - `RESTORE_CONFIRM=1 ./scripts/backup-prod.sh restore`
 
+### 検証環境（ローカル + 別ホスト退避 + 暗号化）
+- GPG で暗号化し、別ホストへ転送
+  - `GPG_RECIPIENT=backup@example.com REMOTE_HOST=backup-host REMOTE_DIR=/var/backups/erp4 ./scripts/backup-prod.sh backup`
+- 別ホストから最新を取得してリストア
+  - `REMOTE_HOST=backup-host REMOTE_DIR=/var/backups/erp4 ./scripts/backup-prod.sh download`
+  - `RESTORE_CONFIRM=1 ASSET_DIR=/var/erp4-assets ./scripts/backup-prod.sh restore`
+
+注意:
+- `REMOTE_HOST` を指定した場合は `REMOTE_DIR` が必須
+- `REMOTE_KEEP_DAYS` を指定すると別ホスト側も世代削除を実行
+- GPGで暗号化した場合は復号用の鍵がローカルに必要（`GPG_HOME` を必要に応じて指定）
+
 必要な環境変数（抜粋）
 - `DB_HOST`/`DB_PORT`/`DB_USER`/`DB_PASSWORD`/`DB_NAME`
 - `S3_BUCKET`/`S3_PREFIX`/`S3_REGION`/`S3_ENDPOINT_URL`
@@ -54,6 +66,7 @@
 - `ASSET_DIR`（PDF/添付をローカル保存している場合のルート）
 - `GPG_RECIPIENT`（二重暗号化が必要な場合）
 - `BACKUP_FILE`/`BACKUP_GLOBALS_FILE`/`BACKUP_ASSETS_FILE`（特定バックアップを upload/restore する場合）
+- `REMOTE_HOST`/`REMOTE_DIR`/`REMOTE_PORT`/`REMOTE_SSH_KEY`（別ホスト退避）
 
 ## 保持期間/世代管理（案）
 - 日次: 14日分
@@ -64,8 +77,9 @@
 
 ### RPO/RTO 目標
 - RPO: 通常データは最大24時間分の損失を許容（原則: 日次バックアップ）
-  - 重要データは業務要件に基づき短いRPO（例: 1時間以内）を別途定義し、WALアーカイブ等を検討する
-- RTO: インシデント宣言から4時間以内に、DB + PDF/添付 + 主要設定の復旧を完了する
+- RPO: 重要データは最大6時間分の損失を許容（暫定。運用で6時間ごとのバックアップを前提）
+- RTO: 通常データは4時間以内に復旧（DB + PDF/添付 + 主要設定）
+- RTO: 重要データは2時間以内に復旧（暫定）
   - 検知と対応開始の目標は30分以内（RTOには含めない）
 
 ## 暗号化/保管先（案）
@@ -82,6 +96,11 @@
 - アップロード: メタデータに `env`, `generated_at`, `schema_version` を付与
 - 権限: 書き込み専用ロールと読み取り専用ロールを分離
 - 保持期間は S3 Lifecycle で管理（ローカル削除とは別）
+
+## 暫定運用（S3未整備の間）
+- ローカル保存 + 別ホスト退避 + GPG 暗号化
+- 退避先は rsync/scp で同期（`REMOTE_HOST`/`REMOTE_DIR`）
+- 別ホスト側の保持期間は `REMOTE_KEEP_DAYS` で管理（未指定の場合は手動）
 
 ## リストア検証（案）
 - 月次で別環境にリストアし、`/health` と主要APIのスモーク確認

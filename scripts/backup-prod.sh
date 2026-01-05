@@ -22,6 +22,8 @@ Optional env:
   SSE_KMS_KEY_ID, SSE_S3, GPG_RECIPIENT, GPG_HOME, GPG_REMOVE_PLAINTEXT
   ASSET_DIR, KEEP_DAYS, SCHEMA_VERSION, APP_VERSION
   BACKUP_FILE, BACKUP_GLOBALS_FILE, BACKUP_ASSETS_FILE (upload/restore 用)
+  REMOTE_HOST, REMOTE_USER, REMOTE_PORT, REMOTE_DIR
+  REMOTE_SSH_KEY, REMOTE_SSH_OPTS, REMOTE_KEEP_DAYS
   RESTORE_CONFIRM=1 (required for restore)
 USAGE
 }
@@ -80,6 +82,11 @@ pg_env() {
   fi
 }
 
+ssh_extra_opts=()
+if [[ -n "${REMOTE_SSH_OPTS:-}" ]]; then
+  read -r -a ssh_extra_opts <<< "${REMOTE_SSH_OPTS}"
+fi
+
 s3_args=()
 if [[ -n "${S3_REGION:-}" ]]; then
   s3_args+=(--region "$S3_REGION")
@@ -97,6 +104,117 @@ fi
 
 aws_cli() {
   aws "${s3_args[@]}" "$@"
+}
+
+remote_enabled() {
+  [[ -n "${REMOTE_HOST:-}" ]]
+}
+
+validate_remote_values() {
+  if ! remote_enabled; then
+    return 0
+  fi
+  if [[ -z "${REMOTE_DIR:-}" ]]; then
+    echo "REMOTE_DIR is required when REMOTE_HOST is set" >&2
+    exit 1
+  fi
+  if [[ ! "${REMOTE_DIR}" =~ ^[A-Za-z0-9._/=-]+$ ]]; then
+    echo "REMOTE_DIR contains unsupported characters: '${REMOTE_DIR}'" >&2
+    exit 1
+  fi
+  if [[ ! "${BACKUP_PREFIX}" =~ ^[A-Za-z0-9._-]+$ ]]; then
+    echo "BACKUP_PREFIX contains unsupported characters: '${BACKUP_PREFIX}'" >&2
+    exit 1
+  fi
+  if [[ -n "${REMOTE_KEEP_DAYS:-}" && ! "${REMOTE_KEEP_DAYS}" =~ ^[0-9]+$ ]]; then
+    echo "REMOTE_KEEP_DAYS must be a non-negative integer, got: '${REMOTE_KEEP_DAYS}'" >&2
+    exit 1
+  fi
+}
+
+remote_target() {
+  if [[ -n "${REMOTE_USER:-}" ]]; then
+    echo "${REMOTE_USER}@${REMOTE_HOST}"
+  else
+    echo "${REMOTE_HOST}"
+  fi
+}
+
+ssh_remote() {
+  local target
+  target=$(remote_target)
+  local args=()
+  if [[ -n "${REMOTE_PORT:-}" ]]; then
+    args+=(-p "$REMOTE_PORT")
+  fi
+  if [[ -n "${REMOTE_SSH_KEY:-}" ]]; then
+    args+=(-i "$REMOTE_SSH_KEY")
+  fi
+  if (( ${#ssh_extra_opts[@]} > 0 )); then
+    args+=("${ssh_extra_opts[@]}")
+  fi
+  ssh "${args[@]}" "$target" "$@"
+}
+
+build_rsync_rsh() {
+  local cmd=(ssh)
+  if [[ -n "${REMOTE_PORT:-}" ]]; then
+    cmd+=(-p "$REMOTE_PORT")
+  fi
+  if [[ -n "${REMOTE_SSH_KEY:-}" ]]; then
+    cmd+=(-i "$REMOTE_SSH_KEY")
+  fi
+  if (( ${#ssh_extra_opts[@]} > 0 )); then
+    cmd+=("${ssh_extra_opts[@]}")
+  fi
+  local rsh_cmd
+  printf -v rsh_cmd '%q ' "${cmd[@]}"
+  echo "${rsh_cmd% }"
+}
+
+ensure_remote_dir() {
+  if ! remote_enabled; then
+    return 0
+  fi
+  validate_remote_values
+  require_cmd ssh
+  ssh_remote "mkdir -p -- '$REMOTE_DIR'"
+}
+
+remote_copy_files() {
+  if ! remote_enabled; then
+    return 0
+  fi
+  ensure_remote_dir
+
+  local target
+  target=$(remote_target)
+
+  if command -v rsync >/dev/null 2>&1; then
+    local rsync_rsh
+    rsync_rsh=$(build_rsync_rsh)
+    rsync -av --protect-args -e "$rsync_rsh" "$@" "${target}:${REMOTE_DIR}/"
+  else
+    require_cmd scp
+    local scp_args=()
+    if [[ -n "${REMOTE_PORT:-}" ]]; then
+      scp_args+=(-P "$REMOTE_PORT")
+    fi
+    if [[ -n "${REMOTE_SSH_KEY:-}" ]]; then
+      scp_args+=(-i "$REMOTE_SSH_KEY")
+    fi
+    if (( ${#ssh_extra_opts[@]} > 0 )); then
+      scp_args+=("${ssh_extra_opts[@]}")
+    fi
+    local local_path
+    for local_path in "$@"; do
+      scp "${scp_args[@]}" "$local_path" "${target}:${REMOTE_DIR}/"
+    done
+  fi
+
+  if [[ -n "${REMOTE_KEEP_DAYS:-}" ]]; then
+    ssh_remote "find '$REMOTE_DIR' -maxdepth 1 -type f -name '${BACKUP_PREFIX}-*' -mtime +${REMOTE_KEEP_DAYS} -print -delete"
+  fi
 }
 
 s3_uri() {
@@ -228,6 +346,8 @@ backup() {
     aws_cli s3 cp "$meta_upload" "$(s3_uri "$s3_meta_prefix" "$meta_upload")" "${sse_args[@]}"
   fi
 
+  remote_copy_files "$db_upload" "$globals_upload" "$meta_upload" ${assets_upload:+$assets_upload}
+
   if [[ -n "${KEEP_DAYS:-}" ]]; then
     log "pruning backups older than ${KEEP_DAYS} days in $BACKUP_DIR"
     find "$BACKUP_DIR" -maxdepth 1 -type f -name "${BACKUP_PREFIX}-*" -mtime +"$KEEP_DAYS" -print -delete
@@ -339,6 +459,66 @@ download_latest() {
   fi
 }
 
+download_latest_remote() {
+  if ! remote_enabled; then
+    echo "REMOTE_HOST is required for remote download" >&2
+    exit 1
+  fi
+  ensure_remote_dir
+  require_cmd ssh
+
+  mkdir -p "$BACKUP_DIR"
+
+  local db_key
+  local globals_key
+  local assets_key
+  local meta_key
+  db_key=$(ssh_remote "find '$REMOTE_DIR' -maxdepth 1 -type f -name '${BACKUP_PREFIX}-*-db.dump*' -printf '%T@ %p\n' | sort -nr | head -1 | cut -d' ' -f2-" || true)
+  globals_key=$(ssh_remote "find '$REMOTE_DIR' -maxdepth 1 -type f -name '${BACKUP_PREFIX}-*-globals.sql*' -printf '%T@ %p\n' | sort -nr | head -1 | cut -d' ' -f2-" || true)
+  assets_key=$(ssh_remote "find '$REMOTE_DIR' -maxdepth 1 -type f -name '${BACKUP_PREFIX}-*-assets.tar.gz*' -printf '%T@ %p\n' | sort -nr | head -1 | cut -d' ' -f2-" || true)
+  meta_key=$(ssh_remote "find '$REMOTE_DIR' -maxdepth 1 -type f -name '${BACKUP_PREFIX}-*-meta.json*' -printf '%T@ %p\n' | sort -nr | head -1 | cut -d' ' -f2-" || true)
+
+  if [[ -z "$db_key" || -z "$globals_key" ]]; then
+    echo "remote backups not found in ${REMOTE_HOST}:${REMOTE_DIR}" >&2
+    exit 1
+  fi
+
+  local target
+  target=$(remote_target)
+
+  local download_files=("$db_key" "$globals_key")
+  if [[ -n "$assets_key" ]]; then
+    download_files+=("$assets_key")
+  fi
+  if [[ -n "$meta_key" ]]; then
+    download_files+=("$meta_key")
+  fi
+
+  if command -v rsync >/dev/null 2>&1; then
+    local rsync_rsh
+    rsync_rsh=$(build_rsync_rsh)
+    rsync -av --protect-args -e "$rsync_rsh" "${download_files[@]/#/${target}:}" "$BACKUP_DIR/"
+  else
+    require_cmd scp
+    local scp_args=()
+    if [[ -n "${REMOTE_PORT:-}" ]]; then
+      scp_args+=(-P "$REMOTE_PORT")
+    fi
+    if [[ -n "${REMOTE_SSH_KEY:-}" ]]; then
+      scp_args+=(-i "$REMOTE_SSH_KEY")
+    fi
+    if (( ${#ssh_extra_opts[@]} > 0 )); then
+      scp_args+=("${ssh_extra_opts[@]}")
+    fi
+    local remote_path
+    for remote_path in "${download_files[@]}"; do
+      local remote_spec
+      remote_spec="${target}:$(printf '%q' "$remote_path")"
+      scp "${scp_args[@]}" "$remote_spec" "$BACKUP_DIR/"
+    done
+  fi
+}
+
 restore() {
   if [[ "${RESTORE_CONFIRM:-}" != "1" ]]; then
     echo "RESTORE_CONFIRM=1 is required to run restore" >&2
@@ -422,11 +602,14 @@ case "$cmd" in
     upload_existing
     ;;
   download)
-    if [[ -z "${S3_BUCKET:-}" ]]; then
-      echo "S3_BUCKET is required for download" >&2
+    if [[ -n "${S3_BUCKET:-}" ]]; then
+      download_latest
+    elif remote_enabled; then
+      download_latest_remote
+    else
+      echo "S3_BUCKET or REMOTE_HOST is required for download" >&2
       exit 1
     fi
-    download_latest
     ;;
   restore)
     restore
