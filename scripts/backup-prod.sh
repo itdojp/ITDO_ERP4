@@ -110,6 +110,28 @@ remote_enabled() {
   [[ -n "${REMOTE_HOST:-}" ]]
 }
 
+validate_remote_values() {
+  if ! remote_enabled; then
+    return 0
+  fi
+  if [[ -z "${REMOTE_DIR:-}" ]]; then
+    echo "REMOTE_DIR is required when REMOTE_HOST is set" >&2
+    exit 1
+  fi
+  if [[ ! "${REMOTE_DIR}" =~ ^[A-Za-z0-9._/=-]+$ ]]; then
+    echo "REMOTE_DIR contains unsupported characters: '${REMOTE_DIR}'" >&2
+    exit 1
+  fi
+  if [[ ! "${BACKUP_PREFIX}" =~ ^[A-Za-z0-9._-]+$ ]]; then
+    echo "BACKUP_PREFIX contains unsupported characters: '${BACKUP_PREFIX}'" >&2
+    exit 1
+  fi
+  if [[ -n "${REMOTE_KEEP_DAYS:-}" && ! "${REMOTE_KEEP_DAYS}" =~ ^[0-9]+$ ]]; then
+    echo "REMOTE_KEEP_DAYS must be a non-negative integer, got: '${REMOTE_KEEP_DAYS}'" >&2
+    exit 1
+  fi
+}
+
 remote_target() {
   if [[ -n "${REMOTE_USER:-}" ]]; then
     echo "${REMOTE_USER}@${REMOTE_HOST}"
@@ -134,16 +156,29 @@ ssh_remote() {
   ssh "${args[@]}" "$target" "$@"
 }
 
+build_rsync_rsh() {
+  local cmd=(ssh)
+  if [[ -n "${REMOTE_PORT:-}" ]]; then
+    cmd+=(-p "$REMOTE_PORT")
+  fi
+  if [[ -n "${REMOTE_SSH_KEY:-}" ]]; then
+    cmd+=(-i "$REMOTE_SSH_KEY")
+  fi
+  if (( ${#ssh_extra_opts[@]} > 0 )); then
+    cmd+=("${ssh_extra_opts[@]}")
+  fi
+  local rsh_cmd
+  printf -v rsh_cmd '%q ' "${cmd[@]}"
+  echo "${rsh_cmd% }"
+}
+
 ensure_remote_dir() {
   if ! remote_enabled; then
     return 0
   fi
-  if [[ -z "${REMOTE_DIR:-}" ]]; then
-    echo "REMOTE_DIR is required when REMOTE_HOST is set" >&2
-    exit 1
-  fi
+  validate_remote_values
   require_cmd ssh
-  ssh_remote "mkdir -p '$REMOTE_DIR'"
+  ssh_remote "mkdir -p -- '$REMOTE_DIR'"
 }
 
 remote_copy_files() {
@@ -156,17 +191,9 @@ remote_copy_files() {
   target=$(remote_target)
 
   if command -v rsync >/dev/null 2>&1; then
-    local rsync_rsh=(ssh)
-    if [[ -n "${REMOTE_PORT:-}" ]]; then
-      rsync_rsh+=(-p "$REMOTE_PORT")
-    fi
-    if [[ -n "${REMOTE_SSH_KEY:-}" ]]; then
-      rsync_rsh+=(-i "$REMOTE_SSH_KEY")
-    fi
-    if (( ${#ssh_extra_opts[@]} > 0 )); then
-      rsync_rsh+=("${ssh_extra_opts[@]}")
-    fi
-    rsync -av --protect-args -e "${rsync_rsh[*]}" "$@" "${target}:${REMOTE_DIR}/"
+    local rsync_rsh
+    rsync_rsh=$(build_rsync_rsh)
+    rsync -av --protect-args -e "$rsync_rsh" "$@" "${target}:${REMOTE_DIR}/"
   else
     require_cmd scp
     local scp_args=()
@@ -179,7 +206,10 @@ remote_copy_files() {
     if (( ${#ssh_extra_opts[@]} > 0 )); then
       scp_args+=("${ssh_extra_opts[@]}")
     fi
-    scp "${scp_args[@]}" "$@" "${target}:${REMOTE_DIR}/"
+    local local_path
+    for local_path in "$@"; do
+      scp "${scp_args[@]}" "$local_path" "${target}:${REMOTE_DIR}/"
+    done
   fi
 
   if [[ -n "${REMOTE_KEEP_DAYS:-}" ]]; then
@@ -443,10 +473,10 @@ download_latest_remote() {
   local globals_key
   local assets_key
   local meta_key
-  db_key=$(ssh_remote "ls -1t '$REMOTE_DIR'/${BACKUP_PREFIX}-*-db.dump* 2>/dev/null | head -1" || true)
-  globals_key=$(ssh_remote "ls -1t '$REMOTE_DIR'/${BACKUP_PREFIX}-*-globals.sql* 2>/dev/null | head -1" || true)
-  assets_key=$(ssh_remote "ls -1t '$REMOTE_DIR'/${BACKUP_PREFIX}-*-assets.tar.gz* 2>/dev/null | head -1" || true)
-  meta_key=$(ssh_remote "ls -1t '$REMOTE_DIR'/${BACKUP_PREFIX}-*-meta.json* 2>/dev/null | head -1" || true)
+  db_key=$(ssh_remote "find '$REMOTE_DIR' -maxdepth 1 -type f -name '${BACKUP_PREFIX}-*-db.dump*' -printf '%T@ %p\n' | sort -nr | head -1 | cut -d' ' -f2-" || true)
+  globals_key=$(ssh_remote "find '$REMOTE_DIR' -maxdepth 1 -type f -name '${BACKUP_PREFIX}-*-globals.sql*' -printf '%T@ %p\n' | sort -nr | head -1 | cut -d' ' -f2-" || true)
+  assets_key=$(ssh_remote "find '$REMOTE_DIR' -maxdepth 1 -type f -name '${BACKUP_PREFIX}-*-assets.tar.gz*' -printf '%T@ %p\n' | sort -nr | head -1 | cut -d' ' -f2-" || true)
+  meta_key=$(ssh_remote "find '$REMOTE_DIR' -maxdepth 1 -type f -name '${BACKUP_PREFIX}-*-meta.json*' -printf '%T@ %p\n' | sort -nr | head -1 | cut -d' ' -f2-" || true)
 
   if [[ -z "$db_key" || -z "$globals_key" ]]; then
     echo "remote backups not found in ${REMOTE_HOST}:${REMOTE_DIR}" >&2
@@ -465,17 +495,9 @@ download_latest_remote() {
   fi
 
   if command -v rsync >/dev/null 2>&1; then
-    local rsync_rsh=(ssh)
-    if [[ -n "${REMOTE_PORT:-}" ]]; then
-      rsync_rsh+=(-p "$REMOTE_PORT")
-    fi
-    if [[ -n "${REMOTE_SSH_KEY:-}" ]]; then
-      rsync_rsh+=(-i "$REMOTE_SSH_KEY")
-    fi
-    if (( ${#ssh_extra_opts[@]} > 0 )); then
-      rsync_rsh+=("${ssh_extra_opts[@]}")
-    fi
-    rsync -av --protect-args -e "${rsync_rsh[*]}" "${download_files[@]/#/${target}:}" "$BACKUP_DIR/"
+    local rsync_rsh
+    rsync_rsh=$(build_rsync_rsh)
+    rsync -av --protect-args -e "$rsync_rsh" "${download_files[@]/#/${target}:}" "$BACKUP_DIR/"
   else
     require_cmd scp
     local scp_args=()
@@ -488,7 +510,12 @@ download_latest_remote() {
     if (( ${#ssh_extra_opts[@]} > 0 )); then
       scp_args+=("${ssh_extra_opts[@]}")
     fi
-    scp "${scp_args[@]}" "${download_files[@]/#/${target}:}" "$BACKUP_DIR/"
+    local remote_path
+    for remote_path in "${download_files[@]}"; do
+      local remote_spec
+      remote_spec="${target}:$(printf '%q' "$remote_path")"
+      scp "${scp_args[@]}" "$remote_spec" "$BACKUP_DIR/"
+    done
   fi
 }
 
