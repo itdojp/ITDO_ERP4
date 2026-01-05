@@ -21,6 +21,7 @@ Optional env:
   ENVIRONMENT, S3_BUCKET, S3_PREFIX, S3_REGION, S3_ENDPOINT_URL
   SSE_KMS_KEY_ID, SSE_S3, GPG_RECIPIENT, GPG_HOME, GPG_REMOVE_PLAINTEXT
   ASSET_DIR, KEEP_DAYS, SCHEMA_VERSION, APP_VERSION
+  BACKUP_FILE, BACKUP_GLOBALS_FILE, BACKUP_ASSETS_FILE (upload/restore 用)
   RESTORE_CONFIRM=1 (required for restore)
 USAGE
 }
@@ -49,11 +50,34 @@ require_env() {
   fi
 }
 
+PGPASSFILE_CREATED=""
+
+cleanup_pgpass() {
+  if [[ -n "$PGPASSFILE_CREATED" ]]; then
+    rm -f "$PGPASSFILE_CREATED"
+  fi
+}
+
+trap cleanup_pgpass EXIT
+
 pg_env() {
-  export PGPASSWORD="$DB_PASSWORD"
   export PGHOST="$DB_HOST"
   export PGPORT="$DB_PORT"
   export PGUSER="$DB_USER"
+  if [[ -n "${PGPASSFILE:-}" ]]; then
+    return 0
+  fi
+  if [[ -n "${DB_PASSWORD:-}" ]]; then
+    PGPASSFILE_CREATED="$(mktemp "${TMPDIR:-/tmp}/pgpass.XXXXXX")"
+    chmod 600 "$PGPASSFILE_CREATED"
+    printf '%s:%s:%s:%s:%s\n' \
+      "${DB_HOST:-*}" \
+      "${DB_PORT:-*}" \
+      "*" \
+      "${DB_USER:-*}" \
+      "$DB_PASSWORD" > "$PGPASSFILE_CREATED"
+    export PGPASSFILE="$PGPASSFILE_CREATED"
+  fi
 }
 
 s3_args=()
@@ -97,6 +121,10 @@ s3_latest_key() {
 
 maybe_encrypt() {
   local file=$1
+  if [[ "$file" == *.gpg ]]; then
+    echo "$file"
+    return 0
+  fi
   if [[ -z "${GPG_RECIPIENT:-}" ]]; then
     echo "$file"
     return 0
@@ -203,9 +231,78 @@ backup() {
   if [[ -n "${KEEP_DAYS:-}" ]]; then
     log "pruning backups older than ${KEEP_DAYS} days in $BACKUP_DIR"
     find "$BACKUP_DIR" -maxdepth 1 -type f -name "${BACKUP_PREFIX}-*" -mtime +"$KEEP_DAYS" -print -delete
+    if [[ -n "${S3_BUCKET:-}" ]]; then
+      log "note: S3 objects under s3://${S3_BUCKET}/${S3_PREFIX} are not pruned; configure a lifecycle policy"
+    fi
   fi
 
   log "backup completed"
+}
+
+upload_existing() {
+  if [[ -z "${S3_BUCKET:-}" ]]; then
+    echo "S3_BUCKET is required for upload" >&2
+    exit 1
+  fi
+  require_cmd aws
+  mkdir -p "$BACKUP_DIR"
+
+  local db_file="${BACKUP_FILE:-}"
+  local globals_file="${BACKUP_GLOBALS_FILE:-}"
+  local assets_file="${BACKUP_ASSETS_FILE:-}"
+  local meta_file=""
+
+  if [[ -z "$db_file" ]]; then
+    db_file=$(ls -1t "$BACKUP_DIR"/${BACKUP_PREFIX}-*-db.dump* 2>/dev/null | head -1)
+  fi
+  if [[ -z "$globals_file" ]]; then
+    globals_file=$(ls -1t "$BACKUP_DIR"/${BACKUP_PREFIX}-*-globals.sql* 2>/dev/null | head -1)
+  fi
+  if [[ -z "$db_file" || ! -f "$db_file" ]]; then
+    echo "backup file not found. Set BACKUP_FILE or run backup first." >&2
+    exit 1
+  fi
+  if [[ -z "$globals_file" || ! -f "$globals_file" ]]; then
+    echo "globals file not found. Set BACKUP_GLOBALS_FILE or run backup first." >&2
+    exit 1
+  fi
+
+  if [[ -z "$assets_file" ]]; then
+    assets_file=$(ls -1t "$BACKUP_DIR"/${BACKUP_PREFIX}-*-assets.tar.gz* 2>/dev/null | head -1 || true)
+  fi
+  meta_file=$(ls -1t "$BACKUP_DIR"/${BACKUP_PREFIX}-*-meta.json* 2>/dev/null | head -1 || true)
+
+  local db_upload
+  local globals_upload
+  local assets_upload=""
+  local meta_upload=""
+  db_upload=$(maybe_encrypt "$db_file")
+  globals_upload=$(maybe_encrypt "$globals_file")
+  if [[ -n "$assets_file" && -f "$assets_file" ]]; then
+    assets_upload=$(maybe_encrypt "$assets_file")
+  fi
+  if [[ -n "$meta_file" && -f "$meta_file" ]]; then
+    meta_upload=$(maybe_encrypt "$meta_file")
+  fi
+
+  local s3_base="${S3_PREFIX%/}"
+  local s3_db_prefix="${s3_base}/db"
+  local s3_globals_prefix="${s3_base}/globals"
+  local s3_assets_prefix="${s3_base}/assets"
+  local s3_meta_prefix="${s3_base}/meta"
+  log "uploading db dump to S3"
+  aws_cli s3 cp "$db_upload" "$(s3_uri "$s3_db_prefix" "$db_upload")" "${sse_args[@]}"
+  log "uploading globals dump to S3"
+  aws_cli s3 cp "$globals_upload" "$(s3_uri "$s3_globals_prefix" "$globals_upload")" "${sse_args[@]}"
+  if [[ -n "$assets_upload" ]]; then
+    log "uploading assets archive to S3"
+    aws_cli s3 cp "$assets_upload" "$(s3_uri "$s3_assets_prefix" "$assets_upload")" "${sse_args[@]}"
+  fi
+  if [[ -n "$meta_upload" ]]; then
+    log "uploading metadata to S3"
+    aws_cli s3 cp "$meta_upload" "$(s3_uri "$s3_meta_prefix" "$meta_upload")" "${sse_args[@]}"
+  fi
+  log "upload completed"
 }
 
 download_latest() {
@@ -268,16 +365,21 @@ restore() {
     exit 1
   fi
 
+  local gpg_args=()
+  if [[ -n "${GPG_HOME:-}" ]]; then
+    gpg_args+=(--homedir "$GPG_HOME")
+  fi
+
   if [[ "$globals_file" == *.gpg ]]; then
     require_cmd gpg
     local decrypted_globals="${globals_file%.gpg}"
-    gpg --batch --yes --output "$decrypted_globals" --decrypt "$globals_file"
+    gpg "${gpg_args[@]}" --batch --yes --output "$decrypted_globals" --decrypt "$globals_file"
     globals_file="$decrypted_globals"
   fi
   if [[ "$backup_file" == *.gpg ]]; then
     require_cmd gpg
     local decrypted_backup="${backup_file%.gpg}"
-    gpg --batch --yes --output "$decrypted_backup" --decrypt "$backup_file"
+    gpg "${gpg_args[@]}" --batch --yes --output "$decrypted_backup" --decrypt "$backup_file"
     backup_file="$decrypted_backup"
   fi
 
@@ -285,6 +387,29 @@ restore() {
   psql -v ON_ERROR_STOP=1 -f "$globals_file" postgres
   log "restoring database"
   pg_restore --clean --if-exists -d "$DB_NAME" "$backup_file"
+
+  if [[ -n "${ASSET_DIR:-}" ]]; then
+    local assets_file="${BACKUP_ASSETS_FILE:-}"
+    if [[ -z "$assets_file" ]]; then
+      assets_file=$(ls -1t "$BACKUP_DIR"/${BACKUP_PREFIX}-*-assets.tar.gz* 2>/dev/null | head -1 || true)
+    fi
+    if [[ -n "$assets_file" && -f "$assets_file" ]]; then
+      if [[ "$assets_file" == *.gpg ]]; then
+        require_cmd gpg
+        local decrypted_assets="${assets_file%.gpg}"
+        gpg "${gpg_args[@]}" --batch --yes --output "$decrypted_assets" --decrypt "$assets_file"
+        assets_file="$decrypted_assets"
+      fi
+      mkdir -p "$ASSET_DIR"
+      if [[ -n "$(ls -A "$ASSET_DIR" 2>/dev/null)" ]]; then
+        log "warning: asset dir is not empty; files may be overwritten"
+      fi
+      log "restoring assets to $ASSET_DIR"
+      tar -xzf "$assets_file" -C "$ASSET_DIR"
+    else
+      log "assets archive not found; skipping asset restore"
+    fi
+  fi
   log "restore completed"
 }
 
@@ -294,11 +419,7 @@ case "$cmd" in
     backup
     ;;
   upload)
-    if [[ -z "${S3_BUCKET:-}" ]]; then
-      echo "S3_BUCKET is required for upload" >&2
-      exit 1
-    fi
-    backup
+    upload_existing
     ;;
   download)
     if [[ -z "${S3_BUCKET:-}" ]]; then

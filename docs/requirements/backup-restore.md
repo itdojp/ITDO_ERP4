@@ -41,7 +41,7 @@
 ### 本番向けスクリプト（AWS/S3 例）
 - バックアップ（DB/グローバル/メタデータ/任意で添付）
   - `./scripts/backup-prod.sh backup`
-- S3 へアップロード込み（SSE-KMS）
+- S3 へアップロード（既存ローカルバックアップを転送）
   - `S3_BUCKET=erp4-backups SSE_KMS_KEY_ID=alias/erp4-backup ./scripts/backup-prod.sh upload`
 - S3 から取得してリストア
   - `S3_BUCKET=erp4-backups ./scripts/backup-prod.sh download`
@@ -53,6 +53,7 @@
 - `SSE_KMS_KEY_ID` または `SSE_S3`（例: `AES256`）
 - `ASSET_DIR`（PDF/添付をローカル保存している場合のルート）
 - `GPG_RECIPIENT`（二重暗号化が必要な場合）
+- `BACKUP_FILE`/`BACKUP_GLOBALS_FILE`/`BACKUP_ASSETS_FILE`（特定バックアップを upload/restore する場合）
 
 ## 保持期間/世代管理（案）
 - 日次: 14日分
@@ -80,6 +81,7 @@
 - 暗号化: SSE-KMS（例: `alias/erp4-backup`）+ 必要に応じてGPG
 - アップロード: メタデータに `env`, `generated_at`, `schema_version` を付与
 - 権限: 書き込み専用ロールと読み取り専用ロールを分離
+- 保持期間は S3 Lifecycle で管理（ローカル削除とは別）
 
 ## リストア検証（案）
 - 月次で別環境にリストアし、`/health` と主要APIのスモーク確認
