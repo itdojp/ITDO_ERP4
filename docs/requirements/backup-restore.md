@@ -58,6 +58,8 @@
 - `REMOTE_HOST` を指定した場合は `REMOTE_DIR` が必須
 - `REMOTE_KEEP_DAYS` を指定すると別ホスト側も世代削除を実行
 - GPGで暗号化した場合は復号用の鍵がローカルに必要（`GPG_HOME` を必要に応じて指定）
+- `REMOTE_DIR` は安全な文字（英数字/`._/=-`）のみを許容
+- `BACKUP_PREFIX` は安全な文字（英数字/`._-`）のみを許容
 
 必要な環境変数（抜粋）
 - `DB_HOST`/`DB_PORT`/`DB_USER`/`DB_PASSWORD`/`DB_NAME`
@@ -103,8 +105,14 @@
 - 別ホスト側の保持期間は `REMOTE_KEEP_DAYS` で管理（未指定の場合は手動）
 
 ## リストア検証（案）
-- 月次で別環境にリストアし、`/health` と主要APIのスモーク確認
-- DB件数/合計金額の整合（`./scripts/podman-poc.sh check`。内部的に `scripts/checks/poc-integrity.sql` を利用）を実行
+### 定期リストア検証（暫定）
+- 頻度: 月次（第1営業日）
+- 手順:
+  1. 退避先から最新を取得（S3 または REMOTE_HOST）
+  2. 検証DBへリストア（`RESTORE_CONFIRM=1`）
+  3. `/health` と主要APIのスモーク確認
+  4. `./scripts/podman-poc.sh check` で件数/金額の整合確認
+  5. 結果を `docs/test-results/` に記録
 - 失敗時は原因と対応を記録し、次回の手順を更新
 
 ## PDF/添付の扱い（案）
