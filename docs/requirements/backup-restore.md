@@ -38,6 +38,23 @@
 - リストア後は `./scripts/podman-poc.sh check` で件数/金額の整合を確認
 - `RESTORE_CONFIRM=1` を付けた場合のみ restore が実行される
 
+### 本番向けスクリプト（AWS/S3 例）
+- バックアップ（DB/グローバル/メタデータ/任意で添付）
+  - `./scripts/backup-prod.sh backup`
+- S3 へアップロード（既存ローカルバックアップを転送）
+  - `S3_BUCKET=erp4-backups SSE_KMS_KEY_ID=alias/erp4-backup ./scripts/backup-prod.sh upload`
+- S3 から取得してリストア
+  - `S3_BUCKET=erp4-backups ./scripts/backup-prod.sh download`
+  - `RESTORE_CONFIRM=1 ./scripts/backup-prod.sh restore`
+
+必要な環境変数（抜粋）
+- `DB_HOST`/`DB_PORT`/`DB_USER`/`DB_PASSWORD`/`DB_NAME`
+- `S3_BUCKET`/`S3_PREFIX`/`S3_REGION`/`S3_ENDPOINT_URL`
+- `SSE_KMS_KEY_ID` または `SSE_S3`（例: `AES256`）
+- `ASSET_DIR`（PDF/添付をローカル保存している場合のルート）
+- `GPG_RECIPIENT`（二重暗号化が必要な場合）
+- `BACKUP_FILE`/`BACKUP_GLOBALS_FILE`/`BACKUP_ASSETS_FILE`（特定バックアップを upload/restore する場合）
+
 ## 保持期間/世代管理（案）
 - 日次: 14日分
 - 週次: 8週分
@@ -60,10 +77,11 @@
 ## 本番運用（案）
 - 実行タイミング: 深夜帯の日次（例: 02:00 JST）
 - 取得形式: `pg_dump -Fc`（DB）+ `pg_dumpall --globals-only`（ロール/権限）
-- 保存先: `s3://<bucket>/erp4/<env>/{db,globals,assets}/YYYY/MM/DD/`
+- 保存先: `s3://<bucket>/erp4/<env>/{db,globals,assets,meta}/`
 - 暗号化: SSE-KMS（例: `alias/erp4-backup`）+ 必要に応じてGPG
 - アップロード: メタデータに `env`, `generated_at`, `schema_version` を付与
 - 権限: 書き込み専用ロールと読み取り専用ロールを分離
+- 保持期間は S3 Lifecycle で管理（ローカル削除とは別）
 
 ## リストア検証（案）
 - 月次で別環境にリストアし、`/health` と主要APIのスモーク確認
@@ -83,3 +101,4 @@
 ## TODO
 - 本番環境の保持期間/暗号化方針の確定（叩き台は追記済み）
 - PDF/添付のバックアップ方式を決定（叩き台は追記済み）
+- S3 バケット名/リージョン/KMS の確定値を反映
