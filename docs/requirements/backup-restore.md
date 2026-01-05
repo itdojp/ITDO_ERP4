@@ -58,7 +58,8 @@
 - `REMOTE_HOST` を指定した場合は `REMOTE_DIR` が必須
 - `REMOTE_KEEP_DAYS` を指定すると別ホスト側も世代削除を実行
 - GPGで暗号化した場合は復号用の鍵がローカルに必要（`GPG_HOME` を必要に応じて指定）
-- `REMOTE_DIR` と `BACKUP_PREFIX` は安全な文字（英数字/`._-/=`）のみを許容
+- `REMOTE_DIR` は安全な文字（英数字/`._/=-`）のみを許容
+- `BACKUP_PREFIX` は安全な文字（英数字/`._-`）のみを許容
 
 必要な環境変数（抜粋）
 - `DB_HOST`/`DB_PORT`/`DB_USER`/`DB_PASSWORD`/`DB_NAME`
