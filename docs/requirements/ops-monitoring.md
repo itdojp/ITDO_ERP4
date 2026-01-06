@@ -7,11 +7,12 @@
 ## 監視対象（優先順）
 1. **バッチ/ジョブ**
    - 発番/定期案件/アラート計算/承認エスカレーション
+   - レポート購読/配信（report_subscriptions / report_deliveries）
    - 外部連携（HR/CRM）の同期ジョブ
    - 失敗件数、最終実行時刻、連続失敗回数
 2. **アラート/通知**
    - アラート遅延（triggeredAt → sent）
-   - 送信失敗（document_send_logs / mail logs）
+   - 送信失敗（document_send_logs / report_deliveries / mail logs）
 3. **API/DB 基盤**
    - API 5xx 率、遅延、DB 接続数、遅いクエリ
 
@@ -19,6 +20,7 @@
 - ジョブ失敗: 1回でも失敗 → 通知
 - アラート遅延: 24h 超過は要確認（管理画面閾値に合わせる）
 - 送信失敗率: 一定回数連続失敗で通知
+- レポート配信: failed/failed_permanent 件数、retry待ち件数、最終配信時刻
 - 外部連携失敗: integration_failure の AlertSetting で通知
 
 ## 閾値の初期案（ドラフト）
@@ -38,6 +40,7 @@
 
 ## 最低限の運用手順
 - 日次: 失敗ジョブ数/アラート遅延件数の確認
+- 日次: レポート配信の failed_permanent / retry待ち件数の確認
 - 週次: 送信失敗の再送状況確認
 
 ## TODO

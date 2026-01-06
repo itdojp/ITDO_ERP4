@@ -9,6 +9,8 @@
 - [ ] /pdf-templates と /template-settings CRUD が動作する
 - [ ] /document-send-logs/:id と /document-send-logs/:id/events が取得できる
 - [ ] /document-send-logs/:id/retry で再送が記録される
+- [ ] /report-subscriptions CRUD → /report-subscriptions/:id/run で report_deliveries が作成される
+- [ ] /jobs/report-subscriptions/run と /jobs/report-deliveries/retry が動作する
 - [ ] /approval-rules CRUD のハッピーパス
 - [ ] /vendor-quotes 作成と /vendor-invoices 作成→approve が通る
 - [ ] /wellbeing-entries POST → HR/AdminでGETできる
