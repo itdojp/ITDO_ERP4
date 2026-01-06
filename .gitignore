@@ -10,3 +10,5 @@ packages/frontend/.env
 /tmp
 /test-results
 /playwright-report
+/packages/frontend/test-results
+/packages/frontend/playwright-report

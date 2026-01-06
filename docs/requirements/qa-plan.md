@@ -75,7 +75,8 @@ UUID生成関数は環境に合わせて置き換え（`gen_random_uuid()`/`uuid
 ## フロント自動テスト (E2E)
 - 実行: `scripts/e2e-frontend.sh`
 - 画面キャプチャの出力先: `docs/test-results/YYYY-MM-DD-frontend-e2e/`
-- 操作範囲: 日報 + ウェルビーイング、工数入力、経費入力、請求の作成
+- 操作範囲: ダッシュボード、日報+WB、工数/経費/請求、仕入/発注、承認一覧、レポート、案件、顧客/業者マスタ、設定
+- CI向け: `E2E_CAPTURE=0` で証跡保存をスキップ
 
 ## 管理系
 - マスタ管理: /customers, /vendors の GET/POST/PATCH でCRUD動作

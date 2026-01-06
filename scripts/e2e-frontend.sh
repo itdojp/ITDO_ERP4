@@ -8,6 +8,7 @@ DATABASE_URL="${DATABASE_URL:-postgresql://postgres:postgres@localhost:55432/pos
 E2E_DATE="${E2E_DATE:-$(date +%Y-%m-%d)}"
 E2E_EVIDENCE_DIR="${E2E_EVIDENCE_DIR:-$ROOT_DIR/docs/test-results/${E2E_DATE}-frontend-e2e}"
 E2E_BASE_URL="${E2E_BASE_URL:-http://localhost:${FRONTEND_PORT}}"
+E2E_CAPTURE="${E2E_CAPTURE:-1}"
 
 BACKEND_LOG="$ROOT_DIR/tmp/e2e-backend.log"
 FRONTEND_LOG="$ROOT_DIR/tmp/e2e-frontend.log"
@@ -69,6 +70,7 @@ fi
 E2E_ROOT_DIR="$ROOT_DIR" \
 E2E_EVIDENCE_DIR="$E2E_EVIDENCE_DIR" \
 E2E_BASE_URL="$E2E_BASE_URL" \
-  npx --prefix "$ROOT_DIR/packages/frontend" playwright test
+E2E_CAPTURE="$E2E_CAPTURE" \
+  npx --prefix "$ROOT_DIR/packages/frontend" playwright test --config "$ROOT_DIR/packages/frontend/playwright.config.ts"
 
 echo "e2e evidence saved: $E2E_EVIDENCE_DIR"

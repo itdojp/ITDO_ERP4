@@ -10,8 +10,14 @@
 - 成功
 
 ## 取得した画面キャプチャ
-- docs/test-results/2026-01-06-frontend-e2e/01-dashboard.png
-- docs/test-results/2026-01-06-frontend-e2e/02-daily-report.png
-- docs/test-results/2026-01-06-frontend-e2e/03-time-entries.png
-- docs/test-results/2026-01-06-frontend-e2e/04-expenses.png
-- docs/test-results/2026-01-06-frontend-e2e/05-invoices.png
+- docs/test-results/2026-01-06-frontend-e2e/01-core-dashboard.png
+- docs/test-results/2026-01-06-frontend-e2e/02-core-daily-report.png
+- docs/test-results/2026-01-06-frontend-e2e/03-core-time-entries.png
+- docs/test-results/2026-01-06-frontend-e2e/04-core-expenses.png
+- docs/test-results/2026-01-06-frontend-e2e/05-core-invoices.png
+- docs/test-results/2026-01-06-frontend-e2e/06-vendor-docs.png
+- docs/test-results/2026-01-06-frontend-e2e/07-approvals.png
+- docs/test-results/2026-01-06-frontend-e2e/08-reports.png
+- docs/test-results/2026-01-06-frontend-e2e/09-projects.png
+- docs/test-results/2026-01-06-frontend-e2e/10-master-data.png
+- docs/test-results/2026-01-06-frontend-e2e/11-admin-settings.png
