@@ -20,6 +20,15 @@ const PUSH_TOPICS = [
   { id: 'reports', label: 'レポート' },
   { id: 'invoices', label: '請求/発注' },
 ];
+const PUSH_TOPIC_SET = new Set(PUSH_TOPICS.map((topic) => topic.id));
+
+function normalizePushTopics(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return ['alerts'];
+  const filtered = raw
+    .map((item) => String(item))
+    .filter((item) => PUSH_TOPIC_SET.has(item));
+  return filtered.length ? filtered : ['alerts'];
+}
 
 let googleScriptPromise: Promise<void> | null = null;
 
@@ -160,9 +169,7 @@ export const CurrentUser: React.FC = () => {
       const raw = window.localStorage.getItem(PUSH_TOPIC_KEY);
       if (!raw) return ['alerts'];
       const parsed = JSON.parse(raw);
-      return Array.isArray(parsed)
-        ? parsed.map((item) => String(item)).filter(Boolean)
-        : ['alerts'];
+      return normalizePushTopics(parsed);
     } catch {
       return ['alerts'];
     }
@@ -223,6 +230,43 @@ export const CurrentUser: React.FC = () => {
       setQueueProcessing(true);
       try {
         const result = await processOfflineQueue({ includeFailed });
+        if (result.stoppedBy === 'locked') {
+          return;
+        }
+        if (result.stoppedBy === 'failed') {
+          setQueueError('送信に失敗した項目があります');
+        } else if (result.stoppedBy === 'offline') {
+          setQueueMessage('オフラインのため送信を保留しました');
+        } else {
+          setQueueMessage('送信待ちを処理しました');
+        }
+      } catch {
+        setQueueError('送信待ちの処理に失敗しました');
+      } finally {
+        setQueueProcessing(false);
+        await loadQueueItems();
+      }
+    },
+    [auth, loadQueueItems],
+  );
+
+  const runQueueItem = useCallback(
+    async (id: string) => {
+      setQueueError('');
+      setQueueMessage('');
+      if (!auth) {
+        setQueueError('ログイン後に送信待ちを処理できます');
+        return;
+      }
+      setQueueProcessing(true);
+      try {
+        const result = await processOfflineQueue({
+          includeFailed: true,
+          targetId: id,
+        });
+        if (result.stoppedBy === 'locked') {
+          return;
+        }
         if (result.stoppedBy === 'failed') {
           setQueueError('送信に失敗した項目があります');
         } else if (result.stoppedBy === 'offline') {
@@ -250,10 +294,14 @@ export const CurrentUser: React.FC = () => {
 
   useEffect(() => {
     loadQueueItems();
-    runQueue(false).catch(() => undefined);
+    if (auth) {
+      runQueue(false).catch(() => undefined);
+    }
     const handleOnline = () => {
       setIsOnline(true);
-      runQueue(false).catch(() => undefined);
+      if (auth) {
+        runQueue(false).catch(() => undefined);
+      }
     };
     const handleOffline = () => setIsOnline(false);
     window.addEventListener('online', handleOnline);
@@ -262,7 +310,7 @@ export const CurrentUser: React.FC = () => {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
     };
-  }, [loadQueueItems, runQueue]);
+  }, [auth, loadQueueItems, runQueue]);
 
   useEffect(() => {
     if (!auth || !pushSupported) {
@@ -415,7 +463,8 @@ export const CurrentUser: React.FC = () => {
         setPushError('通知の受信に同意してください');
         return;
       }
-      if (pushTopics.length === 0) {
+      const normalizedTopics = normalizePushTopics(pushTopics);
+      if (normalizedTopics.length === 0) {
         setPushError('配信条件を1つ以上選択してください');
         return;
       }
@@ -441,7 +490,7 @@ export const CurrentUser: React.FC = () => {
         body: JSON.stringify({
           ...payload,
           userAgent: navigator.userAgent,
-          topics: pushTopics,
+          topics: normalizedTopics,
         }),
       });
       setPushMessage('Push購読を登録しました');
@@ -679,7 +728,7 @@ export const CurrentUser: React.FC = () => {
                   <div className="row" style={{ marginTop: 6 }}>
                     <button
                       className="button secondary"
-                      onClick={() => runQueue(true)}
+                      onClick={() => runQueueItem(item.id)}
                       disabled={queueProcessing}
                     >
                       再送
