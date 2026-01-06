@@ -2,35 +2,12 @@ import { FastifyInstance } from 'fastify';
 import { prisma } from '../services/db.js';
 import { logAudit } from '../services/audit.js';
 import { requireRole } from '../services/rbac.js';
+import { sendCsv, toCsv } from '../utils/csv.js';
 
 function normalizeFormat(raw?: string) {
   const value = (raw || 'json').toLowerCase();
   if (value === 'csv' || value === 'json') return value;
   return null;
-}
-
-function formatCsvValue(value: unknown) {
-  if (value == null) return '';
-  const text = String(value);
-  if (/[",\n\r]/.test(text)) {
-    return `"${text.replace(/"/g, '""')}"`;
-  }
-  return text;
-}
-
-function toCsv(headers: string[], rows: unknown[][]) {
-  const lines = [headers.map(formatCsvValue).join(',')];
-  for (const row of rows) {
-    lines.push(row.map(formatCsvValue).join(','));
-  }
-  return `${lines.join('\n')}\n`;
-}
-
-function sendCsv(reply: any, filename: string, csv: string) {
-  return reply
-    .header('Content-Disposition', `attachment; filename="${filename}"`)
-    .type('text/csv; charset=utf-8')
-    .send(csv);
 }
 
 export async function registerAccessReviewRoutes(app: FastifyInstance) {

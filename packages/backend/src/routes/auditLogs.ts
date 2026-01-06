@@ -3,6 +3,8 @@ import { prisma } from '../services/db.js';
 import { logAudit } from '../services/audit.js';
 import { requireRole } from '../services/rbac.js';
 import { endOfDay, parseDateParam } from '../utils/date.js';
+import { sendCsv, toCsv } from '../utils/csv.js';
+import type { Prisma } from '@prisma/client';
 
 const DEFAULT_LIMIT = 200;
 const MAX_LIMIT = 1000;
@@ -18,30 +20,6 @@ function normalizeLimit(raw?: string | number) {
   const value = Number(raw);
   if (!Number.isFinite(value)) return DEFAULT_LIMIT;
   return Math.max(0, Math.min(MAX_LIMIT, Math.floor(value)));
-}
-
-function formatCsvValue(value: unknown) {
-  if (value == null) return '';
-  const text = String(value);
-  if (/[",\n\r]/.test(text)) {
-    return `"${text.replace(/"/g, '""')}"`;
-  }
-  return text;
-}
-
-function toCsv(headers: string[], rows: unknown[][]) {
-  const lines = [headers.map(formatCsvValue).join(',')];
-  for (const row of rows) {
-    lines.push(row.map(formatCsvValue).join(','));
-  }
-  return `${lines.join('\n')}\n`;
-}
-
-function sendCsv(reply: any, filename: string, csv: string) {
-  return reply
-    .header('Content-Disposition', `attachment; filename="${filename}"`)
-    .type('text/csv; charset=utf-8')
-    .send(csv);
 }
 
 export async function registerAuditLogRoutes(app: FastifyInstance) {
@@ -76,20 +54,37 @@ export async function registerAuditLogRoutes(app: FastifyInstance) {
       }
       const fromDate = parseDateParam(from);
       const toDate = parseDateParam(to);
-      const where: any = {};
+      const where: Prisma.AuditLogWhereInput = {};
       if (userId) where.userId = String(userId);
       if (action) where.action = String(action);
       if (targetTable) where.targetTable = String(targetTable);
       if (targetId) where.targetId = String(targetId);
-      if (fromDate || toDate) {
-        where.createdAt = {};
-        if (fromDate) where.createdAt.gte = fromDate;
-        if (toDate) where.createdAt.lte = endOfDay(toDate);
+      const createdAt: Prisma.DateTimeFilter = {};
+      if (fromDate) createdAt.gte = fromDate;
+      if (toDate) createdAt.lte = endOfDay(toDate);
+      if (Object.keys(createdAt).length) {
+        where.createdAt = createdAt;
       }
       const items = await prisma.auditLog.findMany({
         where,
         orderBy: { createdAt: 'desc' },
         take: normalizeLimit(limit),
+      });
+      await logAudit({
+        action: 'audit_log_exported',
+        userId: req.user?.userId,
+        metadata: {
+          format: normalizedFormat,
+          rowCount: items.length,
+          filters: {
+            from,
+            to,
+            userId,
+            action,
+            targetTable,
+            targetId,
+          },
+        },
       });
       if (normalizedFormat === 'csv') {
         const headers = [
@@ -110,24 +105,12 @@ export async function registerAuditLogRoutes(app: FastifyInstance) {
           item.createdAt.toISOString(),
           item.metadata ? JSON.stringify(item.metadata) : '',
         ]);
-        await logAudit({
-          action: 'audit_log_exported',
-          userId: req.user?.userId,
-          metadata: {
-            format: 'csv',
-            rowCount: items.length,
-            filters: {
-              from,
-              to,
-              userId,
-              action,
-              targetTable,
-              targetId,
-            },
-          },
-        });
         const dateLabel = new Date().toISOString().slice(0, 10);
-        return sendCsv(reply, `audit-logs-${dateLabel}.csv`, toCsv(headers, rows));
+        return sendCsv(
+          reply,
+          `audit-logs-${dateLabel}.csv`,
+          toCsv(headers, rows),
+        );
       }
       return { items };
     },
