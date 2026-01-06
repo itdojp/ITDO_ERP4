@@ -13,7 +13,7 @@ import {
   reassignSchema,
 } from './validators.js';
 import { prisma } from '../services/db.js';
-import { logAudit } from '../services/audit.js';
+import { auditContextFromRequest, logAudit } from '../services/audit.js';
 import { logReassignment } from '../services/reassignmentLog.js';
 import { parseDueDateRule } from '../services/dueDateRule.js';
 
@@ -379,9 +379,10 @@ export async function registerProjectRoutes(app: FastifyInstance) {
       });
       await logAudit({
         action: 'reassignment',
-        userId: req.user?.userId,
         targetTable: 'project_tasks',
         targetId: taskId,
+        reasonCode: body.reasonCode,
+        reasonText,
         metadata: {
           fromProjectId: projectId,
           toProjectId: body.toProjectId,
@@ -390,6 +391,7 @@ export async function registerProjectRoutes(app: FastifyInstance) {
           reasonCode: body.reasonCode,
           reasonText,
         },
+        ...auditContextFromRequest(req),
       });
       await logReassignment({
         targetTable: 'project_tasks',

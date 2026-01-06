@@ -1,6 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import { prisma } from '../services/db.js';
-import { logAudit } from '../services/audit.js';
+import { auditContextFromRequest, logAudit } from '../services/audit.js';
 import { requireRole } from '../services/rbac.js';
 import { endOfDay, parseDateParam } from '../utils/date.js';
 import { sendCsv, toCsv } from '../utils/csv.js';
@@ -27,17 +27,37 @@ export async function registerAuditLogRoutes(app: FastifyInstance) {
     '/audit-logs',
     { preHandler: requireRole(['admin', 'mgmt', 'exec']) },
     async (req, reply) => {
-      const { from, to, userId, action, targetTable, targetId, format, limit } =
-        req.query as {
-          from?: string;
-          to?: string;
-          userId?: string;
-          action?: string;
-          targetTable?: string;
-          targetId?: string;
-          format?: string;
-          limit?: string;
-        };
+      const {
+        from,
+        to,
+        userId,
+        action,
+        targetTable,
+        targetId,
+        reasonCode,
+        reasonText,
+        source,
+        actorRole,
+        actorGroupId,
+        requestId,
+        format,
+        limit,
+      } = req.query as {
+        from?: string;
+        to?: string;
+        userId?: string;
+        action?: string;
+        targetTable?: string;
+        targetId?: string;
+        reasonCode?: string;
+        reasonText?: string;
+        source?: string;
+        actorRole?: string;
+        actorGroupId?: string;
+        requestId?: string;
+        format?: string;
+        limit?: string;
+      };
       const normalizedFormat = normalizeFormat(format);
       if (!normalizedFormat) {
         return reply.status(400).send({
@@ -54,6 +74,14 @@ export async function registerAuditLogRoutes(app: FastifyInstance) {
       if (action) where.action = String(action);
       if (targetTable) where.targetTable = String(targetTable);
       if (targetId) where.targetId = String(targetId);
+      if (reasonCode) where.reasonCode = String(reasonCode);
+      if (reasonText) {
+        where.reasonText = { contains: String(reasonText) };
+      }
+      if (source) where.source = String(source);
+      if (actorRole) where.actorRole = String(actorRole);
+      if (actorGroupId) where.actorGroupId = String(actorGroupId);
+      if (requestId) where.requestId = String(requestId);
       const createdAt: Prisma.DateTimeFilter = {};
       if (fromDate) createdAt.gte = fromDate;
       if (toDate) createdAt.lte = endOfDay(toDate);
@@ -67,7 +95,6 @@ export async function registerAuditLogRoutes(app: FastifyInstance) {
       });
       await logAudit({
         action: 'audit_log_exported',
-        userId: req.user?.userId,
         metadata: {
           format: normalizedFormat,
           rowCount: items.length,
@@ -78,14 +105,29 @@ export async function registerAuditLogRoutes(app: FastifyInstance) {
             action,
             targetTable,
             targetId,
+            reasonCode,
+            reasonText,
+            source,
+            actorRole,
+            actorGroupId,
+            requestId,
           },
         },
+        ...auditContextFromRequest(req),
       });
       if (normalizedFormat === 'csv') {
         const headers = [
           'id',
           'action',
           'userId',
+          'actorRole',
+          'actorGroupId',
+          'requestId',
+          'ipAddress',
+          'userAgent',
+          'source',
+          'reasonCode',
+          'reasonText',
           'targetTable',
           'targetId',
           'createdAt',
@@ -95,6 +137,14 @@ export async function registerAuditLogRoutes(app: FastifyInstance) {
           item.id,
           item.action,
           item.userId || '',
+          item.actorRole || '',
+          item.actorGroupId || '',
+          item.requestId || '',
+          item.ipAddress || '',
+          item.userAgent || '',
+          item.source || '',
+          item.reasonCode || '',
+          item.reasonText || '',
           item.targetTable || '',
           item.targetId || '',
           item.createdAt.toISOString(),

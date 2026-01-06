@@ -2,7 +2,7 @@ import { timingSafeEqual } from 'crypto';
 import { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { Prisma } from '@prisma/client';
 import { prisma } from '../services/db.js';
-import { logAudit } from '../services/audit.js';
+import { auditContextFromRequest, logAudit } from '../services/audit.js';
 
 const SCIM_USER_SCHEMA = 'urn:ietf:params:scim:schemas:core:2.0:User';
 const SCIM_GROUP_SCHEMA = 'urn:ietf:params:scim:schemas:core:2.0:Group';
@@ -576,6 +576,7 @@ export async function registerScimRoutes(app: FastifyInstance) {
       targetTable: 'UserAccount',
       targetId: created.id,
       metadata: { externalId: created.externalId, userName: created.userName },
+      ...auditContextFromRequest(req, { source: 'scim' }),
     });
     return reply.code(201).send(buildUserResource(created));
   });
@@ -635,6 +636,7 @@ export async function registerScimRoutes(app: FastifyInstance) {
       targetTable: 'UserAccount',
       targetId: updated.id,
       metadata: { externalId: updated.externalId, userName: updated.userName },
+      ...auditContextFromRequest(req, { source: 'scim' }),
     });
     return buildUserResource(updated);
   });
@@ -739,6 +741,7 @@ export async function registerScimRoutes(app: FastifyInstance) {
           externalId: updated.externalId,
           userName: updated.userName,
         },
+        ...auditContextFromRequest(req, { source: 'scim' }),
       });
       return buildUserResource(updated);
     } catch (err) {
@@ -766,6 +769,7 @@ export async function registerScimRoutes(app: FastifyInstance) {
         action: 'scim_user_deactivate',
         targetTable: 'UserAccount',
         targetId: updated.id,
+        ...auditContextFromRequest(req, { source: 'scim' }),
       });
       return reply.code(204).send();
     } catch (err) {
@@ -912,6 +916,7 @@ export async function registerScimRoutes(app: FastifyInstance) {
       action: 'scim_group_create',
       targetTable: 'GroupAccount',
       targetId: created.id,
+      ...auditContextFromRequest(req, { source: 'scim' }),
     });
     return reply.code(201).send(
       buildGroupResource({
@@ -996,6 +1001,7 @@ export async function registerScimRoutes(app: FastifyInstance) {
       action: 'scim_group_update',
       targetTable: 'GroupAccount',
       targetId: updated.id,
+      ...auditContextFromRequest(req, { source: 'scim' }),
     });
     return buildGroupResource({
       ...updated,
@@ -1154,6 +1160,7 @@ export async function registerScimRoutes(app: FastifyInstance) {
       action: 'scim_group_patch',
       targetTable: 'GroupAccount',
       targetId: group.id,
+      ...auditContextFromRequest(req, { source: 'scim' }),
     });
     return buildGroupResource({
       ...group,
@@ -1176,6 +1183,7 @@ export async function registerScimRoutes(app: FastifyInstance) {
         action: 'scim_group_disable',
         targetTable: 'GroupAccount',
         targetId: updated.id,
+        ...auditContextFromRequest(req, { source: 'scim' }),
       });
       return reply.code(204).send();
     } catch (err) {

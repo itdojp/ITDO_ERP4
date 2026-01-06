@@ -1,7 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import type { Prisma } from '@prisma/client';
 import { prisma } from '../services/db.js';
-import { logAudit } from '../services/audit.js';
+import { auditContextFromRequest, logAudit } from '../services/audit.js';
 import { requireRole } from '../services/rbac.js';
 import { endOfDay, parseDateParam } from '../utils/date.js';
 
@@ -113,8 +113,8 @@ export async function registerInsightRoutes(app: FastifyInstance) {
       const capped = items.slice(0, normalizedLimit);
       await logAudit({
         action: 'insights_view',
-        userId: req.user?.userId,
         metadata: { filters: { from, to, projectId, limit } },
+        ...auditContextFromRequest(req),
       });
       return { generatedAt: new Date().toISOString(), items: capped };
     },

@@ -18,15 +18,15 @@
 - 権限は admin/mgmt/exec を対象（PoC）
 
 ## 監査ログ（案）
-- 記録項目: who/when/action/target/from/to/reason/actorGroup
+- 記録項目: who/when/action/target/from/to/reason/actorGroup/role/requestId/ip/source
 - 保存: DB保存、改ざん検知のためのハッシュチェーン検討
 - 出力: 期間指定のCSV/PDF
 
 ## PoC API（案）
 - `GET /audit-logs`
-  - query: `from`, `to`, `userId`, `action`, `targetTable`, `targetId`, `format=csv|json`, `limit`
+  - query: `from`, `to`, `userId`, `action`, `targetTable`, `targetId`, `reasonCode`, `reasonText`, `source`, `actorRole`, `actorGroupId`, `requestId`, `format=csv|json`, `limit`
   - json: `{ items: AuditLog[] }`
-  - csv: `id,action,userId,targetTable,targetId,createdAt,metadata`
+  - csv: `id,action,userId,actorRole,actorGroupId,requestId,ipAddress,userAgent,source,reasonCode,reasonText,targetTable,targetId,createdAt,metadata`
 - `GET /access-reviews/snapshot`
   - query: `format=csv|json`
   - json: `{ users, groups, memberships }`

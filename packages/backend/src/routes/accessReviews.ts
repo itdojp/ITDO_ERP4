@@ -1,6 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import { prisma } from '../services/db.js';
-import { logAudit } from '../services/audit.js';
+import { auditContextFromRequest, logAudit } from '../services/audit.js';
 import { requireRole } from '../services/rbac.js';
 import { sendCsv, toCsv } from '../utils/csv.js';
 
@@ -53,13 +53,13 @@ export async function registerAccessReviewRoutes(app: FastifyInstance) {
       ]);
       await logAudit({
         action: 'access_review_exported',
-        userId: req.user?.userId,
         metadata: {
           format: normalizedFormat,
           userCount: users.length,
           groupCount: groups.length,
           membershipCount: memberships.length,
         },
+        ...auditContextFromRequest(req),
       });
       if (normalizedFormat === 'csv') {
         const groupMap = new Map(groups.map((g) => [g.id, g]));

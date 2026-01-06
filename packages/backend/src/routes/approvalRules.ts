@@ -9,7 +9,7 @@ import {
   approvalRuleSchema,
 } from './validators.js';
 import { DocStatusValue, TimeStatusValue } from '../types.js';
-import { logAudit } from '../services/audit.js';
+import { auditContextFromRequest, logAudit } from '../services/audit.js';
 
 function hasValidSteps(
   steps: Array<{ approverGroupId?: string; approverUserId?: string }>,
@@ -111,6 +111,13 @@ export async function registerApprovalRuleRoutes(app: FastifyInstance) {
         });
       }
       const created = await prisma.approvalRule.create({ data: body });
+      await logAudit({
+        action: 'approval_rule_created',
+        targetTable: 'approval_rules',
+        targetId: created.id,
+        metadata: { flowType: created.flowType },
+        ...auditContextFromRequest(req),
+      });
       return created;
     },
   );
@@ -133,6 +140,13 @@ export async function registerApprovalRuleRoutes(app: FastifyInstance) {
       const updated = await prisma.approvalRule.update({
         where: { id },
         data: body,
+      });
+      await logAudit({
+        action: 'approval_rule_updated',
+        targetTable: 'approval_rules',
+        targetId: updated.id,
+        metadata: { flowType: updated.flowType },
+        ...auditContextFromRequest(req),
       });
       return updated;
     },
@@ -213,6 +227,7 @@ export async function registerApprovalRuleRoutes(app: FastifyInstance) {
           reason: body.reason,
           actorGroupId,
           actorGroupIds,
+          auditContext: auditContextFromRequest(req, { userId }),
         });
         return result;
       } catch (err: any) {
@@ -287,9 +302,10 @@ export async function registerApprovalRuleRoutes(app: FastifyInstance) {
           await resetTargetStatus(tx, instance.targetTable, instance.targetId);
           await logAudit({
             action: 'approval_cancel',
-            userId,
             targetTable: 'approval_instances',
             targetId: instance.id,
+            reasonText: reason,
+            actorGroupId,
             metadata: {
               fromStatus: instance.status,
               toStatus: DocStatusValue.cancelled,
@@ -298,6 +314,7 @@ export async function registerApprovalRuleRoutes(app: FastifyInstance) {
               targetTable: instance.targetTable,
               targetId: instance.targetId,
             },
+            ...auditContextFromRequest(req, { userId }),
           });
           return { status: DocStatusValue.cancelled };
         });

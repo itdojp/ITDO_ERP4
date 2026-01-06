@@ -842,13 +842,21 @@ model NumberSequence {
 }
 
 model AuditLog {
-  id          String   @id @default(uuid())
-  action      String
-  userId      String?
-  targetTable String?
-  targetId    String?
-  metadata    Json?
-  createdAt   DateTime @default(now())
+  id           String   @id @default(uuid())
+  action       String
+  userId       String?
+  actorRole    String?
+  actorGroupId String?
+  requestId    String?
+  ipAddress    String?
+  userAgent    String?
+  source       String?
+  reasonCode   String?
+  reasonText   String?
+  targetTable  String?
+  targetId     String?
+  metadata     Json?
+  createdAt    DateTime @default(now())
 
   @@index([targetTable, targetId])
   @@index([action])
