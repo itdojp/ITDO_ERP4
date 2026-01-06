@@ -21,6 +21,8 @@ import { registerMetricJobRoutes } from './metricsJobs.js';
 import { registerRecurringJobRoutes } from './recurringJobs.js';
 import { registerDataQualityJobRoutes } from './dataQualityJobs.js';
 import { registerReportRoutes } from './reports.js';
+import { registerAuditLogRoutes } from './auditLogs.js';
+import { registerAccessReviewRoutes } from './accessReviews.js';
 import { registerPdfTemplateRoutes } from './pdfTemplates.js';
 import { registerTemplateSettingRoutes } from './templateSettings.js';
 import { registerChatRoutes } from './chat.js';
@@ -65,4 +67,6 @@ export async function registerRoutes(app: FastifyInstance) {
   await registerVendorDocRoutes(app);
   await registerLeaveRoutes(app);
   await registerReportRoutes(app);
+  await registerAuditLogRoutes(app);
+  await registerAccessReviewRoutes(app);
 }
