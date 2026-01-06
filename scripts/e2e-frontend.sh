@@ -79,6 +79,11 @@ wait_for_url() {
   return 1
 }
 
+mkdir -p "$ROOT_DIR/tmp"
+if [[ "$E2E_CAPTURE" != "0" ]]; then
+  mkdir -p "$E2E_EVIDENCE_DIR"
+fi
+
 if [[ ! -d "$ROOT_DIR/packages/backend/node_modules" ]]; then
   npm install --prefix "$ROOT_DIR/packages/backend"
 fi
