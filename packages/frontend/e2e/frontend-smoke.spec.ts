@@ -50,7 +50,7 @@ const runId = () =>
   process.env.E2E_RUN_ID ||
   `${Date.now().toString().slice(-6)}-${Math.floor(Math.random() * 90 + 10)}`;
 
-test('frontend smoke core', async ({ page }) => {
+test('frontend smoke core @core', async ({ page }) => {
   await prepare(page);
 
   const dashboardSection = page
@@ -116,7 +116,7 @@ test('frontend smoke core', async ({ page }) => {
   await captureSection(invoiceSection, '05-core-invoices.png');
 });
 
-test('frontend smoke vendor approvals', async ({ page }) => {
+test('frontend smoke vendor approvals @extended', async ({ page }) => {
   test.setTimeout(180_000);
   await prepare(page);
 
@@ -166,7 +166,7 @@ test('frontend smoke vendor approvals', async ({ page }) => {
   await captureSection(approvalsSection, '07-approvals.png');
 });
 
-test('frontend smoke reports masters settings', async ({ page }) => {
+test('frontend smoke reports masters settings @extended', async ({ page }) => {
   const id = runId();
   await prepare(page);
 
@@ -249,5 +249,84 @@ test('frontend smoke reports masters settings', async ({ page }) => {
   await expect(
     settingsSection.getByText('アラート設定を作成しました'),
   ).toBeVisible();
+  const approvalBlock = settingsSection
+    .locator('strong', { hasText: '承認ルール（簡易モック）' })
+    .locator('..');
+  await approvalBlock.getByRole('button', { name: '作成' }).click();
+  await expect(
+    settingsSection.getByText('承認ルールを作成しました'),
+  ).toBeVisible();
+
+  const reportBlock = settingsSection
+    .locator('strong', { hasText: 'レポート購読（配信設定）' })
+    .locator('..');
+  await reportBlock
+    .getByLabel('reportKey')
+    .fill(`project_effort_${id}`);
+  await reportBlock.getByLabel('params (JSON)').fill('{"limit":10}');
+  await reportBlock.getByLabel('recipients (JSON)').fill('{"roles":["mgmt"]}');
+  await reportBlock.getByRole('button', { name: '作成' }).click();
+  await expect(
+    settingsSection.getByText('レポート購読を作成しました'),
+  ).toBeVisible();
+
+  const integrationBlock = settingsSection
+    .locator('strong', { hasText: '外部連携設定（HR/CRM）' })
+    .locator('..');
+  await integrationBlock
+    .getByLabel('名称')
+    .fill(`E2E Integration ${id}`);
+  await integrationBlock.getByRole('button', { name: '作成' }).click();
+  await expect(
+    settingsSection.getByText('連携設定を作成しました'),
+  ).toBeVisible();
   await captureSection(settingsSection, '11-admin-settings.png');
+});
+
+test('frontend smoke chat hr analytics @extended', async ({ page }) => {
+  const id = runId();
+  await prepare(page);
+
+  await expect(page.getByText('ID: demo-user')).toBeVisible();
+  await expect(page.getByText('Roles: admin, mgmt')).toBeVisible();
+
+  const chatSection = page
+    .locator('h2', { hasText: 'プロジェクトチャット' })
+    .locator('..');
+  await chatSection.scrollIntoViewIfNeeded();
+  await chatSection.getByRole('button', { name: '読み込み' }).click();
+  const chatMessage = `E2E chat message ${id}`;
+  await chatSection
+    .getByPlaceholder('メッセージを書く')
+    .fill(chatMessage);
+  await chatSection
+    .getByPlaceholder('タグ (comma separated)')
+    .fill('e2e,chat');
+  await chatSection.getByRole('button', { name: '投稿' }).click();
+  await expect(chatSection.getByText(chatMessage)).toBeVisible();
+  const reactionButton = chatSection.getByRole('button', { name: /^👍/ });
+  if (await reactionButton.first().isEnabled().catch(() => false)) {
+    await reactionButton.first().click();
+  }
+  await captureSection(chatSection, '12-project-chat.png');
+
+  const hrSection = page
+    .locator('h2', { hasText: '匿名集計（人事向け）' })
+    .locator('..');
+  await hrSection.scrollIntoViewIfNeeded();
+  await hrSection.getByLabel('閾値').fill('1');
+  await hrSection.getByRole('button', { name: '更新' }).first().click();
+  await expect(hrSection.locator('ul.list li')).not.toHaveCount(0);
+  const groupSelect = hrSection.getByRole('combobox');
+  if (await groupSelect.locator('option', { hasText: 'hr-group' }).count()) {
+    await groupSelect.selectOption({ label: 'hr-group' });
+  }
+  const updateButtons = hrSection.getByRole('button', { name: '更新' });
+  if (
+    (await updateButtons.count()) > 1 &&
+    (await updateButtons.nth(1).isEnabled().catch(() => false))
+  ) {
+    await updateButtons.nth(1).click();
+  }
+  await captureSection(hrSection, '13-hr-analytics.png');
 });

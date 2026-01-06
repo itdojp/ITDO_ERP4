@@ -21,3 +21,5 @@
 - docs/test-results/2026-01-06-frontend-e2e/09-projects.png
 - docs/test-results/2026-01-06-frontend-e2e/10-master-data.png
 - docs/test-results/2026-01-06-frontend-e2e/11-admin-settings.png
+- docs/test-results/2026-01-06-frontend-e2e/12-project-chat.png
+- docs/test-results/2026-01-06-frontend-e2e/13-hr-analytics.png

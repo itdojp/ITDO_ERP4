@@ -9,6 +9,8 @@ E2E_DATE="${E2E_DATE:-$(date +%Y-%m-%d)}"
 E2E_EVIDENCE_DIR="${E2E_EVIDENCE_DIR:-$ROOT_DIR/docs/test-results/${E2E_DATE}-frontend-e2e}"
 E2E_BASE_URL="${E2E_BASE_URL:-http://localhost:${FRONTEND_PORT}}"
 E2E_CAPTURE="${E2E_CAPTURE:-1}"
+E2E_SCOPE="${E2E_SCOPE:-full}"
+E2E_GREP="${E2E_GREP:-}"
 
 BACKEND_LOG="$ROOT_DIR/tmp/e2e-backend.log"
 FRONTEND_LOG="$ROOT_DIR/tmp/e2e-frontend.log"
@@ -74,10 +76,27 @@ if [[ "${E2E_SKIP_PLAYWRIGHT_INSTALL:-}" != "1" ]]; then
   npx --prefix "$ROOT_DIR/packages/frontend" playwright install chromium
 fi
 
+if [[ -z "$E2E_GREP" ]]; then
+  case "$E2E_SCOPE" in
+    core)
+      E2E_GREP="@core"
+      ;;
+    extended)
+      E2E_GREP="@extended"
+      ;;
+    full)
+      ;;
+    *)
+      echo "Unknown E2E_SCOPE: $E2E_SCOPE" >&2
+      exit 1
+      ;;
+  esac
+fi
+
 E2E_ROOT_DIR="$ROOT_DIR" \
 E2E_EVIDENCE_DIR="$E2E_EVIDENCE_DIR" \
 E2E_BASE_URL="$E2E_BASE_URL" \
 E2E_CAPTURE="$E2E_CAPTURE" \
-  npx --prefix "$ROOT_DIR/packages/frontend" playwright test --config "$ROOT_DIR/packages/frontend/playwright.config.ts"
+  npx --prefix "$ROOT_DIR/packages/frontend" playwright test --config "$ROOT_DIR/packages/frontend/playwright.config.ts" ${E2E_GREP:+--grep "$E2E_GREP"}
 
 echo "e2e evidence saved: $E2E_EVIDENCE_DIR"
