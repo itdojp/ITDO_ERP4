@@ -18,9 +18,9 @@
   - [x] docs/requirements/ai-analytics.md に手順/仕様を追記
 
 ## 次アクション（保守/改善）
-- [ ] #345 CSVユーティリティ共通化（reports/reportSubscriptions）
-  - [ ] reports/reportSubscriptions のCSV処理を utils/csv.ts に統合
-  - [ ] 振る舞い差分があればドキュメント化
+- [x] #345 CSVユーティリティ共通化（reports/reportSubscriptions）
+  - [x] reports/reportSubscriptions のCSV処理を utils/csv.ts に統合
+  - [x] 振る舞い差分があればドキュメント化
 
 ## 次アクション（意思決定反映の実装計画）
 - [x] #275 Googleログイン対応 + 非Googleユーザ許容（ハイブリッド認証）
