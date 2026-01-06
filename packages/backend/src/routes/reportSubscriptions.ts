@@ -19,6 +19,7 @@ import {
 } from '../services/pdf.js';
 import { sendEmail } from '../services/notifier.js';
 import { requireRole } from '../services/rbac.js';
+import { toCsv } from '../utils/csv.js';
 import { parseDateParam } from '../utils/date.js';
 import {
   reportSubscriptionPatchSchema,
@@ -248,23 +249,6 @@ function normalizeFormat(value: string | null): 'csv' | 'pdf' {
   if (!value) return 'csv';
   if (value === 'csv' || value === 'pdf') return value;
   throw new ReportParamError('INVALID_FORMAT', 'format must be csv or pdf');
-}
-
-function formatCsvValue(value: unknown) {
-  if (value == null) return '';
-  const text = String(value);
-  if (/[",\n\r]/.test(text)) {
-    return `"${text.replace(/"/g, '""')}"`;
-  }
-  return text;
-}
-
-function toCsv(headers: string[], rows: unknown[][]) {
-  const lines = [headers.map(formatCsvValue).join(',')];
-  for (const row of rows) {
-    lines.push(row.map(formatCsvValue).join(','));
-  }
-  return `${lines.join('\n')}\n`;
 }
 
 async function writeReportFile(filename: string, content: string) {

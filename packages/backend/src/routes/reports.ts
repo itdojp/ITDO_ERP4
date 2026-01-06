@@ -11,6 +11,7 @@ import {
 import { generatePdf } from '../services/pdf.js';
 import { requireRole } from '../services/rbac.js';
 import { parseDateParam } from '../utils/date.js';
+import { sendCsv, toCsv } from '../utils/csv.js';
 
 function validateFormat(format: string | undefined, reply: any) {
   if (!format) return true;
@@ -21,30 +22,6 @@ function validateFormat(format: string | undefined, reply: any) {
     return false;
   }
   return true;
-}
-
-function formatCsvValue(value: unknown) {
-  if (value == null) return '';
-  const text = String(value);
-  if (/[",\n\r]/.test(text)) {
-    return `"${text.replace(/"/g, '""')}"`;
-  }
-  return text;
-}
-
-function toCsv(headers: string[], rows: unknown[][]) {
-  const lines = [headers.map(formatCsvValue).join(',')];
-  for (const row of rows) {
-    lines.push(row.map(formatCsvValue).join(','));
-  }
-  return `${lines.join('\n')}\n`;
-}
-
-function sendCsv(reply: any, filename: string, csv: string) {
-  return reply
-    .header('Content-Disposition', `attachment; filename="${filename}"`)
-    .type('text/csv; charset=utf-8')
-    .send(csv);
 }
 
 function buildTemplateId(reportName: string, layout?: string) {
