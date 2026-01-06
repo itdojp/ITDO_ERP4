@@ -787,12 +787,16 @@ model ReportDelivery {
   target          String?
   payload         Json?
   error           String?
+  retryCount      Int                @default(0)
+  nextRetryAt     DateTime?
+  lastErrorAt     DateTime?
   sentAt          DateTime?
   createdAt       DateTime           @default(now())
   createdBy       String?
 
   @@index([subscriptionId, sentAt])
   @@index([status, sentAt])
+  @@index([status, nextRetryAt])
 }
 
 model DailyReport {

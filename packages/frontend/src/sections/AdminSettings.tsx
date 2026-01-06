@@ -1707,9 +1707,7 @@ export const AdminSettings: React.FC = () => {
             <button
               className="button secondary"
               onClick={() =>
-                loadIntegrationRuns(
-                  integrationRunFilterId.trim() || undefined,
-                )
+                loadIntegrationRuns(integrationRunFilterId.trim() || undefined)
               }
             >
               履歴表示
@@ -1794,9 +1792,7 @@ export const AdminSettings: React.FC = () => {
                     <strong>{run.status || '-'}</strong> / retry:{' '}
                     {run.retryCount ?? 0}
                   </div>
-                  <span className="badge">
-                    {formatDateTime(run.startedAt)}
-                  </span>
+                  <span className="badge">{formatDateTime(run.startedAt)}</span>
                 </div>
                 <div style={{ fontSize: 12, color: '#475569', marginTop: 4 }}>
                   finished: {formatDateTime(run.finishedAt)} / nextRetry:{' '}

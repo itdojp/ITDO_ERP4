@@ -24,6 +24,7 @@
 - POST `/report-subscriptions/:id/run`
 - GET `/report-deliveries?subscriptionId=<value>`
 - POST `/jobs/report-subscriptions/run`
+- POST `/jobs/report-deliveries/retry`
 - `format=csv` 指定時は `text/csv` を返す
 - `format=pdf` 指定時は `{ format, templateId, url }` を返す（`url=/pdf-files/:filename`）
 

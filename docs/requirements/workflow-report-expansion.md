@@ -14,6 +14,18 @@
 - 失敗時は再送（最大3回、指数バックオフ）
 - 永続失敗は管理者に通知し、手動再送を許容
 
+#### 配信実装（PoC→本実装）
+- 配信チャネル: `email` / `dashboard` を想定
+  - `email`: recipients.emails が空の場合は `skipped` 扱い
+  - `dashboard`: recipients.users/roles が空の場合は `skipped` 扱い（管理画面の配信履歴に記録）
+- 配信ステータス: `success` / `stub` / `failed` / `failed_permanent` / `skipped`
+- 再送ジョブ: `POST /jobs/report-deliveries/retry`（`status=failed` + `nextRetryAt<=now` を再送）
+- 再送ポリシー: `REPORT_DELIVERY_RETRY_MAX`（デフォルト3）、`REPORT_DELIVERY_RETRY_BASE_MINUTES`（デフォルト60）
+- 最大遅延: `REPORT_DELIVERY_RETRY_MAX_DELAY_MINUTES`（デフォルト1440）
+- 永続失敗通知: `REPORT_DELIVERY_FAILURE_EMAILS`（カンマ区切り、未設定なら通知なし）
+- CSV 添付: `REPORT_STORAGE_DIR`（デフォルト `/tmp/erp4/reports`）に書き出して添付
+- PDF 添付: `generatePdf` の出力ファイル（`PDF_STORAGE_DIR`）を添付
+
 ### テンプレート拡張
 - レポート項目のON/OFF
 - 出力レイアウトのプリセット
