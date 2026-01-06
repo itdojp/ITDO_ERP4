@@ -51,6 +51,7 @@ type Recipients = {
 
 type ReportPayload = {
   reportKey: string;
+  name?: string | null;
   format: 'csv' | 'pdf';
   params: Prisma.InputJsonValue | null;
   generatedAt: string;
@@ -76,6 +77,7 @@ class ReportParamError extends Error {
 
 const DEFAULT_REPORT_RETRY_MAX = 3;
 const DEFAULT_REPORT_RETRY_BASE_MINUTES = 60;
+const DEFAULT_REPORT_RETRY_MAX_DELAY_MINUTES = 24 * 60;
 const DEFAULT_REPORT_STORAGE_DIR = '/tmp/erp4/reports';
 
 const NON_RETRYABLE_ERRORS = new Set([
@@ -113,18 +115,26 @@ function resolveReportRetryBaseMinutes() {
   );
 }
 
+function resolveReportRetryMaxDelayMinutes() {
+  return parseNonNegativeInt(
+    process.env.REPORT_DELIVERY_RETRY_MAX_DELAY_MINUTES,
+    DEFAULT_REPORT_RETRY_MAX_DELAY_MINUTES,
+  );
+}
+
 function resolveReportStorageDir() {
   return process.env.REPORT_STORAGE_DIR || DEFAULT_REPORT_STORAGE_DIR;
 }
 
-function computeNextRetryAt(
-  now: Date,
-  retryCount: number,
-  baseMinutes: number,
-) {
-  if (retryCount <= 0 || baseMinutes <= 0) return null;
-  const factor = Math.pow(2, retryCount - 1);
-  const delayMs = baseMinutes * factor * 60 * 1000;
+function computeNextRetryAt(now: Date, attempt: number, baseMinutes: number) {
+  if (attempt <= 0 || baseMinutes <= 0) return null;
+  const factor = Math.pow(2, attempt - 1);
+  const maxDelayMinutes = resolveReportRetryMaxDelayMinutes();
+  const cappedMinutes =
+    maxDelayMinutes > 0
+      ? Math.min(baseMinutes * factor, maxDelayMinutes)
+      : baseMinutes * factor;
+  const delayMs = cappedMinutes * 60 * 1000;
   return new Date(now.getTime() + delayMs);
 }
 
@@ -323,7 +333,6 @@ async function buildCsvAttachment(payload: ReportPayload) {
     filename,
     payload.csv,
   );
-  payload.csvFilename = safeName;
   return {
     attachment: {
       filename: safeName,
@@ -331,6 +340,7 @@ async function buildCsvAttachment(payload: ReportPayload) {
       contentType: 'text/csv',
     },
     filePath,
+    filename: safeName,
   };
 }
 
@@ -340,6 +350,7 @@ async function buildPdfAttachment(payload: ReportPayload) {
   }
   let filePath = payload.pdf.filePath;
   let filename = payload.pdf.filename;
+  let pdf = payload.pdf;
   if (!filePath && filename && isSafePdfFilename(filename)) {
     const candidate = resolvePdfFilePath(filename);
     if (await fileExists(candidate)) {
@@ -359,7 +370,7 @@ async function buildPdfAttachment(payload: ReportPayload) {
       data as Record<string, unknown>,
       payload.reportKey,
     );
-    payload.pdf = {
+    pdf = {
       ...payload.pdf,
       url: result.url,
       filePath: result.filePath,
@@ -378,6 +389,7 @@ async function buildPdfAttachment(payload: ReportPayload) {
       contentType: 'application/pdf',
     },
     filePath,
+    pdf,
   };
 }
 
@@ -781,6 +793,7 @@ async function buildReportPayload(
 
   const payload: ReportPayload = {
     reportKey: subscription.reportKey,
+    name: subscription.name ?? null,
     format,
     params: normalizeJsonValue(subscription.params),
     generatedAt: new Date().toISOString(),
@@ -840,16 +853,20 @@ async function sendReportDelivery(
   actorId: string | undefined,
 ) {
   const now = new Date();
-  const baseData: Omit<Prisma.ReportDeliveryCreateInput, 'status'> = {
+  let payloadToStore = payload;
+  const buildBaseData = (
+    nextPayload: ReportPayload = payloadToStore,
+  ): Omit<Prisma.ReportDeliveryCreateInput, 'status'> => ({
     subscription: { connect: { id: subscription.id } },
     channel,
-    payload: payload as Prisma.InputJsonValue,
+    payload: nextPayload as Prisma.InputJsonValue,
     createdBy: actorId,
-  };
+  });
 
   if (channel === 'email') {
     const emails = recipients.emails ?? [];
     if (!emails.length) {
+      const baseData = buildBaseData();
       return {
         ...baseData,
         status: 'skipped',
@@ -861,10 +878,16 @@ async function sendReportDelivery(
     const attachments = [];
     try {
       if (payload.format === 'csv') {
-        const { attachment } = await buildCsvAttachment(payload);
+        const { attachment, filename } = await buildCsvAttachment(payload);
+        if (filename && payload.csvFilename !== filename) {
+          payloadToStore = { ...payloadToStore, csvFilename: filename };
+        }
         attachments.push(attachment);
       } else {
-        const { attachment } = await buildPdfAttachment(payload);
+        const { attachment, pdf } = await buildPdfAttachment(payload);
+        if (pdf && payload.pdf !== pdf) {
+          payloadToStore = { ...payloadToStore, pdf };
+        }
         attachments.push(attachment);
       }
     } catch (err) {
@@ -875,6 +898,7 @@ async function sendReportDelivery(
         target: emails.join(','),
         error,
       });
+      const baseData = buildBaseData();
       return {
         ...baseData,
         status: 'failed_permanent',
@@ -884,10 +908,11 @@ async function sendReportDelivery(
         lastErrorAt: now,
       };
     }
+    const baseData = buildBaseData(payloadToStore);
     const emailResult = await sendEmail(
       emails,
       buildEmailSubject(subscription),
-      buildEmailBody(payload),
+      buildEmailBody(payloadToStore),
       { attachments },
     );
     const error = emailResult.error;
@@ -896,11 +921,11 @@ async function sendReportDelivery(
     const retryable =
       emailResult.status === 'failed' &&
       isRetryableError(error) &&
-      retryMax > 1 &&
+      retryMax > 0 &&
       retryBase > 0;
-    const retryCount = retryable ? 1 : 0;
+    const retryCount = 0;
     const nextRetryAt = retryable
-      ? computeNextRetryAt(now, retryCount, retryBase)
+      ? computeNextRetryAt(now, retryCount + 1, retryBase)
       : null;
     const status =
       emailResult.status === 'failed' && !retryable
@@ -923,7 +948,7 @@ async function sendReportDelivery(
       retryCount,
       nextRetryAt,
       lastErrorAt:
-        status === 'failed' || status === 'failed_permanent' ? now : undefined,
+        status === 'failed' || status === 'failed_permanent' ? now : null,
     };
   }
 
@@ -934,6 +959,7 @@ async function sendReportDelivery(
         ? recipients.roles
         : [];
     if (!targets.length) {
+      const baseData = buildBaseData();
       return {
         ...baseData,
         status: 'skipped',
@@ -942,14 +968,17 @@ async function sendReportDelivery(
         sentAt: now,
       };
     }
+    const baseData = buildBaseData();
     return {
       ...baseData,
       status: 'success',
       target: targets.join(','),
       sentAt: now,
+      lastErrorAt: null,
     };
   }
 
+  const baseData = buildBaseData();
   return {
     ...baseData,
     status: 'failed_permanent',
@@ -1036,8 +1065,6 @@ async function retryReportDelivery(
           nextRetryAt: null,
         },
       });
-    }
-    if (!dryRun) {
       await notifyPermanentFailure({
         reportKey: 'unknown',
         channel: delivery.channel,
@@ -1052,6 +1079,7 @@ async function retryReportDelivery(
     };
   }
   const payload = delivery.payload as ReportPayload;
+  let payloadToStore = payload;
   const emails = parseTargetList(delivery.target);
   if (!emails.length) {
     if (!dryRun) {
@@ -1065,8 +1093,6 @@ async function retryReportDelivery(
           nextRetryAt: null,
         },
       });
-    }
-    if (!dryRun) {
       await notifyPermanentFailure({
         reportKey: payload.reportKey,
         channel: delivery.channel,
@@ -1083,10 +1109,16 @@ async function retryReportDelivery(
   const attachments = [];
   try {
     if (payload.format === 'csv') {
-      const { attachment } = await buildCsvAttachment(payload);
+      const { attachment, filename } = await buildCsvAttachment(payload);
+      if (filename && payload.csvFilename !== filename) {
+        payloadToStore = { ...payloadToStore, csvFilename: filename };
+      }
       attachments.push(attachment);
     } else {
-      const { attachment } = await buildPdfAttachment(payload);
+      const { attachment, pdf } = await buildPdfAttachment(payload);
+      if (pdf && payload.pdf !== pdf) {
+        payloadToStore = { ...payloadToStore, pdf };
+      }
       attachments.push(attachment);
     }
   } catch (err) {
@@ -1102,8 +1134,6 @@ async function retryReportDelivery(
           nextRetryAt: null,
         },
       });
-    }
-    if (!dryRun) {
       await notifyPermanentFailure({
         reportKey: payload.reportKey,
         channel: delivery.channel,
@@ -1126,15 +1156,12 @@ async function retryReportDelivery(
   }
   const emailResult = await sendEmail(
     emails,
-    buildEmailSubject({ reportKey: payload.reportKey }),
-    buildEmailBody(payload),
+    buildEmailSubject({ reportKey: payload.reportKey, name: payload.name }),
+    buildEmailBody(payloadToStore),
     { attachments },
   );
   const error = emailResult.error;
-  const nextRetryCount =
-    emailResult.status === 'failed'
-      ? delivery.retryCount + 1
-      : delivery.retryCount;
+  const nextRetryCount = delivery.retryCount + 1;
   const retryMax = resolveReportRetryMax();
   const retryBase = resolveReportRetryBaseMinutes();
   const retryable =
@@ -1143,7 +1170,7 @@ async function retryReportDelivery(
     retryBase > 0 &&
     nextRetryCount < retryMax;
   const nextRetryAt = retryable
-    ? computeNextRetryAt(now, nextRetryCount, retryBase)
+    ? computeNextRetryAt(now, nextRetryCount + 1, retryBase)
     : null;
   const status =
     emailResult.status === 'failed' && !retryable
@@ -1168,7 +1195,7 @@ async function retryReportDelivery(
       nextRetryAt,
       lastErrorAt:
         status === 'failed' || status === 'failed_permanent' ? now : null,
-      payload: payload as Prisma.InputJsonValue,
+      payload: payloadToStore as Prisma.InputJsonValue,
     },
   });
   return {
@@ -1420,13 +1447,52 @@ export async function registerReportSubscriptionRoutes(app: FastifyInstance) {
       const results = [];
       for (const item of items) {
         try {
+          if (!dryRun) {
+            const claim = await prisma.reportDelivery.updateMany({
+              where: {
+                id: item.id,
+                status: 'failed',
+                retryCount: { lt: retryMax },
+                nextRetryAt: { lte: now },
+              },
+              data: { status: 'retrying' },
+            });
+            if (claim.count === 0) {
+              results.push({
+                id: item.id,
+                status: 'skipped',
+                error: 'already_claimed',
+              });
+              continue;
+            }
+          }
           const result = await retryReportDelivery(item, Boolean(dryRun));
           results.push(result);
         } catch (err) {
+          const error = err instanceof Error ? err.message : 'retry_failed';
+          if (!dryRun) {
+            await prisma.reportDelivery.update({
+              where: { id: item.id },
+              data: {
+                status: 'failed_permanent',
+                error,
+                lastErrorAt: now,
+                nextRetryAt: null,
+              },
+            });
+            if (isReportPayload(item.payload)) {
+              await notifyPermanentFailure({
+                reportKey: item.payload.reportKey,
+                channel: item.channel,
+                target: item.target,
+                error,
+              });
+            }
+          }
           results.push({
             id: item.id,
             status: 'failed_permanent',
-            error: err instanceof Error ? err.message : 'retry_failed',
+            error,
           });
         }
       }

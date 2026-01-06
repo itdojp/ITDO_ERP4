@@ -21,6 +21,7 @@
 - 配信ステータス: `success` / `stub` / `failed` / `failed_permanent` / `skipped`
 - 再送ジョブ: `POST /jobs/report-deliveries/retry`（`status=failed` + `nextRetryAt<=now` を再送）
 - 再送ポリシー: `REPORT_DELIVERY_RETRY_MAX`（デフォルト3）、`REPORT_DELIVERY_RETRY_BASE_MINUTES`（デフォルト60）
+- 最大遅延: `REPORT_DELIVERY_RETRY_MAX_DELAY_MINUTES`（デフォルト1440）
 - 永続失敗通知: `REPORT_DELIVERY_FAILURE_EMAILS`（カンマ区切り、未設定なら通知なし）
 - CSV 添付: `REPORT_STORAGE_DIR`（デフォルト `/tmp/erp4/reports`）に書き出して添付
 - PDF 添付: `generatePdf` の出力ファイル（`PDF_STORAGE_DIR`）を添付
