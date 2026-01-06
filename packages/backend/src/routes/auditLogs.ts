@@ -76,7 +76,10 @@ export async function registerAuditLogRoutes(app: FastifyInstance) {
       if (targetId) where.targetId = String(targetId);
       if (reasonCode) where.reasonCode = String(reasonCode);
       if (reasonText) {
-        where.reasonText = { contains: String(reasonText) };
+        where.reasonText = {
+          contains: String(reasonText),
+          mode: 'insensitive',
+        };
       }
       if (source) where.source = String(source);
       if (actorRole) where.actorRole = String(actorRole);

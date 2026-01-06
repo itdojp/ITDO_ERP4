@@ -483,8 +483,6 @@ export async function act(
         fromStatus: current.status,
         toStatus: nextStepStatus,
         step: current.stepOrder,
-        reason: options.reason,
-        actorGroupId: options.actorGroupId,
       },
     });
     let newStatus;
@@ -538,8 +536,6 @@ export async function act(
         fromStatus: instance.status,
         toStatus: newStatus,
         step: current.stepOrder,
-        reason: options.reason,
-        actorGroupId: options.actorGroupId,
       },
     });
     return { status: newStatus, currentStep: newCurrentStep };

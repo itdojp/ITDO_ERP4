@@ -388,8 +388,6 @@ export async function registerProjectRoutes(app: FastifyInstance) {
           toProjectId: body.toProjectId,
           fromTaskId: taskId,
           toTaskId: taskId,
-          reasonCode: body.reasonCode,
-          reasonText,
         },
         ...auditContextFromRequest(req),
       });

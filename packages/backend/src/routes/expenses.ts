@@ -208,8 +208,6 @@ export async function registerExpenseRoutes(app: FastifyInstance) {
         metadata: {
           fromProjectId: expense.projectId,
           toProjectId: body.toProjectId,
-          reasonCode: body.reasonCode,
-          reasonText,
         },
         ...auditContextFromRequest(req),
       });

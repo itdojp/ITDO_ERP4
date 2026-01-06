@@ -45,6 +45,7 @@ export function auditContextFromRequest(
 ): AuditContext {
   return {
     userId: req.user?.userId,
+    // Use primary role/group for filtering; full list is available in auth context.
     actorRole: resolveActorRole(req.user),
     actorGroupId: req.user?.groupIds?.[0],
     requestId: resolveRequestId(req),

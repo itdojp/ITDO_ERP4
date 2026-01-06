@@ -364,8 +364,6 @@ export async function registerTimeEntryRoutes(app: FastifyInstance) {
           toProjectId: body.toProjectId,
           fromTaskId: entry.taskId,
           toTaskId: nextTaskId,
-          reasonCode: body.reasonCode,
-          reasonText,
         },
         ...auditContextFromRequest(req),
       });

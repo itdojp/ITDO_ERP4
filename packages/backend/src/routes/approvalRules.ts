@@ -309,8 +309,6 @@ export async function registerApprovalRuleRoutes(app: FastifyInstance) {
             metadata: {
               fromStatus: instance.status,
               toStatus: DocStatusValue.cancelled,
-              reason,
-              actorGroupId,
               targetTable: instance.targetTable,
               targetId: instance.targetId,
             },
