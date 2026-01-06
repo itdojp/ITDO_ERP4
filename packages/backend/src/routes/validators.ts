@@ -410,6 +410,7 @@ const alertTypeSchema = Type.Union([
   Type.Literal('approval_delay'),
   Type.Literal('approval_escalation'),
   Type.Literal('delivery_due'),
+  Type.Literal('integration_failure'),
 ]);
 
 const alertChannelSchema = Type.Union([

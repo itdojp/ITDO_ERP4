@@ -18,9 +18,81 @@
 - Customer / Vendor / Contact
 - プロジェクト（任意: CRM 側に案件が存在する場合）
 
+## フィールドマッピング（暫定）
+### CRM: Customer
+| ERP | 内容 | 外部CRMキー例 | 備考 |
+| --- | --- | --- | --- |
+| code | 顧客コード | account_code | 変更禁止・一意 |
+| name | 顧客名 | account_name | 必須 |
+| invoiceRegistrationId | 適格請求書番号 | invoice_reg_id | 任意 |
+| taxRegion | 税区分 | tax_region | 任意 |
+| billingAddress | 請求先住所 | billing_address | 任意 |
+| status | 状態 | status | 任意 |
+| externalSource | 連携元識別子 | source | ERP保持 |
+| externalId | 外部ID | external_id | 外部主キー |
+| updatedAt | 更新日時 | updated_at | 差分同期キー |
+
+### CRM: Vendor
+| ERP | 内容 | 外部CRMキー例 | 備考 |
+| --- | --- | --- | --- |
+| code | 業者コード | vendor_code | 変更禁止・一意 |
+| name | 業者名 | vendor_name | 必須 |
+| bankInfo | 振込情報 | bank_info | 任意 |
+| taxRegion | 税区分 | tax_region | 任意 |
+| status | 状態 | status | 任意 |
+| externalSource | 連携元識別子 | source | ERP保持 |
+| externalId | 外部ID | external_id | 外部主キー |
+| updatedAt | 更新日時 | updated_at | 差分同期キー |
+
+### CRM: Contact
+| ERP | 内容 | 外部CRMキー例 | 備考 |
+| --- | --- | --- | --- |
+| customerId / vendorId | 紐付け | parent_id | どちらか必須 |
+| name | 氏名 | name | 必須 |
+| email | メール | email | 任意 |
+| phone | 電話 | phone | 任意 |
+| role | 役割 | role | 任意 |
+| isPrimary | 主担当 | is_primary | 任意 |
+| updatedAt | 更新日時 | updated_at | 差分同期キー |
+
+### HR: WellbeingEntry
+| ERP | 内容 | 外部HRキー例 | 備考 |
+| --- | --- | --- | --- |
+| userId | 匿名化ユーザID | user_hash | salted hash |
+| entryDate | 入力日 | entry_date | 必須 |
+| status | good / not_good | status | 必須 |
+| helpRequested | ヘルプ要請 | help_requested | 任意 |
+| notes | メモ | notes | 原則除外 |
+| updatedAt | 更新日時 | updated_at | 差分同期キー |
+
+### HR: UserAccount
+| ERP | 内容 | 外部IDキー例 | 備考 |
+| --- | --- | --- | --- |
+| externalId | 外部ID | external_id | 主キー |
+| userName | ログインID | user_name | 必須 |
+| displayName | 表示名 | display_name | 任意 |
+| department | 部門 | department | 任意 |
+| organization | 組織 | organization | 任意 |
+| managerUserId | 上長 | manager_id | 任意 |
+| active | 在籍 | active | 必須 |
+| updatedAt | 更新日時 | updated_at | 差分同期キー |
+
 ## マスター/優先順位
 - HR: IdP/IDaaS を一次マスター（UserAccount は IdP/IDaaS からの同期専用で、HR からは参照のみ）
 - CRM: 外部CRMを一次マスター、ERPは参照/補助入力
+
+## 差分同期キー/衝突解決
+### 差分同期キー
+- CRM: externalId + externalSource を主キー、updatedAt を差分同期キーとして利用
+- CRM: externalId が未設定の場合は code を暫定キーとして扱う
+- HR: UserAccount は externalId を主キー、updatedAt を差分同期キーとして利用
+- HR: WellbeingEntry は (userId, entryDate) を重複防止キーとして扱う
+
+### 衝突解決ルール
+- CRM: 外部CRMを一次マスターとし、外部更新が常に優先
+- CRM: code が一致し externalId が異なる場合は外部IDを優先し、ERP側は上書き
+- HR: UserAccount は IDaaS が一次マスターのため、ERP側の更新は原則上書きしない
+- HR: WellbeingEntry は追記のみ（更新/削除はしない）
 
 ## 連携方式・頻度
 - 方式:
@@ -37,7 +109,7 @@
   - notes は原則除外（必要ならマスキング/同意）
 
 ## エラー/再送方針
-- 失敗時は再送キューに保持（最大3回、指数バックオフ）
+- 失敗時は再送キューに保持（最大3回、指数バックオフ: 1h → 2h → 4h）
 - 永続失敗は管理者に通知し、手動再送の導線を用意
 - 失敗理由を監査ログに残す
 

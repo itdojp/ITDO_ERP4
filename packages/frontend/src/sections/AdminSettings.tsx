@@ -59,6 +59,18 @@ type IntegrationSetting = {
   lastRunStatus?: string | null;
 };
 
+type IntegrationRun = {
+  id: string;
+  settingId: string;
+  status?: string | null;
+  startedAt?: string | null;
+  finishedAt?: string | null;
+  message?: string | null;
+  metrics?: Record<string, unknown> | null;
+  retryCount?: number | null;
+  nextRetryAt?: string | null;
+};
+
 type ReportSubscription = {
   id: string;
   name?: string | null;
@@ -89,6 +101,7 @@ const alertTypes = [
   'approval_delay',
   'approval_escalation',
   'delivery_due',
+  'integration_failure',
 ];
 const alertChannels = ['email', 'dashboard', 'slack', 'webhook'];
 const flowTypes = [
@@ -178,6 +191,9 @@ export const AdminSettings: React.FC = () => {
   const [integrationItems, setIntegrationItems] = useState<
     IntegrationSetting[]
   >([]);
+  const [integrationRuns, setIntegrationRuns] = useState<IntegrationRun[]>([]);
+  const [integrationRunFilterId, setIntegrationRunFilterId] =
+    useState<string>('');
   const [reportItems, setReportItems] = useState<ReportSubscription[]>([]);
   const [reportDeliveries, setReportDeliveries] = useState<ReportDelivery[]>(
     [],
@@ -307,6 +323,27 @@ export const AdminSettings: React.FC = () => {
       } catch (err) {
         logError('loadReportDeliveries failed', err);
         setReportDeliveries([]);
+      }
+    },
+    [logError],
+  );
+
+  const loadIntegrationRuns = useCallback(
+    async (settingId?: string) => {
+      try {
+        const query = new URLSearchParams();
+        if (settingId) {
+          query.set('settingId', settingId);
+        }
+        query.set('limit', '50');
+        const suffix = query.toString();
+        const res = await api<{ items: IntegrationRun[] }>(
+          `/integration-runs${suffix ? `?${suffix}` : ''}`,
+        );
+        setIntegrationRuns(res.items || []);
+      } catch (err) {
+        logError('loadIntegrationRuns failed', err);
+        setIntegrationRuns([]);
       }
     },
     [logError],
@@ -1667,6 +1704,33 @@ export const AdminSettings: React.FC = () => {
             >
               再読込
             </button>
+            <button
+              className="button secondary"
+              onClick={() =>
+                loadIntegrationRuns(
+                  integrationRunFilterId.trim() || undefined,
+                )
+              }
+            >
+              履歴表示
+            </button>
+          </div>
+          <div className="row" style={{ marginTop: 8, flexWrap: 'wrap' }}>
+            <label>
+              履歴フィルタ
+              <select
+                value={integrationRunFilterId}
+                onChange={(e) => setIntegrationRunFilterId(e.target.value)}
+              >
+                <option value="">すべて</option>
+                {integrationItems.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.type}
+                    {item.name ? ` / ${item.name}` : ''}
+                  </option>
+                ))}
+              </select>
+            </label>
           </div>
           <div
             className="list"
@@ -1709,6 +1773,40 @@ export const AdminSettings: React.FC = () => {
                   >
                     実行
                   </button>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div
+            className="list"
+            style={{ display: 'grid', gap: 8, marginTop: 12 }}
+          >
+            {integrationRuns.length === 0 && (
+              <div className="card">連携履歴なし</div>
+            )}
+            {integrationRuns.map((run) => (
+              <div key={run.id} className="card" style={{ padding: 12 }}>
+                <div
+                  className="row"
+                  style={{ justifyContent: 'space-between' }}
+                >
+                  <div>
+                    <strong>{run.status || '-'}</strong> / retry:{' '}
+                    {run.retryCount ?? 0}
+                  </div>
+                  <span className="badge">
+                    {formatDateTime(run.startedAt)}
+                  </span>
+                </div>
+                <div style={{ fontSize: 12, color: '#475569', marginTop: 4 }}>
+                  finished: {formatDateTime(run.finishedAt)} / nextRetry:{' '}
+                  {formatDateTime(run.nextRetryAt)}
+                </div>
+                <div style={{ fontSize: 12, color: '#475569', marginTop: 4 }}>
+                  message: {run.message || '-'}
+                </div>
+                <div style={{ fontSize: 12, color: '#475569', marginTop: 4 }}>
+                  setting: {run.settingId}
                 </div>
               </div>
             ))}
