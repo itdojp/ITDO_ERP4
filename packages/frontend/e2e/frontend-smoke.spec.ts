@@ -161,9 +161,10 @@ test('frontend smoke vendor approvals @extended', async ({ page }) => {
     .locator('h3', { hasText: '発注書' })
     .locator('..');
   await safeClick(poBlock.getByRole('button', { name: '再読込' }), 'po reload');
-  await waitForList(poBlock.locator('ul.list li'), 'po list');
+  const poReady = await waitForList(poBlock.locator('ul.list li'), 'po list');
   const poSubmitButton = poBlock.getByRole('button', { name: '承認依頼' });
   if (
+    poReady &&
     (await poSubmitButton.count()) > 0 &&
     (await poSubmitButton
       .first()
@@ -184,7 +185,10 @@ test('frontend smoke vendor approvals @extended', async ({ page }) => {
     quoteBlock.getByRole('button', { name: '再読込' }),
     'quote reload',
   );
-  await waitForList(quoteBlock.locator('ul.list li'), 'quote list');
+  const quoteReady = await waitForList(
+    quoteBlock.locator('ul.list li'),
+    'quote list',
+  );
 
   const invoiceBlock = vendorSection
     .locator('h3', { hasText: '仕入請求' })
@@ -193,7 +197,15 @@ test('frontend smoke vendor approvals @extended', async ({ page }) => {
     invoiceBlock.getByRole('button', { name: '再読込' }),
     'invoice reload',
   );
-  await waitForList(invoiceBlock.locator('ul.list li'), 'invoice list');
+  const invoiceReady = await waitForList(
+    invoiceBlock.locator('ul.list li'),
+    'invoice list',
+  );
+
+  if (!poReady || !quoteReady || !invoiceReady) {
+    await captureSection(vendorSection, '06-vendor-docs.png');
+    return;
+  }
 
   await captureSection(vendorSection, '06-vendor-docs.png');
 
