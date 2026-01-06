@@ -1,0 +1,238 @@
+import crypto from 'crypto';
+import fs from 'fs';
+import path from 'path';
+import { prisma } from '../packages/backend/src/services/db.js';
+import { toCsv } from '../packages/backend/src/utils/csv.js';
+
+type ExportOptions = {
+  date: string;
+  outputDir: string;
+  prevHash?: string;
+};
+
+function parseArgValue(key: string): string | undefined {
+  const prefix = `--${key}=`;
+  const hit = process.argv.find((arg) => arg.startsWith(prefix));
+  if (!hit) return undefined;
+  return hit.slice(prefix.length);
+}
+
+function requireDate(input?: string): string {
+  if (!input) {
+    const now = new Date();
+    const utc = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+    const yesterday = new Date(utc - 24 * 60 * 60 * 1000);
+    return yesterday.toISOString().slice(0, 10);
+  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(input)) {
+    throw new Error('date must be YYYY-MM-DD');
+  }
+  const [year, month, day] = input.split('-').map((part) => Number(part));
+  const candidate = new Date(Date.UTC(year, month - 1, day));
+  if (
+    candidate.getUTCFullYear() !== year ||
+    candidate.getUTCMonth() !== month - 1 ||
+    candidate.getUTCDate() !== day
+  ) {
+    throw new Error('date must be a valid calendar date');
+  }
+  return input;
+}
+
+function resolveRange(date: string): { from: Date; to: Date } {
+  const [year, month, day] = date.split('-').map((part) => Number(part));
+  const from = new Date(Date.UTC(year, month - 1, day, 0, 0, 0));
+  const to = new Date(Date.UTC(year, month - 1, day + 1, 0, 0, 0));
+  return { from, to };
+}
+
+function sha256(value: string) {
+  return crypto.createHash('sha256').update(value).digest('hex');
+}
+
+function writeFileAtomic(targetPath: string, content: string) {
+  const dir = path.dirname(targetPath);
+  const tempPath = path.join(
+    dir,
+    `.${path.basename(targetPath)}.${process.pid}.${Date.now()}.tmp`,
+  );
+  try {
+    fs.writeFileSync(tempPath, content, 'utf8');
+    fs.renameSync(tempPath, targetPath);
+  } catch (err) {
+    if (fs.existsSync(tempPath)) {
+      try {
+        fs.unlinkSync(tempPath);
+      } catch {
+        // ignore cleanup failure
+      }
+    }
+    throw err;
+  }
+}
+
+function resolvePrevHash(
+  outputDir: string,
+  date: string,
+  explicit?: string,
+): string | null {
+  if (explicit) return explicit;
+  const current = new Date(`${date}T00:00:00.000Z`);
+  const prev = new Date(current.getTime() - 24 * 60 * 60 * 1000);
+  const prevDate = prev.toISOString().slice(0, 10);
+  const prevPath = path.join(outputDir, `audit-logs-${prevDate}.sha256.json`);
+  if (!fs.existsSync(prevPath)) return null;
+  try {
+    const raw = fs.readFileSync(prevPath, 'utf8');
+    const parsed = JSON.parse(raw) as { chainHash?: string };
+    return parsed.chainHash ?? null;
+  } catch (err) {
+    console.warn(
+      '[audit-export] warning: failed to read or parse previous hash file',
+      { path: prevPath, error: err instanceof Error ? err.message : String(err) },
+    );
+    return null;
+  }
+}
+
+async function runExport(options: ExportOptions) {
+  const { from, to } = resolveRange(options.date);
+  const items: Array<Record<string, any>> = [];
+  const rows: string[][] = [];
+  const rangeFilter = { createdAt: { gte: from, lt: to } };
+  const BATCH_SIZE = 1000;
+  let lastCreatedAt: Date | null = null;
+  let lastId: string | null = null;
+  while (true) {
+    const where = lastCreatedAt && lastId
+      ? {
+          AND: [
+            rangeFilter,
+            {
+              OR: [
+                { createdAt: { gt: lastCreatedAt } },
+                { createdAt: lastCreatedAt, id: { gt: lastId } },
+              ],
+            },
+          ],
+        }
+      : rangeFilter;
+    const batch = (await prisma.auditLog.findMany({
+      where,
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+      take: BATCH_SIZE,
+    })) as Array<Record<string, any>>;
+    if (!batch.length) break;
+    for (const item of batch) {
+      items.push(item);
+      rows.push([
+        item.id,
+        item.action,
+        item.userId || '',
+        item.actorRole || '',
+        item.actorGroupId || '',
+        item.requestId || '',
+        item.ipAddress || '',
+        item.userAgent || '',
+        item.source || '',
+        item.reasonCode || '',
+        item.reasonText || '',
+        item.targetTable || '',
+        item.targetId || '',
+        item.createdAt.toISOString(),
+        item.metadata ? JSON.stringify(item.metadata) : '',
+      ]);
+    }
+    const last = batch[batch.length - 1];
+    lastCreatedAt = last.createdAt as Date;
+    lastId = String(last.id);
+  }
+  const headers = [
+    'id',
+    'action',
+    'userId',
+    'actorRole',
+    'actorGroupId',
+    'requestId',
+    'ipAddress',
+    'userAgent',
+    'source',
+    'reasonCode',
+    'reasonText',
+    'targetTable',
+    'targetId',
+    'createdAt',
+    'metadata',
+  ];
+  const csvContent = toCsv(headers, rows);
+  const outputDir = options.outputDir;
+  fs.mkdirSync(outputDir, { recursive: true });
+  const csvName = `audit-logs-${options.date}.csv`;
+  const jsonName = `audit-logs-${options.date}.json`;
+  const hashName = `audit-logs-${options.date}.sha256.json`;
+  const csvPath = path.join(outputDir, csvName);
+  const jsonPath = path.join(outputDir, jsonName);
+  const hashPath = path.join(outputDir, hashName);
+  const payload = {
+    date: options.date,
+    generatedAt: new Date().toISOString(),
+    items,
+  };
+  const jsonContent = JSON.stringify(payload, null, 2);
+  const fileHash = sha256(csvContent);
+  const jsonHash = sha256(jsonContent);
+  const prevHash = resolvePrevHash(outputDir, options.date, options.prevHash);
+  const chainHash = prevHash ? sha256(`${prevHash}:${fileHash}`) : sha256(fileHash);
+  const hashPayload = {
+    date: options.date,
+    csv: csvName,
+    fileHash,
+    jsonHash,
+    prevHash,
+    chainHash,
+    generatedAt: new Date().toISOString(),
+  };
+  const hashContent = JSON.stringify(hashPayload, null, 2);
+  const written: string[] = [];
+  try {
+    writeFileAtomic(csvPath, csvContent);
+    written.push(csvPath);
+    writeFileAtomic(jsonPath, jsonContent);
+    written.push(jsonPath);
+    writeFileAtomic(hashPath, hashContent);
+    written.push(hashPath);
+  } catch (err) {
+    for (const target of written) {
+      try {
+        fs.unlinkSync(target);
+      } catch {
+        // ignore cleanup failure
+      }
+    }
+    throw err;
+  }
+  return { csvPath, jsonPath, hashPath, count: items.length, chainHash };
+}
+
+async function main() {
+  const date = requireDate(parseArgValue('date'));
+  const outputDir =
+    parseArgValue('output-dir') || path.join('data', 'audit-exports');
+  const prevHash = parseArgValue('prev-hash');
+  const result = await runExport({ date, outputDir, prevHash });
+  console.log('[audit-export]', {
+    date,
+    outputDir,
+    count: result.count,
+    chainHash: result.chainHash,
+  });
+}
+
+main()
+  .catch((err) => {
+    console.error('[audit-export] failed', err);
+    process.exit(1);
+  })
+  .finally(async () => {
+    await prisma.$disconnect();
+  });
