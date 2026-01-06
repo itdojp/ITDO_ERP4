@@ -13,6 +13,30 @@ if [[ -z "${DATABASE_URL:-}" ]]; then
     exit 1
   fi
 fi
+if [[ -z "${DATABASE_URL_PSQL:-}" ]]; then
+  DATABASE_URL_PSQL="$DATABASE_URL"
+  if [[ "$DATABASE_URL_PSQL" == *"?"* ]]; then
+    base="${DATABASE_URL_PSQL%%\?*}"
+    query="${DATABASE_URL_PSQL#*\?}"
+    new_query=""
+    IFS='&' read -r -a params <<< "$query"
+    for param in "${params[@]}"; do
+      if [[ "$param" == schema=* ]]; then
+        continue
+      fi
+      if [[ -z "$new_query" ]]; then
+        new_query="$param"
+      else
+        new_query="${new_query}&${param}"
+      fi
+    done
+    if [[ -n "$new_query" ]]; then
+      DATABASE_URL_PSQL="${base}?${new_query}"
+    else
+      DATABASE_URL_PSQL="$base"
+    fi
+  fi
+fi
 E2E_DATE="${E2E_DATE:-$(date +%Y-%m-%d)}"
 E2E_EVIDENCE_DIR="${E2E_EVIDENCE_DIR:-$ROOT_DIR/docs/test-results/${E2E_DATE}-frontend-e2e}"
 E2E_BASE_URL="${E2E_BASE_URL:-http://localhost:${FRONTEND_PORT}}"
@@ -64,7 +88,7 @@ fi
 
 wait_for_db() {
   for _ in $(seq 1 30); do
-    if psql "$DATABASE_URL" -c "select 1" >/dev/null 2>&1; then
+    if psql "$DATABASE_URL_PSQL" -c "select 1" >/dev/null 2>&1; then
       return 0
     fi
     sleep 1
@@ -88,7 +112,7 @@ case "$E2E_DB_MODE" in
     fi
     DATABASE_URL="$DATABASE_URL" npx --prefix "$ROOT_DIR/packages/backend" prisma db push \
       --schema "$ROOT_DIR/packages/backend/prisma/schema.prisma" --skip-generate
-    psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$ROOT_DIR/scripts/seed-demo.sql"
+    psql "$DATABASE_URL_PSQL" -v ON_ERROR_STOP=1 -f "$ROOT_DIR/scripts/seed-demo.sql"
     ;;
   *)
     echo "Unknown E2E_DB_MODE: $E2E_DB_MODE" >&2
