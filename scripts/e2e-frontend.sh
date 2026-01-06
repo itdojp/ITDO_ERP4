@@ -4,7 +4,15 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BACKEND_PORT="${BACKEND_PORT:-3002}"
 FRONTEND_PORT="${FRONTEND_PORT:-5173}"
-DATABASE_URL="${DATABASE_URL:-postgresql://postgres:postgres@localhost:55432/postgres?schema=public}"
+E2E_DB_MODE="${E2E_DB_MODE:-podman}"
+if [[ -z "${DATABASE_URL:-}" ]]; then
+  if [[ "$E2E_DB_MODE" == "podman" ]]; then
+    DATABASE_URL="postgresql://postgres:postgres@localhost:55432/postgres?schema=public"
+  else
+    echo "DATABASE_URL is required when E2E_DB_MODE=direct" >&2
+    exit 1
+  fi
+fi
 E2E_DATE="${E2E_DATE:-$(date +%Y-%m-%d)}"
 E2E_EVIDENCE_DIR="${E2E_EVIDENCE_DIR:-$ROOT_DIR/docs/test-results/${E2E_DATE}-frontend-e2e}"
 E2E_BASE_URL="${E2E_BASE_URL:-http://localhost:${FRONTEND_PORT}}"
@@ -54,8 +62,39 @@ if [[ ! -d "$ROOT_DIR/packages/frontend/node_modules" ]]; then
   npm install --prefix "$ROOT_DIR/packages/frontend"
 fi
 
-"$ROOT_DIR/scripts/podman-poc.sh" db-push
-"$ROOT_DIR/scripts/podman-poc.sh" seed
+wait_for_db() {
+  for _ in $(seq 1 30); do
+    if psql "$DATABASE_URL" -c "select 1" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 1
+  done
+  return 1
+}
+
+case "$E2E_DB_MODE" in
+  podman)
+    "$ROOT_DIR/scripts/podman-poc.sh" db-push
+    "$ROOT_DIR/scripts/podman-poc.sh" seed
+    ;;
+  direct)
+    if ! command -v psql >/dev/null 2>&1; then
+      echo "psql command not found; install postgresql-client for direct mode" >&2
+      exit 1
+    fi
+    if ! wait_for_db; then
+      echo "database not ready for direct mode" >&2
+      exit 1
+    fi
+    DATABASE_URL="$DATABASE_URL" npx --prefix "$ROOT_DIR/packages/backend" prisma db push \
+      --schema "$ROOT_DIR/packages/backend/prisma/schema.prisma" --skip-generate
+    psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$ROOT_DIR/scripts/seed-demo.sql"
+    ;;
+  *)
+    echo "Unknown E2E_DB_MODE: $E2E_DB_MODE" >&2
+    exit 1
+    ;;
+esac
 
 npm run prisma:generate --prefix "$ROOT_DIR/packages/backend"
 npm run build --prefix "$ROOT_DIR/packages/backend"
