@@ -91,6 +91,7 @@ for setting in alert_settings where is_enabled:
 - 失敗通知: failed_permanent は REPORT_DELIVERY_FAILURE_EMAILS 宛に通知（未設定ならスキップ）。
 - スケジュール案: subscriptions=日次/週次に合わせて cron で実行（例: 02:00 JST）、retry=15〜30分おき。
 - 注意: report-subscriptions/run は都度 delivery を作るため、過剰実行に注意（重複配信防止は cron 設定で担保）。
+- 運用補助: `scripts/run-report-deliveries.sh`（DRY_RUN=1 で検証可能）
 
 ## 承認タイムアウト（将来）
 - 設定された承認期限を超過した approval_step を検出し、エスカレーション先へ通知。初期スコープでは未実装、後続で追加。
