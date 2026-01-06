@@ -11,7 +11,7 @@ import {
   requireRoleOrSelf,
 } from '../services/rbac.js';
 import { prisma } from '../services/db.js';
-import { logAudit } from '../services/audit.js';
+import { auditContextFromRequest, logAudit } from '../services/audit.js';
 import { logReassignment } from '../services/reassignmentLog.js';
 import { submitApprovalWithUpdate } from '../services/approval.js';
 import { FlowTypeValue } from '../types.js';
@@ -188,13 +188,12 @@ export async function registerTimeEntryRoutes(app: FastifyInstance) {
           createdBy: userId,
         });
         // 監査ログ: 修正が承認待ちになったことを記録
-        const { logAudit } = await import('../services/audit.js');
         await logAudit({
           action: 'time_entry_modified',
-          userId,
           targetTable: 'time_entries',
           targetId: id,
           metadata: { changedFields: Object.keys(body) },
+          ...auditContextFromRequest(req, { userId }),
         });
         return updated;
       }
@@ -356,17 +355,17 @@ export async function registerTimeEntryRoutes(app: FastifyInstance) {
       });
       await logAudit({
         action: 'reassignment',
-        userId: req.user?.userId,
         targetTable: 'time_entries',
         targetId: id,
+        reasonCode: body.reasonCode,
+        reasonText,
         metadata: {
           fromProjectId: entry.projectId,
           toProjectId: body.toProjectId,
           fromTaskId: entry.taskId,
           toTaskId: nextTaskId,
-          reasonCode: body.reasonCode,
-          reasonText,
         },
+        ...auditContextFromRequest(req),
       });
       await logReassignment({
         targetTable: 'time_entries',

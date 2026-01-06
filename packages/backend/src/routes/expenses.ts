@@ -4,7 +4,7 @@ import { expenseReassignSchema, expenseSchema } from './validators.js';
 import { DocStatusValue, FlowTypeValue } from '../types.js';
 import { requireProjectAccess, requireRole } from '../services/rbac.js';
 import { prisma } from '../services/db.js';
-import { logAudit } from '../services/audit.js';
+import { auditContextFromRequest, logAudit } from '../services/audit.js';
 import { logReassignment } from '../services/reassignmentLog.js';
 import { parseDateParam } from '../utils/date.js';
 import { findPeriodLock, toPeriodKey } from '../services/periodLock.js';
@@ -201,15 +201,15 @@ export async function registerExpenseRoutes(app: FastifyInstance) {
       });
       await logAudit({
         action: 'reassignment',
-        userId: req.user?.userId,
         targetTable: 'expenses',
         targetId: id,
+        reasonCode: body.reasonCode,
+        reasonText,
         metadata: {
           fromProjectId: expense.projectId,
           toProjectId: body.toProjectId,
-          reasonCode: body.reasonCode,
-          reasonText,
         },
+        ...auditContextFromRequest(req),
       });
       await logReassignment({
         targetTable: 'expenses',

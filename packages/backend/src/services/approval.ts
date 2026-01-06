@@ -1,6 +1,6 @@
 import { DocStatusValue } from '../types.js';
 import { prisma } from './db.js';
-import { logAudit } from './audit.js';
+import { logAudit, type AuditContext } from './audit.js';
 
 type Step = {
   approverGroupId?: string;
@@ -17,6 +17,7 @@ type ActOptions = {
   reason?: string;
   actorGroupId?: string;
   actorGroupIds?: string[];
+  auditContext?: AuditContext;
 };
 type CreateApprovalOptions = { client?: any; createdBy?: string };
 /**
@@ -466,18 +467,22 @@ export async function act(
       where: { id: current.id },
       data: { status: nextStepStatus, actedBy: userId, actedAt: new Date() },
     });
+    const auditBase = {
+      ...(options.auditContext ?? {}),
+      userId: options.auditContext?.userId ?? userId,
+      actorGroupId: options.auditContext?.actorGroupId ?? options.actorGroupId,
+    };
     await logAudit({
       action: `approval_step_${action}`,
-      userId,
       targetTable: 'approval_steps',
       targetId: current.id,
+      ...auditBase,
+      reasonText: options.reason,
       metadata: {
         instanceId: instance.id,
         fromStatus: current.status,
         toStatus: nextStepStatus,
         step: current.stepOrder,
-        reason: options.reason,
-        actorGroupId: options.actorGroupId,
       },
     });
     let newStatus;
@@ -523,15 +528,14 @@ export async function act(
     );
     await logAudit({
       action: `approval_${action}`,
-      userId,
       targetTable: 'approval_instances',
       targetId: instance.id,
+      ...auditBase,
+      reasonText: options.reason,
       metadata: {
         fromStatus: instance.status,
         toStatus: newStatus,
         step: current.stepOrder,
-        reason: options.reason,
-        actorGroupId: options.actorGroupId,
       },
     });
     return { status: newStatus, currentStep: newCurrentStep };

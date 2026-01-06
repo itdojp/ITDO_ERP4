@@ -3,6 +3,7 @@ import { Prisma, type TemplateKind } from '@prisma/client';
 import { prisma } from '../services/db.js';
 import { requireRole } from '../services/rbac.js';
 import { getPdfTemplate } from '../services/pdfTemplates.js';
+import { auditContextFromRequest, logAudit } from '../services/audit.js';
 import {
   templateSettingPatchSchema,
   templateSettingSchema,
@@ -94,21 +95,31 @@ export async function registerTemplateSettingRoutes(app: FastifyInstance) {
         });
       }
       const userId = req.user?.userId;
-      return prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-        const created = await tx.docTemplateSetting.create({
-          data: {
-            ...body,
-            layoutConfig: normalizeJsonInput(body.layoutConfig),
-            isDefault: normalizeBoolean(body.isDefault),
-            createdBy: userId,
-            updatedBy: userId,
-          },
-        });
-        if (body.isDefault === true) {
-          await ensureDefault(tx, created.kind, created.id);
-        }
-        return created;
+      const created = await prisma.$transaction(
+        async (tx: Prisma.TransactionClient) => {
+          const created = await tx.docTemplateSetting.create({
+            data: {
+              ...body,
+              layoutConfig: normalizeJsonInput(body.layoutConfig),
+              isDefault: normalizeBoolean(body.isDefault),
+              createdBy: userId,
+              updatedBy: userId,
+            },
+          });
+          if (body.isDefault === true) {
+            await ensureDefault(tx, created.kind, created.id);
+          }
+          return created;
+        },
+      );
+      await logAudit({
+        action: 'template_setting_created',
+        targetTable: 'doc_template_settings',
+        targetId: created.id,
+        metadata: { kind: created.kind, templateId: created.templateId },
+        ...auditContextFromRequest(req),
       });
+      return created;
     },
   );
 
@@ -159,16 +170,26 @@ export async function registerTemplateSettingRoutes(app: FastifyInstance) {
       if (Object.prototype.hasOwnProperty.call(body, 'isDefault')) {
         updatePayload.isDefault = normalizeBoolean(body.isDefault);
       }
-      return prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-        const updated = await tx.docTemplateSetting.update({
-          where: { id },
-          data: updatePayload,
-        });
-        if (body.isDefault === true) {
-          await ensureDefault(tx, updated.kind, updated.id);
-        }
-        return updated;
+      const updated = await prisma.$transaction(
+        async (tx: Prisma.TransactionClient) => {
+          const updated = await tx.docTemplateSetting.update({
+            where: { id },
+            data: updatePayload,
+          });
+          if (body.isDefault === true) {
+            await ensureDefault(tx, updated.kind, updated.id);
+          }
+          return updated;
+        },
+      );
+      await logAudit({
+        action: 'template_setting_updated',
+        targetTable: 'doc_template_settings',
+        targetId: updated.id,
+        metadata: { kind: updated.kind, templateId: updated.templateId },
+        ...auditContextFromRequest(req),
       });
+      return updated;
     },
   );
 }

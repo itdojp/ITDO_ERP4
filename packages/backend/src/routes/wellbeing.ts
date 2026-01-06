@@ -2,7 +2,7 @@ import { FastifyInstance } from 'fastify';
 import { wellbeingSchema } from './validators.js';
 import { requireRole } from '../services/rbac.js';
 import { prisma } from '../services/db.js';
-import { logAudit } from '../services/audit.js';
+import { auditContextFromRequest, logAudit } from '../services/audit.js';
 import { endOfDay, parseDateParam } from '../utils/date.js';
 
 function formatMonthKey(value: Date) {
@@ -45,7 +45,7 @@ export async function registerWellbeingRoutes(app: FastifyInstance) {
   app.get(
     '/wellbeing-entries',
     { preHandler: requireRole(['hr', 'admin']) },
-    async () => {
+    async (req) => {
       const items = await prisma.wellbeingEntry.findMany({
         orderBy: { entryDate: 'desc' },
         take: 50,
@@ -53,6 +53,7 @@ export async function registerWellbeingRoutes(app: FastifyInstance) {
       await logAudit({
         action: 'wellbeing_view',
         targetTable: 'wellbeing_entries',
+        ...auditContextFromRequest(req),
       });
       return { items };
     },
@@ -172,7 +173,6 @@ export async function registerWellbeingRoutes(app: FastifyInstance) {
 
       await logAudit({
         action: 'wellbeing_analytics_view',
-        userId: req.user?.userId,
         targetTable: 'wellbeing_entries',
         metadata: {
           groupBy: groupByValue,
@@ -181,6 +181,7 @@ export async function registerWellbeingRoutes(app: FastifyInstance) {
           to: to || null,
           visibilityGroupId: visibilityGroupId || null,
         },
+        ...auditContextFromRequest(req),
       });
 
       return {

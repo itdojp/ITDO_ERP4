@@ -2,6 +2,7 @@ import { FastifyInstance } from 'fastify';
 import { requireRole } from '../services/rbac.js';
 import { prisma } from '../services/db.js';
 import { alertSettingPatchSchema, alertSettingSchema } from './validators.js';
+import { auditContextFromRequest, logAudit } from '../services/audit.js';
 
 export async function registerAlertSettingRoutes(app: FastifyInstance) {
   app.get(
@@ -21,6 +22,13 @@ export async function registerAlertSettingRoutes(app: FastifyInstance) {
     async (req) => {
       const body = req.body as any;
       const created = await prisma.alertSetting.create({ data: body });
+      await logAudit({
+        action: 'alert_setting_created',
+        targetTable: 'alert_settings',
+        targetId: created.id,
+        metadata: { type: created.type, isEnabled: created.isEnabled },
+        ...auditContextFromRequest(req),
+      });
       return created;
     },
   );
@@ -38,6 +46,13 @@ export async function registerAlertSettingRoutes(app: FastifyInstance) {
         where: { id },
         data: body,
       });
+      await logAudit({
+        action: 'alert_setting_updated',
+        targetTable: 'alert_settings',
+        targetId: updated.id,
+        metadata: { type: updated.type, isEnabled: updated.isEnabled },
+        ...auditContextFromRequest(req),
+      });
       return updated;
     },
   );
@@ -51,6 +66,13 @@ export async function registerAlertSettingRoutes(app: FastifyInstance) {
         where: { id },
         data: { isEnabled: true },
       });
+      await logAudit({
+        action: 'alert_setting_enabled',
+        targetTable: 'alert_settings',
+        targetId: updated.id,
+        metadata: { type: updated.type },
+        ...auditContextFromRequest(req),
+      });
       return updated;
     },
   );
@@ -63,6 +85,13 @@ export async function registerAlertSettingRoutes(app: FastifyInstance) {
       const updated = await prisma.alertSetting.update({
         where: { id },
         data: { isEnabled: false },
+      });
+      await logAudit({
+        action: 'alert_setting_disabled',
+        targetTable: 'alert_settings',
+        targetId: updated.id,
+        metadata: { type: updated.type },
+        ...auditContextFromRequest(req),
       });
       return updated;
     },
