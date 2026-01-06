@@ -15,7 +15,7 @@
 ### HR/CRM 連携向けチェック
 - CRM: externalId が null/空、externalSource + externalId の重複
 - CRM: contacts が customerId/vendorId のどちらにも紐付いていない
-- CRM: contacts.email の形式不正（存在する場合）
+- CRM: contacts.email の形式エラー（存在する場合）
 - HR: userAccount.externalId の欠損、wellbeingEntry.userId/entryDate の欠損
 - HR: 匿名化IDの形式（hash prefix 等）を運用ルールに合わせて検知
 

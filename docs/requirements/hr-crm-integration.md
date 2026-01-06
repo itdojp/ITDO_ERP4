@@ -116,7 +116,7 @@
 ## 運用検証（手順）
 ### 手動実行
 - `/integration-settings/:id/run` を実行し、`integration_runs` に status=success が記録されることを確認。
-- `metrics` に件数（CRM: customers/vendors/contacts、HR: users/wellbeing）が入ることを確認。
+- `metrics` に件数（CRM指標: customers/vendors/contacts、HR指標: users/wellbeing）が入ることを確認。
 
 ### 定期実行（cron）
 - `/jobs/integrations/run` を定期実行し、schedule が設定された setting が実行されることを確認。
@@ -132,8 +132,8 @@
 - `retryMax/retryBaseMinutes` に従って `/jobs/integrations/run` で再送されることを確認。
 
 ### 監視指標（例）
-- 実行件数（runs/day）、失敗件数、retry件数
-- delta件数（updatedSinceありの customers/vendors/contacts/users/wellbeing）
+- 実行件数（runs/day）、失敗件数、リトライ件数
+- delta件数（updatedSinceを指定した場合の customers/vendors/contacts/users/wellbeing）
 - 実行時間（startedAt/finishedAt）
 
 ## オープン事項
