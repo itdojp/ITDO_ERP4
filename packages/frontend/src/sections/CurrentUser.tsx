@@ -762,9 +762,7 @@ export const CurrentUser: React.FC = () => {
                   </div>
                 )}
                 <div style={{ marginTop: 8 }}>
-                  <div style={{ fontSize: 12, color: '#475569' }}>
-                    配信条件
-                  </div>
+                  <div style={{ fontSize: 12, color: '#475569' }}>配信条件</div>
                   <div className="row" style={{ gap: 8, marginTop: 4 }}>
                     {PUSH_TOPICS.map((topic) => (
                       <label key={topic.id} className="badge">

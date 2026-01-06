@@ -104,7 +104,10 @@ export function isOfflineError(err: unknown): boolean {
 }
 
 function generateQueueId(): string {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+  if (
+    typeof crypto !== 'undefined' &&
+    typeof crypto.randomUUID === 'function'
+  ) {
     return crypto.randomUUID();
   }
   return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
@@ -139,15 +142,13 @@ export async function listOfflineItems(): Promise<QueueItem[]> {
     const items = await withStore<QueueRecord[]>('readonly', (store) =>
       store.getAll(),
     );
-    return (items || [])
-      .slice()
-      .sort((a, b) => {
-        const orderDiff = a.order - b.order;
-        if (orderDiff !== 0) return orderDiff;
-        if (a.createdAt < b.createdAt) return -1;
-        if (a.createdAt > b.createdAt) return 1;
-        return 0;
-      });
+    return (items || []).slice().sort((a, b) => {
+      const orderDiff = a.order - b.order;
+      if (orderDiff !== 0) return orderDiff;
+      if (a.createdAt < b.createdAt) return -1;
+      if (a.createdAt > b.createdAt) return 1;
+      return 0;
+    });
   } catch {
     return [];
   }
@@ -161,8 +162,9 @@ async function updateOfflineItem(
   id: string,
   updater: (item: QueueItem) => QueueItem,
 ): Promise<QueueItem | null> {
-  const current = await withStore<QueueRecord | undefined>('readonly', (store) =>
-    store.get(id),
+  const current = await withStore<QueueRecord | undefined>(
+    'readonly',
+    (store) => store.get(id),
   );
   if (!current) return null;
   const next = updater({ ...current });
@@ -203,12 +205,13 @@ export async function processOfflineQueue(options?: {
           await sendRequest(item.requests[i]);
           cursor = i + 1;
           if (cursor < item.requests.length) {
-            current = (await updateOfflineItem(item.id, (prev) => ({
-              ...prev,
-              cursor,
-              status: 'pending',
-              updatedAt: new Date().toISOString(),
-            }))) ?? current;
+            current =
+              (await updateOfflineItem(item.id, (prev) => ({
+                ...prev,
+                cursor,
+                status: 'pending',
+                updatedAt: new Date().toISOString(),
+              }))) ?? current;
           }
         } catch (err) {
           if (isOfflineError(err)) {
