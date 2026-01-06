@@ -21,6 +21,13 @@ cleanup() {
   if [[ -n "${BACKEND_PID:-}" ]] && kill -0 "$BACKEND_PID" >/dev/null 2>&1; then
     kill "$BACKEND_PID" || true
   fi
+  for port in "$FRONTEND_PORT" "$BACKEND_PORT"; do
+    local pid
+    pid=$(ss -ltnp | awk -v p=":$port" '$4 ~ p { if (match($0, /pid=([0-9]+)/, a)) print a[1]; }' | head -n 1)
+    if [[ -n "${pid:-}" ]]; then
+      kill "$pid" >/dev/null 2>&1 || true
+    fi
+  done
 }
 trap cleanup EXIT
 
