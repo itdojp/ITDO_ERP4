@@ -45,7 +45,7 @@ export async function registerWellbeingRoutes(app: FastifyInstance) {
   app.get(
     '/wellbeing-entries',
     { preHandler: requireRole(['hr', 'admin']) },
-    async () => {
+    async (req) => {
       const items = await prisma.wellbeingEntry.findMany({
         orderBy: { entryDate: 'desc' },
         take: 50,
