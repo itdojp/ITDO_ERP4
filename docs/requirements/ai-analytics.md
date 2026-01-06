@@ -13,12 +13,10 @@
 - 定型レポートの要約文（テンプレで開始）
 
 ## PoCスコープ（Phase 3）
-
 - ルールベースのインサイト生成（Alertの集計から作成）
 - 対象: 予算超過/残業超過/承認遅延/納期未請求/外部連携失敗
 - 出力: 管理/経営向けの要約カード（件数・対象・推奨アクション）
 - 監査ログで閲覧履歴を記録
-
 ## 入力データ範囲（案）
 
 - プロジェクト/見積/請求/経費/工数/承認/アラート
@@ -58,7 +56,6 @@
     - `items`: `{ id, type, severity, count, latestAt, sampleTargets }[]`
   - 監査ログ: `insights_view` に filters を記録
   - 備考: `projectId` 指定時は `alert.targetRef` と `alert.setting.scopeProjectId` の一致を含める
-
 ## 次アクション
 
 - ユースケースの優先順位を決定
