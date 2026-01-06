@@ -30,14 +30,11 @@ type Insight = {
   type: string;
   severity: 'low' | 'medium' | 'high';
   count: number;
-  latestAt?: string | null;
-  sampleTargets?: string[];
+  latestAt: string | null;
+  sampleTargets: string[];
 };
 
-const INSIGHT_LABELS: Record<
-  string,
-  { title: string; hint: string }
-> = {
+const INSIGHT_LABELS: Record<string, { title: string; hint: string }> = {
   budget_overrun: {
     title: '予算超過の兆候',
     hint: '見積/マイルストーンの予算と実績の差分を確認してください。',
@@ -62,6 +59,16 @@ const INSIGHT_LABELS: Record<
     title: '外部連携の失敗',
     hint: '連携ログと再実行の状況を確認してください。',
   },
+};
+
+const formatDateTime = (value: string | null) => {
+  if (!value) return 'N/A';
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value.slice(0, 16);
+  return new Intl.DateTimeFormat('ja-JP', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  }).format(parsed);
 };
 
 export const Dashboard: React.FC = () => {
@@ -214,23 +221,29 @@ export const Dashboard: React.FC = () => {
               };
               return (
                 <div key={item.id} className="card" style={{ padding: 12 }}>
-                  <div className="row" style={{ justifyContent: 'space-between' }}>
+                  <div
+                    className="row"
+                    style={{ justifyContent: 'space-between' }}
+                  >
                     <div>
                       <strong>{label.title}</strong>
                     </div>
                     <span className="badge">{item.severity}</span>
                   </div>
                   <div style={{ marginTop: 6 }}>
-                    件数: {item.count} / 最新:{' '}
-                    {item.latestAt ? item.latestAt.slice(0, 16) : 'N/A'}
+                    件数: {item.count} / 最新: {formatDateTime(item.latestAt)}
                   </div>
                   {item.sampleTargets && item.sampleTargets.length > 0 && (
-                    <div style={{ fontSize: 12, color: '#475569', marginTop: 4 }}>
+                    <div
+                      style={{ fontSize: 12, color: '#475569', marginTop: 4 }}
+                    >
                       対象例: {item.sampleTargets.join(', ')}
                     </div>
                   )}
                   {label.hint && (
-                    <div style={{ fontSize: 12, color: '#475569', marginTop: 4 }}>
+                    <div
+                      style={{ fontSize: 12, color: '#475569', marginTop: 4 }}
+                    >
                       {label.hint}
                     </div>
                   )}
