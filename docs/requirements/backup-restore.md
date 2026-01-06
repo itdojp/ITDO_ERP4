@@ -95,7 +95,7 @@
 ## 本番運用（案）
 - 実行タイミング: 深夜帯の日次（例: 02:00 JST）
 - 取得形式: `pg_dump -Fc`（DB）+ `pg_dumpall --globals-only`（ロール/権限）
-- 保存先: `s3://erp4-backups/erp4/<env>/{db,globals,assets,meta}/`（暫定）
+- 保存先: `s3://erp4-backups/erp4/<env>/{db,globals,assets,meta}/`（暫定。`<env>` は `prod` / `staging` など環境名に合わせて `S3_PREFIX` と一致させる）
 - 暗号化: SSE-KMS（例: `alias/erp4-backup`）を必須。GPGは別ホスト退避時のみ任意
 - アップロード: メタデータに `env`, `generated_at`, `schema_version` を付与
 - 権限: 書き込み専用ロールと読み取り専用ロールを分離
