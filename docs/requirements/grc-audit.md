@@ -30,12 +30,14 @@
 - `GET /access-reviews/snapshot`
   - query: `format=csv|json`
   - json: `{ users, groups, memberships }`
+    - users: `{ id, userName, displayName, department, active }`
+    - groups: `{ id, displayName, active }`
+    - memberships: `{ userId, groupId }`
   - csv: `userId,userName,displayName,department,active,groupId,groupName,groupActive`
 
 ## PoCでの監査ログ記録
 - `audit_log_exported` / `access_review_exported` を記録
 - metadata に `filters` / `format` / `rowCount` を保持
-
 ## アクセスレビュー（案）
 - 定期レビュー（四半期）
 - 変更履歴の可視化
