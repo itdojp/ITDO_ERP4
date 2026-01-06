@@ -27,29 +27,24 @@ export async function registerAuditLogRoutes(app: FastifyInstance) {
     '/audit-logs',
     { preHandler: requireRole(['admin', 'mgmt', 'exec']) },
     async (req, reply) => {
-      const {
-        from,
-        to,
-        userId,
-        action,
-        targetTable,
-        targetId,
-        format,
-        limit,
-      } = req.query as {
-        from?: string;
-        to?: string;
-        userId?: string;
-        action?: string;
-        targetTable?: string;
-        targetId?: string;
-        format?: string;
-        limit?: string;
-      };
+      const { from, to, userId, action, targetTable, targetId, format, limit } =
+        req.query as {
+          from?: string;
+          to?: string;
+          userId?: string;
+          action?: string;
+          targetTable?: string;
+          targetId?: string;
+          format?: string;
+          limit?: string;
+        };
       const normalizedFormat = normalizeFormat(format);
       if (!normalizedFormat) {
         return reply.status(400).send({
-          error: { code: 'INVALID_FORMAT', message: 'format must be csv or json' },
+          error: {
+            code: 'INVALID_FORMAT',
+            message: 'format must be csv or json',
+          },
         });
       }
       const fromDate = parseDateParam(from);

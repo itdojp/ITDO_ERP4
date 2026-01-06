@@ -19,7 +19,10 @@ export async function registerAccessReviewRoutes(app: FastifyInstance) {
       const normalizedFormat = normalizeFormat(format);
       if (!normalizedFormat) {
         return reply.status(400).send({
-          error: { code: 'INVALID_FORMAT', message: 'format must be csv or json' },
+          error: {
+            code: 'INVALID_FORMAT',
+            message: 'format must be csv or json',
+          },
         });
       }
       const [users, groups, memberships] = await Promise.all([
