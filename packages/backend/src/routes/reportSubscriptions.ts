@@ -1,3 +1,5 @@
+import { promises as fs } from 'fs';
+import path from 'path';
 import { FastifyInstance } from 'fastify';
 import { Prisma, type ReportSubscription } from '@prisma/client';
 import { prisma } from '../services/db.js';
@@ -10,7 +12,12 @@ import {
   reportProjectProfitByGroup,
   reportProjectProfitByUser,
 } from '../services/reports.js';
-import { generatePdf } from '../services/pdf.js';
+import {
+  generatePdf,
+  isSafePdfFilename,
+  resolvePdfFilePath,
+} from '../services/pdf.js';
+import { sendEmail } from '../services/notifier.js';
 import { requireRole } from '../services/rbac.js';
 import { parseDateParam } from '../utils/date.js';
 import {
@@ -42,12 +49,107 @@ type Recipients = {
   users?: string[];
 };
 
+type ReportPayload = {
+  reportKey: string;
+  format: 'csv' | 'pdf';
+  params: Prisma.InputJsonValue | null;
+  generatedAt: string;
+  data: Prisma.InputJsonValue;
+  csv?: string;
+  csvFilename?: string;
+  pdf?: {
+    templateId: string;
+    url: string;
+    filePath?: string;
+    filename?: string;
+  };
+};
+
 class ReportParamError extends Error {
   code: string;
 
   constructor(code: string, message: string) {
     super(message);
     this.code = code;
+  }
+}
+
+const DEFAULT_REPORT_RETRY_MAX = 3;
+const DEFAULT_REPORT_RETRY_BASE_MINUTES = 60;
+const DEFAULT_REPORT_STORAGE_DIR = '/tmp/erp4/reports';
+
+const NON_RETRYABLE_ERRORS = new Set([
+  'missing_email',
+  'missing_recipients',
+  'invalid_recipient',
+  'missing_attachment',
+  'csv_missing',
+  'pdf_missing',
+  'pdf_template_missing',
+  'unknown_channel',
+  'smtp_config_missing',
+  'smtp_disabled',
+  'smtp_unavailable',
+]);
+
+function parseNonNegativeInt(value: string | undefined, fallback: number) {
+  if (!value) return fallback;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0) return fallback;
+  return Math.floor(parsed);
+}
+
+function resolveReportRetryMax() {
+  return parseNonNegativeInt(
+    process.env.REPORT_DELIVERY_RETRY_MAX,
+    DEFAULT_REPORT_RETRY_MAX,
+  );
+}
+
+function resolveReportRetryBaseMinutes() {
+  return parseNonNegativeInt(
+    process.env.REPORT_DELIVERY_RETRY_BASE_MINUTES,
+    DEFAULT_REPORT_RETRY_BASE_MINUTES,
+  );
+}
+
+function resolveReportStorageDir() {
+  return process.env.REPORT_STORAGE_DIR || DEFAULT_REPORT_STORAGE_DIR;
+}
+
+function computeNextRetryAt(
+  now: Date,
+  retryCount: number,
+  baseMinutes: number,
+) {
+  if (retryCount <= 0 || baseMinutes <= 0) return null;
+  const factor = Math.pow(2, retryCount - 1);
+  const delayMs = baseMinutes * factor * 60 * 1000;
+  return new Date(now.getTime() + delayMs);
+}
+
+function sanitizeFilenamePart(value: string) {
+  return value.replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/-+/g, '-');
+}
+
+function buildReportFilename(
+  reportKey: string,
+  format: 'csv' | 'pdf',
+  hint?: string,
+) {
+  const safeKey = sanitizeFilenamePart(reportKey || 'report');
+  const safeHint = hint ? sanitizeFilenamePart(hint) : '';
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '');
+  const suffix = safeHint ? `-${safeHint}` : '';
+  return `${safeKey}${suffix}-${timestamp}.${format}`;
+}
+
+async function fileExists(filePath: string) {
+  try {
+    await fs.access(filePath);
+    return true;
+  } catch {
+    return false;
   }
 }
 
@@ -73,6 +175,27 @@ function normalizeRecipients(value: unknown): Recipients {
 function normalizeChannels(value: unknown) {
   const channels = normalizeStringArray(value);
   return channels.length ? channels : ['dashboard'];
+}
+
+function isRetryableError(error?: string | null) {
+  if (!error) return true;
+  return !NON_RETRYABLE_ERRORS.has(error);
+}
+
+function parseTargetList(value?: string | null) {
+  if (!value) return [];
+  return value
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function isReportPayload(value: unknown): value is ReportPayload {
+  if (!isPlainObject(value)) return false;
+  const raw = value as Record<string, unknown>;
+  if (typeof raw.reportKey !== 'string') return false;
+  if (raw.format !== 'csv' && raw.format !== 'pdf') return false;
+  return true;
 }
 
 function normalizeJsonValue(value: unknown): Prisma.InputJsonValue | null {
@@ -134,6 +257,130 @@ function toCsv(headers: string[], rows: unknown[][]) {
   return `${lines.join('\n')}\n`;
 }
 
+async function writeReportFile(filename: string, content: string) {
+  const storageDir = resolveReportStorageDir();
+  await fs.mkdir(storageDir, { recursive: true });
+  const safeName = sanitizeFilenamePart(filename || 'report');
+  const filePath = path.join(storageDir, safeName);
+  await fs.writeFile(filePath, content);
+  return { filePath, filename: safeName };
+}
+
+function buildEmailSubject(meta: { reportKey: string; name?: string | null }) {
+  const label = meta.name?.trim() || meta.reportKey;
+  return `Report ${label}`;
+}
+
+function buildEmailBody(payload: ReportPayload) {
+  const params = payload.params ? JSON.stringify(payload.params) : '-';
+  return [
+    `reportKey: ${payload.reportKey}`,
+    `format: ${payload.format}`,
+    `generatedAt: ${payload.generatedAt}`,
+    `params: ${params}`,
+  ].join('\n');
+}
+
+function resolveFailureNotifyEmails() {
+  const raw = process.env.REPORT_DELIVERY_FAILURE_EMAILS || '';
+  return raw
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+async function notifyPermanentFailure(meta: {
+  reportKey: string;
+  channel: string;
+  target?: string | null;
+  error?: string | null;
+}) {
+  const emails = resolveFailureNotifyEmails();
+  if (!emails.length) return;
+  const subject = `Report delivery failed: ${meta.reportKey}`;
+  const body = [
+    `reportKey: ${meta.reportKey}`,
+    `channel: ${meta.channel}`,
+    `target: ${meta.target || '-'}`,
+    `error: ${meta.error || '-'}`,
+  ].join('\n');
+  try {
+    await sendEmail(emails, subject, body);
+  } catch (err) {
+    console.error('[report failure notify failed]', {
+      message: err instanceof Error ? err.message : 'notify_failed',
+    });
+  }
+}
+
+async function buildCsvAttachment(payload: ReportPayload) {
+  if (!payload.csv) {
+    throw new Error('csv_missing');
+  }
+  const filename =
+    payload.csvFilename || buildReportFilename(payload.reportKey, 'csv');
+  const { filePath, filename: safeName } = await writeReportFile(
+    filename,
+    payload.csv,
+  );
+  payload.csvFilename = safeName;
+  return {
+    attachment: {
+      filename: safeName,
+      path: filePath,
+      contentType: 'text/csv',
+    },
+    filePath,
+  };
+}
+
+async function buildPdfAttachment(payload: ReportPayload) {
+  if (!payload.pdf) {
+    throw new Error('pdf_missing');
+  }
+  let filePath = payload.pdf.filePath;
+  let filename = payload.pdf.filename;
+  if (!filePath && filename && isSafePdfFilename(filename)) {
+    const candidate = resolvePdfFilePath(filename);
+    if (await fileExists(candidate)) {
+      filePath = candidate;
+    }
+  }
+  if (!filePath) {
+    const templateId = payload.pdf.templateId;
+    if (!templateId) {
+      throw new Error('pdf_template_missing');
+    }
+    const data = isPlainObject(payload.data)
+      ? payload.data
+      : { data: payload.data };
+    const result = await generatePdf(
+      templateId,
+      data as Record<string, unknown>,
+      payload.reportKey,
+    );
+    payload.pdf = {
+      ...payload.pdf,
+      url: result.url,
+      filePath: result.filePath,
+      filename: result.filename,
+    };
+    filePath = result.filePath;
+    filename = result.filename;
+  }
+  if (!filePath || !filename) {
+    throw new Error('missing_attachment');
+  }
+  return {
+    attachment: {
+      filename,
+      path: filePath,
+      contentType: 'application/pdf',
+    },
+    filePath,
+  };
+}
+
 function buildTemplateId(reportName: string, layout?: string) {
   const trimmedLayout = layout?.trim();
   // Only allow a simple token so ":" cannot affect the templateId segments.
@@ -170,20 +417,9 @@ function parseIdList(value: unknown) {
   return [];
 }
 
-function resolveTarget(channel: string, recipients: Recipients) {
-  if (channel === 'email') {
-    return recipients.emails?.join(',') || '-';
-  }
-  if (channel === 'dashboard') {
-    const users = recipients.users?.join(',');
-    if (users) return users;
-    const roles = recipients.roles?.join(',');
-    return roles || '-';
-  }
-  return '-';
-}
-
-async function buildReportPayload(subscription: ReportSubscription) {
+async function buildReportPayload(
+  subscription: ReportSubscription,
+): Promise<ReportPayload> {
   const params = isPlainObject(subscription.params) ? subscription.params : {};
   const format = normalizeFormat(subscription.format);
   const layout = typeof params.layout === 'string' ? params.layout : undefined;
@@ -191,7 +427,15 @@ async function buildReportPayload(subscription: ReportSubscription) {
   const toDate = parseDateInput(params.to, 'to');
   let data: unknown;
   let csv: string | undefined;
-  let pdf: { templateId: string; url: string } | undefined;
+  let csvFilename: string | undefined;
+  let pdf:
+    | {
+        templateId: string;
+        url: string;
+        filePath?: string;
+        filename?: string;
+      }
+    | undefined;
 
   switch (subscription.reportKey) {
     case 'project-effort': {
@@ -207,14 +451,19 @@ async function buildReportPayload(subscription: ReportSubscription) {
           ['projectId', 'totalMinutes', 'totalExpenses'],
           [[result.projectId, result.totalMinutes, result.totalExpenses]],
         );
+        csvFilename = buildReportFilename(
+          subscription.reportKey,
+          'csv',
+          subscription.id,
+        );
       } else {
         const templateId = buildTemplateId('project-effort', layout);
-        const { url } = await generatePdf(
+        const { url, filePath, filename } = await generatePdf(
           templateId,
           toJsonValue(result) as Record<string, unknown>,
           'project-effort',
         );
-        pdf = { templateId, url };
+        pdf = { templateId, url, filePath, filename };
       }
       break;
     }
@@ -257,14 +506,19 @@ async function buildReportPayload(subscription: ReportSubscription) {
             ],
           ],
         );
+        csvFilename = buildReportFilename(
+          subscription.reportKey,
+          'csv',
+          subscription.id,
+        );
       } else {
         const templateId = buildTemplateId('project-profit', layout);
-        const { url } = await generatePdf(
+        const { url, filePath, filename } = await generatePdf(
           templateId,
           toJsonValue(result) as Record<string, unknown>,
           'project-profit',
         );
-        pdf = { templateId, url };
+        pdf = { templateId, url, filePath, filename };
       }
       break;
     }
@@ -316,14 +570,19 @@ async function buildReportPayload(subscription: ReportSubscription) {
           item.minutes,
         ]);
         csv = toCsv(headers, rows);
+        csvFilename = buildReportFilename(
+          subscription.reportKey,
+          'csv',
+          subscription.id,
+        );
       } else {
         const templateId = buildTemplateId('project-profit-by-user', layout);
-        const { url } = await generatePdf(
+        const { url, filePath, filename } = await generatePdf(
           templateId,
           toJsonValue(result) as Record<string, unknown>,
           'project-profit-by-user',
         );
-        pdf = { templateId, url };
+        pdf = { templateId, url, filePath, filename };
       }
       break;
     }
@@ -383,14 +642,19 @@ async function buildReportPayload(subscription: ReportSubscription) {
           result.userIds.join('|'),
         ];
         csv = toCsv(headers, [row]);
+        csvFilename = buildReportFilename(
+          subscription.reportKey,
+          'csv',
+          subscription.id,
+        );
       } else {
         const templateId = buildTemplateId('project-profit-by-group', layout);
-        const { url } = await generatePdf(
+        const { url, filePath, filename } = await generatePdf(
           templateId,
           toJsonValue(result) as Record<string, unknown>,
           'project-profit-by-group',
         );
-        pdf = { templateId, url };
+        pdf = { templateId, url, filePath, filename };
       }
       break;
     }
@@ -410,14 +674,19 @@ async function buildReportPayload(subscription: ReportSubscription) {
           ['userId', 'totalMinutes'],
           result.map((item) => [item.userId, item.totalMinutes]),
         );
+        csvFilename = buildReportFilename(
+          subscription.reportKey,
+          'csv',
+          subscription.id,
+        );
       } else {
         const templateId = buildTemplateId('group-effort', layout);
-        const { url } = await generatePdf(
+        const { url, filePath, filename } = await generatePdf(
           templateId,
           toJsonValue({ items: result }) as Record<string, unknown>,
           'group-effort',
         );
-        pdf = { templateId, url };
+        pdf = { templateId, url, filePath, filename };
       }
       break;
     }
@@ -434,14 +703,19 @@ async function buildReportPayload(subscription: ReportSubscription) {
           ['userId', 'totalMinutes', 'dailyHours'],
           [[result.userId, result.totalMinutes, result.dailyHours]],
         );
+        csvFilename = buildReportFilename(
+          subscription.reportKey,
+          'csv',
+          subscription.id,
+        );
       } else {
         const templateId = buildTemplateId('overtime', layout);
-        const { url } = await generatePdf(
+        const { url, filePath, filename } = await generatePdf(
           templateId,
           toJsonValue(result) as Record<string, unknown>,
           'overtime',
         );
-        pdf = { templateId, url };
+        pdf = { templateId, url, filePath, filename };
       }
       break;
     }
@@ -482,14 +756,19 @@ async function buildReportPayload(subscription: ReportSubscription) {
           item.invoiceStatuses.join('|'),
         ]);
         csv = toCsv(headers, rows);
+        csvFilename = buildReportFilename(
+          subscription.reportKey,
+          'csv',
+          subscription.id,
+        );
       } else {
         const templateId = buildTemplateId('delivery-due', layout);
-        const { url } = await generatePdf(
+        const { url, filePath, filename } = await generatePdf(
           templateId,
           toJsonValue({ items: result }) as Record<string, unknown>,
           'delivery-due',
         );
-        pdf = { templateId, url };
+        pdf = { templateId, url, filePath, filename };
       }
       break;
     }
@@ -500,15 +779,22 @@ async function buildReportPayload(subscription: ReportSubscription) {
       );
   }
 
-  const payload = {
+  const payload: ReportPayload = {
     reportKey: subscription.reportKey,
     format,
     params: normalizeJsonValue(subscription.params),
     generatedAt: new Date().toISOString(),
     data: toJsonValue(data),
-    ...(csv ? { csv } : {}),
-    ...(pdf ? { pdf } : {}),
-  } as Prisma.InputJsonValue;
+  };
+  if (csv) {
+    payload.csv = csv;
+  }
+  if (csvFilename) {
+    payload.csvFilename = csvFilename;
+  }
+  if (pdf) {
+    payload.pdf = pdf;
+  }
 
   return payload;
 }
@@ -526,6 +812,152 @@ async function updateRunStatus(
       updatedBy: actorId,
     },
   });
+}
+
+function isSuccessStatus(status: string) {
+  return status === 'success' || status === 'stub';
+}
+
+function isFailureStatus(status: string) {
+  return status === 'failed' || status === 'failed_permanent';
+}
+
+function computeRunStatus(statuses: string[]) {
+  if (statuses.length === 0) return 'skipped';
+  const hasSuccess = statuses.some(isSuccessStatus);
+  const hasFailure = statuses.some(isFailureStatus);
+  if (hasFailure && hasSuccess) return 'partial';
+  if (hasFailure) return 'failed';
+  if (hasSuccess) return 'success';
+  return 'skipped';
+}
+
+async function sendReportDelivery(
+  channel: string,
+  subscription: ReportSubscription,
+  payload: ReportPayload,
+  recipients: Recipients,
+  actorId: string | undefined,
+) {
+  const now = new Date();
+  const baseData: Omit<Prisma.ReportDeliveryCreateInput, 'status'> = {
+    subscription: { connect: { id: subscription.id } },
+    channel,
+    payload: payload as Prisma.InputJsonValue,
+    createdBy: actorId,
+  };
+
+  if (channel === 'email') {
+    const emails = recipients.emails ?? [];
+    if (!emails.length) {
+      return {
+        ...baseData,
+        status: 'skipped',
+        error: 'missing_email',
+        target: '-',
+        sentAt: now,
+      };
+    }
+    const attachments = [];
+    try {
+      if (payload.format === 'csv') {
+        const { attachment } = await buildCsvAttachment(payload);
+        attachments.push(attachment);
+      } else {
+        const { attachment } = await buildPdfAttachment(payload);
+        attachments.push(attachment);
+      }
+    } catch (err) {
+      const error = err instanceof Error ? err.message : 'missing_attachment';
+      await notifyPermanentFailure({
+        reportKey: subscription.reportKey,
+        channel,
+        target: emails.join(','),
+        error,
+      });
+      return {
+        ...baseData,
+        status: 'failed_permanent',
+        error,
+        target: emails.join(','),
+        sentAt: now,
+        lastErrorAt: now,
+      };
+    }
+    const emailResult = await sendEmail(
+      emails,
+      buildEmailSubject(subscription),
+      buildEmailBody(payload),
+      { attachments },
+    );
+    const error = emailResult.error;
+    const retryMax = resolveReportRetryMax();
+    const retryBase = resolveReportRetryBaseMinutes();
+    const retryable =
+      emailResult.status === 'failed' &&
+      isRetryableError(error) &&
+      retryMax > 1 &&
+      retryBase > 0;
+    const retryCount = retryable ? 1 : 0;
+    const nextRetryAt = retryable
+      ? computeNextRetryAt(now, retryCount, retryBase)
+      : null;
+    const status =
+      emailResult.status === 'failed' && !retryable
+        ? 'failed_permanent'
+        : emailResult.status;
+    if (status === 'failed_permanent') {
+      await notifyPermanentFailure({
+        reportKey: subscription.reportKey,
+        channel,
+        target: emailResult.target || emails.join(','),
+        error,
+      });
+    }
+    return {
+      ...baseData,
+      status,
+      error,
+      target: emailResult.target || emails.join(','),
+      sentAt: now,
+      retryCount,
+      nextRetryAt,
+      lastErrorAt:
+        status === 'failed' || status === 'failed_permanent' ? now : undefined,
+    };
+  }
+
+  if (channel === 'dashboard') {
+    const targets = recipients.users?.length
+      ? recipients.users
+      : recipients.roles?.length
+        ? recipients.roles
+        : [];
+    if (!targets.length) {
+      return {
+        ...baseData,
+        status: 'skipped',
+        error: 'missing_recipients',
+        target: '-',
+        sentAt: now,
+      };
+    }
+    return {
+      ...baseData,
+      status: 'success',
+      target: targets.join(','),
+      sentAt: now,
+    };
+  }
+
+  return {
+    ...baseData,
+    status: 'failed_permanent',
+    error: 'unknown_channel',
+    target: '-',
+    sentAt: now,
+    lastErrorAt: now,
+  };
 }
 
 async function runSubscription(
@@ -547,24 +979,203 @@ async function runSubscription(
       deliveries: [],
     };
   }
-  const deliveries = channels.map((channel) => ({
-    subscriptionId: subscription.id,
-    channel,
-    status: 'generated',
-    target: resolveTarget(channel, recipients),
-    payload,
-    sentAt: new Date(),
-    createdBy: actorId,
-  }));
-  if (deliveries.length) {
-    await prisma.reportDelivery.createMany({ data: deliveries });
+  const deliveries: Prisma.ReportDeliveryCreateInput[] = [];
+  for (const channel of channels) {
+    const delivery = await sendReportDelivery(
+      channel,
+      subscription,
+      payload,
+      recipients,
+      actorId,
+    );
+    deliveries.push(delivery);
   }
-  await updateRunStatus(subscription.id, 'success', actorId);
+  const createdDeliveries = [];
+  for (const delivery of deliveries) {
+    createdDeliveries.push(
+      await prisma.reportDelivery.create({ data: delivery }),
+    );
+  }
+  const runStatus = computeRunStatus(deliveries.map((item) => item.status));
+  await updateRunStatus(subscription.id, runStatus, actorId);
   return {
     payload,
     channels,
     recipients,
-    deliveries,
+    deliveries: createdDeliveries,
+  };
+}
+
+async function retryReportDelivery(
+  delivery: {
+    id: string;
+    channel: string;
+    payload: Prisma.JsonValue | null;
+    target: string | null;
+    retryCount: number;
+  },
+  dryRun: boolean,
+) {
+  const now = new Date();
+  if (delivery.channel !== 'email') {
+    return {
+      id: delivery.id,
+      status: 'skipped',
+      error: 'unsupported_channel',
+    };
+  }
+  if (!isReportPayload(delivery.payload)) {
+    if (!dryRun) {
+      await prisma.reportDelivery.update({
+        where: { id: delivery.id },
+        data: {
+          status: 'failed_permanent',
+          error: 'invalid_payload',
+          lastErrorAt: now,
+          sentAt: now,
+          nextRetryAt: null,
+        },
+      });
+    }
+    if (!dryRun) {
+      await notifyPermanentFailure({
+        reportKey: 'unknown',
+        channel: delivery.channel,
+        target: delivery.target,
+        error: 'invalid_payload',
+      });
+    }
+    return {
+      id: delivery.id,
+      status: 'failed_permanent',
+      error: 'invalid_payload',
+    };
+  }
+  const payload = delivery.payload as ReportPayload;
+  const emails = parseTargetList(delivery.target);
+  if (!emails.length) {
+    if (!dryRun) {
+      await prisma.reportDelivery.update({
+        where: { id: delivery.id },
+        data: {
+          status: 'failed_permanent',
+          error: 'missing_email',
+          lastErrorAt: now,
+          sentAt: now,
+          nextRetryAt: null,
+        },
+      });
+    }
+    if (!dryRun) {
+      await notifyPermanentFailure({
+        reportKey: payload.reportKey,
+        channel: delivery.channel,
+        target: delivery.target,
+        error: 'missing_email',
+      });
+    }
+    return {
+      id: delivery.id,
+      status: 'failed_permanent',
+      error: 'missing_email',
+    };
+  }
+  const attachments = [];
+  try {
+    if (payload.format === 'csv') {
+      const { attachment } = await buildCsvAttachment(payload);
+      attachments.push(attachment);
+    } else {
+      const { attachment } = await buildPdfAttachment(payload);
+      attachments.push(attachment);
+    }
+  } catch (err) {
+    const error = err instanceof Error ? err.message : 'missing_attachment';
+    if (!dryRun) {
+      await prisma.reportDelivery.update({
+        where: { id: delivery.id },
+        data: {
+          status: 'failed_permanent',
+          error,
+          lastErrorAt: now,
+          sentAt: now,
+          nextRetryAt: null,
+        },
+      });
+    }
+    if (!dryRun) {
+      await notifyPermanentFailure({
+        reportKey: payload.reportKey,
+        channel: delivery.channel,
+        target: delivery.target,
+        error,
+      });
+    }
+    return {
+      id: delivery.id,
+      status: 'failed_permanent',
+      error,
+    };
+  }
+  if (dryRun) {
+    return {
+      id: delivery.id,
+      status: 'dry_run',
+      target: emails.join(','),
+    };
+  }
+  const emailResult = await sendEmail(
+    emails,
+    buildEmailSubject({ reportKey: payload.reportKey }),
+    buildEmailBody(payload),
+    { attachments },
+  );
+  const error = emailResult.error;
+  const nextRetryCount =
+    emailResult.status === 'failed'
+      ? delivery.retryCount + 1
+      : delivery.retryCount;
+  const retryMax = resolveReportRetryMax();
+  const retryBase = resolveReportRetryBaseMinutes();
+  const retryable =
+    emailResult.status === 'failed' &&
+    isRetryableError(error) &&
+    retryBase > 0 &&
+    nextRetryCount < retryMax;
+  const nextRetryAt = retryable
+    ? computeNextRetryAt(now, nextRetryCount, retryBase)
+    : null;
+  const status =
+    emailResult.status === 'failed' && !retryable
+      ? 'failed_permanent'
+      : emailResult.status;
+  if (status === 'failed_permanent' && !dryRun) {
+    await notifyPermanentFailure({
+      reportKey: payload.reportKey,
+      channel: delivery.channel,
+      target: emailResult.target || emails.join(','),
+      error,
+    });
+  }
+  await prisma.reportDelivery.update({
+    where: { id: delivery.id },
+    data: {
+      status,
+      error,
+      target: emailResult.target || emails.join(','),
+      sentAt: now,
+      retryCount: nextRetryCount,
+      nextRetryAt,
+      lastErrorAt:
+        status === 'failed' || status === 'failed_permanent' ? now : null,
+      payload: payload as Prisma.InputJsonValue,
+    },
+  });
+  return {
+    id: delivery.id,
+    status,
+    error,
+    nextRetryAt,
   };
 }
 
@@ -780,6 +1391,42 @@ export async function registerReportSubscriptionRoutes(app: FastifyInstance) {
             reportKey: item.reportKey,
             deliveries: 0,
             error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }
+      return { ok: true, count: results.length, items: results };
+    },
+  );
+
+  app.post(
+    '/jobs/report-deliveries/retry',
+    {
+      preHandler: requireRole(reportSubscriptionRoles),
+      schema: reportSubscriptionRunSchema,
+    },
+    async (req) => {
+      const { dryRun } = (req.body || {}) as RunBody;
+      const retryMax = resolveReportRetryMax();
+      const now = new Date();
+      const items = await prisma.reportDelivery.findMany({
+        where: {
+          status: 'failed',
+          retryCount: { lt: retryMax },
+          nextRetryAt: { lte: now },
+        },
+        orderBy: { nextRetryAt: 'asc' },
+        take: 100,
+      });
+      const results = [];
+      for (const item of items) {
+        try {
+          const result = await retryReportDelivery(item, Boolean(dryRun));
+          results.push(result);
+        } catch (err) {
+          results.push({
+            id: item.id,
+            status: 'failed_permanent',
+            error: err instanceof Error ? err.message : 'retry_failed',
           });
         }
       }
