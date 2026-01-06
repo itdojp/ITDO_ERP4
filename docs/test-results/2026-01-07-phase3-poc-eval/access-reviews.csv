@@ -1,0 +1,2 @@
+userId,userName,displayName,department,active,groupId,groupName,groupActive
+10000000-0000-0000-0000-00000000A001,auditor,Audit User,,true,20000000-0000-0000-0000-00000000B001,Audit Group,true
