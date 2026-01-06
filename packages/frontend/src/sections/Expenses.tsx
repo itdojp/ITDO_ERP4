@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { api, getAuthState } from '../api';
 import { useProjects } from '../hooks/useProjects';
+import { enqueueOfflineItem, isOfflineError } from '../utils/offlineQueue';
 
 type Expense = {
   id: string;
@@ -113,21 +114,27 @@ export const Expenses: React.FC = () => {
       setMessage(null);
       return;
     }
+    const userId = getAuthState()?.userId || 'demo-user';
+    const payload = {
+      projectId: form.projectId.trim(),
+      userId,
+      category: form.category.trim(),
+      amount: form.amount,
+      currency: form.currency.trim() || 'JPY',
+      incurredOn: form.incurredOn,
+      isShared: form.isShared,
+      receiptUrl: form.receiptUrl.trim() || undefined,
+    };
+    const request = {
+      path: '/expenses',
+      method: 'POST',
+      body: payload,
+    };
     try {
       setIsSaving(true);
-      const userId = getAuthState()?.userId || 'demo-user';
-      await api('/expenses', {
-        method: 'POST',
-        body: JSON.stringify({
-          projectId: form.projectId.trim(),
-          userId,
-          category: form.category.trim(),
-          amount: form.amount,
-          currency: form.currency.trim() || 'JPY',
-          incurredOn: form.incurredOn,
-          isShared: form.isShared,
-          receiptUrl: form.receiptUrl.trim() || undefined,
-        }),
+      await api(request.path, {
+        method: request.method,
+        body: JSON.stringify(request.body),
       });
       setMessage({ text: '経費を保存しました', type: 'success' });
       try {
@@ -141,7 +148,20 @@ export const Expenses: React.FC = () => {
       }
       setForm({ ...defaultForm, projectId: defaultProjectId });
     } catch (e) {
-      setMessage({ text: '保存に失敗しました', type: 'error' });
+      if (isOfflineError(e)) {
+        await enqueueOfflineItem({
+          kind: 'expense',
+          label: `経費 ${form.incurredOn} ${form.amount}${form.currency}`,
+          requests: [request],
+        });
+        setMessage({
+          text: 'オフラインのため送信待ちに保存しました',
+          type: 'success',
+        });
+        setForm({ ...defaultForm, projectId: defaultProjectId });
+      } else {
+        setMessage({ text: '保存に失敗しました', type: 'error' });
+      }
     } finally {
       setIsSaving(false);
     }

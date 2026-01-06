@@ -1,11 +1,25 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { api, AuthState, getAuthState, setAuthState } from '../api';
+import {
+  listOfflineItems,
+  processOfflineQueue,
+  removeOfflineItem,
+  type QueueItem,
+} from '../utils/offlineQueue';
 
 type MeResponse = {
   user: { userId: string; roles: string[]; ownerProjects?: string[] | string };
 };
 
 const pushPublicKey = (import.meta.env.VITE_PUSH_PUBLIC_KEY || '').trim();
+const PUSH_TOPIC_KEY = 'erp4_push_topics';
+const PUSH_CONSENT_KEY = 'erp4_push_consent';
+const PUSH_TOPICS = [
+  { id: 'alerts', label: 'アラート' },
+  { id: 'approvals', label: '承認' },
+  { id: 'reports', label: 'レポート' },
+  { id: 'invoices', label: '請求/発注' },
+];
 
 let googleScriptPromise: Promise<void> | null = null;
 
@@ -141,7 +155,33 @@ export const CurrentUser: React.FC = () => {
     useState<PushSubscription | null>(null);
   const [pushMessage, setPushMessage] = useState('');
   const [pushError, setPushError] = useState('');
+  const [pushTopics, setPushTopics] = useState<string[]>(() => {
+    try {
+      const raw = window.localStorage.getItem(PUSH_TOPIC_KEY);
+      if (!raw) return ['alerts'];
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed)
+        ? parsed.map((item) => String(item)).filter(Boolean)
+        : ['alerts'];
+    } catch {
+      return ['alerts'];
+    }
+  });
+  const [pushConsent, setPushConsent] = useState(() => {
+    try {
+      return window.localStorage.getItem(PUSH_CONSENT_KEY) === 'true';
+    } catch {
+      return false;
+    }
+  });
   const [googleError, setGoogleError] = useState('');
+  const [queueItems, setQueueItems] = useState<QueueItem[]>([]);
+  const [queueMessage, setQueueMessage] = useState('');
+  const [queueError, setQueueError] = useState('');
+  const [queueProcessing, setQueueProcessing] = useState(false);
+  const [isOnline, setIsOnline] = useState(
+    typeof navigator !== 'undefined' ? navigator.onLine : true,
+  );
   const googleButtonRef = useRef<HTMLDivElement | null>(null);
   const [googleReady, setGoogleReady] = useState(false);
   const googleButtonRendered = useRef(false);
@@ -162,6 +202,67 @@ export const CurrentUser: React.FC = () => {
       })
       .catch(() => setError('取得に失敗'));
   }, [auth]);
+
+  const loadQueueItems = useCallback(async () => {
+    try {
+      const items = await listOfflineItems();
+      setQueueItems(items);
+    } catch {
+      setQueueItems([]);
+    }
+  }, []);
+
+  const runQueue = useCallback(
+    async (includeFailed?: boolean) => {
+      setQueueError('');
+      setQueueMessage('');
+      if (!auth) {
+        setQueueError('ログイン後に送信待ちを処理できます');
+        return;
+      }
+      setQueueProcessing(true);
+      try {
+        const result = await processOfflineQueue({ includeFailed });
+        if (result.stoppedBy === 'failed') {
+          setQueueError('送信に失敗した項目があります');
+        } else if (result.stoppedBy === 'offline') {
+          setQueueMessage('オフラインのため送信を保留しました');
+        } else {
+          setQueueMessage('送信待ちを処理しました');
+        }
+      } catch {
+        setQueueError('送信待ちの処理に失敗しました');
+      } finally {
+        setQueueProcessing(false);
+        await loadQueueItems();
+      }
+    },
+    [auth, loadQueueItems],
+  );
+
+  const discardQueueItem = useCallback(
+    async (id: string) => {
+      await removeOfflineItem(id);
+      await loadQueueItems();
+    },
+    [loadQueueItems],
+  );
+
+  useEffect(() => {
+    loadQueueItems();
+    runQueue(false).catch(() => undefined);
+    const handleOnline = () => {
+      setIsOnline(true);
+      runQueue(false).catch(() => undefined);
+    };
+    const handleOffline = () => setIsOnline(false);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, [loadQueueItems, runQueue]);
 
   useEffect(() => {
     if (!auth || !pushSupported) {
@@ -184,6 +285,22 @@ export const CurrentUser: React.FC = () => {
       setPushError('Push購読の取得に失敗しました');
     });
   }, [auth, pushSupported]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(PUSH_TOPIC_KEY, JSON.stringify(pushTopics));
+    } catch {
+      // ignore
+    }
+  }, [pushTopics]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(PUSH_CONSENT_KEY, String(pushConsent));
+    } catch {
+      // ignore
+    }
+  }, [pushConsent]);
 
   const applyTokenLogin = useCallback((token: string) => {
     const payload = decodeJwtPayload(token);
@@ -284,10 +401,24 @@ export const CurrentUser: React.FC = () => {
     }
   };
 
+  const togglePushTopic = (id: string) => {
+    setPushTopics((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id],
+    );
+  };
+
   const subscribePush = async () => {
     setPushError('');
     setPushMessage('');
     try {
+      if (!pushConsent) {
+        setPushError('通知の受信に同意してください');
+        return;
+      }
+      if (pushTopics.length === 0) {
+        setPushError('配信条件を1つ以上選択してください');
+        return;
+      }
       if (!pushPublicKey) {
         setPushError('VITE_PUSH_PUBLIC_KEY が未設定です');
         return;
@@ -307,7 +438,11 @@ export const CurrentUser: React.FC = () => {
       const payload = subscription.toJSON();
       await api('/push-subscriptions', {
         method: 'POST',
-        body: JSON.stringify({ ...payload, userAgent: navigator.userAgent }),
+        body: JSON.stringify({
+          ...payload,
+          userAgent: navigator.userAgent,
+          topics: pushTopics,
+        }),
       });
       setPushMessage('Push購読を登録しました');
       setPushSubscription(subscription);
@@ -478,6 +613,90 @@ export const CurrentUser: React.FC = () => {
             !error && <div>読み込み中...</div>
           )}
           <div style={{ marginTop: 12 }}>
+            <strong>オフライン送信キュー</strong>
+            <div style={{ marginTop: 6 }}>
+              <div>
+                状態: {isOnline ? 'オンライン' : 'オフライン'} / 件数:{' '}
+                {queueItems.length}
+              </div>
+              <div className="row" style={{ gap: 8, marginTop: 6 }}>
+                <button
+                  className="button secondary"
+                  onClick={() => runQueue(true)}
+                  disabled={queueProcessing || queueItems.length === 0}
+                >
+                  再送
+                </button>
+                <button
+                  className="button secondary"
+                  onClick={loadQueueItems}
+                  disabled={queueProcessing}
+                >
+                  再読込
+                </button>
+              </div>
+              {queueMessage && (
+                <div style={{ color: '#16a34a', marginTop: 6 }}>
+                  {queueMessage}
+                </div>
+              )}
+              {queueError && (
+                <div style={{ color: '#dc2626', marginTop: 6 }}>
+                  {queueError}
+                </div>
+              )}
+            </div>
+            <div
+              className="list"
+              style={{ display: 'grid', gap: 8, marginTop: 8 }}
+            >
+              {queueItems.length === 0 && (
+                <div className="card">送信待ちはありません</div>
+              )}
+              {queueItems.map((item) => (
+                <div key={item.id} className="card" style={{ padding: 12 }}>
+                  <div
+                    className="row"
+                    style={{ justifyContent: 'space-between' }}
+                  >
+                    <div>
+                      <strong>{item.label}</strong>
+                      {item.status === 'failed' && (
+                        <span style={{ marginLeft: 8, color: '#dc2626' }}>
+                          失敗
+                        </span>
+                      )}
+                    </div>
+                    <span className="badge">retry {item.retryCount}</span>
+                  </div>
+                  {item.lastError && (
+                    <div
+                      style={{ fontSize: 12, color: '#475569', marginTop: 4 }}
+                    >
+                      error: {item.lastError}
+                    </div>
+                  )}
+                  <div className="row" style={{ marginTop: 6 }}>
+                    <button
+                      className="button secondary"
+                      onClick={() => runQueue(true)}
+                      disabled={queueProcessing}
+                    >
+                      再送
+                    </button>
+                    <button
+                      className="button secondary"
+                      onClick={() => discardQueueItem(item.id)}
+                      disabled={queueProcessing}
+                    >
+                      破棄
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div style={{ marginTop: 12 }}>
             <strong>Push通知</strong>
             {!pushSupported && (
               <div style={{ marginTop: 6 }}>このブラウザは未対応です</div>
@@ -493,6 +712,42 @@ export const CurrentUser: React.FC = () => {
                     VITE_PUSH_PUBLIC_KEY が未設定です
                   </div>
                 )}
+                <div style={{ marginTop: 8 }}>
+                  <div style={{ fontSize: 12, color: '#475569' }}>
+                    配信条件
+                  </div>
+                  <div className="row" style={{ gap: 8, marginTop: 4 }}>
+                    {PUSH_TOPICS.map((topic) => (
+                      <label key={topic.id} className="badge">
+                        <input
+                          type="checkbox"
+                          checked={pushTopics.includes(topic.id)}
+                          onChange={() => togglePushTopic(topic.id)}
+                          style={{ marginRight: 6 }}
+                        />
+                        {topic.label}
+                      </label>
+                    ))}
+                  </div>
+                  <label
+                    style={{
+                      display: 'flex',
+                      gap: 8,
+                      alignItems: 'center',
+                      marginTop: 6,
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={pushConsent}
+                      onChange={(e) => setPushConsent(e.target.checked)}
+                    />
+                    通知の受信に同意します
+                  </label>
+                  <div style={{ fontSize: 12, color: '#475569' }}>
+                    配信条件は後から変更できます（再登録で反映）。
+                  </div>
+                </div>
                 <div className="row" style={{ gap: 8, marginTop: 6 }}>
                   <button className="button secondary" onClick={subscribePush}>
                     購読登録

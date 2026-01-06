@@ -570,6 +570,7 @@ export const pushSubscriptionSchema = {
         { additionalProperties: false },
       ),
       userAgent: Type.Optional(Type.String()),
+      topics: Type.Optional(Type.Array(Type.String())),
     },
     { additionalProperties: false },
   ),
