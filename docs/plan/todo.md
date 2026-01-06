@@ -32,7 +32,6 @@
   - [ ] 監査ログ出力の運用フロー（申請/承認/実行/記録）
   - [ ] アクセスレビューの周期/責任者/記録方法
   - [ ] インサイトの説明責任/運用ルール（誤検知/根拠提示）
-
 ## 次アクション（保守/改善）
 - [x] #345 CSVユーティリティ共通化（reports/reportSubscriptions）
   - [x] reports/reportSubscriptions のCSV処理を utils/csv.ts に統合
