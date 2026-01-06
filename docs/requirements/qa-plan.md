@@ -72,6 +72,11 @@ UUID生成関数は環境に合わせて置き換え（`gen_random_uuid()`/`uuid
 - シードデータ: scripts/seed-demo.sql をロード後、フロントに反映されることを確認（プロジェクト/請求/工数/経費のダミー）
 - 整合チェック: scripts/checks/poc-integrity.sql を実行し、件数/合計が期待値と一致することを確認
 
+## フロント自動テスト (E2E)
+- 実行: `scripts/e2e-frontend.sh`
+- 画面キャプチャの出力先: `docs/test-results/YYYY-MM-DD-frontend-e2e/`
+- 操作範囲: 日報 + ウェルビーイング、工数入力、経費入力、請求の作成
+
 ## 管理系
 - マスタ管理: /customers, /vendors の GET/POST/PATCH でCRUD動作
 - 連絡先管理: /contacts の GET/POST/PATCH でCRUD動作（customerId または vendorId のみ許可）

@@ -8,3 +8,5 @@ packages/frontend/.vite
 packages/backend/.env
 packages/frontend/.env
 /tmp
+/test-results
+/playwright-report
