@@ -7,6 +7,7 @@ import {
   loadDraft,
   saveDraft,
 } from '../utils/drafts';
+import { enqueueOfflineItem, isOfflineError } from '../utils/offlineQueue';
 
 const tags = [
   '仕事量が多い',
@@ -84,31 +85,45 @@ export const DailyReport: React.FC = () => {
       setMessage({ text: 'Good / Not Good を選択してください', type: 'error' });
       return;
     }
-    try {
-      setIsSubmitting(true);
-      await api('/daily-reports', {
+    const now = new Date();
+    const isoNow = now.toISOString();
+    const requests = [
+      {
+        path: '/daily-reports',
         method: 'POST',
-        body: JSON.stringify({
+        body: {
           userId,
           content: '日報本文',
-          reportDate: new Date().toISOString(),
+          reportDate: isoNow,
           linkedProjectIds: [],
           status: 'submitted',
-        }),
-      });
-      await api('/wellbeing-entries', {
+        },
+      },
+      {
+        path: '/wellbeing-entries',
         method: 'POST',
-        body: JSON.stringify({
+        body: {
           userId,
-          entryDate: new Date().toISOString(),
+          entryDate: isoNow,
           status,
           notes: selectedTags.length
             ? `${notes}\nTags:${selectedTags.join(',')}`
             : notes,
           helpRequested,
           visibilityGroupId: 'hr-group',
-        }),
-      });
+        },
+      },
+    ];
+    let cursor = 0;
+    try {
+      setIsSubmitting(true);
+      for (const req of requests) {
+        await api(req.path, {
+          method: req.method,
+          body: JSON.stringify(req.body),
+        });
+        cursor += 1;
+      }
       setMessage({ text: '送信しました', type: 'success' });
       setNotes('');
       setSelectedTags([]);
@@ -116,7 +131,25 @@ export const DailyReport: React.FC = () => {
       setStatus('');
       await clearDraft(draftKey);
     } catch (e) {
-      setMessage({ text: '送信に失敗しました', type: 'error' });
+      if (isOfflineError(e)) {
+        await enqueueOfflineItem({
+          kind: 'daily-report',
+          label: `日報 ${isoNow.slice(0, 10)}`,
+          requests,
+          cursor,
+        });
+        setMessage({
+          text: 'オフラインのため送信待ちに保存しました',
+          type: 'success',
+        });
+        setNotes('');
+        setSelectedTags([]);
+        setHelpRequested(false);
+        setStatus('');
+        await clearDraft(draftKey);
+      } else {
+        setMessage({ text: '送信に失敗しました', type: 'error' });
+      }
     } finally {
       setIsSubmitting(false);
     }

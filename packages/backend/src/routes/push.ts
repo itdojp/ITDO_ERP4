@@ -1,4 +1,5 @@
 import { FastifyInstance } from 'fastify';
+import { Prisma } from '@prisma/client';
 import { prisma } from '../services/db.js';
 import { requireRole } from '../services/rbac.js';
 import {
@@ -14,6 +15,7 @@ type PushSubscriptionBody = {
   expirationTime?: number | null;
   keys: { p256dh: string; auth: string };
   userAgent?: string;
+  topics?: string[];
 };
 
 type PushTestBody = {
@@ -28,6 +30,12 @@ function resolveExpirationTime(value?: number | null) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return undefined;
   return date;
+}
+
+function normalizeTopics(raw?: string[]) {
+  if (!raw) return undefined;
+  const topics = raw.map((item) => String(item).trim()).filter(Boolean);
+  return topics.length ? topics : Prisma.DbNull;
 }
 
 function parseLimit(raw: string | undefined, maxValue: number) {
@@ -94,6 +102,7 @@ export async function registerPushRoutes(app: FastifyInstance) {
         return reply.code(401).send({ error: 'unauthorized' });
       }
       const expirationTime = resolveExpirationTime(body.expirationTime);
+      const topics = normalizeTopics(body.topics);
       const now = new Date();
       const saved = await prisma.pushSubscription.upsert({
         where: { endpoint: body.endpoint },
@@ -104,6 +113,8 @@ export async function registerPushRoutes(app: FastifyInstance) {
           auth: body.keys.auth,
           expirationTime,
           userAgent: body.userAgent,
+          topics,
+          consentAt: now,
           isActive: true,
           lastSeenAt: now,
           createdBy: userId,
@@ -115,6 +126,8 @@ export async function registerPushRoutes(app: FastifyInstance) {
           auth: body.keys.auth,
           expirationTime,
           userAgent: body.userAgent,
+          topics,
+          consentAt: now,
           isActive: true,
           lastSeenAt: now,
           updatedBy: userId,

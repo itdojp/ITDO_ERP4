@@ -14,6 +14,7 @@ import {
   loadDraft,
   saveDraft,
 } from '../utils/drafts';
+import { enqueueOfflineItem, isOfflineError } from '../utils/offlineQueue';
 
 type TimeEntry = {
   id: string;
@@ -152,18 +153,24 @@ export const TimeEntries: React.FC = () => {
       setMessage(null);
       return;
     }
+    const payload = {
+      ...form,
+      projectId: form.projectId.trim(),
+      taskId: form.taskId.trim() || undefined,
+      workType: form.workType.trim() || undefined,
+      location: form.location.trim() || undefined,
+      userId,
+    };
+    const request = {
+      path: '/time-entries',
+      method: 'POST',
+      body: payload,
+    };
     try {
       setIsSaving(true);
-      await api('/time-entries', {
-        method: 'POST',
-        body: JSON.stringify({
-          ...form,
-          projectId: form.projectId.trim(),
-          taskId: form.taskId.trim() || undefined,
-          workType: form.workType.trim() || undefined,
-          location: form.location.trim() || undefined,
-          userId,
-        }),
+      await api(request.path, {
+        method: request.method,
+        body: JSON.stringify(request.body),
       });
       setMessage({ text: '保存しました', type: 'success' });
       const updated = await api<{ items: TimeEntry[] }>('/time-entries');
@@ -171,7 +178,21 @@ export const TimeEntries: React.FC = () => {
       setForm({ ...defaultForm, projectId: defaultProjectId });
       await clearDraft(draftKey);
     } catch (e) {
-      setMessage({ text: '保存に失敗しました', type: 'error' });
+      if (isOfflineError(e)) {
+        await enqueueOfflineItem({
+          kind: 'time-entry',
+          label: `工数 ${form.workDate} ${form.minutes}分`,
+          requests: [request],
+        });
+        setMessage({
+          text: 'オフラインのため送信待ちに保存しました',
+          type: 'success',
+        });
+        setForm({ ...defaultForm, projectId: defaultProjectId });
+        await clearDraft(draftKey);
+      } else {
+        setMessage({ text: '保存に失敗しました', type: 'error' });
+      }
     } finally {
       setIsSaving(false);
     }

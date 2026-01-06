@@ -651,6 +651,8 @@ model PushSubscription {
   auth           String
   expirationTime DateTime?
   userAgent      String?
+  topics         Json?
+  consentAt      DateTime?
   isActive       Boolean  @default(true)
   lastSeenAt     DateTime?
   createdAt      DateTime @default(now())
