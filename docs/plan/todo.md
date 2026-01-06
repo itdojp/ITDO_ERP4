@@ -17,6 +17,11 @@
   - [x] 閲覧操作の監査ログ記録
   - [x] docs/requirements/ai-analytics.md に手順/仕様を追記
 
+## 次アクション（保守/改善）
+- [ ] #345 CSVユーティリティ共通化（reports/reportSubscriptions）
+  - [ ] reports/reportSubscriptions のCSV処理を utils/csv.ts に統合
+  - [ ] 振る舞い差分があればドキュメント化
+
 ## 次アクション（意思決定反映の実装計画）
 - [x] #275 Googleログイン対応 + 非Googleユーザ許容（ハイブリッド認証）
   - [x] AUTH_MODE=hybrid の導入方針を定義し、環境変数（JWKS/ISSUER/AUDIENCE 等）を追加
