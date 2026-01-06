@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { expect, test, type Locator, type Page } from '@playwright/test';
 
-const dateTag = new Date().toISOString().slice(0, 10);
+const dateTag = process.env.E2E_DATE || new Date().toISOString().slice(0, 10);
 const rootDir = process.env.E2E_ROOT_DIR || process.cwd();
 const evidenceDir =
   process.env.E2E_EVIDENCE_DIR ||
@@ -18,6 +18,10 @@ const authState = {
   projectIds: ['00000000-0000-0000-0000-000000000001'],
   groupIds: ['mgmt', 'hr-group'],
 };
+
+const runId = () =>
+  process.env.E2E_RUN_ID ||
+  `${Date.now().toString().slice(-6)}-${Math.floor(Math.random() * 90 + 10)}`;
 
 function ensureEvidenceDir() {
   if (!captureEnabled) return;
@@ -49,11 +53,35 @@ async function prepare(
   if (options?.mockPush) {
     await page.addInitScript(() => {
       if (!('PushManager' in window)) return;
+      const randomBytes = (size: number) => {
+        const bytes = new Uint8Array(size);
+        if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
+          crypto.getRandomValues(bytes);
+          return bytes;
+        }
+        for (let i = 0; i < size; i += 1) {
+          bytes[i] = Math.floor(Math.random() * 256);
+        }
+        return bytes;
+      };
+      const bytesToBase64 = (bytes: Uint8Array) => {
+        let binary = '';
+        for (const byte of bytes) {
+          binary += String.fromCharCode(byte);
+        }
+        return btoa(binary);
+      };
+      const makeId = () => {
+        if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
+          return crypto.randomUUID();
+        }
+        return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      };
       const makeSubscription = () => {
-        const endpoint = `https://example.com/push/${Math.random()}`;
+        const endpoint = `https://example.com/push/${makeId()}`;
         const keys = {
-          p256dh: btoa(Math.random().toString(36)),
-          auth: btoa(Math.random().toString(36)),
+          p256dh: bytesToBase64(randomBytes(16)),
+          auth: bytesToBase64(randomBytes(12)),
         };
         return {
           endpoint,
@@ -96,10 +124,10 @@ async function selectByLabelOrFirst(select: Locator, label: string) {
 async function ensureServiceWorker(page: Page) {
   return page.evaluate(async () => {
     if (!('serviceWorker' in navigator)) return false;
-    let registration = await navigator.serviceWorker.getRegistration();
-    if (!registration) {
+    const existing = await navigator.serviceWorker.getRegistration();
+    if (!existing) {
       try {
-        registration = await navigator.serviceWorker.register('/sw.js');
+        await navigator.serviceWorker.register('/sw.js');
       } catch {
         return false;
       }
@@ -115,6 +143,9 @@ test('pwa offline duplicate time entries @pwa @extended', async ({
 }) => {
   test.setTimeout(120_000);
   await prepare(page);
+  const id = runId();
+  const workTag = `E2E-DUP-${id}`;
+  const locationTag = `offline-dup-${id}`;
 
   const timeSection = page
     .locator('h2', { hasText: '工数入力' })
@@ -128,14 +159,17 @@ test('pwa offline duplicate time entries @pwa @extended', async ({
   await context.setOffline(true);
 
   await timeSection.locator('input[type="number"]').fill('75');
-  await timeSection.getByPlaceholder('作業種別').fill('E2E-DUP');
-  await timeSection.getByPlaceholder('場所').fill('offline-dup');
+  await timeSection.getByPlaceholder('作業種別').fill(workTag);
+  await timeSection.getByPlaceholder('場所').fill(locationTag);
 
   const addButton = timeSection.getByRole('button', { name: '追加' });
   await addButton.click();
   await expect(
     timeSection.getByText('オフラインのため送信待ちに保存しました'),
   ).toBeVisible();
+  await timeSection.locator('input[type="number"]').fill('75');
+  await timeSection.getByPlaceholder('作業種別').fill(workTag);
+  await timeSection.getByPlaceholder('場所').fill(locationTag);
   await addButton.click();
   await expect(
     timeSection.getByText('オフラインのため送信待ちに保存しました'),
@@ -184,9 +218,17 @@ test('pwa offline duplicate time entries @pwa @extended', async ({
     .locator('..');
   await timeSectionReload.scrollIntoViewIfNeeded();
   const dupItems = timeSectionReload.locator('ul.list li', {
-    hasText: 'E2E-DUP',
+    hasText: workTag,
   });
   await expect(dupItems).toHaveCount(2);
+  const normalizedTexts = (await dupItems.allTextContents()).map((text) =>
+    text.replace(/\s+/g, ' ').trim(),
+  );
+  if (normalizedTexts.length === 2) {
+    expect(normalizedTexts[0]).toBe(normalizedTexts[1]);
+  }
+  expect(normalizedTexts.join(' ')).toContain(workTag);
+  expect(normalizedTexts.join(' ')).toContain(locationTag);
   await captureSection(
     timeSectionReload,
     '16-offline-duplicate-time-entry.png',
