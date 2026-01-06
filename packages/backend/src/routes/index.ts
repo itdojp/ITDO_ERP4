@@ -23,6 +23,7 @@ import { registerDataQualityJobRoutes } from './dataQualityJobs.js';
 import { registerReportRoutes } from './reports.js';
 import { registerAuditLogRoutes } from './auditLogs.js';
 import { registerAccessReviewRoutes } from './accessReviews.js';
+import { registerInsightRoutes } from './insights.js';
 import { registerPdfTemplateRoutes } from './pdfTemplates.js';
 import { registerTemplateSettingRoutes } from './templateSettings.js';
 import { registerChatRoutes } from './chat.js';
@@ -69,4 +70,5 @@ export async function registerRoutes(app: FastifyInstance) {
   await registerReportRoutes(app);
   await registerAuditLogRoutes(app);
   await registerAccessReviewRoutes(app);
+  await registerInsightRoutes(app);
 }

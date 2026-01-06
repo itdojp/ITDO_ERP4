@@ -25,12 +25,64 @@ type ApprovalInstance = {
   steps: ApprovalStep[];
 };
 
+type Insight = {
+  id: string;
+  type: string;
+  severity: 'low' | 'medium' | 'high';
+  count: number;
+  latestAt: string | null;
+  sampleTargets: string[];
+};
+
+const INSIGHT_LABELS: Record<string, { title: string; hint: string }> = {
+  budget_overrun: {
+    title: '予算超過の兆候',
+    hint: '見積/マイルストーンの予算と実績の差分を確認してください。',
+  },
+  overtime: {
+    title: '残業超過の兆候',
+    hint: '対象メンバーの稼働状況を確認してください。',
+  },
+  approval_delay: {
+    title: '承認遅延の兆候',
+    hint: '未承認の申請を確認してください。',
+  },
+  approval_escalation: {
+    title: '承認エスカレーション',
+    hint: '期限超過の承認が発生しています。',
+  },
+  delivery_due: {
+    title: '未請求の納期超過',
+    hint: '納品済みの請求タイミングを確認してください。',
+  },
+  integration_failure: {
+    title: '外部連携の失敗',
+    hint: '連携ログと再実行の状況を確認してください。',
+  },
+};
+
+const formatDateTime = (value: string | null) => {
+  if (!value) return 'N/A';
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value.slice(0, 16);
+  return new Intl.DateTimeFormat('ja-JP', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  }).format(parsed);
+};
+
 export const Dashboard: React.FC = () => {
   const auth = getAuthState();
   const userId = auth?.userId ?? '';
+  const roles = auth?.roles ?? [];
+  const canViewInsights = roles.some((role) =>
+    ['admin', 'mgmt', 'exec'].includes(role),
+  );
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [approvals, setApprovals] = useState<ApprovalInstance[]>([]);
   const [approvalMessage, setApprovalMessage] = useState('');
+  const [insights, setInsights] = useState<Insight[]>([]);
+  const [insightMessage, setInsightMessage] = useState('');
   const [showAll, setShowAll] = useState(false);
   const hasMore = alerts.length > 5;
   const visibleAlerts = showAll ? alerts : alerts.slice(0, 5);
@@ -59,6 +111,19 @@ export const Dashboard: React.FC = () => {
       .then((data) => setAlerts(data.items))
       .catch(() => setAlerts([]));
   }, []);
+
+  useEffect(() => {
+    if (!canViewInsights) return;
+    api<{ items: Insight[] }>('/insights')
+      .then((data) => {
+        setInsights(data.items || []);
+        setInsightMessage('');
+      })
+      .catch(() => {
+        setInsights([]);
+        setInsightMessage('インサイトの取得に失敗しました');
+      });
+  }, [canViewInsights]);
 
   useEffect(() => {
     const loadApprovals = async () => {
@@ -138,6 +203,59 @@ export const Dashboard: React.FC = () => {
         ))}
         {alerts.length === 0 && <div className="card">アラートなし</div>}
       </div>
+      {canViewInsights && (
+        <div style={{ marginTop: 16 }}>
+          <div className="row" style={{ alignItems: 'center' }}>
+            <p className="badge">Insights</p>
+          </div>
+          {insightMessage && (
+            <div style={{ color: '#dc2626', marginBottom: 8 }}>
+              {insightMessage}
+            </div>
+          )}
+          <div className="list" style={{ display: 'grid', gap: 8 }}>
+            {insights.map((item) => {
+              const label = INSIGHT_LABELS[item.type] || {
+                title: item.type,
+                hint: '',
+              };
+              return (
+                <div key={item.id} className="card" style={{ padding: 12 }}>
+                  <div
+                    className="row"
+                    style={{ justifyContent: 'space-between' }}
+                  >
+                    <div>
+                      <strong>{label.title}</strong>
+                    </div>
+                    <span className="badge">{item.severity}</span>
+                  </div>
+                  <div style={{ marginTop: 6 }}>
+                    件数: {item.count} / 最新: {formatDateTime(item.latestAt)}
+                  </div>
+                  {item.sampleTargets && item.sampleTargets.length > 0 && (
+                    <div
+                      style={{ fontSize: 12, color: '#475569', marginTop: 4 }}
+                    >
+                      対象例: {item.sampleTargets.join(', ')}
+                    </div>
+                  )}
+                  {label.hint && (
+                    <div
+                      style={{ fontSize: 12, color: '#475569', marginTop: 4 }}
+                    >
+                      {label.hint}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+            {insights.length === 0 && (
+              <div className="card">インサイトなし</div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 };
