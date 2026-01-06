@@ -12,6 +12,13 @@
 - 欠損: time_entries/expenses で user_id/project_id/currency が null のもの
 - 工数/休暇の整合: 同一日で minutes が 1440 を超えていないか、休暇と重複していないか
 
+### HR/CRM 連携向けチェック
+- CRM: externalId が null/空、externalSource + externalId の重複
+- CRM: contacts が customerId/vendorId のどちらにも紐付いていない
+- CRM: contacts.email の形式エラー（存在する場合）
+- HR: userAccount.externalId の欠損、wellbeingEntry.userId/entryDate の欠損
+- HR: 匿名化IDの形式（hash prefix 等）を運用ルールに合わせて検知
+
 ## 出力形式
 - CSV or Markdown レポート: 「種別, 対象ID, 詳細」
 - 件数サマリ: チェックごとの件数を集計

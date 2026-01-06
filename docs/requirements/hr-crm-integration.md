@@ -113,6 +113,29 @@
 - 永続失敗は管理者に通知し、手動再送の導線を用意
 - 失敗理由を監査ログに残す
 
+## 運用検証（手順）
+### 手動実行
+- `/integration-settings/:id/run` を実行し、`integration_runs` に status=success が記録されることを確認。
+- `metrics` に件数（CRM指標: customers/vendors/contacts、HR指標: users/wellbeing）が入ることを確認。
+
+### 定期実行（cron）
+- `/jobs/integrations/run` を定期実行し、schedule が設定された setting が実行されることを確認。
+- 現状 schedule 文字列の解釈は未実装のため、cron 側で頻度を制御する。
+
+### 差分同期（updatedSince）
+- `config.updatedSince` を指定して delta が取得できることを確認（`updatedAt > updatedSince` 判定）。
+- 境界値: updatedSince を直前時刻/当日 00:00 にした場合の件数と再実行時の差分を比較。
+
+### 失敗/リトライ
+- `config.simulateFailure=true` で失敗を再現し、run.status=failed/nextRetryAt を確認。
+- `alert_settings`（type=integration_failure）によりアラートが作成されることを確認。
+- `retryMax/retryBaseMinutes` に従って `/jobs/integrations/run` で再送されることを確認。
+
+### 監視指標（例）
+- 実行件数（runs/day）、失敗件数、リトライ件数
+- delta件数（updatedSinceを指定した場合の customers/vendors/contacts/users/wellbeing）
+- 実行時間（startedAt/finishedAt）
+
 ## オープン事項
 - CRM 側のフィールド定義
   - code 以外の追加コードが必要か（部門コード/請求コード など）
