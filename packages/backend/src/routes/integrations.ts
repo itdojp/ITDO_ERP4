@@ -50,7 +50,9 @@ const DEFAULT_RETRY_BASE_MINUTES = 60;
 
 function getRetryPolicy(config: unknown) {
   const record =
-    config && typeof config === 'object' ? (config as Record<string, unknown>) : {};
+    config && typeof config === 'object'
+      ? (config as Record<string, unknown>)
+      : {};
   const retryMaxRaw = record.retryMax;
   const retryBaseRaw = record.retryBaseMinutes;
   const retryMax =
@@ -139,35 +141,42 @@ async function executeIntegration(setting: {
     throw new Error('invalid_updatedSince');
   }
   if (setting.type === 'crm') {
-    const where = updatedSince ? { updatedAt: { gt: updatedSince } } : undefined;
+    const where = updatedSince
+      ? { updatedAt: { gt: updatedSince } }
+      : undefined;
     const [customers, vendors, contacts] = await Promise.all([
       prisma.customer.count({ where }),
       prisma.vendor.count({ where }),
       prisma.contact.count({ where }),
     ]);
+    const metrics: Record<string, unknown> = {
+      customers,
+      vendors,
+      contacts,
+    };
+    if (updatedSince) {
+      metrics.updatedSince = updatedSince.toISOString();
+    }
     return {
       message: updatedSince ? 'exported_delta' : 'exported',
-      metrics: {
-        customers,
-        vendors,
-        contacts,
-        updatedSince: updatedSince?.toISOString() ?? null,
-      },
+      metrics,
     };
   }
   if (setting.type === 'hr') {
-    const where = updatedSince ? { updatedAt: { gt: updatedSince } } : undefined;
+    const where = updatedSince
+      ? { updatedAt: { gt: updatedSince } }
+      : undefined;
     const [users, wellbeing] = await Promise.all([
       prisma.userAccount.count({ where }),
       prisma.wellbeingEntry.count({ where }),
     ]);
+    const metrics: Record<string, unknown> = { users, wellbeing };
+    if (updatedSince) {
+      metrics.updatedSince = updatedSince.toISOString();
+    }
     return {
       message: updatedSince ? 'exported_delta' : 'exported',
-      metrics: {
-        users,
-        wellbeing,
-        updatedSince: updatedSince?.toISOString() ?? null,
-      },
+      metrics,
     };
   }
   return { message: 'noop', metrics: {} };
@@ -191,7 +200,7 @@ async function runIntegrationSetting(
           startedAt: now,
           finishedAt: null,
           message: null,
-          metrics: null,
+          metrics: Prisma.DbNull,
           nextRetryAt: null,
         },
       })
@@ -393,11 +402,10 @@ export async function registerIntegrationRoutes(app: FastifyInstance) {
         if (run.retryCount >= retryMax) {
           continue;
         }
-        const updated = await runIntegrationSetting(
-          run.setting,
-          userId,
-          { id: run.id, retryCount: run.retryCount },
-        );
+        const updated = await runIntegrationSetting(run.setting, userId, {
+          id: run.id,
+          retryCount: run.retryCount,
+        });
         retryResults.push({ id: updated.id, status: updated.status });
       }
 

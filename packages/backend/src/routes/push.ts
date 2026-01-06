@@ -1,4 +1,5 @@
 import { FastifyInstance } from 'fastify';
+import { Prisma } from '@prisma/client';
 import { prisma } from '../services/db.js';
 import { requireRole } from '../services/rbac.js';
 import {
@@ -32,9 +33,9 @@ function resolveExpirationTime(value?: number | null) {
 }
 
 function normalizeTopics(raw?: string[]) {
-  if (!raw) return null;
+  if (!raw) return undefined;
   const topics = raw.map((item) => String(item).trim()).filter(Boolean);
-  return topics.length ? topics : null;
+  return topics.length ? topics : Prisma.DbNull;
 }
 
 function parseLimit(raw: string | undefined, maxValue: number) {
