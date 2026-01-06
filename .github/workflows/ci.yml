@@ -4,6 +4,8 @@ on:
   push:
     branches: ["**"]
   pull_request:
+  schedule:
+    - cron: "0 18 * * *"
 
 jobs:
   backend:
@@ -64,3 +66,42 @@ jobs:
       - run: npm install --prefix packages/backend
       - run: npm install --prefix packages/frontend
       - run: npx --prefix packages/backend ts-node --project packages/backend/tsconfig.json scripts/data-quality-check.ts || true
+  e2e-frontend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    if: |
+      github.event_name == 'pull_request' ||
+      github.event_name == 'schedule' ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/docs/bootstrap')
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 18
+      - run: npm ci --prefix packages/backend
+      - run: npm ci --prefix packages/frontend
+      - run: sudo apt-get update
+      - run: sudo apt-get install -y postgresql-client
+      - run: npx --prefix packages/frontend playwright install --with-deps chromium
+      - name: Run frontend e2e
+        env:
+          E2E_DB_MODE: direct
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres?schema=public
+          E2E_CAPTURE: 0
+          E2E_SKIP_PLAYWRIGHT_INSTALL: 1
+          E2E_SCOPE: ${{ github.event_name == 'pull_request' && 'core' || 'full' }}
+        run: ./scripts/e2e-frontend.sh
