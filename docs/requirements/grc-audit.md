@@ -47,6 +47,10 @@
 - 保持期間の法的要件の整理
 - マスキング/秘匿の範囲
 - 監査対応フロー（依頼→抽出→提出）
+- 日次エクスポート（`scripts/export-audit-logs.ts`）とハッシュチェーンの運用
+  - 出力先: `data/audit-exports/`（CSV/JSON/sha256）
+  - 連鎖: `audit-logs-YYYY-MM-DD.sha256.json` の `chainHash` を前日と連結
+  - 外部保全: WORM/S3 Object Lock などで保全
 
 ## 未決定事項
 - 法令準拠の詳細（各国/地域）

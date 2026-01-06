@@ -12,3 +12,4 @@ packages/frontend/.env
 /playwright-report
 /packages/frontend/test-results
 /packages/frontend/playwright-report
+data/audit-exports
