@@ -53,7 +53,12 @@
   - query: `from`, `to`, `projectId`, `limit`
   - response:
     - `generatedAt`: レスポンス生成日時（ISO 8601）
-    - `items`: `{ id, type, severity, count, latestAt, sampleTargets }[]`
+    - `items`: `{ id, type, severity, count, latestAt, sampleTargets, evidence }[]`
+      - `evidence`: `{ period, targets, calculation, settings }`
+        - `period`: `{ from, to }`（指定がない場合は null）
+        - `targets`: 代表対象（ID配列）
+        - `calculation`: 根拠/計算式の説明
+        - `settings`: `{ id, threshold, period, scopeProjectId }[]`
   - 監査ログ: `insights_view` に filters を記録
   - 備考: `projectId` 指定時は `alert.targetRef` と `alert.setting.scopeProjectId` の一致を含める
 ## 次アクション
