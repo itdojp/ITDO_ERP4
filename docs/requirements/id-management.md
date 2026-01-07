@@ -14,11 +14,21 @@
 - プロビジョニング: まずはCSV/手動同期、将来SCIM (SCIM v2)
 - 中間: IDaaS を利用する場合は経由可能にする
 
+## 決定事項
+- IdP/IDaaS: Google を採用
+- Googleアカウントを正とする（`issuer + sub` を主キーとして扱う）
+- email は連絡用として扱い、自動リンクはしない
+- ローカルユーザ（非Google）は email をIDとして運用する
+- `g.itdo.jp` と `itdo.jp` のメールが併存するため、衝突回避の運用/実装は要検討
+- Admin SDK Directory API はセキュリティ的に使わない方針
+
 ## ユーザ情報の持ち方
 - ERP側の userId は内部IDとして保持し、IdP/IDaaSの subject は externalId として保持する
   - IdP連携ユーザは externalId 必須、非連携ユーザは externalId を null 許容
 - email/name は同期可能な属性として保持
 - 組織/部門/グループはERP側の権限制御に利用
+  - Google連携ユーザ: `externalId`（`issuer + sub`）を主キーとして扱い、email は連絡用
+  - ローカルユーザ: `userName=email` をIDとして扱う（`externalId=null`）
 
 ### 例（論理モデル）
 - users: id, externalId, email, name, orgUnitId, status, roleCodes, groupIds
@@ -46,9 +56,10 @@
 - プロジェクト所属はERP側で管理（IdP/IDaaSとは別管理）
 
 ## リンク規約（暫定）
-- `externalId` がある場合はそれを優先してユーザを同定
-- `externalId` が無い場合は `email` を主キー相当として扱う
-- `externalId` と `email` が両方ある場合、`externalId` を一次キーとして維持し、`email` は変更許容
+- IdP連携ユーザは `externalId` を一次キーとし、email では自動リンクしない
+- ローカルユーザは `userName=email` を主キー相当として扱う
+- `externalId` と `email` が両方ある場合、`externalId` を一次キーとして維持し、`email` は連絡用で変更許容
+- `g.itdo.jp` と `itdo.jp` の重複/エイリアスに起因する衝突回避ルールは未確定
 
 ## プロビジョニング/退職
 - 退職/無効化はIdP/IDaaSの状態を優先（ログイン不可）
@@ -81,7 +92,9 @@
 - JWT_AUDIENCE: Google の Client ID
 - フロントは `VITE_GOOGLE_CLIENT_ID` を指定してIDトークンを取得し、Authorization: Bearer で送信
 - Google IDを持たないユーザは header認証（AUTH_MODE=hybrid）やローカルユーザ運用で許容する
-- userId を email に揃える場合は `JWT_SUB_CLAIM=email` を指定（email 変更時の運用ルールは別途定義）
+- userId は `sub` を使用（`JWT_SUB_CLAIM=sub`）
+- 連絡用emailは `email` claim を優先し、取得できない場合は手入力で登録
+- 追加の連絡用emailは Admin SDK を使わず、手入力で運用する
 
 ## 監査ログ（案）
 - 変更種別: role_grant / role_revoke / group_sync / user_deactivate / user_reactivate
@@ -89,8 +102,9 @@
 - SCIM同期は batchId を残し、差分の追跡を可能にする
 
 ## 次のTODO
-- 採用IdP/IDaaSの決定（Google/MS/Okta等）
+- 採用IdP/IDaaSの決定（Google/MS/Okta等）【決定: Google】
 - SCIM導入の可否、同期頻度・責任分界の定義
 - ユーザ属性の正式スキーマ確定（たたき台は追記済み）
 - 監査ログ/権限変更ログの要件整理（たたき台は追記済み）
-- JWT_SUB_CLAIM=email 運用時の email 変更ルールを整理
+- 連絡用emailの取得方法を確定【決定: OIDC email claim 優先、不可なら手入力。Admin SDK は使わない】
+- `g.itdo.jp` / `itdo.jp` の衝突回避方針を決定（運用 or 正規化）
