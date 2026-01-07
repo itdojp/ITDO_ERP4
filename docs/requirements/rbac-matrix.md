@@ -12,6 +12,7 @@
 
 ## リソース × 権限（PoC）
 - projects: admin, mgmt（閲覧/作成）、user（閲覧）
+- project_members: admin, mgmt（リーダ付与/全体）、project_lead（メンバ追加/削除）
 - estimates/invoices: admin, mgmt（作成/承認/送信）、user（閲覧、自身プロジェクトのみ）
 - purchase_orders/vendor_docs: admin, mgmt（作成/承認/送付）
 - time_entries: user（自分）, mgmt/admin（全体）

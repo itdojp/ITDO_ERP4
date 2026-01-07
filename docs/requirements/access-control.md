@@ -42,6 +42,7 @@
 - `project_lead` / `employee` / `probationary` は現状 user 相当として扱う（追加/制限は後続決定）
 - `external_chat` はチャット機能のみ許可（他APIは拒否）
 - 承認インスタンスの閲覧は mgmt/exec + 申請者本人 + 所属案件のメンバー
+- プロジェクトメンバーは ERP 側で管理（ProjectMember）。admin/mgmt がリーダを登録し、リーダは自プロジェクトのメンバーを追加/削除できる
 
 ## ユーザ属性（ABAC入力）
 - tenantId / orgUnitId / departmentId

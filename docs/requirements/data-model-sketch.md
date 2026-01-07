@@ -25,6 +25,8 @@
   - idx: (project_id, created_at)
 - **project_milestones**: project_id, name, amount, bill_upon (enum: date/acceptance/time), due_date, tax_rate, invoice_template_id
   - idx: (project_id), (due_date)
+- **project_members**: project_id, user_id, role (leader/member)
+  - idx: (project_id, user_id)
 - **recurring_project_templates**: project_id, frequency (monthly/quarterly/semiannual/annual), default_amount, default_currency, default_tax_rate, default_terms, default_milestone_name, bill_upon, due_date_rule (json), should_generate_estimate, should_generate_invoice, next_run_at, timezone, is_active
 
 ## 見積/請求

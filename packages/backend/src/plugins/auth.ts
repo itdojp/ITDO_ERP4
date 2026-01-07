@@ -1,6 +1,7 @@
 import fp from 'fastify-plugin';
 import { createRemoteJWKSet, importSPKI, jwtVerify } from 'jose';
 import type { CryptoKey, JWTPayload, JWTVerifyGetKey } from 'jose';
+import { prisma } from '../services/db.js';
 
 export type UserContext = {
   userId: string;
@@ -187,11 +188,32 @@ function respondUnauthorized(req: any, reply: any, reason?: string) {
   return reply.code(401).send({ error: 'unauthorized' });
 }
 
+async function applyProjectMembership(req: any) {
+  const userId = req.user?.userId;
+  if (!userId) return;
+  const roles = req.user?.roles || [];
+  if (roles.includes('admin') || roles.includes('mgmt')) return;
+  try {
+    const memberships = await prisma.projectMember.findMany({
+      where: { userId },
+      select: { projectId: true },
+    });
+    if (memberships.length) {
+      req.user.projectIds = memberships.map((row) => row.projectId);
+    }
+  } catch (err) {
+    if (req.log && typeof req.log.warn === 'function') {
+      req.log.warn({ err }, 'Failed to resolve project membership');
+    }
+  }
+}
+
 async function authPlugin(fastify: any) {
   fastify.addHook('onRequest', async (req: any, reply: any) => {
     const mode = RESOLVED_AUTH_MODE;
     if (mode === 'header') {
       applyHeaderAuth(req);
+      await applyProjectMembership(req);
       return;
     }
     const token = parseBearerToken(req);
@@ -200,10 +222,12 @@ async function authPlugin(fastify: any) {
         return respondUnauthorized(req, reply, 'missing_token');
       }
       applyHeaderAuth(req);
+      await applyProjectMembership(req);
       return;
     }
     try {
       req.user = await authenticateJwt(token);
+      await applyProjectMembership(req);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'invalid_token';
       return respondUnauthorized(req, reply, message);
