@@ -231,11 +231,6 @@ export async function registerProjectRoutes(app: FastifyInstance) {
         const allowed = await ensureProjectLeader(req, reply, projectId);
         if (!allowed) return;
       }
-      if (!body.userId) {
-        return reply.status(400).send({
-          error: { code: 'INVALID_USER', message: 'userId is required' },
-        });
-      }
       const project = await prisma.project.findUnique({
         where: { id: projectId },
         select: { id: true, deletedAt: true },
@@ -257,6 +252,14 @@ export async function registerProjectRoutes(app: FastifyInstance) {
       const existing = await prisma.projectMember.findUnique({
         where: { projectId_userId: { projectId, userId: body.userId } },
       });
+      if (!isPrivileged && existing?.role === 'leader') {
+        return reply.status(403).send({
+          error: {
+            code: 'FORBIDDEN_LEADER_CHANGE',
+            message: 'Project leaders cannot change leader roles',
+          },
+        });
+      }
       if (existing && existing.role === requestedRole) {
         return existing;
       }
@@ -264,12 +267,19 @@ export async function registerProjectRoutes(app: FastifyInstance) {
         role: requestedRole,
         updatedBy: req.user?.userId,
       };
-      const member = existing
+      let member = existing
         ? await prisma.projectMember.update({
             where: { id: existing.id },
             data,
           })
-        : await prisma.projectMember.create({
+        : null;
+      let auditAction = existing
+        ? 'project_member_role_updated'
+        : 'project_member_added';
+      let previousRole = existing?.role ?? null;
+      if (!member) {
+        try {
+          member = await prisma.projectMember.create({
             data: {
               projectId,
               userId: body.userId,
@@ -278,16 +288,56 @@ export async function registerProjectRoutes(app: FastifyInstance) {
               updatedBy: req.user?.userId,
             },
           });
+        } catch (err) {
+          if (err instanceof Prisma.PrismaClientKnownRequestError) {
+            if (err.code === 'P2002') {
+              const fallback = await prisma.projectMember.findUnique({
+                where: { projectId_userId: { projectId, userId: body.userId } },
+              });
+              if (!fallback) throw err;
+              if (!isPrivileged && fallback.role === 'leader') {
+                return reply.status(403).send({
+                  error: {
+                    code: 'FORBIDDEN_LEADER_CHANGE',
+                    message: 'Project leaders cannot change leader roles',
+                  },
+                });
+              }
+              if (fallback.role === requestedRole) {
+                return fallback;
+              }
+              previousRole = fallback.role;
+              auditAction = 'project_member_role_updated';
+              member = await prisma.projectMember.update({
+                where: { id: fallback.id },
+                data,
+              });
+            } else {
+              throw err;
+            }
+          } else {
+            throw err;
+          }
+        }
+      }
+      if (!member) {
+        return reply.status(500).send({
+          error: {
+            code: 'PROJECT_MEMBER_SAVE_FAILED',
+            message: 'Project member could not be saved',
+          },
+        });
+      }
       await logAudit({
         ...auditContextFromRequest(req),
-        action: existing ? 'project_member_role_updated' : 'project_member_added',
+        action: auditAction,
         targetTable: 'ProjectMember',
         targetId: member.id,
         metadata: {
           projectId,
           userId: body.userId,
           role: requestedRole,
-          previousRole: existing?.role ?? null,
+          previousRole,
         },
       });
       return member;
@@ -307,11 +357,6 @@ export async function registerProjectRoutes(app: FastifyInstance) {
         projectId: string;
         userId: string;
       };
-      if (!targetUserId) {
-        return reply.status(400).send({
-          error: { code: 'INVALID_USER', message: 'userId is required' },
-        });
-      }
       const roles = req.user?.roles || [];
       const isPrivileged = isPrivilegedRole(roles);
       if (!isPrivileged) {
