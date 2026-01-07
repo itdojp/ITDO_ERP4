@@ -189,11 +189,13 @@ export const Projects: React.FC = () => {
         setMembers([]);
         setMemberMessage('');
         setMemberForm(emptyMemberForm);
+        setMemberRoleDrafts({});
         return;
       }
       setMemberProjectId(projectId);
       setMemberForm(emptyMemberForm);
       setMemberMessage('');
+      setMemberRoleDrafts({});
       loadMembers(projectId);
     },
     [loadMembers, memberProjectId],
@@ -207,6 +209,25 @@ export const Projects: React.FC = () => {
       return;
     }
     const role = isPrivileged ? memberForm.role : 'member';
+    const existing = members.find((item) => item.userId === trimmedUserId);
+    if (existing) {
+      if (existing.role === role) {
+        setMemberMessage('すでに登録済みです');
+        return;
+      }
+      if (isPrivileged) {
+        setMemberRoleDrafts((prev) => ({
+          ...prev,
+          [trimmedUserId]: role,
+        }));
+        setMemberMessage(
+          '既存メンバーです。権限変更は一覧の「権限更新」を使用してください。',
+        );
+      } else {
+        setMemberMessage('既存メンバーの権限変更は管理者のみ可能です。');
+      }
+      return;
+    }
     try {
       await api(`/projects/${memberProjectId}/members`, {
         method: 'POST',
@@ -358,25 +379,33 @@ export const Projects: React.FC = () => {
                         setMemberForm({ ...memberForm, userId: e.target.value })
                       }
                     />
-                    <select
-                      aria-label="案件メンバーの権限"
-                      value={memberForm.role}
-                      onChange={(e) =>
-                        setMemberForm({
-                          ...memberForm,
-                          role: e.target.value as ProjectMemberRole,
-                        })
-                      }
-                      disabled={!isPrivileged}
-                    >
-                      {memberRoleOptions.map((option) => (
-                        <option key={option.value} value={option.value}>
-                          {option.label}
-                        </option>
-                      ))}
-                    </select>
+                    {isPrivileged ? (
+                      <select
+                        aria-label="案件メンバーの権限"
+                        value={memberForm.role}
+                        onChange={(e) =>
+                          setMemberForm({
+                            ...memberForm,
+                            role: e.target.value as ProjectMemberRole,
+                          })
+                        }
+                      >
+                        {memberRoleOptions.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <span
+                        aria-label="案件メンバーの権限"
+                        style={{ alignSelf: 'center' }}
+                      >
+                        権限: メンバー (固定)
+                      </span>
+                    )}
                     <button className="button" onClick={saveMember}>
-                      追加/更新
+                      追加
                     </button>
                     <button
                       className="button secondary"
@@ -402,7 +431,7 @@ export const Projects: React.FC = () => {
                             {isPrivileged && (
                               <>
                                 <select
-                                  aria-label="メンバー権限"
+                                  aria-label="案件メンバーの権限"
                                   value={draftRole}
                                   onChange={(e) =>
                                     setMemberRoleDrafts((prev) => ({
