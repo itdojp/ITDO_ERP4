@@ -45,7 +45,7 @@
 | departmentId | 任意 | IdP/IDaaS | 部門 |
 | roleCodes | 必須 | ERP | ロール（RBAC） |
 | groupIds | 任意 | ERP/IdP | 承認/人事などのグループ |
-| projectIds | 任意 | ERP/claim | 所属案件（複数を許容、保持場所は要決定） |
+| projectIds | 任意 | ERP | 所属案件（複数を許容、ERP側で管理） |
 | employmentType | 任意 | ERP/HR | 正社員/契約等 |
 | managerUserId | 任意 | IdP/ERP | 上長 |
 | joinedAt / leftAt | 任意 | ERP/HR | 在籍期間 |
@@ -53,7 +53,7 @@
 ## ロール/グループ付与方針
 - IdP/IDaaS グループ → ERPロール/承認グループへマッピング
 - 例外はERP側で手動付与（監査ログに記録）
-- プロジェクト所属はERP側で管理するか、JWTの claim として受け取るかを決定する
+- プロジェクト所属はERP側で管理する（JWT claim には含めない）
 
 ## リンク規約（暫定）
 - IdP連携ユーザは `externalId` を一次キーとし、email では自動リンクしない
@@ -109,5 +109,5 @@
 - ユーザ属性の正式スキーマ確定（たたき台は追記済み）
 - 監査ログ/権限変更ログの要件整理（たたき台は追記済み）
 - 連絡用emailの取得方法を確定【決定: OIDC email claim 優先、不可なら手入力。Admin SDK は使わない】
-- projectIds の持ち方を決定（JWT claim で持つか、ERP側で管理するか）
+- projectIds の持ち方を決定【決定: ERP側で管理】
 - `g.itdo.jp` / `itdo.jp` の衝突回避方針を決定（運用 or 正規化）
