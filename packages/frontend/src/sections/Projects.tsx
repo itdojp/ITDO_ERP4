@@ -82,12 +82,53 @@ const toCsv = (headers: string[], rows: string[][]) => {
 };
 
 const parseCsvRows = (text: string) => {
-  // Simple CSV parser (no quoted fields) for userId,role input.
-  return text
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0)
-    .map((line) => line.split(',').map((value) => value.trim()));
+  // CSV parser supporting quoted fields compatible with toCsv.
+  const rows: string[][] = [];
+  let currentRow: string[] = [];
+  let currentField = '';
+  let inQuotes = false;
+
+  for (let i = 0; i < text.length; i += 1) {
+    const char = text[i];
+
+    if (inQuotes) {
+      if (char === '"') {
+        if (text[i + 1] === '"') {
+          currentField += '"';
+          i += 1;
+        } else {
+          inQuotes = false;
+        }
+      } else {
+        currentField += char;
+      }
+    } else if (char === '"') {
+      inQuotes = true;
+    } else if (char === ',') {
+      currentRow.push(currentField.trim());
+      currentField = '';
+    } else if (char === '\r') {
+      continue;
+    } else if (char === '\n') {
+      currentRow.push(currentField.trim());
+      if (currentRow.some((value) => value.length > 0)) {
+        rows.push(currentRow);
+      }
+      currentRow = [];
+      currentField = '';
+    } else {
+      currentField += char;
+    }
+  }
+
+  if (currentField.length > 0 || currentRow.length > 0) {
+    currentRow.push(currentField.trim());
+    if (currentRow.some((value) => value.length > 0)) {
+      rows.push(currentRow);
+    }
+  }
+
+  return rows;
 };
 
 const normalizeCsvHeader = (value: string) => {
@@ -115,6 +156,7 @@ export const Projects: React.FC = () => {
   const [candidateLoading, setCandidateLoading] = useState(false);
   const [importFile, setImportFile] = useState<File | null>(null);
   const [importing, setImporting] = useState(false);
+  const importInputId = 'project-members-csv-input';
 
   const auth = getAuthState();
   const isPrivileged = (auth?.roles ?? []).some((role) =>
@@ -200,28 +242,31 @@ export const Projects: React.FC = () => {
     setEditingProjectId(null);
   };
 
-  const loadMembers = useCallback(async (projectId: string) => {
-    setMemberLoading(true);
-    try {
-      const res = await api<{ items: ProjectMember[] }>(
-        `/projects/${projectId}/members`,
-      );
-      const items = res.items || [];
-      setMembers(items);
-      setMemberRoleDrafts(
-        Object.fromEntries(items.map((item) => [item.userId, item.role])),
-      );
-      setMemberMessage('');
-      return items;
-    } catch (err) {
-      console.error('Failed to load project members.', err);
-      setMembers([]);
-      setMemberMessage(`メンバー一覧の取得に失敗しました${errorDetail(err)}`);
-      return [];
-    } finally {
-      setMemberLoading(false);
-    }
-  }, []);
+  const loadMembers = useCallback(
+    async (projectId: string): Promise<ProjectMember[] | null> => {
+      setMemberLoading(true);
+      try {
+        const res = await api<{ items: ProjectMember[] }>(
+          `/projects/${projectId}/members`,
+        );
+        const items = res.items || [];
+        setMembers(items);
+        setMemberRoleDrafts(
+          Object.fromEntries(items.map((item) => [item.userId, item.role])),
+        );
+        setMemberMessage('');
+        return items;
+      } catch (err) {
+        console.error('Failed to load project members.', err);
+        setMembers([]);
+        setMemberMessage(`メンバー一覧の取得に失敗しました${errorDetail(err)}`);
+        return null;
+      } finally {
+        setMemberLoading(false);
+      }
+    },
+    [],
+  );
 
   const toggleMembers = useCallback(
     (projectId: string) => {
@@ -286,6 +331,7 @@ export const Projects: React.FC = () => {
       setMemberForm(emptyMemberForm);
       setCandidateQuery('');
       setCandidates([]);
+      setCandidateMessage('');
       loadMembers(memberProjectId);
     } catch (err) {
       console.error('Failed to save project member.', err);
@@ -332,8 +378,12 @@ export const Projects: React.FC = () => {
 
   const exportMembersCsv = async () => {
     if (!memberProjectId) return;
-    const items =
-      members.length > 0 ? members : await loadMembers(memberProjectId);
+    let items = members;
+    if (!items.length) {
+      const fetched = await loadMembers(memberProjectId);
+      if (!fetched) return;
+      items = fetched;
+    }
     if (!items.length) {
       setMemberMessage('エクスポート対象のメンバーがありません');
       return;
@@ -361,23 +411,32 @@ export const Projects: React.FC = () => {
         return;
       }
       const header = rows[0].map((value) => normalizeCsvHeader(value));
-      const hasHeader = header.includes('userid') || header.includes('user');
+      const hasHeader = header.includes('userid');
       const dataRows = hasHeader ? rows.slice(1) : rows;
       if (dataRows.length === 0) {
         setMemberMessage('CSVにデータがありません');
         return;
       }
       const currentMembers = await loadMembers(memberProjectId);
+      if (!currentMembers) {
+        return;
+      }
       const existingMap = new Map(
         currentMembers.map((member) => [member.userId, member]),
       );
       let added = 0;
       let skipped = 0;
       let failed = 0;
-      for (const row of dataRows) {
+      const failedRows: string[] = [];
+      for (let rowIndex = 0; rowIndex < dataRows.length; rowIndex += 1) {
+        const row = dataRows[rowIndex];
+        const displayIndex = rowIndex + (hasHeader ? 2 : 1);
         const userId = (row[0] || '').trim();
         if (!userId) {
           failed += 1;
+          if (failedRows.length < 5) {
+            failedRows.push(`${displayIndex}行目: (空欄)`);
+          }
           continue;
         }
         const rawRole = (row[1] || '').toLowerCase();
@@ -403,10 +462,16 @@ export const Projects: React.FC = () => {
         } catch (err) {
           console.error('Failed to import project member.', err);
           failed += 1;
+          if (failedRows.length < 5) {
+            failedRows.push(`${displayIndex}行目: ${userId}`);
+          }
         }
       }
+      const failureDetail = failedRows.length
+        ? ` (例: ${failedRows.join(', ')})`
+        : '';
       setMemberMessage(
-        `インポート完了: 追加 ${added} 件 / スキップ ${skipped} 件 / 失敗 ${failed} 件`,
+        `インポート完了: 追加 ${added} 件 / スキップ ${skipped} 件 / 失敗 ${failed} 件${failureDetail}`,
       );
       setImportFile(null);
       await loadMembers(memberProjectId);
@@ -638,10 +703,15 @@ export const Projects: React.FC = () => {
                     >
                       CSVエクスポート
                     </button>
+                    <label className="button secondary" htmlFor={importInputId}>
+                      CSVファイル選択
+                    </label>
                     <input
+                      id={importInputId}
                       type="file"
                       accept=".csv,text/csv"
                       aria-label="メンバーCSVインポート"
+                      style={{ display: 'none' }}
                       onChange={(e) =>
                         setImportFile(e.target.files?.[0] || null)
                       }
@@ -654,6 +724,9 @@ export const Projects: React.FC = () => {
                       CSVインポート
                     </button>
                   </div>
+                  {importFile && (
+                    <p style={{ marginTop: 4 }}>選択中: {importFile.name}</p>
+                  )}
                   <p style={{ marginTop: 8 }}>
                     CSVは userId,role の2列（roleは
                     member/leader）で作成してください。
