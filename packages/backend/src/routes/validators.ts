@@ -50,6 +50,12 @@ export const projectPatchSchema = {
   body: Type.Partial(projectSchema.body),
 };
 
+export const projectMemberSchema = {
+  body: Type.Object({
+    userId: Type.String({ minLength: 1 }),
+  }),
+};
+
 export const customerSchema = {
   body: Type.Object(
     {

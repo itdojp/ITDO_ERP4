@@ -47,7 +47,7 @@
 - tenantId / orgUnitId / departmentId
 - roleCodes（RBACロール）
 - groupIds（承認/人事などのグループ）
-- projectIds（所属案件）
+- projectIds（所属案件、ProjectMemberから取得）
 - employmentType / managerUserId（将来拡張）
 
 ## リソース属性（ABAC入力）
