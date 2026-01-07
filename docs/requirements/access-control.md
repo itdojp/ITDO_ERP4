@@ -40,6 +40,7 @@
 - ルートのpreHandlerでは上記ロールを前提に `requireRole` を適用
 - `project_lead` / `employee` / `probationary` は現状 user 相当として扱う（追加/制限は後続決定）
 - `external_chat` はチャット機能のみ許可（他APIは拒否）
+- user 相当ロールは `AUTH_USER_ROLE_ALIASES` で追加可能
 - 承認インスタンスの閲覧は mgmt/exec + 申請者本人 + 所属案件のメンバー
 
 ## ユーザ属性（ABAC入力）

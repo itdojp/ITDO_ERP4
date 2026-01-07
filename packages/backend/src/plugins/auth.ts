@@ -37,7 +37,13 @@ const JWT_GROUP_CLAIM = process.env.JWT_GROUP_CLAIM || 'group_ids';
 const JWT_PROJECT_CLAIM = process.env.JWT_PROJECT_CLAIM || 'project_ids';
 const JWT_ORG_CLAIM = process.env.JWT_ORG_CLAIM || 'org_id';
 const AUTH_DEFAULT_ROLE = process.env.AUTH_DEFAULT_ROLE || 'user';
-const USER_ROLE_ALIASES = new Set(['project_lead', 'employee', 'probationary']);
+const AUTH_USER_ROLE_ALIASES =
+  process.env.AUTH_USER_ROLE_ALIASES || 'project_lead,employee,probationary';
+const USER_ROLE_ALIASES = new Set(
+  AUTH_USER_ROLE_ALIASES.split(/[\s,]+/)
+    .map((value) => value.trim())
+    .filter(Boolean),
+);
 
 let cachedJwks: ReturnType<typeof createRemoteJWKSet> | null = null;
 let cachedPublicKey: CryptoKey | null = null;

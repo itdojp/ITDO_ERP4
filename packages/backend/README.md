@@ -61,6 +61,7 @@ npm run dev
   - JWT_ISSUER / JWT_AUDIENCE / JWT_ALGS
   - JWT_*_CLAIM (roles/group_ids/project_ids/org_id)
   - AUTH_DEFAULT_ROLE (rolesが無い場合のデフォルト)
+  - AUTH_USER_ROLE_ALIASES (user相当として扱うロールの追加)
 - 補足: hybridはAuthorizationが無い場合にヘッダ認証へフォールバックする。
 - 注意: headerは開発用のモック。インターネット公開環境では使用しない。
 
