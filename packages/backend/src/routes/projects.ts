@@ -10,7 +10,6 @@ import {
   projectTaskPatchSchema,
   projectMilestoneSchema,
   projectMilestonePatchSchema,
-  projectMemberSchema,
   deleteReasonSchema,
   reassignSchema,
 } from './validators.js';
