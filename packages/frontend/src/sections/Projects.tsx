@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { api } from '../api';
+import { api, getAuthState } from '../api';
 
 type Project = {
   id: string;
@@ -15,6 +15,21 @@ type Customer = {
   name: string;
 };
 
+type ProjectMemberRole = 'member' | 'leader';
+
+type ProjectMember = {
+  id: string;
+  userId: string;
+  role: ProjectMemberRole;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+type ProjectMemberForm = {
+  userId: string;
+  role: ProjectMemberRole;
+};
+
 const emptyProject = {
   code: '',
   name: '',
@@ -22,11 +37,21 @@ const emptyProject = {
   customerId: '',
 };
 
+const emptyMemberForm: ProjectMemberForm = {
+  userId: '',
+  role: 'member',
+};
+
 const statusOptions = [
   { value: 'draft', label: '起案中' },
   { value: 'active', label: '進行中' },
   { value: 'on_hold', label: '保留' },
   { value: 'closed', label: '完了' },
+];
+
+const memberRoleOptions: { value: ProjectMemberRole; label: string }[] = [
+  { value: 'member', label: 'メンバー' },
+  { value: 'leader', label: 'リーダー' },
 ];
 
 const errorDetail = (err: unknown) => {
@@ -42,6 +67,20 @@ export const Projects: React.FC = () => {
   const [form, setForm] = useState(emptyProject);
   const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
   const [message, setMessage] = useState('');
+  const [memberProjectId, setMemberProjectId] = useState<string | null>(null);
+  const [members, setMembers] = useState<ProjectMember[]>([]);
+  const [memberForm, setMemberForm] =
+    useState<ProjectMemberForm>(emptyMemberForm);
+  const [memberMessage, setMemberMessage] = useState('');
+  const [memberLoading, setMemberLoading] = useState(false);
+  const [memberRoleDrafts, setMemberRoleDrafts] = useState<
+    Record<string, ProjectMemberRole>
+  >({});
+
+  const auth = getAuthState();
+  const isPrivileged = (auth?.roles ?? []).some((role) =>
+    ['admin', 'mgmt'].includes(role),
+  );
 
   const customerMap = useMemo(() => {
     return new Map(customers.map((item) => [item.id, item]));
@@ -122,6 +161,124 @@ export const Projects: React.FC = () => {
     setEditingProjectId(null);
   };
 
+  const loadMembers = useCallback(async (projectId: string) => {
+    setMemberLoading(true);
+    try {
+      const res = await api<{ items: ProjectMember[] }>(
+        `/projects/${projectId}/members`,
+      );
+      const items = res.items || [];
+      setMembers(items);
+      setMemberRoleDrafts(
+        Object.fromEntries(items.map((item) => [item.userId, item.role])),
+      );
+      setMemberMessage('');
+    } catch (err) {
+      console.error('Failed to load project members.', err);
+      setMembers([]);
+      setMemberMessage(`メンバー一覧の取得に失敗しました${errorDetail(err)}`);
+    } finally {
+      setMemberLoading(false);
+    }
+  }, []);
+
+  const toggleMembers = useCallback(
+    (projectId: string) => {
+      if (memberProjectId === projectId) {
+        setMemberProjectId(null);
+        setMembers([]);
+        setMemberMessage('');
+        setMemberForm(emptyMemberForm);
+        setMemberRoleDrafts({});
+        return;
+      }
+      setMemberProjectId(projectId);
+      setMemberForm(emptyMemberForm);
+      setMemberMessage('');
+      setMemberRoleDrafts({});
+      loadMembers(projectId);
+    },
+    [loadMembers, memberProjectId],
+  );
+
+  const saveMember = async () => {
+    if (!memberProjectId) return;
+    const trimmedUserId = memberForm.userId.trim();
+    if (!trimmedUserId) {
+      setMemberMessage('ユーザIDは必須です');
+      return;
+    }
+    const role = isPrivileged ? memberForm.role : 'member';
+    const existing = members.find((item) => item.userId === trimmedUserId);
+    if (existing) {
+      if (existing.role === role) {
+        setMemberMessage('すでに登録済みです');
+        return;
+      }
+      if (isPrivileged) {
+        setMemberRoleDrafts((prev) => ({
+          ...prev,
+          [trimmedUserId]: role,
+        }));
+        setMemberMessage(
+          '既存メンバーです。権限変更は一覧の「権限更新」を使用してください。',
+        );
+      } else {
+        setMemberMessage('既存メンバーの権限変更は管理者のみ可能です。');
+      }
+      return;
+    }
+    try {
+      await api(`/projects/${memberProjectId}/members`, {
+        method: 'POST',
+        body: JSON.stringify({ userId: trimmedUserId, role }),
+      });
+      setMemberMessage('メンバーを保存しました');
+      setMemberForm(emptyMemberForm);
+      loadMembers(memberProjectId);
+    } catch (err) {
+      console.error('Failed to save project member.', err);
+      setMemberMessage(`メンバーの保存に失敗しました${errorDetail(err)}`);
+    }
+  };
+
+  const updateMemberRole = async (member: ProjectMember) => {
+    if (!memberProjectId) return;
+    const nextRole = memberRoleDrafts[member.userId] || member.role;
+    if (nextRole === member.role) {
+      setMemberMessage('変更がありません');
+      return;
+    }
+    try {
+      await api(`/projects/${memberProjectId}/members`, {
+        method: 'POST',
+        body: JSON.stringify({ userId: member.userId, role: nextRole }),
+      });
+      setMemberMessage('メンバー権限を更新しました');
+      loadMembers(memberProjectId);
+    } catch (err) {
+      console.error('Failed to update project member role.', err);
+      setMemberMessage(`メンバー権限の更新に失敗しました${errorDetail(err)}`);
+    }
+  };
+
+  const removeMember = async (member: ProjectMember) => {
+    if (!memberProjectId) return;
+    try {
+      await api(
+        `/projects/${memberProjectId}/members/${encodeURIComponent(
+          member.userId,
+        )}`,
+        { method: 'DELETE' },
+      );
+      setMemberMessage('メンバーを削除しました');
+      loadMembers(memberProjectId);
+    } catch (err) {
+      console.error('Failed to remove project member.', err);
+      setMemberMessage(`メンバー削除に失敗しました${errorDetail(err)}`);
+    }
+  };
+
   useEffect(() => {
     loadProjects();
     loadCustomers();
@@ -200,6 +357,130 @@ export const Projects: React.FC = () => {
               >
                 編集
               </button>
+              <button
+                className="button secondary"
+                style={{ marginLeft: 8 }}
+                onClick={() => toggleMembers(item.id)}
+              >
+                {memberProjectId === item.id
+                  ? 'メンバー閉じる'
+                  : 'メンバー管理'}
+              </button>
+              {memberProjectId === item.id && (
+                <div className="card" style={{ marginTop: 12 }}>
+                  <h3>メンバー管理</h3>
+                  <div className="row">
+                    <input
+                      type="text"
+                      placeholder="ユーザID (email等)"
+                      aria-label="案件メンバーのユーザID"
+                      value={memberForm.userId}
+                      onChange={(e) =>
+                        setMemberForm({ ...memberForm, userId: e.target.value })
+                      }
+                    />
+                    {isPrivileged ? (
+                      <select
+                        aria-label="案件メンバーの権限"
+                        value={memberForm.role}
+                        onChange={(e) =>
+                          setMemberForm({
+                            ...memberForm,
+                            role: e.target.value as ProjectMemberRole,
+                          })
+                        }
+                      >
+                        {memberRoleOptions.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <span
+                        aria-label="案件メンバーの権限"
+                        style={{ alignSelf: 'center' }}
+                      >
+                        権限: メンバー (固定)
+                      </span>
+                    )}
+                    <button className="button" onClick={saveMember}>
+                      追加
+                    </button>
+                    <button
+                      className="button secondary"
+                      onClick={() => loadMembers(item.id)}
+                    >
+                      再読込
+                    </button>
+                  </div>
+                  {memberMessage && <p>{memberMessage}</p>}
+                  {memberLoading ? (
+                    <p>読み込み中...</p>
+                  ) : (
+                    <ul className="list">
+                      {members.map((member) => {
+                        const draftRole =
+                          memberRoleDrafts[member.userId] || member.role;
+                        const canRemove =
+                          isPrivileged || member.role !== 'leader';
+                        return (
+                          <li key={member.userId}>
+                            <span className="badge">{member.role}</span>{' '}
+                            {member.userId}
+                            {isPrivileged && (
+                              <>
+                                <select
+                                  aria-label="案件メンバーの権限"
+                                  value={draftRole}
+                                  onChange={(e) =>
+                                    setMemberRoleDrafts((prev) => ({
+                                      ...prev,
+                                      [member.userId]: e.target
+                                        .value as ProjectMemberRole,
+                                    }))
+                                  }
+                                  style={{ marginLeft: 8 }}
+                                >
+                                  {memberRoleOptions.map((option) => (
+                                    <option
+                                      key={option.value}
+                                      value={option.value}
+                                    >
+                                      {option.label}
+                                    </option>
+                                  ))}
+                                </select>
+                                <button
+                                  className="button secondary"
+                                  style={{ marginLeft: 8 }}
+                                  onClick={() => updateMemberRole(member)}
+                                >
+                                  権限更新
+                                </button>
+                              </>
+                            )}
+                            <button
+                              className="button secondary"
+                              style={{ marginLeft: 8 }}
+                              onClick={() => removeMember(member)}
+                              disabled={!canRemove}
+                            >
+                              削除
+                            </button>
+                          </li>
+                        );
+                      })}
+                      {members.length === 0 && <li>メンバーなし</li>}
+                    </ul>
+                  )}
+                  {!isPrivileged && (
+                    <p style={{ marginTop: 8 }}>
+                      リーダー権限の付与・変更は管理者のみ可能です。
+                    </p>
+                  )}
+                </div>
+              )}
             </li>
           );
         })}
