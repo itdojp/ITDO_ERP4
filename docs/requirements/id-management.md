@@ -11,7 +11,7 @@
 
 ## 連携方式（想定）
 - 認証: OIDC（IdPに接続）
-- プロビジョニング: まずはCSV/手動同期、将来SCIM (SCIM v2)
+- プロビジョニング: まずはCSV/手動同期（SCIMは将来検討）
 - 中間: IDaaS を利用する場合は経由可能にする
 
 ## 決定事項
@@ -67,11 +67,13 @@
 - 代理/兼務などはERP側の属性で表現
 
 ## SCIM 同期方針（概要）
-- 対象: Users / Groups / Group Membership
-- 方式: 基本は IDaaS → ERP への Push。ERP側の手動変更は監査ログに記録。
-- 競合: IdP/IDaaS を一次マスターとし、ERP側は補助属性のみ更新可。
-- 無効化/削除: SCIM `active=false` で論理無効化し、履歴は保持する。
-- 詳細は `docs/requirements/scim-sync.md` に整理。
+- 現時点では導入しない（要件を詰めた後に再検討）
+- 将来の想定:
+  - 対象: Users / Groups / Group Membership
+  - 方式: 基本は IDaaS → ERP への Push。ERP側の手動変更は監査ログに記録。
+  - 競合: IdP/IDaaS を一次マスターとし、ERP側は補助属性のみ更新可。
+  - 無効化/削除: SCIM `active=false` で論理無効化し、履歴は保持する。
+  - 詳細は `docs/requirements/scim-sync.md` に整理。
 
 ## PoC段階
 - ヘッダ認証のモック（x-user-id/x-roles/x-group-ids）
@@ -103,7 +105,7 @@
 
 ## 次のTODO
 - 採用IdP/IDaaSの決定（Google/MS/Okta等）【決定: Google】
-- SCIM導入の可否、同期頻度・責任分界の定義
+- SCIM導入の可否、同期頻度・責任分界の定義【決定: 現時点では導入しない。要件を詰めて再検討】
 - ユーザ属性の正式スキーマ確定（たたき台は追記済み）
 - 監査ログ/権限変更ログの要件整理（たたき台は追記済み）
 - 連絡用emailの取得方法を確定【決定: OIDC email claim 優先、不可なら手入力。Admin SDK は使わない】
