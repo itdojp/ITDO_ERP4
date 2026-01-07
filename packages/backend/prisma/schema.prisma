@@ -860,6 +860,9 @@ model AuditLog {
 
   @@index([targetTable, targetId])
   @@index([action])
+  @@index([createdAt])
+  @@index([userId, createdAt])
+  @@index([action, createdAt])
 }
 
 model ReassignmentLog {

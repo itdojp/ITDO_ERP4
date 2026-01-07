@@ -34,21 +34,21 @@
   - [x] インサイトの説明責任/運用ルール（誤検知/根拠提示）
 
 ## 次アクション（Phase 3 本実装）
-- [ ] #354 監査ログ拡張（項目/イベント/出力統一）
-  - [ ] AuditLogスキーマの拡張（actorRole/actorGroupId/requestId/ipAddress/userAgent/source/reasonCode/reasonText）
-  - [ ] 監査イベント対象の追加（認証/権限/承認/データ操作/設定変更）
-  - [ ] /audit-logs の検索/CSV出力に拡張項目を反映
-- [ ] #355 監査ログ外部保全/改ざん検知の実装
-  - [ ] 日次ローテーションのCSV/JSON出力の整理
-  - [ ] ハッシュチェーン生成（sha256）と検証手順
-  - [ ] 外部保全（WORM/S3 Object Lock）運用手順の整理
+- [x] #354 監査ログ拡張（項目/イベント/出力統一）
+  - [x] AuditLogスキーマの拡張（actorRole/actorGroupId/requestId/ipAddress/userAgent/source/reasonCode/reasonText）
+  - [x] 監査イベント対象の追加（認証/権限/承認/データ操作/設定変更）
+  - [x] /audit-logs の検索/CSV出力に拡張項目を反映
+- [x] #355 監査ログ外部保全/改ざん検知の実装
+  - [x] 日次ローテーションのCSV/JSON出力の整理
+  - [x] ハッシュチェーン生成（sha256）と検証手順
+  - [x] 外部保全（WORM/S3 Object Lock）運用手順の整理
 - [ ] #356 インサイト拡張 + 根拠表示
   - [ ] 予実ギャップ/承認ボトルネック/納期・請求遅延/連携失敗の指標追加
   - [ ] 根拠データ（件数/対象/期間/計算式）をAPIに含める
   - [ ] 管理UIで根拠情報を表示
-- [ ] #357 監査ログの性能/保持方針（パーティション/インデックス）
-  - [ ] パーティション/保持方針のドキュメント化
-  - [ ] 必要なインデックス/マイグレーションの洗い出し
+- [x] #357 監査ログの性能/保持方針（パーティション/インデックス）
+  - [x] パーティション/保持方針のドキュメント化
+  - [x] 必要なインデックス/マイグレーションの洗い出し
 ## 次アクション（保守/改善）
 - [x] #345 CSVユーティリティ共通化（reports/reportSubscriptions）
   - [x] reports/reportSubscriptions のCSV処理を utils/csv.ts に統合
