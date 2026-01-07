@@ -30,10 +30,10 @@
 - いずれも管理画面で変更可能にする前提
 
 ## 再送ポリシー（運用）
-- 未対応のアラートに対して、`remindAfterHours`（時間）間隔でリマインド送信（`remindMaxCount` で上限設定）
+- 未対応のアラートに対して、`remindAfterHours`（時間）間隔でリマインド送信（初回通知に加えて、最大 `remindMaxCount` 回のリマインド送信）
 - 再送間隔は `remindAfterHours` で一定（段階式は将来拡張）
 - `remindAfterHours` が未設定の場合は再送なし
-- デフォルト: `remindMaxCount=3`
+- デフォルト: `remindMaxCount=3`（初回通知 + 最大3回のリマインド = 最大4回の通知）
 
 ## 通知チャネル
 - 既定: 管理者へのメール + 管理ダッシュボード
