@@ -20,6 +20,7 @@
 - email は連絡用として扱い、自動リンクはしない
 - ローカルユーザ（非Google）は email をIDとして運用する
 - `g.itdo.jp` と `itdo.jp` のメールが併存するため、衝突回避の運用/実装は要検討
+- Admin SDK Directory API はセキュリティ的に使わない方針
 
 ## ユーザ情報の持ち方
 - ERP側の userId は内部IDとして保持し、IdP/IDaaSの subject は externalId として保持する
@@ -93,6 +94,7 @@
 - Google IDを持たないユーザは header認証（AUTH_MODE=hybrid）やローカルユーザ運用で許容する
 - userId は `sub` を使用（`JWT_SUB_CLAIM=sub`）
 - 連絡用emailは `email` claim を優先し、取得できない場合は手入力で登録
+- 追加の連絡用emailは Admin SDK を使わず、手入力で運用する
 
 ## 監査ログ（案）
 - 変更種別: role_grant / role_revoke / group_sync / user_deactivate / user_reactivate
@@ -104,5 +106,5 @@
 - SCIM導入の可否、同期頻度・責任分界の定義
 - ユーザ属性の正式スキーマ確定（たたき台は追記済み）
 - 監査ログ/権限変更ログの要件整理（たたき台は追記済み）
-- 連絡用emailの取得方法を確定（Google OIDC email claim / People API / 手入力）
+- 連絡用emailの取得方法を確定【決定: OIDC email claim 優先、不可なら手入力。Admin SDK は使わない】
 - `g.itdo.jp` / `itdo.jp` の衝突回避方針を決定（運用 or 正規化）
