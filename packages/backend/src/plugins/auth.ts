@@ -1,6 +1,7 @@
 import fp from 'fastify-plugin';
 import { createRemoteJWKSet, importSPKI, jwtVerify } from 'jose';
 import type { CryptoKey, JWTPayload, JWTVerifyGetKey } from 'jose';
+import { prisma } from '../services/db.js';
 
 export type UserContext = {
   userId: string;
@@ -92,6 +93,27 @@ function resolveUserId(payload: JWTPayload): string | null {
   const alt = resolveClaim(payload, 'preferred_username');
   if (typeof alt === 'string' && alt.trim()) return alt.trim();
   return null;
+}
+
+async function resolveProjectIdsFromDb(userId: string) {
+  const members = await prisma.projectMember.findMany({
+    where: { userId, project: { deletedAt: null } },
+    select: { projectId: true },
+  });
+  return members.map((member) => member.projectId);
+}
+
+async function ensureProjectIds(req: any) {
+  const user = req.user;
+  if (!user) return;
+  if (user.roles.includes('admin') || user.roles.includes('mgmt')) return;
+  const fallback = Array.isArray(user.projectIds) ? user.projectIds : [];
+  const fromDb = await resolveProjectIdsFromDb(user.userId);
+  if (fromDb.length) {
+    user.projectIds = fromDb;
+  } else if (!fallback.length) {
+    user.projectIds = [];
+  }
 }
 
 function buildUserContext(payload: JWTPayload): UserContext | null {
@@ -192,6 +214,7 @@ async function authPlugin(fastify: any) {
     const mode = RESOLVED_AUTH_MODE;
     if (mode === 'header') {
       applyHeaderAuth(req);
+      await ensureProjectIds(req);
       return;
     }
     const token = parseBearerToken(req);
@@ -200,10 +223,12 @@ async function authPlugin(fastify: any) {
         return respondUnauthorized(req, reply, 'missing_token');
       }
       applyHeaderAuth(req);
+      await ensureProjectIds(req);
       return;
     }
     try {
       req.user = await authenticateJwt(token);
+      await ensureProjectIds(req);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'invalid_token';
       return respondUnauthorized(req, reply, message);

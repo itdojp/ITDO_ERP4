@@ -139,6 +139,9 @@
 - [x] フロント Hooks 警告の解消（AdminSettings/Dashboard）（#269）
 - [x] レポート購読の reportKey 一覧と用途を docs に追記（#271）
 
+## 次アクション（アクセス制御/所属管理）
+- [ ] #378 ERP側での案件メンバー管理（projectIdsのDB化）
+
 ## 次アクション（意思決定・運用確定）
 - [x] #365 ID管理の未決定事項整理（IdP/SCIM/メール変更）
 - [x] #366 アクセス制御の未決定事項整理（ロール/ABAC/PBAC/RLS）
