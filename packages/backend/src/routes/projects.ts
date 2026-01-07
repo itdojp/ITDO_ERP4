@@ -51,11 +51,7 @@ function isPrivilegedRole(roles: string[]) {
   return roles.includes('admin') || roles.includes('mgmt');
 }
 
-async function ensureProjectLeader(
-  req: any,
-  reply: any,
-  projectId: string,
-) {
+async function ensureProjectLeader(req: any, reply: any, projectId: string) {
   const userId = req.user?.userId;
   if (!userId) {
     reply.code(401).send({ error: 'unauthorized' });
