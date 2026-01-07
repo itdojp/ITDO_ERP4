@@ -33,13 +33,12 @@
 | hr | 人事 | ウェルビーイングの閲覧（専用）、人事関連の閲覧 |
 | project_lead | 社員（リーダ） | user相当（追加権限は要定義） |
 | employee | 社員（一般） | user相当 |
-| probationary | 社員（試用） | チャットのみ（他機能は不可） |
+| probationary | 社員（試用） | user相当 |
 | external_chat | 外部ユーザ | チャットのみ（他機能は不可） |
 
 ### 補足
 - ルートのpreHandlerでは上記ロールを前提に `requireRole` を適用
-- `project_lead` / `employee` は現状 user 相当として扱う（追加/制限は後続決定）
-- `probationary` はチャットのみ許可（他APIは拒否）
+- `project_lead` / `employee` / `probationary` は現状 user 相当として扱う（追加/制限は後続決定）
 - `external_chat` はチャット機能のみ許可（他APIは拒否）
 - 承認インスタンスの閲覧は mgmt/exec + 申請者本人 + 所属案件のメンバー
 
