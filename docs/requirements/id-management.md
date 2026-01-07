@@ -19,7 +19,7 @@
 - Googleアカウントを正とする（`issuer + sub` を主キーとして扱う）
 - email は連絡用として扱い、自動リンクはしない
 - ローカルユーザ（非Google）は email をIDとして運用する
-- `g.itdo.jp` と `itdo.jp` のメールが併存するため、衝突回避の運用/実装は要検討
+- `g.itdo.jp` と `itdo.jp` は別メールとして扱い、自動正規化しない
 - Admin SDK Directory API はセキュリティ的に使わない方針
 
 ## ユーザ情報の持ち方
@@ -34,7 +34,7 @@
 - users: id, externalId, email, name, orgUnitId, status, roleCodes, groupIds
 - user_profiles: employmentType, managerUserId, joinedAt（任意）
 
-## ユーザ属性（案）
+## ユーザ属性（決定）
 | 項目 | 必須 | 取得元 | 備考 |
 | --- | --- | --- | --- |
 | externalId | 任意（IdP連携時は必須） | IdP/IDaaS | subject/immutable ID |
@@ -53,13 +53,13 @@
 ## ロール/グループ付与方針
 - IdP/IDaaS グループ → ERPロール/承認グループへマッピング
 - 例外はERP側で手動付与（監査ログに記録）
-- プロジェクト所属はERP側で管理する（JWT claim には含めない）
+- プロジェクト所属はERP側で管理（IdP/IDaaSとは別管理）
 
 ## リンク規約（暫定）
 - IdP連携ユーザは `externalId` を一次キーとし、email では自動リンクしない
 - ローカルユーザは `userName=email` を主キー相当として扱う
 - `externalId` と `email` が両方ある場合、`externalId` を一次キーとして維持し、`email` は連絡用で変更許容
-- `g.itdo.jp` と `itdo.jp` の重複/エイリアスに起因する衝突回避ルールは未確定
+- `g.itdo.jp` / `itdo.jp` の衝突は自動解決せず、連絡用emailの重複は許容する
 
 ## プロビジョニング/退職
 - 退職/無効化はIdP/IDaaSの状態を優先（ログイン不可）
@@ -98,7 +98,7 @@
 - 連絡用emailは `email` claim を優先し、取得できない場合は手入力で登録
 - 追加の連絡用emailは Admin SDK を使わず、手入力で運用する
 
-## 監査ログ（案）
+## 監査ログ（決定）
 - 変更種別: role_grant / role_revoke / group_sync / user_deactivate / user_reactivate
 - 記録項目: actor, targetUserId, source(IdP/manual), before/after, reason, timestamp, correlationId
 - SCIM同期は batchId を残し、差分の追跡を可能にする
@@ -106,8 +106,7 @@
 ## 次のTODO
 - 採用IdP/IDaaSの決定（Google/MS/Okta等）【決定: Google】
 - SCIM導入の可否、同期頻度・責任分界の定義【決定: 現時点では導入しない。要件を詰めて再検討】
-- ユーザ属性の正式スキーマ確定（たたき台は追記済み）
-- 監査ログ/権限変更ログの要件整理（たたき台は追記済み）
+- ユーザ属性の正式スキーマ確定【決定済み】
+- 監査ログ/権限変更ログの要件整理【決定済み】
 - 連絡用emailの取得方法を確定【決定: OIDC email claim 優先、不可なら手入力。Admin SDK は使わない】
-- projectIds の持ち方を決定【決定: ERP側で管理】
-- `g.itdo.jp` / `itdo.jp` の衝突回避方針を決定（運用 or 正規化）
+- `g.itdo.jp` / `itdo.jp` の衝突回避方針を決定【決定: 自動リンクなし、メールは連絡用のみ】
