@@ -25,6 +25,20 @@ type ApprovalInstance = {
   steps: ApprovalStep[];
 };
 
+type InsightSettingSummary = {
+  id: string;
+  threshold: number | null;
+  period: string;
+  scopeProjectId?: string | null;
+};
+
+type InsightEvidence = {
+  period: { from: string | null; to: string | null };
+  calculation: string;
+  targets: string[];
+  settings: InsightSettingSummary[];
+};
+
 type Insight = {
   id: string;
   type: string;
@@ -32,6 +46,7 @@ type Insight = {
   count: number;
   latestAt: string | null;
   sampleTargets: string[];
+  evidence: InsightEvidence;
 };
 
 const INSIGHT_LABELS: Record<string, { title: string; hint: string }> = {
@@ -69,6 +84,13 @@ const formatDateTime = (value: string | null) => {
     dateStyle: 'medium',
     timeStyle: 'short',
   }).format(parsed);
+};
+
+const formatPeriod = (period: { from: string | null; to: string | null }) => {
+  const fromLabel = period.from ? formatDateTime(period.from) : '指定なし';
+  const toLabel = period.to ? formatDateTime(period.to) : '指定なし';
+  if (fromLabel === '指定なし' && toLabel === '指定なし') return '指定なし';
+  return `${fromLabel} 〜 ${toLabel}`;
 };
 
 export const Dashboard: React.FC = () => {
@@ -219,6 +241,10 @@ export const Dashboard: React.FC = () => {
                 title: item.type,
                 hint: '',
               };
+              const sampleTargets =
+                item.sampleTargets.length > 0
+                  ? item.sampleTargets
+                  : item.evidence.targets ?? [];
               return (
                 <div key={item.id} className="card" style={{ padding: 12 }}>
                   <div
@@ -233,11 +259,25 @@ export const Dashboard: React.FC = () => {
                   <div style={{ marginTop: 6 }}>
                     件数: {item.count} / 最新: {formatDateTime(item.latestAt)}
                   </div>
-                  {item.sampleTargets && item.sampleTargets.length > 0 && (
+                  {sampleTargets.length > 0 && (
                     <div
                       style={{ fontSize: 12, color: '#475569', marginTop: 4 }}
                     >
-                      対象例: {item.sampleTargets.join(', ')}
+                      対象例: {sampleTargets.join(', ')}
+                    </div>
+                  )}
+                  {item.evidence?.period && (
+                    <div
+                      style={{ fontSize: 12, color: '#475569', marginTop: 4 }}
+                    >
+                      期間: {formatPeriod(item.evidence.period)}
+                    </div>
+                  )}
+                  {item.evidence?.calculation && (
+                    <div
+                      style={{ fontSize: 12, color: '#475569', marginTop: 4 }}
+                    >
+                      根拠: {item.evidence.calculation}
                     </div>
                   )}
                   {label.hint && (
