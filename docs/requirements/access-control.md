@@ -98,6 +98,6 @@
 
 ## 次のTODO
 - 公式ロール一覧の確定（役割/責務の整理）【決定済み】
-- ABAC条件の共通フォーマット整理（決定済み: subject/resource/environment）
+- ABAC条件の共通フォーマット整理【決定: subject/resource/environment】
 - PBAC導入の可否と運用フローの決定【決定: Phase 3 では導入しない】
 - RLS対象テーブルの選定【決定: time_entries / expenses / daily_reports / wellbeing_entries】
