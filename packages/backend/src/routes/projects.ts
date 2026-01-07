@@ -10,6 +10,7 @@ import {
   projectTaskPatchSchema,
   projectMilestoneSchema,
   projectMilestonePatchSchema,
+  projectMemberSchema,
   deleteReasonSchema,
   reassignSchema,
 } from './validators.js';
@@ -115,6 +116,79 @@ export async function registerProjectRoutes(app: FastifyInstance) {
         take: 100,
       });
       return { items: projects };
+    },
+  );
+
+  app.get(
+    '/projects/:projectId/members',
+    { preHandler: requireRole(['admin', 'mgmt']) },
+    async (req, reply) => {
+      const projectId = ensureProjectIdParam(req, reply);
+      if (!projectId) return;
+      const items = await prisma.projectMember.findMany({
+        where: { projectId },
+        orderBy: { createdAt: 'desc' },
+      });
+      return { items };
+    },
+  );
+
+  app.post(
+    '/projects/:projectId/members',
+    { preHandler: requireRole(['admin', 'mgmt']), schema: projectMemberSchema },
+    async (req, reply) => {
+      const projectId = ensureProjectIdParam(req, reply);
+      if (!projectId) return;
+      const body = req.body as { userId: string };
+      const actorId = req.user?.userId;
+      const member = await prisma.projectMember.upsert({
+        where: { projectId_userId: { projectId, userId: body.userId } },
+        update: {},
+        create: {
+          projectId,
+          userId: body.userId,
+          createdBy: actorId,
+        },
+      });
+      await logAudit({
+        action: 'project_member_added',
+        targetTable: 'ProjectMember',
+        targetId: member.id,
+        metadata: { projectId, userId: body.userId },
+        ...auditContextFromRequest(req, { userId: actorId }),
+      });
+      return member;
+    },
+  );
+
+  app.delete(
+    '/projects/:projectId/members/:userId',
+    { preHandler: requireRole(['admin', 'mgmt']) },
+    async (req, reply) => {
+      const { projectId, userId } = req.params as {
+        projectId: string;
+        userId: string;
+      };
+      const existing = await prisma.projectMember.findUnique({
+        where: { projectId_userId: { projectId, userId } },
+      });
+      if (!existing) {
+        return reply.status(404).send({
+          error: { code: 'NOT_FOUND', message: 'member not found' },
+        });
+      }
+      await prisma.projectMember.delete({
+        where: { projectId_userId: { projectId, userId } },
+      });
+      const actorId = req.user?.userId;
+      await logAudit({
+        action: 'project_member_removed',
+        targetTable: 'ProjectMember',
+        targetId: existing.id,
+        metadata: { projectId, userId },
+        ...auditContextFromRequest(req, { userId: actorId }),
+      });
+      return { ok: true };
     },
   );
 

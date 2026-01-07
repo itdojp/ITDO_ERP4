@@ -95,6 +95,27 @@ function resolveUserId(payload: JWTPayload): string | null {
   return null;
 }
 
+async function resolveProjectIdsFromDb(userId: string) {
+  const members = await prisma.projectMember.findMany({
+    where: { userId, project: { deletedAt: null } },
+    select: { projectId: true },
+  });
+  return members.map((member) => member.projectId);
+}
+
+async function ensureProjectIds(req: any) {
+  const user = req.user;
+  if (!user) return;
+  if (user.roles.includes('admin') || user.roles.includes('mgmt')) return;
+  const fallback = Array.isArray(user.projectIds) ? user.projectIds : [];
+  const fromDb = await resolveProjectIdsFromDb(user.userId);
+  if (fromDb.length) {
+    user.projectIds = fromDb;
+  } else if (!fallback.length) {
+    user.projectIds = [];
+  }
+}
+
 function buildUserContext(payload: JWTPayload): UserContext | null {
   const userId = resolveUserId(payload);
   if (!userId) return null;
@@ -188,32 +209,12 @@ function respondUnauthorized(req: any, reply: any, reason?: string) {
   return reply.code(401).send({ error: 'unauthorized' });
 }
 
-async function applyProjectMembership(req: any) {
-  const userId = req.user?.userId;
-  if (!userId) return;
-  const roles = req.user?.roles || [];
-  if (roles.includes('admin') || roles.includes('mgmt')) return;
-  try {
-    const memberships = await prisma.projectMember.findMany({
-      where: { userId },
-      select: { projectId: true },
-    });
-    if (memberships.length) {
-      req.user.projectIds = memberships.map((row) => row.projectId);
-    }
-  } catch (err) {
-    if (req.log && typeof req.log.warn === 'function') {
-      req.log.warn({ err }, 'Failed to resolve project membership');
-    }
-  }
-}
-
 async function authPlugin(fastify: any) {
   fastify.addHook('onRequest', async (req: any, reply: any) => {
     const mode = RESOLVED_AUTH_MODE;
     if (mode === 'header') {
       applyHeaderAuth(req);
-      await applyProjectMembership(req);
+      await ensureProjectIds(req);
       return;
     }
     const token = parseBearerToken(req);
@@ -222,12 +223,12 @@ async function authPlugin(fastify: any) {
         return respondUnauthorized(req, reply, 'missing_token');
       }
       applyHeaderAuth(req);
-      await applyProjectMembership(req);
+      await ensureProjectIds(req);
       return;
     }
     try {
       req.user = await authenticateJwt(token);
-      await applyProjectMembership(req);
+      await ensureProjectIds(req);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'invalid_token';
       return respondUnauthorized(req, reply, message);

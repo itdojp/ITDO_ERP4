@@ -203,7 +203,6 @@ model ProjectMember {
   @@index([userId])
   @@index([projectId])
 }
-
 model ProjectTask {
   id            String        @id @default(uuid())
   project       Project       @relation(fields: [projectId], references: [id], onDelete: Restrict)

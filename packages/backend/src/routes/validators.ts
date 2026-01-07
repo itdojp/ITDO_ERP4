@@ -61,7 +61,6 @@ export const projectMemberSchema = {
     role: Type.Optional(projectMemberRoleSchema),
   }),
 };
-
 export const customerSchema = {
   body: Type.Object(
     {

@@ -54,7 +54,7 @@
 - IdP/IDaaS グループ → ERPロール/承認グループへマッピング
 - 例外はERP側で手動付与（監査ログに記録）
 - プロジェクト所属はERP側で管理（IdP/IDaaSとは別管理）
-  - ProjectMember テーブルでリーダ/メンバーを保持し、projectIds はそこから解決する
+  - `ProjectMember` テーブルでリーダ/メンバーを保持し、projectIds はそこから解決する
 
 ## リンク規約（暫定）
 - IdP連携ユーザは `externalId` を一次キーとし、email では自動リンクしない
