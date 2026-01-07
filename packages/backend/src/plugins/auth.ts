@@ -97,7 +97,9 @@ function resolveUserId(payload: JWTPayload): string | null {
 function buildUserContext(payload: JWTPayload): UserContext | null {
   const userId = resolveUserId(payload);
   if (!userId) return null;
-  const roles = expandRoles(normalizeList(resolveClaim(payload, JWT_ROLE_CLAIM)));
+  const roles = expandRoles(
+    normalizeList(resolveClaim(payload, JWT_ROLE_CLAIM)),
+  );
   const groupIds = normalizeList(resolveClaim(payload, JWT_GROUP_CLAIM));
   const projectIds = normalizeList(resolveClaim(payload, JWT_PROJECT_CLAIM));
   const orgId = resolveClaim(payload, JWT_ORG_CLAIM);
@@ -160,8 +162,8 @@ function applyHeaderAuth(req: any) {
   const rolesHeader = (req.headers['x-roles'] as string) || 'user';
   const roles = expandRoles(
     rolesHeader
-    .split(',')
-    .map((r: string) => r.trim())
+      .split(',')
+      .map((r: string) => r.trim())
       .filter(Boolean),
   );
   const orgId = (req.headers['x-org-id'] as string) || undefined;

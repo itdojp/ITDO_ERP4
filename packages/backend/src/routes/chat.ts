@@ -26,14 +26,7 @@ function parseLimit(value?: string, fallback = 50) {
 }
 
 export async function registerChatRoutes(app: FastifyInstance) {
-  const chatRoles = [
-    'admin',
-    'mgmt',
-    'user',
-    'hr',
-    'exec',
-    'external_chat',
-  ];
+  const chatRoles = ['admin', 'mgmt', 'user', 'hr', 'exec', 'external_chat'];
 
   app.get(
     '/projects/:projectId/chat-messages',
