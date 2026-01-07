@@ -14,6 +14,12 @@
 - プロビジョニング: まずはCSV/手動同期、将来SCIM (SCIM v2)
 - 中間: IDaaS を利用する場合は経由可能にする
 
+## 決定事項
+- IdP/IDaaS: Google を採用
+- ログインID: email を利用
+- ローカルユーザ（非Google）も許容する
+- `g.itdo.jp` と `itdo.jp` のメールが併存するため、衝突回避の運用/実装は要検討
+
 ## ユーザ情報の持ち方
 - ERP側の userId は内部IDとして保持し、IdP/IDaaSの subject は externalId として保持する
   - IdP連携ユーザは externalId 必須、非連携ユーザは externalId を null 許容
@@ -49,6 +55,7 @@
 - `externalId` がある場合はそれを優先してユーザを同定
 - `externalId` が無い場合は `email` を主キー相当として扱う
 - `externalId` と `email` が両方ある場合、`externalId` を一次キーとして維持し、`email` は変更許容
+- `g.itdo.jp` と `itdo.jp` の重複/エイリアスに起因する衝突回避ルールは未確定
 
 ## プロビジョニング/退職
 - 退職/無効化はIdP/IDaaSの状態を優先（ログイン不可）
@@ -89,8 +96,9 @@
 - SCIM同期は batchId を残し、差分の追跡を可能にする
 
 ## 次のTODO
-- 採用IdP/IDaaSの決定（Google/MS/Okta等）
+- 採用IdP/IDaaSの決定（Google/MS/Okta等）【決定: Google】
 - SCIM導入の可否、同期頻度・責任分界の定義
 - ユーザ属性の正式スキーマ確定（たたき台は追記済み）
 - 監査ログ/権限変更ログの要件整理（たたき台は追記済み）
 - JWT_SUB_CLAIM=email 運用時の email 変更ルールを整理
+- `g.itdo.jp` / `itdo.jp` の衝突回避方針を決定（運用 or 正規化）
