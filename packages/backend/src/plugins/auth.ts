@@ -220,6 +220,9 @@ function respondUnauthorized(req: any, reply: any, reason?: string) {
 
 async function authPlugin(fastify: any) {
   fastify.addHook('onRequest', async (req: any, reply: any) => {
+    if (typeof req.url === 'string' && req.url.startsWith('/health')) {
+      return;
+    }
     const mode = RESOLVED_AUTH_MODE;
     if (mode === 'header') {
       applyHeaderAuth(req);
