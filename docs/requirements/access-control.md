@@ -12,7 +12,7 @@
 
 ## 方針（段階的導入）
 ### PoC（現在）
-- ルート単位のRBAC（admin/mgmt/exec/user/hr）
+- ルート単位のRBAC（admin/mgmt/exec/user/hr + 社員区分 + 外部チャット）
 - projectIdフィルタによる簡易スコープ制御
 - 監査ログは主要アクションのみ
 
@@ -30,11 +30,16 @@
 | admin | システム管理者 | 全設定/全データの閲覧・編集・承認 |
 | mgmt | 管理部 | 見積/請求/発注/仕入の作成・承認、マスタ管理、アラート設定 |
 | exec | 経営 | 高額案件の承認、ダッシュボード/レポート閲覧 |
-| user | 一般 | 日報/工数/経費の登録、自分/所属案件の閲覧 |
 | hr | 人事 | ウェルビーイングの閲覧（専用）、人事関連の閲覧 |
+| project_lead | 社員（リーダ） | user相当（追加権限は要定義） |
+| employee | 社員（一般） | user相当 |
+| probationary | 社員（試用） | user相当（制限は要定義） |
+| external_chat | 外部ユーザ | チャット等の限定機能のみ |
 
 ### 補足
 - ルートのpreHandlerでは上記ロールを前提に `requireRole` を適用
+- `project_lead` / `employee` / `probationary` は現状 user 相当として扱う（追加/制限は後続決定）
+- `external_chat` はチャット機能のみ許可（他APIは拒否）
 - 承認インスタンスの閲覧は mgmt/exec + 申請者本人 + 所属案件のメンバー
 
 ## ユーザ属性（ABAC入力）

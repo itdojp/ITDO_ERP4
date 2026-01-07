@@ -37,6 +37,7 @@ const JWT_GROUP_CLAIM = process.env.JWT_GROUP_CLAIM || 'group_ids';
 const JWT_PROJECT_CLAIM = process.env.JWT_PROJECT_CLAIM || 'project_ids';
 const JWT_ORG_CLAIM = process.env.JWT_ORG_CLAIM || 'org_id';
 const AUTH_DEFAULT_ROLE = process.env.AUTH_DEFAULT_ROLE || 'user';
+const USER_ROLE_ALIASES = new Set(['project_lead', 'employee', 'probationary']);
 
 let cachedJwks: ReturnType<typeof createRemoteJWKSet> | null = null;
 let cachedPublicKey: CryptoKey | null = null;
@@ -72,6 +73,13 @@ function normalizeList(value: unknown): string[] {
   return [];
 }
 
+function expandRoles(roles: string[]): string[] {
+  const normalized = new Set(roles);
+  const hasUserAlias = roles.some((role) => USER_ROLE_ALIASES.has(role));
+  if (hasUserAlias) normalized.add('user');
+  return Array.from(normalized);
+}
+
 function resolveClaim(payload: JWTPayload, claim: string): unknown {
   return (payload as Record<string, unknown>)[claim];
 }
@@ -89,7 +97,7 @@ function resolveUserId(payload: JWTPayload): string | null {
 function buildUserContext(payload: JWTPayload): UserContext | null {
   const userId = resolveUserId(payload);
   if (!userId) return null;
-  const roles = normalizeList(resolveClaim(payload, JWT_ROLE_CLAIM));
+  const roles = expandRoles(normalizeList(resolveClaim(payload, JWT_ROLE_CLAIM)));
   const groupIds = normalizeList(resolveClaim(payload, JWT_GROUP_CLAIM));
   const projectIds = normalizeList(resolveClaim(payload, JWT_PROJECT_CLAIM));
   const orgId = resolveClaim(payload, JWT_ORG_CLAIM);
@@ -150,10 +158,12 @@ async function authenticateJwt(token: string): Promise<UserContext> {
 function applyHeaderAuth(req: any) {
   const userId = (req.headers['x-user-id'] as string) || 'demo-user';
   const rolesHeader = (req.headers['x-roles'] as string) || 'user';
-  const roles = rolesHeader
+  const roles = expandRoles(
+    rolesHeader
     .split(',')
     .map((r: string) => r.trim())
-    .filter(Boolean);
+      .filter(Boolean),
+  );
   const orgId = (req.headers['x-org-id'] as string) || undefined;
   const projectIdsHeader = (req.headers['x-project-ids'] as string) || '';
   const projectIds = projectIdsHeader
