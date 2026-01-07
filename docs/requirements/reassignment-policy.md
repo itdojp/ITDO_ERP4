@@ -56,14 +56,14 @@
 
 ※ 監査ログには `reasonCode` と自由記述 `reasonText` を保存し、運用で追加可能にする。
 
-## 締め期間の扱い（案）
-- `PeriodLock` のような締めテーブルを用意し、月次/四半期の締めを記録する
+## 締め期間の扱い（決定）
+- `PeriodLock` のような締めテーブルを用意し、月次とプロジェクト期間の締めを記録する
   - 例: `period`(YYYY-MM), `scope`(global/project), `projectId`, `closedAt`, `closedBy`, `reason`
 - 付け替え対象（TimeEntry/Expense/Invoice/PurchaseOrder/VendorInvoice）は、該当期間が締め済みなら原則不可
 - 例外解除は mgmt + exec の二重承認（後続スコープ）
 - 運用: 管理部が `/period-locks` で締めを作成/解除する（scope=global/project）
 
 ## 次のTODO
-- 締め期間の定義（叩き台は追記済み、運用決定待ち）
+- 締め期間の定義（決定済み: 月次 + プロジェクト期間）
 - 付け替え理由コードの初期セット決定（叩き台は追記済み、要確認）
 - 承認解除/取消の手順と権限の明確化
