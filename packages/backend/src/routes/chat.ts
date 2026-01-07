@@ -33,6 +33,7 @@ export async function registerChatRoutes(app: FastifyInstance) {
     'hr',
     'exec',
     'external_chat',
+    'probationary',
   ];
 
   app.get(
