@@ -5,6 +5,10 @@
 - mgmt: 見積/請求/発注の承認・設定
 - hr: ウェルビーイング閲覧（匿名集計/個人閲覧はルール別）
 - user: 通常ユーザ（工数/日報/経費/休暇）
+- project_lead: 社員（リーダ、現状はuser相当）
+- employee: 社員（一般、現状はuser相当）
+- probationary: 社員（試用、現状はuser相当）
+- external_chat: 外部ユーザ（チャットのみ）
 
 ## リソース × 権限（PoC）
 - projects: admin, mgmt（閲覧/作成）、user（閲覧）
@@ -15,7 +19,7 @@
 - leave_requests: user（自分）, mgmt/admin（全体）
 - daily_reports: user（自分）
 - wellbeing_entries: user（自分の登録）, hr（閲覧: 原則個人閲覧、匿名集計は5人以上）
-- project_chat_messages: プロジェクトメンバー（user/mgmt/admin/hr）
+- project_chat_messages: プロジェクトメンバー（user/mgmt/admin/hr/external_chat）
 - alert-settings / approval-rules: admin, mgmt
 - approval-instances: admin/mgmt/exec + 申請者本人 + プロジェクトメンバー
 - alerts: admin, mgmt（全体）、user（自分関連のみを将来考慮）
