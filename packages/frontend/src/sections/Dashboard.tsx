@@ -244,7 +244,7 @@ export const Dashboard: React.FC = () => {
               const sampleTargets =
                 item.sampleTargets.length > 0
                   ? item.sampleTargets
-                  : item.evidence.targets ?? [];
+                  : (item.evidence.targets ?? []);
               return (
                 <div key={item.id} className="card" style={{ padding: 12 }}>
                   <div
