@@ -17,6 +17,11 @@ enum ProjectStatus {
   closed // 完了
 }
 
+enum ProjectMemberRole {
+  leader
+  member
+}
+
 enum DocStatus {
   draft // 下書き/未送信
   pending_qa // 管理部レビュー待ち
@@ -157,6 +162,7 @@ model Project {
   currency                String?
   recurringTemplate       RecurringProjectTemplate?
   recurringGenerationLogs RecurringGenerationLog[]
+  members                 ProjectMember[]
   tasks                   ProjectTask[]
   milestones              ProjectMilestone[]
   chatMessages            ProjectChatMessage[]
@@ -170,7 +176,6 @@ model Project {
   rateCards               RateCard[]
   approvalInstances       ApprovalInstance[]
   periodLocks             PeriodLock[]
-  members                 ProjectMember[]
   createdAt               DateTime                  @default(now())
   createdBy               String?
   updatedAt               DateTime                  @updatedAt
@@ -184,18 +189,20 @@ model Project {
 }
 
 model ProjectMember {
-  id        String   @id @default(uuid())
-  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  id        String            @id @default(uuid())
+  project   Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
   projectId String
   userId    String
-  createdAt DateTime @default(now())
+  role      ProjectMemberRole @default(member)
+  createdAt DateTime          @default(now())
   createdBy String?
+  updatedAt DateTime          @updatedAt
+  updatedBy String?
 
   @@unique([projectId, userId])
   @@index([userId])
   @@index([projectId])
 }
-
 model ProjectTask {
   id            String        @id @default(uuid())
   project       Project       @relation(fields: [projectId], references: [id], onDelete: Restrict)

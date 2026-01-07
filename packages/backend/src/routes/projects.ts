@@ -4,12 +4,12 @@ import { requireProjectAccess, requireRole } from '../services/rbac.js';
 import {
   projectSchema,
   projectPatchSchema,
+  projectMemberSchema,
   recurringTemplateSchema,
   projectTaskSchema,
   projectTaskPatchSchema,
   projectMilestoneSchema,
   projectMilestonePatchSchema,
-  projectMemberSchema,
   deleteReasonSchema,
   reassignSchema,
 } from './validators.js';
@@ -45,6 +45,27 @@ function ensureProjectIdParam(req: any, reply: any) {
     });
   }
   return undefined;
+}
+
+function isPrivilegedRole(roles: string[]) {
+  return roles.includes('admin') || roles.includes('mgmt');
+}
+
+async function ensureProjectLeader(req: any, reply: any, projectId: string) {
+  const userId = req.user?.userId;
+  if (!userId) {
+    reply.code(401).send({ error: 'unauthorized' });
+    return false;
+  }
+  const leader = await prisma.projectMember.findFirst({
+    where: { projectId, userId, role: 'leader' },
+    select: { id: true },
+  });
+  if (!leader) {
+    reply.code(403).send({ error: 'forbidden_project' });
+    return false;
+  }
+  return true;
 }
 
 async function hasCircularParent(taskId: string, parentTaskId: string) {
@@ -90,79 +111,6 @@ export async function registerProjectRoutes(app: FastifyInstance) {
         take: 100,
       });
       return { items: projects };
-    },
-  );
-
-  app.get(
-    '/projects/:projectId/members',
-    { preHandler: requireRole(['admin', 'mgmt']) },
-    async (req, reply) => {
-      const projectId = ensureProjectIdParam(req, reply);
-      if (!projectId) return;
-      const items = await prisma.projectMember.findMany({
-        where: { projectId },
-        orderBy: { createdAt: 'desc' },
-      });
-      return { items };
-    },
-  );
-
-  app.post(
-    '/projects/:projectId/members',
-    { preHandler: requireRole(['admin', 'mgmt']), schema: projectMemberSchema },
-    async (req, reply) => {
-      const projectId = ensureProjectIdParam(req, reply);
-      if (!projectId) return;
-      const body = req.body as { userId: string };
-      const actorId = req.user?.userId;
-      const member = await prisma.projectMember.upsert({
-        where: { projectId_userId: { projectId, userId: body.userId } },
-        update: {},
-        create: {
-          projectId,
-          userId: body.userId,
-          createdBy: actorId,
-        },
-      });
-      await logAudit({
-        action: 'project_member_added',
-        targetTable: 'ProjectMember',
-        targetId: member.id,
-        metadata: { projectId, userId: body.userId },
-        ...auditContextFromRequest(req, { userId: actorId }),
-      });
-      return member;
-    },
-  );
-
-  app.delete(
-    '/projects/:projectId/members/:userId',
-    { preHandler: requireRole(['admin', 'mgmt']) },
-    async (req, reply) => {
-      const { projectId, userId } = req.params as {
-        projectId: string;
-        userId: string;
-      };
-      const existing = await prisma.projectMember.findUnique({
-        where: { projectId_userId: { projectId, userId } },
-      });
-      if (!existing) {
-        return reply.status(404).send({
-          error: { code: 'NOT_FOUND', message: 'member not found' },
-        });
-      }
-      await prisma.projectMember.delete({
-        where: { projectId_userId: { projectId, userId } },
-      });
-      const actorId = req.user?.userId;
-      await logAudit({
-        action: 'project_member_removed',
-        targetTable: 'ProjectMember',
-        targetId: existing.id,
-        metadata: { projectId, userId },
-        ...auditContextFromRequest(req, { userId: actorId }),
-      });
-      return { ok: true };
     },
   );
 
@@ -235,6 +183,211 @@ export async function registerProjectRoutes(app: FastifyInstance) {
         data,
       });
       return project;
+    },
+  );
+
+  app.get(
+    '/projects/:projectId/members',
+    {
+      preHandler: [
+        requireRole(['admin', 'mgmt', 'user']),
+        ensureProjectIdParam,
+      ],
+    },
+    async (req, reply) => {
+      const { projectId } = req.params as { projectId: string };
+      const roles = req.user?.roles || [];
+      if (!isPrivilegedRole(roles)) {
+        const allowed = await ensureProjectLeader(req, reply, projectId);
+        if (!allowed) return;
+      }
+      const items = await prisma.projectMember.findMany({
+        where: { projectId },
+        orderBy: { createdAt: 'asc' },
+      });
+      return { items };
+    },
+  );
+
+  app.post(
+    '/projects/:projectId/members',
+    {
+      preHandler: [
+        requireRole(['admin', 'mgmt', 'user']),
+        ensureProjectIdParam,
+      ],
+      schema: projectMemberSchema,
+    },
+    async (req, reply) => {
+      const { projectId } = req.params as { projectId: string };
+      const body = req.body as { userId: string; role?: 'member' | 'leader' };
+      const roles = req.user?.roles || [];
+      const isPrivileged = isPrivilegedRole(roles);
+      if (!isPrivileged) {
+        const allowed = await ensureProjectLeader(req, reply, projectId);
+        if (!allowed) return;
+      }
+      const project = await prisma.project.findUnique({
+        where: { id: projectId },
+        select: { id: true, deletedAt: true },
+      });
+      if (!project || project.deletedAt) {
+        return reply.status(404).send({
+          error: { code: 'NOT_FOUND', message: 'Project not found' },
+        });
+      }
+      const requestedRole = body.role ?? 'member';
+      if (!isPrivileged && requestedRole !== 'member') {
+        return reply.status(403).send({
+          error: {
+            code: 'FORBIDDEN_ROLE_ASSIGNMENT',
+            message: 'Project leaders can only assign members',
+          },
+        });
+      }
+      const existing = await prisma.projectMember.findUnique({
+        where: { projectId_userId: { projectId, userId: body.userId } },
+      });
+      if (!isPrivileged && existing?.role === 'leader') {
+        return reply.status(403).send({
+          error: {
+            code: 'FORBIDDEN_LEADER_CHANGE',
+            message: 'Project leaders cannot change leader roles',
+          },
+        });
+      }
+      if (existing && existing.role === requestedRole) {
+        return existing;
+      }
+      const data = {
+        role: requestedRole,
+        updatedBy: req.user?.userId,
+      };
+      let member = existing
+        ? await prisma.projectMember.update({
+            where: { id: existing.id },
+            data,
+          })
+        : null;
+      let auditAction = existing
+        ? 'project_member_role_updated'
+        : 'project_member_added';
+      let previousRole = existing?.role ?? null;
+      if (!member) {
+        try {
+          member = await prisma.projectMember.create({
+            data: {
+              projectId,
+              userId: body.userId,
+              role: requestedRole,
+              createdBy: req.user?.userId,
+              updatedBy: req.user?.userId,
+            },
+          });
+        } catch (err) {
+          if (err instanceof Prisma.PrismaClientKnownRequestError) {
+            if (err.code === 'P2002') {
+              const fallback = await prisma.projectMember.findUnique({
+                where: { projectId_userId: { projectId, userId: body.userId } },
+              });
+              if (!fallback) throw err;
+              if (!isPrivileged && fallback.role === 'leader') {
+                return reply.status(403).send({
+                  error: {
+                    code: 'FORBIDDEN_LEADER_CHANGE',
+                    message: 'Project leaders cannot change leader roles',
+                  },
+                });
+              }
+              if (fallback.role === requestedRole) {
+                return fallback;
+              }
+              previousRole = fallback.role;
+              auditAction = 'project_member_role_updated';
+              member = await prisma.projectMember.update({
+                where: { id: fallback.id },
+                data,
+              });
+            } else {
+              throw err;
+            }
+          } else {
+            throw err;
+          }
+        }
+      }
+      if (!member) {
+        return reply.status(500).send({
+          error: {
+            code: 'PROJECT_MEMBER_SAVE_FAILED',
+            message: 'Project member could not be saved',
+          },
+        });
+      }
+      await logAudit({
+        ...auditContextFromRequest(req),
+        action: auditAction,
+        targetTable: 'ProjectMember',
+        targetId: member.id,
+        metadata: {
+          projectId,
+          userId: body.userId,
+          role: requestedRole,
+          previousRole,
+        },
+      });
+      return member;
+    },
+  );
+
+  app.delete(
+    '/projects/:projectId/members/:userId',
+    {
+      preHandler: [
+        requireRole(['admin', 'mgmt', 'user']),
+        ensureProjectIdParam,
+      ],
+    },
+    async (req, reply) => {
+      const { projectId, userId: targetUserId } = req.params as {
+        projectId: string;
+        userId: string;
+      };
+      const roles = req.user?.roles || [];
+      const isPrivileged = isPrivilegedRole(roles);
+      if (!isPrivileged) {
+        const allowed = await ensureProjectLeader(req, reply, projectId);
+        if (!allowed) return;
+      }
+      const member = await prisma.projectMember.findUnique({
+        where: { projectId_userId: { projectId, userId: targetUserId } },
+      });
+      if (!member) {
+        return reply.status(404).send({
+          error: { code: 'NOT_FOUND', message: 'Project member not found' },
+        });
+      }
+      if (!isPrivileged && member.role === 'leader') {
+        return reply.status(403).send({
+          error: {
+            code: 'FORBIDDEN_MEMBER_REMOVAL',
+            message: 'Project leaders cannot remove leaders',
+          },
+        });
+      }
+      await prisma.projectMember.delete({ where: { id: member.id } });
+      await logAudit({
+        ...auditContextFromRequest(req),
+        action: 'project_member_removed',
+        targetTable: 'ProjectMember',
+        targetId: member.id,
+        metadata: {
+          projectId,
+          userId: targetUserId,
+          role: member.role,
+        },
+      });
+      return { ok: true };
     },
   );
 

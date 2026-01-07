@@ -108,11 +108,20 @@ async function ensureProjectIds(req: any) {
   if (!user) return;
   if (user.roles.includes('admin') || user.roles.includes('mgmt')) return;
   const fallback = Array.isArray(user.projectIds) ? user.projectIds : [];
-  const fromDb = await resolveProjectIdsFromDb(user.userId);
-  if (fromDb.length) {
-    user.projectIds = fromDb;
-  } else if (!fallback.length) {
-    user.projectIds = [];
+  try {
+    const fromDb = await resolveProjectIdsFromDb(user.userId);
+    if (fromDb.length) {
+      user.projectIds = fromDb;
+    } else if (!fallback.length) {
+      user.projectIds = [];
+    }
+  } catch (err) {
+    if (req.log && typeof req.log.warn === 'function') {
+      req.log.warn({ err }, 'Failed to resolve projectIds from DB');
+    }
+    if (!fallback.length) {
+      user.projectIds = [];
+    }
   }
 }
 
@@ -211,6 +220,9 @@ function respondUnauthorized(req: any, reply: any, reason?: string) {
 
 async function authPlugin(fastify: any) {
   fastify.addHook('onRequest', async (req: any, reply: any) => {
+    if (typeof req.url === 'string' && req.url.startsWith('/health')) {
+      return;
+    }
     const mode = RESOLVED_AUTH_MODE;
     if (mode === 'header') {
       applyHeaderAuth(req);

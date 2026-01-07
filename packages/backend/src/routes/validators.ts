@@ -50,12 +50,17 @@ export const projectPatchSchema = {
   body: Type.Partial(projectSchema.body),
 };
 
+const projectMemberRoleSchema = Type.Union([
+  Type.Literal('member'),
+  Type.Literal('leader'),
+]);
+
 export const projectMemberSchema = {
   body: Type.Object({
     userId: Type.String({ minLength: 1 }),
+    role: Type.Optional(projectMemberRoleSchema),
   }),
 };
-
 export const customerSchema = {
   body: Type.Object(
     {

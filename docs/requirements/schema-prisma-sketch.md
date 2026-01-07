@@ -11,6 +11,7 @@
 - ProjectTask.projectId: ON DELETE RESTRICT。承認WF外で projectId の付け替えを許容
 - ProjectTask.parentTaskId: ON DELETE RESTRICT。親削除時は子を移動または論理削除
 - ProjectMilestone.projectId: ON DELETE RESTRICT
+- ProjectMember.projectId: ON DELETE CASCADE（プロジェクト削除時は所属を削除）
 - TimeEntry.projectId / Expense.projectId: ON DELETE RESTRICT（必須）
 
 ### 見積/請求
@@ -52,6 +53,7 @@ model AuditFields { // 擬似: 実際は全modelにmixin
 }
 
 enum ProjectStatus { draft active on_hold closed }
+enum ProjectMemberRole { leader member }
 enum DocStatus { draft pending_qa pending_exec approved rejected sent paid cancelled received acknowledged }
 enum TimeStatus { submitted approved rejected }
 enum LeaveStatus { draft pending_manager approved rejected }
@@ -133,6 +135,7 @@ model Project {
   endDate   DateTime?
   currency  String?
   recurringTemplate RecurringProjectTemplate?
+  members   ProjectMember[]
   tasks     ProjectTask[]
   milestones ProjectMilestone[]
   estimates Estimate[]
@@ -144,6 +147,18 @@ model Project {
   vendorInvoices VendorInvoice[]
   deletedAt DateTime?
   deletedReason String?
+}
+
+model ProjectMember {
+  id        String  @id @default(uuid())
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  projectId String
+  userId    String
+  role      ProjectMemberRole @default(member)
+  createdAt DateTime @default(now())
+  createdBy String?
+  updatedAt DateTime @updatedAt
+  updatedBy String?
 }
 
 model ProjectTask {

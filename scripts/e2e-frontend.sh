@@ -132,13 +132,25 @@ PORT="$BACKEND_PORT" AUTH_MODE=header DATABASE_URL="$DATABASE_URL" \
 ALLOWED_ORIGINS="http://localhost:${FRONTEND_PORT},http://127.0.0.1:${FRONTEND_PORT}" \
   node "$ROOT_DIR/packages/backend/dist/index.js" >"$BACKEND_LOG" 2>&1 &
 BACKEND_PID=$!
-wait_for_url "http://localhost:${BACKEND_PORT}/health" "backend"
+if ! wait_for_url "http://localhost:${BACKEND_PORT}/health" "backend"; then
+  if [[ -f "$BACKEND_LOG" ]]; then
+    echo "backend log:" >&2
+    tail -n 200 "$BACKEND_LOG" >&2
+  fi
+  exit 1
+fi
 
 VITE_API_BASE="http://localhost:${BACKEND_PORT}" \
   npm run dev --prefix "$ROOT_DIR/packages/frontend" -- --host 0.0.0.0 --port "$FRONTEND_PORT" \
   >"$FRONTEND_LOG" 2>&1 &
 FRONTEND_PID=$!
-wait_for_url "http://localhost:${FRONTEND_PORT}/" "frontend"
+if ! wait_for_url "http://localhost:${FRONTEND_PORT}/" "frontend"; then
+  if [[ -f "$FRONTEND_LOG" ]]; then
+    echo "frontend log:" >&2
+    tail -n 200 "$FRONTEND_LOG" >&2
+  fi
+  exit 1
+fi
 
 if [[ "${E2E_SKIP_PLAYWRIGHT_INSTALL:-}" != "1" ]]; then
   npx --prefix "$ROOT_DIR/packages/frontend" playwright install chromium

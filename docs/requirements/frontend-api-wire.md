@@ -8,6 +8,11 @@
 ## dashboard
 - GET `/alerts` → ダッシュボード表示
 
+## projects
+- GET `/projects/:projectId/members`
+- POST `/projects/:projectId/members` { userId, role? }
+- DELETE `/projects/:projectId/members/:userId`
+
 ## reports
 - GET `/reports/delivery-due?from=YYYY-MM-DD&to=YYYY-MM-DD&projectId?&format=csv|pdf?&layout=default?`
 - GET `/reports/project-effort/:projectId?from=YYYY-MM-DD&to=YYYY-MM-DD&format=csv|pdf?&layout=default?`
