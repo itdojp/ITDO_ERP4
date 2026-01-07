@@ -16,6 +16,11 @@
 - データ修正が必要な場合は、マイグレーション SQL に追記するか、別途手動SQL手順を用意
 - 破壊的変更（カラム削除/型変更/制約強化）は事前に影響確認と移行手順を用意
 
+## 決定事項（本番運用）
+- ロール: app（DMLのみ）/ migrator（DDL + prisma_migrations）/ readonly（参照のみ）
+- ステージング/本番は release 手順の一部として migrator で `prisma migrate deploy` を実行
+- データ移行が必要な場合は migration.sql か専用スクリプトを同PRに同梱し、実行手順を docs に記録
+
 ## 推奨フロー
 1) `packages/backend/prisma/schema.prisma` を更新
 2) `npx prisma migrate dev --name <change>`
@@ -31,5 +36,5 @@
 
 ## 次のTODO
 - [x] 最初のベースラインマイグレーション作成（`packages/backend/prisma/migrations/*_init`）
-- [ ] ステージング/本番の実行権限とロールを整備
-- [ ] データ移行手順との統合
+- [x] ステージング/本番の実行権限とロールを整備
+- [x] データ移行手順との統合
