@@ -92,10 +92,7 @@ function formatThreshold(type: string, threshold: number | null) {
   return unit ? `${threshold}${unit}` : String(threshold);
 }
 
-function formatSettingSummary(
-  type: string,
-  setting: InsightSettingSummary,
-) {
+function formatSettingSummary(type: string, setting: InsightSettingSummary) {
   const parts: string[] = [];
   const threshold = formatThreshold(type, setting.threshold);
   if (threshold) parts.push(`閾値:${threshold}`);
@@ -107,7 +104,10 @@ function formatSettingSummary(
   return parts.join(' ');
 }
 
-function formatSettingsSummary(type: string, settings: InsightSettingSummary[]) {
+function formatSettingsSummary(
+  type: string,
+  settings: InsightSettingSummary[],
+) {
   if (!settings.length) return null;
   if (settings.length === 1) {
     return `設定: ${formatSettingSummary(type, settings[0])}`;
