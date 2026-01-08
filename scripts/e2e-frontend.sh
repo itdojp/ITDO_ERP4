@@ -176,6 +176,7 @@ fi
 E2E_ROOT_DIR="$ROOT_DIR" \
 E2E_EVIDENCE_DIR="$E2E_EVIDENCE_DIR" \
 E2E_BASE_URL="$E2E_BASE_URL" \
+E2E_API_BASE="http://localhost:${BACKEND_PORT}" \
 E2E_CAPTURE="$E2E_CAPTURE" \
   npx --prefix "$ROOT_DIR/packages/frontend" playwright test --config "$ROOT_DIR/packages/frontend/playwright.config.ts" ${E2E_GREP:+--grep "$E2E_GREP"}
 

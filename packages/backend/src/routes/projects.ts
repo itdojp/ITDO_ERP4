@@ -191,10 +191,9 @@ export async function registerProjectRoutes(app: FastifyInstance) {
       );
       const nextParentId = hasParentIdProp
         ? normalizeParentId(body.parentId)
-        : current.parentId ?? null;
+        : (current.parentId ?? null);
       const currentParentId = current.parentId ?? null;
-      const parentChanged =
-        hasParentIdProp && nextParentId !== currentParentId;
+      const parentChanged = hasParentIdProp && nextParentId !== currentParentId;
       const reasonText =
         typeof body.reasonText === 'string' ? body.reasonText.trim() : '';
       if (parentChanged && !reasonText) {
