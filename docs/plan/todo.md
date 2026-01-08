@@ -1,5 +1,14 @@
 # TODO リスト（短期ドライブ用）
 
+## 次アクション（リリース準備/QA整理）
+- [x] #398 テスト結果インデックス整備
+  - [x] docs/test-results/README.md を追加
+  - [x] 既存のテスト結果ファイルを日付順に整理
+- [x] #399 QA手順: Push通知の前提条件を明文化
+  - [x] docs/requirements/qa-plan.md に VITE_ENABLE_SW / VITE_PUSH_PUBLIC_KEY の追記
+- [x] #400 リリース前チェックリストの叩き台
+  - [x] docs/plan/release-checklist.md を追加
+
 ## 次アクション（Phase 3 着手）
 - [x] #338 Phase 3 計画整理（ロードマップ/TODO更新）
   - [x] ロードマップをPhase 3着手に更新（Phase 2完了の反映）
