@@ -38,7 +38,7 @@ type RecurringTemplateBody = {
   isActive?: boolean;
 };
 
-function ensureProjectIdParam(req: any, reply: any) {
+async function ensureProjectIdParam(req: any, reply: any) {
   const projectId = req?.params?.projectId;
   if (!projectId) {
     return reply.status(400).send({
