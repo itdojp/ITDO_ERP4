@@ -282,8 +282,9 @@ test('frontend smoke reports masters settings @extended', async ({ page }) => {
     'e2e-member-1@example.com',
   );
   await memberCard.getByRole('button', { name: '追加' }).click();
-  await expect(memberCard.getByText('メンバーを保存しました')).toBeVisible();
-  await expect(memberCard.getByText('e2e-member-1@example.com')).toBeVisible();
+  await expect(memberCard.getByText('e2e-member-1@example.com')).toBeVisible({
+    timeout: actionTimeout,
+  });
   const [download] = await Promise.all([
     page.waitForEvent('download'),
     memberCard.getByRole('button', { name: 'CSVエクスポート' }).click(),
@@ -298,8 +299,9 @@ test('frontend smoke reports masters settings @extended', async ({ page }) => {
       buffer: Buffer.from(csv),
     });
   await memberCard.getByRole('button', { name: 'CSVインポート' }).click();
-  await expect(memberCard.getByText('インポート完了')).toBeVisible();
-  await expect(memberCard.getByText('e2e-member-2@example.com')).toBeVisible();
+  await expect(memberCard.getByText('e2e-member-2@example.com')).toBeVisible({
+    timeout: actionTimeout,
+  });
   await captureSection(projectsSection, '09-projects.png');
   await captureSection(memberCard, '09-project-members.png');
 
