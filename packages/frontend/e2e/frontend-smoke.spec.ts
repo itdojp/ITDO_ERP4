@@ -80,6 +80,14 @@ async function selectByLabelOrFirst(select: Locator, label: string) {
   await select.selectOption({ index: 1 });
 }
 
+async function selectFirstOption(select: Locator) {
+  await expect
+    .poll(() => select.locator('option').count(), { timeout: actionTimeout })
+    .toBeGreaterThan(1);
+  await select.selectOption({ index: 1 });
+  return;
+}
+
 const runId = () =>
   process.env.E2E_RUN_ID ||
   `${Date.now().toString().slice(-6)}-${Math.floor(Math.random() * 90 + 10)}`;
@@ -231,7 +239,79 @@ test('frontend smoke vendor approvals @extended', async ({ page }) => {
   await captureSection(approvalsSection, '07-approvals.png');
 });
 
+test('frontend smoke vendor docs create @extended', async ({ page }) => {
+  test.setTimeout(180_000);
+  const id = runId();
+  const digits = String(id).replace(/\D/g, '').slice(-4) || '1234';
+  const base = Number(digits);
+  const poAmount = base + 1000;
+  const quoteAmount = base + 2000;
+  const invoiceAmount = base + 3000;
+  await prepare(page);
+
+  const vendorSection = page
+    .locator('h2', { hasText: '仕入/発注' })
+    .locator('..');
+  await vendorSection.scrollIntoViewIfNeeded();
+
+  const poBlock = vendorSection
+    .locator('h3', { hasText: '発注書' })
+    .locator('..');
+  const poProjectSelect = poBlock.locator('select').first();
+  const poVendorSelect = poBlock.locator('select').nth(1);
+  await selectFirstOption(poProjectSelect);
+  await selectFirstOption(poVendorSelect);
+  await poBlock
+    .locator('input[type="number"]')
+    .first()
+    .fill(String(poAmount));
+  await poBlock.getByRole('button', { name: '登録' }).click();
+  await expect(poBlock.getByText('発注書を登録しました')).toBeVisible();
+  await expect(
+    poBlock.getByText(`${poAmount.toLocaleString()} JPY`),
+  ).toBeVisible();
+
+  const quoteBlock = vendorSection
+    .locator('h3', { hasText: '仕入見積' })
+    .locator('..');
+  const quoteProjectSelect = quoteBlock.locator('select').first();
+  const quoteVendorSelect = quoteBlock.locator('select').nth(1);
+  await selectFirstOption(quoteProjectSelect);
+  await selectFirstOption(quoteVendorSelect);
+  const quoteNo = `VQ-E2E-${id}`;
+  await quoteBlock.getByPlaceholder('見積番号').fill(quoteNo);
+  await quoteBlock
+    .locator('input[type="number"]')
+    .first()
+    .fill(String(quoteAmount));
+  await quoteBlock.getByRole('button', { name: '登録' }).click();
+  await expect(quoteBlock.getByText('仕入見積を登録しました')).toBeVisible();
+  await expect(quoteBlock.getByText(quoteNo)).toBeVisible();
+
+  const invoiceBlock = vendorSection
+    .locator('h3', { hasText: '仕入請求' })
+    .locator('..');
+  const invoiceProjectSelect = invoiceBlock.locator('select').first();
+  const invoiceVendorSelect = invoiceBlock.locator('select').nth(1);
+  await selectFirstOption(invoiceProjectSelect);
+  await selectFirstOption(invoiceVendorSelect);
+  const vendorInvoiceNo = `VI-E2E-${id}`;
+  await invoiceBlock.getByPlaceholder('請求番号').fill(vendorInvoiceNo);
+  await invoiceBlock
+    .locator('input[type="number"]')
+    .first()
+    .fill(String(invoiceAmount));
+  await invoiceBlock.getByRole('button', { name: '登録' }).click();
+  await expect(
+    invoiceBlock.getByText('仕入請求を登録しました'),
+  ).toBeVisible();
+  await expect(invoiceBlock.getByText(vendorInvoiceNo)).toBeVisible();
+
+  await captureSection(vendorSection, '06-vendor-docs-create.png');
+});
+
 test('frontend smoke reports masters settings @extended', async ({ page }) => {
+  test.setTimeout(180_000);
   const id = runId();
   await prepare(page);
 
@@ -363,16 +443,42 @@ test('frontend smoke reports masters settings @extended', async ({ page }) => {
     settingsSection.getByText('承認ルールを作成しました'),
   ).toBeVisible();
 
+  const templateBlock = settingsSection
+    .locator('strong', { hasText: 'テンプレ設定（見積/請求/発注）' })
+    .locator('..');
+  const templateSelect = templateBlock.getByLabel('テンプレ');
+  await expect(
+    templateSelect.locator('option', { hasText: 'Invoice Default' }),
+  ).toHaveCount(1);
+  await templateSelect.selectOption({ label: 'Invoice Default' });
+  const numberRule = `PYYYY-MM-NNNN-${id}`;
+  await templateBlock.getByLabel('番号ルール').fill(numberRule);
+  await templateBlock.getByRole('button', { name: '作成' }).click();
+  await expect(
+    settingsSection.getByText('テンプレ設定を作成しました'),
+  ).toBeVisible();
+  await expect(templateBlock.getByText(numberRule)).toBeVisible();
+
   const reportBlock = settingsSection
     .locator('strong', { hasText: 'レポート購読（配信設定）' })
     .locator('..');
-  await reportBlock.getByLabel('reportKey').fill(`project_effort_${id}`);
-  await reportBlock.getByLabel('params (JSON)').fill('{"limit":10}');
+  const reportName = `E2E Report ${id}`;
+  await reportBlock.getByLabel('名称').fill(reportName);
+  await reportBlock.getByLabel('reportKey').fill('project-effort');
+  await reportBlock
+    .getByLabel('params (JSON)')
+    .fill('{"projectId":"00000000-0000-0000-0000-000000000001"}');
   await reportBlock.getByLabel('recipients (JSON)').fill('{"roles":["mgmt"]}');
   await reportBlock.getByRole('button', { name: '作成' }).click();
   await expect(
     settingsSection.getByText('レポート購読を作成しました'),
   ).toBeVisible();
+  const reportItem = reportBlock.locator('.list .card', {
+    hasText: reportName,
+  });
+  await expect(reportItem).toBeVisible();
+  await reportItem.getByRole('button', { name: '実行' }).click();
+  await expect(settingsSection.getByText('レポートを実行しました')).toBeVisible();
 
   const integrationBlock = settingsSection
     .locator('strong', { hasText: '外部連携設定（HR/CRM）' })
@@ -382,6 +488,12 @@ test('frontend smoke reports masters settings @extended', async ({ page }) => {
   await expect(
     settingsSection.getByText('連携設定を作成しました'),
   ).toBeVisible();
+  const integrationItem = integrationBlock.locator('.list .card', {
+    hasText: `E2E Integration ${id}`,
+  });
+  await expect(integrationItem).toBeVisible();
+  await integrationItem.getByRole('button', { name: '実行' }).click();
+  await expect(settingsSection.getByText('連携を実行しました')).toBeVisible();
   await captureSection(settingsSection, '11-admin-settings.png');
 });
 
