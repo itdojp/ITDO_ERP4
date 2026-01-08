@@ -225,38 +225,41 @@ export async function registerProjectRoutes(app: FastifyInstance) {
         const allowed = await ensureProjectLeader(req, reply, projectId);
         if (!allowed) return;
       }
-      const keyword = (q || '').trim();
+      const keyword = (q || '').trim().slice(0, 64);
       if (keyword.length < 2) {
         return { items: [] };
       }
-      const members = await prisma.projectMember.findMany({
-        where: { projectId },
-        select: { userId: true },
-      });
-      const excludeUserIds = members.map((member) => member.userId);
-      const where: Prisma.UserAccountWhereInput = {
-        active: true,
-        OR: [
-          { userName: { contains: keyword, mode: 'insensitive' } },
-          { displayName: { contains: keyword, mode: 'insensitive' } },
-          { givenName: { contains: keyword, mode: 'insensitive' } },
-          { familyName: { contains: keyword, mode: 'insensitive' } },
-          { department: { contains: keyword, mode: 'insensitive' } },
-        ],
-      };
-      if (excludeUserIds.length > 0) {
-        where.AND = [{ userName: { notIn: excludeUserIds } }];
-      }
-      const users = await prisma.userAccount.findMany({
-        where,
-        select: {
-          userName: true,
-          displayName: true,
-          department: true,
-        },
-        orderBy: { userName: 'asc' },
-        take: 20,
-      });
+      const escapedKeyword = keyword.replace(/[%_\\]/g, '\\$&');
+      const likePattern = `%${escapedKeyword}%`;
+      const users = await prisma.$queryRaw<
+        Array<{
+          userName: string;
+          displayName: string | null;
+          department: string | null;
+        }>
+      >`
+        SELECT
+          ua."userName",
+          ua."displayName",
+          ua."department"
+        FROM "UserAccount" AS ua
+        WHERE ua."active" = true
+          AND (
+            ua."userName" ILIKE ${likePattern} ESCAPE '\\'
+            OR ua."displayName" ILIKE ${likePattern} ESCAPE '\\'
+            OR ua."givenName" ILIKE ${likePattern} ESCAPE '\\'
+            OR ua."familyName" ILIKE ${likePattern} ESCAPE '\\'
+            OR ua."department" ILIKE ${likePattern} ESCAPE '\\'
+          )
+          AND NOT EXISTS (
+            SELECT 1
+            FROM "ProjectMember" AS pm
+            WHERE pm."projectId" = ${projectId}
+              AND pm."userId" = ua."userName"
+          )
+        ORDER BY ua."userName" ASC
+        LIMIT 20
+      `;
       return {
         items: users.map((user) => ({
           userId: user.userName,
