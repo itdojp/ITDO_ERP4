@@ -977,10 +977,15 @@ export async function registerProjectRoutes(app: FastifyInstance) {
       if (typeof body.amount === 'number') {
         const draftInvoices = await prisma.invoice.findMany({
           where: { milestoneId, deletedAt: null, status: 'draft' },
-          include: {
+          select: {
+            id: true,
+            totalAmount: true,
             lines: { select: { id: true, quantity: true, unitPrice: true } },
           },
         });
+        const amountTolerance = 0.0001;
+        const updates: Prisma.PrismaPromise<unknown>[] = [];
+        const updatedInvoiceIds: string[] = [];
         for (const invoice of draftInvoices) {
           if (invoice.lines.length !== 1) {
             console.warn('[milestone] invoice sync skipped', {
@@ -1003,7 +1008,7 @@ export async function registerProjectRoutes(app: FastifyInstance) {
           }
           const lineTotal = quantity * toNumber(line.unitPrice);
           const invoiceTotal = toNumber(invoice.totalAmount);
-          if (Math.abs(lineTotal - invoiceTotal) > 0.0001) {
+          if (Math.abs(lineTotal - invoiceTotal) > amountTolerance) {
             console.warn('[milestone] invoice sync skipped', {
               invoiceId: invoice.id,
               reason: 'manual_adjustment',
@@ -1012,7 +1017,7 @@ export async function registerProjectRoutes(app: FastifyInstance) {
             });
             continue;
           }
-          await prisma.$transaction([
+          updates.push(
             prisma.billingLine.update({
               where: { id: line.id },
               data: { unitPrice: body.amount },
@@ -1021,7 +1026,19 @@ export async function registerProjectRoutes(app: FastifyInstance) {
               where: { id: invoice.id },
               data: { totalAmount: body.amount },
             }),
-          ]);
+          );
+          updatedInvoiceIds.push(invoice.id);
+        }
+        if (updates.length) {
+          try {
+            await prisma.$transaction(updates);
+          } catch (err) {
+            console.error('[milestone] invoice sync failed', {
+              milestoneId,
+              invoiceIds: updatedInvoiceIds,
+              error: err,
+            });
+          }
         }
       }
       return updated;
