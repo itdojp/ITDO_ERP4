@@ -160,6 +160,8 @@ model Project {
   startDate               DateTime?
   endDate                 DateTime?
   currency                String?
+  planHours               Decimal?
+  budgetCost              Decimal?
   recurringTemplate       RecurringProjectTemplate?
   recurringGenerationLogs RecurringGenerationLog[]
   members                 ProjectMember[]

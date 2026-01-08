@@ -7,6 +7,9 @@ type Project = {
   name: string;
   status: string;
   customerId?: string | null;
+  currency?: string | null;
+  planHours?: number | null;
+  budgetCost?: number | null;
 };
 
 type Customer = {
@@ -48,6 +51,8 @@ const emptyProject = {
   name: '',
   status: 'draft',
   customerId: '',
+  planHours: '',
+  budgetCost: '',
 };
 
 const emptyMemberForm: ProjectMemberForm = {
@@ -72,6 +77,15 @@ const errorDetail = (err: unknown) => {
     return ` (${err.message})`;
   }
   return '';
+};
+
+const parseNumberInput = (value: string) => {
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  const numeric = Number(trimmed);
+  if (!Number.isFinite(numeric)) return undefined;
+  if (numeric < 0) return undefined;
+  return numeric;
 };
 
 const toCsv = (headers: string[], rows: string[][]) => {
@@ -176,11 +190,15 @@ export const Projects: React.FC = () => {
 
   const projectPayload = useMemo(() => {
     const trimmedCustomerId = form.customerId.trim();
+    const planHours = parseNumberInput(form.planHours);
+    const budgetCost = parseNumberInput(form.budgetCost);
     return {
       code: form.code.trim(),
       name: form.name.trim(),
       status: form.status || 'draft',
       customerId: trimmedCustomerId.length > 0 ? trimmedCustomerId : null,
+      planHours,
+      budgetCost,
     };
   }, [form]);
 
@@ -241,6 +259,14 @@ export const Projects: React.FC = () => {
       name: item.name || '',
       status: item.status || 'draft',
       customerId: item.customerId || '',
+      planHours:
+        item.planHours === null || item.planHours === undefined
+          ? ''
+          : String(item.planHours),
+      budgetCost:
+        item.budgetCost === null || item.budgetCost === undefined
+          ? ''
+          : String(item.budgetCost),
     });
   };
 
@@ -581,6 +607,26 @@ export const Projects: React.FC = () => {
         </select>
       </div>
       <div className="row" style={{ marginTop: 8 }}>
+        <input
+          type="number"
+          inputMode="decimal"
+          placeholder="予定工数 (h)"
+          aria-label="予定工数"
+          value={form.planHours}
+          onChange={(e) => setForm({ ...form, planHours: e.target.value })}
+          min={0}
+        />
+        <input
+          type="number"
+          inputMode="decimal"
+          placeholder="予算コスト"
+          aria-label="予算コスト"
+          value={form.budgetCost}
+          onChange={(e) => setForm({ ...form, budgetCost: e.target.value })}
+          min={0}
+        />
+      </div>
+      <div className="row" style={{ marginTop: 8 }}>
         <button className="button" onClick={saveProject}>
           {editingProjectId ? '更新' : '追加'}
         </button>
@@ -602,6 +648,14 @@ export const Projects: React.FC = () => {
               <span className="badge">{item.status}</span> {item.code} /{' '}
               {item.name}
               {customer && ` / ${customer.code} ${customer.name}`}
+              {item.planHours !== null &&
+                item.planHours !== undefined &&
+                ` / 予定工数: ${item.planHours}h`}
+              {item.budgetCost !== null &&
+                item.budgetCost !== undefined &&
+                ` / 予算コスト: ${item.budgetCost}${
+                  item.currency ? ` ${item.currency}` : ''
+                }`}
               <button
                 className="button secondary"
                 style={{ marginLeft: 8 }}
