@@ -30,6 +30,12 @@ type ProjectMemberForm = {
   role: ProjectMemberRole;
 };
 
+type ProjectMemberCandidate = {
+  userId: string;
+  displayName?: string | null;
+  department?: string | null;
+};
+
 const emptyProject = {
   code: '',
   name: '',
@@ -61,6 +67,74 @@ const errorDetail = (err: unknown) => {
   return '';
 };
 
+const toCsv = (headers: string[], rows: string[][]) => {
+  const escapeValue = (value: string) => {
+    if (/[",\n\r]/.test(value)) {
+      return `"${value.replace(/"/g, '""')}"`;
+    }
+    return value;
+  };
+  const lines = [headers.map(escapeValue).join(',')];
+  for (const row of rows) {
+    lines.push(row.map((value) => escapeValue(value ?? '')).join(','));
+  }
+  return `${lines.join('\n')}\n`;
+};
+
+const parseCsvRows = (text: string) => {
+  // CSV parser supporting quoted fields compatible with toCsv.
+  const rows: string[][] = [];
+  let currentRow: string[] = [];
+  let currentField = '';
+  let inQuotes = false;
+
+  for (let i = 0; i < text.length; i += 1) {
+    const char = text[i];
+
+    if (inQuotes) {
+      if (char === '"') {
+        if (text[i + 1] === '"') {
+          currentField += '"';
+          i += 1;
+        } else {
+          inQuotes = false;
+        }
+      } else {
+        currentField += char;
+      }
+    } else if (char === '"') {
+      inQuotes = true;
+    } else if (char === ',') {
+      currentRow.push(currentField.trim());
+      currentField = '';
+    } else if (char === '\r') {
+      continue;
+    } else if (char === '\n') {
+      currentRow.push(currentField.trim());
+      if (currentRow.some((value) => value.length > 0)) {
+        rows.push(currentRow);
+      }
+      currentRow = [];
+      currentField = '';
+    } else {
+      currentField += char;
+    }
+  }
+
+  if (currentField.length > 0 || currentRow.length > 0) {
+    currentRow.push(currentField.trim());
+    if (currentRow.some((value) => value.length > 0)) {
+      rows.push(currentRow);
+    }
+  }
+
+  return rows;
+};
+
+const normalizeCsvHeader = (value: string) => {
+  return value.toLowerCase().replace(/[^a-z0-9]/g, '');
+};
+
 export const Projects: React.FC = () => {
   const [projects, setProjects] = useState<Project[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -76,6 +150,13 @@ export const Projects: React.FC = () => {
   const [memberRoleDrafts, setMemberRoleDrafts] = useState<
     Record<string, ProjectMemberRole>
   >({});
+  const [candidateQuery, setCandidateQuery] = useState('');
+  const [candidates, setCandidates] = useState<ProjectMemberCandidate[]>([]);
+  const [candidateMessage, setCandidateMessage] = useState('');
+  const [candidateLoading, setCandidateLoading] = useState(false);
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [importing, setImporting] = useState(false);
+  const importInputId = 'project-members-csv-input';
 
   const auth = getAuthState();
   const isPrivileged = (auth?.roles ?? []).some((role) =>
@@ -161,26 +242,31 @@ export const Projects: React.FC = () => {
     setEditingProjectId(null);
   };
 
-  const loadMembers = useCallback(async (projectId: string) => {
-    setMemberLoading(true);
-    try {
-      const res = await api<{ items: ProjectMember[] }>(
-        `/projects/${projectId}/members`,
-      );
-      const items = res.items || [];
-      setMembers(items);
-      setMemberRoleDrafts(
-        Object.fromEntries(items.map((item) => [item.userId, item.role])),
-      );
-      setMemberMessage('');
-    } catch (err) {
-      console.error('Failed to load project members.', err);
-      setMembers([]);
-      setMemberMessage(`メンバー一覧の取得に失敗しました${errorDetail(err)}`);
-    } finally {
-      setMemberLoading(false);
-    }
-  }, []);
+  const loadMembers = useCallback(
+    async (projectId: string): Promise<ProjectMember[] | null> => {
+      setMemberLoading(true);
+      try {
+        const res = await api<{ items: ProjectMember[] }>(
+          `/projects/${projectId}/members`,
+        );
+        const items = res.items || [];
+        setMembers(items);
+        setMemberRoleDrafts(
+          Object.fromEntries(items.map((item) => [item.userId, item.role])),
+        );
+        setMemberMessage('');
+        return items;
+      } catch (err) {
+        console.error('Failed to load project members.', err);
+        setMembers([]);
+        setMemberMessage(`メンバー一覧の取得に失敗しました${errorDetail(err)}`);
+        return null;
+      } finally {
+        setMemberLoading(false);
+      }
+    },
+    [],
+  );
 
   const toggleMembers = useCallback(
     (projectId: string) => {
@@ -190,12 +276,20 @@ export const Projects: React.FC = () => {
         setMemberMessage('');
         setMemberForm(emptyMemberForm);
         setMemberRoleDrafts({});
+        setCandidateQuery('');
+        setCandidates([]);
+        setCandidateMessage('');
+        setImportFile(null);
         return;
       }
       setMemberProjectId(projectId);
       setMemberForm(emptyMemberForm);
       setMemberMessage('');
       setMemberRoleDrafts({});
+      setCandidateQuery('');
+      setCandidates([]);
+      setCandidateMessage('');
+      setImportFile(null);
       loadMembers(projectId);
     },
     [loadMembers, memberProjectId],
@@ -235,10 +329,154 @@ export const Projects: React.FC = () => {
       });
       setMemberMessage('メンバーを保存しました');
       setMemberForm(emptyMemberForm);
+      setCandidateQuery('');
+      setCandidates([]);
+      setCandidateMessage('');
       loadMembers(memberProjectId);
     } catch (err) {
       console.error('Failed to save project member.', err);
       setMemberMessage(`メンバーの保存に失敗しました${errorDetail(err)}`);
+    }
+  };
+
+  const searchCandidates = async () => {
+    if (!memberProjectId) return;
+    const query = candidateQuery.trim();
+    if (query.length < 2) {
+      setCandidateMessage('2文字以上で検索してください');
+      setCandidates([]);
+      return;
+    }
+    setCandidateLoading(true);
+    try {
+      const res = await api<{ items: ProjectMemberCandidate[] }>(
+        `/projects/${memberProjectId}/member-candidates?q=${encodeURIComponent(
+          query,
+        )}`,
+      );
+      const items = res.items || [];
+      setCandidates(items);
+      setCandidateMessage(items.length ? '' : '候補がありません');
+    } catch (err) {
+      console.error('Failed to search member candidates.', err);
+      setCandidateMessage(`候補の取得に失敗しました${errorDetail(err)}`);
+      setCandidates([]);
+    } finally {
+      setCandidateLoading(false);
+    }
+  };
+
+  const clearCandidates = () => {
+    setCandidateQuery('');
+    setCandidates([]);
+    setCandidateMessage('');
+  };
+
+  const selectCandidate = (candidate: ProjectMemberCandidate) => {
+    setMemberForm((prev) => ({ ...prev, userId: candidate.userId }));
+  };
+
+  const exportMembersCsv = async () => {
+    if (!memberProjectId) return;
+    let items = members;
+    if (!items.length) {
+      const fetched = await loadMembers(memberProjectId);
+      if (!fetched) return;
+      items = fetched;
+    }
+    if (!items.length) {
+      setMemberMessage('エクスポート対象のメンバーがありません');
+      return;
+    }
+    const headers = ['userId', 'role'];
+    const rows = items.map((member) => [member.userId, member.role]);
+    const csv = toCsv(headers, rows);
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `project-members-${memberProjectId}.csv`;
+    link.click();
+    window.URL.revokeObjectURL(url);
+  };
+
+  const importMembersCsv = async () => {
+    if (!memberProjectId || !importFile) return;
+    setImporting(true);
+    try {
+      const text = await importFile.text();
+      const rows = parseCsvRows(text);
+      if (rows.length === 0) {
+        setMemberMessage('CSVにデータがありません');
+        return;
+      }
+      const header = rows[0].map((value) => normalizeCsvHeader(value));
+      const hasHeader = header.includes('userid');
+      const dataRows = hasHeader ? rows.slice(1) : rows;
+      if (dataRows.length === 0) {
+        setMemberMessage('CSVにデータがありません');
+        return;
+      }
+      const currentMembers = await loadMembers(memberProjectId);
+      if (!currentMembers) {
+        return;
+      }
+      const existingMap = new Map(
+        currentMembers.map((member) => [member.userId, member]),
+      );
+      let added = 0;
+      let skipped = 0;
+      let failed = 0;
+      const failedRows: string[] = [];
+      for (let rowIndex = 0; rowIndex < dataRows.length; rowIndex += 1) {
+        const row = dataRows[rowIndex];
+        const displayIndex = rowIndex + (hasHeader ? 2 : 1);
+        const userId = (row[0] || '').trim();
+        if (!userId) {
+          failed += 1;
+          if (failedRows.length < 5) {
+            failedRows.push(`${displayIndex}行目: (空欄)`);
+          }
+          continue;
+        }
+        const rawRole = (row[1] || '').toLowerCase();
+        const requestedRole =
+          rawRole === 'leader' || rawRole === 'member' ? rawRole : 'member';
+        const role = isPrivileged ? requestedRole : 'member';
+        const existing = existingMap.get(userId);
+        if (existing) {
+          skipped += 1;
+          continue;
+        }
+        try {
+          await api(`/projects/${memberProjectId}/members`, {
+            method: 'POST',
+            body: JSON.stringify({ userId, role }),
+          });
+          added += 1;
+          existingMap.set(userId, {
+            id: '',
+            userId,
+            role,
+          });
+        } catch (err) {
+          console.error('Failed to import project member.', err);
+          failed += 1;
+          if (failedRows.length < 5) {
+            failedRows.push(`${displayIndex}行目: ${userId}`);
+          }
+        }
+      }
+      const failureDetail = failedRows.length
+        ? ` (例: ${failedRows.join(', ')})`
+        : '';
+      setMemberMessage(
+        `インポート完了: 追加 ${added} 件 / スキップ ${skipped} 件 / 失敗 ${failed} 件${failureDetail}`,
+      );
+      setImportFile(null);
+      await loadMembers(memberProjectId);
+    } finally {
+      setImporting(false);
     }
   };
 
@@ -414,6 +652,85 @@ export const Projects: React.FC = () => {
                       再読込
                     </button>
                   </div>
+                  <div className="row" style={{ marginTop: 8 }}>
+                    <input
+                      type="text"
+                      placeholder="候補検索 (2文字以上)"
+                      aria-label="メンバー候補検索"
+                      value={candidateQuery}
+                      onChange={(e) => setCandidateQuery(e.target.value)}
+                    />
+                    <button
+                      className="button secondary"
+                      onClick={searchCandidates}
+                      disabled={candidateLoading}
+                    >
+                      検索
+                    </button>
+                    <button
+                      className="button secondary"
+                      onClick={clearCandidates}
+                    >
+                      クリア
+                    </button>
+                  </div>
+                  {candidateMessage && <p>{candidateMessage}</p>}
+                  {candidateLoading && <p>候補検索中...</p>}
+                  {candidates.length > 0 && (
+                    <ul className="list">
+                      {candidates.map((candidate) => (
+                        <li key={candidate.userId}>
+                          {candidate.displayName
+                            ? `${candidate.displayName} / `
+                            : ''}
+                          {candidate.userId}
+                          {candidate.department && ` (${candidate.department})`}
+                          <button
+                            className="button secondary"
+                            style={{ marginLeft: 8 }}
+                            onClick={() => selectCandidate(candidate)}
+                          >
+                            選択
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  <div className="row" style={{ marginTop: 8 }}>
+                    <button
+                      className="button secondary"
+                      onClick={exportMembersCsv}
+                    >
+                      CSVエクスポート
+                    </button>
+                    <label className="button secondary" htmlFor={importInputId}>
+                      CSVファイル選択
+                    </label>
+                    <input
+                      id={importInputId}
+                      type="file"
+                      accept=".csv,text/csv"
+                      aria-label="メンバーCSVインポート"
+                      style={{ display: 'none' }}
+                      onChange={(e) =>
+                        setImportFile(e.target.files?.[0] || null)
+                      }
+                    />
+                    <button
+                      className="button"
+                      onClick={importMembersCsv}
+                      disabled={!importFile || importing}
+                    >
+                      CSVインポート
+                    </button>
+                  </div>
+                  {importFile && (
+                    <p style={{ marginTop: 4 }}>選択中: {importFile.name}</p>
+                  )}
+                  <p style={{ marginTop: 8 }}>
+                    CSVは userId,role の2列（roleは
+                    member/leader）で作成してください。
+                  </p>
                   {memberMessage && <p>{memberMessage}</p>}
                   {memberLoading ? (
                     <p>読み込み中...</p>

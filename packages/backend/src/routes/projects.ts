@@ -209,6 +209,64 @@ export async function registerProjectRoutes(app: FastifyInstance) {
     },
   );
 
+  app.get(
+    '/projects/:projectId/member-candidates',
+    {
+      preHandler: [
+        requireRole(['admin', 'mgmt', 'user']),
+        ensureProjectIdParam,
+      ],
+    },
+    async (req, reply) => {
+      const { projectId } = req.params as { projectId: string };
+      const { q } = req.query as { q?: string };
+      const roles = req.user?.roles || [];
+      if (!isPrivilegedRole(roles)) {
+        const allowed = await ensureProjectLeader(req, reply, projectId);
+        if (!allowed) return;
+      }
+      const keyword = (q || '').trim();
+      if (keyword.length < 2) {
+        return { items: [] };
+      }
+      const members = await prisma.projectMember.findMany({
+        where: { projectId },
+        select: { userId: true },
+      });
+      const excludeUserIds = members.map((member) => member.userId);
+      const where: Prisma.UserAccountWhereInput = {
+        active: true,
+        OR: [
+          { userName: { contains: keyword, mode: 'insensitive' } },
+          { displayName: { contains: keyword, mode: 'insensitive' } },
+          { givenName: { contains: keyword, mode: 'insensitive' } },
+          { familyName: { contains: keyword, mode: 'insensitive' } },
+          { department: { contains: keyword, mode: 'insensitive' } },
+        ],
+      };
+      if (excludeUserIds.length > 0) {
+        where.AND = [{ userName: { notIn: excludeUserIds } }];
+      }
+      const users = await prisma.userAccount.findMany({
+        where,
+        select: {
+          userName: true,
+          displayName: true,
+          department: true,
+        },
+        orderBy: { userName: 'asc' },
+        take: 20,
+      });
+      return {
+        items: users.map((user) => ({
+          userId: user.userName,
+          displayName: user.displayName,
+          department: user.department,
+        })),
+      };
+    },
+  );
+
   app.post(
     '/projects/:projectId/members',
     {
