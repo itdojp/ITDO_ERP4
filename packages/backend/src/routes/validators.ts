@@ -212,6 +212,7 @@ export const reassignSchema = {
     toProjectId: Type.String(),
     reasonCode: reassignReasonCodeSchema,
     reasonText: Type.String({ minLength: 1 }),
+    moveTimeEntries: Type.Optional(Type.Boolean()),
   }),
 };
 

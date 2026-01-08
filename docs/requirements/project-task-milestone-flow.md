@@ -55,6 +55,7 @@
 - 付け替え（Project間移動）:
   - `docs/requirements/reassignment-policy.md` に従う。
   - time_entries/expenses などの紐付けがある場合は一括移動が前提。件数サマリを提示し、同意が無い場合は移動不可。
+  - `POST /projects/:id/tasks/:taskId/reassign` に `moveTimeEntries=true` を指定した場合、承認/締めチェック済みの time_entries を一括で projectId 更新する。
 - 削除:
   - 子タスクがある場合は削除不可（先に移動/削除を完了させる）。
   - time_entries がある場合は削除不可。廃止する場合は `docs/requirements/reassignment-policy.md` に従い別タスクへ付け替える。
