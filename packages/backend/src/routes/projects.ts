@@ -18,6 +18,7 @@ import { prisma } from '../services/db.js';
 import { auditContextFromRequest, logAudit } from '../services/audit.js';
 import { logReassignment } from '../services/reassignmentLog.js';
 import { parseDueDateRule } from '../services/dueDateRule.js';
+import { toNumber } from '../services/utils.js';
 
 type RecurringFrequency = 'monthly' | 'quarterly' | 'semiannual' | 'annual';
 type BillUpon = 'date' | 'acceptance' | 'time';
@@ -973,6 +974,56 @@ export async function registerProjectRoutes(app: FastifyInstance) {
           taxRate: body.taxRate,
         },
       });
+      if (typeof body.amount === 'number') {
+        const draftInvoices = await prisma.invoice.findMany({
+          where: { milestoneId, deletedAt: null, status: 'draft' },
+          include: {
+            lines: { select: { id: true, quantity: true, unitPrice: true } },
+          },
+        });
+        for (const invoice of draftInvoices) {
+          if (invoice.lines.length !== 1) {
+            console.warn('[milestone] invoice sync skipped', {
+              invoiceId: invoice.id,
+              reason: 'line_count',
+              lineCount: invoice.lines.length,
+            });
+            continue;
+          }
+          const line = invoice.lines[0];
+          if (!line) continue;
+          const quantity = toNumber(line.quantity);
+          if (quantity !== 1) {
+            console.warn('[milestone] invoice sync skipped', {
+              invoiceId: invoice.id,
+              reason: 'quantity',
+              quantity,
+            });
+            continue;
+          }
+          const lineTotal = quantity * toNumber(line.unitPrice);
+          const invoiceTotal = toNumber(invoice.totalAmount);
+          if (Math.abs(lineTotal - invoiceTotal) > 0.0001) {
+            console.warn('[milestone] invoice sync skipped', {
+              invoiceId: invoice.id,
+              reason: 'manual_adjustment',
+              lineTotal,
+              invoiceTotal,
+            });
+            continue;
+          }
+          await prisma.$transaction([
+            prisma.billingLine.update({
+              where: { id: line.id },
+              data: { unitPrice: body.amount },
+            }),
+            prisma.invoice.update({
+              where: { id: invoice.id },
+              data: { totalAmount: body.amount },
+            }),
+          ]);
+        }
+      }
       return updated;
     },
   );
