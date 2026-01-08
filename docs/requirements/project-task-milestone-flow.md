@@ -42,7 +42,7 @@
 - 作成: name, customerId, status=draft を必須。parentProjectId は任意。
 - 変更:
   - name/status/customer/owner は admin/mgmt/PM が変更可。
-  - parentProjectId 変更は理由必須。承認中の伝票（見積/請求/発注）がある場合は変更不可（承認解除/取消後に実施）。
+  - parentProjectId 変更は admin/mgmt のみ。理由必須 + 監査ログ必須。承認中の伝票（見積/請求/発注）がある場合は変更不可（承認解除/取消後に実施）。
 - 削除:
   - 子案件/タスク/マイルストーンが無く、伝票（見積/請求/発注）に紐づいていない場合のみ論理削除可。
 
@@ -54,7 +54,8 @@
   - 子タスクがある場合は一括移動のみ。
 - 付け替え（Project間移動）:
   - `docs/requirements/reassignment-policy.md` に従う。
-  - time_entries/expenses などの紐付けがある場合は一括移動か移動不可。
+  - time_entries/expenses などの紐付けがある場合は一括移動が前提。件数サマリを提示し、同意が無い場合は移動不可。
+  - `POST /projects/:id/tasks/:taskId/reassign` に `moveTimeEntries=true` を指定した場合、承認/締めチェック済みの time_entries を一括で projectId 更新する。
 - 削除:
   - 子タスクがある場合は削除不可（先に移動/削除を完了させる）。
   - time_entries がある場合は削除不可。廃止する場合は `docs/requirements/reassignment-policy.md` に従い別タスクへ付け替える。
@@ -63,7 +64,7 @@
 ### ProjectMilestone（マイルストーン）
 - 作成: projectId, name, amount, due_date を必須。
 - 変更:
-  - name/amount/due_date は draft or 未請求状態のみ変更可。
+  - name/amount/due_date は invoice が draft の場合のみ変更可（変更時は明細を再計算）。
   - invoice が pending_qa 以降の場合は変更不可（請求取消後に修正）。
   - amount 変更時は milestoneId 付き draft invoice の単一行のみ unitPrice/totalAmount を更新（複数行/手動調整はスキップ）。
 - 付け替え:
@@ -84,5 +85,4 @@
 - `POST /projects/:id/tasks/:taskId/reassign`（理由必須）
 
 ## 未決定/確認事項
-- Project の parent 変更を許可する際の承認/ログの粒度
-- Task 移動時に time_entries を一括移動する操作のUI設計
+- なし（MVP方針は上記にて確定）
