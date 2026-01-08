@@ -10,8 +10,11 @@
 
 ## projects
 - GET `/projects/:projectId/members`
+- GET `/projects/:projectId/member-candidates?q=<keyword>`
 - POST `/projects/:projectId/members` { userId, role? }
+- POST `/projects/:projectId/members/bulk` { items: [{ userId, role? }] }
 - DELETE `/projects/:projectId/members/:userId`
+  - CSVインポートは `members/bulk` を使用
 
 ## reports
 - GET `/reports/delivery-due?from=YYYY-MM-DD&to=YYYY-MM-DD&projectId?&format=csv|pdf?&layout=default?`
