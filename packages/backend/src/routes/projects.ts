@@ -245,11 +245,11 @@ export async function registerProjectRoutes(app: FastifyInstance) {
         FROM "UserAccount" AS ua
         WHERE ua."active" = true
           AND (
-            ua."userName" ILIKE ${likePattern}
-            OR ua."displayName" ILIKE ${likePattern}
-            OR ua."givenName" ILIKE ${likePattern}
-            OR ua."familyName" ILIKE ${likePattern}
-            OR ua."department" ILIKE ${likePattern}
+            ua."userName" ILIKE ${likePattern} ESCAPE '\\'
+            OR ua."displayName" ILIKE ${likePattern} ESCAPE '\\'
+            OR ua."givenName" ILIKE ${likePattern} ESCAPE '\\'
+            OR ua."familyName" ILIKE ${likePattern} ESCAPE '\\'
+            OR ua."department" ILIKE ${likePattern} ESCAPE '\\'
           )
           AND NOT EXISTS (
             SELECT 1
