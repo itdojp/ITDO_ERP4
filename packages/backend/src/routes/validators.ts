@@ -49,7 +49,12 @@ export const projectSchema = {
 };
 
 export const projectPatchSchema = {
-  body: Type.Partial(projectSchema.body),
+  body: Type.Intersect([
+    Type.Partial(projectSchema.body),
+    Type.Object({
+      reasonText: Type.Optional(Type.String({ minLength: 1 })),
+    }),
+  ]),
 };
 
 const projectMemberRoleSchema = Type.Union([
