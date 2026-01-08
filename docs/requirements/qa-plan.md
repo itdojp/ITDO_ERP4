@@ -12,6 +12,9 @@
 - 承認フロー: 見積/請求/発注/経費/休暇の submit → /approval-instances で作成確認 → /approval-instances/:id/act で承認/却下 → 対象ステータス更新
 - アラートジョブ: POST /jobs/alerts/run → GET /alerts で履歴確認
 - 承認期限エスカレーション: POST /jobs/approval-escalations/run → GET /alerts で履歴確認
+- 案件メンバー: GET /projects/:id/members → POST /projects/:id/members → DELETE /projects/:id/members/:userId
+- 案件メンバー候補: GET /projects/:id/member-candidates?q= で候補が取得できる
+- 案件メンバー一括: POST /projects/:id/members/bulk で追加/スキップ/失敗が返る
 - レポート購読: POST /report-subscriptions → POST /report-subscriptions/:id/run → GET /report-deliveries で配信履歴確認
 - レポート再送: POST /jobs/report-deliveries/retry で failed の再送が更新されることを確認
 - 失敗通知: REPORT_DELIVERY_FAILURE_EMAILS を設定し、無効宛先や欠損添付で failed_permanent を発生させ通知が走ることを確認（stub の場合はログ出力）
@@ -71,6 +74,7 @@ UUID生成関数は環境に合わせて置き換え（`gen_random_uuid()`/`uuid
 - 仕入/発注: 発注書/仕入見積/仕入請求を登録 → 一覧に反映
 - 承認一覧: フィルタ表示と承認/却下の動作
 - 案件: 顧客を選択して保存 → 一覧に顧客名が表示される
+- 案件: メンバー管理（一覧/追加/削除/権限更新/候補検索/CSV）が動作する
 - ヘルプモーダル: 日報画面から開閉でき、相談先リストと緊急案内が表示される
 - オフライン送信: 日報/工数/経費の送信をオフライン時に実行 → キューに保存 → オンライン復帰で自動送信
 - Push通知: 配信条件チェック + 同意 → 購読登録/解除ができる
