@@ -6,6 +6,7 @@
 
 ## 一覧
 ### 2026-01-08
+- バックアップ/リストア: docs/test-results/2026-01-08-backup-restore.md
 - バックエンドスモーク: docs/test-results/2026-01-08-backend-smoke.md
 - フロントE2E(フルスコープ): docs/test-results/2026-01-08-frontend-e2e.md
 - 証跡: docs/test-results/2026-01-08-frontend-e2e/
