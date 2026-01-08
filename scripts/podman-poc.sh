@@ -184,19 +184,24 @@ restore() {
     echo "backup file not found. Set BACKUP_FILE or create a backup first." >&2
     exit 1
   fi
+  if [[ "${SKIP_GLOBALS:-}" != "1" ]]; then
+    if [[ -z "$globals_file" || ! -f "$globals_file" ]]; then
+      echo "globals file not found. Set BACKUP_GLOBALS_FILE or SKIP_GLOBALS=1." >&2
+      exit 1
+    fi
+  fi
   if [[ "${RESTORE_CLEAN:-}" == "1" ]]; then
     podman exec -e PGPASSWORD="$DB_PASSWORD" "$CONTAINER_NAME" \
       psql -U "$DB_USER" -d "$DB_NAME" -v ON_ERROR_STOP=1 \
-      -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"
+      -c "DROP SCHEMA public CASCADE" \
+      -c "CREATE SCHEMA public"
+    echo "public schema dropped and recreated (RESTORE_CLEAN=1)"
   fi
   if [[ "${SKIP_GLOBALS:-}" == "1" ]]; then
     echo "skipping globals restore (SKIP_GLOBALS=1)"
-  elif [[ -n "$globals_file" && -f "$globals_file" ]]; then
+  else
     cat "$globals_file" | podman exec -e PGPASSWORD="$DB_PASSWORD" -i "$CONTAINER_NAME" \
       psql -U "$DB_USER" -v ON_ERROR_STOP=1
-  else
-    echo "globals file not found. Set BACKUP_GLOBALS_FILE or SKIP_GLOBALS=1." >&2
-    exit 1
   fi
   cat "$backup_file" | podman exec -e PGPASSWORD="$DB_PASSWORD" -i "$CONTAINER_NAME" \
     psql -U "$DB_USER" -d "$DB_NAME" -v ON_ERROR_STOP=1
