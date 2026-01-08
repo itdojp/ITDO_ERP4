@@ -66,6 +66,7 @@
 - 変更:
   - name/amount/due_date は invoice が draft の場合のみ変更可（変更時は明細を再計算）。
   - invoice が pending_qa 以降の場合は変更不可（請求取消後に修正）。
+  - amount 変更時は milestoneId 付き draft invoice の単一行のみ unitPrice/totalAmount を更新（複数行/手動調整はスキップ）。
 - 付け替え:
   - projectId 変更は原則不可（必要なら新規作成 + 旧マイルストーンは論理削除）。
   - 旧マイルストーンは deletedReason=`moved` とし、新マイルストーンIDを監査ログまたは詳細メモに記録する。

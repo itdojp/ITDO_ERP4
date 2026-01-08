@@ -18,6 +18,7 @@ import { prisma } from '../services/db.js';
 import { auditContextFromRequest, logAudit } from '../services/audit.js';
 import { logReassignment } from '../services/reassignmentLog.js';
 import { parseDueDateRule } from '../services/dueDateRule.js';
+import { toNumber } from '../services/utils.js';
 import { findPeriodLock, toPeriodKey } from '../services/periodLock.js';
 import { DocStatusValue, TimeStatusValue } from '../types.js';
 
@@ -1187,6 +1188,73 @@ export async function registerProjectRoutes(app: FastifyInstance) {
           taxRate: body.taxRate,
         },
       });
+      if (typeof body.amount === 'number') {
+        const draftInvoices = await prisma.invoice.findMany({
+          where: { milestoneId, deletedAt: null, status: 'draft' },
+          select: {
+            id: true,
+            totalAmount: true,
+            lines: { select: { id: true, quantity: true, unitPrice: true } },
+          },
+        });
+        const amountTolerance = 0.0001;
+        const updates: Prisma.PrismaPromise<unknown>[] = [];
+        const updatedInvoiceIds: string[] = [];
+        for (const invoice of draftInvoices) {
+          if (invoice.lines.length !== 1) {
+            console.warn('[milestone] invoice sync skipped', {
+              invoiceId: invoice.id,
+              reason: 'line_count',
+              lineCount: invoice.lines.length,
+            });
+            continue;
+          }
+          const line = invoice.lines[0];
+          if (!line) continue;
+          const quantity = toNumber(line.quantity);
+          if (quantity !== 1) {
+            console.warn('[milestone] invoice sync skipped', {
+              invoiceId: invoice.id,
+              reason: 'quantity',
+              quantity,
+            });
+            continue;
+          }
+          const lineTotal = quantity * toNumber(line.unitPrice);
+          const invoiceTotal = toNumber(invoice.totalAmount);
+          if (Math.abs(lineTotal - invoiceTotal) > amountTolerance) {
+            console.warn('[milestone] invoice sync skipped', {
+              invoiceId: invoice.id,
+              reason: 'manual_adjustment',
+              lineTotal,
+              invoiceTotal,
+            });
+            continue;
+          }
+          updates.push(
+            prisma.billingLine.update({
+              where: { id: line.id },
+              data: { unitPrice: body.amount },
+            }),
+            prisma.invoice.update({
+              where: { id: invoice.id },
+              data: { totalAmount: body.amount },
+            }),
+          );
+          updatedInvoiceIds.push(invoice.id);
+        }
+        if (updates.length) {
+          try {
+            await prisma.$transaction(updates);
+          } catch (err) {
+            console.error('[milestone] invoice sync failed', {
+              milestoneId,
+              invoiceIds: updatedInvoiceIds,
+              error: err,
+            });
+          }
+        }
+      }
       return updated;
     },
   );
