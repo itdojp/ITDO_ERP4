@@ -8,6 +8,7 @@ import {
   type Prisma,
 } from '@prisma/client';
 type MetricResult = { metric: number; targetRef: string };
+type ProjectBudget = { budget: number; currency: string | null };
 function startOfDay(date: Date) {
   const result = new Date(date);
   result.setUTCHours(0, 0, 0, 0);
@@ -25,30 +26,23 @@ function resolvePeriodRange(period: string, now = new Date()) {
   return { start, end };
 }
 
-async function resolveProjectBudget(projectId: string): Promise<number> {
-  const estimate = await prisma.estimate.findFirst({
-    where: {
-      projectId,
-      deletedAt: null,
-      status: { notIn: [DocStatus.cancelled, DocStatus.rejected] },
-    },
-    orderBy: { createdAt: 'desc' },
-    select: { totalAmount: true },
+async function resolveProjectBudget(
+  projectId: string,
+): Promise<ProjectBudget | null> {
+  const project = await prisma.project.findUnique({
+    where: { id: projectId },
+    select: { budgetCost: true, currency: true },
   });
-  const estimateBudgetRaw = estimate?.totalAmount;
-  if (estimateBudgetRaw != null) {
-    const estimateValue = toNumber(estimateBudgetRaw);
-    if (estimateValue > 0) return estimateValue;
+  if (!project?.budgetCost) {
+    console.warn('[metrics] budgetCost missing for project', projectId);
+    return null;
   }
-  const milestoneSum = await prisma.projectMilestone.aggregate({
-    where: { projectId, deletedAt: null },
-    _sum: { amount: true },
-  });
-  if (milestoneSum._sum.amount == null) {
-    console.warn('[metrics] budget missing for project', projectId);
-    return 0;
+  const budgetValue = toNumber(project.budgetCost);
+  if (budgetValue <= 0) {
+    console.warn('[metrics] budgetCost invalid for project', projectId);
+    return null;
   }
-  return toNumber(milestoneSum._sum.amount);
+  return { budget: budgetValue, currency: project.currency ?? null };
 }
 
 async function sumTimeCost(projectId: string): Promise<number> {
@@ -94,25 +88,39 @@ async function sumTimeCost(projectId: string): Promise<number> {
   return total;
 }
 
-async function sumExpenseCost(projectId: string): Promise<number> {
+async function sumExpenseCost(
+  projectId: string,
+  currency?: string | null,
+): Promise<number> {
+  const where: Prisma.ExpenseWhereInput = {
+    projectId,
+    deletedAt: null,
+    status: { notIn: [DocStatus.cancelled, DocStatus.rejected] },
+  };
+  if (currency) {
+    where.currency = currency;
+  }
   const sum = await prisma.expense.aggregate({
-    where: {
-      projectId,
-      deletedAt: null,
-      status: { notIn: [DocStatus.cancelled, DocStatus.rejected] },
-    },
+    where,
     _sum: { amount: true },
   });
   return toNumber(sum._sum.amount);
 }
 
-async function sumVendorInvoiceCost(projectId: string): Promise<number> {
+async function sumVendorInvoiceCost(
+  projectId: string,
+  currency?: string | null,
+): Promise<number> {
+  const where: Prisma.VendorInvoiceWhereInput = {
+    projectId,
+    deletedAt: null,
+    status: { notIn: [DocStatus.cancelled, DocStatus.rejected] },
+  };
+  if (currency) {
+    where.currency = currency;
+  }
   const sum = await prisma.vendorInvoice.aggregate({
-    where: {
-      projectId,
-      deletedAt: null,
-      status: { notIn: [DocStatus.cancelled, DocStatus.rejected] },
-    },
+    where,
     _sum: { totalAmount: true },
   });
   return toNumber(sum._sum.totalAmount);
@@ -132,13 +140,48 @@ export async function computeBudgetOverrun(
   if (!projectIds.length) return null;
   let best: MetricResult | null = null;
   for (const projectId of projectIds) {
-    const budget = await resolveProjectBudget(projectId);
-    if (!budget) continue;
+    const budgetInfo = await resolveProjectBudget(projectId);
+    if (!budgetInfo) continue;
+    const { budget, currency } = budgetInfo;
     const [expenseCost, vendorCost, timeCost] = await Promise.all([
-      sumExpenseCost(projectId),
-      sumVendorInvoiceCost(projectId),
+      sumExpenseCost(projectId, currency),
+      sumVendorInvoiceCost(projectId, currency),
       sumTimeCost(projectId),
     ]);
+    if (currency) {
+      const [expenseMismatch, vendorMismatch] = await Promise.all([
+        prisma.expense.findFirst({
+          where: {
+            projectId,
+            currency: { not: currency },
+            deletedAt: null,
+            status: { notIn: [DocStatus.cancelled, DocStatus.rejected] },
+          },
+          select: { id: true },
+        }),
+        prisma.vendorInvoice.findFirst({
+          where: {
+            projectId,
+            currency: { not: currency },
+            deletedAt: null,
+            status: { notIn: [DocStatus.cancelled, DocStatus.rejected] },
+          },
+          select: { id: true },
+        }),
+      ]);
+      if (expenseMismatch) {
+        console.warn('[metrics] expense currency mismatch', {
+          projectId,
+          currency,
+        });
+      }
+      if (vendorMismatch) {
+        console.warn('[metrics] vendor invoice currency mismatch', {
+          projectId,
+          currency,
+        });
+      }
+    }
     const actual = expenseCost + vendorCost + timeCost;
     // metric is percent over budget (0 when <= 100% utilization)
     const overPercent = Math.max(0, (actual / budget - 1) * 100);

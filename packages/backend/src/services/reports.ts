@@ -132,16 +132,20 @@ async function resolveRevenueBudget(
   projectId: string,
   from?: Date,
   to?: Date,
+  currency?: string | null,
 ): Promise<number> {
   const estimateWhere: any = {
     projectId,
     deletedAt: null,
-    status: { notIn: ['cancelled', 'rejected'] },
+    status: 'approved',
   };
   if (from || to) {
     estimateWhere.createdAt = {};
     if (from) estimateWhere.createdAt.gte = from;
     if (to) estimateWhere.createdAt.lte = to;
+  }
+  if (currency) {
+    estimateWhere.currency = currency;
   }
   const estimate = await prisma.estimate.findFirst({
     where: estimateWhere,
@@ -172,6 +176,11 @@ export async function reportProjectEffort(
   to?: Date,
 ) {
   const where: any = { projectId };
+  const project = await prisma.project.findUnique({
+    where: { id: projectId },
+    select: { currency: true },
+  });
+  const currency = project?.currency ?? null;
   if (from || to) {
     where.workDate = {};
     if (from) where.workDate.gte = from;
@@ -181,9 +190,33 @@ export async function reportProjectEffort(
     _sum: { minutes: true },
     where,
   });
+  const expenseBaseWhere: any = {
+    projectId,
+    deletedAt: null,
+    status: 'approved',
+  };
+  if (from || to) {
+    expenseBaseWhere.incurredOn = {};
+    if (from) expenseBaseWhere.incurredOn.gte = from;
+    if (to) expenseBaseWhere.incurredOn.lte = to;
+  }
+  const expenseWhere: any = { ...expenseBaseWhere };
+  if (currency) expenseWhere.currency = currency;
+  const expenseMismatch = currency
+    ? await prisma.expense.findFirst({
+        where: { ...expenseBaseWhere, currency: { not: currency } },
+        select: { id: true },
+      })
+    : null;
+  if (expenseMismatch) {
+    console.warn('[reports] expense currency mismatch', {
+      projectId,
+      currency,
+    });
+  }
   const expenses = await prisma.expense.aggregate({
     _sum: { amount: true },
-    where: { projectId },
+    where: expenseWhere,
   });
   return {
     projectId,
@@ -300,6 +333,11 @@ export async function reportProjectProfit(
   from?: Date,
   to?: Date,
 ) {
+  const project = await prisma.project.findUnique({
+    where: { id: projectId },
+    select: { currency: true },
+  });
+  const currency = project?.currency ?? null;
   const invoiceWhere: any = {
     projectId,
     deletedAt: null,
@@ -310,6 +348,9 @@ export async function reportProjectProfit(
     if (from) invoiceWhere.issueDate.gte = from;
     if (to) invoiceWhere.issueDate.lte = to;
   }
+  const invoiceWhereFiltered = currency
+    ? { ...invoiceWhere, currency }
+    : invoiceWhere;
   const vendorWhere: any = {
     projectId,
     deletedAt: null,
@@ -320,6 +361,9 @@ export async function reportProjectProfit(
     if (from) vendorWhere.receivedDate.gte = from;
     if (to) vendorWhere.receivedDate.lte = to;
   }
+  const vendorWhereFiltered = currency
+    ? { ...vendorWhere, currency }
+    : vendorWhere;
   const expenseWhere: any = {
     projectId,
     deletedAt: null,
@@ -330,22 +374,60 @@ export async function reportProjectProfit(
     if (from) expenseWhere.incurredOn.gte = from;
     if (to) expenseWhere.incurredOn.lte = to;
   }
+  const expenseWhereFiltered = currency
+    ? { ...expenseWhere, currency }
+    : expenseWhere;
 
   const [invoiceSum, vendorSum, expenseSum, time] = await Promise.all([
     prisma.invoice.aggregate({
-      where: invoiceWhere,
+      where: invoiceWhereFiltered,
       _sum: { totalAmount: true },
     }),
     prisma.vendorInvoice.aggregate({
-      where: vendorWhere,
+      where: vendorWhereFiltered,
       _sum: { totalAmount: true },
     }),
     prisma.expense.aggregate({
-      where: expenseWhere,
+      where: expenseWhereFiltered,
       _sum: { amount: true },
     }),
     sumTimeCost(projectId, from, to),
   ]);
+  if (currency) {
+    const [invoiceMismatch, vendorMismatch, expenseMismatch] =
+      await Promise.all([
+        prisma.invoice.findFirst({
+          where: { ...invoiceWhere, currency: { not: currency } },
+          select: { id: true },
+        }),
+        prisma.vendorInvoice.findFirst({
+          where: { ...vendorWhere, currency: { not: currency } },
+          select: { id: true },
+        }),
+        prisma.expense.findFirst({
+          where: { ...expenseWhere, currency: { not: currency } },
+          select: { id: true },
+        }),
+      ]);
+    if (invoiceMismatch) {
+      console.warn('[reports] invoice currency mismatch', {
+        projectId,
+        currency,
+      });
+    }
+    if (vendorMismatch) {
+      console.warn('[reports] vendor invoice currency mismatch', {
+        projectId,
+        currency,
+      });
+    }
+    if (expenseMismatch) {
+      console.warn('[reports] expense currency mismatch', {
+        projectId,
+        currency,
+      });
+    }
+  }
   const revenue = toNumber(invoiceSum._sum.totalAmount);
   const vendorCost = toNumber(vendorSum._sum.totalAmount);
   const expenseCost = toNumber(expenseSum._sum.amount);
@@ -353,7 +435,12 @@ export async function reportProjectProfit(
   const directCost = vendorCost + expenseCost + laborCost;
   const grossProfit = revenue - directCost;
   const grossMargin = revenue > 0 ? grossProfit / revenue : 0;
-  const budgetRevenue = await resolveRevenueBudget(projectId, from, to);
+  const budgetRevenue = await resolveRevenueBudget(
+    projectId,
+    from,
+    to,
+    currency,
+  );
   const varianceRevenue = revenue - budgetRevenue;
   return {
     projectId,
@@ -390,6 +477,11 @@ export async function reportProjectProfitByUser(
   to?: Date,
   userIds?: string[],
 ) {
+  const project = await prisma.project.findUnique({
+    where: { id: projectId },
+    select: { currency: true },
+  });
+  const currency = project?.currency ?? null;
   const invoiceWhere: any = {
     projectId,
     deletedAt: null,
@@ -400,6 +492,9 @@ export async function reportProjectProfitByUser(
     if (from) invoiceWhere.issueDate.gte = from;
     if (to) invoiceWhere.issueDate.lte = to;
   }
+  const invoiceWhereFiltered = currency
+    ? { ...invoiceWhere, currency }
+    : invoiceWhere;
   const vendorWhere: any = {
     projectId,
     deletedAt: null,
@@ -410,6 +505,9 @@ export async function reportProjectProfitByUser(
     if (from) vendorWhere.receivedDate.gte = from;
     if (to) vendorWhere.receivedDate.lte = to;
   }
+  const vendorWhereFiltered = currency
+    ? { ...vendorWhere, currency }
+    : vendorWhere;
   const expenseWhere: any = {
     projectId,
     deletedAt: null,
@@ -420,23 +518,61 @@ export async function reportProjectProfitByUser(
     if (from) expenseWhere.incurredOn.gte = from;
     if (to) expenseWhere.incurredOn.lte = to;
   }
+  const expenseWhereFiltered = currency
+    ? { ...expenseWhere, currency }
+    : expenseWhere;
 
   const [invoiceSum, vendorSum, expenseAgg, labor] = await Promise.all([
     prisma.invoice.aggregate({
-      where: invoiceWhere,
+      where: invoiceWhereFiltered,
       _sum: { totalAmount: true },
     }),
     prisma.vendorInvoice.aggregate({
-      where: vendorWhere,
+      where: vendorWhereFiltered,
       _sum: { totalAmount: true },
     }),
     prisma.expense.groupBy({
       by: ['userId'],
-      where: expenseWhere,
+      where: expenseWhereFiltered,
       _sum: { amount: true },
     }),
     sumTimeCostByUser(projectId, from, to),
   ]);
+  if (currency) {
+    const [invoiceMismatch, vendorMismatch, expenseMismatch] =
+      await Promise.all([
+        prisma.invoice.findFirst({
+          where: { ...invoiceWhere, currency: { not: currency } },
+          select: { id: true },
+        }),
+        prisma.vendorInvoice.findFirst({
+          where: { ...vendorWhere, currency: { not: currency } },
+          select: { id: true },
+        }),
+        prisma.expense.findFirst({
+          where: { ...expenseWhere, currency: { not: currency } },
+          select: { id: true },
+        }),
+      ]);
+    if (invoiceMismatch) {
+      console.warn('[reports] invoice currency mismatch', {
+        projectId,
+        currency,
+      });
+    }
+    if (vendorMismatch) {
+      console.warn('[reports] vendor invoice currency mismatch', {
+        projectId,
+        currency,
+      });
+    }
+    if (expenseMismatch) {
+      console.warn('[reports] expense currency mismatch', {
+        projectId,
+        currency,
+      });
+    }
+  }
   const revenue = toNumber(invoiceSum._sum.totalAmount);
   const vendorCost = toNumber(vendorSum._sum.totalAmount);
   const totalLaborCost = labor.totalCost;
