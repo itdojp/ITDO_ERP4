@@ -507,6 +507,12 @@ export async function registerProjectRoutes(app: FastifyInstance) {
             },
           });
         } catch (err) {
+          if (req.log && typeof req.log.warn === 'function') {
+            req.log.warn(
+              { err, projectId, userId: item.userId },
+              'Failed to create project member in bulk import',
+            );
+          }
           failed += 1;
           if (failureDetails.length < 5) {
             failureDetails.push({

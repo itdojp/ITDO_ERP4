@@ -486,6 +486,9 @@ export const Projects: React.FC = () => {
       );
       setImportFile(null);
       await loadMembers(memberProjectId);
+    } catch (err) {
+      console.error('Failed to import project members.', err);
+      setMemberMessage(`インポートに失敗しました${errorDetail(err)}`);
     } finally {
       setImporting(false);
     }
