@@ -24,9 +24,9 @@
   - rate_cards は projectId 指定優先、無ければ汎用（role/workType）を参照
 
 ## 予算（Budget）/見込
-- 売上予算: approved な estimate.totalAmount または milestone.amount の合計
-- 工数予算: 現状は未定義（後続で planHours を持たせる）
-- コスト予算: 現状は未定義（後続で budgetCost を持たせる）
+- 売上予算: approved な最新 estimate.totalAmount を優先（無ければ milestone.amount の合計）
+- 工数予算: Project.planHours を基準（Task/Milestone 側に planHours があれば加算）
+- コスト予算: Project.budgetCost を基準（未設定の場合は判定を行わない）
 
 ## 期間指定時の扱い
 - 期間指定がある場合:
@@ -59,15 +59,12 @@
 ## 集計軸
 - 期間: 月次/四半期/任意期間
 - 単位: project / group / user
-- 為替: MVP は同一通貨前提（多通貨対応は後続）
+- 為替: MVP は同一通貨前提（通貨が混在する場合は集計対象外 + 警告ログ）
 
 ## アラート連携
 - 予算超過（売上）: 売上予算に対する実績比率で判定（初期 110%）
-- 予算超過（コスト）: budgetCost 定義後に別途判定ロジックを追加する
+- 予算超過（コスト）: budgetCost が設定されている場合のみ判定（初期 110%）
 - 残業: time_entries から集計
 
 ## 未決定/確認事項
-- 工数予算の持ち方（project/milestone/task のどこに planHours を置くか）
-- 売上予算の基準（estimate vs milestone のどちらを主とするか）
-- 複数通貨/税抜税込の集計方針
-- コスト予算（budgetCost）に対する予算超過アラートの有無としきい値
+- なし（MVP方針は上記にて確定、拡張は後続）
