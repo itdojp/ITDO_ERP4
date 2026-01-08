@@ -13,6 +13,11 @@ insert into "Customer" (id, code, name, status, "createdAt", "updatedAt") values
   ('00000000-0000-0000-0000-000000000020','CUST-DEMO-1','Demo Customer 1','active', now(), now())
 on conflict do nothing;
 
+insert into "UserAccount" (id, "userName", "displayName", "givenName", "familyName", department, active, "createdAt", "updatedAt") values
+  ('90000000-0000-0000-0000-000000000001','e2e-member-1@example.com','E2E Member 1','E2E','Member 1','Engineering', true, now(), now()),
+  ('90000000-0000-0000-0000-000000000002','e2e-member-2@example.com','E2E Member 2','E2E','Member 2','Sales', true, now(), now())
+on conflict do nothing;
+
 insert into "ApprovalRule" (id, "flowType", conditions, steps, "createdAt", "updatedAt") values
   ('50000000-0000-0000-0000-000000000001','estimate','{}','[]', now(), now()),
   ('50000000-0000-0000-0000-000000000002','invoice','{}','[]', now(), now()),
