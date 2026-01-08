@@ -284,7 +284,7 @@ model RecurringProjectTemplate {
   defaultMilestoneName   String?
   billUpon               String?
   dueDateRule            Json?
-  shouldGenerateEstimate Boolean                  @default(true)
+  shouldGenerateEstimate Boolean                  @default(false)
   shouldGenerateInvoice  Boolean                  @default(true)
   nextRunAt              DateTime?
   timezone               String?
