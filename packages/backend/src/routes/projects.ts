@@ -18,6 +18,8 @@ import { prisma } from '../services/db.js';
 import { auditContextFromRequest, logAudit } from '../services/audit.js';
 import { logReassignment } from '../services/reassignmentLog.js';
 import { parseDueDateRule } from '../services/dueDateRule.js';
+import { findPeriodLock, toPeriodKey } from '../services/periodLock.js';
+import { DocStatusValue, TimeStatusValue } from '../types.js';
 
 type RecurringFrequency = 'monthly' | 'quarterly' | 'semiannual' | 'annual';
 type BillUpon = 'date' | 'acceptance' | 'time';
@@ -733,6 +735,7 @@ export async function registerProjectRoutes(app: FastifyInstance) {
         taskId: string;
       };
       const body = req.body as any;
+      const moveTimeEntries = body.moveTimeEntries === true;
       const reasonText =
         typeof body.reasonText === 'string' ? body.reasonText.trim() : '';
       if (!reasonText) {
@@ -776,7 +779,7 @@ export async function registerProjectRoutes(app: FastifyInstance) {
         ]);
       if (
         childCount > 0 ||
-        timeCount > 0 ||
+        (!moveTimeEntries && timeCount > 0) ||
         estimateCount > 0 ||
         invoiceCount > 0 ||
         poCount > 0
@@ -788,11 +791,94 @@ export async function registerProjectRoutes(app: FastifyInstance) {
           },
         });
       }
-      const updated = await prisma.projectTask.update({
-        where: { id: taskId },
-        data: {
-          projectId: body.toProjectId,
-        },
+      let timeEntries: {
+        id: string;
+        projectId: string;
+        taskId: string | null;
+        workDate: Date;
+        status: string;
+      }[] = [];
+      if (moveTimeEntries && timeCount > 0) {
+        timeEntries = await prisma.timeEntry.findMany({
+          where: { taskId, deletedAt: null },
+          select: {
+            id: true,
+            projectId: true,
+            taskId: true,
+            workDate: true,
+            status: true,
+          },
+        });
+        const approvedEntry = timeEntries.find(
+          (entry) => entry.status === TimeStatusValue.approved,
+        );
+        if (approvedEntry) {
+          return reply.status(400).send({
+            error: {
+              code: 'INVALID_STATUS',
+              message: 'Time entry approved',
+            },
+          });
+        }
+        const pendingApproval = await prisma.approvalInstance.findFirst({
+          where: {
+            targetTable: 'time_entries',
+            targetId: { in: timeEntries.map((entry) => entry.id) },
+            status: {
+              in: [DocStatusValue.pending_qa, DocStatusValue.pending_exec],
+            },
+          },
+          select: { id: true },
+        });
+        if (pendingApproval) {
+          return reply.status(400).send({
+            error: {
+              code: 'PENDING_APPROVAL',
+              message: 'Approval in progress',
+            },
+          });
+        }
+        const lockCache = new Map<string, boolean>();
+        const isLocked = async (periodKey: string, targetProjectId: string) => {
+          const cacheKey = `${periodKey}:${targetProjectId}`;
+          if (lockCache.has(cacheKey)) return lockCache.get(cacheKey) ?? false;
+          const lock = await findPeriodLock(periodKey, targetProjectId);
+          const locked = Boolean(lock);
+          lockCache.set(cacheKey, locked);
+          return locked;
+        };
+        for (const entry of timeEntries) {
+          const periodKey = toPeriodKey(entry.workDate);
+          const fromLocked = await isLocked(periodKey, entry.projectId);
+          if (fromLocked) {
+            return reply.status(400).send({
+              error: { code: 'PERIOD_LOCKED', message: 'Period is locked' },
+            });
+          }
+          if (body.toProjectId !== entry.projectId) {
+            const toLocked = await isLocked(periodKey, body.toProjectId);
+            if (toLocked) {
+              return reply.status(400).send({
+                error: { code: 'PERIOD_LOCKED', message: 'Period is locked' },
+              });
+            }
+          }
+        }
+      }
+      const updated = await prisma.$transaction(async (tx) => {
+        const taskUpdate = await tx.projectTask.update({
+          where: { id: taskId },
+          data: {
+            projectId: body.toProjectId,
+          },
+        });
+        if (moveTimeEntries && timeEntries.length) {
+          await tx.timeEntry.updateMany({
+            where: { id: { in: timeEntries.map((entry) => entry.id) } },
+            data: { projectId: body.toProjectId },
+          });
+        }
+        return taskUpdate;
       });
       await logAudit({
         action: 'reassignment',
@@ -805,6 +891,7 @@ export async function registerProjectRoutes(app: FastifyInstance) {
           toProjectId: body.toProjectId,
           fromTaskId: taskId,
           toTaskId: taskId,
+          movedTimeEntries: moveTimeEntries ? timeEntries.length : 0,
         },
         ...auditContextFromRequest(req),
       });
@@ -819,6 +906,42 @@ export async function registerProjectRoutes(app: FastifyInstance) {
         reasonText,
         createdBy: req.user?.userId,
       });
+      if (moveTimeEntries && timeEntries.length) {
+        const auditContext = auditContextFromRequest(req);
+        await Promise.all(
+          timeEntries.map((entry) =>
+            logAudit({
+              action: 'reassignment',
+              targetTable: 'time_entries',
+              targetId: entry.id,
+              reasonCode: body.reasonCode,
+              reasonText,
+              metadata: {
+                fromProjectId: entry.projectId,
+                toProjectId: body.toProjectId,
+                fromTaskId: entry.taskId,
+                toTaskId: entry.taskId,
+              },
+              ...auditContext,
+            }),
+          ),
+        );
+        await Promise.all(
+          timeEntries.map((entry) =>
+            logReassignment({
+              targetTable: 'time_entries',
+              targetId: entry.id,
+              fromProjectId: entry.projectId,
+              toProjectId: body.toProjectId,
+              fromTaskId: entry.taskId,
+              toTaskId: entry.taskId,
+              reasonCode: body.reasonCode,
+              reasonText,
+              createdBy: req.user?.userId,
+            }),
+          ),
+        );
+      }
       return updated;
     },
   );
