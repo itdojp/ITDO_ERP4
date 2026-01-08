@@ -61,6 +61,24 @@ export const projectMemberSchema = {
     role: Type.Optional(projectMemberRoleSchema),
   }),
 };
+
+export const projectMemberBulkSchema = {
+  body: Type.Object(
+    {
+      items: Type.Array(
+        Type.Object(
+          {
+            userId: Type.String({ minLength: 1 }),
+            role: Type.Optional(projectMemberRoleSchema),
+          },
+          { additionalProperties: false },
+        ),
+        { minItems: 1, maxItems: 500 },
+      ),
+    },
+    { additionalProperties: false },
+  ),
+};
 export const customerSchema = {
   body: Type.Object(
     {

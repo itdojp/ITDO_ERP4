@@ -36,6 +36,13 @@ type ProjectMemberCandidate = {
   department?: string | null;
 };
 
+type ProjectMemberBulkResult = {
+  added: number;
+  skipped: number;
+  failed: number;
+  failures?: Array<{ userId: string | null; reason: string }>;
+};
+
 const emptyProject = {
   code: '',
   name: '',
@@ -417,14 +424,8 @@ export const Projects: React.FC = () => {
         setMemberMessage('CSVにデータがありません');
         return;
       }
-      const currentMembers = await loadMembers(memberProjectId);
-      if (!currentMembers) {
-        return;
-      }
-      const existingMap = new Map(
-        currentMembers.map((member) => [member.userId, member]),
-      );
-      let added = 0;
+      const seen = new Set<string>();
+      const items: Array<{ userId: string; role: ProjectMemberRole }> = [];
       let skipped = 0;
       let failed = 0;
       const failedRows: string[] = [];
@@ -439,42 +440,55 @@ export const Projects: React.FC = () => {
           }
           continue;
         }
+        if (seen.has(userId)) {
+          skipped += 1;
+          continue;
+        }
+        seen.add(userId);
         const rawRole = (row[1] || '').toLowerCase();
         const requestedRole =
           rawRole === 'leader' || rawRole === 'member' ? rawRole : 'member';
         const role = isPrivileged ? requestedRole : 'member';
-        const existing = existingMap.get(userId);
-        if (existing) {
-          skipped += 1;
-          continue;
-        }
-        try {
-          await api(`/projects/${memberProjectId}/members`, {
-            method: 'POST',
-            body: JSON.stringify({ userId, role }),
-          });
-          added += 1;
-          existingMap.set(userId, {
-            id: '',
-            userId,
-            role,
-          });
-        } catch (err) {
-          console.error('Failed to import project member.', err);
-          failed += 1;
-          if (failedRows.length < 5) {
-            failedRows.push(`${displayIndex}行目: ${userId}`);
-          }
-        }
+        items.push({ userId, role });
       }
-      const failureDetail = failedRows.length
-        ? ` (例: ${failedRows.join(', ')})`
+      if (!items.length) {
+        setMemberMessage(
+          `インポート対象がありません (スキップ ${skipped} 件 / 失敗 ${failed} 件)`,
+        );
+        return;
+      }
+      const result = await api<ProjectMemberBulkResult>(
+        `/projects/${memberProjectId}/members/bulk`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ items }),
+        },
+      );
+      const totalAdded = result.added;
+      const totalSkipped = result.skipped + skipped;
+      const totalFailed = result.failed + failed;
+      const failureSamples: string[] = [...failedRows];
+      const backendSamples =
+        result.failures?.map((failure) =>
+          failure.userId
+            ? `${failure.userId}: ${failure.reason}`
+            : failure.reason,
+        ) || [];
+      for (const sample of backendSamples) {
+        if (failureSamples.length >= 5) break;
+        failureSamples.push(sample);
+      }
+      const failureDetail = failureSamples.length
+        ? ` (例: ${failureSamples.join(', ')})`
         : '';
       setMemberMessage(
-        `インポート完了: 追加 ${added} 件 / スキップ ${skipped} 件 / 失敗 ${failed} 件${failureDetail}`,
+        `インポート完了: 追加 ${totalAdded} 件 / スキップ ${totalSkipped} 件 / 失敗 ${totalFailed} 件${failureDetail}`,
       );
       setImportFile(null);
       await loadMembers(memberProjectId);
+    } catch (err) {
+      console.error('Failed to import project members.', err);
+      setMemberMessage(`インポートに失敗しました${errorDetail(err)}`);
     } finally {
       setImporting(false);
     }
