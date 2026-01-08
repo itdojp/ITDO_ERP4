@@ -151,11 +151,21 @@ export async function computeBudgetOverrun(
     if (currency) {
       const [expenseMismatch, vendorMismatch] = await Promise.all([
         prisma.expense.findFirst({
-          where: { projectId, currency: { not: currency } },
+          where: {
+            projectId,
+            currency: { not: currency },
+            deletedAt: null,
+            status: { notIn: [DocStatus.cancelled, DocStatus.rejected] },
+          },
           select: { id: true },
         }),
         prisma.vendorInvoice.findFirst({
-          where: { projectId, currency: { not: currency } },
+          where: {
+            projectId,
+            currency: { not: currency },
+            deletedAt: null,
+            status: { notIn: [DocStatus.cancelled, DocStatus.rejected] },
+          },
           select: { id: true },
         }),
       ]);

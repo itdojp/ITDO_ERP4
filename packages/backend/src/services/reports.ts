@@ -190,13 +190,21 @@ export async function reportProjectEffort(
     _sum: { minutes: true },
     where,
   });
-  const expenseWhere: any = { projectId };
-  if (currency) {
-    expenseWhere.currency = currency;
+  const expenseBaseWhere: any = {
+    projectId,
+    deletedAt: null,
+    status: 'approved',
+  };
+  if (from || to) {
+    expenseBaseWhere.incurredOn = {};
+    if (from) expenseBaseWhere.incurredOn.gte = from;
+    if (to) expenseBaseWhere.incurredOn.lte = to;
   }
+  const expenseWhere: any = { ...expenseBaseWhere };
+  if (currency) expenseWhere.currency = currency;
   const expenseMismatch = currency
     ? await prisma.expense.findFirst({
-        where: { projectId, currency: { not: currency } },
+        where: { ...expenseBaseWhere, currency: { not: currency } },
         select: { id: true },
       })
     : null;

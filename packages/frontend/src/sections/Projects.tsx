@@ -7,6 +7,7 @@ type Project = {
   name: string;
   status: string;
   customerId?: string | null;
+  currency?: string | null;
   planHours?: number | null;
   budgetCost?: number | null;
 };
@@ -83,6 +84,7 @@ const parseNumberInput = (value: string) => {
   if (!trimmed) return undefined;
   const numeric = Number(trimmed);
   if (!Number.isFinite(numeric)) return undefined;
+  if (numeric < 0) return undefined;
   return numeric;
 };
 
@@ -651,7 +653,9 @@ export const Projects: React.FC = () => {
                 ` / 予定工数: ${item.planHours}h`}
               {item.budgetCost !== null &&
                 item.budgetCost !== undefined &&
-                ` / 予算コスト: ¥${item.budgetCost}`}
+                ` / 予算コスト: ${item.budgetCost}${
+                  item.currency ? ` ${item.currency}` : ''
+                }`}
               <button
                 className="button secondary"
                 style={{ marginLeft: 8 }}
