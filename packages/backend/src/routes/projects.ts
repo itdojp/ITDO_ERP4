@@ -86,6 +86,29 @@ async function hasCircularParent(taskId: string, parentTaskId: string) {
   return false;
 }
 
+function normalizeParentId(value: unknown): string | null {
+  if (value === null || value === undefined) return null;
+  const trimmed = String(value).trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+async function hasCircularProjectParent(projectId: string, parentId: string) {
+  const visited = new Set<string>([projectId]);
+  let currentId: string | null = parentId;
+  while (currentId) {
+    if (visited.has(currentId)) return true;
+    visited.add(currentId);
+    const current: { parentId: string | null } | null =
+      await prisma.project.findUnique({
+        where: { id: currentId },
+        select: { parentId: true },
+      });
+    if (!current) return false;
+    currentId = current.parentId;
+  }
+  return false;
+}
+
 export async function registerProjectRoutes(app: FastifyInstance) {
   app.get(
     '/projects',
@@ -164,9 +187,7 @@ export async function registerProjectRoutes(app: FastifyInstance) {
         'parentId',
       );
       const nextParentId = hasParentIdProp
-        ? body.parentId
-          ? String(body.parentId).trim() || null
-          : null
+        ? normalizeParentId(body.parentId)
         : current.parentId ?? null;
       const currentParentId = current.parentId ?? null;
       const parentChanged =
@@ -175,8 +196,43 @@ export async function registerProjectRoutes(app: FastifyInstance) {
         typeof body.reasonText === 'string' ? body.reasonText.trim() : '';
       if (parentChanged && !reasonText) {
         return reply.status(400).send({
-          error: { code: 'INVALID_REASON', message: 'reasonText is required' },
+          error: {
+            code: 'INVALID_REASON',
+            message: 'reasonText is required when changing project parent',
+          },
         });
+      }
+      if (parentChanged) {
+        if (nextParentId === projectId) {
+          return reply.status(400).send({
+            error: {
+              code: 'INVALID_PARENT',
+              message: 'Project cannot be its own parent',
+            },
+          });
+        }
+        if (nextParentId) {
+          const parent = await prisma.project.findUnique({
+            where: { id: nextParentId },
+            select: { id: true, deletedAt: true },
+          });
+          if (!parent || parent.deletedAt) {
+            return reply.status(404).send({
+              error: {
+                code: 'NOT_FOUND',
+                message: 'Parent project not found',
+              },
+            });
+          }
+          if (await hasCircularProjectParent(projectId, nextParentId)) {
+            return reply.status(400).send({
+              error: {
+                code: 'VALIDATION_ERROR',
+                message: 'Parent project creates circular reference',
+              },
+            });
+          }
+        }
       }
       const hasCustomerIdProp = Object.prototype.hasOwnProperty.call(
         body,
