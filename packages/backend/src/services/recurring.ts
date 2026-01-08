@@ -91,7 +91,7 @@ export async function runRecurringTemplates(now = new Date()) {
     }
     const periodStart = startOfMonth(runAt);
     const periodEnd = addMonths(periodStart, 1);
-    const shouldGenerateEstimate = template.shouldGenerateEstimate ?? true;
+    const shouldGenerateEstimate = template.shouldGenerateEstimate ?? false;
     const shouldGenerateInvoice = template.shouldGenerateInvoice ?? true;
     const shouldGenerateMilestone = Boolean(
       template.defaultMilestoneName ||
