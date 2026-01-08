@@ -5,6 +5,7 @@ import {
   projectSchema,
   projectPatchSchema,
   projectMemberSchema,
+  projectMemberBulkSchema,
   recurringTemplateSchema,
   projectTaskSchema,
   projectTaskPatchSchema,
@@ -395,6 +396,128 @@ export async function registerProjectRoutes(app: FastifyInstance) {
         },
       });
       return member;
+    },
+  );
+
+  app.post(
+    '/projects/:projectId/members/bulk',
+    {
+      preHandler: [
+        requireRole(['admin', 'mgmt', 'user']),
+        ensureProjectIdParam,
+      ],
+      schema: projectMemberBulkSchema,
+    },
+    async (req, reply) => {
+      const { projectId } = req.params as { projectId: string };
+      const body = req.body as {
+        items: Array<{ userId: string; role?: 'member' | 'leader' }>;
+      };
+      const roles = req.user?.roles || [];
+      const isPrivileged = isPrivilegedRole(roles);
+      if (!isPrivileged) {
+        const allowed = await ensureProjectLeader(req, reply, projectId);
+        if (!allowed) return;
+      }
+      const project = await prisma.project.findUnique({
+        where: { id: projectId },
+        select: { id: true, deletedAt: true },
+      });
+      if (!project || project.deletedAt) {
+        return reply.status(404).send({
+          error: { code: 'NOT_FOUND', message: 'Project not found' },
+        });
+      }
+
+      const actorId = req.user?.userId;
+      const failureDetails: Array<{ userId: string | null; reason: string }> =
+        [];
+      let added = 0;
+      let skipped = 0;
+      let failed = 0;
+      const seen = new Set<string>();
+      const normalized: Array<{ userId: string; role: 'member' | 'leader' }> =
+        [];
+
+      for (const item of body.items) {
+        const userId = item.userId.trim();
+        if (!userId) {
+          failed += 1;
+          if (failureDetails.length < 5) {
+            failureDetails.push({ userId: null, reason: 'missing_user_id' });
+          }
+          continue;
+        }
+        const requestedRole = item.role === 'leader' ? 'leader' : 'member';
+        if (!isPrivileged && requestedRole !== 'member') {
+          return reply.status(403).send({
+            error: {
+              code: 'FORBIDDEN_ROLE_ASSIGNMENT',
+              message: 'Project leaders can only assign members',
+            },
+          });
+        }
+        if (seen.has(userId)) {
+          skipped += 1;
+          continue;
+        }
+        seen.add(userId);
+        normalized.push({ userId, role: requestedRole });
+      }
+
+      if (normalized.length === 0) {
+        return { added, skipped, failed, failures: failureDetails };
+      }
+
+      const existing = await prisma.projectMember.findMany({
+        where: {
+          projectId,
+          userId: { in: normalized.map((item) => item.userId) },
+        },
+        select: { userId: true },
+      });
+      const existingSet = new Set(existing.map((member) => member.userId));
+
+      for (const item of normalized) {
+        if (existingSet.has(item.userId)) {
+          skipped += 1;
+          continue;
+        }
+        try {
+          const member = await prisma.projectMember.create({
+            data: {
+              projectId,
+              userId: item.userId,
+              role: item.role,
+              createdBy: actorId,
+              updatedBy: actorId,
+            },
+          });
+          added += 1;
+          await logAudit({
+            ...auditContextFromRequest(req),
+            action: 'project_member_added',
+            targetTable: 'ProjectMember',
+            targetId: member.id,
+            metadata: {
+              projectId,
+              userId: item.userId,
+              role: item.role,
+              source: 'bulk',
+            },
+          });
+        } catch (err) {
+          failed += 1;
+          if (failureDetails.length < 5) {
+            failureDetails.push({
+              userId: item.userId,
+              reason: 'create_failed',
+            });
+          }
+        }
+      }
+
+      return { added, skipped, failed, failures: failureDetails };
     },
   );
 
