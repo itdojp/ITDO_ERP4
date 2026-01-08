@@ -159,6 +159,25 @@ export async function registerProjectRoutes(app: FastifyInstance) {
           error: { code: 'NOT_FOUND', message: 'Project not found' },
         });
       }
+      const hasParentIdProp = Object.prototype.hasOwnProperty.call(
+        body,
+        'parentId',
+      );
+      const nextParentId = hasParentIdProp
+        ? body.parentId
+          ? String(body.parentId).trim() || null
+          : null
+        : current.parentId ?? null;
+      const currentParentId = current.parentId ?? null;
+      const parentChanged =
+        hasParentIdProp && nextParentId !== currentParentId;
+      const reasonText =
+        typeof body.reasonText === 'string' ? body.reasonText.trim() : '';
+      if (parentChanged && !reasonText) {
+        return reply.status(400).send({
+          error: { code: 'INVALID_REASON', message: 'reasonText is required' },
+        });
+      }
       const hasCustomerIdProp = Object.prototype.hasOwnProperty.call(
         body,
         'customerId',
@@ -178,11 +197,27 @@ export async function registerProjectRoutes(app: FastifyInstance) {
           });
         }
       }
-      const data = hasCustomerIdProp ? { ...body, customerId } : { ...body };
+      const data = { ...body };
+      if (hasCustomerIdProp) data.customerId = customerId;
+      if (hasParentIdProp) data.parentId = nextParentId;
+      delete data.reasonText;
       const project = await prisma.project.update({
         where: { id: projectId },
         data,
       });
+      if (parentChanged) {
+        await logAudit({
+          action: 'project_parent_updated',
+          targetTable: 'projects',
+          targetId: projectId,
+          reasonText,
+          metadata: {
+            fromParentId: currentParentId,
+            toParentId: nextParentId,
+          },
+          ...auditContextFromRequest(req),
+        });
+      }
       return project;
     },
   );
