@@ -72,20 +72,15 @@ async function prepare(page: Page) {
   ).toBeVisible();
 }
 
-async function selectByLabelOrFirst(select: Locator, label: string) {
-  if (await select.locator('option', { hasText: label }).count()) {
+async function selectByLabelOrFirst(select: Locator, label?: string) {
+  if (label && (await select.locator('option', { hasText: label }).count())) {
     await select.selectOption({ label });
     return;
   }
-  await select.selectOption({ index: 1 });
-}
-
-async function selectFirstOption(select: Locator) {
   await expect
     .poll(() => select.locator('option').count(), { timeout: actionTimeout })
     .toBeGreaterThan(1);
   await select.selectOption({ index: 1 });
-  return;
 }
 
 const runId = () =>
@@ -259,8 +254,8 @@ test('frontend smoke vendor docs create @extended', async ({ page }) => {
     .locator('..');
   const poProjectSelect = poBlock.locator('select').first();
   const poVendorSelect = poBlock.locator('select').nth(1);
-  await selectFirstOption(poProjectSelect);
-  await selectFirstOption(poVendorSelect);
+  await selectByLabelOrFirst(poProjectSelect);
+  await selectByLabelOrFirst(poVendorSelect);
   await poBlock
     .locator('input[type="number"]')
     .first()
@@ -276,8 +271,8 @@ test('frontend smoke vendor docs create @extended', async ({ page }) => {
     .locator('..');
   const quoteProjectSelect = quoteBlock.locator('select').first();
   const quoteVendorSelect = quoteBlock.locator('select').nth(1);
-  await selectFirstOption(quoteProjectSelect);
-  await selectFirstOption(quoteVendorSelect);
+  await selectByLabelOrFirst(quoteProjectSelect);
+  await selectByLabelOrFirst(quoteVendorSelect);
   const quoteNo = `VQ-E2E-${id}`;
   await quoteBlock.getByPlaceholder('見積番号').fill(quoteNo);
   await quoteBlock
@@ -293,8 +288,8 @@ test('frontend smoke vendor docs create @extended', async ({ page }) => {
     .locator('..');
   const invoiceProjectSelect = invoiceBlock.locator('select').first();
   const invoiceVendorSelect = invoiceBlock.locator('select').nth(1);
-  await selectFirstOption(invoiceProjectSelect);
-  await selectFirstOption(invoiceVendorSelect);
+  await selectByLabelOrFirst(invoiceProjectSelect);
+  await selectByLabelOrFirst(invoiceVendorSelect);
   const vendorInvoiceNo = `VI-E2E-${id}`;
   await invoiceBlock.getByPlaceholder('請求番号').fill(vendorInvoiceNo);
   await invoiceBlock
