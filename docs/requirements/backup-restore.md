@@ -26,6 +26,8 @@
   - `./scripts/podman-poc.sh backup`
   - `RESTORE_CONFIRM=1 ./scripts/podman-poc.sh restore`
   - オプション: `BACKUP_DIR`, `BACKUP_FILE`, `BACKUP_GLOBALS_FILE`, `BACKUP_PREFIX`
+  - `SKIP_GLOBALS=1`（既存ロールがある場合のglobals適用スキップ）
+  - `RESTORE_CLEAN=1`（PodmanのPoC用: restore前に public スキーマを再作成）
   - 備考: `BACKUP_FILE`/`BACKUP_GLOBALS_FILE` は任意パス指定なので、信頼できる入力のみ使用する
 
 ## リストア手順（例）
@@ -60,6 +62,9 @@
 - GPGで暗号化した場合は復号用の鍵がローカルに必要（`GPG_HOME` を必要に応じて指定）
 - `REMOTE_DIR` は安全な文字（英数字/`._/=-`）のみを許容
 - `BACKUP_PREFIX` は安全な文字（英数字/`._-`）のみを許容
+- globals は既存ロールがある環境だと restore が失敗するため、空DBで実行するか `SKIP_GLOBALS=1` を指定
+- 既存スキーマがある状態で restore すると型/テーブル重複で失敗するため、空DBで実行するか `RESTORE_CLEAN=1` を指定
+- `SKIP_GLOBALS` を指定しない場合は globals ファイル必須（欠損時は restore を失敗させる）
 
 必要な環境変数（抜粋）
 - `DB_HOST`/`DB_PORT`/`DB_USER`/`DB_PASSWORD`/`DB_NAME`
@@ -70,6 +75,7 @@
 - `BACKUP_FILE`/`BACKUP_GLOBALS_FILE`/`BACKUP_ASSETS_FILE`（特定バックアップを upload/restore する場合）
 - `REMOTE_HOST`/`REMOTE_DIR`/`REMOTE_PORT`/`REMOTE_SSH_KEY`（別ホスト退避）
 - `SKIP_GLOBALS=1`（restore時に globals の適用をスキップ）
+- `RESTORE_CLEAN=1`（PodmanのPoC用: restore前に public スキーマを再作成）
 - 参考テンプレート: `docs/requirements/backup-restore.env.example`
 
 ## 保持期間/世代管理（決定）

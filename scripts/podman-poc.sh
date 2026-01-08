@@ -24,6 +24,7 @@ stats   : run scripts/checks/pg-stat-statements.sql inside container
 stats-reset : reset pg_stat_statements counters inside container
 backup  : create SQL and globals dump into BACKUP_DIR (default: ./tmp/erp4-backups)
 restore : restore SQL (and globals if present). Requires RESTORE_CONFIRM=1
+          options: SKIP_GLOBALS=1, RESTORE_CLEAN=1
 stop    : stop and remove postgres container
 reset   : stop + start + db-push + seed + check
 USAGE
@@ -183,7 +184,22 @@ restore() {
     echo "backup file not found. Set BACKUP_FILE or create a backup first." >&2
     exit 1
   fi
-  if [[ -n "$globals_file" && -f "$globals_file" ]]; then
+  if [[ "${SKIP_GLOBALS:-}" != "1" ]]; then
+    if [[ -z "$globals_file" || ! -f "$globals_file" ]]; then
+      echo "globals file not found. Set BACKUP_GLOBALS_FILE or SKIP_GLOBALS=1." >&2
+      exit 1
+    fi
+  fi
+  if [[ "${RESTORE_CLEAN:-}" == "1" ]]; then
+    podman exec -e PGPASSWORD="$DB_PASSWORD" "$CONTAINER_NAME" \
+      psql -U "$DB_USER" -d "$DB_NAME" -v ON_ERROR_STOP=1 \
+      -c "DROP SCHEMA public CASCADE" \
+      -c "CREATE SCHEMA public"
+    echo "public schema dropped and recreated (RESTORE_CLEAN=1)"
+  fi
+  if [[ "${SKIP_GLOBALS:-}" == "1" ]]; then
+    echo "skipping globals restore (SKIP_GLOBALS=1)"
+  else
     cat "$globals_file" | podman exec -e PGPASSWORD="$DB_PASSWORD" -i "$CONTAINER_NAME" \
       psql -U "$DB_USER" -v ON_ERROR_STOP=1
   fi
