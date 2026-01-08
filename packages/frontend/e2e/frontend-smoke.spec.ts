@@ -67,7 +67,9 @@ async function prepare(page: Page) {
     window.localStorage.setItem('erp4_auth', JSON.stringify(state));
   }, authState);
   await page.goto(baseUrl);
-  await expect(page.getByRole('heading', { name: 'ERP4 MVP PoC' })).toBeVisible();
+  await expect(
+    page.getByRole('heading', { name: 'ERP4 MVP PoC' }),
+  ).toBeVisible();
 }
 
 async function selectByLabelOrFirst(select: Locator, label: string) {
@@ -108,9 +110,7 @@ test('frontend smoke core @core', async ({ page }) => {
   await expect(dailySection.getByText('送信しました')).toBeVisible();
   await captureSection(dailySection, '02-core-daily-report.png');
 
-  const timeSection = page
-    .locator('h2', { hasText: '工数入力' })
-    .locator('..');
+  const timeSection = page.locator('h2', { hasText: '工数入力' }).locator('..');
   await timeSection.scrollIntoViewIfNeeded();
   await selectByLabelOrFirst(
     timeSection.getByLabel('案件選択'),
@@ -134,9 +134,7 @@ test('frontend smoke core @core', async ({ page }) => {
   await expect(expenseSection.getByText('経費を保存しました')).toBeVisible();
   await captureSection(expenseSection, '04-core-expenses.png');
 
-  const invoiceSection = page
-    .locator('h2', { hasText: '請求' })
-    .locator('..');
+  const invoiceSection = page.locator('h2', { hasText: '請求' }).locator('..');
   await invoiceSection.scrollIntoViewIfNeeded();
   await selectByLabelOrFirst(
     invoiceSection.getByLabel('案件選択'),
@@ -264,7 +262,46 @@ test('frontend smoke reports masters settings @extended', async ({ page }) => {
     .selectOption({ label: 'CUST-DEMO-1 / Demo Customer 1' });
   await projectsSection.getByRole('button', { name: '追加' }).click();
   await expect(projectsSection.getByText('案件を追加しました')).toBeVisible();
+  const projectItem = projectsSection.locator('li', {
+    hasText: `E2E-PRJ-${id}`,
+  });
+  await expect(projectItem).toBeVisible();
+  await projectItem.getByRole('button', { name: 'メンバー管理' }).click();
+  const memberCard = projectItem.locator('.card', {
+    hasText: 'メンバー管理',
+  });
+  await expect(memberCard).toBeVisible();
+  await memberCard.getByPlaceholder('候補検索 (2文字以上)').fill('E2E');
+  await memberCard.getByRole('button', { name: '検索' }).click();
+  await expect(memberCard.getByText('E2E Member 1')).toBeVisible();
+  await memberCard
+    .locator('li', { hasText: 'e2e-member-1@example.com' })
+    .getByRole('button', { name: '選択' })
+    .click();
+  await expect(memberCard.getByLabel('案件メンバーのユーザID')).toHaveValue(
+    'e2e-member-1@example.com',
+  );
+  await memberCard.getByRole('button', { name: '追加' }).click();
+  await expect(memberCard.getByText('メンバーを保存しました')).toBeVisible();
+  await expect(memberCard.getByText('e2e-member-1@example.com')).toBeVisible();
+  const [download] = await Promise.all([
+    page.waitForEvent('download'),
+    memberCard.getByRole('button', { name: 'CSVエクスポート' }).click(),
+  ]);
+  await expect(download.suggestedFilename()).toContain('project-members-');
+  const csv = 'userId,role\n' + 'e2e-member-2@example.com,member\n';
+  await memberCard
+    .locator('#project-members-csv-input')
+    .setInputFiles({
+      name: 'members.csv',
+      mimeType: 'text/csv',
+      buffer: Buffer.from(csv),
+    });
+  await memberCard.getByRole('button', { name: 'CSVインポート' }).click();
+  await expect(memberCard.getByText('インポート完了')).toBeVisible();
+  await expect(memberCard.getByText('e2e-member-2@example.com')).toBeVisible();
   await captureSection(projectsSection, '09-projects.png');
+  await captureSection(memberCard, '09-project-members.png');
 
   const masterSection = page
     .locator('h2', { hasText: '顧客/業者マスタ' })
@@ -327,9 +364,7 @@ test('frontend smoke reports masters settings @extended', async ({ page }) => {
   const reportBlock = settingsSection
     .locator('strong', { hasText: 'レポート購読（配信設定）' })
     .locator('..');
-  await reportBlock
-    .getByLabel('reportKey')
-    .fill(`project_effort_${id}`);
+  await reportBlock.getByLabel('reportKey').fill(`project_effort_${id}`);
   await reportBlock.getByLabel('params (JSON)').fill('{"limit":10}');
   await reportBlock.getByLabel('recipients (JSON)').fill('{"roles":["mgmt"]}');
   await reportBlock.getByRole('button', { name: '作成' }).click();
@@ -340,9 +375,7 @@ test('frontend smoke reports masters settings @extended', async ({ page }) => {
   const integrationBlock = settingsSection
     .locator('strong', { hasText: '外部連携設定（HR/CRM）' })
     .locator('..');
-  await integrationBlock
-    .getByLabel('名称')
-    .fill(`E2E Integration ${id}`);
+  await integrationBlock.getByLabel('名称').fill(`E2E Integration ${id}`);
   await integrationBlock.getByRole('button', { name: '作成' }).click();
   await expect(
     settingsSection.getByText('連携設定を作成しました'),
@@ -363,16 +396,17 @@ test('frontend smoke chat hr analytics @extended', async ({ page }) => {
   await chatSection.scrollIntoViewIfNeeded();
   await chatSection.getByRole('button', { name: '読み込み' }).click();
   const chatMessage = `E2E chat message ${id}`;
-  await chatSection
-    .getByPlaceholder('メッセージを書く')
-    .fill(chatMessage);
-  await chatSection
-    .getByPlaceholder('タグ (comma separated)')
-    .fill('e2e,chat');
+  await chatSection.getByPlaceholder('メッセージを書く').fill(chatMessage);
+  await chatSection.getByPlaceholder('タグ (comma separated)').fill('e2e,chat');
   await chatSection.getByRole('button', { name: '投稿' }).click();
   await expect(chatSection.getByText(chatMessage)).toBeVisible();
   const reactionButton = chatSection.getByRole('button', { name: /^👍/ });
-  if (await reactionButton.first().isEnabled().catch(() => false)) {
+  if (
+    await reactionButton
+      .first()
+      .isEnabled()
+      .catch(() => false)
+  ) {
     await reactionButton.first().click();
   }
   await captureSection(chatSection, '12-project-chat.png');
@@ -391,7 +425,10 @@ test('frontend smoke chat hr analytics @extended', async ({ page }) => {
   const updateButtons = hrSection.getByRole('button', { name: '更新' });
   if (
     (await updateButtons.count()) > 1 &&
-    (await updateButtons.nth(1).isEnabled().catch(() => false))
+    (await updateButtons
+      .nth(1)
+      .isEnabled()
+      .catch(() => false))
   ) {
     await updateButtons.nth(1).click();
   }
