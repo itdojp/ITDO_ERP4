@@ -43,6 +43,8 @@ export const projectSchema = {
       Type.Union([Type.String({ minLength: 1 }), Type.Null()]),
     ),
     parentId: Type.Optional(Type.String()),
+    planHours: Type.Optional(Type.Number({ minimum: 0 })),
+    budgetCost: Type.Optional(Type.Number({ minimum: 0 })),
   }),
 };
 
