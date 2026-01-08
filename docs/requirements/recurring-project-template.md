@@ -72,7 +72,7 @@
 - defaultMilestoneName: 任意。入力がある場合はマイルストーン生成対象
 - billUpon: default `date`。マイルストーン生成時は必須
 - dueDateRule: 任意。初期は `periodEndPlusOffset` + offsetDays（0〜365）のみ対応
-- shouldGenerateEstimate / shouldGenerateInvoice: 任意。いずれも false の場合でも、マイルストーン設定があればマイルストーンのみ生成
+- shouldGenerateEstimate / shouldGenerateInvoice: 任意。初期は請求のみ（Invoice=true, Estimate=false）。いずれも false の場合でも、マイルストーン設定があればマイルストーンのみ生成
 
 ### 操作/ガード
 - 生成済みドラフトの更新は行わず、次回以降の生成にのみ反映
@@ -85,5 +85,4 @@
 - 誤生成時はドラフトを論理削除し、生成履歴に理由を記録する。
 
 ## 未決定/確認事項
-- shouldGenerateEstimate/shouldGenerateInvoice の初期値（請求のみ or 両方）
-- dueDateRule の最小粒度（日付固定 or 月末 + offset のみ）
+- なし（MVP方針は上記にて確定）
