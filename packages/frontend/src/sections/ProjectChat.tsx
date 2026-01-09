@@ -186,8 +186,14 @@ export const ProjectChat: React.FC = () => {
           placeholder="タグで絞り込み (任意)"
           value={filterTag}
           onChange={(e) => setFilterTag(e.target.value)}
+          maxLength={32}
           style={{ minWidth: 200 }}
         />
+      </div>
+      <div style={{ marginTop: 4 }}>
+        <small style={{ fontSize: 12, color: '#6b7280' }}>
+          タグを変更した後は「読み込み」ボタンを押して絞り込みを適用します。
+        </small>
       </div>
       {projectMessage && <p style={{ color: '#dc2626' }}>{projectMessage}</p>}
       <div style={{ marginTop: 8 }}>
