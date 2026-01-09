@@ -70,7 +70,7 @@
 - POST `/vendor-invoices/:id/approve`
 
 ## project chat
-- GET `/projects/:projectId/chat-messages?limit=&before=`
+- GET `/projects/:projectId/chat-messages?limit=&before=&tag=`
 - POST `/projects/:projectId/chat-messages` { body, tags? }
 - POST `/chat-messages/:id/reactions` { emoji }
 
