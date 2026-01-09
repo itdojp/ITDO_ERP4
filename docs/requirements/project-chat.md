@@ -17,11 +17,11 @@
 - `external_chat` はチャットのみ利用可（他機能は不可）
 
 ## 決定事項（見直し反映）
-- 未読/既読状態を保持する
+- 既読/未読状態を保持する
 - 既読状態を他のユーザに見せるかは「チャット単位」で管理者が選択可能
 - メンションは必須
 - 本文はMarkdownで記述する
-- 通知/添付/検索はERP統合として望ましい形で設計する（方式は未決定）
+- 通知/添付/検索はERP統合として望ましい形で設計する（原則のみ決定。詳細な方式は「未決定/要設計」を参照）
 
 ## 未決定/要設計
 - チャット単位の定義（プロジェクト限定か、部門/全社/DMを含めるか）
@@ -51,10 +51,10 @@
 ## データモデル（拡張案）
 - ChatRoom（type, name, projectId?, readReceiptMode, createdBy など）
 - ChatRoomMember（roomId, userId, role, lastReadAt など）
-- ChatMessage（roomId, userId, bodyMarkdown, createdAt など）
+- ChatMessage（roomId, userId, bodyMarkdown, createdAt など）※Markdown本文
 - ChatMessageRead（messageId, userId, readAt）※既読表示の粒度次第
 - ChatAttachment（messageId, storageKey, fileName, mime, size など）
-- ChatMention（messageId, targetUserId/targetGroupId など）
+- ChatMention（messageId, targetType, targetId など）※例: targetType = 'user' | 'group'
 
 ## API
 ### 現行API
@@ -131,8 +131,8 @@
 - リアクションの取り消し（トグル）
 - 添付/画像/ファイル
 - リアルタイム更新（WS/ポーリング）
-- メンション/通知連携
-- 既読/未読の表示/設定
+- メンション/通知連携（設計中・決定事項/未決定セクションに基づき後続実装）
+- 既読/未読の表示/設定（設計中・決定事項/未決定セクションに基づき後続実装）
 - 複数タグの AND/OR 検索
 
 ## 関連ドキュメント
