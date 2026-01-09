@@ -38,9 +38,10 @@ export async function registerChatRoutes(app: FastifyInstance) {
     },
     async (req, reply) => {
       const { projectId } = req.params as { projectId: string };
-      const { limit, before } = req.query as {
+      const { limit, before, tag } = req.query as {
         limit?: string;
         before?: string;
+        tag?: string;
       };
       const take = parseLimit(limit);
       if (!take) {
@@ -57,16 +58,21 @@ export async function registerChatRoutes(app: FastifyInstance) {
           error: { code: 'INVALID_DATE', message: 'Invalid before date' },
         });
       }
-      const where: {
-        projectId: string;
-        deletedAt: null;
-        createdAt?: { lt: Date };
-      } = {
+      const where: Prisma.ProjectChatMessageWhereInput = {
         projectId,
         deletedAt: null,
       };
       if (beforeDate) {
         where.createdAt = { lt: beforeDate };
+      }
+      const trimmedTag = typeof tag === 'string' ? tag.trim() : '';
+      if (trimmedTag.length > 32) {
+        return reply.status(400).send({
+          error: { code: 'INVALID_TAG', message: 'Tag is too long' },
+        });
+      }
+      if (trimmedTag) {
+        where.tags = { array_contains: [trimmedTag] };
       }
       const items = await prisma.projectChatMessage.findMany({
         where,

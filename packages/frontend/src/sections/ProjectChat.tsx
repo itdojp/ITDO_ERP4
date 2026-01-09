@@ -12,7 +12,8 @@ type ChatMessage = {
   createdAt: string;
 };
 
-const reactionOptions = ['👍', '🎉'];
+const reactionOptions = ['👍', '🎉', '❤️', '😂', '🙏', '👀'];
+const pageSize = 50;
 
 function parseTags(value: string) {
   return value
@@ -44,24 +45,60 @@ export const ProjectChat: React.FC = () => {
   });
   const [body, setBody] = useState('');
   const [tags, setTags] = useState('');
+  const [filterTag, setFilterTag] = useState('');
   const [items, setItems] = useState<ChatMessage[]>([]);
   const [message, setMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [isPosting, setIsPosting] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
 
   const load = async () => {
     try {
       setIsLoading(true);
+      const query = new URLSearchParams({ limit: String(pageSize) });
+      const trimmedTag = filterTag.trim();
+      if (trimmedTag) {
+        query.set('tag', trimmedTag);
+      }
       const res = await api<{ items: ChatMessage[] }>(
-        `/projects/${projectId}/chat-messages`,
+        `/projects/${projectId}/chat-messages?${query.toString()}`,
       );
       setItems(res.items || []);
+      setHasMore((res.items || []).length === pageSize);
       setMessage('読み込みました');
     } catch (error) {
       console.error('チャットの取得に失敗しました', error);
       setMessage('読み込みに失敗しました');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const loadMore = async () => {
+    const lastItem = items[items.length - 1];
+    if (!lastItem) return;
+    try {
+      setIsLoadingMore(true);
+      const query = new URLSearchParams({
+        limit: String(pageSize),
+        before: lastItem.createdAt,
+      });
+      const trimmedTag = filterTag.trim();
+      if (trimmedTag) {
+        query.set('tag', trimmedTag);
+      }
+      const res = await api<{ items: ChatMessage[] }>(
+        `/projects/${projectId}/chat-messages?${query.toString()}`,
+      );
+      const nextItems = res.items || [];
+      setItems((prevItems) => [...prevItems, ...nextItems]);
+      setHasMore(nextItems.length === pageSize);
+    } catch (error) {
+      console.error('追加読み込みに失敗しました', error);
+      setMessage('追加読み込みに失敗しました');
+    } finally {
+      setIsLoadingMore(false);
     }
   };
 
@@ -144,6 +181,13 @@ export const ProjectChat: React.FC = () => {
         >
           {isLoading ? '読み込み中...' : '読み込み'}
         </button>
+        <input
+          type="text"
+          placeholder="タグで絞り込み (任意)"
+          value={filterTag}
+          onChange={(e) => setFilterTag(e.target.value)}
+          style={{ minWidth: 200 }}
+        />
       </div>
       {projectMessage && <p style={{ color: '#dc2626' }}>{projectMessage}</p>}
       <div style={{ marginTop: 8 }}>
@@ -213,6 +257,17 @@ export const ProjectChat: React.FC = () => {
         })}
         {items.length === 0 && <li>メッセージなし</li>}
       </ul>
+      {items.length > 0 && (
+        <div style={{ marginTop: 8 }}>
+          <button
+            className="button secondary"
+            onClick={loadMore}
+            disabled={!hasMore || isLoadingMore}
+          >
+            {isLoadingMore ? '読み込み中...' : 'もっと読み込む'}
+          </button>
+        </div>
+      )}
     </div>
   );
 };

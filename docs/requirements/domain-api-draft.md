@@ -46,7 +46,7 @@
   - `POST /projects/:id/tasks` {parent_task_id?, name, assignee, dates, status}
   - `POST /projects/:id/milestones` {name, amount, bill_upon, due_date, tax_rate}
 - Project Chat
-  - `GET /projects/:id/chat-messages` {limit?, before?}
+  - `GET /projects/:id/chat-messages` {limit?, before?, tag?}
   - `POST /projects/:id/chat-messages` {body, tags?}
   - `POST /chat-messages/:id/reactions` {emoji}
 - Estimate/Invoice
