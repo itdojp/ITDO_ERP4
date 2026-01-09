@@ -15,6 +15,8 @@
 - admin/mgmt は全プロジェクトにアクセス可能
 - それ以外のロールは `projectIds` に含まれる案件のみアクセス可能
 - `external_chat` はチャットのみ利用可（他機能は不可）
+  - 参加可能なルームは「許可されたルーム」のみ（招待/許可制）
+  - DM は禁止
 
 ## 決定事項（見直し反映）
 - 既読/未読状態を保持する
@@ -27,16 +29,25 @@
 - 投稿内容は完全削除できない（論理削除 + 監査保全。削除しても監査上は追跡可能）
 - 外部連携（Webhook/外部通知など）は公式ルームのみ許可する
 
-## 未決定/要設計
-- チャット単位の定義（プロジェクト限定か、部門/全社/DMを含めるか）
-- 既読表示の粒度（既読者一覧/人数のみ/非表示）
-- メンションの種類（ユーザ/ロール/グループ/プロジェクト）
+## 未決定/要設計（ベース方針）
+### ベース（案）
+- チャット単位は「プロジェクト/部門/全社/DM」を含める
+  - DM は管理者設定で無効化できる
+- 既読表示の粒度はチャット（ルーム）毎に選択できる
+  - 既読者一覧 / 人数のみ / 非表示
+- メンションの種類: ユーザ / グループ / 全員
+- 検索の対象範囲は設定で選択できる
+  - チャットのみ / ERP横断
+- 通知チャネル（アプリ内/メール/Push/外部連携）と通知条件は設定で選択できるようにする（詳細検討）
+- AI機能の範囲: 要約/アクション抽出/FAQ/検索支援（詳細検討）
+- 外部ユーザ（external_chat）は「許可されたルーム」のみ参加可、DMは禁止
+
+### 詳細検討（論点）
 - Markdown方言（CommonMark/GFMなど）とサニタイズ方針
-- 添付の保存先/権限制御/容量上限/ウイルススキャン
-- 検索の対象範囲（チャットのみ/ERP横断/添付含む）
-- 通知チャネル（アプリ内/メール/Push/外部連携）と通知条件
-- AI機能の範囲（要約/アクション抽出/FAQ/検索支援など）と権限/監査
-- 外部ユーザ（external_chat）の参加範囲/制限
+- 添付の保存先: Google Drive を候補として検討（権限制御/共有モデル/監査/容量/ウイルス対策）
+- ERP横断検索の範囲と権限制御、インデックス方式
+- 通知の既定値、ミュート/頻度制御、外部連携の扱い（公式ルームのみ）
+- AIの実装方式（ローカル/外部LLM）、権限/監査（外部LLM送信は外部連携扱い）
 
 ## ガバナンス設計（案）
 ### ルームの種別
@@ -49,7 +60,9 @@
   - ルーム管理者（room owner）を必須にし、ルーム管理者不在を許さない（自治の責任者を明確化）
   - 内容は通常閲覧不可で、監査目的の break-glass によってのみ閲覧可能
   - 私的ルームは外部連携を禁止（外部連携が必要なら公式ルームとして作成する）
-  - DM を含めるかは要決定（DM を作る場合も「私的ルーム」として同一ポリシーに統一する）
+  - DM（1:1）は私的ルームの一種として扱う（管理者設定でDMを無効化できる）
+    - external_chat はDM禁止
+    - DMのルーム管理者（owner）の扱いは要設計（例: 両参加者を owner とみなす）
 
 ### 「会社が認知する」範囲（決定: B）
 - 会社（admin/mgmt/exec/監査権限者）は、ルームの存在とメタ情報を把握できる（常時監視ではなく「把握できる」状態）
@@ -151,12 +164,12 @@
 - `projectId, createdAt`
 
 ## データモデル（拡張案）
-- ChatRoom（type, name, projectId?, readReceiptMode, createdBy など）
+- ChatRoom（type, name, projectId?, groupId?, readReceiptMode, allowExternal, createdBy など）
 - ChatRoomMember（roomId, userId, role, lastReadAt など）
 - ChatMessage（roomId, userId, bodyMarkdown, createdAt など）※Markdown本文
 - ChatMessageRead（messageId, userId, readAt）※既読表示の粒度次第
 - ChatAttachment（messageId, storageKey, fileName, mime, size など）
-- ChatMention（messageId, targetType, targetId など）※例: targetType = 'user' | 'group'
+- ChatMention（messageId, targetType, targetId など）※例: targetType = 'user' | 'group' | 'all'
 - ChatBreakGlassRequest（roomId, requesterUserId, reasonCode, reasonText, status, approverUserId, approvedAt, grantedAt, expiresAt など）
 - ChatBreakGlassEvent（requestId, actorUserId, action, at, scope など）
 
@@ -222,7 +235,8 @@
 - 未読/既読表示（設定に応じて表示方式を切替）
 - メンション入力支援
 - Markdownプレビュー
-- 添付/検索/通知設定の導線
+- 部門/全社/DM を含む「ルーム一覧」と作成・参加フロー
+- 添付/検索/通知設定の導線（ルーム単位/個人単位）
 - AI支援（要約/アクション抽出）表示の導線
 - break-glass のバナー/履歴表示（ルーム単位）
 - 監査者向けの申請/承認/閲覧UI（管理画面または監査画面）
@@ -237,12 +251,15 @@
   - `packages/frontend/e2e/frontend-smoke.spec.ts`
 
 ## 未実装/後続スコープ
+- ルーム機能（部門/全社/DM/私的グループ）と管理者設定（DM無効化）
 - メッセージ編集/削除（論理削除API）
 - リアクションの取り消し（トグル）
 - 添付/画像/ファイル
 - リアルタイム更新（WS/ポーリング）
 - メンション/通知連携（設計中・決定事項/未決定セクションに基づき後続実装）
 - 既読/未読の表示/設定（設計中・決定事項/未決定セクションに基づき後続実装）
+- 検索（チャットのみ/ERP横断の切替）
+- AI支援（要約/アクション抽出/FAQ/検索支援）
 - 複数タグの AND/OR 検索
 
 ## 関連ドキュメント
