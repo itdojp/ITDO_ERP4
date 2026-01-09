@@ -1,15 +1,38 @@
 # プロジェクトチャット仕様（統合）
 
 ## 目的/スコープ
-- プロジェクト単位の簡易グループチャットを提供する
-- MVPは「投稿/閲覧/タグ/リアクション/ページング」に限定する
-- 監査/通知/リアルタイム配信は後続スコープ
+- ERPと統合されたチャット機能として、Slack/Chatwork代替を目指す
+- プロジェクト情報/タスク/承認などERPの情報と連動した利用を想定する
+- AIを取り込み、要約/アクション抽出などの支援を行う（詳細は決定待ち）
+
+## 現状（実装済み）
+- プロジェクト単位の簡易グループチャット
+- 投稿/閲覧/タグ/リアクション/ページングのみ
+- 監査/通知/リアルタイム配信/添付/検索は未実装
 
 ## 役割/アクセス制御
 - 許可ロール: admin / mgmt / user / hr / exec / external_chat
 - admin/mgmt は全プロジェクトにアクセス可能
 - それ以外のロールは `projectIds` に含まれる案件のみアクセス可能
 - `external_chat` はチャットのみ利用可（他機能は不可）
+
+## 決定事項（見直し反映）
+- 未読/既読状態を保持する
+- 既読状態を他のユーザに見せるかは「チャット単位」で管理者が選択可能
+- メンションは必須
+- 本文はMarkdownで記述する
+- 通知/添付/検索はERP統合として望ましい形で設計する（方式は未決定）
+
+## 未決定/要設計
+- チャット単位の定義（プロジェクト限定か、部門/全社/DMを含めるか）
+- 既読表示の粒度（既読者一覧/人数のみ/非表示）
+- メンションの種類（ユーザ/ロール/グループ/プロジェクト）
+- Markdown方言（CommonMark/GFMなど）とサニタイズ方針
+- 添付の保存先/権限制御/容量上限/ウイルススキャン
+- 検索の対象範囲（チャットのみ/ERP横断/添付含む）
+- 通知チャネル（アプリ内/メール/Push/外部連携）と通知条件
+- AI機能の範囲（要約/アクション抽出/FAQ/検索支援など）と権限/監査
+- 外部ユーザ（external_chat）の参加範囲/制限
 
 ## データモデル
 ### ProjectChatMessage
@@ -25,7 +48,16 @@
 ### インデックス
 - `projectId, createdAt`
 
+## データモデル（拡張案）
+- ChatRoom（type, name, projectId?, readReceiptMode, createdBy など）
+- ChatRoomMember（roomId, userId, role, lastReadAt など）
+- ChatMessage（roomId, userId, bodyMarkdown, createdAt など）
+- ChatMessageRead（messageId, userId, readAt）※既読表示の粒度次第
+- ChatAttachment（messageId, storageKey, fileName, mime, size など）
+- ChatMention（messageId, targetUserId/targetGroupId など）
+
 ## API
+### 現行API
 ### GET `/projects/:projectId/chat-messages`
 **Query**
 - `limit` (default 50, max 200)
@@ -62,11 +94,28 @@
 - 形式は `{ emoji: { count, userIds[] } }`
 - 既存データが数値の場合は互換扱いで更新する
 
+### 拡張API（案）
+- `GET /chat-rooms`（参加可能なチャット一覧）
+- `POST /chat-rooms`（新規作成/設定）
+- `GET /chat-rooms/:id/messages`（メッセージ取得）
+- `POST /chat-rooms/:id/messages`（メッセージ投稿）
+- `POST /chat-rooms/:id/read`（既読更新）
+- `GET /chat-rooms/:id/unread-counts`（未読件数）
+- `POST /chat-messages/:id/attachments`（添付）
+- `GET /chat-search?q=`（検索）
+
 ## UI（ProjectChat）
 - プロジェクト選択、読み込み、投稿、タグ表示、リアクション
 - タグ絞り込み入力（適用は「読み込み」ボタン）
 - 追加読み込み（`before` 使用）
 - 既定のリアクション候補: 👍/🎉/❤️/😂/🙏/👀
+
+## UI（拡張方針）
+- 未読/既読表示（設定に応じて表示方式を切替）
+- メンション入力支援
+- Markdownプレビュー
+- 添付/検索/通知設定の導線
+- AI支援（要約/アクション抽出）表示の導線
 
 ## バリデーション/制約
 - 本文: 1〜2000文字
@@ -83,6 +132,7 @@
 - 添付/画像/ファイル
 - リアルタイム更新（WS/ポーリング）
 - メンション/通知連携
+- 既読/未読の表示/設定
 - 複数タグの AND/OR 検索
 
 ## 関連ドキュメント
