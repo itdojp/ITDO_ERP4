@@ -63,5 +63,5 @@ Phase 3 のPoC計画と最小実装を完了し、次はPoC評価と本実装計
 ※ 上記はドラフトです。ITDO_ERP3 側の課題 (#325/#326 等) と整合を取りつつ更新していきます。
 
 ## 6. 未決定/残作業（運用）
-- S3 バケット/リージョン/KMS の確定値を `docs/requirements/backup-restore.md` に反映
-- S3/OSS 移行の時期を決定（`docs/requirements/backup-restore.md`）
+- [ ] S3 バケット/リージョン/KMS の確定値を `docs/requirements/backup-restore.md` に反映
+- [ ] S3/OSS 移行の時期を決定（`docs/requirements/backup-restore.md`）
