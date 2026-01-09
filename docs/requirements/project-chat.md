@@ -18,7 +18,7 @@
 
 ## 決定事項（見直し反映）
 - 既読/未読状態を保持する
-- 既読状態を他のユーザに見せるかは「チャット単位」で管理者が選択可能
+- 既読状態を他のユーザに見せるかは「チャット単位」でルーム管理者が選択可能
 - メンションは必須
 - 本文はMarkdownで記述する
 - 通知/添付/検索はERP統合として望ましい形で設計する（原則のみ決定。詳細な方式は「未決定/要設計」を参照）
@@ -46,22 +46,22 @@
   - 外部連携（Webhook/外部通知/外部ユーザ招待/外部LLM等）を許可できるのは公式ルームのみ
 - 私的ルーム（社員の自治を基本とするが、会社が監査できる前提）
   - 作成/管理: user（内部ユーザ）のみ。external_chat は作成不可
-  - ルーム管理者（room admin/owner）を必須にし、管理者不在を許さない（自治の責任者を明確化）
+  - ルーム管理者（room owner）を必須にし、ルーム管理者不在を許さない（自治の責任者を明確化）
   - 内容は通常閲覧不可で、監査目的の break-glass によってのみ閲覧可能
   - 私的ルームは外部連携を禁止（外部連携が必要なら公式ルームとして作成する）
   - DM を含めるかは要決定（DM を作る場合も「私的ルーム」として同一ポリシーに統一する）
 
 ### 「会社が認知する」範囲（決定: B）
 - 会社（admin/mgmt/exec/監査権限者）は、ルームの存在とメタ情報を把握できる（常時監視ではなく「把握できる」状態）
-  - 例: roomId / 種別 / 表示名 / 作成者 / 管理者 / メンバー数 / 最終発言時刻 / 外部連携の有無
+  - 例: roomId / 種別 / 表示名 / 作成者 / ルーム管理者 / メンバー数 / 最終発言時刻 / 外部連携の有無
   - メンバー一覧の閲覧を許可する（閲覧自体も監査ログ対象とする）
 - 通常の管理権限では本文/添付の「内容」は閲覧できない（内容は break-glass 経由のみ）
 - 監査目的の break-glass（理由+ログ+承認）により、必要時は内容も閲覧できる
 
 ### 私的グループの自治（案）
-- 私的グループは、ルーム内の管理者（room admin/owner）を必須とする
+- 私的グループは、ルーム管理者（room owner）を必須とする
   - 参加者の招待/退出、ルーム設定変更の責任を持つ
-  - 管理者が不在にならないように、退出時は管理者移譲を必須にする
+  - ルーム管理者が不在にならないように、退出時はルーム管理者移譲を必須にする
 - 自治の前提（案）
   - 私的ルームでも、会社の情報セキュリティ/コンプライアンス規程の対象（「会社のシステム上のコミュニケーション」であることは明示する）
   - 会社は常時監視しないが、通報や監査要請があった場合は、規程に基づき調査できる状態（break-glass）を担保する
@@ -70,7 +70,7 @@
   - 会社側の強制措置（強制アーカイブ/凍結/退会など）が必要になる場合は、すべて理由必須 + 監査ログ必須
 
 ### 会社側の強制措置（案）
-- 想定アクション: ルーム凍結（read-only）/ 強制アーカイブ / 外部連携停止 / 管理者再設定 / メンバー強制退会
+- 想定アクション: ルーム凍結（read-only）/ 強制アーカイブ / 外部連携停止 / ルーム管理者再設定 / メンバー強制退会
 - すべて `reasonCode + reasonText` を必須とし、監査ログへ記録する
 - 原則としてルーム内にシステムメッセージを残す（強制措置が行われた事実が消えない）
 
@@ -109,7 +109,7 @@
 
 ### 「事前に分かる」仕組み（案）
 - 監査閲覧が申請/承認された時点で、ルーム内にシステムメッセージ・バナーを表示して通知する
-- 少なくともルーム管理者（私的ルームの管理者）には必ず通知する（MVPは全メンバーにも表示）
+- 少なくとも私的ルームのルーム管理者には必ず通知する（MVPは全メンバーにも表示）
 - 通知表示と閲覧権付与は同一トランザクションで確定し、通知が残らない状態での閲覧を不可能にする
 - 通知内容（案）
   - requestId / 対象期間 / 閲覧者（監査担当）/ reasonCode を含める
@@ -121,8 +121,8 @@
   - システムメッセージは削除不可（閲覧の事実が消えない）
   - 少なくともルーム管理者は必ず視認できる（MVPは全メンバーに表示）
 - 監査閲覧の履歴（requestId、申請者、承認者、閲覧者、対象期間、実行日時、理由）をルーム設定/監査画面から参照できる
-  - 参照権限（案）: room admin + mgmt/exec
-  - reasonText の参照は mgmt/exec のみ（room admin は reasonCode まで）
+  - 参照権限（案）: ルーム管理者 + mgmt/exec
+  - reasonText の参照は mgmt/exec のみ（ルーム管理者は reasonCode まで）
 
 ### 改ざん・削除対策（案）
 - チャットはハードデリート禁止（後述）
@@ -157,7 +157,7 @@
 - ChatMessageRead（messageId, userId, readAt）※既読表示の粒度次第
 - ChatAttachment（messageId, storageKey, fileName, mime, size など）
 - ChatMention（messageId, targetType, targetId など）※例: targetType = 'user' | 'group'
-- ChatBreakGlassRequest（roomId, requestedBy, reasonCode, reasonText, status, approvedBy, approvedAt, grantedAt, expiresAt など）
+- ChatBreakGlassRequest（roomId, requesterUserId, reasonCode, reasonText, status, approverUserId, approvedAt, grantedAt, expiresAt など）
 - ChatBreakGlassEvent（requestId, actorUserId, action, at, scope など）
 
 ## API
@@ -208,7 +208,8 @@
 - `POST /chat-messages/:id/attachments`（添付）
 - `GET /chat-search?q=`（検索）
 - `POST /chat-break-glass/requests`（監査閲覧申請）
-- `POST /chat-break-glass/requests/:id/approve|reject`（承認/却下）
+- `POST /chat-break-glass/requests/:id/approve`（承認）
+- `POST /chat-break-glass/requests/:id/reject`（却下）
 - `GET /chat-break-glass/requests`（申請一覧/履歴）
 
 ## UI（ProjectChat）
