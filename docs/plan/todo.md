@@ -1,5 +1,9 @@
 # TODO リスト（短期ドライブ用）
 
+## 残作業（運用確定）
+- [ ] S3 バケット/リージョン/KMS の確定値を `docs/requirements/backup-restore.md` に反映
+- [ ] S3/OSS 移行の時期を決定（`docs/requirements/backup-restore.md`）
+
 ## 次アクション（リリース準備/QA整理）
 - [x] #398 テスト結果インデックス整備
   - [x] docs/test-results/README.md を追加
