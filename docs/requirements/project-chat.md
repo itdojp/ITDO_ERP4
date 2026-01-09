@@ -50,6 +50,8 @@
 **挙動**
 - `userId` は認証情報から取得
 - 認証情報が不足する場合は `demo-user` をフォールバック（PoC向け）
+  - 本番環境では無効化し、401/403 を返す前提
+  - `demo-user` は明示的な設定フラグでのみ有効化する
 
 ### POST `/chat-messages/:id/reactions`
 **Body**
