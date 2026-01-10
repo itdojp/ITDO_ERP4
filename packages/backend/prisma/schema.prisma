@@ -169,6 +169,7 @@ model Project {
   milestones              ProjectMilestone[]
   chatMessages            ProjectChatMessage[]
   chatAckRequests         ProjectChatAckRequest[]
+  chatReadStates          ProjectChatReadState[]
   estimates               Estimate[]
   invoices                Invoice[]
   timeEntries             TimeEntry[]
@@ -298,6 +299,20 @@ model ProjectChatAttachment {
   @@unique([provider, providerKey])
   @@index([messageId])
   @@index([createdAt])
+}
+
+model ProjectChatReadState {
+  id         String   @id @default(uuid())
+  project    Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  projectId  String
+  userId     String
+  lastReadAt DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([projectId, userId])
+  @@index([userId])
+  @@index([projectId])
 }
 
 model ProjectMilestone {
