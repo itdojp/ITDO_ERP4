@@ -2,6 +2,7 @@ import { FastifyInstance } from 'fastify';
 import type { Prisma } from '@prisma/client';
 import {
   projectChatMessageSchema,
+  projectChatAckRequestSchema,
   projectChatReactionSchema,
 } from './validators.js';
 import { prisma } from '../services/db.js';
@@ -23,6 +24,20 @@ function parseLimit(value?: string, fallback = 50) {
   const parsed = Number(value);
   if (!Number.isInteger(parsed) || parsed <= 0) return null;
   return Math.min(parsed, 200);
+}
+
+function normalizeStringArray(
+  value: unknown,
+  options?: { dedupe?: boolean; max?: number },
+) {
+  if (!Array.isArray(value)) return [];
+  const items = value
+    .map((entry) => (typeof entry === 'string' ? entry.trim() : ''))
+    .filter(Boolean);
+  const deduped = options?.dedupe ? Array.from(new Set(items)) : items;
+  return typeof options?.max === 'number'
+    ? deduped.slice(0, options.max)
+    : deduped;
 }
 
 export async function registerChatRoutes(app: FastifyInstance) {
@@ -78,6 +93,13 @@ export async function registerChatRoutes(app: FastifyInstance) {
         where,
         orderBy: { createdAt: 'desc' },
         take,
+        include: {
+          ackRequest: {
+            include: {
+              acks: true,
+            },
+          },
+        },
       });
       return { items };
     },
@@ -101,12 +123,150 @@ export async function registerChatRoutes(app: FastifyInstance) {
           projectId,
           userId,
           body: body.body,
-          tags: body.tags?.length ? body.tags : undefined,
+          tags: normalizeStringArray(body.tags, { max: 8 }) || undefined,
           createdBy: userId,
           updatedBy: userId,
         },
       });
       return message;
+    },
+  );
+
+  app.post(
+    '/projects/:projectId/chat-ack-requests',
+    {
+      schema: projectChatAckRequestSchema,
+      preHandler: [
+        requireRole(chatRoles),
+        requireProjectAccess((req) => (req.params as any)?.projectId),
+      ],
+    },
+    async (req, reply) => {
+      const { projectId } = req.params as { projectId: string };
+      const body = req.body as {
+        body: string;
+        requiredUserIds: string[];
+        dueAt?: string;
+        tags?: string[];
+      };
+      const userId = req.user?.userId || 'demo-user';
+      const requiredUserIds = normalizeStringArray(body.requiredUserIds, {
+        dedupe: true,
+        max: 50,
+      });
+      if (!requiredUserIds.length) {
+        return reply.status(400).send({
+          error: {
+            code: 'INVALID_REQUIRED_USERS',
+            message: 'requiredUserIds must contain at least one userId',
+          },
+        });
+      }
+      const dueAt = parseDateParam(body.dueAt);
+      if (body.dueAt && !dueAt) {
+        return reply.status(400).send({
+          error: { code: 'INVALID_DATE', message: 'Invalid dueAt date-time' },
+        });
+      }
+
+      const message = await prisma.projectChatMessage.create({
+        data: {
+          projectId,
+          userId,
+          body: body.body,
+          tags: normalizeStringArray(body.tags, { max: 8 }) || undefined,
+          createdBy: userId,
+          updatedBy: userId,
+          ackRequest: {
+            create: {
+              projectId,
+              requiredUserIds,
+              dueAt: dueAt ?? undefined,
+              createdBy: userId,
+            },
+          },
+        },
+        include: {
+          ackRequest: {
+            include: { acks: true },
+          },
+        },
+      });
+      return message;
+    },
+  );
+
+  app.post(
+    '/chat-ack-requests/:id/ack',
+    {
+      preHandler: requireRole(chatRoles),
+    },
+    async (req, reply) => {
+      const { id } = req.params as { id: string };
+      const requestItem = await prisma.projectChatAckRequest.findUnique({
+        where: { id },
+        include: {
+          message: true,
+          acks: true,
+        },
+      });
+      if (!requestItem || requestItem.message.deletedAt) {
+        return reply.status(404).send({
+          error: { code: 'NOT_FOUND', message: 'Ack request not found' },
+        });
+      }
+
+      const roles = req.user?.roles || [];
+      const projectIds = req.user?.projectIds || [];
+      if (!hasProjectAccess(roles, projectIds, requestItem.projectId)) {
+        return reply.status(403).send({
+          error: {
+            code: 'FORBIDDEN_PROJECT',
+            message: 'Access to this project is forbidden',
+          },
+        });
+      }
+
+      const userId = req.user?.userId;
+      if (!userId) {
+        return reply.status(400).send({
+          error: { code: 'MISSING_USER_ID', message: 'user id is required' },
+        });
+      }
+      const requiredUserIds = normalizeStringArray(
+        requestItem.requiredUserIds,
+        {
+          dedupe: true,
+        },
+      );
+      if (!requiredUserIds.includes(userId)) {
+        return reply.status(403).send({
+          error: {
+            code: 'NOT_REQUIRED',
+            message: 'User is not in requiredUserIds',
+          },
+        });
+      }
+
+      await prisma.projectChatAck.upsert({
+        where: {
+          requestId_userId: {
+            requestId: requestItem.id,
+            userId,
+          },
+        },
+        update: {},
+        create: {
+          requestId: requestItem.id,
+          userId,
+        },
+      });
+
+      const updated = await prisma.projectChatAckRequest.findUnique({
+        where: { id: requestItem.id },
+        include: { acks: true },
+      });
+      return updated;
     },
   );
 

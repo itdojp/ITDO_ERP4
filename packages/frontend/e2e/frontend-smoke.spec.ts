@@ -63,6 +63,14 @@ async function waitForList(locator: Locator, label: string) {
 
 async function prepare(page: Page) {
   ensureEvidenceDir();
+  page.on('pageerror', (error) => {
+    console.error('[e2e][pageerror]', error);
+  });
+  page.on('console', (msg) => {
+    if (msg.type() === 'error') {
+      console.error('[e2e][console.error]', msg.text());
+    }
+  });
   await page.addInitScript((state) => {
     window.localStorage.setItem('erp4_auth', JSON.stringify(state));
   }, authState);
@@ -493,6 +501,7 @@ test('frontend smoke reports masters settings @extended', async ({ page }) => {
 });
 
 test('frontend smoke chat hr analytics @extended', async ({ page }) => {
+  test.setTimeout(180_000);
   const id = runId();
   await prepare(page);
 
@@ -503,7 +512,10 @@ test('frontend smoke chat hr analytics @extended', async ({ page }) => {
     .locator('h2', { hasText: 'プロジェクトチャット' })
     .locator('..');
   await chatSection.scrollIntoViewIfNeeded();
-  await chatSection.getByRole('button', { name: '読み込み' }).click();
+  await selectByLabelOrFirst(
+    chatSection.getByLabel('案件選択'),
+    'PRJ-DEMO-1 / Demo Project 1',
+  );
   const chatMessage = `E2E chat message ${id}`;
   await chatSection.getByPlaceholder('メッセージを書く').fill(chatMessage);
   await chatSection.getByPlaceholder('タグ (comma separated)').fill('e2e,chat');
@@ -518,6 +530,22 @@ test('frontend smoke chat hr analytics @extended', async ({ page }) => {
   ) {
     await reactionButton.first().click();
   }
+  await expect(chatSection.getByRole('button', { name: '投稿' })).toBeEnabled({
+    timeout: actionTimeout,
+  });
+
+  const ackMessage = `E2E ack request ${id}`;
+  await chatSection.getByPlaceholder('メッセージを書く').fill(ackMessage);
+  await chatSection.getByPlaceholder('タグ (comma separated)').fill('e2e,ack');
+  await chatSection
+    .getByPlaceholder('確認対象ユーザID (comma separated)')
+    .fill('demo-user');
+  await chatSection.getByRole('button', { name: '確認依頼' }).click();
+  const ackItem = chatSection.locator('li', { hasText: ackMessage });
+  await expect(ackItem).toBeVisible();
+  await expect(ackItem.getByText('確認状況: 0/1')).toBeVisible();
+  await ackItem.getByRole('button', { name: 'OK' }).click();
+  await expect(ackItem.getByText('確認状況: 1/1')).toBeVisible();
   await captureSection(chatSection, '12-project-chat.png');
 
   const hrSection = page
