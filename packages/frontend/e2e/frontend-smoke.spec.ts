@@ -517,10 +517,18 @@ test('frontend smoke chat hr analytics @extended', async ({ page }) => {
     'PRJ-DEMO-1 / Demo Project 1',
   );
   const chatMessage = `E2E chat message ${id}`;
+  const uploadName = `e2e-chat-${id}.txt`;
+  const uploadPath = path.join(rootDir, 'tmp', uploadName);
+  fs.mkdirSync(path.dirname(uploadPath), { recursive: true });
+  fs.writeFileSync(uploadPath, `e2e upload ${id}`);
   await chatSection.getByPlaceholder('メッセージを書く').fill(chatMessage);
   await chatSection.getByPlaceholder('タグ (comma separated)').fill('e2e,chat');
+  await chatSection.getByLabel('添付').setInputFiles(uploadPath);
   await chatSection.getByRole('button', { name: '投稿' }).click();
   await expect(chatSection.getByText(chatMessage)).toBeVisible();
+  await expect(
+    chatSection.getByRole('button', { name: uploadName }),
+  ).toBeVisible();
   const reactionButton = chatSection.getByRole('button', { name: /^👍/ });
   if (
     await reactionButton

@@ -243,6 +243,7 @@ model ProjectChatMessage {
   tags          Json?
   reactions     Json?
   ackRequest    ProjectChatAckRequest?
+  attachments   ProjectChatAttachment[]
   createdAt     DateTime  @default(now())
   createdBy     String?
   updatedAt     DateTime  @updatedAt
@@ -277,6 +278,26 @@ model ProjectChatAck {
 
   @@unique([requestId, userId])
   @@index([userId])
+}
+
+model ProjectChatAttachment {
+  id           String            @id @default(uuid())
+  message      ProjectChatMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  messageId    String
+  provider     String
+  providerKey  String
+  sha256       String?
+  sizeBytes    Int?
+  mimeType     String?
+  originalName String
+  createdAt    DateTime          @default(now())
+  createdBy    String?
+  deletedAt    DateTime?
+  deletedReason String?
+
+  @@unique([provider, providerKey])
+  @@index([messageId])
+  @@index([createdAt])
 }
 
 model ProjectMilestone {
