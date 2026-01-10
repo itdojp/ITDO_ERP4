@@ -12,6 +12,12 @@ type ChatMessage = {
   body: string;
   tags?: string[];
   reactions?: Record<string, number | { count: number; userIds: string[] }>;
+  ackRequest?: {
+    id: string;
+    requiredUserIds: unknown;
+    dueAt?: string | null;
+    acks?: { userId: string; ackedAt: string }[];
+  } | null;
   createdAt: string;
 };
 
@@ -22,6 +28,20 @@ function parseTags(value: string) {
   return value
     .split(',')
     .map((tag) => tag.trim())
+    .filter(Boolean);
+}
+
+function normalizeStringArray(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((entry) => (typeof entry === 'string' ? entry.trim() : ''))
+    .filter(Boolean);
+}
+
+function parseUserIds(value: string) {
+  return value
+    .split(',')
+    .map((entry) => entry.trim())
     .filter(Boolean);
 }
 
@@ -84,6 +104,7 @@ export const ProjectChat: React.FC = () => {
   });
   const [body, setBody] = useState('');
   const [tags, setTags] = useState('');
+  const [ackTargets, setAckTargets] = useState('');
   const [filterTag, setFilterTag] = useState('');
   const [items, setItems] = useState<ChatMessage[]>([]);
   const [message, setMessage] = useState('');
@@ -91,6 +112,7 @@ export const ProjectChat: React.FC = () => {
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [isPosting, setIsPosting] = useState(false);
   const [hasMore, setHasMore] = useState(false);
+  const currentUserId = auth?.userId || 'demo-user';
 
   const load = async () => {
     try {
@@ -182,6 +204,59 @@ export const ProjectChat: React.FC = () => {
     }
   };
 
+  const postAckRequest = async () => {
+    const trimmedBody = body.trim();
+    if (!trimmedBody) {
+      setMessage('メッセージを入力してください');
+      return;
+    }
+    if (trimmedBody.length > 2000) {
+      setMessage('メッセージは2000文字以内で入力してください');
+      return;
+    }
+    const parsedTargets = parseUserIds(ackTargets);
+    const uniqueTargets = Array.from(new Set(parsedTargets));
+    if (!uniqueTargets.length) {
+      setMessage('確認対象のユーザIDを入力してください');
+      return;
+    }
+    if (uniqueTargets.length > 50) {
+      setMessage('確認対象は最大50件までです');
+      return;
+    }
+    const parsedTags = parseTags(tags);
+    if (parsedTags.length > 8) {
+      setMessage('タグは最大8件までです');
+      return;
+    }
+    const invalidTag = parsedTags.find((tag) => tag.length > 32);
+    if (invalidTag) {
+      setMessage('タグは1つあたり32文字以内で入力してください');
+      return;
+    }
+    try {
+      setIsPosting(true);
+      await api(`/projects/${projectId}/chat-ack-requests`, {
+        method: 'POST',
+        body: JSON.stringify({
+          body: trimmedBody,
+          requiredUserIds: uniqueTargets,
+          tags: parsedTags,
+        }),
+      });
+      setBody('');
+      setTags('');
+      setAckTargets('');
+      setMessage('確認依頼を投稿しました');
+      await load();
+    } catch (error) {
+      console.error('確認依頼の投稿に失敗しました', error);
+      setMessage('確認依頼の投稿に失敗しました');
+    } finally {
+      setIsPosting(false);
+    }
+  };
+
   const addReaction = async (id: string, emoji: string) => {
     try {
       const updated = await api<ChatMessage>(`/chat-messages/${id}/reactions`, {
@@ -194,6 +269,25 @@ export const ProjectChat: React.FC = () => {
     } catch (error) {
       console.error('リアクションに失敗しました', error);
       setMessage('リアクションに失敗しました');
+    }
+  };
+
+  const ackRequest = async (requestId: string) => {
+    try {
+      const updated = await api<ChatMessage['ackRequest']>(
+        `/chat-ack-requests/${requestId}/ack`,
+        { method: 'POST' },
+      );
+      setItems((prevItems) =>
+        prevItems.map((item) =>
+          item.ackRequest?.id === requestId
+            ? { ...item, ackRequest: updated || item.ackRequest }
+            : item,
+        ),
+      );
+    } catch (error) {
+      console.error('確認の記録に失敗しました', error);
+      setMessage('確認の記録に失敗しました');
     }
   };
 
@@ -250,9 +344,25 @@ export const ProjectChat: React.FC = () => {
           placeholder="タグ (comma separated)"
           style={{ width: '100%', marginTop: 8 }}
         />
-        <button className="button" onClick={postMessage} disabled={isPosting}>
-          {isPosting ? '投稿中...' : '投稿'}
-        </button>
+        <input
+          type="text"
+          value={ackTargets}
+          onChange={(e) => setAckTargets(e.target.value)}
+          placeholder="確認対象ユーザID (comma separated)"
+          style={{ width: '100%', marginTop: 8 }}
+        />
+        <div className="row" style={{ gap: 8, marginTop: 8 }}>
+          <button className="button" onClick={postMessage} disabled={isPosting}>
+            {isPosting ? '投稿中...' : '投稿'}
+          </button>
+          <button
+            className="button secondary"
+            onClick={postAckRequest}
+            disabled={isPosting}
+          >
+            {isPosting ? '投稿中...' : '確認依頼'}
+          </button>
+        </div>
       </div>
       {message && <p>{message}</p>}
       <ul className="list">
@@ -264,6 +374,20 @@ export const ProjectChat: React.FC = () => {
           const reactionEntries = Object.entries(reactions).map(
             ([emoji, value]) => [emoji, getReactionCount(value)],
           );
+          const requiredUserIds = normalizeStringArray(
+            item.ackRequest?.requiredUserIds,
+          );
+          const ackedUserIds = normalizeStringArray(
+            item.ackRequest?.acks?.map((ack) => ack.userId),
+          );
+          const requiredCount = requiredUserIds.length;
+          const ackedCount = requiredUserIds.filter((userId) =>
+            ackedUserIds.includes(userId),
+          ).length;
+          const canAck =
+            item.ackRequest?.id &&
+            requiredUserIds.includes(currentUserId) &&
+            !ackedUserIds.includes(currentUserId);
           return (
             <li key={item.id}>
               <div style={{ fontSize: 12, color: '#64748b' }}>
@@ -272,8 +396,12 @@ export const ProjectChat: React.FC = () => {
               <ReactMarkdown
                 remarkPlugins={[remarkGfm, remarkBreaks]}
                 allowedElements={markdownAllowedElements}
-                transformLinkUri={transformLinkUri}
-                linkTarget="_blank"
+                urlTransform={transformLinkUri}
+                components={{
+                  a: ({ node: _node, ...props }) => (
+                    <a {...props} target="_blank" rel="noreferrer noopener" />
+                  ),
+                }}
               >
                 {item.body}
               </ReactMarkdown>
@@ -284,6 +412,44 @@ export const ProjectChat: React.FC = () => {
                       #{tag}
                     </span>
                   ))}
+                </div>
+              )}
+              {item.ackRequest?.id && (
+                <div
+                  style={{
+                    marginTop: 8,
+                    padding: 10,
+                    border: '1px solid #e2e8f0',
+                    borderRadius: 8,
+                    background: '#f8fafc',
+                  }}
+                >
+                  <div style={{ fontSize: 12, color: '#64748b' }}>
+                    確認状況: {ackedCount}/{requiredCount || 0}
+                  </div>
+                  {requiredCount > 0 && (
+                    <div
+                      className="row"
+                      style={{ gap: 6, flexWrap: 'wrap', marginTop: 6 }}
+                    >
+                      {requiredUserIds.map((userId) => (
+                        <span key={userId} className="badge">
+                          {userId}
+                          {ackedUserIds.includes(userId) ? ' ✅' : ''}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  {canAck && (
+                    <div style={{ marginTop: 8 }}>
+                      <button
+                        className="button"
+                        onClick={() => ackRequest(item.ackRequest!.id)}
+                      >
+                        OK
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
               <div className="row" style={{ gap: 6, marginTop: 6 }}>

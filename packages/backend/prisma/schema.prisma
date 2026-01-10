@@ -168,6 +168,7 @@ model Project {
   tasks                   ProjectTask[]
   milestones              ProjectMilestone[]
   chatMessages            ProjectChatMessage[]
+  chatAckRequests         ProjectChatAckRequest[]
   estimates               Estimate[]
   invoices                Invoice[]
   timeEntries             TimeEntry[]
@@ -241,6 +242,7 @@ model ProjectChatMessage {
   body          String
   tags          Json?
   reactions     Json?
+  ackRequest    ProjectChatAckRequest?
   createdAt     DateTime  @default(now())
   createdBy     String?
   updatedAt     DateTime  @updatedAt
@@ -249,6 +251,32 @@ model ProjectChatMessage {
   deletedReason String?
 
   @@index([projectId, createdAt])
+}
+
+model ProjectChatAckRequest {
+  id              String            @id @default(uuid())
+  message         ProjectChatMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  messageId       String            @unique
+  project         Project           @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  projectId       String
+  requiredUserIds Json
+  dueAt           DateTime?
+  createdAt       DateTime          @default(now())
+  createdBy       String?
+  acks            ProjectChatAck[]
+
+  @@index([projectId, createdAt])
+}
+
+model ProjectChatAck {
+  id        String               @id @default(uuid())
+  request   ProjectChatAckRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  requestId String
+  userId    String
+  ackedAt   DateTime             @default(now())
+
+  @@unique([requestId, userId])
+  @@index([userId])
 }
 
 model ProjectMilestone {

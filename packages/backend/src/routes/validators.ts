@@ -365,6 +365,23 @@ export const projectChatReactionSchema = {
   }),
 };
 
+export const projectChatAckRequestSchema = {
+  body: Type.Object(
+    {
+      body: Type.String({ minLength: 1, maxLength: 2000 }),
+      requiredUserIds: Type.Array(Type.String({ minLength: 1 }), {
+        minItems: 1,
+        maxItems: 50,
+      }),
+      dueAt: Type.Optional(Type.String({ format: 'date-time' })),
+      tags: Type.Optional(
+        Type.Array(Type.String({ maxLength: 32 }), { maxItems: 8 }),
+      ),
+    },
+    { additionalProperties: false },
+  ),
+};
+
 export const leaveRequestSchema = {
   body: Type.Object({
     userId: Type.String(),

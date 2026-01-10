@@ -163,8 +163,23 @@
 - `body`: メッセージ本文
 - `tags`: JSON配列（文字列のタグ一覧）
 - `reactions`: JSONマップ（emoji -> { count, userIds[] }）
+- `ackRequest`: 確認依頼（任意、特別メッセージ）
 - `createdAt/createdBy`, `updatedAt/updatedBy`
 - `deletedAt/deletedReason`（論理削除用、API未実装）
+
+### ProjectChatAckRequest（確認依頼）
+- `id`: UUID
+- `messageId`: 参照先 `ProjectChatMessage`（1:1）
+- `projectId`: 参照先 `Project`（検索/一覧用途）
+- `requiredUserIds`: JSON配列（確認対象ユーザID、重複なしを想定）
+- `dueAt`: 任意（期限）
+- `createdAt/createdBy`
+
+### ProjectChatAck（確認）
+- `id`: UUID
+- `requestId`: 参照先 `ProjectChatAckRequest`
+- `userId`: 確認したユーザID
+- `ackedAt`
 
 ### インデックス
 - `projectId, createdAt`
@@ -209,6 +224,25 @@
   - 本番環境では無効化し、401/403 を返す前提
   - `demo-user` は明示的な設定フラグでのみ有効化する
 
+### POST `/projects/:projectId/chat-ack-requests`
+**Body**
+- `body` (1〜2000文字)
+- `requiredUserIds` (1〜50件)
+- `dueAt` (任意: ISO日時)
+- `tags` (任意: 0〜8件、各32文字まで)
+
+**挙動**
+- 通常メッセージ + `ProjectChatAckRequest` を1トランザクションで作成する
+- `requiredUserIds` はトリムして重複排除する（API側で正規化）
+
+### POST `/chat-ack-requests/:id/ack`
+**Body**
+- なし
+
+**挙動**
+- `requiredUserIds` に含まれるユーザのみ OK/確認できる
+- 二重送信は冪等（同一ユーザは1回のみ記録される）
+
 ### POST `/chat-messages/:id/reactions`
 **Body**
 - `emoji` (1〜16文字)
@@ -225,7 +259,6 @@
 - `POST /chat-rooms/:id/messages`（メッセージ投稿）
 - `POST /chat-rooms/:id/read`（既読更新）
 - `GET /chat-rooms/:id/unread-counts`（未読件数）
-- `POST /chat-messages/:id/ack`（確認メッセージへのOK/確認）
 - `POST /chat-messages/:id/attachments`（添付）
 - `GET /chat-search?q=`（検索）
 - `POST /chat-break-glass/requests`（監査閲覧申請）
