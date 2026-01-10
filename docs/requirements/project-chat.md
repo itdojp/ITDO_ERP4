@@ -20,8 +20,11 @@
 
 ## 決定事項（見直し反映）
 - 既読/未読状態を保持する
-- 既読状態を他のユーザに見せるかは「チャット単位」でルーム管理者が選択可能
+- 自分の未読は自分のみが確認できる（未読件数/新着強調など）
+- 自分以外の未読/既読状態は表示しない（いわゆる既読表示はしない）
 - メンションは必須
+- メンション対象は補完選択で指定できる（ユーザ/グループ/全員）
+  - 全員宛（@all）は投稿前の確認メッセージ + 投稿回数制限を行う
 - 本文はMarkdownで記述する
 - 通知/添付/検索はERP統合として望ましい形で設計する（原則のみ決定。詳細な方式は「未決定/要設計」を参照）
 - 監査目的の break-glass（監査閲覧）を提供する（理由必須 + 監査ログ必須 + 二重承認を想定）
@@ -33,9 +36,11 @@
 ### ベース（案）
 - チャット単位は「プロジェクト/部門/全社/DM」を含める
   - DM は管理者設定で無効化できる
-- 既読表示の粒度はチャット（ルーム）毎に選択できる
-  - 既読者一覧 / 人数のみ / 非表示
-- メンションの種類: ユーザ / グループ / 全員
+- 自分の未読は自分のみが全てわかる（未読件数/未読ハイライト）
+  - 自分以外の未読/既読状態は表示しない
+- 指定した対象者の「OK/確認」状況を追える確認メッセージ（特別メッセージ）を提供する（方式は要設計）
+- メンションの種類: ユーザ / グループ / 全員（補完選択で指定）
+  - 全員宛（@all）は投稿前確認 + 投稿回数制限
 - 検索の対象範囲は設定で選択できる
   - チャットのみ / ERP横断
 - 通知チャネル（アプリ内/メール/Push/外部連携）と通知条件は設定で選択できるようにする（詳細検討）
@@ -45,6 +50,7 @@
 ### 詳細検討（論点）
 - Markdown方言（CommonMark/GFMなど）とサニタイズ方針
 - 添付の保存先: Google Drive を候補として検討（権限制御/共有モデル/監査/容量/ウイルス対策）
+  - Google側の「システムユーザのみが読み書きできる領域」を専用ストレージとして利用する案（Drive連携案に相当）
 - ERP横断検索の範囲と権限制御、インデックス方式
 - 通知の既定値、ミュート/頻度制御、外部連携の扱い（公式ルームのみ）
 - AIの実装方式（ローカル/外部LLM）、権限/監査（外部LLM送信は外部連携扱い）
@@ -164,12 +170,13 @@
 - `projectId, createdAt`
 
 ## データモデル（拡張案）
-- ChatRoom（type, name, projectId?, groupId?, readReceiptMode, allowExternal, createdBy など）
+- ChatRoom（type, name, projectId?, groupId?, allowExternal, createdBy など）
 - ChatRoomMember（roomId, userId, role, lastReadAt など）
-- ChatMessage（roomId, userId, bodyMarkdown, createdAt など）※Markdown本文
-- ChatMessageRead（messageId, userId, readAt）※既読表示の粒度次第
+- ChatMessage（roomId, userId, bodyMarkdown, createdAt, messageType など）※Markdown本文
 - ChatAttachment（messageId, storageKey, fileName, mime, size など）
 - ChatMention（messageId, targetType, targetId など）※例: targetType = 'user' | 'group' | 'all'
+- ChatMessageAckRequest（messageId, requiredUserIds, requiredAll, dueAt など）
+- ChatMessageAck（messageId, userId, ackedAt）
 - ChatBreakGlassRequest（roomId, requesterUserId, reasonCode, reasonText, status, approverUserId, approvedAt, grantedAt, expiresAt など）
 - ChatBreakGlassEvent（requestId, actorUserId, action, at, scope など）
 
@@ -218,6 +225,7 @@
 - `POST /chat-rooms/:id/messages`（メッセージ投稿）
 - `POST /chat-rooms/:id/read`（既読更新）
 - `GET /chat-rooms/:id/unread-counts`（未読件数）
+- `POST /chat-messages/:id/ack`（確認メッセージへのOK/確認）
 - `POST /chat-messages/:id/attachments`（添付）
 - `GET /chat-search?q=`（検索）
 - `POST /chat-break-glass/requests`（監査閲覧申請）
