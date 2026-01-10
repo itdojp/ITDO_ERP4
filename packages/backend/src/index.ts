@@ -1,6 +1,7 @@
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
+import multipart from '@fastify/multipart';
 import { registerRoutes } from './routes/index.js';
 import authPlugin from './plugins/auth.js';
 
@@ -30,6 +31,17 @@ async function main() {
     },
   });
   await server.register(authPlugin);
+  const chatAttachmentMaxBytes = Number(
+    process.env.CHAT_ATTACHMENT_MAX_BYTES || 10 * 1024 * 1024,
+  );
+  await server.register(multipart, {
+    limits: {
+      fileSize:
+        Number.isFinite(chatAttachmentMaxBytes) && chatAttachmentMaxBytes > 0
+          ? Math.floor(chatAttachmentMaxBytes)
+          : 10 * 1024 * 1024,
+    },
+  });
 
   // health
   server.get('/health', async () => ({ ok: true }));

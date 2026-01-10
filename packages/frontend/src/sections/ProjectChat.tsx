@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkBreaks from 'remark-breaks';
 import remarkGfm from 'remark-gfm';
-import { api, getAuthState } from '../api';
+import { api, apiResponse, getAuthState } from '../api';
 import { useProjects } from '../hooks/useProjects';
 
 type ChatMessage = {
@@ -18,6 +18,13 @@ type ChatMessage = {
     dueAt?: string | null;
     acks?: { userId: string; ackedAt: string }[];
   } | null;
+  attachments?: {
+    id: string;
+    originalName: string;
+    mimeType?: string | null;
+    sizeBytes?: number | null;
+    createdAt: string;
+  }[];
   createdAt: string;
 };
 
@@ -94,6 +101,10 @@ function transformLinkUri(uri?: string) {
   return '';
 }
 
+function sanitizeFilename(value: string) {
+  return value.replace(/["\\\r\n]/g, '_').replace(/[/\\]/g, '_');
+}
+
 export const ProjectChat: React.FC = () => {
   const auth = getAuthState();
   const defaultProjectId = auth?.projectIds?.[0] || 'demo-project';
@@ -105,6 +116,7 @@ export const ProjectChat: React.FC = () => {
   const [body, setBody] = useState('');
   const [tags, setTags] = useState('');
   const [ackTargets, setAckTargets] = useState('');
+  const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
   const [filterTag, setFilterTag] = useState('');
   const [items, setItems] = useState<ChatMessage[]>([]);
   const [message, setMessage] = useState('');
@@ -113,6 +125,35 @@ export const ProjectChat: React.FC = () => {
   const [isPosting, setIsPosting] = useState(false);
   const [hasMore, setHasMore] = useState(false);
   const currentUserId = auth?.userId || 'demo-user';
+
+  const uploadAttachment = async (messageId: string, file: File) => {
+    const form = new FormData();
+    form.append('file', file, file.name);
+    await api(`/chat-messages/${messageId}/attachments`, {
+      method: 'POST',
+      body: form,
+    });
+  };
+
+  const downloadAttachment = async (
+    attachmentId: string,
+    originalName: string,
+  ) => {
+    const res = await apiResponse(`/chat-attachments/${attachmentId}`);
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      throw new Error(`download failed (${res.status}) ${text}`);
+    }
+    const blob = await res.blob();
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = sanitizeFilename(originalName) || 'attachment';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(url);
+  };
 
   const load = async () => {
     try {
@@ -185,15 +226,22 @@ export const ProjectChat: React.FC = () => {
     }
     try {
       setIsPosting(true);
-      await api(`/projects/${projectId}/chat-messages`, {
-        method: 'POST',
-        body: JSON.stringify({
-          body: trimmedBody,
-          tags: parsedTags,
-        }),
-      });
+      const created = await api<ChatMessage>(
+        `/projects/${projectId}/chat-messages`,
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            body: trimmedBody,
+            tags: parsedTags,
+          }),
+        },
+      );
+      if (attachmentFile) {
+        await uploadAttachment(created.id, attachmentFile);
+      }
       setBody('');
       setTags('');
+      setAttachmentFile(null);
       setMessage('投稿しました');
       await load();
     } catch (error) {
@@ -236,17 +284,24 @@ export const ProjectChat: React.FC = () => {
     }
     try {
       setIsPosting(true);
-      await api(`/projects/${projectId}/chat-ack-requests`, {
-        method: 'POST',
-        body: JSON.stringify({
-          body: trimmedBody,
-          requiredUserIds: uniqueTargets,
-          tags: parsedTags,
-        }),
-      });
+      const created = await api<ChatMessage>(
+        `/projects/${projectId}/chat-ack-requests`,
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            body: trimmedBody,
+            requiredUserIds: uniqueTargets,
+            tags: parsedTags,
+          }),
+        },
+      );
+      if (attachmentFile) {
+        await uploadAttachment(created.id, attachmentFile);
+      }
       setBody('');
       setTags('');
       setAckTargets('');
+      setAttachmentFile(null);
       setMessage('確認依頼を投稿しました');
       await load();
     } catch (error) {
@@ -345,6 +400,12 @@ export const ProjectChat: React.FC = () => {
           style={{ width: '100%', marginTop: 8 }}
         />
         <input
+          aria-label="添付"
+          type="file"
+          onChange={(e) => setAttachmentFile(e.target.files?.[0] || null)}
+          style={{ width: '100%', marginTop: 8 }}
+        />
+        <input
           type="text"
           value={ackTargets}
           onChange={(e) => setAckTargets(e.target.value)}
@@ -405,6 +466,36 @@ export const ProjectChat: React.FC = () => {
               >
                 {item.body}
               </ReactMarkdown>
+              {item.attachments && item.attachments.length > 0 && (
+                <div style={{ marginTop: 6 }}>
+                  <div style={{ fontSize: 12, color: '#64748b' }}>添付:</div>
+                  <div
+                    className="row"
+                    style={{ gap: 6, flexWrap: 'wrap', marginTop: 4 }}
+                  >
+                    {item.attachments.map((attachment) => (
+                      <button
+                        key={attachment.id}
+                        className="button secondary"
+                        onClick={() =>
+                          downloadAttachment(
+                            attachment.id,
+                            attachment.originalName,
+                          ).catch((error) => {
+                            console.error(
+                              '添付のダウンロードに失敗しました',
+                              error,
+                            );
+                            setMessage('添付のダウンロードに失敗しました');
+                          })
+                        }
+                      >
+                        {attachment.originalName}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
               {item.tags && item.tags.length > 0 && (
                 <div className="row" style={{ gap: 6, marginTop: 4 }}>
                   {item.tags.map((tag) => (

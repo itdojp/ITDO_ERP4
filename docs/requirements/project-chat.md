@@ -181,6 +181,18 @@
 - `userId`: 確認したユーザID
 - `ackedAt`
 
+### ProjectChatAttachment（添付）
+- `id`: UUID
+- `messageId`: 参照先 `ProjectChatMessage`
+- `provider`: `local` / `gdrive`
+- `providerKey`: 保存先側のキー（ローカルキー/Drive fileId 等）
+- `sha256`: 任意
+- `sizeBytes`: 任意
+- `mimeType`: 任意
+- `originalName`: 元のファイル名
+- `createdAt/createdBy`
+- `deletedAt/deletedReason`（論理削除用、API未実装）
+
 ### インデックス
 - `projectId, createdAt`
 
@@ -242,6 +254,20 @@
 **挙動**
 - `requiredUserIds` に含まれるユーザのみ OK/確認できる
 - 二重送信は冪等（同一ユーザは1回のみ記録される）
+
+### POST `/chat-messages/:id/attachments`
+**Body**
+- `multipart/form-data` で `file` を送信
+
+**挙動**
+- `messageId` のメッセージに添付を追加する
+- provider は `CHAT_ATTACHMENT_PROVIDER` に従う（`local`/`gdrive`）
+- `CHAT_ATTACHMENT_MAX_BYTES` を超える場合は 413 を返す
+
+### GET `/chat-attachments/:id`
+**挙動**
+- ERPの権限チェック（案件アクセス）を通過した場合のみダウンロード可能
+- 認証はヘッダベースのため、UI側は `fetch` で取得してダウンロードする（直リンクではない）
 
 ### POST `/chat-messages/:id/reactions`
 **Body**

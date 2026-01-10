@@ -11,6 +11,11 @@ import {
   requireProjectAccess,
   requireRole,
 } from '../services/rbac.js';
+import { auditContextFromRequest, logAudit } from '../services/audit.js';
+import {
+  openAttachment,
+  storeAttachment,
+} from '../services/chatAttachments.js';
 
 function parseDateParam(value?: string) {
   if (!value) return null;
@@ -38,6 +43,29 @@ function normalizeStringArray(
   return typeof options?.max === 'number'
     ? deduped.slice(0, options.max)
     : deduped;
+}
+
+function parseMaxBytes(raw: string | undefined, fallback: number) {
+  if (!raw) return fallback;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+  return Math.floor(parsed);
+}
+
+async function readFileBuffer(
+  stream: AsyncIterable<Buffer>,
+  maxBytes: number,
+): Promise<Buffer> {
+  const chunks: Buffer[] = [];
+  let total = 0;
+  for await (const chunk of stream) {
+    total += chunk.length;
+    if (total > maxBytes) {
+      throw new Error('FILE_TOO_LARGE');
+    }
+    chunks.push(chunk);
+  }
+  return Buffer.concat(chunks);
 }
 
 export async function registerChatRoutes(app: FastifyInstance) {
@@ -98,6 +126,18 @@ export async function registerChatRoutes(app: FastifyInstance) {
             include: {
               acks: true,
             },
+          },
+          attachments: {
+            select: {
+              id: true,
+              originalName: true,
+              mimeType: true,
+              sizeBytes: true,
+              createdAt: true,
+              createdBy: true,
+            },
+            where: { deletedAt: null },
+            orderBy: { createdAt: 'asc' },
           },
         },
       });
@@ -349,6 +389,183 @@ export async function registerChatRoutes(app: FastifyInstance) {
         },
       });
       return updated;
+    },
+  );
+
+  app.post(
+    '/chat-messages/:id/attachments',
+    {
+      preHandler: requireRole(chatRoles),
+      bodyLimit: parseMaxBytes(
+        process.env.CHAT_ATTACHMENT_MAX_BYTES,
+        10 * 1024 * 1024,
+      ),
+    },
+    async (req, reply) => {
+      const { id } = req.params as { id: string };
+      const message = await prisma.projectChatMessage.findUnique({
+        where: { id },
+      });
+      if (!message || message.deletedAt) {
+        return reply.status(404).send({
+          error: { code: 'NOT_FOUND', message: 'Message not found' },
+        });
+      }
+      const roles = req.user?.roles || [];
+      const projectIds = req.user?.projectIds || [];
+      if (!hasProjectAccess(roles, projectIds, message.projectId)) {
+        return reply.status(403).send({
+          error: {
+            code: 'FORBIDDEN_PROJECT',
+            message: 'Access to this project is forbidden',
+          },
+        });
+      }
+      const userId = req.user?.userId;
+      if (!userId) {
+        return reply.status(400).send({
+          error: { code: 'MISSING_USER_ID', message: 'user id is required' },
+        });
+      }
+
+      const maxBytes = parseMaxBytes(
+        process.env.CHAT_ATTACHMENT_MAX_BYTES,
+        10 * 1024 * 1024,
+      );
+      const file = await (req as any).file?.();
+      if (!file) {
+        return reply.status(400).send({
+          error: { code: 'MISSING_FILE', message: 'file is required' },
+        });
+      }
+      const filename = typeof file.filename === 'string' ? file.filename : '';
+      if (!filename) {
+        return reply.status(400).send({
+          error: {
+            code: 'INVALID_FILENAME',
+            message: 'filename is required',
+          },
+        });
+      }
+      const mimetype = typeof file.mimetype === 'string' ? file.mimetype : null;
+
+      let buffer: Buffer;
+      try {
+        buffer = await readFileBuffer(file.file, maxBytes);
+      } catch (err) {
+        if (err instanceof Error && err.message === 'FILE_TOO_LARGE') {
+          return reply.status(413).send({
+            error: {
+              code: 'FILE_TOO_LARGE',
+              message: `file exceeds ${maxBytes} bytes`,
+            },
+          });
+        }
+        throw err;
+      }
+
+      const stored = await storeAttachment({
+        buffer,
+        originalName: filename,
+        mimeType: mimetype,
+      });
+
+      const attachment = await prisma.projectChatAttachment.create({
+        data: {
+          messageId: message.id,
+          provider: stored.provider,
+          providerKey: stored.providerKey,
+          sha256: stored.sha256,
+          sizeBytes: stored.sizeBytes,
+          mimeType: stored.mimeType,
+          originalName: stored.originalName,
+          createdBy: userId,
+        },
+        select: {
+          id: true,
+          messageId: true,
+          originalName: true,
+          mimeType: true,
+          sizeBytes: true,
+          createdAt: true,
+          createdBy: true,
+        },
+      });
+      await logAudit({
+        action: 'chat_attachment_uploaded',
+        targetTable: 'project_chat_attachments',
+        targetId: attachment.id,
+        metadata: {
+          messageId: message.id,
+          projectId: message.projectId,
+          provider: stored.provider,
+          sizeBytes: stored.sizeBytes,
+          mimeType: stored.mimeType,
+        } as Prisma.InputJsonValue,
+        ...auditContextFromRequest(req),
+      });
+      return attachment;
+    },
+  );
+
+  app.get(
+    '/chat-attachments/:id',
+    { preHandler: requireRole(chatRoles) },
+    async (req, reply) => {
+      const { id } = req.params as { id: string };
+      const attachment = await prisma.projectChatAttachment.findUnique({
+        where: { id },
+        include: { message: true },
+      });
+      if (!attachment || attachment.deletedAt || attachment.message.deletedAt) {
+        return reply
+          .status(404)
+          .send({ error: { code: 'NOT_FOUND', message: 'Not found' } });
+      }
+      const roles = req.user?.roles || [];
+      const projectIds = req.user?.projectIds || [];
+      if (!hasProjectAccess(roles, projectIds, attachment.message.projectId)) {
+        return reply.status(403).send({
+          error: {
+            code: 'FORBIDDEN_PROJECT',
+            message: 'Access to this project is forbidden',
+          },
+        });
+      }
+
+      const safeFilename = attachment.originalName.replace(/["\\\r\n]/g, '_');
+      reply.header(
+        'Content-Disposition',
+        `attachment; filename="${safeFilename}"`,
+      );
+      reply.type(attachment.mimeType || 'application/octet-stream');
+
+      const opened = await openAttachment(
+        attachment.provider === 'gdrive' ? 'gdrive' : 'local',
+        attachment.providerKey,
+      );
+      opened.stream.on('error', (err) => {
+        opened.stream.destroy();
+        if (req.log && typeof req.log.error === 'function') {
+          req.log.error({ err }, 'Error while streaming attachment');
+        }
+        if (!reply.raw.headersSent) {
+          reply.status(500).send({ error: 'internal_error' });
+        }
+      });
+
+      await logAudit({
+        action: 'chat_attachment_downloaded',
+        targetTable: 'project_chat_attachments',
+        targetId: attachment.id,
+        metadata: {
+          messageId: attachment.messageId,
+          projectId: attachment.message.projectId,
+          provider: attachment.provider,
+        } as Prisma.InputJsonValue,
+        ...auditContextFromRequest(req),
+      });
+      return reply.send(opened.stream);
     },
   );
 }

@@ -97,16 +97,32 @@ async function handleResponse<T>(res: Response, path: string): Promise<T> {
   throw new Error(`Request failed: ${path} (${res.status}) ${body}`);
 }
 
+function shouldSetJsonHeader(body: RequestInit['body']) {
+  if (body === undefined || body === null) return false;
+  if (typeof FormData !== 'undefined' && body instanceof FormData) return false;
+  return typeof body === 'string';
+}
+
+export async function apiResponse(
+  path: string,
+  options: RequestInit = {},
+): Promise<Response> {
+  const url = resolveApiPath(path);
+  const res = await fetch(url, {
+    ...options,
+    headers: mergeHeaders(options.headers, {
+      json: shouldSetJsonHeader(options.body),
+    }),
+  });
+  return res;
+}
+
 export async function api<T>(
   path: string,
   options: RequestInit = {},
 ): Promise<T> {
-  const hasBody = options.body !== undefined && options.body !== null;
   const url = resolveApiPath(path);
-  const res = await fetch(url, {
-    ...options,
-    headers: mergeHeaders(options.headers, { json: hasBody }),
-  });
+  const res = await apiResponse(url, options);
   return handleResponse<T>(res, url);
 }
 
