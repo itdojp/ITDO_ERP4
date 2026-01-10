@@ -1,4 +1,7 @@
 import React, { useState } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkBreaks from 'remark-breaks';
+import remarkGfm from 'remark-gfm';
 import { api, getAuthState } from '../api';
 import { useProjects } from '../hooks/useProjects';
 
@@ -33,6 +36,42 @@ function getReactionCount(value: unknown) {
     return (value as { count: number }).count;
   }
   return 0;
+}
+
+const markdownAllowedElements = [
+  'p',
+  'br',
+  'strong',
+  'em',
+  'del',
+  'blockquote',
+  'ul',
+  'ol',
+  'li',
+  'code',
+  'pre',
+  'a',
+  'h1',
+  'h2',
+  'h3',
+  'hr',
+];
+
+function transformLinkUri(uri?: string) {
+  if (!uri) return '';
+  const trimmed = uri.trim();
+  if (!trimmed) return '';
+  if (trimmed.startsWith('/') || trimmed.startsWith('#')) return trimmed;
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+      return trimmed;
+    }
+    if (parsed.protocol === 'mailto:') return trimmed;
+  } catch {
+    // ignore
+  }
+  return '';
 }
 
 export const ProjectChat: React.FC = () => {
@@ -230,7 +269,14 @@ export const ProjectChat: React.FC = () => {
               <div style={{ fontSize: 12, color: '#64748b' }}>
                 {item.userId} / {new Date(item.createdAt).toLocaleString()}
               </div>
-              <div>{item.body}</div>
+              <ReactMarkdown
+                remarkPlugins={[remarkGfm, remarkBreaks]}
+                allowedElements={markdownAllowedElements}
+                transformLinkUri={transformLinkUri}
+                linkTarget="_blank"
+              >
+                {item.body}
+              </ReactMarkdown>
               {item.tags && item.tags.length > 0 && (
                 <div className="row" style={{ gap: 6, marginTop: 4 }}>
                   {item.tags.map((tag) => (
