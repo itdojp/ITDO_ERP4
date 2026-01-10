@@ -236,12 +236,20 @@
 **Body**
 - `body` (1〜2000文字)
 - `tags` (任意: 0〜8件、各32文字まで)
+- `mentions` (任意)
+  - `userIds` (任意: 0〜50件)
+  - `groupIds` (任意: 0〜20件)
+  - `all` (任意: `true` の場合は @all 扱い)
 
 **挙動**
 - `userId` は認証情報から取得
 - 認証情報が不足する場合は `demo-user` をフォールバック（PoC向け）
   - 本番環境では無効化し、401/403 を返す前提
   - `demo-user` は明示的な設定フラグでのみ有効化する
+- `mentions.all=true` の場合は投稿回数制限（rate limit）を適用する
+  - `CHAT_ALL_MENTION_MIN_INTERVAL_SECONDS` (default: 3600)
+  - `CHAT_ALL_MENTION_MAX_PER_24H` (default: 3)
+  - 超過時は 429 を返す
 
 ### POST `/projects/:projectId/chat-ack-requests`
 **Body**
@@ -249,10 +257,20 @@
 - `requiredUserIds` (1〜50件)
 - `dueAt` (任意: ISO日時)
 - `tags` (任意: 0〜8件、各32文字まで)
+- `mentions` (任意)
+  - `userIds` (任意: 0〜50件)
+  - `groupIds` (任意: 0〜20件)
+  - `all` (任意: `true` の場合は @all 扱い)
 
 **挙動**
 - 通常メッセージ + `ProjectChatAckRequest` を1トランザクションで作成する
 - `requiredUserIds` はトリムして重複排除する（API側で正規化）
+- `mentions.all=true` の場合は投稿回数制限（rate limit）を適用する（詳細は `POST /chat-messages` と同様）
+
+### GET `/projects/:projectId/chat-mention-candidates`
+**挙動**
+- UIでの補完選択用に、ユーザ候補（案件メンバー中心）とグループ候補（JWTの `group_ids`）を返す
+- `allowAll=false` の場合、UIは @all を選べない（例: external_chat）
 
 ### POST `/chat-ack-requests/:id/ack`
 **Body**
