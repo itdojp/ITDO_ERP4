@@ -125,6 +125,8 @@ export const ProjectChat: React.FC = () => {
   const [isPosting, setIsPosting] = useState(false);
   const [hasMore, setHasMore] = useState(false);
   const currentUserId = auth?.userId || 'demo-user';
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [highlightSince, setHighlightSince] = useState<Date | null>(null);
 
   const uploadAttachment = async (messageId: string, file: File) => {
     const form = new FormData();
@@ -155,9 +157,28 @@ export const ProjectChat: React.FC = () => {
     window.URL.revokeObjectURL(url);
   };
 
+  const fetchUnreadState = async () => {
+    const res = await api<{ unreadCount?: number; lastReadAt?: string | null }>(
+      `/projects/${projectId}/chat-unread`,
+    );
+    const nextUnread =
+      typeof res.unreadCount === 'number' ? res.unreadCount : 0;
+    const lastReadAt =
+      typeof res.lastReadAt === 'string' ? new Date(res.lastReadAt) : null;
+    setUnreadCount(nextUnread);
+    setHighlightSince(lastReadAt);
+    return nextUnread;
+  };
+
   const load = async () => {
     try {
       setIsLoading(true);
+      let unreadBefore = 0;
+      try {
+        unreadBefore = await fetchUnreadState();
+      } catch (error) {
+        console.warn('未読状態の取得に失敗しました', error);
+      }
       const query = new URLSearchParams({ limit: String(pageSize) });
       const trimmedTag = filterTag.trim();
       if (trimmedTag) {
@@ -168,6 +189,14 @@ export const ProjectChat: React.FC = () => {
       );
       setItems(res.items || []);
       setHasMore((res.items || []).length === pageSize);
+      if (unreadBefore > 0) {
+        try {
+          await api(`/projects/${projectId}/chat-read`, { method: 'POST' });
+          setUnreadCount(0);
+        } catch (error) {
+          console.warn('既読更新に失敗しました', error);
+        }
+      }
       setMessage('読み込みました');
     } catch (error) {
       console.error('チャットの取得に失敗しました', error);
@@ -348,7 +377,10 @@ export const ProjectChat: React.FC = () => {
 
   return (
     <div>
-      <h2>プロジェクトチャット</h2>
+      <h2>
+        プロジェクトチャット
+        {unreadCount > 0 ? ` (未読 ${unreadCount})` : ''}
+      </h2>
       <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
         <select
           aria-label="案件選択"
@@ -449,8 +481,14 @@ export const ProjectChat: React.FC = () => {
             item.ackRequest?.id &&
             requiredUserIds.includes(currentUserId) &&
             !ackedUserIds.includes(currentUserId);
+          const isUnread =
+            highlightSince &&
+            new Date(item.createdAt).getTime() > highlightSince.getTime();
           return (
-            <li key={item.id}>
+            <li
+              key={item.id}
+              style={isUnread ? { background: '#fef9c3' } : undefined}
+            >
               <div style={{ fontSize: 12, color: '#64748b' }}>
                 {item.userId} / {new Date(item.createdAt).toLocaleString()}
               </div>

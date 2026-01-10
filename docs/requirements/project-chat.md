@@ -193,6 +193,13 @@
 - `createdAt/createdBy`
 - `deletedAt/deletedReason`（論理削除用、API未実装）
 
+### ProjectChatReadState（未読/既読：自分のみ）
+- `id`: UUID
+- `projectId`: 参照先 `Project`
+- `userId`: ユーザID
+- `lastReadAt`: 最終既読時刻（この時刻より新しい投稿を未読として数える）
+- `createdAt/updatedAt`
+
 ### インデックス
 - `projectId, createdAt`
 
@@ -268,6 +275,14 @@
 **挙動**
 - ERPの権限チェック（案件アクセス）を通過した場合のみダウンロード可能
 - 認証はヘッダベースのため、UI側は `fetch` で取得してダウンロードする（直リンクではない）
+
+### GET `/projects/:projectId/chat-unread`
+**挙動**
+- 自分の未読件数と `lastReadAt` を返す（他人の既読/未読は返さない）
+
+### POST `/projects/:projectId/chat-read`
+**挙動**
+- 自分の `lastReadAt` を `now()` に更新する（MVPは「読み込み」時点で更新する運用）
 
 ### POST `/chat-messages/:id/reactions`
 **Body**

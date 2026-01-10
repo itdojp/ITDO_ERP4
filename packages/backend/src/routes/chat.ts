@@ -145,6 +145,71 @@ export async function registerChatRoutes(app: FastifyInstance) {
     },
   );
 
+  app.get(
+    '/projects/:projectId/chat-unread',
+    {
+      preHandler: [
+        requireRole(chatRoles),
+        requireProjectAccess((req) => (req.params as any)?.projectId),
+      ],
+    },
+    async (req, reply) => {
+      const { projectId } = req.params as { projectId: string };
+      const userId = req.user?.userId;
+      if (!userId) {
+        return reply.status(400).send({
+          error: { code: 'MISSING_USER_ID', message: 'user id is required' },
+        });
+      }
+      const state = await prisma.projectChatReadState.findUnique({
+        where: { projectId_userId: { projectId, userId } },
+        select: { lastReadAt: true },
+      });
+      const unreadCount = await prisma.projectChatMessage.count({
+        where: {
+          projectId,
+          deletedAt: null,
+          createdAt: state?.lastReadAt ? { gt: state.lastReadAt } : undefined,
+        },
+      });
+      return {
+        unreadCount,
+        lastReadAt: state?.lastReadAt ? state.lastReadAt.toISOString() : null,
+      };
+    },
+  );
+
+  app.post(
+    '/projects/:projectId/chat-read',
+    {
+      preHandler: [
+        requireRole(chatRoles),
+        requireProjectAccess((req) => (req.params as any)?.projectId),
+      ],
+    },
+    async (req, reply) => {
+      const { projectId } = req.params as { projectId: string };
+      const userId = req.user?.userId;
+      if (!userId) {
+        return reply.status(400).send({
+          error: { code: 'MISSING_USER_ID', message: 'user id is required' },
+        });
+      }
+      const now = new Date();
+      const updated = await prisma.projectChatReadState.upsert({
+        where: { projectId_userId: { projectId, userId } },
+        update: { lastReadAt: now },
+        create: {
+          projectId,
+          userId,
+          lastReadAt: now,
+        },
+        select: { lastReadAt: true },
+      });
+      return { lastReadAt: updated.lastReadAt.toISOString() };
+    },
+  );
+
   app.post(
     '/projects/:projectId/chat-messages',
     {
