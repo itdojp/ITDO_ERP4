@@ -243,6 +243,8 @@ model ProjectChatMessage {
   body          String
   tags          Json?
   reactions     Json?
+  mentions      Json?
+  mentionsAll   Boolean   @default(false)
   ackRequest    ProjectChatAckRequest?
   attachments   ProjectChatAttachment[]
   createdAt     DateTime  @default(now())
@@ -253,6 +255,7 @@ model ProjectChatMessage {
   deletedReason String?
 
   @@index([projectId, createdAt])
+  @@index([projectId, userId, mentionsAll, createdAt])
 }
 
 model ProjectChatAckRequest {

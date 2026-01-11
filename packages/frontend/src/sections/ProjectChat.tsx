@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkBreaks from 'remark-breaks';
 import remarkGfm from 'remark-gfm';
@@ -12,6 +12,8 @@ type ChatMessage = {
   body: string;
   tags?: string[];
   reactions?: Record<string, number | { count: number; userIds: string[] }>;
+  mentions?: { userIds?: unknown; groupIds?: unknown } | null;
+  mentionsAll?: boolean;
   ackRequest?: {
     id: string;
     requiredUserIds: unknown;
@@ -26,6 +28,12 @@ type ChatMessage = {
     createdAt: string;
   }[];
   createdAt: string;
+};
+
+type MentionCandidates = {
+  users?: { userId: string; displayName?: string | null }[];
+  groups?: { groupId: string }[];
+  allowAll?: boolean;
 };
 
 const reactionOptions = ['👍', '🎉', '❤️', '😂', '🙏', '👀'];
@@ -127,6 +135,47 @@ export const ProjectChat: React.FC = () => {
   const currentUserId = auth?.userId || 'demo-user';
   const [unreadCount, setUnreadCount] = useState(0);
   const [highlightSince, setHighlightSince] = useState<Date | null>(null);
+  const [mentionCandidates, setMentionCandidates] = useState<MentionCandidates>(
+    {},
+  );
+  const [mentionUserInput, setMentionUserInput] = useState('');
+  const [mentionGroupInput, setMentionGroupInput] = useState('');
+  const [mentionUserIds, setMentionUserIds] = useState<string[]>([]);
+  const [mentionGroupIds, setMentionGroupIds] = useState<string[]>([]);
+  const [mentionAll, setMentionAll] = useState(false);
+
+  const buildMentionsPayload = () => {
+    const users = Array.from(new Set(mentionUserIds))
+      .filter(Boolean)
+      .slice(0, 50);
+    const groups = Array.from(new Set(mentionGroupIds))
+      .filter(Boolean)
+      .slice(0, 20);
+    if (!mentionAll && users.length === 0 && groups.length === 0) {
+      return undefined;
+    }
+    return {
+      userIds: users.length ? users : undefined,
+      groupIds: groups.length ? groups : undefined,
+      all: mentionAll || undefined,
+    };
+  };
+
+  const resetMentions = () => {
+    setMentionUserInput('');
+    setMentionGroupInput('');
+    setMentionUserIds([]);
+    setMentionGroupIds([]);
+    setMentionAll(false);
+  };
+
+  const removeMentionUser = (userId: string) => {
+    setMentionUserIds((prev) => prev.filter((entry) => entry !== userId));
+  };
+
+  const removeMentionGroup = (groupId: string) => {
+    setMentionGroupIds((prev) => prev.filter((entry) => entry !== groupId));
+  };
 
   const uploadAttachment = async (messageId: string, file: File) => {
     const form = new FormData();
@@ -168,6 +217,47 @@ export const ProjectChat: React.FC = () => {
     setUnreadCount(nextUnread);
     setHighlightSince(lastReadAt);
     return nextUnread;
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+    const run = async () => {
+      try {
+        const res = await api<MentionCandidates>(
+          `/projects/${projectId}/chat-mention-candidates`,
+        );
+        if (!cancelled) {
+          setMentionCandidates(res || {});
+        }
+      } catch (error) {
+        console.warn('メンション候補の取得に失敗しました', error);
+        if (!cancelled) {
+          setMentionCandidates({});
+        }
+      }
+    };
+    run().catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId]);
+
+  const addMentionUser = () => {
+    const value = mentionUserInput.trim();
+    if (!value) return;
+    setMentionUserIds((prev) =>
+      prev.includes(value) ? prev : [...prev, value].slice(0, 50),
+    );
+    setMentionUserInput('');
+  };
+
+  const addMentionGroup = () => {
+    const value = mentionGroupInput.trim();
+    if (!value) return;
+    setMentionGroupIds((prev) =>
+      prev.includes(value) ? prev : [...prev, value].slice(0, 20),
+    );
+    setMentionGroupInput('');
   };
 
   const load = async () => {
@@ -253,24 +343,41 @@ export const ProjectChat: React.FC = () => {
       setMessage('タグは1つあたり32文字以内で入力してください');
       return;
     }
+    if (mentionAll) {
+      const ok = window.confirm('全員宛(@all)で投稿します。よろしいですか？');
+      if (!ok) return;
+    }
     try {
       setIsPosting(true);
-      const created = await api<ChatMessage>(
-        `/projects/${projectId}/chat-messages`,
-        {
-          method: 'POST',
-          body: JSON.stringify({
-            body: trimmedBody,
-            tags: parsedTags,
-          }),
-        },
-      );
+      const mentions = buildMentionsPayload();
+      const res = await apiResponse(`/projects/${projectId}/chat-messages`, {
+        method: 'POST',
+        body: JSON.stringify({
+          body: trimmedBody,
+          tags: parsedTags,
+          mentions,
+        }),
+      });
+      if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        if (res.status === 429) {
+          setMessage('@all の投稿が制限されています。時間をおいてください。');
+        } else if (res.status === 403) {
+          setMessage('この操作は許可されていません');
+        } else {
+          setMessage('投稿に失敗しました');
+        }
+        console.error('チャット投稿に失敗しました', res.status, text);
+        return;
+      }
+      const created = (await res.json().catch(() => ({}))) as ChatMessage;
       if (attachmentFile) {
         await uploadAttachment(created.id, attachmentFile);
       }
       setBody('');
       setTags('');
       setAttachmentFile(null);
+      resetMentions();
       setMessage('投稿しました');
       await load();
     } catch (error) {
@@ -311,9 +418,14 @@ export const ProjectChat: React.FC = () => {
       setMessage('タグは1つあたり32文字以内で入力してください');
       return;
     }
+    if (mentionAll) {
+      const ok = window.confirm('全員宛(@all)で投稿します。よろしいですか？');
+      if (!ok) return;
+    }
     try {
       setIsPosting(true);
-      const created = await api<ChatMessage>(
+      const mentions = buildMentionsPayload();
+      const res = await apiResponse(
         `/projects/${projectId}/chat-ack-requests`,
         {
           method: 'POST',
@@ -321,9 +433,23 @@ export const ProjectChat: React.FC = () => {
             body: trimmedBody,
             requiredUserIds: uniqueTargets,
             tags: parsedTags,
+            mentions,
           }),
         },
       );
+      if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        if (res.status === 429) {
+          setMessage('@all の投稿が制限されています。時間をおいてください。');
+        } else if (res.status === 403) {
+          setMessage('この操作は許可されていません');
+        } else {
+          setMessage('確認依頼の投稿に失敗しました');
+        }
+        console.error('確認依頼の投稿に失敗しました', res.status, text);
+        return;
+      }
+      const created = (await res.json().catch(() => ({}))) as ChatMessage;
       if (attachmentFile) {
         await uploadAttachment(created.id, attachmentFile);
       }
@@ -331,6 +457,7 @@ export const ProjectChat: React.FC = () => {
       setTags('');
       setAckTargets('');
       setAttachmentFile(null);
+      resetMentions();
       setMessage('確認依頼を投稿しました');
       await load();
     } catch (error) {
@@ -437,6 +564,129 @@ export const ProjectChat: React.FC = () => {
           onChange={(e) => setAttachmentFile(e.target.files?.[0] || null)}
           style={{ width: '100%', marginTop: 8 }}
         />
+        <div className="row" style={{ gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
+          <input
+            aria-label="メンションユーザ"
+            type="text"
+            list="chat-mention-users"
+            value={mentionUserInput}
+            onChange={(e) => setMentionUserInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                addMentionUser();
+              }
+            }}
+            placeholder="メンション: ユーザID (任意)"
+            style={{ flex: '1 1 240px' }}
+          />
+          <button
+            className="button secondary"
+            onClick={addMentionUser}
+            type="button"
+          >
+            ユーザ追加
+          </button>
+        </div>
+        <datalist id="chat-mention-users">
+          {(mentionCandidates.users || []).map((user) => (
+            <option
+              key={user.userId}
+              value={user.userId}
+              label={user.displayName ? `${user.displayName}` : user.userId}
+            />
+          ))}
+        </datalist>
+        <div className="row" style={{ gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
+          <input
+            aria-label="メンショングループ"
+            type="text"
+            list="chat-mention-groups"
+            value={mentionGroupInput}
+            onChange={(e) => setMentionGroupInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                addMentionGroup();
+              }
+            }}
+            placeholder="メンション: グループID (任意)"
+            style={{ flex: '1 1 240px' }}
+          />
+          <button
+            className="button secondary"
+            onClick={addMentionGroup}
+            type="button"
+          >
+            グループ追加
+          </button>
+        </div>
+        <datalist id="chat-mention-groups">
+          {(mentionCandidates.groups || []).map((group) => (
+            <option key={group.groupId} value={group.groupId} />
+          ))}
+        </datalist>
+        {(mentionCandidates.allowAll ?? true) && (
+          <label style={{ display: 'block', marginTop: 8 }}>
+            <input
+              type="checkbox"
+              checked={mentionAll}
+              onChange={(e) => setMentionAll(e.target.checked)}
+            />{' '}
+            全員にメンション (@all)
+          </label>
+        )}
+        {(mentionAll ||
+          mentionUserIds.length > 0 ||
+          mentionGroupIds.length > 0) && (
+          <div
+            className="row"
+            style={{ gap: 6, flexWrap: 'wrap', marginTop: 6 }}
+          >
+            {mentionAll && (
+              <button
+                type="button"
+                className="badge"
+                aria-label="全員へのメンションを解除"
+                onClick={() => setMentionAll(false)}
+                style={{ cursor: 'pointer' }}
+              >
+                @all ×
+              </button>
+            )}
+            {mentionUserIds.map((userId) => (
+              <button
+                key={userId}
+                type="button"
+                className="badge"
+                aria-label={`ユーザへのメンションを解除: ${userId}`}
+                onClick={() => removeMentionUser(userId)}
+                style={{ cursor: 'pointer' }}
+              >
+                @{userId} ×
+              </button>
+            ))}
+            {mentionGroupIds.map((groupId) => (
+              <button
+                key={groupId}
+                type="button"
+                className="badge"
+                aria-label={`グループへのメンションを解除: ${groupId}`}
+                onClick={() => removeMentionGroup(groupId)}
+                style={{ cursor: 'pointer' }}
+              >
+                @{groupId} ×
+              </button>
+            ))}
+            <button
+              className="button secondary"
+              onClick={resetMentions}
+              type="button"
+            >
+              メンション解除
+            </button>
+          </div>
+        )}
         <input
           type="text"
           value={ackTargets}
@@ -473,6 +723,11 @@ export const ProjectChat: React.FC = () => {
           const ackedUserIds = normalizeStringArray(
             item.ackRequest?.acks?.map((ack) => ack.userId),
           );
+          const mentionedUserIds = normalizeStringArray(item.mentions?.userIds);
+          const mentionedGroupIds = normalizeStringArray(
+            item.mentions?.groupIds,
+          );
+          const mentionAllFlag = item.mentionsAll === true;
           const requiredCount = requiredUserIds.length;
           const ackedCount = requiredUserIds.filter((userId) =>
             ackedUserIds.includes(userId),
@@ -504,6 +759,38 @@ export const ProjectChat: React.FC = () => {
               >
                 {item.body}
               </ReactMarkdown>
+              {(mentionAllFlag ||
+                mentionedUserIds.length > 0 ||
+                mentionedGroupIds.length > 0) && (
+                <div
+                  className="row"
+                  style={{ gap: 6, flexWrap: 'wrap', marginTop: 4 }}
+                >
+                  {mentionAllFlag && (
+                    <span className="badge" aria-label="全員へのメンション">
+                      @all
+                    </span>
+                  )}
+                  {mentionedUserIds.map((userId) => (
+                    <span
+                      key={userId}
+                      className="badge"
+                      aria-label={`メンション対象ユーザ: ${userId}`}
+                    >
+                      @{userId}
+                    </span>
+                  ))}
+                  {mentionedGroupIds.map((groupId) => (
+                    <span
+                      key={groupId}
+                      className="badge"
+                      aria-label={`メンション対象グループ: ${groupId}`}
+                    >
+                      @{groupId}
+                    </span>
+                  ))}
+                </div>
+              )}
               {item.attachments && item.attachments.length > 0 && (
                 <div style={{ marginTop: 6 }}>
                   <div style={{ fontSize: 12, color: '#64748b' }}>添付:</div>

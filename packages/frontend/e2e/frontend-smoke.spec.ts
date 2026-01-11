@@ -516,6 +516,10 @@ test('frontend smoke chat hr analytics @extended', async ({ page }) => {
     chatSection.getByLabel('案件選択'),
     'PRJ-DEMO-1 / Demo Project 1',
   );
+  await chatSection.getByLabel('メンションユーザ').fill('demo-user');
+  await chatSection.getByRole('button', { name: 'ユーザ追加' }).click();
+  await chatSection.getByLabel('メンショングループ').fill('mgmt');
+  await chatSection.getByRole('button', { name: 'グループ追加' }).click();
   const chatMessage = `E2E chat message ${id}`;
   const uploadName = `e2e-chat-${id}.txt`;
   const uploadPath = path.join(rootDir, 'tmp', uploadName);
@@ -526,6 +530,9 @@ test('frontend smoke chat hr analytics @extended', async ({ page }) => {
   await chatSection.getByLabel('添付').setInputFiles(uploadPath);
   await chatSection.getByRole('button', { name: '投稿' }).click();
   await expect(chatSection.getByText(chatMessage)).toBeVisible();
+  const chatItem = chatSection.locator('li', { hasText: chatMessage });
+  await expect(chatItem.getByText('@demo-user')).toBeVisible();
+  await expect(chatItem.getByText('@mgmt')).toBeVisible();
   await expect(
     chatSection.getByRole('button', { name: uploadName }),
   ).toBeVisible();

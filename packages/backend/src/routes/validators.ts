@@ -350,13 +350,30 @@ export const wellbeingSchema = {
   }),
 };
 
-export const projectChatMessageSchema = {
-  body: Type.Object({
-    body: Type.String({ minLength: 1, maxLength: 2000 }),
-    tags: Type.Optional(
-      Type.Array(Type.String({ maxLength: 32 }), { maxItems: 8 }),
+const projectChatMentionsSchema = Type.Object(
+  {
+    userIds: Type.Optional(
+      Type.Array(Type.String({ minLength: 1 }), { maxItems: 50 }),
     ),
-  }),
+    groupIds: Type.Optional(
+      Type.Array(Type.String({ minLength: 1 }), { maxItems: 20 }),
+    ),
+    all: Type.Optional(Type.Boolean()),
+  },
+  { additionalProperties: false },
+);
+
+export const projectChatMessageSchema = {
+  body: Type.Object(
+    {
+      body: Type.String({ minLength: 1, maxLength: 2000 }),
+      tags: Type.Optional(
+        Type.Array(Type.String({ maxLength: 32 }), { maxItems: 8 }),
+      ),
+      mentions: Type.Optional(projectChatMentionsSchema),
+    },
+    { additionalProperties: false },
+  ),
 };
 
 export const projectChatReactionSchema = {
@@ -377,6 +394,7 @@ export const projectChatAckRequestSchema = {
       tags: Type.Optional(
         Type.Array(Type.String({ maxLength: 32 }), { maxItems: 8 }),
       ),
+      mentions: Type.Optional(projectChatMentionsSchema),
     },
     { additionalProperties: false },
   ),

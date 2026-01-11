@@ -52,6 +52,13 @@ function parseMaxBytes(raw: string | undefined, fallback: number) {
   return Math.floor(parsed);
 }
 
+function parseNonNegativeInt(raw: string | undefined, fallback: number) {
+  if (!raw) return fallback;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed < 0) return fallback;
+  return Math.floor(parsed);
+}
+
 async function readFileBuffer(
   stream: AsyncIterable<Buffer>,
   maxBytes: number,
@@ -70,6 +77,221 @@ async function readFileBuffer(
 
 export async function registerChatRoutes(app: FastifyInstance) {
   const chatRoles = ['admin', 'mgmt', 'user', 'hr', 'exec', 'external_chat'];
+
+  type AllMentionRateLimit =
+    | { allowed: true }
+    | {
+        allowed: false;
+        reason: 'min_interval';
+        minIntervalSeconds: number;
+        lastAt: Date;
+      }
+    | {
+        allowed: false;
+        reason: 'max_24h';
+        maxPer24h: number;
+        windowStart: Date;
+      };
+
+  function normalizeMentions(value: unknown) {
+    if (!value || typeof value !== 'object') {
+      return {
+        mentions: undefined as Prisma.InputJsonValue | undefined,
+        mentionsAll: false,
+        mentionUserIds: [] as string[],
+        mentionGroupIds: [] as string[],
+      };
+    }
+    const record = value as {
+      userIds?: unknown;
+      groupIds?: unknown;
+      all?: unknown;
+    };
+    const mentionUserIds = normalizeStringArray(record.userIds, {
+      dedupe: true,
+      max: 50,
+    });
+    const mentionGroupIds = normalizeStringArray(record.groupIds, {
+      dedupe: true,
+      max: 20,
+    });
+    const mentionsAll = record.all === true;
+    const mentions =
+      mentionUserIds.length || mentionGroupIds.length
+        ? ({
+            userIds: mentionUserIds.length ? mentionUserIds : undefined,
+            groupIds: mentionGroupIds.length ? mentionGroupIds : undefined,
+          } as Prisma.InputJsonValue)
+        : undefined;
+    return { mentions, mentionsAll, mentionUserIds, mentionGroupIds };
+  }
+
+  async function enforceAllMentionRateLimit(options: {
+    projectId: string;
+    userId: string;
+    now: Date;
+  }): Promise<AllMentionRateLimit> {
+    const minIntervalSeconds = parseNonNegativeInt(
+      process.env.CHAT_ALL_MENTION_MIN_INTERVAL_SECONDS,
+      60 * 60,
+    );
+    const maxPer24h = parseNonNegativeInt(
+      process.env.CHAT_ALL_MENTION_MAX_PER_24H,
+      3,
+    );
+
+    const since24h = new Date(options.now.getTime() - 24 * 60 * 60 * 1000);
+
+    const [lastAll, count24h] = await Promise.all([
+      minIntervalSeconds > 0
+        ? prisma.projectChatMessage.findFirst({
+            where: {
+              projectId: options.projectId,
+              userId: options.userId,
+              mentionsAll: true,
+              deletedAt: null,
+            },
+            select: { createdAt: true },
+            orderBy: { createdAt: 'desc' },
+          })
+        : Promise.resolve(null),
+      maxPer24h > 0
+        ? prisma.projectChatMessage.count({
+            where: {
+              projectId: options.projectId,
+              userId: options.userId,
+              mentionsAll: true,
+              deletedAt: null,
+              createdAt: { gte: since24h },
+            },
+          })
+        : Promise.resolve(0),
+    ]);
+
+    if (
+      minIntervalSeconds > 0 &&
+      lastAll &&
+      options.now.getTime() - lastAll.createdAt.getTime() <
+        minIntervalSeconds * 1000
+    ) {
+      return {
+        allowed: false,
+        reason: 'min_interval',
+        minIntervalSeconds,
+        lastAt: lastAll.createdAt,
+      };
+    }
+    if (maxPer24h > 0 && count24h >= maxPer24h) {
+      return {
+        allowed: false,
+        reason: 'max_24h',
+        maxPer24h,
+        windowStart: since24h,
+      };
+    }
+    return { allowed: true };
+  }
+
+  function buildAllMentionBlockedMetadata(
+    projectId: string,
+    rateLimit: Exclude<AllMentionRateLimit, { allowed: true }>,
+  ) {
+    const metadata: Record<string, unknown> = {
+      projectId,
+      reason: rateLimit.reason,
+    };
+    if (rateLimit.reason === 'min_interval') {
+      metadata.minIntervalSeconds = rateLimit.minIntervalSeconds;
+      metadata.lastAt = rateLimit.lastAt.toISOString();
+    }
+    if (rateLimit.reason === 'max_24h') {
+      metadata.maxPer24h = rateLimit.maxPer24h;
+      metadata.windowStart = rateLimit.windowStart.toISOString();
+    }
+    return metadata;
+  }
+
+  async function ensureAllMentionAllowed(options: {
+    req: any;
+    reply: any;
+    projectId: string;
+    userId: string;
+  }) {
+    const roles = options.req.user?.roles || [];
+    if (roles.includes('external_chat')) {
+      options.reply.status(403).send({
+        error: {
+          code: 'FORBIDDEN_ALL_MENTION',
+          message: 'external_chat cannot use @all',
+        },
+      });
+      return false;
+    }
+
+    const rateLimit = await enforceAllMentionRateLimit({
+      projectId: options.projectId,
+      userId: options.userId,
+      now: new Date(),
+    });
+    if (!rateLimit.allowed) {
+      await logAudit({
+        action: 'chat_all_mention_blocked',
+        targetTable: 'project_chat_messages',
+        metadata: buildAllMentionBlockedMetadata(
+          options.projectId,
+          rateLimit,
+        ) as Prisma.InputJsonValue,
+        ...auditContextFromRequest(options.req),
+      });
+      options.reply.status(429).send({
+        error: {
+          code: 'ALL_MENTION_RATE_LIMIT',
+          message: 'Too many @all posts',
+        },
+      });
+      return false;
+    }
+
+    return true;
+  }
+
+  async function logChatMessageMentions(options: {
+    req: any;
+    messageId: string;
+    projectId: string;
+    mentionsAll: boolean;
+    mentionUserIds: string[];
+    mentionGroupIds: string[];
+  }) {
+    if (
+      !options.mentionsAll &&
+      options.mentionUserIds.length === 0 &&
+      options.mentionGroupIds.length === 0
+    ) {
+      return;
+    }
+    await logAudit({
+      action: 'chat_message_posted_with_mentions',
+      targetTable: 'project_chat_messages',
+      targetId: options.messageId,
+      metadata: {
+        projectId: options.projectId,
+        mentionAll: options.mentionsAll,
+        mentionUserCount: options.mentionUserIds.length,
+        mentionGroupCount: options.mentionGroupIds.length,
+      } as Prisma.InputJsonValue,
+      ...auditContextFromRequest(options.req),
+    });
+    if (options.mentionsAll) {
+      await logAudit({
+        action: 'chat_all_mention_posted',
+        targetTable: 'project_chat_messages',
+        targetId: options.messageId,
+        metadata: { projectId: options.projectId } as Prisma.InputJsonValue,
+        ...auditContextFromRequest(options.req),
+      });
+    }
+  }
 
   app.get(
     '/projects/:projectId/chat-messages',
@@ -142,6 +364,66 @@ export async function registerChatRoutes(app: FastifyInstance) {
         },
       });
       return { items };
+    },
+  );
+
+  app.get(
+    '/projects/:projectId/chat-mention-candidates',
+    {
+      preHandler: [
+        requireRole(chatRoles),
+        requireProjectAccess((req) => (req.params as any)?.projectId),
+      ],
+    },
+    async (req) => {
+      const { projectId } = req.params as { projectId: string };
+      const currentUserId = req.user?.userId || '';
+      const groupIds = Array.isArray(req.user?.groupIds)
+        ? req.user.groupIds
+        : [];
+      const members = await prisma.projectMember.findMany({
+        where: { projectId },
+        select: { userId: true, role: true },
+        orderBy: { userId: 'asc' },
+      });
+      const userIdSet = new Set(members.map((member) => member.userId));
+      if (currentUserId) {
+        userIdSet.add(currentUserId);
+      }
+      const userIds = Array.from(userIdSet);
+      const accounts = userIds.length
+        ? await prisma.userAccount.findMany({
+            where: {
+              userName: { in: userIds },
+              deletedAt: null,
+              active: true,
+            },
+            select: { userName: true, displayName: true },
+          })
+        : [];
+      const displayMap = new Map(
+        accounts.map((account) => [
+          account.userName,
+          account.displayName || null,
+        ]),
+      );
+      const users = userIds
+        .map((userId) => ({
+          userId,
+          displayName: displayMap.get(userId) || null,
+        }))
+        .sort((a, b) => a.userId.localeCompare(b.userId));
+      const groups = Array.from(
+        new Set(
+          groupIds
+            .map((groupId) =>
+              typeof groupId === 'string' ? groupId.trim() : '',
+            )
+            .filter(Boolean),
+        ),
+      ).map((groupId) => ({ groupId }));
+      const allowAll = !(req.user?.roles || []).includes('external_chat');
+      return { users, groups, allowAll };
     },
   );
 
@@ -219,19 +501,45 @@ export async function registerChatRoutes(app: FastifyInstance) {
         requireProjectAccess((req) => (req.params as any)?.projectId),
       ],
     },
-    async (req) => {
+    async (req, reply) => {
       const { projectId } = req.params as { projectId: string };
-      const body = req.body as { body: string; tags?: string[] };
+      const body = req.body as {
+        body: string;
+        tags?: string[];
+        mentions?: unknown;
+      };
       const userId = req.user?.userId || 'demo-user';
+      const { mentions, mentionsAll, mentionUserIds, mentionGroupIds } =
+        normalizeMentions(body.mentions);
+
+      if (mentionsAll) {
+        const ok = await ensureAllMentionAllowed({
+          req,
+          reply,
+          projectId,
+          userId,
+        });
+        if (!ok) return;
+      }
       const message = await prisma.projectChatMessage.create({
         data: {
           projectId,
           userId,
           body: body.body,
           tags: normalizeStringArray(body.tags, { max: 8 }) || undefined,
+          mentions,
+          mentionsAll,
           createdBy: userId,
           updatedBy: userId,
         },
+      });
+      await logChatMessageMentions({
+        req,
+        messageId: message.id,
+        projectId,
+        mentionsAll,
+        mentionUserIds,
+        mentionGroupIds,
       });
       return message;
     },
@@ -253,6 +561,7 @@ export async function registerChatRoutes(app: FastifyInstance) {
         requiredUserIds: string[];
         dueAt?: string;
         tags?: string[];
+        mentions?: unknown;
       };
       const userId = req.user?.userId || 'demo-user';
       const requiredUserIds = normalizeStringArray(body.requiredUserIds, {
@@ -274,12 +583,26 @@ export async function registerChatRoutes(app: FastifyInstance) {
         });
       }
 
+      const { mentions, mentionsAll, mentionUserIds, mentionGroupIds } =
+        normalizeMentions(body.mentions);
+      if (mentionsAll) {
+        const ok = await ensureAllMentionAllowed({
+          req,
+          reply,
+          projectId,
+          userId,
+        });
+        if (!ok) return;
+      }
+
       const message = await prisma.projectChatMessage.create({
         data: {
           projectId,
           userId,
           body: body.body,
           tags: normalizeStringArray(body.tags, { max: 8 }) || undefined,
+          mentions,
+          mentionsAll,
           createdBy: userId,
           updatedBy: userId,
           ackRequest: {
@@ -296,6 +619,14 @@ export async function registerChatRoutes(app: FastifyInstance) {
             include: { acks: true },
           },
         },
+      });
+      await logChatMessageMentions({
+        req,
+        messageId: message.id,
+        projectId,
+        mentionsAll,
+        mentionUserIds,
+        mentionGroupIds,
       });
       return message;
     },
