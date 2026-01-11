@@ -563,6 +563,11 @@ test('frontend smoke chat hr analytics @extended', async ({ page }) => {
   await expect(ackItem.getByText('確認状況: 1/1')).toBeVisible();
   await captureSection(chatSection, '12-project-chat.png');
 
+  await chatSection.getByRole('button', { name: '要約' }).click();
+  const summaryBlock = chatSection.getByText('要約（スタブ）');
+  await expect(summaryBlock).toBeVisible();
+  await expect(chatSection.locator('pre')).toContainText('取得件数');
+
   const hrSection = page
     .locator('h2', { hasText: '匿名集計（人事向け）' })
     .locator('..');

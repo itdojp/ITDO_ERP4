@@ -4,6 +4,7 @@ import {
   projectChatMessageSchema,
   projectChatAckRequestSchema,
   projectChatReactionSchema,
+  projectChatSummarySchema,
 } from './validators.js';
 import { prisma } from '../services/db.js';
 import {
@@ -29,6 +30,14 @@ function parseLimit(value?: string, fallback = 50) {
   const parsed = Number(value);
   if (!Number.isInteger(parsed) || parsed <= 0) return null;
   return Math.min(parsed, 200);
+}
+
+function parseLimitNumber(value: unknown, fallback = 100) {
+  if (value === undefined || value === null) return fallback;
+  if (typeof value !== 'number' || !Number.isFinite(value)) return null;
+  const normalized = Math.floor(value);
+  if (!Number.isInteger(normalized) || normalized <= 0) return null;
+  return Math.min(normalized, 200);
 }
 
 function normalizeStringArray(
@@ -364,6 +373,152 @@ export async function registerChatRoutes(app: FastifyInstance) {
         },
       });
       return { items };
+    },
+  );
+
+  app.post(
+    '/projects/:projectId/chat-summary',
+    {
+      schema: projectChatSummarySchema,
+      preHandler: [
+        requireRole(chatRoles),
+        requireProjectAccess((req) => (req.params as any)?.projectId),
+      ],
+    },
+    async (req, reply) => {
+      const { projectId } = req.params as { projectId: string };
+      const body = req.body as {
+        since?: string;
+        until?: string;
+        limit?: number;
+      };
+      const since = parseDateParam(body.since);
+      if (body.since && !since) {
+        return reply.status(400).send({
+          error: { code: 'INVALID_DATE', message: 'Invalid since date-time' },
+        });
+      }
+      const until = parseDateParam(body.until);
+      if (body.until && !until) {
+        return reply.status(400).send({
+          error: { code: 'INVALID_DATE', message: 'Invalid until date-time' },
+        });
+      }
+      const take = parseLimitNumber(body.limit);
+      if (!take) {
+        return reply.status(400).send({
+          error: {
+            code: 'INVALID_LIMIT',
+            message: 'limit must be a positive number',
+          },
+        });
+      }
+
+      const createdAt =
+        since && until
+          ? { gte: since, lte: until }
+          : since
+            ? { gte: since }
+            : until
+              ? { lte: until }
+              : undefined;
+
+      const items = await prisma.projectChatMessage.findMany({
+        where: {
+          projectId,
+          deletedAt: null,
+          createdAt,
+        },
+        orderBy: { createdAt: 'desc' },
+        take,
+        select: {
+          id: true,
+          userId: true,
+          body: true,
+          createdAt: true,
+          tags: true,
+          mentionsAll: true,
+          ackRequest: { select: { id: true } },
+        },
+      });
+
+      const users = new Set(items.map((item) => item.userId));
+      const mentionAllCount = items.filter((item) => item.mentionsAll).length;
+      const ackRequestCount = items.filter(
+        (item) => item.ackRequest?.id,
+      ).length;
+      const tagCounts = new Map<string, number>();
+      for (const item of items) {
+        const tags = Array.isArray(item.tags) ? item.tags : [];
+        for (const rawTag of tags) {
+          if (typeof rawTag !== 'string') continue;
+          const tag = rawTag.trim();
+          if (!tag) continue;
+          tagCounts.set(tag, (tagCounts.get(tag) || 0) + 1);
+        }
+      }
+      const topTags = Array.from(tagCounts.entries())
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 5)
+        .map(([tag, count]) => `#${tag}(${count})`);
+
+      const latestAt = items[0]?.createdAt || null;
+      const earliestAt = items.length
+        ? items[items.length - 1].createdAt
+        : null;
+
+      const sampleLines = items.slice(0, 5).map((item) => {
+        const excerpt = item.body.replace(/\s+/g, ' ').trim().slice(0, 80);
+        const suffix = item.body.trim().length > 80 ? '…' : '';
+        return `- ${item.userId}: ${excerpt}${suffix}`;
+      });
+
+      const fromLabel = earliestAt ? earliestAt.toISOString() : null;
+      const toLabel = latestAt ? latestAt.toISOString() : null;
+
+      const summaryLines = [
+        '（スタブ要約: 集計ベース）',
+        `- projectId: ${projectId}`,
+        `- 取得件数: ${items.length}件`,
+        `- 投稿者数: ${users.size}名`,
+        `- @all: ${mentionAllCount}件`,
+        `- 確認依頼: ${ackRequestCount}件`,
+        fromLabel || toLabel
+          ? `- 期間: ${fromLabel || '-'} 〜 ${toLabel || '-'}`
+          : null,
+        topTags.length ? `- 上位タグ: ${topTags.join(', ')}` : null,
+        sampleLines.length ? '- 直近の投稿（最大5件）:' : null,
+        ...sampleLines,
+      ].filter(Boolean) as string[];
+
+      await logAudit({
+        action: 'chat_summary_generated',
+        targetTable: 'project_chat_messages',
+        metadata: {
+          projectId,
+          limit: take,
+          since: body.since || null,
+          until: body.until || null,
+          messageCount: items.length,
+          userCount: users.size,
+        } as Prisma.InputJsonValue,
+        ...auditContextFromRequest(req),
+      });
+
+      return {
+        summary: items.length
+          ? summaryLines.join('\n')
+          : '対象メッセージがありません',
+        stats: {
+          projectId,
+          messageCount: items.length,
+          userCount: users.size,
+          mentionAllCount,
+          ackRequestCount,
+          since: fromLabel,
+          until: toLabel,
+        },
+      };
     },
   );
 
