@@ -468,8 +468,9 @@ export async function registerChatRoutes(app: FastifyInstance) {
         : null;
 
       const sampleLines = items.slice(0, 5).map((item) => {
-        const excerpt = item.body.replace(/\s+/g, ' ').trim().slice(0, 80);
-        const suffix = item.body.trim().length > 80 ? '…' : '';
+        const normalizedBody = item.body.replace(/\s+/g, ' ').trim();
+        const excerpt = normalizedBody.slice(0, 80);
+        const suffix = normalizedBody.length > 80 ? '…' : '';
         return `- ${item.userId}: ${excerpt}${suffix}`;
       });
 

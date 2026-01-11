@@ -224,6 +224,7 @@ export const ProjectChat: React.FC = () => {
   const generateSummary = async () => {
     try {
       setIsSummarizing(true);
+      setSummary('');
       const res = await api<{ summary?: string }>(
         `/projects/${projectId}/chat-summary`,
         {
