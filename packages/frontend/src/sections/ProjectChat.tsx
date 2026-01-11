@@ -36,6 +36,23 @@ type MentionCandidates = {
   allowAll?: boolean;
 };
 
+type BreakGlassEvent = {
+  id: string;
+  status: string;
+  reasonCode: string;
+  requesterUserId: string;
+  viewerUserId: string;
+  targetFrom?: string | null;
+  targetUntil?: string | null;
+  ttlHours: number;
+  approved1At?: string | null;
+  approved2At?: string | null;
+  rejectedAt?: string | null;
+  grantedAt?: string | null;
+  expiresAt?: string | null;
+  createdAt: string;
+};
+
 const reactionOptions = ['👍', '🎉', '❤️', '😂', '🙏', '👀'];
 const pageSize = 50;
 
@@ -113,6 +130,19 @@ function sanitizeFilename(value: string) {
   return value.replace(/["\\\r\n]/g, '_').replace(/[/\\]/g, '_');
 }
 
+function formatBreakGlassStatus(status: string) {
+  switch (status) {
+    case 'requested':
+      return '申請中';
+    case 'approved':
+      return '承認済み';
+    case 'rejected':
+      return '却下';
+    default:
+      return status;
+  }
+}
+
 export const ProjectChat: React.FC = () => {
   const auth = getAuthState();
   const defaultProjectId = auth?.projectIds?.[0] || 'demo-project';
@@ -139,6 +169,9 @@ export const ProjectChat: React.FC = () => {
   const [isSummarizing, setIsSummarizing] = useState(false);
   const [mentionCandidates, setMentionCandidates] = useState<MentionCandidates>(
     {},
+  );
+  const [breakGlassEvents, setBreakGlassEvents] = useState<BreakGlassEvent[]>(
+    [],
   );
   const [mentionUserInput, setMentionUserInput] = useState('');
   const [mentionGroupInput, setMentionGroupInput] = useState('');
@@ -256,6 +289,31 @@ export const ProjectChat: React.FC = () => {
         if (!cancelled) {
           setMentionCandidates({});
         }
+      }
+    };
+    run().catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const run = async () => {
+      if (!projectId) {
+        setBreakGlassEvents([]);
+        return;
+      }
+      try {
+        const res = await api<{ items?: BreakGlassEvent[] }>(
+          `/projects/${projectId}/chat-break-glass-events`,
+        );
+        if (!cancelled) {
+          setBreakGlassEvents(Array.isArray(res.items) ? res.items : []);
+        }
+      } catch (error) {
+        console.warn('break-glassイベントの取得に失敗しました', error);
+        if (!cancelled) setBreakGlassEvents([]);
       }
     };
     run().catch(() => undefined);
@@ -572,6 +630,34 @@ export const ProjectChat: React.FC = () => {
         </small>
       </div>
       {projectMessage && <p style={{ color: '#dc2626' }}>{projectMessage}</p>}
+      {breakGlassEvents.length > 0 && (
+        <div
+          style={{
+            marginTop: 8,
+            padding: 10,
+            border: '1px solid #f59e0b',
+            borderRadius: 8,
+            background: '#fffbeb',
+          }}
+        >
+          <div style={{ fontWeight: 600 }}>監査閲覧（break-glass）</div>
+          {breakGlassEvents.slice(0, 3).map((event) => (
+            <div
+              key={event.id}
+              style={{ fontSize: 12, color: '#92400e', marginTop: 4 }}
+            >
+              {formatBreakGlassStatus(event.status)} / {event.reasonCode} /
+              閲覧者: {event.viewerUserId}
+              {event.expiresAt
+                ? ` / 期限: ${new Date(event.expiresAt).toLocaleString()}`
+                : ''}
+            </div>
+          ))}
+          <div style={{ fontSize: 12, color: '#92400e', marginTop: 6 }}>
+            ※ reasonText は表示しません
+          </div>
+        </div>
+      )}
       <div style={{ marginTop: 8 }}>
         <textarea
           placeholder="メッセージを書く"
