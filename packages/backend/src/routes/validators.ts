@@ -411,6 +411,31 @@ export const projectChatSummarySchema = {
   ),
 };
 
+export const chatBreakGlassRequestSchema = {
+  body: Type.Object(
+    {
+      projectId: Type.Optional(Type.String({ minLength: 1 })),
+      roomId: Type.Optional(Type.String({ minLength: 1 })),
+      viewerUserId: Type.Optional(Type.String({ minLength: 1 })),
+      reasonCode: Type.String({ minLength: 1, maxLength: 64 }),
+      reasonText: Type.String({ minLength: 1, maxLength: 2000 }),
+      targetFrom: Type.Optional(Type.String({ format: 'date-time' })),
+      targetUntil: Type.Optional(Type.String({ format: 'date-time' })),
+      ttlHours: Type.Optional(Type.Integer({ minimum: 1, maximum: 168 })),
+    },
+    { additionalProperties: false },
+  ),
+};
+
+export const chatBreakGlassRejectSchema = {
+  body: Type.Object(
+    {
+      reason: Type.String({ minLength: 1, maxLength: 2000 }),
+    },
+    { additionalProperties: false },
+  ),
+};
+
 export const leaveRequestSchema = {
   body: Type.Object({
     userId: Type.String(),

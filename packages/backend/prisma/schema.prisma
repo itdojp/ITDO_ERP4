@@ -187,6 +187,7 @@ model Project {
   updatedBy               String?
   deletedAt               DateTime?
   deletedReason           String?
+  ChatBreakGlassRequest   ChatBreakGlassRequest[]
 
   @@index([status, deletedAt])
   @@index([customerId, deletedAt])
@@ -208,6 +209,7 @@ model ProjectMember {
   @@index([userId])
   @@index([projectId])
 }
+
 model ProjectTask {
   id            String        @id @default(uuid())
   project       Project       @relation(fields: [projectId], references: [id], onDelete: Restrict)
@@ -237,20 +239,20 @@ model ProjectTask {
 }
 
 model ProjectChatMessage {
-  id            String    @id @default(uuid())
-  project       Project   @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  id            String                  @id @default(uuid())
+  project       Project                 @relation(fields: [projectId], references: [id], onDelete: Restrict)
   projectId     String
   userId        String
   body          String
   tags          Json?
   reactions     Json?
   mentions      Json?
-  mentionsAll   Boolean   @default(false)
+  mentionsAll   Boolean                 @default(false)
   ackRequest    ProjectChatAckRequest?
   attachments   ProjectChatAttachment[]
-  createdAt     DateTime  @default(now())
+  createdAt     DateTime                @default(now())
   createdBy     String?
-  updatedAt     DateTime  @updatedAt
+  updatedAt     DateTime                @updatedAt
   updatedBy     String?
   deletedAt     DateTime?
   deletedReason String?
@@ -260,14 +262,14 @@ model ProjectChatMessage {
 }
 
 model ProjectChatAckRequest {
-  id              String            @id @default(uuid())
+  id              String             @id @default(uuid())
   message         ProjectChatMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
-  messageId       String            @unique
-  project         Project           @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  messageId       String             @unique
+  project         Project            @relation(fields: [projectId], references: [id], onDelete: Restrict)
   projectId       String
   requiredUserIds Json
   dueAt           DateTime?
-  createdAt       DateTime          @default(now())
+  createdAt       DateTime           @default(now())
   createdBy       String?
   acks            ProjectChatAck[]
 
@@ -275,29 +277,29 @@ model ProjectChatAckRequest {
 }
 
 model ProjectChatAck {
-  id        String               @id @default(uuid())
+  id        String                @id @default(uuid())
   request   ProjectChatAckRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
   requestId String
   userId    String
-  ackedAt   DateTime             @default(now())
+  ackedAt   DateTime              @default(now())
 
   @@unique([requestId, userId])
   @@index([userId])
 }
 
 model ProjectChatAttachment {
-  id           String            @id @default(uuid())
-  message      ProjectChatMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
-  messageId    String
-  provider     String
-  providerKey  String
-  sha256       String?
-  sizeBytes    Int?
-  mimeType     String?
-  originalName String
-  createdAt    DateTime          @default(now())
-  createdBy    String?
-  deletedAt    DateTime?
+  id            String             @id @default(uuid())
+  message       ProjectChatMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  messageId     String
+  provider      String
+  providerKey   String
+  sha256        String?
+  sizeBytes     Int?
+  mimeType      String?
+  originalName  String
+  createdAt     DateTime           @default(now())
+  createdBy     String?
+  deletedAt     DateTime?
   deletedReason String?
 
   @@unique([provider, providerKey])
@@ -320,23 +322,71 @@ model ProjectChatReadState {
 }
 
 model AppNotification {
-  id        String   @id @default(uuid())
+  id        String    @id @default(uuid())
   userId    String
   kind      String
-  project   Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  project   Project?  @relation(fields: [projectId], references: [id], onDelete: SetNull)
   projectId String?
   messageId String?
   payload   Json?
   readAt    DateTime?
-  createdAt DateTime @default(now())
+  createdAt DateTime  @default(now())
   createdBy String?
-  updatedAt DateTime @updatedAt
+  updatedAt DateTime  @updatedAt
   updatedBy String?
 
   @@index([userId, createdAt])
   @@index([userId, readAt, createdAt])
   @@index([projectId])
   @@index([kind, createdAt])
+}
+
+model ChatBreakGlassRequest {
+  id              String                    @id @default(uuid())
+  targetType      String // project/room
+  project         Project?                  @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  projectId       String?
+  roomId          String?
+  requesterUserId String
+  viewerUserId    String
+  reasonCode      String
+  reasonText      String
+  targetFrom      DateTime?
+  targetUntil     DateTime?
+  ttlHours        Int                       @default(24)
+  status          String                    @default("requested")
+  approved1By     String?
+  approved1Role   String?
+  approved1At     DateTime?
+  approved2By     String?
+  approved2Role   String?
+  approved2At     DateTime?
+  rejectedBy      String?
+  rejectedRole    String?
+  rejectedAt      DateTime?
+  rejectedReason  String?
+  grantedAt       DateTime?
+  expiresAt       DateTime?
+  createdAt       DateTime                  @default(now())
+  updatedAt       DateTime                  @updatedAt
+  accessLogs      ChatBreakGlassAccessLog[]
+
+  @@index([status, createdAt])
+  @@index([projectId, createdAt])
+  @@index([viewerUserId, createdAt])
+}
+
+model ChatBreakGlassAccessLog {
+  id          String                @id @default(uuid())
+  request     ChatBreakGlassRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  requestId   String
+  actorUserId String
+  action      String
+  metadata    Json?
+  accessedAt  DateTime              @default(now())
+
+  @@index([requestId, accessedAt])
+  @@index([actorUserId, accessedAt])
 }
 
 model ProjectMilestone {
@@ -722,7 +772,7 @@ model AlertSetting {
   recipients       Json // emails/roles/users
   channels         Json // email/dashboard/ext_future
   remindAfterHours Int?
-  remindMaxCount   Int?     @default(3)
+  remindMaxCount   Int?      @default(3)
   isEnabled        Boolean   @default(true)
   alerts           Alert[]
   createdAt        DateTime  @default(now())
@@ -734,20 +784,20 @@ model AlertSetting {
 }
 
 model Alert {
-  id           String       @id @default(uuid())
-  setting      AlertSetting @relation(fields: [settingId], references: [id])
-  settingId    String
-  targetRef    String
-  triggeredAt  DateTime     @default(now())
-  reminderAt   DateTime?
-  reminderCount Int      @default(0)
-  status       String       @default("open")
-  sentChannels Json?
-  sentResult   Json?
-  createdAt    DateTime     @default(now())
-  createdBy    String?
-  updatedAt    DateTime     @updatedAt
-  updatedBy    String?
+  id            String       @id @default(uuid())
+  setting       AlertSetting @relation(fields: [settingId], references: [id])
+  settingId     String
+  targetRef     String
+  triggeredAt   DateTime     @default(now())
+  reminderAt    DateTime?
+  reminderCount Int          @default(0)
+  status        String       @default("open")
+  sentChannels  Json?
+  sentResult    Json?
+  createdAt     DateTime     @default(now())
+  createdBy     String?
+  updatedAt     DateTime     @updatedAt
+  updatedBy     String?
 
   @@index([settingId])
   @@index([status, triggeredAt])
@@ -755,20 +805,20 @@ model Alert {
 }
 
 model PushSubscription {
-  id             String   @id @default(uuid())
+  id             String    @id @default(uuid())
   userId         String
-  endpoint       String   @unique
+  endpoint       String    @unique
   p256dh         String
   auth           String
   expirationTime DateTime?
   userAgent      String?
   topics         Json?
   consentAt      DateTime?
-  isActive       Boolean  @default(true)
+  isActive       Boolean   @default(true)
   lastSeenAt     DateTime?
-  createdAt      DateTime @default(now())
+  createdAt      DateTime  @default(now())
   createdBy      String?
-  updatedAt      DateTime @updatedAt
+  updatedAt      DateTime  @updatedAt
   updatedBy      String?
 
   @@index([userId, isActive])
@@ -792,37 +842,37 @@ model DocTemplateSetting {
 }
 
 model IntegrationSetting {
-  id             String              @id @default(uuid())
-  type           IntegrationType
-  name           String?
-  provider       String?
-  status         IntegrationStatus   @default(active)
-  schedule       String?
-  config         Json?
-  lastRunAt      DateTime?
-  lastRunStatus  IntegrationRunStatus?
-  createdAt      DateTime            @default(now())
-  createdBy      String?
-  updatedAt      DateTime            @updatedAt
-  updatedBy      String?
-  runs           IntegrationRun[]
+  id            String                @id @default(uuid())
+  type          IntegrationType
+  name          String?
+  provider      String?
+  status        IntegrationStatus     @default(active)
+  schedule      String?
+  config        Json?
+  lastRunAt     DateTime?
+  lastRunStatus IntegrationRunStatus?
+  createdAt     DateTime              @default(now())
+  createdBy     String?
+  updatedAt     DateTime              @updatedAt
+  updatedBy     String?
+  runs          IntegrationRun[]
 
   @@index([type, status])
 }
 
 model IntegrationRun {
-  id         String                @id @default(uuid())
-  setting    IntegrationSetting    @relation(fields: [settingId], references: [id], onDelete: Cascade)
-  settingId  String
-  status     IntegrationRunStatus  @default(running)
-  startedAt  DateTime              @default(now())
-  finishedAt DateTime?
-  message    String?
-  metrics    Json?
-  retryCount Int                   @default(0)
+  id          String               @id @default(uuid())
+  setting     IntegrationSetting   @relation(fields: [settingId], references: [id], onDelete: Cascade)
+  settingId   String
+  status      IntegrationRunStatus @default(running)
+  startedAt   DateTime             @default(now())
+  finishedAt  DateTime?
+  message     String?
+  metrics     Json?
+  retryCount  Int                  @default(0)
   nextRetryAt DateTime?
-  createdAt  DateTime              @default(now())
-  createdBy  String?
+  createdAt   DateTime             @default(now())
+  createdBy   String?
 
   @@index([settingId, startedAt])
   @@index([status, startedAt])
@@ -868,42 +918,42 @@ model DocumentSendEvent {
 }
 
 model ReportSubscription {
-  id             String   @id @default(uuid())
-  name           String?
-  reportKey      String
-  format         String   @default("csv")
-  schedule       String?
-  params         Json?
-  recipients     Json?
-  channels       Json?
-  isEnabled      Boolean  @default(true)
-  lastRunAt      DateTime?
-  lastRunStatus  String?
-  createdAt      DateTime @default(now())
-  createdBy      String?
-  updatedAt      DateTime @updatedAt
-  updatedBy      String?
-  deliveries     ReportDelivery[]
+  id            String           @id @default(uuid())
+  name          String?
+  reportKey     String
+  format        String           @default("csv")
+  schedule      String?
+  params        Json?
+  recipients    Json?
+  channels      Json?
+  isEnabled     Boolean          @default(true)
+  lastRunAt     DateTime?
+  lastRunStatus String?
+  createdAt     DateTime         @default(now())
+  createdBy     String?
+  updatedAt     DateTime         @updatedAt
+  updatedBy     String?
+  deliveries    ReportDelivery[]
 
   @@index([reportKey, isEnabled])
   @@index([isEnabled, lastRunAt])
 }
 
 model ReportDelivery {
-  id              String             @id @default(uuid())
-  subscription    ReportSubscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
-  subscriptionId  String?
-  channel         String
-  status          String
-  target          String?
-  payload         Json?
-  error           String?
-  retryCount      Int                @default(0)
-  nextRetryAt     DateTime?
-  lastErrorAt     DateTime?
-  sentAt          DateTime?
-  createdAt       DateTime           @default(now())
-  createdBy       String?
+  id             String              @id @default(uuid())
+  subscription   ReportSubscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+  subscriptionId String?
+  channel        String
+  status         String
+  target         String?
+  payload        Json?
+  error          String?
+  retryCount     Int                 @default(0)
+  nextRetryAt    DateTime?
+  lastErrorAt    DateTime?
+  sentAt         DateTime?
+  createdAt      DateTime            @default(now())
+  createdBy      String?
 
   @@index([subscriptionId, sentAt])
   @@index([status, sentAt])
@@ -997,7 +1047,7 @@ model ReassignmentLog {
 model PeriodLock {
   id        String   @id @default(uuid())
   period    String
-  scope     String   // global/project
+  scope     String // global/project
   project   Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
   projectId String?
   reason    String?
@@ -1012,22 +1062,22 @@ model PeriodLock {
 }
 
 model UserAccount {
-  id            String   @id @default(uuid())
-  externalId    String?  @unique
-  userName      String   @unique
+  id            String      @id @default(uuid())
+  externalId    String?     @unique
+  userName      String      @unique
   displayName   String?
   givenName     String?
   familyName    String?
-  active        Boolean  @default(true)
+  active        Boolean     @default(true)
   emails        Json?
   phoneNumbers  Json?
   department    String?
   organization  String?
   managerUserId String?
   scimMeta      Json?
-  createdAt     DateTime @default(now())
+  createdAt     DateTime    @default(now())
   createdBy     String?
-  updatedAt     DateTime @updatedAt
+  updatedAt     DateTime    @updatedAt
   updatedBy     String?
   deletedAt     DateTime?
   deletedReason String?
