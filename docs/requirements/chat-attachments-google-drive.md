@@ -76,3 +76,14 @@ E2E_CAPTURE=0 E2E_SCOPE=extended ./scripts/e2e-frontend.sh
 - 共有フォルダ/共有ドライブの権限設定次第で、添付が意図せず閲覧可能になる可能性があるため、フォルダの共有設定を必ず確認する
 - 将来的に「公式ルームのみ添付OK」等のポリシーを導入する場合は #434 と整合させる
 
+## 8. 補助: Drive疎通チェック（スクリプト）
+E2Eを回す前に「フォルダ参照ができるか」「（任意で）書き込み/削除ができるか」を確認するためのスクリプトです。
+
+```bash
+# read only（一覧取得まで）
+npx --prefix packages/backend ts-node --project packages/backend/tsconfig.json scripts/check-chat-gdrive.ts
+
+# write（テストファイルを作成→削除/ゴミ箱）
+GDRIVE_CHECK_MODE=write \
+  npx --prefix packages/backend ts-node --project packages/backend/tsconfig.json scripts/check-chat-gdrive.ts
+```
