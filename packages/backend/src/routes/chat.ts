@@ -303,6 +303,54 @@ export async function registerChatRoutes(app: FastifyInstance) {
     }
   }
 
+  async function tryCreateChatMentionNotifications(options: {
+    req: any;
+    projectId: string;
+    messageId: string;
+    messageBody: string;
+    senderUserId: string;
+    mentionsAll: boolean;
+    mentionUserIds: string[];
+    mentionGroupIds: string[];
+  }) {
+    try {
+      const notificationResult = await createChatMentionNotifications({
+        projectId: options.projectId,
+        messageId: options.messageId,
+        messageBody: options.messageBody,
+        senderUserId: options.senderUserId,
+        mentionUserIds: options.mentionUserIds,
+        mentionGroupIds: options.mentionGroupIds,
+        mentionAll: options.mentionsAll,
+      });
+      if (notificationResult.created <= 0) return;
+
+      await logAudit({
+        action: 'chat_mention_notifications_created',
+        targetTable: 'project_chat_messages',
+        targetId: options.messageId,
+        metadata: {
+          projectId: options.projectId,
+          messageId: options.messageId,
+          createdCount: notificationResult.created,
+          recipientCount: notificationResult.recipients.length,
+          recipientUserIds: notificationResult.recipients.slice(0, 20),
+          recipientsTruncated: notificationResult.truncated,
+          mentionAll: options.mentionsAll,
+          mentionUserCount: options.mentionUserIds.length,
+          mentionGroupCount: options.mentionGroupIds.length,
+          usesProjectMemberFallback: notificationResult.usesProjectMemberFallback,
+        } as Prisma.InputJsonValue,
+        ...auditContextFromRequest(options.req),
+      });
+    } catch (err) {
+      options.req.log?.warn(
+        { err },
+        'Failed to create chat mention notifications',
+      );
+    }
+  }
+
   app.get(
     '/projects/:projectId/chat-messages',
     {
@@ -698,39 +746,16 @@ export async function registerChatRoutes(app: FastifyInstance) {
         mentionUserIds,
         mentionGroupIds,
       });
-      try {
-        const notificationResult = await createChatMentionNotifications({
-          projectId,
-          messageId: message.id,
-          messageBody: message.body,
-          senderUserId: userId,
-          mentionUserIds,
-          mentionGroupIds,
-          mentionAll: mentionsAll,
-        });
-        if (notificationResult.created > 0) {
-          await logAudit({
-            action: 'chat_mention_notifications_created',
-            targetTable: 'project_chat_messages',
-            targetId: message.id,
-            metadata: {
-              projectId,
-              messageId: message.id,
-              createdCount: notificationResult.created,
-              recipientCount: notificationResult.recipients.length,
-              recipientUserIds: notificationResult.recipients.slice(0, 20),
-              recipientsTruncated: notificationResult.truncated,
-              mentionAll: mentionsAll,
-              mentionUserCount: mentionUserIds.length,
-              mentionGroupCount: mentionGroupIds.length,
-              usesProjectMemberFallback: notificationResult.usesProjectMemberFallback,
-            } as Prisma.InputJsonValue,
-            ...auditContextFromRequest(req),
-          });
-        }
-      } catch (err) {
-        req.log?.warn({ err }, 'Failed to create chat mention notifications');
-      }
+      await tryCreateChatMentionNotifications({
+        req,
+        projectId,
+        messageId: message.id,
+        messageBody: message.body,
+        senderUserId: userId,
+        mentionsAll,
+        mentionUserIds,
+        mentionGroupIds,
+      });
       return message;
     },
   );
@@ -818,40 +843,16 @@ export async function registerChatRoutes(app: FastifyInstance) {
         mentionUserIds,
         mentionGroupIds,
       });
-      try {
-        const notificationResult = await createChatMentionNotifications({
-          projectId,
-          messageId: message.id,
-          messageBody: message.body,
-          senderUserId: userId,
-          mentionUserIds,
-          mentionGroupIds,
-          mentionAll: mentionsAll,
-        });
-        if (notificationResult.created > 0) {
-          await logAudit({
-            action: 'chat_mention_notifications_created',
-            targetTable: 'project_chat_messages',
-            targetId: message.id,
-            metadata: {
-              projectId,
-              messageId: message.id,
-              createdCount: notificationResult.created,
-              recipientCount: notificationResult.recipients.length,
-              recipientUserIds: notificationResult.recipients.slice(0, 20),
-              recipientsTruncated: notificationResult.truncated,
-              mentionAll: mentionsAll,
-              mentionUserCount: mentionUserIds.length,
-              mentionGroupCount: mentionGroupIds.length,
-              usesProjectMemberFallback:
-                notificationResult.usesProjectMemberFallback,
-            } as Prisma.InputJsonValue,
-            ...auditContextFromRequest(req),
-          });
-        }
-      } catch (err) {
-        req.log?.warn({ err }, 'Failed to create chat mention notifications');
-      }
+      await tryCreateChatMentionNotifications({
+        req,
+        projectId,
+        messageId: message.id,
+        messageBody: message.body,
+        senderUserId: userId,
+        mentionsAll,
+        mentionUserIds,
+        mentionGroupIds,
+      });
       return message;
     },
   );
