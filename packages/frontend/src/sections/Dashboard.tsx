@@ -288,7 +288,10 @@ export const Dashboard: React.FC = () => {
             const excerpt = resolveExcerpt(item.payload);
             return (
               <div key={item.id} className="card" style={{ padding: 12 }}>
-                <div className="row" style={{ justifyContent: 'space-between' }}>
+                <div
+                  className="row"
+                  style={{ justifyContent: 'space-between' }}
+                >
                   <div>
                     <strong>{formatNotificationLabel(item)}</strong>
                     <div style={{ fontSize: 12, color: '#475569' }}>

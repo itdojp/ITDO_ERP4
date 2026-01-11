@@ -339,7 +339,8 @@ export async function registerChatRoutes(app: FastifyInstance) {
           mentionAll: options.mentionsAll,
           mentionUserCount: options.mentionUserIds.length,
           mentionGroupCount: options.mentionGroupIds.length,
-          usesProjectMemberFallback: notificationResult.usesProjectMemberFallback,
+          usesProjectMemberFallback:
+            notificationResult.usesProjectMemberFallback,
         } as Prisma.InputJsonValue,
         ...auditContextFromRequest(options.req),
       });
