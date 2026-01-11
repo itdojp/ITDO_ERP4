@@ -34,6 +34,7 @@ import { registerPushRoutes } from './push.js';
 import { registerReportSubscriptionRoutes } from './reportSubscriptions.js';
 import { registerIntegrationRoutes } from './integrations.js';
 import { registerPeriodLockRoutes } from './periodLocks.js';
+import { registerNotificationRoutes } from './notifications.js';
 
 export async function registerRoutes(app: FastifyInstance) {
   await registerAuthRoutes(app);
@@ -46,6 +47,7 @@ export async function registerRoutes(app: FastifyInstance) {
   await registerSendEventRoutes(app);
   await registerScimRoutes(app);
   await registerPushRoutes(app);
+  await registerNotificationRoutes(app);
   await registerReportSubscriptionRoutes(app);
   await registerIntegrationRoutes(app);
   await registerPeriodLockRoutes(app);

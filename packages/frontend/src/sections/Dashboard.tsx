@@ -49,6 +49,23 @@ type Insight = {
   evidence: InsightEvidence;
 };
 
+type AppNotification = {
+  id: string;
+  userId: string;
+  kind: string;
+  projectId?: string | null;
+  messageId?: string | null;
+  payload?: unknown;
+  readAt?: string | null;
+  createdAt: string;
+  project?: {
+    id: string;
+    code: string;
+    name: string;
+    deletedAt?: string | null;
+  } | null;
+};
+
 const INSIGHT_LABELS: Record<string, { title: string; hint: string }> = {
   budget_overrun: {
     title: '予算超過の兆候',
@@ -86,6 +103,27 @@ const formatDateTime = (value: string | null) => {
   }).format(parsed);
 };
 
+function resolveFromUserId(payload: unknown) {
+  if (!payload || typeof payload !== 'object') return null;
+  const value = (payload as { fromUserId?: unknown }).fromUserId;
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+function resolveExcerpt(payload: unknown) {
+  if (!payload || typeof payload !== 'object') return null;
+  const value = (payload as { excerpt?: unknown }).excerpt;
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+function formatNotificationLabel(item: AppNotification) {
+  if (item.kind === 'chat_mention') {
+    const fromUserId = resolveFromUserId(item.payload);
+    if (fromUserId) return `${fromUserId} からメンション`;
+    return 'チャットでメンション';
+  }
+  return item.kind;
+}
+
 const formatPeriod = (period: { from: string | null; to: string | null }) => {
   const fromLabel = period.from ? formatDateTime(period.from) : '指定なし';
   const toLabel = period.to ? formatDateTime(period.to) : '指定なし';
@@ -103,6 +141,9 @@ export const Dashboard: React.FC = () => {
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [approvals, setApprovals] = useState<ApprovalInstance[]>([]);
   const [approvalMessage, setApprovalMessage] = useState('');
+  const [notificationCount, setNotificationCount] = useState(0);
+  const [notifications, setNotifications] = useState<AppNotification[]>([]);
+  const [notificationMessage, setNotificationMessage] = useState('');
   const [insights, setInsights] = useState<Insight[]>([]);
   const [insightMessage, setInsightMessage] = useState('');
   const [showAll, setShowAll] = useState(false);
@@ -133,6 +174,44 @@ export const Dashboard: React.FC = () => {
       .then((data) => setAlerts(data.items))
       .catch(() => setAlerts([]));
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadNotifications = async () => {
+      try {
+        const [countRes, listRes] = await Promise.all([
+          api<{ unreadCount?: number }>('/notifications/unread-count'),
+          api<{ items?: AppNotification[] }>('/notifications?unread=1&limit=5'),
+        ]);
+        if (cancelled) return;
+        setNotificationCount(
+          typeof countRes.unreadCount === 'number' ? countRes.unreadCount : 0,
+        );
+        setNotifications(Array.isArray(listRes.items) ? listRes.items : []);
+        setNotificationMessage('');
+      } catch (err) {
+        if (cancelled) return;
+        setNotificationCount(0);
+        setNotifications([]);
+        setNotificationMessage('通知の取得に失敗しました');
+      }
+    };
+    loadNotifications().catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const markNotificationRead = async (id: string) => {
+    try {
+      await api(`/notifications/${id}/read`, { method: 'POST' });
+      setNotifications((prev) => prev.filter((item) => item.id !== id));
+      setNotificationCount((prev) => Math.max(prev - 1, 0));
+    } catch (err) {
+      console.error('通知の既読化に失敗しました', err);
+      setNotificationMessage('通知の既読化に失敗しました');
+    }
+  };
 
   useEffect(() => {
     if (!canViewInsights) return;
@@ -190,6 +269,56 @@ export const Dashboard: React.FC = () => {
             {approvalMessage}
           </div>
         )}
+      </div>
+      <div className="card" style={{ marginBottom: 12, padding: 12 }}>
+        <div className="row" style={{ justifyContent: 'space-between' }}>
+          <strong>通知</strong>
+          <span className="badge">Unread {notificationCount}</span>
+        </div>
+        {notificationMessage && (
+          <div style={{ color: '#dc2626', marginTop: 6 }}>
+            {notificationMessage}
+          </div>
+        )}
+        <div className="list" style={{ display: 'grid', gap: 8, marginTop: 8 }}>
+          {notifications.map((item) => {
+            const projectLabel = item.project
+              ? `${item.project.code} / ${item.project.name}`
+              : item.projectId || 'N/A';
+            const excerpt = resolveExcerpt(item.payload);
+            return (
+              <div key={item.id} className="card" style={{ padding: 12 }}>
+                <div
+                  className="row"
+                  style={{ justifyContent: 'space-between' }}
+                >
+                  <div>
+                    <strong>{formatNotificationLabel(item)}</strong>
+                    <div style={{ fontSize: 12, color: '#475569' }}>
+                      {projectLabel} / {formatDateTime(item.createdAt)}
+                    </div>
+                    {excerpt && (
+                      <div style={{ fontSize: 12, color: '#475569' }}>
+                        {excerpt}
+                      </div>
+                    )}
+                  </div>
+                  <button
+                    className="button secondary"
+                    onClick={() => markNotificationRead(item.id)}
+                  >
+                    既読
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+          {notifications.length === 0 && (
+            <div className="card" style={{ padding: 12 }}>
+              通知なし
+            </div>
+          )}
+        </div>
       </div>
       <div className="row" style={{ alignItems: 'center' }}>
         <p className="badge">

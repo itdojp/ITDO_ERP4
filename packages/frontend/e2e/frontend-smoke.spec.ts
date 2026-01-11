@@ -503,6 +503,7 @@ test('frontend smoke reports masters settings @extended', async ({ page }) => {
 test('frontend smoke chat hr analytics @extended', async ({ page }) => {
   test.setTimeout(180_000);
   const id = runId();
+  const mentionTarget = 'e2e-member-1@example.com';
   await prepare(page);
 
   await expect(page.getByText('ID: demo-user')).toBeVisible();
@@ -516,7 +517,7 @@ test('frontend smoke chat hr analytics @extended', async ({ page }) => {
     chatSection.getByLabel('案件選択'),
     'PRJ-DEMO-1 / Demo Project 1',
   );
-  await chatSection.getByLabel('メンションユーザ').fill('demo-user');
+  await chatSection.getByLabel('メンションユーザ').fill(mentionTarget);
   await chatSection.getByRole('button', { name: 'ユーザ追加' }).click();
   await chatSection.getByLabel('メンショングループ').fill('mgmt');
   await chatSection.getByRole('button', { name: 'グループ追加' }).click();
@@ -531,7 +532,7 @@ test('frontend smoke chat hr analytics @extended', async ({ page }) => {
   await chatSection.getByRole('button', { name: '投稿' }).click();
   await expect(chatSection.getByText(chatMessage)).toBeVisible();
   const chatItem = chatSection.locator('li', { hasText: chatMessage });
-  await expect(chatItem.getByText('@demo-user')).toBeVisible();
+  await expect(chatItem.getByText(`@${mentionTarget}`)).toBeVisible();
   await expect(chatItem.getByText('@mgmt')).toBeVisible();
   await expect(
     chatSection.getByRole('button', { name: uploadName }),
@@ -590,4 +591,33 @@ test('frontend smoke chat hr analytics @extended', async ({ page }) => {
     await updateButtons.nth(1).click();
   }
   await captureSection(hrSection, '13-hr-analytics.png');
+
+  const mentionPage = await page.context().newPage();
+  mentionPage.on('pageerror', (error) => {
+    console.error('[e2e][mentionPage][pageerror]', error);
+  });
+  mentionPage.on('console', (msg) => {
+    if (msg.type() === 'error') {
+      console.error('[e2e][mentionPage][console.error]', msg.text());
+    }
+  });
+  await mentionPage.addInitScript((state) => {
+    window.localStorage.setItem('erp4_auth', JSON.stringify(state));
+  }, {
+    userId: mentionTarget,
+    roles: authState.roles,
+    projectIds: authState.projectIds,
+    groupIds: authState.groupIds,
+  });
+  await mentionPage.goto(baseUrl);
+  await expect(
+    mentionPage.getByRole('heading', { name: 'ERP4 MVP PoC' }),
+  ).toBeVisible();
+  const dashboardSection = mentionPage
+    .locator('h2', { hasText: 'Dashboard' })
+    .locator('..');
+  await expect(dashboardSection.getByText(chatMessage)).toBeVisible({
+    timeout: actionTimeout,
+  });
+  await mentionPage.close();
 });

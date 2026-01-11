@@ -17,6 +17,7 @@ import {
   openAttachment,
   storeAttachment,
 } from '../services/chatAttachments.js';
+import { createChatMentionNotifications } from '../services/appNotifications.js';
 
 function parseDateParam(value?: string) {
   if (!value) return null;
@@ -299,6 +300,55 @@ export async function registerChatRoutes(app: FastifyInstance) {
         metadata: { projectId: options.projectId } as Prisma.InputJsonValue,
         ...auditContextFromRequest(options.req),
       });
+    }
+  }
+
+  async function tryCreateChatMentionNotifications(options: {
+    req: any;
+    projectId: string;
+    messageId: string;
+    messageBody: string;
+    senderUserId: string;
+    mentionsAll: boolean;
+    mentionUserIds: string[];
+    mentionGroupIds: string[];
+  }) {
+    try {
+      const notificationResult = await createChatMentionNotifications({
+        projectId: options.projectId,
+        messageId: options.messageId,
+        messageBody: options.messageBody,
+        senderUserId: options.senderUserId,
+        mentionUserIds: options.mentionUserIds,
+        mentionGroupIds: options.mentionGroupIds,
+        mentionAll: options.mentionsAll,
+      });
+      if (notificationResult.created <= 0) return;
+
+      await logAudit({
+        action: 'chat_mention_notifications_created',
+        targetTable: 'project_chat_messages',
+        targetId: options.messageId,
+        metadata: {
+          projectId: options.projectId,
+          messageId: options.messageId,
+          createdCount: notificationResult.created,
+          recipientCount: notificationResult.recipients.length,
+          recipientUserIds: notificationResult.recipients.slice(0, 20),
+          recipientsTruncated: notificationResult.truncated,
+          mentionAll: options.mentionsAll,
+          mentionUserCount: options.mentionUserIds.length,
+          mentionGroupCount: options.mentionGroupIds.length,
+          usesProjectMemberFallback:
+            notificationResult.usesProjectMemberFallback,
+        } as Prisma.InputJsonValue,
+        ...auditContextFromRequest(options.req),
+      });
+    } catch (err) {
+      options.req.log?.warn(
+        { err },
+        'Failed to create chat mention notifications',
+      );
     }
   }
 
@@ -697,6 +747,16 @@ export async function registerChatRoutes(app: FastifyInstance) {
         mentionUserIds,
         mentionGroupIds,
       });
+      await tryCreateChatMentionNotifications({
+        req,
+        projectId,
+        messageId: message.id,
+        messageBody: message.body,
+        senderUserId: userId,
+        mentionsAll,
+        mentionUserIds,
+        mentionGroupIds,
+      });
       return message;
     },
   );
@@ -780,6 +840,16 @@ export async function registerChatRoutes(app: FastifyInstance) {
         req,
         messageId: message.id,
         projectId,
+        mentionsAll,
+        mentionUserIds,
+        mentionGroupIds,
+      });
+      await tryCreateChatMentionNotifications({
+        req,
+        projectId,
+        messageId: message.id,
+        messageBody: message.body,
+        senderUserId: userId,
         mentionsAll,
         mentionUserIds,
         mentionGroupIds,
