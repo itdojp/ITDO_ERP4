@@ -1,7 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import type { Prisma } from '@prisma/client';
 import { prisma } from '../services/db.js';
-import { requireRole } from '../services/rbac.js';
+import { hasProjectAccess, requireRole } from '../services/rbac.js';
 import { auditContextFromRequest, logAudit } from '../services/audit.js';
 import {
   chatBreakGlassRejectSchema,
@@ -34,6 +34,53 @@ function addHours(date: Date, hours: number) {
 
 export async function registerChatBreakGlassRoutes(app: FastifyInstance) {
   const allowedRoles = ['mgmt', 'exec'];
+  const chatRoles = ['admin', 'mgmt', 'user', 'hr', 'exec', 'external_chat'];
+
+  app.get(
+    '/projects/:projectId/chat-break-glass-events',
+    { preHandler: requireRole(chatRoles) },
+    async (req, reply) => {
+      const { projectId } = req.params as { projectId: string };
+      const roles = req.user?.roles || [];
+      const projectIds = req.user?.projectIds || [];
+      if (
+        !roles.includes('exec') &&
+        !hasProjectAccess(roles, projectIds, projectId)
+      ) {
+        return reply.status(403).send({
+          error: {
+            code: 'FORBIDDEN_PROJECT',
+            message: 'Access to this project is forbidden',
+          },
+        });
+      }
+
+      const items = await prisma.chatBreakGlassRequest.findMany({
+        where: { projectId },
+        orderBy: { createdAt: 'desc' },
+        take: 20,
+        select: {
+          id: true,
+          status: true,
+          reasonCode: true,
+          requesterUserId: true,
+          viewerUserId: true,
+          targetFrom: true,
+          targetUntil: true,
+          ttlHours: true,
+          approved1At: true,
+          approved2At: true,
+          rejectedAt: true,
+          grantedAt: true,
+          expiresAt: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+      });
+
+      return { items };
+    },
+  );
 
   app.post(
     '/chat-break-glass/requests',
