@@ -5,9 +5,12 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BACKEND_PORT="${BACKEND_PORT:-3002}"
 FRONTEND_PORT="${FRONTEND_PORT:-5173}"
 E2E_DB_MODE="${E2E_DB_MODE:-podman}"
+E2E_PODMAN_CONTAINER_NAME="${E2E_PODMAN_CONTAINER_NAME:-erp4-pg-e2e}"
+E2E_PODMAN_HOST_PORT="${E2E_PODMAN_HOST_PORT:-55433}"
+E2E_PODMAN_RESET="${E2E_PODMAN_RESET:-1}"
 if [[ -z "${DATABASE_URL:-}" ]]; then
   if [[ "$E2E_DB_MODE" == "podman" ]]; then
-    DATABASE_URL="postgresql://postgres:postgres@localhost:55432/postgres?schema=public"
+    DATABASE_URL="postgresql://postgres:postgres@localhost:${E2E_PODMAN_HOST_PORT}/postgres?schema=public"
   else
     echo "DATABASE_URL is required when E2E_DB_MODE=direct" >&2
     exit 1
@@ -103,8 +106,14 @@ wait_for_db() {
 
 case "$E2E_DB_MODE" in
   podman)
-    "$ROOT_DIR/scripts/podman-poc.sh" db-push
-    "$ROOT_DIR/scripts/podman-poc.sh" seed
+    if [[ "$E2E_PODMAN_RESET" == "1" ]]; then
+      CONTAINER_NAME="$E2E_PODMAN_CONTAINER_NAME" HOST_PORT="$E2E_PODMAN_HOST_PORT" \
+        "$ROOT_DIR/scripts/podman-poc.sh" stop >/dev/null 2>&1 || true
+    fi
+    CONTAINER_NAME="$E2E_PODMAN_CONTAINER_NAME" HOST_PORT="$E2E_PODMAN_HOST_PORT" \
+      "$ROOT_DIR/scripts/podman-poc.sh" db-push
+    CONTAINER_NAME="$E2E_PODMAN_CONTAINER_NAME" HOST_PORT="$E2E_PODMAN_HOST_PORT" \
+      "$ROOT_DIR/scripts/podman-poc.sh" seed
     ;;
   direct)
     if ! command -v psql >/dev/null 2>&1; then
