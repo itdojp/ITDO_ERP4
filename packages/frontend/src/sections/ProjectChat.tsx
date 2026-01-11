@@ -145,10 +145,10 @@ export const ProjectChat: React.FC = () => {
   const [mentionAll, setMentionAll] = useState(false);
 
   const buildMentionsPayload = () => {
-    const users = Array.from(new Set(mentionUserIds.map((id) => id.trim())))
+    const users = Array.from(new Set(mentionUserIds))
       .filter(Boolean)
       .slice(0, 50);
-    const groups = Array.from(new Set(mentionGroupIds.map((id) => id.trim())))
+    const groups = Array.from(new Set(mentionGroupIds))
       .filter(Boolean)
       .slice(0, 20);
     if (!mentionAll && users.length === 0 && groups.length === 0) {
@@ -167,6 +167,14 @@ export const ProjectChat: React.FC = () => {
     setMentionUserIds([]);
     setMentionGroupIds([]);
     setMentionAll(false);
+  };
+
+  const removeMentionUser = (userId: string) => {
+    setMentionUserIds((prev) => prev.filter((entry) => entry !== userId));
+  };
+
+  const removeMentionGroup = (groupId: string) => {
+    setMentionGroupIds((prev) => prev.filter((entry) => entry !== groupId));
   };
 
   const uploadAttachment = async (messageId: string, file: File) => {
@@ -563,6 +571,12 @@ export const ProjectChat: React.FC = () => {
             list="chat-mention-users"
             value={mentionUserInput}
             onChange={(e) => setMentionUserInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                addMentionUser();
+              }
+            }}
             placeholder="メンション: ユーザID (任意)"
             style={{ flex: '1 1 240px' }}
           />
@@ -590,6 +604,12 @@ export const ProjectChat: React.FC = () => {
             list="chat-mention-groups"
             value={mentionGroupInput}
             onChange={(e) => setMentionGroupInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                addMentionGroup();
+              }
+            }}
             placeholder="メンション: グループID (任意)"
             style={{ flex: '1 1 240px' }}
           />
@@ -623,16 +643,40 @@ export const ProjectChat: React.FC = () => {
             className="row"
             style={{ gap: 6, flexWrap: 'wrap', marginTop: 6 }}
           >
-            {mentionAll && <span className="badge">@all</span>}
+            {mentionAll && (
+              <button
+                type="button"
+                className="badge"
+                aria-label="全員へのメンションを解除"
+                onClick={() => setMentionAll(false)}
+                style={{ cursor: 'pointer' }}
+              >
+                @all ×
+              </button>
+            )}
             {mentionUserIds.map((userId) => (
-              <span key={userId} className="badge">
-                @{userId}
-              </span>
+              <button
+                key={userId}
+                type="button"
+                className="badge"
+                aria-label={`ユーザへのメンションを解除: ${userId}`}
+                onClick={() => removeMentionUser(userId)}
+                style={{ cursor: 'pointer' }}
+              >
+                @{userId} ×
+              </button>
             ))}
             {mentionGroupIds.map((groupId) => (
-              <span key={groupId} className="badge">
-                @{groupId}
-              </span>
+              <button
+                key={groupId}
+                type="button"
+                className="badge"
+                aria-label={`グループへのメンションを解除: ${groupId}`}
+                onClick={() => removeMentionGroup(groupId)}
+                style={{ cursor: 'pointer' }}
+              >
+                @{groupId} ×
+              </button>
             ))}
             <button
               className="button secondary"
@@ -722,14 +766,26 @@ export const ProjectChat: React.FC = () => {
                   className="row"
                   style={{ gap: 6, flexWrap: 'wrap', marginTop: 4 }}
                 >
-                  {mentionAllFlag && <span className="badge">@all</span>}
+                  {mentionAllFlag && (
+                    <span className="badge" aria-label="全員へのメンション">
+                      @all
+                    </span>
+                  )}
                   {mentionedUserIds.map((userId) => (
-                    <span key={userId} className="badge">
+                    <span
+                      key={userId}
+                      className="badge"
+                      aria-label={`メンション対象ユーザ: ${userId}`}
+                    >
                       @{userId}
                     </span>
                   ))}
                   {mentionedGroupIds.map((groupId) => (
-                    <span key={groupId} className="badge">
+                    <span
+                      key={groupId}
+                      className="badge"
+                      aria-label={`メンション対象グループ: ${groupId}`}
+                    >
                       @{groupId}
                     </span>
                   ))}

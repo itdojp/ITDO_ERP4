@@ -192,6 +192,107 @@ export async function registerChatRoutes(app: FastifyInstance) {
     return { allowed: true };
   }
 
+  function buildAllMentionBlockedMetadata(
+    projectId: string,
+    rateLimit: Exclude<AllMentionRateLimit, { allowed: true }>,
+  ) {
+    const metadata: Record<string, unknown> = {
+      projectId,
+      reason: rateLimit.reason,
+    };
+    if (rateLimit.reason === 'min_interval') {
+      metadata.minIntervalSeconds = rateLimit.minIntervalSeconds;
+      metadata.lastAt = rateLimit.lastAt.toISOString();
+    }
+    if (rateLimit.reason === 'max_24h') {
+      metadata.maxPer24h = rateLimit.maxPer24h;
+      metadata.windowStart = rateLimit.windowStart.toISOString();
+    }
+    return metadata;
+  }
+
+  async function ensureAllMentionAllowed(options: {
+    req: any;
+    reply: any;
+    projectId: string;
+    userId: string;
+  }) {
+    const roles = options.req.user?.roles || [];
+    if (roles.includes('external_chat')) {
+      options.reply.status(403).send({
+        error: {
+          code: 'FORBIDDEN_ALL_MENTION',
+          message: 'external_chat cannot use @all',
+        },
+      });
+      return false;
+    }
+
+    const rateLimit = await enforceAllMentionRateLimit({
+      projectId: options.projectId,
+      userId: options.userId,
+      now: new Date(),
+    });
+    if (!rateLimit.allowed) {
+      await logAudit({
+        action: 'chat_all_mention_blocked',
+        targetTable: 'project_chat_messages',
+        metadata: buildAllMentionBlockedMetadata(
+          options.projectId,
+          rateLimit,
+        ) as Prisma.InputJsonValue,
+        ...auditContextFromRequest(options.req),
+      });
+      options.reply.status(429).send({
+        error: {
+          code: 'ALL_MENTION_RATE_LIMIT',
+          message: 'Too many @all posts',
+        },
+      });
+      return false;
+    }
+
+    return true;
+  }
+
+  async function logChatMessageMentions(options: {
+    req: any;
+    messageId: string;
+    projectId: string;
+    mentionsAll: boolean;
+    mentionUserIds: string[];
+    mentionGroupIds: string[];
+  }) {
+    if (
+      !options.mentionsAll &&
+      options.mentionUserIds.length === 0 &&
+      options.mentionGroupIds.length === 0
+    ) {
+      return;
+    }
+    await logAudit({
+      action: 'chat_message_posted_with_mentions',
+      targetTable: 'project_chat_messages',
+      targetId: options.messageId,
+      metadata: {
+        projectId: options.projectId,
+        mentionAll: options.mentionsAll,
+        mentionUserCount: options.mentionUserIds.length,
+        mentionGroupCount: options.mentionGroupIds.length,
+      } as Prisma.InputJsonValue,
+      ...auditContextFromRequest(options.req),
+    });
+    if (options.mentionsAll) {
+      await logAudit({
+        action: 'chat_all_mention_posted',
+        targetTable: 'project_chat_messages',
+        targetId: options.messageId,
+        metadata: { projectId: options.projectId } as Prisma.InputJsonValue,
+        ...auditContextFromRequest(options.req),
+      });
+    }
+  }
+
   app.get(
     '/projects/:projectId/chat-messages',
     {
@@ -412,47 +513,13 @@ export async function registerChatRoutes(app: FastifyInstance) {
         normalizeMentions(body.mentions);
 
       if (mentionsAll) {
-        const roles = req.user?.roles || [];
-        if (roles.includes('external_chat')) {
-          return reply.status(403).send({
-            error: {
-              code: 'FORBIDDEN_ALL_MENTION',
-              message: 'external_chat cannot use @all',
-            },
-          });
-        }
-        const now = new Date();
-        const rateLimit = await enforceAllMentionRateLimit({
+        const ok = await ensureAllMentionAllowed({
+          req,
+          reply,
           projectId,
           userId,
-          now,
         });
-        if (!rateLimit.allowed) {
-          const metadata: Record<string, unknown> = {
-            projectId,
-            reason: rateLimit.reason,
-          };
-          if (rateLimit.reason === 'min_interval') {
-            metadata.minIntervalSeconds = rateLimit.minIntervalSeconds;
-            metadata.lastAt = rateLimit.lastAt.toISOString();
-          }
-          if (rateLimit.reason === 'max_24h') {
-            metadata.maxPer24h = rateLimit.maxPer24h;
-            metadata.windowStart = rateLimit.windowStart.toISOString();
-          }
-          await logAudit({
-            action: 'chat_all_mention_blocked',
-            targetTable: 'project_chat_messages',
-            metadata: metadata as Prisma.InputJsonValue,
-            ...auditContextFromRequest(req),
-          });
-          return reply.status(429).send({
-            error: {
-              code: 'ALL_MENTION_RATE_LIMIT',
-              message: 'Too many @all posts',
-            },
-          });
-        }
+        if (!ok) return;
       }
       const message = await prisma.projectChatMessage.create({
         data: {
@@ -466,31 +533,14 @@ export async function registerChatRoutes(app: FastifyInstance) {
           updatedBy: userId,
         },
       });
-      if (mentionsAll || mentionUserIds.length || mentionGroupIds.length) {
-        await logAudit({
-          action: 'chat_message_posted_with_mentions',
-          targetTable: 'project_chat_messages',
-          targetId: message.id,
-          metadata: {
-            projectId,
-            mentionAll: mentionsAll,
-            mentionUserCount: mentionUserIds.length,
-            mentionGroupCount: mentionGroupIds.length,
-          } as Prisma.InputJsonValue,
-          ...auditContextFromRequest(req),
-        });
-        if (mentionsAll) {
-          await logAudit({
-            action: 'chat_all_mention_posted',
-            targetTable: 'project_chat_messages',
-            targetId: message.id,
-            metadata: {
-              projectId,
-            } as Prisma.InputJsonValue,
-            ...auditContextFromRequest(req),
-          });
-        }
-      }
+      await logChatMessageMentions({
+        req,
+        messageId: message.id,
+        projectId,
+        mentionsAll,
+        mentionUserIds,
+        mentionGroupIds,
+      });
       return message;
     },
   );
@@ -536,47 +586,13 @@ export async function registerChatRoutes(app: FastifyInstance) {
       const { mentions, mentionsAll, mentionUserIds, mentionGroupIds } =
         normalizeMentions(body.mentions);
       if (mentionsAll) {
-        const roles = req.user?.roles || [];
-        if (roles.includes('external_chat')) {
-          return reply.status(403).send({
-            error: {
-              code: 'FORBIDDEN_ALL_MENTION',
-              message: 'external_chat cannot use @all',
-            },
-          });
-        }
-        const now = new Date();
-        const rateLimit = await enforceAllMentionRateLimit({
+        const ok = await ensureAllMentionAllowed({
+          req,
+          reply,
           projectId,
           userId,
-          now,
         });
-        if (!rateLimit.allowed) {
-          const metadata: Record<string, unknown> = {
-            projectId,
-            reason: rateLimit.reason,
-          };
-          if (rateLimit.reason === 'min_interval') {
-            metadata.minIntervalSeconds = rateLimit.minIntervalSeconds;
-            metadata.lastAt = rateLimit.lastAt.toISOString();
-          }
-          if (rateLimit.reason === 'max_24h') {
-            metadata.maxPer24h = rateLimit.maxPer24h;
-            metadata.windowStart = rateLimit.windowStart.toISOString();
-          }
-          await logAudit({
-            action: 'chat_all_mention_blocked',
-            targetTable: 'project_chat_messages',
-            metadata: metadata as Prisma.InputJsonValue,
-            ...auditContextFromRequest(req),
-          });
-          return reply.status(429).send({
-            error: {
-              code: 'ALL_MENTION_RATE_LIMIT',
-              message: 'Too many @all posts',
-            },
-          });
-        }
+        if (!ok) return;
       }
 
       const message = await prisma.projectChatMessage.create({
@@ -604,31 +620,14 @@ export async function registerChatRoutes(app: FastifyInstance) {
           },
         },
       });
-      if (mentionsAll || mentionUserIds.length || mentionGroupIds.length) {
-        await logAudit({
-          action: 'chat_message_posted_with_mentions',
-          targetTable: 'project_chat_messages',
-          targetId: message.id,
-          metadata: {
-            projectId,
-            mentionAll: mentionsAll,
-            mentionUserCount: mentionUserIds.length,
-            mentionGroupCount: mentionGroupIds.length,
-          } as Prisma.InputJsonValue,
-          ...auditContextFromRequest(req),
-        });
-        if (mentionsAll) {
-          await logAudit({
-            action: 'chat_all_mention_posted',
-            targetTable: 'project_chat_messages',
-            targetId: message.id,
-            metadata: {
-              projectId,
-            } as Prisma.InputJsonValue,
-            ...auditContextFromRequest(req),
-          });
-        }
-      }
+      await logChatMessageMentions({
+        req,
+        messageId: message.id,
+        projectId,
+        mentionsAll,
+        mentionUserIds,
+        mentionGroupIds,
+      });
       return message;
     },
   );
