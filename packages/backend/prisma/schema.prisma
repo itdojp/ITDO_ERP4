@@ -170,6 +170,7 @@ model Project {
   chatMessages            ProjectChatMessage[]
   chatAckRequests         ProjectChatAckRequest[]
   chatReadStates          ProjectChatReadState[]
+  notifications           AppNotification[]
   estimates               Estimate[]
   invoices                Invoice[]
   timeEntries             TimeEntry[]
@@ -316,6 +317,26 @@ model ProjectChatReadState {
   @@unique([projectId, userId])
   @@index([userId])
   @@index([projectId])
+}
+
+model AppNotification {
+  id        String   @id @default(uuid())
+  userId    String
+  kind      String
+  project   Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  projectId String?
+  messageId String?
+  payload   Json?
+  readAt    DateTime?
+  createdAt DateTime @default(now())
+  createdBy String?
+  updatedAt DateTime @updatedAt
+  updatedBy String?
+
+  @@index([userId, createdAt])
+  @@index([userId, readAt, createdAt])
+  @@index([projectId])
+  @@index([kind, createdAt])
 }
 
 model ProjectMilestone {
