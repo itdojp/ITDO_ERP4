@@ -87,6 +87,7 @@ export async function storeAttachment(
     }
     const drive = getDriveClient();
     const uploaded = await drive.files.create({
+      supportsAllDrives: true,
       requestBody: {
         name: originalName,
         parents: [folderId],
@@ -133,7 +134,7 @@ export async function openAttachment(
   if (provider === 'gdrive') {
     const drive = getDriveClient();
     const downloaded = await drive.files.get(
-      { fileId: providerKey, alt: 'media' },
+      { fileId: providerKey, alt: 'media', supportsAllDrives: true },
       { responseType: 'stream' },
     );
     return { stream: downloaded.data as unknown as Readable };
