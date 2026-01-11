@@ -4,6 +4,15 @@
 - [ ] S3 バケット/リージョン/KMS の確定値を `docs/requirements/backup-restore.md` に反映
 - [ ] S3/OSS 移行の時期を決定（`docs/requirements/backup-restore.md`）
 
+## 次アクション（チャット）
+- [ ] #453 ルーム化（project chat→room chat）移行方針の確定と段階移行の計画化
+  - [ ] 仕様/方針ドキュメントの確定（`docs/requirements/chat-rooms.md`）
+  - [ ] 互換維持の移行ステップ（Step 1〜5）の確定
+- [ ] #434 ガバナンス（公式/私的/DM）と監査break-glassの設計を確定
+- [ ] #454 break-glass（申請/二重承認/閲覧許可/監査ログ）を実装
+- [ ] #455 break-glass UI（申請/承認/履歴）+ システムメッセージ
+- [ ] #445 AI支援（要約/アクション抽出/FAQ/検索支援）のMVP方針決定
+
 ## 次アクション（リリース準備/QA整理）
 - [x] #398 テスト結果インデックス整備
   - [x] docs/test-results/README.md を追加
