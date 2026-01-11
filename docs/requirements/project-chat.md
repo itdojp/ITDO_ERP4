@@ -303,6 +303,16 @@
 **挙動**
 - 自分の `lastReadAt` を `now()` に更新する（MVPは「読み込み」時点で更新する運用）
 
+### POST `/projects/:projectId/chat-summary`
+**Body**
+- `since` (任意: ISO日時)
+- `until` (任意: ISO日時)
+- `limit` (任意: 1〜200、デフォルト100)
+
+**挙動**
+- 直近メッセージを集計して「スタブ要約」を返す（外部LLM送信はしない）
+- 実行操作は監査ログ `chat_summary_generated` として記録する
+
 ### POST `/chat-messages/:id/reactions`
 **Body**
 - `emoji` (1〜16文字)

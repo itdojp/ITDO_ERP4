@@ -400,6 +400,17 @@ export const projectChatAckRequestSchema = {
   ),
 };
 
+export const projectChatSummarySchema = {
+  body: Type.Object(
+    {
+      since: Type.Optional(Type.String({ format: 'date-time' })),
+      until: Type.Optional(Type.String({ format: 'date-time' })),
+      limit: Type.Optional(Type.Number({ minimum: 1, maximum: 200 })),
+    },
+    { additionalProperties: false },
+  ),
+};
+
 export const leaveRequestSchema = {
   body: Type.Object({
     userId: Type.String(),

@@ -135,6 +135,8 @@ export const ProjectChat: React.FC = () => {
   const currentUserId = auth?.userId || 'demo-user';
   const [unreadCount, setUnreadCount] = useState(0);
   const [highlightSince, setHighlightSince] = useState<Date | null>(null);
+  const [summary, setSummary] = useState('');
+  const [isSummarizing, setIsSummarizing] = useState(false);
   const [mentionCandidates, setMentionCandidates] = useState<MentionCandidates>(
     {},
   );
@@ -217,6 +219,26 @@ export const ProjectChat: React.FC = () => {
     setUnreadCount(nextUnread);
     setHighlightSince(lastReadAt);
     return nextUnread;
+  };
+
+  const generateSummary = async () => {
+    try {
+      setIsSummarizing(true);
+      setSummary('');
+      const res = await api<{ summary?: string }>(
+        `/projects/${projectId}/chat-summary`,
+        {
+          method: 'POST',
+          body: JSON.stringify({}),
+        },
+      );
+      setSummary(typeof res.summary === 'string' ? res.summary : '');
+    } catch (error) {
+      console.error('要約の生成に失敗しました', error);
+      setMessage('要約の生成に失敗しました');
+    } finally {
+      setIsSummarizing(false);
+    }
   };
 
   useEffect(() => {
@@ -528,6 +550,13 @@ export const ProjectChat: React.FC = () => {
         >
           {isLoading ? '読み込み中...' : '読み込み'}
         </button>
+        <button
+          className="button secondary"
+          onClick={generateSummary}
+          disabled={isSummarizing || !projectId}
+        >
+          {isSummarizing ? '要約中...' : '要約'}
+        </button>
         <input
           type="text"
           placeholder="タグで絞り込み (任意)"
@@ -708,6 +737,20 @@ export const ProjectChat: React.FC = () => {
         </div>
       </div>
       {message && <p>{message}</p>}
+      {summary && (
+        <div
+          style={{
+            marginTop: 8,
+            padding: 12,
+            border: '1px solid #e2e8f0',
+            borderRadius: 8,
+            background: '#f8fafc',
+          }}
+        >
+          <div style={{ fontSize: 12, color: '#64748b' }}>要約（スタブ）</div>
+          <pre style={{ whiteSpace: 'pre-wrap', margin: 0 }}>{summary}</pre>
+        </div>
+      )}
       <ul className="list">
         {items.map((item) => {
           const reactions =
