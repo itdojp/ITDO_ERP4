@@ -166,7 +166,25 @@ export async function registerProjectRoutes(app: FastifyInstance) {
         }
       }
       const data = hasCustomerIdProp ? { ...body, customerId } : { ...body };
-      const project = await prisma.project.create({ data });
+      const userId = req.user?.userId;
+      const project = await prisma.$transaction(async (tx) => {
+        const created = await tx.project.create({
+          data: {
+            ...data,
+            createdBy: userId,
+          },
+        });
+        await tx.chatRoom.create({
+          data: {
+            type: 'project',
+            name: created.code,
+            isOfficial: true,
+            projectId: created.id,
+            createdBy: userId,
+          },
+        });
+        return created;
+      });
       return project;
     },
   );
