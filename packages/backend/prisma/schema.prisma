@@ -171,6 +171,7 @@ model Project {
   chatAckRequests         ProjectChatAckRequest[]
   chatReadStates          ProjectChatReadState[]
   notifications           AppNotification[]
+  chatRooms               ChatRoom[]
   estimates               Estimate[]
   invoices                Invoice[]
   timeEntries             TimeEntry[]
@@ -339,6 +340,48 @@ model AppNotification {
   @@index([userId, readAt, createdAt])
   @@index([projectId])
   @@index([kind, createdAt])
+}
+
+model ChatRoom {
+  id                        String           @id @default(uuid())
+  type                      String // project/department/company/private_group/dm
+  name                      String
+  isOfficial                Boolean          @default(true)
+  project                   Project?         @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  projectId                 String?
+  groupId                   String?
+  allowExternalUsers        Boolean          @default(false)
+  allowExternalIntegrations Boolean          @default(false)
+  createdAt                 DateTime         @default(now())
+  createdBy                 String?
+  updatedAt                 DateTime         @updatedAt
+  updatedBy                 String?
+  deletedAt                 DateTime?
+  deletedReason             String?
+  members                   ChatRoomMember[]
+
+  @@unique([type, projectId])
+  @@index([type, createdAt])
+  @@index([projectId, createdAt])
+  @@index([deletedAt])
+}
+
+model ChatRoomMember {
+  id            String    @id @default(uuid())
+  room          ChatRoom  @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  roomId        String
+  userId        String
+  role          String    @default("member")
+  createdAt     DateTime  @default(now())
+  createdBy     String?
+  updatedAt     DateTime  @updatedAt
+  updatedBy     String?
+  deletedAt     DateTime?
+  deletedReason String?
+
+  @@unique([roomId, userId])
+  @@index([userId])
+  @@index([roomId])
 }
 
 model ChatBreakGlassRequest {
