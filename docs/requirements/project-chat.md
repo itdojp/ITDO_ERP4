@@ -7,6 +7,7 @@
 
 ## 現状（実装済み）
 - プロジェクト単位の簡易グループチャット（room-based: `ChatRoom(type=project)` + `ChatMessage`）
+- private_group/DM（room-based: `ChatRoom(type=private_group/dm)` + `ChatMessage`）
 - 投稿/閲覧/タグ/リアクション/ページング
 - メンション（ユーザ/グループ/@all）+ @all の投稿制限
 - 未読/既読（自分のみ）
@@ -16,8 +17,7 @@
 - 手動要約スタブ（UI）
 
 ## 未実装（後続）
-- ルーム種別拡張（project以外: 部門/全社/私的/DM）とガバナンス実装（#434）
-- 旧ProjectChat*テーブルの凍結/廃止（Step 5、#475）
+- ルーム種別拡張（部門/全社）とガバナンス実装（#434）
 - ガバナンス（公式/私的）と break-glass（#434/#454/#455）
 - 検索（チャットのみ/ERP横断）とインデックス
 - 通知チャネルの拡張（メール/Push/外部連携）
@@ -176,55 +176,7 @@
 - 主テーブル: `ChatRoom` / `ChatMessage` / `ChatAttachment` / `ChatReadState` / `ChatAckRequest` / `ChatAck`
 - break-glass: `ChatBreakGlassRequest` / `ChatBreakGlassAccessLog`
 - projectルームは `roomId = projectId`（`ChatRoom.id = Project.id`）
-
-以下の ProjectChat* は **legacy** です（Step 5で凍結/廃止、#475）。
-
-### ProjectChatMessage（legacy）
-- `id`: UUID
-- `projectId`: 参照先 `Project`
-- `userId`: 投稿者のID
-- `body`: メッセージ本文
-- `tags`: JSON配列（文字列のタグ一覧）
-- `reactions`: JSONマップ（emoji -> { count, userIds[] }）
-- `ackRequest`: 確認依頼（任意、特別メッセージ）
-- `createdAt/createdBy`, `updatedAt/updatedBy`
-- `deletedAt/deletedReason`（論理削除用、API未実装）
-
-### ProjectChatAckRequest（legacy: 確認依頼）
-- `id`: UUID
-- `messageId`: 参照先 `ProjectChatMessage`（1:1）
-- `projectId`: 参照先 `Project`（検索/一覧用途）
-- `requiredUserIds`: JSON配列（確認対象ユーザID、重複なしを想定）
-- `dueAt`: 任意（期限）
-- `createdAt/createdBy`
-
-### ProjectChatAck（legacy: 確認）
-- `id`: UUID
-- `requestId`: 参照先 `ProjectChatAckRequest`
-- `userId`: 確認したユーザID
-- `ackedAt`
-
-### ProjectChatAttachment（legacy: 添付）
-- `id`: UUID
-- `messageId`: 参照先 `ProjectChatMessage`
-- `provider`: `local` / `gdrive`
-- `providerKey`: 保存先側のキー（ローカルキー/Drive fileId 等）
-- `sha256`: 任意
-- `sizeBytes`: 任意
-- `mimeType`: 任意
-- `originalName`: 元のファイル名
-- `createdAt/createdBy`
-- `deletedAt/deletedReason`（論理削除用、API未実装）
-
-### ProjectChatReadState（legacy: 未読/既読：自分のみ）
-- `id`: UUID
-- `projectId`: 参照先 `Project`
-- `userId`: ユーザID
-- `lastReadAt`: 最終既読時刻（この時刻より新しい投稿を未読として数える）
-- `createdAt/updatedAt`
-
-### インデックス
-- `projectId, createdAt`
+- `ProjectChat*`（legacy）は Step 5 で削除済み（migration: `20260112030000_drop_legacy_project_chat`）
 
 ## データモデル（後続案）
 - ChatMention（メンションの正規化: `messageId`, `targetType`, `targetId`）
