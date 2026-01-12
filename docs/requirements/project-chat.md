@@ -16,9 +16,9 @@
 - 添付（local/gdrive）+ 監査ログ（upload/download）
 - メンション通知（アプリ内 / `/notifications`）
 - 手動要約スタブ（UI: project/room）
+- 外部要約（公式ルームのみ、外部連携ON時。監査ログ必須）: `docs/requirements/chat-external-llm.md`
 
 ## 未実装（後続）
-- 外部LLM連携（公式ルームのみ/監査ログ必須）(#483)
 - 検索（チャットのみ/ERP横断）とインデックス
 - 通知チャネルの拡張（メール/Push/外部連携）
 - リアルタイム配信（WebSocket等）
