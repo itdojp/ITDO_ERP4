@@ -690,5 +690,10 @@ test('frontend smoke room chat (private_group/dm) @extended', async ({
     timeout: actionTimeout,
   });
 
+  await roomChatSection.getByRole('button', { name: '要約' }).click();
+  const summaryBlock = roomChatSection.getByText('要約（スタブ）');
+  await expect(summaryBlock).toBeVisible();
+  await expect(roomChatSection.locator('pre')).toContainText('取得件数');
+
   await captureSection(roomChatSection, '14-room-chat.png');
 });
