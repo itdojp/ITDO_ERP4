@@ -173,6 +173,7 @@ export const RoomChat: React.FC = () => {
   const [ackTargets, setAckTargets] = useState('');
   const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
   const [filterTag, setFilterTag] = useState('');
+  const [filterQuery, setFilterQuery] = useState('');
 
   const [unreadCount, setUnreadCount] = useState(0);
   const [highlightSince, setHighlightSince] = useState<Date | null>(null);
@@ -228,7 +229,11 @@ export const RoomChat: React.FC = () => {
     }
   };
 
-  const loadMessages = async (options?: { append?: boolean }) => {
+  const loadMessages = async (options?: {
+    append?: boolean;
+    query?: string;
+    tag?: string;
+  }) => {
     if (!roomId) return;
     const append = options?.append === true;
     try {
@@ -245,7 +250,18 @@ export const RoomChat: React.FC = () => {
       const query = new URLSearchParams();
       query.set('limit', String(pageSize));
       if (before) query.set('before', before);
-      if (filterTag.trim()) query.set('tag', filterTag.trim());
+      const effectiveTag = options?.tag !== undefined ? options.tag : filterTag;
+      const effectiveQuery =
+        options?.query !== undefined ? options.query : filterQuery;
+
+      if (effectiveTag.trim()) query.set('tag', effectiveTag.trim());
+      const trimmedQuery = effectiveQuery.trim();
+      if (trimmedQuery && trimmedQuery.length < 2) {
+        setMessage('検索語は2文字以上で入力してください');
+        setHasMore(false);
+        return;
+      }
+      if (trimmedQuery) query.set('q', trimmedQuery);
 
       const res = await api<{ items?: ChatMessage[] }>(
         `/chat-rooms/${roomId}/messages?${query.toString()}`,
@@ -786,6 +802,15 @@ export const RoomChat: React.FC = () => {
           style={{ gap: 12, flexWrap: 'wrap', marginTop: 8 }}
         >
           <label>
+            検索（本文）
+            <input
+              type="text"
+              value={filterQuery}
+              onChange={(e) => setFilterQuery(e.target.value)}
+              placeholder="keyword"
+            />
+          </label>
+          <label>
             タグ絞り込み
             <input
               type="text"
@@ -800,6 +825,17 @@ export const RoomChat: React.FC = () => {
             disabled={!roomId || isLoading}
           >
             適用
+          </button>
+          <button
+            className="button secondary"
+            onClick={() => {
+              setFilterQuery('');
+              setFilterTag('');
+              loadMessages({ query: '', tag: '' }).catch(() => undefined);
+            }}
+            disabled={!roomId || isLoading}
+          >
+            クリア
           </button>
         </div>
 

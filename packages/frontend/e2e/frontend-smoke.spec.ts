@@ -668,6 +668,13 @@ test('frontend smoke room chat (private_group/dm) @extended', async ({
     messageList.locator('.card', { hasText: companyText }).first(),
   ).toBeVisible({ timeout: actionTimeout });
 
+  await messageList.getByLabel('検索（本文）').fill(`company message ${run}`);
+  await messageList.getByRole('button', { name: '適用' }).click();
+  await expect(
+    messageList.locator('.card', { hasText: companyText }).first(),
+  ).toBeVisible({ timeout: actionTimeout });
+  await messageList.getByRole('button', { name: 'クリア' }).click();
+
   await selectByLabelOrFirst(roomSelect, 'department: mgmt');
   const departmentText = `E2E department message ${run}`;
   await roomChatSection.getByPlaceholder('Markdownで入力').fill(departmentText);
