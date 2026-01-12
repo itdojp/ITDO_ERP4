@@ -359,6 +359,9 @@ model ChatRoom {
   deletedAt                 DateTime?
   deletedReason             String?
   members                   ChatRoomMember[]
+  messages                  ChatMessage[]
+  ackRequests               ChatAckRequest[]
+  readStates                ChatReadState[]
 
   @@unique([type, projectId])
   @@index([type, createdAt])
@@ -378,6 +381,90 @@ model ChatRoomMember {
   updatedBy     String?
   deletedAt     DateTime?
   deletedReason String?
+
+  @@unique([roomId, userId])
+  @@index([userId])
+  @@index([roomId])
+}
+
+model ChatMessage {
+  id            String           @id @default(uuid())
+  room          ChatRoom         @relation(fields: [roomId], references: [id], onDelete: Restrict)
+  roomId        String
+  userId        String
+  body          String
+  tags          Json?
+  reactions     Json?
+  mentions      Json?
+  mentionsAll   Boolean          @default(false)
+  ackRequest    ChatAckRequest?
+  attachments   ChatAttachment[]
+  createdAt     DateTime         @default(now())
+  createdBy     String?
+  updatedAt     DateTime         @updatedAt
+  updatedBy     String?
+  deletedAt     DateTime?
+  deletedReason String?
+
+  @@index([roomId, createdAt])
+  @@index([roomId, userId, mentionsAll, createdAt])
+  @@index([deletedAt, createdAt])
+}
+
+model ChatAckRequest {
+  id              String      @id @default(uuid())
+  message         ChatMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  messageId       String      @unique
+  room            ChatRoom    @relation(fields: [roomId], references: [id], onDelete: Restrict)
+  roomId          String
+  requiredUserIds Json
+  dueAt           DateTime?
+  createdAt       DateTime    @default(now())
+  createdBy       String?
+  acks            ChatAck[]
+
+  @@index([roomId, createdAt])
+}
+
+model ChatAck {
+  id        String         @id @default(uuid())
+  request   ChatAckRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  requestId String
+  userId    String
+  ackedAt   DateTime       @default(now())
+
+  @@unique([requestId, userId])
+  @@index([userId])
+}
+
+model ChatAttachment {
+  id            String      @id @default(uuid())
+  message       ChatMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  messageId     String
+  provider      String
+  providerKey   String
+  sha256        String?
+  sizeBytes     Int?
+  mimeType      String?
+  originalName  String
+  createdAt     DateTime    @default(now())
+  createdBy     String?
+  deletedAt     DateTime?
+  deletedReason String?
+
+  @@unique([provider, providerKey])
+  @@index([messageId])
+  @@index([createdAt])
+}
+
+model ChatReadState {
+  id         String   @id @default(uuid())
+  room       ChatRoom @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  roomId     String
+  userId     String
+  lastReadAt DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
   @@unique([roomId, userId])
   @@index([userId])

@@ -136,6 +136,30 @@ export async function registerChatRoutes(app: FastifyInstance) {
     return { mentions, mentionsAll, mentionUserIds, mentionGroupIds };
   }
 
+  async function ensureProjectRoom(projectId: string, userId: string | null) {
+    const existing = await prisma.chatRoom.findUnique({
+      where: { id: projectId },
+      select: { id: true },
+    });
+    if (existing) return true;
+    const project = await prisma.project.findUnique({
+      where: { id: projectId },
+      select: { id: true, code: true, deletedAt: true },
+    });
+    if (!project || project.deletedAt) return false;
+    await prisma.chatRoom.create({
+      data: {
+        id: project.id,
+        type: 'project',
+        name: project.code,
+        isOfficial: true,
+        projectId: project.id,
+        createdBy: userId,
+      },
+    });
+    return true;
+  }
+
   async function enforceAllMentionRateLimit(options: {
     projectId: string;
     userId: string;
@@ -154,9 +178,9 @@ export async function registerChatRoutes(app: FastifyInstance) {
 
     const [lastAll, count24h] = await Promise.all([
       minIntervalSeconds > 0
-        ? prisma.projectChatMessage.findFirst({
+        ? prisma.chatMessage.findFirst({
             where: {
-              projectId: options.projectId,
+              roomId: options.projectId,
               userId: options.userId,
               mentionsAll: true,
               deletedAt: null,
@@ -166,9 +190,9 @@ export async function registerChatRoutes(app: FastifyInstance) {
           })
         : Promise.resolve(null),
       maxPer24h > 0
-        ? prisma.projectChatMessage.count({
+        ? prisma.chatMessage.count({
             where: {
-              projectId: options.projectId,
+              roomId: options.projectId,
               userId: options.userId,
               mentionsAll: true,
               deletedAt: null,
@@ -246,7 +270,7 @@ export async function registerChatRoutes(app: FastifyInstance) {
     if (!rateLimit.allowed) {
       await logAudit({
         action: 'chat_all_mention_blocked',
-        targetTable: 'project_chat_messages',
+        targetTable: 'chat_messages',
         metadata: buildAllMentionBlockedMetadata(
           options.projectId,
           rateLimit,
@@ -282,7 +306,7 @@ export async function registerChatRoutes(app: FastifyInstance) {
     }
     await logAudit({
       action: 'chat_message_posted_with_mentions',
-      targetTable: 'project_chat_messages',
+      targetTable: 'chat_messages',
       targetId: options.messageId,
       metadata: {
         projectId: options.projectId,
@@ -295,7 +319,7 @@ export async function registerChatRoutes(app: FastifyInstance) {
     if (options.mentionsAll) {
       await logAudit({
         action: 'chat_all_mention_posted',
-        targetTable: 'project_chat_messages',
+        targetTable: 'chat_messages',
         targetId: options.messageId,
         metadata: { projectId: options.projectId } as Prisma.InputJsonValue,
         ...auditContextFromRequest(options.req),
@@ -327,7 +351,7 @@ export async function registerChatRoutes(app: FastifyInstance) {
 
       await logAudit({
         action: 'chat_mention_notifications_created',
-        targetTable: 'project_chat_messages',
+        targetTable: 'chat_messages',
         targetId: options.messageId,
         metadata: {
           projectId: options.projectId,
@@ -382,8 +406,8 @@ export async function registerChatRoutes(app: FastifyInstance) {
           error: { code: 'INVALID_DATE', message: 'Invalid before date' },
         });
       }
-      const where: Prisma.ProjectChatMessageWhereInput = {
-        projectId,
+      const where: Prisma.ChatMessageWhereInput = {
+        roomId: projectId,
         deletedAt: null,
       };
       if (beforeDate) {
@@ -398,7 +422,7 @@ export async function registerChatRoutes(app: FastifyInstance) {
       if (trimmedTag) {
         where.tags = { array_contains: [trimmedTag] };
       }
-      const items = await prisma.projectChatMessage.findMany({
+      const items = await prisma.chatMessage.findMany({
         where,
         orderBy: { createdAt: 'desc' },
         take,
@@ -473,9 +497,9 @@ export async function registerChatRoutes(app: FastifyInstance) {
               ? { lte: until }
               : undefined;
 
-      const items = await prisma.projectChatMessage.findMany({
+      const items = await prisma.chatMessage.findMany({
         where: {
-          projectId,
+          roomId: projectId,
           deletedAt: null,
           createdAt,
         },
@@ -544,7 +568,7 @@ export async function registerChatRoutes(app: FastifyInstance) {
 
       await logAudit({
         action: 'chat_summary_generated',
-        targetTable: 'project_chat_messages',
+        targetTable: 'chat_messages',
         metadata: {
           projectId,
           limit: take,
@@ -649,13 +673,13 @@ export async function registerChatRoutes(app: FastifyInstance) {
           error: { code: 'MISSING_USER_ID', message: 'user id is required' },
         });
       }
-      const state = await prisma.projectChatReadState.findUnique({
-        where: { projectId_userId: { projectId, userId } },
+      const state = await prisma.chatReadState.findUnique({
+        where: { roomId_userId: { roomId: projectId, userId } },
         select: { lastReadAt: true },
       });
-      const unreadCount = await prisma.projectChatMessage.count({
+      const unreadCount = await prisma.chatMessage.count({
         where: {
-          projectId,
+          roomId: projectId,
           deletedAt: null,
           createdAt: state?.lastReadAt ? { gt: state.lastReadAt } : undefined,
         },
@@ -683,12 +707,17 @@ export async function registerChatRoutes(app: FastifyInstance) {
           error: { code: 'MISSING_USER_ID', message: 'user id is required' },
         });
       }
+      if (!(await ensureProjectRoom(projectId, userId))) {
+        return reply.status(404).send({
+          error: { code: 'NOT_FOUND', message: 'Project not found' },
+        });
+      }
       const now = new Date();
-      const updated = await prisma.projectChatReadState.upsert({
-        where: { projectId_userId: { projectId, userId } },
+      const updated = await prisma.chatReadState.upsert({
+        where: { roomId_userId: { roomId: projectId, userId } },
         update: { lastReadAt: now },
         create: {
-          projectId,
+          roomId: projectId,
           userId,
           lastReadAt: now,
         },
@@ -727,9 +756,14 @@ export async function registerChatRoutes(app: FastifyInstance) {
         });
         if (!ok) return;
       }
-      const message = await prisma.projectChatMessage.create({
+      if (!(await ensureProjectRoom(projectId, userId))) {
+        return reply.status(404).send({
+          error: { code: 'NOT_FOUND', message: 'Project not found' },
+        });
+      }
+      const message = await prisma.chatMessage.create({
         data: {
-          projectId,
+          roomId: projectId,
           userId,
           body: body.body,
           tags: normalizeStringArray(body.tags, { max: 8 }) || undefined,
@@ -811,9 +845,15 @@ export async function registerChatRoutes(app: FastifyInstance) {
         if (!ok) return;
       }
 
-      const message = await prisma.projectChatMessage.create({
+      if (!(await ensureProjectRoom(projectId, userId))) {
+        return reply.status(404).send({
+          error: { code: 'NOT_FOUND', message: 'Project not found' },
+        });
+      }
+
+      const message = await prisma.chatMessage.create({
         data: {
-          projectId,
+          roomId: projectId,
           userId,
           body: body.body,
           tags: normalizeStringArray(body.tags, { max: 8 }) || undefined,
@@ -823,7 +863,7 @@ export async function registerChatRoutes(app: FastifyInstance) {
           updatedBy: userId,
           ackRequest: {
             create: {
-              projectId,
+              roomId: projectId,
               requiredUserIds,
               dueAt: dueAt ?? undefined,
               createdBy: userId,
@@ -865,7 +905,7 @@ export async function registerChatRoutes(app: FastifyInstance) {
     },
     async (req, reply) => {
       const { id } = req.params as { id: string };
-      const requestItem = await prisma.projectChatAckRequest.findUnique({
+      const requestItem = await prisma.chatAckRequest.findUnique({
         where: { id },
         include: {
           message: true,
@@ -880,7 +920,7 @@ export async function registerChatRoutes(app: FastifyInstance) {
 
       const roles = req.user?.roles || [];
       const projectIds = req.user?.projectIds || [];
-      if (!hasProjectAccess(roles, projectIds, requestItem.projectId)) {
+      if (!hasProjectAccess(roles, projectIds, requestItem.roomId)) {
         return reply.status(403).send({
           error: {
             code: 'FORBIDDEN_PROJECT',
@@ -910,7 +950,7 @@ export async function registerChatRoutes(app: FastifyInstance) {
         });
       }
 
-      await prisma.projectChatAck.upsert({
+      await prisma.chatAck.upsert({
         where: {
           requestId_userId: {
             requestId: requestItem.id,
@@ -924,7 +964,7 @@ export async function registerChatRoutes(app: FastifyInstance) {
         },
       });
 
-      const updated = await prisma.projectChatAckRequest.findUnique({
+      const updated = await prisma.chatAckRequest.findUnique({
         where: { id: requestItem.id },
         include: { acks: true },
       });
@@ -941,7 +981,7 @@ export async function registerChatRoutes(app: FastifyInstance) {
     async (req, reply) => {
       const { id } = req.params as { id: string };
       const body = req.body as { emoji: string };
-      const message = await prisma.projectChatMessage.findUnique({
+      const message = await prisma.chatMessage.findUnique({
         where: { id },
       });
       if (!message || message.deletedAt) {
@@ -951,7 +991,7 @@ export async function registerChatRoutes(app: FastifyInstance) {
       }
       const roles = req.user?.roles || [];
       const projectIds = req.user?.projectIds || [];
-      if (!hasProjectAccess(roles, projectIds, message.projectId)) {
+      if (!hasProjectAccess(roles, projectIds, message.roomId)) {
         return reply.status(403).send({
           error: {
             code: 'FORBIDDEN_PROJECT',
@@ -1003,7 +1043,7 @@ export async function registerChatRoutes(app: FastifyInstance) {
         ...current,
         [trimmedEmoji]: normalized,
       } as Prisma.InputJsonValue;
-      const updated = await prisma.projectChatMessage.update({
+      const updated = await prisma.chatMessage.update({
         where: { id },
         data: {
           reactions: next,
@@ -1025,7 +1065,7 @@ export async function registerChatRoutes(app: FastifyInstance) {
     },
     async (req, reply) => {
       const { id } = req.params as { id: string };
-      const message = await prisma.projectChatMessage.findUnique({
+      const message = await prisma.chatMessage.findUnique({
         where: { id },
       });
       if (!message || message.deletedAt) {
@@ -1035,7 +1075,7 @@ export async function registerChatRoutes(app: FastifyInstance) {
       }
       const roles = req.user?.roles || [];
       const projectIds = req.user?.projectIds || [];
-      if (!hasProjectAccess(roles, projectIds, message.projectId)) {
+      if (!hasProjectAccess(roles, projectIds, message.roomId)) {
         return reply.status(403).send({
           error: {
             code: 'FORBIDDEN_PROJECT',
@@ -1092,7 +1132,7 @@ export async function registerChatRoutes(app: FastifyInstance) {
         mimeType: mimetype,
       });
 
-      const attachment = await prisma.projectChatAttachment.create({
+      const attachment = await prisma.chatAttachment.create({
         data: {
           messageId: message.id,
           provider: stored.provider,
@@ -1115,11 +1155,11 @@ export async function registerChatRoutes(app: FastifyInstance) {
       });
       await logAudit({
         action: 'chat_attachment_uploaded',
-        targetTable: 'project_chat_attachments',
+        targetTable: 'chat_attachments',
         targetId: attachment.id,
         metadata: {
           messageId: message.id,
-          projectId: message.projectId,
+          projectId: message.roomId,
           provider: stored.provider,
           sizeBytes: stored.sizeBytes,
           mimeType: stored.mimeType,
@@ -1135,7 +1175,7 @@ export async function registerChatRoutes(app: FastifyInstance) {
     { preHandler: requireRole(chatRoles) },
     async (req, reply) => {
       const { id } = req.params as { id: string };
-      const attachment = await prisma.projectChatAttachment.findUnique({
+      const attachment = await prisma.chatAttachment.findUnique({
         where: { id },
         include: { message: true },
       });
@@ -1146,7 +1186,7 @@ export async function registerChatRoutes(app: FastifyInstance) {
       }
       const roles = req.user?.roles || [];
       const projectIds = req.user?.projectIds || [];
-      if (!hasProjectAccess(roles, projectIds, attachment.message.projectId)) {
+      if (!hasProjectAccess(roles, projectIds, attachment.message.roomId)) {
         return reply.status(403).send({
           error: {
             code: 'FORBIDDEN_PROJECT',
@@ -1178,11 +1218,11 @@ export async function registerChatRoutes(app: FastifyInstance) {
 
       await logAudit({
         action: 'chat_attachment_downloaded',
-        targetTable: 'project_chat_attachments',
+        targetTable: 'chat_attachments',
         targetId: attachment.id,
         metadata: {
           messageId: attachment.messageId,
-          projectId: attachment.message.projectId,
+          projectId: attachment.message.roomId,
           provider: attachment.provider,
         } as Prisma.InputJsonValue,
         ...auditContextFromRequest(req),
