@@ -1,5 +1,6 @@
 import React from 'react';
 import { Dashboard } from '../sections/Dashboard';
+import { GlobalSearch } from '../sections/GlobalSearch';
 import { DailyReport } from '../sections/DailyReport';
 import { TimeEntries } from '../sections/TimeEntries';
 import { Invoices } from '../sections/Invoices';
@@ -23,6 +24,9 @@ export const App: React.FC = () => {
       <CurrentUser />
       <div className="card">
         <Dashboard />
+      </div>
+      <div className="card">
+        <GlobalSearch />
       </div>
       <div className="card">
         <DailyReport />
