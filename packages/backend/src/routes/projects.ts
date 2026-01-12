@@ -176,6 +176,7 @@ export async function registerProjectRoutes(app: FastifyInstance) {
         });
         await tx.chatRoom.create({
           data: {
+            id: created.id,
             type: 'project',
             name: created.code,
             isOfficial: true,
