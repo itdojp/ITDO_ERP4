@@ -14,6 +14,10 @@ import {
   openAttachment,
   storeAttachment,
 } from '../services/chatAttachments.js';
+import {
+  getChatAttachmentScanProvider,
+  scanChatAttachment,
+} from '../services/chatAttachmentScan.js';
 import { createChatMentionNotifications } from '../services/appNotifications.js';
 
 function parseDateParam(value?: string) {
@@ -1176,6 +1180,38 @@ export async function registerChatRoutes(app: FastifyInstance) {
         throw err;
       }
 
+      const scanProvider = getChatAttachmentScanProvider();
+      const scanResult = await scanChatAttachment({
+        buffer,
+        provider: scanProvider,
+      });
+      if (scanResult.verdict === 'infected') {
+        await logAudit({
+          action: 'chat_attachment_blocked',
+          targetTable: 'chat_messages',
+          targetId: message.id,
+          metadata: {
+            messageId: message.id,
+            roomId: message.roomId,
+            roomType: access.room.type,
+            projectId:
+              access.room.type === 'project' ? message.roomId : undefined,
+            provider: scanResult.provider,
+            verdict: scanResult.verdict,
+            detected: scanResult.detected || null,
+            sizeBytes: buffer.length,
+            mimeType: mimetype,
+          } as Prisma.InputJsonValue,
+          ...auditContextFromRequest(req),
+        });
+        return reply.status(422).send({
+          error: {
+            code: 'VIRUS_DETECTED',
+            message: 'attachment blocked by antivirus policy',
+          },
+        });
+      }
+
       const stored = await storeAttachment({
         buffer,
         originalName: filename,
@@ -1216,6 +1252,9 @@ export async function registerChatRoutes(app: FastifyInstance) {
           provider: stored.provider,
           sizeBytes: stored.sizeBytes,
           mimeType: stored.mimeType,
+          scanProvider: scanResult.provider,
+          scanVerdict: scanResult.verdict,
+          scanDetected: scanResult.detected || null,
         } as Prisma.InputJsonValue,
         ...auditContextFromRequest(req),
       });
