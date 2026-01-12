@@ -1273,10 +1273,11 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
     { preHandler: requireRole(chatRoles) },
     async (req, reply) => {
       const { roomId } = req.params as { roomId: string };
-      const { limit, before, tag } = req.query as {
+      const { limit, before, tag, q } = req.query as {
         limit?: string;
         before?: string;
         tag?: string;
+        q?: string;
       };
       const userId = req.user?.userId;
       if (!userId) {
@@ -1332,6 +1333,20 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
       }
       if (trimmedTag) {
         where.tags = { array_contains: [trimmedTag] };
+      }
+      const trimmedQuery = typeof q === 'string' ? q.trim() : '';
+      if (trimmedQuery.length > 100) {
+        return reply.status(400).send({
+          error: { code: 'INVALID_QUERY', message: 'query is too long' },
+        });
+      }
+      if (trimmedQuery && trimmedQuery.length < 2) {
+        return reply.status(400).send({
+          error: { code: 'INVALID_QUERY', message: 'query is too short' },
+        });
+      }
+      if (trimmedQuery) {
+        where.body = { contains: trimmedQuery, mode: 'insensitive' };
       }
       const items = await prisma.chatMessage.findMany({
         where,

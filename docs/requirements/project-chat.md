@@ -300,7 +300,7 @@
 - `POST /chat-rooms/:id/read`（既読更新）
 - `GET /chat-rooms/:id/unread-counts`（未読件数）
 - `POST /chat-messages/:id/attachments`（添付）
-- `GET /chat-search?q=`（検索）
+- `GET /chat-rooms/:id/messages?q=`（ルーム内検索）
 - `POST /chat-break-glass/requests`（監査閲覧申請）
 - `POST /chat-break-glass/requests/:id/approve`（承認）
 - `POST /chat-break-glass/requests/:id/reject`（却下）
