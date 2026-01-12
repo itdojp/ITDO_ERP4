@@ -93,6 +93,17 @@ for setting in alert_settings where is_enabled:
 - 注意: report-subscriptions/run は都度 delivery を作るため、過剰実行に注意（重複配信防止は cron 設定で担保）。
 - 運用補助: `scripts/run-report-deliveries.sh`（DRY_RUN=1 で検証可能）
 
+## 通知（メール配信）ジョブ（MVP）
+- 対象: app_notifications / app_notification_deliveries。
+- `/jobs/notification-deliveries/run`: 未配信（pending/failed）の通知をメールで送る。
+  - 初期スコープ: `kind=chat_mention` のみ。
+  - 宛先: `userId` がメール形式ならそれを使う。そうでなければ `user_accounts.emails` の primary/先頭を使う。
+  - 既読の通知は `skipped (already_read)` として送信しない。
+  - 監査: 実行者/件数を audit_logs に記録。
+- リトライ: `status=failed` は `nextRetryAt` 以降に再送（指数バックオフ）。
+  - 設定: `NOTIFICATION_DELIVERY_RETRY_MAX`, `NOTIFICATION_DELIVERY_RETRY_BASE_MINUTES`, `NOTIFICATION_DELIVERY_RETRY_MAX_DELAY_MINUTES`
+  - 送信対象の遡及範囲: `NOTIFICATION_DELIVERY_LOOKBACK_DAYS`（既定 30日）
+
 ## 承認タイムアウト（将来）
 - 設定された承認期限を超過した approval_step を検出し、エスカレーション先へ通知。初期スコープでは未実装、後続で追加。
 

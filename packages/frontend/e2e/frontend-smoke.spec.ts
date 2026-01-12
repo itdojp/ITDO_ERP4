@@ -9,6 +9,7 @@ const evidenceDir =
   path.join(rootDir, 'docs', 'test-results', `${dateTag}-frontend-e2e`);
 const captureEnabled = process.env.E2E_CAPTURE !== '0';
 const baseUrl = process.env.E2E_BASE_URL || 'http://localhost:5173';
+const apiBase = process.env.E2E_API_BASE || 'http://localhost:3002';
 const actionTimeout = 8000;
 
 const authState = {
@@ -558,6 +559,31 @@ test('frontend smoke chat hr analytics @extended', async ({ page }) => {
   await expect(chatSection.getByRole('button', { name: '投稿' })).toBeEnabled({
     timeout: actionTimeout,
   });
+
+  const deliveryRes = await page.request.post(
+    `${apiBase}/jobs/notification-deliveries/run`,
+    {
+      data: { limit: 50 },
+      headers: {
+        'x-user-id': authState.userId,
+        'x-roles': authState.roles.join(','),
+      },
+    },
+  );
+  expect(deliveryRes.ok()).toBeTruthy();
+  const deliveryJson = (await deliveryRes.json()) as {
+    ok?: boolean;
+    items?: Array<{ status?: string; target?: string | null }>;
+  };
+  expect(deliveryJson.ok).toBeTruthy();
+  expect(Array.isArray(deliveryJson.items)).toBeTruthy();
+  expect(
+    (deliveryJson.items ?? []).some(
+      (item) =>
+        (item.status === 'stub' || item.status === 'success') &&
+        (item.target || '').includes(mentionTarget),
+    ),
+  ).toBeTruthy();
 
   const ackMessage = `E2E ack request ${id}`;
   await chatSection.getByPlaceholder('メッセージを書く').fill(ackMessage);

@@ -705,6 +705,16 @@ export const reportSubscriptionRunSchema = {
   ),
 };
 
+export const notificationDeliveryRunSchema = {
+  body: Type.Object(
+    {
+      dryRun: Type.Optional(Type.Boolean()),
+      limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 200 })),
+    },
+    { additionalProperties: false },
+  ),
+};
+
 export const pushSubscriptionSchema = {
   body: Type.Object(
     {

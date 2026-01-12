@@ -237,23 +237,47 @@ model ProjectTask {
 }
 
 model AppNotification {
-  id        String    @id @default(uuid())
-  userId    String
-  kind      String
-  project   Project?  @relation(fields: [projectId], references: [id], onDelete: SetNull)
-  projectId String?
-  messageId String?
-  payload   Json?
-  readAt    DateTime?
-  createdAt DateTime  @default(now())
-  createdBy String?
-  updatedAt DateTime  @updatedAt
-  updatedBy String?
+  id         String                    @id @default(uuid())
+  userId     String
+  kind       String
+  project    Project?                  @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  projectId  String?
+  messageId  String?
+  payload    Json?
+  readAt     DateTime?
+  deliveries AppNotificationDelivery[]
+  createdAt  DateTime                  @default(now())
+  createdBy  String?
+  updatedAt  DateTime                  @updatedAt
+  updatedBy  String?
 
   @@index([userId, createdAt])
   @@index([userId, readAt, createdAt])
   @@index([projectId])
   @@index([kind, createdAt])
+}
+
+model AppNotificationDelivery {
+  id                String          @id @default(uuid())
+  notification      AppNotification @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+  notificationId    String
+  channel           String
+  status            String
+  target            String?
+  payload           Json?
+  providerMessageId String?
+  error             String?
+  retryCount        Int             @default(0)
+  nextRetryAt       DateTime?
+  lastErrorAt       DateTime?
+  sentAt            DateTime?
+  createdAt         DateTime        @default(now())
+  createdBy         String?
+
+  @@unique([notificationId, channel])
+  @@index([status, nextRetryAt])
+  @@index([channel, sentAt])
+  @@index([notificationId, createdAt])
 }
 
 model ChatRoom {
@@ -434,13 +458,13 @@ model ChatBreakGlassAccessLog {
 }
 
 model ChatSetting {
-  id                           String   @id @default("default")
+  id                            String   @id @default("default")
   allowUserPrivateGroupCreation Boolean  @default(true)
   allowDmCreation               Boolean  @default(true)
-  createdAt                    DateTime @default(now())
-  createdBy                    String?
-  updatedAt                    DateTime @updatedAt
-  updatedBy                    String?
+  createdAt                     DateTime @default(now())
+  createdBy                     String?
+  updatedAt                     DateTime @updatedAt
+  updatedBy                     String?
 }
 
 model ProjectMilestone {
