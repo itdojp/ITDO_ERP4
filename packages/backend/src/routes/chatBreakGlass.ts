@@ -82,6 +82,63 @@ export async function registerChatBreakGlassRoutes(app: FastifyInstance) {
     },
   );
 
+  app.get(
+    '/chat-rooms/:roomId/chat-break-glass-events',
+    { preHandler: requireRole(chatRoles) },
+    async (req, reply) => {
+      const { roomId } = req.params as { roomId: string };
+      const roles = req.user?.roles || [];
+      const userId = req.user?.userId || '';
+
+      const canSeeAllRooms =
+        roles.includes('admin') || roles.includes('mgmt') || roles.includes('exec');
+      if (!canSeeAllRooms) {
+        if (!userId) {
+          return reply.status(400).send({
+            error: { code: 'MISSING_USER_ID', message: 'user id is required' },
+          });
+        }
+        const membership = await prisma.chatRoomMember.findUnique({
+          where: { roomId_userId: { roomId, userId } },
+          select: { id: true, deletedAt: true },
+        });
+        if (!membership || membership.deletedAt) {
+          return reply.status(403).send({
+            error: {
+              code: 'FORBIDDEN_ROOM',
+              message: 'Access to this room is forbidden',
+            },
+          });
+        }
+      }
+
+      const items = await prisma.chatBreakGlassRequest.findMany({
+        where: { roomId },
+        orderBy: { createdAt: 'desc' },
+        take: 20,
+        select: {
+          id: true,
+          status: true,
+          reasonCode: true,
+          requesterUserId: true,
+          viewerUserId: true,
+          targetFrom: true,
+          targetUntil: true,
+          ttlHours: true,
+          approved1At: true,
+          approved2At: true,
+          rejectedAt: true,
+          grantedAt: true,
+          expiresAt: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+      });
+
+      return { items };
+    },
+  );
+
   app.post(
     '/chat-break-glass/requests',
     {
@@ -472,6 +529,7 @@ export async function registerChatBreakGlassRoutes(app: FastifyInstance) {
       const {
         status,
         projectId,
+        roomId,
         viewerUserId,
         requesterUserId,
         since,
@@ -480,6 +538,7 @@ export async function registerChatBreakGlassRoutes(app: FastifyInstance) {
       } = req.query as {
         status?: string;
         projectId?: string;
+        roomId?: string;
         viewerUserId?: string;
         requesterUserId?: string;
         since?: string;
@@ -516,6 +575,9 @@ export async function registerChatBreakGlassRoutes(app: FastifyInstance) {
       }
       if (projectId) {
         where.projectId = projectId.trim();
+      }
+      if (roomId) {
+        where.roomId = roomId.trim();
       }
       if (viewerUserId) {
         where.viewerUserId = viewerUserId.trim();
@@ -616,11 +678,24 @@ export async function registerChatBreakGlassRoutes(app: FastifyInstance) {
           error: { code: 'EXPIRED', message: 'Request has expired' },
         });
       }
-      if (request.targetType !== 'project' || !request.projectId) {
+      let targetRoomId: string | null = null;
+      if (request.targetType === 'project') {
+        targetRoomId = request.projectId || null;
+      } else if (request.targetType === 'room') {
+        targetRoomId = request.roomId || null;
+      } else {
         return reply.status(400).send({
           error: {
             code: 'UNSUPPORTED_TARGET',
-            message: 'Only project target is supported in MVP',
+            message: 'Only project/room target is supported',
+          },
+        });
+      }
+      if (!targetRoomId) {
+        return reply.status(400).send({
+          error: {
+            code: 'MISSING_TARGET',
+            message: 'projectId or roomId is required',
           },
         });
       }
@@ -663,7 +738,7 @@ export async function registerChatBreakGlassRoutes(app: FastifyInstance) {
               : undefined;
 
       const where: Prisma.ChatMessageWhereInput = {
-        roomId: request.projectId,
+        roomId: targetRoomId,
         deletedAt: null,
         createdAt,
       };
@@ -703,7 +778,9 @@ export async function registerChatBreakGlassRoutes(app: FastifyInstance) {
           actorUserId,
           action: 'view_messages',
           metadata: {
+            targetType: request.targetType,
             projectId: request.projectId,
+            roomId: request.roomId,
             targetFrom: request.targetFrom?.toISOString() || null,
             targetUntil: request.targetUntil?.toISOString() || null,
             before: beforeDate?.toISOString() || null,
@@ -722,7 +799,9 @@ export async function registerChatBreakGlassRoutes(app: FastifyInstance) {
         metadata: {
           actorUserId,
           action: 'view_messages',
+          targetType: request.targetType,
           projectId: request.projectId,
+          roomId: request.roomId,
           returnedCount: items.length,
         } as Prisma.InputJsonValue,
         ...auditContextFromRequest(req),

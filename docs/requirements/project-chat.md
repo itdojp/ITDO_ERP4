@@ -6,7 +6,7 @@
 - AIを取り込み、要約/アクション抽出などの支援を行う（詳細は決定待ち）
 
 ## 現状（実装済み）
-- プロジェクト単位の簡易グループチャット
+- プロジェクト単位の簡易グループチャット（room-based: `ChatRoom(type=project)` + `ChatMessage`）
 - 投稿/閲覧/タグ/リアクション/ページング
 - メンション（ユーザ/グループ/@all）+ @all の投稿制限
 - 未読/既読（自分のみ）
@@ -16,7 +16,8 @@
 - 手動要約スタブ（UI）
 
 ## 未実装（後続）
-- ルーム化（project以外: 部門/全社/私的/DM）と段階移行（#453）
+- ルーム種別拡張（project以外: 部門/全社/私的/DM）とガバナンス実装（#434）
+- 旧ProjectChat*テーブルの凍結/廃止（Step 5、#475）
 - ガバナンス（公式/私的）と break-glass（#434/#454/#455）
 - 検索（チャットのみ/ERP横断）とインデックス
 - 通知チャネルの拡張（メール/Push/外部連携）
@@ -170,7 +171,15 @@
   - 削除理由を必須化し、用途別に扱えるようにする（例: `user_retract` / `admin_moderation` / `legal_hold` / `other`）
 
 ## データモデル
-### ProjectChatMessage
+### 現行（room-based）
+- Prisma: `packages/backend/prisma/schema.prisma` を正とする
+- 主テーブル: `ChatRoom` / `ChatMessage` / `ChatAttachment` / `ChatReadState` / `ChatAckRequest` / `ChatAck`
+- break-glass: `ChatBreakGlassRequest` / `ChatBreakGlassAccessLog`
+- projectルームは `roomId = projectId`（`ChatRoom.id = Project.id`）
+
+以下の ProjectChat* は **legacy** です（Step 5で凍結/廃止、#475）。
+
+### ProjectChatMessage（legacy）
 - `id`: UUID
 - `projectId`: 参照先 `Project`
 - `userId`: 投稿者のID
@@ -181,7 +190,7 @@
 - `createdAt/createdBy`, `updatedAt/updatedBy`
 - `deletedAt/deletedReason`（論理削除用、API未実装）
 
-### ProjectChatAckRequest（確認依頼）
+### ProjectChatAckRequest（legacy: 確認依頼）
 - `id`: UUID
 - `messageId`: 参照先 `ProjectChatMessage`（1:1）
 - `projectId`: 参照先 `Project`（検索/一覧用途）
@@ -189,13 +198,13 @@
 - `dueAt`: 任意（期限）
 - `createdAt/createdBy`
 
-### ProjectChatAck（確認）
+### ProjectChatAck（legacy: 確認）
 - `id`: UUID
 - `requestId`: 参照先 `ProjectChatAckRequest`
 - `userId`: 確認したユーザID
 - `ackedAt`
 
-### ProjectChatAttachment（添付）
+### ProjectChatAttachment（legacy: 添付）
 - `id`: UUID
 - `messageId`: 参照先 `ProjectChatMessage`
 - `provider`: `local` / `gdrive`
@@ -207,7 +216,7 @@
 - `createdAt/createdBy`
 - `deletedAt/deletedReason`（論理削除用、API未実装）
 
-### ProjectChatReadState（未読/既読：自分のみ）
+### ProjectChatReadState（legacy: 未読/既読：自分のみ）
 - `id`: UUID
 - `projectId`: 参照先 `Project`
 - `userId`: ユーザID
@@ -217,19 +226,14 @@
 ### インデックス
 - `projectId, createdAt`
 
-## データモデル（拡張案）
-- ChatRoom（type, name, projectId?, groupId?, allowExternal, createdBy など）
-- ChatRoomMember（roomId, userId, role, lastReadAt など）
-- ChatMessage（roomId, userId, bodyMarkdown, createdAt, messageType など）※Markdown本文
-- ChatAttachment（messageId, storageKey, fileName, mime, size など）
-- ChatMention（messageId, targetType, targetId など）※例: targetType = 'user' | 'group' | 'all'
-- ChatMessageAckRequest（messageId, requiredUserIds, requiredAll, dueAt など）
-- ChatMessageAck（messageId, userId, ackedAt）
-- ChatBreakGlassRequest（roomId, requesterUserId, reasonCode, reasonText, status, approverUserId, approvedAt, grantedAt, expiresAt など）
-- ChatBreakGlassEvent（requestId, actorUserId, action, at, scope など）
+## データモデル（後続案）
+- ChatMention（メンションの正規化: `messageId`, `targetType`, `targetId`）
+- ChatMessageRevision（編集履歴）/ system message の正規化
+- 検索用インデックス（チャット単体/ERP横断）
 
 ## API
 ### 現行API
+※ 内部実装は room-based（Chat*）へ移行済み（外部APIは互換維持）。
 ### GET `/projects/:projectId/chat-messages`
 **Query**
 - `limit` (default 50, max 200)
