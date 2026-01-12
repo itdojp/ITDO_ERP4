@@ -6,6 +6,11 @@ import { requireRole } from '../services/rbac.js';
 import { ensureChatRoomContentAccess } from '../services/chatRoomAccess.js';
 import { auditContextFromRequest, logAudit } from '../services/audit.js';
 import {
+  getChatExternalLlmConfig,
+  getChatExternalLlmRateLimit,
+  summarizeWithExternalLlm,
+} from '../services/chatExternalLlm.js';
+import {
   chatRoomCreateSchema,
   chatRoomMemberAddSchema,
   chatRoomPatchSchema,
@@ -1534,6 +1539,249 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
           until: toLabel,
         },
       };
+    },
+  );
+
+  app.post(
+    '/chat-rooms/:roomId/ai-summary',
+    { preHandler: requireRole(chatRoles), schema: projectChatSummarySchema },
+    async (req, reply) => {
+      const { roomId } = req.params as { roomId: string };
+      const body = req.body as {
+        since?: string;
+        until?: string;
+        limit?: number;
+      };
+
+      const userId = req.user?.userId;
+      if (!userId) {
+        return reply.status(400).send({
+          error: { code: 'MISSING_USER_ID', message: 'user id is required' },
+        });
+      }
+
+      const roles = req.user?.roles || [];
+      if (roles.includes('external_chat')) {
+        return reply.status(403).send({
+          error: {
+            code: 'FORBIDDEN_EXTERNAL',
+            message: 'external_chat cannot use external LLM features',
+          },
+        });
+      }
+
+      const config = getChatExternalLlmConfig();
+      if (config.provider === 'disabled') {
+        return reply.status(503).send({
+          error: {
+            code: 'EXTERNAL_LLM_NOT_CONFIGURED',
+            message: 'external LLM provider is not configured',
+          },
+        });
+      }
+
+      const projectIds = req.user?.projectIds || [];
+      const groupIds = Array.isArray(req.user?.groupIds)
+        ? req.user.groupIds
+        : [];
+      const access = await ensureChatRoomContentAccess({
+        roomId,
+        userId,
+        roles,
+        projectIds,
+        groupIds,
+      });
+      if (!access.ok) {
+        return reply
+          .status(access.reason === 'not_found' ? 404 : 403)
+          .send({ error: access.reason });
+      }
+
+      const room = await prisma.chatRoom.findUnique({
+        where: { id: access.room.id },
+        select: {
+          id: true,
+          type: true,
+          isOfficial: true,
+          allowExternalIntegrations: true,
+          deletedAt: true,
+        },
+      });
+      if (!room || room.deletedAt) {
+        return reply.status(404).send({
+          error: { code: 'NOT_FOUND', message: 'Room not found' },
+        });
+      }
+      if (!room.isOfficial || !room.allowExternalIntegrations) {
+        return reply.status(403).send({
+          error: {
+            code: 'EXTERNAL_INTEGRATIONS_DISABLED',
+            message: 'external integrations are disabled for this room',
+          },
+        });
+      }
+
+      const sinceRaw = typeof body.since === 'string' ? body.since : undefined;
+      const untilRaw = typeof body.until === 'string' ? body.until : undefined;
+      let since = parseDateParam(sinceRaw);
+      if (sinceRaw && !since) {
+        return reply.status(400).send({
+          error: { code: 'INVALID_DATE', message: 'Invalid since date-time' },
+        });
+      }
+      let until = parseDateParam(untilRaw);
+      if (untilRaw && !until) {
+        return reply.status(400).send({
+          error: { code: 'INVALID_DATE', message: 'Invalid until date-time' },
+        });
+      }
+
+      const now = new Date();
+      if (!since && !until) {
+        until = now;
+        since = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      }
+
+      const take = parseLimitNumber(body.limit, 120);
+      if (!take) {
+        return reply.status(400).send({
+          error: {
+            code: 'INVALID_LIMIT',
+            message: 'limit must be a positive number',
+          },
+        });
+      }
+
+      const createdAt =
+        since && until
+          ? { gte: since, lte: until }
+          : since
+            ? { gte: since }
+            : until
+              ? { lte: until }
+              : undefined;
+
+      const limits = getChatExternalLlmRateLimit();
+      const windowStart = new Date(Date.now() - 60 * 60 * 1000);
+      const [userCount, roomCount] = await Promise.all([
+        prisma.auditLog.count({
+          where: {
+            action: 'chat_external_llm_requested',
+            userId,
+            createdAt: { gte: windowStart },
+          },
+        }),
+        prisma.auditLog.count({
+          where: {
+            action: 'chat_external_llm_requested',
+            targetTable: 'chat_rooms',
+            targetId: room.id,
+            createdAt: { gte: windowStart },
+          },
+        }),
+      ]);
+      if (userCount >= limits.userPerHour || roomCount >= limits.roomPerHour) {
+        return reply.status(429).send({
+          error: {
+            code: 'RATE_LIMITED',
+            message: 'external LLM rate limit exceeded',
+          },
+        });
+      }
+
+      const items = await prisma.chatMessage.findMany({
+        where: {
+          roomId: room.id,
+          deletedAt: null,
+          createdAt,
+        },
+        orderBy: { createdAt: 'desc' },
+        take,
+        select: {
+          body: true,
+        },
+      });
+      const bodies = items
+        .slice()
+        .reverse()
+        .map((item) => item.body);
+
+      const fromLabel = since ? since.toISOString() : null;
+      const toLabel = until ? until.toISOString() : null;
+
+      await logAudit({
+        action: 'chat_external_llm_requested',
+        targetTable: 'chat_rooms',
+        targetId: room.id,
+        metadata: {
+          kind: 'room_summary',
+          roomId: room.id,
+          roomType: room.type,
+          provider: config.provider,
+          model: config.model,
+          limit: take,
+          since: fromLabel,
+          until: toLabel,
+          messageCount: bodies.length,
+          resultStored: false,
+          rateLimit: limits,
+        } as Prisma.InputJsonValue,
+        ...auditContextFromRequest(req),
+      });
+
+      const startedAt = Date.now();
+      try {
+        const result = await summarizeWithExternalLlm({ bodies });
+        const elapsedMs = Date.now() - startedAt;
+        await logAudit({
+          action: 'chat_external_llm_succeeded',
+          targetTable: 'chat_rooms',
+          targetId: room.id,
+          metadata: {
+            kind: 'room_summary',
+            provider: result.provider,
+            model: result.model,
+            elapsedMs,
+            outputChars: result.summary.length,
+          } as Prisma.InputJsonValue,
+          ...auditContextFromRequest(req),
+        });
+
+        return {
+          summary: result.summary,
+          provider: result.provider,
+          model: result.model,
+          stats: {
+            roomId: room.id,
+            roomType: room.type,
+            messageCount: bodies.length,
+            since: fromLabel,
+            until: toLabel,
+          },
+        };
+      } catch (err) {
+        const elapsedMs = Date.now() - startedAt;
+        const message = err instanceof Error ? err.message : String(err);
+        await logAudit({
+          action: 'chat_external_llm_failed',
+          targetTable: 'chat_rooms',
+          targetId: room.id,
+          metadata: {
+            kind: 'room_summary',
+            provider: config.provider,
+            model: config.model,
+            elapsedMs,
+            error: message.slice(0, 300),
+          } as Prisma.InputJsonValue,
+          ...auditContextFromRequest(req),
+        });
+        return reply.status(502).send({
+          error: {
+            code: 'EXTERNAL_LLM_FAILED',
+            message: 'external LLM request failed',
+          },
+        });
+      }
     },
   );
 

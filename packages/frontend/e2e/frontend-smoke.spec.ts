@@ -698,6 +698,60 @@ test('frontend smoke room chat (private_group/dm) @extended', async ({
   await captureSection(roomChatSection, '14-room-chat.png');
 });
 
+test('frontend smoke room chat external summary @extended', async ({ page }) => {
+  test.setTimeout(180_000);
+  const run = runId();
+  await prepare(page);
+
+  const settingsSection = page.locator('h2', { hasText: 'Settings' }).locator('..');
+  await settingsSection.scrollIntoViewIfNeeded();
+  const roomSettingsCard = settingsSection
+    .locator('strong', { hasText: 'チャットルーム設定' })
+    .locator('..');
+  await roomSettingsCard.scrollIntoViewIfNeeded();
+  await roomSettingsCard.getByRole('button', { name: '再読込' }).click();
+  const settingsRoomSelect = roomSettingsCard.getByLabel('ルーム');
+  await expect
+    .poll(() => settingsRoomSelect.locator('option').count(), {
+      timeout: actionTimeout,
+    })
+    .toBeGreaterThan(1);
+  await selectByLabelOrFirst(settingsRoomSelect, 'company: 全社');
+  await roomSettingsCard.getByRole('checkbox', { name: '外部連携を許可' }).check();
+  await roomSettingsCard.getByRole('button', { name: '保存' }).click();
+  await expect(roomSettingsCard.getByText('保存しました')).toBeVisible({
+    timeout: actionTimeout,
+  });
+
+  const roomChatSection = page
+    .locator('h2', { hasText: 'チャット（全社/部門/private_group/DM）' })
+    .locator('..');
+  await roomChatSection.scrollIntoViewIfNeeded();
+  await roomChatSection.getByRole('button', { name: '再読込' }).first().click();
+
+  const roomSelect = roomChatSection.getByLabel('ルーム');
+  await expect
+    .poll(() => roomSelect.locator('option').count(), { timeout: actionTimeout })
+    .toBeGreaterThan(1);
+  await selectByLabelOrFirst(roomSelect, 'company: 全社');
+
+  const messageText = `E2E external summary ${run}`;
+  await roomChatSection.getByPlaceholder('Markdownで入力').fill(messageText);
+  await roomChatSection.getByRole('button', { name: '送信' }).click();
+  await expect(roomChatSection.getByText(messageText)).toBeVisible({
+    timeout: actionTimeout,
+  });
+
+  page.once('dialog', (dialog) => dialog.accept().catch(() => undefined));
+  await roomChatSection.getByRole('button', { name: '外部要約' }).click();
+  await expect(roomChatSection.getByText('要約（外部:', { exact: false })).toBeVisible({
+    timeout: actionTimeout,
+  });
+  await expect(roomChatSection.locator('pre')).toContainText('概要', {
+    timeout: actionTimeout,
+  });
+});
+
 test('frontend smoke external chat invited rooms @extended', async ({
   page,
 }) => {

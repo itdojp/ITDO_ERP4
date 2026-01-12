@@ -162,7 +162,10 @@ export const RoomChat: React.FC = () => {
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [message, setMessage] = useState('');
   const [summary, setSummary] = useState('');
+  const [summaryProvider, setSummaryProvider] = useState('');
+  const [summaryModel, setSummaryModel] = useState('');
   const [isSummarizing, setIsSummarizing] = useState(false);
+  const [isSummarizingExternal, setIsSummarizingExternal] = useState(false);
 
   const [body, setBody] = useState('');
   const [tags, setTags] = useState('');
@@ -458,12 +461,60 @@ export const RoomChat: React.FC = () => {
           body: JSON.stringify({ limit: 120 }),
         },
       );
+      setSummaryProvider('');
+      setSummaryModel('');
       setSummary(typeof res.summary === 'string' ? res.summary : '');
     } catch (err) {
       console.error('Failed to summarize room messages.', err);
       setMessage('要約の生成に失敗しました');
     } finally {
       setIsSummarizing(false);
+    }
+  };
+
+  const summarizeExternal = async () => {
+    if (!roomId) return;
+    if (selectedRoom?.allowExternalIntegrations !== true) return;
+    if (roles.includes('external_chat')) return;
+
+    const ok = window.confirm(
+      [
+        '外部LLMへ送信して要約します（本文のみ。添付は送信しません）。',
+        '送信範囲: 直近120件 / 過去7日間',
+        '続行しますか？',
+      ].join('\n'),
+    );
+    if (!ok) return;
+
+    const now = new Date();
+    const since = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+
+    try {
+      setIsSummarizingExternal(true);
+      setMessage('');
+      const res = await api<{
+        summary?: string;
+        provider?: string;
+        model?: string;
+      }>(`/chat-rooms/${roomId}/ai-summary`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          limit: 120,
+          since: since.toISOString(),
+          until: now.toISOString(),
+        }),
+      });
+      setSummaryProvider(
+        typeof res.provider === 'string' ? res.provider : 'external',
+      );
+      setSummaryModel(typeof res.model === 'string' ? res.model : '');
+      setSummary(typeof res.summary === 'string' ? res.summary : '');
+    } catch (err) {
+      console.error('Failed to generate external summary.', err);
+      setMessage('外部要約の生成に失敗しました');
+    } finally {
+      setIsSummarizingExternal(false);
     }
   };
 
@@ -475,6 +526,8 @@ export const RoomChat: React.FC = () => {
   useEffect(() => {
     if (!roomId) return;
     setSummary('');
+    setSummaryProvider('');
+    setSummaryModel('');
     loadMessages().catch(() => undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roomId]);
@@ -523,11 +576,25 @@ export const RoomChat: React.FC = () => {
         >
           {isSummarizing ? '要約中...' : '要約'}
         </button>
+        {selectedRoom?.allowExternalIntegrations === true &&
+          !roles.includes('external_chat') && (
+            <button
+              className="button secondary"
+              onClick={summarizeExternal}
+              disabled={!roomId || isSummarizingExternal}
+            >
+              {isSummarizingExternal ? '外部要約中...' : '外部要約'}
+            </button>
+          )}
       </div>
 
       {summary && (
         <div className="card" style={{ padding: 12, marginTop: 12 }}>
-          <div style={{ fontSize: 12, color: '#64748b' }}>要約（スタブ）</div>
+          <div style={{ fontSize: 12, color: '#64748b' }}>
+            {summaryProvider
+              ? `要約（外部: ${summaryProvider}${summaryModel ? ` / ${summaryModel}` : ''}）`
+              : '要約（スタブ）'}
+          </div>
           <pre style={{ whiteSpace: 'pre-wrap', margin: 0 }}>{summary}</pre>
         </div>
       )}

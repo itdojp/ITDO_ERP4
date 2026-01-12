@@ -139,6 +139,7 @@ npm run build --prefix "$ROOT_DIR/packages/backend"
 
 PORT="$BACKEND_PORT" AUTH_MODE=header DATABASE_URL="$DATABASE_URL" \
 ALLOWED_ORIGINS="http://localhost:${FRONTEND_PORT},http://127.0.0.1:${FRONTEND_PORT}" \
+CHAT_EXTERNAL_LLM_PROVIDER="${CHAT_EXTERNAL_LLM_PROVIDER:-stub}" \
   node "$ROOT_DIR/packages/backend/dist/index.js" >"$BACKEND_LOG" 2>&1 &
 BACKEND_PID=$!
 if ! wait_for_url "http://localhost:${BACKEND_PORT}/health" "backend"; then
