@@ -1,4 +1,4 @@
-# チャット: ルーム化（project chat → room chat）移行方針（案）
+# チャット: ルーム化（project chat → room chat）移行方針（確定）
 
 ## 背景
 現状のチャットは `projectId` 直結（`ProjectChatMessage`）であり、以下を本格実装するには「ルーム」という単位が必要です。
@@ -78,27 +78,25 @@ DB上は `type` として表現し、ポリシー（公式/私的、外部連携
 ## 移行戦略（推奨）
 **推奨: 新テーブル導入 + project chat を段階移行**
 
-1) **Step 1: roomテーブルを追加（影響なし）**
-   - `ChatRoom` / `ChatRoomMember` を追加
-   - projectルームの生成方針を決める（例: project参照時に on-demand 作成）
+1) **Step 1: roomテーブルを追加（影響なし）【完了】**
+   - `ChatRoom` / `ChatRoomMember` を追加（#464）
+   - projectルームは on-demand / project作成時に生成
 
-2) **Step 2: room API を追加（既存project chatは維持）**
-   - `GET /chat-rooms`（一覧）
-   - `POST /chat-rooms`（作成：公式/私的）
-   - `POST /chat-rooms/:id/members`（招待）
-   - DMはMVPでは無効（管理者設定導入後に開始）
+2) **Step 2: room API を追加（既存project chatは維持）【部分完了】**
+   - `GET /chat-rooms`（一覧）（#465）
+   - ProjectChat の案件選択を room一覧に切替（#469）
+   - ルーム作成/招待/DM は #434 の設計確定後に実装
 
-3) **Step 3: project chat API を room に寄せる（互換を維持）**
-   - `GET /projects/:projectId/chat-messages` は内部的に projectルームを参照して返す
-   - 新規投稿は room の message テーブルへ書く（移行後）
+3) **Step 3: project chat API を room に寄せる（互換を維持）【完了】**
+   - 既存の `/projects/:projectId/chat-*` は `Chat*`（room-based）参照へ移行（#472）
+   - break-glass の閲覧対象も `ChatMessage` に切替（#472）
 
-4) **Step 4: 既存データの移行**
-   - `ProjectChatMessage` → `ChatMessage` へ移行するバッチ/スクリプト
-   - `ProjectChatAttachment/ReadState/Ack...` も room 系へ移行
-   - 互換維持のため、移行期間は project chat API で両面対応（読取は旧+新、書込は新）
+4) **Step 4: 既存データの移行【完了】**
+   - migration `20260112003555_add_chat_room_messages` で `ProjectChat*` → `Chat*` をコピー
+   - `prisma migrate deploy` を使う環境で適用される（`prisma db push` はデータ移行を含まない）
 
-5) **Step 5: project chat テーブルを凍結 → 廃止**
-   - 旧APIを廃止する前に、移行完了の監査ログ/件数検証を残す
+5) **Step 5: 旧ProjectChat* テーブルを凍結 → 廃止【残】**
+   - #475 で扱う（件数一致チェック、削除タイミング、最終削除のmigration）
 
 ## 既存仕様との整合
 - メンション/未読/確認メッセージ/添付/通知/AI要約は「Room単位」で提供する想定です。
