@@ -9,6 +9,7 @@ type ChatRoom = {
   type: string;
   name: string;
   isOfficial?: boolean | null;
+  projectId?: string | null;
   projectCode?: string | null;
   projectName?: string | null;
   groupId?: string | null;
@@ -40,6 +41,16 @@ type ChatMessage = {
     createdAt: string;
   }[];
   createdAt: string;
+};
+
+type ChatSearchItem = {
+  id: string;
+  roomId: string;
+  userId: string;
+  body: string;
+  tags?: string[];
+  createdAt: string;
+  room: ChatRoom;
 };
 
 const reactionOptions = ['👍', '🎉', '❤️', '😂', '🙏', '👀'];
@@ -119,6 +130,13 @@ function sanitizeFilename(value: string) {
   return value.replace(/["\\\r\n]/g, '_').replace(/[/\\]/g, '_');
 }
 
+function buildExcerpt(value: string, maxLength = 200) {
+  const normalized = value.replace(/\s+/g, ' ').trim();
+  if (!normalized) return '';
+  if (normalized.length <= maxLength) return normalized;
+  return `${normalized.slice(0, maxLength)}…`;
+}
+
 function formatRoomLabel(room: ChatRoom, currentUserId: string) {
   if (room.type === 'project') {
     if (room.projectCode && room.projectName) {
@@ -174,6 +192,12 @@ export const RoomChat: React.FC = () => {
   const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
   const [filterTag, setFilterTag] = useState('');
   const [filterQuery, setFilterQuery] = useState('');
+
+  const [globalQuery, setGlobalQuery] = useState('');
+  const [globalItems, setGlobalItems] = useState<ChatSearchItem[]>([]);
+  const [globalHasMore, setGlobalHasMore] = useState(false);
+  const [globalMessage, setGlobalMessage] = useState('');
+  const [globalLoading, setGlobalLoading] = useState(false);
 
   const [unreadCount, setUnreadCount] = useState(0);
   const [highlightSince, setHighlightSince] = useState<Date | null>(null);
@@ -283,6 +307,57 @@ export const RoomChat: React.FC = () => {
     } finally {
       setIsLoading(false);
       setIsLoadingMore(false);
+    }
+  };
+
+  const openSearchResult = (item: ChatSearchItem) => {
+    if (item.room.type === 'project' && item.room.projectId) {
+      if (roles.includes('external_chat')) {
+        setRoomId(item.room.id);
+      } else {
+        window.dispatchEvent(
+          new CustomEvent('erp4_open_project_chat', {
+            detail: { projectId: item.room.projectId },
+          }),
+        );
+      }
+      return;
+    }
+    setRoomId(item.room.id);
+    setMessage('');
+  };
+
+  const loadGlobalSearch = async (options?: { append?: boolean }) => {
+    const append = options?.append === true;
+    const trimmed = globalQuery.trim();
+    if (trimmed.length < 2) {
+      setGlobalMessage('検索語は2文字以上で入力してください');
+      return;
+    }
+    try {
+      setGlobalLoading(true);
+      setGlobalMessage('');
+      const before =
+        append && globalItems.length
+          ? globalItems[globalItems.length - 1]?.createdAt
+          : '';
+      const query = new URLSearchParams();
+      query.set('q', trimmed);
+      query.set('limit', String(pageSize));
+      if (before) query.set('before', before);
+      const res = await api<{ items?: ChatSearchItem[] }>(
+        `/chat-messages/search?${query.toString()}`,
+      );
+      const fetched = Array.isArray(res.items) ? res.items : [];
+      setGlobalItems((prev) => (append ? [...prev, ...fetched] : fetched));
+      setGlobalHasMore(fetched.length >= pageSize);
+    } catch (err) {
+      console.error('Failed to search chat messages.', err);
+      setGlobalMessage('検索に失敗しました');
+      if (!append) setGlobalItems([]);
+      setGlobalHasMore(false);
+    } finally {
+      setGlobalLoading(false);
     }
   };
 
@@ -977,6 +1052,103 @@ export const RoomChat: React.FC = () => {
             disabled={isLoadingMore}
           >
             {isLoadingMore ? '読み込み中...' : 'さらに読み込む'}
+          </button>
+        )}
+      </div>
+
+      <div className="card" style={{ padding: 12, marginTop: 12 }}>
+        <strong>横断検索（チャット全体）</strong>
+        <div
+          className="row"
+          style={{ gap: 12, flexWrap: 'wrap', marginTop: 8 }}
+        >
+          <label>
+            横断検索（本文）
+            <input
+              type="text"
+              value={globalQuery}
+              onChange={(e) => setGlobalQuery(e.target.value)}
+              placeholder="keyword"
+            />
+          </label>
+          <button
+            className="button secondary"
+            onClick={() => loadGlobalSearch()}
+            disabled={globalLoading}
+          >
+            検索
+          </button>
+          <button
+            className="button secondary"
+            onClick={() => {
+              setGlobalQuery('');
+              setGlobalItems([]);
+              setGlobalHasMore(false);
+              setGlobalMessage('');
+            }}
+            disabled={globalLoading}
+          >
+            クリア
+          </button>
+        </div>
+
+        {globalMessage && (
+          <div style={{ color: '#dc2626', marginTop: 6 }}>{globalMessage}</div>
+        )}
+        {globalLoading && <div style={{ marginTop: 8 }}>検索中...</div>}
+
+        <div
+          className="list"
+          style={{ display: 'grid', gap: 8, marginTop: 12 }}
+        >
+          {globalItems.map((item) => {
+            const createdAt = new Date(item.createdAt).toLocaleString();
+            const roomLabel = formatRoomLabel(item.room, currentUserId);
+            const excerpt = buildExcerpt(item.body);
+            return (
+              <div key={item.id} className="card" style={{ padding: 12 }}>
+                <div
+                  className="row"
+                  style={{ justifyContent: 'space-between' }}
+                >
+                  <div>
+                    <strong>{roomLabel}</strong>
+                    <div style={{ fontSize: 12, color: '#475569' }}>
+                      {createdAt} / {item.userId}
+                    </div>
+                    {excerpt && (
+                      <div
+                        style={{ fontSize: 12, color: '#475569', marginTop: 4 }}
+                      >
+                        {excerpt}
+                      </div>
+                    )}
+                  </div>
+                  <button
+                    className="button secondary"
+                    onClick={() => openSearchResult(item)}
+                  >
+                    開く
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+          {globalItems.length === 0 && !globalLoading && (
+            <div className="card" style={{ padding: 12 }}>
+              検索結果なし
+            </div>
+          )}
+        </div>
+
+        {globalHasMore && (
+          <button
+            className="button secondary"
+            style={{ marginTop: 12 }}
+            onClick={() => loadGlobalSearch({ append: true })}
+            disabled={globalLoading}
+          >
+            さらに読み込む
           </button>
         )}
       </div>
