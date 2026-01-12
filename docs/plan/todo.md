@@ -5,14 +5,15 @@
 - [ ] S3/OSS 移行の時期を決定（`docs/requirements/backup-restore.md`）
 
 ## 次アクション（チャット）
-- [ ] #453 ルーム化（project chat→room chat）移行方針の確定と段階移行の計画化
+- [x] #453 ルーム化（project chat→room chat）移行方針の確定と段階移行の計画化
   - [x] 仕様/方針ドキュメント（案）の追加（`docs/requirements/chat-rooms.md`）
   - [x] #464 ChatRoom/ChatRoomMember のDB追加（projectルーム先行）
   - [x] #465 ルーム一覧API（projectルーム先行）
   - [x] #469 ProjectChat の案件選択を /chat-rooms へ切替（projectルーム先行）
   - [x] #471 projectルームIDをprojectIdに固定（roomId=projectId）
-  - [ ] #472 room-based messageテーブル導入とproject chat API移行（Step 3）
-  - [ ] 互換維持の移行ステップ（Step 1〜5）の確定
+  - [x] #472 room-based messageテーブル導入とproject chat API移行（Step 3）
+  - [ ] #475 旧ProjectChat*テーブルの凍結/廃止（Step 5）
+  - [x] 互換維持の移行ステップ（Step 1〜5）の確定
 - [ ] #434 ガバナンス（公式/私的/DM）と監査break-glassの設計を確定
 - [x] #454 break-glass（申請/二重承認/閲覧許可/監査ログ）を実装
 - [x] #455 break-glass UI（申請/承認/履歴）+ システムメッセージ
