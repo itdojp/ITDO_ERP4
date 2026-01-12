@@ -118,6 +118,74 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
     return parsed;
   }
 
+  async function resolveSearchRoomIds(options: {
+    userId: string;
+    roles: string[];
+    projectIds: string[];
+    groupIds: string[];
+  }) {
+    const isExternal = options.roles.includes('external_chat');
+    const internalChatRoles = new Set(['admin', 'mgmt', 'exec', 'user', 'hr']);
+    const hasInternalChatRole = options.roles.some((role) =>
+      internalChatRoles.has(role),
+    );
+    const roomIds = new Set<string>();
+
+    if (!isExternal && hasInternalChatRole) {
+      roomIds.add(companyRoomId);
+      if (options.groupIds.length > 0) {
+        const departmentRooms = await prisma.chatRoom.findMany({
+          where: {
+            type: 'department',
+            deletedAt: null,
+            groupId: { in: options.groupIds },
+          },
+          select: { id: true },
+          take: 200,
+        });
+        departmentRooms.forEach((room) => roomIds.add(room.id));
+      }
+    }
+
+    if (!isExternal) {
+      if (options.roles.includes('admin') || options.roles.includes('mgmt')) {
+        const projectRooms = await prisma.chatRoom.findMany({
+          where: { type: 'project', deletedAt: null },
+          select: { id: true },
+          take: 500,
+        });
+        projectRooms.forEach((room) => roomIds.add(room.id));
+      } else if (options.projectIds.length > 0) {
+        const projectRooms = await prisma.chatRoom.findMany({
+          where: {
+            type: 'project',
+            deletedAt: null,
+            id: { in: options.projectIds },
+          },
+          select: { id: true },
+          take: 200,
+        });
+        projectRooms.forEach((room) => roomIds.add(room.id));
+      }
+    }
+
+    const memberRooms = await prisma.chatRoomMember.findMany({
+      where: {
+        userId: options.userId,
+        deletedAt: null,
+        room: {
+          deletedAt: null,
+          ...(isExternal ? { allowExternalUsers: true } : {}),
+        },
+      },
+      select: { roomId: true },
+      take: 200,
+    });
+    memberRooms.forEach((row) => roomIds.add(row.roomId));
+
+    return Array.from(roomIds);
+  }
+
   function parseLimit(value?: string, fallback = 50) {
     if (!value) return fallback;
     const parsed = Number(value);
@@ -646,6 +714,143 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
       ];
 
       return { items };
+    },
+  );
+
+  app.get(
+    '/chat-messages/search',
+    { preHandler: requireRole(chatRoles) },
+    async (req, reply) => {
+      const { q, limit, before } = req.query as {
+        q?: string;
+        limit?: string;
+        before?: string;
+      };
+      const userId = req.user?.userId;
+      if (!userId) {
+        return reply.status(400).send({
+          error: { code: 'MISSING_USER_ID', message: 'user id is required' },
+        });
+      }
+
+      const take = parseLimit(limit);
+      if (!take) {
+        return reply.status(400).send({
+          error: {
+            code: 'INVALID_LIMIT',
+            message: 'limit must be a positive integer',
+          },
+        });
+      }
+
+      const beforeDate = parseDateParam(before);
+      if (before && !beforeDate) {
+        return reply.status(400).send({
+          error: { code: 'INVALID_DATE', message: 'Invalid before date' },
+        });
+      }
+
+      const trimmedQuery = typeof q === 'string' ? q.trim() : '';
+      if (trimmedQuery.length > 100) {
+        return reply.status(400).send({
+          error: { code: 'INVALID_QUERY', message: 'query is too long' },
+        });
+      }
+      if (trimmedQuery.length < 2) {
+        return reply.status(400).send({
+          error: { code: 'INVALID_QUERY', message: 'query is too short' },
+        });
+      }
+
+      const roles = req.user?.roles || [];
+      const projectIds = normalizeStringArray(req.user?.projectIds, {
+        dedupe: true,
+        max: 500,
+      });
+      const groupIds = normalizeStringArray(req.user?.groupIds, {
+        dedupe: true,
+        max: 50,
+      });
+
+      const roomIds = await resolveSearchRoomIds({
+        userId,
+        roles,
+        projectIds,
+        groupIds,
+      });
+      if (roomIds.length === 0) {
+        return { items: [] };
+      }
+
+      const where: Prisma.ChatMessageWhereInput = {
+        roomId: { in: roomIds },
+        deletedAt: null,
+        body: { contains: trimmedQuery, mode: 'insensitive' },
+        room: { deletedAt: null },
+      };
+      if (beforeDate) {
+        where.createdAt = { lt: beforeDate };
+      }
+
+      const items = await prisma.chatMessage.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        take,
+        include: {
+          room: {
+            select: {
+              id: true,
+              type: true,
+              name: true,
+              isOfficial: true,
+              projectId: true,
+              groupId: true,
+              allowExternalUsers: true,
+              allowExternalIntegrations: true,
+              project: { select: { code: true, name: true } },
+            },
+          },
+        },
+      });
+
+      const responseItems = items.map((item) => {
+        const room = item.room;
+        const projectCode = room.project?.code || null;
+        const projectName = room.project?.name || null;
+        return {
+          id: item.id,
+          roomId: item.roomId,
+          userId: item.userId,
+          body: item.body,
+          tags: item.tags,
+          createdAt: item.createdAt,
+          room: {
+            id: room.id,
+            type: room.type,
+            name: room.name,
+            isOfficial: room.isOfficial,
+            projectId: room.projectId,
+            projectCode,
+            projectName,
+            groupId: room.groupId,
+            allowExternalUsers: room.allowExternalUsers,
+            allowExternalIntegrations: room.allowExternalIntegrations,
+          },
+        };
+      });
+
+      await logAudit({
+        action: 'chat_messages_search',
+        targetTable: 'chat_messages',
+        metadata: {
+          query: trimmedQuery.slice(0, 100),
+          resultCount: responseItems.length,
+          limit: take,
+        } as Prisma.InputJsonValue,
+        ...auditContextFromRequest(req),
+      });
+
+      return { items: responseItems };
     },
   );
 

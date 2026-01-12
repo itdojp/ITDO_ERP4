@@ -147,6 +147,24 @@ export const ProjectChat: React.FC = () => {
   const auth = getAuthState();
   const defaultProjectId = auth?.projectIds?.[0] || 'demo-project';
   const [projectId, setProjectId] = useState(defaultProjectId);
+
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent<{ projectId?: unknown }>).detail;
+      const nextProjectId =
+        detail && typeof detail.projectId === 'string' ? detail.projectId : '';
+      if (!nextProjectId) return;
+      setProjectId(nextProjectId);
+    };
+    window.addEventListener('erp4_open_project_chat', handler as EventListener);
+    return () => {
+      window.removeEventListener(
+        'erp4_open_project_chat',
+        handler as EventListener,
+      );
+    };
+  }, []);
+
   const { rooms, roomMessage } = useChatRooms({
     selectedProjectId: projectId,
     onSelect: setProjectId,

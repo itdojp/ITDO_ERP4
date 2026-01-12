@@ -701,6 +701,17 @@ test('frontend smoke room chat (private_group/dm) @extended', async ({
   ).toBeVisible({ timeout: actionTimeout });
   await messageList.getByRole('button', { name: 'クリア' }).click();
 
+  const globalSearchCard = roomChatSection
+    .locator('strong', { hasText: '横断検索（チャット全体）' })
+    .locator('..');
+  await globalSearchCard
+    .getByLabel('横断検索（本文）')
+    .fill(`company message ${run}`);
+  await globalSearchCard.getByRole('button', { name: '検索' }).click();
+  await expect(globalSearchCard.getByText(companyText)).toBeVisible({
+    timeout: actionTimeout,
+  });
+
   await selectByLabelOrFirst(roomSelect, 'department: mgmt');
   const departmentText = `E2E department message ${run}`;
   await roomChatSection.getByPlaceholder('Markdownで入力').fill(departmentText);
