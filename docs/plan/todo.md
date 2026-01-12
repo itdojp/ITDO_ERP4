@@ -10,7 +10,7 @@
   - [x] #464 ChatRoom/ChatRoomMember のDB追加（projectルーム先行）
   - [x] #465 ルーム一覧API（projectルーム先行）
   - [x] #469 ProjectChat の案件選択を /chat-rooms へ切替（projectルーム先行）
-  - [ ] #471 projectルームIDをprojectIdに固定（roomId=projectId）
+  - [x] #471 projectルームIDをprojectIdに固定（roomId=projectId）
   - [ ] #472 room-based messageテーブル導入とproject chat API移行（Step 3）
   - [ ] 互換維持の移行ステップ（Step 1〜5）の確定
 - [ ] #434 ガバナンス（公式/私的/DM）と監査break-glassの設計を確定

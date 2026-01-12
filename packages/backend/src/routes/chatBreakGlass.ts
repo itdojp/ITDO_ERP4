@@ -662,8 +662,8 @@ export async function registerChatBreakGlassRoutes(app: FastifyInstance) {
               ? { lte: request.targetUntil }
               : undefined;
 
-      const where: Prisma.ProjectChatMessageWhereInput = {
-        projectId: request.projectId,
+      const where: Prisma.ChatMessageWhereInput = {
+        roomId: request.projectId,
         deletedAt: null,
         createdAt,
       };
@@ -676,7 +676,7 @@ export async function registerChatBreakGlassRoutes(app: FastifyInstance) {
         where.tags = { array_contains: [trimmedTag] };
       }
 
-      const items = await prisma.projectChatMessage.findMany({
+      const items = await prisma.chatMessage.findMany({
         where,
         orderBy: { createdAt: 'desc' },
         take,
