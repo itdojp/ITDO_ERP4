@@ -4,6 +4,7 @@ import { hasProjectAccess } from './rbac.js';
 type ChatRoomBase = {
   id: string;
   type: string;
+  groupId: string | null;
   deletedAt: Date | null;
   allowExternalUsers: boolean;
 };
@@ -24,12 +25,25 @@ export async function ensureChatRoomContentAccess(options: {
   userId: string;
   roles: string[];
   projectIds: string[];
+  groupIds?: string[];
 }): Promise<ChatRoomContentAccessResult> {
+  const isExternal = options.roles.includes('external_chat');
+  const internalChatRoles = new Set(['admin', 'mgmt', 'exec', 'user', 'hr']);
+  const hasInternalChatRole = options.roles.some((role) =>
+    internalChatRoles.has(role),
+  );
+  const groupIdSet = new Set(
+    (Array.isArray(options.groupIds) ? options.groupIds : [])
+      .map((value) => (typeof value === 'string' ? value.trim() : ''))
+      .filter(Boolean),
+  );
+
   const room = await prisma.chatRoom.findUnique({
     where: { id: options.roomId },
     select: {
       id: true,
       type: true,
+      groupId: true,
       deletedAt: true,
       allowExternalUsers: true,
     },
@@ -45,8 +59,31 @@ export async function ensureChatRoomContentAccess(options: {
     return { ok: false, reason: 'forbidden_project' };
   }
 
-  if (options.roles.includes('external_chat') && !room.allowExternalUsers) {
+  if (isExternal && !room.allowExternalUsers) {
     return { ok: false, reason: 'forbidden_external_room' };
+  }
+
+  if (room.type === 'company') {
+    if (!isExternal) {
+      if (!hasInternalChatRole) {
+        return { ok: false, reason: 'forbidden_room_member' };
+      }
+      return { ok: true, room };
+    }
+  }
+
+  if (room.type === 'department') {
+    if (!isExternal) {
+      if (!hasInternalChatRole) {
+        return { ok: false, reason: 'forbidden_room_member' };
+      }
+      const groupId =
+        typeof room.groupId === 'string' ? room.groupId.trim() : '';
+      if (!groupId || !groupIdSet.has(groupId)) {
+        return { ok: false, reason: 'forbidden_room_member' };
+      }
+      return { ok: true, room };
+    }
   }
 
   const member = await prisma.chatRoomMember.findFirst({

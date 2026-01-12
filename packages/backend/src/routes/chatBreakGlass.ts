@@ -3,6 +3,7 @@ import type { Prisma } from '@prisma/client';
 import { prisma } from '../services/db.js';
 import { hasProjectAccess, requireRole } from '../services/rbac.js';
 import { auditContextFromRequest, logAudit } from '../services/audit.js';
+import { ensureChatRoomContentAccess } from '../services/chatRoomAccess.js';
 import {
   chatBreakGlassRejectSchema,
   chatBreakGlassRequestSchema,
@@ -100,14 +101,28 @@ export async function registerChatBreakGlassRoutes(app: FastifyInstance) {
             error: { code: 'MISSING_USER_ID', message: 'user id is required' },
           });
         }
-        const membership = await prisma.chatRoomMember.findUnique({
-          where: { roomId_userId: { roomId, userId } },
-          select: { id: true, deletedAt: true },
+        const projectIds = req.user?.projectIds || [];
+        const groupIds = Array.isArray(req.user?.groupIds)
+          ? req.user.groupIds
+          : [];
+        const access = await ensureChatRoomContentAccess({
+          roomId,
+          userId,
+          roles,
+          projectIds,
+          groupIds,
         });
-        if (!membership || membership.deletedAt) {
-          return reply.status(403).send({
+        if (!access.ok) {
+          return reply.status(access.reason === 'not_found' ? 404 : 403).send({
             error: {
-              code: 'FORBIDDEN_ROOM',
+              code:
+                access.reason === 'not_found'
+                  ? 'NOT_FOUND'
+                  : access.reason === 'forbidden_project'
+                    ? 'FORBIDDEN_PROJECT'
+                    : access.reason === 'forbidden_external_room'
+                      ? 'FORBIDDEN_EXTERNAL_ROOM'
+                      : 'FORBIDDEN_ROOM_MEMBER',
               message: 'Access to this room is forbidden',
             },
           });

@@ -14,8 +14,10 @@
 - [x] #472 room-based messageテーブル導入とproject chat API移行（Step 3）
   - [x] #475 旧ProjectChat*テーブルの凍結/廃止（Step 5）
   - [x] 互換維持の移行ステップ（Step 1〜5）の確定
-- [ ] #434 ガバナンス（公式/私的/DM）と監査break-glassの設計を確定
+- [x] #434 ガバナンス（公式/私的/DM）と監査break-glassの設計を確定
   - [x] #477 break-glass を room target に対応
+  - [x] 公式ルーム（company/department）のMVP
+  - [x] private_group/DM のMVP（設定ON/OFF含む）
 - [x] #454 break-glass（申請/二重承認/閲覧許可/監査ログ）を実装
 - [x] #455 break-glass UI（申請/承認/履歴）+ システムメッセージ
 - [ ] #445 AI支援（要約/アクション抽出/FAQ/検索支援）のMVP方針決定

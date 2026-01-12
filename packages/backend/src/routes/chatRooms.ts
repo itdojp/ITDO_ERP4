@@ -1,6 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import crypto from 'node:crypto';
-import type { Prisma } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import { prisma } from '../services/db.js';
 import { requireRole } from '../services/rbac.js';
 import { ensureChatRoomContentAccess } from '../services/chatRoomAccess.js';
@@ -15,6 +15,80 @@ import {
 export async function registerChatRoomRoutes(app: FastifyInstance) {
   const chatRoles = ['admin', 'mgmt', 'user', 'hr', 'exec', 'external_chat'];
   const chatSettingId = 'default';
+  const companyRoomId = 'company';
+  const companyRoomName = '全社';
+
+  type DepartmentRoomTarget = { roomId: string; groupId: string };
+
+  function buildDepartmentRoomId(groupId: string) {
+    const digest = crypto
+      .createHash('sha256')
+      .update(groupId.trim())
+      .digest('hex')
+      .slice(0, 32);
+    return `dept_${digest}`;
+  }
+
+  async function ensureCompanyRoom(userId: string | null) {
+    const existing = await prisma.chatRoom.findUnique({
+      where: { id: companyRoomId },
+      select: { id: true, deletedAt: true },
+    });
+    if (existing) return;
+
+    try {
+      await prisma.chatRoom.create({
+        data: {
+          id: companyRoomId,
+          type: 'company',
+          name: companyRoomName,
+          isOfficial: true,
+          allowExternalUsers: false,
+          allowExternalIntegrations: false,
+          createdBy: userId,
+          updatedBy: userId,
+        },
+      });
+    } catch (err) {
+      if (
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === 'P2002'
+      ) {
+        return;
+      }
+      throw err;
+    }
+  }
+
+  async function ensureDepartmentRooms(
+    userId: string | null,
+    targets: DepartmentRoomTarget[],
+  ) {
+    if (!targets.length) return;
+    const ids = targets.map((target) => target.roomId);
+    const existing = await prisma.chatRoom.findMany({
+      where: { id: { in: ids } },
+      select: { id: true },
+    });
+    const existingIds = new Set(existing.map((room) => room.id));
+    const missing = targets.filter((target) => !existingIds.has(target.roomId));
+    if (!missing.length) return;
+
+    await prisma.chatRoom.createMany({
+      data: missing.map((target) => ({
+        id: target.roomId,
+        type: 'department',
+        name: target.groupId,
+        groupId: target.groupId,
+        isOfficial: true,
+        allowExternalUsers: false,
+        allowExternalIntegrations: false,
+        createdBy: userId,
+        updatedBy: userId,
+      })),
+      skipDuplicates: true,
+    });
+  }
 
   function normalizeStringArray(
     value: unknown,
@@ -266,10 +340,29 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
       const roles = req.user?.roles || [];
       const userId = req.user?.userId;
       const projectIds = req.user?.projectIds || [];
+      const rawGroupIds = Array.isArray(req.user?.groupIds)
+        ? req.user.groupIds
+        : [];
+      const groupIds = normalizeStringArray(rawGroupIds, {
+        dedupe: true,
+        max: 50,
+      });
+      const groupIdSet = new Set(groupIds);
       const canSeeAllMeta =
         roles.includes('admin') ||
         roles.includes('mgmt') ||
         roles.includes('exec');
+      const canBootstrapOfficialRooms = !roles.includes('external_chat');
+      const departmentTargets: DepartmentRoomTarget[] =
+        canBootstrapOfficialRooms
+          ? groupIds.map((groupId) => ({
+              groupId,
+              roomId: buildDepartmentRoomId(groupId),
+            }))
+          : [];
+      const officialRoomIds = canBootstrapOfficialRooms
+        ? [companyRoomId, ...departmentTargets.map((target) => target.roomId)]
+        : [];
 
       const canSeeAllProjects = canSeeAllMeta;
 
@@ -331,7 +424,27 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
         }
       }
 
-      const [projectRooms, otherRooms] = await Promise.all([
+      if (canBootstrapOfficialRooms) {
+        await ensureCompanyRoom(userId || null);
+        await ensureDepartmentRooms(userId || null, departmentTargets);
+      }
+
+      const roomSelect = {
+        id: true,
+        type: true,
+        name: true,
+        isOfficial: true,
+        projectId: true,
+        groupId: true,
+        allowExternalUsers: true,
+        allowExternalIntegrations: true,
+        createdAt: true,
+        createdBy: true,
+        updatedAt: true,
+        updatedBy: true,
+      } as const;
+
+      const projectRoomsPromise =
         targetProjectIds.length > 0
           ? prisma.chatRoom.findMany({
               where: {
@@ -340,80 +453,74 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
                 deletedAt: null,
               },
               orderBy: { createdAt: 'desc' },
-              select: {
-                id: true,
-                type: true,
-                name: true,
-                isOfficial: true,
-                projectId: true,
-                groupId: true,
-                allowExternalUsers: true,
-                allowExternalIntegrations: true,
-                createdAt: true,
-                createdBy: true,
-                updatedAt: true,
-                updatedBy: true,
-              },
+              select: roomSelect,
             })
-          : Promise.resolve([]),
-        canSeeAllMeta
-          ? prisma.chatRoom.findMany({
-              where: { type: { not: 'project' }, deletedAt: null },
-              orderBy: { createdAt: 'desc' },
-              take: 200,
-              select: {
-                id: true,
-                type: true,
-                name: true,
-                isOfficial: true,
-                projectId: true,
-                groupId: true,
-                allowExternalUsers: true,
-                allowExternalIntegrations: true,
-                createdAt: true,
-                createdBy: true,
-                updatedAt: true,
-                updatedBy: true,
-              },
-            })
-          : userId
-            ? prisma.chatRoomMember
-                .findMany({
-                  where: {
-                    userId,
+          : Promise.resolve([]);
+
+      const metaRoomsPromise = canSeeAllMeta
+        ? prisma.chatRoom.findMany({
+            where: { type: { not: 'project' }, deletedAt: null },
+            orderBy: { createdAt: 'desc' },
+            take: 200,
+            select: roomSelect,
+          })
+        : Promise.resolve([]);
+
+      const memberRoomsPromise =
+        !canSeeAllMeta && userId
+          ? prisma.chatRoomMember
+              .findMany({
+                where: {
+                  userId,
+                  deletedAt: null,
+                  room: {
                     deletedAt: null,
-                    room: {
-                      deletedAt: null,
-                      type: { not: 'project' },
-                      ...(roles.includes('external_chat')
-                        ? { allowExternalUsers: true }
-                        : {}),
-                    },
+                    type: { not: 'project' },
+                    ...(roles.includes('external_chat')
+                      ? { allowExternalUsers: true }
+                      : {}),
                   },
-                  orderBy: { createdAt: 'desc' },
-                  take: 200,
-                  select: {
-                    room: {
-                      select: {
-                        id: true,
-                        type: true,
-                        name: true,
-                        isOfficial: true,
-                        projectId: true,
-                        groupId: true,
-                        allowExternalUsers: true,
-                        allowExternalIntegrations: true,
-                        createdAt: true,
-                        createdBy: true,
-                        updatedAt: true,
-                        updatedBy: true,
-                      },
-                    },
-                  },
-                })
-                .then((rows) => rows.map((row) => row.room))
-            : Promise.resolve([]),
-      ]);
+                },
+                orderBy: { createdAt: 'desc' },
+                take: 200,
+                select: { room: { select: roomSelect } },
+              })
+              .then((rows) => rows.map((row) => row.room))
+          : Promise.resolve([]);
+
+      const officialRoomsPromise =
+        !canSeeAllMeta && officialRoomIds.length > 0
+          ? prisma.chatRoom.findMany({
+              where: { id: { in: officialRoomIds }, deletedAt: null },
+              orderBy: { createdAt: 'desc' },
+              select: roomSelect,
+            })
+          : Promise.resolve([]);
+
+      const [projectRooms, metaRooms, memberRooms, officialRooms] =
+        await Promise.all([
+          projectRoomsPromise,
+          metaRoomsPromise,
+          memberRoomsPromise,
+          officialRoomsPromise,
+        ]);
+
+      const otherRoomsRaw = canSeeAllMeta
+        ? metaRooms
+        : [...memberRooms, ...officialRooms];
+
+      const otherRooms = (() => {
+        if (otherRoomsRaw.length <= 1) return otherRoomsRaw;
+        const seen = new Set<string>();
+        const merged: typeof otherRoomsRaw = [];
+        for (const room of otherRoomsRaw) {
+          if (seen.has(room.id)) continue;
+          seen.add(room.id);
+          merged.push(room);
+        }
+        merged.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+        return merged;
+      })();
 
       const projectMap = new Map(
         projects.map((project) => [
@@ -459,26 +566,39 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
             updatedBy: room.updatedBy || null,
           };
         }),
-        ...otherRooms.map((room) => ({
-          id: room.id,
-          type: room.type,
-          name: room.name,
-          isOfficial: room.isOfficial,
-          isMember: canSeeAllMeta ? memberRoleByRoom.has(room.id) : true,
-          memberRole: canSeeAllMeta
-            ? memberRoleByRoom.get(room.id) || null
-            : null,
-          projectId: null,
-          projectCode: null,
-          projectName: null,
-          groupId: room.groupId || null,
-          allowExternalUsers: room.allowExternalUsers,
-          allowExternalIntegrations: room.allowExternalIntegrations,
-          createdAt: room.createdAt,
-          createdBy: room.createdBy || null,
-          updatedAt: room.updatedAt,
-          updatedBy: room.updatedBy || null,
-        })),
+        ...otherRooms.map((room) => {
+          const deptGroupId =
+            typeof room.groupId === 'string' ? room.groupId.trim() : '';
+          const implicitAccess =
+            room.type === 'company'
+              ? canBootstrapOfficialRooms
+              : room.type === 'department'
+                ? deptGroupId !== '' && groupIdSet.has(deptGroupId)
+                : false;
+          const isMember = canSeeAllMeta
+            ? implicitAccess || memberRoleByRoom.has(room.id)
+            : true;
+          return {
+            id: room.id,
+            type: room.type,
+            name: room.name,
+            isOfficial: room.isOfficial,
+            isMember,
+            memberRole: canSeeAllMeta
+              ? memberRoleByRoom.get(room.id) || null
+              : null,
+            projectId: null,
+            projectCode: null,
+            projectName: null,
+            groupId: room.groupId || null,
+            allowExternalUsers: room.allowExternalUsers,
+            allowExternalIntegrations: room.allowExternalIntegrations,
+            createdAt: room.createdAt,
+            createdBy: room.createdBy || null,
+            updatedAt: room.updatedAt,
+            updatedBy: room.updatedBy || null,
+          };
+        }),
       ];
 
       return { items };
@@ -797,11 +917,15 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
       }
       const roles = req.user?.roles || [];
       const projectIds = req.user?.projectIds || [];
+      const groupIds = Array.isArray(req.user?.groupIds)
+        ? req.user.groupIds
+        : [];
       const access = await ensureChatRoomContentAccess({
         roomId,
         userId,
         roles,
         projectIds,
+        groupIds,
       });
       if (!access.ok) {
         return reply
@@ -809,9 +933,6 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
           .send({ error: access.reason });
       }
 
-      const groupIds = Array.isArray(req.user?.groupIds)
-        ? req.user.groupIds
-        : [];
       const members =
         access.room.type === 'project'
           ? []
@@ -869,11 +990,15 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
       }
       const roles = req.user?.roles || [];
       const projectIds = req.user?.projectIds || [];
+      const groupIds = Array.isArray(req.user?.groupIds)
+        ? req.user.groupIds
+        : [];
       const access = await ensureChatRoomContentAccess({
         roomId,
         userId,
         roles,
         projectIds,
+        groupIds,
       });
       if (!access.ok) {
         return reply
@@ -911,11 +1036,15 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
       }
       const roles = req.user?.roles || [];
       const projectIds = req.user?.projectIds || [];
+      const groupIds = Array.isArray(req.user?.groupIds)
+        ? req.user.groupIds
+        : [];
       const access = await ensureChatRoomContentAccess({
         roomId,
         userId,
         roles,
         projectIds,
+        groupIds,
       });
       if (!access.ok) {
         return reply
@@ -955,11 +1084,15 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
       }
       const roles = req.user?.roles || [];
       const projectIds = req.user?.projectIds || [];
+      const groupIds = Array.isArray(req.user?.groupIds)
+        ? req.user.groupIds
+        : [];
       const access = await ensureChatRoomContentAccess({
         roomId,
         userId,
         roles,
         projectIds,
+        groupIds,
       });
       if (!access.ok) {
         return reply
@@ -1044,11 +1177,15 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
       }
       const roles = req.user?.roles || [];
       const projectIds = req.user?.projectIds || [];
+      const groupIds = Array.isArray(req.user?.groupIds)
+        ? req.user.groupIds
+        : [];
       const access = await ensureChatRoomContentAccess({
         roomId,
         userId,
         roles,
         projectIds,
+        groupIds,
       });
       if (!access.ok) {
         return reply
@@ -1120,11 +1257,15 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
       }
       const roles = req.user?.roles || [];
       const projectIds = req.user?.projectIds || [];
+      const groupIds = Array.isArray(req.user?.groupIds)
+        ? req.user.groupIds
+        : [];
       const access = await ensureChatRoomContentAccess({
         roomId,
         userId,
         roles,
         projectIds,
+        groupIds,
       });
       if (!access.ok) {
         return reply
