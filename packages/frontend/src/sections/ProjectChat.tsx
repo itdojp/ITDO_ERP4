@@ -3,7 +3,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkBreaks from 'remark-breaks';
 import remarkGfm from 'remark-gfm';
 import { api, apiResponse, getAuthState } from '../api';
-import { useProjects } from '../hooks/useProjects';
+import { useChatRooms } from '../hooks/useChatRooms';
 
 type ChatMessage = {
   id: string;
@@ -147,7 +147,7 @@ export const ProjectChat: React.FC = () => {
   const auth = getAuthState();
   const defaultProjectId = auth?.projectIds?.[0] || 'demo-project';
   const [projectId, setProjectId] = useState(defaultProjectId);
-  const { projects, projectMessage } = useProjects({
+  const { rooms, roomMessage } = useChatRooms({
     selectedProjectId: projectId,
     onSelect: setProjectId,
   });
@@ -595,9 +595,13 @@ export const ProjectChat: React.FC = () => {
           onChange={(e) => setProjectId(e.target.value)}
         >
           <option value="">案件を選択</option>
-          {projects.map((project) => (
-            <option key={project.id} value={project.id}>
-              {project.code} / {project.name}
+          {rooms.map((room) => (
+            <option key={room.id} value={room.projectId || ''}>
+              {(() => {
+                const code = (room.projectCode || room.name || '').trim();
+                const name = (room.projectName || '').trim();
+                return name ? `${code} / ${name}` : code;
+              })()}
             </option>
           ))}
         </select>
@@ -629,7 +633,7 @@ export const ProjectChat: React.FC = () => {
           タグを変更した後は「読み込み」ボタンを押して絞り込みを適用します。
         </small>
       </div>
-      {projectMessage && <p style={{ color: '#dc2626' }}>{projectMessage}</p>}
+      {roomMessage && <p style={{ color: '#dc2626' }}>{roomMessage}</p>}
       {breakGlassEvents.length > 0 && (
         <div
           style={{
