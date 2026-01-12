@@ -17,7 +17,7 @@
 - **purchase_order_lines**: `id`, `purchase_order_id`, `description`, `quantity`, `unit_price`, `tax_rate`, `task_id?`, `expense_id?`。
 - **vendor_quotes**: `id`, `project_id`, `vendor_id`, `quote_no`, `issue_date`, `currency`, `total_amount`, `status`(received/approved/rejected), `document_url`。
 - **vendor_invoices**: `id`, `project_id`, `vendor_id`, `vendor_invoice_no`, `received_date`, `due_date`, `currency`, `total_amount`, `status`(received/pending_qa/approved/paid/rejected), `document_url`。
-- **time_entries**: `id`, `project_id`, `task_id?`, `user_id`, `work_date`, `minutes`, `work_type`, `location`, `notes`, `status`(draft/submitted/approved/rejected), `approved_by`, `approved_at`。
+- **time_entries**: `id`, `project_id`, `task_id?`, `user_id`, `work_date`, `minutes`, `work_type`, `location`, `notes`, `status`(submitted/approved/rejected), `approved_by`, `approved_at`。
 - **rate_cards**: `id`, `project_id?`, `role/work_type`, `unit_price`, `valid_from/to`, `currency`。
 - **expenses**: `id`, `project_id`, `user_id`, `category`, `amount`, `currency`, `incurred_on`, `is_shared`(共通経費), `status`(draft/pending_qa/pending_exec/approved/rejected), `receipt_url?`。
 - **leave_requests**: `id`, `user_id`, `leave_type`, `start_date`, `end_date`, `status`(draft/pending_manager/approved/rejected), `hours`, `notes`。
@@ -63,19 +63,23 @@
 - Vendor Docs
   - `POST /vendor-quotes` {project_id, vendor_id, quote_no?, total_amount, currency, issue_date, document_url}
   - `POST /vendor-invoices` {project_id, vendor_id, vendor_invoice_no?, total_amount, currency, received_date, due_date, document_url}
-  - `POST /vendor-invoices/:id/approve` / `POST /vendor-invoices/:id/pay`
+  - `POST /vendor-invoices/:id/approve`（承認フロー起動）
 - Time
   - `POST /time-entries` {project_id, task_id?, work_date, minutes, work_type, location, notes}
-  - `POST /time-entries/:id/submit` / `POST /time-entries/:id/approve`
+  - `PATCH /time-entries/:id` 更新（重要項目変更は承認フロー起動）
   - `GET /reports/time` filters {user, group, project, period}
 - Reports
   - `GET /reports/delivery-due` filters {from, to, project_id}
 - Expense
   - `POST /expenses` {project_id, category, amount, currency, incurred_on, is_shared, receipt_url?}
-  - `POST /expenses/:id/submit` / `POST /expenses/:id/approve`
+  - `POST /expenses/:id/submit` → 承認フロー起動
 - Leave
   - `POST /leave-requests` {leave_type, start_date, end_date, hours?, notes}
-  - `POST /leave-requests/:id/submit` / `POST /leave-requests/:id/approve`
+  - `POST /leave-requests/:id/submit` → 承認フロー起動
+- Approvals
+  - `GET /approval-instances`（一覧/フィルタ）
+  - `POST /approval-instances/:id/act` {action: approve|reject, reason?}
+  - `POST /approval-instances/:id/cancel` {reason}
 - Alerts
   - `POST /alert-settings` {type, threshold, period, recipients, channels}
   - `GET /alerts`（発報履歴）

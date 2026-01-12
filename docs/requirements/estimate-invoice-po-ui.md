@@ -50,7 +50,7 @@
 ## 採番ルール
 - 見積/納品/請求: `PYYYY-MM-NNNN`（P=Q（見積/Quote）/D（納品）/I（請求））。
 - 仕入関連: `POYYYY-MM-NNNN` / `VQYYYY-MM-NNNN` / `VIYYYY-MM-NNNN` を想定。
-- 採番タイミング: submit 時に採番（draft では空で可）。
+- 採番タイミング: ドラフト作成時に採番（draft でも番号あり）。取消/却下/キャンセルも履歴として残す前提。
 
 ## 承認ルールとの接続
 - approval_rules の conditions に含まれる isRecurring と amount でスキップ判定。
