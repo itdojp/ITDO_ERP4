@@ -458,6 +458,7 @@ export const RoomChat: React.FC = () => {
 
   useEffect(() => {
     if (!roomId) return;
+    setSummary('');
     loadMessages().catch(() => undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roomId]);
