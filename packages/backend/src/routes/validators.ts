@@ -411,6 +411,35 @@ export const projectChatSummarySchema = {
   ),
 };
 
+export const chatRoomCreateSchema = {
+  body: Type.Object(
+    {
+      type: Type.Union([Type.Literal('private_group'), Type.Literal('dm')]),
+      name: Type.Optional(Type.String({ minLength: 1, maxLength: 80 })),
+      memberUserIds: Type.Optional(
+        Type.Array(Type.String({ minLength: 1 }), {
+          minItems: 1,
+          maxItems: 200,
+        }),
+      ),
+      partnerUserId: Type.Optional(Type.String({ minLength: 1 })),
+    },
+    { additionalProperties: false },
+  ),
+};
+
+export const chatRoomMemberAddSchema = {
+  body: Type.Object(
+    {
+      userIds: Type.Array(Type.String({ minLength: 1 }), {
+        minItems: 1,
+        maxItems: 200,
+      }),
+    },
+    { additionalProperties: false },
+  ),
+};
+
 export const chatBreakGlassRequestSchema = {
   body: Type.Object(
     {
@@ -720,4 +749,14 @@ export const integrationSettingSchema = {
 
 export const integrationSettingPatchSchema = {
   body: Type.Partial(integrationSettingSchema.body),
+};
+
+export const chatSettingPatchSchema = {
+  body: Type.Object(
+    {
+      allowUserPrivateGroupCreation: Type.Optional(Type.Boolean()),
+      allowDmCreation: Type.Optional(Type.Boolean()),
+    },
+    { additionalProperties: false },
+  ),
 };

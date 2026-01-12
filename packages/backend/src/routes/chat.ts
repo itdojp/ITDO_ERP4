@@ -7,11 +7,8 @@ import {
   projectChatSummarySchema,
 } from './validators.js';
 import { prisma } from '../services/db.js';
-import {
-  hasProjectAccess,
-  requireProjectAccess,
-  requireRole,
-} from '../services/rbac.js';
+import { requireProjectAccess, requireRole } from '../services/rbac.js';
+import { ensureChatRoomContentAccess } from '../services/chatRoomAccess.js';
 import { auditContextFromRequest, logAudit } from '../services/audit.js';
 import {
   openAttachment,
@@ -918,21 +915,34 @@ export async function registerChatRoutes(app: FastifyInstance) {
         });
       }
 
-      const roles = req.user?.roles || [];
-      const projectIds = req.user?.projectIds || [];
-      if (!hasProjectAccess(roles, projectIds, requestItem.roomId)) {
-        return reply.status(403).send({
-          error: {
-            code: 'FORBIDDEN_PROJECT',
-            message: 'Access to this project is forbidden',
-          },
-        });
-      }
-
       const userId = req.user?.userId;
       if (!userId) {
         return reply.status(400).send({
           error: { code: 'MISSING_USER_ID', message: 'user id is required' },
+        });
+      }
+
+      const roles = req.user?.roles || [];
+      const projectIds = req.user?.projectIds || [];
+      const access = await ensureChatRoomContentAccess({
+        roomId: requestItem.roomId,
+        userId,
+        roles,
+        projectIds,
+      });
+      if (!access.ok) {
+        return reply.status(access.reason === 'not_found' ? 404 : 403).send({
+          error: {
+            code:
+              access.reason === 'not_found'
+                ? 'NOT_FOUND'
+                : access.reason === 'forbidden_project'
+                  ? 'FORBIDDEN_PROJECT'
+                  : access.reason === 'forbidden_external_room'
+                    ? 'FORBIDDEN_EXTERNAL_ROOM'
+                    : 'FORBIDDEN_ROOM_MEMBER',
+            message: 'Access to this room is forbidden',
+          },
         });
       }
       const requiredUserIds = normalizeStringArray(
@@ -989,20 +999,34 @@ export async function registerChatRoutes(app: FastifyInstance) {
           error: { code: 'NOT_FOUND', message: 'Message not found' },
         });
       }
-      const roles = req.user?.roles || [];
-      const projectIds = req.user?.projectIds || [];
-      if (!hasProjectAccess(roles, projectIds, message.roomId)) {
-        return reply.status(403).send({
-          error: {
-            code: 'FORBIDDEN_PROJECT',
-            message: 'Access to this project is forbidden',
-          },
-        });
-      }
       const userId = req.user?.userId;
       if (!userId) {
         return reply.status(400).send({
           error: { code: 'MISSING_USER_ID', message: 'user id is required' },
+        });
+      }
+
+      const roles = req.user?.roles || [];
+      const projectIds = req.user?.projectIds || [];
+      const access = await ensureChatRoomContentAccess({
+        roomId: message.roomId,
+        userId,
+        roles,
+        projectIds,
+      });
+      if (!access.ok) {
+        return reply.status(access.reason === 'not_found' ? 404 : 403).send({
+          error: {
+            code:
+              access.reason === 'not_found'
+                ? 'NOT_FOUND'
+                : access.reason === 'forbidden_project'
+                  ? 'FORBIDDEN_PROJECT'
+                  : access.reason === 'forbidden_external_room'
+                    ? 'FORBIDDEN_EXTERNAL_ROOM'
+                    : 'FORBIDDEN_ROOM_MEMBER',
+            message: 'Access to this room is forbidden',
+          },
         });
       }
       const trimmedEmoji = body.emoji.trim();
@@ -1073,20 +1097,34 @@ export async function registerChatRoutes(app: FastifyInstance) {
           error: { code: 'NOT_FOUND', message: 'Message not found' },
         });
       }
-      const roles = req.user?.roles || [];
-      const projectIds = req.user?.projectIds || [];
-      if (!hasProjectAccess(roles, projectIds, message.roomId)) {
-        return reply.status(403).send({
-          error: {
-            code: 'FORBIDDEN_PROJECT',
-            message: 'Access to this project is forbidden',
-          },
-        });
-      }
       const userId = req.user?.userId;
       if (!userId) {
         return reply.status(400).send({
           error: { code: 'MISSING_USER_ID', message: 'user id is required' },
+        });
+      }
+
+      const roles = req.user?.roles || [];
+      const projectIds = req.user?.projectIds || [];
+      const access = await ensureChatRoomContentAccess({
+        roomId: message.roomId,
+        userId,
+        roles,
+        projectIds,
+      });
+      if (!access.ok) {
+        return reply.status(access.reason === 'not_found' ? 404 : 403).send({
+          error: {
+            code:
+              access.reason === 'not_found'
+                ? 'NOT_FOUND'
+                : access.reason === 'forbidden_project'
+                  ? 'FORBIDDEN_PROJECT'
+                  : access.reason === 'forbidden_external_room'
+                    ? 'FORBIDDEN_EXTERNAL_ROOM'
+                    : 'FORBIDDEN_ROOM_MEMBER',
+            message: 'Access to this room is forbidden',
+          },
         });
       }
 
@@ -1159,7 +1197,10 @@ export async function registerChatRoutes(app: FastifyInstance) {
         targetId: attachment.id,
         metadata: {
           messageId: message.id,
-          projectId: message.roomId,
+          roomId: message.roomId,
+          roomType: access.room.type,
+          projectId:
+            access.room.type === 'project' ? message.roomId : undefined,
           provider: stored.provider,
           sizeBytes: stored.sizeBytes,
           mimeType: stored.mimeType,
@@ -1184,13 +1225,32 @@ export async function registerChatRoutes(app: FastifyInstance) {
           .status(404)
           .send({ error: { code: 'NOT_FOUND', message: 'Not found' } });
       }
+      const userId = req.user?.userId;
+      if (!userId) {
+        return reply.status(400).send({
+          error: { code: 'MISSING_USER_ID', message: 'user id is required' },
+        });
+      }
       const roles = req.user?.roles || [];
       const projectIds = req.user?.projectIds || [];
-      if (!hasProjectAccess(roles, projectIds, attachment.message.roomId)) {
-        return reply.status(403).send({
+      const access = await ensureChatRoomContentAccess({
+        roomId: attachment.message.roomId,
+        userId,
+        roles,
+        projectIds,
+      });
+      if (!access.ok) {
+        return reply.status(access.reason === 'not_found' ? 404 : 403).send({
           error: {
-            code: 'FORBIDDEN_PROJECT',
-            message: 'Access to this project is forbidden',
+            code:
+              access.reason === 'not_found'
+                ? 'NOT_FOUND'
+                : access.reason === 'forbidden_project'
+                  ? 'FORBIDDEN_PROJECT'
+                  : access.reason === 'forbidden_external_room'
+                    ? 'FORBIDDEN_EXTERNAL_ROOM'
+                    : 'FORBIDDEN_ROOM_MEMBER',
+            message: 'Access to this room is forbidden',
           },
         });
       }
@@ -1222,7 +1282,12 @@ export async function registerChatRoutes(app: FastifyInstance) {
         targetId: attachment.id,
         metadata: {
           messageId: attachment.messageId,
-          projectId: attachment.message.roomId,
+          roomId: attachment.message.roomId,
+          roomType: access.room.type,
+          projectId:
+            access.room.type === 'project'
+              ? attachment.message.roomId
+              : undefined,
           provider: attachment.provider,
         } as Prisma.InputJsonValue,
         ...auditContextFromRequest(req),

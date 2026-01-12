@@ -621,3 +621,50 @@ test('frontend smoke chat hr analytics @extended', async ({ page }) => {
   });
   await mentionPage.close();
 });
+
+test('frontend smoke room chat (private_group/dm) @extended', async ({
+  page,
+}) => {
+  test.setTimeout(180_000);
+  await prepare(page);
+
+  const roomChatSection = page
+    .locator('h2', { hasText: 'チャット（private_group / DM）' })
+    .locator('..');
+  await roomChatSection.scrollIntoViewIfNeeded();
+
+  const run = runId();
+  const groupName = `e2e-private-${run}`;
+
+  await roomChatSection.getByLabel('private_group 名').fill(groupName);
+  await roomChatSection.getByRole('button', { name: 'private_group作成' }).click();
+
+  const roomSelect = roomChatSection.getByLabel('ルーム');
+  await expect(roomSelect).not.toHaveValue('', { timeout: actionTimeout });
+  await expect(roomSelect.locator('option:checked')).toContainText(groupName);
+
+  const messageText = `E2E room message ${run}`;
+  await roomChatSection.getByPlaceholder('Markdownで入力').fill(messageText);
+  await roomChatSection.getByRole('button', { name: '送信' }).click();
+  await expect(roomChatSection.getByText(messageText)).toBeVisible({
+    timeout: actionTimeout,
+  });
+
+  const previousRoomId = await roomSelect.inputValue();
+  const partnerUserId = `e2e-partner-${run}`;
+  await roomChatSection.getByLabel('DM 相手(userId)').fill(partnerUserId);
+  await roomChatSection.getByRole('button', { name: 'DM作成' }).click();
+  await expect
+    .poll(() => roomSelect.inputValue(), { timeout: actionTimeout })
+    .not.toBe(previousRoomId);
+  await expect(roomSelect.locator('option:checked')).toContainText(partnerUserId);
+
+  const dmText = `E2E dm message ${run}`;
+  await roomChatSection.getByPlaceholder('Markdownで入力').fill(dmText);
+  await roomChatSection.getByRole('button', { name: '送信' }).click();
+  await expect(roomChatSection.getByText(dmText)).toBeVisible({
+    timeout: actionTimeout,
+  });
+
+  await captureSection(roomChatSection, '14-room-chat.png');
+});

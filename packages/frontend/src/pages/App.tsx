@@ -10,6 +10,7 @@ import { Reports } from '../sections/Reports';
 import { AdminSettings } from '../sections/AdminSettings';
 import { Approvals } from '../sections/Approvals';
 import { ProjectChat } from '../sections/ProjectChat';
+import { RoomChat } from '../sections/RoomChat';
 import { ChatBreakGlass } from '../sections/ChatBreakGlass';
 import { MasterData } from '../sections/MasterData';
 import { Projects } from '../sections/Projects';
@@ -58,6 +59,9 @@ export const App: React.FC = () => {
       </div>
       <div className="card">
         <ProjectChat />
+      </div>
+      <div className="card">
+        <RoomChat />
       </div>
       <div className="card">
         <HRAnalytics />

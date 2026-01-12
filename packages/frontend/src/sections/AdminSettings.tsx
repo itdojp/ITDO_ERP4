@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '../api';
+import { ChatSettingsCard } from './ChatSettingsCard';
 
 type AlertSetting = {
   id: string;
@@ -876,6 +877,7 @@ export const AdminSettings: React.FC = () => {
       <h2>Settings</h2>
       {message && <p>{message}</p>}
       <div className="list" style={{ display: 'grid', gap: 12 }}>
+        <ChatSettingsCard />
         <div className="card" style={{ padding: 12 }}>
           <strong>アラート設定（簡易モック）</strong>
           <div className="row" style={{ marginTop: 8 }}>
