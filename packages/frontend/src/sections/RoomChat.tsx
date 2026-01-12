@@ -168,6 +168,7 @@ export const RoomChat: React.FC = () => {
   const [isSummarizingExternal, setIsSummarizingExternal] = useState(false);
 
   const [body, setBody] = useState('');
+  const [showPreview, setShowPreview] = useState(false);
   const [tags, setTags] = useState('');
   const [ackTargets, setAckTargets] = useState('');
   const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
@@ -685,6 +686,36 @@ export const RoomChat: React.FC = () => {
         <div className="card" style={{ padding: 12, marginTop: 12 }}>
           <strong>投稿</strong>
           {message && <div style={{ marginTop: 8 }}>{message}</div>}
+          <label
+            className="row"
+            style={{ gap: 6, marginTop: 8, alignItems: 'center' }}
+          >
+            <input
+              type="checkbox"
+              checked={showPreview}
+              onChange={(e) => setShowPreview(e.target.checked)}
+              disabled={isLoading}
+            />
+            プレビュー
+          </label>
+          {showPreview && (
+            <div
+              role="region"
+              aria-label="Markdownプレビュー"
+              style={{
+                marginTop: 8,
+                padding: 10,
+                border: '1px solid #e2e8f0',
+                borderRadius: 8,
+                background: '#f8fafc',
+              }}
+            >
+              <div style={{ fontSize: 12, color: '#64748b' }}>プレビュー</div>
+              <div style={{ marginTop: 6 }}>
+                {renderMessageBody(body.trim() ? body : '（空）')}
+              </div>
+            </div>
+          )}
           <div style={{ display: 'grid', gap: 8, marginTop: 8 }}>
             <textarea
               value={body}
