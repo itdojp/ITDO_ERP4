@@ -69,11 +69,14 @@ DB上は `type` として表現し、ポリシー（公式/私的、外部連携
 ## アクセス制御（案）
 - **ルームの存在（メタ情報）**
   - admin/mgmt/exec は全ルームのメタ情報を参照可能（会社の「認知」）
-  - user は自分が参加しているルームのみ
+  - user/hr は自分が参加しているルーム + 全社/部門ルーム（groupIds由来）を参照可能
   - external_chat は「許可されたルームのみ」
 - **メッセージ閲覧**
-  - 公式ルーム: メンバーは閲覧可能（projectルームは project member と同等扱いを想定）
-  - 私的ルーム/DM: メンバーのみ閲覧可能、会社側は break-glass 経由でのみ閲覧可能
+  - project: ProjectMember と同等扱い（room member は持たない）
+  - company: internal role（admin/mgmt/exec/user/hr）なら閲覧/投稿可（room member 不要）
+  - department: `groupIds` に `ChatRoom.groupId` が含まれる場合に閲覧/投稿可（room member 不要）
+  - private_group/dm: room member のみ閲覧/投稿可
+  - break-glass: mgmt/exec は申請 + 二重承認で私的ルーム/DMも監査閲覧可能
 
 ## 移行戦略（推奨）
 **推奨: 新テーブル導入 + project chat を段階移行**

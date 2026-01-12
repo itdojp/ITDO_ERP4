@@ -924,11 +924,15 @@ export async function registerChatRoutes(app: FastifyInstance) {
 
       const roles = req.user?.roles || [];
       const projectIds = req.user?.projectIds || [];
+      const groupIds = Array.isArray(req.user?.groupIds)
+        ? req.user.groupIds
+        : [];
       const access = await ensureChatRoomContentAccess({
         roomId: requestItem.roomId,
         userId,
         roles,
         projectIds,
+        groupIds,
       });
       if (!access.ok) {
         return reply.status(access.reason === 'not_found' ? 404 : 403).send({
@@ -1008,11 +1012,15 @@ export async function registerChatRoutes(app: FastifyInstance) {
 
       const roles = req.user?.roles || [];
       const projectIds = req.user?.projectIds || [];
+      const groupIds = Array.isArray(req.user?.groupIds)
+        ? req.user.groupIds
+        : [];
       const access = await ensureChatRoomContentAccess({
         roomId: message.roomId,
         userId,
         roles,
         projectIds,
+        groupIds,
       });
       if (!access.ok) {
         return reply.status(access.reason === 'not_found' ? 404 : 403).send({
@@ -1106,11 +1114,15 @@ export async function registerChatRoutes(app: FastifyInstance) {
 
       const roles = req.user?.roles || [];
       const projectIds = req.user?.projectIds || [];
+      const groupIds = Array.isArray(req.user?.groupIds)
+        ? req.user.groupIds
+        : [];
       const access = await ensureChatRoomContentAccess({
         roomId: message.roomId,
         userId,
         roles,
         projectIds,
+        groupIds,
       });
       if (!access.ok) {
         return reply.status(access.reason === 'not_found' ? 404 : 403).send({
@@ -1233,11 +1245,15 @@ export async function registerChatRoutes(app: FastifyInstance) {
       }
       const roles = req.user?.roles || [];
       const projectIds = req.user?.projectIds || [];
+      const groupIds = Array.isArray(req.user?.groupIds)
+        ? req.user.groupIds
+        : [];
       const access = await ensureChatRoomContentAccess({
         roomId: attachment.message.roomId,
         userId,
         roles,
         projectIds,
+        groupIds,
       });
       if (!access.ok) {
         return reply.status(access.reason === 'not_found' ? 404 : 403).send({

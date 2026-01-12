@@ -457,7 +457,7 @@ export const RoomChat: React.FC = () => {
 
   return (
     <div>
-      <h2>チャット（private_group / DM）</h2>
+      <h2>チャット（全社/部門/private_group/DM）</h2>
       {roomMessage && <p>{roomMessage}</p>}
       <div className="row" style={{ gap: 12, flexWrap: 'wrap' }}>
         <label>

@@ -629,17 +629,41 @@ test('frontend smoke room chat (private_group/dm) @extended', async ({
   await prepare(page);
 
   const roomChatSection = page
-    .locator('h2', { hasText: 'チャット（private_group / DM）' })
+    .locator('h2', { hasText: 'チャット（全社/部門/private_group/DM）' })
     .locator('..');
   await roomChatSection.scrollIntoViewIfNeeded();
 
   const run = runId();
+  const roomSelect = roomChatSection.getByLabel('ルーム');
+  await expect
+    .poll(() => roomSelect.locator('option').count(), { timeout: actionTimeout })
+    .toBeGreaterThan(1);
+  await expect(roomSelect.locator('option', { hasText: 'company: 全社' })).toHaveCount(1);
+  await expect(
+    roomSelect.locator('option', { hasText: 'department: mgmt' }),
+  ).toHaveCount(1);
+
+  await selectByLabelOrFirst(roomSelect, 'company: 全社');
+  const companyText = `E2E company message ${run}`;
+  await roomChatSection.getByPlaceholder('Markdownで入力').fill(companyText);
+  await roomChatSection.getByRole('button', { name: '送信' }).click();
+  await expect(roomChatSection.getByText(companyText)).toBeVisible({
+    timeout: actionTimeout,
+  });
+
+  await selectByLabelOrFirst(roomSelect, 'department: mgmt');
+  const departmentText = `E2E department message ${run}`;
+  await roomChatSection.getByPlaceholder('Markdownで入力').fill(departmentText);
+  await roomChatSection.getByRole('button', { name: '送信' }).click();
+  await expect(roomChatSection.getByText(departmentText)).toBeVisible({
+    timeout: actionTimeout,
+  });
+
   const groupName = `e2e-private-${run}`;
 
   await roomChatSection.getByLabel('private_group 名').fill(groupName);
   await roomChatSection.getByRole('button', { name: 'private_group作成' }).click();
 
-  const roomSelect = roomChatSection.getByLabel('ルーム');
   await expect(roomSelect).not.toHaveValue('', { timeout: actionTimeout });
   await expect(roomSelect.locator('option:checked')).toContainText(groupName);
 
