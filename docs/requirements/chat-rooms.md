@@ -62,6 +62,7 @@ DB上は `type` として表現し、ポリシー（公式/私的、外部連携
   - 既存の「確認メッセージ」（OK追跡）と同等
 
 補足
+- projectルーム（`type=project`）は **`roomId = projectId`** として扱う（`ChatRoom.id = Project.id`）。
 - 監査/改ざん検知・論理削除方針は `docs/requirements/project-chat.md` の方針を踏襲します。
 - break-glass 用のテーブルは別（#454）で設計/実装しますが、参照先は `roomId` とします。
 
@@ -108,4 +109,3 @@ DB上は `type` として表現し、ポリシー（公式/私的、外部連携
 - 公式ルームの作成/管理権限（project leader の範囲）
 - projectルームのメンバー同期（ProjectMemberの自動同期 vs room member の別管理）
 - break-glass の cooldown（MVPは0想定）
-

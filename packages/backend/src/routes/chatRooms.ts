@@ -74,6 +74,7 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
       if (missingProjects.length > 0) {
         await prisma.chatRoom.createMany({
           data: missingProjects.map((project) => ({
+            id: project.id,
             type: 'project',
             name: project.code,
             isOfficial: true,
