@@ -167,9 +167,6 @@ model Project {
   members                 ProjectMember[]
   tasks                   ProjectTask[]
   milestones              ProjectMilestone[]
-  chatMessages            ProjectChatMessage[]
-  chatAckRequests         ProjectChatAckRequest[]
-  chatReadStates          ProjectChatReadState[]
   notifications           AppNotification[]
   chatRooms               ChatRoom[]
   estimates               Estimate[]
@@ -237,89 +234,6 @@ model ProjectTask {
 
   @@index([projectId, deletedAt])
   @@index([parentTaskId, deletedAt])
-}
-
-model ProjectChatMessage {
-  id            String                  @id @default(uuid())
-  project       Project                 @relation(fields: [projectId], references: [id], onDelete: Restrict)
-  projectId     String
-  userId        String
-  body          String
-  tags          Json?
-  reactions     Json?
-  mentions      Json?
-  mentionsAll   Boolean                 @default(false)
-  ackRequest    ProjectChatAckRequest?
-  attachments   ProjectChatAttachment[]
-  createdAt     DateTime                @default(now())
-  createdBy     String?
-  updatedAt     DateTime                @updatedAt
-  updatedBy     String?
-  deletedAt     DateTime?
-  deletedReason String?
-
-  @@index([projectId, createdAt])
-  @@index([projectId, userId, mentionsAll, createdAt])
-}
-
-model ProjectChatAckRequest {
-  id              String             @id @default(uuid())
-  message         ProjectChatMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
-  messageId       String             @unique
-  project         Project            @relation(fields: [projectId], references: [id], onDelete: Restrict)
-  projectId       String
-  requiredUserIds Json
-  dueAt           DateTime?
-  createdAt       DateTime           @default(now())
-  createdBy       String?
-  acks            ProjectChatAck[]
-
-  @@index([projectId, createdAt])
-}
-
-model ProjectChatAck {
-  id        String                @id @default(uuid())
-  request   ProjectChatAckRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
-  requestId String
-  userId    String
-  ackedAt   DateTime              @default(now())
-
-  @@unique([requestId, userId])
-  @@index([userId])
-}
-
-model ProjectChatAttachment {
-  id            String             @id @default(uuid())
-  message       ProjectChatMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
-  messageId     String
-  provider      String
-  providerKey   String
-  sha256        String?
-  sizeBytes     Int?
-  mimeType      String?
-  originalName  String
-  createdAt     DateTime           @default(now())
-  createdBy     String?
-  deletedAt     DateTime?
-  deletedReason String?
-
-  @@unique([provider, providerKey])
-  @@index([messageId])
-  @@index([createdAt])
-}
-
-model ProjectChatReadState {
-  id         String   @id @default(uuid())
-  project    Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  projectId  String
-  userId     String
-  lastReadAt DateTime
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-
-  @@unique([projectId, userId])
-  @@index([userId])
-  @@index([projectId])
 }
 
 model AppNotification {

@@ -85,7 +85,7 @@ DB上は `type` として表現し、ポリシー（公式/私的、外部連携
 2) **Step 2: room API を追加（既存project chatは維持）【部分完了】**
    - `GET /chat-rooms`（一覧）（#465）
    - ProjectChat の案件選択を room一覧に切替（#469）
-   - ルーム作成/招待/DM は #434 の設計確定後に実装
+   - private_group/DM の作成/招待/room chat API（#479）
 
 3) **Step 3: project chat API を room に寄せる（互換を維持）【完了】**
    - 既存の `/projects/:projectId/chat-*` は `Chat*`（room-based）参照へ移行（#472）
@@ -95,15 +95,15 @@ DB上は `type` として表現し、ポリシー（公式/私的、外部連携
    - migration `20260112003555_add_chat_room_messages` で `ProjectChat*` → `Chat*` をコピー
    - `prisma migrate deploy` を使う環境で適用される（`prisma db push` はデータ移行を含まない）
 
-5) **Step 5: 旧ProjectChat* テーブルを凍結 → 廃止【残】**
-   - #475 で扱う（件数一致チェック、削除タイミング、最終削除のmigration）
+5) **Step 5: 旧ProjectChat* テーブルを凍結 → 廃止【完了】**
+   - 移行検証SQL: `scripts/checks/chat-migration-step5.sql`
+   - 削除migration: `20260112030000_drop_legacy_project_chat`（不整合がある場合は失敗する）
 
 ## 既存仕様との整合
 - メンション/未読/確認メッセージ/添付/通知/AI要約は「Room単位」で提供する想定です。
 - 既存の ProjectChat UI は「projectルームのフロント」として継続し、room UI（一覧/作成）は別画面として追加します。
 
 ## 未決定（後続で確定）
-- DMを許可するか（許可する場合も私的ルームとして同一ポリシー）
 - 公式ルームの作成/管理権限（project leader の範囲）
 - projectルームのメンバー同期（ProjectMemberの自動同期 vs room member の別管理）
 - break-glass の cooldown（MVPは0想定）
