@@ -56,6 +56,16 @@ export async function ensureChatRoomContentAccess(options: {
     if (hasProjectAccess(options.roles, options.projectIds, room.id)) {
       return { ok: true, room };
     }
+    if (isExternal && room.allowExternalUsers) {
+      const member = await prisma.chatRoomMember.findFirst({
+        where: { roomId: room.id, userId: options.userId, deletedAt: null },
+        select: { role: true },
+      });
+      if (!member) {
+        return { ok: false, reason: 'forbidden_room_member' };
+      }
+      return { ok: true, room, memberRole: member.role };
+    }
     return { ok: false, reason: 'forbidden_project' };
   }
 

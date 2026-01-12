@@ -8,6 +8,7 @@ import { auditContextFromRequest, logAudit } from '../services/audit.js';
 import {
   chatRoomCreateSchema,
   chatRoomMemberAddSchema,
+  chatRoomPatchSchema,
   projectChatAckRequestSchema,
   projectChatMessageSchema,
   projectChatSummarySchema,
@@ -374,13 +375,42 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
         : [];
 
       const canSeeAllProjects = canSeeAllMeta;
+      const isExternal = roles.includes('external_chat');
+      const invitedProjectIds =
+        !canSeeAllProjects && isExternal && userId
+          ? Array.from(
+              new Set(
+                (
+                  await prisma.chatRoomMember.findMany({
+                    where: {
+                      userId,
+                      deletedAt: null,
+                      room: {
+                        deletedAt: null,
+                        type: 'project',
+                        allowExternalUsers: true,
+                      },
+                    },
+                    take: 200,
+                    select: { roomId: true },
+                  })
+                )
+                  .map((row) => row.roomId)
+                  .filter(Boolean),
+              ),
+            )
+          : [];
+
+      const effectiveProjectIds = canSeeAllProjects
+        ? []
+        : Array.from(new Set([...projectIds, ...invitedProjectIds]));
 
       const projects =
-        canSeeAllProjects || projectIds.length > 0
+        canSeeAllProjects || effectiveProjectIds.length > 0
           ? await prisma.project.findMany({
               where: canSeeAllProjects
                 ? { deletedAt: null }
-                : { id: { in: projectIds }, deletedAt: null },
+                : { id: { in: effectiveProjectIds }, deletedAt: null },
               orderBy: { createdAt: 'desc' },
               take: 200,
               select: {
@@ -614,6 +644,142 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
     },
   );
 
+  app.patch(
+    '/chat-rooms/:roomId',
+    { preHandler: requireRole(['admin', 'mgmt']), schema: chatRoomPatchSchema },
+    async (req, reply) => {
+      const userId = req.user?.userId;
+      if (!userId) {
+        return reply.status(400).send({
+          error: { code: 'MISSING_USER_ID', message: 'user id is required' },
+        });
+      }
+
+      const { roomId } = req.params as { roomId: string };
+      const body = req.body as {
+        name?: string;
+        allowExternalUsers?: boolean;
+        allowExternalIntegrations?: boolean;
+      };
+
+      const room = await prisma.chatRoom.findUnique({
+        where: { id: roomId },
+        select: {
+          id: true,
+          type: true,
+          name: true,
+          isOfficial: true,
+          allowExternalUsers: true,
+          allowExternalIntegrations: true,
+          deletedAt: true,
+        },
+      });
+      if (!room || room.deletedAt) {
+        return reply.status(404).send({
+          error: { code: 'NOT_FOUND', message: 'Room not found' },
+        });
+      }
+      if (room.type === 'dm') {
+        return reply.status(400).send({
+          error: { code: 'INVALID_ROOM_TYPE', message: 'dm cannot be updated' },
+        });
+      }
+
+      const update: Prisma.ChatRoomUpdateInput = { updatedBy: userId };
+      const changes: Record<string, { from: unknown; to: unknown }> = {};
+
+      if (body.name !== undefined) {
+        const nextName = typeof body.name === 'string' ? body.name.trim() : '';
+        if (!nextName) {
+          return reply.status(400).send({
+            error: { code: 'INVALID_NAME', message: 'name is required' },
+          });
+        }
+        if (!room.isOfficial) {
+          return reply.status(400).send({
+            error: {
+              code: 'INVALID_ROOM',
+              message: 'non-official room name cannot be updated by this API',
+            },
+          });
+        }
+        if (room.type === 'project') {
+          return reply.status(400).send({
+            error: {
+              code: 'INVALID_ROOM_TYPE',
+              message: 'project room name cannot be updated',
+            },
+          });
+        }
+        if (nextName !== room.name) {
+          update.name = nextName;
+          changes.name = { from: room.name, to: nextName };
+        }
+      }
+
+      if (body.allowExternalUsers !== undefined) {
+        if (body.allowExternalUsers && !room.isOfficial) {
+          return reply.status(400).send({
+            error: {
+              code: 'INVALID_ROOM',
+              message:
+                'allowExternalUsers can be enabled only for official rooms',
+            },
+          });
+        }
+        if (body.allowExternalUsers !== room.allowExternalUsers) {
+          update.allowExternalUsers = body.allowExternalUsers;
+          changes.allowExternalUsers = {
+            from: room.allowExternalUsers,
+            to: body.allowExternalUsers,
+          };
+        }
+      }
+
+      if (body.allowExternalIntegrations !== undefined) {
+        if (body.allowExternalIntegrations && !room.isOfficial) {
+          return reply.status(400).send({
+            error: {
+              code: 'INVALID_ROOM',
+              message:
+                'allowExternalIntegrations can be enabled only for official rooms',
+            },
+          });
+        }
+        if (body.allowExternalIntegrations !== room.allowExternalIntegrations) {
+          update.allowExternalIntegrations = body.allowExternalIntegrations;
+          changes.allowExternalIntegrations = {
+            from: room.allowExternalIntegrations,
+            to: body.allowExternalIntegrations,
+          };
+        }
+      }
+
+      if (Object.keys(changes).length === 0) {
+        return room;
+      }
+
+      const updated = await prisma.chatRoom.update({
+        where: { id: room.id },
+        data: update,
+      });
+
+      await logAudit({
+        action: 'chat_room_updated',
+        targetTable: 'chat_rooms',
+        targetId: room.id,
+        metadata: {
+          roomId: room.id,
+          roomType: room.type,
+          changes,
+        } as Prisma.InputJsonValue,
+        ...auditContextFromRequest(req),
+      });
+
+      return updated;
+    },
+  );
+
   app.post(
     '/chat-rooms',
     { preHandler: requireRole(chatRoles), schema: chatRoomCreateSchema },
@@ -843,32 +1009,54 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
       const { roomId } = req.params as { roomId: string };
       const room = await prisma.chatRoom.findUnique({
         where: { id: roomId },
-        select: { id: true, type: true, deletedAt: true },
+        select: { id: true, type: true, isOfficial: true, deletedAt: true },
       });
       if (!room || room.deletedAt) {
         return reply.status(404).send({
           error: { code: 'NOT_FOUND', message: 'Room not found' },
         });
       }
-      if (room.type !== 'private_group') {
+      if (room.type === 'dm') {
         return reply.status(400).send({
           error: {
             code: 'INVALID_ROOM_TYPE',
-            message: 'room type is not private_group',
+            message: 'dm cannot add members',
           },
         });
       }
-      const membership = await prisma.chatRoomMember.findFirst({
-        where: { roomId: room.id, userId, deletedAt: null },
-        select: { role: true },
-      });
-      if (!membership || !['owner', 'admin'].includes(membership.role)) {
-        return reply.status(403).send({
-          error: {
-            code: 'FORBIDDEN_ROOM_MEMBER',
-            message: 'only room owner/admin can manage members',
-          },
+
+      if (room.type === 'private_group') {
+        const membership = await prisma.chatRoomMember.findFirst({
+          where: { roomId: room.id, userId, deletedAt: null },
+          select: { role: true },
         });
+        if (!membership || !['owner', 'admin'].includes(membership.role)) {
+          return reply.status(403).send({
+            error: {
+              code: 'FORBIDDEN_ROOM_MEMBER',
+              message: 'only room owner/admin can manage members',
+            },
+          });
+        }
+      } else {
+        const canManageOfficialMembers =
+          roles.includes('admin') || roles.includes('mgmt');
+        if (!canManageOfficialMembers) {
+          return reply.status(403).send({
+            error: {
+              code: 'FORBIDDEN_ROLE',
+              message: 'only admin/mgmt can manage official room members',
+            },
+          });
+        }
+        if (!room.isOfficial) {
+          return reply.status(400).send({
+            error: {
+              code: 'INVALID_ROOM',
+              message: 'only official rooms can accept admin-managed members',
+            },
+          });
+        }
       }
 
       const body = req.body as { userIds: string[] };

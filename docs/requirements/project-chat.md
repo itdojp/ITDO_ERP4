@@ -29,6 +29,7 @@
 - それ以外のロールは `projectIds` に含まれる案件のみアクセス可能
 - `external_chat` はチャットのみ利用可（他機能は不可）
   - 参加可能なルームは「許可されたルーム」のみ（招待/許可制）
+    - MVP: `allowExternalUsers=true` かつ `ChatRoomMember` 登録されたルーム（project/company/department）に限定
   - DM は禁止
 
 ## 決定事項（見直し反映）
