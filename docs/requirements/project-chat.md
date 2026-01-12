@@ -7,6 +7,7 @@
 
 ## 現状（実装済み）
 - プロジェクト単位の簡易グループチャット（room-based: `ChatRoom(type=project)` + `ChatMessage`）
+- 公式ルーム（全社/部門）+ ルーム設定（外部ユーザ許可/外部連携許可）
 - private_group/DM（room-based: `ChatRoom(type=private_group/dm)` + `ChatMessage`）
 - 投稿/閲覧/タグ/リアクション/ページング
 - メンション（ユーザ/グループ/@all）+ @all の投稿制限
@@ -17,8 +18,7 @@
 - 手動要約スタブ（UI: project/room）
 
 ## 未実装（後続）
-- ルーム種別拡張（部門/全社）とガバナンス実装（#434）
-- ガバナンス（公式/私的）と break-glass（#434/#454/#455）
+- 外部LLM連携（公式ルームのみ/監査ログ必須）(#483)
 - 検索（チャットのみ/ERP横断）とインデックス
 - 通知チャネルの拡張（メール/Push/外部連携）
 - リアルタイム配信（WebSocket等）
