@@ -1,0 +1,74 @@
+# GRC/監査機能強化 要件整理（初版）
+
+## 目的
+- 監査対応に必要な証跡を整備し、改ざん防止と可観測性を高める。
+- 権限棚卸しとアクセスレビューを運用で回せる状態にする。
+
+## 対象範囲（案）
+- 監査ログの拡充（閲覧/編集/承認/エクスポート）
+- 監査レポートの出力（期間/対象/担当）
+- 権限棚卸し（ロール/グループ/プロジェクト権限）
+- データ保持/削除ポリシー
+
+## PoCスコープ（Phase 3）
+- 監査ログの検索/CSV出力（期間/ユーザ/アクション/対象）
+- 監査ログ出力の操作自体を監査ログに記録
+- アクセス棚卸しスナップショットの出力（ユーザ/グループ/状態）
+- 監査ログの改ざん検知（ハッシュチェーン）は次フェーズに持ち越し
+- 権限は admin/mgmt/exec を対象（PoC）
+
+## 監査ログ（案）
+- 記録項目: who/when/action/target/from/to/reason/actorGroup/role/requestId/ip/source
+- 保存: DB保存、改ざん検知のためのハッシュチェーン検討
+- 出力: 期間指定のCSV/PDF
+
+## PoC API（案）
+- `GET /audit-logs`
+  - query: `from`, `to`, `userId`, `action`, `targetTable`, `targetId`, `reasonCode`, `reasonText`, `source`, `actorRole`, `actorGroupId`, `requestId`, `format=csv|json`, `limit`
+  - json: `{ items: AuditLog[] }`
+  - csv: `id,action,userId,actorRole,actorGroupId,requestId,ipAddress,userAgent,source,reasonCode,reasonText,targetTable,targetId,createdAt,metadata`
+- `GET /access-reviews/snapshot`
+  - query: `format=csv|json`
+  - json: `{ users, groups, memberships }`
+    - users: `{ id, userName, displayName, department, active }`
+    - groups: `{ id, displayName, active }`
+    - memberships: `{ userId, groupId }`
+  - csv: `userId,userName,displayName,department,active,groupId,groupName,groupActive`
+
+## PoCでの監査ログ記録
+- `audit_log_exported` / `access_review_exported` を記録
+- metadata に `filters` / `format` / `rowCount` を保持
+## アクセスレビュー（案）
+- 定期レビュー（四半期）
+- 変更履歴の可視化
+- レビュー結果の記録
+
+## 非機能/運用（案）
+- 保持期間の法的要件の整理
+- マスキング/秘匿の範囲
+- 監査対応フロー（依頼→抽出→提出）
+- 日次エクスポート（`scripts/export-audit-logs.ts`）とハッシュチェーンの運用
+  - 出力先: `data/audit-exports/`（CSV/JSON/sha256）
+  - 連鎖: `audit-logs-YYYY-MM-DD.sha256.json` の `chainHash` を前日と連結
+  - 外部保全: WORM/S3 Object Lock などで保全
+
+## 性能/保持方針（暫定）
+- オンライン保持: 13か月（暫定。法務/監査要件で見直す）
+- アーカイブ: 日次エクスポートを 7年保管（ローカル+別ホスト退避）。削除は当面手動
+- インデックス: `createdAt` / `userId + createdAt` / `action + createdAt` を追加
+- パーティション: `createdAt` の月次パーティションを次フェーズで検討
+  - 目安: 検索レイテンシがSLA超過、またはログ件数が目標上限に近づいた時点で移行
+
+## 決定事項（暫定）
+- 法令準拠: 当面は日本（JP）の要件のみを対象（他地域は後続）。
+- 外部保全: 日次エクスポート + WORM/S3 Object Lock を推奨（必須化は次フェーズ）。
+- レポート形式: CSV + JSON（ハッシュチェーン付き）を標準。PDF は後続。
+
+## 未決定事項
+- なし（MVP方針は上記にて確定）
+
+## 次アクション
+- 監査対象イベントの棚卸し
+- 保持期間/出力要件の整理
+- アクセスレビューの運用案作成
+- PoC実装（監査ログ出力/アクセス棚卸し）

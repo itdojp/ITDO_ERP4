@@ -23,4 +23,13 @@ ITDO_ERP4/
 - [ ] Project-Open のカスタマイズ把握（タイムシート、請求、権限、通知）を `docs/legacy/` に整理
 - [ ] 新アーキテクチャ仮案の決定と初期サービス（例：Timesheet API）の PoC 着手
 
+## 手動確認（PoC）
+フロント（ダッシュボード→日報→工数→請求）
+- ダッシュボード: アラートカードが最新5件表示され、`すべて表示`で切替できる
+- 日報/ウェルビーイング: Good/Not Good 送信ができ、Not Good時にタグ/コメント/ヘルプ導線が表示される
+- 工数入力: 入力→一覧再取得で反映される
+- 請求ドラフト: 一覧/詳細が表示され、送信ボタンでステータスが更新される
+
+バックエンドの詳細手順は `docs/requirements/manual-test-checklist.md` と `packages/backend/src/tests/happy-path.md` を参照。
+
 詳細は `docs/` 以下のドキュメントおよび GitHub Issues を参照してください。開発フローは今後整備予定です。
