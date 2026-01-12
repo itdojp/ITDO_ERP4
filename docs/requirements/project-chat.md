@@ -14,7 +14,7 @@
 - 確認メッセージ（OK追跡）
 - 添付（local/gdrive）+ 監査ログ（upload/download）
 - メンション通知（アプリ内 / `/notifications`）
-- 手動要約スタブ（UI）
+- 手動要約スタブ（UI: project/room）
 
 ## 未実装（後続）
 - ルーム種別拡張（部門/全社）とガバナンス実装（#434）

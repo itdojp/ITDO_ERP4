@@ -148,6 +148,8 @@ export const RoomChat: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [message, setMessage] = useState('');
+  const [summary, setSummary] = useState('');
+  const [isSummarizing, setIsSummarizing] = useState(false);
 
   const [body, setBody] = useState('');
   const [tags, setTags] = useState('');
@@ -427,6 +429,28 @@ export const RoomChat: React.FC = () => {
     }
   };
 
+  const summarize = async () => {
+    if (!roomId) return;
+    try {
+      setIsSummarizing(true);
+      setMessage('');
+      const res = await api<{ summary?: string }>(
+        `/chat-rooms/${roomId}/summary`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ limit: 120 }),
+        },
+      );
+      setSummary(typeof res.summary === 'string' ? res.summary : '');
+    } catch (err) {
+      console.error('Failed to summarize room messages.', err);
+      setMessage('要約の生成に失敗しました');
+    } finally {
+      setIsSummarizing(false);
+    }
+  };
+
   useEffect(() => {
     loadRooms().catch(() => undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -434,6 +458,7 @@ export const RoomChat: React.FC = () => {
 
   useEffect(() => {
     if (!roomId) return;
+    setSummary('');
     loadMessages().catch(() => undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roomId]);
@@ -475,7 +500,21 @@ export const RoomChat: React.FC = () => {
           再読込
         </button>
         <span className="badge">Unread {unreadCount}</span>
+        <button
+          className="button secondary"
+          onClick={summarize}
+          disabled={!roomId || isSummarizing}
+        >
+          {isSummarizing ? '要約中...' : '要約'}
+        </button>
       </div>
+
+      {summary && (
+        <div className="card" style={{ padding: 12, marginTop: 12 }}>
+          <div style={{ fontSize: 12, color: '#64748b' }}>要約（スタブ）</div>
+          <pre style={{ whiteSpace: 'pre-wrap', margin: 0 }}>{summary}</pre>
+        </div>
+      )}
 
       <div className="card" style={{ padding: 12, marginTop: 12 }}>
         <strong>作成（MVP）</strong>
