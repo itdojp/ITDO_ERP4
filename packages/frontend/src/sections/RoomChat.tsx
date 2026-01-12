@@ -169,6 +169,23 @@ export const RoomChat: React.FC = () => {
   const [roomId, setRoomId] = useState('');
   const [roomMessage, setRoomMessage] = useState('');
 
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent<{ roomId?: unknown }>).detail;
+      const nextRoomId =
+        detail && typeof detail.roomId === 'string' ? detail.roomId : '';
+      if (!nextRoomId) return;
+      setRoomId(nextRoomId);
+    };
+    window.addEventListener('erp4_open_room_chat', handler as EventListener);
+    return () => {
+      window.removeEventListener(
+        'erp4_open_room_chat',
+        handler as EventListener,
+      );
+    };
+  }, []);
+
   const selectedRoom = useMemo(
     () => rooms.find((room) => room.id === roomId) || null,
     [rooms, roomId],

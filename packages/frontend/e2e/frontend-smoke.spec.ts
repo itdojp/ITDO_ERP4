@@ -156,6 +156,16 @@ test('frontend smoke core @core', async ({ page }) => {
   await invoiceSection.getByRole('button', { name: '作成' }).click();
   await expect(invoiceSection.getByText('作成しました')).toBeVisible();
   await captureSection(invoiceSection, '05-core-invoices.png');
+
+  const searchSection = page
+    .locator('h2', { hasText: '検索（ERP横断）' })
+    .locator('..');
+  await searchSection.scrollIntoViewIfNeeded();
+  await searchSection.getByLabel('検索語').fill('PRJ-DEMO-1');
+  await searchSection.getByRole('button', { name: '検索' }).click();
+  await expect(searchSection.getByText('PRJ-DEMO-1')).toBeVisible({
+    timeout: actionTimeout,
+  });
 });
 
 test('frontend smoke vendor approvals @extended', async ({ page }) => {
