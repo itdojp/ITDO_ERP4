@@ -91,7 +91,9 @@ export async function registerChatBreakGlassRoutes(app: FastifyInstance) {
       const userId = req.user?.userId || '';
 
       const canSeeAllRooms =
-        roles.includes('admin') || roles.includes('mgmt') || roles.includes('exec');
+        roles.includes('admin') ||
+        roles.includes('mgmt') ||
+        roles.includes('exec');
       if (!canSeeAllRooms) {
         if (!userId) {
           return reply.status(400).send({
