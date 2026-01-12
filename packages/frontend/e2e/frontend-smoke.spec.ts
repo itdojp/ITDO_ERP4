@@ -697,3 +697,120 @@ test('frontend smoke room chat (private_group/dm) @extended', async ({
 
   await captureSection(roomChatSection, '14-room-chat.png');
 });
+
+test('frontend smoke external chat invited rooms @extended', async ({
+  page,
+}) => {
+  test.setTimeout(180_000);
+  const run = runId();
+  const externalUserId = `e2e-external-${run}@example.com`;
+  await prepare(page);
+
+  const settingsSection = page.locator('h2', { hasText: 'Settings' }).locator('..');
+  await settingsSection.scrollIntoViewIfNeeded();
+  const roomSettingsCard = settingsSection
+    .locator('strong', { hasText: 'チャットルーム設定' })
+    .locator('..');
+  await roomSettingsCard.scrollIntoViewIfNeeded();
+
+  await roomSettingsCard.getByRole('button', { name: '再読込' }).click();
+  const roomSelect = roomSettingsCard.getByLabel('ルーム');
+  await expect
+    .poll(() => roomSelect.locator('option').count(), { timeout: actionTimeout })
+    .toBeGreaterThan(1);
+
+  await selectByLabelOrFirst(roomSelect, 'company: 全社');
+  await roomSettingsCard
+    .getByRole('checkbox', { name: '外部ユーザ参加を許可' })
+    .check();
+  await roomSettingsCard.getByRole('button', { name: '保存' }).click();
+  await expect(roomSettingsCard.getByText('保存しました')).toBeVisible({
+    timeout: actionTimeout,
+  });
+  await roomSettingsCard
+    .getByLabel('userId（comma separated）')
+    .fill(externalUserId);
+  await roomSettingsCard.getByRole('button', { name: 'メンバー追加' }).click();
+  await expect(roomSettingsCard.getByText('メンバーを追加しました')).toBeVisible({
+    timeout: actionTimeout,
+  });
+
+  await selectByLabelOrFirst(
+    roomSelect,
+    'project: PRJ-DEMO-1 / Demo Project 1',
+  );
+  await roomSettingsCard
+    .getByRole('checkbox', { name: '外部ユーザ参加を許可' })
+    .check();
+  await roomSettingsCard.getByRole('button', { name: '保存' }).click();
+  await expect(roomSettingsCard.getByText('保存しました')).toBeVisible({
+    timeout: actionTimeout,
+  });
+  await roomSettingsCard
+    .getByLabel('userId（comma separated）')
+    .fill(externalUserId);
+  await roomSettingsCard.getByRole('button', { name: 'メンバー追加' }).click();
+  await expect(roomSettingsCard.getByText('メンバーを追加しました')).toBeVisible({
+    timeout: actionTimeout,
+  });
+
+  const externalPage = await page.context().newPage();
+  externalPage.on('pageerror', (error) => {
+    console.error('[e2e][externalPage][pageerror]', error);
+  });
+  externalPage.on('console', (msg) => {
+    if (msg.type() === 'error') {
+      const text = msg.text();
+      if (text.includes('(403)') || text.includes('403 (Forbidden)')) {
+        return;
+      }
+      console.error('[e2e][externalPage][console.error]', text);
+    }
+  });
+  await externalPage.addInitScript((state) => {
+    window.localStorage.setItem('erp4_auth', JSON.stringify(state));
+  }, {
+    userId: externalUserId,
+    roles: ['external_chat'],
+    projectIds: [],
+    groupIds: [],
+  });
+  await externalPage.goto(baseUrl);
+  await expect(
+    externalPage.getByRole('heading', { name: 'ERP4 MVP PoC' }),
+  ).toBeVisible();
+
+  const roomChatSection = externalPage
+    .locator('h2', { hasText: 'チャット（全社/部門/private_group/DM）' })
+    .locator('..');
+  await roomChatSection.scrollIntoViewIfNeeded();
+
+  const externalRoomSelect = roomChatSection.getByLabel('ルーム');
+  await expect
+    .poll(
+      () => externalRoomSelect.locator('option').count(),
+      { timeout: actionTimeout },
+    )
+    .toBeGreaterThan(1);
+
+  await selectByLabelOrFirst(externalRoomSelect, 'company: 全社');
+  const companyText = `E2E external company ${run}`;
+  await roomChatSection.getByPlaceholder('Markdownで入力').fill(companyText);
+  await roomChatSection.getByRole('button', { name: '送信' }).click();
+  await expect(roomChatSection.getByText(companyText)).toBeVisible({
+    timeout: actionTimeout,
+  });
+
+  await selectByLabelOrFirst(
+    externalRoomSelect,
+    'project: PRJ-DEMO-1 / Demo Project 1',
+  );
+  const projectText = `E2E external project ${run}`;
+  await roomChatSection.getByPlaceholder('Markdownで入力').fill(projectText);
+  await roomChatSection.getByRole('button', { name: '送信' }).click();
+  await expect(roomChatSection.getByText(projectText)).toBeVisible({
+    timeout: actionTimeout,
+  });
+
+  await externalPage.close();
+});

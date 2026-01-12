@@ -440,6 +440,17 @@ export const chatRoomMemberAddSchema = {
   ),
 };
 
+export const chatRoomPatchSchema = {
+  body: Type.Object(
+    {
+      name: Type.Optional(Type.String({ minLength: 1, maxLength: 80 })),
+      allowExternalUsers: Type.Optional(Type.Boolean()),
+      allowExternalIntegrations: Type.Optional(Type.Boolean()),
+    },
+    { additionalProperties: false },
+  ),
+};
+
 export const chatBreakGlassRequestSchema = {
   body: Type.Object(
     {

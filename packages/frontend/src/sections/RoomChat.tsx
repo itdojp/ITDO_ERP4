@@ -8,6 +8,12 @@ type ChatRoom = {
   id: string;
   type: string;
   name: string;
+  isOfficial?: boolean | null;
+  projectCode?: string | null;
+  projectName?: string | null;
+  groupId?: string | null;
+  allowExternalUsers?: boolean | null;
+  allowExternalIntegrations?: boolean | null;
   isMember?: boolean | null;
 };
 
@@ -114,6 +120,13 @@ function sanitizeFilename(value: string) {
 }
 
 function formatRoomLabel(room: ChatRoom, currentUserId: string) {
+  if (room.type === 'project') {
+    if (room.projectCode && room.projectName) {
+      return `${room.projectCode} / ${room.projectName}`;
+    }
+    if (room.projectCode) return room.projectCode;
+    return room.name;
+  }
   if (room.type !== 'dm') return room.name;
   const parts = room.name.startsWith('dm:')
     ? room.name.slice(3).split(':')
@@ -169,10 +182,13 @@ export const RoomChat: React.FC = () => {
     try {
       const res = await api<{ items?: ChatRoom[] }>('/chat-rooms');
       const items = Array.isArray(res.items) ? res.items : [];
-      const nonProjectRooms = items.filter((room) => room.type !== 'project');
+      const showProjectRooms = roles.includes('external_chat');
+      const visibleRooms = showProjectRooms
+        ? items
+        : items.filter((room) => room.type !== 'project');
       const joinedRooms = canSeeAllMeta
-        ? nonProjectRooms.filter((room) => room.isMember !== false)
-        : nonProjectRooms;
+        ? visibleRooms.filter((room) => room.isMember !== false)
+        : visibleRooms;
       setRooms(joinedRooms);
       setRoomMessage('');
       if (!roomId && joinedRooms.length) {
