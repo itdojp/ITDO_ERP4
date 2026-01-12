@@ -27,6 +27,13 @@ DB上は `type` として表現し、ポリシー（公式/私的、外部連携
 - `private_group`: 私的グループ（ユーザが作成）
 - `dm`: DM（ユーザ2名のprivate_group特化）
 
+## ルームIDの決め方（MVP）
+- `project`: `ChatRoom.id = Project.id`（`roomId = projectId`）
+- `company`: 固定（`ChatRoom.id = "company"`）
+- `department`: 決定的ID（`ChatRoom.id = "dept_" + sha256(groupId).slice(0,32)`）、`ChatRoom.groupId = groupId`
+- `private_group`: `uuid`
+- `dm`: 決定的ID（`ChatRoom.id = "dm_" + sha256(userA + "\\n" + userB).slice(0,32)`）
+
 ## データモデル（案）
 最小構成（MVP）として以下を想定します（命名は例）。
 

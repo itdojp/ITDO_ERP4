@@ -1,6 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import crypto from 'node:crypto';
-import type { Prisma } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import { prisma } from '../services/db.js';
 import { requireRole } from '../services/rbac.js';
 import { ensureChatRoomContentAccess } from '../services/chatRoomAccess.js';
@@ -36,18 +36,28 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
     });
     if (existing) return;
 
-    await prisma.chatRoom.create({
-      data: {
-        id: companyRoomId,
-        type: 'company',
-        name: companyRoomName,
-        isOfficial: true,
-        allowExternalUsers: false,
-        allowExternalIntegrations: false,
-        createdBy: userId,
-        updatedBy: userId,
-      },
-    });
+    try {
+      await prisma.chatRoom.create({
+        data: {
+          id: companyRoomId,
+          type: 'company',
+          name: companyRoomName,
+          isOfficial: true,
+          allowExternalUsers: false,
+          allowExternalIntegrations: false,
+          createdBy: userId,
+          updatedBy: userId,
+        },
+      });
+    } catch (err) {
+      if (
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === 'P2002'
+      ) {
+        return;
+      }
+      throw err;
+    }
   }
 
   async function ensureDepartmentRooms(
