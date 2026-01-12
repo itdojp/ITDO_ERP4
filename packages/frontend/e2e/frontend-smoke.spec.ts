@@ -527,10 +527,19 @@ test('frontend smoke chat hr analytics @extended', async ({ page }) => {
   fs.mkdirSync(path.dirname(uploadPath), { recursive: true });
   fs.writeFileSync(uploadPath, `e2e upload ${id}`);
   await chatSection.getByPlaceholder('メッセージを書く').fill(chatMessage);
+  await chatSection.getByRole('checkbox', { name: 'プレビュー' }).check();
+  const projectPreview = chatSection.getByRole('region', {
+    name: 'Markdownプレビュー',
+  });
+  await expect(projectPreview.getByText(chatMessage)).toBeVisible({
+    timeout: actionTimeout,
+  });
   await chatSection.getByPlaceholder('タグ (comma separated)').fill('e2e,chat');
   await chatSection.getByLabel('添付').setInputFiles(uploadPath);
   await chatSection.getByRole('button', { name: '投稿' }).click();
-  await expect(chatSection.getByText(chatMessage)).toBeVisible();
+  await expect(chatSection.locator('li', { hasText: chatMessage })).toBeVisible({
+    timeout: actionTimeout,
+  });
   const chatItem = chatSection.locator('li', { hasText: chatMessage });
   await expect(chatItem.getByText(`@${mentionTarget}`)).toBeVisible();
   await expect(chatItem.getByText('@mgmt')).toBeVisible();
@@ -635,6 +644,7 @@ test('frontend smoke room chat (private_group/dm) @extended', async ({
 
   const run = runId();
   const roomSelect = roomChatSection.getByLabel('ルーム');
+  const messageList = roomChatSection.locator('strong', { hasText: '一覧' }).locator('..');
   await expect
     .poll(() => roomSelect.locator('option').count(), { timeout: actionTimeout })
     .toBeGreaterThan(1);
@@ -646,18 +656,25 @@ test('frontend smoke room chat (private_group/dm) @extended', async ({
   await selectByLabelOrFirst(roomSelect, 'company: 全社');
   const companyText = `E2E company message ${run}`;
   await roomChatSection.getByPlaceholder('Markdownで入力').fill(companyText);
-  await roomChatSection.getByRole('button', { name: '送信' }).click();
-  await expect(roomChatSection.getByText(companyText)).toBeVisible({
+  await roomChatSection.getByRole('checkbox', { name: 'プレビュー' }).check();
+  const roomPreview = roomChatSection.getByRole('region', {
+    name: 'Markdownプレビュー',
+  });
+  await expect(roomPreview.getByText(companyText)).toBeVisible({
     timeout: actionTimeout,
   });
+  await roomChatSection.getByRole('button', { name: '送信' }).click();
+  await expect(
+    messageList.locator('.card', { hasText: companyText }).first(),
+  ).toBeVisible({ timeout: actionTimeout });
 
   await selectByLabelOrFirst(roomSelect, 'department: mgmt');
   const departmentText = `E2E department message ${run}`;
   await roomChatSection.getByPlaceholder('Markdownで入力').fill(departmentText);
   await roomChatSection.getByRole('button', { name: '送信' }).click();
-  await expect(roomChatSection.getByText(departmentText)).toBeVisible({
-    timeout: actionTimeout,
-  });
+  await expect(
+    messageList.locator('.card', { hasText: departmentText }).first(),
+  ).toBeVisible({ timeout: actionTimeout });
 
   const groupName = `e2e-private-${run}`;
 
@@ -670,9 +687,9 @@ test('frontend smoke room chat (private_group/dm) @extended', async ({
   const messageText = `E2E room message ${run}`;
   await roomChatSection.getByPlaceholder('Markdownで入力').fill(messageText);
   await roomChatSection.getByRole('button', { name: '送信' }).click();
-  await expect(roomChatSection.getByText(messageText)).toBeVisible({
-    timeout: actionTimeout,
-  });
+  await expect(
+    messageList.locator('.card', { hasText: messageText }).first(),
+  ).toBeVisible({ timeout: actionTimeout });
 
   const previousRoomId = await roomSelect.inputValue();
   const partnerUserId = `e2e-partner-${run}`;
@@ -686,9 +703,9 @@ test('frontend smoke room chat (private_group/dm) @extended', async ({
   const dmText = `E2E dm message ${run}`;
   await roomChatSection.getByPlaceholder('Markdownで入力').fill(dmText);
   await roomChatSection.getByRole('button', { name: '送信' }).click();
-  await expect(roomChatSection.getByText(dmText)).toBeVisible({
-    timeout: actionTimeout,
-  });
+  await expect(
+    messageList.locator('.card', { hasText: dmText }).first(),
+  ).toBeVisible({ timeout: actionTimeout });
 
   await roomChatSection.getByRole('button', { name: '要約' }).click();
   const summaryBlock = roomChatSection.getByText('要約（スタブ）');

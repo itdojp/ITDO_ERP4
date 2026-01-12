@@ -152,6 +152,7 @@ export const ProjectChat: React.FC = () => {
     onSelect: setProjectId,
   });
   const [body, setBody] = useState('');
+  const [showPreview, setShowPreview] = useState(false);
   const [tags, setTags] = useState('');
   const [ackTargets, setAckTargets] = useState('');
   const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
@@ -670,6 +671,47 @@ export const ProjectChat: React.FC = () => {
           maxLength={2000}
           style={{ width: '100%', minHeight: 80 }}
         />
+        <label
+          className="row"
+          style={{ gap: 6, marginTop: 8, alignItems: 'center' }}
+        >
+          <input
+            type="checkbox"
+            checked={showPreview}
+            onChange={(e) => setShowPreview(e.target.checked)}
+            disabled={isPosting}
+          />
+          プレビュー
+        </label>
+        {showPreview && (
+          <div
+            role="region"
+            aria-label="Markdownプレビュー"
+            style={{
+              marginTop: 8,
+              padding: 10,
+              border: '1px solid #e2e8f0',
+              borderRadius: 8,
+              background: '#f8fafc',
+            }}
+          >
+            <div style={{ fontSize: 12, color: '#64748b' }}>プレビュー</div>
+            <div style={{ marginTop: 6 }}>
+              <ReactMarkdown
+                remarkPlugins={[remarkGfm, remarkBreaks]}
+                allowedElements={markdownAllowedElements}
+                urlTransform={transformLinkUri}
+                components={{
+                  a: ({ node: _node, ...props }) => (
+                    <a {...props} target="_blank" rel="noreferrer noopener" />
+                  ),
+                }}
+              >
+                {body.trim() ? body : '（空）'}
+              </ReactMarkdown>
+            </div>
+          </div>
+        )}
         <input
           type="text"
           value={tags}
