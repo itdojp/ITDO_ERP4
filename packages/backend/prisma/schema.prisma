@@ -537,12 +537,15 @@ model Estimate {
   id              String         @id @default(uuid())
   project         Project        @relation(fields: [projectId], references: [id], onDelete: Restrict)
   projectId       String
+  estimateNo      String         @unique
   version         Int
   totalAmount     Decimal
   currency        String
   status          DocStatus      @default(draft)
   validUntil      DateTime?
   notes           String?
+  pdfUrl          String?
+  emailMessageId  String?
   numberingSerial Int?
   lines           EstimateLine[]
   invoices        Invoice[]
