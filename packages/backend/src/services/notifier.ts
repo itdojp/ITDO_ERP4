@@ -459,6 +459,31 @@ export async function sendInvoiceEmail(
   });
 }
 
+export async function sendEstimateEmail(
+  to: string[],
+  estimateNo: string,
+  pdf?: PdfInfo,
+  options?: Pick<EmailOptions, 'metadata'>,
+) {
+  const body = pdf?.url
+    ? `Estimate email (placeholder)\nPDF: ${pdf.url}`
+    : 'Estimate email (placeholder)';
+  const attachments =
+    pdf?.path && pdf.filename
+      ? [
+          {
+            filename: pdf.filename,
+            path: pdf.path,
+            contentType: 'application/pdf',
+          },
+        ]
+      : undefined;
+  return sendEmail(to, `Estimate ${estimateNo}`, body, {
+    attachments,
+    metadata: options?.metadata,
+  });
+}
+
 export async function sendPurchaseOrderEmail(
   to: string[],
   poNo: string,

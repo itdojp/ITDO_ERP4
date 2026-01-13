@@ -1,6 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import type { Prisma } from '@prisma/client';
 import {
+  sendEstimateEmail,
   sendInvoiceEmail,
   sendPurchaseOrderEmail,
 } from '../services/notifier.js';
@@ -268,6 +269,127 @@ function extractTemplateSettingId(metadata: unknown) {
 }
 
 export async function registerSendRoutes(app: FastifyInstance) {
+  app.post(
+    '/estimates/:id/send',
+    { preHandler: requireRole(['admin', 'mgmt']) },
+    async (req, reply) => {
+      const { id } = req.params as { id: string };
+      const { templateId, templateSettingId } = req.query as {
+        templateId?: string;
+        templateSettingId?: string;
+      };
+      const estimate = await prisma.estimate.findUnique({ where: { id } });
+      if (!estimate) {
+        return { error: 'not_found' };
+      }
+      const resolved = await resolveTemplateContext('estimate', {
+        templateId,
+        templateSettingId,
+      });
+      if (!resolved.template) {
+        return reply
+          .code(resolved.error?.status || 400)
+          .send({ error: resolved.error?.code || 'invalid_template' });
+      }
+      const template = resolved.template;
+      const pdf = await generatePdf(
+        template.id,
+        {
+          id,
+          estimateNo: estimate.estimateNo,
+        },
+        estimate.estimateNo,
+        buildPdfOptions(resolved.setting),
+      );
+      const recipients = ['sales@example.com'];
+      if (!pdf.filePath || !pdf.filename) {
+        await createSendLog(prisma, {
+          kind: 'estimate',
+          targetTable: 'estimates',
+          targetId: id,
+          recipients,
+          templateId: template.id,
+          pdfUrl: pdf.url,
+          status: 'failed',
+          error: 'pdf_generation_failed',
+          actorId: req.user?.userId,
+          metadata: buildSendLogMetadata(template, resolved.setting),
+        });
+        return reply.status(500).send({ error: 'pdf_generation_failed' });
+      }
+      const sendLog = await createSendLog(prisma, {
+        kind: 'estimate',
+        targetTable: 'estimates',
+        targetId: id,
+        recipients,
+        templateId: template.id,
+        pdfUrl: pdf.url,
+        status: 'requested',
+        actorId: req.user?.userId,
+        metadata: buildSendLogMetadata(template, resolved.setting),
+      });
+      const notifyResult = await sendEstimateEmail(
+        recipients,
+        estimate.estimateNo,
+        {
+          filename: pdf.filename,
+          path: pdf.filePath,
+          url: pdf.url,
+        },
+        {
+          metadata: buildEmailMetadata({
+            sendLogId: sendLog.id,
+            targetTable: 'estimates',
+            targetId: id,
+            kind: 'estimate',
+          }),
+        },
+      );
+      const nextStatus = shouldMarkSent(notifyResult)
+        ? DocStatusValue.sent
+        : estimate.status;
+      const updated = await prisma.$transaction(
+        async (tx: Prisma.TransactionClient) => {
+          const updatedEstimate = await tx.estimate.update({
+            where: { id },
+            data: {
+              status: nextStatus,
+              pdfUrl: pdf.url,
+              emailMessageId: notifyResult.messageId,
+            },
+          });
+          await updateSendLog(tx, {
+            id: sendLog.id,
+            result: notifyResult,
+            actorId: req.user?.userId,
+          });
+          return updatedEstimate;
+        },
+      );
+      return updated;
+    },
+  );
+
+  app.get(
+    '/estimates/:id/send-logs',
+    { preHandler: requireRole(['admin', 'mgmt']) },
+    async (req, reply) => {
+      const { id } = req.params as { id: string };
+      const estimate = await prisma.estimate.findUnique({
+        where: { id },
+        select: { id: true },
+      });
+      if (!estimate) {
+        return reply.code(404).send({ error: 'not_found' });
+      }
+      const items = await prisma.documentSendLog.findMany({
+        where: { targetTable: 'estimates', targetId: id },
+        orderBy: { createdAt: 'desc' },
+      });
+      return { items };
+    },
+  );
+
   app.post(
     '/invoices/:id/send',
     { preHandler: requireRole(['admin', 'mgmt']) },

@@ -105,6 +105,7 @@ export async function registerSearchRoutes(app: FastifyInstance) {
                 ? {}
                 : { projectId: { in: projectIds }, deletedAt: null }),
               OR: [
+                { estimateNo: { contains: trimmed, mode: 'insensitive' } },
                 { notes: { contains: trimmed, mode: 'insensitive' } },
                 {
                   lines: {

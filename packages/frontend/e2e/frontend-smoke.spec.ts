@@ -146,6 +146,21 @@ test('frontend smoke core @core', async ({ page }) => {
   await expect(expenseSection.getByText('経費を保存しました')).toBeVisible();
   await captureSection(expenseSection, '04-core-expenses.png');
 
+  const estimateSection = page.locator('h2', { hasText: '見積' }).locator('..');
+  await estimateSection.scrollIntoViewIfNeeded();
+  await selectByLabelOrFirst(
+    estimateSection.getByLabel('案件選択'),
+    'PRJ-DEMO-1 / Demo Project 1',
+  );
+  await estimateSection.locator('input[type="number"]').fill('140000');
+  await estimateSection.getByRole('button', { name: '作成' }).click();
+  await expect(estimateSection.getByText('作成しました')).toBeVisible();
+  await estimateSection.getByRole('button', { name: '承認依頼' }).click();
+  await expect(estimateSection.getByText('承認依頼しました')).toBeVisible();
+  await estimateSection.getByRole('button', { name: '送信 (Stub)' }).click();
+  await expect(estimateSection.getByText('送信しました')).toBeVisible();
+  await captureSection(estimateSection, '05-core-estimates.png');
+
   const invoiceSection = page.locator('h2', { hasText: '請求' }).locator('..');
   await invoiceSection.scrollIntoViewIfNeeded();
   await selectByLabelOrFirst(
@@ -155,7 +170,7 @@ test('frontend smoke core @core', async ({ page }) => {
   await invoiceSection.locator('input[type="number"]').fill('150000');
   await invoiceSection.getByRole('button', { name: '作成' }).click();
   await expect(invoiceSection.getByText('作成しました')).toBeVisible();
-  await captureSection(invoiceSection, '05-core-invoices.png');
+  await captureSection(invoiceSection, '06-core-invoices.png');
 
   const searchSection = page
     .locator('h2', { hasText: '検索（ERP横断）' })
