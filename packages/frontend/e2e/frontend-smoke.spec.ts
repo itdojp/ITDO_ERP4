@@ -82,13 +82,18 @@ async function prepare(page: Page) {
 }
 
 async function selectByLabelOrFirst(select: Locator, label?: string) {
-  if (label && (await select.locator('option', { hasText: label }).count())) {
-    await select.selectOption({ label });
-    return;
-  }
   await expect
     .poll(() => select.locator('option').count(), { timeout: actionTimeout })
     .toBeGreaterThan(1);
+  if (label) {
+    await expect
+      .poll(() => select.locator('option', { hasText: label }).count(), {
+        timeout: actionTimeout,
+      })
+      .toBeGreaterThan(0);
+    await select.selectOption({ label });
+    return;
+  }
   await select.selectOption({ index: 1 });
 }
 
@@ -223,8 +228,8 @@ test('frontend smoke core @core', async ({ page }) => {
     invoiceSection.getByLabel('案件選択'),
     'PRJ-DEMO-1 / Demo Project 1',
   );
-  await invoiceSection.locator('input[type="number"]').fill('150000');
-  await invoiceSection.getByRole('button', { name: '作成' }).click();
+  await invoiceSection.getByPlaceholder('金額').fill('150000');
+  await invoiceSection.getByRole('button', { name: /^作成$/ }).click();
   await expect(invoiceSection.getByText('作成しました')).toBeVisible();
   await captureSection(invoiceSection, '06-core-invoices.png');
 

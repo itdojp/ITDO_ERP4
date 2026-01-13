@@ -589,6 +589,7 @@ model Invoice {
   emailMessageId  String?
   numberingSerial Int?
   lines           BillingLine[]
+  billedTimeEntries TimeEntry[]     @relation("InvoiceToTimeEntries")
   createdAt       DateTime          @default(now())
   createdBy       String?
   updatedAt       DateTime          @updatedAt
@@ -710,6 +711,9 @@ model TimeEntry {
   projectId     String
   task          ProjectTask? @relation(fields: [taskId], references: [id], onDelete: SetNull)
   taskId        String?
+  billedInvoice Invoice?     @relation("InvoiceToTimeEntries", fields: [billedInvoiceId], references: [id], onDelete: SetNull)
+  billedInvoiceId String?
+  billedAt      DateTime?
   userId        String
   workDate      DateTime
   minutes       Int
@@ -729,6 +733,7 @@ model TimeEntry {
   @@index([projectId, workDate, deletedAt])
   @@index([userId, workDate])
   @@index([status])
+  @@index([billedInvoiceId])
 }
 
 model RateCard {

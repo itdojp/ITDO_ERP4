@@ -47,13 +47,18 @@ async function prepare(page: Page) {
 }
 
 async function selectByLabelOrFirst(select: Locator, label?: string) {
-  if (label && (await select.locator('option', { hasText: label }).count())) {
-    await select.selectOption({ label });
-    return;
-  }
   await expect
     .poll(() => select.locator('option').count(), { timeout: actionTimeout })
     .toBeGreaterThan(1);
+  if (label) {
+    await expect
+      .poll(() => select.locator('option', { hasText: label }).count(), {
+        timeout: actionTimeout,
+      })
+      .toBeGreaterThan(0);
+    await select.selectOption({ label });
+    return;
+  }
   await select.selectOption({ index: 1 });
 }
 

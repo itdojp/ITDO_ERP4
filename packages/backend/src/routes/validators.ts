@@ -293,6 +293,20 @@ export const invoiceSchema = {
   }),
 };
 
+export const invoiceFromTimeEntriesSchema = {
+  body: Type.Object(
+    {
+      from: Type.String({ format: 'date' }),
+      to: Type.String({ format: 'date' }),
+      unitPrice: Type.Number({ exclusiveMinimum: 0 }),
+      currency: Type.Optional(Type.String({ default: 'JPY' })),
+      issueDate: Type.Optional(Type.String({ format: 'date' })),
+      dueDate: Type.Optional(Type.String({ format: 'date' })),
+    },
+    { additionalProperties: false },
+  ),
+};
+
 export const purchaseOrderSchema = {
   body: Type.Object({
     vendorId: Type.String(),
