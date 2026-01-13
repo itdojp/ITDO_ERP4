@@ -7,6 +7,7 @@ import { ProjectTasks } from '../sections/ProjectTasks';
 import { Estimates } from '../sections/Estimates';
 import { Invoices } from '../sections/Invoices';
 import { Expenses } from '../sections/Expenses';
+import { LeaveRequests } from '../sections/LeaveRequests';
 import { HRAnalytics } from '../sections/HRAnalytics';
 import { CurrentUser } from '../sections/CurrentUser';
 import { Reports } from '../sections/Reports';
@@ -42,6 +43,9 @@ export const App: React.FC = () => {
       </div>
       <div className="card">
         <Expenses />
+      </div>
+      <div className="card">
+        <LeaveRequests />
       </div>
       <div className="card">
         <Estimates />

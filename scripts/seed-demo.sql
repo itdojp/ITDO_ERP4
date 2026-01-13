@@ -24,7 +24,8 @@ insert into "ApprovalRule" (id, "flowType", conditions, steps, "createdAt", "upd
   ('50000000-0000-0000-0000-000000000003','expense','{}','[]', now(), now()),
   ('50000000-0000-0000-0000-000000000004','time','{}','[]', now(), now()),
   ('50000000-0000-0000-0000-000000000005','purchase_order','{}','[]', now(), now()),
-  ('50000000-0000-0000-0000-000000000006','vendor_invoice','{}','[]', now(), now())
+  ('50000000-0000-0000-0000-000000000006','vendor_invoice','{}','[]', now(), now()),
+  ('50000000-0000-0000-0000-000000000007','leave','{}','[]', now(), now())
 on conflict do nothing;
 
 insert into "Estimate" (id, "projectId", "estimateNo", version, "totalAmount", currency, status, "numberingSerial", "createdAt", "updatedAt")
