@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '../api';
 import { ChatSettingsCard } from './ChatSettingsCard';
 import { ChatRoomSettingsCard } from './ChatRoomSettingsCard';
+import { RateCardSettingsCard } from './RateCardSettingsCard';
 
 type AlertSetting = {
   id: string;
@@ -880,6 +881,7 @@ export const AdminSettings: React.FC = () => {
       <div className="list" style={{ display: 'grid', gap: 12 }}>
         <ChatSettingsCard />
         <ChatRoomSettingsCard />
+        <RateCardSettingsCard />
         <div className="card" style={{ padding: 12 }}>
           <strong>アラート設定（簡易モック）</strong>
           <div className="row" style={{ marginTop: 8 }}>
