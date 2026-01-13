@@ -1,4 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { api, getAuthState } from '../api';
 import type { ProjectOption } from '../hooks/useProjects';
 import { HelpModal } from './HelpModal';
@@ -51,9 +57,7 @@ export const DailyReport: React.FC = () => {
   const [projectMessage, setProjectMessage] = useState('');
   const [historyItems, setHistoryItems] = useState<DailyReportItem[]>([]);
   const [historyMessage, setHistoryMessage] = useState('');
-  const [historyUserId, setHistoryUserId] = useState(() =>
-    isPrivileged ? userId : '',
-  );
+  const [historyUserId, setHistoryUserId] = useState('');
   const [isHistoryLoading, setIsHistoryLoading] = useState(false);
   const saveQueueRef = useRef(Promise.resolve());
 
@@ -146,8 +150,9 @@ export const DailyReport: React.FC = () => {
       const res = await api<{ items: DailyReportItem[] }>(
         `/daily-reports${suffix}`,
       );
-      setHistoryItems(res.items || []);
-      setHistoryMessage('読み込みました');
+      const items = res.items || [];
+      setHistoryItems(items);
+      setHistoryMessage(items.length > 0 ? '読み込みました' : '');
     } catch (err) {
       setHistoryItems([]);
       setHistoryMessage('読み込みに失敗しました');
@@ -159,10 +164,6 @@ export const DailyReport: React.FC = () => {
   useEffect(() => {
     loadHistory().catch(() => undefined);
   }, [loadHistory]);
-
-  const handleLinkedProjectsChange = (value: string[]) => {
-    setLinkedProjectIds(value);
-  };
 
   const renderProject = (projectId: string) => {
     const project = projectMap.get(projectId);
@@ -260,6 +261,7 @@ export const DailyReport: React.FC = () => {
       <div style={{ marginTop: 8 }}>
         <textarea
           placeholder="日報本文（任意）"
+          aria-label="日報本文"
           value={reportContent}
           onChange={(e) => setReportContent(e.target.value)}
           style={{ width: '100%', minHeight: 80 }}
@@ -273,7 +275,7 @@ export const DailyReport: React.FC = () => {
           multiple
           value={linkedProjectIds}
           onChange={(e) =>
-            handleLinkedProjectsChange(
+            setLinkedProjectIds(
               Array.from(e.target.selectedOptions).map((opt) => opt.value),
             )
           }
@@ -376,6 +378,7 @@ export const DailyReport: React.FC = () => {
             value={historyUserId}
             onChange={(e) => setHistoryUserId(e.target.value)}
             placeholder="userId（空欄で全員: 最新50件）"
+            aria-label="ユーザーIDで絞り込み"
             style={{ flex: 1, minWidth: 240 }}
           />
           <button
