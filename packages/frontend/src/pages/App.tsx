@@ -3,6 +3,7 @@ import { Dashboard } from '../sections/Dashboard';
 import { GlobalSearch } from '../sections/GlobalSearch';
 import { DailyReport } from '../sections/DailyReport';
 import { TimeEntries } from '../sections/TimeEntries';
+import { ProjectTasks } from '../sections/ProjectTasks';
 import { Estimates } from '../sections/Estimates';
 import { Invoices } from '../sections/Invoices';
 import { Expenses } from '../sections/Expenses';
@@ -35,6 +36,9 @@ export const App: React.FC = () => {
       </div>
       <div className="card">
         <TimeEntries />
+      </div>
+      <div className="card">
+        <ProjectTasks />
       </div>
       <div className="card">
         <Expenses />
