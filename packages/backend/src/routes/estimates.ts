@@ -99,6 +99,7 @@ export async function registerEstimateRoutes(app: FastifyInstance) {
       const estimate = await prisma.estimate.create({
         data: {
           projectId,
+          estimateNo: number,
           version: serial,
           totalAmount: body.totalAmount,
           currency: body.currency || 'JPY',

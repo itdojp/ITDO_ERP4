@@ -238,6 +238,7 @@ export async function runRecurringTemplates(now = new Date()) {
             ? await tx.estimate.create({
                 data: {
                   projectId: template.projectId,
+                  estimateNo: estimateNumbering!.number,
                   version: estimateNumbering!.serial,
                   totalAmount: amount,
                   currency,
