@@ -96,6 +96,23 @@ const runId = () =>
   process.env.E2E_RUN_ID ||
   `${Date.now().toString().slice(-6)}-${Math.floor(Math.random() * 90 + 10)}`;
 
+const buildAuthHeaders = (override?: Partial<typeof authState>) => {
+  const resolved = { ...authState, ...(override ?? {}) };
+  return {
+    'x-user-id': resolved.userId,
+    'x-roles': resolved.roles.join(','),
+    'x-project-ids': (resolved.projectIds ?? []).join(','),
+    'x-group-ids': (resolved.groupIds ?? []).join(','),
+  };
+};
+
+async function ensureOk(res: { ok(): boolean; status(): number }) {
+  expect(res.ok()).toBeTruthy();
+  if (!res.ok()) {
+    throw new Error(`Request failed with status ${res.status()}`);
+  }
+}
+
 test('frontend smoke core @core', async ({ page }) => {
   await prepare(page);
 
@@ -148,16 +165,55 @@ test('frontend smoke core @core', async ({ page }) => {
 
   const estimateSection = page.locator('h2', { hasText: '見積' }).locator('..');
   await estimateSection.scrollIntoViewIfNeeded();
+  const estimateTag = `E2E-${runId()}`;
   await selectByLabelOrFirst(
     estimateSection.getByLabel('案件選択'),
     'PRJ-DEMO-1 / Demo Project 1',
   );
-  await estimateSection.locator('input[type="number"]').fill('140000');
+  await estimateSection.locator('input[type="number"]').fill('90000');
+  await estimateSection.getByLabel('備考').fill(estimateTag);
   await estimateSection.getByRole('button', { name: '作成' }).click();
   await expect(estimateSection.getByText('作成しました')).toBeVisible();
   await estimateSection.getByRole('button', { name: '承認依頼' }).click();
   await expect(estimateSection.getByText('承認依頼しました')).toBeVisible();
-  await estimateSection.getByRole('button', { name: '送信 (Stub)' }).click();
+  const estimateRes = await page.request.get(
+    `${apiBase}/projects/${authState.projectIds[0]}/estimates`,
+    { headers: buildAuthHeaders() },
+  );
+  await ensureOk(estimateRes);
+  const estimatePayload = await estimateRes.json();
+  const estimateId = (estimatePayload?.items ?? []).find(
+    (item: any) => item?.notes === estimateTag,
+  )?.id as string | undefined;
+  expect(estimateId).toBeTruthy();
+  const instanceRes = await page.request.get(
+    `${apiBase}/approval-instances?flowType=estimate&projectId=${encodeURIComponent(
+      authState.projectIds[0],
+    )}`,
+    { headers: buildAuthHeaders() },
+  );
+  await ensureOk(instanceRes);
+  const instancePayload = await instanceRes.json();
+  const instance = (instancePayload?.items ?? []).find(
+    (item: any) =>
+      item?.targetTable === 'estimates' &&
+      item?.targetId === estimateId &&
+      item?.status !== 'approved' &&
+      item?.status !== 'rejected',
+  ) as any;
+  expect(instance?.id).toBeTruthy();
+  const actRes = await page.request.post(
+    `${apiBase}/approval-instances/${encodeURIComponent(instance.id)}/act`,
+    {
+      headers: buildAuthHeaders(),
+      data: { action: 'approve', reason: 'e2e-smoke' },
+    },
+  );
+  await ensureOk(actRes);
+  await estimateSection.getByRole('button', { name: '読み込み' }).click();
+  await expect(estimateSection.getByText('読み込みました')).toBeVisible();
+  const estimateFirstRow = estimateSection.locator('ul.list li').first();
+  await estimateFirstRow.getByRole('button', { name: '送信 (Stub)' }).click();
   await expect(estimateSection.getByText('送信しました')).toBeVisible();
   await captureSection(estimateSection, '05-core-estimates.png');
 

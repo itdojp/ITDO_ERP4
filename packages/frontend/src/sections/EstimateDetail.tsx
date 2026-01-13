@@ -126,7 +126,11 @@ export const EstimateDetail: React.FC<EstimateDetailProps> = ({
           {sendLogs.length === 0 && !sendLogError && <li>履歴なし</li>}
         </ul>
       </div>
-      <button className="button" onClick={onSend}>
+      <button
+        className="button"
+        onClick={onSend}
+        disabled={!onSend || (status !== 'approved' && status !== 'sent')}
+      >
         送信 (Stub)
       </button>
     </div>

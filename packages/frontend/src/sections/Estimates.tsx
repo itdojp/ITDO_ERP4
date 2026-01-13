@@ -16,7 +16,7 @@ interface Estimate {
 }
 
 const buildInitialForm = (projectId?: string) => ({
-  projectId: projectId || 'demo-project',
+  projectId: projectId ?? '',
   totalAmount: 100000,
   currency: 'JPY',
   validUntil: '',
@@ -29,12 +29,9 @@ export const Estimates: React.FC = () => {
     buildInitialForm(auth?.projectIds?.[0]),
   );
   const [items, setItems] = useState<Estimate[]>([]);
-  const handleProjectSelect = useCallback(
-    (projectId: string) => {
-      setForm((prev) => ({ ...prev, projectId }));
-    },
-    [setForm],
-  );
+  const handleProjectSelect = useCallback((projectId: string) => {
+    setForm((prev) => ({ ...prev, projectId }));
+  }, []);
   const { projects, projectMessage } = useProjects({
     selectedProjectId: form.projectId,
     onSelect: handleProjectSelect,
@@ -54,6 +51,10 @@ export const Estimates: React.FC = () => {
   }, []);
 
   const create = async () => {
+    if (!form.projectId) {
+      setMessage('案件を選択してください');
+      return;
+    }
     try {
       const res = await api<{ number: string; estimate: Estimate }>(
         `/projects/${form.projectId}/estimates`,
@@ -82,6 +83,10 @@ export const Estimates: React.FC = () => {
   };
 
   const load = async () => {
+    if (!form.projectId) {
+      setMessage('案件を選択してください');
+      return;
+    }
     try {
       const res = await api<{ items: Estimate[] }>(
         `/projects/${form.projectId}/estimates`,
@@ -207,7 +212,11 @@ export const Estimates: React.FC = () => {
               >
                 承認依頼
               </button>
-              <button className="button" onClick={() => send(d.id)}>
+              <button
+                className="button"
+                onClick={() => send(d.id)}
+                disabled={d.status !== 'approved' && d.status !== 'sent'}
+              >
                 送信 (Stub)
               </button>
             </div>

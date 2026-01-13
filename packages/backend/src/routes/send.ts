@@ -280,7 +280,7 @@ export async function registerSendRoutes(app: FastifyInstance) {
       };
       const estimate = await prisma.estimate.findUnique({ where: { id } });
       if (!estimate) {
-        return { error: 'not_found' };
+        return reply.code(404).send({ error: 'not_found' });
       }
       const resolved = await resolveTemplateContext('estimate', {
         templateId,
