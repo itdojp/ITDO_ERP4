@@ -178,9 +178,11 @@ export async function reportProjectEffort(
   const where: any = { projectId };
   const project = await prisma.project.findUnique({
     where: { id: projectId },
-    select: { currency: true },
+    select: { currency: true, planHours: true },
   });
   const currency = project?.currency ?? null;
+  const planHoursRaw = project?.planHours ?? null;
+  const planHours = planHoursRaw == null ? null : toNumber(planHoursRaw);
   if (from || to) {
     where.workDate = {};
     if (from) where.workDate.gte = from;
@@ -218,9 +220,14 @@ export async function reportProjectEffort(
     _sum: { amount: true },
     where: expenseWhere,
   });
+  const planMinutes = planHours == null ? null : planHours * 60;
+  const totalMinutes = minutes._sum.minutes || 0;
   return {
     projectId,
-    totalMinutes: minutes._sum.minutes || 0,
+    planHours,
+    planMinutes,
+    totalMinutes,
+    varianceMinutes: planMinutes == null ? null : totalMinutes - planMinutes,
     totalExpenses: expenses._sum.amount || 0,
   };
 }

@@ -4,7 +4,10 @@ import { useProjects } from '../hooks/useProjects';
 
 type ProjectEffort = {
   projectId: string;
+  planHours?: number | null;
+  planMinutes?: number | null;
   totalMinutes: number;
+  varianceMinutes?: number | null;
   totalExpenses: number;
 };
 type GroupEffort = { userId: string; totalMinutes: number };
@@ -149,6 +152,16 @@ export const Reports: React.FC = () => {
             <strong>プロジェクト別工数</strong>
             <div>Project: {renderProject(projectReport.projectId)}</div>
             <div>Minutes: {projectReport.totalMinutes}</div>
+            {projectReport.planHours !== null &&
+              projectReport.planHours !== undefined && (
+                <div>
+                  Plan: {Number(projectReport.planHours).toFixed(2)}h / Actual:{' '}
+                  {(projectReport.totalMinutes / 60).toFixed(2)}h / Var:{' '}
+                  {((projectReport.totalMinutes / 60) -
+                    Number(projectReport.planHours)).toFixed(2)}
+                  h
+                </div>
+              )}
             <div>
               Expenses: ¥
               {Number(projectReport.totalExpenses || 0).toLocaleString()}
