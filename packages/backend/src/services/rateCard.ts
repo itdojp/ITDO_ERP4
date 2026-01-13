@@ -18,26 +18,44 @@ function buildDateRange(workDate: Date): Prisma.RateCardWhereInput {
 export async function resolveRateCard(match: RateCardMatch) {
   const base = buildDateRange(match.workDate);
   const workType = match.workType?.trim();
-  const workTypeFilter = workType ? { workType } : { workType: null };
+  const workTypeCandidates = workType ? [workType, null] : [null];
+  const candidates: Prisma.RateCardWhereInput[] = [];
   if (match.projectId) {
-    const project = await prisma.rateCard.findFirst({
-      where: {
-        ...base,
-        projectId: match.projectId,
-        ...workTypeFilter,
-      },
-      orderBy: { validFrom: 'desc' },
-    });
-    if (project) return project;
+    for (const candidate of workTypeCandidates) {
+      candidates.push({ projectId: match.projectId, workType: candidate });
+    }
   }
-  return prisma.rateCard.findFirst({
-    where: {
-      ...base,
-      projectId: null,
-      ...workTypeFilter,
-    },
+  for (const candidate of workTypeCandidates) {
+    candidates.push({ projectId: null, workType: candidate });
+  }
+  if (!candidates.length) return null;
+  const items = await prisma.rateCard.findMany({
+    where: { AND: [base, { OR: candidates }] },
     orderBy: { validFrom: 'desc' },
+    take: 50,
   });
+  if (!items.length) return null;
+
+  const score = (item: {
+    projectId: string | null;
+    workType: string | null;
+  }) => {
+    let value = 0;
+    if (match.projectId && item.projectId === match.projectId) value += 100;
+    if (workType && item.workType === workType) value += 10;
+    return value;
+  };
+
+  let best: (typeof items)[number] | null = null;
+  let bestScore = -1;
+  for (const item of items) {
+    const currentScore = score(item);
+    if (currentScore > bestScore) {
+      best = item;
+      bestScore = currentScore;
+    }
+  }
+  return best;
 }
 
 export function calcTimeAmount(minutes: number, unitPrice: number) {

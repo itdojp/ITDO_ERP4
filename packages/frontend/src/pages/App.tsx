@@ -3,6 +3,8 @@ import { Dashboard } from '../sections/Dashboard';
 import { GlobalSearch } from '../sections/GlobalSearch';
 import { DailyReport } from '../sections/DailyReport';
 import { TimeEntries } from '../sections/TimeEntries';
+import { ProjectTasks } from '../sections/ProjectTasks';
+import { Estimates } from '../sections/Estimates';
 import { Invoices } from '../sections/Invoices';
 import { Expenses } from '../sections/Expenses';
 import { HRAnalytics } from '../sections/HRAnalytics';
@@ -15,6 +17,7 @@ import { RoomChat } from '../sections/RoomChat';
 import { ChatBreakGlass } from '../sections/ChatBreakGlass';
 import { MasterData } from '../sections/MasterData';
 import { Projects } from '../sections/Projects';
+import { ProjectMilestones } from '../sections/ProjectMilestones';
 import { VendorDocuments } from '../sections/VendorDocuments';
 
 export const App: React.FC = () => {
@@ -35,7 +38,13 @@ export const App: React.FC = () => {
         <TimeEntries />
       </div>
       <div className="card">
+        <ProjectTasks />
+      </div>
+      <div className="card">
         <Expenses />
+      </div>
+      <div className="card">
+        <Estimates />
       </div>
       <div className="card">
         <Invoices />
@@ -54,6 +63,9 @@ export const App: React.FC = () => {
       </div>
       <div className="card">
         <Projects />
+      </div>
+      <div className="card">
+        <ProjectMilestones />
       </div>
       <div className="card">
         <MasterData />

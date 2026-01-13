@@ -57,6 +57,8 @@
 - GET `/projects/:projectId/estimates` (list)
 - POST `/projects/:projectId/estimates` { lines, totalAmount, currency, validUntil?, notes }
 - POST `/estimates/:id/submit`
+- POST `/estimates/:id/send?templateId?&templateSettingId?`
+- GET  `/estimates/:id/send-logs`
 - GET `/projects/:projectId/invoices` (list)
 - POST `/projects/:projectId/invoices` { estimateId?, milestoneId?, lines, issueDate?, dueDate?, currency, totalAmount }
 - POST `/invoices/:id/submit`

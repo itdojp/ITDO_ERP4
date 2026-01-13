@@ -27,8 +27,8 @@ insert into "ApprovalRule" (id, "flowType", conditions, steps, "createdAt", "upd
   ('50000000-0000-0000-0000-000000000006','vendor_invoice','{}','[]', now(), now())
 on conflict do nothing;
 
-insert into "Estimate" (id, "projectId", version, "totalAmount", currency, status, "createdAt", "updatedAt")
-values ('10000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-000000000001',1,120000,'JPY','approved', now(), now())
+insert into "Estimate" (id, "projectId", "estimateNo", version, "totalAmount", currency, status, "numberingSerial", "createdAt", "updatedAt")
+values ('10000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-000000000001','Q2025-11-0001',1,120000,'JPY','approved', 1, now(), now())
 on conflict do nothing;
 
 insert into "Invoice" (id, "projectId", "estimateId", "invoiceNo", "issueDate", "totalAmount", currency, status, "createdAt", "updatedAt")

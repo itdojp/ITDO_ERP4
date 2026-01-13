@@ -25,6 +25,7 @@ type InvoiceResult = {
 
 type EstimateResult = {
   id: string;
+  estimateNo?: string | null;
   status: string;
   totalAmount: unknown;
   currency: string;
@@ -342,7 +343,7 @@ export const GlobalSearch: React.FC = () => {
                     style={{ justifyContent: 'space-between' }}
                   >
                     <div>
-                      <strong>{est.id}</strong>{' '}
+                      <strong>{est.estimateNo || est.id}</strong>{' '}
                       <span className="badge">{est.status}</span>
                     </div>
                     <div style={{ fontSize: 12, color: '#475569' }}>
