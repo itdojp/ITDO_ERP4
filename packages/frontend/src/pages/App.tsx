@@ -15,6 +15,7 @@ import { RoomChat } from '../sections/RoomChat';
 import { ChatBreakGlass } from '../sections/ChatBreakGlass';
 import { MasterData } from '../sections/MasterData';
 import { Projects } from '../sections/Projects';
+import { ProjectMilestones } from '../sections/ProjectMilestones';
 import { VendorDocuments } from '../sections/VendorDocuments';
 
 export const App: React.FC = () => {
@@ -54,6 +55,9 @@ export const App: React.FC = () => {
       </div>
       <div className="card">
         <Projects />
+      </div>
+      <div className="card">
+        <ProjectMilestones />
       </div>
       <div className="card">
         <MasterData />
