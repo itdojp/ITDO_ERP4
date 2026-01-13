@@ -190,7 +190,10 @@ export async function registerInvoiceRoutes(app: FastifyInstance) {
       const unitPrice = Number(body.unitPrice);
       if (!Number.isFinite(unitPrice) || unitPrice <= 0) {
         return reply.status(400).send({
-          error: { code: 'INVALID_UNIT_PRICE', message: 'unitPrice must be > 0' },
+          error: {
+            code: 'INVALID_UNIT_PRICE',
+            message: 'unitPrice must be > 0',
+          },
         });
       }
       const project = await prisma.project.findUnique({
@@ -206,7 +209,9 @@ export async function registerInvoiceRoutes(app: FastifyInstance) {
         typeof body.currency === 'string' && body.currency.trim()
           ? body.currency.trim()
           : project.currency || 'JPY';
-      const issueDate = body.issueDate ? parseDate(String(body.issueDate)) : null;
+      const issueDate = body.issueDate
+        ? parseDate(String(body.issueDate))
+        : null;
       const dueDate = body.dueDate ? parseDate(String(body.dueDate)) : null;
       if (body.issueDate && !issueDate) {
         return reply.status(400).send({
