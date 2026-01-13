@@ -18,6 +18,10 @@ function parseOptionalString(value: unknown) {
   return trimmed ? trimmed : null;
 }
 
+function isValidUnitPrice(unitPrice: number) {
+  return Number.isFinite(unitPrice) && unitPrice > 0;
+}
+
 export async function registerRateCardRoutes(app: FastifyInstance) {
   const requireAdmin = requireRole(['admin', 'mgmt']);
 
@@ -76,7 +80,7 @@ export async function registerRateCardRoutes(app: FastifyInstance) {
     if (!currency) {
       return reply.code(400).send({ error: 'currency_required' });
     }
-    if (!Number.isFinite(unitPrice) || unitPrice < 0) {
+    if (!isValidUnitPrice(unitPrice)) {
       return reply.code(400).send({ error: 'unit_price_invalid' });
     }
     if (!validFrom) {
@@ -146,7 +150,7 @@ export async function registerRateCardRoutes(app: FastifyInstance) {
         return reply.code(400).send({ error: 'currency_required' });
       }
       if (unitPrice !== undefined) {
-        if (!Number.isFinite(unitPrice) || unitPrice < 0) {
+        if (!isValidUnitPrice(unitPrice)) {
           return reply.code(400).send({ error: 'unit_price_invalid' });
         }
       }
@@ -191,6 +195,9 @@ export async function registerRateCardRoutes(app: FastifyInstance) {
         return reply.code(404).send({ error: 'not_found' });
       }
       const now = new Date();
+      if (current.validTo && current.validTo.getTime() <= now.getTime()) {
+        return current;
+      }
       const updated = await prisma.rateCard.update({
         where: { id },
         data: {

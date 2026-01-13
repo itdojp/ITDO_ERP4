@@ -12,7 +12,7 @@ type RateCard = {
   projectId?: string | null;
   role: string;
   workType?: string | null;
-  unitPrice: unknown;
+  unitPrice: number | string;
   validFrom: string;
   validTo?: string | null;
   currency: string;
@@ -93,6 +93,24 @@ export const RateCardSettingsCard: React.FC = () => {
   }, [filterActiveOnly, filterIncludeGlobal, filterProjectId, filterWorkType]);
 
   const create = useCallback(async () => {
+    const trimmedRole = role.trim();
+    if (!trimmedRole) {
+      setMessage('role は必須です');
+      return;
+    }
+    const parsedUnitPrice = Number(unitPrice);
+    if (!Number.isFinite(parsedUnitPrice) || parsedUnitPrice <= 0) {
+      setMessage('unitPrice は 1 以上で入力してください');
+      return;
+    }
+    if (!currency.trim()) {
+      setMessage('currency は必須です');
+      return;
+    }
+    if (!validFrom.trim()) {
+      setMessage('validFrom は必須です');
+      return;
+    }
     setIsLoading(true);
     setMessage('');
     try {
@@ -101,9 +119,9 @@ export const RateCardSettingsCard: React.FC = () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           projectId: formProjectId || null,
-          role,
+          role: trimmedRole,
           workType: workType.trim() ? workType.trim() : null,
-          unitPrice: Number(unitPrice),
+          unitPrice: parsedUnitPrice,
           currency,
           validFrom,
           validTo: validTo.trim() ? validTo.trim() : null,
@@ -285,6 +303,7 @@ export const RateCardSettingsCard: React.FC = () => {
         {items.map((item) => (
           <li key={item.id}>
             <span className="badge">{renderProject(item.projectId)}</span>{' '}
+            <span className="badge">{item.role}</span>{' '}
             {item.workType || '(default)'} / {String(item.unitPrice)}{' '}
             {item.currency} / {formatDate(item.validFrom)}〜
             {formatDate(item.validTo)}
