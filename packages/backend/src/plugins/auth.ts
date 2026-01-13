@@ -39,6 +39,13 @@ const JWT_PROJECT_CLAIM = process.env.JWT_PROJECT_CLAIM || 'project_ids';
 const JWT_ORG_CLAIM = process.env.JWT_ORG_CLAIM || 'org_id';
 const AUTH_DEFAULT_ROLE = process.env.AUTH_DEFAULT_ROLE || 'user';
 const USER_ROLE_ALIASES = new Set(['project_lead', 'employee', 'probationary']);
+const ROLE_GROUP_MAP: Record<string, string> = {
+  admin: 'admin',
+  mgmt: 'mgmt',
+  exec: 'exec',
+  hr: 'hr',
+  'hr-group': 'hr',
+};
 
 let cachedJwks: ReturnType<typeof createRemoteJWKSet> | null = null;
 let cachedPublicKey: CryptoKey | null = null;
@@ -101,6 +108,84 @@ async function resolveProjectIdsFromDb(userId: string) {
     select: { projectId: true },
   });
   return members.map((member) => member.projectId);
+}
+
+async function resolveUserGroupsFromDb(userId: string) {
+  const user = await prisma.userAccount.findUnique({
+    where: { userName: userId },
+    select: {
+      active: true,
+      deletedAt: true,
+      organization: true,
+      memberships: {
+        include: { group: { select: { displayName: true, active: true } } },
+      },
+    },
+  });
+  if (!user) return null;
+  if (!user.active || user.deletedAt) {
+    return { blocked: true as const };
+  }
+  const groupIds = user.memberships
+    .filter((membership) => membership.group.active)
+    .map((membership) => membership.group.displayName)
+    .map((value) => value.trim())
+    .filter(Boolean);
+  return {
+    blocked: false as const,
+    orgId: user.organization ?? undefined,
+    groupIds,
+  };
+}
+
+function unionStrings(a: string[] | undefined, b: string[]) {
+  const set = new Set<string>();
+  for (const item of a ?? []) {
+    const trimmed = item.trim();
+    if (trimmed) set.add(trimmed);
+  }
+  for (const item of b) {
+    const trimmed = item.trim();
+    if (trimmed) set.add(trimmed);
+  }
+  return Array.from(set);
+}
+
+function deriveRolesFromGroups(groupIds: string[]) {
+  const roles: string[] = [];
+  for (const groupId of groupIds) {
+    const mapped = ROLE_GROUP_MAP[groupId];
+    if (mapped) roles.push(mapped);
+  }
+  return roles;
+}
+
+async function ensureGroupIds(req: any, reply: any) {
+  const user = req.user;
+  if (!user) return true;
+  try {
+    const resolved = await resolveUserGroupsFromDb(user.userId);
+    if (!resolved) return true;
+    if (resolved.blocked) {
+      respondUnauthorized(req, reply, 'user_inactive');
+      return false;
+    }
+    const mergedGroupIds = unionStrings(user.groupIds, resolved.groupIds);
+    const derivedRoles = deriveRolesFromGroups(mergedGroupIds);
+    const mergedRoles = expandRoles(
+      unionStrings(user.roles, ['user', ...derivedRoles]),
+    );
+    user.groupIds = mergedGroupIds;
+    user.roles = mergedRoles;
+    if (!user.orgId && resolved.orgId) {
+      user.orgId = resolved.orgId;
+    }
+  } catch (err) {
+    if (req.log && typeof req.log.warn === 'function') {
+      req.log.warn({ err }, 'Failed to resolve groupIds from DB');
+    }
+  }
+  return true;
 }
 
 async function ensureProjectIds(req: any) {
@@ -240,6 +325,7 @@ async function authPlugin(fastify: any) {
     }
     try {
       req.user = await authenticateJwt(token);
+      if (!(await ensureGroupIds(req, reply))) return;
       await ensureProjectIds(req);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'invalid_token';
