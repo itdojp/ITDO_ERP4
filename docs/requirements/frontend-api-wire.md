@@ -15,6 +15,10 @@
 - POST `/projects/:projectId/members/bulk` { items: [{ userId, role? }] }
 - DELETE `/projects/:projectId/members/:userId`
   - CSVインポートは `members/bulk` を使用
+- GET `/projects/:projectId/recurring-template`
+- POST `/projects/:projectId/recurring-template` { frequency, nextRunAt?, defaultAmount?, ... }
+- GET `/projects/:projectId/recurring-generation-logs?limit=&templateId?&periodKey?`
+- POST `/jobs/recurring-projects/run`
 
 ## reports
 - GET `/reports/delivery-due?from=YYYY-MM-DD&to=YYYY-MM-DD&projectId?&format=csv|pdf?&layout=default?`

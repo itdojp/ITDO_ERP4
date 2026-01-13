@@ -155,7 +155,7 @@ export const recurringTemplateSchema = {
     defaultTerms: Type.Optional(Type.String()),
     defaultMilestoneName: Type.Optional(Type.String()),
     billUpon: Type.Optional(billUponSchema),
-    dueDateRule: Type.Optional(dueDateRuleSchema),
+    dueDateRule: Type.Optional(Type.Union([dueDateRuleSchema, Type.Null()])),
     shouldGenerateEstimate: Type.Optional(Type.Boolean()),
     shouldGenerateInvoice: Type.Optional(Type.Boolean()),
     isActive: Type.Optional(Type.Boolean()),
