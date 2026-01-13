@@ -213,7 +213,8 @@ export const Invoices: React.FC = () => {
           </button>
         </div>
         <p style={{ margin: '8px 0 0', fontSize: 12, color: '#6b7280' }}>
-          注意: 対象工数は請求に紐づけられ、解除するまで編集/付け替えできません。
+          注意:
+          対象工数は請求に紐づけられ、解除するまで編集/付け替えできません。
         </p>
       </div>
       {projectMessage && <p style={{ color: '#dc2626' }}>{projectMessage}</p>}
