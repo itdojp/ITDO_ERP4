@@ -46,19 +46,24 @@ type ProjectMemberBulkResult = {
   failures?: Array<{ userId: string | null; reason: string }>;
 };
 
+type DueDateRule = {
+  type: 'periodEndPlusOffset';
+  offsetDays: number;
+};
+
 type RecurringProjectTemplate = {
   id: string;
   projectId: string;
   frequency?: string | null;
   nextRunAt?: string | null;
   timezone?: string | null;
-  defaultAmount?: unknown | null;
+  defaultAmount?: number | string | null;
   defaultCurrency?: string | null;
-  defaultTaxRate?: unknown | null;
+  defaultTaxRate?: number | string | null;
   defaultTerms?: string | null;
   defaultMilestoneName?: string | null;
   billUpon?: string | null;
-  dueDateRule?: unknown | null;
+  dueDateRule?: DueDateRule | null;
   shouldGenerateEstimate?: boolean | null;
   shouldGenerateInvoice?: boolean | null;
   isActive?: boolean | null;
@@ -156,11 +161,10 @@ const toDatetimeLocal = (value?: string | null) => {
   return date.toISOString().slice(0, 16);
 };
 
-const parseDueDateOffsetDays = (value: unknown) => {
-  if (!value || typeof value !== 'object') return '';
-  const rule = value as { type?: unknown; offsetDays?: unknown };
-  if (rule.type !== 'periodEndPlusOffset') return '';
-  const offset = Number(rule.offsetDays);
+const parseDueDateOffsetDays = (value?: DueDateRule | null) => {
+  if (!value) return '';
+  if (value.type !== 'periodEndPlusOffset') return '';
+  const offset = Number(value.offsetDays);
   if (!Number.isFinite(offset)) return '';
   return String(offset);
 };
@@ -362,7 +366,7 @@ export const Projects: React.FC = () => {
         console.error('Failed to load recurring template.', err);
         setRecurringTemplateId(null);
         setRecurringForm(defaultRecurringTemplateForm);
-        setRecurringMessage('テンプレの取得に失敗しました');
+        setRecurringMessage(`テンプレの取得に失敗しました${errorDetail(err)}`);
       } finally {
         setRecurringLoading(false);
       }
@@ -385,7 +389,7 @@ export const Projects: React.FC = () => {
       } catch (err) {
         console.error('Failed to load recurring logs.', err);
         setRecurringLogs([]);
-        setRecurringMessage('生成ログの取得に失敗しました');
+        setRecurringMessage(`生成ログの取得に失敗しました${errorDetail(err)}`);
       } finally {
         setRecurringLoading(false);
       }
@@ -400,16 +404,13 @@ export const Projects: React.FC = () => {
       return;
     }
     const amount = parseNumberInput(recurringForm.defaultAmount);
-    if (amount === undefined || amount <= 0) {
+    if (amount === undefined || amount < 1) {
       setRecurringMessage('デフォルト金額は1以上で入力してください');
       return;
     }
     const taxRate = parseNumberInput(recurringForm.defaultTaxRate);
     const offsetRaw = recurringForm.dueDateOffsetDays.trim();
-    let dueDateRule: {
-      type: 'periodEndPlusOffset';
-      offsetDays: number;
-    } | null = null;
+    let dueDateRule: DueDateRule | null = null;
     if (offsetRaw) {
       const offsetDays = Number(offsetRaw);
       if (!Number.isFinite(offsetDays) || !Number.isInteger(offsetDays)) {
@@ -475,7 +476,7 @@ export const Projects: React.FC = () => {
       await loadRecurringLogs(recurringProjectId);
     } catch (err) {
       console.error('Failed to save recurring template.', err);
-      setRecurringMessage('保存に失敗しました');
+      setRecurringMessage(`保存に失敗しました${errorDetail(err)}`);
     } finally {
       setRecurringLoading(false);
     }
@@ -501,7 +502,7 @@ export const Projects: React.FC = () => {
     } catch (err) {
       console.error('Failed to run recurring job.', err);
       setRecurringJobResult(null);
-      setRecurringJobMessage('ジョブ実行に失敗しました');
+      setRecurringJobMessage(`ジョブ実行に失敗しました${errorDetail(err)}`);
     } finally {
       setRecurringLoading(false);
     }
@@ -1321,7 +1322,7 @@ export const Projects: React.FC = () => {
                   min={0}
                   max={365}
                   step={1}
-                  placeholder="空で無効"
+                  placeholder="空で無効（0=月末）"
                   disabled={recurringLoading}
                 />
               </label>
@@ -1396,6 +1397,7 @@ export const Projects: React.FC = () => {
             <div className="row" style={{ gap: 12, flexWrap: 'wrap' }}>
               <label className="row" style={{ gap: 6 }}>
                 <input
+                  aria-label="見積を生成"
                   type="checkbox"
                   checked={recurringForm.shouldGenerateEstimate}
                   onChange={(e) =>
@@ -1410,6 +1412,7 @@ export const Projects: React.FC = () => {
               </label>
               <label className="row" style={{ gap: 6 }}>
                 <input
+                  aria-label="請求を生成"
                   type="checkbox"
                   checked={recurringForm.shouldGenerateInvoice}
                   onChange={(e) =>
@@ -1424,6 +1427,7 @@ export const Projects: React.FC = () => {
               </label>
               <label className="row" style={{ gap: 6 }}>
                 <input
+                  aria-label="定期テンプレ有効"
                   type="checkbox"
                   checked={recurringForm.isActive}
                   onChange={(e) =>

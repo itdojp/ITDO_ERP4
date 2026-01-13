@@ -1403,8 +1403,15 @@ export async function registerProjectRoutes(app: FastifyInstance) {
   app.get(
     '/projects/:id/recurring-generation-logs',
     { preHandler: requireRole(['admin', 'mgmt']) },
-    async (req) => {
+    async (req, reply) => {
       const { id } = req.params as { id: string };
+      const project = await prisma.project.findUnique({
+        where: { id },
+        select: { id: true, deletedAt: true },
+      });
+      if (!project || project.deletedAt) {
+        return reply.code(404).send({ error: 'not_found' });
+      }
       const { limit, templateId, periodKey } = req.query as {
         limit?: string;
         templateId?: string;

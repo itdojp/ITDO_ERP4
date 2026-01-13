@@ -47,6 +47,17 @@ test('recurring template generates draft invoice @core', async ({ request }) => 
   );
   await ensureOk(templateRes);
   const template = await templateRes.json();
+  expect(template.dueDateRule).toBeNull();
+
+  const loadedRes = await request.get(
+    `${apiBase}/projects/${project.id}/recurring-template`,
+    { headers: authHeaders },
+  );
+  await ensureOk(loadedRes);
+  const loaded = await loadedRes.json();
+  expect(loaded).toBeTruthy();
+  expect(loaded.id).toBe(template.id);
+  expect(loaded.dueDateRule).toBeNull();
 
   const jobRes = await request.post(`${apiBase}/jobs/recurring-projects/run`, {
     data: {},
@@ -83,4 +94,3 @@ test('recurring template generates draft invoice @core', async ({ request }) => 
     true,
   );
 });
-
