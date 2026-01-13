@@ -42,5 +42,19 @@ export const useProjectTasks = ({ projectId }: UseProjectTasksOptions) => {
     loadTasks();
   }, [loadTasks]);
 
+  useEffect(() => {
+    if (!projectId) return;
+    if (typeof window === 'undefined') return;
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent<{ projectId?: unknown }>).detail;
+      if (!detail || typeof detail !== 'object') return;
+      if (detail.projectId !== projectId) return;
+      loadTasks();
+    };
+    window.addEventListener('erp4:project-tasks-changed', handler);
+    return () =>
+      window.removeEventListener('erp4:project-tasks-changed', handler);
+  }, [loadTasks, projectId]);
+
   return { tasks, taskMessage, isLoading, loadTasks };
 };

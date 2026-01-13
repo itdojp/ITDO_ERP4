@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { api, getAuthState } from '../api';
 import { useProjects } from '../hooks/useProjects';
 
@@ -12,10 +12,24 @@ type ProjectTask = {
 };
 
 const buildInitialForm = (projectId?: string) => ({
-  projectId: projectId || 'demo-project',
+  projectId: projectId ?? '',
   name: '',
   status: '',
 });
+
+const errorDetail = (err: unknown) => {
+  if (err instanceof Error && err.message) {
+    return ` (${err.message})`;
+  }
+  return '';
+};
+
+const notifyTasksChanged = (projectId: string) => {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(
+    new CustomEvent('erp4:project-tasks-changed', { detail: { projectId } }),
+  );
+};
 
 export const ProjectTasks: React.FC = () => {
   const auth = getAuthState();
@@ -26,12 +40,9 @@ export const ProjectTasks: React.FC = () => {
   const [editing, setEditing] = useState<ProjectTask | null>(null);
   const [message, setMessage] = useState('');
 
-  const handleProjectSelect = useCallback(
-    (projectId: string) => {
-      setForm((prev) => ({ ...prev, projectId }));
-    },
-    [setForm],
-  );
+  const handleProjectSelect = useCallback((projectId: string) => {
+    setForm((prev) => ({ ...prev, projectId }));
+  }, []);
   const { projects, projectMessage } = useProjects({
     selectedProjectId: form.projectId,
     onSelect: handleProjectSelect,
@@ -46,23 +57,44 @@ export const ProjectTasks: React.FC = () => {
     return project ? `${project.code} / ${project.name}` : projectId;
   };
 
-  const load = async () => {
-    try {
-      const res = await api<{ items: ProjectTask[] }>(
-        `/projects/${form.projectId}/tasks`,
-      );
-      setItems(res.items || []);
-      setMessage('読み込みました');
-    } catch (err) {
-      setItems([]);
-      setMessage('読み込みに失敗');
-    }
-  };
+  const load = useCallback(
+    async (options?: { silent?: boolean }) => {
+      if (!form.projectId) {
+        setItems([]);
+        if (!options?.silent) {
+          setMessage('案件を選択してください');
+        }
+        return;
+      }
+      try {
+        const res = await api<{ items: ProjectTask[] }>(
+          `/projects/${form.projectId}/tasks`,
+        );
+        setItems(res.items || []);
+        setMessage('読み込みました');
+      } catch (err) {
+        setItems([]);
+        setMessage(`読み込みに失敗しました${errorDetail(err)}`);
+      }
+    },
+    [form.projectId],
+  );
 
   const resetForm = useCallback(() => {
     setForm((prev) => ({ ...buildInitialForm(prev.projectId) }));
     setEditing(null);
   }, []);
+
+  useEffect(() => {
+    void load({ silent: true });
+  }, [load]);
+
+  useEffect(() => {
+    if (!editing) return;
+    if (editing.projectId === form.projectId) return;
+    setEditing(null);
+    setForm((prev) => ({ ...prev, name: '', status: '' }));
+  }, [editing, form.projectId]);
 
   const save = async () => {
     if (!form.projectId) {
@@ -91,6 +123,7 @@ export const ProjectTasks: React.FC = () => {
           prev.map((item) => (item.id === updated.id ? updated : item)),
         );
         setMessage('更新しました');
+        notifyTasksChanged(form.projectId);
         resetForm();
         return;
       }
@@ -106,9 +139,10 @@ export const ProjectTasks: React.FC = () => {
       );
       setItems((prev) => [created, ...prev]);
       setMessage('作成しました');
+      notifyTasksChanged(form.projectId);
       resetForm();
     } catch (err) {
-      setMessage('保存に失敗');
+      setMessage(`保存に失敗しました${errorDetail(err)}`);
     }
   };
 
@@ -124,19 +158,27 @@ export const ProjectTasks: React.FC = () => {
 
   const remove = async (item: ProjectTask) => {
     const reason = window.prompt('削除理由を入力してください');
-    if (!reason) return;
+    if (reason === null) {
+      return;
+    }
+    const trimmedReason = reason.trim();
+    if (!trimmedReason) {
+      setMessage('削除理由は必須です');
+      return;
+    }
     try {
       await api(`/projects/${item.projectId}/tasks/${item.id}/delete`, {
         method: 'POST',
-        body: JSON.stringify({ reason }),
+        body: JSON.stringify({ reason: trimmedReason }),
       });
       setItems((prev) => prev.filter((task) => task.id !== item.id));
       setMessage('削除しました');
+      notifyTasksChanged(item.projectId);
       if (editing?.id === item.id) {
         resetForm();
       }
     } catch (err) {
-      setMessage('削除に失敗');
+      setMessage(`削除に失敗しました${errorDetail(err)}`);
     }
   };
 
@@ -156,7 +198,7 @@ export const ProjectTasks: React.FC = () => {
             </option>
           ))}
         </select>
-        <button className="button secondary" onClick={load}>
+        <button className="button secondary" onClick={() => load()}>
           読み込み
         </button>
       </div>

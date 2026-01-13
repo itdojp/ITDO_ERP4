@@ -73,6 +73,7 @@ test('task to time entry link @core', async ({ page, request }) => {
   await taskSection.getByLabel('タスク名').fill(taskName);
   await taskSection.getByRole('button', { name: '作成' }).click();
   await expect(taskSection.getByText('作成しました')).toBeVisible();
+  await expect(taskSection.getByText(taskName)).toBeVisible();
 
   const tasksRes = await request.get(`${apiBase}/projects/${projectId}/tasks`, {
     headers: authHeaders,
@@ -87,12 +88,15 @@ test('task to time entry link @core', async ({ page, request }) => {
   await timeSection.scrollIntoViewIfNeeded();
   await selectByLabelOrFirst(
     timeSection.getByLabel('案件選択'),
-    'PRJ-DEMO-2 / Demo Project 2',
-  );
-  await selectByLabelOrFirst(
-    timeSection.getByLabel('案件選択'),
     'PRJ-DEMO-1 / Demo Project 1',
   );
+  const taskSelect = timeSection.getByLabel('タスク選択');
+  await expect
+    .poll(
+      () => taskSelect.locator('option', { hasText: taskName }).count(),
+      { timeout: 30_000 },
+    )
+    .toBeGreaterThan(0);
   await timeSection.getByLabel('タスク選択').selectOption({ label: taskName });
   await timeSection.locator('input[type="number"]').fill('75');
   await timeSection.getByRole('button', { name: '追加' }).click();
