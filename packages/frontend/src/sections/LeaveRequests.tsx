@@ -100,6 +100,10 @@ export const LeaveRequests: React.FC = () => {
       setMessage('時間が不正です');
       return;
     }
+    if (hoursRaw && !Number.isInteger(hours)) {
+      setMessage('時間は整数で入力してください');
+      return;
+    }
     try {
       const created = await api<LeaveRequest>('/leave-requests', {
         method: 'POST',
@@ -187,10 +191,13 @@ export const LeaveRequests: React.FC = () => {
           </label>
           <input
             aria-label="休暇時間(任意)"
+            type="number"
+            min={0}
+            step={1}
             value={form.hours}
             onChange={(e) => setForm({ ...form, hours: e.target.value })}
-            placeholder="時間(任意)"
-            inputMode="decimal"
+            placeholder="時間(任意, 整数)"
+            inputMode="numeric"
           />
           <input
             aria-label="備考(任意)"
@@ -225,7 +232,9 @@ export const LeaveRequests: React.FC = () => {
             <span className="badge">{item.status}</span> {item.leaveType} /{' '}
             {new Date(item.startDate).toLocaleDateString()}〜
             {new Date(item.endDate).toLocaleDateString()}
-            {item.hours != null ? ` / ${item.hours}h` : ''}
+            {item.hours !== null && item.hours !== undefined
+              ? ` / ${item.hours}h`
+              : ''}
             <div>
               <button
                 className="button"

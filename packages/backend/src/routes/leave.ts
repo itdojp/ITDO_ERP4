@@ -44,13 +44,18 @@ export async function registerLeaveRoutes(app: FastifyInstance) {
         hours = Number(body.hours);
         if (!Number.isFinite(hours) || hours < 0 || !Number.isInteger(hours)) {
           return reply.status(400).send({
-            error: { code: 'INVALID_HOURS', message: 'hours must be integer' },
+            error: {
+              code: 'INVALID_HOURS',
+              message: 'hours must be a non-negative integer',
+            },
           });
         }
       }
       const leave = await prisma.leaveRequest.create({
         data: {
-          ...body,
+          userId: body.userId,
+          leaveType: body.leaveType,
+          notes: body.notes,
           startDate,
           endDate,
           hours: hours ?? undefined,
@@ -78,30 +83,39 @@ export async function registerLeaveRoutes(app: FastifyInstance) {
       ) {
         return reply.code(403).send({ error: 'forbidden' });
       }
-      const conflicts = await prisma.timeEntry.findMany({
-        where: {
-          userId: leave.userId,
-          deletedAt: null,
-          status: { in: [TimeStatusValue.submitted, TimeStatusValue.approved] },
-          minutes: { gt: 0 },
-          workDate: { gte: leave.startDate, lte: endOfDay(leave.endDate) },
-        },
-        select: {
-          id: true,
-          projectId: true,
-          taskId: true,
-          workDate: true,
-          minutes: true,
-        },
-        orderBy: { workDate: 'asc' },
-        take: 50,
+      const workDateEnd = endOfDay(leave.endDate);
+      const conflictStatuses = [
+        TimeStatusValue.submitted,
+        TimeStatusValue.approved,
+      ];
+      const conflictWhere = {
+        userId: leave.userId,
+        deletedAt: null,
+        status: { in: conflictStatuses },
+        minutes: { gt: 0 },
+        workDate: { gte: leave.startDate, lte: workDateEnd },
+      };
+      const conflictCount = await prisma.timeEntry.count({
+        where: conflictWhere,
       });
-      if (conflicts.length) {
+      if (conflictCount) {
+        const conflicts = await prisma.timeEntry.findMany({
+          where: conflictWhere,
+          select: {
+            id: true,
+            projectId: true,
+            taskId: true,
+            workDate: true,
+            minutes: true,
+          },
+          orderBy: { workDate: 'asc' },
+          take: 50,
+        });
         return reply.status(409).send({
           error: {
             code: 'TIME_ENTRY_CONFLICT',
             message: 'Time entries exist in leave period',
-            conflictCount: conflicts.length,
+            conflictCount,
             conflicts: conflicts.map((entry) => ({
               id: entry.id,
               projectId: entry.projectId,
