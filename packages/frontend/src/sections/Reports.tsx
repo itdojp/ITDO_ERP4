@@ -152,16 +152,32 @@ export const Reports: React.FC = () => {
             <strong>プロジェクト別工数</strong>
             <div>Project: {renderProject(projectReport.projectId)}</div>
             <div>Minutes: {projectReport.totalMinutes}</div>
-            {projectReport.planHours !== null &&
-              projectReport.planHours !== undefined && (
-                <div>
-                  Plan: {Number(projectReport.planHours).toFixed(2)}h / Actual:{' '}
-                  {(projectReport.totalMinutes / 60).toFixed(2)}h / Var:{' '}
-                  {((projectReport.totalMinutes / 60) -
-                    Number(projectReport.planHours)).toFixed(2)}
-                  h
-                </div>
-              )}
+            {projectReport.planHours != null && (
+              <div>
+                {(() => {
+                  const planHours = Number(projectReport.planHours);
+                  const actualHours = projectReport.totalMinutes / 60;
+                  const varianceHours =
+                    projectReport.varianceMinutes != null
+                      ? projectReport.varianceMinutes / 60
+                      : actualHours - planHours;
+                  const sign = varianceHours > 0 ? '+' : '';
+                  const label =
+                    varianceHours > 0
+                      ? '超過'
+                      : varianceHours < 0
+                        ? '未達'
+                        : '予定通り';
+                  return (
+                    <>
+                      Plan: {planHours.toFixed(2)}h / Actual:{' '}
+                      {actualHours.toFixed(2)}h / Var: {sign}
+                      {varianceHours.toFixed(2)}h（{label}）
+                    </>
+                  );
+                })()}
+              </div>
+            )}
             <div>
               Expenses: ¥
               {Number(projectReport.totalExpenses || 0).toLocaleString()}
