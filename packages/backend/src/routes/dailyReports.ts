@@ -28,8 +28,17 @@ export async function registerDailyReportRoutes(app: FastifyInstance) {
           error: { code: 'INVALID_DATE', message: 'Invalid reportDate' },
         });
       }
+      const actorId = req.user?.userId;
       const report = await prisma.dailyReport.create({
-        data: { ...body, reportDate },
+        data: {
+          userId: body.userId,
+          reportDate,
+          content: body.content,
+          linkedProjectIds: body.linkedProjectIds ?? undefined,
+          status: body.status ?? undefined,
+          createdBy: actorId,
+          updatedBy: actorId,
+        },
       });
       return report;
     },

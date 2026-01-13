@@ -130,6 +130,10 @@ test('frontend smoke core @core', async ({ page }) => {
     .locator('h2', { hasText: '日報 + ウェルビーイング' })
     .locator('..');
   await dailySection.scrollIntoViewIfNeeded();
+  const dailyReportText = `E2E日報: ${runId()}`;
+  await dailySection
+    .getByPlaceholder('日報本文（任意）')
+    .fill(dailyReportText);
   await dailySection.getByRole('button', { name: 'Not Good' }).click();
   await dailySection.getByRole('button', { name: '仕事量が多い' }).click();
   await dailySection
@@ -142,6 +146,10 @@ test('frontend smoke core @core', async ({ page }) => {
     .check();
   await dailySection.getByRole('button', { name: '送信' }).click();
   await expect(dailySection.getByText('送信しました')).toBeVisible();
+  await dailySection.getByRole('button', { name: '履歴を読み込み' }).click();
+  const dailyHistoryItem = dailySection.getByText(dailyReportText);
+  await dailyHistoryItem.scrollIntoViewIfNeeded();
+  await expect(dailyHistoryItem).toBeVisible();
   await captureSection(dailySection, '02-core-daily-report.png');
 
   const timeSection = page.locator('h2', { hasText: '工数入力' }).locator('..');
