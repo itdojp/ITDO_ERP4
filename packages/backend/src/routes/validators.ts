@@ -298,7 +298,7 @@ export const invoiceFromTimeEntriesSchema = {
     {
       from: Type.String({ format: 'date' }),
       to: Type.String({ format: 'date' }),
-      unitPrice: Type.Number({ minimum: 0 }),
+      unitPrice: Type.Number({ exclusiveMinimum: 0 }),
       currency: Type.Optional(Type.String({ default: 'JPY' })),
       issueDate: Type.Optional(Type.String({ format: 'date' })),
       dueDate: Type.Optional(Type.String({ format: 'date' })),

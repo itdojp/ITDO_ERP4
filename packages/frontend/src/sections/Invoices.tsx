@@ -36,7 +36,15 @@ export const Invoices: React.FC = () => {
   );
   const [timeFrom, setTimeFrom] = useState(() => {
     const now = new Date();
-    return formatDateInput(new Date(now.getFullYear(), now.getMonth(), 1));
+    let fromDate = new Date(now.getFullYear(), now.getMonth(), 1);
+    if (
+      fromDate.getFullYear() === now.getFullYear() &&
+      fromDate.getMonth() === now.getMonth() &&
+      fromDate.getDate() === now.getDate()
+    ) {
+      fromDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    }
+    return formatDateInput(fromDate);
   });
   const [timeTo, setTimeTo] = useState(() => formatDateInput(new Date()));
   const [timeUnitPrice, setTimeUnitPrice] = useState(10000);

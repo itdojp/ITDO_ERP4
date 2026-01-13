@@ -169,7 +169,10 @@ export async function registerInvoiceRoutes(app: FastifyInstance) {
   app.post(
     '/projects/:projectId/invoices/from-time-entries',
     {
-      preHandler: requireRole(['admin', 'mgmt']),
+      preHandler: [
+        requireRole(['admin', 'mgmt']),
+        requireProjectAccess((req) => (req.params as any)?.projectId),
+      ],
       schema: invoiceFromTimeEntriesSchema,
     },
     async (req, reply) => {
@@ -182,7 +185,8 @@ export async function registerInvoiceRoutes(app: FastifyInstance) {
           error: { code: 'INVALID_DATE', message: 'from/to are required' },
         });
       }
-      if (fromDate.getTime() > toDate.getTime()) {
+      const toDateEnd = endOfDay(toDate);
+      if (fromDate.getTime() > toDateEnd.getTime()) {
         return reply.status(400).send({
           error: { code: 'INVALID_DATE_RANGE', message: 'from must be <= to' },
         });
@@ -230,7 +234,7 @@ export async function registerInvoiceRoutes(app: FastifyInstance) {
           deletedAt: null,
           billedInvoiceId: null,
           status: { in: [TimeStatusValue.submitted, TimeStatusValue.approved] },
-          workDate: { gte: fromDate, lte: endOfDay(toDate) },
+          workDate: { gte: fromDate, lte: toDateEnd },
         },
         select: {
           id: true,
@@ -301,7 +305,7 @@ export async function registerInvoiceRoutes(app: FastifyInstance) {
           const quantityHours = group.minutes / 60;
           return {
             description: `工数 ${taskName}${workTypeLabel}`,
-            quantity: quantityHours.toFixed(2),
+            quantity: Number(quantityHours.toFixed(2)),
             unitPrice,
             taxRate: null,
             taskId: group.taskId,
@@ -366,7 +370,7 @@ export async function registerInvoiceRoutes(app: FastifyInstance) {
         return reply.status(400).send({
           error: {
             code: 'INVALID_STATUS',
-            message: 'Only draft invoice can release time entries',
+            message: 'Only a draft invoice can release time entries',
           },
         });
       }
