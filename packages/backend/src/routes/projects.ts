@@ -1399,4 +1399,38 @@ export async function registerProjectRoutes(app: FastifyInstance) {
       return template;
     },
   );
+
+  app.get(
+    '/projects/:id/recurring-generation-logs',
+    { preHandler: requireRole(['admin', 'mgmt']) },
+    async (req, reply) => {
+      const { id } = req.params as { id: string };
+      const project = await prisma.project.findUnique({
+        where: { id },
+        select: { id: true, deletedAt: true },
+      });
+      if (!project || project.deletedAt) {
+        return reply.code(404).send({ error: 'not_found' });
+      }
+      const { limit, templateId, periodKey } = req.query as {
+        limit?: string;
+        templateId?: string;
+        periodKey?: string;
+      };
+      const takeRaw = limit ? Number(limit) : 50;
+      const take =
+        Number.isFinite(takeRaw) && takeRaw > 0
+          ? Math.min(Math.floor(takeRaw), 200)
+          : 50;
+      const where: Record<string, unknown> = { projectId: id };
+      if (templateId) where.templateId = templateId;
+      if (periodKey) where.periodKey = periodKey;
+      const items = await prisma.recurringGenerationLog.findMany({
+        where,
+        orderBy: [{ runAt: 'desc' }, { createdAt: 'desc' }],
+        take,
+      });
+      return { items };
+    },
+  );
 }

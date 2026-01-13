@@ -46,6 +46,56 @@ type ProjectMemberBulkResult = {
   failures?: Array<{ userId: string | null; reason: string }>;
 };
 
+type DueDateRule = {
+  type: 'periodEndPlusOffset';
+  offsetDays: number;
+};
+
+type RecurringProjectTemplate = {
+  id: string;
+  projectId: string;
+  frequency?: string | null;
+  nextRunAt?: string | null;
+  timezone?: string | null;
+  defaultAmount?: number | string | null;
+  defaultCurrency?: string | null;
+  defaultTaxRate?: number | string | null;
+  defaultTerms?: string | null;
+  defaultMilestoneName?: string | null;
+  billUpon?: string | null;
+  dueDateRule?: DueDateRule | null;
+  shouldGenerateEstimate?: boolean | null;
+  shouldGenerateInvoice?: boolean | null;
+  isActive?: boolean | null;
+};
+
+type RecurringGenerationLog = {
+  id: string;
+  templateId: string;
+  projectId: string;
+  periodKey: string;
+  runAt: string;
+  status: string;
+  message?: string | null;
+  estimateId?: string | null;
+  invoiceId?: string | null;
+  milestoneId?: string | null;
+  createdAt?: string | null;
+};
+
+type RecurringJobRunResult = {
+  processed: number;
+  results: Array<{
+    templateId: string;
+    projectId: string;
+    status: 'created' | 'skipped' | 'error';
+    message?: string;
+    estimateId?: string;
+    invoiceId?: string;
+    milestoneId?: string;
+  }>;
+};
+
 const emptyProject = {
   code: '',
   name: '',
@@ -58,6 +108,22 @@ const emptyProject = {
 const emptyMemberForm: ProjectMemberForm = {
   userId: '',
   role: 'member',
+};
+
+const defaultRecurringTemplateForm = {
+  frequency: 'monthly',
+  defaultAmount: '',
+  defaultCurrency: 'JPY',
+  defaultTaxRate: '',
+  defaultTerms: '',
+  defaultMilestoneName: '',
+  billUpon: 'date',
+  dueDateOffsetDays: '',
+  shouldGenerateEstimate: false,
+  shouldGenerateInvoice: true,
+  isActive: true,
+  nextRunAt: '',
+  timezone: '',
 };
 
 const statusOptions = [
@@ -86,6 +152,21 @@ const parseNumberInput = (value: string) => {
   if (!Number.isFinite(numeric)) return undefined;
   if (numeric < 0) return undefined;
   return numeric;
+};
+
+const toDatetimeLocal = (value?: string | null) => {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toISOString().slice(0, 16);
+};
+
+const parseDueDateOffsetDays = (value?: DueDateRule | null) => {
+  if (!value) return '';
+  if (value.type !== 'periodEndPlusOffset') return '';
+  const offset = Number(value.offsetDays);
+  if (!Number.isFinite(offset)) return '';
+  return String(offset);
 };
 
 const toCsv = (headers: string[], rows: string[][]) => {
@@ -184,6 +265,22 @@ export const Projects: React.FC = () => {
     ['admin', 'mgmt'].includes(role),
   );
 
+  const [recurringProjectId, setRecurringProjectId] = useState('');
+  const [recurringTemplateId, setRecurringTemplateId] = useState<string | null>(
+    null,
+  );
+  const [recurringForm, setRecurringForm] = useState(
+    defaultRecurringTemplateForm,
+  );
+  const [recurringLogs, setRecurringLogs] = useState<RecurringGenerationLog[]>(
+    [],
+  );
+  const [recurringJobResult, setRecurringJobResult] =
+    useState<RecurringJobRunResult | null>(null);
+  const [recurringMessage, setRecurringMessage] = useState('');
+  const [recurringJobMessage, setRecurringJobMessage] = useState('');
+  const [recurringLoading, setRecurringLoading] = useState(false);
+
   const customerMap = useMemo(() => {
     return new Map(customers.map((item) => [item.id, item]));
   }, [customers]);
@@ -223,6 +320,193 @@ export const Projects: React.FC = () => {
       setMessage(`顧客一覧の取得に失敗しました${errorDetail(err)}`);
     }
   }, []);
+
+  const loadRecurringTemplate = useCallback(
+    async (projectId: string) => {
+      if (!isPrivileged) return;
+      if (!projectId) return;
+      setRecurringLoading(true);
+      setRecurringMessage('');
+      try {
+        const template = await api<RecurringProjectTemplate | null>(
+          `/projects/${projectId}/recurring-template`,
+        );
+        if (!template) {
+          setRecurringTemplateId(null);
+          setRecurringForm(defaultRecurringTemplateForm);
+          setRecurringMessage('テンプレは未設定です');
+          return;
+        }
+        setRecurringTemplateId(template.id);
+        setRecurringForm({
+          frequency: template.frequency || 'monthly',
+          defaultAmount:
+            template.defaultAmount === null ||
+            template.defaultAmount === undefined
+              ? ''
+              : String(template.defaultAmount),
+          defaultCurrency: template.defaultCurrency || 'JPY',
+          defaultTaxRate:
+            template.defaultTaxRate === null ||
+            template.defaultTaxRate === undefined
+              ? ''
+              : String(template.defaultTaxRate),
+          defaultTerms: template.defaultTerms || '',
+          defaultMilestoneName: template.defaultMilestoneName || '',
+          billUpon: template.billUpon || 'date',
+          dueDateOffsetDays: parseDueDateOffsetDays(template.dueDateRule),
+          shouldGenerateEstimate: template.shouldGenerateEstimate ?? false,
+          shouldGenerateInvoice: template.shouldGenerateInvoice ?? true,
+          isActive: template.isActive ?? true,
+          nextRunAt: toDatetimeLocal(template.nextRunAt),
+          timezone: template.timezone || '',
+        });
+        setRecurringMessage('テンプレを読み込みました');
+      } catch (err) {
+        console.error('Failed to load recurring template.', err);
+        setRecurringTemplateId(null);
+        setRecurringForm(defaultRecurringTemplateForm);
+        setRecurringMessage(`テンプレの取得に失敗しました${errorDetail(err)}`);
+      } finally {
+        setRecurringLoading(false);
+      }
+    },
+    [isPrivileged],
+  );
+
+  const loadRecurringLogs = useCallback(
+    async (projectId: string) => {
+      if (!isPrivileged) return;
+      if (!projectId) return;
+      setRecurringLoading(true);
+      setRecurringMessage('');
+      try {
+        const res = await api<{ items: RecurringGenerationLog[] }>(
+          `/projects/${projectId}/recurring-generation-logs?limit=50`,
+        );
+        setRecurringLogs(res.items || []);
+        setRecurringMessage('生成ログを更新しました');
+      } catch (err) {
+        console.error('Failed to load recurring logs.', err);
+        setRecurringLogs([]);
+        setRecurringMessage(`生成ログの取得に失敗しました${errorDetail(err)}`);
+      } finally {
+        setRecurringLoading(false);
+      }
+    },
+    [isPrivileged],
+  );
+
+  const saveRecurringTemplate = useCallback(async () => {
+    if (!isPrivileged) return;
+    if (!recurringProjectId) {
+      setRecurringMessage('案件を選択してください');
+      return;
+    }
+    const amount = parseNumberInput(recurringForm.defaultAmount);
+    if (amount === undefined || amount < 1) {
+      setRecurringMessage('デフォルト金額は1以上で入力してください');
+      return;
+    }
+    const taxRate = parseNumberInput(recurringForm.defaultTaxRate);
+    const offsetRaw = recurringForm.dueDateOffsetDays.trim();
+    let dueDateRule: DueDateRule | null = null;
+    if (offsetRaw) {
+      const offsetDays = Number(offsetRaw);
+      if (!Number.isFinite(offsetDays) || !Number.isInteger(offsetDays)) {
+        setRecurringMessage('納期ルール(offsetDays)は整数で入力してください');
+        return;
+      }
+      if (offsetDays < 0 || offsetDays > 365) {
+        setRecurringMessage('納期ルール(offsetDays)は0〜365で入力してください');
+        return;
+      }
+      dueDateRule = { type: 'periodEndPlusOffset', offsetDays };
+    }
+    const nextRunAtRaw = recurringForm.nextRunAt.trim();
+    let nextRunAt: string | undefined;
+    if (nextRunAtRaw) {
+      const parsed = new Date(nextRunAtRaw);
+      if (Number.isNaN(parsed.getTime())) {
+        setRecurringMessage('次回実行日時が不正です');
+        return;
+      }
+      nextRunAt = parsed.toISOString();
+    }
+    setRecurringLoading(true);
+    setRecurringMessage('');
+    try {
+      const payload: Record<string, unknown> = {
+        frequency: recurringForm.frequency,
+        defaultAmount: amount,
+        defaultCurrency: recurringForm.defaultCurrency,
+        shouldGenerateEstimate: recurringForm.shouldGenerateEstimate,
+        shouldGenerateInvoice: recurringForm.shouldGenerateInvoice,
+        isActive: recurringForm.isActive,
+        dueDateRule: dueDateRule,
+      };
+      if (taxRate !== undefined) {
+        payload.defaultTaxRate = taxRate;
+      }
+      if (recurringForm.defaultTerms.trim()) {
+        payload.defaultTerms = recurringForm.defaultTerms.trim();
+      }
+      if (recurringForm.defaultMilestoneName.trim()) {
+        payload.defaultMilestoneName =
+          recurringForm.defaultMilestoneName.trim();
+      }
+      if (recurringForm.billUpon.trim()) {
+        payload.billUpon = recurringForm.billUpon.trim();
+      }
+      if (recurringForm.timezone.trim()) {
+        payload.timezone = recurringForm.timezone.trim();
+      }
+      if (nextRunAt) {
+        payload.nextRunAt = nextRunAt;
+      }
+      const template = await api<RecurringProjectTemplate>(
+        `/projects/${recurringProjectId}/recurring-template`,
+        {
+          method: 'POST',
+          body: JSON.stringify(payload),
+        },
+      );
+      setRecurringTemplateId(template.id);
+      setRecurringMessage('保存しました');
+      await loadRecurringLogs(recurringProjectId);
+    } catch (err) {
+      console.error('Failed to save recurring template.', err);
+      setRecurringMessage(`保存に失敗しました${errorDetail(err)}`);
+    } finally {
+      setRecurringLoading(false);
+    }
+  }, [isPrivileged, loadRecurringLogs, recurringForm, recurringProjectId]);
+
+  const runRecurringJob = useCallback(async () => {
+    if (!isPrivileged) return;
+    setRecurringJobMessage('');
+    setRecurringLoading(true);
+    try {
+      const result = await api<RecurringJobRunResult>(
+        '/jobs/recurring-projects/run',
+        {
+          method: 'POST',
+          body: '{}',
+        },
+      );
+      setRecurringJobResult(result);
+      setRecurringJobMessage('ジョブを実行しました');
+      if (recurringProjectId) {
+        await loadRecurringLogs(recurringProjectId);
+      }
+    } catch (err) {
+      console.error('Failed to run recurring job.', err);
+      setRecurringJobResult(null);
+      setRecurringJobMessage(`ジョブ実行に失敗しました${errorDetail(err)}`);
+    } finally {
+      setRecurringLoading(false);
+    }
+  }, [isPrivileged, loadRecurringLogs, recurringProjectId]);
 
   const saveProject = async () => {
     if (!projectPayload.code || !projectPayload.name) {
@@ -562,6 +846,25 @@ export const Projects: React.FC = () => {
     loadCustomers();
   }, [loadProjects, loadCustomers]);
 
+  useEffect(() => {
+    if (!isPrivileged) return;
+    if (recurringProjectId) return;
+    if (projects.length === 0) return;
+    setRecurringProjectId(projects[0].id);
+  }, [isPrivileged, projects, recurringProjectId]);
+
+  useEffect(() => {
+    if (!isPrivileged) return;
+    if (!recurringProjectId) return;
+    loadRecurringTemplate(recurringProjectId);
+    loadRecurringLogs(recurringProjectId);
+  }, [
+    isPrivileged,
+    loadRecurringLogs,
+    loadRecurringTemplate,
+    recurringProjectId,
+  ]);
+
   return (
     <div>
       <h2>案件</h2>
@@ -871,6 +1174,318 @@ export const Projects: React.FC = () => {
         })}
         {projects.length === 0 && <li>データなし</li>}
       </ul>
+
+      <div className="card" style={{ marginTop: 12, padding: 12 }}>
+        <h3>定期案件テンプレ（MVP）</h3>
+        {!isPrivileged && (
+          <p style={{ marginTop: 8 }}>
+            管理者/管理部（admin/mgmt）のみ利用できます。
+          </p>
+        )}
+        {isPrivileged && (
+          <>
+            <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+              <select
+                aria-label="定期テンプレ案件選択"
+                value={recurringProjectId}
+                onChange={(e) => setRecurringProjectId(e.target.value)}
+                disabled={recurringLoading}
+              >
+                <option value="">案件を選択</option>
+                {projects.map((project) => (
+                  <option key={project.id} value={project.id}>
+                    {project.code} / {project.name}
+                  </option>
+                ))}
+              </select>
+              <button
+                className="button secondary"
+                onClick={() => loadRecurringTemplate(recurringProjectId)}
+                disabled={!recurringProjectId || recurringLoading}
+              >
+                テンプレ再読込
+              </button>
+              <button
+                className="button secondary"
+                onClick={() => loadRecurringLogs(recurringProjectId)}
+                disabled={!recurringProjectId || recurringLoading}
+              >
+                ログ更新
+              </button>
+            </div>
+            {recurringTemplateId && (
+              <div style={{ fontSize: 12, color: '#475569', marginTop: 4 }}>
+                templateId: {recurringTemplateId}
+              </div>
+            )}
+            {recurringMessage && <p>{recurringMessage}</p>}
+            <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+              <label>
+                頻度
+                <select
+                  aria-label="定期頻度"
+                  value={recurringForm.frequency}
+                  onChange={(e) =>
+                    setRecurringForm((prev) => ({
+                      ...prev,
+                      frequency: e.target.value,
+                    }))
+                  }
+                  disabled={recurringLoading}
+                >
+                  <option value="monthly">毎月</option>
+                  <option value="quarterly">四半期</option>
+                  <option value="semiannual">半年</option>
+                  <option value="annual">年次</option>
+                </select>
+              </label>
+              <label>
+                デフォルト金額
+                <input
+                  aria-label="定期デフォルト金額"
+                  type="number"
+                  value={recurringForm.defaultAmount}
+                  onChange={(e) =>
+                    setRecurringForm((prev) => ({
+                      ...prev,
+                      defaultAmount: e.target.value,
+                    }))
+                  }
+                  min={0}
+                  disabled={recurringLoading}
+                />
+              </label>
+              <label>
+                通貨
+                <select
+                  aria-label="定期通貨"
+                  value={recurringForm.defaultCurrency}
+                  onChange={(e) =>
+                    setRecurringForm((prev) => ({
+                      ...prev,
+                      defaultCurrency: e.target.value,
+                    }))
+                  }
+                  disabled={recurringLoading}
+                >
+                  <option value="JPY">JPY</option>
+                  <option value="USD">USD</option>
+                </select>
+              </label>
+              <label>
+                税率(任意)
+                <input
+                  aria-label="定期税率"
+                  type="number"
+                  value={recurringForm.defaultTaxRate}
+                  onChange={(e) =>
+                    setRecurringForm((prev) => ({
+                      ...prev,
+                      defaultTaxRate: e.target.value,
+                    }))
+                  }
+                  step="0.01"
+                  min={0}
+                  disabled={recurringLoading}
+                />
+              </label>
+              <label>
+                請求タイミング(任意)
+                <select
+                  aria-label="定期請求タイミング"
+                  value={recurringForm.billUpon}
+                  onChange={(e) =>
+                    setRecurringForm((prev) => ({
+                      ...prev,
+                      billUpon: e.target.value,
+                    }))
+                  }
+                  disabled={recurringLoading}
+                >
+                  <option value="date">日付</option>
+                  <option value="acceptance">検収</option>
+                  <option value="time">工数</option>
+                </select>
+              </label>
+              <label>
+                納期ルール(offsetDays)
+                <input
+                  aria-label="定期納期オフセット"
+                  type="number"
+                  value={recurringForm.dueDateOffsetDays}
+                  onChange={(e) =>
+                    setRecurringForm((prev) => ({
+                      ...prev,
+                      dueDateOffsetDays: e.target.value,
+                    }))
+                  }
+                  min={0}
+                  max={365}
+                  step={1}
+                  placeholder="空で無効（0=月末）"
+                  disabled={recurringLoading}
+                />
+              </label>
+            </div>
+
+            <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+              <label>
+                マイルストーン名(任意)
+                <input
+                  aria-label="定期マイルストーン名"
+                  value={recurringForm.defaultMilestoneName}
+                  onChange={(e) =>
+                    setRecurringForm((prev) => ({
+                      ...prev,
+                      defaultMilestoneName: e.target.value,
+                    }))
+                  }
+                  disabled={recurringLoading}
+                />
+              </label>
+              <label>
+                次回実行日時(任意)
+                <input
+                  aria-label="定期次回実行日時"
+                  type="datetime-local"
+                  value={recurringForm.nextRunAt}
+                  onChange={(e) =>
+                    setRecurringForm((prev) => ({
+                      ...prev,
+                      nextRunAt: e.target.value,
+                    }))
+                  }
+                  disabled={recurringLoading}
+                />
+              </label>
+              <label>
+                タイムゾーン(任意)
+                <input
+                  aria-label="定期タイムゾーン"
+                  value={recurringForm.timezone}
+                  onChange={(e) =>
+                    setRecurringForm((prev) => ({
+                      ...prev,
+                      timezone: e.target.value,
+                    }))
+                  }
+                  placeholder="Asia/Tokyo"
+                  disabled={recurringLoading}
+                />
+              </label>
+            </div>
+
+            <div style={{ marginTop: 8 }}>
+              <label>
+                デフォルト文面(任意)
+                <textarea
+                  aria-label="定期デフォルト文面"
+                  value={recurringForm.defaultTerms}
+                  onChange={(e) =>
+                    setRecurringForm((prev) => ({
+                      ...prev,
+                      defaultTerms: e.target.value,
+                    }))
+                  }
+                  rows={3}
+                  style={{ width: '100%' }}
+                  disabled={recurringLoading}
+                />
+              </label>
+            </div>
+
+            <div className="row" style={{ gap: 12, flexWrap: 'wrap' }}>
+              <label className="row" style={{ gap: 6 }}>
+                <input
+                  aria-label="見積を生成"
+                  type="checkbox"
+                  checked={recurringForm.shouldGenerateEstimate}
+                  onChange={(e) =>
+                    setRecurringForm((prev) => ({
+                      ...prev,
+                      shouldGenerateEstimate: e.target.checked,
+                    }))
+                  }
+                  disabled={recurringLoading}
+                />
+                見積を生成
+              </label>
+              <label className="row" style={{ gap: 6 }}>
+                <input
+                  aria-label="請求を生成"
+                  type="checkbox"
+                  checked={recurringForm.shouldGenerateInvoice}
+                  onChange={(e) =>
+                    setRecurringForm((prev) => ({
+                      ...prev,
+                      shouldGenerateInvoice: e.target.checked,
+                    }))
+                  }
+                  disabled={recurringLoading}
+                />
+                請求を生成
+              </label>
+              <label className="row" style={{ gap: 6 }}>
+                <input
+                  aria-label="定期テンプレ有効"
+                  type="checkbox"
+                  checked={recurringForm.isActive}
+                  onChange={(e) =>
+                    setRecurringForm((prev) => ({
+                      ...prev,
+                      isActive: e.target.checked,
+                    }))
+                  }
+                  disabled={recurringLoading}
+                />
+                有効
+              </label>
+              <button
+                className="button"
+                onClick={saveRecurringTemplate}
+                disabled={!recurringProjectId || recurringLoading}
+              >
+                保存
+              </button>
+              <button
+                className="button secondary"
+                onClick={runRecurringJob}
+                disabled={recurringLoading}
+              >
+                ジョブ実行
+              </button>
+            </div>
+
+            {recurringJobMessage && <p>{recurringJobMessage}</p>}
+            {recurringJobResult && (
+              <div style={{ fontSize: 12, color: '#475569', marginTop: 4 }}>
+                processed: {recurringJobResult.processed} / results:{' '}
+                {
+                  recurringJobResult.results.filter(
+                    (r) => r.projectId === recurringProjectId,
+                  ).length
+                }
+              </div>
+            )}
+
+            <div style={{ marginTop: 12 }}>
+              <strong>生成ログ</strong>
+              <ul className="list">
+                {recurringLogs.map((log) => (
+                  <li key={log.id}>
+                    <span className="badge">{log.status}</span> {log.periodKey}{' '}
+                    / {new Date(log.runAt).toLocaleString()}
+                    {log.invoiceId && <> / invoice:{log.invoiceId}</>}
+                    {log.estimateId && <> / estimate:{log.estimateId}</>}
+                    {log.message && <> / {log.message}</>}
+                  </li>
+                ))}
+                {recurringLogs.length === 0 && <li>ログなし</li>}
+              </ul>
+            </div>
+          </>
+        )}
+      </div>
     </div>
   );
 };
