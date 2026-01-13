@@ -153,6 +153,27 @@ export async function registerTimeEntryRoutes(app: FastifyInstance) {
           return reply.code(403).send({ error: 'forbidden_project' });
         }
       }
+      if (before.billedInvoiceId) {
+        const immutableFields = [
+          'projectId',
+          'taskId',
+          'workDate',
+          'minutes',
+          'workType',
+          'userId',
+        ] as const;
+        const hasImmutableUpdate = immutableFields.some(
+          (field) => body[field] !== undefined,
+        );
+        if (hasImmutableUpdate) {
+          return reply.status(400).send({
+            error: {
+              code: 'BILLED',
+              message: 'Time entry already billed and cannot be modified',
+            },
+          });
+        }
+      }
       const changed = ['minutes', 'workDate', 'taskId', 'projectId'].some(
         (k) => body[k] !== undefined && (body as any)[k] !== (before as any)[k],
       );
@@ -290,6 +311,14 @@ export async function registerTimeEntryRoutes(app: FastifyInstance) {
       if (entry.status === TimeStatusValue.approved) {
         return reply.status(400).send({
           error: { code: 'INVALID_STATUS', message: 'Time entry approved' },
+        });
+      }
+      if (entry.billedInvoiceId) {
+        return reply.status(400).send({
+          error: {
+            code: 'BILLED',
+            message: 'Time entry already billed and cannot be reassigned',
+          },
         });
       }
       const pendingApproval = await prisma.approvalInstance.findFirst({

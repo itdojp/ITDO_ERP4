@@ -907,6 +907,7 @@ export async function registerProjectRoutes(app: FastifyInstance) {
         taskId: string | null;
         workDate: Date;
         status: string;
+        billedInvoiceId: string | null;
       }[] = [];
       if (moveTimeEntries && timeCount > 0) {
         timeEntries = await prisma.timeEntry.findMany({
@@ -917,8 +918,18 @@ export async function registerProjectRoutes(app: FastifyInstance) {
             taskId: true,
             workDate: true,
             status: true,
+            billedInvoiceId: true,
           },
         });
+        const billedEntry = timeEntries.find((entry) => entry.billedInvoiceId);
+        if (billedEntry) {
+          return reply.status(400).send({
+            error: {
+              code: 'BILLED',
+              message: 'Time entry already billed',
+            },
+          });
+        }
         const approvedEntry = timeEntries.find(
           (entry) => entry.status === TimeStatusValue.approved,
         );

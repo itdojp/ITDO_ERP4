@@ -53,6 +53,8 @@
   - `POST /projects/:id/estimates` {lines, total, valid_until}
   - `POST /estimates/:id/submit` → 承認フロー起動
   - `POST /projects/:id/invoices` {estimate_id?, milestone_id?, lines, issue_date, due_date}
+  - `POST /projects/:id/invoices/from-time-entries` {from, to, unitPrice, currency?} → 工数から請求ドラフト生成（工数を請求に紐付けて重複請求を防止）
+  - `POST /invoices/:id/release-time-entries` → draft 請求から工数紐付けを解除
   - `POST /invoices/:id/submit` → 承認フロー / `POST /invoices/:id/send` → PDF+メール (`templateId?`, `templateSettingId?`)
   - `GET /invoices/:id/send-logs` → 送信履歴
 - Purchase Order
