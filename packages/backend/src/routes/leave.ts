@@ -1,9 +1,10 @@
 import { FastifyInstance } from 'fastify';
 import { prisma } from '../services/db.js';
 import { submitApprovalWithUpdate } from '../services/approval.js';
-import { FlowTypeValue } from '../types.js';
+import { FlowTypeValue, TimeStatusValue } from '../types.js';
 import { requireRole } from '../services/rbac.js';
 import { leaveRequestSchema } from './validators.js';
+import { endOfDay, parseDateParam } from '../utils/date.js';
 
 export async function registerLeaveRoutes(app: FastifyInstance) {
   app.post(
@@ -23,7 +24,43 @@ export async function registerLeaveRoutes(app: FastifyInstance) {
         }
         body.userId = currentUserId;
       }
-      const leave = await prisma.leaveRequest.create({ data: body });
+      const startDate = parseDateParam(body.startDate);
+      const endDate = parseDateParam(body.endDate);
+      if (!startDate || !endDate) {
+        return reply.status(400).send({
+          error: { code: 'INVALID_DATE', message: 'Invalid startDate/endDate' },
+        });
+      }
+      if (startDate.getTime() > endDate.getTime()) {
+        return reply.status(400).send({
+          error: {
+            code: 'INVALID_DATE_RANGE',
+            message: 'startDate must be <= endDate',
+          },
+        });
+      }
+      let hours = undefined as number | undefined;
+      if (body.hours !== undefined && body.hours !== null) {
+        hours = Number(body.hours);
+        if (!Number.isFinite(hours) || hours < 0 || !Number.isInteger(hours)) {
+          return reply.status(400).send({
+            error: {
+              code: 'INVALID_HOURS',
+              message: 'hours must be a non-negative integer',
+            },
+          });
+        }
+      }
+      const leave = await prisma.leaveRequest.create({
+        data: {
+          userId: body.userId,
+          leaveType: body.leaveType,
+          notes: body.notes,
+          startDate,
+          endDate,
+          hours: hours ?? undefined,
+        },
+      });
       return leave;
     },
   );
@@ -45,6 +82,49 @@ export async function registerLeaveRoutes(app: FastifyInstance) {
         leave.userId !== userId
       ) {
         return reply.code(403).send({ error: 'forbidden' });
+      }
+      const workDateEnd = endOfDay(leave.endDate);
+      const conflictStatuses = [
+        TimeStatusValue.submitted,
+        TimeStatusValue.approved,
+      ];
+      const conflictWhere = {
+        userId: leave.userId,
+        deletedAt: null,
+        status: { in: conflictStatuses },
+        minutes: { gt: 0 },
+        workDate: { gte: leave.startDate, lte: workDateEnd },
+      };
+      const conflictCount = await prisma.timeEntry.count({
+        where: conflictWhere,
+      });
+      if (conflictCount) {
+        const conflicts = await prisma.timeEntry.findMany({
+          where: conflictWhere,
+          select: {
+            id: true,
+            projectId: true,
+            taskId: true,
+            workDate: true,
+            minutes: true,
+          },
+          orderBy: { workDate: 'asc' },
+          take: 50,
+        });
+        return reply.status(409).send({
+          error: {
+            code: 'TIME_ENTRY_CONFLICT',
+            message: 'Time entries exist in leave period',
+            conflictCount,
+            conflicts: conflicts.map((entry) => ({
+              id: entry.id,
+              projectId: entry.projectId,
+              taskId: entry.taskId,
+              workDate: entry.workDate,
+              minutes: entry.minutes,
+            })),
+          },
+        });
       }
       const { updated } = await submitApprovalWithUpdate({
         flowType: FlowTypeValue.leave,
