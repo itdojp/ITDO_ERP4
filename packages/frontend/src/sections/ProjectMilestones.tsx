@@ -6,10 +6,10 @@ type Milestone = {
   id: string;
   projectId: string;
   name: string;
-  amount: unknown;
+  amount: number | string;
   billUpon: string;
   dueDate?: string | null;
-  taxRate?: unknown | null;
+  taxRate?: number | string | null;
 };
 
 type DeliveryDueItem = {
@@ -18,19 +18,26 @@ type DeliveryDueItem = {
   projectCode?: string | null;
   projectName?: string | null;
   name?: string | null;
-  amount: unknown;
+  amount: number | string;
   dueDate?: string | null;
   invoiceCount: number;
 };
 
 const buildInitialForm = (projectId?: string) => ({
-  projectId: projectId || 'demo-project',
+  projectId: projectId ?? '',
   name: '',
   amount: 100000,
   billUpon: 'date',
   dueDate: '',
   taxRate: '',
 });
+
+const errorDetail = (err: unknown) => {
+  if (err instanceof Error && err.message) {
+    return ` (${err.message})`;
+  }
+  return '';
+};
 
 export const ProjectMilestones: React.FC = () => {
   const auth = getAuthState();
@@ -41,12 +48,9 @@ export const ProjectMilestones: React.FC = () => {
   const [editing, setEditing] = useState<Milestone | null>(null);
   const [message, setMessage] = useState('');
 
-  const handleProjectSelect = useCallback(
-    (projectId: string) => {
-      setForm((prev) => ({ ...prev, projectId }));
-    },
-    [setForm],
-  );
+  const handleProjectSelect = useCallback((projectId: string) => {
+    setForm((prev) => ({ ...prev, projectId }));
+  }, []);
   const { projects, projectMessage } = useProjects({
     selectedProjectId: form.projectId,
     onSelect: handleProjectSelect,
@@ -62,6 +66,10 @@ export const ProjectMilestones: React.FC = () => {
   };
 
   const load = async () => {
+    if (!form.projectId) {
+      setMessage('案件を選択してください');
+      return;
+    }
     try {
       const res = await api<{ items: Milestone[] }>(
         `/projects/${form.projectId}/milestones`,
@@ -69,7 +77,7 @@ export const ProjectMilestones: React.FC = () => {
       setItems(res.items || []);
       setMessage('読み込みました');
     } catch (err) {
-      setMessage('読み込みに失敗');
+      setMessage(`読み込みに失敗しました${errorDetail(err)}`);
     }
   };
 
@@ -129,7 +137,7 @@ export const ProjectMilestones: React.FC = () => {
       setMessage('作成しました');
       resetForm();
     } catch (err) {
-      setMessage('保存に失敗');
+      setMessage(`保存に失敗しました${errorDetail(err)}`);
     }
   };
 
@@ -148,11 +156,18 @@ export const ProjectMilestones: React.FC = () => {
 
   const remove = async (item: Milestone) => {
     const reason = window.prompt('削除理由を入力してください');
-    if (!reason) return;
+    if (reason === null) {
+      return;
+    }
+    const trimmedReason = reason.trim();
+    if (!trimmedReason) {
+      setMessage('削除理由は必須です');
+      return;
+    }
     try {
       await api(`/projects/${item.projectId}/milestones/${item.id}/delete`, {
         method: 'POST',
-        body: JSON.stringify({ reason }),
+        body: JSON.stringify({ reason: trimmedReason }),
       });
       setItems((prev) => prev.filter((m) => m.id !== item.id));
       setMessage('削除しました');
@@ -160,7 +175,7 @@ export const ProjectMilestones: React.FC = () => {
         resetForm();
       }
     } catch (err) {
-      setMessage('削除に失敗');
+      setMessage(`削除に失敗しました${errorDetail(err)}`);
     }
   };
 
@@ -185,7 +200,7 @@ export const ProjectMilestones: React.FC = () => {
       setDeliveryDueMessage('取得しました');
     } catch (err) {
       setDeliveryDueItems([]);
-      setDeliveryDueMessage('取得に失敗');
+      setDeliveryDueMessage(`取得に失敗しました${errorDetail(err)}`);
     }
   };
 
