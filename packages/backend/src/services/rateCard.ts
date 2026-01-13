@@ -18,26 +18,32 @@ function buildDateRange(workDate: Date): Prisma.RateCardWhereInput {
 export async function resolveRateCard(match: RateCardMatch) {
   const base = buildDateRange(match.workDate);
   const workType = match.workType?.trim();
-  const workTypeFilter = workType ? { workType } : { workType: null };
+  const workTypeCandidates = workType ? [workType, null] : [null];
   if (match.projectId) {
-    const project = await prisma.rateCard.findFirst({
+    for (const candidate of workTypeCandidates) {
+      const project = await prisma.rateCard.findFirst({
+        where: {
+          ...base,
+          projectId: match.projectId,
+          workType: candidate,
+        },
+        orderBy: { validFrom: 'desc' },
+      });
+      if (project) return project;
+    }
+  }
+  for (const candidate of workTypeCandidates) {
+    const global = await prisma.rateCard.findFirst({
       where: {
         ...base,
-        projectId: match.projectId,
-        ...workTypeFilter,
+        projectId: null,
+        workType: candidate,
       },
       orderBy: { validFrom: 'desc' },
     });
-    if (project) return project;
+    if (global) return global;
   }
-  return prisma.rateCard.findFirst({
-    where: {
-      ...base,
-      projectId: null,
-      ...workTypeFilter,
-    },
-    orderBy: { validFrom: 'desc' },
-  });
+  return null;
 }
 
 export function calcTimeAmount(minutes: number, unitPrice: number) {
