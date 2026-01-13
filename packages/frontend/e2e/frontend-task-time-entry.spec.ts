@@ -1,0 +1,116 @@
+import { expect, test, type Locator, type Page } from '@playwright/test';
+
+const baseUrl = process.env.E2E_BASE_URL || 'http://localhost:5173';
+const apiBase = process.env.E2E_API_BASE || 'http://localhost:3002';
+const actionTimeout = 8000;
+
+const authState = {
+  userId: 'demo-user',
+  roles: ['admin', 'mgmt'],
+  projectIds: ['00000000-0000-0000-0000-000000000001'],
+  groupIds: ['mgmt', 'hr-group'],
+};
+
+const authHeaders = {
+  'x-user-id': authState.userId,
+  'x-roles': authState.roles.join(','),
+  'x-project-ids': authState.projectIds.join(','),
+  'x-group-ids': authState.groupIds.join(','),
+};
+
+const runId = () =>
+  process.env.E2E_RUN_ID ||
+  `${Date.now().toString().slice(-6)}-${Math.floor(Math.random() * 90 + 10)}`;
+
+async function ensureOk(res: { ok(): boolean; status(): number; text(): any }) {
+  if (res.ok()) return;
+  const body = await res.text();
+  throw new Error(`[e2e] api failed: ${res.status()} ${body}`);
+}
+
+async function prepare(page: Page) {
+  page.on('pageerror', (error) => {
+    console.error('[e2e][pageerror]', error);
+  });
+  page.on('console', (msg) => {
+    if (msg.type() === 'error') {
+      console.error('[e2e][console.error]', msg.text());
+    }
+  });
+  await page.addInitScript((state) => {
+    window.localStorage.setItem('erp4_auth', JSON.stringify(state));
+  }, authState);
+  await page.goto(baseUrl);
+  await expect(
+    page.getByRole('heading', { name: 'ERP4 MVP PoC' }),
+  ).toBeVisible();
+}
+
+async function selectByLabelOrFirst(select: Locator, label?: string) {
+  if (label && (await select.locator('option', { hasText: label }).count())) {
+    await select.selectOption({ label });
+    return;
+  }
+  await expect
+    .poll(() => select.locator('option').count(), { timeout: actionTimeout })
+    .toBeGreaterThan(1);
+  await select.selectOption({ index: 1 });
+}
+
+test('task to time entry link @core', async ({ page, request }) => {
+  const suffix = runId();
+  const taskName = `E2E Task ${suffix}`;
+  const projectId = authState.projectIds[0];
+
+  await prepare(page);
+
+  const taskSection = page.locator('h2', { hasText: 'タスク' }).locator('..');
+  await taskSection.scrollIntoViewIfNeeded();
+  await selectByLabelOrFirst(
+    taskSection.getByLabel('案件選択'),
+    'PRJ-DEMO-1 / Demo Project 1',
+  );
+  await taskSection.getByLabel('タスク名').fill(taskName);
+  await taskSection.getByRole('button', { name: '作成' }).click();
+  await expect(taskSection.getByText('作成しました')).toBeVisible();
+
+  const tasksRes = await request.get(`${apiBase}/projects/${projectId}/tasks`, {
+    headers: authHeaders,
+  });
+  await ensureOk(tasksRes);
+  const tasksJson = await tasksRes.json();
+  const tasks = Array.isArray(tasksJson.items) ? tasksJson.items : [];
+  const createdTask = tasks.find((item: any) => item.name === taskName);
+  expect(createdTask).toBeTruthy();
+
+  const timeSection = page.locator('h2', { hasText: '工数入力' }).locator('..');
+  await timeSection.scrollIntoViewIfNeeded();
+  await selectByLabelOrFirst(
+    timeSection.getByLabel('案件選択'),
+    'PRJ-DEMO-2 / Demo Project 2',
+  );
+  await selectByLabelOrFirst(
+    timeSection.getByLabel('案件選択'),
+    'PRJ-DEMO-1 / Demo Project 1',
+  );
+  await timeSection.getByLabel('タスク選択').selectOption({ label: taskName });
+  await timeSection.locator('input[type="number"]').fill('75');
+  await timeSection.getByRole('button', { name: '追加' }).click();
+  await expect(timeSection.getByText('保存しました')).toBeVisible();
+
+  const timeRes = await request.get(
+    `${apiBase}/time-entries?projectId=${encodeURIComponent(projectId)}&userId=${encodeURIComponent(authState.userId)}`,
+    { headers: authHeaders },
+  );
+  await ensureOk(timeRes);
+  const timeJson = await timeRes.json();
+  const timeItems = Array.isArray(timeJson.items) ? timeJson.items : [];
+  expect(
+    timeItems.some(
+      (item: any) =>
+        item.minutes === 75 &&
+        item.taskId === createdTask.id &&
+        item.projectId === projectId,
+    ),
+  ).toBe(true);
+});
