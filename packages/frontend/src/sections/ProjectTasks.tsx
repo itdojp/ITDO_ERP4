@@ -236,7 +236,10 @@ export const ProjectTasks: React.FC = () => {
           >
             <option value="">親なし</option>
             {items
-              .filter((task) => task.id !== editing?.id)
+              .filter(
+                (task) =>
+                  task.id !== editing?.id && task.projectId === form.projectId,
+              )
               .map((task) => (
                 <option key={task.id} value={task.id}>
                   {task.name}
