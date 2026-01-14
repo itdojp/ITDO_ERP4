@@ -74,8 +74,24 @@ export async function registerReportRoutes(app: FastifyInstance) {
       );
       if (format === 'csv') {
         const csv = toCsv(
-          ['projectId', 'totalMinutes', 'totalExpenses'],
-          [[res.projectId, res.totalMinutes, res.totalExpenses]],
+          [
+            'projectId',
+            'planHours',
+            'planMinutes',
+            'totalMinutes',
+            'varianceMinutes',
+            'totalExpenses',
+          ],
+          [
+            [
+              res.projectId,
+              res.planHours,
+              res.planMinutes,
+              res.totalMinutes,
+              res.varianceMinutes,
+              res.totalExpenses,
+            ],
+          ],
         );
         return sendCsv(reply, `project-${projectId}-effort.csv`, csv);
       }
