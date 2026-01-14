@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { api, getAuthState } from '../api';
 import { useProjects } from '../hooks/useProjects';
 
@@ -12,6 +12,29 @@ type ProjectEffort = {
 };
 type GroupEffort = { userId: string; totalMinutes: number };
 type Overtime = { userId: string; totalMinutes: number; dailyHours: number };
+
+type ProjectBaseline = {
+  id: string;
+  name: string;
+  createdAt?: string | null;
+};
+
+type BurndownItem = {
+  date: string;
+  burnedMinutes: number;
+  cumulativeBurnedMinutes: number;
+  remainingMinutes: number;
+};
+
+type BurndownReport = {
+  projectId: string;
+  baselineId: string;
+  planMinutes: number;
+  from: string;
+  to: string;
+  items: BurndownItem[];
+};
+
 function buildQuery(from?: string, to?: string) {
   const params = new URLSearchParams();
   if (from) params.set('from', from);
@@ -25,6 +48,8 @@ export const Reports: React.FC = () => {
   const defaultProjectId = auth?.projectIds?.[0] || 'demo-project';
   const defaultUserId = auth?.userId || 'demo-user';
   const [projectId, setProjectId] = useState(defaultProjectId);
+  const [baselines, setBaselines] = useState<ProjectBaseline[]>([]);
+  const [baselineId, setBaselineId] = useState('');
   const [groupUserIds, setGroupUserIds] = useState(defaultUserId);
   const [overtimeUserId, setOvertimeUserId] = useState(defaultUserId);
   const [from, setFrom] = useState('');
@@ -34,6 +59,9 @@ export const Reports: React.FC = () => {
   );
   const [groupReport, setGroupReport] = useState<GroupEffort[]>([]);
   const [overtimeReport, setOvertimeReport] = useState<Overtime | null>(null);
+  const [burndownReport, setBurndownReport] = useState<BurndownReport | null>(
+    null,
+  );
   const [message, setMessage] = useState('');
 
   const { projects, projectMessage } = useProjects({
@@ -44,6 +72,59 @@ export const Reports: React.FC = () => {
     () => new Map(projects.map((project) => [project.id, project])),
     [projects],
   );
+
+  useEffect(() => {
+    if (!projectId) {
+      setBaselines([]);
+      setBaselineId('');
+      return;
+    }
+    const run = async () => {
+      try {
+        const res = await api<{ items: ProjectBaseline[] }>(
+          `/projects/${projectId}/baselines`,
+        );
+        const items = Array.isArray(res.items) ? res.items : [];
+        setBaselines(items);
+        setBaselineId((prev) => {
+          if (items.some((baseline) => baseline.id === prev)) return prev;
+          return items[0]?.id || '';
+        });
+      } catch (err) {
+        setBaselines([]);
+        setBaselineId('');
+      }
+    };
+    void run();
+  }, [projectId]);
+
+  const loadBurndown = async () => {
+    if (!projectId) {
+      setMessage('案件を選択してください');
+      return;
+    }
+    if (!baselineId) {
+      setMessage('ベースラインを選択してください');
+      return;
+    }
+    if (!from || !to) {
+      setMessage('from/to を入力してください');
+      return;
+    }
+    const params = new URLSearchParams();
+    params.set('baselineId', baselineId);
+    params.set('from', from);
+    params.set('to', to);
+    try {
+      const res = await api<BurndownReport>(
+        `/reports/burndown/${projectId}?${params.toString()}`,
+      );
+      setBurndownReport(res);
+      setMessage('バーンダウンを取得しました');
+    } catch (err) {
+      setMessage('取得に失敗しました');
+    }
+  };
 
   const loadProject = async () => {
     try {
@@ -144,6 +225,23 @@ export const Reports: React.FC = () => {
           個人別残業
         </button>
       </div>
+      <div className="row" style={{ gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
+        <select
+          aria-label="ベースライン選択"
+          value={baselineId}
+          onChange={(e) => setBaselineId(e.target.value)}
+        >
+          <option value="">ベースラインを選択</option>
+          {baselines.map((baseline) => (
+            <option key={baseline.id} value={baseline.id}>
+              {baseline.name}
+            </option>
+          ))}
+        </select>
+        <button className="button" onClick={loadBurndown}>
+          バーンダウン
+        </button>
+      </div>
       {projectMessage && <p style={{ color: '#dc2626' }}>{projectMessage}</p>}
       {message && <p>{message}</p>}
       <div className="list" style={{ display: 'grid', gap: 8 }}>
@@ -184,6 +282,24 @@ export const Reports: React.FC = () => {
             </div>
           </div>
         )}
+        {burndownReport && (
+          <div className="card" style={{ padding: 12 }}>
+            <strong>バーンダウン</strong>
+            <div>Project: {renderProject(burndownReport.projectId)}</div>
+            <div>Plan: {burndownReport.planMinutes} min</div>
+            <div>
+              Period: {burndownReport.from}〜{burndownReport.to}
+            </div>
+            <div style={{ marginTop: 8 }}>
+              {burndownReport.items.map((item) => (
+                <div key={item.date}>
+                  {item.date}: burned {item.burnedMinutes} / remaining{' '}
+                  {item.remainingMinutes}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
         {groupReport.length > 0 && (
           <div className="card" style={{ padding: 12 }}>
             <strong>グループ別工数</strong>
@@ -202,9 +318,10 @@ export const Reports: React.FC = () => {
             <div>Hours (avg/day): {overtimeReport.dailyHours.toFixed(2)}</div>
           </div>
         )}
-        {!projectReport && groupReport.length === 0 && !overtimeReport && (
-          <div className="card">レポート未取得</div>
-        )}
+        {!projectReport &&
+          groupReport.length === 0 &&
+          !overtimeReport &&
+          !burndownReport && <div className="card">レポート未取得</div>}
       </div>
     </div>
   );
