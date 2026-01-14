@@ -174,10 +174,18 @@ export const projectTaskSchema = {
     parentTaskId: Type.Optional(Type.String()),
     assigneeId: Type.Optional(Type.String()),
     status: Type.Optional(Type.String()),
-    planStart: Type.Optional(Type.String({ format: 'date' })),
-    planEnd: Type.Optional(Type.String({ format: 'date' })),
-    actualStart: Type.Optional(Type.String({ format: 'date' })),
-    actualEnd: Type.Optional(Type.String({ format: 'date' })),
+    planStart: Type.Optional(
+      Type.Union([Type.String({ format: 'date' }), Type.Null()]),
+    ),
+    planEnd: Type.Optional(
+      Type.Union([Type.String({ format: 'date' }), Type.Null()]),
+    ),
+    actualStart: Type.Optional(
+      Type.Union([Type.String({ format: 'date' }), Type.Null()]),
+    ),
+    actualEnd: Type.Optional(
+      Type.Union([Type.String({ format: 'date' }), Type.Null()]),
+    ),
   }),
 };
 
