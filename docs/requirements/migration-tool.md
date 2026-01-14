@@ -10,7 +10,7 @@
 ## 前提
 - DB 接続は `DATABASE_URL` を使用する
 - **書き込み実行**は `MIGRATION_CONFIRM=1` が必須
-- `--apply` の場合、簡易整合チェック（件数一致/明細合計）を実行する
+- `--apply` の場合、簡易整合チェック（件数一致/明細合計/プロジェクト別合計/参照整合）を実行する
 
 ## 入力ディレクトリ
 デフォルト: `tmp/migration/po`
@@ -279,9 +279,15 @@ export MIGRATION_CONFIRM=1
 npx --prefix packages/backend ts-node --project packages/backend/tsconfig.json scripts/migrate-po.ts --only=projects,tasks --apply
 ```
 
+## 取込後の簡易整合チェック（apply時）
+- 件数一致: `id in (...)` で「入力で対象にしたID」が DB に存在することを確認
+- 明細合計: 見積/請求/発注の `lines` 合計が `totalAmount` と一致することを確認
+- プロジェクト別合計: 対象IDの `totalAmount/amount/minutes` をプロジェクト別に集計し入力と一致することを確認
+- 参照整合: `Invoice.estimateId/milestoneId` と `PurchaseOrderLine.expenseId` のプロジェクト整合を確認
+
 ## 既知の制約（最小実装）
 - CSV 取込は未対応（後続）
 - `time_entries.userId` などのユーザIDの突合せは運用で決める必要がある
-- 簡易整合チェックは `id in (...)` による件数一致チェックのため、巨大データでは時間/SQL制限の調整が必要になる可能性がある
+- 簡易整合チェックは `id in (...)` / `groupBy` によるチェックのため、巨大データでは時間/SQL制限の調整が必要になる可能性がある
 - 見積/請求/発注の明細（lines）は apply 時に「全削除→再作成」で同期する（差分更新は未対応）
 - 承認フロー（ApprovalInstance/Step）はこのツールでは作成しない（必要なら別途運用/後続対応）
