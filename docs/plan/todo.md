@@ -5,10 +5,14 @@
 - [ ] S3/OSS 移行の時期を決定（`docs/requirements/backup-restore.md`）
 
 ## 次アクション（プロジェクト運用/レポート）
-- [ ] #522 EVM（PV/EV/AC/SPI/CPI）日次算出
-  - [ ] API: `GET /reports/project-evm/:projectId?from=YYYY-MM-DD&to=YYYY-MM-DD`
-  - [ ] UI: Reports に EVM（表/指標）を追加
-  - [ ] E2E（@extended）または手動QA手順の追記
+- [x] #522 EVM（PV/EV/AC/SPI/CPI）日次算出（PR #532）
+  - [x] API: `GET /reports/project-evm/:projectId?from=YYYY-MM-DD&to=YYYY-MM-DD`
+  - [x] UI: Reports に EVM（表/指標）を追加
+  - [x] E2E（@extended）または手動QA手順の追記
+- [ ] #533 PO→ERP4 データ移行 実行ツール
+  - [ ] 入力仕様（JSON/CSV）と実行手順を docs に整理
+  - [ ] 最小import（customers/vendors/projects/tasks/milestones/time/expense）
+  - [ ] 取込後の整合チェック（件数/参照切れ/合計）を追加
 
 ## 次アクション（チャット）
 - [x] #453 ルーム化（project chat→room chat）移行方針の確定と段階移行の計画化
