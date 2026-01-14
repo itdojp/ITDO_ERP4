@@ -992,6 +992,25 @@ function normalizeLines<T>(lines: T[] | null | undefined): T[] {
   return lines.filter((line) => line != null);
 }
 
+type NumberingKind = 'estimate' | 'invoice' | 'purchase_order' | 'vendor_quote' | 'vendor_invoice';
+
+async function resolveDocumentNumber(
+  kind: NumberingKind,
+  numberingDate: Date,
+  preferredNo: string | null,
+  existingNo: string | null | undefined,
+  existingSerial?: number | null | undefined,
+): Promise<{ number: string; serial: number | null }> {
+  if (existingNo) {
+    return { number: existingNo, serial: existingSerial ?? null };
+  }
+  if (preferredNo) {
+    return { number: preferredNo, serial: existingSerial ?? null };
+  }
+  const allocation = await nextNumber(kind, numberingDate);
+  return { number: allocation.number, serial: allocation.serial };
+}
+
 async function importEstimates(
   options: CliOptions,
   items: EstimateInput[],
@@ -1101,18 +1120,15 @@ async function importEstimates(
     }
     if (errors.length) break;
 
-    let estimateNo: string;
-    let numberingSerial: number | null = null;
-    if (exists) {
-      estimateNo = exists.estimateNo;
-      numberingSerial = exists.numberingSerial ?? null;
-    } else if (preferredNo) {
-      estimateNo = preferredNo;
-    } else {
-      const allocation = await nextNumber('estimate', numberingDate);
-      estimateNo = allocation.number;
-      numberingSerial = allocation.serial;
-    }
+    const resolved = await resolveDocumentNumber(
+      'estimate',
+      numberingDate,
+      preferredNo,
+      exists?.estimateNo,
+      exists?.numberingSerial,
+    );
+    const estimateNo = resolved.number;
+    const numberingSerial = resolved.serial;
 
     const data = {
       id,
@@ -1304,18 +1320,15 @@ async function importInvoices(
     }
     if (errors.length) break;
 
-    let invoiceNo: string;
-    let numberingSerial: number | null = null;
-    if (exists) {
-      invoiceNo = exists.invoiceNo;
-      numberingSerial = exists.numberingSerial ?? null;
-    } else if (preferredNo) {
-      invoiceNo = preferredNo;
-    } else {
-      const allocation = await nextNumber('invoice', numberingDate);
-      invoiceNo = allocation.number;
-      numberingSerial = allocation.serial;
-    }
+    const resolved = await resolveDocumentNumber(
+      'invoice',
+      numberingDate,
+      preferredNo,
+      exists?.invoiceNo,
+      exists?.numberingSerial,
+    );
+    const invoiceNo = resolved.number;
+    const numberingSerial = resolved.serial;
 
     const data = {
       id,
@@ -1500,22 +1513,15 @@ async function importPurchaseOrders(
     }
     if (errors.length) break;
 
-    let poNo: string;
-    let numberingSerial: number | null = null;
-    if (exists) {
-      poNo = exists.poNo;
-      numberingSerial = exists.numberingSerial ?? null;
-    } else if (preferredNo) {
-      poNo = preferredNo;
-    } else {
-      const allocation = await nextNumber('purchase_order', numberingDate);
-      poNo = allocation.number;
-      numberingSerial = allocation.serial;
-    }
-    if (!poNo) {
-      errors.push({ scope: 'purchase_orders', legacyId: item.legacyId, message: 'failed to determine poNo' });
-      continue;
-    }
+    const resolved = await resolveDocumentNumber(
+      'purchase_order',
+      numberingDate,
+      preferredNo,
+      exists?.poNo,
+      exists?.numberingSerial,
+    );
+    const poNo = resolved.number;
+    const numberingSerial = resolved.serial;
 
     const data = {
       id,
@@ -1634,15 +1640,9 @@ async function importVendorQuotes(
       continue;
     }
 
-    const quoteNo = preferredNo
-      ? preferredNo
-      : exists?.quoteNo
-        ? exists.quoteNo
-        : (await nextNumber('vendor_quote', numberingDate)).number;
-    if (!quoteNo) {
-      errors.push({ scope: 'vendor_quotes', legacyId: item.legacyId, message: 'failed to allocate quoteNo' });
-      continue;
-    }
+    const quoteNo = (
+      await resolveDocumentNumber('vendor_quote', numberingDate, preferredNo, exists?.quoteNo)
+    ).number;
 
     const data = {
       id,
@@ -1755,22 +1755,15 @@ async function importVendorInvoices(
       continue;
     }
 
-    let vendorInvoiceNo: string | null = null;
-    let numberingSerial: number | null = null;
-    if (preferredNo) {
-      vendorInvoiceNo = preferredNo;
-    } else if (exists?.vendorInvoiceNo) {
-      vendorInvoiceNo = exists.vendorInvoiceNo;
-      numberingSerial = exists.numberingSerial ?? null;
-    } else {
-      const allocation = await nextNumber('vendor_invoice', numberingDate);
-      vendorInvoiceNo = allocation.number;
-      numberingSerial = allocation.serial;
-    }
-    if (!vendorInvoiceNo) {
-      errors.push({ scope: 'vendor_invoices', legacyId: item.legacyId, message: 'failed to determine vendorInvoiceNo' });
-      continue;
-    }
+    const resolved = await resolveDocumentNumber(
+      'vendor_invoice',
+      numberingDate,
+      preferredNo,
+      exists?.vendorInvoiceNo,
+      exists?.numberingSerial,
+    );
+    const vendorInvoiceNo = resolved.number;
+    const numberingSerial = resolved.serial;
 
     const data = {
       id,
