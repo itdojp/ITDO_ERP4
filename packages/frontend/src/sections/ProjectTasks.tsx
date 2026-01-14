@@ -9,6 +9,10 @@ type ProjectTask = {
   status?: string | null;
   parentTaskId?: string | null;
   assigneeId?: string | null;
+  planStart?: string | null;
+  planEnd?: string | null;
+  actualStart?: string | null;
+  actualEnd?: string | null;
 };
 
 const buildInitialForm = (projectId?: string) => ({
@@ -16,6 +20,10 @@ const buildInitialForm = (projectId?: string) => ({
   name: '',
   status: '',
   parentTaskId: '',
+  planStart: '',
+  planEnd: '',
+  actualStart: '',
+  actualEnd: '',
   reasonText: '',
 });
 
@@ -24,6 +32,13 @@ const errorDetail = (err: unknown) => {
     return ` (${err.message})`;
   }
   return '';
+};
+
+const toDateInput = (value?: string | null) => {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toISOString().slice(0, 10);
 };
 
 const notifyTasksChanged = (projectId: string) => {
@@ -119,6 +134,10 @@ export const ProjectTasks: React.FC = () => {
       name: '',
       status: '',
       parentTaskId: '',
+      planStart: '',
+      planEnd: '',
+      actualStart: '',
+      actualEnd: '',
       reasonText: '',
     }));
   }, [editing, form.projectId]);
@@ -139,6 +158,10 @@ export const ProjectTasks: React.FC = () => {
       setMessage('親タスクを変更する場合は理由を入力してください');
       return;
     }
+    const planStart = form.planStart.trim();
+    const planEnd = form.planEnd.trim();
+    const actualStart = form.actualStart.trim();
+    const actualEnd = form.actualEnd.trim();
     try {
       if (editing) {
         const updated = await api<ProjectTask>(
@@ -149,6 +172,10 @@ export const ProjectTasks: React.FC = () => {
               name,
               status: status || undefined,
               parentTaskId,
+              planStart: planStart || null,
+              planEnd: planEnd || null,
+              actualStart: actualStart || null,
+              actualEnd: actualEnd || null,
               ...(parentChanged ? { reasonText: trimmedReasonText } : {}),
             }),
           },
@@ -169,6 +196,10 @@ export const ProjectTasks: React.FC = () => {
             name,
             status: status || undefined,
             ...(parentTaskId ? { parentTaskId } : {}),
+            ...(planStart ? { planStart } : {}),
+            ...(planEnd ? { planEnd } : {}),
+            ...(actualStart ? { actualStart } : {}),
+            ...(actualEnd ? { actualEnd } : {}),
           }),
         },
       );
@@ -190,6 +221,10 @@ export const ProjectTasks: React.FC = () => {
       name: item.name,
       status: item.status || '',
       parentTaskId: item.parentTaskId || '',
+      planStart: toDateInput(item.planStart),
+      planEnd: toDateInput(item.planEnd),
+      actualStart: toDateInput(item.actualStart),
+      actualEnd: toDateInput(item.actualEnd),
       reasonText: '',
     }));
   };
@@ -275,6 +310,30 @@ export const ProjectTasks: React.FC = () => {
                 </option>
               ))}
           </select>
+          <input
+            aria-label="計画開始日"
+            type="date"
+            value={form.planStart}
+            onChange={(e) => setForm({ ...form, planStart: e.target.value })}
+          />
+          <input
+            aria-label="計画終了日"
+            type="date"
+            value={form.planEnd}
+            onChange={(e) => setForm({ ...form, planEnd: e.target.value })}
+          />
+          <input
+            aria-label="実績開始日"
+            type="date"
+            value={form.actualStart}
+            onChange={(e) => setForm({ ...form, actualStart: e.target.value })}
+          />
+          <input
+            aria-label="実績終了日"
+            type="date"
+            value={form.actualEnd}
+            onChange={(e) => setForm({ ...form, actualEnd: e.target.value })}
+          />
           <button className="button" onClick={save}>
             {editing ? '更新' : '作成'}
           </button>
@@ -310,11 +369,29 @@ export const ProjectTasks: React.FC = () => {
           const parentLabel = item.parentTaskId
             ? parent?.name || item.parentTaskId
             : null;
+          const planStart = toDateInput(item.planStart);
+          const planEnd = toDateInput(item.planEnd);
+          const actualStart = toDateInput(item.actualStart);
+          const actualEnd = toDateInput(item.actualEnd);
+          const planLabel =
+            planStart || planEnd
+              ? `計画: ${planStart || '未設定'}〜${planEnd || '未設定'}`
+              : null;
+          const actualLabel =
+            actualStart || actualEnd
+              ? `実績: ${actualStart || '未設定'}〜${actualEnd || '未設定'}`
+              : null;
           return (
             <li key={item.id}>
               <span className="badge">{item.status || 'open'}</span> {item.name}{' '}
               / {renderProject(item.projectId)}
               {parentLabel && ` / 親: ${parentLabel}`}
+              {(planLabel || actualLabel) && (
+                <div style={{ marginTop: 4, fontSize: 12 }}>
+                  {planLabel && <div>{planLabel}</div>}
+                  {actualLabel && <div>{actualLabel}</div>}
+                </div>
+              )}
               <div style={{ marginTop: 6 }}>
                 <button
                   className="button secondary"

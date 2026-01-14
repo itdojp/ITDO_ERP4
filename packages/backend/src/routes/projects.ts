@@ -72,13 +72,21 @@ function isStartDateAfterEndDate(
   );
 }
 
-function sendInvalidProjectPeriodError(reply: any) {
+function sendInvalidDateRangeError(
+  reply: any,
+  startField: string,
+  endField: string,
+) {
   return reply.status(400).send({
     error: {
       code: 'VALIDATION_ERROR',
-      message: 'startDate must be before or equal to endDate',
+      message: `${startField} must be before or equal to ${endField}`,
     },
   });
+}
+
+function sendInvalidProjectPeriodError(reply: any) {
+  return sendInvalidDateRangeError(reply, 'startDate', 'endDate');
 }
 
 async function ensureProjectLeader(req: any, reply: any, projectId: string) {
@@ -778,6 +786,19 @@ export async function registerProjectRoutes(app: FastifyInstance) {
       const { projectId } = req.params as { projectId: string };
       const body = req.body as any;
       const parentTaskId = normalizeParentId(body.parentTaskId);
+      const { value: planStart } = parseNullableDateField(body, 'planStart');
+      const { value: planEnd } = parseNullableDateField(body, 'planEnd');
+      const { value: actualStart } = parseNullableDateField(
+        body,
+        'actualStart',
+      );
+      const { value: actualEnd } = parseNullableDateField(body, 'actualEnd');
+      if (isStartDateAfterEndDate(planStart, planEnd)) {
+        return sendInvalidDateRangeError(reply, 'planStart', 'planEnd');
+      }
+      if (isStartDateAfterEndDate(actualStart, actualEnd)) {
+        return sendInvalidDateRangeError(reply, 'actualStart', 'actualEnd');
+      }
       if (parentTaskId) {
         const parent = await prisma.projectTask.findUnique({
           where: { id: parentTaskId },
@@ -804,10 +825,10 @@ export async function registerProjectRoutes(app: FastifyInstance) {
           parentTaskId,
           assigneeId: body.assigneeId,
           status: body.status,
-          planStart: body.planStart ? new Date(body.planStart) : null,
-          planEnd: body.planEnd ? new Date(body.planEnd) : null,
-          actualStart: body.actualStart ? new Date(body.actualStart) : null,
-          actualEnd: body.actualEnd ? new Date(body.actualEnd) : null,
+          planStart: planStart ?? null,
+          planEnd: planEnd ?? null,
+          actualStart: actualStart ?? null,
+          actualEnd: actualEnd ?? null,
         },
       });
       return task;
@@ -842,6 +863,28 @@ export async function registerProjectRoutes(app: FastifyInstance) {
         return reply.status(400).send({
           error: { code: 'ALREADY_DELETED', message: 'Task already deleted' },
         });
+      }
+      const { hasProp: hasPlanStartProp, value: planStart } =
+        parseNullableDateField(body, 'planStart');
+      const { hasProp: hasPlanEndProp, value: planEnd } =
+        parseNullableDateField(body, 'planEnd');
+      const { hasProp: hasActualStartProp, value: actualStart } =
+        parseNullableDateField(body, 'actualStart');
+      const { hasProp: hasActualEndProp, value: actualEnd } =
+        parseNullableDateField(body, 'actualEnd');
+      const effectivePlanStart =
+        planStart === undefined ? current.planStart : planStart;
+      const effectivePlanEnd =
+        planEnd === undefined ? current.planEnd : planEnd;
+      if (isStartDateAfterEndDate(effectivePlanStart, effectivePlanEnd)) {
+        return sendInvalidDateRangeError(reply, 'planStart', 'planEnd');
+      }
+      const effectiveActualStart =
+        actualStart === undefined ? current.actualStart : actualStart;
+      const effectiveActualEnd =
+        actualEnd === undefined ? current.actualEnd : actualEnd;
+      if (isStartDateAfterEndDate(effectiveActualStart, effectiveActualEnd)) {
+        return sendInvalidDateRangeError(reply, 'actualStart', 'actualEnd');
       }
       const hasParentTaskIdProp = Object.prototype.hasOwnProperty.call(
         body,
@@ -907,12 +950,10 @@ export async function registerProjectRoutes(app: FastifyInstance) {
           parentTaskId: hasParentTaskIdProp ? nextParentTaskId : undefined,
           assigneeId: body.assigneeId,
           status: body.status,
-          planStart: body.planStart ? new Date(body.planStart) : undefined,
-          planEnd: body.planEnd ? new Date(body.planEnd) : undefined,
-          actualStart: body.actualStart
-            ? new Date(body.actualStart)
-            : undefined,
-          actualEnd: body.actualEnd ? new Date(body.actualEnd) : undefined,
+          planStart: hasPlanStartProp ? planStart : undefined,
+          planEnd: hasPlanEndProp ? planEnd : undefined,
+          actualStart: hasActualStartProp ? actualStart : undefined,
+          actualEnd: hasActualEndProp ? actualEnd : undefined,
         },
       });
       if (parentChanged) {
