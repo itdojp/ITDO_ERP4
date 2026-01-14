@@ -142,6 +142,33 @@ export async function registerReportRoutes(app: FastifyInstance) {
         });
       }
 
+      const cursor = new Date(
+        Date.UTC(
+          fromDate.getUTCFullYear(),
+          fromDate.getUTCMonth(),
+          fromDate.getUTCDate(),
+        ),
+      );
+      const endDate = new Date(
+        Date.UTC(
+          toDate.getUTCFullYear(),
+          toDate.getUTCMonth(),
+          toDate.getUTCDate(),
+        ),
+      );
+      const MAX_BURNDOWN_RANGE_DAYS = 365;
+      const MS_PER_DAY = 24 * 60 * 60 * 1000;
+      const rangeDays =
+        Math.floor((endDate.getTime() - cursor.getTime()) / MS_PER_DAY) + 1;
+      if (rangeDays > MAX_BURNDOWN_RANGE_DAYS) {
+        return reply.status(400).send({
+          error: {
+            code: 'DATE_RANGE_TOO_LARGE',
+            message: `Date range cannot exceed ${MAX_BURNDOWN_RANGE_DAYS} days`,
+          },
+        });
+      }
+
       const baseline = await prisma.projectBaseline.findUnique({
         where: { id: baselineId },
         select: { id: true, projectId: true, deletedAt: true, planHours: true },
@@ -195,8 +222,7 @@ export async function registerReportRoutes(app: FastifyInstance) {
         remainingMinutes: number;
       }> = [];
       let cumulative = 0;
-      const cursor = new Date(fromDate);
-      while (cursor.getTime() <= toDate.getTime()) {
+      while (cursor.getTime() <= endDate.getTime()) {
         const key = cursor.toISOString().slice(0, 10);
         const burnedMinutes = burnedByDay.get(key) ?? 0;
         cumulative += burnedMinutes;

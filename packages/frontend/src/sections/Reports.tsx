@@ -122,6 +122,7 @@ export const Reports: React.FC = () => {
       setBurndownReport(res);
       setMessage('バーンダウンを取得しました');
     } catch (err) {
+      setBurndownReport(null);
       setMessage('取得に失敗しました');
     }
   };
