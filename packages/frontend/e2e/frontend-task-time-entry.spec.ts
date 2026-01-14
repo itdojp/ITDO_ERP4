@@ -76,7 +76,7 @@ test('task to time entry link @core', async ({ page, request }) => {
     'PRJ-DEMO-1 / Demo Project 1',
   );
   await taskSection.getByLabel('タスク名').fill(taskName);
-  await taskSection.getByRole('button', { name: '作成' }).click();
+  await taskSection.getByRole('button', { name: /^作成$/ }).click();
   await expect(taskSection.getByText('作成しました')).toBeVisible();
   await expect(
     taskSection.locator('ul.list li', { hasText: taskName }).first(),
