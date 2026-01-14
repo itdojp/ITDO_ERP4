@@ -198,6 +198,18 @@ export const projectTaskPatchSchema = {
   ]),
 };
 
+export const projectTaskDependencySchema = {
+  body: Type.Object(
+    {
+      predecessorIds: Type.Array(Type.String({ minLength: 1 }), {
+        minItems: 0,
+        maxItems: 200,
+      }),
+    },
+    { additionalProperties: false },
+  ),
+};
+
 export const projectMilestoneSchema = {
   body: Type.Object({
     name: Type.String(),
