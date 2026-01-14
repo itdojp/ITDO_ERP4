@@ -9,6 +9,7 @@ import {
   recurringTemplateSchema,
   projectTaskSchema,
   projectTaskPatchSchema,
+  projectTaskDependencySchema,
   projectMilestoneSchema,
   projectMilestonePatchSchema,
   deleteReasonSchema,
@@ -119,6 +120,66 @@ async function hasCircularParent(taskId: string, parentTaskId: string) {
       });
     if (!current) return false;
     currentId = current.parentTaskId;
+  }
+  return false;
+}
+
+type TaskDependencyEdge = { fromTaskId: string; toTaskId: string };
+
+function buildTaskDependencyGraph(edges: TaskDependencyEdge[]) {
+  const graph = new Map<string, Set<string>>();
+  for (const edge of edges) {
+    const next = graph.get(edge.fromTaskId) ?? new Set<string>();
+    next.add(edge.toTaskId);
+    graph.set(edge.fromTaskId, next);
+  }
+  return graph;
+}
+
+function removeTaskDependency(
+  graph: Map<string, Set<string>>,
+  fromTaskId: string,
+  toTaskId: string,
+) {
+  const next = graph.get(fromTaskId);
+  if (!next) return;
+  next.delete(toTaskId);
+  if (next.size === 0) {
+    graph.delete(fromTaskId);
+  }
+}
+
+function addTaskDependency(
+  graph: Map<string, Set<string>>,
+  fromTaskId: string,
+  toTaskId: string,
+) {
+  const next = graph.get(fromTaskId) ?? new Set<string>();
+  next.add(toTaskId);
+  graph.set(fromTaskId, next);
+}
+
+function hasTaskDependencyPath(
+  graph: Map<string, Set<string>>,
+  startId: string,
+  targetId: string,
+) {
+  if (startId === targetId) return true;
+  const visited = new Set<string>();
+  const stack = [startId];
+  while (stack.length) {
+    const current = stack.pop();
+    if (!current) continue;
+    if (current === targetId) return true;
+    if (visited.has(current)) continue;
+    visited.add(current);
+    const next = graph.get(current);
+    if (!next) continue;
+    for (const neighbor of next) {
+      if (!visited.has(neighbor)) {
+        stack.push(neighbor);
+      }
+    }
   }
   return false;
 }
@@ -990,6 +1051,172 @@ export async function registerProjectRoutes(app: FastifyInstance) {
     },
   );
 
+  app.get(
+    '/projects/:projectId/tasks/:taskId/dependencies',
+    {
+      preHandler: [
+        requireRole(['admin', 'mgmt', 'user']),
+        ensureProjectIdParam,
+        requireProjectAccess((req) => (req.params as any)?.projectId),
+      ],
+    },
+    async (req, reply) => {
+      const { projectId, taskId } = req.params as {
+        projectId: string;
+        taskId: string;
+      };
+      const task = await prisma.projectTask.findUnique({
+        where: { id: taskId },
+        select: { id: true, projectId: true, deletedAt: true },
+      });
+      if (!task || task.projectId !== projectId) {
+        return reply.status(404).send({
+          error: { code: 'NOT_FOUND', message: 'Task not found' },
+        });
+      }
+      if (task.deletedAt) {
+        return reply.status(400).send({
+          error: { code: 'ALREADY_DELETED', message: 'Task already deleted' },
+        });
+      }
+      const deps = await prisma.projectTaskDependency.findMany({
+        where: { projectId, toTaskId: taskId, fromTask: { deletedAt: null } },
+        select: { fromTaskId: true },
+        orderBy: { createdAt: 'asc' },
+      });
+      return { predecessorIds: deps.map((dep) => dep.fromTaskId) };
+    },
+  );
+
+  app.put(
+    '/projects/:projectId/tasks/:taskId/dependencies',
+    {
+      preHandler: [
+        requireRole(['admin', 'mgmt', 'user']),
+        ensureProjectIdParam,
+        requireProjectAccess((req) => (req.params as any)?.projectId),
+      ],
+      schema: projectTaskDependencySchema,
+    },
+    async (req, reply) => {
+      const { projectId, taskId } = req.params as {
+        projectId: string;
+        taskId: string;
+      };
+      const body = req.body as any;
+      const rawPredecessorIds: unknown[] = Array.isArray(body.predecessorIds)
+        ? body.predecessorIds
+        : [];
+      const predecessorIds: string[] = Array.from(
+        new Set(
+          rawPredecessorIds
+            .map((value) => String(value).trim())
+            .filter((value) => value.length > 0),
+        ),
+      );
+      if (predecessorIds.includes(taskId)) {
+        return reply.status(400).send({
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'Task cannot depend on itself',
+          },
+        });
+      }
+      const task = await prisma.projectTask.findUnique({
+        where: { id: taskId },
+        select: { id: true, projectId: true, deletedAt: true },
+      });
+      if (!task || task.projectId !== projectId) {
+        return reply.status(404).send({
+          error: { code: 'NOT_FOUND', message: 'Task not found' },
+        });
+      }
+      if (task.deletedAt) {
+        return reply.status(400).send({
+          error: { code: 'ALREADY_DELETED', message: 'Task already deleted' },
+        });
+      }
+
+      if (predecessorIds.length) {
+        const predecessors = await prisma.projectTask.findMany({
+          where: { id: { in: predecessorIds }, projectId, deletedAt: null },
+          select: { id: true },
+        });
+        if (predecessors.length !== predecessorIds.length) {
+          return reply.status(404).send({
+            error: {
+              code: 'NOT_FOUND',
+              message: 'Predecessor task not found',
+            },
+          });
+        }
+      }
+
+      const existing = await prisma.projectTaskDependency.findMany({
+        where: { projectId, toTaskId: taskId },
+        select: { fromTaskId: true },
+      });
+      const existingIds = new Set(existing.map((dep) => dep.fromTaskId));
+      const desiredIds = new Set(predecessorIds);
+      const toAdd = predecessorIds.filter((id) => !existingIds.has(id));
+      const toRemove = Array.from(existingIds).filter(
+        (id) => !desiredIds.has(id),
+      );
+
+      if (toAdd.length) {
+        const edges = await prisma.projectTaskDependency.findMany({
+          where: {
+            projectId,
+            fromTask: { deletedAt: null },
+            toTask: { deletedAt: null },
+          },
+          select: { fromTaskId: true, toTaskId: true },
+        });
+        const graph = buildTaskDependencyGraph(edges);
+        for (const fromTaskId of toRemove) {
+          removeTaskDependency(graph, fromTaskId, taskId);
+        }
+        for (const fromTaskId of toAdd) {
+          if (hasTaskDependencyPath(graph, taskId, fromTaskId)) {
+            return reply.status(400).send({
+              error: {
+                code: 'VALIDATION_ERROR',
+                message: 'Task dependency creates circular reference',
+              },
+            });
+          }
+          addTaskDependency(graph, fromTaskId, taskId);
+        }
+      }
+
+      const userId = req.user?.userId;
+      await prisma.$transaction(async (tx) => {
+        if (toRemove.length) {
+          await tx.projectTaskDependency.deleteMany({
+            where: {
+              projectId,
+              toTaskId: taskId,
+              fromTaskId: { in: toRemove },
+            },
+          });
+        }
+        if (toAdd.length) {
+          await tx.projectTaskDependency.createMany({
+            data: toAdd.map((fromTaskId) => ({
+              projectId,
+              fromTaskId,
+              toTaskId: taskId,
+              createdBy: userId,
+            })),
+            skipDuplicates: true,
+          });
+        }
+      });
+
+      return { predecessorIds, added: toAdd.length, removed: toRemove.length };
+    },
+  );
+
   app.post(
     '/projects/:projectId/tasks/:taskId/reassign',
     { preHandler: requireRole(['admin', 'mgmt']), schema: reassignSchema },
@@ -1029,21 +1256,34 @@ export async function registerProjectRoutes(app: FastifyInstance) {
           error: { code: 'NOT_FOUND', message: 'Target project not found' },
         });
       }
-      const [childCount, timeCount, estimateCount, invoiceCount, poCount] =
-        await Promise.all([
-          prisma.projectTask.count({
-            where: { parentTaskId: taskId, deletedAt: null },
-          }),
-          prisma.timeEntry.count({
-            where: { taskId, deletedAt: null },
-          }),
-          prisma.estimateLine.count({ where: { taskId } }),
-          prisma.billingLine.count({ where: { taskId } }),
-          prisma.purchaseOrderLine.count({ where: { taskId } }),
-        ]);
+      const [
+        childCount,
+        timeCount,
+        dependencyCount,
+        estimateCount,
+        invoiceCount,
+        poCount,
+      ] = await Promise.all([
+        prisma.projectTask.count({
+          where: { parentTaskId: taskId, deletedAt: null },
+        }),
+        prisma.timeEntry.count({
+          where: { taskId, deletedAt: null },
+        }),
+        prisma.projectTaskDependency.count({
+          where: {
+            projectId,
+            OR: [{ fromTaskId: taskId }, { toTaskId: taskId }],
+          },
+        }),
+        prisma.estimateLine.count({ where: { taskId } }),
+        prisma.billingLine.count({ where: { taskId } }),
+        prisma.purchaseOrderLine.count({ where: { taskId } }),
+      ]);
       if (
         childCount > 0 ||
         (!moveTimeEntries && timeCount > 0) ||
+        dependencyCount > 0 ||
         estimateCount > 0 ||
         invoiceCount > 0 ||
         poCount > 0
@@ -1269,12 +1509,21 @@ export async function registerProjectRoutes(app: FastifyInstance) {
           },
         });
       }
-      const updated = await prisma.projectTask.update({
-        where: { id: taskId },
-        data: {
-          deletedAt: new Date(),
-          deletedReason: body.reason,
-        },
+      const updated = await prisma.$transaction(async (tx) => {
+        const updated = await tx.projectTask.update({
+          where: { id: taskId },
+          data: {
+            deletedAt: new Date(),
+            deletedReason: body.reason,
+          },
+        });
+        await tx.projectTaskDependency.deleteMany({
+          where: {
+            projectId,
+            OR: [{ fromTaskId: taskId }, { toTaskId: taskId }],
+          },
+        });
+        return updated;
       });
       return updated;
     },

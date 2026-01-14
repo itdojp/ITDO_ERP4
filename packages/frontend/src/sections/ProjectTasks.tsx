@@ -22,6 +22,7 @@ const buildInitialForm = (projectId?: string) => ({
   status: '',
   parentTaskId: '',
   progressPercent: '',
+  predecessorIds: [] as string[],
   planStart: '',
   planEnd: '',
   actualStart: '',
@@ -116,6 +117,25 @@ export const ProjectTasks: React.FC = () => {
     [form.projectId],
   );
 
+  const loadDependencies = useCallback(
+    async (projectId: string, taskId: string) => {
+      try {
+        const res = await api<{ predecessorIds?: string[] }>(
+          `/projects/${projectId}/tasks/${taskId}/dependencies`,
+        );
+        setForm((prev) => ({
+          ...prev,
+          predecessorIds: Array.isArray(res.predecessorIds)
+            ? res.predecessorIds
+            : [],
+        }));
+      } catch (err) {
+        setMessage(`依存関係の読み込みに失敗しました${errorDetail(err)}`);
+      }
+    },
+    [],
+  );
+
   const resetForm = useCallback(() => {
     setForm((prev) => ({ ...buildInitialForm(prev.projectId) }));
     setEditing(null);
@@ -137,6 +157,7 @@ export const ProjectTasks: React.FC = () => {
       status: '',
       parentTaskId: '',
       progressPercent: '',
+      predecessorIds: [],
       planStart: '',
       planEnd: '',
       actualStart: '',
@@ -202,8 +223,24 @@ export const ProjectTasks: React.FC = () => {
         setItems((prev) =>
           prev.map((item) => (item.id === updated.id ? updated : item)),
         );
-        setMessage('更新しました');
         notifyTasksChanged(form.projectId);
+        setEditing(updated);
+        setEditingOriginalParentTaskId(updated.parentTaskId ?? null);
+        try {
+          await api(
+            `/projects/${form.projectId}/tasks/${editing.id}/dependencies`,
+            {
+              method: 'PUT',
+              body: JSON.stringify({ predecessorIds: form.predecessorIds }),
+            },
+          );
+        } catch (err) {
+          setMessage(
+            `タスクは更新しましたが、依存関係の更新に失敗しました${errorDetail(err)}`,
+          );
+          return;
+        }
+        setMessage('更新しました');
         resetForm();
         return;
       }
@@ -241,6 +278,7 @@ export const ProjectTasks: React.FC = () => {
       name: item.name,
       status: item.status || '',
       parentTaskId: item.parentTaskId || '',
+      predecessorIds: [],
       progressPercent:
         item.progressPercent != null ? String(item.progressPercent) : '',
       planStart: toDateInput(item.planStart),
@@ -249,6 +287,7 @@ export const ProjectTasks: React.FC = () => {
       actualEnd: toDateInput(item.actualEnd),
       reasonText: '',
     }));
+    void loadDependencies(item.projectId, item.id);
   };
 
   const remove = async (item: ProjectTask) => {
@@ -378,6 +417,38 @@ export const ProjectTasks: React.FC = () => {
             </button>
           )}
         </div>
+        {editing && (
+          <div style={{ marginTop: 8 }}>
+            <select
+              multiple
+              aria-label="先行タスク選択"
+              value={form.predecessorIds}
+              onChange={(e) =>
+                setForm({
+                  ...form,
+                  predecessorIds: Array.from(e.target.selectedOptions).map(
+                    (opt) => opt.value,
+                  ),
+                })
+              }
+              style={{ minWidth: 240, minHeight: 120 }}
+            >
+              {items
+                .filter(
+                  (task) =>
+                    task.id !== editing.id && task.projectId === form.projectId,
+                )
+                .map((task) => (
+                  <option key={task.id} value={task.id}>
+                    {task.name}
+                  </option>
+                ))}
+            </select>
+            <div style={{ fontSize: 12, color: '#6b7280', marginTop: 4 }}>
+              先行タスク（複数選択可）
+            </div>
+          </div>
+        )}
         {editing && (
           <div style={{ marginTop: 8 }}>
             <textarea
