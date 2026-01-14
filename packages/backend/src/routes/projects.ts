@@ -1080,7 +1080,7 @@ export async function registerProjectRoutes(app: FastifyInstance) {
         });
       }
       const deps = await prisma.projectTaskDependency.findMany({
-        where: { projectId, toTaskId: taskId },
+        where: { projectId, toTaskId: taskId, fromTask: { deletedAt: null } },
         select: { fromTaskId: true },
         orderBy: { createdAt: 'asc' },
       });
@@ -1165,7 +1165,11 @@ export async function registerProjectRoutes(app: FastifyInstance) {
 
       if (toAdd.length) {
         const edges = await prisma.projectTaskDependency.findMany({
-          where: { projectId },
+          where: {
+            projectId,
+            fromTask: { deletedAt: null },
+            toTask: { deletedAt: null },
+          },
           select: { fromTaskId: true, toTaskId: true },
         });
         const graph = buildTaskDependencyGraph(edges);
@@ -1252,21 +1256,34 @@ export async function registerProjectRoutes(app: FastifyInstance) {
           error: { code: 'NOT_FOUND', message: 'Target project not found' },
         });
       }
-      const [childCount, timeCount, estimateCount, invoiceCount, poCount] =
-        await Promise.all([
-          prisma.projectTask.count({
-            where: { parentTaskId: taskId, deletedAt: null },
-          }),
-          prisma.timeEntry.count({
-            where: { taskId, deletedAt: null },
-          }),
-          prisma.estimateLine.count({ where: { taskId } }),
-          prisma.billingLine.count({ where: { taskId } }),
-          prisma.purchaseOrderLine.count({ where: { taskId } }),
-        ]);
+      const [
+        childCount,
+        timeCount,
+        dependencyCount,
+        estimateCount,
+        invoiceCount,
+        poCount,
+      ] = await Promise.all([
+        prisma.projectTask.count({
+          where: { parentTaskId: taskId, deletedAt: null },
+        }),
+        prisma.timeEntry.count({
+          where: { taskId, deletedAt: null },
+        }),
+        prisma.projectTaskDependency.count({
+          where: {
+            projectId,
+            OR: [{ fromTaskId: taskId }, { toTaskId: taskId }],
+          },
+        }),
+        prisma.estimateLine.count({ where: { taskId } }),
+        prisma.billingLine.count({ where: { taskId } }),
+        prisma.purchaseOrderLine.count({ where: { taskId } }),
+      ]);
       if (
         childCount > 0 ||
         (!moveTimeEntries && timeCount > 0) ||
+        dependencyCount > 0 ||
         estimateCount > 0 ||
         invoiceCount > 0 ||
         poCount > 0
@@ -1492,12 +1509,21 @@ export async function registerProjectRoutes(app: FastifyInstance) {
           },
         });
       }
-      const updated = await prisma.projectTask.update({
-        where: { id: taskId },
-        data: {
-          deletedAt: new Date(),
-          deletedReason: body.reason,
-        },
+      const updated = await prisma.$transaction(async (tx) => {
+        const updated = await tx.projectTask.update({
+          where: { id: taskId },
+          data: {
+            deletedAt: new Date(),
+            deletedReason: body.reason,
+          },
+        });
+        await tx.projectTaskDependency.deleteMany({
+          where: {
+            projectId,
+            OR: [{ fromTaskId: taskId }, { toTaskId: taskId }],
+          },
+        });
+        return updated;
       });
       return updated;
     },

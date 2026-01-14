@@ -74,6 +74,13 @@ test('task dependencies can be set/cleared and prevents cycles @extended', async
   );
   expect(cycleRes.ok()).toBeFalsy();
   expect(cycleRes.status()).toBe(400);
+  const cycleBody = await cycleRes.json();
+  expect(cycleBody).toMatchObject({
+    error: {
+      code: 'VALIDATION_ERROR',
+      message: 'Task dependency creates circular reference',
+    },
+  });
 
   const clearBRes = await request.put(
     `${apiBase}/projects/${encodeURIComponent(demoProjectId)}/tasks/${encodeURIComponent(taskB.id)}/dependencies`,
