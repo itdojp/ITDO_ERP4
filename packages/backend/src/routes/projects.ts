@@ -524,7 +524,13 @@ export async function registerProjectRoutes(app: FastifyInstance) {
       }
       const project = await prisma.project.findUnique({
         where: { id: projectId },
-        select: { id: true, deletedAt: true },
+        select: {
+          id: true,
+          deletedAt: true,
+          currency: true,
+          planHours: true,
+          budgetCost: true,
+        },
       });
       if (!project || project.deletedAt) {
         return reply.status(404).send({
@@ -1621,7 +1627,13 @@ export async function registerProjectRoutes(app: FastifyInstance) {
       const baselineName = name || `baseline-${new Date().toISOString()}`;
       const project = await prisma.project.findUnique({
         where: { id: projectId },
-        select: { id: true, deletedAt: true },
+        select: {
+          id: true,
+          deletedAt: true,
+          currency: true,
+          planHours: true,
+          budgetCost: true,
+        },
       });
       if (!project || project.deletedAt) {
         return reply.status(404).send({
@@ -1645,6 +1657,9 @@ export async function registerProjectRoutes(app: FastifyInstance) {
           data: {
             projectId,
             name: baselineName,
+            currency: project.currency,
+            planHours: project.planHours,
+            budgetCost: project.budgetCost,
             createdBy,
           },
         });

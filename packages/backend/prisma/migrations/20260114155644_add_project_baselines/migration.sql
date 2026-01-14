@@ -3,6 +3,9 @@ CREATE TABLE "ProjectBaseline" (
     "id" TEXT NOT NULL,
     "projectId" TEXT NOT NULL,
     "name" TEXT NOT NULL,
+    "currency" TEXT,
+    "planHours" DECIMAL(65,30),
+    "budgetCost" DECIMAL(65,30),
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "createdBy" TEXT,
     "deletedAt" TIMESTAMP(3),
@@ -50,4 +53,3 @@ ALTER TABLE "ProjectBaselineTask" ADD CONSTRAINT "ProjectBaselineTask_baselineId
 
 -- AddForeignKey
 ALTER TABLE "ProjectBaselineTask" ADD CONSTRAINT "ProjectBaselineTask_taskId_fkey" FOREIGN KEY ("taskId") REFERENCES "ProjectTask"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-

@@ -264,6 +264,9 @@ model ProjectBaseline {
   project       Project               @relation(fields: [projectId], references: [id], onDelete: Cascade)
   projectId     String
   name          String
+  currency      String?
+  planHours     Decimal?
+  budgetCost    Decimal?
   tasks         ProjectBaselineTask[]
   createdAt     DateTime              @default(now())
   createdBy     String?
