@@ -1,8 +1,8 @@
 # TODO リスト（短期ドライブ用）
 
 ## 残作業（運用確定）
-- [ ] S3 バケット/リージョン/KMS の確定値を `docs/requirements/backup-restore.md` に反映
-- [ ] S3/OSS 移行の時期を決定（`docs/requirements/backup-restore.md`）
+- [ ] #544 S3 バケット/リージョン/KMS の確定値を `docs/requirements/backup-restore.md` に反映
+- [ ] #544 S3/OSS 移行の時期を決定（`docs/requirements/backup-restore.md`）
 
 ## 次アクション（プロジェクト運用/レポート）
 - [x] #522 EVM（PV/EV/AC/SPI/CPI）日次算出（PR #532）
@@ -19,6 +19,7 @@
   - [x] CSV 取込対応（#537）
   - [x] 移行後チェックSQLを追加（PR #540）
   - [x] 運用手順（リハーサル/ロールバック/チェック）を docs に追加（PR #541）
+- [ ] #543 PO→ERP4 実データ移行 リハーサル（1回目）
 
 ## 次アクション（チャット）
 - [x] #453 ルーム化（project chat→room chat）移行方針の確定と段階移行の計画化
