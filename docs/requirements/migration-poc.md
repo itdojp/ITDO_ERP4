@@ -8,7 +8,9 @@ This note describes a minimal PoC load using demo seed data and a basic integrit
    - `psql $DATABASE_URL -f scripts/seed-demo.sql`
 3. Run integrity checks:
    - `psql $DATABASE_URL -f scripts/checks/poc-integrity.sql`
-4. Compare results with the expected values in `scripts/checks/poc-integrity.sql`.
+4. (Optional) After running `scripts/migrate-po.ts --apply`, run PO migration checks:
+   - `psql $DATABASE_URL -f scripts/checks/migration-po-integrity.sql`
+5. Compare results with the expected values in `scripts/checks/poc-integrity.sql`.
 
 ## Podman で実行する場合（psql が無い環境向け）
 1. PostgreSQL コンテナを起動（workspace をマウント）:
@@ -19,7 +21,9 @@ This note describes a minimal PoC load using demo seed data and a basic integrit
    - `podman exec -e PGPASSWORD=postgres erp4-pg-poc psql -U postgres -d postgres -f /workspace/scripts/seed-demo.sql`
 4. integrity check を実行:
    - `podman exec -e PGPASSWORD=postgres erp4-pg-poc psql -U postgres -d postgres -f /workspace/scripts/checks/poc-integrity.sql`
-5. 後片付け:
+5. (任意) `scripts/migrate-po.ts --apply` 実行後、移行チェックを実行:
+   - `podman exec -e PGPASSWORD=postgres erp4-pg-poc psql -U postgres -d postgres -f /workspace/scripts/checks/migration-po-integrity.sql`
+6. 後片付け:
    - `podman stop erp4-pg-poc && podman rm erp4-pg-poc`
 
 ### まとめて実行する場合
