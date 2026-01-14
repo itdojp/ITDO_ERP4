@@ -715,7 +715,14 @@ export async function registerProjectRoutes(app: FastifyInstance) {
 
   app.post(
     '/projects/:projectId/tasks',
-    { preHandler: requireRole(['admin', 'mgmt']), schema: projectTaskSchema },
+    {
+      preHandler: [
+        requireRole(['admin', 'mgmt', 'user']),
+        ensureProjectIdParam,
+        requireProjectAccess((req) => (req.params as any)?.projectId),
+      ],
+      schema: projectTaskSchema,
+    },
     async (req, reply) => {
       const { projectId } = req.params as { projectId: string };
       const body = req.body as any;
@@ -759,7 +766,11 @@ export async function registerProjectRoutes(app: FastifyInstance) {
   app.patch(
     '/projects/:projectId/tasks/:taskId',
     {
-      preHandler: requireRole(['admin', 'mgmt']),
+      preHandler: [
+        requireRole(['admin', 'mgmt', 'user']),
+        ensureProjectIdParam,
+        requireProjectAccess((req) => (req.params as any)?.projectId),
+      ],
       schema: projectTaskPatchSchema,
     },
     async (req, reply) => {
@@ -788,6 +799,19 @@ export async function registerProjectRoutes(app: FastifyInstance) {
       const nextParentTaskId = hasParentTaskIdProp
         ? normalizeParentId(body.parentTaskId)
         : undefined;
+      const currentParentTaskId = current.parentTaskId ?? null;
+      const parentChanged =
+        hasParentTaskIdProp && nextParentTaskId !== currentParentTaskId;
+      const reasonText =
+        typeof body.reasonText === 'string' ? body.reasonText.trim() : '';
+      if (parentChanged && !reasonText) {
+        return reply.status(400).send({
+          error: {
+            code: 'INVALID_REASON',
+            message: 'reasonText is required when changing task parent',
+          },
+        });
+      }
       if (hasParentTaskIdProp) {
         if (nextParentTaskId === taskId) {
           return reply.status(400).send({
@@ -840,6 +864,20 @@ export async function registerProjectRoutes(app: FastifyInstance) {
           actualEnd: body.actualEnd ? new Date(body.actualEnd) : undefined,
         },
       });
+      if (parentChanged) {
+        await logAudit({
+          action: 'project_task_parent_updated',
+          targetTable: 'project_tasks',
+          targetId: taskId,
+          reasonText,
+          metadata: {
+            projectId,
+            fromParentTaskId: currentParentTaskId,
+            toParentTaskId: nextParentTaskId ?? null,
+          },
+          ...auditContextFromRequest(req),
+        });
+      }
       return task;
     },
   );

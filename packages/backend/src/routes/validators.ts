@@ -176,7 +176,12 @@ export const projectTaskSchema = {
 };
 
 export const projectTaskPatchSchema = {
-  body: Type.Partial(projectTaskSchema.body),
+  body: Type.Intersect([
+    Type.Partial(projectTaskSchema.body),
+    Type.Object({
+      reasonText: Type.Optional(Type.String({ minLength: 1 })),
+    }),
+  ]),
 };
 
 export const projectMilestoneSchema = {
