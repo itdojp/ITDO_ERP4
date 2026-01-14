@@ -8,6 +8,8 @@ import {
   reportProjectProfit,
   reportProjectEffort,
 } from '../services/reports.js';
+import { prisma } from '../services/db.js';
+import { dateKey, toNumber } from '../services/utils.js';
 import { generatePdf } from '../services/pdf.js';
 import { requireRole } from '../services/rbac.js';
 import { parseDateParam } from '../utils/date.js';
@@ -99,6 +101,148 @@ export async function registerReportRoutes(app: FastifyInstance) {
         return sendPdf(reply, 'project-effort', layout, res);
       }
       return res;
+    },
+  );
+
+  app.get(
+    '/reports/burndown/:projectId',
+    { preHandler: requireRole(['admin', 'mgmt']) },
+    async (req, reply) => {
+      const { projectId } = req.params as { projectId: string };
+      const { baselineId, from, to } = req.query as {
+        baselineId?: string;
+        from?: string;
+        to?: string;
+      };
+      if (!baselineId || typeof baselineId !== 'string') {
+        return reply.status(400).send({
+          error: {
+            code: 'MISSING_BASELINE',
+            message: 'baselineId is required',
+          },
+        });
+      }
+      const fromRaw = parseDateParam(from);
+      const toRaw = parseDateParam(to);
+      if (!fromRaw || !toRaw) {
+        return reply.status(400).send({
+          error: { code: 'INVALID_DATE', message: 'from/to are required' },
+        });
+      }
+      const fromDate = new Date(fromRaw);
+      fromDate.setUTCHours(0, 0, 0, 0);
+      const toDate = new Date(toRaw);
+      toDate.setUTCHours(23, 59, 59, 999);
+      if (fromDate.getTime() > toDate.getTime()) {
+        return reply.status(400).send({
+          error: {
+            code: 'INVALID_DATE_RANGE',
+            message: 'from must be before or equal to to',
+          },
+        });
+      }
+
+      const cursor = new Date(
+        Date.UTC(
+          fromDate.getUTCFullYear(),
+          fromDate.getUTCMonth(),
+          fromDate.getUTCDate(),
+        ),
+      );
+      const endDate = new Date(
+        Date.UTC(
+          toDate.getUTCFullYear(),
+          toDate.getUTCMonth(),
+          toDate.getUTCDate(),
+        ),
+      );
+      const MAX_BURNDOWN_RANGE_DAYS = 365;
+      const MS_PER_DAY = 24 * 60 * 60 * 1000;
+      const rangeDays =
+        Math.floor((endDate.getTime() - cursor.getTime()) / MS_PER_DAY) + 1;
+      if (rangeDays > MAX_BURNDOWN_RANGE_DAYS) {
+        return reply.status(400).send({
+          error: {
+            code: 'DATE_RANGE_TOO_LARGE',
+            message: `Date range cannot exceed ${MAX_BURNDOWN_RANGE_DAYS} days`,
+          },
+        });
+      }
+
+      const baseline = await prisma.projectBaseline.findUnique({
+        where: { id: baselineId },
+        select: { id: true, projectId: true, deletedAt: true, planHours: true },
+      });
+      if (!baseline || baseline.projectId !== projectId) {
+        return reply.status(404).send({
+          error: { code: 'NOT_FOUND', message: 'Baseline not found' },
+        });
+      }
+      if (baseline.deletedAt) {
+        return reply.status(400).send({
+          error: {
+            code: 'ALREADY_DELETED',
+            message: 'Baseline already deleted',
+          },
+        });
+      }
+      const planHoursRaw = baseline.planHours;
+      const planHours = planHoursRaw == null ? null : toNumber(planHoursRaw);
+      if (planHours == null || planHours <= 0) {
+        return reply.status(400).send({
+          error: {
+            code: 'MISSING_PLAN_HOURS',
+            message: 'Baseline planHours is required',
+          },
+        });
+      }
+      const planMinutes = Math.round(planHours * 60);
+
+      const entries = await prisma.timeEntry.findMany({
+        where: {
+          projectId,
+          deletedAt: null,
+          status: { in: ['submitted', 'approved'] },
+          workDate: { gte: fromDate, lte: toDate },
+        },
+        select: { minutes: true, workDate: true },
+      });
+      const burnedByDay = new Map<string, number>();
+      for (const entry of entries) {
+        const key = dateKey(entry.workDate);
+        burnedByDay.set(
+          key,
+          (burnedByDay.get(key) ?? 0) + (entry.minutes || 0),
+        );
+      }
+      const items: Array<{
+        date: string;
+        burnedMinutes: number;
+        cumulativeBurnedMinutes: number;
+        remainingMinutes: number;
+      }> = [];
+      let cumulative = 0;
+      while (cursor.getTime() <= endDate.getTime()) {
+        const key = cursor.toISOString().slice(0, 10);
+        const burnedMinutes = burnedByDay.get(key) ?? 0;
+        cumulative += burnedMinutes;
+        items.push({
+          date: key,
+          burnedMinutes,
+          cumulativeBurnedMinutes: cumulative,
+          remainingMinutes: planMinutes - cumulative,
+        });
+        cursor.setUTCDate(cursor.getUTCDate() + 1);
+      }
+
+      return {
+        projectId,
+        baselineId,
+        planMinutes,
+        from: fromDate.toISOString().slice(0, 10),
+        to: toDate.toISOString().slice(0, 10),
+        items,
+      };
     },
   );
 
