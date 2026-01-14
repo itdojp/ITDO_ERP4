@@ -15,6 +15,7 @@ const buildInitialForm = (projectId?: string) => ({
   projectId: projectId ?? '',
   name: '',
   status: '',
+  parentTaskId: '',
 });
 
 const errorDetail = (err: unknown) => {
@@ -50,6 +51,10 @@ export const ProjectTasks: React.FC = () => {
   const projectMap = useMemo(
     () => new Map(projects.map((project) => [project.id, project])),
     [projects],
+  );
+  const taskMap = useMemo(
+    () => new Map(items.map((task) => [task.id, task])),
+    [items],
   );
 
   const renderProject = (projectId: string) => {
@@ -93,7 +98,7 @@ export const ProjectTasks: React.FC = () => {
     if (!editing) return;
     if (editing.projectId === form.projectId) return;
     setEditing(null);
-    setForm((prev) => ({ ...prev, name: '', status: '' }));
+    setForm((prev) => ({ ...prev, name: '', status: '', parentTaskId: '' }));
   }, [editing, form.projectId]);
 
   const save = async () => {
@@ -107,6 +112,7 @@ export const ProjectTasks: React.FC = () => {
       return;
     }
     const status = form.status.trim();
+    const parentTaskId = form.parentTaskId.trim();
     try {
       if (editing) {
         const updated = await api<ProjectTask>(
@@ -116,6 +122,7 @@ export const ProjectTasks: React.FC = () => {
             body: JSON.stringify({
               name,
               status: status || undefined,
+              parentTaskId,
             }),
           },
         );
@@ -134,6 +141,7 @@ export const ProjectTasks: React.FC = () => {
           body: JSON.stringify({
             name,
             status: status || undefined,
+            ...(parentTaskId ? { parentTaskId } : {}),
           }),
         },
       );
@@ -153,6 +161,7 @@ export const ProjectTasks: React.FC = () => {
       projectId: item.projectId,
       name: item.name,
       status: item.status || '',
+      parentTaskId: item.parentTaskId || '',
     }));
   };
 
@@ -220,6 +229,23 @@ export const ProjectTasks: React.FC = () => {
             onChange={(e) => setForm({ ...form, status: e.target.value })}
             placeholder="ステータス（任意）"
           />
+          <select
+            aria-label="親タスク選択"
+            value={form.parentTaskId}
+            onChange={(e) => setForm({ ...form, parentTaskId: e.target.value })}
+          >
+            <option value="">親なし</option>
+            {items
+              .filter(
+                (task) =>
+                  task.id !== editing?.id && task.projectId === form.projectId,
+              )
+              .map((task) => (
+                <option key={task.id} value={task.id}>
+                  {task.name}
+                </option>
+              ))}
+          </select>
           <button className="button" onClick={save}>
             {editing ? '更新' : '作成'}
           </button>
@@ -232,24 +258,36 @@ export const ProjectTasks: React.FC = () => {
       </div>
 
       <ul className="list" style={{ marginTop: 12 }}>
-        {items.map((item) => (
-          <li key={item.id}>
-            <span className="badge">{item.status || 'open'}</span> {item.name} /{' '}
-            {renderProject(item.projectId)}
-            <div style={{ marginTop: 6 }}>
-              <button
-                className="button secondary"
-                style={{ marginRight: 8 }}
-                onClick={() => startEdit(item)}
-              >
-                編集
-              </button>
-              <button className="button secondary" onClick={() => remove(item)}>
-                削除
-              </button>
-            </div>
-          </li>
-        ))}
+        {items.map((item) => {
+          const parent = item.parentTaskId
+            ? taskMap.get(item.parentTaskId)
+            : null;
+          const parentLabel = item.parentTaskId
+            ? parent?.name || item.parentTaskId
+            : null;
+          return (
+            <li key={item.id}>
+              <span className="badge">{item.status || 'open'}</span> {item.name}{' '}
+              / {renderProject(item.projectId)}
+              {parentLabel && ` / 親: ${parentLabel}`}
+              <div style={{ marginTop: 6 }}>
+                <button
+                  className="button secondary"
+                  style={{ marginRight: 8 }}
+                  onClick={() => startEdit(item)}
+                >
+                  編集
+                </button>
+                <button
+                  className="button secondary"
+                  onClick={() => remove(item)}
+                >
+                  削除
+                </button>
+              </div>
+            </li>
+          );
+        })}
         {items.length === 0 && <li>データなし</li>}
       </ul>
     </div>

@@ -719,9 +719,10 @@ export async function registerProjectRoutes(app: FastifyInstance) {
     async (req, reply) => {
       const { projectId } = req.params as { projectId: string };
       const body = req.body as any;
-      if (body.parentTaskId) {
+      const parentTaskId = normalizeParentId(body.parentTaskId);
+      if (parentTaskId) {
         const parent = await prisma.projectTask.findUnique({
-          where: { id: body.parentTaskId },
+          where: { id: parentTaskId },
           select: { projectId: true, deletedAt: true },
         });
         if (!parent || parent.deletedAt) {
@@ -742,7 +743,7 @@ export async function registerProjectRoutes(app: FastifyInstance) {
         data: {
           projectId,
           name: body.name,
-          parentTaskId: body.parentTaskId,
+          parentTaskId,
           assigneeId: body.assigneeId,
           status: body.status,
           planStart: body.planStart ? new Date(body.planStart) : null,
@@ -780,8 +781,15 @@ export async function registerProjectRoutes(app: FastifyInstance) {
           error: { code: 'ALREADY_DELETED', message: 'Task already deleted' },
         });
       }
-      if (Object.prototype.hasOwnProperty.call(body, 'parentTaskId')) {
-        if (body.parentTaskId === taskId) {
+      const hasParentTaskIdProp = Object.prototype.hasOwnProperty.call(
+        body,
+        'parentTaskId',
+      );
+      const nextParentTaskId = hasParentTaskIdProp
+        ? normalizeParentId(body.parentTaskId)
+        : undefined;
+      if (hasParentTaskIdProp) {
+        if (nextParentTaskId === taskId) {
           return reply.status(400).send({
             error: {
               code: 'VALIDATION_ERROR',
@@ -789,9 +797,9 @@ export async function registerProjectRoutes(app: FastifyInstance) {
             },
           });
         }
-        if (body.parentTaskId) {
+        if (nextParentTaskId) {
           const parent = await prisma.projectTask.findUnique({
-            where: { id: body.parentTaskId },
+            where: { id: nextParentTaskId },
             select: { projectId: true, deletedAt: true },
           });
           if (!parent || parent.deletedAt) {
@@ -807,7 +815,7 @@ export async function registerProjectRoutes(app: FastifyInstance) {
               },
             });
           }
-          if (await hasCircularParent(taskId, body.parentTaskId)) {
+          if (await hasCircularParent(taskId, nextParentTaskId)) {
             return reply.status(400).send({
               error: {
                 code: 'VALIDATION_ERROR',
@@ -821,7 +829,7 @@ export async function registerProjectRoutes(app: FastifyInstance) {
         where: { id: taskId },
         data: {
           name: body.name,
-          parentTaskId: body.parentTaskId,
+          parentTaskId: hasParentTaskIdProp ? nextParentTaskId : undefined,
           assigneeId: body.assigneeId,
           status: body.status,
           planStart: body.planStart ? new Date(body.planStart) : undefined,
