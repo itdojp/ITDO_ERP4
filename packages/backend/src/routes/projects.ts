@@ -55,6 +55,32 @@ function isPrivilegedRole(roles: string[]) {
   return roles.includes('admin') || roles.includes('mgmt');
 }
 
+function parseNullableDateField(body: any, key: string) {
+  const hasProp = Object.prototype.hasOwnProperty.call(body, key);
+  const value = hasProp ? (body[key] ? new Date(body[key]) : null) : undefined;
+  return { hasProp, value };
+}
+
+function isStartDateAfterEndDate(
+  startDate: Date | null | undefined,
+  endDate: Date | null | undefined,
+) {
+  return (
+    startDate instanceof Date &&
+    endDate instanceof Date &&
+    startDate.getTime() > endDate.getTime()
+  );
+}
+
+function sendInvalidProjectPeriodError(reply: any) {
+  return reply.status(400).send({
+    error: {
+      code: 'VALIDATION_ERROR',
+      message: 'startDate must be before or equal to endDate',
+    },
+  });
+}
+
 async function ensureProjectLeader(req: any, reply: any, projectId: string) {
   const userId = req.user?.userId;
   if (!userId) {
@@ -154,35 +180,12 @@ export async function registerProjectRoutes(app: FastifyInstance) {
         hasCustomerIdProp && body.customerId !== ''
           ? (body.customerId ?? null)
           : null;
-      const hasStartDateProp = Object.prototype.hasOwnProperty.call(
-        body,
-        'startDate',
-      );
-      const hasEndDateProp = Object.prototype.hasOwnProperty.call(
-        body,
-        'endDate',
-      );
-      const startDate = hasStartDateProp
-        ? body.startDate
-          ? new Date(body.startDate)
-          : null
-        : undefined;
-      const endDate = hasEndDateProp
-        ? body.endDate
-          ? new Date(body.endDate)
-          : null
-        : undefined;
-      if (
-        startDate instanceof Date &&
-        endDate instanceof Date &&
-        startDate.getTime() > endDate.getTime()
-      ) {
-        return reply.status(400).send({
-          error: {
-            code: 'VALIDATION_ERROR',
-            message: 'startDate must be before or equal to endDate',
-          },
-        });
+      const { hasProp: hasStartDateProp, value: startDate } =
+        parseNullableDateField(body, 'startDate');
+      const { hasProp: hasEndDateProp, value: endDate } =
+        parseNullableDateField(body, 'endDate');
+      if (isStartDateAfterEndDate(startDate, endDate)) {
+        return sendInvalidProjectPeriodError(reply);
       }
       if (customerId) {
         const customer = await prisma.customer.findUnique({
@@ -309,39 +312,16 @@ export async function registerProjectRoutes(app: FastifyInstance) {
           });
         }
       }
-      const hasStartDateProp = Object.prototype.hasOwnProperty.call(
-        body,
-        'startDate',
-      );
-      const hasEndDateProp = Object.prototype.hasOwnProperty.call(
-        body,
-        'endDate',
-      );
-      const startDate = hasStartDateProp
-        ? body.startDate
-          ? new Date(body.startDate)
-          : null
-        : undefined;
-      const endDate = hasEndDateProp
-        ? body.endDate
-          ? new Date(body.endDate)
-          : null
-        : undefined;
+      const { hasProp: hasStartDateProp, value: startDate } =
+        parseNullableDateField(body, 'startDate');
+      const { hasProp: hasEndDateProp, value: endDate } =
+        parseNullableDateField(body, 'endDate');
       const effectiveStartDate =
         startDate === undefined ? current.startDate : startDate;
       const effectiveEndDate =
         endDate === undefined ? current.endDate : endDate;
-      if (
-        effectiveStartDate instanceof Date &&
-        effectiveEndDate instanceof Date &&
-        effectiveStartDate.getTime() > effectiveEndDate.getTime()
-      ) {
-        return reply.status(400).send({
-          error: {
-            code: 'VALIDATION_ERROR',
-            message: 'startDate must be before or equal to endDate',
-          },
-        });
+      if (isStartDateAfterEndDate(effectiveStartDate, effectiveEndDate)) {
+        return sendInvalidProjectPeriodError(reply);
       }
       const data = { ...body };
       if (hasCustomerIdProp) data.customerId = customerId;
