@@ -2261,6 +2261,13 @@ async function main() {
       }
     }
 
+    type PurchaseOrderDoc = { id: string; poNo: string; projectId: string };
+    type PurchaseOrderLineDoc = { id: string; purchaseOrderId: string; expenseId: string | null };
+    type ExpenseDoc = { id: string; projectId: string };
+    type TotalAmountGroupRow = { projectId: string; _sum: { totalAmount: unknown } | null };
+    type AmountGroupRow = { projectId: string; _sum: { amount: unknown } | null };
+    type MinutesGroupRow = { projectId: string; _sum: { minutes: unknown } | null };
+
     if (shouldRun(options, 'customers')) {
       await verifyIds(
         'customers',
@@ -2390,27 +2397,27 @@ async function main() {
 
     if (shouldRun(options, 'purchase_orders') && purchaseOrders.length) {
       const poIds = purchaseOrders.map((item) => makeId('purchase_order', item.legacyId));
-      const purchaseOrderDocs = await prisma.purchaseOrder.findMany({
+      const purchaseOrderDocs: PurchaseOrderDoc[] = await prisma.purchaseOrder.findMany({
         where: { id: { in: poIds } },
         select: { id: true, poNo: true, projectId: true },
       });
       const purchaseOrderById = new Map<string, { poNo: string; projectId: string }>(
-        purchaseOrderDocs.map((doc: any) => [doc.id, { poNo: doc.poNo, projectId: doc.projectId }]),
+        purchaseOrderDocs.map((doc) => [doc.id, { poNo: doc.poNo, projectId: doc.projectId }]),
       );
-      const lines = await prisma.purchaseOrderLine.findMany({
+      const lines: PurchaseOrderLineDoc[] = await prisma.purchaseOrderLine.findMany({
         where: { purchaseOrderId: { in: poIds }, expenseId: { not: null } },
         select: { id: true, purchaseOrderId: true, expenseId: true },
       });
       const expenseIds = Array.from(
-        new Set(lines.map((line: any) => line.expenseId).filter(Boolean)),
+        new Set(lines.map((line) => line.expenseId).filter(Boolean)),
       );
       if (expenseIds.length) {
-        const expenseDocs = await prisma.expense.findMany({
+        const expenseDocs: ExpenseDoc[] = await prisma.expense.findMany({
           where: { id: { in: expenseIds } },
           select: { id: true, projectId: true },
         });
         const expenseProjectById = new Map<string, string>(
-          expenseDocs.map((doc: any) => [doc.id, doc.projectId]),
+          expenseDocs.map((doc) => [doc.id, doc.projectId]),
         );
         for (const line of lines) {
           if (!line.expenseId) continue;
@@ -2441,13 +2448,13 @@ async function main() {
         rememberProject(projectId, item.projectLegacyId);
         addSum(expected, projectId, toNumber(item.totalAmount));
       }
-      const rows = await prisma.invoice.groupBy({
+      const rows: TotalAmountGroupRow[] = await prisma.invoice.groupBy({
         by: ['projectId'],
         where: { id: { in: invoices.map((item) => makeId('invoice', item.legacyId)) } },
         _sum: { totalAmount: true },
       });
       const actual = new Map<string, number>(
-        rows.map((row: any) => [row.projectId, toNumber(row._sum?.totalAmount)]),
+        rows.map((row) => [row.projectId, toNumber(row._sum?.totalAmount)]),
       );
       verifyProjectSums('invoices.projectSum', expected, actual, 0.01);
     }
@@ -2459,13 +2466,13 @@ async function main() {
         rememberProject(projectId, item.projectLegacyId);
         addSum(expected, projectId, toNumber(item.totalAmount));
       }
-      const rows = await prisma.purchaseOrder.groupBy({
+      const rows: TotalAmountGroupRow[] = await prisma.purchaseOrder.groupBy({
         by: ['projectId'],
         where: { id: { in: purchaseOrders.map((item) => makeId('purchase_order', item.legacyId)) } },
         _sum: { totalAmount: true },
       });
       const actual = new Map<string, number>(
-        rows.map((row: any) => [row.projectId, toNumber(row._sum?.totalAmount)]),
+        rows.map((row) => [row.projectId, toNumber(row._sum?.totalAmount)]),
       );
       verifyProjectSums('purchase_orders.projectSum', expected, actual, 0.01);
     }
@@ -2477,13 +2484,13 @@ async function main() {
         rememberProject(projectId, item.projectLegacyId);
         addSum(expected, projectId, toNumber(item.totalAmount));
       }
-      const rows = await prisma.vendorQuote.groupBy({
+      const rows: TotalAmountGroupRow[] = await prisma.vendorQuote.groupBy({
         by: ['projectId'],
         where: { id: { in: vendorQuotes.map((item) => makeId('vendor_quote', item.legacyId)) } },
         _sum: { totalAmount: true },
       });
       const actual = new Map<string, number>(
-        rows.map((row: any) => [row.projectId, toNumber(row._sum?.totalAmount)]),
+        rows.map((row) => [row.projectId, toNumber(row._sum?.totalAmount)]),
       );
       verifyProjectSums('vendor_quotes.projectSum', expected, actual, 0.01);
     }
@@ -2495,13 +2502,13 @@ async function main() {
         rememberProject(projectId, item.projectLegacyId);
         addSum(expected, projectId, toNumber(item.totalAmount));
       }
-      const rows = await prisma.vendorInvoice.groupBy({
+      const rows: TotalAmountGroupRow[] = await prisma.vendorInvoice.groupBy({
         by: ['projectId'],
         where: { id: { in: vendorInvoices.map((item) => makeId('vendor_invoice', item.legacyId)) } },
         _sum: { totalAmount: true },
       });
       const actual = new Map<string, number>(
-        rows.map((row: any) => [row.projectId, toNumber(row._sum?.totalAmount)]),
+        rows.map((row) => [row.projectId, toNumber(row._sum?.totalAmount)]),
       );
       verifyProjectSums('vendor_invoices.projectSum', expected, actual, 0.01);
     }
@@ -2513,13 +2520,13 @@ async function main() {
         rememberProject(projectId, item.projectLegacyId);
         addSum(expected, projectId, toNumber(item.amount));
       }
-      const rows = await prisma.expense.groupBy({
+      const rows: AmountGroupRow[] = await prisma.expense.groupBy({
         by: ['projectId'],
         where: { id: { in: expenses.map((item) => makeId('expense', item.legacyId)) } },
         _sum: { amount: true },
       });
       const actual = new Map<string, number>(
-        rows.map((row: any) => [row.projectId, toNumber(row._sum?.amount)]),
+        rows.map((row) => [row.projectId, toNumber(row._sum?.amount)]),
       );
       verifyProjectSums('expenses.projectSum', expected, actual, 0.01);
     }
@@ -2531,13 +2538,13 @@ async function main() {
         rememberProject(projectId, item.projectLegacyId);
         addSum(expected, projectId, toNumber(item.minutes));
       }
-      const rows = await prisma.timeEntry.groupBy({
+      const rows: MinutesGroupRow[] = await prisma.timeEntry.groupBy({
         by: ['projectId'],
         where: { id: { in: timeEntries.map((item) => makeId('time_entry', item.legacyId)) } },
         _sum: { minutes: true },
       });
       const actual = new Map<string, number>(
-        rows.map((row: any) => [row.projectId, toNumber(row._sum?.minutes)]),
+        rows.map((row) => [row.projectId, toNumber(row._sum?.minutes)]),
       );
       verifyProjectSums('time_entries.projectSum', expected, actual, 0);
     }
