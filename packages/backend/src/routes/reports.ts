@@ -9,6 +9,7 @@ import {
   reportProjectEffort,
 } from '../services/reports.js';
 import { prisma } from '../services/db.js';
+import { calcTimeAmount, resolveRateCard } from '../services/rateCard.js';
 import { dateKey, toNumber } from '../services/utils.js';
 import { generatePdf } from '../services/pdf.js';
 import { requireRole } from '../services/rbac.js';
@@ -101,6 +102,322 @@ export async function registerReportRoutes(app: FastifyInstance) {
         return sendPdf(reply, 'project-effort', layout, res);
       }
       return res;
+    },
+  );
+
+  app.get(
+    '/reports/project-evm/:projectId',
+    { preHandler: requireRole(['admin', 'mgmt']) },
+    async (req, reply) => {
+      const { projectId } = req.params as { projectId: string };
+      const { from, to } = req.query as { from?: string; to?: string };
+      const fromRaw = parseDateParam(from);
+      const toRaw = parseDateParam(to);
+      if (!fromRaw || !toRaw) {
+        return reply.status(400).send({
+          error: {
+            code: 'INVALID_DATE',
+            message: 'from/to are required',
+          },
+        });
+      }
+      const fromDate = new Date(fromRaw);
+      fromDate.setUTCHours(0, 0, 0, 0);
+      const toDate = new Date(toRaw);
+      toDate.setUTCHours(23, 59, 59, 999);
+      if (fromDate.getTime() > toDate.getTime()) {
+        return reply.status(400).send({
+          error: {
+            code: 'INVALID_DATE_RANGE',
+            message: 'from must be before or equal to to',
+          },
+        });
+      }
+
+      const project = await prisma.project.findUnique({
+        where: { id: projectId },
+        select: {
+          id: true,
+          deletedAt: true,
+          startDate: true,
+          endDate: true,
+          planHours: true,
+          budgetCost: true,
+          currency: true,
+        },
+      });
+      if (!project) {
+        return reply.status(404).send({
+          error: { code: 'NOT_FOUND', message: 'Project not found' },
+        });
+      }
+      if (project.deletedAt) {
+        return reply.status(400).send({
+          error: { code: 'ALREADY_DELETED', message: 'Project deleted' },
+        });
+      }
+      if (!project.startDate || !project.endDate) {
+        return reply.status(400).send({
+          error: {
+            code: 'MISSING_PROJECT_PERIOD',
+            message: 'Project startDate/endDate are required',
+          },
+        });
+      }
+      const projectStart = new Date(project.startDate);
+      projectStart.setUTCHours(0, 0, 0, 0);
+      const projectEnd = new Date(project.endDate);
+      projectEnd.setUTCHours(0, 0, 0, 0);
+      if (projectStart.getTime() > projectEnd.getTime()) {
+        return reply.status(400).send({
+          error: {
+            code: 'INVALID_PROJECT_PERIOD',
+            message: 'Project startDate must be before or equal to endDate',
+          },
+        });
+      }
+      if (fromDate.getTime() < projectStart.getTime()) {
+        return reply.status(400).send({
+          error: {
+            code: 'OUT_OF_PROJECT_PERIOD',
+            message: 'from must be on or after project startDate',
+          },
+        });
+      }
+      if (toDate.getTime() > projectEnd.getTime() + 24 * 60 * 60 * 1000 - 1) {
+        return reply.status(400).send({
+          error: {
+            code: 'OUT_OF_PROJECT_PERIOD',
+            message: 'to must be on or before project endDate',
+          },
+        });
+      }
+
+      const MAX_EVM_RANGE_DAYS = 365;
+      const MS_PER_DAY = 24 * 60 * 60 * 1000;
+      const rangeDays =
+        Math.floor(
+          (new Date(
+            Date.UTC(
+              toDate.getUTCFullYear(),
+              toDate.getUTCMonth(),
+              toDate.getUTCDate(),
+            ),
+          ).getTime() -
+            new Date(
+              Date.UTC(
+                projectStart.getUTCFullYear(),
+                projectStart.getUTCMonth(),
+                projectStart.getUTCDate(),
+              ),
+            ).getTime()) /
+            MS_PER_DAY,
+        ) + 1;
+      if (rangeDays > MAX_EVM_RANGE_DAYS) {
+        return reply.status(400).send({
+          error: {
+            code: 'DATE_RANGE_TOO_LARGE',
+            message: `Project EVM range cannot exceed ${MAX_EVM_RANGE_DAYS} days`,
+          },
+        });
+      }
+
+      const planHoursRaw = project.planHours;
+      const planHours = planHoursRaw == null ? null : toNumber(planHoursRaw);
+      const planMinutes =
+        planHours != null && planHours > 0 ? Math.round(planHours * 60) : null;
+      if (!planMinutes) {
+        return reply.status(400).send({
+          error: {
+            code: 'MISSING_PLAN_HOURS',
+            message: 'planHours is required',
+          },
+        });
+      }
+      const budgetCostRaw = project.budgetCost;
+      const budgetCost = budgetCostRaw == null ? null : toNumber(budgetCostRaw);
+      if (!budgetCost || budgetCost <= 0) {
+        return reply.status(400).send({
+          error: {
+            code: 'MISSING_BUDGET_COST',
+            message: 'budgetCost is required',
+          },
+        });
+      }
+
+      const projectDurationDays =
+        Math.floor(
+          (projectEnd.getTime() - projectStart.getTime()) / MS_PER_DAY,
+        ) + 1;
+
+      const timeEntries = await prisma.timeEntry.findMany({
+        where: {
+          projectId,
+          deletedAt: null,
+          status: { in: ['submitted', 'approved'] },
+          workDate: { gte: projectStart, lte: toDate },
+        },
+        select: { minutes: true, workDate: true, workType: true },
+      });
+      const minutesByDay = new Map<string, number>();
+      const minutesByCombo = new Map<
+        string,
+        { workDate: Date; workType?: string; minutes: number }
+      >();
+      for (const entry of timeEntries) {
+        const key = dateKey(entry.workDate);
+        minutesByDay.set(
+          key,
+          (minutesByDay.get(key) ?? 0) + (entry.minutes || 0),
+        );
+        const workType = entry.workType ?? undefined;
+        const comboKey = `${key}|${workType ?? ''}`;
+        const combo = minutesByCombo.get(comboKey);
+        if (combo) {
+          combo.minutes += entry.minutes || 0;
+        } else {
+          minutesByCombo.set(comboKey, {
+            workDate: entry.workDate,
+            workType,
+            minutes: entry.minutes || 0,
+          });
+        }
+      }
+      const rateCardCache = new Map<
+        string,
+        Awaited<ReturnType<typeof resolveRateCard>>
+      >();
+      await Promise.all(
+        Array.from(minutesByCombo.entries()).map(async ([comboKey, combo]) => {
+          const rateCard = await resolveRateCard({
+            projectId,
+            workDate: combo.workDate,
+            workType: combo.workType,
+          });
+          rateCardCache.set(comboKey, rateCard);
+        }),
+      );
+      const laborCostByDay = new Map<string, number>();
+      for (const [comboKey, combo] of minutesByCombo.entries()) {
+        const [dayKey] = comboKey.split('|');
+        const rateCard = rateCardCache.get(comboKey);
+        if (!rateCard) continue;
+        const unitPrice = toNumber(rateCard.unitPrice);
+        if (!unitPrice) continue;
+        const cost = calcTimeAmount(combo.minutes, unitPrice);
+        laborCostByDay.set(dayKey, (laborCostByDay.get(dayKey) ?? 0) + cost);
+      }
+
+      const expenses = await prisma.expense.findMany({
+        where: {
+          projectId,
+          deletedAt: null,
+          status: 'approved',
+          incurredOn: { gte: projectStart, lte: toDate },
+        },
+        select: { amount: true, incurredOn: true },
+      });
+      const expenseCostByDay = new Map<string, number>();
+      for (const expense of expenses) {
+        const key = dateKey(expense.incurredOn);
+        expenseCostByDay.set(
+          key,
+          (expenseCostByDay.get(key) ?? 0) + toNumber(expense.amount),
+        );
+      }
+
+      const vendorInvoices = await prisma.vendorInvoice.findMany({
+        where: {
+          projectId,
+          deletedAt: null,
+          status: { in: ['received', 'approved', 'paid'] },
+          receivedDate: { gte: projectStart, lte: toDate },
+        },
+        select: { totalAmount: true, receivedDate: true },
+      });
+      const vendorCostByDay = new Map<string, number>();
+      for (const invoice of vendorInvoices) {
+        if (!invoice.receivedDate) continue;
+        const key = dateKey(invoice.receivedDate);
+        vendorCostByDay.set(
+          key,
+          (vendorCostByDay.get(key) ?? 0) + toNumber(invoice.totalAmount),
+        );
+      }
+
+      const items: Array<{
+        date: string;
+        pv: number;
+        ev: number;
+        ac: number;
+        spi: number | null;
+        cpi: number | null;
+      }> = [];
+      let cumulativeMinutes = 0;
+      let cumulativeCost = 0;
+
+      const cursor = new Date(
+        Date.UTC(
+          projectStart.getUTCFullYear(),
+          projectStart.getUTCMonth(),
+          projectStart.getUTCDate(),
+        ),
+      );
+      const endDate = new Date(
+        Date.UTC(
+          toDate.getUTCFullYear(),
+          toDate.getUTCMonth(),
+          toDate.getUTCDate(),
+        ),
+      );
+      const fromDay = new Date(
+        Date.UTC(
+          fromDate.getUTCFullYear(),
+          fromDate.getUTCMonth(),
+          fromDate.getUTCDate(),
+        ),
+      );
+      while (cursor.getTime() <= endDate.getTime()) {
+        const dayKey = cursor.toISOString().slice(0, 10);
+        const dailyMinutes = minutesByDay.get(dayKey) ?? 0;
+        cumulativeMinutes += dailyMinutes;
+        const dailyCost =
+          (laborCostByDay.get(dayKey) ?? 0) +
+          (expenseCostByDay.get(dayKey) ?? 0) +
+          (vendorCostByDay.get(dayKey) ?? 0);
+        cumulativeCost += dailyCost;
+
+        const elapsedDays =
+          Math.floor((cursor.getTime() - projectStart.getTime()) / MS_PER_DAY) +
+          1;
+        const pv = budgetCost * (elapsedDays / projectDurationDays);
+        const progress = Math.min(1, cumulativeMinutes / planMinutes);
+        const ev = budgetCost * progress;
+        const spi = pv > 0 ? ev / pv : null;
+        const cpi = cumulativeCost > 0 ? ev / cumulativeCost : null;
+
+        if (cursor.getTime() >= fromDay.getTime()) {
+          items.push({
+            date: dayKey,
+            pv,
+            ev,
+            ac: cumulativeCost,
+            spi,
+            cpi,
+          });
+        }
+        cursor.setUTCDate(cursor.getUTCDate() + 1);
+      }
+
+      return {
+        projectId,
+        currency: project.currency ?? null,
+        planMinutes,
+        budgetCost,
+        from: fromDate.toISOString().slice(0, 10),
+        to: toDate.toISOString().slice(0, 10),
+        items,
+      };
     },
   );
 

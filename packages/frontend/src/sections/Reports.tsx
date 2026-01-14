@@ -35,6 +35,25 @@ type BurndownReport = {
   items: BurndownItem[];
 };
 
+type EvmItem = {
+  date: string;
+  pv: number;
+  ev: number;
+  ac: number;
+  spi: number | null;
+  cpi: number | null;
+};
+
+type EvmReport = {
+  projectId: string;
+  currency?: string | null;
+  planMinutes: number;
+  budgetCost: number;
+  from: string;
+  to: string;
+  items: EvmItem[];
+};
+
 function buildQuery(from?: string, to?: string) {
   const params = new URLSearchParams();
   if (from) params.set('from', from);
@@ -62,6 +81,7 @@ export const Reports: React.FC = () => {
   const [burndownReport, setBurndownReport] = useState<BurndownReport | null>(
     null,
   );
+  const [evmReport, setEvmReport] = useState<EvmReport | null>(null);
   const [message, setMessage] = useState('');
 
   const { projects, projectMessage } = useProjects({
@@ -123,6 +143,27 @@ export const Reports: React.FC = () => {
       setMessage('バーンダウンを取得しました');
     } catch (err) {
       setBurndownReport(null);
+      setMessage('取得に失敗しました');
+    }
+  };
+
+  const loadEvm = async () => {
+    if (!projectId) {
+      setMessage('案件を選択してください');
+      return;
+    }
+    if (!from || !to) {
+      setMessage('from/to を入力してください');
+      return;
+    }
+    try {
+      const res = await api<EvmReport>(
+        `/reports/project-evm/${projectId}${buildQuery(from, to)}`,
+      );
+      setEvmReport(res);
+      setMessage('EVMを取得しました');
+    } catch (err) {
+      setEvmReport(null);
       setMessage('取得に失敗しました');
     }
   };
@@ -242,6 +283,9 @@ export const Reports: React.FC = () => {
         <button className="button" onClick={loadBurndown}>
           バーンダウン
         </button>
+        <button className="button" onClick={loadEvm}>
+          EVM
+        </button>
       </div>
       {projectMessage && <p style={{ color: '#dc2626' }}>{projectMessage}</p>}
       {message && <p>{message}</p>}
@@ -301,6 +345,32 @@ export const Reports: React.FC = () => {
             </div>
           </div>
         )}
+        {evmReport && (
+          <div className="card" style={{ padding: 12 }}>
+            <strong>EVM</strong>
+            <div>Project: {renderProject(evmReport.projectId)}</div>
+            <div>
+              Budget Cost: {Math.round(evmReport.budgetCost * 100) / 100}
+              {evmReport.currency ? ` ${evmReport.currency}` : ''}
+            </div>
+            <div>Plan: {evmReport.planMinutes} min</div>
+            <div>
+              Period: {evmReport.from}〜{evmReport.to}
+            </div>
+            <div style={{ marginTop: 8 }}>
+              {evmReport.items.map((item) => (
+                <div key={item.date}>
+                  {item.date}: PV {Math.round(item.pv * 100) / 100} / EV{' '}
+                  {Math.round(item.ev * 100) / 100} / AC{' '}
+                  {Math.round(item.ac * 100) / 100} / SPI{' '}
+                  {item.spi == null ? '-' : Math.round(item.spi * 1000) / 1000}{' '}
+                  / CPI{' '}
+                  {item.cpi == null ? '-' : Math.round(item.cpi * 1000) / 1000}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
         {groupReport.length > 0 && (
           <div className="card" style={{ padding: 12 }}>
             <strong>グループ別工数</strong>
@@ -322,7 +392,8 @@ export const Reports: React.FC = () => {
         {!projectReport &&
           groupReport.length === 0 &&
           !overtimeReport &&
-          !burndownReport && <div className="card">レポート未取得</div>}
+          !burndownReport &&
+          !evmReport && <div className="card">レポート未取得</div>}
       </div>
     </div>
   );
