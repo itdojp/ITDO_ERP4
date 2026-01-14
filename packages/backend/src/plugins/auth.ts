@@ -39,6 +39,35 @@ const JWT_PROJECT_CLAIM = process.env.JWT_PROJECT_CLAIM || 'project_ids';
 const JWT_ORG_CLAIM = process.env.JWT_ORG_CLAIM || 'org_id';
 const AUTH_DEFAULT_ROLE = process.env.AUTH_DEFAULT_ROLE || 'user';
 const USER_ROLE_ALIASES = new Set(['project_lead', 'employee', 'probationary']);
+const DEFAULT_GROUP_TO_ROLE_MAP: Record<string, string> = {
+  admin: 'admin',
+  mgmt: 'mgmt',
+  exec: 'exec',
+  hr: 'hr',
+  'hr-group': 'hr',
+};
+const AUTH_GROUP_TO_ROLE_MAP_RAW = process.env.AUTH_GROUP_TO_ROLE_MAP || '';
+const AUTH_DB_USER_CONTEXT_CACHE_TTL_SECONDS = Number(
+  process.env.AUTH_DB_USER_CONTEXT_CACHE_TTL_SECONDS || 0,
+);
+
+function parseGroupToRoleMap(raw: string) {
+  const map = { ...DEFAULT_GROUP_TO_ROLE_MAP };
+  raw
+    .split(',')
+    .map((token) => token.trim())
+    .filter(Boolean)
+    .forEach((token) => {
+      const [groupIdRaw, roleRaw] = token.split('=');
+      const groupId = groupIdRaw?.trim();
+      const role = roleRaw?.trim();
+      if (!groupId || !role) return;
+      map[groupId] = role;
+    });
+  return map;
+}
+
+const GROUP_TO_ROLE_MAP = parseGroupToRoleMap(AUTH_GROUP_TO_ROLE_MAP_RAW);
 
 let cachedJwks: ReturnType<typeof createRemoteJWKSet> | null = null;
 let cachedPublicKey: CryptoKey | null = null;
@@ -101,6 +130,122 @@ async function resolveProjectIdsFromDb(userId: string) {
     select: { projectId: true },
   });
   return members.map((member) => member.projectId);
+}
+
+async function resolveUserGroupsFromDb(userId: string) {
+  const user = await prisma.userAccount.findUnique({
+    where: { userName: userId },
+    select: {
+      active: true,
+      deletedAt: true,
+      organization: true,
+      memberships: {
+        include: { group: { select: { displayName: true, active: true } } },
+      },
+    },
+  });
+  if (!user) return null;
+  if (!user.active || user.deletedAt) {
+    return { blocked: true as const };
+  }
+  const groupIds = user.memberships
+    .filter((membership) => membership.group.active)
+    .map((membership) => membership.group.displayName)
+    .map((value) => value.trim())
+    .filter(Boolean);
+  return {
+    blocked: false as const,
+    orgId: user.organization ?? undefined,
+    groupIds,
+  };
+}
+
+type UserDbContext =
+  | null
+  | { blocked: true }
+  | { blocked: false; orgId?: string; groupIds: string[] };
+
+type CachedUserDbContext = {
+  expiresAt: number;
+  value: UserDbContext;
+};
+
+const userDbContextCache = new Map<string, CachedUserDbContext>();
+
+function resolveDbCacheTtlMs() {
+  if (!Number.isFinite(AUTH_DB_USER_CONTEXT_CACHE_TTL_SECONDS)) return 0;
+  if (AUTH_DB_USER_CONTEXT_CACHE_TTL_SECONDS <= 0) return 0;
+  return Math.min(
+    24 * 60 * 60 * 1000,
+    AUTH_DB_USER_CONTEXT_CACHE_TTL_SECONDS * 1000,
+  );
+}
+
+async function resolveUserDbContext(userId: string): Promise<UserDbContext> {
+  const ttlMs = resolveDbCacheTtlMs();
+  if (ttlMs <= 0) {
+    return resolveUserGroupsFromDb(userId);
+  }
+  const cached = userDbContextCache.get(userId);
+  const now = Date.now();
+  if (cached && cached.expiresAt > now) {
+    return cached.value;
+  }
+  const value = await resolveUserGroupsFromDb(userId);
+  userDbContextCache.set(userId, { expiresAt: now + ttlMs, value });
+  return value;
+}
+
+function unionStrings(a: string[] | undefined, b: string[]) {
+  const set = new Set<string>();
+  for (const item of a ?? []) {
+    const trimmed = item.trim();
+    if (trimmed) set.add(trimmed);
+  }
+  for (const item of b) {
+    const trimmed = item.trim();
+    if (trimmed) set.add(trimmed);
+  }
+  return Array.from(set);
+}
+
+function deriveRolesFromGroups(groupIds: string[]) {
+  const roles: string[] = [];
+  for (const groupId of groupIds) {
+    const mapped = GROUP_TO_ROLE_MAP[groupId];
+    if (mapped) roles.push(mapped);
+  }
+  return roles;
+}
+
+async function validateAndEnrichUserContext(req: any, reply: any) {
+  const user = req.user;
+  if (!user) return true;
+  try {
+    const resolved = await resolveUserDbContext(user.userId);
+    if (!resolved) return true;
+    if (resolved.blocked) {
+      respondUnauthorized(req, reply, 'user_inactive');
+      return false;
+    }
+    const mergedGroupIds = unionStrings(user.groupIds, resolved.groupIds);
+    const derivedRoles = deriveRolesFromGroups(mergedGroupIds);
+    const mergedRoles = expandRoles(
+      unionStrings(user.roles, ['user', ...derivedRoles]),
+    );
+    user.groupIds = mergedGroupIds;
+    user.roles = mergedRoles;
+    if (!user.orgId && resolved.orgId) {
+      user.orgId = resolved.orgId;
+    }
+  } catch (err) {
+    if (req.log && typeof req.log.warn === 'function') {
+      req.log.warn({ err }, 'Failed to resolve groupIds from DB');
+    }
+    respondUnauthorized(req, reply, 'group_resolution_failed');
+    return false;
+  }
+  return true;
 }
 
 async function ensureProjectIds(req: any) {
@@ -240,6 +385,7 @@ async function authPlugin(fastify: any) {
     }
     try {
       req.user = await authenticateJwt(token);
+      if (!(await validateAndEnrichUserContext(req, reply))) return;
       await ensureProjectIds(req);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'invalid_token';
