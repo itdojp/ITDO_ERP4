@@ -2206,6 +2206,68 @@ async function main() {
       return Math.abs(a - b) <= tolerance;
     }
 
+    type ProjectInfo = { legacyId?: string; code?: string; name?: string };
+    const projectInfo = new Map<string, ProjectInfo>();
+    for (const item of projects) {
+      projectInfo.set(makeId('project', item.legacyId), {
+        legacyId: item.legacyId,
+        code: item.code,
+        name: item.name,
+      });
+    }
+
+    function rememberProject(projectId: string, legacyId: string) {
+      const info = projectInfo.get(projectId);
+      if (info) {
+        if (!info.legacyId) info.legacyId = legacyId;
+        return;
+      }
+      projectInfo.set(projectId, { legacyId });
+    }
+
+    function describeProject(projectId: string): string {
+      const info = projectInfo.get(projectId);
+      if (!info) return projectId;
+      const parts: string[] = [];
+      if (info.code) parts.push(info.code);
+      if (info.name) parts.push(info.name);
+      if (info.legacyId && info.legacyId !== info.code) parts.push(`legacy:${info.legacyId}`);
+      const label = parts.join(' / ');
+      return label ? `${label} (${projectId})` : projectId;
+    }
+
+    function addSum(map: Map<string, number>, key: string, value: number) {
+      map.set(key, (map.get(key) ?? 0) + value);
+    }
+
+    function verifyProjectSums(
+      scope: string,
+      expected: Map<string, number>,
+      actual: Map<string, number>,
+      tolerance: number,
+    ) {
+      const keys = new Set<string>([...expected.keys(), ...actual.keys()]);
+      for (const projectId of keys) {
+        const exp = expected.get(projectId) ?? 0;
+        const act = actual.get(projectId) ?? 0;
+        if (!isClose(exp, act, tolerance)) {
+          const diff = act - exp;
+          verifyErrors.push({
+            scope,
+            legacyId: projectInfo.get(projectId)?.legacyId,
+            message: `project sum mismatch: project=${describeProject(projectId)} expected=${exp} actual=${act} diff=${diff}`,
+          });
+        }
+      }
+    }
+
+    type PurchaseOrderDoc = { id: string; poNo: string; projectId: string };
+    type PurchaseOrderLineDoc = { id: string; purchaseOrderId: string; expenseId: string | null };
+    type ExpenseDoc = { id: string; projectId: string };
+    type TotalAmountGroupRow = { projectId: string; _sum: { totalAmount: unknown } | null };
+    type AmountGroupRow = { projectId: string; _sum: { amount: unknown } | null };
+    type MinutesGroupRow = { projectId: string; _sum: { minutes: unknown } | null };
+
     if (shouldRun(options, 'customers')) {
       await verifyIds(
         'customers',
@@ -2289,6 +2351,202 @@ async function main() {
         expenses.map((item) => makeId('expense', item.legacyId)),
         async (ids) => prisma.expense.count({ where: { id: { in: ids } } }),
       );
+    }
+
+    if (shouldRun(options, 'invoices') && invoices.length) {
+      const invoiceIds = invoices.map((item) => makeId('invoice', item.legacyId));
+      const docs = await prisma.invoice.findMany({
+        where: { id: { in: invoiceIds } },
+        select: {
+          invoiceNo: true,
+          projectId: true,
+          estimateId: true,
+          milestoneId: true,
+          estimate: { select: { projectId: true } },
+          milestone: { select: { projectId: true } },
+        },
+      });
+      for (const doc of docs) {
+        if (doc.estimateId && !doc.estimate?.projectId) {
+          verifyErrors.push({
+            scope: 'invoices.estimateProject',
+            message: `estimate missing (${doc.invoiceNo}): estimateId=${doc.estimateId}`,
+          });
+        }
+        if (doc.estimate?.projectId && doc.estimate.projectId !== doc.projectId) {
+          verifyErrors.push({
+            scope: 'invoices.estimateProject',
+            message: `estimate project mismatch (${doc.invoiceNo}): invoice.project=${describeProject(doc.projectId)} estimate.project=${describeProject(doc.estimate.projectId)}`,
+          });
+        }
+
+        if (doc.milestoneId && !doc.milestone?.projectId) {
+          verifyErrors.push({
+            scope: 'invoices.milestoneProject',
+            message: `milestone missing (${doc.invoiceNo}): milestoneId=${doc.milestoneId}`,
+          });
+        }
+        if (doc.milestone?.projectId && doc.milestone.projectId !== doc.projectId) {
+          verifyErrors.push({
+            scope: 'invoices.milestoneProject',
+            message: `milestone project mismatch (${doc.invoiceNo}): invoice.project=${describeProject(doc.projectId)} milestone.project=${describeProject(doc.milestone.projectId)}`,
+          });
+        }
+      }
+    }
+
+    if (shouldRun(options, 'purchase_orders') && purchaseOrders.length) {
+      const poIds = purchaseOrders.map((item) => makeId('purchase_order', item.legacyId));
+      const purchaseOrderDocs: PurchaseOrderDoc[] = await prisma.purchaseOrder.findMany({
+        where: { id: { in: poIds } },
+        select: { id: true, poNo: true, projectId: true },
+      });
+      const purchaseOrderById = new Map<string, { poNo: string; projectId: string }>(
+        purchaseOrderDocs.map((doc) => [doc.id, { poNo: doc.poNo, projectId: doc.projectId }]),
+      );
+      const lines: PurchaseOrderLineDoc[] = await prisma.purchaseOrderLine.findMany({
+        where: { purchaseOrderId: { in: poIds }, expenseId: { not: null } },
+        select: { id: true, purchaseOrderId: true, expenseId: true },
+      });
+      const expenseIds = Array.from(
+        new Set(lines.map((line) => line.expenseId).filter(Boolean)),
+      );
+      if (expenseIds.length) {
+        const expenseDocs: ExpenseDoc[] = await prisma.expense.findMany({
+          where: { id: { in: expenseIds } },
+          select: { id: true, projectId: true },
+        });
+        const expenseProjectById = new Map<string, string>(
+          expenseDocs.map((doc) => [doc.id, doc.projectId]),
+        );
+        for (const line of lines) {
+          if (!line.expenseId) continue;
+          const po = purchaseOrderById.get(line.purchaseOrderId);
+          if (!po) continue;
+          const expenseProjectId = expenseProjectById.get(line.expenseId);
+          if (!expenseProjectId) {
+            verifyErrors.push({
+              scope: 'purchase_orders.expenseProject',
+              message: `expense missing (${po.poNo}): lineId=${line.id} expenseId=${line.expenseId}`,
+            });
+            continue;
+          }
+          if (expenseProjectId !== po.projectId) {
+            verifyErrors.push({
+              scope: 'purchase_orders.expenseProject',
+              message: `expense project mismatch (${po.poNo}): PO.project=${describeProject(po.projectId)} expense.project=${describeProject(expenseProjectId)} lineId=${line.id} expenseId=${line.expenseId}`,
+            });
+          }
+        }
+      }
+    }
+
+    if (shouldRun(options, 'invoices') && invoices.length) {
+      const expected = new Map<string, number>();
+      for (const item of invoices) {
+        const projectId = makeId('project', item.projectLegacyId);
+        rememberProject(projectId, item.projectLegacyId);
+        addSum(expected, projectId, toNumber(item.totalAmount));
+      }
+      const rows: TotalAmountGroupRow[] = await prisma.invoice.groupBy({
+        by: ['projectId'],
+        where: { id: { in: invoices.map((item) => makeId('invoice', item.legacyId)) } },
+        _sum: { totalAmount: true },
+      });
+      const actual = new Map<string, number>(
+        rows.map((row) => [row.projectId, toNumber(row._sum?.totalAmount)]),
+      );
+      verifyProjectSums('invoices.projectSum', expected, actual, 0.01);
+    }
+
+    if (shouldRun(options, 'purchase_orders') && purchaseOrders.length) {
+      const expected = new Map<string, number>();
+      for (const item of purchaseOrders) {
+        const projectId = makeId('project', item.projectLegacyId);
+        rememberProject(projectId, item.projectLegacyId);
+        addSum(expected, projectId, toNumber(item.totalAmount));
+      }
+      const rows: TotalAmountGroupRow[] = await prisma.purchaseOrder.groupBy({
+        by: ['projectId'],
+        where: { id: { in: purchaseOrders.map((item) => makeId('purchase_order', item.legacyId)) } },
+        _sum: { totalAmount: true },
+      });
+      const actual = new Map<string, number>(
+        rows.map((row) => [row.projectId, toNumber(row._sum?.totalAmount)]),
+      );
+      verifyProjectSums('purchase_orders.projectSum', expected, actual, 0.01);
+    }
+
+    if (shouldRun(options, 'vendor_quotes') && vendorQuotes.length) {
+      const expected = new Map<string, number>();
+      for (const item of vendorQuotes) {
+        const projectId = makeId('project', item.projectLegacyId);
+        rememberProject(projectId, item.projectLegacyId);
+        addSum(expected, projectId, toNumber(item.totalAmount));
+      }
+      const rows: TotalAmountGroupRow[] = await prisma.vendorQuote.groupBy({
+        by: ['projectId'],
+        where: { id: { in: vendorQuotes.map((item) => makeId('vendor_quote', item.legacyId)) } },
+        _sum: { totalAmount: true },
+      });
+      const actual = new Map<string, number>(
+        rows.map((row) => [row.projectId, toNumber(row._sum?.totalAmount)]),
+      );
+      verifyProjectSums('vendor_quotes.projectSum', expected, actual, 0.01);
+    }
+
+    if (shouldRun(options, 'vendor_invoices') && vendorInvoices.length) {
+      const expected = new Map<string, number>();
+      for (const item of vendorInvoices) {
+        const projectId = makeId('project', item.projectLegacyId);
+        rememberProject(projectId, item.projectLegacyId);
+        addSum(expected, projectId, toNumber(item.totalAmount));
+      }
+      const rows: TotalAmountGroupRow[] = await prisma.vendorInvoice.groupBy({
+        by: ['projectId'],
+        where: { id: { in: vendorInvoices.map((item) => makeId('vendor_invoice', item.legacyId)) } },
+        _sum: { totalAmount: true },
+      });
+      const actual = new Map<string, number>(
+        rows.map((row) => [row.projectId, toNumber(row._sum?.totalAmount)]),
+      );
+      verifyProjectSums('vendor_invoices.projectSum', expected, actual, 0.01);
+    }
+
+    if (shouldRun(options, 'expenses') && expenses.length) {
+      const expected = new Map<string, number>();
+      for (const item of expenses) {
+        const projectId = makeId('project', item.projectLegacyId);
+        rememberProject(projectId, item.projectLegacyId);
+        addSum(expected, projectId, toNumber(item.amount));
+      }
+      const rows: AmountGroupRow[] = await prisma.expense.groupBy({
+        by: ['projectId'],
+        where: { id: { in: expenses.map((item) => makeId('expense', item.legacyId)) } },
+        _sum: { amount: true },
+      });
+      const actual = new Map<string, number>(
+        rows.map((row) => [row.projectId, toNumber(row._sum?.amount)]),
+      );
+      verifyProjectSums('expenses.projectSum', expected, actual, 0.01);
+    }
+
+    if (shouldRun(options, 'time_entries') && timeEntries.length) {
+      const expected = new Map<string, number>();
+      for (const item of timeEntries) {
+        const projectId = makeId('project', item.projectLegacyId);
+        rememberProject(projectId, item.projectLegacyId);
+        addSum(expected, projectId, toNumber(item.minutes));
+      }
+      const rows: MinutesGroupRow[] = await prisma.timeEntry.groupBy({
+        by: ['projectId'],
+        where: { id: { in: timeEntries.map((item) => makeId('time_entry', item.legacyId)) } },
+        _sum: { minutes: true },
+      });
+      const actual = new Map<string, number>(
+        rows.map((row) => [row.projectId, toNumber(row._sum?.minutes)]),
+      );
+      verifyProjectSums('time_entries.projectSum', expected, actual, 0);
     }
 
     if (shouldRun(options, 'estimates')) {
