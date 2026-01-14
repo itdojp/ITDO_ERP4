@@ -15,6 +15,7 @@ import {
   saveDraft,
 } from '../utils/drafts';
 import { enqueueOfflineItem, isOfflineError } from '../utils/offlineQueue';
+import { Alert, Button, Card, EmptyState, Input, Select, Toast } from '../ui';
 
 type TimeEntry = {
   id: string;
@@ -201,39 +202,50 @@ export const TimeEntries: React.FC = () => {
   return (
     <div>
       <h2>工数入力</h2>
-      <div className="card" style={{ marginBottom: 12 }}>
-        <div className="row" style={{ gap: 8, alignItems: 'center' }}>
-          <select
+      <Card padding="small" style={{ marginBottom: 12 }}>
+        <div
+          style={{
+            display: 'flex',
+            gap: 12,
+            flexWrap: 'wrap',
+            alignItems: 'flex-end',
+          }}
+        >
+          <Select
+            label="案件"
             aria-label="案件選択"
             value={form.projectId}
             onChange={(e) => setForm({ ...form, projectId: e.target.value })}
+            placeholder="案件を選択"
           >
-            <option value="">案件を選択</option>
             {projects.map((project) => (
               <option key={project.id} value={project.id}>
                 {project.code} / {project.name}
               </option>
             ))}
-          </select>
-          <select
+          </Select>
+          <Select
+            label="タスク"
             aria-label="タスク選択"
             value={form.taskId}
             onChange={(e) => setForm({ ...form, taskId: e.target.value })}
             disabled={!form.projectId || tasksLoading}
+            placeholder="タスク未選択"
           >
-            <option value="">タスク未選択</option>
             {tasks.map((task) => (
               <option key={task.id} value={task.id}>
                 {task.name}
               </option>
             ))}
-          </select>
-          <input
+          </Select>
+          <Input
+            label="日付"
             type="date"
             value={form.workDate}
             onChange={(e) => setForm({ ...form, workDate: e.target.value })}
           />
-          <input
+          <Input
+            label="工数 (分)"
             type="number"
             min={1}
             max={1440}
@@ -242,57 +254,78 @@ export const TimeEntries: React.FC = () => {
             onChange={(e) =>
               setForm({ ...form, minutes: Number(e.target.value) })
             }
-            style={{ width: 100 }}
+            error={minutesError || undefined}
           />
-          <input
+          <Input
+            label="作業種別"
             type="text"
             value={form.workType}
             onChange={(e) => setForm({ ...form, workType: e.target.value })}
-            placeholder="作業種別"
+            placeholder="例: 通常"
           />
-          <input
+          <Input
+            label="場所"
             type="text"
             value={form.location}
             onChange={(e) => setForm({ ...form, location: e.target.value })}
-            placeholder="場所"
+            placeholder="例: office"
           />
-          <button
-            className="button"
+          <Button
             onClick={add}
             disabled={!isValid || isSaving}
+            loading={isSaving}
           >
             追加
-          </button>
+          </Button>
         </div>
         {validationHint && (
-          <p style={{ color: '#dc2626', margin: '8px 0 0' }}>
-            {validationHint}
-          </p>
+          <div style={{ marginTop: 12 }}>
+            <Alert variant="error">{validationHint}</Alert>
+          </div>
         )}
         {projectMessage && (
-          <p style={{ color: '#dc2626', margin: '8px 0 0' }}>
-            {projectMessage}
-          </p>
+          <div style={{ marginTop: 12 }}>
+            <Alert variant="error">{projectMessage}</Alert>
+          </div>
         )}
         {taskMessage && (
-          <p style={{ color: '#dc2626', margin: '8px 0 0' }}>{taskMessage}</p>
+          <div style={{ marginTop: 12 }}>
+            <Alert variant="error">{taskMessage}</Alert>
+          </div>
         )}
-      </div>
-      <ul className="list">
+      </Card>
+      <div style={{ display: 'grid', gap: 8 }}>
         {items.map((e) => (
-          <li key={e.id}>
-            <span className="badge">{e.status}</span> {e.workDate.slice(0, 10)}{' '}
-            / {renderProject(e.projectId)} / {e.minutes} min
-            {e.workType && <> / {e.workType}</>}
-            {e.location && <> / {e.location}</>}
-          </li>
+          <Card key={e.id} padding="small">
+            <div
+              style={{
+                display: 'flex',
+                gap: 8,
+                flexWrap: 'wrap',
+                alignItems: 'center',
+              }}
+            >
+              <span className="badge">{e.status}</span>
+              <span>{e.workDate.slice(0, 10)}</span>
+              <span>/ {renderProject(e.projectId)}</span>
+              <span>/ {e.minutes} min</span>
+              {e.workType && <span>/ {e.workType}</span>}
+              {e.location && <span>/ {e.location}</span>}
+            </div>
+          </Card>
         ))}
-        {items.length === 0 && <li>データなし</li>}
-      </ul>
+        {items.length === 0 && <EmptyState title="データなし" />}
+      </div>
       {message && (
-        <p style={{ color: message.type === 'error' ? '#dc2626' : undefined }}>
-          {message.text}
-        </p>
+        <div style={{ marginTop: 12 }}>
+          <Toast
+            variant={message.type}
+            title={message.type === 'success' ? '完了' : 'エラー'}
+            description={message.text}
+            dismissible
+            onClose={() => setMessage(null)}
+          />
+        </div>
       )}
     </div>
   );

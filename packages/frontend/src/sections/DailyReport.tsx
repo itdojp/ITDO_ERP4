@@ -9,6 +9,16 @@ import { api, getAuthState } from '../api';
 import type { ProjectOption } from '../hooks/useProjects';
 import { HelpModal } from './HelpModal';
 import {
+  Alert,
+  Button,
+  Card,
+  EmptyState,
+  Input,
+  Select,
+  Textarea,
+  Toast,
+} from '../ui';
+import {
   clearDraft,
   getDraftOwnerId,
   loadDraft,
@@ -258,20 +268,18 @@ export const DailyReport: React.FC = () => {
   return (
     <div>
       <h2>日報 + ウェルビーイング</h2>
-      <div style={{ marginTop: 8 }}>
-        <textarea
-          placeholder="日報本文（任意）"
+      <div style={{ display: 'grid', gap: 12, marginTop: 8 }}>
+        <Textarea
+          label="日報本文（任意）"
           aria-label="日報本文"
+          placeholder="日報本文（任意）"
           value={reportContent}
           onChange={(e) => setReportContent(e.target.value)}
-          style={{ width: '100%', minHeight: 80 }}
+          fullWidth
+          rows={4}
         />
-      </div>
-      <div style={{ marginTop: 8 }}>
-        <label style={{ display: 'block', marginBottom: 4 }}>
-          関連案件（任意・複数選択可）
-        </label>
-        <select
+        <Select
+          label="関連案件（任意・複数選択可）"
           multiple
           value={linkedProjectIds}
           onChange={(e) =>
@@ -279,7 +287,7 @@ export const DailyReport: React.FC = () => {
               Array.from(e.target.selectedOptions).map((opt) => opt.value),
             )
           }
-          style={{ width: '100%', minHeight: 96 }}
+          fullWidth
           aria-label="関連案件"
         >
           {projects.map((project) => (
@@ -287,54 +295,54 @@ export const DailyReport: React.FC = () => {
               {project.code} / {project.name}
             </option>
           ))}
-        </select>
-        {projectMessage && <p style={{ color: '#dc2626' }}>{projectMessage}</p>}
+        </Select>
+        {projectMessage && <Alert variant="error">{projectMessage}</Alert>}
       </div>
       <div className="row" style={{ alignItems: 'center' }}>
         <span>今日のコンディション:</span>
-        <button
-          className="button secondary"
+        <Button
+          variant={status === 'good' ? 'primary' : 'secondary'}
           onClick={() => setStatus('good')}
           aria-pressed={status === 'good'}
         >
           Good
-        </button>
-        <button
-          className="button secondary"
+        </Button>
+        <Button
+          variant={status === 'not_good' ? 'primary' : 'secondary'}
           onClick={() => setStatus('not_good')}
           aria-pressed={status === 'not_good'}
         >
           Not Good
-        </button>
-        <button
-          className="button"
-          style={{ marginLeft: 'auto' }}
-          onClick={() => setShowHelp(true)}
-        >
-          ヘルプ / 相談したい
-        </button>
+        </Button>
+        <div style={{ marginLeft: 'auto' }}>
+          <Button variant="outline" onClick={() => setShowHelp(true)}>
+            ヘルプ / 相談したい
+          </Button>
+        </div>
       </div>
       {status === 'not_good' && (
         <div style={{ marginTop: 12 }}>
           <div>タグ（任意）</div>
           <div className="row">
             {tags.map((tag) => (
-              <button
+              <Button
                 key={tag}
-                className="button secondary"
+                variant={selectedTags.includes(tag) ? 'primary' : 'secondary'}
                 onClick={() => toggleTag(tag)}
                 aria-pressed={selectedTags.includes(tag)}
               >
                 {tag}
-              </button>
+              </Button>
             ))}
           </div>
           <div style={{ marginTop: 8 }}>
-            <textarea
+            <Textarea
+              label="メモ（空欄可）"
               placeholder="共有してもよければ、今日しんどかったことを書いてください（空欄可）"
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              style={{ width: '100%', minHeight: 80 }}
+              fullWidth
+              rows={4}
             />
           </div>
           <label
@@ -355,14 +363,20 @@ export const DailyReport: React.FC = () => {
         </div>
       )}
       <div style={{ marginTop: 8 }}>
-        <button className="button" onClick={submit} disabled={isSubmitting}>
+        <Button onClick={submit} loading={isSubmitting}>
           送信
-        </button>
+        </Button>
       </div>
       {message && (
-        <p style={{ color: message.type === 'error' ? '#dc2626' : undefined }}>
-          {message.text}
-        </p>
+        <div style={{ marginTop: 12 }}>
+          <Toast
+            variant={message.type}
+            title={message.type === 'success' ? '完了' : 'エラー'}
+            description={message.text}
+            dismissible
+            onClose={() => setMessage(null)}
+          />
+        </div>
       )}
       <p style={{ fontSize: 12, color: '#475569', marginTop: 8 }}>
         この入力は評価に使われません。職場環境の改善とサポートのためにのみ利用します。
@@ -373,43 +387,41 @@ export const DailyReport: React.FC = () => {
       <h3 style={{ margin: '0 0 8px' }}>日報履歴</h3>
       {isPrivileged && (
         <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
-          <input
-            type="text"
+          <Input
+            label="userId で絞り込み"
             value={historyUserId}
             onChange={(e) => setHistoryUserId(e.target.value)}
             placeholder="userId（空欄で全員: 最新50件）"
             aria-label="ユーザーIDで絞り込み"
-            style={{ flex: 1, minWidth: 240 }}
+            fullWidth
           />
-          <button
-            className="button secondary"
+          <Button
+            variant="secondary"
             onClick={() => loadHistory()}
-            disabled={isHistoryLoading}
+            loading={isHistoryLoading}
           >
             履歴を読み込み
-          </button>
+          </Button>
         </div>
       )}
       {!isPrivileged && (
-        <button
-          className="button secondary"
+        <Button
+          variant="secondary"
           onClick={() => loadHistory()}
-          disabled={isHistoryLoading}
+          loading={isHistoryLoading}
         >
           履歴を読み込み
-        </button>
+        </Button>
       )}
       {historyMessage && <p style={{ fontSize: 12 }}>{historyMessage}</p>}
-      <ul className="list" style={{ marginTop: 8 }}>
+      <div style={{ display: 'grid', gap: 8, marginTop: 8 }}>
         {historyItems.length === 0 && (
-          <li className="card" style={{ padding: 12 }}>
-            まだ日報はありません
-          </li>
+          <EmptyState title="まだ日報はありません" />
         )}
         {historyItems.map((item) => {
           const linked = parseLinkedProjectIds(item.linkedProjectIds);
           return (
-            <li key={item.id} className="card" style={{ padding: 12 }}>
+            <Card key={item.id} padding="small">
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                 <strong>{item.reportDate.slice(0, 10)}</strong>
                 {isPrivileged && <span>User: {item.userId}</span>}
@@ -427,10 +439,10 @@ export const DailyReport: React.FC = () => {
                   関連案件: {linked.map(renderProject).join(', ')}
                 </div>
               )}
-            </li>
+            </Card>
           );
         })}
-      </ul>
+      </div>
     </div>
   );
 };

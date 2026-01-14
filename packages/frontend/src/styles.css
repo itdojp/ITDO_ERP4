@@ -1,27 +1,15 @@
-:root {
-  font-family:
-    'Inter',
-    system-ui,
-    -apple-system,
-    sans-serif;
-  color: #0f172a;
-  background-color: #f8fafc;
-}
-body {
-  margin: 0;
-}
 .container {
   max-width: 1200px;
   margin: 0 auto;
-  padding: 24px;
+  padding: var(--space-24, 24px);
 }
 .card {
-  background: #ffffff;
-  border: 1px solid #e2e8f0;
+  background: var(--color-bg-base, #ffffff);
+  border: 1px solid var(--color-border-default, #e2e8f0);
   border-radius: 12px;
   padding: 16px;
   margin-bottom: 16px;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  box-shadow: var(--shadow-xs, 0 1px 2px rgba(0, 0, 0, 0.05));
 }
 .row {
   display: flex;
@@ -30,26 +18,26 @@ body {
 }
 .button {
   appearance: none;
-  border: 1px solid #0ea5e9;
-  background: #0ea5e9;
-  color: #fff;
+  border: 1px solid var(--color-action-primary, #0ea5e9);
+  background: var(--color-action-primary, #0ea5e9);
+  color: var(--color-text-inverse, #fff);
   border-radius: 8px;
   padding: 8px 12px;
   cursor: pointer;
 }
 .button.secondary {
-  border: 1px solid #94a3b8;
-  background: #fff;
-  color: #0f172a;
+  border: 1px solid var(--color-border-strong, #94a3b8);
+  background: var(--color-bg-base, #fff);
+  color: var(--color-text-primary, #0f172a);
 }
 .badge {
   display: inline-block;
   padding: 2px 8px;
   border-radius: 999px;
-  border: 1px solid #e2e8f0;
-  background: #f1f5f9;
+  border: 1px solid var(--color-border-default, #e2e8f0);
+  background: var(--color-bg-subtle, #f1f5f9);
   font-size: 12px;
-  color: #475569;
+  color: var(--color-text-muted, #475569);
 }
 .list {
   list-style: none;
@@ -58,12 +46,12 @@ body {
 }
 .list li {
   padding: 8px 0;
-  border-bottom: 1px solid #e2e8f0;
+  border-bottom: 1px solid var(--color-border-default, #e2e8f0);
 }
 .list li:last-child {
   border-bottom: none;
 }
 .alert {
-  border-left: 4px solid #f97316;
+  border-left: 4px solid var(--color-status-warning, #f97316);
   padding-left: 12px;
 }

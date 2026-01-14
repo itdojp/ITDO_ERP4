@@ -1,4 +1,5 @@
 import React from 'react';
+import { Card } from '../ui';
 import { Dashboard } from '../sections/Dashboard';
 import { GlobalSearch } from '../sections/GlobalSearch';
 import { DailyReport } from '../sections/DailyReport';
@@ -26,66 +27,66 @@ export const App: React.FC = () => {
     <div className="container">
       <h1>ERP4 MVP PoC</h1>
       <CurrentUser />
-      <div className="card">
+      <Card>
         <Dashboard />
-      </div>
-      <div className="card">
+      </Card>
+      <Card>
         <GlobalSearch />
-      </div>
-      <div className="card">
+      </Card>
+      <Card>
         <DailyReport />
-      </div>
-      <div className="card">
+      </Card>
+      <Card>
         <TimeEntries />
-      </div>
-      <div className="card">
+      </Card>
+      <Card>
         <ProjectTasks />
-      </div>
-      <div className="card">
+      </Card>
+      <Card>
         <Expenses />
-      </div>
-      <div className="card">
+      </Card>
+      <Card>
         <LeaveRequests />
-      </div>
-      <div className="card">
+      </Card>
+      <Card>
         <Estimates />
-      </div>
-      <div className="card">
+      </Card>
+      <Card>
         <Invoices />
-      </div>
-      <div className="card">
+      </Card>
+      <Card>
         <VendorDocuments />
-      </div>
-      <div className="card">
+      </Card>
+      <Card>
         <Reports />
-      </div>
-      <div className="card">
+      </Card>
+      <Card>
         <Approvals />
-      </div>
-      <div className="card">
+      </Card>
+      <Card>
         <ChatBreakGlass />
-      </div>
-      <div className="card">
+      </Card>
+      <Card>
         <Projects />
-      </div>
-      <div className="card">
+      </Card>
+      <Card>
         <ProjectMilestones />
-      </div>
-      <div className="card">
+      </Card>
+      <Card>
         <MasterData />
-      </div>
-      <div className="card">
+      </Card>
+      <Card>
         <AdminSettings />
-      </div>
-      <div className="card">
+      </Card>
+      <Card>
         <ProjectChat />
-      </div>
-      <div className="card">
+      </Card>
+      <Card>
         <RoomChat />
-      </div>
-      <div className="card">
+      </Card>
+      <Card>
         <HRAnalytics />
-      </div>
+      </Card>
     </div>
   );
 };
