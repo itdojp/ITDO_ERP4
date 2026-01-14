@@ -16,6 +16,26 @@ type ProjectTask = {
   progressPercent?: number | null;
 };
 
+type ProjectBaselineTask = {
+  id: string;
+  baselineId: string;
+  taskId: string;
+  name: string;
+  status?: string | null;
+  planStart?: string | null;
+  planEnd?: string | null;
+  progressPercent?: number | null;
+};
+
+type ProjectBaseline = {
+  id: string;
+  projectId: string;
+  name: string;
+  createdAt?: string | null;
+  taskCount?: number;
+  tasks?: ProjectBaselineTask[];
+};
+
 const buildInitialForm = (projectId?: string) => ({
   projectId: projectId ?? '',
   name: '',
@@ -57,6 +77,11 @@ export const ProjectTasks: React.FC = () => {
     buildInitialForm(auth?.projectIds?.[0]),
   );
   const [items, setItems] = useState<ProjectTask[]>([]);
+  const [baselines, setBaselines] = useState<ProjectBaseline[]>([]);
+  const [selectedBaselineId, setSelectedBaselineId] = useState('');
+  const [baselineDetail, setBaselineDetail] = useState<ProjectBaseline | null>(
+    null,
+  );
   const [editing, setEditing] = useState<ProjectTask | null>(null);
   const [editingOriginalParentTaskId, setEditingOriginalParentTaskId] =
     useState<string | null>(null);
@@ -136,6 +161,65 @@ export const ProjectTasks: React.FC = () => {
     [],
   );
 
+  const loadBaselines = useCallback(
+    async (options?: { silent?: boolean }) => {
+      if (!form.projectId) {
+        setBaselines([]);
+        setSelectedBaselineId('');
+        setBaselineDetail(null);
+        if (!options?.silent) {
+          setMessage('案件を選択してください');
+        }
+        return;
+      }
+      try {
+        const res = await api<{ items: ProjectBaseline[] }>(
+          `/projects/${form.projectId}/baselines`,
+        );
+        const nextItems = Array.isArray(res.items) ? res.items : [];
+        setBaselines(nextItems);
+        if (!nextItems.some((item) => item.id === selectedBaselineId)) {
+          setSelectedBaselineId('');
+          setBaselineDetail(null);
+        }
+        if (!options?.silent) {
+          setMessage('ベースライン一覧を読み込みました');
+        }
+      } catch (err) {
+        setBaselines([]);
+        setSelectedBaselineId('');
+        setBaselineDetail(null);
+        if (!options?.silent) {
+          setMessage(
+            `ベースライン一覧の読み込みに失敗しました${errorDetail(err)}`,
+          );
+        }
+      }
+    },
+    [form.projectId, selectedBaselineId],
+  );
+
+  const loadBaselineDetail = useCallback(
+    async (baselineId: string) => {
+      if (!form.projectId || !baselineId) {
+        setBaselineDetail(null);
+        return;
+      }
+      try {
+        const res = await api<ProjectBaseline>(
+          `/projects/${form.projectId}/baselines/${baselineId}`,
+        );
+        setBaselineDetail(res);
+      } catch (err) {
+        setBaselineDetail(null);
+        setMessage(
+          `ベースライン詳細の読み込みに失敗しました${errorDetail(err)}`,
+        );
+      }
+    },
+    [form.projectId],
+  );
+
   const resetForm = useCallback(() => {
     setForm((prev) => ({ ...buildInitialForm(prev.projectId) }));
     setEditing(null);
@@ -144,7 +228,12 @@ export const ProjectTasks: React.FC = () => {
 
   useEffect(() => {
     void load({ silent: true });
-  }, [load]);
+    void loadBaselines({ silent: true });
+  }, [load, loadBaselines]);
+
+  useEffect(() => {
+    void loadBaselineDetail(selectedBaselineId);
+  }, [loadBaselineDetail, selectedBaselineId]);
 
   useEffect(() => {
     if (!editing) return;
@@ -165,6 +254,30 @@ export const ProjectTasks: React.FC = () => {
       reasonText: '',
     }));
   }, [editing, form.projectId]);
+
+  const createBaseline = async () => {
+    if (!form.projectId) {
+      setMessage('案件を選択してください');
+      return;
+    }
+    const name = window.prompt('ベースライン名（任意）');
+    if (name === null) return;
+    const trimmed = name.trim();
+    try {
+      const created = await api<ProjectBaseline>(
+        `/projects/${form.projectId}/baselines`,
+        {
+          method: 'POST',
+          body: JSON.stringify(trimmed ? { name: trimmed } : {}),
+        },
+      );
+      await loadBaselines({ silent: true });
+      setSelectedBaselineId(created.id);
+      setMessage('ベースラインを作成しました');
+    } catch (err) {
+      setMessage(`ベースラインの作成に失敗しました${errorDetail(err)}`);
+    }
+  };
 
   const save = async () => {
     if (!form.projectId) {
@@ -338,6 +451,73 @@ export const ProjectTasks: React.FC = () => {
       </div>
       {projectMessage && <p style={{ color: '#dc2626' }}>{projectMessage}</p>}
       {message && <p>{message}</p>}
+
+      <div className="card" style={{ marginTop: 12, padding: 12 }}>
+        <strong>ベースライン</strong>
+        <div className="row" style={{ gap: 8, flexWrap: 'wrap', marginTop: 8 }}>
+          <button
+            className="button secondary"
+            onClick={createBaseline}
+            disabled={!form.projectId}
+          >
+            ベースライン作成
+          </button>
+          <button
+            className="button secondary"
+            onClick={() => loadBaselines()}
+            disabled={!form.projectId}
+          >
+            一覧更新
+          </button>
+          <select
+            aria-label="ベースライン選択"
+            value={selectedBaselineId}
+            onChange={(e) => setSelectedBaselineId(e.target.value)}
+            disabled={!form.projectId}
+          >
+            <option value="">（未選択）</option>
+            {baselines.map((baseline) => (
+              <option key={baseline.id} value={baseline.id}>
+                {baseline.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        {baselineDetail && (
+          <div style={{ marginTop: 8 }}>
+            <div style={{ fontSize: 12, color: '#6b7280' }}>
+              作成日時:{' '}
+              {baselineDetail.createdAt
+                ? new Date(baselineDetail.createdAt).toLocaleString()
+                : '不明'}
+              / タスク数:{' '}
+              {Array.isArray(baselineDetail.tasks)
+                ? baselineDetail.tasks.length
+                : 0}
+            </div>
+            {Array.isArray(baselineDetail.tasks) &&
+              baselineDetail.tasks.length > 0 && (
+                <ul className="list" style={{ marginTop: 8 }}>
+                  {baselineDetail.tasks.map((task) => {
+                    const planStart = toDateInput(task.planStart);
+                    const planEnd = toDateInput(task.planEnd);
+                    return (
+                      <li key={task.id}>
+                        {task.name}
+                        {(planStart || planEnd) &&
+                          ` / 計画: ${planStart || '未設定'}〜${planEnd || '未設定'}`}
+                        {task.progressPercent != null &&
+                          ` / 進捗: ${task.progressPercent}%`}
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            {Array.isArray(baselineDetail.tasks) &&
+              baselineDetail.tasks.length === 0 && <div>タスクなし</div>}
+          </div>
+        )}
+      </div>
 
       <div className="card" style={{ marginTop: 12, padding: 12 }}>
         <strong>{editing ? '編集' : '新規作成'}</strong>
