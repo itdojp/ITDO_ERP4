@@ -7,6 +7,9 @@
 ## ツール
 - `scripts/migrate-po.ts`
 
+## Runbook
+実行手順（リハーサル/ロールバック方針）は `docs/requirements/migration-runbook.md` を参照。
+
 ## 前提
 - DB 接続は `DATABASE_URL` を使用する
 - **書き込み実行**は `MIGRATION_CONFIRM=1` が必須
@@ -309,6 +312,11 @@ npx --prefix packages/backend ts-node --project packages/backend/tsconfig.json s
 - 明細合計: 見積/請求/発注の `lines` 合計が `totalAmount` と一致することを確認
 - プロジェクト別合計: 対象IDの `totalAmount/amount/minutes` をプロジェクト別に集計し入力と一致することを確認
 - 参照整合: `Invoice.estimateId/milestoneId` と `PurchaseOrderLine.expenseId` のプロジェクト整合を確認
+
+## 移行後のDBチェック（SQL）
+`--apply` 後に、DB側で参照整合/金額整合を確認する場合は以下を実行する。
+
+- `scripts/checks/migration-po-integrity.sql`
 
 ## 既知の制約（最小実装）
 - `time_entries.userId` などのユーザIDの突合せは運用で決める必要がある
