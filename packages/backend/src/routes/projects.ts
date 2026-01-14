@@ -847,6 +847,13 @@ export async function registerProjectRoutes(app: FastifyInstance) {
       const { projectId } = req.params as { projectId: string };
       const body = req.body as any;
       const parentTaskId = normalizeParentId(body.parentTaskId);
+      const hasProgressPercentProp = Object.prototype.hasOwnProperty.call(
+        body,
+        'progressPercent',
+      );
+      const progressPercent = hasProgressPercentProp
+        ? body.progressPercent
+        : undefined;
       const { value: planStart } = parseNullableDateField(body, 'planStart');
       const { value: planEnd } = parseNullableDateField(body, 'planEnd');
       const { value: actualStart } = parseNullableDateField(
@@ -886,6 +893,7 @@ export async function registerProjectRoutes(app: FastifyInstance) {
           parentTaskId,
           assigneeId: body.assigneeId,
           status: body.status,
+          progressPercent: progressPercent ?? null,
           planStart: planStart ?? null,
           planEnd: planEnd ?? null,
           actualStart: actualStart ?? null,
@@ -925,6 +933,13 @@ export async function registerProjectRoutes(app: FastifyInstance) {
           error: { code: 'ALREADY_DELETED', message: 'Task already deleted' },
         });
       }
+      const hasProgressPercentProp = Object.prototype.hasOwnProperty.call(
+        body,
+        'progressPercent',
+      );
+      const progressPercent = hasProgressPercentProp
+        ? body.progressPercent
+        : undefined;
       const { hasProp: hasPlanStartProp, value: planStart } =
         parseNullableDateField(body, 'planStart');
       const { hasProp: hasPlanEndProp, value: planEnd } =
@@ -1011,6 +1026,7 @@ export async function registerProjectRoutes(app: FastifyInstance) {
           parentTaskId: hasParentTaskIdProp ? nextParentTaskId : undefined,
           assigneeId: body.assigneeId,
           status: body.status,
+          progressPercent: hasProgressPercentProp ? progressPercent : undefined,
           planStart: hasPlanStartProp ? planStart : undefined,
           planEnd: hasPlanEndProp ? planEnd : undefined,
           actualStart: hasActualStartProp ? actualStart : undefined,

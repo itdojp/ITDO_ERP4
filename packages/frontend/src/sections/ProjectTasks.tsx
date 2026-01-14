@@ -13,6 +13,7 @@ type ProjectTask = {
   planEnd?: string | null;
   actualStart?: string | null;
   actualEnd?: string | null;
+  progressPercent?: number | null;
 };
 
 const buildInitialForm = (projectId?: string) => ({
@@ -20,6 +21,7 @@ const buildInitialForm = (projectId?: string) => ({
   name: '',
   status: '',
   parentTaskId: '',
+  progressPercent: '',
   predecessorIds: [] as string[],
   planStart: '',
   planEnd: '',
@@ -154,6 +156,7 @@ export const ProjectTasks: React.FC = () => {
       name: '',
       status: '',
       parentTaskId: '',
+      progressPercent: '',
       predecessorIds: [],
       planStart: '',
       planEnd: '',
@@ -179,6 +182,21 @@ export const ProjectTasks: React.FC = () => {
       setMessage('親タスクを変更する場合は理由を入力してください');
       return;
     }
+    const trimmedProgress = form.progressPercent.trim();
+    let progressPercent: number | null = null;
+    if (trimmedProgress.length > 0) {
+      const parsed = Number(trimmedProgress);
+      if (
+        !Number.isFinite(parsed) ||
+        !Number.isInteger(parsed) ||
+        parsed < 0 ||
+        parsed > 100
+      ) {
+        setMessage('進捗率は0〜100の整数で入力してください');
+        return;
+      }
+      progressPercent = parsed;
+    }
     const planStart = form.planStart.trim();
     const planEnd = form.planEnd.trim();
     const actualStart = form.actualStart.trim();
@@ -193,6 +211,7 @@ export const ProjectTasks: React.FC = () => {
               name,
               status: status || undefined,
               parentTaskId,
+              progressPercent,
               planStart: planStart || null,
               planEnd: planEnd || null,
               actualStart: actualStart || null,
@@ -201,18 +220,27 @@ export const ProjectTasks: React.FC = () => {
             }),
           },
         );
-        await api(
-          `/projects/${form.projectId}/tasks/${editing.id}/dependencies`,
-          {
-            method: 'PUT',
-            body: JSON.stringify({ predecessorIds: form.predecessorIds }),
-          },
-        );
         setItems((prev) =>
           prev.map((item) => (item.id === updated.id ? updated : item)),
         );
-        setMessage('更新しました');
         notifyTasksChanged(form.projectId);
+        setEditing(updated);
+        setEditingOriginalParentTaskId(updated.parentTaskId ?? null);
+        try {
+          await api(
+            `/projects/${form.projectId}/tasks/${editing.id}/dependencies`,
+            {
+              method: 'PUT',
+              body: JSON.stringify({ predecessorIds: form.predecessorIds }),
+            },
+          );
+        } catch (err) {
+          setMessage(
+            `タスクは更新しましたが、依存関係の更新に失敗しました${errorDetail(err)}`,
+          );
+          return;
+        }
+        setMessage('更新しました');
         resetForm();
         return;
       }
@@ -224,6 +252,7 @@ export const ProjectTasks: React.FC = () => {
             name,
             status: status || undefined,
             ...(parentTaskId ? { parentTaskId } : {}),
+            ...(progressPercent != null ? { progressPercent } : {}),
             ...(planStart ? { planStart } : {}),
             ...(planEnd ? { planEnd } : {}),
             ...(actualStart ? { actualStart } : {}),
@@ -250,6 +279,8 @@ export const ProjectTasks: React.FC = () => {
       status: item.status || '',
       parentTaskId: item.parentTaskId || '',
       predecessorIds: [],
+      progressPercent:
+        item.progressPercent != null ? String(item.progressPercent) : '',
       planStart: toDateInput(item.planStart),
       planEnd: toDateInput(item.planEnd),
       actualStart: toDateInput(item.actualStart),
@@ -322,6 +353,19 @@ export const ProjectTasks: React.FC = () => {
             value={form.status}
             onChange={(e) => setForm({ ...form, status: e.target.value })}
             placeholder="ステータス（任意）"
+          />
+          <input
+            aria-label="進捗率"
+            type="number"
+            inputMode="numeric"
+            min={0}
+            max={100}
+            step={1}
+            value={form.progressPercent}
+            onChange={(e) =>
+              setForm({ ...form, progressPercent: e.target.value })
+            }
+            placeholder="進捗(%)"
           />
           <select
             aria-label="親タスク選択"
@@ -447,6 +491,8 @@ export const ProjectTasks: React.FC = () => {
             <li key={item.id}>
               <span className="badge">{item.status || 'open'}</span> {item.name}{' '}
               / {renderProject(item.projectId)}
+              {item.progressPercent != null &&
+                ` / 進捗: ${item.progressPercent}%`}
               {parentLabel && ` / 親: ${parentLabel}`}
               {(planLabel || actualLabel) && (
                 <div style={{ marginTop: 4, fontSize: 12 }}>
