@@ -9,7 +9,7 @@
   - [x] API: `GET /reports/project-evm/:projectId?from=YYYY-MM-DD&to=YYYY-MM-DD`
   - [x] UI: Reports に EVM（表/指標）を追加
   - [x] E2E（@extended）または手動QA手順の追記
-- [ ] #533 PO→ERP4 データ移行 実行ツール
+- [x] #533 PO→ERP4 データ移行 実行ツール
   - [x] 入力仕様（JSON）と実行手順を docs に整理（PR #534）
   - [x] 最小import（customers/vendors/projects/tasks/milestones/time/expense）（PR #534）
   - [x] 見積/請求/発注/業者書類の最小import（estimate/invoice/PO/VQ/VI）（PR #535）
@@ -18,7 +18,7 @@
   - [x] 取込後の整合チェック（プロジェクト別合計など）を追加（#536）
   - [x] CSV 取込対応（#537）
   - [x] 移行後チェックSQLを追加（PR #540）
-  - [ ] 運用手順（リハーサル/ロールバック/チェック）を docs に追加（#533 段階3）
+  - [x] 運用手順（リハーサル/ロールバック/チェック）を docs に追加（PR #541）
 
 ## 次アクション（チャット）
 - [x] #453 ルーム化（project chat→room chat）移行方針の確定と段階移行の計画化
