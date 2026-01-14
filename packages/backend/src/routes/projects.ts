@@ -10,6 +10,7 @@ import {
   projectTaskSchema,
   projectTaskPatchSchema,
   projectTaskDependencySchema,
+  projectBaselineSchema,
   projectMilestoneSchema,
   projectMilestonePatchSchema,
   deleteReasonSchema,
@@ -1526,6 +1527,145 @@ export async function registerProjectRoutes(app: FastifyInstance) {
         return updated;
       });
       return updated;
+    },
+  );
+
+  app.get(
+    '/projects/:projectId/baselines',
+    {
+      preHandler: [
+        requireRole(['admin', 'mgmt', 'user']),
+        ensureProjectIdParam,
+        requireProjectAccess((req) => (req.params as any)?.projectId),
+      ],
+    },
+    async (req, reply) => {
+      const { projectId } = req.params as { projectId: string };
+      const project = await prisma.project.findUnique({
+        where: { id: projectId },
+        select: { id: true, deletedAt: true },
+      });
+      if (!project || project.deletedAt) {
+        return reply.status(404).send({
+          error: { code: 'NOT_FOUND', message: 'Project not found' },
+        });
+      }
+      const items = await prisma.projectBaseline.findMany({
+        where: { projectId, deletedAt: null },
+        orderBy: { createdAt: 'desc' },
+        take: 100,
+      });
+      return { items };
+    },
+  );
+
+  app.get(
+    '/projects/:projectId/baselines/:baselineId',
+    {
+      preHandler: [
+        requireRole(['admin', 'mgmt', 'user']),
+        ensureProjectIdParam,
+        requireProjectAccess((req) => (req.params as any)?.projectId),
+      ],
+    },
+    async (req, reply) => {
+      const { projectId, baselineId } = req.params as {
+        projectId: string;
+        baselineId: string;
+      };
+      const baseline = await prisma.projectBaseline.findUnique({
+        where: { id: baselineId },
+        include: {
+          tasks: {
+            orderBy: { createdAt: 'asc' },
+          },
+        },
+      });
+      if (!baseline || baseline.projectId !== projectId) {
+        return reply.status(404).send({
+          error: { code: 'NOT_FOUND', message: 'Baseline not found' },
+        });
+      }
+      if (baseline.deletedAt) {
+        return reply.status(400).send({
+          error: {
+            code: 'ALREADY_DELETED',
+            message: 'Baseline already deleted',
+          },
+        });
+      }
+      return baseline;
+    },
+  );
+
+  app.post(
+    '/projects/:projectId/baselines',
+    {
+      preHandler: [
+        requireRole(['admin', 'mgmt', 'user']),
+        ensureProjectIdParam,
+        requireProjectAccess((req) => (req.params as any)?.projectId),
+      ],
+      schema: projectBaselineSchema,
+    },
+    async (req, reply) => {
+      const { projectId } = req.params as { projectId: string };
+      const roles = req.user?.roles || [];
+      const isPrivileged = isPrivilegedRole(roles);
+      if (!isPrivileged) {
+        const allowed = await ensureProjectLeader(req, reply, projectId);
+        if (!allowed) return;
+      }
+      const body = req.body as any;
+      const name = typeof body.name === 'string' ? body.name.trim() : '';
+      const baselineName = name || `baseline-${new Date().toISOString()}`;
+      const project = await prisma.project.findUnique({
+        where: { id: projectId },
+        select: { id: true, deletedAt: true },
+      });
+      if (!project || project.deletedAt) {
+        return reply.status(404).send({
+          error: { code: 'NOT_FOUND', message: 'Project not found' },
+        });
+      }
+      const tasks = await prisma.projectTask.findMany({
+        where: { projectId, deletedAt: null },
+        select: {
+          id: true,
+          name: true,
+          status: true,
+          planStart: true,
+          planEnd: true,
+          progressPercent: true,
+        },
+      });
+      const createdBy = req.user?.userId;
+      const baseline = await prisma.$transaction(async (tx) => {
+        const baseline = await tx.projectBaseline.create({
+          data: {
+            projectId,
+            name: baselineName,
+            createdBy,
+          },
+        });
+        if (tasks.length) {
+          await tx.projectBaselineTask.createMany({
+            data: tasks.map((task) => ({
+              baselineId: baseline.id,
+              taskId: task.id,
+              name: task.name,
+              status: task.status,
+              planStart: task.planStart,
+              planEnd: task.planEnd,
+              progressPercent: task.progressPercent,
+              createdBy,
+            })),
+            skipDuplicates: true,
+          });
+        }
+        return baseline;
+      });
+      return { ...baseline, taskCount: tasks.length };
     },
   );
 

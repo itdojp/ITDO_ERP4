@@ -213,6 +213,15 @@ export const projectTaskDependencySchema = {
   ),
 };
 
+export const projectBaselineSchema = {
+  body: Type.Object(
+    {
+      name: Type.Optional(Type.String({ minLength: 1 })),
+    },
+    { additionalProperties: false },
+  ),
+};
+
 export const projectMilestoneSchema = {
   body: Type.Object({
     name: Type.String(),
