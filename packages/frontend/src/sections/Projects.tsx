@@ -6,6 +6,7 @@ type Project = {
   code: string;
   name: string;
   status: string;
+  parentId?: string | null;
   customerId?: string | null;
   currency?: string | null;
   planHours?: number | null;
@@ -100,9 +101,11 @@ const emptyProject = {
   code: '',
   name: '',
   status: 'draft',
+  parentId: '',
   customerId: '',
   planHours: '',
   budgetCost: '',
+  reasonText: '',
 };
 
 const emptyMemberForm: ProjectMemberForm = {
@@ -242,6 +245,9 @@ export const Projects: React.FC = () => {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [form, setForm] = useState(emptyProject);
   const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
+  const [editingOriginalParentId, setEditingOriginalParentId] = useState<
+    string | null
+  >(null);
   const [message, setMessage] = useState('');
   const [memberProjectId, setMemberProjectId] = useState<string | null>(null);
   const [members, setMembers] = useState<ProjectMember[]>([]);
@@ -284,6 +290,17 @@ export const Projects: React.FC = () => {
   const customerMap = useMemo(() => {
     return new Map(customers.map((item) => [item.id, item]));
   }, [customers]);
+
+  const projectMap = useMemo(() => {
+    return new Map(projects.map((item) => [item.id, item]));
+  }, [projects]);
+
+  const trimmedParentId = form.parentId.trim();
+  const nextParentId = trimmedParentId.length > 0 ? trimmedParentId : null;
+  const parentChanged =
+    editingProjectId !== null &&
+    nextParentId !== (editingOriginalParentId ?? null);
+  const trimmedReasonText = form.reasonText.trim();
 
   const projectPayload = useMemo(() => {
     const trimmedCustomerId = form.customerId.trim();
@@ -513,22 +530,35 @@ export const Projects: React.FC = () => {
       setMessage('コードと名称は必須です');
       return;
     }
+    if (editingProjectId && parentChanged && !trimmedReasonText) {
+      setMessage('親案件を変更する場合は理由を入力してください');
+      return;
+    }
     try {
       if (editingProjectId) {
         await api(`/projects/${editingProjectId}`, {
           method: 'PATCH',
-          body: JSON.stringify(projectPayload),
+          body: JSON.stringify({
+            ...projectPayload,
+            parentId: trimmedParentId,
+            ...(trimmedReasonText ? { reasonText: trimmedReasonText } : {}),
+          }),
         });
         setMessage('案件を更新しました');
       } else {
+        const createPayload = {
+          ...projectPayload,
+          ...(trimmedParentId ? { parentId: trimmedParentId } : {}),
+        };
         await api('/projects', {
           method: 'POST',
-          body: JSON.stringify(projectPayload),
+          body: JSON.stringify(createPayload),
         });
         setMessage('案件を追加しました');
       }
       setForm(emptyProject);
       setEditingProjectId(null);
+      setEditingOriginalParentId(null);
       loadProjects();
     } catch (err) {
       console.error('Failed to save project.', err);
@@ -538,10 +568,12 @@ export const Projects: React.FC = () => {
 
   const editProject = (item: Project) => {
     setEditingProjectId(item.id);
+    setEditingOriginalParentId(item.parentId ?? null);
     setForm({
       code: item.code || '',
       name: item.name || '',
       status: item.status || 'draft',
+      parentId: item.parentId || '',
       customerId: item.customerId || '',
       planHours:
         item.planHours === null || item.planHours === undefined
@@ -551,12 +583,14 @@ export const Projects: React.FC = () => {
         item.budgetCost === null || item.budgetCost === undefined
           ? ''
           : String(item.budgetCost),
+      reasonText: '',
     });
   };
 
   const resetProject = () => {
     setForm(emptyProject);
     setEditingProjectId(null);
+    setEditingOriginalParentId(null);
   };
 
   const loadMembers = useCallback(
@@ -897,6 +931,20 @@ export const Projects: React.FC = () => {
       </div>
       <div className="row" style={{ marginTop: 8 }}>
         <select
+          aria-label="親案件選択"
+          value={form.parentId}
+          onChange={(e) => setForm({ ...form, parentId: e.target.value })}
+        >
+          <option value="">親なし</option>
+          {projects
+            .filter((item) => item.id !== editingProjectId)
+            .map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.code} / {item.name}
+              </option>
+            ))}
+        </select>
+        <select
           aria-label="顧客選択"
           value={form.customerId}
           onChange={(e) => setForm({ ...form, customerId: e.target.value })}
@@ -929,6 +977,22 @@ export const Projects: React.FC = () => {
           min={0}
         />
       </div>
+      {editingProjectId && (
+        <div style={{ marginTop: 8 }}>
+          <textarea
+            placeholder={
+              parentChanged
+                ? '親案件の変更理由（必須）'
+                : '親案件の変更理由（親変更時のみ必須）'
+            }
+            aria-label="親案件の変更理由"
+            value={form.reasonText}
+            onChange={(e) => setForm({ ...form, reasonText: e.target.value })}
+            style={{ width: '100%', minHeight: 60 }}
+            disabled={!parentChanged}
+          />
+        </div>
+      )}
       <div className="row" style={{ marginTop: 8 }}>
         <button className="button" onClick={saveProject}>
           {editingProjectId ? '更新' : '追加'}
@@ -946,10 +1010,12 @@ export const Projects: React.FC = () => {
           const customer = item.customerId
             ? customerMap.get(item.customerId)
             : undefined;
+          const parent = item.parentId ? projectMap.get(item.parentId) : null;
           return (
             <li key={item.id}>
               <span className="badge">{item.status}</span> {item.code} /{' '}
               {item.name}
+              {parent && ` / 親: ${parent.code} ${parent.name}`}
               {customer && ` / ${customer.code} ${customer.name}`}
               {item.planHours !== null &&
                 item.planHours !== undefined &&
