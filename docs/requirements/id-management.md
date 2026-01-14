@@ -95,7 +95,10 @@
   - `hr` / `hr-group` → role `hr`
   - role `user` は常に付与される（`project_lead`/`employee`/`probationary` は `user` に包含）
   - `UserAccount.active=false` または `deletedAt!=null` の場合はログイン不可（401）
+  - DB照会に失敗した場合はログイン不可（401）
   - 補足: 現状は PoC のため、ユーザ/グループ投入は SCIM エンドポイントまたはSQLで行う（同期の本番化は後続）
+  - グループ→ロールのマッピングは環境変数で上書き可能: `AUTH_GROUP_TO_ROLE_MAP="groupA=role1,groupB=role2"`（未指定時は既定マップを使用）
+  - DB照会の負荷が問題になる場合はキャッシュを有効化できる: `AUTH_DB_USER_CONTEXT_CACHE_TTL_SECONDS`（秒、0で無効。無効がデフォルト）
 
 ### Google OIDC（例）
 - JWT_JWKS_URL: `https://www.googleapis.com/oauth2/v3/certs`
