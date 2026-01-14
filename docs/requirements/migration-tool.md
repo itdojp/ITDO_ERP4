@@ -12,25 +12,44 @@
 - **書き込み実行**は `MIGRATION_CONFIRM=1` が必須
 - `--apply` の場合、簡易整合チェック（件数一致/明細合計/プロジェクト別合計/参照整合）を実行する
 
+## 入力フォーマット
+- `--input-format=json|csv`（デフォルト: json）
+- `csv` は **ヘッダ付きCSV（UTF-8）** を想定
+  - 列名は JSON のキー名と同一（例: `legacyId`, `projectLegacyId`）
+  - 空文字は `null` 相当として扱う（数値/日付などのパース時に `null` になる）
+  - 見積/請求/発注の `lines` は、CSVの `lines` 列に **JSON配列文字列** を入れると取り込める（未指定なら自動で1行生成）
+
 ## 入力ディレクトリ
 デフォルト: `tmp/migration/po`
 
 以下のファイルが存在する場合に取り込みます（存在しないファイルはスキップ）。
 
-- `customers.json`
-- `vendors.json`
-- `projects.json`
-- `tasks.json`
-- `milestones.json`
-- `estimates.json`
-- `invoices.json`
-- `purchase_orders.json`
-- `vendor_quotes.json`
-- `vendor_invoices.json`
-- `time_entries.json`
-- `expenses.json`
-
-※ まずは JSON（配列）を最小実装にしています。CSV 対応は後続で追加します。
+- JSON: `*.json`
+  - `customers.json`
+  - `vendors.json`
+  - `projects.json`
+  - `tasks.json`
+  - `milestones.json`
+  - `estimates.json`
+  - `invoices.json`
+  - `purchase_orders.json`
+  - `vendor_quotes.json`
+  - `vendor_invoices.json`
+  - `time_entries.json`
+  - `expenses.json`
+- CSV: `*.csv`
+  - `customers.csv`
+  - `vendors.csv`
+  - `projects.csv`
+  - `tasks.csv`
+  - `milestones.csv`
+  - `estimates.csv`
+  - `invoices.csv`
+  - `purchase_orders.csv`
+  - `vendor_quotes.csv`
+  - `vendor_invoices.csv`
+  - `time_entries.csv`
+  - `expenses.csv`
 
 ## ID生成（決定的UUID）
 再実行で重複しないよう、`legacyId` から **決定的UUID（uuidv5相当）** を生成して `id` に採用します。
@@ -273,6 +292,12 @@ export MIGRATION_CONFIRM=1
 npx --prefix packages/backend ts-node --project packages/backend/tsconfig.json scripts/migrate-po.ts --input-dir=tmp/migration/po --apply
 ```
 
+### apply（CSV入力でDB書き込み）
+```bash
+export MIGRATION_CONFIRM=1
+npx --prefix packages/backend ts-node --project packages/backend/tsconfig.json scripts/migrate-po.ts --input-dir=tmp/migration/po --input-format=csv --apply
+```
+
 ### 対象を絞る（例: projects と tasks のみ）
 ```bash
 export MIGRATION_CONFIRM=1
@@ -286,7 +311,6 @@ npx --prefix packages/backend ts-node --project packages/backend/tsconfig.json s
 - 参照整合: `Invoice.estimateId/milestoneId` と `PurchaseOrderLine.expenseId` のプロジェクト整合を確認
 
 ## 既知の制約（最小実装）
-- CSV 取込は未対応（後続）
 - `time_entries.userId` などのユーザIDの突合せは運用で決める必要がある
 - 簡易整合チェックは `id in (...)` / `groupBy` によるチェックのため、巨大データでは時間/SQL制限の調整が必要になる可能性がある
 - 見積/請求/発注の明細（lines）は apply 時に「全削除→再作成」で同期する（差分更新は未対応）
