@@ -114,11 +114,15 @@ async function prepare(
 }
 
 async function selectByLabelOrFirst(select: Locator, label: string) {
-  if (await select.locator('option', { hasText: label }).count()) {
-    await select.selectOption({ label });
-    return;
-  }
-  await select.selectOption({ index: 1 });
+  await expect
+    .poll(() => select.locator('option').count(), { timeout: 15_000 })
+    .toBeGreaterThan(1);
+  await expect
+    .poll(() => select.locator('option', { hasText: label }).count(), {
+      timeout: 15_000,
+    })
+    .toBeGreaterThan(0);
+  await select.selectOption({ label });
 }
 
 async function ensureServiceWorker(page: Page) {
