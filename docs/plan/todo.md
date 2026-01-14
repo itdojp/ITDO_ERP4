@@ -10,9 +10,12 @@
   - [x] UI: Reports に EVM（表/指標）を追加
   - [x] E2E（@extended）または手動QA手順の追記
 - [ ] #533 PO→ERP4 データ移行 実行ツール
-  - [ ] 入力仕様（JSON/CSV）と実行手順を docs に整理
-  - [ ] 最小import（customers/vendors/projects/tasks/milestones/time/expense）
-  - [ ] 取込後の整合チェック（件数/参照切れ/合計）を追加
+  - [x] 入力仕様（JSON）と実行手順を docs に整理（PR #534）
+  - [x] 最小import（customers/vendors/projects/tasks/milestones/time/expense）（PR #534）
+  - [ ] 見積/請求/発注/業者書類の最小import（estimate/invoice/PO/VQ/VI）
+  - [x] 取込後の整合チェック（件数一致）を追加（PR #534）
+  - [ ] 取込後の整合チェック（参照切れ/合計）を追加
+  - [ ] CSV 取込対応（後続）
 
 ## 次アクション（チャット）
 - [x] #453 ルーム化（project chat→room chat）移行方針の確定と段階移行の計画化

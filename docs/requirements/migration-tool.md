@@ -22,6 +22,11 @@
 - `projects.json`
 - `tasks.json`
 - `milestones.json`
+- `estimates.json`
+- `invoices.json`
+- `purchase_orders.json`
+- `vendor_quotes.json`
+- `vendor_invoices.json`
 - `time_entries.json`
 - `expenses.json`
 
@@ -112,6 +117,119 @@
 ]
 ```
 
+### estimates.json
+```json
+[
+  {
+    "legacyId": "im_estimates:6000",
+    "projectLegacyId": "im_projects:1001",
+    "estimateNo": null,
+    "numberingDate": "2026-01-05",
+    "version": 1,
+    "totalAmount": 120000,
+    "currency": "JPY",
+    "status": "approved",
+    "validUntil": "2026-02-15",
+    "notes": "Imported estimate",
+    "lines": [
+      {
+        "description": "Dev work",
+        "quantity": 1,
+        "unitPrice": 120000,
+        "taxRate": 0.1,
+        "taskLegacyId": "im_tasks:2001"
+      }
+    ]
+  }
+]
+```
+
+### invoices.json
+```json
+[
+  {
+    "legacyId": "im_invoices:7000",
+    "projectLegacyId": "im_projects:1001",
+    "invoiceNo": null,
+    "issueDate": "2026-01-20",
+    "dueDate": "2026-02-20",
+    "currency": "JPY",
+    "totalAmount": 120000,
+    "status": "sent",
+    "estimateLegacyId": "im_estimates:6000",
+    "milestoneLegacyId": "im_phases:3001",
+    "lines": [
+      {
+        "description": "Dev work",
+        "quantity": 1,
+        "unitPrice": 120000,
+        "taxRate": 0.1,
+        "taskLegacyId": "im_tasks:2001"
+      }
+    ]
+  }
+]
+```
+
+### purchase_orders.json
+```json
+[
+  {
+    "legacyId": "im_purchase_orders:8000",
+    "projectLegacyId": "im_projects:1001",
+    "vendorLegacyId": "im_vendors:456",
+    "poNo": null,
+    "issueDate": "2026-01-25",
+    "dueDate": "2026-02-10",
+    "currency": "JPY",
+    "totalAmount": 90000,
+    "status": "approved",
+    "lines": [
+      {
+        "description": "Subcontract",
+        "quantity": 1,
+        "unitPrice": 90000,
+        "taxRate": 0.1,
+        "taskLegacyId": "im_tasks:2001"
+      }
+    ]
+  }
+]
+```
+
+### vendor_quotes.json
+```json
+[
+  {
+    "legacyId": "im_vendor_quotes:9000",
+    "projectLegacyId": "im_projects:1001",
+    "vendorLegacyId": "im_vendors:456",
+    "quoteNo": null,
+    "issueDate": "2026-01-10",
+    "currency": "JPY",
+    "totalAmount": 90000,
+    "status": "received"
+  }
+]
+```
+
+### vendor_invoices.json
+```json
+[
+  {
+    "legacyId": "im_vendor_invoices:9100",
+    "projectLegacyId": "im_projects:1001",
+    "vendorLegacyId": "im_vendors:456",
+    "vendorInvoiceNo": null,
+    "receivedDate": "2026-02-01",
+    "dueDate": "2026-02-28",
+    "currency": "JPY",
+    "totalAmount": 90000,
+    "status": "received"
+  }
+]
+```
+
 ### time_entries.json
 ```json
 [
@@ -163,6 +281,7 @@ npx --prefix packages/backend ts-node --project packages/backend/tsconfig.json s
 
 ## 既知の制約（最小実装）
 - CSV 取込は未対応（後続）
-- 請求/見積/発注/業者書類の取込は未対応（後続）
 - `time_entries.userId` などのユーザIDの突合せは運用で決める必要がある
 - 簡易整合チェックは `id in (...)` による件数一致チェックのため、巨大データでは時間/SQL制限の調整が必要になる可能性がある
+- 見積/請求/発注の明細（lines）は apply 時に「全削除→再作成」で同期する（差分更新は未対応）
+- 承認フロー（ApprovalInstance/Step）はこのツールでは作成しない（必要なら別途運用/後続対応）

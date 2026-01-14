@@ -4,6 +4,9 @@ import crypto from 'crypto';
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-expect-error: dist JS module has no type declarations for ts-node
 import { prisma } from '../packages/backend/dist/services/db.js';
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-expect-error: dist JS module has no type declarations for ts-node
+import { nextNumber } from '../packages/backend/dist/services/numbering.js';
 
 type CliOptions = {
   inputDir: string;
@@ -42,6 +45,14 @@ type PlannedIds = {
   vendors: Set<string>;
   projects: Set<string>;
   tasks: Set<string>;
+  milestones: Set<string>;
+  estimates: Set<string>;
+  invoices: Set<string>;
+  purchase_orders: Set<string>;
+  vendor_quotes: Set<string>;
+  vendor_invoices: Set<string>;
+  time_entries: Set<string>;
+  expenses: Set<string>;
 };
 
 function parseArgValue(key: string): string | undefined {
@@ -65,7 +76,7 @@ function printHelp() {
     '',
     'Options:',
     '  --input-dir=DIR   Input directory (default: tmp/migration/po)',
-    '  --only=LIST       Comma-separated scopes: customers,vendors,projects,tasks,milestones,time_entries,expenses',
+    '  --only=LIST       Comma-separated scopes: customers,vendors,projects,tasks,milestones,estimates,invoices,purchase_orders,vendor_quotes,vendor_invoices,time_entries,expenses',
     '  --apply           Apply changes to DB (requires MIGRATION_CONFIRM=1)',
     '',
     'Examples:',
@@ -190,6 +201,14 @@ const existsCache = {
   vendor: new Map<string, boolean>(),
   project: new Map<string, boolean>(),
   task: new Map<string, boolean>(),
+  milestone: new Map<string, boolean>(),
+  estimate: new Map<string, boolean>(),
+  invoice: new Map<string, boolean>(),
+  purchaseOrder: new Map<string, boolean>(),
+  vendorQuote: new Map<string, boolean>(),
+  vendorInvoice: new Map<string, boolean>(),
+  timeEntry: new Map<string, boolean>(),
+  expense: new Map<string, boolean>(),
 };
 
 function ensureNoDuplicates(
@@ -306,6 +325,98 @@ type ExpenseInput = {
   isShared?: boolean;
   receiptUrl?: string | null;
   status?: DocStatus;
+};
+
+type EstimateLineInput = {
+  description: string;
+  quantity?: number | null;
+  unitPrice: number;
+  taxRate?: number | null;
+  taskLegacyId?: string | null;
+};
+
+type EstimateInput = {
+  legacyId: string;
+  projectLegacyId: string;
+  estimateNo?: string | null;
+  numberingDate?: string | null;
+  version?: number | null;
+  totalAmount: number;
+  currency: string;
+  status?: DocStatus;
+  validUntil?: string | null;
+  notes?: string | null;
+  lines?: EstimateLineInput[] | null;
+};
+
+type BillingLineInput = {
+  description: string;
+  quantity?: number | null;
+  unitPrice: number;
+  taxRate?: number | null;
+  taskLegacyId?: string | null;
+  timeEntryRange?: string | null;
+};
+
+type InvoiceInput = {
+  legacyId: string;
+  projectLegacyId: string;
+  invoiceNo?: string | null;
+  issueDate?: string | null;
+  dueDate?: string | null;
+  currency: string;
+  totalAmount: number;
+  status?: DocStatus;
+  estimateLegacyId?: string | null;
+  milestoneLegacyId?: string | null;
+  lines?: BillingLineInput[] | null;
+};
+
+type PurchaseOrderLineInput = {
+  description: string;
+  quantity?: number | null;
+  unitPrice: number;
+  taxRate?: number | null;
+  taskLegacyId?: string | null;
+  expenseLegacyId?: string | null;
+};
+
+type PurchaseOrderInput = {
+  legacyId: string;
+  projectLegacyId: string;
+  vendorLegacyId: string;
+  poNo?: string | null;
+  issueDate?: string | null;
+  dueDate?: string | null;
+  currency: string;
+  totalAmount: number;
+  status?: DocStatus;
+  lines?: PurchaseOrderLineInput[] | null;
+};
+
+type VendorQuoteInput = {
+  legacyId: string;
+  projectLegacyId: string;
+  vendorLegacyId: string;
+  quoteNo?: string | null;
+  issueDate?: string | null;
+  currency: string;
+  totalAmount: number;
+  status?: DocStatus;
+  documentUrl?: string | null;
+};
+
+type VendorInvoiceInput = {
+  legacyId: string;
+  projectLegacyId: string;
+  vendorLegacyId: string;
+  vendorInvoiceNo?: string | null;
+  receivedDate?: string | null;
+  dueDate?: string | null;
+  currency: string;
+  totalAmount: number;
+  status?: DocStatus;
+  documentUrl?: string | null;
 };
 
 async function importCustomers(
@@ -813,6 +924,7 @@ async function importMilestones(
       invoiceTemplateId: null,
     };
     const exists = await prisma.projectMilestone.findUnique({ where: { id }, select: { id: true } });
+    existsCache.milestone.set(id, !!exists);
     if (!options.apply) {
       if (exists) updated += 1;
       else created += 1;
@@ -826,9 +938,884 @@ async function importMilestones(
         await prisma.projectMilestone.create({ data });
         created += 1;
       }
+      existsCache.milestone.set(id, true);
     } catch (err) {
       errors.push({
         scope: 'milestones',
+        legacyId: item.legacyId,
+        message: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+  return { created, updated };
+}
+
+async function resolveTaskId(
+  options: CliOptions,
+  planned: PlannedIds,
+  projectId: string,
+  taskLegacyId: string,
+  scope: string,
+  legacyId: string,
+  errors: ImportError[],
+): Promise<string | null> {
+  const taskId = makeId('task', taskLegacyId);
+  const taskOk = await existsOrPlanned(
+    taskId,
+    planned.tasks,
+    existsCache.task,
+    async () =>
+      !!(await prisma.projectTask.findUnique({ where: { id: taskId }, select: { id: true } })),
+  );
+  if (!taskOk) {
+    errors.push({ scope, legacyId, message: `task not found: ${taskLegacyId}` });
+    return null;
+  }
+  if (!options.apply) return taskId;
+  const task = await prisma.projectTask.findUnique({
+    where: { id: taskId },
+    select: { projectId: true, deletedAt: true },
+  });
+  if (!task || task.deletedAt) {
+    errors.push({ scope, legacyId, message: `task not found: ${taskLegacyId}` });
+    return null;
+  }
+  if (task.projectId !== projectId) {
+    errors.push({ scope, legacyId, message: `task belongs to another project: ${taskLegacyId}` });
+    return null;
+  }
+  return taskId;
+}
+
+function normalizeLines<T>(lines: T[] | null | undefined): T[] {
+  if (!lines) return [];
+  return lines.filter((line) => line != null);
+}
+
+async function importEstimates(
+  options: CliOptions,
+  items: EstimateInput[],
+  planned: PlannedIds,
+  errors: ImportError[],
+) {
+  if (options.only && !options.only.has('estimates')) return { created: 0, updated: 0 };
+  ensureNoDuplicates(
+    items.map((item) => ({ legacyId: item.legacyId, code: normalizeString(item.estimateNo) })),
+    'estimates',
+    errors,
+  );
+  if (errors.length) return { created: 0, updated: 0 };
+
+  let created = 0;
+  let updated = 0;
+  for (const item of items) {
+    const id = makeId('estimate', item.legacyId);
+    const projectId = makeId('project', item.projectLegacyId);
+    const projectOk = await existsOrPlanned(
+      projectId,
+      planned.projects,
+      existsCache.project,
+      async () => !!(await prisma.project.findUnique({ where: { id: projectId }, select: { id: true } })),
+    );
+    if (!projectOk) {
+      errors.push({
+        scope: 'estimates',
+        legacyId: item.legacyId,
+        message: `project not found: ${item.projectLegacyId}`,
+      });
+      continue;
+    }
+
+    const totalAmount = parseNumber(item.totalAmount);
+    if (totalAmount == null || totalAmount < 0) {
+      errors.push({
+        scope: 'estimates',
+        legacyId: item.legacyId,
+        message: 'totalAmount must be >= 0',
+      });
+      continue;
+    }
+
+    const versionRaw = parseNumber(item.version);
+    const version = versionRaw == null ? 1 : Math.max(1, Math.trunc(versionRaw));
+    const validUntil = parseDate(item.validUntil);
+    const numberingDate = parseDate(item.numberingDate) || new Date();
+    const preferredNo = normalizeString(item.estimateNo);
+    const currency = normalizeString(item.currency) || 'JPY';
+
+    const exists = await prisma.estimate.findUnique({
+      where: { id },
+      select: { id: true, estimateNo: true, numberingSerial: true },
+    });
+    existsCache.estimate.set(id, !!exists);
+    if (!options.apply) {
+      if (exists) updated += 1;
+      else created += 1;
+      continue;
+    }
+
+    const lines = normalizeLines(item.lines).length
+      ? normalizeLines(item.lines)
+      : [
+          {
+            description: `Imported (${item.legacyId})`,
+            quantity: 1,
+            unitPrice: totalAmount,
+            taxRate: null,
+            taskLegacyId: null,
+          } satisfies EstimateLineInput,
+        ];
+
+    const lineData: Array<{
+      estimateId: string;
+      description: string;
+      quantity: number;
+      unitPrice: number;
+      taxRate: number | null;
+      taskId: string | null;
+    }> = [];
+    for (const line of lines) {
+      const quantity = parseNumber(line.quantity) ?? 1;
+      const unitPrice = parseNumber(line.unitPrice);
+      if (unitPrice == null || unitPrice < 0) {
+        errors.push({
+          scope: 'estimates',
+          legacyId: item.legacyId,
+          message: 'line.unitPrice must be >= 0',
+        });
+        continue;
+      }
+      const taskLegacyId = normalizeString(line.taskLegacyId);
+      const taskId = taskLegacyId
+        ? await resolveTaskId(options, planned, projectId, taskLegacyId, 'estimates', item.legacyId, errors)
+        : null;
+      if (taskLegacyId && !taskId) continue;
+      lineData.push({
+        estimateId: id,
+        description: line.description,
+        quantity,
+        unitPrice,
+        taxRate: parseNumber(line.taxRate),
+        taskId,
+      });
+    }
+    if (errors.length) break;
+
+    let estimateNo: string;
+    let numberingSerial: number | null = null;
+    if (exists) {
+      estimateNo = exists.estimateNo;
+      numberingSerial = exists.numberingSerial ?? null;
+    } else if (preferredNo) {
+      estimateNo = preferredNo;
+    } else {
+      const allocation = await nextNumber('estimate', numberingDate);
+      estimateNo = allocation.number;
+      numberingSerial = allocation.serial;
+    }
+
+    const data = {
+      id,
+      projectId,
+      estimateNo,
+      version,
+      totalAmount,
+      currency,
+      status: parseEnumValue(item.status, DOC_STATUS_VALUES, 'draft'),
+      validUntil,
+      notes: normalizeString(item.notes) ?? undefined,
+      numberingSerial: numberingSerial ?? undefined,
+      pdfUrl: undefined,
+      emailMessageId: undefined,
+      deletedAt: null,
+      deletedReason: null,
+    };
+
+    try {
+      await prisma.$transaction(async (tx: any) => {
+        if (exists) {
+          await tx.estimate.update({
+            where: { id },
+            data: {
+              projectId,
+              version,
+              totalAmount,
+              currency,
+              status: data.status,
+              validUntil,
+              notes: data.notes,
+              deletedAt: null,
+              deletedReason: null,
+            },
+          });
+        } else {
+          await tx.estimate.create({ data });
+        }
+        await tx.estimateLine.deleteMany({ where: { estimateId: id } });
+        if (lineData.length) {
+          await tx.estimateLine.createMany({ data: lineData });
+        }
+      });
+      if (exists) updated += 1;
+      else created += 1;
+      existsCache.estimate.set(id, true);
+    } catch (err) {
+      errors.push({
+        scope: 'estimates',
+        legacyId: item.legacyId,
+        message: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+  return { created, updated };
+}
+
+async function importInvoices(
+  options: CliOptions,
+  items: InvoiceInput[],
+  planned: PlannedIds,
+  errors: ImportError[],
+) {
+  if (options.only && !options.only.has('invoices')) return { created: 0, updated: 0 };
+  ensureNoDuplicates(
+    items.map((item) => ({ legacyId: item.legacyId, code: normalizeString(item.invoiceNo) })),
+    'invoices',
+    errors,
+  );
+  if (errors.length) return { created: 0, updated: 0 };
+
+  let created = 0;
+  let updated = 0;
+  for (const item of items) {
+    const id = makeId('invoice', item.legacyId);
+    const projectId = makeId('project', item.projectLegacyId);
+    const projectOk = await existsOrPlanned(
+      projectId,
+      planned.projects,
+      existsCache.project,
+      async () => !!(await prisma.project.findUnique({ where: { id: projectId }, select: { id: true } })),
+    );
+    if (!projectOk) {
+      errors.push({
+        scope: 'invoices',
+        legacyId: item.legacyId,
+        message: `project not found: ${item.projectLegacyId}`,
+      });
+      continue;
+    }
+
+    const totalAmount = parseNumber(item.totalAmount);
+    if (totalAmount == null || totalAmount < 0) {
+      errors.push({ scope: 'invoices', legacyId: item.legacyId, message: 'totalAmount must be >= 0' });
+      continue;
+    }
+    const issueDate = parseDate(item.issueDate);
+    const dueDate = parseDate(item.dueDate);
+    const numberingDate = issueDate || dueDate || new Date();
+    const preferredNo = normalizeString(item.invoiceNo);
+    const currency = normalizeString(item.currency) || 'JPY';
+
+    const estimateId = normalizeString(item.estimateLegacyId)
+      ? makeId('estimate', item.estimateLegacyId as string)
+      : null;
+    if (estimateId) {
+      const ok = await existsOrPlanned(
+        estimateId,
+        planned.estimates,
+        existsCache.estimate,
+        async () => !!(await prisma.estimate.findUnique({ where: { id: estimateId }, select: { id: true } })),
+      );
+      if (!ok) {
+        errors.push({ scope: 'invoices', legacyId: item.legacyId, message: `estimate not found: ${item.estimateLegacyId}` });
+        continue;
+      }
+    }
+
+    const milestoneId = normalizeString(item.milestoneLegacyId)
+      ? makeId('milestone', item.milestoneLegacyId as string)
+      : null;
+    if (milestoneId) {
+      const ok = await existsOrPlanned(
+        milestoneId,
+        planned.milestones,
+        existsCache.milestone,
+        async () => !!(await prisma.projectMilestone.findUnique({ where: { id: milestoneId }, select: { id: true } })),
+      );
+      if (!ok) {
+        errors.push({ scope: 'invoices', legacyId: item.legacyId, message: `milestone not found: ${item.milestoneLegacyId}` });
+        continue;
+      }
+    }
+
+    const exists = await prisma.invoice.findUnique({
+      where: { id },
+      select: { id: true, invoiceNo: true, numberingSerial: true },
+    });
+    existsCache.invoice.set(id, !!exists);
+    if (!options.apply) {
+      if (exists) updated += 1;
+      else created += 1;
+      continue;
+    }
+
+    const lines = normalizeLines(item.lines).length
+      ? normalizeLines(item.lines)
+      : [
+          {
+            description: `Imported (${item.legacyId})`,
+            quantity: 1,
+            unitPrice: totalAmount,
+            taxRate: null,
+            taskLegacyId: null,
+            timeEntryRange: null,
+          } satisfies BillingLineInput,
+        ];
+
+    const lineData: Array<{
+      invoiceId: string;
+      description: string;
+      quantity: number;
+      unitPrice: number;
+      taxRate: number | null;
+      taskId: string | null;
+      timeEntryRange: string | null;
+    }> = [];
+    for (const line of lines) {
+      const quantity = parseNumber(line.quantity) ?? 1;
+      const unitPrice = parseNumber(line.unitPrice);
+      if (unitPrice == null || unitPrice < 0) {
+        errors.push({ scope: 'invoices', legacyId: item.legacyId, message: 'line.unitPrice must be >= 0' });
+        continue;
+      }
+      const taskLegacyId = normalizeString(line.taskLegacyId);
+      const taskId = taskLegacyId
+        ? await resolveTaskId(options, planned, projectId, taskLegacyId, 'invoices', item.legacyId, errors)
+        : null;
+      if (taskLegacyId && !taskId) continue;
+      lineData.push({
+        invoiceId: id,
+        description: line.description,
+        quantity,
+        unitPrice,
+        taxRate: parseNumber(line.taxRate),
+        taskId,
+        timeEntryRange: normalizeString(line.timeEntryRange),
+      });
+    }
+    if (errors.length) break;
+
+    let invoiceNo: string;
+    let numberingSerial: number | null = null;
+    if (exists) {
+      invoiceNo = exists.invoiceNo;
+      numberingSerial = exists.numberingSerial ?? null;
+    } else if (preferredNo) {
+      invoiceNo = preferredNo;
+    } else {
+      const allocation = await nextNumber('invoice', numberingDate);
+      invoiceNo = allocation.number;
+      numberingSerial = allocation.serial;
+    }
+
+    const data = {
+      id,
+      projectId,
+      estimateId,
+      milestoneId,
+      invoiceNo,
+      issueDate,
+      dueDate,
+      currency,
+      totalAmount,
+      status: parseEnumValue(item.status, DOC_STATUS_VALUES, 'draft'),
+      pdfUrl: undefined,
+      emailMessageId: undefined,
+      numberingSerial: numberingSerial ?? undefined,
+      deletedAt: null,
+      deletedReason: null,
+    };
+
+    try {
+      await prisma.$transaction(async (tx: any) => {
+        if (exists) {
+          await tx.invoice.update({
+            where: { id },
+            data: {
+              projectId,
+              estimateId,
+              milestoneId,
+              issueDate,
+              dueDate,
+              currency,
+              totalAmount,
+              status: data.status,
+              deletedAt: null,
+              deletedReason: null,
+            },
+          });
+        } else {
+          await tx.invoice.create({ data });
+        }
+        await tx.billingLine.deleteMany({ where: { invoiceId: id } });
+        if (lineData.length) {
+          await tx.billingLine.createMany({ data: lineData });
+        }
+      });
+      if (exists) updated += 1;
+      else created += 1;
+      existsCache.invoice.set(id, true);
+    } catch (err) {
+      errors.push({
+        scope: 'invoices',
+        legacyId: item.legacyId,
+        message: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+  return { created, updated };
+}
+
+async function importPurchaseOrders(
+  options: CliOptions,
+  items: PurchaseOrderInput[],
+  planned: PlannedIds,
+  errors: ImportError[],
+) {
+  if (options.only && !options.only.has('purchase_orders')) return { created: 0, updated: 0 };
+  ensureNoDuplicates(
+    items.map((item) => ({ legacyId: item.legacyId, code: normalizeString(item.poNo) })),
+    'purchase_orders',
+    errors,
+  );
+  if (errors.length) return { created: 0, updated: 0 };
+
+  let created = 0;
+  let updated = 0;
+  for (const item of items) {
+    const id = makeId('purchase_order', item.legacyId);
+    const projectId = makeId('project', item.projectLegacyId);
+    const vendorId = makeId('vendor', item.vendorLegacyId);
+    const projectOk = await existsOrPlanned(
+      projectId,
+      planned.projects,
+      existsCache.project,
+      async () => !!(await prisma.project.findUnique({ where: { id: projectId }, select: { id: true } })),
+    );
+    if (!projectOk) {
+      errors.push({ scope: 'purchase_orders', legacyId: item.legacyId, message: `project not found: ${item.projectLegacyId}` });
+      continue;
+    }
+    const vendorOk = await existsOrPlanned(
+      vendorId,
+      planned.vendors,
+      existsCache.vendor,
+      async () => !!(await prisma.vendor.findUnique({ where: { id: vendorId }, select: { id: true } })),
+    );
+    if (!vendorOk) {
+      errors.push({ scope: 'purchase_orders', legacyId: item.legacyId, message: `vendor not found: ${item.vendorLegacyId}` });
+      continue;
+    }
+
+    const totalAmount = parseNumber(item.totalAmount);
+    if (totalAmount == null || totalAmount < 0) {
+      errors.push({ scope: 'purchase_orders', legacyId: item.legacyId, message: 'totalAmount must be >= 0' });
+      continue;
+    }
+    const issueDate = parseDate(item.issueDate);
+    const dueDate = parseDate(item.dueDate);
+    const numberingDate = issueDate || dueDate || new Date();
+    const preferredNo = normalizeString(item.poNo);
+    const currency = normalizeString(item.currency) || 'JPY';
+
+    const exists = await prisma.purchaseOrder.findUnique({
+      where: { id },
+      select: { id: true, poNo: true, numberingSerial: true },
+    });
+    existsCache.purchaseOrder.set(id, !!exists);
+    if (!options.apply) {
+      if (exists) updated += 1;
+      else created += 1;
+      continue;
+    }
+
+    const lines = normalizeLines(item.lines).length
+      ? normalizeLines(item.lines)
+      : [
+          {
+            description: `Imported (${item.legacyId})`,
+            quantity: 1,
+            unitPrice: totalAmount,
+            taxRate: null,
+            taskLegacyId: null,
+            expenseLegacyId: null,
+          } satisfies PurchaseOrderLineInput,
+        ];
+
+    const lineData: Array<{
+      purchaseOrderId: string;
+      description: string;
+      quantity: number;
+      unitPrice: number;
+      taxRate: number | null;
+      taskId: string | null;
+      expenseId: string | null;
+    }> = [];
+    for (const line of lines) {
+      const quantity = parseNumber(line.quantity) ?? 1;
+      const unitPrice = parseNumber(line.unitPrice);
+      if (unitPrice == null || unitPrice < 0) {
+        errors.push({ scope: 'purchase_orders', legacyId: item.legacyId, message: 'line.unitPrice must be >= 0' });
+        continue;
+      }
+      const taskLegacyId = normalizeString(line.taskLegacyId);
+      const taskId = taskLegacyId
+        ? await resolveTaskId(options, planned, projectId, taskLegacyId, 'purchase_orders', item.legacyId, errors)
+        : null;
+      if (taskLegacyId && !taskId) continue;
+
+      const expenseLegacyId = normalizeString(line.expenseLegacyId);
+      const expenseId = expenseLegacyId ? makeId('expense', expenseLegacyId) : null;
+      if (expenseId) {
+        const ok = await existsOrPlanned(
+          expenseId,
+          planned.expenses,
+          existsCache.expense,
+          async () => !!(await prisma.expense.findUnique({ where: { id: expenseId }, select: { id: true } })),
+        );
+        if (!ok) {
+          errors.push({ scope: 'purchase_orders', legacyId: item.legacyId, message: `expense not found: ${expenseLegacyId}` });
+          continue;
+        }
+      }
+
+      lineData.push({
+        purchaseOrderId: id,
+        description: line.description,
+        quantity,
+        unitPrice,
+        taxRate: parseNumber(line.taxRate),
+        taskId,
+        expenseId,
+      });
+    }
+    if (errors.length) break;
+
+    let poNo: string;
+    let numberingSerial: number | null = null;
+    if (exists) {
+      poNo = exists.poNo;
+      numberingSerial = exists.numberingSerial ?? null;
+    } else if (preferredNo) {
+      poNo = preferredNo;
+    } else {
+      const allocation = await nextNumber('purchase_order', numberingDate);
+      poNo = allocation.number;
+      numberingSerial = allocation.serial;
+    }
+    if (!poNo) {
+      errors.push({ scope: 'purchase_orders', legacyId: item.legacyId, message: 'failed to determine poNo' });
+      continue;
+    }
+
+    const data = {
+      id,
+      projectId,
+      vendorId,
+      poNo,
+      issueDate,
+      dueDate,
+      currency,
+      totalAmount,
+      status: parseEnumValue(item.status, DOC_STATUS_VALUES, 'draft'),
+      pdfUrl: undefined,
+      numberingSerial: numberingSerial ?? undefined,
+      deletedAt: null,
+      deletedReason: null,
+    };
+
+    try {
+      await prisma.$transaction(async (tx: any) => {
+        if (exists) {
+          await tx.purchaseOrder.update({
+            where: { id },
+            data: {
+              projectId,
+              vendorId,
+              issueDate,
+              dueDate,
+              currency,
+              totalAmount,
+              status: data.status,
+              deletedAt: null,
+              deletedReason: null,
+            },
+          });
+        } else {
+          await tx.purchaseOrder.create({ data });
+        }
+        await tx.purchaseOrderLine.deleteMany({ where: { purchaseOrderId: id } });
+        if (lineData.length) {
+          await tx.purchaseOrderLine.createMany({ data: lineData });
+        }
+      });
+      if (exists) updated += 1;
+      else created += 1;
+      existsCache.purchaseOrder.set(id, true);
+    } catch (err) {
+      errors.push({
+        scope: 'purchase_orders',
+        legacyId: item.legacyId,
+        message: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+  return { created, updated };
+}
+
+async function importVendorQuotes(
+  options: CliOptions,
+  items: VendorQuoteInput[],
+  planned: PlannedIds,
+  errors: ImportError[],
+) {
+  if (options.only && !options.only.has('vendor_quotes')) return { created: 0, updated: 0 };
+  ensureNoDuplicates(
+    items.map((item) => ({ legacyId: item.legacyId, code: normalizeString(item.quoteNo) })),
+    'vendor_quotes',
+    errors,
+  );
+  if (errors.length) return { created: 0, updated: 0 };
+
+  let created = 0;
+  let updated = 0;
+  for (const item of items) {
+    const id = makeId('vendor_quote', item.legacyId);
+    const projectId = makeId('project', item.projectLegacyId);
+    const vendorId = makeId('vendor', item.vendorLegacyId);
+    const projectOk = await existsOrPlanned(
+      projectId,
+      planned.projects,
+      existsCache.project,
+      async () => !!(await prisma.project.findUnique({ where: { id: projectId }, select: { id: true } })),
+    );
+    if (!projectOk) {
+      errors.push({ scope: 'vendor_quotes', legacyId: item.legacyId, message: `project not found: ${item.projectLegacyId}` });
+      continue;
+    }
+    const vendorOk = await existsOrPlanned(
+      vendorId,
+      planned.vendors,
+      existsCache.vendor,
+      async () => !!(await prisma.vendor.findUnique({ where: { id: vendorId }, select: { id: true } })),
+    );
+    if (!vendorOk) {
+      errors.push({ scope: 'vendor_quotes', legacyId: item.legacyId, message: `vendor not found: ${item.vendorLegacyId}` });
+      continue;
+    }
+
+    const totalAmount = parseNumber(item.totalAmount);
+    if (totalAmount == null || totalAmount < 0) {
+      errors.push({ scope: 'vendor_quotes', legacyId: item.legacyId, message: 'totalAmount must be >= 0' });
+      continue;
+    }
+    const issueDate = parseDate(item.issueDate);
+    const numberingDate = issueDate || new Date();
+    const preferredNo = normalizeString(item.quoteNo);
+    const currency = normalizeString(item.currency) || 'JPY';
+
+    const exists = await prisma.vendorQuote.findUnique({
+      where: { id },
+      select: { id: true, quoteNo: true },
+    });
+    existsCache.vendorQuote.set(id, !!exists);
+    if (!options.apply) {
+      if (exists) updated += 1;
+      else created += 1;
+      continue;
+    }
+
+    const quoteNo = preferredNo
+      ? preferredNo
+      : exists?.quoteNo
+        ? exists.quoteNo
+        : (await nextNumber('vendor_quote', numberingDate)).number;
+    if (!quoteNo) {
+      errors.push({ scope: 'vendor_quotes', legacyId: item.legacyId, message: 'failed to allocate quoteNo' });
+      continue;
+    }
+
+    const data = {
+      id,
+      projectId,
+      vendorId,
+      quoteNo,
+      issueDate,
+      currency,
+      totalAmount,
+      status: parseEnumValue(item.status, DOC_STATUS_VALUES, 'received'),
+      documentUrl: normalizeString(item.documentUrl) ?? undefined,
+      deletedAt: null,
+      deletedReason: null,
+    };
+
+    try {
+      if (exists) {
+        await prisma.vendorQuote.update({
+          where: { id },
+          data: {
+            projectId,
+            vendorId,
+            quoteNo,
+            issueDate,
+            currency,
+            totalAmount,
+            status: data.status,
+            documentUrl: data.documentUrl,
+            deletedAt: null,
+            deletedReason: null,
+          },
+        });
+        updated += 1;
+      } else {
+        await prisma.vendorQuote.create({ data });
+        created += 1;
+      }
+      existsCache.vendorQuote.set(id, true);
+    } catch (err) {
+      errors.push({
+        scope: 'vendor_quotes',
+        legacyId: item.legacyId,
+        message: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+  return { created, updated };
+}
+
+async function importVendorInvoices(
+  options: CliOptions,
+  items: VendorInvoiceInput[],
+  planned: PlannedIds,
+  errors: ImportError[],
+) {
+  if (options.only && !options.only.has('vendor_invoices')) return { created: 0, updated: 0 };
+  ensureNoDuplicates(
+    items.map((item) => ({ legacyId: item.legacyId, code: normalizeString(item.vendorInvoiceNo) })),
+    'vendor_invoices',
+    errors,
+  );
+  if (errors.length) return { created: 0, updated: 0 };
+
+  let created = 0;
+  let updated = 0;
+  for (const item of items) {
+    const id = makeId('vendor_invoice', item.legacyId);
+    const projectId = makeId('project', item.projectLegacyId);
+    const vendorId = makeId('vendor', item.vendorLegacyId);
+    const projectOk = await existsOrPlanned(
+      projectId,
+      planned.projects,
+      existsCache.project,
+      async () => !!(await prisma.project.findUnique({ where: { id: projectId }, select: { id: true } })),
+    );
+    if (!projectOk) {
+      errors.push({ scope: 'vendor_invoices', legacyId: item.legacyId, message: `project not found: ${item.projectLegacyId}` });
+      continue;
+    }
+    const vendorOk = await existsOrPlanned(
+      vendorId,
+      planned.vendors,
+      existsCache.vendor,
+      async () => !!(await prisma.vendor.findUnique({ where: { id: vendorId }, select: { id: true } })),
+    );
+    if (!vendorOk) {
+      errors.push({ scope: 'vendor_invoices', legacyId: item.legacyId, message: `vendor not found: ${item.vendorLegacyId}` });
+      continue;
+    }
+
+    const totalAmount = parseNumber(item.totalAmount);
+    if (totalAmount == null || totalAmount < 0) {
+      errors.push({ scope: 'vendor_invoices', legacyId: item.legacyId, message: 'totalAmount must be >= 0' });
+      continue;
+    }
+    const receivedDate = parseDate(item.receivedDate);
+    const dueDate = parseDate(item.dueDate);
+    const numberingDate = receivedDate || dueDate || new Date();
+    const preferredNo = normalizeString(item.vendorInvoiceNo);
+    const currency = normalizeString(item.currency) || 'JPY';
+
+    const exists = await prisma.vendorInvoice.findUnique({
+      where: { id },
+      select: { id: true, vendorInvoiceNo: true, numberingSerial: true },
+    });
+    existsCache.vendorInvoice.set(id, !!exists);
+    if (!options.apply) {
+      if (exists) updated += 1;
+      else created += 1;
+      continue;
+    }
+
+    let vendorInvoiceNo: string | null = null;
+    let numberingSerial: number | null = null;
+    if (preferredNo) {
+      vendorInvoiceNo = preferredNo;
+    } else if (exists?.vendorInvoiceNo) {
+      vendorInvoiceNo = exists.vendorInvoiceNo;
+      numberingSerial = exists.numberingSerial ?? null;
+    } else {
+      const allocation = await nextNumber('vendor_invoice', numberingDate);
+      vendorInvoiceNo = allocation.number;
+      numberingSerial = allocation.serial;
+    }
+    if (!vendorInvoiceNo) {
+      errors.push({ scope: 'vendor_invoices', legacyId: item.legacyId, message: 'failed to determine vendorInvoiceNo' });
+      continue;
+    }
+
+    const data = {
+      id,
+      projectId,
+      vendorId,
+      vendorInvoiceNo,
+      receivedDate,
+      dueDate,
+      currency,
+      totalAmount,
+      status: parseEnumValue(item.status, DOC_STATUS_VALUES, 'received'),
+      documentUrl: normalizeString(item.documentUrl) ?? undefined,
+      numberingSerial: numberingSerial ?? undefined,
+      deletedAt: null,
+      deletedReason: null,
+    };
+
+    try {
+      if (exists) {
+        await prisma.vendorInvoice.update({
+          where: { id },
+          data: {
+            projectId,
+            vendorId,
+            vendorInvoiceNo,
+            receivedDate,
+            dueDate,
+            currency,
+            totalAmount,
+            status: data.status,
+            documentUrl: data.documentUrl,
+            numberingSerial: numberingSerial ?? undefined,
+            deletedAt: null,
+            deletedReason: null,
+          },
+        });
+        updated += 1;
+      } else {
+        await prisma.vendorInvoice.create({ data });
+        created += 1;
+      }
+      existsCache.vendorInvoice.set(id, true);
+    } catch (err) {
+      errors.push({
+        scope: 'vendor_invoices',
         legacyId: item.legacyId,
         message: err instanceof Error ? err.message : String(err),
       });
@@ -923,6 +1910,7 @@ async function importTimeEntries(
       approvedAt: null,
     };
     const exists = await prisma.timeEntry.findUnique({ where: { id }, select: { id: true } });
+    existsCache.timeEntry.set(id, !!exists);
     if (!options.apply) {
       if (exists) updated += 1;
       else created += 1;
@@ -936,6 +1924,7 @@ async function importTimeEntries(
         await prisma.timeEntry.create({ data });
         created += 1;
       }
+      existsCache.timeEntry.set(id, true);
     } catch (err) {
       errors.push({
         scope: 'time_entries',
@@ -1003,6 +1992,7 @@ async function importExpenses(
       receiptUrl: normalizeString(item.receiptUrl) ?? undefined,
     };
     const exists = await prisma.expense.findUnique({ where: { id }, select: { id: true } });
+    existsCache.expense.set(id, !!exists);
     if (!options.apply) {
       if (exists) updated += 1;
       else created += 1;
@@ -1016,6 +2006,7 @@ async function importExpenses(
         await prisma.expense.create({ data });
         created += 1;
       }
+      existsCache.expense.set(id, true);
     } catch (err) {
       errors.push({
         scope: 'expenses',
@@ -1061,6 +2052,21 @@ async function main() {
   const milestones = (readJsonIfExists<MilestoneInput[]>(
     path.join(inputDir, 'milestones.json'),
   ) ?? []) as MilestoneInput[];
+  const estimates = (readJsonIfExists<EstimateInput[]>(
+    path.join(inputDir, 'estimates.json'),
+  ) ?? []) as EstimateInput[];
+  const invoices = (readJsonIfExists<InvoiceInput[]>(
+    path.join(inputDir, 'invoices.json'),
+  ) ?? []) as InvoiceInput[];
+  const purchaseOrders = (readJsonIfExists<PurchaseOrderInput[]>(
+    path.join(inputDir, 'purchase_orders.json'),
+  ) ?? []) as PurchaseOrderInput[];
+  const vendorQuotes = (readJsonIfExists<VendorQuoteInput[]>(
+    path.join(inputDir, 'vendor_quotes.json'),
+  ) ?? []) as VendorQuoteInput[];
+  const vendorInvoices = (readJsonIfExists<VendorInvoiceInput[]>(
+    path.join(inputDir, 'vendor_invoices.json'),
+  ) ?? []) as VendorInvoiceInput[];
   const timeEntries = (readJsonIfExists<TimeEntryInput[]>(
     path.join(inputDir, 'time_entries.json'),
   ) ?? []) as TimeEntryInput[];
@@ -1073,6 +2079,14 @@ async function main() {
     vendors: new Set<string>(),
     projects: new Set<string>(),
     tasks: new Set<string>(),
+    milestones: new Set<string>(),
+    estimates: new Set<string>(),
+    invoices: new Set<string>(),
+    purchase_orders: new Set<string>(),
+    vendor_quotes: new Set<string>(),
+    vendor_invoices: new Set<string>(),
+    time_entries: new Set<string>(),
+    expenses: new Set<string>(),
   };
   if (shouldRun(options, 'customers')) {
     customers.forEach((item) => planned.customers.add(makeId('customer', item.legacyId)));
@@ -1085,6 +2099,34 @@ async function main() {
   }
   if (shouldRun(options, 'tasks')) {
     tasks.forEach((item) => planned.tasks.add(makeId('task', item.legacyId)));
+  }
+  if (shouldRun(options, 'milestones')) {
+    milestones.forEach((item) => planned.milestones.add(makeId('milestone', item.legacyId)));
+  }
+  if (shouldRun(options, 'estimates')) {
+    estimates.forEach((item) => planned.estimates.add(makeId('estimate', item.legacyId)));
+  }
+  if (shouldRun(options, 'invoices')) {
+    invoices.forEach((item) => planned.invoices.add(makeId('invoice', item.legacyId)));
+  }
+  if (shouldRun(options, 'purchase_orders')) {
+    purchaseOrders.forEach((item) =>
+      planned.purchase_orders.add(makeId('purchase_order', item.legacyId)),
+    );
+  }
+  if (shouldRun(options, 'vendor_quotes')) {
+    vendorQuotes.forEach((item) => planned.vendor_quotes.add(makeId('vendor_quote', item.legacyId)));
+  }
+  if (shouldRun(options, 'vendor_invoices')) {
+    vendorInvoices.forEach((item) =>
+      planned.vendor_invoices.add(makeId('vendor_invoice', item.legacyId)),
+    );
+  }
+  if (shouldRun(options, 'time_entries')) {
+    timeEntries.forEach((item) => planned.time_entries.add(makeId('time_entry', item.legacyId)));
+  }
+  if (shouldRun(options, 'expenses')) {
+    expenses.forEach((item) => planned.expenses.add(makeId('expense', item.legacyId)));
   }
 
   console.log('[migration-po] input dir:', inputDir);
@@ -1112,6 +2154,26 @@ async function main() {
   if (shouldRun(options, 'milestones')) {
     const res = await importMilestones(options, milestones, planned, errors);
     summary.milestones = { ...res, total: milestones.length };
+  }
+  if (shouldRun(options, 'estimates')) {
+    const res = await importEstimates(options, estimates, planned, errors);
+    summary.estimates = { ...res, total: estimates.length };
+  }
+  if (shouldRun(options, 'invoices')) {
+    const res = await importInvoices(options, invoices, planned, errors);
+    summary.invoices = { ...res, total: invoices.length };
+  }
+  if (shouldRun(options, 'purchase_orders')) {
+    const res = await importPurchaseOrders(options, purchaseOrders, planned, errors);
+    summary.purchase_orders = { ...res, total: purchaseOrders.length };
+  }
+  if (shouldRun(options, 'vendor_quotes')) {
+    const res = await importVendorQuotes(options, vendorQuotes, planned, errors);
+    summary.vendor_quotes = { ...res, total: vendorQuotes.length };
+  }
+  if (shouldRun(options, 'vendor_invoices')) {
+    const res = await importVendorInvoices(options, vendorInvoices, planned, errors);
+    summary.vendor_invoices = { ...res, total: vendorInvoices.length };
   }
   if (shouldRun(options, 'time_entries')) {
     const res = await importTimeEntries(options, timeEntries, planned, errors);
@@ -1177,6 +2239,41 @@ async function main() {
         'milestones',
         milestones.map((item) => makeId('milestone', item.legacyId)),
         async (ids) => prisma.projectMilestone.count({ where: { id: { in: ids } } }),
+      );
+    }
+    if (shouldRun(options, 'estimates')) {
+      await verifyIds(
+        'estimates',
+        estimates.map((item) => makeId('estimate', item.legacyId)),
+        async (ids) => prisma.estimate.count({ where: { id: { in: ids } } }),
+      );
+    }
+    if (shouldRun(options, 'invoices')) {
+      await verifyIds(
+        'invoices',
+        invoices.map((item) => makeId('invoice', item.legacyId)),
+        async (ids) => prisma.invoice.count({ where: { id: { in: ids } } }),
+      );
+    }
+    if (shouldRun(options, 'purchase_orders')) {
+      await verifyIds(
+        'purchase_orders',
+        purchaseOrders.map((item) => makeId('purchase_order', item.legacyId)),
+        async (ids) => prisma.purchaseOrder.count({ where: { id: { in: ids } } }),
+      );
+    }
+    if (shouldRun(options, 'vendor_quotes')) {
+      await verifyIds(
+        'vendor_quotes',
+        vendorQuotes.map((item) => makeId('vendor_quote', item.legacyId)),
+        async (ids) => prisma.vendorQuote.count({ where: { id: { in: ids } } }),
+      );
+    }
+    if (shouldRun(options, 'vendor_invoices')) {
+      await verifyIds(
+        'vendor_invoices',
+        vendorInvoices.map((item) => makeId('vendor_invoice', item.legacyId)),
+        async (ids) => prisma.vendorInvoice.count({ where: { id: { in: ids } } }),
       );
     }
     if (shouldRun(options, 'time_entries')) {
