@@ -8,6 +8,8 @@ type Project = {
   status: string;
   parentId?: string | null;
   customerId?: string | null;
+  startDate?: string | null;
+  endDate?: string | null;
   currency?: string | null;
   planHours?: number | null;
   budgetCost?: number | null;
@@ -103,6 +105,8 @@ const emptyProject = {
   status: 'draft',
   parentId: '',
   customerId: '',
+  startDate: '',
+  endDate: '',
   planHours: '',
   budgetCost: '',
   reasonText: '',
@@ -162,6 +166,13 @@ const toDatetimeLocal = (value?: string | null) => {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '';
   return date.toISOString().slice(0, 16);
+};
+
+const toDateInput = (value?: string | null) => {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toISOString().slice(0, 10);
 };
 
 const parseDueDateOffsetDays = (value?: DueDateRule | null) => {
@@ -304,6 +315,8 @@ export const Projects: React.FC = () => {
 
   const projectPayload = useMemo(() => {
     const trimmedCustomerId = form.customerId.trim();
+    const trimmedStartDate = form.startDate.trim();
+    const trimmedEndDate = form.endDate.trim();
     const planHours = parseNumberInput(form.planHours);
     const budgetCost = parseNumberInput(form.budgetCost);
     return {
@@ -311,6 +324,8 @@ export const Projects: React.FC = () => {
       name: form.name.trim(),
       status: form.status || 'draft',
       customerId: trimmedCustomerId.length > 0 ? trimmedCustomerId : null,
+      startDate: trimmedStartDate.length > 0 ? trimmedStartDate : null,
+      endDate: trimmedEndDate.length > 0 ? trimmedEndDate : null,
       planHours,
       budgetCost,
     };
@@ -575,6 +590,8 @@ export const Projects: React.FC = () => {
       status: item.status || 'draft',
       parentId: item.parentId || '',
       customerId: item.customerId || '',
+      startDate: toDateInput(item.startDate),
+      endDate: toDateInput(item.endDate),
       planHours:
         item.planHours === null || item.planHours === undefined
           ? ''
@@ -959,6 +976,20 @@ export const Projects: React.FC = () => {
       </div>
       <div className="row" style={{ marginTop: 8 }}>
         <input
+          type="date"
+          aria-label="開始日"
+          value={form.startDate}
+          onChange={(e) => setForm({ ...form, startDate: e.target.value })}
+        />
+        <input
+          type="date"
+          aria-label="終了日"
+          value={form.endDate}
+          onChange={(e) => setForm({ ...form, endDate: e.target.value })}
+        />
+      </div>
+      <div className="row" style={{ marginTop: 8 }}>
+        <input
           type="number"
           inputMode="decimal"
           placeholder="予定工数 (h)"
@@ -1011,12 +1042,19 @@ export const Projects: React.FC = () => {
             ? customerMap.get(item.customerId)
             : undefined;
           const parent = item.parentId ? projectMap.get(item.parentId) : null;
+          const startDate = toDateInput(item.startDate);
+          const endDate = toDateInput(item.endDate);
+          const periodLabel =
+            startDate || endDate
+              ? `${startDate || '未設定'}〜${endDate || '未設定'}`
+              : '';
           return (
             <li key={item.id}>
               <span className="badge">{item.status}</span> {item.code} /{' '}
               {item.name}
               {parent && ` / 親: ${parent.code} ${parent.name}`}
               {customer && ` / ${customer.code} ${customer.name}`}
+              {periodLabel && ` / 期間: ${periodLabel}`}
               {item.planHours !== null &&
                 item.planHours !== undefined &&
                 ` / 予定工数: ${item.planHours}h`}

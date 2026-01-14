@@ -42,6 +42,12 @@ export const projectSchema = {
     customerId: Type.Optional(
       Type.Union([Type.String({ minLength: 1 }), Type.Null()]),
     ),
+    startDate: Type.Optional(
+      Type.Union([Type.String({ format: 'date' }), Type.Null()]),
+    ),
+    endDate: Type.Optional(
+      Type.Union([Type.String({ format: 'date' }), Type.Null()]),
+    ),
     parentId: Type.Optional(Type.String()),
     planHours: Type.Optional(Type.Number({ minimum: 0 })),
     budgetCost: Type.Optional(Type.Number({ minimum: 0 })),

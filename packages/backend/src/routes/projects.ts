@@ -55,6 +55,32 @@ function isPrivilegedRole(roles: string[]) {
   return roles.includes('admin') || roles.includes('mgmt');
 }
 
+function parseNullableDateField(body: any, key: string) {
+  const hasProp = Object.prototype.hasOwnProperty.call(body, key);
+  const value = hasProp ? (body[key] ? new Date(body[key]) : null) : undefined;
+  return { hasProp, value };
+}
+
+function isStartDateAfterEndDate(
+  startDate: Date | null | undefined,
+  endDate: Date | null | undefined,
+) {
+  return (
+    startDate instanceof Date &&
+    endDate instanceof Date &&
+    startDate.getTime() > endDate.getTime()
+  );
+}
+
+function sendInvalidProjectPeriodError(reply: any) {
+  return reply.status(400).send({
+    error: {
+      code: 'VALIDATION_ERROR',
+      message: 'startDate must be before or equal to endDate',
+    },
+  });
+}
+
 async function ensureProjectLeader(req: any, reply: any, projectId: string) {
   const userId = req.user?.userId;
   if (!userId) {
@@ -154,6 +180,13 @@ export async function registerProjectRoutes(app: FastifyInstance) {
         hasCustomerIdProp && body.customerId !== ''
           ? (body.customerId ?? null)
           : null;
+      const { hasProp: hasStartDateProp, value: startDate } =
+        parseNullableDateField(body, 'startDate');
+      const { hasProp: hasEndDateProp, value: endDate } =
+        parseNullableDateField(body, 'endDate');
+      if (isStartDateAfterEndDate(startDate, endDate)) {
+        return sendInvalidProjectPeriodError(reply);
+      }
       if (customerId) {
         const customer = await prisma.customer.findUnique({
           where: { id: customerId },
@@ -165,7 +198,12 @@ export async function registerProjectRoutes(app: FastifyInstance) {
           });
         }
       }
-      const data = hasCustomerIdProp ? { ...body, customerId } : { ...body };
+      const data = {
+        ...body,
+        ...(hasCustomerIdProp ? { customerId } : {}),
+        ...(hasStartDateProp ? { startDate } : {}),
+        ...(hasEndDateProp ? { endDate } : {}),
+      };
       const userId = req.user?.userId;
       const project = await prisma.$transaction(async (tx) => {
         const created = await tx.project.create({
@@ -274,9 +312,22 @@ export async function registerProjectRoutes(app: FastifyInstance) {
           });
         }
       }
+      const { hasProp: hasStartDateProp, value: startDate } =
+        parseNullableDateField(body, 'startDate');
+      const { hasProp: hasEndDateProp, value: endDate } =
+        parseNullableDateField(body, 'endDate');
+      const effectiveStartDate =
+        startDate === undefined ? current.startDate : startDate;
+      const effectiveEndDate =
+        endDate === undefined ? current.endDate : endDate;
+      if (isStartDateAfterEndDate(effectiveStartDate, effectiveEndDate)) {
+        return sendInvalidProjectPeriodError(reply);
+      }
       const data = { ...body };
       if (hasCustomerIdProp) data.customerId = customerId;
       if (hasParentIdProp) data.parentId = nextParentId;
+      if (hasStartDateProp) data.startDate = startDate;
+      if (hasEndDateProp) data.endDate = endDate;
       delete data.reasonText;
       const project = await prisma.project.update({
         where: { id: projectId },
