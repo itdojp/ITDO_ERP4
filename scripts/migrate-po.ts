@@ -1858,23 +1858,19 @@ async function importTimeEntries(
       continue;
     }
 
-    const taskId = item.taskLegacyId ? makeId('task', item.taskLegacyId) : null;
-    if (taskId) {
-      const taskOk = await existsOrPlanned(
-        taskId,
-        planned.tasks,
-        existsCache.task,
-        async () => !!(await prisma.projectTask.findUnique({ where: { id: taskId }, select: { id: true } })),
-      );
-      if (!taskOk) {
-        errors.push({
-          scope: 'time_entries',
-          legacyId: item.legacyId,
-          message: `task not found: ${item.taskLegacyId}`,
-        });
-        continue;
-      }
-    }
+    const taskLegacyId = normalizeString(item.taskLegacyId);
+    const taskId = taskLegacyId
+      ? await resolveTaskId(
+          options,
+          planned,
+          projectId,
+          taskLegacyId,
+          'time_entries',
+          item.legacyId,
+          errors,
+        )
+      : null;
+    if (taskLegacyId && !taskId) continue;
     const workDate = parseDate(item.workDate);
     if (!workDate) {
       errors.push({
@@ -2206,6 +2202,17 @@ async function main() {
       }
     }
 
+    function toNumber(value: unknown): number {
+      if (value == null) return 0;
+      if (typeof value === 'number') return value;
+      return Number(String(value));
+    }
+
+    function isClose(a: number, b: number, tolerance: number): boolean {
+      if (!Number.isFinite(a) || !Number.isFinite(b)) return false;
+      return Math.abs(a - b) <= tolerance;
+    }
+
     if (shouldRun(options, 'customers')) {
       await verifyIds(
         'customers',
@@ -2289,6 +2296,66 @@ async function main() {
         expenses.map((item) => makeId('expense', item.legacyId)),
         async (ids) => prisma.expense.count({ where: { id: { in: ids } } }),
       );
+    }
+
+    if (shouldRun(options, 'estimates')) {
+      const docs = await prisma.estimate.findMany({
+        where: { id: { in: estimates.map((item) => makeId('estimate', item.legacyId)) } },
+        select: { id: true, estimateNo: true, totalAmount: true, lines: { select: { quantity: true, unitPrice: true } } },
+      });
+      for (const doc of docs) {
+        const total = toNumber(doc.totalAmount);
+        const sum = (doc.lines || []).reduce(
+          (acc: number, line: any) => acc + toNumber(line.quantity) * toNumber(line.unitPrice),
+          0,
+        );
+        if (!isClose(sum, total, 0.01)) {
+          verifyErrors.push({
+            scope: 'estimates',
+            message: `line total mismatch (${doc.estimateNo}): totalAmount=${total} lines=${sum}`,
+          });
+        }
+      }
+    }
+
+    if (shouldRun(options, 'invoices')) {
+      const docs = await prisma.invoice.findMany({
+        where: { id: { in: invoices.map((item) => makeId('invoice', item.legacyId)) } },
+        select: { id: true, invoiceNo: true, totalAmount: true, lines: { select: { quantity: true, unitPrice: true } } },
+      });
+      for (const doc of docs) {
+        const total = toNumber(doc.totalAmount);
+        const sum = (doc.lines || []).reduce(
+          (acc: number, line: any) => acc + toNumber(line.quantity) * toNumber(line.unitPrice),
+          0,
+        );
+        if (!isClose(sum, total, 0.01)) {
+          verifyErrors.push({
+            scope: 'invoices',
+            message: `line total mismatch (${doc.invoiceNo}): totalAmount=${total} lines=${sum}`,
+          });
+        }
+      }
+    }
+
+    if (shouldRun(options, 'purchase_orders')) {
+      const docs = await prisma.purchaseOrder.findMany({
+        where: { id: { in: purchaseOrders.map((item) => makeId('purchase_order', item.legacyId)) } },
+        select: { id: true, poNo: true, totalAmount: true, lines: { select: { quantity: true, unitPrice: true } } },
+      });
+      for (const doc of docs) {
+        const total = toNumber(doc.totalAmount);
+        const sum = (doc.lines || []).reduce(
+          (acc: number, line: any) => acc + toNumber(line.quantity) * toNumber(line.unitPrice),
+          0,
+        );
+        if (!isClose(sum, total, 0.01)) {
+          verifyErrors.push({
+            scope: 'purchase_orders',
+            message: `line total mismatch (${doc.poNo}): totalAmount=${total} lines=${sum}`,
+          });
+        }
+      }
     }
 
     if (verifyErrors.length) {

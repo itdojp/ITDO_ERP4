@@ -12,9 +12,10 @@
 - [ ] #533 PO→ERP4 データ移行 実行ツール
   - [x] 入力仕様（JSON）と実行手順を docs に整理（PR #534）
   - [x] 最小import（customers/vendors/projects/tasks/milestones/time/expense）（PR #534）
-  - [ ] 見積/請求/発注/業者書類の最小import（estimate/invoice/PO/VQ/VI）
+  - [x] 見積/請求/発注/業者書類の最小import（estimate/invoice/PO/VQ/VI）（PR #535）
   - [x] 取込後の整合チェック（件数一致）を追加（PR #534）
-  - [ ] 取込後の整合チェック（参照切れ/合計）を追加
+  - [x] 取込後の整合チェック（参照切れ/明細合計）を追加（PR #535）
+  - [ ] 取込後の整合チェック（プロジェクト別合計など）を追加
   - [ ] CSV 取込対応（後続）
 
 ## 次アクション（チャット）
