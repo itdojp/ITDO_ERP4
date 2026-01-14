@@ -154,6 +154,36 @@ export async function registerProjectRoutes(app: FastifyInstance) {
         hasCustomerIdProp && body.customerId !== ''
           ? (body.customerId ?? null)
           : null;
+      const hasStartDateProp = Object.prototype.hasOwnProperty.call(
+        body,
+        'startDate',
+      );
+      const hasEndDateProp = Object.prototype.hasOwnProperty.call(
+        body,
+        'endDate',
+      );
+      const startDate = hasStartDateProp
+        ? body.startDate
+          ? new Date(body.startDate)
+          : null
+        : undefined;
+      const endDate = hasEndDateProp
+        ? body.endDate
+          ? new Date(body.endDate)
+          : null
+        : undefined;
+      if (
+        startDate instanceof Date &&
+        endDate instanceof Date &&
+        startDate.getTime() > endDate.getTime()
+      ) {
+        return reply.status(400).send({
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'startDate must be before or equal to endDate',
+          },
+        });
+      }
       if (customerId) {
         const customer = await prisma.customer.findUnique({
           where: { id: customerId },
@@ -165,7 +195,12 @@ export async function registerProjectRoutes(app: FastifyInstance) {
           });
         }
       }
-      const data = hasCustomerIdProp ? { ...body, customerId } : { ...body };
+      const data = {
+        ...body,
+        ...(hasCustomerIdProp ? { customerId } : {}),
+        ...(hasStartDateProp ? { startDate } : {}),
+        ...(hasEndDateProp ? { endDate } : {}),
+      };
       const userId = req.user?.userId;
       const project = await prisma.$transaction(async (tx) => {
         const created = await tx.project.create({
@@ -274,9 +309,45 @@ export async function registerProjectRoutes(app: FastifyInstance) {
           });
         }
       }
+      const hasStartDateProp = Object.prototype.hasOwnProperty.call(
+        body,
+        'startDate',
+      );
+      const hasEndDateProp = Object.prototype.hasOwnProperty.call(
+        body,
+        'endDate',
+      );
+      const startDate = hasStartDateProp
+        ? body.startDate
+          ? new Date(body.startDate)
+          : null
+        : undefined;
+      const endDate = hasEndDateProp
+        ? body.endDate
+          ? new Date(body.endDate)
+          : null
+        : undefined;
+      const effectiveStartDate =
+        startDate === undefined ? current.startDate : startDate;
+      const effectiveEndDate =
+        endDate === undefined ? current.endDate : endDate;
+      if (
+        effectiveStartDate instanceof Date &&
+        effectiveEndDate instanceof Date &&
+        effectiveStartDate.getTime() > effectiveEndDate.getTime()
+      ) {
+        return reply.status(400).send({
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'startDate must be before or equal to endDate',
+          },
+        });
+      }
       const data = { ...body };
       if (hasCustomerIdProp) data.customerId = customerId;
       if (hasParentIdProp) data.parentId = nextParentId;
+      if (hasStartDateProp) data.startDate = startDate;
+      if (hasEndDateProp) data.endDate = endDate;
       delete data.reasonText;
       const project = await prisma.project.update({
         where: { id: projectId },
