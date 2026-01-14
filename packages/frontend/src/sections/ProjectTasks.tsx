@@ -16,6 +16,7 @@ const buildInitialForm = (projectId?: string) => ({
   name: '',
   status: '',
   parentTaskId: '',
+  reasonText: '',
 });
 
 const errorDetail = (err: unknown) => {
@@ -39,7 +40,12 @@ export const ProjectTasks: React.FC = () => {
   );
   const [items, setItems] = useState<ProjectTask[]>([]);
   const [editing, setEditing] = useState<ProjectTask | null>(null);
+  const [editingOriginalParentTaskId, setEditingOriginalParentTaskId] =
+    useState<string | null>(null);
   const [message, setMessage] = useState('');
+  const isPrivileged = (auth?.roles ?? []).some((role) =>
+    ['admin', 'mgmt'].includes(role),
+  );
 
   const handleProjectSelect = useCallback((projectId: string) => {
     setForm((prev) => ({ ...prev, projectId }));
@@ -56,6 +62,14 @@ export const ProjectTasks: React.FC = () => {
     () => new Map(items.map((task) => [task.id, task])),
     [items],
   );
+
+  const trimmedParentTaskId = form.parentTaskId.trim();
+  const nextParentTaskId =
+    trimmedParentTaskId.length > 0 ? trimmedParentTaskId : null;
+  const parentChanged =
+    editing !== null &&
+    nextParentTaskId !== (editingOriginalParentTaskId ?? null);
+  const trimmedReasonText = form.reasonText.trim();
 
   const renderProject = (projectId: string) => {
     const project = projectMap.get(projectId);
@@ -88,6 +102,7 @@ export const ProjectTasks: React.FC = () => {
   const resetForm = useCallback(() => {
     setForm((prev) => ({ ...buildInitialForm(prev.projectId) }));
     setEditing(null);
+    setEditingOriginalParentTaskId(null);
   }, []);
 
   useEffect(() => {
@@ -98,7 +113,14 @@ export const ProjectTasks: React.FC = () => {
     if (!editing) return;
     if (editing.projectId === form.projectId) return;
     setEditing(null);
-    setForm((prev) => ({ ...prev, name: '', status: '', parentTaskId: '' }));
+    setEditingOriginalParentTaskId(null);
+    setForm((prev) => ({
+      ...prev,
+      name: '',
+      status: '',
+      parentTaskId: '',
+      reasonText: '',
+    }));
   }, [editing, form.projectId]);
 
   const save = async () => {
@@ -112,7 +134,11 @@ export const ProjectTasks: React.FC = () => {
       return;
     }
     const status = form.status.trim();
-    const parentTaskId = form.parentTaskId.trim();
+    const parentTaskId = trimmedParentTaskId;
+    if (editing && parentChanged && !trimmedReasonText) {
+      setMessage('親タスクを変更する場合は理由を入力してください');
+      return;
+    }
     try {
       if (editing) {
         const updated = await api<ProjectTask>(
@@ -123,6 +149,7 @@ export const ProjectTasks: React.FC = () => {
               name,
               status: status || undefined,
               parentTaskId,
+              ...(parentChanged ? { reasonText: trimmedReasonText } : {}),
             }),
           },
         );
@@ -156,12 +183,14 @@ export const ProjectTasks: React.FC = () => {
 
   const startEdit = (item: ProjectTask) => {
     setEditing(item);
+    setEditingOriginalParentTaskId(item.parentTaskId ?? null);
     setForm((prev) => ({
       ...prev,
       projectId: item.projectId,
       name: item.name,
       status: item.status || '',
       parentTaskId: item.parentTaskId || '',
+      reasonText: '',
     }));
   };
 
@@ -255,6 +284,22 @@ export const ProjectTasks: React.FC = () => {
             </button>
           )}
         </div>
+        {editing && (
+          <div style={{ marginTop: 8 }}>
+            <textarea
+              placeholder={
+                parentChanged
+                  ? '親タスクの変更理由（必須）'
+                  : '親タスクの変更理由（親変更時のみ必須）'
+              }
+              aria-label="親タスクの変更理由"
+              value={form.reasonText}
+              onChange={(e) => setForm({ ...form, reasonText: e.target.value })}
+              style={{ width: '100%', minHeight: 60 }}
+              disabled={!parentChanged}
+            />
+          </div>
+        )}
       </div>
 
       <ul className="list" style={{ marginTop: 12 }}>
@@ -278,12 +323,14 @@ export const ProjectTasks: React.FC = () => {
                 >
                   編集
                 </button>
-                <button
-                  className="button secondary"
-                  onClick={() => remove(item)}
-                >
-                  削除
-                </button>
+                {isPrivileged && (
+                  <button
+                    className="button secondary"
+                    onClick={() => remove(item)}
+                  >
+                    削除
+                  </button>
+                )}
               </div>
             </li>
           );

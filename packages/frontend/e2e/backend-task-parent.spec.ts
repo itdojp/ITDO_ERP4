@@ -42,7 +42,7 @@ test('task parent can be updated and cleared @extended', async ({ request }) => 
   await ensureOk(childRes);
   const child = await childRes.json();
 
-  const patchRes = await request.patch(
+  const missingReasonRes = await request.patch(
     `${apiBase}/projects/${encodeURIComponent(demoProjectId)}/tasks/${encodeURIComponent(
       child.id,
     )}`,
@@ -51,16 +51,42 @@ test('task parent can be updated and cleared @extended', async ({ request }) => 
       headers: authHeaders,
     },
   );
+  expect(missingReasonRes.ok()).toBeFalsy();
+  expect(missingReasonRes.status()).toBe(400);
+  const missingReasonBody = await missingReasonRes.json();
+  expect(missingReasonBody?.error?.code).toBe('INVALID_REASON');
+
+  const patchRes = await request.patch(
+    `${apiBase}/projects/${encodeURIComponent(demoProjectId)}/tasks/${encodeURIComponent(
+      child.id,
+    )}`,
+    {
+      data: { parentTaskId: parent.id, reasonText: 'e2e: link parent' },
+      headers: authHeaders,
+    },
+  );
   await ensureOk(patchRes);
   const patched = await patchRes.json();
   expect(patched.parentTaskId).toBe(parent.id);
+
+  const missingClearReasonRes = await request.patch(
+    `${apiBase}/projects/${encodeURIComponent(demoProjectId)}/tasks/${encodeURIComponent(
+      child.id,
+    )}`,
+    {
+      data: { parentTaskId: '' },
+      headers: authHeaders,
+    },
+  );
+  expect(missingClearReasonRes.ok()).toBeFalsy();
+  expect(missingClearReasonRes.status()).toBe(400);
 
   const clearRes = await request.patch(
     `${apiBase}/projects/${encodeURIComponent(demoProjectId)}/tasks/${encodeURIComponent(
       child.id,
     )}`,
     {
-      data: { parentTaskId: '' },
+      data: { parentTaskId: '', reasonText: 'e2e: clear parent' },
       headers: authHeaders,
     },
   );
@@ -73,7 +99,7 @@ test('task parent can be updated and cleared @extended', async ({ request }) => 
       child.id,
     )}`,
     {
-      data: { parentTaskId: child.id },
+      data: { parentTaskId: child.id, reasonText: 'e2e: self parent' },
       headers: authHeaders,
     },
   );
@@ -85,7 +111,7 @@ test('task parent can be updated and cleared @extended', async ({ request }) => 
       child.id,
     )}`,
     {
-      data: { parentTaskId: parent.id },
+      data: { parentTaskId: parent.id, reasonText: 'e2e: link parent' },
       headers: authHeaders,
     },
   );
@@ -95,7 +121,7 @@ test('task parent can be updated and cleared @extended', async ({ request }) => 
       parent.id,
     )}`,
     {
-      data: { parentTaskId: child.id },
+      data: { parentTaskId: child.id, reasonText: 'e2e: circular' },
       headers: authHeaders,
     },
   );
