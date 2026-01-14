@@ -12,13 +12,15 @@ npm run dev
 
 このフロントエンドは `@itdojp/design-system` を利用します。
 
-### GitHub Packages 認証（必要）
+### 現状の導入方式
 
-`@itdojp` scope は GitHub Packages（`npm.pkg.github.com`）から取得します（`.npmrc` 参照）。
+現状は GitHub Packages 側の公開・権限設定が未確定なため、`git+https` で
+`itdo-design-system`（`v1.0.0`）を取得し、`postinstall` で `dist/` を生成します。
 
-ローカル実行では `NODE_AUTH_TOKEN` が必要です。
+### （将来）GitHub Packages を使う場合
 
-例:
+`.npmrc` は `@itdojp` scope を GitHub Packages（`npm.pkg.github.com`）へ向ける設定です。
+切り替えた場合は `NODE_AUTH_TOKEN` が必要になります。
 
 ```bash
 gh auth refresh -s read:packages
@@ -28,5 +30,4 @@ cd packages/frontend
 npm install
 ```
 
-CI では `.github/workflows/ci.yml` で `packages: read` と `NODE_AUTH_TOKEN` を設定しています。
-
+CI 側は `.github/workflows/ci.yml` に `packages: read` と `NODE_AUTH_TOKEN` の下地があります。
