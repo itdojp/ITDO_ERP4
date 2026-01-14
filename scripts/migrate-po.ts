@@ -10,6 +10,7 @@ import { nextNumber } from '../packages/backend/dist/services/numbering.js';
 
 type CliOptions = {
   inputDir: string;
+  inputFormat: 'json' | 'csv';
   apply: boolean;
   only: Set<string> | null;
 };
@@ -72,10 +73,11 @@ function shouldShowHelp(): boolean {
 
 function printHelp() {
   const lines = [
-    'Usage: scripts/migrate-po.ts [--input-dir=DIR] [--only=customers,vendors,...] [--apply]',
+    'Usage: scripts/migrate-po.ts [--input-dir=DIR] [--input-format=json|csv] [--only=customers,vendors,...] [--apply]',
     '',
     'Options:',
     '  --input-dir=DIR   Input directory (default: tmp/migration/po)',
+    '  --input-format=F  Input format: json|csv (default: json)',
     '  --only=LIST       Comma-separated scopes: customers,vendors,projects,tasks,milestones,estimates,invoices,purchase_orders,vendor_quotes,vendor_invoices,time_entries,expenses',
     '  --apply           Apply changes to DB (requires MIGRATION_CONFIRM=1)',
     '',
@@ -84,6 +86,14 @@ function printHelp() {
     '  MIGRATION_CONFIRM=1 npx --prefix packages/backend ts-node --project packages/backend/tsconfig.json scripts/migrate-po.ts --apply',
   ];
   console.log(lines.join('\n'));
+}
+
+function parseInputFormat(value?: string): 'json' | 'csv' {
+  if (!value) return 'json';
+  const normalized = value.trim().toLowerCase();
+  if (normalized === 'json') return 'json';
+  if (normalized === 'csv') return 'csv';
+  throw new Error(`invalid --input-format: ${value} (expected: json|csv)`);
 }
 
 function parseOnly(value?: string): Set<string> | null {
@@ -160,6 +170,162 @@ function readJsonIfExists<T>(filePath: string): T | null {
   const raw = fs.readFileSync(filePath, 'utf8');
   if (!raw.trim()) return null;
   return JSON.parse(raw) as T;
+}
+
+type CsvRecord = Record<string, string | null>;
+
+function parseCsvRaw(value: string): string[][] {
+  const rows: string[][] = [];
+  let currentRow: string[] = [];
+  let currentField = '';
+  let inQuotes = false;
+
+  const input = value.replace(/^\uFEFF/, '');
+  for (let idx = 0; idx < input.length; idx += 1) {
+    const ch = input[idx];
+    if (inQuotes) {
+      if (ch === '"') {
+        const next = input[idx + 1];
+        if (next === '"') {
+          currentField += '"';
+          idx += 1;
+          continue;
+        }
+        inQuotes = false;
+        continue;
+      }
+      currentField += ch;
+      continue;
+    }
+
+    if (ch === '"') {
+      inQuotes = true;
+      continue;
+    }
+    if (ch === ',') {
+      currentRow.push(currentField);
+      currentField = '';
+      continue;
+    }
+    if (ch === '\n' || ch === '\r') {
+      if (ch === '\r' && input[idx + 1] === '\n') idx += 1;
+      currentRow.push(currentField);
+      currentField = '';
+      const isEmptyRow = currentRow.every((cell) => !cell.trim());
+      if (!isEmptyRow) rows.push(currentRow);
+      currentRow = [];
+      continue;
+    }
+    currentField += ch;
+  }
+
+  currentRow.push(currentField);
+  if (!currentRow.every((cell) => !cell.trim())) rows.push(currentRow);
+  return rows;
+}
+
+function normalizeCsvCell(value: string | undefined): string | null {
+  if (value == null) return null;
+  const trimmed = value.trim();
+  return trimmed ? trimmed : null;
+}
+
+function readCsvRecordsIfExists(
+  filePath: string,
+  scope: string,
+  errors: ImportError[],
+): CsvRecord[] | null {
+  if (!fs.existsSync(filePath)) return null;
+  const raw = fs.readFileSync(filePath, 'utf8');
+  if (!raw.trim()) return [];
+  const rows = parseCsvRaw(raw);
+  if (!rows.length) return [];
+  if (rows.length === 1) return [];
+
+  const header = rows[0].map((cell) => (cell ?? '').trim());
+  if (!header.length || header.every((v) => !v)) {
+    errors.push({ scope, message: `invalid CSV header: ${path.basename(filePath)}` });
+    return [];
+  }
+  const records: CsvRecord[] = [];
+  for (let rowIndex = 1; rowIndex < rows.length; rowIndex += 1) {
+    const row = rows[rowIndex];
+    const record: CsvRecord = {};
+    for (let colIndex = 0; colIndex < header.length; colIndex += 1) {
+      const key = header[colIndex];
+      if (!key) continue;
+      record[key] = normalizeCsvCell(row[colIndex]);
+    }
+    records.push(record);
+  }
+  return records;
+}
+
+function parseCsvBoolean(value: string | null): boolean | undefined {
+  if (value == null) return undefined;
+  const normalized = value.trim().toLowerCase();
+  if (['1', 'true', 'yes', 'y'].includes(normalized)) return true;
+  if (['0', 'false', 'no', 'n'].includes(normalized)) return false;
+  return undefined;
+}
+
+function parseCsvJsonArray(
+  scope: string,
+  legacyId: string | undefined,
+  value: string | null,
+  errors: ImportError[],
+): unknown[] | null {
+  if (value == null) return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  try {
+    const parsed = JSON.parse(trimmed);
+    if (!Array.isArray(parsed)) {
+      errors.push({
+        scope,
+        legacyId,
+        message: 'CSV lines must be a JSON array',
+      });
+      return null;
+    }
+    return parsed;
+  } catch (err) {
+    errors.push({
+      scope,
+      legacyId,
+      message: `failed to parse CSV JSON field: ${err instanceof Error ? err.message : String(err)}`,
+    });
+    return null;
+  }
+}
+
+function parseCsvItems<T extends { legacyId: string }>(
+  scope: string,
+  records: CsvRecord[],
+  required: string[],
+  errors: ImportError[],
+  postProcess?: (item: Record<string, unknown>, record: CsvRecord) => void,
+): T[] {
+  const items: T[] = [];
+  for (const record of records) {
+    const legacyId = record.legacyId ?? undefined;
+    let ok = true;
+    for (const key of required) {
+      if (!record[key]) {
+        errors.push({
+          scope,
+          legacyId,
+          message: `missing required field: ${key}`,
+        });
+        ok = false;
+      }
+    }
+    if (!ok) continue;
+    const item: Record<string, unknown> = { ...record };
+    postProcess?.(item, record);
+    items.push(item as T);
+  }
+  return items;
 }
 
 function parseDate(value: unknown): Date | null {
@@ -2019,49 +2185,114 @@ async function main() {
 
   const inputDir =
     parseArgValue('input-dir') || parseArgValue('inputDir') || 'tmp/migration/po';
+  const inputFormat = parseInputFormat(parseArgValue('input-format') || parseArgValue('inputFormat'));
   const apply = parseFlag('apply');
   const only = parseOnly(parseArgValue('only'));
-  const options: CliOptions = { inputDir, apply, only };
+  const options: CliOptions = { inputDir, inputFormat, apply, only };
   requireConfirm(apply);
 
   const errors: ImportError[] = [];
 
-  const customers = (readJsonIfExists<CustomerInput[]>(
-    path.join(inputDir, 'customers.json'),
-  ) ?? []) as CustomerInput[];
-  const vendors = (readJsonIfExists<VendorInput[]>(
-    path.join(inputDir, 'vendors.json'),
-  ) ?? []) as VendorInput[];
-  const projects = (readJsonIfExists<ProjectInput[]>(
-    path.join(inputDir, 'projects.json'),
-  ) ?? []) as ProjectInput[];
-  const tasks = (readJsonIfExists<TaskInput[]>(
-    path.join(inputDir, 'tasks.json'),
-  ) ?? []) as TaskInput[];
-  const milestones = (readJsonIfExists<MilestoneInput[]>(
-    path.join(inputDir, 'milestones.json'),
-  ) ?? []) as MilestoneInput[];
-  const estimates = (readJsonIfExists<EstimateInput[]>(
-    path.join(inputDir, 'estimates.json'),
-  ) ?? []) as EstimateInput[];
-  const invoices = (readJsonIfExists<InvoiceInput[]>(
-    path.join(inputDir, 'invoices.json'),
-  ) ?? []) as InvoiceInput[];
-  const purchaseOrders = (readJsonIfExists<PurchaseOrderInput[]>(
-    path.join(inputDir, 'purchase_orders.json'),
-  ) ?? []) as PurchaseOrderInput[];
-  const vendorQuotes = (readJsonIfExists<VendorQuoteInput[]>(
-    path.join(inputDir, 'vendor_quotes.json'),
-  ) ?? []) as VendorQuoteInput[];
-  const vendorInvoices = (readJsonIfExists<VendorInvoiceInput[]>(
-    path.join(inputDir, 'vendor_invoices.json'),
-  ) ?? []) as VendorInvoiceInput[];
-  const timeEntries = (readJsonIfExists<TimeEntryInput[]>(
-    path.join(inputDir, 'time_entries.json'),
-  ) ?? []) as TimeEntryInput[];
-  const expenses = (readJsonIfExists<ExpenseInput[]>(
-    path.join(inputDir, 'expenses.json'),
-  ) ?? []) as ExpenseInput[];
+  function readInputArray<T extends { legacyId: string }>(
+    scope: string,
+    baseName: string,
+    required: string[],
+    postProcess?: (item: Record<string, unknown>, record: CsvRecord) => void,
+  ): T[] {
+    if (options.inputFormat === 'csv') {
+      const records = readCsvRecordsIfExists(
+        path.join(inputDir, `${baseName}.csv`),
+        scope,
+        errors,
+      );
+      if (!records) return [];
+      return parseCsvItems<T>(scope, records, required, errors, postProcess);
+    }
+    const json = readJsonIfExists<T[]>(path.join(inputDir, `${baseName}.json`));
+    return (json ?? []) as T[];
+  }
+
+  const customers = readInputArray<CustomerInput>('customers', 'customers', [
+    'legacyId',
+    'code',
+    'name',
+    'status',
+  ]);
+  const vendors = readInputArray<VendorInput>('vendors', 'vendors', [
+    'legacyId',
+    'code',
+    'name',
+    'status',
+  ]);
+  const projects = readInputArray<ProjectInput>('projects', 'projects', ['legacyId', 'code', 'name']);
+  const tasks = readInputArray<TaskInput>('tasks', 'tasks', ['legacyId', 'projectLegacyId', 'name']);
+  const milestones = readInputArray<MilestoneInput>('milestones', 'milestones', [
+    'legacyId',
+    'projectLegacyId',
+    'name',
+    'amount',
+  ]);
+  const estimates = readInputArray<EstimateInput>(
+    'estimates',
+    'estimates',
+    ['legacyId', 'projectLegacyId', 'totalAmount', 'currency'],
+    (item, record) => {
+      if (record.lines != null) {
+        item.lines = parseCsvJsonArray('estimates', record.legacyId ?? undefined, record.lines, errors) ?? null;
+      }
+    },
+  );
+  const invoices = readInputArray<InvoiceInput>(
+    'invoices',
+    'invoices',
+    ['legacyId', 'projectLegacyId', 'currency', 'totalAmount'],
+    (item, record) => {
+      if (record.lines != null) {
+        item.lines = parseCsvJsonArray('invoices', record.legacyId ?? undefined, record.lines, errors) ?? null;
+      }
+    },
+  );
+  const purchaseOrders = readInputArray<PurchaseOrderInput>(
+    'purchase_orders',
+    'purchase_orders',
+    ['legacyId', 'projectLegacyId', 'vendorLegacyId', 'currency', 'totalAmount'],
+    (item, record) => {
+      if (record.lines != null) {
+        item.lines = parseCsvJsonArray('purchase_orders', record.legacyId ?? undefined, record.lines, errors) ?? null;
+      }
+    },
+  );
+  const vendorQuotes = readInputArray<VendorQuoteInput>(
+    'vendor_quotes',
+    'vendor_quotes',
+    ['legacyId', 'projectLegacyId', 'vendorLegacyId', 'currency', 'totalAmount'],
+  );
+  const vendorInvoices = readInputArray<VendorInvoiceInput>(
+    'vendor_invoices',
+    'vendor_invoices',
+    ['legacyId', 'projectLegacyId', 'vendorLegacyId', 'currency', 'totalAmount'],
+  );
+  const timeEntries = readInputArray<TimeEntryInput>(
+    'time_entries',
+    'time_entries',
+    ['legacyId', 'projectLegacyId', 'userId', 'workDate', 'minutes'],
+  );
+  const expenses = readInputArray<ExpenseInput>(
+    'expenses',
+    'expenses',
+    ['legacyId', 'projectLegacyId', 'userId', 'category', 'amount', 'currency', 'incurredOn'],
+    (item, record) => {
+      const parsed = parseCsvBoolean(record.isShared ?? null);
+      if (parsed != null) item.isShared = parsed;
+      else if (record.isShared != null) {
+        errors.push({
+          scope: 'expenses',
+          legacyId: record.legacyId ?? undefined,
+          message: 'invalid isShared (expected: true/false/1/0)',
+        });
+      }
+    },
+  );
 
   const planned: PlannedIds = {
     customers: new Set<string>(),
@@ -2119,6 +2350,7 @@ async function main() {
   }
 
   console.log('[migration-po] input dir:', inputDir);
+  console.log('[migration-po] input format:', inputFormat);
   console.log('[migration-po] mode:', apply ? 'apply' : 'dry-run');
   if (only) console.log('[migration-po] only:', Array.from(only).join(','));
 
