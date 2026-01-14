@@ -21,6 +21,27 @@
   - 列名は JSON のキー名と同一（例: `legacyId`, `projectLegacyId`）
   - 空文字は `null` 相当として扱う（数値/日付などのパース時に `null` になる）
   - 見積/請求/発注の `lines` は、CSVの `lines` 列に **JSON配列文字列** を入れると取り込める（未指定なら自動で1行生成）
+  - 余分な列があっても無視される（既知キーのみ参照）
+
+### CSV列定義（最小）
+以下は **必須列（最低限）**。追加列は任意（未指定は `null` 扱い）。
+
+- `customers.csv`: `legacyId`, `code`, `name`, `status`
+- `vendors.csv`: `legacyId`, `code`, `name`, `status`
+- `projects.csv`: `legacyId`, `code`, `name`
+- `tasks.csv`: `legacyId`, `projectLegacyId`, `name`
+- `milestones.csv`: `legacyId`, `projectLegacyId`, `name`, `amount`
+- `estimates.csv`: `legacyId`, `projectLegacyId`, `totalAmount`, `currency`
+  - `lines` 列（任意）: JSON配列文字列（例: `[{"description":"...", "quantity":1, "unitPrice":1000}]`）
+- `invoices.csv`: `legacyId`, `projectLegacyId`, `totalAmount`, `currency`
+  - `lines` 列（任意）: JSON配列文字列
+- `purchase_orders.csv`: `legacyId`, `projectLegacyId`, `vendorLegacyId`, `totalAmount`, `currency`
+  - `lines` 列（任意）: JSON配列文字列
+- `vendor_quotes.csv`: `legacyId`, `projectLegacyId`, `vendorLegacyId`, `totalAmount`, `currency`
+- `vendor_invoices.csv`: `legacyId`, `projectLegacyId`, `vendorLegacyId`, `totalAmount`, `currency`
+- `time_entries.csv`: `legacyId`, `projectLegacyId`, `userId`, `workDate`, `minutes`
+- `expenses.csv`: `legacyId`, `projectLegacyId`, `userId`, `category`, `amount`, `currency`, `incurredOn`
+  - `isShared`（任意）: `true/false/1/0`（大小文字は不問）
 
 ## 入力ディレクトリ
 デフォルト: `tmp/migration/po`
