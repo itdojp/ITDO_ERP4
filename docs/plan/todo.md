@@ -4,6 +4,12 @@
 - [ ] S3 バケット/リージョン/KMS の確定値を `docs/requirements/backup-restore.md` に反映
 - [ ] S3/OSS 移行の時期を決定（`docs/requirements/backup-restore.md`）
 
+## 次アクション（プロジェクト運用/レポート）
+- [ ] #522 EVM（PV/EV/AC/SPI/CPI）日次算出
+  - [ ] API: `GET /reports/project-evm/:projectId?from=YYYY-MM-DD&to=YYYY-MM-DD`
+  - [ ] UI: Reports に EVM（表/指標）を追加
+  - [ ] E2E（@extended）または手動QA手順の追記
+
 ## 次アクション（チャット）
 - [x] #453 ルーム化（project chat→room chat）移行方針の確定と段階移行の計画化
   - [x] 仕様/方針ドキュメント（案）の追加（`docs/requirements/chat-rooms.md`）
