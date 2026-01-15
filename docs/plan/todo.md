@@ -25,7 +25,7 @@
   - [ ] BE: Push通知の実配信（/push-notifications/test の stub 解消）
   - [ ] BE: Slack/Webhook通知の実装（notifier の stub 解消、優先度低）
   - [ ] BE: 添付AVスキャンの実運用（stub/eicar からの移行、要否判断）
-  - [ ] FE: SCIM 設定/状態のUI（/scim/*、要否判断）
+  - [x] FE: SCIM 設定/状態のUI（/scim/status）
 
 ## 次アクション（プロジェクト運用/レポート）
 - [x] #522 EVM（PV/EV/AC/SPI/CPI）日次算出（PR #532）
