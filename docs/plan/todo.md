@@ -3,6 +3,7 @@
 ## 残作業（運用確定）
 - [ ] #544 S3 バケット/リージョン/KMS の確定値を `docs/requirements/backup-restore.md` に反映
 - [ ] #544 S3/OSS 移行の時期を決定（`docs/requirements/backup-restore.md`）
+- [ ] #547 GitHub Packages 配布復旧後に `@itdojp/design-system@1.0.0` へ依存を戻す（暫定: git tag 参照）
 
 ## 次アクション（未実装対応: FE/BE）
 - [x] #551 #552 未実装項目の解消（優先度A: 管理/監査UI）
@@ -22,9 +23,9 @@
   - [x] FE: PDFファイル閲覧導線（/pdf-files/:filename）
   - [x] FE: Pushテスト送信UI（/push-notifications/test）
 - [ ] 未実装項目の解消（優先度D: 実配信/外部連携）
-  - [ ] BE: Push通知の実配信（/push-notifications/test の stub 解消）
-  - [ ] BE: Slack/Webhook通知の実装（notifier の stub 解消、優先度低）
-  - [ ] BE: 添付AVスキャンの実運用（stub/eicar からの移行、要否判断）
+  - [ ] #558 BE: Push通知の実配信（/push-notifications/test の stub 解消）
+  - [ ] #559 BE: Slack/Webhook通知の実装（notifier の stub 解消、優先度低）
+  - [ ] #560 BE: 添付AVスキャンの実運用（stub/eicar からの移行、要否判断）
   - [x] FE: SCIM 設定/状態のUI（/scim/status）
 
 ## 次アクション（プロジェクト運用/レポート）
