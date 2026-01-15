@@ -51,7 +51,8 @@ export const AdminJobs: React.FC = () => {
   const notificationLimitError = useMemo(() => {
     if (!notificationLimit.trim()) return '';
     const parsed = Number(notificationLimit);
-    if (!Number.isFinite(parsed)) return 'limit は数値で入力してください';
+    if (!Number.isFinite(parsed))
+      return 'limit は有効な数値で入力してください';
     if (parsed < 1 || parsed > 200) return 'limit は 1-200 で入力してください';
     return '';
   }, [notificationLimit]);

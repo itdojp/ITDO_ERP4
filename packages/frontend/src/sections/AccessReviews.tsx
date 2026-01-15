@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { api, apiResponse } from '../api';
 import { Alert, Button, Card, EmptyState } from '../ui';
-import { downloadResponseAsFile } from '../utils/download';
+import { downloadResponseAsFile, formatDateForFilename } from '../utils/download';
 
 type AccessReviewUser = {
   id: string;
@@ -71,9 +71,7 @@ export const AccessReviews: React.FC = () => {
       if (!res.ok) {
         throw new Error(`Request failed: ${res.status}`);
       }
-      const fallbackName = `access-review-${new Date()
-        .toISOString()
-        .slice(0, 10)}.csv`;
+      const fallbackName = `access-review-${formatDateForFilename()}.csv`;
       await downloadResponseAsFile(res, fallbackName);
     } catch (err) {
       setMessage('CSV出力に失敗しました');

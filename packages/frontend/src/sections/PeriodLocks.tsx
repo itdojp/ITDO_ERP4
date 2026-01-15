@@ -31,7 +31,8 @@ type FormState = {
   reason: string;
 };
 
-const resolveDefaultPeriod = () => new Date().toISOString().slice(0, 7);
+const PERIOD_FORMAT_REGEX = /^\d{4}-\d{2}$/;
+const getCurrentPeriod = () => new Date().toISOString().slice(0, 7);
 
 const formatDateTime = (value?: string | null) => {
   if (!value) return '-';
@@ -49,7 +50,7 @@ export const PeriodLocks: React.FC = () => {
     projectId: '',
   });
   const [form, setForm] = useState<FormState>({
-    period: resolveDefaultPeriod(),
+    period: getCurrentPeriod(),
     scope: 'project',
     projectId: '',
     reason: '',
@@ -90,8 +91,13 @@ export const PeriodLocks: React.FC = () => {
   };
 
   const validateForm = () => {
-    if (!/^\d{4}-\d{2}$/.test(form.period)) {
+    const period = form.period;
+    if (!PERIOD_FORMAT_REGEX.test(period)) {
       return 'period は YYYY-MM 形式で入力してください';
+    }
+    const month = Number(period.slice(5, 7));
+    if (!Number.isFinite(month) || month < 1 || month > 12) {
+      return 'period は有効な月 (01-12) を指定してください';
     }
     if (!form.scope) {
       return 'scope を選択してください';

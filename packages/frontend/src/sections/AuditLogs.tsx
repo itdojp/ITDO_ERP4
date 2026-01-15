@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { api, apiResponse } from '../api';
 import { Alert, Button, Card, EmptyState, Input, Select } from '../ui';
-import { downloadResponseAsFile } from '../utils/download';
+import { downloadResponseAsFile, formatDateForFilename } from '../utils/download';
 
 type AuditLogItem = {
   id: string;
@@ -121,9 +121,7 @@ export const AuditLogs: React.FC = () => {
       if (!res.ok) {
         throw new Error(`Request failed: ${res.status}`);
       }
-      const fallbackName = `audit-logs-${new Date()
-        .toISOString()
-        .slice(0, 10)}.csv`;
+      const fallbackName = `audit-logs-${formatDateForFilename()}.csv`;
       await downloadResponseAsFile(res, fallbackName);
     } catch (err) {
       setMessage('CSV出力に失敗しました');

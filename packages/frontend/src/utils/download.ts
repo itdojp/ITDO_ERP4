@@ -1,3 +1,9 @@
+const URL_REVOKE_DELAY_MS = 1000;
+
+export function formatDateForFilename(date: Date = new Date()) {
+  return date.toISOString().slice(0, 10);
+}
+
 export function resolveFilename(
   disposition: string | null | undefined,
   fallback: string,
@@ -37,5 +43,5 @@ export async function downloadResponseAsFile(
   document.body.appendChild(link);
   link.click();
   link.remove();
-  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  window.setTimeout(() => URL.revokeObjectURL(url), URL_REVOKE_DELAY_MS);
 }
