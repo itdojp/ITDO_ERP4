@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { api, getAuthState } from '../api';
+import { Alert, Button, Card, EmptyState } from '../ui';
 
-type Alert = {
+type AlertItem = {
   id: string;
   type: string;
   targetRef?: string;
@@ -138,7 +139,7 @@ export const Dashboard: React.FC = () => {
   const canViewInsights = roles.some((role) =>
     ['admin', 'mgmt', 'exec'].includes(role),
   );
-  const [alerts, setAlerts] = useState<Alert[]>([]);
+  const [alerts, setAlerts] = useState<AlertItem[]>([]);
   const [approvals, setApprovals] = useState<ApprovalInstance[]>([]);
   const [approvalMessage, setApprovalMessage] = useState('');
   const [notificationCount, setNotificationCount] = useState(0);
@@ -170,7 +171,7 @@ export const Dashboard: React.FC = () => {
   }, [approvals, auth?.groupIds, userId]);
 
   useEffect(() => {
-    api<{ items: Alert[] }>('/alerts')
+    api<{ items: AlertItem[] }>('/alerts')
       .then((data) => setAlerts(data.items))
       .catch(() => setAlerts([]));
   }, []);
@@ -255,7 +256,7 @@ export const Dashboard: React.FC = () => {
   return (
     <div>
       <h2>Dashboard</h2>
-      <div className="card" style={{ marginBottom: 12, padding: 12 }}>
+      <Card padding="small" style={{ marginBottom: 12 }}>
         <div className="row" style={{ justifyContent: 'space-between' }}>
           <strong>承認状況</strong>
           <span className="badge">Pending</span>
@@ -265,19 +266,19 @@ export const Dashboard: React.FC = () => {
           件
         </div>
         {approvalMessage && (
-          <div style={{ color: '#dc2626', marginTop: 6 }}>
-            {approvalMessage}
+          <div style={{ marginTop: 8 }}>
+            <Alert variant="error">{approvalMessage}</Alert>
           </div>
         )}
-      </div>
-      <div className="card" style={{ marginBottom: 12, padding: 12 }}>
+      </Card>
+      <Card padding="small" style={{ marginBottom: 12 }}>
         <div className="row" style={{ justifyContent: 'space-between' }}>
           <strong>通知</strong>
           <span className="badge">Unread {notificationCount}</span>
         </div>
         {notificationMessage && (
-          <div style={{ color: '#dc2626', marginTop: 6 }}>
-            {notificationMessage}
+          <div style={{ marginTop: 8 }}>
+            <Alert variant="error">{notificationMessage}</Alert>
           </div>
         )}
         <div className="list" style={{ display: 'grid', gap: 8, marginTop: 8 }}>
@@ -287,7 +288,7 @@ export const Dashboard: React.FC = () => {
               : item.projectId || 'N/A';
             const excerpt = resolveExcerpt(item.payload);
             return (
-              <div key={item.id} className="card" style={{ padding: 12 }}>
+              <Card key={item.id} padding="small">
                 <div
                   className="row"
                   style={{ justifyContent: 'space-between' }}
@@ -303,23 +304,19 @@ export const Dashboard: React.FC = () => {
                       </div>
                     )}
                   </div>
-                  <button
-                    className="button secondary"
+                  <Button
+                    variant="secondary"
                     onClick={() => markNotificationRead(item.id)}
                   >
                     既読
-                  </button>
+                  </Button>
                 </div>
-              </div>
+              </Card>
             );
           })}
-          {notifications.length === 0 && (
-            <div className="card" style={{ padding: 12 }}>
-              通知なし
-            </div>
-          )}
+          {notifications.length === 0 && <EmptyState title="通知なし" />}
         </div>
-      </div>
+      </Card>
       <div className="row" style={{ alignItems: 'center' }}>
         <p className="badge">
           Alerts{' '}
@@ -328,18 +325,16 @@ export const Dashboard: React.FC = () => {
             : `(最新${Math.min(alerts.length, 5)}件)`}
         </p>
         {hasMore && (
-          <button
-            className="button secondary"
-            style={{ marginLeft: 'auto' }}
-            onClick={() => setShowAll((v) => !v)}
-          >
-            {showAll ? '最新のみ' : 'すべて表示'}
-          </button>
+          <div style={{ marginLeft: 'auto' }}>
+            <Button variant="secondary" onClick={() => setShowAll((v) => !v)}>
+              {showAll ? '最新のみ' : 'すべて表示'}
+            </Button>
+          </div>
         )}
       </div>
       <div className="list" style={{ display: 'grid', gap: 8 }}>
         {visibleAlerts.map((a) => (
-          <div key={a.id} className="card" style={{ padding: 12 }}>
+          <Card key={a.id} padding="small">
             <div className="row" style={{ justifyContent: 'space-between' }}>
               <div>
                 <strong>{a.type}</strong> / {a.targetRef || 'N/A'}
@@ -350,9 +345,9 @@ export const Dashboard: React.FC = () => {
               送信: {(a.sentChannels || []).join(', ') || '未送信'} /{' '}
               {a.triggeredAt?.slice(0, 16) || ''}
             </div>
-          </div>
+          </Card>
         ))}
-        {alerts.length === 0 && <div className="card">アラートなし</div>}
+        {alerts.length === 0 && <EmptyState title="アラートなし" />}
       </div>
       {canViewInsights && (
         <div style={{ marginTop: 16 }}>
@@ -360,8 +355,8 @@ export const Dashboard: React.FC = () => {
             <p className="badge">Insights</p>
           </div>
           {insightMessage && (
-            <div style={{ color: '#dc2626', marginBottom: 8 }}>
-              {insightMessage}
+            <div style={{ marginBottom: 8 }}>
+              <Alert variant="error">{insightMessage}</Alert>
             </div>
           )}
           <div className="list" style={{ display: 'grid', gap: 8 }}>
@@ -375,7 +370,7 @@ export const Dashboard: React.FC = () => {
                   ? item.sampleTargets
                   : (item.evidence.targets ?? []);
               return (
-                <div key={item.id} className="card" style={{ padding: 12 }}>
+                <Card key={item.id} padding="small">
                   <div
                     className="row"
                     style={{ justifyContent: 'space-between' }}
@@ -416,12 +411,10 @@ export const Dashboard: React.FC = () => {
                       {label.hint}
                     </div>
                   )}
-                </div>
+                </Card>
               );
             })}
-            {insights.length === 0 && (
-              <div className="card">インサイトなし</div>
-            )}
+            {insights.length === 0 && <EmptyState title="インサイトなし" />}
           </div>
         </div>
       )}

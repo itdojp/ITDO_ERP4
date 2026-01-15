@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { api, getAuthState } from '../api';
 import { InvoiceDetail } from './InvoiceDetail';
 import { useProjects } from '../hooks/useProjects';
+import { Alert, Button, Card, EmptyState, Input, Select, Toast } from '../ui';
 
 interface Invoice {
   id: string;
@@ -159,119 +160,148 @@ export const Invoices: React.FC = () => {
   return (
     <div>
       <h2>請求</h2>
-      <div className="row" style={{ gap: 8 }}>
-        <select
+      <div
+        style={{
+          display: 'flex',
+          gap: 12,
+          flexWrap: 'wrap',
+          alignItems: 'flex-end',
+        }}
+      >
+        <Select
+          label="案件"
           aria-label="案件選択"
           value={form.projectId}
           onChange={(e) => setForm({ ...form, projectId: e.target.value })}
+          placeholder="案件を選択"
         >
-          <option value="">案件を選択</option>
           {projects.map((project) => (
             <option key={project.id} value={project.id}>
               {project.code} / {project.name}
             </option>
           ))}
-        </select>
-        <input
+        </Select>
+        <Input
+          label="金額"
           type="number"
           value={form.totalAmount}
           onChange={(e) =>
             setForm({ ...form, totalAmount: Number(e.target.value) })
           }
           placeholder="金額"
+          min={0}
         />
-        <button className="button" onClick={create}>
-          作成
-        </button>
-        <button className="button secondary" onClick={load}>
+        <Button onClick={create}>作成</Button>
+        <Button variant="secondary" onClick={load}>
           読み込み
-        </button>
+        </Button>
       </div>
-      <div className="card" style={{ marginTop: 12 }}>
+      <Card padding="small" style={{ marginTop: 12 }}>
         <h3 style={{ marginTop: 0 }}>工数から請求ドラフト作成</h3>
-        <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
-          <label className="row" style={{ gap: 6, alignItems: 'center' }}>
-            <span>期間</span>
-            <input
-              aria-label="工数集計開始日"
-              type="date"
-              value={timeFrom}
-              onChange={(e) => setTimeFrom(e.target.value)}
-            />
-            <span>〜</span>
-            <input
-              aria-label="工数集計終了日"
-              type="date"
-              value={timeTo}
-              onChange={(e) => setTimeTo(e.target.value)}
-            />
-          </label>
-          <label className="row" style={{ gap: 6, alignItems: 'center' }}>
-            <span>単価(円/時)</span>
-            <input
-              aria-label="請求単価"
-              type="number"
-              value={timeUnitPrice}
-              onChange={(e) => setTimeUnitPrice(Number(e.target.value))}
-              min={1}
-            />
-          </label>
-          <button className="button" onClick={createFromTimeEntries}>
-            工数から作成
-          </button>
+        <div
+          style={{
+            display: 'flex',
+            gap: 12,
+            flexWrap: 'wrap',
+            alignItems: 'flex-end',
+          }}
+        >
+          <Input
+            label="工数集計開始日"
+            aria-label="工数集計開始日"
+            type="date"
+            value={timeFrom}
+            onChange={(e) => setTimeFrom(e.target.value)}
+          />
+          <Input
+            label="工数集計終了日"
+            aria-label="工数集計終了日"
+            type="date"
+            value={timeTo}
+            onChange={(e) => setTimeTo(e.target.value)}
+          />
+          <Input
+            label="単価(円/時)"
+            aria-label="請求単価"
+            type="number"
+            value={timeUnitPrice}
+            onChange={(e) => setTimeUnitPrice(Number(e.target.value))}
+            min={1}
+          />
+          <Button onClick={createFromTimeEntries}>工数から作成</Button>
         </div>
-        <p style={{ margin: '8px 0 0', fontSize: 12, color: '#6b7280' }}>
-          注意:
-          対象工数は請求に紐づけられ、解除するまで編集/付け替えできません。
-        </p>
-      </div>
-      {projectMessage && <p style={{ color: '#dc2626' }}>{projectMessage}</p>}
-      {message && <p>{message}</p>}
-      <ul className="list">
+        <div style={{ marginTop: 12 }}>
+          <Alert variant="warning">
+            対象工数は請求に紐づけられ、解除するまで編集/付け替えできません。
+          </Alert>
+        </div>
+      </Card>
+      {projectMessage && (
+        <div style={{ marginTop: 12 }}>
+          <Alert variant="error">{projectMessage}</Alert>
+        </div>
+      )}
+      {message && (
+        <div style={{ marginTop: 12 }}>
+          <Toast variant="info" title="通知" description={message} />
+        </div>
+      )}
+      <div style={{ display: 'grid', gap: 8, marginTop: 12 }}>
         {items.map((d) => (
-          <li key={d.id}>
-            <span className="badge">{d.status}</span> {d.invoiceNo || '(draft)'}{' '}
-            / {renderProject(d.projectId)} / ¥
-            {(d.totalAmount || 0).toLocaleString()}
-            <div>
-              <button
-                className="button secondary"
-                style={{ marginRight: 8 }}
-                onClick={() => setSelected(d)}
-              >
-                詳細
-              </button>
-              <button className="button" onClick={() => send(d.id)}>
-                送信 (Stub)
-              </button>
+          <Card key={d.id} padding="small">
+            <div
+              style={{
+                display: 'flex',
+                gap: 8,
+                flexWrap: 'wrap',
+                alignItems: 'center',
+              }}
+            >
+              <span className="badge">{d.status}</span>
+              <span>{d.invoiceNo || '(draft)'}</span>
+              <span>/ {renderProject(d.projectId)}</span>
+              <span>/ ¥{(d.totalAmount || 0).toLocaleString()}</span>
             </div>
-          </li>
+            <div
+              style={{
+                marginTop: 8,
+                display: 'flex',
+                gap: 8,
+                flexWrap: 'wrap',
+              }}
+            >
+              <Button variant="secondary" onClick={() => setSelected(d)}>
+                詳細
+              </Button>
+              <Button onClick={() => send(d.id)}>送信 (Stub)</Button>
+            </div>
+          </Card>
         ))}
-        {items.length === 0 && <li>データなし</li>}
-      </ul>
+        {items.length === 0 && <EmptyState title="データなし" />}
+      </div>
       {selected && (
-        <div className="card">
+        <Card padding="small" style={{ marginTop: 12 }}>
           <InvoiceDetail
             {...selected}
             approval={buildApproval(selected.status)}
             onSend={() => send(selected.id)}
           />
           {selected.status === 'draft' && (
-            <button
-              className="button secondary"
-              style={{ marginTop: 8 }}
-              onClick={() => releaseTimeEntries(selected.id)}
-            >
-              工数リンク解除
-            </button>
+            <div style={{ marginTop: 12 }}>
+              <Button
+                variant="secondary"
+                onClick={() => releaseTimeEntries(selected.id)}
+              >
+                工数リンク解除
+              </Button>
+            </div>
           )}
-          <button
-            className="button secondary"
-            onClick={() => setSelected(null)}
-          >
-            閉じる
-          </button>
-        </div>
+          <div style={{ marginTop: 12 }}>
+            <Button variant="secondary" onClick={() => setSelected(null)}>
+              閉じる
+            </Button>
+          </div>
+        </Card>
       )}
     </div>
   );

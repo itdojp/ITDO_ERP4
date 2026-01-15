@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { api } from '../api';
+import { Alert, Button, Card, EmptyState } from '../ui';
 
 type SendLog = {
   id: string;
@@ -92,33 +93,49 @@ export const InvoiceDetail: React.FC<InvoiceDetailProps> = ({
       <div style={{ marginTop: 12 }}>
         <div className="row" style={{ alignItems: 'center', gap: 8 }}>
           <strong>送信履歴</strong>
-          <button
-            className="button secondary"
+          <Button
+            variant="secondary"
             onClick={loadSendLogs}
-            disabled={isLoadingLogs}
+            loading={isLoadingLogs}
           >
-            {isLoadingLogs ? '更新中...' : '更新'}
-          </button>
+            更新
+          </Button>
         </div>
         {sendLogError && (
-          <div style={{ color: '#dc2626', marginTop: 4 }}>{sendLogError}</div>
+          <div style={{ marginTop: 8 }}>
+            <Alert variant="error">{sendLogError}</Alert>
+          </div>
         )}
-        <ul className="list">
+        <div style={{ display: 'grid', gap: 8, marginTop: 8 }}>
           {sendLogs.map((log) => (
-            <li key={log.id}>
-              <span className="badge">{log.status}</span> {log.channel} /{' '}
-              {new Date(log.createdAt).toLocaleString()}
+            <Card key={log.id} padding="small">
+              <div
+                style={{
+                  display: 'flex',
+                  gap: 8,
+                  flexWrap: 'wrap',
+                  alignItems: 'center',
+                }}
+              >
+                <span className="badge">{log.status}</span>
+                <span>{log.channel}</span>
+                <span>/ {new Date(log.createdAt).toLocaleString()}</span>
+              </div>
               {log.error && (
-                <div style={{ color: '#dc2626' }}>Error: {log.error}</div>
+                <div style={{ marginTop: 8 }}>
+                  <Alert variant="error">Error: {log.error}</Alert>
+                </div>
               )}
-            </li>
+            </Card>
           ))}
-          {sendLogs.length === 0 && !sendLogError && <li>履歴なし</li>}
-        </ul>
+          {sendLogs.length === 0 && !sendLogError && (
+            <EmptyState title="履歴なし" />
+          )}
+        </div>
       </div>
-      <button className="button" onClick={onSend}>
-        送信 (Stub)
-      </button>
+      <div style={{ marginTop: 12 }}>
+        <Button onClick={onSend}>送信 (Stub)</Button>
+      </div>
     </div>
   );
 };
