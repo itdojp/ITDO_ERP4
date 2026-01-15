@@ -163,8 +163,8 @@ test('pwa offline duplicate time entries @pwa @extended', async ({
   await context.setOffline(true);
 
   await timeSection.locator('input[type="number"]').fill('75');
-  await timeSection.getByPlaceholder('作業種別').fill(workTag);
-  await timeSection.getByPlaceholder('場所').fill(locationTag);
+  await timeSection.getByLabel('作業種別').fill(workTag);
+  await timeSection.getByLabel('場所').fill(locationTag);
 
   const addButton = timeSection.getByRole('button', { name: '追加' });
   await addButton.click();
@@ -172,8 +172,8 @@ test('pwa offline duplicate time entries @pwa @extended', async ({
     timeSection.getByText('オフラインのため送信待ちに保存しました'),
   ).toBeVisible();
   await timeSection.locator('input[type="number"]').fill('75');
-  await timeSection.getByPlaceholder('作業種別').fill(workTag);
-  await timeSection.getByPlaceholder('場所').fill(locationTag);
+  await timeSection.getByLabel('作業種別').fill(workTag);
+  await timeSection.getByLabel('場所').fill(locationTag);
   await addButton.click();
   await expect(
     timeSection.getByText('オフラインのため送信待ちに保存しました'),
@@ -221,9 +221,7 @@ test('pwa offline duplicate time entries @pwa @extended', async ({
     .locator('h2', { hasText: '工数入力' })
     .locator('..');
   await timeSectionReload.scrollIntoViewIfNeeded();
-  const dupItems = timeSectionReload.locator('ul.list li', {
-    hasText: workTag,
-  });
+  const dupItems = timeSectionReload.locator('.itdo-card', { hasText: workTag });
   await expect(dupItems).toHaveCount(2);
   const normalizedTexts = (await dupItems.allTextContents()).map((text) =>
     text.replace(/\s+/g, ' ').trim(),

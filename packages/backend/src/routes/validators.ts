@@ -175,7 +175,7 @@ export const projectTaskSchema = {
     assigneeId: Type.Optional(Type.String()),
     status: Type.Optional(Type.String()),
     progressPercent: Type.Optional(
-      Type.Union([Type.Integer({ minimum: 0, maximum: 100 }), Type.Null()]),
+      Type.Integer({ minimum: 0, maximum: 100, nullable: true }),
     ),
     planStart: Type.Optional(
       Type.Union([Type.String({ format: 'date' }), Type.Null()]),
