@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { api } from '../api';
+import { api, apiResponse } from '../api';
+import { formatDateForFilename, openResponseInNewTab } from '../utils/download';
 
 type ProjectOption = {
   id: string;
@@ -23,6 +24,15 @@ type PurchaseOrder = {
   currency: string;
   totalAmount: number | string;
   status: string;
+};
+
+type DocumentSendLog = {
+  id: string;
+  channel: string;
+  status: string;
+  createdAt: string;
+  error?: string | null;
+  pdfUrl?: string | null;
 };
 
 type VendorQuote = {
@@ -82,6 +92,12 @@ type VendorInvoiceForm = {
 
 const formatDate = (value?: string | null) =>
   value ? value.slice(0, 10) : '-';
+const formatDateTime = (value?: string | null) => {
+  if (!value) return '-';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString();
+};
 
 const formatAmount = (value: number | string, currency: string) => {
   const amount =
@@ -155,6 +171,15 @@ export const VendorDocuments: React.FC = () => {
   const [poActionState, setPoActionState] = useState<Record<string, boolean>>(
     {},
   );
+  const [poSendLogs, setPoSendLogs] = useState<
+    Record<string, DocumentSendLog[]>
+  >({});
+  const [poSendLogMessage, setPoSendLogMessage] = useState<
+    Record<string, string>
+  >({});
+  const [poSendLogLoading, setPoSendLogLoading] = useState<
+    Record<string, boolean>
+  >({});
   const [invoiceActionState, setInvoiceActionState] = useState<
     Record<string, boolean>
   >({});
@@ -412,6 +437,10 @@ export const VendorDocuments: React.FC = () => {
     setPoActionState((prev) => ({ ...prev, [id]: isBusy }));
   };
 
+  const setPoSendLogBusy = (id: string, isBusy: boolean) => {
+    setPoSendLogLoading((prev) => ({ ...prev, [id]: isBusy }));
+  };
+
   const setInvoiceActionBusy = (id: string, isBusy: boolean) => {
     setInvoiceActionState((prev) => ({ ...prev, [id]: isBusy }));
   };
@@ -428,6 +457,58 @@ export const VendorDocuments: React.FC = () => {
       setPoResult({ text: '発注書の承認依頼に失敗しました', type: 'error' });
     } finally {
       setPoActionBusy(id, false);
+    }
+  };
+
+  const loadPurchaseOrderSendLogs = async (id: string) => {
+    try {
+      setPoSendLogBusy(id, true);
+      setPoSendLogMessage((prev) => ({ ...prev, [id]: '' }));
+      const res = await api<{ items: DocumentSendLog[] }>(
+        `/purchase-orders/${id}/send-logs`,
+      );
+      setPoSendLogs((prev) => ({ ...prev, [id]: res.items || [] }));
+    } catch (err) {
+      console.error('Failed to load purchase order send logs.', err);
+      setPoSendLogMessage((prev) => ({
+        ...prev,
+        [id]: '送信履歴の取得に失敗しました',
+      }));
+    } finally {
+      setPoSendLogBusy(id, false);
+    }
+  };
+
+  const openPurchaseOrderPdf = async (id: string, pdfUrl?: string | null) => {
+    if (!pdfUrl) {
+      setPoSendLogMessage((prev) => ({
+        ...prev,
+        [id]: 'PDF URL がありません',
+      }));
+      return;
+    }
+    if (pdfUrl.startsWith('stub://')) {
+      setPoSendLogMessage((prev) => ({
+        ...prev,
+        [id]: 'PDF は stub です',
+      }));
+      return;
+    }
+    try {
+      setPoSendLogBusy(id, true);
+      const res = await apiResponse(pdfUrl);
+      if (!res.ok) {
+        throw new Error(`Request failed: ${res.status}`);
+      }
+      const filename = `purchase-order-${formatDateForFilename()}.pdf`;
+      await openResponseInNewTab(res, filename);
+    } catch (err) {
+      setPoSendLogMessage((prev) => ({
+        ...prev,
+        [id]: 'PDFの取得に失敗しました',
+      }));
+    } finally {
+      setPoSendLogBusy(id, false);
     }
   };
 
@@ -569,6 +650,54 @@ export const VendorDocuments: React.FC = () => {
                       {poActionState[item.id] ? '申請中' : '承認依頼'}
                     </button>
                   </div>
+                )}
+                <div style={{ marginTop: 6 }}>
+                  <button
+                    className="button secondary"
+                    onClick={() => loadPurchaseOrderSendLogs(item.id)}
+                    disabled={poSendLogLoading[item.id]}
+                  >
+                    {poSendLogLoading[item.id] ? '取得中' : '送信履歴'}
+                  </button>
+                </div>
+                {poSendLogMessage[item.id] && (
+                  <div style={{ color: '#dc2626', marginTop: 4 }}>
+                    {poSendLogMessage[item.id]}
+                  </div>
+                )}
+                {Object.prototype.hasOwnProperty.call(poSendLogs, item.id) && (
+                  <ul className="list" style={{ marginTop: 6 }}>
+                    {(poSendLogs[item.id] || []).map((log) => (
+                      <li key={log.id}>
+                        <span className="badge">{log.status}</span>{' '}
+                        {log.channel} / {formatDateTime(log.createdAt)}
+                        {log.error && (
+                          <div style={{ color: '#dc2626' }}>
+                            error: {log.error}
+                          </div>
+                        )}
+                        <div style={{ fontSize: 12, color: '#64748b' }}>
+                          logId: {log.id}
+                        </div>
+                        {log.pdfUrl && (
+                          <div style={{ marginTop: 4 }}>
+                            <button
+                              className="button secondary"
+                              onClick={() =>
+                                openPurchaseOrderPdf(item.id, log.pdfUrl)
+                              }
+                              disabled={poSendLogLoading[item.id]}
+                            >
+                              PDFを開く
+                            </button>
+                          </div>
+                        )}
+                      </li>
+                    ))}
+                    {(poSendLogs[item.id] || []).length === 0 && (
+                      <li>履歴なし</li>
+                    )}
+                  </ul>
                 )}
               </li>
             ))}

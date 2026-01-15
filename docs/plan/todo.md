@@ -15,12 +15,12 @@
   - [x] FE: レポート配信ジョブUI（/jobs/report-subscriptions/run, /jobs/report-deliveries/retry）
   - [x] FE: 定期案件ジョブUI（/jobs/recurring-projects/run）
   - [x] FE: 連携ジョブUI（/jobs/integrations/run）
-- [ ] 未実装項目の解消（優先度C: 文書送信/ファイル/通知UI）
-  - [ ] FE: 発注書の送信履歴（/purchase-orders/:id/send-logs）UI
-  - [ ] FE: ドキュメント送信ログ詳細/イベント（/document-send-logs/:id, /document-send-logs/:id/events）UI
-  - [ ] FE: ドキュメント送信ログの再送（/document-send-logs/:id/retry）UI
-  - [ ] FE: PDFファイル閲覧導線（/pdf-files/:filename）
-  - [ ] FE: Pushテスト送信UI（/push-notifications/test）
+- [x] 未実装項目の解消（優先度C: 文書送信/ファイル/通知UI）
+  - [x] FE: 発注書の送信履歴（/purchase-orders/:id/send-logs）UI
+  - [x] FE: ドキュメント送信ログ詳細/イベント（/document-send-logs/:id, /document-send-logs/:id/events）UI
+  - [x] FE: ドキュメント送信ログの再送（/document-send-logs/:id/retry）UI
+  - [x] FE: PDFファイル閲覧導線（/pdf-files/:filename）
+  - [x] FE: Pushテスト送信UI（/push-notifications/test）
 - [ ] 未実装項目の解消（優先度D: 実配信/外部連携）
   - [ ] BE: Push通知の実配信（/push-notifications/test の stub 解消）
   - [ ] BE: Slack/Webhook通知の実装（notifier の stub 解消、優先度低）

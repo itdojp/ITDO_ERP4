@@ -45,3 +45,25 @@ export async function downloadResponseAsFile(
   link.remove();
   window.setTimeout(() => URL.revokeObjectURL(url), URL_REVOKE_DELAY_MS);
 }
+
+export async function openResponseInNewTab(
+  res: Response,
+  fallbackName: string,
+) {
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const opened = window.open(url, '_blank', 'noopener,noreferrer');
+  if (!opened) {
+    const filename = resolveFilename(
+      res.headers.get('content-disposition'),
+      fallbackName,
+    );
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  }
+  window.setTimeout(() => URL.revokeObjectURL(url), URL_REVOKE_DELAY_MS);
+}
