@@ -30,6 +30,7 @@ npm run dev
 - Numbering: PYYYY-MM-NNNN per kind via number_sequences
 - Auth/RBAC: header mock by default; JWT (OIDC) mode available
 - Notifications: SMTP/SendGrid 設定があればメール送信、未設定なら stub
+- Push: `POST /push-notifications/test` は VAPID 設定があれば実配信、未設定なら stub
 - PDF: ローカル生成 + `/pdf-files/:filename` で取得
 - Validation: TypeBox for some routes; expand as needed
 
@@ -53,6 +54,13 @@ npm run dev
   - SENDGRID_EVENT_MAX_BYTES / SENDGRID_EVENT_MAX_BATCH (optional)
   - POST `/webhooks/sendgrid/events` with header `x-erp4-webhook-key`
 - 備考: 添付はbase64で送信するため、ファイルサイズに注意。
+
+## Push (WebPush)
+- env:
+  - VAPID_SUBJECT / VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY
+  - フロント側は `VITE_PUSH_PUBLIC_KEY` に同じ公開鍵を設定する
+- endpoints:
+  - `POST /push-notifications/test`
 
 ## Auth (JWT/OIDC)
 - env:

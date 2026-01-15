@@ -30,6 +30,7 @@
 ### 入力項目/制約
 - Googleログインは `VITE_GOOGLE_CLIENT_ID` が未設定の場合は表示されません
 - Push 通知は `VITE_PUSH_PUBLIC_KEY` 未設定だと購読登録に失敗します
+- `VAPID_*`（backend）が未設定の場合、`テスト通知` は実配信ではなくローカル表示になります
 - 送信待ちキューはログイン済みの場合のみ処理できます
 
 ![現在のユーザー](../test-results/2026-01-15-frontend-e2e-r2/00-current-user.png)

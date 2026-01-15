@@ -80,6 +80,7 @@ UUID生成関数は環境に合わせて置き換え（`gen_random_uuid()`/`uuid
 - オフライン送信: 日報/工数/経費の送信をオフライン時に実行 → キューに保存 → オンライン復帰で自動送信
 - Push通知: 配信条件チェック + 同意 → 購読登録/解除ができる
   - 前提: `VITE_ENABLE_SW=true` と `VITE_PUSH_PUBLIC_KEY` を設定
+  - 実配信テストを行う場合は backend 側に `VAPID_SUBJECT` / `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` を設定（未設定だと `/push-notifications/test` は stub）
 - シードデータ: scripts/seed-demo.sql をロード後、フロントに反映されることを確認（プロジェクト/請求/工数/経費のダミー）
 - 整合チェック: scripts/checks/poc-integrity.sql を実行し、件数/合計が期待値と一致することを確認
 

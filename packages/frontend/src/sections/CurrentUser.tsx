@@ -532,7 +532,10 @@ export const CurrentUser: React.FC = () => {
       const registration = await ensureRegistration();
       if (!registration) return;
       const res = await api<{
+        stub?: boolean;
         payload: { title: string; body: string; url: string };
+        delivered?: number;
+        failed?: number;
       }>('/push-notifications/test', {
         method: 'POST',
         body: JSON.stringify({
@@ -541,19 +544,25 @@ export const CurrentUser: React.FC = () => {
           url: '/',
         }),
       });
-      if (registration.active) {
-        registration.active.postMessage({
-          type: 'PUSH_TEST',
-          payload: res.payload,
-        });
-      } else if (typeof registration.showNotification === 'function') {
-        await registration.showNotification(res.payload.title, {
-          body: res.payload.body,
-          data: { url: res.payload.url },
-          icon: '/icon.svg',
-        });
+      if (res.stub) {
+        if (registration.active) {
+          registration.active.postMessage({
+            type: 'PUSH_TEST',
+            payload: res.payload,
+          });
+        } else if (typeof registration.showNotification === 'function') {
+          await registration.showNotification(res.payload.title, {
+            body: res.payload.body,
+            data: { url: res.payload.url },
+            icon: '/icon.svg',
+          });
+        }
+        setPushMessage('テスト通知をローカル表示しました');
+      } else {
+        setPushMessage(
+          `テスト通知をPush配信しました（成功: ${res.delivered ?? 0}, 失敗: ${res.failed ?? 0}）`,
+        );
       }
-      setPushMessage('テスト通知を送信しました');
     } catch (err) {
       logPushError('test notification failed', err);
       setPushError('テスト通知の送信に失敗しました');
