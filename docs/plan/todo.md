@@ -9,12 +9,12 @@
   - [x] FE: アクセス棚卸しスナップショット（/access-reviews/snapshot）UI
   - [x] FE: 監査ログ検索/CSV出力（/audit-logs）UI
   - [x] FE: 期間締め（/period-locks）管理UI
-- [ ] 未実装項目の解消（優先度B: ジョブ/運用UI）
-  - [ ] FE: ジョブ実行UI（/jobs/alerts/run, /jobs/approval-escalations/run, /jobs/data-quality/run）
-  - [ ] FE: 通知配信ジョブUI（/jobs/notification-deliveries/run）
-  - [ ] FE: レポート配信ジョブUI（/jobs/report-subscriptions/run, /jobs/report-deliveries/retry）
-  - [ ] FE: 定期案件ジョブUI（/jobs/recurring-projects/run）
-  - [ ] FE: 連携ジョブUI（/jobs/integrations/run）
+- [x] 未実装項目の解消（優先度B: ジョブ/運用UI）
+  - [x] FE: ジョブ実行UI（/jobs/alerts/run, /jobs/approval-escalations/run, /jobs/data-quality/run）
+  - [x] FE: 通知配信ジョブUI（/jobs/notification-deliveries/run）
+  - [x] FE: レポート配信ジョブUI（/jobs/report-subscriptions/run, /jobs/report-deliveries/retry）
+  - [x] FE: 定期案件ジョブUI（/jobs/recurring-projects/run）
+  - [x] FE: 連携ジョブUI（/jobs/integrations/run）
 - [ ] 未実装項目の解消（優先度C: 文書送信/ファイル/通知UI）
   - [ ] FE: 発注書の送信履歴（/purchase-orders/:id/send-logs）UI
   - [ ] FE: ドキュメント送信ログ詳細/イベント（/document-send-logs/:id, /document-send-logs/:id/events）UI
