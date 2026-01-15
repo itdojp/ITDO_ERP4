@@ -1,5 +1,7 @@
 import webpush from 'web-push';
 
+const MAX_ERROR_MESSAGE_LENGTH = 2000;
+
 type VapidConfig = {
   subject: string;
   publicKey: string;
@@ -60,7 +62,7 @@ function normalizeError(err: unknown): {
       : undefined;
   const message =
     typeof webPushError.body === 'string' && webPushError.body.trim()
-      ? webPushError.body.slice(0, 2000)
+      ? webPushError.body.slice(0, MAX_ERROR_MESSAGE_LENGTH)
       : typeof webPushError.message === 'string' && webPushError.message.trim()
         ? webPushError.message
         : 'send_failed';
@@ -84,29 +86,31 @@ export async function sendWebPush(
   }
   ensureConfigured(config);
   const body = JSON.stringify(payload);
-  const results: WebPushResult[] = [];
-  for (const sub of subscriptions) {
-    try {
-      await webpush.sendNotification(
-        {
-          endpoint: sub.endpoint,
-          keys: { p256dh: sub.p256dh, auth: sub.auth },
-        },
-        body,
-      );
-      results.push({ subscriptionId: sub.id, status: 'success' });
-    } catch (err) {
-      const normalized = normalizeError(err);
-      const shouldDisable =
-        normalized.statusCode === 404 || normalized.statusCode === 410;
-      results.push({
-        subscriptionId: sub.id,
-        status: 'failed',
-        error: normalized.message,
-        statusCode: normalized.statusCode,
-        shouldDisable,
-      });
-    }
-  }
+  const sendPromises: Promise<WebPushResult>[] = subscriptions.map(
+    async (sub): Promise<WebPushResult> => {
+      try {
+        await webpush.sendNotification(
+          {
+            endpoint: sub.endpoint,
+            keys: { p256dh: sub.p256dh, auth: sub.auth },
+          },
+          body,
+        );
+        return { subscriptionId: sub.id, status: 'success' as const };
+      } catch (err) {
+        const normalized = normalizeError(err);
+        const shouldDisable =
+          normalized.statusCode === 404 || normalized.statusCode === 410;
+        return {
+          subscriptionId: sub.id,
+          status: 'failed' as const,
+          error: normalized.message,
+          statusCode: normalized.statusCode,
+          shouldDisable,
+        };
+      }
+    },
+  );
+  const results = await Promise.all(sendPromises);
   return { enabled: true, results };
 }

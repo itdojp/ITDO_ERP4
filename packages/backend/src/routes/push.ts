@@ -11,6 +11,7 @@ import {
 } from './validators.js';
 
 const allowedRoles = ['admin', 'mgmt', 'exec', 'user', 'hr'];
+const DEFAULT_PUSH_ICON = '/icon.svg';
 
 type PushSubscriptionBody = {
   endpoint: string;
@@ -224,7 +225,7 @@ export async function registerPushRoutes(app: FastifyInstance) {
           p256dh: sub.p256dh,
           auth: sub.auth,
         })),
-        { ...payload, icon: '/icon.svg' },
+        { ...payload, icon: DEFAULT_PUSH_ICON },
       );
       const disabledIds = sendResult.results
         .filter((result) => result.shouldDisable)
