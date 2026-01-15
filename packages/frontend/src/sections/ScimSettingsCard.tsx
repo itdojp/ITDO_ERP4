@@ -69,9 +69,7 @@ export const ScimSettingsCard: React.FC = () => {
           認可方式: Authorization: Bearer <code>{'{トークン}'}</code>
           （バックエンド環境変数 <code>SCIM_BEARER_TOKEN</code> の値）
         </div>
-        <div>
-          最大取得件数: {status ? status.pageMax : '-'}
-        </div>
+        <div>最大取得件数: {status ? status.pageMax : '-'}</div>
         {!status?.configured && (
           <div style={{ color: '#b45309' }}>
             SCIM_BEARER_TOKEN を設定し、バックエンドを再起動してください。
