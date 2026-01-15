@@ -65,8 +65,8 @@ Phase 3 のPoC計画と最小実装を完了し、次はPoC評価と本実装計
 ## 6. 未決定/残作業（運用）
 - [ ] S3 バケット/リージョン/KMS の確定値を `docs/requirements/backup-restore.md` に反映
 - [ ] S3/OSS 移行の時期を決定（`docs/requirements/backup-restore.md`）
-- [ ] PO→ERP4 実データ移行 リハーサル（1回目）
-- [ ] design-system 依存を `@itdojp/design-system@1.0.0` へ戻す（GitHub Packages 配布復旧後）
-- [ ] Push通知の実配信（WebPush）
-- [ ] Slack/Webhook 通知（stub解消、SSRF対策）
-- [ ] 添付AVスキャン（要否判断/方式決定）
+- [ ] PO→ERP4 実データ移行 リハーサル（1回目）（#543）
+- [ ] design-system 依存を `@itdojp/design-system@1.0.0` へ戻す（GitHub Packages 配布復旧後）（#547）
+- [ ] Push通知の実配信（WebPush）（#558）
+- [ ] Slack/Webhook 通知（stub解消、SSRF対策）（#559）
+- [ ] 添付AVスキャン（要否判断/方式決定）（#560）
