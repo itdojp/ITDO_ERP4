@@ -1,5 +1,7 @@
 import { createHash } from 'crypto';
 import * as fs from 'fs/promises';
+import { lookup as dnsLookup } from 'node:dns/promises';
+import { isIP } from 'node:net';
 import nodemailer from 'nodemailer';
 import type { Transporter } from 'nodemailer';
 
@@ -406,6 +408,270 @@ function redactUrl(raw: string): string {
   }
 }
 
+type WebhookPolicy = {
+  enabled: boolean;
+  allowedHosts: Set<string>;
+  allowHttp: boolean;
+  allowPrivateIp: boolean;
+  timeoutMs: number;
+  maxBytes: number;
+};
+
+let cachedWebhookPolicy: WebhookPolicy | null = null;
+let cachedWebhookPolicyKey: string | null = null;
+
+function resolveWebhookPolicy(): WebhookPolicy {
+  const rawHosts = process.env.WEBHOOK_ALLOWED_HOSTS || '';
+  const allowed = rawHosts
+    .split(',')
+    .map((value) => value.trim().toLowerCase())
+    .filter(Boolean);
+  const timeoutRaw = process.env.WEBHOOK_TIMEOUT_MS;
+  const parsedTimeout = timeoutRaw ? Number(timeoutRaw) : Number.NaN;
+  const timeoutMs =
+    Number.isFinite(parsedTimeout) && parsedTimeout > 0
+      ? Math.floor(parsedTimeout)
+      : 5000;
+  const maxBytesRaw = process.env.WEBHOOK_MAX_BYTES;
+  const parsedMaxBytes = maxBytesRaw ? Number(maxBytesRaw) : Number.NaN;
+  const maxBytes =
+    Number.isFinite(parsedMaxBytes) && parsedMaxBytes > 0
+      ? Math.floor(parsedMaxBytes)
+      : 1024 * 1024;
+  const allowHttp = process.env.WEBHOOK_ALLOW_HTTP === 'true';
+  const allowPrivateIp = process.env.WEBHOOK_ALLOW_PRIVATE_IP === 'true';
+  return {
+    enabled: allowed.length > 0,
+    allowedHosts: new Set(allowed),
+    allowHttp,
+    allowPrivateIp,
+    timeoutMs,
+    maxBytes,
+  };
+}
+
+function getWebhookPolicy(): WebhookPolicy {
+  const key = [
+    process.env.WEBHOOK_ALLOWED_HOSTS || '',
+    process.env.WEBHOOK_TIMEOUT_MS || '',
+    process.env.WEBHOOK_MAX_BYTES || '',
+    process.env.WEBHOOK_ALLOW_HTTP || '',
+    process.env.WEBHOOK_ALLOW_PRIVATE_IP || '',
+  ].join('|');
+  if (cachedWebhookPolicy && cachedWebhookPolicyKey === key) {
+    return cachedWebhookPolicy;
+  }
+  cachedWebhookPolicy = resolveWebhookPolicy();
+  cachedWebhookPolicyKey = key;
+  return cachedWebhookPolicy;
+}
+
+function isPrivateIPv4(ip: string): boolean {
+  const parts = ip.split('.').map((value) => Number(value));
+  if (parts.length !== 4) return true;
+  if (
+    parts.some((value) => !Number.isInteger(value) || value < 0 || value > 255)
+  )
+    return true;
+  const [a, b, c, d] = parts;
+  if (a === 255 && b === 255 && c === 255 && d === 255) return true;
+  if (a === 10) return true;
+  if (a === 127) return true;
+  if (a === 0) return true;
+  if (a === 169 && b === 254) return true;
+  if (a === 172 && b >= 16 && b <= 31) return true;
+  if (a === 192 && b === 168) return true;
+  if (a === 192 && b === 0 && c === 2) return true;
+  if (a === 100 && b >= 64 && b <= 127) return true;
+  if (a === 198 && (b === 18 || b === 19)) return true;
+  if (a === 198 && b === 51 && c === 100) return true;
+  if (a === 203 && b === 0 && c === 113) return true;
+  if (a >= 224) return true;
+  return false;
+}
+
+function isPrivateIPv6(ip: string): boolean {
+  const normalized = ip.toLowerCase();
+  if (normalized === '::' || normalized === '::1') return true;
+  if (normalized.startsWith('fe80:')) return true;
+  if (normalized.startsWith('fec0:')) return true;
+  if (normalized.startsWith('fc') || normalized.startsWith('fd')) return true;
+  if (normalized.startsWith('ff')) return true;
+  if (normalized.startsWith('2001:db8')) return true;
+  if (normalized.startsWith('::ffff:')) {
+    const tail = normalized.slice('::ffff:'.length);
+    if (isIP(tail) === 4) return isPrivateIPv4(tail);
+  }
+  return false;
+}
+
+function isPrivateAddress(ip: string): boolean {
+  const version = isIP(ip);
+  if (version === 4) return isPrivateIPv4(ip);
+  if (version === 6) return isPrivateIPv6(ip);
+  return true;
+}
+
+async function validateWebhookUrl(
+  rawUrl: string,
+  policy: WebhookPolicy,
+): Promise<{ ok: true; url: URL } | { ok: false; error: string }> {
+  let parsed: URL;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    return { ok: false, error: 'invalid_url' };
+  }
+  const protocol = parsed.protocol.toLowerCase();
+  if (protocol !== 'https:' && !(policy.allowHttp && protocol === 'http:')) {
+    return { ok: false, error: 'insecure_scheme' };
+  }
+  const hostname = parsed.hostname.toLowerCase();
+  if (!hostname) return { ok: false, error: 'missing_hostname' };
+  if (!policy.allowedHosts.has(hostname)) {
+    return { ok: false, error: 'host_not_allowed' };
+  }
+  const port = parsed.port;
+  const defaultPort = protocol === 'https:' ? '443' : '80';
+  if (port && port !== defaultPort) {
+    return { ok: false, error: 'port_not_allowed' };
+  }
+  if (policy.allowPrivateIp) {
+    return { ok: true, url: parsed };
+  }
+  if (isIP(hostname)) {
+    return isPrivateAddress(hostname)
+      ? { ok: false, error: 'private_ip_blocked' }
+      : { ok: true, url: parsed };
+  }
+  try {
+    const resolved = await dnsLookup(hostname, { all: true, verbatim: true });
+    if (!resolved.length) {
+      return { ok: false, error: 'dns_lookup_failed' };
+    }
+    const hasPrivate = resolved.some(({ address }) =>
+      isPrivateAddress(address),
+    );
+    if (hasPrivate) {
+      return { ok: false, error: 'private_ip_blocked' };
+    }
+  } catch {
+    return { ok: false, error: 'dns_lookup_failed' };
+  }
+  return { ok: true, url: parsed };
+}
+
+async function postJson(
+  url: string,
+  payload: Record<string, unknown>,
+  channel: 'slack' | 'webhook',
+): Promise<NotifyResult> {
+  const safeUrl = redactUrl(url);
+  const policy = getWebhookPolicy();
+  if (!policy.enabled) {
+    return { status: 'skipped', channel, target: safeUrl, error: 'disabled' };
+  }
+  const validation = await validateWebhookUrl(url, policy);
+  if (!validation.ok) {
+    return {
+      status: 'skipped',
+      channel,
+      target: safeUrl,
+      error: validation.error,
+    };
+  }
+  const body = JSON.stringify(payload);
+  if (Buffer.byteLength(body, 'utf8') > policy.maxBytes) {
+    return {
+      status: 'failed',
+      channel,
+      target: safeUrl,
+      error: 'payload_too_large',
+    };
+  }
+  if (!policy.allowPrivateIp) {
+    const hostname = validation.url.hostname.toLowerCase();
+    if (!isIP(hostname)) {
+      try {
+        const resolved = await dnsLookup(hostname, {
+          all: true,
+          verbatim: true,
+        });
+        const hasPrivate = resolved.some(({ address }) =>
+          isPrivateAddress(address),
+        );
+        if (hasPrivate) {
+          return {
+            status: 'skipped',
+            channel,
+            target: safeUrl,
+            error: 'private_ip_blocked',
+          };
+        }
+      } catch {
+        return {
+          status: 'skipped',
+          channel,
+          target: safeUrl,
+          error: 'dns_lookup_failed',
+        };
+      }
+    }
+  }
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), policy.timeoutMs);
+  try {
+    const res = await fetch(validation.url.toString(), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'User-Agent': 'ITDO_ERP4/0.1',
+      },
+      signal: controller.signal,
+      redirect: 'error',
+      body,
+    });
+    if (!res.ok) {
+      return {
+        status: 'failed',
+        channel,
+        target: safeUrl,
+        error: `http_${res.status}`,
+      };
+    }
+    return { status: 'success', channel, target: safeUrl };
+  } catch (err) {
+    const message =
+      err &&
+      typeof err === 'object' &&
+      'name' in err &&
+      (err as { name?: unknown }).name === 'AbortError'
+        ? 'timeout'
+        : 'send_failed';
+    return { status: 'failed', channel, target: safeUrl, error: message };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function buildSlackPayload(payload: Record<string, unknown>) {
+  const settingId = payload.settingId;
+  const metric = payload.metric;
+  const threshold = payload.threshold;
+  if (
+    typeof settingId === 'string' &&
+    typeof metric === 'number' &&
+    typeof threshold === 'number'
+  ) {
+    return {
+      text: `[ERP4] Alert triggered: ${settingId} (metric=${metric}, threshold=${threshold})`,
+    };
+  }
+  return {
+    text: '[ERP4] Alert notification sent',
+  };
+}
+
 export async function sendSlackWebhookStub(
   url: string,
   payload: Record<string, unknown>,
@@ -415,6 +681,13 @@ export async function sendSlackWebhookStub(
   return { status: 'stub', channel: 'slack', target: safeUrl };
 }
 
+export async function sendSlackWebhook(
+  url: string,
+  payload: Record<string, unknown>,
+): Promise<NotifyResult> {
+  return postJson(url, buildSlackPayload(payload), 'slack');
+}
+
 export async function sendWebhookStub(
   url: string,
   payload: Record<string, unknown>,
@@ -422,6 +695,13 @@ export async function sendWebhookStub(
   const safeUrl = redactUrl(url);
   console.log('[webhook stub]', { url: safeUrl, payload });
   return { status: 'stub', channel: 'webhook', target: safeUrl };
+}
+
+export async function sendWebhook(
+  url: string,
+  payload: Record<string, unknown>,
+): Promise<NotifyResult> {
+  return postJson(url, payload, 'webhook');
 }
 
 export function buildStubResults(channels: string[]): NotifyResult[] {

@@ -1,8 +1,8 @@
 import {
   buildStubResults,
   sendEmail,
-  sendSlackWebhookStub,
-  sendWebhookStub,
+  sendSlackWebhook,
+  sendWebhook,
 } from './notifier.js';
 import { prisma } from './db.js';
 import type {
@@ -110,7 +110,7 @@ async function sendAlertNotification(
       });
     } else {
       for (const url of targets) {
-        sentResult.push(await sendSlackWebhookStub(url, payload));
+        sentResult.push(await sendSlackWebhook(url, payload));
       }
     }
   }
@@ -124,7 +124,7 @@ async function sendAlertNotification(
       });
     } else {
       for (const url of targets) {
-        sentResult.push(await sendWebhookStub(url, payload));
+        sentResult.push(await sendWebhook(url, payload));
       }
     }
   }
