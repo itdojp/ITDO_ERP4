@@ -209,9 +209,7 @@ export const PeriodLocks: React.FC = () => {
           <Input
             label="period"
             value={filters.period}
-            onChange={(e) =>
-              setFilters({ ...filters, period: e.target.value })
-            }
+            onChange={(e) => setFilters({ ...filters, period: e.target.value })}
             placeholder="YYYY-MM"
           />
           <Select
@@ -255,10 +253,7 @@ export const PeriodLocks: React.FC = () => {
               <div>
                 <strong>{item.period}</strong> / {item.scope}
               </div>
-              <Button
-                variant="secondary"
-                onClick={() => removeLock(item.id)}
-              >
+              <Button variant="secondary" onClick={() => removeLock(item.id)}>
                 解除
               </Button>
             </div>

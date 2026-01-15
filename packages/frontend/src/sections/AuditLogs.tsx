@@ -1,7 +1,10 @@
 import React, { useMemo, useState } from 'react';
 import { api, apiResponse } from '../api';
 import { Alert, Button, Card, EmptyState, Input, Select } from '../ui';
-import { downloadResponseAsFile, formatDateForFilename } from '../utils/download';
+import {
+  downloadResponseAsFile,
+  formatDateForFilename,
+} from '../utils/download';
 
 type AuditLogItem = {
   id: string;
@@ -100,9 +103,7 @@ export const AuditLogs: React.FC = () => {
     try {
       setIsLoading(true);
       setMessage('');
-      const res = await api<{ items: AuditLogItem[] }>(
-        `/audit-logs?${query}`,
-      );
+      const res = await api<{ items: AuditLogItem[] }>(`/audit-logs?${query}`);
       setItems(res.items || []);
     } catch (err) {
       setItems([]);

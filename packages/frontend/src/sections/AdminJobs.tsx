@@ -40,9 +40,7 @@ const buildInitialState = (): Record<JobKey, JobState> => ({
 });
 
 export const AdminJobs: React.FC = () => {
-  const [jobs, setJobs] = useState<Record<JobKey, JobState>>(
-    buildInitialState,
-  );
+  const [jobs, setJobs] = useState<Record<JobKey, JobState>>(buildInitialState);
   const [reportDryRun, setReportDryRun] = useState(false);
   const [reportRetryDryRun, setReportRetryDryRun] = useState(false);
   const [notificationDryRun, setNotificationDryRun] = useState(false);
@@ -51,8 +49,7 @@ export const AdminJobs: React.FC = () => {
   const notificationLimitError = useMemo(() => {
     if (!notificationLimit.trim()) return '';
     const parsed = Number(notificationLimit);
-    if (!Number.isFinite(parsed))
-      return 'limit は有効な数値で入力してください';
+    if (!Number.isFinite(parsed)) return 'limit は有効な数値で入力してください';
     if (parsed < 1 || parsed > 200) return 'limit は 1-200 で入力してください';
     return '';
   }, [notificationLimit]);
@@ -111,7 +108,8 @@ export const AdminJobs: React.FC = () => {
   };
   const runRecurringProjects = () =>
     runJob('recurringProjects', '/jobs/recurring-projects/run');
-  const runIntegrations = () => runJob('integrations', '/jobs/integrations/run');
+  const runIntegrations = () =>
+    runJob('integrations', '/jobs/integrations/run');
 
   const renderResult = (key: JobKey) => {
     const state = jobs[key];
@@ -251,7 +249,9 @@ export const AdminJobs: React.FC = () => {
             通知配信
           </Button>
         </div>
-        <div style={{ marginTop: 12 }}>{renderResult('notificationDeliveries')}</div>
+        <div style={{ marginTop: 12 }}>
+          {renderResult('notificationDeliveries')}
+        </div>
       </Card>
 
       <Card padding="small">

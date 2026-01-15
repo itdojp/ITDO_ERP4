@@ -1,7 +1,10 @@
 import React, { useMemo, useState } from 'react';
 import { api, apiResponse } from '../api';
 import { Alert, Button, Card, EmptyState } from '../ui';
-import { downloadResponseAsFile, formatDateForFilename } from '../utils/download';
+import {
+  downloadResponseAsFile,
+  formatDateForFilename,
+} from '../utils/download';
 
 type AccessReviewUser = {
   id: string;
@@ -118,9 +121,7 @@ export const AccessReviews: React.FC = () => {
             <span className="badge">
               memberships: {snapshot.memberships.length}
             </span>
-            {hasMoreUsers && (
-              <span className="badge">上位20件を表示</span>
-            )}
+            {hasMoreUsers && <span className="badge">上位20件を表示</span>}
           </div>
           <div style={{ marginTop: 12, display: 'grid', gap: 8 }}>
             {visibleUsers.map((user) => (
