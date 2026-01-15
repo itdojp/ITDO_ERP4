@@ -66,7 +66,8 @@ export const ScimSettingsCard: React.FC = () => {
           Base URL: <code>{baseUrl}</code>
         </div>
         <div>
-          認可方式: Authorization: Bearer <code>SCIM_BEARER_TOKEN</code>
+          認可方式: Authorization: Bearer <code>{'{トークン}'}</code>
+          （バックエンド環境変数 <code>SCIM_BEARER_TOKEN</code> の値）
         </div>
         <div>
           最大取得件数: {status ? status.pageMax : '-'}
