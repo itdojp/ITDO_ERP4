@@ -78,7 +78,7 @@ const ALLOWED_ASSET_HOSTS = new Set(
     .filter(Boolean),
 );
 
-function resolvePdfStorageDir() {
+export function resolvePdfStorageDir() {
   return process.env.PDF_STORAGE_DIR || '/tmp/erp4/pdfs';
 }
 
