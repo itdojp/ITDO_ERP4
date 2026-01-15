@@ -5,6 +5,10 @@
 - 画面キャプチャなどの証跡は `docs/test-results/YYYY-MM-DD-*/` に保存する。
 
 ## 一覧
+### 2026-01-15
+- フロントE2E(フル + UIエビデンス): docs/test-results/2026-01-15-frontend-e2e.md
+- 証跡: docs/test-results/2026-01-15-frontend-e2e/
+
 ### 2026-01-12
 - フロントE2E(extended): docs/test-results/2026-01-12-frontend-e2e.md
 
