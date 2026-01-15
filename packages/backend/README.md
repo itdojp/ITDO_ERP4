@@ -60,9 +60,11 @@ npm run dev
 - env:
   - WEBHOOK_ALLOWED_HOSTS=hooks.slack.com,example.com（ホスト名の完全一致。未設定は無効）
   - WEBHOOK_TIMEOUT_MS (optional; default 5000)
+  - WEBHOOK_MAX_BYTES (optional; default 1048576)
   - WEBHOOK_ALLOW_HTTP / WEBHOOK_ALLOW_PRIVATE_IP (DEV-ONLY; optional)
 - セキュリティ:
   - allowlist に含まれないホスト/プライベートIP宛は拒否（SSRF対策）
+  - リダイレクトは追従せずエラー扱い（open redirect 経由のSSRF回避）
   - 本番で有効化する場合は送信先の統制（運用ルール/監査）を前提にする
 
 ## Auth (JWT/OIDC)

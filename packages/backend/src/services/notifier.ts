@@ -414,7 +414,11 @@ type WebhookPolicy = {
   allowHttp: boolean;
   allowPrivateIp: boolean;
   timeoutMs: number;
+  maxBytes: number;
 };
+
+let cachedWebhookPolicy: WebhookPolicy | null = null;
+let cachedWebhookPolicyKey: string | null = null;
 
 function resolveWebhookPolicy(): WebhookPolicy {
   const rawHosts = process.env.WEBHOOK_ALLOWED_HOSTS || '';
@@ -428,6 +432,12 @@ function resolveWebhookPolicy(): WebhookPolicy {
     Number.isFinite(parsedTimeout) && parsedTimeout > 0
       ? Math.floor(parsedTimeout)
       : 5000;
+  const maxBytesRaw = process.env.WEBHOOK_MAX_BYTES;
+  const parsedMaxBytes = maxBytesRaw ? Number(maxBytesRaw) : Number.NaN;
+  const maxBytes =
+    Number.isFinite(parsedMaxBytes) && parsedMaxBytes > 0
+      ? Math.floor(parsedMaxBytes)
+      : 1024 * 1024;
   const allowHttp = process.env.WEBHOOK_ALLOW_HTTP === 'true';
   const allowPrivateIp = process.env.WEBHOOK_ALLOW_PRIVATE_IP === 'true';
   return {
@@ -436,7 +446,24 @@ function resolveWebhookPolicy(): WebhookPolicy {
     allowHttp,
     allowPrivateIp,
     timeoutMs,
+    maxBytes,
   };
+}
+
+function getWebhookPolicy(): WebhookPolicy {
+  const key = [
+    process.env.WEBHOOK_ALLOWED_HOSTS || '',
+    process.env.WEBHOOK_TIMEOUT_MS || '',
+    process.env.WEBHOOK_MAX_BYTES || '',
+    process.env.WEBHOOK_ALLOW_HTTP || '',
+    process.env.WEBHOOK_ALLOW_PRIVATE_IP || '',
+  ].join('|');
+  if (cachedWebhookPolicy && cachedWebhookPolicyKey === key) {
+    return cachedWebhookPolicy;
+  }
+  cachedWebhookPolicy = resolveWebhookPolicy();
+  cachedWebhookPolicyKey = key;
+  return cachedWebhookPolicy;
 }
 
 function isPrivateIPv4(ip: string): boolean {
@@ -446,15 +473,19 @@ function isPrivateIPv4(ip: string): boolean {
     parts.some((value) => !Number.isInteger(value) || value < 0 || value > 255)
   )
     return true;
-  const [a, b] = parts;
+  const [a, b, c, d] = parts;
+  if (a === 255 && b === 255 && c === 255 && d === 255) return true;
   if (a === 10) return true;
   if (a === 127) return true;
   if (a === 0) return true;
   if (a === 169 && b === 254) return true;
   if (a === 172 && b >= 16 && b <= 31) return true;
   if (a === 192 && b === 168) return true;
+  if (a === 192 && b === 0 && c === 2) return true;
   if (a === 100 && b >= 64 && b <= 127) return true;
   if (a === 198 && (b === 18 || b === 19)) return true;
+  if (a === 198 && b === 51 && c === 100) return true;
+  if (a === 203 && b === 0 && c === 113) return true;
   if (a >= 224) return true;
   return false;
 }
@@ -463,7 +494,10 @@ function isPrivateIPv6(ip: string): boolean {
   const normalized = ip.toLowerCase();
   if (normalized === '::' || normalized === '::1') return true;
   if (normalized.startsWith('fe80:')) return true;
+  if (normalized.startsWith('fec0:')) return true;
   if (normalized.startsWith('fc') || normalized.startsWith('fd')) return true;
+  if (normalized.startsWith('ff')) return true;
+  if (normalized.startsWith('2001:db8')) return true;
   if (normalized.startsWith('::ffff:')) {
     const tail = normalized.slice('::ffff:'.length);
     if (isIP(tail) === 4) return isPrivateIPv4(tail);
@@ -533,7 +567,7 @@ async function postJson(
   channel: 'slack' | 'webhook',
 ): Promise<NotifyResult> {
   const safeUrl = redactUrl(url);
-  const policy = resolveWebhookPolicy();
+  const policy = getWebhookPolicy();
   if (!policy.enabled) {
     return { status: 'skipped', channel, target: safeUrl, error: 'disabled' };
   }
@@ -546,6 +580,44 @@ async function postJson(
       error: validation.error,
     };
   }
+  const body = JSON.stringify(payload);
+  if (Buffer.byteLength(body, 'utf8') > policy.maxBytes) {
+    return {
+      status: 'failed',
+      channel,
+      target: safeUrl,
+      error: 'payload_too_large',
+    };
+  }
+  if (!policy.allowPrivateIp) {
+    const hostname = validation.url.hostname.toLowerCase();
+    if (!isIP(hostname)) {
+      try {
+        const resolved = await dnsLookup(hostname, {
+          all: true,
+          verbatim: true,
+        });
+        const hasPrivate = resolved.some(({ address }) =>
+          isPrivateAddress(address),
+        );
+        if (hasPrivate) {
+          return {
+            status: 'skipped',
+            channel,
+            target: safeUrl,
+            error: 'private_ip_blocked',
+          };
+        }
+      } catch {
+        return {
+          status: 'skipped',
+          channel,
+          target: safeUrl,
+          error: 'dns_lookup_failed',
+        };
+      }
+    }
+  }
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), policy.timeoutMs);
   try {
@@ -555,8 +627,9 @@ async function postJson(
         'Content-Type': 'application/json',
         'User-Agent': 'ITDO_ERP4/0.1',
       },
-      body: JSON.stringify(payload),
       signal: controller.signal,
+      redirect: 'error',
+      body,
     });
     if (!res.ok) {
       return {
@@ -574,9 +647,7 @@ async function postJson(
       'name' in err &&
       (err as { name?: unknown }).name === 'AbortError'
         ? 'timeout'
-        : err instanceof Error
-          ? err.message
-          : 'send_failed';
+        : 'send_failed';
     return { status: 'failed', channel, target: safeUrl, error: message };
   } finally {
     clearTimeout(timer);
@@ -597,7 +668,7 @@ function buildSlackPayload(payload: Record<string, unknown>) {
     };
   }
   return {
-    text: `[ERP4] Notification: ${JSON.stringify(payload)}`,
+    text: '[ERP4] Alert notification sent',
   };
 }
 

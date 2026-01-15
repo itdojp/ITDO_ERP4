@@ -17,6 +17,8 @@
   - `https://` のみ許可（`WEBHOOK_ALLOW_HTTP=true` を明示した場合のみ `http://` を許可）
   - プライベートIP（10/8, 192.168/16 等）への送信は拒否（`WEBHOOK_ALLOW_PRIVATE_IP=true` で無効化可）
   - タイムアウト: `WEBHOOK_TIMEOUT_MS`（未指定は 5000ms）
+  - 最大ペイロード: `WEBHOOK_MAX_BYTES`（未指定は 1048576 bytes）
+  - リダイレクト: follow しない（redirect はエラー扱い）
 
 ## 仕様メモ
 - AlertSetting: type (budget_overrun/overtime/approval_delay/approval_escalation/delivery_due), threshold, scope, recipients (emails/roles/users/slackWebhooks/webhooks), channels
