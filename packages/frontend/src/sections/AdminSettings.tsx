@@ -3,6 +3,7 @@ import { api } from '../api';
 import { ChatSettingsCard } from './ChatSettingsCard';
 import { ChatRoomSettingsCard } from './ChatRoomSettingsCard';
 import { RateCardSettingsCard } from './RateCardSettingsCard';
+import { ScimSettingsCard } from './ScimSettingsCard';
 
 type AlertSetting = {
   id: string;
@@ -881,6 +882,7 @@ export const AdminSettings: React.FC = () => {
       <div className="list" style={{ display: 'grid', gap: 12 }}>
         <ChatSettingsCard />
         <ChatRoomSettingsCard />
+        <ScimSettingsCard />
         <RateCardSettingsCard />
         <div className="card" style={{ padding: 12 }}>
           <strong>アラート設定（簡易モック）</strong>

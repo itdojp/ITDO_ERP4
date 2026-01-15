@@ -3,6 +3,7 @@ import { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { Prisma } from '@prisma/client';
 import { prisma } from '../services/db.js';
 import { auditContextFromRequest, logAudit } from '../services/audit.js';
+import { requireRole } from '../services/rbac.js';
 
 const SCIM_USER_SCHEMA = 'urn:ietf:params:scim:schemas:core:2.0:User';
 const SCIM_GROUP_SCHEMA = 'urn:ietf:params:scim:schemas:core:2.0:Group';
@@ -431,6 +432,18 @@ async function removeGroupMembers(groupId: string, memberIds: string[]) {
 }
 
 export async function registerScimRoutes(app: FastifyInstance) {
+  app.get(
+    '/scim/status',
+    { preHandler: requireRole(['admin', 'mgmt']) },
+    async () => {
+      const token = process.env.SCIM_BEARER_TOKEN;
+      return {
+        configured: Boolean(token && token.trim()),
+        pageMax: resolvePageSize(),
+      };
+    },
+  );
+
   app.get('/scim/v2/ServiceProviderConfig', async (req, reply) => {
     if (requireScimAuth(req, reply)) return;
     return {
