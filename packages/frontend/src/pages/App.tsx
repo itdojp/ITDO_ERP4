@@ -25,6 +25,7 @@ import { AccessReviews } from '../sections/AccessReviews';
 import { AuditLogs } from '../sections/AuditLogs';
 import { PeriodLocks } from '../sections/PeriodLocks';
 import { AdminJobs } from '../sections/AdminJobs';
+import { DocumentSendLogs } from '../sections/DocumentSendLogs';
 
 export const App: React.FC = () => {
   return (
@@ -84,6 +85,9 @@ export const App: React.FC = () => {
       </Card>
       <Card>
         <AdminJobs />
+      </Card>
+      <Card>
+        <DocumentSendLogs />
       </Card>
       <Card>
         <AccessReviews />
