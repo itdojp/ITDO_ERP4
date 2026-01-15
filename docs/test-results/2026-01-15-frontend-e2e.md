@@ -22,10 +22,12 @@ E2E_SCOPE=full E2E_CAPTURE=1 ./scripts/e2e-frontend.sh
 - `docs/test-results/2026-01-15-frontend-e2e/`
 
 ### 主なキャプチャ
+- `00-current-user.png`
 - `01-core-dashboard.png`
 - `02-core-daily-report.png`
 - `03-core-time-entries.png`
 - `06-core-invoices.png`
+- `06-core-global-search.png`
 - `07-approvals.png`
 - `08-reports.png`
 - `09-projects.png`
@@ -35,6 +37,21 @@ E2E_SCOPE=full E2E_CAPTURE=1 ./scripts/e2e-frontend.sh
 - `13-hr-analytics.png`
 - `14-room-chat.png`
 - `16-offline-duplicate-time-entry.png`
+- `21-project-tasks.png`
+- `22-leave-requests.png`
+- `23-project-milestones.png`
+- `24-chat-break-glass.png`
+
+## 追加実行（UI補完）
+- 実行日時: 2026-01-15
+- 実行コマンド:
+```bash
+E2E_DATE=2026-01-15 \
+E2E_GREP="frontend smoke core|frontend smoke additional sections" \
+E2E_CAPTURE=1 ./scripts/e2e-frontend.sh
+```
+- 結果: 2 passed
+- 追加キャプチャ: `00-current-user.png` / `06-core-global-search.png` / `21-project-tasks.png` / `22-leave-requests.png` / `23-project-milestones.png` / `24-chat-break-glass.png`
 
 ## 実行されたテスト（全件）
 - `delivery due report @core`

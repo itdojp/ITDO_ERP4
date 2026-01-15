@@ -121,6 +121,11 @@ async function ensureOk(res: { ok(): boolean; status(): number }) {
 test('frontend smoke core @core', async ({ page }) => {
   await prepare(page);
 
+  const currentUserSection = page.locator('.card', {
+    has: page.locator('strong', { hasText: '現在のユーザー' }),
+  });
+  await captureSection(currentUserSection, '00-current-user.png');
+
   const dashboardSection = page
     .locator('h2', { hasText: 'Dashboard' })
     .locator('..');
@@ -250,6 +255,7 @@ test('frontend smoke core @core', async ({ page }) => {
   await expect(searchSection.getByText('PRJ-DEMO-1')).toBeVisible({
     timeout: actionTimeout,
   });
+  await captureSection(searchSection, '06-core-global-search.png');
 });
 
 test('frontend smoke vendor approvals @extended', async ({ page }) => {
@@ -1022,4 +1028,29 @@ test('frontend smoke external chat invited rooms @extended', async ({
   });
 
   await externalPage.close();
+});
+
+test('frontend smoke additional sections @extended', async ({ page }) => {
+  test.setTimeout(180_000);
+  await prepare(page);
+
+  const taskSection = page.locator('h2', { hasText: 'タスク' }).locator('..');
+  await taskSection.scrollIntoViewIfNeeded();
+  await captureSection(taskSection, '21-project-tasks.png');
+
+  const leaveSection = page.locator('h2', { hasText: '休暇' }).locator('..');
+  await leaveSection.scrollIntoViewIfNeeded();
+  await captureSection(leaveSection, '22-leave-requests.png');
+
+  const milestoneSection = page
+    .locator('h2', { hasText: 'マイルストーン' })
+    .locator('..');
+  await milestoneSection.scrollIntoViewIfNeeded();
+  await captureSection(milestoneSection, '23-project-milestones.png');
+
+  const breakGlassSection = page
+    .locator('h2', { hasText: 'Chat break-glass（監査閲覧）' })
+    .locator('..');
+  await breakGlassSection.scrollIntoViewIfNeeded();
+  await captureSection(breakGlassSection, '24-chat-break-glass.png');
 });
