@@ -21,6 +21,9 @@ import { MasterData } from '../sections/MasterData';
 import { Projects } from '../sections/Projects';
 import { ProjectMilestones } from '../sections/ProjectMilestones';
 import { VendorDocuments } from '../sections/VendorDocuments';
+import { AccessReviews } from '../sections/AccessReviews';
+import { AuditLogs } from '../sections/AuditLogs';
+import { PeriodLocks } from '../sections/PeriodLocks';
 
 export const App: React.FC = () => {
   return (
@@ -77,6 +80,15 @@ export const App: React.FC = () => {
       </Card>
       <Card>
         <AdminSettings />
+      </Card>
+      <Card>
+        <AccessReviews />
+      </Card>
+      <Card>
+        <AuditLogs />
+      </Card>
+      <Card>
+        <PeriodLocks />
       </Card>
       <Card>
         <ProjectChat />

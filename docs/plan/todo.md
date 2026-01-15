@@ -4,6 +4,29 @@
 - [ ] #544 S3 バケット/リージョン/KMS の確定値を `docs/requirements/backup-restore.md` に反映
 - [ ] #544 S3/OSS 移行の時期を決定（`docs/requirements/backup-restore.md`）
 
+## 次アクション（未実装対応: FE/BE）
+- [x] #551 #552 未実装項目の解消（優先度A: 管理/監査UI）
+  - [x] FE: アクセス棚卸しスナップショット（/access-reviews/snapshot）UI
+  - [x] FE: 監査ログ検索/CSV出力（/audit-logs）UI
+  - [x] FE: 期間締め（/period-locks）管理UI
+- [ ] 未実装項目の解消（優先度B: ジョブ/運用UI）
+  - [ ] FE: ジョブ実行UI（/jobs/alerts/run, /jobs/approval-escalations/run, /jobs/data-quality/run）
+  - [ ] FE: 通知配信ジョブUI（/jobs/notification-deliveries/run）
+  - [ ] FE: レポート配信ジョブUI（/jobs/report-subscriptions/run, /jobs/report-deliveries/retry）
+  - [ ] FE: 定期案件ジョブUI（/jobs/recurring-projects/run）
+  - [ ] FE: 連携ジョブUI（/jobs/integrations/run）
+- [ ] 未実装項目の解消（優先度C: 文書送信/ファイル/通知UI）
+  - [ ] FE: 発注書の送信履歴（/purchase-orders/:id/send-logs）UI
+  - [ ] FE: ドキュメント送信ログ詳細/イベント（/document-send-logs/:id, /document-send-logs/:id/events）UI
+  - [ ] FE: ドキュメント送信ログの再送（/document-send-logs/:id/retry）UI
+  - [ ] FE: PDFファイル閲覧導線（/pdf-files/:filename）
+  - [ ] FE: Pushテスト送信UI（/push-notifications/test）
+- [ ] 未実装項目の解消（優先度D: 実配信/外部連携）
+  - [ ] BE: Push通知の実配信（/push-notifications/test の stub 解消）
+  - [ ] BE: Slack/Webhook通知の実装（notifier の stub 解消、優先度低）
+  - [ ] BE: 添付AVスキャンの実運用（stub/eicar からの移行、要否判断）
+  - [ ] FE: SCIM 設定/状態のUI（/scim/*、要否判断）
+
 ## 次アクション（プロジェクト運用/レポート）
 - [x] #522 EVM（PV/EV/AC/SPI/CPI）日次算出（PR #532）
   - [x] API: `GET /reports/project-evm/:projectId?from=YYYY-MM-DD&to=YYYY-MM-DD`
