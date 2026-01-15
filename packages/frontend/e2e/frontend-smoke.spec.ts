@@ -1054,3 +1054,110 @@ test('frontend smoke additional sections @extended', async ({ page }) => {
   await breakGlassSection.scrollIntoViewIfNeeded();
   await captureSection(breakGlassSection, '24-chat-break-glass.png');
 });
+
+test('frontend smoke admin ops @extended', async ({ page }) => {
+  test.setTimeout(180_000);
+  await prepare(page);
+
+  const run = runId();
+  const estimateCreateRes = await page.request.post(
+    `${apiBase}/projects/${encodeURIComponent(authState.projectIds[0])}/estimates`,
+    {
+      headers: buildAuthHeaders(),
+      data: {
+        totalAmount: 12345,
+        currency: 'JPY',
+        notes: `E2E-admin-ops-${run}`,
+      },
+    },
+  );
+  await ensureOk(estimateCreateRes);
+  const estimateCreatePayload = await estimateCreateRes.json();
+  const estimateId = estimateCreatePayload?.estimate?.id as string | undefined;
+  expect(estimateId).toBeTruthy();
+
+  const estimateSendRes = await page.request.post(
+    `${apiBase}/estimates/${encodeURIComponent(estimateId)}/send`,
+    { headers: buildAuthHeaders() },
+  );
+  await ensureOk(estimateSendRes);
+
+  const sendLogsRes = await page.request.get(
+    `${apiBase}/estimates/${encodeURIComponent(estimateId)}/send-logs`,
+    { headers: buildAuthHeaders() },
+  );
+  await ensureOk(sendLogsRes);
+  const sendLogsPayload = await sendLogsRes.json();
+  const sendLogId = (sendLogsPayload?.items ?? [])[0]?.id as
+    | string
+    | undefined;
+
+  const now = new Date();
+  const lockPeriod = now.toISOString().slice(0, 7);
+  const lockRes = await page.request.post(`${apiBase}/period-locks`, {
+    headers: buildAuthHeaders(),
+    data: { period: lockPeriod, scope: 'global', reason: `e2e-${run}` },
+  });
+  if (!lockRes.ok() && lockRes.status() !== 409) {
+    throw new Error(`Failed to create period lock: ${lockRes.status()}`);
+  }
+
+  const adminJobsSection = page
+    .locator('h2', { hasText: '運用ジョブ' })
+    .locator('..');
+  await adminJobsSection.scrollIntoViewIfNeeded();
+  await captureSection(adminJobsSection, '25-admin-jobs.png');
+
+  const sendLogSection = page
+    .locator('h2', { hasText: 'ドキュメント送信ログ' })
+    .locator('..');
+  await sendLogSection.scrollIntoViewIfNeeded();
+  if (sendLogId) {
+    await sendLogSection.getByLabel('sendLogId').fill(sendLogId);
+    await sendLogSection.getByRole('button', { name: 'まとめて取得' }).click();
+    await expect(sendLogSection.getByText(estimateId)).toBeVisible({
+      timeout: actionTimeout,
+    });
+  }
+  await captureSection(sendLogSection, '26-document-send-logs.png');
+
+  const pdfSection = page
+    .locator('h2', { hasText: 'PDFファイル一覧' })
+    .locator('..');
+  await pdfSection.scrollIntoViewIfNeeded();
+  await safeClick(pdfSection.getByRole('button', { name: '再読込' }), 'pdf list');
+  await captureSection(pdfSection, '27-pdf-files.png');
+
+  const accessReviewSection = page
+    .locator('h2', { hasText: 'アクセス棚卸し' })
+    .locator('..');
+  await accessReviewSection.scrollIntoViewIfNeeded();
+  await safeClick(
+    accessReviewSection.getByRole('button', { name: 'スナップショット取得' }),
+    'access review snapshot',
+  );
+  await expect(accessReviewSection.getByText('users:')).toBeVisible({
+    timeout: actionTimeout,
+  });
+  await captureSection(accessReviewSection, '28-access-reviews.png');
+
+  const auditLogSection = page
+    .locator('h2', { hasText: '監査ログ' })
+    .locator('..');
+  await auditLogSection.scrollIntoViewIfNeeded();
+  await safeClick(
+    auditLogSection.getByRole('button', { name: '検索' }),
+    'audit logs search',
+  );
+  await captureSection(auditLogSection, '29-audit-logs.png');
+
+  const periodLockSection = page
+    .locator('h2', { hasText: '期間締め' })
+    .locator('..');
+  await periodLockSection.scrollIntoViewIfNeeded();
+  await safeClick(
+    periodLockSection.getByRole('button', { name: '検索' }),
+    'period locks list',
+  );
+  await captureSection(periodLockSection, '30-period-locks.png');
+});
