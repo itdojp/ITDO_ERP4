@@ -2,15 +2,15 @@
 
 ## 前提
 - 本書は PoC 環境の UI 操作に関する詳細ガイドです。
-- 画面キャプチャは 2026-01-15 実行の E2E で取得しています。
-  - 証跡: `docs/test-results/2026-01-15-frontend-e2e/`
+- 画面キャプチャは 2026-01-15 実行の E2E（r2）で取得しています。
+  - 証跡: `docs/test-results/2026-01-15-frontend-e2e-r2/`
 - 画面の表示内容は demo seed に基づきます（データ差分あり）。
 - 対象ロールの目安: admin / mgmt / exec / hr
 - 利用者向けの操作は `docs/requirements/ui-manual-user.md` を参照してください。
 
 ## 目次
 - 共通: 現在のユーザー / ダッシュボード / ERP横断検索
-- 管理者向け: 承認 / レポート / 案件 / 定期案件テンプレ / マイルストーン / マスタ / ベンダー書類 / 管理設定 / 監査閲覧 / HR分析
+- 管理者向け: 承認 / レポート / 案件 / 定期案件テンプレ / マイルストーン / マスタ / ベンダー書類 / 管理設定 / 運用ジョブ / ドキュメント送信ログ / PDFファイル一覧 / アクセス棚卸し / 監査ログ / 期間締め / 監査閲覧 / HR分析
 - 補足: PWA キャッシュ更新
 
 ## 共通: 現在のユーザー
@@ -32,7 +32,7 @@
 - Push 通知は `VITE_PUSH_PUBLIC_KEY` 未設定だと購読登録に失敗します
 - 送信待ちキューはログイン済みの場合のみ処理できます
 
-![現在のユーザー](../test-results/2026-01-15-frontend-e2e/00-current-user.png)
+![現在のユーザー](../test-results/2026-01-15-frontend-e2e-r2/00-current-user.png)
 
 ---
 
@@ -47,7 +47,7 @@
 3. 「Alerts」で `すべて表示` / `最新のみ` を切り替える
 4. 「Insights」で件数・期間・根拠・ヒントを確認する（admin/mgmt/execのみ）
 
-![ダッシュボード](../test-results/2026-01-15-frontend-e2e/01-core-dashboard.png)
+![ダッシュボード](../test-results/2026-01-15-frontend-e2e-r2/01-core-dashboard.png)
 
 ---
 
@@ -63,7 +63,7 @@
 4. チャット結果は `開く` で該当チャットを開く
 5. `クリア` で入力と結果を初期化する
 
-![ERP横断検索](../test-results/2026-01-15-frontend-e2e/06-core-global-search.png)
+![ERP横断検索](../test-results/2026-01-15-frontend-e2e-r2/06-core-global-search.png)
 
 ---
 
@@ -83,7 +83,7 @@
 ### 入力項目/制約
 - `承認対象外` は現在の承認者/グループと一致しない場合に表示されます
 
-![承認](../test-results/2026-01-15-frontend-e2e/07-approvals.png)
+![承認](../test-results/2026-01-15-frontend-e2e-r2/07-approvals.png)
 
 ### レポート
 - 目的: 工数・予実・稼働の可視化
@@ -103,7 +103,7 @@
 - `from/to` は YYYY-MM-DD 形式
 - バーンダウンはベースラインが必須
 
-![レポート](../test-results/2026-01-15-frontend-e2e/08-reports.png)
+![レポート](../test-results/2026-01-15-frontend-e2e-r2/08-reports.png)
 
 ### プロジェクト / メンバー管理
 - 目的: 案件情報とメンバー構成の確認・管理
@@ -127,8 +127,8 @@
 - メンバー権限変更は admin/mgmt のみ
 - CSV 形式: `userId,role`（role は `member` / `leader`）
 
-![プロジェクト](../test-results/2026-01-15-frontend-e2e/09-projects.png)
-![プロジェクトメンバー](../test-results/2026-01-15-frontend-e2e/09-project-members.png)
+![プロジェクト](../test-results/2026-01-15-frontend-e2e-r2/09-projects.png)
+![プロジェクトメンバー](../test-results/2026-01-15-frontend-e2e-r2/09-project-members.png)
 
 ### 定期案件テンプレ（MVP）
 - 目的: 定期案件の見積/請求ドラフトを自動生成
@@ -157,7 +157,7 @@
 5. 一覧の `削除` で削除（理由入力が必須）
 6. 「未請求（納期範囲）レポート」で `from/to` を指定し `取得`
 
-![マイルストーン](../test-results/2026-01-15-frontend-e2e/23-project-milestones.png)
+![マイルストーン](../test-results/2026-01-15-frontend-e2e-r2/23-project-milestones.png)
 
 ### マスタ管理
 - 目的: 取引先やタグ等のマスタデータ管理
@@ -176,7 +176,7 @@
 - 連絡先は氏名が必須
 - 紐付け先を変更すると入力中の情報が破棄されます
 
-![マスタ管理](../test-results/2026-01-15-frontend-e2e/10-master-data.png)
+![マスタ管理](../test-results/2026-01-15-frontend-e2e-r2/10-master-data.png)
 
 ### ベンダー書類（発注 / 仕入見積 / 仕入請求）
 - 目的: 発注書・仕入見積・仕入請求の管理
@@ -189,8 +189,8 @@
 4. 仕入請求で案件・業者・請求番号・金額・通貨・受領日・支払期限・書類URLを入力し `登録`
 5. 仕入請求の `承認依頼` を実行する
 
-![ベンダー書類一覧](../test-results/2026-01-15-frontend-e2e/06-vendor-docs.png)
-![ベンダー書類作成](../test-results/2026-01-15-frontend-e2e/06-vendor-docs-create.png)
+![ベンダー書類一覧](../test-results/2026-01-15-frontend-e2e-r2/06-vendor-docs.png)
+![ベンダー書類作成](../test-results/2026-01-15-frontend-e2e-r2/06-vendor-docs-create.png)
 
 ### 管理設定
 - 目的: 全体設定・運用設定の確認
@@ -253,7 +253,34 @@
 - JSON 入力が不正な場合は保存されません
 - チャットルーム設定は admin/mgmt のみ
 
-![管理設定](../test-results/2026-01-15-frontend-e2e/11-admin-settings.png)
+![管理設定](../test-results/2026-01-15-frontend-e2e-r2/11-admin-settings.png)
+
+### 運用ジョブ
+- 目的: バッチ処理（アラート計算/承認遅延/配信/定期案件等）を手動実行し、実行結果を確認する
+- 主な操作: dryRun の切替、各ジョブの実行、結果JSONの確認
+- 補足: 実運用ではスケジュール実行が前提（本UIは手動実行・検証用途）
+
+### 詳細操作
+1. 目的のジョブ領域（アラート/レポート配信/通知配信/定期案件/外部連携）を確認する
+2. 必要に応じて `dryRun` を有効化する（副作用を抑えた試行）
+3. 対象ジョブの `実行` ボタンを押す
+4. 結果欄の JSON を確認する
+
+![運用ジョブ](../test-results/2026-01-15-frontend-e2e-r2/25-admin-jobs.png)
+
+### ドキュメント送信ログ
+- 目的: 見積/請求/発注などの送信結果を sendLogId で追跡する（PDF、送信イベント、再送）
+- 主な操作: sendLogId で取得、イベント取得、PDF閲覧、再送
+- 補足: sendLogId は「見積/請求/発注の送信履歴」やメールメタデータ等から取得します
+
+### 詳細操作
+1. `sendLogId` を入力し `まとめて取得` を押す
+2. 送信ログの status / recipients / target を確認する
+3. `PDFを開く` でPDFを確認する（stub の場合は表示されません）
+4. 必要に応じて `再送` を実行する（既に送信済みの状態は不可）
+5. `イベント取得` でプロバイダイベント（存在する場合）を確認する
+
+![ドキュメント送信ログ](../test-results/2026-01-15-frontend-e2e-r2/26-document-send-logs.png)
 
 ### PDFファイル一覧
 - 目的: 生成済みPDFファイルの一覧確認と閲覧
@@ -264,6 +291,46 @@
 1. `filename prefix` に接頭辞（任意）を入力する
 2. `再読込` を押して一覧を取得する
 3. 対象行の `開く` を押してPDFを確認する
+
+![PDFファイル一覧](../test-results/2026-01-15-frontend-e2e-r2/27-pdf-files.png)
+
+### アクセス棚卸し
+- 目的: ユーザ/グループ/所属のスナップショットを取得し、棚卸し資料として確認・出力する
+- 主な操作: スナップショット取得、CSV出力
+- 補足: 取得結果は上位20件のみ表示（全件はCSV出力）
+
+### 詳細操作
+1. `スナップショット取得` を押す
+2. users/groups/memberships の件数と上位表示を確認する
+3. `CSV出力` で棚卸し用CSVを出力する
+
+![アクセス棚卸し](../test-results/2026-01-15-frontend-e2e-r2/28-access-reviews.png)
+
+### 監査ログ
+- 目的: 重要操作の監査ログを検索し、CSVでエクスポートする
+- 主な操作: 条件指定（期間/actor/target/reason など）、検索、CSV出力
+- 補足: 取得件数（limit）を指定可能
+
+### 詳細操作
+1. 必要なフィルタ（from/to/userId/action/targetTable/targetId 等）を入力する（任意）
+2. `検索` を押して一覧を取得する
+3. `CSV出力` を押してCSVを取得する
+
+![監査ログ](../test-results/2026-01-15-frontend-e2e-r2/29-audit-logs.png)
+
+### 期間締め
+- 目的: 月次などの期間に対する登録・更新の締め（ロック）を管理する
+- 主な操作: 締め登録（global/project）、一覧検索、解除
+- 補足: project scope は案件選択が必須
+
+### 詳細操作
+1. `period`（YYYY-MM）と `scope`（global/project）を指定する
+2. scope=project の場合は案件を選択する
+3. `reason`（任意）を入力し `締め登録` を押す
+4. 下部の検索条件を指定し `検索` で一覧を取得する
+5. 対象行の `解除` で締めを解除する
+
+![期間締め](../test-results/2026-01-15-frontend-e2e-r2/30-period-locks.png)
 
 ### 監査閲覧（Break-glass）
 - 目的: 監査目的のチャット閲覧（Break-glass）
@@ -282,7 +349,7 @@
 - `ttlHours` は 1〜168
 - 監査閲覧は `approved` 状態のみ可能
 
-![監査閲覧](../test-results/2026-01-15-frontend-e2e/24-chat-break-glass.png)
+![監査閲覧](../test-results/2026-01-15-frontend-e2e-r2/24-chat-break-glass.png)
 
 ### HR 分析（HR グループ向け）
 - 目的: ウェルビーイング指標の確認
@@ -297,14 +364,14 @@
 - 閾値未満のデータは匿名性確保のため非表示
 - 評価目的の利用は禁止
 
-![HR分析](../test-results/2026-01-15-frontend-e2e/13-hr-analytics.png)
+![HR分析](../test-results/2026-01-15-frontend-e2e-r2/13-hr-analytics.png)
 
 ---
 
 ## 補足
 - PWA のキャッシュ更新確認: サービスワーカー更新後の表示確認に利用します。
 
-![PWA キャッシュ更新](../test-results/2026-01-15-frontend-e2e/20-sw-cache-refresh.png)
+![PWA キャッシュ更新](../test-results/2026-01-15-frontend-e2e-r2/20-sw-cache-refresh.png)
 
 - `pwa push subscribe flow` は `VITE_PUSH_PUBLIC_KEY` 未設定のため E2E ではスキップしています。
 - 画面デザインは `@itdojp/design-system` 適用済みです（compact density）。

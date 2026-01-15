@@ -5,5 +5,5 @@
 - 管理者向け: `docs/requirements/ui-manual-admin.md`
 
 ## 証跡
-- 画面キャプチャ: `docs/test-results/2026-01-15-frontend-e2e/`
-
+- 画面キャプチャ: `docs/test-results/2026-01-15-frontend-e2e-r2/`（最新版）
+- 画面キャプチャ（旧）: `docs/test-results/2026-01-15-frontend-e2e/`

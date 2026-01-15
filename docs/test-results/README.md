@@ -8,6 +8,8 @@
 ### 2026-01-15
 - フロントE2E(フル + UIエビデンス): docs/test-results/2026-01-15-frontend-e2e.md
 - 証跡: docs/test-results/2026-01-15-frontend-e2e/
+- フロントE2E(フル + UIエビデンス r2): docs/test-results/2026-01-15-frontend-e2e-r2.md
+- 証跡: docs/test-results/2026-01-15-frontend-e2e-r2/
 
 ### 2026-01-12
 - フロントE2E(extended): docs/test-results/2026-01-12-frontend-e2e.md
