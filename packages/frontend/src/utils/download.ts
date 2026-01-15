@@ -65,5 +65,6 @@ export async function openResponseInNewTab(
     link.click();
     link.remove();
   }
-  window.setTimeout(() => URL.revokeObjectURL(url), URL_REVOKE_DELAY_MS);
+  const revokeDelayMs = opened ? URL_REVOKE_DELAY_MS : URL_REVOKE_DELAY_MS * 10;
+  window.setTimeout(() => URL.revokeObjectURL(url), revokeDelayMs);
 }

@@ -100,6 +100,7 @@ export const DocumentSendLogs: React.FC = () => {
     } catch (err) {
       setLog(null);
       setMessage('送信ログの取得に失敗しました');
+      console.error('Failed to load document send log.', err);
     } finally {
       setIsLoadingLog(false);
     }
@@ -120,6 +121,7 @@ export const DocumentSendLogs: React.FC = () => {
     } catch (err) {
       setEvents([]);
       setMessage('送信イベントの取得に失敗しました');
+      console.error('Failed to load document send events.', err);
     } finally {
       setIsLoadingEvents(false);
     }
@@ -149,6 +151,7 @@ export const DocumentSendLogs: React.FC = () => {
       await loadAll();
     } catch (err) {
       setMessage('再送に失敗しました');
+      console.error('Failed to retry document send.', err);
     } finally {
       setIsRetrying(false);
     }
@@ -173,6 +176,7 @@ export const DocumentSendLogs: React.FC = () => {
       await openResponseInNewTab(res, filename);
     } catch (err) {
       setMessage('PDFの取得に失敗しました');
+      console.error('Failed to open PDF.', err);
     } finally {
       setIsOpeningPdf(false);
     }

@@ -503,6 +503,7 @@ export const VendorDocuments: React.FC = () => {
       const filename = `purchase-order-${formatDateForFilename()}.pdf`;
       await openResponseInNewTab(res, filename);
     } catch (err) {
+      console.error('Failed to open purchase order PDF.', err);
       setPoSendLogMessage((prev) => ({
         ...prev,
         [id]: 'PDFの取得に失敗しました',
