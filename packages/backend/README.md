@@ -29,7 +29,9 @@ npm run dev
 ## Notes
 - Numbering: PYYYY-MM-NNNN per kind via number_sequences
 - Auth/RBAC: header mock by default; JWT (OIDC) mode available
-- Notifications: SMTP/SendGrid 設定があればメール送信、未設定なら stub
+- Notifications:
+  - Email: SMTP/SendGrid 設定があれば送信、未設定なら stub
+  - Slack/Webhook: `WEBHOOK_ALLOWED_HOSTS` 設定時のみ送信（未設定は skipped）
 - PDF: ローカル生成 + `/pdf-files/:filename` で取得
 - Validation: TypeBox for some routes; expand as needed
 
@@ -53,6 +55,15 @@ npm run dev
   - SENDGRID_EVENT_MAX_BYTES / SENDGRID_EVENT_MAX_BATCH (optional)
   - POST `/webhooks/sendgrid/events` with header `x-erp4-webhook-key`
 - 備考: 添付はbase64で送信するため、ファイルサイズに注意。
+
+## Slack/Webhook（外部通知）
+- env:
+  - WEBHOOK_ALLOWED_HOSTS=hooks.slack.com,example.com（ホスト名の完全一致。未設定は無効）
+  - WEBHOOK_TIMEOUT_MS (optional; default 5000)
+  - WEBHOOK_ALLOW_HTTP / WEBHOOK_ALLOW_PRIVATE_IP (DEV-ONLY; optional)
+- セキュリティ:
+  - allowlist に含まれないホスト/プライベートIP宛は拒否（SSRF対策）
+  - 本番で有効化する場合は送信先の統制（運用ルール/監査）を前提にする
 
 ## Auth (JWT/OIDC)
 - env:

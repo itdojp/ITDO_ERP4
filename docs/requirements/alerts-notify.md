@@ -1,13 +1,22 @@
 # アラート通知方針（PoC stub → 後続実装）
 
 ## 現状
-- channels: email は SMTP/SendGrid 設定があれば実送信、それ以外は stub（sendEmail / buildStubResults / sendSlackWebhookStub / sendWebhookStub）
+- channels: email は SMTP/SendGrid 設定があれば実送信、それ以外は stub（sendEmail / buildStubResults）
+- channels: slack/webhook は `WEBHOOK_ALLOWED_HOSTS` を設定した場合のみ送信（未設定は skipped）
 - alerts.sentChannels/sentResult に送信結果を保存
 
 ## 次ステップ
 - 送信キュー/レート制御の設計・実装（メール/外部通知、必要なら）
 - ダッシュボード: フロントで alerts をフェッチして表示（既存ダッシュボードを接続）
-- 外部通知: Slack/Webhook の実送信対応（現在は stub）
+- 外部通知: Slack/Webhook の送信先登録・運用ルールの確定（allowlist/監査/失敗時運用）
+
+## 外部Webhook送信（Slack/Webhook）設定
+- デフォルト: 無効（`WEBHOOK_ALLOWED_HOSTS` 未設定）
+- 有効化: `WEBHOOK_ALLOWED_HOSTS=hooks.slack.com,example.com`（ホスト名の完全一致）
+- 制約:
+  - `https://` のみ許可（`WEBHOOK_ALLOW_HTTP=true` を明示した場合のみ `http://` を許可）
+  - プライベートIP（10/8, 192.168/16 等）への送信は拒否（`WEBHOOK_ALLOW_PRIVATE_IP=true` で無効化可）
+  - タイムアウト: `WEBHOOK_TIMEOUT_MS`（未指定は 5000ms）
 
 ## 仕様メモ
 - AlertSetting: type (budget_overrun/overtime/approval_delay/approval_escalation/delivery_due), threshold, scope, recipients (emails/roles/users/slackWebhooks/webhooks), channels
@@ -30,4 +39,4 @@
 
 ## バッチ/同期
 - 日次で computeAndTrigger を実行。将来は時間単位に拡張
-- 再送/サプレッションは remindAfterHours + remindMaxCount で制御する（Slack/Webhook は stub）
+- 再送/サプレッションは remindAfterHours + remindMaxCount で制御する（Slack/Webhook は allowlist 設定時のみ送信）
