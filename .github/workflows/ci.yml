@@ -25,6 +25,8 @@ jobs:
         working-directory: packages/backend
         env:
           DATABASE_URL: postgresql://user:pass@localhost:5432/postgres?schema=public
+      - run: npm run test:ci
+        working-directory: packages/backend
       - run: npx prisma format --schema=./prisma/schema.prisma
         working-directory: packages/backend
         env:
@@ -41,6 +43,7 @@ jobs:
         with:
           node-version: 18
       - run: npm install --prefix packages/frontend
+      - run: npm run typecheck --prefix packages/frontend
       - run: npm run build --prefix packages/frontend
   lint:
     runs-on: ubuntu-latest

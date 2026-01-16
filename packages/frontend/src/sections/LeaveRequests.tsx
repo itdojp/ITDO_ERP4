@@ -95,14 +95,18 @@ export const LeaveRequests: React.FC = () => {
       return;
     }
     const hoursRaw = form.hours.trim();
-    const hours = hoursRaw ? Number(hoursRaw) : null;
-    if (hoursRaw && (!Number.isFinite(hours) || hours < 0)) {
-      setMessage('時間が不正です');
-      return;
-    }
-    if (hoursRaw && !Number.isInteger(hours)) {
-      setMessage('時間は整数で入力してください');
-      return;
+    let hours: number | undefined;
+    if (hoursRaw) {
+      const parsedHours = Number(hoursRaw);
+      if (!Number.isFinite(parsedHours) || parsedHours < 0) {
+        setMessage('時間が不正です');
+        return;
+      }
+      if (!Number.isInteger(parsedHours)) {
+        setMessage('時間は整数で入力してください');
+        return;
+      }
+      hours = parsedHours;
     }
     try {
       const created = await api<LeaveRequest>('/leave-requests', {
@@ -112,7 +116,7 @@ export const LeaveRequests: React.FC = () => {
           leaveType,
           startDate,
           endDate,
-          hours: hours ?? undefined,
+          hours,
           notes: form.notes.trim() || undefined,
         }),
       });

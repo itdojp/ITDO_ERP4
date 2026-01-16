@@ -76,7 +76,9 @@ function loadGoogleIdentityScript() {
         resolve();
         return;
       }
-      if (existing.readyState === 'complete') {
+      const readyState = (existing as unknown as { readyState?: string })
+        .readyState;
+      if (readyState === 'complete') {
         existing.dataset.loaded = 'true';
         resolve();
         return;

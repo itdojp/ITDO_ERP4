@@ -1334,7 +1334,7 @@ export const AdminSettings: React.FC = () => {
                   </button>
                   <button
                     className="button secondary"
-                    disabled={item.isDefault}
+                    disabled={Boolean(item.isDefault)}
                     onClick={() => setTemplateDefault(item.id)}
                   >
                     デフォルト化
