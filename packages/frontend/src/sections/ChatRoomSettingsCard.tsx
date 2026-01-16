@@ -183,7 +183,7 @@ export const ChatRoomSettingsCard: React.FC = () => {
         </label>
         <button
           className="button secondary"
-          onClick={load}
+          onClick={() => load()}
           disabled={isLoading}
         >
           再読込

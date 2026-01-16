@@ -907,9 +907,9 @@ export const ProjectChat: React.FC = () => {
             item.reactions && typeof item.reactions === 'object'
               ? item.reactions
               : {};
-          const reactionEntries = Object.entries(reactions).map(
-            ([emoji, value]) => [emoji, getReactionCount(value)],
-          );
+          const reactionEntries: Array<[string, number]> = Object.entries(
+            reactions,
+          ).map(([emoji, value]) => [emoji, getReactionCount(value)]);
           const requiredUserIds = normalizeStringArray(
             item.ackRequest?.requiredUserIds,
           );

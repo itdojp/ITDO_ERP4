@@ -131,9 +131,10 @@ export async function apiWithAuth<T>(
   token?: string,
   options: RequestInit = {},
 ): Promise<T> {
-  const headers = token ? { Authorization: `Bearer ${token}` } : {};
+  const headers = mergeHeaders(options.headers);
+  if (token) headers.Authorization = `Bearer ${token}`;
   return api<T>(path, {
     ...options,
-    headers: { ...(options.headers || {}), ...headers },
+    headers,
   });
 }

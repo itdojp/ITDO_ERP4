@@ -36,5 +36,7 @@ ITDO_ERP4/
 - 品質目標: `docs/quality/quality-goals.md`
 - DoD: `docs/quality/definition-of-done.md`
 - 品質ゲート（CI）: `docs/quality/quality-gates.md`
+- テスト戦略: `docs/quality/test-strategy.md`
+- テストギャップ: `docs/quality/test-gaps.md`
 
 詳細は `docs/` 以下のドキュメントおよび GitHub Issues を参照してください。開発フローは今後整備予定です。

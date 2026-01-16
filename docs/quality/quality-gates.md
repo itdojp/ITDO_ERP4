@@ -43,9 +43,11 @@ CIで何を検査しているか、どれを「必須ゲート（ブロック）
   - `prisma format`
   - `prisma validate`
 - TypeScript build: `npm run build`
+- unit test: `npm run test:ci`
 
 ### CI / frontend
 - `packages/frontend` の依存解決（`npm install`）
+- TypeScript typecheck: `npm run typecheck`
 - Vite build: `npm run build`
 
 ### CI / lint
@@ -69,6 +71,13 @@ CIで何を検査しているか、どれを「必須ゲート（ブロック）
 - `./**/*.md` のリンク切れをチェック
 
 ## ローカルでの実行（例）
+### 統一コマンド（Makefile）
+- `make lint`
+- `make format-check`
+- `make typecheck`
+- `make test`
+- `make e2e`
+
 ### Lint/Format
 - backend: `npm run lint --prefix packages/backend && npm run format:check --prefix packages/backend`
 - frontend: `npm run lint --prefix packages/frontend && npm run format:check --prefix packages/frontend`
@@ -76,6 +85,13 @@ CIで何を検査しているか、どれを「必須ゲート（ブロック）
 ### Build
 - backend: `npm run build --prefix packages/backend`
 - frontend: `npm run build --prefix packages/frontend`
+
+### Typecheck
+- backend: `npm run typecheck --prefix packages/backend`
+- frontend: `npm run typecheck --prefix packages/frontend`
+
+### Test
+- backend: `npm run test --prefix packages/backend`
 
 ### E2E（検証環境はPodman前提）
 - `scripts/e2e-frontend.sh`（既定で Podman DB を利用）
@@ -87,4 +103,3 @@ CIで何を検査しているか、どれを「必須ゲート（ブロック）
 - チャット添付AV（ClamAV/clamd）:
   - `bash scripts/podman-clamav.sh check`
   - `bash scripts/smoke-chat-attachments-av.sh`
-
