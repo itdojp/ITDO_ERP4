@@ -88,6 +88,7 @@ X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*
 1. clamd を起動（例: Podman で TCP 3310 を公開）
    - 例: `podman run -d --name erp4-clamav -p 3310:3310 docker.io/clamav/clamav:latest`
    - 終了後: `podman stop erp4-clamav && podman rm erp4-clamav`
+   - 補助スクリプト: `bash scripts/podman-clamav.sh start`（停止は `bash scripts/podman-clamav.sh stop`）
 2. backend を `CHAT_ATTACHMENT_AV_PROVIDER=clamav` で起動（`CLAMAV_HOST`/`CLAMAV_PORT` を環境に合わせて設定）
 3. EICAR 文字列を含むファイルをアップロードし、422 で拒否されることを確認
 4. clamd を停止した状態でアップロードし、503（`AV_UNAVAILABLE`）で拒否されることを確認
@@ -98,4 +99,10 @@ clamd の疎通と EICAR 検知（`FOUND`）を確認するスクリプトです
 
 ```bash
 npx --prefix packages/backend ts-node --project packages/backend/tsconfig.json scripts/check-chat-clamav.ts
+```
+
+もしくは、Podman起動〜疎通確認までをまとめて実行します。
+
+```bash
+bash scripts/podman-clamav.sh check
 ```
