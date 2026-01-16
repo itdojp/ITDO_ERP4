@@ -23,8 +23,8 @@
   - [x] FE: PDFファイル閲覧導線（/pdf-files/:filename）
   - [x] FE: Pushテスト送信UI（/push-notifications/test）
 - [ ] 未実装項目の解消（優先度D: 実配信/外部連携）
-  - [x] #558 BE: Push通知の実配信（/push-notifications/test の stub 解消）
-  - [x] #559 BE: Slack/Webhook通知の実装（notifier の stub 解消、優先度低）
+  - [ ] #558 BE: Push通知の実配信（/push-notifications/test の stub 解消）
+  - [ ] #559 BE: Slack/Webhook通知の実装（notifier の stub 解消、優先度低）
   - [ ] #560 BE: 添付AVスキャンの実運用（stub/eicar からの移行、要否判断）
   - [x] FE: SCIM 設定/状態のUI（/scim/status）
 
