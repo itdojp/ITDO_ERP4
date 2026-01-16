@@ -28,3 +28,44 @@
 ## 備考
 - CI の実行条件/範囲は `docs/quality/quality-gates.md` を正とする。
 - 追加したテストは、手動チェックリストのどの項目を代替するかを本ドキュメントで追跡する。
+
+## 手動確認チェックリストとの対応（PoC）
+`docs/requirements/manual-test-checklist.md` の各項目について、現状の自動テスト/スモークの対応を整理する。
+
+### バックエンド API
+| 手動確認項目 | 自動テスト/スモーク（現状） | 備考 |
+| --- | --- | --- |
+| `POST /projects → /projects/:id/estimates → /projects/:id/invoices → /invoices/:id/send` | `scripts/smoke-backend.sh` | UI側は `packages/frontend/e2e/frontend-smoke.spec.ts @core` で見積/請求ドラフトまで |
+| `POST/GET /time-entries`（非管理ロールは self のみ取得） | `packages/frontend/e2e/backend-time-invoice.spec.ts @core` / `packages/frontend/e2e/frontend-task-time-entry.spec.ts @core` | 「非管理ロールの取得制限」は未カバー（手動） |
+| `POST/GET /expenses`（非管理ロールは self のみ取得） | `packages/frontend/e2e/frontend-smoke.spec.ts @core` | 「非管理ロールの取得制限」は未カバー（手動） |
+| `/alert-settings` CRUD と `/jobs/alerts/run` で alert が保存される | `packages/frontend/e2e/frontend-smoke.spec.ts @core`（alert-settings 作成） / `scripts/smoke-backend.sh`（alerts job 実行） | job が alert を保存することの確認は smoke 側 |
+| `/jobs/approval-escalations/run` で承認期限エスカレーションが保存される | 未カバー（手動） |  |
+| `/pdf-templates` と `/template-settings` CRUD が動作する | `packages/frontend/e2e/frontend-smoke.spec.ts @core`（template-settings 作成） | `pdf-templates` は未カバー（手動） |
+| `/document-send-logs/:id` と `/document-send-logs/:id/events` が取得できる | `packages/frontend/e2e/frontend-smoke.spec.ts @extended`（admin ops） | `:id/retry` は未カバー（手動） |
+| `/document-send-logs/:id/retry` で再送が記録される | 未カバー（手動） |  |
+| `/report-subscriptions` CRUD → `/report-subscriptions/:id/run` で report_deliveries が作成される | `packages/frontend/e2e/frontend-smoke.spec.ts @core` |  |
+| `/jobs/report-subscriptions/run` と `/jobs/report-deliveries/retry` が動作する | 未カバー（手動） |  |
+| `/approval-rules` CRUD のハッピーパス | `packages/frontend/e2e/frontend-smoke.spec.ts @core`（作成） | CRUD（一覧/更新/削除）は未カバー（手動） |
+| `/projects/:id/members` のGET/POST/DELETEが動作する | `packages/frontend/e2e/frontend-smoke.spec.ts @extended`（メンバー管理） | DELETE/権限更新は未カバー（手動） |
+| `/projects/:id/member-candidates?q=` の候補検索が動作する | `packages/frontend/e2e/frontend-smoke.spec.ts @extended`（候補検索） |  |
+| `/projects/:id/members/bulk` で複数メンバーの追加が動作する | `packages/frontend/e2e/frontend-smoke.spec.ts @extended`（CSVインポート） | CSVインポート経由で利用 |
+| `/vendor-quotes` 作成と `/vendor-invoices` 作成→approve が通る | `packages/frontend/e2e/frontend-smoke.spec.ts @extended`（vendor docs create + approvals） / `scripts/smoke-backend.sh`（vendor invoice approve） |  |
+| `/wellbeing-entries` POST → HR/AdminでGETできる | `packages/frontend/e2e/frontend-smoke.spec.ts @core`（送信/履歴） | 「HR/Adminのみ閲覧」は未カバー（手動） |
+
+### フロント PoC
+| 手動確認項目 | 自動テスト（現状） |
+| --- | --- |
+| ダッシュボード: アラートカードが最新5件表示（なければプレースホルダ） | `packages/frontend/e2e/frontend-smoke.spec.ts @core` |
+| 日報+WB: Good/Not Good 送信、Not Good時タグ/コメント/ヘルプ導線 | `packages/frontend/e2e/frontend-smoke.spec.ts @core` |
+| 工数入力: 入力→一覧に反映 | `packages/frontend/e2e/frontend-smoke.spec.ts @core` / `packages/frontend/e2e/frontend-task-time-entry.spec.ts @core` |
+| 請求: 作成→送信、詳細モックの表示 | `packages/frontend/e2e/frontend-smoke.spec.ts @core`（作成/表示） |
+| 案件: メンバー管理（一覧/追加/削除/権限更新） | `packages/frontend/e2e/frontend-smoke.spec.ts @extended`（一覧/追加/CSV）※削除/権限更新は未カバー |
+| 案件: メンバー候補検索 | `packages/frontend/e2e/frontend-smoke.spec.ts @extended` |
+| 案件: CSVインポート/エクスポート | `packages/frontend/e2e/frontend-smoke.spec.ts @extended` |
+
+### 環境・その他
+| 手動確認項目 | 自動検査/手順（現状） |
+| --- | --- |
+| CI (backend/frontend/lint/lychee) が緑 | GitHub Actions（`CI` / `Link Check`） |
+| prisma format/validate が通る | `CI / backend`（`.github/workflows/ci.yml`） |
+| Podman 検証（reset→smoke完走） | `scripts/podman-poc.sh` + `scripts/smoke-backend.sh` |
