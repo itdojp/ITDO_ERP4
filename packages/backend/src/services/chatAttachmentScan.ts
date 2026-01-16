@@ -28,6 +28,9 @@ export function getChatAttachmentScanProvider(): ChatAttachmentScanProvider {
 const EICAR_SIGNATURE =
   'X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*';
 
+const CLAMAV_CHUNK_SIZE = 16 * 1024;
+const CLAMAV_MAX_RESPONSE_CHARS = 16 * 1024;
+
 type ClamavConfig = {
   host: string;
   port: number;
@@ -39,7 +42,7 @@ function resolveClamavConfig(): ClamavConfig {
   const portRaw = process.env.CLAMAV_PORT;
   const parsedPort = portRaw ? Number(portRaw) : Number.NaN;
   const port =
-    Number.isFinite(parsedPort) && parsedPort > 0
+    Number.isFinite(parsedPort) && parsedPort >= 1 && parsedPort <= 65535
       ? Math.floor(parsedPort)
       : 3310;
   const timeoutRaw = process.env.CLAMAV_TIMEOUT_MS;
@@ -65,7 +68,6 @@ async function scanWithClamav(
 ): Promise<ChatAttachmentScanResult> {
   const config = resolveClamavConfig();
   const timeoutMs = config.timeoutMs;
-  const chunkSize = 16 * 1024;
 
   return new Promise<ChatAttachmentScanResult>((resolve) => {
     const socket = connect({ host: config.host, port: config.port });
@@ -90,6 +92,11 @@ async function scanWithClamav(
 
     socket.on('data', (chunk) => {
       response += chunk.toString('utf8');
+      if (response.length > CLAMAV_MAX_RESPONSE_CHARS) {
+        socket.destroy();
+        finalize({ verdict: 'error', error: 'response_too_large' });
+        return;
+      }
       if (response.includes('\n') || response.includes('\0')) {
         socket.destroy();
       }
@@ -129,8 +136,12 @@ async function scanWithClamav(
       void (async () => {
         try {
           await writeAsync(socket, 'zINSTREAM\0');
-          for (let offset = 0; offset < buffer.length; offset += chunkSize) {
-            const chunk = buffer.subarray(offset, offset + chunkSize);
+          for (
+            let offset = 0;
+            offset < buffer.length;
+            offset += CLAMAV_CHUNK_SIZE
+          ) {
+            const chunk = buffer.subarray(offset, offset + CLAMAV_CHUNK_SIZE);
             const header = Buffer.alloc(4);
             header.writeUInt32BE(chunk.length, 0);
             await writeAsync(socket, header);
