@@ -21,6 +21,9 @@ Environment variables:
   CONTAINER_NAME (default: erp4-clamav)
   HOST_PORT      (default: 3310)
   CLAMAV_IMAGE   (default: docker.io/clamav/clamav:latest)
+  WAIT_HOST      (default: 127.0.0.1)   # used by 'check' readiness wait
+  WAIT_PORT      (default: HOST_PORT)   # used by 'check' readiness wait
+  WAIT_TIMEOUT_SEC (default: 120)       # used by 'check' readiness wait
 USAGE
 }
 
@@ -30,6 +33,28 @@ container_exists() {
 
 container_running() {
   podman ps --format "{{.Names}}" | grep -q "^${CONTAINER_NAME}$"
+}
+
+can_connect() {
+  local host="$1"
+  local port="$2"
+  (exec 3<>"/dev/tcp/${host}/${port}") >/dev/null 2>&1
+}
+
+wait_ready() {
+  local host="${WAIT_HOST:-127.0.0.1}"
+  local port="${WAIT_PORT:-$HOST_PORT}"
+  local timeout_sec="${WAIT_TIMEOUT_SEC:-120}"
+  local start_ts
+  start_ts="$(date +%s)"
+
+  while ! can_connect "$host" "$port"; do
+    if (( $(date +%s) - start_ts >= timeout_sec )); then
+      echo "clamav not ready after ${timeout_sec}s: ${host}:${port}" >&2
+      return 1
+    fi
+    sleep 1
+  done
 }
 
 start_container() {
@@ -42,13 +67,14 @@ start_container() {
       -p "$HOST_PORT":3310 \
       "$CLAMAV_IMAGE" >/dev/null
   fi
-  echo "clamav ready: $CONTAINER_NAME (host port: $HOST_PORT)"
+  echo "clamav container started: $CONTAINER_NAME (host port: $HOST_PORT)"
 }
 
 stop_container() {
   if container_exists; then
     podman stop "$CONTAINER_NAME" >/dev/null || true
     podman rm "$CONTAINER_NAME" >/dev/null || true
+    echo "clamav stopped: $CONTAINER_NAME"
   fi
 }
 
@@ -71,6 +97,7 @@ logs() {
 
 check() {
   start_container
+  wait_ready
   CLAMAV_HOST="${CLAMAV_HOST:-127.0.0.1}" \
     CLAMAV_PORT="${CLAMAV_PORT:-$HOST_PORT}" \
     CLAMAV_TIMEOUT_MS="${CLAMAV_TIMEOUT_MS:-10000}" \
@@ -100,4 +127,3 @@ case "$cmd" in
     exit 1
     ;;
 esac
-
