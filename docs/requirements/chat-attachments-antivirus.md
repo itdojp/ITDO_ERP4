@@ -78,7 +78,7 @@ ClamAV 定義更新は以下のいずれかを採用する前提で運用を確�
 EICARテスト文字列（例）
 
 ```
-X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*
+X5O!P%@AP[4\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*
 ```
 
 3. 422（`VIRUS_DETECTED`）で拒否されることを確認
