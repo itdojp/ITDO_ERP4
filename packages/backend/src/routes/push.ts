@@ -2,6 +2,8 @@ import { FastifyInstance } from 'fastify';
 import { Prisma } from '@prisma/client';
 import { prisma } from '../services/db.js';
 import { requireRole } from '../services/rbac.js';
+import { auditContextFromRequest, logAudit } from '../services/audit.js';
+import { isWebPushEnabled, sendWebPush } from '../services/webPush.js';
 import {
   pushSubscriptionDisableSchema,
   pushSubscriptionSchema,
@@ -9,6 +11,7 @@ import {
 } from './validators.js';
 
 const allowedRoles = ['admin', 'mgmt', 'exec', 'user', 'hr'];
+const DEFAULT_PUSH_ICON = '/icon.svg';
 
 type PushSubscriptionBody = {
   endpoint: string;
@@ -43,6 +46,15 @@ function parseLimit(raw: string | undefined, maxValue: number) {
   const parsed = Number(raw);
   if (!Number.isFinite(parsed) || parsed <= 0) return maxValue;
   return Math.min(parsed, maxValue);
+}
+
+function redactEndpoint(raw: string): string {
+  try {
+    const parsed = new URL(raw);
+    return `${parsed.protocol}//${parsed.host}/...`;
+  } catch {
+    return '<invalid-endpoint>';
+  }
 }
 
 export async function registerPushRoutes(app: FastifyInstance) {
@@ -193,15 +205,65 @@ export async function registerPushRoutes(app: FastifyInstance) {
         body: body.body || 'テスト通知',
         url: body.url || '/',
       };
-      return {
-        stub: true,
-        payload,
-        count: subscriptions.length,
-        targets: subscriptions.map((sub) => ({
+      const webPushEnabled = isWebPushEnabled();
+      if (!webPushEnabled) {
+        return {
+          stub: true,
+          payload,
+          count: subscriptions.length,
+          targets: subscriptions.map((sub) => ({
+            id: sub.id,
+            endpoint: redactEndpoint(sub.endpoint),
+            userId: sub.userId,
+          })),
+        };
+      }
+      const sendResult = await sendWebPush(
+        subscriptions.map((sub) => ({
           id: sub.id,
           endpoint: sub.endpoint,
-          userId: sub.userId,
+          p256dh: sub.p256dh,
+          auth: sub.auth,
         })),
+        { ...payload, icon: DEFAULT_PUSH_ICON },
+      );
+      const disabledIds = sendResult.results
+        .filter((result) => result.shouldDisable)
+        .map((result) => result.subscriptionId);
+      if (disabledIds.length) {
+        await prisma.pushSubscription.updateMany({
+          where: { id: { in: disabledIds } },
+          data: {
+            isActive: false,
+            lastSeenAt: new Date(),
+            updatedBy: requester,
+          },
+        });
+      }
+      const delivered = sendResult.results.filter(
+        (result) => result.status === 'success',
+      ).length;
+      const failed = sendResult.results.length - delivered;
+      await logAudit({
+        ...auditContextFromRequest(req),
+        action: 'push_notification_test',
+        targetTable: 'UserAccount',
+        targetId: targetUserId,
+        metadata: {
+          delivered,
+          failed,
+          subscriptionCount: subscriptions.length,
+          disabledCount: disabledIds.length,
+        } as Prisma.InputJsonValue,
+      });
+      return {
+        stub: false,
+        payload,
+        count: subscriptions.length,
+        delivered,
+        failed,
+        disabled: disabledIds.length,
+        results: sendResult.results,
       };
     },
   );

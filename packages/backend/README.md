@@ -32,6 +32,7 @@ npm run dev
 - Notifications:
   - Email: SMTP/SendGrid 設定があれば送信、未設定なら stub
   - Slack/Webhook: `WEBHOOK_ALLOWED_HOSTS` 設定時のみ送信（未設定は skipped）
+  - Push(WebPush): `POST /push-notifications/test` は VAPID 設定があれば実配信、未設定なら stub
 - PDF: ローカル生成 + `/pdf-files/:filename` で取得
 - Validation: TypeBox for some routes; expand as needed
 
@@ -66,6 +67,13 @@ npm run dev
   - allowlist に含まれないホスト/プライベートIP宛は拒否（SSRF対策）
   - リダイレクトは追従せずエラー扱い（open redirect 経由のSSRF回避）
   - 本番で有効化する場合は送信先の統制（運用ルール/監査）を前提にする
+
+## Push (WebPush)
+- env:
+  - VAPID_SUBJECT / VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY
+  - フロント側は `VITE_PUSH_PUBLIC_KEY` に同じ公開鍵を設定する
+- endpoints:
+  - `POST /push-notifications/test`
 
 ## Auth (JWT/OIDC)
 - env:
