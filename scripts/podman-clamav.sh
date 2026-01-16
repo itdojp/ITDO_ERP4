@@ -44,20 +44,22 @@ can_connect() {
 clamd_ping() {
   local host="$1"
   local port="$2"
+  local response_timeout_sec=2
+  local max_response_bytes=64
 
   if ! exec 3<>"/dev/tcp/${host}/${port}" 2>/dev/null; then
     return 1
   fi
-  printf 'PING\0' >&3 || {
-    exec 3<&- 3>&-
+  if ! printf 'PING\0' >&3; then
+    exec 3<&- 3>&- 2>/dev/null || true
     return 1
-  }
+  fi
 
   local response
   response=$(
-    timeout 2 dd bs=1 count=64 <&3 2>/dev/null | tr -d '\0' || true
+    timeout "$response_timeout_sec" dd bs=1 count="$max_response_bytes" <&3 2>/dev/null | tr -d '\0' || true
   )
-  exec 3<&- 3>&-
+  exec 3<&- 3>&- 2>/dev/null || true
 
   [[ "${response^^}" == *PONG* ]]
 }
