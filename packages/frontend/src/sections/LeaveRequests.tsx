@@ -108,10 +108,6 @@ export const LeaveRequests: React.FC = () => {
       }
       hours = parsedHours;
     }
-    if (hoursRaw && hours === undefined) {
-      setMessage('時間が不正です');
-      return;
-    }
     try {
       const created = await api<LeaveRequest>('/leave-requests', {
         method: 'POST',
