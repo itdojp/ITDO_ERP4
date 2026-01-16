@@ -23,7 +23,7 @@ Environment variables:
   CLAMAV_IMAGE   (default: docker.io/clamav/clamav:latest)
   WAIT_HOST      (default: 127.0.0.1)   # used by 'check' readiness wait
   WAIT_PORT      (default: HOST_PORT)   # used by 'check' readiness wait
-  WAIT_TIMEOUT_SEC (default: 120)       # used by 'check' readiness wait
+  WAIT_TIMEOUT_SEC (default: 300)       # used by 'check' readiness wait
 USAGE
 }
 
@@ -41,14 +41,37 @@ can_connect() {
   (exec 3<>"/dev/tcp/${host}/${port}") >/dev/null 2>&1
 }
 
+clamd_ping() {
+  local host="$1"
+  local port="$2"
+  local response_timeout_sec=2
+  local max_response_bytes=64
+
+  if ! exec 3<>"/dev/tcp/${host}/${port}" 2>/dev/null; then
+    return 1
+  fi
+  if ! printf 'PING\0' >&3; then
+    exec 3<&- 3>&- 2>/dev/null || true
+    return 1
+  fi
+
+  local response
+  response=$(
+    timeout "$response_timeout_sec" dd bs=1 count="$max_response_bytes" <&3 2>/dev/null | tr -d '\0' || true
+  )
+  exec 3<&- 3>&- 2>/dev/null || true
+
+  [[ "${response^^}" == *PONG* ]]
+}
+
 wait_ready() {
   local host="${WAIT_HOST:-127.0.0.1}"
   local port="${WAIT_PORT:-$HOST_PORT}"
-  local timeout_sec="${WAIT_TIMEOUT_SEC:-120}"
+  local timeout_sec="${WAIT_TIMEOUT_SEC:-300}"
   local start_ts
   start_ts="$(date +%s)"
 
-  while ! can_connect "$host" "$port"; do
+  while ! clamd_ping "$host" "$port"; do
     if (( $(date +%s) - start_ts >= timeout_sec )); then
       echo "clamav not ready after ${timeout_sec}s: ${host}:${port}" >&2
       return 1

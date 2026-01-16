@@ -78,7 +78,7 @@ ClamAV 定義更新は以下のいずれかを採用する前提で運用を確�
 EICARテスト文字列（例）
 
 ```
-X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*
+X5O!P%@AP[4\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*
 ```
 
 3. 422（`VIRUS_DETECTED`）で拒否されることを確認
@@ -105,4 +105,16 @@ npx --prefix packages/backend ts-node --project packages/backend/tsconfig.json s
 
 ```bash
 bash scripts/podman-clamav.sh check
+```
+
+### 補助: Backend 統合スモーク（API）
+
+Podman DB + clamd + backend を起動し、API経由で以下を確認します。
+
+- clamd 稼働中: clean 添付は 200 で成功
+- clamd 稼働中: EICAR 添付は 422（`VIRUS_DETECTED`）で拒否
+- clamd 停止中: clean 添付は 503（`AV_UNAVAILABLE`）で拒否（fail closed）
+
+```bash
+bash scripts/smoke-chat-attachments-av.sh
 ```
