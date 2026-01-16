@@ -44,6 +44,7 @@ X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*
 
 ### ClamAV（clamd）での疎通
 1. clamd を起動（例: Podman で TCP 3310 を公開）
+   - 例: `podman run -d --name erp4-clamav -p 3310:3310 docker.io/clamav/clamav:latest`
 2. backend を `CHAT_ATTACHMENT_AV_PROVIDER=clamav` で起動（`CLAMAV_HOST`/`CLAMAV_PORT` を環境に合わせて設定）
 3. EICAR 文字列を含むファイルをアップロードし、422 で拒否されることを確認
 4. clamd を停止した状態でアップロードし、503（`AV_UNAVAILABLE`）で拒否されることを確認
