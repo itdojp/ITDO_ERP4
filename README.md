@@ -32,4 +32,9 @@ ITDO_ERP4/
 
 バックエンドの詳細手順は `docs/requirements/manual-test-checklist.md` と `packages/backend/src/tests/happy-path.md` を参照。
 
+## 品質（Quality）
+- 品質目標: `docs/quality/quality-goals.md`
+- DoD: `docs/quality/definition-of-done.md`
+- 品質ゲート（CI）: `docs/quality/quality-gates.md`
+
 詳細は `docs/` 以下のドキュメントおよび GitHub Issues を参照してください。開発フローは今後整備予定です。
