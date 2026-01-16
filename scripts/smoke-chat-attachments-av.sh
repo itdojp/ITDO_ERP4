@@ -223,7 +223,7 @@ if [[ "$code" != "422" ]]; then
   cat "$body_file" >&2 || true
   exit 1
 fi
-err_code=$(cat "$body_file" | python -c 'import json,sys; print(json.load(sys.stdin).get("error", {}).get("code",""))' || true)
+err_code=$(cat "$body_file" | json_get "error.code" || true)
 echo "error_code=$err_code"
 
 echo "stop clamd and expect 503"
