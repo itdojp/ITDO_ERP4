@@ -75,7 +75,7 @@ E2E_CAPTURE=0 E2E_SCOPE=extended ./scripts/e2e-frontend.sh
 - `REFRESH_TOKEN` は実質的に長期鍵のため、Secret管理（Vault等）に置く
 - 共有フォルダ/共有ドライブの権限設定次第で、添付が意図せず閲覧可能になる可能性があるため、フォルダの共有設定を必ず確認する
 - 将来的に「公式ルームのみ添付OK」等のポリシーを導入する場合は #434 と整合させる
-- 添付のウイルス対策（スキャン）は `CHAT_ATTACHMENT_AV_PROVIDER` で制御する（MVP: `disabled`/`stub`/`eicar`、詳細: `docs/requirements/chat-attachments-antivirus.md`）
+- 添付のウイルス対策（スキャン）は `CHAT_ATTACHMENT_AV_PROVIDER` で制御する（MVP: `disabled`/`stub`/`eicar`/`clamav`、詳細: `docs/requirements/chat-attachments-antivirus.md`）
 
 ## 8. 補助: Drive疎通チェック（スクリプト）
 E2Eを回す前に「フォルダ参照ができるか」「（任意で）書き込み/削除ができるか」を確認するためのスクリプトです。

@@ -1185,6 +1185,33 @@ export async function registerChatRoutes(app: FastifyInstance) {
         buffer,
         provider: scanProvider,
       });
+      if (scanResult.verdict === 'error') {
+        await logAudit({
+          action: 'chat_attachment_scan_failed',
+          targetTable: 'chat_messages',
+          targetId: message.id,
+          metadata: {
+            messageId: message.id,
+            roomId: message.roomId,
+            roomType: access.room.type,
+            projectId:
+              access.room.type === 'project' ? message.roomId : undefined,
+            provider: scanResult.provider,
+            verdict: scanResult.verdict,
+            detected: scanResult.detected || null,
+            error: scanResult.error || null,
+            sizeBytes: buffer.length,
+            mimeType: mimetype,
+          } as Prisma.InputJsonValue,
+          ...auditContextFromRequest(req),
+        });
+        return reply.status(503).send({
+          error: {
+            code: 'AV_UNAVAILABLE',
+            message: 'antivirus scanner unavailable',
+          },
+        });
+      }
       if (scanResult.verdict === 'infected') {
         await logAudit({
           action: 'chat_attachment_blocked',
