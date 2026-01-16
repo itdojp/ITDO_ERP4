@@ -25,7 +25,10 @@
 - [ ] 未実装項目の解消（優先度D: 実配信/外部連携）
   - [x] #558 BE: Push通知の実配信（/push-notifications/test の stub 解消）
   - [x] #559 BE: Slack/Webhook通知の実装（notifier の stub 解消、優先度低）
-  - [ ] #560 BE: 添付AVスキャンの実運用（stub/eicar からの移行、要否判断）
+  - [ ] #560 BE: 添付AVスキャンの実運用（要否判断/方式決定）
+    - [x] ClamAV/clamd オプション（`CHAT_ATTACHMENT_AV_PROVIDER=clamav`）の実装（PR #565）
+    - [ ] 本番での有効化方針（`disabled` 継続 or `clamav`）の決定
+    - [ ] 定義更新/監視/障害時の運用方針の決定（`docs/requirements/chat-attachments-antivirus.md`）
   - [x] FE: SCIM 設定/状態のUI（/scim/status）
 
 ## 次アクション（プロジェクト運用/レポート）
