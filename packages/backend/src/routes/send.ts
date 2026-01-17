@@ -401,7 +401,7 @@ export async function registerSendRoutes(app: FastifyInstance) {
       };
       const invoice = await prisma.invoice.findUnique({ where: { id } });
       if (!invoice) {
-        return { error: 'not_found' };
+        return reply.code(404).send({ error: 'not_found' });
       }
       const resolved = await resolveTemplateContext('invoice', {
         templateId,
@@ -522,7 +522,7 @@ export async function registerSendRoutes(app: FastifyInstance) {
       };
       const po = await prisma.purchaseOrder.findUnique({ where: { id } });
       if (!po) {
-        return { error: 'not_found' };
+        return reply.code(404).send({ error: 'not_found' });
       }
       const resolved = await resolveTemplateContext('purchase_order', {
         templateId,

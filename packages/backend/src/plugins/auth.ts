@@ -2,6 +2,7 @@ import fp from 'fastify-plugin';
 import { createRemoteJWKSet, importSPKI, jwtVerify } from 'jose';
 import type { CryptoKey, JWTPayload, JWTVerifyGetKey } from 'jose';
 import { prisma } from '../services/db.js';
+import { createApiErrorResponse } from '../services/errors.js';
 
 export type UserContext = {
   userId: string;
@@ -360,12 +361,19 @@ function respondUnauthorized(req: any, reply: any, reason?: string) {
   if (req.log && typeof req.log.warn === 'function') {
     req.log.warn({ reason }, 'Unauthorized request');
   }
-  return reply.code(401).send({ error: 'unauthorized' });
+  return reply.code(401).send(
+    createApiErrorResponse('unauthorized', 'Unauthorized', {
+      category: 'auth',
+    }),
+  );
 }
 
 async function authPlugin(fastify: any) {
   fastify.addHook('onRequest', async (req: any, reply: any) => {
-    if (typeof req.url === 'string' && req.url.startsWith('/health')) {
+    if (
+      typeof req.url === 'string' &&
+      (req.url.startsWith('/health') || req.url.startsWith('/ready'))
+    ) {
       return;
     }
     const mode = RESOLVED_AUTH_MODE;
