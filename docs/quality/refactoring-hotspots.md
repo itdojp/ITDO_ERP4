@@ -25,5 +25,6 @@
 | `packages/backend/src/services/reports.ts` | 集計ロジックが肥大しやすい | 主要集計の pure 部分を抽出し unit test |
 
 ## 進捗ログ
-- 2026-01-17: Priority A の対象を確定（Issue #576）
-
+- 2026-01-17: Priority A の対象を確定（Issue #576 / PR #580）
+- 2026-01-17: `projects.ts` のタスク依存ロジックを分離し unit test を追加（PR #581）
+- 2026-01-17: `migrate-po.ts` の CSV/ID生成ユーティリティを抽出し unit test を追加（PR #582）
