@@ -2,6 +2,7 @@ import Fastify, { FastifyInstance } from 'fastify';
 import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
 import multipart from '@fastify/multipart';
+import rateLimit from '@fastify/rate-limit';
 import crypto from 'node:crypto';
 import authPlugin from './plugins/auth.js';
 import { registerRoutes } from './routes/index.js';
@@ -107,6 +108,28 @@ export async function buildServer(
   });
 
   await server.register(authPlugin);
+
+  const rateLimitEnabled =
+    process.env.RATE_LIMIT_ENABLED === '1' ||
+    process.env.NODE_ENV === 'production';
+  if (rateLimitEnabled) {
+    const maxRaw = Number(process.env.RATE_LIMIT_MAX || 600);
+    const max =
+      Number.isFinite(maxRaw) && maxRaw > 0 ? Math.floor(maxRaw) : 600;
+    const timeWindow = process.env.RATE_LIMIT_WINDOW || '1 minute';
+    await server.register(rateLimit, {
+      global: true,
+      max,
+      timeWindow,
+      allowList: (req) => {
+        const url = req.url;
+        return (
+          typeof url === 'string' &&
+          (url.startsWith('/health') || url.startsWith('/ready'))
+        );
+      },
+    });
+  }
 
   const chatAttachmentMaxBytes = Number(
     process.env.CHAT_ATTACHMENT_MAX_BYTES || 10 * 1024 * 1024,
