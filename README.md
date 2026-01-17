@@ -40,3 +40,6 @@ ITDO_ERP4/
 - テストギャップ: `docs/quality/test-gaps.md`
 
 詳細は `docs/` 以下のドキュメントおよび GitHub Issues を参照してください。開発フローは今後整備予定です。
+
+## 運用（Ops）
+- 運用Runbook（入口）: [docs/ops/index.md](docs/ops/index.md)

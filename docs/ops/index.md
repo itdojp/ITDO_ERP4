@@ -1,0 +1,37 @@
+# 運用ドキュメント（Runbook）
+
+## 目的
+運用・引き継ぎ・障害対応を成立させるための「入口（目次）」です。運用者はまず本ページから辿ることを想定します。
+
+## 目次
+### 起動/デプロイ
+- ローカル/PoC 起動: [deploy-start](deploy-start.md)
+- 設定（環境変数/シークレット）: [configuration](configuration.md)
+
+### バックアップ/リストア
+- [backup-restore](backup-restore.md)
+  - 詳細: [docs/requirements/backup-restore.md](../requirements/backup-restore.md)
+
+### 移行（Project-Open → ERP4）
+- [migration](migration.md)
+  - 詳細: [docs/requirements/migration-runbook.md](../requirements/migration-runbook.md)
+
+### 添付AVスキャン
+- [antivirus](antivirus.md)
+  - 詳細: [docs/requirements/chat-attachments-antivirus.md](../requirements/chat-attachments-antivirus.md)
+
+### 監視/障害対応
+- health/readiness/ログ: [observability](observability.md)
+- 一次切り分け（Runbook）: [incident-response](incident-response.md)
+  - 既存資料: [docs/requirements/ops-monitoring.md](../requirements/ops-monitoring.md)
+
+### リリース
+- [release](release.md)
+
+### セキュリティ運用
+- [security](security.md)
+  - ベースライン: [docs/security/security-baseline.md](../security/security-baseline.md)
+
+### 性能
+- ベースライン（再計測手順）: [docs/performance/performance-baseline.md](../performance/performance-baseline.md)
+- 計測結果: [docs/test-results/README.md](../test-results/README.md)
