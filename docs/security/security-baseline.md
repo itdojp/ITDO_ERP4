@@ -31,6 +31,10 @@ PoC→運用フェーズに向けて、最低限のセキュリティ基準（�
 - 入力サイズ制限
   - API bodyLimit（1MB）
   - 添付ファイルサイズ上限（既定 10MB、`CHAT_ATTACHMENT_MAX_BYTES` で調整）
+- レート制限（最小）
+  - `@fastify/rate-limit`（in-memory）を導入
+  - `RATE_LIMIT_ENABLED=1` または `NODE_ENV=production` で有効化
+  - 設定: `RATE_LIMIT_MAX`（既定 600）/ `RATE_LIMIT_WINDOW`（既定 `1 minute`）
 - 可観測性
   - request-id（`x-request-id`）付与と統一エラー応答（`docs/ops/observability.md`）
 - 添付
@@ -46,8 +50,6 @@ GitHub Actions で `npm audit --audit-level=high` を実行する。
 
 ## 残課題（別Issue管理）
 - SAST（CodeQL 等）の導入可否（リポジトリ公開範囲/契約制約に依存）
-- レート制限（API/添付/認証系）の方針と実装
 - IDOR の重点点検（主要API）
 - Secrets 管理（環境変数/鍵/ローテーション）
 - 添付のAVスキャン/隔離/最終保管（#560 等）
-
