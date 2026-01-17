@@ -1,11 +1,16 @@
 import { FastifyReply, FastifyRequest } from 'fastify';
+import { createApiErrorResponse } from './errors.js';
 
 export function requireRole(allowed: string[]) {
   return async (req: FastifyRequest, reply: FastifyReply) => {
     const roles = req.user?.roles || [];
     if (!allowed.some((r) => roles.includes(r))) {
       // Short-circuit to avoid downstream handler execution
-      return reply.code(403).send({ error: 'forbidden' });
+      return reply.code(403).send(
+        createApiErrorResponse('forbidden', 'Forbidden', {
+          category: 'permission',
+        }),
+      );
     }
   };
 }
@@ -31,7 +36,11 @@ export function requireRoleOrSelf(
     if (allowed.some((r) => roles.includes(r))) return;
     const targetUser = getTargetUserId ? getTargetUserId(req) : undefined;
     if (!targetUser || !userId || targetUser !== userId) {
-      return reply.code(403).send({ error: 'forbidden' });
+      return reply.code(403).send(
+        createApiErrorResponse('forbidden', 'Forbidden', {
+          category: 'permission',
+        }),
+      );
     }
   };
 }
@@ -49,7 +58,11 @@ export function requireProjectAccess(
       targetProject &&
       !hasProjectAccess(roles, userProjects, targetProject)
     ) {
-      return reply.code(403).send({ error: 'forbidden_project' });
+      return reply.code(403).send(
+        createApiErrorResponse('forbidden_project', 'Forbidden', {
+          category: 'permission',
+        }),
+      );
     }
   };
 }
