@@ -1,12 +1,17 @@
 import fs from 'fs';
 import path from 'path';
-import crypto from 'crypto';
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-expect-error: dist JS module has no type declarations for ts-node
 import { prisma } from '../packages/backend/dist/services/db.js';
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-expect-error: dist JS module has no type declarations for ts-node
 import { nextNumber } from '../packages/backend/dist/services/numbering.js';
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-expect-error: dist JS module has no type declarations for ts-node
+import { makePoMigrationId as makeId } from '../packages/backend/dist/migration/legacyIds.js';
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-expect-error: dist JS module has no type declarations for ts-node
+import { normalizeCsvCell, parseCsvBoolean, parseCsvRaw } from '../packages/backend/dist/migration/csv.js';
 
 type CliOptions = {
   inputDir: string;
@@ -21,7 +26,6 @@ type ImportError = {
   message: string;
 };
 
-const DNS_NAMESPACE_UUID = '6ba7b810-9dad-11d1-80b4-00c04fd430c8';
 const DOC_STATUS_VALUES = [
   'draft',
   'pending_qa',
@@ -132,39 +136,6 @@ async function existsOrPlanned(
   return ok;
 }
 
-function uuidToBytes(uuid: string): Buffer {
-  const hex = uuid.replace(/-/g, '');
-  if (!/^[0-9a-fA-F]{32}$/.test(hex)) {
-    throw new Error(`invalid uuid: ${uuid}`);
-  }
-  return Buffer.from(hex, 'hex');
-}
-
-function bytesToUuid(bytes: Buffer): string {
-  const hex = bytes.toString('hex');
-  return [
-    hex.slice(0, 8),
-    hex.slice(8, 12),
-    hex.slice(12, 16),
-    hex.slice(16, 20),
-    hex.slice(20),
-  ].join('-');
-}
-
-function uuidv5(name: string, namespaceUuid: string): string {
-  const namespace = uuidToBytes(namespaceUuid);
-  const input = Buffer.concat([namespace, Buffer.from(name, 'utf8')]);
-  const hash = crypto.createHash('sha1').update(input).digest();
-  const bytes = Buffer.from(hash.subarray(0, 16));
-  bytes[6] = (bytes[6] & 0x0f) | 0x50;
-  bytes[8] = (bytes[8] & 0x3f) | 0x80;
-  return bytesToUuid(bytes);
-}
-
-function makeId(kind: string, legacyId: string) {
-  return uuidv5(`erp4:po:${kind}:${legacyId}`, DNS_NAMESPACE_UUID);
-}
-
 function readJsonIfExists<T>(filePath: string): T | null {
   if (!fs.existsSync(filePath)) return null;
   const raw = fs.readFileSync(filePath, 'utf8');
@@ -174,62 +145,6 @@ function readJsonIfExists<T>(filePath: string): T | null {
 
 type CsvRecord = Record<string, string | null>;
 
-function parseCsvRaw(value: string): string[][] {
-  const rows: string[][] = [];
-  let currentRow: string[] = [];
-  let currentField = '';
-  let inQuotes = false;
-
-  const input = value.replace(/^\uFEFF/, '');
-  for (let idx = 0; idx < input.length; idx += 1) {
-    const ch = input[idx];
-    if (inQuotes) {
-      if (ch === '"') {
-        const next = input[idx + 1];
-        if (next === '"') {
-          currentField += '"';
-          idx += 1;
-          continue;
-        }
-        inQuotes = false;
-        continue;
-      }
-      currentField += ch;
-      continue;
-    }
-
-    if (ch === '"') {
-      inQuotes = true;
-      continue;
-    }
-    if (ch === ',') {
-      currentRow.push(currentField);
-      currentField = '';
-      continue;
-    }
-    if (ch === '\n' || ch === '\r') {
-      if (ch === '\r' && input[idx + 1] === '\n') idx += 1;
-      currentRow.push(currentField);
-      currentField = '';
-      const isEmptyRow = currentRow.every((cell) => !cell.trim());
-      if (!isEmptyRow) rows.push(currentRow);
-      currentRow = [];
-      continue;
-    }
-    currentField += ch;
-  }
-
-  currentRow.push(currentField);
-  if (!currentRow.every((cell) => !cell.trim())) rows.push(currentRow);
-  return rows;
-}
-
-function normalizeCsvCell(value: string | undefined): string | null {
-  if (value == null) return null;
-  const trimmed = value.trim();
-  return trimmed ? trimmed : null;
-}
-
 function readCsvRecordsIfExists(
   filePath: string,
   scope: string,
@@ -238,7 +153,7 @@ function readCsvRecordsIfExists(
   if (!fs.existsSync(filePath)) return null;
   const raw = fs.readFileSync(filePath, 'utf8');
   if (!raw.trim()) return [];
-  const rows = parseCsvRaw(raw);
+  const rows = parseCsvRaw(raw) as string[][];
   if (!rows.length) return [];
   if (rows.length === 1) return [];
 
@@ -259,14 +174,6 @@ function readCsvRecordsIfExists(
     records.push(record);
   }
   return records;
-}
-
-function parseCsvBoolean(value: string | null): boolean | undefined {
-  if (value == null) return undefined;
-  const normalized = value.trim().toLowerCase();
-  if (['1', 'true', 'yes', 'y'].includes(normalized)) return true;
-  if (['0', 'false', 'no', 'n'].includes(normalized)) return false;
-  return undefined;
 }
 
 function parseCsvJsonArray(
