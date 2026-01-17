@@ -806,6 +806,8 @@ model RateCard {
   validFrom DateTime
   validTo   DateTime?
   currency  String
+
+  @@index([projectId, workType, validFrom])
 }
 
 model Expense {
