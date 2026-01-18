@@ -44,4 +44,5 @@
 
 ### 性能
 - ベースライン（再計測手順）: [docs/performance/performance-baseline.md](../performance/performance-baseline.md)
+- 退行検知ポリシー: [docs/performance/perf-regression-policy.md](../performance/perf-regression-policy.md)
 - 計測結果: [docs/test-results/README.md](../test-results/README.md)
