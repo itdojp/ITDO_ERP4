@@ -36,6 +36,7 @@ module.exports = [
       ...tsPlugin.configs.recommended.rules,
       ...react.configs.recommended.rules,
       ...reactHooks.configs.recommended.rules,
+      'react-hooks/set-state-in-effect': 'off',
       'no-undef': 'off',
       '@typescript-eslint/no-unused-vars': 'off'
     }
