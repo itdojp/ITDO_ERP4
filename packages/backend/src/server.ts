@@ -7,6 +7,7 @@ import crypto from 'node:crypto';
 import authPlugin from './plugins/auth.js';
 import { registerRoutes } from './routes/index.js';
 import { prisma } from './services/db.js';
+import { assertValidBackendEnv } from './services/envValidation.js';
 import {
   getReadinessReport,
   toPublicReadinessReport,
@@ -90,6 +91,24 @@ function normalizeOpenApiNullable(value: unknown): unknown {
       cloned.nullable = true;
       cloned.type = nonNullTypes.length === 1 ? nonNullTypes[0] : nonNullTypes;
     }
+  }
+
+  const exclusiveMinimumRaw = cloned.exclusiveMinimum;
+  if (
+    typeof exclusiveMinimumRaw === 'number' &&
+    Number.isFinite(exclusiveMinimumRaw)
+  ) {
+    cloned.minimum = exclusiveMinimumRaw;
+    cloned.exclusiveMinimum = true;
+  }
+
+  const exclusiveMaximumRaw = cloned.exclusiveMaximum;
+  if (
+    typeof exclusiveMaximumRaw === 'number' &&
+    Number.isFinite(exclusiveMaximumRaw)
+  ) {
+    cloned.maximum = exclusiveMaximumRaw;
+    cloned.exclusiveMaximum = true;
   }
 
   return cloned;
@@ -176,6 +195,7 @@ function buildLoggerOptions() {
 export async function buildServer(
   options: BuildServerOptions = {},
 ): Promise<FastifyInstance> {
+  assertValidBackendEnv();
   const server = Fastify({
     logger: options.logger === false ? false : buildLoggerOptions(),
     bodyLimit: 1024 * 1024,
