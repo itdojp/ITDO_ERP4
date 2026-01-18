@@ -24,6 +24,77 @@ type BuildServerOptions = {
 const REQUEST_ID_HEADER = 'x-request-id';
 const REQUEST_ID_SAFE_PATTERN = /^[A-Za-z0-9._-]{1,128}$/;
 
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function isNullSchemaObject(value: unknown): boolean {
+  if (!isPlainObject(value)) return false;
+  if (value.type === 'null') return true;
+  if (
+    Array.isArray(value.enum) &&
+    value.enum.length === 1 &&
+    value.enum[0] === null
+  ) {
+    return true;
+  }
+  return false;
+}
+
+function normalizeOpenApiNullable(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(normalizeOpenApiNullable);
+  if (!isPlainObject(value)) return value;
+
+  const cloned: Record<string, unknown> = {};
+  for (const [key, child] of Object.entries(value)) {
+    cloned[key] = normalizeOpenApiNullable(child);
+  }
+
+  for (const unionKey of ['anyOf', 'oneOf'] as const) {
+    const unionRaw = cloned[unionKey];
+    if (!Array.isArray(unionRaw)) continue;
+
+    const nonNullSchemas = unionRaw.filter((item) => !isNullSchemaObject(item));
+    const hasNull = nonNullSchemas.length !== unionRaw.length;
+    if (!hasNull || nonNullSchemas.length === 0) continue;
+
+    cloned.nullable = true;
+
+    if (nonNullSchemas.length === 1) {
+      const base = nonNullSchemas[0];
+      delete cloned[unionKey];
+
+      if (isPlainObject(base) && typeof base.$ref === 'string') {
+        return {
+          ...cloned,
+          allOf: [base],
+        };
+      }
+      if (isPlainObject(base)) {
+        return {
+          ...base,
+          ...cloned,
+        };
+      }
+
+      return cloned;
+    }
+
+    cloned[unionKey] = nonNullSchemas;
+  }
+
+  const typeRaw = cloned.type;
+  if (Array.isArray(typeRaw) && typeRaw.includes('null')) {
+    const nonNullTypes = typeRaw.filter((t) => t !== 'null');
+    if (nonNullTypes.length > 0) {
+      cloned.nullable = true;
+      cloned.type = nonNullTypes.length === 1 ? nonNullTypes[0] : nonNullTypes;
+    }
+  }
+
+  return cloned;
+}
+
 async function registerOpenApiIfEnabled(server: FastifyInstance) {
   const enabled =
     process.env.OPENAPI_EXPORT === '1' || process.env.OPENAPI_EXPOSE === '1';
@@ -59,6 +130,12 @@ async function registerOpenApiIfEnabled(server: FastifyInstance) {
           },
         },
       },
+    },
+    transformObject: (documentObject) => {
+      if ('openapiObject' in documentObject) {
+        return normalizeOpenApiNullable(documentObject.openapiObject) as any;
+      }
+      return documentObject.swaggerObject;
     },
   });
 }
