@@ -33,6 +33,34 @@ type SubmitApprovalOptions = {
   createdBy?: string;
 };
 
+const OPEN_APPROVAL_STATUSES = [
+  DocStatusValue.pending_qa,
+  DocStatusValue.pending_exec,
+] as const;
+
+function isPrismaUniqueError(err: unknown) {
+  return (
+    Boolean(err) && typeof err === 'object' && (err as any).code === 'P2002'
+  );
+}
+
+async function findOpenApprovalInstance(options: {
+  client: any;
+  flowType: string;
+  targetTable: string;
+  targetId: string;
+}) {
+  return options.client.approvalInstance.findFirst({
+    where: {
+      flowType: options.flowType,
+      targetTable: options.targetTable,
+      targetId: options.targetId,
+      status: { in: OPEN_APPROVAL_STATUSES as unknown as string[] },
+    },
+    include: { steps: true },
+  });
+}
+
 async function enrichProjectFields(
   payload: Record<string, unknown>,
   client: any,
@@ -79,6 +107,14 @@ async function createApprovalWithClient(
   createdBy?: string,
   projectId?: string,
 ) {
+  const existing = await findOpenApprovalInstance({
+    client,
+    flowType,
+    targetTable,
+    targetId,
+  });
+  if (existing) return existing;
+
   const normalizedSteps = steps.map((s, idx) => ({
     ...s,
     stepOrder: s.stepOrder ?? idx + 1,
@@ -86,28 +122,42 @@ async function createApprovalWithClient(
   const currentStep = normalizedSteps.length
     ? Math.min(...normalizedSteps.map((s) => s.stepOrder || 1))
     : null;
-  const instance = await client.approvalInstance.create({
-    data: {
+  try {
+    const instance = await client.approvalInstance.create({
+      data: {
+        flowType,
+        targetTable,
+        targetId,
+        projectId,
+        status: resolvePendingStatus(normalizedSteps, currentStep),
+        currentStep,
+        ruleId,
+        createdBy,
+        steps: {
+          create: normalizedSteps.map((s: any) => ({
+            stepOrder: s.stepOrder,
+            approverGroupId: s.approverGroupId,
+            approverUserId: s.approverUserId,
+            status: DocStatusValue.pending_qa,
+          })),
+        },
+      },
+      include: { steps: true },
+    });
+    return instance;
+  } catch (err) {
+    if (!isPrismaUniqueError(err)) {
+      throw err;
+    }
+    const fallback = await findOpenApprovalInstance({
+      client,
       flowType,
       targetTable,
       targetId,
-      projectId,
-      status: resolvePendingStatus(normalizedSteps, currentStep),
-      currentStep,
-      ruleId,
-      createdBy,
-      steps: {
-        create: normalizedSteps.map((s: any) => ({
-          stepOrder: s.stepOrder,
-          approverGroupId: s.approverGroupId,
-          approverUserId: s.approverUserId,
-          status: DocStatusValue.pending_qa,
-        })),
-      },
-    },
-    include: { steps: true },
-  });
-  return instance;
+    });
+    if (fallback) return fallback;
+    throw err;
+  }
 }
 
 export async function createApproval(

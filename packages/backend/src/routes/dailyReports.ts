@@ -3,6 +3,7 @@ import { dailyReportSchema } from './validators.js';
 import { requireRole } from '../services/rbac.js';
 import { prisma } from '../services/db.js';
 import { parseDateParam } from '../utils/date.js';
+import { auditContextFromRequest, logAudit } from '../services/audit.js';
 
 export async function registerDailyReportRoutes(app: FastifyInstance) {
   app.post(
@@ -29,8 +30,9 @@ export async function registerDailyReportRoutes(app: FastifyInstance) {
         });
       }
       const actorId = req.user?.userId ?? null;
-      const report = await prisma.dailyReport.create({
-        data: {
+      const report = await prisma.dailyReport.upsert({
+        where: { userId_reportDate: { userId: body.userId, reportDate } },
+        create: {
           userId: body.userId,
           reportDate,
           content: body.content,
@@ -42,6 +44,23 @@ export async function registerDailyReportRoutes(app: FastifyInstance) {
           createdBy: actorId,
           updatedBy: actorId,
         },
+        update: {
+          content: body.content,
+          linkedProjectIds:
+            body.linkedProjectIds?.length > 0
+              ? body.linkedProjectIds
+              : undefined,
+          status: body.status ?? undefined,
+          updatedBy: actorId,
+        },
+      });
+
+      await logAudit({
+        action: 'daily_report_upserted',
+        targetTable: 'daily_reports',
+        targetId: report.id,
+        metadata: { reportDate: reportDate.toISOString().slice(0, 10) },
+        ...auditContextFromRequest(req),
       });
       return report;
     },

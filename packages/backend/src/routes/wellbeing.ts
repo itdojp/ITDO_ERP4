@@ -35,8 +35,30 @@ export async function registerWellbeingRoutes(app: FastifyInstance) {
           error: { code: 'INVALID_DATE', message: 'Invalid entryDate' },
         });
       }
-      const entry = await prisma.wellbeingEntry.create({
-        data: { ...body, entryDate },
+      const actorId = req.user?.userId ?? null;
+      const entry = await prisma.wellbeingEntry.upsert({
+        where: { userId_entryDate: { userId: body.userId, entryDate } },
+        create: {
+          ...body,
+          entryDate,
+          createdBy: actorId,
+          updatedBy: actorId,
+        },
+        update: {
+          status: body.status,
+          helpRequested: body.helpRequested,
+          notes: body.notes ?? undefined,
+          visibilityGroupId: body.visibilityGroupId,
+          updatedBy: actorId,
+        },
+      });
+
+      await logAudit({
+        action: 'wellbeing_entry_upserted',
+        targetTable: 'wellbeing_entries',
+        targetId: entry.id,
+        metadata: { entryDate: entryDate.toISOString().slice(0, 10) },
+        ...auditContextFromRequest(req),
       });
       return entry;
     },
