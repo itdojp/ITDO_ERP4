@@ -5,6 +5,12 @@
 - 画面キャプチャなどの証跡は `docs/test-results/YYYY-MM-DD-*/` に保存する。
 
 ## 一覧
+### Performance
+- 入口: docs/test-results/perf/README.md
+
+### 2026-01-17
+- 性能ベースライン: docs/test-results/perf-2026-01-17.md
+
 ### 2026-01-16
 - チャット添付AV（ClamAV/clamd）: docs/test-results/2026-01-16-chat-attachments-av.md
 
