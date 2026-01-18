@@ -3876,7 +3876,8 @@
                     "type": "string"
                   },
                   "unitPrice": {
-                    "exclusiveMinimum": 0,
+                    "exclusiveMinimum": true,
+                    "minimum": 0,
                     "type": "number"
                   }
                 },

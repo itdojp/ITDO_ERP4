@@ -7,6 +7,7 @@
 ### 起動/デプロイ
 - ローカル/PoC 起動: [deploy-start](deploy-start.md)
 - 設定（環境変数/シークレット）: [configuration](configuration.md)
+- Secrets/アクセス権限: [secrets-and-access](secrets-and-access.md)
 
 ### バックアップ/リストア
 - [backup-restore](backup-restore.md)
@@ -43,4 +44,5 @@
 
 ### 性能
 - ベースライン（再計測手順）: [docs/performance/performance-baseline.md](../performance/performance-baseline.md)
+- 退行検知ポリシー: [docs/performance/perf-regression-policy.md](../performance/perf-regression-policy.md)
 - 計測結果: [docs/test-results/README.md](../test-results/README.md)
