@@ -24,6 +24,45 @@ type BuildServerOptions = {
 const REQUEST_ID_HEADER = 'x-request-id';
 const REQUEST_ID_SAFE_PATTERN = /^[A-Za-z0-9._-]{1,128}$/;
 
+async function registerOpenApiIfEnabled(server: FastifyInstance) {
+  const enabled =
+    process.env.OPENAPI_EXPORT === '1' || process.env.OPENAPI_EXPOSE === '1';
+  if (!enabled) return;
+
+  const { default: swagger } = await import('@fastify/swagger');
+  await server.register(swagger, {
+    openapi: {
+      info: {
+        title: 'ITDO ERP4 API',
+        version: process.env.API_VERSION || '0.1.0',
+      },
+      components: {
+        schemas: {
+          ApiError: {
+            type: 'object',
+            additionalProperties: false,
+            properties: {
+              code: { type: 'string' },
+              message: { type: 'string' },
+              details: {},
+              category: { type: 'string' },
+            },
+            required: ['code', 'message'],
+          },
+          ApiErrorResponse: {
+            type: 'object',
+            additionalProperties: false,
+            properties: {
+              error: { $ref: '#/components/schemas/ApiError' },
+            },
+            required: ['error'],
+          },
+        },
+      },
+    },
+  });
+}
+
 function generateRequestId() {
   return crypto.randomUUID();
 }
@@ -108,6 +147,7 @@ export async function buildServer(
   });
 
   await server.register(authPlugin);
+  await registerOpenApiIfEnabled(server);
 
   const rateLimitEnabled =
     process.env.RATE_LIMIT_ENABLED === '1' ||

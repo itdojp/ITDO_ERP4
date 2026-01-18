@@ -124,3 +124,31 @@ jobs:
           E2E_SKIP_PLAYWRIGHT_INSTALL: 1
           E2E_SCOPE: ${{ github.event_name == 'pull_request' && 'core' || 'full' }}
         run: ./scripts/e2e-frontend.sh
+
+  api-schema:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 18
+      - run: npm ci --prefix packages/backend
+      - run: npx --prefix packages/backend prisma generate --schema=packages/backend/prisma/schema.prisma
+      - run: npm run build --prefix packages/backend
+        env:
+          DATABASE_URL: postgresql://user:pass@localhost:5432/postgres?schema=public
+      - name: Generate OpenAPI
+        run: node scripts/export-openapi.mjs --out tmp/openapi.json
+      - name: Ensure OpenAPI snapshot is up to date
+        run: diff -u docs/api/openapi.json tmp/openapi.json
+      - name: Breaking change check (openapi-diff)
+        run: |
+          git fetch origin "${GITHUB_BASE_REF}" --depth=1
+          if git show "origin/${GITHUB_BASE_REF}:docs/api/openapi.json" > tmp/openapi-base.json 2>/dev/null; then
+            npx --prefix packages/backend openapi-diff tmp/openapi-base.json tmp/openapi.json
+          else
+            echo "base openapi not found; skipping breaking change check"
+          fi
