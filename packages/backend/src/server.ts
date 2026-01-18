@@ -93,6 +93,24 @@ function normalizeOpenApiNullable(value: unknown): unknown {
     }
   }
 
+  const exclusiveMinimumRaw = cloned.exclusiveMinimum;
+  if (
+    typeof exclusiveMinimumRaw === 'number' &&
+    Number.isFinite(exclusiveMinimumRaw)
+  ) {
+    cloned.minimum = exclusiveMinimumRaw;
+    cloned.exclusiveMinimum = true;
+  }
+
+  const exclusiveMaximumRaw = cloned.exclusiveMaximum;
+  if (
+    typeof exclusiveMaximumRaw === 'number' &&
+    Number.isFinite(exclusiveMaximumRaw)
+  ) {
+    cloned.maximum = exclusiveMaximumRaw;
+    cloned.exclusiveMaximum = true;
+  }
+
   return cloned;
 }
 

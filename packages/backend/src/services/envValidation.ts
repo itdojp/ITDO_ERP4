@@ -58,8 +58,15 @@ export function assertValidBackendEnv() {
   } else {
     try {
       const parsed = new URL(databaseUrl);
-      if (parsed.protocol !== 'postgresql:' && parsed.protocol !== 'postgres:') {
-        addIssue(issues, 'DATABASE_URL', 'postgresql:// の形式で指定してください');
+      if (
+        parsed.protocol !== 'postgresql:' &&
+        parsed.protocol !== 'postgres:'
+      ) {
+        addIssue(
+          issues,
+          'DATABASE_URL',
+          'postgresql:// の形式で指定してください',
+        );
       }
     } catch {
       addIssue(issues, 'DATABASE_URL', 'URL形式として不正です');
@@ -79,7 +86,11 @@ export function assertValidBackendEnv() {
       .filter(Boolean);
     for (const origin of origins) {
       if (!isHttpUrl(origin)) {
-        addIssue(issues, 'ALLOWED_ORIGINS', 'http(s) URL のカンマ区切りで指定してください');
+        addIssue(
+          issues,
+          'ALLOWED_ORIGINS',
+          'http(s) URL のカンマ区切りで指定してください',
+        );
         break;
       }
     }
@@ -88,7 +99,11 @@ export function assertValidBackendEnv() {
   const authMode = (process.env.AUTH_MODE || 'header').trim().toLowerCase();
   const allowedAuthModes = new Set(['header', 'jwt', 'hybrid']);
   if (!allowedAuthModes.has(authMode)) {
-    addIssue(issues, 'AUTH_MODE', "header|jwt|hybrid のいずれかを指定してください");
+    addIssue(
+      issues,
+      'AUTH_MODE',
+      'header|jwt|hybrid のいずれかを指定してください',
+    );
   }
 
   if (authMode === 'jwt' || authMode === 'hybrid') {
@@ -148,7 +163,11 @@ export function assertValidBackendEnv() {
     .toLowerCase();
   const allowedMailTransports = new Set(['stub', 'smtp', 'sendgrid']);
   if (!allowedMailTransports.has(mailTransport)) {
-    addIssue(issues, 'MAIL_TRANSPORT', 'stub|smtp|sendgrid のいずれかを指定してください');
+    addIssue(
+      issues,
+      'MAIL_TRANSPORT',
+      'stub|smtp|sendgrid のいずれかを指定してください',
+    );
   }
   if (mailTransport === 'sendgrid') {
     assertRequired(issues, 'SENDGRID_API_KEY', process.env.SENDGRID_API_KEY);
@@ -165,14 +184,24 @@ export function assertValidBackendEnv() {
     }
     const secureRaw = normalizeString(process.env.SMTP_SECURE);
     if (secureRaw && parseBoolean(secureRaw) === undefined) {
-      addIssue(issues, 'SMTP_SECURE', 'true|false|1|0 のいずれかを指定してください');
+      addIssue(
+        issues,
+        'SMTP_SECURE',
+        'true|false|1|0 のいずれかを指定してください',
+      );
     }
   }
 
-  const pdfProvider = (process.env.PDF_PROVIDER || 'local').trim().toLowerCase();
+  const pdfProvider = (process.env.PDF_PROVIDER || 'local')
+    .trim()
+    .toLowerCase();
   const allowedPdfProviders = new Set(['local', 'external']);
   if (!allowedPdfProviders.has(pdfProvider)) {
-    addIssue(issues, 'PDF_PROVIDER', 'local|external のいずれかを指定してください');
+    addIssue(
+      issues,
+      'PDF_PROVIDER',
+      'local|external のいずれかを指定してください',
+    );
   }
   if (pdfProvider === 'external') {
     assertRequired(issues, 'PDF_EXTERNAL_URL', process.env.PDF_EXTERNAL_URL);
@@ -201,7 +230,9 @@ export function assertValidBackendEnv() {
       'CHAT_EXTERNAL_LLM_OPENAI_API_KEY',
       process.env.CHAT_EXTERNAL_LLM_OPENAI_API_KEY,
     );
-    const baseUrl = normalizeString(process.env.CHAT_EXTERNAL_LLM_OPENAI_BASE_URL);
+    const baseUrl = normalizeString(
+      process.env.CHAT_EXTERNAL_LLM_OPENAI_BASE_URL,
+    );
     if (baseUrl && !isHttpUrl(baseUrl)) {
       addIssue(
         issues,
@@ -218,4 +249,3 @@ export function assertValidBackendEnv() {
     throw new Error(`環境変数の設定が不正です:\n${lines}`);
   }
 }
-
