@@ -7,6 +7,7 @@
 ### 起動/デプロイ
 - ローカル/PoC 起動: [deploy-start](deploy-start.md)
 - 設定（環境変数/シークレット）: [configuration](configuration.md)
+- Secrets/アクセス権限: [secrets-and-access](secrets-and-access.md)
 
 ### バックアップ/リストア
 - [backup-restore](backup-restore.md)
