@@ -40,9 +40,7 @@ const OPEN_APPROVAL_STATUSES = [
 
 function isPrismaUniqueError(err: unknown) {
   return (
-    Boolean(err) &&
-    typeof err === 'object' &&
-    (err as any).code === 'P2002'
+    Boolean(err) && typeof err === 'object' && (err as any).code === 'P2002'
   );
 }
 
