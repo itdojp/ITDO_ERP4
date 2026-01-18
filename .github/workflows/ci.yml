@@ -155,7 +155,7 @@ jobs:
         run: |
           git fetch origin "${GITHUB_BASE_REF}" --depth=1
           if git show "origin/${GITHUB_BASE_REF}:docs/api/openapi.json" > tmp/openapi-base.json 2>/dev/null; then
-            if grep -q '"type": "null"' tmp/openapi-base.json || grep -Eq '"exclusive(Minimum|Maximum)"\\s*:\\s*[0-9]+' tmp/openapi-base.json; then
+            if grep -q '"type": "null"' tmp/openapi-base.json || grep -Eq '"exclusive(Minimum|Maximum)"[[:space:]]*:[[:space:]]*[0-9]+' tmp/openapi-base.json; then
               echo "base openapi is not OpenAPI 3.0 compatible -> skipping openapi-diff"
               exit 0
             fi
