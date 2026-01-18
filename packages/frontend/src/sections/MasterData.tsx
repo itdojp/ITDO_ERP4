@@ -88,10 +88,10 @@ const errorDetail = (err: unknown) => {
 const hasContactDraft = (form: typeof emptyContact) =>
   Boolean(
     form.name.trim() ||
-      form.email.trim() ||
-      form.phone.trim() ||
-      form.role.trim() ||
-      form.isPrimary,
+    form.email.trim() ||
+    form.phone.trim() ||
+    form.role.trim() ||
+    form.isPrimary,
   );
 
 export const MasterData: React.FC = () => {
