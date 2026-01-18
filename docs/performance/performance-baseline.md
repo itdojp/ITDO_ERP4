@@ -63,3 +63,5 @@ CONTAINER_NAME=erp4-pg-perf HOST_PORT=55434 ./scripts/podman-poc.sh stats-reset
 
 ## 計測結果
 計測結果は `docs/test-results/perf-YYYY-MM-DD.md` に残す。
+
+退行検知の運用ポリシー: `docs/performance/perf-regression-policy.md`
