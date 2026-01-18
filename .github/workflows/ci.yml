@@ -70,7 +70,7 @@ jobs:
       - name: Generate SBOM (CycloneDX)
         run: ./scripts/export-sbom.sh --out tmp/sbom
       - name: Upload SBOM artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: sbom-${{ github.sha }}
           path: tmp/sbom/*.cdx.json
