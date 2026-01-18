@@ -1,0 +1,47 @@
+name: Release (manual build)
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag (e.g. v0.1.0)"
+        required: true
+        type: string
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 18
+      - name: Prepare metadata
+        run: |
+          echo "TAG=${{ inputs.tag }}" >> "$GITHUB_ENV"
+          echo "SHA=${GITHUB_SHA}" >> "$GITHUB_ENV"
+          echo "RUN_ID=${GITHUB_RUN_ID}" >> "$GITHUB_ENV"
+      - name: Install (backend)
+        run: npm ci --prefix packages/backend
+      - name: Generate prisma client (backend)
+        run: npx --prefix packages/backend prisma generate --schema=packages/backend/prisma/schema.prisma
+      - name: Build (backend)
+        env:
+          DATABASE_URL: postgresql://user:pass@localhost:5432/postgres?schema=public
+        run: npm run build --prefix packages/backend
+      - name: Install (frontend)
+        run: npm ci --prefix packages/frontend
+      - name: Build (frontend)
+        run: npm run build --prefix packages/frontend
+      - name: Package artifacts
+        run: |
+          mkdir -p dist/release
+          node -e 'const fs=require("fs"); const data={tag:process.env.TAG, sha:process.env.SHA, runId:process.env.RUN_ID, createdAt:new Date().toISOString()}; fs.writeFileSync("dist/release/metadata.json", JSON.stringify(data,null,2));'
+          tar -czf "dist/release/backend-${TAG}-${SHA}.tgz" -C packages/backend dist prisma package.json package-lock.json
+          tar -czf "dist/release/frontend-${TAG}-${SHA}.tgz" -C packages/frontend dist package.json package-lock.json
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: erp4-release-${{ inputs.tag }}-${{ github.sha }}
+          path: dist/release/*
+          if-no-files-found: error
