@@ -163,3 +163,15 @@ jobs:
           else
             echo "base openapi not found; skipping breaking change check"
           fi
+
+  secret-scan:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    if: github.event_name == 'pull_request' || github.event_name == 'schedule'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        with:
+          args: "--redact"

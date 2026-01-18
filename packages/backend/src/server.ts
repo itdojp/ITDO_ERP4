@@ -7,6 +7,7 @@ import crypto from 'node:crypto';
 import authPlugin from './plugins/auth.js';
 import { registerRoutes } from './routes/index.js';
 import { prisma } from './services/db.js';
+import { assertValidBackendEnv } from './services/envValidation.js';
 import {
   getReadinessReport,
   toPublicReadinessReport,
@@ -176,6 +177,7 @@ function buildLoggerOptions() {
 export async function buildServer(
   options: BuildServerOptions = {},
 ): Promise<FastifyInstance> {
+  assertValidBackendEnv();
   const server = Fastify({
     logger: options.logger === false ? false : buildLoggerOptions(),
     bodyLimit: 1024 * 1024,
