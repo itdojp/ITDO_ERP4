@@ -1,0 +1,59 @@
+name: Performance
+
+on:
+  workflow_dispatch:
+    inputs:
+      runLabel:
+        description: "Label for this run (stored in artifacts)"
+        required: false
+        default: "manual"
+  schedule:
+    - cron: "0 19 * * 1"
+
+jobs:
+  api-bench:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 18
+      - run: sudo apt-get update
+      - run: sudo apt-get install -y postgresql-client
+      - name: Run api bench
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres?schema=public
+          OUT_DIR: tmp/perf-ci
+          RUN_LABEL: ${{ inputs.runLabel || 'scheduled' }}
+        run: ./scripts/perf/run-api-bench-ci.sh
+      - name: Compare with baseline (non-blocking)
+        continue-on-error: true
+        run: |
+          if [[ -f docs/performance/perf-baseline.json ]]; then
+            node ./scripts/perf/compare-api-bench.mjs --base docs/performance/perf-baseline.json --next tmp/perf-ci/result.json
+          else
+            echo "baseline not found; skipping comparison"
+          fi
+      - name: Upload perf artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: perf-api-bench-${{ github.run_id }}
+          path: tmp/perf-ci/*
+          if-no-files-found: error
+          retention-days: 90
+
