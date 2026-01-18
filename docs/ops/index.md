@@ -26,7 +26,10 @@
   - 既存資料: [docs/requirements/ops-monitoring.md](../requirements/ops-monitoring.md)
 
 ### リリース
-- [release](release.md)
+- 入口: [release](release.md)
+- 戦略/詳細: [release-strategy](release-strategy.md)
+- チェックリスト: [release-checklist](release-checklist.md)
+- Feature Flag 運用: [feature-flags](feature-flags.md)
 
 ### セキュリティ運用
 - [security](security.md)
