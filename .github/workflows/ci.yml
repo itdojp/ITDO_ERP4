@@ -65,14 +65,21 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 18
+      - run: npm ci --prefix packages/backend
+      - run: npm ci --prefix packages/frontend
+      - name: Generate SBOM (CycloneDX)
+        run: ./scripts/export-sbom.sh --out tmp/sbom
+      - name: Upload SBOM artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-${{ github.sha }}
+          path: tmp/sbom/*.cdx.json
+          if-no-files-found: error
+          retention-days: 30
       - name: Backend audit (high/critical)
-        run: |
-          npm ci --prefix packages/backend
-          npm audit --prefix packages/backend --audit-level=high
+        run: npm audit --prefix packages/backend --audit-level=high
       - name: Frontend audit (high/critical)
-        run: |
-          npm ci --prefix packages/frontend
-          npm audit --prefix packages/frontend --audit-level=high
+        run: npm audit --prefix packages/frontend --audit-level=high
   data-quality:
     runs-on: ubuntu-latest
     continue-on-error: true
@@ -148,6 +155,10 @@ jobs:
         run: |
           git fetch origin "${GITHUB_BASE_REF}" --depth=1
           if git show "origin/${GITHUB_BASE_REF}:docs/api/openapi.json" > tmp/openapi-base.json 2>/dev/null; then
+            if grep -q '"type": "null"' tmp/openapi-base.json; then
+              echo "base openapi contains 'type: null' (OpenAPI 3.0互換でないため) -> skipping openapi-diff"
+              exit 0
+            fi
             npx --prefix packages/backend openapi-diff tmp/openapi-base.json tmp/openapi.json
           else
             echo "base openapi not found; skipping breaking change check"

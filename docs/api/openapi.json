@@ -3014,26 +3014,14 @@
                     "type": "string"
                   },
                   "customerId": {
-                    "anyOf": [
-                      {
-                        "minLength": 1,
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
-                    ]
+                    "minLength": 1,
+                    "nullable": true,
+                    "type": "string"
                   },
                   "endDate": {
-                    "anyOf": [
-                      {
-                        "format": "date",
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
-                    ]
+                    "format": "date",
+                    "nullable": true,
+                    "type": "string"
                   },
                   "name": {
                     "type": "string"
@@ -3046,15 +3034,9 @@
                     "type": "number"
                   },
                   "startDate": {
-                    "anyOf": [
-                      {
-                        "format": "date",
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
-                    ]
+                    "format": "date",
+                    "nullable": true,
+                    "type": "string"
                   },
                   "status": {
                     "type": "string"
@@ -3171,32 +3153,26 @@
                     "type": "string"
                   },
                   "dueDateRule": {
-                    "anyOf": [
-                      {
-                        "additionalProperties": false,
-                        "properties": {
-                          "offsetDays": {
-                            "maximum": 365,
-                            "minimum": 0,
-                            "type": "integer"
-                          },
-                          "type": {
-                            "enum": [
-                              "periodEndPlusOffset"
-                            ],
-                            "type": "string"
-                          }
-                        },
-                        "required": [
-                          "type",
-                          "offsetDays"
-                        ],
-                        "type": "object"
+                    "additionalProperties": false,
+                    "nullable": true,
+                    "properties": {
+                      "offsetDays": {
+                        "maximum": 365,
+                        "minimum": 0,
+                        "type": "integer"
                       },
-                      {
-                        "type": "null"
+                      "type": {
+                        "enum": [
+                          "periodEndPlusOffset"
+                        ],
+                        "type": "string"
                       }
-                    ]
+                    },
+                    "required": [
+                      "type",
+                      "offsetDays"
+                    ],
+                    "type": "object"
                   },
                   "frequency": {
                     "anyOf": [
@@ -3286,26 +3262,14 @@
                         "type": "string"
                       },
                       "customerId": {
-                        "anyOf": [
-                          {
-                            "minLength": 1,
-                            "type": "string"
-                          },
-                          {
-                            "type": "null"
-                          }
-                        ]
+                        "minLength": 1,
+                        "nullable": true,
+                        "type": "string"
                       },
                       "endDate": {
-                        "anyOf": [
-                          {
-                            "format": "date",
-                            "type": "string"
-                          },
-                          {
-                            "type": "null"
-                          }
-                        ]
+                        "format": "date",
+                        "nullable": true,
+                        "type": "string"
                       },
                       "name": {
                         "type": "string"
@@ -3318,15 +3282,9 @@
                         "type": "number"
                       },
                       "startDate": {
-                        "anyOf": [
-                          {
-                            "format": "date",
-                            "type": "string"
-                          },
-                          {
-                            "type": "null"
-                          }
-                        ]
+                        "format": "date",
+                        "nullable": true,
+                        "type": "string"
                       },
                       "status": {
                         "type": "string"
@@ -4390,26 +4348,14 @@
               "schema": {
                 "properties": {
                   "actualEnd": {
-                    "anyOf": [
-                      {
-                        "format": "date",
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
-                    ]
+                    "format": "date",
+                    "nullable": true,
+                    "type": "string"
                   },
                   "actualStart": {
-                    "anyOf": [
-                      {
-                        "format": "date",
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
-                    ]
+                    "format": "date",
+                    "nullable": true,
+                    "type": "string"
                   },
                   "assigneeId": {
                     "type": "string"
@@ -4421,26 +4367,14 @@
                     "type": "string"
                   },
                   "planEnd": {
-                    "anyOf": [
-                      {
-                        "format": "date",
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
-                    ]
+                    "format": "date",
+                    "nullable": true,
+                    "type": "string"
                   },
                   "planStart": {
-                    "anyOf": [
-                      {
-                        "format": "date",
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
-                    ]
+                    "format": "date",
+                    "nullable": true,
+                    "type": "string"
                   },
                   "progressPercent": {
                     "maximum": 100,
@@ -4496,26 +4430,14 @@
                   {
                     "properties": {
                       "actualEnd": {
-                        "anyOf": [
-                          {
-                            "format": "date",
-                            "type": "string"
-                          },
-                          {
-                            "type": "null"
-                          }
-                        ]
+                        "format": "date",
+                        "nullable": true,
+                        "type": "string"
                       },
                       "actualStart": {
-                        "anyOf": [
-                          {
-                            "format": "date",
-                            "type": "string"
-                          },
-                          {
-                            "type": "null"
-                          }
-                        ]
+                        "format": "date",
+                        "nullable": true,
+                        "type": "string"
                       },
                       "assigneeId": {
                         "type": "string"
@@ -4527,26 +4449,14 @@
                         "type": "string"
                       },
                       "planEnd": {
-                        "anyOf": [
-                          {
-                            "format": "date",
-                            "type": "string"
-                          },
-                          {
-                            "type": "null"
-                          }
-                        ]
+                        "format": "date",
+                        "nullable": true,
+                        "type": "string"
                       },
                       "planStart": {
-                        "anyOf": [
-                          {
-                            "format": "date",
-                            "type": "string"
-                          },
-                          {
-                            "type": "null"
-                          }
-                        ]
+                        "format": "date",
+                        "nullable": true,
+                        "type": "string"
                       },
                       "progressPercent": {
                         "maximum": 100,
@@ -4930,14 +4840,8 @@
                     "type": "string"
                   },
                   "expirationTime": {
-                    "anyOf": [
-                      {
-                        "type": "number"
-                      },
-                      {
-                        "type": "null"
-                      }
-                    ]
+                    "nullable": true,
+                    "type": "number"
                   },
                   "keys": {
                     "additionalProperties": false,
@@ -6041,14 +5945,8 @@
                     "type": "string"
                   },
                   "toTaskId": {
-                    "anyOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
-                    ]
+                    "nullable": true,
+                    "type": "string"
                   }
                 },
                 "required": [
