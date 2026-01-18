@@ -54,11 +54,14 @@
 
 ClamAV 定義更新は以下のいずれかを採用する前提で運用を確定する。
 
-- コンテナが自動更新する構成（イメージ/エントリポイントに依存）
+- コンテナ内の `freshclam` で自動更新する構成（イメージ/エントリポイントに依存）
 - 定期ジョブで `freshclam` を実行する構成（例: 日次）
 - 定期的にイメージを更新して入れ替える構成
 
-※ `clamav/clamav` イメージがどの方式かは、本ドキュメント作成時点では検証していません。採用前に検証環境で確認してください。
+検証メモ:
+- `docker.io/clamav/clamav:latest` は `clamd` と `freshclam --daemon` が同一コンテナで起動し、定義更新も実行されることを確認しました。
+  - 例: `podman exec erp4-clamav ps -eo pid,comm,args` で `freshclam --daemon` を確認
+  - 例: `podman logs erp4-clamav` に `ClamAV update process started` が出力されることを確認
 
 ### 監視/障害時
 
