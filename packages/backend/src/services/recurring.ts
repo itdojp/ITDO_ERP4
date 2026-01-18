@@ -95,8 +95,8 @@ export async function runRecurringTemplates(now = new Date()) {
     const shouldGenerateInvoice = template.shouldGenerateInvoice ?? true;
     const shouldGenerateMilestone = Boolean(
       template.defaultMilestoneName ||
-        template.billUpon ||
-        template.dueDateRule,
+      template.billUpon ||
+      template.dueDateRule,
     );
     if (
       !shouldGenerateEstimate &&
