@@ -22,6 +22,9 @@
 
 ### 監視/障害対応
 - health/readiness/ログ: [observability](observability.md)
+- SLI/SLO（暫定）: [slo](slo.md)
+- アラート設計: [alerting](alerting.md)
+- ダッシュボード定義: [dashboard](dashboard.md)
 - 一次切り分け（Runbook）: [incident-response](incident-response.md)
   - 既存資料: [docs/requirements/ops-monitoring.md](../requirements/ops-monitoring.md)
 
