@@ -1119,6 +1119,8 @@ model DailyReport {
   createdBy        String?
   updatedAt        DateTime @updatedAt
   updatedBy        String?
+
+  @@unique([userId, reportDate])
 }
 
 model WellbeingEntry {
@@ -1134,7 +1136,8 @@ model WellbeingEntry {
   updatedAt         DateTime @updatedAt
   updatedBy         String?
 
-  @@index([userId, entryDate])
+  @@unique([userId, entryDate])
+  @@index([visibilityGroupId, entryDate])
 }
 
 model NumberSequence {
