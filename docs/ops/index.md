@@ -26,6 +26,8 @@
 - アラート設計: [alerting](alerting.md)
 - ダッシュボード定義: [dashboard](dashboard.md)
 - 一次切り分け（Runbook）: [incident-response](incident-response.md)
+- Postmortem テンプレ: [postmortem-template](postmortem-template.md)
+- ゲームデイ（演習計画）: [game-day](game-day.md)
   - 既存資料: [docs/requirements/ops-monitoring.md](../requirements/ops-monitoring.md)
 
 ### リリース
