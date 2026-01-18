@@ -40,7 +40,7 @@ jobs:
           tar -czf "dist/release/backend-${TAG}-${SHA}.tgz" -C packages/backend dist prisma package.json package-lock.json
           tar -czf "dist/release/frontend-${TAG}-${SHA}.tgz" -C packages/frontend dist package.json package-lock.json
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: erp4-release-${{ inputs.tag }}-${{ github.sha }}
           path: dist/release/*
