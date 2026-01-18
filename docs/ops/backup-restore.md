@@ -2,6 +2,7 @@
 
 ## 入口
 詳細は `docs/requirements/backup-restore.md` を参照。
+DR計画（RTO/RPO/復元演習）は `docs/ops/dr-plan.md` を参照。
 
 ## PoC/検証（Podman DB）
 `scripts/podman-poc.sh` にバックアップ/リストア手順が実装済み。

@@ -64,7 +64,7 @@ git push origin vX.Y.Z
 - 原則: **DB を戻さずに前方互換（expand/contract）** を目指す
 - 破壊的変更やデータ補正を伴う場合は、バックアップからのリストアを含めて判断する
   - バックアップ/リストア: `docs/ops/backup-restore.md`
-  - DR計画（RTO/RPO）は後続（Issue #590）
+  - DR計画（RTO/RPO/復元演習）: `docs/ops/dr-plan.md`
 
 ## 関連
 - チェックリスト（短縮版）: `docs/ops/release-checklist.md`
