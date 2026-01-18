@@ -14,7 +14,7 @@ jobs:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
         with:
-          node-version: 18
+          node-version: 20.19.0
       - run: npm install
         working-directory: packages/backend
       - run: npx prisma generate --schema=./prisma/schema.prisma
@@ -41,7 +41,7 @@ jobs:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
         with:
-          node-version: 18
+          node-version: 20.19.0
       - run: npm install --prefix packages/frontend
       - run: npm run typecheck --prefix packages/frontend
       - run: npm run build --prefix packages/frontend
@@ -51,7 +51,7 @@ jobs:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
         with:
-          node-version: 18
+          node-version: 20.19.0
       - run: npm install --prefix packages/backend
       - run: npm run lint --prefix packages/backend
       - run: npm run format:check --prefix packages/backend
@@ -64,7 +64,7 @@ jobs:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
         with:
-          node-version: 18
+          node-version: 20.19.0
       - run: npm ci --prefix packages/backend
       - run: npm ci --prefix packages/frontend
       - name: Generate SBOM (CycloneDX)
@@ -87,7 +87,7 @@ jobs:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
         with:
-          node-version: 18
+          node-version: 20.19.0
       - run: npm install --prefix packages/backend
       - run: npm install --prefix packages/frontend
       - run: npx --prefix packages/backend ts-node --project packages/backend/tsconfig.json scripts/data-quality-check.ts || true
@@ -117,7 +117,7 @@ jobs:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
         with:
-          node-version: 18
+          node-version: 20.19.0
       - run: npm ci --prefix packages/backend
       - run: npm ci --prefix packages/frontend
       - run: sudo apt-get update
@@ -141,7 +141,7 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-node@v6
         with:
-          node-version: 18
+          node-version: 20.19.0
       - run: npm ci --prefix packages/backend
       - run: npx --prefix packages/backend prisma generate --schema=packages/backend/prisma/schema.prisma
       - run: npm run build --prefix packages/backend
