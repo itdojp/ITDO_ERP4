@@ -65,14 +65,21 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 18
+      - run: npm ci --prefix packages/backend
+      - run: npm ci --prefix packages/frontend
+      - name: Generate SBOM (CycloneDX)
+        run: ./scripts/export-sbom.sh --out tmp/sbom
+      - name: Upload SBOM artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-${{ github.sha }}
+          path: tmp/sbom/*.cdx.json
+          if-no-files-found: error
+          retention-days: 30
       - name: Backend audit (high/critical)
-        run: |
-          npm ci --prefix packages/backend
-          npm audit --prefix packages/backend --audit-level=high
+        run: npm audit --prefix packages/backend --audit-level=high
       - name: Frontend audit (high/critical)
-        run: |
-          npm ci --prefix packages/frontend
-          npm audit --prefix packages/frontend --audit-level=high
+        run: npm audit --prefix packages/frontend --audit-level=high
   data-quality:
     runs-on: ubuntu-latest
     continue-on-error: true
