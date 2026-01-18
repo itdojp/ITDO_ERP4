@@ -10,6 +10,7 @@
 
 ### バックアップ/リストア
 - [backup-restore](backup-restore.md)
+  - DR計画（RTO/RPO/復元演習）: [dr-plan](dr-plan.md)
   - 詳細: [docs/requirements/backup-restore.md](../requirements/backup-restore.md)
 
 ### 移行（Project-Open → ERP4）
