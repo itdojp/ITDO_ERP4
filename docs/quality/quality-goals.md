@@ -11,7 +11,7 @@
 
 ## 品質スコープ（起点）
 PoC導線の手動確認ドキュメントを、品質スコープの起点として扱う。
-- `docs/requirements/manual-test-checklist.md`
+- `docs/manual/manual-test-checklist.md`
 - `packages/backend/src/tests/happy-path.md`
 
 補助（QA/リリース準備のチェックリスト）

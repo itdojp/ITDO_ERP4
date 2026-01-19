@@ -14,7 +14,6 @@
 - [ ] frontend 配信（静的アセット）
 
 ## 事後（必須）
-- [ ] 手動確認（最小）: `docs/requirements/manual-test-checklist.md`
+- [ ] 手動確認（最小）: `docs/manual/manual-test-checklist.md`
 - [ ] 監視（エラー率/遅延/依存障害）
 - [ ] 問題があれば Feature Flag で無効化、または成果物ロールバック
-

@@ -29,7 +29,7 @@
 ## リリース実施（推奨手順）
 ### 1) リリース候補を確定
 - `main` の対象コミット SHA を確定する
-- 必要なら手動確認（PoC導線）: `docs/requirements/manual-test-checklist.md`
+- 必要なら手動確認（PoC導線）: `docs/manual/manual-test-checklist.md`
 
 ### 2) タグ付け
 ```bash
@@ -52,7 +52,7 @@ git push origin vX.Y.Z
 
 ## リリース後チェック（必須）
 - `/healthz` と `/readyz` を確認（`503` の場合は依存障害）
-- 主要導線の確認（最小）: `docs/requirements/manual-test-checklist.md`
+- 主要導線の確認（最小）: `docs/manual/manual-test-checklist.md`
 - 監視/一次切り分け: `docs/ops/observability.md`
 
 ## ロールバック方針（暫定）

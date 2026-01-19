@@ -6,7 +6,7 @@
   - 証跡: `docs/test-results/2026-01-15-frontend-e2e-r2/`
 - 画面の表示内容は demo seed に基づきます（データ差分あり）。
 - 対象ロールの目安: user
-- 管理者向けの操作は `docs/requirements/ui-manual-admin.md` を参照してください。
+- 管理者向けの操作は `docs/manual/ui-manual-admin.md` を参照してください。
 
 ## 目次
 - 共通: 現在のユーザー / ダッシュボード / ERP横断検索

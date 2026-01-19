@@ -4,7 +4,7 @@
 主要領域ごとに「現状の自動テスト有無」と「優先度（A/B/C）」を整理し、追加すべきテストを追跡可能にする。
 
 起点（手動確認）
-- `docs/requirements/manual-test-checklist.md`
+- `docs/manual/manual-test-checklist.md`
 - `packages/backend/src/tests/happy-path.md`
 
 ## 優先度の定義
@@ -30,7 +30,7 @@
 - 追加したテストは、手動チェックリストのどの項目を代替するかを本ドキュメントで追跡する。
 
 ## 手動確認チェックリストとの対応（PoC）
-`docs/requirements/manual-test-checklist.md` の各項目について、現状の自動テスト/スモークの対応を整理する。
+`docs/manual/manual-test-checklist.md` の各項目について、現状の自動テスト/スモークの対応を整理する。
 
 ### バックエンド API
 | 手動確認項目 | 自動テスト/スモーク（現状） | 備考 |
