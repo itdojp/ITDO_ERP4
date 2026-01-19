@@ -5,7 +5,8 @@
 - 未カバーの画面/状態を発見し、追加作業を計画できるようにする
 
 ## 最新の証跡
-- 最新の証跡ディレクトリは `docs/manual/ui-manual.md` の「証跡」セクションを参照
+- 最新の証跡ディレクトリは `docs/manual/ui-manual.md`（分冊入口）の「証跡」セクションを参照
+  - 必要に応じて `docs/manual/ui-manual-user.md` / `docs/manual/ui-manual-admin.md` の前提も参照
 
 ## 画面（セクション）一覧
 | 画面（UIセクション） | 対象ロール（目安） | 証跡（スクショ） | 操作マニュアル（主要） |
