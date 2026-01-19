@@ -28,7 +28,7 @@ E2E_CAPTURE=1 E2E_SCOPE=core ./scripts/e2e-frontend.sh
 任意で保存先を固定する場合:
 ```bash
 E2E_CAPTURE=1 E2E_SCOPE=core \
-E2E_EVIDENCE_DIR="$PWD/docs/test-results/2026-01-19-frontend-e2e-r3" \
+E2E_EVIDENCE_DIR="$PWD/docs/test-results/2026-01-19-frontend-e2e-r1" \
 ./scripts/e2e-frontend.sh
 ```
 

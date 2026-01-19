@@ -8,6 +8,10 @@
 ### Performance
 - 入口: docs/test-results/perf/README.md
 
+### 2026-01-19
+- フロントE2E(フル + UIエビデンス r1): docs/test-results/2026-01-19-frontend-e2e-r1.md
+- 証跡: docs/test-results/2026-01-19-frontend-e2e-r1/
+
 ### 2026-01-17
 - 性能ベースライン: docs/test-results/perf-2026-01-17.md
 

@@ -226,6 +226,7 @@ export async function buildServer(
     origin:
       allowedOrigins && allowedOrigins.length > 0 ? allowedOrigins : false,
     maxAge: 86400,
+    methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   });
   await server.register(helmet, {
     contentSecurityPolicy: {

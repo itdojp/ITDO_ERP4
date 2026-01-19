@@ -26,3 +26,8 @@
 ## 匿名集計
 匿名性確保の条件（例: N>=5 など）はポリシーに従う。
 実装状況と差分がある場合は Issue として追跡する。
+
+## 関連画面（証跡）
+![日報（ウェルビーイング）](../test-results/2026-01-19-frontend-e2e-r1/02-core-daily-report.png)
+
+![HR分析](../test-results/2026-01-19-frontend-e2e-r1/13-hr-analytics.png)
