@@ -64,3 +64,16 @@
 - 納期超過の未請求（delivery_due）アラートが出ていないか
 - 承認遅延（approval_delay/approval_escalation）が出ていないか
 - 仕入請求の紐付け漏れ（案件・発注書）がないか
+
+## 関連画面（証跡）
+![見積](../test-results/2026-01-19-frontend-e2e-r1/05-core-estimates.png)
+
+![請求ドラフト](../test-results/2026-01-19-frontend-e2e-r1/06-core-invoices.png)
+
+![ベンダー書類一覧](../test-results/2026-01-19-frontend-e2e-r1/06-vendor-docs.png)
+
+![ベンダー書類作成](../test-results/2026-01-19-frontend-e2e-r1/06-vendor-docs-create.png)
+
+![ドキュメント送信ログ](../test-results/2026-01-19-frontend-e2e-r1/26-document-send-logs.png)
+
+![PDFファイル一覧](../test-results/2026-01-19-frontend-e2e-r1/27-pdf-files.png)

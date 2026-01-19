@@ -41,3 +41,12 @@
 ## 監査/ログ
 - 付け替え（project/task reassignment）は監査対象（理由入力を前提）
 - 監査ログの確認は [ui-manual-admin](ui-manual-admin.md) の「監査ログ」を参照
+
+## 関連画面（証跡）
+![プロジェクト](../test-results/2026-01-19-frontend-e2e-r1/09-projects.png)
+
+![プロジェクトメンバー](../test-results/2026-01-19-frontend-e2e-r1/09-project-members.png)
+
+![タスク](../test-results/2026-01-19-frontend-e2e-r1/21-project-tasks.png)
+
+![マイルストーン](../test-results/2026-01-19-frontend-e2e-r1/23-project-milestones.png)

@@ -18,6 +18,17 @@
 4. オフライン送信キューの挙動を確認（再送/破棄）
 5. Push通知（任意）の購読登録（PoC/検証の範囲）
 
+## 画面キャプチャ（証跡）
+PoC の E2E 実行時に取得した画面キャプチャです。
+
+![現在のユーザー](../test-results/2026-01-19-frontend-e2e-r1/00-current-user.png)
+
+![ダッシュボード](../test-results/2026-01-19-frontend-e2e-r1/01-core-dashboard.png)
+
+![ERP横断検索](../test-results/2026-01-19-frontend-e2e-r1/06-core-global-search.png)
+
+![オフライン送信待ち](../test-results/2026-01-19-frontend-e2e-r1/14-offline-daily-queue.png)
+
 詳細手順（画面操作）:
 - 利用者: [ui-manual-user](ui-manual-user.md)
 - 管理者: [ui-manual-admin](ui-manual-admin.md)
