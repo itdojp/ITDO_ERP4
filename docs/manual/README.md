@@ -31,6 +31,7 @@
 ### QA/証跡
 - 手動確認チェックリスト: [manual-test-checklist](manual-test-checklist.md)
 - E2E（Playwright）と証跡（画面キャプチャ）: [e2e-evidence-howto](e2e-evidence-howto.md)
+- UI 画面カバレッジ（マニュアル/証跡）: [screen-coverage](screen-coverage.md)
 
 ## 更新ルール（最小）
 - **仕様の決定**は `docs/requirements/`、**操作/運用**は `docs/manual/` に記載する
