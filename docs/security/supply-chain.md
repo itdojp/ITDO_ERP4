@@ -33,7 +33,7 @@
 ### CI での生成（artifact）
 - workflow: `.github/workflows/ci.yml`
 - job: `security-audit`
-- 生成ツール: `@cyclonedx/cyclonedx-npm@2.1.0`（Node.js 18 互換）
+- 生成ツール: `@cyclonedx/cyclonedx-npm@2.1.0`（Node.js >=14）
 - 出力:
   - `tmp/sbom/backend.cdx.json`
   - `tmp/sbom/frontend.cdx.json`

@@ -13,9 +13,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
-          node-version: 18
+          node-version: 20.19.0
       - name: Prepare metadata
         run: |
           echo "TAG=${{ inputs.tag }}" >> "$GITHUB_ENV"
