@@ -19,7 +19,7 @@
 - 認証/ID/アクセス制御: `docs/requirements/id-management.md` / `docs/requirements/access-control.md` / `docs/requirements/rbac-matrix.md`
 - 運用（バックアップ/監視/ジョブ）: `docs/requirements/backup-restore.md` / `docs/requirements/batch-jobs.md` / `docs/requirements/ops-monitoring.md`
 - データ移行: `docs/requirements/migration-mapping.md` / `docs/requirements/migration-tool.md` / `docs/requirements/db-migration.md` / `docs/requirements/migration-poc.md`
-- QA/テスト: `docs/requirements/qa-plan.md` / `docs/requirements/manual-test-checklist.md` / `docs/test-results/README.md`
+- QA/テスト: `docs/requirements/qa-plan.md` / `docs/manual/manual-test-checklist.md` / `docs/test-results/README.md`
 
 補足: チャットの仕様は `docs/requirements/project-chat.md` を一次ソースとする。
 

@@ -14,7 +14,7 @@
 - backend デプロイ/起動
 - frontend デプロイ/配信
 - `/healthz` / `/readyz` の確認
-- 手動確認（PoC）: `docs/requirements/manual-test-checklist.md`
+- 手動確認（PoC）: `docs/manual/manual-test-checklist.md`
 
 ## 事後
 - 監視（エラー率/遅延/依存障害）
