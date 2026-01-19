@@ -65,9 +65,25 @@ export const Invoices: React.FC = () => {
     [projects],
   );
   const [selected, setSelected] = useState<Invoice | null>(null);
-  const [message, setMessage] = useState('');
+  const [message, setMessage] = useState<
+    | {
+        text: string;
+        type: 'success' | 'error' | 'info';
+      }
+    | null
+  >(null);
+
+  useEffect(() => {
+    if (!message || message.type !== 'success') return;
+    const timer = setTimeout(() => setMessage(null), 4000);
+    return () => clearTimeout(timer);
+  }, [message]);
 
   const create = async () => {
+    if (form.totalAmount <= 0) {
+      setMessage({ text: '金額は1円以上で入力してください', type: 'error' });
+      return;
+    }
     try {
       const res = await api<Invoice>(`/projects/${form.projectId}/invoices`, {
         method: 'POST',
@@ -79,10 +95,10 @@ export const Invoices: React.FC = () => {
           ],
         }),
       });
-      setMessage('作成しました');
+      setMessage({ text: '作成しました', type: 'success' });
       setItems((prev) => [...prev, res]);
     } catch (e) {
-      setMessage('作成に失敗');
+      setMessage({ text: '作成に失敗しました', type: 'error' });
     }
   };
 
@@ -92,9 +108,9 @@ export const Invoices: React.FC = () => {
         `/projects/${form.projectId}/invoices`,
       );
       setItems(res.items);
-      setMessage('読み込みました');
+      setMessage({ text: '読み込みました', type: 'success' });
     } catch (e) {
-      setMessage('読み込みに失敗');
+      setMessage({ text: '読み込みに失敗しました', type: 'error' });
     }
   };
 
@@ -112,12 +128,13 @@ export const Invoices: React.FC = () => {
           }),
         },
       );
-      setMessage(
-        `工数${res.meta?.timeEntryCount ?? 0}件からドラフトを作成しました`,
-      );
+      setMessage({
+        text: `工数${res.meta?.timeEntryCount ?? 0}件からドラフトを作成しました`,
+        type: 'success',
+      });
       setItems((prev) => [res.invoice, ...prev]);
     } catch (e) {
-      setMessage('工数からの作成に失敗');
+      setMessage({ text: '工数からの作成に失敗しました', type: 'error' });
     }
   };
 
@@ -127,18 +144,21 @@ export const Invoices: React.FC = () => {
         `/invoices/${id}/release-time-entries`,
         { method: 'POST' },
       );
-      setMessage(`工数リンクを解除しました (${res.released}件)`);
+      setMessage({
+        text: `工数リンクを解除しました (${res.released}件)`,
+        type: 'success',
+      });
     } catch (e) {
-      setMessage('工数リンクの解除に失敗');
+      setMessage({ text: '工数リンクの解除に失敗しました', type: 'error' });
     }
   };
 
   const send = async (id: string) => {
     try {
       await api(`/invoices/${id}/send`, { method: 'POST' });
-      setMessage('送信しました');
+      setMessage({ text: '送信しました', type: 'success' });
     } catch (e) {
-      setMessage('送信失敗');
+      setMessage({ text: '送信に失敗しました', type: 'error' });
     }
   };
 
@@ -183,6 +203,7 @@ export const Invoices: React.FC = () => {
         </Select>
         <Input
           label="金額"
+          aria-label="金額"
           type="number"
           value={form.totalAmount}
           onChange={(e) =>
@@ -243,7 +264,13 @@ export const Invoices: React.FC = () => {
       )}
       {message && (
         <div style={{ marginTop: 12 }}>
-          <Toast variant="info" title="通知" description={message} />
+          <Toast
+            variant={message.type}
+            title={message.type === 'error' ? 'エラー' : '完了'}
+            description={message.text}
+            dismissible
+            onClose={() => setMessage(null)}
+          />
         </div>
       )}
       <div style={{ display: 'grid', gap: 8, marginTop: 12 }}>

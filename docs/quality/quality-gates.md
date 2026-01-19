@@ -66,6 +66,7 @@ CIで何を検査しているか、どれを「必須ゲート（ブロック）
   - PR: 実行（`E2E_SCOPE=core`）
   - schedule: 実行（`E2E_SCOPE=full`）
   - push: デフォルトブランチのみ実行（`E2E_SCOPE=full`）
+- UI/UX 最低ライン（a11y/入力体験/エラー一貫性）: `docs/ui/ux-quality.md`
 
 ### Link Check / lychee
 - `./**/*.md` のリンク切れをチェック
