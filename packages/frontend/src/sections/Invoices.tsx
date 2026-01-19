@@ -65,13 +65,10 @@ export const Invoices: React.FC = () => {
     [projects],
   );
   const [selected, setSelected] = useState<Invoice | null>(null);
-  const [message, setMessage] = useState<
-    | {
-        text: string;
-        type: 'success' | 'error' | 'info';
-      }
-    | null
-  >(null);
+  const [message, setMessage] = useState<{
+    text: string;
+    type: 'success' | 'error' | 'info';
+  } | null>(null);
 
   useEffect(() => {
     if (!message || message.type !== 'success') return;
