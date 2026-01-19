@@ -15,6 +15,7 @@ ITDO_ERP4/
 └── docs/
     ├── plan/               # 実装計画・マイルストーン
     ├── requirements/       # 実装用に抽出した仕様書
+    ├── manual/             # 利用者/管理者向けマニュアル
     └── legacy/             # Project-Open カスタマイズの棚卸し
 ```
 
@@ -30,7 +31,7 @@ ITDO_ERP4/
 - 工数入力: 入力→一覧再取得で反映される
 - 請求ドラフト: 一覧/詳細が表示され、送信ボタンでステータスが更新される
 
-バックエンドの詳細手順は `docs/requirements/manual-test-checklist.md` と `packages/backend/src/tests/happy-path.md` を参照。
+バックエンドの詳細手順は `docs/manual/manual-test-checklist.md` と `packages/backend/src/tests/happy-path.md` を参照。
 
 ## 品質（Quality）
 - 品質目標: `docs/quality/quality-goals.md`
@@ -43,3 +44,4 @@ ITDO_ERP4/
 
 ## 運用（Ops）
 - 運用Runbook（入口）: [docs/ops/index.md](docs/ops/index.md)
+- 操作/運用マニュアル（入口）: [docs/manual/README.md](docs/manual/README.md)
