@@ -49,6 +49,10 @@
 - ストレージ（Google Drive 等）: 専用フォルダ/専用アカウント、必要スコープ最小化
 - GitHub: Fine-grained PAT / Actions Secrets のアクセス範囲を最小化
 
+### DBユーザ（アプリ用ロール分離）
+- 推奨: migrate 実行ユーザ（DDL）とアプリ実行ユーザ（DML）を分離する
+- 手順/SQL: `docs/ops/db-roles.md`
+
 ## インシデント時
 - 影響範囲の特定（漏洩した可能性のあるキー、期間、アクセスログ）
 - シークレットの即時失効/再発行
