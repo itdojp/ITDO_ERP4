@@ -24,3 +24,13 @@ E2E_SCOPE=full \
 ## エビデンス格納先
 - `docs/test-results/2026-01-19-frontend-e2e-r1/`
 
+## 追加/更新キャプチャ（管理設定の詳細）
+- `11-chat-settings.png`（チャット設定）
+- `11-chat-room-settings.png`（チャットルーム設定）
+- `11-scim-provisioning.png`（SCIM プロビジョニング）
+- `11-rate-card.png`（単価（RateCard））
+- `11-alert-settings.png`（アラート設定（簡易モック））
+- `11-approval-rules.png`（承認ルール（簡易モック））
+- `11-template-settings.png`（テンプレ設定（見積/請求/発注））
+- `11-report-subscriptions.png`（レポート購読（配信設定））
+- `11-integration-settings.png`（外部連携設定（HR/CRM））

@@ -42,6 +42,18 @@
 | チャット（全社/部門/private_group/DM） | user / hr / external_chat | `docs/test-results/2026-01-19-frontend-e2e-r1/14-room-chat.png` | `docs/manual/ui-manual-user.md` / `docs/manual/chat-guide.md` |
 | 匿名集計（人事向け） | hr | `docs/test-results/2026-01-19-frontend-e2e-r1/13-hr-analytics.png` | `docs/manual/ui-manual-admin.md` / `docs/manual/hr-guide.md` |
 
+## 管理設定（詳細カード）
+管理設定（Settings）はカードが多いため、主要カードは個別にキャプチャしています。
+- `docs/test-results/2026-01-19-frontend-e2e-r1/11-chat-settings.png`
+- `docs/test-results/2026-01-19-frontend-e2e-r1/11-chat-room-settings.png`
+- `docs/test-results/2026-01-19-frontend-e2e-r1/11-scim-provisioning.png`
+- `docs/test-results/2026-01-19-frontend-e2e-r1/11-rate-card.png`
+- `docs/test-results/2026-01-19-frontend-e2e-r1/11-alert-settings.png`
+- `docs/test-results/2026-01-19-frontend-e2e-r1/11-approval-rules.png`
+- `docs/test-results/2026-01-19-frontend-e2e-r1/11-template-settings.png`
+- `docs/test-results/2026-01-19-frontend-e2e-r1/11-report-subscriptions.png`
+- `docs/test-results/2026-01-19-frontend-e2e-r1/11-integration-settings.png`
+
 ## 未カバー（追加候補）
 現時点で「PoCの主要セクション（上表）」は証跡取得済みです。追加で網羅したい場合、以下を候補とします。
 - Googleログイン（ボタン表示/成功フロー）: `VITE_GOOGLE_CLIENT_ID` 未設定だと UI に表示されません。
