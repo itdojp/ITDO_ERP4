@@ -29,6 +29,8 @@ PoC の E2E 実行時に取得した画面キャプチャです。
 
 ![オフライン送信待ち](../test-results/2026-01-19-frontend-e2e-r1/14-offline-daily-queue.png)
 
+![Push購読（登録）](../test-results/2026-01-19-frontend-e2e-pwa-push/17-push-registered.png)
+
 詳細手順（画面操作）:
 - 利用者: [ui-manual-user](ui-manual-user.md)
 - 管理者: [ui-manual-admin](ui-manual-admin.md)

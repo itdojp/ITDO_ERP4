@@ -11,6 +11,8 @@
 ### 2026-01-19
 - フロントE2E(フル + UIエビデンス r1): docs/test-results/2026-01-19-frontend-e2e-r1.md
 - 証跡: docs/test-results/2026-01-19-frontend-e2e-r1/
+- PWA/Push運用検証: docs/test-results/2026-01-19-pwa-push-ops.md
+- 証跡: docs/test-results/2026-01-19-frontend-e2e-pwa-push/
 
 ### 2026-01-17
 - 性能ベースライン: docs/test-results/perf-2026-01-17.md

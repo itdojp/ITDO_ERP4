@@ -269,7 +269,11 @@ test('pwa push subscribe flow @pwa', async ({ page, context }) => {
   await captureSection(pushSection, '17-push-registered.png');
 
   await pushSection.getByRole('button', { name: 'テスト通知' }).click();
-  await expect(pushSection.getByText('テスト通知を送信しました')).toBeVisible();
+  await expect(
+    pushSection.getByText(
+      /テスト通知を(ローカル表示しました|Push配信しました)/,
+    ),
+  ).toBeVisible();
 
   await pushSection.getByRole('button', { name: '購読解除' }).click();
   await expect(pushSection.getByText('Push購読を解除しました')).toBeVisible();

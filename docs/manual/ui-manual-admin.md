@@ -35,6 +35,15 @@
 
 ![現在のユーザー](../test-results/2026-01-19-frontend-e2e-r1/00-current-user.png)
 
+### Push通知（証跡）
+`VITE_PUSH_PUBLIC_KEY` が設定されている環境でのみ取得しています。
+
+![Push購読（登録）](../test-results/2026-01-19-frontend-e2e-pwa-push/17-push-registered.png)
+
+![Push購読（解除）](../test-results/2026-01-19-frontend-e2e-pwa-push/18-push-unsubscribed.png)
+
+![Push購読（再登録）](../test-results/2026-01-19-frontend-e2e-pwa-push/19-push-resubscribed.png)
+
 ---
 
 ## 共通: ダッシュボード
