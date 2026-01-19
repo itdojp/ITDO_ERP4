@@ -532,6 +532,28 @@ test('frontend smoke reports masters settings @extended', async ({ page }) => {
     .locator('h2', { hasText: 'Settings' })
     .locator('..');
   await settingsSection.scrollIntoViewIfNeeded();
+
+  const chatSettingsBlock = settingsSection
+    .locator('strong', { hasText: 'チャット設定' })
+    .locator('..');
+  await captureSection(chatSettingsBlock, '11-chat-settings.png');
+
+  const chatRoomSettingsBlock = settingsSection
+    .locator('strong', { hasText: 'チャットルーム設定' })
+    .first()
+    .locator('..');
+  await captureSection(chatRoomSettingsBlock, '11-chat-room-settings.png');
+
+  const scimBlock = settingsSection
+    .locator('strong', { hasText: 'SCIM プロビジョニング' })
+    .locator('..');
+  await captureSection(scimBlock, '11-scim-provisioning.png');
+
+  const rateCardBlock = settingsSection
+    .locator('strong', { hasText: '単価（RateCard）' })
+    .locator('..');
+  await captureSection(rateCardBlock, '11-rate-card.png');
+
   const alertBlock = settingsSection
     .locator('strong', { hasText: 'アラート設定（簡易モック）' })
     .locator('..');
@@ -539,6 +561,7 @@ test('frontend smoke reports masters settings @extended', async ({ page }) => {
   await expect(
     settingsSection.getByText('アラート設定を作成しました'),
   ).toBeVisible();
+  await captureSection(alertBlock, '11-alert-settings.png');
   const approvalBlock = settingsSection
     .locator('strong', { hasText: '承認ルール（簡易モック）' })
     .locator('..');
@@ -546,6 +569,7 @@ test('frontend smoke reports masters settings @extended', async ({ page }) => {
   await expect(
     settingsSection.getByText('承認ルールを作成しました'),
   ).toBeVisible();
+  await captureSection(approvalBlock, '11-approval-rules.png');
 
   const templateBlock = settingsSection
     .locator('strong', { hasText: 'テンプレ設定（見積/請求/発注）' })
@@ -562,6 +586,7 @@ test('frontend smoke reports masters settings @extended', async ({ page }) => {
     settingsSection.getByText('テンプレ設定を作成しました'),
   ).toBeVisible();
   await expect(templateBlock.getByText(numberRule)).toBeVisible();
+  await captureSection(templateBlock, '11-template-settings.png');
 
   const reportBlock = settingsSection
     .locator('strong', { hasText: 'レポート購読（配信設定）' })
@@ -583,6 +608,7 @@ test('frontend smoke reports masters settings @extended', async ({ page }) => {
   await expect(reportItem).toBeVisible();
   await reportItem.getByRole('button', { name: '実行' }).click();
   await expect(settingsSection.getByText('レポートを実行しました')).toBeVisible();
+  await captureSection(reportBlock, '11-report-subscriptions.png');
 
   const integrationBlock = settingsSection
     .locator('strong', { hasText: '外部連携設定（HR/CRM）' })
@@ -598,6 +624,7 @@ test('frontend smoke reports masters settings @extended', async ({ page }) => {
   await expect(integrationItem).toBeVisible();
   await integrationItem.getByRole('button', { name: '実行' }).click();
   await expect(settingsSection.getByText('連携を実行しました')).toBeVisible();
+  await captureSection(integrationBlock, '11-integration-settings.png');
   await captureSection(settingsSection, '11-admin-settings.png');
 });
 

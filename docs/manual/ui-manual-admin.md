@@ -211,11 +211,15 @@
 1. 「user/hr の private_group 作成を許可」「DM 作成を許可」を切り替える
 2. `保存` / `再読込` を実行する
 
+![チャット設定](../test-results/2026-01-19-frontend-e2e-r1/11-chat-settings.png)
+
 ### 詳細操作（チャットルーム設定）
 1. 公式ルームを選択し `再読込` を実行する
 2. 「外部ユーザ参加を許可」「外部連携を許可」を設定する
 3. `保存` で反映する
 4. 外部ユーザ追加は userId を入力して `メンバー追加` を実行する
+
+![チャットルーム設定](../test-results/2026-01-19-frontend-e2e-r1/11-chat-room-settings.png)
 
 ### 詳細操作（SCIM設定）
 1. 「SCIM プロビジョニング」カードで状態（有効/未設定）を確認する
@@ -225,10 +229,14 @@
 ### 補足（SCIM）
 - SCIM はバックエンド環境変数 `SCIM_BEARER_TOKEN` が未設定の場合、未設定として表示されます
 
+![SCIM プロビジョニング](../test-results/2026-01-19-frontend-e2e-r1/11-scim-provisioning.png)
+
 ### 詳細操作（単価）
 1. 案件フィルタや workType を指定して `取得`
 2. 追加フォームで role / workType / unitPrice / currency / validFrom / validTo を入力し `追加`
 3. 不要な単価は `無効化` する
+
+![単価（RateCard）](../test-results/2026-01-19-frontend-e2e-r1/11-rate-card.png)
 
 ### 詳細操作（アラート設定）
 1. 種別・閾値・期間・projectId（任意）を入力する
@@ -236,16 +244,22 @@
 3. 通知チャネルを選択し `作成` / `更新` する
 4. 一覧の `無効化/有効化` と `編集` を実行する
 
+![アラート設定（簡易モック）](../test-results/2026-01-19-frontend-e2e-r1/11-alert-settings.png)
+
 ### 詳細操作（承認ルール）
 1. flowType を選択する
 2. `conditions (JSON)` と `steps (JSON)` を入力する
 3. `作成` / `更新` / `再読込` を実行する
+
+![承認ルール（簡易モック）](../test-results/2026-01-19-frontend-e2e-r1/11-approval-rules.png)
 
 ### 詳細操作（テンプレ設定）
 1. 種別とテンプレを選択する
 2. 番号ルール・ロゴURL・署名テキスト・layoutConfig を入力する
 3. `作成` / `更新` / `再読込` を実行する
 4. 一覧の `編集` / `デフォルト化` を実行する
+
+![テンプレ設定（見積/請求/発注）](../test-results/2026-01-19-frontend-e2e-r1/11-template-settings.png)
 
 ### 詳細操作（レポート購読）
 1. reportKey / format / schedule / channels / params / recipients を設定する
@@ -254,10 +268,14 @@
 4. 一覧の `実行` / `無効化` / `配信履歴` を実行する
 5. `一括実行` で全購読を実行する
 
+![レポート購読（配信設定）](../test-results/2026-01-19-frontend-e2e-r1/11-report-subscriptions.png)
+
 ### 詳細操作（外部連携設定）
 1. 種別・名称・プロバイダ・ステータス・スケジュールを入力する
 2. `config (JSON)` を入力し `作成` / `更新` を実行する
 3. 一覧の `実行` / `履歴表示` を実行する
+
+![外部連携設定（HR/CRM）](../test-results/2026-01-19-frontend-e2e-r1/11-integration-settings.png)
 
 ### 入力項目/制約
 - JSON 入力が不正な場合は保存されません
