@@ -50,7 +50,7 @@ jobs:
             echo "baseline not found; skipping comparison"
           fi
       - name: Upload perf artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: perf-api-bench-${{ github.run_id }}
           path: tmp/perf-ci/*
