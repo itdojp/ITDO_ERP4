@@ -1,7 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import { prisma } from '../services/db.js';
 import { requireRole } from '../services/rbac.js';
-import { requireUserContext } from '../services/authContext.js';
 
 function parseLimit(raw: string | undefined, fallback: number) {
   if (!raw) return fallback;
@@ -26,7 +25,10 @@ export async function registerNotificationRoutes(app: FastifyInstance) {
     '/notifications/unread-count',
     { preHandler: requireRole(allowedRoles) },
     async (req, reply) => {
-      const { userId } = requireUserContext(req);
+      const userId = req.user?.userId;
+      if (!userId) {
+        return reply.code(401).send({ error: 'unauthorized' });
+      }
       const unreadCount = await prisma.appNotification.count({
         where: { userId, readAt: null },
       });
@@ -38,7 +40,10 @@ export async function registerNotificationRoutes(app: FastifyInstance) {
     '/notifications',
     { preHandler: requireRole(allowedRoles) },
     async (req, reply) => {
-      const { userId } = requireUserContext(req);
+      const userId = req.user?.userId;
+      if (!userId) {
+        return reply.code(401).send({ error: 'unauthorized' });
+      }
       const query = (req.query || {}) as {
         unread?: string;
         limit?: string;
@@ -72,7 +77,10 @@ export async function registerNotificationRoutes(app: FastifyInstance) {
     { preHandler: requireRole(allowedRoles) },
     async (req, reply) => {
       const { id } = req.params as { id: string };
-      const { userId } = requireUserContext(req);
+      const userId = req.user?.userId;
+      if (!userId) {
+        return reply.code(401).send({ error: 'unauthorized' });
+      }
       const current = await prisma.appNotification.findUnique({
         where: { id },
         select: { id: true, userId: true, readAt: true },
