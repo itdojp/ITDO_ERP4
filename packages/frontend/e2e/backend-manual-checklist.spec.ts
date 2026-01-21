@@ -1,11 +1,11 @@
+import { randomUUID } from 'node:crypto';
 import { expect, test } from '@playwright/test';
 
 const apiBase = process.env.E2E_API_BASE || 'http://localhost:3002';
 const defaultProjectId = '00000000-0000-0000-0000-000000000001';
 const defaultVendorId = '00000000-0000-0000-0000-000000000010';
 
-const runId = () =>
-  `${Date.now().toString().slice(-6)}-${Math.floor(Math.random() * 90 + 10)}`;
+const runId = () => `${Date.now().toString().slice(-6)}-${randomUUID()}`;
 
 const buildHeaders = (input: {
   userId: string;
