@@ -4,6 +4,7 @@
 - [ ] #544 S3 バケット/リージョン/KMS の確定値を `docs/requirements/backup-restore.md` に反映
 - [ ] #544 S3/OSS 移行の時期を決定（`docs/requirements/backup-restore.md`）
 - [ ] #547 GitHub Packages 配布復旧後に `@itdojp/design-system@1.0.0` へ依存を戻す（暫定: git tag 参照）
+- [ ] #650 依存関係更新の運用ルール整備（`docs/quality/dependency-update-policy.md`）
 
 ## 次アクション（未実装対応: FE/BE）
 - [x] #551 #552 未実装項目の解消（優先度A: 管理/監査UI）
