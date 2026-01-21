@@ -27,6 +27,8 @@ jobs:
           DATABASE_URL: postgresql://user:pass@localhost:5432/postgres?schema=public
       - run: npm run test:ci
         working-directory: packages/backend
+        env:
+          DATABASE_URL: postgresql://user:pass@localhost:5432/postgres?schema=public
       - run: npx prisma format --config ./prisma.config.ts
         working-directory: packages/backend
         env:
@@ -149,6 +151,8 @@ jobs:
           DATABASE_URL: postgresql://user:pass@localhost:5432/postgres?schema=public
       - name: Generate OpenAPI
         run: node scripts/export-openapi.mjs --out tmp/openapi.json
+        env:
+          DATABASE_URL: postgresql://user:pass@localhost:5432/postgres?schema=public
       - name: Ensure OpenAPI snapshot is up to date
         run: diff -u docs/api/openapi.json tmp/openapi.json
       - name: Breaking change check (openapi-diff)
