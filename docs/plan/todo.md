@@ -6,6 +6,7 @@
 - [ ] #547 GitHub Packages 配布復旧後に `@itdojp/design-system@1.0.0` へ依存を戻す（暫定: git tag 参照）
 - [ ] #648 E2E/統合テストの拡充（手動チェックの自動化開始）
 - [ ] #650 依存関係更新の運用ルール整備（`docs/quality/dependency-update-policy.md`）
+- [ ] #649 監査ログ/操作ログ 基盤の整理（PIIマスキング・相関ID）
 
 ## 次アクション（未実装対応: FE/BE）
 - [x] #551 #552 未実装項目の解消（優先度A: 管理/監査UI）

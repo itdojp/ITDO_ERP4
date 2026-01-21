@@ -22,9 +22,26 @@
 - 保存: DB保存、改ざん検知のためのハッシュチェーン検討
 - 出力: 期間指定のCSV/PDF
 
+### 命名規約（action）
+- 形式: `<target>_<verb>` を基本とする
+  - 例: `approval_rule_created`, `project_member_removed`, `audit_log_exported`
+- 認証/認可/操作系は `auth_*` / `permission_*` を prefix にする
+
+### 相関ID（requestId）
+- リクエスト単位の相関IDとして `x-request-id` を採用する
+- サーバ側で未指定の場合は自動採番し、レスポンスヘッダに返却
+
+### PIIマスキング方針（エクスポート時）
+- 対象: userId / email / phone / address / displayName / free text に含まれるメール・電話
+- マスキング（ログ/エクスポート）:
+  - email: ローカル部の先頭2文字のみ表示 + `***` + ドメイン
+  - 各種ID: 先頭数文字のみ残して後半を `*` で置換
+  - IP: 最終オクテット（IPv4）または後半（IPv6）を伏字
+- 例外: 正当理由+責任者承認がある場合のみ、mask=0 での出力を許容（運用で記録）
+
 ## PoC API（案）
 - `GET /audit-logs`
-  - query: `from`, `to`, `userId`, `action`, `targetTable`, `targetId`, `reasonCode`, `reasonText`, `source`, `actorRole`, `actorGroupId`, `requestId`, `format=csv|json`, `limit`
+  - query: `from`, `to`, `userId`, `action`, `targetTable`, `targetId`, `reasonCode`, `reasonText`, `source`, `actorRole`, `actorGroupId`, `requestId`, `format=csv|json`, `mask=0|1`, `limit`
   - json: `{ items: AuditLog[] }`
   - csv: `id,action,userId,actorRole,actorGroupId,requestId,ipAddress,userAgent,source,reasonCode,reasonText,targetTable,targetId,createdAt,metadata`
 - `GET /access-reviews/snapshot`

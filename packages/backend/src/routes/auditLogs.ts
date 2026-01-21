@@ -15,11 +15,135 @@ function normalizeFormat(raw?: string) {
   return null;
 }
 
+function normalizeMask(raw: string | undefined, format: 'csv' | 'json') {
+  if (raw === undefined || raw === '') {
+    return format === 'csv';
+  }
+  const normalized = String(raw).trim().toLowerCase();
+  if (['1', 'true', 'yes'].includes(normalized)) return true;
+  if (['0', 'false', 'no'].includes(normalized)) return false;
+  return format === 'csv';
+}
+
 function normalizeLimit(raw?: string | number) {
   if (raw === undefined || raw === null || raw === '') return DEFAULT_LIMIT;
   const value = Number(raw);
   if (!Number.isFinite(value)) return DEFAULT_LIMIT;
   return Math.max(0, Math.min(MAX_LIMIT, Math.floor(value)));
+}
+
+function maskEmail(value: string) {
+  const [local, domain] = value.split('@');
+  if (!domain) return value;
+  if (!local) return `***@${domain}`;
+  if (local.length <= 2) {
+    return `${local[0]}***@${domain}`;
+  }
+  const prefix = local.slice(0, 2);
+  const maskedLocal =
+    prefix + '*'.repeat(Math.max(local.length - prefix.length, 3));
+  return `${maskedLocal}@${domain}`;
+}
+
+function maskId(value: string) {
+  if (value.length <= 3) return '*'.repeat(value.length);
+  const keep = Math.min(4, Math.max(2, Math.ceil(value.length / 3)));
+  return `${value.slice(0, keep)}${'*'.repeat(value.length - keep)}`;
+}
+
+function maskIp(value: string) {
+  if (value.includes(':')) {
+    const parts = value.split(':');
+    if (parts.length <= 2) return value;
+    return `${parts.slice(0, 2).join(':')}:****`;
+  }
+  const parts = value.split('.');
+  if (parts.length !== 4) return value;
+  return `${parts[0]}.${parts[1]}.${parts[2]}.*`;
+}
+
+function maskFreeText(value: string) {
+  return value
+    .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, (match) =>
+      maskEmail(match),
+    )
+    .replace(/\b\d{10,13}\b/g, (match) => maskId(match));
+}
+
+const SENSITIVE_KEYS = [
+  'email',
+  'userId',
+  'userName',
+  'displayName',
+  'name',
+  'phone',
+  'address',
+  'recipient',
+  'recipients',
+];
+
+function maskJsonValue(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map((item) => maskJsonValue(item));
+  }
+  if (value && typeof value === 'object') {
+    const output: Record<string, unknown> = {};
+    for (const [key, child] of Object.entries(value)) {
+      if (
+        SENSITIVE_KEYS.some((sensitive) =>
+          key.toLowerCase().includes(sensitive),
+        )
+      ) {
+        if (typeof child === 'string') {
+          output[key] = child.includes('@') ? maskEmail(child) : maskId(child);
+        } else {
+          output[key] = maskJsonValue(child);
+        }
+      } else {
+        output[key] = maskJsonValue(child);
+      }
+    }
+    return output;
+  }
+  if (typeof value === 'string') {
+    return maskFreeText(value);
+  }
+  return value;
+}
+
+function maskAuditLog(item: {
+  id: string;
+  action: string;
+  userId: string | null;
+  actorRole: string | null;
+  actorGroupId: string | null;
+  requestId: string | null;
+  ipAddress: string | null;
+  userAgent: string | null;
+  source: string | null;
+  reasonCode: string | null;
+  reasonText: string | null;
+  targetTable: string | null;
+  targetId: string | null;
+  createdAt: Date;
+  metadata: Prisma.JsonValue | null;
+}) {
+  return {
+    ...item,
+    userId: item.userId
+      ? item.userId.includes('@')
+        ? maskEmail(item.userId)
+        : maskId(item.userId)
+      : item.userId,
+    requestId: item.requestId ? maskId(item.requestId) : item.requestId,
+    ipAddress: item.ipAddress ? maskIp(item.ipAddress) : item.ipAddress,
+    reasonText: item.reasonText
+      ? maskFreeText(item.reasonText)
+      : item.reasonText,
+    metadata: item.metadata
+      ? (maskJsonValue(item.metadata) as Prisma.JsonValue)
+      : item.metadata,
+  };
 }
 
 export async function registerAuditLogRoutes(app: FastifyInstance) {
@@ -41,6 +165,7 @@ export async function registerAuditLogRoutes(app: FastifyInstance) {
         actorGroupId,
         requestId,
         format,
+        mask,
         limit,
       } = req.query as {
         from?: string;
@@ -56,6 +181,7 @@ export async function registerAuditLogRoutes(app: FastifyInstance) {
         actorGroupId?: string;
         requestId?: string;
         format?: string;
+        mask?: string;
         limit?: string;
       };
       const normalizedFormat = normalizeFormat(format);
@@ -67,6 +193,7 @@ export async function registerAuditLogRoutes(app: FastifyInstance) {
           },
         });
       }
+      const shouldMask = normalizeMask(mask, normalizedFormat);
       const fromDate = parseDateParam(from);
       const toDate = parseDateParam(to);
       const where: Prisma.AuditLogWhereInput = {};
@@ -100,6 +227,7 @@ export async function registerAuditLogRoutes(app: FastifyInstance) {
         action: 'audit_log_exported',
         metadata: {
           format: normalizedFormat,
+          mask: shouldMask,
           rowCount: items.length,
           filters: {
             from,
@@ -114,10 +242,12 @@ export async function registerAuditLogRoutes(app: FastifyInstance) {
             actorRole,
             actorGroupId,
             requestId,
+            mask,
           },
         },
         ...auditContextFromRequest(req),
       });
+      const outputItems = shouldMask ? items.map(maskAuditLog) : items;
       if (normalizedFormat === 'csv') {
         const headers = [
           'id',
@@ -136,7 +266,7 @@ export async function registerAuditLogRoutes(app: FastifyInstance) {
           'createdAt',
           'metadata',
         ];
-        const rows = items.map((item) => [
+        const rows = outputItems.map((item) => [
           item.id,
           item.action,
           item.userId || '',
@@ -160,7 +290,7 @@ export async function registerAuditLogRoutes(app: FastifyInstance) {
           toCsv(headers, rows),
         );
       }
-      return { items };
+      return { items: outputItems };
     },
   );
 }
