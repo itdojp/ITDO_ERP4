@@ -3,7 +3,7 @@
 ## 脆弱性の報告（推奨）
 公開Issueでは詳細を書かず、**GitHub Security Advisories** から非公開で報告してください。
 - 場所: `Security` タブ → `Report a vulnerability`
-- 参考: https://docs.github.com/code-security/security-advisories
+- 参考: https://docs.github.com/en/code-security/security-advisories/guidance-on-reporting-and-writing/privately-reporting-a-security-vulnerability
 
 ## 代替の連絡手段
 Security Advisories が利用できない場合は、公開情報を含まない形で Issue から連絡してください。
