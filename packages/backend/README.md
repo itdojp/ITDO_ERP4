@@ -9,6 +9,7 @@ npm run prisma:generate
 npm run dev
 ```
 本番ビルド確認: `npm run build && node dist/index.js`
+補足: Prisma 7 は `prisma.config.ts` を利用します（`DATABASE_URL` が必須）。
 
 ## API (PoC)
 - health: GET /health
