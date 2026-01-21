@@ -16,7 +16,7 @@ This note describes a minimal PoC load using demo seed data and a basic integrit
 1. PostgreSQL コンテナを起動（workspace をマウント）:
    - `podman run -d --name erp4-pg-poc -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=postgres -v $PWD:/workspace:ro -p 55432:5432 docker.io/library/postgres:15`
 2. スキーマ反映（Prisma をコンテナ内で実行）:
-   - `podman run --rm --network container:erp4-pg-poc -v $PWD:/workspace -w /workspace -e DATABASE_URL="postgresql://postgres:postgres@localhost:5432/postgres?schema=public" docker.io/library/node:20-bookworm npx --prefix packages/backend prisma db push --config packages/backend/prisma.config.ts --skip-generate`
+   - `podman run --rm --network container:erp4-pg-poc -v $PWD:/workspace -w /workspace -e DATABASE_URL="postgresql://postgres:postgres@localhost:5432/postgres?schema=public" docker.io/library/node:20-bookworm npx --prefix packages/backend prisma db push --config packages/backend/prisma.config.ts`
 3. seed を適用:
    - `podman exec -e PGPASSWORD=postgres erp4-pg-poc psql -U postgres -d postgres -f /workspace/scripts/seed-demo.sql`
 4. integrity check を実行:

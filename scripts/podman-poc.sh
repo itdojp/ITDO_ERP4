@@ -74,7 +74,7 @@ db_push() {
     -w /workspace \
     -e DATABASE_URL="$DB_URL" \
     docker.io/library/node:20-bookworm \
-    npx --prefix packages/backend prisma db push --config packages/backend/prisma.config.ts --skip-generate
+    npx --prefix packages/backend prisma db push --config packages/backend/prisma.config.ts
 }
 
 migrate_deploy() {
