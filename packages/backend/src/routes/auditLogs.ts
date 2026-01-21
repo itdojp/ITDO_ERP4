@@ -89,7 +89,11 @@ function maskJsonValue(value: unknown): unknown {
   if (value && typeof value === 'object') {
     const output: Record<string, unknown> = {};
     for (const [key, child] of Object.entries(value)) {
-      if (SENSITIVE_KEYS.some((sensitive) => key.toLowerCase().includes(sensitive))) {
+      if (
+        SENSITIVE_KEYS.some((sensitive) =>
+          key.toLowerCase().includes(sensitive),
+        )
+      ) {
         if (typeof child === 'string') {
           output[key] = child.includes('@') ? maskEmail(child) : maskId(child);
         } else {
@@ -133,8 +137,12 @@ function maskAuditLog(item: {
       : item.userId,
     requestId: item.requestId ? maskId(item.requestId) : item.requestId,
     ipAddress: item.ipAddress ? maskIp(item.ipAddress) : item.ipAddress,
-    reasonText: item.reasonText ? maskFreeText(item.reasonText) : item.reasonText,
-    metadata: item.metadata ? (maskJsonValue(item.metadata) as Prisma.JsonValue) : item.metadata,
+    reasonText: item.reasonText
+      ? maskFreeText(item.reasonText)
+      : item.reasonText,
+    metadata: item.metadata
+      ? (maskJsonValue(item.metadata) as Prisma.JsonValue)
+      : item.metadata,
   };
 }
 
