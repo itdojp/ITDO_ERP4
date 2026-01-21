@@ -46,6 +46,8 @@
 - CI: PR は `E2E_SCOPE=core`、main/schedule は `E2E_SCOPE=full`（`docs/quality/quality-gates.md`）
 - 証跡（画面キャプチャ等）は CI では出力しない（`E2E_CAPTURE=0`）
 - 証跡が必要な検証はローカルで実施し、`docs/test-results/` に保存する
+- 手動チェックリストとの対応は `docs/quality/test-gaps.md` で追跡する
+- 失敗時の診断手順は `docs/manual/e2e-evidence-howto.md` を参照する
 
 ## flaky 回避（必須）
 - 時刻依存を作らない（Clock 注入、固定日付、`Date.now()` を直接使わない）
