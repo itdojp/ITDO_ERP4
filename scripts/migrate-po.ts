@@ -2322,14 +2322,19 @@ async function main() {
 
   if (apply) {
     const verifyErrors: ImportError[] = [];
+    const verifyChunkSize = Number(process.env.MIGRATION_VERIFY_CHUNK_SIZE ?? 1000);
 
     async function verifyIds(scope: string, ids: string[], countFn: (ids: string[]) => Promise<number>) {
       if (!ids.length) return;
-      const count = await countFn(ids);
-      if (count !== ids.length) {
+      let total = 0;
+      for (let offset = 0; offset < ids.length; offset += verifyChunkSize) {
+        const chunk = ids.slice(offset, offset + verifyChunkSize);
+        total += await countFn(chunk);
+      }
+      if (total !== ids.length) {
         verifyErrors.push({
           scope,
-          message: `integrity check mismatch: expected ${ids.length}, got ${count}`,
+          message: `integrity check mismatch: expected ${ids.length}, got ${total}`,
         });
       }
     }
@@ -2343,6 +2348,23 @@ async function main() {
     function isClose(a: number, b: number, tolerance: number): boolean {
       if (!Number.isFinite(a) || !Number.isFinite(b)) return false;
       return Math.abs(a - b) <= tolerance;
+    }
+
+    async function groupSumByProject(
+      ids: string[],
+      sumKey: string,
+      groupByFn: (ids: string[]) => Promise<{ projectId: string; _sum?: Record<string, unknown> }[]>,
+    ): Promise<Map<string, number>> {
+      const totals = new Map<string, number>();
+      for (let offset = 0; offset < ids.length; offset += verifyChunkSize) {
+        const chunk = ids.slice(offset, offset + verifyChunkSize);
+        const rows = await groupByFn(chunk);
+        for (const row of rows) {
+          const value = toNumber(row._sum?.[sumKey]);
+          totals.set(row.projectId, (totals.get(row.projectId) ?? 0) + value);
+        }
+      }
+      return totals;
     }
 
     type ProjectInfo = { legacyId?: string; code?: string; name?: string };
@@ -2403,9 +2425,6 @@ async function main() {
     type PurchaseOrderDoc = { id: string; poNo: string; projectId: string };
     type PurchaseOrderLineDoc = { id: string; purchaseOrderId: string; expenseId: string | null };
     type ExpenseDoc = { id: string; projectId: string };
-    type TotalAmountGroupRow = { projectId: string; _sum: { totalAmount: unknown } | null };
-    type AmountGroupRow = { projectId: string; _sum: { amount: unknown } | null };
-    type MinutesGroupRow = { projectId: string; _sum: { minutes: unknown } | null };
 
     if (shouldRun(options, 'customers')) {
       await verifyIds(
@@ -2587,13 +2606,13 @@ async function main() {
         rememberProject(projectId, item.projectLegacyId);
         addSum(expected, projectId, toNumber(item.totalAmount));
       }
-      const rows: TotalAmountGroupRow[] = await prisma.invoice.groupBy({
-        by: ['projectId'],
-        where: { id: { in: invoices.map((item) => makeId('invoice', item.legacyId)) } },
-        _sum: { totalAmount: true },
-      });
-      const actual = new Map<string, number>(
-        rows.map((row) => [row.projectId, toNumber(row._sum?.totalAmount)]),
+      const ids = invoices.map((item) => makeId('invoice', item.legacyId));
+      const actual = await groupSumByProject(ids, 'totalAmount', (chunk) =>
+        prisma.invoice.groupBy({
+          by: ['projectId'],
+          where: { id: { in: chunk } },
+          _sum: { totalAmount: true },
+        }),
       );
       verifyProjectSums('invoices.projectSum', expected, actual, 0.01);
     }
@@ -2605,13 +2624,13 @@ async function main() {
         rememberProject(projectId, item.projectLegacyId);
         addSum(expected, projectId, toNumber(item.totalAmount));
       }
-      const rows: TotalAmountGroupRow[] = await prisma.purchaseOrder.groupBy({
-        by: ['projectId'],
-        where: { id: { in: purchaseOrders.map((item) => makeId('purchase_order', item.legacyId)) } },
-        _sum: { totalAmount: true },
-      });
-      const actual = new Map<string, number>(
-        rows.map((row) => [row.projectId, toNumber(row._sum?.totalAmount)]),
+      const ids = purchaseOrders.map((item) => makeId('purchase_order', item.legacyId));
+      const actual = await groupSumByProject(ids, 'totalAmount', (chunk) =>
+        prisma.purchaseOrder.groupBy({
+          by: ['projectId'],
+          where: { id: { in: chunk } },
+          _sum: { totalAmount: true },
+        }),
       );
       verifyProjectSums('purchase_orders.projectSum', expected, actual, 0.01);
     }
@@ -2623,13 +2642,13 @@ async function main() {
         rememberProject(projectId, item.projectLegacyId);
         addSum(expected, projectId, toNumber(item.totalAmount));
       }
-      const rows: TotalAmountGroupRow[] = await prisma.vendorQuote.groupBy({
-        by: ['projectId'],
-        where: { id: { in: vendorQuotes.map((item) => makeId('vendor_quote', item.legacyId)) } },
-        _sum: { totalAmount: true },
-      });
-      const actual = new Map<string, number>(
-        rows.map((row) => [row.projectId, toNumber(row._sum?.totalAmount)]),
+      const ids = vendorQuotes.map((item) => makeId('vendor_quote', item.legacyId));
+      const actual = await groupSumByProject(ids, 'totalAmount', (chunk) =>
+        prisma.vendorQuote.groupBy({
+          by: ['projectId'],
+          where: { id: { in: chunk } },
+          _sum: { totalAmount: true },
+        }),
       );
       verifyProjectSums('vendor_quotes.projectSum', expected, actual, 0.01);
     }
@@ -2641,13 +2660,13 @@ async function main() {
         rememberProject(projectId, item.projectLegacyId);
         addSum(expected, projectId, toNumber(item.totalAmount));
       }
-      const rows: TotalAmountGroupRow[] = await prisma.vendorInvoice.groupBy({
-        by: ['projectId'],
-        where: { id: { in: vendorInvoices.map((item) => makeId('vendor_invoice', item.legacyId)) } },
-        _sum: { totalAmount: true },
-      });
-      const actual = new Map<string, number>(
-        rows.map((row) => [row.projectId, toNumber(row._sum?.totalAmount)]),
+      const ids = vendorInvoices.map((item) => makeId('vendor_invoice', item.legacyId));
+      const actual = await groupSumByProject(ids, 'totalAmount', (chunk) =>
+        prisma.vendorInvoice.groupBy({
+          by: ['projectId'],
+          where: { id: { in: chunk } },
+          _sum: { totalAmount: true },
+        }),
       );
       verifyProjectSums('vendor_invoices.projectSum', expected, actual, 0.01);
     }
@@ -2659,13 +2678,13 @@ async function main() {
         rememberProject(projectId, item.projectLegacyId);
         addSum(expected, projectId, toNumber(item.amount));
       }
-      const rows: AmountGroupRow[] = await prisma.expense.groupBy({
-        by: ['projectId'],
-        where: { id: { in: expenses.map((item) => makeId('expense', item.legacyId)) } },
-        _sum: { amount: true },
-      });
-      const actual = new Map<string, number>(
-        rows.map((row) => [row.projectId, toNumber(row._sum?.amount)]),
+      const ids = expenses.map((item) => makeId('expense', item.legacyId));
+      const actual = await groupSumByProject(ids, 'amount', (chunk) =>
+        prisma.expense.groupBy({
+          by: ['projectId'],
+          where: { id: { in: chunk } },
+          _sum: { amount: true },
+        }),
       );
       verifyProjectSums('expenses.projectSum', expected, actual, 0.01);
     }
@@ -2677,13 +2696,13 @@ async function main() {
         rememberProject(projectId, item.projectLegacyId);
         addSum(expected, projectId, toNumber(item.minutes));
       }
-      const rows: MinutesGroupRow[] = await prisma.timeEntry.groupBy({
-        by: ['projectId'],
-        where: { id: { in: timeEntries.map((item) => makeId('time_entry', item.legacyId)) } },
-        _sum: { minutes: true },
-      });
-      const actual = new Map<string, number>(
-        rows.map((row) => [row.projectId, toNumber(row._sum?.minutes)]),
+      const ids = timeEntries.map((item) => makeId('time_entry', item.legacyId));
+      const actual = await groupSumByProject(ids, 'minutes', (chunk) =>
+        prisma.timeEntry.groupBy({
+          by: ['projectId'],
+          where: { id: { in: chunk } },
+          _sum: { minutes: true },
+        }),
       );
       verifyProjectSums('time_entries.projectSum', expected, actual, 0);
     }
