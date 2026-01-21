@@ -62,6 +62,7 @@ PoC導線の手動確認ドキュメントを、品質スコープの起点と�
 - 監査ログが「いつ/誰が/何を」行ったか追跡できる（閲覧/エクスポート含む）
 - 外部連携（Webhook等）で既知の危険（SSRF/過大payload等）を作らない
 - 重要運用（バックアップ/リストア/移行）の手順が docs にあり、検証結果が `docs/test-results/` に残る
+- 依存関係更新の運用ルールが明文化され、継続的に更新できる（`docs/quality/dependency-update-policy.md`）
 
 ### P2（改善: 体験/保守性）
 - UIの状態表現（loading/error/empty/disabled）が一貫している
