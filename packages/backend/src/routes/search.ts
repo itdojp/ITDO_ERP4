@@ -24,7 +24,7 @@ export async function registerSearchRoutes(app: FastifyInstance) {
     '/search',
     { preHandler: requireRole(allowedRoles) },
     async (req, reply) => {
-      const { roles, projectIds } = requireUserContext(req);
+      const { roles, projectIds = [] } = requireUserContext(req);
 
       const query = (req.query || {}) as { q?: string; limit?: string };
       const trimmed = normalizeQuery(query.q);
