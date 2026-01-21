@@ -4,7 +4,6 @@ import { prisma } from '../services/db.js';
 import { requireRole } from '../services/rbac.js';
 import { auditContextFromRequest, logAudit } from '../services/audit.js';
 import { isWebPushEnabled, sendWebPush } from '../services/webPush.js';
-import { requireUserContext } from '../services/authContext.js';
 import {
   pushSubscriptionDisableSchema,
   pushSubscriptionSchema,
@@ -63,7 +62,11 @@ export async function registerPushRoutes(app: FastifyInstance) {
     '/push-subscriptions',
     { preHandler: requireRole(allowedRoles) },
     async (req, reply) => {
-      const { roles, userId } = requireUserContext(req);
+      const roles = req.user?.roles || [];
+      const userId = req.user?.userId;
+      if (!userId) {
+        return reply.code(401).send({ error: 'unauthorized' });
+      }
       const isPrivileged = roles.includes('admin') || roles.includes('mgmt');
       const query = (req.query || {}) as {
         cursor?: string;
@@ -106,7 +109,10 @@ export async function registerPushRoutes(app: FastifyInstance) {
     { preHandler: requireRole(allowedRoles), schema: pushSubscriptionSchema },
     async (req, reply) => {
       const body = req.body as PushSubscriptionBody;
-      const { userId } = requireUserContext(req);
+      const userId = req.user?.userId;
+      if (!userId) {
+        return reply.code(401).send({ error: 'unauthorized' });
+      }
       const expirationTime = resolveExpirationTime(body.expirationTime);
       const topics = normalizeTopics(body.topics);
       const now = new Date();
@@ -157,7 +163,11 @@ export async function registerPushRoutes(app: FastifyInstance) {
       if (!current) {
         return reply.code(404).send({ error: 'not_found' });
       }
-      const { roles, userId } = requireUserContext(req);
+      const roles = req.user?.roles || [];
+      const userId = req.user?.userId;
+      if (!userId) {
+        return reply.code(401).send({ error: 'unauthorized' });
+      }
       const isPrivileged = roles.includes('admin') || roles.includes('mgmt');
       if (!isPrivileged && current.userId !== userId) {
         return reply.code(403).send({ error: 'forbidden' });
@@ -175,7 +185,11 @@ export async function registerPushRoutes(app: FastifyInstance) {
     { preHandler: requireRole(allowedRoles), schema: pushTestSchema },
     async (req, reply) => {
       const body = req.body as PushTestBody;
-      const { roles, userId: requester } = requireUserContext(req);
+      const roles = req.user?.roles || [];
+      const requester = req.user?.userId;
+      if (!requester) {
+        return reply.code(401).send({ error: 'unauthorized' });
+      }
       const isPrivileged = roles.includes('admin') || roles.includes('mgmt');
       const targetUserId = body.userId || requester;
       if (!isPrivileged && targetUserId !== requester) {

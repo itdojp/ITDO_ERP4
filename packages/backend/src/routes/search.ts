@@ -1,9 +1,9 @@
 import { FastifyInstance } from 'fastify';
 import { Prisma } from '@prisma/client';
 import { prisma } from '../services/db.js';
+import { requireUserContext } from '../services/authContext.js';
 import { requireRole } from '../services/rbac.js';
 import { auditContextFromRequest, logAudit } from '../services/audit.js';
-import { requireUserContext } from '../services/authContext.js';
 
 function parseLimit(raw: string | undefined, fallback: number) {
   if (!raw) return fallback;
@@ -24,7 +24,10 @@ export async function registerSearchRoutes(app: FastifyInstance) {
     '/search',
     { preHandler: requireRole(allowedRoles) },
     async (req, reply) => {
-      const { roles, projectIds = [] } = requireUserContext(req);
+      const { userId, roles, projectIds = [] } = requireUserContext(req);
+      if (!userId) {
+        return reply.code(401).send({ error: 'unauthorized' });
+      }
 
       const query = (req.query || {}) as { q?: string; limit?: string };
       const trimmed = normalizeQuery(query.q);
