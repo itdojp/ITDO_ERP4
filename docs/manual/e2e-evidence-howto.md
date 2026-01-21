@@ -32,6 +32,12 @@ E2E_EVIDENCE_DIR="$PWD/docs/test-results/2026-01-19-frontend-e2e-r1" \
 ./scripts/e2e-frontend.sh
 ```
 
+## 失敗時の診断（最小）
+- 起動失敗やAPI例外は `tmp/e2e-backend.log` / `tmp/e2e-frontend.log` を確認
+- 該当ケースだけ再実行する場合は `E2E_GREP` で対象を絞る
+- 画面の証跡が必要な場合は `E2E_CAPTURE=1` で再実行し、`docs/test-results/` の画像を確認
+- API側の切り分けは `scripts/smoke-backend.sh` を併用（任意）
+
 ## 差分比較（最小）
 - 画面キャプチャは Git の差分で追跡する（更新時は PR で履歴を残す）
 - 重要導線（Dashboard/日報/工数/請求/承認/チャット）を優先して更新する
