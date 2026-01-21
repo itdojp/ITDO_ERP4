@@ -2322,7 +2322,12 @@ async function main() {
 
   if (apply) {
     const verifyErrors: ImportError[] = [];
-    const verifyChunkSize = Number(process.env.MIGRATION_VERIFY_CHUNK_SIZE ?? 1000);
+    const defaultVerifyChunkSize = 1000;
+    const parsedVerifyChunkSize = Number.parseInt(process.env.MIGRATION_VERIFY_CHUNK_SIZE ?? '', 10);
+    const verifyChunkSize =
+      Number.isFinite(parsedVerifyChunkSize) && parsedVerifyChunkSize > 0
+        ? parsedVerifyChunkSize
+        : defaultVerifyChunkSize;
 
     async function verifyIds(scope: string, ids: string[], countFn: (ids: string[]) => Promise<number>) {
       if (!ids.length) return;
