@@ -13,3 +13,5 @@ packages/frontend/.env
 /packages/frontend/test-results
 /packages/frontend/playwright-report
 data/audit-exports
+pg_dump*.sql
+pg_dump*.sql:Zone.Identifier
