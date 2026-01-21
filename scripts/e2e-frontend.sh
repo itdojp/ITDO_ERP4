@@ -125,7 +125,7 @@ case "$E2E_DB_MODE" in
       exit 1
     fi
     DATABASE_URL="$DATABASE_URL" npx --prefix "$ROOT_DIR/packages/backend" prisma db push \
-      --schema "$ROOT_DIR/packages/backend/prisma/schema.prisma" --skip-generate
+      --config "$ROOT_DIR/packages/backend/prisma.config.ts" --skip-generate
     psql "$DATABASE_URL_PSQL" -v ON_ERROR_STOP=1 -f "$ROOT_DIR/scripts/seed-demo.sql"
     ;;
   *)
