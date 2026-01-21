@@ -1,6 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { Prisma } from '@prisma/client';
 import { prisma } from '../services/db.js';
+import { requireUserContext } from '../services/authContext.js';
 import { requireRole } from '../services/rbac.js';
 import { auditContextFromRequest, logAudit } from '../services/audit.js';
 
@@ -23,7 +24,7 @@ export async function registerSearchRoutes(app: FastifyInstance) {
     '/search',
     { preHandler: requireRole(allowedRoles) },
     async (req, reply) => {
-      const userId = req.user?.userId;
+      const { userId, roles, projectIds = [] } = requireUserContext(req);
       if (!userId) {
         return reply.code(401).send({ error: 'unauthorized' });
       }
@@ -39,13 +40,9 @@ export async function registerSearchRoutes(app: FastifyInstance) {
 
       const take = parseLimit(query.limit, 10);
 
-      const roles = req.user?.roles || [];
       const isExternal = roles.includes('external_chat');
       const canSeeAllProjects =
         roles.includes('admin') || roles.includes('mgmt');
-      const projectIds = Array.isArray(req.user?.projectIds)
-        ? req.user.projectIds
-        : [];
 
       const result = {
         query: trimmed,
