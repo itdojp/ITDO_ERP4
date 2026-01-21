@@ -16,7 +16,7 @@ function normalizeFormat(raw?: string) {
 }
 
 function normalizeMask(raw: string | undefined, format: 'csv' | 'json') {
-  if (raw === undefined || raw === null || raw === '') {
+  if (raw === undefined || raw === '') {
     return format === 'csv';
   }
   const normalized = String(raw).trim().toLowerCase();
@@ -35,6 +35,10 @@ function normalizeLimit(raw?: string | number) {
 function maskEmail(value: string) {
   const [local, domain] = value.split('@');
   if (!domain) return value;
+  if (!local) return `***@${domain}`;
+  if (local.length <= 2) {
+    return `${local[0]}***@${domain}`;
+  }
   const prefix = local.slice(0, 2);
   const maskedLocal =
     prefix + '*'.repeat(Math.max(local.length - prefix.length, 3));
