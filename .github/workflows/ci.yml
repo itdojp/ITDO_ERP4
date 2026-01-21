@@ -146,6 +146,8 @@ jobs:
           node-version: 20.19.0
       - run: npm ci --prefix packages/backend
       - run: npx --prefix packages/backend prisma generate --config packages/backend/prisma.config.ts
+        env:
+          DATABASE_URL: postgresql://user:pass@localhost:5432/postgres?schema=public
       - run: npm run build --prefix packages/backend
         env:
           DATABASE_URL: postgresql://user:pass@localhost:5432/postgres?schema=public
