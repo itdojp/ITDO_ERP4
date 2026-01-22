@@ -39,11 +39,22 @@ async function prepare(page: Page) {
   });
   await page.addInitScript((state) => {
     window.localStorage.setItem('erp4_auth', JSON.stringify(state));
+    window.localStorage.removeItem('erp4_active_section');
   }, authState);
   await page.goto(baseUrl);
   await expect(
     page.getByRole('heading', { name: 'ERP4 MVP PoC' }),
   ).toBeVisible();
+}
+
+async function navigateToSection(page: Page, label: string, heading?: string) {
+  await page.getByRole('button', { name: label }).click();
+  const targetHeading = heading || label;
+  await expect(
+    page
+      .locator('main')
+      .getByRole('heading', { name: targetHeading, level: 2, exact: true }),
+  ).toBeVisible({ timeout: actionTimeout });
 }
 
 async function selectByLabelOrFirst(select: Locator, label?: string) {
@@ -69,7 +80,11 @@ test('task to time entry link @core', async ({ page, request }) => {
 
   await prepare(page);
 
-  const taskSection = page.locator('h2', { hasText: 'タスク' }).locator('..');
+  await navigateToSection(page, 'タスク');
+  const taskSection = page
+    .locator('main')
+    .locator('h2', { hasText: 'タスク' })
+    .locator('..');
   await taskSection.scrollIntoViewIfNeeded();
   await selectByLabelOrFirst(
     taskSection.getByLabel('案件選択'),
@@ -91,7 +106,11 @@ test('task to time entry link @core', async ({ page, request }) => {
   const createdTask = tasks.find((item: any) => item.name === taskName);
   expect(createdTask).toBeTruthy();
 
-  const timeSection = page.locator('h2', { hasText: '工数入力' }).locator('..');
+  await navigateToSection(page, '工数入力');
+  const timeSection = page
+    .locator('main')
+    .locator('h2', { hasText: '工数入力' })
+    .locator('..');
   await timeSection.scrollIntoViewIfNeeded();
   await selectByLabelOrFirst(
     timeSection.getByLabel('案件選択'),
@@ -99,10 +118,9 @@ test('task to time entry link @core', async ({ page, request }) => {
   );
   const taskSelect = timeSection.getByLabel('タスク選択');
   await expect
-    .poll(
-      () => taskSelect.locator('option', { hasText: taskName }).count(),
-      { timeout: 30_000 },
-    )
+    .poll(() => taskSelect.locator('option', { hasText: taskName }).count(), {
+      timeout: 30_000,
+    })
     .toBeGreaterThan(0);
   await timeSection.getByLabel('タスク選択').selectOption({ label: taskName });
   await timeSection.locator('input[type="number"]').fill('75');

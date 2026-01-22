@@ -36,6 +36,23 @@ const run = (command, args, cwd) => {
   });
 };
 
+const removeNestedReact = () => {
+  const nestedRoot = path.join(designSystemRoot, 'node_modules');
+  const reactPath = path.join(nestedRoot, 'react');
+  const reactDomPath = path.join(nestedRoot, 'react-dom');
+  try {
+    fs.rmSync(reactPath, { recursive: true, force: true });
+    fs.rmSync(reactDomPath, { recursive: true, force: true });
+  } catch {
+    // ignore cleanup failures
+  }
+};
+
+const sleep = (ms) => {
+  const waitArray = new Int32Array(new SharedArrayBuffer(4));
+  Atomics.wait(waitArray, 0, 0, ms);
+};
+
 const resolveGitTag = () => {
   try {
     const pkgPath = path.join(frontendRoot, 'package.json');
@@ -63,33 +80,75 @@ const tag = resolveGitTag();
 const repoUrl = 'https://github.com/itdojp/itdo-design-system.git';
 const cacheRoot = path.join(os.tmpdir(), 'erp4-design-system-build');
 const repoDir = path.join(cacheRoot, `itdo-design-system-${tag}`);
+const cloneRetriesRaw = process.env.DESIGN_SYSTEM_CLONE_RETRIES || '3';
+const cloneRetries = Math.max(1, Number(cloneRetriesRaw) || 1);
 
-console.log(`[design-system] dist not found; building from source (${tag})...`);
+const buildLocal = () => {
+  try {
+    console.log('[design-system] dist not found; building in-place...');
+    run('npm', ['install'], designSystemRoot);
+    run('npm', ['run', 'build:lib'], designSystemRoot);
+    removeNestedReact();
+    if (exists(distEntry) && exists(distStyles)) {
+      console.log('[design-system] local build complete');
+      return true;
+    }
+  } catch (err) {
+    console.warn('[design-system] local build failed; fallback to clone');
+  }
+  return false;
+};
 
-fs.rmSync(repoDir, { recursive: true, force: true });
+if (buildLocal()) {
+  process.exit(0);
+}
+
+console.log(`[design-system] building from source (${tag})...`);
+
 fs.mkdirSync(cacheRoot, { recursive: true });
 
-run(
-  'git',
-  [
-    '-c',
-    'advice.detachedHead=false',
-    'clone',
-    '--quiet',
-    '--depth',
-    '1',
-    '--branch',
-    tag,
-    repoUrl,
-    repoDir,
-  ],
-  cacheRoot,
-);
+let cloned = false;
+for (let attempt = 1; attempt <= cloneRetries; attempt += 1) {
+  try {
+    fs.rmSync(repoDir, { recursive: true, force: true });
+    run(
+      'git',
+      [
+        '-c',
+        'advice.detachedHead=false',
+        'clone',
+        '--quiet',
+        '--depth',
+        '1',
+        '--branch',
+        tag,
+        repoUrl,
+        repoDir,
+      ],
+      cacheRoot,
+    );
+    cloned = true;
+    break;
+  } catch (err) {
+    if (attempt >= cloneRetries) {
+      throw err;
+    }
+    console.warn(
+      `[design-system] clone failed (attempt ${attempt}/${cloneRetries}). retrying...`,
+    );
+    sleep(1000 * attempt);
+  }
+}
+if (!cloned) {
+  console.error('[design-system] failed to clone design-system repository');
+  process.exit(1);
+}
 run('npm', ['ci'], repoDir);
 run('npm', ['run', 'build:lib'], repoDir);
 
 fs.mkdirSync(distRoot, { recursive: true });
 fs.cpSync(path.join(repoDir, 'dist'), distRoot, { recursive: true });
+removeNestedReact();
 
 if (!exists(distEntry) || !exists(distStyles)) {
   console.error('[design-system] build finished but dist is missing');

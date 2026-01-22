@@ -74,11 +74,22 @@ async function prepare(page: Page) {
   });
   await page.addInitScript((state) => {
     window.localStorage.setItem('erp4_auth', JSON.stringify(state));
+    window.localStorage.removeItem('erp4_active_section');
   }, authState);
   await page.goto(baseUrl);
   await expect(
     page.getByRole('heading', { name: 'ERP4 MVP PoC' }),
   ).toBeVisible();
+}
+
+async function navigateToSection(page: Page, label: string, heading?: string) {
+  await page.getByRole('button', { name: label }).click();
+  const targetHeading = heading || label;
+  await expect(
+    page
+      .locator('main')
+      .getByRole('heading', { name: targetHeading, level: 2, exact: true }),
+  ).toBeVisible({ timeout: actionTimeout });
 }
 
 async function selectByLabelOrFirst(select: Locator, label?: string) {
@@ -126,19 +137,21 @@ test('frontend smoke core @core', async ({ page }) => {
   });
   await captureSection(currentUserSection, '00-current-user.png');
 
+  await navigateToSection(page, 'ホーム', 'Dashboard');
   const dashboardSection = page
+    .locator('main')
     .locator('h2', { hasText: 'Dashboard' })
     .locator('..');
   await captureSection(dashboardSection, '01-core-dashboard.png');
 
+  await navigateToSection(page, '日報 + ウェルビーイング');
   const dailySection = page
+    .locator('main')
     .locator('h2', { hasText: '日報 + ウェルビーイング' })
     .locator('..');
   await dailySection.scrollIntoViewIfNeeded();
   const dailyReportText = `E2E日報: ${runId()}`;
-  await dailySection
-    .getByPlaceholder('日報本文（任意）')
-    .fill(dailyReportText);
+  await dailySection.getByPlaceholder('日報本文（任意）').fill(dailyReportText);
   await dailySection.getByRole('button', { name: 'Not Good' }).click();
   await dailySection.getByRole('button', { name: '仕事量が多い' }).click();
   await dailySection
@@ -157,7 +170,11 @@ test('frontend smoke core @core', async ({ page }) => {
   await expect(dailyHistoryItem).toBeVisible();
   await captureSection(dailySection, '02-core-daily-report.png');
 
-  const timeSection = page.locator('h2', { hasText: '工数入力' }).locator('..');
+  await navigateToSection(page, '工数入力');
+  const timeSection = page
+    .locator('main')
+    .locator('h2', { hasText: '工数入力' })
+    .locator('..');
   await timeSection.scrollIntoViewIfNeeded();
   await selectByLabelOrFirst(
     timeSection.getByLabel('案件選択'),
@@ -168,7 +185,9 @@ test('frontend smoke core @core', async ({ page }) => {
   await expect(timeSection.getByText('保存しました')).toBeVisible();
   await captureSection(timeSection, '03-core-time-entries.png');
 
+  await navigateToSection(page, '経費精算', '経費入力');
   const expenseSection = page
+    .locator('main')
     .locator('h2', { hasText: '経費入力' })
     .locator('..');
   await expenseSection.scrollIntoViewIfNeeded();
@@ -181,7 +200,11 @@ test('frontend smoke core @core', async ({ page }) => {
   await expect(expenseSection.getByText('経費を保存しました')).toBeVisible();
   await captureSection(expenseSection, '04-core-expenses.png');
 
-  const estimateSection = page.locator('h2', { hasText: '見積' }).locator('..');
+  await navigateToSection(page, '見積');
+  const estimateSection = page
+    .locator('main')
+    .locator('h2', { hasText: '見積' })
+    .locator('..');
   await estimateSection.scrollIntoViewIfNeeded();
   const estimateTag = `E2E-${runId()}`;
   await selectByLabelOrFirst(
@@ -235,7 +258,11 @@ test('frontend smoke core @core', async ({ page }) => {
   await expect(estimateSection.getByText('送信しました')).toBeVisible();
   await captureSection(estimateSection, '05-core-estimates.png');
 
-  const invoiceSection = page.locator('h2', { hasText: '請求' }).locator('..');
+  await navigateToSection(page, '請求');
+  const invoiceSection = page
+    .locator('main')
+    .locator('h2', { hasText: '請求' })
+    .locator('..');
   await invoiceSection.scrollIntoViewIfNeeded();
   await selectByLabelOrFirst(
     invoiceSection.getByLabel('案件選択'),
@@ -246,7 +273,9 @@ test('frontend smoke core @core', async ({ page }) => {
   await expect(invoiceSection.getByText('作成しました')).toBeVisible();
   await captureSection(invoiceSection, '06-core-invoices.png');
 
+  await navigateToSection(page, 'ホーム', '検索（ERP横断）');
   const searchSection = page
+    .locator('main')
     .locator('h2', { hasText: '検索（ERP横断）' })
     .locator('..');
   await searchSection.scrollIntoViewIfNeeded();
@@ -262,7 +291,9 @@ test('frontend smoke vendor approvals @extended', async ({ page }) => {
   test.setTimeout(180_000);
   await prepare(page);
 
+  await navigateToSection(page, '仕入/発注');
   const vendorSection = page
+    .locator('main')
     .locator('h2', { hasText: '仕入/発注' })
     .locator('..');
   await vendorSection.scrollIntoViewIfNeeded();
@@ -319,7 +350,9 @@ test('frontend smoke vendor approvals @extended', async ({ page }) => {
 
   await captureSection(vendorSection, '06-vendor-docs.png');
 
+  await navigateToSection(page, '承認', '承認一覧');
   const approvalsSection = page
+    .locator('main')
     .locator('h2', { hasText: '承認一覧' })
     .locator('..');
   await approvalsSection.scrollIntoViewIfNeeded();
@@ -353,7 +386,9 @@ test('frontend smoke vendor docs create @extended', async ({ page }) => {
   const invoiceAmount = base + 3000;
   await prepare(page);
 
+  await navigateToSection(page, '仕入/発注');
   const vendorSection = page
+    .locator('main')
     .locator('h2', { hasText: '仕入/発注' })
     .locator('..');
   await vendorSection.scrollIntoViewIfNeeded();
@@ -365,10 +400,7 @@ test('frontend smoke vendor docs create @extended', async ({ page }) => {
   const poVendorSelect = poBlock.locator('select').nth(1);
   await selectByLabelOrFirst(poProjectSelect);
   await selectByLabelOrFirst(poVendorSelect);
-  await poBlock
-    .locator('input[type="number"]')
-    .first()
-    .fill(String(poAmount));
+  await poBlock.locator('input[type="number"]').first().fill(String(poAmount));
   await poBlock.getByRole('button', { name: '登録' }).click();
   await expect(poBlock.getByText('発注書を登録しました')).toBeVisible();
   await expect(
@@ -406,9 +438,7 @@ test('frontend smoke vendor docs create @extended', async ({ page }) => {
     .first()
     .fill(String(invoiceAmount));
   await invoiceBlock.getByRole('button', { name: '登録' }).click();
-  await expect(
-    invoiceBlock.getByText('仕入請求を登録しました'),
-  ).toBeVisible();
+  await expect(invoiceBlock.getByText('仕入請求を登録しました')).toBeVisible();
   await expect(invoiceBlock.getByText(vendorInvoiceNo)).toBeVisible();
 
   await captureSection(vendorSection, '06-vendor-docs-create.png');
@@ -419,7 +449,9 @@ test('frontend smoke reports masters settings @extended', async ({ page }) => {
   const id = runId();
   await prepare(page);
 
+  await navigateToSection(page, 'レポート', 'Reports');
   const reportsSection = page
+    .locator('main')
     .locator('h2', { hasText: 'Reports' })
     .locator('..');
   await reportsSection.scrollIntoViewIfNeeded();
@@ -437,7 +469,11 @@ test('frontend smoke reports masters settings @extended', async ({ page }) => {
   ).toBeVisible();
   await captureSection(reportsSection, '08-reports.png');
 
-  const projectsSection = page.locator('h2', { hasText: '案件' }).locator('..');
+  await navigateToSection(page, '案件');
+  const projectsSection = page
+    .locator('main')
+    .locator('h2', { hasText: '案件' })
+    .locator('..');
   await projectsSection.scrollIntoViewIfNeeded();
   await projectsSection.getByLabel('案件コード').fill(`E2E-PRJ-${id}`);
   await projectsSection.getByLabel('案件名称').fill(`E2E Project ${id}`);
@@ -475,13 +511,11 @@ test('frontend smoke reports masters settings @extended', async ({ page }) => {
   ]);
   await expect(download.suggestedFilename()).toContain('project-members-');
   const csv = 'userId,role\n' + 'e2e-member-2@example.com,member\n';
-  await memberCard
-    .locator('#project-members-csv-input')
-    .setInputFiles({
-      name: 'members.csv',
-      mimeType: 'text/csv',
-      buffer: Buffer.from(csv),
-    });
+  await memberCard.locator('#project-members-csv-input').setInputFiles({
+    name: 'members.csv',
+    mimeType: 'text/csv',
+    buffer: Buffer.from(csv),
+  });
   await memberCard.getByRole('button', { name: 'CSVインポート' }).click();
   await expect(memberCard.getByText('e2e-member-2@example.com')).toBeVisible({
     timeout: actionTimeout,
@@ -489,7 +523,9 @@ test('frontend smoke reports masters settings @extended', async ({ page }) => {
   await captureSection(projectsSection, '09-projects.png');
   await captureSection(memberCard, '09-project-members.png');
 
+  await navigateToSection(page, 'マスタ管理', '顧客/業者マスタ');
   const masterSection = page
+    .locator('main')
     .locator('h2', { hasText: '顧客/業者マスタ' })
     .locator('..');
   await masterSection.scrollIntoViewIfNeeded();
@@ -528,7 +564,9 @@ test('frontend smoke reports masters settings @extended', async ({ page }) => {
   await expect(contactBlock.getByText('連絡先を追加しました')).toBeVisible();
   await captureSection(masterSection, '10-master-data.png');
 
+  await navigateToSection(page, '設定', 'Settings');
   const settingsSection = page
+    .locator('main')
     .locator('h2', { hasText: 'Settings' })
     .locator('..');
   await settingsSection.scrollIntoViewIfNeeded();
@@ -607,7 +645,9 @@ test('frontend smoke reports masters settings @extended', async ({ page }) => {
   });
   await expect(reportItem).toBeVisible();
   await reportItem.getByRole('button', { name: '実行' }).click();
-  await expect(settingsSection.getByText('レポートを実行しました')).toBeVisible();
+  await expect(
+    settingsSection.getByText('レポートを実行しました'),
+  ).toBeVisible();
   await captureSection(reportBlock, '11-report-subscriptions.png');
 
   const integrationBlock = settingsSection
@@ -637,7 +677,9 @@ test('frontend smoke chat hr analytics @extended', async ({ page }) => {
   await expect(page.getByText('ID: demo-user')).toBeVisible();
   await expect(page.getByText('Roles: admin, mgmt')).toBeVisible();
 
+  await navigateToSection(page, 'プロジェクトチャット');
   const chatSection = page
+    .locator('main')
     .locator('h2', { hasText: 'プロジェクトチャット' })
     .locator('..');
   await chatSection.scrollIntoViewIfNeeded();
@@ -665,9 +707,11 @@ test('frontend smoke chat hr analytics @extended', async ({ page }) => {
   await chatSection.getByPlaceholder('タグ (comma separated)').fill('e2e,chat');
   await chatSection.getByLabel('添付').setInputFiles(uploadPath);
   await chatSection.getByRole('button', { name: '投稿' }).click();
-  await expect(chatSection.locator('li', { hasText: chatMessage })).toBeVisible({
-    timeout: actionTimeout,
-  });
+  await expect(chatSection.locator('li', { hasText: chatMessage })).toBeVisible(
+    {
+      timeout: actionTimeout,
+    },
+  );
   const chatItem = chatSection.locator('li', { hasText: chatMessage });
   await expect(chatItem.getByText(`@${mentionTarget}`)).toBeVisible();
   await expect(chatItem.getByText('@mgmt')).toBeVisible();
@@ -731,7 +775,9 @@ test('frontend smoke chat hr analytics @extended', async ({ page }) => {
   await expect(summaryBlock).toBeVisible();
   await expect(chatSection.locator('pre')).toContainText('取得件数');
 
+  await navigateToSection(page, 'HR分析', '匿名集計（人事向け）');
   const hrSection = page
+    .locator('main')
     .locator('h2', { hasText: '匿名集計（人事向け）' })
     .locator('..');
   await hrSection.scrollIntoViewIfNeeded();
@@ -763,19 +809,30 @@ test('frontend smoke chat hr analytics @extended', async ({ page }) => {
       console.error('[e2e][mentionPage][console.error]', msg.text());
     }
   });
-  await mentionPage.addInitScript((state) => {
-    window.localStorage.setItem('erp4_auth', JSON.stringify(state));
-  }, {
-    userId: mentionTarget,
-    roles: authState.roles,
-    projectIds: authState.projectIds,
-    groupIds: authState.groupIds,
-  });
+  await mentionPage.addInitScript(
+    (state) => {
+      window.localStorage.setItem('erp4_auth', JSON.stringify(state));
+      window.localStorage.removeItem('erp4_active_section');
+    },
+    {
+      userId: mentionTarget,
+      roles: authState.roles,
+      projectIds: authState.projectIds,
+      groupIds: authState.groupIds,
+    },
+  );
   await mentionPage.goto(baseUrl);
   await expect(
     mentionPage.getByRole('heading', { name: 'ERP4 MVP PoC' }),
   ).toBeVisible();
+  await mentionPage.getByRole('button', { name: 'ホーム' }).click();
+  await expect(
+    mentionPage
+      .locator('main')
+      .getByRole('heading', { name: 'Dashboard', level: 2, exact: true }),
+  ).toBeVisible({ timeout: actionTimeout });
   const dashboardSection = mentionPage
+    .locator('main')
     .locator('h2', { hasText: 'Dashboard' })
     .locator('..');
   await expect(dashboardSection.getByText(chatMessage)).toBeVisible({
@@ -790,18 +847,30 @@ test('frontend smoke room chat (private_group/dm) @extended', async ({
   test.setTimeout(180_000);
   await prepare(page);
 
+  await navigateToSection(
+    page,
+    'ルームチャット',
+    'チャット（全社/部門/private_group/DM）',
+  );
   const roomChatSection = page
+    .locator('main')
     .locator('h2', { hasText: 'チャット（全社/部門/private_group/DM）' })
     .locator('..');
   await roomChatSection.scrollIntoViewIfNeeded();
 
   const run = runId();
   const roomSelect = roomChatSection.getByLabel('ルーム');
-  const messageList = roomChatSection.locator('strong', { hasText: '一覧' }).locator('..');
+  const messageList = roomChatSection
+    .locator('strong', { hasText: '一覧' })
+    .locator('..');
   await expect
-    .poll(() => roomSelect.locator('option').count(), { timeout: actionTimeout })
+    .poll(() => roomSelect.locator('option').count(), {
+      timeout: actionTimeout,
+    })
     .toBeGreaterThan(1);
-  await expect(roomSelect.locator('option', { hasText: 'company: 全社' })).toHaveCount(1);
+  await expect(
+    roomSelect.locator('option', { hasText: 'company: 全社' }),
+  ).toHaveCount(1);
   await expect(
     roomSelect.locator('option', { hasText: 'department: mgmt' }),
   ).toHaveCount(1);
@@ -850,7 +919,9 @@ test('frontend smoke room chat (private_group/dm) @extended', async ({
   const groupName = `e2e-private-${run}`;
 
   await roomChatSection.getByLabel('private_group 名').fill(groupName);
-  await roomChatSection.getByRole('button', { name: 'private_group作成' }).click();
+  await roomChatSection
+    .getByRole('button', { name: 'private_group作成' })
+    .click();
 
   await expect(roomSelect).not.toHaveValue('', { timeout: actionTimeout });
   await expect(roomSelect.locator('option:checked')).toContainText(groupName);
@@ -869,7 +940,9 @@ test('frontend smoke room chat (private_group/dm) @extended', async ({
   await expect
     .poll(() => roomSelect.inputValue(), { timeout: actionTimeout })
     .not.toBe(previousRoomId);
-  await expect(roomSelect.locator('option:checked')).toContainText(partnerUserId);
+  await expect(roomSelect.locator('option:checked')).toContainText(
+    partnerUserId,
+  );
 
   const dmText = `E2E dm message ${run}`;
   await roomChatSection.getByPlaceholder('Markdownで入力').fill(dmText);
@@ -886,12 +959,18 @@ test('frontend smoke room chat (private_group/dm) @extended', async ({
   await captureSection(roomChatSection, '14-room-chat.png');
 });
 
-test('frontend smoke room chat external summary @extended', async ({ page }) => {
+test('frontend smoke room chat external summary @extended', async ({
+  page,
+}) => {
   test.setTimeout(180_000);
   const run = runId();
   await prepare(page);
 
-  const settingsSection = page.locator('h2', { hasText: 'Settings' }).locator('..');
+  await navigateToSection(page, '設定', 'Settings');
+  const settingsSection = page
+    .locator('main')
+    .locator('h2', { hasText: 'Settings' })
+    .locator('..');
   await settingsSection.scrollIntoViewIfNeeded();
   const roomSettingsCard = settingsSection
     .locator('strong', { hasText: 'チャットルーム設定' })
@@ -905,13 +984,21 @@ test('frontend smoke room chat external summary @extended', async ({ page }) => 
     })
     .toBeGreaterThan(1);
   await selectByLabelOrFirst(settingsRoomSelect, 'company: 全社');
-  await roomSettingsCard.getByRole('checkbox', { name: '外部連携を許可' }).check();
+  await roomSettingsCard
+    .getByRole('checkbox', { name: '外部連携を許可' })
+    .check();
   await roomSettingsCard.getByRole('button', { name: '保存' }).click();
   await expect(roomSettingsCard.getByText('保存しました')).toBeVisible({
     timeout: actionTimeout,
   });
 
+  await navigateToSection(
+    page,
+    'ルームチャット',
+    'チャット（全社/部門/private_group/DM）',
+  );
   const roomChatSection = page
+    .locator('main')
     .locator('h2', { hasText: 'チャット（全社/部門/private_group/DM）' })
     .locator('..');
   await roomChatSection.scrollIntoViewIfNeeded();
@@ -919,7 +1006,9 @@ test('frontend smoke room chat external summary @extended', async ({ page }) => 
 
   const roomSelect = roomChatSection.getByLabel('ルーム');
   await expect
-    .poll(() => roomSelect.locator('option').count(), { timeout: actionTimeout })
+    .poll(() => roomSelect.locator('option').count(), {
+      timeout: actionTimeout,
+    })
     .toBeGreaterThan(1);
   await selectByLabelOrFirst(roomSelect, 'company: 全社');
 
@@ -932,7 +1021,9 @@ test('frontend smoke room chat external summary @extended', async ({ page }) => 
 
   page.once('dialog', (dialog) => dialog.accept().catch(() => undefined));
   await roomChatSection.getByRole('button', { name: '外部要約' }).click();
-  await expect(roomChatSection.getByText('要約（外部:', { exact: false })).toBeVisible({
+  await expect(
+    roomChatSection.getByText('要約（外部:', { exact: false }),
+  ).toBeVisible({
     timeout: actionTimeout,
   });
   await expect(roomChatSection.locator('pre')).toContainText('概要', {
@@ -948,7 +1039,11 @@ test('frontend smoke external chat invited rooms @extended', async ({
   const externalUserId = `e2e-external-${run}@example.com`;
   await prepare(page);
 
-  const settingsSection = page.locator('h2', { hasText: 'Settings' }).locator('..');
+  await navigateToSection(page, '設定', 'Settings');
+  const settingsSection = page
+    .locator('main')
+    .locator('h2', { hasText: 'Settings' })
+    .locator('..');
   await settingsSection.scrollIntoViewIfNeeded();
   const roomSettingsCard = settingsSection
     .locator('strong', { hasText: 'チャットルーム設定' })
@@ -958,7 +1053,9 @@ test('frontend smoke external chat invited rooms @extended', async ({
   await roomSettingsCard.getByRole('button', { name: '再読込' }).click();
   const roomSelect = roomSettingsCard.getByLabel('ルーム');
   await expect
-    .poll(() => roomSelect.locator('option').count(), { timeout: actionTimeout })
+    .poll(() => roomSelect.locator('option').count(), {
+      timeout: actionTimeout,
+    })
     .toBeGreaterThan(1);
 
   await selectByLabelOrFirst(roomSelect, 'company: 全社');
@@ -973,7 +1070,9 @@ test('frontend smoke external chat invited rooms @extended', async ({
     .getByLabel('userId（comma separated）')
     .fill(externalUserId);
   await roomSettingsCard.getByRole('button', { name: 'メンバー追加' }).click();
-  await expect(roomSettingsCard.getByText('メンバーを追加しました')).toBeVisible({
+  await expect(
+    roomSettingsCard.getByText('メンバーを追加しました'),
+  ).toBeVisible({
     timeout: actionTimeout,
   });
 
@@ -992,7 +1091,9 @@ test('frontend smoke external chat invited rooms @extended', async ({
     .getByLabel('userId（comma separated）')
     .fill(externalUserId);
   await roomSettingsCard.getByRole('button', { name: 'メンバー追加' }).click();
-  await expect(roomSettingsCard.getByText('メンバーを追加しました')).toBeVisible({
+  await expect(
+    roomSettingsCard.getByText('メンバーを追加しました'),
+  ).toBeVisible({
     timeout: actionTimeout,
   });
 
@@ -1009,30 +1110,42 @@ test('frontend smoke external chat invited rooms @extended', async ({
       console.error('[e2e][externalPage][console.error]', text);
     }
   });
-  await externalPage.addInitScript((state) => {
-    window.localStorage.setItem('erp4_auth', JSON.stringify(state));
-  }, {
-    userId: externalUserId,
-    roles: ['external_chat'],
-    projectIds: [],
-    groupIds: [],
-  });
+  await externalPage.addInitScript(
+    (state) => {
+      window.localStorage.setItem('erp4_auth', JSON.stringify(state));
+      window.localStorage.removeItem('erp4_active_section');
+    },
+    {
+      userId: externalUserId,
+      roles: ['external_chat'],
+      projectIds: [],
+      groupIds: [],
+    },
+  );
   await externalPage.goto(baseUrl);
   await expect(
     externalPage.getByRole('heading', { name: 'ERP4 MVP PoC' }),
   ).toBeVisible();
 
+  await externalPage.getByRole('button', { name: 'ルームチャット' }).click();
+  await expect(
+    externalPage.locator('main').getByRole('heading', {
+      name: 'チャット（全社/部門/private_group/DM）',
+      level: 2,
+      exact: true,
+    }),
+  ).toBeVisible({ timeout: actionTimeout });
   const roomChatSection = externalPage
+    .locator('main')
     .locator('h2', { hasText: 'チャット（全社/部門/private_group/DM）' })
     .locator('..');
   await roomChatSection.scrollIntoViewIfNeeded();
 
   const externalRoomSelect = roomChatSection.getByLabel('ルーム');
   await expect
-    .poll(
-      () => externalRoomSelect.locator('option').count(),
-      { timeout: actionTimeout },
-    )
+    .poll(() => externalRoomSelect.locator('option').count(), {
+      timeout: actionTimeout,
+    })
     .toBeGreaterThan(1);
 
   await selectByLabelOrFirst(externalRoomSelect, 'company: 全社');
@@ -1115,9 +1228,7 @@ test('frontend smoke admin ops @extended', async ({ page }) => {
   );
   await ensureOk(sendLogsRes);
   const sendLogsPayload = await sendLogsRes.json();
-  const sendLogId = (sendLogsPayload?.items ?? [])[0]?.id as
-    | string
-    | undefined;
+  const sendLogId = (sendLogsPayload?.items ?? [])[0]?.id as string | undefined;
 
   const now = new Date();
   const lockPeriod = now.toISOString().slice(0, 7);
@@ -1152,7 +1263,10 @@ test('frontend smoke admin ops @extended', async ({ page }) => {
     .locator('h2', { hasText: 'PDFファイル一覧' })
     .locator('..');
   await pdfSection.scrollIntoViewIfNeeded();
-  await safeClick(pdfSection.getByRole('button', { name: '再読込' }), 'pdf list');
+  await safeClick(
+    pdfSection.getByRole('button', { name: '再読込' }),
+    'pdf list',
+  );
   await captureSection(pdfSection, '27-pdf-files.png');
 
   const accessReviewSection = page
