@@ -592,6 +592,9 @@ export const CurrentUser: React.FC = () => {
     };
     setAuthState(next);
     setAuth(next);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('erp4:auth-updated'));
+    }
   };
 
   const logout = () => {
@@ -599,6 +602,9 @@ export const CurrentUser: React.FC = () => {
     setAuth(null);
     setMe(null);
     setError('');
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('erp4:auth-updated'));
+    }
   };
 
   return (

@@ -36,6 +36,15 @@ export const useProjects = ({
   }, [loadProjects]);
 
   useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const handler = () => {
+      loadProjects();
+    };
+    window.addEventListener('erp4:auth-updated', handler);
+    return () => window.removeEventListener('erp4:auth-updated', handler);
+  }, [loadProjects]);
+
+  useEffect(() => {
     if (projects.length === 0) return;
     if (projects.some((project) => project.id === selectedProjectId)) {
       return;
