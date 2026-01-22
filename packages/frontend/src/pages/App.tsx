@@ -321,13 +321,13 @@ export const App: React.FC = () => {
     () => sectionGroups.flatMap((group) => group.items),
     [sectionGroups],
   );
+  const fallbackSectionId = sections[0]?.id || 'home';
   const [activeSectionId, setActiveSectionId] = useState(() => {
-    if (typeof window === 'undefined') return sections[0]?.id || 'home';
-    return (
-      window.localStorage.getItem(ACTIVE_SECTION_KEY) ||
-      sections[0]?.id ||
-      'home'
-    );
+    if (typeof window === 'undefined') return fallbackSectionId;
+    const storedId = window.localStorage.getItem(ACTIVE_SECTION_KEY);
+    if (!storedId) return fallbackSectionId;
+    const isValid = sections.some((section) => section.id === storedId);
+    return isValid ? storedId : fallbackSectionId;
   });
 
   useEffect(() => {
@@ -369,9 +369,9 @@ export const App: React.FC = () => {
             ))}
           </div>
         </Card>
-        <div style={{ flex: '1 1 720px', minWidth: 280 }}>
-          {activeSection?.render()}
-        </div>
+        <main style={{ flex: '1 1 720px', minWidth: 280 }}>
+          {activeSection ? activeSection.render() : null}
+        </main>
       </div>
     </div>
   );
