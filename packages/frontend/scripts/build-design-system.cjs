@@ -36,6 +36,18 @@ const run = (command, args, cwd) => {
   });
 };
 
+const removeNestedReact = () => {
+  const nestedRoot = path.join(designSystemRoot, 'node_modules');
+  const reactPath = path.join(nestedRoot, 'react');
+  const reactDomPath = path.join(nestedRoot, 'react-dom');
+  try {
+    fs.rmSync(reactPath, { recursive: true, force: true });
+    fs.rmSync(reactDomPath, { recursive: true, force: true });
+  } catch {
+    // ignore cleanup failures
+  }
+};
+
 const sleep = (ms) => {
   const waitArray = new Int32Array(new SharedArrayBuffer(4));
   Atomics.wait(waitArray, 0, 0, ms);
@@ -76,6 +88,7 @@ const buildLocal = () => {
     console.log('[design-system] dist not found; building in-place...');
     run('npm', ['install'], designSystemRoot);
     run('npm', ['run', 'build:lib'], designSystemRoot);
+    removeNestedReact();
     if (exists(distEntry) && exists(distStyles)) {
       console.log('[design-system] local build complete');
       return true;
@@ -135,6 +148,7 @@ run('npm', ['run', 'build:lib'], repoDir);
 
 fs.mkdirSync(distRoot, { recursive: true });
 fs.cpSync(path.join(repoDir, 'dist'), distRoot, { recursive: true });
+removeNestedReact();
 
 if (!exists(distEntry) || !exists(distStyles)) {
   console.error('[design-system] build finished but dist is missing');
