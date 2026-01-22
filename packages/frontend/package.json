@@ -16,6 +16,8 @@
   },
   "dependencies": {
     "@itdojp/design-system": "git+https://github.com/itdojp/itdo-design-system.git#v1.0.0",
+    "@tanstack/react-table": "^8.21.3",
+    "@tanstack/react-virtual": "^3.13.6",
     "react": "^19.2.3",
     "react-dom": "^19.2.3",
     "react-markdown": "^10.1.0",

@@ -5,6 +5,15 @@ import React, {
   useRef,
   useState,
 } from 'react';
+import {
+  ColumnDef,
+  SortingState,
+  flexRender,
+  getCoreRowModel,
+  getSortedRowModel,
+  useReactTable,
+} from '@tanstack/react-table';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import { api, getAuthState } from '../api';
 import { useProjects } from '../hooks/useProjects';
 import { useProjectTasks } from '../hooks/useProjectTasks';
@@ -15,7 +24,18 @@ import {
   saveDraft,
 } from '../utils/drafts';
 import { enqueueOfflineItem, isOfflineError } from '../utils/offlineQueue';
-import { Alert, Button, Card, EmptyState, Input, Select, Toast } from '../ui';
+import {
+  Alert,
+  Button,
+  Card,
+  EmptyState,
+  FilterBar,
+  Input,
+  Select,
+  Skeleton,
+  Spinner,
+  Toast,
+} from '../ui';
 
 type TimeEntry = {
   id: string;
@@ -27,6 +47,16 @@ type TimeEntry = {
   location?: string;
   taskId?: string;
 };
+type TimeEntryView = {
+  id: string;
+  projectId: string;
+  projectLabel: string;
+  workDate: string;
+  minutes: number;
+  status: string;
+  workType?: string;
+  location?: string;
+};
 type FormState = {
   projectId: string;
   taskId: string;
@@ -37,6 +67,11 @@ type FormState = {
 };
 
 type MessageState = { text: string; type: 'success' | 'error' } | null;
+type ListStatus = 'idle' | 'loading' | 'error' | 'success';
+type ColumnMeta = {
+  width?: string;
+  align?: React.CSSProperties['textAlign'];
+};
 
 const defaultForm: FormState = {
   projectId: 'demo-project',
@@ -47,12 +82,519 @@ const defaultForm: FormState = {
   location: 'office',
 };
 
+const FEATURE_TIMESHEET_GRID =
+  (import.meta.env.VITE_FEATURE_TIMESHEET_GRID || '').trim() === '1';
+
+const formatMinutes = (minutes: number) => `${minutes}分`;
+
+const formatWorkDate = (value: string) => value.slice(0, 10);
+
+const normalizeSearch = (value: string) =>
+  value
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim();
+
+const buildSearchText = (item: TimeEntryView) =>
+  normalizeSearch(
+    [
+      item.workDate,
+      item.projectLabel,
+      item.status,
+      item.workType,
+      item.location,
+      `${item.minutes}`,
+    ]
+      .filter(Boolean)
+      .join(' '),
+  );
+
+const useMediaQuery = (query: string) => {
+  const [matches, setMatches] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return window.matchMedia(query).matches;
+  });
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const media = window.matchMedia(query);
+    const onChange = () => setMatches(media.matches);
+    onChange();
+    if (media.addEventListener) {
+      media.addEventListener('change', onChange);
+      return () => media.removeEventListener('change', onChange);
+    }
+    media.addListener(onChange);
+    return () => media.removeListener(onChange);
+  }, [query]);
+
+  return matches;
+};
+
+const EmptyListState: React.FC<{
+  status: ListStatus;
+  error?: string;
+  onRetry: () => void;
+}> = ({ status, error, onRetry }) => {
+  if (status === 'loading') {
+    return (
+      <div
+        style={{
+          display: 'grid',
+          placeItems: 'center',
+          padding: '24px 0',
+        }}
+      >
+        <Spinner label="読み込み中" />
+      </div>
+    );
+  }
+  if (status === 'error') {
+    return (
+      <EmptyState
+        title="工数一覧の取得に失敗しました"
+        description={error || '通信環境を確認して再試行してください'}
+        action={
+          <Button variant="primary" onClick={onRetry}>
+            再試行
+          </Button>
+        }
+      />
+    );
+  }
+  return <EmptyState title="工数がありません" />;
+};
+
+const LegacyTimeEntryList: React.FC<{
+  items: TimeEntryView[];
+  status: ListStatus;
+  error?: string;
+  onRetry: () => void;
+}> = ({ items, status, error, onRetry }) => {
+  if (status === 'loading' || status === 'error' || items.length === 0) {
+    return (
+      <Card padding="small">
+        <EmptyListState status={status} error={error} onRetry={onRetry} />
+      </Card>
+    );
+  }
+  return (
+    <div style={{ display: 'grid', gap: 8 }}>
+      {items.map((entry) => (
+        <Card key={entry.id} padding="small">
+          <div
+            style={{
+              display: 'flex',
+              gap: 8,
+              flexWrap: 'wrap',
+              alignItems: 'center',
+            }}
+          >
+            <span className="badge">{entry.status}</span>
+            <span>{formatWorkDate(entry.workDate)}</span>
+            <span>/ {entry.projectLabel}</span>
+            <span>/ {formatMinutes(entry.minutes)}</span>
+            {entry.workType && <span>/ {entry.workType}</span>}
+            {entry.location && <span>/ {entry.location}</span>}
+          </div>
+        </Card>
+      ))}
+    </div>
+  );
+};
+
+const MobileTimeEntryList: React.FC<{
+  items: TimeEntryView[];
+  status: ListStatus;
+  error?: string;
+  onRetry: () => void;
+}> = ({ items, status, error, onRetry }) => {
+  if (status === 'loading' || status === 'error' || items.length === 0) {
+    return (
+      <Card padding="small">
+        <EmptyListState status={status} error={error} onRetry={onRetry} />
+      </Card>
+    );
+  }
+  return (
+    <div style={{ display: 'grid', gap: 12 }}>
+      {items.map((entry) => (
+        <Card key={entry.id} padding="small">
+          <div style={{ display: 'grid', gap: 6 }}>
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                gap: 8,
+              }}
+            >
+              <strong>{formatWorkDate(entry.workDate)}</strong>
+              <span className="badge">{entry.status}</span>
+            </div>
+            <div style={{ fontSize: 13, color: 'var(--color-text-secondary)' }}>
+              {entry.projectLabel}
+            </div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <span>{formatMinutes(entry.minutes)}</span>
+              {entry.workType && <span>{entry.workType}</span>}
+              {entry.location && <span>{entry.location}</span>}
+            </div>
+          </div>
+        </Card>
+      ))}
+    </div>
+  );
+};
+
+const TimesheetGrid: React.FC<{
+  items: TimeEntryView[];
+  status: ListStatus;
+  error?: string;
+  onRetry: () => void;
+}> = ({ items, status, error, onRetry }) => {
+  const [sorting, setSorting] = useState<SortingState>([
+    { id: 'workDate', desc: true },
+  ]);
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
+
+  const statusOptions = useMemo(() => {
+    const unique = Array.from(new Set(items.map((item) => item.status))).filter(
+      (value) => value && value !== 'all',
+    );
+    return unique;
+  }, [items]);
+
+  const filteredItems = useMemo(() => {
+    let next = items;
+    if (statusFilter !== 'all') {
+      next = next.filter((item) => item.status === statusFilter);
+    }
+    const needle = normalizeSearch(search);
+    if (needle) {
+      next = next.filter((item) => buildSearchText(item).includes(needle));
+    }
+    return next;
+  }, [items, search, statusFilter]);
+
+  const columns = useMemo<ColumnDef<TimeEntryView>[]>(
+    () => [
+      {
+        accessorKey: 'workDate',
+        header: '日付',
+        cell: (info) => formatWorkDate(String(info.getValue())),
+        sortingFn: (a, b) =>
+          String(a.getValue('workDate')).localeCompare(
+            String(b.getValue('workDate')),
+          ),
+        meta: { width: '120px' },
+      },
+      {
+        accessorKey: 'projectLabel',
+        header: '案件',
+        cell: (info) => info.getValue(),
+        meta: { width: 'minmax(220px, 1.6fr)' },
+      },
+      {
+        accessorKey: 'minutes',
+        header: '工数',
+        cell: (info) => formatMinutes(Number(info.getValue())),
+        sortingFn: 'basic',
+        meta: { align: 'right', width: '100px' },
+      },
+      {
+        accessorKey: 'status',
+        header: '状態',
+        cell: (info) => <span className="badge">{info.getValue() as string}</span>,
+        meta: { width: '110px' },
+      },
+      {
+        accessorKey: 'workType',
+        header: '作業種別',
+        cell: (info) => info.getValue() || '-',
+        meta: { width: '160px' },
+      },
+      {
+        accessorKey: 'location',
+        header: '場所',
+        cell: (info) => info.getValue() || '-',
+        meta: { width: '140px' },
+      },
+    ],
+    [],
+  );
+
+  const table = useReactTable({
+    data: filteredItems,
+    columns,
+    state: { sorting },
+    onSortingChange: setSorting,
+    getCoreRowModel: getCoreRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+  });
+
+  const rows = table.getRowModel().rows;
+  const parentRef = useRef<HTMLDivElement | null>(null);
+  const rowVirtualizer = useVirtualizer({
+    count: rows.length,
+    getScrollElement: () => parentRef.current,
+    estimateSize: () => 44,
+    overscan: 8,
+  });
+
+  const columnTemplate = useMemo(() => {
+    return table
+      .getAllLeafColumns()
+      .map((column) => {
+        const meta = column.columnDef.meta as ColumnMeta | undefined;
+        return meta?.width || 'minmax(120px, 1fr)';
+      })
+      .join(' ');
+  }, [table]);
+
+  const statusBanner =
+    status === 'success' ? (
+      <Alert variant="success">{`最新の工数を表示中（${items.length}件）`}</Alert>
+    ) : status === 'error' ? (
+      <Alert variant="error">
+        {error || '工数一覧の取得に失敗しました'}
+      </Alert>
+    ) : null;
+
+  if (status === 'loading') {
+    return (
+      <Card padding="small">
+        <div style={{ display: 'grid', gap: 12 }}>
+          <Skeleton height={20} width="40%" />
+          <Skeleton height={320} width="100%" />
+        </div>
+      </Card>
+    );
+  }
+
+  if (status === 'error' || items.length === 0) {
+    return (
+      <Card padding="small">
+        <EmptyListState status={status} error={error} onRetry={onRetry} />
+      </Card>
+    );
+  }
+
+  return (
+    <Card padding="small">
+      <div style={{ display: 'grid', gap: 12 }}>
+        <FilterBar
+          actions={
+            <div style={{ display: 'flex', gap: 8 }}>
+              <Button variant="ghost" onClick={onRetry}>
+                再取得
+              </Button>
+            </div>
+          }
+        >
+          <div
+            style={{
+              display: 'flex',
+              gap: 12,
+              flexWrap: 'wrap',
+              alignItems: 'center',
+            }}
+          >
+            <Input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="検索（案件名/メモ/状態 など）"
+              aria-label="工数検索"
+            />
+            <Select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              aria-label="状態フィルタ"
+            >
+              <option value="all">状態: 全て</option>
+              {statusOptions.map((value) => (
+                <option key={value} value={value}>
+                  {value}
+                </option>
+              ))}
+            </Select>
+          </div>
+        </FilterBar>
+        {statusBanner}
+        <div
+          style={{
+            border: '1px solid var(--color-border-default)',
+            borderRadius: 12,
+            overflow: 'hidden',
+          }}
+        >
+          <div
+            role="rowgroup"
+            style={{
+              position: 'sticky',
+              top: 0,
+              zIndex: 2,
+              background: 'var(--color-neutral-50)',
+              borderBottom: '1px solid var(--color-border-default)',
+            }}
+          >
+            {table.getHeaderGroups().map((headerGroup) => (
+              <div
+                key={headerGroup.id}
+                role="row"
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: columnTemplate,
+                  gap: 0,
+                  padding: '8px 12px',
+                  fontSize: 12,
+                  fontWeight: 600,
+                  color: 'var(--color-text-secondary)',
+                }}
+              >
+                {headerGroup.headers.map((header) => {
+                  const meta = header.column.columnDef.meta as ColumnMeta | undefined;
+                  const canSort = header.column.getCanSort();
+                  const sortState = header.column.getIsSorted();
+                  return (
+                    <div
+                      key={header.id}
+                      role="columnheader"
+                      aria-sort={
+                        sortState === 'asc'
+                          ? 'ascending'
+                          : sortState === 'desc'
+                            ? 'descending'
+                            : 'none'
+                      }
+                      style={{
+                        textAlign: meta?.align || 'left',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 4,
+                      }}
+                    >
+                      <button
+                        type="button"
+                        onClick={canSort ? header.column.getToggleSortingHandler() : undefined}
+                        style={{
+                          all: 'unset',
+                          cursor: canSort ? 'pointer' : 'default',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 4,
+                        }}
+                      >
+                        {flexRender(
+                          header.column.columnDef.header,
+                          header.getContext(),
+                        )}
+                        {sortState ? (
+                          <span style={{ fontSize: 10 }}>
+                            {sortState === 'asc' ? '▲' : '▼'}
+                          </span>
+                        ) : null}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            ))}
+          </div>
+          <div
+            ref={parentRef}
+            style={{
+              height: 420,
+              overflow: 'auto',
+              position: 'relative',
+            }}
+          >
+            <div
+              style={{
+                height: rowVirtualizer.getTotalSize(),
+                position: 'relative',
+              }}
+            >
+              {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+                const row = rows[virtualRow.index];
+                const isEven = virtualRow.index % 2 === 0;
+                return (
+                  <div
+                    key={row.id}
+                    role="row"
+                    style={{
+                      position: 'absolute',
+                      top: 0,
+                      left: 0,
+                      width: '100%',
+                      transform: `translateY(${virtualRow.start}px)`,
+                      display: 'grid',
+                      gridTemplateColumns: columnTemplate,
+                      gap: 0,
+                      alignItems: 'center',
+                      padding: '10px 12px',
+                      background: isEven
+                        ? 'var(--color-neutral-50)'
+                        : 'var(--color-white)',
+                      borderBottom: '1px solid var(--color-border-default)',
+                    }}
+                  >
+                    {row.getVisibleCells().map((cell) => {
+                      const meta = cell.column.columnDef.meta as ColumnMeta | undefined;
+                      return (
+                        <div
+                          key={cell.id}
+                          role="cell"
+                          style={{
+                            textAlign: meta?.align || 'left',
+                            fontSize: 13,
+                            color: 'var(--color-text-primary)',
+                          }}
+                        >
+                          {flexRender(
+                            cell.column.columnDef.cell,
+                            cell.getContext(),
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+        {filteredItems.length === 0 && (
+          <EmptyState
+            title="該当する工数がありません"
+            description="条件を変更してください"
+            action={
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  setSearch('');
+                  setStatusFilter('all');
+                }}
+              >
+                条件をクリア
+              </Button>
+            }
+          />
+        )}
+      </div>
+    </Card>
+  );
+};
+
 export const TimeEntries: React.FC = () => {
   const auth = getAuthState();
   const userId = auth?.userId || 'demo-user';
   const defaultProjectId = auth?.projectIds?.[0] || defaultForm.projectId;
   const draftOwnerId = getDraftOwnerId(auth?.userId);
   const [items, setItems] = useState<TimeEntry[]>([]);
+  const [listStatus, setListStatus] = useState<ListStatus>('idle');
+  const [listError, setListError] = useState('');
   const [form, setForm] = useState<FormState>({
     ...defaultForm,
     projectId: defaultProjectId,
@@ -81,8 +623,20 @@ export const TimeEntries: React.FC = () => {
     () => new Map(projects.map((project) => [project.id, project])),
     [projects],
   );
+  const viewItems = useMemo<TimeEntryView[]>(
+    () =>
+      items.map((entry) => {
+        const project = projectMap.get(entry.projectId);
+        const projectLabel = project
+          ? `${project.code} / ${project.name}`
+          : entry.projectId;
+        return { ...entry, projectLabel };
+      }),
+    [items, projectMap],
+  );
   const [message, setMessage] = useState<MessageState>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const isMobile = useMediaQuery('(max-width: 768px)');
   const minutesValue = Number.isFinite(form.minutes) ? form.minutes : 0;
   const minutesError =
     minutesValue <= 0
@@ -96,11 +650,22 @@ export const TimeEntries: React.FC = () => {
   const isValid = baseValid && !minutesError;
   const validationHint = !baseValid ? '案件と日付は必須です' : minutesError;
 
-  useEffect(() => {
-    api<{ items: TimeEntry[] }>('/time-entries')
-      .then((res) => setItems(res.items))
-      .catch(() => setItems([]));
+  const fetchItems = useCallback(async () => {
+    setListStatus('loading');
+    setListError('');
+    try {
+      const res = await api<{ items: TimeEntry[] }>('/time-entries');
+      setItems(res.items);
+      setListStatus('success');
+    } catch {
+      setListStatus('error');
+      setListError('工数一覧の取得に失敗しました');
+    }
   }, []);
+
+  useEffect(() => {
+    fetchItems();
+  }, [fetchItems]);
 
   useEffect(() => {
     loadDraft<FormState>(draftKey).then((draft) => {
@@ -144,11 +709,6 @@ export const TimeEntries: React.FC = () => {
     return () => clearTimeout(timer);
   }, [draftKey, form]);
 
-  const renderProject = (projectId: string) => {
-    const project = projectMap.get(projectId);
-    return project ? `${project.code} / ${project.name}` : projectId;
-  };
-
   const add = async () => {
     if (!isValid) {
       setMessage(null);
@@ -174,8 +734,7 @@ export const TimeEntries: React.FC = () => {
         body: JSON.stringify(request.body),
       });
       setMessage({ text: '保存しました', type: 'success' });
-      const updated = await api<{ items: TimeEntry[] }>('/time-entries');
-      setItems(updated.items);
+      await fetchItems();
       setForm({ ...defaultForm, projectId: defaultProjectId });
       await clearDraft(draftKey);
     } catch (e) {
@@ -294,27 +853,32 @@ export const TimeEntries: React.FC = () => {
           </div>
         )}
       </Card>
-      <div style={{ display: 'grid', gap: 8 }}>
-        {items.map((e) => (
-          <Card key={e.id} padding="small">
-            <div
-              style={{
-                display: 'flex',
-                gap: 8,
-                flexWrap: 'wrap',
-                alignItems: 'center',
-              }}
-            >
-              <span className="badge">{e.status}</span>
-              <span>{e.workDate.slice(0, 10)}</span>
-              <span>/ {renderProject(e.projectId)}</span>
-              <span>/ {e.minutes} min</span>
-              {e.workType && <span>/ {e.workType}</span>}
-              {e.location && <span>/ {e.location}</span>}
-            </div>
-          </Card>
-        ))}
-        {items.length === 0 && <EmptyState title="データなし" />}
+      <div style={{ marginTop: 16 }}>
+        <h3 style={{ marginBottom: 8 }}>工数一覧</h3>
+        {FEATURE_TIMESHEET_GRID ? (
+          isMobile ? (
+            <MobileTimeEntryList
+              items={viewItems}
+              status={listStatus}
+              error={listError}
+              onRetry={fetchItems}
+            />
+          ) : (
+            <TimesheetGrid
+              items={viewItems}
+              status={listStatus}
+              error={listError}
+              onRetry={fetchItems}
+            />
+          )
+        ) : (
+          <LegacyTimeEntryList
+            items={viewItems}
+            status={listStatus}
+            error={listError}
+            onRetry={fetchItems}
+          />
+        )}
       </div>
       {message && (
         <div style={{ marginTop: 12 }}>
