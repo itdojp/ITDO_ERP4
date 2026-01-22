@@ -20,6 +20,7 @@ async function prepare(page: Page) {
   });
   await page.addInitScript((state) => {
     window.localStorage.setItem('erp4_auth', JSON.stringify(state));
+    window.localStorage.removeItem('erp4_active_section');
   }, authState);
   await page.goto(baseUrl);
   await expect(
@@ -27,20 +28,38 @@ async function prepare(page: Page) {
   ).toBeVisible();
 }
 
+async function navigateToSection(page: Page, label: string, heading?: string) {
+  await page.getByRole('button', { name: label }).click();
+  const targetHeading = heading || label;
+  await expect(
+    page.locator('main').getByRole('heading', { name: targetHeading }),
+  ).toBeVisible();
+}
+
 test('ux-quality baseline (labels/errors/keyboard) @core', async ({ page }) => {
   await prepare(page);
 
+  await navigateToSection(page, '日報 + ウェルビーイング');
   const dailySection = page
+    .locator('main')
     .locator('h2', { hasText: '日報 + ウェルビーイング' })
     .locator('..');
   await dailySection.scrollIntoViewIfNeeded();
   await expect(dailySection.getByLabel('日報本文')).toBeVisible();
 
-  const timeSection = page.locator('h2', { hasText: '工数入力' }).locator('..');
+  await navigateToSection(page, '工数入力');
+  const timeSection = page
+    .locator('main')
+    .locator('h2', { hasText: '工数入力' })
+    .locator('..');
   await timeSection.scrollIntoViewIfNeeded();
   await expect(timeSection.getByLabel('案件選択')).toBeVisible();
 
-  const invoiceSection = page.locator('h2', { hasText: '請求' }).locator('..');
+  await navigateToSection(page, '請求');
+  const invoiceSection = page
+    .locator('main')
+    .locator('h2', { hasText: '請求' })
+    .locator('..');
   await invoiceSection.scrollIntoViewIfNeeded();
   const projectSelect = invoiceSection.getByLabel('案件選択');
   const amountInput = invoiceSection.getByLabel('金額');
@@ -57,4 +76,3 @@ test('ux-quality baseline (labels/errors/keyboard) @core', async ({ page }) => {
     invoiceSection.getByText('金額は1円以上で入力してください'),
   ).toBeVisible();
 });
-
