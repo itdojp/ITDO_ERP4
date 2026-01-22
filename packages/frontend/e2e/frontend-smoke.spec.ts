@@ -812,6 +812,7 @@ test('frontend smoke chat hr analytics @extended', async ({ page }) => {
   await mentionPage.addInitScript(
     (state) => {
       window.localStorage.setItem('erp4_auth', JSON.stringify(state));
+      window.localStorage.removeItem('erp4_active_section');
     },
     {
       userId: mentionTarget,
@@ -824,7 +825,14 @@ test('frontend smoke chat hr analytics @extended', async ({ page }) => {
   await expect(
     mentionPage.getByRole('heading', { name: 'ERP4 MVP PoC' }),
   ).toBeVisible();
+  await mentionPage.getByRole('button', { name: 'ホーム' }).click();
+  await expect(
+    mentionPage
+      .locator('main')
+      .getByRole('heading', { name: 'Dashboard', level: 2, exact: true }),
+  ).toBeVisible({ timeout: actionTimeout });
   const dashboardSection = mentionPage
+    .locator('main')
     .locator('h2', { hasText: 'Dashboard' })
     .locator('..');
   await expect(dashboardSection.getByText(chatMessage)).toBeVisible({
@@ -839,7 +847,13 @@ test('frontend smoke room chat (private_group/dm) @extended', async ({
   test.setTimeout(180_000);
   await prepare(page);
 
+  await navigateToSection(
+    page,
+    'ルームチャット',
+    'チャット（全社/部門/private_group/DM）',
+  );
   const roomChatSection = page
+    .locator('main')
     .locator('h2', { hasText: 'チャット（全社/部門/private_group/DM）' })
     .locator('..');
   await roomChatSection.scrollIntoViewIfNeeded();
@@ -952,7 +966,9 @@ test('frontend smoke room chat external summary @extended', async ({
   const run = runId();
   await prepare(page);
 
+  await navigateToSection(page, '設定', 'Settings');
   const settingsSection = page
+    .locator('main')
     .locator('h2', { hasText: 'Settings' })
     .locator('..');
   await settingsSection.scrollIntoViewIfNeeded();
@@ -976,7 +992,13 @@ test('frontend smoke room chat external summary @extended', async ({
     timeout: actionTimeout,
   });
 
+  await navigateToSection(
+    page,
+    'ルームチャット',
+    'チャット（全社/部門/private_group/DM）',
+  );
   const roomChatSection = page
+    .locator('main')
     .locator('h2', { hasText: 'チャット（全社/部門/private_group/DM）' })
     .locator('..');
   await roomChatSection.scrollIntoViewIfNeeded();
@@ -1017,7 +1039,9 @@ test('frontend smoke external chat invited rooms @extended', async ({
   const externalUserId = `e2e-external-${run}@example.com`;
   await prepare(page);
 
+  await navigateToSection(page, '設定', 'Settings');
   const settingsSection = page
+    .locator('main')
     .locator('h2', { hasText: 'Settings' })
     .locator('..');
   await settingsSection.scrollIntoViewIfNeeded();
@@ -1089,6 +1113,7 @@ test('frontend smoke external chat invited rooms @extended', async ({
   await externalPage.addInitScript(
     (state) => {
       window.localStorage.setItem('erp4_auth', JSON.stringify(state));
+      window.localStorage.removeItem('erp4_active_section');
     },
     {
       userId: externalUserId,
@@ -1102,7 +1127,16 @@ test('frontend smoke external chat invited rooms @extended', async ({
     externalPage.getByRole('heading', { name: 'ERP4 MVP PoC' }),
   ).toBeVisible();
 
+  await externalPage.getByRole('button', { name: 'ルームチャット' }).click();
+  await expect(
+    externalPage.locator('main').getByRole('heading', {
+      name: 'チャット（全社/部門/private_group/DM）',
+      level: 2,
+      exact: true,
+    }),
+  ).toBeVisible({ timeout: actionTimeout });
   const roomChatSection = externalPage
+    .locator('main')
     .locator('h2', { hasText: 'チャット（全社/部門/private_group/DM）' })
     .locator('..');
   await roomChatSection.scrollIntoViewIfNeeded();

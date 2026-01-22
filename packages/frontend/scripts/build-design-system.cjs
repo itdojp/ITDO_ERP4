@@ -74,7 +74,7 @@ const cloneRetries = Math.max(1, Number(cloneRetriesRaw) || 1);
 const buildLocal = () => {
   try {
     console.log('[design-system] dist not found; building in-place...');
-    run('npm', ['ci'], designSystemRoot);
+    run('npm', ['install'], designSystemRoot);
     run('npm', ['run', 'build:lib'], designSystemRoot);
     if (exists(distEntry) && exists(distStyles)) {
       console.log('[design-system] local build complete');
