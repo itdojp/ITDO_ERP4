@@ -56,6 +56,7 @@ type TimeEntryView = {
   status: string;
   workType?: string;
   location?: string;
+  searchText: string;
 };
 type FormState = {
   projectId: string;
@@ -84,6 +85,7 @@ const defaultForm: FormState = {
 
 const FEATURE_TIMESHEET_GRID =
   (import.meta.env.VITE_FEATURE_TIMESHEET_GRID || '').trim() === '1';
+const MOBILE_BREAKPOINT_PX = 768;
 
 const formatMinutes = (minutes: number) => `${minutes}分`;
 
@@ -95,7 +97,7 @@ const normalizeSearch = (value: string) =>
     .replace(/\s+/g, ' ')
     .trim();
 
-const buildSearchText = (item: TimeEntryView) =>
+const buildSearchText = (item: Omit<TimeEntryView, 'searchText'>) =>
   normalizeSearch(
     [
       item.workDate,
@@ -273,7 +275,7 @@ const TimesheetGrid: React.FC<{
     }
     const needle = normalizeSearch(search);
     if (needle) {
-      next = next.filter((item) => buildSearchText(item).includes(needle));
+      next = next.filter((item) => item.searchText.includes(needle));
     }
     return next;
   }, [items, search, statusFilter]);
@@ -336,10 +338,11 @@ const TimesheetGrid: React.FC<{
 
   const rows = table.getRowModel().rows;
   const parentRef = useRef<HTMLDivElement | null>(null);
+  const VIRTUALIZED_ROW_HEIGHT_PX = 44;
   const rowVirtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => parentRef.current,
-    estimateSize: () => 44,
+    estimateSize: () => VIRTUALIZED_ROW_HEIGHT_PX,
     overscan: 8,
   });
 
@@ -422,150 +425,7 @@ const TimesheetGrid: React.FC<{
           </div>
         </FilterBar>
         {statusBanner}
-        <div
-          style={{
-            border: '1px solid var(--color-border-default)',
-            borderRadius: 12,
-            overflow: 'hidden',
-          }}
-        >
-          <div
-            role="rowgroup"
-            style={{
-              position: 'sticky',
-              top: 0,
-              zIndex: 2,
-              background: 'var(--color-neutral-50)',
-              borderBottom: '1px solid var(--color-border-default)',
-            }}
-          >
-            {table.getHeaderGroups().map((headerGroup) => (
-              <div
-                key={headerGroup.id}
-                role="row"
-                style={{
-                  display: 'grid',
-                  gridTemplateColumns: columnTemplate,
-                  gap: 0,
-                  padding: '8px 12px',
-                  fontSize: 12,
-                  fontWeight: 600,
-                  color: 'var(--color-text-secondary)',
-                }}
-              >
-                {headerGroup.headers.map((header) => {
-                  const meta = header.column.columnDef.meta as ColumnMeta | undefined;
-                  const canSort = header.column.getCanSort();
-                  const sortState = header.column.getIsSorted();
-                  return (
-                    <div
-                      key={header.id}
-                      role="columnheader"
-                      aria-sort={
-                        sortState === 'asc'
-                          ? 'ascending'
-                          : sortState === 'desc'
-                            ? 'descending'
-                            : 'none'
-                      }
-                      style={{
-                        textAlign: meta?.align || 'left',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 4,
-                      }}
-                    >
-                      <button
-                        type="button"
-                        onClick={canSort ? header.column.getToggleSortingHandler() : undefined}
-                        style={{
-                          all: 'unset',
-                          cursor: canSort ? 'pointer' : 'default',
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: 4,
-                        }}
-                      >
-                        {flexRender(
-                          header.column.columnDef.header,
-                          header.getContext(),
-                        )}
-                        {sortState ? (
-                          <span style={{ fontSize: 10 }}>
-                            {sortState === 'asc' ? '▲' : '▼'}
-                          </span>
-                        ) : null}
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
-            ))}
-          </div>
-          <div
-            ref={parentRef}
-            style={{
-              height: 420,
-              overflow: 'auto',
-              position: 'relative',
-            }}
-          >
-            <div
-              style={{
-                height: rowVirtualizer.getTotalSize(),
-                position: 'relative',
-              }}
-            >
-              {rowVirtualizer.getVirtualItems().map((virtualRow) => {
-                const row = rows[virtualRow.index];
-                const isEven = virtualRow.index % 2 === 0;
-                return (
-                  <div
-                    key={row.id}
-                    role="row"
-                    style={{
-                      position: 'absolute',
-                      top: 0,
-                      left: 0,
-                      width: '100%',
-                      transform: `translateY(${virtualRow.start}px)`,
-                      display: 'grid',
-                      gridTemplateColumns: columnTemplate,
-                      gap: 0,
-                      alignItems: 'center',
-                      padding: '10px 12px',
-                      background: isEven
-                        ? 'var(--color-neutral-50)'
-                        : 'var(--color-white)',
-                      borderBottom: '1px solid var(--color-border-default)',
-                    }}
-                  >
-                    {row.getVisibleCells().map((cell) => {
-                      const meta = cell.column.columnDef.meta as ColumnMeta | undefined;
-                      return (
-                        <div
-                          key={cell.id}
-                          role="cell"
-                          style={{
-                            textAlign: meta?.align || 'left',
-                            fontSize: 13,
-                            color: 'var(--color-text-primary)',
-                          }}
-                        >
-                          {flexRender(
-                            cell.column.columnDef.cell,
-                            cell.getContext(),
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-        {filteredItems.length === 0 && (
+        {filteredItems.length === 0 ? (
           <EmptyState
             title="該当する工数がありません"
             description="条件を変更してください"
@@ -581,6 +441,150 @@ const TimesheetGrid: React.FC<{
               </Button>
             }
           />
+        ) : (
+          <div
+            style={{
+              border: '1px solid var(--color-border-default)',
+              borderRadius: 12,
+              overflow: 'hidden',
+            }}
+          >
+            <div
+              role="rowgroup"
+              style={{
+                position: 'sticky',
+                top: 0,
+                zIndex: 2,
+                background: 'var(--color-neutral-50)',
+                borderBottom: '1px solid var(--color-border-default)',
+              }}
+            >
+              {table.getHeaderGroups().map((headerGroup) => (
+                <div
+                  key={headerGroup.id}
+                  role="row"
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: columnTemplate,
+                    gap: 0,
+                    padding: '8px 12px',
+                    fontSize: 12,
+                    fontWeight: 600,
+                    color: 'var(--color-text-secondary)',
+                  }}
+                >
+                  {headerGroup.headers.map((header) => {
+                    const meta = header.column.columnDef.meta as ColumnMeta | undefined;
+                    const canSort = header.column.getCanSort();
+                    const sortState = header.column.getIsSorted();
+                    return (
+                      <div
+                        key={header.id}
+                        role="columnheader"
+                        aria-sort={
+                          sortState === 'asc'
+                            ? 'ascending'
+                            : sortState === 'desc'
+                              ? 'descending'
+                              : 'none'
+                        }
+                        style={{
+                          textAlign: meta?.align || 'left',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 4,
+                        }}
+                      >
+                        <button
+                          type="button"
+                          onClick={canSort ? header.column.getToggleSortingHandler() : undefined}
+                          style={{
+                            all: 'unset',
+                            cursor: canSort ? 'pointer' : 'default',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 4,
+                          }}
+                        >
+                          {flexRender(
+                            header.column.columnDef.header,
+                            header.getContext(),
+                          )}
+                          {sortState ? (
+                            <span style={{ fontSize: 10 }}>
+                              {sortState === 'asc' ? '▲' : '▼'}
+                            </span>
+                          ) : null}
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              ))}
+            </div>
+            <div
+              ref={parentRef}
+              style={{
+                height: 420,
+                overflow: 'auto',
+                position: 'relative',
+              }}
+            >
+              <div
+                style={{
+                  height: rowVirtualizer.getTotalSize(),
+                  position: 'relative',
+                }}
+              >
+                {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+                  const row = rows[virtualRow.index];
+                  const isEven = virtualRow.index % 2 === 0;
+                  return (
+                    <div
+                      key={row.id}
+                      role="row"
+                      style={{
+                        position: 'absolute',
+                        top: 0,
+                        left: 0,
+                        width: '100%',
+                        transform: `translateY(${virtualRow.start}px)`,
+                        display: 'grid',
+                        gridTemplateColumns: columnTemplate,
+                        gap: 0,
+                        alignItems: 'center',
+                        padding: '10px 12px',
+                        background: isEven
+                          ? 'var(--color-neutral-50)'
+                          : 'var(--color-white)',
+                        borderBottom: '1px solid var(--color-border-default)',
+                      }}
+                    >
+                      {row.getVisibleCells().map((cell) => {
+                        const meta = cell.column.columnDef.meta as ColumnMeta | undefined;
+                        return (
+                          <div
+                            key={cell.id}
+                            role="cell"
+                            style={{
+                              textAlign: meta?.align || 'left',
+                              fontSize: 13,
+                              color: 'var(--color-text-primary)',
+                            }}
+                          >
+                            {flexRender(
+                              cell.column.columnDef.cell,
+                              cell.getContext(),
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
         )}
       </div>
     </Card>
@@ -630,13 +634,14 @@ export const TimeEntries: React.FC = () => {
         const projectLabel = project
           ? `${project.code} / ${project.name}`
           : entry.projectId;
-        return { ...entry, projectLabel };
+        const base = { ...entry, projectLabel };
+        return { ...base, searchText: buildSearchText(base) };
       }),
     [items, projectMap],
   );
   const [message, setMessage] = useState<MessageState>(null);
   const [isSaving, setIsSaving] = useState(false);
-  const isMobile = useMediaQuery('(max-width: 768px)');
+  const isMobile = useMediaQuery(`(max-width: ${MOBILE_BREAKPOINT_PX}px)`);
   const minutesValue = Number.isFinite(form.minutes) ? form.minutes : 0;
   const minutesError =
     minutesValue <= 0
