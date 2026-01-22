@@ -381,6 +381,9 @@ export const CurrentUser: React.FC = () => {
     setAuthState(next);
     setAuth(next);
     setGoogleError('');
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('erp4:auth-updated'));
+    }
   }, []);
 
   useEffect(() => {
