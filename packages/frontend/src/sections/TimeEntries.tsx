@@ -92,10 +92,7 @@ const formatMinutes = (minutes: number) => `${minutes}分`;
 const formatWorkDate = (value: string) => value.slice(0, 10);
 
 const normalizeSearch = (value: string) =>
-  value
-    .toLowerCase()
-    .replace(/\s+/g, ' ')
-    .trim();
+  value.toLowerCase().replace(/\s+/g, ' ').trim();
 
 const buildSearchText = (item: Omit<TimeEntryView, 'searchText'>) =>
   normalizeSearch(
@@ -308,7 +305,9 @@ const TimesheetGrid: React.FC<{
       {
         accessorKey: 'status',
         header: '状態',
-        cell: (info) => <span className="badge">{info.getValue() as string}</span>,
+        cell: (info) => (
+          <span className="badge">{info.getValue() as string}</span>
+        ),
         meta: { width: '110px' },
       },
       {
@@ -327,6 +326,7 @@ const TimesheetGrid: React.FC<{
     [],
   );
 
+  // eslint-disable-next-line react-hooks/incompatible-library
   const table = useReactTable({
     data: filteredItems,
     columns,
@@ -360,9 +360,7 @@ const TimesheetGrid: React.FC<{
     status === 'success' ? (
       <Alert variant="success">{`最新の工数を表示中（${items.length}件）`}</Alert>
     ) : status === 'error' ? (
-      <Alert variant="error">
-        {error || '工数一覧の取得に失敗しました'}
-      </Alert>
+      <Alert variant="error">{error || '工数一覧の取得に失敗しました'}</Alert>
     ) : null;
 
   if (status === 'loading') {
@@ -474,7 +472,9 @@ const TimesheetGrid: React.FC<{
                   }}
                 >
                   {headerGroup.headers.map((header) => {
-                    const meta = header.column.columnDef.meta as ColumnMeta | undefined;
+                    const meta = header.column.columnDef.meta as
+                      | ColumnMeta
+                      | undefined;
                     const canSort = header.column.getCanSort();
                     const sortState = header.column.getIsSorted();
                     return (
@@ -497,7 +497,11 @@ const TimesheetGrid: React.FC<{
                       >
                         <button
                           type="button"
-                          onClick={canSort ? header.column.getToggleSortingHandler() : undefined}
+                          onClick={
+                            canSort
+                              ? header.column.getToggleSortingHandler()
+                              : undefined
+                          }
                           style={{
                             all: 'unset',
                             cursor: canSort ? 'pointer' : 'default',
@@ -561,7 +565,9 @@ const TimesheetGrid: React.FC<{
                       }}
                     >
                       {row.getVisibleCells().map((cell) => {
-                        const meta = cell.column.columnDef.meta as ColumnMeta | undefined;
+                        const meta = cell.column.columnDef.meta as
+                          | ColumnMeta
+                          | undefined;
                         return (
                           <div
                             key={cell.id}
