@@ -71,7 +71,26 @@ const repoDir = path.join(cacheRoot, `itdo-design-system-${tag}`);
 const cloneRetriesRaw = process.env.DESIGN_SYSTEM_CLONE_RETRIES || '3';
 const cloneRetries = Math.max(1, Number(cloneRetriesRaw) || 1);
 
-console.log(`[design-system] dist not found; building from source (${tag})...`);
+const buildLocal = () => {
+  try {
+    console.log('[design-system] dist not found; building in-place...');
+    run('npm', ['ci'], designSystemRoot);
+    run('npm', ['run', 'build:lib'], designSystemRoot);
+    if (exists(distEntry) && exists(distStyles)) {
+      console.log('[design-system] local build complete');
+      return true;
+    }
+  } catch (err) {
+    console.warn('[design-system] local build failed; fallback to clone');
+  }
+  return false;
+};
+
+if (buildLocal()) {
+  process.exit(0);
+}
+
+console.log(`[design-system] building from source (${tag})...`);
 
 fs.mkdirSync(cacheRoot, { recursive: true });
 

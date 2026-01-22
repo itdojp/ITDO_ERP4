@@ -86,7 +86,9 @@ async function navigateToSection(page: Page, label: string, heading?: string) {
   await page.getByRole('button', { name: label }).click();
   const targetHeading = heading || label;
   await expect(
-    page.locator('main').getByRole('heading', { name: targetHeading }),
+    page
+      .locator('main')
+      .getByRole('heading', { name: targetHeading, level: 2, exact: true }),
   ).toBeVisible({ timeout: actionTimeout });
 }
 
