@@ -15,7 +15,7 @@
     "format:check": "prettier --check \"src/**/*.{ts,tsx,jsx,js,css,json,md}\""
   },
   "dependencies": {
-    "@itdojp/design-system": "git+https://github.com/itdojp/itdo-design-system.git#v1.0.1",
+    "@itdojp/design-system": "git+https://github.com/itdojp/itdo-design-system.git#bump-1.0.1",
     "@tanstack/react-table": "^8.21.3",
     "@tanstack/react-virtual": "^3.13.6",
     "react": "^19.2.3",
