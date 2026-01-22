@@ -359,7 +359,9 @@ export const App: React.FC = () => {
                     key={item.id}
                     size="small"
                     fullWidth
-                    variant={item.id === activeSection?.id ? 'primary' : 'ghost'}
+                    variant={
+                      item.id === activeSection?.id ? 'primary' : 'ghost'
+                    }
                     onClick={() => setActiveSectionId(item.id)}
                   >
                     {item.label}
