@@ -36,6 +36,11 @@ const run = (command, args, cwd) => {
   });
 };
 
+const sleep = (ms) => {
+  const waitArray = new Int32Array(new SharedArrayBuffer(4));
+  Atomics.wait(waitArray, 0, 0, ms);
+};
+
 const resolveGitTag = () => {
   try {
     const pkgPath = path.join(frontendRoot, 'package.json');
@@ -63,28 +68,49 @@ const tag = resolveGitTag();
 const repoUrl = 'https://github.com/itdojp/itdo-design-system.git';
 const cacheRoot = path.join(os.tmpdir(), 'erp4-design-system-build');
 const repoDir = path.join(cacheRoot, `itdo-design-system-${tag}`);
+const cloneRetriesRaw = process.env.DESIGN_SYSTEM_CLONE_RETRIES || '3';
+const cloneRetries = Math.max(1, Number(cloneRetriesRaw) || 1);
 
 console.log(`[design-system] dist not found; building from source (${tag})...`);
 
-fs.rmSync(repoDir, { recursive: true, force: true });
 fs.mkdirSync(cacheRoot, { recursive: true });
 
-run(
-  'git',
-  [
-    '-c',
-    'advice.detachedHead=false',
-    'clone',
-    '--quiet',
-    '--depth',
-    '1',
-    '--branch',
-    tag,
-    repoUrl,
-    repoDir,
-  ],
-  cacheRoot,
-);
+let cloned = false;
+for (let attempt = 1; attempt <= cloneRetries; attempt += 1) {
+  try {
+    fs.rmSync(repoDir, { recursive: true, force: true });
+    run(
+      'git',
+      [
+        '-c',
+        'advice.detachedHead=false',
+        'clone',
+        '--quiet',
+        '--depth',
+        '1',
+        '--branch',
+        tag,
+        repoUrl,
+        repoDir,
+      ],
+      cacheRoot,
+    );
+    cloned = true;
+    break;
+  } catch (err) {
+    if (attempt >= cloneRetries) {
+      throw err;
+    }
+    console.warn(
+      `[design-system] clone failed (attempt ${attempt}/${cloneRetries}). retrying...`,
+    );
+    sleep(1000 * attempt);
+  }
+}
+if (!cloned) {
+  console.error('[design-system] failed to clone design-system repository');
+  process.exit(1);
+}
 run('npm', ['ci'], repoDir);
 run('npm', ['run', 'build:lib'], repoDir);
 
