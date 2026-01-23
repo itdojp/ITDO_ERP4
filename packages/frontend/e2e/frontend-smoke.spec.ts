@@ -164,13 +164,11 @@ test('frontend smoke core @core', async ({ page }) => {
     .check();
   await dailySection.getByRole('button', { name: '送信' }).click();
   await expect(dailySection.getByText('送信しました')).toBeVisible();
-  const revisionSection = dailySection
-    .locator('h3', { hasText: '編集履歴（選択日）' })
+  const historySection = dailySection
+    .locator('h3', { hasText: '日報履歴' })
     .locator('..');
-  await revisionSection
-    .getByRole('button', { name: '編集履歴を読み込み' })
-    .click();
-  const dailyHistoryItem = revisionSection.getByText(dailyReportText);
+  await historySection.getByRole('button', { name: '履歴を読み込み' }).click();
+  const dailyHistoryItem = historySection.getByText(dailyReportText);
   await dailyHistoryItem.scrollIntoViewIfNeeded();
   await expect(dailyHistoryItem).toBeVisible();
   await captureSection(dailySection, '02-core-daily-report.png');
