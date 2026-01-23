@@ -15,3 +15,5 @@ packages/frontend/.env
 data/audit-exports
 pg_dump*.sql
 pg_dump*.sql:Zone.Identifier
+/PO_Manuals
+*:Zone.Identifier
