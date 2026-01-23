@@ -6397,17 +6397,13 @@
                   "editableDays": {
                     "maximum": 365,
                     "minimum": 1,
-                    "type": "number"
+                    "type": "integer"
                   }
                 },
-                "required": [
-                  "editableDays"
-                ],
                 "type": "object"
               }
             }
-          },
-          "required": true
+          }
         },
         "responses": {
           "200": {

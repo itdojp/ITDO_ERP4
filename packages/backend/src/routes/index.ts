@@ -31,6 +31,7 @@ import { registerChatRoutes } from './chat.js';
 import { registerChatBreakGlassRoutes } from './chatBreakGlass.js';
 import { registerChatRoomRoutes } from './chatRooms.js';
 import { registerChatSettingRoutes } from './chatSettings.js';
+import { registerWorklogSettingRoutes } from './worklogSettings.js';
 import { registerPdfFileRoutes } from './pdfFiles.js';
 import { registerSendEventRoutes } from './sendEvents.js';
 import { registerScimRoutes } from './scim.js';
@@ -41,7 +42,6 @@ import { registerPeriodLockRoutes } from './periodLocks.js';
 import { registerRateCardRoutes } from './rateCards.js';
 import { registerNotificationRoutes } from './notifications.js';
 import { registerNotificationJobRoutes } from './notificationJobs.js';
-import { registerWorklogSettingRoutes } from './worklogSettings.js';
 
 export async function registerRoutes(app: FastifyInstance) {
   await registerAuthRoutes(app);

@@ -829,20 +829,20 @@ export const integrationSettingPatchSchema = {
   body: Type.Partial(integrationSettingSchema.body),
 };
 
-export const worklogSettingPatchSchema = {
-  body: Type.Object(
-    {
-      editableDays: Type.Number({ minimum: 1, maximum: 365 }),
-    },
-    { additionalProperties: false },
-  ),
-};
-
 export const chatSettingPatchSchema = {
   body: Type.Object(
     {
       allowUserPrivateGroupCreation: Type.Optional(Type.Boolean()),
       allowDmCreation: Type.Optional(Type.Boolean()),
+    },
+    { additionalProperties: false },
+  ),
+};
+
+export const worklogSettingPatchSchema = {
+  body: Type.Object(
+    {
+      editableDays: Type.Optional(Type.Integer({ minimum: 1, maximum: 365 })),
     },
     { additionalProperties: false },
   ),

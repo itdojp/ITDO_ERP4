@@ -4,6 +4,7 @@ import { ChatSettingsCard } from './ChatSettingsCard';
 import { ChatRoomSettingsCard } from './ChatRoomSettingsCard';
 import { RateCardSettingsCard } from './RateCardSettingsCard';
 import { ScimSettingsCard } from './ScimSettingsCard';
+import { WorklogSettingsCard } from './WorklogSettingsCard';
 
 type AlertSetting = {
   id: string;
@@ -884,6 +885,7 @@ export const AdminSettings: React.FC = () => {
         <ChatRoomSettingsCard />
         <ScimSettingsCard />
         <RateCardSettingsCard />
+        <WorklogSettingsCard />
         <div className="card" style={{ padding: 12 }}>
           <strong>アラート設定（簡易モック）</strong>
           <div className="row" style={{ marginTop: 8 }}>
