@@ -35,16 +35,21 @@ const tags = [
   '特になし',
 ];
 
-const toDateKey = (value: Date) => value.toISOString().slice(0, 10);
-const toDateOnly = (value: string) => new Date(`${value}T00:00:00Z`);
+const pad2 = (value: number) => String(value).padStart(2, '0');
+const toLocalDateKey = (value: Date) =>
+  `${value.getFullYear()}-${pad2(value.getMonth() + 1)}-${pad2(value.getDate())}`;
+const toLocalDate = (value: string) => {
+  const [year, month, day] = value.split('-').map(Number);
+  return new Date(year, month - 1, day);
+};
 const diffInDays = (from: string, to: string) => {
   const msPerDay = 24 * 60 * 60 * 1000;
   return Math.floor(
-    (toDateOnly(to).getTime() - toDateOnly(from).getTime()) / msPerDay,
+    (toLocalDate(to).getTime() - toLocalDate(from).getTime()) / msPerDay,
   );
 };
 const isEditableByDate = (dateKey: string, editableDays: number) =>
-  diffInDays(dateKey, toDateKey(new Date())) <= editableDays;
+  diffInDays(dateKey, toLocalDateKey(new Date())) <= editableDays;
 const parseLinkedProjectIds = (value: unknown): string[] => {
   if (!Array.isArray(value)) return [];
   return value.filter((item): item is string => typeof item === 'string');
@@ -77,7 +82,7 @@ export const DailyReport: React.FC = () => {
   const userId = auth?.userId || 'demo-user';
   const isPrivileged =
     auth?.roles?.includes('admin') || auth?.roles?.includes('mgmt');
-  const todayKey = useMemo(() => toDateKey(new Date()), []);
+  const todayKey = useMemo(() => toLocalDateKey(new Date()), []);
   const draftOwnerId = getDraftOwnerId(auth?.userId);
   const [reportDate, setReportDate] = useState(todayKey);
   const draftKey = `daily-report:${draftOwnerId}:${reportDate}`;
@@ -99,6 +104,7 @@ export const DailyReport: React.FC = () => {
   const [revisionItems, setRevisionItems] = useState<DailyReportRevision[]>([]);
   const [revisionMessage, setRevisionMessage] = useState('');
   const [isRevisionLoading, setIsRevisionLoading] = useState(false);
+  const [isRevisionLoaded, setIsRevisionLoaded] = useState(false);
   const [historyItems, setHistoryItems] = useState<DailyReportItem[]>([]);
   const [historyMessage, setHistoryMessage] = useState('');
   const [historyUserId, setHistoryUserId] = useState('');
@@ -116,6 +122,7 @@ export const DailyReport: React.FC = () => {
     setReportId(null);
     setRevisionItems([]);
     setRevisionMessage('');
+    setIsRevisionLoaded(false);
   }, [reportDate]);
 
   const projectMap = useMemo(
@@ -148,10 +155,6 @@ export const DailyReport: React.FC = () => {
       })
       .catch(() => undefined);
   }, []);
-
-  useEffect(() => {
-    loadReport().catch(() => undefined);
-  }, [loadReport]);
 
   useEffect(() => {
     saveQueueRef.current = Promise.resolve();
@@ -194,44 +197,68 @@ export const DailyReport: React.FC = () => {
     );
   };
 
-  const loadReport = useCallback(async () => {
-    const qs = new URLSearchParams({ reportDate });
-    const suffix = qs.toString() ? `?${qs}` : '';
-    try {
-      const res = await api<{ items: DailyReportItem[] }>(
-        `/daily-reports${suffix}`,
-      );
-      const item = res.items?.[0];
+  const loadReport = useCallback(
+    async (options?: { preferDraft?: boolean }) => {
+      const preferDraft = options?.preferDraft ?? true;
+      const qs = new URLSearchParams({ reportDate });
+      const suffix = qs.toString() ? `?${qs}` : '';
+      let item: DailyReportItem | null = null;
+      try {
+        const res = await api<{ items: DailyReportItem[] }>(
+          `/daily-reports${suffix}`,
+        );
+        item = res.items?.[0] ?? null;
+      } catch {
+        item = null;
+      }
       if (item) {
         setReportId(item.id);
+      } else {
+        setReportId(null);
+      }
+
+      type DraftType = {
+        status: 'good' | 'not_good' | '';
+        reportContent?: string;
+        linkedProjectIds?: string[];
+        notes?: string;
+        selectedTags?: string[];
+        helpRequested?: boolean;
+      };
+      let draft: DraftType | null = null;
+      try {
+        draft = await loadDraft<DraftType>(draftKey);
+      } catch {
+        draft = null;
+      }
+
+      if (preferDraft && draft) {
+        setStatus(draft.status ?? '');
+        setReportContent(draft.reportContent ?? item?.content ?? '');
+        setLinkedProjectIds(
+          draft.linkedProjectIds ??
+            (item ? parseLinkedProjectIds(item.linkedProjectIds) : []),
+        );
+        setNotes(draft.notes ?? '');
+        setSelectedTags(draft.selectedTags ?? []);
+        setHelpRequested(Boolean(draft.helpRequested));
+        return;
+      }
+
+      if (item) {
         setReportContent(item.content ?? '');
         setLinkedProjectIds(parseLinkedProjectIds(item.linkedProjectIds));
       } else {
-        setReportId(null);
         setReportContent('');
         setLinkedProjectIds([]);
       }
-    } catch {
-      setReportId(null);
-      setReportContent('');
-      setLinkedProjectIds([]);
-    }
-    const draft = await loadDraft<{
-      status: 'good' | 'not_good' | '';
-      reportContent?: string;
-      linkedProjectIds?: string[];
-      notes?: string;
-      selectedTags?: string[];
-      helpRequested?: boolean;
-    }>(draftKey);
-    if (!draft) return;
-    setStatus(draft.status ?? '');
-    setReportContent(draft.reportContent ?? '');
-    setLinkedProjectIds(draft.linkedProjectIds ?? []);
-    setNotes(draft.notes ?? '');
-    setSelectedTags(draft.selectedTags ?? []);
-    setHelpRequested(Boolean(draft.helpRequested));
-  }, [draftKey, reportDate]);
+    },
+    [draftKey, reportDate],
+  );
+
+  useEffect(() => {
+    loadReport().catch(() => undefined);
+  }, [loadReport]);
 
   const loadHistory = useCallback(async () => {
     const qs = new URLSearchParams();
@@ -260,6 +287,7 @@ export const DailyReport: React.FC = () => {
     if (!reportId) {
       setRevisionItems([]);
       setRevisionMessage('');
+      setIsRevisionLoaded(false);
       return;
     }
     try {
@@ -274,6 +302,7 @@ export const DailyReport: React.FC = () => {
       setRevisionItems([]);
       setRevisionMessage('読み込みに失敗しました');
     } finally {
+      setIsRevisionLoaded(true);
       setIsRevisionLoading(false);
     }
   }, [reportId]);
@@ -386,8 +415,12 @@ export const DailyReport: React.FC = () => {
           type="date"
           value={reportDate}
           onChange={(e) => setReportDate(e.target.value)}
+          max={todayKey}
         />
-        <Button variant="secondary" onClick={() => loadReport()}>
+        <Button
+          variant="secondary"
+          onClick={() => loadReport({ preferDraft: false })}
+        >
           日報を再読み込み
         </Button>
       </div>
@@ -554,7 +587,12 @@ export const DailyReport: React.FC = () => {
           <p style={{ fontSize: 12, marginTop: 6 }}>{revisionMessage}</p>
         )}
         <div style={{ display: 'grid', gap: 8, marginTop: 8 }}>
-          {revisionItems.length === 0 && (
+          {!isRevisionLoaded && (
+            <p style={{ fontSize: 12, color: '#6b7280' }}>
+              履歴を読み込みボタンをクリックしてください
+            </p>
+          )}
+          {isRevisionLoaded && revisionItems.length === 0 && (
             <EmptyState title="履歴はありません" />
           )}
           {revisionItems.map((rev) => {
@@ -563,7 +601,7 @@ export const DailyReport: React.FC = () => {
               <Card key={rev.id} padding="small">
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                   <strong>v{rev.version}</strong>
-                  <span>{rev.createdAt.slice(0, 10)}</span>
+                  <span>{rev.createdAt.slice(0, 19).replace('T', ' ')}</span>
                   {rev.createdBy && <span>by {rev.createdBy}</span>}
                 </div>
                 {rev.reasonText && (
