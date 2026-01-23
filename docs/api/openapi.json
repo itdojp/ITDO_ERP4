@@ -1953,6 +1953,10 @@
                     },
                     "type": "array"
                   },
+                  "reasonText": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
                   "reportDate": {
                     "type": "string"
                   },
@@ -1974,6 +1978,25 @@
           },
           "required": true
         },
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/daily-reports/{id}/revisions": {
+      "get": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Default Response"
@@ -5845,35 +5868,49 @@
           "content": {
             "application/json": {
               "schema": {
-                "properties": {
-                  "location": {
-                    "type": "string"
+                "allOf": [
+                  {
+                    "properties": {
+                      "location": {
+                        "type": "string"
+                      },
+                      "minutes": {
+                        "maximum": 1440,
+                        "minimum": 0,
+                        "type": "number"
+                      },
+                      "notes": {
+                        "type": "string"
+                      },
+                      "projectId": {
+                        "type": "string"
+                      },
+                      "taskId": {
+                        "type": "string"
+                      },
+                      "userId": {
+                        "type": "string"
+                      },
+                      "workDate": {
+                        "format": "date",
+                        "type": "string"
+                      },
+                      "workType": {
+                        "type": "string"
+                      }
+                    },
+                    "type": "object"
                   },
-                  "minutes": {
-                    "maximum": 1440,
-                    "minimum": 0,
-                    "type": "number"
-                  },
-                  "notes": {
-                    "type": "string"
-                  },
-                  "projectId": {
-                    "type": "string"
-                  },
-                  "taskId": {
-                    "type": "string"
-                  },
-                  "userId": {
-                    "type": "string"
-                  },
-                  "workDate": {
-                    "format": "date",
-                    "type": "string"
-                  },
-                  "workType": {
-                    "type": "string"
+                  {
+                    "properties": {
+                      "reasonText": {
+                        "minLength": 1,
+                        "type": "string"
+                      }
+                    },
+                    "type": "object"
                   }
-                },
+                ],
                 "type": "object"
               }
             }
@@ -6346,6 +6383,43 @@
                   "status",
                   "userId",
                   "visibilityGroupId"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/worklog-settings": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      },
+      "patch": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "editableDays": {
+                    "maximum": 365,
+                    "minimum": 1,
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "editableDays"
                 ],
                 "type": "object"
               }
