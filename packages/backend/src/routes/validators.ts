@@ -838,3 +838,12 @@ export const chatSettingPatchSchema = {
     { additionalProperties: false },
   ),
 };
+
+export const worklogSettingPatchSchema = {
+  body: Type.Object(
+    {
+      editableDays: Type.Optional(Type.Integer({ minimum: 1, maximum: 365 })),
+    },
+    { additionalProperties: false },
+  ),
+};
