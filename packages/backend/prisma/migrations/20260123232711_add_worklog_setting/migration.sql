@@ -1,5 +1,5 @@
 -- Add WorklogSetting for worklog correction policy
-CREATE TABLE IF NOT EXISTS "WorklogSetting" (
+CREATE TABLE "WorklogSetting" (
   "id" TEXT NOT NULL DEFAULT 'default',
   "editableDays" INTEGER NOT NULL DEFAULT 14,
   "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,

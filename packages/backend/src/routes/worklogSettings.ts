@@ -11,12 +11,10 @@ export async function registerWorklogSettingRoutes(app: FastifyInstance) {
     '/worklog-settings',
     { preHandler: requireRole(['admin', 'mgmt']) },
     async () => {
-      const existing = await prisma.worklogSetting.findUnique({
+      return prisma.worklogSetting.upsert({
         where: { id: WORKLOG_SETTING_ID },
-      });
-      if (existing) return existing;
-      return prisma.worklogSetting.create({
-        data: { id: WORKLOG_SETTING_ID, editableDays: 14 },
+        create: { id: WORKLOG_SETTING_ID, editableDays: 14 },
+        update: {},
       });
     },
   );
