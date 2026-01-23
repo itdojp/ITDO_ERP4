@@ -11,13 +11,17 @@ export async function registerWorklogSettingRoutes(app: FastifyInstance) {
   app.get(
     '/worklog-settings',
     { preHandler: requireRole(['admin', 'mgmt']) },
-    async () => {
-      const setting = await prisma.worklogSetting.findUnique({
+    async (req) => {
+      const actorId = req.user?.userId ?? null;
+      return prisma.worklogSetting.upsert({
         where: { id: DEFAULT_SETTING_ID },
-      });
-      if (setting) return setting;
-      return prisma.worklogSetting.create({
-        data: { id: DEFAULT_SETTING_ID, editableDays: DEFAULT_EDITABLE_DAYS },
+        create: {
+          id: DEFAULT_SETTING_ID,
+          editableDays: DEFAULT_EDITABLE_DAYS,
+          createdBy: actorId,
+          updatedBy: actorId,
+        },
+        update: {},
       });
     },
   );
@@ -31,10 +35,16 @@ export async function registerWorklogSettingRoutes(app: FastifyInstance) {
     async (req) => {
       const body = req.body as { editableDays: number };
       const editableDays = Number(body.editableDays);
+      const actorId = req.user?.userId ?? null;
       const updated = await prisma.worklogSetting.upsert({
         where: { id: DEFAULT_SETTING_ID },
-        create: { id: DEFAULT_SETTING_ID, editableDays },
-        update: { editableDays },
+        create: {
+          id: DEFAULT_SETTING_ID,
+          editableDays,
+          createdBy: actorId,
+          updatedBy: actorId,
+        },
+        update: { editableDays, updatedBy: actorId },
       });
       await logAudit({
         action: 'worklog_setting_updated',

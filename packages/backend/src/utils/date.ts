@@ -17,7 +17,7 @@ export function diffInDays(from: Date, to: Date) {
 }
 
 export function isWithinEditableDays(targetDate: Date, editableDays: number, now = new Date()) {
-  return diffInDays(targetDate, now) <= editableDays;
+  return diffInDays(now, targetDate) <= editableDays;
 }
 
 export function endOfDay(value: Date) {
