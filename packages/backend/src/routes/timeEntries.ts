@@ -385,7 +385,10 @@ export async function registerTimeEntryRoutes(app: FastifyInstance) {
         });
       }
       const editableDays = await getEditableDays();
-      const isEditableByDate = isWithinEditableDays(entry.workDate, editableDays);
+      const isEditableByDate = isWithinEditableDays(
+        entry.workDate,
+        editableDays,
+      );
       const projectIdsToCheck = Array.from(
         new Set([entry.projectId, body.toProjectId].filter(Boolean)),
       );

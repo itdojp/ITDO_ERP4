@@ -2,7 +2,11 @@ import { FastifyInstance } from 'fastify';
 import { dailyReportSchema } from './validators.js';
 import { requireRole } from '../services/rbac.js';
 import { prisma } from '../services/db.js';
-import { isWithinEditableDays, parseDateParam, toDateOnly } from '../utils/date.js';
+import {
+  isWithinEditableDays,
+  parseDateParam,
+  toDateOnly,
+} from '../utils/date.js';
 import { auditContextFromRequest, logAudit } from '../services/audit.js';
 import { getEditableDays } from '../services/worklogSetting.js';
 
@@ -117,7 +121,9 @@ export async function registerDailyReportRoutes(app: FastifyInstance) {
       });
 
       await logAudit({
-        action: result.created ? 'daily_report_created' : 'daily_report_updated',
+        action: result.created
+          ? 'daily_report_created'
+          : 'daily_report_updated',
         targetTable: 'daily_reports',
         targetId: result.report.id,
         reasonText: reasonText || undefined,

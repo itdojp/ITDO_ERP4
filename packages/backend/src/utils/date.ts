@@ -6,7 +6,9 @@ export function parseDateParam(value?: string) {
 }
 
 export function toDateOnly(value: Date) {
-  return new Date(Date.UTC(value.getUTCFullYear(), value.getUTCMonth(), value.getUTCDate()));
+  return new Date(
+    Date.UTC(value.getUTCFullYear(), value.getUTCMonth(), value.getUTCDate()),
+  );
 }
 
 export function diffInDays(from: Date, to: Date) {
@@ -16,7 +18,11 @@ export function diffInDays(from: Date, to: Date) {
   return Math.floor((end - start) / msPerDay);
 }
 
-export function isWithinEditableDays(targetDate: Date, editableDays: number, now = new Date()) {
+export function isWithinEditableDays(
+  targetDate: Date,
+  editableDays: number,
+  now = new Date(),
+) {
   return diffInDays(now, targetDate) <= editableDays;
 }
 

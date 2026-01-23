@@ -1953,10 +1953,6 @@
                     },
                     "type": "array"
                   },
-                  "reasonText": {
-                    "minLength": 1,
-                    "type": "string"
-                  },
                   "reportDate": {
                     "type": "string"
                   },
@@ -5868,49 +5864,35 @@
           "content": {
             "application/json": {
               "schema": {
-                "allOf": [
-                  {
-                    "properties": {
-                      "location": {
-                        "type": "string"
-                      },
-                      "minutes": {
-                        "maximum": 1440,
-                        "minimum": 0,
-                        "type": "number"
-                      },
-                      "notes": {
-                        "type": "string"
-                      },
-                      "projectId": {
-                        "type": "string"
-                      },
-                      "taskId": {
-                        "type": "string"
-                      },
-                      "userId": {
-                        "type": "string"
-                      },
-                      "workDate": {
-                        "format": "date",
-                        "type": "string"
-                      },
-                      "workType": {
-                        "type": "string"
-                      }
-                    },
-                    "type": "object"
+                "properties": {
+                  "location": {
+                    "type": "string"
                   },
-                  {
-                    "properties": {
-                      "reasonText": {
-                        "minLength": 1,
-                        "type": "string"
-                      }
-                    },
-                    "type": "object"
+                  "minutes": {
+                    "maximum": 1440,
+                    "minimum": 0,
+                    "type": "number"
+                  },
+                  "notes": {
+                    "type": "string"
+                  },
+                  "projectId": {
+                    "type": "string"
+                  },
+                  "taskId": {
+                    "type": "string"
+                  },
+                  "userId": {
+                    "type": "string"
+                  },
+                  "workDate": {
+                    "format": "date",
+                    "type": "string"
+                  },
+                  "workType": {
+                    "type": "string"
                   }
-                ],
+                },
                 "type": "object"
               }
             }

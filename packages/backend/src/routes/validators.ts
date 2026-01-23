@@ -298,14 +298,7 @@ export const timeEntrySchema = {
 };
 
 export const timeEntryPatchSchema = {
-  body: Type.Partial(
-    Type.Intersect([
-      timeEntrySchema.body,
-      Type.Object({
-        reasonText: Type.Optional(Type.String({ minLength: 1 })),
-      }),
-    ]),
-  ),
+  body: Type.Partial(timeEntrySchema.body),
 };
 
 export const expenseSchema = {
@@ -400,7 +393,6 @@ export const dailyReportSchema = {
     userId: Type.String(),
     linkedProjectIds: Type.Optional(Type.Array(Type.String())),
     status: Type.Optional(Type.String()),
-    reasonText: Type.Optional(Type.String({ minLength: 1 })),
   }),
 };
 
