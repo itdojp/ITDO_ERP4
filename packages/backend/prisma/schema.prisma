@@ -951,6 +951,15 @@ model Alert {
   @@index([targetRef, status])
 }
 
+model WorklogSetting {
+  id           String   @id @default("default")
+  editableDays Int      @default(14)
+  createdAt    DateTime @default(now())
+  createdBy    String?
+  updatedAt    DateTime @updatedAt
+  updatedBy    String?
+}
+
 model PushSubscription {
   id             String    @id @default(uuid())
   userId         String
@@ -1110,16 +1119,33 @@ model ReportDelivery {
 model DailyReport {
   id               String   @id @default(uuid())
   userId           String
-  reportDate       DateTime
+  reportDate       DateTime @db.Date
   content          String
   linkedProjectIds Json?
   status           String?
+  revisions        DailyReportRevision[]
   createdAt        DateTime @default(now())
   createdBy        String?
   updatedAt        DateTime @updatedAt
   updatedBy        String?
 
   @@unique([userId, reportDate])
+}
+
+model DailyReportRevision {
+  id            String   @id @default(uuid())
+  dailyReport   DailyReport @relation(fields: [dailyReportId], references: [id], onDelete: Cascade)
+  dailyReportId String
+  version       Int
+  content       String
+  linkedProjectIds Json?
+  status        String?
+  reasonText    String?
+  createdAt     DateTime @default(now())
+  createdBy     String?
+
+  @@unique([dailyReportId, version])
+  @@index([dailyReportId, createdAt])
 }
 
 model WellbeingEntry {

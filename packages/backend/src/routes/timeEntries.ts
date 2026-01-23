@@ -15,8 +15,9 @@ import { auditContextFromRequest, logAudit } from '../services/audit.js';
 import { logReassignment } from '../services/reassignmentLog.js';
 import { submitApprovalWithUpdate } from '../services/approval.js';
 import { FlowTypeValue } from '../types.js';
-import { parseDateParam } from '../utils/date.js';
+import { isWithinEditableDays, parseDateParam } from '../utils/date.js';
 import { findPeriodLock, toPeriodKey } from '../services/periodLock.js';
+import { getEditableDays } from '../services/worklogSetting.js';
 
 async function validateTaskId(
   taskId: unknown,
@@ -139,6 +140,9 @@ export async function registerTimeEntryRoutes(app: FastifyInstance) {
     async (req, reply) => {
       const { id } = req.params as { id: string };
       const body = req.body as any;
+      const reasonText =
+        typeof body.reasonText === 'string' ? body.reasonText.trim() : '';
+      const { reasonText: _omitReason, ...rest } = body;
       const roles = req.user?.roles || [];
       const isPrivileged = roles.includes('admin') || roles.includes('mgmt');
       const userId = req.user?.userId;
@@ -175,9 +179,9 @@ export async function registerTimeEntryRoutes(app: FastifyInstance) {
         }
       }
       const changed = ['minutes', 'workDate', 'taskId', 'projectId'].some(
-        (k) => body[k] !== undefined && (body as any)[k] !== (before as any)[k],
+        (k) => rest[k] !== undefined && (rest as any)[k] !== (before as any)[k],
       );
-      const data = { ...body } as any;
+      const data = { ...rest } as any;
       if (!isPrivileged) {
         data.userId = userId;
       }
@@ -190,14 +194,73 @@ export async function registerTimeEntryRoutes(app: FastifyInstance) {
         if (typeof resolved !== 'string') return resolved;
         data.taskId = resolved;
       }
-      if (body.workDate !== undefined) {
-        const parsed = parseDateParam(body.workDate);
+      if (rest.workDate !== undefined) {
+        const parsed = parseDateParam(rest.workDate);
         if (!parsed) {
           return reply.status(400).send({
             error: { code: 'INVALID_DATE', message: 'Invalid workDate' },
           });
         }
         data.workDate = parsed;
+      }
+      const editableDays = await getEditableDays();
+      const now = new Date();
+      const workDatesToCheck = [
+        before.workDate,
+        data.workDate ?? undefined,
+      ].filter((value): value is Date => value instanceof Date);
+      const isEditableByDate = workDatesToCheck.every((date) =>
+        isWithinEditableDays(date, editableDays, now),
+      );
+      const projectIdsToCheck = Array.from(
+        new Set(
+          [before.projectId, data.projectId]
+            .filter((value): value is string => typeof value === 'string')
+            .map((value) => value.trim())
+            .filter((value) => value.length > 0),
+        ),
+      );
+      const closedProjects = projectIdsToCheck.length
+        ? await prisma.project.findMany({
+            where: { id: { in: projectIdsToCheck }, status: 'closed' },
+            select: { id: true },
+          })
+        : [];
+      const hasClosedProject = closedProjects.length > 0;
+      if (!isEditableByDate || hasClosedProject) {
+        if (!isPrivileged) {
+          return reply.status(403).send({
+            error: {
+              code: 'WORKLOG_LOCKED',
+              message: 'Time entry is locked for modification',
+              details: {
+                editableDays,
+                editWindowExpired: !isEditableByDate,
+                projectClosed: hasClosedProject,
+              },
+            },
+          });
+        }
+        if (!reasonText) {
+          return reply.status(400).send({
+            error: {
+              code: 'REASON_REQUIRED',
+              message: 'reasonText is required for override',
+            },
+          });
+        }
+        await logAudit({
+          action: 'time_entry_override',
+          targetTable: 'time_entries',
+          targetId: id,
+          reasonText,
+          metadata: {
+            editableDays,
+            editWindowExpired: !isEditableByDate,
+            projectClosed: hasClosedProject,
+          },
+          ...auditContextFromRequest(req, { userId }),
+        });
       }
       if (changed) {
         data.status = TimeStatusValue.submitted;
@@ -213,7 +276,7 @@ export async function registerTimeEntryRoutes(app: FastifyInstance) {
           action: 'time_entry_modified',
           targetTable: 'time_entries',
           targetId: id,
-          metadata: { changedFields: Object.keys(body) },
+          metadata: { changedFields: Object.keys(rest) },
           ...auditContextFromRequest(req, { userId }),
         });
         return updated;
@@ -321,6 +384,18 @@ export async function registerTimeEntryRoutes(app: FastifyInstance) {
           },
         });
       }
+      const editableDays = await getEditableDays();
+      const isEditableByDate = isWithinEditableDays(entry.workDate, editableDays);
+      const projectIdsToCheck = Array.from(
+        new Set([entry.projectId, body.toProjectId].filter(Boolean)),
+      );
+      const closedProjects = projectIdsToCheck.length
+        ? await prisma.project.findMany({
+            where: { id: { in: projectIdsToCheck }, status: 'closed' },
+            select: { id: true },
+          })
+        : [];
+      const hasClosedProject = closedProjects.length > 0;
       const pendingApproval = await prisma.approvalInstance.findFirst({
         where: {
           targetTable: 'time_entries',
@@ -393,6 +468,9 @@ export async function registerTimeEntryRoutes(app: FastifyInstance) {
           toProjectId: body.toProjectId,
           fromTaskId: entry.taskId,
           toTaskId: nextTaskId,
+          editableDays,
+          editWindowExpired: !isEditableByDate,
+          projectClosed: hasClosedProject,
         },
         ...auditContextFromRequest(req),
       });

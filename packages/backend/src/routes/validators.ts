@@ -298,7 +298,14 @@ export const timeEntrySchema = {
 };
 
 export const timeEntryPatchSchema = {
-  body: Type.Partial(timeEntrySchema.body),
+  body: Type.Partial(
+    Type.Intersect([
+      timeEntrySchema.body,
+      Type.Object({
+        reasonText: Type.Optional(Type.String({ minLength: 1 })),
+      }),
+    ]),
+  ),
 };
 
 export const expenseSchema = {
@@ -393,6 +400,7 @@ export const dailyReportSchema = {
     userId: Type.String(),
     linkedProjectIds: Type.Optional(Type.Array(Type.String())),
     status: Type.Optional(Type.String()),
+    reasonText: Type.Optional(Type.String({ minLength: 1 })),
   }),
 };
 
@@ -827,6 +835,15 @@ export const integrationSettingSchema = {
 
 export const integrationSettingPatchSchema = {
   body: Type.Partial(integrationSettingSchema.body),
+};
+
+export const worklogSettingPatchSchema = {
+  body: Type.Object(
+    {
+      editableDays: Type.Number({ minimum: 1, maximum: 365 }),
+    },
+    { additionalProperties: false },
+  ),
 };
 
 export const chatSettingPatchSchema = {

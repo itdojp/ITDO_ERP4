@@ -5,6 +5,21 @@ export function parseDateParam(value?: string) {
   return parsed;
 }
 
+export function toDateOnly(value: Date) {
+  return new Date(Date.UTC(value.getUTCFullYear(), value.getUTCMonth(), value.getUTCDate()));
+}
+
+export function diffInDays(from: Date, to: Date) {
+  const msPerDay = 24 * 60 * 60 * 1000;
+  const start = toDateOnly(from).getTime();
+  const end = toDateOnly(to).getTime();
+  return Math.floor((end - start) / msPerDay);
+}
+
+export function isWithinEditableDays(targetDate: Date, editableDays: number, now = new Date()) {
+  return diffInDays(targetDate, now) <= editableDays;
+}
+
 export function endOfDay(value: Date) {
   const end = new Date(value);
   end.setHours(23, 59, 59, 999);

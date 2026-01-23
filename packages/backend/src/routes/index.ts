@@ -41,6 +41,7 @@ import { registerPeriodLockRoutes } from './periodLocks.js';
 import { registerRateCardRoutes } from './rateCards.js';
 import { registerNotificationRoutes } from './notifications.js';
 import { registerNotificationJobRoutes } from './notificationJobs.js';
+import { registerWorklogSettingRoutes } from './worklogSettings.js';
 
 export async function registerRoutes(app: FastifyInstance) {
   await registerAuthRoutes(app);
@@ -57,6 +58,7 @@ export async function registerRoutes(app: FastifyInstance) {
   await registerNotificationJobRoutes(app);
   await registerReportSubscriptionRoutes(app);
   await registerIntegrationRoutes(app);
+  await registerWorklogSettingRoutes(app);
   await registerPeriodLockRoutes(app);
   await registerRateCardRoutes(app);
   await registerMetricJobRoutes(app);
