@@ -35,6 +35,21 @@ const tags = [
   '特になし',
 ];
 
+const toDateKey = (value: Date) => value.toISOString().slice(0, 10);
+const toDateOnly = (value: string) => new Date(`${value}T00:00:00Z`);
+const diffInDays = (from: string, to: string) => {
+  const msPerDay = 24 * 60 * 60 * 1000;
+  return Math.floor(
+    (toDateOnly(to).getTime() - toDateOnly(from).getTime()) / msPerDay,
+  );
+};
+const isEditableByDate = (dateKey: string, editableDays: number) =>
+  diffInDays(dateKey, toDateKey(new Date())) <= editableDays;
+const parseLinkedProjectIds = (value: unknown): string[] => {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is string => typeof item === 'string');
+};
+
 type MessageState = { text: string; type: 'success' | 'error' } | null;
 
 type DailyReportItem = {
@@ -46,13 +61,26 @@ type DailyReportItem = {
   status?: string | null;
 };
 
+type DailyReportRevision = {
+  id: string;
+  version: number;
+  content: string;
+  linkedProjectIds?: unknown;
+  status?: string | null;
+  reasonText?: string | null;
+  createdAt: string;
+  createdBy?: string | null;
+};
+
 export const DailyReport: React.FC = () => {
   const auth = getAuthState();
   const userId = auth?.userId || 'demo-user';
   const isPrivileged =
     auth?.roles?.includes('admin') || auth?.roles?.includes('mgmt');
+  const todayKey = useMemo(() => toDateKey(new Date()), []);
   const draftOwnerId = getDraftOwnerId(auth?.userId);
-  const draftKey = `daily-report:${draftOwnerId}`;
+  const [reportDate, setReportDate] = useState(todayKey);
+  const draftKey = `daily-report:${draftOwnerId}:${reportDate}`;
 
   const [status, setStatus] = useState<'good' | 'not_good' | ''>('');
   const [reportContent, setReportContent] = useState('');
@@ -65,16 +93,39 @@ export const DailyReport: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [projects, setProjects] = useState<ProjectOption[]>([]);
   const [projectMessage, setProjectMessage] = useState('');
+  const [reportId, setReportId] = useState<string | null>(null);
+  const [editableDays, setEditableDays] = useState(14);
+  const [reasonText, setReasonText] = useState('');
+  const [revisionItems, setRevisionItems] = useState<DailyReportRevision[]>([]);
+  const [revisionMessage, setRevisionMessage] = useState('');
+  const [isRevisionLoading, setIsRevisionLoading] = useState(false);
   const [historyItems, setHistoryItems] = useState<DailyReportItem[]>([]);
   const [historyMessage, setHistoryMessage] = useState('');
   const [historyUserId, setHistoryUserId] = useState('');
   const [isHistoryLoading, setIsHistoryLoading] = useState(false);
   const saveQueueRef = useRef(Promise.resolve());
 
+  useEffect(() => {
+    setReportContent('');
+    setLinkedProjectIds([]);
+    setStatus('');
+    setNotes('');
+    setSelectedTags([]);
+    setHelpRequested(false);
+    setReasonText('');
+    setReportId(null);
+    setRevisionItems([]);
+    setRevisionMessage('');
+  }, [reportDate]);
+
   const projectMap = useMemo(
     () => new Map(projects.map((project) => [project.id, project])),
     [projects],
   );
+  const isLocked = useMemo(() => {
+    if (!reportDate) return false;
+    return !isEditableByDate(reportDate, editableDays);
+  }, [reportDate, editableDays]);
 
   useEffect(() => {
     api<{ items: ProjectOption[] }>('/projects')
@@ -89,23 +140,18 @@ export const DailyReport: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    loadDraft<{
-      status: 'good' | 'not_good' | '';
-      reportContent?: string;
-      linkedProjectIds?: string[];
-      notes?: string;
-      selectedTags?: string[];
-      helpRequested?: boolean;
-    }>(draftKey).then((draft) => {
-      if (!draft) return;
-      setStatus(draft.status ?? '');
-      setReportContent(draft.reportContent ?? '');
-      setLinkedProjectIds(draft.linkedProjectIds ?? []);
-      setNotes(draft.notes ?? '');
-      setSelectedTags(draft.selectedTags ?? []);
-      setHelpRequested(Boolean(draft.helpRequested));
-    });
-  }, [draftKey]);
+    api<{ editableDays?: number }>('/worklog-settings')
+      .then((res) => {
+        if (typeof res.editableDays === 'number') {
+          setEditableDays(res.editableDays);
+        }
+      })
+      .catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
+    loadReport().catch(() => undefined);
+  }, [loadReport]);
 
   useEffect(() => {
     saveQueueRef.current = Promise.resolve();
@@ -148,6 +194,45 @@ export const DailyReport: React.FC = () => {
     );
   };
 
+  const loadReport = useCallback(async () => {
+    const qs = new URLSearchParams({ reportDate });
+    const suffix = qs.toString() ? `?${qs}` : '';
+    try {
+      const res = await api<{ items: DailyReportItem[] }>(
+        `/daily-reports${suffix}`,
+      );
+      const item = res.items?.[0];
+      if (item) {
+        setReportId(item.id);
+        setReportContent(item.content ?? '');
+        setLinkedProjectIds(parseLinkedProjectIds(item.linkedProjectIds));
+      } else {
+        setReportId(null);
+        setReportContent('');
+        setLinkedProjectIds([]);
+      }
+    } catch {
+      setReportId(null);
+      setReportContent('');
+      setLinkedProjectIds([]);
+    }
+    const draft = await loadDraft<{
+      status: 'good' | 'not_good' | '';
+      reportContent?: string;
+      linkedProjectIds?: string[];
+      notes?: string;
+      selectedTags?: string[];
+      helpRequested?: boolean;
+    }>(draftKey);
+    if (!draft) return;
+    setStatus(draft.status ?? '');
+    setReportContent(draft.reportContent ?? '');
+    setLinkedProjectIds(draft.linkedProjectIds ?? []);
+    setNotes(draft.notes ?? '');
+    setSelectedTags(draft.selectedTags ?? []);
+    setHelpRequested(Boolean(draft.helpRequested));
+  }, [draftKey, reportDate]);
+
   const loadHistory = useCallback(async () => {
     const qs = new URLSearchParams();
     const trimmedUserId = historyUserId.trim();
@@ -171,6 +256,28 @@ export const DailyReport: React.FC = () => {
     }
   }, [historyUserId]);
 
+  const loadRevisions = useCallback(async () => {
+    if (!reportId) {
+      setRevisionItems([]);
+      setRevisionMessage('');
+      return;
+    }
+    try {
+      setIsRevisionLoading(true);
+      const res = await api<{ items: DailyReportRevision[] }>(
+        `/daily-reports/${reportId}/revisions`,
+      );
+      const items = res.items || [];
+      setRevisionItems(items);
+      setRevisionMessage(items.length > 0 ? '読み込みました' : '');
+    } catch {
+      setRevisionItems([]);
+      setRevisionMessage('読み込みに失敗しました');
+    } finally {
+      setIsRevisionLoading(false);
+    }
+  }, [reportId]);
+
   useEffect(() => {
     loadHistory().catch(() => undefined);
   }, [loadHistory]);
@@ -180,18 +287,30 @@ export const DailyReport: React.FC = () => {
     return project ? `${project.code} / ${project.name}` : projectId;
   };
 
-  const parseLinkedProjectIds = (value: unknown): string[] => {
-    if (!Array.isArray(value)) return [];
-    return value.filter((item): item is string => typeof item === 'string');
-  };
-
   const submit = async () => {
+    if (!reportDate) {
+      setMessage({ text: '対象日を選択してください', type: 'error' });
+      return;
+    }
+    if (isLocked && !isPrivileged) {
+      setMessage({
+        text: `対象日から${editableDays}日を超えたため修正できません`,
+        type: 'error',
+      });
+      return;
+    }
+    const trimmedReason = reasonText.trim();
+    if (isLocked && isPrivileged && !trimmedReason) {
+      setMessage({
+        text: 'ロック解除で修正する場合は理由を入力してください',
+        type: 'error',
+      });
+      return;
+    }
     if (!status) {
       setMessage({ text: 'Good / Not Good を選択してください', type: 'error' });
       return;
     }
-    const now = new Date();
-    const isoNow = now.toISOString();
     const requests = [
       {
         path: '/daily-reports',
@@ -199,9 +318,10 @@ export const DailyReport: React.FC = () => {
         body: {
           userId,
           content: reportContent,
-          reportDate: isoNow,
+          reportDate,
           linkedProjectIds,
           status: 'submitted',
+          reasonText: trimmedReason || undefined,
         },
       },
       {
@@ -209,7 +329,7 @@ export const DailyReport: React.FC = () => {
         method: 'POST',
         body: {
           userId,
-          entryDate: isoNow,
+          entryDate: reportDate,
           status,
           notes: selectedTags.length
             ? `${notes}\nTags:${selectedTags.join(',')}`
@@ -230,19 +350,15 @@ export const DailyReport: React.FC = () => {
         cursor += 1;
       }
       setMessage({ text: '送信しました', type: 'success' });
-      setNotes('');
-      setReportContent('');
-      setLinkedProjectIds([]);
-      setSelectedTags([]);
-      setHelpRequested(false);
-      setStatus('');
+      setReasonText('');
       await clearDraft(draftKey);
+      await loadReport();
       await loadHistory();
     } catch (e) {
       if (isOfflineError(e)) {
         await enqueueOfflineItem({
           kind: 'daily-report',
-          label: `日報 ${isoNow.slice(0, 10)}`,
+          label: `日報 ${reportDate}`,
           requests,
           cursor,
         });
@@ -250,12 +366,7 @@ export const DailyReport: React.FC = () => {
           text: 'オフラインのため送信待ちに保存しました',
           type: 'success',
         });
-        setNotes('');
-        setReportContent('');
-        setLinkedProjectIds([]);
-        setSelectedTags([]);
-        setHelpRequested(false);
-        setStatus('');
+        setReasonText('');
         await clearDraft(draftKey);
       } else {
         setMessage({ text: '送信に失敗しました', type: 'error' });
@@ -268,6 +379,32 @@ export const DailyReport: React.FC = () => {
   return (
     <div>
       <h2>日報 + ウェルビーイング</h2>
+      <div className="row" style={{ gap: 12, flexWrap: 'wrap', marginTop: 8 }}>
+        <Input
+          label="対象日"
+          aria-label="対象日"
+          type="date"
+          value={reportDate}
+          onChange={(e) => setReportDate(e.target.value)}
+        />
+        <Button variant="secondary" onClick={() => loadReport()}>
+          日報を再読み込み
+        </Button>
+      </div>
+      {isLocked && !isPrivileged && (
+        <div style={{ marginTop: 8 }}>
+          <Alert variant="warning">
+            対象日から{editableDays}日を超えているため修正できません。
+          </Alert>
+        </div>
+      )}
+      {isLocked && isPrivileged && (
+        <div style={{ marginTop: 8 }}>
+          <Alert variant="warning">
+            対象日から{editableDays}日を超えています。管理者は理由を記載して修正できます。
+          </Alert>
+        </div>
+      )}
       <div style={{ display: 'grid', gap: 12, marginTop: 8 }}>
         <Textarea
           label="日報本文（任意）"
@@ -277,6 +414,7 @@ export const DailyReport: React.FC = () => {
           onChange={(e) => setReportContent(e.target.value)}
           fullWidth
           rows={4}
+          disabled={isLocked && !isPrivileged}
         />
         <Select
           label="関連案件（任意・複数選択可）"
@@ -289,6 +427,7 @@ export const DailyReport: React.FC = () => {
           }
           fullWidth
           aria-label="関連案件"
+          disabled={isLocked && !isPrivileged}
         >
           {projects.map((project) => (
             <option key={project.id} value={project.id}>
@@ -297,6 +436,15 @@ export const DailyReport: React.FC = () => {
           ))}
         </Select>
         {projectMessage && <Alert variant="error">{projectMessage}</Alert>}
+        {isLocked && isPrivileged && (
+          <Input
+            label="修正理由（管理者のみ）"
+            aria-label="修正理由"
+            value={reasonText}
+            onChange={(e) => setReasonText(e.target.value)}
+            fullWidth
+          />
+        )}
       </div>
       <div className="row" style={{ alignItems: 'center' }}>
         <span>今日のコンディション:</span>
@@ -304,6 +452,7 @@ export const DailyReport: React.FC = () => {
           variant={status === 'good' ? 'primary' : 'secondary'}
           onClick={() => setStatus('good')}
           aria-pressed={status === 'good'}
+          disabled={isLocked && !isPrivileged}
         >
           Good
         </Button>
@@ -311,6 +460,7 @@ export const DailyReport: React.FC = () => {
           variant={status === 'not_good' ? 'primary' : 'secondary'}
           onClick={() => setStatus('not_good')}
           aria-pressed={status === 'not_good'}
+          disabled={isLocked && !isPrivileged}
         >
           Not Good
         </Button>
@@ -330,6 +480,7 @@ export const DailyReport: React.FC = () => {
                 variant={selectedTags.includes(tag) ? 'primary' : 'secondary'}
                 onClick={() => toggleTag(tag)}
                 aria-pressed={selectedTags.includes(tag)}
+                disabled={isLocked && !isPrivileged}
               >
                 {tag}
               </Button>
@@ -343,6 +494,7 @@ export const DailyReport: React.FC = () => {
               onChange={(e) => setNotes(e.target.value)}
               fullWidth
               rows={4}
+              disabled={isLocked && !isPrivileged}
             />
           </div>
           <label
@@ -357,13 +509,18 @@ export const DailyReport: React.FC = () => {
               type="checkbox"
               checked={helpRequested}
               onChange={(e) => setHelpRequested(e.target.checked)}
+              disabled={isLocked && !isPrivileged}
             />
             相談したい（人事/相談窓口へ）
           </label>
         </div>
       )}
       <div style={{ marginTop: 8 }}>
-        <Button onClick={submit} loading={isSubmitting}>
+        <Button
+          onClick={submit}
+          loading={isSubmitting}
+          disabled={isLocked && !isPrivileged}
+        >
           送信
         </Button>
       </div>
@@ -382,6 +539,55 @@ export const DailyReport: React.FC = () => {
         この入力は評価に使われません。職場環境の改善とサポートのためにのみ利用します。
       </p>
       {showHelp && <HelpModal onClose={() => setShowHelp(false)} />}
+
+      <div style={{ marginTop: 16 }}>
+        <h3 style={{ margin: '0 0 8px' }}>編集履歴（選択日）</h3>
+        <Button
+          variant="secondary"
+          onClick={() => loadRevisions()}
+          loading={isRevisionLoading}
+          disabled={!reportId}
+        >
+          履歴を読み込み
+        </Button>
+        {revisionMessage && (
+          <p style={{ fontSize: 12, marginTop: 6 }}>{revisionMessage}</p>
+        )}
+        <div style={{ display: 'grid', gap: 8, marginTop: 8 }}>
+          {revisionItems.length === 0 && (
+            <EmptyState title="履歴はありません" />
+          )}
+          {revisionItems.map((rev) => {
+            const linked = parseLinkedProjectIds(rev.linkedProjectIds);
+            return (
+              <Card key={rev.id} padding="small">
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  <strong>v{rev.version}</strong>
+                  <span>{rev.createdAt.slice(0, 10)}</span>
+                  {rev.createdBy && <span>by {rev.createdBy}</span>}
+                </div>
+                {rev.reasonText && (
+                  <div style={{ marginTop: 6, fontSize: 12 }}>
+                    修正理由: {rev.reasonText}
+                  </div>
+                )}
+                {rev.content && (
+                  <div style={{ whiteSpace: 'pre-wrap', marginTop: 6 }}>
+                    {rev.content}
+                  </div>
+                )}
+                {linked.length > 0 && (
+                  <div
+                    style={{ marginTop: 6, fontSize: 12, color: '#475569' }}
+                  >
+                    関連案件: {linked.map(renderProject).join(', ')}
+                  </div>
+                )}
+              </Card>
+            );
+          })}
+        </div>
+      </div>
 
       <hr style={{ margin: '16px 0' }} />
       <h3 style={{ margin: '0 0 8px' }}>日報履歴</h3>
