@@ -434,7 +434,8 @@ export const DailyReport: React.FC = () => {
       {isLocked && isPrivileged && (
         <div style={{ marginTop: 8 }}>
           <Alert variant="warning">
-            対象日から{editableDays}日を超えています。管理者は理由を記載して修正できます。
+            対象日から{editableDays}
+            日を超えています。管理者は理由を記載して修正できます。
           </Alert>
         </div>
       )}
@@ -581,7 +582,7 @@ export const DailyReport: React.FC = () => {
           loading={isRevisionLoading}
           disabled={!reportId}
         >
-          履歴を読み込み
+          編集履歴を読み込み
         </Button>
         {revisionMessage && (
           <p style={{ fontSize: 12, marginTop: 6 }}>{revisionMessage}</p>
@@ -615,9 +616,7 @@ export const DailyReport: React.FC = () => {
                   </div>
                 )}
                 {linked.length > 0 && (
-                  <div
-                    style={{ marginTop: 6, fontSize: 12, color: '#475569' }}
-                  >
+                  <div style={{ marginTop: 6, fontSize: 12, color: '#475569' }}>
                     関連案件: {linked.map(renderProject).join(', ')}
                   </div>
                 )}
