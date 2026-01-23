@@ -164,7 +164,9 @@ test('frontend smoke core @core', async ({ page }) => {
     .check();
   await dailySection.getByRole('button', { name: '送信' }).click();
   await expect(dailySection.getByText('送信しました')).toBeVisible();
-  await dailySection.getByRole('button', { name: '履歴を読み込み' }).click();
+  await dailySection
+    .getByRole('button', { name: '編集履歴を読み込み' })
+    .click();
   const dailyHistoryItem = dailySection.getByText(dailyReportText);
   await dailyHistoryItem.scrollIntoViewIfNeeded();
   await expect(dailyHistoryItem).toBeVisible();
