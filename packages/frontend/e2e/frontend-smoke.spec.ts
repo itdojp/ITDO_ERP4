@@ -164,8 +164,14 @@ test('frontend smoke core @core', async ({ page }) => {
     .check();
   await dailySection.getByRole('button', { name: '送信' }).click();
   await expect(dailySection.getByText('送信しました')).toBeVisible();
-  await dailySection.getByRole('button', { name: '履歴を読み込み' }).click();
-  const dailyHistoryItem = dailySection.getByText(dailyReportText);
+  const historySection = dailySection
+    .locator('h3', { hasText: '日報履歴' })
+    .locator('..');
+  await historySection
+    .getByRole('button', { name: /^履歴を読み込み$/ })
+    .click();
+  const historyList = dailySection.locator('[data-e2e="daily-history-list"]');
+  const dailyHistoryItem = historyList.getByText(dailyReportText);
   await dailyHistoryItem.scrollIntoViewIfNeeded();
   await expect(dailyHistoryItem).toBeVisible();
   await captureSection(dailySection, '02-core-daily-report.png');
