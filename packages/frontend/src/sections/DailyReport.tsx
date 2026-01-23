@@ -657,7 +657,10 @@ export const DailyReport: React.FC = () => {
         </Button>
       )}
       {historyMessage && <p style={{ fontSize: 12 }}>{historyMessage}</p>}
-      <div style={{ display: 'grid', gap: 8, marginTop: 8 }}>
+      <div
+        style={{ display: 'grid', gap: 8, marginTop: 8 }}
+        data-e2e="daily-history-list"
+      >
         {historyItems.length === 0 && (
           <EmptyState title="まだ日報はありません" />
         )}

@@ -168,9 +168,10 @@ test('frontend smoke core @core', async ({ page }) => {
     .locator('h3', { hasText: '日報履歴' })
     .locator('..');
   await historySection
-    .getByRole('button', { name: '履歴を読み込み', exact: true })
+    .getByRole('button', { name: /^履歴を読み込み$/ })
     .click();
-  const dailyHistoryItem = historySection.getByText(dailyReportText);
+  const historyList = dailySection.locator('[data-e2e="daily-history-list"]');
+  const dailyHistoryItem = historyList.getByText(dailyReportText);
   await dailyHistoryItem.scrollIntoViewIfNeeded();
   await expect(dailyHistoryItem).toBeVisible();
   await captureSection(dailySection, '02-core-daily-report.png');
