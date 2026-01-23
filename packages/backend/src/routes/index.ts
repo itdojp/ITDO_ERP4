@@ -58,6 +58,7 @@ export async function registerRoutes(app: FastifyInstance) {
   await registerNotificationJobRoutes(app);
   await registerReportSubscriptionRoutes(app);
   await registerIntegrationRoutes(app);
+  await registerWorklogSettingRoutes(app);
   await registerPeriodLockRoutes(app);
   await registerRateCardRoutes(app);
   await registerMetricJobRoutes(app);
@@ -68,7 +69,6 @@ export async function registerRoutes(app: FastifyInstance) {
   await registerWellbeingRoutes(app);
   await registerChatRoutes(app);
   await registerChatSettingRoutes(app);
-  await registerWorklogSettingRoutes(app);
   await registerChatBreakGlassRoutes(app);
   await registerChatRoomRoutes(app);
   await registerProjectRoutes(app);
