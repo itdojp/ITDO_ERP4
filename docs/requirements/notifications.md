@@ -10,6 +10,7 @@
 - 外部連携: Slack/Webhook（主にアラート系で利用、運用は allowlist）
 
 ## 現行実装（MVP）
+※ 2026-01-24 時点（PR #681 で日報未提出通知を追加済み）
 ### AppNotification の発火イベント（実装済み）
 - `chat_mention`: チャットのメンション通知（Chat で作成）
 - `daily_report_missing`: 日報未提出通知（ジョブで作成）
