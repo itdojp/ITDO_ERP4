@@ -16,6 +16,7 @@
   - API/概念: `docs/requirements/domain-api-draft.md`
   - ウェルビーイング: `docs/requirements/wellbeing-policy.md`
   - 経費精算: `docs/requirements/expense-settlement.md`
+  - 日報未提出: `docs/requirements/daily-report-missing.md`
 - 損益/予実/単価: `docs/requirements/profit-and-variance.md` / `docs/requirements/rate-card.md`
 - 認証/ID/アクセス制御: `docs/requirements/id-management.md` / `docs/requirements/access-control.md` / `docs/requirements/rbac-matrix.md`
 - 運用（バックアップ/監視/ジョブ）: `docs/requirements/backup-restore.md` / `docs/requirements/batch-jobs.md` / `docs/requirements/ops-monitoring.md`
