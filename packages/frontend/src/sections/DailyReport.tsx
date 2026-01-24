@@ -77,6 +77,17 @@ type DailyReportRevision = {
   createdBy?: string | null;
 };
 
+type TimeEntryItem = {
+  id: string;
+  projectId: string;
+  workDate: string;
+  minutes: number;
+  status: string;
+  workType?: string;
+  location?: string;
+  notes?: string;
+};
+
 export const DailyReport: React.FC = () => {
   const auth = getAuthState();
   const userId = auth?.userId || 'demo-user';
@@ -109,6 +120,9 @@ export const DailyReport: React.FC = () => {
   const [historyMessage, setHistoryMessage] = useState('');
   const [historyUserId, setHistoryUserId] = useState('');
   const [isHistoryLoading, setIsHistoryLoading] = useState(false);
+  const [timeEntries, setTimeEntries] = useState<TimeEntryItem[]>([]);
+  const [timeEntryMessage, setTimeEntryMessage] = useState('');
+  const [isTimeEntryLoading, setIsTimeEntryLoading] = useState(false);
   const saveQueueRef = useRef(Promise.resolve());
 
   useEffect(() => {
@@ -260,6 +274,28 @@ export const DailyReport: React.FC = () => {
     loadReport().catch(() => undefined);
   }, [loadReport]);
 
+  const loadTimeEntries = useCallback(async () => {
+    if (!reportDate) return;
+    const qs = new URLSearchParams({ from: reportDate, to: reportDate });
+    if (userId) {
+      qs.set('userId', userId);
+    }
+    try {
+      setIsTimeEntryLoading(true);
+      const res = await api<{ items: TimeEntryItem[] }>(
+        `/time-entries?${qs.toString()}`,
+      );
+      const items = Array.isArray(res.items) ? res.items : [];
+      setTimeEntries(items);
+      setTimeEntryMessage(items.length > 0 ? '' : '当日の工数はありません');
+    } catch {
+      setTimeEntries([]);
+      setTimeEntryMessage('当日の工数を取得できませんでした');
+    } finally {
+      setIsTimeEntryLoading(false);
+    }
+  }, [reportDate, userId]);
+
   const loadHistory = useCallback(async () => {
     const qs = new URLSearchParams();
     const trimmedUserId = historyUserId.trim();
@@ -311,9 +347,46 @@ export const DailyReport: React.FC = () => {
     loadHistory().catch(() => undefined);
   }, [loadHistory]);
 
+  useEffect(() => {
+    loadTimeEntries().catch(() => undefined);
+  }, [loadTimeEntries]);
+
   const renderProject = (projectId: string) => {
     const project = projectMap.get(projectId);
     return project ? `${project.code} / ${project.name}` : projectId;
+  };
+
+  const timeEntrySummary = useMemo(() => {
+    const totalMinutes = timeEntries.reduce(
+      (sum, entry) => sum + (entry.minutes || 0),
+      0,
+    );
+    const byProject = new Map<string, number>();
+    timeEntries.forEach((entry) => {
+      byProject.set(
+        entry.projectId,
+        (byProject.get(entry.projectId) || 0) + entry.minutes,
+      );
+    });
+    return { totalMinutes, byProject };
+  }, [timeEntries]);
+
+  const addLinkedProject = (projectId: string) => {
+    setLinkedProjectIds((prev) =>
+      prev.includes(projectId) ? prev : [...prev, projectId],
+    );
+  };
+
+  const addAllLinkedProjects = () => {
+    const uniqueProjectIds = Array.from(
+      new Set(timeEntries.map((entry) => entry.projectId)),
+    );
+    if (uniqueProjectIds.length === 0) return;
+    setLinkedProjectIds((prev) => {
+      const next = new Set(prev);
+      uniqueProjectIds.forEach((id) => next.add(id));
+      return Array.from(next);
+    });
   };
 
   const submit = async () => {
@@ -440,6 +513,68 @@ export const DailyReport: React.FC = () => {
         </div>
       )}
       <div style={{ display: 'grid', gap: 12, marginTop: 8 }}>
+        <Card padding="small">
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <strong>当日の工数</strong>
+            <Button
+              variant="secondary"
+              onClick={() => loadTimeEntries()}
+              loading={isTimeEntryLoading}
+            >
+              再取得
+            </Button>
+            <Button
+              variant="outline"
+              onClick={addAllLinkedProjects}
+              disabled={
+                (isLocked && !isPrivileged) || timeEntries.length === 0
+              }
+            >
+              工数の案件を全て関連付け
+            </Button>
+            {timeEntrySummary.totalMinutes > 0 && (
+              <span style={{ marginLeft: 'auto', fontSize: 12 }}>
+                合計: {timeEntrySummary.totalMinutes} 分
+              </span>
+            )}
+          </div>
+          {timeEntryMessage && (
+            <div style={{ marginTop: 8 }}>
+              <Alert variant="warning">{timeEntryMessage}</Alert>
+            </div>
+          )}
+          {timeEntries.length > 0 && (
+            <div style={{ display: 'grid', gap: 6, marginTop: 8 }}>
+              {Array.from(timeEntrySummary.byProject.entries()).map(
+                ([projectId, minutes]) => (
+                  <div
+                    key={projectId}
+                    style={{
+                      display: 'flex',
+                      gap: 8,
+                      alignItems: 'center',
+                      flexWrap: 'wrap',
+                    }}
+                  >
+                    <span>{renderProject(projectId)}</span>
+                    <span style={{ fontSize: 12, color: '#475569' }}>
+                      {minutes} 分
+                    </span>
+                    {!linkedProjectIds.includes(projectId) && (
+                      <Button
+                        variant="secondary"
+                        onClick={() => addLinkedProject(projectId)}
+                        disabled={isLocked && !isPrivileged}
+                      >
+                        関連案件に追加
+                      </Button>
+                    )}
+                  </div>
+                ),
+              )}
+            </div>
+          )}
+        </Card>
         <Textarea
           label="日報本文（任意）"
           aria-label="日報本文"
