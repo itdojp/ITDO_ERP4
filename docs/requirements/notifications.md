@@ -16,6 +16,9 @@
 - 日報修正（対象: 本人、必要なら上長）
 - 工数修正の承認（対象: 申請者/承認者）
 
+補足:
+- 日報未提出は `kind=daily_report_missing` として AppNotification を生成（メール配信対象）。
+
 > 日報未提出の判定は `docs/requirements/daily-report-missing.md` を参照。
 
 ### 休暇
