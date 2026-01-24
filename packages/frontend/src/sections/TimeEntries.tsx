@@ -34,6 +34,7 @@ import {
   Select,
   Skeleton,
   Spinner,
+  Textarea,
   Toast,
 } from '../ui';
 
@@ -46,6 +47,7 @@ type TimeEntry = {
   workType?: string;
   location?: string;
   taskId?: string;
+  notes?: string;
 };
 type TimeEntryView = {
   id: string;
@@ -56,6 +58,7 @@ type TimeEntryView = {
   status: string;
   workType?: string;
   location?: string;
+  notes?: string;
   searchText: string;
 };
 type FormState = {
@@ -65,6 +68,7 @@ type FormState = {
   minutes: number;
   workType: string;
   location: string;
+  notes: string;
 };
 
 type MessageState = { text: string; type: 'success' | 'error' } | null;
@@ -81,6 +85,7 @@ const defaultForm: FormState = {
   minutes: 60,
   workType: '通常',
   location: 'office',
+  notes: '',
 };
 
 const FEATURE_TIMESHEET_GRID =
@@ -102,6 +107,7 @@ const buildSearchText = (item: Omit<TimeEntryView, 'searchText'>) =>
       item.status,
       item.workType,
       item.location,
+      item.notes,
       `${item.minutes}`,
     ]
       .filter(Boolean)
@@ -195,6 +201,7 @@ const LegacyTimeEntryList: React.FC<{
             <span>/ {formatMinutes(entry.minutes)}</span>
             {entry.workType && <span>/ {entry.workType}</span>}
             {entry.location && <span>/ {entry.location}</span>}
+            {entry.notes && <span>/ {entry.notes}</span>}
           </div>
         </Card>
       ))}
@@ -238,6 +245,7 @@ const MobileTimeEntryList: React.FC<{
               <span>{formatMinutes(entry.minutes)}</span>
               {entry.workType && <span>{entry.workType}</span>}
               {entry.location && <span>{entry.location}</span>}
+              {entry.notes && <span>{entry.notes}</span>}
             </div>
           </div>
         </Card>
@@ -321,6 +329,12 @@ const TimesheetGrid: React.FC<{
         header: '場所',
         cell: (info) => info.getValue() || '-',
         meta: { width: '140px' },
+      },
+      {
+        accessorKey: 'notes',
+        header: 'メモ',
+        cell: (info) => info.getValue() || '-',
+        meta: { width: 'minmax(180px, 1.4fr)' },
       },
     ],
     [],
@@ -731,6 +745,7 @@ export const TimeEntries: React.FC = () => {
       taskId: form.taskId.trim() || undefined,
       workType: form.workType.trim() || undefined,
       location: form.location.trim() || undefined,
+      notes: form.notes.trim() || undefined,
       userId,
     };
     const request = {
@@ -839,6 +854,13 @@ export const TimeEntries: React.FC = () => {
             value={form.location}
             onChange={(e) => setForm({ ...form, location: e.target.value })}
             placeholder="例: office"
+          />
+          <Textarea
+            label="作業メモ"
+            aria-label="作業メモ"
+            value={form.notes}
+            onChange={(e) => setForm({ ...form, notes: e.target.value })}
+            placeholder="作業内容や補足を入力"
           />
           <Button
             onClick={add}
