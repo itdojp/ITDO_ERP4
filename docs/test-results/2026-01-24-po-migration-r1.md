@@ -104,7 +104,52 @@ TimeEntry|54216
 Vendor|26
 ```
 
+## 参照整合の簡易チェック
+※ `UserAccount` が未投入のため、ユーザ参照は未整合のまま（想定通り）。
+
+コマンド:
+```
+podman exec -e PGPASSWORD=postgres erp4-pg-erp4-mig-r1 \
+  psql -U postgres -d postgres -tA -c "
+  select 'time_entries_without_user' as check, count(*) from \"TimeEntry\" t
+    left join \"UserAccount\" u on u.id = t.\"userId\"
+    where u.id is null;
+  select 'expenses_without_user' as check, count(*) from \"Expense\" e
+    left join \"UserAccount\" u on u.id = e.\"userId\"
+    where u.id is null;
+  select 'projects_without_customer' as check, count(*) from \"Project\" p
+    left join \"Customer\" c on c.id = p.\"customerId\"
+    where p.\"customerId\" is not null and c.id is null;
+  select 'projects_without_parent' as check, count(*) from \"Project\" p
+    left join \"Project\" parent on parent.id = p.\"parentId\"
+    where p.\"parentId\" is not null and parent.id is null;
+  select 'invoices_without_project' as check, count(*) from \"Invoice\" i
+    left join \"Project\" p on p.id = i.\"projectId\"
+    where i.\"projectId\" is not null and p.id is null;
+  select 'time_entries_without_project' as check, count(*) from \"TimeEntry\" t
+    left join \"Project\" p on p.id = t.\"projectId\"
+    where p.id is null;
+  select 'expenses_without_project' as check, count(*) from \"Expense\" e
+    left join \"Project\" p on p.id = e.\"projectId\"
+    where p.id is null;"
+```
+
+結果:
+```
+time_entries_without_user|54216
+expenses_without_user|15288
+projects_without_customer|0
+projects_without_parent|0
+invoices_without_project|0
+time_entries_without_project|0
+expenses_without_project|0
+```
+
+所見:
+- UserAccount を移行していないため、TimeEntry/Expense の userId は全件未解決（想定通り）。
+- Project → Customer / 親子 Project / Invoice → Project / TimeEntry・Expense → Project は参照欠損なし。
+
 ## 次のアクション
 - `--apply` 後のデータ検証（件数/ランダムサンプル/不整合確認）
 - 失敗行/検証不一致があれば差分整理
-- `WorklogSetting` 重複マイグレーション修正（PR #688）をマージ
+- UserAccount 移行方式の決定と userId マッピングの検討
