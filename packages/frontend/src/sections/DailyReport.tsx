@@ -526,9 +526,7 @@ export const DailyReport: React.FC = () => {
             <Button
               variant="outline"
               onClick={addAllLinkedProjects}
-              disabled={
-                (isLocked && !isPrivileged) || timeEntries.length === 0
-              }
+              disabled={(isLocked && !isPrivileged) || timeEntries.length === 0}
             >
               工数の案件を全て関連付け
             </Button>
