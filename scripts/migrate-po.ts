@@ -340,10 +340,10 @@ async function importUsers(
     const email = normalizeString(item.email) ?? undefined;
     const givenName = normalizeString(item.givenName) ?? undefined;
     const familyName = normalizeString(item.familyName) ?? undefined;
+    const fallbackDisplayName = [givenName, familyName].filter(Boolean).join(' ');
     const displayName =
       normalizeString(item.displayName) ??
-      [givenName, familyName].filter(Boolean).join(' ') ||
-      undefined;
+      (fallbackDisplayName ? fallbackDisplayName : undefined);
     const emails = email ? [{ value: email, primary: true }] : undefined;
     const active = item.active ?? true;
 
