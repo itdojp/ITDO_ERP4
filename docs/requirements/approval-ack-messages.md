@@ -29,11 +29,11 @@
 
 ## 変更/撤回（案）
 - 作成者は撤回可能（canceled）とする
-- 回答の取り消し（ack revoke）は要判断
+- 回答の取り消し（ack revoke）は要判断（未確定）
 - 監査上は履歴保存を必須とする
 
 ## UI/UX（案）
-- メッセージに「ACK必須」バッジと進捗（例: 3/5）を表示
+- メッセージに「ack必須」バッジと進捗（例: 3/5）を表示
 - 対象者は「確認」ボタンで ack する
 - 進捗表示範囲は要決定（全員公開/作成者のみ）
 - 未完了一覧の簡易ビュー（期限順）を追加
@@ -42,18 +42,19 @@
 - 作成時に対象者へ通知
 - 期限前リマインド（例: 24h/1h）を任意設定
 - 完了時は作成者へ通知
-- チャネルは通知方針（#669）に従う
+- チャネルは `docs/requirements/notifications.md` の方針に従う
 
 ## 監査/ログ（案）
-- 監査ログ: ack_request_created / ack_acked / ack_revoked / ack_canceled / ack_expired
-- metadata に roomId / messageId / requiredUserIds / dueAt / actor を記録
+- 監査ログ: ack_request_created / ack_request_acknowledged / ack_canceled / ack_expired
+- metadata に room_id / message_id / required_user_ids / due_at / actor を記録
 
 ## データモデル（案）
-- 既存: `ChatAckRequest(messageId, roomId, requiredUserIds, dueAt)`
-- 既存: `ChatAck(requestId, userId, ackedAt)`
+- 既存（ルームチャット用）: `ChatAckRequest(messageId, roomId, requiredUserIds, dueAt)`
+- 既存（ルームチャット用）: `ChatAck(requestId, userId, ackedAt)`
+- 廃止済み（レガシー・プロジェクトチャット用）: `ProjectChatAckRequest` / `ProjectChatAck`
+  - migration `20260112030000_drop_legacy_project_chat` で削除
 - 拡張案:
   - ChatAckRequest: status / canceledAt / canceledBy / targetType / targetIds / snapshotUserIds
-  - ChatAck: revokedAt / revokedBy / comment
 
 ## 権限（案）
 - 作成: ルーム投稿権限を持つユーザ
@@ -65,6 +66,7 @@
 - [ ] 期限超過時の扱いを確定
 - [ ] 進捗の可視化範囲を確定
 - [ ] 撤回/再確認の許容範囲を確定
+- [ ] 外部ユーザ（external_chat）の対象者としての許容範囲を確定
 - [ ] 監査ログ/検索/通知との接続を整理
 
 ## 関連
