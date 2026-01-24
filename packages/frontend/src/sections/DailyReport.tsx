@@ -121,7 +121,10 @@ export const DailyReport: React.FC = () => {
   const [historyUserId, setHistoryUserId] = useState('');
   const [isHistoryLoading, setIsHistoryLoading] = useState(false);
   const [timeEntries, setTimeEntries] = useState<TimeEntryItem[]>([]);
-  const [timeEntryMessage, setTimeEntryMessage] = useState('');
+  const [timeEntryMessage, setTimeEntryMessage] = useState<{
+    text: string;
+    type: 'info' | 'error';
+  } | null>(null);
   const [isTimeEntryLoading, setIsTimeEntryLoading] = useState(false);
   const saveQueueRef = useRef(Promise.resolve());
 
@@ -277,7 +280,7 @@ export const DailyReport: React.FC = () => {
   const loadTimeEntries = useCallback(async () => {
     if (!reportDate) return;
     const qs = new URLSearchParams({ from: reportDate, to: reportDate });
-    if (userId) {
+    if (isPrivileged && userId) {
       qs.set('userId', userId);
     }
     try {
@@ -287,14 +290,21 @@ export const DailyReport: React.FC = () => {
       );
       const items = Array.isArray(res.items) ? res.items : [];
       setTimeEntries(items);
-      setTimeEntryMessage(items.length > 0 ? '' : '当日の工数はありません');
+      setTimeEntryMessage(
+        items.length > 0
+          ? null
+          : { text: '当日の工数はありません', type: 'info' },
+      );
     } catch {
       setTimeEntries([]);
-      setTimeEntryMessage('当日の工数を取得できませんでした');
+      setTimeEntryMessage({
+        text: '当日の工数を取得できませんでした',
+        type: 'error',
+      });
     } finally {
       setIsTimeEntryLoading(false);
     }
-  }, [reportDate, userId]);
+  }, [reportDate, userId, isPrivileged]);
 
   const loadHistory = useCallback(async () => {
     const qs = new URLSearchParams();
@@ -365,7 +375,7 @@ export const DailyReport: React.FC = () => {
     timeEntries.forEach((entry) => {
       byProject.set(
         entry.projectId,
-        (byProject.get(entry.projectId) || 0) + entry.minutes,
+        (byProject.get(entry.projectId) || 0) + (entry.minutes || 0),
       );
     });
     return { totalMinutes, byProject };
@@ -515,7 +525,7 @@ export const DailyReport: React.FC = () => {
       <div style={{ display: 'grid', gap: 12, marginTop: 8 }}>
         <Card padding="small">
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            <strong>当日の工数</strong>
+            <h3 style={{ margin: 0 }}>当日の工数</h3>
             <Button
               variant="secondary"
               onClick={() => loadTimeEntries()}
@@ -538,9 +548,19 @@ export const DailyReport: React.FC = () => {
               </span>
             )}
           </div>
-          {timeEntryMessage && (
+          {isTimeEntryLoading && timeEntries.length === 0 && (
+            <div style={{ marginTop: 8, fontSize: 12, color: '#6b7280' }}>
+              工数を読み込み中...
+            </div>
+          )}
+          {timeEntryMessage && timeEntryMessage.type === 'error' && (
             <div style={{ marginTop: 8 }}>
-              <Alert variant="warning">{timeEntryMessage}</Alert>
+              <Alert variant="warning">{timeEntryMessage.text}</Alert>
+            </div>
+          )}
+          {timeEntryMessage && timeEntryMessage.type === 'info' && (
+            <div style={{ marginTop: 8, fontSize: 12, color: '#6b7280' }}>
+              {timeEntryMessage.text}
             </div>
           )}
           {timeEntries.length > 0 && (
