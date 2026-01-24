@@ -32,9 +32,9 @@
 - VendorInvoice: draft → pending → approved → paid
 
 ### UI導線（案）
-- PO詳細から「見積作成」「請求作成」ボタン
+- PO詳細から「請求作成」ボタン
 - VendorInvoice 詳細に「関連PO」セクションを表示
-- 仕入請求の入金（支払）確認は admin/mgmt 操作
+- 仕入請求の支払確認は admin/mgmt 操作
 
 ### 監査/通知（案）
 - 発注/請求の発行・承認・支払確定を監査ログへ
