@@ -14,6 +14,9 @@
 - PWA/Push運用検証: docs/test-results/2026-01-19-pwa-push-ops.md
 - 証跡: docs/test-results/2026-01-19-frontend-e2e-pwa-push/
 
+### 2026-01-24
+- PO移行リハーサルr1: docs/test-results/2026-01-24-po-migration-r1.md
+
 ### 2026-01-17
 - 性能ベースライン: docs/test-results/perf-2026-01-17.md
 
