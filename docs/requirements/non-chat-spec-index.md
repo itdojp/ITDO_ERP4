@@ -5,8 +5,8 @@
 ## 1. 仕様の一次ソース（読む順）
 - スコープ/全体像: `docs/requirements/mvp-scope.md`
 - ドメイン/データモデル/API たたき台: `docs/requirements/domain-api-draft.md`
-- 画面/運用（見積/請求/発注/仕入）: `docs/requirements/estimate-invoice-po-ui.md`
-- 承認/アラート/通知: `docs/requirements/approval-alerts.md` / `docs/requirements/approval-log.md` / `docs/requirements/alerts-notify.md` / `docs/requirements/alert-suppression.md` / `docs/requirements/notifications.md`
+- 画面/運用（見積/請求/発注/仕入）: `docs/requirements/estimate-invoice-po-ui.md` / `docs/requirements/delivery-invoice-flow.md` / `docs/requirements/vendor-doc-linking.md` / `docs/requirements/document-template-variants.md`
+- 承認/アラート/通知: `docs/requirements/approval-alerts.md` / `docs/requirements/approval-log.md` / `docs/requirements/alerts-notify.md` / `docs/requirements/alert-suppression.md` / `docs/requirements/notifications.md` / `docs/requirements/approval-ack-messages.md`
 - 案件/タスク/マイルストーン/定期案件:
   - `docs/requirements/project-task-milestone-flow.md`
   - `docs/requirements/recurring-project-template.md`
@@ -15,6 +15,7 @@
 - 工数/経費/休暇/日報/ウェルビーイング:
   - API/概念: `docs/requirements/domain-api-draft.md`
   - ウェルビーイング: `docs/requirements/wellbeing-policy.md`
+  - 経費精算: `docs/requirements/expense-settlement.md`
 - 損益/予実/単価: `docs/requirements/profit-and-variance.md` / `docs/requirements/rate-card.md`
 - 認証/ID/アクセス制御: `docs/requirements/id-management.md` / `docs/requirements/access-control.md` / `docs/requirements/rbac-matrix.md`
 - 運用（バックアップ/監視/ジョブ）: `docs/requirements/backup-restore.md` / `docs/requirements/batch-jobs.md` / `docs/requirements/ops-monitoring.md`
