@@ -22,6 +22,27 @@
 - 納品は Invoice の状態/メタ情報で表現
 - モデル増設を避けるが、納品書単体運用は難しい
 
+## 追加で整理すべき論点（未確定）
+### 連動ルール
+- 見積から納品/請求を引用作成する際のコピー範囲（明細/割引/税/注記）
+- 承認済みドキュメントからの引用のみ許可するか
+- 納品→請求の再見積（部分納品/分割請求）の扱い
+
+### 状態遷移（案）
+- Estimate: draft → pending → approved → sent/archived
+- Delivery（A案）: draft → pending → approved → sent
+- Invoice: draft → pending → approved → sent → paid
+- 入金確認: paidAt/paidBy を保持（部分入金の扱いは分かりません）
+
+### UI導線（案）
+- Estimate 詳細から「納品作成」「請求作成」を開始
+- Delivery 詳細から「請求作成」を開始
+- Invoice 詳細で「入金確認」操作（admin/mgmt のみ）
+
+### 監査/通知（案）
+- 発行/送信/入金確認は監査ログに記録
+- 送付/入金はアプリ内通知（メールは運用次第）
+
 ## TODO
 - [ ] 納品書の要否を決定（A/B）
 - [ ] 引用作成の導線（Estimate→Delivery→Invoice）設計
