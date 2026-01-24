@@ -315,6 +315,7 @@ model AppNotification {
   @@index([userId, readAt, createdAt])
   @@index([projectId])
   @@index([kind, createdAt])
+  @@index([kind, messageId, userId])
 }
 
 model AppNotificationDelivery {

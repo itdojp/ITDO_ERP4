@@ -148,18 +148,22 @@ export async function runDailyReportMissingNotifications(
     const existingUsers = new Set(existing.map((item) => item.userId));
     skippedExistingNotifications = existingUsers.size;
     const targets = missingUserIds.filter((id) => !existingUsers.has(id));
-    if (!dryRun && targets.length > 0) {
-      const result = await prisma.appNotification.createMany({
-        data: targets.map((userId) => ({
-          userId,
-          kind: 'daily_report_missing',
-          messageId,
-          payload: { reportDate: targetDateKey },
-          createdBy: options.actorId ?? undefined,
-          updatedBy: options.actorId ?? undefined,
-        })),
-      });
-      createdNotifications = result.count;
+    if (targets.length > 0) {
+      if (!dryRun) {
+        const result = await prisma.appNotification.createMany({
+          data: targets.map((userId) => ({
+            userId,
+            kind: 'daily_report_missing',
+            messageId,
+            payload: { reportDate: targetDateKey },
+            createdBy: options.actorId ?? undefined,
+            updatedBy: options.actorId ?? undefined,
+          })),
+        });
+        createdNotifications = result.count;
+      } else {
+        createdNotifications = targets.length;
+      }
     }
   }
 
