@@ -125,13 +125,7 @@ podman exec -e PGPASSWORD=postgres erp4-pg-erp4-mig-r1 \
     where p.\"parentId\" is not null and parent.id is null;
   select 'invoices_without_project' as check, count(*) from \"Invoice\" i
     left join \"Project\" p on p.id = i.\"projectId\"
-    where i.\"projectId\" is not null and p.id is null;
-  select 'time_entries_without_project' as check, count(*) from \"TimeEntry\" t
-    left join \"Project\" p on p.id = t.\"projectId\"
-    where p.id is null;
-  select 'expenses_without_project' as check, count(*) from \"Expense\" e
-    left join \"Project\" p on p.id = e.\"projectId\"
-    where p.id is null;"
+    where i.\"projectId\" is not null and p.id is null;"
 ```
 
 結果:
@@ -141,13 +135,11 @@ expenses_without_user|15288
 projects_without_customer|0
 projects_without_parent|0
 invoices_without_project|0
-time_entries_without_project|0
-expenses_without_project|0
 ```
 
 所見:
 - UserAccount を移行していないため、TimeEntry/Expense の userId は全件未解決（想定通り）。
-- Project → Customer / 親子 Project / Invoice → Project / TimeEntry・Expense → Project は参照欠損なし。
+- Project → Customer / 親子 Project / Invoice → Project は参照欠損なし。
 
 ## 参照整合の簡易チェック（UserAccount投入後）
 実施:
