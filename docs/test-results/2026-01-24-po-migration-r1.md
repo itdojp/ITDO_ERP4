@@ -80,6 +80,30 @@ expenses:       created 15288 / updated 0
 その他:
 - `migration-po` の integrity check は `ok`
 
+## 移行後の件数確認
+コマンド:
+```
+podman exec -e PGPASSWORD=postgres erp4-pg-erp4-mig-r1 \
+  psql -U postgres -d postgres -tA -c "
+  select 'Customer' as tbl, count(*) from \"Customer\"
+  union all select 'Vendor', count(*) from \"Vendor\"
+  union all select 'Project', count(*) from \"Project\"
+  union all select 'Invoice', count(*) from \"Invoice\"
+  union all select 'TimeEntry', count(*) from \"TimeEntry\"
+  union all select 'Expense', count(*) from \"Expense\"
+  order by tbl;"
+```
+
+結果:
+```
+Customer|87
+Expense|15288
+Invoice|2897
+Project|1734
+TimeEntry|54216
+Vendor|26
+```
+
 ## 次のアクション
 - `--apply` 後のデータ検証（件数/ランダムサンプル/不整合確認）
 - 失敗行/検証不一致があれば差分整理
