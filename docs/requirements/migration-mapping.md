@@ -44,6 +44,7 @@
 - PO: `cc_users`, `acs_rels` 等 → ERP4: `users` 相当（まだ未定義）
   - ロール/プロジェクトアサインは参照用にダンプし、RBACは新設計に合わせて再付与。
 - チーム/グループ: 旧組織・プロジェクトグループは mapping_groups に保持し、グループ設計確定後に紐付け。
+  - PoCでは `UserAccount.id = legacy user_id` として投入し、TimeEntry/Expense の参照を一旦解決する案も検討（恒久運用では再マッピングが必要）。
 
 ### 業者/発注/仕入
 - PO: 取引先テーブル（例: `im_companies`）→ ERP4: `vendors`/`customers`（区分で分岐）

@@ -46,6 +46,7 @@ type ProjectStatus = (typeof PROJECT_STATUS_VALUES)[number];
 type TimeStatus = (typeof TIME_STATUS_VALUES)[number];
 
 type PlannedIds = {
+  users: Set<string>;
   customers: Set<string>;
   vendors: Set<string>;
   projects: Set<string>;
@@ -77,12 +78,12 @@ function shouldShowHelp(): boolean {
 
 function printHelp() {
   const lines = [
-    'Usage: scripts/migrate-po.ts [--input-dir=DIR] [--input-format=json|csv] [--only=customers,vendors,...] [--apply]',
+    'Usage: scripts/migrate-po.ts [--input-dir=DIR] [--input-format=json|csv] [--only=users,customers,...] [--apply]',
     '',
     'Options:',
     '  --input-dir=DIR   Input directory (default: tmp/migration/po)',
     '  --input-format=F  Input format: json|csv (default: json)',
-    '  --only=LIST       Comma-separated scopes: customers,vendors,projects,tasks,milestones,estimates,invoices,purchase_orders,vendor_quotes,vendor_invoices,time_entries,expenses',
+    '  --only=LIST       Comma-separated scopes: users,customers,vendors,projects,tasks,milestones,estimates,invoices,purchase_orders,vendor_quotes,vendor_invoices,time_entries,expenses',
     '  --apply           Apply changes to DB (requires MIGRATION_CONFIRM=1)',
     '',
     'Examples:',
@@ -270,6 +271,7 @@ function normalizeString(value: unknown): string | null {
 }
 
 const existsCache = {
+  user: new Map<string, boolean>(),
   customer: new Map<string, boolean>(),
   vendor: new Map<string, boolean>(),
   project: new Map<string, boolean>(),
@@ -313,6 +315,74 @@ function ensureNoDuplicates(
   }
 }
 
+async function importUsers(
+  options: CliOptions,
+  items: UserInput[],
+  errors: ImportError[],
+) {
+  if (options.only && !options.only.has('users')) return { created: 0, updated: 0 };
+  ensureNoDuplicates(items, 'users', errors);
+  if (errors.length) return { created: 0, updated: 0 };
+
+  let created = 0;
+  let updated = 0;
+  for (const item of items) {
+    const id = normalizeString(item.userId);
+    if (!id) {
+      errors.push({ scope: 'users', legacyId: item.legacyId, message: 'userId is required' });
+      continue;
+    }
+    const userName = normalizeString(item.userName);
+    if (!userName) {
+      errors.push({ scope: 'users', legacyId: item.legacyId, message: 'userName is required' });
+      continue;
+    }
+    const email = normalizeString(item.email) ?? undefined;
+    const givenName = normalizeString(item.givenName) ?? undefined;
+    const familyName = normalizeString(item.familyName) ?? undefined;
+    const displayName =
+      normalizeString(item.displayName) ??
+      [givenName, familyName].filter(Boolean).join(' ') ||
+      undefined;
+    const emails = email ? [{ value: email, primary: true }] : undefined;
+    const active = item.active ?? true;
+
+    const data = {
+      id,
+      userName,
+      displayName,
+      givenName,
+      familyName,
+      active,
+      emails,
+    };
+    const exists = await prisma.userAccount.findUnique({ where: { id }, select: { id: true } });
+    existsCache.user.set(id, !!exists);
+    if (!options.apply) {
+      if (exists) updated += 1;
+      else created += 1;
+      continue;
+    }
+    try {
+      if (exists) {
+        await prisma.userAccount.update({ where: { id }, data });
+        updated += 1;
+      } else {
+        await prisma.userAccount.create({ data });
+        created += 1;
+      }
+      existsCache.user.set(id, true);
+    } catch (err) {
+      errors.push({
+        scope: 'users',
+        legacyId: item.legacyId,
+        message: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+  return { created, updated };
+}
+
 type CustomerInput = {
   legacyId: string;
   code: string;
@@ -321,6 +391,17 @@ type CustomerInput = {
   invoiceRegistrationId?: string | null;
   taxRegion?: string | null;
   billingAddress?: string | null;
+};
+
+type UserInput = {
+  legacyId: string;
+  userId: string;
+  userName: string;
+  email?: string | null;
+  displayName?: string | null;
+  givenName?: string | null;
+  familyName?: string | null;
+  active?: boolean | null;
 };
 
 type VendorInput = {
@@ -2119,6 +2200,17 @@ async function main() {
     return (json ?? []) as T[];
   }
 
+  const users = readInputArray<UserInput>('users', 'users', ['legacyId', 'userId', 'userName'], (item, record) => {
+    const parsed = parseCsvBoolean(record.active ?? null);
+    if (parsed != null) item.active = parsed;
+    else if (record.active != null) {
+      errors.push({
+        scope: 'users',
+        legacyId: record.legacyId ?? undefined,
+        message: 'invalid active (expected: true/false/1/0)',
+      });
+    }
+  });
   const customers = readInputArray<CustomerInput>('customers', 'customers', [
     'legacyId',
     'code',
@@ -2202,6 +2294,7 @@ async function main() {
   );
 
   const planned: PlannedIds = {
+    users: new Set<string>(),
     customers: new Set<string>(),
     vendors: new Set<string>(),
     projects: new Set<string>(),
@@ -2215,6 +2308,9 @@ async function main() {
     time_entries: new Set<string>(),
     expenses: new Set<string>(),
   };
+  if (shouldRun(options, 'users')) {
+    users.forEach((item) => planned.users.add(item.userId));
+  }
   if (shouldRun(options, 'customers')) {
     customers.forEach((item) => planned.customers.add(makeId('customer', item.legacyId)));
   }
@@ -2263,6 +2359,10 @@ async function main() {
 
   const summary: Record<string, { created: number; updated: number; total: number }> = {};
 
+  if (shouldRun(options, 'users')) {
+    const res = await importUsers(options, users, errors);
+    summary.users = { ...res, total: users.length };
+  }
   if (shouldRun(options, 'customers')) {
     const res = await importCustomers(options, customers, errors);
     summary.customers = { ...res, total: customers.length };
