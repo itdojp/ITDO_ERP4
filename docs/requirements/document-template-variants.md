@@ -12,13 +12,13 @@
 ## 前提（現行実装・資料）
 - `doc_template_settings` は `kind`, `templateId`, `numberRule`, `layoutConfig`, `logoUrl`, `signatureText`, `isDefault` を保持
 - `/pdf-templates?kind=` でテンプレ一覧を取得
-- `POST /{estimates|invoices|purchase-orders}/:id/send` は `templateId` / `templateSettingId` を任意指定可能
+- `POST /{estimates|invoices|purchase-orders}/:id/send` はクエリパラメータ（`?templateId=&templateSettingId=`）として `templateId` / `templateSettingId` を任意指定可能
 - `layoutConfig` の想定キーは `docs/requirements/pdf-email.md` に記載（`documentTitle`, `companyName`, `footerNote` など）
 
 ## 変動要素（候補）
 - 税表示: 税抜/税込/税額別記、端数処理の表示方針
 - 日付表示: 発行日/期限/有効期限の表示有無
-- 印影/署名: 会社印・担当者署名の表示有無（`signatureImageUrl` / `signatureText`）
+- 印影/署名: 会社印・担当者署名の表示有無（`layoutConfig.signatureImageUrl` / `signatureText`）
 - タイトル/注記/フッタ: 文言・文書タイトルの差分
 - ロゴ表示: `logoUrl` の有無
 - その他: 旧システムのテンプレ種別の全量は分かりません
@@ -36,8 +36,12 @@
 - フラグの組み合わせが複雑化した場合はテンプレ増設へ切替を検討。
 
 ## 権限（案）
-- テンプレ設定（`doc_template_settings`）のCRUD: admin/mgmt
-- テンプレの選択/切替: 分かりません。以下は候補。
+- 現行仕様
+  - テンプレ設定（`doc_template_settings`）のCRUD: admin/mgmt
+  - `POST /{estimates|invoices|purchase-orders}/:id/send` の実行: admin/mgmt のみに制限
+  - 上記 `/send` API 経由のテンプレ選択/切替: 現時点では admin/mgmt のみが実行可能
+- 将来案（権限を広げる場合の検討メモ）
+  - テンプレの選択/切替: 分かりません。以下は候補。
   - 案A: 送信権限を持つ利用者のみ（承認済みドキュメントに限定）
   - 案B: 作成者がドラフト時に選択し、承認後は変更不可
   - 案C: 送信時のみ選択可能（監査ログに保存）
