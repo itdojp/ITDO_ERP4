@@ -11,6 +11,6 @@ CREATE TABLE IF NOT EXISTS "WorklogSetting" (
 );
 
 -- Seed default
-INSERT INTO "WorklogSetting" ("id", "editableDays")
-VALUES ('default', 14)
+INSERT INTO "WorklogSetting" ("id", "editableDays", "createdAt", "updatedAt")
+VALUES ('default', 14, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
 ON CONFLICT ("id") DO NOTHING;
