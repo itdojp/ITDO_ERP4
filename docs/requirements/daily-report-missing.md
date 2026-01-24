@@ -4,7 +4,7 @@
 日報未提出を検知し、本人/管理者へ通知することで運用漏れを抑止する。
 
 ## 前提
-- 日報は `DailyReport`（reportDate 기준）で1日1件の upsert。
+- 日報は `DailyReport`（reportDate基準）で1日1件の upsert。
 - 修正ロックは `WorklogSetting.editableDays` に準拠（workDate基準）。
 
 ## 主要論点（未確定）
