@@ -104,8 +104,8 @@ TimeEntry|54216
 Vendor|26
 ```
 
-## 参照整合の簡易チェック
-※ `UserAccount` が未投入のため、ユーザ参照は未整合のまま（想定通り）。
+## 参照整合の簡易チェック（UserAccount未投入時）
+※ 初回チェック時点では `UserAccount` を投入しておらず、ユーザ参照は未整合のまま（想定通り）。
 
 コマンド:
 ```
@@ -149,7 +149,21 @@ expenses_without_project|0
 - UserAccount を移行していないため、TimeEntry/Expense の userId は全件未解決（想定通り）。
 - Project → Customer / 親子 Project / Invoice → Project / TimeEntry・Expense → Project は参照欠損なし。
 
+## 参照整合の簡易チェック（UserAccount投入後）
+実施:
+- `users.csv` を作成し、`scripts/migrate-po.ts --only=users --apply` を実行
+
+結果:
+```
+time_entries_without_user|0
+expenses_without_user|15288
+```
+
+所見:
+- TimeEntry の userId は `users.csv` の投入で解決。
+- Expense は元データにユーザ情報が無く、全件未解決のまま。
+
 ## 次のアクション
 - `--apply` 後のデータ検証（件数/ランダムサンプル/不整合確認）
 - 失敗行/検証不一致があれば差分整理
-- UserAccount 移行方式の決定と userId マッピングの検討
+- Expense の userId マッピング方針（placeholder/プロジェクト責任者/手動補完）を決定
