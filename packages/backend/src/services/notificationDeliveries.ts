@@ -155,6 +155,16 @@ function buildChatMentionEmailBody(notification: {
     .join('\n');
 }
 
+function resolveEmailNotificationKinds() {
+  const raw = process.env.NOTIFICATION_EMAIL_KINDS;
+  if (!raw) return ['chat_mention', 'daily_report_missing'];
+  const kinds = raw
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean);
+  return kinds.length ? kinds : ['chat_mention', 'daily_report_missing'];
+}
+
 type DeliveryRunItem = {
   id: string;
   notificationId: string;
@@ -201,7 +211,7 @@ export async function runNotificationEmailDeliveries(options: {
 
   const candidates = await prisma.appNotification.findMany({
     where: {
-      kind: 'chat_mention',
+      kind: { in: resolveEmailNotificationKinds() },
       readAt: null,
       createdAt: { gte: lookbackFrom },
     },
@@ -359,6 +369,17 @@ export async function runNotificationEmailDeliveries(options: {
         projectName: notification.project?.name,
       });
       body = buildChatMentionEmailBody(notification);
+    } else if (notification.kind === 'daily_report_missing') {
+      const payload = notification.payload as
+        | { reportDate?: string }
+        | undefined;
+      const reportDate = payload?.reportDate || '';
+      subject = reportDate
+        ? `ERP4: 日報未提出（${reportDate}）`
+        : 'ERP4: 日報未提出';
+      body = reportDate
+        ? `日報が未提出です。対象日: ${reportDate}`
+        : '日報が未提出です。';
     }
 
     try {

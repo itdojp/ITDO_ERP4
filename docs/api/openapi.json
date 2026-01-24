@@ -193,6 +193,12 @@
                           "integration_failure"
                         ],
                         "type": "string"
+                      },
+                      {
+                        "enum": [
+                          "daily_report_missing"
+                        ],
+                        "type": "string"
                       }
                     ]
                   }
@@ -361,6 +367,12 @@
                       {
                         "enum": [
                           "integration_failure"
+                        ],
+                        "type": "string"
+                      },
+                      {
+                        "enum": [
+                          "daily_report_missing"
                         ],
                         "type": "string"
                       }
@@ -2646,6 +2658,33 @@
     },
     "/jobs/approval-escalations/run": {
       "post": {
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/jobs/daily-report-missing/run": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "dryRun": {
+                    "type": "boolean"
+                  },
+                  "targetDate": {
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "Default Response"

@@ -65,6 +65,7 @@ enum AlertType {
   approval_escalation // 承認期限エスカレーション
   delivery_due // 納期超過の未請求
   integration_failure // 外部連携失敗
+  daily_report_missing // 日報未提出
 }
 
 enum TemplateKind {
@@ -314,6 +315,7 @@ model AppNotification {
   @@index([userId, readAt, createdAt])
   @@index([projectId])
   @@index([kind, createdAt])
+  @@index([kind, messageId, userId])
 }
 
 model AppNotificationDelivery {
