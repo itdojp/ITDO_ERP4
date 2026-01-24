@@ -6,7 +6,7 @@
 - スコープ/全体像: `docs/requirements/mvp-scope.md`
 - ドメイン/データモデル/API たたき台: `docs/requirements/domain-api-draft.md`
 - 画面/運用（見積/請求/発注/仕入）: `docs/requirements/estimate-invoice-po-ui.md`
-- 承認/アラート: `docs/requirements/approval-alerts.md` / `docs/requirements/approval-log.md` / `docs/requirements/alerts-notify.md` / `docs/requirements/alert-suppression.md`
+- 承認/アラート/通知: `docs/requirements/approval-alerts.md` / `docs/requirements/approval-log.md` / `docs/requirements/alerts-notify.md` / `docs/requirements/alert-suppression.md` / `docs/requirements/notifications.md`
 - 案件/タスク/マイルストーン/定期案件:
   - `docs/requirements/project-task-milestone-flow.md`
   - `docs/requirements/recurring-project-template.md`
