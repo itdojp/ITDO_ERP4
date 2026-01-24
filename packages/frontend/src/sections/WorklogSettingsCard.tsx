@@ -6,21 +6,21 @@ type WorklogSetting = {
   editableDays?: number | null;
 };
 
+const normalizeEditableDays = (value: string) => {
+  if (!value.trim()) return null;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return null;
+  const normalized = Math.floor(parsed);
+  if (normalized < 1) return 1;
+  if (normalized > 365) return 365;
+  return normalized;
+};
+
 export const WorklogSettingsCard: React.FC = () => {
   const [editableDays, setEditableDays] = useState(14);
   const [editableDaysInput, setEditableDaysInput] = useState('14');
   const [message, setMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-
-  const normalizeEditableDays = (value: string) => {
-    if (!value.trim()) return null;
-    const parsed = Number(value);
-    if (!Number.isFinite(parsed)) return null;
-    const normalized = Math.floor(parsed);
-    if (normalized < 1) return 1;
-    if (normalized > 365) return 365;
-    return normalized;
-  };
 
   const load = useCallback(async () => {
     setIsLoading(true);
@@ -63,7 +63,7 @@ export const WorklogSettingsCard: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [editableDays]);
+  }, [editableDaysInput]);
 
   useEffect(() => {
     load().catch(() => undefined);
