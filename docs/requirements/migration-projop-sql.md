@@ -112,6 +112,22 @@ WHERE c.company_id IN (SELECT DISTINCT company_id FROM im_projects)
 ) TO STDOUT WITH CSV HEADER" \
 > tmp/migration/po-projop-20260121/customers.csv
 
+# users（UserAccount）
+podman exec -e PGPASSWORD=postgres erp4-pg-projop psql -U postgres -d postgres -c \
+"COPY (SELECT
+  'cc_users:'||u.user_id AS \"legacyId\",
+  u.user_id::text AS \"userId\",
+  COALESCE(NULLIF(u.email,''), NULLIF(u.username,''), 'user-'||u.user_id::text) AS \"userName\",
+  u.email AS \"email\",
+  u.first_names AS \"givenName\",
+  u.last_name AS \"familyName\",
+  NULLIF(trim(COALESCE(u.first_names,'') || ' ' || COALESCE(u.last_name,'')), '') AS \"displayName\",
+  CASE WHEN u.member_state = 'approved' THEN 'true' ELSE 'false' END AS \"active\"
+FROM cc_users u
+WHERE u.user_id IS NOT NULL
+) TO STDOUT WITH CSV HEADER" \
+> tmp/migration/po-projop-20260121/users.csv
+
 # vendors（カテゴリに Provider が含まれるもの）
 podman exec -e PGPASSWORD=postgres erp4-pg-projop psql -U postgres -d postgres -c \
 "COPY (SELECT
@@ -224,14 +240,14 @@ npm run build --prefix packages/backend
 DATABASE_URL=postgresql://postgres:postgres@localhost:55440/postgres?schema=public \
   npx --prefix packages/backend ts-node --project packages/backend/tsconfig.json \
   scripts/migrate-po.ts --input-dir=tmp/migration/po-projop-20260121 --input-format=csv \
-  --only=customers,vendors,projects,invoices,time_entries,expenses
+  --only=users,customers,vendors,projects,invoices,time_entries,expenses
 
 # apply
 MIGRATION_CONFIRM=1 MIGRATION_VERIFY_CHUNK_SIZE=1000 \
 DATABASE_URL=postgresql://postgres:postgres@localhost:55440/postgres?schema=public \
   npx --prefix packages/backend ts-node --project packages/backend/tsconfig.json \
   scripts/migrate-po.ts --input-dir=tmp/migration/po-projop-20260121 --input-format=csv \
-  --only=customers,vendors,projects,invoices,time_entries,expenses --apply
+  --only=users,customers,vendors,projects,invoices,time_entries,expenses --apply
 ```
 
 ## 5. 検証
