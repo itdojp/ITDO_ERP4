@@ -616,6 +616,7 @@ const alertTypeSchema = Type.Union([
   Type.Literal('approval_escalation'),
   Type.Literal('delivery_due'),
   Type.Literal('integration_failure'),
+  Type.Literal('daily_report_missing'),
 ]);
 
 const alertChannelSchema = Type.Union([
@@ -767,6 +768,16 @@ export const notificationDeliveryRunSchema = {
     {
       dryRun: Type.Optional(Type.Boolean()),
       limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 200 })),
+    },
+    { additionalProperties: false },
+  ),
+};
+
+export const dailyReportMissingRunSchema = {
+  body: Type.Object(
+    {
+      targetDate: Type.Optional(Type.String()),
+      dryRun: Type.Optional(Type.Boolean()),
     },
     { additionalProperties: false },
   ),

@@ -107,6 +107,7 @@ const alertTypes = [
   'approval_escalation',
   'delivery_due',
   'integration_failure',
+  'daily_report_missing',
 ];
 const alertChannels = ['email', 'dashboard', 'slack', 'webhook'];
 const flowTypes = [

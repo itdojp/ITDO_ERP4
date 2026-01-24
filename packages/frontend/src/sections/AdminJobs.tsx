@@ -17,6 +17,7 @@ type JobKey =
   | 'reportSubscriptions'
   | 'reportDeliveries'
   | 'notificationDeliveries'
+  | 'dailyReportMissing'
   | 'recurringProjects'
   | 'integrations';
 
@@ -35,6 +36,7 @@ const buildInitialState = (): Record<JobKey, JobState> => ({
   reportSubscriptions: { result: null, error: '', loading: false },
   reportDeliveries: { result: null, error: '', loading: false },
   notificationDeliveries: { result: null, error: '', loading: false },
+  dailyReportMissing: { result: null, error: '', loading: false },
   recurringProjects: { result: null, error: '', loading: false },
   integrations: { result: null, error: '', loading: false },
 });
@@ -45,6 +47,8 @@ export const AdminJobs: React.FC = () => {
   const [reportRetryDryRun, setReportRetryDryRun] = useState(false);
   const [notificationDryRun, setNotificationDryRun] = useState(false);
   const [notificationLimit, setNotificationLimit] = useState('50');
+  const [dailyReportDryRun, setDailyReportDryRun] = useState(false);
+  const [dailyReportTargetDate, setDailyReportTargetDate] = useState('');
 
   const notificationLimitError = useMemo(() => {
     if (!notificationLimit.trim()) return '';
@@ -106,6 +110,13 @@ export const AdminJobs: React.FC = () => {
       ...(limit ? { limit } : {}),
     });
   };
+  const runDailyReportMissing = () =>
+    runJob('dailyReportMissing', '/jobs/daily-report-missing/run', {
+      ...(dailyReportTargetDate.trim()
+        ? { targetDate: dailyReportTargetDate.trim() }
+        : {}),
+      dryRun: dailyReportDryRun,
+    });
   const runRecurringProjects = () =>
     runJob('recurringProjects', '/jobs/recurring-projects/run');
   const runIntegrations = () =>
@@ -157,6 +168,28 @@ export const AdminJobs: React.FC = () => {
           >
             データ品質チェック
           </Button>
+          <label className="badge" style={{ cursor: 'pointer' }}>
+            <input
+              type="checkbox"
+              checked={dailyReportDryRun}
+              onChange={(e) => setDailyReportDryRun(e.target.checked)}
+              style={{ marginRight: 6 }}
+            />
+            dryRun
+          </label>
+          <Input
+            value={dailyReportTargetDate}
+            onChange={(e) => setDailyReportTargetDate(e.target.value)}
+            placeholder="YYYY-MM-DD"
+            style={{ width: 140 }}
+          />
+          <Button
+            variant="secondary"
+            onClick={runDailyReportMissing}
+            loading={jobs.dailyReportMissing.loading}
+          >
+            日報未提出通知
+          </Button>
         </div>
         <div style={{ marginTop: 12, display: 'grid', gap: 8 }}>
           <div>
@@ -170,6 +203,10 @@ export const AdminJobs: React.FC = () => {
           <div>
             <strong>データ品質チェック</strong>
             {renderResult('dataQuality')}
+          </div>
+          <div>
+            <strong>日報未提出通知</strong>
+            {renderResult('dailyReportMissing')}
           </div>
         </div>
       </Card>

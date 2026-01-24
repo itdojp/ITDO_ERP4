@@ -21,9 +21,14 @@
 4. 既に通知済みのユーザはスキップ（サプレッション）
 
 ## 実装案
-- AlertSetting に `daily_report_missing` を追加
-- threshold は「欠損人数」または「欠損率」で運用
-- targetRef は `userId:YYYY-MM-DD` を基本とし、通知重複を防止
+- AppNotification で本人向け通知を作成（`kind=daily_report_missing`）
+- AlertSetting に `daily_report_missing` を追加し、管理者向けに欠損人数をアラート
+  - 目安: threshold は「欠損人数」
+  - targetRef は `daily-report:YYYY-MM-DD`
+- 通知ジョブ: `POST /jobs/daily-report-missing/run`
+  - `targetDate` 未指定時は `DAILY_REPORT_MISSING_TARGET_OFFSET_DAYS`（既定 1）日だけ遡及
+  - 休日スキップは `DAILY_REPORT_MISSING_SKIP_WEEKEND`（既定 true）
+  - 工数入力がある人のみ対象にする場合は `DAILY_REPORT_MISSING_REQUIRE_TIME_ENTRY=true`
 
 ## TODO
 - [ ] 対象ユーザの範囲を確定
