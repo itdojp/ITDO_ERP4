@@ -9,6 +9,20 @@
 - Push: WebPush（`/push-notifications/test`、購読は `push_subscriptions`）
 - 外部連携: Slack/Webhook（主にアラート系で利用、運用は allowlist）
 
+## 現行実装（MVP）
+### AppNotification の発火イベント（実装済み）
+- `chat_mention`: チャットのメンション通知（Chat で作成）
+- `daily_report_missing`: 日報未提出通知（ジョブで作成）
+
+### メール配信の対象（実装済み）
+- `chat_mention`
+- `daily_report_missing`
+- 配信ジョブ: `/jobs/notification-deliveries/run`
+
+### 未実装/手動のみ
+- Push通知の実配信は `/push-notifications/test` の手動テストのみ
+- イベント別のPush/外部連携（Slack/Webhook）は未実装
+
 ## 通知イベント一覧（ドラフト）
 ### 日報/工数
 - 日報未提出（対象: 本人 / 管理者）
