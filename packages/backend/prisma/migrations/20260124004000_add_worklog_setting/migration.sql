@@ -1,10 +1,10 @@
--- CreateTable
-CREATE TABLE "WorklogSetting" (
-    "id" TEXT NOT NULL,
+-- CreateTable (idempotent)
+CREATE TABLE IF NOT EXISTS "WorklogSetting" (
+    "id" TEXT NOT NULL DEFAULT 'default',
     "editableDays" INTEGER NOT NULL DEFAULT 14,
-    "createdAt" TIMESTAMPTZ NOT NULL DEFAULT now(),
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "createdBy" TEXT,
-    "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT now(),
+    "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedBy" TEXT,
 
     CONSTRAINT "WorklogSetting_pkey" PRIMARY KEY ("id")
