@@ -48,7 +48,39 @@ expenses:       created 0 / updated 15288
 - dry-run が「全件 updated」になっているため、移行先DBに既存データが入っている状態。
 - 本番相当の移行リハーサルは **空のERP4 DB** を用意した上で `--apply` を実行する必要がある。
 
+## 移行 apply（空DB）
+前提:
+- 新規の空DBコンテナ `erp4-pg-erp4-mig-r1`（host port: 55441）
+- `prisma migrate deploy` 実行済み
+- `WorklogSetting` の重複マイグレーション対策が必要（PR #688）
+
+コマンド:
+```
+MIGRATION_CONFIRM=1 DATABASE_URL="postgresql://postgres:postgres@localhost:55441/postgres?schema=public" \
+  npx --prefix packages/backend ts-node --project packages/backend/tsconfig.json \
+  scripts/migrate-po.ts --input-format=csv --input-dir=tmp/migration/po-projop-20260121 --apply
+```
+
+結果（summary）:
+```
+customers:      created 87 / updated 0
+vendors:        created 26 / updated 0
+projects:       created 1734 / updated 0
+tasks:          created 0 / updated 0
+milestones:     created 0 / updated 0
+estimates:      created 0 / updated 0
+invoices:       created 2897 / updated 0
+purchase_orders created 0 / updated 0
+vendor_quotes   created 0 / updated 0
+vendor_invoices created 0 / updated 0
+time_entries:   created 54216 / updated 0
+expenses:       created 15288 / updated 0
+```
+
+その他:
+- `migration-po` の integrity check は `ok`
+
 ## 次のアクション
-- ERP4 移行先DBの初期化（新規コンテナ or schema reset）
-- `MIGRATION_CONFIRM=1` で `--apply` 実行し、import 結果を記録
+- `--apply` 後のデータ検証（件数/ランダムサンプル/不整合確認）
 - 失敗行/検証不一致があれば差分整理
+- `WorklogSetting` 重複マイグレーション修正（PR #688）をマージ
