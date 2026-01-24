@@ -88,9 +88,8 @@ RESTORE_CONFIRM=1 CONTAINER_NAME=erp4-pg-po-migration HOST_PORT=55440 bash scrip
 
 ## 6. よくある失敗パターン（チェックポイント）
 - 参照切れ（project/task/milestone/estimate/vendor/expense の未投入）
-  - `--only` で依存順に投入する（customers/vendors → projects → tasks/milestones → documents → time/expense）
+  - `--only` で依存順に投入する（users → customers/vendors → projects → tasks/milestones → documents → time/expense）
 - ユーザID（`time_entries.userId` 等）の突合せが未確定
   - PoC段階では「文字列IDのまま」取り込み、後で運用/ID連携設計で確定させる（必要なら変換ジョブを作る）
 - 金額整合（header total と lines 合計の不一致）
   - 入力側の `totalAmount` と `lines` の内容を合わせる（または `lines` を省略して自動生成にする）
-
