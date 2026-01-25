@@ -22,6 +22,17 @@ from "Invoice"
 group by "projectId"
 order by "projectId";
 
+-- 2.5) user references (should be resolved via UserAccount.id)
+select e.id, e."userId"
+from "Expense" e
+left join "UserAccount" u on u.id = e."userId"
+where u.id is null;
+
+select te.id, te."userId"
+from "TimeEntry" te
+left join "UserAccount" u on u.id = te."userId"
+where u.id is null;
+
 select "projectId", sum(amount) as expense_total
 from "Expense"
 group by "projectId"
