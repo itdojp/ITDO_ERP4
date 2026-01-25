@@ -328,6 +328,12 @@ export MIGRATION_CONFIRM=1
 npx --prefix packages/backend ts-node --project packages/backend/tsconfig.json scripts/migrate-po.ts --only=projects,tasks --apply
 ```
 
+### 対象を絞る（例: users のみ）
+```bash
+export MIGRATION_CONFIRM=1
+npx --prefix packages/backend ts-node --project packages/backend/tsconfig.json scripts/migrate-po.ts --only=users --apply
+```
+
 ## 取込後の簡易整合チェック（apply時）
 - 件数一致: `id in (...)` で「入力で対象にしたID」が DB に存在することを確認
 - 明細合計: 見積/請求/発注の `lines` 合計が `totalAmount` と一致することを確認
@@ -341,6 +347,7 @@ npx --prefix packages/backend ts-node --project packages/backend/tsconfig.json s
 
 ## 既知の制約（最小実装）
 - `time_entries.userId` などのユーザIDの突合せは運用で決める必要がある
+- `users.csv` は PoC 向けに最小限の UserAccount を投入する用途（恒久運用は IDaaS/SCIM の方針に従う）
 - 簡易整合チェックは `id in (...)` / `groupBy` によるチェックのため、巨大データでは時間/SQL制限の調整が必要になる可能性がある
 - 見積/請求/発注の明細（lines）は apply 時に「全削除→再作成」で同期する（差分更新は未対応）
 - 承認フロー（ApprovalInstance/Step）はこのツールでは作成しない（必要なら別途運用/後続対応）
