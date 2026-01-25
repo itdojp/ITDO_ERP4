@@ -13,12 +13,17 @@
 - 見積→納品→請求の引用作成/連鎖UIが未整備
 - 請求の発行/入金確認の状態遷移が未整備
 
-## 方針案（未確定）
+## MVP方針
+- 納品(D)は請求に統合（請求書の状態/メタ情報で表現）
+- 納品番号（Dプレフィックス）は予約のみ。独立ドキュメントは作成しない
+- 追加要件が出た場合に DeliveryDocument（A案）を検討
+
+## 方針案（拡張）
 ### A. 納品書モデルを新設
 - DeliveryDocument を追加し、Estimate/Invoice と連動
 - 承認/ロック/送付ログは請求と同等に扱う
 
-### B. 納品を請求に統合
+### B. 納品を請求に統合（MVP）
 - 納品は Invoice の状態/メタ情報で表現
 - モデル増設を避けるが、納品書単体運用は難しい
 
@@ -29,10 +34,10 @@
 - 納品→請求の再見積（部分納品/分割請求）の扱い
 
 ### 状態遷移（案）
-- Estimate: draft → pending → approved → sent/archived
-- Delivery（A案）: draft → pending → approved → sent
-- Invoice: draft → pending → approved → sent → paid
-- 入金確認: paidAt/paidBy を保持（部分入金の扱いは分かりません）
+- Estimate: draft → pending_qa → pending_exec → approved → sent/archived
+- Delivery（A案）: draft → pending_qa → pending_exec → approved → sent
+- Invoice: draft → pending_qa → pending_exec → approved → sent → paid
+- 入金確認: paidAt/paidBy を保持（部分入金はMVP対象外）
 
 ### UI導線（案）
 - Estimate 詳細から「納品作成」「請求作成」を開始
@@ -44,8 +49,8 @@
 - 送付/入金はアプリ内通知（メールは運用次第）
 
 ## TODO
-- [ ] 納品書の要否を決定（A/B）
-- [ ] 引用作成の導線（Estimate→Delivery→Invoice）設計
+- [ ] 引用作成の導線（Estimate→Invoice）設計（MVP）
+- [ ] 納品情報（Invoiceメタ）の項目を確定
 - [ ] 請求の発行/入金確認の状態遷移と権限を決定
 - [ ] 監査ログ/通知との連動設計
 
