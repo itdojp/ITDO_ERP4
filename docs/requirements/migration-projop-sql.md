@@ -115,15 +115,22 @@ WHERE c.company_id IN (SELECT DISTINCT company_id FROM im_projects)
 # users（UserAccount）
 podman exec -e PGPASSWORD=postgres erp4-pg-projop psql -U postgres -d postgres -c \
 "COPY (SELECT
-  'cc_users:'||u.user_id AS \"legacyId\",
+  'users:'||u.user_id AS \"legacyId\",
   u.user_id::text AS \"userId\",
-  COALESCE(NULLIF(u.email,''), NULLIF(u.username,''), 'user-'||u.user_id::text) AS \"userName\",
-  u.email AS \"email\",
-  u.first_names AS \"givenName\",
-  u.last_name AS \"familyName\",
-  NULLIF(trim(COALESCE(u.first_names,'') || ' ' || COALESCE(u.last_name,'')), '') AS \"displayName\",
-  CASE WHEN u.member_state = 'approved' THEN 'true' ELSE 'false' END AS \"active\"
-FROM cc_users u
+  COALESCE(NULLIF(pa.email,''), NULLIF(u.username,''), 'user-'||u.user_id::text) AS \"userName\",
+  pa.email AS \"email\",
+  pe.first_names AS \"givenName\",
+  pe.last_name AS \"familyName\",
+  NULLIF(trim(COALESCE(pe.first_names,'') || ' ' || COALESCE(pe.last_name,'')), '') AS \"displayName\",
+  CASE WHEN COALESCE(mr.member_state, 'approved') = 'approved' THEN 'true' ELSE 'false' END AS \"active\"
+FROM users u
+JOIN persons pe ON pe.person_id = u.user_id
+JOIN parties pa ON pa.party_id = u.user_id
+LEFT JOIN group_member_map m
+  ON m.member_id = u.user_id
+ AND m.group_id = acs__magic_object_id('registered_users')
+ AND m.rel_type = 'membership_rel'
+LEFT JOIN membership_rels mr ON mr.rel_id = m.rel_id
 WHERE u.user_id IS NOT NULL
 ) TO STDOUT WITH CSV HEADER" \
 > tmp/migration/po-projop-20260121/users.csv
@@ -188,11 +195,13 @@ WHERE hours > 0 AND day IS NOT NULL AND day >= '1900-01-01'
 > tmp/migration/po-projop-20260121/time_entries.csv
 
 # expenses（project_id ありのみ）
+# - userId は provider_id（Submitter）を使用する
+# - provider_id は creation_user と一致するため両者の整合性は保たれる
 podman exec -e PGPASSWORD=postgres erp4-pg-projop psql -U postgres -d postgres -c \
 "COPY (SELECT
   'im_expenses:'||e.expense_id AS \"legacyId\",
   'im_projects:'||c.project_id AS \"projectLegacyId\",
-  COALESCE(c.last_modifying_user, c.customer_id)::text AS \"userId\",
+  c.provider_id::text AS \"userId\",
   COALESCE(cat.category,'expense') AS \"category\",
   COALESCE(c.amount,0) AS \"amount\",
   COALESCE(c.currency,'JPY') AS \"currency\",

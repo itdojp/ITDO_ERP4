@@ -41,7 +41,7 @@
   - 領収書パスは receipt_url に転記（ファイル本体は別途移送が必要）。
 
 ### ユーザ/ロール
-- PO: `cc_users`, `acs_rels` 等 → ERP4: `users` 相当（まだ未定義）
+- PO: `users`, `persons`, `parties` 等 → ERP4: `users` 相当（まだ未定義）
   - ロール/プロジェクトアサインは参照用にダンプし、RBACは新設計に合わせて再付与。
 - チーム/グループ: 旧組織・プロジェクトグループは mapping_groups に保持し、グループ設計確定後に紐付け。
   - PoCでは `UserAccount.id = legacy user_id` として投入し、TimeEntry/Expense の参照を一旦解決する案も検討（恒久運用では再マッピングが必要）。
@@ -101,8 +101,8 @@ insert into mapping_projects(legacy_id, new_id, legacy_code) values
   ('im_projects:1002', '22222222-2222-2222-2222-222222222222', 'PRJ-002');
 
 insert into mapping_users(legacy_id, new_id, legacy_login) values
-  ('cc_users:501', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'taro@example.com'),
-  ('cc_users:502', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'hanako@example.com');
+  ('users:501', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'taro@example.com'),
+  ('users:502', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'hanako@example.com');
 
 insert into mapping_vendors(legacy_id, new_id, legacy_code) values
   ('im_companies:801', 'cccccccc-cccc-cccc-cccc-cccccccccccc', 'VND-001');

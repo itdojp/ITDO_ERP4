@@ -13,7 +13,10 @@
 ) to 'invoices_legacy.csv' with csv header;
 
 \copy (
-  select user_id, login, email from cc_users
+  select u.user_id, u.username, pa.email, pe.first_names, pe.last_name
+  from users u
+  join parties pa on pa.party_id = u.user_id
+  join persons pe on pe.person_id = u.user_id
 ) to 'users_legacy.csv' with csv header;
 ```
 
