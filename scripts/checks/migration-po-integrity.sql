@@ -47,6 +47,17 @@ from "VendorInvoice"
 group by "projectId"
 order by "projectId";
 
+-- 2.5) user references (should be resolved via UserAccount.id)
+select e.id, e."userId"
+from "Expense" e
+left join "UserAccount" u on u.id = e."userId"
+where u.id is null;
+
+select te.id, te."userId"
+from "TimeEntry" te
+left join "UserAccount" u on u.id = te."userId"
+where u.id is null;
+
 -- 3) referential integrity (cross-project mismatches)
 -- Invoice.estimateId -> Estimate.projectId mismatch
 select i.id, i."invoiceNo", i."projectId" as invoice_project_id, e."projectId" as estimate_project_id
