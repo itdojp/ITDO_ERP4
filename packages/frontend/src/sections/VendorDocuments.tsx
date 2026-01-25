@@ -84,7 +84,7 @@ type VendorQuoteForm = {
 type VendorInvoiceForm = {
   projectId: string;
   vendorId: string;
-  purchaseOrderId: string;
+  purchaseOrderId?: string;
   vendorInvoiceNo: string;
   receivedDate: string;
   dueDate: string;
@@ -440,6 +440,7 @@ export const VendorDocuments: React.FC = () => {
       setInvoiceResult({ text: '仕入請求を登録しました', type: 'success' });
       setInvoiceForm((prev) => ({
         ...prev,
+        purchaseOrderId: '',
         vendorInvoiceNo: '',
         documentUrl: '',
         totalAmount: 0,
