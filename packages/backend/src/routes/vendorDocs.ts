@@ -62,6 +62,7 @@ export async function registerVendorDocRoutes(app: FastifyInstance) {
       if (status) where.status = status;
       const items = await prisma.vendorInvoice.findMany({
         where,
+        include: { purchaseOrder: { select: { id: true, poNo: true } } },
         orderBy: { createdAt: 'desc' },
         take: 100,
       });
@@ -76,6 +77,7 @@ export async function registerVendorDocRoutes(app: FastifyInstance) {
       const { id } = req.params as { id: string };
       const invoice = await prisma.vendorInvoice.findUnique({
         where: { id },
+        include: { purchaseOrder: { select: { id: true, poNo: true } } },
       });
       if (!invoice) {
         return reply.status(404).send({
@@ -152,6 +154,38 @@ export async function registerVendorDocRoutes(app: FastifyInstance) {
         return reply.status(404).send({
           error: { code: 'NOT_FOUND', message: 'Vendor not found' },
         });
+      }
+      if (body.purchaseOrderId) {
+        const purchaseOrder = await prisma.purchaseOrder.findUnique({
+          where: { id: body.purchaseOrderId },
+          select: {
+            id: true,
+            projectId: true,
+            vendorId: true,
+            deletedAt: true,
+          },
+        });
+        if (!purchaseOrder || purchaseOrder.deletedAt) {
+          return reply.status(404).send({
+            error: { code: 'NOT_FOUND', message: 'Purchase order not found' },
+          });
+        }
+        if (purchaseOrder.projectId !== body.projectId) {
+          return reply.status(400).send({
+            error: {
+              code: 'INVALID_PURCHASE_ORDER',
+              message: 'Purchase order project does not match',
+            },
+          });
+        }
+        if (purchaseOrder.vendorId !== body.vendorId) {
+          return reply.status(400).send({
+            error: {
+              code: 'INVALID_PURCHASE_ORDER',
+              message: 'Purchase order vendor does not match',
+            },
+          });
+        }
       }
       const vi = await prisma.vendorInvoice.create({
         data: {

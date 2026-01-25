@@ -51,6 +51,8 @@ type VendorInvoice = {
   vendorInvoiceNo?: string | null;
   projectId: string;
   vendorId: string;
+  purchaseOrderId?: string | null;
+  purchaseOrder?: { id: string; poNo?: string | null } | null;
   receivedDate?: string | null;
   dueDate?: string | null;
   currency: string;
@@ -82,6 +84,7 @@ type VendorQuoteForm = {
 type VendorInvoiceForm = {
   projectId: string;
   vendorId: string;
+  purchaseOrderId: string;
   vendorInvoiceNo: string;
   receivedDate: string;
   dueDate: string;
@@ -134,6 +137,7 @@ const defaultVendorQuoteForm: VendorQuoteForm = {
 const defaultVendorInvoiceForm: VendorInvoiceForm = {
   projectId: '',
   vendorId: '',
+  purchaseOrderId: '',
   vendorInvoiceNo: '',
   receivedDate: today,
   dueDate: '',
@@ -191,6 +195,14 @@ export const VendorDocuments: React.FC = () => {
   const vendorMap = useMemo(() => {
     return new Map(vendors.map((vendor) => [vendor.id, vendor]));
   }, [vendors]);
+
+  const availablePurchaseOrders = useMemo(() => {
+    return purchaseOrders.filter(
+      (po) =>
+        po.projectId === invoiceForm.projectId &&
+        po.vendorId === invoiceForm.vendorId,
+    );
+  }, [purchaseOrders, invoiceForm.projectId, invoiceForm.vendorId]);
 
   const loadProjects = useCallback(async () => {
     try {
@@ -295,6 +307,16 @@ export const VendorDocuments: React.FC = () => {
       prev.vendorId ? prev : { ...prev, vendorId: vendors[0].id },
     );
   }, [vendors]);
+
+  useEffect(() => {
+    if (!invoiceForm.purchaseOrderId) return;
+    const exists = availablePurchaseOrders.some(
+      (po) => po.id === invoiceForm.purchaseOrderId,
+    );
+    if (!exists) {
+      setInvoiceForm((prev) => ({ ...prev, purchaseOrderId: '' }));
+    }
+  }, [availablePurchaseOrders, invoiceForm.purchaseOrderId]);
 
   const renderProject = (projectId: string) => {
     const project = projectMap.get(projectId);
@@ -406,6 +428,7 @@ export const VendorDocuments: React.FC = () => {
         body: JSON.stringify({
           projectId: invoiceForm.projectId,
           vendorId: invoiceForm.vendorId,
+          purchaseOrderId: invoiceForm.purchaseOrderId || undefined,
           vendorInvoiceNo: invoiceForm.vendorInvoiceNo.trim() || undefined,
           receivedDate: invoiceForm.receivedDate || undefined,
           dueDate: invoiceForm.dueDate || undefined,
@@ -443,6 +466,25 @@ export const VendorDocuments: React.FC = () => {
 
   const setInvoiceActionBusy = (id: string, isBusy: boolean) => {
     setInvoiceActionState((prev) => ({ ...prev, [id]: isBusy }));
+  };
+
+  const startVendorInvoiceFromPo = (po: PurchaseOrder) => {
+    const amount =
+      typeof po.totalAmount === 'number'
+        ? po.totalAmount
+        : Number(po.totalAmount) || 0;
+    setInvoiceForm((prev) => ({
+      ...prev,
+      projectId: po.projectId,
+      vendorId: po.vendorId,
+      purchaseOrderId: po.id,
+      currency: po.currency || prev.currency,
+      totalAmount: amount,
+    }));
+    setInvoiceResult({
+      text: '発注書から仕入請求の入力を開始しました',
+      type: 'success',
+    });
   };
 
   const submitPurchaseOrder = async (id: string) => {
@@ -655,6 +697,14 @@ export const VendorDocuments: React.FC = () => {
                 <div style={{ marginTop: 6 }}>
                   <button
                     className="button secondary"
+                    onClick={() => startVendorInvoiceFromPo(item)}
+                  >
+                    仕入請求を作成
+                  </button>
+                </div>
+                <div style={{ marginTop: 6 }}>
+                  <button
+                    className="button secondary"
                     onClick={() => loadPurchaseOrderSendLogs(item.id)}
                     disabled={poSendLogLoading[item.id]}
                   >
@@ -855,6 +905,22 @@ export const VendorDocuments: React.FC = () => {
                   </option>
                 ))}
               </select>
+              <select
+                value={invoiceForm.purchaseOrderId}
+                onChange={(e) =>
+                  setInvoiceForm({
+                    ...invoiceForm,
+                    purchaseOrderId: e.target.value,
+                  })
+                }
+              >
+                <option value="">関連発注書 (任意)</option>
+                {availablePurchaseOrders.map((po) => (
+                  <option key={po.id} value={po.id}>
+                    {po.poNo || missingNumberLabel}
+                  </option>
+                ))}
+              </select>
               <input
                 type="text"
                 value={invoiceForm.vendorInvoiceNo}
@@ -957,6 +1023,11 @@ export const VendorDocuments: React.FC = () => {
                   受領日: {formatDate(item.receivedDate)} / 支払期限:{' '}
                   {formatDate(item.dueDate)}
                 </div>
+                {item.purchaseOrder && (
+                  <div style={{ fontSize: 12, color: '#64748b' }}>
+                    関連発注書: {item.purchaseOrder.poNo || item.purchaseOrder.id}
+                  </div>
+                )}
                 {item.status === 'draft' && (
                   <div style={{ marginTop: 6 }}>
                     <button
