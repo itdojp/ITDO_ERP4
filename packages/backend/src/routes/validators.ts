@@ -353,7 +353,12 @@ export const invoiceFromTimeEntriesSchema = {
 export const invoiceMarkPaidSchema = {
   body: Type.Object(
     {
-      paidAt: Type.Optional(Type.String()),
+      paidAt: Type.Optional(
+        Type.Union([
+          Type.String({ format: 'date-time' }),
+          Type.String({ format: 'date' }),
+        ]),
+      ),
     },
     { additionalProperties: false },
   ),
