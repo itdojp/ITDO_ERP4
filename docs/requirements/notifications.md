@@ -60,6 +60,37 @@
 - 通知サプレッションと再送ポリシーの確定
 - 監査ログに残す通知イベントの範囲を決定
 
+## 具体化（たたき台）
+### イベント別の宛先/チャネル
+| カテゴリ | イベント | 宛先（初期案） | チャネル | 備考 |
+|---|---|---|---|---|
+| 日報/工数 | 日報未提出 | 本人 / 管理者(mgmt/admin) | app + email | 既存実装: kind=daily_report_missing |
+| 日報/工数 | 日報提出 | 本人 | app | メール不要（任意） |
+| 日報/工数 | 日報修正 | 本人 | app | ロック期間後の修正は管理者承認対象に寄せる |
+| 日報/工数 | 工数修正申請/承認 | 申請者/承認者 | app + email | 承認系は重要通知扱い |
+| 休暇 | 申請/差戻し/承認/却下 | 申請者/承認者 | app + email | 承認系 |
+| 休暇 | 休暇予定の事前通知 | 本人 / 管理者 | app | メールは任意 |
+| プロジェクト | 新規作成 | mgmt/admin | app | 既存ログと整合 |
+| プロジェクト | ステータス変更 | mgmt/admin/lead | app | 重大変更のみメール（任意） |
+| プロジェクト | メンバー追加 | 追加されたユーザ | app | 参加通知 |
+| 承認 | 申請/差戻し/承認/却下 | 申請者/承認者 | app + email | 重要通知 |
+| 承認 | 承認遅延 | 承認者/管理者 | app + email | 既存アラートと整合 |
+
+### 宛先ルール（初期案）
+- roles: admin/mgmt/exec/hr は Role による配信対象に含められる
+- project members: projectId 連動イベントは ProjectMember から宛先抽出
+- 個別指定: recipients.users / recipients.emails を優先
+
+### サプレッション/再送
+- remindAfterHours: 24h
+- remindMaxCount: 3
+- 同一イベントの再送は `AppNotificationDelivery` の status を参照して抑制
+
+### 監査ログ対象
+- 承認/却下/差戻し
+- 日報未提出（生成）
+- 休暇承認/却下
+
 ## 関連
 - `docs/requirements/alerts-notify.md`
 - `docs/requirements/approval-alerts.md`
