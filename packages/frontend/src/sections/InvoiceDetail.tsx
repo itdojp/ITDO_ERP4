@@ -15,10 +15,14 @@ type InvoiceDetailProps = {
   invoiceNo?: string;
   projectId: string;
   status: string;
+  paidAt?: string | null;
+  paidBy?: string | null;
   totalAmount: number;
   lines?: { description: string; quantity: number; unitPrice: number }[];
   approval?: { step: number; total: number; status: string };
   onSend?: () => void;
+  onMarkPaid?: () => void;
+  canMarkPaid?: boolean;
 };
 
 export const InvoiceDetail: React.FC<InvoiceDetailProps> = ({
@@ -26,10 +30,14 @@ export const InvoiceDetail: React.FC<InvoiceDetailProps> = ({
   invoiceNo,
   projectId,
   status,
+  paidAt,
+  paidBy,
   totalAmount,
   lines = [],
   approval,
   onSend,
+  onMarkPaid,
+  canMarkPaid = false,
 }) => {
   const [sendLogs, setSendLogs] = useState<SendLog[]>([]);
   const [sendLogError, setSendLogError] = useState('');
@@ -62,6 +70,8 @@ export const InvoiceDetail: React.FC<InvoiceDetailProps> = ({
       <div>No: {invoiceNo || '(draft)'}</div>
       <div>Project: {projectId}</div>
       <div>Status: {status}</div>
+      <div>Paid: {paidAt ? new Date(paidAt).toLocaleString() : '-'}</div>
+      <div>Paid By: {paidBy || '-'}</div>
       <div>Amount: ¥{totalAmount.toLocaleString()}</div>
       {lines.length > 0 && (
         <table className="table" style={{ width: '100%', marginTop: 8 }}>
@@ -134,7 +144,14 @@ export const InvoiceDetail: React.FC<InvoiceDetailProps> = ({
         </div>
       </div>
       <div style={{ marginTop: 12 }}>
-        <Button onClick={onSend}>送信 (Stub)</Button>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <Button onClick={onSend}>送信 (Stub)</Button>
+          {canMarkPaid && status !== 'paid' && (
+            <Button variant="secondary" onClick={onMarkPaid}>
+              入金確認
+            </Button>
+          )}
+        </div>
       </div>
     </div>
   );

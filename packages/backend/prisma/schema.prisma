@@ -655,6 +655,8 @@ model Invoice {
   currency          String
   totalAmount       Decimal
   status            DocStatus         @default(draft)
+  paidAt            DateTime?
+  paidBy            String?
   pdfUrl            String?
   emailMessageId    String?
   numberingSerial   Int?

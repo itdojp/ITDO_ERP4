@@ -2,10 +2,15 @@ import { FastifyInstance } from 'fastify';
 import { nextNumber } from '../services/numbering.js';
 import { submitApprovalWithUpdate } from '../services/approval.js';
 import { FlowTypeValue, DocStatusValue, TimeStatusValue } from '../types.js';
-import { invoiceFromTimeEntriesSchema, invoiceSchema } from './validators.js';
+import {
+  invoiceFromTimeEntriesSchema,
+  invoiceMarkPaidSchema,
+  invoiceSchema,
+} from './validators.js';
 import { requireProjectAccess, requireRole } from '../services/rbac.js';
 import { prisma } from '../services/db.js';
 import { endOfDay, parseDateParam } from '../utils/date.js';
+import { auditContextFromRequest, logAudit } from '../services/audit.js';
 
 export async function registerInvoiceRoutes(app: FastifyInstance) {
   const parseDate = (value?: string) => {
@@ -379,6 +384,61 @@ export async function registerInvoiceRoutes(app: FastifyInstance) {
         data: { billedInvoiceId: null, billedAt: null },
       });
       return { released: updated.count };
+    },
+  );
+
+  app.post(
+    '/invoices/:id/mark-paid',
+    { preHandler: requireRole(['admin', 'mgmt']), schema: invoiceMarkPaidSchema },
+    async (req, reply) => {
+      const { id } = req.params as { id: string };
+      const body = req.body as { paidAt?: string };
+      const paidAt = body?.paidAt ? parseDate(body.paidAt) : new Date();
+      if (body?.paidAt && !paidAt) {
+        return reply.status(400).send({
+          error: { code: 'INVALID_DATE', message: 'paidAt is invalid' },
+        });
+      }
+      const invoice = await prisma.invoice.findUnique({ where: { id } });
+      if (!invoice || invoice.deletedAt) {
+        return reply.status(404).send({
+          error: { code: 'NOT_FOUND', message: 'Invoice not found' },
+        });
+      }
+      if (
+        invoice.status === DocStatusValue.cancelled ||
+        invoice.status === DocStatusValue.rejected
+      ) {
+        return reply.status(409).send({
+          error: {
+            code: 'INVALID_STATUS',
+            message: 'Invoice cannot be marked as paid',
+          },
+        });
+      }
+      const actorId = req.user?.userId || 'system';
+      const updated = await prisma.invoice.update({
+        where: { id },
+        data: {
+          status: DocStatusValue.paid,
+          paidAt,
+          paidBy: actorId,
+          updatedBy: actorId,
+        },
+        include: { lines: true },
+      });
+      await logAudit({
+        ...auditContextFromRequest(req),
+        action: 'invoice_mark_paid',
+        targetTable: 'Invoice',
+        targetId: id,
+        metadata: {
+          previousStatus: invoice.status,
+          paidAt: updated.paidAt?.toISOString(),
+          paidBy: updated.paidBy ?? null,
+        },
+      });
+      return updated;
     },
   );
 

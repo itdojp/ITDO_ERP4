@@ -350,6 +350,15 @@ export const invoiceFromTimeEntriesSchema = {
   ),
 };
 
+export const invoiceMarkPaidSchema = {
+  body: Type.Object(
+    {
+      paidAt: Type.Optional(Type.String()),
+    },
+    { additionalProperties: false },
+  ),
+};
+
 export const purchaseOrderSchema = {
   body: Type.Object({
     vendorId: Type.String(),
