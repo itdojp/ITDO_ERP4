@@ -68,7 +68,7 @@ on conflict do nothing;
 
 insert into mapping_users(legacy_id, new_id)
 select u.user_id, gen_random_uuid()
-from legacy.cc_users u
+from legacy.users u
 on conflict do nothing;
 
 insert into mapping_groups(legacy_id, new_id)
