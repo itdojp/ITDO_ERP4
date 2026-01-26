@@ -10,6 +10,8 @@ interface Invoice {
   projectId: string;
   totalAmount: number;
   status: string;
+  paidAt?: string | null;
+  paidBy?: string | null;
   lines?: { description: string; quantity: number; unitPrice: number }[];
 }
 
@@ -32,6 +34,9 @@ function formatDateInput(value: Date) {
 
 export const Invoices: React.FC = () => {
   const auth = getAuthState();
+  const canMarkPaid = Boolean(
+    auth?.roles?.some((role) => role === 'admin' || role === 'mgmt'),
+  );
   const [form, setForm] = useState(() =>
     buildInitialForm(auth?.projectIds?.[0]),
   );
@@ -156,6 +161,24 @@ export const Invoices: React.FC = () => {
       setMessage({ text: '送信しました', type: 'success' });
     } catch (e) {
       setMessage({ text: '送信に失敗しました', type: 'error' });
+    }
+  };
+
+  const markPaid = async (id: string) => {
+    if (!canMarkPaid) return;
+    if (!window.confirm('入金確認としてステータスをpaidに変更しますか？')) {
+      return;
+    }
+    try {
+      const res = await api<Invoice>(`/invoices/${id}/mark-paid`, {
+        method: 'POST',
+        body: JSON.stringify({}),
+      });
+      setItems((prev) => prev.map((item) => (item.id === id ? res : item)));
+      setSelected((prev) => (prev && prev.id === id ? res : prev));
+      setMessage({ text: '入金を確認しました', type: 'success' });
+    } catch (e) {
+      setMessage({ text: '入金確認に失敗しました', type: 'error' });
     }
   };
 
@@ -309,6 +332,8 @@ export const Invoices: React.FC = () => {
             {...selected}
             approval={buildApproval(selected.status)}
             onSend={() => send(selected.id)}
+            onMarkPaid={() => markPaid(selected.id)}
+            canMarkPaid={canMarkPaid}
           />
           {selected.status === 'draft' && (
             <div style={{ marginTop: 12 }}>

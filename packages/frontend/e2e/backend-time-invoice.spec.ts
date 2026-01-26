@@ -146,3 +146,59 @@ test('time entries to invoice draft @core', async ({ request }) => {
   ).toBe(false);
 });
 
+test('invoice mark paid updates status and validates input @extended', async ({
+  request,
+}) => {
+  const suffix = runId();
+
+  const projectRes = await request.post(`${apiBase}/projects`, {
+    data: {
+      code: `E2E-PAID-${suffix}`,
+      name: `E2E Invoice Paid ${suffix}`,
+      status: 'active',
+    },
+    headers: authHeaders,
+  });
+  await ensureOk(projectRes);
+  const project = await projectRes.json();
+
+  const invoiceRes = await request.post(
+    `${apiBase}/projects/${project.id}/invoices`,
+    {
+      data: {
+        totalAmount: 100000,
+        currency: 'JPY',
+        lines: [{ description: 'E2E Paid', quantity: 1, unitPrice: 100000 }],
+      },
+      headers: authHeaders,
+    },
+  );
+  await ensureOk(invoiceRes);
+  const invoice = await invoiceRes.json();
+
+  const markPaidRes = await request.post(
+    `${apiBase}/invoices/${invoice.id}/mark-paid`,
+    { headers: authHeaders },
+  );
+  await ensureOk(markPaidRes);
+  const marked = await markPaidRes.json();
+  expect(marked.status).toBe('paid');
+  expect(typeof marked.paidAt).toBe('string');
+  expect(marked.paidBy).toBe('demo-user');
+
+  const invalidDateRes = await request.post(
+    `${apiBase}/invoices/${invoice.id}/mark-paid`,
+    { data: { paidAt: 'invalid-date' }, headers: authHeaders },
+  );
+  expect(invalidDateRes.status()).toBe(400);
+  const invalidDateText = await invalidDateRes.text();
+  expect(invalidDateText).toContain('INVALID_DATE');
+
+  const missingRes = await request.post(
+    `${apiBase}/invoices/00000000-0000-0000-0000-000000000000/mark-paid`,
+    { headers: authHeaders },
+  );
+  expect(missingRes.status()).toBe(404);
+  const missingText = await missingRes.text();
+  expect(missingText).toContain('NOT_FOUND');
+});

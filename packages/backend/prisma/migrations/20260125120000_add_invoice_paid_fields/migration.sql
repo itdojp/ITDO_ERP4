@@ -1,0 +1,2 @@
+ALTER TABLE "Invoice" ADD COLUMN "paidAt" TIMESTAMP(3);
+ALTER TABLE "Invoice" ADD COLUMN "paidBy" TEXT;
