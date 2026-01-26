@@ -389,7 +389,10 @@ export async function registerInvoiceRoutes(app: FastifyInstance) {
 
   app.post(
     '/invoices/:id/mark-paid',
-    { preHandler: requireRole(['admin', 'mgmt']), schema: invoiceMarkPaidSchema },
+    {
+      preHandler: requireRole(['admin', 'mgmt']),
+      schema: invoiceMarkPaidSchema,
+    },
     async (req, reply) => {
       const { id } = req.params as { id: string };
       const body = req.body as { paidAt?: string };
