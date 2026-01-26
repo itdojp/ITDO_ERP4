@@ -141,6 +141,17 @@ export async function registerVendorDocRoutes(app: FastifyInstance) {
           error: { code: 'INVALID_DATE', message: 'Invalid dueDate' },
         });
       }
+      if (
+        body.purchaseOrderId != null &&
+        typeof body.purchaseOrderId !== 'string'
+      ) {
+        return reply.status(400).send({
+          error: {
+            code: 'INVALID_PURCHASE_ORDER',
+            message: 'purchaseOrderId must be string',
+          },
+        });
+      }
       const { projectExists, vendorExists } = await checkProjectAndVendor(
         body.projectId,
         body.vendorId,

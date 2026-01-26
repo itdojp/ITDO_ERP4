@@ -6116,7 +6116,7 @@
                     "type": "string"
                   },
                   "purchaseOrderId": {
-                    "type": "string"
+                    "description": "Purchase order id (string)"
                   },
                   "receivedDate": {
                     "format": "date",

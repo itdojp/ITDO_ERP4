@@ -379,7 +379,9 @@ export const vendorInvoiceSchema = {
   body: Type.Object({
     projectId: Type.String(),
     vendorId: Type.String(),
-    purchaseOrderId: Type.Optional(Type.String()),
+    purchaseOrderId: Type.Optional(
+      Type.Any({ description: 'Purchase order id (string)' }),
+    ),
     vendorInvoiceNo: Type.Optional(Type.String()),
     receivedDate: Type.Optional(Type.String({ format: 'date' })),
     dueDate: Type.Optional(Type.String({ format: 'date' })),
