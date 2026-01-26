@@ -1026,7 +1026,8 @@ export const VendorDocuments: React.FC = () => {
                 </div>
                 {item.purchaseOrder && (
                   <div style={{ fontSize: 12, color: '#64748b' }}>
-                    関連発注書: {item.purchaseOrder.poNo || item.purchaseOrder.id}
+                    関連発注書:{' '}
+                    {item.purchaseOrder.poNo || item.purchaseOrder.id}
                   </div>
                 )}
                 {item.status === 'draft' && (

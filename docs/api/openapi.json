@@ -6072,6 +6072,9 @@
                   "projectId": {
                     "type": "string"
                   },
+                  "purchaseOrderId": {
+                    "type": "string"
+                  },
                   "receivedDate": {
                     "format": "date",
                     "type": "string"
