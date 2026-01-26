@@ -43,7 +43,7 @@
     "@types/pdfkit": "^0.17.4",
     "@typescript-eslint/eslint-plugin": "^8.53.0",
     "@typescript-eslint/parser": "^8.15.0",
-    "dotenv": "^16.6.1",
+    "dotenv": "^17.2.3",
     "eslint": "^9.39.2",
     "openapi-diff": "^0.24.1",
     "prettier": "^3.8.0",
