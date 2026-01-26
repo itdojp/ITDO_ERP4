@@ -692,6 +692,7 @@ model PurchaseOrder {
   projectId       String
   vendor          Vendor              @relation(fields: [vendorId], references: [id], onDelete: Restrict)
   vendorId        String
+  vendorInvoices  VendorInvoice[]
   poNo            String              @unique
   issueDate       DateTime?
   dueDate         DateTime?
@@ -756,6 +757,8 @@ model VendorInvoice {
   projectId       String
   vendor          Vendor    @relation(fields: [vendorId], references: [id], onDelete: Restrict)
   vendorId        String
+  purchaseOrder   PurchaseOrder? @relation(fields: [purchaseOrderId], references: [id], onDelete: SetNull)
+  purchaseOrderId String?
   vendorInvoiceNo String?
   receivedDate    DateTime?
   dueDate         DateTime?
@@ -773,6 +776,7 @@ model VendorInvoice {
 
   @@index([projectId, status, deletedAt])
   @@index([vendorId, status, deletedAt])
+  @@index([purchaseOrderId])
   @@index([receivedDate])
   @@index([dueDate])
 }

@@ -6115,6 +6115,9 @@
                   "projectId": {
                     "type": "string"
                   },
+                  "purchaseOrderId": {
+                    "description": "Purchase order id (string)"
+                  },
                   "receivedDate": {
                     "format": "date",
                     "type": "string"
