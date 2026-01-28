@@ -173,7 +173,8 @@ export async function registerRefCandidateRoutes(app: FastifyInstance) {
               'chat_message',
             ] as RefCandidateKind[]);
 
-      const canSeeAllProjects = roles.includes('admin') || roles.includes('mgmt');
+      const canSeeAllProjects =
+        roles.includes('admin') || roles.includes('mgmt');
       const canAccessMaster = roles.includes('admin') || roles.includes('mgmt');
 
       const rawScopeIds = await resolveProjectScopeIds(projectId);
@@ -278,7 +279,9 @@ export async function registerRefCandidateRoutes(app: FastifyInstance) {
               projectId: { in: scopeProjectIds },
               OR: [
                 { poNo: { contains: trimmed, mode: 'insensitive' } },
-                { vendor: { name: { contains: trimmed, mode: 'insensitive' } } },
+                {
+                  vendor: { name: { contains: trimmed, mode: 'insensitive' } },
+                },
               ],
             },
             orderBy: { createdAt: 'desc' },
@@ -315,7 +318,9 @@ export async function registerRefCandidateRoutes(app: FastifyInstance) {
               projectId: { in: scopeProjectIds },
               OR: [
                 { quoteNo: { contains: trimmed, mode: 'insensitive' } },
-                { vendor: { name: { contains: trimmed, mode: 'insensitive' } } },
+                {
+                  vendor: { name: { contains: trimmed, mode: 'insensitive' } },
+                },
               ],
             },
             orderBy: { createdAt: 'desc' },
@@ -352,7 +357,9 @@ export async function registerRefCandidateRoutes(app: FastifyInstance) {
               projectId: { in: scopeProjectIds },
               OR: [
                 { vendorInvoiceNo: { contains: trimmed, mode: 'insensitive' } },
-                { vendor: { name: { contains: trimmed, mode: 'insensitive' } } },
+                {
+                  vendor: { name: { contains: trimmed, mode: 'insensitive' } },
+                },
               ],
             },
             orderBy: { createdAt: 'desc' },
