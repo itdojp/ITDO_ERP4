@@ -474,6 +474,28 @@ test('frontend smoke vendor docs create @extended', async ({ page }) => {
   await expect(invoiceBlock.getByText('仕入請求を登録しました')).toBeVisible();
   await expect(invoiceBlock.getByText(vendorInvoiceNo)).toBeVisible();
 
+  const annotationText = `E2E注釈: ${id}`;
+  const createdInvoiceItem = vendorSection.locator('li', {
+    hasText: vendorInvoiceNo,
+  });
+  await createdInvoiceItem.getByRole('button', { name: '注釈' }).click();
+  const annotationDialog = page.getByRole('dialog');
+  await expect(annotationDialog.getByText(`仕入請求: ${vendorInvoiceNo}`)).toBeVisible();
+  await annotationDialog.getByLabel('メモ（Markdown）').fill(annotationText);
+  await annotationDialog.getByRole('button', { name: '保存' }).click();
+  await expect(annotationDialog.getByText('保存しました')).toBeVisible({
+    timeout: actionTimeout,
+  });
+  await annotationDialog.getByRole('button', { name: '閉じる' }).click();
+
+  await createdInvoiceItem.getByRole('button', { name: '注釈' }).click();
+  const annotationDialog2 = page.getByRole('dialog');
+  await expect(annotationDialog2.getByLabel('メモ（Markdown）')).toHaveValue(
+    annotationText,
+    { timeout: actionTimeout },
+  );
+  await annotationDialog2.getByRole('button', { name: '閉じる' }).click();
+
   await captureSection(vendorSection, '06-vendor-docs-create.png');
 });
 
