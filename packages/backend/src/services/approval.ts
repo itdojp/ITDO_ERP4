@@ -40,7 +40,10 @@ const OPEN_APPROVAL_STATUSES = [
 ] as const;
 
 function isPendingStatus(status: string) {
-  return status === DocStatusValue.pending_qa || status === DocStatusValue.pending_exec;
+  return (
+    status === DocStatusValue.pending_qa ||
+    status === DocStatusValue.pending_exec
+  );
 }
 
 function resolveStagePolicy(
@@ -54,7 +57,8 @@ function resolveStagePolicy(
   if (mode === 'any') return { mode: 'any' };
   if (mode === 'quorum') {
     const quorum = Number((raw as any).quorum);
-    if (Number.isInteger(quorum) && quorum >= 1) return { mode: 'quorum', quorum };
+    if (Number.isInteger(quorum) && quorum >= 1)
+      return { mode: 'quorum', quorum };
     // Invalid quorum -> fall back to safest semantics (all).
     return { mode: 'all' };
   }
@@ -68,7 +72,9 @@ function isStageCompleted(
   if (policy.mode === 'all') {
     return !steps.some((s) => isPendingStatus(s.status));
   }
-  const approvedCount = steps.filter((s) => s.status === DocStatusValue.approved).length;
+  const approvedCount = steps.filter(
+    (s) => s.status === DocStatusValue.approved,
+  ).length;
   if (policy.mode === 'any') return approvedCount >= 1;
   const quorum = Number(policy.quorum);
   if (!Number.isInteger(quorum) || quorum < 1) return false;
@@ -169,7 +175,10 @@ async function createApprovalWithClient(
         projectId,
         status: resolvePendingStatus(normalizedSteps, currentStep),
         currentStep,
-        stagePolicy: stagePolicy && Object.keys(stagePolicy).length ? stagePolicy : undefined,
+        stagePolicy:
+          stagePolicy && Object.keys(stagePolicy).length
+            ? stagePolicy
+            : undefined,
         ruleId,
         createdBy,
         steps: {
@@ -368,6 +377,8 @@ export async function act(
 ) {
   return prisma.$transaction(async (tx: any) => {
     const now = new Date();
+    // Serialize actions per instance to avoid lost updates when multiple approvers act concurrently.
+    await tx.$queryRaw`SELECT id FROM "ApprovalInstance" WHERE id = ${instanceId} FOR UPDATE`;
     const instance = await tx.approvalInstance.findUnique({
       where: { id: instanceId },
       include: { steps: true },
@@ -397,8 +408,7 @@ export async function act(
       return true;
     };
     const alreadyActed = currentSteps.some(
-      (s: any) =>
-        s.actedBy === userId && s.status !== DocStatusValue.pending_qa,
+      (s: any) => s.actedBy === userId && !isPendingStatus(String(s.status)),
     );
     if (alreadyActed) {
       throw new Error(
@@ -406,7 +416,7 @@ export async function act(
       );
     }
     const eligibleSteps = currentSteps.filter(
-      (s: any) => s.status === DocStatusValue.pending_qa && isEligibleStep(s),
+      (s: any) => isPendingStatus(String(s.status)) && isEligibleStep(s),
     );
     if (!eligibleSteps.length) {
       throw new Error('No actionable step for user');
@@ -424,7 +434,9 @@ export async function act(
     const stepUpdated = await tx.approvalStep.updateMany({
       where: {
         id: current.id,
-        status: { in: [DocStatusValue.pending_qa, DocStatusValue.pending_exec] },
+        status: {
+          in: [DocStatusValue.pending_qa, DocStatusValue.pending_exec],
+        },
       },
       data: { status: nextStepStatus, actedBy: userId, actedAt: now },
     });
@@ -457,9 +469,14 @@ export async function act(
       newStatus = DocStatusValue.rejected;
       newCurrentStep = null;
     } else {
-      const stagePolicy = resolveStagePolicy(instance.stagePolicy, instance.currentStep);
+      const stagePolicy = resolveStagePolicy(
+        instance.stagePolicy,
+        instance.currentStep,
+      );
       const currentStepsAfter = currentSteps.map((s: any) =>
-        s.id === current.id ? { ...s, status: nextStatus, actedBy: userId, actedAt: now } : s,
+        s.id === current.id
+          ? { ...s, status: nextStatus, actedBy: userId, actedAt: now }
+          : s,
       );
 
       const stageCompleted = isStageCompleted(stagePolicy, currentStepsAfter);
@@ -473,25 +490,45 @@ export async function act(
             .filter((s: any) => isPendingStatus(String(s.status)))
             .map((s: any) => s.id);
           if (pendingIds.length) {
-            await tx.approvalStep.updateMany({
+            const updateResult = await tx.approvalStep.updateMany({
               where: {
                 id: { in: pendingIds },
-                status: { in: [DocStatusValue.pending_qa, DocStatusValue.pending_exec] },
+                status: {
+                  in: [DocStatusValue.pending_qa, DocStatusValue.pending_exec],
+                },
               },
-              data: { status: DocStatusValue.cancelled, actedBy: 'system', actedAt: now },
-            });
-            await logAudit({
-              action: 'approval_stage_auto_cancel',
-              targetTable: 'approval_instances',
-              targetId: instance.id,
-              ...auditBase,
-              metadata: {
-                step: instance.currentStep,
-                mode: stagePolicy.mode,
-                quorum: stagePolicy.mode === 'quorum' ? stagePolicy.quorum : null,
-                cancelledStepIds: pendingIds,
+              data: {
+                status: DocStatusValue.cancelled,
+                actedBy: 'system',
+                actedAt: now,
               },
             });
+            if (updateResult.count > 0) {
+              const cancelledSteps = await tx.approvalStep.findMany({
+                where: {
+                  id: { in: pendingIds },
+                  status: DocStatusValue.cancelled,
+                  actedBy: 'system',
+                },
+                select: { id: true },
+              });
+              const cancelledStepIds = cancelledSteps.map((s: any) => s.id);
+              if (cancelledStepIds.length > 0) {
+                await logAudit({
+                  action: 'approval_stage_auto_cancel',
+                  targetTable: 'approval_instances',
+                  targetId: instance.id,
+                  ...auditBase,
+                  metadata: {
+                    step: instance.currentStep,
+                    mode: stagePolicy.mode,
+                    quorum:
+                      stagePolicy.mode === 'quorum' ? stagePolicy.quorum : null,
+                    cancelledStepIds,
+                  },
+                });
+              }
+            }
           }
         }
 

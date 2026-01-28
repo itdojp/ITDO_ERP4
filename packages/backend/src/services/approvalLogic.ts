@@ -172,6 +172,7 @@ function normalizeStagesDefinition(raw: unknown): {
     if (!stage || typeof stage !== 'object') return null;
     const order = Number((stage as any).order);
     if (!Number.isInteger(order) || order < 1) return null;
+    if (Object.prototype.hasOwnProperty.call(stagePolicy, order)) return null;
     if (!Array.isArray((stage as any).approvers) || stage.approvers.length < 1)
       return null;
 
@@ -182,7 +183,12 @@ function normalizeStagesDefinition(raw: unknown): {
       stagePolicy[order] = { mode: 'any' };
     } else if (completion.mode === 'quorum') {
       const quorum = Number((completion as any).quorum);
-      if (!Number.isInteger(quorum) || quorum < 1) return null;
+      if (
+        !Number.isInteger(quorum) ||
+        quorum < 1 ||
+        quorum > stage.approvers.length
+      )
+        return null;
       stagePolicy[order] = { mode: 'quorum', quorum };
     } else {
       return null;

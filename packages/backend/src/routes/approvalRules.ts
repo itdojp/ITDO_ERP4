@@ -11,9 +11,7 @@ import {
 import { DocStatusValue, TimeStatusValue } from '../types.js';
 import { auditContextFromRequest, logAudit } from '../services/audit.js';
 
-function hasValidSteps(
-  steps: unknown,
-) {
+function hasValidSteps(steps: unknown) {
   if (Array.isArray(steps)) {
     return steps.every((s) => Boolean(s?.approverGroupId || s?.approverUserId));
   }
@@ -28,6 +26,12 @@ function hasValidSteps(
     orders.add(order);
     const approvers = stage?.approvers;
     if (!Array.isArray(approvers) || approvers.length < 1) return false;
+    const completion = stage?.completion;
+    if (completion && completion.mode === 'quorum') {
+      const quorum = Number(completion.quorum);
+      if (!Number.isInteger(quorum) || quorum < 1) return false;
+      if (quorum > approvers.length) return false;
+    }
     for (const approver of approvers) {
       const type = approver?.type;
       const id = approver?.id;
@@ -128,7 +132,8 @@ export async function registerApprovalRuleRoutes(app: FastifyInstance) {
       if (!hasValidSteps(body.steps || [])) {
         return reply.code(400).send({
           error: 'invalid_steps',
-          message: 'Invalid steps definition',
+          message:
+            'steps must be either an array of steps (approverGroupId/approverUserId) or {stages:[{order, approvers:[{type,id}], completion?}]}; stage.order must be unique; quorum must be <= approvers.length',
         });
       }
       const created = await prisma.approvalRule.create({ data: body });
@@ -155,7 +160,8 @@ export async function registerApprovalRuleRoutes(app: FastifyInstance) {
       if (body.steps && !hasValidSteps(body.steps || [])) {
         return reply.code(400).send({
           error: 'invalid_steps',
-          message: 'Invalid steps definition',
+          message:
+            'steps must be either an array of steps (approverGroupId/approverUserId) or {stages:[{order, approvers:[{type,id}], completion?}]}; stage.order must be unique; quorum must be <= approvers.length',
         });
       }
       const updated = await prisma.approvalRule.update({

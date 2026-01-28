@@ -29,8 +29,7 @@
 
 ### 制約
 
-- 現行の「並列ステージ」は **同一 stepOrder 内の全ステップ承認（all-of）** が前提。`any-of` / `quorum` は表現できない。
-  - `packages/backend/src/services/approval.ts`（`act()` の `hasPending` 判定）
+- （調査時点の）現行の「並列ステージ」は **同一 stepOrder 内の全ステップ承認（all-of）** が前提で、`any` / `quorum` は表現できなかった（本設計・実装により解消済み）。
 - 承認完了/取消に伴う target status 更新は `targetTable` ごとの分岐で個別。
   - `packages/backend/src/services/approval.ts`（`updateTargetStatus`）
   - `packages/backend/src/routes/approvalRules.ts`（`resetTargetStatus`）

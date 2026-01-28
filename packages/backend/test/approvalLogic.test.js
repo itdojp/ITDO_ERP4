@@ -4,6 +4,7 @@ import {
   matchApprovalSteps,
   matchesRuleCondition,
   normalizeRuleSteps,
+  normalizeRuleStepsWithPolicy,
 } from '../dist/services/approvalLogic.js';
 
 test('matchApprovalSteps: default thresholds', () => {
@@ -101,3 +102,70 @@ test('matchesRuleCondition: amount range and flow flags', () => {
   );
 });
 
+test('normalizeRuleStepsWithPolicy: stages format returns steps and stagePolicy', () => {
+  const result = normalizeRuleStepsWithPolicy({
+    stages: [
+      {
+        order: 1,
+        completion: { mode: 'all' },
+        approvers: [
+          { type: 'group', id: 'mgmt' },
+          { type: 'user', id: 'u1' },
+        ],
+      },
+      {
+        order: 2,
+        completion: { mode: 'any' },
+        approvers: [{ type: 'group', id: 'exec' }],
+      },
+      {
+        order: 3,
+        completion: { mode: 'quorum', quorum: 2 },
+        approvers: [
+          { type: 'user', id: 'u2' },
+          { type: 'user', id: 'u3' },
+        ],
+      },
+    ],
+  });
+  assert.ok(result);
+  assert.deepEqual(result.steps, [
+    { stepOrder: 1, approverGroupId: 'mgmt' },
+    { stepOrder: 1, approverUserId: 'u1' },
+    { stepOrder: 2, approverGroupId: 'exec' },
+    { stepOrder: 3, approverUserId: 'u2' },
+    { stepOrder: 3, approverUserId: 'u3' },
+  ]);
+  assert.deepEqual(result.stagePolicy, {
+    1: { mode: 'all' },
+    2: { mode: 'any' },
+    3: { mode: 'quorum', quorum: 2 },
+  });
+});
+
+test('normalizeRuleStepsWithPolicy: rejects duplicate stage order', () => {
+  assert.equal(
+    normalizeRuleStepsWithPolicy({
+      stages: [
+        { order: 1, approvers: [{ type: 'group', id: 'mgmt' }] },
+        { order: 1, approvers: [{ type: 'group', id: 'exec' }] },
+      ],
+    }),
+    null,
+  );
+});
+
+test('normalizeRuleStepsWithPolicy: rejects invalid quorum', () => {
+  assert.equal(
+    normalizeRuleStepsWithPolicy({
+      stages: [
+        {
+          order: 1,
+          completion: { mode: 'quorum', quorum: 2 },
+          approvers: [{ type: 'group', id: 'mgmt' }],
+        },
+      ],
+    }),
+    null,
+  );
+});

@@ -675,27 +675,149 @@
                     ]
                   },
                   "steps": {
-                    "items": {
-                      "additionalProperties": false,
-                      "properties": {
-                        "approverGroupId": {
-                          "type": "string"
+                    "anyOf": [
+                      {
+                        "items": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "approverGroupId": {
+                              "type": "string"
+                            },
+                            "approverUserId": {
+                              "type": "string"
+                            },
+                            "parallelKey": {
+                              "type": "string"
+                            },
+                            "stepOrder": {
+                              "minimum": 1,
+                              "type": "number"
+                            }
+                          },
+                          "type": "object"
                         },
-                        "approverUserId": {
-                          "type": "string"
-                        },
-                        "parallelKey": {
-                          "type": "string"
-                        },
-                        "stepOrder": {
-                          "minimum": 1,
-                          "type": "number"
-                        }
+                        "minItems": 1,
+                        "type": "array"
                       },
-                      "type": "object"
-                    },
-                    "minItems": 1,
-                    "type": "array"
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "stages": {
+                            "items": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "approvers": {
+                                  "items": {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "id": {
+                                        "minLength": 1,
+                                        "type": "string"
+                                      },
+                                      "type": {
+                                        "anyOf": [
+                                          {
+                                            "enum": [
+                                              "group"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          {
+                                            "enum": [
+                                              "user"
+                                            ],
+                                            "type": "string"
+                                          }
+                                        ]
+                                      }
+                                    },
+                                    "required": [
+                                      "type",
+                                      "id"
+                                    ],
+                                    "type": "object"
+                                  },
+                                  "minItems": 1,
+                                  "type": "array"
+                                },
+                                "completion": {
+                                  "anyOf": [
+                                    {
+                                      "additionalProperties": false,
+                                      "properties": {
+                                        "mode": {
+                                          "enum": [
+                                            "all"
+                                          ],
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "mode"
+                                      ],
+                                      "type": "object"
+                                    },
+                                    {
+                                      "additionalProperties": false,
+                                      "properties": {
+                                        "mode": {
+                                          "enum": [
+                                            "any"
+                                          ],
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "mode"
+                                      ],
+                                      "type": "object"
+                                    },
+                                    {
+                                      "additionalProperties": false,
+                                      "properties": {
+                                        "mode": {
+                                          "enum": [
+                                            "quorum"
+                                          ],
+                                          "type": "string"
+                                        },
+                                        "quorum": {
+                                          "minimum": 1,
+                                          "type": "integer"
+                                        }
+                                      },
+                                      "required": [
+                                        "mode",
+                                        "quorum"
+                                      ],
+                                      "type": "object"
+                                    }
+                                  ]
+                                },
+                                "label": {
+                                  "type": "string"
+                                },
+                                "order": {
+                                  "minimum": 1,
+                                  "type": "integer"
+                                }
+                              },
+                              "required": [
+                                "order",
+                                "approvers"
+                              ],
+                              "type": "object"
+                            },
+                            "minItems": 1,
+                            "type": "array"
+                          }
+                        },
+                        "required": [
+                          "stages"
+                        ],
+                        "type": "object"
+                      }
+                    ]
                   }
                 },
                 "required": [
@@ -854,27 +976,149 @@
                     ]
                   },
                   "steps": {
-                    "items": {
-                      "additionalProperties": false,
-                      "properties": {
-                        "approverGroupId": {
-                          "type": "string"
+                    "anyOf": [
+                      {
+                        "items": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "approverGroupId": {
+                              "type": "string"
+                            },
+                            "approverUserId": {
+                              "type": "string"
+                            },
+                            "parallelKey": {
+                              "type": "string"
+                            },
+                            "stepOrder": {
+                              "minimum": 1,
+                              "type": "number"
+                            }
+                          },
+                          "type": "object"
                         },
-                        "approverUserId": {
-                          "type": "string"
-                        },
-                        "parallelKey": {
-                          "type": "string"
-                        },
-                        "stepOrder": {
-                          "minimum": 1,
-                          "type": "number"
-                        }
+                        "minItems": 1,
+                        "type": "array"
                       },
-                      "type": "object"
-                    },
-                    "minItems": 1,
-                    "type": "array"
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "stages": {
+                            "items": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "approvers": {
+                                  "items": {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "id": {
+                                        "minLength": 1,
+                                        "type": "string"
+                                      },
+                                      "type": {
+                                        "anyOf": [
+                                          {
+                                            "enum": [
+                                              "group"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          {
+                                            "enum": [
+                                              "user"
+                                            ],
+                                            "type": "string"
+                                          }
+                                        ]
+                                      }
+                                    },
+                                    "required": [
+                                      "type",
+                                      "id"
+                                    ],
+                                    "type": "object"
+                                  },
+                                  "minItems": 1,
+                                  "type": "array"
+                                },
+                                "completion": {
+                                  "anyOf": [
+                                    {
+                                      "additionalProperties": false,
+                                      "properties": {
+                                        "mode": {
+                                          "enum": [
+                                            "all"
+                                          ],
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "mode"
+                                      ],
+                                      "type": "object"
+                                    },
+                                    {
+                                      "additionalProperties": false,
+                                      "properties": {
+                                        "mode": {
+                                          "enum": [
+                                            "any"
+                                          ],
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "mode"
+                                      ],
+                                      "type": "object"
+                                    },
+                                    {
+                                      "additionalProperties": false,
+                                      "properties": {
+                                        "mode": {
+                                          "enum": [
+                                            "quorum"
+                                          ],
+                                          "type": "string"
+                                        },
+                                        "quorum": {
+                                          "minimum": 1,
+                                          "type": "integer"
+                                        }
+                                      },
+                                      "required": [
+                                        "mode",
+                                        "quorum"
+                                      ],
+                                      "type": "object"
+                                    }
+                                  ]
+                                },
+                                "label": {
+                                  "type": "string"
+                                },
+                                "order": {
+                                  "minimum": 1,
+                                  "type": "integer"
+                                }
+                              },
+                              "required": [
+                                "order",
+                                "approvers"
+                              ],
+                              "type": "object"
+                            },
+                            "minItems": 1,
+                            "type": "array"
+                          }
+                        },
+                        "required": [
+                          "stages"
+                        ],
+                        "type": "object"
+                      }
+                    ]
                   }
                 },
                 "type": "object"
