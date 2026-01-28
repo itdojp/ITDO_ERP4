@@ -93,6 +93,8 @@ async function resolveProjectScopeIds(projectId: string) {
       select: { id: true, parentId: true, deletedAt: true },
     });
     if (!parent || parent.deletedAt) break;
+    // Guard against accidental cycles in parent pointers.
+    if (scopeIds.has(parent.id)) break;
     scopeIds.add(parent.id);
     cursor = parent.parentId;
   }
@@ -157,9 +159,10 @@ export async function registerRefCandidateRoutes(app: FastifyInstance) {
       }
 
       const take = parseLimit(query.limit, 20);
+      const parsedTypes = normalizeTypes(query.types);
       const requestedTypes =
-        normalizeTypes(query.types).length > 0
-          ? normalizeTypes(query.types)
+        parsedTypes.length > 0
+          ? parsedTypes
           : ([
               'invoice',
               'estimate',
@@ -182,9 +185,11 @@ export async function registerRefCandidateRoutes(app: FastifyInstance) {
         return reply.status(404).send({ error: 'project_not_found' });
       }
 
-      const scopeProjectIds = canSeeAllProjects
-        ? rawScopeIds
-        : rawScopeIds.filter((id) => projectIds.includes(id));
+      let scopeProjectIds = rawScopeIds;
+      if (!canSeeAllProjects) {
+        const projectIdSet = new Set(projectIds);
+        scopeProjectIds = rawScopeIds.filter((id) => projectIdSet.has(id));
+      }
 
       const effectiveTypes = requestedTypes.filter((type) => {
         if ((type === 'customer' || type === 'vendor') && !canAccessMaster) {
