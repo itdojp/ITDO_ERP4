@@ -83,6 +83,8 @@ function matchesStateConstraints(stateConstraints: unknown, state: unknown) {
 }
 
 type GuardEvalContext = {
+  client: any;
+  flowType: FlowType;
   targetTable?: string;
   targetId?: string;
 };
@@ -99,8 +101,9 @@ async function evaluateApprovalOpenGuard(ctx: GuardEvalContext) {
       } satisfies ActionPolicyGuardFailure,
     };
   }
-  const open = await prisma.approvalInstance.findFirst({
+  const open = await ctx.client.approvalInstance.findFirst({
     where: {
+      flowType: ctx.flowType,
       targetTable,
       targetId,
       status: { in: [DocStatusValue.pending_qa, DocStatusValue.pending_exec] },
@@ -160,11 +163,13 @@ async function evaluateGuards(guards: unknown, ctx: GuardEvalContext) {
 
 export async function evaluateActionPolicy(
   input: EvaluateActionPolicyInput,
+  options?: { client?: any },
 ): Promise<EvaluateActionPolicyResult> {
   const actionKey = normalizeString(input.actionKey);
   const reasonText = normalizeString(input.reasonText);
+  const client = options?.client ?? prisma;
 
-  const policies = await prisma.actionPolicy.findMany({
+  const policies = await client.actionPolicy.findMany({
     where: { flowType: input.flowType, actionKey, isEnabled: true },
     orderBy: [{ priority: 'desc' }, { createdAt: 'desc' }],
   });
@@ -178,6 +183,8 @@ export async function evaluateActionPolicy(
     if (!matchesSubjects(policy.subjects, input.actor)) continue;
 
     const guardRes = await evaluateGuards(policy.guards, {
+      client,
+      flowType: input.flowType,
       targetTable: input.targetTable,
       targetId: input.targetId,
     });
