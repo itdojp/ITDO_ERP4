@@ -1,4 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { apiResponse, getAuthState } from '../api';
 import {
   Alert,
@@ -11,7 +17,11 @@ import {
   Textarea,
   Toast,
 } from '../ui';
-import { buildOpenHash, navigateToOpen, parseOpenHash } from '../utils/deepLink';
+import {
+  buildOpenHash,
+  navigateToOpen,
+  parseOpenHash,
+} from '../utils/deepLink';
 import { copyToClipboard } from '../utils/clipboard';
 
 type AnnotationTargetKind =
@@ -92,9 +102,11 @@ type RefCandidateItem = {
   meta?: Record<string, unknown>;
 };
 
-type MessageState =
-  | { variant: 'success' | 'error' | 'warning' | 'info'; title: string; description?: string }
-  | null;
+type MessageState = {
+  variant: 'success' | 'error' | 'warning' | 'info';
+  title: string;
+  description?: string;
+} | null;
 
 function normalizeString(value: unknown) {
   return typeof value === 'string' ? value.trim() : '';
@@ -151,7 +163,10 @@ function parseInternalRefInput(
     try {
       const url = new URL(raw);
       const open = parseOpenHash(url.hash || '');
-      if (open && ALLOWED_INTERNAL_REF_KIND_SET.has(open.kind as InternalRefKind)) {
+      if (
+        open &&
+        ALLOWED_INTERNAL_REF_KIND_SET.has(open.kind as InternalRefKind)
+      ) {
         return { kind: open.kind as InternalRefKind, id: open.id };
       }
     } catch {
@@ -167,7 +182,10 @@ function parseInternalRefInput(
       : '';
   if (normalized) {
     const open = parseOpenHash(normalized);
-    if (open && ALLOWED_INTERNAL_REF_KIND_SET.has(open.kind as InternalRefKind)) {
+    if (
+      open &&
+      ALLOWED_INTERNAL_REF_KIND_SET.has(open.kind as InternalRefKind)
+    ) {
       return { kind: open.kind as InternalRefKind, id: open.id };
     }
   }
@@ -244,7 +262,10 @@ const InternalOpenLink = ({
   const link = normalizeString(href);
   const isOpen = link.startsWith('/#/open') || link.startsWith('#/open');
   const safeHref = link || '#';
-  const mergedStyle: React.CSSProperties = { ...(style || {}), color: '#2563eb' };
+  const mergedStyle: React.CSSProperties = {
+    ...(style || {}),
+    color: '#2563eb',
+  };
 
   return (
     <a
@@ -317,10 +338,18 @@ export const AnnotationsCard: React.FC<AnnotationsCardProps> = ({
         return;
       }
       setNotes(typeof payload.notes === 'string' ? payload.notes : '');
-      setExternalUrls(Array.isArray(payload.externalUrls) ? payload.externalUrls : []);
-      setInternalRefs(Array.isArray(payload.internalRefs) ? payload.internalRefs : []);
-      setUpdatedAt(typeof payload.updatedAt === 'string' ? payload.updatedAt : null);
-      setUpdatedBy(typeof payload.updatedBy === 'string' ? payload.updatedBy : null);
+      setExternalUrls(
+        Array.isArray(payload.externalUrls) ? payload.externalUrls : [],
+      );
+      setInternalRefs(
+        Array.isArray(payload.internalRefs) ? payload.internalRefs : [],
+      );
+      setUpdatedAt(
+        typeof payload.updatedAt === 'string' ? payload.updatedAt : null,
+      );
+      setUpdatedBy(
+        typeof payload.updatedBy === 'string' ? payload.updatedBy : null,
+      );
       setRequiresReason(false);
       setReasonText('');
     } catch (err) {
@@ -392,10 +421,18 @@ export const AnnotationsCard: React.FC<AnnotationsCardProps> = ({
         return;
       }
       setNotes(typeof payload.notes === 'string' ? payload.notes : '');
-      setExternalUrls(Array.isArray(payload.externalUrls) ? payload.externalUrls : []);
-      setInternalRefs(Array.isArray(payload.internalRefs) ? payload.internalRefs : []);
-      setUpdatedAt(typeof payload.updatedAt === 'string' ? payload.updatedAt : null);
-      setUpdatedBy(typeof payload.updatedBy === 'string' ? payload.updatedBy : null);
+      setExternalUrls(
+        Array.isArray(payload.externalUrls) ? payload.externalUrls : [],
+      );
+      setInternalRefs(
+        Array.isArray(payload.internalRefs) ? payload.internalRefs : [],
+      );
+      setUpdatedAt(
+        typeof payload.updatedAt === 'string' ? payload.updatedAt : null,
+      );
+      setUpdatedBy(
+        typeof payload.updatedBy === 'string' ? payload.updatedBy : null,
+      );
       setMessage({ variant: 'success', title: '保存しました' });
       setRequiresReason(false);
       setReasonText('');
@@ -464,7 +501,9 @@ export const AnnotationsCard: React.FC<AnnotationsCardProps> = ({
             setRefError(mapAnnotationError(parseApiError(payload)));
             return;
           }
-          const items = Array.isArray(payload.items) ? (payload.items as RefCandidateItem[]) : [];
+          const items = Array.isArray(payload.items)
+            ? (payload.items as RefCandidateItem[])
+            : [];
           setRefItems(items);
         } catch (err) {
           console.error('Failed to load ref-candidates', err);
@@ -483,7 +522,9 @@ export const AnnotationsCard: React.FC<AnnotationsCardProps> = ({
   const addInternalRef = useCallback(
     (ref: InternalRef) => {
       const key = `${ref.kind}:${ref.id}`;
-      const exists = internalRefs.some((item) => `${item.kind}:${item.id}` === key);
+      const exists = internalRefs.some(
+        (item) => `${item.kind}:${item.id}` === key,
+      );
       if (exists) return;
       setInternalRefs((prev) => [...prev, ref]);
     },
@@ -587,19 +628,25 @@ export const AnnotationsCard: React.FC<AnnotationsCardProps> = ({
   const eventLogItems = useMemo(() => {
     const formatCount = (value: unknown) =>
       typeof value === 'number' ? `${value}` : `${Number(value) || 0}`;
-    const safeLength = (value: string | null) => (typeof value === 'string' ? value.length : 0);
-    const safeArrayLen = (value: unknown[]) => (Array.isArray(value) ? value.length : 0);
+    const safeLength = (value: string | null) =>
+      typeof value === 'string' ? value.length : 0;
+    const safeArrayLen = (value: unknown[]) =>
+      Array.isArray(value) ? value.length : 0;
 
     return historyItems.map((entry, index) => {
       const prev = historyItems[index + 1];
-      const changes: Array<{ field: string; before?: string; after?: string }> = [];
+      const changes: Array<{ field: string; before?: string; after?: string }> =
+        [];
 
       const beforeNotesLen = prev ? safeLength(prev.notes) : undefined;
       const afterNotesLen = safeLength(entry.notes);
       if (beforeNotesLen === undefined || beforeNotesLen !== afterNotesLen) {
         changes.push({
           field: 'メモ文字数',
-          before: beforeNotesLen === undefined ? undefined : formatCount(beforeNotesLen),
+          before:
+            beforeNotesLen === undefined
+              ? undefined
+              : formatCount(beforeNotesLen),
           after: formatCount(afterNotesLen),
         });
       }
@@ -609,7 +656,10 @@ export const AnnotationsCard: React.FC<AnnotationsCardProps> = ({
       if (beforeUrlCount === undefined || beforeUrlCount !== afterUrlCount) {
         changes.push({
           field: '外部URL件数',
-          before: beforeUrlCount === undefined ? undefined : formatCount(beforeUrlCount),
+          before:
+            beforeUrlCount === undefined
+              ? undefined
+              : formatCount(beforeUrlCount),
           after: formatCount(afterUrlCount),
         });
       }
@@ -619,7 +669,10 @@ export const AnnotationsCard: React.FC<AnnotationsCardProps> = ({
       if (beforeRefCount === undefined || beforeRefCount !== afterRefCount) {
         changes.push({
           field: '内部参照件数',
-          before: beforeRefCount === undefined ? undefined : formatCount(beforeRefCount),
+          before:
+            beforeRefCount === undefined
+              ? undefined
+              : formatCount(beforeRefCount),
           after: formatCount(afterRefCount),
         });
       }
@@ -664,16 +717,28 @@ export const AnnotationsCard: React.FC<AnnotationsCardProps> = ({
       {loadError && <Alert variant="error">{loadError}</Alert>}
 
       <Card padding="small">
-        <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-          <div style={{ fontWeight: 600 }}>
-            {title || '注釈'}
-          </div>
+        <div
+          style={{
+            display: 'flex',
+            gap: 12,
+            alignItems: 'center',
+            flexWrap: 'wrap',
+          }}
+        >
+          <div style={{ fontWeight: 600 }}>{title || '注釈'}</div>
           <div style={{ fontSize: 12, color: '#64748b' }}>
-            {updatedAt ? `更新: ${new Date(updatedAt).toLocaleString()}` : '更新: -'}
+            {updatedAt
+              ? `更新: ${new Date(updatedAt).toLocaleString()}`
+              : '更新: -'}
             {updatedBy ? ` / 更新者: ${updatedBy}` : ''}
           </div>
           <div style={{ marginLeft: 'auto' }}>
-            <Button variant="secondary" size="small" onClick={load} disabled={loading}>
+            <Button
+              variant="secondary"
+              size="small"
+              onClick={load}
+              disabled={loading}
+            >
               再読込
             </Button>
           </div>
@@ -701,7 +766,12 @@ export const AnnotationsCard: React.FC<AnnotationsCardProps> = ({
               >
                 {previewVisible ? 'プレビューを隠す' : 'プレビュー'}
               </Button>
-              <Button variant="primary" size="small" onClick={save} disabled={saving}>
+              <Button
+                variant="primary"
+                size="small"
+                onClick={save}
+                disabled={saving}
+              >
                 {saving ? '保存中' : '保存'}
               </Button>
             </div>
@@ -718,7 +788,10 @@ export const AnnotationsCard: React.FC<AnnotationsCardProps> = ({
                 <div style={{ fontWeight: 600, marginBottom: 6 }}>
                   プレビュー
                 </div>
-                <MarkdownRenderer content={notes} linkComponent={InternalOpenLink} />
+                <MarkdownRenderer
+                  content={notes}
+                  linkComponent={InternalOpenLink}
+                />
               </Card>
             )}
           </div>
@@ -726,10 +799,25 @@ export const AnnotationsCard: React.FC<AnnotationsCardProps> = ({
       </Card>
 
       <Card padding="small">
-        <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+        <div
+          style={{
+            display: 'flex',
+            gap: 12,
+            alignItems: 'center',
+            flexWrap: 'wrap',
+          }}
+        >
           <div style={{ fontWeight: 600 }}>外部URL</div>
         </div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', flexWrap: 'wrap', marginTop: 8 }}>
+        <div
+          style={{
+            display: 'flex',
+            gap: 8,
+            alignItems: 'flex-end',
+            flexWrap: 'wrap',
+            marginTop: 8,
+          }}
+        >
           <Input
             label="追加（スペース区切りで複数可）"
             value={externalUrlInput}
@@ -737,13 +825,20 @@ export const AnnotationsCard: React.FC<AnnotationsCardProps> = ({
             placeholder="https://example.com"
             style={{ minWidth: 320 }}
           />
-          <Button variant="secondary" size="small" onClick={addExternalUrls} disabled={!externalUrlInput.trim()}>
+          <Button
+            variant="secondary"
+            size="small"
+            onClick={addExternalUrls}
+            disabled={!externalUrlInput.trim()}
+          >
             追加
           </Button>
         </div>
         <div style={{ display: 'grid', gap: 6, marginTop: 12 }}>
           {externalUrls.length === 0 && (
-            <div style={{ fontSize: 12, color: '#64748b' }}>外部URLはありません</div>
+            <div style={{ fontSize: 12, color: '#64748b' }}>
+              外部URLはありません
+            </div>
           )}
           {externalUrls.map((url, index) => {
             const safeHref = toSafeExternalHref(url);
@@ -771,20 +866,20 @@ export const AnnotationsCard: React.FC<AnnotationsCardProps> = ({
                     {url}
                   </span>
                 )}
-              <Button
-                variant="ghost"
-                size="small"
-                onClick={() => copyLink('url', url, url)}
-              >
-                コピー
-              </Button>
-              <Button
-                variant="ghost"
-                size="small"
-                onClick={() => removeExternalUrl(index)}
-              >
-                削除
-              </Button>
+                <Button
+                  variant="ghost"
+                  size="small"
+                  onClick={() => copyLink('url', url, url)}
+                >
+                  コピー
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="small"
+                  onClick={() => removeExternalUrl(index)}
+                >
+                  削除
+                </Button>
               </div>
             );
           })}
@@ -792,15 +887,31 @@ export const AnnotationsCard: React.FC<AnnotationsCardProps> = ({
       </Card>
 
       <Card padding="small">
-        <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+        <div
+          style={{
+            display: 'flex',
+            gap: 12,
+            alignItems: 'center',
+            flexWrap: 'wrap',
+          }}
+        >
           <div style={{ fontWeight: 600 }}>内部参照</div>
           <div style={{ fontSize: 12, color: '#64748b' }}>
-            {projectId ? '候補は案件スコープ内から検索' : '案件ID未指定のため候補検索は無効'}
+            {projectId
+              ? '候補は案件スコープ内から検索'
+              : '案件ID未指定のため候補検索は無効'}
           </div>
         </div>
 
         <div style={{ display: 'grid', gap: 8, marginTop: 8 }}>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+          <div
+            style={{
+              display: 'flex',
+              gap: 8,
+              alignItems: 'flex-end',
+              flexWrap: 'wrap',
+            }}
+          >
             <Input
               label="手動追加（deep link / kind:id）"
               value={manualRefInput}
@@ -824,7 +935,9 @@ export const AnnotationsCard: React.FC<AnnotationsCardProps> = ({
             placeholder="例: INV- / PRJ- / 顧客名 / 業者名 / 発言内容…"
             disabled={!projectId}
           />
-          {refLoading && <div style={{ fontSize: 12, color: '#64748b' }}>検索中…</div>}
+          {refLoading && (
+            <div style={{ fontSize: 12, color: '#64748b' }}>検索中…</div>
+          )}
           {refError && <Alert variant="warning">{refError}</Alert>}
           {refItems.length > 0 && (
             <div style={{ display: 'grid', gap: 6 }}>
@@ -844,7 +957,11 @@ export const AnnotationsCard: React.FC<AnnotationsCardProps> = ({
                 >
                   <span className="badge">{item.kind}</span>
                   <span style={{ flex: '1 1 280px' }}>{item.label}</span>
-                  <Button variant="ghost" size="small" onClick={() => insertRef(item)}>
+                  <Button
+                    variant="ghost"
+                    size="small"
+                    onClick={() => insertRef(item)}
+                  >
                     挿入
                   </Button>
                   <Button
@@ -852,7 +969,10 @@ export const AnnotationsCard: React.FC<AnnotationsCardProps> = ({
                     size="small"
                     onClick={() => {
                       navigateToOpen({ kind: item.kind, id: item.id });
-                      setMessage({ variant: 'info', title: '参照先を開きました' });
+                      setMessage({
+                        variant: 'info',
+                        title: '参照先を開きました',
+                      });
                     }}
                   >
                     開く
@@ -864,13 +984,23 @@ export const AnnotationsCard: React.FC<AnnotationsCardProps> = ({
 
           <div style={{ display: 'grid', gap: 6, marginTop: 4 }}>
             {internalRefs.length === 0 && (
-              <div style={{ fontSize: 12, color: '#64748b' }}>内部参照はありません</div>
+              <div style={{ fontSize: 12, color: '#64748b' }}>
+                内部参照はありません
+              </div>
             )}
             {internalRefs.map((ref, index) => {
               const label = ref.label?.trim() || `${ref.kind}:${ref.id}`;
               const url = buildInternalLink(ref.kind, ref.id);
               return (
-                <div key={`${ref.kind}:${ref.id}:${index}`} style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                <div
+                  key={`${ref.kind}:${ref.id}:${index}`}
+                  style={{
+                    display: 'flex',
+                    gap: 8,
+                    alignItems: 'center',
+                    flexWrap: 'wrap',
+                  }}
+                >
                   <span className="badge">{ref.kind}</span>
                   <a
                     href={url}
@@ -886,18 +1016,32 @@ export const AnnotationsCard: React.FC<AnnotationsCardProps> = ({
                     variant="ghost"
                     size="small"
                     onClick={() =>
-                      insertIntoNotes(`[${escapeMarkdownLinkLabel(label)}](${url})`)
+                      insertIntoNotes(
+                        `[${escapeMarkdownLinkLabel(label)}](${url})`,
+                      )
                     }
                   >
                     挿入
                   </Button>
-                  <Button variant="ghost" size="small" onClick={() => copyLink('url', label, url)}>
+                  <Button
+                    variant="ghost"
+                    size="small"
+                    onClick={() => copyLink('url', label, url)}
+                  >
                     コピー
                   </Button>
-                  <Button variant="ghost" size="small" onClick={() => copyLink('markdown', label, url)}>
+                  <Button
+                    variant="ghost"
+                    size="small"
+                    onClick={() => copyLink('markdown', label, url)}
+                  >
                     Markdown
                   </Button>
-                  <Button variant="ghost" size="small" onClick={() => removeInternalRef(index)}>
+                  <Button
+                    variant="ghost"
+                    size="small"
+                    onClick={() => removeInternalRef(index)}
+                  >
                     削除
                   </Button>
                 </div>
@@ -908,7 +1052,14 @@ export const AnnotationsCard: React.FC<AnnotationsCardProps> = ({
       </Card>
 
       <Card padding="small">
-        <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+        <div
+          style={{
+            display: 'flex',
+            gap: 12,
+            alignItems: 'center',
+            flexWrap: 'wrap',
+          }}
+        >
           <div style={{ fontWeight: 600 }}>履歴（監査ログ）</div>
           <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
             <Button
@@ -916,7 +1067,11 @@ export const AnnotationsCard: React.FC<AnnotationsCardProps> = ({
               size="small"
               onClick={() => {
                 setHistoryVisible((prev) => !prev);
-                if (!historyVisible && historyItems.length === 0 && !historyLoading) {
+                if (
+                  !historyVisible &&
+                  historyItems.length === 0 &&
+                  !historyLoading
+                ) {
                   loadHistory().catch(() => undefined);
                 }
               }}
