@@ -305,6 +305,7 @@ export const Expenses: React.FC = () => {
             <div style={{ marginTop: 6 }}>
               <button
                 className="button secondary"
+                aria-label={`注釈（経費）: ${item.incurredOn.slice(0, 10)} ${item.category} ${item.amount} ${item.currency}`}
                 onClick={() =>
                   setAnnotationTarget({
                     kind: 'expense',
