@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { api, getAuthState } from '../api';
+import { AnnotationsCard } from '../components/AnnotationsCard';
 import { useProjects } from '../hooks/useProjects';
+import { Button, Dialog } from '../ui';
 import { enqueueOfflineItem, isOfflineError } from '../utils/offlineQueue';
 
 type Expense = {
@@ -59,6 +61,12 @@ export const Expenses: React.FC = () => {
     () => new Map(projects.map((project) => [project.id, project])),
     [projects],
   );
+  const [annotationTarget, setAnnotationTarget] = useState<{
+    kind: 'expense';
+    id: string;
+    projectId: string;
+    title: string;
+  } | null>(null);
   const [message, setMessage] = useState<MessageState>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [showMissingOnly, setShowMissingOnly] = useState(false);
@@ -294,6 +302,21 @@ export const Expenses: React.FC = () => {
                 </span>
               </>
             )}
+            <div style={{ marginTop: 6 }}>
+              <button
+                className="button secondary"
+                onClick={() =>
+                  setAnnotationTarget({
+                    kind: 'expense',
+                    id: item.id,
+                    projectId: item.projectId,
+                    title: `経費: ${item.incurredOn.slice(0, 10)} / ${item.category}`,
+                  })
+                }
+              >
+                注釈
+              </button>
+            </div>
           </li>
         ))}
         {visibleItems.length === 0 && <li>データなし</li>}
@@ -303,6 +326,26 @@ export const Expenses: React.FC = () => {
           {message.text}
         </p>
       )}
+      <Dialog
+        open={Boolean(annotationTarget)}
+        onClose={() => setAnnotationTarget(null)}
+        title={annotationTarget?.title || '注釈'}
+        size="large"
+        footer={
+          <Button variant="secondary" onClick={() => setAnnotationTarget(null)}>
+            閉じる
+          </Button>
+        }
+      >
+        {annotationTarget && (
+          <AnnotationsCard
+            targetKind={annotationTarget.kind}
+            targetId={annotationTarget.id}
+            projectId={annotationTarget.projectId}
+            title={annotationTarget.title}
+          />
+        )}
+      </Dialog>
     </div>
   );
 };
