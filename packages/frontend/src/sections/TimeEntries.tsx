@@ -785,6 +785,8 @@ export const TimeEntries: React.FC = () => {
     }
   };
 
+  const canOpenDailyReport = /^\d{4}-\d{2}-\d{2}$/.test(form.workDate.trim());
+
   return (
     <div
       style={{
@@ -798,9 +800,11 @@ export const TimeEntries: React.FC = () => {
       <Button
         size="small"
         variant="ghost"
-        onClick={() =>
-          navigateToOpen({ kind: 'daily_report', id: form.workDate })
-        }
+        disabled={!canOpenDailyReport}
+        onClick={() => {
+          if (!canOpenDailyReport) return;
+          navigateToOpen({ kind: 'daily_report', id: form.workDate.trim() });
+        }}
       >
         日報を開く
       </Button>
