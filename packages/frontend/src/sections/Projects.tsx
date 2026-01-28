@@ -1,5 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { api, getAuthState } from '../api';
+import { AnnotationsCard } from '../components/AnnotationsCard';
+import { Button, Dialog } from '../ui';
 
 type Project = {
   id: string;
@@ -260,6 +262,12 @@ export const Projects: React.FC = () => {
     string | null
   >(null);
   const [message, setMessage] = useState('');
+  const [annotationTarget, setAnnotationTarget] = useState<{
+    kind: 'project';
+    id: string;
+    projectId: string;
+    title: string;
+  } | null>(null);
   const [memberProjectId, setMemberProjectId] = useState<string | null>(null);
   const [members, setMembers] = useState<ProjectMember[]>([]);
   const [memberForm, setMemberForm] =
@@ -1079,6 +1087,20 @@ export const Projects: React.FC = () => {
                   ? 'メンバー閉じる'
                   : 'メンバー管理'}
               </button>
+              <button
+                className="button secondary"
+                style={{ marginLeft: 8 }}
+                onClick={() =>
+                  setAnnotationTarget({
+                    kind: 'project',
+                    id: item.id,
+                    projectId: item.id,
+                    title: `案件: ${item.code} / ${item.name}`,
+                  })
+                }
+              >
+                注釈
+              </button>
               {memberProjectId === item.id && (
                 <div className="card" style={{ marginTop: 12 }}>
                   <h3>メンバー管理</h3>
@@ -1590,6 +1612,26 @@ export const Projects: React.FC = () => {
           </>
         )}
       </div>
+      <Dialog
+        open={Boolean(annotationTarget)}
+        onClose={() => setAnnotationTarget(null)}
+        title={annotationTarget?.title || '注釈'}
+        size="large"
+        footer={
+          <Button variant="secondary" onClick={() => setAnnotationTarget(null)}>
+            閉じる
+          </Button>
+        }
+      >
+        {annotationTarget && (
+          <AnnotationsCard
+            targetKind={annotationTarget.kind}
+            targetId={annotationTarget.id}
+            projectId={annotationTarget.projectId}
+            title={annotationTarget.title}
+          />
+        )}
+      </Dialog>
     </div>
   );
 };
