@@ -688,6 +688,8 @@ const actionPolicyStateConstraintsSchema = Type.Union([
 
 const actionPolicyGuardsSchema = Type.Union([
   Type.Null(),
+  // NOTE: Keep this schema wide for backward compatibility (api-schema / openapi-diff).
+  // The evaluator is fail-safe and will deny when guards are malformed or unknown.
   Type.Array(Type.Any(), { minItems: 0 }),
 ]);
 
@@ -717,6 +719,8 @@ export const actionPolicyEvaluateSchema = {
       flowType: flowTypeSchema,
       actionKey: Type.String({ minLength: 1, maxLength: 100 }),
       state: Type.Optional(Type.Any()),
+      targetTable: Type.Optional(Type.String({ minLength: 1 })),
+      targetId: Type.Optional(Type.String({ minLength: 1 })),
       actor: Type.Optional(
         Type.Object(
           {

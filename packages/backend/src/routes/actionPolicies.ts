@@ -9,6 +9,7 @@ import {
   actionPolicySchema,
 } from './validators.js';
 import { requireUserContext } from '../services/authContext.js';
+import { evaluateActionPolicy } from '../services/actionPolicy.js';
 
 type ActorContext = {
   userId: string | null;
@@ -42,42 +43,6 @@ function parseFlowType(value: string): FlowType | null {
     return value as FlowType;
   }
   return null;
-}
-
-function matchesSubjects(subjects: unknown, actor: ActorContext): boolean {
-  // OR semantics: if any of roles/groupIds/userIds matches, the policy matches.
-  if (!subjects || typeof subjects !== 'object') return true;
-  const obj = subjects as Record<string, unknown>;
-  const roles = normalizeStringArray(obj.roles);
-  const groupIds = normalizeStringArray(obj.groupIds);
-  const userIds = normalizeStringArray(obj.userIds);
-  const hasAny = roles.length || groupIds.length || userIds.length;
-  if (!hasAny) return true;
-
-  if (roles.length && roles.some((role) => actor.roles.includes(role)))
-    return true;
-  if (
-    groupIds.length &&
-    groupIds.some((groupId) => actor.groupIds.includes(groupId))
-  )
-    return true;
-  if (userIds.length && actor.userId && userIds.includes(actor.userId))
-    return true;
-  return false;
-}
-
-function matchesStateConstraints(stateConstraints: unknown, state: unknown) {
-  if (!stateConstraints || typeof stateConstraints !== 'object') return true;
-  if (!state || typeof state !== 'object') return true;
-  const constraints = stateConstraints as Record<string, unknown>;
-  const current = state as Record<string, unknown>;
-  const status = normalizeString(current.status);
-
-  const statusIn = normalizeStringArray(constraints.statusIn);
-  if (statusIn.length && !statusIn.includes(status)) return false;
-  const statusNotIn = normalizeStringArray(constraints.statusNotIn);
-  if (statusNotIn.length && statusNotIn.includes(status)) return false;
-  return true;
 }
 
 export async function registerActionPolicyRoutes(app: FastifyInstance) {
@@ -199,6 +164,8 @@ export async function registerActionPolicyRoutes(app: FastifyInstance) {
         flowType?: FlowType;
         actionKey?: string;
         state?: unknown;
+        targetTable?: string;
+        targetId?: string;
         actor?: { userId?: string; roles?: unknown; groupIds?: unknown };
         reasonText?: string;
       };
@@ -215,33 +182,16 @@ export async function registerActionPolicyRoutes(app: FastifyInstance) {
         groupIds: normalizeStringArray(body.actor?.groupIds),
       };
 
-      const items = await prisma.actionPolicy.findMany({
-        where: { flowType, actionKey, isEnabled: true },
-        orderBy: [{ priority: 'desc' }, { createdAt: 'desc' }],
+      const result = await evaluateActionPolicy({
+        flowType,
+        actionKey,
+        state: body.state,
+        targetTable: normalizeString(body.targetTable) || undefined,
+        targetId: normalizeString(body.targetId) || undefined,
+        actor,
+        reasonText,
       });
-
-      const matched = items.find((policy) => {
-        if (!matchesStateConstraints(policy.stateConstraints, body.state))
-          return false;
-        if (!matchesSubjects(policy.subjects, actor)) return false;
-        return true;
-      });
-
-      if (!matched) {
-        return { allowed: false, reason: 'no_matching_policy' };
-      }
-      if (matched.requireReason && !reasonText) {
-        return {
-          allowed: false,
-          reason: 'reason_required',
-          matchedPolicyId: matched.id,
-        };
-      }
-      return {
-        allowed: true,
-        matchedPolicyId: matched.id,
-        requireReason: matched.requireReason,
-      };
+      return result;
     },
   );
 }

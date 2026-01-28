@@ -448,7 +448,15 @@
                   "reasonText": {
                     "type": "string"
                   },
-                  "state": {}
+                  "state": {},
+                  "targetId": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "targetTable": {
+                    "minLength": 1,
+                    "type": "string"
+                  }
                 },
                 "required": [
                   "flowType",
