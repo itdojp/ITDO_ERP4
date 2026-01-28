@@ -2,6 +2,7 @@ import { FastifyInstance } from 'fastify';
 import { prisma } from '../services/db.js';
 import { requireRole } from '../services/rbac.js';
 import { auditContextFromRequest, logAudit } from '../services/audit.js';
+import { FlowTypeValue, type FlowType } from '../types.js';
 import {
   actionPolicyEvaluateSchema,
   actionPolicyPatchSchema,
@@ -15,6 +16,17 @@ type ActorContext = {
   groupIds: string[];
 };
 
+type ActionPolicyInput = {
+  flowType: FlowType;
+  actionKey: string;
+  priority?: number;
+  isEnabled?: boolean;
+  subjects?: unknown;
+  stateConstraints?: unknown;
+  requireReason?: boolean;
+  guards?: unknown;
+};
+
 function normalizeString(value: unknown) {
   return typeof value === 'string' ? value.trim() : '';
 }
@@ -24,7 +36,16 @@ function normalizeStringArray(value: unknown): string[] {
   return value.map((item) => normalizeString(item)).filter(Boolean);
 }
 
+function parseFlowType(value: string): FlowType | null {
+  if (!value) return null;
+  if (Object.prototype.hasOwnProperty.call(FlowTypeValue, value)) {
+    return value as FlowType;
+  }
+  return null;
+}
+
 function matchesSubjects(subjects: unknown, actor: ActorContext): boolean {
+  // OR semantics: if any of roles/groupIds/userIds matches, the policy matches.
   if (!subjects || typeof subjects !== 'object') return true;
   const obj = subjects as Record<string, unknown>;
   const roles = normalizeStringArray(obj.roles);
@@ -63,13 +84,17 @@ export async function registerActionPolicyRoutes(app: FastifyInstance) {
   app.get(
     '/action-policies',
     { preHandler: requireRole(['admin', 'mgmt']) },
-    async (req) => {
+    async (req, reply) => {
       const query = (req.query || {}) as {
         flowType?: string;
         actionKey?: string;
         isEnabled?: string;
       };
-      const flowType = normalizeString(query.flowType);
+      const flowTypeRaw = normalizeString(query.flowType);
+      const flowType = flowTypeRaw ? parseFlowType(flowTypeRaw) : null;
+      if (flowTypeRaw && !flowType) {
+        return reply.status(400).send({ error: 'invalid_flowType' });
+      }
       const actionKey = normalizeString(query.actionKey);
       const isEnabledRaw = normalizeString(query.isEnabled);
       const isEnabled =
@@ -81,7 +106,7 @@ export async function registerActionPolicyRoutes(app: FastifyInstance) {
 
       const items = await prisma.actionPolicy.findMany({
         where: {
-          ...(flowType ? { flowType: flowType as any } : {}),
+          ...(flowType ? { flowType } : {}),
           ...(actionKey ? { actionKey } : {}),
           ...(isEnabled !== undefined ? { isEnabled } : {}),
         },
@@ -98,11 +123,17 @@ export async function registerActionPolicyRoutes(app: FastifyInstance) {
   app.post(
     '/action-policies',
     { preHandler: requireRole(['admin', 'mgmt']), schema: actionPolicySchema },
-    async (req) => {
+    async (req, reply) => {
       const { userId } = requireUserContext(req);
+      const body = req.body as ActionPolicyInput;
+      const actionKey = normalizeString(body.actionKey);
+      if (!actionKey) {
+        return reply.status(400).send({ error: 'actionKey_required' });
+      }
       const created = await prisma.actionPolicy.create({
         data: {
-          ...(req.body as any),
+          ...(body as any),
+          actionKey,
           createdBy: userId ?? undefined,
           updatedBy: userId ?? undefined,
         },
@@ -124,13 +155,25 @@ export async function registerActionPolicyRoutes(app: FastifyInstance) {
       preHandler: requireRole(['admin', 'mgmt']),
       schema: actionPolicyPatchSchema,
     },
-    async (req) => {
+    async (req, reply) => {
       const { id } = req.params as { id: string };
       const { userId } = requireUserContext(req);
+      const body = (req.body || {}) as Partial<ActionPolicyInput>;
+      const hasActionKey = Object.prototype.hasOwnProperty.call(
+        body,
+        'actionKey',
+      );
+      const actionKey = hasActionKey
+        ? normalizeString(body.actionKey)
+        : undefined;
+      if (hasActionKey && !actionKey) {
+        return reply.status(400).send({ error: 'actionKey_required' });
+      }
       const updated = await prisma.actionPolicy.update({
         where: { id },
         data: {
-          ...(req.body as any),
+          ...(body as any),
+          ...(actionKey !== undefined ? { actionKey } : {}),
           updatedBy: userId ?? undefined,
         },
       });
@@ -151,16 +194,19 @@ export async function registerActionPolicyRoutes(app: FastifyInstance) {
       preHandler: requireRole(['admin', 'mgmt']),
       schema: actionPolicyEvaluateSchema,
     },
-    async (req) => {
+    async (req, reply) => {
       const body = (req.body || {}) as {
-        flowType?: string;
+        flowType?: FlowType;
         actionKey?: string;
         state?: unknown;
         actor?: { userId?: string; roles?: unknown; groupIds?: unknown };
         reasonText?: string;
       };
-      const flowType = normalizeString(body.flowType);
+      const flowType = body.flowType as FlowType;
       const actionKey = normalizeString(body.actionKey);
+      if (!actionKey) {
+        return reply.status(400).send({ error: 'actionKey_required' });
+      }
       const reasonText = normalizeString(body.reasonText);
 
       const actor: ActorContext = {
@@ -170,9 +216,8 @@ export async function registerActionPolicyRoutes(app: FastifyInstance) {
       };
 
       const items = await prisma.actionPolicy.findMany({
-        where: { flowType: flowType as any, actionKey, isEnabled: true },
+        where: { flowType, actionKey, isEnabled: true },
         orderBy: [{ priority: 'desc' }, { createdAt: 'desc' }],
-        take: 50,
       });
 
       const matched = items.find((policy) => {

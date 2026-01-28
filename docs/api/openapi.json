@@ -122,7 +122,12 @@
                       }
                     ]
                   },
-                  "guards": {},
+                  "guards": {
+                    "items": {},
+                    "minItems": 0,
+                    "nullable": true,
+                    "type": "array"
+                  },
                   "isEnabled": {
                     "type": "boolean"
                   },
@@ -132,8 +137,55 @@
                   "requireReason": {
                     "type": "boolean"
                   },
-                  "stateConstraints": {},
-                  "subjects": {}
+                  "stateConstraints": {
+                    "additionalProperties": true,
+                    "nullable": true,
+                    "properties": {
+                      "statusIn": {
+                        "items": {
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "statusNotIn": {
+                        "items": {
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "type": "array"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "subjects": {
+                    "additionalProperties": true,
+                    "nullable": true,
+                    "properties": {
+                      "groupIds": {
+                        "items": {
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "roles": {
+                        "items": {
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "userIds": {
+                        "items": {
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "type": "array"
+                      }
+                    },
+                    "type": "object"
+                  }
                 },
                 "required": [
                   "flowType",
@@ -227,7 +279,12 @@
                       }
                     ]
                   },
-                  "guards": {},
+                  "guards": {
+                    "items": {},
+                    "minItems": 0,
+                    "nullable": true,
+                    "type": "array"
+                  },
                   "isEnabled": {
                     "type": "boolean"
                   },
@@ -237,8 +294,55 @@
                   "requireReason": {
                     "type": "boolean"
                   },
-                  "stateConstraints": {},
-                  "subjects": {}
+                  "stateConstraints": {
+                    "additionalProperties": true,
+                    "nullable": true,
+                    "properties": {
+                      "statusIn": {
+                        "items": {
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "statusNotIn": {
+                        "items": {
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "type": "array"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "subjects": {
+                    "additionalProperties": true,
+                    "nullable": true,
+                    "properties": {
+                      "groupIds": {
+                        "items": {
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "roles": {
+                        "items": {
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "userIds": {
+                        "items": {
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "type": "array"
+                      }
+                    },
+                    "type": "object"
+                  }
                 },
                 "type": "object"
               }
@@ -270,17 +374,20 @@
                     "properties": {
                       "groupIds": {
                         "items": {
+                          "minLength": 1,
                           "type": "string"
                         },
                         "type": "array"
                       },
                       "roles": {
                         "items": {
+                          "minLength": 1,
                           "type": "string"
                         },
                         "type": "array"
                       },
                       "userId": {
+                        "minLength": 1,
                         "type": "string"
                       }
                     },
