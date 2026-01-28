@@ -1,5 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { api } from '../api';
+import { api, getAuthState } from '../api';
+import { AnnotationsCard } from '../components/AnnotationsCard';
+import { useProjects } from '../hooks/useProjects';
+import { Alert, Button, Dialog, Select } from '../ui';
 
 type Customer = {
   id: string;
@@ -112,6 +115,24 @@ export const MasterData: React.FC = () => {
   const [contactOwnerType, setContactOwnerType] =
     useState<ContactOwnerType>('customer');
   const [contactOwnerId, setContactOwnerId] = useState('');
+  const [annotationTarget, setAnnotationTarget] = useState<{
+    kind: 'customer' | 'vendor';
+    id: string;
+    title: string;
+  } | null>(null);
+  const [annotationScopeProjectId, setAnnotationScopeProjectId] = useState(
+    () => getAuthState()?.projectIds?.[0] || '',
+  );
+  const handleAnnotationProjectSelect = useCallback((projectId: string) => {
+    setAnnotationScopeProjectId(projectId);
+  }, []);
+  const {
+    projects: annotationScopeProjects,
+    projectMessage: annotationScopeProjectMessage,
+  } = useProjects({
+    selectedProjectId: annotationScopeProjectId,
+    onSelect: handleAnnotationProjectSelect,
+  });
 
   const customerPayload = useMemo(() => {
     return {
@@ -491,6 +512,20 @@ export const MasterData: React.FC = () => {
                 >
                   編集
                 </button>
+                <button
+                  className="button secondary"
+                  style={{ marginLeft: 8 }}
+                  aria-label={`注釈（顧客）: ${item.code} / ${item.name}`}
+                  onClick={() =>
+                    setAnnotationTarget({
+                      kind: 'customer',
+                      id: item.id,
+                      title: `顧客: ${item.code} / ${item.name}`,
+                    })
+                  }
+                >
+                  注釈
+                </button>
               </li>
             ))}
             {customers.length === 0 && <li>データなし</li>}
@@ -594,6 +629,20 @@ export const MasterData: React.FC = () => {
                   onClick={() => editVendor(item)}
                 >
                   編集
+                </button>
+                <button
+                  className="button secondary"
+                  style={{ marginLeft: 8 }}
+                  aria-label={`注釈（業者）: ${item.code} / ${item.name}`}
+                  onClick={() =>
+                    setAnnotationTarget({
+                      kind: 'vendor',
+                      id: item.id,
+                      title: `業者: ${item.code} / ${item.name}`,
+                    })
+                  }
+                >
+                  注釈
                 </button>
               </li>
             ))}
@@ -755,6 +804,50 @@ export const MasterData: React.FC = () => {
           </ul>
         </div>
       </div>
+      <Dialog
+        open={Boolean(annotationTarget)}
+        onClose={() => setAnnotationTarget(null)}
+        title={annotationTarget?.title || '注釈'}
+        size="large"
+        footer={
+          <Button variant="secondary" onClick={() => setAnnotationTarget(null)}>
+            閉じる
+          </Button>
+        }
+      >
+        <div style={{ display: 'grid', gap: 12 }}>
+          <Select
+            label="候補検索スコープ（案件）"
+            aria-label="候補検索スコープ"
+            value={annotationScopeProjectId}
+            onChange={(e) => setAnnotationScopeProjectId(e.target.value)}
+            placeholder="案件を選択"
+            disabled={annotationScopeProjects.length === 0}
+          >
+            {annotationScopeProjects.length === 0 && (
+              <option value="">
+                {annotationScopeProjectMessage || '案件一覧を取得中...'}
+              </option>
+            )}
+            {annotationScopeProjects.map((project) => (
+              <option key={project.id} value={project.id}>
+                {project.code} / {project.name}
+              </option>
+            ))}
+          </Select>
+          {annotationScopeProjectMessage && (
+            <Alert variant="warning">{annotationScopeProjectMessage}</Alert>
+          )}
+          {annotationTarget && (
+            <AnnotationsCard
+              targetKind={annotationTarget.kind}
+              targetId={annotationTarget.id}
+              projectId={annotationScopeProjectId || null}
+              title={annotationTarget.title}
+            />
+          )}
+        </div>
+      </Dialog>
     </div>
   );
 };

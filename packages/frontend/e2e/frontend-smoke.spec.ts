@@ -630,6 +630,53 @@ test('frontend smoke reports masters settings @extended', async ({ page }) => {
   await vendorBlock.getByRole('button', { name: '追加' }).click();
   await expect(vendorBlock.getByText('業者を追加しました')).toBeVisible();
 
+  // 注釈UI（MasterData: customer/vendor）: 保存 → 再表示で永続化を確認
+  const customerItem = customerBlock.locator('li', { hasText: customerCode });
+  const customerAnnotationText = `E2E顧客注釈: ${id}`;
+  await customerItem.getByRole('button', { name: '注釈' }).click();
+  const customerAnnotationDialog = page.getByRole('dialog');
+  await expect(
+    customerAnnotationDialog.getByText(
+      `顧客: ${customerCode} / ${customerName}`,
+    ),
+  ).toBeVisible({ timeout: actionTimeout });
+  await customerAnnotationDialog
+    .getByLabel('メモ（Markdown）')
+    .fill(customerAnnotationText);
+  await customerAnnotationDialog.getByRole('button', { name: '保存' }).click();
+  await expect(customerAnnotationDialog.getByText('保存しました')).toBeVisible({
+    timeout: actionTimeout,
+  });
+  await customerAnnotationDialog.getByRole('button', { name: '閉じる' }).click();
+  await customerItem.getByRole('button', { name: '注釈' }).click();
+  const customerAnnotationDialog2 = page.getByRole('dialog');
+  await expect(customerAnnotationDialog2.getByLabel('メモ（Markdown）')).toHaveValue(
+    customerAnnotationText,
+    { timeout: actionTimeout },
+  );
+  await customerAnnotationDialog2.getByRole('button', { name: '閉じる' }).click();
+
+  const vendorItem = vendorBlock.locator('li', { hasText: vendorCode });
+  const vendorAnnotationText = `E2E業者注釈: ${id}`;
+  await vendorItem.getByRole('button', { name: '注釈' }).click();
+  const vendorAnnotationDialog = page.getByRole('dialog');
+  await expect(
+    vendorAnnotationDialog.getByText(`業者: ${vendorCode} / ${vendorName}`),
+  ).toBeVisible({ timeout: actionTimeout });
+  await vendorAnnotationDialog.getByLabel('メモ（Markdown）').fill(vendorAnnotationText);
+  await vendorAnnotationDialog.getByRole('button', { name: '保存' }).click();
+  await expect(vendorAnnotationDialog.getByText('保存しました')).toBeVisible({
+    timeout: actionTimeout,
+  });
+  await vendorAnnotationDialog.getByRole('button', { name: '閉じる' }).click();
+  await vendorItem.getByRole('button', { name: '注釈' }).click();
+  const vendorAnnotationDialog2 = page.getByRole('dialog');
+  await expect(vendorAnnotationDialog2.getByLabel('メモ（Markdown）')).toHaveValue(
+    vendorAnnotationText,
+    { timeout: actionTimeout },
+  );
+  await vendorAnnotationDialog2.getByRole('button', { name: '閉じる' }).click();
+
   const contactBlock = masterSection
     .locator('h3', { hasText: '連絡先' })
     .locator('..');
