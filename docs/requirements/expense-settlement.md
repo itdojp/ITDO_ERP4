@@ -42,7 +42,7 @@
 - 備考: `notes`（後続。現状 `Expense` に未実装）
 
 ### 状態遷移（MVP確定）
-- 申請承認（既存）: `draft` → `pending_qa` → `pending_exec` → `approved` / `rejected` / `cancelled`
+- 申請承認（既存）: `draft` → `pending_qa` → `pending_exec` → `approved` / `rejected`
 - 精算（追加）: `settlementStatus=unpaid` → `paid`
   - `status=approved` のみ `paid` へ遷移可能
   - `paid` の取消（`paid` → `unpaid`）は admin/mgmt のみ（理由必須、監査ログ対象）
@@ -56,9 +56,11 @@
 - 精算操作（支払済み/取消）は admin/mgmt のみ
 - `status=pending_*`（承認中）/`status=approved`（承認後）は、申請者による主要項目変更を禁止（現行ポリシー維持）
 - 監査ログ:
-  - `expense_settlement_mark_paid`（誰が/いつ/金額/支払日/支払方法）
-  - `expense_settlement_unmark_paid`（理由必須）
-- 通知: 支払完了は申請者へアプリ内通知（メールは運用次第、通知体系は `docs/requirements/notifications.md` に準拠）
+  - `expense_mark_paid`（誰が/いつ/金額/支払日/支払方法）
+    - 金額: Expense に保持する精算対象金額（`Expense.amount`）を記録する
+    - 支払方法: MVP は任意項目とし、未指定の場合は `null` またはフィールド省略とする（実装でどちらかに統一）
+  - `expense_unmark_paid`（理由必須）
+- 通知: 支払完了は申請者へアプリ内通知（`kind=expense_mark_paid`）。メールは運用次第（通知体系は `docs/requirements/notifications.md` に準拠）
 
 ## 後続検討
 - 属性要件（支払方法/税率/備考 等）の拡充
