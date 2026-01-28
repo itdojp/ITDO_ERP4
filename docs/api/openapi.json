@@ -1326,6 +1326,25 @@
         }
       }
     },
+    "/chat-messages/{id}": {
+      "get": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
     "/chat-messages/{id}/attachments": {
       "post": {
         "parameters": [
