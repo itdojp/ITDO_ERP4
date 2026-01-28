@@ -23,7 +23,8 @@ export function parseOpenHash(value: string): DeepLinkOpenPayload | null {
   const normalized = raw.startsWith('#') ? raw.slice(1) : raw;
   if (!normalized.startsWith('/open?') && normalized !== '/open') return null;
   const queryIndex = normalized.indexOf('?');
-  const queryWithFragment = queryIndex >= 0 ? normalized.slice(queryIndex + 1) : '';
+  const queryWithFragment =
+    queryIndex >= 0 ? normalized.slice(queryIndex + 1) : '';
   const query = queryWithFragment.split('#', 1)[0];
   const params = new URLSearchParams(query);
   const kind = params.get('kind');
