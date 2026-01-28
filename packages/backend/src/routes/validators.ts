@@ -663,6 +663,48 @@ export const approvalRulePatchSchema = {
   body: Type.Partial(approvalRuleSchema.body),
 };
 
+export const actionPolicySchema = {
+  body: Type.Object(
+    {
+      flowType: flowTypeSchema,
+      actionKey: Type.String({ minLength: 1, maxLength: 100 }),
+      priority: Type.Optional(Type.Integer()),
+      isEnabled: Type.Optional(Type.Boolean()),
+      subjects: Type.Optional(Type.Any()),
+      stateConstraints: Type.Optional(Type.Any()),
+      requireReason: Type.Optional(Type.Boolean()),
+      guards: Type.Optional(Type.Any()),
+    },
+    { additionalProperties: false },
+  ),
+};
+
+export const actionPolicyPatchSchema = {
+  body: Type.Partial(actionPolicySchema.body),
+};
+
+export const actionPolicyEvaluateSchema = {
+  body: Type.Object(
+    {
+      flowType: flowTypeSchema,
+      actionKey: Type.String({ minLength: 1, maxLength: 100 }),
+      state: Type.Optional(Type.Any()),
+      actor: Type.Optional(
+        Type.Object(
+          {
+            userId: Type.Optional(Type.String()),
+            roles: Type.Optional(Type.Array(Type.String())),
+            groupIds: Type.Optional(Type.Array(Type.String())),
+          },
+          { additionalProperties: false },
+        ),
+      ),
+      reasonText: Type.Optional(Type.String()),
+    },
+    { additionalProperties: false },
+  ),
+};
+
 const alertTypeSchema = Type.Union([
   Type.Literal('budget_overrun'),
   Type.Literal('overtime'),

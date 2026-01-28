@@ -974,6 +974,26 @@ model ApprovalStep {
   @@index([status, approverUserId])
 }
 
+model ActionPolicy {
+  id               String   @id @default(uuid())
+  flowType          FlowType
+  actionKey         String
+  priority          Int      @default(0)
+  isEnabled         Boolean  @default(true)
+  subjects          Json?
+  stateConstraints  Json?
+  requireReason     Boolean  @default(false)
+  guards            Json?
+  createdAt         DateTime @default(now())
+  createdBy         String?
+  updatedAt         DateTime @updatedAt
+  updatedBy         String?
+
+  @@index([flowType, actionKey])
+  @@index([flowType, actionKey, isEnabled])
+  @@index([isEnabled])
+}
+
 model AlertSetting {
   id               String    @id @default(uuid())
   type             AlertType

@@ -45,11 +45,13 @@ import { registerRateCardRoutes } from './rateCards.js';
 import { registerNotificationRoutes } from './notifications.js';
 import { registerNotificationJobRoutes } from './notificationJobs.js';
 import { registerRefCandidateRoutes } from './refCandidates.js';
+import { registerActionPolicyRoutes } from './actionPolicies.js';
 
 export async function registerRoutes(app: FastifyInstance) {
   await registerAuthRoutes(app);
   await registerAlertSettingRoutes(app);
   await registerApprovalRuleRoutes(app);
+  await registerActionPolicyRoutes(app);
   await registerPdfTemplateRoutes(app);
   await registerTemplateSettingRoutes(app);
   await registerPdfFileRoutes(app);
