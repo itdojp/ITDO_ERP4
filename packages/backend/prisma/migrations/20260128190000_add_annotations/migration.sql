@@ -15,7 +15,6 @@ CREATE TABLE "Annotation" (
 );
 
 CREATE UNIQUE INDEX "Annotation_targetKind_targetId_key" ON "Annotation"("targetKind", "targetId");
-CREATE INDEX "Annotation_targetKind_targetId_idx" ON "Annotation"("targetKind", "targetId");
 
 CREATE TABLE "AnnotationLog" (
   "id" TEXT NOT NULL,
@@ -33,6 +32,5 @@ CREATE TABLE "AnnotationLog" (
   CONSTRAINT "AnnotationLog_pkey" PRIMARY KEY ("id")
 );
 
-CREATE INDEX "AnnotationLog_targetKind_targetId_idx" ON "AnnotationLog"("targetKind", "targetId");
 CREATE INDEX "AnnotationLog_createdAt_idx" ON "AnnotationLog"("createdAt");
-
+CREATE INDEX "AnnotationLog_targetKind_targetId_createdAt_idx" ON "AnnotationLog"("targetKind", "targetId", "createdAt" DESC);

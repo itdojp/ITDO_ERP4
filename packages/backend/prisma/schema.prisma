@@ -562,7 +562,6 @@ model Annotation {
   updatedBy   String?
 
   @@unique([targetKind, targetId])
-  @@index([targetKind, targetId])
 }
 
 model AnnotationLog {
@@ -578,8 +577,8 @@ model AnnotationLog {
   createdAt   DateTime @default(now())
   createdBy   String?
 
-  @@index([targetKind, targetId])
   @@index([createdAt])
+  @@index([targetKind, targetId, createdAt(sort: Desc)])
 }
 
 model ProjectMilestone {

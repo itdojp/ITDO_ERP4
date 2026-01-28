@@ -601,6 +601,16 @@
       "get": {
         "parameters": [
           {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "maximum": 200,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
             "in": "path",
             "name": "kind",
             "required": true,

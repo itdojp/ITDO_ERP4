@@ -97,6 +97,14 @@ function normalizeHistoryLimit(value: unknown) {
   return Math.max(1, Math.min(MAX_HISTORY_LIMIT, Math.floor(parsed)));
 }
 
+const annotationHistoryQuerySchema = {
+  type: 'object',
+  properties: {
+    limit: { type: 'integer', minimum: 1, maximum: MAX_HISTORY_LIMIT },
+  },
+  additionalProperties: false,
+} as const;
+
 function resolveActorRole(roles: string[]) {
   if (roles.includes('admin')) return 'admin';
   if (roles.includes('mgmt')) return 'mgmt';
@@ -386,7 +394,10 @@ export async function registerAnnotationRoutes(app: FastifyInstance) {
 
   app.get(
     '/annotations/:kind/:id/history',
-    { preHandler: requireRole(allowedRoles) },
+    {
+      preHandler: requireRole(allowedRoles),
+      schema: { querystring: annotationHistoryQuerySchema },
+    },
     async (req, reply) => {
       const { userId, roles, projectIds = [] } = requireUserContext(req);
       if (!userId) return reply.code(401).send({ error: 'unauthorized' });
@@ -495,9 +506,13 @@ export async function registerAnnotationRoutes(app: FastifyInstance) {
         reasonText?: string;
       };
 
-      const current = await prisma.annotation.findUnique({
-        where: { targetKind_targetId: { targetKind: kind, targetId: id } },
-      });
+      const hasUpdatableField =
+        Object.prototype.hasOwnProperty.call(body, 'notes') ||
+        Object.prototype.hasOwnProperty.call(body, 'externalUrls') ||
+        Object.prototype.hasOwnProperty.call(body, 'internalRefs');
+      if (!hasUpdatableField) {
+        return reply.status(400).send({ error: 'empty_update' });
+      }
 
       let reasonCode: string | null = null;
       const rawReasonText = normalizeString(body.reasonText);
@@ -544,62 +559,142 @@ export async function registerAnnotationRoutes(app: FastifyInstance) {
         }
       }
 
-      const mergedNotes =
-        nextNotes !== undefined ? nextNotes : (current?.notes ?? null);
-      const mergedExternalUrls =
-        nextExternalUrls !== undefined
-          ? nextExternalUrls
-          : normalizeJsonArray<string>(current?.externalUrls);
-      const mergedInternalRefs =
-        nextInternalRefs !== undefined
-          ? nextInternalRefs
-          : normalizeJsonArray<InternalRef>(current?.internalRefs);
-
-      if (mergedNotes !== null && mergedNotes.length > limits.maxNotesLength) {
-        return reply.status(400).send({ error: 'NOTES_TOO_LONG' });
-      }
-
       const actorRole = resolveActorRole(roles);
 
-      const updated = await prisma.annotation.upsert({
-        where: { targetKind_targetId: { targetKind: kind, targetId: id } },
-        create: {
+      const sumLength = (values: string[]) =>
+        values.reduce((acc, item) => acc + item.length, 0);
+      const maxLength = (values: string[]) =>
+        values.reduce((acc, item) => Math.max(acc, item.length), 0);
+
+      const result = await prisma
+        .$transaction(async (tx) => {
+          const current = await tx.annotation.findUnique({
+            where: { targetKind_targetId: { targetKind: kind, targetId: id } },
+          });
+
+          const mergedNotes =
+            nextNotes !== undefined ? nextNotes : (current?.notes ?? null);
+          const mergedExternalUrls =
+            nextExternalUrls !== undefined
+              ? nextExternalUrls
+              : normalizeJsonArray<string>(current?.externalUrls);
+          const mergedInternalRefs =
+            nextInternalRefs !== undefined
+              ? nextInternalRefs
+              : normalizeJsonArray<InternalRef>(current?.internalRefs);
+
+          if (
+            mergedNotes !== null &&
+            mergedNotes.length > limits.maxNotesLength
+          ) {
+            throw new Error('NOTES_TOO_LONG');
+          }
+
+          const beforeUrls = normalizeJsonArray<string>(current?.externalUrls);
+          const beforeRefs = normalizeJsonArray<InternalRef>(
+            current?.internalRefs,
+          );
+
+          const noEffectiveChange =
+            mergedNotes === (current?.notes ?? null) &&
+            JSON.stringify(mergedExternalUrls) === JSON.stringify(beforeUrls) &&
+            JSON.stringify(mergedInternalRefs) === JSON.stringify(beforeRefs);
+          if (noEffectiveChange && !reasonCode) {
+            return {
+              didWrite: false as const,
+              current,
+              mergedNotes,
+              mergedExternalUrls,
+              mergedInternalRefs,
+            };
+          }
+
+          const updated = await tx.annotation.upsert({
+            where: { targetKind_targetId: { targetKind: kind, targetId: id } },
+            create: {
+              targetKind: kind,
+              targetId: id,
+              notes: mergedNotes,
+              externalUrls:
+                mergedExternalUrls as unknown as Prisma.InputJsonValue,
+              internalRefs:
+                mergedInternalRefs as unknown as Prisma.InputJsonValue,
+              createdBy: userId,
+              updatedBy: userId,
+            },
+            update: {
+              notes: mergedNotes,
+              externalUrls:
+                mergedExternalUrls as unknown as Prisma.InputJsonValue,
+              internalRefs:
+                mergedInternalRefs as unknown as Prisma.InputJsonValue,
+              updatedBy: userId,
+            },
+          });
+
+          await tx.annotationLog.create({
+            data: {
+              targetKind: kind,
+              targetId: id,
+              notes: mergedNotes,
+              externalUrls:
+                mergedExternalUrls as unknown as Prisma.InputJsonValue,
+              internalRefs:
+                mergedInternalRefs as unknown as Prisma.InputJsonValue,
+              reasonCode: reasonCode ?? null,
+              reasonText: rawReasonText || null,
+              actorRole,
+              createdBy: userId,
+            },
+          });
+
+          return {
+            didWrite: true as const,
+            current,
+            updated,
+            mergedNotes,
+            mergedExternalUrls,
+            mergedInternalRefs,
+          };
+        })
+        .catch((err) => {
+          if (err instanceof Error && err.message === 'NOTES_TOO_LONG') {
+            reply.status(400).send({ error: 'NOTES_TOO_LONG' });
+            return null;
+          }
+          throw err;
+        });
+
+      if (!result) {
+        return;
+      }
+
+      if (!result.didWrite) {
+        return {
           targetKind: kind,
           targetId: id,
-          notes: mergedNotes,
-          externalUrls: mergedExternalUrls as unknown as Prisma.InputJsonValue,
-          internalRefs: mergedInternalRefs as unknown as Prisma.InputJsonValue,
-          createdBy: userId,
-          updatedBy: userId,
-        },
-        update: {
-          notes: mergedNotes,
-          externalUrls: mergedExternalUrls as unknown as Prisma.InputJsonValue,
-          internalRefs: mergedInternalRefs as unknown as Prisma.InputJsonValue,
-          updatedBy: userId,
-        },
-      });
+          notes: result.current?.notes ?? null,
+          externalUrls: normalizeJsonArray<string>(
+            result.current?.externalUrls,
+          ),
+          internalRefs: normalizeJsonArray<InternalRef>(
+            result.current?.internalRefs,
+          ),
+          updatedAt: result.current?.updatedAt ?? null,
+          updatedBy: result.current?.updatedBy ?? null,
+        };
+      }
 
-      await prisma.annotationLog.create({
-        data: {
-          targetKind: kind,
-          targetId: id,
-          notes: mergedNotes,
-          externalUrls: mergedExternalUrls as unknown as Prisma.InputJsonValue,
-          internalRefs: mergedInternalRefs as unknown as Prisma.InputJsonValue,
-          reasonCode: reasonCode ?? null,
-          reasonText: rawReasonText || null,
-          actorRole,
-          createdBy: userId,
-        },
-      });
-
-      const beforeNotesLen = (current?.notes ?? '').length;
-      const afterNotesLen = (mergedNotes ?? '').length;
-      const beforeUrls = normalizeJsonArray<string>(current?.externalUrls);
-      const afterUrls = mergedExternalUrls;
-      const beforeRefs = normalizeJsonArray<InternalRef>(current?.internalRefs);
-      const afterRefs = mergedInternalRefs;
+      const beforeNotesLen = (result.current?.notes ?? '').length;
+      const afterNotesLen = (result.mergedNotes ?? '').length;
+      const beforeUrls = normalizeJsonArray<string>(
+        result.current?.externalUrls,
+      );
+      const afterUrls = result.mergedExternalUrls;
+      const beforeRefs = normalizeJsonArray<InternalRef>(
+        result.current?.internalRefs,
+      );
+      const afterRefs = result.mergedInternalRefs;
 
       await logAudit({
         action: 'annotations_updated',
@@ -614,6 +709,14 @@ export async function registerAnnotationRoutes(app: FastifyInstance) {
             before: beforeUrls.length,
             after: afterUrls.length,
           },
+          externalUrlTotalLength: {
+            before: sumLength(beforeUrls),
+            after: sumLength(afterUrls),
+          },
+          externalUrlMaxLength: {
+            before: maxLength(beforeUrls),
+            after: maxLength(afterUrls),
+          },
           internalRefCount: {
             before: beforeRefs.length,
             after: afterRefs.length,
@@ -625,11 +728,13 @@ export async function registerAnnotationRoutes(app: FastifyInstance) {
       return {
         targetKind: kind,
         targetId: id,
-        notes: updated.notes ?? null,
-        externalUrls: normalizeJsonArray<string>(updated.externalUrls),
-        internalRefs: normalizeJsonArray<InternalRef>(updated.internalRefs),
-        updatedAt: updated.updatedAt,
-        updatedBy: updated.updatedBy ?? null,
+        notes: result.updated.notes ?? null,
+        externalUrls: normalizeJsonArray<string>(result.updated.externalUrls),
+        internalRefs: normalizeJsonArray<InternalRef>(
+          result.updated.internalRefs,
+        ),
+        updatedAt: result.updated.updatedAt,
+        updatedBy: result.updated.updatedBy ?? null,
       };
     },
   );
