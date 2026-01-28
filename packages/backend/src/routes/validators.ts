@@ -663,6 +663,76 @@ export const approvalRulePatchSchema = {
   body: Type.Partial(approvalRuleSchema.body),
 };
 
+const actionPolicySubjectsSchema = Type.Union([
+  Type.Null(),
+  Type.Object(
+    {
+      roles: Type.Optional(Type.Array(Type.String({ minLength: 1 }))),
+      groupIds: Type.Optional(Type.Array(Type.String({ minLength: 1 }))),
+      userIds: Type.Optional(Type.Array(Type.String({ minLength: 1 }))),
+    },
+    { additionalProperties: true },
+  ),
+]);
+
+const actionPolicyStateConstraintsSchema = Type.Union([
+  Type.Null(),
+  Type.Object(
+    {
+      statusIn: Type.Optional(Type.Array(Type.String({ minLength: 1 }))),
+      statusNotIn: Type.Optional(Type.Array(Type.String({ minLength: 1 }))),
+    },
+    { additionalProperties: true },
+  ),
+]);
+
+const actionPolicyGuardsSchema = Type.Union([
+  Type.Null(),
+  Type.Array(Type.Any(), { minItems: 0 }),
+]);
+
+export const actionPolicySchema = {
+  body: Type.Object(
+    {
+      flowType: flowTypeSchema,
+      actionKey: Type.String({ minLength: 1, maxLength: 100 }),
+      priority: Type.Optional(Type.Integer()),
+      isEnabled: Type.Optional(Type.Boolean()),
+      subjects: Type.Optional(actionPolicySubjectsSchema),
+      stateConstraints: Type.Optional(actionPolicyStateConstraintsSchema),
+      requireReason: Type.Optional(Type.Boolean()),
+      guards: Type.Optional(actionPolicyGuardsSchema),
+    },
+    { additionalProperties: false },
+  ),
+};
+
+export const actionPolicyPatchSchema = {
+  body: Type.Partial(actionPolicySchema.body),
+};
+
+export const actionPolicyEvaluateSchema = {
+  body: Type.Object(
+    {
+      flowType: flowTypeSchema,
+      actionKey: Type.String({ minLength: 1, maxLength: 100 }),
+      state: Type.Optional(Type.Any()),
+      actor: Type.Optional(
+        Type.Object(
+          {
+            userId: Type.Optional(Type.String({ minLength: 1 })),
+            roles: Type.Optional(Type.Array(Type.String({ minLength: 1 }))),
+            groupIds: Type.Optional(Type.Array(Type.String({ minLength: 1 }))),
+          },
+          { additionalProperties: false },
+        ),
+      ),
+      reasonText: Type.Optional(Type.String()),
+    },
+    { additionalProperties: false },
+  ),
+};
+
 const alertTypeSchema = Type.Union([
   Type.Literal('budget_overrun'),
   Type.Literal('overtime'),

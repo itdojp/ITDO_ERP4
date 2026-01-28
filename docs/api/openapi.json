@@ -50,6 +50,423 @@
         }
       }
     },
+    "/action-policies": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      },
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "actionKey": {
+                    "maxLength": 100,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "flowType": {
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "estimate"
+                        ],
+                        "type": "string"
+                      },
+                      {
+                        "enum": [
+                          "invoice"
+                        ],
+                        "type": "string"
+                      },
+                      {
+                        "enum": [
+                          "expense"
+                        ],
+                        "type": "string"
+                      },
+                      {
+                        "enum": [
+                          "leave"
+                        ],
+                        "type": "string"
+                      },
+                      {
+                        "enum": [
+                          "time"
+                        ],
+                        "type": "string"
+                      },
+                      {
+                        "enum": [
+                          "purchase_order"
+                        ],
+                        "type": "string"
+                      },
+                      {
+                        "enum": [
+                          "vendor_invoice"
+                        ],
+                        "type": "string"
+                      },
+                      {
+                        "enum": [
+                          "vendor_quote"
+                        ],
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "guards": {
+                    "items": {},
+                    "minItems": 0,
+                    "nullable": true,
+                    "type": "array"
+                  },
+                  "isEnabled": {
+                    "type": "boolean"
+                  },
+                  "priority": {
+                    "type": "integer"
+                  },
+                  "requireReason": {
+                    "type": "boolean"
+                  },
+                  "stateConstraints": {
+                    "additionalProperties": true,
+                    "nullable": true,
+                    "properties": {
+                      "statusIn": {
+                        "items": {
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "statusNotIn": {
+                        "items": {
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "type": "array"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "subjects": {
+                    "additionalProperties": true,
+                    "nullable": true,
+                    "properties": {
+                      "groupIds": {
+                        "items": {
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "roles": {
+                        "items": {
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "userIds": {
+                        "items": {
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "type": "array"
+                      }
+                    },
+                    "type": "object"
+                  }
+                },
+                "required": [
+                  "flowType",
+                  "actionKey"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/action-policies/{id}": {
+      "patch": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "actionKey": {
+                    "maxLength": 100,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "flowType": {
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "estimate"
+                        ],
+                        "type": "string"
+                      },
+                      {
+                        "enum": [
+                          "invoice"
+                        ],
+                        "type": "string"
+                      },
+                      {
+                        "enum": [
+                          "expense"
+                        ],
+                        "type": "string"
+                      },
+                      {
+                        "enum": [
+                          "leave"
+                        ],
+                        "type": "string"
+                      },
+                      {
+                        "enum": [
+                          "time"
+                        ],
+                        "type": "string"
+                      },
+                      {
+                        "enum": [
+                          "purchase_order"
+                        ],
+                        "type": "string"
+                      },
+                      {
+                        "enum": [
+                          "vendor_invoice"
+                        ],
+                        "type": "string"
+                      },
+                      {
+                        "enum": [
+                          "vendor_quote"
+                        ],
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "guards": {
+                    "items": {},
+                    "minItems": 0,
+                    "nullable": true,
+                    "type": "array"
+                  },
+                  "isEnabled": {
+                    "type": "boolean"
+                  },
+                  "priority": {
+                    "type": "integer"
+                  },
+                  "requireReason": {
+                    "type": "boolean"
+                  },
+                  "stateConstraints": {
+                    "additionalProperties": true,
+                    "nullable": true,
+                    "properties": {
+                      "statusIn": {
+                        "items": {
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "statusNotIn": {
+                        "items": {
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "type": "array"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "subjects": {
+                    "additionalProperties": true,
+                    "nullable": true,
+                    "properties": {
+                      "groupIds": {
+                        "items": {
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "roles": {
+                        "items": {
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "userIds": {
+                        "items": {
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "type": "array"
+                      }
+                    },
+                    "type": "object"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/action-policies/evaluate": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "actionKey": {
+                    "maxLength": 100,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "actor": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "groupIds": {
+                        "items": {
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "roles": {
+                        "items": {
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "userId": {
+                        "minLength": 1,
+                        "type": "string"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "flowType": {
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "estimate"
+                        ],
+                        "type": "string"
+                      },
+                      {
+                        "enum": [
+                          "invoice"
+                        ],
+                        "type": "string"
+                      },
+                      {
+                        "enum": [
+                          "expense"
+                        ],
+                        "type": "string"
+                      },
+                      {
+                        "enum": [
+                          "leave"
+                        ],
+                        "type": "string"
+                      },
+                      {
+                        "enum": [
+                          "time"
+                        ],
+                        "type": "string"
+                      },
+                      {
+                        "enum": [
+                          "purchase_order"
+                        ],
+                        "type": "string"
+                      },
+                      {
+                        "enum": [
+                          "vendor_invoice"
+                        ],
+                        "type": "string"
+                      },
+                      {
+                        "enum": [
+                          "vendor_quote"
+                        ],
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "reasonText": {
+                    "type": "string"
+                  },
+                  "state": {}
+                },
+                "required": [
+                  "flowType",
+                  "actionKey"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
     "/alert-settings": {
       "get": {
         "responses": {
