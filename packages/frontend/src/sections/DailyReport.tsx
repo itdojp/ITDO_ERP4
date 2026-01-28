@@ -98,6 +98,21 @@ export const DailyReport: React.FC = () => {
   const [reportDate, setReportDate] = useState(todayKey);
   const draftKey = `daily-report:${draftOwnerId}:${reportDate}`;
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent).detail as
+        | { kind?: string; id?: string }
+        | undefined;
+      if (!detail || detail.kind !== 'daily_report') return;
+      const next = typeof detail.id === 'string' ? detail.id.trim() : '';
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(next)) return;
+      setReportDate(next);
+    };
+    window.addEventListener('erp4_open_entity', handler);
+    return () => window.removeEventListener('erp4_open_entity', handler);
+  }, []);
+
   const [status, setStatus] = useState<'good' | 'not_good' | ''>('');
   const [reportContent, setReportContent] = useState('');
   const [linkedProjectIds, setLinkedProjectIds] = useState<string[]>([]);

@@ -112,6 +112,13 @@ const runId = () =>
   process.env.E2E_RUN_ID ||
   `${Date.now().toString().slice(-6)}-${Math.floor(Math.random() * 90 + 10)}`;
 
+const shiftDateKey = (dateKey: string, deltaDays: number) => {
+  const [year, month, day] = dateKey.split('-').map(Number);
+  const base = new Date(Date.UTC(year, month - 1, day));
+  base.setUTCDate(base.getUTCDate() + deltaDays);
+  return base.toISOString().slice(0, 10);
+};
+
 const buildAuthHeaders = (override?: Partial<typeof authState>) => {
   const resolved = { ...authState, ...(override ?? {}) };
   return {
@@ -174,6 +181,8 @@ test('frontend smoke core @core', async ({ page }) => {
   const dailyHistoryItem = historyList.getByText(dailyReportText);
   await dailyHistoryItem.scrollIntoViewIfNeeded();
   await expect(dailyHistoryItem).toBeVisible();
+  const dailyReportMaxDate = await dailySection.getByLabel('対象日').inputValue();
+  const deepLinkDailyReportDate = shiftDateKey(dailyReportMaxDate, -1);
   await captureSection(dailySection, '02-core-daily-report.png');
 
   await navigateToSection(page, '工数入力');
@@ -190,6 +199,24 @@ test('frontend smoke core @core', async ({ page }) => {
   await timeSection.getByRole('button', { name: '追加' }).click();
   await expect(timeSection.getByText('保存しました')).toBeVisible();
   await captureSection(timeSection, '03-core-time-entries.png');
+  await timeSection.locator('input[type="date"]').fill(deepLinkDailyReportDate);
+  await timeSection.getByRole('button', { name: '日報を開く' }).click();
+  await expect(
+    page
+      .locator('main')
+      .getByRole('heading', {
+        name: '日報 + ウェルビーイング',
+        level: 2,
+        exact: true,
+      }),
+  ).toBeVisible({ timeout: actionTimeout });
+  const dailySectionAfterOpen = page
+    .locator('main')
+    .locator('h2', { hasText: '日報 + ウェルビーイング' })
+    .locator('..');
+  await expect(dailySectionAfterOpen.getByLabel('対象日')).toHaveValue(
+    deepLinkDailyReportDate,
+  );
 
   await navigateToSection(page, '経費精算', '経費入力');
   const expenseSection = page
