@@ -3,9 +3,9 @@ import { prisma } from './db.js';
 const DEFAULT_EDITABLE_DAYS = 14;
 const DEFAULT_SETTING_ID = 'default';
 
-export async function getEditableDays() {
+export async function getEditableDays(client = prisma) {
   try {
-    const setting = await prisma.worklogSetting.findUnique({
+    const setting = await client.worklogSetting.findUnique({
       where: { id: DEFAULT_SETTING_ID },
       select: { editableDays: true },
     });
