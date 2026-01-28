@@ -1,7 +1,9 @@
 import React, { useCallback, useMemo, useState } from 'react';
 import { api, getAuthState } from '../api';
+import { AnnotationsCard } from '../components/AnnotationsCard';
 import { useProjects } from '../hooks/useProjects';
 import { EstimateDetail } from './EstimateDetail';
+import { Button, Dialog } from '../ui';
 
 interface Estimate {
   id: string;
@@ -41,6 +43,12 @@ export const Estimates: React.FC = () => {
     [projects],
   );
   const [selected, setSelected] = useState<Estimate | null>(null);
+  const [annotationTarget, setAnnotationTarget] = useState<{
+    kind: 'estimate';
+    id: string;
+    projectId: string;
+    title: string;
+  } | null>(null);
   const [message, setMessage] = useState('');
 
   const updateItem = useCallback((updated: Estimate) => {
@@ -231,14 +239,49 @@ export const Estimates: React.FC = () => {
             approval={buildApproval(selected.status)}
             onSend={() => send(selected.id)}
           />
-          <button
-            className="button secondary"
-            onClick={() => setSelected(null)}
-          >
-            閉じる
-          </button>
+          <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+            <button
+              className="button secondary"
+              onClick={() =>
+                setAnnotationTarget({
+                  kind: 'estimate',
+                  id: selected.id,
+                  projectId: selected.projectId,
+                  title: `見積: ${selected.estimateNo || '(draft)'}`,
+                })
+              }
+            >
+              注釈
+            </button>
+            <button
+              className="button secondary"
+              onClick={() => setSelected(null)}
+            >
+              閉じる
+            </button>
+          </div>
         </div>
       )}
+      <Dialog
+        open={Boolean(annotationTarget)}
+        onClose={() => setAnnotationTarget(null)}
+        title={annotationTarget?.title || '注釈'}
+        size="large"
+        footer={
+          <Button variant="secondary" onClick={() => setAnnotationTarget(null)}>
+            閉じる
+          </Button>
+        }
+      >
+        {annotationTarget && (
+          <AnnotationsCard
+            targetKind={annotationTarget.kind}
+            targetId={annotationTarget.id}
+            projectId={annotationTarget.projectId}
+            title={annotationTarget.title}
+          />
+        )}
+      </Dialog>
     </div>
   );
 };
