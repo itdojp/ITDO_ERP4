@@ -17,6 +17,7 @@
 - 明細単位の精算で開始する（精算書は後続検討）
 - 旧システムの「Submitter=支払対象」を踏襲し、支払先は原則 `userId` とする
 - 外部支払先は既存の支払先名（外部会社名）で保持し、支払対象とは分離する
+- 精算状態は Expense に保持する（MVP: `settlementStatus=unpaid/paid` + `paidAt/paidBy`）
 
 ## 後続拡張（候補）
 ### A. 明細単位の精算（MVP）
@@ -29,31 +30,37 @@
 - 精算書で支払方法/支払日/担当を管理
 - 実務運用に近いが設計/実装コストが増える
 
-## 追加で整理すべき論点（後続検討）
-### 属性候補（MVP案）
+## 追加で整理すべき論点（MVPで確定させる項目）
+### 属性（MVP確定/候補）
 - 支払先（支払対象）: `userId` を基本とする（従業員）
-- 支払方法: 振込/現金/法人カード/立替相殺
-- 税率: 0/8/10%（明細単位）
-- 支払日: `paidAt` を保持（締め処理は後続）
-- 証憑: `receiptUrl` を維持（命名規則は運用で定義）
-- 備考: `notes`（必要に応じて追加）
+- 精算状態: `settlementStatus`（MVP: `unpaid` / `paid`）
+- 支払日: `paidAt`（MVP）
+- 支払担当: `paidBy`（MVP）
+- 支払方法: 振込/現金/法人カード/立替相殺（MVPは任意項目、運用で固定も可）
+- 税率: 0/8/10%（明細単位、現状は後続）
+- 証憑: `receiptUrl` を維持（命名規則/プレビューは後続のUIで拡張）
+- 備考: `notes`（後続。現状 `Expense` に未実装）
 
-### 状態遷移（案）
-- 明細単位の場合:
-  - draft → pending_qa → pending_exec → approved → settled/paid
-  - 差戻し/却下は現行フローに準拠
-- 精算書単位の場合:
-  - expense: draft → pending → approved → linked
-  - expense_settlement: draft → pending_payment → paid
+### 状態遷移（MVP確定）
+- 申請承認（既存）: `draft` → `pending_qa` → `pending_exec` → `approved` / `rejected`
+- 精算（追加）: `settlementStatus=unpaid` → `paid`
+  - `status=approved` のみ `paid` へ遷移可能
+  - `paid` の取消（`paid` → `unpaid`）は admin/mgmt のみ（理由必須、監査ログ対象）
 
-### UI導線（案）
-- 明細単位: 一覧に「精算済み」操作を追加（admin/mgmt）
-- 精算書単位: 「精算書作成」→ 明細選択 → 承認/支払
-- 検索/集計: 支払日/支払方法/担当/案件で絞り込み
+### UI導線（MVP確定）
+- 申請者: 自分の Expense 一覧/詳細で「精算状況（未/済）」を確認できる
+- admin/mgmt: Expense 一覧/詳細に「支払済み」操作を追加（支払日/担当を記録）
+- 検索/集計: 「未精算のみ」「支払日レンジ」「案件」で絞り込み（MVPは最小で可）
 
-### 監査/通知（案）
-- 支払確定は監査ログに記録（誰が/いつ/金額）
-- 支払完了通知: 申請者へアプリ内（メールは運用次第）
+### 権限/監査/通知（MVP確定）
+- 精算操作（支払済み/取消）は admin/mgmt のみ
+- `status=pending_*`（承認中）/`status=approved`（承認後）は、申請者による主要項目変更を禁止（現行ポリシー維持）
+- 監査ログ:
+  - `expense_mark_paid`（誰が/いつ/金額/支払日/支払方法）
+    - 金額: Expense に保持する精算対象金額（`Expense.amount`）を記録する
+    - 支払方法: MVP は任意項目とし、未指定の場合は `null` またはフィールド省略とする（実装でどちらかに統一）
+  - `expense_unmark_paid`（理由必須）
+- 通知: 支払完了は申請者へアプリ内通知（`kind=expense_mark_paid`）。メールは運用次第（通知体系は `docs/requirements/notifications.md` に準拠）
 
 ## 後続検討
 - 属性要件（支払方法/税率/備考 等）の拡充
