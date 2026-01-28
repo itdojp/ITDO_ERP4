@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { api, getAuthState } from '../api';
+import { navigateToOpen } from '../utils/deepLink';
 
 type ProjectResult = {
   id: string;
@@ -158,18 +159,10 @@ function formatRoomLabel(room: ChatRoom, currentUserId: string) {
 
 function openChatTarget(message: ChatMessageResult) {
   if (message.room.type === 'project' && message.room.projectId) {
-    window.dispatchEvent(
-      new CustomEvent('erp4_open_project_chat', {
-        detail: { projectId: message.room.projectId },
-      }),
-    );
+    navigateToOpen({ kind: 'project_chat', id: message.room.projectId });
     return;
   }
-  window.dispatchEvent(
-    new CustomEvent('erp4_open_room_chat', {
-      detail: { roomId: message.roomId },
-    }),
-  );
+  navigateToOpen({ kind: 'room_chat', id: message.roomId });
 }
 
 export const GlobalSearch: React.FC = () => {
