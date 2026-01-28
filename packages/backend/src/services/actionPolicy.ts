@@ -227,9 +227,63 @@ async function evaluatePeriodLockGuard(ctx: GuardEvalContext) {
     };
   }
 
-  for (const periodKey of periodKeys) {
+  // For multiple periodKeys/projectIds we avoid periodKeys x projectIds DB queries by batching.
+  const periodKeyList = Array.from(periodKeys);
+  if (periodKeyList.length === 1 && projectIds.length === 1) {
+    const periodKey = periodKeyList[0];
+    const projectId = projectIds[0];
+    const lock = await findPeriodLock(periodKey, projectId, ctx.client);
+    if (lock) {
+      return {
+        ok: false,
+        failure: {
+          type: 'period_lock',
+          reason: 'period_locked',
+          details: { periodKey, projectId, lock },
+        } satisfies ActionPolicyGuardFailure,
+      };
+    }
+    return { ok: true } as const;
+  }
+
+  const locks = await ctx.client.periodLock.findMany({
+    where: {
+      period: { in: periodKeyList },
+      OR: [
+        { scope: 'global' },
+        { scope: 'project', projectId: { in: projectIds } },
+      ],
+    },
+    select: { id: true, scope: true, projectId: true, period: true },
+  });
+
+  const globalLockByPeriod = new Map<string, any>();
+  const projectLockByKey = new Map<string, any>();
+  for (const lock of locks) {
+    if (lock.scope === 'global') {
+      globalLockByPeriod.set(lock.period, lock);
+      continue;
+    }
+    if (lock.scope === 'project' && typeof lock.projectId === 'string') {
+      projectLockByKey.set(`${lock.period}|${lock.projectId}`, lock);
+    }
+  }
+
+  for (const periodKey of periodKeyList) {
+    const globalLock = globalLockByPeriod.get(periodKey);
+    if (globalLock) {
+      const projectId = projectIds[0];
+      return {
+        ok: false,
+        failure: {
+          type: 'period_lock',
+          reason: 'period_locked',
+          details: { periodKey, projectId, lock: globalLock },
+        } satisfies ActionPolicyGuardFailure,
+      };
+    }
     for (const projectId of projectIds) {
-      const lock = await findPeriodLock(periodKey, projectId, ctx.client);
+      const lock = projectLockByKey.get(`${periodKey}|${projectId}`);
       if (lock) {
         return {
           ok: false,

@@ -161,6 +161,44 @@ test('evaluateActionPolicy: project_closed guard rejects when project is closed'
   assert.equal(res.guardFailures[0].reason, 'project_is_closed');
 });
 
+test('evaluateActionPolicy: project_closed guard passes when project is not closed', async () => {
+  const policies = [
+    {
+      id: 'p1',
+      stateConstraints: null,
+      subjects: null,
+      guards: [{ type: 'project_closed' }],
+      requireReason: false,
+    },
+  ];
+  const calls = { projectFindMany: 0 };
+  const fakeClient = {
+    actionPolicy: { findMany: async () => policies },
+    project: {
+      findMany: async (args) => {
+        calls.projectFindMany += 1;
+        assert.deepEqual(args.where, {
+          id: { in: ['p1'] },
+          status: 'closed',
+        });
+        return [];
+      },
+    },
+  };
+  const res = await evaluateActionPolicy(
+    {
+      flowType: 'invoice',
+      actionKey: 'edit',
+      actor: { userId: 'u1', roles: ['admin'], groupIds: [] },
+      state: { projectId: 'p1' },
+    },
+    { client: fakeClient },
+  );
+  assert.equal(calls.projectFindMany, 1);
+  assert.equal(res.allowed, true);
+  assert.equal(res.matchedPolicyId, 'p1');
+});
+
 test('evaluateActionPolicy: period_lock guard rejects when period is locked', async () => {
   const policies = [
     {
@@ -203,6 +241,95 @@ test('evaluateActionPolicy: period_lock guard rejects when period is locked', as
   assert.equal(res.guardFailures[0].reason, 'period_locked');
 });
 
+test('evaluateActionPolicy: period_lock guard passes when period is not locked', async () => {
+  const policies = [
+    {
+      id: 'p1',
+      stateConstraints: null,
+      subjects: null,
+      guards: [{ type: 'period_lock' }],
+      requireReason: false,
+    },
+  ];
+  const calls = { findFirst: 0 };
+  const fakeClient = {
+    actionPolicy: { findMany: async () => policies },
+    periodLock: {
+      findFirst: async (args) => {
+        calls.findFirst += 1;
+        assert.equal(args.where.period, '2050-01');
+        assert.deepEqual(args.where.OR, [
+          { scope: 'global' },
+          { scope: 'project', projectId: 'p1' },
+        ]);
+        return null;
+      },
+    },
+  };
+  const res = await evaluateActionPolicy(
+    {
+      flowType: 'invoice',
+      actionKey: 'edit',
+      actor: { userId: 'u1', roles: ['admin'], groupIds: [] },
+      state: { projectId: 'p1', periodKey: '2050-01' },
+    },
+    { client: fakeClient },
+  );
+  assert.equal(calls.findFirst, 1);
+  assert.equal(res.allowed, true);
+  assert.equal(res.matchedPolicyId, 'p1');
+});
+
+test('evaluateActionPolicy: period_lock guard batches queries for multiple period/project pairs', async () => {
+  const policies = [
+    {
+      id: 'p1',
+      stateConstraints: null,
+      subjects: null,
+      guards: [{ type: 'period_lock' }],
+      requireReason: false,
+    },
+  ];
+  const calls = { findMany: 0 };
+  const fakeClient = {
+    actionPolicy: { findMany: async () => policies },
+    periodLock: {
+      findFirst: async () => {
+        throw new Error('unexpected findFirst call');
+      },
+      findMany: async (args) => {
+        calls.findMany += 1;
+        assert.deepEqual(args.where.period.in.slice().sort(), [
+          '2050-01',
+          '2050-02',
+        ]);
+        assert.deepEqual(args.where.OR, [
+          { scope: 'global' },
+          { scope: 'project', projectId: { in: ['p1', 'p2'] } },
+        ]);
+        return [
+          { id: 'lock1', scope: 'global', projectId: null, period: '2050-02' },
+        ];
+      },
+    },
+  };
+  const res = await evaluateActionPolicy(
+    {
+      flowType: 'invoice',
+      actionKey: 'edit',
+      actor: { userId: 'u1', roles: ['admin'], groupIds: [] },
+      state: { projectIds: ['p1', 'p2'], periodKeys: ['2050-01', '2050-02'] },
+    },
+    { client: fakeClient },
+  );
+  assert.equal(calls.findMany, 1);
+  assert.equal(res.allowed, false);
+  assert.equal(res.reason, 'guard_failed');
+  assert.equal(res.matchedPolicyId, 'p1');
+  assert.equal(res.guardFailures[0].type, 'period_lock');
+  assert.equal(res.guardFailures[0].reason, 'period_locked');
+});
+
 test('evaluateActionPolicy: editable_days guard rejects when outside editable window', async () => {
   const policies = [
     {
@@ -233,4 +360,39 @@ test('evaluateActionPolicy: editable_days guard rejects when outside editable wi
   assert.equal(res.matchedPolicyId, 'p1');
   assert.equal(res.guardFailures[0].type, 'editable_days');
   assert.equal(res.guardFailures[0].reason, 'edit_window_expired');
+});
+
+test('evaluateActionPolicy: editable_days guard passes when within editable window', async () => {
+  const policies = [
+    {
+      id: 'p1',
+      stateConstraints: null,
+      subjects: null,
+      guards: [{ type: 'editable_days' }],
+      requireReason: false,
+    },
+  ];
+  const calls = { findUnique: 0 };
+  const fakeClient = {
+    actionPolicy: { findMany: async () => policies },
+    worklogSetting: {
+      findUnique: async (args) => {
+        calls.findUnique += 1;
+        assert.deepEqual(args.where, { id: 'default' });
+        return { editableDays: 14 };
+      },
+    },
+  };
+  const res = await evaluateActionPolicy(
+    {
+      flowType: 'invoice',
+      actionKey: 'edit',
+      actor: { userId: 'u1', roles: ['admin'], groupIds: [] },
+      state: { workDate: new Date().toISOString() },
+    },
+    { client: fakeClient },
+  );
+  assert.equal(calls.findUnique, 1);
+  assert.equal(res.allowed, true);
+  assert.equal(res.matchedPolicyId, 'p1');
 });
