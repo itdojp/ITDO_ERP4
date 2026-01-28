@@ -129,9 +129,10 @@ async function resolveRule(
   payload: Record<string, unknown>,
   client: any = prisma,
 ) {
+  const now = new Date();
   const rules = await client.approvalRule.findMany({
-    where: { flowType },
-    orderBy: { createdAt: 'desc' },
+    where: { flowType, isActive: true, effectiveFrom: { lte: now } },
+    orderBy: [{ effectiveFrom: 'desc' }, { createdAt: 'desc' }],
   });
   if (!rules.length) return null;
   const matched = rules.find((r: { conditions?: unknown }) =>
