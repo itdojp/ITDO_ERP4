@@ -123,7 +123,21 @@
                     ]
                   },
                   "guards": {
-                    "items": {},
+                    "items": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "params": {},
+                        "type": {
+                          "maxLength": 100,
+                          "minLength": 1,
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "type"
+                      ],
+                      "type": "object"
+                    },
                     "minItems": 0,
                     "nullable": true,
                     "type": "array"
@@ -280,7 +294,21 @@
                     ]
                   },
                   "guards": {
-                    "items": {},
+                    "items": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "params": {},
+                        "type": {
+                          "maxLength": 100,
+                          "minLength": 1,
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "type"
+                      ],
+                      "type": "object"
+                    },
                     "minItems": 0,
                     "nullable": true,
                     "type": "array"
@@ -448,7 +476,15 @@
                   "reasonText": {
                     "type": "string"
                   },
-                  "state": {}
+                  "state": {},
+                  "targetId": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "targetTable": {
+                    "minLength": 1,
+                    "type": "string"
+                  }
                 },
                 "required": [
                   "flowType",

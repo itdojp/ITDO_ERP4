@@ -688,7 +688,16 @@ const actionPolicyStateConstraintsSchema = Type.Union([
 
 const actionPolicyGuardsSchema = Type.Union([
   Type.Null(),
-  Type.Array(Type.Any(), { minItems: 0 }),
+  Type.Array(
+    Type.Object(
+      {
+        type: Type.String({ minLength: 1, maxLength: 100 }),
+        params: Type.Optional(Type.Any()),
+      },
+      { additionalProperties: true },
+    ),
+    { minItems: 0 },
+  ),
 ]);
 
 export const actionPolicySchema = {
@@ -717,6 +726,8 @@ export const actionPolicyEvaluateSchema = {
       flowType: flowTypeSchema,
       actionKey: Type.String({ minLength: 1, maxLength: 100 }),
       state: Type.Optional(Type.Any()),
+      targetTable: Type.Optional(Type.String({ minLength: 1 })),
+      targetId: Type.Optional(Type.String({ minLength: 1 })),
       actor: Type.Optional(
         Type.Object(
           {
