@@ -891,6 +891,9 @@ model ApprovalInstance {
   projectId   String?
   status      DocStatus      @default(pending_qa)
   currentStep Int?
+  // Snapshot of stage-level completion rules per stepOrder (e.g. all/any/quorum).
+  // Keep this on the instance to avoid changing semantics mid-flight when rules are edited.
+  stagePolicy Json?
   rule        ApprovalRule   @relation(fields: [ruleId], references: [id])
   ruleId      String
   steps       ApprovalStep[]

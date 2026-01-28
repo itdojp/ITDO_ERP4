@@ -11,10 +11,35 @@ import {
 import { DocStatusValue, TimeStatusValue } from '../types.js';
 import { auditContextFromRequest, logAudit } from '../services/audit.js';
 
-function hasValidSteps(
-  steps: Array<{ approverGroupId?: string; approverUserId?: string }>,
-) {
-  return steps.every((s) => Boolean(s.approverGroupId || s.approverUserId));
+function hasValidSteps(steps: unknown) {
+  if (Array.isArray(steps)) {
+    return steps.every((s) => Boolean(s?.approverGroupId || s?.approverUserId));
+  }
+  if (!steps || typeof steps !== 'object') return false;
+  const stages = (steps as any).stages;
+  if (!Array.isArray(stages) || stages.length < 1) return false;
+  const orders = new Set<number>();
+  for (const stage of stages) {
+    const order = Number(stage?.order);
+    if (!Number.isInteger(order) || order < 1) return false;
+    if (orders.has(order)) return false;
+    orders.add(order);
+    const approvers = stage?.approvers;
+    if (!Array.isArray(approvers) || approvers.length < 1) return false;
+    const completion = stage?.completion;
+    if (completion && completion.mode === 'quorum') {
+      const quorum = Number(completion.quorum);
+      if (!Number.isInteger(quorum) || quorum < 1) return false;
+      if (quorum > approvers.length) return false;
+    }
+    for (const approver of approvers) {
+      const type = approver?.type;
+      const id = approver?.id;
+      if (type !== 'group' && type !== 'user') return false;
+      if (typeof id !== 'string' || !id.trim()) return false;
+    }
+  }
+  return true;
 }
 
 const privilegedRoles = new Set(['admin', 'mgmt', 'exec']);
@@ -107,7 +132,8 @@ export async function registerApprovalRuleRoutes(app: FastifyInstance) {
       if (!hasValidSteps(body.steps || [])) {
         return reply.code(400).send({
           error: 'invalid_steps',
-          message: 'approverGroupId or approverUserId is required per step',
+          message:
+            'steps must be either an array of steps (approverGroupId/approverUserId) or {stages:[{order, approvers:[{type,id}], completion?}]}; stage.order must be unique; quorum must be <= approvers.length',
         });
       }
       const created = await prisma.approvalRule.create({ data: body });
@@ -134,7 +160,8 @@ export async function registerApprovalRuleRoutes(app: FastifyInstance) {
       if (body.steps && !hasValidSteps(body.steps || [])) {
         return reply.code(400).send({
           error: 'invalid_steps',
-          message: 'approverGroupId or approverUserId is required per step',
+          message:
+            'steps must be either an array of steps (approverGroupId/approverUserId) or {stages:[{order, approvers:[{type,id}], completion?}]}; stage.order must be unique; quorum must be <= approvers.length',
         });
       }
       const updated = await prisma.approvalRule.update({
