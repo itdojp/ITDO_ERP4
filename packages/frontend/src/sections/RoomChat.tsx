@@ -140,7 +140,7 @@ function buildExcerpt(value: string, maxLength = 200) {
 }
 
 function escapeMarkdownLinkLabel(value: string) {
-  return value.replace(/[[\]]/g, '\\$&');
+  return value.replace(/\\/g, '\\\\').replace(/[[\]]/g, '\\$&');
 }
 
 function buildBeforeForCreatedAt(createdAt: string) {
