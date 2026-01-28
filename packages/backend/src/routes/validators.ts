@@ -365,15 +365,6 @@ export const invoiceMarkPaidSchema = {
   ),
 };
 
-export const invoiceSubmitSchema = {
-  body: Type.Object(
-    {
-      reasonText: Type.Optional(Type.String({ minLength: 1 })),
-    },
-    { additionalProperties: false },
-  ),
-};
-
 export const purchaseOrderSchema = {
   body: Type.Object({
     vendorId: Type.String(),
