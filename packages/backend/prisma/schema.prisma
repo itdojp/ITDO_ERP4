@@ -549,6 +549,39 @@ model AnnotationSetting {
   updatedBy                String?
 }
 
+model Annotation {
+  id          String   @id @default(uuid())
+  targetKind  String
+  targetId    String
+  notes       String?
+  externalUrls Json?
+  internalRefs Json?
+  createdAt   DateTime @default(now())
+  createdBy   String?
+  updatedAt   DateTime @updatedAt
+  updatedBy   String?
+
+  @@unique([targetKind, targetId])
+  @@index([targetKind, targetId])
+}
+
+model AnnotationLog {
+  id          String   @id @default(uuid())
+  targetKind  String
+  targetId    String
+  notes       String?
+  externalUrls Json?
+  internalRefs Json?
+  reasonCode  String?
+  reasonText  String?
+  actorRole   String?
+  createdAt   DateTime @default(now())
+  createdBy   String?
+
+  @@index([targetKind, targetId])
+  @@index([createdAt])
+}
+
 model ProjectMilestone {
   id                String    @id @default(uuid())
   project           Project   @relation(fields: [projectId], references: [id], onDelete: Restrict)
