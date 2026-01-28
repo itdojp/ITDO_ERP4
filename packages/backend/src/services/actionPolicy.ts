@@ -1,5 +1,8 @@
 import { prisma } from './db.js';
 import { DocStatusValue, type FlowType } from '../types.js';
+import { findPeriodLock, toPeriodKey } from './periodLock.js';
+import { getEditableDays } from './worklogSetting.js';
+import { isWithinEditableDays, parseDateParam } from '../utils/date.js';
 
 export type ActionPolicyActor = {
   userId: string | null;
@@ -85,8 +88,10 @@ function matchesStateConstraints(stateConstraints: unknown, state: unknown) {
 type GuardEvalContext = {
   client: any;
   flowType: FlowType;
+  state?: unknown;
   targetTable?: string;
   targetId?: string;
+  now: Date;
 };
 
 async function evaluateApprovalOpenGuard(ctx: GuardEvalContext) {
@@ -117,6 +122,152 @@ async function evaluateApprovalOpenGuard(ctx: GuardEvalContext) {
         type: 'approval_open',
         reason: 'approval_in_progress',
         details: { approvalInstanceId: open.id, status: open.status },
+      } satisfies ActionPolicyGuardFailure,
+    };
+  }
+  return { ok: true } as const;
+}
+
+function extractProjectIds(state: unknown): string[] {
+  if (!state || typeof state !== 'object') return [];
+  const obj = state as Record<string, unknown>;
+  const ids = new Set<string>();
+  const projectId = normalizeString(obj.projectId);
+  if (projectId) ids.add(projectId);
+  for (const id of normalizeStringArray(obj.projectIds)) ids.add(id);
+  return Array.from(ids);
+}
+
+function extractWorkDates(state: unknown): Date[] {
+  if (!state || typeof state !== 'object') return [];
+  const obj = state as Record<string, unknown>;
+  const dates: Date[] = [];
+
+  const workDateRaw = normalizeString(obj.workDate);
+  const parsed = parseDateParam(workDateRaw);
+  if (parsed) dates.push(parsed);
+
+  const workDatesRaw = Array.isArray(obj.workDates) ? obj.workDates : [];
+  for (const item of workDatesRaw) {
+    const raw = normalizeString(item);
+    const parsedItem = parseDateParam(raw);
+    if (parsedItem) dates.push(parsedItem);
+  }
+
+  return dates;
+}
+
+function extractPeriodKeys(state: unknown): string[] {
+  if (!state || typeof state !== 'object') return [];
+  const obj = state as Record<string, unknown>;
+  const keys = new Set<string>();
+  const periodKey = normalizeString(obj.periodKey);
+  if (periodKey) keys.add(periodKey);
+  for (const key of normalizeStringArray(obj.periodKeys)) keys.add(key);
+  return Array.from(keys);
+}
+
+async function evaluateProjectClosedGuard(ctx: GuardEvalContext) {
+  const projectIds = extractProjectIds(ctx.state);
+  if (!projectIds.length) {
+    return {
+      ok: false,
+      failure: {
+        type: 'project_closed',
+        reason: 'project_required',
+      } satisfies ActionPolicyGuardFailure,
+    };
+  }
+
+  const closedProjects = await ctx.client.project.findMany({
+    where: { id: { in: projectIds }, status: 'closed' },
+    select: { id: true },
+  });
+  if (closedProjects.length) {
+    return {
+      ok: false,
+      failure: {
+        type: 'project_closed',
+        reason: 'project_is_closed',
+        details: {
+          projectIds,
+          closedProjectIds: closedProjects.map((p: { id: string }) => p.id),
+        },
+      } satisfies ActionPolicyGuardFailure,
+    };
+  }
+
+  return { ok: true } as const;
+}
+
+async function evaluatePeriodLockGuard(ctx: GuardEvalContext) {
+  const projectIds = extractProjectIds(ctx.state);
+  if (!projectIds.length) {
+    return {
+      ok: false,
+      failure: {
+        type: 'period_lock',
+        reason: 'project_required',
+      } satisfies ActionPolicyGuardFailure,
+    };
+  }
+
+  const periodKeys = new Set<string>();
+  for (const key of extractPeriodKeys(ctx.state)) periodKeys.add(key);
+  for (const date of extractWorkDates(ctx.state))
+    periodKeys.add(toPeriodKey(date));
+
+  if (!periodKeys.size) {
+    return {
+      ok: false,
+      failure: {
+        type: 'period_lock',
+        reason: 'period_required',
+      } satisfies ActionPolicyGuardFailure,
+    };
+  }
+
+  for (const periodKey of periodKeys) {
+    for (const projectId of projectIds) {
+      const lock = await findPeriodLock(periodKey, projectId, ctx.client);
+      if (lock) {
+        return {
+          ok: false,
+          failure: {
+            type: 'period_lock',
+            reason: 'period_locked',
+            details: { periodKey, projectId, lock },
+          } satisfies ActionPolicyGuardFailure,
+        };
+      }
+    }
+  }
+
+  return { ok: true } as const;
+}
+
+async function evaluateEditableDaysGuard(ctx: GuardEvalContext) {
+  const workDates = extractWorkDates(ctx.state);
+  if (!workDates.length) {
+    return {
+      ok: false,
+      failure: {
+        type: 'editable_days',
+        reason: 'workDate_required',
+      } satisfies ActionPolicyGuardFailure,
+    };
+  }
+  const editableDays = await getEditableDays(ctx.client);
+  const violations = workDates
+    .filter((date) => !isWithinEditableDays(date, editableDays, ctx.now))
+    .map((date) => date.toISOString());
+  if (violations.length) {
+    return {
+      ok: false,
+      failure: {
+        type: 'editable_days',
+        reason: 'edit_window_expired',
+        details: { editableDays, violations },
       } satisfies ActionPolicyGuardFailure,
     };
   }
@@ -154,6 +305,21 @@ async function evaluateGuards(guards: unknown, ctx: GuardEvalContext) {
       if (!res.ok) failures.push(res.failure);
       continue;
     }
+    if (type === 'project_closed') {
+      const res = await evaluateProjectClosedGuard(ctx);
+      if (!res.ok) failures.push(res.failure);
+      continue;
+    }
+    if (type === 'period_lock') {
+      const res = await evaluatePeriodLockGuard(ctx);
+      if (!res.ok) failures.push(res.failure);
+      continue;
+    }
+    if (type === 'editable_days') {
+      const res = await evaluateEditableDaysGuard(ctx);
+      if (!res.ok) failures.push(res.failure);
+      continue;
+    }
     failures.push({ type, reason: 'unknown_guard_type' });
   }
 
@@ -173,6 +339,7 @@ export async function evaluateActionPolicy(
     where: { flowType: input.flowType, actionKey, isEnabled: true },
     orderBy: [{ priority: 'desc' }, { createdAt: 'desc' }],
   });
+  const now = new Date();
 
   let firstMatchedPolicyId: string | undefined;
   let firstMatchedGuardFailures: ActionPolicyGuardFailure[] | undefined;
@@ -185,8 +352,10 @@ export async function evaluateActionPolicy(
     const guardRes = await evaluateGuards(policy.guards, {
       client,
       flowType: input.flowType,
+      state: input.state,
       targetTable: input.targetTable,
       targetId: input.targetId,
+      now,
     });
     if (!guardRes.ok) {
       if (!firstMatchedPolicyId) {
