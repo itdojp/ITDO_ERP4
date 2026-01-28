@@ -43,6 +43,7 @@ import { registerPeriodLockRoutes } from './periodLocks.js';
 import { registerRateCardRoutes } from './rateCards.js';
 import { registerNotificationRoutes } from './notifications.js';
 import { registerNotificationJobRoutes } from './notificationJobs.js';
+import { registerRefCandidateRoutes } from './refCandidates.js';
 
 export async function registerRoutes(app: FastifyInstance) {
   await registerAuthRoutes(app);
@@ -86,6 +87,7 @@ export async function registerRoutes(app: FastifyInstance) {
   await registerLeaveRoutes(app);
   await registerReportRoutes(app);
   await registerSearchRoutes(app);
+  await registerRefCandidateRoutes(app);
   await registerAuditLogRoutes(app);
   await registerAccessReviewRoutes(app);
   await registerInsightRoutes(app);
