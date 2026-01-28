@@ -19,7 +19,7 @@ type ActOptions = {
   actorGroupIds?: string[];
   auditContext?: AuditContext;
 };
-type CreateApprovalOptions = { client?: any; createdBy?: string };
+type CreateApprovalOptions = { client?: any; createdBy?: string; now?: Date };
 /**
  * Options for submitApprovalWithUpdate.
  * update() runs in a transaction and should return the updated entity.
@@ -128,10 +128,11 @@ async function resolveRule(
   flowType: string,
   payload: Record<string, unknown>,
   client: any = prisma,
+  now: Date = new Date(),
 ) {
   const rules = await client.approvalRule.findMany({
-    where: { flowType },
-    orderBy: { createdAt: 'desc' },
+    where: { flowType, isActive: true, effectiveFrom: { lte: now } },
+    orderBy: [{ effectiveFrom: 'desc' }, { createdAt: 'desc' }],
   });
   if (!rules.length) return null;
   const matched = rules.find((r: { conditions?: unknown }) =>
@@ -242,7 +243,12 @@ export async function createApprovalFor(
 ) {
   const client = options.client ?? prisma;
   const enrichedPayload = await enrichProjectFields(payload, client);
-  const rule = await resolveRule(flowType, enrichedPayload, client);
+  const rule = await resolveRule(
+    flowType,
+    enrichedPayload,
+    client,
+    options.now,
+  );
   const normalized = normalizeRuleStepsWithPolicy(rule?.steps);
   const steps =
     normalized?.steps ||

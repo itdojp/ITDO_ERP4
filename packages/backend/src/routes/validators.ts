@@ -649,6 +649,9 @@ export const approvalRuleSchema = {
   body: Type.Object(
     {
       flowType: flowTypeSchema,
+      version: Type.Optional(Type.Integer({ minimum: 1 })),
+      isActive: Type.Optional(Type.Boolean()),
+      effectiveFrom: Type.Optional(Type.String({ format: 'date-time' })),
       conditions: Type.Optional(approvalConditionSchema),
       steps: Type.Union([
         Type.Array(approvalStepSchema, { minItems: 1 }),
