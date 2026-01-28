@@ -33,6 +33,7 @@
 
 補足:
 - 日報未提出は `kind=daily_report_missing` として AppNotification を生成（メール配信対象）。
+- 旧システム（Project-Open）では `/intranet-timesheet2/hours/` から日報メール送信、および平日朝の未入力リマインダーメール（cron）運用があった（`docs/legacy/project-open-notes.md`）。
 
 > 日報未提出の判定は `docs/requirements/daily-report-missing.md` を参照。
 
@@ -75,9 +76,13 @@
 | 承認 | 承認遅延 | 承認者/管理者 | app + email | 既存アラートと整合 |
 
 ### 宛先ルール（MVP確定）
-- roles: admin/mgmt/exec/hr は Role による配信対象に含められる
+- `AppNotification.userId` は認証コンテキストの `userId` と同一（既定: JWTの `sub` / `email` / `preferred_username`、またはヘッダ `x-user-id`）。
+- roles: admin/mgmt/exec/hr は Role による配信対象に含められる（role claim、および `groupIds` から派生して解決される）。
+- groupIds: DB（`UserAccount`/`UserGroup`/`GroupAccount`）から解決する場合、`GroupAccount.displayName` の集合になる。
+- `AUTH_GROUP_TO_ROLE_MAP`（例: `hr-group=hr`）により、group→role の変換を行う。
 - project members: projectId 連動イベントは ProjectMember から宛先抽出
 - 個別指定: recipients.users / recipients.emails を優先
+- TODO: 「role 指定で通知する」場合、role→group の逆引き + `UserAccount.userName` の解決が必要（現状は共通ユーティリティ未整備）。
 
 ### サプレッション/再送（MVP）
 - remindAfterHours: 24h
