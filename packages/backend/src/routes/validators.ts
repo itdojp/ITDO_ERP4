@@ -587,6 +587,40 @@ const approvalStepSchema = Type.Object(
   { additionalProperties: false },
 );
 
+const approvalStageApproverSchema = Type.Object(
+  {
+    type: Type.Union([Type.Literal('group'), Type.Literal('user')]),
+    id: Type.String({ minLength: 1 }),
+  },
+  { additionalProperties: false },
+);
+
+const approvalStageCompletionSchema = Type.Union([
+  Type.Object({ mode: Type.Literal('all') }, { additionalProperties: false }),
+  Type.Object({ mode: Type.Literal('any') }, { additionalProperties: false }),
+  Type.Object(
+    { mode: Type.Literal('quorum'), quorum: Type.Integer({ minimum: 1 }) },
+    { additionalProperties: false },
+  ),
+]);
+
+const approvalStageSchema = Type.Object(
+  {
+    order: Type.Integer({ minimum: 1 }),
+    label: Type.Optional(Type.String()),
+    completion: Type.Optional(approvalStageCompletionSchema),
+    approvers: Type.Array(approvalStageApproverSchema, { minItems: 1 }),
+  },
+  { additionalProperties: false },
+);
+
+const approvalStagesSchema = Type.Object(
+  {
+    stages: Type.Array(approvalStageSchema, { minItems: 1 }),
+  },
+  { additionalProperties: false },
+);
+
 const flowFlagsSchema = Type.Union([
   Type.Array(Type.String()),
   Type.Record(Type.String(), Type.Boolean()),
@@ -616,7 +650,10 @@ export const approvalRuleSchema = {
     {
       flowType: flowTypeSchema,
       conditions: Type.Optional(approvalConditionSchema),
-      steps: Type.Array(approvalStepSchema, { minItems: 1 }),
+      steps: Type.Union([
+        Type.Array(approvalStepSchema, { minItems: 1 }),
+        approvalStagesSchema,
+      ]),
     },
     { additionalProperties: false },
   ),
