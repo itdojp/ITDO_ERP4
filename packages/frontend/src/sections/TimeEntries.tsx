@@ -23,6 +23,7 @@ import {
   loadDraft,
   saveDraft,
 } from '../utils/drafts';
+import { navigateToOpen } from '../utils/deepLink';
 import { enqueueOfflineItem, isOfflineError } from '../utils/offlineQueue';
 import {
   Alert,
@@ -786,7 +787,26 @@ export const TimeEntries: React.FC = () => {
 
   return (
     <div>
-      <h2>工数入力</h2>
+      <div
+        style={{
+          display: 'flex',
+          gap: 12,
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          flexWrap: 'wrap',
+        }}
+      >
+        <h2 style={{ margin: 0 }}>工数入力</h2>
+        <Button
+          size="small"
+          variant="ghost"
+          onClick={() =>
+            navigateToOpen({ kind: 'daily_report', id: form.workDate })
+          }
+        >
+          日報を開く
+        </Button>
+      </div>
       <Card padding="small" style={{ marginBottom: 12 }}>
         <div
           style={{
