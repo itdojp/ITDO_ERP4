@@ -180,7 +180,12 @@ export const RoomChat: React.FC = () => {
   const [rooms, setRooms] = useState<ChatRoom[]>([]);
   const [roomId, setRoomId] = useState('');
   const [roomMessage, setRoomMessage] = useState('');
+  const currentRoomIdRef = useRef('');
   const skipNextRoomAutoLoadRef = useRef(false);
+
+  useEffect(() => {
+    currentRoomIdRef.current = roomId;
+  }, [roomId]);
 
   useEffect(() => {
     const handler = (event: Event) => {
@@ -240,8 +245,16 @@ export const RoomChat: React.FC = () => {
         detail && typeof detail.createdAt === 'string' ? detail.createdAt : '';
       if (!messageId || !targetRoomId) return;
 
-      skipNextRoomAutoLoadRef.current = true;
-      setRoomId(targetRoomId);
+      const currentRoomId = currentRoomIdRef.current;
+      const isRoomChange = targetRoomId !== currentRoomId;
+      if (isRoomChange) {
+        skipNextRoomAutoLoadRef.current = true;
+        setRoomId(targetRoomId);
+      } else {
+        // 同一ルーム内の deep link では roomId の change が発生せず、
+        // skip フラグが残ると「次のルーム切替」で自動ロードが抑止されてしまう。
+        skipNextRoomAutoLoadRef.current = false;
+      }
       setFilterQuery('');
       setFilterTag('');
       setPendingOpenMessage({ roomId: targetRoomId, messageId, createdAt });
