@@ -387,7 +387,11 @@ export const App: React.FC = () => {
     if (typeof window === 'undefined') return;
     const handle = () => {
       const parsed = parseOpenHash(window.location.hash);
-      if (!parsed) return;
+      if (!parsed) {
+        setDeepLinkError('');
+        setPendingDeepLink(null);
+        return;
+      }
       const resolved = resolveDeepLinkTarget(parsed);
       if (!resolved) {
         setDeepLinkError(
@@ -395,6 +399,7 @@ export const App: React.FC = () => {
             ? 'chat_message の deep link は未対応です（#710: Chat発言 deep link解決API の導入後に対応）'
             : `deep link の kind が未対応です: ${parsed.kind}`,
         );
+        setPendingDeepLink(null);
         return;
       }
       setDeepLinkError('');
@@ -428,6 +433,14 @@ export const App: React.FC = () => {
       );
     }
     setPendingDeepLink(null);
+    // 1回限りの「open」アクションとして扱い、リロード時の再実行を避ける。
+    if (typeof window !== 'undefined') {
+      window.history.replaceState(
+        null,
+        '',
+        window.location.pathname + window.location.search,
+      );
+    }
   }, [activeSectionId, pendingDeepLink]);
 
   const activeSection =
@@ -461,7 +474,21 @@ export const App: React.FC = () => {
                     variant={
                       item.id === activeSection?.id ? 'primary' : 'ghost'
                     }
-                    onClick={() => setActiveSectionId(item.id)}
+                    onClick={() => {
+                      setDeepLinkError('');
+                      setPendingDeepLink(null);
+                      setActiveSectionId(item.id);
+                      if (
+                        typeof window !== 'undefined' &&
+                        window.location.hash.startsWith('#/open')
+                      ) {
+                        window.history.replaceState(
+                          null,
+                          '',
+                          window.location.pathname + window.location.search,
+                        );
+                      }
+                    }}
                   >
                     {item.label}
                   </Button>
