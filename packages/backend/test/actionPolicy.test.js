@@ -1,7 +1,23 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { evaluateActionPolicy } from '../dist/services/actionPolicy.js';
+import {
+  evaluateActionPolicy,
+  evaluateActionPolicyWithFallback,
+} from '../dist/services/actionPolicy.js';
+
+test('evaluateActionPolicyWithFallback: allow when no policy exists', async () => {
+  const res = await evaluateActionPolicyWithFallback(
+    {
+      flowType: 'invoice',
+      actionKey: 'edit',
+      actor: { userId: 'u1', roles: ['admin'], groupIds: [] },
+    },
+    { client: { actionPolicy: { findMany: async () => [] } } },
+  );
+  assert.equal(res.allowed, true);
+  assert.equal(res.policyApplied, false);
+});
 
 test('evaluateActionPolicy: deny by default when no policy exists', async () => {
   const res = await evaluateActionPolicy(

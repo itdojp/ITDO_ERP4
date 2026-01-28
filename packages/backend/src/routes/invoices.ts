@@ -1,6 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { nextNumber } from '../services/numbering.js';
 import { submitApprovalWithUpdate } from '../services/approval.js';
+import { evaluateActionPolicyWithFallback } from '../services/actionPolicy.js';
 import { FlowTypeValue, DocStatusValue, TimeStatusValue } from '../types.js';
 import {
   invoiceFromTimeEntriesSchema,
@@ -395,8 +396,10 @@ export async function registerInvoiceRoutes(app: FastifyInstance) {
     },
     async (req, reply) => {
       const { id } = req.params as { id: string };
-      const body = req.body as { paidAt?: string };
+      const body = req.body as { paidAt?: string; reasonText?: string };
       const paidAt = body?.paidAt ? parseDate(body.paidAt) : new Date();
+      const reasonText =
+        typeof body?.reasonText === 'string' ? body.reasonText.trim() : '';
       if (body?.paidAt && !paidAt) {
         return reply.status(400).send({
           error: { code: 'INVALID_DATE', message: 'paidAt is invalid' },
@@ -406,6 +409,42 @@ export async function registerInvoiceRoutes(app: FastifyInstance) {
       if (!invoice || invoice.deletedAt) {
         return reply.status(404).send({
           error: { code: 'NOT_FOUND', message: 'Invoice not found' },
+        });
+      }
+
+      const policyRes = await evaluateActionPolicyWithFallback({
+        flowType: FlowTypeValue.invoice,
+        actionKey: 'mark_paid',
+        actor: {
+          userId: req.user?.userId ?? null,
+          roles: req.user?.roles || [],
+          groupIds: req.user?.groupIds || [],
+        },
+        reasonText,
+        state: { status: invoice.status, projectId: invoice.projectId },
+        targetTable: 'invoices',
+        targetId: id,
+      });
+      if (policyRes.policyApplied && !policyRes.allowed) {
+        if (policyRes.reason === 'reason_required') {
+          return reply.status(400).send({
+            error: {
+              code: 'REASON_REQUIRED',
+              message: 'reasonText is required for override',
+              details: { matchedPolicyId: policyRes.matchedPolicyId ?? null },
+            },
+          });
+        }
+        return reply.status(403).send({
+          error: {
+            code: 'ACTION_POLICY_DENIED',
+            message: 'Invoice cannot be marked as paid',
+            details: {
+              reason: policyRes.reason,
+              matchedPolicyId: policyRes.matchedPolicyId ?? null,
+              guardFailures: policyRes.guardFailures ?? null,
+            },
+          },
         });
       }
       if (
@@ -448,8 +487,52 @@ export async function registerInvoiceRoutes(app: FastifyInstance) {
   app.post(
     '/invoices/:id/submit',
     { preHandler: requireRole(['admin', 'mgmt']) },
-    async (req) => {
+    async (req, reply) => {
       const { id } = req.params as { id: string };
+      const body = req.body as any;
+      const reasonText =
+        typeof body?.reasonText === 'string' ? body.reasonText.trim() : '';
+      const invoice = await prisma.invoice.findUnique({
+        where: { id },
+        select: { status: true, projectId: true },
+      });
+      if (invoice) {
+        const policyRes = await evaluateActionPolicyWithFallback({
+          flowType: FlowTypeValue.invoice,
+          actionKey: 'submit',
+          actor: {
+            userId: req.user?.userId ?? null,
+            roles: req.user?.roles || [],
+            groupIds: req.user?.groupIds || [],
+          },
+          reasonText,
+          state: { status: invoice.status, projectId: invoice.projectId },
+          targetTable: 'invoices',
+          targetId: id,
+        });
+        if (policyRes.policyApplied && !policyRes.allowed) {
+          if (policyRes.reason === 'reason_required') {
+            return reply.status(400).send({
+              error: {
+                code: 'REASON_REQUIRED',
+                message: 'reasonText is required for override',
+                details: { matchedPolicyId: policyRes.matchedPolicyId ?? null },
+              },
+            });
+          }
+          return reply.status(403).send({
+            error: {
+              code: 'ACTION_POLICY_DENIED',
+              message: 'Invoice cannot be submitted',
+              details: {
+                reason: policyRes.reason,
+                matchedPolicyId: policyRes.matchedPolicyId ?? null,
+                guardFailures: policyRes.guardFailures ?? null,
+              },
+            },
+          });
+        }
+      }
       const { updated } = await submitApprovalWithUpdate({
         flowType: FlowTypeValue.invoice,
         targetTable: 'invoices',

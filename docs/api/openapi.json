@@ -3506,6 +3506,10 @@
                         "type": "string"
                       }
                     ]
+                  },
+                  "reasonText": {
+                    "minLength": 1,
+                    "type": "string"
                   }
                 },
                 "type": "object"

@@ -40,6 +40,10 @@ export type EvaluateActionPolicyResult =
       guardFailures?: ActionPolicyGuardFailure[];
     };
 
+export type EvaluateActionPolicyWithFallbackResult =
+  | (EvaluateActionPolicyResult & { policyApplied: true })
+  | { allowed: true; policyApplied: false };
+
 function normalizeString(value: unknown) {
   return typeof value === 'string' ? value.trim() : '';
 }
@@ -446,4 +450,21 @@ export async function evaluateActionPolicy(
   }
 
   return { allowed: false, reason: 'no_matching_policy' };
+}
+
+/**
+ * Transitional helper for Phase 3 route migration:
+ * - If no ActionPolicy exists, keep legacy behavior by allowing the action.
+ * - If an ActionPolicy exists, enforce its decision.
+ */
+export async function evaluateActionPolicyWithFallback(
+  input: EvaluateActionPolicyInput,
+  options?: { client?: any },
+): Promise<EvaluateActionPolicyWithFallbackResult> {
+  const res = await evaluateActionPolicy(input, options);
+  if (res.allowed) return { ...res, policyApplied: true } as const;
+  if (res.reason === 'no_matching_policy') {
+    return { allowed: true, policyApplied: false } as const;
+  }
+  return { ...res, policyApplied: true } as const;
 }
