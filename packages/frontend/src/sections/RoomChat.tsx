@@ -1,8 +1,10 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkBreaks from 'remark-breaks';
 import remarkGfm from 'remark-gfm';
 import { api, apiResponse, getAuthState } from '../api';
+import { copyToClipboard } from '../utils/clipboard';
+import { buildOpenHash } from '../utils/deepLink';
 
 type ChatRoom = {
   id: string;
@@ -137,6 +139,16 @@ function buildExcerpt(value: string, maxLength = 200) {
   return `${normalized.slice(0, maxLength)}…`;
 }
 
+function escapeMarkdownLinkLabel(value: string) {
+  return value.replace(/\\/g, '\\\\').replace(/[[\]]/g, '\\$&');
+}
+
+function buildBeforeForCreatedAt(createdAt: string) {
+  const date = new Date(createdAt);
+  if (Number.isNaN(date.getTime())) return '';
+  return new Date(date.getTime() + 1).toISOString();
+}
+
 function formatRoomLabel(room: ChatRoom, currentUserId: string) {
   if (room.type === 'project') {
     if (room.projectCode && room.projectName) {
@@ -168,6 +180,12 @@ export const RoomChat: React.FC = () => {
   const [rooms, setRooms] = useState<ChatRoom[]>([]);
   const [roomId, setRoomId] = useState('');
   const [roomMessage, setRoomMessage] = useState('');
+  const currentRoomIdRef = useRef('');
+  const skipNextRoomAutoLoadRef = useRef(false);
+
+  useEffect(() => {
+    currentRoomIdRef.current = roomId;
+  }, [roomId]);
 
   useEffect(() => {
     const handler = (event: Event) => {
@@ -210,6 +228,47 @@ export const RoomChat: React.FC = () => {
   const [filterTag, setFilterTag] = useState('');
   const [filterQuery, setFilterQuery] = useState('');
 
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const detail = (
+        event as CustomEvent<{
+          messageId?: unknown;
+          roomId?: unknown;
+          createdAt?: unknown;
+        }>
+      ).detail;
+      const messageId =
+        detail && typeof detail.messageId === 'string' ? detail.messageId : '';
+      const targetRoomId =
+        detail && typeof detail.roomId === 'string' ? detail.roomId : '';
+      const createdAt =
+        detail && typeof detail.createdAt === 'string' ? detail.createdAt : '';
+      if (!messageId || !targetRoomId) return;
+
+      const currentRoomId = currentRoomIdRef.current;
+      const isRoomChange = targetRoomId !== currentRoomId;
+      if (isRoomChange) {
+        skipNextRoomAutoLoadRef.current = true;
+        setRoomId(targetRoomId);
+      } else {
+        // 同一ルーム内の deep link では roomId の change が発生せず、
+        // skip フラグが残ると「次のルーム切替」で自動ロードが抑止されてしまう。
+        skipNextRoomAutoLoadRef.current = false;
+      }
+      setFilterQuery('');
+      setFilterTag('');
+      setPendingOpenMessage({ roomId: targetRoomId, messageId, createdAt });
+    };
+
+    window.addEventListener('erp4_open_chat_message', handler as EventListener);
+    return () => {
+      window.removeEventListener(
+        'erp4_open_chat_message',
+        handler as EventListener,
+      );
+    };
+  }, []);
+
   const [globalQuery, setGlobalQuery] = useState('');
   const [globalItems, setGlobalItems] = useState<ChatSearchItem[]>([]);
   const [globalHasMore, setGlobalHasMore] = useState(false);
@@ -218,6 +277,13 @@ export const RoomChat: React.FC = () => {
 
   const [unreadCount, setUnreadCount] = useState(0);
   const [highlightSince, setHighlightSince] = useState<Date | null>(null);
+  const [pendingOpenMessage, setPendingOpenMessage] = useState<{
+    roomId: string;
+    messageId: string;
+    createdAt: string;
+  } | null>(null);
+  const [pendingScrollMessageId, setPendingScrollMessageId] = useState('');
+  const [highlightMessageId, setHighlightMessageId] = useState('');
 
   const [createPrivateName, setCreatePrivateName] = useState('');
   const [createPrivateMembers, setCreatePrivateMembers] = useState('');
@@ -272,6 +338,7 @@ export const RoomChat: React.FC = () => {
 
   const loadMessages = async (options?: {
     append?: boolean;
+    before?: string;
     query?: string;
     tag?: string;
   }) => {
@@ -287,7 +354,11 @@ export const RoomChat: React.FC = () => {
       setMessage('');
 
       const before =
-        append && items.length ? items[items.length - 1]?.createdAt : '';
+        options?.before !== undefined
+          ? options.before
+          : append && items.length
+            ? items[items.length - 1]?.createdAt
+            : '';
       const query = new URLSearchParams();
       query.set('limit', String(pageSize));
       if (before) query.set('before', before);
@@ -326,6 +397,35 @@ export const RoomChat: React.FC = () => {
       setIsLoadingMore(false);
     }
   };
+
+  useEffect(() => {
+    if (!pendingOpenMessage) return;
+    if (pendingOpenMessage.roomId !== roomId) return;
+    const { messageId, createdAt } = pendingOpenMessage;
+    setPendingOpenMessage(null);
+    const before = buildBeforeForCreatedAt(createdAt);
+    loadMessages({ before, query: '', tag: '' })
+      .then(() => {
+        setPendingScrollMessageId(messageId);
+        setHighlightMessageId(messageId);
+        window.setTimeout(() => setHighlightMessageId(''), 10_000);
+      })
+      .catch(() => undefined);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingOpenMessage, roomId]);
+
+  useEffect(() => {
+    if (!pendingScrollMessageId) return;
+    if (!items.some((item) => item.id === pendingScrollMessageId)) return;
+    const id = pendingScrollMessageId;
+    setPendingScrollMessageId('');
+    window.setTimeout(() => {
+      const element = document.getElementById(`chat-message-${id}`);
+      if (element) {
+        element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }, 0);
+  }, [items, pendingScrollMessageId]);
 
   const openSearchResult = (item: ChatSearchItem) => {
     if (item.room.type === 'project' && item.room.projectId) {
@@ -637,6 +737,10 @@ export const RoomChat: React.FC = () => {
     setSummary('');
     setSummaryProvider('');
     setSummaryModel('');
+    if (skipNextRoomAutoLoadRef.current) {
+      skipNextRoomAutoLoadRef.current = false;
+      return;
+    }
     loadMessages().catch(() => undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roomId]);
@@ -657,6 +761,30 @@ export const RoomChat: React.FC = () => {
       {text}
     </ReactMarkdown>
   );
+
+  const copyMessageLink = async (
+    mode: 'url' | 'markdown',
+    item: Pick<ChatMessage, 'id' | 'createdAt' | 'userId' | 'body'>,
+  ) => {
+    const hash = buildOpenHash({ kind: 'chat_message', id: item.id });
+    const url = `/${hash}`;
+
+    if (mode === 'url') {
+      const ok = await copyToClipboard(url);
+      setMessage(ok ? 'リンクURLをコピーしました' : 'コピーに失敗しました');
+      return;
+    }
+
+    const roomLabel = selectedRoom
+      ? formatRoomLabel(selectedRoom, currentUserId)
+      : roomId;
+    const label = escapeMarkdownLinkLabel(
+      `${roomLabel} ${new Date(item.createdAt).toLocaleString()} ${item.userId}: ${buildExcerpt(item.body, 80)}`.trim(),
+    );
+    const markdown = `[${label}](${url})`;
+    const ok = await copyToClipboard(markdown);
+    setMessage(ok ? 'Markdownリンクをコピーしました' : 'コピーに失敗しました');
+  };
 
   return (
     <div>
@@ -939,8 +1067,9 @@ export const RoomChat: React.FC = () => {
           {items.map((item) => {
             const tags = Array.isArray(item.tags) ? item.tags : [];
             const createdAt = new Date(item.createdAt).toLocaleString();
-            const isHighlighted =
+            const isUnread =
               highlightSince && new Date(item.createdAt) > highlightSince;
+            const isTarget = highlightMessageId === item.id;
             const ackRequest = item.ackRequest;
             const requiredUserIds = ackRequest
               ? normalizeStringArray(ackRequest.requiredUserIds)
@@ -956,10 +1085,13 @@ export const RoomChat: React.FC = () => {
             return (
               <div
                 key={item.id}
+                id={`chat-message-${item.id}`}
                 className="card"
                 style={{
                   padding: 12,
-                  borderColor: isHighlighted ? '#f59e0b' : undefined,
+                  borderColor: isUnread ? '#f59e0b' : undefined,
+                  outline: isTarget ? '2px solid #f59e0b' : undefined,
+                  outlineOffset: isTarget ? 2 : undefined,
                 }}
               >
                 <div
@@ -975,6 +1107,24 @@ export const RoomChat: React.FC = () => {
                     </span>
                   </div>
                   <div className="row" style={{ gap: 6 }}>
+                    <button
+                      type="button"
+                      className="button secondary"
+                      aria-label="発言リンクURLをコピー"
+                      onClick={() => copyMessageLink('url', item)}
+                      style={{ padding: '2px 8px' }}
+                    >
+                      URL
+                    </button>
+                    <button
+                      type="button"
+                      className="button secondary"
+                      aria-label="発言リンクMarkdownをコピー"
+                      onClick={() => copyMessageLink('markdown', item)}
+                      style={{ padding: '2px 8px' }}
+                    >
+                      MD
+                    </button>
                     {reactionOptions.map((emoji) => (
                       <button
                         key={emoji}

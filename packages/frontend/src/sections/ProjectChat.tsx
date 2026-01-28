@@ -4,6 +4,8 @@ import remarkBreaks from 'remark-breaks';
 import remarkGfm from 'remark-gfm';
 import { api, apiResponse, getAuthState } from '../api';
 import { useChatRooms } from '../hooks/useChatRooms';
+import { copyToClipboard } from '../utils/clipboard';
+import { buildOpenHash } from '../utils/deepLink';
 
 type ChatMessage = {
   id: string;
@@ -55,6 +57,23 @@ type BreakGlassEvent = {
 
 const reactionOptions = ['👍', '🎉', '❤️', '😂', '🙏', '👀'];
 const pageSize = 50;
+
+function buildExcerpt(value: string, maxLength = 80) {
+  const normalized = value.replace(/\s+/g, ' ').trim();
+  if (!normalized) return '';
+  if (normalized.length <= maxLength) return normalized;
+  return `${normalized.slice(0, maxLength)}…`;
+}
+
+function escapeMarkdownLinkLabel(value: string) {
+  return value.replace(/\\/g, '\\\\').replace(/[[\]]/g, '\\$&');
+}
+
+function buildBeforeForCreatedAt(createdAt: string) {
+  const date = new Date(createdAt);
+  if (Number.isNaN(date.getTime())) return '';
+  return new Date(date.getTime() + 1).toISOString();
+}
 
 function parseTags(value: string) {
   return value
@@ -165,6 +184,45 @@ export const ProjectChat: React.FC = () => {
     };
   }, []);
 
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const detail = (
+        event as CustomEvent<{
+          messageId?: unknown;
+          roomType?: unknown;
+          projectId?: unknown;
+          createdAt?: unknown;
+        }>
+      ).detail;
+      const messageId =
+        detail && typeof detail.messageId === 'string' ? detail.messageId : '';
+      const roomType =
+        detail && typeof detail.roomType === 'string' ? detail.roomType : '';
+      const targetProjectId =
+        detail && typeof detail.projectId === 'string' ? detail.projectId : '';
+      const createdAt =
+        detail && typeof detail.createdAt === 'string' ? detail.createdAt : '';
+      if (!messageId || roomType !== 'project' || !targetProjectId) return;
+
+      // projectId の切替→メッセージ周辺をロード→スクロール、を段階実行する。
+      setProjectId(targetProjectId);
+      setFilterTag('');
+      setPendingOpenMessage({
+        projectId: targetProjectId,
+        messageId,
+        createdAt,
+      });
+    };
+
+    window.addEventListener('erp4_open_chat_message', handler as EventListener);
+    return () => {
+      window.removeEventListener(
+        'erp4_open_chat_message',
+        handler as EventListener,
+      );
+    };
+  }, []);
+
   const { rooms, roomMessage } = useChatRooms({
     selectedProjectId: projectId,
     onSelect: setProjectId,
@@ -197,6 +255,13 @@ export const ProjectChat: React.FC = () => {
   const [mentionUserIds, setMentionUserIds] = useState<string[]>([]);
   const [mentionGroupIds, setMentionGroupIds] = useState<string[]>([]);
   const [mentionAll, setMentionAll] = useState(false);
+  const [pendingOpenMessage, setPendingOpenMessage] = useState<{
+    projectId: string;
+    messageId: string;
+    createdAt: string;
+  } | null>(null);
+  const [pendingScrollMessageId, setPendingScrollMessageId] = useState('');
+  const [highlightMessageId, setHighlightMessageId] = useState('');
 
   const buildMentionsPayload = () => {
     const users = Array.from(new Set(mentionUserIds))
@@ -422,6 +487,58 @@ export const ProjectChat: React.FC = () => {
     }
   };
 
+  const loadAroundMessage = async (target: {
+    messageId: string;
+    createdAt: string;
+  }) => {
+    const before = buildBeforeForCreatedAt(target.createdAt);
+    try {
+      setIsLoading(true);
+      const query = new URLSearchParams({ limit: String(pageSize) });
+      if (before) query.set('before', before);
+      const res = await api<{ items: ChatMessage[] }>(
+        `/projects/${projectId}/chat-messages?${query.toString()}`,
+      );
+      const nextItems = res.items || [];
+      setItems(nextItems);
+      setHasMore(nextItems.length === pageSize);
+      setMessage('');
+    } catch (error) {
+      console.error('チャットの取得に失敗しました', error);
+      setMessage('読み込みに失敗しました');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!pendingOpenMessage) return;
+    if (pendingOpenMessage.projectId !== projectId) return;
+    const { messageId, createdAt } = pendingOpenMessage;
+    setPendingOpenMessage(null);
+    loadAroundMessage({ messageId, createdAt })
+      .then(() => {
+        setPendingScrollMessageId(messageId);
+        setHighlightMessageId(messageId);
+        window.setTimeout(() => setHighlightMessageId(''), 10_000);
+      })
+      .catch(() => undefined);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingOpenMessage, projectId]);
+
+  useEffect(() => {
+    if (!pendingScrollMessageId) return;
+    if (!items.some((item) => item.id === pendingScrollMessageId)) return;
+    const id = pendingScrollMessageId;
+    setPendingScrollMessageId('');
+    window.setTimeout(() => {
+      const element = document.getElementById(`chat-message-${id}`);
+      if (element) {
+        element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }, 0);
+  }, [items, pendingScrollMessageId]);
+
   const postMessage = async () => {
     const trimmedBody = body.trim();
     if (!trimmedBody) {
@@ -599,6 +716,33 @@ export const ProjectChat: React.FC = () => {
       console.error('確認の記録に失敗しました', error);
       setMessage('確認の記録に失敗しました');
     }
+  };
+
+  const copyMessageLink = async (
+    mode: 'url' | 'markdown',
+    item: Pick<ChatMessage, 'id' | 'createdAt' | 'userId' | 'body'>,
+  ) => {
+    const hash = buildOpenHash({ kind: 'chat_message', id: item.id });
+    const url = `/${hash}`;
+
+    if (mode === 'url') {
+      const ok = await copyToClipboard(url);
+      setMessage(ok ? 'リンクURLをコピーしました' : 'コピーに失敗しました');
+      return;
+    }
+
+    const projectRoom = rooms.find((room) => room.projectId === projectId);
+    const projectLabel = projectRoom
+      ? `${projectRoom.projectCode || projectRoom.projectId || ''} ${projectRoom.projectName || ''}`
+          .replace(/\s+/g, ' ')
+          .trim()
+      : projectId;
+    const label = escapeMarkdownLinkLabel(
+      `${projectLabel} ${new Date(item.createdAt).toLocaleString()} ${item.userId}: ${buildExcerpt(item.body)}`.trim(),
+    );
+    const markdown = `[${label}](${url})`;
+    const ok = await copyToClipboard(markdown);
+    setMessage(ok ? 'Markdownリンクをコピーしました' : 'コピーに失敗しました');
   };
 
   return (
@@ -932,13 +1076,51 @@ export const ProjectChat: React.FC = () => {
           const isUnread =
             highlightSince &&
             new Date(item.createdAt).getTime() > highlightSince.getTime();
+          const isHighlighted = highlightMessageId === item.id;
+          const itemStyle =
+            isUnread || isHighlighted
+              ? {
+                  ...(isUnread ? { background: '#fef9c3' } : {}),
+                  ...(isHighlighted
+                    ? { outline: '2px solid #f59e0b', outlineOffset: 2 }
+                    : {}),
+                }
+              : undefined;
           return (
-            <li
-              key={item.id}
-              style={isUnread ? { background: '#fef9c3' } : undefined}
-            >
-              <div style={{ fontSize: 12, color: '#64748b' }}>
-                {item.userId} / {new Date(item.createdAt).toLocaleString()}
+            <li key={item.id} id={`chat-message-${item.id}`} style={itemStyle}>
+              <div
+                className="row"
+                style={{
+                  justifyContent: 'space-between',
+                  flexWrap: 'wrap',
+                  gap: 8,
+                  fontSize: 12,
+                  color: '#64748b',
+                }}
+              >
+                <div>
+                  {item.userId} / {new Date(item.createdAt).toLocaleString()}
+                </div>
+                <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}>
+                  <button
+                    type="button"
+                    className="button secondary"
+                    aria-label="発言リンクURLをコピー"
+                    style={{ padding: '2px 8px' }}
+                    onClick={() => copyMessageLink('url', item)}
+                  >
+                    URL
+                  </button>
+                  <button
+                    type="button"
+                    className="button secondary"
+                    aria-label="発言リンクMarkdownをコピー"
+                    style={{ padding: '2px 8px' }}
+                    onClick={() => copyMessageLink('markdown', item)}
+                  >
+                    MD
+                  </button>
+                </div>
               </div>
               <ReactMarkdown
                 remarkPlugins={[remarkGfm, remarkBreaks]}

@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { apiResponse, getAuthState } from '../api';
 import { Alert, Button, Card } from '../ui';
 import { Dashboard } from '../sections/Dashboard';
 import { GlobalSearch } from '../sections/GlobalSearch';
@@ -45,13 +46,18 @@ const ACTIVE_SECTION_KEY = 'erp4_active_section';
 type DeepLinkResolvedTarget = {
   sectionId: string;
   payload: DeepLinkOpenPayload;
+  chatMessage?: {
+    roomId: string;
+    roomType: string;
+    projectId?: string | null;
+    createdAt: string;
+    excerpt?: string;
+  };
 };
 
 function resolveDeepLinkTarget(
   payload: DeepLinkOpenPayload,
 ): DeepLinkResolvedTarget | null {
-  // NOTE: "chat_message" requires a room/message resolver API (#710). Until then, support
-  // direct room/project chat links for internal navigation.
   switch (payload.kind) {
     case 'project_chat':
       return { sectionId: 'project-chat', payload };
@@ -83,6 +89,36 @@ function resolveDeepLinkTarget(
     default:
       return null;
   }
+}
+
+type ApiErrorPayload = {
+  error?: { code?: unknown; message?: unknown };
+};
+
+function buildChatMessageDeepLinkError(params: {
+  status: number;
+  payload?: ApiErrorPayload;
+}) {
+  const code = params.payload?.error?.code;
+  if (typeof code === 'string') {
+    switch (code) {
+      case 'FORBIDDEN_PROJECT':
+        return 'アクセス不可: 案件スコープ外です';
+      case 'FORBIDDEN_ROOM_MEMBER':
+        return 'アクセス不可: ルームのメンバーではありません';
+      case 'FORBIDDEN_EXTERNAL_ROOM':
+        return 'アクセス不可: 外部ユーザはこのルームを参照できません';
+      case 'NOT_FOUND':
+        return '対象の発言が見つかりません';
+      case 'MISSING_USER_ID':
+        return '認証情報が不足しています（userId）';
+      default:
+        break;
+    }
+  }
+  if (params.status === 404) return '対象の発言が見つかりません';
+  if (params.status === 403) return 'アクセス不可: 権限がありません';
+  return 'chat_message の deep link 解決に失敗しました';
 }
 
 export const App: React.FC = () => {
@@ -385,20 +421,87 @@ export const App: React.FC = () => {
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
+    let requestSeq = 0;
     const handle = () => {
+      requestSeq += 1;
+      const currentSeq = requestSeq;
       const parsed = parseOpenHash(window.location.hash);
       if (!parsed) {
         setDeepLinkError('');
         setPendingDeepLink(null);
         return;
       }
+
+      if (parsed.kind === 'chat_message') {
+        setDeepLinkError('');
+        setPendingDeepLink(null);
+        const messageId = parsed.id;
+        const run = async () => {
+          const res = await apiResponse(`/chat-messages/${messageId}`);
+          const payload = (await res
+            .json()
+            .catch(() => ({}))) as ApiErrorPayload & {
+            roomId?: unknown;
+            createdAt?: unknown;
+            excerpt?: unknown;
+            room?: { id?: unknown; type?: unknown; projectId?: unknown };
+          };
+          if (currentSeq !== requestSeq) return;
+          if (!res.ok) {
+            setDeepLinkError(
+              buildChatMessageDeepLinkError({ status: res.status, payload }),
+            );
+            return;
+          }
+
+          const roomId =
+            typeof payload.roomId === 'string' ? payload.roomId : '';
+          const createdAt =
+            typeof payload.createdAt === 'string' ? payload.createdAt : '';
+          const roomType =
+            typeof payload.room?.type === 'string' ? payload.room.type : '';
+          const projectId =
+            typeof payload.room?.projectId === 'string'
+              ? payload.room.projectId
+              : null;
+          if (!roomId || !createdAt || !roomType) {
+            setDeepLinkError('chat_message の deep link 解決に失敗しました');
+            return;
+          }
+
+          const auth = getAuthState();
+          const roles = auth?.roles || [];
+          const openProjectRoomInRoomChat = roles.includes('external_chat');
+          const sectionId =
+            roomType === 'project' && projectId && !openProjectRoomInRoomChat
+              ? 'project-chat'
+              : 'room-chat';
+
+          setPendingDeepLink({
+            sectionId,
+            payload: { kind: parsed.kind, id: parsed.id },
+            chatMessage: {
+              roomId,
+              roomType,
+              projectId,
+              createdAt,
+              excerpt:
+                typeof payload.excerpt === 'string' ? payload.excerpt : '',
+            },
+          });
+          setActiveSectionId(sectionId);
+        };
+        run().catch((error) => {
+          console.error('chat_message deeplink resolve failed', error);
+          if (currentSeq !== requestSeq) return;
+          setDeepLinkError('chat_message の deep link 解決に失敗しました');
+        });
+        return;
+      }
+
       const resolved = resolveDeepLinkTarget(parsed);
       if (!resolved) {
-        setDeepLinkError(
-          parsed.kind === 'chat_message'
-            ? 'chat_message の deep link は未対応です（#710: Chat発言 deep link解決API の導入後に対応）'
-            : `deep link の kind が未対応です: ${parsed.kind}`,
-        );
+        setDeepLinkError(`deep link の kind が未対応です: ${parsed.kind}`);
         setPendingDeepLink(null);
         return;
       }
@@ -425,6 +528,33 @@ export const App: React.FC = () => {
     } else if (kind === 'room_chat') {
       window.dispatchEvent(
         new CustomEvent('erp4_open_room_chat', { detail: { roomId: id } }),
+      );
+    } else if (kind === 'chat_message' && pendingDeepLink.chatMessage) {
+      const chatMessage = pendingDeepLink.chatMessage;
+      if (chatMessage.roomType === 'project' && chatMessage.projectId) {
+        window.dispatchEvent(
+          new CustomEvent('erp4_open_project_chat', {
+            detail: { projectId: chatMessage.projectId },
+          }),
+        );
+      } else {
+        window.dispatchEvent(
+          new CustomEvent('erp4_open_room_chat', {
+            detail: { roomId: chatMessage.roomId },
+          }),
+        );
+      }
+      window.dispatchEvent(
+        new CustomEvent('erp4_open_chat_message', {
+          detail: {
+            messageId: id,
+            roomId: chatMessage.roomId,
+            roomType: chatMessage.roomType,
+            projectId: chatMessage.projectId,
+            createdAt: chatMessage.createdAt,
+            excerpt: chatMessage.excerpt,
+          },
+        }),
       );
     } else {
       // Fallback: allow section-level handlers to implement deep link opening later.
