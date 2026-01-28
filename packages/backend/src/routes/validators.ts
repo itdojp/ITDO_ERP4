@@ -932,3 +932,37 @@ export const annotationSettingPatchSchema = {
     { additionalProperties: false },
   ),
 };
+
+export const annotationPatchSchema = {
+  body: Type.Object(
+    {
+      notes: Type.Optional(
+        Type.Union([Type.String({ maxLength: 200000 }), Type.Null()]),
+      ),
+      externalUrls: Type.Optional(
+        Type.Union([
+          Type.Array(Type.String({ maxLength: 200000 }), { maxItems: 500 }),
+          Type.Null(),
+        ]),
+      ),
+      internalRefs: Type.Optional(
+        Type.Union([
+          Type.Array(
+            Type.Object(
+              {
+                kind: Type.String({ minLength: 1, maxLength: 50 }),
+                id: Type.String({ minLength: 1, maxLength: 200 }),
+                label: Type.Optional(Type.String({ maxLength: 200 })),
+              },
+              { additionalProperties: false },
+            ),
+            { maxItems: 500 },
+          ),
+          Type.Null(),
+        ]),
+      ),
+      reasonText: Type.Optional(Type.String({ maxLength: 20000 })),
+    },
+    { additionalProperties: false },
+  ),
+};
