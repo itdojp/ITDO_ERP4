@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Button, Card } from '../ui';
+import { Alert, Button, Card } from '../ui';
 import { Dashboard } from '../sections/Dashboard';
 import { GlobalSearch } from '../sections/GlobalSearch';
 import { DailyReport } from '../sections/DailyReport';
@@ -27,6 +27,7 @@ import { PeriodLocks } from '../sections/PeriodLocks';
 import { AdminJobs } from '../sections/AdminJobs';
 import { DocumentSendLogs } from '../sections/DocumentSendLogs';
 import { PdfFiles } from '../sections/PdfFiles';
+import { parseOpenHash, type DeepLinkOpenPayload } from '../utils/deepLink';
 
 type SectionItem = {
   id: string;
@@ -40,6 +41,49 @@ type SectionGroup = {
 };
 
 const ACTIVE_SECTION_KEY = 'erp4_active_section';
+
+type DeepLinkResolvedTarget = {
+  sectionId: string;
+  payload: DeepLinkOpenPayload;
+};
+
+function resolveDeepLinkTarget(
+  payload: DeepLinkOpenPayload,
+): DeepLinkResolvedTarget | null {
+  // NOTE: "chat_message" requires a room/message resolver API (#710). Until then, support
+  // direct room/project chat links for internal navigation.
+  switch (payload.kind) {
+    case 'project_chat':
+      return { sectionId: 'project-chat', payload };
+    case 'room_chat':
+      return { sectionId: 'room-chat', payload };
+    case 'chat_message':
+      return null;
+    case 'invoice':
+      return { sectionId: 'invoices', payload };
+    case 'estimate':
+      return { sectionId: 'estimates', payload };
+    case 'expense':
+      return { sectionId: 'expenses', payload };
+    case 'purchase_order':
+    case 'vendor_quote':
+    case 'vendor_invoice':
+      return { sectionId: 'vendor-documents', payload };
+    case 'project':
+      return { sectionId: 'projects', payload };
+    case 'time_entry':
+      return { sectionId: 'time-entries', payload };
+    case 'daily_report':
+      return { sectionId: 'daily-report', payload };
+    case 'leave_request':
+      return { sectionId: 'leave-requests', payload };
+    case 'customer':
+    case 'vendor':
+      return { sectionId: 'master-data', payload };
+    default:
+      return null;
+  }
+}
 
 export const App: React.FC = () => {
   const sectionGroups = useMemo<SectionGroup[]>(
@@ -329,12 +373,75 @@ export const App: React.FC = () => {
     const isValid = sections.some((section) => section.id === storedId);
     return isValid ? storedId : fallbackSectionId;
   });
+  const [pendingDeepLink, setPendingDeepLink] =
+    useState<DeepLinkResolvedTarget | null>(null);
+  const [deepLinkError, setDeepLinkError] = useState<string>('');
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
     if (!activeSectionId) return;
     window.localStorage.setItem(ACTIVE_SECTION_KEY, activeSectionId);
   }, [activeSectionId]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const handle = () => {
+      const parsed = parseOpenHash(window.location.hash);
+      if (!parsed) {
+        setDeepLinkError('');
+        setPendingDeepLink(null);
+        return;
+      }
+      const resolved = resolveDeepLinkTarget(parsed);
+      if (!resolved) {
+        setDeepLinkError(
+          parsed.kind === 'chat_message'
+            ? 'chat_message の deep link は未対応です（#710: Chat発言 deep link解決API の導入後に対応）'
+            : `deep link の kind が未対応です: ${parsed.kind}`,
+        );
+        setPendingDeepLink(null);
+        return;
+      }
+      setDeepLinkError('');
+      setPendingDeepLink(resolved);
+      setActiveSectionId(resolved.sectionId);
+    };
+    handle();
+    window.addEventListener('hashchange', handle);
+    return () => window.removeEventListener('hashchange', handle);
+  }, []);
+
+  useEffect(() => {
+    if (!pendingDeepLink) return;
+    if (activeSectionId !== pendingDeepLink.sectionId) return;
+
+    const { kind, id } = pendingDeepLink.payload;
+    if (kind === 'project_chat') {
+      window.dispatchEvent(
+        new CustomEvent('erp4_open_project_chat', {
+          detail: { projectId: id },
+        }),
+      );
+    } else if (kind === 'room_chat') {
+      window.dispatchEvent(
+        new CustomEvent('erp4_open_room_chat', { detail: { roomId: id } }),
+      );
+    } else {
+      // Fallback: allow section-level handlers to implement deep link opening later.
+      window.dispatchEvent(
+        new CustomEvent('erp4_open_entity', { detail: { kind, id } }),
+      );
+    }
+    setPendingDeepLink(null);
+    // 1回限りの「open」アクションとして扱い、リロード時の再実行を避ける。
+    if (typeof window !== 'undefined') {
+      window.history.replaceState(
+        null,
+        '',
+        window.location.pathname + window.location.search,
+      );
+    }
+  }, [activeSectionId, pendingDeepLink]);
 
   const activeSection =
     sections.find((section) => section.id === activeSectionId) || sections[0];
@@ -343,6 +450,11 @@ export const App: React.FC = () => {
     <div className="container">
       <h1>ERP4 MVP PoC</h1>
       <CurrentUser />
+      {deepLinkError && (
+        <div style={{ marginTop: 8 }}>
+          <Alert variant="warning">{deepLinkError}</Alert>
+        </div>
+      )}
       <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
         <Card
           padding="small"
@@ -362,7 +474,21 @@ export const App: React.FC = () => {
                     variant={
                       item.id === activeSection?.id ? 'primary' : 'ghost'
                     }
-                    onClick={() => setActiveSectionId(item.id)}
+                    onClick={() => {
+                      setDeepLinkError('');
+                      setPendingDeepLink(null);
+                      setActiveSectionId(item.id);
+                      if (
+                        typeof window !== 'undefined' &&
+                        window.location.hash.startsWith('#/open')
+                      ) {
+                        window.history.replaceState(
+                          null,
+                          '',
+                          window.location.pathname + window.location.search,
+                        );
+                      }
+                    }}
                   >
                     {item.label}
                   </Button>
