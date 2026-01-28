@@ -15,6 +15,33 @@
 - **Guard**: 期間締め/案件closed/editableDays 等の横断判定部品（管理画面から「定義済み部品」を選択）。
 - **Handler**: 送信/入金確認など副作用を伴う処理（安全性のためコード側に固定し、管理画面で任意スクリプトは許容しない）。
 
+## actionKey 辞書（暫定）
+
+ActionPolicy/WorkflowDefinition で参照する **共通キー**として扱う。
+
+### 共通 actionKey（案）
+
+- `edit`: 文書の更新（例: PATCH/PUT）
+- `submit`: 承認申請（submitApprovalWithUpdate 相当）
+- `send`: 対外送付（メール送信等の副作用は handler）
+- `mark_paid`: 入金/支払の確定
+- `link_po`: 発注書（PO）との紐づけ
+- `unlink_po`: PO 紐づけ解除
+
+注:
+
+- `cancel` / `reject` / `return`（差戻し）等の語彙は、現行実装（DocStatus）と要件差分が残っているため Phase 0 で確定する。
+
+### FlowType別の主な対応エンドポイント（現行）
+
+- estimate: `submit` -> `POST /estimates/:id/submit`, `send` -> `POST /estimates/:id/send`
+- invoice: `submit` -> `POST /invoices/:id/submit`, `send` -> `POST /invoices/:id/send`, `mark_paid` -> `POST /invoices/:id/mark-paid`
+- purchase_order: `submit` -> `POST /purchase-orders/:id/submit`, `send` -> `POST /purchase-orders/:id/send`
+- vendor_invoice: `submit` 相当 -> `POST /vendor-invoices/:id/approve`（命名差分あり）
+- expense: `submit` -> `POST /expenses/:id/submit`
+- leave: `submit` -> `POST /leave-requests/:id/submit`
+- time: `submit` -> `POST /time-entries/:id/submit`, `edit` -> `PATCH /time-entries/:id`
+
 ## 現行実装（調査結果の要約）
 
 ### 承認（共通基盤）
@@ -88,6 +115,7 @@
 ```
 
 注:
+
 - approver の `type=role` を許容するかは要設計（現行は groupIds ベース）。
 - reject の扱い（any reject で即却下/閾値方式等）は要設計。現行実装は「rejectで即クローズ」。
 
@@ -99,6 +127,7 @@
 - instance 作成時に rule の定義を解釈して stagePolicy を生成し保存する。
 
 代替案:
+
 - `ApprovalStage(instanceId, stepOrder, completionMode, quorum, ...)` の新設（検索性は上がるが移行/実装が増える）。
 
 ### 3) 承認実行ロジック（act）の拡張
@@ -107,6 +136,7 @@
 - `mode=any/quorum`: 完了条件を満たした時点で、同一 stepOrder の未処理ステップを **自動キャンセル**（`status=cancelled`, `actedBy='system'` 等）し、次ステージへ進める。
 
 注:
+
 - 自動キャンセルは「後続ステージへ進んでいるのに、未処理ステップが残り続ける」状態を避け、承認可能者一覧や監査の整合を保つために必要。
 
 ## 提案設計（Phase 2: ActionPolicy + Guard）
@@ -139,6 +169,7 @@ ActionPolicy は「どの state で、誰が、どの action を実行できる�
   - `createdAt/createdBy/updatedAt/updatedBy`
 
 注:
+
 - `subjects` は「roles と groupIds のどちらを主とするか」が未確定（現行は API 権限は roles、承認者判定は groupIds）。
 - `stateConstraints` の最小は `status`（DocStatus）だが、TimeEntry/Leave 等は別ステートのため統合方式は要設計。
 
@@ -147,9 +178,10 @@ ActionPolicy は「どの state で、誰が、どの action を実行できる�
 1. `flowType` + `actionKey` が一致する policy を候補とする
 2. `stateConstraints` を満たすものに絞り込む
 3. `subjects`（role/group/user）に合致するものに絞り込む
-4. `priority` の高いものを採用（同点の場合は「より具体的な policy」を優先）  
+4. `priority` の高いものを採用（同点の場合は「より具体的な policy」を優先）
 
 デフォルト動作（案）:
+
 - マッチする policy が無い場合は拒否（deny by default）。運用上必要なら allowlist を作る。
 
 ### 2) Guard（案）
@@ -157,6 +189,7 @@ ActionPolicy は「どの state で、誰が、どの action を実行できる�
 管理画面で選択できる「定義済み」判定部品として提供する。
 
 例:
+
 - `period_lock`: period lock されている場合は拒否
 - `project_closed`: project.status=closed の場合は拒否
 - `editable_days`: editableDays の範囲外は admin override + reason 必須
