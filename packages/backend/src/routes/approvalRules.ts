@@ -137,18 +137,22 @@ export async function registerApprovalRuleRoutes(app: FastifyInstance) {
             'steps must be either an array of steps (approverGroupId/approverUserId) or {stages:[{order, approvers:[{type,id}], completion?}]}; stage.order must be unique; quorum must be <= approvers.length',
         });
       }
-      const effectiveFrom =
-        body.effectiveFrom !== undefined
-          ? parseDateParam(body.effectiveFrom)
-          : undefined;
-      if (body.effectiveFrom !== undefined && !effectiveFrom) {
-        return reply.code(400).send({
-          error: 'invalid_effectiveFrom',
-          message: 'effectiveFrom must be a valid date-time string',
-        });
+      let effectiveFrom: Date | undefined;
+      if (body.effectiveFrom !== undefined) {
+        const parsed = parseDateParam(body.effectiveFrom);
+        if (!parsed) {
+          return reply.code(400).send({
+            error: 'invalid_effectiveFrom',
+            message: 'effectiveFrom must be a valid date-time string',
+          });
+        }
+        effectiveFrom = parsed;
       }
       const created = await prisma.approvalRule.create({
-        data: { ...body, ...(effectiveFrom ? { effectiveFrom } : {}) },
+        data: {
+          ...body,
+          ...(effectiveFrom !== undefined ? { effectiveFrom } : {}),
+        },
       });
       await logAudit({
         action: 'approval_rule_created',
@@ -177,19 +181,23 @@ export async function registerApprovalRuleRoutes(app: FastifyInstance) {
             'steps must be either an array of steps (approverGroupId/approverUserId) or {stages:[{order, approvers:[{type,id}], completion?}]}; stage.order must be unique; quorum must be <= approvers.length',
         });
       }
-      const effectiveFrom =
-        body.effectiveFrom !== undefined
-          ? parseDateParam(body.effectiveFrom)
-          : undefined;
-      if (body.effectiveFrom !== undefined && !effectiveFrom) {
-        return reply.code(400).send({
-          error: 'invalid_effectiveFrom',
-          message: 'effectiveFrom must be a valid date-time string',
-        });
+      let effectiveFrom: Date | undefined;
+      if (body.effectiveFrom !== undefined) {
+        const parsed = parseDateParam(body.effectiveFrom);
+        if (!parsed) {
+          return reply.code(400).send({
+            error: 'invalid_effectiveFrom',
+            message: 'effectiveFrom must be a valid date-time string',
+          });
+        }
+        effectiveFrom = parsed;
       }
       const updated = await prisma.approvalRule.update({
         where: { id },
-        data: { ...body, ...(effectiveFrom ? { effectiveFrom } : {}) },
+        data: {
+          ...body,
+          ...(effectiveFrom !== undefined ? { effectiveFrom } : {}),
+        },
       });
       await logAudit({
         action: 'approval_rule_updated',
