@@ -438,6 +438,54 @@
         }
       }
     },
+    "/annotation-settings": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      },
+      "patch": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "maxExternalUrlCount": {
+                    "maximum": 500,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "maxExternalUrlLength": {
+                    "maximum": 200000,
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "maxExternalUrlTotalLength": {
+                    "maximum": 2000000,
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "maxNotesLength": {
+                    "maximum": 200000,
+                    "minimum": 0,
+                    "type": "integer"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
     "/approval-instances": {
       "get": {
         "responses": {

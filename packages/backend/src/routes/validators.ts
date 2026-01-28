@@ -912,3 +912,23 @@ export const worklogSettingPatchSchema = {
     { additionalProperties: false },
   ),
 };
+
+export const annotationSettingPatchSchema = {
+  body: Type.Object(
+    {
+      maxExternalUrlCount: Type.Optional(
+        Type.Integer({ minimum: 0, maximum: 500 }),
+      ),
+      maxExternalUrlLength: Type.Optional(
+        Type.Integer({ minimum: 1, maximum: 200000 }),
+      ),
+      maxExternalUrlTotalLength: Type.Optional(
+        Type.Integer({ minimum: 1, maximum: 2000000 }),
+      ),
+      maxNotesLength: Type.Optional(
+        Type.Integer({ minimum: 0, maximum: 200000 }),
+      ),
+    },
+    { additionalProperties: false },
+  ),
+};
