@@ -786,164 +786,163 @@ export const TimeEntries: React.FC = () => {
   };
 
   return (
-    <div>
-      <div
-        style={{
-          display: 'flex',
-          gap: 12,
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          flexWrap: 'wrap',
-        }}
+    <div
+      style={{
+        display: 'grid',
+        gridTemplateColumns: '1fr auto',
+        gap: 12,
+        alignItems: 'center',
+      }}
+    >
+      <h2 style={{ margin: 0 }}>工数入力</h2>
+      <Button
+        size="small"
+        variant="ghost"
+        onClick={() =>
+          navigateToOpen({ kind: 'daily_report', id: form.workDate })
+        }
       >
-        <h2 style={{ margin: 0 }}>工数入力</h2>
-        <Button
-          size="small"
-          variant="ghost"
-          onClick={() =>
-            navigateToOpen({ kind: 'daily_report', id: form.workDate })
-          }
-        >
-          日報を開く
-        </Button>
-      </div>
-      <Card padding="small" style={{ marginBottom: 12 }}>
-        <div
-          style={{
-            display: 'flex',
-            gap: 12,
-            flexWrap: 'wrap',
-            alignItems: 'flex-end',
-          }}
-        >
-          <Select
-            label="案件"
-            aria-label="案件選択"
-            value={form.projectId}
-            onChange={(e) => setForm({ ...form, projectId: e.target.value })}
-            placeholder="案件を選択"
+        日報を開く
+      </Button>
+      <div style={{ gridColumn: '1 / -1' }}>
+        <Card padding="small" style={{ marginBottom: 12 }}>
+          <div
+            style={{
+              display: 'flex',
+              gap: 12,
+              flexWrap: 'wrap',
+              alignItems: 'flex-end',
+            }}
           >
-            {projects.map((project) => (
-              <option key={project.id} value={project.id}>
-                {project.code} / {project.name}
-              </option>
-            ))}
-          </Select>
-          <Select
-            label="タスク"
-            aria-label="タスク選択"
-            value={form.taskId}
-            onChange={(e) => setForm({ ...form, taskId: e.target.value })}
-            disabled={!form.projectId || tasksLoading}
-            placeholder="タスク未選択"
-          >
-            {tasks.map((task) => (
-              <option key={task.id} value={task.id}>
-                {task.name}
-              </option>
-            ))}
-          </Select>
-          <Input
-            label="日付"
-            type="date"
-            value={form.workDate}
-            onChange={(e) => setForm({ ...form, workDate: e.target.value })}
-          />
-          <Input
-            label="工数 (分)"
-            type="number"
-            min={1}
-            max={1440}
-            step={15}
-            value={form.minutes}
-            onChange={(e) =>
-              setForm({ ...form, minutes: Number(e.target.value) })
-            }
-            error={minutesError || undefined}
-          />
-          <Input
-            label="作業種別"
-            type="text"
-            value={form.workType}
-            onChange={(e) => setForm({ ...form, workType: e.target.value })}
-            placeholder="例: 通常"
-          />
-          <Input
-            label="場所"
-            type="text"
-            value={form.location}
-            onChange={(e) => setForm({ ...form, location: e.target.value })}
-            placeholder="例: office"
-          />
-          <Textarea
-            label="作業メモ"
-            aria-label="作業メモ"
-            value={form.notes}
-            onChange={(e) => setForm({ ...form, notes: e.target.value })}
-            placeholder="作業内容や補足を入力"
-          />
-          <Button
-            onClick={add}
-            disabled={!isValid || isSaving}
-            loading={isSaving}
-          >
-            追加
-          </Button>
-        </div>
-        {validationHint && (
-          <div style={{ marginTop: 12 }}>
-            <Alert variant="error">{validationHint}</Alert>
-          </div>
-        )}
-        {projectMessage && (
-          <div style={{ marginTop: 12 }}>
-            <Alert variant="error">{projectMessage}</Alert>
-          </div>
-        )}
-        {taskMessage && (
-          <div style={{ marginTop: 12 }}>
-            <Alert variant="error">{taskMessage}</Alert>
-          </div>
-        )}
-      </Card>
-      <div style={{ marginTop: 16 }}>
-        <h3 style={{ marginBottom: 8 }}>工数一覧</h3>
-        {FEATURE_TIMESHEET_GRID ? (
-          isMobile ? (
-            <MobileTimeEntryList
-              items={viewItems}
-              status={listStatus}
-              error={listError}
-              onRetry={fetchItems}
+            <Select
+              label="案件"
+              aria-label="案件選択"
+              value={form.projectId}
+              onChange={(e) => setForm({ ...form, projectId: e.target.value })}
+              placeholder="案件を選択"
+            >
+              {projects.map((project) => (
+                <option key={project.id} value={project.id}>
+                  {project.code} / {project.name}
+                </option>
+              ))}
+            </Select>
+            <Select
+              label="タスク"
+              aria-label="タスク選択"
+              value={form.taskId}
+              onChange={(e) => setForm({ ...form, taskId: e.target.value })}
+              disabled={!form.projectId || tasksLoading}
+              placeholder="タスク未選択"
+            >
+              {tasks.map((task) => (
+                <option key={task.id} value={task.id}>
+                  {task.name}
+                </option>
+              ))}
+            </Select>
+            <Input
+              label="日付"
+              type="date"
+              value={form.workDate}
+              onChange={(e) => setForm({ ...form, workDate: e.target.value })}
             />
+            <Input
+              label="工数 (分)"
+              type="number"
+              min={1}
+              max={1440}
+              step={15}
+              value={form.minutes}
+              onChange={(e) =>
+                setForm({ ...form, minutes: Number(e.target.value) })
+              }
+              error={minutesError || undefined}
+            />
+            <Input
+              label="作業種別"
+              type="text"
+              value={form.workType}
+              onChange={(e) => setForm({ ...form, workType: e.target.value })}
+              placeholder="例: 通常"
+            />
+            <Input
+              label="場所"
+              type="text"
+              value={form.location}
+              onChange={(e) => setForm({ ...form, location: e.target.value })}
+              placeholder="例: office"
+            />
+            <Textarea
+              label="作業メモ"
+              aria-label="作業メモ"
+              value={form.notes}
+              onChange={(e) => setForm({ ...form, notes: e.target.value })}
+              placeholder="作業内容や補足を入力"
+            />
+            <Button
+              onClick={add}
+              disabled={!isValid || isSaving}
+              loading={isSaving}
+            >
+              追加
+            </Button>
+          </div>
+          {validationHint && (
+            <div style={{ marginTop: 12 }}>
+              <Alert variant="error">{validationHint}</Alert>
+            </div>
+          )}
+          {projectMessage && (
+            <div style={{ marginTop: 12 }}>
+              <Alert variant="error">{projectMessage}</Alert>
+            </div>
+          )}
+          {taskMessage && (
+            <div style={{ marginTop: 12 }}>
+              <Alert variant="error">{taskMessage}</Alert>
+            </div>
+          )}
+        </Card>
+        <div style={{ marginTop: 16 }}>
+          <h3 style={{ marginBottom: 8 }}>工数一覧</h3>
+          {FEATURE_TIMESHEET_GRID ? (
+            isMobile ? (
+              <MobileTimeEntryList
+                items={viewItems}
+                status={listStatus}
+                error={listError}
+                onRetry={fetchItems}
+              />
+            ) : (
+              <TimesheetGrid
+                items={viewItems}
+                status={listStatus}
+                error={listError}
+                onRetry={fetchItems}
+              />
+            )
           ) : (
-            <TimesheetGrid
+            <LegacyTimeEntryList
               items={viewItems}
               status={listStatus}
               error={listError}
               onRetry={fetchItems}
             />
-          )
-        ) : (
-          <LegacyTimeEntryList
-            items={viewItems}
-            status={listStatus}
-            error={listError}
-            onRetry={fetchItems}
-          />
+          )}
+        </div>
+        {message && (
+          <div style={{ marginTop: 12 }}>
+            <Toast
+              variant={message.type}
+              title={message.type === 'success' ? '完了' : 'エラー'}
+              description={message.text}
+              dismissible
+              onClose={() => setMessage(null)}
+            />
+          </div>
         )}
       </div>
-      {message && (
-        <div style={{ marginTop: 12 }}>
-          <Toast
-            variant={message.type}
-            title={message.type === 'success' ? '完了' : 'エラー'}
-            description={message.text}
-            dismissible
-            onClose={() => setMessage(null)}
-          />
-        </div>
-      )}
     </div>
   );
 };
