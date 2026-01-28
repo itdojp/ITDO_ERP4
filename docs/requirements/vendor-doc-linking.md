@@ -1,40 +1,35 @@
-# 発注書→業者請求の連動設計（たたき台）
+# 発注書→仕入請求（VendorInvoice）連動設計（MVP確定）
 
 ## 背景
 旧システムでは発注書から業者請求書（仕入請求）を作成する運用があり、参照/紐付けが前提でした。ERP4では PurchaseOrder / VendorQuote / VendorInvoice は存在するものの連動方針が未確定です。
 
 ## 現状（ERP4）
 - PurchaseOrder / VendorQuote / VendorInvoice の CRUD と承認が存在
-- PO と VendorInvoice の直接リンクは未整備
+- `VendorInvoice.purchaseOrderId`（任意）により、PO→VI の 1対多（PO:1 → VI:n、VI→PO は 0..1）を表現可能
 
 ## 差分/課題
-- 発注→仕入請求の関連付け（1対1/1対多/引用作成）の方針が未決定
-- UI導線（PO から VQ/VI 作成/参照）が不足
-- 仕入側の承認/編集ロックの運用が未整理
+- UI導線（PO から VI 作成/参照）が不足
+- 仕入側の承認/編集ロック、差戻し時の扱いが未整理
 
 ## MVP方針
-- PO と VendorInvoice を関連付け、PO から請求作成の導線を提供
-- 1対多（PO→複数VI）を前提にし、多対1は後続で検討
-- 明細対応は参照のみ（PO明細IDを保持するが差異は警告レベル）
+- 関連付け: 1対多（PO→複数VI）を前提にし、多対1（複数PO→1VI）は後続で要件確認
+- POリンク: 作成時の紐づけに加え、既存仕入請求（VI）の紐づけ変更/解除を可能にする
+- 制約: `pending_qa` 以降は admin/mgmt のみ紐づけ変更/解除（監査ログ対象）
+- 明細対応: MVPは「参照のみ」（明細レベルの厳密整合は後続）
 
 ## 追加で整理すべき論点（未確定）
-### 関連付け方式
-- 1対1: POごとに請求1件（簡易）
-- 1対多: 分割納品/分割請求を想定（MVP）
-- 多対1: 複数POを1請求にまとめる（後続で要件確認）
-
-### 明細対応
-- 参照のみ（PO明細IDを保持するが金額整合は警告程度）
-- 厳密対応（PO明細の数量/金額を検証し、差異は承認必須）
+### 差戻し時の扱い
+- 差戻し時に POリンクの維持/変更可否（分かりません、要設計）
 
 ### 状態遷移（案）
-- PurchaseOrder: draft → pending → approved → issued/closed
-- VendorQuote: draft → pending → approved
-- VendorInvoice: draft → pending → approved → paid
+- PurchaseOrder: `draft` → `pending_qa` → `pending_exec` → `approved` → `sent` / `acknowledged`
+- VendorQuote: `received` → `approved` / `rejected`（現状の運用想定）
+- VendorInvoice: `received` → `pending_qa` → `pending_exec` → `approved` → `paid`（`rejected`/`cancelled` あり）
 
 ### UI導線（案）
-- PO詳細から「請求作成」ボタン
-- VendorInvoice 詳細に「関連PO」セクションを表示
+- PO詳細から「仕入請求作成」ボタン（POを引用して VI を作成）
+- PO詳細に「リンク済み仕入請求（VI）一覧」を表示
+- VI詳細に「関連PO」セクションを表示し、変更/解除を可能にする（制約: `pending_qa` 以降は admin/mgmt のみ）
 - 仕入請求の支払確認は admin/mgmt 操作
 
 ### 監査/通知（案）
@@ -42,9 +37,10 @@
 - 支払完了の通知は申請者/担当者へ（チャネルは運用次第）
 
 ## TODO
-- [ ] MVP: 1対多リンクのデータモデル/画面導線を確定
-- [ ] 参照整合の警告ルール（差異許容範囲）を決定
-- [ ] 承認/ロック/差戻しの運用決定
+- [x] MVP: 1対多リンク（PO→複数VI、VI→POは0..1）を採用
+- [ ] POリンクの変更/解除の権限・監査（admin/mgmt 区別、理由必須など）を確定
+- [ ] 差戻し時のリンク維持/変更可否を確定
+- [ ] 明細レベルの対応方針（参照/警告/厳密）を確定
 - [ ] 多対1対応の要否を判断（後続）
 
 ## 関連
