@@ -688,16 +688,9 @@ const actionPolicyStateConstraintsSchema = Type.Union([
 
 const actionPolicyGuardsSchema = Type.Union([
   Type.Null(),
-  Type.Array(
-    Type.Object(
-      {
-        type: Type.String({ minLength: 1, maxLength: 100 }),
-        params: Type.Optional(Type.Any()),
-      },
-      { additionalProperties: true },
-    ),
-    { minItems: 0 },
-  ),
+  // NOTE: Keep this schema wide for backward compatibility (api-schema / openapi-diff).
+  // The evaluator is fail-safe and will deny when guards are malformed or unknown.
+  Type.Array(Type.Any(), { minItems: 0 }),
 ]);
 
 export const actionPolicySchema = {
