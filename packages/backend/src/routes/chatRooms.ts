@@ -765,11 +765,9 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
       const roles = req.user?.roles || [];
       const projectIds = normalizeStringArray(req.user?.projectIds, {
         dedupe: true,
-        max: 500,
       });
       const groupIds = normalizeStringArray(req.user?.groupIds, {
         dedupe: true,
-        max: 50,
       });
 
       const roomIds = await resolveSearchRoomIds({
@@ -851,6 +849,96 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
       });
 
       return { items: responseItems };
+    },
+  );
+
+  app.get(
+    '/chat-messages/:id',
+    { preHandler: requireRole(chatRoles) },
+    async (req, reply) => {
+      const { id } = req.params as { id: string };
+      const userId = req.user?.userId;
+      if (!userId) {
+        return reply.status(400).send({
+          error: { code: 'MISSING_USER_ID', message: 'user id is required' },
+        });
+      }
+
+      const message = await prisma.chatMessage.findUnique({
+        where: { id },
+        include: {
+          room: {
+            select: {
+              id: true,
+              type: true,
+              projectId: true,
+              deletedAt: true,
+            },
+          },
+        },
+      });
+      if (!message || message.deletedAt || message.room.deletedAt) {
+        return reply.status(404).send({
+          error: { code: 'NOT_FOUND', message: 'Chat message not found' },
+        });
+      }
+
+      const roles = req.user?.roles || [];
+      const projectIds = normalizeStringArray(req.user?.projectIds, {
+        dedupe: true,
+        max: 500,
+      });
+      const groupIds = normalizeStringArray(req.user?.groupIds, {
+        dedupe: true,
+        max: 50,
+      });
+
+      const access = await ensureChatRoomContentAccess({
+        roomId: message.roomId,
+        userId,
+        roles,
+        projectIds,
+        groupIds,
+      });
+      if (!access.ok) {
+        return reply.status(access.reason === 'not_found' ? 404 : 403).send({
+          error: {
+            code:
+              access.reason === 'not_found'
+                ? 'NOT_FOUND'
+                : access.reason === 'forbidden_project'
+                  ? 'FORBIDDEN_PROJECT'
+                  : access.reason === 'forbidden_external_room'
+                    ? 'FORBIDDEN_EXTERNAL_ROOM'
+                    : 'FORBIDDEN_ROOM_MEMBER',
+            message: 'Access to this room is forbidden',
+          },
+        });
+      }
+
+      const excerpt = message.body.replace(/\s+/g, ' ').trim().slice(0, 140);
+
+      await logAudit({
+        action: 'chat_message_deeplink_resolved',
+        targetTable: 'chat_messages',
+        targetId: message.id,
+        metadata: {
+          roomId: message.roomId,
+        } as Prisma.InputJsonValue,
+        ...auditContextFromRequest(req),
+      });
+
+      return {
+        id: message.id,
+        roomId: message.roomId,
+        createdAt: message.createdAt,
+        excerpt,
+        room: {
+          id: message.room.id,
+          type: message.room.type,
+          projectId: message.room.projectId,
+        },
+      };
     },
   );
 
