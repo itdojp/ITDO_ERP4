@@ -38,37 +38,46 @@ export async function registerAnnotationSettingRoutes(app: FastifyInstance) {
       preHandler: requireRole(['admin', 'mgmt']),
       schema: annotationSettingPatchSchema,
     },
-    async (req) => {
+    async (req, reply) => {
       const body = req.body as Partial<typeof DEFAULT_LIMITS>;
       const actorId = req.user?.userId ?? null;
+      const current = await prisma.annotationSetting.findUnique({
+        where: { id: ANNOTATION_SETTING_ID },
+      });
+      const currentLimits = current ?? DEFAULT_LIMITS;
+      const nextLimits = {
+        maxExternalUrlCount:
+          body.maxExternalUrlCount ?? currentLimits.maxExternalUrlCount,
+        maxExternalUrlLength:
+          body.maxExternalUrlLength ?? currentLimits.maxExternalUrlLength,
+        maxExternalUrlTotalLength:
+          body.maxExternalUrlTotalLength ??
+          currentLimits.maxExternalUrlTotalLength,
+        maxNotesLength: body.maxNotesLength ?? currentLimits.maxNotesLength,
+      } as const;
+
+      if (
+        nextLimits.maxExternalUrlCount > 0 &&
+        nextLimits.maxExternalUrlTotalLength < nextLimits.maxExternalUrlLength
+      ) {
+        return reply.status(400).send({
+          error: {
+            code: 'INVALID_ANNOTATION_SETTING',
+            message:
+              'maxExternalUrlTotalLength must be >= maxExternalUrlLength when maxExternalUrlCount > 0',
+          },
+        });
+      }
       const updated = await prisma.annotationSetting.upsert({
         where: { id: ANNOTATION_SETTING_ID },
         create: {
           id: ANNOTATION_SETTING_ID,
-          maxExternalUrlCount:
-            body.maxExternalUrlCount ?? DEFAULT_LIMITS.maxExternalUrlCount,
-          maxExternalUrlLength:
-            body.maxExternalUrlLength ?? DEFAULT_LIMITS.maxExternalUrlLength,
-          maxExternalUrlTotalLength:
-            body.maxExternalUrlTotalLength ??
-            DEFAULT_LIMITS.maxExternalUrlTotalLength,
-          maxNotesLength: body.maxNotesLength ?? DEFAULT_LIMITS.maxNotesLength,
+          ...nextLimits,
           createdBy: actorId,
           updatedBy: actorId,
         },
         update: {
-          ...(body.maxExternalUrlCount !== undefined
-            ? { maxExternalUrlCount: body.maxExternalUrlCount }
-            : {}),
-          ...(body.maxExternalUrlLength !== undefined
-            ? { maxExternalUrlLength: body.maxExternalUrlLength }
-            : {}),
-          ...(body.maxExternalUrlTotalLength !== undefined
-            ? { maxExternalUrlTotalLength: body.maxExternalUrlTotalLength }
-            : {}),
-          ...(body.maxNotesLength !== undefined
-            ? { maxNotesLength: body.maxNotesLength }
-            : {}),
+          ...nextLimits,
           updatedBy: actorId,
         },
       });
