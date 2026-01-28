@@ -1,8 +1,18 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { api, getAuthState } from '../api';
+import { AnnotationsCard } from '../components/AnnotationsCard';
 import { InvoiceDetail } from './InvoiceDetail';
 import { useProjects } from '../hooks/useProjects';
-import { Alert, Button, Card, EmptyState, Input, Select, Toast } from '../ui';
+import {
+  Alert,
+  Button,
+  Card,
+  Dialog,
+  EmptyState,
+  Input,
+  Select,
+  Toast,
+} from '../ui';
 
 interface Invoice {
   id: string;
@@ -70,6 +80,12 @@ export const Invoices: React.FC = () => {
     [projects],
   );
   const [selected, setSelected] = useState<Invoice | null>(null);
+  const [annotationTarget, setAnnotationTarget] = useState<{
+    kind: 'invoice';
+    id: string;
+    projectId: string;
+    title: string;
+  } | null>(null);
   const [message, setMessage] = useState<{
     text: string;
     type: 'success' | 'error' | 'info';
@@ -335,6 +351,21 @@ export const Invoices: React.FC = () => {
             onMarkPaid={() => markPaid(selected.id)}
             canMarkPaid={canMarkPaid}
           />
+          <div style={{ marginTop: 12 }}>
+            <Button
+              variant="secondary"
+              onClick={() =>
+                setAnnotationTarget({
+                  kind: 'invoice',
+                  id: selected.id,
+                  projectId: selected.projectId,
+                  title: `請求: ${selected.invoiceNo || '(draft)'}`,
+                })
+              }
+            >
+              注釈
+            </Button>
+          </div>
           {selected.status === 'draft' && (
             <div style={{ marginTop: 12 }}>
               <Button
@@ -352,6 +383,26 @@ export const Invoices: React.FC = () => {
           </div>
         </Card>
       )}
+      <Dialog
+        open={Boolean(annotationTarget)}
+        onClose={() => setAnnotationTarget(null)}
+        title={annotationTarget?.title || '注釈'}
+        size="large"
+        footer={
+          <Button variant="secondary" onClick={() => setAnnotationTarget(null)}>
+            閉じる
+          </Button>
+        }
+      >
+        {annotationTarget && (
+          <AnnotationsCard
+            targetKind={annotationTarget.kind}
+            targetId={annotationTarget.id}
+            projectId={annotationTarget.projectId}
+            title={annotationTarget.title}
+          />
+        )}
+      </Dialog>
     </div>
   );
 };
