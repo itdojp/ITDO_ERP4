@@ -7,6 +7,7 @@ import {
   invoiceFromTimeEntriesSchema,
   invoiceMarkPaidSchema,
   invoiceSchema,
+  invoiceSubmitSchema,
 } from './validators.js';
 import { requireProjectAccess, requireRole } from '../services/rbac.js';
 import { prisma } from '../services/db.js';
@@ -474,6 +475,7 @@ export async function registerInvoiceRoutes(app: FastifyInstance) {
         action: 'invoice_mark_paid',
         targetTable: 'Invoice',
         targetId: id,
+        reasonText: reasonText || undefined,
         metadata: {
           previousStatus: invoice.status,
           paidAt: updated.paidAt?.toISOString(),
@@ -486,7 +488,7 @@ export async function registerInvoiceRoutes(app: FastifyInstance) {
 
   app.post(
     '/invoices/:id/submit',
-    { preHandler: requireRole(['admin', 'mgmt']) },
+    { preHandler: requireRole(['admin', 'mgmt']), schema: invoiceSubmitSchema },
     async (req, reply) => {
       const { id } = req.params as { id: string };
       const body = req.body as any;

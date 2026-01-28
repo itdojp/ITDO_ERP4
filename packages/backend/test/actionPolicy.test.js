@@ -19,6 +19,31 @@ test('evaluateActionPolicyWithFallback: allow when no policy exists', async () =
   assert.equal(res.policyApplied, false);
 });
 
+test('evaluateActionPolicyWithFallback: deny when policy exists', async () => {
+  const policies = [
+    {
+      id: 'p1',
+      stateConstraints: null,
+      subjects: null,
+      guards: null,
+      requireReason: true,
+    },
+  ];
+  const res = await evaluateActionPolicyWithFallback(
+    {
+      flowType: 'invoice',
+      actionKey: 'edit',
+      actor: { userId: 'u1', roles: ['admin'], groupIds: [] },
+      reasonText: '',
+    },
+    { client: { actionPolicy: { findMany: async () => policies } } },
+  );
+  assert.equal(res.policyApplied, true);
+  assert.equal(res.allowed, false);
+  assert.equal(res.reason, 'reason_required');
+  assert.equal(res.matchedPolicyId, 'p1');
+});
+
 test('evaluateActionPolicy: deny by default when no policy exists', async () => {
   const res = await evaluateActionPolicy(
     {
