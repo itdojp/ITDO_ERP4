@@ -765,11 +765,9 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
       const roles = req.user?.roles || [];
       const projectIds = normalizeStringArray(req.user?.projectIds, {
         dedupe: true,
-        max: 500,
       });
       const groupIds = normalizeStringArray(req.user?.groupIds, {
         dedupe: true,
-        max: 50,
       });
 
       const roomIds = await resolveSearchRoomIds({
@@ -934,7 +932,6 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
         id: message.id,
         roomId: message.roomId,
         createdAt: message.createdAt,
-        userId: message.userId,
         excerpt,
         room: {
           id: message.room.id,
