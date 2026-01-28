@@ -109,6 +109,19 @@ function buildInternalLink(kind: string, id: string) {
   return `/${hash}`;
 }
 
+function toSafeExternalHref(value: string): string | null {
+  const raw = value.trim();
+  if (!raw) return null;
+  let parsed: URL;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    return null;
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null;
+  return parsed.toString();
+}
+
 const ALLOWED_INTERNAL_REF_KIND_SET = new Set<InternalRefKind>([
   'invoice',
   'estimate',
@@ -229,8 +242,7 @@ const InternalOpenLink = ({
   children?: React.ReactNode;
 }): JSX.Element => {
   const link = normalizeString(href);
-  const isOpen =
-    link.startsWith('/#/open') || link.startsWith('#/open') || link.startsWith('/#');
+  const isOpen = link.startsWith('/#/open') || link.startsWith('#/open');
   const safeHref = link || '#';
   const mergedStyle: React.CSSProperties = { ...(style || {}), color: '#2563eb' };
 
@@ -245,11 +257,11 @@ const InternalOpenLink = ({
         if (!isOpen) return;
         e.preventDefault();
         if (typeof window === 'undefined') return;
-        if (safeHref.startsWith('/#')) {
+        if (safeHref.startsWith('/#/open')) {
           window.location.hash = safeHref.slice(1);
           return;
         }
-        if (safeHref.startsWith('#')) {
+        if (safeHref.startsWith('#/open')) {
           window.location.hash = safeHref;
         }
       }}
@@ -733,11 +745,32 @@ export const AnnotationsCard: React.FC<AnnotationsCardProps> = ({
           {externalUrls.length === 0 && (
             <div style={{ fontSize: 12, color: '#64748b' }}>外部URLはありません</div>
           )}
-          {externalUrls.map((url, index) => (
-            <div key={`${url}:${index}`} style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-              <a href={url} target="_blank" rel="noreferrer" style={{ color: '#2563eb', wordBreak: 'break-all' }}>
-                {url}
-              </a>
+          {externalUrls.map((url, index) => {
+            const safeHref = toSafeExternalHref(url);
+            return (
+              <div
+                key={`${url}:${index}`}
+                style={{
+                  display: 'flex',
+                  gap: 8,
+                  alignItems: 'center',
+                  flexWrap: 'wrap',
+                }}
+              >
+                {safeHref ? (
+                  <a
+                    href={safeHref}
+                    target="_blank"
+                    rel="noreferrer"
+                    style={{ color: '#2563eb', wordBreak: 'break-all' }}
+                  >
+                    {url}
+                  </a>
+                ) : (
+                  <span style={{ color: '#64748b', wordBreak: 'break-all' }}>
+                    {url}
+                  </span>
+                )}
               <Button
                 variant="ghost"
                 size="small"
@@ -752,8 +785,9 @@ export const AnnotationsCard: React.FC<AnnotationsCardProps> = ({
               >
                 削除
               </Button>
-            </div>
-          ))}
+              </div>
+            );
+          })}
         </div>
       </Card>
 
