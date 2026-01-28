@@ -11,7 +11,7 @@ import {
   Textarea,
   Toast,
 } from '../ui';
-import { buildOpenHash, navigateToOpen } from '../utils/deepLink';
+import { buildOpenHash, navigateToOpen, parseOpenHash } from '../utils/deepLink';
 import { copyToClipboard } from '../utils/clipboard';
 
 type AnnotationTargetKind =
@@ -107,6 +107,69 @@ function escapeMarkdownLinkLabel(value: string) {
 function buildInternalLink(kind: string, id: string) {
   const hash = buildOpenHash({ kind, id });
   return `/${hash}`;
+}
+
+const ALLOWED_INTERNAL_REF_KIND_SET = new Set<InternalRefKind>([
+  'invoice',
+  'estimate',
+  'purchase_order',
+  'vendor_quote',
+  'vendor_invoice',
+  'expense',
+  'project',
+  'customer',
+  'vendor',
+  'time_entry',
+  'daily_report',
+  'leave_request',
+  'project_chat',
+  'room_chat',
+  'chat_message',
+]);
+
+function parseInternalRefInput(
+  value: string,
+): { kind: InternalRefKind; id: string } | null {
+  const raw = value.trim();
+  if (!raw) return null;
+
+  // Full URL (https://.../#/open?kind=...&id=...)
+  if (/^https?:\/\//i.test(raw)) {
+    try {
+      const url = new URL(raw);
+      const open = parseOpenHash(url.hash || '');
+      if (open && ALLOWED_INTERNAL_REF_KIND_SET.has(open.kind as InternalRefKind)) {
+        return { kind: open.kind as InternalRefKind, id: open.id };
+      }
+    } catch {
+      // fall through
+    }
+  }
+
+  // /#/open?... or #/open?...
+  const normalized = raw.startsWith('/#/open')
+    ? raw.slice(1)
+    : raw.startsWith('#/open')
+      ? raw
+      : '';
+  if (normalized) {
+    const open = parseOpenHash(normalized);
+    if (open && ALLOWED_INTERNAL_REF_KIND_SET.has(open.kind as InternalRefKind)) {
+      return { kind: open.kind as InternalRefKind, id: open.id };
+    }
+  }
+
+  // kind:id
+  const sep = raw.indexOf(':');
+  if (sep > 0) {
+    const kindRaw = raw.slice(0, sep).trim();
+    const id = raw.slice(sep + 1).trim();
+    if (id && ALLOWED_INTERNAL_REF_KIND_SET.has(kindRaw as InternalRefKind)) {
+      return { kind: kindRaw as InternalRefKind, id };
+    }
+  }
+
+  return null;
 }
 
 function parseApiError(payload: unknown) {
@@ -422,6 +485,22 @@ export const AnnotationsCard: React.FC<AnnotationsCardProps> = ({
     [setInternalRefs],
   );
 
+  const [manualRefInput, setManualRefInput] = useState('');
+
+  const addManualInternalRef = useCallback(() => {
+    const parsed = parseInternalRefInput(manualRefInput);
+    if (!parsed) {
+      setMessage({
+        variant: 'error',
+        title: '内部参照が不正です（deep link / kind:id）',
+      });
+      return;
+    }
+    addInternalRef({ kind: parsed.kind, id: parsed.id });
+    setManualRefInput('');
+    setMessage({ variant: 'success', title: '内部参照を追加しました' });
+  }, [addInternalRef, manualRefInput]);
+
   const insertRef = useCallback(
     async (candidate: RefCandidateItem) => {
       addInternalRef({
@@ -687,6 +766,23 @@ export const AnnotationsCard: React.FC<AnnotationsCardProps> = ({
         </div>
 
         <div style={{ display: 'grid', gap: 8, marginTop: 8 }}>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+            <Input
+              label="手動追加（deep link / kind:id）"
+              value={manualRefInput}
+              onChange={(e) => setManualRefInput(e.target.value)}
+              placeholder="/#/open?kind=chat_message&id=... または chat_message:<id>"
+              style={{ minWidth: 360 }}
+            />
+            <Button
+              variant="secondary"
+              size="small"
+              onClick={addManualInternalRef}
+              disabled={!manualRefInput.trim()}
+            >
+              追加
+            </Button>
+          </div>
           <Input
             label="候補検索"
             value={refQuery}
@@ -752,6 +848,15 @@ export const AnnotationsCard: React.FC<AnnotationsCardProps> = ({
                   >
                     {label}
                   </a>
+                  <Button
+                    variant="ghost"
+                    size="small"
+                    onClick={() =>
+                      insertIntoNotes(`[${escapeMarkdownLinkLabel(label)}](${url})`)
+                    }
+                  >
+                    挿入
+                  </Button>
                   <Button variant="ghost" size="small" onClick={() => copyLink('url', label, url)}>
                     コピー
                   </Button>
