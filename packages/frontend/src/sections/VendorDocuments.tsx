@@ -1,5 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { api, apiResponse } from '../api';
+import { AnnotationsCard } from '../components/AnnotationsCard';
+import { Button, Dialog } from '../ui';
 import { formatDateForFilename, openResponseInNewTab } from '../utils/download';
 
 type ProjectOption = {
@@ -147,6 +149,12 @@ const defaultVendorInvoiceForm: VendorInvoiceForm = {
 };
 
 export const VendorDocuments: React.FC = () => {
+  const [annotationTarget, setAnnotationTarget] = useState<{
+    kind: 'purchase_order' | 'vendor_quote' | 'vendor_invoice';
+    id: string;
+    projectId: string;
+    title: string;
+  } | null>(null);
   const [projects, setProjects] = useState<ProjectOption[]>([]);
   const [vendors, setVendors] = useState<VendorOption[]>([]);
   const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>([]);
@@ -712,6 +720,21 @@ export const VendorDocuments: React.FC = () => {
                     {poSendLogLoading[item.id] ? '取得中' : '送信履歴'}
                   </button>
                 </div>
+                <div style={{ marginTop: 6 }}>
+                  <button
+                    className="button secondary"
+                    onClick={() =>
+                      setAnnotationTarget({
+                        kind: 'purchase_order',
+                        id: item.id,
+                        projectId: item.projectId,
+                        title: `発注書: ${item.poNo || missingNumberLabel}`,
+                      })
+                    }
+                  >
+                    注釈
+                  </button>
+                </div>
                 {poSendLogMessage[item.id] && (
                   <div style={{ color: '#dc2626', marginTop: 4 }}>
                     {poSendLogMessage[item.id]}
@@ -870,6 +893,21 @@ export const VendorDocuments: React.FC = () => {
                 / {formatAmount(item.totalAmount, item.currency)}
                 <div style={{ fontSize: 12, color: '#64748b' }}>
                   発行日: {formatDate(item.issueDate)}
+                </div>
+                <div style={{ marginTop: 6 }}>
+                  <button
+                    className="button secondary"
+                    onClick={() =>
+                      setAnnotationTarget({
+                        kind: 'vendor_quote',
+                        id: item.id,
+                        projectId: item.projectId,
+                        title: `仕入見積: ${item.quoteNo || missingNumberLabel}`,
+                      })
+                    }
+                  >
+                    注釈
+                  </button>
                 </div>
               </li>
             ))}
@@ -1041,12 +1079,47 @@ export const VendorDocuments: React.FC = () => {
                     </button>
                   </div>
                 )}
+                <div style={{ marginTop: 6 }}>
+                  <button
+                    className="button secondary"
+                    onClick={() =>
+                      setAnnotationTarget({
+                        kind: 'vendor_invoice',
+                        id: item.id,
+                        projectId: item.projectId,
+                        title: `仕入請求: ${item.vendorInvoiceNo || missingNumberLabel}`,
+                      })
+                    }
+                  >
+                    注釈
+                  </button>
+                </div>
               </li>
             ))}
             {vendorInvoices.length === 0 && <li>データなし</li>}
           </ul>
         </div>
       </div>
+      <Dialog
+        open={Boolean(annotationTarget)}
+        onClose={() => setAnnotationTarget(null)}
+        title={annotationTarget?.title || '注釈'}
+        size="large"
+        footer={
+          <Button variant="secondary" onClick={() => setAnnotationTarget(null)}>
+            閉じる
+          </Button>
+        }
+      >
+        {annotationTarget && (
+          <AnnotationsCard
+            targetKind={annotationTarget.kind}
+            targetId={annotationTarget.id}
+            projectId={annotationTarget.projectId}
+            title={annotationTarget.title}
+          />
+        )}
+      </Dialog>
     </div>
   );
 };
