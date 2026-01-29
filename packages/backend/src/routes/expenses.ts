@@ -8,6 +8,7 @@ import { auditContextFromRequest, logAudit } from '../services/audit.js';
 import { logReassignment } from '../services/reassignmentLog.js';
 import { parseDateParam } from '../utils/date.js';
 import { findPeriodLock, toPeriodKey } from '../services/periodLock.js';
+import { evaluateActionPolicyWithFallback } from '../services/actionPolicy.js';
 
 export async function registerExpenseRoutes(app: FastifyInstance) {
   app.post(
@@ -93,6 +94,9 @@ export async function registerExpenseRoutes(app: FastifyInstance) {
     { preHandler: requireRole(['admin', 'mgmt', 'user']) },
     async (req, reply) => {
       const { id } = req.params as { id: string };
+      const body = req.body as any;
+      const reasonText =
+        typeof body?.reasonText === 'string' ? body.reasonText.trim() : '';
       const expense = await prisma.expense.findUnique({ where: { id } });
       if (!expense) {
         return reply.code(404).send({ error: 'not_found' });
@@ -105,6 +109,42 @@ export async function registerExpenseRoutes(app: FastifyInstance) {
         expense.userId !== userId
       ) {
         return reply.code(403).send({ error: 'forbidden' });
+      }
+
+      const policyRes = await evaluateActionPolicyWithFallback({
+        flowType: FlowTypeValue.expense,
+        actionKey: 'submit',
+        actor: {
+          userId: req.user?.userId ?? null,
+          roles: req.user?.roles || [],
+          groupIds: req.user?.groupIds || [],
+        },
+        reasonText,
+        state: { status: expense.status, projectId: expense.projectId },
+        targetTable: 'expenses',
+        targetId: id,
+      });
+      if (policyRes.policyApplied && !policyRes.allowed) {
+        if (policyRes.reason === 'reason_required') {
+          return reply.status(400).send({
+            error: {
+              code: 'REASON_REQUIRED',
+              message: 'reasonText is required for override',
+              details: { matchedPolicyId: policyRes.matchedPolicyId ?? null },
+            },
+          });
+        }
+        return reply.status(403).send({
+          error: {
+            code: 'ACTION_POLICY_DENIED',
+            message: 'Expense cannot be submitted',
+            details: {
+              reason: policyRes.reason,
+              matchedPolicyId: policyRes.matchedPolicyId ?? null,
+              guardFailures: policyRes.guardFailures ?? null,
+            },
+          },
+        });
       }
       const { updated } = await submitApprovalWithUpdate({
         flowType: FlowTypeValue.expense,
