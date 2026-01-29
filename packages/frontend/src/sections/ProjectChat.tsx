@@ -234,6 +234,7 @@ export const ProjectChat: React.FC = () => {
   const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
   const [filterTag, setFilterTag] = useState('');
   const [items, setItems] = useState<ChatMessage[]>([]);
+  const [nowMs, setNowMs] = useState(0);
   const [message, setMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
@@ -262,6 +263,35 @@ export const ProjectChat: React.FC = () => {
   } | null>(null);
   const [pendingScrollMessageId, setPendingScrollMessageId] = useState('');
   const [highlightMessageId, setHighlightMessageId] = useState('');
+
+  const hasActiveAckDeadline = items.some((item) => {
+    const dueAt = item.ackRequest?.dueAt
+      ? new Date(item.ackRequest.dueAt)
+      : null;
+    if (!dueAt || Number.isNaN(dueAt.getTime())) return false;
+    const requiredUserIds = normalizeStringArray(
+      item.ackRequest?.requiredUserIds,
+    );
+    const ackedUserIds = normalizeStringArray(
+      item.ackRequest?.acks?.map((ack) => ack.userId),
+    );
+    const requiredCount = requiredUserIds.length;
+    if (requiredCount <= 0) return false;
+    const ackedCount = requiredUserIds.filter((userId) =>
+      ackedUserIds.includes(userId),
+    ).length;
+    return ackedCount < requiredCount;
+  });
+
+  useEffect(() => {
+    if (!hasActiveAckDeadline) {
+      setNowMs(0);
+      return;
+    }
+    setNowMs(Date.now());
+    const timer = window.setInterval(() => setNowMs(Date.now()), 60_000);
+    return () => window.clearInterval(timer);
+  }, [hasActiveAckDeadline]);
 
   const buildMentionsPayload = () => {
     const users = Array.from(new Set(mentionUserIds))
@@ -1081,7 +1111,8 @@ export const ProjectChat: React.FC = () => {
             requiredCount > 0 &&
             ackedCount < requiredCount &&
             dueAt &&
-            dueAt.getTime() < Date.now();
+            nowMs > 0 &&
+            dueAt.getTime() < nowMs;
           const canAck =
             item.ackRequest?.id &&
             requiredUserIds.includes(currentUserId) &&

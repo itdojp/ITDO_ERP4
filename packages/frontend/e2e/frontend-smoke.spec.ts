@@ -896,6 +896,32 @@ test('frontend smoke chat hr analytics @extended', async ({ page }) => {
   await expect(ackItem.getByText('確認状況: 0/1')).toBeVisible();
   await ackItem.getByRole('button', { name: 'OK' }).click();
   await expect(ackItem.getByText('確認状況: 1/1')).toBeVisible();
+
+  const overdueDueAt = new Date(Date.now() - 60_000).toISOString();
+  const overdueAckMessage = `E2E ack overdue ${id}`;
+  const overdueAckRes = await page.request.post(
+    `${apiBase}/projects/${authState.projectIds[0]}/chat-ack-requests`,
+    {
+      data: {
+        body: overdueAckMessage,
+        requiredUserIds: ['e2e-overdue-target'],
+        dueAt: overdueDueAt,
+        tags: ['e2e', 'ack'],
+      },
+      headers: {
+        'x-user-id': authState.userId,
+        'x-roles': authState.roles.join(','),
+      },
+    },
+  );
+  expect(overdueAckRes.ok()).toBeTruthy();
+  await chatSection.getByRole('button', { name: '読み込み' }).click();
+  const overdueItem = chatSection.locator('li', { hasText: overdueAckMessage });
+  await expect(overdueItem).toBeVisible({ timeout: actionTimeout });
+  const overdueDueLabel = overdueItem.getByText(/期限:/);
+  await expect(overdueDueLabel).toBeVisible();
+  await expect(overdueDueLabel).toContainText('期限超過');
+  await expect(overdueDueLabel).toHaveCSS('color', 'rgb(220, 38, 38)');
   await captureSection(chatSection, '12-project-chat.png');
 
   await chatSection.getByRole('button', { name: '要約' }).click();
@@ -1060,6 +1086,35 @@ test('frontend smoke room chat (private_group/dm) @extended', async ({
   await expect(
     messageList.locator('.card', { hasText: messageText }).first(),
   ).toBeVisible({ timeout: actionTimeout });
+
+  const activeRoomId = await roomSelect.inputValue();
+  const overdueRoomDueAt = new Date(Date.now() - 60_000).toISOString();
+  const overdueRoomAckMessage = `E2E room ack overdue ${run}`;
+  const overdueRoomAckRes = await page.request.post(
+    `${apiBase}/chat-rooms/${activeRoomId}/ack-requests`,
+    {
+      data: {
+        body: overdueRoomAckMessage,
+        requiredUserIds: ['e2e-overdue-target'],
+        dueAt: overdueRoomDueAt,
+        tags: ['e2e', 'ack'],
+      },
+      headers: {
+        'x-user-id': authState.userId,
+        'x-roles': authState.roles.join(','),
+      },
+    },
+  );
+  expect(overdueRoomAckRes.ok()).toBeTruthy();
+  await roomChatSection.getByRole('button', { name: '再読込' }).click();
+  const overdueRoomAckItem = messageList
+    .locator('.card', { hasText: overdueRoomAckMessage })
+    .first();
+  await expect(overdueRoomAckItem).toBeVisible({ timeout: actionTimeout });
+  const overdueRoomDueLabel = overdueRoomAckItem.getByText(/期限:/);
+  await expect(overdueRoomDueLabel).toBeVisible();
+  await expect(overdueRoomDueLabel).toContainText('期限超過');
+  await expect(overdueRoomDueLabel).toHaveCSS('color', 'rgb(220, 38, 38)');
 
   const previousRoomId = await roomSelect.inputValue();
   const partnerUserId = `e2e-partner-${run}`;
