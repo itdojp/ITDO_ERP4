@@ -155,6 +155,42 @@ function buildChatMentionEmailBody(notification: {
     .join('\n');
 }
 
+function buildChatAckRequiredEmailSubject(meta: {
+  projectCode?: string | null;
+  projectName?: string | null;
+}) {
+  const label = meta.projectCode || meta.projectName;
+  return label ? `ERP4: ${label} 確認依頼` : 'ERP4: 確認依頼';
+}
+
+function buildChatAckRequiredEmailBody(notification: {
+  userId: string;
+  createdAt: Date;
+  project?: { code?: string | null; name?: string | null } | null;
+  messageId?: string | null;
+  payload?: Prisma.JsonValue | null;
+}) {
+  const projectLabel = notification.project
+    ? `${notification.project.code || '-'} / ${notification.project.name || '-'}`
+    : '-';
+  const payload = notification.payload as Record<string, unknown> | null;
+  const fromUserId = normalizeString(payload?.fromUserId);
+  const excerpt = normalizeString(payload?.excerpt);
+  const dueAt = normalizeString(payload?.dueAt);
+  return [
+    'chat ack required notification',
+    `to: ${notification.userId}`,
+    `from: ${fromUserId || '-'}`,
+    `project: ${projectLabel}`,
+    `createdAt: ${notification.createdAt.toISOString()}`,
+    `messageId: ${notification.messageId || '-'}`,
+    dueAt ? `dueAt: ${dueAt}` : undefined,
+    excerpt ? `excerpt: ${excerpt}` : undefined,
+  ]
+    .filter((line) => typeof line === 'string' && line.trim() !== '')
+    .join('\n');
+}
+
 function resolveEmailNotificationKinds() {
   const raw = process.env.NOTIFICATION_EMAIL_KINDS;
   if (!raw) return ['chat_mention', 'daily_report_missing'];
@@ -369,6 +405,12 @@ export async function runNotificationEmailDeliveries(options: {
         projectName: notification.project?.name,
       });
       body = buildChatMentionEmailBody(notification);
+    } else if (notification.kind === 'chat_ack_required') {
+      subject = buildChatAckRequiredEmailSubject({
+        projectCode: notification.project?.code,
+        projectName: notification.project?.name,
+      });
+      body = buildChatAckRequiredEmailBody(notification);
     } else if (notification.kind === 'daily_report_missing') {
       const payload = notification.payload as
         | { reportDate?: string }

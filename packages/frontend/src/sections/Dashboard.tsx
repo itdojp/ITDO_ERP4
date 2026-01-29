@@ -122,6 +122,11 @@ function formatNotificationLabel(item: AppNotification) {
     if (fromUserId) return `${fromUserId} からメンション`;
     return 'チャットでメンション';
   }
+  if (item.kind === 'chat_ack_required') {
+    const fromUserId = resolveFromUserId(item.payload);
+    if (fromUserId) return `${fromUserId} から確認依頼`;
+    return '確認依頼';
+  }
   return item.kind;
 }
 

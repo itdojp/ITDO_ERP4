@@ -18,7 +18,10 @@ import {
   getChatAttachmentScanProvider,
   scanChatAttachment,
 } from '../services/chatAttachmentScan.js';
-import { createChatMentionNotifications } from '../services/appNotifications.js';
+import {
+  createChatAckRequiredNotifications,
+  createChatMentionNotifications,
+} from '../services/appNotifications.js';
 
 function parseDateParam(value?: string) {
   if (!value) return null;
@@ -373,6 +376,52 @@ export async function registerChatRoutes(app: FastifyInstance) {
       options.req.log?.warn(
         { err },
         'Failed to create chat mention notifications',
+      );
+    }
+  }
+
+  async function tryCreateChatAckRequiredNotifications(options: {
+    req: any;
+    projectId: string;
+    messageId: string;
+    messageBody: string;
+    senderUserId: string;
+    requiredUserIds: string[];
+    dueAt?: Date | null;
+  }) {
+    try {
+      const notificationResult = await createChatAckRequiredNotifications({
+        projectId: options.projectId,
+        messageId: options.messageId,
+        messageBody: options.messageBody,
+        senderUserId: options.senderUserId,
+        requiredUserIds: options.requiredUserIds,
+        dueAt: options.dueAt ? options.dueAt.toISOString() : null,
+      });
+      if (notificationResult.created <= 0) return;
+
+      await logAudit({
+        action: 'chat_ack_required_notifications_created',
+        targetTable: 'chat_messages',
+        targetId: options.messageId,
+        metadata: {
+          projectId: options.projectId,
+          messageId: options.messageId,
+          createdCount: notificationResult.created,
+          recipientCount: notificationResult.recipients.length,
+          recipientUserIds: notificationResult.recipients.slice(0, 20),
+          recipientsTruncated: notificationResult.truncated,
+          requiredUserCount: options.requiredUserIds.length,
+          senderExcluded:
+            notificationResult.recipients.includes(options.senderUserId) ===
+              false && options.requiredUserIds.includes(options.senderUserId),
+        } as Prisma.InputJsonValue,
+        ...auditContextFromRequest(options.req),
+      });
+    } catch (err) {
+      options.req.log?.warn(
+        { err },
+        'Failed to create chat ack required notifications',
       );
     }
   }
@@ -877,6 +926,21 @@ export async function registerChatRoutes(app: FastifyInstance) {
           },
         },
       });
+      await logAudit({
+        action: 'chat_ack_request_created',
+        targetTable: 'chat_ack_requests',
+        targetId: message.ackRequest?.id,
+        metadata: {
+          projectId,
+          roomId: projectId,
+          messageId: message.id,
+          requiredUserCount: requiredUserIds.length,
+          dueAt: message.ackRequest?.dueAt
+            ? message.ackRequest.dueAt.toISOString()
+            : null,
+        } as Prisma.InputJsonValue,
+        ...auditContextFromRequest(req, { userId }),
+      });
       await logChatMessageMentions({
         req,
         messageId: message.id,
@@ -894,6 +958,15 @@ export async function registerChatRoutes(app: FastifyInstance) {
         mentionsAll,
         mentionUserIds,
         mentionGroupIds,
+      });
+      await tryCreateChatAckRequiredNotifications({
+        req,
+        projectId,
+        messageId: message.id,
+        messageBody: message.body,
+        senderUserId: userId,
+        requiredUserIds,
+        dueAt,
       });
       return message;
     },
@@ -968,6 +1041,9 @@ export async function registerChatRoutes(app: FastifyInstance) {
         });
       }
 
+      const alreadyAcked = requestItem.acks.some(
+        (ack) => ack.userId === userId,
+      );
       await prisma.chatAck.upsert({
         where: {
           requestId_userId: {
@@ -986,6 +1062,21 @@ export async function registerChatRoutes(app: FastifyInstance) {
         where: { id: requestItem.id },
         include: { acks: true },
       });
+      if (!alreadyAcked) {
+        await logAudit({
+          action: 'chat_ack_added',
+          targetTable: 'chat_ack_requests',
+          targetId: requestItem.id,
+          metadata: {
+            roomId: requestItem.roomId,
+            messageId: requestItem.messageId,
+            userId,
+            requiredUserCount: requiredUserIds.length,
+            ackedCount: updated?.acks?.length ?? null,
+          } as Prisma.InputJsonValue,
+          ...auditContextFromRequest(req, { userId }),
+        });
+      }
       return updated;
     },
   );
