@@ -38,7 +38,7 @@
 ## 差分/課題
 
 - OKトラッキング自体は実装済みだが、対象者指定が `requiredUserIds` のみで、グループ/ロール指定や候補検索がない
-- `requiredUserIds` に対する通知がメンション依存（ack専用通知がない）
+- （履歴）以前は `requiredUserIds` に対する通知がメンション依存だったが、現在は AppNotification（`kind=chat_ack_required`）による ack 専用通知を作成済み
 - 期限超過/撤回/OK取り消し（ack revoke）などの運用と状態遷移が未確定
 - 承認フローとチャットの連携が未整理
 

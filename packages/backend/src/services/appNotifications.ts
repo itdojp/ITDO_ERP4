@@ -102,12 +102,34 @@ export async function createChatAckRequiredNotifications(
   });
   recipients.delete(options.senderUserId);
 
+  const truncated = recipients.size > 50;
   const targetUserIds = Array.from(recipients).slice(0, 50);
   if (targetUserIds.length === 0) {
     return {
       created: 0,
       recipients: [] as string[],
       truncated: false,
+    };
+  }
+
+  // Keep this operation idempotent at the application layer (schema has no unique constraint).
+  const existing = await prisma.appNotification.findMany({
+    where: {
+      kind: 'chat_ack_required',
+      messageId: options.messageId,
+      userId: { in: targetUserIds },
+    },
+    select: { userId: true },
+  });
+  const existingUserIds = new Set(existing.map((item) => item.userId));
+  const createUserIds = targetUserIds.filter(
+    (userId) => !existingUserIds.has(userId),
+  );
+  if (createUserIds.length === 0) {
+    return {
+      created: 0,
+      recipients: [] as string[],
+      truncated,
     };
   }
 
@@ -119,7 +141,7 @@ export async function createChatAckRequiredNotifications(
   };
 
   const created = await prisma.appNotification.createMany({
-    data: targetUserIds.map((userId) => ({
+    data: createUserIds.map((userId) => ({
       userId,
       kind: 'chat_ack_required',
       projectId: options.projectId,
@@ -128,12 +150,11 @@ export async function createChatAckRequiredNotifications(
       createdBy: options.senderUserId,
       updatedBy: options.senderUserId,
     })),
-    skipDuplicates: true,
   });
 
   return {
     created: created.count,
-    recipients: targetUserIds,
-    truncated: recipients.size > targetUserIds.length,
+    recipients: createUserIds,
+    truncated,
   };
 }
