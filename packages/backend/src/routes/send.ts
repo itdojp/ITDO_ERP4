@@ -275,13 +275,56 @@ export async function registerSendRoutes(app: FastifyInstance) {
     { preHandler: requireRole(['admin', 'mgmt']) },
     async (req, reply) => {
       const { id } = req.params as { id: string };
-      const { templateId, templateSettingId } = req.query as {
+      const {
+        templateId,
+        templateSettingId,
+        reasonText: reasonTextRaw,
+      } = req.query as {
         templateId?: string;
         templateSettingId?: string;
+        reasonText?: string;
       };
+      const reasonText =
+        typeof reasonTextRaw === 'string' ? reasonTextRaw.trim() : '';
       const estimate = await prisma.estimate.findUnique({ where: { id } });
       if (!estimate) {
         return reply.code(404).send({ error: 'not_found' });
+      }
+
+      const policyRes = await evaluateActionPolicyWithFallback({
+        flowType: FlowTypeValue.estimate,
+        actionKey: 'send',
+        actor: {
+          userId: req.user?.userId ?? null,
+          roles: req.user?.roles || [],
+          groupIds: req.user?.groupIds || [],
+        },
+        reasonText,
+        state: { status: estimate.status, projectId: estimate.projectId },
+        targetTable: 'estimates',
+        targetId: id,
+      });
+      if (policyRes.policyApplied && !policyRes.allowed) {
+        if (policyRes.reason === 'reason_required') {
+          return reply.status(400).send({
+            error: {
+              code: 'REASON_REQUIRED',
+              message: 'reasonText is required for override',
+              details: { matchedPolicyId: policyRes.matchedPolicyId ?? null },
+            },
+          });
+        }
+        return reply.status(403).send({
+          error: {
+            code: 'ACTION_POLICY_DENIED',
+            message: 'Estimate cannot be sent',
+            details: {
+              reason: policyRes.reason,
+              matchedPolicyId: policyRes.matchedPolicyId ?? null,
+              guardFailures: policyRes.guardFailures ?? null,
+            },
+          },
+        });
       }
       const resolved = await resolveTemplateContext('estimate', {
         templateId,
@@ -560,13 +603,56 @@ export async function registerSendRoutes(app: FastifyInstance) {
     { preHandler: requireRole(['admin', 'mgmt']) },
     async (req, reply) => {
       const { id } = req.params as { id: string };
-      const { templateId, templateSettingId } = req.query as {
+      const {
+        templateId,
+        templateSettingId,
+        reasonText: reasonTextRaw,
+      } = req.query as {
         templateId?: string;
         templateSettingId?: string;
+        reasonText?: string;
       };
+      const reasonText =
+        typeof reasonTextRaw === 'string' ? reasonTextRaw.trim() : '';
       const po = await prisma.purchaseOrder.findUnique({ where: { id } });
       if (!po) {
         return reply.code(404).send({ error: 'not_found' });
+      }
+
+      const policyRes = await evaluateActionPolicyWithFallback({
+        flowType: FlowTypeValue.purchase_order,
+        actionKey: 'send',
+        actor: {
+          userId: req.user?.userId ?? null,
+          roles: req.user?.roles || [],
+          groupIds: req.user?.groupIds || [],
+        },
+        reasonText,
+        state: { status: po.status, projectId: po.projectId },
+        targetTable: 'purchase_orders',
+        targetId: id,
+      });
+      if (policyRes.policyApplied && !policyRes.allowed) {
+        if (policyRes.reason === 'reason_required') {
+          return reply.status(400).send({
+            error: {
+              code: 'REASON_REQUIRED',
+              message: 'reasonText is required for override',
+              details: { matchedPolicyId: policyRes.matchedPolicyId ?? null },
+            },
+          });
+        }
+        return reply.status(403).send({
+          error: {
+            code: 'ACTION_POLICY_DENIED',
+            message: 'PurchaseOrder cannot be sent',
+            details: {
+              reason: policyRes.reason,
+              matchedPolicyId: policyRes.matchedPolicyId ?? null,
+              guardFailures: policyRes.guardFailures ?? null,
+            },
+          },
+        });
       }
       const resolved = await resolveTemplateContext('purchase_order', {
         templateId,
