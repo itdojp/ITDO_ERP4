@@ -7108,6 +7108,25 @@
         }
       }
     },
+    "/vendor-invoices/{id}/submit": {
+      "post": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
     "/vendor-quotes": {
       "get": {
         "responses": {

@@ -50,7 +50,7 @@ ActionPolicy/WorkflowDefinition で参照する **共通キー**として扱う�
 - estimate: `submit` -> `POST /estimates/:id/submit`, `send` -> `POST /estimates/:id/send`
 - invoice: `submit` -> `POST /invoices/:id/submit`, `send` -> `POST /invoices/:id/send`, `mark_paid` -> `POST /invoices/:id/mark-paid`
 - purchase_order: `submit` -> `POST /purchase-orders/:id/submit`, `send` -> `POST /purchase-orders/:id/send`
-- vendor_invoice: `submit` 相当 -> `POST /vendor-invoices/:id/approve`（命名差分あり）
+- vendor_invoice: `submit` -> `POST /vendor-invoices/:id/submit`（後方互換: `/approve` も残す）
 - expense: `submit` -> `POST /expenses/:id/submit`
 - leave: `submit` -> `POST /leave-requests/:id/submit`
 - time: `submit` -> `POST /time-entries/:id/submit`, `edit` -> `PATCH /time-entries/:id`

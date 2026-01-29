@@ -568,7 +568,7 @@ export const VendorDocuments: React.FC = () => {
     try {
       setInvoiceActionBusy(id, true);
       setInvoiceResult(null);
-      await api(`/vendor-invoices/${id}/approve`, { method: 'POST' });
+      await api(`/vendor-invoices/${id}/submit`, { method: 'POST' });
       setInvoiceResult({ text: '仕入請求を承認依頼しました', type: 'success' });
       loadVendorInvoices();
     } catch (err) {

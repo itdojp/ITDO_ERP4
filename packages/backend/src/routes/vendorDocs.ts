@@ -1,4 +1,4 @@
-import { FastifyInstance } from 'fastify';
+import { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { submitApprovalWithUpdate } from '../services/approval.js';
 import { FlowTypeValue, DocStatusValue } from '../types.js';
 import { vendorInvoiceSchema, vendorQuoteSchema } from './validators.js';
@@ -212,79 +212,92 @@ export async function registerVendorDocRoutes(app: FastifyInstance) {
     },
   );
 
-  app.post(
-    '/vendor-invoices/:id/approve',
-    { preHandler: requireRole(['admin', 'mgmt']) },
-    async (req, reply) => {
-      const { id } = req.params as { id: string };
-      const body = req.body as any;
-      const reasonText =
-        typeof body?.reasonText === 'string' ? body.reasonText.trim() : '';
-      const vendorInvoice = await prisma.vendorInvoice.findUnique({
-        where: { id },
-        select: { status: true, projectId: true },
+  const submitVendorInvoiceApproval = async (
+    req: FastifyRequest,
+    reply: FastifyReply,
+  ) => {
+    const { id } = req.params as { id: string };
+    const body = req.body as any;
+    const reasonText =
+      typeof body?.reasonText === 'string' ? body.reasonText.trim() : '';
+    const vendorInvoice = await prisma.vendorInvoice.findUnique({
+      where: { id },
+      select: { status: true, projectId: true },
+    });
+    if (vendorInvoice) {
+      const policyRes = await evaluateActionPolicyWithFallback({
+        flowType: FlowTypeValue.vendor_invoice,
+        actionKey: 'submit',
+        actor: {
+          userId: req.user?.userId ?? null,
+          roles: req.user?.roles || [],
+          groupIds: req.user?.groupIds || [],
+        },
+        reasonText,
+        state: {
+          status: vendorInvoice.status,
+          projectId: vendorInvoice.projectId,
+        },
+        targetTable: 'vendor_invoices',
+        targetId: id,
       });
-      if (vendorInvoice) {
-        const policyRes = await evaluateActionPolicyWithFallback({
-          flowType: FlowTypeValue.vendor_invoice,
-          actionKey: 'submit',
-          actor: {
-            userId: req.user?.userId ?? null,
-            roles: req.user?.roles || [],
-            groupIds: req.user?.groupIds || [],
-          },
-          reasonText,
-          state: {
-            status: vendorInvoice.status,
-            projectId: vendorInvoice.projectId,
-          },
-          targetTable: 'vendor_invoices',
-          targetId: id,
-        });
-        if (policyRes.policyApplied && !policyRes.allowed) {
-          if (policyRes.reason === 'reason_required') {
-            return reply.status(400).send({
-              error: {
-                code: 'REASON_REQUIRED',
-                message: 'reasonText is required for override',
-                details: { matchedPolicyId: policyRes.matchedPolicyId ?? null },
-              },
-            });
-          }
-          return reply.status(403).send({
+      if (policyRes.policyApplied && !policyRes.allowed) {
+        if (policyRes.reason === 'reason_required') {
+          return reply.status(400).send({
             error: {
-              code: 'ACTION_POLICY_DENIED',
-              message: 'VendorInvoice cannot be submitted',
-              details: {
-                reason: policyRes.reason,
-                matchedPolicyId: policyRes.matchedPolicyId ?? null,
-                guardFailures: policyRes.guardFailures ?? null,
-              },
+              code: 'REASON_REQUIRED',
+              message: 'reasonText is required for override',
+              details: { matchedPolicyId: policyRes.matchedPolicyId ?? null },
             },
           });
         }
-        await logActionPolicyOverrideIfNeeded({
-          req,
-          flowType: FlowTypeValue.vendor_invoice,
-          actionKey: 'submit',
-          targetTable: 'vendor_invoices',
-          targetId: id,
-          reasonText,
-          result: policyRes,
+        return reply.status(403).send({
+          error: {
+            code: 'ACTION_POLICY_DENIED',
+            message: 'VendorInvoice cannot be submitted',
+            details: {
+              reason: policyRes.reason,
+              matchedPolicyId: policyRes.matchedPolicyId ?? null,
+              guardFailures: policyRes.guardFailures ?? null,
+            },
+          },
         });
       }
-      const { updated } = await submitApprovalWithUpdate({
+      await logActionPolicyOverrideIfNeeded({
+        req,
         flowType: FlowTypeValue.vendor_invoice,
+        actionKey: 'submit',
         targetTable: 'vendor_invoices',
         targetId: id,
-        update: (tx) =>
-          tx.vendorInvoice.update({
-            where: { id },
-            data: { status: DocStatusValue.pending_qa },
-          }),
-        createdBy: req.user?.userId,
+        reasonText,
+        result: policyRes,
       });
-      return updated;
-    },
+    }
+    const { updated } = await submitApprovalWithUpdate({
+      flowType: FlowTypeValue.vendor_invoice,
+      targetTable: 'vendor_invoices',
+      targetId: id,
+      update: (tx) =>
+        tx.vendorInvoice.update({
+          where: { id },
+          data: { status: DocStatusValue.pending_qa },
+        }),
+      createdBy: req.user?.userId,
+    });
+    return updated;
+  };
+
+  app.post(
+    '/vendor-invoices/:id/approve',
+    { preHandler: requireRole(['admin', 'mgmt']) },
+    submitVendorInvoiceApproval,
+  );
+
+  // Alias for consistency: other flowTypes use `/submit` for approval submission.
+  // Keep `/approve` for backward compatibility.
+  app.post(
+    '/vendor-invoices/:id/submit',
+    { preHandler: requireRole(['admin', 'mgmt']) },
+    submitVendorInvoiceApproval,
   );
 }

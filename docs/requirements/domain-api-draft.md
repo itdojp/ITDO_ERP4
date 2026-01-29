@@ -65,7 +65,7 @@
 - Vendor Docs
   - `POST /vendor-quotes` {project_id, vendor_id, quote_no?, total_amount, currency, issue_date, document_url}
   - `POST /vendor-invoices` {project_id, vendor_id, vendor_invoice_no?, total_amount, currency, received_date, due_date, document_url}
-  - `POST /vendor-invoices/:id/approve`（承認フロー起動）
+  - `POST /vendor-invoices/:id/submit`（承認フロー起動、後方互換: `/approve` も残す）
 - Time
   - `POST /time-entries` {project_id, task_id?, work_date, minutes, work_type, location, notes}
   - `PATCH /time-entries/:id` 更新（重要項目変更は承認フロー起動）

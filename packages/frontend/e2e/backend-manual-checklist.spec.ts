@@ -319,7 +319,7 @@ test('backend manual checklist: members/vendors/time/expenses/wellbeing @extende
   await ensureOk(vendorInvoiceRes);
   const vendorInvoice = await vendorInvoiceRes.json();
   const approveRes = await request.post(
-    `${apiBase}/vendor-invoices/${encodeURIComponent(vendorInvoice.id)}/approve`,
+    `${apiBase}/vendor-invoices/${encodeURIComponent(vendorInvoice.id)}/submit`,
     { headers: adminHeaders },
   );
   await ensureOk(approveRes);
