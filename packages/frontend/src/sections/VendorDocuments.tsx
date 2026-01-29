@@ -368,6 +368,8 @@ export const VendorDocuments: React.FC = () => {
   const missingNumberLabel = '(番号未設定)';
   const isVendorInvoiceSubmittableStatus = (status: string) =>
     status === 'received' || status === 'draft';
+  const isVendorInvoicePoLinkReasonRequiredStatus = (status: string) =>
+    status !== 'received' && status !== 'draft' && status !== 'rejected';
   const normalizeCurrency = (value: string) =>
     value.trim().toUpperCase().slice(0, 3);
 
@@ -1278,7 +1280,13 @@ export const VendorDocuments: React.FC = () => {
                   prev ? { ...prev, reasonText: e.target.value } : prev,
                 )
               }
-              placeholder="変更理由（pending_qa 以降は必須）"
+              placeholder={
+                isVendorInvoicePoLinkReasonRequiredStatus(
+                  invoicePoLinkDialog.invoice.status,
+                )
+                  ? '変更理由（必須）'
+                  : '変更理由（任意）'
+              }
             />
             {invoicePoLinkResult && (
               <p
