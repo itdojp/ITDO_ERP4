@@ -22,7 +22,12 @@ function normalizeString(value: unknown) {
 
 function isVendorInvoicePreSubmitStatus(status: string) {
   // VendorInvoice is created in `received` status. Some legacy flows may still use `draft`.
-  return status === DocStatusValue.received || status === DocStatusValue.draft;
+  // When rejected, the invoice is typically returned for correction (treated as editable in normal operations).
+  return (
+    status === DocStatusValue.received ||
+    status === DocStatusValue.draft ||
+    status === DocStatusValue.rejected
+  );
 }
 
 export async function registerVendorDocRoutes(app: FastifyInstance) {
