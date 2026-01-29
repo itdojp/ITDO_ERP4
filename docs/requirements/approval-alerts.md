@@ -7,7 +7,7 @@
 ### 見積 / 請求
 - ステート: `draft` → `pending_qa`(管理部) → `pending_exec`(経営) → `approved` → `sent`(請求のみ) → `paid` / `rejected` / `cancelled`
 - 小額/定期スキップ: approval_rule 条件で `pending_exec` をバイパスし `approved` へ。条件は金額上限・定期フラグ等を管理画面で設定。
-- 差戻し: どのステップからも `returned` → 修正後 `pending_*` へ再申請。
+- 差戻し: `reject` により `rejected` へ。修正後 `submit` で `pending_*` へ再申請。
 
 ### 経費
 - ステート: `draft` → `pending_qa`(管理部 or 経理) → `pending_exec`(金額閾値超の場合) → `approved` / `rejected`。

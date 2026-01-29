@@ -28,7 +28,7 @@
 - **Guard**: 期間締め/案件closed/editableDays 等の横断判定部品（管理画面から「定義済み部品」を選択）。
 - **Handler**: 送信/入金確認など副作用を伴う処理（安全性のためコード側に固定し、管理画面で任意スクリプトは許容しない）。
 
-## actionKey 辞書（暫定/実装済み中心）
+## actionKey 辞書（現行 + 予約）
 
 ActionPolicy/WorkflowDefinition で参照する **共通キー**として扱う。
 
@@ -43,7 +43,13 @@ ActionPolicy/WorkflowDefinition で参照する **共通キー**として扱う�
 
 注:
 
-- `cancel` / `reject` / `return`（差戻し）等の語彙は、現行実装（DocStatus）と要件差分が残っているため Phase 0 で確定する。
+- 差戻しは `reject`（`status=rejected`）として扱う。`returned` 状態は導入しない（現行 `DocStatus` と整合）。
+- 申請取り下げは承認インスタンスの `cancel`（`POST /approval-instances/:id/cancel`）で表現し、対象文書の status は `resetTargetStatus` により pre-submit 相当へ戻る。
+
+### 承認インスタンス操作（現行）
+
+- `approve`/`reject`: `POST /approval-instances/:id/act`（body: `{ action: 'approve' | 'reject', reason? }`）
+- `cancel`: `POST /approval-instances/:id/cancel`（body: `{ reason }`）
 
 ### FlowType別の主な対応エンドポイント（現行）
 
@@ -235,4 +241,3 @@ ActionPolicy は「どの state で、誰が、どの action を実行できる�
 - reject の集計ルール（any reject / quorum reject / veto 等）
 - approver の表現（group/user/role の最終仕様、データモデル）
 - DocStatus 以外の state（TimeEntry/Leave 等）を ActionPolicy にどう統合するか
-- `returned`（差戻し）などドキュメント上の状態と実装の差分解消方針
