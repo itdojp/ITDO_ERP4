@@ -29,6 +29,11 @@
 - `daily_report_missing`
 - 配信ジョブ: `/jobs/notification-deliveries/run`
 
+補足:
+
+- `project_member_added` は現状 app-only（メール配信対象外）。
+  - メール配信を行う場合は subject/body の生成ロジックを追加した上で `NOTIFICATION_EMAIL_KINDS` に含める。
+
 ### 未実装/手動のみ
 
 - Push通知の実配信は `/push-notifications/test` の手動テストのみ
