@@ -32,6 +32,18 @@ type ApprovalRule = {
   steps?: Array<Record<string, unknown>> | null;
 };
 
+type ActionPolicy = {
+  id: string;
+  flowType: string;
+  actionKey: string;
+  priority?: number | null;
+  isEnabled?: boolean | null;
+  subjects?: Record<string, unknown> | null;
+  stateConstraints?: Record<string, unknown> | null;
+  requireReason?: boolean | null;
+  guards?: unknown | null;
+};
+
 type PdfTemplate = {
   id: string;
   name: string;
@@ -169,6 +181,17 @@ const createDefaultRuleForm = () => ({
   stepsJson: '[{"approverGroupId":"mgmt","stepOrder":1}]',
 });
 
+const createDefaultActionPolicyForm = () => ({
+  flowType: 'invoice',
+  actionKey: 'submit',
+  priority: '0',
+  isEnabled: true,
+  requireReason: false,
+  subjectsJson: '',
+  stateConstraintsJson: '',
+  guardsJson: '',
+});
+
 const createDefaultIntegrationForm = () => ({
   type: 'crm',
   name: '',
@@ -192,6 +215,9 @@ const createDefaultReportForm = () => ({
 export const AdminSettings: React.FC = () => {
   const [alertItems, setAlertItems] = useState<AlertSetting[]>([]);
   const [ruleItems, setRuleItems] = useState<ApprovalRule[]>([]);
+  const [actionPolicyItems, setActionPolicyItems] = useState<ActionPolicy[]>(
+    [],
+  );
   const [templateItems, setTemplateItems] = useState<TemplateSetting[]>([]);
   const [pdfTemplates, setPdfTemplates] = useState<PdfTemplate[]>([]);
   const [integrationItems, setIntegrationItems] = useState<
@@ -207,6 +233,9 @@ export const AdminSettings: React.FC = () => {
   const [message, setMessage] = useState('');
   const [alertForm, setAlertForm] = useState(createDefaultAlertForm);
   const [ruleForm, setRuleForm] = useState(createDefaultRuleForm);
+  const [actionPolicyForm, setActionPolicyForm] = useState(
+    createDefaultActionPolicyForm,
+  );
   const [integrationForm, setIntegrationForm] = useState(
     createDefaultIntegrationForm,
   );
@@ -225,6 +254,9 @@ export const AdminSettings: React.FC = () => {
   );
   const [editingAlertId, setEditingAlertId] = useState<string | null>(null);
   const [editingRuleId, setEditingRuleId] = useState<string | null>(null);
+  const [editingActionPolicyId, setEditingActionPolicyId] = useState<
+    string | null
+  >(null);
   const [editingIntegrationId, setEditingIntegrationId] = useState<
     string | null
   >(null);
@@ -267,6 +299,16 @@ export const AdminSettings: React.FC = () => {
     } catch (err) {
       logError('loadApprovalRules failed', err);
       setRuleItems([]);
+    }
+  }, [logError]);
+
+  const loadActionPolicies = useCallback(async () => {
+    try {
+      const res = await api<{ items: ActionPolicy[] }>('/action-policies');
+      setActionPolicyItems(res.items || []);
+    } catch (err) {
+      logError('loadActionPolicies failed', err);
+      setActionPolicyItems([]);
     }
   }, [logError]);
 
@@ -358,6 +400,7 @@ export const AdminSettings: React.FC = () => {
   useEffect(() => {
     loadAlertSettings();
     loadApprovalRules();
+    loadActionPolicies();
     loadTemplateSettings();
     loadPdfTemplates();
     loadIntegrationSettings();
@@ -365,6 +408,7 @@ export const AdminSettings: React.FC = () => {
   }, [
     loadAlertSettings,
     loadApprovalRules,
+    loadActionPolicies,
     loadTemplateSettings,
     loadPdfTemplates,
     loadIntegrationSettings,
@@ -437,6 +481,11 @@ export const AdminSettings: React.FC = () => {
   const resetRuleForm = () => {
     setRuleForm(createDefaultRuleForm());
     setEditingRuleId(null);
+  };
+
+  const resetActionPolicyForm = () => {
+    setActionPolicyForm(createDefaultActionPolicyForm());
+    setEditingActionPolicyId(null);
   };
 
   const resetTemplateForm = () => {
@@ -817,6 +866,85 @@ export const AdminSettings: React.FC = () => {
     }
   };
 
+  const startEditActionPolicy = (item: ActionPolicy) => {
+    setEditingActionPolicyId(item.id);
+    setActionPolicyForm({
+      flowType: item.flowType,
+      actionKey: item.actionKey,
+      priority: String(item.priority ?? 0),
+      isEnabled: item.isEnabled ?? true,
+      requireReason: item.requireReason ?? false,
+      subjectsJson: item.subjects ? JSON.stringify(item.subjects, null, 2) : '',
+      stateConstraintsJson: item.stateConstraints
+        ? JSON.stringify(item.stateConstraints, null, 2)
+        : '',
+      guardsJson: item.guards ? JSON.stringify(item.guards, null, 2) : '',
+    });
+  };
+
+  const submitActionPolicy = async () => {
+    const actionKey = actionPolicyForm.actionKey.trim();
+    if (!actionKey) {
+      setMessage('actionKey を入力してください');
+      return;
+    }
+    const priorityRaw = actionPolicyForm.priority.trim();
+    const priority = priorityRaw.length > 0 ? Number(priorityRaw) : undefined;
+    if (
+      priorityRaw.length > 0 &&
+      (!Number.isFinite(priority) || !Number.isInteger(priority))
+    ) {
+      setMessage('priority は整数で入力してください');
+      return;
+    }
+    const subjects = parseJson('subjects', actionPolicyForm.subjectsJson);
+    if (subjects === null) return;
+    const stateConstraints = parseJson(
+      'stateConstraints',
+      actionPolicyForm.stateConstraintsJson,
+    );
+    if (stateConstraints === null) return;
+    const guards = parseJson('guards', actionPolicyForm.guardsJson);
+    if (guards === null) return;
+
+    const payload = {
+      flowType: actionPolicyForm.flowType,
+      actionKey,
+      priority,
+      isEnabled: actionPolicyForm.isEnabled,
+      requireReason: actionPolicyForm.requireReason,
+      ...(subjects !== undefined ? { subjects } : {}),
+      ...(stateConstraints !== undefined ? { stateConstraints } : {}),
+      ...(guards !== undefined ? { guards } : {}),
+    };
+
+    try {
+      if (editingActionPolicyId) {
+        await api(`/action-policies/${editingActionPolicyId}`, {
+          method: 'PATCH',
+          body: JSON.stringify(payload),
+        });
+        setMessage('ActionPolicy を更新しました');
+      } else {
+        await api('/action-policies', {
+          method: 'POST',
+          body: JSON.stringify(payload),
+        });
+        setMessage('ActionPolicy を作成しました');
+      }
+      await loadActionPolicies();
+      resetActionPolicyForm();
+    } catch (err) {
+      logError('submitActionPolicy failed', err);
+      if (editingActionPolicyId) {
+        setMessage('更新に失敗しました。新規作成モードに戻しました');
+        resetActionPolicyForm();
+        return;
+      }
+      setMessage('保存に失敗しました');
+    }
+  };
+
   const startEditRule = (item: ApprovalRule) => {
     setEditingRuleId(item.id);
     setRuleForm({
@@ -1174,6 +1302,198 @@ export const AdminSettings: React.FC = () => {
                   <button
                     className="button secondary"
                     onClick={() => startEditRule(rule)}
+                  >
+                    編集
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="card" style={{ padding: 12 }}>
+          <strong>ActionPolicy（権限/ロック）</strong>
+          <div className="row" style={{ marginTop: 8, flexWrap: 'wrap' }}>
+            <label>
+              flowType
+              <select
+                value={actionPolicyForm.flowType}
+                onChange={(e) =>
+                  setActionPolicyForm({
+                    ...actionPolicyForm,
+                    flowType: e.target.value,
+                  })
+                }
+              >
+                {flowTypes.map((type) => (
+                  <option key={type} value={type}>
+                    {type}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              actionKey
+              <input
+                type="text"
+                value={actionPolicyForm.actionKey}
+                onChange={(e) =>
+                  setActionPolicyForm({
+                    ...actionPolicyForm,
+                    actionKey: e.target.value,
+                  })
+                }
+                placeholder="submit/send/edit/..."
+              />
+            </label>
+            <label>
+              priority
+              <input
+                type="number"
+                value={actionPolicyForm.priority}
+                onChange={(e) =>
+                  setActionPolicyForm({
+                    ...actionPolicyForm,
+                    priority: e.target.value,
+                  })
+                }
+              />
+            </label>
+            <label className="badge" style={{ cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={actionPolicyForm.isEnabled}
+                onChange={(e) =>
+                  setActionPolicyForm({
+                    ...actionPolicyForm,
+                    isEnabled: e.target.checked,
+                  })
+                }
+                style={{ marginRight: 6 }}
+              />
+              isEnabled
+            </label>
+            <label className="badge" style={{ cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={actionPolicyForm.requireReason}
+                onChange={(e) =>
+                  setActionPolicyForm({
+                    ...actionPolicyForm,
+                    requireReason: e.target.checked,
+                  })
+                }
+                style={{ marginRight: 6 }}
+              />
+              requireReason
+            </label>
+          </div>
+          <div className="row" style={{ marginTop: 8, flexWrap: 'wrap' }}>
+            <label style={{ flex: 1, minWidth: 240 }}>
+              subjects (JSON)
+              <textarea
+                value={actionPolicyForm.subjectsJson}
+                onChange={(e) =>
+                  setActionPolicyForm({
+                    ...actionPolicyForm,
+                    subjectsJson: e.target.value,
+                  })
+                }
+                rows={3}
+                style={{ width: '100%' }}
+                placeholder='{"roles":["admin","mgmt"],"groupIds":["mgmt"],"userIds":["user@example.com"]}'
+              />
+            </label>
+            <label style={{ flex: 1, minWidth: 240 }}>
+              stateConstraints (JSON)
+              <textarea
+                value={actionPolicyForm.stateConstraintsJson}
+                onChange={(e) =>
+                  setActionPolicyForm({
+                    ...actionPolicyForm,
+                    stateConstraintsJson: e.target.value,
+                  })
+                }
+                rows={3}
+                style={{ width: '100%' }}
+                placeholder='{"statusIn":["draft"],"statusNotIn":["cancelled"]}'
+              />
+            </label>
+            <label style={{ flex: 1, minWidth: 240 }}>
+              guards (JSON)
+              <textarea
+                value={actionPolicyForm.guardsJson}
+                onChange={(e) =>
+                  setActionPolicyForm({
+                    ...actionPolicyForm,
+                    guardsJson: e.target.value,
+                  })
+                }
+                rows={3}
+                style={{ width: '100%' }}
+                placeholder='[{"type":"approval_open"},{"type":"project_closed"},{"type":"period_lock"},{"type":"editable_days"}]'
+              />
+            </label>
+          </div>
+          <div className="row" style={{ marginTop: 8 }}>
+            <button className="button" onClick={submitActionPolicy}>
+              {editingActionPolicyId ? '更新' : '作成'}
+            </button>
+            <button
+              className="button secondary"
+              onClick={resetActionPolicyForm}
+            >
+              {editingActionPolicyId ? 'キャンセル' : 'クリア'}
+            </button>
+            <button className="button secondary" onClick={loadActionPolicies}>
+              再読込
+            </button>
+          </div>
+          <div
+            className="list"
+            style={{ display: 'grid', gap: 8, marginTop: 8 }}
+          >
+            {actionPolicyItems.length === 0 && (
+              <div className="card">ポリシーなし</div>
+            )}
+            {actionPolicyItems.map((item) => (
+              <div key={item.id} className="card" style={{ padding: 12 }}>
+                <div
+                  className="row"
+                  style={{ justifyContent: 'space-between', flexWrap: 'wrap' }}
+                >
+                  <div>
+                    <strong>
+                      {item.flowType} / {item.actionKey}
+                    </strong>{' '}
+                    (priority: {item.priority ?? 0})
+                  </div>
+                  <div className="row" style={{ gap: 6 }}>
+                    <span className="badge">
+                      {(item.isEnabled ?? true) ? 'enabled' : 'disabled'}
+                    </span>
+                    <span className="badge">
+                      {item.requireReason ? 'requireReason' : 'no-reason'}
+                    </span>
+                  </div>
+                </div>
+                <div style={{ fontSize: 12, color: '#475569', marginTop: 4 }}>
+                  subjects:{' '}
+                  {item.subjects ? JSON.stringify(item.subjects) : '-'}
+                </div>
+                <div style={{ fontSize: 12, color: '#475569', marginTop: 4 }}>
+                  stateConstraints:{' '}
+                  {item.stateConstraints
+                    ? JSON.stringify(item.stateConstraints)
+                    : '-'}
+                </div>
+                <div style={{ fontSize: 12, color: '#475569', marginTop: 4 }}>
+                  guards: {item.guards ? JSON.stringify(item.guards) : '-'}
+                </div>
+                <div className="row" style={{ marginTop: 6 }}>
+                  <button
+                    className="button secondary"
+                    onClick={() => startEditActionPolicy(item)}
                   >
                     編集
                   </button>
