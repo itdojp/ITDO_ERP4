@@ -11,10 +11,11 @@ import {
   getPdfTemplate,
 } from '../services/pdfTemplates.js';
 import type { PdfTemplate } from '../services/pdfTemplates.js';
-import { DocStatusValue } from '../types.js';
+import { DocStatusValue, FlowTypeValue } from '../types.js';
 import { requireRole } from '../services/rbac.js';
 import { prisma } from '../services/db.js';
 import type { NotifyResult } from '../services/notifier.js';
+import { evaluateActionPolicyWithFallback } from '../services/actionPolicy.js';
 
 type TemplateResolveResult = {
   template: PdfTemplate | null;
@@ -395,13 +396,56 @@ export async function registerSendRoutes(app: FastifyInstance) {
     { preHandler: requireRole(['admin', 'mgmt']) },
     async (req, reply) => {
       const { id } = req.params as { id: string };
-      const { templateId, templateSettingId } = req.query as {
+      const {
+        templateId,
+        templateSettingId,
+        reasonText: reasonTextRaw,
+      } = req.query as {
         templateId?: string;
         templateSettingId?: string;
+        reasonText?: string;
       };
+      const reasonText =
+        typeof reasonTextRaw === 'string' ? reasonTextRaw.trim() : '';
       const invoice = await prisma.invoice.findUnique({ where: { id } });
       if (!invoice) {
         return reply.code(404).send({ error: 'not_found' });
+      }
+
+      const policyRes = await evaluateActionPolicyWithFallback({
+        flowType: FlowTypeValue.invoice,
+        actionKey: 'send',
+        actor: {
+          userId: req.user?.userId ?? null,
+          roles: req.user?.roles || [],
+          groupIds: req.user?.groupIds || [],
+        },
+        reasonText,
+        state: { status: invoice.status, projectId: invoice.projectId },
+        targetTable: 'invoices',
+        targetId: id,
+      });
+      if (policyRes.policyApplied && !policyRes.allowed) {
+        if (policyRes.reason === 'reason_required') {
+          return reply.status(400).send({
+            error: {
+              code: 'REASON_REQUIRED',
+              message: 'reasonText is required for override',
+              details: { matchedPolicyId: policyRes.matchedPolicyId ?? null },
+            },
+          });
+        }
+        return reply.status(403).send({
+          error: {
+            code: 'ACTION_POLICY_DENIED',
+            message: 'Invoice cannot be sent',
+            details: {
+              reason: policyRes.reason,
+              matchedPolicyId: policyRes.matchedPolicyId ?? null,
+              guardFailures: policyRes.guardFailures ?? null,
+            },
+          },
+        });
       }
       const resolved = await resolveTemplateContext('invoice', {
         templateId,
