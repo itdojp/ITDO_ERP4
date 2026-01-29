@@ -123,6 +123,12 @@ function resolveReportDate(payload: unknown) {
   return typeof value === 'string' && value.trim() ? value.trim() : null;
 }
 
+function resolveDueAt(payload: unknown) {
+  if (!payload || typeof payload !== 'object') return null;
+  const value = (payload as { dueAt?: unknown }).dueAt;
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
 const FLOW_TYPE_LABEL_MAP: Record<string, string> = {
   estimate: '見積',
   invoice: '請求',
@@ -421,6 +427,7 @@ export const Dashboard: React.FC = () => {
               ? `${item.project.code} / ${item.project.name}`
               : item.projectId || 'N/A';
             const excerpt = resolveExcerpt(item.payload);
+            const dueAt = resolveDueAt(item.payload);
             const canOpen =
               ((item.kind === 'chat_mention' ||
                 item.kind === 'chat_ack_required') &&
@@ -441,6 +448,16 @@ export const Dashboard: React.FC = () => {
                     <div style={{ fontSize: 12, color: '#475569' }}>
                       {projectLabel} / {formatDateTime(item.createdAt)}
                     </div>
+                    {item.kind === 'chat_ack_required' && dueAt && (
+                      <div
+                        style={{
+                          fontSize: 12,
+                          color: '#475569',
+                        }}
+                      >
+                        期限: {formatDateTime(dueAt)}
+                      </div>
+                    )}
                     {excerpt && (
                       <div style={{ fontSize: 12, color: '#475569' }}>
                         {excerpt}
