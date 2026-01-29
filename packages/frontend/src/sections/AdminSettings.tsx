@@ -28,8 +28,13 @@ type AlertSetting = {
 type ApprovalRule = {
   id: string;
   flowType: string;
+  version?: number | null;
+  isActive?: boolean | null;
+  effectiveFrom?: string | null;
   conditions?: Record<string, unknown> | null;
-  steps?: Array<Record<string, unknown>> | null;
+  steps?: unknown | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
 };
 
 type ActionPolicy = {
@@ -177,6 +182,9 @@ const createDefaultAlertForm = () => ({
 
 const createDefaultRuleForm = () => ({
   flowType: 'invoice',
+  version: '1',
+  isActive: true,
+  effectiveFrom: '',
   conditionsJson: '{"amountMin": 0}',
   stepsJson: '[{"approverGroupId":"mgmt","stepOrder":1}]',
 });
@@ -458,6 +466,22 @@ export const AdminSettings: React.FC = () => {
       await loadAlertSettings();
     } catch (err) {
       logError('toggleAlert failed', err);
+      setMessage('状態変更に失敗しました');
+    }
+  };
+
+  const toggleApprovalRuleActive = async (
+    id: string,
+    current: boolean | null | undefined,
+  ) => {
+    try {
+      await api(`/approval-rules/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ isActive: !(current ?? true) }),
+      });
+      await loadApprovalRules();
+    } catch (err) {
+      logError('toggleApprovalRuleActive failed', err);
       setMessage('状態変更に失敗しました');
     }
   };
@@ -949,6 +973,9 @@ export const AdminSettings: React.FC = () => {
     setEditingRuleId(item.id);
     setRuleForm({
       flowType: item.flowType,
+      version: String(item.version ?? 1),
+      isActive: item.isActive ?? true,
+      effectiveFrom: item.effectiveFrom ?? '',
       conditionsJson: item.conditions
         ? JSON.stringify(item.conditions, null, 2)
         : '',
@@ -957,6 +984,17 @@ export const AdminSettings: React.FC = () => {
   };
 
   const submitApprovalRule = async () => {
+    const versionRaw = ruleForm.version.trim();
+    let version: number | undefined;
+    if (versionRaw.length > 0) {
+      const parsed = Number(versionRaw);
+      if (!Number.isFinite(parsed) || !Number.isInteger(parsed) || parsed < 1) {
+        setMessage('version は1以上の整数で入力してください');
+        return;
+      }
+      version = parsed;
+    }
+    const effectiveFrom = ruleForm.effectiveFrom.trim();
     const conditions = parseJson('conditions', ruleForm.conditionsJson);
     if (conditions === null) return;
     const steps = parseJson('steps', ruleForm.stepsJson);
@@ -965,16 +1003,29 @@ export const AdminSettings: React.FC = () => {
       setMessage('steps を入力してください');
       return;
     }
-    if (!Array.isArray(steps)) {
-      setMessage('steps は配列で入力してください');
+    const isStepsArray = Array.isArray(steps);
+    const isStepsObject = !isStepsArray && steps && typeof steps === 'object';
+    if (!isStepsArray && !isStepsObject) {
+      setMessage('steps は配列または {stages:[...]} の形式で入力してください');
       return;
     }
-    if (!steps.length) {
-      setMessage('steps は1件以上必要です');
-      return;
+    if (isStepsArray) {
+      if (!steps.length) {
+        setMessage('steps は1件以上必要です');
+        return;
+      }
+    } else {
+      const stages = (steps as Record<string, unknown>).stages;
+      if (!Array.isArray(stages) || stages.length < 1) {
+        setMessage('stages は1件以上必要です');
+        return;
+      }
     }
     const payload = {
       flowType: ruleForm.flowType,
+      version,
+      isActive: ruleForm.isActive,
+      ...(effectiveFrom ? { effectiveFrom } : {}),
       conditions: conditions || undefined,
       steps,
     };
@@ -1229,7 +1280,7 @@ export const AdminSettings: React.FC = () => {
 
         <div className="card" style={{ padding: 12 }}>
           <strong>承認ルール（簡易モック）</strong>
-          <div className="row" style={{ marginTop: 8 }}>
+          <div className="row" style={{ marginTop: 8, flexWrap: 'wrap' }}>
             <label>
               flowType
               <select
@@ -1244,6 +1295,39 @@ export const AdminSettings: React.FC = () => {
                   </option>
                 ))}
               </select>
+            </label>
+            <label>
+              version
+              <input
+                type="number"
+                value={ruleForm.version}
+                onChange={(e) =>
+                  setRuleForm({ ...ruleForm, version: e.target.value })
+                }
+                min={1}
+              />
+            </label>
+            <label>
+              effectiveFrom (任意, ISO date-time)
+              <input
+                type="text"
+                value={ruleForm.effectiveFrom}
+                onChange={(e) =>
+                  setRuleForm({ ...ruleForm, effectiveFrom: e.target.value })
+                }
+                placeholder="2026-01-29T00:00:00Z"
+              />
+            </label>
+            <label className="badge" style={{ cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={ruleForm.isActive}
+                onChange={(e) =>
+                  setRuleForm({ ...ruleForm, isActive: e.target.checked })
+                }
+                style={{ marginRight: 6 }}
+              />
+              isActive
             </label>
           </div>
           <div className="row" style={{ marginTop: 8, flexWrap: 'wrap' }}>
@@ -1288,8 +1372,21 @@ export const AdminSettings: React.FC = () => {
             {ruleItems.length === 0 && <div className="card">ルールなし</div>}
             {ruleItems.map((rule) => (
               <div key={rule.id} className="card" style={{ padding: 12 }}>
-                <div>
-                  <strong>{rule.flowType}</strong>
+                <div
+                  className="row"
+                  style={{ justifyContent: 'space-between', flexWrap: 'wrap' }}
+                >
+                  <div>
+                    <strong>{rule.flowType}</strong> (v{rule.version ?? 1})
+                  </div>
+                  <div className="row" style={{ gap: 6 }}>
+                    <span className="badge">
+                      {(rule.isActive ?? true) ? 'active' : 'inactive'}
+                    </span>
+                    <span className="badge">
+                      effectiveFrom: {formatDateTime(rule.effectiveFrom)}
+                    </span>
+                  </div>
                 </div>
                 <div style={{ fontSize: 12, color: '#475569', marginTop: 4 }}>
                   conditions:{' '}
@@ -1299,6 +1396,14 @@ export const AdminSettings: React.FC = () => {
                   steps: {rule.steps ? JSON.stringify(rule.steps) : '-'}
                 </div>
                 <div className="row" style={{ marginTop: 6 }}>
+                  <button
+                    className="button secondary"
+                    onClick={() =>
+                      toggleApprovalRuleActive(rule.id, rule.isActive)
+                    }
+                  >
+                    {(rule.isActive ?? true) ? '無効化' : '有効化'}
+                  </button>
                   <button
                     className="button secondary"
                     onClick={() => startEditRule(rule)}
