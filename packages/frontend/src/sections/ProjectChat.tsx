@@ -1069,6 +1069,19 @@ export const ProjectChat: React.FC = () => {
           const ackedCount = requiredUserIds.filter((userId) =>
             ackedUserIds.includes(userId),
           ).length;
+          const dueAt = item.ackRequest?.dueAt
+            ? new Date(item.ackRequest.dueAt)
+            : null;
+          const dueAtLabel =
+            dueAt && !Number.isNaN(dueAt.getTime())
+              ? dueAt.toLocaleString()
+              : '';
+          const isOverdue =
+            Boolean(dueAtLabel) &&
+            requiredCount > 0 &&
+            ackedCount < requiredCount &&
+            dueAt &&
+            dueAt.getTime() < Date.now();
           const canAck =
             item.ackRequest?.id &&
             requiredUserIds.includes(currentUserId) &&
@@ -1215,8 +1228,19 @@ export const ProjectChat: React.FC = () => {
                     background: '#f8fafc',
                   }}
                 >
-                  <div style={{ fontSize: 12, color: '#64748b' }}>
-                    確認状況: {ackedCount}/{requiredCount || 0}
+                  <div
+                    className="row"
+                    style={{ gap: 10, flexWrap: 'wrap', fontSize: 12 }}
+                  >
+                    <div style={{ color: '#64748b' }}>
+                      確認状況: {ackedCount}/{requiredCount || 0}
+                    </div>
+                    {dueAtLabel && (
+                      <div style={{ color: isOverdue ? '#dc2626' : '#64748b' }}>
+                        期限: {dueAtLabel}
+                        {isOverdue ? ' (期限超過)' : ''}
+                      </div>
+                    )}
                   </div>
                   {requiredCount > 0 && (
                     <div

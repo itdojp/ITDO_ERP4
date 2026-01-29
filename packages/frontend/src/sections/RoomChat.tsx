@@ -1077,6 +1077,21 @@ export const RoomChat: React.FC = () => {
             const ackedUserIds = new Set(
               (ackRequest?.acks || []).map((ack) => ack.userId),
             );
+            const dueAt = ackRequest?.dueAt ? new Date(ackRequest.dueAt) : null;
+            const dueAtLabel =
+              dueAt && !Number.isNaN(dueAt.getTime())
+                ? dueAt.toLocaleString()
+                : '';
+            const ackedCount = requiredUserIds.filter((userId) =>
+              ackedUserIds.has(userId),
+            ).length;
+            const requiredCount = requiredUserIds.length;
+            const isOverdue =
+              Boolean(dueAtLabel) &&
+              requiredCount > 0 &&
+              ackedCount < requiredCount &&
+              dueAt &&
+              dueAt.getTime() < Date.now();
             const canAck =
               ackRequest &&
               requiredUserIds.includes(currentUserId) &&
@@ -1167,6 +1182,18 @@ export const RoomChat: React.FC = () => {
                     >
                       acked: {Array.from(ackedUserIds).join(', ') || '-'}
                     </div>
+                    {dueAtLabel && (
+                      <div
+                        style={{
+                          fontSize: 12,
+                          color: isOverdue ? '#dc2626' : '#475569',
+                          marginTop: 4,
+                        }}
+                      >
+                        期限: {dueAtLabel}
+                        {isOverdue ? ' (期限超過)' : ''}
+                      </div>
+                    )}
                     {canAck && (
                       <button
                         className="button"
