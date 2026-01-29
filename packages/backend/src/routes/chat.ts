@@ -414,8 +414,7 @@ export async function registerChatRoutes(app: FastifyInstance) {
           requiredUserCount: options.requiredUserIds.length,
           senderExcluded:
             notificationResult.recipients.includes(options.senderUserId) ===
-              false &&
-            options.requiredUserIds.includes(options.senderUserId),
+              false && options.requiredUserIds.includes(options.senderUserId),
         } as Prisma.InputJsonValue,
         ...auditContextFromRequest(options.req),
       });
