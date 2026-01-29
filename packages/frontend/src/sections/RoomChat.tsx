@@ -210,6 +210,7 @@ export const RoomChat: React.FC = () => {
   );
 
   const [items, setItems] = useState<ChatMessage[]>([]);
+  const [nowMs, setNowMs] = useState(0);
   const [hasMore, setHasMore] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
@@ -227,6 +228,37 @@ export const RoomChat: React.FC = () => {
   const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
   const [filterTag, setFilterTag] = useState('');
   const [filterQuery, setFilterQuery] = useState('');
+
+  const hasActiveAckDeadline = useMemo(() => {
+    return items.some((item) => {
+      const dueAt = item.ackRequest?.dueAt
+        ? new Date(item.ackRequest.dueAt)
+        : null;
+      if (!dueAt || Number.isNaN(dueAt.getTime())) return false;
+      const requiredUserIds = item.ackRequest
+        ? normalizeStringArray(item.ackRequest.requiredUserIds)
+        : [];
+      const requiredCount = requiredUserIds.length;
+      if (requiredCount <= 0) return false;
+      const ackedUserIds = new Set(
+        (item.ackRequest?.acks || []).map((ack) => ack.userId),
+      );
+      const ackedCount = requiredUserIds.filter((userId) =>
+        ackedUserIds.has(userId),
+      ).length;
+      return ackedCount < requiredCount;
+    });
+  }, [items]);
+
+  useEffect(() => {
+    if (!hasActiveAckDeadline) {
+      setNowMs(0);
+      return;
+    }
+    setNowMs(Date.now());
+    const timer = window.setInterval(() => setNowMs(Date.now()), 60_000);
+    return () => window.clearInterval(timer);
+  }, [hasActiveAckDeadline]);
 
   useEffect(() => {
     const handler = (event: Event) => {
@@ -1077,6 +1109,22 @@ export const RoomChat: React.FC = () => {
             const ackedUserIds = new Set(
               (ackRequest?.acks || []).map((ack) => ack.userId),
             );
+            const dueAt = ackRequest?.dueAt ? new Date(ackRequest.dueAt) : null;
+            const dueAtLabel =
+              dueAt && !Number.isNaN(dueAt.getTime())
+                ? dueAt.toLocaleString()
+                : '';
+            const ackedCount = requiredUserIds.filter((userId) =>
+              ackedUserIds.has(userId),
+            ).length;
+            const requiredCount = requiredUserIds.length;
+            const isOverdue =
+              Boolean(dueAtLabel) &&
+              requiredCount > 0 &&
+              ackedCount < requiredCount &&
+              dueAt &&
+              nowMs > 0 &&
+              dueAt.getTime() < nowMs;
             const canAck =
               ackRequest &&
               requiredUserIds.includes(currentUserId) &&
@@ -1167,6 +1215,18 @@ export const RoomChat: React.FC = () => {
                     >
                       acked: {Array.from(ackedUserIds).join(', ') || '-'}
                     </div>
+                    {dueAtLabel && (
+                      <div
+                        style={{
+                          fontSize: 12,
+                          color: isOverdue ? '#dc2626' : '#475569',
+                          marginTop: 4,
+                        }}
+                      >
+                        期限: {dueAtLabel}
+                        {isOverdue ? ' (期限超過)' : ''}
+                      </div>
+                    )}
                     {canAck && (
                       <button
                         className="button"
