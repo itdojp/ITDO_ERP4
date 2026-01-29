@@ -33,6 +33,8 @@ type ChatMessage = {
     id: string;
     requiredUserIds: unknown;
     dueAt?: string | null;
+    canceledAt?: string | null;
+    canceledBy?: string | null;
     acks?: { userId: string; ackedAt: string }[];
   } | null;
   attachments?: {
@@ -231,6 +233,7 @@ export const RoomChat: React.FC = () => {
 
   const hasActiveAckDeadline = useMemo(() => {
     return items.some((item) => {
+      if (item.ackRequest?.canceledAt) return false;
       const dueAt = item.ackRequest?.dueAt
         ? new Date(item.ackRequest.dueAt)
         : null;
@@ -621,6 +624,49 @@ export const RoomChat: React.FC = () => {
     } catch (err) {
       console.error('Failed to ack request.', err);
       setMessage('OKの送信に失敗しました');
+    }
+  };
+
+  const revokeAck = async (requestId: string) => {
+    try {
+      const updated = await api<ChatMessage['ackRequest']>(
+        `/chat-ack-requests/${requestId}/revoke`,
+        { method: 'POST' },
+      );
+      setItems((prev) =>
+        prev.map((item) =>
+          item.ackRequest?.id === requestId
+            ? { ...item, ackRequest: updated || null }
+            : item,
+        ),
+      );
+      setMessage('OKを取り消しました');
+    } catch (err) {
+      console.error('Failed to revoke ack.', err);
+      setMessage('OKの取り消しに失敗しました');
+    }
+  };
+
+  const cancelAckRequest = async (requestId: string, reason?: string) => {
+    try {
+      const updated = await api<ChatMessage['ackRequest']>(
+        `/chat-ack-requests/${requestId}/cancel`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ reason }),
+        },
+      );
+      setItems((prev) =>
+        prev.map((item) =>
+          item.ackRequest?.id === requestId
+            ? { ...item, ackRequest: updated || null }
+            : item,
+        ),
+      );
+      setMessage('確認依頼を撤回しました');
+    } catch (err) {
+      console.error('Failed to cancel ack request.', err);
+      setMessage('確認依頼の撤回に失敗しました');
     }
   };
 
@@ -1109,6 +1155,10 @@ export const RoomChat: React.FC = () => {
             const ackedUserIds = new Set(
               (ackRequest?.acks || []).map((ack) => ack.userId),
             );
+            const isCanceled = Boolean(ackRequest?.canceledAt);
+            const canceledAtLabel = ackRequest?.canceledAt
+              ? new Date(ackRequest.canceledAt).toLocaleString()
+              : '';
             const dueAt = ackRequest?.dueAt ? new Date(ackRequest.dueAt) : null;
             const dueAtLabel =
               dueAt && !Number.isNaN(dueAt.getTime())
@@ -1120,6 +1170,7 @@ export const RoomChat: React.FC = () => {
             const requiredCount = requiredUserIds.length;
             const isOverdue =
               Boolean(dueAtLabel) &&
+              !isCanceled &&
               requiredCount > 0 &&
               ackedCount < requiredCount &&
               dueAt &&
@@ -1127,8 +1178,20 @@ export const RoomChat: React.FC = () => {
               dueAt.getTime() < nowMs;
             const canAck =
               ackRequest &&
+              !isCanceled &&
               requiredUserIds.includes(currentUserId) &&
               !ackedUserIds.has(currentUserId);
+            const canRevoke =
+              ackRequest &&
+              !isCanceled &&
+              requiredUserIds.includes(currentUserId) &&
+              ackedUserIds.has(currentUserId);
+            const canCancel =
+              ackRequest &&
+              !isCanceled &&
+              (item.userId === currentUserId ||
+                roles.includes('admin') ||
+                roles.includes('mgmt'));
 
             return (
               <div
@@ -1227,14 +1290,62 @@ export const RoomChat: React.FC = () => {
                         {isOverdue ? ' (期限超過)' : ''}
                       </div>
                     )}
-                    {canAck && (
-                      <button
-                        className="button"
-                        style={{ marginTop: 6 }}
-                        onClick={() => ack(ackRequest.id)}
+                    {isCanceled && (
+                      <div
+                        style={{
+                          fontSize: 12,
+                          color: '#475569',
+                          marginTop: 4,
+                        }}
                       >
-                        OK
-                      </button>
+                        撤回: {canceledAtLabel}
+                        {ackRequest.canceledBy
+                          ? ` / ${ackRequest.canceledBy}`
+                          : ''}
+                      </div>
+                    )}
+                    {(canAck || canRevoke || canCancel) && (
+                      <div
+                        className="row"
+                        style={{ gap: 8, flexWrap: 'wrap', marginTop: 6 }}
+                      >
+                        {canAck && (
+                          <button
+                            className="button"
+                            onClick={() => ack(ackRequest.id)}
+                          >
+                            OK
+                          </button>
+                        )}
+                        {canRevoke && (
+                          <button
+                            className="button secondary"
+                            onClick={() => {
+                              if (!window.confirm('OKを取り消しますか？'))
+                                return;
+                              revokeAck(ackRequest.id).catch(() => undefined);
+                            }}
+                          >
+                            OK取消
+                          </button>
+                        )}
+                        {canCancel && (
+                          <button
+                            className="button secondary"
+                            onClick={() => {
+                              const reason =
+                                window.prompt('撤回理由（任意）') ?? null;
+                              if (reason === null) return;
+                              cancelAckRequest(
+                                ackRequest.id,
+                                reason.trim() || undefined,
+                              ).catch(() => undefined);
+                            }}
+                          >
+                            撤回
+                          </button>
+                        )}
+                      </div>
                     )}
                   </div>
                 )}
