@@ -5,6 +5,7 @@ import { FlowTypeValue, TimeStatusValue } from '../types.js';
 import { requireRole } from '../services/rbac.js';
 import { leaveRequestSchema } from './validators.js';
 import { endOfDay, parseDateParam } from '../utils/date.js';
+import { evaluateActionPolicyWithFallback } from '../services/actionPolicy.js';
 
 export async function registerLeaveRoutes(app: FastifyInstance) {
   app.post(
@@ -70,6 +71,9 @@ export async function registerLeaveRoutes(app: FastifyInstance) {
     { preHandler: requireRole(['admin', 'mgmt', 'user']) },
     async (req, reply) => {
       const { id } = req.params as { id: string };
+      const body = req.body as any;
+      const reasonText =
+        typeof body?.reasonText === 'string' ? body.reasonText.trim() : '';
       const leave = await prisma.leaveRequest.findUnique({ where: { id } });
       if (!leave) {
         return reply.code(404).send({ error: 'not_found' });
@@ -82,6 +86,42 @@ export async function registerLeaveRoutes(app: FastifyInstance) {
         leave.userId !== userId
       ) {
         return reply.code(403).send({ error: 'forbidden' });
+      }
+
+      const policyRes = await evaluateActionPolicyWithFallback({
+        flowType: FlowTypeValue.leave,
+        actionKey: 'submit',
+        actor: {
+          userId: req.user?.userId ?? null,
+          roles: req.user?.roles || [],
+          groupIds: req.user?.groupIds || [],
+        },
+        reasonText,
+        state: { status: leave.status },
+        targetTable: 'leave_requests',
+        targetId: id,
+      });
+      if (policyRes.policyApplied && !policyRes.allowed) {
+        if (policyRes.reason === 'reason_required') {
+          return reply.status(400).send({
+            error: {
+              code: 'REASON_REQUIRED',
+              message: 'reasonText is required for override',
+              details: { matchedPolicyId: policyRes.matchedPolicyId ?? null },
+            },
+          });
+        }
+        return reply.status(403).send({
+          error: {
+            code: 'ACTION_POLICY_DENIED',
+            message: 'LeaveRequest cannot be submitted',
+            details: {
+              reason: policyRes.reason,
+              matchedPolicyId: policyRes.matchedPolicyId ?? null,
+              guardFailures: policyRes.guardFailures ?? null,
+            },
+          },
+        });
       }
       const workDateEnd = endOfDay(leave.endDate);
       const conflictStatuses = [
