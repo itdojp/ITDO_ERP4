@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { api, getAuthState } from '../api';
 import { Alert, Button, Card, EmptyState } from '../ui';
+import { navigateToOpen } from '../utils/deepLink';
 
 type AlertItem = {
   id: string;
@@ -219,6 +220,13 @@ export const Dashboard: React.FC = () => {
     }
   };
 
+  const openNotificationTarget = (item: AppNotification) => {
+    if (item.messageId) {
+      navigateToOpen({ kind: 'chat_message', id: item.messageId });
+      return;
+    }
+  };
+
   useEffect(() => {
     if (!canViewInsights) return;
     api<{ items: Insight[] }>('/insights')
@@ -292,6 +300,7 @@ export const Dashboard: React.FC = () => {
               ? `${item.project.code} / ${item.project.name}`
               : item.projectId || 'N/A';
             const excerpt = resolveExcerpt(item.payload);
+            const canOpen = Boolean(item.messageId);
             return (
               <Card key={item.id} padding="small">
                 <div
@@ -309,12 +318,22 @@ export const Dashboard: React.FC = () => {
                       </div>
                     )}
                   </div>
-                  <Button
-                    variant="secondary"
-                    onClick={() => markNotificationRead(item.id)}
-                  >
-                    既読
-                  </Button>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    {canOpen && (
+                      <Button
+                        variant="secondary"
+                        onClick={() => openNotificationTarget(item)}
+                      >
+                        開く
+                      </Button>
+                    )}
+                    <Button
+                      variant="secondary"
+                      onClick={() => markNotificationRead(item.id)}
+                    >
+                      既読
+                    </Button>
+                  </div>
                 </div>
               </Card>
             );
