@@ -45,6 +45,32 @@ function parseFlowType(value: string): FlowType | null {
   return null;
 }
 
+function actionPolicySnapshotForAudit(policy: any) {
+  const toIso = (value: unknown) => {
+    if (!value) return null;
+    if (value instanceof Date) return value.toISOString();
+    const parsed = new Date(String(value));
+    if (Number.isNaN(parsed.getTime())) return null;
+    return parsed.toISOString();
+  };
+
+  return {
+    id: policy?.id,
+    flowType: policy?.flowType,
+    actionKey: policy?.actionKey,
+    priority: policy?.priority,
+    isEnabled: policy?.isEnabled,
+    subjects: policy?.subjects ?? null,
+    stateConstraints: policy?.stateConstraints ?? null,
+    requireReason: policy?.requireReason,
+    guards: policy?.guards ?? null,
+    createdAt: toIso(policy?.createdAt),
+    createdBy: policy?.createdBy ?? null,
+    updatedAt: toIso(policy?.updatedAt),
+    updatedBy: policy?.updatedBy ?? null,
+  };
+}
+
 export async function registerActionPolicyRoutes(app: FastifyInstance) {
   app.get(
     '/action-policies',
@@ -107,7 +133,11 @@ export async function registerActionPolicyRoutes(app: FastifyInstance) {
         action: 'action_policy_created',
         targetTable: 'action_policies',
         targetId: created.id,
-        metadata: { flowType: created.flowType, actionKey: created.actionKey },
+        metadata: {
+          flowType: created.flowType,
+          actionKey: created.actionKey,
+          after: actionPolicySnapshotForAudit(created),
+        },
         ...auditContextFromRequest(req),
       });
       return created;
@@ -134,19 +164,31 @@ export async function registerActionPolicyRoutes(app: FastifyInstance) {
       if (hasActionKey && !actionKey) {
         return reply.status(400).send({ error: 'actionKey_required' });
       }
-      const updated = await prisma.actionPolicy.update({
-        where: { id },
-        data: {
-          ...(body as any),
-          ...(actionKey !== undefined ? { actionKey } : {}),
-          updatedBy: userId ?? undefined,
-        },
+      const data = {
+        ...(body as any),
+        ...(actionKey !== undefined ? { actionKey } : {}),
+        updatedBy: userId ?? undefined,
+      };
+
+      const { before, updated } = await prisma.$transaction(async (tx) => {
+        const before = await tx.actionPolicy.findUnique({ where: { id } });
+        const updated = await tx.actionPolicy.update({
+          where: { id },
+          data,
+        });
+        return { before, updated };
       });
       await logAudit({
         action: 'action_policy_updated',
         targetTable: 'action_policies',
         targetId: updated.id,
-        metadata: { flowType: updated.flowType, actionKey: updated.actionKey },
+        metadata: {
+          flowType: updated.flowType,
+          actionKey: updated.actionKey,
+          before: before ? actionPolicySnapshotForAudit(before) : null,
+          after: actionPolicySnapshotForAudit(updated),
+          patch: data,
+        },
         ...auditContextFromRequest(req),
       });
       return updated;
