@@ -392,6 +392,25 @@ export const vendorInvoiceSchema = {
   }),
 };
 
+export const vendorInvoiceLinkPoSchema = {
+  body: Type.Object(
+    {
+      purchaseOrderId: Type.String({ minLength: 1 }),
+      reasonText: Type.Optional(Type.String({ minLength: 1 })),
+    },
+    { additionalProperties: false },
+  ),
+};
+
+export const vendorInvoiceUnlinkPoSchema = {
+  body: Type.Object(
+    {
+      reasonText: Type.Optional(Type.String({ minLength: 1 })),
+    },
+    { additionalProperties: false },
+  ),
+};
+
 export const vendorQuoteSchema = {
   body: Type.Object({
     projectId: Type.String(),
