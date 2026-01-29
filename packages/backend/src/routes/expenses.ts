@@ -9,6 +9,7 @@ import { logReassignment } from '../services/reassignmentLog.js';
 import { parseDateParam } from '../utils/date.js';
 import { findPeriodLock, toPeriodKey } from '../services/periodLock.js';
 import { evaluateActionPolicyWithFallback } from '../services/actionPolicy.js';
+import { logActionPolicyOverrideIfNeeded } from '../services/actionPolicyAudit.js';
 
 export async function registerExpenseRoutes(app: FastifyInstance) {
   app.post(
@@ -146,6 +147,15 @@ export async function registerExpenseRoutes(app: FastifyInstance) {
           },
         });
       }
+      await logActionPolicyOverrideIfNeeded({
+        req,
+        flowType: FlowTypeValue.expense,
+        actionKey: 'submit',
+        targetTable: 'expenses',
+        targetId: id,
+        reasonText,
+        result: policyRes,
+      });
       const { updated } = await submitApprovalWithUpdate({
         flowType: FlowTypeValue.expense,
         targetTable: 'expenses',

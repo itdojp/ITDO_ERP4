@@ -16,6 +16,7 @@ import { requireRole } from '../services/rbac.js';
 import { prisma } from '../services/db.js';
 import type { NotifyResult } from '../services/notifier.js';
 import { evaluateActionPolicyWithFallback } from '../services/actionPolicy.js';
+import { logActionPolicyOverrideIfNeeded } from '../services/actionPolicyAudit.js';
 
 type TemplateResolveResult = {
   template: PdfTemplate | null;
@@ -326,6 +327,15 @@ export async function registerSendRoutes(app: FastifyInstance) {
           },
         });
       }
+      await logActionPolicyOverrideIfNeeded({
+        req,
+        flowType: FlowTypeValue.estimate,
+        actionKey: 'send',
+        targetTable: 'estimates',
+        targetId: id,
+        reasonText,
+        result: policyRes,
+      });
       const resolved = await resolveTemplateContext('estimate', {
         templateId,
         templateSettingId,
@@ -490,6 +500,15 @@ export async function registerSendRoutes(app: FastifyInstance) {
           },
         });
       }
+      await logActionPolicyOverrideIfNeeded({
+        req,
+        flowType: FlowTypeValue.invoice,
+        actionKey: 'send',
+        targetTable: 'invoices',
+        targetId: id,
+        reasonText,
+        result: policyRes,
+      });
       const resolved = await resolveTemplateContext('invoice', {
         templateId,
         templateSettingId,
@@ -654,6 +673,15 @@ export async function registerSendRoutes(app: FastifyInstance) {
           },
         });
       }
+      await logActionPolicyOverrideIfNeeded({
+        req,
+        flowType: FlowTypeValue.purchase_order,
+        actionKey: 'send',
+        targetTable: 'purchase_orders',
+        targetId: id,
+        reasonText,
+        result: policyRes,
+      });
       const resolved = await resolveTemplateContext('purchase_order', {
         templateId,
         templateSettingId,
