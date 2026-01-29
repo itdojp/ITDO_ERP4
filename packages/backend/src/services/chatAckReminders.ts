@@ -130,8 +130,7 @@ export async function runChatAckReminders(
       request.acks.map((ack) => normalizeString(ack.userId)).filter(Boolean),
     );
     const incompleteUserIds = requiredUserIds.filter(
-      (userId) =>
-        userId !== senderUserId && !ackedUserIds.has(userId) && userId !== '',
+      (userId) => userId !== senderUserId && !ackedUserIds.has(userId),
     );
     if (!incompleteUserIds.length) {
       skippedCompletedRequests += 1;
