@@ -18,6 +18,7 @@ import {
 } from './validators.js';
 import { prisma } from '../services/db.js';
 import { auditContextFromRequest, logAudit } from '../services/audit.js';
+import { createProjectMemberAddedNotifications } from '../services/appNotifications.js';
 import { logReassignment } from '../services/reassignmentLog.js';
 import { parseDueDateRule } from '../services/dueDateRule.js';
 import { toNumber } from '../services/utils.js';
@@ -68,6 +69,32 @@ function parseNullableDateField(body: any, key: string) {
   const hasProp = Object.prototype.hasOwnProperty.call(body, key);
   const value = hasProp ? (body[key] ? new Date(body[key]) : null) : undefined;
   return { hasProp, value };
+}
+
+async function tryCreateProjectMemberAddedNotifications(options: {
+  req: any;
+  projectId: string;
+  actorUserId?: string | null;
+  items: Array<{ userId: string; role: 'member' | 'leader' }>;
+  source: 'single' | 'bulk';
+}) {
+  const actorUserId =
+    typeof options.actorUserId === 'string' ? options.actorUserId.trim() : '';
+  if (!actorUserId) return;
+  if (options.items.length === 0) return;
+  try {
+    await createProjectMemberAddedNotifications({
+      projectId: options.projectId,
+      actorUserId,
+      items: options.items,
+      source: options.source,
+    });
+  } catch (err) {
+    options.req.log?.warn(
+      { err, projectId: options.projectId },
+      'Failed to create project member added notifications',
+    );
+  }
 }
 
 function isStartDateAfterEndDate(
@@ -578,6 +605,15 @@ export async function registerProjectRoutes(app: FastifyInstance) {
           previousRole,
         },
       });
+      if (auditAction === 'project_member_added') {
+        await tryCreateProjectMemberAddedNotifications({
+          req,
+          projectId,
+          actorUserId: req.user?.userId,
+          items: [{ userId: member.userId, role: requestedRole }],
+          source: 'single',
+        });
+      }
       return member;
     },
   );
@@ -618,6 +654,8 @@ export async function registerProjectRoutes(app: FastifyInstance) {
       let added = 0;
       let skipped = 0;
       let failed = 0;
+      const notifyItems: Array<{ userId: string; role: 'member' | 'leader' }> =
+        [];
       const seen = new Set<string>();
       const normalized: Array<{ userId: string; role: 'member' | 'leader' }> =
         [];
@@ -689,6 +727,7 @@ export async function registerProjectRoutes(app: FastifyInstance) {
               source: 'bulk',
             },
           });
+          notifyItems.push({ userId: item.userId, role: item.role });
         } catch (err) {
           if (req.log && typeof req.log.warn === 'function') {
             req.log.warn(
@@ -706,6 +745,13 @@ export async function registerProjectRoutes(app: FastifyInstance) {
         }
       }
 
+      await tryCreateProjectMemberAddedNotifications({
+        req,
+        projectId,
+        actorUserId: actorId,
+        items: notifyItems,
+        source: 'bulk',
+      });
       return { added, skipped, failed, failures: failureDetails };
     },
   );

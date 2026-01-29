@@ -20,6 +20,7 @@
 - `chat_mention`: チャットのメンション通知（Chat で作成）
 - `chat_ack_required`: 確認依頼（ack required）の通知（requiredUserIds に対して作成）
 - `daily_report_missing`: 日報未提出通知（ジョブで作成）
+- `project_member_added`: 案件メンバー追加（追加されたユーザに対して作成）
 
 ### メール配信の対象（実装済み）
 
@@ -27,6 +28,11 @@
 - （任意）`chat_ack_required`（環境変数 `NOTIFICATION_EMAIL_KINDS` に含めた場合）
 - `daily_report_missing`
 - 配信ジョブ: `/jobs/notification-deliveries/run`
+
+補足:
+
+- `project_member_added` は現状 app-only（メール配信対象外）。
+  - メール配信を行う場合は subject/body の生成ロジックを追加した上で `NOTIFICATION_EMAIL_KINDS` に含める。
 
 ### 未実装/手動のみ
 

@@ -20,6 +20,13 @@ type ChatAckRequiredNotificationOptions = {
   dueAt?: string | null;
 };
 
+type ProjectMemberAddedNotificationOptions = {
+  projectId: string;
+  actorUserId: string;
+  items: Array<{ userId: string; role: 'member' | 'leader' }>;
+  source?: 'single' | 'bulk';
+};
+
 function parseMaxRecipients() {
   const raw = process.env.CHAT_MENTION_NOTIFICATION_MAX_RECIPIENTS;
   if (!raw) return 200;
@@ -156,5 +163,46 @@ export async function createChatAckRequiredNotifications(
     created: created.count,
     recipients: createUserIds,
     truncated,
+  };
+}
+
+export async function createProjectMemberAddedNotifications(
+  options: ProjectMemberAddedNotificationOptions,
+) {
+  const data: Prisma.AppNotificationCreateManyInput[] = [];
+  const recipients: string[] = [];
+  const seen = new Set<string>();
+  for (const item of options.items) {
+    const userId = item.userId.trim();
+    if (!userId) continue;
+    if (userId === options.actorUserId) continue;
+    if (seen.has(userId)) continue;
+    seen.add(userId);
+    recipients.push(userId);
+    data.push({
+      userId,
+      kind: 'project_member_added',
+      projectId: options.projectId,
+      payload: {
+        fromUserId: options.actorUserId,
+        role: item.role,
+        source: options.source || undefined,
+      } as Prisma.InputJsonValue,
+      createdBy: options.actorUserId,
+      updatedBy: options.actorUserId,
+    });
+  }
+
+  if (data.length === 0) {
+    return {
+      created: 0,
+      recipients: [] as string[],
+    };
+  }
+
+  const created = await prisma.appNotification.createMany({ data });
+  return {
+    created: created.count,
+    recipients,
   };
 }
