@@ -191,6 +191,29 @@ function buildChatAckRequiredEmailBody(notification: {
     .join('\n');
 }
 
+function formatFlowTypeLabel(flowType: string) {
+  switch (flowType) {
+    case 'estimate':
+      return '見積';
+    case 'invoice':
+      return '請求';
+    case 'purchase_order':
+      return '発注';
+    case 'vendor_quote':
+      return '仕入見積';
+    case 'vendor_invoice':
+      return '仕入請求';
+    case 'expense':
+      return '経費';
+    case 'leave':
+      return '休暇';
+    case 'time':
+      return '工数';
+    default:
+      return flowType;
+  }
+}
+
 function resolveEmailNotificationKinds() {
   const raw = process.env.NOTIFICATION_EMAIL_KINDS;
   if (!raw) return ['chat_mention', 'daily_report_missing'];
@@ -411,6 +434,45 @@ export async function runNotificationEmailDeliveries(options: {
         projectName: notification.project?.name,
       });
       body = buildChatAckRequiredEmailBody(notification);
+    } else if (
+      notification.kind === 'approval_pending' ||
+      notification.kind === 'approval_approved' ||
+      notification.kind === 'approval_rejected'
+    ) {
+      const projectLabel = notification.project
+        ? `${notification.project.code || '-'} / ${notification.project.name || '-'}`
+        : '-';
+      const payload = notification.payload as Record<string, unknown> | null;
+      const fromUserId = normalizeString(payload?.fromUserId);
+      const flowType = normalizeString(payload?.flowType);
+      const flowLabel = flowType ? formatFlowTypeLabel(flowType) : '申請';
+      const approvalInstanceId = normalizeString(payload?.approvalInstanceId);
+      const targetTable = normalizeString(payload?.targetTable);
+      const targetId = normalizeString(payload?.targetId);
+
+      const subjectSuffix =
+        notification.kind === 'approval_pending'
+          ? `${flowLabel} 承認依頼`
+          : notification.kind === 'approval_approved'
+            ? `${flowLabel} 承認完了`
+            : `${flowLabel} 差戻し`;
+      subject =
+        projectLabel !== '-'
+          ? `ERP4: ${projectLabel} ${subjectSuffix}`
+          : `ERP4: ${subjectSuffix}`;
+      body = [
+        'approval notification',
+        `kind: ${notification.kind}`,
+        `to: ${notification.userId}`,
+        `from: ${fromUserId || '-'}`,
+        `project: ${projectLabel}`,
+        `createdAt: ${notification.createdAt.toISOString()}`,
+        `approvalInstanceId: ${approvalInstanceId || '-'}`,
+        `targetTable: ${targetTable || '-'}`,
+        `targetId: ${targetId || '-'}`,
+      ]
+        .filter((line) => typeof line === 'string' && line.trim() !== '')
+        .join('\n');
     } else if (notification.kind === 'daily_report_missing') {
       const payload = notification.payload as
         | { reportDate?: string }

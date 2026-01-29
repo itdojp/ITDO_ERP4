@@ -1,6 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { prisma } from '../services/db.js';
 import { submitApprovalWithUpdate } from '../services/approval.js';
+import { createApprovalPendingNotifications } from '../services/appNotifications.js';
 import { FlowTypeValue, TimeStatusValue } from '../types.js';
 import { requireRole } from '../services/rbac.js';
 import { leaveRequestSchema } from './validators.js';
@@ -176,7 +177,8 @@ export async function registerLeaveRoutes(app: FastifyInstance) {
           },
         });
       }
-      const { updated } = await submitApprovalWithUpdate({
+      const actorUserId = req.user?.userId || 'system';
+      const { updated, approval } = await submitApprovalWithUpdate({
         flowType: FlowTypeValue.leave,
         targetTable: 'leave_requests',
         targetId: id,
@@ -187,6 +189,17 @@ export async function registerLeaveRoutes(app: FastifyInstance) {
           }),
         payload: { hours: leave.hours || 0 },
         createdBy: userId,
+      });
+      await createApprovalPendingNotifications({
+        approvalInstanceId: approval.id,
+        projectId: approval.projectId,
+        requesterUserId: actorUserId,
+        actorUserId,
+        flowType: approval.flowType,
+        targetTable: approval.targetTable,
+        targetId: approval.targetId,
+        currentStep: approval.currentStep,
+        steps: approval.steps,
       });
       return updated;
     },
