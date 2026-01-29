@@ -5,6 +5,7 @@ import { DocStatusValue, FlowTypeValue } from '../types.js';
 import { estimateSchema } from './validators.js';
 import { requireProjectAccess, requireRole } from '../services/rbac.js';
 import { prisma } from '../services/db.js';
+import { evaluateActionPolicyWithFallback } from '../services/actionPolicy.js';
 
 export async function registerEstimateRoutes(app: FastifyInstance) {
   app.get(
@@ -118,8 +119,52 @@ export async function registerEstimateRoutes(app: FastifyInstance) {
   app.post(
     '/estimates/:id/submit',
     { preHandler: requireRole(['admin', 'mgmt']) },
-    async (req) => {
+    async (req, reply) => {
       const { id } = req.params as { id: string };
+      const body = req.body as any;
+      const reasonText =
+        typeof body?.reasonText === 'string' ? body.reasonText.trim() : '';
+      const estimate = await prisma.estimate.findUnique({
+        where: { id },
+        select: { status: true, projectId: true },
+      });
+      if (estimate) {
+        const policyRes = await evaluateActionPolicyWithFallback({
+          flowType: FlowTypeValue.estimate,
+          actionKey: 'submit',
+          actor: {
+            userId: req.user?.userId ?? null,
+            roles: req.user?.roles || [],
+            groupIds: req.user?.groupIds || [],
+          },
+          reasonText,
+          state: { status: estimate.status, projectId: estimate.projectId },
+          targetTable: 'estimates',
+          targetId: id,
+        });
+        if (policyRes.policyApplied && !policyRes.allowed) {
+          if (policyRes.reason === 'reason_required') {
+            return reply.status(400).send({
+              error: {
+                code: 'REASON_REQUIRED',
+                message: 'reasonText is required for override',
+                details: { matchedPolicyId: policyRes.matchedPolicyId ?? null },
+              },
+            });
+          }
+          return reply.status(403).send({
+            error: {
+              code: 'ACTION_POLICY_DENIED',
+              message: 'Estimate cannot be submitted',
+              details: {
+                reason: policyRes.reason,
+                matchedPolicyId: policyRes.matchedPolicyId ?? null,
+                guardFailures: policyRes.guardFailures ?? null,
+              },
+            },
+          });
+        }
+      }
       const { updated } = await submitApprovalWithUpdate({
         flowType: FlowTypeValue.estimate,
         targetTable: 'estimates',
