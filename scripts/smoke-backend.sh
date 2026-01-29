@@ -138,7 +138,7 @@ require_id "vendor_quote_id" "$vendor_quote_id"
 vendor_invoice_resp=$(post_json "$BASE_URL/vendor-invoices" "{\"projectId\":\"$project_id\",\"vendorId\":\"$vendor_id\",\"vendorInvoiceNo\":\"$PROJECT_CODE-VI\",\"receivedDate\":\"$work_date\",\"dueDate\":\"$work_date\",\"currency\":\"JPY\",\"totalAmount\":90000}")
 vendor_invoice_id=$(echo "$vendor_invoice_resp" | json_get "id")
 require_id "vendor_invoice_id" "$vendor_invoice_id"
-post_json "$BASE_URL/vendor-invoices/$vendor_invoice_id/approve" '{}' >/dev/null
+post_json "$BASE_URL/vendor-invoices/$vendor_invoice_id/submit" '{}' >/dev/null
 
 echo "[9/9] run alert job and approval check"
 post_json "$BASE_URL/jobs/alerts/run" '{}' >/dev/null

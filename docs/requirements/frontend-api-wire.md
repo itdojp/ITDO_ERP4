@@ -73,7 +73,7 @@
 - GET  `/purchase-orders/:id/send-logs`
 - POST `/vendor-quotes` { projectId, vendorId, quote_no?, ... }
 - POST `/vendor-invoices` { projectId, vendorId, vendor_invoice_no?, ... }
-- POST `/vendor-invoices/:id/approve`
+- POST `/vendor-invoices/:id/submit`（承認フロー起動、後方互換: `/approve` も残す）
 
 ## project chat
 - GET `/projects/:projectId/chat-messages?limit=&before=&tag=`
