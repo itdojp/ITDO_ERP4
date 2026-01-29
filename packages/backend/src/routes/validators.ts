@@ -914,6 +914,16 @@ export const reportSubscriptionRunSchema = {
   ),
 };
 
+export const chatAckReminderRunSchema = {
+  body: Type.Object(
+    {
+      dryRun: Type.Optional(Type.Boolean()),
+      limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 500 })),
+    },
+    { additionalProperties: false },
+  ),
+};
+
 export const notificationDeliveryRunSchema = {
   body: Type.Object(
     {
