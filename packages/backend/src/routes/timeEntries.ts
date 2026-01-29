@@ -19,6 +19,7 @@ import { isWithinEditableDays, parseDateParam } from '../utils/date.js';
 import { findPeriodLock, toPeriodKey } from '../services/periodLock.js';
 import { getEditableDays } from '../services/worklogSetting.js';
 import { evaluateActionPolicyWithFallback } from '../services/actionPolicy.js';
+import { logActionPolicyOverrideIfNeeded } from '../services/actionPolicyAudit.js';
 
 async function validateTaskId(
   taskId: unknown,
@@ -268,6 +269,15 @@ export async function registerTimeEntryRoutes(app: FastifyInstance) {
           },
         });
       }
+      await logActionPolicyOverrideIfNeeded({
+        req,
+        flowType: FlowTypeValue.time,
+        actionKey: 'edit',
+        targetTable: 'time_entries',
+        targetId: id,
+        reasonText,
+        result: policyRes,
+      });
       if (!isEditableByDate || hasClosedProject) {
         if (!policyRes.policyApplied && !isPrivileged) {
           return reply.status(403).send({
@@ -430,6 +440,15 @@ export async function registerTimeEntryRoutes(app: FastifyInstance) {
             },
           });
         }
+        await logActionPolicyOverrideIfNeeded({
+          req,
+          flowType: FlowTypeValue.time,
+          actionKey: 'submit',
+          targetTable: 'time_entries',
+          targetId: id,
+          reasonText,
+          result: policyRes,
+        });
       }
       const entry = await prisma.timeEntry.update({
         where: { id },
