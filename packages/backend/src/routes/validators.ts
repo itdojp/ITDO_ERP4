@@ -359,6 +359,7 @@ export const invoiceMarkPaidSchema = {
           Type.String({ format: 'date' }),
         ]),
       ),
+      reasonText: Type.Optional(Type.String({ minLength: 1 })),
     },
     { additionalProperties: false },
   ),
