@@ -381,8 +381,56 @@ export async function registerTimeEntryRoutes(app: FastifyInstance) {
   app.post(
     '/time-entries/:id/submit',
     { preHandler: requireRole(['admin', 'mgmt']) },
-    async (req) => {
+    async (req, reply) => {
       const { id } = req.params as { id: string };
+      const body = req.body as any;
+      const reasonText =
+        typeof body?.reasonText === 'string' ? body.reasonText.trim() : '';
+      const before = await prisma.timeEntry.findUnique({
+        where: { id },
+        select: { status: true, projectId: true, workDate: true },
+      });
+      if (before) {
+        const policyRes = await evaluateActionPolicyWithFallback({
+          flowType: FlowTypeValue.time,
+          actionKey: 'submit',
+          actor: {
+            userId: req.user?.userId ?? null,
+            roles: req.user?.roles || [],
+            groupIds: req.user?.groupIds || [],
+          },
+          reasonText,
+          state: {
+            status: before.status,
+            projectId: before.projectId,
+            workDate: before.workDate.toISOString(),
+          },
+          targetTable: 'time_entries',
+          targetId: id,
+        });
+        if (policyRes.policyApplied && !policyRes.allowed) {
+          if (policyRes.reason === 'reason_required') {
+            return reply.status(400).send({
+              error: {
+                code: 'REASON_REQUIRED',
+                message: 'reasonText is required for override',
+                details: { matchedPolicyId: policyRes.matchedPolicyId ?? null },
+              },
+            });
+          }
+          return reply.status(403).send({
+            error: {
+              code: 'ACTION_POLICY_DENIED',
+              message: 'Time entry cannot be submitted',
+              details: {
+                reason: policyRes.reason,
+                matchedPolicyId: policyRes.matchedPolicyId ?? null,
+                guardFailures: policyRes.guardFailures ?? null,
+              },
+            },
+          });
+        }
+      }
       const entry = await prisma.timeEntry.update({
         where: { id },
         data: { status: TimeStatusValue.submitted },
