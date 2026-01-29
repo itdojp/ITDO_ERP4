@@ -128,6 +128,11 @@ function formatNotificationLabel(item: AppNotification) {
     if (fromUserId) return `${fromUserId} から確認依頼`;
     return '確認依頼';
   }
+  if (item.kind === 'project_member_added') {
+    const fromUserId = resolveFromUserId(item.payload);
+    if (fromUserId) return `${fromUserId} により案件メンバーに追加されました`;
+    return '案件メンバーに追加されました';
+  }
   return item.kind;
 }
 

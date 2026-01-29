@@ -20,6 +20,7 @@
 - `chat_mention`: チャットのメンション通知（Chat で作成）
 - `chat_ack_required`: 確認依頼（ack required）の通知（requiredUserIds に対して作成）
 - `daily_report_missing`: 日報未提出通知（ジョブで作成）
+- `project_member_added`: 案件メンバー追加（追加されたユーザに対して作成）
 
 ### メール配信の対象（実装済み）
 
