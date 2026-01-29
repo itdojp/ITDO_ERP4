@@ -159,7 +159,10 @@ function formatFlowTypeLabel(flowType: string) {
   return FLOW_TYPE_LABEL_MAP[flowType] ?? flowType;
 }
 
-function resolveApprovalTargetDeepLink(target: { targetTable: string; targetId: string }) {
+function resolveApprovalTargetDeepLink(target: {
+  targetTable: string;
+  targetId: string;
+}) {
   switch (target.targetTable) {
     case 'estimates':
       return { kind: 'estimate', id: target.targetId };
@@ -220,7 +223,8 @@ function formatNotificationLabel(item: AppNotification) {
     const fromUserId = resolveFromUserId(item.payload);
     const flowType = resolveFlowType(item.payload);
     const flowLabel = flowType ? formatFlowTypeLabel(flowType) : '申請';
-    if (fromUserId) return `${fromUserId} により${flowLabel}が差戻しとなりました`;
+    if (fromUserId)
+      return `${fromUserId} により${flowLabel}が差戻しとなりました`;
     return `${flowLabel}が差戻しとなりました`;
   }
   return item.kind;
@@ -330,7 +334,10 @@ export const Dashboard: React.FC = () => {
       navigateToOpen({ kind: 'approvals', id: 'inbox' });
       return;
     }
-    if (item.kind === 'approval_approved' || item.kind === 'approval_rejected') {
+    if (
+      item.kind === 'approval_approved' ||
+      item.kind === 'approval_rejected'
+    ) {
       const target = resolveApprovalTarget(item.payload);
       const deepLink = target ? resolveApprovalTargetDeepLink(target) : null;
       if (deepLink) {
