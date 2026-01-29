@@ -110,6 +110,13 @@ for setting in alert_settings where is_enabled:
 - `DAILY_REPORT_MISSING_SKIP_WEEKEND=true` の場合は土日をスキップ。
 - `DAILY_REPORT_MISSING_REQUIRE_TIME_ENTRY=true` の場合は当日の工数入力があるユーザのみ対象。
 
+## 確認依頼（ack required）期限リマインドジョブ（MVP）
+- `/jobs/chat-ack-reminders/run`: 期限（dueAt）を過ぎた未完了の確認依頼を抽出し、未確認者へ `kind=chat_ack_required` の AppNotification を追加で生成する。
+- 対象: `chat_ack_requests.due_at <= now` かつ requiredUserIds のうち未ackが残っているもの（message.deletedAt は除外）。
+- リマインド抑止: `CHAT_ACK_REMINDER_MIN_INTERVAL_HOURS`（既定 24h）以内に通知済みのユーザ（同一messageId）はスキップ。
+  - 初回通知（作成時）は dueAt より前に作成されるため、dueAt 経過後のリマインドを抑止しない。
+- 探索範囲: `CHAT_ACK_REMINDER_LOOKBACK_DAYS`（既定 30日）より過去の dueAt は対象外。
+
 ## 承認タイムアウト（将来）
 - 設定された承認期限を超過した approval_step を検出し、エスカレーション先へ通知。初期スコープでは未実装、後続で追加。
 

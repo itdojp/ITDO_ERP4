@@ -3618,6 +3618,35 @@
         }
       }
     },
+    "/jobs/chat-ack-reminders/run": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "dryRun": {
+                    "type": "boolean"
+                  },
+                  "limit": {
+                    "maximum": 500,
+                    "minimum": 1,
+                    "type": "integer"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
     "/jobs/daily-report-missing/run": {
       "post": {
         "requestBody": {
