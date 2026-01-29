@@ -11,6 +11,15 @@ type ChatMentionNotificationOptions = {
   mentionAll: boolean;
 };
 
+type ChatAckRequiredNotificationOptions = {
+  projectId: string;
+  messageId: string;
+  messageBody: string;
+  senderUserId: string;
+  requiredUserIds: string[];
+  dueAt?: string | null;
+};
+
 function parseMaxRecipients() {
   const raw = process.env.CHAT_MENTION_NOTIFICATION_MAX_RECIPIENTS;
   if (!raw) return 200;
@@ -80,5 +89,51 @@ export async function createChatMentionNotifications(
     recipients: targetUserIds,
     truncated: recipients.size > targetUserIds.length,
     usesProjectMemberFallback,
+  };
+}
+
+export async function createChatAckRequiredNotifications(
+  options: ChatAckRequiredNotificationOptions,
+) {
+  const recipients = new Set<string>();
+  options.requiredUserIds.forEach((userId) => {
+    const trimmed = userId.trim();
+    if (trimmed) recipients.add(trimmed);
+  });
+  recipients.delete(options.senderUserId);
+
+  const targetUserIds = Array.from(recipients).slice(0, 50);
+  if (targetUserIds.length === 0) {
+    return {
+      created: 0,
+      recipients: [] as string[],
+      truncated: false,
+    };
+  }
+
+  const payload: Prisma.InputJsonValue = {
+    fromUserId: options.senderUserId,
+    excerpt: options.messageBody.replace(/\s+/g, ' ').trim().slice(0, 140),
+    dueAt: options.dueAt || undefined,
+    requiredCount: options.requiredUserIds.length,
+  };
+
+  const created = await prisma.appNotification.createMany({
+    data: targetUserIds.map((userId) => ({
+      userId,
+      kind: 'chat_ack_required',
+      projectId: options.projectId,
+      messageId: options.messageId,
+      payload,
+      createdBy: options.senderUserId,
+      updatedBy: options.senderUserId,
+    })),
+    skipDuplicates: true,
+  });
+
+  return {
+    created: created.count,
+    recipients: targetUserIds,
+    truncated: recipients.size > targetUserIds.length,
   };
 }
