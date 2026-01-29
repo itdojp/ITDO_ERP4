@@ -229,6 +229,18 @@ export const VendorDocuments: React.FC = () => {
     );
   }, [invoicePoLinkDialog, purchaseOrders]);
 
+  const vendorInvoicesByPurchaseOrderId = useMemo(() => {
+    const map = new Map<string, VendorInvoice[]>();
+    vendorInvoices.forEach((invoice) => {
+      const poId = invoice.purchaseOrderId;
+      if (!poId) return;
+      const list = map.get(poId) || [];
+      list.push(invoice);
+      map.set(poId, list);
+    });
+    return map;
+  }, [vendorInvoices]);
+
   const loadProjects = useCallback(async () => {
     try {
       const res = await api<{ items: ProjectOption[] }>('/projects');
@@ -751,100 +763,125 @@ export const VendorDocuments: React.FC = () => {
           </button>
           {poListMessage && <p style={{ color: '#dc2626' }}>{poListMessage}</p>}
           <ul className="list">
-            {purchaseOrders.map((item) => (
-              <li key={item.id}>
-                <span className="badge">{item.status}</span>{' '}
-                {item.poNo || missingNumberLabel} /{' '}
-                {renderProject(item.projectId)} / {renderVendor(item.vendorId)}{' '}
-                / {formatAmount(item.totalAmount, item.currency)}
-                <div style={{ fontSize: 12, color: '#64748b' }}>
-                  発行日: {formatDate(item.issueDate)} / 納期:{' '}
-                  {formatDate(item.dueDate)}
-                </div>
-                {item.status === 'draft' && (
+            {purchaseOrders.map((item) => {
+              const linkedInvoices =
+                vendorInvoicesByPurchaseOrderId.get(item.id) || [];
+              const linkedInvoiceLabels = linkedInvoices.map(
+                (invoice) =>
+                  `${invoice.vendorInvoiceNo || missingNumberLabel}(${invoice.status})`,
+              );
+              const shownLinkedInvoiceLabels = linkedInvoiceLabels.slice(0, 3);
+              const remainingLinkedInvoiceCount =
+                linkedInvoiceLabels.length - shownLinkedInvoiceLabels.length;
+              return (
+                <li key={item.id}>
+                  <span className="badge">{item.status}</span>{' '}
+                  {item.poNo || missingNumberLabel} /{' '}
+                  {renderProject(item.projectId)} /{' '}
+                  {renderVendor(item.vendorId)} /{' '}
+                  {formatAmount(item.totalAmount, item.currency)}
+                  <div style={{ fontSize: 12, color: '#64748b' }}>
+                    発行日: {formatDate(item.issueDate)} / 納期:{' '}
+                    {formatDate(item.dueDate)}
+                  </div>
+                  {linkedInvoices.length > 0 && (
+                    <div style={{ fontSize: 12, color: '#64748b' }}>
+                      リンク済み仕入請求: {linkedInvoices.length}件（
+                      {shownLinkedInvoiceLabels.join(', ')}
+                      {remainingLinkedInvoiceCount > 0
+                        ? ` 他${remainingLinkedInvoiceCount}件`
+                        : ''}
+                      ）
+                    </div>
+                  )}
+                  {item.status === 'draft' && (
+                    <div style={{ marginTop: 6 }}>
+                      <button
+                        className="button secondary"
+                        onClick={() => submitPurchaseOrder(item.id)}
+                        disabled={poActionState[item.id]}
+                      >
+                        {poActionState[item.id] ? '申請中' : '承認依頼'}
+                      </button>
+                    </div>
+                  )}
                   <div style={{ marginTop: 6 }}>
                     <button
                       className="button secondary"
-                      onClick={() => submitPurchaseOrder(item.id)}
-                      disabled={poActionState[item.id]}
+                      onClick={() => startVendorInvoiceFromPo(item)}
                     >
-                      {poActionState[item.id] ? '申請中' : '承認依頼'}
+                      仕入請求を作成
                     </button>
                   </div>
-                )}
-                <div style={{ marginTop: 6 }}>
-                  <button
-                    className="button secondary"
-                    onClick={() => startVendorInvoiceFromPo(item)}
-                  >
-                    仕入請求を作成
-                  </button>
-                </div>
-                <div style={{ marginTop: 6 }}>
-                  <button
-                    className="button secondary"
-                    onClick={() => loadPurchaseOrderSendLogs(item.id)}
-                    disabled={poSendLogLoading[item.id]}
-                  >
-                    {poSendLogLoading[item.id] ? '取得中' : '送信履歴'}
-                  </button>
-                </div>
-                <div style={{ marginTop: 6 }}>
-                  <button
-                    className="button secondary"
-                    onClick={() =>
-                      setAnnotationTarget({
-                        kind: 'purchase_order',
-                        id: item.id,
-                        projectId: item.projectId,
-                        title: `発注書: ${item.poNo || missingNumberLabel}`,
-                      })
-                    }
-                  >
-                    注釈
-                  </button>
-                </div>
-                {poSendLogMessage[item.id] && (
-                  <div style={{ color: '#dc2626', marginTop: 4 }}>
-                    {poSendLogMessage[item.id]}
+                  <div style={{ marginTop: 6 }}>
+                    <button
+                      className="button secondary"
+                      onClick={() => loadPurchaseOrderSendLogs(item.id)}
+                      disabled={poSendLogLoading[item.id]}
+                    >
+                      {poSendLogLoading[item.id] ? '取得中' : '送信履歴'}
+                    </button>
                   </div>
-                )}
-                {Object.prototype.hasOwnProperty.call(poSendLogs, item.id) && (
-                  <ul className="list" style={{ marginTop: 6 }}>
-                    {(poSendLogs[item.id] || []).map((log) => (
-                      <li key={log.id}>
-                        <span className="badge">{log.status}</span>{' '}
-                        {log.channel} / {formatDateTime(log.createdAt)}
-                        {log.error && (
-                          <div style={{ color: '#dc2626' }}>
-                            error: {log.error}
+                  <div style={{ marginTop: 6 }}>
+                    <button
+                      className="button secondary"
+                      onClick={() =>
+                        setAnnotationTarget({
+                          kind: 'purchase_order',
+                          id: item.id,
+                          projectId: item.projectId,
+                          title: `発注書: ${item.poNo || missingNumberLabel}`,
+                        })
+                      }
+                    >
+                      注釈
+                    </button>
+                  </div>
+                  {poSendLogMessage[item.id] && (
+                    <div style={{ color: '#dc2626', marginTop: 4 }}>
+                      {poSendLogMessage[item.id]}
+                    </div>
+                  )}
+                  {Object.prototype.hasOwnProperty.call(
+                    poSendLogs,
+                    item.id,
+                  ) && (
+                    <ul className="list" style={{ marginTop: 6 }}>
+                      {(poSendLogs[item.id] || []).map((log) => (
+                        <li key={log.id}>
+                          <span className="badge">{log.status}</span>{' '}
+                          {log.channel} / {formatDateTime(log.createdAt)}
+                          {log.error && (
+                            <div style={{ color: '#dc2626' }}>
+                              error: {log.error}
+                            </div>
+                          )}
+                          <div style={{ fontSize: 12, color: '#64748b' }}>
+                            logId: {log.id}
                           </div>
-                        )}
-                        <div style={{ fontSize: 12, color: '#64748b' }}>
-                          logId: {log.id}
-                        </div>
-                        {log.pdfUrl && (
-                          <div style={{ marginTop: 4 }}>
-                            <button
-                              className="button secondary"
-                              onClick={() =>
-                                openPurchaseOrderPdf(item.id, log.pdfUrl)
-                              }
-                              disabled={poSendLogLoading[item.id]}
-                            >
-                              PDFを開く
-                            </button>
-                          </div>
-                        )}
-                      </li>
-                    ))}
-                    {(poSendLogs[item.id] || []).length === 0 && (
-                      <li>履歴なし</li>
-                    )}
-                  </ul>
-                )}
-              </li>
-            ))}
+                          {log.pdfUrl && (
+                            <div style={{ marginTop: 4 }}>
+                              <button
+                                className="button secondary"
+                                onClick={() =>
+                                  openPurchaseOrderPdf(item.id, log.pdfUrl)
+                                }
+                                disabled={poSendLogLoading[item.id]}
+                              >
+                                PDFを開く
+                              </button>
+                            </div>
+                          )}
+                        </li>
+                      ))}
+                      {(poSendLogs[item.id] || []).length === 0 && (
+                        <li>履歴なし</li>
+                      )}
+                    </ul>
+                  )}
+                </li>
+              );
+            })}
             {purchaseOrders.length === 0 && <li>データなし</li>}
           </ul>
         </div>
