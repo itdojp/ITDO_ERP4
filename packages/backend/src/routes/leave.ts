@@ -6,6 +6,7 @@ import { requireRole } from '../services/rbac.js';
 import { leaveRequestSchema } from './validators.js';
 import { endOfDay, parseDateParam } from '../utils/date.js';
 import { evaluateActionPolicyWithFallback } from '../services/actionPolicy.js';
+import { logActionPolicyOverrideIfNeeded } from '../services/actionPolicyAudit.js';
 
 export async function registerLeaveRoutes(app: FastifyInstance) {
   app.post(
@@ -123,6 +124,15 @@ export async function registerLeaveRoutes(app: FastifyInstance) {
           },
         });
       }
+      await logActionPolicyOverrideIfNeeded({
+        req,
+        flowType: FlowTypeValue.leave,
+        actionKey: 'submit',
+        targetTable: 'leave_requests',
+        targetId: id,
+        reasonText,
+        result: policyRes,
+      });
       const workDateEnd = endOfDay(leave.endDate);
       const conflictStatuses = [
         TimeStatusValue.submitted,

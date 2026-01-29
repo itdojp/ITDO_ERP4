@@ -7,6 +7,7 @@ import { prisma } from '../services/db.js';
 import { checkProjectAndVendor } from '../services/entityChecks.js';
 import { parseDateParam } from '../utils/date.js';
 import { evaluateActionPolicyWithFallback } from '../services/actionPolicy.js';
+import { logActionPolicyOverrideIfNeeded } from '../services/actionPolicyAudit.js';
 
 export async function registerVendorDocRoutes(app: FastifyInstance) {
   app.get(
@@ -262,6 +263,15 @@ export async function registerVendorDocRoutes(app: FastifyInstance) {
             },
           });
         }
+        await logActionPolicyOverrideIfNeeded({
+          req,
+          flowType: FlowTypeValue.vendor_invoice,
+          actionKey: 'submit',
+          targetTable: 'vendor_invoices',
+          targetId: id,
+          reasonText,
+          result: policyRes,
+        });
       }
       const { updated } = await submitApprovalWithUpdate({
         flowType: FlowTypeValue.vendor_invoice,

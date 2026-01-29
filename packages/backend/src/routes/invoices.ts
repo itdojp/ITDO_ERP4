@@ -12,6 +12,7 @@ import { requireProjectAccess, requireRole } from '../services/rbac.js';
 import { prisma } from '../services/db.js';
 import { endOfDay, parseDateParam } from '../utils/date.js';
 import { auditContextFromRequest, logAudit } from '../services/audit.js';
+import { logActionPolicyOverrideIfNeeded } from '../services/actionPolicyAudit.js';
 
 export async function registerInvoiceRoutes(app: FastifyInstance) {
   const parseDate = (value?: string) => {
@@ -447,6 +448,15 @@ export async function registerInvoiceRoutes(app: FastifyInstance) {
           },
         });
       }
+      await logActionPolicyOverrideIfNeeded({
+        req,
+        flowType: FlowTypeValue.invoice,
+        actionKey: 'mark_paid',
+        targetTable: 'invoices',
+        targetId: id,
+        reasonText,
+        result: policyRes,
+      });
       if (
         invoice.status === DocStatusValue.cancelled ||
         invoice.status === DocStatusValue.rejected
@@ -533,6 +543,15 @@ export async function registerInvoiceRoutes(app: FastifyInstance) {
             },
           });
         }
+        await logActionPolicyOverrideIfNeeded({
+          req,
+          flowType: FlowTypeValue.invoice,
+          actionKey: 'submit',
+          targetTable: 'invoices',
+          targetId: id,
+          reasonText,
+          result: policyRes,
+        });
       }
       const { updated } = await submitApprovalWithUpdate({
         flowType: FlowTypeValue.invoice,

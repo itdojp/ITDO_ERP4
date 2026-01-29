@@ -2,6 +2,7 @@ import { FastifyInstance } from 'fastify';
 import { nextNumber } from '../services/numbering.js';
 import { submitApprovalWithUpdate } from '../services/approval.js';
 import { evaluateActionPolicyWithFallback } from '../services/actionPolicy.js';
+import { logActionPolicyOverrideIfNeeded } from '../services/actionPolicyAudit.js';
 import { FlowTypeValue, DocStatusValue } from '../types.js';
 import { purchaseOrderSchema } from './validators.js';
 import { requireRole } from '../services/rbac.js';
@@ -138,6 +139,15 @@ export async function registerPurchaseOrderRoutes(app: FastifyInstance) {
             },
           });
         }
+        await logActionPolicyOverrideIfNeeded({
+          req,
+          flowType: FlowTypeValue.purchase_order,
+          actionKey: 'submit',
+          targetTable: 'purchase_orders',
+          targetId: id,
+          reasonText,
+          result: policyRes,
+        });
       }
       const { updated } = await submitApprovalWithUpdate({
         flowType: FlowTypeValue.purchase_order,

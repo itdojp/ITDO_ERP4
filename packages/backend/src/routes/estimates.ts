@@ -6,6 +6,7 @@ import { estimateSchema } from './validators.js';
 import { requireProjectAccess, requireRole } from '../services/rbac.js';
 import { prisma } from '../services/db.js';
 import { evaluateActionPolicyWithFallback } from '../services/actionPolicy.js';
+import { logActionPolicyOverrideIfNeeded } from '../services/actionPolicyAudit.js';
 
 export async function registerEstimateRoutes(app: FastifyInstance) {
   app.get(
@@ -164,6 +165,15 @@ export async function registerEstimateRoutes(app: FastifyInstance) {
             },
           });
         }
+        await logActionPolicyOverrideIfNeeded({
+          req,
+          flowType: FlowTypeValue.estimate,
+          actionKey: 'submit',
+          targetTable: 'estimates',
+          targetId: id,
+          reasonText,
+          result: policyRes,
+        });
       }
       const { updated } = await submitApprovalWithUpdate({
         flowType: FlowTypeValue.estimate,
