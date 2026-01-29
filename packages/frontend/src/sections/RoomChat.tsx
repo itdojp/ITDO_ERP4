@@ -84,7 +84,9 @@ function normalizeStringArray(value: unknown) {
 function isAckRequest(
   value: ChatMessage['ackRequest'],
 ): value is NonNullable<ChatMessage['ackRequest']> {
-  const id = value && typeof value === 'object' ? (value as any).id : '';
+  if (!value || typeof value !== 'object') return false;
+  if (!('id' in value)) return false;
+  const id = (value as { id?: unknown }).id;
   return typeof id === 'string' && id.length > 0;
 }
 
