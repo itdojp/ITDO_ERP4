@@ -67,6 +67,13 @@ function buildExcerpt(value: string, maxLength = 80) {
   return `${normalized.slice(0, maxLength)}…`;
 }
 
+function isAckRequest(
+  value: ChatMessage['ackRequest'],
+): value is NonNullable<ChatMessage['ackRequest']> {
+  const id = value && typeof value === 'object' ? (value as any).id : '';
+  return typeof id === 'string' && id.length > 0;
+}
+
 function escapeMarkdownLinkLabel(value: string) {
   return value.replace(/\\/g, '\\\\').replace(/[[\]]/g, '\\$&');
 }
@@ -742,7 +749,10 @@ export const ProjectChat: React.FC = () => {
       setItems((prevItems) =>
         prevItems.map((item) =>
           item.ackRequest?.id === requestId
-            ? { ...item, ackRequest: updated || item.ackRequest }
+            ? {
+                ...item,
+                ackRequest: isAckRequest(updated) ? updated : item.ackRequest,
+              }
             : item,
         ),
       );
@@ -761,7 +771,10 @@ export const ProjectChat: React.FC = () => {
       setItems((prevItems) =>
         prevItems.map((item) =>
           item.ackRequest?.id === requestId
-            ? { ...item, ackRequest: updated || item.ackRequest }
+            ? {
+                ...item,
+                ackRequest: isAckRequest(updated) ? updated : item.ackRequest,
+              }
             : item,
         ),
       );
@@ -778,13 +791,17 @@ export const ProjectChat: React.FC = () => {
         `/chat-ack-requests/${requestId}/cancel`,
         {
           method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ reason }),
         },
       );
       setItems((prevItems) =>
         prevItems.map((item) =>
           item.ackRequest?.id === requestId
-            ? { ...item, ackRequest: updated || item.ackRequest }
+            ? {
+                ...item,
+                ackRequest: isAckRequest(updated) ? updated : item.ackRequest,
+              }
             : item,
         ),
       );

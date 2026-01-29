@@ -81,6 +81,13 @@ function normalizeStringArray(value: unknown) {
     .filter(Boolean);
 }
 
+function isAckRequest(
+  value: ChatMessage['ackRequest'],
+): value is NonNullable<ChatMessage['ackRequest']> {
+  const id = value && typeof value === 'object' ? (value as any).id : '';
+  return typeof id === 'string' && id.length > 0;
+}
+
 function getReactionCount(value: unknown) {
   if (typeof value === 'number') return value;
   if (
@@ -617,7 +624,10 @@ export const RoomChat: React.FC = () => {
       setItems((prev) =>
         prev.map((item) =>
           item.ackRequest?.id === requestId
-            ? { ...item, ackRequest: updated || null }
+            ? {
+                ...item,
+                ackRequest: isAckRequest(updated) ? updated : item.ackRequest,
+              }
             : item,
         ),
       );
@@ -636,7 +646,10 @@ export const RoomChat: React.FC = () => {
       setItems((prev) =>
         prev.map((item) =>
           item.ackRequest?.id === requestId
-            ? { ...item, ackRequest: updated || null }
+            ? {
+                ...item,
+                ackRequest: isAckRequest(updated) ? updated : item.ackRequest,
+              }
             : item,
         ),
       );
@@ -653,13 +666,17 @@ export const RoomChat: React.FC = () => {
         `/chat-ack-requests/${requestId}/cancel`,
         {
           method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ reason }),
         },
       );
       setItems((prev) =>
         prev.map((item) =>
           item.ackRequest?.id === requestId
-            ? { ...item, ackRequest: updated || null }
+            ? {
+                ...item,
+                ackRequest: isAckRequest(updated) ? updated : item.ackRequest,
+              }
             : item,
         ),
       );

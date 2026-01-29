@@ -1159,29 +1159,30 @@ export async function registerChatRoutes(app: FastifyInstance) {
         });
       }
 
-      const cancelledAt = requestItem.canceledAt ?? new Date();
       if (!requestItem.canceledAt) {
-        await prisma.chatAckRequest.update({
-          where: { id: requestItem.id },
-          data: {
-            canceledAt: cancelledAt,
-            canceledBy: userId,
-          },
+        const canceledAt = new Date();
+        const updated = await prisma.chatAckRequest.updateMany({
+          where: { id: requestItem.id, canceledAt: null },
+          data: { canceledAt, canceledBy: userId },
         });
-        await logAudit({
-          action: 'chat_ack_request_canceled',
-          targetTable: 'chat_ack_requests',
-          targetId: requestItem.id,
-          metadata: {
-            roomId: requestItem.roomId,
-            messageId: requestItem.messageId,
-            isPrivileged,
-          } as Prisma.InputJsonValue,
-          ...auditContextFromRequest(req, {
-            userId,
-            reasonText: reason || undefined,
-          }),
-        });
+        if (updated.count > 0) {
+          await logAudit({
+            action: 'chat_ack_request_canceled',
+            targetTable: 'chat_ack_requests',
+            targetId: requestItem.id,
+            metadata: {
+              roomId: requestItem.roomId,
+              messageId: requestItem.messageId,
+              canceledAt: canceledAt.toISOString(),
+              canceledBy: userId,
+              isPrivileged,
+            } as Prisma.InputJsonValue,
+            ...auditContextFromRequest(req, {
+              userId,
+              reasonText: reason || undefined,
+            }),
+          });
+        }
       }
 
       return prisma.chatAckRequest.findUnique({
