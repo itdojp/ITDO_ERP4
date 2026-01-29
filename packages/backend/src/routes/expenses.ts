@@ -1,5 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import { submitApprovalWithUpdate } from '../services/approval.js';
+import { createApprovalPendingNotifications } from '../services/appNotifications.js';
 import { expenseReassignSchema, expenseSchema } from './validators.js';
 import { DocStatusValue, FlowTypeValue } from '../types.js';
 import { requireProjectAccess, requireRole } from '../services/rbac.js';
@@ -156,7 +157,8 @@ export async function registerExpenseRoutes(app: FastifyInstance) {
         reasonText,
         result: policyRes,
       });
-      const { updated } = await submitApprovalWithUpdate({
+      const actorUserId = req.user?.userId || 'system';
+      const { updated, approval } = await submitApprovalWithUpdate({
         flowType: FlowTypeValue.expense,
         targetTable: 'expenses',
         targetId: id,
@@ -166,6 +168,17 @@ export async function registerExpenseRoutes(app: FastifyInstance) {
             data: { status: DocStatusValue.pending_qa },
           }),
         createdBy: userId,
+      });
+      await createApprovalPendingNotifications({
+        approvalInstanceId: approval.id,
+        projectId: approval.projectId,
+        requesterUserId: actorUserId,
+        actorUserId,
+        flowType: approval.flowType,
+        targetTable: approval.targetTable,
+        targetId: approval.targetId,
+        currentStep: approval.currentStep,
+        steps: approval.steps,
       });
       return updated;
     },

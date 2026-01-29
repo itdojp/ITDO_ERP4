@@ -14,6 +14,7 @@ import { prisma } from '../services/db.js';
 import { auditContextFromRequest, logAudit } from '../services/audit.js';
 import { logReassignment } from '../services/reassignmentLog.js';
 import { submitApprovalWithUpdate } from '../services/approval.js';
+import { createApprovalPendingNotifications } from '../services/appNotifications.js';
 import { FlowTypeValue } from '../types.js';
 import { isWithinEditableDays, parseDateParam } from '../utils/date.js';
 import { findPeriodLock, toPeriodKey } from '../services/periodLock.js';
@@ -321,12 +322,24 @@ export async function registerTimeEntryRoutes(app: FastifyInstance) {
       }
       if (changed) {
         data.status = TimeStatusValue.submitted;
-        const { updated } = await submitApprovalWithUpdate({
+        const actorUserId = userId || 'system';
+        const { updated, approval } = await submitApprovalWithUpdate({
           flowType: FlowTypeValue.time,
           targetTable: 'time_entries',
           targetId: id,
           update: (tx) => tx.timeEntry.update({ where: { id }, data }),
           createdBy: userId,
+        });
+        await createApprovalPendingNotifications({
+          approvalInstanceId: approval.id,
+          projectId: approval.projectId,
+          requesterUserId: actorUserId,
+          actorUserId,
+          flowType: approval.flowType,
+          targetTable: approval.targetTable,
+          targetId: approval.targetId,
+          currentStep: approval.currentStep,
+          steps: approval.steps,
         });
         // 監査ログ: 修正が承認待ちになったことを記録
         await logAudit({

@@ -123,6 +123,68 @@ function resolveReportDate(payload: unknown) {
   return typeof value === 'string' && value.trim() ? value.trim() : null;
 }
 
+const FLOW_TYPE_LABEL_MAP: Record<string, string> = {
+  estimate: '見積',
+  invoice: '請求',
+  purchase_order: '発注',
+  vendor_quote: '仕入見積',
+  vendor_invoice: '仕入請求',
+  expense: '経費',
+  leave: '休暇',
+  time: '工数',
+};
+
+function resolveFlowType(payload: unknown) {
+  if (!payload || typeof payload !== 'object') return null;
+  const value = (payload as { flowType?: unknown }).flowType;
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+function resolveApprovalTarget(payload: unknown) {
+  if (!payload || typeof payload !== 'object') return null;
+  const obj = payload as { targetTable?: unknown; targetId?: unknown };
+  const targetTable =
+    typeof obj.targetTable === 'string' && obj.targetTable.trim()
+      ? obj.targetTable.trim()
+      : null;
+  const targetId =
+    typeof obj.targetId === 'string' && obj.targetId.trim()
+      ? obj.targetId.trim()
+      : null;
+  if (!targetTable || !targetId) return null;
+  return { targetTable, targetId };
+}
+
+function formatFlowTypeLabel(flowType: string) {
+  return FLOW_TYPE_LABEL_MAP[flowType] ?? flowType;
+}
+
+function resolveApprovalTargetDeepLink(target: {
+  targetTable: string;
+  targetId: string;
+}) {
+  switch (target.targetTable) {
+    case 'estimates':
+      return { kind: 'estimate', id: target.targetId };
+    case 'invoices':
+      return { kind: 'invoice', id: target.targetId };
+    case 'expenses':
+      return { kind: 'expense', id: target.targetId };
+    case 'purchase_orders':
+      return { kind: 'purchase_order', id: target.targetId };
+    case 'vendor_invoices':
+      return { kind: 'vendor_invoice', id: target.targetId };
+    case 'vendor_quotes':
+      return { kind: 'vendor_quote', id: target.targetId };
+    case 'leave_requests':
+      return { kind: 'leave_request', id: target.targetId };
+    case 'time_entries':
+      return { kind: 'time_entry', id: target.targetId };
+    default:
+      return null;
+  }
+}
+
 function formatNotificationLabel(item: AppNotification) {
   if (item.kind === 'chat_mention') {
     const fromUserId = resolveFromUserId(item.payload);
@@ -142,6 +204,28 @@ function formatNotificationLabel(item: AppNotification) {
     const fromUserId = resolveFromUserId(item.payload);
     if (fromUserId) return `${fromUserId} により案件メンバーに追加されました`;
     return '案件メンバーに追加されました';
+  }
+  if (item.kind === 'approval_pending') {
+    const fromUserId = resolveFromUserId(item.payload);
+    const flowType = resolveFlowType(item.payload);
+    const flowLabel = flowType ? formatFlowTypeLabel(flowType) : '申請';
+    if (fromUserId) return `${fromUserId} から${flowLabel}の承認依頼`;
+    return `${flowLabel}の承認依頼`;
+  }
+  if (item.kind === 'approval_approved') {
+    const fromUserId = resolveFromUserId(item.payload);
+    const flowType = resolveFlowType(item.payload);
+    const flowLabel = flowType ? formatFlowTypeLabel(flowType) : '申請';
+    if (fromUserId) return `${fromUserId} により${flowLabel}が承認されました`;
+    return `${flowLabel}が承認されました`;
+  }
+  if (item.kind === 'approval_rejected') {
+    const fromUserId = resolveFromUserId(item.payload);
+    const flowType = resolveFlowType(item.payload);
+    const flowLabel = flowType ? formatFlowTypeLabel(flowType) : '申請';
+    if (fromUserId)
+      return `${fromUserId} により${flowLabel}が差戻しとなりました`;
+    return `${flowLabel}が差戻しとなりました`;
   }
   return item.kind;
 }
@@ -246,6 +330,22 @@ export const Dashboard: React.FC = () => {
       if (!reportDate) return;
       navigateToOpen({ kind: 'daily_report', id: reportDate });
     }
+    if (item.kind === 'approval_pending') {
+      navigateToOpen({ kind: 'approvals', id: 'inbox' });
+      return;
+    }
+    if (
+      item.kind === 'approval_approved' ||
+      item.kind === 'approval_rejected'
+    ) {
+      const target = resolveApprovalTarget(item.payload);
+      const deepLink = target ? resolveApprovalTargetDeepLink(target) : null;
+      if (deepLink) {
+        navigateToOpen(deepLink);
+        return;
+      }
+      navigateToOpen({ kind: 'approvals', id: 'inbox' });
+    }
   };
 
   useEffect(() => {
@@ -326,7 +426,10 @@ export const Dashboard: React.FC = () => {
                 item.kind === 'chat_ack_required') &&
                 Boolean(item.messageId)) ||
               (item.kind === 'daily_report_missing' &&
-                Boolean(resolveReportDate(item.payload)));
+                Boolean(resolveReportDate(item.payload))) ||
+              item.kind === 'approval_pending' ||
+              item.kind === 'approval_approved' ||
+              item.kind === 'approval_rejected';
             return (
               <Card key={item.id} padding="small">
                 <div

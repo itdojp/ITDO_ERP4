@@ -3,6 +3,10 @@ import { act } from '../services/approval.js';
 import { requireRole } from '../services/rbac.js';
 import { prisma } from '../services/db.js';
 import {
+  createApprovalOutcomeNotification,
+  createApprovalPendingNotifications,
+} from '../services/appNotifications.js';
+import {
   approvalActionSchema,
   approvalCancelSchema,
   approvalRulePatchSchema,
@@ -320,6 +324,50 @@ export async function registerApprovalRuleRoutes(app: FastifyInstance) {
           actorGroupIds,
           auditContext: auditContextFromRequest(req, { userId }),
         });
+        const instance = await prisma.approvalInstance.findUnique({
+          where: { id },
+          include: { steps: true },
+        });
+        if (instance?.createdBy) {
+          if (result.status === DocStatusValue.approved) {
+            await createApprovalOutcomeNotification({
+              approvalInstanceId: instance.id,
+              projectId: instance.projectId,
+              requesterUserId: instance.createdBy,
+              actorUserId: userId,
+              flowType: instance.flowType,
+              targetTable: instance.targetTable,
+              targetId: instance.targetId,
+              outcome: 'approved',
+            });
+          } else if (result.status === DocStatusValue.rejected) {
+            await createApprovalOutcomeNotification({
+              approvalInstanceId: instance.id,
+              projectId: instance.projectId,
+              requesterUserId: instance.createdBy,
+              actorUserId: userId,
+              flowType: instance.flowType,
+              targetTable: instance.targetTable,
+              targetId: instance.targetId,
+              outcome: 'rejected',
+            });
+          } else if (
+            result.status === DocStatusValue.pending_qa ||
+            result.status === DocStatusValue.pending_exec
+          ) {
+            await createApprovalPendingNotifications({
+              approvalInstanceId: instance.id,
+              projectId: instance.projectId,
+              requesterUserId: instance.createdBy,
+              actorUserId: userId,
+              flowType: instance.flowType,
+              targetTable: instance.targetTable,
+              targetId: instance.targetId,
+              currentStep: instance.currentStep,
+              steps: instance.steps,
+            });
+          }
+        }
         return result;
       } catch (err: any) {
         return reply.code(400).send({

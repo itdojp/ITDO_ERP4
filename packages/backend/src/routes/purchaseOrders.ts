@@ -1,6 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { nextNumber } from '../services/numbering.js';
 import { submitApprovalWithUpdate } from '../services/approval.js';
+import { createApprovalPendingNotifications } from '../services/appNotifications.js';
 import { evaluateActionPolicyWithFallback } from '../services/actionPolicy.js';
 import { logActionPolicyOverrideIfNeeded } from '../services/actionPolicyAudit.js';
 import { FlowTypeValue, DocStatusValue } from '../types.js';
@@ -149,7 +150,8 @@ export async function registerPurchaseOrderRoutes(app: FastifyInstance) {
           result: policyRes,
         });
       }
-      const { updated } = await submitApprovalWithUpdate({
+      const actorUserId = req.user?.userId || 'system';
+      const { updated, approval } = await submitApprovalWithUpdate({
         flowType: FlowTypeValue.purchase_order,
         targetTable: 'purchase_orders',
         targetId: id,
@@ -159,6 +161,17 @@ export async function registerPurchaseOrderRoutes(app: FastifyInstance) {
             data: { status: DocStatusValue.pending_qa },
           }),
         createdBy: req.user?.userId,
+      });
+      await createApprovalPendingNotifications({
+        approvalInstanceId: approval.id,
+        projectId: approval.projectId,
+        requesterUserId: actorUserId,
+        actorUserId,
+        flowType: approval.flowType,
+        targetTable: approval.targetTable,
+        targetId: approval.targetId,
+        currentStep: approval.currentStep,
+        steps: approval.steps,
       });
       return updated;
     },

@@ -75,6 +75,8 @@ function resolveDeepLinkTarget(
     case 'vendor_quote':
     case 'vendor_invoice':
       return { sectionId: 'vendor-documents', payload };
+    case 'approvals':
+      return { sectionId: 'approvals', payload };
     case 'project':
       return { sectionId: 'projects', payload };
     case 'time_entry':

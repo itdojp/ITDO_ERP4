@@ -21,11 +21,15 @@
 - `chat_ack_required`: 確認依頼（ack required）の通知（requiredUserIds に対して作成）
 - `daily_report_missing`: 日報未提出通知（ジョブで作成）
 - `project_member_added`: 案件メンバー追加（追加されたユーザに対して作成）
+- `approval_pending`: 承認待ち通知（承認者に対して作成）
+- `approval_approved`: 承認完了通知（申請者に対して作成）
+- `approval_rejected`: 差戻し通知（申請者に対して作成）
 
 ### メール配信の対象（実装済み）
 
 - `chat_mention`
 - （任意）`chat_ack_required`（環境変数 `NOTIFICATION_EMAIL_KINDS` に含めた場合）
+- （任意）`approval_pending`, `approval_approved`, `approval_rejected`（環境変数 `NOTIFICATION_EMAIL_KINDS` に含めた場合）
 - `daily_report_missing`
 - 配信ジョブ: `/jobs/notification-deliveries/run`
 
