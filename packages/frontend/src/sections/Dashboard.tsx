@@ -225,9 +225,6 @@ export const Dashboard: React.FC = () => {
       navigateToOpen({ kind: 'chat_message', id: item.messageId });
       return;
     }
-    if (item.projectId && item.kind.startsWith('chat_')) {
-      navigateToOpen({ kind: 'project_chat', id: item.projectId });
-    }
   };
 
   useEffect(() => {
