@@ -195,6 +195,14 @@ export const VendorDocuments: React.FC = () => {
   const [invoiceActionState, setInvoiceActionState] = useState<
     Record<string, boolean>
   >({});
+  const [invoicePoLinkDialog, setInvoicePoLinkDialog] = useState<{
+    invoice: VendorInvoice;
+    purchaseOrderId: string;
+    reasonText: string;
+  } | null>(null);
+  const [invoicePoLinkBusy, setInvoicePoLinkBusy] = useState(false);
+  const [invoicePoLinkResult, setInvoicePoLinkResult] =
+    useState<MessageState>(null);
 
   const projectMap = useMemo(() => {
     return new Map(projects.map((project) => [project.id, project]));
@@ -211,6 +219,15 @@ export const VendorDocuments: React.FC = () => {
         po.vendorId === invoiceForm.vendorId,
     );
   }, [purchaseOrders, invoiceForm.projectId, invoiceForm.vendorId]);
+
+  const availablePurchaseOrdersForInvoicePoLink = useMemo(() => {
+    if (!invoicePoLinkDialog) return [];
+    const invoice = invoicePoLinkDialog.invoice;
+    return purchaseOrders.filter(
+      (po) =>
+        po.projectId === invoice.projectId && po.vendorId === invoice.vendorId,
+    );
+  }, [invoicePoLinkDialog, purchaseOrders]);
 
   const loadProjects = useCallback(async () => {
     try {
@@ -337,6 +354,8 @@ export const VendorDocuments: React.FC = () => {
   };
 
   const missingNumberLabel = '(番号未設定)';
+  const isVendorInvoiceSubmittableStatus = (status: string) =>
+    status === 'received' || status === 'draft';
   const normalizeCurrency = (value: string) =>
     value.trim().toUpperCase().slice(0, 3);
 
@@ -579,6 +598,56 @@ export const VendorDocuments: React.FC = () => {
       });
     } finally {
       setInvoiceActionBusy(id, false);
+    }
+  };
+
+  const openVendorInvoicePoLinkDialog = (invoice: VendorInvoice) => {
+    setInvoicePoLinkResult(null);
+    setInvoicePoLinkDialog({
+      invoice,
+      purchaseOrderId: invoice.purchaseOrderId || '',
+      reasonText: '',
+    });
+  };
+
+  const saveVendorInvoicePoLink = async () => {
+    if (!invoicePoLinkDialog) return;
+    const invoice = invoicePoLinkDialog.invoice;
+    const purchaseOrderId = invoicePoLinkDialog.purchaseOrderId.trim();
+    const reasonText = invoicePoLinkDialog.reasonText.trim();
+    try {
+      setInvoicePoLinkBusy(true);
+      setInvoicePoLinkResult(null);
+      if (purchaseOrderId) {
+        await api(`/vendor-invoices/${invoice.id}/link-po`, {
+          method: 'POST',
+          body: JSON.stringify({
+            purchaseOrderId,
+            ...(reasonText ? { reasonText } : {}),
+          }),
+        });
+      } else {
+        await api(`/vendor-invoices/${invoice.id}/unlink-po`, {
+          method: 'POST',
+          body: JSON.stringify({
+            ...(reasonText ? { reasonText } : {}),
+          }),
+        });
+      }
+      setInvoicePoLinkResult({
+        text: '関連発注書を更新しました',
+        type: 'success',
+      });
+      loadVendorInvoices();
+      setInvoicePoLinkDialog(null);
+    } catch (err) {
+      console.error('Failed to update vendor invoice purchase order.', err);
+      setInvoicePoLinkResult({
+        text: '関連発注書の更新に失敗しました',
+        type: 'error',
+      });
+    } finally {
+      setInvoicePoLinkBusy(false);
     }
   };
 
@@ -1062,13 +1131,13 @@ export const VendorDocuments: React.FC = () => {
                   受領日: {formatDate(item.receivedDate)} / 支払期限:{' '}
                   {formatDate(item.dueDate)}
                 </div>
-                {item.purchaseOrder && (
+                {(item.purchaseOrder || item.purchaseOrderId) && (
                   <div style={{ fontSize: 12, color: '#64748b' }}>
                     関連発注書:{' '}
-                    {item.purchaseOrder.poNo || item.purchaseOrder.id}
+                    {item.purchaseOrder?.poNo || item.purchaseOrderId}
                   </div>
                 )}
-                {item.status === 'draft' && (
+                {isVendorInvoiceSubmittableStatus(item.status) && (
                   <div style={{ marginTop: 6 }}>
                     <button
                       className="button secondary"
@@ -1079,7 +1148,20 @@ export const VendorDocuments: React.FC = () => {
                     </button>
                   </div>
                 )}
-                <div style={{ marginTop: 6 }}>
+                <div
+                  style={{
+                    marginTop: 6,
+                    display: 'flex',
+                    gap: 8,
+                    flexWrap: 'wrap',
+                  }}
+                >
+                  <button
+                    className="button secondary"
+                    onClick={() => openVendorInvoicePoLinkDialog(item)}
+                  >
+                    PO紐づけ
+                  </button>
                   <button
                     className="button secondary"
                     onClick={() =>
@@ -1100,6 +1182,83 @@ export const VendorDocuments: React.FC = () => {
           </ul>
         </div>
       </div>
+      <Dialog
+        open={Boolean(invoicePoLinkDialog)}
+        onClose={() => setInvoicePoLinkDialog(null)}
+        title="仕入請求: 関連発注書（PO）"
+        size="large"
+        footer={
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+            <Button
+              variant="secondary"
+              onClick={() => setInvoicePoLinkDialog(null)}
+              disabled={invoicePoLinkBusy}
+            >
+              閉じる
+            </Button>
+            <Button
+              onClick={saveVendorInvoicePoLink}
+              disabled={invoicePoLinkBusy}
+            >
+              {invoicePoLinkBusy ? '更新中' : '更新'}
+            </Button>
+          </div>
+        }
+      >
+        {invoicePoLinkDialog && (
+          <div style={{ display: 'grid', gap: 12 }}>
+            <div style={{ fontSize: 12, color: '#64748b' }}>
+              <span className="badge">
+                {invoicePoLinkDialog.invoice.status}
+              </span>{' '}
+              {invoicePoLinkDialog.invoice.vendorInvoiceNo ||
+                missingNumberLabel}
+              {' / '}
+              {renderProject(invoicePoLinkDialog.invoice.projectId)}
+              {' / '}
+              {renderVendor(invoicePoLinkDialog.invoice.vendorId)}
+            </div>
+            <select
+              value={invoicePoLinkDialog.purchaseOrderId}
+              onChange={(e) =>
+                setInvoicePoLinkDialog((prev) =>
+                  prev ? { ...prev, purchaseOrderId: e.target.value } : prev,
+                )
+              }
+            >
+              <option value="">紐づけなし</option>
+              {availablePurchaseOrdersForInvoicePoLink.map((po) => (
+                <option key={po.id} value={po.id}>
+                  {po.poNo || missingNumberLabel}
+                </option>
+              ))}
+            </select>
+            <input
+              type="text"
+              value={invoicePoLinkDialog.reasonText}
+              onChange={(e) =>
+                setInvoicePoLinkDialog((prev) =>
+                  prev ? { ...prev, reasonText: e.target.value } : prev,
+                )
+              }
+              placeholder="変更理由（pending_qa 以降は必須）"
+            />
+            {invoicePoLinkResult && (
+              <p
+                style={{
+                  color:
+                    invoicePoLinkResult.type === 'error'
+                      ? '#dc2626'
+                      : '#16a34a',
+                  margin: 0,
+                }}
+              >
+                {invoicePoLinkResult.text}
+              </p>
+            )}
+          </div>
+        )}
+      </Dialog>
       <Dialog
         open={Boolean(annotationTarget)}
         onClose={() => setAnnotationTarget(null)}
