@@ -37,6 +37,20 @@ type ApprovalRule = {
   updatedAt?: string | null;
 };
 
+type AuditLogItem = {
+  id: string;
+  action: string;
+  userId?: string | null;
+  actorRole?: string | null;
+  actorGroupId?: string | null;
+  reasonCode?: string | null;
+  reasonText?: string | null;
+  targetTable?: string | null;
+  targetId?: string | null;
+  createdAt: string;
+  metadata?: Record<string, unknown> | null;
+};
+
 type ActionPolicy = {
   id: string;
   flowType: string;
@@ -165,6 +179,15 @@ function formatDateTime(value?: string | null): string {
   return date.toLocaleString();
 }
 
+function formatJson(value: unknown): string {
+  if (value === undefined) return '-';
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return '-';
+  }
+}
+
 const createDefaultAlertForm = () => ({
   type: 'budget_overrun',
   threshold: '10',
@@ -262,6 +285,15 @@ export const AdminSettings: React.FC = () => {
   );
   const [editingAlertId, setEditingAlertId] = useState<string | null>(null);
   const [editingRuleId, setEditingRuleId] = useState<string | null>(null);
+  const [approvalRuleAuditOpen, setApprovalRuleAuditOpen] = useState<
+    Record<string, boolean>
+  >({});
+  const [approvalRuleAuditLoading, setApprovalRuleAuditLoading] = useState<
+    Record<string, boolean>
+  >({});
+  const [approvalRuleAuditLogs, setApprovalRuleAuditLogs] = useState<
+    Record<string, AuditLogItem[]>
+  >({});
   const [editingActionPolicyId, setEditingActionPolicyId] = useState<
     string | null
   >(null);
@@ -286,6 +318,67 @@ export const AdminSettings: React.FC = () => {
     () => new Map(pdfTemplates.map((template) => [template.id, template.name])),
     [pdfTemplates],
   );
+  const approvalRuleMonitoring = useMemo(() => {
+    const now = new Date();
+    const parseDate = (value?: string | null) => {
+      if (!value) return null;
+      const parsed = new Date(value);
+      if (Number.isNaN(parsed.getTime())) return null;
+      return parsed;
+    };
+    const compareByDateDesc = (
+      left: ApprovalRule,
+      right: ApprovalRule,
+      field: keyof ApprovalRule,
+    ) => {
+      const a = parseDate(left[field] as string | null);
+      const b = parseDate(right[field] as string | null);
+      const aTime = a ? a.getTime() : 0;
+      const bTime = b ? b.getTime() : 0;
+      if (aTime !== bTime) return bTime - aTime;
+      return 0;
+    };
+    const groups: Record<
+      string,
+      {
+        effective: ApprovalRule[];
+        future: ApprovalRule[];
+        inactive: ApprovalRule[];
+        fallback: ApprovalRule | null;
+      }
+    > = {};
+    for (const flowType of flowTypes) {
+      groups[flowType] = {
+        effective: [],
+        future: [],
+        inactive: [],
+        fallback: null,
+      };
+    }
+    for (const rule of ruleItems) {
+      const isActive = rule.isActive ?? true;
+      const effectiveFrom = parseDate(rule.effectiveFrom ?? null);
+      if (!isActive) {
+        groups[rule.flowType]?.inactive.push(rule);
+      } else if (effectiveFrom && effectiveFrom.getTime() > now.getTime()) {
+        groups[rule.flowType]?.future.push(rule);
+      } else {
+        groups[rule.flowType]?.effective.push(rule);
+      }
+    }
+    for (const flowType of Object.keys(groups)) {
+      const group = groups[flowType];
+      group.effective.sort((a, b) => {
+        const byEffectiveFrom = compareByDateDesc(a, b, 'effectiveFrom');
+        if (byEffectiveFrom !== 0) return byEffectiveFrom;
+        return compareByDateDesc(a, b, 'createdAt');
+      });
+      group.future.sort((a, b) => compareByDateDesc(a, b, 'effectiveFrom'));
+      group.inactive.sort((a, b) => compareByDateDesc(a, b, 'updatedAt'));
+      group.fallback = group.effective[0] || null;
+    }
+    return { now, groups };
+  }, [ruleItems]);
   const logError = useCallback((label: string, err: unknown) => {
     console.error(`[AdminSettings] ${label}`, err);
   }, []);
@@ -309,6 +402,33 @@ export const AdminSettings: React.FC = () => {
       setRuleItems([]);
     }
   }, [logError]);
+
+  const loadApprovalRuleAuditLogs = useCallback(
+    async (ruleId: string) => {
+      try {
+        setApprovalRuleAuditLoading((prev) => ({ ...prev, [ruleId]: true }));
+        const query = new URLSearchParams();
+        query.set('targetTable', 'approval_rules');
+        query.set('targetId', ruleId);
+        query.set('limit', '50');
+        query.set('format', 'json');
+        const res = await api<{ items: AuditLogItem[] }>(
+          `/audit-logs?${query.toString()}`,
+        );
+        setApprovalRuleAuditLogs((prev) => ({
+          ...prev,
+          [ruleId]: res.items || [],
+        }));
+      } catch (err) {
+        logError('loadApprovalRuleAuditLogs failed', err);
+        setApprovalRuleAuditLogs((prev) => ({ ...prev, [ruleId]: [] }));
+        setMessage('承認ルールの履歴取得に失敗しました');
+      } finally {
+        setApprovalRuleAuditLoading((prev) => ({ ...prev, [ruleId]: false }));
+      }
+    },
+    [logError],
+  );
 
   const loadActionPolicies = useCallback(async () => {
     try {
@@ -1280,6 +1400,63 @@ export const AdminSettings: React.FC = () => {
 
         <div className="card" style={{ padding: 12 }}>
           <strong>承認ルール（簡易モック）</strong>
+          <div style={{ fontSize: 12, color: '#475569', marginTop: 6 }}>
+            <div>
+              注意: ルール変更は既存の進行中承認には適用されません（申請時に
+              steps/stagePolicy をスナップショット保持）。
+              適用が必要な場合は「取消→再申請」運用で反映します。
+            </div>
+            <div>
+              運用監視: isActive=true かつ effectiveFrom&lt;=現在時刻 が候補。
+              複数候補がある場合は effectiveFrom desc / createdAt desc
+              の順で評価し、条件一致がなければ先頭が fallback になります。
+            </div>
+          </div>
+          <details style={{ marginTop: 8 }}>
+            <summary style={{ cursor: 'pointer' }}>
+              運用監視（有効化状態/影響範囲）
+            </summary>
+            <div
+              className="list"
+              style={{ display: 'grid', gap: 8, marginTop: 8 }}
+            >
+              <div style={{ fontSize: 12, color: '#475569' }}>
+                現在時刻: {approvalRuleMonitoring.now.toLocaleString()}
+              </div>
+              {flowTypes.map((flowType) => {
+                const group = approvalRuleMonitoring.groups[flowType];
+                const fallback = group?.fallback || null;
+                return (
+                  <div key={flowType} className="card" style={{ padding: 10 }}>
+                    <div
+                      className="row"
+                      style={{
+                        justifyContent: 'space-between',
+                        flexWrap: 'wrap',
+                      }}
+                    >
+                      <strong>{flowType}</strong>
+                      <span className="badge">
+                        effective:{group?.effective.length ?? 0} / future:
+                        {group?.future.length ?? 0} / inactive:
+                        {group?.inactive.length ?? 0}
+                      </span>
+                    </div>
+                    <div
+                      style={{ fontSize: 12, color: '#475569', marginTop: 4 }}
+                    >
+                      fallback:{' '}
+                      {fallback
+                        ? `v${fallback.version ?? 1} id=${fallback.id} effectiveFrom=${formatDateTime(
+                            fallback.effectiveFrom,
+                          )}`
+                        : '-'}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </details>
           <div className="row" style={{ marginTop: 8, flexWrap: 'wrap' }}>
             <label>
               flowType
@@ -1370,49 +1547,241 @@ export const AdminSettings: React.FC = () => {
             style={{ display: 'grid', gap: 8, marginTop: 8 }}
           >
             {ruleItems.length === 0 && <div className="card">ルールなし</div>}
-            {ruleItems.map((rule) => (
-              <div key={rule.id} className="card" style={{ padding: 12 }}>
-                <div
-                  className="row"
-                  style={{ justifyContent: 'space-between', flexWrap: 'wrap' }}
-                >
-                  <div>
-                    <strong>{rule.flowType}</strong> (v{rule.version ?? 1})
-                  </div>
-                  <div className="row" style={{ gap: 6 }}>
-                    <span className="badge">
-                      {(rule.isActive ?? true) ? 'active' : 'inactive'}
-                    </span>
-                    <span className="badge">
-                      effectiveFrom: {formatDateTime(rule.effectiveFrom)}
-                    </span>
-                  </div>
-                </div>
-                <div style={{ fontSize: 12, color: '#475569', marginTop: 4 }}>
-                  conditions:{' '}
-                  {rule.conditions ? JSON.stringify(rule.conditions) : '-'}
-                </div>
-                <div style={{ fontSize: 12, color: '#475569', marginTop: 4 }}>
-                  steps: {rule.steps ? JSON.stringify(rule.steps) : '-'}
-                </div>
-                <div className="row" style={{ marginTop: 6 }}>
-                  <button
-                    className="button secondary"
-                    onClick={() =>
-                      toggleApprovalRuleActive(rule.id, rule.isActive)
-                    }
+            {ruleItems.map((rule) => {
+              const isActive = rule.isActive ?? true;
+              const effectiveFrom = rule.effectiveFrom
+                ? new Date(rule.effectiveFrom)
+                : null;
+              const isEffectiveFromValid =
+                Boolean(effectiveFrom) &&
+                !Number.isNaN(effectiveFrom!.getTime());
+              const now = approvalRuleMonitoring.now;
+              const statusLabel = !isActive
+                ? 'inactive'
+                : isEffectiveFromValid &&
+                    effectiveFrom!.getTime() > now.getTime()
+                  ? 'future'
+                  : 'effective';
+              const isHistoryOpen = approvalRuleAuditOpen[rule.id] ?? false;
+              const isHistoryLoading =
+                approvalRuleAuditLoading[rule.id] ?? false;
+              const auditLogs = approvalRuleAuditLogs[rule.id] || [];
+              return (
+                <div key={rule.id} className="card" style={{ padding: 12 }}>
+                  <div
+                    className="row"
+                    style={{
+                      justifyContent: 'space-between',
+                      flexWrap: 'wrap',
+                      gap: 6,
+                    }}
                   >
-                    {(rule.isActive ?? true) ? '無効化' : '有効化'}
-                  </button>
-                  <button
-                    className="button secondary"
-                    onClick={() => startEditRule(rule)}
+                    <div>
+                      <strong>{rule.flowType}</strong> (v{rule.version ?? 1}) /
+                      id={rule.id}
+                    </div>
+                    <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}>
+                      <span className="badge">{statusLabel}</span>
+                      <span className="badge">
+                        isActive: {isActive ? 'true' : 'false'}
+                      </span>
+                      <span className="badge">
+                        effectiveFrom: {formatDateTime(rule.effectiveFrom)}
+                      </span>
+                      <span className="badge">
+                        updatedAt: {formatDateTime(rule.updatedAt)}
+                      </span>
+                    </div>
+                  </div>
+                  <div
+                    style={{
+                      fontSize: 12,
+                      color: '#475569',
+                      marginTop: 4,
+                      whiteSpace: 'pre-wrap',
+                    }}
                   >
-                    編集
-                  </button>
+                    conditions:{' '}
+                    {rule.conditions ? formatJson(rule.conditions) : '-'}
+                  </div>
+                  <div
+                    style={{
+                      fontSize: 12,
+                      color: '#475569',
+                      marginTop: 4,
+                      whiteSpace: 'pre-wrap',
+                    }}
+                  >
+                    steps: {rule.steps ? formatJson(rule.steps) : '-'}
+                  </div>
+                  <div
+                    className="row"
+                    style={{ marginTop: 6, flexWrap: 'wrap' }}
+                  >
+                    <button
+                      className="button secondary"
+                      onClick={() =>
+                        toggleApprovalRuleActive(rule.id, rule.isActive)
+                      }
+                    >
+                      {isActive ? '無効化' : '有効化'}
+                    </button>
+                    <button
+                      className="button secondary"
+                      onClick={() => startEditRule(rule)}
+                    >
+                      編集
+                    </button>
+                    <button
+                      className="button secondary"
+                      onClick={() => {
+                        const nextOpen = !isHistoryOpen;
+                        setApprovalRuleAuditOpen((prev) => ({
+                          ...prev,
+                          [rule.id]: nextOpen,
+                        }));
+                        if (
+                          nextOpen &&
+                          approvalRuleAuditLogs[rule.id] === undefined
+                        ) {
+                          loadApprovalRuleAuditLogs(rule.id);
+                        }
+                      }}
+                    >
+                      {isHistoryOpen ? '履歴を閉じる' : '履歴を見る'}
+                    </button>
+                    {isHistoryOpen && (
+                      <button
+                        className="button secondary"
+                        onClick={() => loadApprovalRuleAuditLogs(rule.id)}
+                      >
+                        履歴を再読込
+                      </button>
+                    )}
+                  </div>
+                  {isHistoryOpen && (
+                    <div style={{ marginTop: 8 }}>
+                      {isHistoryLoading && (
+                        <div style={{ fontSize: 12, color: '#475569' }}>
+                          読み込み中...
+                        </div>
+                      )}
+                      {!isHistoryLoading && auditLogs.length === 0 && (
+                        <div
+                          className="card"
+                          style={{ padding: 10, fontSize: 12 }}
+                        >
+                          履歴なし
+                        </div>
+                      )}
+                      {!isHistoryLoading &&
+                        auditLogs.map((log) => {
+                          const meta = log.metadata || {};
+                          const metaFields = meta as {
+                            before?: unknown;
+                            after?: unknown;
+                            patch?: unknown;
+                          };
+                          const before = metaFields.before;
+                          const after = metaFields.after;
+                          const patch = metaFields.patch;
+                          const hasBeforeAfter =
+                            before !== undefined || after !== undefined;
+                          return (
+                            <details key={log.id} style={{ marginTop: 6 }}>
+                              <summary style={{ cursor: 'pointer' }}>
+                                {formatDateTime(log.createdAt)} / {log.action} /{' '}
+                                {log.actorRole || '-'} / {log.userId || '-'}
+                              </summary>
+                              <div
+                                style={{
+                                  display: 'grid',
+                                  gap: 8,
+                                  marginTop: 8,
+                                  fontSize: 12,
+                                }}
+                              >
+                                {(log.reasonText || log.reasonCode) && (
+                                  <div style={{ color: '#475569' }}>
+                                    reason: {log.reasonCode || '-'} /{' '}
+                                    {log.reasonText || '-'}
+                                  </div>
+                                )}
+                                {hasBeforeAfter ? (
+                                  <>
+                                    <div style={{ color: '#475569' }}>
+                                      before
+                                    </div>
+                                    <pre
+                                      style={{
+                                        margin: 0,
+                                        padding: 10,
+                                        whiteSpace: 'pre-wrap',
+                                        borderRadius: 6,
+                                        background: '#0f172a',
+                                        color: '#e2e8f0',
+                                      }}
+                                    >
+                                      {formatJson(before)}
+                                    </pre>
+                                    <div style={{ color: '#475569' }}>
+                                      after
+                                    </div>
+                                    <pre
+                                      style={{
+                                        margin: 0,
+                                        padding: 10,
+                                        whiteSpace: 'pre-wrap',
+                                        borderRadius: 6,
+                                        background: '#0f172a',
+                                        color: '#e2e8f0',
+                                      }}
+                                    >
+                                      {formatJson(after)}
+                                    </pre>
+                                    {patch !== undefined && (
+                                      <>
+                                        <div style={{ color: '#475569' }}>
+                                          patch
+                                        </div>
+                                        <pre
+                                          style={{
+                                            margin: 0,
+                                            padding: 10,
+                                            whiteSpace: 'pre-wrap',
+                                            borderRadius: 6,
+                                            background: '#0f172a',
+                                            color: '#e2e8f0',
+                                          }}
+                                        >
+                                          {formatJson(patch)}
+                                        </pre>
+                                      </>
+                                    )}
+                                  </>
+                                ) : (
+                                  <pre
+                                    style={{
+                                      margin: 0,
+                                      padding: 10,
+                                      whiteSpace: 'pre-wrap',
+                                      borderRadius: 6,
+                                      background: '#0f172a',
+                                      color: '#e2e8f0',
+                                    }}
+                                  >
+                                    {formatJson(meta)}
+                                  </pre>
+                                )}
+                              </div>
+                            </details>
+                          );
+                        })}
+                    </div>
+                  )}
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
 

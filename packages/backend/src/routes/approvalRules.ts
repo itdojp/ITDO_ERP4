@@ -43,6 +43,27 @@ function hasValidSteps(steps: unknown) {
   return true;
 }
 
+function ruleSnapshotForAudit(rule: any) {
+  const toIso = (value: unknown) => {
+    if (!value) return null;
+    if (value instanceof Date) return value.toISOString();
+    const parsed = new Date(String(value));
+    if (Number.isNaN(parsed.getTime())) return String(value);
+    return parsed.toISOString();
+  };
+  return {
+    id: rule?.id,
+    flowType: rule?.flowType,
+    version: rule?.version,
+    isActive: rule?.isActive,
+    effectiveFrom: toIso(rule?.effectiveFrom),
+    conditions: rule?.conditions ?? null,
+    steps: rule?.steps ?? null,
+    createdAt: toIso(rule?.createdAt),
+    updatedAt: toIso(rule?.updatedAt),
+  };
+}
+
 const privilegedRoles = new Set(['admin', 'mgmt', 'exec']);
 type ApprovalInstanceAccessFilter = {
   createdBy?: string;
@@ -158,7 +179,10 @@ export async function registerApprovalRuleRoutes(app: FastifyInstance) {
         action: 'approval_rule_created',
         targetTable: 'approval_rules',
         targetId: created.id,
-        metadata: { flowType: created.flowType },
+        metadata: {
+          flowType: created.flowType,
+          after: ruleSnapshotForAudit(created),
+        },
         ...auditContextFromRequest(req),
       });
       return created;
@@ -192,6 +216,7 @@ export async function registerApprovalRuleRoutes(app: FastifyInstance) {
         }
         effectiveFrom = parsed;
       }
+      const before = await prisma.approvalRule.findUnique({ where: { id } });
       const updated = await prisma.approvalRule.update({
         where: { id },
         data: {
@@ -203,7 +228,12 @@ export async function registerApprovalRuleRoutes(app: FastifyInstance) {
         action: 'approval_rule_updated',
         targetTable: 'approval_rules',
         targetId: updated.id,
-        metadata: { flowType: updated.flowType },
+        metadata: {
+          flowType: updated.flowType,
+          before: before ? ruleSnapshotForAudit(before) : null,
+          after: ruleSnapshotForAudit(updated),
+          patch: body,
+        },
         ...auditContextFromRequest(req),
       });
       return updated;
