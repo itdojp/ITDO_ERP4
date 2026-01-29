@@ -6,6 +6,7 @@ import { requireRole } from '../services/rbac.js';
 import { prisma } from '../services/db.js';
 import { checkProjectAndVendor } from '../services/entityChecks.js';
 import { parseDateParam } from '../utils/date.js';
+import { evaluateActionPolicyWithFallback } from '../services/actionPolicy.js';
 
 export async function registerVendorDocRoutes(app: FastifyInstance) {
   app.get(
@@ -213,8 +214,55 @@ export async function registerVendorDocRoutes(app: FastifyInstance) {
   app.post(
     '/vendor-invoices/:id/approve',
     { preHandler: requireRole(['admin', 'mgmt']) },
-    async (req) => {
+    async (req, reply) => {
       const { id } = req.params as { id: string };
+      const body = req.body as any;
+      const reasonText =
+        typeof body?.reasonText === 'string' ? body.reasonText.trim() : '';
+      const vendorInvoice = await prisma.vendorInvoice.findUnique({
+        where: { id },
+        select: { status: true, projectId: true },
+      });
+      if (vendorInvoice) {
+        const policyRes = await evaluateActionPolicyWithFallback({
+          flowType: FlowTypeValue.vendor_invoice,
+          actionKey: 'submit',
+          actor: {
+            userId: req.user?.userId ?? null,
+            roles: req.user?.roles || [],
+            groupIds: req.user?.groupIds || [],
+          },
+          reasonText,
+          state: {
+            status: vendorInvoice.status,
+            projectId: vendorInvoice.projectId,
+          },
+          targetTable: 'vendor_invoices',
+          targetId: id,
+        });
+        if (policyRes.policyApplied && !policyRes.allowed) {
+          if (policyRes.reason === 'reason_required') {
+            return reply.status(400).send({
+              error: {
+                code: 'REASON_REQUIRED',
+                message: 'reasonText is required for override',
+                details: { matchedPolicyId: policyRes.matchedPolicyId ?? null },
+              },
+            });
+          }
+          return reply.status(403).send({
+            error: {
+              code: 'ACTION_POLICY_DENIED',
+              message: 'VendorInvoice cannot be submitted',
+              details: {
+                reason: policyRes.reason,
+                matchedPolicyId: policyRes.matchedPolicyId ?? null,
+                guardFailures: policyRes.guardFailures ?? null,
+              },
+            },
+          });
+        }
+      }
       const { updated } = await submitApprovalWithUpdate({
         flowType: FlowTypeValue.vendor_invoice,
         targetTable: 'vendor_invoices',
