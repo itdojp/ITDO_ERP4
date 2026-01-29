@@ -1,25 +1,38 @@
-# ワークフロー汎用化（承認 + アクション権限/ロック）設計（案）
+# ワークフロー汎用化（承認 + アクション権限/ロック）設計
 
 ## 目的
 
 - 多段承認、並列/順不同の承認（all/any/quorum 等）を、管理画面から柔軟に設定・変更できるようにする。
 - 承認だけでは表現できない「編集ロック」「権限」「例外（管理者上書き）」を共通化し、ドメイン別実装の重複と手戻りを削減する。
 
+## 決定事項（現行運用）
+
+- 対象範囲
+  - 承認: WorkflowDefinition（現 `ApprovalRule`）+ 承認インスタンス（`ApprovalInstance/Step`）
+  - 権限/ロック: `ActionPolicy + Guard`（`flowType × actionKey × state` + 定義済み横断判定部品）
+  - 副作用（送信/入金確認/支払確定 等）は Handler としてコード側に残し、管理画面から任意スクリプトは実行させない。
+- 変更適用ポリシー
+  - 承認ルール（ApprovalRule）は原則「新規申請から適用」。
+    - 申請時に `ApprovalInstance.stagePolicy` をスナップショット保持し、進行中の承認はルール変更の影響を受けない。
+    - 進行中に適用が必要な場合は、管理者運用（取消→再申請、上書き等）で吸収する。
+  - ActionPolicy/Guard は各操作時に評価されるため、ポリシー変更は以後の操作に即時反映される。
+    - Phase 3 は移行期のため「該当 ActionPolicy が無い場合は許可（fallback）」として既存動作を維持する。
+
 ## 用語
 
 - **flowType**: 承認/ワークフロー適用対象の種別（例: `invoice`, `expense`）。現行は `FlowType` enum を使用。
 - **target**: ワークフロー対象の実体（例: invoices テーブルの1行）。`targetTable + targetId` で参照。
 - **approval workflow**: 承認インスタンス（ApprovalInstance/Step）により表現される承認プロセス。
-- **actionKey**: 画面/API上の操作を表す共通キー（例: `edit`, `submit`, `cancel`, `send`, `mark_paid`）。
+- **actionKey**: 画面/API上の操作を表す共通キー（例: `edit`, `submit`, `send`, `mark_paid`）。
 - **ActionPolicy**: `flowType × actionKey × state` で実行可否と要件（role、理由必須、ガード等）を定義するポリシー。
 - **Guard**: 期間締め/案件closed/editableDays 等の横断判定部品（管理画面から「定義済み部品」を選択）。
 - **Handler**: 送信/入金確認など副作用を伴う処理（安全性のためコード側に固定し、管理画面で任意スクリプトは許容しない）。
 
-## actionKey 辞書（暫定）
+## actionKey 辞書（暫定/実装済み中心）
 
 ActionPolicy/WorkflowDefinition で参照する **共通キー**として扱う。
 
-### 共通 actionKey（案）
+### 共通 actionKey（現状）
 
 - `edit`: 文書の更新（例: PATCH/PUT）
 - `submit`: 承認申請（submitApprovalWithUpdate 相当）
