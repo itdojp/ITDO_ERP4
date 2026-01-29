@@ -896,6 +896,22 @@ test('frontend smoke chat hr analytics @extended', async ({ page }) => {
   await expect(ackItem.getByText('確認状況: 0/1')).toBeVisible();
   await ackItem.getByRole('button', { name: 'OK' }).click();
   await expect(ackItem.getByText('確認状況: 1/1')).toBeVisible();
+  page.once('dialog', (dialog) => dialog.accept().catch(() => undefined));
+  await ackItem.getByRole('button', { name: 'OK取消' }).click();
+  await expect(ackItem.getByText('確認状況: 0/1')).toBeVisible({
+    timeout: actionTimeout,
+  });
+  await expect(ackItem.getByRole('button', { name: 'OK' })).toBeVisible({
+    timeout: actionTimeout,
+  });
+  page.once('dialog', (dialog) =>
+    dialog.accept('e2e cancel').catch(() => undefined),
+  );
+  await ackItem.getByRole('button', { name: '撤回' }).click();
+  await expect(ackItem.getByText(/^撤回:/)).toBeVisible({
+    timeout: actionTimeout,
+  });
+  await expect(ackItem.getByRole('button', { name: 'OK' })).toHaveCount(0);
 
   const overdueDueAt = new Date(Date.now() - 60_000).toISOString();
   const overdueAckMessage = `E2E ack overdue ${id}`;
