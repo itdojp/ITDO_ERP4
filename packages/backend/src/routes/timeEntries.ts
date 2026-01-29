@@ -18,6 +18,7 @@ import { FlowTypeValue } from '../types.js';
 import { isWithinEditableDays, parseDateParam } from '../utils/date.js';
 import { findPeriodLock, toPeriodKey } from '../services/periodLock.js';
 import { getEditableDays } from '../services/worklogSetting.js';
+import { evaluateActionPolicyWithFallback } from '../services/actionPolicy.js';
 
 async function validateTaskId(
   taskId: unknown,
@@ -227,8 +228,48 @@ export async function registerTimeEntryRoutes(app: FastifyInstance) {
           })
         : [];
       const hasClosedProject = closedProjects.length > 0;
+
+      const policyRes = await evaluateActionPolicyWithFallback({
+        flowType: FlowTypeValue.time,
+        actionKey: 'edit',
+        actor: {
+          userId: req.user?.userId ?? null,
+          roles: req.user?.roles || [],
+          groupIds: req.user?.groupIds || [],
+        },
+        reasonText,
+        state: {
+          status: before.status,
+          projectIds: projectIdsToCheck,
+          workDates: workDatesToCheck.map((date) => date.toISOString()),
+        },
+        targetTable: 'time_entries',
+        targetId: id,
+      });
+      if (policyRes.policyApplied && !policyRes.allowed) {
+        if (policyRes.reason === 'reason_required') {
+          return reply.status(400).send({
+            error: {
+              code: 'REASON_REQUIRED',
+              message: 'reasonText is required for override',
+              details: { matchedPolicyId: policyRes.matchedPolicyId ?? null },
+            },
+          });
+        }
+        return reply.status(403).send({
+          error: {
+            code: 'ACTION_POLICY_DENIED',
+            message: 'Time entry cannot be modified',
+            details: {
+              reason: policyRes.reason,
+              matchedPolicyId: policyRes.matchedPolicyId ?? null,
+              guardFailures: policyRes.guardFailures ?? null,
+            },
+          },
+        });
+      }
       if (!isEditableByDate || hasClosedProject) {
-        if (!isPrivileged) {
+        if (!policyRes.policyApplied && !isPrivileged) {
           return reply.status(403).send({
             error: {
               code: 'WORKLOG_LOCKED',
@@ -241,7 +282,7 @@ export async function registerTimeEntryRoutes(app: FastifyInstance) {
             },
           });
         }
-        if (!reasonText) {
+        if (!policyRes.policyApplied && !reasonText) {
           return reply.status(400).send({
             error: {
               code: 'REASON_REQUIRED',
@@ -253,12 +294,18 @@ export async function registerTimeEntryRoutes(app: FastifyInstance) {
           action: 'time_entry_override',
           targetTable: 'time_entries',
           targetId: id,
-          reasonText,
           metadata: {
             editableDays,
             editWindowExpired: !isEditableByDate,
             projectClosed: hasClosedProject,
+            actionPolicy: policyRes.policyApplied
+              ? {
+                  matchedPolicyId: policyRes.matchedPolicyId,
+                  requireReason: policyRes.requireReason,
+                }
+              : { matchedPolicyId: null, requireReason: false },
           },
+          reasonText: reasonText || undefined,
           ...auditContextFromRequest(req, { userId }),
         });
       }
