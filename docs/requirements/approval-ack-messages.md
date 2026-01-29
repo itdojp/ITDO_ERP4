@@ -14,7 +14,7 @@
 
 - 対象者は `requiredUserIds`（ユーザIDの明示指定・API上は最大50人まで）のみ
 - 期限は `dueAt` 任意（期限超過による自動クローズ/エスカレーションは未実装）
-- OK取り消し（ack revoke）は未実装
+- OK取り消し（ack revoke）は実装済み（本人）
 - 進捗表示はルーム参加者全員に表示（ack状況のみ表示し、既読/未読の区別はしない）
 - 通知は `requiredUserIds` 向けに AppNotification（`kind=chat_ack_required`）を作成（メール配信は `NOTIFICATION_EMAIL_KINDS` に含めた場合のみ）。メンション通知（`kind=chat_mention`）は併用可
 
@@ -33,7 +33,7 @@
 ### 3) 監査/ログ要件（誰が確認したか）
 
 - MVPは「誰が/いつ ack したか」を検索可能にし、監査ログに残す（例: `ack_request_created` / `ack_added`）
-- OK取り消し（ack revoke）、期限超過時の扱い（expired/リマインド/エスカレーション）は後続で確定
+- OK取り消し（ack revoke）、期限超過時の扱い（expired/リマインド/エスカレーション）は段階導入（MVPでは revoke/リマインドまで対応）
 
 ## 差分/課題
 
@@ -63,8 +63,8 @@
 
 ## 変更/撤回（確定/後続）
 
-- 撤回（canceled）は後続で追加（作成者/管理者）
-- 回答の取り消し（ack revoke）は後続で追加（本人）
+- 撤回（canceled）は実装済み（作成者/管理者）
+- 回答の取り消し（ack revoke）は実装済み（本人）
 - 監査上は履歴保存を必須とする（作成/ack はMVPで対応済み）
 
 ## UI/UX（案）
@@ -104,10 +104,10 @@
 ## TODO
 
 - [ ] 対象者の指定方法（ユーザのみ/グループ/ロール）を確定（MVPは userId 指定のみ）
-- [ ] dueAt のリマインド実装（通知/一覧の優先度付けなど、運用に合わせて段階導入）
+- [x] dueAt のリマインド実装（期限超過時の通知ジョブ）
 - [ ] 進捗の可視化範囲を確定（MVPはルーム内可視）
-- [ ] 撤回（canceled）を追加（作成者/管理者）
-- [ ] ack revoke を追加（本人）
+- [x] 撤回（canceled）を追加（作成者/管理者）
+- [x] ack revoke を追加（本人）
 - [ ] 外部ユーザ（external_chat）の対象者としての許容範囲を確定
 - [ ] 承認フローとの連携方法（WorkflowDefinition/ActionPolicy と整合）を確定
 

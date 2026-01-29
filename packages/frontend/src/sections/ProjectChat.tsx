@@ -20,6 +20,8 @@ type ChatMessage = {
     id: string;
     requiredUserIds: unknown;
     dueAt?: string | null;
+    canceledAt?: string | null;
+    canceledBy?: string | null;
     acks?: { userId: string; ackedAt: string }[];
   } | null;
   attachments?: {
@@ -63,6 +65,15 @@ function buildExcerpt(value: string, maxLength = 80) {
   if (!normalized) return '';
   if (normalized.length <= maxLength) return normalized;
   return `${normalized.slice(0, maxLength)}…`;
+}
+
+function isAckRequest(
+  value: ChatMessage['ackRequest'],
+): value is NonNullable<ChatMessage['ackRequest']> {
+  if (!value || typeof value !== 'object') return false;
+  if (!('id' in value)) return false;
+  const id = (value as { id?: unknown }).id;
+  return typeof id === 'string' && id.length > 0;
 }
 
 function escapeMarkdownLinkLabel(value: string) {
@@ -241,6 +252,7 @@ export const ProjectChat: React.FC = () => {
   const [isPosting, setIsPosting] = useState(false);
   const [hasMore, setHasMore] = useState(false);
   const currentUserId = auth?.userId || 'demo-user';
+  const roles = auth?.roles || [];
   const [unreadCount, setUnreadCount] = useState(0);
   const [highlightSince, setHighlightSince] = useState<Date | null>(null);
   const [summary, setSummary] = useState('');
@@ -265,6 +277,7 @@ export const ProjectChat: React.FC = () => {
   const [highlightMessageId, setHighlightMessageId] = useState('');
 
   const hasActiveAckDeadline = items.some((item) => {
+    if (item.ackRequest?.canceledAt) return false;
     const dueAt = item.ackRequest?.dueAt
       ? new Date(item.ackRequest.dueAt)
       : null;
@@ -738,13 +751,66 @@ export const ProjectChat: React.FC = () => {
       setItems((prevItems) =>
         prevItems.map((item) =>
           item.ackRequest?.id === requestId
-            ? { ...item, ackRequest: updated || item.ackRequest }
+            ? {
+                ...item,
+                ackRequest: isAckRequest(updated) ? updated : item.ackRequest,
+              }
             : item,
         ),
       );
     } catch (error) {
       console.error('確認の記録に失敗しました', error);
       setMessage('確認の記録に失敗しました');
+    }
+  };
+
+  const revokeAck = async (requestId: string) => {
+    try {
+      const updated = await api<ChatMessage['ackRequest']>(
+        `/chat-ack-requests/${requestId}/revoke`,
+        { method: 'POST' },
+      );
+      setItems((prevItems) =>
+        prevItems.map((item) =>
+          item.ackRequest?.id === requestId
+            ? {
+                ...item,
+                ackRequest: isAckRequest(updated) ? updated : item.ackRequest,
+              }
+            : item,
+        ),
+      );
+      setMessage('OKを取り消しました');
+    } catch (error) {
+      console.error('OKの取り消しに失敗しました', error);
+      setMessage('OKの取り消しに失敗しました');
+    }
+  };
+
+  const cancelAckRequest = async (requestId: string, reason?: string) => {
+    try {
+      const updated = await api<ChatMessage['ackRequest']>(
+        `/chat-ack-requests/${requestId}/cancel`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ reason }),
+        },
+      );
+      setItems((prevItems) =>
+        prevItems.map((item) =>
+          item.ackRequest?.id === requestId
+            ? {
+                ...item,
+                ackRequest: isAckRequest(updated) ? updated : item.ackRequest,
+              }
+            : item,
+        ),
+      );
+      setMessage('確認依頼を撤回しました');
+    } catch (error) {
+      console.error('確認依頼の撤回に失敗しました', error);
+      setMessage('確認依頼の撤回に失敗しました');
     }
   };
 
@@ -1099,6 +1165,10 @@ export const ProjectChat: React.FC = () => {
           const ackedCount = requiredUserIds.filter((userId) =>
             ackedUserIds.includes(userId),
           ).length;
+          const isCanceled = Boolean(item.ackRequest?.canceledAt);
+          const canceledAtLabel = item.ackRequest?.canceledAt
+            ? new Date(item.ackRequest.canceledAt).toLocaleString()
+            : '';
           const dueAt = item.ackRequest?.dueAt
             ? new Date(item.ackRequest.dueAt)
             : null;
@@ -1108,6 +1178,7 @@ export const ProjectChat: React.FC = () => {
               : '';
           const isOverdue =
             Boolean(dueAtLabel) &&
+            !isCanceled &&
             requiredCount > 0 &&
             ackedCount < requiredCount &&
             dueAt &&
@@ -1115,8 +1186,20 @@ export const ProjectChat: React.FC = () => {
             dueAt.getTime() < nowMs;
           const canAck =
             item.ackRequest?.id &&
+            !isCanceled &&
             requiredUserIds.includes(currentUserId) &&
             !ackedUserIds.includes(currentUserId);
+          const canRevoke =
+            item.ackRequest?.id &&
+            !isCanceled &&
+            requiredUserIds.includes(currentUserId) &&
+            ackedUserIds.includes(currentUserId);
+          const canCancel =
+            item.ackRequest?.id &&
+            !isCanceled &&
+            (item.userId === currentUserId ||
+              roles.includes('admin') ||
+              roles.includes('mgmt'));
           const isUnread =
             highlightSince &&
             new Date(item.createdAt).getTime() > highlightSince.getTime();
@@ -1272,6 +1355,14 @@ export const ProjectChat: React.FC = () => {
                         {isOverdue ? ' (期限超過)' : ''}
                       </div>
                     )}
+                    {isCanceled && (
+                      <div style={{ color: '#64748b' }}>
+                        撤回: {canceledAtLabel}
+                        {item.ackRequest?.canceledBy
+                          ? ` / ${item.ackRequest.canceledBy}`
+                          : ''}
+                      </div>
+                    )}
                   </div>
                   {requiredCount > 0 && (
                     <div
@@ -1286,14 +1377,48 @@ export const ProjectChat: React.FC = () => {
                       ))}
                     </div>
                   )}
-                  {canAck && (
-                    <div style={{ marginTop: 8 }}>
-                      <button
-                        className="button"
-                        onClick={() => ackRequest(item.ackRequest!.id)}
-                      >
-                        OK
-                      </button>
+                  {(canAck || canRevoke || canCancel) && (
+                    <div
+                      className="row"
+                      style={{ gap: 8, flexWrap: 'wrap', marginTop: 8 }}
+                    >
+                      {canAck && (
+                        <button
+                          className="button"
+                          onClick={() => ackRequest(item.ackRequest!.id)}
+                        >
+                          OK
+                        </button>
+                      )}
+                      {canRevoke && (
+                        <button
+                          className="button secondary"
+                          onClick={() => {
+                            if (!window.confirm('OKを取り消しますか？')) return;
+                            revokeAck(item.ackRequest!.id).catch(
+                              () => undefined,
+                            );
+                          }}
+                        >
+                          OK取消
+                        </button>
+                      )}
+                      {canCancel && (
+                        <button
+                          className="button secondary"
+                          onClick={() => {
+                            const reason =
+                              window.prompt('撤回理由（任意）') ?? null;
+                            if (reason === null) return;
+                            cancelAckRequest(
+                              item.ackRequest!.id,
+                              reason.trim() || undefined,
+                            ).catch(() => undefined);
+                          }}
+                        >
+                          撤回
+                        </button>
+                      )}
                     </div>
                   )}
                 </div>

@@ -3,6 +3,7 @@ import type { Prisma } from '@prisma/client';
 import {
   projectChatMessageSchema,
   projectChatAckRequestSchema,
+  chatAckRequestCancelSchema,
   projectChatReactionSchema,
   projectChatSummarySchema,
 } from './validators.js';
@@ -991,6 +992,14 @@ export async function registerChatRoutes(app: FastifyInstance) {
           error: { code: 'NOT_FOUND', message: 'Ack request not found' },
         });
       }
+      if (requestItem.canceledAt) {
+        return reply.status(409).send({
+          error: {
+            code: 'CANCELED',
+            message: 'Ack request is canceled',
+          },
+        });
+      }
 
       const userId = req.user?.userId;
       if (!userId) {
@@ -1077,6 +1086,212 @@ export async function registerChatRoutes(app: FastifyInstance) {
           ...auditContextFromRequest(req, { userId }),
         });
       }
+      return updated;
+    },
+  );
+
+  app.post(
+    '/chat-ack-requests/:id/cancel',
+    {
+      schema: chatAckRequestCancelSchema,
+      preHandler: requireRole(chatRoles),
+    },
+    async (req, reply) => {
+      const { id } = req.params as { id: string };
+      const body = (req.body || {}) as { reason?: string };
+      const reason = typeof body.reason === 'string' ? body.reason.trim() : '';
+
+      const requestItem = await prisma.chatAckRequest.findUnique({
+        where: { id },
+        include: {
+          message: true,
+          acks: true,
+        },
+      });
+      if (!requestItem || requestItem.message.deletedAt) {
+        return reply.status(404).send({
+          error: { code: 'NOT_FOUND', message: 'Ack request not found' },
+        });
+      }
+
+      const userId = req.user?.userId;
+      if (!userId) {
+        return reply.status(400).send({
+          error: { code: 'MISSING_USER_ID', message: 'user id is required' },
+        });
+      }
+
+      const roles = req.user?.roles || [];
+      const projectIds = req.user?.projectIds || [];
+      const groupIds = Array.isArray(req.user?.groupIds)
+        ? req.user.groupIds
+        : [];
+      const access = await ensureChatRoomContentAccess({
+        roomId: requestItem.roomId,
+        userId,
+        roles,
+        projectIds,
+        groupIds,
+      });
+      if (!access.ok) {
+        return reply.status(access.reason === 'not_found' ? 404 : 403).send({
+          error: {
+            code:
+              access.reason === 'not_found'
+                ? 'NOT_FOUND'
+                : access.reason === 'forbidden_project'
+                  ? 'FORBIDDEN_PROJECT'
+                  : access.reason === 'forbidden_external_room'
+                    ? 'FORBIDDEN_EXTERNAL_ROOM'
+                    : 'FORBIDDEN_ROOM_MEMBER',
+            message: 'Access to this room is forbidden',
+          },
+        });
+      }
+
+      const isPrivileged = roles.includes('admin') || roles.includes('mgmt');
+      const isOwner =
+        requestItem.message.userId === userId ||
+        requestItem.createdBy === userId;
+      if (!isOwner && !isPrivileged) {
+        return reply.status(403).send({
+          error: { code: 'FORBIDDEN', message: 'Cannot cancel this request' },
+        });
+      }
+
+      if (!requestItem.canceledAt) {
+        const canceledAt = new Date();
+        const updated = await prisma.chatAckRequest.updateMany({
+          where: { id: requestItem.id, canceledAt: null },
+          data: { canceledAt, canceledBy: userId },
+        });
+        if (updated.count > 0) {
+          await logAudit({
+            action: 'chat_ack_request_canceled',
+            targetTable: 'chat_ack_requests',
+            targetId: requestItem.id,
+            metadata: {
+              roomId: requestItem.roomId,
+              messageId: requestItem.messageId,
+              canceledAt: canceledAt.toISOString(),
+              canceledBy: userId,
+              isPrivileged,
+            } as Prisma.InputJsonValue,
+            ...auditContextFromRequest(req, {
+              userId,
+              reasonText: reason || undefined,
+            }),
+          });
+        }
+      }
+
+      return prisma.chatAckRequest.findUnique({
+        where: { id: requestItem.id },
+        include: { acks: true },
+      });
+    },
+  );
+
+  app.post(
+    '/chat-ack-requests/:id/revoke',
+    { preHandler: requireRole(chatRoles) },
+    async (req, reply) => {
+      const { id } = req.params as { id: string };
+      const requestItem = await prisma.chatAckRequest.findUnique({
+        where: { id },
+        include: {
+          message: true,
+          acks: true,
+        },
+      });
+      if (!requestItem || requestItem.message.deletedAt) {
+        return reply.status(404).send({
+          error: { code: 'NOT_FOUND', message: 'Ack request not found' },
+        });
+      }
+      if (requestItem.canceledAt) {
+        return reply.status(409).send({
+          error: {
+            code: 'CANCELED',
+            message: 'Ack request is canceled',
+          },
+        });
+      }
+
+      const userId = req.user?.userId;
+      if (!userId) {
+        return reply.status(400).send({
+          error: { code: 'MISSING_USER_ID', message: 'user id is required' },
+        });
+      }
+
+      const roles = req.user?.roles || [];
+      const projectIds = req.user?.projectIds || [];
+      const groupIds = Array.isArray(req.user?.groupIds)
+        ? req.user.groupIds
+        : [];
+      const access = await ensureChatRoomContentAccess({
+        roomId: requestItem.roomId,
+        userId,
+        roles,
+        projectIds,
+        groupIds,
+      });
+      if (!access.ok) {
+        return reply.status(access.reason === 'not_found' ? 404 : 403).send({
+          error: {
+            code:
+              access.reason === 'not_found'
+                ? 'NOT_FOUND'
+                : access.reason === 'forbidden_project'
+                  ? 'FORBIDDEN_PROJECT'
+                  : access.reason === 'forbidden_external_room'
+                    ? 'FORBIDDEN_EXTERNAL_ROOM'
+                    : 'FORBIDDEN_ROOM_MEMBER',
+            message: 'Access to this room is forbidden',
+          },
+        });
+      }
+
+      const requiredUserIds = normalizeStringArray(
+        requestItem.requiredUserIds,
+        { dedupe: true },
+      );
+      if (!requiredUserIds.includes(userId)) {
+        return reply.status(403).send({
+          error: {
+            code: 'NOT_REQUIRED',
+            message: 'User is not in requiredUserIds',
+          },
+        });
+      }
+
+      const deleted = await prisma.chatAck.deleteMany({
+        where: {
+          requestId: requestItem.id,
+          userId,
+        },
+      });
+      const updated = await prisma.chatAckRequest.findUnique({
+        where: { id: requestItem.id },
+        include: { acks: true },
+      });
+      if (deleted.count > 0) {
+        await logAudit({
+          action: 'chat_ack_revoked',
+          targetTable: 'chat_ack_requests',
+          targetId: requestItem.id,
+          metadata: {
+            roomId: requestItem.roomId,
+            messageId: requestItem.messageId,
+            userId,
+            requiredUserCount: requiredUserIds.length,
+            ackedCount: updated?.acks?.length ?? null,
+          } as Prisma.InputJsonValue,
+          ...auditContextFromRequest(req, { userId }),
+        });
+      }
+
       return updated;
     },
   );

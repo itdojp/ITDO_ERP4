@@ -494,6 +494,15 @@ export const projectChatAckRequestSchema = {
   ),
 };
 
+export const chatAckRequestCancelSchema = {
+  body: Type.Object(
+    {
+      reason: Type.Optional(Type.String({ maxLength: 2000 })),
+    },
+    { additionalProperties: false },
+  ),
+};
+
 export const projectChatSummarySchema = {
   body: Type.Object(
     {

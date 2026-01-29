@@ -94,6 +94,7 @@ export async function runChatAckReminders(
         lte: now,
         gte: lookbackFrom,
       },
+      canceledAt: null,
       message: { deletedAt: null },
     },
     orderBy: [{ dueAt: 'asc' }],
