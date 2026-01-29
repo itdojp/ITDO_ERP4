@@ -48,7 +48,7 @@ function ruleSnapshotForAudit(rule: any) {
     if (!value) return null;
     if (value instanceof Date) return value.toISOString();
     const parsed = new Date(String(value));
-    if (Number.isNaN(parsed.getTime())) return String(value);
+    if (Number.isNaN(parsed.getTime())) return null;
     return parsed.toISOString();
   };
   return {
@@ -216,13 +216,16 @@ export async function registerApprovalRuleRoutes(app: FastifyInstance) {
         }
         effectiveFrom = parsed;
       }
-      const before = await prisma.approvalRule.findUnique({ where: { id } });
-      const updated = await prisma.approvalRule.update({
-        where: { id },
-        data: {
-          ...body,
-          ...(effectiveFrom !== undefined ? { effectiveFrom } : {}),
-        },
+      const { before, updated } = await prisma.$transaction(async (tx) => {
+        const before = await tx.approvalRule.findUnique({ where: { id } });
+        const updated = await tx.approvalRule.update({
+          where: { id },
+          data: {
+            ...body,
+            ...(effectiveFrom !== undefined ? { effectiveFrom } : {}),
+          },
+        });
+        return { before, updated };
       });
       await logAudit({
         action: 'approval_rule_updated',

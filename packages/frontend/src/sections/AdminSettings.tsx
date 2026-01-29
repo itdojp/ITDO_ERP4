@@ -338,6 +338,12 @@ export const AdminSettings: React.FC = () => {
       if (aTime !== bTime) return bTime - aTime;
       return 0;
     };
+    const createGroup = () => ({
+      effective: [] as ApprovalRule[],
+      future: [] as ApprovalRule[],
+      inactive: [] as ApprovalRule[],
+      fallback: null as ApprovalRule | null,
+    });
     const groups: Record<
       string,
       {
@@ -348,22 +354,21 @@ export const AdminSettings: React.FC = () => {
       }
     > = {};
     for (const flowType of flowTypes) {
-      groups[flowType] = {
-        effective: [],
-        future: [],
-        inactive: [],
-        fallback: null,
-      };
+      groups[flowType] = createGroup();
     }
     for (const rule of ruleItems) {
+      const flowType = rule.flowType;
+      if (!groups[flowType]) {
+        groups[flowType] = createGroup();
+      }
       const isActive = rule.isActive ?? true;
       const effectiveFrom = parseDate(rule.effectiveFrom ?? null);
       if (!isActive) {
-        groups[rule.flowType]?.inactive.push(rule);
+        groups[flowType].inactive.push(rule);
       } else if (effectiveFrom && effectiveFrom.getTime() > now.getTime()) {
-        groups[rule.flowType]?.future.push(rule);
+        groups[flowType].future.push(rule);
       } else {
-        groups[rule.flowType]?.effective.push(rule);
+        groups[flowType].effective.push(rule);
       }
     }
     for (const flowType of Object.keys(groups)) {
@@ -427,7 +432,7 @@ export const AdminSettings: React.FC = () => {
         setApprovalRuleAuditLoading((prev) => ({ ...prev, [ruleId]: false }));
       }
     },
-    [logError],
+    [logError, setMessage],
   );
 
   const loadActionPolicies = useCallback(async () => {
@@ -1423,7 +1428,12 @@ export const AdminSettings: React.FC = () => {
               <div style={{ fontSize: 12, color: '#475569' }}>
                 現在時刻: {approvalRuleMonitoring.now.toLocaleString()}
               </div>
-              {flowTypes.map((flowType) => {
+              {[
+                ...flowTypes,
+                ...Object.keys(approvalRuleMonitoring.groups)
+                  .filter((flowType) => !flowTypes.includes(flowType))
+                  .sort(),
+              ].map((flowType) => {
                 const group = approvalRuleMonitoring.groups[flowType];
                 const fallback = group?.fallback || null;
                 return (
