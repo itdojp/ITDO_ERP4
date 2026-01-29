@@ -240,6 +240,14 @@ export async function registerVendorDocRoutes(app: FastifyInstance) {
       const actorId = req.user?.userId;
       const reasonText = normalizeString(body?.reasonText);
       const nextPurchaseOrderId = normalizeString(body?.purchaseOrderId);
+      if (!nextPurchaseOrderId) {
+        return reply.status(400).send({
+          error: {
+            code: 'INVALID_INPUT',
+            message: 'purchaseOrderId must be a non-empty string',
+          },
+        });
+      }
 
       const before = await prisma.vendorInvoice.findUnique({
         where: { id },

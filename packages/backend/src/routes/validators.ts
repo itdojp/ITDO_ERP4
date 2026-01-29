@@ -395,8 +395,8 @@ export const vendorInvoiceSchema = {
 export const vendorInvoiceLinkPoSchema = {
   body: Type.Object(
     {
-      purchaseOrderId: Type.String({ minLength: 1 }),
-      reasonText: Type.Optional(Type.String({ minLength: 1 })),
+      purchaseOrderId: Type.String({ minLength: 1, pattern: '\\S' }),
+      reasonText: Type.Optional(Type.String({ minLength: 1, pattern: '\\S' })),
     },
     { additionalProperties: false },
   ),
@@ -405,7 +405,7 @@ export const vendorInvoiceLinkPoSchema = {
 export const vendorInvoiceUnlinkPoSchema = {
   body: Type.Object(
     {
-      reasonText: Type.Optional(Type.String({ minLength: 1 })),
+      reasonText: Type.Optional(Type.String({ minLength: 1, pattern: '\\S' })),
     },
     { additionalProperties: false },
   ),

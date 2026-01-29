@@ -7128,10 +7128,12 @@
                 "properties": {
                   "purchaseOrderId": {
                     "minLength": 1,
+                    "pattern": "\\S",
                     "type": "string"
                   },
                   "reasonText": {
                     "minLength": 1,
+                    "pattern": "\\S",
                     "type": "string"
                   }
                 },
@@ -7190,6 +7192,7 @@
                 "properties": {
                   "reasonText": {
                     "minLength": 1,
+                    "pattern": "\\S",
                     "type": "string"
                   }
                 },
