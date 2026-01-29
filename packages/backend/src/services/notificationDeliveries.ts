@@ -191,27 +191,19 @@ function buildChatAckRequiredEmailBody(notification: {
     .join('\n');
 }
 
+const FLOW_TYPE_LABEL_MAP: Record<string, string> = {
+  estimate: '見積',
+  invoice: '請求',
+  purchase_order: '発注',
+  vendor_quote: '仕入見積',
+  vendor_invoice: '仕入請求',
+  expense: '経費',
+  leave: '休暇',
+  time: '工数',
+};
+
 function formatFlowTypeLabel(flowType: string) {
-  switch (flowType) {
-    case 'estimate':
-      return '見積';
-    case 'invoice':
-      return '請求';
-    case 'purchase_order':
-      return '発注';
-    case 'vendor_quote':
-      return '仕入見積';
-    case 'vendor_invoice':
-      return '仕入請求';
-    case 'expense':
-      return '経費';
-    case 'leave':
-      return '休暇';
-    case 'time':
-      return '工数';
-    default:
-      return flowType;
-  }
+  return FLOW_TYPE_LABEL_MAP[flowType] ?? flowType;
 }
 
 function resolveEmailNotificationKinds() {
