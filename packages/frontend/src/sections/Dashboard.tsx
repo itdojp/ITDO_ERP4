@@ -117,6 +117,12 @@ function resolveExcerpt(payload: unknown) {
   return typeof value === 'string' && value.trim() ? value.trim() : null;
 }
 
+function resolveReportDate(payload: unknown) {
+  if (!payload || typeof payload !== 'object') return null;
+  const value = (payload as { reportDate?: unknown }).reportDate;
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
 function formatNotificationLabel(item: AppNotification) {
   if (item.kind === 'chat_mention') {
     const fromUserId = resolveFromUserId(item.payload);
@@ -127,6 +133,10 @@ function formatNotificationLabel(item: AppNotification) {
     const fromUserId = resolveFromUserId(item.payload);
     if (fromUserId) return `${fromUserId} から確認依頼`;
     return '確認依頼';
+  }
+  if (item.kind === 'daily_report_missing') {
+    const reportDate = resolveReportDate(item.payload);
+    return reportDate ? `日報未提出 (${reportDate})` : '日報未提出';
   }
   if (item.kind === 'project_member_added') {
     const fromUserId = resolveFromUserId(item.payload);
@@ -226,9 +236,15 @@ export const Dashboard: React.FC = () => {
   };
 
   const openNotificationTarget = (item: AppNotification) => {
-    if (item.messageId) {
+    if (item.kind === 'chat_mention' || item.kind === 'chat_ack_required') {
+      if (!item.messageId) return;
       navigateToOpen({ kind: 'chat_message', id: item.messageId });
       return;
+    }
+    if (item.kind === 'daily_report_missing') {
+      const reportDate = resolveReportDate(item.payload);
+      if (!reportDate) return;
+      navigateToOpen({ kind: 'daily_report', id: reportDate });
     }
   };
 
@@ -305,7 +321,12 @@ export const Dashboard: React.FC = () => {
               ? `${item.project.code} / ${item.project.name}`
               : item.projectId || 'N/A';
             const excerpt = resolveExcerpt(item.payload);
-            const canOpen = Boolean(item.messageId);
+            const canOpen =
+              ((item.kind === 'chat_mention' ||
+                item.kind === 'chat_ack_required') &&
+                Boolean(item.messageId)) ||
+              (item.kind === 'daily_report_missing' &&
+                Boolean(resolveReportDate(item.payload)));
             return (
               <Card key={item.id} padding="small">
                 <div
