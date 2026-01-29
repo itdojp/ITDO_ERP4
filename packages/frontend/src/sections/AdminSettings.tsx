@@ -297,6 +297,15 @@ export const AdminSettings: React.FC = () => {
   const [editingActionPolicyId, setEditingActionPolicyId] = useState<
     string | null
   >(null);
+  const [actionPolicyAuditOpen, setActionPolicyAuditOpen] = useState<
+    Record<string, boolean>
+  >({});
+  const [actionPolicyAuditLoading, setActionPolicyAuditLoading] = useState<
+    Record<string, boolean>
+  >({});
+  const [actionPolicyAuditLogs, setActionPolicyAuditLogs] = useState<
+    Record<string, AuditLogItem[]>
+  >({});
   const [editingIntegrationId, setEditingIntegrationId] = useState<
     string | null
   >(null);
@@ -444,6 +453,39 @@ export const AdminSettings: React.FC = () => {
       setActionPolicyItems([]);
     }
   }, [logError]);
+
+  const loadActionPolicyAuditLogs = useCallback(
+    async (policyId: string) => {
+      try {
+        setActionPolicyAuditLoading((prev) => ({
+          ...prev,
+          [policyId]: true,
+        }));
+        const query = new URLSearchParams();
+        query.set('targetTable', 'action_policies');
+        query.set('targetId', policyId);
+        query.set('limit', '50');
+        query.set('format', 'json');
+        const res = await api<{ items: AuditLogItem[] }>(
+          `/audit-logs?${query.toString()}`,
+        );
+        setActionPolicyAuditLogs((prev) => ({
+          ...prev,
+          [policyId]: res.items || [],
+        }));
+      } catch (err) {
+        logError('loadActionPolicyAuditLogs failed', err);
+        setActionPolicyAuditLogs((prev) => ({ ...prev, [policyId]: [] }));
+        setMessage('ActionPolicy の履歴取得に失敗しました');
+      } finally {
+        setActionPolicyAuditLoading((prev) => ({
+          ...prev,
+          [policyId]: false,
+        }));
+      }
+    },
+    [logError, setMessage],
+  );
 
   const loadTemplateSettings = useCallback(async () => {
     try {
@@ -1940,50 +1982,228 @@ export const AdminSettings: React.FC = () => {
             {actionPolicyItems.length === 0 && (
               <div className="card">ポリシーなし</div>
             )}
-            {actionPolicyItems.map((item) => (
-              <div key={item.id} className="card" style={{ padding: 12 }}>
-                <div
-                  className="row"
-                  style={{ justifyContent: 'space-between', flexWrap: 'wrap' }}
-                >
-                  <div>
-                    <strong>
-                      {item.flowType} / {item.actionKey}
-                    </strong>{' '}
-                    (priority: {item.priority ?? 0})
-                  </div>
-                  <div className="row" style={{ gap: 6 }}>
-                    <span className="badge">
-                      {(item.isEnabled ?? true) ? 'enabled' : 'disabled'}
-                    </span>
-                    <span className="badge">
-                      {item.requireReason ? 'requireReason' : 'no-reason'}
-                    </span>
-                  </div>
-                </div>
-                <div style={{ fontSize: 12, color: '#475569', marginTop: 4 }}>
-                  subjects:{' '}
-                  {item.subjects ? JSON.stringify(item.subjects) : '-'}
-                </div>
-                <div style={{ fontSize: 12, color: '#475569', marginTop: 4 }}>
-                  stateConstraints:{' '}
-                  {item.stateConstraints
-                    ? JSON.stringify(item.stateConstraints)
-                    : '-'}
-                </div>
-                <div style={{ fontSize: 12, color: '#475569', marginTop: 4 }}>
-                  guards: {item.guards ? JSON.stringify(item.guards) : '-'}
-                </div>
-                <div className="row" style={{ marginTop: 6 }}>
-                  <button
-                    className="button secondary"
-                    onClick={() => startEditActionPolicy(item)}
+            {actionPolicyItems.map((item) => {
+              const isHistoryOpen = actionPolicyAuditOpen[item.id] ?? false;
+              const isHistoryLoading =
+                actionPolicyAuditLoading[item.id] ?? false;
+              const auditLogs = actionPolicyAuditLogs[item.id] || [];
+              return (
+                <div key={item.id} className="card" style={{ padding: 12 }}>
+                  <div
+                    className="row"
+                    style={{
+                      justifyContent: 'space-between',
+                      flexWrap: 'wrap',
+                    }}
                   >
-                    編集
-                  </button>
+                    <div>
+                      <strong>
+                        {item.flowType} / {item.actionKey}
+                      </strong>{' '}
+                      (priority: {item.priority ?? 0}) / id={item.id}
+                    </div>
+                    <div className="row" style={{ gap: 6 }}>
+                      <span className="badge">
+                        {(item.isEnabled ?? true) ? 'enabled' : 'disabled'}
+                      </span>
+                      <span className="badge">
+                        {item.requireReason ? 'requireReason' : 'no-reason'}
+                      </span>
+                    </div>
+                  </div>
+                  <div
+                    style={{
+                      fontSize: 12,
+                      color: '#475569',
+                      marginTop: 4,
+                      whiteSpace: 'pre-wrap',
+                    }}
+                  >
+                    subjects: {item.subjects ? formatJson(item.subjects) : '-'}
+                  </div>
+                  <div
+                    style={{
+                      fontSize: 12,
+                      color: '#475569',
+                      marginTop: 4,
+                      whiteSpace: 'pre-wrap',
+                    }}
+                  >
+                    stateConstraints:{' '}
+                    {item.stateConstraints
+                      ? formatJson(item.stateConstraints)
+                      : '-'}
+                  </div>
+                  <div
+                    style={{
+                      fontSize: 12,
+                      color: '#475569',
+                      marginTop: 4,
+                      whiteSpace: 'pre-wrap',
+                    }}
+                  >
+                    guards: {item.guards ? formatJson(item.guards) : '-'}
+                  </div>
+                  <div
+                    className="row"
+                    style={{ marginTop: 6, flexWrap: 'wrap' }}
+                  >
+                    <button
+                      className="button secondary"
+                      onClick={() => startEditActionPolicy(item)}
+                    >
+                      編集
+                    </button>
+                    <button
+                      className="button secondary"
+                      onClick={() => {
+                        const nextOpen = !isHistoryOpen;
+                        setActionPolicyAuditOpen((prev) => ({
+                          ...prev,
+                          [item.id]: nextOpen,
+                        }));
+                        if (
+                          nextOpen &&
+                          actionPolicyAuditLogs[item.id] === undefined
+                        ) {
+                          loadActionPolicyAuditLogs(item.id);
+                        }
+                      }}
+                    >
+                      {isHistoryOpen ? '履歴を閉じる' : '履歴を見る'}
+                    </button>
+                    {isHistoryOpen && (
+                      <button
+                        className="button secondary"
+                        onClick={() => loadActionPolicyAuditLogs(item.id)}
+                      >
+                        履歴を再読込
+                      </button>
+                    )}
+                  </div>
+                  {isHistoryOpen && (
+                    <div style={{ marginTop: 8 }}>
+                      {isHistoryLoading && (
+                        <div style={{ fontSize: 12, color: '#475569' }}>
+                          読み込み中...
+                        </div>
+                      )}
+                      {!isHistoryLoading && auditLogs.length === 0 && (
+                        <div
+                          className="card"
+                          style={{ padding: 10, fontSize: 12 }}
+                        >
+                          履歴なし
+                        </div>
+                      )}
+                      {!isHistoryLoading &&
+                        auditLogs.map((log) => {
+                          const meta = log.metadata || {};
+                          const metaFields = meta as {
+                            before?: unknown;
+                            after?: unknown;
+                            patch?: unknown;
+                          };
+                          const before = metaFields.before;
+                          const after = metaFields.after;
+                          const patch = metaFields.patch;
+                          const hasBeforeAfter =
+                            before !== undefined || after !== undefined;
+                          return (
+                            <details key={log.id} style={{ marginTop: 6 }}>
+                              <summary style={{ cursor: 'pointer' }}>
+                                {formatDateTime(log.createdAt)} / {log.action} /{' '}
+                                {log.actorRole || '-'} / {log.userId || '-'}
+                              </summary>
+                              <div
+                                style={{
+                                  display: 'grid',
+                                  gap: 8,
+                                  marginTop: 8,
+                                  fontSize: 12,
+                                }}
+                              >
+                                {(log.reasonText || log.reasonCode) && (
+                                  <div style={{ color: '#475569' }}>
+                                    reason: {log.reasonCode || '-'} /{' '}
+                                    {log.reasonText || '-'}
+                                  </div>
+                                )}
+                                {hasBeforeAfter ? (
+                                  <>
+                                    <div style={{ color: '#475569' }}>
+                                      before
+                                    </div>
+                                    <pre
+                                      style={{
+                                        margin: 0,
+                                        padding: 10,
+                                        whiteSpace: 'pre-wrap',
+                                        borderRadius: 6,
+                                        background: '#0f172a',
+                                        color: '#e2e8f0',
+                                      }}
+                                    >
+                                      {formatJson(before)}
+                                    </pre>
+                                    <div style={{ color: '#475569' }}>
+                                      after
+                                    </div>
+                                    <pre
+                                      style={{
+                                        margin: 0,
+                                        padding: 10,
+                                        whiteSpace: 'pre-wrap',
+                                        borderRadius: 6,
+                                        background: '#0f172a',
+                                        color: '#e2e8f0',
+                                      }}
+                                    >
+                                      {formatJson(after)}
+                                    </pre>
+                                    {patch !== undefined && (
+                                      <>
+                                        <div style={{ color: '#475569' }}>
+                                          patch
+                                        </div>
+                                        <pre
+                                          style={{
+                                            margin: 0,
+                                            padding: 10,
+                                            whiteSpace: 'pre-wrap',
+                                            borderRadius: 6,
+                                            background: '#0f172a',
+                                            color: '#e2e8f0',
+                                          }}
+                                        >
+                                          {formatJson(patch)}
+                                        </pre>
+                                      </>
+                                    )}
+                                  </>
+                                ) : (
+                                  <pre
+                                    style={{
+                                      margin: 0,
+                                      padding: 10,
+                                      whiteSpace: 'pre-wrap',
+                                      borderRadius: 6,
+                                      background: '#0f172a',
+                                      color: '#e2e8f0',
+                                    }}
+                                  >
+                                    {formatJson(meta)}
+                                  </pre>
+                                )}
+                              </div>
+                            </details>
+                          );
+                        })}
+                    </div>
+                  )}
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
 
