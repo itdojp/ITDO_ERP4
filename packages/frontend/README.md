@@ -15,7 +15,14 @@ npm run dev
 ### 現状の導入方式
 
 現状は GitHub Packages 側の公開・権限設定が未確定なため、`git+https` で
-`itdo-design-system`（`v1.0.0`）を取得し、`postinstall` で `dist/` を生成します。
+`itdo-design-system`（`v1.0.2`）を取得し、`postinstall` で `dist/` を生成します。
+
+ERP4側の主な適用箇所:
+
+- 依存: `packages/frontend/package.json` の `@itdojp/design-system`
+- グローバルCSS: `packages/frontend/src/main.tsx` で `@itdojp/design-system/styles.css` を1回だけ import
+- density: `packages/frontend/index.html` の `<html data-density="compact">`
+- UIアダプタ: `packages/frontend/src/ui/index.ts` で re-export
 
 ### （将来）GitHub Packages を使う場合
 
