@@ -140,7 +140,8 @@ export async function runChatAckReminders(
     }
     const excerpt = buildExcerpt(request.message?.body ?? '');
     for (const userId of incompleteUserIds) {
-      const projectId = request.room?.type === 'project' ? request.roomId : null;
+      const projectId =
+        request.room?.type === 'project' ? request.roomId : null;
       candidates.push({
         userId,
         projectId,

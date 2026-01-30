@@ -2311,7 +2311,10 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
           });
         }
       } catch (err) {
-        req.log?.warn({ err }, 'Failed to create chat ack required notifications');
+        req.log?.warn(
+          { err },
+          'Failed to create chat ack required notifications',
+        );
       }
 
       if (mentionsAll || mentionUserIds.length || mentionGroupIds.length) {
