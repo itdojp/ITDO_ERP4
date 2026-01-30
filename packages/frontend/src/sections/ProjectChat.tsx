@@ -474,7 +474,7 @@ export const ProjectChat: React.FC = () => {
     const value = ackTargetInput.trim();
     if (!value) return;
     const current = parseUserIds(ackTargets);
-    const next = Array.from(new Set([...current, value]));
+    const next = Array.from(new Set([...current, value])).slice(0, 50);
     setAckTargets(next.join(','));
     setAckTargetInput('');
   };
@@ -736,7 +736,7 @@ export const ProjectChat: React.FC = () => {
       }
       setBody('');
       setTags('');
-      setAckTargets('');
+      resetAckTargets();
       setAttachmentFile(null);
       resetMentions();
       setMessage('確認依頼を投稿しました');
