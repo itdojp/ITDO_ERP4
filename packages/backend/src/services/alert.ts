@@ -168,8 +168,8 @@ async function resolveEmails(recipients: AlertRecipients | null | undefined) {
   return targets.length ? targets : ['alert@example.com'];
 }
 
-function resolveTargets(raw?: string[] | null): string[] {
-  return raw?.filter(Boolean) ?? [];
+function resolveTargets(raw: unknown): string[] {
+  return normalizeStringArray(raw);
 }
 
 function toReminderAt(now: Date, remindAfterHours?: number | null) {
