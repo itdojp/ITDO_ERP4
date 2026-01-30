@@ -5,6 +5,7 @@ import { prisma } from '../services/db.js';
 import { requireRole } from '../services/rbac.js';
 import { ensureChatRoomContentAccess } from '../services/chatRoomAccess.js';
 import { auditContextFromRequest, logAudit } from '../services/audit.js';
+import { createChatAckRequiredNotifications } from '../services/appNotifications.js';
 import {
   getChatExternalLlmConfig,
   getChatExternalLlmRateLimit,
@@ -2259,6 +2260,72 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
         },
         include: { ackRequest: { include: { acks: true } } },
       });
+
+      const projectId = access.room.type === 'project' ? access.room.id : null;
+
+      if (!message.ackRequest) {
+        throw new Error('Expected ackRequest to be created for chat message');
+      }
+
+      await logAudit({
+        action: 'chat_ack_request_created',
+        targetTable: 'chat_ack_requests',
+        targetId: message.ackRequest.id,
+        metadata: {
+          projectId,
+          roomId: access.room.id,
+          messageId: message.id,
+          requiredUserCount: requiredUserIds.length,
+          dueAt: message.ackRequest.dueAt
+            ? message.ackRequest.dueAt.toISOString()
+            : null,
+        } as Prisma.InputJsonValue,
+        ...auditContextFromRequest(req),
+      });
+
+      try {
+        const notificationResult = await createChatAckRequiredNotifications({
+          projectId,
+          messageId: message.id,
+          messageBody: message.body,
+          senderUserId: userId,
+          requiredUserIds,
+          dueAt: dueAt ? dueAt.toISOString() : null,
+        });
+
+        if (notificationResult.created > 0) {
+          await logAudit({
+            action: 'chat_ack_required_notifications_created',
+            targetTable: 'chat_messages',
+            targetId: message.id,
+            metadata: {
+              projectId,
+              roomId: access.room.id,
+              messageId: message.id,
+              createdCount: notificationResult.created,
+              recipientCount: notificationResult.recipients.length,
+              recipientUserIds: notificationResult.recipients.slice(0, 20),
+              recipientsTruncated: notificationResult.truncated,
+              requiredUserCount: requiredUserIds.length,
+              senderExcluded:
+                notificationResult.recipients.includes(userId) === false &&
+                requiredUserIds.includes(userId),
+            } as Prisma.InputJsonValue,
+            ...auditContextFromRequest(req),
+          });
+        }
+      } catch (err) {
+        req.log?.warn(
+          {
+            err,
+            projectId,
+            roomId: access.room.id,
+            messageId: message.id,
+            requiredUserCount: requiredUserIds.length,
+          },
+          'Failed to create chat ack required notifications',
+        );
+      }
 
       if (mentionsAll || mentionUserIds.length || mentionGroupIds.length) {
         await logAudit({
