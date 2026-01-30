@@ -12,6 +12,10 @@ import { requireProjectAccess, requireRole } from '../services/rbac.js';
 import { ensureChatRoomContentAccess } from '../services/chatRoomAccess.js';
 import { auditContextFromRequest, logAudit } from '../services/audit.js';
 import {
+  logChatAckRequestCreated,
+  tryCreateChatAckRequiredNotificationsWithAudit,
+} from '../services/chatAckNotifications.js';
+import {
   openAttachment,
   storeAttachment,
 } from '../services/chatAttachments.js';
@@ -19,10 +23,7 @@ import {
   getChatAttachmentScanProvider,
   scanChatAttachment,
 } from '../services/chatAttachmentScan.js';
-import {
-  createChatAckRequiredNotifications,
-  createChatMentionNotifications,
-} from '../services/appNotifications.js';
+import { createChatMentionNotifications } from '../services/appNotifications.js';
 
 function parseDateParam(value?: string) {
   if (!value) return null;
@@ -377,52 +378,6 @@ export async function registerChatRoutes(app: FastifyInstance) {
       options.req.log?.warn(
         { err },
         'Failed to create chat mention notifications',
-      );
-    }
-  }
-
-  async function tryCreateChatAckRequiredNotifications(options: {
-    req: any;
-    projectId: string;
-    messageId: string;
-    messageBody: string;
-    senderUserId: string;
-    requiredUserIds: string[];
-    dueAt?: Date | null;
-  }) {
-    try {
-      const notificationResult = await createChatAckRequiredNotifications({
-        projectId: options.projectId,
-        messageId: options.messageId,
-        messageBody: options.messageBody,
-        senderUserId: options.senderUserId,
-        requiredUserIds: options.requiredUserIds,
-        dueAt: options.dueAt ? options.dueAt.toISOString() : null,
-      });
-      if (notificationResult.created <= 0) return;
-
-      await logAudit({
-        action: 'chat_ack_required_notifications_created',
-        targetTable: 'chat_messages',
-        targetId: options.messageId,
-        metadata: {
-          projectId: options.projectId,
-          messageId: options.messageId,
-          createdCount: notificationResult.created,
-          recipientCount: notificationResult.recipients.length,
-          recipientUserIds: notificationResult.recipients.slice(0, 20),
-          recipientsTruncated: notificationResult.truncated,
-          requiredUserCount: options.requiredUserIds.length,
-          senderExcluded:
-            notificationResult.recipients.includes(options.senderUserId) ===
-              false && options.requiredUserIds.includes(options.senderUserId),
-        } as Prisma.InputJsonValue,
-        ...auditContextFromRequest(options.req),
-      });
-    } catch (err) {
-      options.req.log?.warn(
-        { err },
-        'Failed to create chat ack required notifications',
       );
     }
   }
@@ -927,20 +882,18 @@ export async function registerChatRoutes(app: FastifyInstance) {
           },
         },
       });
-      await logAudit({
-        action: 'chat_ack_request_created',
-        targetTable: 'chat_ack_requests',
-        targetId: message.ackRequest?.id,
-        metadata: {
-          projectId,
-          roomId: projectId,
-          messageId: message.id,
-          requiredUserCount: requiredUserIds.length,
-          dueAt: message.ackRequest?.dueAt
-            ? message.ackRequest.dueAt.toISOString()
-            : null,
-        } as Prisma.InputJsonValue,
-        ...auditContextFromRequest(req, { userId }),
+      if (!message.ackRequest) {
+        throw new Error('Expected ackRequest to be created for chat message');
+      }
+      await logChatAckRequestCreated({
+        req,
+        actorUserId: userId,
+        projectId,
+        roomId: projectId,
+        messageId: message.id,
+        ackRequestId: message.ackRequest.id,
+        requiredUserIds,
+        dueAt: message.ackRequest.dueAt,
       });
       await logChatMessageMentions({
         req,
@@ -960,14 +913,15 @@ export async function registerChatRoutes(app: FastifyInstance) {
         mentionUserIds,
         mentionGroupIds,
       });
-      await tryCreateChatAckRequiredNotifications({
+      await tryCreateChatAckRequiredNotificationsWithAudit({
         req,
+        actorUserId: userId,
         projectId,
+        roomId: projectId,
         messageId: message.id,
         messageBody: message.body,
-        senderUserId: userId,
         requiredUserIds,
-        dueAt,
+        dueAt: message.ackRequest.dueAt,
       });
       return message;
     },
