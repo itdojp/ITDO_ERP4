@@ -12,7 +12,7 @@ type ChatMentionNotificationOptions = {
 };
 
 type ChatAckRequiredNotificationOptions = {
-  projectId: string;
+  projectId?: string | null;
   messageId: string;
   messageBody: string;
   senderUserId: string;
@@ -208,7 +208,7 @@ export async function createChatAckRequiredNotifications(
     data: createUserIds.map((userId) => ({
       userId,
       kind: 'chat_ack_required',
-      projectId: options.projectId,
+      projectId: options.projectId ?? null,
       messageId: options.messageId,
       payload,
       createdBy: options.senderUserId,
