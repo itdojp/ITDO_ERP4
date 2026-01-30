@@ -3,6 +3,7 @@ import { createRemoteJWKSet, importSPKI, jwtVerify } from 'jose';
 import type { CryptoKey, JWTPayload, JWTVerifyGetKey } from 'jose';
 import { prisma } from '../services/db.js';
 import { createApiErrorResponse } from '../services/errors.js';
+import { parseGroupToRoleMap } from '../utils/authGroupToRoleMap.js';
 
 export type UserContext = {
   userId: string;
@@ -40,33 +41,10 @@ const JWT_PROJECT_CLAIM = process.env.JWT_PROJECT_CLAIM || 'project_ids';
 const JWT_ORG_CLAIM = process.env.JWT_ORG_CLAIM || 'org_id';
 const AUTH_DEFAULT_ROLE = process.env.AUTH_DEFAULT_ROLE || 'user';
 const USER_ROLE_ALIASES = new Set(['project_lead', 'employee', 'probationary']);
-const DEFAULT_GROUP_TO_ROLE_MAP: Record<string, string> = {
-  admin: 'admin',
-  mgmt: 'mgmt',
-  exec: 'exec',
-  hr: 'hr',
-  'hr-group': 'hr',
-};
 const AUTH_GROUP_TO_ROLE_MAP_RAW = process.env.AUTH_GROUP_TO_ROLE_MAP || '';
 const AUTH_DB_USER_CONTEXT_CACHE_TTL_SECONDS = Number(
   process.env.AUTH_DB_USER_CONTEXT_CACHE_TTL_SECONDS || 0,
 );
-
-function parseGroupToRoleMap(raw: string) {
-  const map = { ...DEFAULT_GROUP_TO_ROLE_MAP };
-  raw
-    .split(',')
-    .map((token) => token.trim())
-    .filter(Boolean)
-    .forEach((token) => {
-      const [groupIdRaw, roleRaw] = token.split('=');
-      const groupId = groupIdRaw?.trim();
-      const role = roleRaw?.trim();
-      if (!groupId || !role) return;
-      map[groupId] = role;
-    });
-  return map;
-}
 
 const GROUP_TO_ROLE_MAP = parseGroupToRoleMap(AUTH_GROUP_TO_ROLE_MAP_RAW);
 

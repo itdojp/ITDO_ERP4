@@ -9,6 +9,7 @@ import type {
   AlertSetting as PrismaAlertSetting,
   Prisma,
 } from '@prisma/client';
+import { parseGroupToRoleMap } from '../utils/authGroupToRoleMap.js';
 
 const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -37,14 +38,6 @@ type SendResultItem = {
   target?: string;
 };
 
-const DEFAULT_GROUP_TO_ROLE_MAP: Record<string, string> = {
-  admin: 'admin',
-  mgmt: 'mgmt',
-  exec: 'exec',
-  hr: 'hr',
-  'hr-group': 'hr',
-};
-
 function normalizeString(value: unknown) {
   return typeof value === 'string' ? value.trim() : '';
 }
@@ -59,22 +52,6 @@ function normalizeStringArray(value: unknown): string[] {
     .split(',')
     .map((item) => item.trim())
     .filter(Boolean);
-}
-
-function parseGroupToRoleMap(raw: string) {
-  const map = { ...DEFAULT_GROUP_TO_ROLE_MAP };
-  raw
-    .split(',')
-    .map((token) => token.trim())
-    .filter(Boolean)
-    .forEach((token) => {
-      const [groupIdRaw, roleRaw] = token.split('=');
-      const groupId = groupIdRaw?.trim();
-      const role = roleRaw?.trim();
-      if (!groupId || !role) return;
-      map[groupId] = role;
-    });
-  return map;
 }
 
 function pickPrimaryEmail(value: unknown) {
@@ -146,11 +123,6 @@ async function resolveEmails(recipients: AlertRecipients | null | undefined) {
       select: { userName: true, emails: true },
     });
     for (const account of accounts) {
-      const email = emailRegex.test(account.userName) ? account.userName : null;
-      if (email) {
-        pushEmail(email);
-        continue;
-      }
       const primaryEmail = pickPrimaryEmail(account.emails);
       if (primaryEmail && emailRegex.test(primaryEmail)) {
         pushEmail(primaryEmail);
