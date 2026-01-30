@@ -12,7 +12,8 @@ type ChatMentionNotificationOptions = {
 };
 
 type ChatAckRequiredNotificationOptions = {
-  projectId?: string | null;
+  // Always pass explicitly. Use `null` for non-project rooms.
+  projectId: string | null;
   messageId: string;
   messageBody: string;
   senderUserId: string;

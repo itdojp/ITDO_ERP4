@@ -2263,16 +2263,20 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
 
       const projectId = access.room.type === 'project' ? access.room.id : null;
 
+      if (!message.ackRequest) {
+        throw new Error('Expected ackRequest to be created for chat message');
+      }
+
       await logAudit({
         action: 'chat_ack_request_created',
         targetTable: 'chat_ack_requests',
-        targetId: message.ackRequest?.id,
+        targetId: message.ackRequest.id,
         metadata: {
           projectId,
           roomId: access.room.id,
           messageId: message.id,
           requiredUserCount: requiredUserIds.length,
-          dueAt: message.ackRequest?.dueAt
+          dueAt: message.ackRequest.dueAt
             ? message.ackRequest.dueAt.toISOString()
             : null,
         } as Prisma.InputJsonValue,
@@ -2312,7 +2316,13 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
         }
       } catch (err) {
         req.log?.warn(
-          { err },
+          {
+            err,
+            projectId,
+            roomId: access.room.id,
+            messageId: message.id,
+            requiredUserCount: requiredUserIds.length,
+          },
           'Failed to create chat ack required notifications',
         );
       }
