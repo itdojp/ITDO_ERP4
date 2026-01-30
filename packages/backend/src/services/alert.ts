@@ -10,6 +10,8 @@ import type {
   Prisma,
 } from '@prisma/client';
 
+const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 type MetricResult = { metric: number; targetRef: string };
 type MetricFetcher = (
   setting: PrismaAlertSetting,
@@ -35,6 +37,67 @@ type SendResultItem = {
   target?: string;
 };
 
+const DEFAULT_GROUP_TO_ROLE_MAP: Record<string, string> = {
+  admin: 'admin',
+  mgmt: 'mgmt',
+  exec: 'exec',
+  hr: 'hr',
+  'hr-group': 'hr',
+};
+
+function normalizeString(value: unknown) {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function normalizeStringArray(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.map((item) => normalizeString(item)).filter(Boolean);
+  }
+  const raw = normalizeString(value);
+  if (!raw) return [];
+  return raw
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function parseGroupToRoleMap(raw: string) {
+  const map = { ...DEFAULT_GROUP_TO_ROLE_MAP };
+  raw
+    .split(',')
+    .map((token) => token.trim())
+    .filter(Boolean)
+    .forEach((token) => {
+      const [groupIdRaw, roleRaw] = token.split('=');
+      const groupId = groupIdRaw?.trim();
+      const role = roleRaw?.trim();
+      if (!groupId || !role) return;
+      map[groupId] = role;
+    });
+  return map;
+}
+
+function pickPrimaryEmail(value: unknown) {
+  if (!Array.isArray(value)) return null;
+  const primary = value.find((item) => {
+    if (!item || typeof item !== 'object') return false;
+    return Boolean((item as { primary?: unknown }).primary);
+  });
+  if (primary && typeof primary === 'object') {
+    const email = normalizeString((primary as { value?: unknown }).value);
+    if (email) return email;
+  }
+  const first = value
+    .map((item) => {
+      if (typeof item === 'string') return item.trim();
+      if (!item || typeof item !== 'object') return '';
+      const raw = (item as { value?: unknown }).value;
+      return typeof raw === 'string' ? raw.trim() : '';
+    })
+    .filter(Boolean)[0];
+  return first || null;
+}
+
 function normalizeChannels(raw: unknown): string[] {
   if (Array.isArray(raw)) return raw.map((c) => String(c)).filter(Boolean);
   if (raw && typeof raw === 'object') {
@@ -45,11 +108,92 @@ function normalizeChannels(raw: unknown): string[] {
   return ['dashboard'];
 }
 
-function resolveEmails(
-  recipients: AlertRecipients | null | undefined,
-): string[] {
-  const emails = recipients?.emails?.filter(Boolean) || [];
-  return emails.length ? emails : ['alert@example.com'];
+async function resolveEmails(recipients: AlertRecipients | null | undefined) {
+  const direct = normalizeStringArray(recipients?.emails);
+  const users = normalizeStringArray(recipients?.users);
+  const roles = normalizeStringArray(recipients?.roles);
+
+  const targets: string[] = [];
+  const seen = new Set<string>();
+
+  const pushEmail = (email: string) => {
+    const trimmed = email.trim();
+    if (!trimmed) return;
+    if (seen.has(trimmed)) return;
+    seen.add(trimmed);
+    targets.push(trimmed);
+  };
+
+  // 1) Direct email list is used as-is (validation happens in notifier.sendEmail).
+  direct.forEach((email) => pushEmail(email));
+
+  // 2) Users: resolve userName -> primary email (or accept raw email address).
+  const userNameLookups: string[] = [];
+  users.forEach((user) => {
+    if (emailRegex.test(user)) {
+      pushEmail(user);
+      return;
+    }
+    userNameLookups.push(user);
+  });
+  if (userNameLookups.length) {
+    const accounts = await prisma.userAccount.findMany({
+      where: {
+        userName: { in: userNameLookups },
+        active: true,
+        deletedAt: null,
+      },
+      select: { userName: true, emails: true },
+    });
+    for (const account of accounts) {
+      const email = emailRegex.test(account.userName) ? account.userName : null;
+      if (email) {
+        pushEmail(email);
+        continue;
+      }
+      const primaryEmail = pickPrimaryEmail(account.emails);
+      if (primaryEmail && emailRegex.test(primaryEmail)) {
+        pushEmail(primaryEmail);
+      }
+    }
+  }
+
+  // 3) Roles: expand via AUTH_GROUP_TO_ROLE_MAP (role <- groupId) inversion.
+  if (roles.length) {
+    const groupToRole = parseGroupToRoleMap(
+      process.env.AUTH_GROUP_TO_ROLE_MAP || '',
+    );
+    const groupIds = Object.entries(groupToRole)
+      .filter(([, role]) => roles.includes(role))
+      .map(([groupId]) => groupId.trim())
+      .filter(Boolean);
+    if (groupIds.length) {
+      const memberships = await prisma.userGroup.findMany({
+        where: {
+          group: { displayName: { in: groupIds }, active: true },
+          user: { active: true, deletedAt: null },
+        },
+        select: { user: { select: { userName: true, emails: true } } },
+      });
+      for (const membership of memberships) {
+        const email = membership.user
+          ? emailRegex.test(membership.user.userName)
+            ? membership.user.userName
+            : null
+          : null;
+        if (email) {
+          pushEmail(email);
+          continue;
+        }
+        const primaryEmail = pickPrimaryEmail(membership.user?.emails);
+        if (primaryEmail && emailRegex.test(primaryEmail)) {
+          pushEmail(primaryEmail);
+        }
+      }
+    }
+  }
+
+  return targets.length ? targets : ['alert@example.com'];
 }
 
 function resolveTargets(raw?: string[] | null): string[] {
@@ -94,7 +238,7 @@ async function sendAlertNotification(
   const payload = { settingId: setting.id, metric, threshold };
   if (channels.includes('email')) {
     const emailResult = await sendEmail(
-      resolveEmails(recipients),
+      await resolveEmails(recipients),
       `${subjectPrefix} ${setting.id}`,
       `metric ${metric} > ${threshold}`,
     );
