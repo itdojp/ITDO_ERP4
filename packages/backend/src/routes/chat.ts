@@ -15,6 +15,7 @@ import {
   logChatAckRequestCreated,
   tryCreateChatAckRequiredNotificationsWithAudit,
 } from '../services/chatAckNotifications.js';
+import { validateChatAckRequiredRecipientsForRoom } from '../services/chatAckRecipients.js';
 import {
   openAttachment,
   storeAttachment,
@@ -857,6 +858,41 @@ export async function registerChatRoutes(app: FastifyInstance) {
         });
       }
 
+      const room = await prisma.chatRoom.findUnique({
+        where: { id: projectId },
+        select: {
+          id: true,
+          type: true,
+          groupId: true,
+          deletedAt: true,
+          allowExternalUsers: true,
+        },
+      });
+      if (!room || room.deletedAt) {
+        return reply.status(404).send({
+          error: { code: 'NOT_FOUND', message: 'Room not found' },
+        });
+      }
+      const recipientValidation =
+        await validateChatAckRequiredRecipientsForRoom({
+          room,
+          requiredUserIds,
+        });
+      if (!recipientValidation.ok) {
+        return reply.status(400).send({
+          error: {
+            code: 'INVALID_REQUIRED_USERS',
+            message:
+              'requiredUserIds must be active users who can access this room',
+            details: {
+              reason: recipientValidation.reason,
+              invalidUserIds: recipientValidation.invalidUserIds.slice(0, 20),
+            },
+          },
+        });
+      }
+      const validatedRequiredUserIds = recipientValidation.validUserIds;
+
       const message = await prisma.chatMessage.create({
         data: {
           roomId: projectId,
@@ -870,7 +906,7 @@ export async function registerChatRoutes(app: FastifyInstance) {
           ackRequest: {
             create: {
               roomId: projectId,
-              requiredUserIds,
+              requiredUserIds: validatedRequiredUserIds,
               dueAt: dueAt ?? undefined,
               createdBy: userId,
             },

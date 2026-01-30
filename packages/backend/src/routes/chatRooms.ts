@@ -9,6 +9,7 @@ import {
   logChatAckRequestCreated,
   tryCreateChatAckRequiredNotificationsWithAudit,
 } from '../services/chatAckNotifications.js';
+import { validateChatAckRequiredRecipientsForRoom } from '../services/chatAckRecipients.js';
 import {
   getChatExternalLlmConfig,
   getChatExternalLlmRateLimit,
@@ -2242,6 +2243,26 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
         if (!ok) return;
       }
 
+      const recipientValidation =
+        await validateChatAckRequiredRecipientsForRoom({
+          room: access.room,
+          requiredUserIds,
+        });
+      if (!recipientValidation.ok) {
+        return reply.status(400).send({
+          error: {
+            code: 'INVALID_REQUIRED_USERS',
+            message:
+              'requiredUserIds must be active users who can access this room',
+            details: {
+              reason: recipientValidation.reason,
+              invalidUserIds: recipientValidation.invalidUserIds.slice(0, 20),
+            },
+          },
+        });
+      }
+      const validatedRequiredUserIds = recipientValidation.validUserIds;
+
       const message = await prisma.chatMessage.create({
         data: {
           roomId: access.room.id,
@@ -2255,7 +2276,7 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
           ackRequest: {
             create: {
               roomId: access.room.id,
-              requiredUserIds,
+              requiredUserIds: validatedRequiredUserIds,
               dueAt: dueAt ?? undefined,
               createdBy: userId,
             },
@@ -2277,7 +2298,7 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
         roomId: access.room.id,
         messageId: message.id,
         ackRequestId: message.ackRequest.id,
-        requiredUserIds,
+        requiredUserIds: validatedRequiredUserIds,
         dueAt: message.ackRequest.dueAt,
       });
 
@@ -2288,7 +2309,7 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
         roomId: access.room.id,
         messageId: message.id,
         messageBody: message.body,
-        requiredUserIds,
+        requiredUserIds: validatedRequiredUserIds,
         dueAt: message.ackRequest.dueAt,
       });
 
