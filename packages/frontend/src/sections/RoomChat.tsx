@@ -57,6 +57,12 @@ type ChatSearchItem = {
   room: ChatRoom;
 };
 
+type MentionCandidates = {
+  users?: { userId: string; displayName?: string | null }[];
+  groups?: { groupId: string }[];
+  allowAll?: boolean;
+};
+
 const reactionOptions = ['👍', '🎉', '❤️', '😂', '🙏', '👀'];
 const pageSize = 50;
 
@@ -236,9 +242,18 @@ export const RoomChat: React.FC = () => {
   const [showPreview, setShowPreview] = useState(false);
   const [tags, setTags] = useState('');
   const [ackTargets, setAckTargets] = useState('');
+  const [ackTargetInput, setAckTargetInput] = useState('');
+  const [mentionCandidates, setMentionCandidates] = useState<MentionCandidates>(
+    {},
+  );
   const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
   const [filterTag, setFilterTag] = useState('');
   const [filterQuery, setFilterQuery] = useState('');
+
+  const ackTargetUserIds = useMemo(
+    () => Array.from(new Set(parseUserIds(ackTargets))),
+    [ackTargets],
+  );
 
   const hasActiveAckDeadline = useMemo(() => {
     return items.some((item) => {
@@ -551,6 +566,27 @@ export const RoomChat: React.FC = () => {
     window.URL.revokeObjectURL(url);
   };
 
+  const addAckTargetUser = () => {
+    const value = ackTargetInput.trim();
+    if (!value) return;
+    setAckTargets((prev) => {
+      const current = parseUserIds(prev);
+      const next = Array.from(new Set([...current, value])).slice(0, 50);
+      return next.join(',');
+    });
+    setAckTargetInput('');
+  };
+
+  const removeAckTargetUser = (userId: string) => {
+    const current = parseUserIds(ackTargets);
+    setAckTargets(current.filter((entry) => entry !== userId).join(','));
+  };
+
+  const resetAckTargets = () => {
+    setAckTargets('');
+    setAckTargetInput('');
+  };
+
   const postMessage = async (mode: 'message' | 'ack') => {
     if (!roomId) return;
     if (!body.trim()) {
@@ -570,9 +606,13 @@ export const RoomChat: React.FC = () => {
       const payload =
         mode === 'ack'
           ? (() => {
-              const required = parseUserIds(ackTargets);
+              const required = Array.from(new Set(parseUserIds(ackTargets)));
               if (required.length === 0) {
                 setMessage('確認対象（requiredUserIds）を入力してください');
+                return null;
+              }
+              if (required.length > 50) {
+                setMessage('確認対象は最大50件までです');
                 return null;
               }
               return {
@@ -592,7 +632,7 @@ export const RoomChat: React.FC = () => {
       }
       setBody('');
       setTags('');
-      setAckTargets('');
+      resetAckTargets();
       setAttachmentFile(null);
       await loadMessages();
     } catch (err) {
@@ -842,6 +882,36 @@ export const RoomChat: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roomId]);
 
+  useEffect(() => {
+    if (!roomId) {
+      setMentionCandidates({});
+      return;
+    }
+
+    const controller = new AbortController();
+    let cancelled = false;
+    const run = async () => {
+      try {
+        const res = await api<MentionCandidates>(
+          `/chat-rooms/${roomId}/mention-candidates`,
+          { signal: controller.signal },
+        );
+        if (!cancelled) {
+          setMentionCandidates(res || {});
+        }
+      } catch (error) {
+        if (controller.signal.aborted) return;
+        console.warn('メンション候補の取得に失敗しました', error);
+        if (!cancelled) setMentionCandidates({});
+      }
+    };
+    run().catch(() => undefined);
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [roomId]);
+
   const displayedRooms = useMemo(() => {
     return rooms.map((room) => ({
       ...room,
@@ -1085,6 +1155,65 @@ export const RoomChat: React.FC = () => {
                 />
               </label>
             </div>
+            <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+              <input
+                aria-label="確認対象ユーザ追加"
+                type="text"
+                list="room-ack-target-users"
+                value={ackTargetInput}
+                onChange={(e) => setAckTargetInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    addAckTargetUser();
+                  }
+                }}
+                placeholder="確認対象: ユーザID (任意)"
+                style={{ flex: '1 1 240px' }}
+              />
+              <button
+                className="button secondary"
+                onClick={addAckTargetUser}
+                type="button"
+              >
+                確認対象追加
+              </button>
+              <span style={{ fontSize: 12, color: '#6b7280' }}>
+                {ackTargetUserIds.length}/50
+              </span>
+            </div>
+            <datalist id="room-ack-target-users">
+              {(mentionCandidates.users || []).map((user) => (
+                <option
+                  key={user.userId}
+                  value={user.userId}
+                  label={user.displayName ? `${user.displayName}` : user.userId}
+                />
+              ))}
+            </datalist>
+            {ackTargetUserIds.length > 0 && (
+              <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}>
+                {ackTargetUserIds.map((userId) => (
+                  <button
+                    key={userId}
+                    type="button"
+                    className="badge"
+                    aria-label={`確認対象から除外: ${userId}`}
+                    onClick={() => removeAckTargetUser(userId)}
+                    style={{ cursor: 'pointer' }}
+                  >
+                    {userId} ×
+                  </button>
+                ))}
+                <button
+                  className="button secondary"
+                  onClick={resetAckTargets}
+                  type="button"
+                >
+                  確認対象クリア
+                </button>
+              </div>
+            )}
             <div className="row" style={{ gap: 12 }}>
               <button
                 className="button"
