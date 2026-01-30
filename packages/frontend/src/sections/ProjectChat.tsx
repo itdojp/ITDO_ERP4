@@ -242,6 +242,7 @@ export const ProjectChat: React.FC = () => {
   const [showPreview, setShowPreview] = useState(false);
   const [tags, setTags] = useState('');
   const [ackTargets, setAckTargets] = useState('');
+  const [ackTargetInput, setAckTargetInput] = useState('');
   const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
   const [filterTag, setFilterTag] = useState('');
   const [items, setItems] = useState<ChatMessage[]>([]);
@@ -275,6 +276,8 @@ export const ProjectChat: React.FC = () => {
   } | null>(null);
   const [pendingScrollMessageId, setPendingScrollMessageId] = useState('');
   const [highlightMessageId, setHighlightMessageId] = useState('');
+
+  const ackTargetUserIds = Array.from(new Set(parseUserIds(ackTargets)));
 
   const hasActiveAckDeadline = items.some((item) => {
     if (item.ackRequest?.canceledAt) return false;
@@ -465,6 +468,25 @@ export const ProjectChat: React.FC = () => {
       prev.includes(value) ? prev : [...prev, value].slice(0, 20),
     );
     setMentionGroupInput('');
+  };
+
+  const addAckTargetUser = () => {
+    const value = ackTargetInput.trim();
+    if (!value) return;
+    const current = parseUserIds(ackTargets);
+    const next = Array.from(new Set([...current, value])).slice(0, 50);
+    setAckTargets(next.join(','));
+    setAckTargetInput('');
+  };
+
+  const removeAckTargetUser = (userId: string) => {
+    const current = parseUserIds(ackTargets);
+    setAckTargets(current.filter((entry) => entry !== userId).join(','));
+  };
+
+  const resetAckTargets = () => {
+    setAckTargets('');
+    setAckTargetInput('');
   };
 
   const load = async () => {
@@ -714,7 +736,7 @@ export const ProjectChat: React.FC = () => {
       }
       setBody('');
       setTags('');
-      setAckTargets('');
+      resetAckTargets();
       setAttachmentFile(null);
       resetMentions();
       setMessage('確認依頼を投稿しました');
@@ -1113,6 +1135,59 @@ export const ProjectChat: React.FC = () => {
           placeholder="確認対象ユーザID (comma separated)"
           style={{ width: '100%', marginTop: 8 }}
         />
+        <div className="row" style={{ gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
+          <input
+            aria-label="確認対象ユーザ追加"
+            type="text"
+            list="chat-mention-users"
+            value={ackTargetInput}
+            onChange={(e) => setAckTargetInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                addAckTargetUser();
+              }
+            }}
+            placeholder="確認対象: ユーザID (任意)"
+            style={{ flex: '1 1 240px' }}
+          />
+          <button
+            className="button secondary"
+            onClick={addAckTargetUser}
+            type="button"
+          >
+            確認対象追加
+          </button>
+          <span style={{ fontSize: 12, color: '#6b7280' }}>
+            {ackTargetUserIds.length}/50
+          </span>
+        </div>
+        {ackTargetUserIds.length > 0 && (
+          <div
+            className="row"
+            style={{ gap: 6, flexWrap: 'wrap', marginTop: 6 }}
+          >
+            {ackTargetUserIds.map((userId) => (
+              <button
+                key={userId}
+                type="button"
+                className="badge"
+                aria-label={`確認対象から除外: ${userId}`}
+                onClick={() => removeAckTargetUser(userId)}
+                style={{ cursor: 'pointer' }}
+              >
+                {userId} ×
+              </button>
+            ))}
+            <button
+              className="button secondary"
+              onClick={resetAckTargets}
+              type="button"
+            >
+              確認対象クリア
+            </button>
+          </div>
+        )}
         <div className="row" style={{ gap: 8, marginTop: 8 }}>
           <button className="button" onClick={postMessage} disabled={isPosting}>
             {isPosting ? '投稿中...' : '投稿'}
