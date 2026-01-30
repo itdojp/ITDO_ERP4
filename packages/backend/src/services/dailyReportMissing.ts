@@ -94,9 +94,10 @@ export async function runDailyReportMissingNotifications(
 
   const users = await prisma.userAccount.findMany({
     where: { active: true, deletedAt: null },
-    select: { id: true },
+    select: { userName: true },
   });
-  const userIds = users.map((user) => user.id);
+  // Domain `userId` is aligned with auth principal (`UserAccount.userName`).
+  const userIds = users.map((user) => user.userName.trim()).filter(Boolean);
   if (!userIds.length) {
     return {
       ok: true,
