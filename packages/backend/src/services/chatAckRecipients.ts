@@ -190,12 +190,18 @@ export async function validateChatAckRequiredRecipientsForRoom(options: {
   const forbidden = activeUserIds.filter((userId) => !allowed.has(userId));
   const invalid = [...missingOrInactive, ...forbidden];
   if (invalid.length) {
+    const hasMissingOrInactive = missingOrInactive.length > 0;
+    const hasForbidden = forbidden.length > 0;
+    const reason =
+      hasMissingOrInactive && hasForbidden
+        ? 'required_users_invalid'
+        : hasMissingOrInactive
+          ? 'required_users_inactive'
+          : 'required_users_forbidden';
     return {
       ok: false,
       invalidUserIds: invalid,
-      reason: missingOrInactive.length
-        ? 'required_users_inactive'
-        : 'required_users_forbidden',
+      reason,
     };
   }
 
