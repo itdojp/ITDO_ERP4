@@ -117,17 +117,6 @@ const formatDateTime = (value?: string | null) => {
   return date.toLocaleString();
 };
 
-const formatAmount = (value: number | string, currency: string) => {
-  const amount =
-    typeof value === 'number'
-      ? value
-      : Number.isFinite(Number(value))
-        ? Number(value)
-        : null;
-  if (amount === null) return `- ${currency}`;
-  return `${amount.toLocaleString()} ${currency}`;
-};
-
 const parseNumberValue = (value: number | string | null | undefined) => {
   if (typeof value === 'number') return Number.isFinite(value) ? value : null;
   if (typeof value === 'string') {
@@ -135,6 +124,12 @@ const parseNumberValue = (value: number | string | null | undefined) => {
     return Number.isFinite(parsed) ? parsed : null;
   }
   return null;
+};
+
+const formatAmount = (value: number | string, currency: string) => {
+  const amount = parseNumberValue(value);
+  if (amount === null) return `- ${currency}`;
+  return `${amount.toLocaleString()} ${currency}`;
 };
 
 const today = new Date().toISOString().slice(0, 10);
@@ -286,10 +281,13 @@ export const VendorDocuments: React.FC = () => {
       return;
     }
 
+    const controller = new AbortController();
     let aborted = false;
     setPurchaseOrderDetailLoading(true);
     setPurchaseOrderDetailMessage('');
-    api<PurchaseOrderDetail>(`/purchase-orders/${selectedPurchaseOrderId}`)
+    api<PurchaseOrderDetail>(`/purchase-orders/${selectedPurchaseOrderId}`, {
+      signal: controller.signal,
+    })
       .then((po) => {
         if (aborted) return;
         setPurchaseOrderDetails((prev) => ({ ...prev, [po.id]: po }));
@@ -306,6 +304,7 @@ export const VendorDocuments: React.FC = () => {
 
     return () => {
       aborted = true;
+      controller.abort();
     };
   }, [purchaseOrderDetails, selectedPurchaseOrderId]);
 
@@ -1378,6 +1377,9 @@ export const VendorDocuments: React.FC = () => {
                 {!purchaseOrderDetailLoading && selectedPurchaseOrder && (
                   <>
                     {(() => {
+                      const poCurrency = selectedPurchaseOrder.currency;
+                      const viCurrency = invoicePoLinkDialog.invoice.currency;
+                      const sameCurrency = viCurrency === poCurrency;
                       const poTotal = parseNumberValue(
                         selectedPurchaseOrder.totalAmount,
                       );
@@ -1385,7 +1387,7 @@ export const VendorDocuments: React.FC = () => {
                         invoicePoLinkDialog.invoice.totalAmount,
                       );
                       const diff =
-                        poTotal !== null && viTotal !== null
+                        sameCurrency && poTotal !== null && viTotal !== null
                           ? viTotal - poTotal
                           : null;
                       const hasDiff = diff !== null && Math.abs(diff) > 0.00001;
@@ -1399,24 +1401,24 @@ export const VendorDocuments: React.FC = () => {
                             PO合計:{' '}
                             {formatAmount(
                               selectedPurchaseOrder.totalAmount,
-                              selectedPurchaseOrder.currency,
+                              poCurrency,
                             )}
                           </div>
                           <div style={{ color: '#64748b' }}>
                             仕入請求合計:{' '}
                             {formatAmount(
                               invoicePoLinkDialog.invoice.totalAmount,
-                              invoicePoLinkDialog.invoice.currency,
+                              viCurrency,
                             )}
                           </div>
+                          {!sameCurrency && (
+                            <div style={{ color: '#dc2626' }}>
+                              通貨が異なるため合計差分は算出しません
+                            </div>
+                          )}
                           {hasDiff && (
                             <div style={{ color: '#dc2626' }}>
-                              合計差分: {diff.toLocaleString()}{' '}
-                              {invoicePoLinkDialog.invoice.currency}
-                              {invoicePoLinkDialog.invoice.currency !==
-                              selectedPurchaseOrder.currency
-                                ? '（通貨が異なるため参考値）'
-                                : ''}
+                              合計差分: {formatAmount(diff, viCurrency)}
                             </div>
                           )}
                         </div>
