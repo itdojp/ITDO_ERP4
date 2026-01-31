@@ -2,6 +2,7 @@ import { FastifyInstance } from 'fastify';
 import { Prisma } from '@prisma/client';
 import { prisma } from '../services/db.js';
 import { requireRole } from '../services/rbac.js';
+import { parseDateParam } from '../utils/date.js';
 import { notificationPreferencePatchSchema } from './validators.js';
 
 function parseLimit(raw: string | undefined, fallback: number) {
@@ -20,14 +21,6 @@ function parseUnreadFlag(value: unknown) {
   return Boolean(value);
 }
 
-function parseDateTime(value: unknown) {
-  if (value === null || value === undefined) return null;
-  if (typeof value !== 'string') return null;
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return null;
-  return parsed;
-}
-
 export async function registerNotificationRoutes(app: FastifyInstance) {
   const allowedRoles = ['admin', 'mgmt', 'exec', 'user', 'hr', 'external_chat'];
 
@@ -37,7 +30,9 @@ export async function registerNotificationRoutes(app: FastifyInstance) {
     async (req, reply) => {
       const userId = req.user?.userId;
       if (!userId) {
-        return reply.code(401).send({ error: 'unauthorized' });
+        return reply.status(401).send({
+          error: { code: 'UNAUTHORIZED', message: 'unauthorized' },
+        });
       }
       const unreadCount = await prisma.appNotification.count({
         where: { userId, readAt: null },
@@ -52,7 +47,9 @@ export async function registerNotificationRoutes(app: FastifyInstance) {
     async (req, reply) => {
       const userId = req.user?.userId;
       if (!userId) {
-        return reply.code(401).send({ error: 'unauthorized' });
+        return reply.status(401).send({
+          error: { code: 'UNAUTHORIZED', message: 'unauthorized' },
+        });
       }
       const query = (req.query || {}) as {
         unread?: string;
@@ -89,17 +86,23 @@ export async function registerNotificationRoutes(app: FastifyInstance) {
       const { id } = req.params as { id: string };
       const userId = req.user?.userId;
       if (!userId) {
-        return reply.code(401).send({ error: 'unauthorized' });
+        return reply.status(401).send({
+          error: { code: 'UNAUTHORIZED', message: 'unauthorized' },
+        });
       }
       const current = await prisma.appNotification.findUnique({
         where: { id },
         select: { id: true, userId: true, readAt: true },
       });
       if (!current) {
-        return reply.code(404).send({ error: 'not_found' });
+        return reply.status(404).send({
+          error: { code: 'NOT_FOUND', message: 'not_found' },
+        });
       }
       if (current.userId !== userId) {
-        return reply.code(403).send({ error: 'forbidden' });
+        return reply.status(403).send({
+          error: { code: 'FORBIDDEN', message: 'forbidden' },
+        });
       }
       if (current.readAt) {
         return { ok: true, readAt: current.readAt.toISOString() };
@@ -119,7 +122,9 @@ export async function registerNotificationRoutes(app: FastifyInstance) {
     async (req, reply) => {
       const userId = req.user?.userId;
       if (!userId) {
-        return reply.code(401).send({ error: 'unauthorized' });
+        return reply.status(401).send({
+          error: { code: 'UNAUTHORIZED', message: 'unauthorized' },
+        });
       }
       const pref = await prisma.userNotificationPreference.findUnique({
         where: { userId },
@@ -156,7 +161,9 @@ export async function registerNotificationRoutes(app: FastifyInstance) {
     async (req, reply) => {
       const userId = req.user?.userId;
       if (!userId) {
-        return reply.code(401).send({ error: 'unauthorized' });
+        return reply.status(401).send({
+          error: { code: 'UNAUTHORIZED', message: 'unauthorized' },
+        });
       }
       const body = req.body as {
         emailMode?: 'realtime' | 'digest';
@@ -217,9 +224,12 @@ export async function registerNotificationRoutes(app: FastifyInstance) {
           update.muteAllUntil = null;
           create.muteAllUntil = null;
         } else {
-          const parsed = parseDateTime(body.muteAllUntil);
+          const parsed =
+            typeof body.muteAllUntil === 'string'
+              ? parseDateParam(body.muteAllUntil)
+              : null;
           if (!parsed) {
-            return reply.code(400).send({
+            return reply.status(400).send({
               error: { code: 'INVALID_DATE', message: 'Invalid muteAllUntil' },
             });
           }

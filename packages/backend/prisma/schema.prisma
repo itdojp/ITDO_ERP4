@@ -342,6 +342,7 @@ model AppNotificationDelivery {
 }
 
 model UserNotificationPreference {
+  /// NOTE: userId intentionally has no FK to support JWT/external users (consistent with AppNotification).
   userId                     String   @id
   emailMode                  String   @default("digest")
   emailDigestIntervalMinutes Int      @default(10)
@@ -356,6 +357,7 @@ model ChatRoomNotificationSetting {
   id               String   @id @default(uuid())
   room             ChatRoom @relation(fields: [roomId], references: [id], onDelete: Cascade)
   roomId           String
+  /// NOTE: userId intentionally has no FK to support JWT/external users (consistent with AppNotification).
   userId           String
   notifyAllPosts   Boolean  @default(true)
   notifyMentions   Boolean  @default(true)
