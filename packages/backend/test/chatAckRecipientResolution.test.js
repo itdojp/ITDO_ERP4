@@ -15,10 +15,10 @@ test('resolveChatAckRequiredRecipientUserIds: merges direct+group+role targets w
             ...(where?.OR?.[1]?.displayName?.in || []),
           ];
           const rows = [];
-          if (selectors.includes('g1')) {
+          if (selectors.includes('g1') || selectors.includes('g1-id')) {
             rows.push({ id: 'g1-id', displayName: 'g1' });
           }
-          if (selectors.includes('admin')) {
+          if (selectors.includes('admin') || selectors.includes('admin-id')) {
             rows.push({ id: 'admin-id', displayName: 'admin' });
           }
           return rows;
@@ -58,7 +58,7 @@ test('resolveChatAckRequiredRecipientUserIds: merges direct+group+role targets w
   }
 });
 
-test('resolveChatAckRequiredRecipientUserIds: preserves group order', async () => {
+test('resolveChatAckRequiredRecipientUserIds: accepts UUID selectors for requiredGroupIds', async () => {
   const client = {
     groupAccount: {
       findMany: async ({ where }) => {
@@ -67,10 +67,98 @@ test('resolveChatAckRequiredRecipientUserIds: preserves group order', async () =
           ...(where?.OR?.[1]?.displayName?.in || []),
         ];
         const rows = [];
-        if (selectors.includes('g1')) {
+        if (selectors.includes('g1') || selectors.includes('g1-id')) {
           rows.push({ id: 'g1-id', displayName: 'g1' });
         }
-        if (selectors.includes('g2')) {
+        return rows;
+      },
+    },
+    userGroup: {
+      findMany: async ({ where }) => {
+        const groupIds = where?.groupId?.in || [];
+        const rows = [];
+        if (groupIds.includes('g1-id')) {
+          rows.push(
+            { groupId: 'g1-id', user: { userName: 'u3' } },
+            { groupId: 'g1-id', user: { userName: 'u2' } },
+          );
+        }
+        return rows;
+      },
+    },
+  };
+
+  const res = await resolveChatAckRequiredRecipientUserIds({
+    requiredUserIds: [],
+    requiredGroupIds: ['g1-id'],
+    requiredRoles: [],
+    client,
+  });
+  assert.deepEqual(res, ['u2', 'u3']);
+});
+
+test('resolveChatAckRequiredRecipientUserIds: accepts UUID selectors for role-mapped groups', async () => {
+  const original = process.env.AUTH_GROUP_TO_ROLE_MAP;
+  process.env.AUTH_GROUP_TO_ROLE_MAP = 'g1-id=customrole';
+  try {
+    const client = {
+      groupAccount: {
+        findMany: async ({ where }) => {
+          const selectors = [
+            ...(where?.OR?.[0]?.id?.in || []),
+            ...(where?.OR?.[1]?.displayName?.in || []),
+          ];
+          const rows = [];
+          if (selectors.includes('g1') || selectors.includes('g1-id')) {
+            rows.push({ id: 'g1-id', displayName: 'g1' });
+          }
+          return rows;
+        },
+      },
+      userGroup: {
+        findMany: async ({ where }) => {
+          const groupIds = where?.groupId?.in || [];
+          const rows = [];
+          if (groupIds.includes('g1-id')) {
+            rows.push(
+              { groupId: 'g1-id', user: { userName: 'u3' } },
+              { groupId: 'g1-id', user: { userName: 'u2' } },
+            );
+          }
+          return rows;
+        },
+      },
+    };
+
+    const res = await resolveChatAckRequiredRecipientUserIds({
+      requiredUserIds: [],
+      requiredGroupIds: [],
+      requiredRoles: ['customrole'],
+      client,
+    });
+    assert.deepEqual(res, ['u2', 'u3']);
+  } finally {
+    if (original === undefined) {
+      delete process.env.AUTH_GROUP_TO_ROLE_MAP;
+    } else {
+      process.env.AUTH_GROUP_TO_ROLE_MAP = original;
+    }
+  }
+});
+
+test('resolveChatAckRequiredRecipientUserIds: preserves group order', async () => {
+  const client = {
+    groupAccount: {
+      findMany: async ({ where }) => {
+        const selectors = [
+          ...(where?.OR?.[0]?.id?.in || []),
+          ...(where?.OR?.[1]?.displayName?.in || []),
+          ];
+        const rows = [];
+        if (selectors.includes('g1') || selectors.includes('g1-id')) {
+          rows.push({ id: 'g1-id', displayName: 'g1' });
+        }
+        if (selectors.includes('g2') || selectors.includes('g2-id')) {
           rows.push({ id: 'g2-id', displayName: 'g2' });
         }
         return rows;
