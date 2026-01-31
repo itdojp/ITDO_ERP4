@@ -132,7 +132,7 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
       },
       select: { id: true, groupId: true, name: true },
     });
-    const existingByGroupId = new Map<string, typeof existing[number]>();
+    const existingByGroupId = new Map<string, (typeof existing)[number]>();
     const existingIds = new Set<string>();
     for (const room of existing) {
       if (typeof room.groupId === 'string') {
@@ -210,9 +210,9 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
   }
 
   function normalizeSortedUnique(values: string[]) {
-    return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean))).sort(
-      (a, b) => a.localeCompare(b),
-    );
+    return Array.from(
+      new Set(values.map((value) => value.trim()).filter(Boolean)),
+    ).sort((a, b) => a.localeCompare(b));
   }
 
   function areSameStringSet(a: string[], b: string[]) {
@@ -627,7 +627,9 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
           });
         }
       }
-      const departmentGroupIds = departmentTargets.map((target) => target.groupId);
+      const departmentGroupIds = departmentTargets.map(
+        (target) => target.groupId,
+      );
 
       const canSeeAllProjects = canSeeAllMeta;
       const isExternal = roles.includes('external_chat');
@@ -1266,9 +1268,8 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
 
       if (body.viewerGroupIds !== undefined) {
         const requested = normalizeGroupIdList(body.viewerGroupIds);
-        const { ids, unresolved } = await resolveGroupAccountIdsBySelector(
-          requested,
-        );
+        const { ids, unresolved } =
+          await resolveGroupAccountIdsBySelector(requested);
         if (unresolved.length > 0) {
           return reply.status(400).send({
             error: {
@@ -1287,9 +1288,8 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
 
       if (body.posterGroupIds !== undefined) {
         const requested = normalizeGroupIdList(body.posterGroupIds);
-        const { ids, unresolved } = await resolveGroupAccountIdsBySelector(
-          requested,
-        );
+        const { ids, unresolved } =
+          await resolveGroupAccountIdsBySelector(requested);
         if (unresolved.length > 0) {
           return reply.status(400).send({
             error: {
