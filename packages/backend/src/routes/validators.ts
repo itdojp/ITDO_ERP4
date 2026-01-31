@@ -594,6 +594,36 @@ export const chatBreakGlassRejectSchema = {
   ),
 };
 
+export const notificationPreferencePatchSchema = {
+  body: Type.Object(
+    {
+      emailMode: Type.Optional(
+        Type.Union([Type.Literal('realtime'), Type.Literal('digest')]),
+      ),
+      emailDigestIntervalMinutes: Type.Optional(
+        Type.Integer({ minimum: 1, maximum: 1440 }),
+      ),
+      muteAllUntil: Type.Optional(
+        Type.Union([Type.String({ format: 'date-time' }), Type.Null()]),
+      ),
+    },
+    { additionalProperties: false },
+  ),
+};
+
+export const chatRoomNotificationSettingPatchSchema = {
+  body: Type.Object(
+    {
+      notifyAllPosts: Type.Optional(Type.Boolean()),
+      notifyMentions: Type.Optional(Type.Boolean()),
+      muteUntil: Type.Optional(
+        Type.Union([Type.String({ format: 'date-time' }), Type.Null()]),
+      ),
+    },
+    { additionalProperties: false },
+  ),
+};
+
 export const leaveRequestSchema = {
   body: Type.Object({
     userId: Type.String(),

@@ -21,6 +21,7 @@ import {
 import {
   chatRoomCreateSchema,
   chatRoomMemberAddSchema,
+  chatRoomNotificationSettingPatchSchema,
   chatRoomPatchSchema,
   projectChatAckRequestSchema,
   projectChatMessageSchema,
@@ -1825,6 +1826,193 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
         select: { lastReadAt: true },
       });
       return { lastReadAt: updated.lastReadAt.toISOString() };
+    },
+  );
+
+  app.get(
+    '/chat-rooms/:roomId/notification-setting',
+    { preHandler: requireRole(chatRoles) },
+    async (req, reply) => {
+      const { roomId } = req.params as { roomId: string };
+      const userId = req.user?.userId;
+      if (!userId) {
+        return reply.status(400).send({
+          error: { code: 'MISSING_USER_ID', message: 'user id is required' },
+        });
+      }
+      const roles = req.user?.roles || [];
+      const projectIds = req.user?.projectIds || [];
+      const groupIds = Array.isArray(req.user?.groupIds)
+        ? req.user.groupIds
+        : [];
+      const groupAccountIds = Array.isArray(req.user?.groupAccountIds)
+        ? req.user.groupAccountIds
+        : [];
+      const access = await ensureChatRoomContentAccess({
+        roomId,
+        userId,
+        roles,
+        projectIds,
+        groupIds,
+        groupAccountIds,
+      });
+      if (!access.ok) {
+        return reply
+          .status(access.reason === 'not_found' ? 404 : 403)
+          .send({ error: access.reason });
+      }
+
+      const current = await prisma.chatRoomNotificationSetting.findUnique({
+        where: { roomId_userId: { roomId: access.room.id, userId } },
+        select: {
+          roomId: true,
+          userId: true,
+          notifyAllPosts: true,
+          notifyMentions: true,
+          muteUntil: true,
+        },
+      });
+      if (!current) {
+        return {
+          roomId: access.room.id,
+          userId,
+          notifyAllPosts: true,
+          notifyMentions: true,
+          muteUntil: null,
+        };
+      }
+      return {
+        ...current,
+        muteUntil: current.muteUntil ? current.muteUntil.toISOString() : null,
+      };
+    },
+  );
+
+  app.patch(
+    '/chat-rooms/:roomId/notification-setting',
+    {
+      preHandler: requireRole(chatRoles),
+      schema: chatRoomNotificationSettingPatchSchema,
+    },
+    async (req, reply) => {
+      const { roomId } = req.params as { roomId: string };
+      const userId = req.user?.userId;
+      if (!userId) {
+        return reply.status(400).send({
+          error: { code: 'MISSING_USER_ID', message: 'user id is required' },
+        });
+      }
+      const roles = req.user?.roles || [];
+      const projectIds = req.user?.projectIds || [];
+      const groupIds = Array.isArray(req.user?.groupIds)
+        ? req.user.groupIds
+        : [];
+      const groupAccountIds = Array.isArray(req.user?.groupAccountIds)
+        ? req.user.groupAccountIds
+        : [];
+      const access = await ensureChatRoomContentAccess({
+        roomId,
+        userId,
+        roles,
+        projectIds,
+        groupIds,
+        groupAccountIds,
+      });
+      if (!access.ok) {
+        return reply
+          .status(access.reason === 'not_found' ? 404 : 403)
+          .send({ error: access.reason });
+      }
+
+      const body = req.body as {
+        notifyAllPosts?: boolean;
+        notifyMentions?: boolean;
+        muteUntil?: string | null;
+      };
+
+      if (
+        body.notifyAllPosts === undefined &&
+        body.notifyMentions === undefined &&
+        body.muteUntil === undefined
+      ) {
+        const current = await prisma.chatRoomNotificationSetting.findUnique({
+          where: { roomId_userId: { roomId: access.room.id, userId } },
+          select: {
+            roomId: true,
+            userId: true,
+            notifyAllPosts: true,
+            notifyMentions: true,
+            muteUntil: true,
+          },
+        });
+        return current
+          ? {
+              ...current,
+              muteUntil: current.muteUntil
+                ? current.muteUntil.toISOString()
+                : null,
+            }
+          : {
+              roomId: access.room.id,
+              userId,
+              notifyAllPosts: true,
+              notifyMentions: true,
+              muteUntil: null,
+            };
+      }
+
+      const update: Prisma.ChatRoomNotificationSettingUpdateInput = {
+        updatedBy: userId,
+      };
+      const create: Prisma.ChatRoomNotificationSettingCreateInput = {
+        room: { connect: { id: access.room.id } },
+        userId,
+        notifyAllPosts: true,
+        notifyMentions: true,
+        createdBy: userId,
+        updatedBy: userId,
+      };
+
+      if (body.notifyAllPosts !== undefined) {
+        update.notifyAllPosts = body.notifyAllPosts;
+        create.notifyAllPosts = body.notifyAllPosts;
+      }
+      if (body.notifyMentions !== undefined) {
+        update.notifyMentions = body.notifyMentions;
+        create.notifyMentions = body.notifyMentions;
+      }
+      if (body.muteUntil !== undefined) {
+        if (body.muteUntil === null) {
+          update.muteUntil = null;
+          create.muteUntil = null;
+        } else {
+          const parsed = parseDateParam(body.muteUntil);
+          if (!parsed) {
+            return reply.status(400).send({
+              error: { code: 'INVALID_DATE', message: 'Invalid muteUntil' },
+            });
+          }
+          update.muteUntil = parsed;
+          create.muteUntil = parsed;
+        }
+      }
+
+      const updated = await prisma.chatRoomNotificationSetting.upsert({
+        where: { roomId_userId: { roomId: access.room.id, userId } },
+        update,
+        create,
+        select: {
+          roomId: true,
+          userId: true,
+          notifyAllPosts: true,
+          notifyMentions: true,
+          muteUntil: true,
+        },
+      });
+      return {
+        ...updated,
+        muteUntil: updated.muteUntil ? updated.muteUntil.toISOString() : null,
+      };
     },
   );
 
