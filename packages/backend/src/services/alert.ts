@@ -85,6 +85,33 @@ function normalizeChannels(raw: unknown): string[] {
   return ['dashboard'];
 }
 
+async function resolveActiveGroupAccountIdsBySelector(selectors: string[]) {
+  const normalized = selectors.map((id) => id.trim()).filter(Boolean);
+  if (!normalized.length) return [] as string[];
+  const rows = await prisma.groupAccount.findMany({
+    where: {
+      active: true,
+      OR: [{ id: { in: normalized } }, { displayName: { in: normalized } }],
+    },
+    select: { id: true, displayName: true },
+  });
+  const map = new Map<string, string>();
+  for (const row of rows) {
+    const id = normalizeString(row?.id);
+    const name = normalizeString(row?.displayName);
+    if (!id) continue;
+    map.set(id, id);
+    if (name && !map.has(name)) map.set(name, id);
+  }
+  return Array.from(
+    new Set(
+      Array.from(map.values())
+        .map((value) => value.trim())
+        .filter(Boolean),
+    ),
+  );
+}
+
 async function resolveEmails(recipients: AlertRecipients | null | undefined) {
   const direct = normalizeStringArray(recipients?.emails);
   const users = normalizeStringArray(recipients?.users);
@@ -140,26 +167,31 @@ async function resolveEmails(recipients: AlertRecipients | null | undefined) {
       .map(([groupId]) => groupId.trim())
       .filter(Boolean);
     if (groupIds.length) {
-      const memberships = await prisma.userGroup.findMany({
-        where: {
-          group: { displayName: { in: groupIds }, active: true },
-          user: { active: true, deletedAt: null },
-        },
-        select: { user: { select: { userName: true, emails: true } } },
-      });
-      for (const membership of memberships) {
-        const email = membership.user
-          ? emailRegex.test(membership.user.userName)
-            ? membership.user.userName
-            : null
-          : null;
-        if (email) {
-          pushEmail(email);
-          continue;
-        }
-        const primaryEmail = pickPrimaryEmail(membership.user?.emails);
-        if (primaryEmail && emailRegex.test(primaryEmail)) {
-          pushEmail(primaryEmail);
+      const resolvedGroupAccountIds =
+        await resolveActiveGroupAccountIdsBySelector(groupIds);
+      if (resolvedGroupAccountIds.length) {
+        const memberships = await prisma.userGroup.findMany({
+          where: {
+            groupId: { in: resolvedGroupAccountIds },
+            group: { active: true },
+            user: { active: true, deletedAt: null },
+          },
+          select: { user: { select: { userName: true, emails: true } } },
+        });
+        for (const membership of memberships) {
+          const email = membership.user
+            ? emailRegex.test(membership.user.userName)
+              ? membership.user.userName
+              : null
+            : null;
+          if (email) {
+            pushEmail(email);
+            continue;
+          }
+          const primaryEmail = pickPrimaryEmail(membership.user?.emails);
+          if (primaryEmail && emailRegex.test(primaryEmail)) {
+            pushEmail(primaryEmail);
+          }
         }
       }
     }

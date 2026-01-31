@@ -187,3 +187,46 @@ test('resolveChatAckRequiredRecipientUserIds: preserves group order', async () =
   });
   assert.deepEqual(res, ['u1', 'u2']);
 });
+
+test('resolveChatAckRequiredRecipientUserIds: prefers UUID selector over displayName collisions', async () => {
+  const client = {
+    groupAccount: {
+      findMany: async ({ where }) => {
+        const selectors = [
+          ...(where?.OR?.[0]?.id?.in || []),
+          ...(where?.OR?.[1]?.displayName?.in || []),
+        ];
+        const rows = [];
+        if (selectors.includes('admin')) {
+          // Simulate collision: displayName=admin (uuid-a) and id=admin (uuid-b)
+          rows.push(
+            { id: 'uuid-a', displayName: 'admin' },
+            { id: 'admin', displayName: 'other' },
+          );
+        }
+        return rows;
+      },
+    },
+    userGroup: {
+      findMany: async ({ where }) => {
+        const groupIds = where?.groupId?.in || [];
+        const rows = [];
+        if (groupIds.includes('uuid-a')) {
+          rows.push({ groupId: 'uuid-a', user: { userName: 'u2' } });
+        }
+        if (groupIds.includes('admin')) {
+          rows.push({ groupId: 'admin', user: { userName: 'u1' } });
+        }
+        return rows;
+      },
+    },
+  };
+
+  const res = await resolveChatAckRequiredRecipientUserIds({
+    requiredUserIds: [],
+    requiredGroupIds: ['admin'],
+    requiredRoles: [],
+    client,
+  });
+  assert.deepEqual(res, ['u1']);
+});

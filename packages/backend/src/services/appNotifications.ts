@@ -68,27 +68,71 @@ function normalizeId(value: unknown) {
   return typeof value === 'string' ? value.trim() : '';
 }
 
+async function resolveActiveGroupAccountIdsBySelector(selectors: string[]) {
+  const normalized = selectors.map((id) => id.trim()).filter(Boolean);
+  if (!normalized.length) return new Map<string, string>();
+  const rows = await prisma.groupAccount.findMany({
+    where: {
+      active: true,
+      OR: [{ id: { in: normalized } }, { displayName: { in: normalized } }],
+    },
+    select: { id: true, displayName: true },
+  });
+  const map = new Map<string, string>();
+  for (const row of rows) {
+    const id = normalizeId(row?.id);
+    const name = normalizeId(row?.displayName);
+    if (!id) continue;
+    map.set(id, id);
+    if (name && !map.has(name)) map.set(name, id);
+  }
+  return map;
+}
+
 async function resolveGroupMemberUserIds(groupIds: string[]) {
   const normalized = groupIds.map((id) => id.trim()).filter(Boolean);
   if (!normalized.length) return new Map<string, string[]>();
+
+  const selectorToGroupAccountId =
+    await resolveActiveGroupAccountIdsBySelector(normalized);
+  const resolvedGroupAccountIds = Array.from(
+    new Set(
+      normalized
+        .map((selector) => selectorToGroupAccountId.get(selector) || '')
+        .map((value) => value.trim())
+        .filter(Boolean),
+    ),
+  );
+  if (!resolvedGroupAccountIds.length) return new Map<string, string[]>();
+
   const rows = await prisma.userGroup.findMany({
     where: {
-      group: { displayName: { in: normalized }, active: true },
+      groupId: { in: resolvedGroupAccountIds },
+      group: { active: true },
       user: { active: true, deletedAt: null },
     },
     select: {
-      group: { select: { displayName: true } },
+      groupId: true,
       user: { select: { userName: true } },
     },
   });
-  const map = new Map<string, string[]>();
+  const byGroupAccountId = new Map<string, string[]>();
   for (const row of rows) {
-    const groupId = row.group.displayName.trim();
+    const groupId = normalizeId(row.groupId);
     const userId = row.user.userName.trim();
     if (!groupId || !userId) continue;
-    const list = map.get(groupId) || [];
+    const list = byGroupAccountId.get(groupId) || [];
     list.push(userId);
-    map.set(groupId, list);
+    byGroupAccountId.set(groupId, list);
+  }
+
+  const map = new Map<string, string[]>();
+  for (const selector of normalized) {
+    const groupAccountId = selectorToGroupAccountId.get(selector) || '';
+    const members = groupAccountId
+      ? byGroupAccountId.get(groupAccountId) || []
+      : [];
+    map.set(selector, members);
   }
   return map;
 }
