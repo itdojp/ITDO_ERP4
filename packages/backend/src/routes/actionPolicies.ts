@@ -209,7 +209,12 @@ export async function registerActionPolicyRoutes(app: FastifyInstance) {
         state?: unknown;
         targetTable?: string;
         targetId?: string;
-        actor?: { userId?: string; roles?: unknown; groupIds?: unknown };
+        actor?: {
+          userId?: string;
+          roles?: unknown;
+          groupIds?: unknown;
+          groupAccountIds?: unknown;
+        };
         reasonText?: string;
       };
       const flowType = body.flowType as FlowType;
