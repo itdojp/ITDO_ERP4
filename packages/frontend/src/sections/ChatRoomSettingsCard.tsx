@@ -258,10 +258,14 @@ export const ChatRoomSettingsCard: React.FC = () => {
 
       <div style={{ marginTop: 12 }}>
         <div style={{ fontSize: 12, color: '#475569' }}>
-          閲覧/投稿グループ（GroupAccount.id または displayName をカンマ区切り。displayName は保存時に
-          GroupAccount.id に解決され、保存後は id のみ表示）
+          閲覧/投稿グループ（GroupAccount.id または displayName
+          をカンマ区切り。displayName は保存時に GroupAccount.id
+          に解決され、保存後は id のみ表示）
         </div>
-        <div className="row" style={{ marginTop: 8, gap: 12, flexWrap: 'wrap' }}>
+        <div
+          className="row"
+          style={{ marginTop: 8, gap: 12, flexWrap: 'wrap' }}
+        >
           <label style={{ minWidth: 260 }}>
             閲覧グループ
             <input
