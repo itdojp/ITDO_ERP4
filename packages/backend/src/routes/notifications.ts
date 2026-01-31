@@ -1,6 +1,8 @@
 import { FastifyInstance } from 'fastify';
+import { Prisma } from '@prisma/client';
 import { prisma } from '../services/db.js';
 import { requireRole } from '../services/rbac.js';
+import { notificationPreferencePatchSchema } from './validators.js';
 
 function parseLimit(raw: string | undefined, fallback: number) {
   if (!raw) return fallback;
@@ -16,6 +18,14 @@ function parseUnreadFlag(value: unknown) {
     return normalized === '1' || normalized === 'true' || normalized === 'yes';
   }
   return Boolean(value);
+}
+
+function parseDateTime(value: unknown) {
+  if (value === null || value === undefined) return null;
+  if (typeof value !== 'string') return null;
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed;
 }
 
 export async function registerNotificationRoutes(app: FastifyInstance) {
@@ -100,6 +110,141 @@ export async function registerNotificationRoutes(app: FastifyInstance) {
         select: { readAt: true },
       });
       return { ok: true, readAt: updated.readAt?.toISOString() ?? null };
+    },
+  );
+
+  app.get(
+    '/notification-preferences',
+    { preHandler: requireRole(allowedRoles) },
+    async (req, reply) => {
+      const userId = req.user?.userId;
+      if (!userId) {
+        return reply.code(401).send({ error: 'unauthorized' });
+      }
+      const pref = await prisma.userNotificationPreference.findUnique({
+        where: { userId },
+        select: {
+          userId: true,
+          emailMode: true,
+          emailDigestIntervalMinutes: true,
+          muteAllUntil: true,
+        },
+      });
+      if (pref) {
+        return {
+          ...pref,
+          muteAllUntil: pref.muteAllUntil
+            ? pref.muteAllUntil.toISOString()
+            : null,
+        };
+      }
+      return {
+        userId,
+        emailMode: 'digest',
+        emailDigestIntervalMinutes: 10,
+        muteAllUntil: null,
+      };
+    },
+  );
+
+  app.patch(
+    '/notification-preferences',
+    {
+      preHandler: requireRole(allowedRoles),
+      schema: notificationPreferencePatchSchema,
+    },
+    async (req, reply) => {
+      const userId = req.user?.userId;
+      if (!userId) {
+        return reply.code(401).send({ error: 'unauthorized' });
+      }
+      const body = req.body as {
+        emailMode?: 'realtime' | 'digest';
+        emailDigestIntervalMinutes?: number;
+        muteAllUntil?: string | null;
+      };
+
+      if (
+        body.emailMode === undefined &&
+        body.emailDigestIntervalMinutes === undefined &&
+        body.muteAllUntil === undefined
+      ) {
+        const current = await prisma.userNotificationPreference.findUnique({
+          where: { userId },
+          select: {
+            userId: true,
+            emailMode: true,
+            emailDigestIntervalMinutes: true,
+            muteAllUntil: true,
+          },
+        });
+        return current
+          ? {
+              ...current,
+              muteAllUntil: current.muteAllUntil
+                ? current.muteAllUntil.toISOString()
+                : null,
+            }
+          : {
+              userId,
+              emailMode: 'digest',
+              emailDigestIntervalMinutes: 10,
+              muteAllUntil: null,
+            };
+      }
+
+      const update: Prisma.UserNotificationPreferenceUpdateInput = {
+        updatedBy: userId,
+      };
+      const create: Prisma.UserNotificationPreferenceCreateInput = {
+        userId,
+        emailMode: 'digest',
+        emailDigestIntervalMinutes: 10,
+        createdBy: userId,
+        updatedBy: userId,
+      };
+
+      if (body.emailMode !== undefined) {
+        update.emailMode = body.emailMode;
+        create.emailMode = body.emailMode;
+      }
+      if (body.emailDigestIntervalMinutes !== undefined) {
+        update.emailDigestIntervalMinutes = body.emailDigestIntervalMinutes;
+        create.emailDigestIntervalMinutes = body.emailDigestIntervalMinutes;
+      }
+      if (body.muteAllUntil !== undefined) {
+        if (body.muteAllUntil === null) {
+          update.muteAllUntil = null;
+          create.muteAllUntil = null;
+        } else {
+          const parsed = parseDateTime(body.muteAllUntil);
+          if (!parsed) {
+            return reply.code(400).send({
+              error: { code: 'INVALID_DATE', message: 'Invalid muteAllUntil' },
+            });
+          }
+          update.muteAllUntil = parsed;
+          create.muteAllUntil = parsed;
+        }
+      }
+
+      const updated = await prisma.userNotificationPreference.upsert({
+        where: { userId },
+        update,
+        create,
+        select: {
+          userId: true,
+          emailMode: true,
+          emailDigestIntervalMinutes: true,
+          muteAllUntil: true,
+        },
+      });
+      return {
+        ...updated,
+        muteAllUntil: updated.muteAllUntil
+          ? updated.muteAllUntil.toISOString()
+          : null,
+      };
     },
   );
 }

@@ -2541,6 +2541,65 @@
         }
       }
     },
+    "/chat-rooms/{roomId}/notification-setting": {
+      "get": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "roomId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      },
+      "patch": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "roomId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "muteUntil": {
+                    "format": "date-time",
+                    "nullable": true,
+                    "type": "string"
+                  },
+                  "notifyAllPosts": {
+                    "type": "boolean"
+                  },
+                  "notifyMentions": {
+                    "type": "boolean"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
     "/chat-rooms/{roomId}/read": {
       "post": {
         "parameters": [
@@ -3929,6 +3988,60 @@
     },
     "/me": {
       "get": {
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/notification-preferences": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      },
+      "patch": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "emailDigestIntervalMinutes": {
+                    "maximum": 1440,
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "emailMode": {
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "realtime"
+                        ],
+                        "type": "string"
+                      },
+                      {
+                        "enum": [
+                          "digest"
+                        ],
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "muteAllUntil": {
+                    "format": "date-time",
+                    "nullable": true,
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "Default Response"

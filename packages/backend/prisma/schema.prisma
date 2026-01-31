@@ -341,6 +341,35 @@ model AppNotificationDelivery {
   @@index([notificationId, createdAt])
 }
 
+model UserNotificationPreference {
+  userId                     String   @id
+  emailMode                  String   @default("digest")
+  emailDigestIntervalMinutes Int      @default(10)
+  muteAllUntil               DateTime?
+  createdAt                  DateTime @default(now())
+  createdBy                  String?
+  updatedAt                  DateTime @updatedAt
+  updatedBy                  String?
+}
+
+model ChatRoomNotificationSetting {
+  id               String   @id @default(uuid())
+  room             ChatRoom @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  roomId           String
+  userId           String
+  notifyAllPosts   Boolean  @default(true)
+  notifyMentions   Boolean  @default(true)
+  muteUntil        DateTime?
+  createdAt        DateTime @default(now())
+  createdBy        String?
+  updatedAt        DateTime @updatedAt
+  updatedBy        String?
+
+  @@unique([roomId, userId])
+  @@index([userId])
+  @@index([roomId])
+}
+
 model ChatRoom {
   id                        String           @id @default(uuid())
   type                      String // project/department/company/private_group/dm
@@ -361,6 +390,7 @@ model ChatRoom {
   messages                  ChatMessage[]
   ackRequests               ChatAckRequest[]
   readStates                ChatReadState[]
+  notificationSettings      ChatRoomNotificationSetting[]
 
   @@unique([type, projectId])
   @@index([type, createdAt])

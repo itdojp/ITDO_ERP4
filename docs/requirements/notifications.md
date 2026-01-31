@@ -11,6 +11,24 @@
 - Push: WebPush（`/push-notifications/test`、購読は `push_subscriptions`）
 - 外部連携: Slack/Webhook（主にアラート系で利用、運用は allowlist）
 
+## 通知設定（段階導入）
+
+### ユーザ単位（通知量抑制）
+
+- email:
+  - `realtime` / `digest`（既定: digest）
+  - `emailDigestIntervalMinutes`（既定: 10分）
+- web:
+  - `muteAllUntil`（全体ミュートの期限）
+
+### ルーム単位（チャット通知）
+
+- `notifyAllPosts`: 全投稿通知の有無（既定: true）
+- `notifyMentions`: メンション通知の有無（既定: true）
+- `muteUntil`: ルーム単位ミュートの期限
+
+※ これらの設定は DB に保持し、通知生成ロジックへ段階的に反映する。
+
 ## 現行実装（MVP）
 
 ※ 2026-01-24 時点（PR #681 で日報未提出通知を追加済み）
