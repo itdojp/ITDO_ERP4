@@ -349,6 +349,8 @@ model ChatRoom {
   project                   Project?         @relation(fields: [projectId], references: [id], onDelete: Restrict)
   projectId                 String?
   groupId                   String?
+  viewerGroupIds            Json?
+  posterGroupIds            Json?
   allowExternalUsers        Boolean          @default(false)
   allowExternalIntegrations Boolean          @default(false)
   createdAt                 DateTime         @default(now())

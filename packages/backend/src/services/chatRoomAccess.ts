@@ -5,6 +5,8 @@ type ChatRoomBase = {
   id: string;
   type: string;
   groupId: string | null;
+  viewerGroupIds?: unknown;
+  posterGroupIds?: unknown;
   deletedAt: Date | null;
   allowExternalUsers: boolean;
 };
@@ -27,9 +29,11 @@ export async function ensureChatRoomContentAccess(options: {
   projectIds: string[];
   groupIds?: string[];
   groupAccountIds?: string[];
+  accessLevel?: 'read' | 'post';
   client?: typeof prisma;
 }): Promise<ChatRoomContentAccessResult> {
   const client = options.client ?? prisma;
+  const accessLevel = options.accessLevel ?? 'read';
   const isExternal = options.roles.includes('external_chat');
   const internalChatRoles = new Set(['admin', 'mgmt', 'exec', 'user', 'hr']);
   const hasInternalChatRole = options.roles.some((role) =>
@@ -52,12 +56,38 @@ export async function ensureChatRoomContentAccess(options: {
       id: true,
       type: true,
       groupId: true,
+      viewerGroupIds: true,
+      posterGroupIds: true,
       deletedAt: true,
       allowExternalUsers: true,
     },
   });
   if (!room || room.deletedAt) {
     return { ok: false, reason: 'not_found' };
+  }
+
+  const normalizeRoomGroupIds = (value: unknown) => {
+    if (!Array.isArray(value)) return [];
+    return value
+      .map((entry) => (typeof entry === 'string' ? entry.trim() : ''))
+      .filter(Boolean);
+  };
+  const viewerGroupIds = normalizeRoomGroupIds(room.viewerGroupIds);
+  const posterGroupIds = normalizeRoomGroupIds(room.posterGroupIds);
+  const groupAccessSet = new Set([...groupIdSet, ...groupAccountIdSet]);
+  // viewer/poster group ids are allow-lists that apply to all roles.
+  if (
+    viewerGroupIds.length > 0 &&
+    !viewerGroupIds.some((groupId) => groupAccessSet.has(groupId))
+  ) {
+    return { ok: false, reason: 'forbidden_room_member' };
+  }
+  if (
+    accessLevel === 'post' &&
+    posterGroupIds.length > 0 &&
+    !posterGroupIds.some((groupId) => groupAccessSet.has(groupId))
+  ) {
+    return { ok: false, reason: 'forbidden_room_member' };
   }
 
   if (room.type === 'project') {

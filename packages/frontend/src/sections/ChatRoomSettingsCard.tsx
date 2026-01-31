@@ -9,6 +9,8 @@ type ChatRoom = {
   projectCode?: string | null;
   projectName?: string | null;
   groupId?: string | null;
+  viewerGroupIds?: string[] | null;
+  posterGroupIds?: string[] | null;
   allowExternalUsers?: boolean | null;
   allowExternalIntegrations?: boolean | null;
 };
@@ -18,6 +20,21 @@ function parseUserIds(value: string) {
     .split(',')
     .map((entry) => entry.trim())
     .filter(Boolean);
+}
+
+function parseGroupIds(value: string) {
+  return value
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
+
+function formatGroupIds(value: unknown) {
+  if (!Array.isArray(value)) return '';
+  return value
+    .map((entry) => (typeof entry === 'string' ? entry.trim() : ''))
+    .filter(Boolean)
+    .join(', ');
 }
 
 function formatRoomLabel(room: ChatRoom) {
@@ -43,6 +60,8 @@ export const ChatRoomSettingsCard: React.FC = () => {
   const [allowExternalUsers, setAllowExternalUsers] = useState(false);
   const [allowExternalIntegrations, setAllowExternalIntegrations] =
     useState(false);
+  const [viewerGroupIds, setViewerGroupIds] = useState('');
+  const [posterGroupIds, setPosterGroupIds] = useState('');
   const [memberUserIds, setMemberUserIds] = useState('');
   const [message, setMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -98,6 +117,8 @@ export const ChatRoomSettingsCard: React.FC = () => {
         body: JSON.stringify({
           allowExternalUsers,
           allowExternalIntegrations,
+          viewerGroupIds: parseGroupIds(viewerGroupIds),
+          posterGroupIds: parseGroupIds(posterGroupIds),
         }),
       });
       setMessage('保存しました');
@@ -108,7 +129,14 @@ export const ChatRoomSettingsCard: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [allowExternalIntegrations, allowExternalUsers, load, roomId]);
+  }, [
+    allowExternalIntegrations,
+    allowExternalUsers,
+    load,
+    posterGroupIds,
+    roomId,
+    viewerGroupIds,
+  ]);
 
   const addMembers = useCallback(async () => {
     if (!roomId) return;
@@ -145,6 +173,8 @@ export const ChatRoomSettingsCard: React.FC = () => {
     setAllowExternalIntegrations(
       selectedRoom.allowExternalIntegrations === true,
     );
+    setViewerGroupIds(formatGroupIds(selectedRoom.viewerGroupIds));
+    setPosterGroupIds(formatGroupIds(selectedRoom.posterGroupIds));
   }, [selectedRoom]);
 
   if (!canManage) {
@@ -224,6 +254,39 @@ export const ChatRoomSettingsCard: React.FC = () => {
         >
           保存
         </button>
+      </div>
+
+      <div style={{ marginTop: 12 }}>
+        <div style={{ fontSize: 12, color: '#475569' }}>
+          閲覧/投稿グループ（GroupAccount.id または displayName
+          をカンマ区切り。displayName は保存時に GroupAccount.id
+          に解決され、保存後は id のみ表示）
+        </div>
+        <div
+          className="row"
+          style={{ marginTop: 8, gap: 12, flexWrap: 'wrap' }}
+        >
+          <label style={{ minWidth: 260 }}>
+            閲覧グループ
+            <input
+              type="text"
+              value={viewerGroupIds}
+              onChange={(e) => setViewerGroupIds(e.target.value)}
+              disabled={!roomId || isLoading}
+              placeholder="group-id-1, group-id-2"
+            />
+          </label>
+          <label style={{ minWidth: 260 }}>
+            投稿グループ
+            <input
+              type="text"
+              value={posterGroupIds}
+              onChange={(e) => setPosterGroupIds(e.target.value)}
+              disabled={!roomId || isLoading}
+              placeholder="group-id-1, group-id-2"
+            />
+          </label>
+        </div>
       </div>
 
       <div style={{ marginTop: 12 }}>
