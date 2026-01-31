@@ -11,6 +11,9 @@ export type UserContext = {
   orgId?: string;
   projectIds?: string[];
   groupIds?: string[];
+  // Canonical group identifier (GroupAccount.id). Keep groupIds (displayName)
+  // during the migration period.
+  groupAccountIds?: string[];
 };
 
 declare module 'fastify' {
@@ -119,7 +122,9 @@ async function resolveUserGroupsFromDb(userId: string) {
       deletedAt: true,
       organization: true,
       memberships: {
-        include: { group: { select: { displayName: true, active: true } } },
+        include: {
+          group: { select: { id: true, displayName: true, active: true } },
+        },
       },
     },
   });
@@ -127,6 +132,11 @@ async function resolveUserGroupsFromDb(userId: string) {
   if (!user.active || user.deletedAt) {
     return { blocked: true as const };
   }
+  const groupAccountIds = user.memberships
+    .filter((membership) => membership.group.active)
+    .map((membership) => membership.group.id)
+    .map((value) => value.trim())
+    .filter(Boolean);
   const groupIds = user.memberships
     .filter((membership) => membership.group.active)
     .map((membership) => membership.group.displayName)
@@ -136,13 +146,19 @@ async function resolveUserGroupsFromDb(userId: string) {
     blocked: false as const,
     orgId: user.organization ?? undefined,
     groupIds,
+    groupAccountIds,
   };
 }
 
 type UserDbContext =
   | null
   | { blocked: true }
-  | { blocked: false; orgId?: string; groupIds: string[] };
+  | {
+      blocked: false;
+      orgId?: string;
+      groupIds: string[];
+      groupAccountIds: string[];
+    };
 
 type CachedUserDbContext = {
   expiresAt: number;
@@ -208,11 +224,16 @@ async function validateAndEnrichUserContext(req: any, reply: any) {
       return false;
     }
     const mergedGroupIds = unionStrings(user.groupIds, resolved.groupIds);
+    const mergedGroupAccountIds = unionStrings(
+      user.groupAccountIds,
+      resolved.groupAccountIds,
+    );
     const derivedRoles = deriveRolesFromGroups(mergedGroupIds);
     const mergedRoles = expandRoles(
       unionStrings(user.roles, ['user', ...derivedRoles]),
     );
     user.groupIds = mergedGroupIds;
+    user.groupAccountIds = mergedGroupAccountIds;
     user.roles = mergedRoles;
     if (!user.orgId && resolved.orgId) {
       user.orgId = resolved.orgId;

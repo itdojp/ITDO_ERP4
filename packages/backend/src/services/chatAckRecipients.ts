@@ -40,31 +40,85 @@ function resolveGroupIdsForRoles(roles: string[]) {
     .filter(Boolean);
 }
 
+async function resolveActiveGroupAccountIdsBySelector(options: {
+  selectors: string[];
+  client: any;
+}) {
+  const selectors = options.selectors
+    .map((value) => value.trim())
+    .filter(Boolean);
+  if (!selectors.length) return new Map<string, string>();
+  const rows = await options.client.groupAccount.findMany({
+    where: {
+      active: true,
+      OR: [{ id: { in: selectors } }, { displayName: { in: selectors } }],
+    },
+    select: { id: true, displayName: true },
+  });
+  const map = new Map<string, string>();
+  for (const row of rows) {
+    const id = normalizeId(row?.id);
+    const name = normalizeId(row?.displayName);
+    if (!id) continue;
+    map.set(id, id);
+    if (name) map.set(name, id);
+  }
+  return map;
+}
+
 async function resolveMemberUserIdsForGroups(options: {
   groupIds: string[];
   client: any;
 }) {
+  const selectorToGroupAccountId = await resolveActiveGroupAccountIdsBySelector(
+    {
+      selectors: options.groupIds,
+      client: options.client,
+    },
+  );
+  const resolvedGroupAccountIds = Array.from(
+    new Set(
+      options.groupIds
+        .map((selector) => selectorToGroupAccountId.get(selector) || '')
+        .map((value) => value.trim())
+        .filter(Boolean),
+    ),
+  );
+  if (!resolvedGroupAccountIds.length) return new Map<string, string[]>();
+
   const memberships = await options.client.userGroup.findMany({
     where: {
-      group: { displayName: { in: options.groupIds }, active: true },
+      groupId: { in: resolvedGroupAccountIds },
+      group: { active: true },
       user: { active: true, deletedAt: null },
     },
     select: {
-      group: { select: { displayName: true } },
+      groupId: true,
       user: { select: { userName: true } },
     },
   });
 
-  const byGroup = new Map<string, string[]>();
+  const byGroupAccountId = new Map<string, string[]>();
   for (const membership of memberships) {
-    const groupId = normalizeId(membership?.group?.displayName);
+    const groupId = normalizeId(membership?.groupId);
     const userId = normalizeId(membership?.user?.userName);
     if (!groupId || !userId) continue;
-    const list = byGroup.get(groupId) || [];
+    const list = byGroupAccountId.get(groupId) || [];
     list.push(userId);
-    byGroup.set(groupId, list);
+    byGroupAccountId.set(groupId, list);
   }
-  return byGroup;
+
+  // Preserve the requested order (options.groupIds) at the caller level.
+  const bySelector = new Map<string, string[]>();
+  for (const selector of options.groupIds) {
+    const groupAccountId = selectorToGroupAccountId.get(selector) || '';
+    const members = groupAccountId
+      ? byGroupAccountId.get(groupAccountId) || []
+      : [];
+    bySelector.set(selector, members);
+  }
+
+  return bySelector;
 }
 
 export async function resolveChatAckRequiredRecipientUserIds(options: {

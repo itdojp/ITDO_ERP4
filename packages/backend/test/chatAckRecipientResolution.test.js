@@ -8,18 +8,34 @@ test('resolveChatAckRequiredRecipientUserIds: merges direct+group+role targets w
   delete process.env.AUTH_GROUP_TO_ROLE_MAP;
   try {
     const client = {
+      groupAccount: {
+        findMany: async ({ where }) => {
+          const selectors = [
+            ...(where?.OR?.[0]?.id?.in || []),
+            ...(where?.OR?.[1]?.displayName?.in || []),
+          ];
+          const rows = [];
+          if (selectors.includes('g1') || selectors.includes('g1-id')) {
+            rows.push({ id: 'g1-id', displayName: 'g1' });
+          }
+          if (selectors.includes('admin') || selectors.includes('admin-id')) {
+            rows.push({ id: 'admin-id', displayName: 'admin' });
+          }
+          return rows;
+        },
+      },
       userGroup: {
         findMany: async ({ where }) => {
-          const groupIds = where?.group?.displayName?.in || [];
+          const groupIds = where?.groupId?.in || [];
           const rows = [];
-          if (groupIds.includes('g1')) {
+          if (groupIds.includes('g1-id')) {
             rows.push(
-              { group: { displayName: 'g1' }, user: { userName: 'u3' } },
-              { group: { displayName: 'g1' }, user: { userName: 'u2' } },
+              { groupId: 'g1-id', user: { userName: 'u3' } },
+              { groupId: 'g1-id', user: { userName: 'u2' } },
             );
           }
-          if (groupIds.includes('admin')) {
-            rows.push({ group: { displayName: 'admin' }, user: { userName: 'u4' } });
+          if (groupIds.includes('admin-id')) {
+            rows.push({ groupId: 'admin-id', user: { userName: 'u4' } });
           }
           return rows;
         },
@@ -42,17 +58,121 @@ test('resolveChatAckRequiredRecipientUserIds: merges direct+group+role targets w
   }
 });
 
-test('resolveChatAckRequiredRecipientUserIds: preserves group order', async () => {
+test('resolveChatAckRequiredRecipientUserIds: accepts UUID selectors for requiredGroupIds', async () => {
   const client = {
+    groupAccount: {
+      findMany: async ({ where }) => {
+        const selectors = [
+          ...(where?.OR?.[0]?.id?.in || []),
+          ...(where?.OR?.[1]?.displayName?.in || []),
+        ];
+        const rows = [];
+        if (selectors.includes('g1') || selectors.includes('g1-id')) {
+          rows.push({ id: 'g1-id', displayName: 'g1' });
+        }
+        return rows;
+      },
+    },
     userGroup: {
       findMany: async ({ where }) => {
-        const groupIds = where?.group?.displayName?.in || [];
+        const groupIds = where?.groupId?.in || [];
         const rows = [];
-        if (groupIds.includes('g1')) {
-          rows.push({ group: { displayName: 'g1' }, user: { userName: 'u2' } });
+        if (groupIds.includes('g1-id')) {
+          rows.push(
+            { groupId: 'g1-id', user: { userName: 'u3' } },
+            { groupId: 'g1-id', user: { userName: 'u2' } },
+          );
         }
-        if (groupIds.includes('g2')) {
-          rows.push({ group: { displayName: 'g2' }, user: { userName: 'u1' } });
+        return rows;
+      },
+    },
+  };
+
+  const res = await resolveChatAckRequiredRecipientUserIds({
+    requiredUserIds: [],
+    requiredGroupIds: ['g1-id'],
+    requiredRoles: [],
+    client,
+  });
+  assert.deepEqual(res, ['u2', 'u3']);
+});
+
+test('resolveChatAckRequiredRecipientUserIds: accepts UUID selectors for role-mapped groups', async () => {
+  const original = process.env.AUTH_GROUP_TO_ROLE_MAP;
+  process.env.AUTH_GROUP_TO_ROLE_MAP = 'g1-id=customrole';
+  try {
+    const client = {
+      groupAccount: {
+        findMany: async ({ where }) => {
+          const selectors = [
+            ...(where?.OR?.[0]?.id?.in || []),
+            ...(where?.OR?.[1]?.displayName?.in || []),
+          ];
+          const rows = [];
+          if (selectors.includes('g1') || selectors.includes('g1-id')) {
+            rows.push({ id: 'g1-id', displayName: 'g1' });
+          }
+          return rows;
+        },
+      },
+      userGroup: {
+        findMany: async ({ where }) => {
+          const groupIds = where?.groupId?.in || [];
+          const rows = [];
+          if (groupIds.includes('g1-id')) {
+            rows.push(
+              { groupId: 'g1-id', user: { userName: 'u3' } },
+              { groupId: 'g1-id', user: { userName: 'u2' } },
+            );
+          }
+          return rows;
+        },
+      },
+    };
+
+    const res = await resolveChatAckRequiredRecipientUserIds({
+      requiredUserIds: [],
+      requiredGroupIds: [],
+      requiredRoles: ['customrole'],
+      client,
+    });
+    assert.deepEqual(res, ['u2', 'u3']);
+  } finally {
+    if (original === undefined) {
+      delete process.env.AUTH_GROUP_TO_ROLE_MAP;
+    } else {
+      process.env.AUTH_GROUP_TO_ROLE_MAP = original;
+    }
+  }
+});
+
+test('resolveChatAckRequiredRecipientUserIds: preserves group order', async () => {
+  const client = {
+    groupAccount: {
+      findMany: async ({ where }) => {
+        const selectors = [
+          ...(where?.OR?.[0]?.id?.in || []),
+          ...(where?.OR?.[1]?.displayName?.in || []),
+          ];
+        const rows = [];
+        if (selectors.includes('g1') || selectors.includes('g1-id')) {
+          rows.push({ id: 'g1-id', displayName: 'g1' });
+        }
+        if (selectors.includes('g2') || selectors.includes('g2-id')) {
+          rows.push({ id: 'g2-id', displayName: 'g2' });
+        }
+        return rows;
+      },
+    },
+    userGroup: {
+      findMany: async ({ where }) => {
+        const groupIds = where?.groupId?.in || [];
+        const rows = [];
+        if (groupIds.includes('g1-id')) {
+          rows.push({ groupId: 'g1-id', user: { userName: 'u2' } });
+        }
+        if (groupIds.includes('g2-id')) {
+          rows.push({ groupId: 'g2-id', user: { userName: 'u1' } });
         }
         return rows;
       },
@@ -67,4 +187,3 @@ test('resolveChatAckRequiredRecipientUserIds: preserves group order', async () =
   });
   assert.deepEqual(res, ['u1', 'u2']);
 });
-
