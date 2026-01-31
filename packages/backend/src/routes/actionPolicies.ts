@@ -15,6 +15,7 @@ type ActorContext = {
   userId: string | null;
   roles: string[];
   groupIds: string[];
+  groupAccountIds?: string[];
 };
 
 type ActionPolicyInput = {
@@ -208,7 +209,12 @@ export async function registerActionPolicyRoutes(app: FastifyInstance) {
         state?: unknown;
         targetTable?: string;
         targetId?: string;
-        actor?: { userId?: string; roles?: unknown; groupIds?: unknown };
+        actor?: {
+          userId?: string;
+          roles?: unknown;
+          groupIds?: unknown;
+          groupAccountIds?: unknown;
+        };
         reasonText?: string;
       };
       const flowType = body.flowType as FlowType;
@@ -222,6 +228,7 @@ export async function registerActionPolicyRoutes(app: FastifyInstance) {
         userId: normalizeString(body.actor?.userId) || null,
         roles: normalizeStringArray(body.actor?.roles),
         groupIds: normalizeStringArray(body.actor?.groupIds),
+        groupAccountIds: normalizeStringArray(body.actor?.groupAccountIds),
       };
 
       const result = await evaluateActionPolicy({

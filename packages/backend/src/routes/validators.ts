@@ -764,6 +764,9 @@ export const actionPolicyEvaluateSchema = {
             userId: Type.Optional(Type.String({ minLength: 1 })),
             roles: Type.Optional(Type.Array(Type.String({ minLength: 1 }))),
             groupIds: Type.Optional(Type.Array(Type.String({ minLength: 1 }))),
+            groupAccountIds: Type.Optional(
+              Type.Array(Type.String({ minLength: 1 })),
+            ),
           },
           { additionalProperties: false },
         ),

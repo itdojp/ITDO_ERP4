@@ -238,6 +238,7 @@ export async function registerTimeEntryRoutes(app: FastifyInstance) {
           userId: req.user?.userId ?? null,
           roles: req.user?.roles || [],
           groupIds: req.user?.groupIds || [],
+          groupAccountIds: req.user?.groupAccountIds || [],
         },
         reasonText,
         state: {
@@ -421,6 +422,7 @@ export async function registerTimeEntryRoutes(app: FastifyInstance) {
             userId: req.user?.userId ?? null,
             roles: req.user?.roles || [],
             groupIds: req.user?.groupIds || [],
+            groupAccountIds: req.user?.groupAccountIds || [],
           },
           reasonText,
           state: {

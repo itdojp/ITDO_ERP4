@@ -8,6 +8,7 @@ export type ActionPolicyActor = {
   userId: string | null;
   roles: string[];
   groupIds: string[];
+  groupAccountIds?: string[];
 };
 
 export type ActionPolicyGuardFailure = {
@@ -65,11 +66,19 @@ function matchesSubjects(subjects: unknown, actor: ActionPolicyActor): boolean {
 
   if (roles.length && roles.some((role) => actor.roles.includes(role)))
     return true;
-  if (
-    groupIds.length &&
-    groupIds.some((groupId) => actor.groupIds.includes(groupId))
-  )
-    return true;
+  if (groupIds.length) {
+    const actorGroupIds = normalizeStringArray(actor.groupIds);
+    if (groupIds.some((groupId) => actorGroupIds.includes(groupId)))
+      return true;
+    const actorGroupAccountIds = normalizeStringArray(
+      actor.groupAccountIds ?? [],
+    );
+    if (
+      actorGroupAccountIds.length &&
+      groupIds.some((groupId) => actorGroupAccountIds.includes(groupId))
+    )
+      return true;
+  }
   if (userIds.length && actor.userId && userIds.includes(actor.userId))
     return true;
   return false;

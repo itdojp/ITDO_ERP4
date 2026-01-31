@@ -17,6 +17,7 @@ type ActOptions = {
   reason?: string;
   actorGroupId?: string;
   actorGroupIds?: string[];
+  actorGroupAccountIds?: string[];
   auditContext?: AuditContext;
 };
 type CreateApprovalOptions = { client?: any; createdBy?: string; now?: Date };
@@ -401,8 +402,11 @@ export async function act(
       (s: any) => s.stepOrder === instance.currentStep,
     );
     const actorGroupIds = new Set(
-      options.actorGroupIds ??
-        (options.actorGroupId ? [options.actorGroupId] : []),
+      [
+        ...(options.actorGroupIds ??
+          (options.actorGroupId ? [options.actorGroupId] : [])),
+        ...(options.actorGroupAccountIds ?? []),
+      ].filter((value) => typeof value === 'string' && value.trim() !== ''),
     );
     const isEligibleStep = (step: any) => {
       if (step.approverUserId) {
