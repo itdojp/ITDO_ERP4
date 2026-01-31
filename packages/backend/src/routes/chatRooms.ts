@@ -729,12 +729,18 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
           ? prisma.chatRoom.findMany({
               where: {
                 deletedAt: null,
-                OR: [
-                  { id: companyRoomId },
-                  departmentGroupIds.length > 0
-                    ? { type: 'department', groupId: { in: departmentGroupIds } }
-                    : undefined,
-                ].filter(Boolean),
+                OR: (() => {
+                  const conditions: Prisma.ChatRoomWhereInput[] = [
+                    { id: companyRoomId },
+                  ];
+                  if (departmentGroupIds.length > 0) {
+                    conditions.push({
+                      type: 'department',
+                      groupId: { in: departmentGroupIds },
+                    });
+                  }
+                  return conditions;
+                })(),
               },
               orderBy: { createdAt: 'desc' },
               select: roomSelect,
