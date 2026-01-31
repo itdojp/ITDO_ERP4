@@ -2210,6 +2210,22 @@
                     "maxLength": 80,
                     "minLength": 1,
                     "type": "string"
+                  },
+                  "posterGroupIds": {
+                    "items": {
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "maxItems": 200,
+                    "type": "array"
+                  },
+                  "viewerGroupIds": {
+                    "items": {
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "maxItems": 200,
+                    "type": "array"
                   }
                 },
                 "type": "object"

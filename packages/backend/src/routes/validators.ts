@@ -554,6 +554,16 @@ export const chatRoomPatchSchema = {
       name: Type.Optional(Type.String({ minLength: 1, maxLength: 80 })),
       allowExternalUsers: Type.Optional(Type.Boolean()),
       allowExternalIntegrations: Type.Optional(Type.Boolean()),
+      viewerGroupIds: Type.Optional(
+        Type.Array(Type.String({ minLength: 1 }), {
+          maxItems: 200,
+        }),
+      ),
+      posterGroupIds: Type.Optional(
+        Type.Array(Type.String({ minLength: 1 }), {
+          maxItems: 200,
+        }),
+      ),
     },
     { additionalProperties: false },
   ),

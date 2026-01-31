@@ -203,6 +203,59 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
       : deduped;
   }
 
+  function normalizeGroupIdList(value: unknown, max = 200) {
+    return normalizeStringArray(value, { dedupe: true, max });
+  }
+
+  function normalizeSortedUnique(values: string[]) {
+    return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean))).sort(
+      (a, b) => a.localeCompare(b),
+    );
+  }
+
+  function areSameStringSet(a: string[], b: string[]) {
+    const left = normalizeSortedUnique(a);
+    const right = normalizeSortedUnique(b);
+    if (left.length !== right.length) return false;
+    for (let i = 0; i < left.length; i += 1) {
+      if (left[i] !== right[i]) return false;
+    }
+    return true;
+  }
+
+  async function resolveGroupAccountIdsBySelector(selectors: string[]) {
+    const normalized = normalizeGroupIdList(selectors);
+    if (!normalized.length) {
+      return { ids: [] as string[], unresolved: [] as string[] };
+    }
+    const rows = await prisma.groupAccount.findMany({
+      where: {
+        active: true,
+        OR: [{ id: { in: normalized } }, { displayName: { in: normalized } }],
+      },
+      select: { id: true, displayName: true },
+    });
+    const selectorMap = new Map<string, string>();
+    for (const row of rows) {
+      const id = typeof row.id === 'string' ? row.id.trim() : '';
+      const name =
+        typeof row.displayName === 'string' ? row.displayName.trim() : '';
+      if (id) selectorMap.set(id, id);
+      if (name && !selectorMap.has(name)) selectorMap.set(name, id);
+    }
+    const ids = new Set<string>();
+    const unresolved: string[] = [];
+    for (const selector of normalized) {
+      const id = selectorMap.get(selector);
+      if (id) {
+        ids.add(id);
+      } else {
+        unresolved.push(selector);
+      }
+    }
+    return { ids: Array.from(ids), unresolved };
+  }
+
   function parseDateParam(value?: string) {
     if (!value) return null;
     const parsed = new Date(value);
@@ -672,6 +725,8 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
         isOfficial: true,
         projectId: true,
         groupId: true,
+        viewerGroupIds: true,
+        posterGroupIds: true,
         allowExternalUsers: true,
         allowExternalIntegrations: true,
         createdAt: true,
@@ -729,12 +784,18 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
           ? prisma.chatRoom.findMany({
               where: {
                 deletedAt: null,
-                OR: [
-                  { id: companyRoomId },
-                  departmentGroupIds.length > 0
-                    ? { type: 'department', groupId: { in: departmentGroupIds } }
-                    : undefined,
-                ].filter(Boolean),
+                OR: (() => {
+                  const conditions: Prisma.ChatRoomWhereInput[] = [
+                    { id: companyRoomId },
+                  ];
+                  if (departmentGroupIds.length > 0) {
+                    conditions.push({
+                      type: 'department',
+                      groupId: { in: departmentGroupIds },
+                    });
+                  }
+                  return conditions;
+                })(),
               },
               orderBy: { createdAt: 'desc' },
               select: roomSelect,
@@ -1099,6 +1160,8 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
         name?: string;
         allowExternalUsers?: boolean;
         allowExternalIntegrations?: boolean;
+        viewerGroupIds?: unknown;
+        posterGroupIds?: unknown;
       };
 
       const room = await prisma.chatRoom.findUnique({
@@ -1110,6 +1173,8 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
           isOfficial: true,
           allowExternalUsers: true,
           allowExternalIntegrations: true,
+          viewerGroupIds: true,
+          posterGroupIds: true,
           deletedAt: true,
         },
       });
@@ -1191,6 +1256,48 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
             from: room.allowExternalIntegrations,
             to: body.allowExternalIntegrations,
           };
+        }
+      }
+
+      if (body.viewerGroupIds !== undefined) {
+        const requested = normalizeGroupIdList(body.viewerGroupIds);
+        const { ids, unresolved } = await resolveGroupAccountIdsBySelector(
+          requested,
+        );
+        if (unresolved.length > 0) {
+          return reply.status(400).send({
+            error: {
+              code: 'INVALID_GROUP_IDS',
+              message: 'viewerGroupIds contains unknown group ids',
+              details: { groupIds: unresolved },
+            },
+          });
+        }
+        const current = normalizeGroupIdList(room.viewerGroupIds);
+        if (!areSameStringSet(current, ids)) {
+          update.viewerGroupIds = ids.length ? ids : Prisma.DbNull;
+          changes.viewerGroupIds = { from: current, to: ids };
+        }
+      }
+
+      if (body.posterGroupIds !== undefined) {
+        const requested = normalizeGroupIdList(body.posterGroupIds);
+        const { ids, unresolved } = await resolveGroupAccountIdsBySelector(
+          requested,
+        );
+        if (unresolved.length > 0) {
+          return reply.status(400).send({
+            error: {
+              code: 'INVALID_GROUP_IDS',
+              message: 'posterGroupIds contains unknown group ids',
+              details: { groupIds: unresolved },
+            },
+          });
+        }
+        const current = normalizeGroupIdList(room.posterGroupIds);
+        if (!areSameStringSet(current, ids)) {
+          update.posterGroupIds = ids.length ? ids : Prisma.DbNull;
+          changes.posterGroupIds = { from: current, to: ids };
         }
       }
 
@@ -1566,6 +1673,7 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
         projectIds,
         groupIds,
         groupAccountIds,
+        accessLevel: 'post',
       });
       if (!access.ok) {
         return reply
@@ -1643,6 +1751,7 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
         projectIds,
         groupIds,
         groupAccountIds,
+        accessLevel: 'post',
       });
       if (!access.ok) {
         return reply
