@@ -2269,13 +2269,28 @@
                     },
                     "type": "object"
                   },
+                  "requiredGroupIds": {
+                    "items": {
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "maxItems": 20,
+                    "type": "array"
+                  },
+                  "requiredRoles": {
+                    "items": {
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "maxItems": 20,
+                    "type": "array"
+                  },
                   "requiredUserIds": {
                     "items": {
                       "minLength": 1,
                       "type": "string"
                     },
                     "maxItems": 50,
-                    "minItems": 1,
                     "type": "array"
                   },
                   "tags": {
@@ -2288,8 +2303,7 @@
                   }
                 },
                 "required": [
-                  "body",
-                  "requiredUserIds"
+                  "body"
                 ],
                 "type": "object"
               }
@@ -4539,13 +4553,28 @@
                     },
                     "type": "object"
                   },
+                  "requiredGroupIds": {
+                    "items": {
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "maxItems": 20,
+                    "type": "array"
+                  },
+                  "requiredRoles": {
+                    "items": {
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "maxItems": 20,
+                    "type": "array"
+                  },
                   "requiredUserIds": {
                     "items": {
                       "minLength": 1,
                       "type": "string"
                     },
                     "maxItems": 50,
-                    "minItems": 1,
                     "type": "array"
                   },
                   "tags": {
@@ -4558,8 +4587,7 @@
                   }
                 },
                 "required": [
-                  "body",
-                  "requiredUserIds"
+                  "body"
                 ],
                 "type": "object"
               }

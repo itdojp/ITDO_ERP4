@@ -40,6 +40,86 @@ function resolveGroupIdsForRoles(roles: string[]) {
     .filter(Boolean);
 }
 
+async function resolveMemberUserIdsForGroups(options: {
+  groupIds: string[];
+  client: any;
+}) {
+  const memberships = await options.client.userGroup.findMany({
+    where: {
+      group: { displayName: { in: options.groupIds }, active: true },
+      user: { active: true, deletedAt: null },
+    },
+    select: {
+      group: { select: { displayName: true } },
+      user: { select: { userName: true } },
+    },
+  });
+
+  const byGroup = new Map<string, string[]>();
+  for (const membership of memberships) {
+    const groupId = normalizeId(membership?.group?.displayName);
+    const userId = normalizeId(membership?.user?.userName);
+    if (!groupId || !userId) continue;
+    const list = byGroup.get(groupId) || [];
+    list.push(userId);
+    byGroup.set(groupId, list);
+  }
+  return byGroup;
+}
+
+export async function resolveChatAckRequiredRecipientUserIds(options: {
+  requiredUserIds: string[];
+  requiredGroupIds?: string[];
+  requiredRoles?: string[];
+  client?: any;
+}) {
+  const client = options.client ?? prisma;
+  const directUserIds = normalizeIdList(options.requiredUserIds);
+  const groupIds = normalizeIdList(options.requiredGroupIds ?? []);
+  const roles = normalizeIdList(options.requiredRoles ?? []);
+
+  const out: string[] = [];
+  const seen = new Set<string>();
+  const pushUnique = (userId: string) => {
+    const normalized = normalizeId(userId);
+    if (!normalized) return;
+    if (seen.has(normalized)) return;
+    seen.add(normalized);
+    out.push(normalized);
+  };
+
+  directUserIds.forEach((userId) => pushUnique(userId));
+
+  if (groupIds.length) {
+    const byGroup = await resolveMemberUserIdsForGroups({
+      groupIds,
+      client,
+    });
+    for (const groupId of groupIds) {
+      const members = byGroup.get(groupId) || [];
+      members.sort((a, b) => a.localeCompare(b));
+      members.forEach((userId) => pushUnique(userId));
+    }
+  }
+
+  if (roles.length) {
+    const roleGroupIds = resolveGroupIdsForRoles(roles);
+    if (roleGroupIds.length) {
+      const byGroup = await resolveMemberUserIdsForGroups({
+        groupIds: roleGroupIds,
+        client,
+      });
+      for (const groupId of roleGroupIds) {
+        const members = byGroup.get(groupId) || [];
+        members.sort((a, b) => a.localeCompare(b));
+        members.forEach((userId) => pushUnique(userId));
+      }
+    }
+  }
+
+  return out;
+}
+
 export async function validateChatAckRequiredRecipientsForRoom(options: {
   room: ChatRoomForAckValidation;
   requiredUserIds: string[];

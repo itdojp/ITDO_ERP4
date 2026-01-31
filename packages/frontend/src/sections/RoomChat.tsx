@@ -243,6 +243,10 @@ export const RoomChat: React.FC = () => {
   const [tags, setTags] = useState('');
   const [ackTargets, setAckTargets] = useState('');
   const [ackTargetInput, setAckTargetInput] = useState('');
+  const [ackTargetGroupIds, setAckTargetGroupIds] = useState('');
+  const [ackTargetGroupInput, setAckTargetGroupInput] = useState('');
+  const [ackTargetRoles, setAckTargetRoles] = useState('');
+  const [ackTargetRoleInput, setAckTargetRoleInput] = useState('');
   const [mentionCandidates, setMentionCandidates] = useState<MentionCandidates>(
     {},
   );
@@ -253,6 +257,14 @@ export const RoomChat: React.FC = () => {
   const ackTargetUserIds = useMemo(
     () => Array.from(new Set(parseUserIds(ackTargets))),
     [ackTargets],
+  );
+  const ackTargetGroupIdList = useMemo(
+    () => Array.from(new Set(parseUserIds(ackTargetGroupIds))),
+    [ackTargetGroupIds],
+  );
+  const ackTargetRoleList = useMemo(
+    () => Array.from(new Set(parseUserIds(ackTargetRoles))),
+    [ackTargetRoles],
   );
 
   const hasActiveAckDeadline = useMemo(() => {
@@ -577,14 +589,52 @@ export const RoomChat: React.FC = () => {
     setAckTargetInput('');
   };
 
+  const addAckTargetGroup = () => {
+    const value = ackTargetGroupInput.trim();
+    if (!value) return;
+    setAckTargetGroupIds((prev) => {
+      const current = parseUserIds(prev);
+      const next = Array.from(new Set([...current, value])).slice(0, 20);
+      return next.join(',');
+    });
+    setAckTargetGroupInput('');
+  };
+
+  const addAckTargetRole = () => {
+    const value = ackTargetRoleInput.trim();
+    if (!value) return;
+    setAckTargetRoles((prev) => {
+      const current = parseUserIds(prev);
+      const next = Array.from(new Set([...current, value])).slice(0, 20);
+      return next.join(',');
+    });
+    setAckTargetRoleInput('');
+  };
+
   const removeAckTargetUser = (userId: string) => {
     const current = parseUserIds(ackTargets);
     setAckTargets(current.filter((entry) => entry !== userId).join(','));
   };
 
+  const removeAckTargetGroup = (groupId: string) => {
+    const current = parseUserIds(ackTargetGroupIds);
+    setAckTargetGroupIds(
+      current.filter((entry) => entry !== groupId).join(','),
+    );
+  };
+
+  const removeAckTargetRole = (role: string) => {
+    const current = parseUserIds(ackTargetRoles);
+    setAckTargetRoles(current.filter((entry) => entry !== role).join(','));
+  };
+
   const resetAckTargets = () => {
     setAckTargets('');
     setAckTargetInput('');
+    setAckTargetGroupIds('');
+    setAckTargetGroupInput('');
+    setAckTargetRoles('');
+    setAckTargetRoleInput('');
   };
 
   const postMessage = async (mode: 'message' | 'ack') => {
@@ -607,17 +657,37 @@ export const RoomChat: React.FC = () => {
         mode === 'ack'
           ? (() => {
               const required = Array.from(new Set(parseUserIds(ackTargets)));
-              if (required.length === 0) {
-                setMessage('確認対象（requiredUserIds）を入力してください');
+              const groupIds = Array.from(
+                new Set(parseUserIds(ackTargetGroupIds)),
+              );
+              const roles = Array.from(new Set(parseUserIds(ackTargetRoles)));
+              if (
+                required.length === 0 &&
+                groupIds.length === 0 &&
+                roles.length === 0
+              ) {
+                setMessage(
+                  '確認対象（ユーザID/グループ/ロール）を入力してください',
+                );
                 return null;
               }
               if (required.length > 50) {
                 setMessage('確認対象は最大50件までです');
                 return null;
               }
+              if (groupIds.length > 20) {
+                setMessage('確認対象グループは最大20件までです');
+                return null;
+              }
+              if (roles.length > 20) {
+                setMessage('確認対象ロールは最大20件までです');
+                return null;
+              }
               return {
                 ...basePayload,
-                requiredUserIds: required,
+                ...(required.length ? { requiredUserIds: required } : {}),
+                ...(groupIds.length ? { requiredGroupIds: groupIds } : {}),
+                ...(roles.length ? { requiredRoles: roles } : {}),
               };
             })()
           : basePayload;
@@ -1146,6 +1216,24 @@ export const RoomChat: React.FC = () => {
                 />
               </label>
               <label>
+                確認対象グループ(requiredGroupIds)
+                <input
+                  type="text"
+                  value={ackTargetGroupIds}
+                  onChange={(e) => setAckTargetGroupIds(e.target.value)}
+                  placeholder="group1,group2"
+                />
+              </label>
+              <label>
+                確認対象ロール(requiredRoles)
+                <input
+                  type="text"
+                  value={ackTargetRoles}
+                  onChange={(e) => setAckTargetRoles(e.target.value)}
+                  placeholder="admin,mgmt"
+                />
+              </label>
+              <label>
                 添付
                 <input
                   type="file"
@@ -1191,7 +1279,73 @@ export const RoomChat: React.FC = () => {
                 />
               ))}
             </datalist>
-            {ackTargetUserIds.length > 0 && (
+            <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+              <input
+                aria-label="確認対象グループ追加"
+                type="text"
+                list="room-ack-target-groups"
+                value={ackTargetGroupInput}
+                onChange={(e) => setAckTargetGroupInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    addAckTargetGroup();
+                  }
+                }}
+                placeholder="確認対象: グループID (任意)"
+                style={{ flex: '1 1 240px' }}
+              />
+              <button
+                className="button secondary"
+                onClick={addAckTargetGroup}
+                type="button"
+              >
+                グループ追加
+              </button>
+              <span style={{ fontSize: 12, color: '#6b7280' }}>
+                {ackTargetGroupIdList.length}/20
+              </span>
+            </div>
+            <datalist id="room-ack-target-groups">
+              {(mentionCandidates.groups || []).map((group) => (
+                <option key={group.groupId} value={group.groupId} />
+              ))}
+            </datalist>
+            <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+              <input
+                aria-label="確認対象ロール追加"
+                type="text"
+                list="room-ack-target-roles"
+                value={ackTargetRoleInput}
+                onChange={(e) => setAckTargetRoleInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    addAckTargetRole();
+                  }
+                }}
+                placeholder="確認対象: ロール (任意)"
+                style={{ flex: '1 1 240px' }}
+              />
+              <button
+                className="button secondary"
+                onClick={addAckTargetRole}
+                type="button"
+              >
+                ロール追加
+              </button>
+              <span style={{ fontSize: 12, color: '#6b7280' }}>
+                {ackTargetRoleList.length}/20
+              </span>
+            </div>
+            <datalist id="room-ack-target-roles">
+              {['admin', 'mgmt', 'exec', 'hr'].map((role) => (
+                <option key={role} value={role} />
+              ))}
+            </datalist>
+            {(ackTargetUserIds.length > 0 ||
+              ackTargetGroupIdList.length > 0 ||
+              ackTargetRoleList.length > 0) && (
               <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}>
                 {ackTargetUserIds.map((userId) => (
                   <button
@@ -1203,6 +1357,30 @@ export const RoomChat: React.FC = () => {
                     style={{ cursor: 'pointer' }}
                   >
                     {userId} ×
+                  </button>
+                ))}
+                {ackTargetGroupIdList.map((groupId) => (
+                  <button
+                    key={groupId}
+                    type="button"
+                    className="badge"
+                    aria-label={`確認対象グループから除外: ${groupId}`}
+                    onClick={() => removeAckTargetGroup(groupId)}
+                    style={{ cursor: 'pointer' }}
+                  >
+                    group:{groupId} ×
+                  </button>
+                ))}
+                {ackTargetRoleList.map((role) => (
+                  <button
+                    key={role}
+                    type="button"
+                    className="badge"
+                    aria-label={`確認対象ロールから除外: ${role}`}
+                    onClick={() => removeAckTargetRole(role)}
+                    style={{ cursor: 'pointer' }}
+                  >
+                    role:{role} ×
                   </button>
                 ))}
                 <button

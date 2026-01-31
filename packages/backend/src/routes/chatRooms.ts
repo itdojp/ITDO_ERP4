@@ -9,7 +9,10 @@ import {
   logChatAckRequestCreated,
   tryCreateChatAckRequiredNotificationsWithAudit,
 } from '../services/chatAckNotifications.js';
-import { validateChatAckRequiredRecipientsForRoom } from '../services/chatAckRecipients.js';
+import {
+  resolveChatAckRequiredRecipientUserIds,
+  validateChatAckRequiredRecipientsForRoom,
+} from '../services/chatAckRecipients.js';
 import {
   getChatExternalLlmConfig,
   getChatExternalLlmRateLimit,
@@ -2183,7 +2186,9 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
       const { roomId } = req.params as { roomId: string };
       const body = req.body as {
         body: string;
-        requiredUserIds: string[];
+        requiredUserIds?: string[];
+        requiredGroupIds?: string[];
+        requiredRoles?: string[];
         dueAt?: string;
         tags?: string[];
         mentions?: unknown;
@@ -2212,15 +2217,37 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
           .send({ error: access.reason });
       }
 
-      const requiredUserIds = normalizeStringArray(body.requiredUserIds, {
+      const requestedUserIds = normalizeStringArray(body.requiredUserIds, {
         dedupe: true,
-        max: 50,
+      });
+      const requestedGroupIds = normalizeStringArray(body.requiredGroupIds, {
+        dedupe: true,
+      });
+      const requestedRoles = normalizeStringArray(body.requiredRoles, {
+        dedupe: true,
+      });
+      const requiredUserIds = await resolveChatAckRequiredRecipientUserIds({
+        requiredUserIds: requestedUserIds,
+        requiredGroupIds: requestedGroupIds,
+        requiredRoles: requestedRoles,
       });
       if (!requiredUserIds.length) {
         return reply.status(400).send({
           error: {
             code: 'INVALID_REQUIRED_USERS',
-            message: 'requiredUserIds must contain at least one userId',
+            message:
+              'requiredUserIds/requiredGroupIds/requiredRoles must contain at least one entry',
+          },
+        });
+      }
+      if (requiredUserIds.length > 50) {
+        return reply.status(400).send({
+          error: {
+            code: 'INVALID_REQUIRED_USERS',
+            message: 'requiredUserIds must be at most 50 users after expansion',
+            details: {
+              resolvedUserCount: requiredUserIds.length,
+            },
           },
         });
       }
@@ -2299,6 +2326,9 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
         messageId: message.id,
         ackRequestId: message.ackRequest.id,
         requiredUserIds: validatedRequiredUserIds,
+        requestedUserIds,
+        requestedGroupIds,
+        requestedRoles,
         dueAt: message.ackRequest.dueAt,
       });
 
