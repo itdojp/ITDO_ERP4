@@ -72,6 +72,7 @@ DB上は `type` として表現し、ポリシー（公式/私的、外部連携
 
 補足
 - projectルーム（`type=project`）は **`roomId = projectId`** として扱う（`ChatRoom.id = Project.id`）。
+- departmentルームの移行期は、JWTの`groupIds`にdisplayNameしか無い場合に限り`groupId=displayName`でbootstrapし、解決可能になった時点でUUIDへ更新する。
 - 監査/改ざん検知・論理削除方針は `docs/requirements/project-chat.md` の方針を踏襲します。
 - break-glass 用のテーブルは別（#454）で設計/実装しますが、参照先は `roomId` とします。
 
@@ -86,11 +87,13 @@ DB上は `type` として表現し、ポリシー（公式/私的、外部連携
   - department: `groupAccountIds` に `ChatRoom.groupId` が含まれる場合に閲覧/投稿可（room member 不要）
     - 互換期間は displayName でも判定（dual-read）
   - `viewerGroupIds` が設定されている場合は、上記の条件に加えて `viewerGroupIds` に含まれるユーザのみ許可
+    - allow-list は全ロールに適用（admin/mgmt/exec も対象）
 - private_group/dm: room member のみ閲覧/投稿可
 - break-glass: mgmt/exec は申請 + 二重承認で私的ルーム/DMも監査閲覧可能
 
 - **メッセージ投稿**
   - `posterGroupIds` が設定されている場合は、`posterGroupIds` に含まれるユーザのみ許可
+    - allow-list は全ロールに適用（admin/mgmt/exec も対象）
 
 ## 移行戦略（推奨）
 **推奨: 新テーブル導入 + project chat を段階移行**

@@ -99,6 +99,26 @@ test('ensureChatRoomContentAccess: viewerGroupIds restricts read access', async 
   assert.equal(res.reason, 'forbidden_room_member');
 });
 
+test('ensureChatRoomContentAccess: viewerGroupIds allows read when matched', async () => {
+  const room = buildRoom({
+    groupId: 'dept-sales',
+    viewerGroupIds: ['group-uuid-1'],
+  });
+  const client = createClient(room);
+
+  const res = await ensureChatRoomContentAccess({
+    roomId: room.id,
+    userId: 'u1',
+    roles: ['user'],
+    projectIds: [],
+    groupIds: ['dept-sales'],
+    groupAccountIds: ['group-uuid-1'],
+    client,
+  });
+
+  assert.equal(res.ok, true);
+});
+
 test('ensureChatRoomContentAccess: posterGroupIds restricts post access only', async () => {
   const room = buildRoom({
     groupId: 'dept-sales',
@@ -129,4 +149,25 @@ test('ensureChatRoomContentAccess: posterGroupIds restricts post access only', a
   });
   assert.equal(postRes.ok, false);
   assert.equal(postRes.reason, 'forbidden_room_member');
+});
+
+test('ensureChatRoomContentAccess: posterGroupIds allows post when matched', async () => {
+  const room = buildRoom({
+    groupId: 'dept-sales',
+    posterGroupIds: ['group-uuid-1'],
+  });
+  const client = createClient(room);
+
+  const postRes = await ensureChatRoomContentAccess({
+    roomId: room.id,
+    userId: 'u1',
+    roles: ['user'],
+    projectIds: [],
+    groupIds: ['dept-sales'],
+    groupAccountIds: ['group-uuid-1'],
+    accessLevel: 'post',
+    client,
+  });
+
+  assert.equal(postRes.ok, true);
 });

@@ -75,6 +75,7 @@ export async function ensureChatRoomContentAccess(options: {
   const viewerGroupIds = normalizeRoomGroupIds(room.viewerGroupIds);
   const posterGroupIds = normalizeRoomGroupIds(room.posterGroupIds);
   const groupAccessSet = new Set([...groupIdSet, ...groupAccountIdSet]);
+  // viewer/poster group ids are allow-lists that apply to all roles.
   if (
     viewerGroupIds.length > 0 &&
     !viewerGroupIds.some((groupId) => groupAccessSet.has(groupId))

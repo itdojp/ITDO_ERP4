@@ -126,6 +126,7 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
         deletedAt: null,
         OR: [
           { groupId: { in: targetGroupIds } },
+          // Migration fallback: legacy rooms stored displayName in groupId.
           { groupId: { in: targetDisplayNames } },
         ],
       },
@@ -151,6 +152,7 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
           matched.groupId !== target.groupId ||
           matched.name !== target.displayName
         ) {
+          // Migration: keep the existing roomId, but normalize groupId/name to the latest target.
           updates.push(
             prisma.chatRoom.update({
               where: { id: matched.id },
@@ -241,6 +243,7 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
       const name =
         typeof row.displayName === 'string' ? row.displayName.trim() : '';
       if (id) selectorMap.set(id, id);
+      // Prefer earlier mappings (typically exact id) over displayName matches.
       if (name && !selectorMap.has(name)) selectorMap.set(name, id);
     }
     const ids = new Set<string>();
@@ -616,6 +619,8 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
           if (seenDepartmentGroupIds.has(groupId)) continue;
           seenDepartmentGroupIds.add(groupId);
           departmentTargets.push({
+            // Legacy fallback: when JWT groupIds are displayName-only, keep using displayName
+            // as groupId until GroupAccount resolution catches up.
             groupId,
             displayName: groupId,
             roomId: buildDepartmentRoomId(groupId),
