@@ -618,7 +618,9 @@ export const RoomChat: React.FC = () => {
 
   const removeAckTargetGroup = (groupId: string) => {
     const current = parseUserIds(ackTargetGroupIds);
-    setAckTargetGroupIds(current.filter((entry) => entry !== groupId).join(','));
+    setAckTargetGroupIds(
+      current.filter((entry) => entry !== groupId).join(','),
+    );
   };
 
   const removeAckTargetRole = (role: string) => {
@@ -664,7 +666,9 @@ export const RoomChat: React.FC = () => {
                 groupIds.length === 0 &&
                 roles.length === 0
               ) {
-                setMessage('確認対象（ユーザID/グループ/ロール）を入力してください');
+                setMessage(
+                  '確認対象（ユーザID/グループ/ロール）を入力してください',
+                );
                 return null;
               }
               if (required.length > 50) {

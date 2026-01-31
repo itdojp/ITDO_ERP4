@@ -512,7 +512,9 @@ export const ProjectChat: React.FC = () => {
 
   const removeAckTargetGroup = (groupId: string) => {
     const current = parseUserIds(ackTargetGroupIds);
-    setAckTargetGroupIds(current.filter((entry) => entry !== groupId).join(','));
+    setAckTargetGroupIds(
+      current.filter((entry) => entry !== groupId).join(','),
+    );
   };
 
   const removeAckTargetRole = (role: string) => {
