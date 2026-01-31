@@ -101,7 +101,7 @@ async function resolveActiveGroupAccountIdsBySelector(selectors: string[]) {
     const name = normalizeString(row?.displayName);
     if (!id) continue;
     map.set(id, id);
-    if (name) map.set(name, id);
+    if (name && !map.has(name)) map.set(name, id);
   }
   return Array.from(
     new Set(
