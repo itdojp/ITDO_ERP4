@@ -14,6 +14,31 @@ function buildRoom(overrides = {}) {
   };
 }
 
+function createGroupAccountStub(groups = []) {
+  const selectorMap = new Map();
+  for (const group of groups) {
+    const id = typeof group.id === 'string' ? group.id.trim() : '';
+    const displayName =
+      typeof group.displayName === 'string' ? group.displayName.trim() : '';
+    if (id) selectorMap.set(id, group);
+    if (displayName) selectorMap.set(displayName, group);
+  }
+  return {
+    findMany: async ({ where }) => {
+      const selectors = [
+        ...(where?.OR?.[0]?.id?.in || []),
+        ...(where?.OR?.[1]?.displayName?.in || []),
+      ];
+      const rows = [];
+      for (const selector of selectors) {
+        const group = selectorMap.get(selector);
+        if (group) rows.push(group);
+      }
+      return rows;
+    },
+  };
+}
+
 test('validateChatAckRequiredRecipientsForRoom: project rejects non-members', async () => {
   const room = buildRoom({ id: 'p1', type: 'project' });
   const client = {
@@ -21,6 +46,7 @@ test('validateChatAckRequiredRecipientsForRoom: project rejects non-members', as
       findMany: async () => [{ userName: 'u1' }, { userName: 'u2' }],
     },
     chatRoomMember: { findMany: async () => [] },
+    groupAccount: createGroupAccountStub([]),
     userGroup: { findMany: async () => [] },
     projectMember: { findMany: async () => [{ userId: 'u1' }] },
   };
@@ -40,6 +66,7 @@ test('validateChatAckRequiredRecipientsForRoom: project allowExternalUsers allow
   const client = {
     userAccount: { findMany: async () => [{ userName: 'u2' }] },
     chatRoomMember: { findMany: async () => [{ userId: 'u2' }] },
+    groupAccount: createGroupAccountStub([]),
     userGroup: { findMany: async () => [] },
     projectMember: { findMany: async () => [] },
   };
@@ -61,8 +88,11 @@ test('validateChatAckRequiredRecipientsForRoom: project allows admin/mgmt via gr
       userAccount: { findMany: async () => [{ userName: 'u2' }] },
       chatRoomMember: { findMany: async () => [] },
       projectMember: { findMany: async () => [] },
+      groupAccount: createGroupAccountStub([
+        { id: 'admin-id', displayName: 'admin' },
+      ]),
       userGroup: {
-        findMany: async () => [{ user: { userName: 'u2' } }],
+        findMany: async () => [{ groupId: 'admin-id', user: { userName: 'u2' } }],
       },
     };
 
@@ -88,8 +118,11 @@ test('validateChatAckRequiredRecipientsForRoom: department requires group member
       findMany: async () => [{ userName: 'u1' }, { userName: 'u2' }],
     },
     chatRoomMember: { findMany: async () => [] },
+    groupAccount: createGroupAccountStub([
+      { id: 'deptA-id', displayName: 'deptA' },
+    ]),
     userGroup: {
-      findMany: async () => [{ user: { userName: 'u1' } }],
+      findMany: async () => [{ groupId: 'deptA-id', user: { userName: 'u1' } }],
     },
     projectMember: { findMany: async () => [] },
   };
@@ -114,6 +147,9 @@ test('validateChatAckRequiredRecipientsForRoom: department allowExternalUsers al
   const client = {
     userAccount: { findMany: async () => [{ userName: 'u2' }] },
     chatRoomMember: { findMany: async () => [{ userId: 'u2' }] },
+    groupAccount: createGroupAccountStub([
+      { id: 'deptA-id', displayName: 'deptA' },
+    ]),
     userGroup: { findMany: async () => [] },
     projectMember: { findMany: async () => [] },
   };
@@ -131,6 +167,7 @@ test('validateChatAckRequiredRecipientsForRoom: private_group requires room memb
   const client = {
     userAccount: { findMany: async () => [{ userName: 'u1' }] },
     chatRoomMember: { findMany: async () => [] },
+    groupAccount: createGroupAccountStub([]),
     userGroup: { findMany: async () => [] },
     projectMember: { findMany: async () => [] },
   };
@@ -150,6 +187,7 @@ test('validateChatAckRequiredRecipientsForRoom: mixed inactive+forbidden uses re
   const client = {
     userAccount: { findMany: async () => [{ userName: 'u1' }] },
     chatRoomMember: { findMany: async () => [] },
+    groupAccount: createGroupAccountStub([]),
     userGroup: { findMany: async () => [] },
     projectMember: { findMany: async () => [] },
   };
@@ -169,6 +207,7 @@ test('validateChatAckRequiredRecipientsForRoom: company skips access check but r
   const client = {
     userAccount: { findMany: async () => [{ userName: 'u1' }] },
     chatRoomMember: { findMany: async () => [] },
+    groupAccount: createGroupAccountStub([]),
     userGroup: { findMany: async () => [] },
     projectMember: { findMany: async () => [] },
   };

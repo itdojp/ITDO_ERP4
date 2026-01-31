@@ -66,6 +66,20 @@ async function resolveActiveGroupAccountIdsBySelector(options: {
   return map;
 }
 
+async function resolveGroupAccountIds(options: {
+  selectors: string[];
+  client: any;
+}) {
+  const selectorMap = await resolveActiveGroupAccountIdsBySelector(options);
+  return Array.from(
+    new Set(
+      Array.from(selectorMap.values())
+        .map((value) => value.trim())
+        .filter(Boolean),
+    ),
+  );
+}
+
 async function resolveMemberUserIdsForGroups(options: {
   groupIds: string[];
   client: any;
@@ -256,22 +270,29 @@ export async function validateChatAckRequiredRecipientsForRoom(options: {
     // Project rooms: admin/mgmt are always allowed (rbac.hasProjectAccess).
     const adminMgmtGroupIds = resolveGroupIdsForRoles(['admin', 'mgmt']);
     if (adminMgmtGroupIds.length) {
-      const privileged = await client.userGroup.findMany({
-        where: {
-          user: {
-            userName: { in: activeUserIds },
-            active: true,
-            deletedAt: null,
-          },
-          group: { displayName: { in: adminMgmtGroupIds }, active: true },
-        },
-        select: { user: { select: { userName: true } } },
+      const adminMgmtAccountIds = await resolveGroupAccountIds({
+        selectors: adminMgmtGroupIds,
+        client,
       });
-      normalizeIdList(
-        privileged.map(
-          (row: { user?: { userName?: unknown } }) => row.user?.userName,
-        ),
-      ).forEach((id) => allowed.add(id));
+      if (adminMgmtAccountIds.length) {
+        const privileged = await client.userGroup.findMany({
+          where: {
+            user: {
+              userName: { in: activeUserIds },
+              active: true,
+              deletedAt: null,
+            },
+            groupId: { in: adminMgmtAccountIds },
+            group: { active: true },
+          },
+          select: { user: { select: { userName: true } } },
+        });
+        normalizeIdList(
+          privileged.map(
+            (row: { user?: { userName?: unknown } }) => row.user?.userName,
+          ),
+        ).forEach((id) => allowed.add(id));
+      }
     }
 
     const members = await client.projectMember.findMany({
@@ -282,8 +303,20 @@ export async function validateChatAckRequiredRecipientsForRoom(options: {
       (id) => allowed.add(id),
     );
   } else if (room.type === 'department') {
-    const groupId = normalizeId(room.groupId);
-    if (!groupId) {
+    const groupIdSelector = normalizeId(room.groupId);
+    if (!groupIdSelector) {
+      return {
+        ok: false,
+        invalidUserIds: activeUserIds,
+        reason: 'room_group_required',
+      };
+    }
+    const resolvedGroupIds = await resolveGroupAccountIds({
+      selectors: [groupIdSelector],
+      client,
+    });
+    const groupAccountId = resolvedGroupIds[0] || '';
+    if (!groupAccountId) {
       return {
         ok: false,
         invalidUserIds: activeUserIds,
@@ -297,7 +330,8 @@ export async function validateChatAckRequiredRecipientsForRoom(options: {
           active: true,
           deletedAt: null,
         },
-        group: { displayName: groupId, active: true },
+        groupId: groupAccountId,
+        group: { active: true },
       },
       select: { user: { select: { userName: true } } },
     });
