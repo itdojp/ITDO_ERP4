@@ -30,7 +30,7 @@ DB上は `type` として表現し、ポリシー（公式/私的、外部連携
 ## ルームIDの決め方（MVP）
 - `project`: `ChatRoom.id = Project.id`（`roomId = projectId`）
 - `company`: 固定（`ChatRoom.id = "company"`）
-- `department`: 決定的ID（`ChatRoom.id = "dept_" + sha256(groupId).slice(0,32)`）、`ChatRoom.groupId = groupId`
+- `department`: 決定的ID（`ChatRoom.id = "dept_" + sha256(groupAccountId).slice(0,32)`）、`ChatRoom.groupId = GroupAccount.id (UUID)`
 - `private_group`: `uuid`
 - `dm`: 決定的ID（`ChatRoom.id = "dm_" + sha256(userA + "\\n" + userB).slice(0,32)`）
 
@@ -42,7 +42,7 @@ DB上は `type` として表現し、ポリシー（公式/私的、外部連携
   - `type`（project/department/company/private_group/dm）
   - `name`（project/department/company は自動生成可）
   - `isOfficial`（公式ルーム判定）
-  - `projectId?` / `groupId?`（typeに応じて片方を使う）
+  - `projectId?` / `groupId?`（typeに応じて片方を使う。`groupId` は GroupAccount.id を保持）
   - `allowExternalUsers`（external_chatの参加を許可するか）
   - `allowExternalIntegrations`（Webhook/外部通知/外部LLM等を許可するか。公式のみtrue想定）
   - `createdAt/createdBy`, `updatedAt/updatedBy`, `deletedAt/deletedReason`
@@ -81,7 +81,8 @@ DB上は `type` として表現し、ポリシー（公式/私的、外部連携
 - **メッセージ閲覧**
   - project: ProjectMember と同等扱い（room member は持たない）
   - company: internal role（admin/mgmt/exec/user/hr）なら閲覧/投稿可（room member 不要）
-  - department: `groupIds` に `ChatRoom.groupId` が含まれる場合に閲覧/投稿可（room member 不要）
+  - department: `groupAccountIds` に `ChatRoom.groupId` が含まれる場合に閲覧/投稿可（room member 不要）
+    - 互換期間は displayName でも判定（dual-read）
   - private_group/dm: room member のみ閲覧/投稿可
   - break-glass: mgmt/exec は申請 + 二重承認で私的ルーム/DMも監査閲覧可能
 

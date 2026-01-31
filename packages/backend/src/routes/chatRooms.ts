@@ -33,7 +33,11 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
   const companyRoomId = 'company';
   const companyRoomName = '全社';
 
-  type DepartmentRoomTarget = { roomId: string; groupId: string };
+  type DepartmentRoomTarget = {
+    roomId: string;
+    groupId: string;
+    displayName: string;
+  };
 
   function buildDepartmentRoomId(groupId: string) {
     const digest = crypto
@@ -42,6 +46,40 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
       .digest('hex')
       .slice(0, 32);
     return `dept_${digest}`;
+  }
+
+  async function resolveDepartmentGroupAccounts(options: {
+    groupIds: string[];
+    groupAccountIds: string[];
+  }) {
+    if (!options.groupIds.length && !options.groupAccountIds.length) {
+      return [];
+    }
+    const conditions: Prisma.GroupAccountWhereInput[] = [];
+    if (options.groupAccountIds.length > 0) {
+      conditions.push({ id: { in: options.groupAccountIds } });
+    }
+    if (options.groupIds.length > 0) {
+      conditions.push({ displayName: { in: options.groupIds } });
+    }
+    const rows = await prisma.groupAccount.findMany({
+      where: {
+        active: true,
+        OR: conditions,
+      },
+      select: { id: true, displayName: true },
+    });
+    const byId = new Map<string, { id: string; displayName: string }>();
+    for (const row of rows) {
+      const id = typeof row.id === 'string' ? row.id.trim() : '';
+      const name =
+        typeof row.displayName === 'string' ? row.displayName.trim() : '';
+      if (!id || !name) continue;
+      if (!byId.has(id)) {
+        byId.set(id, { id, displayName: name });
+      }
+    }
+    return Array.from(byId.values());
   }
 
   async function ensureCompanyRoom(userId: string | null) {
@@ -80,29 +118,75 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
     targets: DepartmentRoomTarget[],
   ) {
     if (!targets.length) return;
-    const ids = targets.map((target) => target.roomId);
+    const targetGroupIds = targets.map((target) => target.groupId);
+    const targetDisplayNames = targets.map((target) => target.displayName);
     const existing = await prisma.chatRoom.findMany({
-      where: { id: { in: ids } },
-      select: { id: true },
+      where: {
+        type: 'department',
+        deletedAt: null,
+        OR: [
+          { groupId: { in: targetGroupIds } },
+          { groupId: { in: targetDisplayNames } },
+        ],
+      },
+      select: { id: true, groupId: true, name: true },
     });
-    const existingIds = new Set(existing.map((room) => room.id));
-    const missing = targets.filter((target) => !existingIds.has(target.roomId));
-    if (!missing.length) return;
+    const existingByGroupId = new Map<string, (typeof existing)[number]>();
+    const existingIds = new Set<string>();
+    for (const room of existing) {
+      if (typeof room.groupId === 'string') {
+        existingByGroupId.set(room.groupId, room);
+      }
+      existingIds.add(room.id);
+    }
 
-    await prisma.chatRoom.createMany({
-      data: missing.map((target) => ({
+    const updates: Promise<unknown>[] = [];
+    const createData: Prisma.ChatRoomCreateManyInput[] = [];
+    for (const target of targets) {
+      const matched =
+        existingByGroupId.get(target.groupId) ||
+        existingByGroupId.get(target.displayName);
+      if (matched) {
+        if (
+          matched.groupId !== target.groupId ||
+          matched.name !== target.displayName
+        ) {
+          updates.push(
+            prisma.chatRoom.update({
+              where: { id: matched.id },
+              data: {
+                groupId: target.groupId,
+                name: target.displayName,
+                updatedBy: userId,
+              },
+            }),
+          );
+        }
+        continue;
+      }
+      if (existingIds.has(target.roomId)) continue;
+      createData.push({
         id: target.roomId,
         type: 'department',
-        name: target.groupId,
+        name: target.displayName,
         groupId: target.groupId,
         isOfficial: true,
         allowExternalUsers: false,
         allowExternalIntegrations: false,
         createdBy: userId,
         updatedBy: userId,
-      })),
-      skipDuplicates: true,
-    });
+      });
+    }
+
+    if (updates.length) {
+      await Promise.all(updates);
+    }
+    if (createData.length) {
+      await prisma.chatRoom.createMany({
+        data: createData,
+        skipDuplicates: true,
+      });
+    }
   }
 
   function normalizeStringArray(
@@ -456,16 +540,38 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
         roles.includes('mgmt') ||
         roles.includes('exec');
       const canBootstrapOfficialRooms = !roles.includes('external_chat');
-      const departmentTargets: DepartmentRoomTarget[] =
-        canBootstrapOfficialRooms
-          ? groupIds.map((groupId) => ({
-              groupId,
-              roomId: buildDepartmentRoomId(groupId),
-            }))
-          : [];
-      const officialRoomIds = canBootstrapOfficialRooms
-        ? [companyRoomId, ...departmentTargets.map((target) => target.roomId)]
+      const resolvedDepartmentGroups = canBootstrapOfficialRooms
+        ? await resolveDepartmentGroupAccounts({ groupIds, groupAccountIds })
         : [];
+      const resolvedDisplayNameSet = new Set(
+        resolvedDepartmentGroups.map((group) => group.displayName),
+      );
+      const departmentTargets: DepartmentRoomTarget[] = [];
+      const seenDepartmentGroupIds = new Set<string>();
+      if (canBootstrapOfficialRooms) {
+        for (const group of resolvedDepartmentGroups) {
+          if (seenDepartmentGroupIds.has(group.id)) continue;
+          seenDepartmentGroupIds.add(group.id);
+          departmentTargets.push({
+            groupId: group.id,
+            displayName: group.displayName,
+            roomId: buildDepartmentRoomId(group.id),
+          });
+        }
+        for (const groupId of groupIds) {
+          if (resolvedDisplayNameSet.has(groupId)) continue;
+          if (seenDepartmentGroupIds.has(groupId)) continue;
+          seenDepartmentGroupIds.add(groupId);
+          departmentTargets.push({
+            groupId,
+            displayName: groupId,
+            roomId: buildDepartmentRoomId(groupId),
+          });
+        }
+      }
+      const departmentGroupIds = departmentTargets.map(
+        (target) => target.groupId,
+      );
 
       const canSeeAllProjects = canSeeAllMeta;
       const isExternal = roles.includes('external_chat');
@@ -621,9 +727,23 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
           : Promise.resolve([]);
 
       const officialRoomsPromise =
-        !canSeeAllMeta && officialRoomIds.length > 0
+        !canSeeAllMeta && canBootstrapOfficialRooms
           ? prisma.chatRoom.findMany({
-              where: { id: { in: officialRoomIds }, deletedAt: null },
+              where: {
+                deletedAt: null,
+                OR: (() => {
+                  const conditions: Prisma.ChatRoomWhereInput[] = [
+                    { id: companyRoomId },
+                  ];
+                  if (departmentGroupIds.length > 0) {
+                    conditions.push({
+                      type: 'department',
+                      groupId: { in: departmentGroupIds },
+                    });
+                  }
+                  return conditions;
+                })(),
+              },
               orderBy: { createdAt: 'desc' },
               select: roomSelect,
             })
