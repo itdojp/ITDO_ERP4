@@ -243,6 +243,10 @@ export const ProjectChat: React.FC = () => {
   const [tags, setTags] = useState('');
   const [ackTargets, setAckTargets] = useState('');
   const [ackTargetInput, setAckTargetInput] = useState('');
+  const [ackTargetGroupIds, setAckTargetGroupIds] = useState('');
+  const [ackTargetGroupInput, setAckTargetGroupInput] = useState('');
+  const [ackTargetRoles, setAckTargetRoles] = useState('');
+  const [ackTargetRoleInput, setAckTargetRoleInput] = useState('');
   const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
   const [filterTag, setFilterTag] = useState('');
   const [items, setItems] = useState<ChatMessage[]>([]);
@@ -278,6 +282,10 @@ export const ProjectChat: React.FC = () => {
   const [highlightMessageId, setHighlightMessageId] = useState('');
 
   const ackTargetUserIds = Array.from(new Set(parseUserIds(ackTargets)));
+  const ackTargetGroupIdList = Array.from(
+    new Set(parseUserIds(ackTargetGroupIds)),
+  );
+  const ackTargetRoleList = Array.from(new Set(parseUserIds(ackTargetRoles)));
 
   const hasActiveAckDeadline = items.some((item) => {
     if (item.ackRequest?.canceledAt) return false;
@@ -479,14 +487,46 @@ export const ProjectChat: React.FC = () => {
     setAckTargetInput('');
   };
 
+  const addAckTargetGroup = () => {
+    const value = ackTargetGroupInput.trim();
+    if (!value) return;
+    const current = parseUserIds(ackTargetGroupIds);
+    const next = Array.from(new Set([...current, value])).slice(0, 20);
+    setAckTargetGroupIds(next.join(','));
+    setAckTargetGroupInput('');
+  };
+
+  const addAckTargetRole = () => {
+    const value = ackTargetRoleInput.trim();
+    if (!value) return;
+    const current = parseUserIds(ackTargetRoles);
+    const next = Array.from(new Set([...current, value])).slice(0, 20);
+    setAckTargetRoles(next.join(','));
+    setAckTargetRoleInput('');
+  };
+
   const removeAckTargetUser = (userId: string) => {
     const current = parseUserIds(ackTargets);
     setAckTargets(current.filter((entry) => entry !== userId).join(','));
   };
 
+  const removeAckTargetGroup = (groupId: string) => {
+    const current = parseUserIds(ackTargetGroupIds);
+    setAckTargetGroupIds(current.filter((entry) => entry !== groupId).join(','));
+  };
+
+  const removeAckTargetRole = (role: string) => {
+    const current = parseUserIds(ackTargetRoles);
+    setAckTargetRoles(current.filter((entry) => entry !== role).join(','));
+  };
+
   const resetAckTargets = () => {
     setAckTargets('');
     setAckTargetInput('');
+    setAckTargetGroupIds('');
+    setAckTargetGroupInput('');
+    setAckTargetRoles('');
+    setAckTargetRoleInput('');
   };
 
   const load = async () => {
@@ -681,12 +721,28 @@ export const ProjectChat: React.FC = () => {
     }
     const parsedTargets = parseUserIds(ackTargets);
     const uniqueTargets = Array.from(new Set(parsedTargets));
-    if (!uniqueTargets.length) {
-      setMessage('確認対象のユーザIDを入力してください');
+    const parsedGroupIds = parseUserIds(ackTargetGroupIds);
+    const uniqueGroupIds = Array.from(new Set(parsedGroupIds));
+    const parsedRoles = parseUserIds(ackTargetRoles);
+    const uniqueRoles = Array.from(new Set(parsedRoles));
+    if (
+      uniqueTargets.length === 0 &&
+      uniqueGroupIds.length === 0 &&
+      uniqueRoles.length === 0
+    ) {
+      setMessage('確認対象（ユーザID/グループ/ロール）を入力してください');
       return;
     }
     if (uniqueTargets.length > 50) {
       setMessage('確認対象は最大50件までです');
+      return;
+    }
+    if (uniqueGroupIds.length > 20) {
+      setMessage('確認対象グループは最大20件までです');
+      return;
+    }
+    if (uniqueRoles.length > 20) {
+      setMessage('確認対象ロールは最大20件までです');
       return;
     }
     const parsedTags = parseTags(tags);
@@ -712,7 +768,11 @@ export const ProjectChat: React.FC = () => {
           method: 'POST',
           body: JSON.stringify({
             body: trimmedBody,
-            requiredUserIds: uniqueTargets,
+            ...(uniqueTargets.length ? { requiredUserIds: uniqueTargets } : {}),
+            ...(uniqueGroupIds.length
+              ? { requiredGroupIds: uniqueGroupIds }
+              : {}),
+            ...(uniqueRoles.length ? { requiredRoles: uniqueRoles } : {}),
             tags: parsedTags,
             mentions,
           }),
@@ -1162,7 +1222,82 @@ export const ProjectChat: React.FC = () => {
             {ackTargetUserIds.length}/50
           </span>
         </div>
-        {ackTargetUserIds.length > 0 && (
+        <input
+          type="text"
+          value={ackTargetGroupIds}
+          onChange={(e) => setAckTargetGroupIds(e.target.value)}
+          placeholder="確認対象グループID (comma separated)"
+          style={{ width: '100%', marginTop: 8 }}
+        />
+        <div className="row" style={{ gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
+          <input
+            aria-label="確認対象グループ追加"
+            type="text"
+            list="chat-mention-groups"
+            value={ackTargetGroupInput}
+            onChange={(e) => setAckTargetGroupInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                addAckTargetGroup();
+              }
+            }}
+            placeholder="確認対象: グループID (任意)"
+            style={{ flex: '1 1 240px' }}
+          />
+          <button
+            className="button secondary"
+            onClick={addAckTargetGroup}
+            type="button"
+          >
+            グループ追加
+          </button>
+          <span style={{ fontSize: 12, color: '#6b7280' }}>
+            {ackTargetGroupIdList.length}/20
+          </span>
+        </div>
+        <input
+          type="text"
+          value={ackTargetRoles}
+          onChange={(e) => setAckTargetRoles(e.target.value)}
+          placeholder="確認対象ロール (comma separated)"
+          style={{ width: '100%', marginTop: 8 }}
+        />
+        <div className="row" style={{ gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
+          <input
+            aria-label="確認対象ロール追加"
+            type="text"
+            list="chat-ack-required-roles"
+            value={ackTargetRoleInput}
+            onChange={(e) => setAckTargetRoleInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                addAckTargetRole();
+              }
+            }}
+            placeholder="確認対象: ロール (任意)"
+            style={{ flex: '1 1 240px' }}
+          />
+          <button
+            className="button secondary"
+            onClick={addAckTargetRole}
+            type="button"
+          >
+            ロール追加
+          </button>
+          <span style={{ fontSize: 12, color: '#6b7280' }}>
+            {ackTargetRoleList.length}/20
+          </span>
+        </div>
+        <datalist id="chat-ack-required-roles">
+          {['admin', 'mgmt', 'exec', 'hr'].map((role) => (
+            <option key={role} value={role} />
+          ))}
+        </datalist>
+        {(ackTargetUserIds.length > 0 ||
+          ackTargetGroupIdList.length > 0 ||
+          ackTargetRoleList.length > 0) && (
           <div
             className="row"
             style={{ gap: 6, flexWrap: 'wrap', marginTop: 6 }}
@@ -1177,6 +1312,30 @@ export const ProjectChat: React.FC = () => {
                 style={{ cursor: 'pointer' }}
               >
                 {userId} ×
+              </button>
+            ))}
+            {ackTargetGroupIdList.map((groupId) => (
+              <button
+                key={groupId}
+                type="button"
+                className="badge"
+                aria-label={`確認対象グループから除外: ${groupId}`}
+                onClick={() => removeAckTargetGroup(groupId)}
+                style={{ cursor: 'pointer' }}
+              >
+                group:{groupId} ×
+              </button>
+            ))}
+            {ackTargetRoleList.map((role) => (
+              <button
+                key={role}
+                type="button"
+                className="badge"
+                aria-label={`確認対象ロールから除外: ${role}`}
+                onClick={() => removeAckTargetRole(role)}
+                style={{ cursor: 'pointer' }}
+              >
+                role:{role} ×
               </button>
             ))}
             <button

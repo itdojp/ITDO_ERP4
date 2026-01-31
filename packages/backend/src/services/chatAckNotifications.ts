@@ -11,12 +11,19 @@ type LogChatAckRequestCreatedOptions = {
   messageId: string;
   ackRequestId: string;
   requiredUserIds: string[];
+  requestedUserIds?: string[];
+  requestedGroupIds?: string[];
+  requestedRoles?: string[];
   dueAt: Date | null;
 };
 
 export async function logChatAckRequestCreated(
   options: LogChatAckRequestCreatedOptions,
 ) {
+  const requestedUserIds = options.requestedUserIds || [];
+  const requestedGroupIds = options.requestedGroupIds || [];
+  const requestedRoles = options.requestedRoles || [];
+
   await logAudit({
     action: 'chat_ack_request_created',
     targetTable: 'chat_ack_requests',
@@ -25,6 +32,15 @@ export async function logChatAckRequestCreated(
       projectId: options.projectId,
       roomId: options.roomId,
       messageId: options.messageId,
+      requestedUserCount: requestedUserIds.length,
+      requestedUserIds: requestedUserIds.slice(0, 20),
+      requestedUsersTruncated: requestedUserIds.length > 20,
+      requestedGroupCount: requestedGroupIds.length,
+      requestedGroupIds: requestedGroupIds.slice(0, 20),
+      requestedGroupsTruncated: requestedGroupIds.length > 20,
+      requestedRoleCount: requestedRoles.length,
+      requestedRoles: requestedRoles.slice(0, 20),
+      requestedRolesTruncated: requestedRoles.length > 20,
       requiredUserCount: options.requiredUserIds.length,
       dueAt: options.dueAt ? options.dueAt.toISOString() : null,
     } as Prisma.InputJsonValue,

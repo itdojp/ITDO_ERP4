@@ -12,7 +12,10 @@
 
 ## MVP実装（現状の仕様）
 
-- 対象者は `requiredUserIds`（ユーザIDの明示指定・API上は最大50人まで）のみ
+- 対象者は `requiredUserIds` / `requiredGroupIds` / `requiredRoles` で指定し、サーバ側でユーザIDへ展開して `requiredUserIds`（スナップショット）として保存する（展開後の最大は50人まで）
+- `requiredGroupIds`: SCIM同期された `GroupAccount.displayName` を指定する（展開は `UserGroup` 経由）
+- `requiredRoles`: `AUTH_GROUP_TO_ROLE_MAP` で解決される role code（例: `admin/mgmt/exec/hr`）を指定する（role → group → user に展開）
+- 展開後の対象者に「無効/権限外」が含まれる場合は、対象者の指定を 400 で拒否する（通知の誤送/情報漏えいリスク低減のため）
 - サーバ側で `requiredUserIds` の妥当性（active + 原則「ルーム閲覧可能」）を検証し、無効/権限外は 400 とする（`company` は暫定で active のみ検証）
 - 期限は `dueAt` 任意（期限超過による自動クローズ/エスカレーションは未実装）
 - OK取り消し（ack revoke）は実装済み（本人）
@@ -38,7 +41,7 @@
 
 ## 差分/課題
 
-- OKトラッキング自体は実装済みだが、対象者指定が `requiredUserIds` のみで、グループ/ロール指定や候補検索がない
+- OKトラッキング自体は実装済み。対象者指定は `requiredUserIds` に加え `requiredGroupIds` / `requiredRoles` に対応したが、候補検索（group/role の検索や展開結果の事前確認）は未整備
 - （履歴）以前は `requiredUserIds` に対する通知がメンション依存だったが、現在は AppNotification（`kind=chat_ack_required`）による ack 専用通知を作成済み
 - 期限超過/撤回/OK取り消し（ack revoke）などの運用と状態遷移が未確定
 - 承認フローとチャットの連携が未整理
@@ -104,7 +107,7 @@
 
 ## TODO
 
-- [ ] 対象者の指定方法（ユーザのみ/グループ/ロール）を確定（MVPは userId 指定のみ）
+- [x] 対象者の指定方法（ユーザ/グループ/ロール）を追加（上限値の運用・候補検索・事前確認は後続）
 - [x] dueAt のリマインド実装（期限超過時の通知ジョブ）
 - [ ] 進捗の可視化範囲を確定（MVPはルーム内可視）
 - [x] 撤回（canceled）を追加（作成者/管理者）
