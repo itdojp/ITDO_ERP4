@@ -372,6 +372,13 @@
                   "actor": {
                     "additionalProperties": false,
                     "properties": {
+                      "groupAccountIds": {
+                        "items": {
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
                       "groupIds": {
                         "items": {
                           "minLength": 1,
