@@ -27,7 +27,9 @@ export async function ensureChatRoomContentAccess(options: {
   projectIds: string[];
   groupIds?: string[];
   groupAccountIds?: string[];
+  client?: typeof prisma;
 }): Promise<ChatRoomContentAccessResult> {
+  const client = options.client ?? prisma;
   const isExternal = options.roles.includes('external_chat');
   const internalChatRoles = new Set(['admin', 'mgmt', 'exec', 'user', 'hr']);
   const hasInternalChatRole = options.roles.some((role) =>
@@ -44,7 +46,7 @@ export async function ensureChatRoomContentAccess(options: {
       .filter(Boolean),
   );
 
-  const room = await prisma.chatRoom.findUnique({
+  const room = await client.chatRoom.findUnique({
     where: { id: options.roomId },
     select: {
       id: true,
@@ -63,7 +65,7 @@ export async function ensureChatRoomContentAccess(options: {
       return { ok: true, room };
     }
     if (isExternal && room.allowExternalUsers) {
-      const member = await prisma.chatRoomMember.findFirst({
+      const member = await client.chatRoomMember.findFirst({
         where: { roomId: room.id, userId: options.userId, deletedAt: null },
         select: { role: true },
       });
@@ -105,7 +107,7 @@ export async function ensureChatRoomContentAccess(options: {
     }
   }
 
-  const member = await prisma.chatRoomMember.findFirst({
+  const member = await client.chatRoomMember.findFirst({
     where: { roomId: room.id, userId: options.userId, deletedAt: null },
     select: { role: true },
   });
