@@ -279,6 +279,7 @@ export async function registerVendorDocRoutes(app: FastifyInstance) {
           userId: req.user?.userId ?? null,
           roles: req.user?.roles || [],
           groupIds: req.user?.groupIds || [],
+          groupAccountIds: req.user?.groupAccountIds || [],
         },
         reasonText,
         state: { status: before.status, projectId: before.projectId },
@@ -438,6 +439,7 @@ export async function registerVendorDocRoutes(app: FastifyInstance) {
           userId: req.user?.userId ?? null,
           roles: req.user?.roles || [],
           groupIds: req.user?.groupIds || [],
+          groupAccountIds: req.user?.groupAccountIds || [],
         },
         reasonText,
         state: { status: before.status, projectId: before.projectId },
@@ -553,6 +555,7 @@ export async function registerVendorDocRoutes(app: FastifyInstance) {
           userId: req.user?.userId ?? null,
           roles: req.user?.roles || [],
           groupIds: req.user?.groupIds || [],
+          groupAccountIds: req.user?.groupAccountIds || [],
         },
         reasonText,
         state: {

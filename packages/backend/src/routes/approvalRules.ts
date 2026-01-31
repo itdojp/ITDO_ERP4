@@ -317,11 +317,13 @@ export async function registerApprovalRuleRoutes(app: FastifyInstance) {
       const userId = req.user?.userId || 'system';
       const actorGroupId = req.user?.groupIds?.[0];
       const actorGroupIds = req.user?.groupIds ?? [];
+      const actorGroupAccountIds = req.user?.groupAccountIds ?? [];
       try {
         const result = await act(id, userId, body.action, {
           reason: body.reason,
           actorGroupId,
           actorGroupIds,
+          actorGroupAccountIds,
           auditContext: auditContextFromRequest(req, { userId }),
         });
         const instance = await prisma.approvalInstance.findUnique({
