@@ -69,27 +69,33 @@ function normalizeId(value: unknown) {
   return typeof value === 'string' ? value.trim() : '';
 }
 
-async function filterChatMentionRecipients(options: {
+export async function filterChatMentionRecipients(options: {
   roomId?: string | null;
   userIds: string[];
+  client?: typeof prisma;
+  now?: Date;
 }) {
   const roomId = normalizeId(options.roomId);
   if (!roomId || options.userIds.length === 0) {
+    // Backward compatibility: when roomId is not provided, skip filtering.
     return { allowed: options.userIds, muted: [] as string[] };
   }
 
-  const userIds = options.userIds.map((userId) => userId.trim()).filter(Boolean);
+  const userIds = options.userIds
+    .map((userId) => userId.trim())
+    .filter(Boolean);
   if (!userIds.length) {
     return { allowed: [] as string[], muted: [] as string[] };
   }
 
-  const now = new Date();
+  const client = options.client ?? prisma;
+  const now = options.now ?? new Date();
   const [roomSettings, mutedPreferences] = await Promise.all([
-    prisma.chatRoomNotificationSetting.findMany({
+    client.chatRoomNotificationSetting.findMany({
       where: { roomId, userId: { in: userIds } },
       select: { userId: true, notifyMentions: true, muteUntil: true },
     }),
-    prisma.userNotificationPreference.findMany({
+    client.userNotificationPreference.findMany({
       where: { userId: { in: userIds }, muteAllUntil: { gt: now } },
       select: { userId: true, muteAllUntil: true },
     }),
