@@ -105,12 +105,16 @@ export async function registerChatBreakGlassRoutes(app: FastifyInstance) {
         const groupIds = Array.isArray(req.user?.groupIds)
           ? req.user.groupIds
           : [];
+        const groupAccountIds = Array.isArray(req.user?.groupAccountIds)
+          ? req.user.groupAccountIds
+          : [];
         const access = await ensureChatRoomContentAccess({
           roomId,
           userId,
           roles,
           projectIds,
           groupIds,
+          groupAccountIds,
         });
         if (!access.ok) {
           return reply.status(access.reason === 'not_found' ? 404 : 403).send({

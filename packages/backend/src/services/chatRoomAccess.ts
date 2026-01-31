@@ -26,6 +26,7 @@ export async function ensureChatRoomContentAccess(options: {
   roles: string[];
   projectIds: string[];
   groupIds?: string[];
+  groupAccountIds?: string[];
 }): Promise<ChatRoomContentAccessResult> {
   const isExternal = options.roles.includes('external_chat');
   const internalChatRoles = new Set(['admin', 'mgmt', 'exec', 'user', 'hr']);
@@ -34,6 +35,11 @@ export async function ensureChatRoomContentAccess(options: {
   );
   const groupIdSet = new Set(
     (Array.isArray(options.groupIds) ? options.groupIds : [])
+      .map((value) => (typeof value === 'string' ? value.trim() : ''))
+      .filter(Boolean),
+  );
+  const groupAccountIdSet = new Set(
+    (Array.isArray(options.groupAccountIds) ? options.groupAccountIds : [])
       .map((value) => (typeof value === 'string' ? value.trim() : ''))
       .filter(Boolean),
   );
@@ -89,7 +95,10 @@ export async function ensureChatRoomContentAccess(options: {
       }
       const groupId =
         typeof room.groupId === 'string' ? room.groupId.trim() : '';
-      if (!groupId || !groupIdSet.has(groupId)) {
+      if (
+        !groupId ||
+        (!groupIdSet.has(groupId) && !groupAccountIdSet.has(groupId))
+      ) {
         return { ok: false, reason: 'forbidden_room_member' };
       }
       return { ok: true, room };
