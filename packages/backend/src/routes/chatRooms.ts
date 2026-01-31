@@ -131,7 +131,7 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
       },
       select: { id: true, groupId: true, name: true },
     });
-    const existingByGroupId = new Map<string, typeof existing[number]>();
+    const existingByGroupId = new Map<string, (typeof existing)[number]>();
     const existingIds = new Set<string>();
     for (const room of existing) {
       if (typeof room.groupId === 'string') {
@@ -569,7 +569,9 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
           });
         }
       }
-      const departmentGroupIds = departmentTargets.map((target) => target.groupId);
+      const departmentGroupIds = departmentTargets.map(
+        (target) => target.groupId,
+      );
 
       const canSeeAllProjects = canSeeAllMeta;
       const isExternal = roles.includes('external_chat');
