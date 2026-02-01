@@ -574,10 +574,64 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
     return { mentions, mentionsAll, mentionUserIds, mentionGroupIds };
   }
 
+  async function resolveRoomAudienceUserIds(room: {
+    id: string;
+    type: string;
+    groupId: string | null;
+    allowExternalUsers: boolean;
+  }) {
+    const audience = new Set<string>();
+    if (room.type === 'private_group' || room.type === 'dm') {
+      const members = await prisma.chatRoomMember.findMany({
+        where: { roomId: room.id, deletedAt: null },
+        select: { userId: true },
+      });
+      members.forEach((member) => {
+        if (member.userId) audience.add(member.userId);
+      });
+      return audience;
+    }
+
+    if (room.type === 'department') {
+      const groupId = typeof room.groupId === 'string' ? room.groupId : '';
+      if (groupId) {
+        const members = await resolveChatAckRequiredRecipientUserIds({
+          requiredUserIds: [],
+          requiredGroupIds: [groupId],
+        });
+        members.forEach((userId) => audience.add(userId));
+      }
+    }
+
+    if (room.type === 'company') {
+      const members = await resolveChatAckRequiredRecipientUserIds({
+        requiredUserIds: [],
+        requiredRoles: ['admin', 'mgmt', 'exec', 'user', 'hr'],
+      });
+      members.forEach((userId) => audience.add(userId));
+    }
+
+    if (room.allowExternalUsers) {
+      const externalMembers = await prisma.chatRoomMember.findMany({
+        where: { roomId: room.id, deletedAt: null },
+        select: { userId: true },
+      });
+      externalMembers.forEach((member) => {
+        if (member.userId) audience.add(member.userId);
+      });
+    }
+
+    return audience;
+  }
+
   async function tryCreateRoomChatMentionNotifications(options: {
     req: any;
-    roomId: string;
-    projectId?: string | null;
+    room: {
+      id: string;
+      type: string;
+      groupId: string | null;
+      allowExternalUsers: boolean;
+    };
     messageId: string;
     messageBody: string;
     senderUserId: string;
@@ -586,13 +640,35 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
     mentionGroupIds: string[];
   }) {
     try {
+      const mentionUserIds = [...options.mentionUserIds];
+      if (
+        options.room.type !== 'project' &&
+        (options.mentionsAll || options.mentionGroupIds.length > 0)
+      ) {
+        const audience = await resolveRoomAudienceUserIds(options.room);
+        if (options.mentionGroupIds.length > 0) {
+          const members = await resolveChatAckRequiredRecipientUserIds({
+            requiredUserIds: [],
+            requiredGroupIds: options.mentionGroupIds,
+          });
+          members.forEach((userId) => {
+            if (audience.size === 0 || audience.has(userId)) {
+              mentionUserIds.push(userId);
+            }
+          });
+        }
+        if (options.mentionsAll) {
+          audience.forEach((userId) => mentionUserIds.push(userId));
+        }
+      }
+
       const notificationResult = await createChatMentionNotifications({
-        projectId: options.projectId ?? null,
-        roomId: options.roomId,
+        projectId: options.room.type === 'project' ? options.room.id : null,
+        roomId: options.room.id,
         messageId: options.messageId,
         messageBody: options.messageBody,
         senderUserId: options.senderUserId,
-        mentionUserIds: options.mentionUserIds,
+        mentionUserIds,
         mentionGroupIds: options.mentionGroupIds,
         mentionAll: options.mentionsAll,
       });
@@ -603,8 +679,8 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
         targetTable: 'chat_messages',
         targetId: options.messageId,
         metadata: {
-          roomId: options.roomId,
-          projectId: options.projectId ?? null,
+          roomId: options.room.id,
+          projectId: options.room.type === 'project' ? options.room.id : null,
           messageId: options.messageId,
           createdCount: notificationResult.created,
           recipientCount: notificationResult.recipients.length,
@@ -2691,8 +2767,7 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
         });
         await tryCreateRoomChatMentionNotifications({
           req,
-          roomId: access.room.id,
-          projectId: access.room.type === 'project' ? access.room.id : null,
+          room: access.room,
           messageId: message.id,
           messageBody: message.body,
           senderUserId: userId,
