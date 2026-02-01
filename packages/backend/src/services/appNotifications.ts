@@ -2,7 +2,7 @@ import type { Prisma } from '@prisma/client';
 import { prisma } from './db.js';
 
 type ChatMentionNotificationOptions = {
-  projectId: string;
+  projectId?: string | null;
   roomId?: string | null;
   messageId: string;
   messageBody: string;
@@ -210,11 +210,12 @@ export async function createChatMentionNotifications(
     if (trimmed) recipients.add(trimmed);
   });
 
-  const usesProjectMemberFallback =
-    options.mentionAll || options.mentionGroupIds.length > 0;
-  if (usesProjectMemberFallback) {
+  const hasProjectFallback =
+    Boolean(options.projectId) &&
+    (options.mentionAll || options.mentionGroupIds.length > 0);
+  if (hasProjectFallback) {
     const members = await prisma.projectMember.findMany({
-      where: { projectId: options.projectId },
+      where: { projectId: options.projectId ?? undefined },
       select: { userId: true },
     });
     members.forEach((member) => {
@@ -236,7 +237,7 @@ export async function createChatMentionNotifications(
       created: 0,
       recipients: [] as string[],
       truncated,
-      usesProjectMemberFallback,
+      usesProjectMemberFallback: hasProjectFallback,
     };
   }
 
@@ -253,7 +254,7 @@ export async function createChatMentionNotifications(
     data: filtered.allowed.map((userId) => ({
       userId,
       kind: 'chat_mention',
-      projectId: options.projectId,
+      projectId: options.projectId ?? null,
       messageId: options.messageId,
       payload,
       createdBy: options.senderUserId,
@@ -265,7 +266,7 @@ export async function createChatMentionNotifications(
     created: created.count,
     recipients: filtered.allowed,
     truncated,
-    usesProjectMemberFallback,
+    usesProjectMemberFallback: hasProjectFallback,
   };
 }
 

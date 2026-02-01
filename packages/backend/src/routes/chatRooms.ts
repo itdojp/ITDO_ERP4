@@ -5,6 +5,7 @@ import { prisma } from '../services/db.js';
 import { requireRole } from '../services/rbac.js';
 import { ensureChatRoomContentAccess } from '../services/chatRoomAccess.js';
 import { auditContextFromRequest, logAudit } from '../services/audit.js';
+import { createChatMentionNotifications } from '../services/appNotifications.js';
 import {
   logChatAckRequestCreated,
   tryCreateChatAckRequiredNotificationsWithAudit,
@@ -571,6 +572,58 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
           } as Prisma.InputJsonValue)
         : undefined;
     return { mentions, mentionsAll, mentionUserIds, mentionGroupIds };
+  }
+
+  async function tryCreateRoomChatMentionNotifications(options: {
+    req: any;
+    roomId: string;
+    projectId?: string | null;
+    messageId: string;
+    messageBody: string;
+    senderUserId: string;
+    mentionsAll: boolean;
+    mentionUserIds: string[];
+    mentionGroupIds: string[];
+  }) {
+    try {
+      const notificationResult = await createChatMentionNotifications({
+        projectId: options.projectId ?? null,
+        roomId: options.roomId,
+        messageId: options.messageId,
+        messageBody: options.messageBody,
+        senderUserId: options.senderUserId,
+        mentionUserIds: options.mentionUserIds,
+        mentionGroupIds: options.mentionGroupIds,
+        mentionAll: options.mentionsAll,
+      });
+      if (notificationResult.created <= 0) return;
+
+      await logAudit({
+        action: 'chat_mention_notifications_created',
+        targetTable: 'chat_messages',
+        targetId: options.messageId,
+        metadata: {
+          roomId: options.roomId,
+          projectId: options.projectId ?? null,
+          messageId: options.messageId,
+          createdCount: notificationResult.created,
+          recipientCount: notificationResult.recipients.length,
+          recipientUserIds: notificationResult.recipients.slice(0, 20),
+          recipientsTruncated: notificationResult.truncated,
+          mentionAll: options.mentionsAll,
+          mentionUserCount: options.mentionUserIds.length,
+          mentionGroupCount: options.mentionGroupIds.length,
+          usesProjectMemberFallback:
+            notificationResult.usesProjectMemberFallback,
+        } as Prisma.InputJsonValue,
+        ...auditContextFromRequest(options.req),
+      });
+    } catch (err) {
+      options.req.log?.warn(
+        { err },
+        'Failed to create room chat mention notifications',
+      );
+    }
   }
 
   app.get(
@@ -2635,6 +2688,17 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
             mentionGroupCount: mentionGroupIds.length,
           } as Prisma.InputJsonValue,
           ...auditContextFromRequest(req),
+        });
+        await tryCreateRoomChatMentionNotifications({
+          req,
+          roomId: access.room.id,
+          projectId: access.room.type === 'project' ? access.room.id : null,
+          messageId: message.id,
+          messageBody: message.body,
+          senderUserId: userId,
+          mentionsAll,
+          mentionUserIds,
+          mentionGroupIds,
         });
       }
 
