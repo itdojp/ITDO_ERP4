@@ -237,7 +237,7 @@ export async function createChatMentionNotifications(
       created: 0,
       recipients: [] as string[],
       truncated,
-      usesProjectMemberFallback,
+      usesProjectMemberFallback: hasProjectFallback,
     };
   }
 
