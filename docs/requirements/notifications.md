@@ -41,7 +41,7 @@
   - `notifyAllPosts` / `notifyMentions` / `muteUntil`
 - `chat_mention` は `notifyMentions` と `muteAllUntil` / `muteUntil` を尊重
   - project ルームは `roomId = projectId` として判定
-- 現状は project ルームの `chat_mention` のみ対応（room chat への反映は後続）
+- room chat は `mentionUserIds` のみ通知対象（`mentionGroupIds/@all` の展開は後続）
 - それ以外の通知種別に対する抑制は後続で拡張
 
 ### AppNotification の発火イベント（実装済み）
