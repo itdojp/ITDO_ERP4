@@ -350,6 +350,7 @@ export async function registerChatRoutes(app: FastifyInstance) {
     try {
       const notificationResult = await createChatMentionNotifications({
         projectId: options.projectId,
+        roomId: options.projectId,
         messageId: options.messageId,
         messageBody: options.messageBody,
         senderUserId: options.senderUserId,
