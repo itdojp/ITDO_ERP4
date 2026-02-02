@@ -129,6 +129,18 @@ function resolveDueAt(payload: unknown) {
   return typeof value === 'string' && value.trim() ? value.trim() : null;
 }
 
+function resolveRoomId(payload: unknown) {
+  if (!payload || typeof payload !== 'object') return null;
+  const value = (payload as { roomId?: unknown }).roomId;
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+function resolveRoomName(payload: unknown) {
+  if (!payload || typeof payload !== 'object') return null;
+  const value = (payload as { roomName?: unknown }).roomName;
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
 const FLOW_TYPE_LABEL_MAP: Record<string, string> = {
   estimate: '見積',
   invoice: '請求',
@@ -206,6 +218,12 @@ function formatNotificationLabel(item: AppNotification) {
     const fromUserId = resolveFromUserId(item.payload);
     if (fromUserId) return `${fromUserId} から確認依頼`;
     return '確認依頼';
+  }
+  if (item.kind === 'chat_room_acl_mismatch') {
+    const roomName = resolveRoomName(item.payload);
+    return roomName
+      ? `チャット権限の不整合 (${roomName})`
+      : 'チャット権限の不整合';
   }
   if (item.kind === 'daily_report_missing') {
     const reportDate = resolveReportDate(item.payload);
@@ -398,6 +416,12 @@ export const Dashboard: React.FC = () => {
     ) {
       if (!item.messageId) return;
       navigateToOpen({ kind: 'chat_message', id: item.messageId });
+      return;
+    }
+    if (item.kind === 'chat_room_acl_mismatch') {
+      const roomId = resolveRoomId(item.payload);
+      if (!roomId) return;
+      navigateToOpen({ kind: 'room_chat', id: roomId });
       return;
     }
     if (item.kind === 'daily_report_missing') {

@@ -1813,7 +1813,7 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
         projectIds,
         groupIds,
         groupAccountIds,
-        accessLevel: 'post',
+        accessLevel: 'read',
       });
       if (!access.ok) {
         return reply
@@ -1891,7 +1891,7 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
         projectIds,
         groupIds,
         groupAccountIds,
-        accessLevel: 'post',
+        accessLevel: 'read',
       });
       if (!access.ok) {
         return reply
@@ -1942,6 +1942,7 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
         projectIds,
         groupIds,
         groupAccountIds,
+        accessLevel: 'post',
       });
       if (!access.ok) {
         return reply
@@ -1989,6 +1990,7 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
         projectIds,
         groupIds,
         groupAccountIds,
+        accessLevel: 'post',
       });
       if (!access.ok) {
         return reply
@@ -2792,6 +2794,16 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
         excludeUserIds: mentionRecipients,
       });
 
+      if (access.postWithoutView) {
+        return {
+          ...message,
+          warning: {
+            code: 'POST_WITHOUT_VIEW',
+            message:
+              '投稿後、このルームを閲覧できません。閲覧権限を管理者に確認してください。',
+          },
+        };
+      }
       return message;
     },
   );
@@ -2831,6 +2843,7 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
         projectIds,
         groupIds,
         groupAccountIds,
+        accessLevel: 'post',
       });
       if (!access.ok) {
         return reply
@@ -2979,6 +2992,16 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
         });
       }
 
+      if (access.postWithoutView) {
+        return {
+          ...message,
+          warning: {
+            code: 'POST_WITHOUT_VIEW',
+            message:
+              '投稿後、このルームを閲覧できません。閲覧権限を管理者に確認してください。',
+          },
+        };
+      }
       return message;
     },
   );

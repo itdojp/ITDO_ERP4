@@ -17,6 +17,7 @@ type JobKey =
   | 'reportSubscriptions'
   | 'reportDeliveries'
   | 'notificationDeliveries'
+  | 'chatRoomAclAlerts'
   | 'dailyReportMissing'
   | 'recurringProjects'
   | 'integrations';
@@ -36,6 +37,7 @@ const buildInitialState = (): Record<JobKey, JobState> => ({
   reportSubscriptions: { result: null, error: '', loading: false },
   reportDeliveries: { result: null, error: '', loading: false },
   notificationDeliveries: { result: null, error: '', loading: false },
+  chatRoomAclAlerts: { result: null, error: '', loading: false },
   dailyReportMissing: { result: null, error: '', loading: false },
   recurringProjects: { result: null, error: '', loading: false },
   integrations: { result: null, error: '', loading: false },
@@ -47,6 +49,8 @@ export const AdminJobs: React.FC = () => {
   const [reportRetryDryRun, setReportRetryDryRun] = useState(false);
   const [notificationDryRun, setNotificationDryRun] = useState(false);
   const [notificationLimit, setNotificationLimit] = useState('50');
+  const [chatRoomAclDryRun, setChatRoomAclDryRun] = useState(false);
+  const [chatRoomAclLimit, setChatRoomAclLimit] = useState('200');
   const [dailyReportDryRun, setDailyReportDryRun] = useState(false);
   const [dailyReportTargetDate, setDailyReportTargetDate] = useState('');
 
@@ -108,6 +112,26 @@ export const AdminJobs: React.FC = () => {
     runJob('notificationDeliveries', '/jobs/notification-deliveries/run', {
       dryRun: notificationDryRun,
       ...(limit ? { limit } : {}),
+    });
+  };
+  const runChatRoomAclAlerts = () => {
+    const limitRaw = chatRoomAclLimit.trim();
+    const limit = limitRaw ? Number(limitRaw) : undefined;
+    if (limitRaw && !Number.isFinite(limit)) {
+      updateJob('chatRoomAclAlerts', {
+        error: 'limit は有効な数値で入力してください',
+      });
+      return;
+    }
+    if (limit !== undefined && (limit < 1 || limit > 500)) {
+      updateJob('chatRoomAclAlerts', {
+        error: 'limit は 1-500 で入力してください',
+      });
+      return;
+    }
+    runJob('chatRoomAclAlerts', '/jobs/chat-room-acl-alerts/run', {
+      dryRun: chatRoomAclDryRun,
+      ...(limit !== undefined ? { limit } : {}),
     });
   };
   const runDailyReportMissing = () =>
@@ -285,9 +309,37 @@ export const AdminJobs: React.FC = () => {
           >
             通知配信
           </Button>
+          <label className="badge" style={{ cursor: 'pointer' }}>
+            <input
+              type="checkbox"
+              checked={chatRoomAclDryRun}
+              onChange={(e) => setChatRoomAclDryRun(e.target.checked)}
+              style={{ marginRight: 6 }}
+            />
+            dryRun
+          </label>
+          <Input
+            label="acl limit"
+            type="number"
+            min={1}
+            max={500}
+            value={chatRoomAclLimit}
+            onChange={(e) => setChatRoomAclLimit(e.target.value)}
+          />
+          <Button
+            variant="secondary"
+            onClick={runChatRoomAclAlerts}
+            loading={jobs.chatRoomAclAlerts.loading}
+          >
+            ACL不整合通知
+          </Button>
         </div>
         <div style={{ marginTop: 12 }}>
           {renderResult('notificationDeliveries')}
+          <div style={{ marginTop: 8 }}>
+            <strong>ACL不整合通知</strong>
+            {renderResult('chatRoomAclAlerts')}
+          </div>
         </div>
       </Card>
 

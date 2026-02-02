@@ -1,4 +1,10 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkBreaks from 'remark-breaks';
 import remarkGfm from 'remark-gfm';
@@ -198,11 +204,16 @@ export const RoomChat: React.FC = () => {
   const [rooms, setRooms] = useState<ChatRoom[]>([]);
   const [roomId, setRoomId] = useState('');
   const [roomMessage, setRoomMessage] = useState('');
+  const [postWarning, setPostWarning] = useState('');
   const currentRoomIdRef = useRef('');
   const skipNextRoomAutoLoadRef = useRef(false);
 
   useEffect(() => {
     currentRoomIdRef.current = roomId;
+  }, [roomId]);
+
+  useEffect(() => {
+    setPostWarning('');
   }, [roomId]);
 
   useEffect(() => {
@@ -398,7 +409,7 @@ export const RoomChat: React.FC = () => {
     }
   };
 
-  const loadNotificationSetting = async (targetRoomId: string) => {
+  const loadNotificationSetting = useCallback(async (targetRoomId: string) => {
     setIsNotificationSettingLoading(true);
     setNotificationSettingMessage('');
     try {
@@ -422,7 +433,7 @@ export const RoomChat: React.FC = () => {
     } finally {
       setIsNotificationSettingLoading(false);
     }
-  };
+  }, []);
 
   const saveNotificationSetting = async () => {
     if (!roomId || !notificationSetting) return;
@@ -593,7 +604,7 @@ export const RoomChat: React.FC = () => {
       return;
     }
     loadNotificationSetting(roomId);
-  }, [roomId]);
+  }, [roomId, loadNotificationSetting]);
 
   const openSearchResult = (item: ChatSearchItem) => {
     if (item.room.type === 'project' && item.room.projectId) {
@@ -789,7 +800,9 @@ export const RoomChat: React.FC = () => {
             })()
           : basePayload;
       if (!payload) return;
-      const created = await api<ChatMessage>(endpoint, {
+      const created = await api<
+        ChatMessage & { warning?: { code?: string; message?: string } }
+      >(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -797,6 +810,7 @@ export const RoomChat: React.FC = () => {
       if (attachmentFile) {
         await uploadAttachment(created.id, attachmentFile);
       }
+      setPostWarning(created.warning?.message || '');
       setBody('');
       setTags('');
       resetAckTargets();
@@ -1357,6 +1371,9 @@ export const RoomChat: React.FC = () => {
         <div className="card" style={{ padding: 12, marginTop: 12 }}>
           <strong>投稿</strong>
           {message && <div style={{ marginTop: 8 }}>{message}</div>}
+          {postWarning && (
+            <div style={{ marginTop: 8, color: '#b45309' }}>{postWarning}</div>
+          )}
           <label
             className="row"
             style={{ gap: 6, marginTop: 8, alignItems: 'center' }}
