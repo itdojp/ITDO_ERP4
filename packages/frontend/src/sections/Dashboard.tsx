@@ -737,9 +737,7 @@ export const Dashboard: React.FC = () => {
                         </div>
                       )}
                       {roomMuteFeedback.error && (
-                        <Alert variant="error">
-                          {roomMuteFeedback.error}
-                        </Alert>
+                        <Alert variant="error">{roomMuteFeedback.error}</Alert>
                       )}
                     </div>
                   )}
