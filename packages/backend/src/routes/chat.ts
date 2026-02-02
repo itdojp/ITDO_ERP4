@@ -32,6 +32,7 @@ import {
   createChatMessageNotifications,
 } from '../services/appNotifications.js';
 import { resolveRoomAudienceUserIds } from '../services/chatMentionRecipients.js';
+import { resolveGroupCandidatesBySelector } from '../services/groupCandidates.js';
 
 function parseDateParam(value?: string) {
   if (!value) return null;
@@ -678,6 +679,9 @@ export async function registerChatRoutes(app: FastifyInstance) {
       const groupIds = Array.isArray(req.user?.groupIds)
         ? req.user.groupIds
         : [];
+      const groupAccountIds = Array.isArray(req.user?.groupAccountIds)
+        ? req.user.groupAccountIds
+        : [];
       const members = await prisma.projectMember.findMany({
         where: { projectId },
         select: { userId: true, role: true },
@@ -710,15 +714,10 @@ export async function registerChatRoutes(app: FastifyInstance) {
           displayName: displayMap.get(userId) || null,
         }))
         .sort((a, b) => a.userId.localeCompare(b.userId));
-      const groups = Array.from(
-        new Set(
-          groupIds
-            .map((groupId) =>
-              typeof groupId === 'string' ? groupId.trim() : '',
-            )
-            .filter(Boolean),
-        ),
-      ).map((groupId) => ({ groupId }));
+      const groups = await resolveGroupCandidatesBySelector([
+        ...groupIds,
+        ...groupAccountIds,
+      ]);
       const allowAll = true;
       return { users, groups, allowAll };
     },

@@ -21,6 +21,7 @@ import {
   expandRoomMentionRecipients,
   resolveRoomAudienceUserIds,
 } from '../services/chatMentionRecipients.js';
+import { resolveGroupCandidatesBySelector } from '../services/groupCandidates.js';
 import {
   getChatExternalLlmConfig,
   getChatExternalLlmRateLimit,
@@ -1887,15 +1888,10 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
           displayName: displayMap.get(entry) || null,
         }))
         .sort((a, b) => a.userId.localeCompare(b.userId));
-      const groups = Array.from(
-        new Set(
-          groupIds
-            .map((groupId) =>
-              typeof groupId === 'string' ? groupId.trim() : '',
-            )
-            .filter(Boolean),
-        ),
-      ).map((groupId) => ({ groupId }));
+      const groups = await resolveGroupCandidatesBySelector([
+        ...groupIds,
+        ...groupAccountIds,
+      ]);
       const allowAll = true;
       return { users, groups, allowAll };
     },

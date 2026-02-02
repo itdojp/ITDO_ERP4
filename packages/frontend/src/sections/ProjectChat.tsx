@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkBreaks from 'remark-breaks';
 import remarkGfm from 'remark-gfm';
@@ -37,7 +37,7 @@ type ChatMessage = {
 
 type MentionCandidates = {
   users?: { userId: string; displayName?: string | null }[];
-  groups?: { groupId: string }[];
+  groups?: { groupId: string; displayName?: string | null }[];
   allowAll?: boolean;
 };
 
@@ -274,6 +274,31 @@ export const ProjectChat: React.FC = () => {
   const [mentionUserIds, setMentionUserIds] = useState<string[]>([]);
   const [mentionGroupIds, setMentionGroupIds] = useState<string[]>([]);
   const [mentionAll, setMentionAll] = useState(false);
+  const mentionGroupLabelMap = useMemo(() => {
+    return new Map(
+      (mentionCandidates.groups || []).map((group) => [
+        group.groupId,
+        group.displayName ? group.displayName.trim() : '',
+      ]),
+    );
+  }, [mentionCandidates.groups]);
+  const formatMentionGroupLabel = useCallback(
+    (groupId: string) => {
+      const label = mentionGroupLabelMap.get(groupId);
+      return label ? label : groupId;
+    },
+    [mentionGroupLabelMap],
+  );
+  const formatMentionGroupAria = useCallback(
+    (groupId: string) => {
+      const label = mentionGroupLabelMap.get(groupId);
+      if (label && label !== groupId) {
+        return `${label} (${groupId})`;
+      }
+      return groupId;
+    },
+    [mentionGroupLabelMap],
+  );
   const [pendingOpenMessage, setPendingOpenMessage] = useState<{
     projectId: string;
     messageId: string;
@@ -1323,7 +1348,15 @@ export const ProjectChat: React.FC = () => {
         </div>
         <datalist id="chat-mention-groups">
           {(mentionCandidates.groups || []).map((group) => (
-            <option key={group.groupId} value={group.groupId} />
+            <option
+              key={group.groupId}
+              value={group.groupId}
+              label={
+                group.displayName
+                  ? `${group.displayName} (${group.groupId})`
+                  : group.groupId
+              }
+            />
           ))}
         </datalist>
         {(mentionCandidates.allowAll ?? true) && (
@@ -1371,11 +1404,13 @@ export const ProjectChat: React.FC = () => {
                 key={groupId}
                 type="button"
                 className="badge"
-                aria-label={`グループへのメンションを解除: ${groupId}`}
+                aria-label={`グループへのメンションを解除: ${formatMentionGroupAria(
+                  groupId,
+                )}`}
                 onClick={() => removeMentionGroup(groupId)}
                 style={{ cursor: 'pointer' }}
               >
-                @{groupId} ×
+                @{formatMentionGroupLabel(groupId)} ×
               </button>
             ))}
             <button
@@ -1518,11 +1553,13 @@ export const ProjectChat: React.FC = () => {
                 key={groupId}
                 type="button"
                 className="badge"
-                aria-label={`確認対象グループから除外: ${groupId}`}
+                aria-label={`確認対象グループから除外: ${formatMentionGroupAria(
+                  groupId,
+                )}`}
                 onClick={() => removeAckTargetGroup(groupId)}
                 style={{ cursor: 'pointer' }}
               >
-                group:{groupId} ×
+                group:{formatMentionGroupLabel(groupId)} ×
               </button>
             ))}
             {ackTargetRoleList.map((role) => (
