@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkBreaks from 'remark-breaks';
 import remarkGfm from 'remark-gfm';
@@ -274,23 +274,31 @@ export const ProjectChat: React.FC = () => {
   const [mentionUserIds, setMentionUserIds] = useState<string[]>([]);
   const [mentionGroupIds, setMentionGroupIds] = useState<string[]>([]);
   const [mentionAll, setMentionAll] = useState(false);
-  const mentionGroupLabelMap = new Map(
-    (mentionCandidates.groups || []).map((group) => [
-      group.groupId,
-      group.displayName ? group.displayName.trim() : '',
-    ]),
+  const mentionGroupLabelMap = useMemo(() => {
+    return new Map(
+      (mentionCandidates.groups || []).map((group) => [
+        group.groupId,
+        group.displayName ? group.displayName.trim() : '',
+      ]),
+    );
+  }, [mentionCandidates.groups]);
+  const formatMentionGroupLabel = useCallback(
+    (groupId: string) => {
+      const label = mentionGroupLabelMap.get(groupId);
+      return label ? label : groupId;
+    },
+    [mentionGroupLabelMap],
   );
-  const formatMentionGroupLabel = (groupId: string) => {
-    const label = mentionGroupLabelMap.get(groupId);
-    return label ? label : groupId;
-  };
-  const formatMentionGroupAria = (groupId: string) => {
-    const label = mentionGroupLabelMap.get(groupId);
-    if (label && label !== groupId) {
-      return `${label} (${groupId})`;
-    }
-    return groupId;
-  };
+  const formatMentionGroupAria = useCallback(
+    (groupId: string) => {
+      const label = mentionGroupLabelMap.get(groupId);
+      if (label && label !== groupId) {
+        return `${label} (${groupId})`;
+      }
+      return groupId;
+    },
+    [mentionGroupLabelMap],
+  );
   const [pendingOpenMessage, setPendingOpenMessage] = useState<{
     projectId: string;
     messageId: string;
