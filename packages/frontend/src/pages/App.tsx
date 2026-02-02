@@ -473,9 +473,13 @@ export const App: React.FC = () => {
 
           const auth = getAuthState();
           const roles = auth?.roles || [];
-          const openProjectRoomInRoomChat = roles.includes('external_chat');
+          const canUseProjectChat =
+            roles.includes('admin') ||
+            roles.includes('mgmt') ||
+            roles.includes('exec') ||
+            (auth?.projectIds?.length ?? 0) > 0;
           const sectionId =
-            roomType === 'project' && projectId && !openProjectRoomInRoomChat
+            roomType === 'project' && projectId && canUseProjectChat
               ? 'project-chat'
               : 'room-chat';
 

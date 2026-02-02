@@ -24,13 +24,10 @@
 - リアルタイム配信（WebSocket等）
 
 ## 役割/アクセス制御
-- 許可ロール: admin / mgmt / user / hr / exec / external_chat
+- 許可ロール: admin / mgmt / user / hr / exec（external_chat は認証通過用。チャット権限制御には使わない）
 - admin/mgmt は全プロジェクトにアクセス可能
 - それ以外のロールは `projectIds` に含まれる案件のみアクセス可能
-- `external_chat` はチャットのみ利用可（他機能は不可）
-  - 参加可能なルームは「許可されたルーム」のみ（招待/許可制）
-    - MVP: `allowExternalUsers=true` かつ `ChatRoomMember` 登録されたルーム（project/company/department）に限定
-  - DM は禁止
+- チャット参加/閲覧は room の ACL（viewer/poster + member + allowExternalUsers）で制御する
 
 ## 決定事項（見直し反映）
 - 既読/未読状態を保持する
@@ -59,7 +56,7 @@
   - チャットのみ / ERP横断
 - 通知チャネル（アプリ内/メール/Push/外部連携）と通知条件は設定で選択できるようにする（詳細検討）
 - AI機能の範囲: 要約/アクション抽出/FAQ/検索支援（詳細検討）
-- 外部ユーザ（external_chat）は「許可されたルーム」のみ参加可、DMは禁止
+- 参加制御はルームACL（viewer/poster + member）で行う。DMの可否は設定で制御する
 
 ### 詳細検討（論点）
 - Markdown方言（CommonMark/GFMなど）とサニタイズ方針
@@ -78,12 +75,11 @@
   - 作成/管理: admin/mgmt（案件ルームについては project leader の限定操作を後続で追加検討）
   - 外部連携（Webhook/外部通知/外部ユーザ招待/外部LLM等）を許可できるのは公式ルームのみ
 - 私的ルーム（社員の自治を基本とするが、会社が監査できる前提）
-  - 作成/管理: user（内部ユーザ）のみ。external_chat は作成不可
+  - 作成/管理: 設定とロールで制御（例: user/hr が作成可能）
   - ルーム管理者（room owner）を必須にし、ルーム管理者不在を許さない（自治の責任者を明確化）
   - 内容は通常閲覧不可で、監査目的の break-glass によってのみ閲覧可能
   - 私的ルームは外部連携を禁止（外部連携が必要なら公式ルームとして作成する）
   - DM（1:1）は私的ルームの一種として扱う（管理者設定でDMを無効化できる）
-    - external_chat はDM禁止
     - DMのルーム管理者（owner）の扱いは要設計（例: 両参加者を owner とみなす）
 
 ### 「会社が認知する」範囲（決定: B）
@@ -241,7 +237,7 @@
 ### GET `/projects/:projectId/chat-mention-candidates`
 **挙動**
 - UIでの補完選択用に、ユーザ候補（案件メンバー中心）とグループ候補（JWTの `group_ids`）を返す
-- `allowAll=false` の場合、UIは @all を選べない（例: external_chat）
+- `allowAll=false` の場合、UIは @all を選べない（例: ルーム/ポリシーで @all を無効化）
 
 ### POST `/chat-ack-requests/:id/ack`
 **Body**

@@ -39,11 +39,6 @@ export async function ensureChatRoomContentAccess(options: {
 }): Promise<ChatRoomContentAccessResult> {
   const client = options.client ?? prisma;
   const accessLevel = options.accessLevel ?? 'read';
-  const isExternal = options.roles.includes('external_chat');
-  const internalChatRoles = new Set(['admin', 'mgmt', 'exec', 'user', 'hr']);
-  const hasInternalChatRole = options.roles.some((role) =>
-    internalChatRoles.has(role),
-  );
   const groupIdSet = new Set(
     (Array.isArray(options.groupIds) ? options.groupIds : [])
       .map((value) => (typeof value === 'string' ? value.trim() : ''))
@@ -104,7 +99,7 @@ export async function ensureChatRoomContentAccess(options: {
           : {}),
       };
     }
-    if (isExternal && room.allowExternalUsers) {
+    if (room.allowExternalUsers) {
       const member = await client.chatRoomMember.findFirst({
         where: { roomId: room.id, userId: options.userId, deletedAt: null },
         select: { role: true },
@@ -124,46 +119,31 @@ export async function ensureChatRoomContentAccess(options: {
     return { ok: false, reason: 'forbidden_project' };
   }
 
-  if (isExternal && !room.allowExternalUsers) {
-    return { ok: false, reason: 'forbidden_external_room' };
-  }
-
   if (room.type === 'company') {
-    if (!isExternal) {
-      if (!hasInternalChatRole) {
-        return { ok: false, reason: 'forbidden_room_member' };
-      }
-      return {
-        ok: true,
-        room,
-        ...(accessLevel === 'post' && hasPosterAccess && !hasViewerAccess
-          ? { postWithoutView: true }
-          : {}),
-      };
-    }
+    return {
+      ok: true,
+      room,
+      ...(accessLevel === 'post' && hasPosterAccess && !hasViewerAccess
+        ? { postWithoutView: true }
+        : {}),
+    };
   }
 
   if (room.type === 'department') {
-    if (!isExternal) {
-      if (!hasInternalChatRole) {
-        return { ok: false, reason: 'forbidden_room_member' };
-      }
-      const groupId =
-        typeof room.groupId === 'string' ? room.groupId.trim() : '';
-      if (
-        !groupId ||
-        (!groupIdSet.has(groupId) && !groupAccountIdSet.has(groupId))
-      ) {
-        return { ok: false, reason: 'forbidden_room_member' };
-      }
-      return {
-        ok: true,
-        room,
-        ...(accessLevel === 'post' && hasPosterAccess && !hasViewerAccess
-          ? { postWithoutView: true }
-          : {}),
-      };
+    const groupId = typeof room.groupId === 'string' ? room.groupId.trim() : '';
+    if (
+      !groupId ||
+      (!groupIdSet.has(groupId) && !groupAccountIdSet.has(groupId))
+    ) {
+      return { ok: false, reason: 'forbidden_room_member' };
     }
+    return {
+      ok: true,
+      room,
+      ...(accessLevel === 'post' && hasPosterAccess && !hasViewerAccess
+        ? { postWithoutView: true }
+        : {}),
+    };
   }
 
   const member = await client.chatRoomMember.findFirst({

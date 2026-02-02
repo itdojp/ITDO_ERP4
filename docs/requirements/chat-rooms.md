@@ -7,7 +7,7 @@
 - 公式/私的/DM の切り替え（会社の「認知」範囲の統制）
 - break-glass（監査目的の閲覧申請→二重承認→閲覧許可→監査ログ）※ #434/#454
 - 部門/全社ルーム（案件と独立したチャネル）
-- 外部ユーザ（external_chat）の参加制御（許可ルームのみ）
+- 任意グループによる参加制御（viewer/poster ACL）
 
 ## 目的
 
@@ -51,7 +51,7 @@ DB上は `type` として表現し、ポリシー（公式/私的、外部連携
   - `projectId?` / `groupId?`（typeに応じて片方を使う。`groupId` は GroupAccount.id を保持）
   - `viewerGroupIds?`（閲覧可能グループの allow-list。UUIDを保持）
   - `posterGroupIds?`（投稿可能グループの allow-list。UUIDを保持）
-  - `allowExternalUsers`（external_chatの参加を許可するか）
+  - `allowExternalUsers`（projectルームで ProjectMember 以外の参加を許可するか）
   - `allowExternalIntegrations`（Webhook/外部通知/外部LLM等を許可するか。公式のみtrue想定）
   - `createdAt/createdBy`, `updatedAt/updatedBy`, `deletedAt/deletedReason`
 
@@ -88,10 +88,10 @@ DB上は `type` として表現し、ポリシー（公式/私的、外部連携
 - **ルームの存在（メタ情報）**
   - admin/mgmt/exec は全ルームのメタ情報を参照可能（会社の「認知」）
   - user/hr は自分が参加しているルーム + 全社/部門ルーム（groupIds由来）を参照可能
-  - external_chat は「許可されたルームのみ」
 - **メッセージ閲覧**
   - project: ProjectMember と同等扱い（room member は持たない）
-  - company: internal role（admin/mgmt/exec/user/hr）なら閲覧/投稿可（room member 不要）
+    - `allowExternalUsers=true` の場合は room member も閲覧/投稿可
+  - company: `viewerGroupIds` が空の場合は全ユーザ、設定時は allow-list に含まれるユーザのみ
   - department: `groupAccountIds` に `ChatRoom.groupId` が含まれる場合に閲覧/投稿可（room member 不要）
     - 互換期間は displayName でも判定（dual-read）
 - `viewerGroupIds` が設定されている場合は、上記の条件に加えて `viewerGroupIds` に含まれるユーザのみ「閲覧」許可

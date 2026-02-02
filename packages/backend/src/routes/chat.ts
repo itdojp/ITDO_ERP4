@@ -265,17 +265,6 @@ export async function registerChatRoutes(app: FastifyInstance) {
     projectId: string;
     userId: string;
   }) {
-    const roles = options.req.user?.roles || [];
-    if (roles.includes('external_chat')) {
-      options.reply.status(403).send({
-        error: {
-          code: 'FORBIDDEN_ALL_MENTION',
-          message: 'external_chat cannot use @all',
-        },
-      });
-      return false;
-    }
-
     const rateLimit = await enforceAllMentionRateLimit({
       projectId: options.projectId,
       userId: options.userId,
@@ -730,7 +719,7 @@ export async function registerChatRoutes(app: FastifyInstance) {
             .filter(Boolean),
         ),
       ).map((groupId) => ({ groupId }));
-      const allowAll = !(req.user?.roles || []).includes('external_chat');
+      const allowAll = true;
       return { users, groups, allowAll };
     },
   );
