@@ -1,10 +1,11 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkBreaks from 'remark-breaks';
 import remarkGfm from 'remark-gfm';
 import { api, apiResponse, getAuthState } from '../api';
 import { useChatRooms } from '../hooks/useChatRooms';
 import { copyToClipboard } from '../utils/clipboard';
+import { toIsoFromLocalInput, toLocalDateTimeValue } from '../utils/datetime';
 import { buildOpenHash } from '../utils/deepLink';
 
 type ChatMessage = {
@@ -280,6 +281,18 @@ export const ProjectChat: React.FC = () => {
   } | null>(null);
   const [pendingScrollMessageId, setPendingScrollMessageId] = useState('');
   const [highlightMessageId, setHighlightMessageId] = useState('');
+  const projectRoomId =
+    rooms.find((room) => room.projectId === projectId)?.id || '';
+  const [notificationSetting, setNotificationSetting] = useState<{
+    notifyAllPosts: boolean;
+    notifyMentions: boolean;
+    muteUntil: string | null;
+  } | null>(null);
+  const [notificationSettingMessage, setNotificationSettingMessage] =
+    useState('');
+  const [isNotificationSettingLoading, setIsNotificationSettingLoading] =
+    useState(false);
+  const [muteUntilInput, setMuteUntilInput] = useState('');
 
   const ackTargetUserIds = Array.from(new Set(parseUserIds(ackTargets)));
   const ackTargetGroupIdList = Array.from(
@@ -316,6 +329,90 @@ export const ProjectChat: React.FC = () => {
     const timer = window.setInterval(() => setNowMs(Date.now()), 60_000);
     return () => window.clearInterval(timer);
   }, [hasActiveAckDeadline]);
+
+  const loadNotificationSetting = useCallback(async (targetRoomId: string) => {
+    setIsNotificationSettingLoading(true);
+    setNotificationSettingMessage('');
+    try {
+      const res = await api<{
+        notifyAllPosts?: boolean;
+        notifyMentions?: boolean;
+        muteUntil?: string | null;
+      }>(`/chat-rooms/${targetRoomId}/notification-setting`);
+      const nextSetting = {
+        notifyAllPosts: res.notifyAllPosts !== false,
+        notifyMentions: res.notifyMentions !== false,
+        muteUntil: res.muteUntil ?? null,
+      };
+      setNotificationSetting(nextSetting);
+      setMuteUntilInput(toLocalDateTimeValue(nextSetting.muteUntil));
+    } catch (err) {
+      console.error('Failed to load notification settings.', err);
+      setNotificationSettingMessage('通知設定の取得に失敗しました');
+      setNotificationSetting(null);
+      setMuteUntilInput('');
+    } finally {
+      setIsNotificationSettingLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!projectRoomId) {
+      setNotificationSetting(null);
+      setMuteUntilInput('');
+      return;
+    }
+    loadNotificationSetting(projectRoomId).catch(() => undefined);
+  }, [projectRoomId, loadNotificationSetting]);
+
+  const saveNotificationSetting = async () => {
+    if (!projectRoomId || !notificationSetting) return;
+    setIsNotificationSettingLoading(true);
+    setNotificationSettingMessage('');
+    const muteUntil = toIsoFromLocalInput(muteUntilInput);
+    if (muteUntilInput && !muteUntil) {
+      setNotificationSettingMessage('ミュート期限の形式が不正です');
+      setIsNotificationSettingLoading(false);
+      return;
+    }
+    try {
+      const res = await api<{
+        notifyAllPosts?: boolean;
+        notifyMentions?: boolean;
+        muteUntil?: string | null;
+      }>(`/chat-rooms/${projectRoomId}/notification-setting`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          notifyAllPosts: notificationSetting.notifyAllPosts,
+          notifyMentions: notificationSetting.notifyMentions,
+          muteUntil,
+        }),
+      });
+      const nextSetting = {
+        notifyAllPosts: res.notifyAllPosts !== false,
+        notifyMentions: res.notifyMentions !== false,
+        muteUntil: res.muteUntil ?? null,
+      };
+      setNotificationSetting(nextSetting);
+      setMuteUntilInput(toLocalDateTimeValue(nextSetting.muteUntil));
+      setNotificationSettingMessage('通知設定を保存しました');
+    } catch (err) {
+      console.error('Failed to save notification settings.', err);
+      setNotificationSettingMessage('通知設定の保存に失敗しました');
+    } finally {
+      setIsNotificationSettingLoading(false);
+    }
+  };
+
+  const applyMutePreset = (minutes: number | null) => {
+    if (!minutes) {
+      setMuteUntilInput('');
+      return;
+    }
+    const now = new Date();
+    const next = new Date(now.getTime() + minutes * 60 * 1000);
+    setMuteUntilInput(toLocalDateTimeValue(next.toISOString()));
+  };
 
   const buildMentionsPayload = () => {
     const users = Array.from(new Set(mentionUserIds))
@@ -1002,6 +1099,106 @@ export const ProjectChat: React.FC = () => {
           ))}
           <div style={{ fontSize: 12, color: '#92400e', marginTop: 6 }}>
             ※ reasonText は表示しません
+          </div>
+        </div>
+      )}
+      {projectRoomId && notificationSetting && (
+        <div className="card" style={{ padding: 12, marginTop: 12 }}>
+          <strong>通知設定</strong>
+          {notificationSettingMessage && (
+            <div style={{ marginTop: 8 }}>{notificationSettingMessage}</div>
+          )}
+          <div
+            className="row"
+            style={{ gap: 12, flexWrap: 'wrap', marginTop: 8 }}
+          >
+            <label className="row" style={{ gap: 6, alignItems: 'center' }}>
+              <input
+                type="checkbox"
+                checked={notificationSetting.notifyAllPosts}
+                onChange={(e) =>
+                  setNotificationSetting((prev) =>
+                    prev ? { ...prev, notifyAllPosts: e.target.checked } : prev,
+                  )
+                }
+                disabled={isNotificationSettingLoading}
+              />
+              全投稿通知
+            </label>
+            <label className="row" style={{ gap: 6, alignItems: 'center' }}>
+              <input
+                type="checkbox"
+                checked={notificationSetting.notifyMentions}
+                onChange={(e) =>
+                  setNotificationSetting((prev) =>
+                    prev ? { ...prev, notifyMentions: e.target.checked } : prev,
+                  )
+                }
+                disabled={isNotificationSettingLoading}
+              />
+              メンション通知
+            </label>
+          </div>
+          <div
+            className="row"
+            style={{ gap: 12, flexWrap: 'wrap', marginTop: 8 }}
+          >
+            <label>
+              ミュート期限（任意）
+              <input
+                type="datetime-local"
+                value={muteUntilInput}
+                onChange={(e) => setMuteUntilInput(e.target.value)}
+                disabled={isNotificationSettingLoading}
+              />
+            </label>
+            <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}>
+              <button
+                className="button secondary"
+                type="button"
+                onClick={() => applyMutePreset(10)}
+                disabled={isNotificationSettingLoading}
+              >
+                10分
+              </button>
+              <button
+                className="button secondary"
+                type="button"
+                onClick={() => applyMutePreset(60)}
+                disabled={isNotificationSettingLoading}
+              >
+                1時間
+              </button>
+              <button
+                className="button secondary"
+                type="button"
+                onClick={() => applyMutePreset(1440)}
+                disabled={isNotificationSettingLoading}
+              >
+                1日
+              </button>
+              <button
+                className="button secondary"
+                type="button"
+                onClick={() => applyMutePreset(null)}
+                disabled={isNotificationSettingLoading}
+              >
+                解除
+              </button>
+            </div>
+          </div>
+          <div style={{ marginTop: 8 }}>
+            <button
+              className="button"
+              type="button"
+              onClick={saveNotificationSetting}
+              disabled={isNotificationSettingLoading}
+            >
+              保存
+            </button>
+          </div>
+          <div style={{ marginTop: 6, fontSize: 12, color: '#64748b' }}>
+            ルームごとの通知設定は保存後の投稿から反映されます。
           </div>
         </div>
       )}
