@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '../api';
 import { ChatSettingsCard } from './ChatSettingsCard';
 import { ChatRoomSettingsCard } from './ChatRoomSettingsCard';
+import { GroupManagementCard } from './GroupManagementCard';
 import { RateCardSettingsCard } from './RateCardSettingsCard';
 import { ScimSettingsCard } from './ScimSettingsCard';
 import { WorklogSettingsCard } from './WorklogSettingsCard';
@@ -1230,6 +1231,7 @@ export const AdminSettings: React.FC = () => {
       <div className="list" style={{ display: 'grid', gap: 12 }}>
         <ChatSettingsCard />
         <ChatRoomSettingsCard />
+        <GroupManagementCard />
         <ScimSettingsCard />
         <RateCardSettingsCard />
         <WorklogSettingsCard />

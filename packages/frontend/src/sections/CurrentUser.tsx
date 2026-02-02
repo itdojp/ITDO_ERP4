@@ -6,9 +6,17 @@ import {
   removeOfflineItem,
   type QueueItem,
 } from '../utils/offlineQueue';
+import { toIsoFromLocalInput, toLocalDateTimeValue } from '../utils/datetime';
 
 type MeResponse = {
   user: { userId: string; roles: string[]; ownerProjects?: string[] | string };
+};
+
+type NotificationPreference = {
+  userId: string;
+  emailMode: 'realtime' | 'digest';
+  emailDigestIntervalMinutes: number;
+  muteAllUntil: string | null;
 };
 
 const pushPublicKey = (import.meta.env.VITE_PUSH_PUBLIC_KEY || '').trim();
@@ -188,6 +196,13 @@ export const CurrentUser: React.FC = () => {
   const [queueMessage, setQueueMessage] = useState('');
   const [queueError, setQueueError] = useState('');
   const [queueProcessing, setQueueProcessing] = useState(false);
+  const [notificationPreference, setNotificationPreference] =
+    useState<NotificationPreference | null>(null);
+  const [notificationPrefMessage, setNotificationPrefMessage] = useState('');
+  const [notificationPrefError, setNotificationPrefError] = useState('');
+  const [notificationPrefLoading, setNotificationPrefLoading] = useState(false);
+  const [emailDigestIntervalInput, setEmailDigestIntervalInput] = useState('');
+  const [muteAllUntilInput, setMuteAllUntilInput] = useState('');
   const [isOnline, setIsOnline] = useState(
     typeof navigator !== 'undefined' ? navigator.onLine : true,
   );
@@ -574,6 +589,87 @@ export const CurrentUser: React.FC = () => {
     }
   };
 
+  const loadNotificationPreference = useCallback(async () => {
+    if (!auth) {
+      setNotificationPreference(null);
+      setNotificationPrefMessage('');
+      setNotificationPrefError('');
+      return;
+    }
+    setNotificationPrefLoading(true);
+    setNotificationPrefMessage('');
+    setNotificationPrefError('');
+    try {
+      const res = await api<NotificationPreference>(
+        '/notification-preferences',
+      );
+      setNotificationPreference(res);
+      setEmailDigestIntervalInput(String(res.emailDigestIntervalMinutes ?? 10));
+      setMuteAllUntilInput(toLocalDateTimeValue(res.muteAllUntil));
+    } catch (err) {
+      console.error('Failed to load notification preferences.', err);
+      setNotificationPrefError('通知設定の取得に失敗しました');
+    } finally {
+      setNotificationPrefLoading(false);
+    }
+  }, [auth]);
+
+  useEffect(() => {
+    loadNotificationPreference().catch(() => undefined);
+  }, [loadNotificationPreference]);
+
+  const applyMuteAllPreset = (minutes: number | null) => {
+    if (minutes === null) {
+      setMuteAllUntilInput('');
+      return;
+    }
+    const next = new Date(Date.now() + minutes * 60 * 1000);
+    setMuteAllUntilInput(toLocalDateTimeValue(next.toISOString()));
+  };
+
+  const saveNotificationPreference = async () => {
+    if (!notificationPreference) return;
+    setNotificationPrefMessage('');
+    setNotificationPrefError('');
+    const parsedInterval = Number(emailDigestIntervalInput);
+    if (
+      !Number.isFinite(parsedInterval) ||
+      parsedInterval < 1 ||
+      parsedInterval > 1440
+    ) {
+      setNotificationPrefError('メール集約間隔は1〜1440分で入力してください');
+      return;
+    }
+    const muteAllUntil = toIsoFromLocalInput(muteAllUntilInput);
+    if (muteAllUntilInput && !muteAllUntil) {
+      setNotificationPrefError('ミュート期限の形式が正しくありません');
+      return;
+    }
+    setNotificationPrefLoading(true);
+    try {
+      const res = await api<NotificationPreference>(
+        '/notification-preferences',
+        {
+          method: 'PATCH',
+          body: JSON.stringify({
+            emailMode: notificationPreference.emailMode,
+            emailDigestIntervalMinutes: parsedInterval,
+            muteAllUntil,
+          }),
+        },
+      );
+      setNotificationPreference(res);
+      setEmailDigestIntervalInput(String(res.emailDigestIntervalMinutes ?? 10));
+      setMuteAllUntilInput(toLocalDateTimeValue(res.muteAllUntil));
+      setNotificationPrefMessage('通知設定を保存しました');
+    } catch (err) {
+      console.error('Failed to save notification preferences.', err);
+      setNotificationPrefError('通知設定の保存に失敗しました');
+    } finally {
+      setNotificationPrefLoading(false);
+    }
+  };
+
   const login = () => {
     const roles = form.roles
       .split(',')
@@ -841,6 +937,144 @@ export const CurrentUser: React.FC = () => {
                 )}
               </div>
             )}
+          </div>
+          <div style={{ marginTop: 12 }}>
+            <strong>通知設定</strong>
+            {!notificationPreference && notificationPrefLoading && (
+              <div style={{ marginTop: 6 }}>読み込み中...</div>
+            )}
+            {notificationPreference && (
+              <div style={{ marginTop: 6 }}>
+                <div
+                  className="row"
+                  style={{ gap: 12, flexWrap: 'wrap', alignItems: 'center' }}
+                >
+                  <label>
+                    メール通知
+                    <select
+                      value={notificationPreference.emailMode}
+                      onChange={(e) =>
+                        setNotificationPreference((prev) =>
+                          prev
+                            ? {
+                                ...prev,
+                                emailMode:
+                                  e.target.value === 'realtime'
+                                    ? 'realtime'
+                                    : 'digest',
+                              }
+                            : prev,
+                        )
+                      }
+                      disabled={notificationPrefLoading}
+                    >
+                      <option value="digest">一定時間ごとにまとめて</option>
+                      <option value="realtime">リアルタイム</option>
+                    </select>
+                  </label>
+                  <label>
+                    集約間隔（分）
+                    <input
+                      type="number"
+                      min={1}
+                      max={1440}
+                      value={emailDigestIntervalInput}
+                      onChange={(e) =>
+                        setEmailDigestIntervalInput(e.target.value)
+                      }
+                      disabled={
+                        notificationPrefLoading ||
+                        notificationPreference.emailMode !== 'digest'
+                      }
+                    />
+                  </label>
+                </div>
+                <div style={{ marginTop: 8 }}>
+                  <div style={{ fontSize: 12, color: '#475569' }}>
+                    全体ミュート（通知の一時停止）
+                  </div>
+                  <div
+                    className="row"
+                    style={{ gap: 12, flexWrap: 'wrap', marginTop: 4 }}
+                  >
+                    <label>
+                      期限（任意）
+                      <input
+                        type="datetime-local"
+                        value={muteAllUntilInput}
+                        onChange={(e) => setMuteAllUntilInput(e.target.value)}
+                        disabled={notificationPrefLoading}
+                      />
+                    </label>
+                    <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}>
+                      <button
+                        className="button secondary"
+                        type="button"
+                        onClick={() => applyMuteAllPreset(10)}
+                        disabled={notificationPrefLoading}
+                      >
+                        10分
+                      </button>
+                      <button
+                        className="button secondary"
+                        type="button"
+                        onClick={() => applyMuteAllPreset(60)}
+                        disabled={notificationPrefLoading}
+                      >
+                        1時間
+                      </button>
+                      <button
+                        className="button secondary"
+                        type="button"
+                        onClick={() => applyMuteAllPreset(1440)}
+                        disabled={notificationPrefLoading}
+                      >
+                        1日
+                      </button>
+                      <button
+                        className="button secondary"
+                        type="button"
+                        onClick={() => applyMuteAllPreset(null)}
+                        disabled={notificationPrefLoading}
+                      >
+                        解除
+                      </button>
+                    </div>
+                  </div>
+                </div>
+                <div className="row" style={{ gap: 8, marginTop: 8 }}>
+                  <button
+                    className="button"
+                    type="button"
+                    onClick={saveNotificationPreference}
+                    disabled={notificationPrefLoading}
+                  >
+                    保存
+                  </button>
+                  <button
+                    className="button secondary"
+                    type="button"
+                    onClick={loadNotificationPreference}
+                    disabled={notificationPrefLoading}
+                  >
+                    再読込
+                  </button>
+                </div>
+              </div>
+            )}
+            {notificationPrefMessage && (
+              <div style={{ color: '#16a34a', marginTop: 6 }}>
+                {notificationPrefMessage}
+              </div>
+            )}
+            {notificationPrefError && (
+              <div style={{ color: '#dc2626', marginTop: 6 }}>
+                {notificationPrefError}
+              </div>
+            )}
+            <div style={{ fontSize: 12, color: '#475569', marginTop: 6 }}>
+              ルーム単位の通知は各チャットルームの通知設定で変更できます。
+            </div>
           </div>
           <button
             className="button secondary"
