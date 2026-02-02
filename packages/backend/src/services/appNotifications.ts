@@ -65,6 +65,14 @@ function parseMaxRecipients() {
   return Math.min(Math.floor(parsed), 500);
 }
 
+function parseChatMessageMaxRecipients() {
+  const raw = process.env.CHAT_MESSAGE_NOTIFICATION_MAX_RECIPIENTS;
+  if (!raw) return 200;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed <= 0) return 200;
+  return Math.min(Math.floor(parsed), 500);
+}
+
 function normalizeId(value: unknown) {
   return typeof value === 'string' ? value.trim() : '';
 }
@@ -114,6 +122,68 @@ export async function filterChatMentionRecipients(options: {
       continue;
     }
     if (setting.notifyMentions === false) {
+      mutedUsers.add(userId);
+    }
+  }
+
+  const allowed: string[] = [];
+  const muted: string[] = [];
+  for (const userId of userIds) {
+    if (mutedUsers.has(userId)) {
+      muted.push(userId);
+    } else {
+      allowed.push(userId);
+    }
+  }
+
+  return { allowed, muted };
+}
+
+export async function filterChatAllPostRecipients(options: {
+  roomId?: string | null;
+  userIds: string[];
+  client?: typeof prisma;
+  now?: Date;
+}) {
+  const roomId = normalizeId(options.roomId);
+  if (!roomId || options.userIds.length === 0) {
+    // Backward compatibility: when roomId is not provided, skip filtering.
+    return { allowed: options.userIds, muted: [] as string[] };
+  }
+
+  const userIds = options.userIds
+    .map((userId) => userId.trim())
+    .filter(Boolean);
+  if (!userIds.length) {
+    return { allowed: [] as string[], muted: [] as string[] };
+  }
+
+  const client = options.client ?? prisma;
+  const now = options.now ?? new Date();
+  const [roomSettings, mutedPreferences] = await Promise.all([
+    client.chatRoomNotificationSetting.findMany({
+      where: { roomId, userId: { in: userIds } },
+      select: { userId: true, notifyAllPosts: true, muteUntil: true },
+    }),
+    client.userNotificationPreference.findMany({
+      where: { userId: { in: userIds }, muteAllUntil: { gt: now } },
+      select: { userId: true, muteAllUntil: true },
+    }),
+  ]);
+
+  const mutedUsers = new Set<string>();
+  for (const pref of mutedPreferences) {
+    const userId = normalizeId(pref.userId);
+    if (userId) mutedUsers.add(userId);
+  }
+  for (const setting of roomSettings) {
+    const userId = normalizeId(setting.userId);
+    if (!userId) continue;
+    if (setting.muteUntil && setting.muteUntil > now) {
+      mutedUsers.add(userId);
+      continue;
+    }
+    if (setting.notifyAllPosts === false) {
       mutedUsers.add(userId);
     }
   }
@@ -333,6 +403,65 @@ export async function createChatAckRequiredNotifications(
   return {
     created: created.count,
     recipients: createUserIds,
+    truncated,
+  };
+}
+
+export async function createChatMessageNotifications(options: {
+  projectId?: string | null;
+  roomId: string;
+  messageId: string;
+  messageBody: string;
+  senderUserId: string;
+  recipientUserIds: string[];
+  excludeUserIds?: string[];
+}) {
+  const recipients = new Set<string>();
+  options.recipientUserIds.forEach((userId) => {
+    const trimmed = userId.trim();
+    if (trimmed) recipients.add(trimmed);
+  });
+  options.excludeUserIds?.forEach((userId) => {
+    const trimmed = userId.trim();
+    if (trimmed) recipients.delete(trimmed);
+  });
+  recipients.delete(options.senderUserId);
+
+  const maxRecipients = parseChatMessageMaxRecipients();
+  const targetUserIds = Array.from(recipients).slice(0, maxRecipients);
+  const truncated = recipients.size > targetUserIds.length;
+  const filtered = await filterChatAllPostRecipients({
+    roomId: options.roomId,
+    userIds: targetUserIds,
+  });
+  if (filtered.allowed.length === 0) {
+    return {
+      created: 0,
+      recipients: [] as string[],
+      truncated,
+    };
+  }
+
+  const payload: Prisma.InputJsonValue = {
+    fromUserId: options.senderUserId,
+    excerpt: options.messageBody.replace(/\s+/g, ' ').trim().slice(0, 140),
+  };
+
+  const created = await prisma.appNotification.createMany({
+    data: filtered.allowed.map((userId) => ({
+      userId,
+      kind: 'chat_message',
+      projectId: options.projectId ?? null,
+      messageId: options.messageId,
+      payload,
+      createdBy: options.senderUserId,
+      updatedBy: options.senderUserId,
+    })),
+  });
+
+  return {
+    created: created.count,
+    recipients: filtered.allowed,
     truncated,
   };
 }

@@ -1272,7 +1272,7 @@ export const RoomChat: React.FC = () => {
             </button>
           </div>
           <div style={{ marginTop: 6, fontSize: 12, color: '#64748b' }}>
-            全投稿通知の配信は後続対応。現在はメンション通知のみ反映されます。
+            ルームごとの通知設定は保存後の投稿から反映されます。
           </div>
         </div>
       )}

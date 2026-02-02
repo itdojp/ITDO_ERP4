@@ -5,11 +5,19 @@ type RoomForMention = {
   id: string;
   type: string;
   groupId: string | null;
+  viewerGroupIds?: unknown;
   allowExternalUsers: boolean;
 };
 
 function normalizeId(value: unknown) {
   return typeof value === 'string' ? value.trim() : '';
+}
+
+function normalizeGroupIds(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((entry) => (typeof entry === 'string' ? entry.trim() : ''))
+    .filter(Boolean);
 }
 
 export async function resolveRoomAudienceUserIds(options: {
@@ -18,9 +26,28 @@ export async function resolveRoomAudienceUserIds(options: {
 }) {
   const client = options.client ?? prisma;
   const room = options.room;
+  const viewerGroupIds = normalizeGroupIds(room.viewerGroupIds);
+  const viewerGroupMembers =
+    viewerGroupIds.length > 0
+      ? await resolveChatAckRequiredRecipientUserIds({
+          requiredUserIds: [],
+          requiredGroupIds: viewerGroupIds,
+          client,
+        })
+      : [];
+  const viewerMemberSet = new Set(viewerGroupMembers);
   const audience = new Set<string>();
 
-  if (room.type === 'private_group' || room.type === 'dm') {
+  if (room.type === 'project') {
+    const members = await client.projectMember.findMany({
+      where: { projectId: room.id },
+      select: { userId: true },
+    });
+    members.forEach((member) => {
+      const userId = normalizeId(member?.userId);
+      if (userId) audience.add(userId);
+    });
+  } else if (room.type === 'private_group' || room.type === 'dm') {
     const members = await client.chatRoomMember.findMany({
       where: { roomId: room.id, deletedAt: null },
       select: { userId: true },
@@ -29,10 +56,7 @@ export async function resolveRoomAudienceUserIds(options: {
       const userId = normalizeId(member?.userId);
       if (userId) audience.add(userId);
     });
-    return audience;
-  }
-
-  if (room.type === 'department') {
+  } else if (room.type === 'department') {
     const groupId = normalizeId(room.groupId);
     if (groupId) {
       const members = await resolveChatAckRequiredRecipientUserIds({
@@ -42,9 +66,7 @@ export async function resolveRoomAudienceUserIds(options: {
       });
       members.forEach((userId) => audience.add(userId));
     }
-  }
-
-  if (room.type === 'company') {
+  } else if (room.type === 'company') {
     const members = await resolveChatAckRequiredRecipientUserIds({
       requiredUserIds: [],
       requiredRoles: ['admin', 'mgmt', 'exec', 'user', 'hr'],
@@ -62,6 +84,17 @@ export async function resolveRoomAudienceUserIds(options: {
       const userId = normalizeId(member?.userId);
       if (userId) audience.add(userId);
     });
+  }
+
+  if (viewerGroupIds.length > 0) {
+    if (audience.size === 0) {
+      return viewerMemberSet;
+    }
+    const filtered = new Set<string>();
+    audience.forEach((userId) => {
+      if (viewerMemberSet.has(userId)) filtered.add(userId);
+    });
+    return filtered;
   }
 
   return audience;
