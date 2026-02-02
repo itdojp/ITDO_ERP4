@@ -21,6 +21,7 @@ import {
   expandRoomMentionRecipients,
   resolveRoomAudienceUserIds,
 } from '../services/chatMentionRecipients.js';
+import { resolveGroupCandidatesBySelector } from '../services/groupCandidates.js';
 import {
   getChatExternalLlmConfig,
   getChatExternalLlmRateLimit,
@@ -47,7 +48,6 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
     groupId: string;
     displayName: string;
   };
-  type MentionGroupCandidate = { groupId: string; displayName?: string | null };
 
   function buildDepartmentRoomId(groupId: string) {
     const digest = crypto
@@ -267,31 +267,6 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
       }
     }
     return { ids: Array.from(ids), unresolved };
-  }
-
-  async function resolveGroupCandidatesBySelector(selectors: string[]) {
-    const normalized = normalizeGroupIdList(selectors);
-    if (!normalized.length) return [] as MentionGroupCandidate[];
-    const rows = await prisma.groupAccount.findMany({
-      where: {
-        active: true,
-        OR: [{ id: { in: normalized } }, { displayName: { in: normalized } }],
-      },
-      select: { id: true, displayName: true },
-    });
-    const map = new Map<string, MentionGroupCandidate>();
-    for (const row of rows) {
-      const id = typeof row.id === 'string' ? row.id.trim() : '';
-      if (!id) continue;
-      const displayName =
-        typeof row.displayName === 'string' ? row.displayName.trim() : '';
-      map.set(id, { groupId: id, displayName: displayName || null });
-    }
-    return Array.from(map.values()).sort((a, b) => {
-      const left = a.displayName || a.groupId;
-      const right = b.displayName || b.groupId;
-      return left.localeCompare(right);
-    });
   }
 
   function parseDateParam(value?: string) {

@@ -32,6 +32,7 @@ import {
   createChatMessageNotifications,
 } from '../services/appNotifications.js';
 import { resolveRoomAudienceUserIds } from '../services/chatMentionRecipients.js';
+import { resolveGroupCandidatesBySelector } from '../services/groupCandidates.js';
 
 function parseDateParam(value?: string) {
   if (!value) return null;
@@ -67,36 +68,6 @@ function normalizeStringArray(
   return typeof options?.max === 'number'
     ? deduped.slice(0, options.max)
     : deduped;
-}
-
-type MentionGroupCandidate = { groupId: string; displayName?: string | null };
-
-async function resolveGroupCandidatesBySelector(selectors: string[]) {
-  const normalized = normalizeStringArray(selectors, {
-    dedupe: true,
-    max: 200,
-  });
-  if (!normalized.length) return [] as MentionGroupCandidate[];
-  const rows = await prisma.groupAccount.findMany({
-    where: {
-      active: true,
-      OR: [{ id: { in: normalized } }, { displayName: { in: normalized } }],
-    },
-    select: { id: true, displayName: true },
-  });
-  const map = new Map<string, MentionGroupCandidate>();
-  for (const row of rows) {
-    const id = typeof row.id === 'string' ? row.id.trim() : '';
-    if (!id) continue;
-    const displayName =
-      typeof row.displayName === 'string' ? row.displayName.trim() : '';
-    map.set(id, { groupId: id, displayName: displayName || null });
-  }
-  return Array.from(map.values()).sort((a, b) => {
-    const left = a.displayName || a.groupId;
-    const right = b.displayName || b.groupId;
-    return left.localeCompare(right);
-  });
 }
 
 function parseMaxBytes(raw: string | undefined, fallback: number) {
