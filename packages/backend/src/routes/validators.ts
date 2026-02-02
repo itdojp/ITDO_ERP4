@@ -817,6 +817,43 @@ export const actionPolicyEvaluateSchema = {
   ),
 };
 
+export const groupCreateSchema = {
+  body: Type.Object(
+    {
+      displayName: Type.String({ minLength: 1, maxLength: 200 }),
+      active: Type.Optional(Type.Boolean()),
+      userIds: Type.Optional(
+        Type.Array(Type.String({ minLength: 1 }), { maxItems: 200 }),
+      ),
+    },
+    { additionalProperties: false },
+  ),
+};
+
+export const groupPatchSchema = {
+  body: Type.Partial(
+    Type.Object(
+      {
+        displayName: Type.String({ minLength: 1, maxLength: 200 }),
+        active: Type.Boolean(),
+      },
+      { additionalProperties: false },
+    ),
+  ),
+};
+
+export const groupMemberChangeSchema = {
+  body: Type.Object(
+    {
+      userIds: Type.Array(Type.String({ minLength: 1 }), {
+        minItems: 1,
+        maxItems: 200,
+      }),
+    },
+    { additionalProperties: false },
+  ),
+};
+
 const alertTypeSchema = Type.Union([
   Type.Literal('budget_overrun'),
   Type.Literal('overtime'),
