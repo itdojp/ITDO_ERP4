@@ -66,7 +66,7 @@ type ChatSearchItem = {
 
 type MentionCandidates = {
   users?: { userId: string; displayName?: string | null }[];
-  groups?: { groupId: string }[];
+  groups?: { groupId: string; displayName?: string | null }[];
   allowAll?: boolean;
 };
 
@@ -266,6 +266,31 @@ export const RoomChat: React.FC = () => {
   const [ackTargetRoleInput, setAckTargetRoleInput] = useState('');
   const [mentionCandidates, setMentionCandidates] = useState<MentionCandidates>(
     {},
+  );
+  const mentionGroupLabelMap = useMemo(() => {
+    return new Map(
+      (mentionCandidates.groups || []).map((group) => [
+        group.groupId,
+        group.displayName ? group.displayName.trim() : '',
+      ]),
+    );
+  }, [mentionCandidates.groups]);
+  const formatMentionGroupLabel = useCallback(
+    (groupId: string) => {
+      const label = mentionGroupLabelMap.get(groupId);
+      return label ? label : groupId;
+    },
+    [mentionGroupLabelMap],
+  );
+  const formatMentionGroupAria = useCallback(
+    (groupId: string) => {
+      const label = mentionGroupLabelMap.get(groupId);
+      if (label && label !== groupId) {
+        return `${label} (${groupId})`;
+      }
+      return groupId;
+    },
+    [mentionGroupLabelMap],
   );
   const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
   const [filterTag, setFilterTag] = useState('');
@@ -1526,7 +1551,15 @@ export const RoomChat: React.FC = () => {
             </div>
             <datalist id="room-ack-target-groups">
               {(mentionCandidates.groups || []).map((group) => (
-                <option key={group.groupId} value={group.groupId} />
+                <option
+                  key={group.groupId}
+                  value={group.groupId}
+                  label={
+                    group.displayName
+                      ? `${group.displayName} (${group.groupId})`
+                      : group.groupId
+                  }
+                />
               ))}
             </datalist>
             <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
@@ -1582,11 +1615,13 @@ export const RoomChat: React.FC = () => {
                     key={groupId}
                     type="button"
                     className="badge"
-                    aria-label={`確認対象グループから除外: ${groupId}`}
+                    aria-label={`確認対象グループから除外: ${formatMentionGroupAria(
+                      groupId,
+                    )}`}
                     onClick={() => removeAckTargetGroup(groupId)}
                     style={{ cursor: 'pointer' }}
                   >
-                    group:{groupId} ×
+                    group:{formatMentionGroupLabel(groupId)} ×
                   </button>
                 ))}
                 {ackTargetRoleList.map((role) => (

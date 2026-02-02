@@ -69,6 +69,36 @@ function normalizeStringArray(
     : deduped;
 }
 
+type MentionGroupCandidate = { groupId: string; displayName?: string | null };
+
+async function resolveGroupCandidatesBySelector(selectors: string[]) {
+  const normalized = normalizeStringArray(selectors, {
+    dedupe: true,
+    max: 200,
+  });
+  if (!normalized.length) return [] as MentionGroupCandidate[];
+  const rows = await prisma.groupAccount.findMany({
+    where: {
+      active: true,
+      OR: [{ id: { in: normalized } }, { displayName: { in: normalized } }],
+    },
+    select: { id: true, displayName: true },
+  });
+  const map = new Map<string, MentionGroupCandidate>();
+  for (const row of rows) {
+    const id = typeof row.id === 'string' ? row.id.trim() : '';
+    if (!id) continue;
+    const displayName =
+      typeof row.displayName === 'string' ? row.displayName.trim() : '';
+    map.set(id, { groupId: id, displayName: displayName || null });
+  }
+  return Array.from(map.values()).sort((a, b) => {
+    const left = a.displayName || a.groupId;
+    const right = b.displayName || b.groupId;
+    return left.localeCompare(right);
+  });
+}
+
 function parseMaxBytes(raw: string | undefined, fallback: number) {
   if (!raw) return fallback;
   const parsed = Number(raw);
@@ -678,6 +708,9 @@ export async function registerChatRoutes(app: FastifyInstance) {
       const groupIds = Array.isArray(req.user?.groupIds)
         ? req.user.groupIds
         : [];
+      const groupAccountIds = Array.isArray(req.user?.groupAccountIds)
+        ? req.user.groupAccountIds
+        : [];
       const members = await prisma.projectMember.findMany({
         where: { projectId },
         select: { userId: true, role: true },
@@ -710,15 +743,10 @@ export async function registerChatRoutes(app: FastifyInstance) {
           displayName: displayMap.get(userId) || null,
         }))
         .sort((a, b) => a.userId.localeCompare(b.userId));
-      const groups = Array.from(
-        new Set(
-          groupIds
-            .map((groupId) =>
-              typeof groupId === 'string' ? groupId.trim() : '',
-            )
-            .filter(Boolean),
-        ),
-      ).map((groupId) => ({ groupId }));
+      const groups = await resolveGroupCandidatesBySelector([
+        ...groupIds,
+        ...groupAccountIds,
+      ]);
       const allowAll = true;
       return { users, groups, allowAll };
     },
