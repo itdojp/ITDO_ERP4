@@ -1151,16 +1151,15 @@ export const RoomChat: React.FC = () => {
         >
           {isSummarizing ? '要約中...' : '要約'}
         </button>
-        {selectedRoom?.allowExternalIntegrations === true &&
-          (
-            <button
-              className="button secondary"
-              onClick={summarizeExternal}
-              disabled={!roomId || isSummarizingExternal}
-            >
-              {isSummarizingExternal ? '外部要約中...' : '外部要約'}
-            </button>
-          )}
+        {selectedRoom?.allowExternalIntegrations === true && (
+          <button
+            className="button secondary"
+            onClick={summarizeExternal}
+            disabled={!roomId || isSummarizingExternal}
+          >
+            {isSummarizingExternal ? '外部要約中...' : '外部要約'}
+          </button>
+        )}
       </div>
 
       {roomId && notificationSetting && (

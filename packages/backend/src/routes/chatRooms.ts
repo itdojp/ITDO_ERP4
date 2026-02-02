@@ -757,6 +757,13 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
         max: 50,
       });
       const groupIdSet = new Set([...groupIds, ...groupAccountIds]);
+      const hasViewerAccess = (room: { viewerGroupIds?: unknown }) => {
+        const viewerGroupIds = normalizeStringArray(room.viewerGroupIds);
+        return (
+          viewerGroupIds.length === 0 ||
+          viewerGroupIds.some((groupId) => groupIdSet.has(groupId))
+        );
+      };
       const canSeeAllMeta =
         roles.includes('admin') ||
         roles.includes('mgmt') ||
@@ -978,9 +985,14 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
           officialRoomsPromise,
         ]);
 
+      const filteredProjectRooms = projectRooms.filter(hasViewerAccess);
+      const filteredMetaRooms = metaRooms.filter(hasViewerAccess);
+      const filteredMemberRooms = memberRooms.filter(hasViewerAccess);
+      const filteredOfficialRooms = officialRooms.filter(hasViewerAccess);
+
       const otherRoomsRaw = canSeeAllMeta
-        ? metaRooms
-        : [...memberRooms, ...officialRooms];
+        ? filteredMetaRooms
+        : [...filteredMemberRooms, ...filteredOfficialRooms];
 
       const otherRooms = (() => {
         if (otherRoomsRaw.length <= 1) return otherRoomsRaw;
@@ -1019,7 +1031,7 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
           : new Map<string, string>();
 
       const items = [
-        ...projectRooms.map((room) => {
+        ...filteredProjectRooms.map((room) => {
           const projectId = room.projectId || null;
           const project = projectId ? projectMap.get(projectId) : undefined;
           return {
@@ -1503,6 +1515,20 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
         });
       }
       const roles = req.user?.roles || [];
+      const canCreateRooms =
+        roles.includes('admin') ||
+        roles.includes('mgmt') ||
+        roles.includes('exec') ||
+        roles.includes('user') ||
+        roles.includes('hr');
+      if (!canCreateRooms) {
+        return reply.status(403).send({
+          error: {
+            code: 'FORBIDDEN',
+            message: 'chat room creation is not allowed for this role',
+          },
+        });
+      }
 
       const settings = await getChatSettings();
       const body = req.body as {
