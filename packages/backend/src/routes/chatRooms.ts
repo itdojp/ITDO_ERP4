@@ -14,6 +14,7 @@ import {
   resolveChatAckRequiredRecipientUserIds,
   validateChatAckRequiredRecipientsForRoom,
 } from '../services/chatAckRecipients.js';
+import { expandRoomMentionRecipients } from '../services/chatMentionRecipients.js';
 import {
   getChatExternalLlmConfig,
   getChatExternalLlmRateLimit,
@@ -574,56 +575,6 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
     return { mentions, mentionsAll, mentionUserIds, mentionGroupIds };
   }
 
-  async function resolveRoomAudienceUserIds(room: {
-    id: string;
-    type: string;
-    groupId: string | null;
-    allowExternalUsers: boolean;
-  }) {
-    const audience = new Set<string>();
-    if (room.type === 'private_group' || room.type === 'dm') {
-      const members = await prisma.chatRoomMember.findMany({
-        where: { roomId: room.id, deletedAt: null },
-        select: { userId: true },
-      });
-      members.forEach((member) => {
-        if (member.userId) audience.add(member.userId);
-      });
-      return audience;
-    }
-
-    if (room.type === 'department') {
-      const groupId = typeof room.groupId === 'string' ? room.groupId : '';
-      if (groupId) {
-        const members = await resolveChatAckRequiredRecipientUserIds({
-          requiredUserIds: [],
-          requiredGroupIds: [groupId],
-        });
-        members.forEach((userId) => audience.add(userId));
-      }
-    }
-
-    if (room.type === 'company') {
-      const members = await resolveChatAckRequiredRecipientUserIds({
-        requiredUserIds: [],
-        requiredRoles: ['admin', 'mgmt', 'exec', 'user', 'hr'],
-      });
-      members.forEach((userId) => audience.add(userId));
-    }
-
-    if (room.allowExternalUsers) {
-      const externalMembers = await prisma.chatRoomMember.findMany({
-        where: { roomId: room.id, deletedAt: null },
-        select: { userId: true },
-      });
-      externalMembers.forEach((member) => {
-        if (member.userId) audience.add(member.userId);
-      });
-    }
-
-    return audience;
-  }
-
   async function tryCreateRoomChatMentionNotifications(options: {
     req: any;
     room: {
@@ -640,28 +591,12 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
     mentionGroupIds: string[];
   }) {
     try {
-      const mentionUserIds = [...options.mentionUserIds];
-      if (
-        options.room.type !== 'project' &&
-        (options.mentionsAll || options.mentionGroupIds.length > 0)
-      ) {
-        const audience = await resolveRoomAudienceUserIds(options.room);
-        if (options.mentionGroupIds.length > 0) {
-          const members = await resolveChatAckRequiredRecipientUserIds({
-            requiredUserIds: [],
-            requiredGroupIds: options.mentionGroupIds,
-          });
-          members.forEach((userId) => {
-            if (audience.size === 0 || audience.has(userId)) {
-              mentionUserIds.push(userId);
-            }
-          });
-        }
-        if (options.mentionsAll) {
-          audience.forEach((userId) => mentionUserIds.push(userId));
-        }
-      }
-
+      const mentionUserIds = await expandRoomMentionRecipients({
+        room: options.room,
+        mentionUserIds: options.mentionUserIds,
+        mentionGroupIds: options.mentionGroupIds,
+        mentionsAll: options.mentionsAll,
+      });
       const notificationResult = await createChatMentionNotifications({
         projectId: options.room.type === 'project' ? options.room.id : null,
         roomId: options.room.id,
@@ -687,7 +622,7 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
           recipientUserIds: notificationResult.recipients.slice(0, 20),
           recipientsTruncated: notificationResult.truncated,
           mentionAll: options.mentionsAll,
-          mentionUserCount: options.mentionUserIds.length,
+          mentionUserCount: mentionUserIds.length,
           mentionGroupCount: options.mentionGroupIds.length,
           usesProjectMemberFallback:
             notificationResult.usesProjectMemberFallback,
