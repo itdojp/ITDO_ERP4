@@ -231,9 +231,9 @@ export async function validateChatAckRequiredRecipientsForRoom(options: {
     };
   }
 
-  // Company rooms allow internal users without explicit membership, but we cannot
-  // reliably distinguish external_chat users from DB state alone (roles come from JWT).
-  // Keep validation minimal here until external_chat policy is decided.
+  // Company rooms are globally visible unless additional ACLs are enforced.
+  // Keep validation minimal here (active-only) until room-level ACL checks
+  // can be resolved from DB state.
   if (room.type === 'company') {
     if (missingOrInactive.length) {
       return {
@@ -251,7 +251,7 @@ export async function validateChatAckRequiredRecipientsForRoom(options: {
 
   const allowed = new Set<string>();
 
-  // external_chat access is always membership-based.
+  // Non-project access can be membership-based when allowExternalUsers is enabled.
   if (room.allowExternalUsers) {
     const members = await client.chatRoomMember.findMany({
       where: {

@@ -41,13 +41,14 @@
 | project_lead  | 社員（リーダ） | user相当（追加権限は要定義）                              |
 | employee      | 社員（一般）   | user相当                                                  |
 | probationary  | 社員（試用）   | user相当                                                  |
-| external_chat | 外部ユーザ     | チャットのみ（他機能は不可）                              |
+| external_chat | 外部ユーザ（暫定） | チャットはグループACLで制御（roleによる固定区分は廃止）。他機能の抑止用途は暫定的に残す |
 
 ### 補足
 
 - ルートのpreHandlerでは上記ロールを前提に `requireRole` を適用
 - `project_lead` / `employee` / `probationary` は現状 user 相当として扱う（追加/制限は後続決定）
-- `external_chat` はチャット機能のみ許可（他APIは拒否）
+- `external_chat` はチャットの権限制御には使わない（chatは group ACL に統一）
+- `external_chat` を使った非チャット機能の抑止は暫定運用とし、後続で権限プロファイルへ移行する
 - 承認インスタンスの閲覧は mgmt/exec + 申請者本人 + 所属案件のメンバー
 - プロジェクトメンバーは ERP 側で管理（ProjectMember）。admin/mgmt がリーダを登録し、リーダは自プロジェクトのメンバーを追加/削除できる
 

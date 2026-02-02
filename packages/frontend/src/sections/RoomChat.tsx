@@ -194,6 +194,11 @@ export const RoomChat: React.FC = () => {
   const currentUserId = auth?.userId || 'demo-user';
   const canSeeAllMeta =
     roles.includes('admin') || roles.includes('mgmt') || roles.includes('exec');
+  const canUseProjectChat =
+    roles.includes('admin') ||
+    roles.includes('mgmt') ||
+    roles.includes('exec') ||
+    (auth?.projectIds?.length ?? 0) > 0;
 
   const [rooms, setRooms] = useState<ChatRoom[]>([]);
   const [roomId, setRoomId] = useState('');
@@ -377,7 +382,7 @@ export const RoomChat: React.FC = () => {
     try {
       const res = await api<{ items?: ChatRoom[] }>('/chat-rooms');
       const items = Array.isArray(res.items) ? res.items : [];
-      const showProjectRooms = roles.includes('external_chat');
+      const showProjectRooms = !canUseProjectChat;
       const visibleRooms = showProjectRooms
         ? items
         : items.filter((room) => room.type !== 'project');
@@ -597,15 +602,15 @@ export const RoomChat: React.FC = () => {
 
   const openSearchResult = (item: ChatSearchItem) => {
     if (item.room.type === 'project' && item.room.projectId) {
-      if (roles.includes('external_chat')) {
+      if (!canUseProjectChat) {
         setRoomId(item.room.id);
-      } else {
-        window.dispatchEvent(
-          new CustomEvent('erp4_open_project_chat', {
-            detail: { projectId: item.room.projectId },
-          }),
-        );
+        return;
       }
+      window.dispatchEvent(
+        new CustomEvent('erp4_open_project_chat', {
+          detail: { projectId: item.room.projectId },
+        }),
+      );
       return;
     }
     setRoomId(item.room.id);
@@ -988,7 +993,6 @@ export const RoomChat: React.FC = () => {
   const summarizeExternal = async () => {
     if (!roomId) return;
     if (selectedRoom?.allowExternalIntegrations !== true) return;
-    if (roles.includes('external_chat')) return;
 
     const ok = window.confirm(
       [
@@ -1148,7 +1152,7 @@ export const RoomChat: React.FC = () => {
           {isSummarizing ? '要約中...' : '要約'}
         </button>
         {selectedRoom?.allowExternalIntegrations === true &&
-          !roles.includes('external_chat') && (
+          (
             <button
               className="button secondary"
               onClick={summarizeExternal}
