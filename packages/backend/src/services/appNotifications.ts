@@ -15,6 +15,7 @@ type ChatMentionNotificationOptions = {
 type ChatAckRequiredNotificationOptions = {
   // Always pass explicitly. Use `null` for non-project rooms.
   projectId: string | null;
+  roomId?: string | null;
   messageId: string;
   messageBody: string;
   senderUserId: string;
@@ -313,6 +314,7 @@ export async function createChatMentionNotifications(
 
   const payload: Prisma.InputJsonValue = {
     fromUserId: options.senderUserId,
+    roomId: options.roomId || undefined,
     excerpt: options.messageBody.replace(/\s+/g, ' ').trim().slice(0, 140),
     mentionAll: options.mentionAll || undefined,
     mentionGroupIds: options.mentionGroupIds.length
@@ -383,6 +385,7 @@ export async function createChatAckRequiredNotifications(
 
   const payload: Prisma.InputJsonValue = {
     fromUserId: options.senderUserId,
+    roomId: options.roomId || undefined,
     excerpt: options.messageBody.replace(/\s+/g, ' ').trim().slice(0, 140),
     dueAt: options.dueAt || undefined,
     requiredCount: options.requiredUserIds.length,
@@ -444,6 +447,7 @@ export async function createChatMessageNotifications(options: {
 
   const payload: Prisma.InputJsonValue = {
     fromUserId: options.senderUserId,
+    roomId: options.roomId,
     excerpt: options.messageBody.replace(/\s+/g, ' ').trim().slice(0, 140),
   };
 

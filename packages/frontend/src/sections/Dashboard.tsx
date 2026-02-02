@@ -285,6 +285,11 @@ export const Dashboard: React.FC = () => {
   const [notificationMuteMessage, setNotificationMuteMessage] = useState('');
   const [notificationMuteError, setNotificationMuteError] = useState('');
   const [notificationMuteLoading, setNotificationMuteLoading] = useState(false);
+  const [roomMuteMessage, setRoomMuteMessage] = useState('');
+  const [roomMuteError, setRoomMuteError] = useState('');
+  const [roomMuteLoadingId, setRoomMuteLoadingId] = useState<string | null>(
+    null,
+  );
   const [insights, setInsights] = useState<Insight[]>([]);
   const [insightMessage, setInsightMessage] = useState('');
   const [showAll, setShowAll] = useState(false);
@@ -403,6 +408,35 @@ export const Dashboard: React.FC = () => {
         setNotificationMuteError('通知ミュートの更新に失敗しました');
       } finally {
         setNotificationMuteLoading(false);
+      }
+    },
+    [],
+  );
+
+  const updateRoomMuteUntil = useCallback(
+    async (roomId: string, minutes: number | null) => {
+      setRoomMuteLoadingId(roomId);
+      setRoomMuteMessage('');
+      setRoomMuteError('');
+      const muteUntil =
+        minutes === null
+          ? null
+          : new Date(Date.now() + minutes * 60 * 1000).toISOString();
+      try {
+        await api(`/chat-rooms/${roomId}/notification-setting`, {
+          method: 'PATCH',
+          body: JSON.stringify({ muteUntil }),
+        });
+        setRoomMuteMessage(
+          minutes === null
+            ? 'ルーム通知ミュートを解除しました'
+            : 'ルーム通知をミュートしました',
+        );
+      } catch (err) {
+        console.error('ルーム通知ミュートの更新に失敗しました', err);
+        setRoomMuteError('ルーム通知ミュートの更新に失敗しました');
+      } finally {
+        setRoomMuteLoadingId(null);
       }
     },
     [],
@@ -569,6 +603,16 @@ export const Dashboard: React.FC = () => {
             <Alert variant="error">{notificationMuteError}</Alert>
           </div>
         )}
+        {roomMuteMessage && (
+          <div style={{ marginTop: 6, color: '#16a34a' }}>
+            {roomMuteMessage}
+          </div>
+        )}
+        {roomMuteError && (
+          <div style={{ marginTop: 6 }}>
+            <Alert variant="error">{roomMuteError}</Alert>
+          </div>
+        )}
         <div className="list" style={{ display: 'grid', gap: 8, marginTop: 8 }}>
           {notifications.map((item) => {
             const projectLabel = item.project
@@ -576,6 +620,7 @@ export const Dashboard: React.FC = () => {
               : item.projectId || 'N/A';
             const excerpt = resolveExcerpt(item.payload);
             const dueAt = resolveDueAt(item.payload);
+            const roomId = resolveRoomId(item.payload);
             const canOpen =
               ((item.kind === 'chat_mention' ||
                 item.kind === 'chat_message' ||
@@ -630,6 +675,49 @@ export const Dashboard: React.FC = () => {
                     </Button>
                   </div>
                 </div>
+                {roomId &&
+                  (item.kind === 'chat_mention' ||
+                    item.kind === 'chat_message' ||
+                    item.kind === 'chat_ack_required') && (
+                    <div
+                      className="row"
+                      style={{ gap: 6, flexWrap: 'wrap', marginTop: 8 }}
+                    >
+                      <span className="badge">ルームミュート</span>
+                      <Button
+                        size="small"
+                        variant="secondary"
+                        onClick={() => updateRoomMuteUntil(roomId, 10)}
+                        disabled={roomMuteLoadingId === roomId}
+                      >
+                        10分
+                      </Button>
+                      <Button
+                        size="small"
+                        variant="secondary"
+                        onClick={() => updateRoomMuteUntil(roomId, 60)}
+                        disabled={roomMuteLoadingId === roomId}
+                      >
+                        1時間
+                      </Button>
+                      <Button
+                        size="small"
+                        variant="secondary"
+                        onClick={() => updateRoomMuteUntil(roomId, 1440)}
+                        disabled={roomMuteLoadingId === roomId}
+                      >
+                        1日
+                      </Button>
+                      <Button
+                        size="small"
+                        variant="secondary"
+                        onClick={() => updateRoomMuteUntil(roomId, null)}
+                        disabled={roomMuteLoadingId === roomId}
+                      >
+                        解除
+                      </Button>
+                    </div>
+                  )}
               </Card>
             );
           })}
