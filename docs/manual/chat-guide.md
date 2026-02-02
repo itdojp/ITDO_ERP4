@@ -6,7 +6,7 @@
 ## 対象読者
 - 利用者（`user`）
 - 管理者（`admin/mgmt/exec`）
-- 外部ユーザ（`external_chat`）
+- 外部ユーザ（ルームACLで制御）
 
 ## 参照
 - チャット仕様: [project-chat](../requirements/project-chat.md)
@@ -28,9 +28,10 @@
 - `user/hr の private_group 作成を許可`
 - `DM 作成を許可`
 
-## 外部ユーザ（external_chat）
-- 参加できるのは「許可された公式ルーム」のみ（MVP）
-- DM は禁止（管理者設定で許可していても、外部ユーザは対象外とする運用を推奨）
+## 外部ユーザ（運用上の区分）
+- チャットの閲覧/投稿は **ルームACL（viewer/poster）+ メンバーシップ** で制御します（固定ロールでの区分はしません）。
+- `allowExternalUsers` は「プロジェクト外ユーザの参加を許可する」ためのフラグとして扱います。
+- DM / private_group の可否はチャット設定で制御します。
 
 ## 既読/未読・メンション
 運用方針（要点）:
