@@ -55,7 +55,7 @@
 
 - SCIM 同期グループに加え、ERP 側で手動作成したグループを運用可能にする
 - 識別子は GroupAccount.id（UUID）を正とし、displayName は表示用として扱う
-- 移行期間は displayName 入力も受け付け、サーバ側で UUID に解決して保存する
+- 移行期間を含め、API は GroupAccount.id（UUID）のみを受け付ける。displayName ベースの既存設定は事前に UUID へ移行（クライアント/移行スクリプト側で解決）する
 
 ## ユーザ属性（ABAC入力）
 

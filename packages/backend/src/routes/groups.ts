@@ -237,6 +237,14 @@ export async function registerGroupRoutes(app: FastifyInstance) {
           error: { code: 'NOT_FOUND', message: 'Group not found' },
         });
       }
+      if (current.externalId || current.scimMeta) {
+        return reply.status(409).send({
+          error: {
+            code: 'SCIM_MANAGED_GROUP',
+            message: 'SCIM-managed groups cannot be modified manually',
+          },
+        });
+      }
       const body = req.body as {
         displayName?: string;
         active?: boolean;
@@ -304,11 +312,20 @@ export async function registerGroupRoutes(app: FastifyInstance) {
       const { groupId } = req.params as { groupId: string };
       const group = await prisma.groupAccount.findUnique({
         where: { id: groupId },
-        select: { id: true },
+        select: { id: true, externalId: true, scimMeta: true },
       });
       if (!group) {
         return reply.status(404).send({
           error: { code: 'NOT_FOUND', message: 'Group not found' },
+        });
+      }
+      if (group.externalId || group.scimMeta) {
+        return reply.status(409).send({
+          error: {
+            code: 'SCIM_MANAGED_GROUP',
+            message:
+              'Membership for SCIM-managed groups cannot be modified manually',
+          },
         });
       }
       const body = req.body as { userIds: string[] };
@@ -329,22 +346,28 @@ export async function registerGroupRoutes(app: FastifyInstance) {
       if (!userAccountIds.length) {
         return { ok: true, added: 0 };
       }
-      await prisma.userGroup.createMany({
+      const createResult = await prisma.userGroup.createMany({
         data: userAccountIds.map((userId) => ({ groupId, userId })),
         skipDuplicates: true,
       });
+      const addedCount = createResult.count ?? 0;
       await logAudit({
         action: 'group_members_added',
         targetTable: 'UserGroup',
         metadata: {
           groupId,
-          addedCount: userAccountIds.length,
+          requestedCount: userAccountIds.length,
+          addedCount,
           addedUserAccountIds: userAccountIds.slice(0, 20),
           truncated: userAccountIds.length > 20,
         } as Prisma.InputJsonValue,
         ...auditContextFromRequest(req),
       });
-      return { ok: true, added: userAccountIds.length };
+      return {
+        ok: true,
+        requested: userAccountIds.length,
+        added: addedCount,
+      };
     },
   );
 
@@ -364,11 +387,20 @@ export async function registerGroupRoutes(app: FastifyInstance) {
       const { groupId } = req.params as { groupId: string };
       const group = await prisma.groupAccount.findUnique({
         where: { id: groupId },
-        select: { id: true },
+        select: { id: true, externalId: true, scimMeta: true },
       });
       if (!group) {
         return reply.status(404).send({
           error: { code: 'NOT_FOUND', message: 'Group not found' },
+        });
+      }
+      if (group.externalId || group.scimMeta) {
+        return reply.status(409).send({
+          error: {
+            code: 'SCIM_MANAGED_GROUP',
+            message:
+              'Membership for SCIM-managed groups cannot be modified manually',
+          },
         });
       }
       const body = req.body as { userIds: string[] };
@@ -389,21 +421,27 @@ export async function registerGroupRoutes(app: FastifyInstance) {
       if (!userAccountIds.length) {
         return { ok: true, removed: 0 };
       }
-      await prisma.userGroup.deleteMany({
+      const deleteResult = await prisma.userGroup.deleteMany({
         where: { groupId, userId: { in: userAccountIds } },
       });
+      const removedCount = deleteResult.count ?? 0;
       await logAudit({
         action: 'group_members_removed',
         targetTable: 'UserGroup',
         metadata: {
           groupId,
-          removedCount: userAccountIds.length,
+          requestedCount: userAccountIds.length,
+          removedCount,
           removedUserAccountIds: userAccountIds.slice(0, 20),
           truncated: userAccountIds.length > 20,
         } as Prisma.InputJsonValue,
         ...auditContextFromRequest(req),
       });
-      return { ok: true, removed: userAccountIds.length };
+      return {
+        ok: true,
+        requested: userAccountIds.length,
+        removed: removedCount,
+      };
     },
   );
 }

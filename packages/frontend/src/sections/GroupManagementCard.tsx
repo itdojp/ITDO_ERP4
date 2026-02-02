@@ -57,6 +57,7 @@ export const GroupManagementCard: React.FC = () => {
     () => groups.find((group) => group.id === groupId) || null,
     [groups, groupId],
   );
+  const selectedIsScimManaged = selectedGroup?.isScimManaged === true;
 
   const loadGroups = useCallback(async () => {
     setIsLoading(true);
@@ -313,6 +314,11 @@ export const GroupManagementCard: React.FC = () => {
                   ` / externalId: ${selectedGroup.externalId}`}
                 {selectedGroup.isScimManaged ? ' / SCIM管理' : ''}
               </div>
+              {selectedIsScimManaged && (
+                <div style={{ fontSize: 12, color: '#b45309' }}>
+                  SCIM管理グループは手動で編集できません
+                </div>
+              )}
               <div className="row" style={{ gap: 12, flexWrap: 'wrap' }}>
                 <label>
                   表示名
@@ -320,7 +326,7 @@ export const GroupManagementCard: React.FC = () => {
                     type="text"
                     value={editName}
                     onChange={(e) => setEditName(e.target.value)}
-                    disabled={isLoading}
+                    disabled={isLoading || selectedIsScimManaged}
                   />
                 </label>
                 <label
@@ -330,14 +336,14 @@ export const GroupManagementCard: React.FC = () => {
                     type="checkbox"
                     checked={editActive}
                     onChange={(e) => setEditActive(e.target.checked)}
-                    disabled={isLoading}
+                    disabled={isLoading || selectedIsScimManaged}
                   />
                   有効
                 </label>
                 <button
                   className="button secondary"
                   onClick={handleUpdate}
-                  disabled={isLoading}
+                  disabled={isLoading || selectedIsScimManaged}
                 >
                   更新
                 </button>
@@ -352,13 +358,13 @@ export const GroupManagementCard: React.FC = () => {
                       value={addMembers}
                       onChange={(e) => setAddMembers(e.target.value)}
                       placeholder="user-a, user-b"
-                      disabled={isLoading}
+                      disabled={isLoading || selectedIsScimManaged}
                     />
                   </label>
                   <button
                     className="button secondary"
                     onClick={handleAddMembers}
-                    disabled={isLoading}
+                    disabled={isLoading || selectedIsScimManaged}
                   >
                     追加
                   </button>
@@ -369,13 +375,13 @@ export const GroupManagementCard: React.FC = () => {
                       value={removeMembers}
                       onChange={(e) => setRemoveMembers(e.target.value)}
                       placeholder="user-a, user-b"
-                      disabled={isLoading}
+                      disabled={isLoading || selectedIsScimManaged}
                     />
                   </label>
                   <button
                     className="button secondary"
                     onClick={handleRemoveMembers}
-                    disabled={isLoading}
+                    disabled={isLoading || selectedIsScimManaged}
                   >
                     削除
                   </button>
