@@ -1,4 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkBreaks from 'remark-breaks';
 import remarkGfm from 'remark-gfm';
@@ -1366,9 +1372,7 @@ export const RoomChat: React.FC = () => {
           <strong>投稿</strong>
           {message && <div style={{ marginTop: 8 }}>{message}</div>}
           {postWarning && (
-            <div style={{ marginTop: 8, color: '#b45309' }}>
-              {postWarning}
-            </div>
+            <div style={{ marginTop: 8, color: '#b45309' }}>{postWarning}</div>
           )}
           <label
             className="row"
