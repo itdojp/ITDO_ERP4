@@ -266,8 +266,7 @@ export const Dashboard: React.FC = () => {
   >(null);
   const [notificationMuteMessage, setNotificationMuteMessage] = useState('');
   const [notificationMuteError, setNotificationMuteError] = useState('');
-  const [notificationMuteLoading, setNotificationMuteLoading] =
-    useState(false);
+  const [notificationMuteLoading, setNotificationMuteLoading] = useState(false);
   const [insights, setInsights] = useState<Insight[]>([]);
   const [insightMessage, setInsightMessage] = useState('');
   const [showAll, setShowAll] = useState(false);
@@ -377,7 +376,9 @@ export const Dashboard: React.FC = () => {
           typeof res.muteAllUntil === 'string' ? res.muteAllUntil : null,
         );
         setNotificationMuteMessage(
-          minutes === null ? '通知ミュートを解除しました' : '通知ミュートを更新しました',
+          minutes === null
+            ? '通知ミュートを解除しました'
+            : '通知ミュートを更新しました',
         );
       } catch (err) {
         console.error('通知ミュートの更新に失敗しました', err);
@@ -491,11 +492,19 @@ export const Dashboard: React.FC = () => {
         )}
         <div
           className="row"
-          style={{ gap: 8, flexWrap: 'wrap', marginTop: 8, alignItems: 'center' }}
+          style={{
+            gap: 8,
+            flexWrap: 'wrap',
+            marginTop: 8,
+            alignItems: 'center',
+          }}
         >
           <span className="badge">ミュート</span>
           <span style={{ fontSize: 12, color: '#475569' }}>
-            全体: {notificationMuteUntil ? formatDateTime(notificationMuteUntil) : '未設定'}
+            全体:{' '}
+            {notificationMuteUntil
+              ? formatDateTime(notificationMuteUntil)
+              : '未設定'}
           </span>
           <Button
             variant="secondary"

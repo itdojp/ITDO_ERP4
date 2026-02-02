@@ -6,6 +6,7 @@ import {
   removeOfflineItem,
   type QueueItem,
 } from '../utils/offlineQueue';
+import { toIsoFromLocalInput, toLocalDateTimeValue } from '../utils/datetime';
 
 type MeResponse = {
   user: { userId: string; roles: string[]; ownerProjects?: string[] | string };
@@ -140,23 +141,6 @@ function normalizeJwtList(value: unknown): string[] {
   return [];
 }
 
-function toLocalDateTimeValue(value: string | null | undefined) {
-  if (!value) return '';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '';
-  const pad = (num: number) => String(num).padStart(2, '0');
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(
-    date.getDate(),
-  )}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
-}
-
-function toIsoFromLocalInput(value: string) {
-  if (!value) return null;
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return null;
-  return parsed.toISOString();
-}
-
 function resolveJwtUserId(
   payload: Record<string, unknown> | null,
 ): string | null {
@@ -216,10 +200,8 @@ export const CurrentUser: React.FC = () => {
     useState<NotificationPreference | null>(null);
   const [notificationPrefMessage, setNotificationPrefMessage] = useState('');
   const [notificationPrefError, setNotificationPrefError] = useState('');
-  const [notificationPrefLoading, setNotificationPrefLoading] =
-    useState(false);
-  const [emailDigestIntervalInput, setEmailDigestIntervalInput] =
-    useState('');
+  const [notificationPrefLoading, setNotificationPrefLoading] = useState(false);
+  const [emailDigestIntervalInput, setEmailDigestIntervalInput] = useState('');
   const [muteAllUntilInput, setMuteAllUntilInput] = useState('');
   const [isOnline, setIsOnline] = useState(
     typeof navigator !== 'undefined' ? navigator.onLine : true,
@@ -618,11 +600,11 @@ export const CurrentUser: React.FC = () => {
     setNotificationPrefMessage('');
     setNotificationPrefError('');
     try {
-      const res = await api<NotificationPreference>('/notification-preferences');
-      setNotificationPreference(res);
-      setEmailDigestIntervalInput(
-        String(res.emailDigestIntervalMinutes ?? 10),
+      const res = await api<NotificationPreference>(
+        '/notification-preferences',
       );
+      setNotificationPreference(res);
+      setEmailDigestIntervalInput(String(res.emailDigestIntervalMinutes ?? 10));
       setMuteAllUntilInput(toLocalDateTimeValue(res.muteAllUntil));
     } catch (err) {
       console.error('Failed to load notification preferences.', err);
