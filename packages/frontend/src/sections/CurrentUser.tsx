@@ -1,5 +1,11 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { api, AuthState, getAuthState, setAuthState } from '../api';
+import {
+  api,
+  AuthState,
+  getAuthState,
+  refreshAuthStateFromServer,
+  setAuthState,
+} from '../api';
 import {
   listOfflineItems,
   processOfflineQueue,
@@ -399,6 +405,7 @@ export const CurrentUser: React.FC = () => {
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new Event('erp4:auth-updated'));
     }
+    refreshAuthStateFromServer().catch(() => undefined);
   }, []);
 
   useEffect(() => {

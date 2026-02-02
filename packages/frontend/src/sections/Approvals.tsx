@@ -85,7 +85,15 @@ const formatDateTime = (value?: string | null) => {
 export const Approvals: React.FC = () => {
   const auth = getAuthState();
   const userId = auth?.userId ?? '';
-  const userGroupIds = auth?.groupIds ?? [];
+  const userGroupIds = useMemo(() => auth?.groupIds ?? [], [auth?.groupIds]);
+  const userGroupAccountIds = useMemo(
+    () => auth?.groupAccountIds ?? [],
+    [auth?.groupAccountIds],
+  );
+  const actorGroupIds = useMemo(
+    () => new Set([...userGroupIds, ...userGroupAccountIds]),
+    [userGroupIds, userGroupAccountIds],
+  );
   const isPrivileged = (auth?.roles ?? []).some((role) =>
     ['admin', 'mgmt', 'exec'].includes(role),
   );
@@ -177,7 +185,7 @@ export const Approvals: React.FC = () => {
     return currentSteps.some((step) => {
       if (step.approverUserId) return step.approverUserId === userId;
       if (step.approverGroupId) {
-        return userGroupIds.includes(step.approverGroupId);
+        return actorGroupIds.has(step.approverGroupId);
       }
       return true;
     });

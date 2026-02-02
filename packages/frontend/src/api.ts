@@ -3,6 +3,7 @@ export type AuthState = {
   roles: string[];
   projectIds?: string[];
   groupIds?: string[];
+  groupAccountIds?: string[];
   token?: string;
 };
 
@@ -40,6 +41,8 @@ function buildAuthHeaders(): Record<string, string> {
   if (auth.projectIds?.length)
     headers['x-project-ids'] = auth.projectIds.join(',');
   if (auth.groupIds?.length) headers['x-group-ids'] = auth.groupIds.join(',');
+  if (auth.groupAccountIds?.length)
+    headers['x-group-account-ids'] = auth.groupAccountIds.join(',');
   if (auth.token) headers.Authorization = `Bearer ${auth.token}`;
   return headers;
 }
@@ -137,4 +140,42 @@ export async function apiWithAuth<T>(
     ...options,
     headers,
   });
+}
+
+export async function refreshAuthStateFromServer() {
+  const current = getAuthState();
+  if (!current) return null;
+  try {
+    const res = await api<{ user?: Partial<AuthState> & { userId?: string } }>(
+      '/me',
+    );
+    const user = res.user;
+    if (!user || typeof user.userId !== 'string' || !user.userId.trim()) {
+      return current;
+    }
+    const next: AuthState = {
+      userId: user.userId,
+      roles: Array.isArray(user.roles) ? user.roles : [],
+      projectIds:
+        Array.isArray(user.projectIds) && user.projectIds.length
+          ? user.projectIds
+          : undefined,
+      groupIds:
+        Array.isArray(user.groupIds) && user.groupIds.length
+          ? user.groupIds
+          : undefined,
+      groupAccountIds:
+        Array.isArray(user.groupAccountIds) && user.groupAccountIds.length
+          ? user.groupAccountIds
+          : undefined,
+      token: current.token,
+    };
+    setAuthState(next);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('erp4:auth-updated'));
+    }
+    return next;
+  } catch (err) {
+    return current;
+  }
 }
