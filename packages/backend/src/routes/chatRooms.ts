@@ -2511,6 +2511,7 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
         });
       }
 
+      const roles = req.user?.roles || [];
       const projectIds = req.user?.projectIds || [];
       const groupIds = Array.isArray(req.user?.groupIds)
         ? req.user.groupIds
