@@ -14,6 +14,7 @@ import {
   resolveChatAckRequiredRecipientUserIds,
   validateChatAckRequiredRecipientsForRoom,
 } from '../services/chatAckRecipients.js';
+import { expandRoomMentionRecipients } from '../services/chatMentionRecipients.js';
 import {
   getChatExternalLlmConfig,
   getChatExternalLlmRateLimit,
@@ -576,8 +577,12 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
 
   async function tryCreateRoomChatMentionNotifications(options: {
     req: any;
-    roomId: string;
-    projectId?: string | null;
+    room: {
+      id: string;
+      type: string;
+      groupId: string | null;
+      allowExternalUsers: boolean;
+    };
     messageId: string;
     messageBody: string;
     senderUserId: string;
@@ -586,13 +591,19 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
     mentionGroupIds: string[];
   }) {
     try {
+      const mentionUserIds = await expandRoomMentionRecipients({
+        room: options.room,
+        mentionUserIds: options.mentionUserIds,
+        mentionGroupIds: options.mentionGroupIds,
+        mentionsAll: options.mentionsAll,
+      });
       const notificationResult = await createChatMentionNotifications({
-        projectId: options.projectId ?? null,
-        roomId: options.roomId,
+        projectId: options.room.type === 'project' ? options.room.id : null,
+        roomId: options.room.id,
         messageId: options.messageId,
         messageBody: options.messageBody,
         senderUserId: options.senderUserId,
-        mentionUserIds: options.mentionUserIds,
+        mentionUserIds,
         mentionGroupIds: options.mentionGroupIds,
         mentionAll: options.mentionsAll,
       });
@@ -603,15 +614,15 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
         targetTable: 'chat_messages',
         targetId: options.messageId,
         metadata: {
-          roomId: options.roomId,
-          projectId: options.projectId ?? null,
+          roomId: options.room.id,
+          projectId: options.room.type === 'project' ? options.room.id : null,
           messageId: options.messageId,
           createdCount: notificationResult.created,
           recipientCount: notificationResult.recipients.length,
           recipientUserIds: notificationResult.recipients.slice(0, 20),
           recipientsTruncated: notificationResult.truncated,
           mentionAll: options.mentionsAll,
-          mentionUserCount: options.mentionUserIds.length,
+          mentionUserCount: mentionUserIds.length,
           mentionGroupCount: options.mentionGroupIds.length,
           usesProjectMemberFallback:
             notificationResult.usesProjectMemberFallback,
@@ -2691,8 +2702,7 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
         });
         await tryCreateRoomChatMentionNotifications({
           req,
-          roomId: access.room.id,
-          projectId: access.room.type === 'project' ? access.room.id : null,
+          room: access.room,
           messageId: message.id,
           messageBody: message.body,
           senderUserId: userId,
