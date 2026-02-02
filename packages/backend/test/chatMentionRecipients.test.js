@@ -143,7 +143,7 @@ test('expandRoomMentionRecipients: intersects group mentions with audience', asy
       allowExternalUsers: false,
     },
     mentionUserIds: ['u3'],
-    mentionGroupIds: ['deptB'],
+    mentionGroupIds: ['deptA'],
     mentionsAll: false,
     client,
   });
