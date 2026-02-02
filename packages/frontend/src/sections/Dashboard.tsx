@@ -292,6 +292,8 @@ export const Dashboard: React.FC = () => {
   const visibleAlerts = showAll ? alerts : alerts.slice(0, 5);
   const myPendingApprovals = useMemo(() => {
     const groupIds = auth?.groupIds ?? [];
+    const groupAccountIds = auth?.groupAccountIds ?? [];
+    const actorGroupIds = new Set([...groupIds, ...groupAccountIds]);
     if (!approvals.length) return 0;
     return approvals.filter((item) => {
       if (!item.currentStep) return false;
@@ -303,12 +305,12 @@ export const Dashboard: React.FC = () => {
       return currentSteps.some((step) => {
         if (step.approverUserId) return step.approverUserId === userId;
         if (step.approverGroupId) {
-          return groupIds.includes(step.approverGroupId);
+          return actorGroupIds.has(step.approverGroupId);
         }
         return true;
       });
     }).length;
-  }, [approvals, auth?.groupIds, userId]);
+  }, [approvals, auth?.groupIds, auth?.groupAccountIds, userId]);
 
   useEffect(() => {
     api<{ items: AlertItem[] }>('/alerts')

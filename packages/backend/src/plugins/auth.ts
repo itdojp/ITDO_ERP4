@@ -353,7 +353,13 @@ function applyHeaderAuth(req: any) {
     .split(',')
     .map((g: string) => g.trim())
     .filter(Boolean);
-  req.user = { userId, roles, orgId, projectIds, groupIds };
+  const groupAccountIdsHeader =
+    (req.headers['x-group-account-ids'] as string) || '';
+  const groupAccountIds = groupAccountIdsHeader
+    .split(',')
+    .map((g: string) => g.trim())
+    .filter(Boolean);
+  req.user = { userId, roles, orgId, projectIds, groupIds, groupAccountIds };
 }
 
 function respondUnauthorized(req: any, reply: any, reason?: string) {
