@@ -18,6 +18,7 @@
 - email:
   - `realtime` / `digest`（既定: digest）
   - `emailDigestIntervalMinutes`（既定: 10分）
+- `digest` は通知配信ジョブ実行時に「まとめて配信」される
 - web:
   - `muteAllUntil`（全体ミュートの期限）
 
