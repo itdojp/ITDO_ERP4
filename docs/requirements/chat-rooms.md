@@ -1,6 +1,7 @@
 # チャット: ルーム化（project chat → room chat）移行方針（確定）
 
 ## 背景
+
 現状のチャットは `projectId` 直結（`ProjectChatMessage`）であり、以下を本格実装するには「ルーム」という単位が必要です。
 
 - 公式/私的/DM の切り替え（会社の「認知」範囲の統制）
@@ -9,16 +10,19 @@
 - 外部ユーザ（external_chat）の参加制御（許可ルームのみ）
 
 ## 目的
+
 - room-based chat のデータモデル/API/移行手順を確定し、後続の break-glass / DM / 部門/全社ルームへ進める。
 - 既存の ProjectChat（PoC）の利用を壊さず、段階的に移行できる構成にする。
 
 ## 用語
+
 - **ルーム（Room）**: メッセージが流れる単位（Slackのchannel相当）
 - **公式ルーム（Official）**: 会社が統制する前提のルーム（外部連携/外部ユーザ/外部LLM等を許可し得る）
 - **私的ルーム（Private）**: 社員自治を基本とするが、必要時に break-glass で監査閲覧可能なルーム
 - **DM**: 私的ルームの一種（1:1）。管理者設定で無効化可能。
 
 ## ルーム種別（案）
+
 DB上は `type` として表現し、ポリシー（公式/私的、外部連携可否など）は room の属性で決めます。
 
 - `project`: 案件ルーム（Projectに紐付く）
@@ -28,6 +32,7 @@ DB上は `type` として表現し、ポリシー（公式/私的、外部連携
 - `dm`: DM（ユーザ2名のprivate_group特化）
 
 ## ルームIDの決め方（MVP）
+
 - `project`: `ChatRoom.id = Project.id`（`roomId = projectId`）
 - `company`: 固定（`ChatRoom.id = "company"`）
 - `department`: 決定的ID（`ChatRoom.id = "dept_" + sha256(groupAccountId).slice(0,32)`）、`ChatRoom.groupId = GroupAccount.id (UUID)`
@@ -35,6 +40,7 @@ DB上は `type` として表現し、ポリシー（公式/私的、外部連携
 - `dm`: 決定的ID（`ChatRoom.id = "dm_" + sha256(userA + "\\n" + userB).slice(0,32)`）
 
 ## データモデル（案）
+
 最小構成（MVP）として以下を想定します（命名は例）。
 
 - `ChatRoom`
@@ -71,12 +77,14 @@ DB上は `type` として表現し、ポリシー（公式/私的、外部連携
   - 既存の「確認メッセージ」（OK追跡）と同等
 
 補足
+
 - projectルーム（`type=project`）は **`roomId = projectId`** として扱う（`ChatRoom.id = Project.id`）。
 - departmentルームの移行期は、JWTの`groupIds`にdisplayNameしか無い場合に限り`groupId=displayName`でbootstrapし、解決可能になった時点でUUIDへ更新する。
 - 監査/改ざん検知・論理削除方針は `docs/requirements/project-chat.md` の方針を踏襲します。
 - break-glass 用のテーブルは別（#454）で設計/実装しますが、参照先は `roomId` とします。
 
 ## アクセス制御（案）
+
 - **ルームの存在（メタ情報）**
   - admin/mgmt/exec は全ルームのメタ情報を参照可能（会社の「認知」）
   - user/hr は自分が参加しているルーム + 全社/部門ルーム（groupIds由来）を参照可能
@@ -86,44 +94,54 @@ DB上は `type` として表現し、ポリシー（公式/私的、外部連携
   - company: internal role（admin/mgmt/exec/user/hr）なら閲覧/投稿可（room member 不要）
   - department: `groupAccountIds` に `ChatRoom.groupId` が含まれる場合に閲覧/投稿可（room member 不要）
     - 互換期間は displayName でも判定（dual-read）
-  - `viewerGroupIds` が設定されている場合は、上記の条件に加えて `viewerGroupIds` に含まれるユーザのみ許可
-    - allow-list は全ロールに適用（admin/mgmt/exec も対象）
+- `viewerGroupIds` が設定されている場合は、上記の条件に加えて `viewerGroupIds` に含まれるユーザのみ「閲覧」許可
+  - allow-list は全ロールに適用（admin/mgmt/exec も対象）
 - private_group/dm: room member のみ閲覧/投稿可
 - break-glass: mgmt/exec は申請 + 二重承認で私的ルーム/DMも監査閲覧可能
 
 - **メッセージ投稿**
-  - `posterGroupIds` が設定されている場合は、`posterGroupIds` に含まれるユーザのみ許可
-    - allow-list は全ロールに適用（admin/mgmt/exec も対象）
+- `posterGroupIds` が設定されている場合は、`posterGroupIds` に含まれるユーザのみ「投稿」許可
+  - `posterGroupIds` が未設定の場合は `viewerGroupIds` の制約を踏襲する
+  - allow-list は全ロールに適用（admin/mgmt/exec も対象）
+
+### 投稿可/閲覧不可の警告
+
+- `posterGroupIds` と `viewerGroupIds` が一致しない場合、投稿者が閲覧できない構成になり得る
+  - 投稿時に本人へ警告を返す
+  - 定期ジョブでルーム管理者（owner/admin）へ通知する
 
 ## 移行戦略（推奨）
+
 **推奨: 新テーブル導入 + project chat を段階移行**
 
-1) **Step 1: roomテーブルを追加（影響なし）【完了】**
+1. **Step 1: roomテーブルを追加（影響なし）【完了】**
    - `ChatRoom` / `ChatRoomMember` を追加（#464）
    - projectルームは on-demand / project作成時に生成
 
-2) **Step 2: room API を追加（既存project chatは維持）【部分完了】**
+2. **Step 2: room API を追加（既存project chatは維持）【部分完了】**
    - `GET /chat-rooms`（一覧）（#465）
    - ProjectChat の案件選択を room一覧に切替（#469）
    - private_group/DM の作成/招待/room chat API（#479）
 
-3) **Step 3: project chat API を room に寄せる（互換を維持）【完了】**
+3. **Step 3: project chat API を room に寄せる（互換を維持）【完了】**
    - 既存の `/projects/:projectId/chat-*` は `Chat*`（room-based）参照へ移行（#472）
    - break-glass の閲覧対象も `ChatMessage` に切替（#472）
 
-4) **Step 4: 既存データの移行【完了】**
+4. **Step 4: 既存データの移行【完了】**
    - migration `20260112003555_add_chat_room_messages` で `ProjectChat*` → `Chat*` をコピー
    - `prisma migrate deploy` を使う環境で適用される（`prisma db push` はデータ移行を含まない）
 
-5) **Step 5: 旧ProjectChat* テーブルを凍結 → 廃止【完了】**
+5. **Step 5: 旧ProjectChat\* テーブルを凍結 → 廃止【完了】**
    - 移行検証SQL: `scripts/checks/chat-migration-step5.sql`
    - 削除migration: `20260112030000_drop_legacy_project_chat`（不整合がある場合は失敗する）
 
 ## 既存仕様との整合
+
 - メンション/未読/確認メッセージ/添付/通知/AI要約は「Room単位」で提供する想定です。
 - 既存の ProjectChat UI は「projectルームのフロント」として継続し、room UI（一覧/作成）は別画面として追加します。
 
 ## 未決定（後続で確定）
+
 - 公式ルームの作成/管理権限（project leader の範囲）
 - projectルームのメンバー同期（ProjectMemberの自動同期 vs room member の別管理）
 - break-glass の cooldown（MVPは0想定）

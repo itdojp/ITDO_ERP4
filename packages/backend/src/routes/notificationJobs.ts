@@ -5,9 +5,11 @@ import { auditContextFromRequest, logAudit } from '../services/audit.js';
 import { runNotificationEmailDeliveries } from '../services/notificationDeliveries.js';
 import { runDailyReportMissingNotifications } from '../services/dailyReportMissing.js';
 import { runChatAckReminders } from '../services/chatAckReminders.js';
+import { runChatRoomAclMismatchAlerts } from '../services/chatRoomAclAlerts.js';
 import {
   dailyReportMissingRunSchema,
   chatAckReminderRunSchema,
+  chatRoomAclAlertRunSchema,
   notificationDeliveryRunSchema,
 } from './validators.js';
 
@@ -59,6 +61,31 @@ export async function registerNotificationJobRoutes(app: FastifyInstance) {
 
       await logAudit({
         action: 'chat_ack_reminders_run',
+        targetTable: 'app_notifications',
+        metadata: result as unknown as Prisma.InputJsonValue,
+        ...auditContextFromRequest(req, { source: 'job' }),
+      });
+
+      return result;
+    },
+  );
+
+  app.post(
+    '/jobs/chat-room-acl-alerts/run',
+    {
+      preHandler: requireRole(['admin', 'mgmt']),
+      schema: chatRoomAclAlertRunSchema,
+    },
+    async (req) => {
+      const body = (req.body || {}) as { dryRun?: boolean; limit?: number };
+      const result = await runChatRoomAclMismatchAlerts({
+        actorId: req.user?.userId,
+        dryRun: body.dryRun,
+        limit: body.limit,
+      });
+
+      await logAudit({
+        action: 'chat_room_acl_alerts_run',
         targetTable: 'app_notifications',
         metadata: result as unknown as Prisma.InputJsonValue,
         ...auditContextFromRequest(req, { source: 'job' }),

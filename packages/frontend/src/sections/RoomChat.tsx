@@ -609,7 +609,6 @@ export const RoomChat: React.FC = () => {
       return;
     }
     loadNotificationSetting(roomId);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roomId]);
 
   const openSearchResult = (item: ChatSearchItem) => {
@@ -806,13 +805,18 @@ export const RoomChat: React.FC = () => {
             })()
           : basePayload;
       if (!payload) return;
-      const created = await api<ChatMessage>(endpoint, {
+      const created = await api<
+        ChatMessage & { warning?: { code?: string; message?: string } }
+      >(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
       if (attachmentFile) {
         await uploadAttachment(created.id, attachmentFile);
+      }
+      if (created.warning?.message) {
+        setMessage(created.warning.message);
       }
       setBody('');
       setTags('');
