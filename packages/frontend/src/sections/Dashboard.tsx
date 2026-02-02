@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { api, getAuthState } from '../api';
 import { Alert, Button, Card, EmptyState } from '../ui';
 import { navigateToOpen } from '../utils/deepLink';
@@ -261,6 +261,12 @@ export const Dashboard: React.FC = () => {
   const [notificationCount, setNotificationCount] = useState(0);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [notificationMessage, setNotificationMessage] = useState('');
+  const [notificationMuteUntil, setNotificationMuteUntil] = useState<
+    string | null
+  >(null);
+  const [notificationMuteMessage, setNotificationMuteMessage] = useState('');
+  const [notificationMuteError, setNotificationMuteError] = useState('');
+  const [notificationMuteLoading, setNotificationMuteLoading] = useState(false);
   const [insights, setInsights] = useState<Insight[]>([]);
   const [insightMessage, setInsightMessage] = useState('');
   const [showAll, setShowAll] = useState(false);
@@ -319,6 +325,25 @@ export const Dashboard: React.FC = () => {
     };
   }, []);
 
+  const loadNotificationMute = useCallback(async () => {
+    setNotificationMuteError('');
+    try {
+      const res = await api<{ muteAllUntil?: string | null }>(
+        '/notification-preferences',
+      );
+      setNotificationMuteUntil(
+        typeof res.muteAllUntil === 'string' ? res.muteAllUntil : null,
+      );
+    } catch (err) {
+      console.error('通知設定の取得に失敗しました', err);
+      setNotificationMuteError('通知設定の取得に失敗しました');
+    }
+  }, []);
+
+  useEffect(() => {
+    loadNotificationMute().catch(() => undefined);
+  }, [loadNotificationMute]);
+
   const markNotificationRead = async (id: string) => {
     try {
       await api(`/notifications/${id}/read`, { method: 'POST' });
@@ -329,6 +354,41 @@ export const Dashboard: React.FC = () => {
       setNotificationMessage('通知の既読化に失敗しました');
     }
   };
+
+  const updateNotificationMuteUntil = useCallback(
+    async (minutes: number | null) => {
+      setNotificationMuteLoading(true);
+      setNotificationMuteMessage('');
+      setNotificationMuteError('');
+      const muteAllUntil =
+        minutes === null
+          ? null
+          : new Date(Date.now() + minutes * 60 * 1000).toISOString();
+      try {
+        const res = await api<{ muteAllUntil?: string | null }>(
+          '/notification-preferences',
+          {
+            method: 'PATCH',
+            body: JSON.stringify({ muteAllUntil }),
+          },
+        );
+        setNotificationMuteUntil(
+          typeof res.muteAllUntil === 'string' ? res.muteAllUntil : null,
+        );
+        setNotificationMuteMessage(
+          minutes === null
+            ? '通知ミュートを解除しました'
+            : '通知ミュートを更新しました',
+        );
+      } catch (err) {
+        console.error('通知ミュートの更新に失敗しました', err);
+        setNotificationMuteError('通知ミュートの更新に失敗しました');
+      } finally {
+        setNotificationMuteLoading(false);
+      }
+    },
+    [],
+  );
 
   const openNotificationTarget = (item: AppNotification) => {
     if (
@@ -428,6 +488,61 @@ export const Dashboard: React.FC = () => {
         {notificationMessage && (
           <div style={{ marginTop: 8 }}>
             <Alert variant="error">{notificationMessage}</Alert>
+          </div>
+        )}
+        <div
+          className="row"
+          style={{
+            gap: 8,
+            flexWrap: 'wrap',
+            marginTop: 8,
+            alignItems: 'center',
+          }}
+        >
+          <span className="badge">ミュート</span>
+          <span style={{ fontSize: 12, color: '#475569' }}>
+            全体:{' '}
+            {notificationMuteUntil
+              ? formatDateTime(notificationMuteUntil)
+              : '未設定'}
+          </span>
+          <Button
+            variant="secondary"
+            onClick={() => updateNotificationMuteUntil(10)}
+            disabled={notificationMuteLoading}
+          >
+            10分
+          </Button>
+          <Button
+            variant="secondary"
+            onClick={() => updateNotificationMuteUntil(60)}
+            disabled={notificationMuteLoading}
+          >
+            1時間
+          </Button>
+          <Button
+            variant="secondary"
+            onClick={() => updateNotificationMuteUntil(1440)}
+            disabled={notificationMuteLoading}
+          >
+            1日
+          </Button>
+          <Button
+            variant="secondary"
+            onClick={() => updateNotificationMuteUntil(null)}
+            disabled={notificationMuteLoading}
+          >
+            解除
+          </Button>
+        </div>
+        {notificationMuteMessage && (
+          <div style={{ marginTop: 6, color: '#16a34a' }}>
+            {notificationMuteMessage}
+          </div>
+        )}
+        {notificationMuteError && (
+          <div style={{ marginTop: 6 }}>
+            <Alert variant="error">{notificationMuteError}</Alert>
           </div>
         )}
         <div className="list" style={{ display: 'grid', gap: 8, marginTop: 8 }}>

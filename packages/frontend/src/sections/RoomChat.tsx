@@ -5,6 +5,7 @@ import remarkGfm from 'remark-gfm';
 import { api, apiResponse, getAuthState } from '../api';
 import { copyToClipboard } from '../utils/clipboard';
 import { buildOpenHash } from '../utils/deepLink';
+import { toIsoFromLocalInput, toLocalDateTimeValue } from '../utils/datetime';
 
 type ChatRoom = {
   id: string;
@@ -164,23 +165,6 @@ function buildBeforeForCreatedAt(createdAt: string) {
   const date = new Date(createdAt);
   if (Number.isNaN(date.getTime())) return '';
   return new Date(date.getTime() + 1).toISOString();
-}
-
-function toLocalDateTimeValue(value: string | null | undefined) {
-  if (!value) return '';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '';
-  const pad = (num: number) => String(num).padStart(2, '0');
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(
-    date.getDate(),
-  )}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
-}
-
-function toIsoFromLocalInput(value: string) {
-  if (!value) return null;
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return null;
-  return parsed.toISOString();
 }
 
 function formatRoomLabel(room: ChatRoom, currentUserId: string) {
@@ -609,7 +593,6 @@ export const RoomChat: React.FC = () => {
       return;
     }
     loadNotificationSetting(roomId);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roomId]);
 
   const openSearchResult = (item: ChatSearchItem) => {
