@@ -73,6 +73,84 @@ type ApprovalInstanceAccessFilter = {
   createdBy?: string;
   projectId?: { in: string[] };
 };
+const RESERVED_GROUP_IDS = new Set([
+  'admin',
+  'mgmt',
+  'exec',
+  'hr',
+  'user',
+  'external_chat',
+]);
+
+async function resolveGroupSelector(selector: string) {
+  const trimmed = selector.trim();
+  if (!trimmed || RESERVED_GROUP_IDS.has(trimmed)) return trimmed;
+  const row = await prisma.groupAccount.findFirst({
+    where: {
+      active: true,
+      OR: [{ id: trimmed }, { displayName: trimmed }],
+    },
+    select: { id: true, displayName: true },
+  });
+  if (!row) return trimmed;
+  const displayName = row.displayName?.trim() || '';
+  if (displayName && RESERVED_GROUP_IDS.has(displayName)) {
+    return displayName;
+  }
+  return row.id;
+}
+
+async function resolveApprovalStepsGroupIds(steps: unknown) {
+  if (Array.isArray(steps)) {
+    const resolved = [];
+    for (const step of steps) {
+      if (!step || typeof step !== 'object') {
+        resolved.push(step);
+        continue;
+      }
+      const approverGroupId =
+        typeof (step as any).approverGroupId === 'string'
+          ? await resolveGroupSelector((step as any).approverGroupId)
+          : (step as any).approverGroupId;
+      resolved.push({
+        ...(step as any),
+        ...(approverGroupId !== undefined ? { approverGroupId } : {}),
+      });
+    }
+    return resolved;
+  }
+  if (!steps || typeof steps !== 'object') return steps;
+  const stages = (steps as any).stages;
+  if (!Array.isArray(stages)) return steps;
+  const resolvedStages = [];
+  for (const stage of stages) {
+    if (!stage || typeof stage !== 'object') {
+      resolvedStages.push(stage);
+      continue;
+    }
+    const approvers = Array.isArray((stage as any).approvers)
+      ? (stage as any).approvers
+      : [];
+    const resolvedApprovers = [];
+    for (const approver of approvers) {
+      if (!approver || typeof approver !== 'object') {
+        resolvedApprovers.push(approver);
+        continue;
+      }
+      if (
+        (approver as any).type === 'group' &&
+        typeof (approver as any).id === 'string'
+      ) {
+        const id = await resolveGroupSelector((approver as any).id);
+        resolvedApprovers.push({ ...(approver as any), id });
+      } else {
+        resolvedApprovers.push(approver);
+      }
+    }
+    resolvedStages.push({ ...(stage as any), approvers: resolvedApprovers });
+  }
+  return { ...(steps as any), stages: resolvedStages };
+}
 
 async function resetTargetStatus(
   tx: any,
@@ -155,6 +233,9 @@ export async function registerApprovalRuleRoutes(app: FastifyInstance) {
     { preHandler: requireRole(['admin', 'mgmt']), schema: approvalRuleSchema },
     async (req, reply) => {
       const body = req.body as any;
+      if (body.steps !== undefined) {
+        body.steps = await resolveApprovalStepsGroupIds(body.steps);
+      }
       if (!hasValidSteps(body.steps || [])) {
         return reply.code(400).send({
           error: 'invalid_steps',
@@ -202,6 +283,9 @@ export async function registerApprovalRuleRoutes(app: FastifyInstance) {
     async (req, reply) => {
       const { id } = req.params as { id: string };
       const body = req.body as any;
+      if (body.steps !== undefined) {
+        body.steps = await resolveApprovalStepsGroupIds(body.steps);
+      }
       if (body.steps && !hasValidSteps(body.steps || [])) {
         return reply.code(400).send({
           error: 'invalid_steps',
@@ -265,7 +349,14 @@ export async function registerApprovalRuleRoutes(app: FastifyInstance) {
         currentStep,
       } = req.query as any;
       const stepsFilter: any = {};
-      if (approverGroupId) stepsFilter.approverGroupId = approverGroupId;
+      if (approverGroupId) {
+        const raw = String(approverGroupId).trim();
+        const resolved = await resolveGroupSelector(raw);
+        const candidates =
+          resolved && resolved !== raw ? [raw, resolved] : [raw];
+        stepsFilter.approverGroupId =
+          candidates.length > 1 ? { in: candidates } : candidates[0];
+      }
       if (approverUserId) stepsFilter.approverUserId = approverUserId;
 
       const where: any = {
