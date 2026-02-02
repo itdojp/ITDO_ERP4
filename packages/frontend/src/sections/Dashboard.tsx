@@ -285,8 +285,11 @@ export const Dashboard: React.FC = () => {
   const [notificationMuteMessage, setNotificationMuteMessage] = useState('');
   const [notificationMuteError, setNotificationMuteError] = useState('');
   const [notificationMuteLoading, setNotificationMuteLoading] = useState(false);
-  const [roomMuteMessage, setRoomMuteMessage] = useState('');
-  const [roomMuteError, setRoomMuteError] = useState('');
+  const [roomMuteFeedback, setRoomMuteFeedback] = useState<{
+    roomId: string;
+    message: string;
+    error: string;
+  } | null>(null);
   const [roomMuteLoadingId, setRoomMuteLoadingId] = useState<string | null>(
     null,
   );
@@ -416,8 +419,7 @@ export const Dashboard: React.FC = () => {
   const updateRoomMuteUntil = useCallback(
     async (roomId: string, minutes: number | null) => {
       setRoomMuteLoadingId(roomId);
-      setRoomMuteMessage('');
-      setRoomMuteError('');
+      setRoomMuteFeedback(null);
       const muteUntil =
         minutes === null
           ? null
@@ -427,20 +429,37 @@ export const Dashboard: React.FC = () => {
           method: 'PATCH',
           body: JSON.stringify({ muteUntil }),
         });
-        setRoomMuteMessage(
-          minutes === null
-            ? 'ルーム通知ミュートを解除しました'
-            : 'ルーム通知をミュートしました',
-        );
+        setRoomMuteFeedback({
+          roomId,
+          message:
+            minutes === null
+              ? 'ルーム通知ミュートを解除しました'
+              : 'ルーム通知をミュートしました',
+          error: '',
+        });
       } catch (err) {
         console.error('ルーム通知ミュートの更新に失敗しました', err);
-        setRoomMuteError('ルーム通知ミュートの更新に失敗しました');
+        setRoomMuteFeedback({
+          roomId,
+          message: '',
+          error: 'ルーム通知ミュートの更新に失敗しました',
+        });
       } finally {
         setRoomMuteLoadingId(null);
       }
     },
     [],
   );
+
+  useEffect(() => {
+    if (!roomMuteFeedback?.message && !roomMuteFeedback?.error) return;
+    const timeoutId = window.setTimeout(() => {
+      setRoomMuteFeedback(null);
+    }, 4000);
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [roomMuteFeedback]);
 
   const openNotificationTarget = (item: AppNotification) => {
     if (
@@ -603,16 +622,6 @@ export const Dashboard: React.FC = () => {
             <Alert variant="error">{notificationMuteError}</Alert>
           </div>
         )}
-        {roomMuteMessage && (
-          <div style={{ marginTop: 6, color: '#16a34a' }}>
-            {roomMuteMessage}
-          </div>
-        )}
-        {roomMuteError && (
-          <div style={{ marginTop: 6 }}>
-            <Alert variant="error">{roomMuteError}</Alert>
-          </div>
-        )}
         <div className="list" style={{ display: 'grid', gap: 8, marginTop: 8 }}>
           {notifications.map((item) => {
             const projectLabel = item.project
@@ -716,6 +725,22 @@ export const Dashboard: React.FC = () => {
                       >
                         解除
                       </Button>
+                    </div>
+                  )}
+                {roomId &&
+                  roomMuteFeedback?.roomId === roomId &&
+                  (roomMuteFeedback.message || roomMuteFeedback.error) && (
+                    <div style={{ marginTop: 6 }}>
+                      {roomMuteFeedback.message && (
+                        <div style={{ color: '#16a34a' }}>
+                          {roomMuteFeedback.message}
+                        </div>
+                      )}
+                      {roomMuteFeedback.error && (
+                        <Alert variant="error">
+                          {roomMuteFeedback.error}
+                        </Alert>
+                      )}
                     </div>
                   )}
               </Card>
