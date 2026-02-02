@@ -47,9 +47,7 @@ export async function resolveRoomAudienceUserIds(options: {
       const userId = normalizeId(member?.userId);
       if (userId) audience.add(userId);
     });
-  }
-
-  if (room.type === 'private_group' || room.type === 'dm') {
+  } else if (room.type === 'private_group' || room.type === 'dm') {
     const members = await client.chatRoomMember.findMany({
       where: { roomId: room.id, deletedAt: null },
       select: { userId: true },
@@ -58,10 +56,7 @@ export async function resolveRoomAudienceUserIds(options: {
       const userId = normalizeId(member?.userId);
       if (userId) audience.add(userId);
     });
-    return audience;
-  }
-
-  if (room.type === 'department') {
+  } else if (room.type === 'department') {
     const groupId = normalizeId(room.groupId);
     if (groupId) {
       const members = await resolveChatAckRequiredRecipientUserIds({
@@ -71,9 +66,7 @@ export async function resolveRoomAudienceUserIds(options: {
       });
       members.forEach((userId) => audience.add(userId));
     }
-  }
-
-  if (room.type === 'company') {
+  } else if (room.type === 'company') {
     const members = await resolveChatAckRequiredRecipientUserIds({
       requiredUserIds: [],
       requiredRoles: ['admin', 'mgmt', 'exec', 'user', 'hr'],

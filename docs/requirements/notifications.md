@@ -59,6 +59,7 @@
 ### メール配信の対象（実装済み）
 
 - `chat_mention`
+- （任意）`chat_message`（環境変数 `NOTIFICATION_EMAIL_KINDS` に含めた場合）
 - （任意）`chat_ack_required`（環境変数 `NOTIFICATION_EMAIL_KINDS` に含めた場合）
 - （任意）`approval_pending`, `approval_approved`, `approval_rejected`（環境変数 `NOTIFICATION_EMAIL_KINDS` に含めた場合）
 - `daily_report_missing`
