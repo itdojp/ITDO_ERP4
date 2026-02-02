@@ -82,25 +82,95 @@ const RESERVED_GROUP_IDS = new Set([
   'external_chat',
 ]);
 
-async function resolveGroupSelector(selector: string) {
-  const trimmed = selector.trim();
-  if (!trimmed || RESERVED_GROUP_IDS.has(trimmed)) return trimmed;
-  const row = await prisma.groupAccount.findFirst({
+function normalizeSelector(value: unknown) {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function extractUnknownApproverGroupError(err: unknown) {
+  if (!err || typeof err !== 'object') return null;
+  const message = (err as any).message;
+  if (typeof message !== 'string') return null;
+  if (!message.startsWith('unknown_approver_group:')) return null;
+  return message.slice('unknown_approver_group:'.length);
+}
+
+function collectApprovalGroupSelectors(steps: unknown) {
+  const selectors: string[] = [];
+  if (Array.isArray(steps)) {
+    for (const step of steps) {
+      if (!step || typeof step !== 'object') continue;
+      const approverGroupId = normalizeSelector((step as any).approverGroupId);
+      if (approverGroupId) selectors.push(approverGroupId);
+    }
+    return selectors;
+  }
+  if (!steps || typeof steps !== 'object') return selectors;
+  const stages = (steps as any).stages;
+  if (!Array.isArray(stages)) return selectors;
+  for (const stage of stages) {
+    if (!stage || typeof stage !== 'object') continue;
+    const approvers = Array.isArray((stage as any).approvers)
+      ? (stage as any).approvers
+      : [];
+    for (const approver of approvers) {
+      if (!approver || typeof approver !== 'object') continue;
+      if ((approver as any).type !== 'group') continue;
+      const id = normalizeSelector((approver as any).id);
+      if (id) selectors.push(id);
+    }
+  }
+  return selectors;
+}
+
+async function resolveGroupAccountIdBySelectorMap(selectors: string[]) {
+  // NOTE: Only used in admin/mgmt protected routes. Do not reuse without ACLs.
+  const normalized = Array.from(
+    new Set(selectors.map((selector) => selector.trim()).filter(Boolean)),
+  );
+  if (!normalized.length) return new Map<string, string>();
+  const rows = await prisma.groupAccount.findMany({
     where: {
       active: true,
-      OR: [{ id: trimmed }, { displayName: trimmed }],
+      OR: [{ id: { in: normalized } }, { displayName: { in: normalized } }],
     },
     select: { id: true, displayName: true },
   });
-  if (!row) return trimmed;
-  const displayName = row.displayName?.trim() || '';
-  if (displayName && RESERVED_GROUP_IDS.has(displayName)) {
-    return displayName;
+  const map = new Map<string, string>();
+  for (const row of rows) {
+    const id = normalizeSelector(row?.id);
+    const displayName = normalizeSelector(row?.displayName);
+    if (!id) continue;
+    map.set(id, id);
+    if (displayName) map.set(displayName, id);
   }
-  return row.id;
+  return map;
+}
+
+function resolveSelectorStrict(
+  selector: string,
+  selectorMap: Map<string, string>,
+) {
+  const trimmed = selector.trim();
+  if (!trimmed) return trimmed;
+  const resolved = selectorMap.get(trimmed);
+  if (resolved) return resolved;
+  if (RESERVED_GROUP_IDS.has(trimmed)) return trimmed;
+  throw new Error(`unknown_approver_group:${trimmed}`);
+}
+
+async function resolveGroupSelectorCandidates(selector: string) {
+  const trimmed = normalizeSelector(selector);
+  if (!trimmed) return [];
+  const selectorMap = await resolveGroupAccountIdBySelectorMap([trimmed]);
+  const resolved = selectorMap.get(trimmed);
+  const candidates = new Set<string>([trimmed]);
+  if (resolved) candidates.add(resolved);
+  return Array.from(candidates);
 }
 
 async function resolveApprovalStepsGroupIds(steps: unknown) {
+  const selectors = collectApprovalGroupSelectors(steps);
+  const selectorMap = await resolveGroupAccountIdBySelectorMap(selectors);
   if (Array.isArray(steps)) {
     const resolved = [];
     for (const step of steps) {
@@ -110,7 +180,7 @@ async function resolveApprovalStepsGroupIds(steps: unknown) {
       }
       const approverGroupId =
         typeof (step as any).approverGroupId === 'string'
-          ? await resolveGroupSelector((step as any).approverGroupId)
+          ? resolveSelectorStrict((step as any).approverGroupId, selectorMap)
           : (step as any).approverGroupId;
       resolved.push({
         ...(step as any),
@@ -141,7 +211,7 @@ async function resolveApprovalStepsGroupIds(steps: unknown) {
         (approver as any).type === 'group' &&
         typeof (approver as any).id === 'string'
       ) {
-        const id = await resolveGroupSelector((approver as any).id);
+        const id = resolveSelectorStrict((approver as any).id, selectorMap);
         resolvedApprovers.push({ ...(approver as any), id });
       } else {
         resolvedApprovers.push(approver);
@@ -234,7 +304,18 @@ export async function registerApprovalRuleRoutes(app: FastifyInstance) {
     async (req, reply) => {
       const body = req.body as any;
       if (body.steps !== undefined) {
-        body.steps = await resolveApprovalStepsGroupIds(body.steps);
+        try {
+          body.steps = await resolveApprovalStepsGroupIds(body.steps);
+        } catch (err) {
+          const unknownGroup = extractUnknownApproverGroupError(err);
+          if (unknownGroup !== null) {
+            return reply.code(400).send({
+              error: 'unknown_approver_group',
+              message: `unknown approver group: ${unknownGroup}`,
+            });
+          }
+          throw err;
+        }
       }
       if (!hasValidSteps(body.steps || [])) {
         return reply.code(400).send({
@@ -284,7 +365,18 @@ export async function registerApprovalRuleRoutes(app: FastifyInstance) {
       const { id } = req.params as { id: string };
       const body = req.body as any;
       if (body.steps !== undefined) {
-        body.steps = await resolveApprovalStepsGroupIds(body.steps);
+        try {
+          body.steps = await resolveApprovalStepsGroupIds(body.steps);
+        } catch (err) {
+          const unknownGroup = extractUnknownApproverGroupError(err);
+          if (unknownGroup !== null) {
+            return reply.code(400).send({
+              error: 'unknown_approver_group',
+              message: `unknown approver group: ${unknownGroup}`,
+            });
+          }
+          throw err;
+        }
       }
       if (body.steps && !hasValidSteps(body.steps || [])) {
         return reply.code(400).send({
@@ -350,12 +442,11 @@ export async function registerApprovalRuleRoutes(app: FastifyInstance) {
       } = req.query as any;
       const stepsFilter: any = {};
       if (approverGroupId) {
-        const raw = String(approverGroupId).trim();
-        const resolved = await resolveGroupSelector(raw);
-        const candidates =
-          resolved && resolved !== raw ? [raw, resolved] : [raw];
-        stepsFilter.approverGroupId =
-          candidates.length > 1 ? { in: candidates } : candidates[0];
+        const raw = String(approverGroupId);
+        const candidates = await resolveGroupSelectorCandidates(raw);
+        if (candidates.length) {
+          stepsFilter.approverGroupId = { in: candidates };
+        }
       }
       if (approverUserId) stepsFilter.approverUserId = approverUserId;
 
