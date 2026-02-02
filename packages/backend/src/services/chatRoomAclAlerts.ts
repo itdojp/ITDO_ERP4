@@ -74,11 +74,26 @@ export async function runChatRoomAclMismatchAlerts(options?: {
       ),
     );
     if (!userIds.length) continue;
+    if (dryRun) {
+      roomsAlerted += 1;
+      recipients += userIds.length;
+      continue;
+    }
+    const existing = await prisma.appNotification.findMany({
+      where: {
+        kind: 'chat_room_acl_mismatch',
+        messageId: candidate.room.id,
+        userId: { in: userIds },
+      },
+      select: { userId: true },
+    });
+    const existingSet = new Set(existing.map((item) => item.userId));
+    const targets = userIds.filter((userId) => !existingSet.has(userId));
+    if (!targets.length) continue;
     roomsAlerted += 1;
-    recipients += userIds.length;
-    if (dryRun) continue;
+    recipients += targets.length;
     const result = await prisma.appNotification.createMany({
-      data: userIds.map((userId) => ({
+      data: targets.map((userId) => ({
         userId,
         kind: 'chat_room_acl_mismatch',
         projectId: candidate.room.projectId ?? undefined,
@@ -93,7 +108,6 @@ export async function runChatRoomAclMismatchAlerts(options?: {
         } as Prisma.InputJsonValue,
         createdBy: options?.actorId ?? undefined,
       })),
-      skipDuplicates: true,
     });
     created += result.count ?? 0;
   }

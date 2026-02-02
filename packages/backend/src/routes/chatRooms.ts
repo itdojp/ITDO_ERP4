@@ -1813,7 +1813,7 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
         projectIds,
         groupIds,
         groupAccountIds,
-        accessLevel: 'post',
+        accessLevel: 'read',
       });
       if (!access.ok) {
         return reply
@@ -1891,7 +1891,7 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
         projectIds,
         groupIds,
         groupAccountIds,
-        accessLevel: 'post',
+        accessLevel: 'read',
       });
       if (!access.ok) {
         return reply
@@ -1990,6 +1990,7 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
         projectIds,
         groupIds,
         groupAccountIds,
+        accessLevel: 'post',
       });
       if (!access.ok) {
         return reply

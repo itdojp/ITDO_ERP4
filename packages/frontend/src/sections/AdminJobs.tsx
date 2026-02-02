@@ -115,16 +115,15 @@ export const AdminJobs: React.FC = () => {
     });
   };
   const runChatRoomAclAlerts = () => {
-    const limit = chatRoomAclLimit.trim()
-      ? Number(chatRoomAclLimit)
-      : undefined;
-    if (chatRoomAclLimit.trim() && !Number.isFinite(limit)) {
+    const limitRaw = chatRoomAclLimit.trim();
+    const limit = limitRaw ? Number(limitRaw) : undefined;
+    if (limitRaw && !Number.isFinite(limit)) {
       updateJob('chatRoomAclAlerts', {
         error: 'limit は有効な数値で入力してください',
       });
       return;
     }
-    if (limit && (limit < 1 || limit > 500)) {
+    if (limit !== undefined && (limit < 1 || limit > 500)) {
       updateJob('chatRoomAclAlerts', {
         error: 'limit は 1-500 で入力してください',
       });
@@ -132,7 +131,7 @@ export const AdminJobs: React.FC = () => {
     }
     runJob('chatRoomAclAlerts', '/jobs/chat-room-acl-alerts/run', {
       dryRun: chatRoomAclDryRun,
-      ...(limit ? { limit } : {}),
+      ...(limit !== undefined ? { limit } : {}),
     });
   };
   const runDailyReportMissing = () =>
