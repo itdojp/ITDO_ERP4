@@ -110,6 +110,7 @@ export async function runChatAckReminders(
   type Candidate = {
     userId: string;
     projectId: string | null;
+    roomId: string | null;
     messageId: string;
     dueAt: Date;
     senderUserId: string;
@@ -140,10 +141,12 @@ export async function runChatAckReminders(
     }
     const excerpt = buildExcerpt(request.message?.body ?? '');
     const projectId = request.room.type === 'project' ? request.roomId : null;
+    const roomId = normalizeString(request.roomId) || null;
     for (const userId of incompleteUserIds) {
       candidates.push({
         userId,
         projectId,
+        roomId,
         messageId: request.messageId,
         dueAt: request.dueAt,
         senderUserId,
@@ -207,6 +210,7 @@ export async function runChatAckReminders(
             messageId: item.messageId,
             payload: {
               fromUserId: item.senderUserId,
+              roomId: item.roomId || undefined,
               excerpt: item.excerpt,
               dueAt: item.dueAt.toISOString(),
               requiredCount: item.requiredCount,

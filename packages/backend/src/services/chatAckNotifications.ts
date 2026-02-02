@@ -65,6 +65,7 @@ export async function tryCreateChatAckRequiredNotificationsWithAudit(
   try {
     const notificationResult = await createChatAckRequiredNotifications({
       projectId: options.projectId,
+      roomId: options.roomId,
       messageId: options.messageId,
       messageBody: options.messageBody,
       senderUserId: options.actorUserId,
