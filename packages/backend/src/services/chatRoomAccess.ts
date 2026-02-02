@@ -12,7 +12,12 @@ type ChatRoomBase = {
 };
 
 type ChatRoomContentAccessResult =
-  | { ok: true; room: ChatRoomBase; memberRole?: string }
+  | {
+      ok: true;
+      room: ChatRoomBase;
+      memberRole?: string;
+      postWithoutView?: boolean;
+    }
   | {
       ok: false;
       reason:
@@ -70,24 +75,29 @@ export async function ensureChatRoomContentAccess(options: {
   const viewerGroupIds = normalizeRoomGroupIds(room.viewerGroupIds);
   const posterGroupIds = normalizeRoomGroupIds(room.posterGroupIds);
   const groupAccessSet = new Set([...groupIdSet, ...groupAccountIdSet]);
-  // viewer/poster group ids are allow-lists that apply to all roles.
-  if (
-    viewerGroupIds.length > 0 &&
-    !viewerGroupIds.some((groupId) => groupAccessSet.has(groupId))
-  ) {
+  const hasViewerAccess =
+    viewerGroupIds.length === 0 ||
+    viewerGroupIds.some((groupId) => groupAccessSet.has(groupId));
+  const hasPosterAccess =
+    posterGroupIds.length === 0
+      ? hasViewerAccess
+      : posterGroupIds.some((groupId) => groupAccessSet.has(groupId));
+  if (accessLevel === 'read' && !hasViewerAccess) {
     return { ok: false, reason: 'forbidden_room_member' };
   }
-  if (
-    accessLevel === 'post' &&
-    posterGroupIds.length > 0 &&
-    !posterGroupIds.some((groupId) => groupAccessSet.has(groupId))
-  ) {
+  if (accessLevel === 'post' && !hasPosterAccess) {
     return { ok: false, reason: 'forbidden_room_member' };
   }
 
   if (room.type === 'project') {
     if (hasProjectAccess(options.roles, options.projectIds, room.id)) {
-      return { ok: true, room };
+      return {
+        ok: true,
+        room,
+        ...(accessLevel === 'post' && hasPosterAccess && !hasViewerAccess
+          ? { postWithoutView: true }
+          : {}),
+      };
     }
     if (room.allowExternalUsers) {
       const member = await client.chatRoomMember.findFirst({
@@ -97,13 +107,26 @@ export async function ensureChatRoomContentAccess(options: {
       if (!member) {
         return { ok: false, reason: 'forbidden_room_member' };
       }
-      return { ok: true, room, memberRole: member.role };
+      return {
+        ok: true,
+        room,
+        memberRole: member.role,
+        ...(accessLevel === 'post' && hasPosterAccess && !hasViewerAccess
+          ? { postWithoutView: true }
+          : {}),
+      };
     }
     return { ok: false, reason: 'forbidden_project' };
   }
 
   if (room.type === 'company') {
-    return { ok: true, room };
+    return {
+      ok: true,
+      room,
+      ...(accessLevel === 'post' && hasPosterAccess && !hasViewerAccess
+        ? { postWithoutView: true }
+        : {}),
+    };
   }
 
   if (room.type === 'department') {
@@ -114,7 +137,13 @@ export async function ensureChatRoomContentAccess(options: {
     ) {
       return { ok: false, reason: 'forbidden_room_member' };
     }
-    return { ok: true, room };
+    return {
+      ok: true,
+      room,
+      ...(accessLevel === 'post' && hasPosterAccess && !hasViewerAccess
+        ? { postWithoutView: true }
+        : {}),
+    };
   }
 
   const member = await client.chatRoomMember.findFirst({
@@ -125,5 +154,12 @@ export async function ensureChatRoomContentAccess(options: {
     return { ok: false, reason: 'forbidden_room_member' };
   }
 
-  return { ok: true, room, memberRole: member.role };
+  return {
+    ok: true,
+    room,
+    memberRole: member.role,
+    ...(accessLevel === 'post' && hasPosterAccess && !hasViewerAccess
+      ? { postWithoutView: true }
+      : {}),
+  };
 }

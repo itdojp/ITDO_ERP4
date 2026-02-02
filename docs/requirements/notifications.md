@@ -51,6 +51,7 @@
 - `chat_mention`: チャットのメンション通知（Chat で作成）
 - `chat_message`: チャットの全投稿通知（Chat で作成）
 - `chat_ack_required`: 確認依頼（ack required）の通知（requiredUserIds に対して作成）
+- `chat_room_acl_mismatch`: ルームACL不整合の警告（owner/admin に対して作成、ジョブ）
 - `daily_report_missing`: 日報未提出通知（ジョブで作成）
 - `project_member_added`: 案件メンバー追加（追加されたユーザに対して作成）
 - `approval_pending`: 承認待ち通知（承認者に対して作成）
