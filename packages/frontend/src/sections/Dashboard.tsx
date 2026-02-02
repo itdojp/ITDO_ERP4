@@ -197,6 +197,11 @@ function formatNotificationLabel(item: AppNotification) {
     if (fromUserId) return `${fromUserId} からメンション`;
     return 'チャットでメンション';
   }
+  if (item.kind === 'chat_message') {
+    const fromUserId = resolveFromUserId(item.payload);
+    if (fromUserId) return `${fromUserId} から投稿`;
+    return 'チャット投稿';
+  }
   if (item.kind === 'chat_ack_required') {
     const fromUserId = resolveFromUserId(item.payload);
     if (fromUserId) return `${fromUserId} から確認依頼`;
@@ -326,7 +331,11 @@ export const Dashboard: React.FC = () => {
   };
 
   const openNotificationTarget = (item: AppNotification) => {
-    if (item.kind === 'chat_mention' || item.kind === 'chat_ack_required') {
+    if (
+      item.kind === 'chat_mention' ||
+      item.kind === 'chat_message' ||
+      item.kind === 'chat_ack_required'
+    ) {
       if (!item.messageId) return;
       navigateToOpen({ kind: 'chat_message', id: item.messageId });
       return;
@@ -430,6 +439,7 @@ export const Dashboard: React.FC = () => {
             const dueAt = resolveDueAt(item.payload);
             const canOpen =
               ((item.kind === 'chat_mention' ||
+                item.kind === 'chat_message' ||
                 item.kind === 'chat_ack_required') &&
                 Boolean(item.messageId)) ||
               (item.kind === 'daily_report_missing' &&

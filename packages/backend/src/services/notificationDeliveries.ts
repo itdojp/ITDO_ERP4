@@ -155,6 +155,40 @@ function buildChatMentionEmailBody(notification: {
     .join('\n');
 }
 
+function buildChatMessageEmailSubject(meta: {
+  projectCode?: string | null;
+  projectName?: string | null;
+}) {
+  const label = meta.projectCode || meta.projectName;
+  return label ? `ERP4: ${label} チャット投稿` : 'ERP4: チャット投稿';
+}
+
+function buildChatMessageEmailBody(notification: {
+  userId: string;
+  createdAt: Date;
+  project?: { code?: string | null; name?: string | null } | null;
+  messageId?: string | null;
+  payload?: Prisma.JsonValue | null;
+}) {
+  const projectLabel = notification.project
+    ? `${notification.project.code || '-'} / ${notification.project.name || '-'}`
+    : '-';
+  const payload = notification.payload as Record<string, unknown> | null;
+  const fromUserId = normalizeString(payload?.fromUserId);
+  const excerpt = normalizeString(payload?.excerpt);
+  return [
+    'chat message notification',
+    `to: ${notification.userId}`,
+    `from: ${fromUserId || '-'}`,
+    `project: ${projectLabel}`,
+    `createdAt: ${notification.createdAt.toISOString()}`,
+    `messageId: ${notification.messageId || '-'}`,
+    excerpt ? `excerpt: ${excerpt}` : undefined,
+  ]
+    .filter((line) => typeof line === 'string' && line.trim() !== '')
+    .join('\n');
+}
+
 function buildChatAckRequiredEmailSubject(meta: {
   projectCode?: string | null;
   projectName?: string | null;
@@ -420,6 +454,12 @@ export async function runNotificationEmailDeliveries(options: {
         projectName: notification.project?.name,
       });
       body = buildChatMentionEmailBody(notification);
+    } else if (notification.kind === 'chat_message') {
+      subject = buildChatMessageEmailSubject({
+        projectCode: notification.project?.code,
+        projectName: notification.project?.name,
+      });
+      body = buildChatMessageEmailBody(notification);
     } else if (notification.kind === 'chat_ack_required') {
       subject = buildChatAckRequiredEmailSubject({
         projectCode: notification.project?.code,

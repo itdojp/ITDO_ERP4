@@ -42,11 +42,13 @@
 - `chat_mention` は `notifyMentions` と `muteAllUntil` / `muteUntil` を尊重
   - project ルームは `roomId = projectId` として判定
 - 非 project ルームは `mentionUserIds` に加えて `mentionGroupIds/@all` をルームの閲覧対象へ展開（project ルームは従来通り `mentionGroupIds/@all` 指定時に project members へ fallback）
+- `chat_message`（全投稿通知）は `notifyAllPosts` と `muteAllUntil` / `muteUntil` を尊重
 - それ以外の通知種別に対する抑制は後続で拡張
 
 ### AppNotification の発火イベント（実装済み）
 
 - `chat_mention`: チャットのメンション通知（Chat で作成）
+- `chat_message`: チャットの全投稿通知（Chat で作成）
 - `chat_ack_required`: 確認依頼（ack required）の通知（requiredUserIds に対して作成）
 - `daily_report_missing`: 日報未提出通知（ジョブで作成）
 - `project_member_added`: 案件メンバー追加（追加されたユーザに対して作成）
