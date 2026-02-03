@@ -499,6 +499,23 @@ export const projectChatAckRequestSchema = {
   ),
 };
 
+export const chatAckPreviewSchema = {
+  body: Type.Object(
+    {
+      requiredUserIds: Type.Optional(
+        Type.Array(Type.String({ minLength: 1 }), { maxItems: 50 }),
+      ),
+      requiredGroupIds: Type.Optional(
+        Type.Array(Type.String({ minLength: 1 }), { maxItems: 20 }),
+      ),
+      requiredRoles: Type.Optional(
+        Type.Array(Type.String({ minLength: 1 }), { maxItems: 20 }),
+      ),
+    },
+    { additionalProperties: false },
+  ),
+};
+
 export const chatAckRequestCancelSchema = {
   body: Type.Object(
     {

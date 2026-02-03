@@ -14,6 +14,14 @@ export type ChatAckRecipientValidationResult =
   | { ok: true; validUserIds: string[]; skippedAccessCheck?: boolean }
   | { ok: false; invalidUserIds: string[]; reason: string };
 
+export type ChatAckRecipientPreviewResult = {
+  resolvedUserIds: string[];
+  resolvedCount: number;
+  exceedsLimit: boolean;
+  invalidUserIds: string[];
+  reason?: string;
+};
+
 function normalizeId(value: unknown) {
   return typeof value === 'string' ? value.trim() : '';
 }
@@ -405,4 +413,35 @@ export async function validateChatAckRequiredRecipientsForRoom(options: {
   }
 
   return { ok: true, validUserIds: activeUserIds };
+}
+
+export async function previewChatAckRecipients(options: {
+  room: ChatRoomForAckValidation;
+  requiredUserIds?: string[];
+  requiredGroupIds?: string[];
+  requiredRoles?: string[];
+  client?: any;
+}): Promise<ChatAckRecipientPreviewResult> {
+  const client = options.client ?? prisma;
+  const requiredUserIds = await resolveChatAckRequiredRecipientUserIds({
+    requiredUserIds: options.requiredUserIds ?? [],
+    requiredGroupIds: options.requiredGroupIds ?? [],
+    requiredRoles: options.requiredRoles ?? [],
+    client,
+  });
+  const resolvedCount = requiredUserIds.length;
+  const exceedsLimit = resolvedCount > 50;
+  const validation = await validateChatAckRequiredRecipientsForRoom({
+    room: options.room,
+    requiredUserIds,
+    client,
+  });
+  const invalidUserIds = validation.ok ? [] : validation.invalidUserIds;
+  return {
+    resolvedUserIds: requiredUserIds.slice(0, 50),
+    resolvedCount,
+    exceedsLimit,
+    invalidUserIds: invalidUserIds.slice(0, 20),
+    reason: validation.ok ? undefined : validation.reason,
+  };
 }

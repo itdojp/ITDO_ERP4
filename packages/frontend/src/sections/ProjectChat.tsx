@@ -248,6 +248,15 @@ export const ProjectChat: React.FC = () => {
   const [ackTargetGroupInput, setAckTargetGroupInput] = useState('');
   const [ackTargetRoles, setAckTargetRoles] = useState('');
   const [ackTargetRoleInput, setAckTargetRoleInput] = useState('');
+  const [ackPreview, setAckPreview] = useState<{
+    resolvedUserIds: string[];
+    resolvedCount: number;
+    exceedsLimit: boolean;
+    invalidUserIds: string[];
+    reason?: string;
+  } | null>(null);
+  const [ackPreviewMessage, setAckPreviewMessage] = useState('');
+  const [ackPreviewLoading, setAckPreviewLoading] = useState(false);
   const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
   const [filterTag, setFilterTag] = useState('');
   const [items, setItems] = useState<ChatMessage[]>([]);
@@ -324,6 +333,40 @@ export const ProjectChat: React.FC = () => {
     new Set(parseUserIds(ackTargetGroupIds)),
   );
   const ackTargetRoleList = Array.from(new Set(parseUserIds(ackTargetRoles)));
+
+  useEffect(() => {
+    setAckPreview(null);
+    setAckPreviewMessage('');
+  }, [ackTargets, ackTargetGroupIds, ackTargetRoles]);
+
+  const formatAckPreviewReason = (reason?: string) => {
+    switch (reason) {
+      case 'required_users_empty':
+        return '確認対象が空です';
+      case 'required_users_inactive':
+        return '無効なユーザが含まれています';
+      case 'required_users_forbidden':
+        return '閲覧権限のないユーザが含まれています';
+      case 'required_users_invalid':
+        return '無効/権限外のユーザが含まれています';
+      case 'room_group_required':
+        return 'ルームのグループ設定が必要です';
+      case 'room_deleted':
+        return 'ルームが削除されています';
+      default:
+        return '';
+    }
+  };
+
+  const ackPreviewReasonLabel = ackPreview
+    ? formatAckPreviewReason(ackPreview.reason)
+    : '';
+  const ackPreviewInvalidLabel =
+    ackPreview && ackPreview.invalidUserIds.length > 0
+      ? ackPreview.invalidUserIds.length > 5
+        ? `${ackPreview.invalidUserIds.slice(0, 5).join(', ')}...`
+        : ackPreview.invalidUserIds.join(', ')
+      : '';
 
   const hasActiveAckDeadline = items.some((item) => {
     if (item.ackRequest?.canceledAt) return false;
@@ -652,6 +695,46 @@ export const ProjectChat: React.FC = () => {
     setAckTargetRoles('');
     setAckTargetRoleInput('');
   };
+
+  const previewAckTargets = useCallback(async () => {
+    if (!projectId) return;
+    setAckPreviewLoading(true);
+    setAckPreviewMessage('');
+    const uniqueTargets = ackTargetUserIds;
+    const uniqueGroupIds = ackTargetGroupIdList;
+    const uniqueRoles = ackTargetRoleList;
+    if (
+      uniqueTargets.length === 0 &&
+      uniqueGroupIds.length === 0 &&
+      uniqueRoles.length === 0
+    ) {
+      setAckPreviewLoading(false);
+      setAckPreviewMessage('確認対象を入力してください');
+      return;
+    }
+    try {
+      const res = await api<{
+        resolvedUserIds: string[];
+        resolvedCount: number;
+        exceedsLimit: boolean;
+        invalidUserIds: string[];
+        reason?: string;
+      }>(`/projects/${projectId}/chat-ack-requests/preview`, {
+        method: 'POST',
+        body: JSON.stringify({
+          requiredUserIds: uniqueTargets,
+          requiredGroupIds: uniqueGroupIds,
+          requiredRoles: uniqueRoles,
+        }),
+      });
+      setAckPreview(res);
+    } catch (error) {
+      console.error('確認対象の展開に失敗しました', error);
+      setAckPreviewMessage('確認対象の展開に失敗しました');
+    } finally {
+      setAckPreviewLoading(false);
+    }
+  }, [ackTargetGroupIdList, ackTargetRoleList, ackTargetUserIds, projectId]);
 
   const load = async () => {
     try {
@@ -1529,6 +1612,48 @@ export const ProjectChat: React.FC = () => {
             <option key={role} value={role} />
           ))}
         </datalist>
+        <div
+          className="row"
+          style={{
+            gap: 8,
+            marginTop: 8,
+            flexWrap: 'wrap',
+            alignItems: 'center',
+          }}
+        >
+          <button
+            className="button secondary"
+            onClick={previewAckTargets}
+            type="button"
+            disabled={ackPreviewLoading}
+          >
+            対象者を確認
+          </button>
+          {ackPreviewLoading && (
+            <span style={{ fontSize: 12, color: '#6b7280' }}>確認中...</span>
+          )}
+          {ackPreview && (
+            <span style={{ fontSize: 12, color: '#475569' }}>
+              展開対象: {ackPreview.resolvedCount}人
+              {ackPreview.exceedsLimit ? '（上限超過）' : ''}
+            </span>
+          )}
+          {ackPreviewReasonLabel && (
+            <span style={{ fontSize: 12, color: '#b45309' }}>
+              {ackPreviewReasonLabel}
+            </span>
+          )}
+          {ackPreviewInvalidLabel && (
+            <span style={{ fontSize: 12, color: '#b45309' }}>
+              無効: {ackPreviewInvalidLabel}
+            </span>
+          )}
+          {ackPreviewMessage && (
+            <span style={{ fontSize: 12, color: '#b45309' }}>
+              {ackPreviewMessage}
+            </span>
+          )}
+        </div>
         {(ackTargetUserIds.length > 0 ||
           ackTargetGroupIdList.length > 0 ||
           ackTargetRoleList.length > 0) && (
