@@ -104,6 +104,24 @@ test('resolveRoomAudienceUserIds: department resolves group members', async () =
   assert.deepEqual(Array.from(res), ['u1']);
 });
 
+test('resolveRoomAudienceUserIds: company uses viewerGroupIds when set', async () => {
+  const client = createClient({
+    groupAccounts: [{ id: 'group-uuid', displayName: 'group-uuid' }],
+    memberships: [{ groupId: 'group-uuid', userId: 'u1' }],
+  });
+  const res = await resolveRoomAudienceUserIds({
+    room: {
+      id: 'company',
+      type: 'company',
+      groupId: null,
+      viewerGroupIds: ['group-uuid'],
+      allowExternalUsers: false,
+    },
+    client,
+  });
+  assert.deepEqual(Array.from(res), ['u1']);
+});
+
 test('expandRoomMentionRecipients: skips group members when audience empty', async () => {
   const client = createClient({
     groupAccounts: [{ id: 'deptB-id', displayName: 'deptB' }],
