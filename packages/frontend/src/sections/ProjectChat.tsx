@@ -337,7 +337,7 @@ export const ProjectChat: React.FC = () => {
   useEffect(() => {
     setAckPreview(null);
     setAckPreviewMessage('');
-  }, [ackTargets, ackTargetGroupIds, ackTargetRoles]);
+  }, [projectId, ackTargets, ackTargetGroupIds, ackTargetRoles]);
 
   const formatAckPreviewReason = (reason?: string) => {
     switch (reason) {
@@ -699,6 +699,7 @@ export const ProjectChat: React.FC = () => {
   const previewAckTargets = useCallback(async () => {
     if (!projectId) return;
     setAckPreviewLoading(true);
+    setAckPreview(null);
     setAckPreviewMessage('');
     const uniqueTargets = ackTargetUserIds;
     const uniqueGroupIds = ackTargetGroupIdList;

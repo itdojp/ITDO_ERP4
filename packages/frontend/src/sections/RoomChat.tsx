@@ -321,7 +321,7 @@ export const RoomChat: React.FC = () => {
   useEffect(() => {
     setAckPreview(null);
     setAckPreviewMessage('');
-  }, [ackTargets, ackTargetGroupIds, ackTargetRoles]);
+  }, [ackTargets, ackTargetGroupIds, ackTargetRoles, roomId]);
 
   const formatAckPreviewReason = (reason?: string) => {
     switch (reason) {
@@ -821,6 +821,7 @@ export const RoomChat: React.FC = () => {
   const previewAckTargets = useCallback(async () => {
     if (!roomId) return;
     setAckPreviewLoading(true);
+    setAckPreview(null);
     setAckPreviewMessage('');
     const uniqueTargets = ackTargetUserIds;
     const uniqueGroupIds = ackTargetGroupIdList;
