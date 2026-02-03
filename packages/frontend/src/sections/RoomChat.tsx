@@ -276,6 +276,8 @@ export const RoomChat: React.FC = () => {
   const [mentionCandidates, setMentionCandidates] = useState<MentionCandidates>(
     {},
   );
+  const [ackCandidates, setAckCandidates] = useState<MentionCandidates>({});
+  const [ackCandidateQuery, setAckCandidateQuery] = useState('');
   const mentionGroupLabelMap = useMemo(() => {
     return new Map(
       (mentionCandidates.groups || []).map((group) => [
@@ -284,6 +286,14 @@ export const RoomChat: React.FC = () => {
       ]),
     );
   }, [mentionCandidates.groups]);
+  const ackGroupLabelMap = useMemo(() => {
+    return new Map(
+      (ackCandidates.groups || []).map((group) => [
+        group.groupId,
+        group.displayName ? group.displayName.trim() : '',
+      ]),
+    );
+  }, [ackCandidates.groups]);
   const formatMentionGroupLabel = useCallback(
     (groupId: string) => {
       const label = mentionGroupLabelMap.get(groupId);
@@ -300,6 +310,25 @@ export const RoomChat: React.FC = () => {
       return groupId;
     },
     [mentionGroupLabelMap],
+  );
+  const formatAckGroupLabel = useCallback(
+    (groupId: string) => {
+      const label =
+        ackGroupLabelMap.get(groupId) || mentionGroupLabelMap.get(groupId);
+      return label ? label : groupId;
+    },
+    [ackGroupLabelMap, mentionGroupLabelMap],
+  );
+  const formatAckGroupAria = useCallback(
+    (groupId: string) => {
+      const label =
+        ackGroupLabelMap.get(groupId) || mentionGroupLabelMap.get(groupId);
+      if (label && label !== groupId) {
+        return `${label} (${groupId})`;
+      }
+      return groupId;
+    },
+    [ackGroupLabelMap, mentionGroupLabelMap],
   );
   const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
   const [filterTag, setFilterTag] = useState('');
@@ -768,6 +797,7 @@ export const RoomChat: React.FC = () => {
       return next.join(',');
     });
     setAckTargetInput('');
+    setAckCandidateQuery('');
   };
 
   const addAckTargetGroup = () => {
@@ -779,6 +809,7 @@ export const RoomChat: React.FC = () => {
       return next.join(',');
     });
     setAckTargetGroupInput('');
+    setAckCandidateQuery('');
   };
 
   const addAckTargetRole = () => {
@@ -816,6 +847,7 @@ export const RoomChat: React.FC = () => {
     setAckTargetGroupInput('');
     setAckTargetRoles('');
     setAckTargetRoleInput('');
+    setAckCandidateQuery('');
   };
 
   const previewAckTargets = useCallback(async () => {
@@ -1206,6 +1238,35 @@ export const RoomChat: React.FC = () => {
     };
   }, [roomId]);
 
+  useEffect(() => {
+    const keyword = ackCandidateQuery.trim();
+    if (!roomId || keyword.length < 2) {
+      setAckCandidates({});
+      return;
+    }
+    let cancelled = false;
+    const controller = new AbortController();
+    const handle = window.setTimeout(() => {
+      api<MentionCandidates>(
+        `/chat-rooms/${roomId}/ack-candidates?q=${encodeURIComponent(keyword)}`,
+        { signal: controller.signal },
+      )
+        .then((res) => {
+          if (!cancelled) setAckCandidates(res || {});
+        })
+        .catch((error) => {
+          if (controller.signal.aborted) return;
+          console.warn('確認対象候補の取得に失敗しました', error);
+          if (!cancelled) setAckCandidates({});
+        });
+    }, 200);
+    return () => {
+      cancelled = true;
+      controller.abort();
+      window.clearTimeout(handle);
+    };
+  }, [roomId, ackCandidateQuery]);
+
   const displayedRooms = useMemo(() => {
     return rooms.map((room) => ({
       ...room,
@@ -1576,7 +1637,10 @@ export const RoomChat: React.FC = () => {
                 type="text"
                 list="room-ack-target-users"
                 value={ackTargetInput}
-                onChange={(e) => setAckTargetInput(e.target.value)}
+                onChange={(e) => {
+                  setAckTargetInput(e.target.value);
+                  setAckCandidateQuery(e.target.value);
+                }}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') {
                     e.preventDefault();
@@ -1598,7 +1662,7 @@ export const RoomChat: React.FC = () => {
               </span>
             </div>
             <datalist id="room-ack-target-users">
-              {(mentionCandidates.users || []).map((user) => (
+              {(ackCandidates.users || []).map((user) => (
                 <option
                   key={user.userId}
                   value={user.userId}
@@ -1612,7 +1676,10 @@ export const RoomChat: React.FC = () => {
                 type="text"
                 list="room-ack-target-groups"
                 value={ackTargetGroupInput}
-                onChange={(e) => setAckTargetGroupInput(e.target.value)}
+                onChange={(e) => {
+                  setAckTargetGroupInput(e.target.value);
+                  setAckCandidateQuery(e.target.value);
+                }}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') {
                     e.preventDefault();
@@ -1634,7 +1701,7 @@ export const RoomChat: React.FC = () => {
               </span>
             </div>
             <datalist id="room-ack-target-groups">
-              {(mentionCandidates.groups || []).map((group) => (
+              {(ackCandidates.groups || []).map((group) => (
                 <option
                   key={group.groupId}
                   value={group.groupId}
@@ -1743,13 +1810,13 @@ export const RoomChat: React.FC = () => {
                     key={groupId}
                     type="button"
                     className="badge"
-                    aria-label={`確認対象グループから除外: ${formatMentionGroupAria(
+                    aria-label={`確認対象グループから除外: ${formatAckGroupAria(
                       groupId,
                     )}`}
                     onClick={() => removeAckTargetGroup(groupId)}
                     style={{ cursor: 'pointer' }}
                   >
-                    group:{formatMentionGroupLabel(groupId)} ×
+                    group:{formatAckGroupLabel(groupId)} ×
                   </button>
                 ))}
                 {ackTargetRoleList.map((role) => (

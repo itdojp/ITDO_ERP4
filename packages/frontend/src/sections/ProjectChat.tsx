@@ -275,6 +275,8 @@ export const ProjectChat: React.FC = () => {
   const [mentionCandidates, setMentionCandidates] = useState<MentionCandidates>(
     {},
   );
+  const [ackCandidates, setAckCandidates] = useState<MentionCandidates>({});
+  const [ackCandidateQuery, setAckCandidateQuery] = useState('');
   const [breakGlassEvents, setBreakGlassEvents] = useState<BreakGlassEvent[]>(
     [],
   );
@@ -291,6 +293,14 @@ export const ProjectChat: React.FC = () => {
       ]),
     );
   }, [mentionCandidates.groups]);
+  const ackGroupLabelMap = useMemo(() => {
+    return new Map(
+      (ackCandidates.groups || []).map((group) => [
+        group.groupId,
+        group.displayName ? group.displayName.trim() : '',
+      ]),
+    );
+  }, [ackCandidates.groups]);
   const formatMentionGroupLabel = useCallback(
     (groupId: string) => {
       const label = mentionGroupLabelMap.get(groupId);
@@ -307,6 +317,25 @@ export const ProjectChat: React.FC = () => {
       return groupId;
     },
     [mentionGroupLabelMap],
+  );
+  const formatAckGroupLabel = useCallback(
+    (groupId: string) => {
+      const label =
+        ackGroupLabelMap.get(groupId) || mentionGroupLabelMap.get(groupId);
+      return label ? label : groupId;
+    },
+    [ackGroupLabelMap, mentionGroupLabelMap],
+  );
+  const formatAckGroupAria = useCallback(
+    (groupId: string) => {
+      const label =
+        ackGroupLabelMap.get(groupId) || mentionGroupLabelMap.get(groupId);
+      if (label && label !== groupId) {
+        return `${label} (${groupId})`;
+      }
+      return groupId;
+    },
+    [ackGroupLabelMap, mentionGroupLabelMap],
   );
   const [pendingOpenMessage, setPendingOpenMessage] = useState<{
     projectId: string;
@@ -601,6 +630,37 @@ export const ProjectChat: React.FC = () => {
   }, [projectId]);
 
   useEffect(() => {
+    const keyword = ackCandidateQuery.trim();
+    if (!projectId || keyword.length < 2) {
+      setAckCandidates({});
+      return;
+    }
+    let cancelled = false;
+    const controller = new AbortController();
+    const handle = window.setTimeout(() => {
+      api<MentionCandidates>(
+        `/projects/${projectId}/chat-ack-candidates?q=${encodeURIComponent(
+          keyword,
+        )}`,
+        { signal: controller.signal },
+      )
+        .then((res) => {
+          if (!cancelled) setAckCandidates(res || {});
+        })
+        .catch((error) => {
+          if (controller.signal.aborted) return;
+          console.warn('確認対象候補の取得に失敗しました', error);
+          if (!cancelled) setAckCandidates({});
+        });
+    }, 200);
+    return () => {
+      cancelled = true;
+      controller.abort();
+      window.clearTimeout(handle);
+    };
+  }, [projectId, ackCandidateQuery]);
+
+  useEffect(() => {
     let cancelled = false;
     const run = async () => {
       if (!projectId) {
@@ -650,6 +710,7 @@ export const ProjectChat: React.FC = () => {
     const next = Array.from(new Set([...current, value])).slice(0, 50);
     setAckTargets(next.join(','));
     setAckTargetInput('');
+    setAckCandidateQuery('');
   };
 
   const addAckTargetGroup = () => {
@@ -659,6 +720,7 @@ export const ProjectChat: React.FC = () => {
     const next = Array.from(new Set([...current, value])).slice(0, 20);
     setAckTargetGroupIds(next.join(','));
     setAckTargetGroupInput('');
+    setAckCandidateQuery('');
   };
 
   const addAckTargetRole = () => {
@@ -694,6 +756,7 @@ export const ProjectChat: React.FC = () => {
     setAckTargetGroupInput('');
     setAckTargetRoles('');
     setAckTargetRoleInput('');
+    setAckCandidateQuery('');
   };
 
   const previewAckTargets = useCallback(async () => {
@@ -1517,9 +1580,12 @@ export const ProjectChat: React.FC = () => {
           <input
             aria-label="確認対象ユーザ追加"
             type="text"
-            list="chat-mention-users"
+            list="chat-ack-target-users"
             value={ackTargetInput}
-            onChange={(e) => setAckTargetInput(e.target.value)}
+            onChange={(e) => {
+              setAckTargetInput(e.target.value);
+              setAckCandidateQuery(e.target.value);
+            }}
             onKeyDown={(e) => {
               if (e.key === 'Enter') {
                 e.preventDefault();
@@ -1540,6 +1606,15 @@ export const ProjectChat: React.FC = () => {
             {ackTargetUserIds.length}/50
           </span>
         </div>
+        <datalist id="chat-ack-target-users">
+          {(ackCandidates.users || []).map((user) => (
+            <option
+              key={user.userId}
+              value={user.userId}
+              label={user.displayName ? `${user.displayName}` : user.userId}
+            />
+          ))}
+        </datalist>
         <input
           type="text"
           value={ackTargetGroupIds}
@@ -1551,9 +1626,12 @@ export const ProjectChat: React.FC = () => {
           <input
             aria-label="確認対象グループ追加"
             type="text"
-            list="chat-mention-groups"
+            list="chat-ack-target-groups"
             value={ackTargetGroupInput}
-            onChange={(e) => setAckTargetGroupInput(e.target.value)}
+            onChange={(e) => {
+              setAckTargetGroupInput(e.target.value);
+              setAckCandidateQuery(e.target.value);
+            }}
             onKeyDown={(e) => {
               if (e.key === 'Enter') {
                 e.preventDefault();
@@ -1574,6 +1652,19 @@ export const ProjectChat: React.FC = () => {
             {ackTargetGroupIdList.length}/20
           </span>
         </div>
+        <datalist id="chat-ack-target-groups">
+          {(ackCandidates.groups || []).map((group) => (
+            <option
+              key={group.groupId}
+              value={group.groupId}
+              label={
+                group.displayName
+                  ? `${group.displayName} (${group.groupId})`
+                  : group.groupId
+              }
+            />
+          ))}
+        </datalist>
         <input
           type="text"
           value={ackTargetRoles}
@@ -1679,13 +1770,13 @@ export const ProjectChat: React.FC = () => {
                 key={groupId}
                 type="button"
                 className="badge"
-                aria-label={`確認対象グループから除外: ${formatMentionGroupAria(
+                aria-label={`確認対象グループから除外: ${formatAckGroupAria(
                   groupId,
                 )}`}
                 onClick={() => removeAckTargetGroup(groupId)}
                 style={{ cursor: 'pointer' }}
               >
-                group:{formatMentionGroupLabel(groupId)} ×
+                group:{formatAckGroupLabel(groupId)} ×
               </button>
             ))}
             {ackTargetRoleList.map((role) => (
