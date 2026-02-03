@@ -56,13 +56,15 @@
 
 - SCIM 同期グループに加え、ERP 側で手動作成したグループを運用可能にする
 - 識別子は GroupAccount.id（UUID）を正とし、displayName は表示用として扱う
-- 移行期間を含め、API は GroupAccount.id（UUID）のみを受け付ける。displayName ベースの既存設定は事前に UUID へ移行（クライアント/移行スクリプト側で解決）する
+- 移行期間は displayName も受け付け、サーバ側で UUID に解決して保存する（dual-read/dual-write）
+  - 既存設定は段階的に UUID へ移行（クライアント/移行スクリプト側で解決）
 
 ## ユーザ属性（ABAC入力）
 
 - tenantId / orgUnitId / departmentId
 - roleCodes（RBACロール）
-- groupIds（承認/人事などのグループ）
+- groupAccountIds（グループ識別子: UUID、正）
+- groupIds（グループ表示名: 互換用途）
 - projectIds（所属案件、ProjectMemberから取得）
 - employmentType / managerUserId（将来拡張）
 
