@@ -16,7 +16,7 @@
 | `exec` | 経営 | 承認（高額/リスク）/閲覧 |
 | `hr` | 人事 | ウェルビーイング/HR分析 |
 | `user` | 一般利用者 | 日報/工数/経費/休暇 |
-| `external_chat` | 外部ユーザ | チャットのみ |
+| `external_chat` | 外部ユーザ（暫定） | チャット権限はACLで制御、非チャットの抑止用途で残置 |
 
 補足:
 - `project_lead` / `employee` / `probationary` は現状 `user` 相当（追加制限/追加権限は後続）
@@ -36,7 +36,7 @@
 - 編集（ルール/設定）: 原則 `admin/mgmt` のみ
 
 ### チャット
-- ルームメンバーのみ閲覧/投稿（`external_chat` は許可された公式ルームのみ）
+- ルームの閲覧/投稿は viewer/poster グループ + ルームメンバーで制御
 - 監査閲覧（break-glass）は `mgmt/exec` を想定（詳細: [project-chat](../requirements/project-chat.md)）
 
 ## 403（権限不足）の一次切り分け
