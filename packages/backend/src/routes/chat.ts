@@ -1304,6 +1304,70 @@ export async function registerChatRoutes(app: FastifyInstance) {
     },
   );
 
+  app.get(
+    '/chat-ack-requests/:id',
+    {
+      preHandler: requireRole(chatRoles),
+    },
+    async (req, reply) => {
+      const { id } = req.params as { id: string };
+      const requestItem = await prisma.chatAckRequest.findUnique({
+        where: { id },
+        include: {
+          message: true,
+          acks: true,
+          links: true,
+        },
+      });
+      if (!requestItem || requestItem.message.deletedAt) {
+        return reply.status(404).send({
+          error: { code: 'NOT_FOUND', message: 'Ack request not found' },
+        });
+      }
+
+      const userId = req.user?.userId;
+      if (!userId) {
+        return reply.status(400).send({
+          error: { code: 'MISSING_USER_ID', message: 'user id is required' },
+        });
+      }
+
+      const roles = req.user?.roles || [];
+      const projectIds = req.user?.projectIds || [];
+      const groupIds = Array.isArray(req.user?.groupIds)
+        ? req.user.groupIds
+        : [];
+      const groupAccountIds = Array.isArray(req.user?.groupAccountIds)
+        ? req.user.groupAccountIds
+        : [];
+      const access = await ensureChatRoomContentAccess({
+        roomId: requestItem.roomId,
+        userId,
+        roles,
+        projectIds,
+        groupIds,
+        groupAccountIds,
+      });
+      if (!access.ok) {
+        return reply.status(access.reason === 'not_found' ? 404 : 403).send({
+          error: {
+            code:
+              access.reason === 'not_found'
+                ? 'NOT_FOUND'
+                : access.reason === 'forbidden_project'
+                  ? 'FORBIDDEN_PROJECT'
+                  : access.reason === 'forbidden_external_room'
+                    ? 'FORBIDDEN_EXTERNAL_ROOM'
+                    : 'FORBIDDEN_ROOM_MEMBER',
+            message: 'Access to this room is forbidden',
+          },
+        });
+      }
+
+      return requestItem;
+    },
+  );
+
   app.post(
     '/chat-ack-requests/:id/cancel',
     {
