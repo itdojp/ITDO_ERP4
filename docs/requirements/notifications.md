@@ -152,7 +152,7 @@
 - `AUTH_GROUP_TO_ROLE_MAP`（例: `hr-group=hr`）により、group→role の変換を行う。
 - project members: projectId 連動イベントは ProjectMember から宛先抽出
 - 個別指定: recipients.users / recipients.emails を優先
-- TODO: 「role 指定で通知する」場合、role→group の逆引き + `UserAccount.userName` の解決が必要（現状は共通ユーティリティ未整備）。
+- 補足: role 指定の宛先解決は AlertSetting 側で実装済み（role→group の逆引き + `UserAccount.userName` 解決）。AppNotification の汎用用途で必要になった場合は共通化を検討する。
 
 ### サプレッション/再送（MVP）
 
