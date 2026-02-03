@@ -420,9 +420,19 @@ export async function previewChatAckRecipients(options: {
   requiredUserIds?: string[];
   requiredGroupIds?: string[];
   requiredRoles?: string[];
+  maxResolvedUsers?: number;
+  maxInvalidUsers?: number;
   client?: any;
 }): Promise<ChatAckRecipientPreviewResult> {
   const client = options.client ?? prisma;
+  const maxResolvedUsers =
+    typeof options.maxResolvedUsers === 'number' && options.maxResolvedUsers > 0
+      ? Math.floor(options.maxResolvedUsers)
+      : 50;
+  const maxInvalidUsers =
+    typeof options.maxInvalidUsers === 'number' && options.maxInvalidUsers > 0
+      ? Math.floor(options.maxInvalidUsers)
+      : 20;
   const requiredUserIds = await resolveChatAckRequiredRecipientUserIds({
     requiredUserIds: options.requiredUserIds ?? [],
     requiredGroupIds: options.requiredGroupIds ?? [],
@@ -430,7 +440,7 @@ export async function previewChatAckRecipients(options: {
     client,
   });
   const resolvedCount = requiredUserIds.length;
-  const exceedsLimit = resolvedCount > 50;
+  const exceedsLimit = resolvedCount > maxResolvedUsers;
   const validation = await validateChatAckRequiredRecipientsForRoom({
     room: options.room,
     requiredUserIds,
@@ -438,10 +448,10 @@ export async function previewChatAckRecipients(options: {
   });
   const invalidUserIds = validation.ok ? [] : validation.invalidUserIds;
   return {
-    resolvedUserIds: requiredUserIds.slice(0, 50),
+    resolvedUserIds: requiredUserIds.slice(0, maxResolvedUsers),
     resolvedCount,
     exceedsLimit,
-    invalidUserIds: invalidUserIds.slice(0, 20),
+    invalidUserIds: invalidUserIds.slice(0, maxInvalidUsers),
     reason: validation.ok ? undefined : validation.reason,
   };
 }

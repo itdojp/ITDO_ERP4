@@ -2768,6 +2768,21 @@
               "schema": {
                 "additionalProperties": false,
                 "properties": {
+                  "ackMaxRequiredGroups": {
+                    "maximum": 200,
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "ackMaxRequiredRoles": {
+                    "maximum": 200,
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "ackMaxRequiredUsers": {
+                    "maximum": 200,
+                    "minimum": 1,
+                    "type": "integer"
+                  },
                   "allowDmCreation": {
                     "type": "boolean"
                   },

@@ -18,6 +18,7 @@ import {
   validateChatAckRequiredRecipientsForRoom,
   previewChatAckRecipients,
 } from '../services/chatAckRecipients.js';
+import { getChatAckLimits } from '../services/chatAckLimits.js';
 import {
   expandRoomMentionRecipients,
   resolveRoomAudienceUserIds,
@@ -2872,24 +2873,41 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
           .send({ error: access.reason });
       }
 
+      const limits = await getChatAckLimits();
       const requiredUserIds = normalizeStringArray(body.requiredUserIds, {
         dedupe: true,
-        max: 50,
       });
       const requiredGroupIds = normalizeStringArray(body.requiredGroupIds, {
         dedupe: true,
-        max: 20,
       });
       const requiredRoles = normalizeStringArray(body.requiredRoles, {
         dedupe: true,
-        max: 20,
       });
+      if (requiredGroupIds.length > limits.maxGroups) {
+        return reply.status(400).send({
+          error: {
+            code: 'INVALID_REQUIRED_USERS',
+            message: `requiredGroupIds must be at most ${limits.maxGroups} entries`,
+            details: { requestedGroupCount: requiredGroupIds.length },
+          },
+        });
+      }
+      if (requiredRoles.length > limits.maxRoles) {
+        return reply.status(400).send({
+          error: {
+            code: 'INVALID_REQUIRED_USERS',
+            message: `requiredRoles must be at most ${limits.maxRoles} entries`,
+            details: { requestedRoleCount: requiredRoles.length },
+          },
+        });
+      }
 
       const preview = await previewChatAckRecipients({
         room: access.room,
         requiredUserIds,
         requiredGroupIds,
         requiredRoles,
+        maxResolvedUsers: limits.maxUsers,
       });
       return preview;
     },
@@ -2938,6 +2956,7 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
           .send({ error: access.reason });
       }
 
+      const limits = await getChatAckLimits();
       const requestedUserIds = normalizeStringArray(body.requiredUserIds, {
         dedupe: true,
       });
@@ -2947,6 +2966,24 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
       const requestedRoles = normalizeStringArray(body.requiredRoles, {
         dedupe: true,
       });
+      if (requestedGroupIds.length > limits.maxGroups) {
+        return reply.status(400).send({
+          error: {
+            code: 'INVALID_REQUIRED_USERS',
+            message: `requiredGroupIds must be at most ${limits.maxGroups} entries`,
+            details: { requestedGroupCount: requestedGroupIds.length },
+          },
+        });
+      }
+      if (requestedRoles.length > limits.maxRoles) {
+        return reply.status(400).send({
+          error: {
+            code: 'INVALID_REQUIRED_USERS',
+            message: `requiredRoles must be at most ${limits.maxRoles} entries`,
+            details: { requestedRoleCount: requestedRoles.length },
+          },
+        });
+      }
       const requiredUserIds = await resolveChatAckRequiredRecipientUserIds({
         requiredUserIds: requestedUserIds,
         requiredGroupIds: requestedGroupIds,
@@ -2961,13 +2998,14 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
           },
         });
       }
-      if (requiredUserIds.length > 50) {
+      if (requiredUserIds.length > limits.maxUsers) {
         return reply.status(400).send({
           error: {
             code: 'INVALID_REQUIRED_USERS',
-            message: 'requiredUserIds must be at most 50 users after expansion',
+            message: `requiredUserIds must be at most ${limits.maxUsers} users after expansion`,
             details: {
               resolvedUserCount: requiredUserIds.length,
+              limit: limits.maxUsers,
             },
           },
         });
@@ -3025,6 +3063,9 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
             create: {
               roomId: access.room.id,
               requiredUserIds: validatedRequiredUserIds,
+              requestedUserIds,
+              requestedGroupIds,
+              requestedRoles,
               dueAt: dueAt ?? undefined,
               createdBy: userId,
             },

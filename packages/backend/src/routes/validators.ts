@@ -1127,6 +1127,15 @@ export const chatSettingPatchSchema = {
     {
       allowUserPrivateGroupCreation: Type.Optional(Type.Boolean()),
       allowDmCreation: Type.Optional(Type.Boolean()),
+      ackMaxRequiredUsers: Type.Optional(
+        Type.Integer({ minimum: 1, maximum: 200 }),
+      ),
+      ackMaxRequiredGroups: Type.Optional(
+        Type.Integer({ minimum: 1, maximum: 200 }),
+      ),
+      ackMaxRequiredRoles: Type.Optional(
+        Type.Integer({ minimum: 1, maximum: 200 }),
+      ),
     },
     { additionalProperties: false },
   ),

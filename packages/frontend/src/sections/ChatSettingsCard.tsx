@@ -5,12 +5,18 @@ type ChatSetting = {
   id: string;
   allowUserPrivateGroupCreation?: boolean | null;
   allowDmCreation?: boolean | null;
+  ackMaxRequiredUsers?: number | null;
+  ackMaxRequiredGroups?: number | null;
+  ackMaxRequiredRoles?: number | null;
 };
 
 export const ChatSettingsCard: React.FC = () => {
   const [allowUserPrivateGroupCreation, setAllowUserPrivateGroupCreation] =
     useState(true);
   const [allowDmCreation, setAllowDmCreation] = useState(true);
+  const [ackMaxRequiredUsers, setAckMaxRequiredUsers] = useState(50);
+  const [ackMaxRequiredGroups, setAckMaxRequiredGroups] = useState(20);
+  const [ackMaxRequiredRoles, setAckMaxRequiredRoles] = useState(20);
   const [message, setMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
@@ -23,6 +29,21 @@ export const ChatSettingsCard: React.FC = () => {
         res.allowUserPrivateGroupCreation !== false,
       );
       setAllowDmCreation(res.allowDmCreation !== false);
+      setAckMaxRequiredUsers(
+        typeof res.ackMaxRequiredUsers === 'number'
+          ? res.ackMaxRequiredUsers
+          : 50,
+      );
+      setAckMaxRequiredGroups(
+        typeof res.ackMaxRequiredGroups === 'number'
+          ? res.ackMaxRequiredGroups
+          : 20,
+      );
+      setAckMaxRequiredRoles(
+        typeof res.ackMaxRequiredRoles === 'number'
+          ? res.ackMaxRequiredRoles
+          : 20,
+      );
     } catch (err) {
       console.error('Failed to load chat settings.', err);
       setMessage('チャット設定の取得に失敗しました');
@@ -41,6 +62,9 @@ export const ChatSettingsCard: React.FC = () => {
         body: JSON.stringify({
           allowUserPrivateGroupCreation,
           allowDmCreation,
+          ackMaxRequiredUsers,
+          ackMaxRequiredGroups,
+          ackMaxRequiredRoles,
         }),
       });
       setMessage('保存しました');
@@ -50,7 +74,13 @@ export const ChatSettingsCard: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [allowDmCreation, allowUserPrivateGroupCreation]);
+  }, [
+    allowDmCreation,
+    allowUserPrivateGroupCreation,
+    ackMaxRequiredUsers,
+    ackMaxRequiredGroups,
+    ackMaxRequiredRoles,
+  ]);
 
   useEffect(() => {
     load().catch(() => undefined);
@@ -81,6 +111,54 @@ export const ChatSettingsCard: React.FC = () => {
             disabled={isLoading}
           />
           DM 作成を許可
+        </label>
+        <label className="row" style={{ gap: 6 }}>
+          ack required 最大対象者数
+          <input
+            type="number"
+            min={1}
+            max={200}
+            value={ackMaxRequiredUsers}
+            onChange={(e) => {
+              const next = Number(e.target.value);
+              if (!Number.isFinite(next)) return;
+              setAckMaxRequiredUsers(next);
+            }}
+            disabled={isLoading}
+            style={{ width: 90 }}
+          />
+        </label>
+        <label className="row" style={{ gap: 6 }}>
+          最大グループ数
+          <input
+            type="number"
+            min={1}
+            max={200}
+            value={ackMaxRequiredGroups}
+            onChange={(e) => {
+              const next = Number(e.target.value);
+              if (!Number.isFinite(next)) return;
+              setAckMaxRequiredGroups(next);
+            }}
+            disabled={isLoading}
+            style={{ width: 80 }}
+          />
+        </label>
+        <label className="row" style={{ gap: 6 }}>
+          最大ロール数
+          <input
+            type="number"
+            min={1}
+            max={200}
+            value={ackMaxRequiredRoles}
+            onChange={(e) => {
+              const next = Number(e.target.value);
+              if (!Number.isFinite(next)) return;
+              setAckMaxRequiredRoles(next);
+            }}
+            disabled={isLoading}
+            style={{ width: 80 }}
+          />
         </label>
         <button className="button" onClick={save} disabled={isLoading}>
           保存

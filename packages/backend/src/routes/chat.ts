@@ -21,6 +21,7 @@ import {
   validateChatAckRequiredRecipientsForRoom,
   previewChatAckRecipients,
 } from '../services/chatAckRecipients.js';
+import { getChatAckLimits } from '../services/chatAckLimits.js';
 import {
   openAttachment,
   storeAttachment,
@@ -900,18 +901,34 @@ export async function registerChatRoutes(app: FastifyInstance) {
         requiredRoles?: string[];
       };
       const userId = req.user?.userId || 'demo-user';
+      const limits = await getChatAckLimits();
       const requiredUserIds = normalizeStringArray(body.requiredUserIds, {
         dedupe: true,
-        max: 50,
       });
       const requiredGroupIds = normalizeStringArray(body.requiredGroupIds, {
         dedupe: true,
-        max: 20,
       });
       const requiredRoles = normalizeStringArray(body.requiredRoles, {
         dedupe: true,
-        max: 20,
       });
+      if (requiredGroupIds.length > limits.maxGroups) {
+        return reply.status(400).send({
+          error: {
+            code: 'INVALID_REQUIRED_USERS',
+            message: `requiredGroupIds must be at most ${limits.maxGroups} entries`,
+            details: { requestedGroupCount: requiredGroupIds.length },
+          },
+        });
+      }
+      if (requiredRoles.length > limits.maxRoles) {
+        return reply.status(400).send({
+          error: {
+            code: 'INVALID_REQUIRED_USERS',
+            message: `requiredRoles must be at most ${limits.maxRoles} entries`,
+            details: { requestedRoleCount: requiredRoles.length },
+          },
+        });
+      }
 
       if (!(await ensureProjectRoom(projectId, userId))) {
         return reply.status(404).send({
@@ -940,6 +957,7 @@ export async function registerChatRoutes(app: FastifyInstance) {
         requiredUserIds,
         requiredGroupIds,
         requiredRoles,
+        maxResolvedUsers: limits.maxUsers,
       });
       return preview;
     },
@@ -966,6 +984,7 @@ export async function registerChatRoutes(app: FastifyInstance) {
         mentions?: unknown;
       };
       const userId = req.user?.userId || 'demo-user';
+      const limits = await getChatAckLimits();
       const requestedUserIds = normalizeStringArray(body.requiredUserIds, {
         dedupe: true,
       });
@@ -975,6 +994,24 @@ export async function registerChatRoutes(app: FastifyInstance) {
       const requestedRoles = normalizeStringArray(body.requiredRoles, {
         dedupe: true,
       });
+      if (requestedGroupIds.length > limits.maxGroups) {
+        return reply.status(400).send({
+          error: {
+            code: 'INVALID_REQUIRED_USERS',
+            message: `requiredGroupIds must be at most ${limits.maxGroups} entries`,
+            details: { requestedGroupCount: requestedGroupIds.length },
+          },
+        });
+      }
+      if (requestedRoles.length > limits.maxRoles) {
+        return reply.status(400).send({
+          error: {
+            code: 'INVALID_REQUIRED_USERS',
+            message: `requiredRoles must be at most ${limits.maxRoles} entries`,
+            details: { requestedRoleCount: requestedRoles.length },
+          },
+        });
+      }
       const requiredUserIds = await resolveChatAckRequiredRecipientUserIds({
         requiredUserIds: requestedUserIds,
         requiredGroupIds: requestedGroupIds,
@@ -989,13 +1026,14 @@ export async function registerChatRoutes(app: FastifyInstance) {
           },
         });
       }
-      if (requiredUserIds.length > 50) {
+      if (requiredUserIds.length > limits.maxUsers) {
         return reply.status(400).send({
           error: {
             code: 'INVALID_REQUIRED_USERS',
-            message: 'requiredUserIds must be at most 50 users after expansion',
+            message: `requiredUserIds must be at most ${limits.maxUsers} users after expansion`,
             details: {
               resolvedUserCount: requiredUserIds.length,
+              limit: limits.maxUsers,
             },
           },
         });
@@ -1074,6 +1112,9 @@ export async function registerChatRoutes(app: FastifyInstance) {
             create: {
               roomId: projectId,
               requiredUserIds: validatedRequiredUserIds,
+              requestedUserIds,
+              requestedGroupIds,
+              requestedRoles,
               dueAt: dueAt ?? undefined,
               createdBy: userId,
             },
