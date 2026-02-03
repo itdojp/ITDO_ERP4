@@ -1792,6 +1792,25 @@
         }
       }
     },
+    "/chat-ack-requests/{id}": {
+      "get": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
     "/chat-ack-requests/{id}/ack": {
       "post": {
         "parameters": [
