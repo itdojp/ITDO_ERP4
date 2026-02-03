@@ -103,7 +103,8 @@
 
 - 作成: ルーム投稿権限を持つユーザ
 - 変更/撤回: 作成者 + ルーム管理者
-- 外部ユーザ `external_chat` の扱いは分かりません
+- 受信者検証: ルーム閲覧権限（viewer/poster + メンバーシップ）に基づいて requiredUserIds を検証
+  - company ルームは `viewerGroupIds` が空なら全員許可、設定されている場合は該当グループ所属のみ許可
 
 ## TODO
 
@@ -112,7 +113,7 @@
 - [ ] 進捗の可視化範囲を確定（MVPはルーム内可視）
 - [x] 撤回（canceled）を追加（作成者/管理者）
 - [x] ack revoke を追加（本人）
-- [ ] 外部ユーザ（external_chat）の対象者としての許容範囲を確定
+- [x] 受信者検証はチャットACLに統一（external_chat 依存を廃止）
 - [ ] 承認フローとの連携方法（WorkflowDefinition/ActionPolicy と整合）を確定
 
 ## 関連
