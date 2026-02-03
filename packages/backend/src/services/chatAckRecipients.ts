@@ -238,24 +238,15 @@ export async function validateChatAckRequiredRecipientsForRoom(options: {
       ? normalizeIdList(room.viewerGroupIds)
       : [];
     if (viewerGroupIds.length > 0) {
-      const members = await client.userGroup.findMany({
-        where: {
-          user: {
-            userName: { in: activeUserIds },
-            active: true,
-            deletedAt: null,
-          },
-          groupId: { in: viewerGroupIds },
-          group: { active: true },
-        },
-        select: { user: { select: { userName: true } } },
+      const byGroup = await resolveMemberUserIdsForGroups({
+        groupIds: viewerGroupIds,
+        client,
       });
       const allowed = new Set<string>();
-      normalizeIdList(
-        members.map(
-          (row: { user?: { userName?: unknown } }) => row.user?.userName,
-        ),
-      ).forEach((id) => allowed.add(id));
+      for (const selector of viewerGroupIds) {
+        const members = byGroup.get(selector) || [];
+        members.forEach((userId) => allowed.add(userId));
+      }
       const forbidden = activeUserIds.filter((userId) => !allowed.has(userId));
       const invalid = [...missingOrInactive, ...forbidden];
       if (invalid.length) {

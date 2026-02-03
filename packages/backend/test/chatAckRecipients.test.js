@@ -232,7 +232,9 @@ test('validateChatAckRequiredRecipientsForRoom: company with viewerGroupIds enfo
       findMany: async () => [{ userName: 'u1' }, { userName: 'u2' }],
     },
     chatRoomMember: { findMany: async () => [] },
-    groupAccount: createGroupAccountStub([]),
+    groupAccount: createGroupAccountStub([
+      { id: 'group-uuid', displayName: 'group-uuid' },
+    ]),
     userGroup: {
       findMany: async () => [{ groupId: 'group-uuid', user: { userName: 'u1' } }],
     },
