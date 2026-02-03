@@ -525,6 +525,33 @@ export const chatAckRequestCancelSchema = {
   ),
 };
 
+export const chatAckLinkQuerySchema = {
+  querystring: Type.Object(
+    {
+      ackRequestId: Type.Optional(Type.String({ minLength: 1, maxLength: 200 })),
+      messageId: Type.Optional(Type.String({ minLength: 1, maxLength: 200 })),
+      targetTable: Type.Optional(Type.String({ minLength: 1, maxLength: 200 })),
+      targetId: Type.Optional(Type.String({ minLength: 1, maxLength: 200 })),
+      limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 200 })),
+    },
+    { additionalProperties: false },
+  ),
+};
+
+export const chatAckLinkCreateSchema = {
+  body: Type.Object(
+    {
+      ackRequestId: Type.Optional(Type.String({ minLength: 1, maxLength: 200 })),
+      messageId: Type.Optional(Type.String({ minLength: 1, maxLength: 200 })),
+      targetTable: Type.String({ minLength: 1, maxLength: 200 }),
+      targetId: Type.String({ minLength: 1, maxLength: 200 }),
+      flowType: Type.Optional(Type.String({ minLength: 1, maxLength: 200 })),
+      actionKey: Type.Optional(Type.String({ minLength: 1, maxLength: 200 })),
+    },
+    { additionalProperties: false },
+  ),
+};
+
 export const projectChatSummarySchema = {
   body: Type.Object(
     {
