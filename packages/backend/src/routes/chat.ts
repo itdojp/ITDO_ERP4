@@ -3,6 +3,7 @@ import type { Prisma } from '@prisma/client';
 import {
   projectChatMessageSchema,
   projectChatAckRequestSchema,
+  chatAckPreviewSchema,
   chatAckRequestCancelSchema,
   projectChatReactionSchema,
   projectChatSummarySchema,
@@ -18,6 +19,7 @@ import {
 import {
   resolveChatAckRequiredRecipientUserIds,
   validateChatAckRequiredRecipientsForRoom,
+  previewChatAckRecipients,
 } from '../services/chatAckRecipients.js';
 import {
   openAttachment,
@@ -878,6 +880,68 @@ export async function registerChatRoutes(app: FastifyInstance) {
         });
       }
       return message;
+    },
+  );
+
+  app.post(
+    '/projects/:projectId/chat-ack-requests/preview',
+    {
+      schema: chatAckPreviewSchema,
+      preHandler: [
+        requireRole(chatRoles),
+        requireProjectAccess((req) => (req.params as any)?.projectId),
+      ],
+    },
+    async (req, reply) => {
+      const { projectId } = req.params as { projectId: string };
+      const body = req.body as {
+        requiredUserIds?: string[];
+        requiredGroupIds?: string[];
+        requiredRoles?: string[];
+      };
+      const userId = req.user?.userId || 'demo-user';
+      const requiredUserIds = normalizeStringArray(body.requiredUserIds, {
+        dedupe: true,
+        max: 50,
+      });
+      const requiredGroupIds = normalizeStringArray(body.requiredGroupIds, {
+        dedupe: true,
+        max: 20,
+      });
+      const requiredRoles = normalizeStringArray(body.requiredRoles, {
+        dedupe: true,
+        max: 20,
+      });
+
+      if (!(await ensureProjectRoom(projectId, userId))) {
+        return reply.status(404).send({
+          error: { code: 'NOT_FOUND', message: 'Project not found' },
+        });
+      }
+      const room = await prisma.chatRoom.findUnique({
+        where: { id: projectId },
+        select: {
+          id: true,
+          type: true,
+          groupId: true,
+          viewerGroupIds: true,
+          deletedAt: true,
+          allowExternalUsers: true,
+        },
+      });
+      if (!room || room.deletedAt) {
+        return reply.status(404).send({
+          error: { code: 'NOT_FOUND', message: 'Room not found' },
+        });
+      }
+
+      const preview = await previewChatAckRecipients({
+        room,
+        requiredUserIds,
+        requiredGroupIds,
+        requiredRoles,
+      });
+      return preview;
     },
   );
 

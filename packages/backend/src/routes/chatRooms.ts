@@ -16,6 +16,7 @@ import {
 import {
   resolveChatAckRequiredRecipientUserIds,
   validateChatAckRequiredRecipientsForRoom,
+  previewChatAckRecipients,
 } from '../services/chatAckRecipients.js';
 import {
   expandRoomMentionRecipients,
@@ -32,6 +33,7 @@ import {
   chatRoomMemberAddSchema,
   chatRoomNotificationSettingPatchSchema,
   chatRoomPatchSchema,
+  chatAckPreviewSchema,
   projectChatAckRequestSchema,
   projectChatMessageSchema,
   projectChatSummarySchema,
@@ -2828,6 +2830,68 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
         };
       }
       return message;
+    },
+  );
+
+  app.post(
+    '/chat-rooms/:roomId/ack-requests/preview',
+    { preHandler: requireRole(chatRoles), schema: chatAckPreviewSchema },
+    async (req, reply) => {
+      const { roomId } = req.params as { roomId: string };
+      const body = req.body as {
+        requiredUserIds?: string[];
+        requiredGroupIds?: string[];
+        requiredRoles?: string[];
+      };
+      const userId = req.user?.userId;
+      if (!userId) {
+        return reply.status(400).send({
+          error: { code: 'MISSING_USER_ID', message: 'user id is required' },
+        });
+      }
+      const roles = req.user?.roles || [];
+      const projectIds = req.user?.projectIds || [];
+      const groupIds = Array.isArray(req.user?.groupIds)
+        ? req.user.groupIds
+        : [];
+      const groupAccountIds = Array.isArray(req.user?.groupAccountIds)
+        ? req.user.groupAccountIds
+        : [];
+      const access = await ensureChatRoomContentAccess({
+        roomId,
+        userId,
+        roles,
+        projectIds,
+        groupIds,
+        groupAccountIds,
+        accessLevel: 'post',
+      });
+      if (!access.ok) {
+        return reply
+          .status(access.reason === 'not_found' ? 404 : 403)
+          .send({ error: access.reason });
+      }
+
+      const requiredUserIds = normalizeStringArray(body.requiredUserIds, {
+        dedupe: true,
+        max: 50,
+      });
+      const requiredGroupIds = normalizeStringArray(body.requiredGroupIds, {
+        dedupe: true,
+        max: 20,
+      });
+      const requiredRoles = normalizeStringArray(body.requiredRoles, {
+        dedupe: true,
+        max: 20,
+      });
+
+      const preview = await previewChatAckRecipients({
+        room: access.room,
+        requiredUserIds,
+        requiredGroupIds,
+        requiredRoles,
+      });
+      return preview;
     },
   );
 
