@@ -29,9 +29,10 @@ Refs: #783, #675, #717
 - 短所: 追加クエリが必要
 
 #### 参照API（案）
-- `GET /workflow-links?targetTable=...&targetId=...`
-- `GET /chat-ack-requests/:id` で `targetTable/targetId` を返す（join）
-- `POST /workflow-links`（作成） / `DELETE /workflow-links/:id`（解除）
+- `GET /chat-ack-links?targetTable=...&targetId=...`
+- `GET /chat-ack-links?ackRequestId=...`
+- `GET /chat-ack-requests/:id` は `ChatAckRequest` 本体に加えて `ChatAckLink` を LEFT JOIN し、存在する場合はリンク情報を返す
+- `POST /chat-ack-links`（作成） / `DELETE /chat-ack-links/:id`（解除）
 
 #### UI/UX（案）
 - 承認詳細/業務詳細に「関連する合意形成」セクション
@@ -47,7 +48,7 @@ Refs: #783, #675, #717
 - または `targetTable/targetId` から関連 ack を解決
 
 #### 評価ルール（案）
-- `ChatAckRequest.canceledAt` / `expired` の扱いはポリシーで制御
+- `ChatAckRequest.canceledAt` / `expired` 状態（`dueAt` と現在時刻で算出）の扱いはポリシーで制御
   - 例: `requireCompleted` or `allowCanceled`
 
 ---
@@ -61,7 +62,7 @@ Refs: #783, #675, #717
 - 連携キー: ChatAckRequest 直付け（案A） vs 中間テーブル（案B）
 - 連携の方向性: 業務側から合意形成を作る/参照する、チャット側から業務参照を作る
 - 権限/監査: 連携作成/解除の権限、理由必須、監査ログの粒度
-- 期限/状態遷移: canceled/expired を Guard 評価に含めるか
+- 期限/状態遷移: canceled/expired（`dueAt` 算出）を Guard 評価に含めるか
 
 ## 受入条件（DoD）
 - Phase 1 の参照リンクが実運用で使える
