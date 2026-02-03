@@ -1347,7 +1347,6 @@ export async function registerChatRoutes(app: FastifyInstance) {
         projectIds,
         groupIds,
         groupAccountIds,
-        accessLevel: 'read',
       });
       if (!access.ok) {
         return reply.status(access.reason === 'not_found' ? 404 : 403).send({
