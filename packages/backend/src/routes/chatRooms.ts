@@ -13,6 +13,7 @@ import {
   logChatAckRequestCreated,
   tryCreateChatAckRequiredNotificationsWithAudit,
 } from '../services/chatAckNotifications.js';
+import { searchChatAckCandidates } from '../services/chatAckCandidates.js';
 import {
   resolveChatAckRequiredRecipientUserIds,
   validateChatAckRequiredRecipientsForRoom,
@@ -1897,6 +1898,48 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
       ]);
       const allowAll = true;
       return { users, groups, allowAll };
+    },
+  );
+
+  app.get(
+    '/chat-rooms/:roomId/ack-candidates',
+    { preHandler: requireRole(chatRoles) },
+    async (req, reply) => {
+      const { roomId } = req.params as { roomId: string };
+      const { q } = req.query as { q?: string };
+      const keyword = (q || '').trim();
+      if (keyword.length < 2) {
+        return { users: [], groups: [] };
+      }
+      const userId = req.user?.userId;
+      if (!userId) {
+        return reply.status(400).send({
+          error: { code: 'MISSING_USER_ID', message: 'user id is required' },
+        });
+      }
+      const roles = req.user?.roles || [];
+      const projectIds = req.user?.projectIds || [];
+      const groupIds = Array.isArray(req.user?.groupIds)
+        ? req.user.groupIds
+        : [];
+      const groupAccountIds = Array.isArray(req.user?.groupAccountIds)
+        ? req.user.groupAccountIds
+        : [];
+      const access = await ensureChatRoomContentAccess({
+        roomId,
+        userId,
+        roles,
+        projectIds,
+        groupIds,
+        groupAccountIds,
+        accessLevel: 'read',
+      });
+      if (!access.ok) {
+        return reply
+          .status(access.reason === 'not_found' ? 404 : 403)
+          .send({ error: access.reason });
+      }
+      return searchChatAckCandidates({ room: access.room, q: keyword });
     },
   );
 

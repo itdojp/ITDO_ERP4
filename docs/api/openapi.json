@@ -2447,6 +2447,25 @@
         }
       }
     },
+    "/chat-rooms/{roomId}/ack-candidates": {
+      "get": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "roomId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
     "/chat-rooms/{roomId}/ack-requests": {
       "post": {
         "parameters": [
@@ -5120,6 +5139,25 @@
           {
             "in": "path",
             "name": "baselineId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/projects/{projectId}/chat-ack-candidates": {
+      "get": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "projectId",
             "required": true,
             "schema": {
               "type": "string"

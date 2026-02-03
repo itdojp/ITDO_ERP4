@@ -16,6 +16,7 @@ import {
   logChatAckRequestCreated,
   tryCreateChatAckRequiredNotificationsWithAudit,
 } from '../services/chatAckNotifications.js';
+import { searchChatAckCandidates } from '../services/chatAckCandidates.js';
 import {
   resolveChatAckRequiredRecipientUserIds,
   validateChatAckRequiredRecipientsForRoom,
@@ -723,6 +724,47 @@ export async function registerChatRoutes(app: FastifyInstance) {
       ]);
       const allowAll = true;
       return { users, groups, allowAll };
+    },
+  );
+
+  app.get(
+    '/projects/:projectId/chat-ack-candidates',
+    {
+      preHandler: [
+        requireRole(chatRoles),
+        requireProjectAccess((req) => (req.params as any)?.projectId),
+      ],
+    },
+    async (req, reply) => {
+      const { projectId } = req.params as { projectId: string };
+      const { q } = req.query as { q?: string };
+      const keyword = (q || '').trim();
+      if (keyword.length < 2) {
+        return { users: [], groups: [] };
+      }
+      const userId = req.user?.userId || null;
+      if (!(await ensureProjectRoom(projectId, userId))) {
+        return reply.status(404).send({
+          error: { code: 'NOT_FOUND', message: 'Project not found' },
+        });
+      }
+      const room = await prisma.chatRoom.findUnique({
+        where: { id: projectId },
+        select: {
+          id: true,
+          type: true,
+          groupId: true,
+          viewerGroupIds: true,
+          deletedAt: true,
+          allowExternalUsers: true,
+        },
+      });
+      if (!room || room.deletedAt) {
+        return reply.status(404).send({
+          error: { code: 'NOT_FOUND', message: 'Room not found' },
+        });
+      }
+      return searchChatAckCandidates({ room, q: keyword });
     },
   );
 
