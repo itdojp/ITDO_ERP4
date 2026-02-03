@@ -39,7 +39,7 @@
 | 監査ログ | admin / mgmt | `docs/test-results/2026-01-19-frontend-e2e-r1/29-audit-logs.png` | `docs/manual/ui-manual-admin.md` |
 | 期間締め | admin / mgmt | `docs/test-results/2026-01-19-frontend-e2e-r1/30-period-locks.png` | `docs/manual/ui-manual-admin.md` |
 | プロジェクトチャット | user | `docs/test-results/2026-01-19-frontend-e2e-r1/12-project-chat.png` | `docs/manual/ui-manual-user.md` / `docs/manual/chat-guide.md` |
-| チャット（全社/部門/private_group/DM） | user / hr / external_chat | `docs/test-results/2026-01-19-frontend-e2e-r1/14-room-chat.png` | `docs/manual/ui-manual-user.md` / `docs/manual/chat-guide.md` |
+| チャット（全社/部門/private_group/DM） | user / hr / 外部ユーザ（グループACL） | `docs/test-results/2026-01-19-frontend-e2e-r1/14-room-chat.png` | `docs/manual/ui-manual-user.md` / `docs/manual/chat-guide.md` |
 | 匿名集計（人事向け） | hr | `docs/test-results/2026-01-19-frontend-e2e-r1/13-hr-analytics.png` | `docs/manual/ui-manual-admin.md` / `docs/manual/hr-guide.md` |
 
 ## 管理設定（詳細カード）
