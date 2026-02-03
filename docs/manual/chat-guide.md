@@ -17,6 +17,11 @@
 
 ## ルーム種別（概要）
 運用上の扱いは [project-chat](../requirements/project-chat.md) を優先します。
+
+## 確認依頼（ack required）
+- 重要な周知や合意形成で「確認必須」を設定できます（対象はユーザ/グループ/ロール）。
+- 期限（任意）を設定すると期限超過が一覧で可視化されます。
+- 詳細な操作手順は [ui-manual-user](ui-manual-user.md) を参照してください。
 - `project`: 案件ルーム（案件に紐づく）
 - `department`: 部門/グループ
 - `company`: 全社（必要なら）
