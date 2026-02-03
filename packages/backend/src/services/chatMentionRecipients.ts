@@ -67,6 +67,9 @@ export async function resolveRoomAudienceUserIds(options: {
       members.forEach((userId) => audience.add(userId));
     }
   } else if (room.type === 'company') {
+    if (viewerGroupIds.length > 0) {
+      return viewerMemberSet;
+    }
     const members = await resolveChatAckRequiredRecipientUserIds({
       requiredUserIds: [],
       requiredRoles: ['admin', 'mgmt', 'exec', 'user', 'hr'],
