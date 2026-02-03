@@ -33,6 +33,8 @@ Refs: #783, #675, #717
 - `GET /chat-ack-links?ackRequestId=...`
 - `GET /chat-ack-requests/:id` は `ChatAckRequest` 本体に加えて `ChatAckLink` を LEFT JOIN し、存在する場合はリンク情報を返す
 - `POST /chat-ack-links`（作成） / `DELETE /chat-ack-links/:id`（解除）
+  - 作成時は `ackRequestId` or `messageId` を指定
+  - 権限は admin/mgmt を想定（運用次第で拡張）
 
 #### UI/UX（案）
 - 承認詳細/業務詳細に「関連する合意形成」セクション

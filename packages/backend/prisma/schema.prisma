@@ -431,6 +431,7 @@ model ChatMessage {
   mentions      Json?
   mentionsAll   Boolean          @default(false)
   ackRequest    ChatAckRequest?
+  ackLinks      ChatAckLink[]
   attachments   ChatAttachment[]
   createdAt     DateTime         @default(now())
   createdBy     String?
@@ -460,8 +461,30 @@ model ChatAckRequest {
   createdAt       DateTime    @default(now())
   createdBy       String?
   acks            ChatAck[]
+  links           ChatAckLink[]
 
   @@index([roomId, createdAt])
+}
+
+model ChatAckLink {
+  id           String         @id @default(uuid())
+  ackRequest   ChatAckRequest @relation(fields: [ackRequestId], references: [id], onDelete: Cascade)
+  ackRequestId String
+  message      ChatMessage    @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  messageId    String
+  targetTable  String
+  targetId     String
+  flowType     String?
+  actionKey    String?
+  createdAt    DateTime       @default(now())
+  createdBy    String?
+  updatedAt    DateTime       @updatedAt
+  updatedBy    String?
+
+  @@unique([ackRequestId, targetTable, targetId])
+  @@index([targetTable, targetId])
+  @@index([ackRequestId])
+  @@index([messageId])
 }
 
 model ChatAck {

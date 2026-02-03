@@ -525,6 +525,90 @@ export const chatAckRequestCancelSchema = {
   ),
 };
 
+const chatAckLinkLimitSchema = Type.Optional(
+  Type.Union([
+    Type.Integer({ minimum: 1, maximum: 200 }),
+    Type.String({ pattern: '^[0-9]+$', maxLength: 3 }),
+  ]),
+);
+
+const chatAckLinkBaseQuerySchema = {
+  limit: chatAckLinkLimitSchema,
+};
+
+export const chatAckLinkQuerySchema = {
+  querystring: Type.Union([
+    Type.Object(
+      {
+        ackRequestId: Type.String({ minLength: 1, maxLength: 200 }),
+        messageId: Type.Optional(Type.String({ minLength: 1, maxLength: 200 })),
+        targetTable: Type.Optional(
+          Type.String({ minLength: 1, maxLength: 200 }),
+        ),
+        targetId: Type.Optional(Type.String({ minLength: 1, maxLength: 200 })),
+        ...chatAckLinkBaseQuerySchema,
+      },
+      { additionalProperties: false },
+    ),
+    Type.Object(
+      {
+        messageId: Type.String({ minLength: 1, maxLength: 200 }),
+        ackRequestId: Type.Optional(
+          Type.String({ minLength: 1, maxLength: 200 }),
+        ),
+        targetTable: Type.Optional(
+          Type.String({ minLength: 1, maxLength: 200 }),
+        ),
+        targetId: Type.Optional(Type.String({ minLength: 1, maxLength: 200 })),
+        ...chatAckLinkBaseQuerySchema,
+      },
+      { additionalProperties: false },
+    ),
+    Type.Object(
+      {
+        targetTable: Type.String({ minLength: 1, maxLength: 200 }),
+        targetId: Type.String({ minLength: 1, maxLength: 200 }),
+        ackRequestId: Type.Optional(
+          Type.String({ minLength: 1, maxLength: 200 }),
+        ),
+        messageId: Type.Optional(Type.String({ minLength: 1, maxLength: 200 })),
+        ...chatAckLinkBaseQuerySchema,
+      },
+      { additionalProperties: false },
+    ),
+  ]),
+};
+
+const chatAckLinkBaseBodySchema = {
+  targetTable: Type.String({ minLength: 1, maxLength: 200 }),
+  targetId: Type.String({ minLength: 1, maxLength: 200 }),
+  flowType: Type.Optional(Type.String({ minLength: 1, maxLength: 200 })),
+  actionKey: Type.Optional(Type.String({ minLength: 1, maxLength: 200 })),
+};
+
+export const chatAckLinkCreateSchema = {
+  body: Type.Union([
+    Type.Object(
+      {
+        ackRequestId: Type.String({ minLength: 1, maxLength: 200 }),
+        messageId: Type.Optional(Type.String({ minLength: 1, maxLength: 200 })),
+        ...chatAckLinkBaseBodySchema,
+      },
+      { additionalProperties: false },
+    ),
+    Type.Object(
+      {
+        messageId: Type.String({ minLength: 1, maxLength: 200 }),
+        ackRequestId: Type.Optional(
+          Type.String({ minLength: 1, maxLength: 200 }),
+        ),
+        ...chatAckLinkBaseBodySchema,
+      },
+      { additionalProperties: false },
+    ),
+  ]),
+};
+
 export const projectChatSummarySchema = {
   body: Type.Object(
     {
