@@ -481,13 +481,13 @@ export const projectChatAckRequestSchema = {
     {
       body: Type.String({ minLength: 1, maxLength: 2000 }),
       requiredUserIds: Type.Optional(
-        Type.Array(Type.String({ minLength: 1 }), { maxItems: 50 }),
+        Type.Array(Type.String({ minLength: 1 }), { maxItems: 200 }),
       ),
       requiredGroupIds: Type.Optional(
-        Type.Array(Type.String({ minLength: 1 }), { maxItems: 20 }),
+        Type.Array(Type.String({ minLength: 1 }), { maxItems: 200 }),
       ),
       requiredRoles: Type.Optional(
-        Type.Array(Type.String({ minLength: 1 }), { maxItems: 20 }),
+        Type.Array(Type.String({ minLength: 1 }), { maxItems: 200 }),
       ),
       dueAt: Type.Optional(Type.String({ format: 'date-time' })),
       tags: Type.Optional(
@@ -503,13 +503,13 @@ export const chatAckPreviewSchema = {
   body: Type.Object(
     {
       requiredUserIds: Type.Optional(
-        Type.Array(Type.String({ minLength: 1 }), { maxItems: 50 }),
+        Type.Array(Type.String({ minLength: 1 }), { maxItems: 200 }),
       ),
       requiredGroupIds: Type.Optional(
-        Type.Array(Type.String({ minLength: 1 }), { maxItems: 20 }),
+        Type.Array(Type.String({ minLength: 1 }), { maxItems: 200 }),
       ),
       requiredRoles: Type.Optional(
-        Type.Array(Type.String({ minLength: 1 }), { maxItems: 20 }),
+        Type.Array(Type.String({ minLength: 1 }), { maxItems: 200 }),
       ),
     },
     { additionalProperties: false },

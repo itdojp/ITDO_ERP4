@@ -120,9 +120,10 @@ export const ChatSettingsCard: React.FC = () => {
             max={200}
             value={ackMaxRequiredUsers}
             onChange={(e) => {
-              const next = Number(e.target.value);
-              if (!Number.isFinite(next)) return;
-              setAckMaxRequiredUsers(next);
+              const next = e.currentTarget.valueAsNumber;
+              if (Number.isNaN(next)) return;
+              const clamped = Math.min(200, Math.max(1, Math.floor(next)));
+              setAckMaxRequiredUsers(clamped);
             }}
             disabled={isLoading}
             style={{ width: 90 }}
@@ -136,9 +137,10 @@ export const ChatSettingsCard: React.FC = () => {
             max={200}
             value={ackMaxRequiredGroups}
             onChange={(e) => {
-              const next = Number(e.target.value);
-              if (!Number.isFinite(next)) return;
-              setAckMaxRequiredGroups(next);
+              const next = e.currentTarget.valueAsNumber;
+              if (Number.isNaN(next)) return;
+              const clamped = Math.min(200, Math.max(1, Math.floor(next)));
+              setAckMaxRequiredGroups(clamped);
             }}
             disabled={isLoading}
             style={{ width: 80 }}
@@ -152,9 +154,10 @@ export const ChatSettingsCard: React.FC = () => {
             max={200}
             value={ackMaxRequiredRoles}
             onChange={(e) => {
-              const next = Number(e.target.value);
-              if (!Number.isFinite(next)) return;
-              setAckMaxRequiredRoles(next);
+              const next = e.currentTarget.valueAsNumber;
+              if (Number.isNaN(next)) return;
+              const clamped = Math.min(200, Math.max(1, Math.floor(next)));
+              setAckMaxRequiredRoles(clamped);
             }}
             disabled={isLoading}
             style={{ width: 80 }}

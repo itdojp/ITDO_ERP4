@@ -911,6 +911,15 @@ export async function registerChatRoutes(app: FastifyInstance) {
       const requiredRoles = normalizeStringArray(body.requiredRoles, {
         dedupe: true,
       });
+      if (requiredUserIds.length > limits.maxUsers) {
+        return reply.status(400).send({
+          error: {
+            code: 'INVALID_REQUIRED_USERS',
+            message: `requiredUserIds must be at most ${limits.maxUsers} entries`,
+            details: { requestedUserCount: requiredUserIds.length },
+          },
+        });
+      }
       if (requiredGroupIds.length > limits.maxGroups) {
         return reply.status(400).send({
           error: {

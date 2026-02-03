@@ -2297,7 +2297,7 @@
                       "minLength": 1,
                       "type": "string"
                     },
-                    "maxItems": 20,
+                    "maxItems": 200,
                     "type": "array"
                   },
                   "requiredRoles": {
@@ -2305,7 +2305,7 @@
                       "minLength": 1,
                       "type": "string"
                     },
-                    "maxItems": 20,
+                    "maxItems": 200,
                     "type": "array"
                   },
                   "requiredUserIds": {
@@ -2313,7 +2313,7 @@
                       "minLength": 1,
                       "type": "string"
                     },
-                    "maxItems": 50,
+                    "maxItems": 200,
                     "type": "array"
                   },
                   "tags": {
@@ -2364,7 +2364,7 @@
                       "minLength": 1,
                       "type": "string"
                     },
-                    "maxItems": 20,
+                    "maxItems": 200,
                     "type": "array"
                   },
                   "requiredRoles": {
@@ -2372,7 +2372,7 @@
                       "minLength": 1,
                       "type": "string"
                     },
-                    "maxItems": 20,
+                    "maxItems": 200,
                     "type": "array"
                   },
                   "requiredUserIds": {
@@ -2380,7 +2380,7 @@
                       "minLength": 1,
                       "type": "string"
                     },
-                    "maxItems": 50,
+                    "maxItems": 200,
                     "type": "array"
                   }
                 },
@@ -4983,7 +4983,7 @@
                       "minLength": 1,
                       "type": "string"
                     },
-                    "maxItems": 20,
+                    "maxItems": 200,
                     "type": "array"
                   },
                   "requiredRoles": {
@@ -4991,7 +4991,7 @@
                       "minLength": 1,
                       "type": "string"
                     },
-                    "maxItems": 20,
+                    "maxItems": 200,
                     "type": "array"
                   },
                   "requiredUserIds": {
@@ -4999,7 +4999,7 @@
                       "minLength": 1,
                       "type": "string"
                     },
-                    "maxItems": 50,
+                    "maxItems": 200,
                     "type": "array"
                   },
                   "tags": {
@@ -5050,7 +5050,7 @@
                       "minLength": 1,
                       "type": "string"
                     },
-                    "maxItems": 20,
+                    "maxItems": 200,
                     "type": "array"
                   },
                   "requiredRoles": {
@@ -5058,7 +5058,7 @@
                       "minLength": 1,
                       "type": "string"
                     },
-                    "maxItems": 20,
+                    "maxItems": 200,
                     "type": "array"
                   },
                   "requiredUserIds": {
@@ -5066,7 +5066,7 @@
                       "minLength": 1,
                       "type": "string"
                     },
-                    "maxItems": 50,
+                    "maxItems": 200,
                     "type": "array"
                   }
                 },
