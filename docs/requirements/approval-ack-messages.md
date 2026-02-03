@@ -12,7 +12,8 @@
 
 ## MVP実装（現状の仕様）
 
-- 対象者は `requiredUserIds` / `requiredGroupIds` / `requiredRoles` で指定し、サーバ側でユーザIDへ展開して `requiredUserIds`（スナップショット）として保存する（展開後の最大は50人まで）
+- 対象者は `requiredUserIds` / `requiredGroupIds` / `requiredRoles` で指定し、サーバ側でユーザIDへ展開して `requiredUserIds`（スナップショット）として保存する（最大値は chat settings で運用）
+- 指定方法の記録として `requestedUserIds` / `requestedGroupIds` / `requestedRoles` を保存する
 - `requiredGroupIds`: SCIM同期された `GroupAccount.displayName` を指定する（展開は `UserGroup` 経由）
 - `requiredRoles`: `AUTH_GROUP_TO_ROLE_MAP` で解決される role code（例: `admin/mgmt/exec/hr`）を指定する（role → group → user に展開）
 - 展開後の対象者に「無効/権限外」が含まれる場合は、対象者の指定を 400 で拒否する（通知の誤送/情報漏えいリスク低減のため）
@@ -27,7 +28,7 @@
 ### 1) 全員OK確認の投稿（ack required）
 
 - MVPは現行実装（`requiredUserIds` による対象者指定 + ack進捗表示）を「合意形成」の基本機能として採用する
-- 対象者指定の拡張（グループ/ロール指定、候補検索、上限値調整）は後続（通知/権限体系の確定後）
+- 対象者指定の拡張（候補検索、上限値調整の運用）は後続（通知/権限体系の確定後）
 
 ### 2) チャット/承認フローとの連携
 

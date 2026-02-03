@@ -2297,7 +2297,7 @@
                       "minLength": 1,
                       "type": "string"
                     },
-                    "maxItems": 20,
+                    "maxItems": 200,
                     "type": "array"
                   },
                   "requiredRoles": {
@@ -2305,7 +2305,7 @@
                       "minLength": 1,
                       "type": "string"
                     },
-                    "maxItems": 20,
+                    "maxItems": 200,
                     "type": "array"
                   },
                   "requiredUserIds": {
@@ -2313,7 +2313,7 @@
                       "minLength": 1,
                       "type": "string"
                     },
-                    "maxItems": 50,
+                    "maxItems": 200,
                     "type": "array"
                   },
                   "tags": {
@@ -2364,7 +2364,7 @@
                       "minLength": 1,
                       "type": "string"
                     },
-                    "maxItems": 20,
+                    "maxItems": 200,
                     "type": "array"
                   },
                   "requiredRoles": {
@@ -2372,7 +2372,7 @@
                       "minLength": 1,
                       "type": "string"
                     },
-                    "maxItems": 20,
+                    "maxItems": 200,
                     "type": "array"
                   },
                   "requiredUserIds": {
@@ -2380,7 +2380,7 @@
                       "minLength": 1,
                       "type": "string"
                     },
-                    "maxItems": 50,
+                    "maxItems": 200,
                     "type": "array"
                   }
                 },
@@ -2768,6 +2768,21 @@
               "schema": {
                 "additionalProperties": false,
                 "properties": {
+                  "ackMaxRequiredGroups": {
+                    "maximum": 200,
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "ackMaxRequiredRoles": {
+                    "maximum": 200,
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "ackMaxRequiredUsers": {
+                    "maximum": 200,
+                    "minimum": 1,
+                    "type": "integer"
+                  },
                   "allowDmCreation": {
                     "type": "boolean"
                   },
@@ -4968,7 +4983,7 @@
                       "minLength": 1,
                       "type": "string"
                     },
-                    "maxItems": 20,
+                    "maxItems": 200,
                     "type": "array"
                   },
                   "requiredRoles": {
@@ -4976,7 +4991,7 @@
                       "minLength": 1,
                       "type": "string"
                     },
-                    "maxItems": 20,
+                    "maxItems": 200,
                     "type": "array"
                   },
                   "requiredUserIds": {
@@ -4984,7 +4999,7 @@
                       "minLength": 1,
                       "type": "string"
                     },
-                    "maxItems": 50,
+                    "maxItems": 200,
                     "type": "array"
                   },
                   "tags": {
@@ -5035,7 +5050,7 @@
                       "minLength": 1,
                       "type": "string"
                     },
-                    "maxItems": 20,
+                    "maxItems": 200,
                     "type": "array"
                   },
                   "requiredRoles": {
@@ -5043,7 +5058,7 @@
                       "minLength": 1,
                       "type": "string"
                     },
-                    "maxItems": 20,
+                    "maxItems": 200,
                     "type": "array"
                   },
                   "requiredUserIds": {
@@ -5051,7 +5066,7 @@
                       "minLength": 1,
                       "type": "string"
                     },
-                    "maxItems": 50,
+                    "maxItems": 200,
                     "type": "array"
                   }
                 },

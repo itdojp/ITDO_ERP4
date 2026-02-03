@@ -32,6 +32,9 @@ export async function registerChatSettingRoutes(app: FastifyInstance) {
       const body = req.body as {
         allowUserPrivateGroupCreation?: boolean;
         allowDmCreation?: boolean;
+        ackMaxRequiredUsers?: number;
+        ackMaxRequiredGroups?: number;
+        ackMaxRequiredRoles?: number;
       };
 
       const updated = await prisma.chatSetting.upsert({
@@ -41,6 +44,9 @@ export async function registerChatSettingRoutes(app: FastifyInstance) {
           allowUserPrivateGroupCreation:
             body.allowUserPrivateGroupCreation ?? true,
           allowDmCreation: body.allowDmCreation ?? true,
+          ackMaxRequiredUsers: body.ackMaxRequiredUsers ?? 50,
+          ackMaxRequiredGroups: body.ackMaxRequiredGroups ?? 20,
+          ackMaxRequiredRoles: body.ackMaxRequiredRoles ?? 20,
           createdBy: userId,
           updatedBy: userId,
         },
@@ -54,6 +60,15 @@ export async function registerChatSettingRoutes(app: FastifyInstance) {
           ...(body.allowDmCreation !== undefined
             ? { allowDmCreation: body.allowDmCreation }
             : {}),
+          ...(body.ackMaxRequiredUsers !== undefined
+            ? { ackMaxRequiredUsers: body.ackMaxRequiredUsers }
+            : {}),
+          ...(body.ackMaxRequiredGroups !== undefined
+            ? { ackMaxRequiredGroups: body.ackMaxRequiredGroups }
+            : {}),
+          ...(body.ackMaxRequiredRoles !== undefined
+            ? { ackMaxRequiredRoles: body.ackMaxRequiredRoles }
+            : {}),
           updatedBy: userId,
         },
       });
@@ -65,6 +80,9 @@ export async function registerChatSettingRoutes(app: FastifyInstance) {
         metadata: {
           allowUserPrivateGroupCreation: updated.allowUserPrivateGroupCreation,
           allowDmCreation: updated.allowDmCreation,
+          ackMaxRequiredUsers: updated.ackMaxRequiredUsers,
+          ackMaxRequiredGroups: updated.ackMaxRequiredGroups,
+          ackMaxRequiredRoles: updated.ackMaxRequiredRoles,
         },
         ...auditContextFromRequest(req),
       });
