@@ -1239,6 +1239,11 @@ export const RoomChat: React.FC = () => {
   }, [roomId]);
 
   useEffect(() => {
+    setAckCandidateQuery('');
+    setAckCandidates({});
+  }, [roomId]);
+
+  useEffect(() => {
     const keyword = ackCandidateQuery.trim();
     if (!roomId || keyword.length < 2) {
       setAckCandidates({});

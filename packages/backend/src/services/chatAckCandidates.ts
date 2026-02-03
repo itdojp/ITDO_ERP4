@@ -108,9 +108,7 @@ async function fetchActiveProjectMemberUserIds(options: {
   projectId: string;
   client: typeof prisma;
 }) {
-  const rows = await options.client.$queryRaw<
-    Array<{ userId: string | null }>
-  >`
+  const rows = await options.client.$queryRaw<Array<{ userId: string | null }>>`
     SELECT DISTINCT ua."userName" AS "userId"
     FROM "ProjectMember" AS pm
     INNER JOIN "UserAccount" AS ua
@@ -126,9 +124,7 @@ async function fetchActiveChatRoomMemberUserIds(options: {
   roomId: string;
   client: typeof prisma;
 }) {
-  const rows = await options.client.$queryRaw<
-    Array<{ userId: string | null }>
-  >`
+  const rows = await options.client.$queryRaw<Array<{ userId: string | null }>>`
     SELECT DISTINCT ua."userName" AS "userId"
     FROM "ChatRoomMember" AS crm
     INNER JOIN "UserAccount" AS ua
@@ -268,8 +264,7 @@ async function searchUserCandidates(options: {
   return rows
     .map((row) => ({
       userId: normalizeId(row.userId),
-      displayName:
-        typeof row.displayName === 'string' ? row.displayName : null,
+      displayName: typeof row.displayName === 'string' ? row.displayName : null,
     }))
     .filter((row) => row.userId);
 }

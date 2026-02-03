@@ -630,6 +630,11 @@ export const ProjectChat: React.FC = () => {
   }, [projectId]);
 
   useEffect(() => {
+    setAckCandidateQuery('');
+    setAckCandidates({});
+  }, [projectId]);
+
+  useEffect(() => {
     const keyword = ackCandidateQuery.trim();
     if (!projectId || keyword.length < 2) {
       setAckCandidates({});
