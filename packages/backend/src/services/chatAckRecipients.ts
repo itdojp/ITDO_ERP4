@@ -5,6 +5,7 @@ type ChatRoomForAckValidation = {
   id: string;
   type: string;
   groupId: string | null;
+  viewerGroupIds?: unknown;
   deletedAt: Date | null;
   allowExternalUsers: boolean;
 };
@@ -231,10 +232,47 @@ export async function validateChatAckRequiredRecipientsForRoom(options: {
     };
   }
 
-  // Company rooms are globally visible unless additional ACLs are enforced.
-  // Keep validation minimal here (active-only) until room-level ACL checks
-  // can be resolved from DB state.
+  // Company rooms are globally visible unless viewerGroupIds are set.
   if (room.type === 'company') {
+    const viewerGroupIds = Array.isArray(room.viewerGroupIds)
+      ? normalizeIdList(room.viewerGroupIds)
+      : [];
+    if (viewerGroupIds.length > 0) {
+      const members = await client.userGroup.findMany({
+        where: {
+          user: {
+            userName: { in: activeUserIds },
+            active: true,
+            deletedAt: null,
+          },
+          groupId: { in: viewerGroupIds },
+          group: { active: true },
+        },
+        select: { user: { select: { userName: true } } },
+      });
+      const allowed = new Set<string>();
+      normalizeIdList(
+        members.map((row: { user?: { userName?: unknown } }) => row.user?.userName),
+      ).forEach((id) => allowed.add(id));
+      const forbidden = activeUserIds.filter((userId) => !allowed.has(userId));
+      const invalid = [...missingOrInactive, ...forbidden];
+      if (invalid.length) {
+        const hasMissingOrInactive = missingOrInactive.length > 0;
+        const hasForbidden = forbidden.length > 0;
+        const reason =
+          hasMissingOrInactive && hasForbidden
+            ? 'required_users_invalid'
+            : hasMissingOrInactive
+              ? 'required_users_inactive'
+              : 'required_users_forbidden';
+        return {
+          ok: false,
+          invalidUserIds: invalid,
+          reason,
+        };
+      }
+      return { ok: true, validUserIds: activeUserIds };
+    }
     if (missingOrInactive.length) {
       return {
         ok: false,

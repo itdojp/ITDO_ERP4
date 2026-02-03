@@ -202,7 +202,7 @@ test('validateChatAckRequiredRecipientsForRoom: mixed inactive+forbidden uses re
   assert.equal(res.reason, 'required_users_invalid');
 });
 
-test('validateChatAckRequiredRecipientsForRoom: company skips access check but rejects inactive', async () => {
+test('validateChatAckRequiredRecipientsForRoom: company without ACL skips access check but rejects inactive', async () => {
   const room = buildRoom({ id: 'company', type: 'company' });
   const client = {
     userAccount: { findMany: async () => [{ userName: 'u1' }] },
@@ -219,4 +219,32 @@ test('validateChatAckRequiredRecipientsForRoom: company skips access check but r
   });
   assert.equal(res.ok, false);
   assert.deepEqual(res.invalidUserIds, ['u2']);
+});
+
+test('validateChatAckRequiredRecipientsForRoom: company with viewerGroupIds enforces membership', async () => {
+  const room = buildRoom({
+    id: 'company',
+    type: 'company',
+    viewerGroupIds: ['group-uuid'],
+  });
+  const client = {
+    userAccount: {
+      findMany: async () => [{ userName: 'u1' }, { userName: 'u2' }],
+    },
+    chatRoomMember: { findMany: async () => [] },
+    groupAccount: createGroupAccountStub([]),
+    userGroup: {
+      findMany: async () => [{ groupId: 'group-uuid', user: { userName: 'u1' } }],
+    },
+    projectMember: { findMany: async () => [] },
+  };
+
+  const res = await validateChatAckRequiredRecipientsForRoom({
+    room,
+    requiredUserIds: ['u1', 'u2'],
+    client,
+  });
+  assert.equal(res.ok, false);
+  assert.deepEqual(res.invalidUserIds, ['u2']);
+  assert.equal(res.reason, 'required_users_forbidden');
 });
