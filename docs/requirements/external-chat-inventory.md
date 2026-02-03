@@ -15,8 +15,8 @@
 - `packages/frontend/src/pages/App.tsx`: deep link は projectIds/ロールで project-chat / room-chat を切替
 
 ## docs
-- `docs/requirements/access-control.md`, `docs/requirements/chat-rooms.md`, `docs/requirements/project-chat.md`, `docs/manual/*` で
-  `external_chat=外部ユーザ/チャットのみ` を前提
+- `docs/requirements/access-control.md`, `docs/requirements/chat-rooms.md`, `docs/requirements/project-chat.md`, `docs/manual/*` は
+  「チャット権限はグループACLで制御、external_chat は非チャット抑止の暫定用途」を前提
 
 ---
 
