@@ -31,6 +31,7 @@ import { registerChatRoutes } from './chat.js';
 import { registerChatBreakGlassRoutes } from './chatBreakGlass.js';
 import { registerChatRoomRoutes } from './chatRooms.js';
 import { registerChatSettingRoutes } from './chatSettings.js';
+import { registerChatAckLinkRoutes } from './chatAckLinks.js';
 import { registerWorklogSettingRoutes } from './worklogSettings.js';
 import { registerAnnotationSettingRoutes } from './annotationSettings.js';
 import { registerAnnotationRoutes } from './annotations.js';
@@ -80,6 +81,7 @@ export async function registerRoutes(app: FastifyInstance) {
   await registerChatSettingRoutes(app);
   await registerChatBreakGlassRoutes(app);
   await registerChatRoomRoutes(app);
+  await registerChatAckLinkRoutes(app);
   await registerProjectRoutes(app);
   await registerCustomerRoutes(app);
   await registerVendorRoutes(app);
