@@ -252,7 +252,9 @@ export async function validateChatAckRequiredRecipientsForRoom(options: {
       });
       const allowed = new Set<string>();
       normalizeIdList(
-        members.map((row: { user?: { userName?: unknown } }) => row.user?.userName),
+        members.map(
+          (row: { user?: { userName?: unknown } }) => row.user?.userName,
+        ),
       ).forEach((id) => allowed.add(id));
       const forbidden = activeUserIds.filter((userId) => !allowed.has(userId));
       const invalid = [...missingOrInactive, ...forbidden];
