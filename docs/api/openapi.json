@@ -1818,7 +1818,7 @@
           {
             "in": "query",
             "name": "targetTable",
-            "required": false,
+            "required": true,
             "schema": {
               "maxLength": 200,
               "minLength": 1,
@@ -1828,7 +1828,7 @@
           {
             "in": "query",
             "name": "targetId",
-            "required": false,
+            "required": true,
             "schema": {
               "maxLength": 200,
               "minLength": 1,
@@ -1840,9 +1840,18 @@
             "name": "limit",
             "required": false,
             "schema": {
-              "maximum": 200,
-              "minimum": 1,
-              "type": "integer"
+              "anyOf": [
+                {
+                  "maximum": 200,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "maxLength": 3,
+                  "pattern": "^[0-9]+$",
+                  "type": "string"
+                }
+              ]
             }
           }
         ],
@@ -1857,48 +1866,93 @@
           "content": {
             "application/json": {
               "schema": {
-                "additionalProperties": false,
-                "properties": {
-                  "ackRequestId": {
-                    "maxLength": 200,
-                    "minLength": 1,
-                    "type": "string"
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "ackRequestId": {
+                        "maxLength": 200,
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "actionKey": {
+                        "maxLength": 200,
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "flowType": {
+                        "maxLength": 200,
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "messageId": {
+                        "maxLength": 200,
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "targetId": {
+                        "maxLength": 200,
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "targetTable": {
+                        "maxLength": 200,
+                        "minLength": 1,
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "ackRequestId",
+                      "targetTable",
+                      "targetId"
+                    ],
+                    "type": "object"
                   },
-                  "actionKey": {
-                    "maxLength": 200,
-                    "minLength": 1,
-                    "type": "string"
-                  },
-                  "flowType": {
-                    "maxLength": 200,
-                    "minLength": 1,
-                    "type": "string"
-                  },
-                  "messageId": {
-                    "maxLength": 200,
-                    "minLength": 1,
-                    "type": "string"
-                  },
-                  "targetId": {
-                    "maxLength": 200,
-                    "minLength": 1,
-                    "type": "string"
-                  },
-                  "targetTable": {
-                    "maxLength": 200,
-                    "minLength": 1,
-                    "type": "string"
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "ackRequestId": {
+                        "maxLength": 200,
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "actionKey": {
+                        "maxLength": 200,
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "flowType": {
+                        "maxLength": 200,
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "messageId": {
+                        "maxLength": 200,
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "targetId": {
+                        "maxLength": 200,
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "targetTable": {
+                        "maxLength": 200,
+                        "minLength": 1,
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "messageId",
+                      "targetTable",
+                      "targetId"
+                    ],
+                    "type": "object"
                   }
-                },
-                "required": [
-                  "targetTable",
-                  "targetId"
-                ],
-                "type": "object"
+                ]
               }
             }
-          },
-          "required": true
+          }
         },
         "responses": {
           "200": {

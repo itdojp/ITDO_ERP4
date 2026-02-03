@@ -47,7 +47,8 @@ export async function registerChatAckLinkRoutes(app: FastifyInstance) {
         return reply.status(400).send({
           error: {
             code: 'MISSING_QUERY',
-            message: 'ackRequestId/messageId/targetTable is required',
+            message:
+              'ackRequestId or messageId or (targetTable and targetId) is required',
           },
         });
       }
@@ -115,15 +116,38 @@ export async function registerChatAckLinkRoutes(app: FastifyInstance) {
       const ackRequest = ackRequestId
         ? await prisma.chatAckRequest.findUnique({
             where: { id: ackRequestId },
-            select: { id: true, messageId: true },
+            select: {
+              id: true,
+              messageId: true,
+              canceledAt: true,
+              message: { select: { deletedAt: true } },
+            },
           })
         : await prisma.chatAckRequest.findUnique({
             where: { messageId },
-            select: { id: true, messageId: true },
+            select: {
+              id: true,
+              messageId: true,
+              canceledAt: true,
+              message: { select: { deletedAt: true } },
+            },
           });
       if (!ackRequest) {
         return reply.status(404).send({
           error: { code: 'NOT_FOUND', message: 'Ack request not found' },
+        });
+      }
+      if (ackRequest.message?.deletedAt) {
+        return reply.status(404).send({
+          error: { code: 'NOT_FOUND', message: 'Ack request not found' },
+        });
+      }
+      if (ackRequest.canceledAt) {
+        return reply.status(409).send({
+          error: {
+            code: 'ACK_REQUEST_CANCELED',
+            message: 'Ack request has been canceled',
+          },
         });
       }
 
