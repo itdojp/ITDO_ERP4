@@ -1,5 +1,6 @@
 import type { Prisma } from '@prisma/client';
 import { prisma } from './db.js';
+import { resolveChatAckRequiredRecipientUserIds } from './chatAckRecipients.js';
 
 const DEFAULT_LIMIT = 200;
 const DEFAULT_LOOKBACK_DAYS = 30;
@@ -20,8 +21,10 @@ export type RunChatAckReminderResult = {
   scannedRequests: number;
   skippedCompletedRequests: number;
   candidateNotifications: number;
+  candidateEscalations: number;
   skippedAlreadyNotified: number;
   createdNotifications: number;
+  createdEscalations: number;
   sampleMessageIds: string[];
 };
 
@@ -29,6 +32,13 @@ function parsePositiveIntEnv(name: string, fallback: number) {
   const raw = process.env[name];
   if (!raw) return fallback;
   const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+  return Math.floor(parsed);
+}
+
+function normalizeIntervalHours(value: unknown, fallback: number) {
+  if (value === undefined || value === null) return fallback;
+  const parsed = Number(value);
   if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
   return Math.floor(parsed);
 }
@@ -74,7 +84,7 @@ export async function runChatAckReminders(
     'CHAT_ACK_REMINDER_LOOKBACK_DAYS',
     DEFAULT_LOOKBACK_DAYS,
   );
-  const minIntervalHours = parsePositiveIntEnv(
+  const defaultMinIntervalHours = parsePositiveIntEnv(
     'CHAT_ACK_REMINDER_MIN_INTERVAL_HOURS',
     DEFAULT_MIN_INTERVAL_HOURS,
   );
@@ -82,9 +92,6 @@ export async function runChatAckReminders(
   const now = new Date();
   const lookbackFrom = new Date(
     now.getTime() - lookbackDays * 24 * 60 * 60 * 1000,
-  );
-  const notifiedSince = new Date(
-    now.getTime() - minIntervalHours * 60 * 60 * 1000,
   );
 
   const requests = await prisma.chatAckRequest.findMany({
@@ -106,6 +113,7 @@ export async function runChatAckReminders(
     },
   });
 
+  let maxIntervalHours = defaultMinIntervalHours;
   let skippedCompletedRequests = 0;
   type Candidate = {
     userId: string;
@@ -116,8 +124,12 @@ export async function runChatAckReminders(
     senderUserId: string;
     excerpt: string;
     requiredCount: number;
+    remindIntervalHours: number;
+    thresholdAt: Date;
+    isEscalation: boolean;
   };
   const candidates: Candidate[] = [];
+  const escalationCandidates: Candidate[] = [];
 
   for (const request of requests) {
     if (!request.dueAt) continue;
@@ -139,6 +151,11 @@ export async function runChatAckReminders(
       skippedCompletedRequests += 1;
       continue;
     }
+    const remindIntervalHours = normalizeIntervalHours(
+      request.remindIntervalHours,
+      defaultMinIntervalHours,
+    );
+    maxIntervalHours = Math.max(maxIntervalHours, remindIntervalHours);
     const excerpt = buildExcerpt(request.message?.body ?? '');
     const projectId = request.room.type === 'project' ? request.roomId : null;
     const roomId = normalizeString(request.roomId) || null;
@@ -152,15 +169,64 @@ export async function runChatAckReminders(
         senderUserId,
         excerpt,
         requiredCount,
+        remindIntervalHours,
+        thresholdAt: request.dueAt,
+        isEscalation: false,
       });
+    }
+
+    const escalationAfterHours = normalizeIntervalHours(
+      request.escalationAfterHours,
+      0,
+    );
+    if (escalationAfterHours > 0) {
+      const escalationDueAt = new Date(
+        request.dueAt.getTime() + escalationAfterHours * 3600 * 1000,
+      );
+      if (now >= escalationDueAt) {
+        const escalationUserIds = await resolveChatAckRequiredRecipientUserIds({
+          requiredUserIds: normalizeStringArray(request.escalationUserIds, {
+            dedupe: true,
+            max: 200,
+          }),
+          requiredGroupIds: normalizeStringArray(request.escalationGroupIds, {
+            dedupe: true,
+            max: 200,
+          }),
+          requiredRoles: normalizeStringArray(request.escalationRoles, {
+            dedupe: true,
+            max: 200,
+          }),
+        });
+        for (const userId of escalationUserIds) {
+          escalationCandidates.push({
+            userId,
+            projectId,
+            roomId,
+            messageId: request.messageId,
+            dueAt: request.dueAt,
+            senderUserId,
+            excerpt,
+            requiredCount,
+            remindIntervalHours,
+            thresholdAt: escalationDueAt,
+            isEscalation: true,
+          });
+        }
+      }
     }
   }
 
+  const allCandidates = [...candidates, ...escalationCandidates];
   const uniqueMessageIds = Array.from(
-    new Set(candidates.map((item) => item.messageId)),
+    new Set(allCandidates.map((item) => item.messageId)),
   );
   const uniqueUserIds = Array.from(
-    new Set(candidates.map((item) => item.userId)),
+    new Set(allCandidates.map((item) => item.userId)),
+  );
+
+  const notifiedSince = new Date(
+    now.getTime() - maxIntervalHours * 60 * 60 * 1000,
   );
 
   const existing = uniqueMessageIds.length
@@ -187,9 +253,14 @@ export async function runChatAckReminders(
 
   const toCreate: Candidate[] = [];
   let skippedAlreadyNotified = 0;
-  for (const candidate of candidates) {
+  for (const candidate of allCandidates) {
+    const candidateNotifiedSince = new Date(
+      now.getTime() - candidate.remindIntervalHours * 60 * 60 * 1000,
+    );
     const threshold =
-      candidate.dueAt > notifiedSince ? candidate.dueAt : notifiedSince;
+      candidate.thresholdAt > candidateNotifiedSince
+        ? candidate.thresholdAt
+        : candidateNotifiedSince;
     const key = `${candidate.messageId}:${candidate.userId}`;
     const last = latestNotifiedAt.get(key);
     if (last && last >= threshold) {
@@ -214,6 +285,7 @@ export async function runChatAckReminders(
               excerpt: item.excerpt,
               dueAt: item.dueAt.toISOString(),
               requiredCount: item.requiredCount,
+              escalation: item.isEscalation || undefined,
             } as Prisma.InputJsonValue,
             createdBy: options.actorId ?? undefined,
             updatedBy: options.actorId ?? undefined,
@@ -226,12 +298,14 @@ export async function runChatAckReminders(
     dryRun,
     now: now.toISOString(),
     lookbackDays,
-    minIntervalHours,
+    minIntervalHours: defaultMinIntervalHours,
     scannedRequests: requests.length,
     skippedCompletedRequests,
     candidateNotifications: candidates.length,
+    candidateEscalations: escalationCandidates.length,
     skippedAlreadyNotified,
     createdNotifications,
+    createdEscalations: toCreate.filter((item) => item.isEscalation).length,
     sampleMessageIds: uniqueMessageIds.slice(0, 20),
   };
 }

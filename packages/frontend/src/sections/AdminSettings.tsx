@@ -64,6 +64,24 @@ type ActionPolicy = {
   guards?: unknown | null;
 };
 
+type ChatAckTemplate = {
+  id: string;
+  flowType: string;
+  actionKey: string;
+  messageBody: string;
+  requiredUserIds?: string[] | null;
+  requiredGroupIds?: string[] | null;
+  requiredRoles?: string[] | null;
+  dueInHours?: number | null;
+  remindIntervalHours?: number | null;
+  escalationAfterHours?: number | null;
+  escalationUserIds?: string[] | null;
+  escalationGroupIds?: string[] | null;
+  escalationRoles?: string[] | null;
+  isEnabled?: boolean | null;
+  createdAt?: string | null;
+};
+
 type PdfTemplate = {
   id: string;
   name: string;
@@ -224,6 +242,22 @@ const createDefaultActionPolicyForm = () => ({
   guardsJson: '',
 });
 
+const createDefaultChatAckTemplateForm = () => ({
+  flowType: 'invoice',
+  actionKey: 'approve',
+  messageBody: '',
+  requiredUserIdsJson: '[]',
+  requiredGroupIdsJson: '[]',
+  requiredRolesJson: '[]',
+  dueInHours: '',
+  remindIntervalHours: '',
+  escalationAfterHours: '',
+  escalationUserIdsJson: '[]',
+  escalationGroupIdsJson: '[]',
+  escalationRolesJson: '[]',
+  isEnabled: true,
+});
+
 const createDefaultIntegrationForm = () => ({
   type: 'crm',
   name: '',
@@ -250,6 +284,9 @@ export const AdminSettings: React.FC = () => {
   const [actionPolicyItems, setActionPolicyItems] = useState<ActionPolicy[]>(
     [],
   );
+  const [chatAckTemplateItems, setChatAckTemplateItems] = useState<
+    ChatAckTemplate[]
+  >([]);
   const [templateItems, setTemplateItems] = useState<TemplateSetting[]>([]);
   const [pdfTemplates, setPdfTemplates] = useState<PdfTemplate[]>([]);
   const [integrationItems, setIntegrationItems] = useState<
@@ -267,6 +304,9 @@ export const AdminSettings: React.FC = () => {
   const [ruleForm, setRuleForm] = useState(createDefaultRuleForm);
   const [actionPolicyForm, setActionPolicyForm] = useState(
     createDefaultActionPolicyForm,
+  );
+  const [chatAckTemplateForm, setChatAckTemplateForm] = useState(
+    createDefaultChatAckTemplateForm,
   );
   const [integrationForm, setIntegrationForm] = useState(
     createDefaultIntegrationForm,
@@ -296,6 +336,9 @@ export const AdminSettings: React.FC = () => {
     Record<string, AuditLogItem[]>
   >({});
   const [editingActionPolicyId, setEditingActionPolicyId] = useState<
+    string | null
+  >(null);
+  const [editingChatAckTemplateId, setEditingChatAckTemplateId] = useState<
     string | null
   >(null);
   const [actionPolicyAuditOpen, setActionPolicyAuditOpen] = useState<
@@ -455,6 +498,18 @@ export const AdminSettings: React.FC = () => {
     }
   }, [logError]);
 
+  const loadChatAckTemplates = useCallback(async () => {
+    try {
+      const res = await api<{ items: ChatAckTemplate[] }>(
+        '/chat-ack-templates',
+      );
+      setChatAckTemplateItems(res.items || []);
+    } catch (err) {
+      logError('loadChatAckTemplates failed', err);
+      setChatAckTemplateItems([]);
+    }
+  }, [logError]);
+
   const loadActionPolicyAuditLogs = useCallback(
     async (policyId: string) => {
       try {
@@ -577,6 +632,7 @@ export const AdminSettings: React.FC = () => {
     loadAlertSettings();
     loadApprovalRules();
     loadActionPolicies();
+    loadChatAckTemplates();
     loadTemplateSettings();
     loadPdfTemplates();
     loadIntegrationSettings();
@@ -585,6 +641,7 @@ export const AdminSettings: React.FC = () => {
     loadAlertSettings,
     loadApprovalRules,
     loadActionPolicies,
+    loadChatAckTemplates,
     loadTemplateSettings,
     loadPdfTemplates,
     loadIntegrationSettings,
@@ -678,6 +735,11 @@ export const AdminSettings: React.FC = () => {
   const resetActionPolicyForm = () => {
     setActionPolicyForm(createDefaultActionPolicyForm());
     setEditingActionPolicyId(null);
+  };
+
+  const resetChatAckTemplateForm = () => {
+    setChatAckTemplateForm(createDefaultChatAckTemplateForm());
+    setEditingChatAckTemplateId(null);
   };
 
   const resetTemplateForm = () => {
@@ -1135,6 +1197,155 @@ export const AdminSettings: React.FC = () => {
       }
       setMessage('保存に失敗しました');
     }
+  };
+
+  const submitChatAckTemplate = async () => {
+    const flowType = chatAckTemplateForm.flowType.trim();
+    const actionKey = chatAckTemplateForm.actionKey.trim();
+    const messageBody = chatAckTemplateForm.messageBody.trim();
+    if (!flowType || !actionKey || !messageBody) {
+      setMessage('flowType / actionKey / messageBody を入力してください');
+      return;
+    }
+    const requiredUserIds = parseJson(
+      'requiredUserIds',
+      chatAckTemplateForm.requiredUserIdsJson,
+    );
+    if (requiredUserIds === null) return;
+    const requiredGroupIds = parseJson(
+      'requiredGroupIds',
+      chatAckTemplateForm.requiredGroupIdsJson,
+    );
+    if (requiredGroupIds === null) return;
+    const requiredRoles = parseJson(
+      'requiredRoles',
+      chatAckTemplateForm.requiredRolesJson,
+    );
+    if (requiredRoles === null) return;
+    const escalationUserIds = parseJson(
+      'escalationUserIds',
+      chatAckTemplateForm.escalationUserIdsJson,
+    );
+    if (escalationUserIds === null) return;
+    const escalationGroupIds = parseJson(
+      'escalationGroupIds',
+      chatAckTemplateForm.escalationGroupIdsJson,
+    );
+    if (escalationGroupIds === null) return;
+    const escalationRoles = parseJson(
+      'escalationRoles',
+      chatAckTemplateForm.escalationRolesJson,
+    );
+    if (escalationRoles === null) return;
+
+    const parseOptionalNumber = (raw: string, min: number) => {
+      const trimmed = raw.trim();
+      if (!trimmed) return undefined;
+      const parsed = Number(trimmed);
+      if (!Number.isFinite(parsed) || parsed < min) return null;
+      return Math.floor(parsed);
+    };
+
+    const dueInHours = parseOptionalNumber(chatAckTemplateForm.dueInHours, 0);
+    if (dueInHours === null) {
+      setMessage('dueInHours は0以上の数値で入力してください');
+      return;
+    }
+    const remindIntervalHours = parseOptionalNumber(
+      chatAckTemplateForm.remindIntervalHours,
+      1,
+    );
+    if (remindIntervalHours === null) {
+      setMessage('remindIntervalHours は1以上の数値で入力してください');
+      return;
+    }
+    const escalationAfterHours = parseOptionalNumber(
+      chatAckTemplateForm.escalationAfterHours,
+      1,
+    );
+    if (escalationAfterHours === null) {
+      setMessage('escalationAfterHours は1以上の数値で入力してください');
+      return;
+    }
+
+    const payload = {
+      flowType,
+      actionKey,
+      messageBody,
+      requiredUserIds: requiredUserIds || undefined,
+      requiredGroupIds: requiredGroupIds || undefined,
+      requiredRoles: requiredRoles || undefined,
+      dueInHours,
+      remindIntervalHours,
+      escalationAfterHours,
+      escalationUserIds: escalationUserIds || undefined,
+      escalationGroupIds: escalationGroupIds || undefined,
+      escalationRoles: escalationRoles || undefined,
+      isEnabled: chatAckTemplateForm.isEnabled,
+    };
+
+    try {
+      if (editingChatAckTemplateId) {
+        await api(`/chat-ack-templates/${editingChatAckTemplateId}`, {
+          method: 'PATCH',
+          body: JSON.stringify(payload),
+        });
+        setMessage('Ackテンプレートを更新しました');
+      } else {
+        await api('/chat-ack-templates', {
+          method: 'POST',
+          body: JSON.stringify(payload),
+        });
+        setMessage('Ackテンプレートを作成しました');
+      }
+      await loadChatAckTemplates();
+      resetChatAckTemplateForm();
+    } catch (err) {
+      logError('submitChatAckTemplate failed', err);
+      setMessage('Ackテンプレートの保存に失敗しました');
+    }
+  };
+
+  const startEditChatAckTemplate = (item: ChatAckTemplate) => {
+    setEditingChatAckTemplateId(item.id);
+    setChatAckTemplateForm({
+      flowType: item.flowType,
+      actionKey: item.actionKey,
+      messageBody: item.messageBody,
+      requiredUserIdsJson: item.requiredUserIds
+        ? JSON.stringify(item.requiredUserIds, null, 2)
+        : '[]',
+      requiredGroupIdsJson: item.requiredGroupIds
+        ? JSON.stringify(item.requiredGroupIds, null, 2)
+        : '[]',
+      requiredRolesJson: item.requiredRoles
+        ? JSON.stringify(item.requiredRoles, null, 2)
+        : '[]',
+      dueInHours:
+        item.dueInHours !== null && item.dueInHours !== undefined
+          ? String(item.dueInHours)
+          : '',
+      remindIntervalHours:
+        item.remindIntervalHours !== null &&
+        item.remindIntervalHours !== undefined
+          ? String(item.remindIntervalHours)
+          : '',
+      escalationAfterHours:
+        item.escalationAfterHours !== null &&
+        item.escalationAfterHours !== undefined
+          ? String(item.escalationAfterHours)
+          : '',
+      escalationUserIdsJson: item.escalationUserIds
+        ? JSON.stringify(item.escalationUserIds, null, 2)
+        : '[]',
+      escalationGroupIdsJson: item.escalationGroupIds
+        ? JSON.stringify(item.escalationGroupIds, null, 2)
+        : '[]',
+      escalationRolesJson: item.escalationRoles
+        ? JSON.stringify(item.escalationRoles, null, 2)
+        : '[]',
+      isEnabled: item.isEnabled ?? true,
+    });
   };
 
   const startEditRule = (item: ApprovalRule) => {
@@ -2203,6 +2414,316 @@ export const AdminSettings: React.FC = () => {
                         })}
                     </div>
                   )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="card" style={{ padding: 12 }}>
+          <strong>合意形成テンプレ（ack required）</strong>
+          <div className="row" style={{ marginTop: 8, flexWrap: 'wrap' }}>
+            <label>
+              flowType
+              <select
+                value={chatAckTemplateForm.flowType}
+                onChange={(e) =>
+                  setChatAckTemplateForm({
+                    ...chatAckTemplateForm,
+                    flowType: e.target.value,
+                  })
+                }
+              >
+                {flowTypes.map((type) => (
+                  <option key={type} value={type}>
+                    {type}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              actionKey
+              <input
+                type="text"
+                value={chatAckTemplateForm.actionKey}
+                onChange={(e) =>
+                  setChatAckTemplateForm({
+                    ...chatAckTemplateForm,
+                    actionKey: e.target.value,
+                  })
+                }
+                placeholder="approve/reject"
+              />
+            </label>
+            <label className="badge" style={{ cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={chatAckTemplateForm.isEnabled}
+                onChange={(e) =>
+                  setChatAckTemplateForm({
+                    ...chatAckTemplateForm,
+                    isEnabled: e.target.checked,
+                  })
+                }
+                style={{ marginRight: 6 }}
+              />
+              isEnabled
+            </label>
+          </div>
+          <label style={{ display: 'block', marginTop: 8 }}>
+            messageBody
+            <textarea
+              value={chatAckTemplateForm.messageBody}
+              onChange={(e) =>
+                setChatAckTemplateForm({
+                  ...chatAckTemplateForm,
+                  messageBody: e.target.value,
+                })
+              }
+              rows={3}
+              style={{ width: '100%' }}
+              placeholder="合意形成メッセージ本文"
+            />
+          </label>
+          <div className="row" style={{ marginTop: 8, flexWrap: 'wrap' }}>
+            <label style={{ flex: 1, minWidth: 240 }}>
+              requiredUserIds (JSON)
+              <textarea
+                value={chatAckTemplateForm.requiredUserIdsJson}
+                onChange={(e) =>
+                  setChatAckTemplateForm({
+                    ...chatAckTemplateForm,
+                    requiredUserIdsJson: e.target.value,
+                  })
+                }
+                rows={3}
+                style={{ width: '100%' }}
+                placeholder='["user@example.com"]'
+              />
+            </label>
+            <label style={{ flex: 1, minWidth: 240 }}>
+              requiredGroupIds (JSON)
+              <textarea
+                value={chatAckTemplateForm.requiredGroupIdsJson}
+                onChange={(e) =>
+                  setChatAckTemplateForm({
+                    ...chatAckTemplateForm,
+                    requiredGroupIdsJson: e.target.value,
+                  })
+                }
+                rows={3}
+                style={{ width: '100%' }}
+                placeholder='["group-id"]'
+              />
+            </label>
+            <label style={{ flex: 1, minWidth: 240 }}>
+              requiredRoles (JSON)
+              <textarea
+                value={chatAckTemplateForm.requiredRolesJson}
+                onChange={(e) =>
+                  setChatAckTemplateForm({
+                    ...chatAckTemplateForm,
+                    requiredRolesJson: e.target.value,
+                  })
+                }
+                rows={3}
+                style={{ width: '100%' }}
+                placeholder='["mgmt"]'
+              />
+            </label>
+          </div>
+          <div className="row" style={{ marginTop: 8, flexWrap: 'wrap' }}>
+            <label>
+              dueInHours
+              <input
+                type="number"
+                value={chatAckTemplateForm.dueInHours}
+                onChange={(e) =>
+                  setChatAckTemplateForm({
+                    ...chatAckTemplateForm,
+                    dueInHours: e.target.value,
+                  })
+                }
+                placeholder="(任意)"
+                min={0}
+              />
+            </label>
+            <label>
+              remindIntervalHours
+              <input
+                type="number"
+                value={chatAckTemplateForm.remindIntervalHours}
+                onChange={(e) =>
+                  setChatAckTemplateForm({
+                    ...chatAckTemplateForm,
+                    remindIntervalHours: e.target.value,
+                  })
+                }
+                placeholder="(任意)"
+                min={1}
+              />
+            </label>
+            <label>
+              escalationAfterHours
+              <input
+                type="number"
+                value={chatAckTemplateForm.escalationAfterHours}
+                onChange={(e) =>
+                  setChatAckTemplateForm({
+                    ...chatAckTemplateForm,
+                    escalationAfterHours: e.target.value,
+                  })
+                }
+                placeholder="(任意)"
+                min={1}
+              />
+            </label>
+          </div>
+          <div className="row" style={{ marginTop: 8, flexWrap: 'wrap' }}>
+            <label style={{ flex: 1, minWidth: 240 }}>
+              escalationUserIds (JSON)
+              <textarea
+                value={chatAckTemplateForm.escalationUserIdsJson}
+                onChange={(e) =>
+                  setChatAckTemplateForm({
+                    ...chatAckTemplateForm,
+                    escalationUserIdsJson: e.target.value,
+                  })
+                }
+                rows={3}
+                style={{ width: '100%' }}
+                placeholder='["manager@example.com"]'
+              />
+            </label>
+            <label style={{ flex: 1, minWidth: 240 }}>
+              escalationGroupIds (JSON)
+              <textarea
+                value={chatAckTemplateForm.escalationGroupIdsJson}
+                onChange={(e) =>
+                  setChatAckTemplateForm({
+                    ...chatAckTemplateForm,
+                    escalationGroupIdsJson: e.target.value,
+                  })
+                }
+                rows={3}
+                style={{ width: '100%' }}
+                placeholder='["group-id"]'
+              />
+            </label>
+            <label style={{ flex: 1, minWidth: 240 }}>
+              escalationRoles (JSON)
+              <textarea
+                value={chatAckTemplateForm.escalationRolesJson}
+                onChange={(e) =>
+                  setChatAckTemplateForm({
+                    ...chatAckTemplateForm,
+                    escalationRolesJson: e.target.value,
+                  })
+                }
+                rows={3}
+                style={{ width: '100%' }}
+                placeholder='["mgmt"]'
+              />
+            </label>
+          </div>
+          <div className="row" style={{ marginTop: 8 }}>
+            <button className="button" onClick={submitChatAckTemplate}>
+              {editingChatAckTemplateId ? '更新' : '作成'}
+            </button>
+            <button
+              className="button secondary"
+              onClick={resetChatAckTemplateForm}
+            >
+              {editingChatAckTemplateId ? 'キャンセル' : 'クリア'}
+            </button>
+            <button className="button secondary" onClick={loadChatAckTemplates}>
+              再読込
+            </button>
+          </div>
+          <div
+            className="list"
+            style={{ display: 'grid', gap: 8, marginTop: 8 }}
+          >
+            {chatAckTemplateItems.length === 0 && (
+              <div className="card">テンプレなし</div>
+            )}
+            {chatAckTemplateItems.map((item) => {
+              const requiredLabel =
+                [
+                  item.requiredUserIds
+                    ? `users=${formatJson(item.requiredUserIds)}`
+                    : null,
+                  item.requiredGroupIds
+                    ? `groups=${formatJson(item.requiredGroupIds)}`
+                    : null,
+                  item.requiredRoles
+                    ? `roles=${formatJson(item.requiredRoles)}`
+                    : null,
+                ]
+                  .filter(Boolean)
+                  .join(' / ') || '-';
+              const escalationLabel =
+                [
+                  item.escalationUserIds
+                    ? `users=${formatJson(item.escalationUserIds)}`
+                    : null,
+                  item.escalationGroupIds
+                    ? `groups=${formatJson(item.escalationGroupIds)}`
+                    : null,
+                  item.escalationRoles
+                    ? `roles=${formatJson(item.escalationRoles)}`
+                    : null,
+                ]
+                  .filter(Boolean)
+                  .join(' / ') || '-';
+              return (
+                <div key={item.id} className="card" style={{ padding: 12 }}>
+                  <div
+                    className="row"
+                    style={{ justifyContent: 'space-between', flexWrap: 'wrap' }}
+                  >
+                    <div>
+                      <strong>
+                        {item.flowType} / {item.actionKey}
+                      </strong>{' '}
+                      / id={item.id}
+                    </div>
+                    <span className="badge">
+                      {(item.isEnabled ?? true) ? 'enabled' : 'disabled'}
+                    </span>
+                  </div>
+                  <div
+                    style={{
+                      fontSize: 12,
+                      color: '#475569',
+                      marginTop: 4,
+                      whiteSpace: 'pre-wrap',
+                    }}
+                  >
+                    messageBody: {item.messageBody}
+                  </div>
+                  <div style={{ fontSize: 12, color: '#475569', marginTop: 4 }}>
+                    required: {requiredLabel}
+                  </div>
+                  <div style={{ fontSize: 12, color: '#475569', marginTop: 4 }}>
+                    escalation: {escalationLabel}
+                  </div>
+                  <div style={{ fontSize: 12, color: '#475569', marginTop: 4 }}>
+                    dueInHours: {item.dueInHours ?? '-'} / remindIntervalHours:{' '}
+                    {item.remindIntervalHours ?? '-'} / escalationAfterHours:{' '}
+                    {item.escalationAfterHours ?? '-'}
+                  </div>
+                  <div
+                    className="row"
+                    style={{ marginTop: 6, flexWrap: 'wrap' }}
+                  >
+                    <button
+                      className="button secondary"
+                      onClick={() => startEditChatAckTemplate(item)}
+                    >
+                      編集
+                    </button>
+                  </div>
                 </div>
               );
             })}

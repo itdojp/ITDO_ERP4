@@ -456,6 +456,13 @@ model ChatAckRequest {
   requestedGroupIds Json?
   requestedRoles  Json?
   dueAt           DateTime?
+  remindIntervalHours Int?
+  escalationAfterHours Int?
+  escalationUserIds Json?
+  escalationGroupIds Json?
+  escalationRoles Json?
+  template       ChatAckTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  templateId     String?
   canceledAt      DateTime?
   canceledBy      String?
   createdAt       DateTime    @default(now())
@@ -466,12 +473,39 @@ model ChatAckRequest {
   @@index([roomId, createdAt])
 }
 
+model ChatAckTemplate {
+  id                   String   @id @default(uuid())
+  flowType             FlowType
+  actionKey            String
+  messageBody          String
+  requiredUserIds      Json?
+  requiredGroupIds     Json?
+  requiredRoles        Json?
+  dueInHours           Int?
+  remindIntervalHours  Int?
+  escalationAfterHours Int?
+  escalationUserIds    Json?
+  escalationGroupIds   Json?
+  escalationRoles      Json?
+  isEnabled            Boolean  @default(true)
+  createdAt            DateTime @default(now())
+  createdBy            String?
+  updatedAt            DateTime @updatedAt
+  updatedBy            String?
+  links                ChatAckLink[]
+  ackRequests          ChatAckRequest[]
+
+  @@index([flowType, actionKey, isEnabled])
+}
+
 model ChatAckLink {
   id           String         @id @default(uuid())
   ackRequest   ChatAckRequest @relation(fields: [ackRequestId], references: [id], onDelete: Cascade)
   ackRequestId String
   message      ChatMessage    @relation(fields: [messageId], references: [id], onDelete: Cascade)
   messageId    String
+  template     ChatAckTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  templateId   String?
   targetTable  String
   targetId     String
   flowType     String?

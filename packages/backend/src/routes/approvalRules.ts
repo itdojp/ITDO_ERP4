@@ -15,6 +15,7 @@ import {
 import { DocStatusValue, TimeStatusValue } from '../types.js';
 import { auditContextFromRequest, logAudit } from '../services/audit.js';
 import { parseDateParam } from '../utils/date.js';
+import { applyChatAckTemplates } from '../services/chatAckTemplates.js';
 
 function hasValidSteps(steps: unknown) {
   if (Array.isArray(steps)) {
@@ -550,6 +551,21 @@ export async function registerApprovalRuleRoutes(app: FastifyInstance) {
               currentStep: instance.currentStep,
               steps: instance.steps,
             });
+          }
+        }
+        if (instance) {
+          try {
+            await applyChatAckTemplates({
+              req,
+              flowType: instance.flowType,
+              actionKey: body.action,
+              targetTable: 'approval_instances',
+              targetId: instance.id,
+              projectId: instance.projectId,
+              actorUserId: userId,
+            });
+          } catch (err) {
+            req.log?.warn({ err, approvalInstanceId: instance.id }, 'applyChatAckTemplates failed');
           }
         }
         return result;
