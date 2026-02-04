@@ -141,6 +141,40 @@ function resolveRoomName(payload: unknown) {
   return typeof value === 'string' && value.trim() ? value.trim() : null;
 }
 
+function resolveProjectStatusChange(payload: unknown) {
+  if (!payload || typeof payload !== 'object') return null;
+  const beforeStatus = (payload as { beforeStatus?: unknown }).beforeStatus;
+  const afterStatus = (payload as { afterStatus?: unknown }).afterStatus;
+  if (
+    typeof beforeStatus !== 'string' ||
+    typeof afterStatus !== 'string' ||
+    !beforeStatus.trim() ||
+    !afterStatus.trim()
+  ) {
+    return null;
+  }
+  return {
+    beforeStatus: beforeStatus.trim(),
+    afterStatus: afterStatus.trim(),
+  };
+}
+
+function formatProjectStatusLabel(value: string | null) {
+  if (!value) return '-';
+  switch (value) {
+    case 'draft':
+      return '起案中';
+    case 'active':
+      return '進行中';
+    case 'on_hold':
+      return '保留';
+    case 'closed':
+      return '完了';
+    default:
+      return value;
+  }
+}
+
 const FLOW_TYPE_LABEL_MAP: Record<string, string> = {
   estimate: '見積',
   invoice: '請求',
@@ -233,6 +267,24 @@ function formatNotificationLabel(item: AppNotification) {
     const fromUserId = resolveFromUserId(item.payload);
     if (fromUserId) return `${fromUserId} により案件メンバーに追加されました`;
     return '案件メンバーに追加されました';
+  }
+  if (item.kind === 'project_created') {
+    const fromUserId = resolveFromUserId(item.payload);
+    if (fromUserId) return `${fromUserId} が案件を作成しました`;
+    return '案件が作成されました';
+  }
+  if (item.kind === 'project_status_changed') {
+    const fromUserId = resolveFromUserId(item.payload);
+    const statusChange = resolveProjectStatusChange(item.payload);
+    const statusLabel = statusChange
+      ? `${formatProjectStatusLabel(
+          statusChange.beforeStatus,
+        )} → ${formatProjectStatusLabel(statusChange.afterStatus)}`
+      : '';
+    const base = fromUserId
+      ? `${fromUserId} が案件ステータスを更新しました`
+      : '案件ステータスが更新されました';
+    return statusLabel ? `${base} (${statusLabel})` : base;
   }
   if (item.kind === 'approval_pending') {
     const fromUserId = resolveFromUserId(item.payload);
@@ -500,6 +552,13 @@ export const Dashboard: React.FC = () => {
       }
       navigateToOpen({ kind: 'approvals', id: 'inbox' });
     }
+    if (
+      item.kind === 'project_created' ||
+      item.kind === 'project_status_changed'
+    ) {
+      if (!item.projectId) return;
+      navigateToOpen({ kind: 'project', id: item.projectId });
+    }
   };
 
   useEffect(() => {
@@ -639,9 +698,13 @@ export const Dashboard: React.FC = () => {
                 Boolean(item.messageId)) ||
               (item.kind === 'daily_report_missing' &&
                 Boolean(resolveReportDate(item.payload))) ||
+              ((item.kind === 'project_created' ||
+                item.kind === 'project_status_changed') &&
+                Boolean(item.projectId)) ||
               item.kind === 'approval_pending' ||
               item.kind === 'approval_approved' ||
               item.kind === 'approval_rejected';
+            const statusChange = resolveProjectStatusChange(item.payload);
             return (
               <Card key={item.id} padding="small">
                 <div
@@ -661,6 +724,13 @@ export const Dashboard: React.FC = () => {
                         }}
                       >
                         期限: {formatDateTime(dueAt)}
+                      </div>
+                    )}
+                    {item.kind === 'project_status_changed' && statusChange && (
+                      <div style={{ fontSize: 12, color: '#475569' }}>
+                        ステータス:{' '}
+                        {formatProjectStatusLabel(statusChange.beforeStatus)} →
+                        {formatProjectStatusLabel(statusChange.afterStatus)}
                       </div>
                     )}
                     {excerpt && (
