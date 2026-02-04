@@ -4,6 +4,7 @@ import { submitApprovalWithUpdate } from '../services/approval.js';
 import { createApprovalPendingNotifications } from '../services/appNotifications.js';
 import { FlowTypeValue, DocStatusValue } from '../types.js';
 import {
+  vendorInvoiceAllocationsSchema,
   vendorInvoiceLinkPoSchema,
   vendorInvoiceSchema,
   vendorInvoiceUnlinkPoSchema,
@@ -16,9 +17,30 @@ import { parseDateParam } from '../utils/date.js';
 import { evaluateActionPolicyWithFallback } from '../services/actionPolicy.js';
 import { logActionPolicyOverrideIfNeeded } from '../services/actionPolicyAudit.js';
 import { auditContextFromRequest, logAudit } from '../services/audit.js';
+import { normalizeVendorInvoiceAllocations } from '../services/vendorInvoiceAllocations.js';
 
 function normalizeString(value: unknown) {
   return typeof value === 'string' ? value.trim() : '';
+}
+
+function parseNumberValue(value: unknown) {
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : null;
+  }
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    const parsed = Number(trimmed);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  if (value && typeof value === 'object') {
+    const candidate = value as { toNumber?: () => number };
+    if (typeof candidate.toNumber === 'function') {
+      const parsed = candidate.toNumber();
+      return Number.isFinite(parsed) ? parsed : null;
+    }
+  }
+  return null;
 }
 
 function isVendorInvoicePreSubmitStatus(status: string) {
@@ -109,6 +131,41 @@ export async function registerVendorDocRoutes(app: FastifyInstance) {
         });
       }
       return invoice;
+    },
+  );
+
+  app.get(
+    '/vendor-invoices/:id/allocations',
+    { preHandler: requireRole(['admin', 'mgmt']) },
+    async (req, reply) => {
+      const { id } = req.params as { id: string };
+      const invoice = await prisma.vendorInvoice.findUnique({
+        where: { id },
+        select: {
+          id: true,
+          status: true,
+          projectId: true,
+          vendorId: true,
+          purchaseOrderId: true,
+          vendorInvoiceNo: true,
+          receivedDate: true,
+          dueDate: true,
+          currency: true,
+          totalAmount: true,
+          documentUrl: true,
+          deletedAt: true,
+        },
+      });
+      if (!invoice || invoice.deletedAt) {
+        return reply.status(404).send({
+          error: { code: 'NOT_FOUND', message: 'Vendor invoice not found' },
+        });
+      }
+      const items = await prisma.vendorInvoiceAllocation.findMany({
+        where: { vendorInvoiceId: id },
+        orderBy: { createdAt: 'asc' },
+      });
+      return { invoice, items };
     },
   );
 
@@ -231,6 +288,350 @@ export async function registerVendorDocRoutes(app: FastifyInstance) {
         },
       });
       return vi;
+    },
+  );
+
+  app.put(
+    '/vendor-invoices/:id/allocations',
+    {
+      preHandler: requireRole(['admin', 'mgmt']),
+      schema: vendorInvoiceAllocationsSchema,
+    },
+    async (req, reply) => {
+      const { id } = req.params as { id: string };
+      const body = req.body as any;
+      const actorId = req.user?.userId;
+      const reasonText = normalizeString(body?.reasonText);
+      const autoAdjust = body?.autoAdjust !== false;
+      const invoice = await prisma.vendorInvoice.findUnique({
+        where: { id },
+        select: {
+          id: true,
+          status: true,
+          projectId: true,
+          vendorId: true,
+          purchaseOrderId: true,
+          currency: true,
+          totalAmount: true,
+          deletedAt: true,
+        },
+      });
+      if (!invoice || invoice.deletedAt) {
+        return reply.status(404).send({
+          error: { code: 'NOT_FOUND', message: 'Vendor invoice not found' },
+        });
+      }
+
+      const policyRes = await evaluateActionPolicyWithFallback({
+        flowType: FlowTypeValue.vendor_invoice,
+        actionKey: 'update_allocations',
+        actor: {
+          userId: req.user?.userId ?? null,
+          roles: req.user?.roles || [],
+          groupIds: req.user?.groupIds || [],
+          groupAccountIds: req.user?.groupAccountIds || [],
+        },
+        reasonText,
+        state: { status: invoice.status, projectId: invoice.projectId },
+        targetTable: 'vendor_invoices',
+        targetId: id,
+      });
+      if (policyRes.policyApplied && !policyRes.allowed) {
+        if (policyRes.reason === 'reason_required') {
+          return reply.status(400).send({
+            error: {
+              code: 'REASON_REQUIRED',
+              message: 'reasonText is required for override',
+              details: { matchedPolicyId: policyRes.matchedPolicyId ?? null },
+            },
+          });
+        }
+        return reply.status(403).send({
+          error: {
+            code: 'ACTION_POLICY_DENIED',
+            message: 'VendorInvoice allocations cannot be updated',
+            details: {
+              reason: policyRes.reason,
+              matchedPolicyId: policyRes.matchedPolicyId ?? null,
+              guardFailures: policyRes.guardFailures ?? null,
+            },
+          },
+        });
+      }
+      await logActionPolicyOverrideIfNeeded({
+        req,
+        flowType: FlowTypeValue.vendor_invoice,
+        actionKey: 'update_allocations',
+        targetTable: 'vendor_invoices',
+        targetId: id,
+        reasonText,
+        result: policyRes,
+      });
+
+      const requiresReason =
+        !policyRes.policyApplied &&
+        !isVendorInvoicePreSubmitStatus(invoice.status);
+      if (requiresReason && !reasonText) {
+        return reply.status(400).send({
+          error: {
+            code: 'REASON_REQUIRED',
+            message: 'reasonText is required for override',
+          },
+        });
+      }
+
+      const rawAllocations = Array.isArray(body?.allocations)
+        ? body.allocations
+        : [];
+      const normalizedInputs: Array<{
+        projectId: string;
+        amount: number;
+        taxRate: number | null;
+        taxAmount: number | null;
+        purchaseOrderLineId: string | null;
+      }> = [];
+      const projectIds = new Set<string>();
+      const purchaseOrderLineIds = new Set<string>();
+
+      for (let i = 0; i < rawAllocations.length; i += 1) {
+        const entry = rawAllocations[i] || {};
+        const projectId = normalizeString(entry.projectId);
+        if (!projectId) {
+          return reply.status(400).send({
+            error: {
+              code: 'INVALID_INPUT',
+              message: `allocations[${i}].projectId is required`,
+            },
+          });
+        }
+        const amount = parseNumberValue(entry.amount);
+        if (amount == null || amount < 0) {
+          return reply.status(400).send({
+            error: {
+              code: 'INVALID_AMOUNT',
+              message: `allocations[${i}].amount must be >= 0`,
+            },
+          });
+        }
+        const taxRateRaw = entry.taxRate;
+        const taxRate =
+          taxRateRaw === undefined || taxRateRaw === null
+            ? null
+            : parseNumberValue(taxRateRaw);
+        if (taxRateRaw != null && (taxRate == null || taxRate < 0)) {
+          return reply.status(400).send({
+            error: {
+              code: 'INVALID_TAX_RATE',
+              message: `allocations[${i}].taxRate must be >= 0`,
+            },
+          });
+        }
+        const taxAmountRaw = entry.taxAmount;
+        const taxAmount =
+          taxAmountRaw === undefined || taxAmountRaw === null
+            ? null
+            : parseNumberValue(taxAmountRaw);
+        if (taxAmountRaw != null && (taxAmount == null || taxAmount < 0)) {
+          return reply.status(400).send({
+            error: {
+              code: 'INVALID_TAX_AMOUNT',
+              message: `allocations[${i}].taxAmount must be >= 0`,
+            },
+          });
+        }
+        const purchaseOrderLineId = normalizeString(entry.purchaseOrderLineId);
+        if (purchaseOrderLineId) {
+          purchaseOrderLineIds.add(purchaseOrderLineId);
+        }
+        projectIds.add(projectId);
+        normalizedInputs.push({
+          projectId,
+          amount,
+          taxRate,
+          taxAmount,
+          purchaseOrderLineId: purchaseOrderLineId || null,
+        });
+      }
+
+      if (projectIds.size > 0) {
+        const projects = await prisma.project.findMany({
+          where: { id: { in: Array.from(projectIds) }, deletedAt: null },
+          select: { id: true },
+        });
+        const found = new Set(projects.map((project) => project.id));
+        const missing = Array.from(projectIds).filter((id) => !found.has(id));
+        if (missing.length) {
+          return reply.status(404).send({
+            error: {
+              code: 'NOT_FOUND',
+              message: 'Project not found',
+              details: { missingProjectIds: missing.slice(0, 20) },
+            },
+          });
+        }
+      }
+
+      if (purchaseOrderLineIds.size > 0) {
+        if (!invoice.purchaseOrderId) {
+          return reply.status(400).send({
+            error: {
+              code: 'INVALID_PURCHASE_ORDER_LINE',
+              message: 'purchaseOrderId is not linked to the invoice',
+            },
+          });
+        }
+        const lines = await prisma.purchaseOrderLine.findMany({
+          where: { id: { in: Array.from(purchaseOrderLineIds) } },
+          select: { id: true, purchaseOrderId: true },
+        });
+        const lineMap = new Map(lines.map((line) => [line.id, line]));
+        const missingLines = Array.from(purchaseOrderLineIds).filter(
+          (lineId) => !lineMap.has(lineId),
+        );
+        if (missingLines.length) {
+          return reply.status(404).send({
+            error: {
+              code: 'NOT_FOUND',
+              message: 'Purchase order line not found',
+              details: { missingPurchaseOrderLineIds: missingLines.slice(0, 20) },
+            },
+          });
+        }
+        const invalidLines = lines.filter(
+          (line) => line.purchaseOrderId !== invoice.purchaseOrderId,
+        );
+        if (invalidLines.length) {
+          return reply.status(400).send({
+            error: {
+              code: 'INVALID_PURCHASE_ORDER_LINE',
+              message: 'Purchase order line does not belong to the linked PO',
+              details: {
+                invalidPurchaseOrderLineIds: invalidLines
+                  .map((line) => line.id)
+                  .slice(0, 20),
+              },
+            },
+          });
+        }
+      }
+
+      const invoiceTotal = parseNumberValue(invoice.totalAmount);
+      if (invoiceTotal == null) {
+        return reply.status(400).send({
+          error: {
+            code: 'INVALID_INVOICE_TOTAL',
+            message: 'Vendor invoice total is invalid',
+          },
+        });
+      }
+
+      const normalized = normalizeVendorInvoiceAllocations(
+        normalizedInputs.map((entry) => ({
+          amount: entry.amount,
+          taxRate: entry.taxRate,
+          taxAmount: entry.taxAmount,
+        })),
+        invoiceTotal,
+        { autoAdjust },
+      );
+      if (
+        normalized.items.length > 0 &&
+        Math.abs(normalized.totals.diff) > 0.00001
+      ) {
+        return reply.status(400).send({
+          error: {
+            code: 'ALLOCATION_MISMATCH',
+            message: 'Allocation totals do not match invoice total',
+            details: {
+              invoiceTotal,
+              allocationTotal: normalized.totals.grossTotal,
+              diff: normalized.totals.diff,
+            },
+          },
+        });
+      }
+
+      const beforeItems = await prisma.vendorInvoiceAllocation.findMany({
+        where: { vendorInvoiceId: id },
+        select: { amount: true, taxRate: true, taxAmount: true },
+      });
+      const beforeSummary = normalizeVendorInvoiceAllocations(
+        beforeItems.map((item) => ({
+          amount: parseNumberValue(item.amount) ?? 0,
+          taxRate: parseNumberValue(item.taxRate),
+          taxAmount: parseNumberValue(item.taxAmount),
+        })),
+        invoiceTotal,
+        { autoAdjust: false },
+      ).totals;
+
+      await prisma.$transaction(async (tx) => {
+        await tx.vendorInvoiceAllocation.deleteMany({
+          where: { vendorInvoiceId: id },
+        });
+        if (normalized.items.length > 0) {
+          await tx.vendorInvoiceAllocation.createMany({
+            data: normalized.items.map((entry, index) => ({
+              vendorInvoiceId: id,
+              projectId: normalizedInputs[index].projectId,
+              purchaseOrderLineId: normalizedInputs[index].purchaseOrderLineId,
+              amount: entry.amount,
+              taxRate: entry.taxRate,
+              taxAmount: entry.taxAmount,
+              createdBy: actorId ?? undefined,
+              updatedBy: actorId ?? undefined,
+            })),
+          });
+        }
+        await tx.vendorInvoice.update({
+          where: { id },
+          data: { updatedBy: actorId ?? undefined },
+        });
+      });
+
+      const items = await prisma.vendorInvoiceAllocation.findMany({
+        where: { vendorInvoiceId: id },
+        orderBy: { createdAt: 'asc' },
+      });
+
+      await logAudit({
+        action:
+          normalized.items.length > 0
+            ? 'vendor_invoice_allocations_update'
+            : 'vendor_invoice_allocations_clear',
+        targetTable: 'vendor_invoices',
+        targetId: id,
+        reasonText: reasonText || undefined,
+        metadata: {
+          status: invoice.status,
+          currency: invoice.currency,
+          invoiceTotal,
+          before: {
+            count: beforeItems.length,
+            amountTotal: beforeSummary.amountTotal,
+            taxTotal: beforeSummary.taxTotal,
+            grossTotal: beforeSummary.grossTotal,
+            diff: beforeSummary.diff,
+          },
+          after: {
+            count: normalized.items.length,
+            amountTotal: normalized.totals.amountTotal,
+            taxTotal: normalized.totals.taxTotal,
+            grossTotal: normalized.totals.grossTotal,
+            diff: normalized.totals.diff,
+            adjusted: normalized.adjusted,
+          },
+          actionPolicy: policyRes.policyApplied
+            ? {
+                matchedPolicyId: (policyRes as any).matchedPolicyId ?? null,
+                requireReason: (policyRes as any).requireReason ?? false,
+              }
+            : { matchedPolicyId: null, requireReason: false },
+        } as Prisma.InputJsonValue,
+        ...auditContextFromRequest(req, actorId ? { userId: actorId } : {}),
+      });
+
+      return { items, totals: normalized.totals };
     },
   );
 
