@@ -186,6 +186,10 @@ async function evaluateChatAckCompletedGuard(ctx: GuardEvalContext) {
 
   const failures: Array<Record<string, unknown>> = [];
   for (const request of requests) {
+    if (!request.message) {
+      failures.push({ id: request.id, reason: 'message_missing' });
+      continue;
+    }
     if (request.message?.deletedAt) {
       failures.push({ id: request.id, reason: 'message_deleted' });
       continue;
@@ -200,7 +204,7 @@ async function evaluateChatAckCompletedGuard(ctx: GuardEvalContext) {
       continue;
     }
     const ackedUserIds = new Set(
-      request.acks
+      (request.acks ?? [])
         .map((ack: { userId?: unknown }) => normalizeString(ack.userId))
         .filter(Boolean),
     );

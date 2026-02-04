@@ -541,3 +541,122 @@ test('evaluateActionPolicyWithFallback: chat_ack_completed guard can be overridd
   assert.equal(res.guardOverride, true);
   assert.ok(Array.isArray(res.guardFailures));
 });
+
+test('evaluateActionPolicy: chat_ack_completed guard handles canceled and expired', async () => {
+  const policies = [
+    {
+      id: 'p1',
+      stateConstraints: null,
+      subjects: null,
+      guards: [{ type: 'chat_ack_completed' }],
+      requireReason: false,
+    },
+  ];
+  const fakeClient = {
+    actionPolicy: { findMany: async () => policies },
+    chatAckLink: {
+      findMany: async () => [{ ackRequestId: 'r1' }, { ackRequestId: 'r2' }],
+    },
+    chatAckRequest: {
+      findMany: async () => [
+        {
+          id: 'r1',
+          requiredUserIds: ['u1'],
+          dueAt: null,
+          canceledAt: new Date(),
+          message: { deletedAt: null },
+          acks: [],
+        },
+        {
+          id: 'r2',
+          requiredUserIds: ['u1', 'u2'],
+          dueAt: new Date('2000-01-01T00:00:00.000Z'),
+          canceledAt: null,
+          message: { deletedAt: null },
+          acks: [{ userId: 'u1' }],
+        },
+      ],
+    },
+  };
+  const res = await evaluateActionPolicy(
+    {
+      flowType: 'invoice',
+      actionKey: 'approve',
+      actor: { userId: 'u1', roles: ['admin'], groupIds: [] },
+      targetTable: 'approval_instances',
+      targetId: 'a1',
+    },
+    { client: fakeClient },
+  );
+  assert.equal(res.allowed, false);
+  const details = res.guardFailures?.[0]?.details;
+  const reasons = (details?.requests || []).map((item) => item.reason);
+  assert.ok(reasons.includes('canceled'));
+  assert.ok(reasons.includes('expired'));
+});
+
+test('evaluateActionPolicy: chat_ack_completed guard handles message missing/deleted and empty required', async () => {
+  const policies = [
+    {
+      id: 'p1',
+      stateConstraints: null,
+      subjects: null,
+      guards: [{ type: 'chat_ack_completed' }],
+      requireReason: false,
+    },
+  ];
+  const fakeClient = {
+    actionPolicy: { findMany: async () => policies },
+    chatAckLink: {
+      findMany: async () => [
+        { ackRequestId: 'r1' },
+        { ackRequestId: 'r2' },
+        { ackRequestId: 'r3' },
+      ],
+    },
+    chatAckRequest: {
+      findMany: async () => [
+        {
+          id: 'r1',
+          requiredUserIds: ['u1'],
+          dueAt: null,
+          canceledAt: null,
+          message: null,
+          acks: [],
+        },
+        {
+          id: 'r2',
+          requiredUserIds: ['u1'],
+          dueAt: null,
+          canceledAt: null,
+          message: { deletedAt: new Date() },
+          acks: [],
+        },
+        {
+          id: 'r3',
+          requiredUserIds: [],
+          dueAt: null,
+          canceledAt: null,
+          message: { deletedAt: null },
+          acks: [],
+        },
+      ],
+    },
+  };
+  const res = await evaluateActionPolicy(
+    {
+      flowType: 'invoice',
+      actionKey: 'approve',
+      actor: { userId: 'u1', roles: ['admin'], groupIds: [] },
+      targetTable: 'approval_instances',
+      targetId: 'a1',
+    },
+    { client: fakeClient },
+  );
+  assert.equal(res.allowed, false);
+  const details = res.guardFailures?.[0]?.details;
+  const reasons = (details?.requests || []).map((item) => item.reason);
+  assert.ok(reasons.includes('message_missing'));
+  assert.ok(reasons.includes('message_deleted'));
+  assert.ok(reasons.includes('required_users_empty'));
+});
