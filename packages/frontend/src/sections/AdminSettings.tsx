@@ -1959,7 +1959,7 @@ export const AdminSettings: React.FC = () => {
                 }
                 rows={3}
                 style={{ width: '100%' }}
-                placeholder='[{"type":"approval_open"},{"type":"project_closed"},{"type":"period_lock"},{"type":"editable_days"}]'
+                placeholder='[{"type":"approval_open"},{"type":"project_closed"},{"type":"period_lock"},{"type":"editable_days"},{"type":"chat_ack_completed"}]'
               />
             </label>
           </div>

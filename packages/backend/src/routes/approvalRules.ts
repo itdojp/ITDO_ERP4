@@ -6,6 +6,8 @@ import {
   createApprovalOutcomeNotification,
   createApprovalPendingNotifications,
 } from '../services/appNotifications.js';
+import { evaluateActionPolicyWithFallback } from '../services/actionPolicy.js';
+import { logActionPolicyOverrideIfNeeded } from '../services/actionPolicyAudit.js';
 import {
   approvalActionSchema,
   approvalCancelSchema,
@@ -497,10 +499,60 @@ export async function registerApprovalRuleRoutes(app: FastifyInstance) {
         reason?: string;
       };
       const userId = req.user?.userId || 'system';
+      const reasonText =
+        typeof body.reason === 'string' ? body.reason.trim() : '';
       const actorGroupId = req.user?.groupIds?.[0];
       const actorGroupIds = req.user?.groupIds ?? [];
       const actorGroupAccountIds = req.user?.groupAccountIds ?? [];
       try {
+        const instance = await prisma.approvalInstance.findUnique({
+          where: { id },
+          include: { steps: true },
+        });
+        if (!instance) {
+          return reply.code(404).send({
+            error: 'approval_not_found',
+            message: 'Approval instance not found',
+          });
+        }
+        const policyRes = await evaluateActionPolicyWithFallback({
+          flowType: instance.flowType,
+          actionKey: body.action,
+          actor: {
+            userId: req.user?.userId ?? null,
+            roles: req.user?.roles || [],
+            groupIds: req.user?.groupIds || [],
+            groupAccountIds: req.user?.groupAccountIds || [],
+          },
+          reasonText,
+          state: { status: instance.status, projectId: instance.projectId },
+          targetTable: 'approval_instances',
+          targetId: instance.id,
+        });
+        if (policyRes.policyApplied && !policyRes.allowed) {
+          if (policyRes.reason === 'reason_required') {
+            return reply.status(400).send({
+              error: {
+                code: 'REASON_REQUIRED',
+                message: 'reasonText is required for override',
+                details: {
+                  matchedPolicyId: policyRes.matchedPolicyId ?? null,
+                },
+              },
+            });
+          }
+          return reply.status(403).send({
+            error: {
+              code: 'ACTION_POLICY_DENIED',
+              message: 'Approval action is not allowed',
+              details: {
+                reason: policyRes.reason,
+                matchedPolicyId: policyRes.matchedPolicyId ?? null,
+                guardFailures: policyRes.guardFailures ?? null,
+              },
+            },
+          });
+        }
         const result = await act(id, userId, body.action, {
           reason: body.reason,
           actorGroupId,
@@ -508,31 +560,40 @@ export async function registerApprovalRuleRoutes(app: FastifyInstance) {
           actorGroupAccountIds,
           auditContext: auditContextFromRequest(req, { userId }),
         });
-        const instance = await prisma.approvalInstance.findUnique({
+        await logActionPolicyOverrideIfNeeded({
+          req,
+          flowType: instance.flowType,
+          actionKey: body.action,
+          targetTable: 'approval_instances',
+          targetId: instance.id,
+          reasonText,
+          result: policyRes,
+        });
+        const updated = await prisma.approvalInstance.findUnique({
           where: { id },
           include: { steps: true },
         });
-        if (instance?.createdBy) {
+        if (updated?.createdBy) {
           if (result.status === DocStatusValue.approved) {
             await createApprovalOutcomeNotification({
-              approvalInstanceId: instance.id,
-              projectId: instance.projectId,
-              requesterUserId: instance.createdBy,
+              approvalInstanceId: updated.id,
+              projectId: updated.projectId,
+              requesterUserId: updated.createdBy,
               actorUserId: userId,
-              flowType: instance.flowType,
-              targetTable: instance.targetTable,
-              targetId: instance.targetId,
+              flowType: updated.flowType,
+              targetTable: updated.targetTable,
+              targetId: updated.targetId,
               outcome: 'approved',
             });
           } else if (result.status === DocStatusValue.rejected) {
             await createApprovalOutcomeNotification({
-              approvalInstanceId: instance.id,
-              projectId: instance.projectId,
-              requesterUserId: instance.createdBy,
+              approvalInstanceId: updated.id,
+              projectId: updated.projectId,
+              requesterUserId: updated.createdBy,
               actorUserId: userId,
-              flowType: instance.flowType,
-              targetTable: instance.targetTable,
-              targetId: instance.targetId,
+              flowType: updated.flowType,
+              targetTable: updated.targetTable,
+              targetId: updated.targetId,
               outcome: 'rejected',
             });
           } else if (
@@ -540,15 +601,15 @@ export async function registerApprovalRuleRoutes(app: FastifyInstance) {
             result.status === DocStatusValue.pending_exec
           ) {
             await createApprovalPendingNotifications({
-              approvalInstanceId: instance.id,
-              projectId: instance.projectId,
-              requesterUserId: instance.createdBy,
+              approvalInstanceId: updated.id,
+              projectId: updated.projectId,
+              requesterUserId: updated.createdBy,
               actorUserId: userId,
-              flowType: instance.flowType,
-              targetTable: instance.targetTable,
-              targetId: instance.targetId,
-              currentStep: instance.currentStep,
-              steps: instance.steps,
+              flowType: updated.flowType,
+              targetTable: updated.targetTable,
+              targetId: updated.targetId,
+              currentStep: updated.currentStep,
+              steps: updated.steps,
             });
           }
         }

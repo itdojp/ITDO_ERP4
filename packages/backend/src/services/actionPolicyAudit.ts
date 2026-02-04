@@ -31,6 +31,8 @@ export async function logActionPolicyOverrideIfNeeded(
       flowType: params.flowType,
       actionKey: params.actionKey,
       matchedPolicyId: params.result.matchedPolicyId,
+      guardFailures: params.result.guardFailures ?? null,
+      guardOverride: params.result.guardOverride ?? false,
     },
     ...auditContextFromRequest(params.req),
   });

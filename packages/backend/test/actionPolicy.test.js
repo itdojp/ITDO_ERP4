@@ -437,3 +437,107 @@ test('evaluateActionPolicy: editable_days guard passes when within editable wind
   assert.equal(res.allowed, true);
   assert.equal(res.matchedPolicyId, 'p1');
 });
+
+test('evaluateActionPolicy: chat_ack_completed guard rejects when link missing', async () => {
+  const policies = [
+    {
+      id: 'p1',
+      stateConstraints: null,
+      subjects: null,
+      guards: [{ type: 'chat_ack_completed' }],
+      requireReason: false,
+    },
+  ];
+  const fakeClient = {
+    actionPolicy: { findMany: async () => policies },
+    chatAckLink: { findMany: async () => [] },
+    chatAckRequest: { findMany: async () => [] },
+  };
+  const res = await evaluateActionPolicy(
+    {
+      flowType: 'invoice',
+      actionKey: 'approve',
+      actor: { userId: 'u1', roles: ['admin'], groupIds: [] },
+      targetTable: 'approval_instances',
+      targetId: 'a1',
+    },
+    { client: fakeClient },
+  );
+  assert.equal(res.allowed, false);
+  assert.equal(res.reason, 'guard_failed');
+  assert.equal(res.guardFailures?.[0]?.type, 'chat_ack_completed');
+  assert.equal(res.guardFailures?.[0]?.reason, 'missing_link');
+});
+
+test('evaluateActionPolicy: chat_ack_completed guard passes when all acked', async () => {
+  const policies = [
+    {
+      id: 'p1',
+      stateConstraints: null,
+      subjects: null,
+      guards: [{ type: 'chat_ack_completed' }],
+      requireReason: false,
+    },
+  ];
+  const fakeClient = {
+    actionPolicy: { findMany: async () => policies },
+    chatAckLink: { findMany: async () => [{ ackRequestId: 'r1' }] },
+    chatAckRequest: {
+      findMany: async () => [
+        {
+          id: 'r1',
+          requiredUserIds: ['u1', 'u2'],
+          dueAt: null,
+          canceledAt: null,
+          message: { deletedAt: null },
+          acks: [{ userId: 'u1' }, { userId: 'u2' }],
+        },
+      ],
+    },
+  };
+  const res = await evaluateActionPolicy(
+    {
+      flowType: 'invoice',
+      actionKey: 'approve',
+      actor: { userId: 'u1', roles: ['admin'], groupIds: [] },
+      targetTable: 'approval_instances',
+      targetId: 'a1',
+    },
+    { client: fakeClient },
+  );
+  assert.equal(res.allowed, true);
+  assert.equal(res.matchedPolicyId, 'p1');
+});
+
+test('evaluateActionPolicyWithFallback: chat_ack_completed guard can be overridden by admin with reason', async () => {
+  const policies = [
+    {
+      id: 'p1',
+      stateConstraints: null,
+      subjects: null,
+      guards: [{ type: 'chat_ack_completed' }],
+      requireReason: false,
+    },
+  ];
+  const fakeClient = {
+    actionPolicy: { findMany: async () => policies },
+    chatAckLink: { findMany: async () => [] },
+    chatAckRequest: { findMany: async () => [] },
+  };
+  const res = await evaluateActionPolicyWithFallback(
+    {
+      flowType: 'invoice',
+      actionKey: 'approve',
+      actor: { userId: 'u1', roles: ['admin'], groupIds: [] },
+      reasonText: 'override',
+      targetTable: 'approval_instances',
+      targetId: 'a1',
+    },
+    { client: fakeClient },
+  );
+  assert.equal(res.policyApplied, true);
+  assert.equal(res.allowed, true);
+  assert.equal(res.requireReason, true);
+  assert.equal(res.guardOverride, true);
+  assert.ok(Array.isArray(res.guardFailures));
+});

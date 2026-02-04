@@ -3,6 +3,7 @@ import { DocStatusValue, type FlowType } from '../types.js';
 import { findPeriodLock, toPeriodKey } from './periodLock.js';
 import { getEditableDays } from './worklogSetting.js';
 import { isWithinEditableDays, parseDateParam } from '../utils/date.js';
+import { isAllowedChatAckLinkTargetTable } from './chatAckLinkTargets.js';
 
 export type ActionPolicyActor = {
   userId: string | null;
@@ -32,6 +33,8 @@ export type EvaluateActionPolicyResult =
       allowed: true;
       matchedPolicyId: string;
       requireReason: boolean;
+      guardFailures?: ActionPolicyGuardFailure[];
+      guardOverride?: boolean;
     }
   | {
       allowed: false;
@@ -106,6 +109,136 @@ type GuardEvalContext = {
   targetId?: string;
   now: Date;
 };
+
+async function evaluateChatAckCompletedGuard(ctx: GuardEvalContext) {
+  const targetTable = normalizeString(ctx.targetTable);
+  const targetId = normalizeString(ctx.targetId);
+  if (!targetTable || !targetId) {
+    return {
+      ok: false,
+      failure: {
+        type: 'chat_ack_completed',
+        reason: 'target_required',
+      } satisfies ActionPolicyGuardFailure,
+    };
+  }
+  if (!isAllowedChatAckLinkTargetTable(targetTable)) {
+    return {
+      ok: false,
+      failure: {
+        type: 'chat_ack_completed',
+        reason: 'unsupported_target',
+        details: { targetTable },
+      } satisfies ActionPolicyGuardFailure,
+    };
+  }
+
+  const links = await ctx.client.chatAckLink.findMany({
+    where: { targetTable, targetId },
+    select: { ackRequestId: true },
+  });
+  if (!links.length) {
+    return {
+      ok: false,
+      failure: {
+        type: 'chat_ack_completed',
+        reason: 'missing_link',
+        details: { targetTable, targetId },
+      } satisfies ActionPolicyGuardFailure,
+    };
+  }
+
+  const ackRequestIds = Array.from(
+    new Set(
+      links
+        .map((link: { ackRequestId?: unknown }) =>
+          normalizeString(link.ackRequestId),
+        )
+        .filter(Boolean),
+    ),
+  );
+  if (!ackRequestIds.length) {
+    return {
+      ok: false,
+      failure: {
+        type: 'chat_ack_completed',
+        reason: 'missing_link',
+        details: { targetTable, targetId },
+      } satisfies ActionPolicyGuardFailure,
+    };
+  }
+
+  const requests = await ctx.client.chatAckRequest.findMany({
+    where: { id: { in: ackRequestIds } },
+    select: {
+      id: true,
+      requiredUserIds: true,
+      dueAt: true,
+      canceledAt: true,
+      message: { select: { deletedAt: true } },
+      acks: { select: { userId: true } },
+    },
+  });
+  const requestMap = new Map(
+    requests.map((request: { id: string }) => [request.id, request]),
+  );
+  const missingRequestIds = ackRequestIds.filter((id) => !requestMap.has(id));
+
+  const failures: Array<Record<string, unknown>> = [];
+  for (const request of requests) {
+    if (request.message?.deletedAt) {
+      failures.push({ id: request.id, reason: 'message_deleted' });
+      continue;
+    }
+    if (request.canceledAt) {
+      failures.push({ id: request.id, reason: 'canceled' });
+      continue;
+    }
+    const requiredUserIds = normalizeStringArray(request.requiredUserIds);
+    if (!requiredUserIds.length) {
+      failures.push({ id: request.id, reason: 'required_users_empty' });
+      continue;
+    }
+    const ackedUserIds = new Set(
+      request.acks
+        .map((ack: { userId?: unknown }) => normalizeString(ack.userId))
+        .filter(Boolean),
+    );
+    const incompleteUserIds = requiredUserIds.filter(
+      (userId) => !ackedUserIds.has(userId),
+    );
+    if (!incompleteUserIds.length) continue;
+    const expired =
+      request.dueAt && request.dueAt.getTime() < ctx.now.getTime();
+    failures.push({
+      id: request.id,
+      reason: expired ? 'expired' : 'incomplete',
+      dueAt: request.dueAt ? request.dueAt.toISOString() : null,
+      requiredCount: requiredUserIds.length,
+      ackedCount: requiredUserIds.length - incompleteUserIds.length,
+      incompleteUserIds: incompleteUserIds.slice(0, 20),
+      incompleteTruncated: incompleteUserIds.length > 20,
+    });
+  }
+
+  if (missingRequestIds.length || failures.length) {
+    return {
+      ok: false,
+      failure: {
+        type: 'chat_ack_completed',
+        reason: 'incomplete',
+        details: {
+          targetTable,
+          targetId,
+          missingAckRequestIds: missingRequestIds,
+          requests: failures,
+        },
+      } satisfies ActionPolicyGuardFailure,
+    };
+  }
+
+  return { ok: true } as const;
+}
 
 async function evaluateApprovalOpenGuard(ctx: GuardEvalContext) {
   const targetTable = normalizeString(ctx.targetTable);
@@ -387,6 +520,11 @@ async function evaluateGuards(guards: unknown, ctx: GuardEvalContext) {
       if (!res.ok) failures.push(res.failure);
       continue;
     }
+    if (type === 'chat_ack_completed') {
+      const res = await evaluateChatAckCompletedGuard(ctx);
+      if (!res.ok) failures.push(res.failure);
+      continue;
+    }
     failures.push({ type, reason: 'unknown_guard_type' });
   }
 
@@ -474,6 +612,34 @@ export async function evaluateActionPolicyWithFallback(
   if (res.allowed) return { ...res, policyApplied: true } as const;
   if (res.reason === 'no_matching_policy') {
     return { allowed: true, policyApplied: false } as const;
+  }
+  const guardFailures = res.guardFailures ?? [];
+  const isPrivileged = input.actor.roles.some(
+    (role) => role === 'admin' || role === 'mgmt',
+  );
+  const reasonText = normalizeString(input.reasonText);
+  const isAckGuardOnly =
+    guardFailures.length > 0 &&
+    guardFailures.every((failure) => failure.type === 'chat_ack_completed');
+  if (res.reason === 'guard_failed' && isPrivileged && isAckGuardOnly) {
+    if (!reasonText) {
+      return {
+        allowed: false,
+        reason: 'reason_required',
+        matchedPolicyId: res.matchedPolicyId,
+        requireReason: true,
+        guardFailures,
+        policyApplied: true,
+      } as const;
+    }
+    return {
+      allowed: true,
+      matchedPolicyId: res.matchedPolicyId ?? '',
+      requireReason: true,
+      guardFailures,
+      guardOverride: true,
+      policyApplied: true,
+    } as const;
   }
   return { ...res, policyApplied: true } as const;
 }
