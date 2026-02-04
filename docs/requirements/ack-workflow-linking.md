@@ -66,10 +66,11 @@ Refs: #783, #675, #717
 - 権限/監査: admin/mgmt のみ。監査ログは必須（理由は Phase 1 では任意）
 - Guard 評価ルール: canceled/expired は未完了として扱う（Phase 2）
 - 対象の allowlist: Phase 1 は `approval_instances` のみを許可し、対象の存在確認を必須にする
+- 参照リンク UI: Phase 1 は「業務詳細 + 監査ログ」に設置し、チャット側は参照のみ
+- Phase 2 Guard: requiredUserIds 全員の ack 完了を条件とし、admin/mgmt の例外は理由必須 + 監査ログ
 
 ## 設計論点（未確定）
-- 参照リンク UI の設置箇所（承認詳細/監査ログ/業務詳細）
-- Phase 2 の Guard 仕様詳細（例外許容条件やポリシー切替）
+- なし（Phase 1 の未決事項は解消済み）
 
 ## 受入条件（DoD）
 - Phase 1 の参照リンクが実運用で使える
