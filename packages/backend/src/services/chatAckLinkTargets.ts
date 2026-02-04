@@ -11,7 +11,10 @@ export type ChatAckLinkTargetValidationResult =
 
 type ChatAckLinkTargetClient = {
   approvalInstance: {
-    findUnique: (args: { where: { id: string }; select: { id: true } }) => Promise<{ id: string } | null>;
+    findUnique: (args: {
+      where: { id: string };
+      select: { id: true };
+    }) => Promise<{ id: string } | null>;
   };
 };
 
