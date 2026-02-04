@@ -866,6 +866,16 @@ export const VendorDocuments: React.FC = () => {
     if (!invoiceAllocationDialog) return;
     const invoice = invoiceAllocationDialog.invoice;
     const reasonText = invoiceAllocationReason.trim();
+    if (
+      isVendorInvoiceAllocationReasonRequiredStatus(invoice.status) &&
+      !reasonText
+    ) {
+      setInvoiceAllocationMessage({
+        text: '変更理由を入力してください',
+        type: 'error',
+      });
+      return;
+    }
     const payload: {
       allocations: Array<{
         projectId: string;
@@ -943,7 +953,7 @@ export const VendorDocuments: React.FC = () => {
         text: '配賦明細を更新しました',
         type: 'success',
       });
-      loadVendorInvoices();
+      await loadVendorInvoices();
       await loadVendorInvoiceAllocations(invoice.id);
     } catch (err) {
       console.error('Failed to update vendor invoice allocations.', err);
@@ -1820,6 +1830,7 @@ export const VendorDocuments: React.FC = () => {
                     <iframe
                       title="vendor-invoice-pdf"
                       src={invoiceAllocationDialog.invoice.documentUrl}
+                      sandbox="allow-scripts allow-same-origin"
                       style={{
                         width: '100%',
                         height: 320,

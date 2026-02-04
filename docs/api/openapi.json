@@ -7925,6 +7925,99 @@
         }
       }
     },
+    "/vendor-invoices/{id}/allocations": {
+      "get": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      },
+      "put": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "allocations": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "amount": {
+                          "minimum": 0,
+                          "type": "number"
+                        },
+                        "projectId": {
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "purchaseOrderLineId": {
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "taxAmount": {
+                          "minimum": 0,
+                          "type": "number"
+                        },
+                        "taxRate": {
+                          "minimum": 0,
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "projectId",
+                        "amount"
+                      ],
+                      "type": "object"
+                    },
+                    "type": "array"
+                  },
+                  "autoAdjust": {
+                    "type": "boolean"
+                  },
+                  "reasonText": {
+                    "minLength": 1,
+                    "pattern": "\\S",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "allocations"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
     "/vendor-invoices/{id}/approve": {
       "post": {
         "parameters": [
