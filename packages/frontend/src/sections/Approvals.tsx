@@ -132,9 +132,9 @@ export const Approvals: React.FC = () => {
   const [ackLinkItems, setAckLinkItems] = useState<
     Record<string, ChatAckLink[]>
   >({});
-  const [ackLinkLoading, setAckLinkLoading] = useState<
-    Record<string, boolean>
-  >({});
+  const [ackLinkLoading, setAckLinkLoading] = useState<Record<string, boolean>>(
+    {},
+  );
   const [ackLinkErrors, setAckLinkErrors] = useState<Record<string, string>>(
     {},
   );
@@ -508,10 +508,7 @@ export const Approvals: React.FC = () => {
                     background: '#f8fafc',
                   }}
                 >
-                  <div
-                    className="row"
-                    style={{ alignItems: 'center', gap: 8 }}
-                  >
+                  <div className="row" style={{ alignItems: 'center', gap: 8 }}>
                     <strong>確認依頼リンク</strong>
                     <button
                       className="button secondary"
