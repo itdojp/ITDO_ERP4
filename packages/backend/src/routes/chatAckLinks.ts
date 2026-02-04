@@ -4,6 +4,10 @@ import { prisma } from '../services/db.js';
 import { requireRole } from '../services/rbac.js';
 import { auditContextFromRequest, logAudit } from '../services/audit.js';
 import {
+  isAllowedChatAckLinkTargetTable,
+  validateChatAckLinkTarget,
+} from '../services/chatAckLinkTargets.js';
+import {
   chatAckLinkCreateSchema,
   chatAckLinkQuerySchema,
 } from './validators.js';
@@ -60,6 +64,14 @@ export async function registerChatAckLinkRoutes(app: FastifyInstance) {
           },
         });
       }
+      if (targetTable && !isAllowedChatAckLinkTargetTable(targetTable)) {
+        return reply.status(400).send({
+          error: {
+            code: 'INVALID_TARGET_TABLE',
+            message: 'targetTable is not allowed',
+          },
+        });
+      }
       const where: Prisma.ChatAckLinkWhereInput = {};
       if (ackRequestId) where.ackRequestId = ackRequestId;
       if (messageId) where.messageId = messageId;
@@ -113,6 +125,27 @@ export async function registerChatAckLinkRoutes(app: FastifyInstance) {
         });
       }
 
+      const targetValidation = await validateChatAckLinkTarget({
+        targetTable,
+        targetId,
+      });
+      if (!targetValidation.ok) {
+        const statusCode =
+          targetValidation.reason === 'target_not_found' ? 404 : 400;
+        return reply.status(statusCode).send({
+          error: {
+            code:
+              targetValidation.reason === 'target_not_found'
+                ? 'TARGET_NOT_FOUND'
+                : 'INVALID_TARGET_TABLE',
+            message:
+              targetValidation.reason === 'target_not_found'
+                ? 'Target not found'
+                : 'targetTable is not allowed',
+          },
+        });
+      }
+
       const ackRequest = ackRequestId
         ? await prisma.chatAckRequest.findUnique({
             where: { id: ackRequestId },
@@ -159,8 +192,8 @@ export async function registerChatAckLinkRoutes(app: FastifyInstance) {
           data: {
             ackRequestId: ackRequest.id,
             messageId: ackRequest.messageId,
-            targetTable,
-            targetId,
+            targetTable: targetValidation.targetTable,
+            targetId: targetValidation.targetId,
             flowType: flowType ?? undefined,
             actionKey: actionKey ?? undefined,
             createdBy: userId,

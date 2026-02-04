@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { api, getAuthState } from '../api';
+import { api, apiResponse, getAuthState } from '../api';
+import { navigateToOpen } from '../utils/deepLink';
 
 type ProjectOption = {
   id: string;
@@ -34,6 +35,18 @@ type ApprovalInstance = {
   createdBy?: string | null;
   steps: ApprovalStep[];
   rule?: ApprovalRule | null;
+};
+
+type ChatAckLink = {
+  id: string;
+  ackRequestId: string;
+  messageId: string;
+  targetTable: string;
+  targetId: string;
+  flowType?: string | null;
+  actionKey?: string | null;
+  createdAt: string;
+  createdBy?: string | null;
 };
 
 type MessageState = { text: string; type: 'success' | 'error' } | null;
@@ -97,6 +110,9 @@ export const Approvals: React.FC = () => {
   const isPrivileged = (auth?.roles ?? []).some((role) =>
     ['admin', 'mgmt', 'exec'].includes(role),
   );
+  const canManageAckLinks = (auth?.roles ?? []).some((role) =>
+    ['admin', 'mgmt'].includes(role),
+  );
   const [projects, setProjects] = useState<ProjectOption[]>([]);
   const [projectMessage, setProjectMessage] = useState('');
   const [items, setItems] = useState<ApprovalInstance[]>([]);
@@ -113,6 +129,21 @@ export const Approvals: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [actionState, setActionState] = useState<Record<string, boolean>>({});
   const [reasons, setReasons] = useState<Record<string, string>>({});
+  const [ackLinkItems, setAckLinkItems] = useState<
+    Record<string, ChatAckLink[]>
+  >({});
+  const [ackLinkLoading, setAckLinkLoading] = useState<Record<string, boolean>>(
+    {},
+  );
+  const [ackLinkErrors, setAckLinkErrors] = useState<Record<string, string>>(
+    {},
+  );
+  const [ackLinkInputs, setAckLinkInputs] = useState<Record<string, string>>(
+    {},
+  );
+  const [ackLinkSaving, setAckLinkSaving] = useState<Record<string, boolean>>(
+    {},
+  );
 
   const projectMap = useMemo(() => {
     return new Map(projects.map((project) => [project.id, project]));
@@ -199,6 +230,10 @@ export const Approvals: React.FC = () => {
     setActionState((prev) => ({ ...prev, [id]: isBusy }));
   };
 
+  const setAckLinkLoadingFor = (id: string, isBusy: boolean) => {
+    setAckLinkLoading((prev) => ({ ...prev, [id]: isBusy }));
+  };
+
   const actOnApproval = async (id: string, action: 'approve' | 'reject') => {
     try {
       setActionLoading(id, true);
@@ -226,6 +261,125 @@ export const Approvals: React.FC = () => {
       setActionLoading(id, false);
     }
   };
+
+  const extractChatMessageId = (value: string) => {
+    const trimmed = value.trim();
+    if (!trimmed) return '';
+    const markdownMatch = trimmed.match(/\(([^)]+)\)/);
+    const raw = markdownMatch ? markdownMatch[1] : trimmed;
+    const openIndex = raw.indexOf('open?');
+    if (openIndex >= 0) {
+      const query = raw.slice(openIndex + 5).split('#', 1)[0];
+      const params = new URLSearchParams(query);
+      if (params.get('kind') === 'chat_message') {
+        const id = params.get('id');
+        if (id && id.trim()) return id.trim();
+      }
+    }
+    return trimmed;
+  };
+
+  const loadAckLinks = useCallback(async (approvalId: string) => {
+    try {
+      setAckLinkLoadingFor(approvalId, true);
+      setAckLinkErrors((prev) => ({ ...prev, [approvalId]: '' }));
+      const res = await api<{ items: ChatAckLink[] }>(
+        `/chat-ack-links?targetTable=approval_instances&targetId=${approvalId}`,
+      );
+      setAckLinkItems((prev) => ({
+        ...prev,
+        [approvalId]: res.items || [],
+      }));
+    } catch (error) {
+      console.error('Failed to load chat ack links.', error);
+      setAckLinkItems((prev) => ({ ...prev, [approvalId]: [] }));
+      setAckLinkErrors((prev) => ({
+        ...prev,
+        [approvalId]: '参照リンクの取得に失敗しました',
+      }));
+    } finally {
+      setAckLinkLoadingFor(approvalId, false);
+    }
+  }, []);
+
+  const createAckLink = useCallback(
+    async (approvalId: string) => {
+      const input = ackLinkInputs[approvalId] || '';
+      const messageId = extractChatMessageId(input);
+      if (!messageId) {
+        setAckLinkErrors((prev) => ({
+          ...prev,
+          [approvalId]: '発言URL / Markdown / messageId を入力してください',
+        }));
+        return;
+      }
+      try {
+        setAckLinkSaving((prev) => ({ ...prev, [approvalId]: true }));
+        setAckLinkErrors((prev) => ({ ...prev, [approvalId]: '' }));
+        const res = await apiResponse('/chat-ack-links', {
+          method: 'POST',
+          body: JSON.stringify({
+            messageId,
+            targetTable: 'approval_instances',
+            targetId: approvalId,
+          }),
+        });
+        if (!res.ok) {
+          const payload = (await res.json().catch(() => ({}))) as {
+            error?: { code?: string; message?: string };
+          };
+          const code = payload?.error?.code;
+          const message =
+            code === 'DUPLICATE_LINK'
+              ? '既に登録済みです'
+              : code === 'TARGET_NOT_FOUND'
+                ? '対象の承認データが見つかりません'
+                : code === 'NOT_FOUND'
+                  ? '確認依頼が見つかりません'
+                  : '参照リンクの作成に失敗しました';
+          setAckLinkErrors((prev) => ({ ...prev, [approvalId]: message }));
+          return;
+        }
+        setAckLinkInputs((prev) => ({ ...prev, [approvalId]: '' }));
+        await loadAckLinks(approvalId);
+      } catch (error) {
+        console.error('Failed to create chat ack link.', error);
+        setAckLinkErrors((prev) => ({
+          ...prev,
+          [approvalId]: '参照リンクの作成に失敗しました',
+        }));
+      } finally {
+        setAckLinkSaving((prev) => ({ ...prev, [approvalId]: false }));
+      }
+    },
+    [ackLinkInputs, loadAckLinks],
+  );
+
+  const deleteAckLink = useCallback(
+    async (approvalId: string, linkId: string) => {
+      if (!window.confirm('参照リンクを削除しますか？')) return;
+      try {
+        setAckLinkSaving((prev) => ({ ...prev, [approvalId]: true }));
+        setAckLinkErrors((prev) => ({ ...prev, [approvalId]: '' }));
+        const res = await apiResponse(`/chat-ack-links/${linkId}`, {
+          method: 'DELETE',
+        });
+        if (!res.ok) {
+          throw new Error(`delete failed: ${res.status}`);
+        }
+        await loadAckLinks(approvalId);
+      } catch (error) {
+        console.error('Failed to delete chat ack link.', error);
+        setAckLinkErrors((prev) => ({
+          ...prev,
+          [approvalId]: '参照リンクの削除に失敗しました',
+        }));
+      } finally {
+        setAckLinkSaving((prev) => ({ ...prev, [approvalId]: false }));
+      }
+    },
+    [loadAckLinks],
+  );
 
   const formatStep = (step: ApprovalStep) => {
     const target = step.approverUserId || step.approverGroupId || '-';
@@ -323,6 +477,11 @@ export const Approvals: React.FC = () => {
             item.status === 'pending_qa' || item.status === 'pending_exec';
           const canAct = isActionable && canActOnItem(item);
           const busy = actionState[item.id];
+          const ackLinks = ackLinkItems[item.id] || [];
+          const ackLoading = ackLinkLoading[item.id] || false;
+          const ackError = ackLinkErrors[item.id] || '';
+          const ackInput = ackLinkInputs[item.id] || '';
+          const ackBusy = ackLinkSaving[item.id] || false;
           return (
             <li key={item.id}>
               <div style={{ fontWeight: 600 }}>
@@ -340,6 +499,101 @@ export const Approvals: React.FC = () => {
               <div style={{ fontSize: 12, color: '#64748b' }}>
                 承認者: {item.steps.map(formatStep).join(' / ') || '-'}
               </div>
+              {canManageAckLinks && (
+                <div
+                  style={{
+                    marginTop: 8,
+                    padding: 8,
+                    borderRadius: 8,
+                    background: '#f8fafc',
+                  }}
+                >
+                  <div className="row" style={{ alignItems: 'center', gap: 8 }}>
+                    <strong>確認依頼リンク</strong>
+                    <button
+                      className="button secondary"
+                      onClick={() => loadAckLinks(item.id)}
+                      disabled={ackLoading}
+                    >
+                      {ackLoading ? '更新中' : '更新'}
+                    </button>
+                  </div>
+                  {ackError && (
+                    <div style={{ marginTop: 6, color: '#dc2626' }}>
+                      {ackError}
+                    </div>
+                  )}
+                  <div
+                    className="row"
+                    style={{ gap: 8, marginTop: 8, flexWrap: 'wrap' }}
+                  >
+                    <input
+                      type="text"
+                      value={ackInput}
+                      onChange={(e) =>
+                        setAckLinkInputs((prev) => ({
+                          ...prev,
+                          [item.id]: e.target.value,
+                        }))
+                      }
+                      placeholder="発言URL / Markdown / messageId"
+                      style={{ minWidth: 260 }}
+                      disabled={ackBusy}
+                    />
+                    <button
+                      className="button"
+                      onClick={() => createAckLink(item.id)}
+                      disabled={ackBusy}
+                    >
+                      追加
+                    </button>
+                  </div>
+                  <div style={{ marginTop: 8 }}>
+                    {ackLinks.length === 0 && (
+                      <div style={{ fontSize: 12, color: '#64748b' }}>
+                        登録済みリンクはありません
+                      </div>
+                    )}
+                    {ackLinks.map((link) => (
+                      <div
+                        key={link.id}
+                        style={{
+                          display: 'flex',
+                          gap: 8,
+                          flexWrap: 'wrap',
+                          alignItems: 'center',
+                          marginTop: 6,
+                        }}
+                      >
+                        <span style={{ fontSize: 12, color: '#64748b' }}>
+                          {link.messageId}
+                        </span>
+                        <span style={{ fontSize: 12, color: '#64748b' }}>
+                          / {formatDateTime(link.createdAt)}
+                        </span>
+                        <button
+                          className="button secondary"
+                          onClick={() =>
+                            navigateToOpen({
+                              kind: 'chat_message',
+                              id: link.messageId,
+                            })
+                          }
+                        >
+                          開く
+                        </button>
+                        <button
+                          className="button secondary"
+                          onClick={() => deleteAckLink(item.id, link.id)}
+                          disabled={ackBusy}
+                        >
+                          削除
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
               <div className="row" style={{ gap: 8, marginTop: 8 }}>
                 <input
                   type="text"
