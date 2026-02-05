@@ -23,7 +23,7 @@ E2E_CAPTURE=1 E2E_SCOPE=core ./scripts/e2e-frontend.sh
 ```
 
 補足:
-- Podman DB のポート（既定: 55433）が使用中の場合、`E2E_PODMAN_HOST_PORT` 未指定なら空きポートへ自動フォールバックします。
+- Podman DB のポート（既定: 55433）が使用中、または Podman の既存コンテナにより予約されている場合、`E2E_PODMAN_HOST_PORT` 未指定なら空きポートへ自動フォールバックします。
 - ポートを固定したい場合は `E2E_PODMAN_HOST_PORT=55435` のように明示指定します（競合時はエラーで停止）。
 
 保存先（既定）:
