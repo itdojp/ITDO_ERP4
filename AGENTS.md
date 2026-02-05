@@ -36,6 +36,12 @@ npm run build --prefix packages/frontend
 npm run test --prefix packages/backend
 ```
 
+### Audit（npm audit）
+```bash
+npm audit --prefix packages/backend --audit-level=high
+npm audit --prefix packages/frontend --audit-level=high
+```
+
 ### E2E（Playwright）
 ```bash
 E2E_SCOPE=core E2E_CAPTURE=0 ./scripts/e2e-frontend.sh
