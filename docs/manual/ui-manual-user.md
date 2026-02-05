@@ -3,7 +3,7 @@
 ## 前提
 - 本書は PoC 環境の UI 操作に関する詳細ガイドです。
 - 画面キャプチャは 2026-01-19 実行の E2E（r1）で取得しています。
-  - 証跡: `docs/test-results/2026-01-19-frontend-e2e-r1/`
+  - 証跡: `docs/test-results/2026-02-05-frontend-e2e-r1/`
 - 画面の表示内容は demo seed に基づきます（データ差分あり）。
 - 対象ロールの目安: user
 - 管理者向けの操作は `docs/manual/ui-manual-admin.md` を参照してください。
@@ -37,7 +37,7 @@
 - `VAPID_*`（backend）が未設定の場合、`テスト通知` は実配信ではなくローカル表示になります
 - 送信待ちキューはログイン済みの場合のみ処理できます
 
-![現在のユーザー](../test-results/2026-01-19-frontend-e2e-r1/00-current-user.png)
+![現在のユーザー](../test-results/2026-02-05-frontend-e2e-r1/00-current-user.png)
 
 ### Push通知（証跡）
 `VITE_PUSH_PUBLIC_KEY` が設定されている環境でのみ取得しています。
@@ -62,7 +62,7 @@
 3. 「Alerts」で `すべて表示` / `最新のみ` を切り替える
 4. 「Insights」で件数・期間・根拠・ヒントを確認する（admin/mgmt/execのみ）
 
-![ダッシュボード](../test-results/2026-01-19-frontend-e2e-r1/01-core-dashboard.png)
+![ダッシュボード](../test-results/2026-02-05-frontend-e2e-r1/01-core-dashboard.png)
 
 ---
 
@@ -78,7 +78,7 @@
 4. チャット結果は `開く` で該当チャットを開く
 5. `クリア` で入力と結果を初期化する
 
-![ERP横断検索](../test-results/2026-01-19-frontend-e2e-r1/06-core-global-search.png)
+![ERP横断検索](../test-results/2026-02-05-frontend-e2e-r1/06-core-global-search.png)
 
 ---
 
@@ -104,7 +104,7 @@
 - 日報/ウェルビーイングの入力は評価目的で利用しません
 - オフライン時は送信待ちキューに保存されます
 
-![日報](../test-results/2026-01-19-frontend-e2e-r1/02-core-daily-report.png)
+![日報](../test-results/2026-02-05-frontend-e2e-r1/02-core-daily-report.png)
 
 ### 工数入力
 - 目的: 案件・タスク単位で工数を記録
@@ -123,7 +123,7 @@
 - 案件・日付は必須
 - オフライン時は送信待ちキューに保存されます
 
-![工数入力](../test-results/2026-01-19-frontend-e2e-r1/03-core-time-entries.png)
+![工数入力](../test-results/2026-02-05-frontend-e2e-r1/03-core-time-entries.png)
 
 ### タスク
 - 目的: 案件タスクの登録・進捗・ベースライン確認
@@ -144,7 +144,7 @@
 - 進捗率は 0〜100
 - `削除` は admin/mgmt のみ
 
-![タスク](../test-results/2026-01-19-frontend-e2e-r1/21-project-tasks.png)
+![タスク](../test-results/2026-02-05-frontend-e2e-r1/21-project-tasks.png)
 
 ### 経費入力
 - 目的: 経費の登録と領収書リンクの管理
@@ -163,7 +163,7 @@
 - 通貨は 3 文字の英大文字（例: JPY）
 - オフライン時は送信待ちキューに保存されます
 
-![経費入力](../test-results/2026-01-19-frontend-e2e-r1/04-core-expenses.png)
+![経費入力](../test-results/2026-02-05-frontend-e2e-r1/04-core-expenses.png)
 
 ### 休暇
 - 目的: 休暇の申請と一覧確認
@@ -181,7 +181,7 @@
 - 休暇時間は整数のみ
 - 申請は `draft` 状態のみ
 
-![休暇](../test-results/2026-01-19-frontend-e2e-r1/22-leave-requests.png)
+![休暇](../test-results/2026-02-05-frontend-e2e-r1/22-leave-requests.png)
 
 ### 見積
 - 目的: 見積ドラフトの作成と承認依頼
@@ -199,7 +199,7 @@
 - `承認依頼` は `draft` のみ
 - `送信 (Stub)` は `approved` または `sent` のみ
 
-![見積](../test-results/2026-01-19-frontend-e2e-r1/05-core-estimates.png)
+![見積](../test-results/2026-02-05-frontend-e2e-r1/05-core-estimates.png)
 
 ### 請求（ドラフト）
 - 目的: 工数や金額から請求ドラフトを作成
@@ -217,7 +217,7 @@
 ### 入力項目/制約
 - 工数から作成した場合、対象工数は解除するまで編集/付け替え不可
 
-![請求ドラフト](../test-results/2026-01-19-frontend-e2e-r1/06-core-invoices.png)
+![請求ドラフト](../test-results/2026-02-05-frontend-e2e-r1/06-core-invoices.png)
 
 ### プロジェクトチャット
 - 目的: プロジェクト単位のコミュニケーション
@@ -247,7 +247,7 @@
 - `@all` は候補が許可されている場合のみ表示
 - 通知設定は保存後の投稿から反映
 
-![プロジェクトチャット](../test-results/2026-01-19-frontend-e2e-r1/12-project-chat.png)
+![プロジェクトチャット](../test-results/2026-02-05-frontend-e2e-r1/12-project-chat.png)
 
 ### ルームチャット（DM/Private Group）
 - 目的: ルーム単位のコミュニケーション
@@ -271,23 +271,23 @@
 - 外部要約は `allowExternalIntegrations` が有効なルームのみ表示
 - 通知設定は保存後の投稿から反映
 
-![ルームチャット](../test-results/2026-01-19-frontend-e2e-r1/14-room-chat.png)
+![ルームチャット](../test-results/2026-02-05-frontend-e2e-r1/14-room-chat.png)
 
 ### オフライン動作（参考）
 - 目的: オフライン時の送信待ちと復旧後の再送
 - 主な操作: オフライン保存 → 再送
 - 補足: 送信待ちは「現在のユーザー > オフライン送信キュー」で確認
 
-![オフライン送信待ち](../test-results/2026-01-19-frontend-e2e-r1/14-offline-daily-queue.png)
-![オフライン再送](../test-results/2026-01-19-frontend-e2e-r1/15-offline-queue-retry.png)
-![オフライン重複工数](../test-results/2026-01-19-frontend-e2e-r1/16-offline-duplicate-time-entry.png)
+![オフライン送信待ち](../test-results/2026-02-05-frontend-e2e-r1/14-offline-daily-queue.png)
+![オフライン再送](../test-results/2026-02-05-frontend-e2e-r1/15-offline-queue-retry.png)
+![オフライン重複工数](../test-results/2026-02-05-frontend-e2e-r1/16-offline-duplicate-time-entry.png)
 
 ---
 
 ## 補足
 - PWA のキャッシュ更新確認: サービスワーカー更新後の表示確認に利用します。
 
-![PWA キャッシュ更新](../test-results/2026-01-19-frontend-e2e-r1/20-sw-cache-refresh.png)
+![PWA キャッシュ更新](../test-results/2026-02-05-frontend-e2e-r1/20-sw-cache-refresh.png)
 
 - `pwa push subscribe flow` は `VITE_PUSH_PUBLIC_KEY` 未設定のため E2E ではスキップしています。
 - 画面デザインは `@itdojp/design-system` 適用済みです（compact density）。

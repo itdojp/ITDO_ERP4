@@ -33,6 +33,7 @@ async function prepare(page: Page) {
   ensureEvidenceDir();
   await page.addInitScript((state) => {
     window.localStorage.setItem('erp4_auth', JSON.stringify(state));
+    window.localStorage.removeItem('erp4_active_section');
   }, authState);
   await page.goto(baseUrl);
   await expect(page.getByRole('heading', { name: 'ERP4 MVP PoC' })).toBeVisible();
@@ -42,9 +43,23 @@ test('frontend offline queue @extended', async ({ page, context }) => {
   test.setTimeout(120_000);
   await prepare(page);
 
+  await page
+    .getByRole('button', { name: '日報 + ウェルビーイング', exact: true })
+    .click();
+  await expect(
+    page
+      .locator('main')
+      .getByRole('heading', {
+        name: '日報 + ウェルビーイング',
+        level: 2,
+        exact: true,
+      }),
+  ).toBeVisible();
+
   await context.setOffline(true);
 
   const dailySection = page
+    .locator('main')
     .locator('h2', { hasText: '日報 + ウェルビーイング' })
     .locator('..');
   await dailySection.scrollIntoViewIfNeeded();
@@ -59,7 +74,7 @@ test('frontend offline queue @extended', async ({ page, context }) => {
     has: page.locator('strong', { hasText: '現在のユーザー' }),
   });
   await currentSection.scrollIntoViewIfNeeded();
-  await currentSection.getByRole('button', { name: '再読込' }).click();
+  await currentSection.getByRole('button', { name: '再読込' }).first().click();
 
   const statusLine = currentSection.getByText(/件数:/);
   await expect
