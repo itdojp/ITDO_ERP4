@@ -20,16 +20,32 @@ port_in_use() {
   ss -tanH 2>/dev/null | awk -v p="$port" '$4 ~ ":" p "$" { found=1 } END { exit found ? 0 : 1 }'
 }
 
+PODMAN_PORTS_CACHE="${PODMAN_PORTS_CACHE:-}"
+PODMAN_PORTS_CACHE_LOADED="${PODMAN_PORTS_CACHE_LOADED:-0}"
+
+podman_ports_cache() {
+  if [[ "$PODMAN_PORTS_CACHE_LOADED" == "1" ]]; then
+    printf '%s' "$PODMAN_PORTS_CACHE"
+    return 0
+  fi
+  if ! command -v podman >/dev/null 2>&1; then
+    PODMAN_PORTS_CACHE=""
+    PODMAN_PORTS_CACHE_LOADED="1"
+    return 0
+  fi
+  PODMAN_PORTS_CACHE="$(podman ps -a --format "{{.Ports}}" 2>/dev/null || true)"
+  PODMAN_PORTS_CACHE_LOADED="1"
+  printf '%s' "$PODMAN_PORTS_CACHE"
+}
+
 podman_port_reserved() {
   local port="$1"
-  command -v podman >/dev/null 2>&1 || return 1
-
   # podman ps -a の Ports 表記例:
   # - 0.0.0.0:55433->5432/tcp
   # - :::55433->5432/tcp
   # - 0.0.0.0:8000-8005->8000-8005/tcp
   # 停止中コンテナでも Ports が残るため、rootlessport の bind エラー回避目的で予約扱いにする。
-  podman ps -a --format "{{.Ports}}" 2>/dev/null | tr ',' '\n' | awk -v p="$port" '
+  podman_ports_cache | tr ',' '\n' | awk -v p="$port" '
     BEGIN { pnum = p + 0; found = 0 }
     {
       if (index($0, "->") == 0) next
