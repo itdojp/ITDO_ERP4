@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '../services/db.js';
 import { requireRole } from '../services/rbac.js';
 import { auditContextFromRequest, logAudit } from '../services/audit.js';
+import { FlowTypeValue, type FlowType } from '../types.js';
 import {
   chatAckTemplatePatchSchema,
   chatAckTemplateSchema,
@@ -27,17 +28,32 @@ function normalizeOptionalNumber(value: unknown): number | null {
   return Math.floor(parsed);
 }
 
+function parseFlowType(value: string): FlowType | null {
+  if (Object.prototype.hasOwnProperty.call(FlowTypeValue, value)) {
+    return value as FlowType;
+  }
+  return null;
+}
+
 export async function registerChatAckTemplateRoutes(app: FastifyInstance) {
   app.get(
     '/chat-ack-templates',
     { preHandler: requireRole(['admin', 'mgmt']) },
-    async (req) => {
+    async (req, reply) => {
       const { flowType, actionKey } = req.query as {
         flowType?: string;
         actionKey?: string;
       };
       const where: Prisma.ChatAckTemplateWhereInput = {};
-      if (flowType) where.flowType = flowType;
+      if (flowType) {
+        const parsed = parseFlowType(flowType);
+        if (!parsed) {
+          return reply.status(400).send({
+            error: { code: 'INVALID_FLOW_TYPE', message: 'Invalid flowType' },
+          });
+        }
+        where.flowType = parsed;
+      }
       if (actionKey) where.actionKey = actionKey;
       const items = await prisma.chatAckTemplate.findMany({
         where,
@@ -53,15 +69,22 @@ export async function registerChatAckTemplateRoutes(app: FastifyInstance) {
       preHandler: requireRole(['admin', 'mgmt']),
       schema: chatAckTemplateSchema,
     },
-    async (req) => {
+    async (req, reply) => {
       const body = req.body as any;
+      const parsedFlowType = parseFlowType(body.flowType);
+      if (!parsedFlowType) {
+        return reply.status(400).send({
+          error: { code: 'INVALID_FLOW_TYPE', message: 'Invalid flowType' },
+        });
+      }
       const userId = req.user?.userId;
       const created = await prisma.chatAckTemplate.create({
         data: {
-          flowType: body.flowType,
+          flowType: parsedFlowType,
           actionKey: body.actionKey,
           messageBody: body.messageBody,
-          requiredUserIds: normalizeStringArray(body.requiredUserIds) ?? undefined,
+          requiredUserIds:
+            normalizeStringArray(body.requiredUserIds) ?? undefined,
           requiredGroupIds:
             normalizeStringArray(body.requiredGroupIds) ?? undefined,
           requiredRoles: normalizeStringArray(body.requiredRoles) ?? undefined,
@@ -118,7 +141,13 @@ export async function registerChatAckTemplateRoutes(app: FastifyInstance) {
         updatedBy: userId,
       };
       if (Object.prototype.hasOwnProperty.call(body, 'flowType')) {
-        updatePayload.flowType = body.flowType;
+        const parsedFlowType = parseFlowType(body.flowType);
+        if (!parsedFlowType) {
+          return reply.status(400).send({
+            error: { code: 'INVALID_FLOW_TYPE', message: 'Invalid flowType' },
+          });
+        }
+        updatePayload.flowType = parsedFlowType;
       }
       if (Object.prototype.hasOwnProperty.call(body, 'actionKey')) {
         updatePayload.actionKey = body.actionKey;

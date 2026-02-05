@@ -127,9 +127,12 @@ export async function runChatAckReminders(
     remindIntervalHours: number;
     thresholdAt: Date;
     isEscalation: boolean;
+    kind: string;
   };
   const candidates: Candidate[] = [];
   const escalationCandidates: Candidate[] = [];
+  const reminderKind = 'chat_ack_required';
+  const escalationKind = 'chat_ack_escalation';
 
   for (const request of requests) {
     if (!request.dueAt) continue;
@@ -172,6 +175,7 @@ export async function runChatAckReminders(
         remindIntervalHours,
         thresholdAt: request.dueAt,
         isEscalation: false,
+        kind: reminderKind,
       });
     }
 
@@ -211,6 +215,7 @@ export async function runChatAckReminders(
             remindIntervalHours,
             thresholdAt: escalationDueAt,
             isEscalation: true,
+            kind: escalationKind,
           });
         }
       }
@@ -229,10 +234,10 @@ export async function runChatAckReminders(
     now.getTime() - maxIntervalHours * 60 * 60 * 1000,
   );
 
-  const existing = uniqueMessageIds.length
+  const existingReminders = uniqueMessageIds.length
     ? await prisma.appNotification.findMany({
         where: {
-          kind: 'chat_ack_required',
+          kind: reminderKind,
           messageId: { in: uniqueMessageIds },
           userId: { in: uniqueUserIds },
           createdAt: { gte: notifiedSince },
@@ -242,7 +247,7 @@ export async function runChatAckReminders(
     : [];
 
   const latestNotifiedAt = new Map<string, Date>();
-  for (const item of existing) {
+  for (const item of existingReminders) {
     if (!item.messageId) continue;
     const key = `${item.messageId}:${item.userId}`;
     const prev = latestNotifiedAt.get(key);
@@ -251,9 +256,34 @@ export async function runChatAckReminders(
     }
   }
 
+  const existingEscalations = uniqueMessageIds.length
+    ? await prisma.appNotification.findMany({
+        where: {
+          kind: escalationKind,
+          messageId: { in: uniqueMessageIds },
+          userId: { in: uniqueUserIds },
+        },
+        select: { messageId: true, userId: true },
+      })
+    : [];
+  const escalationSentKeys = new Set<string>();
+  for (const item of existingEscalations) {
+    if (!item.messageId) continue;
+    escalationSentKeys.add(`${item.messageId}:${item.userId}`);
+  }
+
   const toCreate: Candidate[] = [];
   let skippedAlreadyNotified = 0;
   for (const candidate of allCandidates) {
+    if (candidate.isEscalation) {
+      const key = `${candidate.messageId}:${candidate.userId}`;
+      if (escalationSentKeys.has(key)) {
+        skippedAlreadyNotified += 1;
+        continue;
+      }
+      toCreate.push(candidate);
+      continue;
+    }
     const candidateNotifiedSince = new Date(
       now.getTime() - candidate.remindIntervalHours * 60 * 60 * 1000,
     );
@@ -276,7 +306,7 @@ export async function runChatAckReminders(
         await prisma.appNotification.createMany({
           data: toCreate.map((item) => ({
             userId: item.userId,
-            kind: 'chat_ack_required',
+            kind: item.kind,
             projectId: item.projectId ?? null,
             messageId: item.messageId,
             payload: {

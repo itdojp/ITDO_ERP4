@@ -651,7 +651,9 @@ export const chatAckTemplatePatchSchema = {
     {
       flowType: Type.Optional(Type.String({ minLength: 1, maxLength: 200 })),
       actionKey: Type.Optional(Type.String({ minLength: 1, maxLength: 200 })),
-      messageBody: Type.Optional(Type.String({ minLength: 1, maxLength: 2000 })),
+      messageBody: Type.Optional(
+        Type.String({ minLength: 1, maxLength: 2000 }),
+      ),
       requiredUserIds: Type.Optional(
         Type.Array(Type.String({ minLength: 1 }), { maxItems: 200 }),
       ),

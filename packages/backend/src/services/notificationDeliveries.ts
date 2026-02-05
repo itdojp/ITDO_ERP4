@@ -199,13 +199,16 @@ function buildChatAckRequiredEmailSubject(meta: {
   return label ? `ERP4: ${label} ${suffix}` : `ERP4: ${suffix}`;
 }
 
-function buildChatAckRequiredEmailBody(notification: {
-  userId: string;
-  createdAt: Date;
-  project?: { code?: string | null; name?: string | null } | null;
-  messageId?: string | null;
-  payload?: Prisma.JsonValue | null;
-}) {
+function buildChatAckRequiredEmailBody(
+  notification: {
+    userId: string;
+    createdAt: Date;
+    project?: { code?: string | null; name?: string | null } | null;
+    messageId?: string | null;
+    payload?: Prisma.JsonValue | null;
+  },
+  meta: { escalation?: boolean } = {},
+) {
   const projectLabel = notification.project
     ? `${notification.project.code || '-'} / ${notification.project.name || '-'}`
     : '-';
@@ -213,9 +216,14 @@ function buildChatAckRequiredEmailBody(notification: {
   const fromUserId = normalizeString(payload?.fromUserId);
   const excerpt = normalizeString(payload?.excerpt);
   const dueAt = normalizeString(payload?.dueAt);
-  const escalation = Boolean(payload?.escalation);
+  const escalation =
+    meta.escalation !== undefined
+      ? meta.escalation
+      : Boolean(payload?.escalation);
   return [
-    escalation ? 'chat ack required escalation' : 'chat ack required notification',
+    escalation
+      ? 'chat ack required escalation'
+      : 'chat ack required notification',
     `to: ${notification.userId}`,
     `from: ${fromUserId || '-'}`,
     `project: ${projectLabel}`,
@@ -743,15 +751,20 @@ export async function runNotificationEmailDeliveries(options: {
         projectName: notification.project?.name,
       });
       body = buildChatMessageEmailBody(notification);
-    } else if (notification.kind === 'chat_ack_required') {
+    } else if (
+      notification.kind === 'chat_ack_required' ||
+      notification.kind === 'chat_ack_escalation'
+    ) {
       const payload = notification.payload as Record<string, unknown> | null;
-      const escalation = Boolean(payload?.escalation);
+      const escalation =
+        notification.kind === 'chat_ack_escalation' ||
+        Boolean(payload?.escalation);
       subject = buildChatAckRequiredEmailSubject({
         projectCode: notification.project?.code,
         projectName: notification.project?.name,
         escalation,
       });
-      body = buildChatAckRequiredEmailBody(notification);
+      body = buildChatAckRequiredEmailBody(notification, { escalation });
     } else if (
       notification.kind === 'approval_pending' ||
       notification.kind === 'approval_approved' ||

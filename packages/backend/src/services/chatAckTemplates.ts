@@ -5,8 +5,12 @@ import {
   resolveChatAckRequiredRecipientUserIds,
   validateChatAckRequiredRecipientsForRoom,
 } from './chatAckRecipients.js';
-import { logChatAckRequestCreated, tryCreateChatAckRequiredNotificationsWithAudit } from './chatAckNotifications.js';
+import {
+  logChatAckRequestCreated,
+  tryCreateChatAckRequiredNotificationsWithAudit,
+} from './chatAckNotifications.js';
 import { auditContextFromRequest, logAudit } from './audit.js';
+import type { FlowType } from '../types.js';
 
 function normalizeString(value: unknown) {
   return typeof value === 'string' ? value.trim() : '';
@@ -33,7 +37,7 @@ function normalizeOptionalInt(value: unknown): number | null {
 
 export async function applyChatAckTemplates(options: {
   req: FastifyRequest;
-  flowType: string;
+  flowType: FlowType;
   actionKey: string;
   targetTable: string;
   targetId: string;
@@ -105,7 +109,9 @@ export async function applyChatAckTemplates(options: {
           flowType: template.flowType,
           actionKey: template.actionKey,
         } as Prisma.InputJsonValue,
-        ...auditContextFromRequest(options.req, { userId: options.actorUserId }),
+        ...auditContextFromRequest(options.req, {
+          userId: options.actorUserId,
+        }),
       });
       continue;
     }
@@ -126,14 +132,19 @@ export async function applyChatAckTemplates(options: {
           actionKey: template.actionKey,
           invalidUserIds: recipientValidation.invalidUserIds.slice(0, 20),
         } as Prisma.InputJsonValue,
-        ...auditContextFromRequest(options.req, { userId: options.actorUserId }),
+        ...auditContextFromRequest(options.req, {
+          userId: options.actorUserId,
+        }),
       });
       continue;
     }
 
     const dueInHours = normalizeOptionalInt(template.dueInHours);
     const now = new Date();
-    const dueAt = dueInHours != null ? new Date(now.getTime() + dueInHours * 3600 * 1000) : null;
+    const dueAt =
+      dueInHours != null
+        ? new Date(now.getTime() + dueInHours * 3600 * 1000)
+        : null;
 
     const message = await prisma.chatMessage.create({
       data: {

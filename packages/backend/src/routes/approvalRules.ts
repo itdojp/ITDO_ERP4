@@ -565,7 +565,10 @@ export async function registerApprovalRuleRoutes(app: FastifyInstance) {
               actorUserId: userId,
             });
           } catch (err) {
-            req.log?.warn({ err, approvalInstanceId: instance.id }, 'applyChatAckTemplates failed');
+            req.log?.warn(
+              { err, approvalInstanceId: instance.id },
+              'applyChatAckTemplates failed',
+            );
           }
         }
         return result;
