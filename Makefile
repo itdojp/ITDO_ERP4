@@ -1,4 +1,4 @@
-.PHONY: lint format-check typecheck build test e2e audit
+.PHONY: lint format-check typecheck build test e2e ui-evidence pr-comments audit
 
 lint:
 	npm run lint --prefix packages/backend
@@ -21,6 +21,13 @@ test:
 
 e2e:
 	./scripts/e2e-frontend.sh
+
+ui-evidence:
+	./scripts/e2e-ui-evidence.sh
+
+pr-comments:
+	@test -n "$(PR)" || (echo "Usage: make pr-comments PR=<number> [OUT_DIR=...]" >&2; exit 1)
+	./scripts/gh-pr-export-comments.sh "$(PR)" "$(OUT_DIR)"
 
 audit:
 	npm audit --prefix packages/backend --audit-level=high
