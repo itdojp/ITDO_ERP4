@@ -129,6 +129,11 @@ function resolveDueAt(payload: unknown) {
   return typeof value === 'string' && value.trim() ? value.trim() : null;
 }
 
+function resolveEscalation(payload: unknown) {
+  if (!payload || typeof payload !== 'object') return false;
+  return Boolean((payload as { escalation?: unknown }).escalation);
+}
+
 function resolveRoomId(payload: unknown) {
   if (!payload || typeof payload !== 'object') return null;
   const value = (payload as { roomId?: unknown }).roomId;
@@ -214,10 +219,16 @@ function formatNotificationLabel(item: AppNotification) {
     if (fromUserId) return `${fromUserId} から投稿`;
     return 'チャット投稿';
   }
-  if (item.kind === 'chat_ack_required') {
+  if (
+    item.kind === 'chat_ack_required' ||
+    item.kind === 'chat_ack_escalation'
+  ) {
     const fromUserId = resolveFromUserId(item.payload);
-    if (fromUserId) return `${fromUserId} から確認依頼`;
-    return '確認依頼';
+    const escalation =
+      item.kind === 'chat_ack_escalation' || resolveEscalation(item.payload);
+    const suffix = escalation ? '確認依頼（エスカレーション）' : '確認依頼';
+    if (fromUserId) return `${fromUserId} から${suffix}`;
+    return suffix;
   }
   if (item.kind === 'chat_room_acl_mismatch') {
     const roomName = resolveRoomName(item.payload);
@@ -467,7 +478,8 @@ export const Dashboard: React.FC = () => {
     if (
       item.kind === 'chat_mention' ||
       item.kind === 'chat_message' ||
-      item.kind === 'chat_ack_required'
+      item.kind === 'chat_ack_required' ||
+      item.kind === 'chat_ack_escalation'
     ) {
       if (!item.messageId) return;
       navigateToOpen({ kind: 'chat_message', id: item.messageId });
@@ -631,11 +643,15 @@ export const Dashboard: React.FC = () => {
               : item.projectId || 'N/A';
             const excerpt = resolveExcerpt(item.payload);
             const dueAt = resolveDueAt(item.payload);
+            const escalation =
+              item.kind === 'chat_ack_escalation' ||
+              resolveEscalation(item.payload);
             const roomId = resolveRoomId(item.payload);
             const canOpen =
               ((item.kind === 'chat_mention' ||
                 item.kind === 'chat_message' ||
-                item.kind === 'chat_ack_required') &&
+                item.kind === 'chat_ack_required' ||
+                item.kind === 'chat_ack_escalation') &&
                 Boolean(item.messageId)) ||
               (item.kind === 'daily_report_missing' &&
                 Boolean(resolveReportDate(item.payload))) ||
@@ -653,14 +669,21 @@ export const Dashboard: React.FC = () => {
                     <div style={{ fontSize: 12, color: '#475569' }}>
                       {projectLabel} / {formatDateTime(item.createdAt)}
                     </div>
-                    {item.kind === 'chat_ack_required' && dueAt && (
+                    {(item.kind === 'chat_ack_required' ||
+                      item.kind === 'chat_ack_escalation') && (
                       <div
                         style={{
                           fontSize: 12,
                           color: '#475569',
+                          display: 'flex',
+                          gap: 8,
+                          flexWrap: 'wrap',
                         }}
                       >
-                        期限: {formatDateTime(dueAt)}
+                        {dueAt && <span>期限: {formatDateTime(dueAt)}</span>}
+                        {escalation && (
+                          <span className="badge">エスカレーション</span>
+                        )}
                       </div>
                     )}
                     {excerpt && (
@@ -689,7 +712,8 @@ export const Dashboard: React.FC = () => {
                 {roomId &&
                   (item.kind === 'chat_mention' ||
                     item.kind === 'chat_message' ||
-                    item.kind === 'chat_ack_required') && (
+                    item.kind === 'chat_ack_required' ||
+                    item.kind === 'chat_ack_escalation') && (
                     <div
                       className="row"
                       style={{ gap: 6, flexWrap: 'wrap', marginTop: 8 }}

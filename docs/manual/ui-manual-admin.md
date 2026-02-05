@@ -302,6 +302,13 @@
 2. guards (JSON) に `chat_ack_completed` を追加すると、確認依頼の完了をガードできる
 3. admin/mgmt は理由必須で例外実行でき、監査ログに記録される
 
+### 詳細操作（合意形成テンプレ）
+
+1. flowType / actionKey / messageBody を入力する
+2. requiredUserIds / requiredGroupIds / requiredRoles（JSON配列）で対象を指定する
+3. dueInHours / remindIntervalHours / escalationAfterHours を必要に応じて設定する
+4. `作成` / `更新` / `再読込` を実行する
+
 ### 詳細操作（テンプレ設定）
 
 1. 種別とテンプレを選択する
