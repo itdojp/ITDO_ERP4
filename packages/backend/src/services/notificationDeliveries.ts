@@ -815,6 +815,28 @@ export async function runNotificationEmailDeliveries(options: {
       body = reportDate
         ? `日報が未提出です。対象日: ${reportDate}`
         : '日報が未提出です。';
+    } else if (notification.kind === 'expense_mark_paid') {
+      const payload = notification.payload as
+        | { amount?: string; currency?: string; paidAt?: string }
+        | undefined;
+      const amount = payload?.amount ? payload.amount : '';
+      const currency = payload?.currency ? payload.currency : '';
+      const amountLabel = amount
+        ? currency
+          ? `${amount} ${currency}`
+          : amount
+        : '';
+      const paidAt = payload?.paidAt || '';
+      subject = amountLabel
+        ? `ERP4: 経費支払完了（${amountLabel}）`
+        : 'ERP4: 経費支払完了';
+      body = [
+        '経費の支払が完了しました。',
+        amountLabel ? `金額: ${amountLabel}` : null,
+        paidAt ? `支払日: ${paidAt}` : null,
+      ]
+        .filter((line) => typeof line === 'string' && line.trim() !== '')
+        .join('\n');
     }
 
     try {

@@ -1,7 +1,15 @@
 import { FastifyInstance } from 'fastify';
 import { submitApprovalWithUpdate } from '../services/approval.js';
-import { createApprovalPendingNotifications } from '../services/appNotifications.js';
-import { expenseReassignSchema, expenseSchema } from './validators.js';
+import {
+  createApprovalPendingNotifications,
+  createExpenseMarkPaidNotification,
+} from '../services/appNotifications.js';
+import {
+  expenseMarkPaidSchema,
+  expenseReassignSchema,
+  expenseSchema,
+  expenseUnmarkPaidSchema,
+} from './validators.js';
 import { DocStatusValue, FlowTypeValue } from '../types.js';
 import { requireProjectAccess, requireRole } from '../services/rbac.js';
 import { prisma } from '../services/db.js';
@@ -13,6 +21,13 @@ import { evaluateActionPolicyWithFallback } from '../services/actionPolicy.js';
 import { logActionPolicyOverrideIfNeeded } from '../services/actionPolicyAudit.js';
 
 export async function registerExpenseRoutes(app: FastifyInstance) {
+  const parseDate = (value?: string) => {
+    if (!value) return null;
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return null;
+    return parsed;
+  };
+
   app.post(
     '/expenses',
     {
@@ -181,6 +196,241 @@ export async function registerExpenseRoutes(app: FastifyInstance) {
         currentStep: approval.currentStep,
         steps: approval.steps,
       });
+      return updated;
+    },
+  );
+
+  app.post(
+    '/expenses/:id/mark-paid',
+    {
+      preHandler: requireRole(['admin', 'mgmt']),
+      schema: expenseMarkPaidSchema,
+    },
+    async (req, reply) => {
+      const { id } = req.params as { id: string };
+      const body = req.body as { paidAt?: string; reasonText?: string };
+      const paidAt = body?.paidAt ? parseDate(body.paidAt) : new Date();
+      const reasonText =
+        typeof body?.reasonText === 'string' ? body.reasonText.trim() : '';
+      if (body?.paidAt && !paidAt) {
+        return reply.status(400).send({
+          error: { code: 'INVALID_DATE', message: 'paidAt is invalid' },
+        });
+      }
+
+      const expense = await prisma.expense.findUnique({ where: { id } });
+      if (!expense || expense.deletedAt) {
+        return reply.status(404).send({
+          error: { code: 'NOT_FOUND', message: 'Expense not found' },
+        });
+      }
+
+      const policyRes = await evaluateActionPolicyWithFallback({
+        flowType: FlowTypeValue.expense,
+        actionKey: 'mark_paid',
+        actor: {
+          userId: req.user?.userId ?? null,
+          roles: req.user?.roles || [],
+          groupIds: req.user?.groupIds || [],
+          groupAccountIds: req.user?.groupAccountIds || [],
+        },
+        reasonText,
+        state: {
+          status: expense.status,
+          projectId: expense.projectId,
+          settlementStatus: expense.settlementStatus,
+        },
+        targetTable: 'expenses',
+        targetId: id,
+      });
+      if (policyRes.policyApplied && !policyRes.allowed) {
+        if (policyRes.reason === 'reason_required') {
+          return reply.status(400).send({
+            error: {
+              code: 'REASON_REQUIRED',
+              message: 'reasonText is required for override',
+              details: { matchedPolicyId: policyRes.matchedPolicyId ?? null },
+            },
+          });
+        }
+        return reply.status(403).send({
+          error: {
+            code: 'ACTION_POLICY_DENIED',
+            message: 'Expense cannot be marked as paid',
+            details: {
+              reason: policyRes.reason,
+              matchedPolicyId: policyRes.matchedPolicyId ?? null,
+              guardFailures: policyRes.guardFailures ?? null,
+            },
+          },
+        });
+      }
+      await logActionPolicyOverrideIfNeeded({
+        req,
+        flowType: FlowTypeValue.expense,
+        actionKey: 'mark_paid',
+        targetTable: 'expenses',
+        targetId: id,
+        reasonText,
+        result: policyRes,
+      });
+
+      if (expense.status !== DocStatusValue.approved) {
+        return reply.status(409).send({
+          error: {
+            code: 'INVALID_STATUS',
+            message: 'Expense must be approved to mark as paid',
+          },
+        });
+      }
+      if (expense.settlementStatus === 'paid') {
+        return reply.status(409).send({
+          error: {
+            code: 'ALREADY_PAID',
+            message: 'Expense is already marked as paid',
+          },
+        });
+      }
+
+      const actorId = req.user?.userId || 'system';
+      const updated = await prisma.expense.update({
+        where: { id },
+        data: {
+          settlementStatus: 'paid',
+          paidAt,
+          paidBy: actorId,
+          updatedBy: actorId,
+        },
+      });
+
+      await createExpenseMarkPaidNotification({
+        expenseId: id,
+        userId: expense.userId,
+        projectId: expense.projectId,
+        amount: expense.amount?.toString(),
+        currency: expense.currency,
+        paidAt: updated.paidAt ?? paidAt,
+        actorUserId: actorId,
+      });
+
+      await logAudit({
+        ...auditContextFromRequest(req),
+        action: 'expense_mark_paid',
+        targetTable: 'Expense',
+        targetId: id,
+        reasonText: reasonText || undefined,
+        metadata: {
+          previousStatus: expense.status,
+          paidAt: updated.paidAt?.toISOString() ?? null,
+          paidBy: updated.paidBy ?? null,
+          amount: expense.amount?.toString(),
+          currency: expense.currency,
+        },
+      });
+
+      return updated;
+    },
+  );
+
+  app.post(
+    '/expenses/:id/unmark-paid',
+    {
+      preHandler: requireRole(['admin', 'mgmt']),
+      schema: expenseUnmarkPaidSchema,
+    },
+    async (req, reply) => {
+      const { id } = req.params as { id: string };
+      const body = req.body as { reasonText?: string };
+      const reasonText =
+        typeof body?.reasonText === 'string' ? body.reasonText.trim() : '';
+      if (!reasonText) {
+        return reply.status(400).send({
+          error: { code: 'INVALID_REASON', message: 'reasonText is required' },
+        });
+      }
+
+      const expense = await prisma.expense.findUnique({ where: { id } });
+      if (!expense || expense.deletedAt) {
+        return reply.status(404).send({
+          error: { code: 'NOT_FOUND', message: 'Expense not found' },
+        });
+      }
+
+      const policyRes = await evaluateActionPolicyWithFallback({
+        flowType: FlowTypeValue.expense,
+        actionKey: 'unmark_paid',
+        actor: {
+          userId: req.user?.userId ?? null,
+          roles: req.user?.roles || [],
+          groupIds: req.user?.groupIds || [],
+          groupAccountIds: req.user?.groupAccountIds || [],
+        },
+        reasonText,
+        state: {
+          status: expense.status,
+          projectId: expense.projectId,
+          settlementStatus: expense.settlementStatus,
+        },
+        targetTable: 'expenses',
+        targetId: id,
+      });
+      if (policyRes.policyApplied && !policyRes.allowed) {
+        return reply.status(403).send({
+          error: {
+            code: 'ACTION_POLICY_DENIED',
+            message: 'Expense cannot be unmarked as paid',
+            details: {
+              reason: policyRes.reason,
+              matchedPolicyId: policyRes.matchedPolicyId ?? null,
+              guardFailures: policyRes.guardFailures ?? null,
+            },
+          },
+        });
+      }
+      await logActionPolicyOverrideIfNeeded({
+        req,
+        flowType: FlowTypeValue.expense,
+        actionKey: 'unmark_paid',
+        targetTable: 'expenses',
+        targetId: id,
+        reasonText,
+        result: policyRes,
+      });
+
+      if (expense.settlementStatus !== 'paid') {
+        return reply.status(409).send({
+          error: {
+            code: 'INVALID_STATUS',
+            message: 'Expense is not marked as paid',
+          },
+        });
+      }
+
+      const actorId = req.user?.userId || 'system';
+      const updated = await prisma.expense.update({
+        where: { id },
+        data: {
+          settlementStatus: 'unpaid',
+          paidAt: null,
+          paidBy: null,
+          updatedBy: actorId,
+        },
+      });
+
+      await logAudit({
+        ...auditContextFromRequest(req),
+        action: 'expense_unmark_paid',
+        targetTable: 'Expense',
+        targetId: id,
+        reasonText,
+        metadata: {
+          previousPaidAt: expense.paidAt?.toISOString() ?? null,
+          previousPaidBy: expense.paidBy ?? null,
+          amount: expense.amount?.toString(),
+          currency: expense.currency,
+        },
+      });
+
       return updated;
     },
   );

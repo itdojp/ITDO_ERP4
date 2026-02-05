@@ -59,6 +59,7 @@
 - `project_created`: 案件作成（admin/mgmt に対して作成）
 - `project_status_changed`: 案件ステータス変更（admin/mgmt/leader に対して作成）
 - `project_member_added`: 案件メンバー追加（追加されたユーザに対して作成）
+- `expense_mark_paid`: 経費支払完了（申請者に対して作成）
 - `approval_pending`: 承認待ち通知（承認者に対して作成）
 - `approval_approved`: 承認完了通知（申請者に対して作成）
 - `approval_rejected`: 差戻し通知（申請者に対して作成）

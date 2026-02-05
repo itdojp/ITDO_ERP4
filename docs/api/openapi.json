@@ -15,10 +15,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "code",
-          "message"
-        ],
+        "required": ["code", "message"],
         "type": "object"
       },
       "ApiErrorResponse": {
@@ -28,9 +25,7 @@
             "$ref": "#/components/schemas/ApiError"
           }
         },
-        "required": [
-          "error"
-        ],
+        "required": ["error"],
         "type": "object"
       }
     }
@@ -73,51 +68,35 @@
                   "flowType": {
                     "anyOf": [
                       {
-                        "enum": [
-                          "estimate"
-                        ],
+                        "enum": ["estimate"],
                         "type": "string"
                       },
                       {
-                        "enum": [
-                          "invoice"
-                        ],
+                        "enum": ["invoice"],
                         "type": "string"
                       },
                       {
-                        "enum": [
-                          "expense"
-                        ],
+                        "enum": ["expense"],
                         "type": "string"
                       },
                       {
-                        "enum": [
-                          "leave"
-                        ],
+                        "enum": ["leave"],
                         "type": "string"
                       },
                       {
-                        "enum": [
-                          "time"
-                        ],
+                        "enum": ["time"],
                         "type": "string"
                       },
                       {
-                        "enum": [
-                          "purchase_order"
-                        ],
+                        "enum": ["purchase_order"],
                         "type": "string"
                       },
                       {
-                        "enum": [
-                          "vendor_invoice"
-                        ],
+                        "enum": ["vendor_invoice"],
                         "type": "string"
                       },
                       {
-                        "enum": [
-                          "vendor_quote"
-                        ],
+                        "enum": ["vendor_quote"],
                         "type": "string"
                       }
                     ]
@@ -187,10 +166,7 @@
                     "type": "object"
                   }
                 },
-                "required": [
-                  "flowType",
-                  "actionKey"
-                ],
+                "required": ["flowType", "actionKey"],
                 "type": "object"
               }
             }
@@ -230,51 +206,35 @@
                   "flowType": {
                     "anyOf": [
                       {
-                        "enum": [
-                          "estimate"
-                        ],
+                        "enum": ["estimate"],
                         "type": "string"
                       },
                       {
-                        "enum": [
-                          "invoice"
-                        ],
+                        "enum": ["invoice"],
                         "type": "string"
                       },
                       {
-                        "enum": [
-                          "expense"
-                        ],
+                        "enum": ["expense"],
                         "type": "string"
                       },
                       {
-                        "enum": [
-                          "leave"
-                        ],
+                        "enum": ["leave"],
                         "type": "string"
                       },
                       {
-                        "enum": [
-                          "time"
-                        ],
+                        "enum": ["time"],
                         "type": "string"
                       },
                       {
-                        "enum": [
-                          "purchase_order"
-                        ],
+                        "enum": ["purchase_order"],
                         "type": "string"
                       },
                       {
-                        "enum": [
-                          "vendor_invoice"
-                        ],
+                        "enum": ["vendor_invoice"],
                         "type": "string"
                       },
                       {
-                        "enum": [
-                          "vendor_quote"
-                        ],
+                        "enum": ["vendor_quote"],
                         "type": "string"
                       }
                     ]
@@ -403,51 +363,35 @@
                   "flowType": {
                     "anyOf": [
                       {
-                        "enum": [
-                          "estimate"
-                        ],
+                        "enum": ["estimate"],
                         "type": "string"
                       },
                       {
-                        "enum": [
-                          "invoice"
-                        ],
+                        "enum": ["invoice"],
                         "type": "string"
                       },
                       {
-                        "enum": [
-                          "expense"
-                        ],
+                        "enum": ["expense"],
                         "type": "string"
                       },
                       {
-                        "enum": [
-                          "leave"
-                        ],
+                        "enum": ["leave"],
                         "type": "string"
                       },
                       {
-                        "enum": [
-                          "time"
-                        ],
+                        "enum": ["time"],
                         "type": "string"
                       },
                       {
-                        "enum": [
-                          "purchase_order"
-                        ],
+                        "enum": ["purchase_order"],
                         "type": "string"
                       },
                       {
-                        "enum": [
-                          "vendor_invoice"
-                        ],
+                        "enum": ["vendor_invoice"],
                         "type": "string"
                       },
                       {
-                        "enum": [
-                          "vendor_quote"
-                        ],
+                        "enum": ["vendor_quote"],
                         "type": "string"
                       }
                     ]
@@ -465,10 +409,7 @@
                     "type": "string"
                   }
                 },
-                "required": [
-                  "flowType",
-                  "actionKey"
-                ],
+                "required": ["flowType", "actionKey"],
                 "type": "object"
               }
             }
@@ -501,27 +442,19 @@
                     "items": {
                       "anyOf": [
                         {
-                          "enum": [
-                            "email"
-                          ],
+                          "enum": ["email"],
                           "type": "string"
                         },
                         {
-                          "enum": [
-                            "dashboard"
-                          ],
+                          "enum": ["dashboard"],
                           "type": "string"
                         },
                         {
-                          "enum": [
-                            "slack"
-                          ],
+                          "enum": ["slack"],
                           "type": "string"
                         },
                         {
-                          "enum": [
-                            "webhook"
-                          ],
+                          "enum": ["webhook"],
                           "type": "string"
                         }
                       ]
@@ -591,45 +524,31 @@
                   "type": {
                     "anyOf": [
                       {
-                        "enum": [
-                          "budget_overrun"
-                        ],
+                        "enum": ["budget_overrun"],
                         "type": "string"
                       },
                       {
-                        "enum": [
-                          "overtime"
-                        ],
+                        "enum": ["overtime"],
                         "type": "string"
                       },
                       {
-                        "enum": [
-                          "approval_delay"
-                        ],
+                        "enum": ["approval_delay"],
                         "type": "string"
                       },
                       {
-                        "enum": [
-                          "approval_escalation"
-                        ],
+                        "enum": ["approval_escalation"],
                         "type": "string"
                       },
                       {
-                        "enum": [
-                          "delivery_due"
-                        ],
+                        "enum": ["delivery_due"],
                         "type": "string"
                       },
                       {
-                        "enum": [
-                          "integration_failure"
-                        ],
+                        "enum": ["integration_failure"],
                         "type": "string"
                       },
                       {
-                        "enum": [
-                          "daily_report_missing"
-                        ],
+                        "enum": ["daily_report_missing"],
                         "type": "string"
                       }
                     ]
@@ -677,27 +596,19 @@
                     "items": {
                       "anyOf": [
                         {
-                          "enum": [
-                            "email"
-                          ],
+                          "enum": ["email"],
                           "type": "string"
                         },
                         {
-                          "enum": [
-                            "dashboard"
-                          ],
+                          "enum": ["dashboard"],
                           "type": "string"
                         },
                         {
-                          "enum": [
-                            "slack"
-                          ],
+                          "enum": ["slack"],
                           "type": "string"
                         },
                         {
-                          "enum": [
-                            "webhook"
-                          ],
+                          "enum": ["webhook"],
                           "type": "string"
                         }
                       ]
@@ -767,45 +678,31 @@
                   "type": {
                     "anyOf": [
                       {
-                        "enum": [
-                          "budget_overrun"
-                        ],
+                        "enum": ["budget_overrun"],
                         "type": "string"
                       },
                       {
-                        "enum": [
-                          "overtime"
-                        ],
+                        "enum": ["overtime"],
                         "type": "string"
                       },
                       {
-                        "enum": [
-                          "approval_delay"
-                        ],
+                        "enum": ["approval_delay"],
                         "type": "string"
                       },
                       {
-                        "enum": [
-                          "approval_escalation"
-                        ],
+                        "enum": ["approval_escalation"],
                         "type": "string"
                       },
                       {
-                        "enum": [
-                          "delivery_due"
-                        ],
+                        "enum": ["delivery_due"],
                         "type": "string"
                       },
                       {
-                        "enum": [
-                          "integration_failure"
-                        ],
+                        "enum": ["integration_failure"],
                         "type": "string"
                       },
                       {
-                        "enum": [
-                          "daily_report_missing"
-                        ],
+                        "enum": ["daily_report_missing"],
                         "type": "string"
                       }
                     ]
@@ -997,10 +894,7 @@
                           "type": "string"
                         }
                       },
-                      "required": [
-                        "kind",
-                        "id"
-                      ],
+                      "required": ["kind", "id"],
                       "type": "object"
                     },
                     "maxItems": 500,
@@ -1095,15 +989,11 @@
                   "action": {
                     "anyOf": [
                       {
-                        "enum": [
-                          "approve"
-                        ],
+                        "enum": ["approve"],
                         "type": "string"
                       },
                       {
-                        "enum": [
-                          "reject"
-                        ],
+                        "enum": ["reject"],
                         "type": "string"
                       }
                     ]
@@ -1112,9 +1002,7 @@
                     "type": "string"
                   }
                 },
-                "required": [
-                  "action"
-                ],
+                "required": ["action"],
                 "type": "object"
               }
             }
@@ -1151,9 +1039,7 @@
                     "type": "string"
                   }
                 },
-                "required": [
-                  "reason"
-                ],
+                "required": ["reason"],
                 "type": "object"
               }
             }
@@ -1257,51 +1143,35 @@
                   "flowType": {
                     "anyOf": [
                       {
-                        "enum": [
-                          "estimate"
-                        ],
+                        "enum": ["estimate"],
                         "type": "string"
                       },
                       {
-                        "enum": [
-                          "invoice"
-                        ],
+                        "enum": ["invoice"],
                         "type": "string"
                       },
                       {
-                        "enum": [
-                          "expense"
-                        ],
+                        "enum": ["expense"],
                         "type": "string"
                       },
                       {
-                        "enum": [
-                          "leave"
-                        ],
+                        "enum": ["leave"],
                         "type": "string"
                       },
                       {
-                        "enum": [
-                          "time"
-                        ],
+                        "enum": ["time"],
                         "type": "string"
                       },
                       {
-                        "enum": [
-                          "purchase_order"
-                        ],
+                        "enum": ["purchase_order"],
                         "type": "string"
                       },
                       {
-                        "enum": [
-                          "vendor_invoice"
-                        ],
+                        "enum": ["vendor_invoice"],
                         "type": "string"
                       },
                       {
-                        "enum": [
-                          "vendor_quote"
-                        ],
+                        "enum": ["vendor_quote"],
                         "type": "string"
                       }
                     ]
@@ -1352,24 +1222,17 @@
                                       "type": {
                                         "anyOf": [
                                           {
-                                            "enum": [
-                                              "group"
-                                            ],
+                                            "enum": ["group"],
                                             "type": "string"
                                           },
                                           {
-                                            "enum": [
-                                              "user"
-                                            ],
+                                            "enum": ["user"],
                                             "type": "string"
                                           }
                                         ]
                                       }
                                     },
-                                    "required": [
-                                      "type",
-                                      "id"
-                                    ],
+                                    "required": ["type", "id"],
                                     "type": "object"
                                   },
                                   "minItems": 1,
@@ -1381,39 +1244,29 @@
                                       "additionalProperties": false,
                                       "properties": {
                                         "mode": {
-                                          "enum": [
-                                            "all"
-                                          ],
+                                          "enum": ["all"],
                                           "type": "string"
                                         }
                                       },
-                                      "required": [
-                                        "mode"
-                                      ],
+                                      "required": ["mode"],
                                       "type": "object"
                                     },
                                     {
                                       "additionalProperties": false,
                                       "properties": {
                                         "mode": {
-                                          "enum": [
-                                            "any"
-                                          ],
+                                          "enum": ["any"],
                                           "type": "string"
                                         }
                                       },
-                                      "required": [
-                                        "mode"
-                                      ],
+                                      "required": ["mode"],
                                       "type": "object"
                                     },
                                     {
                                       "additionalProperties": false,
                                       "properties": {
                                         "mode": {
-                                          "enum": [
-                                            "quorum"
-                                          ],
+                                          "enum": ["quorum"],
                                           "type": "string"
                                         },
                                         "quorum": {
@@ -1421,10 +1274,7 @@
                                           "type": "integer"
                                         }
                                       },
-                                      "required": [
-                                        "mode",
-                                        "quorum"
-                                      ],
+                                      "required": ["mode", "quorum"],
                                       "type": "object"
                                     }
                                   ]
@@ -1437,19 +1287,14 @@
                                   "type": "integer"
                                 }
                               },
-                              "required": [
-                                "order",
-                                "approvers"
-                              ],
+                              "required": ["order", "approvers"],
                               "type": "object"
                             },
                             "minItems": 1,
                             "type": "array"
                           }
                         },
-                        "required": [
-                          "stages"
-                        ],
+                        "required": ["stages"],
                         "type": "object"
                       }
                     ]
@@ -1459,10 +1304,7 @@
                     "type": "integer"
                   }
                 },
-                "required": [
-                  "flowType",
-                  "steps"
-                ],
+                "required": ["flowType", "steps"],
                 "type": "object"
               }
             }
@@ -1569,51 +1411,35 @@
                   "flowType": {
                     "anyOf": [
                       {
-                        "enum": [
-                          "estimate"
-                        ],
+                        "enum": ["estimate"],
                         "type": "string"
                       },
                       {
-                        "enum": [
-                          "invoice"
-                        ],
+                        "enum": ["invoice"],
                         "type": "string"
                       },
                       {
-                        "enum": [
-                          "expense"
-                        ],
+                        "enum": ["expense"],
                         "type": "string"
                       },
                       {
-                        "enum": [
-                          "leave"
-                        ],
+                        "enum": ["leave"],
                         "type": "string"
                       },
                       {
-                        "enum": [
-                          "time"
-                        ],
+                        "enum": ["time"],
                         "type": "string"
                       },
                       {
-                        "enum": [
-                          "purchase_order"
-                        ],
+                        "enum": ["purchase_order"],
                         "type": "string"
                       },
                       {
-                        "enum": [
-                          "vendor_invoice"
-                        ],
+                        "enum": ["vendor_invoice"],
                         "type": "string"
                       },
                       {
-                        "enum": [
-                          "vendor_quote"
-                        ],
+                        "enum": ["vendor_quote"],
                         "type": "string"
                       }
                     ]
@@ -1664,24 +1490,17 @@
                                       "type": {
                                         "anyOf": [
                                           {
-                                            "enum": [
-                                              "group"
-                                            ],
+                                            "enum": ["group"],
                                             "type": "string"
                                           },
                                           {
-                                            "enum": [
-                                              "user"
-                                            ],
+                                            "enum": ["user"],
                                             "type": "string"
                                           }
                                         ]
                                       }
                                     },
-                                    "required": [
-                                      "type",
-                                      "id"
-                                    ],
+                                    "required": ["type", "id"],
                                     "type": "object"
                                   },
                                   "minItems": 1,
@@ -1693,39 +1512,29 @@
                                       "additionalProperties": false,
                                       "properties": {
                                         "mode": {
-                                          "enum": [
-                                            "all"
-                                          ],
+                                          "enum": ["all"],
                                           "type": "string"
                                         }
                                       },
-                                      "required": [
-                                        "mode"
-                                      ],
+                                      "required": ["mode"],
                                       "type": "object"
                                     },
                                     {
                                       "additionalProperties": false,
                                       "properties": {
                                         "mode": {
-                                          "enum": [
-                                            "any"
-                                          ],
+                                          "enum": ["any"],
                                           "type": "string"
                                         }
                                       },
-                                      "required": [
-                                        "mode"
-                                      ],
+                                      "required": ["mode"],
                                       "type": "object"
                                     },
                                     {
                                       "additionalProperties": false,
                                       "properties": {
                                         "mode": {
-                                          "enum": [
-                                            "quorum"
-                                          ],
+                                          "enum": ["quorum"],
                                           "type": "string"
                                         },
                                         "quorum": {
@@ -1733,10 +1542,7 @@
                                           "type": "integer"
                                         }
                                       },
-                                      "required": [
-                                        "mode",
-                                        "quorum"
-                                      ],
+                                      "required": ["mode", "quorum"],
                                       "type": "object"
                                     }
                                   ]
@@ -1749,19 +1555,14 @@
                                   "type": "integer"
                                 }
                               },
-                              "required": [
-                                "order",
-                                "approvers"
-                              ],
+                              "required": ["order", "approvers"],
                               "type": "object"
                             },
                             "minItems": 1,
                             "type": "array"
                           }
                         },
-                        "required": [
-                          "stages"
-                        ],
+                        "required": ["stages"],
                         "type": "object"
                       }
                     ]
@@ -1901,11 +1702,7 @@
                         "type": "string"
                       }
                     },
-                    "required": [
-                      "ackRequestId",
-                      "targetTable",
-                      "targetId"
-                    ],
+                    "required": ["ackRequestId", "targetTable", "targetId"],
                     "type": "object"
                   },
                   {
@@ -1942,11 +1739,7 @@
                         "type": "string"
                       }
                     },
-                    "required": [
-                      "messageId",
-                      "targetTable",
-                      "targetId"
-                    ],
+                    "required": ["messageId", "targetTable", "targetId"],
                     "type": "object"
                   }
                 ]
@@ -2169,11 +1962,7 @@
                     "type": "array"
                   }
                 },
-                "required": [
-                  "flowType",
-                  "actionKey",
-                  "messageBody"
-                ],
+                "required": ["flowType", "actionKey", "messageBody"],
                 "type": "object"
               }
             }
@@ -2369,10 +2158,7 @@
                     "type": "string"
                   }
                 },
-                "required": [
-                  "reasonCode",
-                  "reasonText"
-                ],
+                "required": ["reasonCode", "reasonText"],
                 "type": "object"
               }
             }
@@ -2448,9 +2234,7 @@
                     "type": "string"
                   }
                 },
-                "required": [
-                  "reason"
-                ],
+                "required": ["reason"],
                 "type": "object"
               }
             }
@@ -2525,9 +2309,7 @@
                     "type": "string"
                   }
                 },
-                "required": [
-                  "emoji"
-                ],
+                "required": ["emoji"],
                 "type": "object"
               }
             }
@@ -2586,23 +2368,17 @@
                   "type": {
                     "anyOf": [
                       {
-                        "enum": [
-                          "private_group"
-                        ],
+                        "enum": ["private_group"],
                         "type": "string"
                       },
                       {
-                        "enum": [
-                          "dm"
-                        ],
+                        "enum": ["dm"],
                         "type": "string"
                       }
                     ]
                   }
                 },
-                "required": [
-                  "type"
-                ],
+                "required": ["type"],
                 "type": "object"
               }
             }
@@ -2778,9 +2554,7 @@
                     "type": "array"
                   }
                 },
-                "required": [
-                  "body"
-                ],
+                "required": ["body"],
                 "type": "object"
               }
             }
@@ -2940,9 +2714,7 @@
                     "type": "array"
                   }
                 },
-                "required": [
-                  "userIds"
-                ],
+                "required": ["userIds"],
                 "type": "object"
               }
             }
@@ -3049,9 +2821,7 @@
                     "type": "array"
                   }
                 },
-                "required": [
-                  "body"
-                ],
+                "required": ["body"],
                 "type": "object"
               }
             }
@@ -3296,9 +3066,7 @@
                     "type": "string"
                   }
                 },
-                "required": [
-                  "name"
-                ],
+                "required": ["name"],
                 "type": "object"
               }
             }
@@ -3428,11 +3196,7 @@
                     "type": "string"
                   }
                 },
-                "required": [
-                  "code",
-                  "name",
-                  "status"
-                ],
+                "required": ["code", "name", "status"],
                 "type": "object"
               }
             }
@@ -3554,11 +3318,7 @@
                     "type": "string"
                   }
                 },
-                "required": [
-                  "content",
-                  "reportDate",
-                  "userId"
-                ],
+                "required": ["content", "reportDate", "userId"],
                 "type": "object"
               }
             }
@@ -3796,6 +3556,53 @@
         }
       }
     },
+    "/expenses/{id}/mark-paid": {
+      "post": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "paidAt": {
+                    "anyOf": [
+                      {
+                        "format": "date-time",
+                        "type": "string"
+                      },
+                      {
+                        "format": "date",
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "reasonText": {
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
     "/expenses/{id}/reassign": {
       "post": {
         "parameters": [
@@ -3817,33 +3624,23 @@
                   "reasonCode": {
                     "anyOf": [
                       {
-                        "enum": [
-                          "input_error"
-                        ],
+                        "enum": ["input_error"],
                         "type": "string"
                       },
                       {
-                        "enum": [
-                          "project_misassignment"
-                        ],
+                        "enum": ["project_misassignment"],
                         "type": "string"
                       },
                       {
-                        "enum": [
-                          "task_restructure"
-                        ],
+                        "enum": ["task_restructure"],
                         "type": "string"
                       },
                       {
-                        "enum": [
-                          "contract_split_merge"
-                        ],
+                        "enum": ["contract_split_merge"],
                         "type": "string"
                       },
                       {
-                        "enum": [
-                          "internal_transfer"
-                        ],
+                        "enum": ["internal_transfer"],
                         "type": "string"
                       }
                     ]
@@ -3856,11 +3653,7 @@
                     "type": "string"
                   }
                 },
-                "required": [
-                  "toProjectId",
-                  "reasonCode",
-                  "reasonText"
-                ],
+                "required": ["toProjectId", "reasonCode", "reasonText"],
                 "type": "object"
               }
             }
@@ -3886,6 +3679,43 @@
             }
           }
         ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/expenses/{id}/unmark-paid": {
+      "post": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "reasonText": {
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": ["reasonText"],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "Default Response"
@@ -3925,9 +3755,7 @@
                     "type": "array"
                   }
                 },
-                "required": [
-                  "displayName"
-                ],
+                "required": ["displayName"],
                 "type": "object"
               }
             }
@@ -4008,9 +3836,7 @@
                     "type": "array"
                   }
                 },
-                "required": [
-                  "userIds"
-                ],
+                "required": ["userIds"],
                 "type": "object"
               }
             }
@@ -4067,9 +3893,7 @@
                     "type": "array"
                   }
                 },
-                "required": [
-                  "userIds"
-                ],
+                "required": ["userIds"],
                 "type": "object"
               }
             }
@@ -4147,15 +3971,11 @@
                   "status": {
                     "anyOf": [
                       {
-                        "enum": [
-                          "active"
-                        ],
+                        "enum": ["active"],
                         "type": "string"
                       },
                       {
-                        "enum": [
-                          "disabled"
-                        ],
+                        "enum": ["disabled"],
                         "type": "string"
                       }
                     ]
@@ -4163,23 +3983,17 @@
                   "type": {
                     "anyOf": [
                       {
-                        "enum": [
-                          "hr"
-                        ],
+                        "enum": ["hr"],
                         "type": "string"
                       },
                       {
-                        "enum": [
-                          "crm"
-                        ],
+                        "enum": ["crm"],
                         "type": "string"
                       }
                     ]
                   }
                 },
-                "required": [
-                  "type"
-                ],
+                "required": ["type"],
                 "type": "object"
               }
             }
@@ -4224,15 +4038,11 @@
                   "status": {
                     "anyOf": [
                       {
-                        "enum": [
-                          "active"
-                        ],
+                        "enum": ["active"],
                         "type": "string"
                       },
                       {
-                        "enum": [
-                          "disabled"
-                        ],
+                        "enum": ["disabled"],
                         "type": "string"
                       }
                     ]
@@ -4240,15 +4050,11 @@
                   "type": {
                     "anyOf": [
                       {
-                        "enum": [
-                          "hr"
-                        ],
+                        "enum": ["hr"],
                         "type": "string"
                       },
                       {
-                        "enum": [
-                          "crm"
-                        ],
+                        "enum": ["crm"],
                         "type": "string"
                       }
                     ]
@@ -4706,12 +4512,7 @@
                     "type": "string"
                   }
                 },
-                "required": [
-                  "userId",
-                  "leaveType",
-                  "startDate",
-                  "endDate"
-                ],
+                "required": ["userId", "leaveType", "startDate", "endDate"],
                 "type": "object"
               }
             }
@@ -4776,15 +4577,11 @@
                   "emailMode": {
                     "anyOf": [
                       {
-                        "enum": [
-                          "realtime"
-                        ],
+                        "enum": ["realtime"],
                         "type": "string"
                       },
                       {
-                        "enum": [
-                          "digest"
-                        ],
+                        "enum": ["digest"],
                         "type": "string"
                       }
                     ]
@@ -4928,24 +4725,17 @@
                   "scope": {
                     "anyOf": [
                       {
-                        "enum": [
-                          "global"
-                        ],
+                        "enum": ["global"],
                         "type": "string"
                       },
                       {
-                        "enum": [
-                          "project"
-                        ],
+                        "enum": ["project"],
                         "type": "string"
                       }
                     ]
                   }
                 },
-                "required": [
-                  "period",
-                  "scope"
-                ],
+                "required": ["period", "scope"],
                 "type": "object"
               }
             }
@@ -5028,10 +4818,7 @@
                     "type": "string"
                   }
                 },
-                "required": [
-                  "code",
-                  "name"
-                ],
+                "required": ["code", "name"],
                 "type": "object"
               }
             }
@@ -5101,21 +4888,15 @@
                   "billUpon": {
                     "anyOf": [
                       {
-                        "enum": [
-                          "date"
-                        ],
+                        "enum": ["date"],
                         "type": "string"
                       },
                       {
-                        "enum": [
-                          "acceptance"
-                        ],
+                        "enum": ["acceptance"],
                         "type": "string"
                       },
                       {
-                        "enum": [
-                          "time"
-                        ],
+                        "enum": ["time"],
                         "type": "string"
                       }
                     ]
@@ -5148,42 +4929,29 @@
                         "type": "integer"
                       },
                       "type": {
-                        "enum": [
-                          "periodEndPlusOffset"
-                        ],
+                        "enum": ["periodEndPlusOffset"],
                         "type": "string"
                       }
                     },
-                    "required": [
-                      "type",
-                      "offsetDays"
-                    ],
+                    "required": ["type", "offsetDays"],
                     "type": "object"
                   },
                   "frequency": {
                     "anyOf": [
                       {
-                        "enum": [
-                          "monthly"
-                        ],
+                        "enum": ["monthly"],
                         "type": "string"
                       },
                       {
-                        "enum": [
-                          "quarterly"
-                        ],
+                        "enum": ["quarterly"],
                         "type": "string"
                       },
                       {
-                        "enum": [
-                          "semiannual"
-                        ],
+                        "enum": ["semiannual"],
                         "type": "string"
                       },
                       {
-                        "enum": [
-                          "annual"
-                        ],
+                        "enum": ["annual"],
                         "type": "string"
                       }
                     ]
@@ -5205,9 +4973,7 @@
                     "type": "string"
                   }
                 },
-                "required": [
-                  "frequency"
-                ],
+                "required": ["frequency"],
                 "type": "object"
               }
             }
@@ -5483,9 +5249,7 @@
                     "type": "array"
                   }
                 },
-                "required": [
-                  "body"
-                ],
+                "required": ["body"],
                 "type": "object"
               }
             }
@@ -5666,9 +5430,7 @@
                     "type": "array"
                   }
                 },
-                "required": [
-                  "body"
-                ],
+                "required": ["body"],
                 "type": "object"
               }
             }
@@ -5818,9 +5580,7 @@
                     "type": "string"
                   }
                 },
-                "required": [
-                  "totalAmount"
-                ],
+                "required": ["totalAmount"],
                 "type": "object"
               }
             }
@@ -5895,9 +5655,7 @@
                     "type": "number"
                   }
                 },
-                "required": [
-                  "totalAmount"
-                ],
+                "required": ["totalAmount"],
                 "type": "object"
               }
             }
@@ -5955,11 +5713,7 @@
                     "type": "number"
                   }
                 },
-                "required": [
-                  "from",
-                  "to",
-                  "unitPrice"
-                ],
+                "required": ["from", "to", "unitPrice"],
                 "type": "object"
               }
             }
@@ -6029,15 +5783,11 @@
                   "role": {
                     "anyOf": [
                       {
-                        "enum": [
-                          "member"
-                        ],
+                        "enum": ["member"],
                         "type": "string"
                       },
                       {
-                        "enum": [
-                          "leader"
-                        ],
+                        "enum": ["leader"],
                         "type": "string"
                       }
                     ]
@@ -6047,9 +5797,7 @@
                     "type": "string"
                   }
                 },
-                "required": [
-                  "userId"
-                ],
+                "required": ["userId"],
                 "type": "object"
               }
             }
@@ -6115,15 +5863,11 @@
                         "role": {
                           "anyOf": [
                             {
-                              "enum": [
-                                "member"
-                              ],
+                              "enum": ["member"],
                               "type": "string"
                             },
                             {
-                              "enum": [
-                                "leader"
-                              ],
+                              "enum": ["leader"],
                               "type": "string"
                             }
                           ]
@@ -6133,9 +5877,7 @@
                           "type": "string"
                         }
                       },
-                      "required": [
-                        "userId"
-                      ],
+                      "required": ["userId"],
                       "type": "object"
                     },
                     "maxItems": 500,
@@ -6143,9 +5885,7 @@
                     "type": "array"
                   }
                 },
-                "required": [
-                  "items"
-                ],
+                "required": ["items"],
                 "type": "object"
               }
             }
@@ -6212,10 +5952,7 @@
                     "type": "number"
                   }
                 },
-                "required": [
-                  "name",
-                  "amount"
-                ],
+                "required": ["name", "amount"],
                 "type": "object"
               }
             }
@@ -6314,9 +6051,7 @@
                     "type": "string"
                   }
                 },
-                "required": [
-                  "reason"
-                ],
+                "required": ["reason"],
                 "type": "object"
               }
             }
@@ -6371,10 +6106,7 @@
                     "type": "string"
                   }
                 },
-                "required": [
-                  "vendorId",
-                  "totalAmount"
-                ],
+                "required": ["vendorId", "totalAmount"],
                 "type": "object"
               }
             }
@@ -6461,9 +6193,7 @@
                     "type": "string"
                   }
                 },
-                "required": [
-                  "name"
-                ],
+                "required": ["name"],
                 "type": "object"
               }
             }
@@ -6596,9 +6326,7 @@
                     "type": "string"
                   }
                 },
-                "required": [
-                  "reason"
-                ],
+                "required": ["reason"],
                 "type": "object"
               }
             }
@@ -6673,9 +6401,7 @@
                     "type": "array"
                   }
                 },
-                "required": [
-                  "predecessorIds"
-                ],
+                "required": ["predecessorIds"],
                 "type": "object"
               }
             }
@@ -6720,33 +6446,23 @@
                   "reasonCode": {
                     "anyOf": [
                       {
-                        "enum": [
-                          "input_error"
-                        ],
+                        "enum": ["input_error"],
                         "type": "string"
                       },
                       {
-                        "enum": [
-                          "project_misassignment"
-                        ],
+                        "enum": ["project_misassignment"],
                         "type": "string"
                       },
                       {
-                        "enum": [
-                          "task_restructure"
-                        ],
+                        "enum": ["task_restructure"],
                         "type": "string"
                       },
                       {
-                        "enum": [
-                          "contract_split_merge"
-                        ],
+                        "enum": ["contract_split_merge"],
                         "type": "string"
                       },
                       {
-                        "enum": [
-                          "internal_transfer"
-                        ],
+                        "enum": ["internal_transfer"],
                         "type": "string"
                       }
                     ]
@@ -6759,11 +6475,7 @@
                     "type": "string"
                   }
                 },
-                "required": [
-                  "toProjectId",
-                  "reasonCode",
-                  "reasonText"
-                ],
+                "required": ["toProjectId", "reasonCode", "reasonText"],
                 "type": "object"
               }
             }
@@ -6930,10 +6642,7 @@
                         "type": "string"
                       }
                     },
-                    "required": [
-                      "p256dh",
-                      "auth"
-                    ],
+                    "required": ["p256dh", "auth"],
                     "type": "object"
                   },
                   "topics": {
@@ -6946,10 +6655,7 @@
                     "type": "string"
                   }
                 },
-                "required": [
-                  "endpoint",
-                  "keys"
-                ],
+                "required": ["endpoint", "keys"],
                 "type": "object"
               }
             }
@@ -6976,9 +6682,7 @@
                     "type": "string"
                   }
                 },
-                "required": [
-                  "endpoint"
-                ],
+                "required": ["endpoint"],
                 "type": "object"
               }
             }
@@ -7119,15 +6823,11 @@
                     "items": {
                       "anyOf": [
                         {
-                          "enum": [
-                            "email"
-                          ],
+                          "enum": ["email"],
                           "type": "string"
                         },
                         {
-                          "enum": [
-                            "dashboard"
-                          ],
+                          "enum": ["dashboard"],
                           "type": "string"
                         }
                       ]
@@ -7138,15 +6838,11 @@
                   "format": {
                     "anyOf": [
                       {
-                        "enum": [
-                          "csv"
-                        ],
+                        "enum": ["csv"],
                         "type": "string"
                       },
                       {
-                        "enum": [
-                          "pdf"
-                        ],
+                        "enum": ["pdf"],
                         "type": "string"
                       }
                     ]
@@ -7191,9 +6887,7 @@
                     "type": "string"
                   }
                 },
-                "required": [
-                  "reportKey"
-                ],
+                "required": ["reportKey"],
                 "type": "object"
               }
             }
@@ -7229,15 +6923,11 @@
                     "items": {
                       "anyOf": [
                         {
-                          "enum": [
-                            "email"
-                          ],
+                          "enum": ["email"],
                           "type": "string"
                         },
                         {
-                          "enum": [
-                            "dashboard"
-                          ],
+                          "enum": ["dashboard"],
                           "type": "string"
                         }
                       ]
@@ -7248,15 +6938,11 @@
                   "format": {
                     "anyOf": [
                       {
-                        "enum": [
-                          "csv"
-                        ],
+                        "enum": ["csv"],
                         "type": "string"
                       },
                       {
-                        "enum": [
-                          "pdf"
-                        ],
+                        "enum": ["pdf"],
                         "type": "string"
                       }
                     ]
@@ -7727,21 +7413,15 @@
                   "kind": {
                     "anyOf": [
                       {
-                        "enum": [
-                          "estimate"
-                        ],
+                        "enum": ["estimate"],
                         "type": "string"
                       },
                       {
-                        "enum": [
-                          "invoice"
-                        ],
+                        "enum": ["invoice"],
                         "type": "string"
                       },
                       {
-                        "enum": [
-                          "purchase_order"
-                        ],
+                        "enum": ["purchase_order"],
                         "type": "string"
                       }
                     ]
@@ -7762,11 +7442,7 @@
                     "type": "string"
                   }
                 },
-                "required": [
-                  "kind",
-                  "templateId",
-                  "numberRule"
-                ],
+                "required": ["kind", "templateId", "numberRule"],
                 "type": "object"
               }
             }
@@ -7804,21 +7480,15 @@
                   "kind": {
                     "anyOf": [
                       {
-                        "enum": [
-                          "estimate"
-                        ],
+                        "enum": ["estimate"],
                         "type": "string"
                       },
                       {
-                        "enum": [
-                          "invoice"
-                        ],
+                        "enum": ["invoice"],
                         "type": "string"
                       },
                       {
-                        "enum": [
-                          "purchase_order"
-                        ],
+                        "enum": ["purchase_order"],
                         "type": "string"
                       }
                     ]
@@ -7893,12 +7563,7 @@
                     "type": "string"
                   }
                 },
-                "required": [
-                  "projectId",
-                  "userId",
-                  "workDate",
-                  "minutes"
-                ],
+                "required": ["projectId", "userId", "workDate", "minutes"],
                 "type": "object"
               }
             }
@@ -7990,33 +7655,23 @@
                   "reasonCode": {
                     "anyOf": [
                       {
-                        "enum": [
-                          "input_error"
-                        ],
+                        "enum": ["input_error"],
                         "type": "string"
                       },
                       {
-                        "enum": [
-                          "project_misassignment"
-                        ],
+                        "enum": ["project_misassignment"],
                         "type": "string"
                       },
                       {
-                        "enum": [
-                          "task_restructure"
-                        ],
+                        "enum": ["task_restructure"],
                         "type": "string"
                       },
                       {
-                        "enum": [
-                          "contract_split_merge"
-                        ],
+                        "enum": ["contract_split_merge"],
                         "type": "string"
                       },
                       {
-                        "enum": [
-                          "internal_transfer"
-                        ],
+                        "enum": ["internal_transfer"],
                         "type": "string"
                       }
                     ]
@@ -8033,11 +7688,7 @@
                     "type": "string"
                   }
                 },
-                "required": [
-                  "toProjectId",
-                  "reasonCode",
-                  "reasonText"
-                ],
+                "required": ["toProjectId", "reasonCode", "reasonText"],
                 "type": "object"
               }
             }
@@ -8115,11 +7766,7 @@
                     "type": "string"
                   }
                 },
-                "required": [
-                  "projectId",
-                  "vendorId",
-                  "totalAmount"
-                ],
+                "required": ["projectId", "vendorId", "totalAmount"],
                 "type": "object"
               }
             }
@@ -8212,10 +7859,7 @@
                           "type": "number"
                         }
                       },
-                      "required": [
-                        "projectId",
-                        "amount"
-                      ],
+                      "required": ["projectId", "amount"],
                       "type": "object"
                     },
                     "type": "array"
@@ -8229,9 +7873,7 @@
                     "type": "string"
                   }
                 },
-                "required": [
-                  "allocations"
-                ],
+                "required": ["allocations"],
                 "type": "object"
               }
             }
@@ -8293,9 +7935,7 @@
                     "type": "string"
                   }
                 },
-                "required": [
-                  "purchaseOrderId"
-                ],
+                "required": ["purchaseOrderId"],
                 "type": "object"
               }
             }
@@ -8402,11 +8042,7 @@
                     "type": "string"
                   }
                 },
-                "required": [
-                  "projectId",
-                  "vendorId",
-                  "totalAmount"
-                ],
+                "required": ["projectId", "vendorId", "totalAmount"],
                 "type": "object"
               }
             }
@@ -8479,11 +8115,7 @@
                     "type": "string"
                   }
                 },
-                "required": [
-                  "code",
-                  "name",
-                  "status"
-                ],
+                "required": ["code", "name", "status"],
                 "type": "object"
               }
             }
