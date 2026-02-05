@@ -411,6 +411,28 @@ export const vendorInvoiceUnlinkPoSchema = {
   ),
 };
 
+export const vendorInvoiceAllocationsSchema = {
+  body: Type.Object(
+    {
+      allocations: Type.Array(
+        Type.Object(
+          {
+            projectId: Type.String({ minLength: 1 }),
+            amount: Type.Number({ minimum: 0 }),
+            taxRate: Type.Optional(Type.Number({ minimum: 0 })),
+            taxAmount: Type.Optional(Type.Number({ minimum: 0 })),
+            purchaseOrderLineId: Type.Optional(Type.String({ minLength: 1 })),
+          },
+          { additionalProperties: false },
+        ),
+      ),
+      reasonText: Type.Optional(Type.String({ minLength: 1, pattern: '\\S' })),
+      autoAdjust: Type.Optional(Type.Boolean()),
+    },
+    { additionalProperties: false },
+  ),
+};
+
 export const vendorQuoteSchema = {
   body: Type.Object({
     projectId: Type.String(),

@@ -177,6 +177,7 @@ model Project {
   purchaseOrders          PurchaseOrder[]
   vendorQuotes            VendorQuote[]
   vendorInvoices          VendorInvoice[]
+  vendorInvoiceAllocations VendorInvoiceAllocation[]
   rateCards               RateCard[]
   approvalInstances       ApprovalInstance[]
   periodLocks             PeriodLock[]
@@ -834,6 +835,7 @@ model PurchaseOrderLine {
   taxRate         Decimal?
   taskId          String?
   expenseId       String?
+  vendorInvoiceAllocations VendorInvoiceAllocation[]
 }
 
 model VendorQuote {
@@ -868,6 +870,7 @@ model VendorInvoice {
   vendorId        String
   purchaseOrder   PurchaseOrder? @relation(fields: [purchaseOrderId], references: [id], onDelete: SetNull)
   purchaseOrderId String?
+  allocations     VendorInvoiceAllocation[]
   vendorInvoiceNo String?
   receivedDate    DateTime?
   dueDate         DateTime?
@@ -888,6 +891,27 @@ model VendorInvoice {
   @@index([purchaseOrderId])
   @@index([receivedDate])
   @@index([dueDate])
+}
+
+model VendorInvoiceAllocation {
+  id                  String    @id @default(uuid())
+  vendorInvoice       VendorInvoice @relation(fields: [vendorInvoiceId], references: [id], onDelete: Cascade)
+  vendorInvoiceId     String
+  project             Project   @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  projectId           String
+  purchaseOrderLine   PurchaseOrderLine? @relation(fields: [purchaseOrderLineId], references: [id], onDelete: SetNull)
+  purchaseOrderLineId String?
+  amount              Decimal
+  taxRate             Decimal?
+  taxAmount           Decimal?
+  createdAt           DateTime  @default(now())
+  createdBy           String?
+  updatedAt           DateTime  @updatedAt
+  updatedBy           String?
+
+  @@index([vendorInvoiceId])
+  @@index([projectId])
+  @@index([purchaseOrderLineId])
 }
 
 model TimeEntry {
