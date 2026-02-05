@@ -47,6 +47,10 @@ npm audit --prefix packages/frontend --audit-level=high
 E2E_SCOPE=core E2E_CAPTURE=0 ./scripts/e2e-frontend.sh
 ```
 
+補足:
+- Podman DBのポート（既定: 55433）が使用中の場合、`E2E_PODMAN_HOST_PORT` が未指定なら空きポートへ自動フォールバックします。
+- ポートを固定したい場合は `E2E_PODMAN_HOST_PORT=55435` のように明示指定してください（競合時はエラーで停止します）。
+
 ## PR作成前の最小チェック
 - lint / format / typecheck / test を通す
 - 依存更新がある場合、`make audit`（high/critical）を通す
