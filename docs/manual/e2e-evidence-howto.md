@@ -5,6 +5,7 @@
 
 ## 参照
 - E2E 実行スクリプト: [scripts/e2e-frontend.sh](../../scripts/e2e-frontend.sh)
+- UI証跡（簡易手順）: [ui-evidence-quickstart](ui-evidence-quickstart.md)
 - 証跡保存先: [docs/test-results](../test-results/)
 - UI マニュアル（スクショ参照）: [ui-manual-user](ui-manual-user.md) / [ui-manual-admin](ui-manual-admin.md)
 
@@ -20,6 +21,11 @@ CI では `E2E_CAPTURE=0`（証跡なし）で実行します。
 ```bash
 # DBは既定で Podman を利用（E2E_DB_MODE=podman）
 E2E_CAPTURE=1 E2E_SCOPE=core ./scripts/e2e-frontend.sh
+```
+
+簡易手順（UI証跡用）:
+```bash
+./scripts/e2e-ui-evidence.sh
 ```
 
 補足:
