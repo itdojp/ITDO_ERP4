@@ -11,6 +11,17 @@ npm run dev
 本番ビルド確認: `npm run build && node dist/index.js`
 補足: Prisma 7 は `prisma.config.ts` を利用します（`DATABASE_URL` が必須）。
 
+## Tests
+```
+cd packages/backend
+npm run test
+```
+- `npm run test` / `npm run test:ci` は `node --test` を直接実行せず、`scripts/run-tests.js` を経由します。
+- `DATABASE_URL` が未設定の場合、tests 実行時のみ既定値を補完します（CIと同値）:
+  - `postgresql://user:pass@localhost:5432/postgres?schema=public`
+- `DATABASE_URL` を明示設定していれば、その値が優先されます（補完は行いません）。
+- 注意: アプリの起動（`npm run dev` / `node dist/index.js`）では従来通り `DATABASE_URL` が必須です（安全性維持）。
+
 ## API (PoC)
 - health: GET /health
 - auth mock: GET /me (x-user-id, x-roles headers)
