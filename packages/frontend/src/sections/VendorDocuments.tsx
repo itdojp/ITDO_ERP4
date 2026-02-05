@@ -401,7 +401,6 @@ export const VendorDocuments: React.FC = () => {
   const loadVendorInvoiceAllocations = useCallback(
     async (invoiceId: string) => {
       setInvoiceAllocationLoading(true);
-      setInvoiceAllocationMessage(null);
       try {
         const res = await api<{
           invoice: VendorInvoice;

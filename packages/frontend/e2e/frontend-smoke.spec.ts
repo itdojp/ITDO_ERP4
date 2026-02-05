@@ -108,6 +108,13 @@ async function selectByLabelOrFirst(select: Locator, label?: string) {
   await select.selectOption({ index: 1 });
 }
 
+async function selectByValue(select: Locator, value: string) {
+  await expect
+    .poll(() => select.locator('option').count(), { timeout: actionTimeout })
+    .toBeGreaterThan(1);
+  await select.selectOption({ value });
+}
+
 const runId = () =>
   process.env.E2E_RUN_ID ||
   `${Date.now().toString().slice(-6)}-${Math.floor(Math.random() * 90 + 10)}`;
@@ -459,20 +466,30 @@ test('frontend smoke vendor docs create @extended', async ({ page }) => {
   const poVendorSelect = poBlock.locator('select').nth(1);
   await selectByLabelOrFirst(poProjectSelect);
   await selectByLabelOrFirst(poVendorSelect);
+  const vendorDocsProjectId = await poProjectSelect.inputValue();
+  const vendorDocsVendorId = await poVendorSelect.inputValue();
   await poBlock.locator('input[type="number"]').first().fill(String(poAmount));
   await poBlock.getByRole('button', { name: '登録' }).click();
   await expect(poBlock.getByText('発注書を登録しました')).toBeVisible();
   await expect(
     poBlock.getByText(`${poAmount.toLocaleString()} JPY`),
   ).toBeVisible();
+  const createdPoItem = poBlock
+    .locator('ul.list li', { hasText: `${poAmount.toLocaleString()} JPY` })
+    .first();
+  await expect(createdPoItem).toBeVisible({ timeout: actionTimeout });
+  const createdPoText = await createdPoItem.innerText();
+  const poNo = createdPoText.match(/PO\d{4}-\d{2}-\d{4}/)?.[0];
+  expect(poNo).toBeTruthy();
+  const poNoValue = poNo as string;
 
   const quoteBlock = vendorSection
     .locator('h3', { hasText: '仕入見積' })
     .locator('..');
   const quoteProjectSelect = quoteBlock.locator('select').first();
   const quoteVendorSelect = quoteBlock.locator('select').nth(1);
-  await selectByLabelOrFirst(quoteProjectSelect);
-  await selectByLabelOrFirst(quoteVendorSelect);
+  await selectByValue(quoteProjectSelect, vendorDocsProjectId);
+  await selectByValue(quoteVendorSelect, vendorDocsVendorId);
   const quoteNo = `VQ-E2E-${id}`;
   await quoteBlock.getByPlaceholder('見積番号').fill(quoteNo);
   await quoteBlock
@@ -488,8 +505,8 @@ test('frontend smoke vendor docs create @extended', async ({ page }) => {
     .locator('..');
   const invoiceProjectSelect = invoiceBlock.locator('select').first();
   const invoiceVendorSelect = invoiceBlock.locator('select').nth(1);
-  await selectByLabelOrFirst(invoiceProjectSelect);
-  await selectByLabelOrFirst(invoiceVendorSelect);
+  await selectByValue(invoiceProjectSelect, vendorDocsProjectId);
+  await selectByValue(invoiceVendorSelect, vendorDocsVendorId);
   const vendorInvoiceNo = `VI-E2E-${id}`;
   await invoiceBlock.getByPlaceholder('請求番号').fill(vendorInvoiceNo);
   await invoiceBlock
@@ -501,12 +518,103 @@ test('frontend smoke vendor docs create @extended', async ({ page }) => {
   await expect(invoiceBlock.getByText(vendorInvoiceNo)).toBeVisible();
 
   const annotationText = `E2E注釈: ${id}`;
-  const createdInvoiceItem = vendorSection.locator('li', {
+  const createdInvoiceItem = invoiceBlock.locator('ul.list li', {
     hasText: vendorInvoiceNo,
+  }).first();
+  await expect(createdInvoiceItem).toBeVisible({ timeout: actionTimeout });
+
+  // (1) PO紐づけ → 一覧に PO番号表示
+  await createdInvoiceItem.scrollIntoViewIfNeeded();
+  await createdInvoiceItem.getByRole('button', { name: 'PO紐づけ' }).click();
+  const poLinkDialog = page.getByRole('dialog');
+  await expect(poLinkDialog.getByText('仕入請求: 関連発注書（PO）')).toBeVisible({
+    timeout: actionTimeout,
   });
+  const poLinkSelect = poLinkDialog.locator('select').first();
+  await selectByLabelOrFirst(poLinkSelect, poNoValue);
+  await poLinkDialog.getByRole('button', { name: '更新' }).click();
+  await expect(poLinkDialog).toBeHidden({ timeout: actionTimeout });
+  await expect
+    .poll(
+      () =>
+        createdInvoiceItem.innerText().then((value) => ({
+          hasLabel: value.includes('関連発注書:'),
+          hasPoNo: value.includes(poNoValue),
+        })),
+      { timeout: actionTimeout },
+    )
+    .toEqual({ hasLabel: true, hasPoNo: true });
+
+  // (2) 紐づけ解除
+  await createdInvoiceItem.scrollIntoViewIfNeeded();
+  await createdInvoiceItem.getByRole('button', { name: 'PO紐づけ' }).click();
+  const poUnlinkDialog = page.getByRole('dialog');
+  await expect(
+    poUnlinkDialog.getByText('仕入請求: 関連発注書（PO）'),
+  ).toBeVisible({
+    timeout: actionTimeout,
+  });
+  const poUnlinkSelect = poUnlinkDialog.locator('select').first();
+  await selectByLabelOrFirst(poUnlinkSelect, '紐づけなし');
+  await poUnlinkDialog.getByRole('button', { name: '更新' }).click();
+  await expect(poUnlinkDialog).toBeHidden({ timeout: actionTimeout });
+  await expect
+    .poll(
+      () =>
+        createdInvoiceItem
+          .innerText()
+          .then((value) => value.includes('関連発注書:')),
+      { timeout: actionTimeout },
+    )
+    .toBe(false);
+
+  // (3) 配賦明細ダイアログ → トグル → 明細追加 → 更新成功メッセージ
+  await createdInvoiceItem.scrollIntoViewIfNeeded();
+  await createdInvoiceItem.getByRole('button', { name: '配賦明細' }).click();
+  const allocationDialog = page.getByRole('dialog');
+  await expect(allocationDialog.getByText('仕入請求: 配賦明細')).toBeVisible({
+    timeout: actionTimeout,
+  });
+  await expect(allocationDialog.getByText('配賦明細を読み込み中...')).toHaveCount(
+    0,
+    { timeout: actionTimeout },
+  );
+  await allocationDialog
+    .getByRole('button', { name: '配賦明細を入力' })
+    .click();
+  await expect(
+    allocationDialog.getByRole('button', { name: '配賦明細を隠す' }),
+  ).toBeVisible({ timeout: actionTimeout });
+  await allocationDialog.getByRole('button', { name: '明細追加' }).click();
+  const allocationRow = allocationDialog.locator('table tbody tr').first();
+  await expect(allocationRow).toBeVisible({ timeout: actionTimeout });
+  const allocationProjectSelect = allocationRow.locator('select').first();
+  if ((await allocationProjectSelect.inputValue()) === '') {
+    await selectByLabelOrFirst(allocationProjectSelect);
+  }
+  await allocationRow
+    .locator('input[type=\"number\"]')
+    .first()
+    .fill(String(invoiceAmount));
+  await allocationDialog.getByRole('button', { name: '更新' }).click();
+  const allocationSuccessMessage = allocationDialog.locator('p', {
+    hasText: '配賦明細を更新しました',
+  });
+  await expect(allocationSuccessMessage).toHaveCount(1, {
+    timeout: actionTimeout,
+  });
+  await allocationSuccessMessage.scrollIntoViewIfNeeded();
+  await expect(allocationSuccessMessage).toBeVisible({
+    timeout: actionTimeout,
+  });
+  await allocationDialog.getByRole('button', { name: '閉じる' }).click();
+  await expect(allocationDialog).toBeHidden({ timeout: actionTimeout });
+
   await createdInvoiceItem.getByRole('button', { name: '注釈' }).click();
   const annotationDialog = page.getByRole('dialog');
-  await expect(annotationDialog.getByText(`仕入請求: ${vendorInvoiceNo}`)).toBeVisible();
+  await expect(
+    annotationDialog.getByRole('heading', { name: `仕入請求: ${vendorInvoiceNo}` }),
+  ).toBeVisible({ timeout: actionTimeout });
   await annotationDialog.getByLabel('メモ（Markdown）').fill(annotationText);
   await annotationDialog.getByRole('button', { name: '保存' }).click();
   await expect(annotationDialog.getByText('保存しました')).toBeVisible({
