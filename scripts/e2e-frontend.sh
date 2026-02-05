@@ -6,8 +6,38 @@ BACKEND_PORT="${BACKEND_PORT:-3002}"
 FRONTEND_PORT="${FRONTEND_PORT:-5173}"
 E2E_DB_MODE="${E2E_DB_MODE:-podman}"
 E2E_PODMAN_CONTAINER_NAME="${E2E_PODMAN_CONTAINER_NAME:-erp4-pg-e2e}"
+E2E_PODMAN_HOST_PORT_EXPLICIT=0
+if [[ -n "${E2E_PODMAN_HOST_PORT+x}" && -n "${E2E_PODMAN_HOST_PORT:-}" ]]; then
+  E2E_PODMAN_HOST_PORT_EXPLICIT=1
+fi
 E2E_PODMAN_HOST_PORT="${E2E_PODMAN_HOST_PORT:-55433}"
 E2E_PODMAN_RESET="${E2E_PODMAN_RESET:-1}"
+
+port_in_use() {
+  local port="$1"
+  ss -ltnH 2>/dev/null | awk -v p="$port" '$4 ~ ":" p "$" { found=1 } END { exit found ? 0 : 1 }'
+}
+
+if [[ "$E2E_DB_MODE" == "podman" ]] && port_in_use "$E2E_PODMAN_HOST_PORT"; then
+  if [[ "$E2E_PODMAN_HOST_PORT_EXPLICIT" == "1" ]]; then
+    echo "E2E_PODMAN_HOST_PORT=${E2E_PODMAN_HOST_PORT} is already in use." >&2
+    echo "Set an unused port, e.g.: E2E_PODMAN_HOST_PORT=55435 ./scripts/e2e-frontend.sh" >&2
+    exit 1
+  fi
+  original_port="$E2E_PODMAN_HOST_PORT"
+  for port in $(seq "$E2E_PODMAN_HOST_PORT" "$((E2E_PODMAN_HOST_PORT + 100))"); do
+    if ! port_in_use "$port"; then
+      E2E_PODMAN_HOST_PORT="$port"
+      echo "Port ${original_port} is in use; falling back to ${E2E_PODMAN_HOST_PORT}"
+      break
+    fi
+  done
+  if port_in_use "$E2E_PODMAN_HOST_PORT"; then
+    echo "Failed to find a free port for e2e db (starting from ${E2E_PODMAN_HOST_PORT})." >&2
+    echo "Set an unused port, e.g.: E2E_PODMAN_HOST_PORT=55435 ./scripts/e2e-frontend.sh" >&2
+    exit 1
+  fi
+fi
 if [[ -z "${DATABASE_URL:-}" ]]; then
   if [[ "$E2E_DB_MODE" == "podman" ]]; then
     DATABASE_URL="postgresql://postgres:postgres@localhost:${E2E_PODMAN_HOST_PORT}/postgres?schema=public"
