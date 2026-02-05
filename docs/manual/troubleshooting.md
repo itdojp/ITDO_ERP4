@@ -25,6 +25,16 @@
 - `psql` が利用できる（direct mode の場合）
 - `playwright install chromium` が完了している
 
+よくある原因/対処:
+- Podman DB のポート競合:
+  - `E2E_PODMAN_HOST_PORT` 未指定の場合、`scripts/e2e-frontend.sh` が空きポートへ自動フォールバックします（ログに表示）。
+  - ポートを固定したい場合は `E2E_PODMAN_HOST_PORT=55435` のように明示指定します（競合時はエラーで停止）。
+- `E2E_DB_MODE=direct`:
+  - `DATABASE_URL` が必須です（例: `postgresql://...`）。
+  - `psql` が必要です（未導入の場合は `E2E_DB_MODE=podman` を利用）。
+- Playwright のインストール:
+  - 既にインストール済みであれば `E2E_SKIP_PLAYWRIGHT_INSTALL=1` でスキップできます。
+
 ローカル実行手順は [e2e-evidence-howto](e2e-evidence-howto.md) を参照。
 
 ## 4. チャット添付が失敗する
