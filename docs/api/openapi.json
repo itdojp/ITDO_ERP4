@@ -3815,16 +3815,9 @@
                 "additionalProperties": false,
                 "properties": {
                   "paidAt": {
-                    "anyOf": [
-                      {
-                        "format": "date-time",
-                        "type": "string"
-                      },
-                      {
-                        "format": "date",
-                        "type": "string"
-                      }
-                    ]
+                    "maxLength": 50,
+                    "minLength": 1,
+                    "type": "string"
                   },
                   "reasonText": {
                     "minLength": 1,
@@ -4445,16 +4438,9 @@
                 "additionalProperties": false,
                 "properties": {
                   "paidAt": {
-                    "anyOf": [
-                      {
-                        "format": "date-time",
-                        "type": "string"
-                      },
-                      {
-                        "format": "date",
-                        "type": "string"
-                      }
-                    ]
+                    "maxLength": 50,
+                    "minLength": 1,
+                    "type": "string"
                   },
                   "reasonText": {
                     "minLength": 1,
