@@ -726,6 +726,34 @@ test('frontend smoke reports masters settings @extended', async ({ page }) => {
   await captureSection(projectsSection, '09-projects.png');
   await captureSection(memberCard, '09-project-members.png');
 
+  // Ensure role update + removal are exercised (regression guard).
+  const member1Item = memberCard.locator('li', {
+    hasText: 'e2e-member-1@example.com',
+  });
+  await member1Item
+    .getByLabel('案件メンバーの権限')
+    .selectOption({ value: 'leader' });
+  await member1Item.getByRole('button', { name: '権限更新' }).click();
+  await expect(memberCard.getByText('メンバー権限を更新しました')).toBeVisible({
+    timeout: actionTimeout,
+  });
+  await expect(
+    memberCard
+      .locator('li', { hasText: 'e2e-member-1@example.com' })
+      .locator('.badge'),
+  ).toHaveText('leader', { timeout: actionTimeout });
+
+  const member2Item = memberCard.locator('li', {
+    hasText: 'e2e-member-2@example.com',
+  });
+  await member2Item.getByRole('button', { name: '削除' }).click();
+  await expect(memberCard.getByText('メンバーを削除しました')).toBeVisible({
+    timeout: actionTimeout,
+  });
+  await expect(memberCard.getByText('e2e-member-2@example.com')).toHaveCount(0, {
+    timeout: actionTimeout,
+  });
+
   await navigateToSection(page, 'マスタ管理', '顧客/業者マスタ');
   const masterSection = page
     .locator('main')
