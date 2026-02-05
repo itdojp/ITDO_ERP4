@@ -21,13 +21,13 @@
 ## 画面キャプチャ（証跡）
 PoC の E2E 実行時に取得した画面キャプチャです。
 
-![現在のユーザー](../test-results/2026-01-19-frontend-e2e-r1/00-current-user.png)
+![現在のユーザー](../test-results/2026-02-05-frontend-e2e-r1/00-current-user.png)
 
-![ダッシュボード](../test-results/2026-01-19-frontend-e2e-r1/01-core-dashboard.png)
+![ダッシュボード](../test-results/2026-02-05-frontend-e2e-r1/01-core-dashboard.png)
 
-![ERP横断検索](../test-results/2026-01-19-frontend-e2e-r1/06-core-global-search.png)
+![ERP横断検索](../test-results/2026-02-05-frontend-e2e-r1/06-core-global-search.png)
 
-![オフライン送信待ち](../test-results/2026-01-19-frontend-e2e-r1/14-offline-daily-queue.png)
+![オフライン送信待ち](../test-results/2026-02-05-frontend-e2e-r1/14-offline-daily-queue.png)
 
 ![Push購読（登録）](../test-results/2026-01-19-frontend-e2e-pwa-push/17-push-registered.png)
 

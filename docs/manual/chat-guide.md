@@ -66,10 +66,10 @@
 - 事前に「使用されたことが分かる」仕組みを運用で担保する（ログ/通知/定期棚卸し）
 
 ## 関連画面（証跡）
-![プロジェクトチャット](../test-results/2026-01-19-frontend-e2e-r1/12-project-chat.png)
+![プロジェクトチャット](../test-results/2026-02-05-frontend-e2e-r1/12-project-chat.png)
 
-![ルームチャット](../test-results/2026-01-19-frontend-e2e-r1/14-room-chat.png)
+![ルームチャット](../test-results/2026-02-05-frontend-e2e-r1/14-room-chat.png)
 
-![監査閲覧](../test-results/2026-01-19-frontend-e2e-r1/24-chat-break-glass.png)
+![監査閲覧](../test-results/2026-02-05-frontend-e2e-r1/24-chat-break-glass.png)
 
-![管理設定](../test-results/2026-01-19-frontend-e2e-r1/11-admin-settings.png)
+![管理設定](../test-results/2026-02-05-frontend-e2e-r1/11-admin-settings.png)

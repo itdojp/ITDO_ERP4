@@ -108,6 +108,7 @@ async function prepare(
   }
   await page.addInitScript((state) => {
     window.localStorage.setItem('erp4_auth', JSON.stringify(state));
+    window.localStorage.removeItem('erp4_active_section');
   }, authState);
   await page.goto(baseUrl);
   await expect(page.getByRole('heading', { name: 'ERP4 MVP PoC' })).toBeVisible();
@@ -152,8 +153,15 @@ test('pwa offline duplicate time entries @pwa @extended', async ({
   const locationTag = `offline-dup-${id}`;
 
   const timeSection = page
+    .locator('main')
     .locator('h2', { hasText: '工数入力' })
     .locator('..');
+  await page.getByRole('button', { name: '工数入力', exact: true }).click();
+  await expect(
+    page
+      .locator('main')
+      .getByRole('heading', { name: '工数入力', level: 2, exact: true }),
+  ).toBeVisible();
   await timeSection.scrollIntoViewIfNeeded();
   await selectByLabelOrFirst(
     timeSection.getByLabel('案件選択'),
@@ -183,7 +191,7 @@ test('pwa offline duplicate time entries @pwa @extended', async ({
     has: page.locator('strong', { hasText: '現在のユーザー' }),
   });
   await currentSection.scrollIntoViewIfNeeded();
-  await currentSection.getByRole('button', { name: '再読込' }).click();
+  await currentSection.getByRole('button', { name: '再読込' }).first().click();
   await expect
     .poll(
       async () => {
@@ -217,7 +225,14 @@ test('pwa offline duplicate time entries @pwa @extended', async ({
     .toBe(0);
 
   await page.reload();
+  await page.getByRole('button', { name: '工数入力', exact: true }).click();
+  await expect(
+    page
+      .locator('main')
+      .getByRole('heading', { name: '工数入力', level: 2, exact: true }),
+  ).toBeVisible();
   const timeSectionReload = page
+    .locator('main')
     .locator('h2', { hasText: '工数入力' })
     .locator('..');
   await timeSectionReload.scrollIntoViewIfNeeded();

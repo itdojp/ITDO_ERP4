@@ -83,7 +83,8 @@ async function prepare(page: Page) {
 }
 
 async function navigateToSection(page: Page, label: string, heading?: string) {
-  await page.getByRole('button', { name: label }).click();
+  // Use exact matching to avoid collisions like "承認" vs "承認依頼".
+  await page.getByRole('button', { name: label, exact: true }).click();
   const targetHeading = heading || label;
   await expect(
     page
@@ -757,9 +758,11 @@ test('frontend smoke reports masters settings @extended', async ({ page }) => {
   await customerItem.getByRole('button', { name: '注釈' }).click();
   const customerAnnotationDialog = page.getByRole('dialog');
   await expect(
-    customerAnnotationDialog.getByText(
-      `顧客: ${customerCode} / ${customerName}`,
-    ),
+    customerAnnotationDialog.getByRole('heading', {
+      name: `顧客: ${customerCode} / ${customerName}`,
+      level: 2,
+      exact: true,
+    }),
   ).toBeVisible({ timeout: actionTimeout });
   await customerAnnotationDialog
     .getByLabel('メモ（Markdown）')
@@ -782,7 +785,11 @@ test('frontend smoke reports masters settings @extended', async ({ page }) => {
   await vendorItem.getByRole('button', { name: '注釈' }).click();
   const vendorAnnotationDialog = page.getByRole('dialog');
   await expect(
-    vendorAnnotationDialog.getByText(`業者: ${vendorCode} / ${vendorName}`),
+    vendorAnnotationDialog.getByRole('heading', {
+      name: `業者: ${vendorCode} / ${vendorName}`,
+      level: 2,
+      exact: true,
+    }),
   ).toBeVisible({ timeout: actionTimeout });
   await vendorAnnotationDialog.getByLabel('メモ（Markdown）').fill(vendorAnnotationText);
   await vendorAnnotationDialog.getByRole('button', { name: '保存' }).click();
@@ -926,6 +933,16 @@ test('frontend smoke chat hr analytics @extended', async ({ page }) => {
   await expect(page.getByText('ID: demo-user')).toBeVisible();
   await expect(page.getByText('Roles: admin, mgmt')).toBeVisible();
 
+  // Ensure the ack-required target user can access the project room.
+  const projectMemberRes = await page.request.post(
+    `${apiBase}/projects/${encodeURIComponent(authState.projectIds[0])}/members`,
+    {
+      headers: buildAuthHeaders(),
+      data: { userId: mentionTarget, role: 'member' },
+    },
+  );
+  await ensureOk(projectMemberRes);
+
   await navigateToSection(page, 'プロジェクトチャット');
   const chatSection = page
     .locator('main')
@@ -938,8 +955,12 @@ test('frontend smoke chat hr analytics @extended', async ({ page }) => {
   );
   await chatSection.getByLabel('メンションユーザ').fill(mentionTarget);
   await chatSection.getByRole('button', { name: 'ユーザ追加' }).click();
-  await chatSection.getByLabel('メンショングループ').fill('mgmt');
-  await chatSection.getByRole('button', { name: 'グループ追加' }).click();
+  const mentionGroupInput = chatSection.getByLabel('メンショングループ');
+  await mentionGroupInput.fill('mgmt');
+  await chatSection
+    .getByRole('button', { name: 'グループ追加' })
+    .first()
+    .click();
   const chatMessage = `E2E chat message ${id}`;
   const uploadName = `e2e-chat-${id}.txt`;
   const uploadPath = path.join(rootDir, 'tmp', uploadName);
@@ -1010,29 +1031,11 @@ test('frontend smoke chat hr analytics @extended', async ({ page }) => {
   await chatSection.getByPlaceholder('タグ (comma separated)').fill('e2e,ack');
   await chatSection
     .getByPlaceholder('確認対象ユーザID (comma separated)')
-    .fill('demo-user');
+    .fill(mentionTarget);
   await chatSection.getByRole('button', { name: '確認依頼' }).click();
   const ackItem = chatSection.locator('li', { hasText: ackMessage });
   await expect(ackItem).toBeVisible();
   await expect(ackItem.getByText('確認状況: 0/1')).toBeVisible();
-  await ackItem.getByRole('button', { name: 'OK' }).click();
-  await expect(ackItem.getByText('確認状況: 1/1')).toBeVisible();
-  page.once('dialog', (dialog) => dialog.accept().catch(() => undefined));
-  await ackItem.getByRole('button', { name: 'OK取消' }).click();
-  await expect(ackItem.getByText('確認状況: 0/1')).toBeVisible({
-    timeout: actionTimeout,
-  });
-  await expect(ackItem.getByRole('button', { name: 'OK' })).toBeVisible({
-    timeout: actionTimeout,
-  });
-  page.once('dialog', (dialog) =>
-    dialog.accept('e2e cancel').catch(() => undefined),
-  );
-  await ackItem.getByRole('button', { name: '撤回' }).click();
-  await expect(ackItem.getByText(/^撤回:/)).toBeVisible({
-    timeout: actionTimeout,
-  });
-  await expect(ackItem.getByRole('button', { name: 'OK' })).toHaveCount(0);
 
   const overdueDueAt = new Date(Date.now() - 60_000).toISOString();
   const overdueAckMessage = `E2E ack overdue ${id}`;
@@ -1041,14 +1044,11 @@ test('frontend smoke chat hr analytics @extended', async ({ page }) => {
     {
       data: {
         body: overdueAckMessage,
-        requiredUserIds: ['e2e-overdue-target'],
+        requiredUserIds: [mentionTarget],
         dueAt: overdueDueAt,
         tags: ['e2e', 'ack'],
       },
-      headers: {
-        'x-user-id': authState.userId,
-        'x-roles': authState.roles.join(','),
-      },
+      headers: buildAuthHeaders(),
     },
   );
   expect(overdueAckRes.ok()).toBeTruthy();
@@ -1116,6 +1116,34 @@ test('frontend smoke chat hr analytics @extended', async ({ page }) => {
   await expect(
     mentionPage.getByRole('heading', { name: 'ERP4 MVP PoC' }),
   ).toBeVisible();
+
+  // Ack / revoke is performed by the required user (mentionTarget).
+  await navigateToSection(mentionPage, 'プロジェクトチャット');
+  const mentionChatSection = mentionPage
+    .locator('main')
+    .locator('h2', { hasText: 'プロジェクトチャット' })
+    .locator('..');
+  await mentionChatSection.scrollIntoViewIfNeeded();
+  await selectByLabelOrFirst(
+    mentionChatSection.getByLabel('案件選択'),
+    'PRJ-DEMO-1 / Demo Project 1',
+  );
+  await mentionChatSection.getByRole('button', { name: '読み込み' }).click();
+  const mentionAckItem = mentionChatSection.locator('li', { hasText: ackMessage });
+  await expect(mentionAckItem).toBeVisible({ timeout: actionTimeout });
+  await expect(mentionAckItem.getByText('確認状況: 0/1')).toBeVisible({
+    timeout: actionTimeout,
+  });
+  await mentionAckItem.getByRole('button', { name: 'OK' }).click();
+  await expect(mentionAckItem.getByText('確認状況: 1/1')).toBeVisible({
+    timeout: actionTimeout,
+  });
+  mentionPage.once('dialog', (dialog) => dialog.accept().catch(() => undefined));
+  await mentionAckItem.getByRole('button', { name: 'OK取消' }).click();
+  await expect(mentionAckItem.getByText('確認状況: 0/1')).toBeVisible({
+    timeout: actionTimeout,
+  });
+
   await mentionPage.getByRole('button', { name: 'ホーム' }).click();
   await expect(
     mentionPage
@@ -1130,6 +1158,28 @@ test('frontend smoke chat hr analytics @extended', async ({ page }) => {
     timeout: actionTimeout,
   });
   await mentionPage.close();
+
+  // Cancel the ack-request as the creator/admin (demo-user).
+  await navigateToSection(page, 'プロジェクトチャット');
+  const chatSectionAfter = page
+    .locator('main')
+    .locator('h2', { hasText: 'プロジェクトチャット' })
+    .locator('..');
+  await chatSectionAfter.scrollIntoViewIfNeeded();
+  await selectByLabelOrFirst(
+    chatSectionAfter.getByLabel('案件選択'),
+    'PRJ-DEMO-1 / Demo Project 1',
+  );
+  await chatSectionAfter.getByRole('button', { name: '読み込み' }).click();
+  const ackItemAfter = chatSectionAfter.locator('li', { hasText: ackMessage });
+  await expect(ackItemAfter).toBeVisible({ timeout: actionTimeout });
+  page.once('dialog', (dialog) =>
+    dialog.accept('e2e cancel').catch(() => undefined),
+  );
+  await ackItemAfter.getByRole('button', { name: '撤回' }).click();
+  await expect(ackItemAfter.getByText(/^撤回:/)).toBeVisible({
+    timeout: actionTimeout,
+  });
 });
 
 test('frontend smoke room chat (private_group/dm) @extended', async ({
@@ -1181,6 +1231,34 @@ test('frontend smoke room chat (private_group/dm) @extended', async ({
     messageList.locator('.card', { hasText: companyText }).first(),
   ).toBeVisible({ timeout: actionTimeout });
 
+  // Ack-required (overdue) on company room so that membership checks do not block.
+  const companyRoomId = await roomSelect.inputValue();
+  const overdueRoomDueAt = new Date(Date.now() - 60_000).toISOString();
+  const overdueRoomAckMessage = `E2E room ack overdue ${run}`;
+  const overdueRoomAckRes = await page.request.post(
+    `${apiBase}/chat-rooms/${companyRoomId}/ack-requests`,
+    {
+      data: {
+        body: overdueRoomAckMessage,
+        requiredUserIds: ['e2e-member-1@example.com'],
+        dueAt: overdueRoomDueAt,
+        tags: ['e2e', 'ack'],
+      },
+      headers: buildAuthHeaders(),
+    },
+  );
+  await ensureOk(overdueRoomAckRes);
+  const postCard = roomChatSection.locator('strong', { hasText: '投稿' }).locator('..');
+  await postCard.getByRole('button', { name: '再読込' }).click();
+  const overdueRoomAckItem = messageList
+    .locator('.card', { hasText: overdueRoomAckMessage })
+    .first();
+  await expect(overdueRoomAckItem).toBeVisible({ timeout: actionTimeout });
+  const overdueRoomDueLabel = overdueRoomAckItem.getByText(/期限:/);
+  await expect(overdueRoomDueLabel).toBeVisible();
+  await expect(overdueRoomDueLabel).toContainText('期限超過');
+  await expect(overdueRoomDueLabel).toHaveCSS('color', 'rgb(220, 38, 38)');
+
   await messageList.getByLabel('検索（本文）').fill(`company message ${run}`);
   await messageList.getByRole('button', { name: '適用' }).click();
   await expect(
@@ -1223,35 +1301,6 @@ test('frontend smoke room chat (private_group/dm) @extended', async ({
   await expect(
     messageList.locator('.card', { hasText: messageText }).first(),
   ).toBeVisible({ timeout: actionTimeout });
-
-  const activeRoomId = await roomSelect.inputValue();
-  const overdueRoomDueAt = new Date(Date.now() - 60_000).toISOString();
-  const overdueRoomAckMessage = `E2E room ack overdue ${run}`;
-  const overdueRoomAckRes = await page.request.post(
-    `${apiBase}/chat-rooms/${activeRoomId}/ack-requests`,
-    {
-      data: {
-        body: overdueRoomAckMessage,
-        requiredUserIds: ['e2e-overdue-target'],
-        dueAt: overdueRoomDueAt,
-        tags: ['e2e', 'ack'],
-      },
-      headers: {
-        'x-user-id': authState.userId,
-        'x-roles': authState.roles.join(','),
-      },
-    },
-  );
-  expect(overdueRoomAckRes.ok()).toBeTruthy();
-  await roomChatSection.getByRole('button', { name: '再読込' }).click();
-  const overdueRoomAckItem = messageList
-    .locator('.card', { hasText: overdueRoomAckMessage })
-    .first();
-  await expect(overdueRoomAckItem).toBeVisible({ timeout: actionTimeout });
-  const overdueRoomDueLabel = overdueRoomAckItem.getByText(/期限:/);
-  await expect(overdueRoomDueLabel).toBeVisible();
-  await expect(overdueRoomDueLabel).toContainText('期限超過');
-  await expect(overdueRoomDueLabel).toHaveCSS('color', 'rgb(220, 38, 38)');
 
   const previousRoomId = await roomSelect.inputValue();
   const partnerUserId = `e2e-partner-${run}`;
@@ -1494,21 +1543,27 @@ test('frontend smoke additional sections @extended', async ({ page }) => {
   test.setTimeout(180_000);
   await prepare(page);
 
-  const taskSection = page.locator('h2', { hasText: 'タスク' }).locator('..');
+  await navigateToSection(page, 'タスク');
+  const taskSection = page.locator('main').locator('h2', { hasText: 'タスク' }).locator('..');
   await taskSection.scrollIntoViewIfNeeded();
   await captureSection(taskSection, '21-project-tasks.png');
 
-  const leaveSection = page.locator('h2', { hasText: '休暇' }).locator('..');
+  await navigateToSection(page, '休暇申請', '休暇');
+  const leaveSection = page.locator('main').locator('h2', { hasText: '休暇' }).locator('..');
   await leaveSection.scrollIntoViewIfNeeded();
   await captureSection(leaveSection, '22-leave-requests.png');
 
+  await navigateToSection(page, 'マイルストーン');
   const milestoneSection = page
+    .locator('main')
     .locator('h2', { hasText: 'マイルストーン' })
     .locator('..');
   await milestoneSection.scrollIntoViewIfNeeded();
   await captureSection(milestoneSection, '23-project-milestones.png');
 
+  await navigateToSection(page, '監査閲覧', 'Chat break-glass（監査閲覧）');
   const breakGlassSection = page
+    .locator('main')
     .locator('h2', { hasText: 'Chat break-glass（監査閲覧）' })
     .locator('..');
   await breakGlassSection.scrollIntoViewIfNeeded();
@@ -1560,13 +1615,17 @@ test('frontend smoke admin ops @extended', async ({ page }) => {
     throw new Error(`Failed to create period lock: ${lockRes.status()}`);
   }
 
+  await navigateToSection(page, 'ジョブ管理', '運用ジョブ');
   const adminJobsSection = page
+    .locator('main')
     .locator('h2', { hasText: '運用ジョブ' })
     .locator('..');
   await adminJobsSection.scrollIntoViewIfNeeded();
   await captureSection(adminJobsSection, '25-admin-jobs.png');
 
+  await navigateToSection(page, '送信ログ', 'ドキュメント送信ログ');
   const sendLogSection = page
+    .locator('main')
     .locator('h2', { hasText: 'ドキュメント送信ログ' })
     .locator('..');
   await sendLogSection.scrollIntoViewIfNeeded();
@@ -1579,7 +1638,9 @@ test('frontend smoke admin ops @extended', async ({ page }) => {
   }
   await captureSection(sendLogSection, '26-document-send-logs.png');
 
+  await navigateToSection(page, 'PDF管理', 'PDFファイル一覧');
   const pdfSection = page
+    .locator('main')
     .locator('h2', { hasText: 'PDFファイル一覧' })
     .locator('..');
   await pdfSection.scrollIntoViewIfNeeded();
@@ -1589,7 +1650,9 @@ test('frontend smoke admin ops @extended', async ({ page }) => {
   );
   await captureSection(pdfSection, '27-pdf-files.png');
 
+  await navigateToSection(page, 'アクセスレビュー', 'アクセス棚卸し');
   const accessReviewSection = page
+    .locator('main')
     .locator('h2', { hasText: 'アクセス棚卸し' })
     .locator('..');
   await accessReviewSection.scrollIntoViewIfNeeded();
@@ -1602,7 +1665,9 @@ test('frontend smoke admin ops @extended', async ({ page }) => {
   });
   await captureSection(accessReviewSection, '28-access-reviews.png');
 
+  await navigateToSection(page, '監査ログ');
   const auditLogSection = page
+    .locator('main')
     .locator('h2', { hasText: '監査ログ' })
     .locator('..');
   await auditLogSection.scrollIntoViewIfNeeded();
@@ -1612,7 +1677,9 @@ test('frontend smoke admin ops @extended', async ({ page }) => {
   );
   await captureSection(auditLogSection, '29-audit-logs.png');
 
+  await navigateToSection(page, '期間締め');
   const periodLockSection = page
+    .locator('main')
     .locator('h2', { hasText: '期間締め' })
     .locator('..');
   await periodLockSection.scrollIntoViewIfNeeded();

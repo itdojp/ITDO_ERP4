@@ -48,8 +48,8 @@ conditions/steps の例は [approval-alerts](../requirements/approval-alerts.md)
 監査ログの参照方法は [ui-manual-admin](ui-manual-admin.md) を参照。
 
 ## 関連画面（証跡）
-![承認](../test-results/2026-01-19-frontend-e2e-r1/07-approvals.png)
+![承認](../test-results/2026-02-05-frontend-e2e-r1/07-approvals.png)
 
-![管理設定](../test-results/2026-01-19-frontend-e2e-r1/11-admin-settings.png)
+![管理設定](../test-results/2026-02-05-frontend-e2e-r1/11-admin-settings.png)
 
-![監査ログ](../test-results/2026-01-19-frontend-e2e-r1/29-audit-logs.png)
+![監査ログ](../test-results/2026-02-05-frontend-e2e-r1/29-audit-logs.png)

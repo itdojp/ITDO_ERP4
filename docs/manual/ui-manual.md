@@ -8,6 +8,7 @@
 - 管理者向け: [ui-manual-admin](ui-manual-admin.md)
 
 ## 証跡
-- 画面キャプチャ: [`2026-01-19-frontend-e2e-r1`](../test-results/2026-01-19-frontend-e2e-r1/)（最新版）
+- 画面キャプチャ: [`2026-02-05-frontend-e2e-r1`](../test-results/2026-02-05-frontend-e2e-r1/)（最新版）
+- 画面キャプチャ（旧）: [`2026-01-19-frontend-e2e-r1`](../test-results/2026-01-19-frontend-e2e-r1/)
 - 画面キャプチャ（旧）: [`2026-01-15-frontend-e2e-r2`](../test-results/2026-01-15-frontend-e2e-r2/)
 - 画面キャプチャ（旧）: [`2026-01-15-frontend-e2e`](../test-results/2026-01-15-frontend-e2e/)

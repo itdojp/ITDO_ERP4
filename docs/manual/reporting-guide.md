@@ -39,6 +39,6 @@
 - 閾値変更は Issue に理由を残す
 
 ## 関連画面（証跡）
-![レポート](../test-results/2026-01-19-frontend-e2e-r1/08-reports.png)
+![レポート](../test-results/2026-02-05-frontend-e2e-r1/08-reports.png)
 
-![ダッシュボード](../test-results/2026-01-19-frontend-e2e-r1/01-core-dashboard.png)
+![ダッシュボード](../test-results/2026-02-05-frontend-e2e-r1/01-core-dashboard.png)
