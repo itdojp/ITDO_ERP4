@@ -47,6 +47,11 @@ enum LeaveStatus {
   rejected
 }
 
+enum ExpenseSettlementStatus {
+  unpaid
+  paid
+}
+
 enum FlowType {
   estimate // 見積
   invoice // 請求
@@ -1004,6 +1009,9 @@ model Expense {
   incurredOn    DateTime
   isShared      Boolean   @default(false)
   status        DocStatus @default(draft)
+  settlementStatus ExpenseSettlementStatus @default(unpaid)
+  paidAt        DateTime?
+  paidBy        String?
   receiptUrl    String?
   createdAt     DateTime  @default(now())
   createdBy     String?

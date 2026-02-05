@@ -144,6 +144,27 @@ function resolveLeaveRange(payload: unknown) {
   return { startDate: start, endDate: end, leaveType: type };
 }
 
+function resolveExpenseId(payload: unknown) {
+  if (!payload || typeof payload !== 'object') return null;
+  const value = (payload as { expenseId?: unknown }).expenseId;
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+function resolveExpenseAmount(payload: unknown) {
+  if (!payload || typeof payload !== 'object') return null;
+  const amount = (payload as { amount?: unknown }).amount;
+  const currency = (payload as { currency?: unknown }).currency;
+  const amountValue =
+    typeof amount === 'string'
+      ? amount.trim()
+      : typeof amount === 'number'
+        ? String(amount)
+        : '';
+  if (!amountValue) return null;
+  const currencyValue =
+    typeof currency === 'string' && currency.trim() ? currency.trim() : '';
+  return currencyValue ? `${amountValue} ${currencyValue}` : amountValue;
+}
 function resolveDueAt(payload: unknown) {
   if (!payload || typeof payload !== 'object') return null;
   const value = (payload as { dueAt?: unknown }).dueAt;
@@ -317,6 +338,10 @@ function formatNotificationLabel(item: AppNotification) {
   if (item.kind === 'daily_report_updated') {
     const reportDate = resolveReportDate(item.payload);
     return reportDate ? `日報修正 (${reportDate})` : '日報修正';
+  }
+  if (item.kind === 'expense_mark_paid') {
+    const amount = resolveExpenseAmount(item.payload);
+    return amount ? `経費支払完了 (${amount})` : '経費支払完了';
   }
   if (item.kind === 'project_member_added') {
     const fromUserId = resolveFromUserId(item.payload);
@@ -604,6 +629,12 @@ export const Dashboard: React.FC = () => {
       navigateToOpen({ kind: 'leave_request', id: leaveRequestId });
       return;
     }
+    if (item.kind === 'expense_mark_paid') {
+      const expenseId = resolveExpenseId(item.payload) || item.messageId;
+      if (!expenseId) return;
+      navigateToOpen({ kind: 'expense', id: expenseId });
+      return;
+    }
     if (item.kind === 'approval_pending') {
       navigateToOpen({ kind: 'approvals', id: 'inbox' });
       return;
@@ -763,6 +794,7 @@ export const Dashboard: React.FC = () => {
               resolveEscalation(item.payload);
             const roomId = resolveRoomId(item.payload);
             const leaveRange = resolveLeaveRange(item.payload);
+            const expenseAmount = resolveExpenseAmount(item.payload);
             const canOpen =
               ((item.kind === 'chat_mention' ||
                 item.kind === 'chat_message' ||
@@ -773,6 +805,8 @@ export const Dashboard: React.FC = () => {
                 item.kind === 'daily_report_submitted' ||
                 item.kind === 'daily_report_updated') &&
                 Boolean(resolveReportDate(item.payload))) ||
+              (item.kind === 'expense_mark_paid' &&
+                Boolean(resolveExpenseId(item.payload) || item.messageId)) ||
               (item.kind === 'leave_upcoming' &&
                 Boolean(
                   resolveLeaveRequestId(item.payload) || item.messageId,
@@ -810,6 +844,11 @@ export const Dashboard: React.FC = () => {
                         {escalation && (
                           <span className="badge">エスカレーション</span>
                         )}
+                      </div>
+                    )}
+                    {item.kind === 'expense_mark_paid' && expenseAmount && (
+                      <div style={{ fontSize: 12, color: '#475569' }}>
+                        金額: {expenseAmount}
                       </div>
                     )}
                     {item.kind === 'project_status_changed' && statusChange && (

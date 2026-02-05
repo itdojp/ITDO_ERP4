@@ -365,6 +365,30 @@ export const invoiceMarkPaidSchema = {
   ),
 };
 
+export const expenseMarkPaidSchema = {
+  body: Type.Object(
+    {
+      paidAt: Type.Optional(
+        Type.Union([
+          Type.String({ format: 'date-time' }),
+          Type.String({ format: 'date' }),
+        ]),
+      ),
+      reasonText: Type.Optional(Type.String({ minLength: 1 })),
+    },
+    { additionalProperties: false },
+  ),
+};
+
+export const expenseUnmarkPaidSchema = {
+  body: Type.Object(
+    {
+      reasonText: Type.String({ minLength: 1 }),
+    },
+    { additionalProperties: false },
+  ),
+};
+
 export const purchaseOrderSchema = {
   body: Type.Object({
     vendorId: Type.String(),

@@ -58,6 +58,16 @@ type ApprovalOutcomeNotificationOptions = {
   outcome: 'approved' | 'rejected';
 };
 
+type ExpenseMarkPaidNotificationOptions = {
+  expenseId: string;
+  userId: string;
+  projectId?: string | null;
+  amount?: string | number | null;
+  currency?: string | null;
+  paidAt?: Date | string | null;
+  actorUserId?: string | null;
+};
+
 type DailyReportNotificationOptions = {
   userId: string;
   reportDate: string;
@@ -715,6 +725,61 @@ export async function createApprovalOutcomeNotification(
       payload,
       createdBy: normalizeId(options.actorUserId) || undefined,
       updatedBy: normalizeId(options.actorUserId) || undefined,
+    },
+  });
+
+  return { created: 1 };
+}
+
+export async function createExpenseMarkPaidNotification(
+  options: ExpenseMarkPaidNotificationOptions,
+) {
+  const expenseId = normalizeId(options.expenseId);
+  const userId = normalizeId(options.userId);
+  if (!expenseId || !userId) return { created: 0 };
+
+  const existing = await prisma.appNotification.findFirst({
+    where: {
+      kind: 'expense_mark_paid',
+      messageId: expenseId,
+      userId,
+    },
+    select: { id: true },
+  });
+  if (existing) return { created: 0 };
+
+  const actorUserId = normalizeId(options.actorUserId ?? undefined);
+  const paidAt =
+    options.paidAt instanceof Date
+      ? options.paidAt
+      : options.paidAt
+        ? new Date(options.paidAt)
+        : null;
+  const paidAtValue =
+    paidAt && !Number.isNaN(paidAt.getTime())
+      ? paidAt.toISOString()
+      : undefined;
+  const amountValue =
+    options.amount === null || options.amount === undefined
+      ? undefined
+      : String(options.amount);
+  const currencyValue = normalizeId(options.currency ?? undefined) || undefined;
+
+  await prisma.appNotification.create({
+    data: {
+      userId,
+      kind: 'expense_mark_paid',
+      messageId: expenseId,
+      projectId: options.projectId ?? undefined,
+      payload: {
+        expenseId,
+        amount: amountValue,
+        currency: currencyValue,
+        paidAt: paidAtValue,
+        fromUserId: actorUserId || undefined,
+      } as Prisma.InputJsonValue,
+      createdBy: actorUserId || undefined,
+      updatedBy: actorUserId || undefined,
     },
   });
 
