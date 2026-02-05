@@ -134,7 +134,7 @@ case "$E2E_DB_MODE" in
     ;;
 esac
 
-npm run prisma:generate --prefix "$ROOT_DIR/packages/backend"
+DATABASE_URL="$DATABASE_URL" npm run prisma:generate --prefix "$ROOT_DIR/packages/backend"
 npm run build --prefix "$ROOT_DIR/packages/backend"
 
 PORT="$BACKEND_PORT" AUTH_MODE=header DATABASE_URL="$DATABASE_URL" \
