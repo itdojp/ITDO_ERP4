@@ -1149,6 +1149,16 @@ export const dailyReportMissingRunSchema = {
   ),
 };
 
+export const leaveUpcomingRunSchema = {
+  body: Type.Object(
+    {
+      targetDate: Type.Optional(Type.String()),
+      dryRun: Type.Optional(Type.Boolean()),
+    },
+    { additionalProperties: false },
+  ),
+};
+
 export const pushSubscriptionSchema = {
   body: Type.Object(
     {

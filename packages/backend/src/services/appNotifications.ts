@@ -271,6 +271,29 @@ async function resolveGroupMemberUserIds(groupIds: string[]) {
   return map;
 }
 
+function resolveGroupIdsForRoles(roles: string[]) {
+  const raw = process.env.AUTH_GROUP_TO_ROLE_MAP || '';
+  return raw
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .map((pair) => pair.split('=').map((value) => value.trim()))
+    .filter(([groupId, role]) => groupId && role && roles.includes(role))
+    .map(([groupId]) => groupId);
+}
+
+export async function resolveRoleRecipientUserIds(roles: string[]) {
+  if (!roles.length) return [] as string[];
+  const groupIds = resolveGroupIdsForRoles(roles);
+  if (!groupIds.length) return [] as string[];
+  const groupMemberMap = await resolveGroupMemberUserIds(groupIds);
+  const recipients = new Set<string>();
+  for (const userIds of groupMemberMap.values()) {
+    userIds.forEach((userId) => recipients.add(userId));
+  }
+  return Array.from(recipients);
+}
+
 export async function createChatMentionNotifications(
   options: ChatMentionNotificationOptions,
 ) {

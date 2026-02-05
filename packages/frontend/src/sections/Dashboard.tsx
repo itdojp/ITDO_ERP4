@@ -123,6 +123,27 @@ function resolveReportDate(payload: unknown) {
   return typeof value === 'string' && value.trim() ? value.trim() : null;
 }
 
+function resolveLeaveRequestId(payload: unknown) {
+  if (!payload || typeof payload !== 'object') return null;
+  const value = (payload as { leaveRequestId?: unknown }).leaveRequestId;
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+function resolveLeaveRange(payload: unknown) {
+  if (!payload || typeof payload !== 'object') return null;
+  const startDate = (payload as { startDate?: unknown }).startDate;
+  const endDate = (payload as { endDate?: unknown }).endDate;
+  const leaveType = (payload as { leaveType?: unknown }).leaveType;
+  const start =
+    typeof startDate === 'string' && startDate.trim() ? startDate.trim() : null;
+  const end =
+    typeof endDate === 'string' && endDate.trim() ? endDate.trim() : null;
+  const type =
+    typeof leaveType === 'string' && leaveType.trim() ? leaveType.trim() : null;
+  if (!start) return null;
+  return { startDate: start, endDate: end, leaveType: type };
+}
+
 function resolveDueAt(payload: unknown) {
   if (!payload || typeof payload !== 'object') return null;
   const value = (payload as { dueAt?: unknown }).dueAt;
@@ -177,6 +198,16 @@ function formatFlowTypeLabel(flowType: string) {
   return FLOW_TYPE_LABEL_MAP[flowType] ?? flowType;
 }
 
+function formatLeaveRange(range: {
+  startDate: string;
+  endDate: string | null;
+}) {
+  if (!range.endDate || range.endDate === range.startDate) {
+    return range.startDate;
+  }
+  return `${range.startDate}〜${range.endDate}`;
+}
+
 function resolveApprovalTargetDeepLink(target: {
   targetTable: string;
   targetId: string;
@@ -228,6 +259,11 @@ function formatNotificationLabel(item: AppNotification) {
   if (item.kind === 'daily_report_missing') {
     const reportDate = resolveReportDate(item.payload);
     return reportDate ? `日報未提出 (${reportDate})` : '日報未提出';
+  }
+  if (item.kind === 'leave_upcoming') {
+    const range = resolveLeaveRange(item.payload);
+    const label = range ? formatLeaveRange(range) : '';
+    return label ? `休暇予定 (${label})` : '休暇予定';
   }
   if (item.kind === 'project_member_added') {
     const fromUserId = resolveFromUserId(item.payload);
@@ -484,6 +520,13 @@ export const Dashboard: React.FC = () => {
       if (!reportDate) return;
       navigateToOpen({ kind: 'daily_report', id: reportDate });
     }
+    if (item.kind === 'leave_upcoming') {
+      const leaveRequestId =
+        resolveLeaveRequestId(item.payload) || item.messageId;
+      if (!leaveRequestId) return;
+      navigateToOpen({ kind: 'leave_request', id: leaveRequestId });
+      return;
+    }
     if (item.kind === 'approval_pending') {
       navigateToOpen({ kind: 'approvals', id: 'inbox' });
       return;
@@ -632,6 +675,7 @@ export const Dashboard: React.FC = () => {
             const excerpt = resolveExcerpt(item.payload);
             const dueAt = resolveDueAt(item.payload);
             const roomId = resolveRoomId(item.payload);
+            const leaveRange = resolveLeaveRange(item.payload);
             const canOpen =
               ((item.kind === 'chat_mention' ||
                 item.kind === 'chat_message' ||
@@ -639,6 +683,10 @@ export const Dashboard: React.FC = () => {
                 Boolean(item.messageId)) ||
               (item.kind === 'daily_report_missing' &&
                 Boolean(resolveReportDate(item.payload))) ||
+              (item.kind === 'leave_upcoming' &&
+                Boolean(
+                  resolveLeaveRequestId(item.payload) || item.messageId,
+                )) ||
               item.kind === 'approval_pending' ||
               item.kind === 'approval_approved' ||
               item.kind === 'approval_rejected';
@@ -661,6 +709,14 @@ export const Dashboard: React.FC = () => {
                         }}
                       >
                         期限: {formatDateTime(dueAt)}
+                      </div>
+                    )}
+                    {item.kind === 'leave_upcoming' && leaveRange && (
+                      <div style={{ fontSize: 12, color: '#475569' }}>
+                        期間: {formatLeaveRange(leaveRange)}
+                        {leaveRange.leaveType
+                          ? ` / 種別: ${leaveRange.leaveType}`
+                          : ''}
                       </div>
                     )}
                     {excerpt && (

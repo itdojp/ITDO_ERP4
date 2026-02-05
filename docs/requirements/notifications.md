@@ -53,10 +53,16 @@
 - `chat_ack_required`: 確認依頼（ack required）の通知（requiredUserIds に対して作成）
 - `chat_room_acl_mismatch`: ルームACL不整合の警告（owner/admin に対して作成、ジョブ）
 - `daily_report_missing`: 日報未提出通知（ジョブで作成）
+- `leave_upcoming`: 休暇予定の事前通知（本人/管理者に対して作成、ジョブ）
 - `project_member_added`: 案件メンバー追加（追加されたユーザに対して作成）
 - `approval_pending`: 承認待ち通知（承認者に対して作成）
 - `approval_approved`: 承認完了通知（申請者に対して作成）
 - `approval_rejected`: 差戻し通知（申請者に対して作成）
+
+補足:
+
+- `leave_upcoming` は `/jobs/leave-upcoming/run` で生成する。
+- 既定の対象日は `LEAVE_UPCOMING_TARGET_OFFSET_DAYS`（既定: 1）で制御する。
 
 ### メール配信の対象（実装済み）
 
@@ -136,7 +142,7 @@
 | 日報/工数      | 工数修正申請/承認        | 申請者/承認者                           | app + email        | 承認系は重要通知扱い                                       |
 | 合意形成       | 確認依頼（ack required） | requiredUserIds                         | app（emailは任意） | `kind=chat_ack_required`                                   |
 | 休暇           | 申請/差戻し/承認/却下    | 申請者/承認者                           | app + email        | 承認系                                                     |
-| 休暇           | 休暇予定の事前通知       | 本人 / 管理者                           | app                | メールは任意                                               |
+| 休暇           | 休暇予定の事前通知       | 本人 / 管理者                           | app                | `kind=leave_upcoming`（メールは任意）                      |
 | 経費           | 支払完了                 | 申請者                                  | app                | `kind=expense_mark_paid`（メールは任意）                   |
 | プロジェクト   | 新規作成                 | mgmt/admin                              | app                | 既存ログと整合                                             |
 | プロジェクト   | ステータス変更           | mgmt/admin/lead                         | app                | 重大変更のみメール（任意）                                 |
