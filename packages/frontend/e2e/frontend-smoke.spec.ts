@@ -112,6 +112,19 @@ async function selectByValue(select: Locator, value: string) {
   await expect
     .poll(() => select.locator('option').count(), { timeout: actionTimeout })
     .toBeGreaterThan(1);
+  await expect
+    .poll(
+      () =>
+        select
+          .locator('option')
+          .evaluateAll(
+            (options, expected) =>
+              options.some((option) => (option as any).value === expected),
+            value,
+          ),
+      { timeout: actionTimeout },
+    )
+    .toBe(true);
   await select.selectOption({ value });
 }
 
@@ -593,7 +606,7 @@ test('frontend smoke vendor docs create @extended', async ({ page }) => {
     await selectByLabelOrFirst(allocationProjectSelect);
   }
   await allocationRow
-    .locator('input[type=\"number\"]')
+    .locator('input[type="number"]')
     .first()
     .fill(String(invoiceAmount));
   await allocationDialog.getByRole('button', { name: '更新' }).click();
