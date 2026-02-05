@@ -18,7 +18,11 @@ import {
 } from './validators.js';
 import { prisma } from '../services/db.js';
 import { auditContextFromRequest, logAudit } from '../services/audit.js';
-import { createProjectMemberAddedNotifications } from '../services/appNotifications.js';
+import {
+  createProjectCreatedNotifications,
+  createProjectMemberAddedNotifications,
+  createProjectStatusChangedNotifications,
+} from '../services/appNotifications.js';
 import { logReassignment } from '../services/reassignmentLog.js';
 import { parseDueDateRule } from '../services/dueDateRule.js';
 import { toNumber } from '../services/utils.js';
@@ -262,6 +266,19 @@ export async function registerProjectRoutes(app: FastifyInstance) {
         });
         return created;
       });
+      if (project?.id) {
+        try {
+          await createProjectCreatedNotifications({
+            projectId: project.id,
+            actorUserId: userId || 'system',
+          });
+        } catch (err) {
+          req.log?.warn(
+            { err, projectId: project.id },
+            'project created notification failed',
+          );
+        }
+      }
       return project;
     },
   );
@@ -362,6 +379,12 @@ export async function registerProjectRoutes(app: FastifyInstance) {
         return sendInvalidProjectPeriodError(reply);
       }
       const data = { ...body };
+      const hasStatusProp = Object.prototype.hasOwnProperty.call(
+        body,
+        'status',
+      );
+      const nextStatus = hasStatusProp ? body.status : current.status;
+      const statusChanged = hasStatusProp && nextStatus !== current.status;
       if (hasCustomerIdProp) data.customerId = customerId;
       if (hasParentIdProp) data.parentId = nextParentId;
       if (hasStartDateProp) data.startDate = startDate;
@@ -383,6 +406,22 @@ export async function registerProjectRoutes(app: FastifyInstance) {
           },
           ...auditContextFromRequest(req),
         });
+      }
+      if (statusChanged) {
+        try {
+          await createProjectStatusChangedNotifications({
+            projectId,
+            actorUserId: req.user?.userId || 'system',
+            beforeStatus: current.status,
+            afterStatus: project.status,
+            ownerUserId: project.ownerUserId,
+          });
+        } catch (err) {
+          req.log?.warn(
+            { err, projectId, before: current.status, after: project.status },
+            'project status notification failed',
+          );
+        }
       }
       return project;
     },
