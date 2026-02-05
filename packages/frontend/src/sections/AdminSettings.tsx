@@ -2680,7 +2680,10 @@ export const AdminSettings: React.FC = () => {
                 <div key={item.id} className="card" style={{ padding: 12 }}>
                   <div
                     className="row"
-                    style={{ justifyContent: 'space-between', flexWrap: 'wrap' }}
+                    style={{
+                      justifyContent: 'space-between',
+                      flexWrap: 'wrap',
+                    }}
                   >
                     <div>
                       <strong>
