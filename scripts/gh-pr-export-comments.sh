@@ -15,10 +15,56 @@ Purpose:
 Output (default):
   tmp/pr-<pr_number>/{pr.json,issue-comments.json,review-comments.json,reviews.json,summary.md}
 
+Rate limit retry (optional env):
+  GH_API_RETRY_MAX=6
+  GH_API_RETRY_SLEEP_SECONDS=2
+
 Examples:
   ./scripts/gh-pr-export-comments.sh 123
   ./scripts/gh-pr-export-comments.sh 123 tmp/pr-123-custom
 USAGE
+}
+
+is_rate_limited_error() {
+  # gh prints errors to stderr; match common GitHub rate limit patterns.
+  local err_file="$1"
+  grep -qiE "HTTP 429|rate limit exceeded|secondary rate limit|abuse detection mechanism" "$err_file"
+}
+
+gh_api_with_retry() {
+  local outfile="$1"
+  shift
+
+  local max_attempts="${GH_API_RETRY_MAX:-6}"
+  local base_sleep_seconds="${GH_API_RETRY_SLEEP_SECONDS:-2}"
+  local attempt=1
+
+  local err_file
+  err_file="$(mktemp -t gh-api-err.XXXXXX)"
+  trap 'rm -f "$err_file"' RETURN
+
+  while true; do
+    if gh api "$@" >"$outfile" 2>"$err_file"; then
+      return 0
+    fi
+    local exit_code=$?
+
+    if ! is_rate_limited_error "$err_file"; then
+      cat "$err_file" >&2
+      return "$exit_code"
+    fi
+
+    if [[ "$attempt" -ge "$max_attempts" ]]; then
+      cat "$err_file" >&2
+      echo "Error: gh api failed after ${attempt} attempts." >&2
+      return "$exit_code"
+    fi
+
+    local sleep_seconds=$((base_sleep_seconds * attempt))
+    echo "rate limited: retrying in ${sleep_seconds}s (attempt ${attempt}/${max_attempts})" >&2
+    sleep "$sleep_seconds"
+    attempt=$((attempt + 1))
+  done
 }
 
 pr_number="${1:-}"
@@ -70,13 +116,13 @@ summary_md="$out_dir/summary.md"
 echo "Exporting PR #${pr_number} comments for ${repo}..."
 
 echo "- fetching PR details"
-gh api "repos/${repo}/pulls/${pr_number}" > "$pr_json"
+gh_api_with_retry "$pr_json" "repos/${repo}/pulls/${pr_number}"
 echo "- fetching issue comments"
-gh api "repos/${repo}/issues/${pr_number}/comments" --paginate > "$issue_comments_json"
+gh_api_with_retry "$issue_comments_json" "repos/${repo}/issues/${pr_number}/comments" --paginate
 echo "- fetching review comments (inline)"
-gh api "repos/${repo}/pulls/${pr_number}/comments" --paginate > "$review_comments_json"
+gh_api_with_retry "$review_comments_json" "repos/${repo}/pulls/${pr_number}/comments" --paginate
 echo "- fetching reviews"
-gh api "repos/${repo}/pulls/${pr_number}/reviews" --paginate > "$reviews_json"
+gh_api_with_retry "$reviews_json" "repos/${repo}/pulls/${pr_number}/reviews" --paginate
 
 exported_at_utc="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
