@@ -14,6 +14,7 @@ make format-check
 make typecheck
 make build
 make test
+make audit
 make e2e
 ```
 
@@ -35,6 +36,12 @@ npm run build --prefix packages/frontend
 npm run test --prefix packages/backend
 ```
 
+### Audit（npm audit）
+```bash
+npm audit --prefix packages/backend --audit-level=high
+npm audit --prefix packages/frontend --audit-level=high
+```
+
 ### E2E（Playwright）
 ```bash
 E2E_SCOPE=core E2E_CAPTURE=0 ./scripts/e2e-frontend.sh
@@ -42,6 +49,7 @@ E2E_SCOPE=core E2E_CAPTURE=0 ./scripts/e2e-frontend.sh
 
 ## PR作成前の最小チェック
 - lint / format / typecheck / test を通す
+- 依存更新がある場合、`make audit`（high/critical）を通す
 - UI変更がある場合、`docs/manual/` と `docs/test-results/` の更新要否を確認する
 
 ## 作業規約（最小）
