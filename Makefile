@@ -1,4 +1,4 @@
-.PHONY: lint format-check typecheck build test e2e
+.PHONY: lint format-check typecheck build test e2e audit
 
 lint:
 	npm run lint --prefix packages/backend
@@ -22,3 +22,6 @@ test:
 e2e:
 	./scripts/e2e-frontend.sh
 
+audit:
+	npm audit --prefix packages/backend --audit-level=high
+	npm audit --prefix packages/frontend --audit-level=high
