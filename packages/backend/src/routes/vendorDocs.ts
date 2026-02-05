@@ -493,7 +493,9 @@ export async function registerVendorDocRoutes(app: FastifyInstance) {
             error: {
               code: 'NOT_FOUND',
               message: 'Purchase order line not found',
-              details: { missingPurchaseOrderLineIds: missingLines.slice(0, 20) },
+              details: {
+                missingPurchaseOrderLineIds: missingLines.slice(0, 20),
+              },
             },
           });
         }
