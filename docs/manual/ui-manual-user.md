@@ -5,6 +5,7 @@
 - 画面キャプチャは 2026-02-05 実行の E2E（r1）で取得しています。
   - 証跡: `docs/test-results/2026-02-05-frontend-e2e-r1/`
 - UI証跡の再取得手順: [ui-evidence-quickstart](ui-evidence-quickstart.md)（詳細: [e2e-evidence-howto](e2e-evidence-howto.md)）
+- Push通知の証跡のみ `docs/test-results/2026-01-19-frontend-e2e-pwa-push/` で取得しています。
 - 画面の表示内容は demo seed に基づきます（データ差分あり）。
 - 対象ロールの目安: user
 - 管理者向けの操作は `docs/manual/ui-manual-admin.md` を参照してください。
