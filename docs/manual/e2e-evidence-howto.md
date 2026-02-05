@@ -22,6 +22,10 @@ CI では `E2E_CAPTURE=0`（証跡なし）で実行します。
 E2E_CAPTURE=1 E2E_SCOPE=core ./scripts/e2e-frontend.sh
 ```
 
+補足:
+- Podman DB のポート（既定: 55433）が使用中の場合、`E2E_PODMAN_HOST_PORT` 未指定なら空きポートへ自動フォールバックします。
+- ポートを固定したい場合は `E2E_PODMAN_HOST_PORT=55435` のように明示指定します（競合時はエラーで停止）。
+
 保存先（既定）:
 - `docs/test-results/<YYYY-MM-DD>-frontend-e2e/`
 
@@ -30,6 +34,25 @@ E2E_CAPTURE=1 E2E_SCOPE=core ./scripts/e2e-frontend.sh
 E2E_CAPTURE=1 E2E_SCOPE=core \
 E2E_EVIDENCE_DIR="$PWD/docs/test-results/2026-01-19-frontend-e2e-r1" \
 ./scripts/e2e-frontend.sh
+```
+
+## 失敗ケースだけ再実行（E2E_GREP）
+例: vendor docs の smoke（extended）のみ再実行
+```bash
+E2E_GREP="vendor docs create" E2E_CAPTURE=0 ./scripts/e2e-frontend.sh
+```
+
+## DB を direct で使う（E2E_DB_MODE=direct）
+`psql` が利用できるローカルDBがある場合:
+```bash
+E2E_DB_MODE=direct DATABASE_URL="postgresql://..." \
+E2E_CAPTURE=0 E2E_SCOPE=core ./scripts/e2e-frontend.sh
+```
+
+## Playwright install をスキップ（任意）
+Playwright のブラウザが既にインストール済みであれば:
+```bash
+E2E_SKIP_PLAYWRIGHT_INSTALL=1 E2E_CAPTURE=0 E2E_SCOPE=core ./scripts/e2e-frontend.sh
 ```
 
 ## 失敗時の診断（最小）
