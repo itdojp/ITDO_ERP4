@@ -519,6 +519,7 @@ export const Dashboard: React.FC = () => {
       const reportDate = resolveReportDate(item.payload);
       if (!reportDate) return;
       navigateToOpen({ kind: 'daily_report', id: reportDate });
+      return;
     }
     if (item.kind === 'leave_upcoming') {
       const leaveRequestId =
