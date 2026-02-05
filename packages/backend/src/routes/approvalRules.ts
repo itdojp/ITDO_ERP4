@@ -338,6 +338,10 @@ export async function registerApprovalRuleRoutes(app: FastifyInstance) {
         }
         effectiveFrom = parsed;
       }
+      // Prisma schema requires `conditions` even when empty. Keep request schema backward compatible.
+      if (body.conditions === undefined) {
+        body.conditions = {};
+      }
       const created = await prisma.approvalRule.create({
         data: {
           ...body,

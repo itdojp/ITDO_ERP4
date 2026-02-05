@@ -8,8 +8,6 @@ const authHeaders = {
   'x-group-ids': 'mgmt,hr-group',
 };
 
-const demoProjectId = '00000000-0000-0000-0000-000000000001';
-
 const runId = () =>
   `${Date.now().toString().slice(-6)}-${Math.floor(Math.random() * 90 + 10)}`;
 
@@ -24,19 +22,26 @@ test('project burndown returns daily remaining minutes @extended', async ({
 }) => {
   const suffix = runId();
 
-  const patchProjectRes = await request.patch(
-    `${apiBase}/projects/${encodeURIComponent(demoProjectId)}`,
-    {
-      data: { planHours: 10 },
-      headers: authHeaders,
+  const projectRes = await request.post(`${apiBase}/projects`, {
+    data: {
+      code: `E2E-BD-${suffix}`,
+      name: `E2E Burndown ${suffix}`,
+      status: 'active',
+      planHours: 10,
     },
-  );
-  await ensureOk(patchProjectRes);
+    headers: authHeaders,
+  });
+  await ensureOk(projectRes);
+  const project = await projectRes.json();
+  const projectHeaders = {
+    ...authHeaders,
+    'x-project-ids': `${authHeaders['x-project-ids']},${project.id}`,
+  };
 
   const baselineName = `E2E Burndown ${suffix}`;
   const baselineRes = await request.post(
-    `${apiBase}/projects/${encodeURIComponent(demoProjectId)}/baselines`,
-    { data: { name: baselineName }, headers: authHeaders },
+    `${apiBase}/projects/${encodeURIComponent(project.id)}/baselines`,
+    { data: { name: baselineName }, headers: projectHeaders },
   );
   await ensureOk(baselineRes);
   const baseline = await baselineRes.json();
@@ -44,12 +49,12 @@ test('project burndown returns daily remaining minutes @extended', async ({
   const createTimeEntry = async (workDate: string, minutes: number) => {
     const res = await request.post(`${apiBase}/time-entries`, {
       data: {
-        projectId: demoProjectId,
+        projectId: project.id,
         userId: 'demo-user',
         workDate,
         minutes,
       },
-      headers: authHeaders,
+      headers: projectHeaders,
     });
     await ensureOk(res);
     return res.json();
@@ -59,8 +64,8 @@ test('project burndown returns daily remaining minutes @extended', async ({
   await createTimeEntry('2026-01-03', 120);
 
   const reportRes = await request.get(
-    `${apiBase}/reports/burndown/${encodeURIComponent(demoProjectId)}?baselineId=${encodeURIComponent(baseline.id)}&from=2026-01-01&to=2026-01-03`,
-    { headers: authHeaders },
+    `${apiBase}/reports/burndown/${encodeURIComponent(project.id)}?baselineId=${encodeURIComponent(baseline.id)}&from=2026-01-01&to=2026-01-03`,
+    { headers: projectHeaders },
   );
   await ensureOk(reportRes);
   const report = await reportRes.json();
@@ -94,4 +99,3 @@ test('project burndown returns daily remaining minutes @extended', async ({
     remainingMinutes: 420,
   });
 });
-

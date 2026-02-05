@@ -353,12 +353,8 @@ export const invoiceFromTimeEntriesSchema = {
 export const invoiceMarkPaidSchema = {
   body: Type.Object(
     {
-      paidAt: Type.Optional(
-        Type.Union([
-          Type.String({ format: 'date-time' }),
-          Type.String({ format: 'date' }),
-        ]),
-      ),
+      // NOTE: Validate in handler (INVALID_DATE) to keep error codes consistent.
+      paidAt: Type.Optional(Type.String({ minLength: 1, maxLength: 50 })),
       reasonText: Type.Optional(Type.String({ minLength: 1 })),
     },
     { additionalProperties: false },
@@ -368,12 +364,8 @@ export const invoiceMarkPaidSchema = {
 export const expenseMarkPaidSchema = {
   body: Type.Object(
     {
-      paidAt: Type.Optional(
-        Type.Union([
-          Type.String({ format: 'date-time' }),
-          Type.String({ format: 'date' }),
-        ]),
-      ),
+      // NOTE: Validate in handler (INVALID_DATE) to keep error codes consistent.
+      paidAt: Type.Optional(Type.String({ minLength: 1, maxLength: 50 })),
       reasonText: Type.Optional(Type.String({ minLength: 1 })),
     },
     { additionalProperties: false },
