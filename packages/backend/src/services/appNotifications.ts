@@ -58,6 +58,13 @@ type ApprovalOutcomeNotificationOptions = {
   outcome: 'approved' | 'rejected';
 };
 
+type DailyReportNotificationOptions = {
+  userId: string;
+  reportDate: string;
+  actorUserId?: string | null;
+  kind: 'daily_report_submitted' | 'daily_report_updated';
+};
+
 type ProjectCreatedNotificationOptions = {
   projectId: string;
   actorUserId: string;
@@ -545,6 +552,41 @@ export async function createProjectMemberAddedNotifications(
     created: created.count,
     recipients,
   };
+}
+
+export async function createDailyReportNotifications(
+  options: DailyReportNotificationOptions,
+) {
+  const userId = normalizeId(options.userId);
+  const reportDate = normalizeId(options.reportDate);
+  if (!userId || !reportDate) {
+    return { created: 0 };
+  }
+
+  const kind = options.kind;
+  const messageId = `${kind}:${userId}:${reportDate}`;
+  const existing = await prisma.appNotification.findFirst({
+    where: { kind, messageId, userId },
+    select: { id: true },
+  });
+  if (existing) return { created: 0 };
+
+  const actorUserId = normalizeId(options.actorUserId ?? undefined);
+  await prisma.appNotification.create({
+    data: {
+      userId,
+      kind,
+      messageId,
+      payload: {
+        reportDate,
+        fromUserId: actorUserId || undefined,
+      } as Prisma.InputJsonValue,
+      createdBy: actorUserId || undefined,
+      updatedBy: actorUserId || undefined,
+    },
+  });
+
+  return { created: 1 };
 }
 
 export async function createApprovalPendingNotifications(

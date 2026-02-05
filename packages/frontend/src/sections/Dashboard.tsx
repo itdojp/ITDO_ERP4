@@ -274,6 +274,14 @@ function formatNotificationLabel(item: AppNotification) {
     const reportDate = resolveReportDate(item.payload);
     return reportDate ? `日報未提出 (${reportDate})` : '日報未提出';
   }
+  if (item.kind === 'daily_report_submitted') {
+    const reportDate = resolveReportDate(item.payload);
+    return reportDate ? `日報提出 (${reportDate})` : '日報提出';
+  }
+  if (item.kind === 'daily_report_updated') {
+    const reportDate = resolveReportDate(item.payload);
+    return reportDate ? `日報修正 (${reportDate})` : '日報修正';
+  }
   if (item.kind === 'project_member_added') {
     const fromUserId = resolveFromUserId(item.payload);
     if (fromUserId) return `${fromUserId} により案件メンバーに追加されました`;
@@ -543,7 +551,11 @@ export const Dashboard: React.FC = () => {
       navigateToOpen({ kind: 'room_chat', id: roomId });
       return;
     }
-    if (item.kind === 'daily_report_missing') {
+    if (
+      item.kind === 'daily_report_missing' ||
+      item.kind === 'daily_report_submitted' ||
+      item.kind === 'daily_report_updated'
+    ) {
       const reportDate = resolveReportDate(item.payload);
       if (!reportDate) return;
       navigateToOpen({ kind: 'daily_report', id: reportDate });
@@ -712,7 +724,9 @@ export const Dashboard: React.FC = () => {
                 item.kind === 'chat_ack_required' ||
                 item.kind === 'chat_ack_escalation') &&
                 Boolean(item.messageId)) ||
-              (item.kind === 'daily_report_missing' &&
+              ((item.kind === 'daily_report_missing' ||
+                item.kind === 'daily_report_submitted' ||
+                item.kind === 'daily_report_updated') &&
                 Boolean(resolveReportDate(item.payload))) ||
               ((item.kind === 'project_created' ||
                 item.kind === 'project_status_changed') &&

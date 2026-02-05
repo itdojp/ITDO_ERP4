@@ -54,6 +54,8 @@
 - `chat_ack_escalation`: 期限超過のエスカレーション通知（管理者/指定先）
 - `chat_room_acl_mismatch`: ルームACL不整合の警告（owner/admin に対して作成、ジョブ）
 - `daily_report_missing`: 日報未提出通知（ジョブで作成）
+- `daily_report_submitted`: 日報提出（本人に対して作成）
+- `daily_report_updated`: 日報修正（本人に対して作成）
 - `project_created`: 案件作成（admin/mgmt に対して作成）
 - `project_status_changed`: 案件ステータス変更（admin/mgmt/leader に対して作成）
 - `project_member_added`: 案件メンバー追加（追加されたユーザに対して作成）
