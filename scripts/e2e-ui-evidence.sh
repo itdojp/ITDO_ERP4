@@ -96,9 +96,9 @@ set -e
 FINISH_AT_UTC="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
 if [[ "$status" == "0" ]]; then
-  sed -i "s/- status: (fill after run)/- status: PASS/" "$LOG_FILE"
+  sed "s/- status: (fill after run)/- status: PASS/" "$LOG_FILE" > "${LOG_FILE}.tmp" && mv "${LOG_FILE}.tmp" "$LOG_FILE"
 else
-  sed -i "s/- status: (fill after run)/- status: FAIL (exit=${status})/" "$LOG_FILE"
+  sed "s/- status: (fill after run)/- status: FAIL (exit=${status})/" "$LOG_FILE" > "${LOG_FILE}.tmp" && mv "${LOG_FILE}.tmp" "$LOG_FILE"
 fi
 
 cat >>"$LOG_FILE" <<EOF
@@ -110,4 +110,3 @@ echo "ui evidence saved:"
 echo "- $EVIDENCE_DIR"
 echo "- $LOG_FILE"
 exit "$status"
-
