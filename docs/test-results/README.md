@@ -3,6 +3,8 @@
 ## 方針
 - 日付単位で `docs/test-results/YYYY-MM-DD-*.md` を作成する。
 - 画面キャプチャなどの証跡は `docs/test-results/YYYY-MM-DD-*/` に保存する。
+- 同日複数回の再取得は `YYYY-MM-DD-frontend-e2e-rN`（r1/r2...）を使用し、上書きしない。
+- UI証跡の取得は `./scripts/e2e-ui-evidence.sh` の利用を推奨する。
 
 ## 一覧
 ### Performance
