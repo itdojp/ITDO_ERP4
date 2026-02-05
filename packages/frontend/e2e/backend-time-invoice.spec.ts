@@ -178,7 +178,7 @@ test('invoice mark paid updates status and validates input @extended', async ({
 
   const markPaidRes = await request.post(
     `${apiBase}/invoices/${invoice.id}/mark-paid`,
-    { headers: authHeaders },
+    { data: {}, headers: authHeaders },
   );
   await ensureOk(markPaidRes);
   const marked = await markPaidRes.json();
@@ -196,7 +196,7 @@ test('invoice mark paid updates status and validates input @extended', async ({
 
   const missingRes = await request.post(
     `${apiBase}/invoices/00000000-0000-0000-0000-000000000000/mark-paid`,
-    { headers: authHeaders },
+    { data: {}, headers: authHeaders },
   );
   expect(missingRes.status()).toBe(404);
   const missingText = await missingRes.text();
