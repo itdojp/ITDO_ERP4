@@ -6,11 +6,13 @@ import { runNotificationEmailDeliveries } from '../services/notificationDeliveri
 import { runDailyReportMissingNotifications } from '../services/dailyReportMissing.js';
 import { runChatAckReminders } from '../services/chatAckReminders.js';
 import { runChatRoomAclMismatchAlerts } from '../services/chatRoomAclAlerts.js';
+import { runLeaveUpcomingNotifications } from '../services/leaveUpcomingNotifications.js';
 import {
   dailyReportMissingRunSchema,
   chatAckReminderRunSchema,
   chatRoomAclAlertRunSchema,
   notificationDeliveryRunSchema,
+  leaveUpcomingRunSchema,
 } from './validators.js';
 
 export async function registerNotificationJobRoutes(app: FastifyInstance) {
@@ -124,6 +126,40 @@ export async function registerNotificationJobRoutes(app: FastifyInstance) {
           alerted: result.alerted,
           closedAlerts: result.closedAlerts,
           skipped: result.skipped,
+        } as Prisma.InputJsonValue,
+        ...auditContextFromRequest(req, { source: 'job' }),
+      });
+
+      return result;
+    },
+  );
+
+  app.post(
+    '/jobs/leave-upcoming/run',
+    {
+      preHandler: requireRole(['admin', 'mgmt']),
+      schema: leaveUpcomingRunSchema,
+    },
+    async (req) => {
+      const body = (req.body || {}) as {
+        targetDate?: string;
+        dryRun?: boolean;
+      };
+      const result = await runLeaveUpcomingNotifications({
+        targetDate: body.targetDate,
+        dryRun: body.dryRun,
+        actorId: req.user?.userId,
+      });
+
+      await logAudit({
+        action: 'leave_upcoming_run',
+        targetTable: 'app_notifications',
+        metadata: {
+          targetDate: result.targetDate,
+          dryRun: result.dryRun,
+          matchedCount: result.matchedCount,
+          createdNotifications: result.createdNotifications,
+          skippedExistingNotifications: result.skippedExistingNotifications,
         } as Prisma.InputJsonValue,
         ...auditContextFromRequest(req, { source: 'job' }),
       });
