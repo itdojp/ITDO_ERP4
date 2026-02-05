@@ -398,29 +398,32 @@ export const VendorDocuments: React.FC = () => {
     }
   }, []);
 
-  const loadVendorInvoiceAllocations = useCallback(async (invoiceId: string) => {
-    setInvoiceAllocationLoading(true);
-    setInvoiceAllocationMessage(null);
-    try {
-      const res = await api<{
-        invoice: VendorInvoice;
-        items: VendorInvoiceAllocation[];
-      }>(`/vendor-invoices/${invoiceId}/allocations`);
-      setInvoiceAllocations(res.items || []);
-      setInvoiceAllocationDialog((prev) =>
-        prev ? { ...prev, invoice: res.invoice } : prev,
-      );
-    } catch (err) {
-      console.error('Failed to load vendor invoice allocations.', err);
-      setInvoiceAllocationMessage({
-        text: '配賦明細の取得に失敗しました',
-        type: 'error',
-      });
-      setInvoiceAllocations([]);
-    } finally {
-      setInvoiceAllocationLoading(false);
-    }
-  }, []);
+  const loadVendorInvoiceAllocations = useCallback(
+    async (invoiceId: string) => {
+      setInvoiceAllocationLoading(true);
+      setInvoiceAllocationMessage(null);
+      try {
+        const res = await api<{
+          invoice: VendorInvoice;
+          items: VendorInvoiceAllocation[];
+        }>(`/vendor-invoices/${invoiceId}/allocations`);
+        setInvoiceAllocations(res.items || []);
+        setInvoiceAllocationDialog((prev) =>
+          prev ? { ...prev, invoice: res.invoice } : prev,
+        );
+      } catch (err) {
+        console.error('Failed to load vendor invoice allocations.', err);
+        setInvoiceAllocationMessage({
+          text: '配賦明細の取得に失敗しました',
+          type: 'error',
+        });
+        setInvoiceAllocations([]);
+      } finally {
+        setInvoiceAllocationLoading(false);
+      }
+    },
+    [],
+  );
 
   useEffect(() => {
     const loadAll = async () => {
@@ -497,7 +500,8 @@ export const VendorDocuments: React.FC = () => {
     value.trim().toUpperCase().slice(0, 3);
 
   const allocationTotals = useMemo(() => {
-    if (!invoiceAllocationDialog || invoiceAllocations.length === 0) return null;
+    if (!invoiceAllocationDialog || invoiceAllocations.length === 0)
+      return null;
     let amountTotal = 0;
     let taxTotal = 0;
     invoiceAllocations.forEach((item) => {
@@ -508,8 +512,7 @@ export const VendorDocuments: React.FC = () => {
     const invoiceTotal = parseNumberValue(
       invoiceAllocationDialog.invoice.totalAmount,
     );
-    const diff =
-      invoiceTotal != null ? invoiceTotal - grossTotal : null;
+    const diff = invoiceTotal != null ? invoiceTotal - grossTotal : null;
     return { amountTotal, taxTotal, grossTotal, invoiceTotal, diff };
   }, [invoiceAllocationDialog, invoiceAllocations]);
 
@@ -906,7 +909,9 @@ export const VendorDocuments: React.FC = () => {
         return;
       }
       const taxRate =
-        entry.taxRate === undefined || entry.taxRate === null || entry.taxRate === ''
+        entry.taxRate === undefined ||
+        entry.taxRate === null ||
+        entry.taxRate === ''
           ? null
           : parseNumberValue(entry.taxRate);
       if (entry.taxRate != null && taxRate == null) {
@@ -1812,9 +1817,7 @@ export const VendorDocuments: React.FC = () => {
             <div>
               <div style={{ fontSize: 12, color: '#64748b' }}>請求書PDF</div>
               {!invoiceAllocationDialog.invoice.documentUrl && (
-                <div style={{ fontSize: 12, color: '#94a3b8' }}>
-                  PDF未登録
-                </div>
+                <div style={{ fontSize: 12, color: '#94a3b8' }}>PDF未登録</div>
               )}
               {invoiceAllocationDialog.invoice.documentUrl && (
                 <div style={{ display: 'grid', gap: 8 }}>
@@ -1845,11 +1848,11 @@ export const VendorDocuments: React.FC = () => {
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
               <Button
                 variant="secondary"
-                onClick={() =>
-                  setInvoiceAllocationExpanded((prev) => !prev)
-                }
+                onClick={() => setInvoiceAllocationExpanded((prev) => !prev)}
               >
-                {invoiceAllocationExpanded ? '配賦明細を隠す' : '配賦明細を入力'}
+                {invoiceAllocationExpanded
+                  ? '配賦明細を隠す'
+                  : '配賦明細を入力'}
               </Button>
               <span style={{ fontSize: 12, color: '#64748b' }}>
                 配賦明細は必要時のみ入力（未入力でも保存可）
@@ -1898,13 +1901,12 @@ export const VendorDocuments: React.FC = () => {
                             amountValue != null && taxRateValue != null
                               ? Math.round((amountValue * taxRateValue) / 100)
                               : null;
-                          const poDetail =
-                            invoiceAllocationDialog.invoice.purchaseOrderId
-                              ? purchaseOrderDetails[
-                                  invoiceAllocationDialog.invoice
-                                    .purchaseOrderId
-                                ]
-                              : null;
+                          const poDetail = invoiceAllocationDialog.invoice
+                            .purchaseOrderId
+                            ? purchaseOrderDetails[
+                                invoiceAllocationDialog.invoice.purchaseOrderId
+                              ]
+                            : null;
                           return (
                             <tr key={`alloc-${index}`}>
                               <td>
@@ -1918,10 +1920,7 @@ export const VendorDocuments: React.FC = () => {
                                 >
                                   <option value="">案件を選択</option>
                                   {projects.map((project) => (
-                                    <option
-                                      key={project.id}
-                                      value={project.id}
-                                    >
+                                    <option key={project.id} value={project.id}>
                                       {project.code} / {project.name}
                                     </option>
                                   ))}
@@ -1976,7 +1975,8 @@ export const VendorDocuments: React.FC = () => {
                                   </div>
                                 )}
                               </td>
-                              {invoiceAllocationDialog.invoice.purchaseOrderId && (
+                              {invoiceAllocationDialog.invoice
+                                .purchaseOrderId && (
                                 <td>
                                   <select
                                     value={entry.purchaseOrderLineId ?? ''}
@@ -2063,8 +2063,7 @@ export const VendorDocuments: React.FC = () => {
                             : '#16a34a',
                       }}
                     >
-                      差分:{' '}
-                      {allocationTotals.diff.toLocaleString()}{' '}
+                      差分: {allocationTotals.diff.toLocaleString()}{' '}
                       {invoiceAllocationDialog.invoice.currency}
                     </div>
                   )}
