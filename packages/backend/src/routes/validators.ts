@@ -411,6 +411,28 @@ export const vendorInvoiceUnlinkPoSchema = {
   ),
 };
 
+export const vendorInvoiceAllocationsSchema = {
+  body: Type.Object(
+    {
+      allocations: Type.Array(
+        Type.Object(
+          {
+            projectId: Type.String({ minLength: 1 }),
+            amount: Type.Number({ minimum: 0 }),
+            taxRate: Type.Optional(Type.Number({ minimum: 0 })),
+            taxAmount: Type.Optional(Type.Number({ minimum: 0 })),
+            purchaseOrderLineId: Type.Optional(Type.String({ minLength: 1 })),
+          },
+          { additionalProperties: false },
+        ),
+      ),
+      reasonText: Type.Optional(Type.String({ minLength: 1, pattern: '\\S' })),
+      autoAdjust: Type.Optional(Type.Boolean()),
+    },
+    { additionalProperties: false },
+  ),
+};
+
 export const vendorQuoteSchema = {
   body: Type.Object({
     projectId: Type.String(),
@@ -607,6 +629,82 @@ export const chatAckLinkCreateSchema = {
       { additionalProperties: false },
     ),
   ]),
+};
+
+export const chatAckTemplateSchema = {
+  body: Type.Object(
+    {
+      flowType: Type.String({ minLength: 1, maxLength: 200 }),
+      actionKey: Type.String({ minLength: 1, maxLength: 200 }),
+      messageBody: Type.String({ minLength: 1, maxLength: 2000 }),
+      requiredUserIds: Type.Optional(
+        Type.Array(Type.String({ minLength: 1 }), { maxItems: 200 }),
+      ),
+      requiredGroupIds: Type.Optional(
+        Type.Array(Type.String({ minLength: 1 }), { maxItems: 200 }),
+      ),
+      requiredRoles: Type.Optional(
+        Type.Array(Type.String({ minLength: 1 }), { maxItems: 200 }),
+      ),
+      dueInHours: Type.Optional(Type.Integer({ minimum: 0, maximum: 8760 })),
+      remindIntervalHours: Type.Optional(
+        Type.Integer({ minimum: 1, maximum: 8760 }),
+      ),
+      escalationAfterHours: Type.Optional(
+        Type.Integer({ minimum: 1, maximum: 8760 }),
+      ),
+      escalationUserIds: Type.Optional(
+        Type.Array(Type.String({ minLength: 1 }), { maxItems: 200 }),
+      ),
+      escalationGroupIds: Type.Optional(
+        Type.Array(Type.String({ minLength: 1 }), { maxItems: 200 }),
+      ),
+      escalationRoles: Type.Optional(
+        Type.Array(Type.String({ minLength: 1 }), { maxItems: 200 }),
+      ),
+      isEnabled: Type.Optional(Type.Boolean()),
+    },
+    { additionalProperties: false },
+  ),
+};
+
+export const chatAckTemplatePatchSchema = {
+  body: Type.Object(
+    {
+      flowType: Type.Optional(Type.String({ minLength: 1, maxLength: 200 })),
+      actionKey: Type.Optional(Type.String({ minLength: 1, maxLength: 200 })),
+      messageBody: Type.Optional(
+        Type.String({ minLength: 1, maxLength: 2000 }),
+      ),
+      requiredUserIds: Type.Optional(
+        Type.Array(Type.String({ minLength: 1 }), { maxItems: 200 }),
+      ),
+      requiredGroupIds: Type.Optional(
+        Type.Array(Type.String({ minLength: 1 }), { maxItems: 200 }),
+      ),
+      requiredRoles: Type.Optional(
+        Type.Array(Type.String({ minLength: 1 }), { maxItems: 200 }),
+      ),
+      dueInHours: Type.Optional(Type.Integer({ minimum: 0, maximum: 8760 })),
+      remindIntervalHours: Type.Optional(
+        Type.Integer({ minimum: 1, maximum: 8760 }),
+      ),
+      escalationAfterHours: Type.Optional(
+        Type.Integer({ minimum: 1, maximum: 8760 }),
+      ),
+      escalationUserIds: Type.Optional(
+        Type.Array(Type.String({ minLength: 1 }), { maxItems: 200 }),
+      ),
+      escalationGroupIds: Type.Optional(
+        Type.Array(Type.String({ minLength: 1 }), { maxItems: 200 }),
+      ),
+      escalationRoles: Type.Optional(
+        Type.Array(Type.String({ minLength: 1 }), { maxItems: 200 }),
+      ),
+      isEnabled: Type.Optional(Type.Boolean()),
+    },
+    { additionalProperties: false },
+  ),
 };
 
 export const projectChatSummarySchema = {

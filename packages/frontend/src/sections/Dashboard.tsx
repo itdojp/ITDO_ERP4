@@ -150,6 +150,11 @@ function resolveDueAt(payload: unknown) {
   return typeof value === 'string' && value.trim() ? value.trim() : null;
 }
 
+function resolveEscalation(payload: unknown) {
+  if (!payload || typeof payload !== 'object') return false;
+  return Boolean((payload as { escalation?: unknown }).escalation);
+}
+
 function resolveRoomId(payload: unknown) {
   if (!payload || typeof payload !== 'object') return null;
   const value = (payload as { roomId?: unknown }).roomId;
@@ -160,6 +165,40 @@ function resolveRoomName(payload: unknown) {
   if (!payload || typeof payload !== 'object') return null;
   const value = (payload as { roomName?: unknown }).roomName;
   return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+function resolveProjectStatusChange(payload: unknown) {
+  if (!payload || typeof payload !== 'object') return null;
+  const beforeStatus = (payload as { beforeStatus?: unknown }).beforeStatus;
+  const afterStatus = (payload as { afterStatus?: unknown }).afterStatus;
+  if (
+    typeof beforeStatus !== 'string' ||
+    typeof afterStatus !== 'string' ||
+    !beforeStatus.trim() ||
+    !afterStatus.trim()
+  ) {
+    return null;
+  }
+  return {
+    beforeStatus: beforeStatus.trim(),
+    afterStatus: afterStatus.trim(),
+  };
+}
+
+function formatProjectStatusLabel(value: string | null) {
+  if (!value) return '-';
+  switch (value) {
+    case 'draft':
+      return '起案中';
+    case 'active':
+      return '進行中';
+    case 'on_hold':
+      return '保留';
+    case 'closed':
+      return '完了';
+    default:
+      return value;
+  }
 }
 
 const FLOW_TYPE_LABEL_MAP: Record<string, string> = {
@@ -245,10 +284,16 @@ function formatNotificationLabel(item: AppNotification) {
     if (fromUserId) return `${fromUserId} から投稿`;
     return 'チャット投稿';
   }
-  if (item.kind === 'chat_ack_required') {
+  if (
+    item.kind === 'chat_ack_required' ||
+    item.kind === 'chat_ack_escalation'
+  ) {
     const fromUserId = resolveFromUserId(item.payload);
-    if (fromUserId) return `${fromUserId} から確認依頼`;
-    return '確認依頼';
+    const escalation =
+      item.kind === 'chat_ack_escalation' || resolveEscalation(item.payload);
+    const suffix = escalation ? '確認依頼（エスカレーション）' : '確認依頼';
+    if (fromUserId) return `${fromUserId} から${suffix}`;
+    return suffix;
   }
   if (item.kind === 'chat_room_acl_mismatch') {
     const roomName = resolveRoomName(item.payload);
@@ -265,10 +310,36 @@ function formatNotificationLabel(item: AppNotification) {
     const label = range ? formatLeaveRange(range) : '';
     return label ? `休暇予定 (${label})` : '休暇予定';
   }
+  if (item.kind === 'daily_report_submitted') {
+    const reportDate = resolveReportDate(item.payload);
+    return reportDate ? `日報提出 (${reportDate})` : '日報提出';
+  }
+  if (item.kind === 'daily_report_updated') {
+    const reportDate = resolveReportDate(item.payload);
+    return reportDate ? `日報修正 (${reportDate})` : '日報修正';
+  }
   if (item.kind === 'project_member_added') {
     const fromUserId = resolveFromUserId(item.payload);
     if (fromUserId) return `${fromUserId} により案件メンバーに追加されました`;
     return '案件メンバーに追加されました';
+  }
+  if (item.kind === 'project_created') {
+    const fromUserId = resolveFromUserId(item.payload);
+    if (fromUserId) return `${fromUserId} が案件を作成しました`;
+    return '案件が作成されました';
+  }
+  if (item.kind === 'project_status_changed') {
+    const fromUserId = resolveFromUserId(item.payload);
+    const statusChange = resolveProjectStatusChange(item.payload);
+    const statusLabel = statusChange
+      ? `${formatProjectStatusLabel(
+          statusChange.beforeStatus,
+        )} → ${formatProjectStatusLabel(statusChange.afterStatus)}`
+      : '';
+    const base = fromUserId
+      ? `${fromUserId} が案件ステータスを更新しました`
+      : '案件ステータスが更新されました';
+    return statusLabel ? `${base} (${statusLabel})` : base;
   }
   if (item.kind === 'approval_pending') {
     const fromUserId = resolveFromUserId(item.payload);
@@ -503,7 +574,8 @@ export const Dashboard: React.FC = () => {
     if (
       item.kind === 'chat_mention' ||
       item.kind === 'chat_message' ||
-      item.kind === 'chat_ack_required'
+      item.kind === 'chat_ack_required' ||
+      item.kind === 'chat_ack_escalation'
     ) {
       if (!item.messageId) return;
       navigateToOpen({ kind: 'chat_message', id: item.messageId });
@@ -515,7 +587,11 @@ export const Dashboard: React.FC = () => {
       navigateToOpen({ kind: 'room_chat', id: roomId });
       return;
     }
-    if (item.kind === 'daily_report_missing') {
+    if (
+      item.kind === 'daily_report_missing' ||
+      item.kind === 'daily_report_submitted' ||
+      item.kind === 'daily_report_updated'
+    ) {
       const reportDate = resolveReportDate(item.payload);
       if (!reportDate) return;
       navigateToOpen({ kind: 'daily_report', id: reportDate });
@@ -543,6 +619,13 @@ export const Dashboard: React.FC = () => {
         return;
       }
       navigateToOpen({ kind: 'approvals', id: 'inbox' });
+    }
+    if (
+      item.kind === 'project_created' ||
+      item.kind === 'project_status_changed'
+    ) {
+      if (!item.projectId) return;
+      navigateToOpen({ kind: 'project', id: item.projectId });
     }
   };
 
@@ -675,22 +758,32 @@ export const Dashboard: React.FC = () => {
               : item.projectId || 'N/A';
             const excerpt = resolveExcerpt(item.payload);
             const dueAt = resolveDueAt(item.payload);
+            const escalation =
+              item.kind === 'chat_ack_escalation' ||
+              resolveEscalation(item.payload);
             const roomId = resolveRoomId(item.payload);
             const leaveRange = resolveLeaveRange(item.payload);
             const canOpen =
               ((item.kind === 'chat_mention' ||
                 item.kind === 'chat_message' ||
-                item.kind === 'chat_ack_required') &&
+                item.kind === 'chat_ack_required' ||
+                item.kind === 'chat_ack_escalation') &&
                 Boolean(item.messageId)) ||
-              (item.kind === 'daily_report_missing' &&
+              ((item.kind === 'daily_report_missing' ||
+                item.kind === 'daily_report_submitted' ||
+                item.kind === 'daily_report_updated') &&
                 Boolean(resolveReportDate(item.payload))) ||
               (item.kind === 'leave_upcoming' &&
                 Boolean(
                   resolveLeaveRequestId(item.payload) || item.messageId,
                 )) ||
+              ((item.kind === 'project_created' ||
+                item.kind === 'project_status_changed') &&
+                Boolean(item.projectId)) ||
               item.kind === 'approval_pending' ||
               item.kind === 'approval_approved' ||
               item.kind === 'approval_rejected';
+            const statusChange = resolveProjectStatusChange(item.payload);
             return (
               <Card key={item.id} padding="small">
                 <div
@@ -702,14 +795,28 @@ export const Dashboard: React.FC = () => {
                     <div style={{ fontSize: 12, color: '#475569' }}>
                       {projectLabel} / {formatDateTime(item.createdAt)}
                     </div>
-                    {item.kind === 'chat_ack_required' && dueAt && (
+                    {(item.kind === 'chat_ack_required' ||
+                      item.kind === 'chat_ack_escalation') && (
                       <div
                         style={{
                           fontSize: 12,
                           color: '#475569',
+                          display: 'flex',
+                          gap: 8,
+                          flexWrap: 'wrap',
                         }}
                       >
-                        期限: {formatDateTime(dueAt)}
+                        {dueAt && <span>期限: {formatDateTime(dueAt)}</span>}
+                        {escalation && (
+                          <span className="badge">エスカレーション</span>
+                        )}
+                      </div>
+                    )}
+                    {item.kind === 'project_status_changed' && statusChange && (
+                      <div style={{ fontSize: 12, color: '#475569' }}>
+                        ステータス:{' '}
+                        {formatProjectStatusLabel(statusChange.beforeStatus)} →
+                        {formatProjectStatusLabel(statusChange.afterStatus)}
                       </div>
                     )}
                     {item.kind === 'leave_upcoming' && leaveRange && (
@@ -746,7 +853,8 @@ export const Dashboard: React.FC = () => {
                 {roomId &&
                   (item.kind === 'chat_mention' ||
                     item.kind === 'chat_message' ||
-                    item.kind === 'chat_ack_required') && (
+                    item.kind === 'chat_ack_required' ||
+                    item.kind === 'chat_ack_escalation') && (
                     <div
                       className="row"
                       style={{ gap: 6, flexWrap: 'wrap', marginTop: 8 }}

@@ -45,6 +45,7 @@ type ChatAckLink = {
   targetId: string;
   flowType?: string | null;
   actionKey?: string | null;
+  templateId?: string | null;
   createdAt: string;
   createdBy?: string | null;
 };
@@ -565,11 +566,17 @@ export const Approvals: React.FC = () => {
                           marginTop: 6,
                         }}
                       >
+                        <span className="badge">
+                          {link.templateId ? 'テンプレ' : '手動'}
+                        </span>
                         <span style={{ fontSize: 12, color: '#64748b' }}>
                           {link.messageId}
                         </span>
                         <span style={{ fontSize: 12, color: '#64748b' }}>
                           / {formatDateTime(link.createdAt)}
+                        </span>
+                        <span style={{ fontSize: 12, color: '#64748b' }}>
+                          / {link.flowType || '-'}:{link.actionKey || '-'}
                         </span>
                         <button
                           className="button secondary"

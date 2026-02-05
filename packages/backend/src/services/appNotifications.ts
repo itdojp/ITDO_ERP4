@@ -58,6 +58,26 @@ type ApprovalOutcomeNotificationOptions = {
   outcome: 'approved' | 'rejected';
 };
 
+type DailyReportNotificationOptions = {
+  userId: string;
+  reportDate: string;
+  actorUserId?: string | null;
+  kind: 'daily_report_submitted' | 'daily_report_updated';
+};
+
+type ProjectCreatedNotificationOptions = {
+  projectId: string;
+  actorUserId: string;
+};
+
+type ProjectStatusChangedNotificationOptions = {
+  projectId: string;
+  actorUserId: string;
+  beforeStatus: string;
+  afterStatus: string;
+  ownerUserId?: string | null;
+};
+
 function parseMaxRecipients() {
   const raw = process.env.CHAT_MENTION_NOTIFICATION_MAX_RECIPIENTS;
   if (!raw) return 200;
@@ -534,6 +554,41 @@ export async function createProjectMemberAddedNotifications(
   };
 }
 
+export async function createDailyReportNotifications(
+  options: DailyReportNotificationOptions,
+) {
+  const userId = normalizeId(options.userId);
+  const reportDate = normalizeId(options.reportDate);
+  if (!userId || !reportDate) {
+    return { created: 0 };
+  }
+
+  const kind = options.kind;
+  const messageId = `${kind}:${userId}:${reportDate}`;
+  const existing = await prisma.appNotification.findFirst({
+    where: { kind, messageId, userId },
+    select: { id: true },
+  });
+  if (existing) return { created: 0 };
+
+  const actorUserId = normalizeId(options.actorUserId ?? undefined);
+  await prisma.appNotification.create({
+    data: {
+      userId,
+      kind,
+      messageId,
+      payload: {
+        reportDate,
+        fromUserId: actorUserId || undefined,
+      } as Prisma.InputJsonValue,
+      createdBy: actorUserId || undefined,
+      updatedBy: actorUserId || undefined,
+    },
+  });
+
+  return { created: 1 };
+}
+
 export async function createApprovalPendingNotifications(
   options: ApprovalPendingNotificationOptions,
 ) {
@@ -664,4 +719,89 @@ export async function createApprovalOutcomeNotification(
   });
 
   return { created: 1 };
+}
+
+export async function createProjectCreatedNotifications(
+  options: ProjectCreatedNotificationOptions,
+) {
+  const projectId = normalizeId(options.projectId);
+  const actorUserId = normalizeId(options.actorUserId);
+  if (!projectId) return { created: 0, recipients: [] as string[] };
+
+  const roleRecipients = await resolveRoleRecipientUserIds(['admin', 'mgmt']);
+  const recipients = roleRecipients.filter((userId) => userId !== actorUserId);
+  if (!recipients.length) {
+    return { created: 0, recipients: [] as string[] };
+  }
+
+  const created = await prisma.appNotification.createMany({
+    data: recipients.map((userId) => ({
+      userId,
+      kind: 'project_created',
+      projectId,
+      messageId: projectId,
+      payload: {
+        fromUserId: actorUserId || undefined,
+      } as Prisma.InputJsonValue,
+      createdBy: actorUserId || undefined,
+      updatedBy: actorUserId || undefined,
+    })),
+  });
+
+  return { created: created.count, recipients };
+}
+
+export async function createProjectStatusChangedNotifications(
+  options: ProjectStatusChangedNotificationOptions,
+) {
+  const projectId = normalizeId(options.projectId);
+  const actorUserId = normalizeId(options.actorUserId);
+  const beforeStatus = normalizeId(options.beforeStatus);
+  const afterStatus = normalizeId(options.afterStatus);
+  if (
+    !projectId ||
+    !beforeStatus ||
+    !afterStatus ||
+    beforeStatus === afterStatus
+  ) {
+    return { created: 0, recipients: [] as string[] };
+  }
+
+  const [roleRecipients, leaders] = await Promise.all([
+    resolveRoleRecipientUserIds(['admin', 'mgmt']),
+    prisma.projectMember.findMany({
+      where: { projectId, role: 'leader' },
+      select: { userId: true },
+    }),
+  ]);
+  const recipients = new Set<string>(roleRecipients);
+  leaders.forEach((row) => {
+    const leaderId = normalizeId(row.userId);
+    if (leaderId) recipients.add(leaderId);
+  });
+  const ownerUserId = normalizeId(options.ownerUserId ?? '');
+  if (ownerUserId) recipients.add(ownerUserId);
+  if (actorUserId) recipients.delete(actorUserId);
+
+  const targetUserIds = Array.from(recipients);
+  if (!targetUserIds.length) {
+    return { created: 0, recipients: [] as string[] };
+  }
+
+  const created = await prisma.appNotification.createMany({
+    data: targetUserIds.map((userId) => ({
+      userId,
+      kind: 'project_status_changed',
+      projectId,
+      payload: {
+        fromUserId: actorUserId || undefined,
+        beforeStatus,
+        afterStatus,
+      } as Prisma.InputJsonValue,
+      createdBy: actorUserId || undefined,
+      updatedBy: actorUserId || undefined,
+    })),
+  });
+
+  return { created: created.count, recipients: targetUserIds };
 }

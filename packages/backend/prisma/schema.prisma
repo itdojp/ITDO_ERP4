@@ -177,6 +177,7 @@ model Project {
   purchaseOrders          PurchaseOrder[]
   vendorQuotes            VendorQuote[]
   vendorInvoices          VendorInvoice[]
+  vendorInvoiceAllocations VendorInvoiceAllocation[]
   rateCards               RateCard[]
   approvalInstances       ApprovalInstance[]
   periodLocks             PeriodLock[]
@@ -456,6 +457,13 @@ model ChatAckRequest {
   requestedGroupIds Json?
   requestedRoles  Json?
   dueAt           DateTime?
+  remindIntervalHours Int?
+  escalationAfterHours Int?
+  escalationUserIds Json?
+  escalationGroupIds Json?
+  escalationRoles Json?
+  template       ChatAckTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  templateId     String?
   canceledAt      DateTime?
   canceledBy      String?
   createdAt       DateTime    @default(now())
@@ -466,12 +474,39 @@ model ChatAckRequest {
   @@index([roomId, createdAt])
 }
 
+model ChatAckTemplate {
+  id                   String   @id @default(uuid())
+  flowType             FlowType
+  actionKey            String
+  messageBody          String
+  requiredUserIds      Json?
+  requiredGroupIds     Json?
+  requiredRoles        Json?
+  dueInHours           Int?
+  remindIntervalHours  Int?
+  escalationAfterHours Int?
+  escalationUserIds    Json?
+  escalationGroupIds   Json?
+  escalationRoles      Json?
+  isEnabled            Boolean  @default(true)
+  createdAt            DateTime @default(now())
+  createdBy            String?
+  updatedAt            DateTime @updatedAt
+  updatedBy            String?
+  links                ChatAckLink[]
+  ackRequests          ChatAckRequest[]
+
+  @@index([flowType, actionKey, isEnabled])
+}
+
 model ChatAckLink {
   id           String         @id @default(uuid())
   ackRequest   ChatAckRequest @relation(fields: [ackRequestId], references: [id], onDelete: Cascade)
   ackRequestId String
   message      ChatMessage    @relation(fields: [messageId], references: [id], onDelete: Cascade)
   messageId    String
+  template     ChatAckTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  templateId   String?
   targetTable  String
   targetId     String
   flowType     String?
@@ -834,6 +869,7 @@ model PurchaseOrderLine {
   taxRate         Decimal?
   taskId          String?
   expenseId       String?
+  vendorInvoiceAllocations VendorInvoiceAllocation[]
 }
 
 model VendorQuote {
@@ -868,6 +904,7 @@ model VendorInvoice {
   vendorId        String
   purchaseOrder   PurchaseOrder? @relation(fields: [purchaseOrderId], references: [id], onDelete: SetNull)
   purchaseOrderId String?
+  allocations     VendorInvoiceAllocation[]
   vendorInvoiceNo String?
   receivedDate    DateTime?
   dueDate         DateTime?
@@ -888,6 +925,27 @@ model VendorInvoice {
   @@index([purchaseOrderId])
   @@index([receivedDate])
   @@index([dueDate])
+}
+
+model VendorInvoiceAllocation {
+  id                  String    @id @default(uuid())
+  vendorInvoice       VendorInvoice @relation(fields: [vendorInvoiceId], references: [id], onDelete: Cascade)
+  vendorInvoiceId     String
+  project             Project   @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  projectId           String
+  purchaseOrderLine   PurchaseOrderLine? @relation(fields: [purchaseOrderLineId], references: [id], onDelete: SetNull)
+  purchaseOrderLineId String?
+  amount              Decimal
+  taxRate             Decimal?
+  taxAmount           Decimal?
+  createdAt           DateTime  @default(now())
+  createdBy           String?
+  updatedAt           DateTime  @updatedAt
+  updatedBy           String?
+
+  @@index([vendorInvoiceId])
+  @@index([projectId])
+  @@index([purchaseOrderLineId])
 }
 
 model TimeEntry {

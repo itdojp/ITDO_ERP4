@@ -9,6 +9,7 @@ import {
 } from '../utils/date.js';
 import { auditContextFromRequest, logAudit } from '../services/audit.js';
 import { getEditableDays } from '../services/worklogSetting.js';
+import { createDailyReportNotifications } from '../services/appNotifications.js';
 
 export async function registerDailyReportRoutes(app: FastifyInstance) {
   app.post(
@@ -133,6 +134,14 @@ export async function registerDailyReportRoutes(app: FastifyInstance) {
           editWindowExpired: !isEditableByDate,
         },
         ...auditContextFromRequest(req),
+      });
+      await createDailyReportNotifications({
+        userId: result.report.userId,
+        reportDate: reportDate.toISOString().slice(0, 10),
+        actorUserId: actorId,
+        kind: result.created
+          ? 'daily_report_submitted'
+          : 'daily_report_updated',
       });
       return result.report;
     },

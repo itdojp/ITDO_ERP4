@@ -56,6 +56,7 @@
 
 - 目的: アラート・承認・通知・インサイトの概要確認
 - 主な操作: 件数確認、通知の既読化、アラート/インサイトの一覧確認
+- 補足: 通知には案件作成/ステータス変更などの運用イベントが含まれます
 - 補足: インサイトは権限により表示されない場合があります
 
 ### 詳細操作
@@ -231,7 +232,8 @@
 2. `再読込` で一覧を更新し、`承認依頼` を実行する
 3. 仕入見積で案件・業者・見積番号・金額・通貨・発行日・書類URLを入力し `登録`
 4. 仕入請求で案件・業者・請求番号・金額・通貨・受領日・支払期限・書類URLを入力し `登録`
-5. 仕入請求の `承認依頼` を実行する
+5. 仕入請求一覧の `配賦明細` で PDF を確認し、必要な場合のみ配賦明細を入力する
+6. 仕入請求の `承認依頼` を実行する
 
 ![ベンダー書類一覧](../test-results/2026-01-19-frontend-e2e-r1/06-vendor-docs.png)
 ![ベンダー書類作成](../test-results/2026-01-19-frontend-e2e-r1/06-vendor-docs-create.png)
@@ -300,6 +302,13 @@
 1. flowType / actionKey / priority / isEnabled / requireReason を設定する
 2. guards (JSON) に `chat_ack_completed` を追加すると、確認依頼の完了をガードできる
 3. admin/mgmt は理由必須で例外実行でき、監査ログに記録される
+
+### 詳細操作（合意形成テンプレ）
+
+1. flowType / actionKey / messageBody を入力する
+2. requiredUserIds / requiredGroupIds / requiredRoles（JSON配列）で対象を指定する
+3. dueInHours / remindIntervalHours / escalationAfterHours を必要に応じて設定する
+4. `作成` / `更新` / `再読込` を実行する
 
 ### 詳細操作（テンプレ設定）
 
