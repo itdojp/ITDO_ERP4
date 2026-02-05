@@ -15,7 +15,7 @@ E2E_PODMAN_RESET="${E2E_PODMAN_RESET:-1}"
 
 port_in_use() {
   local port="$1"
-  ss -ltnH 2>/dev/null | awk -v p=":${port}" '$4 ~ p { found=1 } END { exit found ? 0 : 1 }'
+  ss -ltnH 2>/dev/null | awk -v p="$port" '$4 ~ ":" p "$" { found=1 } END { exit found ? 0 : 1 }'
 }
 
 if [[ "$E2E_DB_MODE" == "podman" ]] && port_in_use "$E2E_PODMAN_HOST_PORT"; then
@@ -24,10 +24,11 @@ if [[ "$E2E_DB_MODE" == "podman" ]] && port_in_use "$E2E_PODMAN_HOST_PORT"; then
     echo "Set an unused port, e.g.: E2E_PODMAN_HOST_PORT=55435 ./scripts/e2e-frontend.sh" >&2
     exit 1
   fi
+  original_port="$E2E_PODMAN_HOST_PORT"
   for port in $(seq "$E2E_PODMAN_HOST_PORT" "$((E2E_PODMAN_HOST_PORT + 100))"); do
     if ! port_in_use "$port"; then
       E2E_PODMAN_HOST_PORT="$port"
-      echo "E2E_PODMAN_HOST_PORT is in use; fallback to ${E2E_PODMAN_HOST_PORT}"
+      echo "Port ${original_port} is in use; falling back to ${E2E_PODMAN_HOST_PORT}"
       break
     fi
   done
