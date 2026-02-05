@@ -273,7 +273,10 @@ export async function registerProjectRoutes(app: FastifyInstance) {
             actorUserId: userId || 'system',
           });
         } catch (err) {
-          req.log?.warn({ err, projectId: project.id }, 'project created notification failed');
+          req.log?.warn(
+            { err, projectId: project.id },
+            'project created notification failed',
+          );
         }
       }
       return project;
@@ -376,7 +379,10 @@ export async function registerProjectRoutes(app: FastifyInstance) {
         return sendInvalidProjectPeriodError(reply);
       }
       const data = { ...body };
-      const hasStatusProp = Object.prototype.hasOwnProperty.call(body, 'status');
+      const hasStatusProp = Object.prototype.hasOwnProperty.call(
+        body,
+        'status',
+      );
       const nextStatus = hasStatusProp ? body.status : current.status;
       const statusChanged = hasStatusProp && nextStatus !== current.status;
       if (hasCustomerIdProp) data.customerId = customerId;

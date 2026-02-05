@@ -716,7 +716,12 @@ export async function createProjectStatusChangedNotifications(
   const actorUserId = normalizeId(options.actorUserId);
   const beforeStatus = normalizeId(options.beforeStatus);
   const afterStatus = normalizeId(options.afterStatus);
-  if (!projectId || !beforeStatus || !afterStatus || beforeStatus === afterStatus) {
+  if (
+    !projectId ||
+    !beforeStatus ||
+    !afterStatus ||
+    beforeStatus === afterStatus
+  ) {
     return { created: 0, recipients: [] as string[] };
   }
 
