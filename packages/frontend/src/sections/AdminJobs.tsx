@@ -17,6 +17,8 @@ type JobKey =
   | 'reportSubscriptions'
   | 'reportDeliveries'
   | 'notificationDeliveries'
+  | 'chatAckReminders'
+  | 'leaveUpcoming'
   | 'chatRoomAclAlerts'
   | 'dailyReportMissing'
   | 'recurringProjects'
@@ -37,6 +39,8 @@ const buildInitialState = (): Record<JobKey, JobState> => ({
   reportSubscriptions: { result: null, error: '', loading: false },
   reportDeliveries: { result: null, error: '', loading: false },
   notificationDeliveries: { result: null, error: '', loading: false },
+  chatAckReminders: { result: null, error: '', loading: false },
+  leaveUpcoming: { result: null, error: '', loading: false },
   chatRoomAclAlerts: { result: null, error: '', loading: false },
   dailyReportMissing: { result: null, error: '', loading: false },
   recurringProjects: { result: null, error: '', loading: false },
@@ -49,6 +53,10 @@ export const AdminJobs: React.FC = () => {
   const [reportRetryDryRun, setReportRetryDryRun] = useState(false);
   const [notificationDryRun, setNotificationDryRun] = useState(false);
   const [notificationLimit, setNotificationLimit] = useState('50');
+  const [chatAckReminderDryRun, setChatAckReminderDryRun] = useState(false);
+  const [chatAckReminderLimit, setChatAckReminderLimit] = useState('200');
+  const [leaveUpcomingDryRun, setLeaveUpcomingDryRun] = useState(false);
+  const [leaveUpcomingTargetDate, setLeaveUpcomingTargetDate] = useState('');
   const [chatRoomAclDryRun, setChatRoomAclDryRun] = useState(false);
   const [chatRoomAclLimit, setChatRoomAclLimit] = useState('200');
   const [dailyReportDryRun, setDailyReportDryRun] = useState(false);
@@ -61,6 +69,14 @@ export const AdminJobs: React.FC = () => {
     if (parsed < 1 || parsed > 200) return 'limit は 1-200 で入力してください';
     return '';
   }, [notificationLimit]);
+
+  const chatAckReminderLimitError = useMemo(() => {
+    if (!chatAckReminderLimit.trim()) return '';
+    const parsed = Number(chatAckReminderLimit);
+    if (!Number.isFinite(parsed)) return 'limit は有効な数値で入力してください';
+    if (parsed < 1 || parsed > 500) return 'limit は 1-500 で入力してください';
+    return '';
+  }, [chatAckReminderLimit]);
 
   const updateJob = (key: JobKey, next: Partial<JobState>) => {
     setJobs((prev) => ({
@@ -114,6 +130,26 @@ export const AdminJobs: React.FC = () => {
       ...(limit ? { limit } : {}),
     });
   };
+  const runChatAckReminders = () => {
+    if (chatAckReminderLimitError) {
+      updateJob('chatAckReminders', { error: chatAckReminderLimitError });
+      return;
+    }
+    const limit = chatAckReminderLimit.trim()
+      ? Number(chatAckReminderLimit)
+      : undefined;
+    runJob('chatAckReminders', '/jobs/chat-ack-reminders/run', {
+      dryRun: chatAckReminderDryRun,
+      ...(limit ? { limit } : {}),
+    });
+  };
+  const runLeaveUpcoming = () =>
+    runJob('leaveUpcoming', '/jobs/leave-upcoming/run', {
+      ...(leaveUpcomingTargetDate.trim()
+        ? { targetDate: leaveUpcomingTargetDate.trim() }
+        : {}),
+      dryRun: leaveUpcomingDryRun,
+    });
   const runChatRoomAclAlerts = () => {
     const limitRaw = chatRoomAclLimit.trim();
     const limit = limitRaw ? Number(limitRaw) : undefined;
@@ -312,6 +348,58 @@ export const AdminJobs: React.FC = () => {
           <label className="badge" style={{ cursor: 'pointer' }}>
             <input
               type="checkbox"
+              checked={leaveUpcomingDryRun}
+              onChange={(e) => setLeaveUpcomingDryRun(e.target.checked)}
+              style={{ marginRight: 6 }}
+            />
+            dryRun
+          </label>
+          <Input
+            value={leaveUpcomingTargetDate}
+            onChange={(e) => setLeaveUpcomingTargetDate(e.target.value)}
+            placeholder="YYYY-MM-DD"
+            style={{ width: 140 }}
+          />
+          <Button
+            variant="secondary"
+            onClick={runLeaveUpcoming}
+            loading={jobs.leaveUpcoming.loading}
+          >
+            休暇予定通知
+          </Button>
+        </div>
+        <div
+          className="row"
+          style={{ alignItems: 'center', gap: 8, marginTop: 8 }}
+        >
+          <label className="badge" style={{ cursor: 'pointer' }}>
+            <input
+              type="checkbox"
+              checked={chatAckReminderDryRun}
+              onChange={(e) => setChatAckReminderDryRun(e.target.checked)}
+              style={{ marginRight: 6 }}
+            />
+            dryRun
+          </label>
+          <Input
+            label="ack limit"
+            type="number"
+            min={1}
+            max={500}
+            value={chatAckReminderLimit}
+            onChange={(e) => setChatAckReminderLimit(e.target.value)}
+            error={chatAckReminderLimitError || undefined}
+          />
+          <Button
+            variant="secondary"
+            onClick={runChatAckReminders}
+            loading={jobs.chatAckReminders.loading}
+          >
+            確認依頼リマインド
+          </Button>
+          <label className="badge" style={{ cursor: 'pointer' }}>
+            <input
+              type="checkbox"
               checked={chatRoomAclDryRun}
               onChange={(e) => setChatRoomAclDryRun(e.target.checked)}
               style={{ marginRight: 6 }}
@@ -334,9 +422,20 @@ export const AdminJobs: React.FC = () => {
             ACL不整合通知
           </Button>
         </div>
-        <div style={{ marginTop: 12 }}>
-          {renderResult('notificationDeliveries')}
-          <div style={{ marginTop: 8 }}>
+        <div style={{ marginTop: 12, display: 'grid', gap: 8 }}>
+          <div>
+            <strong>通知配信</strong>
+            {renderResult('notificationDeliveries')}
+          </div>
+          <div>
+            <strong>休暇予定通知</strong>
+            {renderResult('leaveUpcoming')}
+          </div>
+          <div>
+            <strong>確認依頼リマインド</strong>
+            {renderResult('chatAckReminders')}
+          </div>
+          <div>
             <strong>ACL不整合通知</strong>
             {renderResult('chatRoomAclAlerts')}
           </div>

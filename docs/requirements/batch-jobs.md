@@ -110,6 +110,13 @@ for setting in alert_settings where is_enabled:
 - `DAILY_REPORT_MISSING_SKIP_WEEKEND=true` の場合は土日をスキップ。
 - `DAILY_REPORT_MISSING_REQUIRE_TIME_ENTRY=true` の場合は当日の工数入力があるユーザのみ対象。
 
+## 休暇予定通知ジョブ（MVP）
+- `/jobs/leave-upcoming/run`: 対象日の休暇開始（`status=approved` かつ `startDate` が targetDate のもの）を抽出し、AppNotification（`kind=leave_upcoming`）を生成する。
+- 既定の対象日は `LEAVE_UPCOMING_TARGET_OFFSET_DAYS`（既定 1）日だけ先の日付（例: 明日の休暇）を対象にする。
+- 通知先は本人 + `admin/mgmt`（role宛に展開）を基本とする。
+- 冪等性: `kind=leave_upcoming` + `messageId=leaveRequestId` + `userId` の既存通知がある場合はスキップする。
+- 監査: `/jobs/leave-upcoming/run` 実行は `leave_upcoming_run` として監査ログに記録する。
+
 ## 確認依頼（ack required）期限リマインドジョブ（MVP）
 - `/jobs/chat-ack-reminders/run`: 期限（dueAt）を過ぎた未完了の確認依頼を抽出し、未確認者へ `kind=chat_ack_required` の AppNotification を追加で生成する。
 - 対象: `chat_ack_requests.due_at <= now` かつ requiredUserIds のうち未ackが残っているもの（message.deletedAt は除外）。
