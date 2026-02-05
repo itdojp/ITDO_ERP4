@@ -123,6 +123,27 @@ function resolveReportDate(payload: unknown) {
   return typeof value === 'string' && value.trim() ? value.trim() : null;
 }
 
+function resolveLeaveRequestId(payload: unknown) {
+  if (!payload || typeof payload !== 'object') return null;
+  const value = (payload as { leaveRequestId?: unknown }).leaveRequestId;
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+function resolveLeaveRange(payload: unknown) {
+  if (!payload || typeof payload !== 'object') return null;
+  const startDate = (payload as { startDate?: unknown }).startDate;
+  const endDate = (payload as { endDate?: unknown }).endDate;
+  const leaveType = (payload as { leaveType?: unknown }).leaveType;
+  const start =
+    typeof startDate === 'string' && startDate.trim() ? startDate.trim() : null;
+  const end =
+    typeof endDate === 'string' && endDate.trim() ? endDate.trim() : null;
+  const type =
+    typeof leaveType === 'string' && leaveType.trim() ? leaveType.trim() : null;
+  if (!start) return null;
+  return { startDate: start, endDate: end, leaveType: type };
+}
+
 function resolveExpenseId(payload: unknown) {
   if (!payload || typeof payload !== 'object') return null;
   const value = (payload as { expenseId?: unknown }).expenseId;
@@ -144,7 +165,6 @@ function resolveExpenseAmount(payload: unknown) {
     typeof currency === 'string' && currency.trim() ? currency.trim() : '';
   return currencyValue ? `${amountValue} ${currencyValue}` : amountValue;
 }
-
 function resolveDueAt(payload: unknown) {
   if (!payload || typeof payload !== 'object') return null;
   const value = (payload as { dueAt?: unknown }).dueAt;
@@ -238,6 +258,16 @@ function formatFlowTypeLabel(flowType: string) {
   return FLOW_TYPE_LABEL_MAP[flowType] ?? flowType;
 }
 
+function formatLeaveRange(range: {
+  startDate: string;
+  endDate: string | null;
+}) {
+  if (!range.endDate || range.endDate === range.startDate) {
+    return range.startDate;
+  }
+  return `${range.startDate}〜${range.endDate}`;
+}
+
 function resolveApprovalTargetDeepLink(target: {
   targetTable: string;
   targetId: string;
@@ -295,6 +325,11 @@ function formatNotificationLabel(item: AppNotification) {
   if (item.kind === 'daily_report_missing') {
     const reportDate = resolveReportDate(item.payload);
     return reportDate ? `日報未提出 (${reportDate})` : '日報未提出';
+  }
+  if (item.kind === 'leave_upcoming') {
+    const range = resolveLeaveRange(item.payload);
+    const label = range ? formatLeaveRange(range) : '';
+    return label ? `休暇予定 (${label})` : '休暇予定';
   }
   if (item.kind === 'daily_report_submitted') {
     const reportDate = resolveReportDate(item.payload);
@@ -587,6 +622,13 @@ export const Dashboard: React.FC = () => {
       navigateToOpen({ kind: 'daily_report', id: reportDate });
       return;
     }
+    if (item.kind === 'leave_upcoming') {
+      const leaveRequestId =
+        resolveLeaveRequestId(item.payload) || item.messageId;
+      if (!leaveRequestId) return;
+      navigateToOpen({ kind: 'leave_request', id: leaveRequestId });
+      return;
+    }
     if (item.kind === 'expense_mark_paid') {
       const expenseId = resolveExpenseId(item.payload) || item.messageId;
       if (!expenseId) return;
@@ -751,6 +793,7 @@ export const Dashboard: React.FC = () => {
               item.kind === 'chat_ack_escalation' ||
               resolveEscalation(item.payload);
             const roomId = resolveRoomId(item.payload);
+            const leaveRange = resolveLeaveRange(item.payload);
             const expenseAmount = resolveExpenseAmount(item.payload);
             const canOpen =
               ((item.kind === 'chat_mention' ||
@@ -764,6 +807,10 @@ export const Dashboard: React.FC = () => {
                 Boolean(resolveReportDate(item.payload))) ||
               (item.kind === 'expense_mark_paid' &&
                 Boolean(resolveExpenseId(item.payload) || item.messageId)) ||
+              (item.kind === 'leave_upcoming' &&
+                Boolean(
+                  resolveLeaveRequestId(item.payload) || item.messageId,
+                )) ||
               ((item.kind === 'project_created' ||
                 item.kind === 'project_status_changed') &&
                 Boolean(item.projectId)) ||
@@ -809,6 +856,14 @@ export const Dashboard: React.FC = () => {
                         ステータス:{' '}
                         {formatProjectStatusLabel(statusChange.beforeStatus)} →
                         {formatProjectStatusLabel(statusChange.afterStatus)}
+                      </div>
+                    )}
+                    {item.kind === 'leave_upcoming' && leaveRange && (
+                      <div style={{ fontSize: 12, color: '#475569' }}>
+                        期間: {formatLeaveRange(leaveRange)}
+                        {leaveRange.leaveType
+                          ? ` / 種別: ${leaveRange.leaveType}`
+                          : ''}
                       </div>
                     )}
                     {excerpt && (

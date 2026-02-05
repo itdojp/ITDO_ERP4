@@ -312,7 +312,7 @@ function resolveGroupIdsForRoles(roles: string[]) {
     .map(([groupId]) => groupId);
 }
 
-async function resolveRoleRecipientUserIds(roles: string[]) {
+export async function resolveRoleRecipientUserIds(roles: string[]) {
   if (!roles.length) return [] as string[];
   const groupIds = resolveGroupIdsForRoles(roles);
   if (!groupIds.length) return [] as string[];
