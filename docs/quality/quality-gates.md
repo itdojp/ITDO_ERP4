@@ -95,6 +95,7 @@ CIで何を検査しているか、どれを「必須ゲート（ブロック）
 - `make typecheck`
 - `make test`
 - `make e2e`
+- `make ui-evidence`（UI証跡の再取得。任意）
 
 ### Lint/Format
 - backend: `npm run lint --prefix packages/backend && npm run format:check --prefix packages/backend`

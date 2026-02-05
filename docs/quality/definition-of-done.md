@@ -32,3 +32,6 @@ PR（変更単位）で「完了」と見なす条件を定義し、レビュー
 - 「デフォルト安全」を優先する（例: 外部送信は allowlist、スキャナ停止時は fail closed 等）
 - シークレット/トークンをリポジトリにコミットしない（例: `.env`、鍵、認証情報）
 
+## レビュー補助（任意）
+- PR のレビュー本文/インラインコメント（suggestion含む）の全件確認には、`make pr-comments PR=<number>` を利用できます
+  - 生成物: `tmp/pr-<number>/summary.md`（REST API で取得するため、GraphQL 互換問題の影響を受けません）

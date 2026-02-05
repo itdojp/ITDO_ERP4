@@ -12,6 +12,11 @@
 ./scripts/e2e-ui-evidence.sh
 ```
 
+Makefile を使う場合:
+```bash
+make ui-evidence
+```
+
 生成物:
 - `docs/test-results/<YYYY-MM-DD>-frontend-e2e-rN/`（証跡ディレクトリ）
 - `docs/test-results/<YYYY-MM-DD>-frontend-e2e-rN.md`（実行ログ）
@@ -30,4 +35,3 @@ E2E_GREP="frontend smoke" ./scripts/e2e-ui-evidence.sh
 ## 注意
 - 既存の証跡を上書きしない方針です（同名が存在する場合はエラーになります）
 - 取得した証跡を UI マニュアルに反映する場合は、`docs/manual/ui-manual-*.md` の参照先（画像パス）も更新してください
-
