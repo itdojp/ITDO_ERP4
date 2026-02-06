@@ -3,7 +3,7 @@
 ## 残作業（運用確定）
 - [ ] #544 S3 バケット/リージョン/KMS の確定値を `docs/requirements/backup-restore.md` に反映
 - [ ] #544 S3/OSS 移行の時期を決定（`docs/requirements/backup-restore.md`）
-- [ ] #887 GitHub Packages 配布復旧後に `@itdojp/design-system@1.0.2`（または最新）へ依存を戻す（現状: `github:itdojp/itdo-design-system#bump-1.0.2`）
+- [x] #887 design-system 依存を `@itdo/design-system@1.0.3` へ移行
 - [x] #648 E2E/統合テストの拡充（手動チェックの自動化開始）
 - [x] #650 依存関係更新の運用ルール整備（`docs/quality/dependency-update-policy.md`）
 - [x] #649 監査ログ/操作ログ 基盤の整理（PIIマスキング・相関ID）

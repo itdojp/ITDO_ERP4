@@ -1,1 +1,1 @@
-export * from '@itdojp/design-system';
+export * from '@itdo/design-system';

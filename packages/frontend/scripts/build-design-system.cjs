@@ -8,7 +8,7 @@ const frontendRoot = path.resolve(__dirname, '..');
 const designSystemRoot = path.join(
   frontendRoot,
   'node_modules',
-  '@itdojp',
+  '@itdo',
   'design-system',
 );
 const distRoot = path.join(designSystemRoot, 'dist');
@@ -53,16 +53,21 @@ const sleep = (ms) => {
   Atomics.wait(waitArray, 0, 0, ms);
 };
 
-const resolveGitTag = () => {
+const resolveSourceRef = () => {
   try {
     const pkgPath = path.join(frontendRoot, 'package.json');
     const parsed = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
-    const spec = parsed?.dependencies?.['@itdojp/design-system'];
-    if (typeof spec !== 'string') return 'v1.0.0';
-    const match = spec.match(/#(.+)$/);
-    return match?.[1] ? String(match[1]) : 'v1.0.0';
+    const spec =
+      parsed?.dependencies?.['@itdo/design-system'] ??
+      parsed?.dependencies?.['@itdojp/design-system'];
+    if (typeof spec !== 'string') return 'v1.0.3';
+    const gitRef = spec.match(/#(.+)$/)?.[1];
+    if (gitRef) return String(gitRef);
+    const semver = spec.match(/(\d+\.\d+\.\d+)/)?.[1];
+    if (semver) return `v${semver}`;
+    return 'v1.0.3';
   } catch {
-    return 'v1.0.0';
+    return 'v1.0.3';
   }
 };
 
@@ -76,10 +81,11 @@ if (exists(distEntry) && exists(distStyles)) {
   process.exit(0);
 }
 
-const tag = resolveGitTag();
+const sourceRef = resolveSourceRef();
+const sourceRefDir = sourceRef.replace(/[^A-Za-z0-9._-]/g, '_');
 const repoUrl = 'https://github.com/itdojp/itdo-design-system.git';
 const cacheRoot = path.join(os.tmpdir(), 'erp4-design-system-build');
-const repoDir = path.join(cacheRoot, `itdo-design-system-${tag}`);
+const repoDir = path.join(cacheRoot, `itdo-design-system-${sourceRefDir}`);
 const cloneRetriesRaw = process.env.DESIGN_SYSTEM_CLONE_RETRIES || '3';
 const cloneRetries = Math.max(1, Number(cloneRetriesRaw) || 1);
 
@@ -103,7 +109,7 @@ if (buildLocal()) {
   process.exit(0);
 }
 
-console.log(`[design-system] building from source (${tag})...`);
+console.log(`[design-system] building from source (${sourceRef})...`);
 
 fs.mkdirSync(cacheRoot, { recursive: true });
 
@@ -121,7 +127,7 @@ for (let attempt = 1; attempt <= cloneRetries; attempt += 1) {
         '--depth',
         '1',
         '--branch',
-        tag,
+        sourceRef,
         repoUrl,
         repoDir,
       ],

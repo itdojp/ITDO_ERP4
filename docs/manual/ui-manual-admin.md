@@ -491,4 +491,4 @@
 ![PWA キャッシュ更新](../test-results/2026-02-05-frontend-e2e-r1/20-sw-cache-refresh.png)
 
 - `pwa push subscribe flow` は `VITE_PUSH_PUBLIC_KEY` 未設定のため E2E ではスキップしています。
-- 画面デザインは `@itdojp/design-system` 適用済みです（compact density）。
+- 画面デザインは `@itdo/design-system` 適用済みです（compact density）。

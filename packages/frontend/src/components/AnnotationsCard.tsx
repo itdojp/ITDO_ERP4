@@ -258,7 +258,7 @@ const InternalOpenLink = ({
   ...props
 }: React.ComponentPropsWithoutRef<'a'> & {
   children?: React.ReactNode;
-}): JSX.Element => {
+}): React.ReactElement => {
   const link = normalizeString(href);
   const isOpen = link.startsWith('/#/open') || link.startsWith('#/open');
   const safeHref = link || '#';
