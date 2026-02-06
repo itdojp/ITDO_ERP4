@@ -1,0 +1,76 @@
+name: Design System Package Watch
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "30 2 * * *"
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 20.19.0
+
+      - name: Check latest availability
+        id: latest
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p tmp
+          set +e
+          ./scripts/check-design-system-package.sh > tmp/design-system-package-latest.log 2>&1
+          status=$?
+          cat tmp/design-system-package-latest.log
+          echo "status=${status}" >> "$GITHUB_OUTPUT"
+          if [ "$status" -eq 0 ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+          fi
+          exit 0
+
+      - name: Check target version (1.0.2)
+        id: v102
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DESIGN_SYSTEM_VERSION: 1.0.2
+        run: |
+          set +e
+          ./scripts/check-design-system-package.sh > tmp/design-system-package-v102.log 2>&1
+          status=$?
+          cat tmp/design-system-package-v102.log
+          echo "status=${status}" >> "$GITHUB_OUTPUT"
+          if [ "$status" -eq 0 ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+          fi
+          exit 0
+
+      - name: Write summary
+        run: |
+          {
+            echo "## Design System Package Check"
+            echo ""
+            echo "- latest available: ${{ steps.latest.outputs.available }} (status=${{ steps.latest.outputs.status }})"
+            echo "- v1.0.2 available: ${{ steps.v102.outputs.available }} (status=${{ steps.v102.outputs.status }})"
+            echo ""
+            echo "Manual check command:"
+            echo "\`make design-system-package-check\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: design-system-package-check-${{ github.run_id }}
+          path: tmp/design-system-package-*.log
+          if-no-files-found: error
+          retention-days: 14
