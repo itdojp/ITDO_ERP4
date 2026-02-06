@@ -34,4 +34,4 @@ PR（変更単位）で「完了」と見なす条件を定義し、レビュー
 
 ## レビュー補助（任意）
 - PR のレビュー本文/インラインコメント（suggestion含む）の全件確認には、`make pr-comments PR=123` を利用できます（例: `make pr-comments PR=884`）
-  - 生成物: `tmp/pr-<number>/summary.md`（REST API で取得するため、GraphQL 互換問題の影響を受けません）
+  - 生成物: `tmp/pr-123/summary.md`（例: `tmp/pr-884/summary.md`。REST API で取得するため、GraphQL 互換問題の影響を受けません）
