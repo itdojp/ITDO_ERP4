@@ -72,11 +72,15 @@
 
 ### メール配信の対象（実装済み）
 
+- 既定: `NOTIFICATION_EMAIL_KINDS` 未設定時は `chat_mention`, `daily_report_missing` のみ
+  - `NOTIFICATION_EMAIL_KINDS` を明示すると既定値は上書きされます
 - `chat_mention`
+- `daily_report_missing`
 - （任意）`chat_message`（環境変数 `NOTIFICATION_EMAIL_KINDS` に含めた場合）
 - （任意）`chat_ack_required`（環境変数 `NOTIFICATION_EMAIL_KINDS` に含めた場合）
+- （任意）`chat_ack_escalation`（環境変数 `NOTIFICATION_EMAIL_KINDS` に含めた場合）
+- （任意）`expense_mark_paid`（環境変数 `NOTIFICATION_EMAIL_KINDS` に含めた場合）
 - （任意）`approval_pending`, `approval_approved`, `approval_rejected`（環境変数 `NOTIFICATION_EMAIL_KINDS` に含めた場合）
-- `daily_report_missing`
 - 配信ジョブ: `/jobs/notification-deliveries/run`
 
 補足:
@@ -86,7 +90,8 @@
 
 ### 未実装/手動のみ
 
-- Push通知の実配信は `/push-notifications/test` の手動テストのみ
+- Push通知は `/push-notifications/test` の手動テスト導線のみ（イベント別のPushは未実装）
+  - `VAPID_*`（backend）未設定時は stub 応答（配信なし）
 - イベント別のPush/外部連携（Slack/Webhook）は未実装
 
 ## 通知イベント一覧（MVP確定）
@@ -127,7 +132,7 @@
 
 ## チャネル別の方針（MVP確定）
 
-- 重要: 承認、期限超過、日報未提出 → アプリ内 + メール
+- 重要: 承認、期限超過、日報未提出 → アプリ内 + メール（メールは設定依存: App通知は `NOTIFICATION_EMAIL_KINDS`、アラートは `AlertSetting.channels`）
 - 参考: 提出/修正通知 → アプリ内（メールは任意）
 - 外部連携: アラート系のみ（Slack/Webhook）
 
@@ -156,6 +161,8 @@
 | 承認（その他） | 申請/差戻し/承認/却下    | 申請者/承認者                           | app + email        | 重要通知                                                   |
 | 承認           | 承認遅延                 | 承認者/管理者                           | app + email        | 既存アラートと整合                                         |
 
+※ 表の「app + email」は運用方針です。実配信は AppNotification は `NOTIFICATION_EMAIL_KINDS`、アラートは `AlertSetting.channels` に email が含まれる場合のみ行われます。
+
 ### 宛先ルール（MVP確定）
 
 - `AppNotification.userId` は認証コンテキストの `userId` と同一（既定: JWTの `sub` / `email` / `preferred_username`、またはヘッダ `x-user-id`）。
@@ -168,9 +175,10 @@
 
 ### サプレッション/再送（MVP）
 
-- remindAfterHours: 24h
-- remindMaxCount: 3
-- 同一イベントの再送は `AppNotificationDelivery` の status を参照して抑制
+- （Alert）remindAfterHours: `AlertSetting.remindAfterHours`（未設定ならリマインドなし）
+- （Alert）remindMaxCount: `AlertSetting.remindMaxCount`（未設定は 3）
+- （AppNotification/email）同一通知は `AppNotificationDelivery` の存在で追加作成を抑止（status に依存しない）
+- （AppNotification/email）メール配信は未読（readAt=null）かつ `NOTIFICATION_DELIVERY_LOOKBACK_DAYS` 内のみ対象（既定: 30日）
 
 ### 監査ログ対象（MVP）
 
