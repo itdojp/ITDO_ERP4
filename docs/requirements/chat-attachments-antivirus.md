@@ -73,6 +73,22 @@ ClamAV 定義更新は以下のいずれかを採用する前提で運用を確�
   - 本実装はスキャナ利用不能時に 503 で拒否（fail closed）
   - 影響（添付不可）を許容できない場合は、運用として「復旧優先度」を定義する
 
+### 本番有効化の判定ゲート（Issue #886）
+
+`CHAT_ATTACHMENT_AV_PROVIDER=clamav` を本番で有効化する前に、以下を満たすことを必須とする。
+
+1. セキュリティ要件
+   - 外部ユーザを含む添付利用で「スキャンなし」を許容しないことが、運用責任者/セキュリティ責任者で合意されている。
+2. 可用性要件
+   - fail closed（スキャナ停止時は 503）を業務として許容するか、許容しない場合の代替フロー（受付窓口/一次保管）が定義されている。
+3. 運用要件
+   - 定義更新方式（`freshclam --daemon` / 定期ジョブ / イメージ更新）を選定し、担当/頻度/障害時手順が確定している。
+   - 監視対象（clamd死活、`chat_attachment_scan_failed`、タイムアウト増加）に対するアラート閾値と一次対応手順が確定している。
+4. 検証要件
+   - ステージングで `bash scripts/smoke-chat-attachments-av.sh` を実行し、結果を `docs/test-results/` に記録している。
+
+上記が未確定の場合は `CHAT_ATTACHMENT_AV_PROVIDER=disabled` を維持する。
+
 ## テスト（手動）
 
 1. backend を `CHAT_ATTACHMENT_AV_PROVIDER=eicar` で起動
