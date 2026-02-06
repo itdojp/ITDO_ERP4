@@ -38,3 +38,10 @@ npm install
 ```
 
 CI 側は `.github/workflows/ci.yml` に `packages: read` と `NODE_AUTH_TOKEN` の下地があります。
+
+Packages 側の公開確認（Issue #887）:
+
+```bash
+make design-system-package-check
+DESIGN_SYSTEM_VERSION=1.0.2 make design-system-package-check
+```
