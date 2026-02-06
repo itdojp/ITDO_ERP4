@@ -20,8 +20,6 @@ jobs:
 
       - name: Check latest availability
         id: latest
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           mkdir -p tmp
           set +e
@@ -36,16 +34,15 @@ jobs:
           fi
           exit 0
 
-      - name: Check target version (1.0.2)
-        id: v102
+      - name: Check target version (1.0.3)
+        id: v103
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          DESIGN_SYSTEM_VERSION: 1.0.2
+          DESIGN_SYSTEM_VERSION: 1.0.3
         run: |
           set +e
-          ./scripts/check-design-system-package.sh > tmp/design-system-package-v102.log 2>&1
+          ./scripts/check-design-system-package.sh > tmp/design-system-package-v103.log 2>&1
           status=$?
-          cat tmp/design-system-package-v102.log
+          cat tmp/design-system-package-v103.log
           echo "status=${status}" >> "$GITHUB_OUTPUT"
           if [ "$status" -eq 0 ]; then
             echo "available=true" >> "$GITHUB_OUTPUT"
@@ -60,7 +57,7 @@ jobs:
             echo "## Design System Package Check"
             echo ""
             echo "- latest available: ${{ steps.latest.outputs.available }} (status=${{ steps.latest.outputs.status }})"
-            echo "- v1.0.2 available: ${{ steps.v102.outputs.available }} (status=${{ steps.v102.outputs.status }})"
+            echo "- v1.0.3 available: ${{ steps.v103.outputs.available }} (status=${{ steps.v103.outputs.status }})"
             echo ""
             echo "Manual check command:"
             echo "\`make design-system-package-check\`"

@@ -1,22 +1,27 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-PACKAGE="${DESIGN_SYSTEM_PACKAGE:-@itdojp/design-system}"
-REGISTRY="${DESIGN_SYSTEM_REGISTRY:-https://npm.pkg.github.com}"
+PACKAGE="${DESIGN_SYSTEM_PACKAGE:-@itdo/design-system}"
+REGISTRY="${DESIGN_SYSTEM_REGISTRY:-https://registry.npmjs.org}"
 VERSION="${DESIGN_SYSTEM_VERSION:-}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 NPM_USERCONFIG="${NPM_CONFIG_USERCONFIG:-${REPO_ROOT}/.npmrc}"
 
-if [[ -z "${NODE_AUTH_TOKEN:-}" ]] && command -v gh >/dev/null 2>&1; then
+requires_auth="false"
+if [[ "${REGISTRY}" == *"npm.pkg.github.com"* ]]; then
+  requires_auth="true"
+fi
+
+if [[ "${requires_auth}" == "true" ]] && [[ -z "${NODE_AUTH_TOKEN:-}" ]] && command -v gh >/dev/null 2>&1; then
   if gh auth status >/dev/null 2>&1; then
     NODE_AUTH_TOKEN="$(gh auth token)"
     export NODE_AUTH_TOKEN
   fi
 fi
 
-if [[ -z "${NODE_AUTH_TOKEN:-}" ]]; then
-  echo "NODE_AUTH_TOKEN is required. Export NODE_AUTH_TOKEN or login via 'gh auth login'." >&2
+if [[ "${requires_auth}" == "true" ]] && [[ -z "${NODE_AUTH_TOKEN:-}" ]]; then
+  echo "NODE_AUTH_TOKEN is required for GitHub Packages. Export NODE_AUTH_TOKEN or login via 'gh auth login'." >&2
   exit 1
 fi
 
