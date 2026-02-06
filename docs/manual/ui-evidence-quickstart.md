@@ -32,6 +32,11 @@ E2E_RUN=r2 ./scripts/e2e-ui-evidence.sh
 E2E_GREP="frontend smoke" ./scripts/e2e-ui-evidence.sh
 ```
 
+タイムアウトを伸ばす（環境が重い場合）:
+```bash
+E2E_ACTION_TIMEOUT_MS=15000 make ui-evidence
+```
+
 ## 注意
 - 既存の証跡を上書きしない方針です（同名が存在する場合はエラーになります）
 - 取得した証跡を UI マニュアルに反映する場合は、`docs/manual/ui-manual-*.md` の参照先（画像パス）も更新してください
