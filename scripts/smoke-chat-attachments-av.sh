@@ -9,6 +9,7 @@ BASE_URL="${BASE_URL:-http://localhost:${BACKEND_PORT}}"
 DB_CONTAINER_NAME="${DB_CONTAINER_NAME:-erp4-pg-smoke-chat-av}"
 DB_HOST_PORT="${DB_HOST_PORT:-55436}"
 DATABASE_URL="${DATABASE_URL:-postgresql://postgres:postgres@localhost:${DB_HOST_PORT}/postgres?schema=public}"
+export DATABASE_URL
 
 CLAMAV_CONTAINER_NAME="${CLAMAV_CONTAINER_NAME:-erp4-clamav-smoke}"
 CLAMAV_HOST_PORT="${CLAMAV_HOST_PORT:-3311}"
