@@ -82,9 +82,10 @@ if (exists(distEntry) && exists(distStyles)) {
 }
 
 const sourceRef = resolveSourceRef();
+const sourceRefDir = sourceRef.replace(/[^A-Za-z0-9._-]/g, '_');
 const repoUrl = 'https://github.com/itdojp/itdo-design-system.git';
 const cacheRoot = path.join(os.tmpdir(), 'erp4-design-system-build');
-const repoDir = path.join(cacheRoot, `itdo-design-system-${sourceRef}`);
+const repoDir = path.join(cacheRoot, `itdo-design-system-${sourceRefDir}`);
 const cloneRetriesRaw = process.env.DESIGN_SYSTEM_CLONE_RETRIES || '3';
 const cloneRetries = Math.max(1, Number(cloneRetriesRaw) || 1);
 

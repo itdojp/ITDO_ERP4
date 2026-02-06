@@ -7,10 +7,18 @@ VERSION="${DESIGN_SYSTEM_VERSION:-}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 NPM_USERCONFIG="${NPM_CONFIG_USERCONFIG:-${REPO_ROOT}/.npmrc}"
+TEMP_NPM_USERCONFIG=""
 
 requires_auth="false"
 if [[ "${REGISTRY}" == *"npm.pkg.github.com"* ]]; then
   requires_auth="true"
+fi
+
+if [[ "${requires_auth}" == "false" ]]; then
+  TEMP_NPM_USERCONFIG="$(mktemp)"
+  NPM_USERCONFIG="${TEMP_NPM_USERCONFIG}"
+  printf 'registry=%s\n' "${REGISTRY}" > "${NPM_USERCONFIG}"
+  trap 'if [[ -n "${TEMP_NPM_USERCONFIG}" && -f "${TEMP_NPM_USERCONFIG}" ]]; then rm -f "${TEMP_NPM_USERCONFIG}"; fi' EXIT
 fi
 
 if [[ "${requires_auth}" == "true" ]] && [[ -z "${NODE_AUTH_TOKEN:-}" ]] && command -v gh >/dev/null 2>&1; then
