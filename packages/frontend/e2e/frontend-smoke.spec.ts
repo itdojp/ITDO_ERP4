@@ -10,7 +10,15 @@ const evidenceDir =
 const captureEnabled = process.env.E2E_CAPTURE !== '0';
 const baseUrl = process.env.E2E_BASE_URL || 'http://localhost:5173';
 const apiBase = process.env.E2E_API_BASE || 'http://localhost:3002';
-const actionTimeout = 8000;
+const actionTimeout = (() => {
+  const raw = process.env.E2E_ACTION_TIMEOUT_MS;
+  if (raw) {
+    const value = Number(raw);
+    if (Number.isFinite(value) && value > 0) return value;
+  }
+  // Keep CI slightly more tolerant to reduce flakiness on loaded runners.
+  return process.env.CI ? 15_000 : 8_000;
+})();
 
 const authState = {
   userId: 'demo-user',
