@@ -17,7 +17,7 @@ const actionTimeout = (() => {
     if (Number.isFinite(value) && value > 0) return value;
   }
   // Keep CI slightly more tolerant to reduce flakiness on loaded runners.
-  return process.env.CI ? 15_000 : 8000;
+  return process.env.CI ? 15_000 : 8_000;
 })();
 
 const authState = {
