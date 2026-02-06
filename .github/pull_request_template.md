@@ -12,6 +12,6 @@
 ## 補助コマンド（任意）
 
 - UI変更がある場合（証跡の再取得）: `make ui-evidence`
-- PRコメント出力（本文/レビュー/インライン）: `make pr-comments PR=<number>`
+- PRコメント出力（本文/レビュー/インライン）: `make pr-comments PR=123`（例: `make pr-comments PR=884`）
 
 ## その他メモ
