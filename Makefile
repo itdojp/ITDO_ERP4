@@ -1,4 +1,4 @@
-.PHONY: lint format-check typecheck build test e2e ui-evidence pr-comments audit
+.PHONY: lint format-check typecheck build test e2e ui-evidence pr-comments audit design-system-package-check
 
 lint:
 	npm run lint --prefix packages/backend
@@ -32,3 +32,6 @@ pr-comments:
 audit:
 	npm audit --prefix packages/backend --audit-level=high
 	npm audit --prefix packages/frontend --audit-level=high
+
+design-system-package-check:
+	./scripts/check-design-system-package.sh
