@@ -3,7 +3,7 @@
 ## 残作業（運用確定）
 - [ ] #544 S3 バケット/リージョン/KMS の確定値を `docs/requirements/backup-restore.md` に反映
 - [ ] #544 S3/OSS 移行の時期を決定（`docs/requirements/backup-restore.md`）
-- [ ] （後続）GitHub Packages 配布復旧後に `@itdojp/design-system@1.0.2`（または最新）へ依存を戻す（現状: `github:itdojp/itdo-design-system#bump-1.0.2`）
+- [ ] #887 GitHub Packages 配布復旧後に `@itdojp/design-system@1.0.2`（または最新）へ依存を戻す（現状: `github:itdojp/itdo-design-system#bump-1.0.2`）
 - [x] #648 E2E/統合テストの拡充（手動チェックの自動化開始）
 - [x] #650 依存関係更新の運用ルール整備（`docs/quality/dependency-update-policy.md`）
 - [x] #649 監査ログ/操作ログ 基盤の整理（PIIマスキング・相関ID）
@@ -33,8 +33,8 @@
     - [x] 運用設計（叩き台）を docs に追加（PR #566）
     - [x] Podman で clamd を起動/停止/疎通できる補助スクリプトを追加（PR #567）
     - [x] readiness 改善（PING/PONG）+ 統合スモーク + テスト結果記録（PR #568）
-  - [ ] （運用判断）AVスキャン本番有効化方針（`disabled` 継続 or `clamav`）の決定
-  - [ ] （運用判断）定義更新/監視/障害時の運用方針の最終決定（`docs/requirements/chat-attachments-antivirus.md`）
+  - [ ] #886 AVスキャン本番有効化方針（`disabled` 継続 or `clamav`）の決定
+  - [ ] #886 定義更新/監視/障害時の運用方針の最終決定（`docs/requirements/chat-attachments-antivirus.md`）
   - [x] FE: SCIM 設定/状態のUI（/scim/status）
 
 ## 次アクション（プロジェクト運用/レポート）
