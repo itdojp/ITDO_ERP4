@@ -66,6 +66,12 @@ Playwright のブラウザが既にインストール済みであれば:
 E2E_SKIP_PLAYWRIGHT_INSTALL=1 E2E_CAPTURE=0 E2E_SCOPE=core ./scripts/e2e-frontend.sh
 ```
 
+## タイムアウトを調整する（任意）
+CIやローカル環境が重い場合、E2E の UI 操作系の待ち時間（ms）を調整できます。
+```bash
+E2E_ACTION_TIMEOUT_MS=15000 E2E_CAPTURE=0 E2E_SCOPE=core ./scripts/e2e-frontend.sh
+```
+
 ## 失敗時の診断（最小）
 - 起動失敗やAPI例外は `tmp/e2e-backend.log` / `tmp/e2e-frontend.log` を確認
 - 該当ケースだけ再実行する場合は `E2E_GREP` で対象を絞る
