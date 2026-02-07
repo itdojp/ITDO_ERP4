@@ -1,31 +1,64 @@
 # 添付AVスキャン（Runbook）
 
-## 入口
-詳細は `docs/requirements/chat-attachments-antivirus.md` を参照。
+## 目的
+- チャット添付の AV スキャン運用を、障害時対応まで含めて一貫した手順で実施する。
+- 要件詳細は `docs/requirements/chat-attachments-antivirus.md` を参照する。
+
+## 現時点の運用方針（2026-02-07）
+- 本番は `CHAT_ATTACHMENT_AV_PROVIDER=disabled` を継続し、ステージング検証と運用条件確定後に `clamav` 有効化を判断する。
+- `clamav` 運用時は fail closed（スキャナ利用不能時 503）を維持し、例外バイパスは設けない。
+- 運用判断の残件は `Issue #886` で管理する。
 
 ## 運用モード
 1. `disabled`（既定）
-   - スキャンなし。導入前/方針未確定時の運用。
+   - スキャンなし。運用未確定期間の既定モード。
 2. `clamav`
-   - clamd 連携でスキャン。利用不能時は 503（fail closed）。
+   - clamd 連携でスキャン。`FOUND` は 422、利用不能は 503（fail closed）。
+
+## 検証コマンド
+- clamd 疎通/EICAR 検証: `bash scripts/podman-clamav.sh check`
+- API 統合スモーク: `bash scripts/smoke-chat-attachments-av.sh`
+
+## 監視対象と推奨しきい値（確定候補）
+1. 死活監視（必須）
+   - 条件: clamd TCP 応答不可が 3 分継続
+   - 重要度: Critical
+2. スキャン失敗監視（必須）
+   - 条件: `chat_attachment_scan_failed` が 10 分で 5 件以上
+   - 重要度: High
+3. AV 起因の添付失敗率（推奨）
+   - 条件: 添付 API の 503 比率が 10 分窓で 1% 超
+   - 重要度: High
+4. 遅延監視（推奨）
+   - 条件: スキャン処理時間 p95 が 5 秒超（10 分継続）
+   - 重要度: Medium
+
+注記:
+- 監視基盤が整っていない環境では、監査ログ集計で代替し、日次で件数確認する。
+- しきい値はステージング結果に基づき `Issue #886` で最終確定する。
+
+## 障害時対応フロー（fail closed 前提）
+1. 検知
+   - アラート受信、または `chat_attachment_scan_failed` 急増を確認。
+2. 一次切り分け
+   - clamd コンテナ状態、TCP 3310 応答、`podman logs` を確認。
+3. 復旧
+   - clamd 再起動後、`bash scripts/podman-clamav.sh check` を実行。
+4. 機能確認
+   - `bash scripts/smoke-chat-attachments-av.sh` を再実行して 200/422/503 挙動を確認。
+5. 影響確認
+   - 障害期間中の添付失敗件数を監査ログから集計し、必要に応じて利用者へ周知。
+6. 記録
+   - 原因、対応、再発防止策をインシデント記録に残す。
 
 ## 本番有効化チェックリスト（Issue #886）
 - [ ] `CHAT_ATTACHMENT_AV_PROVIDER` 方針を確定（`disabled` 維持 or `clamav` 有効化）
 - [ ] fail closed を業務上許容するかを確定（不可の場合は代替フローを定義）
 - [ ] 定義更新方式を確定（`freshclam --daemon` / 定期ジョブ / イメージ更新）
 - [ ] 監視/アラート閾値を確定（clamd死活、`chat_attachment_scan_failed`、タイムアウト）
-- [ ] 復旧Runbookを確定（検知→切り分け→復旧→再検証）
+- [x] 復旧Runbookを具体化（検知→切り分け→復旧→再検証）
 - [ ] ステージング検証結果を `docs/test-results/` に記録
 
-過去の検証結果:
-- `docs/test-results/2026-01-16-chat-attachments-av.md`
-
-## 検証コマンド
-- clamd 疎通/EICAR 検証: `bash scripts/podman-clamav.sh check`
-- API統合スモーク: `bash scripts/smoke-chat-attachments-av.sh`
-
-## 復旧時の最小手順
-1. clamd の死活確認（コンテナ/プロセス/TCP 3310）
-2. `chat_attachment_scan_failed` の件数を確認して影響範囲を把握
-3. clamd を復旧後、`bash scripts/podman-clamav.sh check` を実行
-4. API統合スモークを再実行し、正常化を確認
+## 検証結果の記録
+- 直近の検証（ローカル/PoC）: `docs/test-results/2026-02-06-chat-attachments-av-r2.md`
+- 記録テンプレート: `docs/test-results/chat-attachments-av-staging-template.md`

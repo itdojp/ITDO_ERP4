@@ -5,10 +5,15 @@
 - 画面キャプチャなどの証跡は `docs/test-results/YYYY-MM-DD-*/` に保存する。
 - 同日複数回の再取得は `YYYY-MM-DD-frontend-e2e-rN`（r1/r2...）を使用し、上書きしない。
 - UI証跡の取得は `./scripts/e2e-ui-evidence.sh` の利用を推奨する。
+- 運用判定の事前テンプレートは `docs/test-results/*-template.md` を利用する。
 
 ## 一覧
 ### Performance
 - 入口: docs/test-results/perf/README.md
+
+### Template
+- チャット添付AV（Staging）検証テンプレート: docs/test-results/chat-attachments-av-staging-template.md
+- DRリストア運用検証テンプレート: docs/test-results/dr-restore-template.md
 
 ### 2026-02-06
 - チャット添付AV（ClamAV/clamd）再検証 r2: docs/test-results/2026-02-06-chat-attachments-av-r2.md

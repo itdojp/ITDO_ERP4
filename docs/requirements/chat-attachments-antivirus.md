@@ -35,43 +35,52 @@
 - ブロック: `chat_attachment_blocked` を記録
 - スキャン失敗: `chat_attachment_scan_failed` を記録
 
-## 運用設計（叩き台）
+## 運用設計（確定候補 / Issue #886）
 
-### 有効化の考え方
+運用Runbookは `docs/ops/antivirus.md` を正本として管理する。監視しきい値や障害対応フローなどの運用詳細は Runbook 側に記載し、本節では有効化判断と判定ゲートの必須要件を中心に整理する。
 
-- 既定は `disabled`（添付を許容しつつ、運用決定を後回しにできる）
-- `clamav` の有効化は、少なくとも以下を満たす環境で推奨
-  - 外部ユーザが添付をアップロードできる
-  - 監査/ガバナンス上「スキャンなし」を許容できない
+### 現時点の確定事項（2026-02-07時点）
 
-### コンテナ構成（検証環境）
+- 既定は `disabled` を維持する（未確定項目が残る間は挙動変更しない）。
+- `clamav` 運用時の障害挙動は fail closed（スキャナ利用不能時は 503）とする。
+- 検証構成は backend と clamd を同一ホスト別コンテナで接続（TCP: `CLAMAV_HOST`/`CLAMAV_PORT`）する。
 
-- backend と同一ホスト上で clamd を別コンテナとして起動する
-- 接続は TCP（`CLAMAV_HOST`/`CLAMAV_PORT`）で行う
-- この方式では backend 側は「スキャンが成立した場合のみ保存」し、スキャナ利用不能時は 503 で拒否する（fail closed）
+### 有効化判断の前提
 
-### 定義更新（本番の要件として決めること）
+`clamav` 有効化は、少なくとも以下を満たす場合に推奨する。
 
-ClamAV 定義更新は以下のいずれかを採用する前提で運用を確定する。
+- 外部ユーザが添付をアップロード可能である。
+- 監査/ガバナンス上、「スキャンなし」を許容できない。
 
-- コンテナ内の `freshclam` で自動更新する構成（イメージ/エントリポイントに依存）
-- 定期ジョブで `freshclam` を実行する構成（例: 日次）
-- 定期的にイメージを更新して入れ替える構成
+### 定義更新方式（確定候補）
 
-検証メモ:
-- `docker.io/clamav/clamav:latest` は `clamd` と `freshclam --daemon` が同一コンテナで起動し、定義更新も実行されることを確認しました。
-  - 例: `podman exec erp4-clamav ps -eo pid,comm,args` で `freshclam --daemon` を確認
-  - 例: `podman logs erp4-clamav` に `ClamAV update process started` が出力されることを確認
+第1候補:
+- `docker.io/clamav/clamav:latest` の `freshclam --daemon` を利用する。
 
-### 監視/障害時
+補完策:
+- 週次以上でイメージ更新ジョブを実行し、定義/エンジン更新の取りこぼしを抑制する。
 
-- 推奨の監視対象
-  - clamd の死活（TCP 接続）
-  - `chat_attachment_scan_failed` の発生（監査ログ）
-  - スキャン遅延（タイムアウトの増加）
-- 障害時の挙動
-  - 本実装はスキャナ利用不能時に 503 で拒否（fail closed）
-  - 影響（添付不可）を許容できない場合は、運用として「復旧優先度」を定義する
+検証根拠:
+- `podman exec erp4-clamav ps -eo pid,comm,args` で `freshclam --daemon` を確認済み。
+- `podman logs erp4-clamav` で `ClamAV update process started` を確認済み。
+
+### 監視/障害対応（確定候補）
+
+推奨監視対象:
+- clamd 死活（TCP 応答）
+- `chat_attachment_scan_failed` の発生件数
+- スキャン遅延（タイムアウト増加）
+- 添付 API の 503 比率
+
+推奨しきい値:
+- clamd 応答不可が 3 分継続: Critical
+- `chat_attachment_scan_failed` が 10 分で 5 件以上: High
+- 添付 API の 503 比率が 10 分窓で 1% 超: High
+- スキャン処理時間 p95 が 5 秒超（10 分継続）: Medium
+
+障害時の原則:
+- fail closed を維持し、バイパス保存は行わない。
+- 復旧手順は `docs/ops/antivirus.md` に従って再検証まで実施する。
 
 ### 本番有効化の判定ゲート（Issue #886）
 
@@ -86,6 +95,7 @@ ClamAV 定義更新は以下のいずれかを採用する前提で運用を確�
    - 監視対象（clamd死活、`chat_attachment_scan_failed`、タイムアウト増加）に対するアラート閾値と一次対応手順が確定している。
 4. 検証要件
    - ステージングで `bash scripts/smoke-chat-attachments-av.sh` を実行し、結果を `docs/test-results/` に記録している。
+   - 記録は `docs/test-results/chat-attachments-av-staging-template.md` の様式に従う。
 
 上記が未確定の場合は `CHAT_ATTACHMENT_AV_PROVIDER=disabled` を維持する。
 
