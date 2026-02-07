@@ -22,8 +22,9 @@ const ACTION_UPLOADED = 'chat_attachment_uploaded';
 const ACTION_BLOCKED = 'chat_attachment_blocked';
 const ACTION_SCAN_FAILED = 'chat_attachment_scan_failed';
 
-const ALERT_SCAN_FAILED_COUNT = 5;
-const ALERT_SCAN_FAILED_RATE = 0.01;
+const DEFAULT_THRESHOLD_SCAN_FAILED_COUNT = 5;
+const DEFAULT_THRESHOLD_SCAN_FAILED_RATE_PCT = 1;
+const DEFAULT_THRESHOLD_SCAN_P95_MS = 5000;
 
 function parseArgValue(name) {
   const prefix = `--${name}=`;
@@ -55,6 +56,32 @@ function parseFormat(raw) {
   throw new Error('format must be text or json');
 }
 
+function parsePositiveInteger(name, raw, fallback) {
+  if (!raw) return fallback;
+  const parsed = Number(raw);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    throw new Error(`${name} must be a positive integer`);
+  }
+  return parsed;
+}
+
+function parseNonNegativeNumber(name, raw, fallback) {
+  if (!raw) return fallback;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    throw new Error(`${name} must be a non-negative number`);
+  }
+  return parsed;
+}
+
+function parsePercentage(name, raw, fallback) {
+  const value = parseNonNegativeNumber(name, raw, fallback);
+  if (value > 100) {
+    throw new Error(`${name} must be between 0 and 100`);
+  }
+  return value;
+}
+
 function parseOptions() {
   const now = new Date();
   const toRaw = parseArgValue('to');
@@ -71,6 +98,23 @@ function parseOptions() {
     to,
     windowMinutes: parseWindowMinutes(parseArgValue('window-minutes')),
     format: parseFormat(parseArgValue('format')),
+    thresholds: {
+      scanFailedCount: parsePositiveInteger(
+        'threshold-scan-failed-count',
+        parseArgValue('threshold-scan-failed-count'),
+        DEFAULT_THRESHOLD_SCAN_FAILED_COUNT,
+      ),
+      scanFailedRatePct: parsePercentage(
+        'threshold-scan-failed-rate-pct',
+        parseArgValue('threshold-scan-failed-rate-pct'),
+        DEFAULT_THRESHOLD_SCAN_FAILED_RATE_PCT,
+      ),
+      scanP95Ms: parseNonNegativeNumber(
+        'threshold-scan-p95-ms',
+        parseArgValue('threshold-scan-p95-ms'),
+        DEFAULT_THRESHOLD_SCAN_P95_MS,
+      ),
+    },
   };
 }
 
@@ -142,13 +186,21 @@ function toAuditLogCursorWhere(baseWhere, lastCreatedAt, lastId) {
   };
 }
 
+function collectDurationSamples(windowDurations) {
+  const values = [];
+  for (const samples of windowDurations.values()) {
+    values.push(...samples);
+  }
+  return values;
+}
+
 function accumulateRow(row, context) {
   const {
     windowMs,
     providerStats,
     errorCounts,
-    durationSamples,
     windows,
+    windowDurations,
     counters,
   } = context;
   const metadata = asRecord(row.metadata);
@@ -188,7 +240,9 @@ function accumulateRow(row, context) {
 
   const scanDurationMs = resolveDurationMs(metadata);
   if (scanDurationMs !== null) {
-    durationSamples.push(scanDurationMs);
+    const perWindowDurations = windowDurations.get(bucketStart) || [];
+    perWindowDurations.push(scanDurationMs);
+    windowDurations.set(bucketStart, perWindowDurations);
   }
 
   providerStats.set(provider, providerEntry);
@@ -201,8 +255,8 @@ async function main() {
 
   const providerStats = new Map();
   const errorCounts = new Map();
-  const durationSamples = [];
   const windows = new Map();
+  const windowDurations = new Map();
 
   const counters = {
     uploaded: 0,
@@ -235,8 +289,8 @@ async function main() {
         windowMs,
         providerStats,
         errorCounts,
-        durationSamples,
         windows,
+        windowDurations,
         counters,
       });
     }
@@ -271,14 +325,19 @@ async function main() {
       end: new Date(startMs + windowMs).toISOString(),
       ...stat,
       scanFailedRatePct: toPercent(stat.scanFailed, stat.attempts),
+      p95Ms: percentile(windowDurations.get(startMs) || [], 0.95),
     }))
     .sort((a, b) => a.start.localeCompare(b.start));
 
   const violatedByCount = windowSummary.filter(
-    (window) => window.scanFailed >= ALERT_SCAN_FAILED_COUNT,
+    (window) => window.scanFailed >= options.thresholds.scanFailedCount,
   );
   const violatedByRate = windowSummary.filter(
-    (window) => window.scanFailedRatePct / 100 > ALERT_SCAN_FAILED_RATE,
+    (window) => window.scanFailedRatePct > options.thresholds.scanFailedRatePct,
+  );
+  const violatedByP95 = windowSummary.filter(
+    (window) =>
+      window.p95Ms !== null && window.p95Ms > options.thresholds.scanP95Ms,
   );
 
   const latestWindowStart =
@@ -286,6 +345,7 @@ async function main() {
   const latestWindowKey = new Date(latestWindowStart).toISOString();
   const latestWindow =
     windowSummary.find((window) => window.start === latestWindowKey) || null;
+  const durationSamples = collectDurationSamples(windowDurations);
 
   const result = {
     from: options.from.toISOString(),
@@ -312,9 +372,11 @@ async function main() {
       latest: latestWindow,
       violatedByScanFailedCount: violatedByCount,
       violatedByScanFailedRate: violatedByRate,
+      violatedByScanDurationP95: violatedByP95,
       thresholds: {
-        scanFailedCount: ALERT_SCAN_FAILED_COUNT,
-        scanFailedRatePct: ALERT_SCAN_FAILED_RATE * 100,
+        scanFailedCount: options.thresholds.scanFailedCount,
+        scanFailedRatePct: options.thresholds.scanFailedRatePct,
+        scanP95Ms: options.thresholds.scanP95Ms,
       },
     },
   };
@@ -355,11 +417,11 @@ async function main() {
     }
   }
   console.log(
-    `threshold violations: scanFailed>=${ALERT_SCAN_FAILED_COUNT} => ${violatedByCount.length}, scanFailedRate>${ALERT_SCAN_FAILED_RATE * 100}% => ${violatedByRate.length}`,
+    `threshold violations: scanFailed>=${options.thresholds.scanFailedCount} => ${violatedByCount.length}, scanFailedRate>${options.thresholds.scanFailedRatePct}% => ${violatedByRate.length}, scanP95>${options.thresholds.scanP95Ms}ms => ${violatedByP95.length}`,
   );
   if (latestWindow) {
     console.log(
-      `latestWindow: ${latestWindow.start} attempts=${latestWindow.attempts} scanFailed=${latestWindow.scanFailed} scanFailedRate=${formatFixed(latestWindow.scanFailedRatePct)}%`,
+      `latestWindow: ${latestWindow.start} attempts=${latestWindow.attempts} scanFailed=${latestWindow.scanFailed} scanFailedRate=${formatFixed(latestWindow.scanFailedRatePct)}% scanP95=${formatFixed(latestWindow.p95Ms)}ms`,
     );
   } else {
     console.log('latestWindow: none');

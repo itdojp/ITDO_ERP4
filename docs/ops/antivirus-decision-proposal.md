@@ -61,7 +61,7 @@
 
 ## 実行ステップ（決定まで）
 1. ステージングで `make av-staging-evidence` を実行
-2. `docs/test-results/chat-attachments-av-staging-template.md` に沿って結果を確認
+2. `docs/test-results/chat-attachments-av-staging-template.md` に沿って結果を確認（必要なら閾値を変更して再実行）
 3. 本メモの推奨値との差分を評価
 4. `Issue #886` の未チェック項目を更新
 5. `CHAT_ATTACHMENT_AV_PROVIDER` 本番値を確定

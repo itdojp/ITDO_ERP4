@@ -16,6 +16,10 @@
 - `CLAMAV_HOST` / `CLAMAV_PORT` 設定済み
 - clamd 起動済み（TCP 到達可能）
 - 推奨実行: `make av-staging-evidence`
+- 必要に応じて閾値を指定:
+  - `THRESHOLD_SCAN_FAILED_COUNT`（既定: 5）
+  - `THRESHOLD_SCAN_FAILED_RATE_PCT`（既定: 1）
+  - `THRESHOLD_SCAN_P95_MS`（既定: 5000）
 - 補助: `ENV_NAME=staging bash scripts/record-chat-attachments-av-smoke.sh` で記録下書きを生成可能
 - 補助: `ENV_NAME=staging bash scripts/record-chat-attachments-av-metrics.sh` で監査ログ集計を記録可能
 
