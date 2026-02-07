@@ -16,6 +16,7 @@
 - `CLAMAV_HOST` / `CLAMAV_PORT` 設定済み
 - clamd 起動済み（TCP 到達可能）
 - 補助: `ENV_NAME=staging bash scripts/record-chat-attachments-av-smoke.sh` で記録下書きを生成可能
+- 補助: `ENV_NAME=staging bash scripts/record-chat-attachments-av-metrics.sh` で監査ログ集計を記録可能
 
 ## 結果サマリ
 - clean 添付（clamd 稼働中）:
@@ -34,6 +35,7 @@
 - `chat_attachment_scan_failed` の記録確認:
 - 添付 API 503 比率の確認:
 - スキャン遅延（タイムアウト）傾向:
+- 監査ログ集計記録: `docs/test-results/YYYY-MM-DD-chat-attachments-av-audit-staging.md`
 
 ## 判定
 - 本番有効化可否:
