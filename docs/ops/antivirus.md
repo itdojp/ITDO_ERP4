@@ -18,6 +18,7 @@
 ## 検証コマンド
 - clamd 疎通/EICAR 検証: `bash scripts/podman-clamav.sh check`
 - API 統合スモーク: `bash scripts/smoke-chat-attachments-av.sh`
+- 検証結果のMarkdown記録（staging向け）: `ENV_NAME=staging bash scripts/record-chat-attachments-av-smoke.sh`
 
 ## 監視対象と推奨しきい値（確定候補）
 1. 死活監視（必須）
