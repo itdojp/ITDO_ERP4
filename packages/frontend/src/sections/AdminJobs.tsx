@@ -1,6 +1,20 @@
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { api } from '../api';
-import { Alert, Button, Card, EmptyState, Input } from '../ui';
+import {
+  Alert,
+  AsyncStatePanel,
+  Button,
+  Card,
+  CrudList,
+  DataTable,
+  Dialog,
+  FilterBar,
+  Input,
+  Select,
+  StatusBadge,
+  erpStatusDictionary,
+} from '../ui';
+import type { DataTableColumn, DataTableRow } from '../ui';
 
 type JobResult = Record<string, unknown> | null;
 
@@ -23,6 +37,31 @@ type JobKey =
   | 'dailyReportMissing'
   | 'recurringProjects'
   | 'integrations';
+
+type JobGroup = '運用' | 'レポート' | '通知' | '定期/連携';
+
+type JobDescriptor = {
+  key: JobKey;
+  group: JobGroup;
+  label: string;
+};
+
+const JOB_DEFINITIONS: JobDescriptor[] = [
+  { key: 'alerts', group: '運用', label: 'アラート計算' },
+  { key: 'approvalEscalations', group: '運用', label: '承認エスカレーション' },
+  { key: 'dataQuality', group: '運用', label: 'データ品質チェック' },
+  { key: 'dailyReportMissing', group: '運用', label: '日報未提出通知' },
+  { key: 'reportSubscriptions', group: 'レポート', label: '予約レポート実行' },
+  { key: 'reportDeliveries', group: 'レポート', label: '配信リトライ' },
+  { key: 'notificationDeliveries', group: '通知', label: '通知配信' },
+  { key: 'leaveUpcoming', group: '通知', label: '休暇予定通知' },
+  { key: 'chatAckReminders', group: '通知', label: '確認依頼リマインド' },
+  { key: 'chatRoomAclAlerts', group: '通知', label: 'ACL不整合通知' },
+  { key: 'recurringProjects', group: '定期/連携', label: '定期案件生成' },
+  { key: 'integrations', group: '定期/連携', label: '連携ジョブ実行' },
+];
+
+const JOB_KEY_SET = new Set<JobKey>(JOB_DEFINITIONS.map((item) => item.key));
 
 const formatJson = (value: unknown) => {
   try {
@@ -47,8 +86,44 @@ const buildInitialState = (): Record<JobKey, JobState> => ({
   integrations: { result: null, error: '', loading: false },
 });
 
+const toJobKey = (value: string): JobKey | null => {
+  if (!JOB_KEY_SET.has(value as JobKey)) return null;
+  return value as JobKey;
+};
+
+const resolveJobStatus = (state: JobState) => {
+  if (state.loading) return 'running';
+  if (state.error) return 'failed';
+  if (state.result) return 'done';
+  return 'pending';
+};
+
+const summarizeResult = (state: JobState) => {
+  if (state.loading) return '実行中';
+  if (state.error) return state.error;
+  if (!state.result) return '-';
+  const compact = JSON.stringify(state.result);
+  if (!compact) return '-';
+  return compact.length > 80 ? `${compact.slice(0, 80)}...` : compact;
+};
+
+const checkboxLabelStyle: React.CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 6,
+  fontSize: 12,
+  color: '#334155',
+  border: '1px solid #e2e8f0',
+  borderRadius: 6,
+  padding: '4px 8px',
+};
+
 export const AdminJobs: React.FC = () => {
   const [jobs, setJobs] = useState<Record<JobKey, JobState>>(buildInitialState);
+  const [search, setSearch] = useState('');
+  const [groupFilter, setGroupFilter] = useState<'all' | JobGroup>('all');
+  const [detailJobKey, setDetailJobKey] = useState<JobKey | null>(null);
+
   const [reportDryRun, setReportDryRun] = useState(false);
   const [reportRetryDryRun, setReportRetryDryRun] = useState(false);
   const [notificationDryRun, setNotificationDryRun] = useState(false);
@@ -78,398 +153,520 @@ export const AdminJobs: React.FC = () => {
     return '';
   }, [chatAckReminderLimit]);
 
-  const updateJob = (key: JobKey, next: Partial<JobState>) => {
+  const updateJob = useCallback((key: JobKey, next: Partial<JobState>) => {
     setJobs((prev) => ({
       ...prev,
       [key]: { ...prev[key], ...next },
     }));
-  };
+  }, []);
 
-  const runJob = async (
-    key: JobKey,
-    path: string,
-    body?: Record<string, unknown>,
-  ) => {
-    try {
-      updateJob(key, { loading: true, error: '' });
-      const result = await api<JobResult>(path, {
-        method: 'POST',
-        body: body ? JSON.stringify(body) : undefined,
-      });
-      updateJob(key, { result, loading: false });
-    } catch (err) {
-      updateJob(key, {
-        error: 'ジョブ実行に失敗しました',
-        loading: false,
-      });
-    }
-  };
+  const runJob = useCallback(
+    async (key: JobKey, path: string, body?: Record<string, unknown>) => {
+      try {
+        updateJob(key, { loading: true, error: '' });
+        const result = await api<JobResult>(path, {
+          method: 'POST',
+          body: body ? JSON.stringify(body) : undefined,
+        });
+        updateJob(key, { result, loading: false });
+      } catch {
+        updateJob(key, {
+          error: 'ジョブ実行に失敗しました',
+          loading: false,
+        });
+      }
+    },
+    [updateJob],
+  );
 
-  const runAlerts = () => runJob('alerts', '/jobs/alerts/run');
-  const runEscalations = () =>
-    runJob('approvalEscalations', '/jobs/approval-escalations/run');
-  const runDataQuality = () => runJob('dataQuality', '/jobs/data-quality/run');
-  const runReportSubscriptions = () =>
-    runJob('reportSubscriptions', '/jobs/report-subscriptions/run', {
-      dryRun: reportDryRun,
-    });
-  const runReportDeliveries = () =>
-    runJob('reportDeliveries', '/jobs/report-deliveries/retry', {
-      dryRun: reportRetryDryRun,
-    });
-  const runNotificationDeliveries = () => {
-    if (notificationLimitError) {
-      updateJob('notificationDeliveries', { error: notificationLimitError });
-      return;
-    }
-    const limit = notificationLimit.trim()
-      ? Number(notificationLimit)
-      : undefined;
-    runJob('notificationDeliveries', '/jobs/notification-deliveries/run', {
-      dryRun: notificationDryRun,
-      ...(limit ? { limit } : {}),
-    });
-  };
-  const runChatAckReminders = () => {
-    if (chatAckReminderLimitError) {
-      updateJob('chatAckReminders', { error: chatAckReminderLimitError });
-      return;
-    }
-    const limit = chatAckReminderLimit.trim()
-      ? Number(chatAckReminderLimit)
-      : undefined;
-    runJob('chatAckReminders', '/jobs/chat-ack-reminders/run', {
-      dryRun: chatAckReminderDryRun,
-      ...(limit ? { limit } : {}),
-    });
-  };
-  const runLeaveUpcoming = () =>
-    runJob('leaveUpcoming', '/jobs/leave-upcoming/run', {
-      ...(leaveUpcomingTargetDate.trim()
-        ? { targetDate: leaveUpcomingTargetDate.trim() }
-        : {}),
-      dryRun: leaveUpcomingDryRun,
-    });
-  const runChatRoomAclAlerts = () => {
-    const limitRaw = chatRoomAclLimit.trim();
-    const limit = limitRaw ? Number(limitRaw) : undefined;
-    if (limitRaw && !Number.isFinite(limit)) {
-      updateJob('chatRoomAclAlerts', {
-        error: 'limit は有効な数値で入力してください',
-      });
-      return;
-    }
-    if (limit !== undefined && (limit < 1 || limit > 500)) {
-      updateJob('chatRoomAclAlerts', {
-        error: 'limit は 1-500 で入力してください',
-      });
-      return;
-    }
-    runJob('chatRoomAclAlerts', '/jobs/chat-room-acl-alerts/run', {
-      dryRun: chatRoomAclDryRun,
-      ...(limit !== undefined ? { limit } : {}),
-    });
-  };
-  const runDailyReportMissing = () =>
-    runJob('dailyReportMissing', '/jobs/daily-report-missing/run', {
-      ...(dailyReportTargetDate.trim()
-        ? { targetDate: dailyReportTargetDate.trim() }
-        : {}),
-      dryRun: dailyReportDryRun,
-    });
-  const runRecurringProjects = () =>
-    runJob('recurringProjects', '/jobs/recurring-projects/run');
-  const runIntegrations = () =>
-    runJob('integrations', '/jobs/integrations/run');
+  const executeJob = useCallback(
+    (key: JobKey) => {
+      switch (key) {
+        case 'alerts':
+          void runJob('alerts', '/jobs/alerts/run');
+          return;
+        case 'approvalEscalations':
+          void runJob(
+            'approvalEscalations',
+            '/jobs/approval-escalations/run',
+          );
+          return;
+        case 'dataQuality':
+          void runJob('dataQuality', '/jobs/data-quality/run');
+          return;
+        case 'reportSubscriptions':
+          void runJob('reportSubscriptions', '/jobs/report-subscriptions/run', {
+            dryRun: reportDryRun,
+          });
+          return;
+        case 'reportDeliveries':
+          void runJob('reportDeliveries', '/jobs/report-deliveries/retry', {
+            dryRun: reportRetryDryRun,
+          });
+          return;
+        case 'notificationDeliveries': {
+          if (notificationLimitError) {
+            updateJob('notificationDeliveries', { error: notificationLimitError });
+            return;
+          }
+          const limit = notificationLimit.trim()
+            ? Number(notificationLimit)
+            : undefined;
+          void runJob(
+            'notificationDeliveries',
+            '/jobs/notification-deliveries/run',
+            {
+              dryRun: notificationDryRun,
+              ...(limit ? { limit } : {}),
+            },
+          );
+          return;
+        }
+        case 'chatAckReminders': {
+          if (chatAckReminderLimitError) {
+            updateJob('chatAckReminders', { error: chatAckReminderLimitError });
+            return;
+          }
+          const limit = chatAckReminderLimit.trim()
+            ? Number(chatAckReminderLimit)
+            : undefined;
+          void runJob('chatAckReminders', '/jobs/chat-ack-reminders/run', {
+            dryRun: chatAckReminderDryRun,
+            ...(limit ? { limit } : {}),
+          });
+          return;
+        }
+        case 'leaveUpcoming':
+          void runJob('leaveUpcoming', '/jobs/leave-upcoming/run', {
+            ...(leaveUpcomingTargetDate.trim()
+              ? { targetDate: leaveUpcomingTargetDate.trim() }
+              : {}),
+            dryRun: leaveUpcomingDryRun,
+          });
+          return;
+        case 'chatRoomAclAlerts': {
+          const limitRaw = chatRoomAclLimit.trim();
+          const limit = limitRaw ? Number(limitRaw) : undefined;
+          if (limitRaw && !Number.isFinite(limit)) {
+            updateJob('chatRoomAclAlerts', {
+              error: 'limit は有効な数値で入力してください',
+            });
+            return;
+          }
+          if (limit !== undefined && (limit < 1 || limit > 500)) {
+            updateJob('chatRoomAclAlerts', {
+              error: 'limit は 1-500 で入力してください',
+            });
+            return;
+          }
+          void runJob('chatRoomAclAlerts', '/jobs/chat-room-acl-alerts/run', {
+            dryRun: chatRoomAclDryRun,
+            ...(limit !== undefined ? { limit } : {}),
+          });
+          return;
+        }
+        case 'dailyReportMissing':
+          void runJob('dailyReportMissing', '/jobs/daily-report-missing/run', {
+            ...(dailyReportTargetDate.trim()
+              ? { targetDate: dailyReportTargetDate.trim() }
+              : {}),
+            dryRun: dailyReportDryRun,
+          });
+          return;
+        case 'recurringProjects':
+          void runJob('recurringProjects', '/jobs/recurring-projects/run');
+          return;
+        case 'integrations':
+          void runJob('integrations', '/jobs/integrations/run');
+          return;
+        default:
+          return;
+      }
+    },
+    [
+      chatAckReminderDryRun,
+      chatAckReminderLimit,
+      chatAckReminderLimitError,
+      chatRoomAclDryRun,
+      chatRoomAclLimit,
+      dailyReportDryRun,
+      dailyReportTargetDate,
+      leaveUpcomingDryRun,
+      leaveUpcomingTargetDate,
+      notificationDryRun,
+      notificationLimit,
+      notificationLimitError,
+      reportDryRun,
+      reportRetryDryRun,
+      runJob,
+      updateJob,
+    ],
+  );
 
-  const renderResult = (key: JobKey) => {
-    const state = jobs[key];
-    if (state.error) {
-      return <Alert variant="error">{state.error}</Alert>;
-    }
-    if (!state.result) {
-      return <EmptyState title="未実行" />;
+  const buildParameterSummary = useCallback(
+    (key: JobKey) => {
+      switch (key) {
+        case 'reportSubscriptions':
+          return `dryRun=${reportDryRun}`;
+        case 'reportDeliveries':
+          return `dryRun=${reportRetryDryRun}`;
+        case 'notificationDeliveries':
+          return `dryRun=${notificationDryRun}, limit=${notificationLimit || '-'}`;
+        case 'chatAckReminders':
+          return `dryRun=${chatAckReminderDryRun}, limit=${chatAckReminderLimit || '-'}`;
+        case 'leaveUpcoming':
+          return `dryRun=${leaveUpcomingDryRun}, targetDate=${leaveUpcomingTargetDate || '-'}`;
+        case 'chatRoomAclAlerts':
+          return `dryRun=${chatRoomAclDryRun}, limit=${chatRoomAclLimit || '-'}`;
+        case 'dailyReportMissing':
+          return `dryRun=${dailyReportDryRun}, targetDate=${dailyReportTargetDate || '-'}`;
+        default:
+          return '-';
+      }
+    },
+    [
+      chatAckReminderDryRun,
+      chatAckReminderLimit,
+      chatRoomAclDryRun,
+      chatRoomAclLimit,
+      dailyReportDryRun,
+      dailyReportTargetDate,
+      leaveUpcomingDryRun,
+      leaveUpcomingTargetDate,
+      notificationDryRun,
+      notificationLimit,
+      reportDryRun,
+      reportRetryDryRun,
+    ],
+  );
+
+  const filteredDefinitions = useMemo(() => {
+    const needle = search.trim().toLowerCase();
+    return JOB_DEFINITIONS.filter((job) => {
+      if (groupFilter !== 'all' && job.group !== groupFilter) {
+        return false;
+      }
+      if (!needle) return true;
+      return `${job.label} ${job.group}`.toLowerCase().includes(needle);
+    });
+  }, [groupFilter, search]);
+
+  const rows = useMemo<DataTableRow[]>(
+    () =>
+      filteredDefinitions.map((job) => ({
+        id: job.key,
+        group: job.group,
+        job: job.label,
+        params: buildParameterSummary(job.key),
+        status: resolveJobStatus(jobs[job.key]),
+        summary: summarizeResult(jobs[job.key]),
+      })),
+    [buildParameterSummary, filteredDefinitions, jobs],
+  );
+
+  const columns = useMemo<DataTableColumn[]>(
+    () => [
+      { key: 'group', header: '分類' },
+      { key: 'job', header: 'ジョブ' },
+      { key: 'params', header: 'パラメータ' },
+      {
+        key: 'status',
+        header: '状態',
+        cell: (row) => (
+          <StatusBadge
+            status={String(row.status || '')}
+            dictionary={{
+              ...erpStatusDictionary,
+              pending: { label: '未実行', tone: 'neutral' },
+              running: { label: '実行中', tone: 'warning' },
+              failed: { label: '失敗', tone: 'danger' },
+              done: { label: '完了', tone: 'success' },
+            }}
+            size="sm"
+          />
+        ),
+      },
+      { key: 'summary', header: '結果サマリ' },
+    ],
+    [],
+  );
+
+  const listContent = (() => {
+    if (rows.length === 0) {
+      return (
+        <AsyncStatePanel
+          state="empty"
+          empty={{
+            title: 'ジョブがありません',
+            description: '検索条件を変更してください',
+          }}
+        />
+      );
     }
     return (
-      <pre
-        style={{
-          margin: 0,
-          whiteSpace: 'pre-wrap',
-          wordBreak: 'break-word',
-          fontSize: 12,
-          color: '#0f172a',
-        }}
-      >
-        {formatJson(state.result)}
-      </pre>
+      <DataTable
+        columns={columns}
+        rows={rows}
+        rowActions={[
+          {
+            key: 'run',
+            label: '実行',
+            onSelect: (row) => {
+              const key = toJobKey(row.id);
+              if (!key) return;
+              if (jobs[key].loading) return;
+              executeJob(key);
+            },
+          },
+          {
+            key: 'detail',
+            label: '詳細',
+            onSelect: (row) => {
+              const key = toJobKey(row.id);
+              if (!key) return;
+              setDetailJobKey(key);
+            },
+          },
+        ]}
+      />
     );
-  };
+  })();
+
+  const detailState = detailJobKey ? jobs[detailJobKey] : null;
+  const detailLabel = detailJobKey
+    ? JOB_DEFINITIONS.find((item) => item.key === detailJobKey)?.label || ''
+    : '';
 
   return (
     <div>
       <h2>運用ジョブ</h2>
       <Card padding="small">
-        <h3 style={{ marginTop: 0 }}>アラート/承認/品質</h3>
-        <div className="row" style={{ alignItems: 'center', gap: 8 }}>
-          <Button onClick={runAlerts} loading={jobs.alerts.loading}>
-            アラート計算
-          </Button>
-          <Button
-            variant="secondary"
-            onClick={runEscalations}
-            loading={jobs.approvalEscalations.loading}
+        <h3 style={{ marginTop: 0 }}>実行パラメータ</h3>
+        <div style={{ display: 'grid', gap: 12 }}>
+          <div
+            className="row"
+            style={{ alignItems: 'center', gap: 8, flexWrap: 'wrap' }}
           >
-            承認エスカレーション
-          </Button>
-          <Button
-            variant="secondary"
-            onClick={runDataQuality}
-            loading={jobs.dataQuality.loading}
-          >
-            データ品質チェック
-          </Button>
-          <label className="badge" style={{ cursor: 'pointer' }}>
-            <input
-              type="checkbox"
-              checked={dailyReportDryRun}
-              onChange={(e) => setDailyReportDryRun(e.target.checked)}
-              style={{ marginRight: 6 }}
+            <label style={checkboxLabelStyle}>
+              <input
+                type="checkbox"
+                checked={dailyReportDryRun}
+                onChange={(e) => setDailyReportDryRun(e.target.checked)}
+              />
+              日報未提出通知 dryRun
+            </label>
+            <Input
+              value={dailyReportTargetDate}
+              onChange={(e) => setDailyReportTargetDate(e.target.value)}
+              placeholder="日報対象日 YYYY-MM-DD"
+              style={{ width: 180 }}
             />
-            dryRun
-          </label>
-          <Input
-            value={dailyReportTargetDate}
-            onChange={(e) => setDailyReportTargetDate(e.target.value)}
-            placeholder="YYYY-MM-DD"
-            style={{ width: 140 }}
-          />
-          <Button
-            variant="secondary"
-            onClick={runDailyReportMissing}
-            loading={jobs.dailyReportMissing.loading}
+          </div>
+          <div
+            className="row"
+            style={{ alignItems: 'center', gap: 8, flexWrap: 'wrap' }}
           >
-            日報未提出通知
-          </Button>
-        </div>
-        <div style={{ marginTop: 12, display: 'grid', gap: 8 }}>
-          <div>
-            <strong>アラート計算</strong>
-            {renderResult('alerts')}
+            <label style={checkboxLabelStyle}>
+              <input
+                type="checkbox"
+                checked={reportDryRun}
+                onChange={(e) => setReportDryRun(e.target.checked)}
+              />
+              予約レポート dryRun
+            </label>
+            <label style={checkboxLabelStyle}>
+              <input
+                type="checkbox"
+                checked={reportRetryDryRun}
+                onChange={(e) => setReportRetryDryRun(e.target.checked)}
+              />
+              配信リトライ dryRun
+            </label>
           </div>
-          <div>
-            <strong>承認エスカレーション</strong>
-            {renderResult('approvalEscalations')}
+          <div
+            className="row"
+            style={{ alignItems: 'center', gap: 8, flexWrap: 'wrap' }}
+          >
+            <label style={checkboxLabelStyle}>
+              <input
+                type="checkbox"
+                checked={notificationDryRun}
+                onChange={(e) => setNotificationDryRun(e.target.checked)}
+              />
+              通知配信 dryRun
+            </label>
+            <Input
+              label="通知 limit"
+              type="number"
+              min={1}
+              max={200}
+              value={notificationLimit}
+              onChange={(e) => setNotificationLimit(e.target.value)}
+              error={notificationLimitError || undefined}
+              style={{ width: 120 }}
+            />
+            <label style={checkboxLabelStyle}>
+              <input
+                type="checkbox"
+                checked={leaveUpcomingDryRun}
+                onChange={(e) => setLeaveUpcomingDryRun(e.target.checked)}
+              />
+              休暇予定通知 dryRun
+            </label>
+            <Input
+              value={leaveUpcomingTargetDate}
+              onChange={(e) => setLeaveUpcomingTargetDate(e.target.value)}
+              placeholder="休暇対象日 YYYY-MM-DD"
+              style={{ width: 180 }}
+            />
           </div>
-          <div>
-            <strong>データ品質チェック</strong>
-            {renderResult('dataQuality')}
-          </div>
-          <div>
-            <strong>日報未提出通知</strong>
-            {renderResult('dailyReportMissing')}
+          <div
+            className="row"
+            style={{ alignItems: 'center', gap: 8, flexWrap: 'wrap' }}
+          >
+            <label style={checkboxLabelStyle}>
+              <input
+                type="checkbox"
+                checked={chatAckReminderDryRun}
+                onChange={(e) => setChatAckReminderDryRun(e.target.checked)}
+              />
+              確認依頼リマインド dryRun
+            </label>
+            <Input
+              label="ack limit"
+              type="number"
+              min={1}
+              max={500}
+              value={chatAckReminderLimit}
+              onChange={(e) => setChatAckReminderLimit(e.target.value)}
+              error={chatAckReminderLimitError || undefined}
+              style={{ width: 120 }}
+            />
+            <label style={checkboxLabelStyle}>
+              <input
+                type="checkbox"
+                checked={chatRoomAclDryRun}
+                onChange={(e) => setChatRoomAclDryRun(e.target.checked)}
+              />
+              ACL不整合通知 dryRun
+            </label>
+            <Input
+              label="acl limit"
+              type="number"
+              min={1}
+              max={500}
+              value={chatRoomAclLimit}
+              onChange={(e) => setChatRoomAclLimit(e.target.value)}
+              style={{ width: 120 }}
+            />
           </div>
         </div>
       </Card>
 
-      <Card padding="small">
-        <h3 style={{ marginTop: 0 }}>レポート配信</h3>
-        <div className="row" style={{ alignItems: 'center', gap: 8 }}>
-          <label className="badge" style={{ cursor: 'pointer' }}>
-            <input
-              type="checkbox"
-              checked={reportDryRun}
-              onChange={(e) => setReportDryRun(e.target.checked)}
-              style={{ marginRight: 6 }}
-            />
-            dryRun
-          </label>
-          <Button
-            onClick={runReportSubscriptions}
-            loading={jobs.reportSubscriptions.loading}
-          >
-            予約レポート実行
-          </Button>
-          <label className="badge" style={{ cursor: 'pointer' }}>
-            <input
-              type="checkbox"
-              checked={reportRetryDryRun}
-              onChange={(e) => setReportRetryDryRun(e.target.checked)}
-              style={{ marginRight: 6 }}
-            />
-            dryRun
-          </label>
-          <Button
-            variant="secondary"
-            onClick={runReportDeliveries}
-            loading={jobs.reportDeliveries.loading}
-          >
-            配信リトライ
-          </Button>
-        </div>
-        <div style={{ marginTop: 12, display: 'grid', gap: 8 }}>
-          <div>
-            <strong>予約レポート実行</strong>
-            {renderResult('reportSubscriptions')}
-          </div>
-          <div>
-            <strong>配信リトライ</strong>
-            {renderResult('reportDeliveries')}
-          </div>
-        </div>
-      </Card>
+      <div style={{ marginTop: 12 }}>
+        <CrudList
+          title="ジョブ一覧"
+          description="ジョブ実行・状態確認・結果詳細を一元管理します。"
+          filters={
+            <FilterBar
+              actions={
+                <Button
+                  variant="ghost"
+                  onClick={() => {
+                    setSearch('');
+                    setGroupFilter('all');
+                  }}
+                >
+                  条件クリア
+                </Button>
+              }
+            >
+              <div
+                style={{
+                  display: 'flex',
+                  gap: 12,
+                  flexWrap: 'wrap',
+                  alignItems: 'center',
+                }}
+              >
+                <Input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="ジョブ名 / 分類で検索"
+                  aria-label="ジョブ検索"
+                />
+                <Select
+                  value={groupFilter}
+                  onChange={(e) =>
+                    setGroupFilter(e.target.value as 'all' | JobGroup)
+                  }
+                  aria-label="ジョブ分類フィルタ"
+                >
+                  <option value="all">分類: 全て</option>
+                  <option value="運用">運用</option>
+                  <option value="レポート">レポート</option>
+                  <option value="通知">通知</option>
+                  <option value="定期/連携">定期/連携</option>
+                </Select>
+              </div>
+            </FilterBar>
+          }
+          table={listContent}
+        />
+      </div>
 
-      <Card padding="small">
-        <h3 style={{ marginTop: 0 }}>通知配信</h3>
-        <div className="row" style={{ alignItems: 'center', gap: 8 }}>
-          <label className="badge" style={{ cursor: 'pointer' }}>
-            <input
-              type="checkbox"
-              checked={notificationDryRun}
-              onChange={(e) => setNotificationDryRun(e.target.checked)}
-              style={{ marginRight: 6 }}
-            />
-            dryRun
-          </label>
-          <Input
-            label="limit"
-            type="number"
-            min={1}
-            max={200}
-            value={notificationLimit}
-            onChange={(e) => setNotificationLimit(e.target.value)}
-            error={notificationLimitError || undefined}
-          />
-          <Button
-            onClick={runNotificationDeliveries}
-            loading={jobs.notificationDeliveries.loading}
-          >
-            通知配信
+      <Dialog
+        open={Boolean(detailJobKey)}
+        onClose={() => setDetailJobKey(null)}
+        title={detailLabel ? `ジョブ結果: ${detailLabel}` : 'ジョブ結果'}
+        size="large"
+        footer={
+          <Button variant="secondary" onClick={() => setDetailJobKey(null)}>
+            閉じる
           </Button>
-          <label className="badge" style={{ cursor: 'pointer' }}>
-            <input
-              type="checkbox"
-              checked={leaveUpcomingDryRun}
-              onChange={(e) => setLeaveUpcomingDryRun(e.target.checked)}
-              style={{ marginRight: 6 }}
-            />
-            dryRun
-          </label>
-          <Input
-            value={leaveUpcomingTargetDate}
-            onChange={(e) => setLeaveUpcomingTargetDate(e.target.value)}
-            placeholder="YYYY-MM-DD"
-            style={{ width: 140 }}
-          />
-          <Button
-            variant="secondary"
-            onClick={runLeaveUpcoming}
-            loading={jobs.leaveUpcoming.loading}
-          >
-            休暇予定通知
-          </Button>
-        </div>
-        <div
-          className="row"
-          style={{ alignItems: 'center', gap: 8, marginTop: 8 }}
-        >
-          <label className="badge" style={{ cursor: 'pointer' }}>
-            <input
-              type="checkbox"
-              checked={chatAckReminderDryRun}
-              onChange={(e) => setChatAckReminderDryRun(e.target.checked)}
-              style={{ marginRight: 6 }}
-            />
-            dryRun
-          </label>
-          <Input
-            label="ack limit"
-            type="number"
-            min={1}
-            max={500}
-            value={chatAckReminderLimit}
-            onChange={(e) => setChatAckReminderLimit(e.target.value)}
-            error={chatAckReminderLimitError || undefined}
-          />
-          <Button
-            variant="secondary"
-            onClick={runChatAckReminders}
-            loading={jobs.chatAckReminders.loading}
-          >
-            確認依頼リマインド
-          </Button>
-          <label className="badge" style={{ cursor: 'pointer' }}>
-            <input
-              type="checkbox"
-              checked={chatRoomAclDryRun}
-              onChange={(e) => setChatRoomAclDryRun(e.target.checked)}
-              style={{ marginRight: 6 }}
-            />
-            dryRun
-          </label>
-          <Input
-            label="acl limit"
-            type="number"
-            min={1}
-            max={500}
-            value={chatRoomAclLimit}
-            onChange={(e) => setChatRoomAclLimit(e.target.value)}
-          />
-          <Button
-            variant="secondary"
-            onClick={runChatRoomAclAlerts}
-            loading={jobs.chatRoomAclAlerts.loading}
-          >
-            ACL不整合通知
-          </Button>
-        </div>
-        <div style={{ marginTop: 12, display: 'grid', gap: 8 }}>
-          <div>
-            <strong>通知配信</strong>
-            {renderResult('notificationDeliveries')}
+        }
+      >
+        {detailState && (
+          <div style={{ display: 'grid', gap: 12 }}>
+            <div style={{ fontSize: 12, color: '#64748b' }}>
+              <StatusBadge
+                status={resolveJobStatus(detailState)}
+                dictionary={{
+                  ...erpStatusDictionary,
+                  pending: { label: '未実行', tone: 'neutral' },
+                  running: { label: '実行中', tone: 'warning' },
+                  failed: { label: '失敗', tone: 'danger' },
+                  done: { label: '完了', tone: 'success' },
+                }}
+                size="sm"
+              />
+            </div>
+            {detailState.error && <Alert variant="error">{detailState.error}</Alert>}
+            {!detailState.error && !detailState.result && !detailState.loading && (
+              <AsyncStatePanel
+                state="empty"
+                empty={{ title: '結果がありません', description: 'ジョブ未実行です' }}
+              />
+            )}
+            {detailState.loading && (
+              <AsyncStatePanel state="loading" loadingText="ジョブ実行中" />
+            )}
+            {detailState.result && (
+              <pre
+                style={{
+                  margin: 0,
+                  whiteSpace: 'pre-wrap',
+                  wordBreak: 'break-word',
+                  fontSize: 12,
+                  color: '#0f172a',
+                }}
+              >
+                {formatJson(detailState.result)}
+              </pre>
+            )}
           </div>
-          <div>
-            <strong>休暇予定通知</strong>
-            {renderResult('leaveUpcoming')}
-          </div>
-          <div>
-            <strong>確認依頼リマインド</strong>
-            {renderResult('chatAckReminders')}
-          </div>
-          <div>
-            <strong>ACL不整合通知</strong>
-            {renderResult('chatRoomAclAlerts')}
-          </div>
-        </div>
-      </Card>
-
-      <Card padding="small">
-        <h3 style={{ marginTop: 0 }}>定期案件/外部連携</h3>
-        <div className="row" style={{ alignItems: 'center', gap: 8 }}>
-          <Button
-            onClick={runRecurringProjects}
-            loading={jobs.recurringProjects.loading}
-          >
-            定期案件生成
-          </Button>
-          <Button
-            variant="secondary"
-            onClick={runIntegrations}
-            loading={jobs.integrations.loading}
-          >
-            連携ジョブ実行
-          </Button>
-        </div>
-        <div style={{ marginTop: 12, display: 'grid', gap: 8 }}>
-          <div>
-            <strong>定期案件生成</strong>
-            {renderResult('recurringProjects')}
-          </div>
-          <div>
-            <strong>連携ジョブ実行</strong>
-            {renderResult('integrations')}
-          </div>
-        </div>
-      </Card>
+        )}
+      </Dialog>
     </div>
   );
 };
