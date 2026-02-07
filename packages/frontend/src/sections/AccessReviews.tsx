@@ -8,6 +8,7 @@ import {
   CrudList,
   DataTable,
   FilterBar,
+  type ListLoadStatus,
   StatusBadge,
 } from '../ui';
 import type { DataTableColumn, DataTableRow } from '../ui';
@@ -41,15 +42,13 @@ type AccessReviewSnapshot = {
   memberships: AccessReviewMembership[];
 };
 
-type ListStatus = 'idle' | 'loading' | 'error' | 'success';
-
 export const AccessReviews: React.FC = () => {
   const [snapshot, setSnapshot] = useState<AccessReviewSnapshot | null>(null);
   const [message, setMessage] = useState<{
     text: string;
     type: 'success' | 'error' | 'info';
   } | null>(null);
-  const [listStatus, setListStatus] = useState<ListStatus>('idle');
+  const [listStatus, setListStatus] = useState<ListLoadStatus>('idle');
   const [listError, setListError] = useState('');
   const [isDownloading, setIsDownloading] = useState(false);
   const [fetchedAt, setFetchedAt] = useState<string | null>(null);
@@ -110,6 +109,7 @@ export const AccessReviews: React.FC = () => {
       setListStatus('loading');
       setListError('');
       setMessage(null);
+      setFetchedAt(null);
       const data = await api<AccessReviewSnapshot>(
         '/access-reviews/snapshot?format=json',
       );
@@ -118,6 +118,7 @@ export const AccessReviews: React.FC = () => {
       setListStatus('success');
     } catch (err) {
       setSnapshot(null);
+      setFetchedAt(null);
       setListStatus('error');
       setListError('アクセス棚卸しの取得に失敗しました');
     }
