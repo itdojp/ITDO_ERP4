@@ -247,6 +247,9 @@ export const VendorDocuments: React.FC = () => {
   const [poSendLogLoading, setPoSendLogLoading] = useState<
     Record<string, boolean>
   >({});
+  const [poSubmitBusy, setPoSubmitBusy] = useState<Record<string, boolean>>(
+    {},
+  );
   const [poSendLogDialogId, setPoSendLogDialogId] = useState<string | null>(
     null,
   );
@@ -272,6 +275,9 @@ export const VendorDocuments: React.FC = () => {
   const [invoiceAllocationReason, setInvoiceAllocationReason] = useState('');
   const [invoiceAllocationExpanded, setInvoiceAllocationExpanded] =
     useState(false);
+  const [invoiceSubmitBusy, setInvoiceSubmitBusy] = useState<
+    Record<string, boolean>
+  >({});
   const [purchaseOrderDetails, setPurchaseOrderDetails] = useState<
     Record<string, PurchaseOrderDetail>
   >({});
@@ -727,7 +733,9 @@ export const VendorDocuments: React.FC = () => {
   };
 
   const submitPurchaseOrder = async (id: string) => {
+    if (poSubmitBusy[id]) return;
     try {
+      setPoSubmitBusy((prev) => ({ ...prev, [id]: true }));
       setPoResult(null);
       await api(`/purchase-orders/${id}/submit`, { method: 'POST' });
       setPoResult({ text: '発注書を承認依頼しました', type: 'success' });
@@ -735,6 +743,8 @@ export const VendorDocuments: React.FC = () => {
     } catch (err) {
       console.error('Failed to submit purchase order.', err);
       setPoResult({ text: '発注書の承認依頼に失敗しました', type: 'error' });
+    } finally {
+      setPoSubmitBusy((prev) => ({ ...prev, [id]: false }));
     }
   };
 
@@ -797,7 +807,9 @@ export const VendorDocuments: React.FC = () => {
   };
 
   const submitVendorInvoice = async (id: string) => {
+    if (invoiceSubmitBusy[id]) return;
     try {
+      setInvoiceSubmitBusy((prev) => ({ ...prev, [id]: true }));
       setInvoiceResult(null);
       await api(`/vendor-invoices/${id}/submit`, { method: 'POST' });
       setInvoiceResult({ text: '仕入請求を承認依頼しました', type: 'success' });
@@ -808,6 +820,8 @@ export const VendorDocuments: React.FC = () => {
         text: '仕入請求の承認依頼に失敗しました',
         type: 'error',
       });
+    } finally {
+      setInvoiceSubmitBusy((prev) => ({ ...prev, [id]: false }));
     }
   };
 
@@ -1332,6 +1346,13 @@ export const VendorDocuments: React.FC = () => {
                 });
                 return;
               }
+              if (poSubmitBusy[row.id]) {
+                setPoResult({
+                  text: 'この発注書は承認依頼を処理中です',
+                  type: 'error',
+                });
+                return;
+              }
               setConfirmAction({
                 type: 'po-submit',
                 id: row.id,
@@ -1483,6 +1504,13 @@ export const VendorDocuments: React.FC = () => {
               if (!isVendorInvoiceSubmittableStatus(status)) {
                 setInvoiceResult({
                   text: '承認依頼は received/draft の仕入請求のみ実行できます',
+                  type: 'error',
+                });
+                return;
+              }
+              if (invoiceSubmitBusy[row.id]) {
+                setInvoiceResult({
+                  text: 'この仕入請求は承認依頼を処理中です',
                   type: 'error',
                 });
                 return;
@@ -2073,7 +2101,13 @@ export const VendorDocuments: React.FC = () => {
             {activePoSendLogLoading && (
               <AsyncStatePanel state="loading" loadingText="送信履歴を取得中" />
             )}
-            {!activePoSendLogLoading && (
+            {!activePoSendLogLoading && activePoSendLogs.length === 0 && (
+              <AsyncStatePanel
+                state="empty"
+                empty={{ title: '履歴なし', description: '送信履歴がありません' }}
+              />
+            )}
+            {!activePoSendLogLoading && activePoSendLogs.length > 0 && (
               <DataTable
                 columns={[
                   { key: 'status', header: '状態' },
@@ -2127,6 +2161,13 @@ export const VendorDocuments: React.FC = () => {
         }
         confirmLabel="実行"
         cancelLabel="キャンセル"
+        confirmDisabled={
+          confirmAction
+            ? confirmAction.type === 'po-submit'
+              ? Boolean(poSubmitBusy[confirmAction.id])
+              : Boolean(invoiceSubmitBusy[confirmAction.id])
+            : false
+        }
         onConfirm={executeConfirmAction}
         onCancel={() => setConfirmAction(null)}
       />

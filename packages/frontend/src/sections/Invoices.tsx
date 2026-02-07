@@ -142,7 +142,7 @@ export const Invoices: React.FC = () => {
         const res = await api<{ items: Invoice[] }>(
           `/projects/${form.projectId}/invoices`,
         );
-        setItems(res.items);
+        setItems(res.items || []);
         setListStatus('success');
         if (!options?.silent) {
           setMessage({ text: '読み込みました', type: 'success' });
