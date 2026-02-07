@@ -2,12 +2,19 @@ let prisma;
 try {
   ({ prisma } = await import('../packages/backend/dist/services/db.js'));
 } catch (err) {
+  const code = err && typeof err === 'object' ? err.code : undefined;
   console.error(
     '[report-chat-attachments-av-metrics] failed to import backend Prisma client',
   );
-  console.error(
-    'Run `npm run build --prefix packages/backend` before this script.',
-  );
+  if (code === 'ERR_MODULE_NOT_FOUND') {
+    console.error(
+      'Run `npm run build --prefix packages/backend` before this script.',
+    );
+  } else {
+    console.error(
+      'Ensure backend build artifacts and required environment variables (for example, DATABASE_URL) are available.',
+    );
+  }
   throw err;
 }
 
@@ -118,74 +125,130 @@ function formatFixed(value) {
   return Number(value).toFixed(2);
 }
 
+function toAuditLogCursorWhere(baseWhere, lastCreatedAt, lastId) {
+  if (!lastCreatedAt || !lastId) {
+    return baseWhere;
+  }
+  return {
+    AND: [
+      baseWhere,
+      {
+        OR: [
+          { createdAt: { gt: lastCreatedAt } },
+          { createdAt: lastCreatedAt, id: { gt: lastId } },
+        ],
+      },
+    ],
+  };
+}
+
+function accumulateRow(row, context) {
+  const {
+    windowMs,
+    providerStats,
+    errorCounts,
+    durationSamples,
+    windows,
+    counters,
+  } = context;
+  const metadata = asRecord(row.metadata);
+  const provider = resolveProvider(row.action, metadata);
+  const providerEntry = providerStats.get(provider) || {
+    total: 0,
+    uploaded: 0,
+    blocked: 0,
+    scanFailed: 0,
+  };
+  providerEntry.total += 1;
+
+  const bucketStart = Math.floor(row.createdAt.getTime() / windowMs) * windowMs;
+  const windowEntry = windows.get(bucketStart) || {
+    attempts: 0,
+    uploaded: 0,
+    blocked: 0,
+    scanFailed: 0,
+  };
+  windowEntry.attempts += 1;
+
+  if (row.action === ACTION_UPLOADED) {
+    counters.uploaded += 1;
+    providerEntry.uploaded += 1;
+    windowEntry.uploaded += 1;
+  } else if (row.action === ACTION_BLOCKED) {
+    counters.blocked += 1;
+    providerEntry.blocked += 1;
+    windowEntry.blocked += 1;
+  } else if (row.action === ACTION_SCAN_FAILED) {
+    counters.scanFailed += 1;
+    providerEntry.scanFailed += 1;
+    windowEntry.scanFailed += 1;
+    const error = asString(metadata.error) || 'unknown';
+    errorCounts.set(error, (errorCounts.get(error) || 0) + 1);
+  }
+
+  const scanDurationMs = resolveDurationMs(metadata);
+  if (scanDurationMs !== null) {
+    durationSamples.push(scanDurationMs);
+  }
+
+  providerStats.set(provider, providerEntry);
+  windows.set(bucketStart, windowEntry);
+}
+
 async function main() {
   const options = parseOptions();
   const windowMs = options.windowMinutes * 60 * 1000;
-  const rows = await prisma.auditLog.findMany({
-    where: {
-      createdAt: { gte: options.from, lt: options.to },
-      action: {
-        in: [ACTION_UPLOADED, ACTION_BLOCKED, ACTION_SCAN_FAILED],
-      },
-    },
-    select: { action: true, createdAt: true, metadata: true },
-    orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
-  });
 
   const providerStats = new Map();
   const errorCounts = new Map();
   const durationSamples = [];
   const windows = new Map();
 
-  let uploaded = 0;
-  let blocked = 0;
-  let scanFailed = 0;
+  const counters = {
+    uploaded: 0,
+    blocked: 0,
+    scanFailed: 0,
+  };
 
-  for (const row of rows) {
-    const metadata = asRecord(row.metadata);
-    const provider = resolveProvider(row.action, metadata);
-    const providerEntry = providerStats.get(provider) || {
-      total: 0,
-      uploaded: 0,
-      blocked: 0,
-      scanFailed: 0,
-    };
-    providerEntry.total += 1;
+  const baseWhere = {
+    createdAt: { gte: options.from, lt: options.to },
+    action: {
+      in: [ACTION_UPLOADED, ACTION_BLOCKED, ACTION_SCAN_FAILED],
+    },
+  };
+  const BATCH_SIZE = 1000;
+  let lastCreatedAt = null;
+  let lastId = null;
 
-    const bucketStart = Math.floor(row.createdAt.getTime() / windowMs) * windowMs;
-    const windowEntry = windows.get(bucketStart) || {
-      attempts: 0,
-      uploaded: 0,
-      blocked: 0,
-      scanFailed: 0,
-    };
-    windowEntry.attempts += 1;
+  while (true) {
+    const where = toAuditLogCursorWhere(baseWhere, lastCreatedAt, lastId);
+    const rows = await prisma.auditLog.findMany({
+      where,
+      select: { id: true, action: true, createdAt: true, metadata: true },
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+      take: BATCH_SIZE,
+    });
+    if (!rows.length) break;
 
-    if (row.action === ACTION_UPLOADED) {
-      uploaded += 1;
-      providerEntry.uploaded += 1;
-      windowEntry.uploaded += 1;
-    } else if (row.action === ACTION_BLOCKED) {
-      blocked += 1;
-      providerEntry.blocked += 1;
-      windowEntry.blocked += 1;
-    } else if (row.action === ACTION_SCAN_FAILED) {
-      scanFailed += 1;
-      providerEntry.scanFailed += 1;
-      windowEntry.scanFailed += 1;
-      const error = asString(metadata.error) || 'unknown';
-      errorCounts.set(error, (errorCounts.get(error) || 0) + 1);
+    for (const row of rows) {
+      accumulateRow(row, {
+        windowMs,
+        providerStats,
+        errorCounts,
+        durationSamples,
+        windows,
+        counters,
+      });
     }
 
-    const scanDurationMs = resolveDurationMs(metadata);
-    if (scanDurationMs !== null) {
-      durationSamples.push(scanDurationMs);
-    }
-
-    providerStats.set(provider, providerEntry);
-    windows.set(bucketStart, windowEntry);
+    const tail = rows[rows.length - 1];
+    lastCreatedAt = tail.createdAt;
+    lastId = tail.id;
   }
 
+  const uploaded = counters.uploaded;
+  const blocked = counters.blocked;
+  const scanFailed = counters.scanFailed;
   const attempts = uploaded + blocked + scanFailed;
   const blockedRatePct = toPercent(blocked, attempts);
   const scanFailedRatePct = toPercent(scanFailed, attempts);
