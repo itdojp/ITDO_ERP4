@@ -34,6 +34,7 @@
 - upload 成功: `chat_attachment_uploaded` の metadata に scan 情報を付与
 - ブロック: `chat_attachment_blocked` を記録
 - スキャン失敗: `chat_attachment_scan_failed` を記録
+- 共通 metadata: `scanDurationMs` を記録し、遅延監視（p95）を集計可能にする
 
 ## 運用設計（確定候補 / Issue #886）
 

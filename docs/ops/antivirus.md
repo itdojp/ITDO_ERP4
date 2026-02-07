@@ -19,6 +19,9 @@
 - clamd 疎通/EICAR 検証: `bash scripts/podman-clamav.sh check`
 - API 統合スモーク: `bash scripts/smoke-chat-attachments-av.sh`
 - 検証結果のMarkdown記録（staging向け）: `ENV_NAME=staging bash scripts/record-chat-attachments-av-smoke.sh`
+- 監査ログ集計（監視代替/閾値確認）:
+  - `node scripts/report-chat-attachments-av-metrics.mjs --from=2026-02-07T00:00:00Z --to=2026-02-08T00:00:00Z --window-minutes=10`
+  - `ENV_NAME=staging bash scripts/record-chat-attachments-av-metrics.sh`
 
 ## 監視対象と推奨しきい値（確定候補）
 1. 死活監視（必須）
@@ -37,6 +40,15 @@
 注記:
 - 監視基盤が整っていない環境では、監査ログ集計で代替し、日次で件数確認する。
 - しきい値はステージング結果に基づき `Issue #886` で最終確定する。
+
+## 監査ログ集計（監視基盤未整備時の代替）
+1. 集計
+   - `scripts/report-chat-attachments-av-metrics.mjs` を実行し、10分窓で `scanFailed件数` と `scanFailedRate(=503相当率)` を確認する。
+2. エビデンス化
+   - `scripts/record-chat-attachments-av-metrics.sh` で `docs/test-results/` に記録する。
+3. 判定
+   - `scanFailed件数 >= 5 / 10分` または `scanFailedRate > 1% / 10分` が継続する場合は High 扱いで一次対応に入る。
+   - `scanDurationMs p95 > 5s` が継続する場合は Medium 扱いで性能要因を調査する。
 
 ## 障害時対応フロー（fail closed 前提）
 1. 検知

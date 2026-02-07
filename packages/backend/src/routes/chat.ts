@@ -1823,10 +1823,12 @@ export async function registerChatRoutes(app: FastifyInstance) {
       }
 
       const scanProvider = getChatAttachmentScanProvider();
+      const scanStartedAt = Date.now();
       const scanResult = await scanChatAttachment({
         buffer,
         provider: scanProvider,
       });
+      const scanDurationMs = Math.max(0, Date.now() - scanStartedAt);
       if (scanResult.verdict === 'error') {
         await logAudit({
           action: 'chat_attachment_scan_failed',
@@ -1842,6 +1844,7 @@ export async function registerChatRoutes(app: FastifyInstance) {
             verdict: scanResult.verdict,
             detected: scanResult.detected || null,
             error: scanResult.error || null,
+            scanDurationMs,
             sizeBytes: buffer.length,
             mimeType: mimetype,
           } as Prisma.InputJsonValue,
@@ -1868,6 +1871,7 @@ export async function registerChatRoutes(app: FastifyInstance) {
             provider: scanResult.provider,
             verdict: scanResult.verdict,
             detected: scanResult.detected || null,
+            scanDurationMs,
             sizeBytes: buffer.length,
             mimeType: mimetype,
           } as Prisma.InputJsonValue,
@@ -1924,6 +1928,7 @@ export async function registerChatRoutes(app: FastifyInstance) {
           scanProvider: scanResult.provider,
           scanVerdict: scanResult.verdict,
           scanDetected: scanResult.detected || null,
+          scanDurationMs,
         } as Prisma.InputJsonValue,
         ...auditContextFromRequest(req),
       });
