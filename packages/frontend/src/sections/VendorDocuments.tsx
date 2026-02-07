@@ -1,7 +1,22 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { api, apiResponse } from '../api';
 import { AnnotationsCard } from '../components/AnnotationsCard';
-import { Button, Dialog } from '../ui';
+import {
+  Alert,
+  AsyncStatePanel,
+  Button,
+  ConfirmActionDialog,
+  CrudList,
+  DataTable,
+  Dialog,
+  FilterBar,
+  Input,
+  Select,
+  StatusBadge,
+  Toast,
+  erpStatusDictionary,
+} from '../ui';
+import type { DataTableColumn, DataTableRow } from '../ui';
 import { formatDateForFilename, openResponseInNewTab } from '../utils/download';
 
 type ProjectOption = {
@@ -86,6 +101,7 @@ type VendorInvoice = {
 };
 
 type MessageState = { text: string; type: 'success' | 'error' } | null;
+type ListStatus = 'idle' | 'loading' | 'error' | 'success';
 
 type PurchaseOrderForm = {
   projectId: string;
@@ -194,9 +210,19 @@ export const VendorDocuments: React.FC = () => {
   const [vendorInvoices, setVendorInvoices] = useState<VendorInvoice[]>([]);
   const [projectMessage, setProjectMessage] = useState('');
   const [vendorMessage, setVendorMessage] = useState('');
-  const [poListMessage, setPoListMessage] = useState('');
-  const [quoteListMessage, setQuoteListMessage] = useState('');
-  const [invoiceListMessage, setInvoiceListMessage] = useState('');
+  const [poListStatus, setPoListStatus] = useState<ListStatus>('idle');
+  const [poListError, setPoListError] = useState('');
+  const [quoteListStatus, setQuoteListStatus] = useState<ListStatus>('idle');
+  const [quoteListError, setQuoteListError] = useState('');
+  const [invoiceListStatus, setInvoiceListStatus] =
+    useState<ListStatus>('idle');
+  const [invoiceListError, setInvoiceListError] = useState('');
+  const [poSearch, setPoSearch] = useState('');
+  const [poStatusFilter, setPoStatusFilter] = useState('all');
+  const [quoteSearch, setQuoteSearch] = useState('');
+  const [quoteStatusFilter, setQuoteStatusFilter] = useState('all');
+  const [invoiceSearch, setInvoiceSearch] = useState('');
+  const [invoiceStatusFilter, setInvoiceStatusFilter] = useState('all');
   const [poResult, setPoResult] = useState<MessageState>(null);
   const [quoteResult, setQuoteResult] = useState<MessageState>(null);
   const [invoiceResult, setInvoiceResult] = useState<MessageState>(null);
@@ -212,9 +238,6 @@ export const VendorDocuments: React.FC = () => {
   const [isPoSaving, setIsPoSaving] = useState(false);
   const [isQuoteSaving, setIsQuoteSaving] = useState(false);
   const [isInvoiceSaving, setIsInvoiceSaving] = useState(false);
-  const [poActionState, setPoActionState] = useState<Record<string, boolean>>(
-    {},
-  );
   const [poSendLogs, setPoSendLogs] = useState<
     Record<string, DocumentSendLog[]>
   >({});
@@ -224,9 +247,10 @@ export const VendorDocuments: React.FC = () => {
   const [poSendLogLoading, setPoSendLogLoading] = useState<
     Record<string, boolean>
   >({});
-  const [invoiceActionState, setInvoiceActionState] = useState<
-    Record<string, boolean>
-  >({});
+  const [poSubmitBusy, setPoSubmitBusy] = useState<Record<string, boolean>>({});
+  const [poSendLogDialogId, setPoSendLogDialogId] = useState<string | null>(
+    null,
+  );
   const [invoicePoLinkDialog, setInvoicePoLinkDialog] = useState<{
     invoice: VendorInvoice;
     purchaseOrderId: string;
@@ -249,6 +273,9 @@ export const VendorDocuments: React.FC = () => {
   const [invoiceAllocationReason, setInvoiceAllocationReason] = useState('');
   const [invoiceAllocationExpanded, setInvoiceAllocationExpanded] =
     useState(false);
+  const [invoiceSubmitBusy, setInvoiceSubmitBusy] = useState<
+    Record<string, boolean>
+  >({});
   const [purchaseOrderDetails, setPurchaseOrderDetails] = useState<
     Record<string, PurchaseOrderDetail>
   >({});
@@ -256,6 +283,11 @@ export const VendorDocuments: React.FC = () => {
     useState(false);
   const [purchaseOrderDetailMessage, setPurchaseOrderDetailMessage] =
     useState('');
+  const [confirmAction, setConfirmAction] = useState<{
+    type: 'po-submit' | 'invoice-submit';
+    id: string;
+    numberLabel: string;
+  } | null>(null);
 
   const projectMap = useMemo(() => {
     return new Map(projects.map((project) => [project.id, project]));
@@ -363,38 +395,47 @@ export const VendorDocuments: React.FC = () => {
   }, []);
 
   const loadPurchaseOrders = useCallback(async () => {
+    setPoListStatus('loading');
+    setPoListError('');
     try {
       const res = await api<{ items: PurchaseOrder[] }>('/purchase-orders');
       setPurchaseOrders(res.items || []);
-      setPoListMessage('');
+      setPoListStatus('success');
     } catch (err) {
       console.error('Failed to load purchase orders.', err);
       setPurchaseOrders([]);
-      setPoListMessage('発注書一覧の取得に失敗しました');
+      setPoListStatus('error');
+      setPoListError('発注書一覧の取得に失敗しました');
     }
   }, []);
 
   const loadVendorQuotes = useCallback(async () => {
+    setQuoteListStatus('loading');
+    setQuoteListError('');
     try {
       const res = await api<{ items: VendorQuote[] }>('/vendor-quotes');
       setVendorQuotes(res.items || []);
-      setQuoteListMessage('');
+      setQuoteListStatus('success');
     } catch (err) {
       console.error('Failed to load vendor quotes.', err);
       setVendorQuotes([]);
-      setQuoteListMessage('仕入見積一覧の取得に失敗しました');
+      setQuoteListStatus('error');
+      setQuoteListError('仕入見積一覧の取得に失敗しました');
     }
   }, []);
 
   const loadVendorInvoices = useCallback(async () => {
+    setInvoiceListStatus('loading');
+    setInvoiceListError('');
     try {
       const res = await api<{ items: VendorInvoice[] }>('/vendor-invoices');
       setVendorInvoices(res.items || []);
-      setInvoiceListMessage('');
+      setInvoiceListStatus('success');
     } catch (err) {
       console.error('Failed to load vendor invoices.', err);
       setVendorInvoices([]);
-      setInvoiceListMessage('仕入請求一覧の取得に失敗しました');
+      setInvoiceListStatus('error');
+      setInvoiceListError('仕入請求一覧の取得に失敗しました');
     }
   }, []);
 
@@ -478,15 +519,21 @@ export const VendorDocuments: React.FC = () => {
     }
   }, [availablePurchaseOrders, invoiceForm.purchaseOrderId]);
 
-  const renderProject = (projectId: string) => {
-    const project = projectMap.get(projectId);
-    return project ? `${project.code} / ${project.name}` : projectId;
-  };
+  const renderProject = useCallback(
+    (projectId: string) => {
+      const project = projectMap.get(projectId);
+      return project ? `${project.code} / ${project.name}` : projectId;
+    },
+    [projectMap],
+  );
 
-  const renderVendor = (vendorId: string) => {
-    const vendor = vendorMap.get(vendorId);
-    return vendor ? `${vendor.code} / ${vendor.name}` : vendorId;
-  };
+  const renderVendor = useCallback(
+    (vendorId: string) => {
+      const vendor = vendorMap.get(vendorId);
+      return vendor ? `${vendor.code} / ${vendor.name}` : vendorId;
+    },
+    [vendorMap],
+  );
 
   const missingNumberLabel = '(番号未設定)';
   const isVendorInvoiceSubmittableStatus = (status: string) =>
@@ -657,16 +704,8 @@ export const VendorDocuments: React.FC = () => {
     }
   };
 
-  const setPoActionBusy = (id: string, isBusy: boolean) => {
-    setPoActionState((prev) => ({ ...prev, [id]: isBusy }));
-  };
-
   const setPoSendLogBusy = (id: string, isBusy: boolean) => {
     setPoSendLogLoading((prev) => ({ ...prev, [id]: isBusy }));
-  };
-
-  const setInvoiceActionBusy = (id: string, isBusy: boolean) => {
-    setInvoiceActionState((prev) => ({ ...prev, [id]: isBusy }));
   };
 
   const startVendorInvoiceFromPo = (po: PurchaseOrder) => {
@@ -689,8 +728,9 @@ export const VendorDocuments: React.FC = () => {
   };
 
   const submitPurchaseOrder = async (id: string) => {
+    if (poSubmitBusy[id]) return;
     try {
-      setPoActionBusy(id, true);
+      setPoSubmitBusy((prev) => ({ ...prev, [id]: true }));
       setPoResult(null);
       await api(`/purchase-orders/${id}/submit`, { method: 'POST' });
       setPoResult({ text: '発注書を承認依頼しました', type: 'success' });
@@ -699,7 +739,7 @@ export const VendorDocuments: React.FC = () => {
       console.error('Failed to submit purchase order.', err);
       setPoResult({ text: '発注書の承認依頼に失敗しました', type: 'error' });
     } finally {
-      setPoActionBusy(id, false);
+      setPoSubmitBusy((prev) => ({ ...prev, [id]: false }));
     }
   };
 
@@ -720,6 +760,11 @@ export const VendorDocuments: React.FC = () => {
     } finally {
       setPoSendLogBusy(id, false);
     }
+  };
+
+  const openPurchaseOrderSendLogsDialog = (id: string) => {
+    setPoSendLogDialogId(id);
+    void loadPurchaseOrderSendLogs(id);
   };
 
   const openPurchaseOrderPdf = async (id: string, pdfUrl?: string | null) => {
@@ -757,8 +802,9 @@ export const VendorDocuments: React.FC = () => {
   };
 
   const submitVendorInvoice = async (id: string) => {
+    if (invoiceSubmitBusy[id]) return;
     try {
-      setInvoiceActionBusy(id, true);
+      setInvoiceSubmitBusy((prev) => ({ ...prev, [id]: true }));
       setInvoiceResult(null);
       await api(`/vendor-invoices/${id}/submit`, { method: 'POST' });
       setInvoiceResult({ text: '仕入請求を承認依頼しました', type: 'success' });
@@ -770,8 +816,18 @@ export const VendorDocuments: React.FC = () => {
         type: 'error',
       });
     } finally {
-      setInvoiceActionBusy(id, false);
+      setInvoiceSubmitBusy((prev) => ({ ...prev, [id]: false }));
     }
+  };
+
+  const executeConfirmAction = () => {
+    if (!confirmAction) return;
+    if (confirmAction.type === 'po-submit') {
+      void submitPurchaseOrder(confirmAction.id);
+    } else {
+      void submitVendorInvoice(confirmAction.id);
+    }
+    setConfirmAction(null);
   };
 
   const openVendorInvoicePoLinkDialog = (invoice: VendorInvoice) => {
@@ -970,15 +1026,573 @@ export const VendorDocuments: React.FC = () => {
     }
   };
 
+  const purchaseOrderMap = useMemo(
+    () => new Map(purchaseOrders.map((item) => [item.id, item])),
+    [purchaseOrders],
+  );
+  const vendorQuoteMap = useMemo(
+    () => new Map(vendorQuotes.map((item) => [item.id, item])),
+    [vendorQuotes],
+  );
+  const vendorInvoiceMap = useMemo(
+    () => new Map(vendorInvoices.map((item) => [item.id, item])),
+    [vendorInvoices],
+  );
+
+  const poStatusOptions = useMemo(
+    () =>
+      Array.from(new Set(purchaseOrders.map((item) => item.status)))
+        .filter(Boolean)
+        .sort(),
+    [purchaseOrders],
+  );
+  const quoteStatusOptions = useMemo(
+    () =>
+      Array.from(new Set(vendorQuotes.map((item) => item.status)))
+        .filter(Boolean)
+        .sort(),
+    [vendorQuotes],
+  );
+  const invoiceStatusOptions = useMemo(
+    () =>
+      Array.from(new Set(vendorInvoices.map((item) => item.status)))
+        .filter(Boolean)
+        .sort(),
+    [vendorInvoices],
+  );
+
+  const filteredPurchaseOrders = useMemo(() => {
+    const needle = poSearch.trim().toLowerCase();
+    return purchaseOrders.filter((item) => {
+      if (poStatusFilter !== 'all' && item.status !== poStatusFilter) {
+        return false;
+      }
+      if (!needle) return true;
+      const linkedInvoices = vendorInvoicesByPurchaseOrderId.get(item.id) || [];
+      const target = [
+        item.poNo || missingNumberLabel,
+        item.status,
+        renderProject(item.projectId),
+        renderVendor(item.vendorId),
+        `${item.totalAmount}`,
+        linkedInvoices
+          .map((invoice) => invoice.vendorInvoiceNo || '')
+          .join(' '),
+      ]
+        .join(' ')
+        .toLowerCase();
+      return target.includes(needle);
+    });
+  }, [
+    missingNumberLabel,
+    poSearch,
+    poStatusFilter,
+    purchaseOrders,
+    renderProject,
+    renderVendor,
+    vendorInvoicesByPurchaseOrderId,
+  ]);
+
+  const filteredVendorQuotes = useMemo(() => {
+    const needle = quoteSearch.trim().toLowerCase();
+    return vendorQuotes.filter((item) => {
+      if (quoteStatusFilter !== 'all' && item.status !== quoteStatusFilter) {
+        return false;
+      }
+      if (!needle) return true;
+      const target = [
+        item.quoteNo || missingNumberLabel,
+        item.status,
+        renderProject(item.projectId),
+        renderVendor(item.vendorId),
+        `${item.totalAmount}`,
+      ]
+        .join(' ')
+        .toLowerCase();
+      return target.includes(needle);
+    });
+  }, [
+    missingNumberLabel,
+    quoteSearch,
+    quoteStatusFilter,
+    renderProject,
+    renderVendor,
+    vendorQuotes,
+  ]);
+
+  const filteredVendorInvoices = useMemo(() => {
+    const needle = invoiceSearch.trim().toLowerCase();
+    return vendorInvoices.filter((item) => {
+      if (
+        invoiceStatusFilter !== 'all' &&
+        item.status !== invoiceStatusFilter
+      ) {
+        return false;
+      }
+      if (!needle) return true;
+      const target = [
+        item.vendorInvoiceNo || missingNumberLabel,
+        item.status,
+        renderProject(item.projectId),
+        renderVendor(item.vendorId),
+        `${item.totalAmount}`,
+        item.purchaseOrder?.poNo || item.purchaseOrderId || '',
+      ]
+        .join(' ')
+        .toLowerCase();
+      return target.includes(needle);
+    });
+  }, [
+    invoiceSearch,
+    invoiceStatusFilter,
+    missingNumberLabel,
+    renderProject,
+    renderVendor,
+    vendorInvoices,
+  ]);
+
+  const purchaseOrderRows = useMemo<DataTableRow[]>(
+    () =>
+      filteredPurchaseOrders.map((item) => {
+        const linkedInvoices =
+          vendorInvoicesByPurchaseOrderId.get(item.id) || [];
+        const shownLinkedInvoiceLabels = linkedInvoices
+          .slice(0, 3)
+          .map((invoice) => invoice.vendorInvoiceNo || missingNumberLabel);
+        const remainingLinkedInvoiceCount =
+          linkedInvoices.length - shownLinkedInvoiceLabels.length;
+        const linkedSummary =
+          linkedInvoices.length === 0
+            ? '-'
+            : `${linkedInvoices.length}件 (${shownLinkedInvoiceLabels.join(', ')}${
+                remainingLinkedInvoiceCount > 0
+                  ? ` 他${remainingLinkedInvoiceCount}件`
+                  : ''
+              })`;
+
+        return {
+          id: item.id,
+          status: item.status,
+          poNo: item.poNo || missingNumberLabel,
+          project: renderProject(item.projectId),
+          vendor: renderVendor(item.vendorId),
+          totalAmount: formatAmount(item.totalAmount, item.currency),
+          schedule: `発行 ${formatDate(item.issueDate)} / 納期 ${formatDate(
+            item.dueDate,
+          )}`,
+          linkedInvoices: linkedSummary,
+        };
+      }),
+    [
+      filteredPurchaseOrders,
+      missingNumberLabel,
+      renderProject,
+      renderVendor,
+      vendorInvoicesByPurchaseOrderId,
+    ],
+  );
+
+  const vendorQuoteRows = useMemo<DataTableRow[]>(
+    () =>
+      filteredVendorQuotes.map((item) => ({
+        id: item.id,
+        status: item.status,
+        quoteNo: item.quoteNo || missingNumberLabel,
+        project: renderProject(item.projectId),
+        vendor: renderVendor(item.vendorId),
+        totalAmount: formatAmount(item.totalAmount, item.currency),
+        issueDate: formatDate(item.issueDate),
+      })),
+    [filteredVendorQuotes, missingNumberLabel, renderProject, renderVendor],
+  );
+
+  const vendorInvoiceRows = useMemo<DataTableRow[]>(
+    () =>
+      filteredVendorInvoices.map((item) => ({
+        id: item.id,
+        status: item.status,
+        vendorInvoiceNo: item.vendorInvoiceNo || missingNumberLabel,
+        project: renderProject(item.projectId),
+        vendor: renderVendor(item.vendorId),
+        totalAmount: formatAmount(item.totalAmount, item.currency),
+        schedule: `受領 ${formatDate(item.receivedDate)} / 期限 ${formatDate(
+          item.dueDate,
+        )}`,
+        purchaseOrder: item.purchaseOrder?.poNo || item.purchaseOrderId || '-',
+      })),
+    [filteredVendorInvoices, missingNumberLabel, renderProject, renderVendor],
+  );
+
+  const purchaseOrderColumns = useMemo<DataTableColumn[]>(
+    () => [
+      { key: 'poNo', header: '発注番号' },
+      { key: 'project', header: '案件' },
+      { key: 'vendor', header: '業者' },
+      {
+        key: 'status',
+        header: '状態',
+        cell: (row) => (
+          <StatusBadge
+            status={String(row.status || '')}
+            dictionary={erpStatusDictionary}
+            size="sm"
+          />
+        ),
+      },
+      { key: 'totalAmount', header: '金額', align: 'right' },
+      { key: 'schedule', header: '日付' },
+      { key: 'linkedInvoices', header: 'リンク済み仕入請求' },
+    ],
+    [],
+  );
+
+  const vendorQuoteColumns = useMemo<DataTableColumn[]>(
+    () => [
+      { key: 'quoteNo', header: '見積番号' },
+      { key: 'project', header: '案件' },
+      { key: 'vendor', header: '業者' },
+      {
+        key: 'status',
+        header: '状態',
+        cell: (row) => (
+          <StatusBadge
+            status={String(row.status || '')}
+            dictionary={erpStatusDictionary}
+            size="sm"
+          />
+        ),
+      },
+      { key: 'totalAmount', header: '金額', align: 'right' },
+      { key: 'issueDate', header: '発行日' },
+    ],
+    [],
+  );
+
+  const vendorInvoiceColumns = useMemo<DataTableColumn[]>(
+    () => [
+      { key: 'vendorInvoiceNo', header: '請求番号' },
+      { key: 'project', header: '案件' },
+      { key: 'vendor', header: '業者' },
+      {
+        key: 'status',
+        header: '状態',
+        cell: (row) => (
+          <StatusBadge
+            status={String(row.status || '')}
+            dictionary={erpStatusDictionary}
+            size="sm"
+          />
+        ),
+      },
+      { key: 'totalAmount', header: '金額', align: 'right' },
+      { key: 'schedule', header: '受領/期限' },
+      { key: 'purchaseOrder', header: '関連PO' },
+    ],
+    [],
+  );
+
+  const purchaseOrderListContent = (() => {
+    if (poListStatus === 'idle' || poListStatus === 'loading') {
+      return (
+        <AsyncStatePanel state="loading" loadingText="発注書一覧を取得中" />
+      );
+    }
+    if (poListStatus === 'error') {
+      return (
+        <AsyncStatePanel
+          state="error"
+          error={{
+            title: '発注書一覧の取得に失敗しました',
+            detail: poListError,
+            onRetry: () => {
+              void loadPurchaseOrders();
+            },
+            retryLabel: '再試行',
+          }}
+        />
+      );
+    }
+    if (purchaseOrderRows.length === 0) {
+      return (
+        <AsyncStatePanel
+          state="empty"
+          empty={{
+            title:
+              purchaseOrders.length === 0
+                ? '発注書データがありません'
+                : '条件に一致する発注書がありません',
+            description:
+              purchaseOrders.length === 0
+                ? 'フォームから発注書を登録してください'
+                : '検索条件を変更してください',
+          }}
+        />
+      );
+    }
+    return (
+      <DataTable
+        columns={purchaseOrderColumns}
+        rows={purchaseOrderRows}
+        rowActions={[
+          {
+            key: 'submit',
+            label: '承認依頼',
+            onSelect: (row) => {
+              const status = String(row.status || '');
+              if (status !== 'draft') {
+                setPoResult({
+                  text: '承認依頼は draft の発注書のみ実行できます',
+                  type: 'error',
+                });
+                return;
+              }
+              if (poSubmitBusy[row.id]) {
+                setPoResult({
+                  text: 'この発注書は承認依頼を処理中です',
+                  type: 'error',
+                });
+                return;
+              }
+              setConfirmAction({
+                type: 'po-submit',
+                id: row.id,
+                numberLabel: String(row.poNo || missingNumberLabel),
+              });
+            },
+          },
+          {
+            key: 'create-invoice',
+            label: '仕入請求を作成',
+            onSelect: (row) => {
+              const target = purchaseOrderMap.get(row.id);
+              if (!target) return;
+              startVendorInvoiceFromPo(target);
+            },
+          },
+          {
+            key: 'send-logs',
+            label: '送信履歴',
+            onSelect: (row) => {
+              openPurchaseOrderSendLogsDialog(row.id);
+            },
+          },
+          {
+            key: 'annotation',
+            label: '注釈',
+            onSelect: (row) => {
+              const target = purchaseOrderMap.get(row.id);
+              if (!target) return;
+              setAnnotationTarget({
+                kind: 'purchase_order',
+                id: target.id,
+                projectId: target.projectId,
+                title: `発注書: ${target.poNo || missingNumberLabel}`,
+              });
+            },
+          },
+        ]}
+      />
+    );
+  })();
+
+  const vendorQuoteListContent = (() => {
+    if (quoteListStatus === 'idle' || quoteListStatus === 'loading') {
+      return (
+        <AsyncStatePanel state="loading" loadingText="仕入見積一覧を取得中" />
+      );
+    }
+    if (quoteListStatus === 'error') {
+      return (
+        <AsyncStatePanel
+          state="error"
+          error={{
+            title: '仕入見積一覧の取得に失敗しました',
+            detail: quoteListError,
+            onRetry: () => {
+              void loadVendorQuotes();
+            },
+            retryLabel: '再試行',
+          }}
+        />
+      );
+    }
+    if (vendorQuoteRows.length === 0) {
+      return (
+        <AsyncStatePanel
+          state="empty"
+          empty={{
+            title:
+              vendorQuotes.length === 0
+                ? '仕入見積データがありません'
+                : '条件に一致する仕入見積がありません',
+            description:
+              vendorQuotes.length === 0
+                ? 'フォームから仕入見積を登録してください'
+                : '検索条件を変更してください',
+          }}
+        />
+      );
+    }
+    return (
+      <DataTable
+        columns={vendorQuoteColumns}
+        rows={vendorQuoteRows}
+        rowActions={[
+          {
+            key: 'annotation',
+            label: '注釈',
+            onSelect: (row) => {
+              const target = vendorQuoteMap.get(row.id);
+              if (!target) return;
+              setAnnotationTarget({
+                kind: 'vendor_quote',
+                id: target.id,
+                projectId: target.projectId,
+                title: `仕入見積: ${target.quoteNo || missingNumberLabel}`,
+              });
+            },
+          },
+        ]}
+      />
+    );
+  })();
+
+  const vendorInvoiceListContent = (() => {
+    if (invoiceListStatus === 'idle' || invoiceListStatus === 'loading') {
+      return (
+        <AsyncStatePanel state="loading" loadingText="仕入請求一覧を取得中" />
+      );
+    }
+    if (invoiceListStatus === 'error') {
+      return (
+        <AsyncStatePanel
+          state="error"
+          error={{
+            title: '仕入請求一覧の取得に失敗しました',
+            detail: invoiceListError,
+            onRetry: () => {
+              void loadVendorInvoices();
+            },
+            retryLabel: '再試行',
+          }}
+        />
+      );
+    }
+    if (vendorInvoiceRows.length === 0) {
+      return (
+        <AsyncStatePanel
+          state="empty"
+          empty={{
+            title:
+              vendorInvoices.length === 0
+                ? '仕入請求データがありません'
+                : '条件に一致する仕入請求がありません',
+            description:
+              vendorInvoices.length === 0
+                ? 'フォームから仕入請求を登録してください'
+                : '検索条件を変更してください',
+          }}
+        />
+      );
+    }
+    return (
+      <DataTable
+        columns={vendorInvoiceColumns}
+        rows={vendorInvoiceRows}
+        rowActions={[
+          {
+            key: 'submit',
+            label: '承認依頼',
+            onSelect: (row) => {
+              const status = String(row.status || '');
+              if (!isVendorInvoiceSubmittableStatus(status)) {
+                setInvoiceResult({
+                  text: '承認依頼は received/draft の仕入請求のみ実行できます',
+                  type: 'error',
+                });
+                return;
+              }
+              if (invoiceSubmitBusy[row.id]) {
+                setInvoiceResult({
+                  text: 'この仕入請求は承認依頼を処理中です',
+                  type: 'error',
+                });
+                return;
+              }
+              setConfirmAction({
+                type: 'invoice-submit',
+                id: row.id,
+                numberLabel: String(row.vendorInvoiceNo || missingNumberLabel),
+              });
+            },
+          },
+          {
+            key: 'po-link',
+            label: 'PO紐づけ',
+            onSelect: (row) => {
+              const target = vendorInvoiceMap.get(row.id);
+              if (!target) return;
+              openVendorInvoicePoLinkDialog(target);
+            },
+          },
+          {
+            key: 'allocation',
+            label: '配賦明細',
+            onSelect: (row) => {
+              const target = vendorInvoiceMap.get(row.id);
+              if (!target) return;
+              void openVendorInvoiceAllocationDialog(target);
+            },
+          },
+          {
+            key: 'annotation',
+            label: '注釈',
+            onSelect: (row) => {
+              const target = vendorInvoiceMap.get(row.id);
+              if (!target) return;
+              setAnnotationTarget({
+                kind: 'vendor_invoice',
+                id: target.id,
+                projectId: target.projectId,
+                title: `仕入請求: ${target.vendorInvoiceNo || missingNumberLabel}`,
+              });
+            },
+          },
+        ]}
+      />
+    );
+  })();
+
+  const activePoSendLogs = poSendLogDialogId
+    ? poSendLogs[poSendLogDialogId] || []
+    : [];
+  const activePoSendLogMessage = poSendLogDialogId
+    ? poSendLogMessage[poSendLogDialogId] || ''
+    : '';
+  const activePoSendLogLoading = poSendLogDialogId
+    ? poSendLogLoading[poSendLogDialogId]
+    : false;
+  const activePo = poSendLogDialogId
+    ? purchaseOrderMap.get(poSendLogDialogId)
+    : null;
+
   return (
     <div>
       <h2>仕入/発注</h2>
-      {projectMessage && <p style={{ color: '#dc2626' }}>{projectMessage}</p>}
-      {vendorMessage && <p style={{ color: '#dc2626' }}>{vendorMessage}</p>}
-      <div className="row" style={{ gap: 16, alignItems: 'flex-start' }}>
-        <div style={{ minWidth: 320, flex: 1 }}>
+      {projectMessage && (
+        <div style={{ marginTop: 12 }}>
+          <Alert variant="error">{projectMessage}</Alert>
+        </div>
+      )}
+      {vendorMessage && (
+        <div style={{ marginTop: 12 }}>
+          <Alert variant="error">{vendorMessage}</Alert>
+        </div>
+      )}
+      <div style={{ marginTop: 12, display: 'grid', gap: 24 }}>
+        <section>
           <h3>発注書</h3>
-          <div className="card" style={{ marginBottom: 8 }}>
+          <div className="card" style={{ marginBottom: 12 }}>
             <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
               <select
                 value={poForm.projectId}
@@ -1046,155 +1660,85 @@ export const VendorDocuments: React.FC = () => {
                   setPoForm({ ...poForm, dueDate: e.target.value })
                 }
               />
-              <button
-                className="button"
-                onClick={createPurchaseOrder}
-                disabled={isPoSaving}
-              >
+              <Button onClick={createPurchaseOrder} disabled={isPoSaving}>
                 {isPoSaving ? '登録中' : '登録'}
-              </button>
+              </Button>
             </div>
-            {poResult && (
-              <p
-                style={{
-                  color: poResult.type === 'error' ? '#dc2626' : '#16a34a',
-                  marginTop: 8,
-                }}
-              >
-                {poResult.text}
-              </p>
-            )}
           </div>
-          <button className="button secondary" onClick={loadPurchaseOrders}>
-            再読込
-          </button>
-          {poListMessage && <p style={{ color: '#dc2626' }}>{poListMessage}</p>}
-          <ul className="list">
-            {purchaseOrders.map((item) => {
-              const linkedInvoices =
-                vendorInvoicesByPurchaseOrderId.get(item.id) || [];
-              const linkedInvoiceLabels = linkedInvoices.map(
-                (invoice) =>
-                  `${invoice.vendorInvoiceNo || missingNumberLabel}(${invoice.status})`,
-              );
-              const shownLinkedInvoiceLabels = linkedInvoiceLabels.slice(0, 3);
-              const remainingLinkedInvoiceCount =
-                linkedInvoiceLabels.length - shownLinkedInvoiceLabels.length;
-              return (
-                <li key={item.id}>
-                  <span className="badge">{item.status}</span>{' '}
-                  {item.poNo || missingNumberLabel} /{' '}
-                  {renderProject(item.projectId)} /{' '}
-                  {renderVendor(item.vendorId)} /{' '}
-                  {formatAmount(item.totalAmount, item.currency)}
-                  <div style={{ fontSize: 12, color: '#64748b' }}>
-                    発行日: {formatDate(item.issueDate)} / 納期:{' '}
-                    {formatDate(item.dueDate)}
-                  </div>
-                  {linkedInvoices.length > 0 && (
-                    <div style={{ fontSize: 12, color: '#64748b' }}>
-                      リンク済み仕入請求: {linkedInvoices.length}件（
-                      {shownLinkedInvoiceLabels.join(', ')}
-                      {remainingLinkedInvoiceCount > 0
-                        ? ` 他${remainingLinkedInvoiceCount}件`
-                        : ''}
-                      ）
-                    </div>
-                  )}
-                  {item.status === 'draft' && (
-                    <div style={{ marginTop: 6 }}>
-                      <button
-                        className="button secondary"
-                        onClick={() => submitPurchaseOrder(item.id)}
-                        disabled={poActionState[item.id]}
-                      >
-                        {poActionState[item.id] ? '申請中' : '承認依頼'}
-                      </button>
-                    </div>
-                  )}
-                  <div style={{ marginTop: 6 }}>
-                    <button
-                      className="button secondary"
-                      onClick={() => startVendorInvoiceFromPo(item)}
+          {poResult && (
+            <div style={{ marginBottom: 12 }}>
+              <Toast
+                variant={poResult.type}
+                title={poResult.type === 'error' ? 'エラー' : '完了'}
+                description={poResult.text}
+                dismissible
+                onClose={() => setPoResult(null)}
+              />
+            </div>
+          )}
+          <CrudList
+            title="発注書一覧"
+            description="発注書の検索・状態絞り込みと主要操作を実行できます。"
+            filters={
+              <FilterBar
+                actions={
+                  <Button
+                    variant="ghost"
+                    onClick={() => {
+                      void loadPurchaseOrders();
+                    }}
+                  >
+                    再取得
+                  </Button>
+                }
+              >
+                <div
+                  style={{
+                    display: 'flex',
+                    gap: 12,
+                    flexWrap: 'wrap',
+                    alignItems: 'center',
+                  }}
+                >
+                  <Input
+                    value={poSearch}
+                    onChange={(e) => setPoSearch(e.target.value)}
+                    placeholder="発注番号 / 案件 / 業者 / 請求番号で検索"
+                    aria-label="発注書検索"
+                  />
+                  <Select
+                    value={poStatusFilter}
+                    onChange={(e) => setPoStatusFilter(e.target.value)}
+                    aria-label="発注書状態フィルタ"
+                  >
+                    <option value="all">状態: 全て</option>
+                    {poStatusOptions.map((status) => (
+                      <option key={status} value={status}>
+                        {status}
+                      </option>
+                    ))}
+                  </Select>
+                  {(poSearch || poStatusFilter !== 'all') && (
+                    <Button
+                      variant="ghost"
+                      onClick={() => {
+                        setPoSearch('');
+                        setPoStatusFilter('all');
+                      }}
                     >
-                      仕入請求を作成
-                    </button>
-                  </div>
-                  <div style={{ marginTop: 6 }}>
-                    <button
-                      className="button secondary"
-                      onClick={() => loadPurchaseOrderSendLogs(item.id)}
-                      disabled={poSendLogLoading[item.id]}
-                    >
-                      {poSendLogLoading[item.id] ? '取得中' : '送信履歴'}
-                    </button>
-                  </div>
-                  <div style={{ marginTop: 6 }}>
-                    <button
-                      className="button secondary"
-                      onClick={() =>
-                        setAnnotationTarget({
-                          kind: 'purchase_order',
-                          id: item.id,
-                          projectId: item.projectId,
-                          title: `発注書: ${item.poNo || missingNumberLabel}`,
-                        })
-                      }
-                    >
-                      注釈
-                    </button>
-                  </div>
-                  {poSendLogMessage[item.id] && (
-                    <div style={{ color: '#dc2626', marginTop: 4 }}>
-                      {poSendLogMessage[item.id]}
-                    </div>
+                      条件クリア
+                    </Button>
                   )}
-                  {Object.prototype.hasOwnProperty.call(
-                    poSendLogs,
-                    item.id,
-                  ) && (
-                    <ul className="list" style={{ marginTop: 6 }}>
-                      {(poSendLogs[item.id] || []).map((log) => (
-                        <li key={log.id}>
-                          <span className="badge">{log.status}</span>{' '}
-                          {log.channel} / {formatDateTime(log.createdAt)}
-                          {log.error && (
-                            <div style={{ color: '#dc2626' }}>
-                              error: {log.error}
-                            </div>
-                          )}
-                          <div style={{ fontSize: 12, color: '#64748b' }}>
-                            logId: {log.id}
-                          </div>
-                          {log.pdfUrl && (
-                            <div style={{ marginTop: 4 }}>
-                              <button
-                                className="button secondary"
-                                onClick={() =>
-                                  openPurchaseOrderPdf(item.id, log.pdfUrl)
-                                }
-                                disabled={poSendLogLoading[item.id]}
-                              >
-                                PDFを開く
-                              </button>
-                            </div>
-                          )}
-                        </li>
-                      ))}
-                      {(poSendLogs[item.id] || []).length === 0 && (
-                        <li>履歴なし</li>
-                      )}
-                    </ul>
-                  )}
-                </li>
-              );
-            })}
-            {purchaseOrders.length === 0 && <li>データなし</li>}
-          </ul>
-        </div>
-        <div style={{ minWidth: 320, flex: 1 }}>
+                </div>
+              </FilterBar>
+            }
+            table={purchaseOrderListContent}
+          />
+        </section>
+
+        <section>
           <h3>仕入見積</h3>
-          <div className="card" style={{ marginBottom: 8 }}>
+          <div className="card" style={{ marginBottom: 12 }}>
             <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
               <select
                 value={quoteForm.projectId}
@@ -1272,64 +1816,85 @@ export const VendorDocuments: React.FC = () => {
                 placeholder="書類URL"
                 style={{ minWidth: 180 }}
               />
-              <button
-                className="button"
-                onClick={createVendorQuote}
-                disabled={isQuoteSaving}
-              >
+              <Button onClick={createVendorQuote} disabled={isQuoteSaving}>
                 {isQuoteSaving ? '登録中' : '登録'}
-              </button>
+              </Button>
             </div>
-            {quoteResult && (
-              <p
-                style={{
-                  color: quoteResult.type === 'error' ? '#dc2626' : '#16a34a',
-                  marginTop: 8,
-                }}
-              >
-                {quoteResult.text}
-              </p>
-            )}
           </div>
-          <button className="button secondary" onClick={loadVendorQuotes}>
-            再読込
-          </button>
-          {quoteListMessage && (
-            <p style={{ color: '#dc2626' }}>{quoteListMessage}</p>
+          {quoteResult && (
+            <div style={{ marginBottom: 12 }}>
+              <Toast
+                variant={quoteResult.type}
+                title={quoteResult.type === 'error' ? 'エラー' : '完了'}
+                description={quoteResult.text}
+                dismissible
+                onClose={() => setQuoteResult(null)}
+              />
+            </div>
           )}
-          <ul className="list">
-            {vendorQuotes.map((item) => (
-              <li key={item.id}>
-                <span className="badge">{item.status}</span>{' '}
-                {item.quoteNo || missingNumberLabel} /{' '}
-                {renderProject(item.projectId)} / {renderVendor(item.vendorId)}{' '}
-                / {formatAmount(item.totalAmount, item.currency)}
-                <div style={{ fontSize: 12, color: '#64748b' }}>
-                  発行日: {formatDate(item.issueDate)}
-                </div>
-                <div style={{ marginTop: 6 }}>
-                  <button
-                    className="button secondary"
-                    onClick={() =>
-                      setAnnotationTarget({
-                        kind: 'vendor_quote',
-                        id: item.id,
-                        projectId: item.projectId,
-                        title: `仕入見積: ${item.quoteNo || missingNumberLabel}`,
-                      })
-                    }
+          <CrudList
+            title="仕入見積一覧"
+            description="仕入見積の検索と注釈登録を実行できます。"
+            filters={
+              <FilterBar
+                actions={
+                  <Button
+                    variant="ghost"
+                    onClick={() => {
+                      void loadVendorQuotes();
+                    }}
                   >
-                    注釈
-                  </button>
+                    再取得
+                  </Button>
+                }
+              >
+                <div
+                  style={{
+                    display: 'flex',
+                    gap: 12,
+                    flexWrap: 'wrap',
+                    alignItems: 'center',
+                  }}
+                >
+                  <Input
+                    value={quoteSearch}
+                    onChange={(e) => setQuoteSearch(e.target.value)}
+                    placeholder="見積番号 / 案件 / 業者 / 金額で検索"
+                    aria-label="仕入見積検索"
+                  />
+                  <Select
+                    value={quoteStatusFilter}
+                    onChange={(e) => setQuoteStatusFilter(e.target.value)}
+                    aria-label="仕入見積状態フィルタ"
+                  >
+                    <option value="all">状態: 全て</option>
+                    {quoteStatusOptions.map((status) => (
+                      <option key={status} value={status}>
+                        {status}
+                      </option>
+                    ))}
+                  </Select>
+                  {(quoteSearch || quoteStatusFilter !== 'all') && (
+                    <Button
+                      variant="ghost"
+                      onClick={() => {
+                        setQuoteSearch('');
+                        setQuoteStatusFilter('all');
+                      }}
+                    >
+                      条件クリア
+                    </Button>
+                  )}
                 </div>
-              </li>
-            ))}
-            {vendorQuotes.length === 0 && <li>データなし</li>}
-          </ul>
-        </div>
-        <div style={{ minWidth: 320, flex: 1 }}>
+              </FilterBar>
+            }
+            table={vendorQuoteListContent}
+          />
+        </section>
+
+        <section>
           <h3>仕入請求</h3>
-          <div className="card" style={{ marginBottom: 8 }}>
+          <div className="card" style={{ marginBottom: 12 }}>
             <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
               <select
                 value={invoiceForm.projectId}
@@ -1439,99 +2004,185 @@ export const VendorDocuments: React.FC = () => {
                 placeholder="書類URL"
                 style={{ minWidth: 180 }}
               />
-              <button
-                className="button"
-                onClick={createVendorInvoice}
-                disabled={isInvoiceSaving}
-              >
+              <Button onClick={createVendorInvoice} disabled={isInvoiceSaving}>
                 {isInvoiceSaving ? '登録中' : '登録'}
-              </button>
+              </Button>
             </div>
-            {invoiceResult && (
-              <p
-                style={{
-                  color: invoiceResult.type === 'error' ? '#dc2626' : '#16a34a',
-                  marginTop: 8,
-                }}
-              >
-                {invoiceResult.text}
-              </p>
-            )}
           </div>
-          <button className="button secondary" onClick={loadVendorInvoices}>
-            再読込
-          </button>
-          {invoiceListMessage && (
-            <p style={{ color: '#dc2626' }}>{invoiceListMessage}</p>
+          {invoiceResult && (
+            <div style={{ marginBottom: 12 }}>
+              <Toast
+                variant={invoiceResult.type}
+                title={invoiceResult.type === 'error' ? 'エラー' : '完了'}
+                description={invoiceResult.text}
+                dismissible
+                onClose={() => setInvoiceResult(null)}
+              />
+            </div>
           )}
-          <ul className="list">
-            {vendorInvoices.map((item) => (
-              <li key={item.id}>
-                <span className="badge">{item.status}</span>{' '}
-                {item.vendorInvoiceNo || missingNumberLabel} /{' '}
-                {renderProject(item.projectId)} / {renderVendor(item.vendorId)}{' '}
-                / {formatAmount(item.totalAmount, item.currency)}
-                <div style={{ fontSize: 12, color: '#64748b' }}>
-                  受領日: {formatDate(item.receivedDate)} / 支払期限:{' '}
-                  {formatDate(item.dueDate)}
-                </div>
-                {(item.purchaseOrder || item.purchaseOrderId) && (
-                  <div style={{ fontSize: 12, color: '#64748b' }}>
-                    関連発注書:{' '}
-                    {item.purchaseOrder?.poNo || item.purchaseOrderId}
-                  </div>
-                )}
-                {isVendorInvoiceSubmittableStatus(item.status) && (
-                  <div style={{ marginTop: 6 }}>
-                    <button
-                      className="button secondary"
-                      onClick={() => submitVendorInvoice(item.id)}
-                      disabled={invoiceActionState[item.id]}
-                    >
-                      {invoiceActionState[item.id] ? '申請中' : '承認依頼'}
-                    </button>
-                  </div>
-                )}
+          <CrudList
+            title="仕入請求一覧"
+            description="承認依頼・PO紐づけ・配賦明細編集を一覧から実行できます。"
+            filters={
+              <FilterBar
+                actions={
+                  <Button
+                    variant="ghost"
+                    onClick={() => {
+                      void loadVendorInvoices();
+                    }}
+                  >
+                    再取得
+                  </Button>
+                }
+              >
                 <div
                   style={{
-                    marginTop: 6,
                     display: 'flex',
-                    gap: 8,
+                    gap: 12,
                     flexWrap: 'wrap',
+                    alignItems: 'center',
                   }}
                 >
-                  <button
-                    className="button secondary"
-                    onClick={() => openVendorInvoicePoLinkDialog(item)}
+                  <Input
+                    value={invoiceSearch}
+                    onChange={(e) => setInvoiceSearch(e.target.value)}
+                    placeholder="請求番号 / 案件 / 業者 / PO番号で検索"
+                    aria-label="仕入請求検索"
+                  />
+                  <Select
+                    value={invoiceStatusFilter}
+                    onChange={(e) => setInvoiceStatusFilter(e.target.value)}
+                    aria-label="仕入請求状態フィルタ"
                   >
-                    PO紐づけ
-                  </button>
-                  <button
-                    className="button secondary"
-                    onClick={() => openVendorInvoiceAllocationDialog(item)}
-                  >
-                    配賦明細
-                  </button>
-                  <button
-                    className="button secondary"
-                    onClick={() =>
-                      setAnnotationTarget({
-                        kind: 'vendor_invoice',
-                        id: item.id,
-                        projectId: item.projectId,
-                        title: `仕入請求: ${item.vendorInvoiceNo || missingNumberLabel}`,
-                      })
-                    }
-                  >
-                    注釈
-                  </button>
+                    <option value="all">状態: 全て</option>
+                    {invoiceStatusOptions.map((status) => (
+                      <option key={status} value={status}>
+                        {status}
+                      </option>
+                    ))}
+                  </Select>
+                  {(invoiceSearch || invoiceStatusFilter !== 'all') && (
+                    <Button
+                      variant="ghost"
+                      onClick={() => {
+                        setInvoiceSearch('');
+                        setInvoiceStatusFilter('all');
+                      }}
+                    >
+                      条件クリア
+                    </Button>
+                  )}
                 </div>
-              </li>
-            ))}
-            {vendorInvoices.length === 0 && <li>データなし</li>}
-          </ul>
-        </div>
+              </FilterBar>
+            }
+            table={vendorInvoiceListContent}
+          />
+        </section>
       </div>
+      <Dialog
+        open={Boolean(poSendLogDialogId)}
+        onClose={() => setPoSendLogDialogId(null)}
+        title="発注書: 送信履歴"
+        size="large"
+        footer={
+          <Button
+            variant="secondary"
+            onClick={() => setPoSendLogDialogId(null)}
+          >
+            閉じる
+          </Button>
+        }
+      >
+        {poSendLogDialogId && (
+          <div style={{ display: 'grid', gap: 12 }}>
+            <div style={{ fontSize: 12, color: '#64748b' }}>
+              <StatusBadge
+                status={activePo?.status || 'draft'}
+                dictionary={erpStatusDictionary}
+                size="sm"
+              />{' '}
+              {activePo?.poNo || missingNumberLabel}
+            </div>
+            {activePoSendLogMessage && (
+              <Alert variant="error">{activePoSendLogMessage}</Alert>
+            )}
+            {activePoSendLogLoading && (
+              <AsyncStatePanel state="loading" loadingText="送信履歴を取得中" />
+            )}
+            {!activePoSendLogLoading && activePoSendLogs.length === 0 && (
+              <AsyncStatePanel
+                state="empty"
+                empty={{
+                  title: '履歴なし',
+                  description: '送信履歴がありません',
+                }}
+              />
+            )}
+            {!activePoSendLogLoading && activePoSendLogs.length > 0 && (
+              <DataTable
+                columns={[
+                  { key: 'status', header: '状態' },
+                  { key: 'channel', header: 'チャネル' },
+                  { key: 'createdAt', header: '送信日時' },
+                  { key: 'error', header: 'エラー' },
+                  { key: 'logId', header: 'ログID' },
+                ]}
+                rows={activePoSendLogs.map((log) => ({
+                  id: log.id,
+                  status: (
+                    <StatusBadge
+                      status={log.status}
+                      dictionary={erpStatusDictionary}
+                      size="sm"
+                    />
+                  ),
+                  channel: log.channel,
+                  createdAt: formatDateTime(log.createdAt),
+                  error: log.error || '-',
+                  logId: log.id,
+                  pdfUrl: log.pdfUrl || '',
+                }))}
+                rowActions={[
+                  {
+                    key: 'open-pdf',
+                    label: 'PDFを開く',
+                    onSelect: (row: DataTableRow) => {
+                      const pdfUrl = String(row.pdfUrl || '');
+                      if (!poSendLogDialogId) return;
+                      void openPurchaseOrderPdf(poSendLogDialogId, pdfUrl);
+                    },
+                  },
+                ]}
+              />
+            )}
+          </div>
+        )}
+      </Dialog>
+      <ConfirmActionDialog
+        open={Boolean(confirmAction)}
+        title={
+          confirmAction?.type === 'po-submit'
+            ? '発注書を承認依頼しますか？'
+            : '仕入請求を承認依頼しますか？'
+        }
+        description={
+          confirmAction
+            ? `対象: ${confirmAction.numberLabel}\nこの操作は取り消せません。`
+            : undefined
+        }
+        confirmLabel="実行"
+        cancelLabel="キャンセル"
+        confirmDisabled={
+          confirmAction
+            ? confirmAction.type === 'po-submit'
+              ? Boolean(poSubmitBusy[confirmAction.id])
+              : Boolean(invoiceSubmitBusy[confirmAction.id])
+            : false
+        }
+        onConfirm={executeConfirmAction}
+        onCancel={() => setConfirmAction(null)}
+      />
       <Dialog
         open={Boolean(invoicePoLinkDialog)}
         onClose={() => setInvoicePoLinkDialog(null)}
@@ -1558,9 +2209,11 @@ export const VendorDocuments: React.FC = () => {
         {invoicePoLinkDialog && (
           <div style={{ display: 'grid', gap: 12 }}>
             <div style={{ fontSize: 12, color: '#64748b' }}>
-              <span className="badge">
-                {invoicePoLinkDialog.invoice.status}
-              </span>{' '}
+              <StatusBadge
+                status={invoicePoLinkDialog.invoice.status}
+                dictionary={erpStatusDictionary}
+                size="sm"
+              />{' '}
               {invoicePoLinkDialog.invoice.vendorInvoiceNo ||
                 missingNumberLabel}
               {' / '}
@@ -1798,9 +2451,11 @@ export const VendorDocuments: React.FC = () => {
         {invoiceAllocationDialog && (
           <div style={{ display: 'grid', gap: 12 }}>
             <div style={{ fontSize: 12, color: '#64748b' }}>
-              <span className="badge">
-                {invoiceAllocationDialog.invoice.status}
-              </span>{' '}
+              <StatusBadge
+                status={invoiceAllocationDialog.invoice.status}
+                dictionary={erpStatusDictionary}
+                size="sm"
+              />{' '}
               {invoiceAllocationDialog.invoice.vendorInvoiceNo ||
                 missingNumberLabel}
               {' / '}

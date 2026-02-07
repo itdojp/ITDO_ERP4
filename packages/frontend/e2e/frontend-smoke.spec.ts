@@ -336,7 +336,7 @@ test('frontend smoke core @core', async ({ page }) => {
   await captureSection(invoiceSection, '06-core-invoices.png');
 
   // 注釈UI（Invoices）: 作成 → 注釈保存 → 再表示で永続化を確認
-  await invoiceSection.getByRole('button', { name: '詳細' }).click();
+  await invoiceSection.getByRole('button', { name: '詳細' }).last().click();
   await expect(
     invoiceSection.getByRole('heading', { name: '請求詳細' }),
   ).toBeVisible({ timeout: actionTimeout });

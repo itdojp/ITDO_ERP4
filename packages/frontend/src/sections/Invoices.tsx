@@ -5,14 +5,21 @@ import { InvoiceDetail } from './InvoiceDetail';
 import { useProjects } from '../hooks/useProjects';
 import {
   Alert,
+  AsyncStatePanel,
   Button,
   Card,
+  ConfirmActionDialog,
+  CrudList,
+  DataTable,
+  FilterBar,
   Dialog,
-  EmptyState,
   Input,
   Select,
+  StatusBadge,
   Toast,
+  erpStatusDictionary,
 } from '../ui';
+import type { DataTableColumn, DataTableRow } from '../ui';
 
 interface Invoice {
   id: string;
@@ -29,6 +36,8 @@ type InvoiceFromTimeEntriesResponse = {
   invoice: Invoice;
   meta?: { timeEntryCount?: number };
 };
+
+type ListStatus = 'idle' | 'loading' | 'error' | 'success';
 
 const buildInitialForm = (projectId?: string) => ({
   projectId: projectId || 'demo-project',
@@ -65,6 +74,10 @@ export const Invoices: React.FC = () => {
   const [timeTo, setTimeTo] = useState(() => formatDateInput(new Date()));
   const [timeUnitPrice, setTimeUnitPrice] = useState(10000);
   const [items, setItems] = useState<Invoice[]>([]);
+  const [listStatus, setListStatus] = useState<ListStatus>('idle');
+  const [listError, setListError] = useState('');
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
   const handleProjectSelect = useCallback(
     (projectId: string) => {
       setForm((prev) => ({ ...prev, projectId }));
@@ -90,6 +103,7 @@ export const Invoices: React.FC = () => {
     text: string;
     type: 'success' | 'error' | 'info';
   } | null>(null);
+  const [markPaidTarget, setMarkPaidTarget] = useState<Invoice | null>(null);
 
   useEffect(() => {
     if (!message || message.type !== 'success') return;
@@ -120,17 +134,34 @@ export const Invoices: React.FC = () => {
     }
   };
 
-  const load = async () => {
-    try {
-      const res = await api<{ items: Invoice[] }>(
-        `/projects/${form.projectId}/invoices`,
-      );
-      setItems(res.items);
-      setMessage({ text: '読み込みました', type: 'success' });
-    } catch (e) {
-      setMessage({ text: '読み込みに失敗しました', type: 'error' });
-    }
-  };
+  const load = useCallback(
+    async (options?: { silent?: boolean }) => {
+      setListStatus('loading');
+      setListError('');
+      try {
+        const res = await api<{ items: Invoice[] }>(
+          `/projects/${form.projectId}/invoices`,
+        );
+        setItems(res.items || []);
+        setListStatus('success');
+        if (!options?.silent) {
+          setMessage({ text: '読み込みました', type: 'success' });
+        }
+      } catch (e) {
+        setListStatus('error');
+        setListError('請求一覧の取得に失敗しました');
+        if (!options?.silent) {
+          setMessage({ text: '読み込みに失敗しました', type: 'error' });
+        }
+      }
+    },
+    [form.projectId],
+  );
+
+  useEffect(() => {
+    void load({ silent: true });
+    // form.projectId が変わったら対象案件の請求一覧を再取得する。
+  }, [load]);
 
   const createFromTimeEntries = async () => {
     try {
@@ -182,9 +213,6 @@ export const Invoices: React.FC = () => {
 
   const markPaid = async (id: string) => {
     if (!canMarkPaid) return;
-    if (!window.confirm('入金確認としてステータスをpaidに変更しますか？')) {
-      return;
-    }
     try {
       const res = await api<Invoice>(`/invoices/${id}/mark-paid`, {
         method: 'POST',
@@ -198,6 +226,13 @@ export const Invoices: React.FC = () => {
     }
   };
 
+  const requestMarkPaid = (id: string) => {
+    if (!canMarkPaid) return;
+    const target = items.find((item) => item.id === id);
+    if (!target) return;
+    setMarkPaidTarget(target);
+  };
+
   const buildApproval = (status: string) => {
     if (status === 'pending_exec')
       return { step: 2, total: 2, status: 'pending_exec' };
@@ -208,10 +243,164 @@ export const Invoices: React.FC = () => {
     return { step: 0, total: 2, status: 'draft' };
   };
 
-  const renderProject = (projectId: string) => {
-    const project = projectMap.get(projectId);
-    return project ? `${project.code} / ${project.name}` : projectId;
-  };
+  const renderProject = useCallback(
+    (projectId: string) => {
+      const project = projectMap.get(projectId);
+      return project ? `${project.code} / ${project.name}` : projectId;
+    },
+    [projectMap],
+  );
+
+  const statusOptions = useMemo(
+    () =>
+      Array.from(new Set(items.map((item) => item.status)))
+        .filter(Boolean)
+        .sort(),
+    [items],
+  );
+
+  const filteredItems = useMemo(() => {
+    const needle = search.trim().toLowerCase();
+    return items.filter((item) => {
+      if (statusFilter !== 'all' && item.status !== statusFilter) {
+        return false;
+      }
+      if (!needle) return true;
+      const target = [
+        item.invoiceNo || '(draft)',
+        renderProject(item.projectId),
+        item.status,
+        `${item.totalAmount || 0}`,
+      ]
+        .join(' ')
+        .toLowerCase();
+      return target.includes(needle);
+    });
+  }, [items, renderProject, search, statusFilter]);
+
+  const tableRows = useMemo<DataTableRow[]>(
+    () =>
+      filteredItems.map((item) => ({
+        id: item.id,
+        invoiceNo: item.invoiceNo || '(draft)',
+        project: renderProject(item.projectId),
+        status: item.status,
+        totalAmount: `¥${(item.totalAmount || 0).toLocaleString()}`,
+        paidAt: item.paidAt || '-',
+      })),
+    [filteredItems, renderProject],
+  );
+
+  const tableColumns = useMemo<DataTableColumn[]>(
+    () => [
+      { key: 'invoiceNo', header: '請求番号' },
+      { key: 'project', header: '案件' },
+      {
+        key: 'status',
+        header: '状態',
+        cell: (row) => (
+          <StatusBadge
+            status={String(row.status || '')}
+            dictionary={erpStatusDictionary}
+            size="sm"
+          />
+        ),
+      },
+      { key: 'totalAmount', header: '金額', align: 'right' },
+      { key: 'paidAt', header: '入金日' },
+    ],
+    [],
+  );
+
+  const listContent = (() => {
+    if (listStatus === 'loading' || listStatus === 'idle') {
+      return (
+        <AsyncStatePanel state="loading" loadingText="請求一覧を読み込み中" />
+      );
+    }
+    if (listStatus === 'error') {
+      return (
+        <AsyncStatePanel
+          state="error"
+          error={{
+            title: '請求一覧の取得に失敗しました',
+            detail: listError,
+            onRetry: () => {
+              void load();
+            },
+            retryLabel: '再試行',
+          }}
+        />
+      );
+    }
+    if (tableRows.length === 0) {
+      return (
+        <AsyncStatePanel
+          state="empty"
+          empty={{
+            title:
+              items.length === 0
+                ? '請求データがありません'
+                : '条件に一致する請求がありません',
+            description:
+              items.length === 0
+                ? '「作成」または「工数から作成」で請求を登録してください'
+                : '検索条件を変更してください',
+          }}
+        />
+      );
+    }
+    return (
+      <DataTable
+        columns={tableColumns}
+        rows={tableRows}
+        rowActions={[
+          {
+            key: 'detail',
+            label: '詳細',
+            onSelect: (row: DataTableRow) => {
+              const target = items.find((item) => item.id === row.id);
+              if (!target) return;
+              setSelected(target);
+            },
+          },
+          {
+            key: 'send',
+            label: '送信',
+            onSelect: (row: DataTableRow) => {
+              void send(row.id);
+            },
+          },
+          {
+            key: 'release',
+            label: '工数リンク解除',
+            onSelect: (row: DataTableRow) => {
+              const target = items.find((item) => item.id === row.id);
+              if (!target || target.status !== 'draft') {
+                setMessage({
+                  text: '工数リンク解除は draft の請求のみ実行できます',
+                  type: 'info',
+                });
+                return;
+              }
+              void releaseTimeEntries(row.id);
+            },
+          },
+          ...(canMarkPaid
+            ? [
+                {
+                  key: 'mark-paid',
+                  label: '入金確認',
+                  onSelect: (row: DataTableRow) => {
+                    requestMarkPaid(row.id);
+                  },
+                },
+              ]
+            : []),
+        ]}
+      />
+    );
+  })();
 
   return (
     <div>
@@ -249,7 +438,12 @@ export const Invoices: React.FC = () => {
           min={0}
         />
         <Button onClick={create}>作成</Button>
-        <Button variant="secondary" onClick={load}>
+        <Button
+          variant="secondary"
+          onClick={() => {
+            void load();
+          }}
+        >
           読み込み
         </Button>
       </div>
@@ -309,38 +503,65 @@ export const Invoices: React.FC = () => {
           />
         </div>
       )}
-      <div style={{ display: 'grid', gap: 8, marginTop: 12 }}>
-        {items.map((d) => (
-          <Card key={d.id} padding="small">
-            <div
-              style={{
-                display: 'flex',
-                gap: 8,
-                flexWrap: 'wrap',
-                alignItems: 'center',
-              }}
+      <div style={{ marginTop: 12 }}>
+        <CrudList
+          title="一覧"
+          description="検索・状態絞り込み・行アクションで運用できます。"
+          filters={
+            <FilterBar
+              actions={
+                <Button
+                  variant="ghost"
+                  onClick={() => {
+                    void load();
+                  }}
+                >
+                  再取得
+                </Button>
+              }
             >
-              <span className="badge">{d.status}</span>
-              <span>{d.invoiceNo || '(draft)'}</span>
-              <span>/ {renderProject(d.projectId)}</span>
-              <span>/ ¥{(d.totalAmount || 0).toLocaleString()}</span>
-            </div>
-            <div
-              style={{
-                marginTop: 8,
-                display: 'flex',
-                gap: 8,
-                flexWrap: 'wrap',
-              }}
-            >
-              <Button variant="secondary" onClick={() => setSelected(d)}>
-                詳細
-              </Button>
-              <Button onClick={() => send(d.id)}>送信 (Stub)</Button>
-            </div>
-          </Card>
-        ))}
-        {items.length === 0 && <EmptyState title="データなし" />}
+              <div
+                style={{
+                  display: 'flex',
+                  gap: 12,
+                  flexWrap: 'wrap',
+                  alignItems: 'center',
+                }}
+              >
+                <Input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="請求番号 / 案件 / 状態で検索"
+                  aria-label="請求検索"
+                />
+                <Select
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value)}
+                  aria-label="請求状態フィルタ"
+                >
+                  <option value="all">状態: 全て</option>
+                  {statusOptions.map((status) => (
+                    <option key={status} value={status}>
+                      {status}
+                    </option>
+                  ))}
+                </Select>
+                {(search || statusFilter !== 'all') && (
+                  <Button
+                    variant="ghost"
+                    onClick={() => {
+                      setSearch('');
+                      setStatusFilter('all');
+                    }}
+                  >
+                    条件クリア
+                  </Button>
+                )}
+              </div>
+            </FilterBar>
+          }
+          table={listContent}
+        />
       </div>
       {selected && (
         <Card padding="small" style={{ marginTop: 12 }}>
@@ -348,7 +569,7 @@ export const Invoices: React.FC = () => {
             {...selected}
             approval={buildApproval(selected.status)}
             onSend={() => send(selected.id)}
-            onMarkPaid={() => markPaid(selected.id)}
+            onMarkPaid={() => requestMarkPaid(selected.id)}
             canMarkPaid={canMarkPaid}
           />
           <div style={{ marginTop: 12 }}>
@@ -403,6 +624,24 @@ export const Invoices: React.FC = () => {
           />
         )}
       </Dialog>
+      <ConfirmActionDialog
+        open={Boolean(markPaidTarget)}
+        title="入金確認を実行しますか？"
+        description={
+          markPaidTarget
+            ? `対象請求: ${markPaidTarget.invoiceNo || '(draft)'}`
+            : undefined
+        }
+        tone="default"
+        confirmLabel="入金確認"
+        cancelLabel="キャンセル"
+        onConfirm={() => {
+          if (!markPaidTarget) return;
+          void markPaid(markPaidTarget.id);
+          setMarkPaidTarget(null);
+        }}
+        onCancel={() => setMarkPaidTarget(null)}
+      />
     </div>
   );
 };

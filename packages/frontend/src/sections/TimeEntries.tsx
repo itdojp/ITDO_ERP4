@@ -32,11 +32,13 @@ import {
   EmptyState,
   FilterBar,
   Input,
+  ListStatePanel,
   Select,
   Skeleton,
-  Spinner,
+  StatusBadge,
   Textarea,
   Toast,
+  erpStatusDictionary,
 } from '../ui';
 
 type TimeEntry = {
@@ -137,40 +139,6 @@ const useMediaQuery = (query: string) => {
   return matches;
 };
 
-const EmptyListState: React.FC<{
-  status: ListStatus;
-  error?: string;
-  onRetry: () => void;
-}> = ({ status, error, onRetry }) => {
-  if (status === 'loading') {
-    return (
-      <div
-        style={{
-          display: 'grid',
-          placeItems: 'center',
-          padding: '24px 0',
-        }}
-      >
-        <Spinner label="読み込み中" />
-      </div>
-    );
-  }
-  if (status === 'error') {
-    return (
-      <EmptyState
-        title="工数一覧の取得に失敗しました"
-        description={error || '通信環境を確認して再試行してください'}
-        action={
-          <Button variant="primary" onClick={onRetry}>
-            再試行
-          </Button>
-        }
-      />
-    );
-  }
-  return <EmptyState title="工数がありません" />;
-};
-
 const LegacyTimeEntryList: React.FC<{
   items: TimeEntryView[];
   status: ListStatus;
@@ -180,7 +148,13 @@ const LegacyTimeEntryList: React.FC<{
   if (status === 'loading' || status === 'error' || items.length === 0) {
     return (
       <Card padding="small">
-        <EmptyListState status={status} error={error} onRetry={onRetry} />
+        <ListStatePanel
+          status={status}
+          count={items.length}
+          error={error}
+          onRetry={onRetry}
+          emptyTitle="工数がありません"
+        />
       </Card>
     );
   }
@@ -196,7 +170,11 @@ const LegacyTimeEntryList: React.FC<{
               alignItems: 'center',
             }}
           >
-            <span className="badge">{entry.status}</span>
+            <StatusBadge
+              status={entry.status}
+              dictionary={erpStatusDictionary}
+              size="sm"
+            />
             <span>{formatWorkDate(entry.workDate)}</span>
             <span>/ {entry.projectLabel}</span>
             <span>/ {formatMinutes(entry.minutes)}</span>
@@ -219,7 +197,13 @@ const MobileTimeEntryList: React.FC<{
   if (status === 'loading' || status === 'error' || items.length === 0) {
     return (
       <Card padding="small">
-        <EmptyListState status={status} error={error} onRetry={onRetry} />
+        <ListStatePanel
+          status={status}
+          count={items.length}
+          error={error}
+          onRetry={onRetry}
+          emptyTitle="工数がありません"
+        />
       </Card>
     );
   }
@@ -237,7 +221,11 @@ const MobileTimeEntryList: React.FC<{
               }}
             >
               <strong>{formatWorkDate(entry.workDate)}</strong>
-              <span className="badge">{entry.status}</span>
+              <StatusBadge
+                status={entry.status}
+                dictionary={erpStatusDictionary}
+                size="sm"
+              />
             </div>
             <div style={{ fontSize: 13, color: 'var(--color-text-secondary)' }}>
               {entry.projectLabel}
@@ -315,7 +303,11 @@ const TimesheetGrid: React.FC<{
         accessorKey: 'status',
         header: '状態',
         cell: (info) => (
-          <span className="badge">{info.getValue() as string}</span>
+          <StatusBadge
+            status={String(info.getValue())}
+            dictionary={erpStatusDictionary}
+            size="sm"
+          />
         ),
         meta: { width: '110px' },
       },
@@ -392,7 +384,13 @@ const TimesheetGrid: React.FC<{
   if (status === 'error' || items.length === 0) {
     return (
       <Card padding="small">
-        <EmptyListState status={status} error={error} onRetry={onRetry} />
+        <ListStatePanel
+          status={status}
+          count={items.length}
+          error={error}
+          onRetry={onRetry}
+          emptyTitle="工数がありません"
+        />
       </Card>
     );
   }

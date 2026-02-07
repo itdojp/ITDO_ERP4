@@ -1,6 +1,18 @@
 import React, { useMemo, useState } from 'react';
 import { api, apiResponse } from '../api';
-import { Alert, Button, Card, EmptyState, Input, Select } from '../ui';
+import {
+  Alert,
+  AsyncStatePanel,
+  Button,
+  CrudList,
+  DataTable,
+  FilterBar,
+  Input,
+  Select,
+  StatusBadge,
+  erpStatusDictionary,
+} from '../ui';
+import type { DataTableColumn, DataTableRow } from '../ui';
 import {
   downloadResponseAsFile,
   formatDateForFilename,
@@ -93,23 +105,27 @@ export const AuditLogs: React.FC = () => {
     format: 'json',
   });
   const [items, setItems] = useState<AuditLogItem[]>([]);
+  const [listStatus, setListStatus] = useState<
+    'idle' | 'loading' | 'error' | 'success'
+  >('idle');
+  const [listError, setListError] = useState('');
   const [message, setMessage] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
 
   const query = useMemo(() => buildQuery(filters), [filters]);
 
   const loadLogs = async () => {
     try {
-      setIsLoading(true);
+      setListStatus('loading');
+      setListError('');
       setMessage('');
       const res = await api<{ items: AuditLogItem[] }>(`/audit-logs?${query}`);
       setItems(res.items || []);
+      setListStatus('success');
     } catch (err) {
       setItems([]);
-      setMessage('監査ログの取得に失敗しました');
-    } finally {
-      setIsLoading(false);
+      setListStatus('error');
+      setListError('監査ログの取得に失敗しました');
     }
   };
 
@@ -131,148 +147,243 @@ export const AuditLogs: React.FC = () => {
     }
   };
 
+  const rows = useMemo<DataTableRow[]>(
+    () =>
+      items.map((item) => ({
+        id: item.id,
+        createdAt: formatDateTime(item.createdAt),
+        action: item.action,
+        user: item.userId || '-',
+        target: `${item.targetTable || '-'} / ${item.targetId || '-'}`,
+        roleGroup: `${item.actorRole || '-'} / ${item.actorGroupId || '-'}`,
+        reason: `${item.reasonCode || '-'} ${item.reasonText || ''}`.trim(),
+        sourceRequest: `${item.source || '-'} / ${item.requestId || '-'}`,
+        metadata: formatMetadata(item.metadata),
+      })),
+    [items],
+  );
+
+  const columns = useMemo<DataTableColumn[]>(
+    () => [
+      { key: 'createdAt', header: '日時' },
+      {
+        key: 'action',
+        header: '操作',
+        cell: (row) => (
+          <StatusBadge
+            status={String(row.action || '')}
+            dictionary={erpStatusDictionary}
+            size="sm"
+          />
+        ),
+      },
+      { key: 'user', header: 'ユーザー' },
+      { key: 'target', header: '対象' },
+      { key: 'roleGroup', header: 'ロール/グループ' },
+      { key: 'reason', header: '理由' },
+      { key: 'sourceRequest', header: 'ソース/RequestID' },
+      { key: 'metadata', header: 'metadata' },
+    ],
+    [],
+  );
+
+  const listContent = (() => {
+    if (listStatus === 'idle' || listStatus === 'loading') {
+      return <AsyncStatePanel state="loading" loadingText="監査ログを取得中" />;
+    }
+    if (listStatus === 'error') {
+      return (
+        <AsyncStatePanel
+          state="error"
+          error={{
+            title: '監査ログの取得に失敗しました',
+            detail: listError,
+            onRetry: () => {
+              void loadLogs();
+            },
+            retryLabel: '再試行',
+          }}
+        />
+      );
+    }
+    if (rows.length === 0) {
+      return (
+        <AsyncStatePanel
+          state="empty"
+          empty={{
+            title: '監査ログなし',
+            description: '条件を変更して再検索してください',
+          }}
+        />
+      );
+    }
+    return <DataTable columns={columns} rows={rows} />;
+  })();
+
   return (
     <div>
       <h2>監査ログ</h2>
-      <div
-        style={{
-          display: 'flex',
-          flexWrap: 'wrap',
-          gap: 12,
-          alignItems: 'flex-end',
-        }}
-      >
-        <Input
-          label="from"
-          type="date"
-          value={filters.from}
-          onChange={(e) => setFilters({ ...filters, from: e.target.value })}
-        />
-        <Input
-          label="to"
-          type="date"
-          value={filters.to}
-          onChange={(e) => setFilters({ ...filters, to: e.target.value })}
-        />
-        <Input
-          label="userId"
-          value={filters.userId}
-          onChange={(e) => setFilters({ ...filters, userId: e.target.value })}
-        />
-        <Input
-          label="action"
-          value={filters.action}
-          onChange={(e) => setFilters({ ...filters, action: e.target.value })}
-        />
-        <Input
-          label="targetTable"
-          value={filters.targetTable}
-          onChange={(e) =>
-            setFilters({ ...filters, targetTable: e.target.value })
-          }
-        />
-        <Input
-          label="targetId"
-          value={filters.targetId}
-          onChange={(e) => setFilters({ ...filters, targetId: e.target.value })}
-        />
-        <Input
-          label="reasonCode"
-          value={filters.reasonCode}
-          onChange={(e) =>
-            setFilters({ ...filters, reasonCode: e.target.value })
-          }
-        />
-        <Input
-          label="reasonText"
-          value={filters.reasonText}
-          onChange={(e) =>
-            setFilters({ ...filters, reasonText: e.target.value })
-          }
-        />
-        <Input
-          label="source"
-          value={filters.source}
-          onChange={(e) => setFilters({ ...filters, source: e.target.value })}
-        />
-        <Input
-          label="actorRole"
-          value={filters.actorRole}
-          onChange={(e) =>
-            setFilters({ ...filters, actorRole: e.target.value })
-          }
-        />
-        <Input
-          label="actorGroupId"
-          value={filters.actorGroupId}
-          onChange={(e) =>
-            setFilters({ ...filters, actorGroupId: e.target.value })
-          }
-        />
-        <Input
-          label="requestId"
-          value={filters.requestId}
-          onChange={(e) =>
-            setFilters({ ...filters, requestId: e.target.value })
-          }
-        />
-        <Select
-          label="limit"
-          value={filters.limit}
-          onChange={(e) => setFilters({ ...filters, limit: e.target.value })}
-        >
-          {['50', '100', '200', '500', '1000'].map((value) => (
-            <option key={value} value={value}>
-              {value}
-            </option>
-          ))}
-        </Select>
-        <div className="row" style={{ gap: 8 }}>
-          <Button onClick={loadLogs} loading={isLoading}>
-            検索
-          </Button>
-          <Button
-            variant="secondary"
-            onClick={downloadCsv}
-            loading={isDownloading}
-          >
-            CSV出力
-          </Button>
-        </div>
-      </div>
       {message && (
         <div style={{ marginTop: 8 }}>
           <Alert variant="error">{message}</Alert>
         </div>
       )}
-      <div style={{ marginTop: 12, display: 'grid', gap: 8 }}>
-        {items.map((item) => (
-          <Card key={item.id} padding="small">
-            <div className="row" style={{ justifyContent: 'space-between' }}>
-              <div>
-                <strong>{item.action}</strong>{' '}
-                {item.targetTable ? `(${item.targetTable})` : ''}
+      <div style={{ marginTop: 12 }}>
+        <CrudList
+          title="監査ログ一覧"
+          description="条件を指定して監査ログを検索し、CSVを出力できます。"
+          filters={
+            <FilterBar
+              actions={
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <Button
+                    variant="ghost"
+                    onClick={() => {
+                      setFilters({
+                        from: '',
+                        to: '',
+                        userId: '',
+                        action: '',
+                        targetTable: '',
+                        targetId: '',
+                        reasonCode: '',
+                        reasonText: '',
+                        source: '',
+                        actorRole: '',
+                        actorGroupId: '',
+                        requestId: '',
+                        limit: '200',
+                        format: 'json',
+                      });
+                    }}
+                  >
+                    条件クリア
+                  </Button>
+                  <Button onClick={loadLogs} loading={listStatus === 'loading'}>
+                    検索
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    onClick={downloadCsv}
+                    loading={isDownloading}
+                  >
+                    CSV出力
+                  </Button>
+                </div>
+              }
+            >
+              <div
+                style={{
+                  display: 'flex',
+                  flexWrap: 'wrap',
+                  gap: 12,
+                  alignItems: 'flex-end',
+                }}
+              >
+                <Input
+                  label="from"
+                  type="date"
+                  value={filters.from}
+                  onChange={(e) =>
+                    setFilters({ ...filters, from: e.target.value })
+                  }
+                />
+                <Input
+                  label="to"
+                  type="date"
+                  value={filters.to}
+                  onChange={(e) =>
+                    setFilters({ ...filters, to: e.target.value })
+                  }
+                />
+                <Input
+                  label="userId"
+                  value={filters.userId}
+                  onChange={(e) =>
+                    setFilters({ ...filters, userId: e.target.value })
+                  }
+                />
+                <Input
+                  label="action"
+                  value={filters.action}
+                  onChange={(e) =>
+                    setFilters({ ...filters, action: e.target.value })
+                  }
+                />
+                <Input
+                  label="targetTable"
+                  value={filters.targetTable}
+                  onChange={(e) =>
+                    setFilters({ ...filters, targetTable: e.target.value })
+                  }
+                />
+                <Input
+                  label="targetId"
+                  value={filters.targetId}
+                  onChange={(e) =>
+                    setFilters({ ...filters, targetId: e.target.value })
+                  }
+                />
+                <Input
+                  label="reasonCode"
+                  value={filters.reasonCode}
+                  onChange={(e) =>
+                    setFilters({ ...filters, reasonCode: e.target.value })
+                  }
+                />
+                <Input
+                  label="reasonText"
+                  value={filters.reasonText}
+                  onChange={(e) =>
+                    setFilters({ ...filters, reasonText: e.target.value })
+                  }
+                />
+                <Input
+                  label="source"
+                  value={filters.source}
+                  onChange={(e) =>
+                    setFilters({ ...filters, source: e.target.value })
+                  }
+                />
+                <Input
+                  label="actorRole"
+                  value={filters.actorRole}
+                  onChange={(e) =>
+                    setFilters({ ...filters, actorRole: e.target.value })
+                  }
+                />
+                <Input
+                  label="actorGroupId"
+                  value={filters.actorGroupId}
+                  onChange={(e) =>
+                    setFilters({ ...filters, actorGroupId: e.target.value })
+                  }
+                />
+                <Input
+                  label="requestId"
+                  value={filters.requestId}
+                  onChange={(e) =>
+                    setFilters({ ...filters, requestId: e.target.value })
+                  }
+                />
+                <Select
+                  label="limit"
+                  value={filters.limit}
+                  onChange={(e) =>
+                    setFilters({ ...filters, limit: e.target.value })
+                  }
+                >
+                  {['50', '100', '200', '500', '1000'].map((value) => (
+                    <option key={value} value={value}>
+                      {value}
+                    </option>
+                  ))}
+                </Select>
               </div>
-              <span className="badge">{formatDateTime(item.createdAt)}</span>
-            </div>
-            <div style={{ fontSize: 12, color: '#475569', marginTop: 6 }}>
-              user: {item.userId || '-'} / target: {item.targetId || '-'}
-            </div>
-            <div style={{ fontSize: 12, color: '#475569' }}>
-              role: {item.actorRole || '-'} / group: {item.actorGroupId || '-'}
-            </div>
-            <div style={{ fontSize: 12, color: '#475569' }}>
-              reason: {item.reasonCode || '-'} {item.reasonText || ''}
-            </div>
-            <div style={{ fontSize: 12, color: '#475569' }}>
-              source: {item.source || '-'} / requestId: {item.requestId || '-'}
-            </div>
-            <div style={{ fontSize: 12, color: '#475569' }}>
-              metadata: {formatMetadata(item.metadata)}
-            </div>
-          </Card>
-        ))}
-        {items.length === 0 && <EmptyState title="監査ログなし" />}
+            </FilterBar>
+          }
+          table={listContent}
+        />
       </div>
     </div>
   );

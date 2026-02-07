@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { apiResponse, getAuthState } from '../api';
-import { Alert, Button, Card } from '../ui';
+import { Alert, Button, Card, PageHeader, SectionCard } from '../ui';
 import { Dashboard } from '../sections/Dashboard';
 import { GlobalSearch } from '../sections/GlobalSearch';
 import { DailyReport } from '../sections/DailyReport';
@@ -581,10 +581,23 @@ export const App: React.FC = () => {
 
   const activeSection =
     sections.find((section) => section.id === activeSectionId) || sections[0];
+  const activeSectionGroup =
+    sectionGroups.find((group) =>
+      group.items.some((item) => item.id === activeSection?.id),
+    ) || null;
 
   return (
     <div className="container">
-      <h1>ERP4 MVP PoC</h1>
+      <PageHeader
+        title="ERP4 MVP PoC"
+        description={
+          activeSection
+            ? activeSectionGroup
+              ? `${activeSectionGroup.title} / ${activeSection.label}`
+              : activeSection.label
+            : undefined
+        }
+      />
       <CurrentUser />
       {deepLinkError && (
         <div style={{ marginTop: 8 }}>
@@ -592,49 +605,57 @@ export const App: React.FC = () => {
         </div>
       )}
       <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
-        <Card
-          padding="small"
+        <div
           style={{ minWidth: 220, flex: '0 0 220px', alignSelf: 'flex-start' }}
         >
-          <div style={{ display: 'grid', gap: 12 }}>
-            {sectionGroups.map((group) => (
-              <div key={group.title} style={{ display: 'grid', gap: 6 }}>
-                <div style={{ fontSize: 12, color: '#64748b' }}>
-                  {group.title}
-                </div>
-                {group.items.map((item) => (
-                  <Button
-                    key={item.id}
-                    size="small"
-                    fullWidth
-                    variant={
-                      item.id === activeSection?.id ? 'primary' : 'ghost'
-                    }
-                    onClick={() => {
-                      setDeepLinkError('');
-                      setPendingDeepLink(null);
-                      setActiveSectionId(item.id);
-                      if (
-                        typeof window !== 'undefined' &&
-                        window.location.hash.startsWith('#/open')
-                      ) {
-                        window.history.replaceState(
-                          null,
-                          '',
-                          window.location.pathname + window.location.search,
-                        );
+          <SectionCard title="メニュー" density="compact">
+            <div style={{ display: 'grid', gap: 12 }}>
+              {sectionGroups.map((group) => (
+                <div key={group.title} style={{ display: 'grid', gap: 6 }}>
+                  <div style={{ fontSize: 12, color: '#64748b' }}>
+                    {group.title}
+                  </div>
+                  {group.items.map((item) => (
+                    <Button
+                      key={item.id}
+                      size="small"
+                      fullWidth
+                      variant={
+                        item.id === activeSection?.id ? 'primary' : 'ghost'
                       }
-                    }}
-                  >
-                    {item.label}
-                  </Button>
-                ))}
-              </div>
-            ))}
-          </div>
-        </Card>
+                      onClick={() => {
+                        setDeepLinkError('');
+                        setPendingDeepLink(null);
+                        setActiveSectionId(item.id);
+                        if (
+                          typeof window !== 'undefined' &&
+                          window.location.hash.startsWith('#/open')
+                        ) {
+                          window.history.replaceState(
+                            null,
+                            '',
+                            window.location.pathname + window.location.search,
+                          );
+                        }
+                      }}
+                    >
+                      {item.label}
+                    </Button>
+                  ))}
+                </div>
+              ))}
+            </div>
+          </SectionCard>
+        </div>
         <main style={{ flex: '1 1 720px', minWidth: 280 }}>
-          {activeSection ? activeSection.render() : null}
+          {activeSection ? (
+            <SectionCard
+              title={activeSection.label}
+              description={activeSectionGroup?.title}
+            >
+              {activeSection.render()}
+            </SectionCard>
+          ) : null}
         </main>
       </div>
     </div>

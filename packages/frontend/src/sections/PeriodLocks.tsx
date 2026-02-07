@@ -1,6 +1,20 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '../api';
-import { Alert, Button, Card, EmptyState, Input, Select } from '../ui';
+import {
+  Alert,
+  AsyncStatePanel,
+  Button,
+  Card,
+  ConfirmActionDialog,
+  CrudList,
+  DataTable,
+  FilterBar,
+  Input,
+  Select,
+  StatusBadge,
+  erpStatusDictionary,
+} from '../ui';
+import type { DataTableColumn, DataTableRow } from '../ui';
 
 type ProjectOption = {
   id: string;
@@ -55,10 +69,13 @@ export const PeriodLocks: React.FC = () => {
     projectId: '',
     reason: '',
   });
-  const [listMessage, setListMessage] = useState('');
+  const [listStatus, setListStatus] = useState<
+    'idle' | 'loading' | 'error' | 'success'
+  >('idle');
+  const [listError, setListError] = useState('');
   const [formMessage, setFormMessage] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [targetLock, setTargetLock] = useState<PeriodLock | null>(null);
 
   const projectMap = useMemo(
     () => new Map(projects.map((project) => [project.id, project])),
@@ -73,8 +90,8 @@ export const PeriodLocks: React.FC = () => {
 
   const loadLocks = async () => {
     try {
-      setIsLoading(true);
-      setListMessage('');
+      setListStatus('loading');
+      setListError('');
       const params = new URLSearchParams();
       if (filters.period) params.set('period', filters.period);
       if (filters.scope) params.set('scope', filters.scope);
@@ -82,11 +99,11 @@ export const PeriodLocks: React.FC = () => {
       const suffix = params.toString() ? `?${params}` : '';
       const res = await api<{ items: PeriodLock[] }>(`/period-locks${suffix}`);
       setItems(res.items || []);
+      setListStatus('success');
     } catch (err) {
       setItems([]);
-      setListMessage('締め一覧の取得に失敗しました');
-    } finally {
-      setIsLoading(false);
+      setListStatus('error');
+      setListError('締め一覧の取得に失敗しました');
     }
   };
 
@@ -135,20 +152,112 @@ export const PeriodLocks: React.FC = () => {
   };
 
   const removeLock = async (id: string) => {
-    if (!window.confirm('この締めを解除しますか？')) return;
     try {
       await api(`/period-locks/${id}`, { method: 'DELETE' });
       await loadLocks();
     } catch (err) {
-      setListMessage('締め解除に失敗しました');
+      setListError('締め解除に失敗しました');
+      setListStatus('error');
     }
   };
 
-  const renderProject = (projectId?: string | null) => {
-    if (!projectId) return '-';
-    const project = projectMap.get(projectId);
-    return project ? `${project.code} / ${project.name}` : projectId;
-  };
+  const renderProject = useCallback(
+    (projectId?: string | null) => {
+      if (!projectId) return '-';
+      const project = projectMap.get(projectId);
+      return project ? `${project.code} / ${project.name}` : projectId;
+    },
+    [projectMap],
+  );
+
+  const rows = useMemo<DataTableRow[]>(
+    () =>
+      items.map((item) => ({
+        id: item.id,
+        period: item.period,
+        scope: item.scope,
+        project: renderProject(item.projectId),
+        closedAt: formatDateTime(item.closedAt),
+        closedBy: item.closedBy || '-',
+        reason: item.reason || '-',
+      })),
+    [items, renderProject],
+  );
+
+  const columns = useMemo<DataTableColumn[]>(
+    () => [
+      { key: 'period', header: '期間' },
+      {
+        key: 'scope',
+        header: 'スコープ',
+        cell: (row) => (
+          <StatusBadge
+            status={String(row.scope || '')}
+            dictionary={{
+              ...erpStatusDictionary,
+              global: { label: 'global', tone: 'info' },
+              project: { label: 'project', tone: 'success' },
+            }}
+            size="sm"
+          />
+        ),
+      },
+      { key: 'project', header: '案件' },
+      { key: 'closedAt', header: '締め日時' },
+      { key: 'closedBy', header: '実行者' },
+      { key: 'reason', header: '理由' },
+    ],
+    [],
+  );
+
+  const listContent = (() => {
+    if (listStatus === 'idle' || listStatus === 'loading') {
+      return <AsyncStatePanel state="loading" loadingText="締め一覧を取得中" />;
+    }
+    if (listStatus === 'error') {
+      return (
+        <AsyncStatePanel
+          state="error"
+          error={{
+            title: '締め一覧の取得に失敗しました',
+            detail: listError,
+            onRetry: () => {
+              void loadLocks();
+            },
+            retryLabel: '再試行',
+          }}
+        />
+      );
+    }
+    if (rows.length === 0) {
+      return (
+        <AsyncStatePanel
+          state="empty"
+          empty={{
+            title: '締めがありません',
+            description: '条件を変更して検索してください',
+          }}
+        />
+      );
+    }
+    return (
+      <DataTable
+        columns={columns}
+        rows={rows}
+        rowActions={[
+          {
+            key: 'unlock',
+            label: '解除',
+            onSelect: (row) => {
+              const item = items.find((entry) => entry.id === row.id);
+              if (!item) return;
+              setTargetLock(item);
+            },
+          },
+        ]}
+      />
+    );
+  })();
 
   return (
     <div>
@@ -205,74 +314,96 @@ export const PeriodLocks: React.FC = () => {
       </Card>
 
       <Card padding="small">
-        <div className="row" style={{ alignItems: 'flex-end' }}>
-          <Input
-            label="period"
-            value={filters.period}
-            onChange={(e) => setFilters({ ...filters, period: e.target.value })}
-            placeholder="YYYY-MM"
-          />
-          <Select
-            label="scope"
-            value={filters.scope}
-            onChange={(e) => setFilters({ ...filters, scope: e.target.value })}
-          >
-            <option value="">すべて</option>
-            <option value="global">global</option>
-            <option value="project">project</option>
-          </Select>
-          <Select
-            label="project"
-            value={filters.projectId}
-            onChange={(e) =>
-              setFilters({ ...filters, projectId: e.target.value })
-            }
-          >
-            <option value="">すべて</option>
-            {projects.map((project) => (
-              <option key={project.id} value={project.id}>
-                {project.code} / {project.name}
-              </option>
-            ))}
-          </Select>
-          <Button onClick={loadLocks} loading={isLoading}>
-            検索
-          </Button>
-        </div>
-        {listMessage && (
-          <div style={{ marginTop: 8 }}>
-            <Alert variant="error">{listMessage}</Alert>
+        {listError && (
+          <div style={{ marginBottom: 8 }}>
+            <Alert variant="error">{listError}</Alert>
           </div>
         )}
+        <CrudList
+          title="締め一覧"
+          description="条件で絞り込み、対象期間の締めを解除できます。"
+          filters={
+            <FilterBar
+              actions={
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <Button
+                    variant="ghost"
+                    onClick={() =>
+                      setFilters({ period: '', scope: '', projectId: '' })
+                    }
+                  >
+                    条件クリア
+                  </Button>
+                  <Button
+                    onClick={loadLocks}
+                    loading={listStatus === 'loading'}
+                  >
+                    検索
+                  </Button>
+                </div>
+              }
+            >
+              <div
+                className="row"
+                style={{ alignItems: 'flex-end', flexWrap: 'wrap' }}
+              >
+                <Input
+                  label="period"
+                  value={filters.period}
+                  onChange={(e) =>
+                    setFilters({ ...filters, period: e.target.value })
+                  }
+                  placeholder="YYYY-MM"
+                />
+                <Select
+                  label="scope"
+                  value={filters.scope}
+                  onChange={(e) =>
+                    setFilters({ ...filters, scope: e.target.value })
+                  }
+                >
+                  <option value="">すべて</option>
+                  <option value="global">global</option>
+                  <option value="project">project</option>
+                </Select>
+                <Select
+                  label="project"
+                  value={filters.projectId}
+                  onChange={(e) =>
+                    setFilters({ ...filters, projectId: e.target.value })
+                  }
+                >
+                  <option value="">すべて</option>
+                  {projects.map((project) => (
+                    <option key={project.id} value={project.id}>
+                      {project.code} / {project.name}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+            </FilterBar>
+          }
+          table={listContent}
+        />
       </Card>
-
-      <div style={{ marginTop: 12, display: 'grid', gap: 8 }}>
-        {items.map((item) => (
-          <Card key={item.id} padding="small">
-            <div className="row" style={{ justifyContent: 'space-between' }}>
-              <div>
-                <strong>{item.period}</strong> / {item.scope}
-              </div>
-              <Button variant="secondary" onClick={() => removeLock(item.id)}>
-                解除
-              </Button>
-            </div>
-            <div style={{ fontSize: 12, color: '#475569', marginTop: 6 }}>
-              project: {renderProject(item.projectId)}
-            </div>
-            <div style={{ fontSize: 12, color: '#475569' }}>
-              closed: {formatDateTime(item.closedAt)} / by:{' '}
-              {item.closedBy || '-'}
-            </div>
-            {item.reason && (
-              <div style={{ fontSize: 12, color: '#475569' }}>
-                reason: {item.reason}
-              </div>
-            )}
-          </Card>
-        ))}
-        {items.length === 0 && <EmptyState title="締めがありません" />}
-      </div>
+      <ConfirmActionDialog
+        open={Boolean(targetLock)}
+        title="期間締めを解除しますか？"
+        description={
+          targetLock
+            ? `対象: ${targetLock.period} / ${targetLock.scope}`
+            : undefined
+        }
+        tone="danger"
+        confirmLabel="解除"
+        cancelLabel="キャンセル"
+        onConfirm={() => {
+          if (!targetLock) return;
+          void removeLock(targetLock.id);
+          setTargetLock(null);
+        }}
+        onCancel={() => setTargetLock(null)}
+      />
     </div>
   );
 };
