@@ -470,6 +470,7 @@ export const DocumentSendLogs: React.FC = () => {
                   setLogError('');
                   setEventsError('');
                   setMessage(null);
+                  setRetryTargetLogId(null);
                 }}
               >
                 クリア
@@ -505,7 +506,15 @@ export const DocumentSendLogs: React.FC = () => {
         </FilterBar>
         {message && (
           <div style={{ marginTop: 8 }}>
-            <Alert variant={message.type === 'error' ? 'error' : 'info'}>
+            <Alert
+              variant={
+                message.type === 'error'
+                  ? 'error'
+                  : message.type === 'success'
+                    ? 'success'
+                    : 'info'
+              }
+            >
               {message.text}
             </Alert>
           </div>
