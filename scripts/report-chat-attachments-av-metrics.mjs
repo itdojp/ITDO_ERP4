@@ -74,6 +74,14 @@ function parseNonNegativeNumber(name, raw, fallback) {
   return parsed;
 }
 
+function parsePercentage(name, raw, fallback) {
+  const value = parseNonNegativeNumber(name, raw, fallback);
+  if (value > 100) {
+    throw new Error(`${name} must be between 0 and 100`);
+  }
+  return value;
+}
+
 function parseOptions() {
   const now = new Date();
   const toRaw = parseArgValue('to');
@@ -96,7 +104,7 @@ function parseOptions() {
         parseArgValue('threshold-scan-failed-count'),
         DEFAULT_THRESHOLD_SCAN_FAILED_COUNT,
       ),
-      scanFailedRatePct: parseNonNegativeNumber(
+      scanFailedRatePct: parsePercentage(
         'threshold-scan-failed-rate-pct',
         parseArgValue('threshold-scan-failed-rate-pct'),
         DEFAULT_THRESHOLD_SCAN_FAILED_RATE_PCT,
@@ -178,12 +186,19 @@ function toAuditLogCursorWhere(baseWhere, lastCreatedAt, lastId) {
   };
 }
 
+function collectDurationSamples(windowDurations) {
+  const values = [];
+  for (const samples of windowDurations.values()) {
+    values.push(...samples);
+  }
+  return values;
+}
+
 function accumulateRow(row, context) {
   const {
     windowMs,
     providerStats,
     errorCounts,
-    durationSamples,
     windows,
     windowDurations,
     counters,
@@ -225,7 +240,6 @@ function accumulateRow(row, context) {
 
   const scanDurationMs = resolveDurationMs(metadata);
   if (scanDurationMs !== null) {
-    durationSamples.push(scanDurationMs);
     const perWindowDurations = windowDurations.get(bucketStart) || [];
     perWindowDurations.push(scanDurationMs);
     windowDurations.set(bucketStart, perWindowDurations);
@@ -241,7 +255,6 @@ async function main() {
 
   const providerStats = new Map();
   const errorCounts = new Map();
-  const durationSamples = [];
   const windows = new Map();
   const windowDurations = new Map();
 
@@ -276,7 +289,6 @@ async function main() {
         windowMs,
         providerStats,
         errorCounts,
-        durationSamples,
         windows,
         windowDurations,
         counters,
@@ -333,6 +345,7 @@ async function main() {
   const latestWindowKey = new Date(latestWindowStart).toISOString();
   const latestWindow =
     windowSummary.find((window) => window.start === latestWindowKey) || null;
+  const durationSamples = collectDurationSamples(windowDurations);
 
   const result = {
     from: options.from.toISOString(),
