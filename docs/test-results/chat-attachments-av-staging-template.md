@@ -15,6 +15,7 @@
 - `CHAT_ATTACHMENT_AV_PROVIDER=clamav`
 - `CLAMAV_HOST` / `CLAMAV_PORT` 設定済み
 - clamd 起動済み（TCP 到達可能）
+- 推奨実行: `make av-staging-evidence`
 - 補助: `ENV_NAME=staging bash scripts/record-chat-attachments-av-smoke.sh` で記録下書きを生成可能
 - 補助: `ENV_NAME=staging bash scripts/record-chat-attachments-av-metrics.sh` で監査ログ集計を記録可能
 

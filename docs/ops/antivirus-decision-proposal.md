@@ -60,13 +60,11 @@
   - backend とは別コンテナでリソース制限を明示
 
 ## 実行ステップ（決定まで）
-1. ステージングで `bash scripts/smoke-chat-attachments-av.sh` を実行
-2. `docs/test-results/chat-attachments-av-staging-template.md` で結果記録
-3. 監査ログ集計を実行して閾値適合を確認
-   - `ENV_NAME=staging bash scripts/record-chat-attachments-av-metrics.sh`
-4. 本メモの推奨値との差分を評価
-5. `Issue #886` の未チェック項目を更新
-6. `CHAT_ATTACHMENT_AV_PROVIDER` 本番値を確定
+1. ステージングで `make av-staging-evidence` を実行
+2. `docs/test-results/chat-attachments-av-staging-template.md` に沿って結果を確認
+3. 本メモの推奨値との差分を評価
+4. `Issue #886` の未チェック項目を更新
+5. `CHAT_ATTACHMENT_AV_PROVIDER` 本番値を確定
 
 ## 保留中の論点
 - 外部ユーザ添付の想定比率（本番環境実績）

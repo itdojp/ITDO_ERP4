@@ -1,4 +1,4 @@
-.PHONY: lint format-check typecheck build test e2e ui-evidence pr-comments audit design-system-package-check
+.PHONY: lint format-check typecheck build test e2e ui-evidence pr-comments audit design-system-package-check av-staging-evidence
 
 lint:
 	npm run lint --prefix packages/backend
@@ -35,3 +35,6 @@ audit:
 
 design-system-package-check:
 	./scripts/check-design-system-package.sh
+
+av-staging-evidence:
+	./scripts/record-chat-attachments-av-staging.sh
