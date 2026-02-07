@@ -247,9 +247,7 @@ export const VendorDocuments: React.FC = () => {
   const [poSendLogLoading, setPoSendLogLoading] = useState<
     Record<string, boolean>
   >({});
-  const [poSubmitBusy, setPoSubmitBusy] = useState<Record<string, boolean>>(
-    {},
-  );
+  const [poSubmitBusy, setPoSubmitBusy] = useState<Record<string, boolean>>({});
   const [poSendLogDialogId, setPoSendLogDialogId] = useState<string | null>(
     null,
   );
@@ -285,14 +283,11 @@ export const VendorDocuments: React.FC = () => {
     useState(false);
   const [purchaseOrderDetailMessage, setPurchaseOrderDetailMessage] =
     useState('');
-  const [confirmAction, setConfirmAction] = useState<
-    | {
-        type: 'po-submit' | 'invoice-submit';
-        id: string;
-        numberLabel: string;
-      }
-    | null
-  >(null);
+  const [confirmAction, setConfirmAction] = useState<{
+    type: 'po-submit' | 'invoice-submit';
+    id: string;
+    numberLabel: string;
+  } | null>(null);
 
   const projectMap = useMemo(() => {
     return new Map(projects.map((project) => [project.id, project]));
@@ -1080,7 +1075,9 @@ export const VendorDocuments: React.FC = () => {
         renderProject(item.projectId),
         renderVendor(item.vendorId),
         `${item.totalAmount}`,
-        linkedInvoices.map((invoice) => invoice.vendorInvoiceNo || '').join(' '),
+        linkedInvoices
+          .map((invoice) => invoice.vendorInvoiceNo || '')
+          .join(' '),
       ]
         .join(' ')
         .toLowerCase();
@@ -1157,7 +1154,8 @@ export const VendorDocuments: React.FC = () => {
   const purchaseOrderRows = useMemo<DataTableRow[]>(
     () =>
       filteredPurchaseOrders.map((item) => {
-        const linkedInvoices = vendorInvoicesByPurchaseOrderId.get(item.id) || [];
+        const linkedInvoices =
+          vendorInvoicesByPurchaseOrderId.get(item.id) || [];
         const shownLinkedInvoiceLabels = linkedInvoices
           .slice(0, 3)
           .map((invoice) => invoice.vendorInvoiceNo || missingNumberLabel);
@@ -1295,7 +1293,9 @@ export const VendorDocuments: React.FC = () => {
 
   const purchaseOrderListContent = (() => {
     if (poListStatus === 'idle' || poListStatus === 'loading') {
-      return <AsyncStatePanel state="loading" loadingText="発注書一覧を取得中" />;
+      return (
+        <AsyncStatePanel state="loading" loadingText="発注書一覧を取得中" />
+      );
     }
     if (poListStatus === 'error') {
       return (
@@ -1397,7 +1397,9 @@ export const VendorDocuments: React.FC = () => {
 
   const vendorQuoteListContent = (() => {
     if (quoteListStatus === 'idle' || quoteListStatus === 'loading') {
-      return <AsyncStatePanel state="loading" loadingText="仕入見積一覧を取得中" />;
+      return (
+        <AsyncStatePanel state="loading" loadingText="仕入見積一覧を取得中" />
+      );
     }
     if (quoteListStatus === 'error') {
       return (
@@ -1457,7 +1459,9 @@ export const VendorDocuments: React.FC = () => {
 
   const vendorInvoiceListContent = (() => {
     if (invoiceListStatus === 'idle' || invoiceListStatus === 'loading') {
-      return <AsyncStatePanel state="loading" loadingText="仕入請求一覧を取得中" />;
+      return (
+        <AsyncStatePanel state="loading" loadingText="仕入請求一覧を取得中" />
+      );
     }
     if (invoiceListStatus === 'error') {
       return (
@@ -1568,7 +1572,9 @@ export const VendorDocuments: React.FC = () => {
   const activePoSendLogLoading = poSendLogDialogId
     ? poSendLogLoading[poSendLogDialogId]
     : false;
-  const activePo = poSendLogDialogId ? purchaseOrderMap.get(poSendLogDialogId) : null;
+  const activePo = poSendLogDialogId
+    ? purchaseOrderMap.get(poSendLogDialogId)
+    : null;
 
   return (
     <div>
@@ -2080,7 +2086,10 @@ export const VendorDocuments: React.FC = () => {
         title="発注書: 送信履歴"
         size="large"
         footer={
-          <Button variant="secondary" onClick={() => setPoSendLogDialogId(null)}>
+          <Button
+            variant="secondary"
+            onClick={() => setPoSendLogDialogId(null)}
+          >
             閉じる
           </Button>
         }
@@ -2104,7 +2113,10 @@ export const VendorDocuments: React.FC = () => {
             {!activePoSendLogLoading && activePoSendLogs.length === 0 && (
               <AsyncStatePanel
                 state="empty"
-                empty={{ title: '履歴なし', description: '送信履歴がありません' }}
+                empty={{
+                  title: '履歴なし',
+                  description: '送信履歴がありません',
+                }}
               />
             )}
             {!activePoSendLogLoading && activePoSendLogs.length > 0 && (

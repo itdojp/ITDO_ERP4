@@ -314,7 +314,9 @@ export const Invoices: React.FC = () => {
 
   const listContent = (() => {
     if (listStatus === 'loading' || listStatus === 'idle') {
-      return <AsyncStatePanel state="loading" loadingText="請求一覧を読み込み中" />;
+      return (
+        <AsyncStatePanel state="loading" loadingText="請求一覧を読み込み中" />
+      );
     }
     if (listStatus === 'error') {
       return (

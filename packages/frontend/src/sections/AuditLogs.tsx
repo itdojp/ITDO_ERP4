@@ -292,7 +292,9 @@ export const AuditLogs: React.FC = () => {
                   label="to"
                   type="date"
                   value={filters.to}
-                  onChange={(e) => setFilters({ ...filters, to: e.target.value })}
+                  onChange={(e) =>
+                    setFilters({ ...filters, to: e.target.value })
+                  }
                 />
                 <Input
                   label="userId"

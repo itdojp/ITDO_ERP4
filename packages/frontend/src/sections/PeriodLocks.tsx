@@ -334,7 +334,10 @@ export const PeriodLocks: React.FC = () => {
                   >
                     条件クリア
                   </Button>
-                  <Button onClick={loadLocks} loading={listStatus === 'loading'}>
+                  <Button
+                    onClick={loadLocks}
+                    loading={listStatus === 'loading'}
+                  >
                     検索
                   </Button>
                 </div>

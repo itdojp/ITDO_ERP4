@@ -186,10 +186,7 @@ export const AdminJobs: React.FC = () => {
           void runJob('alerts', '/jobs/alerts/run');
           return;
         case 'approvalEscalations':
-          void runJob(
-            'approvalEscalations',
-            '/jobs/approval-escalations/run',
-          );
+          void runJob('approvalEscalations', '/jobs/approval-escalations/run');
           return;
         case 'dataQuality':
           void runJob('dataQuality', '/jobs/data-quality/run');
@@ -206,7 +203,9 @@ export const AdminJobs: React.FC = () => {
           return;
         case 'notificationDeliveries': {
           if (notificationLimitError) {
-            updateJob('notificationDeliveries', { error: notificationLimitError });
+            updateJob('notificationDeliveries', {
+              error: notificationLimitError,
+            });
             return;
           }
           const limit = notificationLimit.trim()
@@ -641,13 +640,20 @@ export const AdminJobs: React.FC = () => {
                 size="sm"
               />
             </div>
-            {detailState.error && <Alert variant="error">{detailState.error}</Alert>}
-            {!detailState.error && !detailState.result && !detailState.loading && (
-              <AsyncStatePanel
-                state="empty"
-                empty={{ title: '結果がありません', description: 'ジョブ未実行です' }}
-              />
+            {detailState.error && (
+              <Alert variant="error">{detailState.error}</Alert>
             )}
+            {!detailState.error &&
+              !detailState.result &&
+              !detailState.loading && (
+                <AsyncStatePanel
+                  state="empty"
+                  empty={{
+                    title: '結果がありません',
+                    description: 'ジョブ未実行です',
+                  }}
+                />
+              )}
             {detailState.loading && (
               <AsyncStatePanel state="loading" loadingText="ジョブ実行中" />
             )}

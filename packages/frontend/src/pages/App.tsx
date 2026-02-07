@@ -605,7 +605,9 @@ export const App: React.FC = () => {
         </div>
       )}
       <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
-        <div style={{ minWidth: 220, flex: '0 0 220px', alignSelf: 'flex-start' }}>
+        <div
+          style={{ minWidth: 220, flex: '0 0 220px', alignSelf: 'flex-start' }}
+        >
           <SectionCard title="メニュー" density="compact">
             <div style={{ display: 'grid', gap: 12 }}>
               {sectionGroups.map((group) => (
