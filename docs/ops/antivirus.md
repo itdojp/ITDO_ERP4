@@ -19,6 +19,7 @@
 - clamd 疎通/EICAR 検証: `bash scripts/podman-clamav.sh check`
 - API 統合スモーク: `bash scripts/smoke-chat-attachments-av.sh`
 - ステージング証跡をまとめて記録（推奨）: `make av-staging-evidence`
+- ステージング判定ゲートを厳格実行（推奨）: `make av-staging-gate`
 - 検証結果のMarkdown記録（staging向け）: `ENV_NAME=staging bash scripts/record-chat-attachments-av-smoke.sh`
 - 監査ログ集計（監視代替/閾値確認）:
   - `node scripts/report-chat-attachments-av-metrics.mjs --from=2026-02-07T00:00:00Z --to=2026-02-08T00:00:00Z --window-minutes=10`
@@ -49,10 +50,12 @@
    - `scripts/report-chat-attachments-av-metrics.mjs` を実行し、10分窓で `scanFailed件数` と `scanFailedRate(=503相当率)` を確認する。
 2. エビデンス化
    - `scripts/record-chat-attachments-av-metrics.sh` で `docs/test-results/` に記録する。
+   - `FAIL_ON_GATE=1` を指定すると、閾値違反時に終了コード 2 で失敗させる。
 3. 判定
    - `scanFailed件数 >= 5 / 10分` または `scanFailedRate > 1% / 10分` が継続する場合は High 扱いで一次対応に入る。
    - `scanDurationMs p95 > 5s` が継続する場合は Medium 扱いで性能要因を調査する。
    - 集計スクリプトの閾値は `--threshold-scan-failed-count` / `--threshold-scan-failed-rate-pct` / `--threshold-scan-p95-ms` で上書きできる。
+   - 記録ファイルの `判定ゲート` セクションで `PASS/FAIL` を確認する。
 
 ## 障害時対応フロー（fail closed 前提）
 1. 検知
