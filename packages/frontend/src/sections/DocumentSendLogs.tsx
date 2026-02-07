@@ -1,6 +1,19 @@
 import React, { useMemo, useState } from 'react';
 import { api, apiResponse } from '../api';
-import { Alert, Button, Card, EmptyState, Input } from '../ui';
+import {
+  Alert,
+  AsyncStatePanel,
+  Button,
+  Card,
+  ConfirmActionDialog,
+  CrudList,
+  DataTable,
+  FilterBar,
+  Input,
+  StatusBadge,
+  erpStatusDictionary,
+} from '../ui';
+import type { DataTableColumn, DataTableRow } from '../ui';
 import { formatDateForFilename, openResponseInNewTab } from '../utils/download';
 
 type DocumentSendLog = {
@@ -30,6 +43,8 @@ type DocumentSendEvent = {
   payload?: Record<string, unknown> | null;
   createdAt: string;
 };
+
+type ListStatus = 'idle' | 'loading' | 'error' | 'success';
 
 const formatDateTime = (value?: string | null) => {
   if (!value) return '-';
@@ -63,11 +78,17 @@ export const DocumentSendLogs: React.FC = () => {
   const [logId, setLogId] = useState('');
   const [log, setLog] = useState<DocumentSendLog | null>(null);
   const [events, setEvents] = useState<DocumentSendEvent[]>([]);
-  const [message, setMessage] = useState('');
-  const [isLoadingLog, setIsLoadingLog] = useState(false);
-  const [isLoadingEvents, setIsLoadingEvents] = useState(false);
+  const [message, setMessage] = useState<{
+    text: string;
+    type: 'success' | 'error' | 'info';
+  } | null>(null);
+  const [logStatus, setLogStatus] = useState<ListStatus>('idle');
+  const [logError, setLogError] = useState('');
+  const [eventsStatus, setEventsStatus] = useState<ListStatus>('idle');
+  const [eventsError, setEventsError] = useState('');
   const [isRetrying, setIsRetrying] = useState(false);
   const [isOpeningPdf, setIsOpeningPdf] = useState(false);
+  const [retryTargetLogId, setRetryTargetLogId] = useState<string | null>(null);
 
   const trimmedLogId = logId.trim();
 
@@ -85,72 +106,200 @@ export const DocumentSendLogs: React.FC = () => {
     return !blocked.has(log.status);
   }, [log]);
 
+  const logRows = useMemo<DataTableRow[]>(
+    () =>
+      log
+        ? [
+            {
+              id: log.id,
+              status: log.status,
+              kind: log.kind,
+              channel: log.channel,
+              target: `${log.targetTable} / ${log.targetId}`,
+              createdAt: formatDateTime(log.createdAt),
+              updatedAt: formatDateTime(log.updatedAt),
+              recipients: formatRecipients(log.recipients),
+              templateId: log.templateId || '-',
+              providerMessageId: log.providerMessageId || '-',
+              error: log.error || '-',
+              metadata: formatPayload(log.metadata),
+            },
+          ]
+        : [],
+    [log],
+  );
+
+  const eventRows = useMemo<DataTableRow[]>(
+    () =>
+      events.map((event) => ({
+        id: event.id,
+        provider: event.provider,
+        eventType: event.eventType,
+        eventAt: formatDateTime(event.eventAt || event.createdAt),
+        payload: formatPayload(event.payload),
+      })),
+    [events],
+  );
+
+  const logColumns = useMemo<DataTableColumn[]>(
+    () => [
+      { key: 'id', header: '送信ログID' },
+      {
+        key: 'status',
+        header: '状態',
+        cell: (row) => (
+          <StatusBadge
+            status={String(row.status || '')}
+            dictionary={erpStatusDictionary}
+            size="sm"
+          />
+        ),
+      },
+      { key: 'kind', header: '種別' },
+      { key: 'channel', header: 'チャネル' },
+      { key: 'target', header: '対象' },
+      { key: 'createdAt', header: '作成日時' },
+      { key: 'updatedAt', header: '更新日時' },
+      { key: 'recipients', header: '宛先' },
+      { key: 'templateId', header: 'テンプレートID' },
+      { key: 'providerMessageId', header: '送信プロバイダID' },
+      {
+        key: 'error',
+        header: 'エラー',
+        cell: (row) => (
+          <span
+            style={{
+              color: row.error && row.error !== '-' ? '#dc2626' : '#475569',
+              fontSize: 12,
+            }}
+          >
+            {String(row.error || '-')}
+          </span>
+        ),
+      },
+      {
+        key: 'metadata',
+        header: 'metadata',
+        cell: (row) => (
+          <pre
+            style={{
+              margin: 0,
+              whiteSpace: 'pre-wrap',
+              wordBreak: 'break-word',
+              fontSize: 12,
+              color: '#475569',
+            }}
+          >
+            {String(row.metadata || '-')}
+          </pre>
+        ),
+      },
+    ],
+    [],
+  );
+
+  const eventColumns = useMemo<DataTableColumn[]>(
+    () => [
+      { key: 'provider', header: 'provider' },
+      { key: 'eventType', header: 'eventType' },
+      { key: 'eventAt', header: 'eventAt' },
+      {
+        key: 'payload',
+        header: 'payload',
+        cell: (row) => (
+          <pre
+            style={{
+              margin: 0,
+              whiteSpace: 'pre-wrap',
+              wordBreak: 'break-word',
+              fontSize: 12,
+              color: '#475569',
+            }}
+          >
+            {String(row.payload || '-')}
+          </pre>
+        ),
+      },
+    ],
+    [],
+  );
+
   const loadLog = async () => {
     if (!trimmedLogId) {
-      setMessage('送信ログIDを入力してください');
+      setMessage({ text: '送信ログIDを入力してください', type: 'error' });
       return;
     }
     try {
-      setIsLoadingLog(true);
-      setMessage('');
+      setLogStatus('loading');
+      setLogError('');
+      setMessage(null);
       const res = await api<DocumentSendLog>(
         `/document-send-logs/${trimmedLogId}`,
       );
       setLog(res);
+      setLogStatus('success');
     } catch (err) {
       setLog(null);
-      setMessage('送信ログの取得に失敗しました');
+      setLogStatus('error');
+      setLogError('送信ログの取得に失敗しました');
+      setMessage({ text: '送信ログの取得に失敗しました', type: 'error' });
       console.error('Failed to load document send log.', err);
-    } finally {
-      setIsLoadingLog(false);
     }
   };
 
   const loadEvents = async () => {
     if (!trimmedLogId) {
-      setMessage('送信ログIDを入力してください');
+      setMessage({ text: '送信ログIDを入力してください', type: 'error' });
       return;
     }
     try {
-      setIsLoadingEvents(true);
-      setMessage('');
+      setEventsStatus('loading');
+      setEventsError('');
+      setMessage(null);
       const res = await api<{ items: DocumentSendEvent[] }>(
         `/document-send-logs/${trimmedLogId}/events`,
       );
       setEvents(res.items || []);
+      setEventsStatus('success');
     } catch (err) {
       setEvents([]);
-      setMessage('送信イベントの取得に失敗しました');
+      setEventsStatus('error');
+      setEventsError('送信イベントの取得に失敗しました');
+      setMessage({ text: '送信イベントの取得に失敗しました', type: 'error' });
       console.error('Failed to load document send events.', err);
-    } finally {
-      setIsLoadingEvents(false);
     }
   };
 
   const loadAll = async () => {
+    if (!trimmedLogId) {
+      setMessage({ text: '送信ログIDを入力してください', type: 'error' });
+      return;
+    }
     await Promise.all([loadLog(), loadEvents()]);
   };
 
-  const retrySend = async () => {
-    if (!trimmedLogId) {
-      setMessage('送信ログIDを入力してください');
+  const retrySend = async (targetLogId: string) => {
+    const normalizedTarget = targetLogId.trim();
+    if (!normalizedTarget) {
+      setMessage({ text: '送信ログIDを入力してください', type: 'error' });
       return;
     }
     try {
       setIsRetrying(true);
-      setMessage('');
+      setMessage(null);
       const res = await api<{ status: string; retryLogId?: string }>(
-        `/document-send-logs/${trimmedLogId}/retry`,
+        `/document-send-logs/${normalizedTarget}/retry`,
         { method: 'POST' },
       );
-      setMessage(
-        res.retryLogId
+      setMessage({
+        text: res.retryLogId
           ? `再送を開始しました（retryLogId: ${res.retryLogId}）`
           : '再送を開始しました',
-      );
+        type: 'success',
+      });
       await loadAll();
     } catch (err) {
-      setMessage('再送に失敗しました');
+      setMessage({ text: '再送に失敗しました', type: 'error' });
       console.error('Failed to retry document send.', err);
     } finally {
       setIsRetrying(false);
@@ -159,15 +308,16 @@ export const DocumentSendLogs: React.FC = () => {
 
   const openPdf = async () => {
     if (!log?.pdfUrl) {
-      setMessage('PDF URL がありません');
+      setMessage({ text: 'PDF URL がありません', type: 'error' });
       return;
     }
     if (log.pdfUrl.startsWith('stub://')) {
-      setMessage('PDF は stub です');
+      setMessage({ text: 'PDF は stub です', type: 'info' });
       return;
     }
     try {
       setIsOpeningPdf(true);
+      setMessage(null);
       const res = await apiResponse(log.pdfUrl);
       if (!res.ok) {
         throw new Error(`Request failed: ${res.status}`);
@@ -175,145 +325,225 @@ export const DocumentSendLogs: React.FC = () => {
       const filename = `document-${formatDateForFilename()}.pdf`;
       await openResponseInNewTab(res, filename);
     } catch (err) {
-      setMessage('PDFの取得に失敗しました');
+      setMessage({ text: 'PDFの取得に失敗しました', type: 'error' });
       console.error('Failed to open PDF.', err);
     } finally {
       setIsOpeningPdf(false);
     }
   };
 
+  const logTable = (() => {
+    if (logStatus === 'idle') {
+      return (
+        <AsyncStatePanel
+          state="empty"
+          empty={{
+            title: '送信ログIDを入力して取得してください',
+          }}
+        />
+      );
+    }
+    if (logStatus === 'loading') {
+      return <AsyncStatePanel state="loading" loadingText="送信ログを取得中" />;
+    }
+    if (logStatus === 'error') {
+      return (
+        <AsyncStatePanel
+          state="error"
+          error={{
+            title: '送信ログの取得に失敗しました',
+            detail: logError,
+            onRetry: () => {
+              void loadLog();
+            },
+            retryLabel: '再試行',
+          }}
+        />
+      );
+    }
+    if (logRows.length === 0) {
+      return (
+        <AsyncStatePanel
+          state="empty"
+          empty={{
+            title: '送信ログがありません',
+          }}
+        />
+      );
+    }
+    return (
+      <DataTable
+        columns={logColumns}
+        rows={logRows}
+        rowActions={[
+          {
+            key: 'open-pdf',
+            label: 'PDFを開く',
+            onSelect: () => {
+              if (!log?.pdfUrl) {
+                setMessage({ text: 'PDF URL がありません', type: 'error' });
+                return;
+              }
+              if (isOpeningPdf) return;
+              void openPdf();
+            },
+          },
+          {
+            key: 'retry',
+            label: '再送',
+            onSelect: (row) => {
+              if (!canRetry) {
+                setMessage({
+                  text: 'このステータスのログは再送できません',
+                  type: 'error',
+                });
+                return;
+              }
+              if (isRetrying) return;
+              setRetryTargetLogId(row.id);
+            },
+          },
+        ]}
+      />
+    );
+  })();
+
+  const eventTable = (() => {
+    if (eventsStatus === 'idle') {
+      return (
+        <AsyncStatePanel
+          state="empty"
+          empty={{
+            title: '送信イベントを取得してください',
+          }}
+        />
+      );
+    }
+    if (eventsStatus === 'loading') {
+      return (
+        <AsyncStatePanel state="loading" loadingText="送信イベントを取得中" />
+      );
+    }
+    if (eventsStatus === 'error') {
+      return (
+        <AsyncStatePanel
+          state="error"
+          error={{
+            title: '送信イベントの取得に失敗しました',
+            detail: eventsError,
+            onRetry: () => {
+              void loadEvents();
+            },
+            retryLabel: '再試行',
+          }}
+        />
+      );
+    }
+    if (eventRows.length === 0) {
+      return (
+        <AsyncStatePanel
+          state="empty"
+          empty={{
+            title: '送信イベントがありません',
+          }}
+        />
+      );
+    }
+    return <DataTable columns={eventColumns} rows={eventRows} />;
+  })();
+
   return (
     <div>
       <h2>ドキュメント送信ログ</h2>
       <Card padding="small">
-        <div className="row" style={{ alignItems: 'flex-end', gap: 8 }}>
-          <Input
-            label="sendLogId"
-            value={logId}
-            onChange={(e) => setLogId(e.target.value)}
-            placeholder="送信ログID"
-          />
-          <Button onClick={loadLog} loading={isLoadingLog}>
-            送信ログ取得
-          </Button>
-          <Button
-            variant="secondary"
-            onClick={loadEvents}
-            loading={isLoadingEvents}
-          >
-            イベント取得
-          </Button>
-          <Button variant="secondary" onClick={loadAll}>
-            まとめて取得
-          </Button>
-        </div>
+        <FilterBar
+          actions={
+            <div style={{ display: 'flex', gap: 8 }}>
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  setLogId('');
+                  setLog(null);
+                  setEvents([]);
+                  setLogStatus('idle');
+                  setEventsStatus('idle');
+                  setLogError('');
+                  setEventsError('');
+                  setMessage(null);
+                }}
+              >
+                クリア
+              </Button>
+              <Button onClick={loadLog} loading={logStatus === 'loading'}>
+                送信ログ取得
+              </Button>
+              <Button
+                variant="secondary"
+                onClick={loadEvents}
+                loading={eventsStatus === 'loading'}
+              >
+                イベント取得
+              </Button>
+              <Button
+                variant="secondary"
+                onClick={loadAll}
+                loading={logStatus === 'loading' || eventsStatus === 'loading'}
+              >
+                まとめて取得
+              </Button>
+            </div>
+          }
+        >
+          <div className="row" style={{ alignItems: 'flex-end', gap: 8 }}>
+            <Input
+              label="sendLogId"
+              value={logId}
+              onChange={(e) => setLogId(e.target.value)}
+              placeholder="送信ログID"
+            />
+          </div>
+        </FilterBar>
         {message && (
           <div style={{ marginTop: 8 }}>
-            <Alert variant="error">{message}</Alert>
+            <Alert variant={message.type === 'error' ? 'error' : 'info'}>
+              {message.text}
+            </Alert>
           </div>
         )}
       </Card>
 
       <div style={{ marginTop: 12, display: 'grid', gap: 8 }}>
         <Card padding="small">
-          <div className="row" style={{ justifyContent: 'space-between' }}>
-            <strong>送信ログ</strong>
-            <div className="row" style={{ gap: 8 }}>
-              {log?.pdfUrl && (
-                <Button
-                  variant="secondary"
-                  onClick={openPdf}
-                  loading={isOpeningPdf}
-                >
-                  PDFを開く
-                </Button>
-              )}
-              <Button
-                onClick={retrySend}
-                disabled={!canRetry}
-                loading={isRetrying}
-              >
-                再送
-              </Button>
-            </div>
-          </div>
-          {!log && <EmptyState title="送信ログなし" />}
-          {log && (
-            <div style={{ marginTop: 8, display: 'grid', gap: 6 }}>
-              <div>
-                <span className="badge">{log.status}</span> {log.kind} /
-                {log.channel}
-              </div>
-              <div style={{ fontSize: 12, color: '#475569' }}>
-                target: {log.targetTable} / {log.targetId}
-              </div>
-              <div style={{ fontSize: 12, color: '#475569' }}>
-                created: {formatDateTime(log.createdAt)} / updated:{' '}
-                {formatDateTime(log.updatedAt)}
-              </div>
-              <div style={{ fontSize: 12, color: '#475569' }}>
-                recipients: {formatRecipients(log.recipients)}
-              </div>
-              <div style={{ fontSize: 12, color: '#475569' }}>
-                providerMessageId: {log.providerMessageId || '-'}
-              </div>
-              {log.error && (
-                <div style={{ fontSize: 12, color: '#dc2626' }}>
-                  error: {log.error}
-                </div>
-              )}
-              {log.metadata && (
-                <pre
-                  style={{
-                    margin: 0,
-                    whiteSpace: 'pre-wrap',
-                    wordBreak: 'break-word',
-                    fontSize: 12,
-                    color: '#475569',
-                  }}
-                >
-                  {formatPayload(log.metadata)}
-                </pre>
-              )}
-            </div>
-          )}
+          <CrudList
+            title="送信ログ"
+            description="送信ログの状態と宛先を確認し、必要に応じて再送できます。"
+            table={logTable}
+          />
         </Card>
-
         <Card padding="small">
-          <strong>送信イベント</strong>
-          {events.length === 0 && <EmptyState title="イベントなし" />}
-          {events.length > 0 && (
-            <div style={{ marginTop: 8, display: 'grid', gap: 8 }}>
-              {events.map((event) => (
-                <Card key={event.id} padding="small">
-                  <div
-                    className="row"
-                    style={{ justifyContent: 'space-between' }}
-                  >
-                    <div>
-                      <strong>{event.provider}</strong> / {event.eventType}
-                    </div>
-                    <span className="badge">
-                      {formatDateTime(event.eventAt || event.createdAt)}
-                    </span>
-                  </div>
-                  <pre
-                    style={{
-                      margin: '6px 0 0',
-                      whiteSpace: 'pre-wrap',
-                      wordBreak: 'break-word',
-                      fontSize: 12,
-                      color: '#475569',
-                    }}
-                  >
-                    {formatPayload(event.payload)}
-                  </pre>
-                </Card>
-              ))}
-            </div>
-          )}
+          <CrudList
+            title="送信イベント"
+            description="配信プロバイダから受信したイベント履歴を確認できます。"
+            table={eventTable}
+          />
         </Card>
       </div>
+      <ConfirmActionDialog
+        open={Boolean(retryTargetLogId)}
+        title="この送信ログを再送しますか？"
+        description={
+          retryTargetLogId ? `送信ログID: ${retryTargetLogId}` : undefined
+        }
+        confirmLabel="再送する"
+        cancelLabel="キャンセル"
+        confirmDisabled={isRetrying}
+        onConfirm={() => {
+          if (!retryTargetLogId) return;
+          void retrySend(retryTargetLogId);
+          setRetryTargetLogId(null);
+        }}
+        onCancel={() => setRetryTargetLogId(null)}
+      />
     </div>
   );
 };
