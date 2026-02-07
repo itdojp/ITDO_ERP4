@@ -23,6 +23,8 @@
 - 監査ログ集計（監視代替/閾値確認）:
   - `node scripts/report-chat-attachments-av-metrics.mjs --from=2026-02-07T00:00:00Z --to=2026-02-08T00:00:00Z --window-minutes=10`
   - `ENV_NAME=staging bash scripts/record-chat-attachments-av-metrics.sh`
+  - 閾値を変えて比較する場合（例）:
+    - `THRESHOLD_SCAN_FAILED_COUNT=3 THRESHOLD_SCAN_FAILED_RATE_PCT=0.5 THRESHOLD_SCAN_P95_MS=3000 ENV_NAME=staging make av-staging-evidence`
 
 ## 監視対象と推奨しきい値（確定候補）
 1. 死活監視（必須）
@@ -50,6 +52,7 @@
 3. 判定
    - `scanFailed件数 >= 5 / 10分` または `scanFailedRate > 1% / 10分` が継続する場合は High 扱いで一次対応に入る。
    - `scanDurationMs p95 > 5s` が継続する場合は Medium 扱いで性能要因を調査する。
+   - 集計スクリプトの閾値は `--threshold-scan-failed-count` / `--threshold-scan-failed-rate-pct` / `--threshold-scan-p95-ms` で上書きできる。
 
 ## 障害時対応フロー（fail closed 前提）
 1. 検知

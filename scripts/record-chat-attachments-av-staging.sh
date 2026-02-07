@@ -10,6 +10,9 @@ FROM_ISO="${FROM_ISO:-}"
 OUT_DIR="${OUT_DIR:-$ROOT_DIR/docs/test-results}"
 SMOKE_OUTPUT_FILE="${SMOKE_OUTPUT_FILE:-$OUT_DIR/${RUN_DATE}-chat-attachments-av-${ENV_NAME}.md}"
 METRICS_OUTPUT_FILE="${METRICS_OUTPUT_FILE:-$OUT_DIR/${RUN_DATE}-chat-attachments-av-audit-${ENV_NAME}.md}"
+THRESHOLD_SCAN_FAILED_COUNT="${THRESHOLD_SCAN_FAILED_COUNT:-5}"
+THRESHOLD_SCAN_FAILED_RATE_PCT="${THRESHOLD_SCAN_FAILED_RATE_PCT:-1}"
+THRESHOLD_SCAN_P95_MS="${THRESHOLD_SCAN_P95_MS:-5000}"
 
 if [[ -z "$FROM_ISO" ]]; then
   FROM_ISO="$(node -e "const to=new Date(process.argv[1]);const from=new Date(to.getTime()-24*60*60*1000);console.log(from.toISOString());" "$TO_ISO")"
@@ -34,6 +37,9 @@ echo "[2/2] record audit metrics evidence"
   ENV_NAME="$ENV_NAME" \
   TO_ISO="$TO_ISO" \
   FROM_ISO="$FROM_ISO" \
+  THRESHOLD_SCAN_FAILED_COUNT="$THRESHOLD_SCAN_FAILED_COUNT" \
+  THRESHOLD_SCAN_FAILED_RATE_PCT="$THRESHOLD_SCAN_FAILED_RATE_PCT" \
+  THRESHOLD_SCAN_P95_MS="$THRESHOLD_SCAN_P95_MS" \
   OUTPUT_FILE="$METRICS_OUTPUT_FILE" \
   bash scripts/record-chat-attachments-av-metrics.sh
 )
