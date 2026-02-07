@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '../api';
+import { ConfirmActionDialog } from '../ui';
 
 type ProjectOption = {
   id: string;
@@ -59,6 +60,7 @@ export const RateCardSettingsCard: React.FC = () => {
     new Date().toISOString().slice(0, 10),
   );
   const [validTo, setValidTo] = useState('');
+  const [disableTargetId, setDisableTargetId] = useState<string | null>(null);
 
   const loadProjects = useCallback(async () => {
     try {
@@ -148,7 +150,6 @@ export const RateCardSettingsCard: React.FC = () => {
 
   const disable = useCallback(
     async (id: string) => {
-      if (!window.confirm('この単価を無効化しますか？')) return;
       setIsLoading(true);
       setMessage('');
       try {
@@ -170,6 +171,11 @@ export const RateCardSettingsCard: React.FC = () => {
     const project = projectMap.get(projectId);
     return project ? `${project.code} / ${project.name}` : projectId;
   };
+
+  const disableTarget = useMemo(
+    () => items.find((item) => item.id === disableTargetId) || null,
+    [disableTargetId, items],
+  );
 
   useEffect(() => {
     loadProjects().catch(() => undefined);
@@ -310,7 +316,7 @@ export const RateCardSettingsCard: React.FC = () => {
             <div style={{ marginTop: 6 }}>
               <button
                 className="button secondary"
-                onClick={() => disable(item.id)}
+                onClick={() => setDisableTargetId(item.id)}
                 disabled={isLoading}
               >
                 無効化
@@ -320,6 +326,25 @@ export const RateCardSettingsCard: React.FC = () => {
         ))}
         {items.length === 0 && <li>データなし</li>}
       </ul>
+      <ConfirmActionDialog
+        open={Boolean(disableTargetId)}
+        title="この単価を無効化しますか？"
+        description={
+          disableTarget
+            ? `${renderProject(disableTarget.projectId)} / ${disableTarget.role} / ${disableTarget.workType || '(default)'}`
+            : undefined
+        }
+        tone="danger"
+        confirmLabel="無効化"
+        cancelLabel="キャンセル"
+        confirmDisabled={isLoading}
+        onConfirm={() => {
+          if (!disableTargetId) return;
+          void disable(disableTargetId);
+          setDisableTargetId(null);
+        }}
+        onCancel={() => setDisableTargetId(null)}
+      />
     </div>
   );
 };
