@@ -60,7 +60,7 @@
   - backend とは別コンテナでリソース制限を明示
 
 ## 実行ステップ（決定まで）
-1. ステージングで `make av-staging-evidence` を実行
+1. ステージングで `make av-staging-gate` を実行（閾値違反時は終了コード 2）
 2. `docs/test-results/chat-attachments-av-staging-template.md` に沿って結果を確認（必要なら閾値を変更して再実行）
 3. 本メモの推奨値との差分を評価
 4. `Issue #886` の未チェック項目を更新

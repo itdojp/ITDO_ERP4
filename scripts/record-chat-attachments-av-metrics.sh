@@ -11,6 +11,7 @@ WINDOW_MINUTES="${WINDOW_MINUTES:-10}"
 THRESHOLD_SCAN_FAILED_COUNT="${THRESHOLD_SCAN_FAILED_COUNT:-5}"
 THRESHOLD_SCAN_FAILED_RATE_PCT="${THRESHOLD_SCAN_FAILED_RATE_PCT:-1}"
 THRESHOLD_SCAN_P95_MS="${THRESHOLD_SCAN_P95_MS:-5000}"
+FAIL_ON_GATE="${FAIL_ON_GATE:-0}"
 OUTPUT_FILE="${OUTPUT_FILE:-$ROOT_DIR/docs/test-results/${RUN_DATE}-chat-attachments-av-audit-${ENV_NAME}.md}"
 REPORT_CMD_BIN="${REPORT_CMD_BIN:-node}"
 REPORT_SCRIPT="${REPORT_SCRIPT:-scripts/report-chat-attachments-av-metrics.mjs}"
@@ -33,7 +34,28 @@ TMP_JSON="$(mktemp)"
     "--format=json" > "$TMP_JSON"
 )
 
-SUMMARY="$(node -e "const fs=require('fs');const data=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));const t=data.totals;const w=data.windows;const p=data.scanDurationMs;const latest=w.latest||{};const out=[\`attempts=\${t.attempts}\`,\`uploaded=\${t.uploaded}\`,\`blocked=\${t.blocked}\`,\`scanFailed=\${t.scanFailed}\`,\`scanFailedRate=\${Number(t.scanFailedRatePct||0).toFixed(2)}%\`,\`scanP95=\${p.p95==null?'-':Number(p.p95).toFixed(2)}ms\`,\`violations_count=\${(w.violatedByScanFailedCount||[]).length}\`,\`violations_rate=\${(w.violatedByScanFailedRate||[]).length}\`,\`violations_latency=\${(w.violatedByScanDurationP95||[]).length}\`,\`latest_attempts=\${latest.attempts??0}\`,\`latest_scanFailed=\${latest.scanFailed??0}\`,\`latest_scanFailedRate=\${latest.scanFailedRatePct==null?'0.00':Number(latest.scanFailedRatePct).toFixed(2)}%\`,\`latest_scanP95=\${latest.p95Ms==null?'-':Number(latest.p95Ms).toFixed(2)}ms\`];console.log(out.join(' | '));" "$TMP_JSON")"
+mapfile -t METRICS < <(
+  node -e "const fs=require('fs');const data=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));const t=data.totals||{};const w=data.windows||{};const p=data.scanDurationMs||{};const latest=w.latest||{};const violationCount=(w.violatedByScanFailedCount||[]).length;const violationRate=(w.violatedByScanFailedRate||[]).length;const violationLatency=(w.violatedByScanDurationP95||[]).length;const gateStatus=(violationCount+violationRate+violationLatency)===0?'PASS':'FAIL';const summary=[\`attempts=\${t.attempts??0}\`,\`uploaded=\${t.uploaded??0}\`,\`blocked=\${t.blocked??0}\`,\`scanFailed=\${t.scanFailed??0}\`,\`scanFailedRate=\${Number(t.scanFailedRatePct||0).toFixed(2)}%\`,\`scanP95=\${p.p95==null?'-':Number(p.p95).toFixed(2)}ms\`,\`violations_count=\${violationCount}\`,\`violations_rate=\${violationRate}\`,\`violations_latency=\${violationLatency}\`,\`latest_attempts=\${latest.attempts??0}\`,\`latest_scanFailed=\${latest.scanFailed??0}\`,\`latest_scanFailedRate=\${latest.scanFailedRatePct==null?'0.00':Number(latest.scanFailedRatePct).toFixed(2)}%\`,\`latest_scanP95=\${latest.p95Ms==null?'-':Number(latest.p95Ms).toFixed(2)}ms\`].join(' | ');console.log(\`SUMMARY=\${summary}\`);console.log(\`VIOLATION_COUNT=\${violationCount}\`);console.log(\`VIOLATION_RATE=\${violationRate}\`);console.log(\`VIOLATION_LATENCY=\${violationLatency}\`);console.log(\`GATE_STATUS=\${gateStatus}\`);" \
+    "$TMP_JSON"
+)
+
+SUMMARY=""
+VIOLATION_COUNT=0
+VIOLATION_RATE=0
+VIOLATION_LATENCY=0
+GATE_STATUS="FAIL"
+
+for line in "${METRICS[@]}"; do
+  key="${line%%=*}"
+  value="${line#*=}"
+  case "$key" in
+    SUMMARY) SUMMARY="$value" ;;
+    VIOLATION_COUNT) VIOLATION_COUNT="$value" ;;
+    VIOLATION_RATE) VIOLATION_RATE="$value" ;;
+    VIOLATION_LATENCY) VIOLATION_LATENCY="$value" ;;
+    GATE_STATUS) GATE_STATUS="$value" ;;
+  esac
+done
 
 mkdir -p "$(dirname "$OUTPUT_FILE")"
 cat > "$OUTPUT_FILE" <<MARKDOWN
@@ -50,6 +72,11 @@ cat > "$OUTPUT_FILE" <<MARKDOWN
 ## サマリ
 - ${SUMMARY}
 
+## 判定ゲート
+- 判定: ${GATE_STATUS}
+- 根拠: violations_count=${VIOLATION_COUNT}, violations_rate=${VIOLATION_RATE}, violations_latency=${VIOLATION_LATENCY}
+- strictモード: FAIL_ON_GATE=${FAIL_ON_GATE}
+
 ## 集計JSON
 \`\`\`json
 $(cat "$TMP_JSON")
@@ -58,3 +85,8 @@ MARKDOWN
 
 rm -f "$TMP_JSON"
 echo "written: $OUTPUT_FILE"
+
+if [[ "$FAIL_ON_GATE" == "1" && "$GATE_STATUS" != "PASS" ]]; then
+  echo "gate failed: $OUTPUT_FILE" >&2
+  exit 2
+fi

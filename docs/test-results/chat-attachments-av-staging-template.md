@@ -16,6 +16,7 @@
 - `CLAMAV_HOST` / `CLAMAV_PORT` 設定済み
 - clamd 起動済み（TCP 到達可能）
 - 推奨実行: `make av-staging-evidence`
+- 判定ゲートを含める場合: `make av-staging-gate`
 - 必要に応じて閾値を指定:
   - `THRESHOLD_SCAN_FAILED_COUNT`（既定: 5）
   - `THRESHOLD_SCAN_FAILED_RATE_PCT`（既定: 1）
@@ -44,5 +45,6 @@
 
 ## 判定
 - 本番有効化可否:
+- 判定ゲート（PASS/FAIL）:
 - 懸念/残課題:
 - 次アクション:
