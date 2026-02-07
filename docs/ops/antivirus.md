@@ -59,6 +59,6 @@
 - [x] 復旧Runbookを具体化（検知→切り分け→復旧→再検証）
 - [ ] ステージング検証結果を `docs/test-results/` に記録
 
-## ステージング検証の記録
-- 最新検証: `docs/test-results/2026-02-06-chat-attachments-av-r2.md`
+## 検証結果の記録
+- 直近の検証（ローカル/PoC）: `docs/test-results/2026-02-06-chat-attachments-av-r2.md`
 - 記録テンプレート: `docs/test-results/chat-attachments-av-staging-template.md`
