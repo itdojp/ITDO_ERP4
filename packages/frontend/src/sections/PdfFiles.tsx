@@ -81,7 +81,6 @@ export const PdfFiles: React.FC = () => {
       setMeta(null);
       setListStatus('error');
       setListError('PDF一覧の取得に失敗しました');
-      setMessage({ text: 'PDF一覧の取得に失敗しました', type: 'error' });
     }
   }, [listUrl]);
 
@@ -89,7 +88,7 @@ export const PdfFiles: React.FC = () => {
     loadFiles();
   }, [loadFiles]);
 
-  const openPdf = async (filename: string) => {
+  const openPdf = useCallback(async (filename: string) => {
     try {
       setOpenBusy((prev) => ({ ...prev, [filename]: true }));
       setMessage(null);
@@ -106,7 +105,7 @@ export const PdfFiles: React.FC = () => {
     } finally {
       setOpenBusy((prev) => ({ ...prev, [filename]: false }));
     }
-  };
+  }, []);
 
   const rows = useMemo<DataTableRow[]>(
     () =>
@@ -127,23 +126,25 @@ export const PdfFiles: React.FC = () => {
       {
         key: 'open',
         header: '',
-        cell: (row) => (
-          <Button
-            variant="secondary"
-            onClick={() => {
-              const filename = String(row.filename || '');
-              if (!filename) return;
-              if (openBusy[filename]) return;
-              void openPdf(filename);
-            }}
-            loading={Boolean(openBusy[String(row.filename || '')])}
-          >
-            開く
-          </Button>
-        ),
+        cell: (row) => {
+          const filename = String(row.filename || '');
+          return (
+            <Button
+              variant="secondary"
+              onClick={() => {
+                if (!filename) return;
+                if (openBusy[filename]) return;
+                void openPdf(filename);
+              }}
+              loading={Boolean(openBusy[filename])}
+            >
+              開く
+            </Button>
+          );
+        },
       },
     ],
-    [openBusy],
+    [openBusy, openPdf],
   );
 
   const table = (() => {
