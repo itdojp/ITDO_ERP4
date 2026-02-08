@@ -1,4 +1,4 @@
-.PHONY: lint format-check typecheck build test e2e ui-evidence pr-comments audit design-system-package-check av-staging-evidence
+.PHONY: lint format-check typecheck build test e2e ui-evidence pr-comments audit design-system-package-check av-staging-evidence av-staging-gate
 
 lint:
 	npm run lint --prefix packages/backend
@@ -38,3 +38,6 @@ design-system-package-check:
 
 av-staging-evidence:
 	./scripts/record-chat-attachments-av-staging.sh
+
+av-staging-gate:
+	FAIL_ON_GATE=1 ./scripts/record-chat-attachments-av-staging.sh
