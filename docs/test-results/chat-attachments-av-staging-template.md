@@ -23,6 +23,7 @@
   - `THRESHOLD_SCAN_P95_MS`（既定: 5000）
 - 補助: `ENV_NAME=staging bash scripts/record-chat-attachments-av-smoke.sh` で記録下書きを生成可能
 - 補助: `ENV_NAME=staging bash scripts/record-chat-attachments-av-metrics.sh` で監査ログ集計を記録可能
+- 補助: `make av-staging-readiness` で技術ゲート判定サマリを生成可能
 
 ## 結果サマリ
 - clean 添付（clamd 稼働中）:
@@ -42,6 +43,7 @@
 - 添付 API 503 比率の確認:
 - スキャン遅延（タイムアウト）傾向:
 - 監査ログ集計記録: `docs/test-results/YYYY-MM-DD-chat-attachments-av-audit-staging.md`
+- 判定サマリ記録: `docs/test-results/YYYY-MM-DD-chat-attachments-av-readiness-staging.md`
 
 ## 判定
 - 本番有効化可否:
