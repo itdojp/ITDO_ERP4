@@ -15,6 +15,7 @@ FAIL_ON_GATE="${FAIL_ON_GATE:-0}"
 OUTPUT_FILE="${OUTPUT_FILE:-$ROOT_DIR/docs/test-results/${RUN_DATE}-chat-attachments-av-audit-${ENV_NAME}.md}"
 REPORT_CMD_BIN="${REPORT_CMD_BIN:-node}"
 REPORT_SCRIPT="${REPORT_SCRIPT:-scripts/report-chat-attachments-av-metrics.mjs}"
+PARSE_SCRIPT="${PARSE_SCRIPT:-scripts/extract-chat-attachments-av-gate.mjs}"
 
 if [[ -z "$FROM_ISO" ]]; then
   FROM_ISO="$(node -e "const to=new Date(process.argv[1]);const from=new Date(to.getTime()-24*60*60*1000);console.log(from.toISOString());" "$TO_ISO")"
@@ -34,10 +35,14 @@ TMP_JSON="$(mktemp)"
     "--format=json" > "$TMP_JSON"
 )
 
-mapfile -t METRICS < <(
-  node -e "const fs=require('fs');const data=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));const t=data.totals||{};const w=data.windows||{};const p=data.scanDurationMs||{};const latest=w.latest||{};const violationCount=(w.violatedByScanFailedCount||[]).length;const violationRate=(w.violatedByScanFailedRate||[]).length;const violationLatency=(w.violatedByScanDurationP95||[]).length;const gateStatus=(violationCount+violationRate+violationLatency)===0?'PASS':'FAIL';const summary=[\`attempts=\${t.attempts??0}\`,\`uploaded=\${t.uploaded??0}\`,\`blocked=\${t.blocked??0}\`,\`scanFailed=\${t.scanFailed??0}\`,\`scanFailedRate=\${Number(t.scanFailedRatePct||0).toFixed(2)}%\`,\`scanP95=\${p.p95==null?'-':Number(p.p95).toFixed(2)}ms\`,\`violations_count=\${violationCount}\`,\`violations_rate=\${violationRate}\`,\`violations_latency=\${violationLatency}\`,\`latest_attempts=\${latest.attempts??0}\`,\`latest_scanFailed=\${latest.scanFailed??0}\`,\`latest_scanFailedRate=\${latest.scanFailedRatePct==null?'0.00':Number(latest.scanFailedRatePct).toFixed(2)}%\`,\`latest_scanP95=\${latest.p95Ms==null?'-':Number(latest.p95Ms).toFixed(2)}ms\`].join(' | ');console.log(\`SUMMARY=\${summary}\`);console.log(\`VIOLATION_COUNT=\${violationCount}\`);console.log(\`VIOLATION_RATE=\${violationRate}\`);console.log(\`VIOLATION_LATENCY=\${violationLatency}\`);console.log(\`GATE_STATUS=\${gateStatus}\`);" \
-    "$TMP_JSON"
-)
+METRICS_OUTPUT="$(
+  cd "$ROOT_DIR"
+  "$REPORT_CMD_BIN" "$PARSE_SCRIPT" "$TMP_JSON"
+)" || {
+  rm -f "$TMP_JSON"
+  echo "failed to parse metrics output for gate evaluation" >&2
+  exit 1
+}
 
 SUMMARY=""
 VIOLATION_COUNT=0
@@ -45,7 +50,8 @@ VIOLATION_RATE=0
 VIOLATION_LATENCY=0
 GATE_STATUS="FAIL"
 
-for line in "${METRICS[@]}"; do
+while IFS= read -r line; do
+  [[ -n "$line" ]] || continue
   key="${line%%=*}"
   value="${line#*=}"
   case "$key" in
@@ -55,7 +61,7 @@ for line in "${METRICS[@]}"; do
     VIOLATION_LATENCY) VIOLATION_LATENCY="$value" ;;
     GATE_STATUS) GATE_STATUS="$value" ;;
   esac
-done
+done <<< "$METRICS_OUTPUT"
 
 mkdir -p "$(dirname "$OUTPUT_FILE")"
 cat > "$OUTPUT_FILE" <<MARKDOWN
