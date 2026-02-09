@@ -20,6 +20,7 @@
 - API 統合スモーク: `bash scripts/smoke-chat-attachments-av.sh`
 - ステージング証跡をまとめて記録（推奨）: `make av-staging-evidence`
 - ステージング判定ゲートを厳格実行（推奨）: `make av-staging-gate`
+- ステージングの本番有効化判定サマリを生成（推奨）: `make av-staging-readiness`
 - 検証結果のMarkdown記録（staging向け）: `ENV_NAME=staging bash scripts/record-chat-attachments-av-smoke.sh`
 - 監査ログ集計（監視代替/閾値確認）:
   - `node scripts/report-chat-attachments-av-metrics.mjs --from=2026-02-07T00:00:00Z --to=2026-02-08T00:00:00Z --window-minutes=10`
@@ -83,3 +84,4 @@
 - 直近の検証（ローカル/PoC）: `docs/test-results/2026-02-06-chat-attachments-av-r2.md`
 - 記録テンプレート: `docs/test-results/chat-attachments-av-staging-template.md`
 - 補助: `scripts/record-chat-attachments-av-staging.sh`（smoke + audit metrics の同時記録）
+- 補助: `scripts/record-chat-attachments-av-readiness.sh`（技術ゲート判定 + 未確定運用判断の整理）

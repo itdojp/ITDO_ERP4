@@ -61,10 +61,11 @@
 
 ## 実行ステップ（決定まで）
 1. ステージングで `make av-staging-gate` を実行（閾値違反時は終了コード 2）
-2. `docs/test-results/chat-attachments-av-staging-template.md` に沿って結果を確認（必要なら閾値を変更して再実行）
-3. 本メモの推奨値との差分を評価
-4. `Issue #886` の未チェック項目を更新
-5. `CHAT_ATTACHMENT_AV_PROVIDER` 本番値を確定
+2. `make av-staging-readiness` を実行し、技術ゲート判定と未確定運用項目を確認
+3. `docs/test-results/chat-attachments-av-staging-template.md` に沿って結果を確認（必要なら閾値を変更して再実行）
+4. 本メモの推奨値との差分を評価
+5. `Issue #886` の未チェック項目を更新
+6. `CHAT_ATTACHMENT_AV_PROVIDER` 本番値を確定
 
 ## 保留中の論点
 - 外部ユーザ添付の想定比率（本番環境実績）
