@@ -44,7 +44,7 @@
     "@typescript-eslint/eslint-plugin": "^8.54.0",
     "@typescript-eslint/parser": "^8.15.0",
     "dotenv": "^17.2.4",
-    "eslint": "^9.39.2",
+    "eslint": "^10.0.0",
     "openapi-diff": "^0.24.1",
     "prettier": "^3.8.1",
     "prisma": "^7.3.0",
