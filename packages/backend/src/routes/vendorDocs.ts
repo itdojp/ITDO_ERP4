@@ -20,6 +20,7 @@ import { logActionPolicyOverrideIfNeeded } from '../services/actionPolicyAudit.j
 import { auditContextFromRequest, logAudit } from '../services/audit.js';
 import { normalizeVendorInvoiceAllocations } from '../services/vendorInvoiceAllocations.js';
 import { normalizeVendorInvoiceLines } from '../services/vendorInvoiceLines.js';
+import { findExceededPurchaseOrderLineQuantities } from '../services/vendorInvoiceLineReconciliation.js';
 
 function normalizeString(value: unknown) {
   return typeof value === 'string' ? value.trim() : '';
@@ -961,15 +962,6 @@ export async function registerVendorDocRoutes(app: FastifyInstance) {
       }
 
       if (purchaseOrderLineIds.size > 0) {
-        const requestedQtyByLine = new Map<string, number>();
-        for (const line of normalizedInputs) {
-          if (!line.purchaseOrderLineId) continue;
-          const current = requestedQtyByLine.get(line.purchaseOrderLineId) || 0;
-          requestedQtyByLine.set(
-            line.purchaseOrderLineId,
-            current + line.quantity,
-          );
-        }
         const existingLines = await prisma.vendorInvoiceLine.findMany({
           where: {
             purchaseOrderLineId: { in: Array.from(purchaseOrderLineIds) },
@@ -983,40 +975,14 @@ export async function registerVendorDocRoutes(app: FastifyInstance) {
           },
           select: { purchaseOrderLineId: true, quantity: true },
         });
-        const existingQtyByLine = new Map<string, number>();
-        for (const line of existingLines) {
-          const lineId = normalizeString(line.purchaseOrderLineId);
-          if (!lineId) continue;
-          const current = existingQtyByLine.get(lineId) || 0;
-          existingQtyByLine.set(
-            lineId,
-            current + (parseNumberValue(line.quantity) ?? 0),
-          );
-        }
-        const exceeded: Array<{
-          purchaseOrderLineId: string;
-          purchaseOrderQuantity: number;
-          existingQuantity: number;
-          requestedQuantity: number;
-        }> = [];
-        for (const lineId of purchaseOrderLineIds) {
-          const poLine = purchaseOrderLineMap.get(lineId);
-          if (!poLine) continue;
-          const purchaseOrderQuantity = parseNumberValue(poLine.quantity) ?? 0;
-          const existingQuantity = existingQtyByLine.get(lineId) || 0;
-          const requestedQuantity = requestedQtyByLine.get(lineId) || 0;
-          if (
-            existingQuantity + requestedQuantity - purchaseOrderQuantity >
-            0.00001
-          ) {
-            exceeded.push({
-              purchaseOrderLineId: lineId,
-              purchaseOrderQuantity,
-              existingQuantity,
-              requestedQuantity,
-            });
-          }
-        }
+        const exceeded = findExceededPurchaseOrderLineQuantities({
+          purchaseOrderLines: Array.from(purchaseOrderLineMap.values()),
+          existingInvoiceLines: existingLines,
+          requestedInvoiceLines: normalizedInputs.map((line) => ({
+            purchaseOrderLineId: line.purchaseOrderLineId,
+            quantity: line.quantity,
+          })),
+        });
         if (exceeded.length) {
           return reply.status(400).send({
             error: {
