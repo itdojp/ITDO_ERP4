@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api, apiResponse } from '../api';
 import { AnnotationsCard } from '../components/AnnotationsCard';
 import {
@@ -67,6 +67,7 @@ type VendorInvoiceAllocation = {
 
 type VendorInvoiceLine = {
   id?: string;
+  tempId?: string;
   lineNo?: number | string;
   description: string;
   quantity: number | string;
@@ -159,6 +160,7 @@ const formatDateTime = (value?: string | null) => {
 const parseNumberValue = (value: number | string | null | undefined) => {
   if (typeof value === 'number') return Number.isFinite(value) ? value : null;
   if (typeof value === 'string') {
+    if (!value.trim()) return null;
     const parsed = Number(value);
     return Number.isFinite(parsed) ? parsed : null;
   }
@@ -311,6 +313,12 @@ export const VendorDocuments: React.FC = () => {
     id: string;
     numberLabel: string;
   } | null>(null);
+  const invoiceLineTempIdRef = useRef(0);
+
+  const nextInvoiceLineTempId = useCallback(() => {
+    invoiceLineTempIdRef.current += 1;
+    return `tmp-line-${invoiceLineTempIdRef.current}`;
+  }, []);
 
   const projectMap = useMemo(() => {
     return new Map(projects.map((project) => [project.id, project]));
@@ -495,7 +503,13 @@ export const VendorDocuments: React.FC = () => {
         invoice: VendorInvoice;
         items: VendorInvoiceLine[];
       }>(`/vendor-invoices/${invoiceId}/lines`);
-      setInvoiceLines(res.items || []);
+      setInvoiceLines(
+        (res.items || []).map((item) =>
+          item.id || item.tempId
+            ? item
+            : { ...item, tempId: nextInvoiceLineTempId() },
+        ),
+      );
       setInvoiceLineDialog((prev) =>
         prev ? { ...prev, invoice: res.invoice } : prev,
       );
@@ -509,7 +523,7 @@ export const VendorDocuments: React.FC = () => {
     } finally {
       setInvoiceLineLoading(false);
     }
-  }, []);
+  }, [nextInvoiceLineTempId]);
 
   useEffect(() => {
     const loadAll = async () => {
@@ -628,7 +642,7 @@ export const VendorDocuments: React.FC = () => {
   }, [invoiceAllocations]);
 
   const invoiceLineTotals = useMemo(() => {
-    if (!invoiceLineDialog) return null;
+    if (!invoiceLineDialog || invoiceLines.length === 0) return null;
     let amountTotal = 0;
     let taxTotal = 0;
     let grossTotal = 0;
@@ -1028,10 +1042,11 @@ export const VendorDocuments: React.FC = () => {
       if (value == null || !Number.isInteger(value)) return maxValue;
       return Math.max(maxValue, value);
     }, 0);
-    const nextLineNo = maxLineNo + 1 || invoiceLines.length + 1;
+    const nextLineNo = maxLineNo + 1;
     setInvoiceLines((prev) => [
       ...prev,
       {
+        tempId: nextInvoiceLineTempId(),
         lineNo: nextLineNo,
         description: '',
         quantity: 1,
@@ -3272,7 +3287,9 @@ export const VendorDocuments: React.FC = () => {
                             calculatedAmount != null &&
                             Math.abs(amount - calculatedAmount) > 0.00001;
                           return (
-                            <tr key={`line-${index}`}>
+                            <tr
+                              key={`line-${entry.id ?? entry.tempId ?? index}`}
+                            >
                               <td>
                                 <input
                                   type="number"
@@ -3302,7 +3319,8 @@ export const VendorDocuments: React.FC = () => {
                               <td>
                                 <input
                                   type="number"
-                                  min={0}
+                                  min={0.000001}
+                                  step="any"
                                   value={entry.quantity}
                                   onChange={(e) =>
                                     updateVendorInvoiceLine(index, {
