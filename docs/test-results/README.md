@@ -14,6 +14,7 @@
 ### Template
 - チャット添付AV（Staging）検証テンプレート: docs/test-results/chat-attachments-av-staging-template.md
 - DRリストア運用検証テンプレート: docs/test-results/dr-restore-template.md
+- モバイル回帰証跡テンプレート: docs/test-results/mobile-regression-template.md
 
 ### 2026-02-06
 - チャット添付AV（ClamAV/clamd）再検証 r2: docs/test-results/2026-02-06-chat-attachments-av-r2.md

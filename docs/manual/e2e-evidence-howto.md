@@ -81,3 +81,7 @@ E2E_ACTION_TIMEOUT_MS=15000 E2E_CAPTURE=0 E2E_SCOPE=core ./scripts/e2e-frontend.
 ## 差分比較（最小）
 - 画面キャプチャは Git の差分で追跡する（更新時は PR で履歴を残す）
 - 重要導線（Dashboard/日報/工数/請求/承認/チャット）を優先して更新する
+
+## PR記載ルール（UI変更時）
+- PR本文に、証跡ファイル（`docs/test-results/YYYY-MM-DD-*.md`）と証跡ディレクトリ（`docs/test-results/YYYY-MM-DD-*/`）のリンクを記載する
+- モバイル回帰を含む場合は `docs/test-results/mobile-regression-template.md` を基に記録し、対象画面（Invoices/VendorDocuments/AuditLogs/PeriodLocks/AdminJobs）の結果を添付する
