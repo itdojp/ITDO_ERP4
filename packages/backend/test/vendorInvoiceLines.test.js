@@ -74,3 +74,45 @@ test('normalizeVendorInvoiceLines: keeps diff when autoAdjust disabled', () => {
   assert.equal(result.totals.grossTotal, 100);
   assert.equal(result.totals.diff, 20);
 });
+
+test('normalizeVendorInvoiceLines: uses explicit amount even when quantity*unitPrice differs', () => {
+  const result = normalizeVendorInvoiceLines(
+    [
+      {
+        lineNo: 1,
+        description: 'line-1',
+        quantity: 3,
+        unitPrice: 100,
+        amount: 310,
+        taxRate: 10,
+        taxAmount: null,
+      },
+    ],
+    341,
+  );
+  assert.equal(result.items[0].amount, 310);
+  assert.equal(result.items[0].taxAmount, 31);
+  assert.equal(result.items[0].grossAmount, 341);
+  assert.equal(result.totals.diff, 0);
+});
+
+test('normalizeVendorInvoiceLines: keeps diff when autoAdjust would make tax negative', () => {
+  const result = normalizeVendorInvoiceLines(
+    [
+      {
+        lineNo: 1,
+        description: 'line-1',
+        quantity: 1,
+        unitPrice: 100,
+        amount: 100,
+        taxRate: null,
+        taxAmount: 0,
+      },
+    ],
+    50,
+    { autoAdjust: true },
+  );
+  assert.equal(result.items[0].taxAmount, 0);
+  assert.equal(result.items[0].grossAmount, 100);
+  assert.equal(result.totals.diff, -50);
+});
