@@ -1,0 +1,2 @@
+templateId,flowType,actionKey,ownerRole,ownerUserId,reviewCycleDays,lastReviewedAt,nextReviewAt,status,effectiveFrom,effectiveTo,replacedBy,notes
+<uuid>,invoice,invoice.submit_ack.v1,mgmt,manager01,90,2026-02-10,2026-05-11,active,2026-02-10,,,
