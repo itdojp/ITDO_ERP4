@@ -43,7 +43,7 @@ export function normalizeVendorInvoiceLines(
       entry.taxAmount != null
         ? entry.taxAmount
         : entry.taxRate != null
-          ? amount * entry.taxRate
+          ? Math.round((amount * entry.taxRate) / 100)
           : 0;
     const grossAmount = amount + taxAmount;
     return {

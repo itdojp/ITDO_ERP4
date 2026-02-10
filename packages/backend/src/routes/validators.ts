@@ -471,10 +471,18 @@ export const vendorInvoiceLinesSchema = {
             description: Type.String({ minLength: 1 }),
             quantity: Type.Number({ exclusiveMinimum: 0 }),
             unitPrice: Type.Number({ minimum: 0 }),
-            amount: Type.Optional(Type.Number({ minimum: 0 })),
-            taxRate: Type.Optional(Type.Number({ minimum: 0 })),
-            taxAmount: Type.Optional(Type.Number({ minimum: 0 })),
-            purchaseOrderLineId: Type.Optional(Type.String({ minLength: 1 })),
+            amount: Type.Optional(
+              Type.Union([Type.Number({ minimum: 0 }), Type.Null()]),
+            ),
+            taxRate: Type.Optional(
+              Type.Union([Type.Number({ minimum: 0 }), Type.Null()]),
+            ),
+            taxAmount: Type.Optional(
+              Type.Union([Type.Number({ minimum: 0 }), Type.Null()]),
+            ),
+            purchaseOrderLineId: Type.Optional(
+              Type.Union([Type.String({ minLength: 1 }), Type.Null()]),
+            ),
           },
           { additionalProperties: false },
         ),

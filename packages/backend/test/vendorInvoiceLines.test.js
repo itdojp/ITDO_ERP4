@@ -12,7 +12,7 @@ test('normalizeVendorInvoiceLines: computes amount/tax/gross when omitted', () =
         quantity: 2,
         unitPrice: 100,
         amount: null,
-        taxRate: 0.1,
+        taxRate: 10,
         taxAmount: null,
       },
     ],
