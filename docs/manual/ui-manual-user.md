@@ -36,6 +36,7 @@
 - メール通知は `digest` の場合、配信間隔（分）が必要です
 - メール通知の既定は `digest` / 10分です
 - Push 通知は `VITE_PUSH_PUBLIC_KEY` 未設定だと購読登録に失敗します
+- Push自動配信の通知種別は backend の `NOTIFICATION_PUSH_KINDS` で制御されます
 - `VAPID_*`（backend）が未設定の場合、`テスト通知` は実配信ではなくローカル表示になります
 - 送信待ちキューはログイン済みの場合のみ処理できます
 

@@ -8,7 +8,7 @@
 
 - アプリ内: `AppNotification` + `/notifications`（既読/未読）
 - メール: `AppNotificationDelivery` + `/jobs/notification-deliveries/run`
-- Push: WebPush（`/push-notifications/test`、購読は `push_subscriptions`）
+- Push: WebPush（イベント連動 + `/push-notifications/test`、購読は `push_subscriptions`）
 - 外部連携: Slack/Webhook（主にアラート系で利用、運用は allowlist）
 
 ## 通知設定（段階導入）
@@ -88,11 +88,27 @@
 - `project_member_added` は現状 app-only（メール配信対象外）。
   - メール配信を行う場合は subject/body の生成ロジックを追加した上で `NOTIFICATION_EMAIL_KINDS` に含める。
 
+### Push配信の対象（段階導入）
+
+- `NOTIFICATION_PUSH_KINDS` 未設定時の既定:
+  - `chat_mention`
+  - `chat_ack_required`
+  - `approval_pending`
+  - `approval_approved`
+  - `approval_rejected`
+  - `daily_report_missing`
+- `NOTIFICATION_PUSH_KINDS` を明示した場合は既定値を上書き
+  - 例: `NOTIFICATION_PUSH_KINDS=chat_mention,chat_ack_required`
+  - `*` 指定で全通知種別を対象化
+  - 空文字指定でPush自動配信を停止
+- 配信失敗のうち 404/410 は購読を自動無効化
+- 監査ログ: `notification_push_dispatched`
+
 ### 未実装/手動のみ
 
-- Push通知は `/push-notifications/test` の手動テスト導線のみ（イベント別のPushは未実装）
-  - `VAPID_*`（backend）未設定時は stub 応答（配信なし）
-- イベント別のPush/外部連携（Slack/Webhook）は未実装
+- `VAPID_*`（backend）未設定時は Push 自動配信をスキップ（`/push-notifications/test` は stub 応答）
+- Push専用の再送キュー/バックオフ制御は未実装
+- イベント別の外部連携（Slack/Webhook）は未実装
 
 ## 通知イベント一覧（MVP確定）
 

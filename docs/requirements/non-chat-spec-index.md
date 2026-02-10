@@ -7,6 +7,7 @@
 - ドメイン/データモデル/API たたき台: `docs/requirements/domain-api-draft.md`
 - 画面/運用（見積/請求/発注/仕入）: `docs/requirements/estimate-invoice-po-ui.md` / `docs/requirements/delivery-invoice-flow.md` / `docs/requirements/vendor-doc-linking.md` / `docs/requirements/document-template-variants.md`
 - 承認/アラート/通知: `docs/requirements/approval-alerts.md` / `docs/requirements/approval-log.md` / `docs/requirements/alerts-notify.md` / `docs/requirements/alert-suppression.md` / `docs/requirements/notifications.md` / `docs/requirements/approval-ack-messages.md`
+- 仕様実装整合レビュー（2026-02）: `docs/requirements/spec-review-2026-02-10.md`
 - 案件/タスク/マイルストーン/定期案件:
   - `docs/requirements/project-task-milestone-flow.md`
   - `docs/requirements/recurring-project-template.md`
