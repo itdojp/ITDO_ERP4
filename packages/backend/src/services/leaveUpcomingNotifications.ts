@@ -1,7 +1,10 @@
 import { prisma } from './db.js';
 import { dateKey } from './utils.js';
 import { parseDateParam, toDateOnly } from '../utils/date.js';
-import { resolveRoleRecipientUserIds } from './appNotifications.js';
+import {
+  filterNotificationRecipients,
+  resolveRoleRecipientUserIds,
+} from './appNotifications.js';
 
 type RunLeaveUpcomingOptions = {
   targetDate?: string;
@@ -99,12 +102,18 @@ export async function runLeaveUpcomingNotifications(
     const recipients = new Set<string>([userId, ...roleRecipients]);
     const targetUserIds = Array.from(recipients);
     if (!targetUserIds.length) continue;
+    const filtered = await filterNotificationRecipients({
+      kind: 'leave_upcoming',
+      userIds: targetUserIds,
+      scope: 'global',
+    });
+    if (!filtered.allowed.length) continue;
 
     const existing = await prisma.appNotification.findMany({
       where: {
         kind: 'leave_upcoming',
         messageId: leaveRequestId,
-        userId: { in: targetUserIds },
+        userId: { in: filtered.allowed },
       },
       select: { userId: true },
     });
@@ -113,7 +122,7 @@ export async function runLeaveUpcomingNotifications(
     );
     skippedExistingNotifications += existingUsers.size;
 
-    const targets = targetUserIds.filter((id) => !existingUsers.has(id));
+    const targets = filtered.allowed.filter((id) => !existingUsers.has(id));
     if (!targets.length) continue;
 
     const startDate = dateKey(toDateOnly(leave.startDate));

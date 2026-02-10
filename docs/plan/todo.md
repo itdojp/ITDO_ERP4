@@ -5,7 +5,7 @@
 - [ ] #544 S3/OSS 移行の時期を決定（`docs/requirements/backup-restore.md`）
 - [x] #918 通知: AppNotificationイベント連動のWebPush配信（段階導入）
 - [ ] #920 会計: PO↔VI明細厳密整合 Phase2（数量/単価/部分請求）
-- [ ] #921 通知: 全種別への抑制ルール統一（mute/preferences適用拡張）
+- [x] #921 通知: 全種別への抑制ルール統一（mute/preferences適用拡張）
 - [ ] #922 運用: chat ack templateの標準化（命名・棚卸し・廃止フロー）
 - [ ] #919 品質: design-system適用後のモバイル回帰証跡テンプレート化
 - [x] #887 design-system 依存を `@itdo/design-system@1.0.3` へ移行

@@ -1,5 +1,6 @@
 import type { Prisma } from '@prisma/client';
 import { prisma } from './db.js';
+import { filterNotificationRecipients } from './appNotifications.js';
 
 function normalizeStringArray(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
@@ -74,21 +75,29 @@ export async function runChatRoomAclMismatchAlerts(options?: {
       ),
     );
     if (!userIds.length) continue;
+    const filtered = await filterNotificationRecipients({
+      kind: 'chat_room_acl_mismatch',
+      userIds,
+      scope: 'global',
+    });
+    if (!filtered.allowed.length) continue;
     if (dryRun) {
       roomsAlerted += 1;
-      recipients += userIds.length;
+      recipients += filtered.allowed.length;
       continue;
     }
     const existing = await prisma.appNotification.findMany({
       where: {
         kind: 'chat_room_acl_mismatch',
         messageId: candidate.room.id,
-        userId: { in: userIds },
+        userId: { in: filtered.allowed },
       },
       select: { userId: true },
     });
     const existingSet = new Set(existing.map((item) => item.userId));
-    const targets = userIds.filter((userId) => !existingSet.has(userId));
+    const targets = filtered.allowed.filter(
+      (userId) => !existingSet.has(userId),
+    );
     if (!targets.length) continue;
     roomsAlerted += 1;
     recipients += targets.length;

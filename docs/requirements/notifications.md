@@ -44,7 +44,23 @@
   - project ルームは `roomId = projectId` として判定
 - 非 project ルームは `mentionUserIds` に加えて `mentionGroupIds/@all` をルームの閲覧対象へ展開（project ルームは従来通り `mentionGroupIds/@all` 指定時に project members へ fallback）
 - `chat_message`（全投稿通知）は `notifyAllPosts` と `muteAllUntil` / `muteUntil` を尊重
-- それ以外の通知種別に対する抑制は後続で拡張
+- `chat_ack_required` は `notifyMentions` と `muteAllUntil` / `muteUntil` を尊重
+- それ以外の通知種別は `muteAllUntil` を尊重
+- `approval_pending` / `approval_approved` / `approval_rejected` / `chat_ack_escalation` / `daily_report_missing` / `chat_room_acl_mismatch` は global mute 例外（抑制しない）
+- 例外種別は `NOTIFICATION_MUTE_BYPASS_KINDS` で上書き可能（空文字で例外なし）
+
+### 通知種別別の抑制適用マトリクス（実装済み）
+
+| 種別                    | `muteAllUntil` | `muteUntil` | `notifyMentions` | `notifyAllPosts` | 備考                |
+| ----------------------- | -------------- | ----------- | ---------------- | ---------------- | ------------------- |
+| `chat_mention`          | 適用           | 適用        | 適用             | -                | room単位で判定      |
+| `chat_message`          | 適用           | 適用        | -                | 適用             | room単位で判定      |
+| `chat_ack_required`     | 適用           | 適用        | 適用             | -                | room単位で判定      |
+| `chat_ack_escalation`   | 例外           | -           | -                | -                | 重要通知            |
+| `approval_*`            | 例外           | -           | -                | -                | 重要通知            |
+| `daily_report_missing`  | 例外           | -           | -                | -                | 重要通知            |
+| `chat_room_acl_mismatch` | 例外          | -           | -                | -                | セキュリティ通知    |
+| その他 AppNotification  | 適用           | -           | -                | -                | kind横断で一律適用  |
 
 ### AppNotification の発火イベント（実装済み）
 

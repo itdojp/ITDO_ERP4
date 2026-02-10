@@ -89,6 +89,20 @@ type ProjectStatusChangedNotificationOptions = {
   ownerUserId?: string | null;
 };
 
+type NotificationSuppressionScope =
+  | 'global'
+  | 'chat_mentions'
+  | 'chat_all_posts';
+
+const DEFAULT_GLOBAL_MUTE_BYPASS_KINDS = [
+  'approval_pending',
+  'approval_approved',
+  'approval_rejected',
+  'chat_ack_escalation',
+  'daily_report_missing',
+  'chat_room_acl_mismatch',
+] as const;
+
 function parseMaxRecipients() {
   const raw = process.env.CHAT_MENTION_NOTIFICATION_MAX_RECIPIENTS;
   if (!raw) return 200;
@@ -109,6 +123,34 @@ function normalizeId(value: unknown) {
   return typeof value === 'string' ? value.trim() : '';
 }
 
+function normalizeUniqueUserIds(userIds: string[]) {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const userId of userIds) {
+    const normalized = normalizeId(userId);
+    if (!normalized) continue;
+    if (seen.has(normalized)) continue;
+    seen.add(normalized);
+    out.push(normalized);
+  }
+  return out;
+}
+
+function resolveGlobalMuteBypassKinds() {
+  const raw = process.env.NOTIFICATION_MUTE_BYPASS_KINDS;
+  if (!raw) return new Set(DEFAULT_GLOBAL_MUTE_BYPASS_KINDS);
+  const values = raw
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+  if (!values.length) return new Set<string>();
+  return new Set(values);
+}
+
+function isGlobalMuteBypassKind(kind: string) {
+  return resolveGlobalMuteBypassKinds().has(kind.trim());
+}
+
 function dispatchNotificationPushesAsync(options: {
   kind: string;
   userIds: string[];
@@ -124,6 +166,85 @@ function dispatchNotificationPushesAsync(options: {
       error: err instanceof Error ? err.message : String(err),
     });
   });
+}
+
+export async function filterNotificationRecipients(options: {
+  kind: string;
+  userIds: string[];
+  roomId?: string | null;
+  scope: NotificationSuppressionScope;
+  client?: typeof prisma;
+  now?: Date;
+}) {
+  const kind = normalizeId(options.kind);
+  const userIds = normalizeUniqueUserIds(options.userIds);
+  if (!userIds.length) {
+    return { allowed: [] as string[], muted: [] as string[] };
+  }
+  if (kind && isGlobalMuteBypassKind(kind)) {
+    return { allowed: userIds, muted: [] as string[] };
+  }
+
+  const client = options.client ?? prisma;
+  const now = options.now ?? new Date();
+
+  const mutedUsers = new Set<string>();
+  const mutedPreferences = await client.userNotificationPreference.findMany({
+    where: { userId: { in: userIds }, muteAllUntil: { gt: now } },
+    select: { userId: true, muteAllUntil: true },
+  });
+  for (const pref of mutedPreferences) {
+    const userId = normalizeId(pref.userId);
+    if (userId) mutedUsers.add(userId);
+  }
+
+  const roomId = normalizeId(options.roomId);
+  if (roomId && options.scope === 'chat_mentions') {
+    const roomSettings = await client.chatRoomNotificationSetting.findMany({
+      where: { roomId, userId: { in: userIds } },
+      select: { userId: true, notifyMentions: true, muteUntil: true },
+    });
+    for (const setting of roomSettings) {
+      const userId = normalizeId(setting.userId);
+      if (!userId) continue;
+      if (setting.muteUntil && setting.muteUntil > now) {
+        mutedUsers.add(userId);
+        continue;
+      }
+      if (setting.notifyMentions === false) {
+        mutedUsers.add(userId);
+      }
+    }
+  }
+  if (roomId && options.scope === 'chat_all_posts') {
+    const roomSettings = await client.chatRoomNotificationSetting.findMany({
+      where: { roomId, userId: { in: userIds } },
+      select: { userId: true, notifyAllPosts: true, muteUntil: true },
+    });
+    for (const setting of roomSettings) {
+      const userId = normalizeId(setting.userId);
+      if (!userId) continue;
+      if (setting.muteUntil && setting.muteUntil > now) {
+        mutedUsers.add(userId);
+        continue;
+      }
+      if (setting.notifyAllPosts === false) {
+        mutedUsers.add(userId);
+      }
+    }
+  }
+
+  const allowed: string[] = [];
+  const muted: string[] = [];
+  for (const userId of userIds) {
+    if (mutedUsers.has(userId)) {
+      muted.push(userId);
+    } else {
+      allowed.push(userId);
+    }
+  }
+
+  return { allowed, muted };
 }
 
 export async function filterChatMentionRecipients(options: {
@@ -145,47 +266,14 @@ export async function filterChatMentionRecipients(options: {
     return { allowed: [] as string[], muted: [] as string[] };
   }
 
-  const client = options.client ?? prisma;
-  const now = options.now ?? new Date();
-  const [roomSettings, mutedPreferences] = await Promise.all([
-    client.chatRoomNotificationSetting.findMany({
-      where: { roomId, userId: { in: userIds } },
-      select: { userId: true, notifyMentions: true, muteUntil: true },
-    }),
-    client.userNotificationPreference.findMany({
-      where: { userId: { in: userIds }, muteAllUntil: { gt: now } },
-      select: { userId: true, muteAllUntil: true },
-    }),
-  ]);
-
-  const mutedUsers = new Set<string>();
-  for (const pref of mutedPreferences) {
-    const userId = normalizeId(pref.userId);
-    if (userId) mutedUsers.add(userId);
-  }
-  for (const setting of roomSettings) {
-    const userId = normalizeId(setting.userId);
-    if (!userId) continue;
-    if (setting.muteUntil && setting.muteUntil > now) {
-      mutedUsers.add(userId);
-      continue;
-    }
-    if (setting.notifyMentions === false) {
-      mutedUsers.add(userId);
-    }
-  }
-
-  const allowed: string[] = [];
-  const muted: string[] = [];
-  for (const userId of userIds) {
-    if (mutedUsers.has(userId)) {
-      muted.push(userId);
-    } else {
-      allowed.push(userId);
-    }
-  }
-
-  return { allowed, muted };
+  return filterNotificationRecipients({
+    kind: 'chat_mention',
+    roomId,
+    userIds,
+    scope: 'chat_mentions',
+    client: options.client,
+    now: options.now,
+  });
 }
 
 export async function filterChatAllPostRecipients(options: {
@@ -207,47 +295,14 @@ export async function filterChatAllPostRecipients(options: {
     return { allowed: [] as string[], muted: [] as string[] };
   }
 
-  const client = options.client ?? prisma;
-  const now = options.now ?? new Date();
-  const [roomSettings, mutedPreferences] = await Promise.all([
-    client.chatRoomNotificationSetting.findMany({
-      where: { roomId, userId: { in: userIds } },
-      select: { userId: true, notifyAllPosts: true, muteUntil: true },
-    }),
-    client.userNotificationPreference.findMany({
-      where: { userId: { in: userIds }, muteAllUntil: { gt: now } },
-      select: { userId: true, muteAllUntil: true },
-    }),
-  ]);
-
-  const mutedUsers = new Set<string>();
-  for (const pref of mutedPreferences) {
-    const userId = normalizeId(pref.userId);
-    if (userId) mutedUsers.add(userId);
-  }
-  for (const setting of roomSettings) {
-    const userId = normalizeId(setting.userId);
-    if (!userId) continue;
-    if (setting.muteUntil && setting.muteUntil > now) {
-      mutedUsers.add(userId);
-      continue;
-    }
-    if (setting.notifyAllPosts === false) {
-      mutedUsers.add(userId);
-    }
-  }
-
-  const allowed: string[] = [];
-  const muted: string[] = [];
-  for (const userId of userIds) {
-    if (mutedUsers.has(userId)) {
-      muted.push(userId);
-    } else {
-      allowed.push(userId);
-    }
-  }
-
-  return { allowed, muted };
+  return filterNotificationRecipients({
+    kind: 'chat_message',
+    roomId,
+    userIds,
+    scope: 'chat_all_posts',
+    client: options.client,
+    now: options.now,
+  });
 }
 
 async function resolveActiveGroupAccountIdsBySelector(selectors: string[]) {
@@ -442,18 +497,31 @@ export async function createChatAckRequiredNotifications(
       truncated: false,
     };
   }
+  const filtered = await filterNotificationRecipients({
+    kind: 'chat_ack_required',
+    roomId: options.roomId,
+    userIds: targetUserIds,
+    scope: 'chat_mentions',
+  });
+  if (filtered.allowed.length === 0) {
+    return {
+      created: 0,
+      recipients: [] as string[],
+      truncated,
+    };
+  }
 
   // Keep this operation idempotent at the application layer (schema has no unique constraint).
   const existing = await prisma.appNotification.findMany({
     where: {
       kind: 'chat_ack_required',
       messageId: options.messageId,
-      userId: { in: targetUserIds },
+      userId: { in: filtered.allowed },
     },
     select: { userId: true },
   });
   const existingUserIds = new Set(existing.map((item) => item.userId));
-  const createUserIds = targetUserIds.filter(
+  const createUserIds = filtered.allowed.filter(
     (userId) => !existingUserIds.has(userId),
   );
   if (createUserIds.length === 0) {
@@ -574,8 +642,8 @@ export async function createChatMessageNotifications(options: {
 export async function createProjectMemberAddedNotifications(
   options: ProjectMemberAddedNotificationOptions,
 ) {
-  const data: Prisma.AppNotificationCreateManyInput[] = [];
   const recipients: string[] = [];
+  const rolesByUserId = new Map<string, 'member' | 'leader'>();
   const seen = new Set<string>();
   for (const item of options.items) {
     const userId = item.userId.trim();
@@ -584,21 +652,40 @@ export async function createProjectMemberAddedNotifications(
     if (seen.has(userId)) continue;
     seen.add(userId);
     recipients.push(userId);
-    data.push({
+    rolesByUserId.set(userId, item.role);
+  }
+  if (!recipients.length) {
+    return {
+      created: 0,
+      recipients: [] as string[],
+    };
+  }
+  const filtered = await filterNotificationRecipients({
+    kind: 'project_member_added',
+    userIds: recipients,
+    scope: 'global',
+  });
+  if (!filtered.allowed.length) {
+    return {
+      created: 0,
+      recipients: [] as string[],
+    };
+  }
+  const data: Prisma.AppNotificationCreateManyInput[] = filtered.allowed.map(
+    (userId) => ({
       userId,
       kind: 'project_member_added',
       projectId: options.projectId,
       payload: {
         fromUserId: options.actorUserId,
-        role: item.role,
+        role: rolesByUserId.get(userId),
         source: options.source || undefined,
       } as Prisma.InputJsonValue,
       createdBy: options.actorUserId,
       updatedBy: options.actorUserId,
-    });
-  }
-
-  if (data.length === 0) {
+    }),
+  );
+  if (!data.length) {
     return {
       created: 0,
       recipients: [] as string[],
@@ -609,7 +696,7 @@ export async function createProjectMemberAddedNotifications(
   if (created.count > 0) {
     dispatchNotificationPushesAsync({
       kind: 'project_member_added',
-      userIds: recipients,
+      userIds: filtered.allowed,
       projectId: options.projectId,
       payload: {
         source: options.source || undefined,
@@ -619,7 +706,7 @@ export async function createProjectMemberAddedNotifications(
   }
   return {
     created: created.count,
-    recipients,
+    recipients: filtered.allowed,
   };
 }
 
@@ -633,9 +720,17 @@ export async function createDailyReportNotifications(
   }
 
   const kind = options.kind;
+  const filtered = await filterNotificationRecipients({
+    kind,
+    userIds: [userId],
+    scope: 'global',
+  });
+  if (!filtered.allowed.length) {
+    return { created: 0 };
+  }
   const messageId = `${kind}:${userId}:${reportDate}`;
   const existing = await prisma.appNotification.findFirst({
-    where: { kind, messageId, userId },
+    where: { kind, messageId, userId: filtered.allowed[0] },
     select: { id: true },
   });
   if (existing) return { created: 0 };
@@ -647,7 +742,7 @@ export async function createDailyReportNotifications(
   };
   await prisma.appNotification.create({
     data: {
-      userId,
+      userId: filtered.allowed[0],
       kind,
       messageId,
       payload,
@@ -657,7 +752,7 @@ export async function createDailyReportNotifications(
   });
   dispatchNotificationPushesAsync({
     kind,
-    userIds: [userId],
+    userIds: filtered.allowed,
     payload,
     messageId,
     actorUserId,
@@ -711,18 +806,26 @@ export async function createApprovalPendingNotifications(
   if (!targetUserIds.length) {
     return { created: 0, recipients: [] as string[], truncated };
   }
+  const filtered = await filterNotificationRecipients({
+    kind: 'approval_pending',
+    userIds: targetUserIds,
+    scope: 'global',
+  });
+  if (!filtered.allowed.length) {
+    return { created: 0, recipients: [] as string[], truncated };
+  }
 
   const messageId = `${approvalInstanceId}:${currentStep}`;
   const existing = await prisma.appNotification.findMany({
     where: {
       kind: 'approval_pending',
       messageId,
-      userId: { in: targetUserIds },
+      userId: { in: filtered.allowed },
     },
     select: { userId: true },
   });
   const existingUserIds = new Set(existing.map((item) => item.userId));
-  const createUserIds = targetUserIds.filter(
+  const createUserIds = filtered.allowed.filter(
     (userId) => !existingUserIds.has(userId),
   );
   if (!createUserIds.length) {
@@ -774,11 +877,19 @@ export async function createApprovalOutcomeNotification(
 
   const kind =
     options.outcome === 'approved' ? 'approval_approved' : 'approval_rejected';
+  const filtered = await filterNotificationRecipients({
+    kind,
+    userIds: [requesterUserId],
+    scope: 'global',
+  });
+  if (!filtered.allowed.length) {
+    return { created: 0 };
+  }
   const existing = await prisma.appNotification.findFirst({
     where: {
       kind,
       messageId: approvalInstanceId,
-      userId: requesterUserId,
+      userId: filtered.allowed[0],
     },
     select: { id: true },
   });
@@ -795,7 +906,7 @@ export async function createApprovalOutcomeNotification(
 
   await prisma.appNotification.create({
     data: {
-      userId: requesterUserId,
+      userId: filtered.allowed[0],
       kind,
       projectId: normalizeId(options.projectId) || undefined,
       messageId: approvalInstanceId,
@@ -806,7 +917,7 @@ export async function createApprovalOutcomeNotification(
   });
   dispatchNotificationPushesAsync({
     kind,
-    userIds: [requesterUserId],
+    userIds: filtered.allowed,
     payload,
     messageId: approvalInstanceId,
     projectId: normalizeId(options.projectId) || undefined,
@@ -822,12 +933,18 @@ export async function createExpenseMarkPaidNotification(
   const expenseId = normalizeId(options.expenseId);
   const userId = normalizeId(options.userId);
   if (!expenseId || !userId) return { created: 0 };
+  const filtered = await filterNotificationRecipients({
+    kind: 'expense_mark_paid',
+    userIds: [userId],
+    scope: 'global',
+  });
+  if (!filtered.allowed.length) return { created: 0 };
 
   const existing = await prisma.appNotification.findFirst({
     where: {
       kind: 'expense_mark_paid',
       messageId: expenseId,
-      userId,
+      userId: filtered.allowed[0],
     },
     select: { id: true },
   });
@@ -852,7 +969,7 @@ export async function createExpenseMarkPaidNotification(
 
   await prisma.appNotification.create({
     data: {
-      userId,
+      userId: filtered.allowed[0],
       kind: 'expense_mark_paid',
       messageId: expenseId,
       projectId: options.projectId ?? undefined,
@@ -869,7 +986,7 @@ export async function createExpenseMarkPaidNotification(
   });
   dispatchNotificationPushesAsync({
     kind: 'expense_mark_paid',
-    userIds: [userId],
+    userIds: filtered.allowed,
     payload: {
       expenseId,
       amount: amountValue,
@@ -897,9 +1014,17 @@ export async function createProjectCreatedNotifications(
   if (!recipients.length) {
     return { created: 0, recipients: [] as string[] };
   }
+  const filtered = await filterNotificationRecipients({
+    kind: 'project_created',
+    userIds: recipients,
+    scope: 'global',
+  });
+  if (!filtered.allowed.length) {
+    return { created: 0, recipients: [] as string[] };
+  }
 
   const created = await prisma.appNotification.createMany({
-    data: recipients.map((userId) => ({
+    data: filtered.allowed.map((userId) => ({
       userId,
       kind: 'project_created',
       projectId,
@@ -914,7 +1039,7 @@ export async function createProjectCreatedNotifications(
   if (created.count > 0) {
     dispatchNotificationPushesAsync({
       kind: 'project_created',
-      userIds: recipients,
+      userIds: filtered.allowed,
       projectId,
       payload: {
         fromUserId: actorUserId || undefined,
@@ -924,7 +1049,7 @@ export async function createProjectCreatedNotifications(
     });
   }
 
-  return { created: created.count, recipients };
+  return { created: created.count, recipients: filtered.allowed };
 }
 
 export async function createProjectStatusChangedNotifications(
@@ -963,9 +1088,17 @@ export async function createProjectStatusChangedNotifications(
   if (!targetUserIds.length) {
     return { created: 0, recipients: [] as string[] };
   }
+  const filtered = await filterNotificationRecipients({
+    kind: 'project_status_changed',
+    userIds: targetUserIds,
+    scope: 'global',
+  });
+  if (!filtered.allowed.length) {
+    return { created: 0, recipients: [] as string[] };
+  }
 
   const created = await prisma.appNotification.createMany({
-    data: targetUserIds.map((userId) => ({
+    data: filtered.allowed.map((userId) => ({
       userId,
       kind: 'project_status_changed',
       projectId,
@@ -981,7 +1114,7 @@ export async function createProjectStatusChangedNotifications(
   if (created.count > 0) {
     dispatchNotificationPushesAsync({
       kind: 'project_status_changed',
-      userIds: targetUserIds,
+      userIds: filtered.allowed,
       projectId,
       payload: {
         fromUserId: actorUserId || undefined,
@@ -992,5 +1125,5 @@ export async function createProjectStatusChangedNotifications(
     });
   }
 
-  return { created: created.count, recipients: targetUserIds };
+  return { created: created.count, recipients: filtered.allowed };
 }

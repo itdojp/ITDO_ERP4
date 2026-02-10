@@ -1,5 +1,6 @@
 import type { Prisma } from '@prisma/client';
 import { prisma } from './db.js';
+import { filterNotificationRecipients } from './appNotifications.js';
 import { resolveChatAckRequiredRecipientUserIds } from './chatAckRecipients.js';
 
 const DEFAULT_LIMIT = 200;
@@ -300,11 +301,51 @@ export async function runChatAckReminders(
     toCreate.push(candidate);
   }
 
+  const grouped = new Map<
+    string,
+    {
+      kind: string;
+      roomId: string | null;
+      scope: 'global' | 'chat_mentions';
+      userIds: Set<string>;
+    }
+  >();
+  for (const candidate of toCreate) {
+    const scope = candidate.kind === reminderKind ? 'chat_mentions' : 'global';
+    const key = `${candidate.kind}:${candidate.roomId ?? ''}:${scope}`;
+    const current = grouped.get(key) ?? {
+      kind: candidate.kind,
+      roomId: candidate.roomId,
+      scope,
+      userIds: new Set<string>(),
+    };
+    current.userIds.add(candidate.userId);
+    grouped.set(key, current);
+  }
+
+  const allowedByKey = new Map<string, Set<string>>();
+  for (const [key, group] of grouped) {
+    const filtered = await filterNotificationRecipients({
+      kind: group.kind,
+      roomId: group.roomId,
+      userIds: Array.from(group.userIds),
+      scope: group.scope,
+    });
+    allowedByKey.set(key, new Set(filtered.allowed));
+  }
+
+  const filteredToCreate = toCreate.filter((candidate) => {
+    const scope = candidate.kind === reminderKind ? 'chat_mentions' : 'global';
+    const key = `${candidate.kind}:${candidate.roomId ?? ''}:${scope}`;
+    const allowed = allowedByKey.get(key);
+    return Boolean(allowed?.has(candidate.userId));
+  });
+
   const createdNotifications = dryRun
-    ? toCreate.length
+    ? filteredToCreate.length
     : (
         await prisma.appNotification.createMany({
-          data: toCreate.map((item) => ({
+          data: filteredToCreate.map((item) => ({
             userId: item.userId,
             kind: item.kind,
             projectId: item.projectId ?? null,
@@ -335,7 +376,8 @@ export async function runChatAckReminders(
     candidateEscalations: escalationCandidates.length,
     skippedAlreadyNotified,
     createdNotifications,
-    createdEscalations: toCreate.filter((item) => item.isEscalation).length,
+    createdEscalations: filteredToCreate.filter((item) => item.isEscalation)
+      .length,
     sampleMessageIds: uniqueMessageIds.slice(0, 20),
   };
 }
