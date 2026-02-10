@@ -865,16 +865,17 @@ model PurchaseOrder {
 }
 
 model PurchaseOrderLine {
-  id              String        @id @default(uuid())
-  purchaseOrder   PurchaseOrder @relation(fields: [purchaseOrderId], references: [id])
-  purchaseOrderId String
-  description     String
-  quantity        Decimal       @default(1)
-  unitPrice       Decimal
-  taxRate         Decimal?
-  taskId          String?
-  expenseId       String?
+  id                       String                  @id @default(uuid())
+  purchaseOrder            PurchaseOrder           @relation(fields: [purchaseOrderId], references: [id])
+  purchaseOrderId          String
+  description              String
+  quantity                 Decimal                 @default(1)
+  unitPrice                Decimal
+  taxRate                  Decimal?
+  taskId                   String?
+  expenseId                String?
   vendorInvoiceAllocations VendorInvoiceAllocation[]
+  vendorInvoiceLines       VendorInvoiceLine[]
 }
 
 model VendorQuote {
@@ -902,25 +903,26 @@ model VendorQuote {
 }
 
 model VendorInvoice {
-  id              String    @id @default(uuid())
-  project         Project   @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  id              String                  @id @default(uuid())
+  project         Project                 @relation(fields: [projectId], references: [id], onDelete: Restrict)
   projectId       String
-  vendor          Vendor    @relation(fields: [vendorId], references: [id], onDelete: Restrict)
+  vendor          Vendor                  @relation(fields: [vendorId], references: [id], onDelete: Restrict)
   vendorId        String
-  purchaseOrder   PurchaseOrder? @relation(fields: [purchaseOrderId], references: [id], onDelete: SetNull)
+  purchaseOrder   PurchaseOrder?          @relation(fields: [purchaseOrderId], references: [id], onDelete: SetNull)
   purchaseOrderId String?
   allocations     VendorInvoiceAllocation[]
+  lines           VendorInvoiceLine[]
   vendorInvoiceNo String?
   receivedDate    DateTime?
   dueDate         DateTime?
   currency        String
   totalAmount     Decimal
-  status          DocStatus @default(received)
+  status          DocStatus               @default(received)
   documentUrl     String?
   numberingSerial Int?
-  createdAt       DateTime  @default(now())
+  createdAt       DateTime                @default(now())
   createdBy       String?
-  updatedAt       DateTime  @updatedAt
+  updatedAt       DateTime                @updatedAt
   updatedBy       String?
   deletedAt       DateTime?
   deletedReason   String?
@@ -950,6 +952,30 @@ model VendorInvoiceAllocation {
 
   @@index([vendorInvoiceId])
   @@index([projectId])
+  @@index([purchaseOrderLineId])
+}
+
+model VendorInvoiceLine {
+  id                  String             @id @default(uuid())
+  vendorInvoice       VendorInvoice      @relation(fields: [vendorInvoiceId], references: [id], onDelete: Cascade)
+  vendorInvoiceId     String
+  lineNo              Int
+  description         String
+  quantity            Decimal            @default(1)
+  unitPrice           Decimal
+  amount              Decimal
+  taxRate             Decimal?
+  taxAmount           Decimal            @default(0)
+  grossAmount         Decimal
+  purchaseOrderLine   PurchaseOrderLine? @relation(fields: [purchaseOrderLineId], references: [id], onDelete: SetNull)
+  purchaseOrderLineId String?
+  createdAt           DateTime           @default(now())
+  createdBy           String?
+  updatedAt           DateTime           @updatedAt
+  updatedBy           String?
+
+  @@unique([vendorInvoiceId, lineNo])
+  @@index([vendorInvoiceId])
   @@index([purchaseOrderLineId])
 }
 

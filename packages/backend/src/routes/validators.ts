@@ -461,6 +461,39 @@ export const vendorInvoiceAllocationsSchema = {
   ),
 };
 
+export const vendorInvoiceLinesSchema = {
+  body: Type.Object(
+    {
+      lines: Type.Array(
+        Type.Object(
+          {
+            lineNo: Type.Optional(Type.Integer({ minimum: 1 })),
+            description: Type.String({ minLength: 1 }),
+            quantity: Type.Number({ exclusiveMinimum: 0 }),
+            unitPrice: Type.Number({ minimum: 0 }),
+            amount: Type.Optional(
+              Type.Union([Type.Number({ minimum: 0 }), Type.Null()]),
+            ),
+            taxRate: Type.Optional(
+              Type.Union([Type.Number({ minimum: 0 }), Type.Null()]),
+            ),
+            taxAmount: Type.Optional(
+              Type.Union([Type.Number({ minimum: 0 }), Type.Null()]),
+            ),
+            purchaseOrderLineId: Type.Optional(
+              Type.Union([Type.String({ minLength: 1 }), Type.Null()]),
+            ),
+          },
+          { additionalProperties: false },
+        ),
+      ),
+      reasonText: Type.Optional(Type.String({ minLength: 1, pattern: '\\S' })),
+      autoAdjust: Type.Optional(Type.Boolean()),
+    },
+    { additionalProperties: false },
+  ),
+};
+
 export const vendorQuoteSchema = {
   body: Type.Object({
     projectId: Type.String(),

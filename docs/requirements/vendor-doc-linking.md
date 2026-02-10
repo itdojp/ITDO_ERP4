@@ -70,8 +70,16 @@
 
 ### 実装状況（#768）
 - Phase 0/1: 仕入請求の配賦明細（任意入力）・税率別サマリ・PDF表示・PO明細参照/選択を実装
-- Phase 2: 未実装（数量配賦/厳密整合/監査粒度の拡張が必要）
+- Phase 2: 部分着手（`VendorInvoiceLine` テーブル + `GET/PUT /vendor-invoices/:id/lines` を実装、UIは後続）
 - 配賦明細は参照/監査用途のため、原価集計への反映は後続で検討
+
+### Phase 2（着手分: #920）
+- `VendorInvoiceLine` を追加し、請求内訳（lineNo/description/quantity/unitPrice/amount/taxRate/taxAmount/grossAmount）を保持
+- `purchaseOrderLineId` を任意保持し、PO未紐付け時や他PO明細指定時は更新を拒否
+- 更新時に以下を検証
+  - 請求総額（`VendorInvoice.totalAmount`）と行合計（`grossAmount`）の整合
+  - PO明細紐付け行の数量合計が、同PO明細の数量上限を超えないこと（他VIの既存行を含む）
+- 監査ログ: `vendor_invoice_lines_update` / `vendor_invoice_lines_clear`
 
 ### 後続検討（Phase 2）: データモデル拡張案（例）
 - 現行: `VendorInvoiceAllocation`（案件/税率別、任意で `purchaseOrderLineId`）で運用する

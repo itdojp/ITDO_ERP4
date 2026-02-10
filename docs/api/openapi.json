@@ -8426,6 +8426,117 @@
         }
       }
     },
+    "/vendor-invoices/{id}/lines": {
+      "get": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      },
+      "put": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "autoAdjust": {
+                    "type": "boolean"
+                  },
+                  "lines": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "amount": {
+                          "minimum": 0,
+                          "nullable": true,
+                          "type": "number"
+                        },
+                        "description": {
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "lineNo": {
+                          "minimum": 1,
+                          "type": "integer"
+                        },
+                        "purchaseOrderLineId": {
+                          "minLength": 1,
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "quantity": {
+                          "exclusiveMinimum": true,
+                          "minimum": 0,
+                          "type": "number"
+                        },
+                        "taxAmount": {
+                          "minimum": 0,
+                          "nullable": true,
+                          "type": "number"
+                        },
+                        "taxRate": {
+                          "minimum": 0,
+                          "nullable": true,
+                          "type": "number"
+                        },
+                        "unitPrice": {
+                          "minimum": 0,
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "description",
+                        "quantity",
+                        "unitPrice"
+                      ],
+                      "type": "object"
+                    },
+                    "type": "array"
+                  },
+                  "reasonText": {
+                    "minLength": 1,
+                    "pattern": "\\S",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "lines"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
     "/vendor-invoices/{id}/link-po": {
       "post": {
         "parameters": [
