@@ -150,6 +150,13 @@ function buildNotificationPushPayload(
         url = buildOpenHash('chat_message', normalizeId(options.messageId));
       }
       break;
+    case 'chat_message':
+      title = 'ERP4: 新着メッセージ';
+      body = excerpt ?? '新着メッセージがあります';
+      if (normalizeId(options.messageId)) {
+        url = buildOpenHash('chat_message', normalizeId(options.messageId));
+      }
+      break;
     case 'chat_ack_required':
       title = 'ERP4: 確認依頼';
       body = excerpt ?? '確認依頼があります';
@@ -190,6 +197,28 @@ function buildNotificationPushPayload(
       }
       break;
     }
+    case 'daily_report_submitted': {
+      const reportDate = getPayloadString(payload, 'reportDate');
+      title = 'ERP4: 日報提出';
+      body = reportDate
+        ? `${reportDate} の日報が提出されました`
+        : '日報が提出されました';
+      if (reportDate) {
+        url = buildOpenHash('daily_report', reportDate);
+      }
+      break;
+    }
+    case 'daily_report_updated': {
+      const reportDate = getPayloadString(payload, 'reportDate');
+      title = 'ERP4: 日報更新';
+      body = reportDate
+        ? `${reportDate} の日報が更新されました`
+        : '日報が更新されました';
+      if (reportDate) {
+        url = buildOpenHash('daily_report', reportDate);
+      }
+      break;
+    }
     case 'expense_mark_paid': {
       const expenseId =
         getPayloadString(payload, 'expenseId') ||
@@ -208,6 +237,16 @@ function buildNotificationPushPayload(
         url = buildOpenHash('project', normalizeId(options.projectId));
       }
       break;
+    case 'project_created': {
+      const projectId =
+        normalizeId(options.projectId) || normalizeId(options.messageId);
+      title = 'ERP4: 新規プロジェクト';
+      body = 'プロジェクトが作成されました';
+      if (projectId) {
+        url = buildOpenHash('project', projectId);
+      }
+      break;
+    }
     case 'project_status_changed':
       title = 'ERP4: プロジェクト状態変更';
       body = 'プロジェクトステータスが更新されました';

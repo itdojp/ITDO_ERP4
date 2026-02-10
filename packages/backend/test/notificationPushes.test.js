@@ -123,3 +123,93 @@ test('dispatchNotificationPushes: dispatches and disables stale subscriptions', 
   assert.equal(auditEntries[0].targetTable, 'app_notifications');
   assert.equal(auditEntries[0].targetId, 'msg_1');
 });
+
+test('dispatchNotificationPushes: supports app-notification kinds added by env', async () => {
+  const scenarios = [
+    {
+      kind: 'chat_message',
+      messageId: 'msg_chat',
+      payload: { excerpt: 'チャット本文' },
+      expected: {
+        title: 'ERP4: 新着メッセージ',
+        body: 'チャット本文',
+        url: '/#/open?kind=chat_message&id=msg_chat',
+      },
+    },
+    {
+      kind: 'project_created',
+      messageId: 'proj_1',
+      projectId: 'proj_1',
+      payload: {},
+      expected: {
+        title: 'ERP4: 新規プロジェクト',
+        body: 'プロジェクトが作成されました',
+        url: '/#/open?kind=project&id=proj_1',
+      },
+    },
+    {
+      kind: 'daily_report_submitted',
+      messageId: 'daily_report_submitted:u1:2026-02-10',
+      payload: { reportDate: '2026-02-10' },
+      expected: {
+        title: 'ERP4: 日報提出',
+        body: '2026-02-10 の日報が提出されました',
+        url: '/#/open?kind=daily_report&id=2026-02-10',
+      },
+    },
+    {
+      kind: 'daily_report_updated',
+      messageId: 'daily_report_updated:u1:2026-02-10',
+      payload: { reportDate: '2026-02-10' },
+      expected: {
+        title: 'ERP4: 日報更新',
+        body: '2026-02-10 の日報が更新されました',
+        url: '/#/open?kind=daily_report&id=2026-02-10',
+      },
+    },
+  ];
+
+  for (const scenario of scenarios) {
+    let capturedPayload = null;
+    const res = await dispatchNotificationPushes(
+      {
+        kind: scenario.kind,
+        userIds: ['u1'],
+        messageId: scenario.messageId,
+        projectId: scenario.projectId,
+        payload: scenario.payload,
+      },
+      {
+        pushKindsEnv: '*',
+        isWebPushEnabledFn: () => true,
+        client: {
+          pushSubscription: {
+            findMany: async () => [
+              {
+                id: 'sub_ok',
+                endpoint: 'https://example.com/ok',
+                p256dh: 'p256dh-ok',
+                auth: 'auth-ok',
+                userId: 'u1',
+              },
+            ],
+            updateMany: async () => ({ count: 0 }),
+          },
+        },
+        sendWebPushFn: async (_subscriptions, payload) => {
+          capturedPayload = payload;
+          return {
+            enabled: true,
+            results: [{ subscriptionId: 'sub_ok', status: 'success' }],
+          };
+        },
+        logAuditFn: async () => undefined,
+      },
+    );
+
+    assert.equal(res.attempted, true);
+    assert.equal(capturedPayload.title, scenario.expected.title);
+    assert.equal(capturedPayload.body, scenario.expected.body);
+    assert.equal(capturedPayload.url, scenario.expected.url);
+  }
+});
