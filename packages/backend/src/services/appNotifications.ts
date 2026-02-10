@@ -1,5 +1,6 @@
 import type { Prisma } from '@prisma/client';
 import { prisma } from './db.js';
+import { dispatchNotificationPushes } from './notificationPushes.js';
 
 type ChatMentionNotificationOptions = {
   projectId?: string | null;
@@ -106,6 +107,23 @@ function parseChatMessageMaxRecipients() {
 
 function normalizeId(value: unknown) {
   return typeof value === 'string' ? value.trim() : '';
+}
+
+function dispatchNotificationPushesAsync(options: {
+  kind: string;
+  userIds: string[];
+  payload?: Prisma.InputJsonValue | null;
+  messageId?: string | null;
+  projectId?: string | null;
+  actorUserId?: string | null;
+}) {
+  void dispatchNotificationPushes(options).catch((err) => {
+    console.error('[notification push dispatch failed]', {
+      kind: options.kind,
+      messageId: options.messageId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  });
 }
 
 export async function filterChatMentionRecipients(options: {
@@ -386,6 +404,16 @@ export async function createChatMentionNotifications(
       updatedBy: options.senderUserId,
     })),
   });
+  if (created.count > 0) {
+    dispatchNotificationPushesAsync({
+      kind: 'chat_mention',
+      userIds: filtered.allowed,
+      payload,
+      messageId: options.messageId,
+      projectId: options.projectId ?? null,
+      actorUserId: options.senderUserId,
+    });
+  }
 
   return {
     created: created.count,
@@ -455,6 +483,16 @@ export async function createChatAckRequiredNotifications(
       updatedBy: options.senderUserId,
     })),
   });
+  if (created.count > 0) {
+    dispatchNotificationPushesAsync({
+      kind: 'chat_ack_required',
+      userIds: createUserIds,
+      payload,
+      messageId: options.messageId,
+      projectId: options.projectId ?? null,
+      actorUserId: options.senderUserId,
+    });
+  }
 
   return {
     created: created.count,
@@ -515,6 +553,16 @@ export async function createChatMessageNotifications(options: {
       updatedBy: options.senderUserId,
     })),
   });
+  if (created.count > 0) {
+    dispatchNotificationPushesAsync({
+      kind: 'chat_message',
+      userIds: filtered.allowed,
+      payload,
+      messageId: options.messageId,
+      projectId: options.projectId ?? null,
+      actorUserId: options.senderUserId,
+    });
+  }
 
   return {
     created: created.count,
@@ -558,6 +606,17 @@ export async function createProjectMemberAddedNotifications(
   }
 
   const created = await prisma.appNotification.createMany({ data });
+  if (created.count > 0) {
+    dispatchNotificationPushesAsync({
+      kind: 'project_member_added',
+      userIds: recipients,
+      projectId: options.projectId,
+      payload: {
+        source: options.source || undefined,
+      } as Prisma.InputJsonValue,
+      actorUserId: options.actorUserId,
+    });
+  }
   return {
     created: created.count,
     recipients,
@@ -582,18 +641,26 @@ export async function createDailyReportNotifications(
   if (existing) return { created: 0 };
 
   const actorUserId = normalizeId(options.actorUserId ?? undefined);
+  const payload: Prisma.InputJsonValue = {
+    reportDate,
+    fromUserId: actorUserId || undefined,
+  };
   await prisma.appNotification.create({
     data: {
       userId,
       kind,
       messageId,
-      payload: {
-        reportDate,
-        fromUserId: actorUserId || undefined,
-      } as Prisma.InputJsonValue,
+      payload,
       createdBy: actorUserId || undefined,
       updatedBy: actorUserId || undefined,
     },
+  });
+  dispatchNotificationPushesAsync({
+    kind,
+    userIds: [userId],
+    payload,
+    messageId,
+    actorUserId,
   });
 
   return { created: 1 };
@@ -682,6 +749,16 @@ export async function createApprovalPendingNotifications(
       updatedBy: normalizeId(options.actorUserId) || undefined,
     })),
   });
+  if (created.count > 0) {
+    dispatchNotificationPushesAsync({
+      kind: 'approval_pending',
+      userIds: createUserIds,
+      payload,
+      messageId,
+      projectId: normalizeId(options.projectId) || undefined,
+      actorUserId: normalizeId(options.actorUserId) || undefined,
+    });
+  }
 
   return { created: created.count, recipients: createUserIds, truncated };
 }
@@ -726,6 +803,14 @@ export async function createApprovalOutcomeNotification(
       createdBy: normalizeId(options.actorUserId) || undefined,
       updatedBy: normalizeId(options.actorUserId) || undefined,
     },
+  });
+  dispatchNotificationPushesAsync({
+    kind,
+    userIds: [requesterUserId],
+    payload,
+    messageId: approvalInstanceId,
+    projectId: normalizeId(options.projectId) || undefined,
+    actorUserId: normalizeId(options.actorUserId) || undefined,
   });
 
   return { created: 1 };
@@ -782,6 +867,20 @@ export async function createExpenseMarkPaidNotification(
       updatedBy: actorUserId || undefined,
     },
   });
+  dispatchNotificationPushesAsync({
+    kind: 'expense_mark_paid',
+    userIds: [userId],
+    payload: {
+      expenseId,
+      amount: amountValue,
+      currency: currencyValue,
+      paidAt: paidAtValue,
+      fromUserId: actorUserId || undefined,
+    } as Prisma.InputJsonValue,
+    messageId: expenseId,
+    projectId: options.projectId ?? undefined,
+    actorUserId: actorUserId || undefined,
+  });
 
   return { created: 1 };
 }
@@ -812,6 +911,18 @@ export async function createProjectCreatedNotifications(
       updatedBy: actorUserId || undefined,
     })),
   });
+  if (created.count > 0) {
+    dispatchNotificationPushesAsync({
+      kind: 'project_created',
+      userIds: recipients,
+      projectId,
+      payload: {
+        fromUserId: actorUserId || undefined,
+      } as Prisma.InputJsonValue,
+      messageId: projectId,
+      actorUserId: actorUserId || undefined,
+    });
+  }
 
   return { created: created.count, recipients };
 }
@@ -867,6 +978,19 @@ export async function createProjectStatusChangedNotifications(
       updatedBy: actorUserId || undefined,
     })),
   });
+  if (created.count > 0) {
+    dispatchNotificationPushesAsync({
+      kind: 'project_status_changed',
+      userIds: targetUserIds,
+      projectId,
+      payload: {
+        fromUserId: actorUserId || undefined,
+        beforeStatus,
+        afterStatus,
+      } as Prisma.InputJsonValue,
+      actorUserId: actorUserId || undefined,
+    });
+  }
 
   return { created: created.count, recipients: targetUserIds };
 }
