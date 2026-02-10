@@ -65,6 +65,19 @@ type VendorInvoiceAllocation = {
   purchaseOrderLineId?: string | null;
 };
 
+type VendorInvoiceLine = {
+  id?: string;
+  lineNo?: number | string;
+  description: string;
+  quantity: number | string;
+  unitPrice: number | string;
+  amount?: number | string | null;
+  taxRate?: number | string | null;
+  taxAmount?: number | string | null;
+  grossAmount?: number | string | null;
+  purchaseOrderLineId?: string | null;
+};
+
 type DocumentSendLog = {
   id: string;
   channel: string;
@@ -273,6 +286,16 @@ export const VendorDocuments: React.FC = () => {
   const [invoiceAllocationReason, setInvoiceAllocationReason] = useState('');
   const [invoiceAllocationExpanded, setInvoiceAllocationExpanded] =
     useState(false);
+  const [invoiceLineDialog, setInvoiceLineDialog] = useState<{
+    invoice: VendorInvoice;
+  } | null>(null);
+  const [invoiceLines, setInvoiceLines] = useState<VendorInvoiceLine[]>([]);
+  const [invoiceLineLoading, setInvoiceLineLoading] = useState(false);
+  const [invoiceLineSaving, setInvoiceLineSaving] = useState(false);
+  const [invoiceLineMessage, setInvoiceLineMessage] =
+    useState<MessageState>(null);
+  const [invoiceLineReason, setInvoiceLineReason] = useState('');
+  const [invoiceLineExpanded, setInvoiceLineExpanded] = useState(false);
   const [invoiceSubmitBusy, setInvoiceSubmitBusy] = useState<
     Record<string, boolean>
   >({});
@@ -465,6 +488,29 @@ export const VendorDocuments: React.FC = () => {
     [],
   );
 
+  const loadVendorInvoiceLines = useCallback(async (invoiceId: string) => {
+    setInvoiceLineLoading(true);
+    try {
+      const res = await api<{
+        invoice: VendorInvoice;
+        items: VendorInvoiceLine[];
+      }>(`/vendor-invoices/${invoiceId}/lines`);
+      setInvoiceLines(res.items || []);
+      setInvoiceLineDialog((prev) =>
+        prev ? { ...prev, invoice: res.invoice } : prev,
+      );
+    } catch (err) {
+      console.error('Failed to load vendor invoice lines.', err);
+      setInvoiceLineMessage({
+        text: '請求明細の取得に失敗しました',
+        type: 'error',
+      });
+      setInvoiceLines([]);
+    } finally {
+      setInvoiceLineLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     const loadAll = async () => {
       await Promise.all([loadProjects(), loadVendors()]);
@@ -542,6 +588,8 @@ export const VendorDocuments: React.FC = () => {
     status !== 'received' && status !== 'draft' && status !== 'rejected';
   const isVendorInvoiceAllocationReasonRequiredStatus = (status: string) =>
     status !== 'received' && status !== 'draft' && status !== 'rejected';
+  const isVendorInvoiceLineReasonRequiredStatus = (status: string) =>
+    status !== 'received' && status !== 'draft' && status !== 'rejected';
   const normalizeCurrency = (value: string) =>
     value.trim().toUpperCase().slice(0, 3);
 
@@ -578,6 +626,48 @@ export const VendorDocuments: React.FC = () => {
       tax: value.tax,
     }));
   }, [invoiceAllocations]);
+
+  const invoiceLineTotals = useMemo(() => {
+    if (!invoiceLineDialog) return null;
+    let amountTotal = 0;
+    let taxTotal = 0;
+    let grossTotal = 0;
+    invoiceLines.forEach((line) => {
+      const quantity = parseNumberValue(line.quantity) ?? 0;
+      const unitPrice = parseNumberValue(line.unitPrice) ?? 0;
+      const amount =
+        parseNumberValue(line.amount) ?? Math.round(quantity * unitPrice);
+      const taxRate = parseNumberValue(line.taxRate);
+      const taxAmount =
+        parseNumberValue(line.taxAmount) ??
+        (taxRate == null ? 0 : Math.round((amount * taxRate) / 100));
+      amountTotal += amount;
+      taxTotal += taxAmount;
+      grossTotal += amount + taxAmount;
+    });
+    const invoiceTotal = parseNumberValue(
+      invoiceLineDialog.invoice.totalAmount,
+    );
+    const diff = invoiceTotal != null ? invoiceTotal - grossTotal : null;
+    return {
+      amountTotal,
+      taxTotal,
+      grossTotal,
+      invoiceTotal,
+      diff,
+    };
+  }, [invoiceLineDialog, invoiceLines]);
+
+  const invoiceLineRequestedQuantityByPoLine = useMemo(() => {
+    const map = new Map<string, number>();
+    invoiceLines.forEach((line) => {
+      const lineId = line.purchaseOrderLineId?.trim();
+      if (!lineId) return;
+      const quantity = parseNumberValue(line.quantity) ?? 0;
+      map.set(lineId, (map.get(lineId) || 0) + quantity);
+    });
+    return map;
+  }, [invoiceLines]);
 
   const createPurchaseOrder = async () => {
     if (!poForm.projectId || !poForm.vendorId) {
@@ -892,6 +982,18 @@ export const VendorDocuments: React.FC = () => {
     await loadVendorInvoiceAllocations(invoice.id);
   };
 
+  const openVendorInvoiceLineDialog = async (invoice: VendorInvoice) => {
+    setInvoiceLineDialog({ invoice });
+    setInvoiceLineReason('');
+    setInvoiceLineMessage(null);
+    setInvoiceLineExpanded(false);
+    setInvoiceLines([]);
+    if (invoice.purchaseOrderId) {
+      void loadPurchaseOrderDetail(invoice.purchaseOrderId);
+    }
+    await loadVendorInvoiceLines(invoice.id);
+  };
+
   const addVendorInvoiceAllocationRow = () => {
     const defaultProjectId =
       invoiceAllocationDialog?.invoice.projectId || projects[0]?.id || '';
@@ -918,6 +1020,229 @@ export const VendorDocuments: React.FC = () => {
 
   const removeVendorInvoiceAllocation = (index: number) => {
     setInvoiceAllocations((prev) => prev.filter((_, idx) => idx !== index));
+  };
+
+  const addVendorInvoiceLineRow = () => {
+    const maxLineNo = invoiceLines.reduce((maxValue, line) => {
+      const value = parseNumberValue(line.lineNo);
+      if (value == null || !Number.isInteger(value)) return maxValue;
+      return Math.max(maxValue, value);
+    }, 0);
+    const nextLineNo = maxLineNo + 1 || invoiceLines.length + 1;
+    setInvoiceLines((prev) => [
+      ...prev,
+      {
+        lineNo: nextLineNo,
+        description: '',
+        quantity: 1,
+        unitPrice: 0,
+        amount: null,
+        taxRate: null,
+        taxAmount: null,
+        purchaseOrderLineId: '',
+      },
+    ]);
+  };
+
+  const updateVendorInvoiceLine = (
+    index: number,
+    update: Partial<VendorInvoiceLine>,
+  ) => {
+    setInvoiceLines((prev) =>
+      prev.map((item, idx) => (idx === index ? { ...item, ...update } : item)),
+    );
+  };
+
+  const removeVendorInvoiceLine = (index: number) => {
+    setInvoiceLines((prev) => prev.filter((_, idx) => idx !== index));
+  };
+
+  const saveVendorInvoiceLines = async () => {
+    if (!invoiceLineDialog) return;
+    const invoice = invoiceLineDialog.invoice;
+    const reasonText = invoiceLineReason.trim();
+    if (
+      isVendorInvoiceLineReasonRequiredStatus(invoice.status) &&
+      !reasonText
+    ) {
+      setInvoiceLineMessage({
+        text: '変更理由を入力してください',
+        type: 'error',
+      });
+      return;
+    }
+
+    const payload: {
+      lines: Array<{
+        lineNo: number;
+        description: string;
+        quantity: number;
+        unitPrice: number;
+        amount?: number | null;
+        taxRate?: number | null;
+        taxAmount?: number | null;
+        purchaseOrderLineId?: string | null;
+      }>;
+      reasonText?: string;
+    } = { lines: [] };
+
+    const lineNos = new Set<number>();
+    for (let i = 0; i < invoiceLines.length; i += 1) {
+      const entry = invoiceLines[i];
+      const lineNoRaw =
+        entry.lineNo === undefined || entry.lineNo === null
+          ? i + 1
+          : parseNumberValue(entry.lineNo);
+      if (
+        lineNoRaw == null ||
+        !Number.isInteger(lineNoRaw) ||
+        Number(lineNoRaw) <= 0
+      ) {
+        setInvoiceLineMessage({
+          text: `請求明細 ${i + 1} の行番号が不正です`,
+          type: 'error',
+        });
+        return;
+      }
+      const lineNo = Number(lineNoRaw);
+      if (lineNos.has(lineNo)) {
+        setInvoiceLineMessage({
+          text: `請求明細 ${i + 1} の行番号が重複しています`,
+          type: 'error',
+        });
+        return;
+      }
+      lineNos.add(lineNo);
+
+      const description = entry.description.trim();
+      if (!description) {
+        setInvoiceLineMessage({
+          text: `請求明細 ${i + 1} の内容を入力してください`,
+          type: 'error',
+        });
+        return;
+      }
+      const quantity = parseNumberValue(entry.quantity);
+      if (quantity == null || quantity <= 0) {
+        setInvoiceLineMessage({
+          text: `請求明細 ${i + 1} の数量が不正です`,
+          type: 'error',
+        });
+        return;
+      }
+      const unitPrice = parseNumberValue(entry.unitPrice);
+      if (unitPrice == null || unitPrice < 0) {
+        setInvoiceLineMessage({
+          text: `請求明細 ${i + 1} の単価が不正です`,
+          type: 'error',
+        });
+        return;
+      }
+      const amount =
+        entry.amount === undefined ||
+        entry.amount === null ||
+        entry.amount === ''
+          ? null
+          : parseNumberValue(entry.amount);
+      if (
+        entry.amount != null &&
+        entry.amount !== '' &&
+        (amount == null || amount < 0)
+      ) {
+        setInvoiceLineMessage({
+          text: `請求明細 ${i + 1} の金額が不正です`,
+          type: 'error',
+        });
+        return;
+      }
+      const taxRate =
+        entry.taxRate === undefined ||
+        entry.taxRate === null ||
+        entry.taxRate === ''
+          ? null
+          : parseNumberValue(entry.taxRate);
+      if (
+        entry.taxRate != null &&
+        entry.taxRate !== '' &&
+        (taxRate == null || taxRate < 0)
+      ) {
+        setInvoiceLineMessage({
+          text: `請求明細 ${i + 1} の税率が不正です`,
+          type: 'error',
+        });
+        return;
+      }
+      const taxAmount =
+        entry.taxAmount === undefined ||
+        entry.taxAmount === null ||
+        entry.taxAmount === ''
+          ? null
+          : parseNumberValue(entry.taxAmount);
+      if (
+        entry.taxAmount != null &&
+        entry.taxAmount !== '' &&
+        (taxAmount == null || taxAmount < 0)
+      ) {
+        setInvoiceLineMessage({
+          text: `請求明細 ${i + 1} の税額が不正です`,
+          type: 'error',
+        });
+        return;
+      }
+      const purchaseOrderLineId = entry.purchaseOrderLineId?.trim();
+      payload.lines.push({
+        lineNo,
+        description,
+        quantity,
+        unitPrice,
+        amount,
+        taxRate,
+        taxAmount,
+        purchaseOrderLineId: purchaseOrderLineId || null,
+      });
+    }
+    if (reasonText) payload.reasonText = reasonText;
+
+    try {
+      setInvoiceLineSaving(true);
+      setInvoiceLineMessage(null);
+      await api(`/vendor-invoices/${invoice.id}/lines`, {
+        method: 'PUT',
+        body: JSON.stringify(payload),
+      });
+      setInvoiceLineMessage({
+        text: '請求明細を更新しました',
+        type: 'success',
+      });
+      await loadVendorInvoices();
+      await loadVendorInvoiceLines(invoice.id);
+    } catch (err) {
+      console.error('Failed to update vendor invoice lines.', err);
+      const errorText = err instanceof Error ? err.message : String(err);
+      if (errorText.includes('PO_LINE_QUANTITY_EXCEEDED')) {
+        setInvoiceLineMessage({
+          text: 'PO明細の数量上限を超えています（数量を見直してください）',
+          type: 'error',
+        });
+      } else if (errorText.includes('LINE_TOTAL_MISMATCH')) {
+        setInvoiceLineMessage({
+          text: '請求合計との差分が解消されていません',
+          type: 'error',
+        });
+      } else if (errorText.includes('INVALID_PURCHASE_ORDER_LINE')) {
+        setInvoiceLineMessage({
+          text: '選択したPO明細が関連POに属していません',
+          type: 'error',
+        });
+      } else {
+        setInvoiceLineMessage({
+          text: '請求明細の更新に失敗しました',
+          type: 'error',
+        });
+      }
+    } finally {
+      setInvoiceLineSaving(false);
+    }
   };
 
   const saveVendorInvoiceAllocations = async () => {
@@ -1545,6 +1870,15 @@ export const VendorDocuments: React.FC = () => {
             },
           },
           {
+            key: 'invoice-lines',
+            label: '請求明細',
+            onSelect: (row) => {
+              const target = vendorInvoiceMap.get(row.id);
+              if (!target) return;
+              void openVendorInvoiceLineDialog(target);
+            },
+          },
+          {
             key: 'annotation',
             label: '注釈',
             onSelect: (row) => {
@@ -1574,6 +1908,10 @@ export const VendorDocuments: React.FC = () => {
     : false;
   const activePo = poSendLogDialogId
     ? purchaseOrderMap.get(poSendLogDialogId)
+    : null;
+  const invoiceLinePurchaseOrderDetail = invoiceLineDialog?.invoice
+    .purchaseOrderId
+    ? purchaseOrderDetails[invoiceLineDialog.invoice.purchaseOrderId] || null
     : null;
 
   return (
@@ -2022,7 +2360,7 @@ export const VendorDocuments: React.FC = () => {
           )}
           <CrudList
             title="仕入請求一覧"
-            description="承認依頼・PO紐づけ・配賦明細編集を一覧から実行できます。"
+            description="承認依頼・PO紐づけ・配賦明細編集・請求明細編集を一覧から実行できます。"
             filters={
               <FilterBar
                 actions={
@@ -2768,6 +3106,433 @@ export const VendorDocuments: React.FC = () => {
                 }}
               >
                 {invoiceAllocationMessage.text}
+              </p>
+            )}
+          </div>
+        )}
+      </Dialog>
+      <Dialog
+        open={Boolean(invoiceLineDialog)}
+        onClose={() => setInvoiceLineDialog(null)}
+        title="仕入請求: 請求明細"
+        size="large"
+        footer={
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+            <Button
+              variant="secondary"
+              onClick={() => setInvoiceLineDialog(null)}
+              disabled={invoiceLineSaving}
+            >
+              閉じる
+            </Button>
+            <Button
+              onClick={saveVendorInvoiceLines}
+              disabled={invoiceLineSaving}
+            >
+              {invoiceLineSaving ? '更新中' : '更新'}
+            </Button>
+          </div>
+        }
+      >
+        {invoiceLineDialog && (
+          <div style={{ display: 'grid', gap: 12 }}>
+            <div style={{ fontSize: 12, color: '#64748b' }}>
+              <StatusBadge
+                status={invoiceLineDialog.invoice.status}
+                dictionary={erpStatusDictionary}
+                size="sm"
+              />{' '}
+              {invoiceLineDialog.invoice.vendorInvoiceNo || missingNumberLabel}
+              {' / '}
+              {renderProject(invoiceLineDialog.invoice.projectId)}
+              {' / '}
+              {renderVendor(invoiceLineDialog.invoice.vendorId)}
+              {' / '}
+              {formatAmount(
+                invoiceLineDialog.invoice.totalAmount,
+                invoiceLineDialog.invoice.currency,
+              )}
+            </div>
+            <div>
+              <div style={{ fontSize: 12, color: '#64748b' }}>請求書PDF</div>
+              {!invoiceLineDialog.invoice.documentUrl && (
+                <div style={{ fontSize: 12, color: '#94a3b8' }}>PDF未登録</div>
+              )}
+              {invoiceLineDialog.invoice.documentUrl && (
+                <div style={{ display: 'grid', gap: 8 }}>
+                  <a
+                    href={invoiceLineDialog.invoice.documentUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    style={{ fontSize: 12 }}
+                  >
+                    PDFを開く
+                  </a>
+                  {isPdfUrl(invoiceLineDialog.invoice.documentUrl) && (
+                    <iframe
+                      title="vendor-invoice-line-pdf"
+                      src={invoiceLineDialog.invoice.documentUrl}
+                      sandbox="allow-scripts allow-same-origin"
+                      style={{
+                        width: '100%',
+                        height: 320,
+                        border: '1px solid #e2e8f0',
+                        borderRadius: 8,
+                      }}
+                    />
+                  )}
+                </div>
+              )}
+            </div>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <Button
+                variant="secondary"
+                onClick={() => setInvoiceLineExpanded((prev) => !prev)}
+              >
+                {invoiceLineExpanded ? '請求明細を隠す' : '請求明細を入力'}
+              </Button>
+              <span style={{ fontSize: 12, color: '#64748b' }}>
+                請求明細は必要時のみ入力（未入力でも保存可）
+              </span>
+            </div>
+            {invoiceLineLoading && (
+              <div style={{ fontSize: 12, color: '#64748b' }}>
+                請求明細を読み込み中...
+              </div>
+            )}
+            {invoiceLineExpanded && !invoiceLineLoading && (
+              <div style={{ display: 'grid', gap: 8 }}>
+                <div>
+                  <button
+                    className="button secondary"
+                    onClick={addVendorInvoiceLineRow}
+                  >
+                    明細追加
+                  </button>
+                </div>
+                {invoiceLines.length === 0 && (
+                  <div style={{ fontSize: 12, color: '#94a3b8' }}>
+                    請求明細は未入力です
+                  </div>
+                )}
+                {invoiceLines.length > 0 && (
+                  <div style={{ overflowX: 'auto' }}>
+                    <table className="table">
+                      <thead>
+                        <tr>
+                          <th>行</th>
+                          <th>内容</th>
+                          <th>数量</th>
+                          <th>単価</th>
+                          <th>金額</th>
+                          <th>税率</th>
+                          <th>税額</th>
+                          {invoiceLineDialog.invoice.purchaseOrderId && (
+                            <th>PO明細</th>
+                          )}
+                          <th>操作</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {invoiceLines.map((entry, index) => {
+                          const quantity = parseNumberValue(entry.quantity);
+                          const unitPrice = parseNumberValue(entry.unitPrice);
+                          const calculatedAmount =
+                            quantity != null && unitPrice != null
+                              ? Math.round(quantity * unitPrice)
+                              : null;
+                          const amount = parseNumberValue(entry.amount);
+                          const amountBase = amount ?? calculatedAmount ?? 0;
+                          const taxRate = parseNumberValue(entry.taxRate);
+                          const calculatedTax =
+                            taxRate != null
+                              ? Math.round((amountBase * taxRate) / 100)
+                              : null;
+                          const selectedPoLineId =
+                            entry.purchaseOrderLineId?.trim() || '';
+                          const selectedPoLine = selectedPoLineId
+                            ? (
+                                invoiceLinePurchaseOrderDetail?.lines || []
+                              ).find((line) => line.id === selectedPoLineId)
+                            : null;
+                          const poQuantity = selectedPoLine
+                            ? parseNumberValue(selectedPoLine.quantity)
+                            : null;
+                          const requestedQuantity = selectedPoLineId
+                            ? invoiceLineRequestedQuantityByPoLine.get(
+                                selectedPoLineId,
+                              ) || 0
+                            : null;
+                          const exceedsPoQuantity =
+                            poQuantity != null &&
+                            requestedQuantity != null &&
+                            requestedQuantity - poQuantity > 0.00001;
+                          const hasAmountDiff =
+                            amount != null &&
+                            calculatedAmount != null &&
+                            Math.abs(amount - calculatedAmount) > 0.00001;
+                          return (
+                            <tr key={`line-${index}`}>
+                              <td>
+                                <input
+                                  type="number"
+                                  min={1}
+                                  value={entry.lineNo ?? index + 1}
+                                  onChange={(e) =>
+                                    updateVendorInvoiceLine(index, {
+                                      lineNo: e.target.value,
+                                    })
+                                  }
+                                  style={{ width: 72 }}
+                                />
+                              </td>
+                              <td>
+                                <input
+                                  type="text"
+                                  value={entry.description}
+                                  onChange={(e) =>
+                                    updateVendorInvoiceLine(index, {
+                                      description: e.target.value,
+                                    })
+                                  }
+                                  placeholder="内容"
+                                  style={{ minWidth: 200 }}
+                                />
+                              </td>
+                              <td>
+                                <input
+                                  type="number"
+                                  min={0}
+                                  value={entry.quantity}
+                                  onChange={(e) =>
+                                    updateVendorInvoiceLine(index, {
+                                      quantity: e.target.value,
+                                    })
+                                  }
+                                  style={{ width: 96 }}
+                                />
+                              </td>
+                              <td>
+                                <input
+                                  type="number"
+                                  min={0}
+                                  value={entry.unitPrice}
+                                  onChange={(e) =>
+                                    updateVendorInvoiceLine(index, {
+                                      unitPrice: e.target.value,
+                                    })
+                                  }
+                                  style={{ width: 110 }}
+                                />
+                              </td>
+                              <td>
+                                <input
+                                  type="number"
+                                  min={0}
+                                  value={entry.amount ?? ''}
+                                  onChange={(e) =>
+                                    updateVendorInvoiceLine(index, {
+                                      amount: e.target.value,
+                                    })
+                                  }
+                                  style={{ width: 120 }}
+                                />
+                                {hasAmountDiff && (
+                                  <div
+                                    style={{ fontSize: 11, color: '#dc2626' }}
+                                  >
+                                    自動計算との差分あり
+                                  </div>
+                                )}
+                              </td>
+                              <td>
+                                <input
+                                  type="number"
+                                  min={0}
+                                  value={entry.taxRate ?? ''}
+                                  onChange={(e) =>
+                                    updateVendorInvoiceLine(index, {
+                                      taxRate: e.target.value,
+                                    })
+                                  }
+                                  style={{ width: 80 }}
+                                />
+                              </td>
+                              <td>
+                                <input
+                                  type="number"
+                                  min={0}
+                                  value={entry.taxAmount ?? ''}
+                                  onChange={(e) =>
+                                    updateVendorInvoiceLine(index, {
+                                      taxAmount: e.target.value,
+                                    })
+                                  }
+                                  style={{ width: 120 }}
+                                />
+                                {calculatedTax != null && (
+                                  <div
+                                    style={{ fontSize: 11, color: '#94a3b8' }}
+                                  >
+                                    自動計算: {calculatedTax}
+                                  </div>
+                                )}
+                              </td>
+                              {invoiceLineDialog.invoice.purchaseOrderId && (
+                                <td>
+                                  <select
+                                    value={entry.purchaseOrderLineId ?? ''}
+                                    onChange={(e) =>
+                                      updateVendorInvoiceLine(index, {
+                                        purchaseOrderLineId: e.target.value,
+                                      })
+                                    }
+                                  >
+                                    <option value="">紐づけなし</option>
+                                    {(
+                                      invoiceLinePurchaseOrderDetail?.lines ||
+                                      []
+                                    ).map((line) => (
+                                      <option key={line.id} value={line.id}>
+                                        {line.description} / {line.quantity} x{' '}
+                                        {line.unitPrice}
+                                      </option>
+                                    ))}
+                                  </select>
+                                  {selectedPoLineId && (
+                                    <div
+                                      style={{
+                                        fontSize: 11,
+                                        color: exceedsPoQuantity
+                                          ? '#dc2626'
+                                          : '#64748b',
+                                      }}
+                                    >
+                                      入力合計: {requestedQuantity ?? 0} /
+                                      PO数量: {poQuantity ?? '-'}
+                                    </div>
+                                  )}
+                                </td>
+                              )}
+                              <td>
+                                <button
+                                  className="button secondary"
+                                  onClick={() => removeVendorInvoiceLine(index)}
+                                >
+                                  削除
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
+            {invoiceLineTotals && (
+              <div
+                style={{
+                  border: '1px solid #e2e8f0',
+                  borderRadius: 8,
+                  padding: 12,
+                  background: '#f8fafc',
+                  fontSize: 12,
+                }}
+              >
+                <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                  <div>
+                    税抜合計:{' '}
+                    {formatAmount(
+                      invoiceLineTotals.amountTotal,
+                      invoiceLineDialog.invoice.currency,
+                    )}
+                  </div>
+                  <div>
+                    税額合計:{' '}
+                    {formatAmount(
+                      invoiceLineTotals.taxTotal,
+                      invoiceLineDialog.invoice.currency,
+                    )}
+                  </div>
+                  <div>
+                    明細合計:{' '}
+                    {formatAmount(
+                      invoiceLineTotals.grossTotal,
+                      invoiceLineDialog.invoice.currency,
+                    )}
+                  </div>
+                  <div>
+                    請求合計:{' '}
+                    {formatAmount(
+                      invoiceLineDialog.invoice.totalAmount,
+                      invoiceLineDialog.invoice.currency,
+                    )}
+                  </div>
+                  {invoiceLineTotals.diff != null && (
+                    <div
+                      style={{
+                        color:
+                          Math.abs(invoiceLineTotals.diff) > 0.00001
+                            ? '#dc2626'
+                            : '#16a34a',
+                      }}
+                    >
+                      差分: {invoiceLineTotals.diff.toLocaleString()}{' '}
+                      {invoiceLineDialog.invoice.currency}
+                    </div>
+                  )}
+                </div>
+                {invoiceLineTotals.diff != null &&
+                  Math.abs(invoiceLineTotals.diff) > 0.00001 && (
+                    <div
+                      style={{
+                        marginTop: 8,
+                        color: '#dc2626',
+                        display: 'flex',
+                        gap: 8,
+                        alignItems: 'center',
+                        flexWrap: 'wrap',
+                      }}
+                    >
+                      <span>
+                        差分が残っています。数量/単価/税額を見直してください。
+                      </span>
+                      <Button
+                        variant="ghost"
+                        onClick={() => {
+                          const target = invoiceLineDialog.invoice;
+                          setInvoiceLineDialog(null);
+                          void openVendorInvoiceAllocationDialog(target);
+                        }}
+                      >
+                        配賦明細を開く
+                      </Button>
+                    </div>
+                  )}
+              </div>
+            )}
+            <input
+              type="text"
+              value={invoiceLineReason}
+              onChange={(e) => setInvoiceLineReason(e.target.value)}
+              placeholder={
+                isVendorInvoiceLineReasonRequiredStatus(
+                  invoiceLineDialog.invoice.status,
+                )
+                  ? '変更理由（必須）'
+                  : '変更理由（任意）'
+              }
+            />
+            {invoiceLineMessage && (
+              <p
+                style={{
+                  color:
+                    invoiceLineMessage.type === 'error' ? '#dc2626' : '#16a34a',
+                }}
+              >
+                {invoiceLineMessage.text}
               </p>
             )}
           </div>
