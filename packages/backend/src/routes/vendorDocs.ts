@@ -5,6 +5,7 @@ import { createApprovalPendingNotifications } from '../services/appNotifications
 import { FlowTypeValue, DocStatusValue } from '../types.js';
 import {
   vendorInvoiceAllocationsSchema,
+  vendorInvoiceLinesSchema,
   vendorInvoiceLinkPoSchema,
   vendorInvoiceSchema,
   vendorInvoiceUnlinkPoSchema,
@@ -18,6 +19,7 @@ import { evaluateActionPolicyWithFallback } from '../services/actionPolicy.js';
 import { logActionPolicyOverrideIfNeeded } from '../services/actionPolicyAudit.js';
 import { auditContextFromRequest, logAudit } from '../services/audit.js';
 import { normalizeVendorInvoiceAllocations } from '../services/vendorInvoiceAllocations.js';
+import { normalizeVendorInvoiceLines } from '../services/vendorInvoiceLines.js';
 
 function normalizeString(value: unknown) {
   return typeof value === 'string' ? value.trim() : '';
@@ -51,6 +53,30 @@ function isVendorInvoicePreSubmitStatus(status: string) {
     status === DocStatusValue.draft ||
     status === DocStatusValue.rejected
   );
+}
+
+function summarizeVendorInvoiceLineTotals(
+  lines: Array<{
+    amount: unknown;
+    taxAmount: unknown;
+    grossAmount: unknown;
+  }>,
+  invoiceTotal: number,
+) {
+  let amountTotal = 0;
+  let taxTotal = 0;
+  let grossTotal = 0;
+  for (const line of lines) {
+    amountTotal += parseNumberValue(line.amount) ?? 0;
+    taxTotal += parseNumberValue(line.taxAmount) ?? 0;
+    grossTotal += parseNumberValue(line.grossAmount) ?? 0;
+  }
+  return {
+    amountTotal,
+    taxTotal,
+    grossTotal,
+    diff: invoiceTotal - grossTotal,
+  };
 }
 
 export async function registerVendorDocRoutes(app: FastifyInstance) {
@@ -166,6 +192,43 @@ export async function registerVendorDocRoutes(app: FastifyInstance) {
         orderBy: { createdAt: 'asc' },
       });
       return { invoice, items };
+    },
+  );
+
+  app.get(
+    '/vendor-invoices/:id/lines',
+    { preHandler: requireRole(['admin', 'mgmt']) },
+    async (req, reply) => {
+      const { id } = req.params as { id: string };
+      const invoice = await prisma.vendorInvoice.findUnique({
+        where: { id },
+        select: {
+          id: true,
+          status: true,
+          projectId: true,
+          vendorId: true,
+          purchaseOrderId: true,
+          vendorInvoiceNo: true,
+          receivedDate: true,
+          dueDate: true,
+          currency: true,
+          totalAmount: true,
+          documentUrl: true,
+          deletedAt: true,
+        },
+      });
+      if (!invoice || invoice.deletedAt) {
+        return reply.status(404).send({
+          error: { code: 'NOT_FOUND', message: 'Vendor invoice not found' },
+        });
+      }
+      const items = await prisma.vendorInvoiceLine.findMany({
+        where: { vendorInvoiceId: id },
+        orderBy: [{ lineNo: 'asc' }, { createdAt: 'asc' }],
+      });
+      const invoiceTotal = parseNumberValue(invoice.totalAmount) ?? 0;
+      const totals = summarizeVendorInvoiceLineTotals(items, invoiceTotal);
+      return { invoice, items, totals };
     },
   );
 
@@ -622,6 +685,484 @@ export async function registerVendorDocRoutes(app: FastifyInstance) {
             grossTotal: normalized.totals.grossTotal,
             diff: normalized.totals.diff,
             adjusted: normalized.adjusted,
+          },
+          actionPolicy: policyRes.policyApplied
+            ? {
+                matchedPolicyId: (policyRes as any).matchedPolicyId ?? null,
+                requireReason: (policyRes as any).requireReason ?? false,
+              }
+            : { matchedPolicyId: null, requireReason: false },
+        } as Prisma.InputJsonValue,
+        ...auditContextFromRequest(req, actorId ? { userId: actorId } : {}),
+      });
+
+      return { items, totals: normalized.totals };
+    },
+  );
+
+  app.put(
+    '/vendor-invoices/:id/lines',
+    {
+      preHandler: requireRole(['admin', 'mgmt']),
+      schema: vendorInvoiceLinesSchema,
+    },
+    async (req, reply) => {
+      const { id } = req.params as { id: string };
+      const body = req.body as any;
+      const actorId = req.user?.userId;
+      const reasonText = normalizeString(body?.reasonText);
+      const autoAdjust = body?.autoAdjust !== false;
+      const invoice = await prisma.vendorInvoice.findUnique({
+        where: { id },
+        select: {
+          id: true,
+          status: true,
+          projectId: true,
+          vendorId: true,
+          purchaseOrderId: true,
+          currency: true,
+          totalAmount: true,
+          deletedAt: true,
+        },
+      });
+      if (!invoice || invoice.deletedAt) {
+        return reply.status(404).send({
+          error: { code: 'NOT_FOUND', message: 'Vendor invoice not found' },
+        });
+      }
+
+      const policyRes = await evaluateActionPolicyWithFallback({
+        flowType: FlowTypeValue.vendor_invoice,
+        actionKey: 'update_lines',
+        actor: {
+          userId: req.user?.userId ?? null,
+          roles: req.user?.roles || [],
+          groupIds: req.user?.groupIds || [],
+          groupAccountIds: req.user?.groupAccountIds || [],
+        },
+        reasonText,
+        state: { status: invoice.status, projectId: invoice.projectId },
+        targetTable: 'vendor_invoices',
+        targetId: id,
+      });
+      if (policyRes.policyApplied && !policyRes.allowed) {
+        if (policyRes.reason === 'reason_required') {
+          return reply.status(400).send({
+            error: {
+              code: 'REASON_REQUIRED',
+              message: 'reasonText is required for override',
+              details: { matchedPolicyId: policyRes.matchedPolicyId ?? null },
+            },
+          });
+        }
+        return reply.status(403).send({
+          error: {
+            code: 'ACTION_POLICY_DENIED',
+            message: 'Vendor invoice lines cannot be updated',
+            details: {
+              reason: policyRes.reason,
+              matchedPolicyId: policyRes.matchedPolicyId ?? null,
+              guardFailures: policyRes.guardFailures ?? null,
+            },
+          },
+        });
+      }
+      await logActionPolicyOverrideIfNeeded({
+        req,
+        flowType: FlowTypeValue.vendor_invoice,
+        actionKey: 'update_lines',
+        targetTable: 'vendor_invoices',
+        targetId: id,
+        reasonText,
+        result: policyRes,
+      });
+
+      const requiresReason =
+        !policyRes.policyApplied &&
+        !isVendorInvoicePreSubmitStatus(invoice.status);
+      if (requiresReason && !reasonText) {
+        return reply.status(400).send({
+          error: {
+            code: 'REASON_REQUIRED',
+            message: 'reasonText is required for override',
+          },
+        });
+      }
+
+      const rawLines = Array.isArray(body?.lines) ? body.lines : [];
+      const normalizedInputs: Array<{
+        lineNo: number;
+        description: string;
+        quantity: number;
+        unitPrice: number;
+        amount: number | null;
+        taxRate: number | null;
+        taxAmount: number | null;
+        purchaseOrderLineId: string | null;
+      }> = [];
+      const lineNos = new Set<number>();
+      const purchaseOrderLineIds = new Set<string>();
+
+      for (let i = 0; i < rawLines.length; i += 1) {
+        const entry = rawLines[i] || {};
+        const lineNoRaw = entry.lineNo;
+        const lineNo =
+          Number.isInteger(lineNoRaw) && Number(lineNoRaw) > 0
+            ? Number(lineNoRaw)
+            : i + 1;
+        if (lineNo <= 0) {
+          return reply.status(400).send({
+            error: {
+              code: 'INVALID_INPUT',
+              message: `lines[${i}].lineNo must be >= 1`,
+            },
+          });
+        }
+        if (lineNos.has(lineNo)) {
+          return reply.status(400).send({
+            error: {
+              code: 'INVALID_INPUT',
+              message: `lines[${i}].lineNo is duplicated`,
+            },
+          });
+        }
+        lineNos.add(lineNo);
+
+        const description = normalizeString(entry.description);
+        if (!description) {
+          return reply.status(400).send({
+            error: {
+              code: 'INVALID_INPUT',
+              message: `lines[${i}].description is required`,
+            },
+          });
+        }
+        const quantity = parseNumberValue(entry.quantity);
+        if (quantity == null || quantity <= 0) {
+          return reply.status(400).send({
+            error: {
+              code: 'INVALID_INPUT',
+              message: `lines[${i}].quantity must be > 0`,
+            },
+          });
+        }
+        const unitPrice = parseNumberValue(entry.unitPrice);
+        if (unitPrice == null || unitPrice < 0) {
+          return reply.status(400).send({
+            error: {
+              code: 'INVALID_INPUT',
+              message: `lines[${i}].unitPrice must be >= 0`,
+            },
+          });
+        }
+        const amountRaw = entry.amount;
+        const amount =
+          amountRaw === undefined || amountRaw === null
+            ? null
+            : parseNumberValue(amountRaw);
+        if (amountRaw != null && (amount == null || amount < 0)) {
+          return reply.status(400).send({
+            error: {
+              code: 'INVALID_INPUT',
+              message: `lines[${i}].amount must be >= 0`,
+            },
+          });
+        }
+        const taxRateRaw = entry.taxRate;
+        const taxRate =
+          taxRateRaw === undefined || taxRateRaw === null
+            ? null
+            : parseNumberValue(taxRateRaw);
+        if (taxRateRaw != null && (taxRate == null || taxRate < 0)) {
+          return reply.status(400).send({
+            error: {
+              code: 'INVALID_INPUT',
+              message: `lines[${i}].taxRate must be >= 0`,
+            },
+          });
+        }
+        const taxAmountRaw = entry.taxAmount;
+        const taxAmount =
+          taxAmountRaw === undefined || taxAmountRaw === null
+            ? null
+            : parseNumberValue(taxAmountRaw);
+        if (taxAmountRaw != null && (taxAmount == null || taxAmount < 0)) {
+          return reply.status(400).send({
+            error: {
+              code: 'INVALID_INPUT',
+              message: `lines[${i}].taxAmount must be >= 0`,
+            },
+          });
+        }
+        const purchaseOrderLineId = normalizeString(entry.purchaseOrderLineId);
+        if (purchaseOrderLineId) {
+          purchaseOrderLineIds.add(purchaseOrderLineId);
+        }
+        normalizedInputs.push({
+          lineNo,
+          description,
+          quantity,
+          unitPrice,
+          amount,
+          taxRate,
+          taxAmount,
+          purchaseOrderLineId: purchaseOrderLineId || null,
+        });
+      }
+
+      let purchaseOrderLineMap = new Map<
+        string,
+        { id: string; purchaseOrderId: string; quantity: unknown }
+      >();
+      if (purchaseOrderLineIds.size > 0) {
+        if (!invoice.purchaseOrderId) {
+          return reply.status(400).send({
+            error: {
+              code: 'INVALID_PURCHASE_ORDER_LINE',
+              message: 'purchaseOrderId is not linked to the invoice',
+            },
+          });
+        }
+        const lines = await prisma.purchaseOrderLine.findMany({
+          where: { id: { in: Array.from(purchaseOrderLineIds) } },
+          select: { id: true, purchaseOrderId: true, quantity: true },
+        });
+        purchaseOrderLineMap = new Map(lines.map((line) => [line.id, line]));
+        const missingLines = Array.from(purchaseOrderLineIds).filter(
+          (lineId) => !purchaseOrderLineMap.has(lineId),
+        );
+        if (missingLines.length) {
+          return reply.status(404).send({
+            error: {
+              code: 'NOT_FOUND',
+              message: 'Purchase order line not found',
+              details: {
+                missingPurchaseOrderLineIds: missingLines.slice(0, 20),
+              },
+            },
+          });
+        }
+        const invalidLines = lines.filter(
+          (line) => line.purchaseOrderId !== invoice.purchaseOrderId,
+        );
+        if (invalidLines.length) {
+          return reply.status(400).send({
+            error: {
+              code: 'INVALID_PURCHASE_ORDER_LINE',
+              message: 'Purchase order line does not belong to the linked PO',
+              details: {
+                invalidPurchaseOrderLineIds: invalidLines
+                  .map((line) => line.id)
+                  .slice(0, 20),
+              },
+            },
+          });
+        }
+      }
+
+      if (purchaseOrderLineIds.size > 0) {
+        const requestedQtyByLine = new Map<string, number>();
+        for (const line of normalizedInputs) {
+          if (!line.purchaseOrderLineId) continue;
+          const current = requestedQtyByLine.get(line.purchaseOrderLineId) || 0;
+          requestedQtyByLine.set(
+            line.purchaseOrderLineId,
+            current + line.quantity,
+          );
+        }
+        const existingLines = await prisma.vendorInvoiceLine.findMany({
+          where: {
+            purchaseOrderLineId: { in: Array.from(purchaseOrderLineIds) },
+            vendorInvoiceId: { not: id },
+            vendorInvoice: {
+              deletedAt: null,
+              status: {
+                notIn: [DocStatusValue.rejected, DocStatusValue.cancelled],
+              },
+            },
+          },
+          select: { purchaseOrderLineId: true, quantity: true },
+        });
+        const existingQtyByLine = new Map<string, number>();
+        for (const line of existingLines) {
+          const lineId = normalizeString(line.purchaseOrderLineId);
+          if (!lineId) continue;
+          const current = existingQtyByLine.get(lineId) || 0;
+          existingQtyByLine.set(
+            lineId,
+            current + (parseNumberValue(line.quantity) ?? 0),
+          );
+        }
+        const exceeded: Array<{
+          purchaseOrderLineId: string;
+          purchaseOrderQuantity: number;
+          existingQuantity: number;
+          requestedQuantity: number;
+        }> = [];
+        for (const lineId of purchaseOrderLineIds) {
+          const poLine = purchaseOrderLineMap.get(lineId);
+          if (!poLine) continue;
+          const purchaseOrderQuantity = parseNumberValue(poLine.quantity) ?? 0;
+          const existingQuantity = existingQtyByLine.get(lineId) || 0;
+          const requestedQuantity = requestedQtyByLine.get(lineId) || 0;
+          if (
+            existingQuantity + requestedQuantity - purchaseOrderQuantity >
+            0.00001
+          ) {
+            exceeded.push({
+              purchaseOrderLineId: lineId,
+              purchaseOrderQuantity,
+              existingQuantity,
+              requestedQuantity,
+            });
+          }
+        }
+        if (exceeded.length) {
+          return reply.status(400).send({
+            error: {
+              code: 'PO_LINE_QUANTITY_EXCEEDED',
+              message:
+                'Requested quantity exceeds purchase order line quantity',
+              details: { exceeded: exceeded.slice(0, 20) },
+            },
+          });
+        }
+      }
+
+      const invoiceTotal = parseNumberValue(invoice.totalAmount);
+      if (invoiceTotal == null) {
+        return reply.status(400).send({
+          error: {
+            code: 'INVALID_INVOICE_TOTAL',
+            message: 'Vendor invoice total is invalid',
+          },
+        });
+      }
+
+      const normalized = normalizeVendorInvoiceLines(
+        normalizedInputs.map((line) => ({
+          lineNo: line.lineNo,
+          description: line.description,
+          quantity: line.quantity,
+          unitPrice: line.unitPrice,
+          amount: line.amount,
+          taxRate: line.taxRate,
+          taxAmount: line.taxAmount,
+          purchaseOrderLineId: line.purchaseOrderLineId,
+        })),
+        invoiceTotal,
+        { autoAdjust },
+      );
+      if (
+        normalized.items.length > 0 &&
+        Math.abs(normalized.totals.diff) > 0.00001
+      ) {
+        return reply.status(400).send({
+          error: {
+            code: 'LINE_TOTAL_MISMATCH',
+            message: 'Line totals do not match invoice total',
+            details: {
+              invoiceTotal,
+              lineTotal: normalized.totals.grossTotal,
+              diff: normalized.totals.diff,
+            },
+          },
+        });
+      }
+
+      const beforeItems = await prisma.vendorInvoiceLine.findMany({
+        where: { vendorInvoiceId: id },
+        select: {
+          amount: true,
+          taxAmount: true,
+          grossAmount: true,
+          quantity: true,
+          purchaseOrderLineId: true,
+        },
+      });
+      const beforeSummary = summarizeVendorInvoiceLineTotals(
+        beforeItems,
+        invoiceTotal,
+      );
+      const beforeQtyByPoLine = new Map<string, number>();
+      for (const item of beforeItems) {
+        const lineId = normalizeString(item.purchaseOrderLineId);
+        if (!lineId) continue;
+        const current = beforeQtyByPoLine.get(lineId) || 0;
+        beforeQtyByPoLine.set(
+          lineId,
+          current + (parseNumberValue(item.quantity) ?? 0),
+        );
+      }
+
+      await prisma.$transaction(async (tx) => {
+        await tx.vendorInvoiceLine.deleteMany({
+          where: { vendorInvoiceId: id },
+        });
+        if (normalized.items.length > 0) {
+          await tx.vendorInvoiceLine.createMany({
+            data: normalized.items.map((line) => ({
+              vendorInvoiceId: id,
+              lineNo: line.lineNo,
+              description: line.description,
+              quantity: line.quantity,
+              unitPrice: line.unitPrice,
+              amount: line.amount,
+              taxRate: line.taxRate,
+              taxAmount: line.taxAmount,
+              grossAmount: line.grossAmount,
+              purchaseOrderLineId: line.purchaseOrderLineId,
+              createdBy: actorId ?? undefined,
+              updatedBy: actorId ?? undefined,
+            })),
+          });
+        }
+        await tx.vendorInvoice.update({
+          where: { id },
+          data: { updatedBy: actorId ?? undefined },
+        });
+      });
+
+      const items = await prisma.vendorInvoiceLine.findMany({
+        where: { vendorInvoiceId: id },
+        orderBy: [{ lineNo: 'asc' }, { createdAt: 'asc' }],
+      });
+      const afterQtyByPoLine = new Map<string, number>();
+      for (const item of normalized.items) {
+        const lineId = normalizeString(item.purchaseOrderLineId);
+        if (!lineId) continue;
+        const current = afterQtyByPoLine.get(lineId) || 0;
+        afterQtyByPoLine.set(lineId, current + item.quantity);
+      }
+
+      await logAudit({
+        action:
+          normalized.items.length > 0
+            ? 'vendor_invoice_lines_update'
+            : 'vendor_invoice_lines_clear',
+        targetTable: 'vendor_invoices',
+        targetId: id,
+        reasonText: reasonText || undefined,
+        metadata: {
+          status: invoice.status,
+          currency: invoice.currency,
+          invoiceTotal,
+          before: {
+            count: beforeItems.length,
+            amountTotal: beforeSummary.amountTotal,
+            taxTotal: beforeSummary.taxTotal,
+            grossTotal: beforeSummary.grossTotal,
+            diff: beforeSummary.diff,
+            quantityByPoLine: Object.fromEntries(beforeQtyByPoLine),
+          },
+          after: {
+            count: normalized.items.length,
+            amountTotal: normalized.totals.amountTotal,
+            taxTotal: normalized.totals.taxTotal,
+            grossTotal: normalized.totals.grossTotal,
+            diff: normalized.totals.diff,
+            quantityByPoLine: Object.fromEntries(afterQtyByPoLine),
+            autoAdjust,
           },
           actionPolicy: policyRes.policyApplied
             ? {
