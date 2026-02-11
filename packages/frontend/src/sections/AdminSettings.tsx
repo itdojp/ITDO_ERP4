@@ -229,7 +229,7 @@ const createDefaultAlertForm = () => ({
 
 type AlertFormDraftPayload = Omit<
   ReturnType<typeof createDefaultAlertForm>,
-  'channels'
+  'channels' | 'slackWebhooks' | 'webhooks'
 > & {
   channels: string[];
 };
@@ -379,7 +379,15 @@ export const AdminSettings: React.FC = () => {
   );
   const alertFormDraftValue = useMemo<AlertFormDraftPayload>(
     () => ({
-      ...alertForm,
+      type: alertForm.type,
+      threshold: alertForm.threshold,
+      period: alertForm.period,
+      scopeProjectId: alertForm.scopeProjectId,
+      remindAfterHours: alertForm.remindAfterHours,
+      remindMaxCount: alertForm.remindMaxCount,
+      emails: alertForm.emails,
+      roles: alertForm.roles,
+      users: alertForm.users,
       channels: Array.from(alertForm.channels),
     }),
     [alertForm],
@@ -390,6 +398,8 @@ export const AdminSettings: React.FC = () => {
     onRestore: (payload) => {
       setAlertForm({
         ...payload,
+        slackWebhooks: '',
+        webhooks: '',
         channels: new Set(payload.channels),
       });
       setEditingAlertId(null);
@@ -414,16 +424,16 @@ export const AdminSettings: React.FC = () => {
     },
     [alertForm],
   );
-  const canSubmitAlertForm = useMemo(
-    () =>
-      Boolean(
-        alertForm.type.trim() &&
-        alertForm.threshold.trim() &&
-        alertForm.period.trim() &&
-        channels.length > 0,
-      ),
-    [alertForm.period, alertForm.threshold, alertForm.type, channels.length],
-  );
+  const canSubmitAlertForm = useMemo(() => {
+    const thresholdValue = Number(alertForm.threshold.trim());
+    return Boolean(
+      alertForm.type.trim() &&
+      alertForm.threshold.trim() &&
+      Number.isFinite(thresholdValue) &&
+      alertForm.period.trim() &&
+      channels.length > 0,
+    );
+  }, [alertForm.period, alertForm.threshold, alertForm.type, channels.length]);
   const alertWizardSteps = useMemo(
     () => [
       {
@@ -433,6 +443,7 @@ export const AdminSettings: React.FC = () => {
         isComplete: Boolean(
           alertForm.type.trim() &&
           alertForm.threshold.trim() &&
+          Number.isFinite(Number(alertForm.threshold.trim())) &&
           alertForm.period.trim(),
         ),
         content: (
@@ -1302,6 +1313,12 @@ export const AdminSettings: React.FC = () => {
       setMessage('通知チャネルを選択してください');
       return;
     }
+    const thresholdRaw = alertForm.threshold.trim();
+    const thresholdValue = Number(thresholdRaw);
+    if (!thresholdRaw || !Number.isFinite(thresholdValue)) {
+      setMessage('閾値は数値で入力してください');
+      return;
+    }
     const remindAfterRaw = alertForm.remindAfterHours.trim();
     const remindMaxRaw = alertForm.remindMaxCount.trim();
     const remindAfter =
@@ -1319,7 +1336,7 @@ export const AdminSettings: React.FC = () => {
     }
     const payload = {
       type: alertForm.type,
-      threshold: Number(alertForm.threshold),
+      threshold: thresholdValue,
       period: alertForm.period,
       scopeProjectId: alertForm.scopeProjectId || undefined,
       remindAfterHours: Number.isFinite(remindAfter) ? remindAfter : undefined,
@@ -1349,7 +1366,11 @@ export const AdminSettings: React.FC = () => {
       }
       await loadAlertSettings();
       resetAlertForm();
-      await alertDraft.clearDraft();
+      try {
+        await alertDraft.clearDraft();
+      } catch (clearErr) {
+        logError('alertDraft.clearDraft failed', clearErr);
+      }
     } catch (err) {
       logError('submitAlertSetting failed', err);
       if (editingAlertId) {
