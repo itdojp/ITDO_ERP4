@@ -9,6 +9,13 @@ import ReactMarkdown from 'react-markdown';
 import remarkBreaks from 'remark-breaks';
 import remarkGfm from 'remark-gfm';
 import { api, apiResponse, getAuthState } from '../api';
+import {
+  AttachmentField,
+  Combobox,
+  type AttachmentRecord,
+  type ComboboxItem,
+  UndoToast,
+} from '../ui';
 import { copyToClipboard } from '../utils/clipboard';
 import { buildOpenHash } from '../utils/deepLink';
 import { toIsoFromLocalInput, toLocalDateTimeValue } from '../utils/datetime';
@@ -154,6 +161,15 @@ function transformLinkUri(uri?: string) {
 
 function sanitizeFilename(value: string) {
   return value.replace(/["\\\r\n]/g, '_').replace(/[/\\]/g, '_');
+}
+
+function resolveAttachmentKind(
+  mimeType: string | null | undefined,
+): AttachmentRecord['kind'] {
+  const normalized = (mimeType || '').toLowerCase();
+  if (normalized.startsWith('image/')) return 'image';
+  if (normalized === 'application/pdf') return 'pdf';
+  return 'file';
 }
 
 function buildExcerpt(value: string, maxLength = 200) {
@@ -333,6 +349,9 @@ export const RoomChat: React.FC = () => {
   const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
   const [filterTag, setFilterTag] = useState('');
   const [filterQuery, setFilterQuery] = useState('');
+  const [pendingUndoRevokeAck, setPendingUndoRevokeAck] = useState<{
+    requestId: string;
+  } | null>(null);
 
   const ackTargetUserIds = useMemo(
     () => Array.from(new Set(parseUserIds(ackTargets))),
@@ -345,6 +364,55 @@ export const RoomChat: React.FC = () => {
   const ackTargetRoleList = useMemo(
     () => Array.from(new Set(parseUserIds(ackTargetRoles))),
     [ackTargetRoles],
+  );
+  const ackTargetUserItems = useMemo<ComboboxItem[]>(
+    () =>
+      (ackCandidates.users || []).map((user) => ({
+        id: user.userId,
+        value: user.userId,
+        label: user.displayName
+          ? `${user.displayName} (${user.userId})`
+          : user.userId,
+        description: user.displayName ? user.userId : undefined,
+      })),
+    [ackCandidates.users],
+  );
+  const ackTargetGroupItems = useMemo<ComboboxItem[]>(
+    () =>
+      (ackCandidates.groups || []).map((group) => ({
+        id: group.groupId,
+        value: group.groupId,
+        label: group.displayName
+          ? `${group.displayName} (${group.groupId})`
+          : group.groupId,
+        description: group.displayName ? group.groupId : undefined,
+      })),
+    [ackCandidates.groups],
+  );
+  const ackTargetRoleItems = useMemo<ComboboxItem[]>(
+    () =>
+      ['admin', 'mgmt', 'exec', 'hr'].map((role) => ({
+        id: role,
+        value: role,
+        label: role,
+      })),
+    [],
+  );
+  const composerAttachments = useMemo<AttachmentRecord[]>(
+    () =>
+      attachmentFile
+        ? [
+            {
+              id: `composer-${attachmentFile.name}-${attachmentFile.size}`,
+              name: attachmentFile.name,
+              size: attachmentFile.size,
+              mimeType: attachmentFile.type || 'application/octet-stream',
+              kind: resolveAttachmentKind(attachmentFile.type),
+              status: 'queued',
+            },
+          ]
+        : [],
+    [attachmentFile],
   );
 
   useEffect(() => {
@@ -788,8 +856,8 @@ export const RoomChat: React.FC = () => {
     window.URL.revokeObjectURL(url);
   };
 
-  const addAckTargetUser = () => {
-    const value = ackTargetInput.trim();
+  const addAckTargetUser = (rawValue?: string) => {
+    const value = (rawValue ?? ackTargetInput).trim();
     if (!value) return;
     setAckTargets((prev) => {
       const current = parseUserIds(prev);
@@ -800,8 +868,8 @@ export const RoomChat: React.FC = () => {
     setAckCandidateQuery('');
   };
 
-  const addAckTargetGroup = () => {
-    const value = ackTargetGroupInput.trim();
+  const addAckTargetGroup = (rawValue?: string) => {
+    const value = (rawValue ?? ackTargetGroupInput).trim();
     if (!value) return;
     setAckTargetGroupIds((prev) => {
       const current = parseUserIds(prev);
@@ -812,8 +880,8 @@ export const RoomChat: React.FC = () => {
     setAckCandidateQuery('');
   };
 
-  const addAckTargetRole = () => {
-    const value = ackTargetRoleInput.trim();
+  const addAckTargetRole = (rawValue?: string) => {
+    const value = (rawValue ?? ackTargetRoleInput).trim();
     if (!value) return;
     setAckTargetRoles((prev) => {
       const current = parseUserIds(prev);
@@ -1626,38 +1694,33 @@ export const RoomChat: React.FC = () => {
                   placeholder="admin,mgmt"
                 />
               </label>
-              <label>
-                添付
-                <input
-                  type="file"
-                  onChange={(e) =>
-                    setAttachmentFile(e.target.files?.[0] || null)
-                  }
-                />
-              </label>
             </div>
+            <AttachmentField
+              attachments={composerAttachments}
+              labels={{
+                title: '添付',
+                addFiles: 'ファイルを選択',
+                empty: '添付ファイルはありません',
+              }}
+              onAddFiles={(files) => setAttachmentFile(files[0] || null)}
+              onRemoveAttachment={() => setAttachmentFile(null)}
+            />
             <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
-              <input
-                aria-label="確認対象ユーザ追加"
-                type="text"
-                list="room-ack-target-users"
-                value={ackTargetInput}
-                onChange={(e) => {
-                  setAckTargetInput(e.target.value);
-                  setAckCandidateQuery(e.target.value);
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    addAckTargetUser();
-                  }
-                }}
+              <Combobox
                 placeholder="確認対象: ユーザID (任意)"
-                style={{ flex: '1 1 240px' }}
+                value={ackTargetInput}
+                onChange={(value) => {
+                  setAckTargetInput(value);
+                  setAckCandidateQuery(value);
+                }}
+                items={ackTargetUserItems}
+                onSelect={(item) => addAckTargetUser(item.value ?? item.id)}
+                fullWidth
+                inputProps={{ 'aria-label': '確認対象ユーザ追加' }}
               />
               <button
                 className="button secondary"
-                onClick={addAckTargetUser}
+                onClick={() => addAckTargetUser()}
                 type="button"
               >
                 確認対象追加
@@ -1666,37 +1729,22 @@ export const RoomChat: React.FC = () => {
                 {ackTargetUserIds.length}/50
               </span>
             </div>
-            <datalist id="room-ack-target-users">
-              {(ackCandidates.users || []).map((user) => (
-                <option
-                  key={user.userId}
-                  value={user.userId}
-                  label={user.displayName ? `${user.displayName}` : user.userId}
-                />
-              ))}
-            </datalist>
             <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
-              <input
-                aria-label="確認対象グループ追加"
-                type="text"
-                list="room-ack-target-groups"
-                value={ackTargetGroupInput}
-                onChange={(e) => {
-                  setAckTargetGroupInput(e.target.value);
-                  setAckCandidateQuery(e.target.value);
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    addAckTargetGroup();
-                  }
-                }}
+              <Combobox
                 placeholder="確認対象: グループID (任意)"
-                style={{ flex: '1 1 240px' }}
+                value={ackTargetGroupInput}
+                onChange={(value) => {
+                  setAckTargetGroupInput(value);
+                  setAckCandidateQuery(value);
+                }}
+                items={ackTargetGroupItems}
+                onSelect={(item) => addAckTargetGroup(item.value ?? item.id)}
+                fullWidth
+                inputProps={{ 'aria-label': '確認対象グループ追加' }}
               />
               <button
                 className="button secondary"
-                onClick={addAckTargetGroup}
+                onClick={() => addAckTargetGroup()}
                 type="button"
               >
                 グループ追加
@@ -1705,38 +1753,19 @@ export const RoomChat: React.FC = () => {
                 {ackTargetGroupIdList.length}/20
               </span>
             </div>
-            <datalist id="room-ack-target-groups">
-              {(ackCandidates.groups || []).map((group) => (
-                <option
-                  key={group.groupId}
-                  value={group.groupId}
-                  label={
-                    group.displayName
-                      ? `${group.displayName} (${group.groupId})`
-                      : group.groupId
-                  }
-                />
-              ))}
-            </datalist>
             <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
-              <input
-                aria-label="確認対象ロール追加"
-                type="text"
-                list="room-ack-target-roles"
-                value={ackTargetRoleInput}
-                onChange={(e) => setAckTargetRoleInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    addAckTargetRole();
-                  }
-                }}
+              <Combobox
                 placeholder="確認対象: ロール (任意)"
-                style={{ flex: '1 1 240px' }}
+                value={ackTargetRoleInput}
+                onChange={(value) => setAckTargetRoleInput(value)}
+                items={ackTargetRoleItems}
+                onSelect={(item) => addAckTargetRole(item.value ?? item.id)}
+                fullWidth
+                inputProps={{ 'aria-label': '確認対象ロール追加' }}
               />
               <button
                 className="button secondary"
-                onClick={addAckTargetRole}
+                onClick={() => addAckTargetRole()}
                 type="button"
               >
                 ロール追加
@@ -1745,11 +1774,6 @@ export const RoomChat: React.FC = () => {
                 {ackTargetRoleList.length}/20
               </span>
             </div>
-            <datalist id="room-ack-target-roles">
-              {['admin', 'mgmt', 'exec', 'hr'].map((role) => (
-                <option key={role} value={role} />
-              ))}
-            </datalist>
             <div
               className="row"
               style={{
@@ -1870,6 +1894,28 @@ export const RoomChat: React.FC = () => {
             </div>
           </div>
         </div>
+      )}
+      {pendingUndoRevokeAck && (
+        <UndoToast
+          title="OK取消を保留しています"
+          description="数秒後に確定します。取り消す場合はUndoを押してください。"
+          severity="warning"
+          durationMs={5000}
+          labels={{ undo: '取り消す' }}
+          onUndo={() => {
+            setPendingUndoRevokeAck(null);
+            setMessage('OK取消を中止しました');
+          }}
+          onCommit={() => {
+            const target = pendingUndoRevokeAck;
+            if (!target) return;
+            setPendingUndoRevokeAck(null);
+            revokeAck(target.requestId).catch(() => undefined);
+          }}
+          onDismiss={() => {
+            setPendingUndoRevokeAck(null);
+          }}
+        />
       )}
 
       <div className="card" style={{ padding: 12, marginTop: 12 }}>
@@ -2099,11 +2145,11 @@ export const RoomChat: React.FC = () => {
                         {canRevoke && (
                           <button
                             className="button secondary"
-                            onClick={() => {
-                              if (!window.confirm('OKを取り消しますか？'))
-                                return;
-                              revokeAck(ackRequest.id).catch(() => undefined);
-                            }}
+                            onClick={() =>
+                              setPendingUndoRevokeAck({
+                                requestId: ackRequest.id,
+                              })
+                            }
                           >
                             OK取消
                           </button>

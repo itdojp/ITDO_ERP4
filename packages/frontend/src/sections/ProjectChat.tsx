@@ -4,6 +4,13 @@ import remarkBreaks from 'remark-breaks';
 import remarkGfm from 'remark-gfm';
 import { api, apiResponse, getAuthState } from '../api';
 import { useChatRooms } from '../hooks/useChatRooms';
+import {
+  AttachmentField,
+  Combobox,
+  type AttachmentRecord,
+  type ComboboxItem,
+  UndoToast,
+} from '../ui';
 import { copyToClipboard } from '../utils/clipboard';
 import { toIsoFromLocalInput, toLocalDateTimeValue } from '../utils/datetime';
 import { buildOpenHash } from '../utils/deepLink';
@@ -159,6 +166,15 @@ function transformLinkUri(uri?: string) {
 
 function sanitizeFilename(value: string) {
   return value.replace(/["\\\r\n]/g, '_').replace(/[/\\]/g, '_');
+}
+
+function resolveAttachmentKind(
+  mimeType: string | null | undefined,
+): AttachmentRecord['kind'] {
+  const normalized = (mimeType || '').toLowerCase();
+  if (normalized.startsWith('image/')) return 'image';
+  if (normalized === 'application/pdf') return 'pdf';
+  return 'file';
 }
 
 function formatBreakGlassStatus(status: string) {
@@ -356,12 +372,88 @@ export const ProjectChat: React.FC = () => {
   const [isNotificationSettingLoading, setIsNotificationSettingLoading] =
     useState(false);
   const [muteUntilInput, setMuteUntilInput] = useState('');
+  const [pendingUndoRevokeAck, setPendingUndoRevokeAck] = useState<{
+    requestId: string;
+  } | null>(null);
 
   const ackTargetUserIds = Array.from(new Set(parseUserIds(ackTargets)));
   const ackTargetGroupIdList = Array.from(
     new Set(parseUserIds(ackTargetGroupIds)),
   );
   const ackTargetRoleList = Array.from(new Set(parseUserIds(ackTargetRoles)));
+  const mentionUserItems = useMemo<ComboboxItem[]>(
+    () =>
+      (mentionCandidates.users || []).map((user) => ({
+        id: user.userId,
+        value: user.userId,
+        label: user.displayName
+          ? `${user.displayName} (${user.userId})`
+          : user.userId,
+        description: user.displayName ? user.userId : undefined,
+      })),
+    [mentionCandidates.users],
+  );
+  const mentionGroupItems = useMemo<ComboboxItem[]>(
+    () =>
+      (mentionCandidates.groups || []).map((group) => ({
+        id: group.groupId,
+        value: group.groupId,
+        label: group.displayName
+          ? `${group.displayName} (${group.groupId})`
+          : group.groupId,
+        description: group.displayName ? group.groupId : undefined,
+      })),
+    [mentionCandidates.groups],
+  );
+  const ackTargetUserItems = useMemo<ComboboxItem[]>(
+    () =>
+      (ackCandidates.users || []).map((user) => ({
+        id: user.userId,
+        value: user.userId,
+        label: user.displayName
+          ? `${user.displayName} (${user.userId})`
+          : user.userId,
+        description: user.displayName ? user.userId : undefined,
+      })),
+    [ackCandidates.users],
+  );
+  const ackTargetGroupItems = useMemo<ComboboxItem[]>(
+    () =>
+      (ackCandidates.groups || []).map((group) => ({
+        id: group.groupId,
+        value: group.groupId,
+        label: group.displayName
+          ? `${group.displayName} (${group.groupId})`
+          : group.groupId,
+        description: group.displayName ? group.groupId : undefined,
+      })),
+    [ackCandidates.groups],
+  );
+  const ackTargetRoleItems = useMemo<ComboboxItem[]>(
+    () =>
+      ['admin', 'mgmt', 'exec', 'hr'].map((role) => ({
+        id: role,
+        value: role,
+        label: role,
+      })),
+    [],
+  );
+  const composerAttachments = useMemo<AttachmentRecord[]>(
+    () =>
+      attachmentFile
+        ? [
+            {
+              id: `composer-${attachmentFile.name}-${attachmentFile.size}`,
+              name: attachmentFile.name,
+              size: attachmentFile.size,
+              mimeType: attachmentFile.type || 'application/octet-stream',
+              kind: resolveAttachmentKind(attachmentFile.type),
+              status: 'queued',
+            },
+          ]
+        : [],
+    [attachmentFile],
+  );
 
   useEffect(() => {
     setAckPreview(null);
@@ -690,8 +782,8 @@ export const ProjectChat: React.FC = () => {
     };
   }, [projectId]);
 
-  const addMentionUser = () => {
-    const value = mentionUserInput.trim();
+  const addMentionUser = (rawValue?: string) => {
+    const value = (rawValue ?? mentionUserInput).trim();
     if (!value) return;
     setMentionUserIds((prev) =>
       prev.includes(value) ? prev : [...prev, value].slice(0, 50),
@@ -699,8 +791,8 @@ export const ProjectChat: React.FC = () => {
     setMentionUserInput('');
   };
 
-  const addMentionGroup = () => {
-    const value = mentionGroupInput.trim();
+  const addMentionGroup = (rawValue?: string) => {
+    const value = (rawValue ?? mentionGroupInput).trim();
     if (!value) return;
     setMentionGroupIds((prev) =>
       prev.includes(value) ? prev : [...prev, value].slice(0, 20),
@@ -708,8 +800,8 @@ export const ProjectChat: React.FC = () => {
     setMentionGroupInput('');
   };
 
-  const addAckTargetUser = () => {
-    const value = ackTargetInput.trim();
+  const addAckTargetUser = (rawValue?: string) => {
+    const value = (rawValue ?? ackTargetInput).trim();
     if (!value) return;
     const current = parseUserIds(ackTargets);
     const next = Array.from(new Set([...current, value])).slice(0, 50);
@@ -718,8 +810,8 @@ export const ProjectChat: React.FC = () => {
     setAckCandidateQuery('');
   };
 
-  const addAckTargetGroup = () => {
-    const value = ackTargetGroupInput.trim();
+  const addAckTargetGroup = (rawValue?: string) => {
+    const value = (rawValue ?? ackTargetGroupInput).trim();
     if (!value) return;
     const current = parseUserIds(ackTargetGroupIds);
     const next = Array.from(new Set([...current, value])).slice(0, 20);
@@ -728,8 +820,8 @@ export const ProjectChat: React.FC = () => {
     setAckCandidateQuery('');
   };
 
-  const addAckTargetRole = () => {
-    const value = ackTargetRoleInput.trim();
+  const addAckTargetRole = (rawValue?: string) => {
+    const value = (rawValue ?? ackTargetRoleInput).trim();
     if (!value) return;
     const current = parseUserIds(ackTargetRoles);
     const next = Array.from(new Set([...current, value])).slice(0, 20);
@@ -1435,82 +1527,54 @@ export const ProjectChat: React.FC = () => {
           placeholder="タグ (comma separated)"
           style={{ width: '100%', marginTop: 8 }}
         />
-        <input
-          aria-label="添付"
-          type="file"
-          onChange={(e) => setAttachmentFile(e.target.files?.[0] || null)}
-          style={{ width: '100%', marginTop: 8 }}
-        />
-        <div className="row" style={{ gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
-          <input
-            aria-label="メンションユーザ"
-            type="text"
-            list="chat-mention-users"
-            value={mentionUserInput}
-            onChange={(e) => setMentionUserInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                e.preventDefault();
-                addMentionUser();
-              }
+        <div style={{ marginTop: 8 }}>
+          <AttachmentField
+            attachments={composerAttachments}
+            labels={{
+              title: '添付',
+              addFiles: 'ファイルを選択',
+              empty: '添付ファイルはありません',
             }}
+            onAddFiles={(files) => setAttachmentFile(files[0] || null)}
+            onRemoveAttachment={() => setAttachmentFile(null)}
+          />
+        </div>
+        <div className="row" style={{ gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
+          <Combobox
             placeholder="メンション: ユーザID (任意)"
-            style={{ flex: '1 1 240px' }}
+            value={mentionUserInput}
+            onChange={(value) => setMentionUserInput(value)}
+            items={mentionUserItems}
+            onSelect={(item) => addMentionUser(item.value ?? item.id)}
+            fullWidth
+            inputProps={{ 'aria-label': 'メンションユーザ' }}
           />
           <button
             className="button secondary"
-            onClick={addMentionUser}
+            onClick={() => addMentionUser()}
             type="button"
           >
             ユーザ追加
           </button>
         </div>
-        <datalist id="chat-mention-users">
-          {(mentionCandidates.users || []).map((user) => (
-            <option
-              key={user.userId}
-              value={user.userId}
-              label={user.displayName ? `${user.displayName}` : user.userId}
-            />
-          ))}
-        </datalist>
         <div className="row" style={{ gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
-          <input
-            aria-label="メンショングループ"
-            type="text"
-            list="chat-mention-groups"
-            value={mentionGroupInput}
-            onChange={(e) => setMentionGroupInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                e.preventDefault();
-                addMentionGroup();
-              }
-            }}
+          <Combobox
             placeholder="メンション: グループID (任意)"
-            style={{ flex: '1 1 240px' }}
+            value={mentionGroupInput}
+            onChange={(value) => setMentionGroupInput(value)}
+            items={mentionGroupItems}
+            onSelect={(item) => addMentionGroup(item.value ?? item.id)}
+            fullWidth
+            inputProps={{ 'aria-label': 'メンショングループ' }}
           />
           <button
             className="button secondary"
-            onClick={addMentionGroup}
+            onClick={() => addMentionGroup()}
             type="button"
           >
             グループ追加
           </button>
         </div>
-        <datalist id="chat-mention-groups">
-          {(mentionCandidates.groups || []).map((group) => (
-            <option
-              key={group.groupId}
-              value={group.groupId}
-              label={
-                group.displayName
-                  ? `${group.displayName} (${group.groupId})`
-                  : group.groupId
-              }
-            />
-          ))}
-        </datalist>
         {(mentionCandidates.allowAll ?? true) && (
           <label style={{ display: 'block', marginTop: 8 }}>
             <input
@@ -1582,27 +1646,21 @@ export const ProjectChat: React.FC = () => {
           style={{ width: '100%', marginTop: 8 }}
         />
         <div className="row" style={{ gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
-          <input
-            aria-label="確認対象ユーザ追加"
-            type="text"
-            list="chat-ack-target-users"
-            value={ackTargetInput}
-            onChange={(e) => {
-              setAckTargetInput(e.target.value);
-              setAckCandidateQuery(e.target.value);
-            }}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                e.preventDefault();
-                addAckTargetUser();
-              }
-            }}
+          <Combobox
             placeholder="確認対象: ユーザID (任意)"
-            style={{ flex: '1 1 240px' }}
+            value={ackTargetInput}
+            onChange={(value) => {
+              setAckTargetInput(value);
+              setAckCandidateQuery(value);
+            }}
+            items={ackTargetUserItems}
+            onSelect={(item) => addAckTargetUser(item.value ?? item.id)}
+            fullWidth
+            inputProps={{ 'aria-label': '確認対象ユーザ追加' }}
           />
           <button
             className="button secondary"
-            onClick={addAckTargetUser}
+            onClick={() => addAckTargetUser()}
             type="button"
           >
             確認対象追加
@@ -1611,15 +1669,6 @@ export const ProjectChat: React.FC = () => {
             {ackTargetUserIds.length}/50
           </span>
         </div>
-        <datalist id="chat-ack-target-users">
-          {(ackCandidates.users || []).map((user) => (
-            <option
-              key={user.userId}
-              value={user.userId}
-              label={user.displayName ? `${user.displayName}` : user.userId}
-            />
-          ))}
-        </datalist>
         <input
           type="text"
           value={ackTargetGroupIds}
@@ -1628,27 +1677,21 @@ export const ProjectChat: React.FC = () => {
           style={{ width: '100%', marginTop: 8 }}
         />
         <div className="row" style={{ gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
-          <input
-            aria-label="確認対象グループ追加"
-            type="text"
-            list="chat-ack-target-groups"
-            value={ackTargetGroupInput}
-            onChange={(e) => {
-              setAckTargetGroupInput(e.target.value);
-              setAckCandidateQuery(e.target.value);
-            }}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                e.preventDefault();
-                addAckTargetGroup();
-              }
-            }}
+          <Combobox
             placeholder="確認対象: グループID (任意)"
-            style={{ flex: '1 1 240px' }}
+            value={ackTargetGroupInput}
+            onChange={(value) => {
+              setAckTargetGroupInput(value);
+              setAckCandidateQuery(value);
+            }}
+            items={ackTargetGroupItems}
+            onSelect={(item) => addAckTargetGroup(item.value ?? item.id)}
+            fullWidth
+            inputProps={{ 'aria-label': '確認対象グループ追加' }}
           />
           <button
             className="button secondary"
-            onClick={addAckTargetGroup}
+            onClick={() => addAckTargetGroup()}
             type="button"
           >
             グループ追加
@@ -1657,19 +1700,6 @@ export const ProjectChat: React.FC = () => {
             {ackTargetGroupIdList.length}/20
           </span>
         </div>
-        <datalist id="chat-ack-target-groups">
-          {(ackCandidates.groups || []).map((group) => (
-            <option
-              key={group.groupId}
-              value={group.groupId}
-              label={
-                group.displayName
-                  ? `${group.displayName} (${group.groupId})`
-                  : group.groupId
-              }
-            />
-          ))}
-        </datalist>
         <input
           type="text"
           value={ackTargetRoles}
@@ -1678,24 +1708,18 @@ export const ProjectChat: React.FC = () => {
           style={{ width: '100%', marginTop: 8 }}
         />
         <div className="row" style={{ gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
-          <input
-            aria-label="確認対象ロール追加"
-            type="text"
-            list="chat-ack-required-roles"
-            value={ackTargetRoleInput}
-            onChange={(e) => setAckTargetRoleInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                e.preventDefault();
-                addAckTargetRole();
-              }
-            }}
+          <Combobox
             placeholder="確認対象: ロール (任意)"
-            style={{ flex: '1 1 240px' }}
+            value={ackTargetRoleInput}
+            onChange={(value) => setAckTargetRoleInput(value)}
+            items={ackTargetRoleItems}
+            onSelect={(item) => addAckTargetRole(item.value ?? item.id)}
+            fullWidth
+            inputProps={{ 'aria-label': '確認対象ロール追加' }}
           />
           <button
             className="button secondary"
-            onClick={addAckTargetRole}
+            onClick={() => addAckTargetRole()}
             type="button"
           >
             ロール追加
@@ -1704,11 +1728,6 @@ export const ProjectChat: React.FC = () => {
             {ackTargetRoleList.length}/20
           </span>
         </div>
-        <datalist id="chat-ack-required-roles">
-          {['admin', 'mgmt', 'exec', 'hr'].map((role) => (
-            <option key={role} value={role} />
-          ))}
-        </datalist>
         <div
           className="row"
           style={{
@@ -1819,6 +1838,28 @@ export const ProjectChat: React.FC = () => {
         </div>
       </div>
       {message && <p>{message}</p>}
+      {pendingUndoRevokeAck && (
+        <UndoToast
+          title="OK取消を保留しています"
+          description="数秒後に確定します。取り消す場合はUndoを押してください。"
+          severity="warning"
+          durationMs={5000}
+          labels={{ undo: '取り消す' }}
+          onUndo={() => {
+            setPendingUndoRevokeAck(null);
+            setMessage('OK取消を中止しました');
+          }}
+          onCommit={() => {
+            const target = pendingUndoRevokeAck;
+            if (!target) return;
+            setPendingUndoRevokeAck(null);
+            revokeAck(target.requestId).catch(() => undefined);
+          }}
+          onDismiss={() => {
+            setPendingUndoRevokeAck(null);
+          }}
+        />
+      )}
       {summary && (
         <div
           style={{
@@ -2085,12 +2126,11 @@ export const ProjectChat: React.FC = () => {
                       {canRevoke && (
                         <button
                           className="button secondary"
-                          onClick={() => {
-                            if (!window.confirm('OKを取り消しますか？')) return;
-                            revokeAck(item.ackRequest!.id).catch(
-                              () => undefined,
-                            );
-                          }}
+                          onClick={() =>
+                            setPendingUndoRevokeAck({
+                              requestId: item.ackRequest!.id,
+                            })
+                          }
                         >
                           OK取消
                         </button>
