@@ -240,8 +240,16 @@
 3. 仕入見積で案件・業者・見積番号・金額・通貨・発行日・書類URLを入力し `登録`
 4. 仕入請求で案件・業者・請求番号・金額・通貨・受領日・支払期限・書類URLを入力し `登録`
 5. 仕入請求一覧の `PO紐づけ` で関連発注書（PO）を設定/解除する（ステータスにより変更理由が必須）
-6. 仕入請求一覧の `配賦明細` で PDF を確認し、必要な場合のみ配賦明細を入力する
-7. 仕入請求の `承認依頼` を実行する
+6. 仕入請求一覧の `請求明細` で PDF を確認し、必要な場合のみ請求明細（数量/単価/税率/税額）を入力する
+7. 仕入請求一覧の `配賦明細` で案件配賦を入力する（必要時のみ）
+8. 仕入請求の `承認依頼` を実行する
+
+### 補足（仕入請求の明細入力）
+
+- `請求明細` は未入力でも保存可能（段階移行を想定）
+- 差分がある場合は明細合計カードに警告表示される
+- PO紐づけ時は明細ごとに `PO明細` を選択可能。入力数量の合計がPO数量を超えると更新できない
+- 差分解消が難しい場合は `配賦明細を開く` から配賦入力へ遷移し、理由を添えて調整する
 
 ![ベンダー書類一覧](../test-results/2026-02-05-frontend-e2e-r1/06-vendor-docs.png)
 ![ベンダー書類作成](../test-results/2026-02-05-frontend-e2e-r1/06-vendor-docs-create.png)
@@ -317,6 +325,20 @@
 2. requiredUserIds / requiredGroupIds / requiredRoles（JSON配列）で対象を指定する
 3. dueInHours / remindIntervalHours / escalationAfterHours を必要に応じて設定する
 4. `作成` / `更新` / `再読込` を実行する
+
+### 合意形成テンプレ運用ルール
+
+1. actionKey は `domain.action_ack.vN`（例: `invoice.submit_ack.v1`）で作成する
+2. 破壊的変更は既存テンプレ更新ではなく、`vN` を繰り上げた新規テンプレで管理する
+3. owner/review周期は台帳 `docs/requirements/chat-ack-template-ledger.csv` に記録する
+4. review周期（`reviewCycleDays`）を超えたテンプレは、月次棚卸しで継続可否を判定する
+5. 廃止時は「後継テンプレ作成 → 旧テンプレを非推奨化（台帳 `status=deprecated` + `replacedBy` 設定、UI上は `isEnabled=true` 維持）→ 切替完了後に旧テンプレ `isEnabled=false` + 台帳 `status=retired`」の順で更新する
+
+### 入力項目/制約（合意形成テンプレ）
+
+- flowType は FlowType の定義値のみ利用する
+- actionKey の重複運用を避けるため、同一 flowType で同一 actionKey について `isEnabled=true` かつ台帳 `status=active` のテンプレは1件のみとする
+- messageBody は目的と確認観点が分かる文面にする（期限/エスカレーション条件を明記）
 
 ### 詳細操作（テンプレ設定）
 

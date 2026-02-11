@@ -8,7 +8,7 @@
 - `VendorInvoice.purchaseOrderId`（任意）により、PO→VI の 1対多（PO:1 → VI:n、VI→PO は 0..1）を表現可能
 
 ## 差分/課題
-- UI導線（PO→VI 作成/参照、VI の POリンク変更/解除、PDF表示＋必要時のみ配賦明細入力）は実装済み
+- UI導線（PO→VI 作成/参照、VI の POリンク変更/解除、PDF表示＋必要時のみ請求明細/配賦明細入力）は実装済み
 - 変更ロック/監査は status/権限により制御（paid の扱い等は後続の運用で強化可能）
 
 ## MVP方針
@@ -18,7 +18,7 @@
   - `received` / `draft` / `rejected`: 通常運用で変更/解除可
   - `pending_qa` 以降: admin/mgmt のみ（理由必須 + 監査）
   - `paid`: 原則禁止。ただし例外時は admin/mgmt + 理由必須 + 監査で許可
-- 明細対応: MVPは「参照のみ」（明細レベルの厳密整合は後続）
+- 明細対応: MVPは「PDF参照を基本に、必要時のみ配賦明細/請求明細を入力」（明細レベルの厳密整合は後続）
 
 ## 補足（現行実装）
 ### 差戻し時の扱い
@@ -34,6 +34,8 @@
 ### UI導線（実装済み）
 - Admin > VendorDocuments で PO→VI 作成、PO詳細でリンク済みVI一覧を参照できる
 - VI 側で POリンクの変更/解除が可能（制約は status/権限/理由/監査で制御）
+- VI の「請求明細」では、PDF表示を基本にし、必要なときだけ明細（数量/単価/税率/税額）を入力/表示する
+  - PO紐づけ済みVIでは、請求明細ごとの `purchaseOrderLineId` 選択と数量上限チェックを行う
 - VI の「配賦明細」では、PDF表示を基本にし、必要なときだけ配賦明細を入力/表示する
   - 参考: `docs/manual/ui-manual-admin.md`、`packages/frontend/src/sections/VendorDocuments.tsx`
 
@@ -70,7 +72,7 @@
 
 ### 実装状況（#768）
 - Phase 0/1: 仕入請求の配賦明細（任意入力）・税率別サマリ・PDF表示・PO明細参照/選択を実装
-- Phase 2: 部分着手（`VendorInvoiceLine` テーブル + `GET/PUT /vendor-invoices/:id/lines` を実装、UIは後続）
+- Phase 2: 部分請求向けの請求明細（`VendorInvoiceLine`）を実装し、`GET/PUT /vendor-invoices/:id/lines` + UI（必要時のみ入力、差分警告、修正導線）を追加
 - 配賦明細は参照/監査用途のため、原価集計への反映は後続で検討
 
 ### Phase 2（着手分: #920）
@@ -80,6 +82,12 @@
   - 請求総額（`VendorInvoice.totalAmount`）と行合計（`grossAmount`）の整合
   - PO明細紐付け行の数量合計が、同PO明細の数量上限を超えないこと（他VIの既存行を含む）
 - 監査ログ: `vendor_invoice_lines_update` / `vendor_invoice_lines_clear`
+
+### 移行方針（既存VIに line 無しを許容）
+- 既存の `VendorInvoice` は line 未登録のまま運用継続可能とする（line入力は任意）
+- `GET /vendor-invoices/:id/lines` は line 未登録の場合 `items=[]` を返し、UIは「未入力」の状態として表示する
+- 請求合計の厳密整合が必要なケースのみ line を入力し、段階的に line 運用へ移行する
+- line 入力に移行した後も、配賦明細入力は案件別配賦の用途で並行利用できる
 
 ### 後続検討（Phase 2）: データモデル拡張案（例）
 - 現行: `VendorInvoiceAllocation`（案件/税率別、任意で `purchaseOrderLineId`）で運用する
