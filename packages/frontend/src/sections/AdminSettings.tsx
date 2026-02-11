@@ -1,5 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '../api';
+import {
+  FormWizard,
+  createLocalStorageDraftAutosaveAdapter,
+  useDraftAutosave,
+} from '../ui';
 import { ChatSettingsCard } from './ChatSettingsCard';
 import { ChatRoomSettingsCard } from './ChatRoomSettingsCard';
 import { GroupManagementCard } from './GroupManagementCard';
@@ -222,6 +227,13 @@ const createDefaultAlertForm = () => ({
   channels: new Set<string>(['email', 'dashboard']),
 });
 
+type AlertFormDraftPayload = Omit<
+  ReturnType<typeof createDefaultAlertForm>,
+  'channels'
+> & {
+  channels: string[];
+};
+
 const createDefaultRuleForm = () => ({
   flowType: 'invoice',
   version: '1',
@@ -301,6 +313,7 @@ export const AdminSettings: React.FC = () => {
   );
   const [message, setMessage] = useState('');
   const [alertForm, setAlertForm] = useState(createDefaultAlertForm);
+  const [alertWizardStep, setAlertWizardStep] = useState('basic');
   const [ruleForm, setRuleForm] = useState(createDefaultRuleForm);
   const [actionPolicyForm, setActionPolicyForm] = useState(
     createDefaultActionPolicyForm,
@@ -357,10 +370,245 @@ export const AdminSettings: React.FC = () => {
   const [reportDeliveryFilterId, setReportDeliveryFilterId] =
     useState<string>('');
   const [reportDryRun, setReportDryRun] = useState(true);
+  const alertDraftAdapter = useMemo(
+    () =>
+      createLocalStorageDraftAutosaveAdapter<AlertFormDraftPayload>(
+        'erp4-admin-settings-alert-form-draft',
+      ),
+    [],
+  );
+  const alertFormDraftValue = useMemo<AlertFormDraftPayload>(
+    () => ({
+      ...alertForm,
+      channels: Array.from(alertForm.channels),
+    }),
+    [alertForm],
+  );
+  const alertDraft = useDraftAutosave<AlertFormDraftPayload>({
+    value: alertFormDraftValue,
+    adapter: alertDraftAdapter,
+    onRestore: (payload) => {
+      setAlertForm({
+        ...payload,
+        channels: new Set(payload.channels),
+      });
+      setEditingAlertId(null);
+      setAlertWizardStep('basic');
+    },
+    intervalMs: 10000,
+  });
 
   const channels = useMemo(
     () => Array.from(alertForm.channels),
     [alertForm.channels],
+  );
+  const toggleChannel = useCallback(
+    (ch: string) => {
+      const next = new Set(alertForm.channels);
+      if (next.has(ch)) {
+        next.delete(ch);
+      } else {
+        next.add(ch);
+      }
+      setAlertForm({ ...alertForm, channels: next });
+    },
+    [alertForm],
+  );
+  const canSubmitAlertForm = useMemo(
+    () =>
+      Boolean(
+        alertForm.type.trim() &&
+        alertForm.threshold.trim() &&
+        alertForm.period.trim() &&
+        channels.length > 0,
+      ),
+    [alertForm.period, alertForm.threshold, alertForm.type, channels.length],
+  );
+  const alertWizardSteps = useMemo(
+    () => [
+      {
+        id: 'basic',
+        title: '基本設定',
+        description: '種別・閾値・期間などの基本条件を入力します。',
+        isComplete: Boolean(
+          alertForm.type.trim() &&
+          alertForm.threshold.trim() &&
+          alertForm.period.trim(),
+        ),
+        content: (
+          <div className="row" style={{ marginTop: 8, flexWrap: 'wrap' }}>
+            <label>
+              種別
+              <select
+                value={alertForm.type}
+                onChange={(e) =>
+                  setAlertForm({ ...alertForm, type: e.target.value })
+                }
+              >
+                {alertTypes.map((type) => (
+                  <option key={type} value={type}>
+                    {type}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              閾値
+              <input
+                type="number"
+                value={alertForm.threshold}
+                onChange={(e) =>
+                  setAlertForm({ ...alertForm, threshold: e.target.value })
+                }
+              />
+            </label>
+            <label>
+              期間
+              <input
+                type="text"
+                value={alertForm.period}
+                onChange={(e) =>
+                  setAlertForm({ ...alertForm, period: e.target.value })
+                }
+                placeholder="day/week/month"
+              />
+            </label>
+            <label>
+              projectId(任意)
+              <input
+                type="text"
+                value={alertForm.scopeProjectId}
+                onChange={(e) =>
+                  setAlertForm({ ...alertForm, scopeProjectId: e.target.value })
+                }
+                placeholder="projectId"
+              />
+            </label>
+            <label>
+              再送間隔(h)
+              <input
+                type="number"
+                value={alertForm.remindAfterHours}
+                onChange={(e) =>
+                  setAlertForm({
+                    ...alertForm,
+                    remindAfterHours: e.target.value,
+                  })
+                }
+                placeholder="24"
+              />
+            </label>
+            <label>
+              再送回数上限
+              <input
+                type="number"
+                value={alertForm.remindMaxCount}
+                onChange={(e) =>
+                  setAlertForm({
+                    ...alertForm,
+                    remindMaxCount: e.target.value,
+                  })
+                }
+                placeholder="3"
+                min={0}
+              />
+            </label>
+          </div>
+        ),
+      },
+      {
+        id: 'recipients',
+        title: '通知先',
+        description: 'メール/ロール/Webhook の送信先を定義します。',
+        optional: true,
+        content: (
+          <div className="row" style={{ marginTop: 8, flexWrap: 'wrap' }}>
+            <label>
+              emails
+              <input
+                type="text"
+                value={alertForm.emails}
+                onChange={(e) =>
+                  setAlertForm({ ...alertForm, emails: e.target.value })
+                }
+                placeholder="a@ex.com,b@ex.com"
+              />
+            </label>
+            <label>
+              roles
+              <input
+                type="text"
+                value={alertForm.roles}
+                onChange={(e) =>
+                  setAlertForm({ ...alertForm, roles: e.target.value })
+                }
+                placeholder="mgmt,exec"
+              />
+            </label>
+            <label>
+              users
+              <input
+                type="text"
+                value={alertForm.users}
+                onChange={(e) =>
+                  setAlertForm({ ...alertForm, users: e.target.value })
+                }
+                placeholder="userId1,userId2"
+              />
+            </label>
+            <label>
+              Slack Webhooks
+              <input
+                type="text"
+                value={alertForm.slackWebhooks}
+                onChange={(e) =>
+                  setAlertForm({ ...alertForm, slackWebhooks: e.target.value })
+                }
+                placeholder="https://hooks.slack.com/..."
+              />
+            </label>
+            <label>
+              Custom Webhooks
+              <input
+                type="text"
+                value={alertForm.webhooks}
+                onChange={(e) =>
+                  setAlertForm({ ...alertForm, webhooks: e.target.value })
+                }
+                placeholder="https://example.com/notify"
+              />
+            </label>
+          </div>
+        ),
+      },
+      {
+        id: 'channels',
+        title: 'チャネル確認',
+        description: '通知チャネルを確認し、保存を実行します。',
+        isComplete: channels.length > 0,
+        content: (
+          <div style={{ display: 'grid', gap: 8 }}>
+            <div className="row" style={{ marginTop: 8 }}>
+              {alertChannels.map((ch) => (
+                <label key={ch} className="badge" style={{ cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={alertForm.channels.has(ch)}
+                    onChange={() => toggleChannel(ch)}
+                    style={{ marginRight: 6 }}
+                  />
+                  {ch}
+                </label>
+              ))}
+            </div>
+            <div style={{ fontSize: 12, color: '#475569' }}>
+              選択中チャネル: {channels.join(', ') || '未選択'}
+            </div>
+          </div>
+        ),
+      },
+    ],
+    [alertForm, channels, toggleChannel],
   );
   const templatesForKind = useMemo(
     () =>
@@ -670,16 +918,6 @@ export const AdminSettings: React.FC = () => {
     });
   }, [templatesForKind, editingTemplateId]);
 
-  const toggleChannel = (ch: string) => {
-    const next = new Set(alertForm.channels);
-    if (next.has(ch)) {
-      next.delete(ch);
-    } else {
-      next.add(ch);
-    }
-    setAlertForm({ ...alertForm, channels: next });
-  };
-
   const toggleAlert = async (
     id: string,
     enabled: boolean | null | undefined,
@@ -725,6 +963,7 @@ export const AdminSettings: React.FC = () => {
   const resetAlertForm = () => {
     setAlertForm(createDefaultAlertForm());
     setEditingAlertId(null);
+    setAlertWizardStep('basic');
   };
 
   const resetRuleForm = () => {
@@ -1035,6 +1274,7 @@ export const AdminSettings: React.FC = () => {
 
   const startEditAlert = (item: AlertSetting) => {
     setEditingAlertId(item.id);
+    setAlertWizardStep('basic');
     setAlertForm({
       type: item.type,
       threshold: String(item.threshold ?? ''),
@@ -1109,6 +1349,7 @@ export const AdminSettings: React.FC = () => {
       }
       await loadAlertSettings();
       resetAlertForm();
+      await alertDraft.clearDraft();
     } catch (err) {
       logError('submitAlertSetting failed', err);
       if (editingAlertId) {
@@ -1448,164 +1689,46 @@ export const AdminSettings: React.FC = () => {
         <WorklogSettingsCard />
         <div className="card" style={{ padding: 12 }}>
           <strong>アラート設定（簡易モック）</strong>
-          <div className="row" style={{ marginTop: 8 }}>
-            <label>
-              種別
-              <select
-                value={alertForm.type}
-                onChange={(e) =>
-                  setAlertForm({ ...alertForm, type: e.target.value })
-                }
-              >
-                {alertTypes.map((type) => (
-                  <option key={type} value={type}>
-                    {type}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              閾値
-              <input
-                type="number"
-                value={alertForm.threshold}
-                onChange={(e) =>
-                  setAlertForm({ ...alertForm, threshold: e.target.value })
-                }
-              />
-            </label>
-            <label>
-              期間
-              <input
-                type="text"
-                value={alertForm.period}
-                onChange={(e) =>
-                  setAlertForm({ ...alertForm, period: e.target.value })
-                }
-                placeholder="day/week/month"
-              />
-            </label>
-            <label>
-              projectId(任意)
-              <input
-                type="text"
-                value={alertForm.scopeProjectId}
-                onChange={(e) =>
-                  setAlertForm({ ...alertForm, scopeProjectId: e.target.value })
-                }
-                placeholder="projectId"
-              />
-            </label>
-            <label>
-              再送間隔(h)
-              <input
-                type="number"
-                value={alertForm.remindAfterHours}
-                onChange={(e) =>
-                  setAlertForm({
-                    ...alertForm,
-                    remindAfterHours: e.target.value,
-                  })
-                }
-                placeholder="24"
-              />
-            </label>
-            <label>
-              再送回数上限
-              <input
-                type="number"
-                value={alertForm.remindMaxCount}
-                onChange={(e) =>
-                  setAlertForm({
-                    ...alertForm,
-                    remindMaxCount: e.target.value,
-                  })
-                }
-                placeholder="3"
-                min={0}
-              />
-            </label>
-          </div>
-          <div className="row" style={{ marginTop: 8 }}>
-            <label>
-              emails
-              <input
-                type="text"
-                value={alertForm.emails}
-                onChange={(e) =>
-                  setAlertForm({ ...alertForm, emails: e.target.value })
-                }
-                placeholder="a@ex.com,b@ex.com"
-              />
-            </label>
-            <label>
-              roles
-              <input
-                type="text"
-                value={alertForm.roles}
-                onChange={(e) =>
-                  setAlertForm({ ...alertForm, roles: e.target.value })
-                }
-                placeholder="mgmt,exec"
-              />
-            </label>
-            <label>
-              users
-              <input
-                type="text"
-                value={alertForm.users}
-                onChange={(e) =>
-                  setAlertForm({ ...alertForm, users: e.target.value })
-                }
-                placeholder="userId1,userId2"
-              />
-            </label>
-            <label>
-              Slack Webhooks
-              <input
-                type="text"
-                value={alertForm.slackWebhooks}
-                onChange={(e) =>
-                  setAlertForm({ ...alertForm, slackWebhooks: e.target.value })
-                }
-                placeholder="https://hooks.slack.com/..."
-              />
-            </label>
-            <label>
-              Custom Webhooks
-              <input
-                type="text"
-                value={alertForm.webhooks}
-                onChange={(e) =>
-                  setAlertForm({ ...alertForm, webhooks: e.target.value })
-                }
-                placeholder="https://example.com/notify"
-              />
-            </label>
-          </div>
-          <div className="row" style={{ marginTop: 8 }}>
-            {alertChannels.map((ch) => (
-              <label key={ch} className="badge" style={{ cursor: 'pointer' }}>
-                <input
-                  type="checkbox"
-                  checked={alertForm.channels.has(ch)}
-                  onChange={() => toggleChannel(ch)}
-                  style={{ marginRight: 6 }}
-                />
-                {ch}
-              </label>
-            ))}
-          </div>
-          <div className="row" style={{ marginTop: 8 }}>
-            <button className="button" onClick={submitAlertSetting}>
-              {editingAlertId ? '更新' : '作成'}
-            </button>
-            <button className="button secondary" onClick={resetAlertForm}>
-              {editingAlertId ? 'キャンセル' : 'クリア'}
-            </button>
-            <button className="button secondary" onClick={loadAlertSettings}>
-              再読込
-            </button>
+          <div style={{ marginTop: 8 }}>
+            <FormWizard
+              steps={alertWizardSteps}
+              value={alertWizardStep}
+              onValueChange={setAlertWizardStep}
+              canSubmit={canSubmitAlertForm}
+              isDirty={alertDraft.isDirty}
+              protectUnsavedChanges
+              autosave={{
+                status: alertDraft.status,
+                lastSavedAt: alertDraft.lastSavedAt
+                  ? new Date(alertDraft.lastSavedAt).toLocaleString()
+                  : undefined,
+                message: alertDraft.errorMessage,
+                onRestoreDraft: alertDraft.hasRestorableDraft
+                  ? alertDraft.restoreDraft
+                  : undefined,
+                onRetrySave: () => {
+                  void alertDraft.saveNow();
+                },
+              }}
+              labels={{
+                back: '戻る',
+                next: '次へ',
+                submit: editingAlertId ? '更新' : '作成',
+                cancel: editingAlertId ? 'キャンセル' : 'クリア',
+                optional: '任意',
+                autosavePrefix: '下書き',
+              }}
+              onSubmit={submitAlertSetting}
+              onCancel={() => {
+                resetAlertForm();
+                void alertDraft.clearDraft();
+              }}
+            />
+            <div className="row" style={{ marginTop: 8 }}>
+              <button className="button secondary" onClick={loadAlertSettings}>
+                再読込
+              </button>
+            </div>
           </div>
           <div
             className="list"
