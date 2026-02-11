@@ -2178,7 +2178,9 @@ export const RoomChat: React.FC = () => {
         <div style={{ display: 'grid', gap: 8, marginTop: 12 }}>
           {items.map((item) => {
             const tags = Array.isArray(item.tags) ? item.tags : [];
-            const mentionedUserIds = normalizeStringArray(item.mentions?.userIds);
+            const mentionedUserIds = normalizeStringArray(
+              item.mentions?.userIds,
+            );
             const mentionedGroupIds = normalizeStringArray(
               item.mentions?.groupIds,
             );

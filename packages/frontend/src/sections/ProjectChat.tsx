@@ -2057,16 +2057,15 @@ export const ProjectChat: React.FC = () => {
                         (attachment) => attachment.id === attachmentId,
                       );
                       if (!target) return;
-                      downloadAttachment(
-                        target.id,
-                        target.originalName,
-                      ).catch((error) => {
-                        console.error(
-                          '添付のダウンロードに失敗しました',
-                          error,
-                        );
-                        setMessage('添付のダウンロードに失敗しました');
-                      });
+                      downloadAttachment(target.id, target.originalName).catch(
+                        (error) => {
+                          console.error(
+                            '添付のダウンロードに失敗しました',
+                            error,
+                          );
+                          setMessage('添付のダウンロードに失敗しました');
+                        },
+                      );
                     }}
                   />
                 </div>
