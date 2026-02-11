@@ -424,19 +424,16 @@ export const AdminSettings: React.FC = () => {
     },
     [alertForm],
   );
-  const canSubmitAlertForm = useMemo(
-    () => {
-      const thresholdValue = Number(alertForm.threshold.trim());
-      return Boolean(
-        alertForm.type.trim() &&
-          alertForm.threshold.trim() &&
-          Number.isFinite(thresholdValue) &&
-          alertForm.period.trim() &&
-          channels.length > 0,
-      );
-    },
-    [alertForm.period, alertForm.threshold, alertForm.type, channels.length],
-  );
+  const canSubmitAlertForm = useMemo(() => {
+    const thresholdValue = Number(alertForm.threshold.trim());
+    return Boolean(
+      alertForm.type.trim() &&
+      alertForm.threshold.trim() &&
+      Number.isFinite(thresholdValue) &&
+      alertForm.period.trim() &&
+      channels.length > 0,
+    );
+  }, [alertForm.period, alertForm.threshold, alertForm.type, channels.length]);
   const alertWizardSteps = useMemo(
     () => [
       {
