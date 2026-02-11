@@ -85,6 +85,15 @@ type VendorInvoiceLine = {
   purchaseOrderLineId?: string | null;
 };
 
+type VendorInvoicePoLineUsage = {
+  purchaseOrderLineId: string;
+  purchaseOrderQuantity: number;
+  existingQuantity: number;
+  requestedQuantity: number;
+  remainingQuantity: number;
+  exceeds: boolean;
+};
+
 type DocumentSendLog = {
   id: string;
   channel: string;
@@ -304,6 +313,8 @@ export const VendorDocuments: React.FC = () => {
     useState<MessageState>(null);
   const [invoiceLineReason, setInvoiceLineReason] = useState('');
   const [invoiceLineExpanded, setInvoiceLineExpanded] = useState(false);
+  const [invoiceLinePoUsageByPoLineId, setInvoiceLinePoUsageByPoLineId] =
+    useState<Record<string, VendorInvoicePoLineUsage>>({});
   const [invoiceSubmitBusy, setInvoiceSubmitBusy] = useState<
     Record<string, boolean>
   >({});
@@ -509,6 +520,7 @@ export const VendorDocuments: React.FC = () => {
         const res = await api<{
           invoice: VendorInvoice;
           items: VendorInvoiceLine[];
+          poLineUsage?: VendorInvoicePoLineUsage[];
         }>(`/vendor-invoices/${invoiceId}/lines`);
         setInvoiceLines(
           (res.items || []).map((item) =>
@@ -517,6 +529,11 @@ export const VendorDocuments: React.FC = () => {
               : { ...item, tempId: nextInvoiceLineTempId() },
           ),
         );
+        const usageByPoLineId: Record<string, VendorInvoicePoLineUsage> = {};
+        (res.poLineUsage || []).forEach((entry) => {
+          usageByPoLineId[entry.purchaseOrderLineId] = entry;
+        });
+        setInvoiceLinePoUsageByPoLineId(usageByPoLineId);
         setInvoiceLineDialog((prev) =>
           prev ? { ...prev, invoice: res.invoice } : prev,
         );
@@ -527,6 +544,7 @@ export const VendorDocuments: React.FC = () => {
           type: 'error',
         });
         setInvoiceLines([]);
+        setInvoiceLinePoUsageByPoLineId({});
       } finally {
         setInvoiceLineLoading(false);
       }
@@ -1011,6 +1029,7 @@ export const VendorDocuments: React.FC = () => {
     setInvoiceLineMessage(null);
     setInvoiceLineExpanded(false);
     setInvoiceLines([]);
+    setInvoiceLinePoUsageByPoLineId({});
     if (invoice.purchaseOrderId) {
       void loadPurchaseOrderDetail(invoice.purchaseOrderId);
     }
@@ -3282,15 +3301,25 @@ export const VendorDocuments: React.FC = () => {
                           const poQuantity = selectedPoLine
                             ? parseNumberValue(selectedPoLine.quantity)
                             : null;
+                          const usage = selectedPoLineId
+                            ? invoiceLinePoUsageByPoLineId[selectedPoLineId]
+                            : null;
+                          const existingQuantity =
+                            parseNumberValue(usage?.existingQuantity) ?? 0;
                           const requestedQuantity = selectedPoLineId
                             ? invoiceLineRequestedQuantityByPoLine.get(
                                 selectedPoLineId,
                               ) || 0
                             : null;
+                          const remainingQuantity =
+                            poQuantity != null && requestedQuantity != null
+                              ? poQuantity -
+                                existingQuantity -
+                                requestedQuantity
+                              : null;
                           const exceedsPoQuantity =
-                            poQuantity != null &&
-                            requestedQuantity != null &&
-                            requestedQuantity - poQuantity > 0.00001;
+                            remainingQuantity != null &&
+                            remainingQuantity < -0.00001;
                           const hasAmountDiff =
                             amount != null &&
                             calculatedAmount != null &&
@@ -3435,8 +3464,16 @@ export const VendorDocuments: React.FC = () => {
                                           : '#64748b',
                                       }}
                                     >
-                                      入力合計: {requestedQuantity ?? 0} /
-                                      PO数量: {poQuantity ?? '-'}
+                                      他VI利用:{' '}
+                                      {existingQuantity.toLocaleString()} /
+                                      入力合計:{' '}
+                                      {(
+                                        requestedQuantity ?? 0
+                                      ).toLocaleString()}{' '}
+                                      / 入力後残:{' '}
+                                      {remainingQuantity != null
+                                        ? remainingQuantity.toLocaleString()
+                                        : '-'}
                                     </div>
                                   )}
                                 </td>

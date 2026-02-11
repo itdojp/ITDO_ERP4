@@ -20,7 +20,11 @@ import { logActionPolicyOverrideIfNeeded } from '../services/actionPolicyAudit.j
 import { auditContextFromRequest, logAudit } from '../services/audit.js';
 import { normalizeVendorInvoiceAllocations } from '../services/vendorInvoiceAllocations.js';
 import { normalizeVendorInvoiceLines } from '../services/vendorInvoiceLines.js';
-import { findExceededPurchaseOrderLineQuantities } from '../services/vendorInvoiceLineReconciliation.js';
+import {
+  findExceededPurchaseOrderLineQuantities,
+  summarizePurchaseOrderLineQuantities,
+  type PurchaseOrderLineQuantitySummary,
+} from '../services/vendorInvoiceLineReconciliation.js';
 
 function normalizeString(value: unknown) {
   return typeof value === 'string' ? value.trim() : '';
@@ -229,7 +233,45 @@ export async function registerVendorDocRoutes(app: FastifyInstance) {
       });
       const invoiceTotal = parseNumberValue(invoice.totalAmount) ?? 0;
       const totals = summarizeVendorInvoiceLineTotals(items, invoiceTotal);
-      return { invoice, items, totals };
+      let poLineUsage: PurchaseOrderLineQuantitySummary[] = [];
+      if (invoice.purchaseOrderId) {
+        const purchaseOrderLines = await prisma.purchaseOrderLine.findMany({
+          where: { purchaseOrderId: invoice.purchaseOrderId },
+          select: { id: true, quantity: true },
+          orderBy: { id: 'asc' },
+        });
+        if (purchaseOrderLines.length > 0) {
+          const lineIds = purchaseOrderLines.map((line) => line.id);
+          const existingLinesGrouped = await prisma.vendorInvoiceLine.groupBy({
+            by: ['purchaseOrderLineId'],
+            where: {
+              purchaseOrderLineId: { in: lineIds },
+              vendorInvoiceId: { not: id },
+              vendorInvoice: {
+                deletedAt: null,
+                status: {
+                  notIn: [DocStatusValue.rejected, DocStatusValue.cancelled],
+                },
+              },
+            },
+            _sum: { quantity: true },
+          });
+          const existingLines = existingLinesGrouped.map((line) => ({
+            purchaseOrderLineId: line.purchaseOrderLineId,
+            quantity: line._sum.quantity ?? 0,
+          }));
+          poLineUsage = summarizePurchaseOrderLineQuantities({
+            purchaseOrderLines,
+            existingInvoiceLines: existingLines,
+            requestedInvoiceLines: items.map((line) => ({
+              purchaseOrderLineId:
+                normalizeString(line.purchaseOrderLineId) || null,
+              quantity: parseNumberValue(line.quantity) ?? 0,
+            })),
+          });
+        }
+      }
+      return { invoice, items, totals, poLineUsage };
     },
   );
 
@@ -962,7 +1004,8 @@ export async function registerVendorDocRoutes(app: FastifyInstance) {
       }
 
       if (purchaseOrderLineIds.size > 0) {
-        const existingLines = await prisma.vendorInvoiceLine.findMany({
+        const existingLinesGrouped = await prisma.vendorInvoiceLine.groupBy({
+          by: ['purchaseOrderLineId'],
           where: {
             purchaseOrderLineId: { in: Array.from(purchaseOrderLineIds) },
             vendorInvoiceId: { not: id },
@@ -973,8 +1016,12 @@ export async function registerVendorDocRoutes(app: FastifyInstance) {
               },
             },
           },
-          select: { purchaseOrderLineId: true, quantity: true },
+          _sum: { quantity: true },
         });
+        const existingLines = existingLinesGrouped.map((line) => ({
+          purchaseOrderLineId: line.purchaseOrderLineId,
+          quantity: line._sum.quantity ?? 0,
+        }));
         const exceeded = findExceededPurchaseOrderLineQuantities({
           purchaseOrderLines: Array.from(purchaseOrderLineMap.values()),
           existingInvoiceLines: existingLines,

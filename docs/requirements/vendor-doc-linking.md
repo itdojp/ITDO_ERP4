@@ -83,6 +83,20 @@
   - PO明細紐付け行の数量合計が、同PO明細の数量上限を超えないこと（他VIの既存行を含む）
 - 監査ログ: `vendor_invoice_lines_update` / `vendor_invoice_lines_clear`
 
+### Phase 2 設計確定（#920）
+- 多段入力UIの責務分離
+  - 1段目: 請求書PDFの確認（証憑の正本確認）
+  - 2段目: 請求明細入力（PO明細との数量/単価整合、部分請求の追跡）
+  - 3段目: 配賦明細入力（案件別・税率別の原価配賦。必要時のみ）
+- 部分請求時の未請求残算出ルール
+  - `remainingQuantity = purchaseOrderQuantity - existingQuantity - requestedQuantity`
+  - `existingQuantity`: 同一PO明細に紐づく「他VI」の数量合計（`rejected`/`cancelled` は除外）
+  - `requestedQuantity`: 現在編集中のVIに入力した同一PO明細の数量合計
+  - 許容誤差は `0.00001`。`remainingQuantity < -0.00001` は保存不可
+- 端数調整不能時のエスカレーション条件
+  - `autoAdjust=true` で最終行の税額を調整しても請求合計との差分が解消できない場合（または税額が負値になる場合）、自動調整は打ち切る
+  - APIは `LINE_TOTAL_MISMATCH`（または `ALLOCATION_TOTAL_MISMATCH`）を返し、運用上は理由付きで手動調整/エスカレーションする
+
 ### 移行方針（既存VIに line 無しを許容）
 - 既存の `VendorInvoice` は line 未登録のまま運用継続可能とする（line入力は任意）
 - `GET /vendor-invoices/:id/lines` は line 未登録の場合 `items=[]` を返し、UIは「未入力」の状態として表示する

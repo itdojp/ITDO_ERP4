@@ -22,6 +22,15 @@ export type ExceededPurchaseOrderLineQuantity = {
   requestedQuantity: number;
 };
 
+export type PurchaseOrderLineQuantitySummary = {
+  purchaseOrderLineId: string;
+  purchaseOrderQuantity: number;
+  existingQuantity: number;
+  requestedQuantity: number;
+  remainingQuantity: number;
+  exceeds: boolean;
+};
+
 type FindExceededPurchaseOrderLineQuantitiesInput = {
   purchaseOrderLines: PurchaseOrderLineQuantityInput[];
   existingInvoiceLines: ExistingVendorInvoiceLineQuantityInput[];
@@ -55,10 +64,27 @@ function toFiniteNumber(value: unknown) {
 export function findExceededPurchaseOrderLineQuantities(
   input: FindExceededPurchaseOrderLineQuantitiesInput,
 ): ExceededPurchaseOrderLineQuantity[] {
+  return summarizePurchaseOrderLineQuantities(input)
+    .filter((entry) => entry.exceeds)
+    .map((entry) => ({
+      purchaseOrderLineId: entry.purchaseOrderLineId,
+      purchaseOrderQuantity: entry.purchaseOrderQuantity,
+      existingQuantity: entry.existingQuantity,
+      requestedQuantity: entry.requestedQuantity,
+    }));
+}
+
+export function summarizePurchaseOrderLineQuantities(
+  input: FindExceededPurchaseOrderLineQuantitiesInput,
+): PurchaseOrderLineQuantitySummary[] {
   const purchaseOrderQuantityByLine = new Map<string, number>();
+  const orderedLineIds: string[] = [];
   for (const line of input.purchaseOrderLines) {
     const lineId = normalizeId(line.id);
     if (!lineId) continue;
+    if (!purchaseOrderQuantityByLine.has(lineId)) {
+      orderedLineIds.push(lineId);
+    }
     purchaseOrderQuantityByLine.set(lineId, toFiniteNumber(line.quantity) ?? 0);
   }
 
@@ -81,23 +107,19 @@ export function findExceededPurchaseOrderLineQuantities(
     requestedQtyByLine.set(lineId, current + line.quantity);
   }
 
-  const exceeded: ExceededPurchaseOrderLineQuantity[] = [];
-  for (const [lineId, requestedQuantity] of requestedQtyByLine) {
-    const purchaseOrderQuantity = purchaseOrderQuantityByLine.get(lineId);
-    if (purchaseOrderQuantity == null) continue;
+  return orderedLineIds.map((lineId) => {
+    const purchaseOrderQuantity = purchaseOrderQuantityByLine.get(lineId) ?? 0;
     const existingQuantity = existingQtyByLine.get(lineId) || 0;
-    if (
-      existingQuantity + requestedQuantity - purchaseOrderQuantity >
-      EPSILON
-    ) {
-      exceeded.push({
-        purchaseOrderLineId: lineId,
-        purchaseOrderQuantity,
-        existingQuantity,
-        requestedQuantity,
-      });
-    }
-  }
-
-  return exceeded;
+    const requestedQuantity = requestedQtyByLine.get(lineId) || 0;
+    const remainingQuantity =
+      purchaseOrderQuantity - existingQuantity - requestedQuantity;
+    return {
+      purchaseOrderLineId: lineId,
+      purchaseOrderQuantity,
+      existingQuantity,
+      requestedQuantity,
+      remainingQuantity,
+      exceeds: remainingQuantity < -EPSILON,
+    };
+  });
 }
