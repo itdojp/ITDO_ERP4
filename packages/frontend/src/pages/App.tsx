@@ -1,6 +1,13 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { apiResponse, getAuthState } from '../api';
-import { Alert, Button, Card, PageHeader, SectionCard } from '../ui';
+import {
+  Alert,
+  Button,
+  Card,
+  CommandPalette,
+  PageHeader,
+  SectionCard,
+} from '../ui';
 import { Dashboard } from '../sections/Dashboard';
 import { GlobalSearch } from '../sections/GlobalSearch';
 import { DailyReport } from '../sections/DailyReport';
@@ -414,6 +421,7 @@ export const App: React.FC = () => {
   const [pendingDeepLink, setPendingDeepLink] =
     useState<DeepLinkResolvedTarget | null>(null);
   const [deepLinkError, setDeepLinkError] = useState<string>('');
+  const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -585,6 +593,103 @@ export const App: React.FC = () => {
     sectionGroups.find((group) =>
       group.items.some((item) => item.id === activeSection?.id),
     ) || null;
+  const sectionGroupLabelBySectionId = useMemo(
+    () =>
+      new Map(
+        sectionGroups.flatMap((group) =>
+          group.items.map((item) => [item.id, group.title] as const),
+        ),
+      ),
+    [sectionGroups],
+  );
+
+  const activateSection = useCallback((sectionId: string) => {
+    setDeepLinkError('');
+    setPendingDeepLink(null);
+    setActiveSectionId(sectionId);
+    if (
+      typeof window !== 'undefined' &&
+      window.location.hash.startsWith('#/open')
+    ) {
+      window.history.replaceState(
+        null,
+        '',
+        window.location.pathname + window.location.search,
+      );
+    }
+  }, []);
+
+  const commandActions = useMemo(
+    () => [
+      {
+        id: 'action-refresh-current',
+        label: '再取得: アプリを再読み込み',
+        group: '主要操作',
+        description: '現在表示中の画面状態を初期化して再読み込みします',
+        keywords: ['再取得', 'refresh', 'reload'],
+        onSelect: () => {
+          if (typeof window === 'undefined') return;
+          window.location.reload();
+        },
+      },
+      {
+        id: 'action-search-global',
+        label: '検索: グローバル検索を開く',
+        group: '主要操作',
+        description:
+          'ホームの検索（ERP横断）に移動して入力欄へフォーカスします',
+        keywords: ['検索', 'search', 'global'],
+        onSelect: () => {
+          activateSection('home');
+          if (typeof window === 'undefined') return;
+          window.setTimeout(() => {
+            window.dispatchEvent(new CustomEvent('erp4_global_search_focus'));
+          }, 0);
+        },
+      },
+      {
+        id: 'action-create-project',
+        label: '作成: 案件を開く',
+        group: '主要操作',
+        description: '案件画面に移動し、新規作成導線へ入ります',
+        keywords: ['作成', 'create', 'project', '案件'],
+        onSelect: () => activateSection('projects'),
+      },
+      {
+        id: 'action-create-estimate',
+        label: '作成: 見積を開く',
+        group: '主要操作',
+        description: '見積画面に移動し、新規作成導線へ入ります',
+        keywords: ['作成', 'create', 'estimate', '見積'],
+        onSelect: () => activateSection('estimates'),
+      },
+      {
+        id: 'action-create-invoice',
+        label: '作成: 請求を開く',
+        group: '主要操作',
+        description: '請求画面に移動し、新規作成導線へ入ります',
+        keywords: ['作成', 'create', 'invoice', '請求'],
+        onSelect: () => activateSection('invoices'),
+      },
+      {
+        id: 'action-create-vendor-docs',
+        label: '作成: 仕入/発注を開く',
+        group: '主要操作',
+        description: '仕入/発注画面に移動し、登録フォームへアクセスします',
+        keywords: ['作成', 'create', 'purchase', 'vendor', '仕入', '発注'],
+        onSelect: () => activateSection('vendor-documents'),
+      },
+      ...sections.map((section) => ({
+        id: `goto-${section.id}`,
+        label: `移動: ${section.label}`,
+        group: '画面遷移',
+        description: `遷移先: ${sectionGroupLabelBySectionId.get(section.id) || '未分類'}`,
+        keywords: [section.id, section.label],
+        onSelect: () => activateSection(section.id),
+      })),
+    ],
+    [activateSection, sectionGroupLabelBySectionId, sections],
+  );
 
   return (
     <div className="container">
@@ -610,6 +715,14 @@ export const App: React.FC = () => {
         >
           <SectionCard title="メニュー" density="compact">
             <div style={{ display: 'grid', gap: 12 }}>
+              <Button
+                size="small"
+                fullWidth
+                variant="secondary"
+                onClick={() => setIsCommandPaletteOpen(true)}
+              >
+                コマンドを開く (Ctrl/Cmd + K)
+              </Button>
               {sectionGroups.map((group) => (
                 <div key={group.title} style={{ display: 'grid', gap: 6 }}>
                   <div style={{ fontSize: 12, color: '#64748b' }}>
@@ -623,21 +736,7 @@ export const App: React.FC = () => {
                       variant={
                         item.id === activeSection?.id ? 'primary' : 'ghost'
                       }
-                      onClick={() => {
-                        setDeepLinkError('');
-                        setPendingDeepLink(null);
-                        setActiveSectionId(item.id);
-                        if (
-                          typeof window !== 'undefined' &&
-                          window.location.hash.startsWith('#/open')
-                        ) {
-                          window.history.replaceState(
-                            null,
-                            '',
-                            window.location.pathname + window.location.search,
-                          );
-                        }
-                      }}
+                      onClick={() => activateSection(item.id)}
                     >
                       {item.label}
                     </Button>
@@ -658,6 +757,14 @@ export const App: React.FC = () => {
           ) : null}
         </main>
       </div>
+      <CommandPalette
+        open={isCommandPaletteOpen}
+        onOpenChange={setIsCommandPaletteOpen}
+        actions={commandActions}
+        title="ERP4 コマンドパレット"
+        placeholder="コマンド・画面名・キーワードで検索"
+        emptyMessage="該当するコマンドがありません"
+      />
     </div>
   );
 };

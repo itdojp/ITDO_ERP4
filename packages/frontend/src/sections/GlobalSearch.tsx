@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { api, getAuthState } from '../api';
 import { navigateToOpen } from '../utils/deepLink';
 
@@ -168,6 +168,7 @@ function openChatTarget(message: ChatMessageResult) {
 export const GlobalSearch: React.FC = () => {
   const auth = getAuthState();
   const currentUserId = auth?.userId || 'demo-user';
+  const queryInputRef = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState('');
   const [limit, setLimit] = useState(10);
   const [erpResult, setErpResult] = useState<ErpSearchResponse | null>(null);
@@ -223,6 +224,17 @@ export const GlobalSearch: React.FC = () => {
     }
   };
 
+  useEffect(() => {
+    const handleFocus = () => {
+      queryInputRef.current?.focus();
+      queryInputRef.current?.select();
+    };
+    window.addEventListener('erp4_global_search_focus', handleFocus);
+    return () => {
+      window.removeEventListener('erp4_global_search_focus', handleFocus);
+    };
+  }, []);
+
   return (
     <div>
       <h2>検索（ERP横断）</h2>
@@ -230,6 +242,7 @@ export const GlobalSearch: React.FC = () => {
         <label>
           検索語
           <input
+            ref={queryInputRef}
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
