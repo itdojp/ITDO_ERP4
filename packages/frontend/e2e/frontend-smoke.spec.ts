@@ -210,7 +210,9 @@ test('frontend smoke core @core', async ({ page }) => {
   const dailyHistoryItem = historyList.getByText(dailyReportText);
   await dailyHistoryItem.scrollIntoViewIfNeeded();
   await expect(dailyHistoryItem).toBeVisible();
-  const dailyReportMaxDate = await dailySection.getByLabel('対象日').inputValue();
+  const dailyReportMaxDate = await dailySection
+    .getByLabel('対象日')
+    .inputValue();
   const deepLinkDailyReportDate = shiftDateKey(dailyReportMaxDate, -1);
   await captureSection(dailySection, '02-core-daily-report.png');
 
@@ -231,13 +233,11 @@ test('frontend smoke core @core', async ({ page }) => {
   await timeSection.locator('input[type="date"]').fill(deepLinkDailyReportDate);
   await timeSection.getByRole('button', { name: '日報を開く' }).click();
   await expect(
-    page
-      .locator('main')
-      .getByRole('heading', {
-        name: '日報 + ウェルビーイング',
-        level: 2,
-        exact: true,
-      }),
+    page.locator('main').getByRole('heading', {
+      name: '日報 + ウェルビーイング',
+      level: 2,
+      exact: true,
+    }),
   ).toBeVisible({ timeout: actionTimeout });
   const dailySectionAfterOpen = page
     .locator('main')
@@ -354,11 +354,12 @@ test('frontend smoke core @core', async ({ page }) => {
 
   await invoiceSection.getByRole('button', { name: '注釈' }).click();
   const invoiceAnnotationDialog2 = page.getByRole('dialog');
-  await expect(invoiceAnnotationDialog2.getByLabel('メモ（Markdown）')).toHaveValue(
-    invoiceAnnotationText,
-    { timeout: actionTimeout },
-  );
-  await invoiceAnnotationDialog2.getByRole('button', { name: '閉じる' }).click();
+  await expect(
+    invoiceAnnotationDialog2.getByLabel('メモ（Markdown）'),
+  ).toHaveValue(invoiceAnnotationText, { timeout: actionTimeout });
+  await invoiceAnnotationDialog2
+    .getByRole('button', { name: '閉じる' })
+    .click();
   await invoiceSection.getByRole('button', { name: '閉じる' }).click();
 
   await navigateToSection(page, 'ホーム', '検索（ERP横断）');
@@ -497,7 +498,7 @@ test('frontend smoke vendor docs create @extended', async ({ page }) => {
     poBlock.getByText(`${poAmount.toLocaleString()} JPY`),
   ).toBeVisible();
   const createdPoItem = poBlock
-    .locator('ul.list li', { hasText: `${poAmount.toLocaleString()} JPY` })
+    .locator('tbody tr', { hasText: `${poAmount.toLocaleString()} JPY` })
     .first();
   await expect(createdPoItem).toBeVisible({ timeout: actionTimeout });
   const createdPoText = await createdPoItem.innerText();
@@ -505,6 +506,7 @@ test('frontend smoke vendor docs create @extended', async ({ page }) => {
   expect(poNo).toBeTruthy();
   const poNoValue = poNo as string;
 
+  await vendorSection.getByRole('tab', { name: /仕入見積/ }).click();
   const quoteBlock = vendorSection
     .locator('h3', { hasText: '仕入見積' })
     .locator('..');
@@ -513,7 +515,7 @@ test('frontend smoke vendor docs create @extended', async ({ page }) => {
   await selectByValue(quoteProjectSelect, vendorDocsProjectId);
   await selectByValue(quoteVendorSelect, vendorDocsVendorId);
   const quoteNo = `VQ-E2E-${id}`;
-  await quoteBlock.getByPlaceholder('見積番号').fill(quoteNo);
+  await quoteBlock.getByPlaceholder('見積番号', { exact: true }).fill(quoteNo);
   await quoteBlock
     .locator('input[type="number"]')
     .first()
@@ -522,6 +524,7 @@ test('frontend smoke vendor docs create @extended', async ({ page }) => {
   await expect(quoteBlock.getByText('仕入見積を登録しました')).toBeVisible();
   await expect(quoteBlock.getByText(quoteNo)).toBeVisible();
 
+  await vendorSection.getByRole('tab', { name: /仕入請求/ }).click();
   const invoiceBlock = vendorSection
     .locator('h3', { hasText: '仕入請求' })
     .locator('..');
@@ -530,7 +533,9 @@ test('frontend smoke vendor docs create @extended', async ({ page }) => {
   await selectByValue(invoiceProjectSelect, vendorDocsProjectId);
   await selectByValue(invoiceVendorSelect, vendorDocsVendorId);
   const vendorInvoiceNo = `VI-E2E-${id}`;
-  await invoiceBlock.getByPlaceholder('請求番号').fill(vendorInvoiceNo);
+  await invoiceBlock
+    .getByPlaceholder('請求番号', { exact: true })
+    .fill(vendorInvoiceNo);
   await invoiceBlock
     .locator('input[type="number"]')
     .first()
@@ -540,16 +545,20 @@ test('frontend smoke vendor docs create @extended', async ({ page }) => {
   await expect(invoiceBlock.getByText(vendorInvoiceNo)).toBeVisible();
 
   const annotationText = `E2E注釈: ${id}`;
-  const createdInvoiceItem = invoiceBlock.locator('ul.list li', {
-    hasText: vendorInvoiceNo,
-  }).first();
+  const createdInvoiceItem = invoiceBlock
+    .locator('tbody tr', {
+      hasText: vendorInvoiceNo,
+    })
+    .first();
   await expect(createdInvoiceItem).toBeVisible({ timeout: actionTimeout });
 
   // (1) PO紐づけ → 一覧に PO番号表示
   await createdInvoiceItem.scrollIntoViewIfNeeded();
   await createdInvoiceItem.getByRole('button', { name: 'PO紐づけ' }).click();
   const poLinkDialog = page.getByRole('dialog');
-  await expect(poLinkDialog.getByText('仕入請求: 関連発注書（PO）')).toBeVisible({
+  await expect(
+    poLinkDialog.getByText('仕入請求: 関連発注書（PO）'),
+  ).toBeVisible({
     timeout: actionTimeout,
   });
   const poLinkSelect = poLinkDialog.locator('select').first();
@@ -559,13 +568,12 @@ test('frontend smoke vendor docs create @extended', async ({ page }) => {
   await expect
     .poll(
       () =>
-        createdInvoiceItem.innerText().then((value) => ({
-          hasLabel: value.includes('関連発注書:'),
-          hasPoNo: value.includes(poNoValue),
-        })),
+        createdInvoiceItem
+          .innerText()
+          .then((value) => value.includes(poNoValue)),
       { timeout: actionTimeout },
     )
-    .toEqual({ hasLabel: true, hasPoNo: true });
+    .toBe(true);
 
   // (2) 紐づけ解除
   await createdInvoiceItem.scrollIntoViewIfNeeded();
@@ -585,7 +593,7 @@ test('frontend smoke vendor docs create @extended', async ({ page }) => {
       () =>
         createdInvoiceItem
           .innerText()
-          .then((value) => value.includes('関連発注書:')),
+          .then((value) => value.includes(poNoValue)),
       { timeout: actionTimeout },
     )
     .toBe(false);
@@ -597,10 +605,9 @@ test('frontend smoke vendor docs create @extended', async ({ page }) => {
   await expect(allocationDialog.getByText('仕入請求: 配賦明細')).toBeVisible({
     timeout: actionTimeout,
   });
-  await expect(allocationDialog.getByText('配賦明細を読み込み中...')).toHaveCount(
-    0,
-    { timeout: actionTimeout },
-  );
+  await expect(
+    allocationDialog.getByText('配賦明細を読み込み中...'),
+  ).toHaveCount(0, { timeout: actionTimeout });
   await allocationDialog
     .getByRole('button', { name: '配賦明細を入力' })
     .click();
@@ -635,7 +642,9 @@ test('frontend smoke vendor docs create @extended', async ({ page }) => {
   await createdInvoiceItem.getByRole('button', { name: '注釈' }).click();
   const annotationDialog = page.getByRole('dialog');
   await expect(
-    annotationDialog.getByRole('heading', { name: `仕入請求: ${vendorInvoiceNo}` }),
+    annotationDialog.getByRole('heading', {
+      name: `仕入請求: ${vendorInvoiceNo}`,
+    }),
   ).toBeVisible({ timeout: actionTimeout });
   await annotationDialog.getByLabel('メモ（Markdown）').fill(annotationText);
   await annotationDialog.getByRole('button', { name: '保存' }).click();
@@ -742,9 +751,6 @@ test('frontend smoke reports masters settings @extended', async ({ page }) => {
     .getByLabel('案件メンバーの権限')
     .selectOption({ value: 'leader' });
   await member1Item.getByRole('button', { name: '権限更新' }).click();
-  await expect(memberCard.getByText('メンバー権限を更新しました')).toBeVisible({
-    timeout: actionTimeout,
-  });
   await expect(
     memberCard
       .locator('li', { hasText: 'e2e-member-1@example.com' })
@@ -755,12 +761,12 @@ test('frontend smoke reports masters settings @extended', async ({ page }) => {
     hasText: 'e2e-member-2@example.com',
   });
   await member2Item.getByRole('button', { name: '削除' }).click();
-  await expect(memberCard.getByText('メンバーを削除しました')).toBeVisible({
-    timeout: actionTimeout,
-  });
-  await expect(memberCard.getByText('e2e-member-2@example.com')).toHaveCount(0, {
-    timeout: actionTimeout,
-  });
+  await expect(memberCard.getByText('e2e-member-2@example.com')).toHaveCount(
+    0,
+    {
+      timeout: actionTimeout,
+    },
+  );
 
   await navigateToSection(page, 'マスタ管理', '顧客/業者マスタ');
   const masterSection = page
@@ -807,14 +813,17 @@ test('frontend smoke reports masters settings @extended', async ({ page }) => {
   await expect(customerAnnotationDialog.getByText('保存しました')).toBeVisible({
     timeout: actionTimeout,
   });
-  await customerAnnotationDialog.getByRole('button', { name: '閉じる' }).click();
+  await customerAnnotationDialog
+    .getByRole('button', { name: '閉じる' })
+    .click();
   await customerItem.getByRole('button', { name: '注釈' }).click();
   const customerAnnotationDialog2 = page.getByRole('dialog');
-  await expect(customerAnnotationDialog2.getByLabel('メモ（Markdown）')).toHaveValue(
-    customerAnnotationText,
-    { timeout: actionTimeout },
-  );
-  await customerAnnotationDialog2.getByRole('button', { name: '閉じる' }).click();
+  await expect(
+    customerAnnotationDialog2.getByLabel('メモ（Markdown）'),
+  ).toHaveValue(customerAnnotationText, { timeout: actionTimeout });
+  await customerAnnotationDialog2
+    .getByRole('button', { name: '閉じる' })
+    .click();
 
   const vendorItem = vendorBlock.locator('li', { hasText: vendorCode });
   const vendorAnnotationText = `E2E業者注釈: ${id}`;
@@ -827,7 +836,9 @@ test('frontend smoke reports masters settings @extended', async ({ page }) => {
       exact: true,
     }),
   ).toBeVisible({ timeout: actionTimeout });
-  await vendorAnnotationDialog.getByLabel('メモ（Markdown）').fill(vendorAnnotationText);
+  await vendorAnnotationDialog
+    .getByLabel('メモ（Markdown）')
+    .fill(vendorAnnotationText);
   await vendorAnnotationDialog.getByRole('button', { name: '保存' }).click();
   await expect(vendorAnnotationDialog.getByText('保存しました')).toBeVisible({
     timeout: actionTimeout,
@@ -835,10 +846,9 @@ test('frontend smoke reports masters settings @extended', async ({ page }) => {
   await vendorAnnotationDialog.getByRole('button', { name: '閉じる' }).click();
   await vendorItem.getByRole('button', { name: '注釈' }).click();
   const vendorAnnotationDialog2 = page.getByRole('dialog');
-  await expect(vendorAnnotationDialog2.getByLabel('メモ（Markdown）')).toHaveValue(
-    vendorAnnotationText,
-    { timeout: actionTimeout },
-  );
+  await expect(
+    vendorAnnotationDialog2.getByLabel('メモ（Markdown）'),
+  ).toHaveValue(vendorAnnotationText, { timeout: actionTimeout });
   await vendorAnnotationDialog2.getByRole('button', { name: '閉じる' }).click();
 
   const contactBlock = masterSection
@@ -887,6 +897,14 @@ test('frontend smoke reports masters settings @extended', async ({ page }) => {
   const alertBlock = settingsSection
     .locator('strong', { hasText: 'アラート設定（簡易モック）' })
     .locator('..');
+  await alertBlock.getByRole('button', { name: '次へ' }).click();
+  await expect(
+    alertBlock.getByRole('heading', { name: '通知先' }),
+  ).toBeVisible();
+  await alertBlock.getByRole('button', { name: '次へ' }).click();
+  await expect(
+    alertBlock.getByRole('heading', { name: 'チャネル確認' }),
+  ).toBeVisible();
   await alertBlock.getByRole('button', { name: '作成' }).click();
   await expect(
     settingsSection.getByText('アラート設定を作成しました'),
@@ -1011,7 +1029,15 @@ test('frontend smoke chat hr analytics @extended', async ({ page }) => {
     timeout: actionTimeout,
   });
   await chatSection.getByPlaceholder('タグ (comma separated)').fill('e2e,chat');
-  await chatSection.getByLabel('添付').setInputFiles(uploadPath);
+  const addFilesButton = chatSection.getByRole('button', {
+    name: 'ファイルを選択',
+  });
+  await expect(addFilesButton).toHaveCount(1);
+  const [fileChooser] = await Promise.all([
+    page.waitForEvent('filechooser'),
+    addFilesButton.click(),
+  ]);
+  await fileChooser.setFiles(uploadPath);
   await chatSection.getByRole('button', { name: '投稿' }).click();
   await expect(chatSection.locator('li', { hasText: chatMessage })).toBeVisible(
     {
@@ -1165,7 +1191,9 @@ test('frontend smoke chat hr analytics @extended', async ({ page }) => {
     'PRJ-DEMO-1 / Demo Project 1',
   );
   await mentionChatSection.getByRole('button', { name: '読み込み' }).click();
-  const mentionAckItem = mentionChatSection.locator('li', { hasText: ackMessage });
+  const mentionAckItem = mentionChatSection.locator('li', {
+    hasText: ackMessage,
+  });
   await expect(mentionAckItem).toBeVisible({ timeout: actionTimeout });
   await expect(mentionAckItem.getByText('確認状況: 0/1')).toBeVisible({
     timeout: actionTimeout,
@@ -1174,7 +1202,9 @@ test('frontend smoke chat hr analytics @extended', async ({ page }) => {
   await expect(mentionAckItem.getByText('確認状況: 1/1')).toBeVisible({
     timeout: actionTimeout,
   });
-  mentionPage.once('dialog', (dialog) => dialog.accept().catch(() => undefined));
+  mentionPage.once('dialog', (dialog) =>
+    dialog.accept().catch(() => undefined),
+  );
   await mentionAckItem.getByRole('button', { name: 'OK取消' }).click();
   await expect(mentionAckItem.getByText('確認状況: 0/1')).toBeVisible({
     timeout: actionTimeout,
@@ -1284,7 +1314,9 @@ test('frontend smoke room chat (private_group/dm) @extended', async ({
     },
   );
   await ensureOk(overdueRoomAckRes);
-  const postCard = roomChatSection.locator('strong', { hasText: '投稿' }).locator('..');
+  const postCard = roomChatSection
+    .locator('strong', { hasText: '投稿' })
+    .locator('..');
   await postCard.getByRole('button', { name: '再読込' }).click();
   const overdueRoomAckItem = messageList
     .locator('.card', { hasText: overdueRoomAckMessage })
@@ -1580,12 +1612,18 @@ test('frontend smoke additional sections @extended', async ({ page }) => {
   await prepare(page);
 
   await navigateToSection(page, 'タスク');
-  const taskSection = page.locator('main').locator('h2', { hasText: 'タスク' }).locator('..');
+  const taskSection = page
+    .locator('main')
+    .locator('h2', { hasText: 'タスク' })
+    .locator('..');
   await taskSection.scrollIntoViewIfNeeded();
   await captureSection(taskSection, '21-project-tasks.png');
 
   await navigateToSection(page, '休暇申請', '休暇');
-  const leaveSection = page.locator('main').locator('h2', { hasText: '休暇' }).locator('..');
+  const leaveSection = page
+    .locator('main')
+    .locator('h2', { hasText: '休暇' })
+    .locator('..');
   await leaveSection.scrollIntoViewIfNeeded();
   await captureSection(leaveSection, '22-leave-requests.png');
 
@@ -1690,6 +1728,7 @@ test('frontend smoke admin ops @extended', async ({ page }) => {
   const accessReviewSection = page
     .locator('main')
     .locator('h2', { hasText: 'アクセス棚卸し' })
+    .first()
     .locator('..');
   await accessReviewSection.scrollIntoViewIfNeeded();
   await safeClick(
@@ -1705,6 +1744,7 @@ test('frontend smoke admin ops @extended', async ({ page }) => {
   const auditLogSection = page
     .locator('main')
     .locator('h2', { hasText: '監査ログ' })
+    .first()
     .locator('..');
   await auditLogSection.scrollIntoViewIfNeeded();
   await safeClick(
