@@ -337,12 +337,14 @@ test('frontend smoke core @core', async ({ page }) => {
 
   // 注釈UI（Invoices）: 作成 → 注釈保存 → 再表示で永続化を確認
   await invoiceSection.getByRole('button', { name: '詳細' }).last().click();
+  const invoiceDetailDrawer = page.getByRole('dialog', { name: /請求詳細/ });
+  await expect(invoiceDetailDrawer).toBeVisible({ timeout: actionTimeout });
   await expect(
-    invoiceSection.getByRole('heading', { name: '請求詳細' }),
+    invoiceDetailDrawer.getByRole('heading', { name: /請求詳細:/ }),
   ).toBeVisible({ timeout: actionTimeout });
   const invoiceAnnotationText = `E2E請求注釈: ${runId()}`;
-  await invoiceSection.getByRole('button', { name: '注釈' }).click();
-  const invoiceAnnotationDialog = page.getByRole('dialog');
+  await invoiceDetailDrawer.getByRole('button', { name: '注釈' }).click();
+  const invoiceAnnotationDialog = page.getByRole('dialog', { name: /請求:/ });
   await invoiceAnnotationDialog
     .getByLabel('メモ（Markdown）')
     .fill(invoiceAnnotationText);
@@ -352,15 +354,16 @@ test('frontend smoke core @core', async ({ page }) => {
   });
   await invoiceAnnotationDialog.getByRole('button', { name: '閉じる' }).click();
 
-  await invoiceSection.getByRole('button', { name: '注釈' }).click();
-  const invoiceAnnotationDialog2 = page.getByRole('dialog');
+  await invoiceDetailDrawer.getByRole('button', { name: '注釈' }).click();
+  const invoiceAnnotationDialog2 = page.getByRole('dialog', { name: /請求:/ });
   await expect(
     invoiceAnnotationDialog2.getByLabel('メモ（Markdown）'),
   ).toHaveValue(invoiceAnnotationText, { timeout: actionTimeout });
   await invoiceAnnotationDialog2
     .getByRole('button', { name: '閉じる' })
     .click();
-  await invoiceSection.getByRole('button', { name: '閉じる' }).click();
+  await invoiceDetailDrawer.getByRole('button', { name: '閉じる' }).click();
+  await expect(invoiceDetailDrawer).toBeHidden({ timeout: actionTimeout });
 
   await navigateToSection(page, 'ホーム', '検索（ERP横断）');
   const searchSection = page
