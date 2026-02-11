@@ -172,6 +172,21 @@ type InvoiceSavedFilterPayload = {
   status: string;
 };
 
+const documentTabIds = [
+  'purchase-orders',
+  'vendor-quotes',
+  'vendor-invoices',
+] as const;
+type DocumentTabId = (typeof documentTabIds)[number];
+
+const isDocumentTabId = (value: string): value is DocumentTabId =>
+  (documentTabIds as readonly string[]).includes(value);
+
+const normalizeInvoiceStatusFilter = (value: string, options: string[]) => {
+  if (value === 'all') return 'all';
+  return options.includes(value) ? value : 'all';
+};
+
 const formatDate = (value?: string | null) =>
   value ? value.slice(0, 10) : '-';
 const formatDateTime = (value?: string | null) => {
@@ -262,9 +277,8 @@ export const VendorDocuments: React.FC = () => {
   const [quoteStatusFilter, setQuoteStatusFilter] = useState('all');
   const [invoiceSearch, setInvoiceSearch] = useState('');
   const [invoiceStatusFilter, setInvoiceStatusFilter] = useState('all');
-  const [activeDocumentTab, setActiveDocumentTab] = useState<
-    'purchase-orders' | 'vendor-quotes' | 'vendor-invoices'
-  >('purchase-orders');
+  const [activeDocumentTab, setActiveDocumentTab] =
+    useState<DocumentTabId>('purchase-orders');
   const [poResult, setPoResult] = useState<MessageState>(null);
   const [quoteResult, setQuoteResult] = useState<MessageState>(null);
   const [invoiceResult, setInvoiceResult] = useState<MessageState>(null);
@@ -320,14 +334,18 @@ export const VendorDocuments: React.FC = () => {
   } | null>(null);
   const [invoiceLines, setInvoiceLines] = useState<VendorInvoiceLine[]>([]);
   const [invoiceLineLoading, setInvoiceLineLoading] = useState(false);
+  const invoiceInitialViewTimestamp = useMemo(
+    () => new Date().toISOString(),
+    [],
+  );
   const invoiceSavedViews = useSavedViews<InvoiceSavedFilterPayload>({
     initialViews: [
       {
         id: 'default',
         name: '既定',
         payload: { search: '', status: 'all' },
-        createdAt: '2026-02-11T00:00:00.000Z',
-        updatedAt: '2026-02-11T00:00:00.000Z',
+        createdAt: invoiceInitialViewTimestamp,
+        updatedAt: invoiceInitialViewTimestamp,
       },
     ],
     initialActiveViewId: 'default',
@@ -2001,26 +2019,20 @@ export const VendorDocuments: React.FC = () => {
       <div style={{ marginTop: 12, display: 'grid', gap: 16 }}>
         <Tabs
           value={activeDocumentTab}
-          onValueChange={(value) =>
-            setActiveDocumentTab(
-              value as 'purchase-orders' | 'vendor-quotes' | 'vendor-invoices',
-            )
-          }
+          onValueChange={(value) => {
+            if (!isDocumentTabId(value)) return;
+            setActiveDocumentTab(value);
+          }}
           ariaLabel="仕入/発注セクション"
-          items={[
-            {
-              id: 'purchase-orders',
-              label: `発注書 (${purchaseOrderRows.length})`,
-            },
-            {
-              id: 'vendor-quotes',
-              label: `仕入見積 (${vendorQuoteRows.length})`,
-            },
-            {
-              id: 'vendor-invoices',
-              label: `仕入請求 (${vendorInvoiceRows.length})`,
-            },
-          ]}
+          items={documentTabIds.map((id) => {
+            if (id === 'purchase-orders') {
+              return { id, label: `発注書 (${purchaseOrderRows.length})` };
+            }
+            if (id === 'vendor-quotes') {
+              return { id, label: `仕入見積 (${vendorQuoteRows.length})` };
+            }
+            return { id, label: `仕入請求 (${vendorInvoiceRows.length})` };
+          })}
         />
         <div style={{ display: 'grid', gap: 24 }}>
           <section
@@ -2486,19 +2498,32 @@ export const VendorDocuments: React.FC = () => {
                 );
                 if (!selected) return;
                 setInvoiceSearch(selected.payload.search);
-                setInvoiceStatusFilter(selected.payload.status);
+                setInvoiceStatusFilter(
+                  normalizeInvoiceStatusFilter(
+                    selected.payload.status,
+                    invoiceStatusOptions,
+                  ),
+                );
               }}
               onSaveAs={(name) => {
+                const normalizedStatus = normalizeInvoiceStatusFilter(
+                  invoiceStatusFilter,
+                  invoiceStatusOptions,
+                );
                 invoiceSavedViews.createView(name, {
                   search: invoiceSearch,
-                  status: invoiceStatusFilter,
+                  status: normalizedStatus,
                 });
               }}
               onUpdateView={(viewId) => {
+                const normalizedStatus = normalizeInvoiceStatusFilter(
+                  invoiceStatusFilter,
+                  invoiceStatusOptions,
+                );
                 invoiceSavedViews.updateView(viewId, {
                   payload: {
                     search: invoiceSearch,
-                    status: invoiceStatusFilter,
+                    status: normalizedStatus,
                   },
                 });
               }}

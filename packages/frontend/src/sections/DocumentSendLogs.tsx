@@ -94,6 +94,7 @@ export const DocumentSendLogs: React.FC = () => {
   const [isOpeningPdf, setIsOpeningPdf] = useState(false);
   const [retryTargetLogId, setRetryTargetLogId] = useState<string | null>(null);
 
+  const initialSavedViewTimestamp = useMemo(() => new Date().toISOString(), []);
   const trimmedLogId = logId.trim();
   const savedViews = useSavedViews<SavedFilterPayload>({
     initialViews: [
@@ -101,8 +102,8 @@ export const DocumentSendLogs: React.FC = () => {
         id: 'default',
         name: '既定',
         payload: { logId: '' },
-        createdAt: '2026-02-11T00:00:00.000Z',
-        updatedAt: '2026-02-11T00:00:00.000Z',
+        createdAt: initialSavedViewTimestamp,
+        updatedAt: initialSavedViewTimestamp,
       },
     ],
     initialActiveViewId: 'default',
@@ -484,13 +485,13 @@ export const DocumentSendLogs: React.FC = () => {
               (view) => view.id === viewId,
             );
             if (!selected) return;
-            setLogId(selected.payload.logId);
+            setLogId((selected.payload?.logId || '').trim());
           }}
           onSaveAs={(name) => {
-            savedViews.createView(name, { logId });
+            savedViews.createView(name, { logId: trimmedLogId });
           }}
           onUpdateView={(viewId) => {
-            savedViews.updateView(viewId, { payload: { logId } });
+            savedViews.updateView(viewId, { payload: { logId: trimmedLogId } });
           }}
           onDuplicateView={(viewId) => {
             savedViews.duplicateView(viewId);

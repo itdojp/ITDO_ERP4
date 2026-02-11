@@ -134,14 +134,15 @@ export const AuditLogs: React.FC = () => {
   const [listError, setListError] = useState('');
   const [message, setMessage] = useState('');
   const [isDownloading, setIsDownloading] = useState(false);
+  const initialSavedViewTimestamp = useMemo(() => new Date().toISOString(), []);
   const savedViews = useSavedViews<SavedFilterPayload>({
     initialViews: [
       {
         id: 'default',
         name: '既定',
         payload: toSavedFilterPayload(defaultFilters),
-        createdAt: '2026-02-11T00:00:00.000Z',
-        updatedAt: '2026-02-11T00:00:00.000Z',
+        createdAt: initialSavedViewTimestamp,
+        updatedAt: initialSavedViewTimestamp,
       },
     ],
     initialActiveViewId: 'default',

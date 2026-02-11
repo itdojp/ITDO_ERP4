@@ -70,12 +70,9 @@ const JOB_DEFINITIONS: JobDescriptor[] = [
 ];
 
 const JOB_KEY_SET = new Set<JobKey>(JOB_DEFINITIONS.map((item) => item.key));
-const JOB_GROUP_SET = new Set<JobGroup>([
-  '運用',
-  'レポート',
-  '通知',
-  '定期/連携',
-]);
+const JOB_GROUP_SET = new Set<JobGroup>(
+  JOB_DEFINITIONS.map((item) => item.group),
+);
 
 const formatJson = (value: unknown) => {
   try {
@@ -156,14 +153,15 @@ export const AdminJobs: React.FC = () => {
   const [chatRoomAclLimit, setChatRoomAclLimit] = useState('200');
   const [dailyReportDryRun, setDailyReportDryRun] = useState(false);
   const [dailyReportTargetDate, setDailyReportTargetDate] = useState('');
+  const initialSavedViewTimestamp = useMemo(() => new Date().toISOString(), []);
   const savedViews = useSavedViews<SavedFilterPayload>({
     initialViews: [
       {
         id: 'default',
         name: '既定',
         payload: { search: '', groupFilter: 'all' },
-        createdAt: '2026-02-11T00:00:00.000Z',
-        updatedAt: '2026-02-11T00:00:00.000Z',
+        createdAt: initialSavedViewTimestamp,
+        updatedAt: initialSavedViewTimestamp,
       },
     ],
     initialActiveViewId: 'default',
