@@ -177,6 +177,22 @@ function resolveAttachmentKind(
   return 'file';
 }
 
+function toAttachmentRecord(attachment: {
+  id: string;
+  originalName: string;
+  mimeType?: string | null;
+  sizeBytes?: number | null;
+}): AttachmentRecord {
+  return {
+    id: attachment.id,
+    name: attachment.originalName,
+    size: typeof attachment.sizeBytes === 'number' ? attachment.sizeBytes : 0,
+    mimeType: attachment.mimeType || 'application/octet-stream',
+    kind: resolveAttachmentKind(attachment.mimeType),
+    status: 'uploaded',
+  };
+}
+
 function formatBreakGlassStatus(status: string) {
   switch (status) {
     case 'requested':
@@ -2028,32 +2044,31 @@ export const ProjectChat: React.FC = () => {
               )}
               {item.attachments && item.attachments.length > 0 && (
                 <div style={{ marginTop: 6 }}>
-                  <div style={{ fontSize: 12, color: '#64748b' }}>添付:</div>
-                  <div
-                    className="row"
-                    style={{ gap: 6, flexWrap: 'wrap', marginTop: 4 }}
-                  >
-                    {item.attachments.map((attachment) => (
-                      <button
-                        key={attachment.id}
-                        className="button secondary"
-                        onClick={() =>
-                          downloadAttachment(
-                            attachment.id,
-                            attachment.originalName,
-                          ).catch((error) => {
-                            console.error(
-                              '添付のダウンロードに失敗しました',
-                              error,
-                            );
-                            setMessage('添付のダウンロードに失敗しました');
-                          })
-                        }
-                      >
-                        {attachment.originalName}
-                      </button>
-                    ))}
-                  </div>
+                  <AttachmentField
+                    attachments={item.attachments.map((attachment) =>
+                      toAttachmentRecord(attachment),
+                    )}
+                    labels={{
+                      title: '添付',
+                      selectPreview: 'ダウンロード',
+                    }}
+                    onSelectPreview={(attachmentId) => {
+                      const target = item.attachments?.find(
+                        (attachment) => attachment.id === attachmentId,
+                      );
+                      if (!target) return;
+                      downloadAttachment(
+                        target.id,
+                        target.originalName,
+                      ).catch((error) => {
+                        console.error(
+                          '添付のダウンロードに失敗しました',
+                          error,
+                        );
+                        setMessage('添付のダウンロードに失敗しました');
+                      });
+                    }}
+                  />
                 </div>
               )}
               {item.tags && item.tags.length > 0 && (
