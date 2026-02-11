@@ -10,9 +10,12 @@ import {
   Dialog,
   FilterBar,
   Input,
+  SavedViewBar,
   Select,
   StatusBadge,
+  createLocalStorageSavedViewsAdapter,
   erpStatusDictionary,
+  useSavedViews,
 } from '../ui';
 import type { DataTableColumn, DataTableRow } from '../ui';
 
@@ -46,6 +49,11 @@ type JobDescriptor = {
   label: string;
 };
 
+type SavedFilterPayload = {
+  search: string;
+  groupFilter: 'all' | JobGroup;
+};
+
 const JOB_DEFINITIONS: JobDescriptor[] = [
   { key: 'alerts', group: '運用', label: 'アラート計算' },
   { key: 'approvalEscalations', group: '運用', label: '承認エスカレーション' },
@@ -62,6 +70,9 @@ const JOB_DEFINITIONS: JobDescriptor[] = [
 ];
 
 const JOB_KEY_SET = new Set<JobKey>(JOB_DEFINITIONS.map((item) => item.key));
+const JOB_GROUP_SET = new Set<JobGroup>(
+  JOB_DEFINITIONS.map((item) => item.group),
+);
 
 const formatJson = (value: unknown) => {
   try {
@@ -107,6 +118,12 @@ const summarizeResult = (state: JobState) => {
   return compact.length > 80 ? `${compact.slice(0, 80)}...` : compact;
 };
 
+const normalizeGroupFilter = (value: string): 'all' | JobGroup => {
+  if (value === 'all') return 'all';
+  if (JOB_GROUP_SET.has(value as JobGroup)) return value as JobGroup;
+  return 'all';
+};
+
 const checkboxLabelStyle: React.CSSProperties = {
   display: 'inline-flex',
   alignItems: 'center',
@@ -136,6 +153,22 @@ export const AdminJobs: React.FC = () => {
   const [chatRoomAclLimit, setChatRoomAclLimit] = useState('200');
   const [dailyReportDryRun, setDailyReportDryRun] = useState(false);
   const [dailyReportTargetDate, setDailyReportTargetDate] = useState('');
+  const initialSavedViewTimestamp = useMemo(() => new Date().toISOString(), []);
+  const savedViews = useSavedViews<SavedFilterPayload>({
+    initialViews: [
+      {
+        id: 'default',
+        name: '既定',
+        payload: { search: '', groupFilter: 'all' },
+        createdAt: initialSavedViewTimestamp,
+        updatedAt: initialSavedViewTimestamp,
+      },
+    ],
+    initialActiveViewId: 'default',
+    storageAdapter: createLocalStorageSavedViewsAdapter<SavedFilterPayload>(
+      'erp4-admin-jobs-saved-views',
+    ),
+  });
 
   const notificationLimitError = useMemo(() => {
     if (!notificationLimit.trim()) return '';
@@ -563,6 +596,44 @@ export const AdminJobs: React.FC = () => {
       </Card>
 
       <div style={{ marginTop: 12 }}>
+        <SavedViewBar
+          views={savedViews.views}
+          activeViewId={savedViews.activeViewId}
+          onSelectView={(viewId) => {
+            savedViews.selectView(viewId);
+            const selected = savedViews.views.find(
+              (view) => view.id === viewId,
+            );
+            if (!selected) return;
+            setSearch(selected.payload.search);
+            setGroupFilter(normalizeGroupFilter(selected.payload.groupFilter));
+          }}
+          onSaveAs={(name) => {
+            savedViews.createView(name, { search, groupFilter });
+          }}
+          onUpdateView={(viewId) => {
+            savedViews.updateView(viewId, { payload: { search, groupFilter } });
+          }}
+          onDuplicateView={(viewId) => {
+            savedViews.duplicateView(viewId);
+          }}
+          onShareView={(viewId) => {
+            savedViews.toggleShared(viewId, true);
+          }}
+          onDeleteView={(viewId) => {
+            savedViews.deleteView(viewId);
+          }}
+          labels={{
+            title: '保存ビュー',
+            saveAsPlaceholder: 'ビュー名',
+            saveAsButton: '保存',
+            update: '更新',
+            duplicate: '複製',
+            share: '共有',
+            delete: '削除',
+            active: '現在のビュー',
+          }}
+        />
         <CrudList
           title="ジョブ一覧"
           description="ジョブ実行・状態確認・結果詳細を一元管理します。"

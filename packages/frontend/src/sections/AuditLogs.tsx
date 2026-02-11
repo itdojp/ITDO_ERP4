@@ -8,9 +8,12 @@ import {
   DataTable,
   FilterBar,
   Input,
+  SavedViewBar,
   Select,
   StatusBadge,
+  createLocalStorageSavedViewsAdapter,
   erpStatusDictionary,
+  useSavedViews,
 } from '../ui';
 import type { DataTableColumn, DataTableRow } from '../ui';
 import {
@@ -53,6 +56,41 @@ type FilterState = {
   format: 'json' | 'csv';
 };
 
+type SavedFilterPayload = Omit<FilterState, 'format'>;
+
+const defaultFilters: FilterState = {
+  from: '',
+  to: '',
+  userId: '',
+  action: '',
+  targetTable: '',
+  targetId: '',
+  reasonCode: '',
+  reasonText: '',
+  source: '',
+  actorRole: '',
+  actorGroupId: '',
+  requestId: '',
+  limit: '200',
+  format: 'json',
+};
+
+const toSavedFilterPayload = (filters: FilterState): SavedFilterPayload => ({
+  from: filters.from,
+  to: filters.to,
+  userId: filters.userId,
+  action: filters.action,
+  targetTable: filters.targetTable,
+  targetId: filters.targetId,
+  reasonCode: filters.reasonCode,
+  reasonText: filters.reasonText,
+  source: filters.source,
+  actorRole: filters.actorRole,
+  actorGroupId: filters.actorGroupId,
+  requestId: filters.requestId,
+  limit: filters.limit,
+});
+
 const buildQuery = (filters: FilterState) => {
   const params = new URLSearchParams();
   if (filters.from) params.set('from', filters.from);
@@ -88,22 +126,7 @@ const formatMetadata = (value: Record<string, unknown> | null | undefined) => {
 };
 
 export const AuditLogs: React.FC = () => {
-  const [filters, setFilters] = useState<FilterState>({
-    from: '',
-    to: '',
-    userId: '',
-    action: '',
-    targetTable: '',
-    targetId: '',
-    reasonCode: '',
-    reasonText: '',
-    source: '',
-    actorRole: '',
-    actorGroupId: '',
-    requestId: '',
-    limit: '200',
-    format: 'json',
-  });
+  const [filters, setFilters] = useState<FilterState>(defaultFilters);
   const [items, setItems] = useState<AuditLogItem[]>([]);
   const [listStatus, setListStatus] = useState<
     'idle' | 'loading' | 'error' | 'success'
@@ -111,6 +134,22 @@ export const AuditLogs: React.FC = () => {
   const [listError, setListError] = useState('');
   const [message, setMessage] = useState('');
   const [isDownloading, setIsDownloading] = useState(false);
+  const initialSavedViewTimestamp = useMemo(() => new Date().toISOString(), []);
+  const savedViews = useSavedViews<SavedFilterPayload>({
+    initialViews: [
+      {
+        id: 'default',
+        name: '既定',
+        payload: toSavedFilterPayload(defaultFilters),
+        createdAt: initialSavedViewTimestamp,
+        updatedAt: initialSavedViewTimestamp,
+      },
+    ],
+    initialActiveViewId: 'default',
+    storageAdapter: createLocalStorageSavedViewsAdapter<SavedFilterPayload>(
+      'erp4-audit-log-saved-views',
+    ),
+  });
 
   const query = useMemo(() => buildQuery(filters), [filters]);
 
@@ -229,6 +268,49 @@ export const AuditLogs: React.FC = () => {
         </div>
       )}
       <div style={{ marginTop: 12 }}>
+        <SavedViewBar
+          views={savedViews.views}
+          activeViewId={savedViews.activeViewId}
+          onSelectView={(viewId) => {
+            savedViews.selectView(viewId);
+            const selected = savedViews.views.find(
+              (view) => view.id === viewId,
+            );
+            if (!selected) return;
+            setFilters((prev) => ({
+              ...prev,
+              ...selected.payload,
+              format: 'json',
+            }));
+          }}
+          onSaveAs={(name) => {
+            savedViews.createView(name, toSavedFilterPayload(filters));
+          }}
+          onUpdateView={(viewId) => {
+            savedViews.updateView(viewId, {
+              payload: toSavedFilterPayload(filters),
+            });
+          }}
+          onDuplicateView={(viewId) => {
+            savedViews.duplicateView(viewId);
+          }}
+          onShareView={(viewId) => {
+            savedViews.toggleShared(viewId, true);
+          }}
+          onDeleteView={(viewId) => {
+            savedViews.deleteView(viewId);
+          }}
+          labels={{
+            title: '保存ビュー',
+            saveAsPlaceholder: 'ビュー名',
+            saveAsButton: '保存',
+            update: '更新',
+            duplicate: '複製',
+            share: '共有',
+            delete: '削除',
+            active: '現在のビュー',
+          }}
+        />
         <CrudList
           title="監査ログ一覧"
           description="条件を指定して監査ログを検索し、CSVを出力できます。"
@@ -239,22 +321,7 @@ export const AuditLogs: React.FC = () => {
                   <Button
                     variant="ghost"
                     onClick={() => {
-                      setFilters({
-                        from: '',
-                        to: '',
-                        userId: '',
-                        action: '',
-                        targetTable: '',
-                        targetId: '',
-                        reasonCode: '',
-                        reasonText: '',
-                        source: '',
-                        actorRole: '',
-                        actorGroupId: '',
-                        requestId: '',
-                        limit: '200',
-                        format: 'json',
-                      });
+                      setFilters(defaultFilters);
                     }}
                   >
                     条件クリア
