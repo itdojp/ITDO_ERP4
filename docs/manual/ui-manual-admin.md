@@ -326,6 +326,20 @@
 3. dueInHours / remindIntervalHours / escalationAfterHours を必要に応じて設定する
 4. `作成` / `更新` / `再読込` を実行する
 
+### 合意形成テンプレ運用ルール
+
+1. actionKey は `domain.action_ack.vN`（例: `invoice.submit_ack.v1`）で作成する
+2. 破壊的変更は既存テンプレ更新ではなく、`vN` を繰り上げた新規テンプレで管理する
+3. owner/review周期は台帳 `docs/requirements/chat-ack-template-ledger.csv` に記録する
+4. review周期（`reviewCycleDays`）を超えたテンプレは、月次棚卸しで継続可否を判定する
+5. 廃止時は「後継テンプレ作成 → 旧テンプレを非推奨化（台帳 `status=deprecated` + `replacedBy` 設定、UI上は `isEnabled=true` 維持）→ 切替完了後に旧テンプレ `isEnabled=false` + 台帳 `status=retired`」の順で更新する
+
+### 入力項目/制約（合意形成テンプレ）
+
+- flowType は FlowType の定義値のみ利用する
+- actionKey の重複運用を避けるため、同一 flowType で同一 actionKey について `isEnabled=true` かつ台帳 `status=active` のテンプレは1件のみとする
+- messageBody は目的と確認観点が分かる文面にする（期限/エスカレーション条件を明記）
+
 ### 詳細操作（テンプレ設定）
 
 1. 種別とテンプレを選択する

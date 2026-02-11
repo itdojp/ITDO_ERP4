@@ -77,6 +77,36 @@ Refs: #783, #675, #717
 - approval_instances の `approve/reject` を起点にテンプレが自動適用される
 - 期限経過後はテンプレ設定に応じてエスカレーション通知を追加送信する
 
+## chat ack template 運用標準（#922）
+
+### 命名規約
+
+- `flowType`: 既存 `FlowType` enum を使用（例: `invoice`, `purchase_order`, `vendor_invoice`）
+- `actionKey`: `domain.action_ack.vN` 形式（例: `invoice.submit_ack.v1`）
+  - 互換性を壊さない修正（文面微調整、対象追加）は同一 `actionKey` で更新
+  - ガード条件や対象範囲を変更する破壊的変更は `vN` を繰り上げて新規作成
+- `messageBody`: 1行目を「目的」、2行目以降を「確認観点」で統一し、期限/エスカレーション条件を明示する
+
+### テンプレ台帳（owner/review周期）
+
+- 台帳は `docs/requirements/chat-ack-template-ledger.csv` を使用する
+- 必須カラム:
+  - `ownerRole`, `ownerUserId`: 運用責任者
+  - `reviewCycleDays`: 棚卸し周期（日）
+  - `lastReviewedAt`, `nextReviewAt`: 最終レビュー日と次回レビュー日
+  - `status`: `active` / `deprecated` / `retired`
+  - `replacedBy`: 置換先テンプレID（該当時のみ）
+- 棚卸し運用:
+  - 月次で `nextReviewAt <= today` のテンプレをレビュー対象として抽出
+  - 重複（同一 `flowType` + 同一 `actionKey` で複数 `active`）を禁止
+
+### 非推奨/廃止フロー
+
+1. 新仕様が必要な場合は後継テンプレを新規作成し、承認ルール/業務導線を後継へ切替
+2. 旧テンプレを `deprecated` として台帳更新（`replacedBy` を設定）
+3. 移行完了後、旧テンプレの `isEnabled=false` に更新し `retired` へ変更
+4. 監査ログ（`chat_ack_template_created/updated`）と台帳更新日時を突合し、履歴の欠落を確認
+
 ## 決定事項
 
 - 連携キー: 中間テーブル（案B: ChatAckLink）を採用
@@ -102,3 +132,4 @@ Refs: #783, #675, #717
 - `docs/requirements/approval-ack-messages.md`
 - `docs/requirements/workflow-generic.md`
 - `docs/requirements/action-policy.md`（存在する場合）
+- `docs/requirements/chat-ack-template-ledger.csv`
