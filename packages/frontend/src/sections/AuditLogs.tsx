@@ -272,7 +272,9 @@ export const AuditLogs: React.FC = () => {
           activeViewId={savedViews.activeViewId}
           onSelectView={(viewId) => {
             savedViews.selectView(viewId);
-            const selected = savedViews.views.find((view) => view.id === viewId);
+            const selected = savedViews.views.find(
+              (view) => view.id === viewId,
+            );
             if (!selected) return;
             setFilters((prev) => ({
               ...prev,

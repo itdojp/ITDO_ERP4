@@ -480,7 +480,9 @@ export const DocumentSendLogs: React.FC = () => {
           activeViewId={savedViews.activeViewId}
           onSelectView={(viewId) => {
             savedViews.selectView(viewId);
-            const selected = savedViews.views.find((view) => view.id === viewId);
+            const selected = savedViews.views.find(
+              (view) => view.id === viewId,
+            );
             if (!selected) return;
             setLogId(selected.payload.logId);
           }}

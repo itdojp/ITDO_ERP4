@@ -603,7 +603,9 @@ export const AdminJobs: React.FC = () => {
           activeViewId={savedViews.activeViewId}
           onSelectView={(viewId) => {
             savedViews.selectView(viewId);
-            const selected = savedViews.views.find((view) => view.id === viewId);
+            const selected = savedViews.views.find(
+              (view) => view.id === viewId,
+            );
             if (!selected) return;
             setSearch(selected.payload.search);
             setGroupFilter(normalizeGroupFilter(selected.payload.groupFilter));
