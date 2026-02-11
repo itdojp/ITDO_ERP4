@@ -32,7 +32,8 @@ contains_eslint10() {
   if [[ -z "${range}" ]]; then
     return 1
   fi
-  if grep -Eq '(^|[^0-9])10([^0-9]|$)' <<<"${range}"; then
+  # Use semver range evaluation to avoid false positives such as "^8.10.0" or "<10".
+  if npx --yes semver -r "${range}" 10.0.0 >/dev/null 2>&1; then
     return 0
   fi
   return 1
