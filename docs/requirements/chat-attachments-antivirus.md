@@ -36,13 +36,14 @@
 - スキャン失敗: `chat_attachment_scan_failed` を記録
 - 共通 metadata: `scanDurationMs` を記録し、遅延監視（p95）を集計可能にする
 
-## 運用設計（確定候補 / Issue #886）
+## 運用設計（確定 / Issue #886）
 
 運用Runbookは `docs/ops/antivirus.md` を正本として管理する。監視しきい値や障害対応フローなどの運用詳細は Runbook 側に記載し、本節では有効化判断と判定ゲートの必須要件を中心に整理する。
+本番の最終決定値は `docs/ops/antivirus-decision-record.md` を正本として記録する。`docs/ops/index.md` からも同 decision record へ到達できる導線を維持する。
 
-### 現時点の確定事項（2026-02-07時点）
+### 現時点の確定事項（2026-02-11時点）
 
-- 既定は `disabled` を維持する（未確定項目が残る間は挙動変更しない）。
+- 既定は `disabled` を維持する（`clamav` への切替は運用変更として別途実施する）。
 - `clamav` 運用時の障害挙動は fail closed（スキャナ利用不能時は 503）とする。
 - 検証構成は backend と clamd を同一ホスト別コンテナで接続（TCP: `CLAMAV_HOST`/`CLAMAV_PORT`）する。
 
@@ -53,33 +54,34 @@
 - 外部ユーザが添付をアップロード可能である。
 - 監査/ガバナンス上、「スキャンなし」を許容できない。
 
-### 定義更新方式（確定候補）
+### 定義更新方式（確定）
 
-第1候補:
 - `docker.io/clamav/clamav:latest` の `freshclam --daemon` を利用する。
-
-補完策:
 - 週次以上でイメージ更新ジョブを実行し、定義/エンジン更新の取りこぼしを抑制する。
 
 検証根拠:
+
 - `podman exec erp4-clamav ps -eo pid,comm,args` で `freshclam --daemon` を確認済み。
 - `podman logs erp4-clamav` で `ClamAV update process started` を確認済み。
 
-### 監視/障害対応（確定候補）
+### 監視/障害対応（確定）
 
 推奨監視対象:
+
 - clamd 死活（TCP 応答）
 - `chat_attachment_scan_failed` の発生件数
 - スキャン遅延（タイムアウト増加）
 - 添付 API の 503 比率
 
 推奨しきい値:
+
 - clamd 応答不可が 3 分継続: Critical
 - `chat_attachment_scan_failed` が 10 分で 5 件以上: High
 - 添付 API の 503 比率が 10 分窓で 1% 超: High
 - スキャン処理時間 p95 が 5 秒超（10 分継続）: Medium
 
 障害時の原則:
+
 - fail closed を維持し、バイパス保存は行わない。
 - 復旧手順は `docs/ops/antivirus.md` に従って再検証まで実施する。
 
@@ -98,7 +100,7 @@
    - ステージングで `bash scripts/smoke-chat-attachments-av.sh` を実行し、結果を `docs/test-results/` に記録している。
    - 記録は `docs/test-results/chat-attachments-av-staging-template.md` の様式に従う。
 
-上記が未確定の場合は `CHAT_ATTACHMENT_AV_PROVIDER=disabled` を維持する。
+上記を満たすまでは `CHAT_ATTACHMENT_AV_PROVIDER=disabled` を維持する。
 
 ## テスト（手動）
 

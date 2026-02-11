@@ -1,21 +1,28 @@
 # 添付AVスキャン（Runbook）
 
 ## 目的
+
 - チャット添付の AV スキャン運用を、障害時対応まで含めて一貫した手順で実施する。
 - 要件詳細は `docs/requirements/chat-attachments-antivirus.md` を参照する。
 
-## 現時点の運用方針（2026-02-07）
-- 本番は `CHAT_ATTACHMENT_AV_PROVIDER=disabled` を継続し、ステージング検証と運用条件確定後に `clamav` 有効化を判断する。
+## 本番運用方針（確定: 2026-02-11）
+
+- 本番は `CHAT_ATTACHMENT_AV_PROVIDER=disabled` を既定として継続する。
 - `clamav` 運用時は fail closed（スキャナ利用不能時 503）を維持し、例外バイパスは設けない。
-- 運用判断の残件は `Issue #886` で管理する。
+- 定義更新は `freshclam --daemon` と週次イメージ更新を併用する。
+- 監視しきい値は本書「監視対象としきい値（確定）」を適用する。
+- 最終決定の記録は `docs/ops/antivirus-decision-record.md` を正本とする。
+- 最終決定の経緯と詳細な記録は `docs/ops/antivirus-decision-record.md` を参照する。
 
 ## 運用モード
+
 1. `disabled`（既定）
    - スキャンなし。運用未確定期間の既定モード。
 2. `clamav`
    - clamd 連携でスキャン。`FOUND` は 422、利用不能は 503（fail closed）。
 
 ## 検証コマンド
+
 - clamd 疎通/EICAR 検証: `bash scripts/podman-clamav.sh check`
 - API 統合スモーク: `bash scripts/smoke-chat-attachments-av.sh`
 - ステージング証跡をまとめて記録（推奨）: `make av-staging-evidence`
@@ -28,7 +35,8 @@
   - 閾値を変えて比較する場合（例）:
     - `THRESHOLD_SCAN_FAILED_COUNT=3 THRESHOLD_SCAN_FAILED_RATE_PCT=0.5 THRESHOLD_SCAN_P95_MS=3000 ENV_NAME=staging make av-staging-evidence`
 
-## 監視対象と推奨しきい値（確定候補）
+## 監視対象としきい値（確定）
+
 1. 死活監視（必須）
    - 条件: clamd TCP 応答不可が 3 分継続
    - 重要度: Critical
@@ -43,10 +51,12 @@
    - 重要度: Medium
 
 注記:
+
 - 監視基盤が整っていない環境では、監査ログ集計で代替し、日次で件数確認する。
-- しきい値はステージング結果に基づき `Issue #886` で最終確定する。
+- しきい値見直し時は `docs/ops/antivirus-decision-record.md` に変更理由と施行日を追記する。
 
 ## 監査ログ集計（監視基盤未整備時の代替）
+
 1. 集計
    - `scripts/report-chat-attachments-av-metrics.mjs` を実行し、10分窓で `scanFailed件数` と `scanFailedRate(=503相当率)` を確認する。
 2. エビデンス化
@@ -59,6 +69,7 @@
    - 記録ファイルの `判定ゲート` セクションで `PASS/FAIL` を確認する。
 
 ## 障害時対応フロー（fail closed 前提）
+
 1. 検知
    - アラート受信、または `chat_attachment_scan_failed` 急増を確認。
 2. 一次切り分け
@@ -73,15 +84,18 @@
    - 原因、対応、再発防止策をインシデント記録に残す。
 
 ## 本番有効化チェックリスト（Issue #886）
-- [ ] `CHAT_ATTACHMENT_AV_PROVIDER` 方針を確定（`disabled` 維持 or `clamav` 有効化）
-- [ ] fail closed を業務上許容するかを確定（不可の場合は代替フローを定義）
-- [ ] 定義更新方式を確定（`freshclam --daemon` / 定期ジョブ / イメージ更新）
-- [ ] 監視/アラート閾値を確定（clamd死活、`chat_attachment_scan_failed`、タイムアウト）
+
+- [x] `CHAT_ATTACHMENT_AV_PROVIDER` 方針を確定（`disabled` 維持）
+- [x] fail closed を業務上許容するかを確定（不可の場合は代替フローを定義）
+- [x] 定義更新方式を確定（`freshclam --daemon` / 定期ジョブ / イメージ更新）
+- [x] 監視/アラート閾値を確定（clamd死活、`chat_attachment_scan_failed`、タイムアウト）
 - [x] 復旧Runbookを具体化（検知→切り分け→復旧→再検証）
-- [ ] ステージング検証結果を `docs/test-results/` に記録
+- [x] ステージング検証結果を `docs/test-results/` に記録
 
 ## 検証結果の記録
+
 - 直近の検証（ローカル/PoC）: `docs/test-results/2026-02-06-chat-attachments-av-r2.md`
+- 直近の検証（staging）: `docs/test-results/2026-02-09-chat-attachments-av-staging.md`
 - 記録テンプレート: `docs/test-results/chat-attachments-av-staging-template.md`
 - 補助: `scripts/record-chat-attachments-av-staging.sh`（smoke + audit metrics の同時記録）
 - 補助: `scripts/record-chat-attachments-av-readiness.sh`（技術ゲート判定 + 未確定運用判断の整理）
