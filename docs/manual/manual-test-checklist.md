@@ -84,6 +84,15 @@
 - [ ] AdminJobs: chat ack reminders / leave upcoming を dryRun/実行でき、結果(JSON)が表示される
 - [ ] 実行後、通知カードに反映される（必要に応じて /notifications で確認）
 
+### モバイル回帰（design-system適用後）
+- [ ] `docs/test-results/mobile-regression-template.md` をコピーし、PR単位の証跡ファイル（`YYYY-MM-DD-mobile-regression-*.md`）を作成する
+- [ ] Invoices: 一覧/フィルタ/行アクションが `375x667` で崩れず操作できる
+- [ ] VendorDocuments: PO紐づけ/解除、配賦明細または請求明細入力が `375x667` で操作できる
+- [ ] AuditLogs: 検索フォーム/一覧/CSV出力が `375x667` で操作できる
+- [ ] PeriodLocks: 登録/解除導線が `375x667` で操作できる
+- [ ] AdminJobs: dryRun切替/実行/結果確認が `375x667` で操作できる
+- [ ] PR本文に証跡ファイルとスクリーンショット格納ディレクトリ（`docs/test-results/...`）のリンクを記載する
+
 ## 環境・その他
 - [ ] CI (backend/frontend/lint/lychee) が緑
 - [ ] prisma format/validate が通る（DATABASE_URL ダミー設定でOK）
