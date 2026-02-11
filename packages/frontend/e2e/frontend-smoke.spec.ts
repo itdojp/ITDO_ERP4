@@ -898,7 +898,13 @@ test('frontend smoke reports masters settings @extended', async ({ page }) => {
     .locator('strong', { hasText: 'アラート設定（簡易モック）' })
     .locator('..');
   await alertBlock.getByRole('button', { name: '次へ' }).click();
+  await expect(
+    alertBlock.getByRole('heading', { name: '通知先' }),
+  ).toBeVisible();
   await alertBlock.getByRole('button', { name: '次へ' }).click();
+  await expect(
+    alertBlock.getByRole('heading', { name: 'チャネル確認' }),
+  ).toBeVisible();
   await alertBlock.getByRole('button', { name: '作成' }).click();
   await expect(
     settingsSection.getByText('アラート設定を作成しました'),
@@ -1023,10 +1029,15 @@ test('frontend smoke chat hr analytics @extended', async ({ page }) => {
     timeout: actionTimeout,
   });
   await chatSection.getByPlaceholder('タグ (comma separated)').fill('e2e,chat');
-  await chatSection
-    .locator('input[type="file"]')
-    .first()
-    .setInputFiles(uploadPath);
+  const addFilesButton = chatSection.getByRole('button', {
+    name: 'ファイルを選択',
+  });
+  await expect(addFilesButton).toHaveCount(1);
+  const [fileChooser] = await Promise.all([
+    page.waitForEvent('filechooser'),
+    addFilesButton.click(),
+  ]);
+  await fileChooser.setFiles(uploadPath);
   await chatSection.getByRole('button', { name: '投稿' }).click();
   await expect(chatSection.locator('li', { hasText: chatMessage })).toBeVisible(
     {
