@@ -1,4 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { api, apiResponse } from '../api';
 import { AnnotationsCard } from '../components/AnnotationsCard';
 import {
@@ -496,34 +502,37 @@ export const VendorDocuments: React.FC = () => {
     [],
   );
 
-  const loadVendorInvoiceLines = useCallback(async (invoiceId: string) => {
-    setInvoiceLineLoading(true);
-    try {
-      const res = await api<{
-        invoice: VendorInvoice;
-        items: VendorInvoiceLine[];
-      }>(`/vendor-invoices/${invoiceId}/lines`);
-      setInvoiceLines(
-        (res.items || []).map((item) =>
-          item.id || item.tempId
-            ? item
-            : { ...item, tempId: nextInvoiceLineTempId() },
-        ),
-      );
-      setInvoiceLineDialog((prev) =>
-        prev ? { ...prev, invoice: res.invoice } : prev,
-      );
-    } catch (err) {
-      console.error('Failed to load vendor invoice lines.', err);
-      setInvoiceLineMessage({
-        text: '請求明細の取得に失敗しました',
-        type: 'error',
-      });
-      setInvoiceLines([]);
-    } finally {
-      setInvoiceLineLoading(false);
-    }
-  }, [nextInvoiceLineTempId]);
+  const loadVendorInvoiceLines = useCallback(
+    async (invoiceId: string) => {
+      setInvoiceLineLoading(true);
+      try {
+        const res = await api<{
+          invoice: VendorInvoice;
+          items: VendorInvoiceLine[];
+        }>(`/vendor-invoices/${invoiceId}/lines`);
+        setInvoiceLines(
+          (res.items || []).map((item) =>
+            item.id || item.tempId
+              ? item
+              : { ...item, tempId: nextInvoiceLineTempId() },
+          ),
+        );
+        setInvoiceLineDialog((prev) =>
+          prev ? { ...prev, invoice: res.invoice } : prev,
+        );
+      } catch (err) {
+        console.error('Failed to load vendor invoice lines.', err);
+        setInvoiceLineMessage({
+          text: '請求明細の取得に失敗しました',
+          type: 'error',
+        });
+        setInvoiceLines([]);
+      } finally {
+        setInvoiceLineLoading(false);
+      }
+    },
+    [nextInvoiceLineTempId],
+  );
 
   useEffect(() => {
     const loadAll = async () => {
