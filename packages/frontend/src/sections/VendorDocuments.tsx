@@ -313,9 +313,8 @@ export const VendorDocuments: React.FC = () => {
     useState<MessageState>(null);
   const [invoiceLineReason, setInvoiceLineReason] = useState('');
   const [invoiceLineExpanded, setInvoiceLineExpanded] = useState(false);
-  const [invoiceLinePoUsageByLineId, setInvoiceLinePoUsageByLineId] = useState<
-    Record<string, VendorInvoicePoLineUsage>
-  >({});
+  const [invoiceLinePoUsageByPoLineId, setInvoiceLinePoUsageByPoLineId] =
+    useState<Record<string, VendorInvoicePoLineUsage>>({});
   const [invoiceSubmitBusy, setInvoiceSubmitBusy] = useState<
     Record<string, boolean>
   >({});
@@ -530,11 +529,11 @@ export const VendorDocuments: React.FC = () => {
               : { ...item, tempId: nextInvoiceLineTempId() },
           ),
         );
-        const usageByLineId: Record<string, VendorInvoicePoLineUsage> = {};
+        const usageByPoLineId: Record<string, VendorInvoicePoLineUsage> = {};
         (res.poLineUsage || []).forEach((entry) => {
-          usageByLineId[entry.purchaseOrderLineId] = entry;
+          usageByPoLineId[entry.purchaseOrderLineId] = entry;
         });
-        setInvoiceLinePoUsageByLineId(usageByLineId);
+        setInvoiceLinePoUsageByPoLineId(usageByPoLineId);
         setInvoiceLineDialog((prev) =>
           prev ? { ...prev, invoice: res.invoice } : prev,
         );
@@ -545,7 +544,7 @@ export const VendorDocuments: React.FC = () => {
           type: 'error',
         });
         setInvoiceLines([]);
-        setInvoiceLinePoUsageByLineId({});
+        setInvoiceLinePoUsageByPoLineId({});
       } finally {
         setInvoiceLineLoading(false);
       }
@@ -1030,7 +1029,7 @@ export const VendorDocuments: React.FC = () => {
     setInvoiceLineMessage(null);
     setInvoiceLineExpanded(false);
     setInvoiceLines([]);
-    setInvoiceLinePoUsageByLineId({});
+    setInvoiceLinePoUsageByPoLineId({});
     if (invoice.purchaseOrderId) {
       void loadPurchaseOrderDetail(invoice.purchaseOrderId);
     }
@@ -3303,7 +3302,7 @@ export const VendorDocuments: React.FC = () => {
                             ? parseNumberValue(selectedPoLine.quantity)
                             : null;
                           const usage = selectedPoLineId
-                            ? invoiceLinePoUsageByLineId[selectedPoLineId]
+                            ? invoiceLinePoUsageByPoLineId[selectedPoLineId]
                             : null;
                           const existingQuantity =
                             parseNumberValue(usage?.existingQuantity) ?? 0;

@@ -23,6 +23,7 @@ import { normalizeVendorInvoiceLines } from '../services/vendorInvoiceLines.js';
 import {
   findExceededPurchaseOrderLineQuantities,
   summarizePurchaseOrderLineQuantities,
+  type PurchaseOrderLineQuantitySummary,
 } from '../services/vendorInvoiceLineReconciliation.js';
 
 function normalizeString(value: unknown) {
@@ -232,14 +233,7 @@ export async function registerVendorDocRoutes(app: FastifyInstance) {
       });
       const invoiceTotal = parseNumberValue(invoice.totalAmount) ?? 0;
       const totals = summarizeVendorInvoiceLineTotals(items, invoiceTotal);
-      let poLineUsage: Array<{
-        purchaseOrderLineId: string;
-        purchaseOrderQuantity: number;
-        existingQuantity: number;
-        requestedQuantity: number;
-        remainingQuantity: number;
-        exceeds: boolean;
-      }> = [];
+      let poLineUsage: PurchaseOrderLineQuantitySummary[] = [];
       if (invoice.purchaseOrderId) {
         const purchaseOrderLines = await prisma.purchaseOrderLine.findMany({
           where: { purchaseOrderId: invoice.purchaseOrderId },
@@ -248,7 +242,8 @@ export async function registerVendorDocRoutes(app: FastifyInstance) {
         });
         if (purchaseOrderLines.length > 0) {
           const lineIds = purchaseOrderLines.map((line) => line.id);
-          const existingLines = await prisma.vendorInvoiceLine.findMany({
+          const existingLinesGrouped = await prisma.vendorInvoiceLine.groupBy({
+            by: ['purchaseOrderLineId'],
             where: {
               purchaseOrderLineId: { in: lineIds },
               vendorInvoiceId: { not: id },
@@ -259,8 +254,12 @@ export async function registerVendorDocRoutes(app: FastifyInstance) {
                 },
               },
             },
-            select: { purchaseOrderLineId: true, quantity: true },
+            _sum: { quantity: true },
           });
+          const existingLines = existingLinesGrouped.map((line) => ({
+            purchaseOrderLineId: line.purchaseOrderLineId,
+            quantity: line._sum.quantity ?? 0,
+          }));
           poLineUsage = summarizePurchaseOrderLineQuantities({
             purchaseOrderLines,
             existingInvoiceLines: existingLines,
@@ -1005,7 +1004,8 @@ export async function registerVendorDocRoutes(app: FastifyInstance) {
       }
 
       if (purchaseOrderLineIds.size > 0) {
-        const existingLines = await prisma.vendorInvoiceLine.findMany({
+        const existingLinesGrouped = await prisma.vendorInvoiceLine.groupBy({
+          by: ['purchaseOrderLineId'],
           where: {
             purchaseOrderLineId: { in: Array.from(purchaseOrderLineIds) },
             vendorInvoiceId: { not: id },
@@ -1016,8 +1016,12 @@ export async function registerVendorDocRoutes(app: FastifyInstance) {
               },
             },
           },
-          select: { purchaseOrderLineId: true, quantity: true },
+          _sum: { quantity: true },
         });
+        const existingLines = existingLinesGrouped.map((line) => ({
+          purchaseOrderLineId: line.purchaseOrderLineId,
+          quantity: line._sum.quantity ?? 0,
+        }));
         const exceeded = findExceededPurchaseOrderLineQuantities({
           purchaseOrderLines: Array.from(purchaseOrderLineMap.values()),
           existingInvoiceLines: existingLines,
