@@ -6,6 +6,7 @@ import React, {
   useState,
 } from 'react';
 import { api } from '../api';
+import { DateRangePicker } from '../ui';
 
 type AnalyticsItem = {
   bucket: string;
@@ -154,24 +155,16 @@ export const HRAnalytics: React.FC = () => {
         className="row"
         style={{ gap: 8, alignItems: 'center', flexWrap: 'wrap' }}
       >
-        <label>
-          開始日
-          <input
-            type="date"
-            value={from}
-            onChange={(e) => setFrom(e.target.value)}
-            style={{ marginLeft: 6 }}
-          />
-        </label>
-        <label>
-          終了日
-          <input
-            type="date"
-            value={to}
-            onChange={(e) => setTo(e.target.value)}
-            style={{ marginLeft: 6 }}
-          />
-        </label>
+        <DateRangePicker
+          label="集計期間"
+          fromLabel="開始日"
+          toLabel="終了日"
+          value={{ from, to }}
+          onChange={(next) => {
+            setFrom(next.from ?? '');
+            setTo(next.to ?? '');
+          }}
+        />
         <label>
           閾値
           <input

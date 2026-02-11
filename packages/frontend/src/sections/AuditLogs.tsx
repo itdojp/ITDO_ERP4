@@ -6,6 +6,7 @@ import {
   Button,
   CrudList,
   DataTable,
+  DateRangePicker,
   FilterBar,
   Input,
   SavedViewBar,
@@ -347,21 +348,18 @@ export const AuditLogs: React.FC = () => {
                   alignItems: 'flex-end',
                 }}
               >
-                <Input
-                  label="from"
-                  type="date"
-                  value={filters.from}
-                  onChange={(e) =>
-                    setFilters({ ...filters, from: e.target.value })
-                  }
-                />
-                <Input
-                  label="to"
-                  type="date"
-                  value={filters.to}
-                  onChange={(e) =>
-                    setFilters({ ...filters, to: e.target.value })
-                  }
+                <DateRangePicker
+                  label="期間"
+                  fromLabel="from"
+                  toLabel="to"
+                  value={{ from: filters.from, to: filters.to }}
+                  onChange={(next) => {
+                    setFilters({
+                      ...filters,
+                      from: next.from ?? '',
+                      to: next.to ?? '',
+                    });
+                  }}
                 />
                 <Input
                   label="userId"
