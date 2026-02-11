@@ -10,8 +10,11 @@ import {
   DataTable,
   FilterBar,
   Input,
+  SavedViewBar,
   StatusBadge,
+  createLocalStorageSavedViewsAdapter,
   erpStatusDictionary,
+  useSavedViews,
 } from '../ui';
 import type { DataTableColumn, DataTableRow } from '../ui';
 import { formatDateForFilename, openResponseInNewTab } from '../utils/download';
@@ -45,6 +48,7 @@ type DocumentSendEvent = {
 };
 
 type ListStatus = 'idle' | 'loading' | 'error' | 'success';
+type SavedFilterPayload = { logId: string };
 
 const formatDateTime = (value?: string | null) => {
   if (!value) return '-';
@@ -91,6 +95,21 @@ export const DocumentSendLogs: React.FC = () => {
   const [retryTargetLogId, setRetryTargetLogId] = useState<string | null>(null);
 
   const trimmedLogId = logId.trim();
+  const savedViews = useSavedViews<SavedFilterPayload>({
+    initialViews: [
+      {
+        id: 'default',
+        name: '既定',
+        payload: { logId: '' },
+        createdAt: '2026-02-11T00:00:00.000Z',
+        updatedAt: '2026-02-11T00:00:00.000Z',
+      },
+    ],
+    initialActiveViewId: 'default',
+    storageAdapter: createLocalStorageSavedViewsAdapter<SavedFilterPayload>(
+      'erp4-document-send-log-saved-views',
+    ),
+  });
 
   const canRetry = useMemo(() => {
     if (!log) return false;
@@ -456,6 +475,41 @@ export const DocumentSendLogs: React.FC = () => {
     <div>
       <h2>ドキュメント送信ログ</h2>
       <Card padding="small">
+        <SavedViewBar
+          views={savedViews.views}
+          activeViewId={savedViews.activeViewId}
+          onSelectView={(viewId) => {
+            savedViews.selectView(viewId);
+            const selected = savedViews.views.find((view) => view.id === viewId);
+            if (!selected) return;
+            setLogId(selected.payload.logId);
+          }}
+          onSaveAs={(name) => {
+            savedViews.createView(name, { logId });
+          }}
+          onUpdateView={(viewId) => {
+            savedViews.updateView(viewId, { payload: { logId } });
+          }}
+          onDuplicateView={(viewId) => {
+            savedViews.duplicateView(viewId);
+          }}
+          onShareView={(viewId) => {
+            savedViews.toggleShared(viewId, true);
+          }}
+          onDeleteView={(viewId) => {
+            savedViews.deleteView(viewId);
+          }}
+          labels={{
+            title: '保存ビュー',
+            saveAsPlaceholder: 'ビュー名',
+            saveAsButton: '保存',
+            update: '更新',
+            duplicate: '複製',
+            share: '共有',
+            delete: '削除',
+            active: '現在のビュー',
+          }}
+        />
         <FilterBar
           actions={
             <div style={{ display: 'flex', gap: 8 }}>

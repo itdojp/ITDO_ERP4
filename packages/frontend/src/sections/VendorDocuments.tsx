@@ -17,10 +17,14 @@ import {
   Dialog,
   FilterBar,
   Input,
+  SavedViewBar,
   Select,
   StatusBadge,
+  Tabs,
   Toast,
+  createLocalStorageSavedViewsAdapter,
   erpStatusDictionary,
+  useSavedViews,
 } from '../ui';
 import type { DataTableColumn, DataTableRow } from '../ui';
 import { formatDateForFilename, openResponseInNewTab } from '../utils/download';
@@ -163,6 +167,11 @@ type VendorInvoiceForm = {
   documentUrl: string;
 };
 
+type InvoiceSavedFilterPayload = {
+  search: string;
+  status: string;
+};
+
 const formatDate = (value?: string | null) =>
   value ? value.slice(0, 10) : '-';
 const formatDateTime = (value?: string | null) => {
@@ -253,6 +262,9 @@ export const VendorDocuments: React.FC = () => {
   const [quoteStatusFilter, setQuoteStatusFilter] = useState('all');
   const [invoiceSearch, setInvoiceSearch] = useState('');
   const [invoiceStatusFilter, setInvoiceStatusFilter] = useState('all');
+  const [activeDocumentTab, setActiveDocumentTab] = useState<
+    'purchase-orders' | 'vendor-quotes' | 'vendor-invoices'
+  >('purchase-orders');
   const [poResult, setPoResult] = useState<MessageState>(null);
   const [quoteResult, setQuoteResult] = useState<MessageState>(null);
   const [invoiceResult, setInvoiceResult] = useState<MessageState>(null);
@@ -308,6 +320,21 @@ export const VendorDocuments: React.FC = () => {
   } | null>(null);
   const [invoiceLines, setInvoiceLines] = useState<VendorInvoiceLine[]>([]);
   const [invoiceLineLoading, setInvoiceLineLoading] = useState(false);
+  const invoiceSavedViews = useSavedViews<InvoiceSavedFilterPayload>({
+    initialViews: [
+      {
+        id: 'default',
+        name: '既定',
+        payload: { search: '', status: 'all' },
+        createdAt: '2026-02-11T00:00:00.000Z',
+        updatedAt: '2026-02-11T00:00:00.000Z',
+      },
+    ],
+    initialActiveViewId: 'default',
+    storageAdapter: createLocalStorageSavedViewsAdapter<InvoiceSavedFilterPayload>(
+      'erp4-vendor-invoice-filter-saved-views',
+    ),
+  });
   const [invoiceLineSaving, setInvoiceLineSaving] = useState(false);
   const [invoiceLineMessage, setInvoiceLineMessage] =
     useState<MessageState>(null);
@@ -1970,8 +1997,37 @@ export const VendorDocuments: React.FC = () => {
           <Alert variant="error">{vendorMessage}</Alert>
         </div>
       )}
-      <div style={{ marginTop: 12, display: 'grid', gap: 24 }}>
-        <section>
+      <div style={{ marginTop: 12, display: 'grid', gap: 16 }}>
+        <Tabs
+          value={activeDocumentTab}
+          onValueChange={(value) =>
+            setActiveDocumentTab(
+              value as 'purchase-orders' | 'vendor-quotes' | 'vendor-invoices',
+            )
+          }
+          ariaLabel="仕入/発注セクション"
+          items={[
+            {
+              id: 'purchase-orders',
+              label: `発注書 (${purchaseOrderRows.length})`,
+            },
+            {
+              id: 'vendor-quotes',
+              label: `仕入見積 (${vendorQuoteRows.length})`,
+            },
+            {
+              id: 'vendor-invoices',
+              label: `仕入請求 (${vendorInvoiceRows.length})`,
+            },
+          ]}
+        />
+        <div style={{ display: 'grid', gap: 24 }}>
+        <section
+          hidden={activeDocumentTab !== 'purchase-orders'}
+          style={{
+            display: activeDocumentTab === 'purchase-orders' ? 'block' : 'none',
+          }}
+        >
           <h3>発注書</h3>
           <div className="card" style={{ marginBottom: 12 }}>
             <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
@@ -2117,7 +2173,12 @@ export const VendorDocuments: React.FC = () => {
           />
         </section>
 
-        <section>
+        <section
+          hidden={activeDocumentTab !== 'vendor-quotes'}
+          style={{
+            display: activeDocumentTab === 'vendor-quotes' ? 'block' : 'none',
+          }}
+        >
           <h3>仕入見積</h3>
           <div className="card" style={{ marginBottom: 12 }}>
             <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
@@ -2273,7 +2334,12 @@ export const VendorDocuments: React.FC = () => {
           />
         </section>
 
-        <section>
+        <section
+          hidden={activeDocumentTab !== 'vendor-invoices'}
+          style={{
+            display: activeDocumentTab === 'vendor-invoices' ? 'block' : 'none',
+          }}
+        >
           <h3>仕入請求</h3>
           <div className="card" style={{ marginBottom: 12 }}>
             <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
@@ -2401,6 +2467,52 @@ export const VendorDocuments: React.FC = () => {
               />
             </div>
           )}
+          <SavedViewBar
+            views={invoiceSavedViews.views}
+            activeViewId={invoiceSavedViews.activeViewId}
+            onSelectView={(viewId) => {
+              invoiceSavedViews.selectView(viewId);
+              const selected = invoiceSavedViews.views.find(
+                (view) => view.id === viewId,
+              );
+              if (!selected) return;
+              setInvoiceSearch(selected.payload.search);
+              setInvoiceStatusFilter(selected.payload.status);
+            }}
+            onSaveAs={(name) => {
+              invoiceSavedViews.createView(name, {
+                search: invoiceSearch,
+                status: invoiceStatusFilter,
+              });
+            }}
+            onUpdateView={(viewId) => {
+              invoiceSavedViews.updateView(viewId, {
+                payload: {
+                  search: invoiceSearch,
+                  status: invoiceStatusFilter,
+                },
+              });
+            }}
+            onDuplicateView={(viewId) => {
+              invoiceSavedViews.duplicateView(viewId);
+            }}
+            onShareView={(viewId) => {
+              invoiceSavedViews.toggleShared(viewId, true);
+            }}
+            onDeleteView={(viewId) => {
+              invoiceSavedViews.deleteView(viewId);
+            }}
+            labels={{
+              title: '仕入請求フィルタ保存',
+              saveAsPlaceholder: 'ビュー名',
+              saveAsButton: '保存',
+              update: '更新',
+              duplicate: '複製',
+              share: '共有',
+              delete: '削除',
+              active: '現在のビュー',
+            }}
+          />
           <CrudList
             title="仕入請求一覧"
             description="承認依頼・PO紐づけ・配賦明細編集・請求明細編集を一覧から実行できます。"
@@ -2460,6 +2572,7 @@ export const VendorDocuments: React.FC = () => {
             table={vendorInvoiceListContent}
           />
         </section>
+        </div>
       </div>
       <Dialog
         open={Boolean(poSendLogDialogId)}
