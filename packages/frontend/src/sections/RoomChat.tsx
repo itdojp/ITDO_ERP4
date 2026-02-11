@@ -9,9 +9,17 @@ import ReactMarkdown from 'react-markdown';
 import remarkBreaks from 'remark-breaks';
 import remarkGfm from 'remark-gfm';
 import { api, apiResponse, getAuthState } from '../api';
+import {
+  AttachmentField,
+  Combobox,
+  type AttachmentRecord,
+  type ComboboxItem,
+  UndoToast,
+} from '../ui';
 import { copyToClipboard } from '../utils/clipboard';
 import { buildOpenHash } from '../utils/deepLink';
 import { toIsoFromLocalInput, toLocalDateTimeValue } from '../utils/datetime';
+import { resolveAttachmentKind } from '../utils/attachments';
 
 type ChatRoom = {
   id: string;
@@ -156,6 +164,22 @@ function sanitizeFilename(value: string) {
   return value.replace(/["\\\r\n]/g, '_').replace(/[/\\]/g, '_');
 }
 
+function toAttachmentRecord(attachment: {
+  id: string;
+  originalName: string;
+  mimeType?: string | null;
+  sizeBytes?: number | null;
+}): AttachmentRecord {
+  return {
+    id: attachment.id,
+    name: attachment.originalName,
+    size: typeof attachment.sizeBytes === 'number' ? attachment.sizeBytes : 0,
+    mimeType: attachment.mimeType || 'application/octet-stream',
+    kind: resolveAttachmentKind(attachment.mimeType),
+    status: 'uploaded',
+  };
+}
+
 function buildExcerpt(value: string, maxLength = 200) {
   const normalized = value.replace(/\s+/g, ' ').trim();
   if (!normalized) return '';
@@ -276,6 +300,11 @@ export const RoomChat: React.FC = () => {
   const [mentionCandidates, setMentionCandidates] = useState<MentionCandidates>(
     {},
   );
+  const [mentionUserInput, setMentionUserInput] = useState('');
+  const [mentionGroupInput, setMentionGroupInput] = useState('');
+  const [mentionUserIds, setMentionUserIds] = useState<string[]>([]);
+  const [mentionGroupIds, setMentionGroupIds] = useState<string[]>([]);
+  const [mentionAll, setMentionAll] = useState(false);
   const [ackCandidates, setAckCandidates] = useState<MentionCandidates>({});
   const [ackCandidateQuery, setAckCandidateQuery] = useState('');
   const mentionGroupLabelMap = useMemo(() => {
@@ -333,6 +362,9 @@ export const RoomChat: React.FC = () => {
   const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
   const [filterTag, setFilterTag] = useState('');
   const [filterQuery, setFilterQuery] = useState('');
+  const [pendingUndoRevokeAck, setPendingUndoRevokeAck] = useState<{
+    requestId: string;
+  } | null>(null);
 
   const ackTargetUserIds = useMemo(
     () => Array.from(new Set(parseUserIds(ackTargets))),
@@ -345,6 +377,79 @@ export const RoomChat: React.FC = () => {
   const ackTargetRoleList = useMemo(
     () => Array.from(new Set(parseUserIds(ackTargetRoles))),
     [ackTargetRoles],
+  );
+  const mentionUserItems = useMemo<ComboboxItem[]>(
+    () =>
+      (mentionCandidates.users || []).map((user) => ({
+        id: user.userId,
+        value: user.userId,
+        label: user.displayName
+          ? `${user.displayName} (${user.userId})`
+          : user.userId,
+        description: user.displayName ? user.userId : undefined,
+      })),
+    [mentionCandidates.users],
+  );
+  const mentionGroupItems = useMemo<ComboboxItem[]>(
+    () =>
+      (mentionCandidates.groups || []).map((group) => ({
+        id: group.groupId,
+        value: group.groupId,
+        label: group.displayName
+          ? `${group.displayName} (${group.groupId})`
+          : group.groupId,
+        description: group.displayName ? group.groupId : undefined,
+      })),
+    [mentionCandidates.groups],
+  );
+  const ackTargetUserItems = useMemo<ComboboxItem[]>(
+    () =>
+      (ackCandidates.users || []).map((user) => ({
+        id: user.userId,
+        value: user.userId,
+        label: user.displayName
+          ? `${user.displayName} (${user.userId})`
+          : user.userId,
+        description: user.displayName ? user.userId : undefined,
+      })),
+    [ackCandidates.users],
+  );
+  const ackTargetGroupItems = useMemo<ComboboxItem[]>(
+    () =>
+      (ackCandidates.groups || []).map((group) => ({
+        id: group.groupId,
+        value: group.groupId,
+        label: group.displayName
+          ? `${group.displayName} (${group.groupId})`
+          : group.groupId,
+        description: group.displayName ? group.groupId : undefined,
+      })),
+    [ackCandidates.groups],
+  );
+  const ackTargetRoleItems = useMemo<ComboboxItem[]>(
+    () =>
+      ['admin', 'mgmt', 'exec', 'hr'].map((role) => ({
+        id: role,
+        value: role,
+        label: role,
+      })),
+    [],
+  );
+  const composerAttachments = useMemo<AttachmentRecord[]>(
+    () =>
+      attachmentFile
+        ? [
+            {
+              id: `composer-${attachmentFile.name}-${attachmentFile.size}`,
+              name: attachmentFile.name,
+              size: attachmentFile.size,
+              mimeType: attachmentFile.type || 'application/octet-stream',
+              kind: resolveAttachmentKind(attachmentFile.type),
+              status: 'queued',
+            },
+          ]
+        : [],
+    [attachmentFile],
   );
 
   useEffect(() => {
@@ -788,8 +893,61 @@ export const RoomChat: React.FC = () => {
     window.URL.revokeObjectURL(url);
   };
 
-  const addAckTargetUser = () => {
-    const value = ackTargetInput.trim();
+  const buildMentionsPayload = () => {
+    const users = Array.from(new Set(mentionUserIds))
+      .map((entry) => entry.trim())
+      .filter(Boolean)
+      .slice(0, 50);
+    const groups = Array.from(new Set(mentionGroupIds))
+      .map((entry) => entry.trim())
+      .filter(Boolean)
+      .slice(0, 20);
+    if (!mentionAll && users.length === 0 && groups.length === 0) {
+      return undefined;
+    }
+    return {
+      userIds: users.length ? users : undefined,
+      groupIds: groups.length ? groups : undefined,
+      all: mentionAll || undefined,
+    };
+  };
+
+  const addMentionUser = (rawValue?: string) => {
+    const value = (rawValue ?? mentionUserInput).trim();
+    if (!value) return;
+    setMentionUserIds((prev) =>
+      prev.includes(value) ? prev : [...prev, value].slice(0, 50),
+    );
+    setMentionUserInput('');
+  };
+
+  const addMentionGroup = (rawValue?: string) => {
+    const value = (rawValue ?? mentionGroupInput).trim();
+    if (!value) return;
+    setMentionGroupIds((prev) =>
+      prev.includes(value) ? prev : [...prev, value].slice(0, 20),
+    );
+    setMentionGroupInput('');
+  };
+
+  const resetMentions = () => {
+    setMentionUserInput('');
+    setMentionGroupInput('');
+    setMentionUserIds([]);
+    setMentionGroupIds([]);
+    setMentionAll(false);
+  };
+
+  const removeMentionUser = (userId: string) => {
+    setMentionUserIds((prev) => prev.filter((entry) => entry !== userId));
+  };
+
+  const removeMentionGroup = (groupId: string) => {
+    setMentionGroupIds((prev) => prev.filter((entry) => entry !== groupId));
+  };
+
+  const addAckTargetUser = (rawValue?: string) => {
+    const value = (rawValue ?? ackTargetInput).trim();
     if (!value) return;
     setAckTargets((prev) => {
       const current = parseUserIds(prev);
@@ -800,8 +958,8 @@ export const RoomChat: React.FC = () => {
     setAckCandidateQuery('');
   };
 
-  const addAckTargetGroup = () => {
-    const value = ackTargetGroupInput.trim();
+  const addAckTargetGroup = (rawValue?: string) => {
+    const value = (rawValue ?? ackTargetGroupInput).trim();
     if (!value) return;
     setAckTargetGroupIds((prev) => {
       const current = parseUserIds(prev);
@@ -812,8 +970,8 @@ export const RoomChat: React.FC = () => {
     setAckCandidateQuery('');
   };
 
-  const addAckTargetRole = () => {
-    const value = ackTargetRoleInput.trim();
+  const addAckTargetRole = (rawValue?: string) => {
+    const value = (rawValue ?? ackTargetRoleInput).trim();
     if (!value) return;
     setAckTargetRoles((prev) => {
       const current = parseUserIds(prev);
@@ -897,12 +1055,26 @@ export const RoomChat: React.FC = () => {
       setMessage('本文を入力してください');
       return;
     }
+    if (mentionAll) {
+      const ok = window.confirm('全員宛(@all)で投稿します。よろしいですか？');
+      if (!ok) return;
+    }
     try {
       setIsLoading(true);
       setMessage('');
-      const basePayload: { body: string; tags?: string[] } = {
+      const mentions = buildMentionsPayload();
+      const basePayload: {
+        body: string;
+        tags?: string[];
+        mentions?: {
+          userIds?: string[];
+          groupIds?: string[];
+          all?: boolean;
+        };
+      } = {
         body: body.trim(),
         tags: tags.trim() ? parseTags(tags) : undefined,
+        mentions,
       };
       const endpoint = `/chat-rooms/${roomId}/${
         mode === 'ack' ? 'ack-requests' : 'messages'
@@ -960,6 +1132,7 @@ export const RoomChat: React.FC = () => {
       setBody('');
       setTags('');
       resetAckTargets();
+      resetMentions();
       setAttachmentFile(null);
       await loadMessages();
     } catch (err) {
@@ -1626,38 +1799,129 @@ export const RoomChat: React.FC = () => {
                   placeholder="admin,mgmt"
                 />
               </label>
-              <label>
-                添付
-                <input
-                  type="file"
-                  onChange={(e) =>
-                    setAttachmentFile(e.target.files?.[0] || null)
-                  }
-                />
-              </label>
             </div>
+            <AttachmentField
+              attachments={composerAttachments}
+              labels={{
+                title: '添付',
+                addFiles: 'ファイルを選択',
+                empty: '添付ファイルはありません',
+              }}
+              onAddFiles={(files) => setAttachmentFile(files[0] || null)}
+              onRemoveAttachment={() => setAttachmentFile(null)}
+            />
             <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
-              <input
-                aria-label="確認対象ユーザ追加"
-                type="text"
-                list="room-ack-target-users"
-                value={ackTargetInput}
-                onChange={(e) => {
-                  setAckTargetInput(e.target.value);
-                  setAckCandidateQuery(e.target.value);
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    addAckTargetUser();
-                  }
-                }}
-                placeholder="確認対象: ユーザID (任意)"
-                style={{ flex: '1 1 240px' }}
+              <Combobox
+                placeholder="メンション: ユーザID (任意)"
+                value={mentionUserInput}
+                onChange={(value) => setMentionUserInput(value)}
+                items={mentionUserItems}
+                onSelect={(item) => addMentionUser(item.value ?? item.id)}
+                fullWidth
+                inputProps={{ 'aria-label': 'メンションユーザ' }}
               />
               <button
                 className="button secondary"
-                onClick={addAckTargetUser}
+                onClick={() => addMentionUser()}
+                type="button"
+              >
+                ユーザ追加
+              </button>
+            </div>
+            <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+              <Combobox
+                placeholder="メンション: グループID (任意)"
+                value={mentionGroupInput}
+                onChange={(value) => setMentionGroupInput(value)}
+                items={mentionGroupItems}
+                onSelect={(item) => addMentionGroup(item.value ?? item.id)}
+                fullWidth
+                inputProps={{ 'aria-label': 'メンショングループ' }}
+              />
+              <button
+                className="button secondary"
+                onClick={() => addMentionGroup()}
+                type="button"
+              >
+                グループ追加
+              </button>
+            </div>
+            {(mentionCandidates.allowAll ?? true) && (
+              <label>
+                <input
+                  type="checkbox"
+                  checked={mentionAll}
+                  onChange={(event) => setMentionAll(event.target.checked)}
+                />{' '}
+                全員にメンション (@all)
+              </label>
+            )}
+            {(mentionAll ||
+              mentionUserIds.length > 0 ||
+              mentionGroupIds.length > 0) && (
+              <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}>
+                {mentionAll && (
+                  <button
+                    type="button"
+                    className="badge"
+                    aria-label="全員へのメンションを解除"
+                    onClick={() => setMentionAll(false)}
+                    style={{ cursor: 'pointer' }}
+                  >
+                    @all ×
+                  </button>
+                )}
+                {mentionUserIds.map((userId) => (
+                  <button
+                    key={userId}
+                    type="button"
+                    className="badge"
+                    aria-label={`ユーザへのメンションを解除: ${userId}`}
+                    onClick={() => removeMentionUser(userId)}
+                    style={{ cursor: 'pointer' }}
+                  >
+                    @{userId} ×
+                  </button>
+                ))}
+                {mentionGroupIds.map((groupId) => (
+                  <button
+                    key={groupId}
+                    type="button"
+                    className="badge"
+                    aria-label={`グループへのメンションを解除: ${formatMentionGroupAria(
+                      groupId,
+                    )}`}
+                    onClick={() => removeMentionGroup(groupId)}
+                    style={{ cursor: 'pointer' }}
+                  >
+                    @{formatMentionGroupLabel(groupId)} ×
+                  </button>
+                ))}
+                <button
+                  className="button secondary"
+                  onClick={resetMentions}
+                  type="button"
+                >
+                  メンション解除
+                </button>
+              </div>
+            )}
+            <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+              <Combobox
+                placeholder="確認対象: ユーザID (任意)"
+                value={ackTargetInput}
+                onChange={(value) => {
+                  setAckTargetInput(value);
+                  setAckCandidateQuery(value);
+                }}
+                items={ackTargetUserItems}
+                onSelect={(item) => addAckTargetUser(item.value ?? item.id)}
+                fullWidth
+                inputProps={{ 'aria-label': '確認対象ユーザ追加' }}
+              />
+              <button
+                className="button secondary"
+                onClick={() => addAckTargetUser()}
                 type="button"
               >
                 確認対象追加
@@ -1666,37 +1930,22 @@ export const RoomChat: React.FC = () => {
                 {ackTargetUserIds.length}/50
               </span>
             </div>
-            <datalist id="room-ack-target-users">
-              {(ackCandidates.users || []).map((user) => (
-                <option
-                  key={user.userId}
-                  value={user.userId}
-                  label={user.displayName ? `${user.displayName}` : user.userId}
-                />
-              ))}
-            </datalist>
             <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
-              <input
-                aria-label="確認対象グループ追加"
-                type="text"
-                list="room-ack-target-groups"
-                value={ackTargetGroupInput}
-                onChange={(e) => {
-                  setAckTargetGroupInput(e.target.value);
-                  setAckCandidateQuery(e.target.value);
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    addAckTargetGroup();
-                  }
-                }}
+              <Combobox
                 placeholder="確認対象: グループID (任意)"
-                style={{ flex: '1 1 240px' }}
+                value={ackTargetGroupInput}
+                onChange={(value) => {
+                  setAckTargetGroupInput(value);
+                  setAckCandidateQuery(value);
+                }}
+                items={ackTargetGroupItems}
+                onSelect={(item) => addAckTargetGroup(item.value ?? item.id)}
+                fullWidth
+                inputProps={{ 'aria-label': '確認対象グループ追加' }}
               />
               <button
                 className="button secondary"
-                onClick={addAckTargetGroup}
+                onClick={() => addAckTargetGroup()}
                 type="button"
               >
                 グループ追加
@@ -1705,38 +1954,19 @@ export const RoomChat: React.FC = () => {
                 {ackTargetGroupIdList.length}/20
               </span>
             </div>
-            <datalist id="room-ack-target-groups">
-              {(ackCandidates.groups || []).map((group) => (
-                <option
-                  key={group.groupId}
-                  value={group.groupId}
-                  label={
-                    group.displayName
-                      ? `${group.displayName} (${group.groupId})`
-                      : group.groupId
-                  }
-                />
-              ))}
-            </datalist>
             <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
-              <input
-                aria-label="確認対象ロール追加"
-                type="text"
-                list="room-ack-target-roles"
-                value={ackTargetRoleInput}
-                onChange={(e) => setAckTargetRoleInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    addAckTargetRole();
-                  }
-                }}
+              <Combobox
                 placeholder="確認対象: ロール (任意)"
-                style={{ flex: '1 1 240px' }}
+                value={ackTargetRoleInput}
+                onChange={(value) => setAckTargetRoleInput(value)}
+                items={ackTargetRoleItems}
+                onSelect={(item) => addAckTargetRole(item.value ?? item.id)}
+                fullWidth
+                inputProps={{ 'aria-label': '確認対象ロール追加' }}
               />
               <button
                 className="button secondary"
-                onClick={addAckTargetRole}
+                onClick={() => addAckTargetRole()}
                 type="button"
               >
                 ロール追加
@@ -1745,11 +1975,6 @@ export const RoomChat: React.FC = () => {
                 {ackTargetRoleList.length}/20
               </span>
             </div>
-            <datalist id="room-ack-target-roles">
-              {['admin', 'mgmt', 'exec', 'hr'].map((role) => (
-                <option key={role} value={role} />
-              ))}
-            </datalist>
             <div
               className="row"
               style={{
@@ -1871,6 +2096,28 @@ export const RoomChat: React.FC = () => {
           </div>
         </div>
       )}
+      {pendingUndoRevokeAck && (
+        <UndoToast
+          title="OK取消を保留しています"
+          description="数秒後に確定します。取り消す場合はUndoを押してください。"
+          severity="warning"
+          durationMs={5000}
+          labels={{ undo: '取り消す' }}
+          onUndo={() => {
+            setPendingUndoRevokeAck(null);
+            setMessage('OK取消を中止しました');
+          }}
+          onCommit={() => {
+            const target = pendingUndoRevokeAck;
+            if (!target) return;
+            setPendingUndoRevokeAck(null);
+            revokeAck(target.requestId).catch(() => undefined);
+          }}
+          onDismiss={() => {
+            setPendingUndoRevokeAck(null);
+          }}
+        />
+      )}
 
       <div className="card" style={{ padding: 12, marginTop: 12 }}>
         <strong>一覧</strong>
@@ -1923,6 +2170,13 @@ export const RoomChat: React.FC = () => {
         <div style={{ display: 'grid', gap: 8, marginTop: 12 }}>
           {items.map((item) => {
             const tags = Array.isArray(item.tags) ? item.tags : [];
+            const mentionedUserIds = normalizeStringArray(
+              item.mentions?.userIds,
+            );
+            const mentionedGroupIds = normalizeStringArray(
+              item.mentions?.groupIds,
+            );
+            const mentionAllFlag = item.mentionsAll === true;
             const createdAt = new Date(item.createdAt).toLocaleString();
             const isUnread =
               highlightSince && new Date(item.createdAt) > highlightSince;
@@ -2030,6 +2284,38 @@ export const RoomChat: React.FC = () => {
                 <div style={{ marginTop: 8 }}>
                   {renderMessageBody(item.body)}
                 </div>
+                {(mentionAllFlag ||
+                  mentionedUserIds.length > 0 ||
+                  mentionedGroupIds.length > 0) && (
+                  <div
+                    className="row"
+                    style={{ gap: 6, flexWrap: 'wrap', marginTop: 6 }}
+                  >
+                    {mentionAllFlag && (
+                      <span className="badge" aria-label="全員へのメンション">
+                        @all
+                      </span>
+                    )}
+                    {mentionedUserIds.map((userId) => (
+                      <span
+                        key={userId}
+                        className="badge"
+                        aria-label={`メンション対象ユーザ: ${userId}`}
+                      >
+                        @{userId}
+                      </span>
+                    ))}
+                    {mentionedGroupIds.map((groupId) => (
+                      <span
+                        key={groupId}
+                        className="badge"
+                        aria-label={`メンション対象グループ: ${groupId}`}
+                      >
+                        @{groupId}
+                      </span>
+                    ))}
+                  </div>
+                )}
                 {tags.length > 0 && (
                   <div style={{ marginTop: 8, fontSize: 12, color: '#475569' }}>
                     tags: {tags.map((tag) => `#${tag}`).join(' ')}
@@ -2099,10 +2385,14 @@ export const RoomChat: React.FC = () => {
                         {canRevoke && (
                           <button
                             className="button secondary"
+                            disabled={!!pendingUndoRevokeAck}
                             onClick={() => {
-                              if (!window.confirm('OKを取り消しますか？'))
+                              if (pendingUndoRevokeAck) {
                                 return;
-                              revokeAck(ackRequest.id).catch(() => undefined);
+                              }
+                              setPendingUndoRevokeAck({
+                                requestId: ackRequest.id,
+                              });
                             }}
                           >
                             OK取消
@@ -2131,30 +2421,28 @@ export const RoomChat: React.FC = () => {
                 {Array.isArray(item.attachments) &&
                   item.attachments.length > 0 && (
                     <div style={{ marginTop: 10 }}>
-                      <div className="badge">添付</div>
-                      <ul style={{ marginTop: 6 }}>
-                        {item.attachments.map((att) => (
-                          <li key={att.id}>
-                            <button
-                              className="button secondary"
-                              onClick={() =>
-                                downloadAttachment(
-                                  att.id,
-                                  att.originalName,
-                                ).catch((err) => {
-                                  console.error(err);
-                                  setMessage(
-                                    '添付のダウンロードに失敗しました',
-                                  );
-                                })
-                              }
-                            >
-                              ダウンロード
-                            </button>{' '}
-                            {att.originalName}
-                          </li>
-                        ))}
-                      </ul>
+                      <AttachmentField
+                        attachments={item.attachments.map((attachment) =>
+                          toAttachmentRecord(attachment),
+                        )}
+                        labels={{
+                          title: '添付',
+                          selectPreview: 'ダウンロード',
+                        }}
+                        onSelectPreview={(attachmentId) => {
+                          const target = item.attachments?.find(
+                            (attachment) => attachment.id === attachmentId,
+                          );
+                          if (!target) return;
+                          downloadAttachment(
+                            target.id,
+                            target.originalName,
+                          ).catch((error) => {
+                            console.error(error);
+                            setMessage('添付のダウンロードに失敗しました');
+                          });
+                        }}
+                      />
                     </div>
                   )}
               </div>
