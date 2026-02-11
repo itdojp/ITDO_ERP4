@@ -21,6 +21,7 @@
 
 ### 添付AVスキャン
 - [antivirus](antivirus.md)
+  - 最終決定記録: [antivirus-decision-record](antivirus-decision-record.md)
   - 運用判断メモ: [antivirus-decision-proposal](antivirus-decision-proposal.md)
   - 詳細: [docs/requirements/chat-attachments-antivirus.md](../requirements/chat-attachments-antivirus.md)
 

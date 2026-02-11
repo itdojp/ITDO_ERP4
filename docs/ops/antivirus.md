@@ -9,6 +9,7 @@
 - `clamav` 運用時は fail closed（スキャナ利用不能時 503）を維持し、例外バイパスは設けない。
 - 運用判断の残件は `Issue #886` で管理する。
 - 最終決定の記録は `docs/ops/antivirus-decision-record.md` を正本とする。
+- 最終決定の経緯と詳細な記録は `docs/ops/antivirus-decision-record.md` を参照する。
 
 ## 運用モード
 1. `disabled`（既定）

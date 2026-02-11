@@ -39,7 +39,7 @@
 ## 運用設計（確定候補 / Issue #886）
 
 運用Runbookは `docs/ops/antivirus.md` を正本として管理する。監視しきい値や障害対応フローなどの運用詳細は Runbook 側に記載し、本節では有効化判断と判定ゲートの必須要件を中心に整理する。
-本番の最終決定値は `docs/ops/antivirus-decision-record.md` を正本として記録し、決定後に本節へ反映する。
+本番の最終決定値は `docs/ops/antivirus-decision-record.md` を正本として記録し、決定後に本節へ反映する。`docs/ops/index.md` からも同 decision record へ到達できる導線を維持する。
 
 ### 現時点の確定事項（2026-02-07時点）
 

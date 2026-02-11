@@ -7,9 +7,10 @@
 ## 前提エビデンス
 - 判定ゲート手順: `make av-staging-gate`
 - 判定サマリ手順: `make av-staging-readiness`
-- 最新実行結果（run/url or doc path）:
+- 最新実行結果（いずれかを記載）:
   - [ ] 記録済み
-  - evidence:
+  - CI実行URL（例: `https://github.com/ORG/REPO/actions/runs/123456789`）:
+  - エビデンスDocパス（例: `docs/test-results/YYYY-MM-DD-av-staging.md`）:
 
 ## 決定項目（最終）
 
@@ -30,7 +31,7 @@
 - 障害時復旧:
 
 ### 4. 監視/アラートしきい値
-- clamd応答不可:
+- clamd 応答不可:
 - `chat_attachment_scan_failed` 件数:
 - 503比率:
 - `scanDurationMs p95`:
