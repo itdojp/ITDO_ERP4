@@ -1,0 +1,86 @@
+name: ESLint 10 Readiness Watch
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 3 * * 1"
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 20.19.0
+
+      - name: Check eslint@10 readiness
+        id: check
+        run: |
+          mkdir -p tmp
+          set +e
+          STRICT=0 ./scripts/check-eslint10-readiness.sh > tmp/eslint10-readiness.log 2>&1
+          status=$?
+          cat tmp/eslint10-readiness.log
+          ready=$(grep -E '^ready:' tmp/eslint10-readiness.log | tail -n1 | sed 's/^ready:[[:space:]]*//')
+          plugin_peer=$(grep -E '^pluginPeerEslint:' tmp/eslint10-readiness.log | tail -n1 | sed 's/^pluginPeerEslint:[[:space:]]*//')
+          parser_peer=$(grep -E '^parserPeerEslint:' tmp/eslint10-readiness.log | tail -n1 | sed 's/^parserPeerEslint:[[:space:]]*//')
+          echo "status=${status}" >> "$GITHUB_OUTPUT"
+          echo "ready=${ready:-false}" >> "$GITHUB_OUTPUT"
+          echo "plugin_peer<<EOF" >> "$GITHUB_OUTPUT"
+          echo "${plugin_peer}" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+          echo "parser_peer<<EOF" >> "$GITHUB_OUTPUT"
+          echo "${parser_peer}" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Write summary
+        run: |
+          {
+            echo "## eslint@10 readiness check"
+            echo ""
+            echo "- ready: ${{ steps.check.outputs.ready }}"
+            echo "- plugin peer: \`${{ steps.check.outputs.plugin_peer }}\`"
+            echo "- parser peer: \`${{ steps.check.outputs.parser_peer }}\`"
+            echo "- script status: ${{ steps.check.outputs.status }}"
+            echo ""
+            echo "Manual check command:"
+            echo "\`make eslint10-readiness-check\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Notify issue #914 when ready
+        if: steps.check.outputs.ready == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PLUGIN_PEER: ${{ steps.check.outputs.plugin_peer }}
+          PARSER_PEER: ${{ steps.check.outputs.parser_peer }}
+        run: |
+          marker="<!-- eslint10-readiness-watch -->"
+          if gh issue view 914 --json comments --jq '.comments[].body' | grep -F "${marker}" >/dev/null 2>&1; then
+            echo "Issue #914 already has readiness notification."
+            exit 0
+          fi
+          gh issue comment 914 --body "$(cat <<EOF
+          eslint@10 再開条件を検知しました。
+
+          - @typescript-eslint/eslint-plugin peerDependencies.eslint: \`${PLUGIN_PEER}\`
+          - @typescript-eslint/parser peerDependencies.eslint: \`${PARSER_PEER}\`
+
+          #914 の未完了タスク（ignore解除・Dependabot再開）を実施してください。
+          <!-- eslint10-readiness-watch -->
+          EOF
+          )"
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: eslint10-readiness-${{ github.run_id }}
+          path: tmp/eslint10-readiness.log
+          if-no-files-found: error
+          retention-days: 14
