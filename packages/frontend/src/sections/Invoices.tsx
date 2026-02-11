@@ -11,6 +11,7 @@ import {
   ConfirmActionDialog,
   CrudList,
   DataTable,
+  Drawer,
   FilterBar,
   Dialog,
   Input,
@@ -563,47 +564,56 @@ export const Invoices: React.FC = () => {
           table={listContent}
         />
       </div>
-      {selected && (
-        <Card padding="small" style={{ marginTop: 12 }}>
-          <InvoiceDetail
-            {...selected}
-            approval={buildApproval(selected.status)}
-            onSend={() => send(selected.id)}
-            onMarkPaid={() => requestMarkPaid(selected.id)}
-            canMarkPaid={canMarkPaid}
-          />
-          <div style={{ marginTop: 12 }}>
-            <Button
-              variant="secondary"
-              onClick={() =>
-                setAnnotationTarget({
-                  kind: 'invoice',
-                  id: selected.id,
-                  projectId: selected.projectId,
-                  title: `請求: ${selected.invoiceNo || '(draft)'}`,
-                })
-              }
-            >
-              注釈
-            </Button>
-          </div>
-          {selected.status === 'draft' && (
-            <div style={{ marginTop: 12 }}>
-              <Button
-                variant="secondary"
-                onClick={() => releaseTimeEntries(selected.id)}
-              >
-                工数リンク解除
-              </Button>
-            </div>
-          )}
-          <div style={{ marginTop: 12 }}>
+      <Drawer
+        open={Boolean(selected)}
+        onClose={() => setSelected(null)}
+        title={
+          selected ? `請求詳細: ${selected.invoiceNo || '(draft)'}` : '請求詳細'
+        }
+        size="lg"
+        footer={
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
             <Button variant="secondary" onClick={() => setSelected(null)}>
               閉じる
             </Button>
           </div>
-        </Card>
-      )}
+        }
+      >
+        {selected && (
+          <div style={{ display: 'grid', gap: 12 }}>
+            <InvoiceDetail
+              {...selected}
+              approval={buildApproval(selected.status)}
+              onSend={() => send(selected.id)}
+              onMarkPaid={() => requestMarkPaid(selected.id)}
+              canMarkPaid={canMarkPaid}
+            />
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <Button
+                variant="secondary"
+                onClick={() =>
+                  setAnnotationTarget({
+                    kind: 'invoice',
+                    id: selected.id,
+                    projectId: selected.projectId,
+                    title: `請求: ${selected.invoiceNo || '(draft)'}`,
+                  })
+                }
+              >
+                注釈
+              </Button>
+              {selected.status === 'draft' && (
+                <Button
+                  variant="secondary"
+                  onClick={() => releaseTimeEntries(selected.id)}
+                >
+                  工数リンク解除
+                </Button>
+              )}
+            </div>
+          </div>
+        )}
+      </Drawer>
       <Dialog
         open={Boolean(annotationTarget)}
         onClose={() => setAnnotationTarget(null)}
