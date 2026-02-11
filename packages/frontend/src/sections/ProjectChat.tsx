@@ -14,6 +14,7 @@ import {
 import { copyToClipboard } from '../utils/clipboard';
 import { toIsoFromLocalInput, toLocalDateTimeValue } from '../utils/datetime';
 import { buildOpenHash } from '../utils/deepLink';
+import { resolveAttachmentKind } from '../utils/attachments';
 
 type ChatMessage = {
   id: string;
@@ -166,15 +167,6 @@ function transformLinkUri(uri?: string) {
 
 function sanitizeFilename(value: string) {
   return value.replace(/["\\\r\n]/g, '_').replace(/[/\\]/g, '_');
-}
-
-function resolveAttachmentKind(
-  mimeType: string | null | undefined,
-): AttachmentRecord['kind'] {
-  const normalized = (mimeType || '').toLowerCase();
-  if (normalized.startsWith('image/')) return 'image';
-  if (normalized === 'application/pdf') return 'pdf';
-  return 'file';
 }
 
 function toAttachmentRecord(attachment: {
@@ -2140,10 +2132,14 @@ export const ProjectChat: React.FC = () => {
                       {canRevoke && (
                         <button
                           className="button secondary"
+                          disabled={!!pendingUndoRevokeAck}
                           onClick={() =>
-                            setPendingUndoRevokeAck({
-                              requestId: item.ackRequest!.id,
-                            })
+                            setPendingUndoRevokeAck(
+                              (prev) =>
+                                prev ?? {
+                                  requestId: item.ackRequest!.id,
+                                },
+                            )
                           }
                         >
                           OK取消
