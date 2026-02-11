@@ -8,6 +8,7 @@
 - 本番は `CHAT_ATTACHMENT_AV_PROVIDER=disabled` を継続し、ステージング検証と運用条件確定後に `clamav` 有効化を判断する。
 - `clamav` 運用時は fail closed（スキャナ利用不能時 503）を維持し、例外バイパスは設けない。
 - 運用判断の残件は `Issue #886` で管理する。
+- 最終決定の記録は `docs/ops/antivirus-decision-record.md` を正本とする。
 
 ## 運用モード
 1. `disabled`（既定）
