@@ -51,16 +51,16 @@
 
 ### 通知種別別の抑制適用マトリクス（実装済み）
 
-| 種別                    | `muteAllUntil` | `muteUntil` | `notifyMentions` | `notifyAllPosts` | 備考                |
-| ----------------------- | -------------- | ----------- | ---------------- | ---------------- | ------------------- |
-| `chat_mention`          | 適用           | 適用        | 適用             | -                | room単位で判定      |
-| `chat_message`          | 適用           | 適用        | -                | 適用             | room単位で判定      |
-| `chat_ack_required`     | 適用           | 適用        | 適用             | -                | room単位で判定      |
-| `chat_ack_escalation`   | 例外           | -           | -                | -                | 重要通知            |
-| `approval_*`            | 例外           | -           | -                | -                | 重要通知            |
-| `daily_report_missing`  | 例外           | -           | -                | -                | 重要通知            |
-| `chat_room_acl_mismatch` | 例外          | -           | -                | -                | セキュリティ通知    |
-| その他 AppNotification  | 適用           | -           | -                | -                | kind横断で一律適用  |
+| 種別                     | `muteAllUntil` | `muteUntil` | `notifyMentions` | `notifyAllPosts` | 備考               |
+| ------------------------ | -------------- | ----------- | ---------------- | ---------------- | ------------------ |
+| `chat_mention`           | 適用           | 適用        | 適用             | -                | room単位で判定     |
+| `chat_message`           | 適用           | 適用        | -                | 適用             | room単位で判定     |
+| `chat_ack_required`      | 適用           | 適用        | 適用             | -                | room単位で判定     |
+| `chat_ack_escalation`    | 例外           | -           | -                | -                | 重要通知           |
+| `approval_*`             | 例外           | -           | -                | -                | 重要通知           |
+| `daily_report_missing`   | 例外           | -           | -                | -                | 重要通知           |
+| `chat_room_acl_mismatch` | 例外           | -           | -                | -                | セキュリティ通知   |
+| その他 AppNotification   | 適用           | -           | -                | -                | kind横断で一律適用 |
 
 ### AppNotification の発火イベント（実装済み）
 

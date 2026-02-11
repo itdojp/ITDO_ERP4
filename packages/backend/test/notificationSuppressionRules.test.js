@@ -116,3 +116,32 @@ test('filterNotificationRecipients: bypass kinds can be overridden by env', asyn
     }
   }
 });
+
+test('filterNotificationRecipients: empty bypass env disables defaults', async () => {
+  const prev = process.env.NOTIFICATION_MUTE_BYPASS_KINDS;
+  process.env.NOTIFICATION_MUTE_BYPASS_KINDS = '';
+  try {
+    const now = new Date('2026-01-01T00:00:00.000Z');
+    const client = createClient({
+      userPreferences: [
+        { userId: 'u1', muteAllUntil: new Date('2026-03-01T00:00:00.000Z') },
+      ],
+    });
+    const res = await filterNotificationRecipients({
+      kind: 'approval_pending',
+      scope: 'global',
+      userIds: ['u1'],
+      client,
+      now,
+    });
+
+    assert.deepEqual(res.allowed, []);
+    assert.deepEqual(res.muted, ['u1']);
+  } finally {
+    if (prev === undefined) {
+      delete process.env.NOTIFICATION_MUTE_BYPASS_KINDS;
+    } else {
+      process.env.NOTIFICATION_MUTE_BYPASS_KINDS = prev;
+    }
+  }
+});

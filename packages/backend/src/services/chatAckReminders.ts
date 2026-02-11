@@ -324,14 +324,20 @@ export async function runChatAckReminders(
   }
 
   const allowedByKey = new Map<string, Set<string>>();
-  for (const [key, group] of grouped) {
-    const filtered = await filterNotificationRecipients({
-      kind: group.kind,
-      roomId: group.roomId,
-      userIds: Array.from(group.userIds),
-      scope: group.scope,
-    });
-    allowedByKey.set(key, new Set(filtered.allowed));
+  const groupedEntries = Array.from(grouped.entries());
+  const filteredEntries = await Promise.all(
+    groupedEntries.map(async ([key, group]) => {
+      const filtered = await filterNotificationRecipients({
+        kind: group.kind,
+        roomId: group.roomId,
+        userIds: Array.from(group.userIds),
+        scope: group.scope,
+      });
+      return [key, new Set(filtered.allowed)] as const;
+    }),
+  );
+  for (const [key, allowed] of filteredEntries) {
+    allowedByKey.set(key, allowed);
   }
 
   const filteredToCreate = toCreate.filter((candidate) => {

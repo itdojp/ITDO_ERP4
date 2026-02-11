@@ -138,7 +138,9 @@ function normalizeUniqueUserIds(userIds: string[]) {
 
 function resolveGlobalMuteBypassKinds() {
   const raw = process.env.NOTIFICATION_MUTE_BYPASS_KINDS;
-  if (!raw) return new Set(DEFAULT_GLOBAL_MUTE_BYPASS_KINDS);
+  // Use defaults only when env is undefined.
+  // Empty string means "no bypass kinds".
+  if (raw === undefined) return new Set(DEFAULT_GLOBAL_MUTE_BYPASS_KINDS);
   const values = raw
     .split(',')
     .map((item) => item.trim())
