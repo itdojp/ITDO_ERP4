@@ -10,12 +10,17 @@ import {
   Alert,
   Button,
   Card,
+  EntityReferencePicker,
   EventLog,
   Input,
   MarkdownRenderer,
   Spinner,
   Textarea,
   Toast,
+  type EntityReferenceCandidate,
+  type EntityReferenceItem,
+  type EntityReferenceKind,
+  type EntityReferenceScope,
 } from '../ui';
 import {
   buildOpenHash,
@@ -92,16 +97,6 @@ type RefCandidateKind =
   | 'vendor'
   | 'chat_message';
 
-type RefCandidateItem = {
-  kind: RefCandidateKind;
-  id: string;
-  label: string;
-  url: string;
-  projectId?: string | null;
-  projectLabel?: string | null;
-  meta?: Record<string, unknown>;
-};
-
 type MessageState = {
   variant: 'success' | 'error' | 'warning' | 'info';
   title: string;
@@ -151,6 +146,20 @@ const ALLOWED_INTERNAL_REF_KIND_SET = new Set<InternalRefKind>([
   'room_chat',
   'chat_message',
 ]);
+
+const REF_PICKER_KINDS: RefCandidateKind[] = [
+  'invoice',
+  'estimate',
+  'purchase_order',
+  'vendor_quote',
+  'vendor_invoice',
+  'expense',
+  'project',
+  'customer',
+  'vendor',
+  'chat_message',
+];
+const REF_PICKER_KIND_SET = new Set<RefCandidateKind>(REF_PICKER_KINDS);
 
 function parseInternalRefInput(
   value: string,
@@ -468,56 +477,7 @@ export const AnnotationsCard: React.FC<AnnotationsCardProps> = ({
     [setExternalUrls],
   );
 
-  const [refQuery, setRefQuery] = useState('');
-  const [refItems, setRefItems] = useState<RefCandidateItem[]>([]);
-  const [refLoading, setRefLoading] = useState(false);
-  const [refError, setRefError] = useState('');
-  const refSeq = useRef(0);
-
-  useEffect(() => {
-    if (!projectId) return;
-    const q = refQuery.trim();
-    if (q.length < 2) {
-      setRefItems([]);
-      setRefError('');
-      return;
-    }
-    refSeq.current += 1;
-    const current = refSeq.current;
-    const timer = setTimeout(() => {
-      const run = async () => {
-        setRefLoading(true);
-        setRefError('');
-        try {
-          const params = new URLSearchParams({ projectId, q, limit: '20' });
-          const res = await apiResponse(`/ref-candidates?${params.toString()}`);
-          const payload = (await res.json().catch(() => ({}))) as {
-            items?: unknown;
-            error?: unknown;
-          };
-          if (current !== refSeq.current) return;
-          if (!res.ok) {
-            setRefItems([]);
-            setRefError(mapAnnotationError(parseApiError(payload)));
-            return;
-          }
-          const items = Array.isArray(payload.items)
-            ? (payload.items as RefCandidateItem[])
-            : [];
-          setRefItems(items);
-        } catch (err) {
-          console.error('Failed to load ref-candidates', err);
-          if (current !== refSeq.current) return;
-          setRefItems([]);
-          setRefError('候補の取得に失敗しました');
-        } finally {
-          if (current === refSeq.current) setRefLoading(false);
-        }
-      };
-      run().catch(() => undefined);
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [projectId, refQuery]);
+  const [refPickerError, setRefPickerError] = useState('');
 
   const addInternalRef = useCallback(
     (ref: InternalRef) => {
@@ -554,19 +514,100 @@ export const AnnotationsCard: React.FC<AnnotationsCardProps> = ({
     setMessage({ variant: 'success', title: '内部参照を追加しました' });
   }, [addInternalRef, manualRefInput]);
 
-  const insertRef = useCallback(
-    async (candidate: RefCandidateItem) => {
-      addInternalRef({
-        kind: candidate.kind as InternalRefKind,
-        id: candidate.id,
-        label: candidate.label,
-      });
-      const url = `/${candidate.url}`;
-      const markdown = `[${escapeMarkdownLinkLabel(candidate.label)}](${url})`;
-      insertIntoNotes(markdown);
-      setMessage({ variant: 'success', title: '参照を挿入しました' });
+  const entityReferenceKinds: EntityReferenceKind[] =
+    REF_PICKER_KINDS as EntityReferenceKind[];
+  const entityReferenceScope: EntityReferenceScope = 'project_tree';
+
+  const entityReferenceValue = useMemo<EntityReferenceItem[]>(() => {
+    return internalRefs.map((ref) => {
+      const label = ref.label?.trim() || `${ref.kind}:${ref.id}`;
+      return {
+        id: ref.id,
+        kind: ref.kind,
+        label,
+        deepLink: buildInternalLink(ref.kind, ref.id),
+      };
+    });
+  }, [internalRefs]);
+
+  const handleEntityReferenceChange = useCallback(
+    (next: EntityReferenceItem[] | EntityReferenceItem | null) => {
+      const items = Array.isArray(next) ? next : next ? [next] : [];
+      const mapped: InternalRef[] = [];
+      const seen = new Set<string>();
+      for (const item of items) {
+        const kind = normalizeString(item.kind) as InternalRefKind;
+        if (!ALLOWED_INTERNAL_REF_KIND_SET.has(kind)) continue;
+        const id = normalizeString(item.id);
+        if (!id) continue;
+        const key = `${kind}:${id}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        const label = normalizeString(item.label);
+        mapped.push(label ? { kind, id, label } : { kind, id });
+      }
+      setInternalRefs(mapped);
+      setRefPickerError('');
     },
-    [addInternalRef, insertIntoNotes],
+    [],
+  );
+
+  const fetchEntityReferenceCandidates = useCallback(
+    async (
+      query: string,
+      kind: EntityReferenceKind,
+      _scope: EntityReferenceScope,
+    ): Promise<EntityReferenceCandidate[]> => {
+      const q = query.trim();
+      if (!projectId || q.length < 2) return [];
+      const requestedKind = normalizeString(kind);
+      if (!REF_PICKER_KIND_SET.has(requestedKind as RefCandidateKind)) {
+        return [];
+      }
+      try {
+        const params = new URLSearchParams({
+          projectId,
+          q,
+          limit: '20',
+          types: requestedKind,
+        });
+        const res = await apiResponse(`/ref-candidates?${params.toString()}`);
+        const payload = (await res.json().catch(() => ({}))) as {
+          items?: unknown;
+          error?: unknown;
+        };
+        if (!res.ok) {
+          setRefPickerError(mapAnnotationError(parseApiError(payload)));
+          return [];
+        }
+        setRefPickerError('');
+        const items = Array.isArray(payload.items)
+          ? (payload.items as Array<Record<string, unknown>>)
+          : [];
+        return items.flatMap((item) => {
+          const itemKind = normalizeString(item.kind);
+          const id = normalizeString(item.id);
+          if (!id || !REF_PICKER_KIND_SET.has(itemKind as RefCandidateKind)) {
+            return [];
+          }
+          const label = normalizeString(item.label) || `${itemKind}:${id}`;
+          const url = normalizeString(item.url);
+          return [
+            {
+              id,
+              kind: itemKind,
+              label,
+              deepLink: url ? `/${url}` : buildInternalLink(itemKind, id),
+            },
+          ];
+        });
+      } catch (err) {
+        console.error('Failed to load ref-candidates', err);
+        setRefPickerError('候補の取得に失敗しました');
+        return [];
+      }
+    },
+    [projectId],
   );
 
   const copyLink = useCallback(
@@ -928,59 +969,26 @@ export const AnnotationsCard: React.FC<AnnotationsCardProps> = ({
               追加
             </Button>
           </div>
-          <Input
+          <EntityReferencePicker
             label="候補検索"
-            value={refQuery}
-            onChange={(e) => setRefQuery(e.target.value)}
+            kinds={entityReferenceKinds}
+            scope={entityReferenceScope}
+            fetchCandidates={fetchEntityReferenceCandidates}
+            value={entityReferenceValue}
+            onChange={handleEntityReferenceChange}
+            multiple
+            maxItems={100}
             placeholder="例: INV- / PRJ- / 顧客名 / 業者名 / 発言内容…"
+            noResultsText="候補が見つかりません"
+            loadingText="候補を検索中…"
+            hint={
+              projectId
+                ? '案件スコープ（同一案件・親子案件）から候補を検索します'
+                : '案件ID未指定のため候補検索は無効です'
+            }
+            error={refPickerError || undefined}
             disabled={!projectId}
           />
-          {refLoading && (
-            <div style={{ fontSize: 12, color: '#64748b' }}>検索中…</div>
-          )}
-          {refError && <Alert variant="warning">{refError}</Alert>}
-          {refItems.length > 0 && (
-            <div style={{ display: 'grid', gap: 6 }}>
-              {refItems.map((item) => (
-                <div
-                  key={`${item.kind}:${item.id}`}
-                  style={{
-                    display: 'flex',
-                    gap: 8,
-                    alignItems: 'center',
-                    flexWrap: 'wrap',
-                    padding: '6px 8px',
-                    border: '1px solid #e5e7eb',
-                    borderRadius: 8,
-                    background: '#fff',
-                  }}
-                >
-                  <span className="badge">{item.kind}</span>
-                  <span style={{ flex: '1 1 280px' }}>{item.label}</span>
-                  <Button
-                    variant="ghost"
-                    size="small"
-                    onClick={() => insertRef(item)}
-                  >
-                    挿入
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="small"
-                    onClick={() => {
-                      navigateToOpen({ kind: item.kind, id: item.id });
-                      setMessage({
-                        variant: 'info',
-                        title: '参照先を開きました',
-                      });
-                    }}
-                  >
-                    開く
-                  </Button>
-                </div>
-              ))}
-            </div>
-          )}
 
           <div style={{ display: 'grid', gap: 6, marginTop: 4 }}>
             {internalRefs.length === 0 && (
