@@ -285,6 +285,86 @@ function toAuditEvent(log: AuditLogItem): AuditEvent {
   };
 }
 
+function renderAuditHistoryPanel(params: {
+  logs: AuditLogItem[];
+  selectedLogId?: string;
+  onSelectLog: (logId: string) => void;
+}): React.ReactNode {
+  const { logs, selectedLogId, onSelectLog } = params;
+  if (logs.length === 0) {
+    return null;
+  }
+  const events = logs.map(toAuditEvent);
+  const selectedLog = logs.find((log) => log.id === selectedLogId) || logs[0];
+  const selectedMeta = parseAuditMetadata(selectedLog.metadata);
+  return (
+    <div style={{ display: 'grid', gap: 8 }}>
+      <AuditTimeline
+        events={events}
+        selectedEventId={selectedLog.id}
+        onSelectEvent={(event) => onSelectLog(event.id)}
+      />
+      <div className="card" style={{ padding: 10 }}>
+        <div style={{ fontSize: 12, color: '#475569' }}>
+          {formatDateTime(selectedLog.createdAt)} / {selectedLog.action} /{' '}
+          {selectedLog.actorRole || '-'} / {selectedLog.userId || '-'}
+        </div>
+        {(selectedLog.reasonText || selectedLog.reasonCode) && (
+          <div style={{ color: '#475569', marginTop: 6, fontSize: 12 }}>
+            reason: {selectedLog.reasonCode || '-'} /{' '}
+            {selectedLog.reasonText || '-'}
+          </div>
+        )}
+        <div style={{ marginTop: 8 }}>
+          {selectedMeta.hasBeforeAfter ? (
+            <DiffViewer
+              before={selectedMeta.before}
+              after={selectedMeta.after}
+              format="json"
+            />
+          ) : (
+            <pre
+              style={{
+                margin: 0,
+                padding: 10,
+                whiteSpace: 'pre-wrap',
+                borderRadius: 6,
+                background: '#0f172a',
+                color: '#e2e8f0',
+                fontSize: 12,
+              }}
+            >
+              {formatJson(selectedMeta.raw)}
+            </pre>
+          )}
+        </div>
+        {selectedMeta.hasPatch && (
+          <details style={{ marginTop: 8 }}>
+            <summary
+              style={{ cursor: 'pointer', fontSize: 12, color: '#475569' }}
+            >
+              patch
+            </summary>
+            <pre
+              style={{
+                margin: '6px 0 0',
+                padding: 10,
+                whiteSpace: 'pre-wrap',
+                borderRadius: 6,
+                background: '#0f172a',
+                color: '#e2e8f0',
+                fontSize: 12,
+              }}
+            >
+              {formatJson(selectedMeta.patch)}
+            </pre>
+          </details>
+        )}
+      </div>
+    </div>
+  );
+}
+
 const createDefaultAlertForm = () => ({
   type: 'budget_overrun',
   threshold: '10',
@@ -2163,103 +2243,16 @@ export const AdminSettings: React.FC = () => {
                         </div>
                       )}
                       {!isHistoryLoading &&
-                        auditLogs.length > 0 &&
-                        (() => {
-                          const events = auditLogs.map(toAuditEvent);
-                          const selectedLogId =
-                            approvalRuleAuditSelected[rule.id] ||
-                            auditLogs[0].id;
-                          const selectedLog =
-                            auditLogs.find((log) => log.id === selectedLogId) ||
-                            auditLogs[0];
-                          const selectedMeta = parseAuditMetadata(
-                            selectedLog.metadata,
-                          );
-                          return (
-                            <div style={{ display: 'grid', gap: 8 }}>
-                              <AuditTimeline
-                                events={events}
-                                selectedEventId={selectedLog.id}
-                                onSelectEvent={(event) => {
-                                  setApprovalRuleAuditSelected((prev) => ({
-                                    ...prev,
-                                    [rule.id]: event.id,
-                                  }));
-                                }}
-                              />
-                              <div className="card" style={{ padding: 10 }}>
-                                <div style={{ fontSize: 12, color: '#475569' }}>
-                                  {formatDateTime(selectedLog.createdAt)} /{' '}
-                                  {selectedLog.action} /{' '}
-                                  {selectedLog.actorRole || '-'} /{' '}
-                                  {selectedLog.userId || '-'}
-                                </div>
-                                {(selectedLog.reasonText ||
-                                  selectedLog.reasonCode) && (
-                                  <div
-                                    style={{
-                                      color: '#475569',
-                                      marginTop: 6,
-                                      fontSize: 12,
-                                    }}
-                                  >
-                                    reason: {selectedLog.reasonCode || '-'} /{' '}
-                                    {selectedLog.reasonText || '-'}
-                                  </div>
-                                )}
-                                <div style={{ marginTop: 8 }}>
-                                  {selectedMeta.hasBeforeAfter ? (
-                                    <DiffViewer
-                                      before={selectedMeta.before}
-                                      after={selectedMeta.after}
-                                      format="json"
-                                    />
-                                  ) : (
-                                    <pre
-                                      style={{
-                                        margin: 0,
-                                        padding: 10,
-                                        whiteSpace: 'pre-wrap',
-                                        borderRadius: 6,
-                                        background: '#0f172a',
-                                        color: '#e2e8f0',
-                                        fontSize: 12,
-                                      }}
-                                    >
-                                      {formatJson(selectedMeta.raw)}
-                                    </pre>
-                                  )}
-                                </div>
-                                {selectedMeta.hasPatch && (
-                                  <details style={{ marginTop: 8 }}>
-                                    <summary
-                                      style={{
-                                        cursor: 'pointer',
-                                        fontSize: 12,
-                                        color: '#475569',
-                                      }}
-                                    >
-                                      patch
-                                    </summary>
-                                    <pre
-                                      style={{
-                                        margin: '6px 0 0',
-                                        padding: 10,
-                                        whiteSpace: 'pre-wrap',
-                                        borderRadius: 6,
-                                        background: '#0f172a',
-                                        color: '#e2e8f0',
-                                        fontSize: 12,
-                                      }}
-                                    >
-                                      {formatJson(selectedMeta.patch)}
-                                    </pre>
-                                  </details>
-                                )}
-                              </div>
-                            </div>
-                          );
-                        })()}
+                        renderAuditHistoryPanel({
+                          logs: auditLogs,
+                          selectedLogId: approvalRuleAuditSelected[rule.id],
+                          onSelectLog: (logId) => {
+                            setApprovalRuleAuditSelected((prev) => ({
+                              ...prev,
+                              [rule.id]: logId,
+                            }));
+                          },
+                        })}
                     </div>
                   )}
                 </div>
@@ -2528,103 +2521,16 @@ export const AdminSettings: React.FC = () => {
                         </div>
                       )}
                       {!isHistoryLoading &&
-                        auditLogs.length > 0 &&
-                        (() => {
-                          const events = auditLogs.map(toAuditEvent);
-                          const selectedLogId =
-                            actionPolicyAuditSelected[item.id] ||
-                            auditLogs[0].id;
-                          const selectedLog =
-                            auditLogs.find((log) => log.id === selectedLogId) ||
-                            auditLogs[0];
-                          const selectedMeta = parseAuditMetadata(
-                            selectedLog.metadata,
-                          );
-                          return (
-                            <div style={{ display: 'grid', gap: 8 }}>
-                              <AuditTimeline
-                                events={events}
-                                selectedEventId={selectedLog.id}
-                                onSelectEvent={(event) => {
-                                  setActionPolicyAuditSelected((prev) => ({
-                                    ...prev,
-                                    [item.id]: event.id,
-                                  }));
-                                }}
-                              />
-                              <div className="card" style={{ padding: 10 }}>
-                                <div style={{ fontSize: 12, color: '#475569' }}>
-                                  {formatDateTime(selectedLog.createdAt)} /{' '}
-                                  {selectedLog.action} /{' '}
-                                  {selectedLog.actorRole || '-'} /{' '}
-                                  {selectedLog.userId || '-'}
-                                </div>
-                                {(selectedLog.reasonText ||
-                                  selectedLog.reasonCode) && (
-                                  <div
-                                    style={{
-                                      color: '#475569',
-                                      marginTop: 6,
-                                      fontSize: 12,
-                                    }}
-                                  >
-                                    reason: {selectedLog.reasonCode || '-'} /{' '}
-                                    {selectedLog.reasonText || '-'}
-                                  </div>
-                                )}
-                                <div style={{ marginTop: 8 }}>
-                                  {selectedMeta.hasBeforeAfter ? (
-                                    <DiffViewer
-                                      before={selectedMeta.before}
-                                      after={selectedMeta.after}
-                                      format="json"
-                                    />
-                                  ) : (
-                                    <pre
-                                      style={{
-                                        margin: 0,
-                                        padding: 10,
-                                        whiteSpace: 'pre-wrap',
-                                        borderRadius: 6,
-                                        background: '#0f172a',
-                                        color: '#e2e8f0',
-                                        fontSize: 12,
-                                      }}
-                                    >
-                                      {formatJson(selectedMeta.raw)}
-                                    </pre>
-                                  )}
-                                </div>
-                                {selectedMeta.hasPatch && (
-                                  <details style={{ marginTop: 8 }}>
-                                    <summary
-                                      style={{
-                                        cursor: 'pointer',
-                                        fontSize: 12,
-                                        color: '#475569',
-                                      }}
-                                    >
-                                      patch
-                                    </summary>
-                                    <pre
-                                      style={{
-                                        margin: '6px 0 0',
-                                        padding: 10,
-                                        whiteSpace: 'pre-wrap',
-                                        borderRadius: 6,
-                                        background: '#0f172a',
-                                        color: '#e2e8f0',
-                                        fontSize: 12,
-                                      }}
-                                    >
-                                      {formatJson(selectedMeta.patch)}
-                                    </pre>
-                                  </details>
-                                )}
-                              </div>
-                            </div>
-                          );
-                        })()}
+                        renderAuditHistoryPanel({
+                          logs: auditLogs,
+                          selectedLogId: actionPolicyAuditSelected[item.id],
+                          onSelectLog: (logId) => {
+                            setActionPolicyAuditSelected((prev) => ({
+                              ...prev,
+                              [item.id]: logId,
+                            }));
+                          },
+                        })}
                     </div>
                   )}
                 </div>
