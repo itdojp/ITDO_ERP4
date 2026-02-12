@@ -27,6 +27,7 @@
 
 - `packages/frontend/src/sections/Invoices.tsx`
   - 請求一覧→請求詳細を `Drawer` で表示
+  - 請求詳細内の注釈編集は、二重 Drawer を避けるため `Dialog` を使用（例外）
 - `packages/frontend/src/sections/Expenses.tsx`
   - 経費一覧→注釈編集を `Drawer` で表示
 
