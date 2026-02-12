@@ -59,6 +59,7 @@
 - [ ] チャット: 確認依頼を作成できる（対象ユーザ/グループ/ロール、期限 dueAt 任意）
 - [ ] チャット: 期限表示と「期限超過」表示が条件に応じて切り替わる
 - [ ] チャット: OK / OK取消 / 撤回 が権限条件に応じて操作できる
+- [ ] チャット: MentionComposer の候補検索（ユーザ/グループ）で対象を選択して投稿できる
 
 ### 日報+工数
 - [ ] 日報+WB: Good/Not Good 送信、Not Good時タグ/コメント/ヘルプ導線
@@ -75,6 +76,8 @@
 ### 経費
 - [ ] 経費入力: プロジェクト/区分/日付/金額/通貨/共通経費/領収書URL を入力→一覧に反映
 - [ ] 経費: 支払完了通知（expense_mark_paid）が通知カードに表示され、対象経費に遷移できる
+- [ ] 経費: 注釈 Drawer でメモを保存し、再表示で保持される
+- [ ] 経費: 注釈の EntityReferencePicker で内部参照候補を追加できる
 
 ### 仕入/発注（PO↔VI）
 - [ ] 仕入/発注: VI 一覧が取得でき、PO 連携状態が表示される
@@ -85,6 +88,13 @@
 ### 運用ジョブ（AdminJobs）
 - [ ] AdminJobs: chat ack reminders / leave upcoming を dryRun/実行でき、結果(JSON)が表示される
 - [ ] 実行後、通知カードに反映される（必要に応じて /notifications で確認）
+
+### 管理設定/監査（design-system 1.1.0）
+- [ ] ActionPolicy: PolicyFormBuilder で作成/更新ができる（必須・JSONバリデーション）
+- [ ] 承認ルール/ActionPolicy: 履歴表示で AuditTimeline と DiffViewer が表示される
+- [ ] 監査ログ: DateRangePicker（from/to）で期間指定検索ができる
+- [ ] 監査閲覧: DateTimeRangePicker（targetFrom/targetUntil）で期間指定できる
+- [ ] HR分析: DateRangePicker（開始日/終了日）で集計範囲を変更できる
 
 ### モバイル回帰（design-system適用後）
 - [ ] `docs/test-results/mobile-regression-template.md` をコピーし、PR単位の証跡ファイル（`YYYY-MM-DD-mobile-regression-*.md`）を作成する
