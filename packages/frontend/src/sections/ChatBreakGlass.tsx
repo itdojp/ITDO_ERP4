@@ -129,13 +129,28 @@ export const ChatBreakGlass: React.FC = () => {
       setError('projectId または roomId を入力してください');
       return;
     }
+    const dateFormatErrors: string[] = [];
     if (targetFromInput && !targetFrom) {
-      setError('targetFrom の日時形式が不正です');
-      return;
+      dateFormatErrors.push('targetFrom の日時形式が不正です');
     }
     if (targetUntilInput && !targetUntil) {
-      setError('targetUntil の日時形式が不正です');
+      dateFormatErrors.push('targetUntil の日時形式が不正です');
+    }
+    if (dateFormatErrors.length > 0) {
+      setError(dateFormatErrors.join(' / '));
       return;
+    }
+    if (targetFrom && targetUntil) {
+      const fromAt = new Date(targetFrom);
+      const untilAt = new Date(targetUntil);
+      if (
+        !Number.isNaN(fromAt.getTime()) &&
+        !Number.isNaN(untilAt.getTime()) &&
+        fromAt.getTime() > untilAt.getTime()
+      ) {
+        setError('targetFrom は targetUntil 以前を指定してください');
+        return;
+      }
     }
     if (!form.reasonText.trim()) {
       setError('reasonText を入力してください');
