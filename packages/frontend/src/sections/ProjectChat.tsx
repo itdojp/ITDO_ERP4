@@ -308,6 +308,15 @@ export const ProjectChat: React.FC = () => {
   const [mentionUserIds, setMentionUserIds] = useState<string[]>([]);
   const [mentionGroupIds, setMentionGroupIds] = useState<string[]>([]);
   const [mentionAll, setMentionAll] = useState(false);
+  const [mentionUserLabelOverrides, setMentionUserLabelOverrides] = useState<
+    Record<string, string>
+  >({});
+  const [mentionGroupLabelOverrides, setMentionGroupLabelOverrides] = useState<
+    Record<string, string>
+  >({});
+  const [ackGroupLabelOverrides, setAckGroupLabelOverrides] = useState<
+    Record<string, string>
+  >({});
   const mentionUserLabelMap = useMemo(() => {
     return new Map(
       (mentionCandidates.users || []).map((user) => [
@@ -335,21 +344,25 @@ export const ProjectChat: React.FC = () => {
   const formatAckGroupLabel = useCallback(
     (groupId: string) => {
       const label =
-        ackGroupLabelMap.get(groupId) || mentionGroupLabelMap.get(groupId);
+        ackGroupLabelOverrides[groupId] ||
+        ackGroupLabelMap.get(groupId) ||
+        mentionGroupLabelMap.get(groupId);
       return label ? label : groupId;
     },
-    [ackGroupLabelMap, mentionGroupLabelMap],
+    [ackGroupLabelMap, ackGroupLabelOverrides, mentionGroupLabelMap],
   );
   const formatAckGroupAria = useCallback(
     (groupId: string) => {
       const label =
-        ackGroupLabelMap.get(groupId) || mentionGroupLabelMap.get(groupId);
+        ackGroupLabelOverrides[groupId] ||
+        ackGroupLabelMap.get(groupId) ||
+        mentionGroupLabelMap.get(groupId);
       if (label && label !== groupId) {
         return `${label} (${groupId})`;
       }
       return groupId;
     },
-    [ackGroupLabelMap, mentionGroupLabelMap],
+    [ackGroupLabelMap, ackGroupLabelOverrides, mentionGroupLabelMap],
   );
   const [pendingOpenMessage, setPendingOpenMessage] = useState<{
     projectId: string;
@@ -385,18 +398,26 @@ export const ProjectChat: React.FC = () => {
         ...mentionUserIds.map((userId) => ({
           id: userId,
           kind: 'user' as const,
-          label: mentionUserLabelMap.get(userId) || userId,
+          label:
+            mentionUserLabelOverrides[userId] ||
+            mentionUserLabelMap.get(userId) ||
+            userId,
         })),
         ...mentionGroupIds.map((groupId) => ({
           id: groupId,
           kind: 'group' as const,
-          label: mentionGroupLabelMap.get(groupId) || groupId,
+          label:
+            mentionGroupLabelOverrides[groupId] ||
+            mentionGroupLabelMap.get(groupId) ||
+            groupId,
         })),
       ].slice(0, 70),
     [
       mentionUserIds,
       mentionGroupIds,
+      mentionUserLabelOverrides,
       mentionUserLabelMap,
+      mentionGroupLabelOverrides,
       mentionGroupLabelMap,
     ],
   );
@@ -633,6 +654,8 @@ export const ProjectChat: React.FC = () => {
   const resetMentionTargets = () => {
     setMentionUserIds([]);
     setMentionGroupIds([]);
+    setMentionUserLabelOverrides({});
+    setMentionGroupLabelOverrides({});
     setMentionAll(false);
   };
 
@@ -662,18 +685,59 @@ export const ProjectChat: React.FC = () => {
     ).slice(0, 20);
     setMentionUserIds(users);
     setMentionGroupIds(groups);
+    setMentionUserLabelOverrides(() => {
+      const overrides: Record<string, string> = {};
+      next
+        .filter((target) => target.kind === 'user')
+        .forEach((target) => {
+          const id = target.id.trim();
+          const label = target.label.trim();
+          if (!id || !label) return;
+          overrides[id] = label;
+        });
+      return overrides;
+    });
+    setMentionGroupLabelOverrides(() => {
+      const overrides: Record<string, string> = {};
+      next
+        .filter((target) => target.kind === 'group')
+        .forEach((target) => {
+          const id = target.id.trim();
+          const label = target.label.trim();
+          if (!id || !label) return;
+          overrides[id] = label;
+        });
+      return overrides;
+    });
   }, []);
 
   const handleAckGroupTargetsChange = useCallback((next: MentionTarget[]) => {
+    const groupTargets = next
+      .filter((target) => target.kind === 'group')
+      .map((target) => ({
+        id: target.id.trim(),
+        label: target.label.trim(),
+      }))
+      .filter((target) => target.id.length > 0);
     const groups = Array.from(
-      new Set(
-        next
-          .filter((target) => target.kind === 'group')
-          .map((target) => target.id.trim())
-          .filter(Boolean),
-      ),
+      new Set(groupTargets.map((target) => target.id)),
     ).slice(0, 20);
+    const groupSet = new Set(groups);
     setAckTargetGroupIds(groups.join(','));
+    setAckGroupLabelOverrides((prev) => {
+      const overrides: Record<string, string> = {};
+      groupTargets.forEach((target) => {
+        if (!groupSet.has(target.id)) return;
+        if (!target.label) return;
+        overrides[target.id] = target.label;
+      });
+      groups.forEach((groupId) => {
+        if (!overrides[groupId] && prev[groupId]) {
+          overrides[groupId] = prev[groupId];
+        }
+      });
+      return overrides;
+    });
   }, []);
 
   const fetchMentionComposerCandidates = useCallback(
@@ -701,6 +765,9 @@ export const ProjectChat: React.FC = () => {
               ? `${user.displayName} (${user.userId})`
               : user.userId,
           }));
+      }
+      if (keyword.length < 2) {
+        return [];
       }
 
       const localGroups = (mentionCandidates.groups || []).map((group) => ({
@@ -933,6 +1000,7 @@ export const ProjectChat: React.FC = () => {
     setAckTargets('');
     setAckTargetInput('');
     setAckTargetGroupIds('');
+    setAckGroupLabelOverrides({});
     setAckTargetRoles('');
     setAckTargetRoleInput('');
     setAckCandidateQuery('');
