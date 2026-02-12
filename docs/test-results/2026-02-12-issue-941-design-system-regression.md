@@ -27,7 +27,7 @@ E2E_SCOPE=core E2E_CAPTURE=0 ./scripts/e2e-frontend.sh
 - E2E core: **11 passed**
   - backend: delivery due / leave-time conflict / milestone sync / effort variance / recurring template / time-invoice
   - frontend: smoke / task-time-entry link / ux-quality baseline
-- E2E証跡ディレクトリ: `docs/test-results/2026-02-12-frontend-e2e`
+- E2E証跡: **未保存（`E2E_CAPTURE=0` のためキャプチャなし）**
 
 ## 補足
 

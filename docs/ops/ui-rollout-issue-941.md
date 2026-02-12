@@ -42,7 +42,7 @@
 
 - 一覧コンテキストを維持する詳細/編集は `Drawer` を優先
 - 単発確認や破壊的操作確認は `Dialog` / `ConfirmActionDialog` を維持
-- 詳細は `docs/ui/dialog-drawer-guideline.md` を参照
+- 詳細は `docs/ui/ux-quality.md` を参照
 
 ## ロールバック方針
 
