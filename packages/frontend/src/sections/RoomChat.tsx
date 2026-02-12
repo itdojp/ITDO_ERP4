@@ -12,8 +12,10 @@ import { api, apiResponse, getAuthState } from '../api';
 import {
   AttachmentField,
   Combobox,
+  MentionComposer,
   type AttachmentRecord,
   type ComboboxItem,
+  type MentionTarget,
   UndoToast,
 } from '../ui';
 import { copyToClipboard } from '../utils/clipboard';
@@ -285,7 +287,6 @@ export const RoomChat: React.FC = () => {
   const [ackTargets, setAckTargets] = useState('');
   const [ackTargetInput, setAckTargetInput] = useState('');
   const [ackTargetGroupIds, setAckTargetGroupIds] = useState('');
-  const [ackTargetGroupInput, setAckTargetGroupInput] = useState('');
   const [ackTargetRoles, setAckTargetRoles] = useState('');
   const [ackTargetRoleInput, setAckTargetRoleInput] = useState('');
   const [ackPreview, setAckPreview] = useState<{
@@ -300,13 +301,28 @@ export const RoomChat: React.FC = () => {
   const [mentionCandidates, setMentionCandidates] = useState<MentionCandidates>(
     {},
   );
-  const [mentionUserInput, setMentionUserInput] = useState('');
-  const [mentionGroupInput, setMentionGroupInput] = useState('');
   const [mentionUserIds, setMentionUserIds] = useState<string[]>([]);
   const [mentionGroupIds, setMentionGroupIds] = useState<string[]>([]);
   const [mentionAll, setMentionAll] = useState(false);
+  const [mentionUserLabelOverrides, setMentionUserLabelOverrides] = useState<
+    Record<string, string>
+  >({});
+  const [mentionGroupLabelOverrides, setMentionGroupLabelOverrides] = useState<
+    Record<string, string>
+  >({});
+  const [ackGroupLabelOverrides, setAckGroupLabelOverrides] = useState<
+    Record<string, string>
+  >({});
   const [ackCandidates, setAckCandidates] = useState<MentionCandidates>({});
   const [ackCandidateQuery, setAckCandidateQuery] = useState('');
+  const mentionUserLabelMap = useMemo(() => {
+    return new Map(
+      (mentionCandidates.users || []).map((user) => [
+        user.userId,
+        user.displayName ? user.displayName.trim() : '',
+      ]),
+    );
+  }, [mentionCandidates.users]);
   const mentionGroupLabelMap = useMemo(() => {
     return new Map(
       (mentionCandidates.groups || []).map((group) => [
@@ -323,41 +339,28 @@ export const RoomChat: React.FC = () => {
       ]),
     );
   }, [ackCandidates.groups]);
-  const formatMentionGroupLabel = useCallback(
-    (groupId: string) => {
-      const label = mentionGroupLabelMap.get(groupId);
-      return label ? label : groupId;
-    },
-    [mentionGroupLabelMap],
-  );
-  const formatMentionGroupAria = useCallback(
-    (groupId: string) => {
-      const label = mentionGroupLabelMap.get(groupId);
-      if (label && label !== groupId) {
-        return `${label} (${groupId})`;
-      }
-      return groupId;
-    },
-    [mentionGroupLabelMap],
-  );
   const formatAckGroupLabel = useCallback(
     (groupId: string) => {
       const label =
-        ackGroupLabelMap.get(groupId) || mentionGroupLabelMap.get(groupId);
+        ackGroupLabelOverrides[groupId] ||
+        ackGroupLabelMap.get(groupId) ||
+        mentionGroupLabelMap.get(groupId);
       return label ? label : groupId;
     },
-    [ackGroupLabelMap, mentionGroupLabelMap],
+    [ackGroupLabelMap, ackGroupLabelOverrides, mentionGroupLabelMap],
   );
   const formatAckGroupAria = useCallback(
     (groupId: string) => {
       const label =
-        ackGroupLabelMap.get(groupId) || mentionGroupLabelMap.get(groupId);
+        ackGroupLabelOverrides[groupId] ||
+        ackGroupLabelMap.get(groupId) ||
+        mentionGroupLabelMap.get(groupId);
       if (label && label !== groupId) {
         return `${label} (${groupId})`;
       }
       return groupId;
     },
-    [ackGroupLabelMap, mentionGroupLabelMap],
+    [ackGroupLabelMap, ackGroupLabelOverrides, mentionGroupLabelMap],
   );
   const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
   const [filterTag, setFilterTag] = useState('');
@@ -378,29 +381,61 @@ export const RoomChat: React.FC = () => {
     () => Array.from(new Set(parseUserIds(ackTargetRoles))),
     [ackTargetRoles],
   );
-  const mentionUserItems = useMemo<ComboboxItem[]>(
+  const mentionTargets = useMemo<MentionTarget[]>(
     () =>
-      (mentionCandidates.users || []).map((user) => ({
-        id: user.userId,
-        value: user.userId,
-        label: user.displayName
-          ? `${user.displayName} (${user.userId})`
-          : user.userId,
-        description: user.displayName ? user.userId : undefined,
-      })),
-    [mentionCandidates.users],
+      [
+        ...mentionUserIds.map((userId) => ({
+          id: userId,
+          kind: 'user' as const,
+          label:
+            mentionUserLabelOverrides[userId] ||
+            mentionUserLabelMap.get(userId) ||
+            userId,
+        })),
+        ...mentionGroupIds.map((groupId) => ({
+          id: groupId,
+          kind: 'group' as const,
+          label:
+            mentionGroupLabelOverrides[groupId] ||
+            mentionGroupLabelMap.get(groupId) ||
+            groupId,
+        })),
+      ].slice(0, 70),
+    [
+      mentionGroupIds,
+      mentionGroupLabelMap,
+      mentionGroupLabelOverrides,
+      mentionUserIds,
+      mentionUserLabelMap,
+      mentionUserLabelOverrides,
+    ],
   );
-  const mentionGroupItems = useMemo<ComboboxItem[]>(
+  const ackGroupTargets = useMemo<MentionTarget[]>(
     () =>
-      (mentionCandidates.groups || []).map((group) => ({
-        id: group.groupId,
-        value: group.groupId,
-        label: group.displayName
-          ? `${group.displayName} (${group.groupId})`
-          : group.groupId,
-        description: group.displayName ? group.groupId : undefined,
+      ackTargetGroupIdList.map((groupId) => ({
+        id: groupId,
+        kind: 'group' as const,
+        label: formatAckGroupLabel(groupId),
       })),
-    [mentionCandidates.groups],
+    [ackTargetGroupIdList, formatAckGroupLabel],
+  );
+  const requiredAckUsers = useMemo<MentionTarget[]>(
+    () =>
+      ackTargetUserIds.map((userId) => ({
+        id: userId,
+        kind: 'user' as const,
+        label: userId,
+      })),
+    [ackTargetUserIds],
+  );
+  const requiredAckRoles = useMemo<MentionTarget[]>(
+    () =>
+      ackTargetRoleList.map((role) => ({
+        id: role,
+        kind: 'role' as const,
+        label: role,
+      })),
+    [ackTargetRoleList],
   );
   const ackTargetUserItems = useMemo<ComboboxItem[]>(
     () =>
@@ -413,18 +448,6 @@ export const RoomChat: React.FC = () => {
         description: user.displayName ? user.userId : undefined,
       })),
     [ackCandidates.users],
-  );
-  const ackTargetGroupItems = useMemo<ComboboxItem[]>(
-    () =>
-      (ackCandidates.groups || []).map((group) => ({
-        id: group.groupId,
-        value: group.groupId,
-        label: group.displayName
-          ? `${group.displayName} (${group.groupId})`
-          : group.groupId,
-        description: group.displayName ? group.groupId : undefined,
-      })),
-    [ackCandidates.groups],
   );
   const ackTargetRoleItems = useMemo<ComboboxItem[]>(
     () =>
@@ -912,39 +935,168 @@ export const RoomChat: React.FC = () => {
     };
   };
 
-  const addMentionUser = (rawValue?: string) => {
-    const value = (rawValue ?? mentionUserInput).trim();
-    if (!value) return;
-    setMentionUserIds((prev) =>
-      prev.includes(value) ? prev : [...prev, value].slice(0, 50),
-    );
-    setMentionUserInput('');
-  };
-
-  const addMentionGroup = (rawValue?: string) => {
-    const value = (rawValue ?? mentionGroupInput).trim();
-    if (!value) return;
-    setMentionGroupIds((prev) =>
-      prev.includes(value) ? prev : [...prev, value].slice(0, 20),
-    );
-    setMentionGroupInput('');
-  };
-
-  const resetMentions = () => {
-    setMentionUserInput('');
-    setMentionGroupInput('');
+  const resetMentionTargets = () => {
     setMentionUserIds([]);
     setMentionGroupIds([]);
+    setMentionUserLabelOverrides({});
+    setMentionGroupLabelOverrides({});
     setMentionAll(false);
   };
 
-  const removeMentionUser = (userId: string) => {
-    setMentionUserIds((prev) => prev.filter((entry) => entry !== userId));
+  const clearComposer = () => {
+    setBody('');
+    setTags('');
+    setAttachmentFile(null);
+    resetMentionTargets();
   };
 
-  const removeMentionGroup = (groupId: string) => {
-    setMentionGroupIds((prev) => prev.filter((entry) => entry !== groupId));
-  };
+  const handleMentionTargetsChange = useCallback((next: MentionTarget[]) => {
+    const users = Array.from(
+      new Set(
+        next
+          .filter((target) => target.kind === 'user')
+          .map((target) => target.id.trim())
+          .filter(Boolean),
+      ),
+    ).slice(0, 50);
+    const groups = Array.from(
+      new Set(
+        next
+          .filter((target) => target.kind === 'group')
+          .map((target) => target.id.trim())
+          .filter(Boolean),
+      ),
+    ).slice(0, 20);
+    setMentionUserIds(users);
+    setMentionGroupIds(groups);
+    setMentionUserLabelOverrides(() => {
+      const overrides: Record<string, string> = {};
+      next
+        .filter((target) => target.kind === 'user')
+        .forEach((target) => {
+          const id = target.id.trim();
+          const label = target.label.trim();
+          if (!id || !label) return;
+          overrides[id] = label;
+        });
+      return overrides;
+    });
+    setMentionGroupLabelOverrides(() => {
+      const overrides: Record<string, string> = {};
+      next
+        .filter((target) => target.kind === 'group')
+        .forEach((target) => {
+          const id = target.id.trim();
+          const label = target.label.trim();
+          if (!id || !label) return;
+          overrides[id] = label;
+        });
+      return overrides;
+    });
+  }, []);
+
+  const handleAckGroupTargetsChange = useCallback((next: MentionTarget[]) => {
+    const groupTargets = next
+      .filter((target) => target.kind === 'group')
+      .map((target) => ({
+        id: target.id.trim(),
+        label: target.label.trim(),
+      }))
+      .filter((target) => target.id.length > 0);
+    const groups = Array.from(
+      new Set(groupTargets.map((target) => target.id)),
+    ).slice(0, 20);
+    const groupSet = new Set(groups);
+    setAckTargetGroupIds(groups.join(','));
+    setAckGroupLabelOverrides((prev) => {
+      const overrides: Record<string, string> = {};
+      groupTargets.forEach((target) => {
+        if (!groupSet.has(target.id)) return;
+        if (!target.label) return;
+        overrides[target.id] = target.label;
+      });
+      groups.forEach((groupId) => {
+        if (!overrides[groupId] && prev[groupId]) {
+          overrides[groupId] = prev[groupId];
+        }
+      });
+      return overrides;
+    });
+  }, []);
+
+  const fetchMentionComposerCandidates = useCallback(
+    async (query: string, kind: 'user' | 'group' | 'role') => {
+      const keyword = query.trim().toLowerCase();
+      if (!keyword || !roomId) return [];
+      if (kind === 'role') {
+        return [];
+      }
+      if (kind === 'user') {
+        return (mentionCandidates.users || [])
+          .filter((user) => {
+            const userId = user.userId.trim();
+            const displayName = user.displayName ? user.displayName.trim() : '';
+            return (
+              userId.toLowerCase().includes(keyword) ||
+              displayName.toLowerCase().includes(keyword)
+            );
+          })
+          .slice(0, 50)
+          .map((user) => ({
+            id: user.userId,
+            kind: 'user' as const,
+            label: user.displayName
+              ? `${user.displayName} (${user.userId})`
+              : user.userId,
+          }));
+      }
+      if (keyword.length < 2) {
+        return [];
+      }
+
+      const localGroups = (mentionCandidates.groups || []).map((group) => ({
+        groupId: group.groupId,
+        displayName: group.displayName ? group.displayName.trim() : '',
+      }));
+      let remoteGroups: { groupId: string; displayName?: string | null }[] = [];
+      try {
+        const response = await api<MentionCandidates>(
+          `/chat-rooms/${roomId}/ack-candidates?q=${encodeURIComponent(
+            query.trim(),
+          )}`,
+        );
+        remoteGroups = response.groups || [];
+      } catch (error) {
+        console.warn('確認対象グループ候補の取得に失敗しました', error);
+      }
+      const merged = new Map<string, string>();
+      [...localGroups, ...remoteGroups].forEach((group) => {
+        const key = group.groupId?.trim();
+        if (!key) return;
+        const label =
+          group.displayName && group.displayName.trim().length > 0
+            ? group.displayName.trim()
+            : key;
+        if (!merged.has(key)) {
+          merged.set(key, label);
+        }
+      });
+      return Array.from(merged.entries())
+        .filter(([groupId, label]) => {
+          return (
+            groupId.toLowerCase().includes(keyword) ||
+            label.toLowerCase().includes(keyword)
+          );
+        })
+        .slice(0, 20)
+        .map(([groupId, label]) => ({
+          id: groupId,
+          kind: 'group' as const,
+          label: label === groupId ? groupId : `${label} (${groupId})`,
+        }));
+    },
+    [mentionCandidates.groups, mentionCandidates.users, roomId],
+  );
 
   const addAckTargetUser = (rawValue?: string) => {
     const value = (rawValue ?? ackTargetInput).trim();
@@ -955,18 +1107,6 @@ export const RoomChat: React.FC = () => {
       return next.join(',');
     });
     setAckTargetInput('');
-    setAckCandidateQuery('');
-  };
-
-  const addAckTargetGroup = (rawValue?: string) => {
-    const value = (rawValue ?? ackTargetGroupInput).trim();
-    if (!value) return;
-    setAckTargetGroupIds((prev) => {
-      const current = parseUserIds(prev);
-      const next = Array.from(new Set([...current, value])).slice(0, 20);
-      return next.join(',');
-    });
-    setAckTargetGroupInput('');
     setAckCandidateQuery('');
   };
 
@@ -1002,7 +1142,7 @@ export const RoomChat: React.FC = () => {
     setAckTargets('');
     setAckTargetInput('');
     setAckTargetGroupIds('');
-    setAckTargetGroupInput('');
+    setAckGroupLabelOverrides({});
     setAckTargetRoles('');
     setAckTargetRoleInput('');
     setAckCandidateQuery('');
@@ -1132,7 +1272,7 @@ export const RoomChat: React.FC = () => {
       setBody('');
       setTags('');
       resetAckTargets();
-      resetMentions();
+      resetMentionTargets();
       setAttachmentFile(null);
       await loadMessages();
     } catch (err) {
@@ -1756,12 +1896,62 @@ export const RoomChat: React.FC = () => {
             </div>
           )}
           <div style={{ display: 'grid', gap: 8, marginTop: 8 }}>
-            <textarea
-              value={body}
-              onChange={(e) => setBody(e.target.value)}
+            <MentionComposer
+              body={body}
+              onBodyChange={setBody}
+              mentions={mentionTargets}
+              onMentionsChange={handleMentionTargetsChange}
+              groups={ackGroupTargets}
+              onGroupsChange={handleAckGroupTargetsChange}
+              requiredUsers={requiredAckUsers}
+              requiredRoles={requiredAckRoles}
+              attachments={composerAttachments}
+              onAddFiles={(files) => setAttachmentFile(files[0] || null)}
+              onRemoveAttachment={() => setAttachmentFile(null)}
+              fetchCandidates={fetchMentionComposerCandidates}
+              onSubmit={() => {
+                void postMessage('message');
+              }}
+              onCancel={clearComposer}
               placeholder="Markdownで入力"
-              rows={4}
+              mentionPlaceholder="メンション対象を検索（ユーザ/グループ）"
+              groupPlaceholder="確認対象グループを検索"
+              submitLabel={isLoading ? '送信中...' : '送信'}
+              cancelLabel="クリア"
+              requiredSectionLabel="確認依頼の対象"
+              disabled={isLoading}
+              limits={{ maxBodyLength: 2000, maxMentions: 70, maxGroups: 20 }}
             />
+            {(mentionCandidates.allowAll ?? true) && (
+              <label>
+                <input
+                  type="checkbox"
+                  checked={mentionAll}
+                  onChange={(event) => setMentionAll(event.target.checked)}
+                />{' '}
+                全員にメンション (@all)
+              </label>
+            )}
+            {mentionAll && (
+              <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  className="badge"
+                  aria-label="全員へのメンションを解除"
+                  onClick={() => setMentionAll(false)}
+                  style={{ cursor: 'pointer' }}
+                >
+                  @all ×
+                </button>
+                <button
+                  className="button secondary"
+                  onClick={resetMentionTargets}
+                  type="button"
+                >
+                  メンション解除
+                </button>
+              </div>
+            )}
             <div className="row" style={{ gap: 12, flexWrap: 'wrap' }}>
               <label>
                 tags
@@ -1800,112 +1990,6 @@ export const RoomChat: React.FC = () => {
                 />
               </label>
             </div>
-            <AttachmentField
-              attachments={composerAttachments}
-              labels={{
-                title: '添付',
-                addFiles: 'ファイルを選択',
-                empty: '添付ファイルはありません',
-              }}
-              onAddFiles={(files) => setAttachmentFile(files[0] || null)}
-              onRemoveAttachment={() => setAttachmentFile(null)}
-            />
-            <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
-              <Combobox
-                placeholder="メンション: ユーザID (任意)"
-                value={mentionUserInput}
-                onChange={(value) => setMentionUserInput(value)}
-                items={mentionUserItems}
-                onSelect={(item) => addMentionUser(item.value ?? item.id)}
-                fullWidth
-                inputProps={{ 'aria-label': 'メンションユーザ' }}
-              />
-              <button
-                className="button secondary"
-                onClick={() => addMentionUser()}
-                type="button"
-              >
-                ユーザ追加
-              </button>
-            </div>
-            <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
-              <Combobox
-                placeholder="メンション: グループID (任意)"
-                value={mentionGroupInput}
-                onChange={(value) => setMentionGroupInput(value)}
-                items={mentionGroupItems}
-                onSelect={(item) => addMentionGroup(item.value ?? item.id)}
-                fullWidth
-                inputProps={{ 'aria-label': 'メンショングループ' }}
-              />
-              <button
-                className="button secondary"
-                onClick={() => addMentionGroup()}
-                type="button"
-              >
-                グループ追加
-              </button>
-            </div>
-            {(mentionCandidates.allowAll ?? true) && (
-              <label>
-                <input
-                  type="checkbox"
-                  checked={mentionAll}
-                  onChange={(event) => setMentionAll(event.target.checked)}
-                />{' '}
-                全員にメンション (@all)
-              </label>
-            )}
-            {(mentionAll ||
-              mentionUserIds.length > 0 ||
-              mentionGroupIds.length > 0) && (
-              <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}>
-                {mentionAll && (
-                  <button
-                    type="button"
-                    className="badge"
-                    aria-label="全員へのメンションを解除"
-                    onClick={() => setMentionAll(false)}
-                    style={{ cursor: 'pointer' }}
-                  >
-                    @all ×
-                  </button>
-                )}
-                {mentionUserIds.map((userId) => (
-                  <button
-                    key={userId}
-                    type="button"
-                    className="badge"
-                    aria-label={`ユーザへのメンションを解除: ${userId}`}
-                    onClick={() => removeMentionUser(userId)}
-                    style={{ cursor: 'pointer' }}
-                  >
-                    @{userId} ×
-                  </button>
-                ))}
-                {mentionGroupIds.map((groupId) => (
-                  <button
-                    key={groupId}
-                    type="button"
-                    className="badge"
-                    aria-label={`グループへのメンションを解除: ${formatMentionGroupAria(
-                      groupId,
-                    )}`}
-                    onClick={() => removeMentionGroup(groupId)}
-                    style={{ cursor: 'pointer' }}
-                  >
-                    @{formatMentionGroupLabel(groupId)} ×
-                  </button>
-                ))}
-                <button
-                  className="button secondary"
-                  onClick={resetMentions}
-                  type="button"
-                >
-                  メンション解除
-                </button>
-              </div>
-            )}
             <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
               <Combobox
                 placeholder="確認対象: ユーザID (任意)"
@@ -1930,29 +2014,9 @@ export const RoomChat: React.FC = () => {
                 {ackTargetUserIds.length}/50
               </span>
             </div>
-            <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
-              <Combobox
-                placeholder="確認対象: グループID (任意)"
-                value={ackTargetGroupInput}
-                onChange={(value) => {
-                  setAckTargetGroupInput(value);
-                  setAckCandidateQuery(value);
-                }}
-                items={ackTargetGroupItems}
-                onSelect={(item) => addAckTargetGroup(item.value ?? item.id)}
-                fullWidth
-                inputProps={{ 'aria-label': '確認対象グループ追加' }}
-              />
-              <button
-                className="button secondary"
-                onClick={() => addAckTargetGroup()}
-                type="button"
-              >
-                グループ追加
-              </button>
-              <span style={{ fontSize: 12, color: '#6b7280' }}>
-                {ackTargetGroupIdList.length}/20
-              </span>
+            <div style={{ marginTop: 6, fontSize: 12, color: '#6b7280' }}>
+              メッセージ作成欄の「確認対象グループを検索」でも追加できます（
+              {ackTargetGroupIdList.length}/20）
             </div>
             <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
               <Combobox
@@ -2071,13 +2135,6 @@ export const RoomChat: React.FC = () => {
               </div>
             )}
             <div className="row" style={{ gap: 12 }}>
-              <button
-                className="button"
-                onClick={() => postMessage('message')}
-                disabled={isLoading}
-              >
-                送信
-              </button>
               <button
                 className="button secondary"
                 onClick={() => postMessage('ack')}
