@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { api, getAuthState } from '../api';
 import { AnnotationsCard } from '../components/AnnotationsCard';
 import { useProjects } from '../hooks/useProjects';
-import { Button, Dialog } from '../ui';
+import { Button, Drawer } from '../ui';
 import { enqueueOfflineItem, isOfflineError } from '../utils/offlineQueue';
 
 type Expense = {
@@ -327,15 +327,20 @@ export const Expenses: React.FC = () => {
           {message.text}
         </p>
       )}
-      <Dialog
+      <Drawer
         open={Boolean(annotationTarget)}
         onClose={() => setAnnotationTarget(null)}
         title={annotationTarget?.title || '注釈'}
-        size="large"
+        size="lg"
         footer={
-          <Button variant="secondary" onClick={() => setAnnotationTarget(null)}>
-            閉じる
-          </Button>
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+            <Button
+              variant="secondary"
+              onClick={() => setAnnotationTarget(null)}
+            >
+              閉じる
+            </Button>
+          </div>
         }
       >
         {annotationTarget && (
@@ -346,7 +351,7 @@ export const Expenses: React.FC = () => {
             title={annotationTarget.title}
           />
         )}
-      </Dialog>
+      </Drawer>
     </div>
   );
 };
