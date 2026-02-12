@@ -141,6 +141,15 @@ const runId = () =>
   process.env.E2E_RUN_ID ||
   `${Date.now().toString().slice(-6)}-${Math.floor(Math.random() * 90 + 10)}`;
 
+const pad2 = (value: number) => String(value).padStart(2, '0');
+
+const toDateInputValue = (date: Date) =>
+  `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
+
+const toDateTimeLocalInputValue = (date: Date) => {
+  return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}T${pad2(date.getHours())}:${pad2(date.getMinutes())}`;
+};
+
 const shiftDateKey = (dateKey: string, deltaDays: number) => {
   const [year, month, day] = dateKey.split('-').map(Number);
   const base = new Date(Date.UTC(year, month - 1, day));
@@ -261,6 +270,49 @@ test('frontend smoke core @core', async ({ page }) => {
   await expenseSection.getByRole('button', { name: '追加' }).click();
   await expect(expenseSection.getByText('経費を保存しました')).toBeVisible();
   await captureSection(expenseSection, '04-core-expenses.png');
+
+  // 経費注釈（Drawer + EntityReferencePicker）: 保存 → 再表示で永続化を確認
+  const expenseAnnotationText = `E2E経費注釈: ${runId()}`;
+  await expenseSection
+    .getByRole('button', { name: /注釈（経費）: .* 2000 JPY/ })
+    .first()
+    .click();
+  const expenseAnnotationDrawer = page.getByRole('dialog', { name: /経費:/ });
+  await expect(expenseAnnotationDrawer).toBeVisible({ timeout: actionTimeout });
+  await expenseAnnotationDrawer
+    .getByLabel('メモ（Markdown）')
+    .fill(expenseAnnotationText);
+  const referencePickerInput = expenseAnnotationDrawer.getByLabel('候補検索');
+  await referencePickerInput.fill('PRJ-DEMO-1');
+  const firstReferenceCandidate = expenseAnnotationDrawer
+    .getByRole('option')
+    .first();
+  await expect(firstReferenceCandidate).toBeVisible({ timeout: actionTimeout });
+  await firstReferenceCandidate.click();
+  await expect(
+    expenseAnnotationDrawer.getByRole('list', { name: 'Selected references' }),
+  ).toBeVisible({ timeout: actionTimeout });
+  await expenseAnnotationDrawer.getByRole('button', { name: '保存' }).click();
+  await expect(page.getByText('保存しました')).toBeVisible({
+    timeout: actionTimeout,
+  });
+  await expenseAnnotationDrawer.getByRole('button', { name: '閉じる' }).click();
+  await expect(expenseAnnotationDrawer).toBeHidden({ timeout: actionTimeout });
+
+  await expenseSection
+    .getByRole('button', { name: /注釈（経費）: .* 2000 JPY/ })
+    .first()
+    .click();
+  const expenseAnnotationDrawer2 = page.getByRole('dialog', { name: /経費:/ });
+  await expect(expenseAnnotationDrawer2.getByLabel('メモ（Markdown）')).toHaveValue(
+    expenseAnnotationText,
+    { timeout: actionTimeout },
+  );
+  await expect(
+    expenseAnnotationDrawer2.getByRole('list', { name: 'Selected references' }),
+  ).toBeVisible({ timeout: actionTimeout });
+  await expenseAnnotationDrawer2.getByRole('button', { name: '閉じる' }).click();
+  await expect(expenseAnnotationDrawer2).toBeHidden({ timeout: actionTimeout });
 
   await navigateToSection(page, '見積');
   const estimateSection = page
@@ -920,7 +972,47 @@ test('frontend smoke reports masters settings @extended', async ({ page }) => {
   await expect(
     settingsSection.getByText('承認ルールを作成しました'),
   ).toBeVisible();
+  await approvalBlock.getByRole('button', { name: '履歴を見る' }).first().click();
+  await expect(
+    approvalBlock.locator('.itdo-audit-timeline').first(),
+  ).toBeVisible({
+    timeout: actionTimeout,
+  });
+  await expect(
+    approvalBlock.getByRole('region', { name: 'Diff output' }).first(),
+  ).toBeVisible({
+    timeout: actionTimeout,
+  });
   await captureSection(approvalBlock, '11-approval-rules.png');
+
+  const actionPolicyBlock = settingsSection
+    .locator('strong', { hasText: 'ActionPolicy（権限/ロック）' })
+    .locator('..');
+  const actionPolicyKey = `submit.e2e.${id}`;
+  await actionPolicyBlock.getByLabel('actionKey').fill(actionPolicyKey);
+  await actionPolicyBlock.getByRole('button', { name: '作成' }).first().click();
+  await expect(
+    settingsSection.getByText('ActionPolicy を作成しました'),
+  ).toBeVisible({ timeout: actionTimeout });
+  const createdActionPolicyCard = actionPolicyBlock.locator('.list .card', {
+    hasText: actionPolicyKey,
+  });
+  await expect(createdActionPolicyCard).toBeVisible({
+    timeout: actionTimeout,
+  });
+  await createdActionPolicyCard
+    .getByRole('button', { name: '履歴を見る' })
+    .click();
+  await expect(
+    createdActionPolicyCard.locator('.itdo-audit-timeline'),
+  ).toBeVisible({
+    timeout: actionTimeout,
+  });
+  await expect(
+    createdActionPolicyCard.getByRole('region', { name: 'Diff output' }),
+  ).toBeVisible({
+    timeout: actionTimeout,
+  });
 
   const templateBlock = settingsSection
     .locator('strong', { hasText: 'テンプレ設定（見積/請求/発注）' })
@@ -1010,14 +1102,15 @@ test('frontend smoke chat hr analytics @extended', async ({ page }) => {
     chatSection.getByLabel('案件選択'),
     'PRJ-DEMO-1 / Demo Project 1',
   );
-  await chatSection.getByLabel('メンションユーザ').fill(mentionTarget);
-  await chatSection.getByRole('button', { name: 'ユーザ追加' }).click();
-  const mentionGroupInput = chatSection.getByLabel('メンショングループ');
-  await mentionGroupInput.fill('mgmt');
-  await chatSection
-    .getByRole('button', { name: 'グループ追加' })
-    .first()
-    .click();
+  const mentionComposerInput = chatSection.getByPlaceholder(
+    'メンション対象を検索（ユーザ/グループ）',
+  );
+  await mentionComposerInput.fill('e2e-member-1');
+  const mentionComposerOption = chatSection
+    .getByRole('option', { name: /e2e-member-1@example\.com/i })
+    .first();
+  await expect(mentionComposerOption).toBeVisible({ timeout: actionTimeout });
+  await mentionComposerOption.click();
   const chatMessage = `E2E chat message ${id}`;
   const uploadName = `e2e-chat-${id}.txt`;
   const uploadPath = path.join(rootDir, 'tmp', uploadName);
@@ -1033,9 +1126,8 @@ test('frontend smoke chat hr analytics @extended', async ({ page }) => {
   });
   await chatSection.getByPlaceholder('タグ (comma separated)').fill('e2e,chat');
   const addFilesButton = chatSection.getByRole('button', {
-    name: 'ファイルを選択',
-  });
-  await expect(addFilesButton).toHaveCount(1);
+    name: /ファイルを選択|Add files/,
+  }).first();
   const [fileChooser] = await Promise.all([
     page.waitForEvent('filechooser'),
     addFilesButton.click(),
@@ -1049,7 +1141,6 @@ test('frontend smoke chat hr analytics @extended', async ({ page }) => {
   );
   const chatItem = chatSection.locator('li', { hasText: chatMessage });
   await expect(chatItem.getByText(`@${mentionTarget}`)).toBeVisible();
-  await expect(chatItem.getByText('@mgmt')).toBeVisible();
   await expect(
     chatSection.getByRole('button', { name: uploadName }),
   ).toBeVisible();
@@ -1062,7 +1153,7 @@ test('frontend smoke chat hr analytics @extended', async ({ page }) => {
   ) {
     await reactionButton.first().click();
   }
-  await expect(chatSection.getByRole('button', { name: '投稿' })).toBeEnabled({
+  await expect(chatSection.getByRole('button', { name: '投稿' })).toBeDisabled({
     timeout: actionTimeout,
   });
 
@@ -1137,6 +1228,10 @@ test('frontend smoke chat hr analytics @extended', async ({ page }) => {
     .locator('h2', { hasText: '匿名集計（人事向け）' })
     .locator('..');
   await hrSection.scrollIntoViewIfNeeded();
+  const hrRangeTo = new Date();
+  const hrRangeFrom = new Date(hrRangeTo.getTime() - 14 * 24 * 60 * 60 * 1000);
+  await hrSection.getByLabel('開始日').fill(toDateInputValue(hrRangeFrom));
+  await hrSection.getByLabel('終了日').fill(toDateInputValue(hrRangeTo));
   await hrSection.getByLabel('閾値').fill('1');
   await hrSection.getByRole('button', { name: '更新' }).first().click();
   await expect(hrSection.locator('ul.list li')).not.toHaveCount(0);
@@ -1645,6 +1740,49 @@ test('frontend smoke additional sections @extended', async ({ page }) => {
     .locator('..');
   await breakGlassSection.scrollIntoViewIfNeeded();
   await captureSection(breakGlassSection, '24-chat-break-glass.png');
+
+  // DateTimeRangePicker regression: break-glass form is available for mgmt without admin role.
+  const breakGlassMgmtPage = await page.context().newPage();
+  breakGlassMgmtPage.on('pageerror', (error) => {
+    console.error('[e2e][breakGlassMgmtPage][pageerror]', error);
+  });
+  breakGlassMgmtPage.on('console', (msg) => {
+    if (msg.type() === 'error') {
+      console.error('[e2e][breakGlassMgmtPage][console.error]', msg.text());
+    }
+  });
+  await breakGlassMgmtPage.addInitScript((state) => {
+    window.localStorage.setItem('erp4_auth', JSON.stringify(state));
+    window.localStorage.removeItem('erp4_active_section');
+  }, {
+    ...authState,
+    roles: ['mgmt'],
+  });
+  await breakGlassMgmtPage.goto(baseUrl);
+  await navigateToSection(
+    breakGlassMgmtPage,
+    '監査閲覧',
+    'Chat break-glass（監査閲覧）',
+  );
+  const breakGlassMgmtSection = breakGlassMgmtPage
+    .locator('main')
+    .locator('h2', { hasText: 'Chat break-glass（監査閲覧）' })
+    .locator('..');
+  const breakGlassTo = new Date();
+  const breakGlassFrom = new Date(
+    breakGlassTo.getTime() - 2 * 60 * 60 * 1000,
+  );
+  const breakGlassFromInput = toDateTimeLocalInputValue(breakGlassFrom);
+  const breakGlassToInput = toDateTimeLocalInputValue(breakGlassTo);
+  await breakGlassMgmtSection.getByLabel('targetFrom').fill(breakGlassFromInput);
+  await breakGlassMgmtSection.getByLabel('targetUntil').fill(breakGlassToInput);
+  await expect(breakGlassMgmtSection.getByLabel('targetFrom')).toHaveValue(
+    breakGlassFromInput,
+  );
+  await expect(breakGlassMgmtSection.getByLabel('targetUntil')).toHaveValue(
+    breakGlassToInput,
+  );
+  await breakGlassMgmtPage.close();
 });
 
 test('frontend smoke admin ops @extended', async ({ page }) => {
@@ -1750,6 +1888,10 @@ test('frontend smoke admin ops @extended', async ({ page }) => {
     .first()
     .locator('..');
   await auditLogSection.scrollIntoViewIfNeeded();
+  const auditRangeTo = toDateInputValue(new Date());
+  const auditRangeFrom = shiftDateKey(auditRangeTo, -7);
+  await auditLogSection.getByLabel('from', { exact: true }).fill(auditRangeFrom);
+  await auditLogSection.getByLabel('to', { exact: true }).fill(auditRangeTo);
   await safeClick(
     auditLogSection.getByRole('button', { name: '検索' }),
     'audit logs search',
