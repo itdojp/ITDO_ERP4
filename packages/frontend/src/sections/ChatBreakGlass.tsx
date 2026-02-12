@@ -3,6 +3,8 @@ import ReactMarkdown from 'react-markdown';
 import remarkBreaks from 'remark-breaks';
 import remarkGfm from 'remark-gfm';
 import { api, apiResponse, getAuthState } from '../api';
+import { DateTimeRangePicker } from '../ui';
+import { toIsoFromLocalInput } from '../utils/datetime';
 
 type BreakGlassRequest = {
   id: string;
@@ -115,8 +117,24 @@ export const ChatBreakGlass: React.FC = () => {
     if (disabledReason) return;
     const projectId = form.projectId.trim();
     const roomId = form.roomId.trim();
+    const targetFromInput = form.targetFrom.trim();
+    const targetUntilInput = form.targetUntil.trim();
+    const targetFrom = targetFromInput
+      ? toIsoFromLocalInput(targetFromInput)
+      : null;
+    const targetUntil = targetUntilInput
+      ? toIsoFromLocalInput(targetUntilInput)
+      : null;
     if (!projectId && !roomId) {
       setError('projectId または roomId を入力してください');
+      return;
+    }
+    if (targetFromInput && !targetFrom) {
+      setError('targetFrom の日時形式が不正です');
+      return;
+    }
+    if (targetUntilInput && !targetUntil) {
+      setError('targetUntil の日時形式が不正です');
       return;
     }
     if (!form.reasonText.trim()) {
@@ -140,8 +158,8 @@ export const ChatBreakGlass: React.FC = () => {
           viewerUserId: form.viewerUserId.trim() || undefined,
           reasonCode: form.reasonCode,
           reasonText: form.reasonText.trim(),
-          targetFrom: form.targetFrom.trim() || undefined,
-          targetUntil: form.targetUntil.trim() || undefined,
+          targetFrom: targetFrom || undefined,
+          targetUntil: targetUntil || undefined,
           ttlHours,
         }),
       });
@@ -311,25 +329,25 @@ export const ChatBreakGlass: React.FC = () => {
               className="row"
               style={{ gap: 8, flexWrap: 'wrap', marginTop: 8 }}
             >
-              <input
-                aria-label="breakglass-targetFrom"
-                type="text"
-                value={form.targetFrom}
-                onChange={(e) =>
-                  setForm((prev) => ({ ...prev, targetFrom: e.target.value }))
-                }
-                placeholder="targetFrom（ISO日時・任意）"
-                style={{ minWidth: 240 }}
-              />
-              <input
-                aria-label="breakglass-targetUntil"
-                type="text"
-                value={form.targetUntil}
-                onChange={(e) =>
-                  setForm((prev) => ({ ...prev, targetUntil: e.target.value }))
-                }
-                placeholder="targetUntil（ISO日時・任意）"
-                style={{ minWidth: 240 }}
+              <DateTimeRangePicker
+                id="breakglass-target-range"
+                label="閲覧対象期間（任意）"
+                fromLabel="targetFrom"
+                toLabel="targetUntil"
+                value={{
+                  from: form.targetFrom || undefined,
+                  to: form.targetUntil || undefined,
+                }}
+                onChange={(next) => {
+                  setForm((prev) => ({
+                    ...prev,
+                    targetFrom: next.from || '',
+                    targetUntil: next.to || '',
+                  }));
+                }}
+                allowEmptyFrom={true}
+                allowEmptyTo={true}
+                timezoneLabel="入力はローカル時刻です（保存時にUTCへ変換）"
               />
             </div>
             <textarea
