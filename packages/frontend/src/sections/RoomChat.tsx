@@ -356,6 +356,9 @@ export const RoomChat: React.FC = () => {
         ackGroupLabelMap.get(groupId) ||
         mentionGroupLabelMap.get(groupId);
       if (label && label !== groupId) {
+        if (label.includes(groupId)) {
+          return label;
+        }
         return `${label} (${groupId})`;
       }
       return groupId;
@@ -1909,9 +1912,7 @@ export const RoomChat: React.FC = () => {
               onAddFiles={(files) => setAttachmentFile(files[0] || null)}
               onRemoveAttachment={() => setAttachmentFile(null)}
               fetchCandidates={fetchMentionComposerCandidates}
-              onSubmit={() => {
-                void postMessage('message');
-              }}
+              onSubmit={() => postMessage('message')}
               onCancel={clearComposer}
               placeholder="Markdownで入力"
               mentionPlaceholder="メンション対象を検索（ユーザ/グループ）"
