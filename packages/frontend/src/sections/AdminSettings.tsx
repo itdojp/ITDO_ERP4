@@ -4,10 +4,11 @@ import {
   AuditTimeline,
   DiffViewer,
   FormWizard,
+  PolicyFormBuilder,
   createLocalStorageDraftAutosaveAdapter,
   useDraftAutosave,
 } from '../ui';
-import type { AuditEvent } from '../ui';
+import type { AuditEvent, PolicyFormSchema, PolicyFormValue } from '../ui';
 import { ChatSettingsCard } from './ChatSettingsCard';
 import { ChatRoomSettingsCard } from './ChatRoomSettingsCard';
 import { GroupManagementCard } from './GroupManagementCard';
@@ -70,6 +71,17 @@ type ActionPolicy = {
   stateConstraints?: Record<string, unknown> | null;
   requireReason?: boolean | null;
   guards?: unknown | null;
+};
+
+type ActionPolicyForm = {
+  flowType: string;
+  actionKey: string;
+  priority?: number;
+  isEnabled: boolean;
+  requireReason: boolean;
+  subjectsJson: string;
+  stateConstraintsJson: string;
+  guardsJson: string;
 };
 
 type ChatAckTemplate = {
@@ -182,6 +194,102 @@ const templateKinds = ['estimate', 'invoice', 'purchase_order'];
 const integrationTypes = ['hr', 'crm'];
 const integrationStatuses = ['active', 'disabled'];
 const reportFormats = ['csv', 'pdf'];
+
+const actionPolicyFormSchema: PolicyFormSchema = {
+  sections: [
+    {
+      id: 'basic',
+      title: '基本設定',
+    },
+    {
+      id: 'constraints',
+      title: '適用条件/ガード',
+    },
+  ],
+  fields: [
+    {
+      name: 'flowType',
+      label: 'flowType',
+      type: 'select',
+      required: true,
+      sectionId: 'basic',
+      options: flowTypes.map((type) => ({ label: type, value: type })),
+    },
+    {
+      name: 'actionKey',
+      label: 'actionKey',
+      type: 'text',
+      required: true,
+      sectionId: 'basic',
+      placeholder: 'submit/send/edit/...',
+    },
+    {
+      name: 'priority',
+      label: 'priority',
+      type: 'number',
+      sectionId: 'basic',
+      step: 1,
+      validator: (fieldValue) => {
+        if (
+          fieldValue === undefined ||
+          fieldValue === null ||
+          fieldValue === ''
+        ) {
+          return undefined;
+        }
+        if (
+          typeof fieldValue !== 'number' ||
+          !Number.isFinite(fieldValue) ||
+          !Number.isInteger(fieldValue)
+        ) {
+          return 'priority は整数で入力してください';
+        }
+        return undefined;
+      },
+    },
+    {
+      name: 'isEnabled',
+      label: 'isEnabled',
+      type: 'checkbox',
+      sectionId: 'basic',
+    },
+    {
+      name: 'requireReason',
+      label: 'requireReason',
+      type: 'checkbox',
+      sectionId: 'basic',
+    },
+    {
+      name: 'subjectsJson',
+      label: 'subjects (JSON)',
+      type: 'textarea',
+      sectionId: 'constraints',
+      rows: 3,
+      columnSpan: 2,
+      placeholder:
+        '{"roles":["admin","mgmt"],"groupIds":["mgmt"],"userIds":["user@example.com"]}',
+    },
+    {
+      name: 'stateConstraintsJson',
+      label: 'stateConstraints (JSON)',
+      type: 'textarea',
+      sectionId: 'constraints',
+      rows: 3,
+      columnSpan: 2,
+      placeholder: '{"statusIn":["draft"],"statusNotIn":["cancelled"]}',
+    },
+    {
+      name: 'guardsJson',
+      label: 'guards (JSON)',
+      type: 'textarea',
+      sectionId: 'constraints',
+      rows: 3,
+      columnSpan: 2,
+      placeholder:
+        '[{"type":"approval_open"},{"type":"project_closed"},{"type":"period_lock"},{"type":"editable_days"},{"type":"chat_ack_completed"}]',
+    },
+  ],
+};
 
 function parseCsv(input: string): string[] {
   return input
@@ -396,16 +504,41 @@ const createDefaultRuleForm = () => ({
   stepsJson: '[{"approverGroupId":"mgmt","stepOrder":1}]',
 });
 
-const createDefaultActionPolicyForm = () => ({
+const createDefaultActionPolicyForm = (): ActionPolicyForm => ({
   flowType: 'invoice',
   actionKey: 'submit',
-  priority: '0',
+  priority: 0,
   isEnabled: true,
   requireReason: false,
   subjectsJson: '',
   stateConstraintsJson: '',
   guardsJson: '',
 });
+
+function normalizeActionPolicyForm(value: PolicyFormValue): ActionPolicyForm {
+  const priorityRaw = value.priority;
+  let priority: number | undefined;
+  if (typeof priorityRaw === 'number') {
+    priority = Number.isFinite(priorityRaw) ? priorityRaw : undefined;
+  } else if (typeof priorityRaw === 'string' && priorityRaw.trim().length > 0) {
+    const parsed = Number(priorityRaw);
+    priority = Number.isFinite(parsed) ? parsed : undefined;
+  }
+  return {
+    flowType: typeof value.flowType === 'string' ? value.flowType : 'invoice',
+    actionKey: typeof value.actionKey === 'string' ? value.actionKey : '',
+    priority,
+    isEnabled: value.isEnabled !== false,
+    requireReason: value.requireReason === true,
+    subjectsJson:
+      typeof value.subjectsJson === 'string' ? value.subjectsJson : '',
+    stateConstraintsJson:
+      typeof value.stateConstraintsJson === 'string'
+        ? value.stateConstraintsJson
+        : '',
+    guardsJson: typeof value.guardsJson === 'string' ? value.guardsJson : '',
+  };
+}
 
 const createDefaultChatAckTemplateForm = () => ({
   flowType: 'invoice',
@@ -1546,7 +1679,7 @@ export const AdminSettings: React.FC = () => {
     setActionPolicyForm({
       flowType: item.flowType,
       actionKey: item.actionKey,
-      priority: String(item.priority ?? 0),
+      priority: item.priority ?? 0,
       isEnabled: item.isEnabled ?? true,
       requireReason: item.requireReason ?? false,
       subjectsJson: item.subjects ? JSON.stringify(item.subjects, null, 2) : '',
@@ -1557,37 +1690,38 @@ export const AdminSettings: React.FC = () => {
     });
   };
 
-  const submitActionPolicy = async () => {
-    const actionKey = actionPolicyForm.actionKey.trim();
+  const submitActionPolicy = async (
+    formValue: ActionPolicyForm = actionPolicyForm,
+  ) => {
+    const actionKey = formValue.actionKey.trim();
     if (!actionKey) {
       setMessage('actionKey を入力してください');
       return;
     }
-    const priorityRaw = actionPolicyForm.priority.trim();
-    const priority = priorityRaw.length > 0 ? Number(priorityRaw) : undefined;
+    const priority = formValue.priority;
     if (
-      priorityRaw.length > 0 &&
+      priority !== undefined &&
       (!Number.isFinite(priority) || !Number.isInteger(priority))
     ) {
       setMessage('priority は整数で入力してください');
       return;
     }
-    const subjects = parseJson('subjects', actionPolicyForm.subjectsJson);
+    const subjects = parseJson('subjects', formValue.subjectsJson);
     if (subjects === null) return;
     const stateConstraints = parseJson(
       'stateConstraints',
-      actionPolicyForm.stateConstraintsJson,
+      formValue.stateConstraintsJson,
     );
     if (stateConstraints === null) return;
-    const guards = parseJson('guards', actionPolicyForm.guardsJson);
+    const guards = parseJson('guards', formValue.guardsJson);
     if (guards === null) return;
 
     const payload = {
-      flowType: actionPolicyForm.flowType,
+      flowType: formValue.flowType,
       actionKey,
       priority,
-      isEnabled: actionPolicyForm.isEnabled,
-      requireReason: actionPolicyForm.requireReason,
+      isEnabled: formValue.isEnabled,
+      requireReason: formValue.requireReason,
       ...(subjects !== undefined ? { subjects } : {}),
       ...(stateConstraints !== undefined ? { stateConstraints } : {}),
       ...(guards !== undefined ? { guards } : {}),
@@ -2263,141 +2397,28 @@ export const AdminSettings: React.FC = () => {
 
         <div className="card" style={{ padding: 12 }}>
           <strong>ActionPolicy（権限/ロック）</strong>
-          <div className="row" style={{ marginTop: 8, flexWrap: 'wrap' }}>
-            <label>
-              flowType
-              <select
-                value={actionPolicyForm.flowType}
-                onChange={(e) =>
-                  setActionPolicyForm({
-                    ...actionPolicyForm,
-                    flowType: e.target.value,
-                  })
-                }
-              >
-                {flowTypes.map((type) => (
-                  <option key={type} value={type}>
-                    {type}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              actionKey
-              <input
-                type="text"
-                value={actionPolicyForm.actionKey}
-                onChange={(e) =>
-                  setActionPolicyForm({
-                    ...actionPolicyForm,
-                    actionKey: e.target.value,
-                  })
-                }
-                placeholder="submit/send/edit/..."
-              />
-            </label>
-            <label>
-              priority
-              <input
-                type="number"
-                value={actionPolicyForm.priority}
-                onChange={(e) =>
-                  setActionPolicyForm({
-                    ...actionPolicyForm,
-                    priority: e.target.value,
-                  })
-                }
-              />
-            </label>
-            <label className="badge" style={{ cursor: 'pointer' }}>
-              <input
-                type="checkbox"
-                checked={actionPolicyForm.isEnabled}
-                onChange={(e) =>
-                  setActionPolicyForm({
-                    ...actionPolicyForm,
-                    isEnabled: e.target.checked,
-                  })
-                }
-                style={{ marginRight: 6 }}
-              />
-              isEnabled
-            </label>
-            <label className="badge" style={{ cursor: 'pointer' }}>
-              <input
-                type="checkbox"
-                checked={actionPolicyForm.requireReason}
-                onChange={(e) =>
-                  setActionPolicyForm({
-                    ...actionPolicyForm,
-                    requireReason: e.target.checked,
-                  })
-                }
-                style={{ marginRight: 6 }}
-              />
-              requireReason
-            </label>
-          </div>
-          <div className="row" style={{ marginTop: 8, flexWrap: 'wrap' }}>
-            <label style={{ flex: 1, minWidth: 240 }}>
-              subjects (JSON)
-              <textarea
-                value={actionPolicyForm.subjectsJson}
-                onChange={(e) =>
-                  setActionPolicyForm({
-                    ...actionPolicyForm,
-                    subjectsJson: e.target.value,
-                  })
-                }
-                rows={3}
-                style={{ width: '100%' }}
-                placeholder='{"roles":["admin","mgmt"],"groupIds":["mgmt"],"userIds":["user@example.com"]}'
-              />
-            </label>
-            <label style={{ flex: 1, minWidth: 240 }}>
-              stateConstraints (JSON)
-              <textarea
-                value={actionPolicyForm.stateConstraintsJson}
-                onChange={(e) =>
-                  setActionPolicyForm({
-                    ...actionPolicyForm,
-                    stateConstraintsJson: e.target.value,
-                  })
-                }
-                rows={3}
-                style={{ width: '100%' }}
-                placeholder='{"statusIn":["draft"],"statusNotIn":["cancelled"]}'
-              />
-            </label>
-            <label style={{ flex: 1, minWidth: 240 }}>
-              guards (JSON)
-              <textarea
-                value={actionPolicyForm.guardsJson}
-                onChange={(e) =>
-                  setActionPolicyForm({
-                    ...actionPolicyForm,
-                    guardsJson: e.target.value,
-                  })
-                }
-                rows={3}
-                style={{ width: '100%' }}
-                placeholder='[{"type":"approval_open"},{"type":"project_closed"},{"type":"period_lock"},{"type":"editable_days"},{"type":"chat_ack_completed"}]'
-              />
-            </label>
-          </div>
-          <div className="row" style={{ marginTop: 8 }}>
-            <button className="button" onClick={submitActionPolicy}>
-              {editingActionPolicyId ? '更新' : '作成'}
-            </button>
-            <button
-              className="button secondary"
-              onClick={resetActionPolicyForm}
-            >
-              {editingActionPolicyId ? 'キャンセル' : 'クリア'}
-            </button>
-            <button className="button secondary" onClick={loadActionPolicies}>
-              再読込
-            </button>
+          <div style={{ marginTop: 8, display: 'grid', gap: 8 }}>
+            <PolicyFormBuilder
+              schema={actionPolicyFormSchema}
+              value={actionPolicyForm}
+              onChange={(next) => {
+                setActionPolicyForm(normalizeActionPolicyForm(next));
+              }}
+              onSubmit={(next) => {
+                const normalized = normalizeActionPolicyForm(next);
+                setActionPolicyForm(normalized);
+                void submitActionPolicy(normalized);
+              }}
+              onReset={resetActionPolicyForm}
+              layout="sectioned"
+              submitLabel={editingActionPolicyId ? '更新' : '作成'}
+              resetLabel={editingActionPolicyId ? 'キャンセル' : 'クリア'}
+            />
+            <div className="row">
+              <button className="button secondary" onClick={loadActionPolicies}>
+                再読込
+              </button>
+            </div>
           </div>
           <div
             className="list"
