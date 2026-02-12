@@ -334,6 +334,7 @@
 1. flowType を選択する
 2. `conditions (JSON)` と `steps (JSON)` を入力する
 3. `作成` / `更新` / `再読込` を実行する
+4. `履歴表示` を開き、`AuditTimeline` でイベントを選択して `DiffViewer` の `before/after` を確認する（必要時は `patch` を展開）
 
 ![承認ルール（簡易モック）](../test-results/2026-02-05-frontend-e2e-r1/11-approval-rules.png)
 
@@ -342,6 +343,7 @@
 1. flowType / actionKey / priority / isEnabled / requireReason を設定する
 2. guards (JSON) に `chat_ack_completed` を追加すると、確認依頼の完了をガードできる
 3. admin/mgmt は理由必須で例外実行でき、監査ログに記録される
+4. `履歴表示` を開き、`AuditTimeline` から変更イベントを選択して `DiffViewer` で差分を確認する
 
 ### 詳細操作（合意形成テンプレ）
 
