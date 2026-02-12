@@ -519,25 +519,31 @@ export const AnnotationsCard: React.FC<AnnotationsCardProps> = ({
   const entityReferenceScope: EntityReferenceScope = 'project_tree';
 
   const entityReferenceValue = useMemo<EntityReferenceItem[]>(() => {
-    return internalRefs.map((ref) => {
-      const label = ref.label?.trim() || `${ref.kind}:${ref.id}`;
-      return {
-        id: ref.id,
-        kind: ref.kind,
-        label,
-        deepLink: buildInternalLink(ref.kind, ref.id),
-      };
-    });
+    return internalRefs
+      .filter((ref) => REF_PICKER_KIND_SET.has(ref.kind as RefCandidateKind))
+      .map((ref) => {
+        const label = ref.label?.trim() || `${ref.kind}:${ref.id}`;
+        return {
+          id: ref.id,
+          kind: ref.kind,
+          label,
+          deepLink: buildInternalLink(ref.kind, ref.id),
+        };
+      });
   }, [internalRefs]);
 
   const handleEntityReferenceChange = useCallback(
     (next: EntityReferenceItem[] | EntityReferenceItem | null) => {
       const items = Array.isArray(next) ? next : next ? [next] : [];
+      const preserved = internalRefs.filter(
+        (ref) => !REF_PICKER_KIND_SET.has(ref.kind as RefCandidateKind),
+      );
       const mapped: InternalRef[] = [];
       const seen = new Set<string>();
       for (const item of items) {
         const kind = normalizeString(item.kind) as InternalRefKind;
         if (!ALLOWED_INTERNAL_REF_KIND_SET.has(kind)) continue;
+        if (!REF_PICKER_KIND_SET.has(kind as RefCandidateKind)) continue;
         const id = normalizeString(item.id);
         if (!id) continue;
         const key = `${kind}:${id}`;
@@ -546,10 +552,10 @@ export const AnnotationsCard: React.FC<AnnotationsCardProps> = ({
         const label = normalizeString(item.label);
         mapped.push(label ? { kind, id, label } : { kind, id });
       }
-      setInternalRefs(mapped);
+      setInternalRefs([...preserved, ...mapped]);
       setRefPickerError('');
     },
-    [],
+    [internalRefs],
   );
 
   const fetchEntityReferenceCandidates = useCallback(
@@ -559,9 +565,13 @@ export const AnnotationsCard: React.FC<AnnotationsCardProps> = ({
       _scope: EntityReferenceScope,
     ): Promise<EntityReferenceCandidate[]> => {
       const q = query.trim();
-      if (!projectId || q.length < 2) return [];
+      if (!projectId || q.length < 2) {
+        setRefPickerError('');
+        return [];
+      }
       const requestedKind = normalizeString(kind);
       if (!REF_PICKER_KIND_SET.has(requestedKind as RefCandidateKind)) {
+        setRefPickerError('');
         return [];
       }
       try {
