@@ -141,10 +141,12 @@ const runId = () =>
   process.env.E2E_RUN_ID ||
   `${Date.now().toString().slice(-6)}-${Math.floor(Math.random() * 90 + 10)}`;
 
-const toDateInputValue = (date: Date) => date.toISOString().slice(0, 10);
+const pad2 = (value: number) => String(value).padStart(2, '0');
+
+const toDateInputValue = (date: Date) =>
+  `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
 
 const toDateTimeLocalInputValue = (date: Date) => {
-  const pad2 = (value: number) => String(value).padStart(2, '0');
   return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}T${pad2(date.getHours())}:${pad2(date.getMinutes())}`;
 };
 
