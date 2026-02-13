@@ -148,6 +148,19 @@ const formatDateTime = (value?: string | null) => {
     .slice(11, 19)}`;
 };
 
+function toSafeExternalHref(value: string): string | null {
+  const raw = value.trim();
+  if (!raw) return null;
+  let parsed: URL;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    return null;
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null;
+  return parsed.toString();
+}
+
 function resolveAnnotationTarget(
   targetTable: string,
   targetId: string,
@@ -902,17 +915,30 @@ export const Approvals: React.FC = () => {
                         )}
                         {externalEvidenceUrls.length > 0 && (
                           <div style={{ display: 'grid', gap: 4 }}>
-                            {externalEvidenceUrls.map((url, index) => (
-                              <a
-                                key={`${url}:${index}`}
-                                href={url}
-                                target="_blank"
-                                rel="noreferrer"
-                                style={{ fontSize: 12, color: '#2563eb' }}
-                              >
-                                {url}
-                              </a>
-                            ))}
+                            {externalEvidenceUrls.map((url, index) => {
+                              const safeHref = toSafeExternalHref(url);
+                              if (!safeHref) {
+                                return (
+                                  <span
+                                    key={`${url}:${index}`}
+                                    style={{ fontSize: 12, color: '#0f172a' }}
+                                  >
+                                    {url}
+                                  </span>
+                                );
+                              }
+                              return (
+                                <a
+                                  key={`${url}:${index}`}
+                                  href={safeHref}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  style={{ fontSize: 12, color: '#2563eb' }}
+                                >
+                                  {url}
+                                </a>
+                              );
+                            })}
                           </div>
                         )}
                         {chatEvidenceRefs.length === 0 &&

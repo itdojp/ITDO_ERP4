@@ -28,6 +28,13 @@ function normalizeString(value: unknown) {
   return typeof value === 'string' ? value.trim() : '';
 }
 
+function resolveErrorCode(value: unknown) {
+  if (typeof value === 'string') return value.trim();
+  if (!value || typeof value !== 'object') return '';
+  const record = value as Record<string, unknown>;
+  return normalizeString(record.code);
+}
+
 function formatDateTime(value: string) {
   if (!value) return '-';
   const date = new Date(value);
@@ -89,7 +96,7 @@ export const ChatEvidencePicker: React.FC<ChatEvidencePickerProps> = ({
         error?: unknown;
       };
       if (!res.ok) {
-        const code = normalizeString(payload.error);
+        const code = resolveErrorCode(payload.error);
         if (code === 'query_too_short') {
           setError('検索キーワードは2文字以上で入力してください');
         } else if (code === 'forbidden_project') {

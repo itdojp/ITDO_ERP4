@@ -549,7 +549,13 @@ export async function registerRefCandidateRoutes(app: FastifyInstance) {
               const projectLabel = message.room.project
                 ? buildProjectLabel(message.room.project)
                 : null;
-              const roomLabel = projectLabel || message.room.name || message.roomId;
+              const roomName =
+                typeof message.room.name === 'string' && message.room.name.trim()
+                  ? message.room.name.trim()
+                  : message.roomId;
+              const roomLabel = projectLabel
+                ? `${projectLabel} / ${roomName}`
+                : roomName;
               const createdLabel = formatRefTimestamp(message.createdAt);
               return {
                 kind: 'chat_message',
