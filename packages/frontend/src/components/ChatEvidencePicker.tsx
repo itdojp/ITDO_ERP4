@@ -117,8 +117,7 @@ export const ChatEvidencePicker: React.FC<ChatEvidencePickerProps> = ({
         if (kind !== 'chat_message') return [];
         const id = normalizeString(item.id);
         if (!id) return [];
-        const label =
-          normalizeString(item.label) || `chat_message:${id}`;
+        const label = normalizeString(item.label) || `chat_message:${id}`;
         const url = normalizeDeepLink(id, normalizeString(item.url));
         const projectLabel = normalizeString(item.projectLabel);
         const meta =
@@ -156,7 +155,12 @@ export const ChatEvidencePicker: React.FC<ChatEvidencePickerProps> = ({
         案件スコープ内（同一案件・親子案件）のチャット発言を候補検索します。
       </div>
       <div
-        style={{ display: 'flex', gap: 8, alignItems: 'flex-end', flexWrap: 'wrap' }}
+        style={{
+          display: 'flex',
+          gap: 8,
+          alignItems: 'flex-end',
+          flexWrap: 'wrap',
+        }}
       >
         <Input
           label="キーワード"
@@ -197,7 +201,9 @@ export const ChatEvidencePicker: React.FC<ChatEvidencePickerProps> = ({
                 <div style={{ fontWeight: 600, marginBottom: 6 }}>
                   {candidate.projectLabel || '案件未設定'} / {roomLabel}
                 </div>
-                <div style={{ fontSize: 12, color: '#64748b', marginBottom: 6 }}>
+                <div
+                  style={{ fontSize: 12, color: '#64748b', marginBottom: 6 }}
+                >
                   投稿日時: {formatDateTime(candidate.createdAt)} / 投稿者:{' '}
                   {authorLabel}
                 </div>

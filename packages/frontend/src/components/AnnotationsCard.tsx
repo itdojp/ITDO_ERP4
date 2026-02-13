@@ -501,9 +501,7 @@ export const AnnotationsCard: React.FC<AnnotationsCardProps> = ({
   const addInternalRef = useCallback(
     (ref: InternalRef) => {
       const key = buildRefKey(ref);
-      const exists = internalRefs.some(
-        (item) => buildRefKey(item) === key,
-      );
+      const exists = internalRefs.some((item) => buildRefKey(item) === key);
       if (exists) return;
       setInternalRefs((prev) => [...prev, ref]);
     },
@@ -589,7 +587,10 @@ export const AnnotationsCard: React.FC<AnnotationsCardProps> = ({
             return [buildRefKey(ref), status] as const;
           }),
         );
-        setRefValidationByKey((prev) => ({ ...prev, ...Object.fromEntries(entries) }));
+        setRefValidationByKey((prev) => ({
+          ...prev,
+          ...Object.fromEntries(entries),
+        }));
       } finally {
         setValidatingRefs(false);
       }
@@ -827,9 +828,7 @@ export const AnnotationsCard: React.FC<AnnotationsCardProps> = ({
     (candidate: ChatEvidenceCandidate) => {
       addChatEvidenceRef(candidate);
       const label = candidate.label?.trim() || `chat_message:${candidate.id}`;
-      insertIntoNotes(
-        `[${escapeMarkdownLinkLabel(label)}](${candidate.url})`,
-      );
+      insertIntoNotes(`[${escapeMarkdownLinkLabel(label)}](${candidate.url})`);
     },
     [addChatEvidenceRef, insertIntoNotes],
   );

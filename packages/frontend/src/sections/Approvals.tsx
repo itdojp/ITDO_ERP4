@@ -1,4 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { api, apiResponse, getAuthState } from '../api';
 import { navigateToOpen } from '../utils/deepLink';
 
@@ -408,7 +414,9 @@ export const Approvals: React.FC = () => {
           reason: reasons[id]?.trim() || undefined,
         }),
       });
-      const payload = (await res.json().catch(() => ({}))) as ApprovalActionErrorPayload;
+      const payload = (await res
+        .json()
+        .catch(() => ({}))) as ApprovalActionErrorPayload;
       if (!res.ok) {
         let text =
           action === 'approve' ? '承認に失敗しました' : '却下に失敗しました';
@@ -564,8 +572,7 @@ export const Approvals: React.FC = () => {
       setEvidenceItems((prev) => ({ ...prev, [item.id]: null }));
       setEvidenceErrors((prev) => ({
         ...prev,
-        [item.id]:
-          'この承認対象は注釈エビデンス表示の対象外です（対応予定）',
+        [item.id]: 'この承認対象は注釈エビデンス表示の対象外です（対応予定）',
       }));
       return;
     }
@@ -573,7 +580,9 @@ export const Approvals: React.FC = () => {
       setEvidenceLoading((prev) => ({ ...prev, [item.id]: true }));
       setEvidenceErrors((prev) => ({ ...prev, [item.id]: '' }));
       const res = await apiResponse(`/annotations/${target.kind}/${target.id}`);
-      const payload = (await res.json().catch(() => ({}))) as AnnotationEvidence;
+      const payload = (await res
+        .json()
+        .catch(() => ({}))) as AnnotationEvidence;
       if (!res.ok) {
         setEvidenceItems((prev) => ({ ...prev, [item.id]: null }));
         setEvidenceErrors((prev) => ({
@@ -624,7 +633,9 @@ export const Approvals: React.FC = () => {
       });
       setChatPreviewErrors((prev) => ({ ...prev, [messageId]: '' }));
       const res = await apiResponse(`/chat-messages/${messageId}`);
-      const payload = (await res.json().catch(() => ({}))) as ChatMessagePreview & {
+      const payload = (await res
+        .json()
+        .catch(() => ({}))) as ChatMessagePreview & {
         error?: { code?: string };
       };
       if (!res.ok) {
@@ -952,8 +963,8 @@ export const Approvals: React.FC = () => {
                     {!evidenceBusy && !evidenceError && (
                       <>
                         <div style={{ fontSize: 12, color: '#64748b' }}>
-                          外部URL: {externalEvidenceUrls.length} 件 / チャット参照:{' '}
-                          {chatEvidenceRefs.length} 件
+                          外部URL: {externalEvidenceUrls.length} 件 /
+                          チャット参照: {chatEvidenceRefs.length} 件
                         </div>
                         {evidenceNotes && (
                           <div style={{ fontSize: 12, color: '#0f172a' }}>
@@ -1018,7 +1029,9 @@ export const Approvals: React.FC = () => {
                                 }}
                               >
                                 <span className="badge">chat_message</span>
-                                <span style={{ fontSize: 12, color: '#64748b' }}>
+                                <span
+                                  style={{ fontSize: 12, color: '#64748b' }}
+                                >
                                   {ref.label || messageId}
                                 </span>
                                 <button
