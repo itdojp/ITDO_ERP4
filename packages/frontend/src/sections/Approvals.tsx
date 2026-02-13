@@ -620,6 +620,26 @@ export const Approvals: React.FC = () => {
     }
   }, [chatPreviewLoading, chatPreviews]);
 
+  useEffect(() => {
+    const messageIds = new Set<string>();
+    for (const item of items) {
+      if (!evidenceOpen[item.id]) continue;
+      const evidence = evidenceItems[item.id];
+      if (!evidence || !Array.isArray(evidence.internalRefs)) continue;
+      for (const ref of evidence.internalRefs) {
+        if (ref?.kind !== 'chat_message' || typeof ref?.id !== 'string') {
+          continue;
+        }
+        const id = ref.id.trim();
+        if (!id) continue;
+        messageIds.add(id);
+      }
+    }
+    for (const messageId of messageIds) {
+      loadChatPreview(messageId).catch(() => undefined);
+    }
+  }, [evidenceItems, evidenceOpen, items, loadChatPreview]);
+
   const formatStep = (step: ApprovalStep) => {
     const target = step.approverUserId || step.approverGroupId || '-';
     return `#${step.stepOrder + 1} ${target} (${step.status})`;

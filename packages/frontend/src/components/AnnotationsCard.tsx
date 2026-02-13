@@ -108,8 +108,18 @@ type MessageState = {
   description?: string;
 } | null;
 
+type RefValidationState = {
+  status: 'ok' | 'forbidden' | 'not_found' | 'error';
+  message: string;
+  checkedAt: string;
+};
+
 function normalizeString(value: unknown) {
   return typeof value === 'string' ? value.trim() : '';
+}
+
+function buildRefKey(ref: Pick<InternalRef, 'kind' | 'id'>) {
+  return `${ref.kind}:${ref.id}`;
 }
 
 function escapeMarkdownLinkLabel(value: string) {
@@ -483,12 +493,16 @@ export const AnnotationsCard: React.FC<AnnotationsCardProps> = ({
   );
 
   const [refPickerError, setRefPickerError] = useState('');
+  const [refValidationByKey, setRefValidationByKey] = useState<
+    Record<string, RefValidationState>
+  >({});
+  const [validatingRefs, setValidatingRefs] = useState(false);
 
   const addInternalRef = useCallback(
     (ref: InternalRef) => {
-      const key = `${ref.kind}:${ref.id}`;
+      const key = buildRefKey(ref);
       const exists = internalRefs.some(
-        (item) => `${item.kind}:${item.id}` === key,
+        (item) => buildRefKey(item) === key,
       );
       if (exists) return;
       setInternalRefs((prev) => [...prev, ref]);
@@ -503,9 +517,83 @@ export const AnnotationsCard: React.FC<AnnotationsCardProps> = ({
     [setInternalRefs],
   );
 
+  const validateChatMessageRef = useCallback(
+    async (messageId: string): Promise<RefValidationState> => {
+      const now = new Date().toISOString();
+      try {
+        const res = await apiResponse(`/chat-messages/${messageId}`);
+        const payload = (await res.json().catch(() => ({}))) as {
+          error?: { code?: string };
+        };
+        if (res.ok) {
+          return {
+            status: 'ok',
+            message: '参照可能',
+            checkedAt: now,
+          };
+        }
+        const code = payload?.error?.code;
+        if (
+          code === 'FORBIDDEN_PROJECT' ||
+          code === 'FORBIDDEN_ROOM_MEMBER' ||
+          code === 'FORBIDDEN_EXTERNAL_ROOM'
+        ) {
+          return {
+            status: 'forbidden',
+            message: '権限不足',
+            checkedAt: now,
+          };
+        }
+        if (code === 'NOT_FOUND' || res.status === 404) {
+          return {
+            status: 'not_found',
+            message: '発言が見つかりません',
+            checkedAt: now,
+          };
+        }
+        return {
+          status: 'error',
+          message: '参照状態の確認に失敗しました',
+          checkedAt: now,
+        };
+      } catch (error) {
+        console.error('Failed to validate chat message ref', error);
+        return {
+          status: 'error',
+          message: '参照状態の確認に失敗しました',
+          checkedAt: now,
+        };
+      }
+    },
+    [],
+  );
+
+  const checkChatRefStates = useCallback(
+    async (refs: InternalRef[]) => {
+      const chatRefs = refs.filter((ref) => ref.kind === 'chat_message');
+      if (chatRefs.length === 0) {
+        setRefValidationByKey({});
+        return;
+      }
+      setValidatingRefs(true);
+      try {
+        const entries = await Promise.all(
+          chatRefs.map(async (ref) => {
+            const status = await validateChatMessageRef(ref.id);
+            return [buildRefKey(ref), status] as const;
+          }),
+        );
+        setRefValidationByKey(Object.fromEntries(entries));
+      } finally {
+        setValidatingRefs(false);
+      }
+    },
+    [validateChatMessageRef],
+  );
+
   const [manualRefInput, setManualRefInput] = useState('');
 
-  const addManualInternalRef = useCallback(() => {
+  const addManualInternalRef = useCallback(async () => {
     const parsed = parseInternalRefInput(manualRefInput);
     if (!parsed) {
       setMessage({
@@ -514,10 +602,38 @@ export const AnnotationsCard: React.FC<AnnotationsCardProps> = ({
       });
       return;
     }
+    if (parsed.kind === 'chat_message') {
+      const validation = await validateChatMessageRef(parsed.id);
+      if (validation.status === 'forbidden') {
+        setMessage({
+          variant: 'error',
+          title: 'この発言は権限不足のため追加できません',
+        });
+        return;
+      }
+      if (validation.status === 'not_found') {
+        setMessage({
+          variant: 'error',
+          title: 'この発言は見つからないため追加できません',
+        });
+        return;
+      }
+      if (validation.status === 'error') {
+        setMessage({
+          variant: 'error',
+          title: '発言の参照状態確認に失敗したため追加できません',
+        });
+        return;
+      }
+    }
     addInternalRef({ kind: parsed.kind, id: parsed.id });
     setManualRefInput('');
     setMessage({ variant: 'success', title: '内部参照を追加しました' });
-  }, [addInternalRef, manualRefInput]);
+  }, [addInternalRef, manualRefInput, validateChatMessageRef]);
+
+  useEffect(() => {
+    checkChatRefStates(internalRefs).catch(() => undefined);
+  }, [checkChatRefStates, internalRefs]);
 
   const entityReferenceKinds: EntityReferenceKind[] =
     REF_PICKER_KINDS as EntityReferenceKind[];
@@ -1002,6 +1118,14 @@ export const AnnotationsCard: React.FC<AnnotationsCardProps> = ({
           >
             エビデンス追加
           </Button>
+          <Button
+            variant="secondary"
+            size="small"
+            onClick={() => checkChatRefStates(internalRefs).catch(() => undefined)}
+            disabled={validatingRefs}
+          >
+            {validatingRefs ? '参照確認中' : '参照状態を確認'}
+          </Button>
           <div style={{ fontSize: 12, color: '#64748b' }}>
             {projectId
               ? '候補は案件スコープ内から検索'
@@ -1028,7 +1152,7 @@ export const AnnotationsCard: React.FC<AnnotationsCardProps> = ({
             <Button
               variant="secondary"
               size="small"
-              onClick={addManualInternalRef}
+              onClick={() => addManualInternalRef().catch(() => undefined)}
               disabled={!manualRefInput.trim()}
             >
               追加
@@ -1064,6 +1188,11 @@ export const AnnotationsCard: React.FC<AnnotationsCardProps> = ({
             {internalRefs.map((ref, index) => {
               const label = ref.label?.trim() || `${ref.kind}:${ref.id}`;
               const url = buildInternalLink(ref.kind, ref.id);
+              const refKey = buildRefKey(ref);
+              const refState =
+                ref.kind === 'chat_message'
+                  ? refValidationByKey[refKey]
+                  : undefined;
               return (
                 <div
                   key={`${ref.kind}:${ref.id}:${index}`}
@@ -1075,6 +1204,33 @@ export const AnnotationsCard: React.FC<AnnotationsCardProps> = ({
                   }}
                 >
                   <span className="badge">{ref.kind}</span>
+                  {ref.kind === 'chat_message' && (
+                    <span
+                      className="badge"
+                      style={{
+                        background:
+                          refState?.status === 'ok'
+                            ? '#dcfce7'
+                            : refState?.status === 'forbidden' ||
+                                refState?.status === 'not_found'
+                              ? '#fee2e2'
+                              : refState?.status === 'error'
+                                ? '#ffedd5'
+                                : '#e2e8f0',
+                        color:
+                          refState?.status === 'ok'
+                            ? '#166534'
+                            : refState?.status === 'forbidden' ||
+                                refState?.status === 'not_found'
+                              ? '#991b1b'
+                              : refState?.status === 'error'
+                                ? '#9a3412'
+                                : '#334155',
+                      }}
+                    >
+                      {refState?.message || '未確認'}
+                    </span>
+                  )}
                   <a
                     href={url}
                     style={{ color: '#2563eb', wordBreak: 'break-all' }}
