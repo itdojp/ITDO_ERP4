@@ -7,9 +7,14 @@ import React, {
 } from 'react';
 import { apiResponse, getAuthState } from '../api';
 import {
+  ChatEvidencePicker,
+  type ChatEvidenceCandidate,
+} from './ChatEvidencePicker';
+import {
   Alert,
   Button,
   Card,
+  Drawer,
   EntityReferencePicker,
   EventLog,
   Input,
@@ -641,6 +646,48 @@ export const AnnotationsCard: React.FC<AnnotationsCardProps> = ({
     [],
   );
 
+  const [evidencePickerOpen, setEvidencePickerOpen] = useState(false);
+
+  const addChatEvidenceRef = useCallback(
+    (candidate: ChatEvidenceCandidate) => {
+      const nextRef: InternalRef = {
+        kind: 'chat_message',
+        id: candidate.id,
+        label: candidate.label?.trim() || `chat_message:${candidate.id}`,
+      };
+      const key = `${nextRef.kind}:${nextRef.id}`;
+      const exists = internalRefs.some(
+        (item) => `${item.kind}:${item.id}` === key,
+      );
+      if (exists) {
+        setMessage({ variant: 'info', title: '内部参照は既に追加済みです' });
+        return;
+      }
+      addInternalRef(nextRef);
+      setMessage({ variant: 'success', title: 'エビデンスを追加しました' });
+    },
+    [addInternalRef, internalRefs],
+  );
+
+  const insertChatEvidenceToNotes = useCallback(
+    (candidate: ChatEvidenceCandidate) => {
+      addChatEvidenceRef(candidate);
+      const label = candidate.label?.trim() || `chat_message:${candidate.id}`;
+      insertIntoNotes(
+        `[${escapeMarkdownLinkLabel(label)}](${candidate.url})`,
+      );
+    },
+    [addChatEvidenceRef, insertIntoNotes],
+  );
+
+  const copyChatEvidenceLink = useCallback(
+    (mode: 'url' | 'markdown', candidate: ChatEvidenceCandidate) => {
+      const label = candidate.label?.trim() || `chat_message:${candidate.id}`;
+      copyLink(mode, label, candidate.url).catch(() => undefined);
+    },
+    [copyLink],
+  );
+
   const [historyVisible, setHistoryVisible] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyItems, setHistoryItems] = useState<AnnotationHistoryItem[]>([]);
@@ -947,6 +994,14 @@ export const AnnotationsCard: React.FC<AnnotationsCardProps> = ({
           }}
         >
           <div style={{ fontWeight: 600 }}>内部参照</div>
+          <Button
+            variant="secondary"
+            size="small"
+            onClick={() => setEvidencePickerOpen(true)}
+            disabled={!projectId}
+          >
+            エビデンス追加
+          </Button>
           <div style={{ fontSize: 12, color: '#64748b' }}>
             {projectId
               ? '候補は案件スコープ内から検索'
@@ -1126,6 +1181,29 @@ export const AnnotationsCard: React.FC<AnnotationsCardProps> = ({
           </div>
         )}
       </Card>
+      <Drawer
+        open={evidencePickerOpen}
+        onClose={() => setEvidencePickerOpen(false)}
+        title="エビデンス追加（チャット発言）"
+        size="lg"
+        footer={
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+            <Button
+              variant="secondary"
+              onClick={() => setEvidencePickerOpen(false)}
+            >
+              閉じる
+            </Button>
+          </div>
+        }
+      >
+        <ChatEvidencePicker
+          projectId={projectId ?? null}
+          onAddCandidate={addChatEvidenceRef}
+          onInsertCandidate={insertChatEvidenceToNotes}
+          onCopyCandidate={copyChatEvidenceLink}
+        />
+      </Drawer>
     </div>
   );
 };

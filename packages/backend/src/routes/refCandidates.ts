@@ -122,6 +122,10 @@ function buildProjectLabel(project: { code: string; name: string }) {
   return `${project.code} / ${project.name}`;
 }
 
+function formatRefTimestamp(value: Date) {
+  return value.toISOString().slice(0, 16).replace('T', ' ');
+}
+
 export async function registerRefCandidateRoutes(app: FastifyInstance) {
   const allowedRoles = ['admin', 'mgmt', 'exec', 'user', 'hr'];
 
@@ -545,15 +549,20 @@ export async function registerRefCandidateRoutes(app: FastifyInstance) {
               const projectLabel = message.room.project
                 ? buildProjectLabel(message.room.project)
                 : null;
+              const roomLabel = projectLabel || message.room.name || message.roomId;
+              const createdLabel = formatRefTimestamp(message.createdAt);
               return {
                 kind: 'chat_message',
                 id: message.id,
-                label: `Chat（${projectLabel || message.room.name}）: ${excerpt}`,
+                label: `Chat（${roomLabel} / ${createdLabel} / ${message.userId}）: ${excerpt}`,
                 url: buildOpenHash('chat_message', message.id),
                 projectId: message.room.projectId ?? null,
                 projectLabel,
                 meta: {
                   roomId: message.roomId,
+                  roomName: message.room.name,
+                  roomType: message.room.type,
+                  userId: message.userId,
                   createdAt: message.createdAt,
                   excerpt,
                 },
