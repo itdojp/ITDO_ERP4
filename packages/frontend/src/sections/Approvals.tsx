@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api, apiResponse, getAuthState } from '../api';
 import { navigateToOpen } from '../utils/deepLink';
 
@@ -297,6 +297,16 @@ export const Approvals: React.FC = () => {
   const [chatPreviews, setChatPreviews] = useState<
     Record<string, ChatMessagePreview | null>
   >({});
+  const chatPreviewLoadingRef = useRef<Record<string, boolean>>({});
+  const chatPreviewsRef = useRef<Record<string, ChatMessagePreview | null>>({});
+
+  useEffect(() => {
+    chatPreviewLoadingRef.current = chatPreviewLoading;
+  }, [chatPreviewLoading]);
+
+  useEffect(() => {
+    chatPreviewsRef.current = chatPreviews;
+  }, [chatPreviews]);
 
   const projectMap = useMemo(() => {
     return new Map(projects.map((project) => [project.id, project]));
@@ -600,9 +610,18 @@ export const Approvals: React.FC = () => {
 
   const loadChatPreview = useCallback(async (messageId: string) => {
     if (!messageId.trim()) return;
-    if (chatPreviews[messageId] || chatPreviewLoading[messageId]) return;
+    if (
+      chatPreviewsRef.current[messageId] ||
+      chatPreviewLoadingRef.current[messageId]
+    ) {
+      return;
+    }
     try {
-      setChatPreviewLoading((prev) => ({ ...prev, [messageId]: true }));
+      setChatPreviewLoading((prev) => {
+        const next = { ...prev, [messageId]: true };
+        chatPreviewLoadingRef.current = next;
+        return next;
+      });
       setChatPreviewErrors((prev) => ({ ...prev, [messageId]: '' }));
       const res = await apiResponse(`/chat-messages/${messageId}`);
       const payload = (await res.json().catch(() => ({}))) as ChatMessagePreview & {
@@ -621,7 +640,11 @@ export const Approvals: React.FC = () => {
         setChatPreviewErrors((prev) => ({ ...prev, [messageId]: message }));
         return;
       }
-      setChatPreviews((prev) => ({ ...prev, [messageId]: payload }));
+      setChatPreviews((prev) => {
+        const next = { ...prev, [messageId]: payload };
+        chatPreviewsRef.current = next;
+        return next;
+      });
     } catch (error) {
       console.error('Failed to load chat message preview.', error);
       setChatPreviewErrors((prev) => ({
@@ -629,9 +652,13 @@ export const Approvals: React.FC = () => {
         [messageId]: '発言プレビューの取得に失敗しました',
       }));
     } finally {
-      setChatPreviewLoading((prev) => ({ ...prev, [messageId]: false }));
+      setChatPreviewLoading((prev) => {
+        const next = { ...prev, [messageId]: false };
+        chatPreviewLoadingRef.current = next;
+        return next;
+      });
     }
-  }, [chatPreviewLoading, chatPreviews]);
+  }, []);
 
   useEffect(() => {
     const messageIds = new Set<string>();

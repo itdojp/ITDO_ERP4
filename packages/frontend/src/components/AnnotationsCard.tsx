@@ -512,9 +512,19 @@ export const AnnotationsCard: React.FC<AnnotationsCardProps> = ({
 
   const removeInternalRef = useCallback(
     (index: number) => {
+      const removed = internalRefs[index];
+      if (removed?.kind === 'chat_message') {
+        const key = buildRefKey(removed);
+        setRefValidationByKey((prev) => {
+          if (!(key in prev)) return prev;
+          const next = { ...prev };
+          delete next[key];
+          return next;
+        });
+      }
       setInternalRefs((prev) => prev.filter((_, i) => i !== index));
     },
-    [setInternalRefs],
+    [internalRefs],
   );
 
   const validateChatMessageRef = useCallback(
@@ -570,20 +580,16 @@ export const AnnotationsCard: React.FC<AnnotationsCardProps> = ({
 
   const checkChatRefStates = useCallback(
     async (refs: InternalRef[]) => {
-      const chatRefs = refs.filter((ref) => ref.kind === 'chat_message');
-      if (chatRefs.length === 0) {
-        setRefValidationByKey({});
-        return;
-      }
+      if (refs.length === 0) return;
       setValidatingRefs(true);
       try {
         const entries = await Promise.all(
-          chatRefs.map(async (ref) => {
+          refs.map(async (ref) => {
             const status = await validateChatMessageRef(ref.id);
             return [buildRefKey(ref), status] as const;
           }),
         );
-        setRefValidationByKey(Object.fromEntries(entries));
+        setRefValidationByKey((prev) => ({ ...prev, ...Object.fromEntries(entries) }));
       } finally {
         setValidatingRefs(false);
       }
@@ -632,8 +638,40 @@ export const AnnotationsCard: React.FC<AnnotationsCardProps> = ({
   }, [addInternalRef, manualRefInput, validateChatMessageRef]);
 
   useEffect(() => {
-    checkChatRefStates(internalRefs).catch(() => undefined);
-  }, [checkChatRefStates, internalRefs]);
+    const chatRefs = internalRefs.filter((ref) => ref.kind === 'chat_message');
+    if (chatRefs.length === 0) {
+      setRefValidationByKey({});
+      return;
+    }
+
+    const refKeySet = new Set(chatRefs.map((ref) => buildRefKey(ref)));
+    setRefValidationByKey((prev) => {
+      const next = Object.fromEntries(
+        Object.entries(prev).filter(([key]) => refKeySet.has(key)),
+      ) as Record<string, RefValidationState>;
+      const prevEntries = Object.entries(prev);
+      const nextEntries = Object.entries(next);
+      if (
+        prevEntries.length === nextEntries.length &&
+        nextEntries.every(([key, value]) => prev[key] === value)
+      ) {
+        return prev;
+      }
+      return next;
+    });
+
+    const refsToValidate = chatRefs.filter(
+      (ref) => !refValidationByKey[buildRefKey(ref)],
+    );
+    if (refsToValidate.length === 0) return;
+
+    const timeoutId = window.setTimeout(() => {
+      checkChatRefStates(refsToValidate).catch(() => undefined);
+    }, 300);
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [checkChatRefStates, internalRefs, refValidationByKey]);
 
   const entityReferenceKinds: EntityReferenceKind[] =
     REF_PICKER_KINDS as EntityReferenceKind[];
@@ -1121,7 +1159,11 @@ export const AnnotationsCard: React.FC<AnnotationsCardProps> = ({
           <Button
             variant="secondary"
             size="small"
-            onClick={() => checkChatRefStates(internalRefs).catch(() => undefined)}
+            onClick={() =>
+              checkChatRefStates(
+                internalRefs.filter((ref) => ref.kind === 'chat_message'),
+              ).catch(() => undefined)
+            }
             disabled={validatingRefs}
           >
             {validatingRefs ? '参照確認中' : '参照状態を確認'}
