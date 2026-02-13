@@ -550,7 +550,8 @@ export async function registerRefCandidateRoutes(app: FastifyInstance) {
                 ? buildProjectLabel(message.room.project)
                 : null;
               const roomName =
-                typeof message.room.name === 'string' && message.room.name.trim()
+                typeof message.room.name === 'string' &&
+                message.room.name.trim()
                   ? message.room.name.trim()
                   : message.roomId;
               const roomLabel = projectLabel

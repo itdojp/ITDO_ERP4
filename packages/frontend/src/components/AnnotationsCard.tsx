@@ -673,9 +673,7 @@ export const AnnotationsCard: React.FC<AnnotationsCardProps> = ({
     (candidate: ChatEvidenceCandidate) => {
       addChatEvidenceRef(candidate);
       const label = candidate.label?.trim() || `chat_message:${candidate.id}`;
-      insertIntoNotes(
-        `[${escapeMarkdownLinkLabel(label)}](${candidate.url})`,
-      );
+      insertIntoNotes(`[${escapeMarkdownLinkLabel(label)}](${candidate.url})`);
     },
     [addChatEvidenceRef, insertIntoNotes],
   );

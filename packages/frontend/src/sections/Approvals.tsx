@@ -398,7 +398,9 @@ export const Approvals: React.FC = () => {
           reason: reasons[id]?.trim() || undefined,
         }),
       });
-      const payload = (await res.json().catch(() => ({}))) as ApprovalActionErrorPayload;
+      const payload = (await res
+        .json()
+        .catch(() => ({}))) as ApprovalActionErrorPayload;
       if (!res.ok) {
         let text =
           action === 'approve' ? '承認に失敗しました' : '却下に失敗しました';
@@ -554,8 +556,7 @@ export const Approvals: React.FC = () => {
       setEvidenceItems((prev) => ({ ...prev, [item.id]: null }));
       setEvidenceErrors((prev) => ({
         ...prev,
-        [item.id]:
-          'この承認対象は注釈エビデンス表示の対象外です（対応予定）',
+        [item.id]: 'この承認対象は注釈エビデンス表示の対象外です（対応予定）',
       }));
       return;
     }
@@ -563,7 +564,9 @@ export const Approvals: React.FC = () => {
       setEvidenceLoading((prev) => ({ ...prev, [item.id]: true }));
       setEvidenceErrors((prev) => ({ ...prev, [item.id]: '' }));
       const res = await apiResponse(`/annotations/${target.kind}/${target.id}`);
-      const payload = (await res.json().catch(() => ({}))) as AnnotationEvidence;
+      const payload = (await res
+        .json()
+        .catch(() => ({}))) as AnnotationEvidence;
       if (!res.ok) {
         setEvidenceItems((prev) => ({ ...prev, [item.id]: null }));
         setEvidenceErrors((prev) => ({
@@ -598,40 +601,45 @@ export const Approvals: React.FC = () => {
     [evidenceItems, evidenceLoading, loadEvidence],
   );
 
-  const loadChatPreview = useCallback(async (messageId: string) => {
-    if (!messageId.trim()) return;
-    if (chatPreviews[messageId] || chatPreviewLoading[messageId]) return;
-    try {
-      setChatPreviewLoading((prev) => ({ ...prev, [messageId]: true }));
-      setChatPreviewErrors((prev) => ({ ...prev, [messageId]: '' }));
-      const res = await apiResponse(`/chat-messages/${messageId}`);
-      const payload = (await res.json().catch(() => ({}))) as ChatMessagePreview & {
-        error?: { code?: string };
-      };
-      if (!res.ok) {
-        const code = payload?.error?.code;
-        const message =
-          code === 'FORBIDDEN_PROJECT' ||
-          code === 'FORBIDDEN_ROOM_MEMBER' ||
-          code === 'FORBIDDEN_EXTERNAL_ROOM'
-            ? '権限が不足しているため発言を表示できません'
-            : code === 'NOT_FOUND'
-              ? '発言が見つかりません'
-              : '発言プレビューの取得に失敗しました';
-        setChatPreviewErrors((prev) => ({ ...prev, [messageId]: message }));
-        return;
+  const loadChatPreview = useCallback(
+    async (messageId: string) => {
+      if (!messageId.trim()) return;
+      if (chatPreviews[messageId] || chatPreviewLoading[messageId]) return;
+      try {
+        setChatPreviewLoading((prev) => ({ ...prev, [messageId]: true }));
+        setChatPreviewErrors((prev) => ({ ...prev, [messageId]: '' }));
+        const res = await apiResponse(`/chat-messages/${messageId}`);
+        const payload = (await res
+          .json()
+          .catch(() => ({}))) as ChatMessagePreview & {
+          error?: { code?: string };
+        };
+        if (!res.ok) {
+          const code = payload?.error?.code;
+          const message =
+            code === 'FORBIDDEN_PROJECT' ||
+            code === 'FORBIDDEN_ROOM_MEMBER' ||
+            code === 'FORBIDDEN_EXTERNAL_ROOM'
+              ? '権限が不足しているため発言を表示できません'
+              : code === 'NOT_FOUND'
+                ? '発言が見つかりません'
+                : '発言プレビューの取得に失敗しました';
+          setChatPreviewErrors((prev) => ({ ...prev, [messageId]: message }));
+          return;
+        }
+        setChatPreviews((prev) => ({ ...prev, [messageId]: payload }));
+      } catch (error) {
+        console.error('Failed to load chat message preview.', error);
+        setChatPreviewErrors((prev) => ({
+          ...prev,
+          [messageId]: '発言プレビューの取得に失敗しました',
+        }));
+      } finally {
+        setChatPreviewLoading((prev) => ({ ...prev, [messageId]: false }));
       }
-      setChatPreviews((prev) => ({ ...prev, [messageId]: payload }));
-    } catch (error) {
-      console.error('Failed to load chat message preview.', error);
-      setChatPreviewErrors((prev) => ({
-        ...prev,
-        [messageId]: '発言プレビューの取得に失敗しました',
-      }));
-    } finally {
-      setChatPreviewLoading((prev) => ({ ...prev, [messageId]: false }));
-    }
-  }, [chatPreviewLoading, chatPreviews]);
+    },
+    [chatPreviewLoading, chatPreviews],
+  );
 
   const formatStep = (step: ApprovalStep) => {
     const target = step.approverUserId || step.approverGroupId || '-';
@@ -905,8 +913,8 @@ export const Approvals: React.FC = () => {
                     {!evidenceBusy && !evidenceError && (
                       <>
                         <div style={{ fontSize: 12, color: '#64748b' }}>
-                          外部URL: {externalEvidenceUrls.length} 件 / チャット参照:{' '}
-                          {chatEvidenceRefs.length} 件
+                          外部URL: {externalEvidenceUrls.length} 件 /
+                          チャット参照: {chatEvidenceRefs.length} 件
                         </div>
                         {evidenceNotes && (
                           <div style={{ fontSize: 12, color: '#0f172a' }}>
@@ -971,7 +979,9 @@ export const Approvals: React.FC = () => {
                                 }}
                               >
                                 <span className="badge">chat_message</span>
-                                <span style={{ fontSize: 12, color: '#64748b' }}>
+                                <span
+                                  style={{ fontSize: 12, color: '#64748b' }}
+                                >
                                   {ref.label || messageId}
                                 </span>
                                 <button
