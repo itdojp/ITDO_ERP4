@@ -4,6 +4,7 @@ import test from 'node:test';
 import {
   buildEvidencePackJsonExport,
   maskEvidencePackJsonExport,
+  renderEvidencePackPdf,
 } from '../dist/services/evidencePackExport.js';
 
 test('buildEvidencePackJsonExport: returns stable sha256 digest', () => {
@@ -109,4 +110,33 @@ test('maskEvidencePackJsonExport: masks sensitive fields and rehashes', () => {
     false,
   );
   assert.notEqual(maskedItems.chatMessages[0].userId, 'u99999');
+});
+
+test('renderEvidencePackPdf: returns pdf buffer', async () => {
+  const exported = buildEvidencePackJsonExport({
+    exportedAt: new Date('2026-02-14T00:00:00.000Z'),
+    exportedBy: 'auditor@example.com',
+    approval: {
+      id: 'ap-3',
+      flowType: 'invoice',
+      targetTable: 'invoices',
+      targetId: 'inv-3',
+      status: 'pending_qa',
+      currentStep: 1,
+      projectId: 'prj-3',
+      createdAt: new Date('2026-02-13T10:00:00.000Z'),
+      createdBy: 'u1234567',
+    },
+    snapshot: {
+      id: 'snap-3',
+      version: 1,
+      capturedAt: new Date('2026-02-14T00:00:00.000Z'),
+      capturedBy: 'u7654321',
+      sourceAnnotationUpdatedAt: new Date('2026-02-13T11:00:00.000Z'),
+      items: { notes: 'test' },
+    },
+  });
+  const pdf = await renderEvidencePackPdf(exported);
+  assert.equal(Buffer.isBuffer(pdf), true);
+  assert.equal(pdf.subarray(0, 4).toString(), '%PDF');
 });

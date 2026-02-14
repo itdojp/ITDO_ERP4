@@ -6,6 +6,7 @@ import { requireRole } from '../services/rbac.js';
 import {
   buildEvidencePackJsonExport,
   maskEvidencePackJsonExport,
+  renderEvidencePackPdf,
 } from '../services/evidencePackExport.js';
 import { createEvidenceSnapshotForApproval } from '../services/evidenceSnapshot.js';
 import {
@@ -23,6 +24,10 @@ function normalizeLimit(value: unknown) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return 50;
   return Math.max(1, Math.min(100, Math.floor(parsed)));
+}
+
+function sanitizeAttachmentFilename(value: string) {
+  return value.replace(/["\\\r\n]/g, '_');
 }
 
 function canReadApprovalInstance(
@@ -231,11 +236,17 @@ export async function registerEvidenceSnapshotRoutes(app: FastifyInstance) {
     {
       preHandler: requireRole(['admin', 'mgmt', 'exec', 'user']),
       schema: evidencePackExportQuerySchema,
+      config: {
+        rateLimit: {
+          max: 60,
+          timeWindow: '1 minute',
+        },
+      },
     },
     async (req, reply) => {
       const { id } = req.params as { id: string };
       const query = req.query as {
-        format?: 'json';
+        format?: 'json' | 'pdf';
         version?: number;
         mask?: number;
       };
@@ -297,6 +308,60 @@ export async function registerEvidenceSnapshotRoutes(app: FastifyInstance) {
       const exported = shouldMask
         ? maskEvidencePackJsonExport(rawExported)
         : rawExported;
+      const filenameBase = sanitizeAttachmentFilename(
+        `evidence-pack-${approval.id}-v${snapshot.version}`,
+      );
+      if (format === 'pdf') {
+        let buffer: Buffer;
+        try {
+          buffer = await renderEvidencePackPdf(exported);
+        } catch {
+          await logAudit({
+            action: 'evidence_pack_exported',
+            targetTable: 'approval_instances',
+            targetId: approval.id,
+            metadata: {
+              approvalInstanceId: approval.id,
+              snapshotId: snapshot.id,
+              snapshotVersion: snapshot.version,
+              format,
+              digest: exported.integrity.digest,
+              mask: shouldMask,
+              success: false,
+              errorCode: 'PDF_EXPORT_FAILED',
+            } as Prisma.InputJsonValue,
+            ...auditContextFromRequest(req),
+          });
+          return reply.status(500).send({
+            error: {
+              code: 'PDF_EXPORT_FAILED',
+              message: 'Failed to render evidence pack PDF',
+            },
+          });
+        }
+        await logAudit({
+          action: 'evidence_pack_exported',
+          targetTable: 'approval_instances',
+          targetId: approval.id,
+          metadata: {
+            approvalInstanceId: approval.id,
+            snapshotId: snapshot.id,
+            snapshotVersion: snapshot.version,
+            format,
+            digest: exported.integrity.digest,
+            mask: shouldMask,
+            success: true,
+          } as Prisma.InputJsonValue,
+          ...auditContextFromRequest(req),
+        });
+        reply.header(
+          'Content-Disposition',
+          `attachment; filename="${filenameBase}.pdf"`,
+        );
+        reply.type('application/pdf');
+        return reply.send(buffer);
+      }
+
       await logAudit({
         action: 'evidence_pack_exported',
         targetTable: 'approval_instances',
@@ -308,13 +373,14 @@ export async function registerEvidenceSnapshotRoutes(app: FastifyInstance) {
           format,
           digest: exported.integrity.digest,
           mask: shouldMask,
+          success: true,
         } as Prisma.InputJsonValue,
         ...auditContextFromRequest(req),
       });
 
       reply.header(
-        'content-disposition',
-        `attachment; filename="evidence-pack-${approval.id}-v${snapshot.version}.json"`,
+        'Content-Disposition',
+        `attachment; filename="${filenameBase}.json"`,
       );
       return exported;
     },

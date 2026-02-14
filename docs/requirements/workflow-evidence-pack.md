@@ -76,19 +76,17 @@
 - 概要: 再生成履歴（version一覧）
 - RBAC: `admin/mgmt`（MVP）
 
-### GET /approval-instances/:id/evidence-pack/export?format=json&version=...
+### GET /approval-instances/:id/evidence-pack/export?format=json|pdf&version=...
 
-- 概要: 指定承認インスタンスの Snapshot を監査提出向けに JSON 形式で出力
+- 概要: 指定承認インスタンスの Snapshot を監査提出向けに JSON/PDF で出力
 - RBAC: 承認閲覧可能ユーザ
 - query:
-  - `format=json`
+  - `format=json|pdf`（省略時は `json`）
   - `version`（省略時は最新）
   - `mask=1|0`（省略時は `1`。PIIマスク適用）
 - 出力:
-  - `payload`（approval/snapshot/exportedAt など）
-  - `integrity.algorithm=sha256`
-  - `integrity.digest`（stable JSON canonicalization のハッシュ）
-  - `integrity.canonicalization=json-stable-sort-keys-v1`
+  - `format=json`: `payload` + `integrity`（sha256/digest/canonicalization）
+  - `format=pdf`: JSON出力と同一内容をPDF化した添付ファイル（監査提出向け）
 - 監査ログ: `action=evidence_pack_exported`
 
 ## UI案（承認画面）
@@ -122,7 +120,7 @@
 - [x] JSONエクスポートAPI
 - [x] detached metadata 方式（SHA-256 digest + canonicalization）
 - [x] マスキングポリシー（PII/機微情報）適用（JSON export）
-- [ ] PDF出力
+- [x] PDF出力（JSONと同一内容をPDF化）
 - [ ] 外部保管連携（S3等）
 
 ## 受け入れ条件（MVP）
