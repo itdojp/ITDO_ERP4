@@ -280,11 +280,6 @@ export async function registerEvidenceSnapshotRoutes(app: FastifyInstance) {
       }
 
       const format = query.format ?? 'json';
-      if (format !== 'json') {
-        return reply.status(400).send({
-          error: { code: 'INVALID_FORMAT', message: 'format must be json' },
-        });
-      }
       const exported = buildEvidencePackJsonExport({
         exportedAt: new Date(),
         exportedBy: req.user?.userId ?? null,
