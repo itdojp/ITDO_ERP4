@@ -8,6 +8,15 @@ export type EvidencePackArchiveFormat = 'json' | 'pdf';
 
 type EvidencePackArchiveProvider = 'local' | 's3';
 type EvidenceArchiveSse = 'AES256' | 'aws:kms';
+type EvidencePackArchiveS3Config = {
+  bucket: string;
+  region: string;
+  endpoint?: string;
+  forcePathStyle: boolean;
+  prefix?: string;
+  sse?: EvidenceArchiveSse;
+  kmsKeyId?: string;
+};
 
 export type EvidencePackArchiveInput = {
   approvalInstanceId: string;
@@ -67,7 +76,7 @@ function resolveLocalArchiveDir() {
   );
 }
 
-function resolveS3Config() {
+function resolveS3Config(): EvidencePackArchiveS3Config {
   const bucket = normalizeString(process.env.EVIDENCE_ARCHIVE_S3_BUCKET);
   const region =
     normalizeString(process.env.EVIDENCE_ARCHIVE_S3_REGION) ||
@@ -169,6 +178,37 @@ function createS3Client(config: {
   });
 }
 
+let cachedS3Runtime:
+  | {
+      cacheKey: string;
+      config: EvidencePackArchiveS3Config;
+      client: S3Client;
+    }
+  | undefined;
+
+function getS3Runtime() {
+  const config = resolveS3Config();
+  const cacheKey = JSON.stringify({
+    region: config.region,
+    endpoint: config.endpoint || null,
+    forcePathStyle: config.forcePathStyle,
+  });
+  if (cachedS3Runtime && cachedS3Runtime.cacheKey === cacheKey) {
+    return cachedS3Runtime;
+  }
+  const client = createS3Client({
+    region: config.region,
+    endpoint: config.endpoint,
+    forcePathStyle: config.forcePathStyle,
+  });
+  cachedS3Runtime = {
+    cacheKey,
+    config,
+    client,
+  };
+  return cachedS3Runtime;
+}
+
 export async function archiveEvidencePack(
   input: EvidencePackArchiveInput,
 ): Promise<EvidencePackArchiveResult> {
@@ -205,12 +245,9 @@ export async function archiveEvidencePack(
     };
   }
 
-  const s3 = resolveS3Config();
-  const client = createS3Client({
-    region: s3.region,
-    endpoint: s3.endpoint,
-    forcePathStyle: s3.forcePathStyle,
-  });
+  const runtime = getS3Runtime();
+  const s3 = runtime.config;
+  const client = runtime.client;
   const contentKey = joinS3Key(s3.prefix, objectKey);
   const contentMetadataKey = joinS3Key(s3.prefix, metadataKey);
 

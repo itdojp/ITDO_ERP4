@@ -334,40 +334,65 @@ export async function registerEvidenceSnapshotRoutes(app: FastifyInstance) {
 
       let content: Buffer;
       let contentType: string;
-      try {
-        if (format === 'pdf') {
+      if (format === 'pdf') {
+        try {
           content = await renderEvidencePackPdf(exported);
           contentType = 'application/pdf';
-        } else {
+        } catch {
+          await logAudit({
+            action: 'evidence_pack_archived',
+            targetTable: 'approval_instances',
+            targetId: approval.id,
+            metadata: {
+              approvalInstanceId: approval.id,
+              snapshotId: snapshot.id,
+              snapshotVersion: snapshot.version,
+              format,
+              digest: exported.integrity.digest,
+              mask: shouldMask,
+              success: false,
+              errorCode: 'PDF_EXPORT_FAILED',
+            } as Prisma.InputJsonValue,
+            ...auditContextFromRequest(req),
+          });
+          return reply.status(500).send({
+            error: {
+              code: 'PDF_EXPORT_FAILED',
+              message: 'Failed to render evidence pack PDF',
+            },
+          });
+        }
+      } else {
+        try {
           content = Buffer.from(
             `${JSON.stringify(exported, null, 2)}\n`,
             'utf8',
           );
           contentType = 'application/json; charset=utf-8';
+        } catch {
+          await logAudit({
+            action: 'evidence_pack_archived',
+            targetTable: 'approval_instances',
+            targetId: approval.id,
+            metadata: {
+              approvalInstanceId: approval.id,
+              snapshotId: snapshot.id,
+              snapshotVersion: snapshot.version,
+              format,
+              digest: exported.integrity.digest,
+              mask: shouldMask,
+              success: false,
+              errorCode: 'JSON_EXPORT_FAILED',
+            } as Prisma.InputJsonValue,
+            ...auditContextFromRequest(req),
+          });
+          return reply.status(500).send({
+            error: {
+              code: 'JSON_EXPORT_FAILED',
+              message: 'Failed to serialize evidence pack JSON',
+            },
+          });
         }
-      } catch {
-        await logAudit({
-          action: 'evidence_pack_archived',
-          targetTable: 'approval_instances',
-          targetId: approval.id,
-          metadata: {
-            approvalInstanceId: approval.id,
-            snapshotId: snapshot.id,
-            snapshotVersion: snapshot.version,
-            format,
-            digest: exported.integrity.digest,
-            mask: shouldMask,
-            success: false,
-            errorCode: 'PDF_EXPORT_FAILED',
-          } as Prisma.InputJsonValue,
-          ...auditContextFromRequest(req),
-        });
-        return reply.status(500).send({
-          error: {
-            code: 'PDF_EXPORT_FAILED',
-            message: 'Failed to render evidence pack PDF',
-          },
-        });
       }
 
       try {
