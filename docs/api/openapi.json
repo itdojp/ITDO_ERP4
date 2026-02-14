@@ -1179,10 +1179,20 @@
             "name": "format",
             "required": false,
             "schema": {
-              "enum": [
-                "json"
-              ],
-              "type": "string"
+              "anyOf": [
+                {
+                  "enum": [
+                    "json"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "enum": [
+                    "pdf"
+                  ],
+                  "type": "string"
+                }
+              ]
             }
           },
           {
