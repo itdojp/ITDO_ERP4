@@ -1,14 +1,13 @@
 import { FastifyInstance } from 'fastify';
 import { Prisma } from '@prisma/client';
-import { promises as fs } from 'node:fs';
 import { prisma } from '../services/db.js';
 import { auditContextFromRequest, logAudit } from '../services/audit.js';
 import { requireRole } from '../services/rbac.js';
 import {
   buildEvidencePackJsonExport,
   maskEvidencePackJsonExport,
+  renderEvidencePackPdf,
 } from '../services/evidencePackExport.js';
-import { generatePdf } from '../services/pdf.js';
 import { createEvidenceSnapshotForApproval } from '../services/evidenceSnapshot.js';
 import {
   evidencePackExportQuerySchema,
@@ -322,28 +321,7 @@ export async function registerEvidenceSnapshotRoutes(app: FastifyInstance) {
 
       const filenameBase = `evidence-pack-${approval.id}-v${snapshot.version}`;
       if (format === 'pdf') {
-        const pdf = await generatePdf(
-          'evidence-pack',
-          {
-            payload: exported.payload,
-            integrity: exported.integrity,
-          },
-          filenameBase,
-          {
-            layoutConfig: {
-              documentTitle: 'Evidence Pack',
-            },
-          },
-        );
-        if (!pdf.filePath || !pdf.filename) {
-          return reply.status(500).send({
-            error: {
-              code: 'PDF_EXPORT_FAILED',
-              message: 'Failed to render evidence pack PDF',
-            },
-          });
-        }
-        const buffer = await fs.readFile(pdf.filePath);
+        const buffer = await renderEvidencePackPdf(exported);
         reply.header(
           'content-disposition',
           `attachment; filename="${filenameBase}.pdf"`,

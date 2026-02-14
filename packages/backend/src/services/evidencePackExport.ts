@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import PDFDocument from 'pdfkit';
 
 type ApprovalSummary = {
   id: string;
@@ -270,4 +271,39 @@ export function maskEvidencePackJsonExport(
       canonicalization: 'json-stable-sort-keys-v1',
     },
   };
+}
+
+export async function renderEvidencePackPdf(
+  exported: EvidencePackJsonExport,
+): Promise<Buffer> {
+  const doc = new PDFDocument({ margin: 40 });
+  const chunks: Buffer[] = [];
+  return await new Promise<Buffer>((resolve, reject) => {
+    doc.on('data', (chunk) => chunks.push(Buffer.from(chunk)));
+    doc.on('end', () => resolve(Buffer.concat(chunks)));
+    doc.on('error', reject);
+
+    doc.fontSize(18).text('Evidence Pack', { align: 'left' });
+    doc.moveDown(0.5);
+    doc.fontSize(10).text(`Schema: ${exported.payload.schemaVersion}`);
+    doc.text(`Exported At: ${exported.payload.exportedAt}`);
+    doc.text(`Digest (SHA-256): ${exported.integrity.digest}`);
+    doc.moveDown();
+    doc.fontSize(12).text('Payload');
+    doc.moveDown(0.5);
+    doc
+      .font('Courier')
+      .fontSize(8.5)
+      .text(
+        JSON.stringify(
+          {
+            payload: exported.payload,
+            integrity: exported.integrity,
+          },
+          null,
+          2,
+        ),
+      );
+    doc.end();
+  });
 }
