@@ -293,7 +293,7 @@ test('frontend smoke core @core', async ({ page }) => {
     expenseAnnotationDrawer.getByRole('list', { name: 'Selected references' }),
   ).toBeVisible({ timeout: actionTimeout });
   await expenseAnnotationDrawer.getByRole('button', { name: '保存' }).click();
-  await expect(page.getByText('保存しました')).toBeVisible({
+  await expect(page.getByText('保存しました', { exact: true })).toBeVisible({
     timeout: actionTimeout,
   });
   await expenseAnnotationDrawer.getByRole('button', { name: '閉じる' }).click();
