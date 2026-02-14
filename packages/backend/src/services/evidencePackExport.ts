@@ -74,10 +74,36 @@ function maskEmail(value: string) {
   return `${maskedLocal}@${domain}`;
 }
 
+function isAsciiAlphaNumChar(char: string) {
+  const code = char.charCodeAt(0);
+  return (
+    (code >= 48 && code <= 57) ||
+    (code >= 65 && code <= 90) ||
+    (code >= 97 && code <= 122)
+  );
+}
+
+function isLeadingWrapperChar(char: string) {
+  return !isAsciiAlphaNumChar(char) && char !== '@';
+}
+
+function isTrailingWrapperChar(char: string) {
+  if (isAsciiAlphaNumChar(char)) return false;
+  return char !== '.' && char !== '@' && char !== '-';
+}
+
 function maskEmailLikeToken(token: string) {
-  const leading = token.match(/^[^a-zA-Z0-9@]+/)?.[0] ?? '';
-  const trailing = token.match(/[^a-zA-Z0-9.@-]+$/)?.[0] ?? '';
-  const core = token.slice(leading.length, token.length - trailing.length);
+  let start = 0;
+  while (start < token.length && isLeadingWrapperChar(token[start] ?? '')) {
+    start += 1;
+  }
+  let end = token.length;
+  while (end > start && isTrailingWrapperChar(token[end - 1] ?? '')) {
+    end -= 1;
+  }
+  const leading = token.slice(0, start);
+  const trailing = token.slice(end);
+  const core = token.slice(start, end);
   const atIndex = core.indexOf('@');
   if (atIndex <= 0 || atIndex !== core.lastIndexOf('@')) {
     return token;
