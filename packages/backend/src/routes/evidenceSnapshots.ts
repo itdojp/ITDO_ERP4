@@ -233,6 +233,12 @@ export async function registerEvidenceSnapshotRoutes(app: FastifyInstance) {
     {
       preHandler: requireRole(['admin', 'mgmt', 'exec', 'user']),
       schema: evidencePackExportQuerySchema,
+      config: {
+        rateLimit: {
+          max: 60,
+          timeWindow: '1 minute',
+        },
+      },
     },
     async (req, reply) => {
       const { id } = req.params as { id: string };
