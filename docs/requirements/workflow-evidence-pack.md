@@ -26,7 +26,7 @@
 
 ## データモデル案
 
-### evidence_snapshots
+### EvidenceSnapshot（テーブル: `evidence_snapshots`）
 
 - `id` (UUID)
 - `approvalInstanceId` (FK)
@@ -40,9 +40,10 @@
   - `externalUrls`: string[]
   - `internalRefs`: { kind, id, label? }[]
   - `chatMessages`: { id, roomId, createdAt, userId, excerpt, bodyHash? }[]
+    - `bodyHash?`: 将来の改ざん検知/整合性検証用。現行 `ChatMessage` には未定義のため、MVPでは未実装可。
 - `createdAt` / `updatedAt`
 
-### audit_logs（既存）
+### AuditLog（既存モデル、テーブル: `audit_logs`）
 
 - `action=evidence_snapshot_created`
 - `action=evidence_snapshot_viewed`
