@@ -930,6 +930,16 @@ export const evidenceSnapshotHistoryQuerySchema = {
   ),
 };
 
+export const evidencePackExportQuerySchema = {
+  querystring: Type.Object(
+    {
+      format: Type.Optional(Type.Literal('json')),
+      version: Type.Optional(Type.Integer({ minimum: 1 })),
+    },
+    { additionalProperties: false },
+  ),
+};
+
 const approvalStepSchema = Type.Object(
   {
     stepOrder: Type.Optional(Type.Number({ minimum: 1 })),

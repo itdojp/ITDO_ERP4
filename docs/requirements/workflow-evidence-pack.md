@@ -1,4 +1,4 @@
-# Workflow Evidence Pack（Issue #957）設計メモ
+# Workflow Evidence Pack（Issue #957 / #961）設計メモ
 
 最終更新: 2026-02-14
 
@@ -76,6 +76,17 @@
 - 概要: 再生成履歴（version一覧）
 - RBAC: `admin/mgmt`（MVP）
 
+### GET /approval-instances/:id/evidence-pack/export?format=json&version=...
+
+- 概要: 指定承認インスタンスの Snapshot を監査提出向けに JSON 形式で出力
+- RBAC: 承認閲覧可能ユーザ
+- 出力:
+  - `payload`（approval/snapshot/exportedAt など）
+  - `integrity.algorithm=sha256`
+  - `integrity.digest`（stable JSON canonicalization のハッシュ）
+  - `integrity.canonicalization=json-stable-sort-keys-v1`
+- 監査ログ: `action=evidence_pack_exported`
+
 ## UI案（承認画面）
 
 - `エビデンス（注釈）` セクションに Snapshot 情報を追加:
@@ -99,6 +110,15 @@
 - 生成/再生成: `admin/mgmt`
 - 閲覧: 当該承認を閲覧できるユーザ
 - 再生成時は `reasonText` 必須 + 監査ログ
+- 監査提出JSONのエクスポートは監査ログに `digest` を記録
+
+## Phase2（Issue #961）進捗
+
+- [x] JSONエクスポートAPI
+- [x] detached metadata 方式（SHA-256 digest + canonicalization）
+- [ ] PDF出力
+- [ ] 外部保管連携（S3等）
+- [ ] マスキングポリシー適用
 
 ## 受け入れ条件（MVP）
 
