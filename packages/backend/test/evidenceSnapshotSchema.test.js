@@ -52,9 +52,18 @@ test('evidencePackExportQuerySchema: accepts json format with version', () => {
   assert.equal(ok, true);
 });
 
-test('evidencePackExportQuerySchema: rejects invalid format', () => {
+test('evidencePackExportQuerySchema: accepts pdf format', () => {
   const ok = Value.Check(evidencePackExportQuerySchema.querystring, {
     format: 'pdf',
+    version: 2,
+    mask: 0,
+  });
+  assert.equal(ok, true);
+});
+
+test('evidencePackExportQuerySchema: rejects invalid format', () => {
+  const ok = Value.Check(evidencePackExportQuerySchema.querystring, {
+    format: 'csv',
   });
   assert.equal(ok, false);
 });

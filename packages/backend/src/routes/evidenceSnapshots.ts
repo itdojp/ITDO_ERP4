@@ -1,5 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import { Prisma } from '@prisma/client';
+import { promises as fs } from 'node:fs';
 import { prisma } from '../services/db.js';
 import { auditContextFromRequest, logAudit } from '../services/audit.js';
 import { requireRole } from '../services/rbac.js';
@@ -7,6 +8,7 @@ import {
   buildEvidencePackJsonExport,
   maskEvidencePackJsonExport,
 } from '../services/evidencePackExport.js';
+import { generatePdf } from '../services/pdf.js';
 import { createEvidenceSnapshotForApproval } from '../services/evidenceSnapshot.js';
 import {
   evidencePackExportQuerySchema,
@@ -235,7 +237,7 @@ export async function registerEvidenceSnapshotRoutes(app: FastifyInstance) {
     async (req, reply) => {
       const { id } = req.params as { id: string };
       const query = req.query as {
-        format?: 'json';
+        format?: 'json' | 'pdf';
         version?: number;
         mask?: number;
       };
@@ -312,9 +314,41 @@ export async function registerEvidenceSnapshotRoutes(app: FastifyInstance) {
         ...auditContextFromRequest(req),
       });
 
+      const filenameBase = `evidence-pack-${approval.id}-v${snapshot.version}`;
+      if (format === 'pdf') {
+        const pdf = await generatePdf(
+          'evidence-pack',
+          {
+            payload: exported.payload,
+            integrity: exported.integrity,
+          },
+          filenameBase,
+          {
+            layoutConfig: {
+              documentTitle: 'Evidence Pack',
+            },
+          },
+        );
+        if (!pdf.filePath || !pdf.filename) {
+          return reply.status(500).send({
+            error: {
+              code: 'PDF_EXPORT_FAILED',
+              message: 'Failed to render evidence pack PDF',
+            },
+          });
+        }
+        const buffer = await fs.readFile(pdf.filePath);
+        reply.header(
+          'content-disposition',
+          `attachment; filename="${filenameBase}.pdf"`,
+        );
+        reply.type('application/pdf');
+        return reply.send(buffer);
+      }
+
       reply.header(
         'content-disposition',
-        `attachment; filename="evidence-pack-${approval.id}-v${snapshot.version}.json"`,
+        `attachment; filename="${filenameBase}.json"`,
       );
       return exported;
     },

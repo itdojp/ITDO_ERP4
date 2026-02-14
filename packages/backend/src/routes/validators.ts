@@ -933,7 +933,9 @@ export const evidenceSnapshotHistoryQuerySchema = {
 export const evidencePackExportQuerySchema = {
   querystring: Type.Object(
     {
-      format: Type.Optional(Type.Literal('json')),
+      format: Type.Optional(
+        Type.Union([Type.Literal('json'), Type.Literal('pdf')]),
+      ),
       version: Type.Optional(Type.Integer({ minimum: 1 })),
       mask: Type.Optional(Type.Integer({ minimum: 0, maximum: 1 })),
     },
