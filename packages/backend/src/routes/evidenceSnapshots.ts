@@ -26,6 +26,10 @@ function normalizeLimit(value: unknown) {
   return Math.max(1, Math.min(100, Math.floor(parsed)));
 }
 
+function sanitizeAttachmentFilename(value: string) {
+  return value.replace(/["\\\r\n]/g, '_');
+}
+
 function canReadApprovalInstance(
   approval: {
     projectId: string | null;
@@ -304,6 +308,60 @@ export async function registerEvidenceSnapshotRoutes(app: FastifyInstance) {
       const exported = shouldMask
         ? maskEvidencePackJsonExport(rawExported)
         : rawExported;
+      const filenameBase = sanitizeAttachmentFilename(
+        `evidence-pack-${approval.id}-v${snapshot.version}`,
+      );
+      if (format === 'pdf') {
+        let buffer: Buffer;
+        try {
+          buffer = await renderEvidencePackPdf(exported);
+        } catch {
+          await logAudit({
+            action: 'evidence_pack_exported',
+            targetTable: 'approval_instances',
+            targetId: approval.id,
+            metadata: {
+              approvalInstanceId: approval.id,
+              snapshotId: snapshot.id,
+              snapshotVersion: snapshot.version,
+              format,
+              digest: exported.integrity.digest,
+              mask: shouldMask,
+              success: false,
+              errorCode: 'PDF_EXPORT_FAILED',
+            } as Prisma.InputJsonValue,
+            ...auditContextFromRequest(req),
+          });
+          return reply.status(500).send({
+            error: {
+              code: 'PDF_EXPORT_FAILED',
+              message: 'Failed to render evidence pack PDF',
+            },
+          });
+        }
+        await logAudit({
+          action: 'evidence_pack_exported',
+          targetTable: 'approval_instances',
+          targetId: approval.id,
+          metadata: {
+            approvalInstanceId: approval.id,
+            snapshotId: snapshot.id,
+            snapshotVersion: snapshot.version,
+            format,
+            digest: exported.integrity.digest,
+            mask: shouldMask,
+            success: true,
+          } as Prisma.InputJsonValue,
+          ...auditContextFromRequest(req),
+        });
+        reply.header(
+          'Content-Disposition',
+          `attachment; filename="${filenameBase}.pdf"`,
+        );
+        reply.type('application/pdf');
+        return reply.send(buffer);
+      }
+
       await logAudit({
         action: 'evidence_pack_exported',
         targetTable: 'approval_instances',
@@ -315,23 +373,13 @@ export async function registerEvidenceSnapshotRoutes(app: FastifyInstance) {
           format,
           digest: exported.integrity.digest,
           mask: shouldMask,
+          success: true,
         } as Prisma.InputJsonValue,
         ...auditContextFromRequest(req),
       });
 
-      const filenameBase = `evidence-pack-${approval.id}-v${snapshot.version}`;
-      if (format === 'pdf') {
-        const buffer = await renderEvidencePackPdf(exported);
-        reply.header(
-          'content-disposition',
-          `attachment; filename="${filenameBase}.pdf"`,
-        );
-        reply.type('application/pdf');
-        return reply.send(buffer);
-      }
-
       reply.header(
-        'content-disposition',
+        'Content-Disposition',
         `attachment; filename="${filenameBase}.json"`,
       );
       return exported;
