@@ -1103,6 +1103,7 @@ model ApprovalInstance {
   rule        ApprovalRule   @relation(fields: [ruleId], references: [id])
   ruleId      String
   steps       ApprovalStep[]
+  evidenceSnapshots EvidenceSnapshot[]
   createdAt   DateTime       @default(now())
   createdBy   String?
   updatedAt   DateTime       @updatedAt
@@ -1111,6 +1112,24 @@ model ApprovalInstance {
   @@index([projectId])
   @@index([status, createdAt])
   @@index([status, projectId])
+}
+
+model EvidenceSnapshot {
+  id                      String           @id @default(uuid())
+  approvalInstance        ApprovalInstance @relation(fields: [approvalInstanceId], references: [id], onDelete: Restrict)
+  approvalInstanceId      String
+  targetTable             String
+  targetId                String
+  sourceAnnotationUpdatedAt DateTime?
+  capturedAt              DateTime         @default(now())
+  capturedBy              String?
+  version                 Int              @default(1)
+  items                   Json?
+  createdAt               DateTime         @default(now())
+  updatedAt               DateTime         @updatedAt
+
+  @@unique([approvalInstanceId, version])
+  @@index([approvalInstanceId, capturedAt(sort: Desc)])
 }
 
 model ApprovalStep {
