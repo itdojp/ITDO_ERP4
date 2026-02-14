@@ -86,6 +86,40 @@ type ChatMessagePreview = {
   };
 };
 
+type SnapshotChatMessage = {
+  id: string;
+  roomId: string;
+  userId: string;
+  createdAt: string;
+  excerpt: string;
+  bodyHash?: string;
+};
+
+type EvidenceSnapshotItems = {
+  notes?: string | null;
+  externalUrls?: string[];
+  internalRefs?: AnnotationInternalRef[];
+  chatMessages?: SnapshotChatMessage[];
+};
+
+type EvidenceSnapshotRecord = {
+  id: string;
+  approvalInstanceId: string;
+  targetTable: string;
+  targetId: string;
+  sourceAnnotationUpdatedAt?: string | null;
+  capturedAt?: string | null;
+  capturedBy?: string | null;
+  version?: number;
+  items?: EvidenceSnapshotItems | null;
+};
+
+type EvidenceSnapshotGetResponse = {
+  exists?: boolean;
+  snapshot?: EvidenceSnapshotRecord | null;
+  error?: { code?: string; message?: string };
+};
+
 type FilterState = {
   flowType: string;
   status: string;
@@ -253,6 +287,7 @@ export const Approvals: React.FC = () => {
   const canManageAckLinks = (auth?.roles ?? []).some((role) =>
     ['admin', 'mgmt'].includes(role),
   );
+  const canManageSnapshots = canManageAckLinks;
   const [projects, setProjects] = useState<ProjectOption[]>([]);
   const [projectMessage, setProjectMessage] = useState('');
   const [items, setItems] = useState<ApprovalInstance[]>([]);
@@ -294,6 +329,21 @@ export const Approvals: React.FC = () => {
   const [evidenceItems, setEvidenceItems] = useState<
     Record<string, AnnotationEvidence | null>
   >({});
+  const [snapshotLoading, setSnapshotLoading] = useState<
+    Record<string, boolean>
+  >({});
+  const [snapshotErrors, setSnapshotErrors] = useState<Record<string, string>>(
+    {},
+  );
+  const [snapshotItems, setSnapshotItems] = useState<
+    Record<string, EvidenceSnapshotRecord | null>
+  >({});
+  const [snapshotLoaded, setSnapshotLoaded] = useState<Record<string, boolean>>(
+    {},
+  );
+  const [snapshotSaving, setSnapshotSaving] = useState<Record<string, boolean>>(
+    {},
+  );
   const [chatPreviewLoading, setChatPreviewLoading] = useState<
     Record<string, boolean>
   >({});
@@ -604,6 +654,110 @@ export const Approvals: React.FC = () => {
     }
   }, []);
 
+  const loadEvidenceSnapshot = useCallback(async (item: ApprovalInstance) => {
+    try {
+      setSnapshotLoading((prev) => ({ ...prev, [item.id]: true }));
+      setSnapshotErrors((prev) => ({ ...prev, [item.id]: '' }));
+      const res = await apiResponse(
+        `/approval-instances/${item.id}/evidence-snapshot`,
+      );
+      const payload = (await res
+        .json()
+        .catch(() => ({}))) as EvidenceSnapshotGetResponse;
+      if (!res.ok) {
+        setSnapshotItems((prev) => ({ ...prev, [item.id]: null }));
+        setSnapshotLoaded((prev) => ({ ...prev, [item.id]: false }));
+        setSnapshotErrors((prev) => ({
+          ...prev,
+          [item.id]: 'Snapshot情報の取得に失敗しました',
+        }));
+        return;
+      }
+      if (!payload.exists || !payload.snapshot) {
+        setSnapshotItems((prev) => ({ ...prev, [item.id]: null }));
+        setSnapshotLoaded((prev) => ({ ...prev, [item.id]: true }));
+        return;
+      }
+      setSnapshotItems((prev) => ({
+        ...prev,
+        [item.id]: payload.snapshot || null,
+      }));
+      setSnapshotLoaded((prev) => ({ ...prev, [item.id]: true }));
+    } catch (error) {
+      console.error('Failed to load evidence snapshot.', error);
+      setSnapshotItems((prev) => ({ ...prev, [item.id]: null }));
+      setSnapshotLoaded((prev) => ({ ...prev, [item.id]: false }));
+      setSnapshotErrors((prev) => ({
+        ...prev,
+        [item.id]: 'Snapshot情報の取得に失敗しました',
+      }));
+    } finally {
+      setSnapshotLoading((prev) => ({ ...prev, [item.id]: false }));
+    }
+  }, []);
+
+  const createEvidenceSnapshot = useCallback(
+    async (item: ApprovalInstance, forceRegenerate: boolean) => {
+      let reasonText = '';
+      if (forceRegenerate) {
+        const input = window.prompt('Snapshot再生成の理由を入力してください');
+        reasonText = (input || '').trim();
+        if (!reasonText) {
+          setSnapshotErrors((prev) => ({
+            ...prev,
+            [item.id]: '再生成には理由が必要です',
+          }));
+          return;
+        }
+      }
+      try {
+        setSnapshotSaving((prev) => ({ ...prev, [item.id]: true }));
+        setSnapshotErrors((prev) => ({ ...prev, [item.id]: '' }));
+        const res = await apiResponse(
+          `/approval-instances/${item.id}/evidence-snapshot`,
+          {
+            method: 'POST',
+            body: JSON.stringify({
+              forceRegenerate,
+              reasonText: reasonText || undefined,
+            }),
+          },
+        );
+        const payload = (await res.json().catch(() => ({}))) as {
+          created?: boolean;
+          error?: { code?: string };
+        };
+        if (!res.ok) {
+          const code = payload?.error?.code;
+          const text =
+            code === 'REASON_REQUIRED'
+              ? '再生成には理由が必要です'
+              : code === 'UNSUPPORTED_TARGET'
+                ? 'この承認対象ではSnapshotを作成できません'
+                : 'Snapshotの作成に失敗しました';
+          setSnapshotErrors((prev) => ({ ...prev, [item.id]: text }));
+          return;
+        }
+        await loadEvidenceSnapshot(item);
+        setMessage({
+          text: payload.created
+            ? 'Snapshotを作成しました'
+            : '既存Snapshotを表示します',
+          type: 'success',
+        });
+      } catch (error) {
+        console.error('Failed to create evidence snapshot.', error);
+        setSnapshotErrors((prev) => ({
+          ...prev,
+          [item.id]: 'Snapshotの作成に失敗しました',
+        }));
+      } finally {
+        setSnapshotSaving((prev) => ({ ...prev, [item.id]: false }));
+      }
+    },
+    [loadEvidenceSnapshot],
+  );
+
   const toggleEvidence = useCallback(
     (item: ApprovalInstance) => {
       setEvidenceOpen((prev) => {
@@ -611,10 +765,20 @@ export const Approvals: React.FC = () => {
         if (nextOpen && !evidenceItems[item.id] && !evidenceLoading[item.id]) {
           loadEvidence(item).catch(() => undefined);
         }
+        if (nextOpen && !snapshotLoaded[item.id] && !snapshotLoading[item.id]) {
+          loadEvidenceSnapshot(item).catch(() => undefined);
+        }
         return { ...prev, [item.id]: nextOpen };
       });
     },
-    [evidenceItems, evidenceLoading, loadEvidence],
+    [
+      evidenceItems,
+      evidenceLoading,
+      loadEvidence,
+      snapshotLoaded,
+      snapshotLoading,
+      loadEvidenceSnapshot,
+    ],
   );
 
   const loadChatPreview = useCallback(async (messageId: string) => {
@@ -796,6 +960,22 @@ export const Approvals: React.FC = () => {
           const evidenceBusy = evidenceLoading[item.id] || false;
           const evidenceError = evidenceErrors[item.id] || '';
           const evidence = evidenceItems[item.id];
+          const snapshot = snapshotItems[item.id];
+          const snapshotBusy = snapshotLoading[item.id] || false;
+          const snapshotError = snapshotErrors[item.id] || '';
+          const snapshotBusySaving = snapshotSaving[item.id] || false;
+          const snapshotPayload = snapshot?.items || null;
+          const snapshotExternalCount = Array.isArray(
+            snapshotPayload?.externalUrls,
+          )
+            ? snapshotPayload.externalUrls.length
+            : 0;
+          const snapshotChatCount = Array.isArray(snapshotPayload?.chatMessages)
+            ? snapshotPayload.chatMessages.length
+            : 0;
+          const snapshotRefCount = Array.isArray(snapshotPayload?.internalRefs)
+            ? snapshotPayload.internalRefs.length
+            : 0;
           const evidenceRefs = Array.isArray(evidence?.internalRefs)
             ? evidence?.internalRefs
             : [];
@@ -950,6 +1130,89 @@ export const Approvals: React.FC = () => {
                 </div>
                 {evidenceVisible && (
                   <div style={{ marginTop: 8, display: 'grid', gap: 8 }}>
+                    <div
+                      style={{
+                        border: '1px solid #e2e8f0',
+                        borderRadius: 8,
+                        padding: 8,
+                        background: '#ffffff',
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 8,
+                          flexWrap: 'wrap',
+                        }}
+                      >
+                        <strong>Evidence Snapshot</strong>
+                        <button
+                          className="button secondary"
+                          onClick={() =>
+                            loadEvidenceSnapshot(item).catch(() => undefined)
+                          }
+                          disabled={snapshotBusy || snapshotBusySaving}
+                        >
+                          {snapshotBusy ? '取得中' : '再取得'}
+                        </button>
+                        {canManageSnapshots && (
+                          <button
+                            className="button secondary"
+                            onClick={() =>
+                              createEvidenceSnapshot(item, Boolean(snapshot))
+                            }
+                            disabled={snapshotBusySaving}
+                          >
+                            {snapshotBusySaving
+                              ? '処理中'
+                              : snapshot
+                                ? '再生成'
+                                : '生成'}
+                          </button>
+                        )}
+                      </div>
+                      {snapshotError && (
+                        <div
+                          style={{
+                            marginTop: 6,
+                            color: '#dc2626',
+                            fontSize: 12,
+                          }}
+                        >
+                          {snapshotError}
+                        </div>
+                      )}
+                      {!snapshotError && (
+                        <div
+                          style={{
+                            marginTop: 6,
+                            fontSize: 12,
+                            color: '#334155',
+                          }}
+                        >
+                          {snapshot ? (
+                            <>
+                              <div>
+                                状態: 生成済み / version:{' '}
+                                {snapshot.version ?? '-'} / 取得:{' '}
+                                {formatDateTime(snapshot.capturedAt)}
+                                {snapshot.capturedBy
+                                  ? ` / ${snapshot.capturedBy}`
+                                  : ''}
+                              </div>
+                              <div>
+                                items: 外部URL {snapshotExternalCount} 件 /
+                                内部参照 {snapshotRefCount} 件 / チャット抜粋{' '}
+                                {snapshotChatCount} 件
+                              </div>
+                            </>
+                          ) : (
+                            <div>状態: 未生成</div>
+                          )}
+                        </div>
+                      )}
+                    </div>
                     {evidenceBusy && (
                       <div style={{ fontSize: 12, color: '#64748b' }}>
                         エビデンスを読み込み中...

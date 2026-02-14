@@ -557,15 +557,6 @@ test('frontend smoke workflow evidence chat references @extended', async ({
   const estimateId = estimateCreatePayload.estimate?.id || '';
   expect(estimateId).toBeTruthy();
 
-  const estimateSubmitRes = await page.request.post(
-    `${apiBase}/estimates/${encodeURIComponent(estimateId)}/submit`,
-    {
-      headers: buildAuthHeaders(),
-      data: { reasonText: 'e2e workflow evidence' },
-    },
-  );
-  await ensureOk(estimateSubmitRes);
-
   const patchAnnotationRes = await page.request.patch(
     `${apiBase}/annotations/estimate/${encodeURIComponent(estimateId)}`,
     {
@@ -585,6 +576,15 @@ test('frontend smoke workflow evidence chat references @extended', async ({
   );
   await ensureOk(patchAnnotationRes);
 
+  const estimateSubmitRes = await page.request.post(
+    `${apiBase}/estimates/${encodeURIComponent(estimateId)}/submit`,
+    {
+      headers: buildAuthHeaders(),
+      data: { reasonText: 'e2e workflow evidence' },
+    },
+  );
+  await ensureOk(estimateSubmitRes);
+
   await navigateToSection(page, '承認', '承認一覧');
   const approvalsSection = page
     .locator('main')
@@ -602,6 +602,9 @@ test('frontend smoke workflow evidence chat references @extended', async ({
     .first();
   await expect(evidenceApprovalItem).toBeVisible({ timeout: actionTimeout });
   await evidenceApprovalItem.getByRole('button', { name: '表示' }).click();
+  await expect(evidenceApprovalItem.getByText('状態: 生成済み')).toBeVisible({
+    timeout: actionTimeout,
+  });
   await expect(
     evidenceApprovalItem.getByText('外部URL: 1 件 / チャット参照: 1 件'),
   ).toBeVisible({

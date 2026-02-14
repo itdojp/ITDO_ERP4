@@ -1,28 +1,13 @@
-import { createHash } from 'node:crypto';
 import { FastifyInstance } from 'fastify';
 import { Prisma } from '@prisma/client';
 import { prisma } from '../services/db.js';
 import { auditContextFromRequest, logAudit } from '../services/audit.js';
 import { requireRole } from '../services/rbac.js';
+import { createEvidenceSnapshotForApproval } from '../services/evidenceSnapshot.js';
 import {
   evidenceSnapshotCreateSchema,
   evidenceSnapshotHistoryQuerySchema,
 } from './validators.js';
-
-type InternalRef = {
-  kind: string;
-  id: string;
-  label?: string;
-};
-
-type SnapshotChatMessage = {
-  id: string;
-  roomId: string;
-  userId: string;
-  createdAt: string;
-  excerpt: string;
-  bodyHash?: string;
-};
 
 function normalizeString(value: unknown) {
   return typeof value === 'string' ? value.trim() : '';
@@ -33,41 +18,6 @@ function normalizeLimit(value: unknown) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return 50;
   return Math.max(1, Math.min(100, Math.floor(parsed)));
-}
-
-function resolveAnnotationTargetKind(targetTable: string) {
-  const normalized = targetTable.trim().toLowerCase();
-  switch (normalized) {
-    case 'estimate':
-    case 'estimates':
-      return 'estimate';
-    case 'invoice':
-    case 'invoices':
-      return 'invoice';
-    case 'purchase_order':
-    case 'purchase_orders':
-      return 'purchase_order';
-    case 'vendor_quote':
-    case 'vendor_quotes':
-      return 'vendor_quote';
-    case 'vendor_invoice':
-    case 'vendor_invoices':
-      return 'vendor_invoice';
-    case 'expense':
-    case 'expenses':
-      return 'expense';
-    case 'project':
-    case 'projects':
-      return 'project';
-    case 'customer':
-    case 'customers':
-      return 'customer';
-    case 'vendor':
-    case 'vendors':
-      return 'vendor';
-    default:
-      return null;
-  }
 }
 
 function canReadApprovalInstance(
@@ -96,92 +46,6 @@ function canReadApprovalInstance(
   if (approval.projectId && projectIds.includes(approval.projectId))
     return true;
   return false;
-}
-
-function normalizeInternalRefs(value: unknown): InternalRef[] {
-  if (!Array.isArray(value)) return [];
-  const refs: InternalRef[] = [];
-  const seen = new Set<string>();
-  for (const entry of value) {
-    if (!entry || typeof entry !== 'object') continue;
-    const record = entry as Record<string, unknown>;
-    const kind = normalizeString(record.kind);
-    const id = normalizeString(record.id);
-    if (!kind || !id) continue;
-    const key = `${kind}:${id}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    const label = normalizeString(record.label);
-    refs.push(label ? { kind, id, label } : { kind, id });
-  }
-  return refs;
-}
-
-function normalizeExternalUrls(value: unknown): string[] {
-  if (!Array.isArray(value)) return [];
-  const urls: string[] = [];
-  const seen = new Set<string>();
-  for (const entry of value) {
-    const url = normalizeString(entry);
-    if (!url || seen.has(url)) continue;
-    seen.add(url);
-    urls.push(url);
-  }
-  return urls;
-}
-
-function toExcerpt(body: string, maxLength = 120) {
-  const compact = body.replace(/\s+/g, ' ').trim();
-  if (!compact) return '(no body)';
-  if (compact.length <= maxLength) return compact;
-  return `${compact.slice(0, maxLength - 3)}...`;
-}
-
-function hashBody(body: string) {
-  const normalized = body.trim();
-  if (!normalized) return '';
-  return createHash('sha256').update(normalized).digest('hex');
-}
-
-async function buildSnapshotChatMessages(
-  refs: InternalRef[],
-): Promise<SnapshotChatMessage[]> {
-  const ids = Array.from(
-    new Set(
-      refs
-        .filter((ref) => ref.kind === 'chat_message')
-        .map((ref) => normalizeString(ref.id))
-        .filter(Boolean),
-    ),
-  );
-  if (ids.length === 0) return [];
-
-  const rows = await prisma.chatMessage.findMany({
-    where: { id: { in: ids }, deletedAt: null },
-    select: {
-      id: true,
-      roomId: true,
-      userId: true,
-      createdAt: true,
-      body: true,
-    },
-  });
-  const rowMap = new Map(rows.map((row) => [row.id, row] as const));
-  const items: SnapshotChatMessage[] = [];
-  for (const id of ids) {
-    const row = rowMap.get(id);
-    if (!row) continue;
-    const bodyHash = hashBody(row.body);
-    items.push({
-      id: row.id,
-      roomId: row.roomId,
-      userId: row.userId,
-      createdAt: row.createdAt.toISOString(),
-      excerpt: toExcerpt(row.body),
-      ...(bodyHash ? { bodyHash } : {}),
-    });
-  }
-  return items;
 }
 
 export async function registerEvidenceSnapshotRoutes(app: FastifyInstance) {
@@ -214,15 +78,6 @@ export async function registerEvidenceSnapshotRoutes(app: FastifyInstance) {
           error: { code: 'NOT_FOUND', message: 'Approval instance not found' },
         });
       }
-      const targetKind = resolveAnnotationTargetKind(approval.targetTable);
-      if (!targetKind) {
-        return reply.status(400).send({
-          error: {
-            code: 'UNSUPPORTED_TARGET',
-            message: `targetTable is not supported: ${approval.targetTable}`,
-          },
-        });
-      }
 
       const latest = await prisma.evidenceSnapshot.findFirst({
         where: { approvalInstanceId: approval.id },
@@ -243,42 +98,28 @@ export async function registerEvidenceSnapshotRoutes(app: FastifyInstance) {
         });
       }
 
-      const annotation = await prisma.annotation.findUnique({
-        where: {
-          targetKind_targetId: {
-            targetKind,
-            targetId: approval.targetId,
+      const result = await createEvidenceSnapshotForApproval(prisma, {
+        approvalInstanceId: approval.id,
+        targetTable: approval.targetTable,
+        targetId: approval.targetId,
+        capturedBy: actorUserId,
+        forceRegenerate,
+      });
+      if (result.unsupportedTarget) {
+        return reply.status(400).send({
+          error: {
+            code: 'UNSUPPORTED_TARGET',
+            message: `targetTable is not supported: ${approval.targetTable}`,
           },
-        },
-        select: {
-          notes: true,
-          externalUrls: true,
-          internalRefs: true,
-          updatedAt: true,
-        },
-      });
-
-      const internalRefs = normalizeInternalRefs(annotation?.internalRefs);
-      const externalUrls = normalizeExternalUrls(annotation?.externalUrls);
-      const chatMessages = await buildSnapshotChatMessages(internalRefs);
-      const items = {
-        notes: annotation?.notes ?? null,
-        externalUrls,
-        internalRefs,
-        chatMessages,
-      };
-      const version = (latest?.version ?? 0) + 1;
-      const created = await prisma.evidenceSnapshot.create({
-        data: {
-          approvalInstanceId: approval.id,
-          targetTable: approval.targetTable,
-          targetId: approval.targetId,
-          sourceAnnotationUpdatedAt: annotation?.updatedAt ?? null,
-          capturedBy: actorUserId,
-          version,
-          items: items as Prisma.InputJsonValue,
-        },
-      });
+        });
+      }
+      if (!result.created) {
+        return {
+          created: false,
+          snapshot: result.snapshot,
+        };
+      }
+      const created = result.snapshot;
 
       await logAudit({
         action: latest

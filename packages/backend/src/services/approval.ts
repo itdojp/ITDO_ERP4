@@ -1,6 +1,7 @@
 import { DocStatusValue } from '../types.js';
 import { prisma } from './db.js';
 import { logAudit, type AuditContext } from './audit.js';
+import { createEvidenceSnapshotForApproval } from './evidenceSnapshot.js';
 import {
   matchApprovalSteps as computeApprovalSteps,
   matchesRuleCondition,
@@ -306,6 +307,32 @@ export async function submitApprovalWithUpdate(options: SubmitApprovalOptions) {
         createdBy: options.createdBy,
       },
     );
+    const snapshotResult = await createEvidenceSnapshotForApproval(tx, {
+      approvalInstanceId: approval.id,
+      targetTable: approval.targetTable,
+      targetId: approval.targetId,
+      capturedBy: options.createdBy ?? null,
+      forceRegenerate: false,
+    });
+    if (snapshotResult.created) {
+      const snapshot = snapshotResult.snapshot;
+      await logAudit({
+        action: 'evidence_snapshot_created',
+        targetTable: 'evidence_snapshots',
+        targetId: snapshot.id,
+        userId: options.createdBy,
+        source: 'system',
+        metadata: {
+          approvalInstanceId: snapshot.approvalInstanceId,
+          targetTable: snapshot.targetTable,
+          targetId: snapshot.targetId,
+          version: snapshot.version,
+          sourceAnnotationUpdatedAt:
+            snapshot.sourceAnnotationUpdatedAt?.toISOString() ?? null,
+          trigger: 'submit_auto',
+        },
+      });
+    }
     return { updated, approval };
   });
 }
