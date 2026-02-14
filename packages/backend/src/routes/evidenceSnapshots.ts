@@ -3,7 +3,10 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '../services/db.js';
 import { auditContextFromRequest, logAudit } from '../services/audit.js';
 import { requireRole } from '../services/rbac.js';
-import { buildEvidencePackJsonExport } from '../services/evidencePackExport.js';
+import {
+  buildEvidencePackJsonExport,
+  maskEvidencePackJsonExport,
+} from '../services/evidencePackExport.js';
 import { createEvidenceSnapshotForApproval } from '../services/evidenceSnapshot.js';
 import {
   evidencePackExportQuerySchema,
@@ -231,7 +234,11 @@ export async function registerEvidenceSnapshotRoutes(app: FastifyInstance) {
     },
     async (req, reply) => {
       const { id } = req.params as { id: string };
-      const query = req.query as { format?: 'json'; version?: number };
+      const query = req.query as {
+        format?: 'json';
+        version?: number;
+        mask?: number;
+      };
       const approval = await prisma.approvalInstance.findUnique({
         where: { id },
         select: {
@@ -280,12 +287,16 @@ export async function registerEvidenceSnapshotRoutes(app: FastifyInstance) {
       }
 
       const format = query.format ?? 'json';
-      const exported = buildEvidencePackJsonExport({
+      const rawExported = buildEvidencePackJsonExport({
         exportedAt: new Date(),
         exportedBy: req.user?.userId ?? null,
         approval,
         snapshot,
       });
+      const shouldMask = query.mask === undefined ? true : query.mask === 1;
+      const exported = shouldMask
+        ? maskEvidencePackJsonExport(rawExported)
+        : rawExported;
       await logAudit({
         action: 'evidence_pack_exported',
         targetTable: 'approval_instances',
@@ -296,6 +307,7 @@ export async function registerEvidenceSnapshotRoutes(app: FastifyInstance) {
           snapshotVersion: snapshot.version,
           format,
           digest: exported.integrity.digest,
+          mask: shouldMask,
         } as Prisma.InputJsonValue,
         ...auditContextFromRequest(req),
       });
