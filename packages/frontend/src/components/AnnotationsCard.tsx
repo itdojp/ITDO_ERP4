@@ -641,7 +641,9 @@ export const AnnotationsCard: React.FC<AnnotationsCardProps> = ({
   useEffect(() => {
     const chatRefs = internalRefs.filter((ref) => ref.kind === 'chat_message');
     if (chatRefs.length === 0) {
-      setRefValidationByKey({});
+      setRefValidationByKey((prev) =>
+        Object.keys(prev).length === 0 ? prev : {},
+      );
       return;
     }
 
