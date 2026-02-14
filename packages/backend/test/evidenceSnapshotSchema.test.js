@@ -4,6 +4,7 @@ import test from 'node:test';
 import { Value } from '@sinclair/typebox/value';
 
 import {
+  evidencePackExportQuerySchema,
   evidenceSnapshotCreateSchema,
   evidenceSnapshotHistoryQuerySchema,
 } from '../dist/routes/validators.js';
@@ -40,4 +41,19 @@ test('evidenceSnapshotHistoryQuerySchema: rejects out-of-range limit', () => {
   });
   assert.equal(low, false);
   assert.equal(high, false);
+});
+
+test('evidencePackExportQuerySchema: accepts json format with version', () => {
+  const ok = Value.Check(evidencePackExportQuerySchema.querystring, {
+    format: 'json',
+    version: 1,
+  });
+  assert.equal(ok, true);
+});
+
+test('evidencePackExportQuerySchema: rejects invalid format', () => {
+  const ok = Value.Check(evidencePackExportQuerySchema.querystring, {
+    format: 'pdf',
+  });
+  assert.equal(ok, false);
 });

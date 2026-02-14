@@ -3,8 +3,10 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '../services/db.js';
 import { auditContextFromRequest, logAudit } from '../services/audit.js';
 import { requireRole } from '../services/rbac.js';
+import { buildEvidencePackJsonExport } from '../services/evidencePackExport.js';
 import { createEvidenceSnapshotForApproval } from '../services/evidenceSnapshot.js';
 import {
+  evidencePackExportQuerySchema,
   evidenceSnapshotCreateSchema,
   evidenceSnapshotHistoryQuerySchema,
 } from './validators.js';
@@ -218,6 +220,91 @@ export async function registerEvidenceSnapshotRoutes(app: FastifyInstance) {
         take: normalizeLimit(query.limit),
       });
       return { items };
+    },
+  );
+
+  app.get(
+    '/approval-instances/:id/evidence-pack/export',
+    {
+      preHandler: requireRole(['admin', 'mgmt', 'exec', 'user']),
+      schema: evidencePackExportQuerySchema,
+    },
+    async (req, reply) => {
+      const { id } = req.params as { id: string };
+      const query = req.query as { format?: 'json'; version?: number };
+      const approval = await prisma.approvalInstance.findUnique({
+        where: { id },
+        select: {
+          id: true,
+          flowType: true,
+          targetTable: true,
+          targetId: true,
+          status: true,
+          currentStep: true,
+          projectId: true,
+          createdAt: true,
+          createdBy: true,
+        },
+      });
+      if (!approval) {
+        return reply.status(404).send({
+          error: { code: 'NOT_FOUND', message: 'Approval instance not found' },
+        });
+      }
+      if (!canReadApprovalInstance(approval, req.user ?? null)) {
+        return reply.status(403).send({
+          error: { code: 'FORBIDDEN', message: 'Access denied' },
+        });
+      }
+
+      const snapshot = query.version
+        ? await prisma.evidenceSnapshot.findUnique({
+            where: {
+              approvalInstanceId_version: {
+                approvalInstanceId: approval.id,
+                version: query.version,
+              },
+            },
+          })
+        : await prisma.evidenceSnapshot.findFirst({
+            where: { approvalInstanceId: approval.id },
+            orderBy: { version: 'desc' },
+          });
+      if (!snapshot) {
+        return reply.status(404).send({
+          error: {
+            code: 'SNAPSHOT_NOT_FOUND',
+            message: 'Evidence snapshot not found',
+          },
+        });
+      }
+
+      const format = query.format ?? 'json';
+      const exported = buildEvidencePackJsonExport({
+        exportedAt: new Date(),
+        exportedBy: req.user?.userId ?? null,
+        approval,
+        snapshot,
+      });
+      await logAudit({
+        action: 'evidence_pack_exported',
+        targetTable: 'approval_instances',
+        targetId: approval.id,
+        metadata: {
+          approvalInstanceId: approval.id,
+          snapshotId: snapshot.id,
+          snapshotVersion: snapshot.version,
+          format,
+          digest: exported.integrity.digest,
+        } as Prisma.InputJsonValue,
+        ...auditContextFromRequest(req),
+      });
+
+      reply.header(
+        'content-disposition',
+        `attachment; filename="evidence-pack-${approval.id}-v${snapshot.version}.json"`,
+      );
+      return exported;
     },
   );
 }
