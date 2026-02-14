@@ -304,14 +304,15 @@ test('frontend smoke core @core', async ({ page }) => {
     .first()
     .click();
   const expenseAnnotationDrawer2 = page.getByRole('dialog', { name: /経費:/ });
-  await expect(expenseAnnotationDrawer2.getByLabel('メモ（Markdown）')).toHaveValue(
-    expenseAnnotationText,
-    { timeout: actionTimeout },
-  );
+  await expect(
+    expenseAnnotationDrawer2.getByLabel('メモ（Markdown）'),
+  ).toHaveValue(expenseAnnotationText, { timeout: actionTimeout });
   await expect(
     expenseAnnotationDrawer2.getByRole('list', { name: 'Selected references' }),
   ).toBeVisible({ timeout: actionTimeout });
-  await expenseAnnotationDrawer2.getByRole('button', { name: '閉じる' }).click();
+  await expenseAnnotationDrawer2
+    .getByRole('button', { name: '閉じる' })
+    .click();
   await expect(expenseAnnotationDrawer2).toBeHidden({ timeout: actionTimeout });
 
   await navigateToSection(page, '見積');
@@ -429,6 +430,199 @@ test('frontend smoke core @core', async ({ page }) => {
     timeout: actionTimeout,
   });
   await captureSection(searchSection, '06-core-global-search.png');
+});
+
+test('frontend smoke workflow evidence chat references @extended', async ({
+  page,
+}) => {
+  test.setTimeout(180_000);
+  const id = runId();
+  const projectId = authState.projectIds[0];
+  const evidenceMessage = `E2E evidence chat ${id}`;
+  const evidenceNote = `E2E evidence note ${id}`;
+  const evidenceUrl = `https://example.com/evidence/${id}`;
+  const digits = String(id).replace(/\D/g, '').slice(-4) || '1234';
+  const expenseAmount = Number(digits) + 4000;
+  const expenseAmountLabel = expenseAmount.toLocaleString();
+  const expenseAmountPattern = new RegExp(
+    `(${expenseAmountLabel.replace(/,/g, ',?')}|${expenseAmount})\\s+JPY`,
+  );
+  await prepare(page);
+
+  const chatMessageRes = await page.request.post(
+    `${apiBase}/projects/${encodeURIComponent(projectId)}/chat-messages`,
+    {
+      headers: buildAuthHeaders(),
+      data: {
+        body: evidenceMessage,
+        tags: ['e2e', 'evidence'],
+      },
+    },
+  );
+  await ensureOk(chatMessageRes);
+  const chatMessage = (await chatMessageRes.json()) as { id?: string };
+  const messageId = typeof chatMessage.id === 'string' ? chatMessage.id : '';
+  expect(messageId).toBeTruthy();
+
+  await navigateToSection(page, '経費精算', '経費入力');
+  const expenseSection = page
+    .locator('main')
+    .locator('h2', { hasText: '経費入力' })
+    .locator('..');
+  await expenseSection.scrollIntoViewIfNeeded();
+  await selectByLabelOrFirst(
+    expenseSection.getByLabel('案件選択'),
+    'PRJ-DEMO-1 / Demo Project 1',
+  );
+  await expenseSection
+    .locator('input[type="number"]')
+    .fill(String(expenseAmount));
+  await expenseSection.getByRole('button', { name: '追加' }).click();
+  await expect(expenseSection.getByText('経費を保存しました')).toBeVisible();
+
+  const createdExpenseItem = expenseSection
+    .locator('li', { hasText: expenseAmountPattern })
+    .first();
+  await expect(createdExpenseItem).toBeVisible({ timeout: actionTimeout });
+  const expenseAnnotationButton = createdExpenseItem.getByRole('button', {
+    name: /注釈（経費）:/,
+  });
+  await expenseAnnotationButton.click();
+
+  const expenseAnnotationDrawer = page.getByRole('dialog', { name: /経費:/ });
+  await expect(expenseAnnotationDrawer).toBeVisible({ timeout: actionTimeout });
+  await expenseAnnotationDrawer
+    .getByRole('button', { name: 'エビデンス追加' })
+    .click();
+
+  const evidencePickerDrawer = page.getByRole('dialog', {
+    name: 'エビデンス追加（チャット発言）',
+  });
+  await expect(evidencePickerDrawer).toBeVisible({ timeout: actionTimeout });
+  await evidencePickerDrawer.getByLabel('キーワード').fill(id);
+  await evidencePickerDrawer.getByRole('button', { name: '検索' }).click();
+  await expect(evidencePickerDrawer.getByText(evidenceMessage)).toBeVisible({
+    timeout: actionTimeout,
+  });
+  await evidencePickerDrawer
+    .getByRole('button', { name: '追加' })
+    .first()
+    .click();
+  await evidencePickerDrawer
+    .getByRole('button', { name: 'メモへ挿入' })
+    .first()
+    .click();
+  await evidencePickerDrawer.getByRole('button', { name: '閉じる' }).click();
+  await expect(evidencePickerDrawer).toBeHidden({ timeout: actionTimeout });
+
+  await expect(
+    expenseAnnotationDrawer.getByRole('link', { name: /Chat（/ }).first(),
+  ).toBeVisible({ timeout: actionTimeout });
+  await expect(
+    expenseAnnotationDrawer
+      .locator('.badge', { hasText: 'chat_message' })
+      .first(),
+  ).toBeVisible({ timeout: actionTimeout });
+  await expect(
+    expenseAnnotationDrawer.getByLabel('メモ（Markdown）'),
+  ).toHaveValue(new RegExp(messageId), { timeout: actionTimeout });
+  await expenseAnnotationDrawer
+    .getByRole('button', { name: '参照状態を確認' })
+    .click();
+  await expect(expenseAnnotationDrawer.getByText('参照可能')).toBeVisible({
+    timeout: actionTimeout,
+  });
+  await expenseAnnotationDrawer.getByRole('button', { name: '保存' }).click();
+  await expect(expenseAnnotationDrawer.getByText('保存しました')).toBeVisible({
+    timeout: actionTimeout,
+  });
+  await expenseAnnotationDrawer.getByRole('button', { name: '閉じる' }).click();
+  await expect(expenseAnnotationDrawer).toBeHidden({ timeout: actionTimeout });
+
+  const estimateCreateRes = await page.request.post(
+    `${apiBase}/projects/${encodeURIComponent(projectId)}/estimates`,
+    {
+      headers: buildAuthHeaders(),
+      data: {
+        totalAmount: 120000,
+        currency: 'JPY',
+        notes: `E2E workflow evidence estimate ${id}`,
+      },
+    },
+  );
+  await ensureOk(estimateCreateRes);
+  const estimateCreatePayload = (await estimateCreateRes.json()) as {
+    estimate?: { id?: string };
+  };
+  const estimateId = estimateCreatePayload.estimate?.id || '';
+  expect(estimateId).toBeTruthy();
+
+  const estimateSubmitRes = await page.request.post(
+    `${apiBase}/estimates/${encodeURIComponent(estimateId)}/submit`,
+    {
+      headers: buildAuthHeaders(),
+      data: { reasonText: 'e2e workflow evidence' },
+    },
+  );
+  await ensureOk(estimateSubmitRes);
+
+  const patchAnnotationRes = await page.request.patch(
+    `${apiBase}/annotations/estimate/${encodeURIComponent(estimateId)}`,
+    {
+      headers: buildAuthHeaders(),
+      data: {
+        notes: evidenceNote,
+        externalUrls: [evidenceUrl],
+        internalRefs: [
+          {
+            kind: 'chat_message',
+            id: messageId,
+            label: `E2E evidence ${id}`,
+          },
+        ],
+      },
+    },
+  );
+  await ensureOk(patchAnnotationRes);
+
+  await navigateToSection(page, '承認', '承認一覧');
+  const approvalsSection = page
+    .locator('main')
+    .locator('h2', { hasText: '承認一覧' })
+    .locator('..');
+  await approvalsSection.scrollIntoViewIfNeeded();
+  await selectByLabelOrFirst(
+    approvalsSection.locator('select').first(),
+    '見積',
+  );
+  await approvalsSection.getByRole('button', { name: '再読込' }).click();
+
+  const evidenceApprovalItem = approvalsSection
+    .locator('li', { hasText: estimateId })
+    .first();
+  await expect(evidenceApprovalItem).toBeVisible({ timeout: actionTimeout });
+  await evidenceApprovalItem.getByRole('button', { name: '表示' }).click();
+  await expect(
+    evidenceApprovalItem.getByText('外部URL: 1 件 / チャット参照: 1 件'),
+  ).toBeVisible({
+    timeout: actionTimeout,
+  });
+  await expect(
+    evidenceApprovalItem.getByText(`メモ: ${evidenceNote}`),
+  ).toBeVisible({
+    timeout: actionTimeout,
+  });
+  await expect(
+    evidenceApprovalItem.getByRole('link', { name: evidenceUrl }),
+  ).toBeVisible({ timeout: actionTimeout });
+  const previewButton = evidenceApprovalItem
+    .getByRole('button', { name: 'プレビュー' })
+    .first();
+  await previewButton.click();
+  await expect(evidenceApprovalItem.getByText(evidenceMessage)).toBeVisible({
+    timeout: actionTimeout,
+  });
+  await captureSection(approvalsSection, '07-approvals-evidence.png');
 });
 
 test('frontend smoke vendor approvals @extended', async ({ page }) => {
@@ -972,7 +1166,10 @@ test('frontend smoke reports masters settings @extended', async ({ page }) => {
   await expect(
     settingsSection.getByText('承認ルールを作成しました'),
   ).toBeVisible();
-  await approvalBlock.getByRole('button', { name: '履歴を見る' }).first().click();
+  await approvalBlock
+    .getByRole('button', { name: '履歴を見る' })
+    .first()
+    .click();
   await expect(
     approvalBlock.locator('.itdo-audit-timeline').first(),
   ).toBeVisible({
@@ -1125,9 +1322,11 @@ test('frontend smoke chat hr analytics @extended', async ({ page }) => {
     timeout: actionTimeout,
   });
   await chatSection.getByPlaceholder('タグ (comma separated)').fill('e2e,chat');
-  const addFilesButton = chatSection.getByRole('button', {
-    name: /ファイルを選択|Add files/,
-  }).first();
+  const addFilesButton = chatSection
+    .getByRole('button', {
+      name: /ファイルを選択|Add files/,
+    })
+    .first();
   const [fileChooser] = await Promise.all([
     page.waitForEvent('filechooser'),
     addFilesButton.click(),
@@ -1751,13 +1950,16 @@ test('frontend smoke additional sections @extended', async ({ page }) => {
       console.error('[e2e][breakGlassMgmtPage][console.error]', msg.text());
     }
   });
-  await breakGlassMgmtPage.addInitScript((state) => {
-    window.localStorage.setItem('erp4_auth', JSON.stringify(state));
-    window.localStorage.removeItem('erp4_active_section');
-  }, {
-    ...authState,
-    roles: ['mgmt'],
-  });
+  await breakGlassMgmtPage.addInitScript(
+    (state) => {
+      window.localStorage.setItem('erp4_auth', JSON.stringify(state));
+      window.localStorage.removeItem('erp4_active_section');
+    },
+    {
+      ...authState,
+      roles: ['mgmt'],
+    },
+  );
   await breakGlassMgmtPage.goto(baseUrl);
   await navigateToSection(
     breakGlassMgmtPage,
@@ -1769,12 +1971,12 @@ test('frontend smoke additional sections @extended', async ({ page }) => {
     .locator('h2', { hasText: 'Chat break-glass（監査閲覧）' })
     .locator('..');
   const breakGlassTo = new Date();
-  const breakGlassFrom = new Date(
-    breakGlassTo.getTime() - 2 * 60 * 60 * 1000,
-  );
+  const breakGlassFrom = new Date(breakGlassTo.getTime() - 2 * 60 * 60 * 1000);
   const breakGlassFromInput = toDateTimeLocalInputValue(breakGlassFrom);
   const breakGlassToInput = toDateTimeLocalInputValue(breakGlassTo);
-  await breakGlassMgmtSection.getByLabel('targetFrom').fill(breakGlassFromInput);
+  await breakGlassMgmtSection
+    .getByLabel('targetFrom')
+    .fill(breakGlassFromInput);
   await breakGlassMgmtSection.getByLabel('targetUntil').fill(breakGlassToInput);
   await expect(breakGlassMgmtSection.getByLabel('targetFrom')).toHaveValue(
     breakGlassFromInput,
@@ -1890,7 +2092,9 @@ test('frontend smoke admin ops @extended', async ({ page }) => {
   await auditLogSection.scrollIntoViewIfNeeded();
   const auditRangeTo = toDateInputValue(new Date());
   const auditRangeFrom = shiftDateKey(auditRangeTo, -7);
-  await auditLogSection.getByLabel('from', { exact: true }).fill(auditRangeFrom);
+  await auditLogSection
+    .getByLabel('from', { exact: true })
+    .fill(auditRangeFrom);
   await auditLogSection.getByLabel('to', { exact: true }).fill(auditRangeTo);
   await safeClick(
     auditLogSection.getByRole('button', { name: '検索' }),

@@ -911,6 +911,25 @@ export const approvalCancelSchema = {
   ),
 };
 
+export const evidenceSnapshotCreateSchema = {
+  body: Type.Object(
+    {
+      forceRegenerate: Type.Optional(Type.Boolean()),
+      reasonText: Type.Optional(Type.String({ maxLength: 2000 })),
+    },
+    { additionalProperties: false },
+  ),
+};
+
+export const evidenceSnapshotHistoryQuerySchema = {
+  querystring: Type.Object(
+    {
+      limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 100 })),
+    },
+    { additionalProperties: false },
+  ),
+};
+
 const approvalStepSchema = Type.Object(
   {
     stepOrder: Type.Optional(Type.Number({ minimum: 1 })),

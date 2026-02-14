@@ -49,6 +49,7 @@ import { registerNotificationJobRoutes } from './notificationJobs.js';
 import { registerRefCandidateRoutes } from './refCandidates.js';
 import { registerActionPolicyRoutes } from './actionPolicies.js';
 import { registerGroupRoutes } from './groups.js';
+import { registerEvidenceSnapshotRoutes } from './evidenceSnapshots.js';
 
 export async function registerRoutes(app: FastifyInstance) {
   await registerAuthRoutes(app);
@@ -101,4 +102,5 @@ export async function registerRoutes(app: FastifyInstance) {
   await registerAuditLogRoutes(app);
   await registerAccessReviewRoutes(app);
   await registerInsightRoutes(app);
+  await registerEvidenceSnapshotRoutes(app);
 }
