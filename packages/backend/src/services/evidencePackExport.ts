@@ -74,12 +74,28 @@ function maskEmail(value: string) {
   return `${maskedLocal}@${domain}`;
 }
 
+function maskEmailLikeToken(token: string) {
+  const leading = token.match(/^[^a-zA-Z0-9@]+/)?.[0] ?? '';
+  const trailing = token.match(/[^a-zA-Z0-9.@-]+$/)?.[0] ?? '';
+  const core = token.slice(leading.length, token.length - trailing.length);
+  const atIndex = core.indexOf('@');
+  if (atIndex <= 0 || atIndex !== core.lastIndexOf('@')) {
+    return token;
+  }
+  const local = core.slice(0, atIndex);
+  const domain = core.slice(atIndex + 1);
+  if (!local || !domain || !domain.includes('.')) {
+    return token;
+  }
+  return `${leading}${maskEmail(core)}${trailing}`;
+}
+
 function maskFreeText(value: string) {
-  return value
-    .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, (match) =>
-      maskEmail(match),
-    )
-    .replace(/\b\d{10,13}\b/g, (match) => maskId(match));
+  const maskedEmails = value
+    .split(/(\s+)/)
+    .map((token) => (token.trim() ? maskEmailLikeToken(token) : token))
+    .join('');
+  return maskedEmails.replace(/\b\d{10,13}\b/g, (match) => maskId(match));
 }
 
 function maskExternalUrl(value: string) {
