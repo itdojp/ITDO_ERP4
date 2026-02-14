@@ -935,6 +935,7 @@ export const evidencePackExportQuerySchema = {
     {
       format: Type.Optional(Type.Literal('json')),
       version: Type.Optional(Type.Integer({ minimum: 1 })),
+      mask: Type.Optional(Type.Integer({ minimum: 0, maximum: 1 })),
     },
     { additionalProperties: false },
   ),

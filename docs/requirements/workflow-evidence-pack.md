@@ -80,6 +80,10 @@
 
 - 概要: 指定承認インスタンスの Snapshot を監査提出向けに JSON 形式で出力
 - RBAC: 承認閲覧可能ユーザ
+- query:
+  - `format=json`
+  - `version`（省略時は最新）
+  - `mask=1|0`（省略時は `1`。PIIマスク適用）
 - 出力:
   - `payload`（approval/snapshot/exportedAt など）
   - `integrity.algorithm=sha256`
@@ -111,14 +115,15 @@
 - 閲覧: 当該承認を閲覧できるユーザ
 - 再生成時は `reasonText` 必須 + 監査ログ
 - 監査提出JSONのエクスポートは監査ログに `digest` を記録
+- JSONエクスポート既定は `mask=1` とし、外部URL/抜粋/ユーザ識別子等をPIIマスクする
 
 ## Phase2（Issue #961）進捗
 
 - [x] JSONエクスポートAPI
 - [x] detached metadata 方式（SHA-256 digest + canonicalization）
+- [x] マスキングポリシー（PII/機微情報）適用（JSON export）
 - [ ] PDF出力
 - [ ] 外部保管連携（S3等）
-- [ ] マスキングポリシー適用
 
 ## 受け入れ条件（MVP）
 

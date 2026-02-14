@@ -56,6 +56,85 @@ function sha256Hex(value: string) {
   return createHash('sha256').update(value).digest('hex');
 }
 
+function maskId(value: string) {
+  if (!value) return value;
+  if (value.length <= 3) return '*'.repeat(value.length);
+  const keep = Math.min(4, Math.max(2, Math.ceil(value.length / 3)));
+  return `${value.slice(0, keep)}${'*'.repeat(value.length - keep)}`;
+}
+
+function maskEmail(value: string) {
+  const [local, domain] = value.split('@');
+  if (!domain) return value;
+  if (!local) return `***@${domain}`;
+  if (local.length <= 2) return `${local[0]}***@${domain}`;
+  const prefix = local.slice(0, 2);
+  const maskedLocal =
+    prefix + '*'.repeat(Math.max(local.length - prefix.length, 3));
+  return `${maskedLocal}@${domain}`;
+}
+
+function isAsciiAlphaNumChar(char: string) {
+  const code = char.charCodeAt(0);
+  return (
+    (code >= 48 && code <= 57) ||
+    (code >= 65 && code <= 90) ||
+    (code >= 97 && code <= 122)
+  );
+}
+
+function isLeadingWrapperChar(char: string) {
+  return !isAsciiAlphaNumChar(char) && char !== '@';
+}
+
+function isTrailingWrapperChar(char: string) {
+  if (isAsciiAlphaNumChar(char)) return false;
+  return char !== '.' && char !== '@' && char !== '-';
+}
+
+function maskEmailLikeToken(token: string) {
+  let start = 0;
+  while (start < token.length && isLeadingWrapperChar(token[start] ?? '')) {
+    start += 1;
+  }
+  let end = token.length;
+  while (end > start && isTrailingWrapperChar(token[end - 1] ?? '')) {
+    end -= 1;
+  }
+  const leading = token.slice(0, start);
+  const trailing = token.slice(end);
+  const core = token.slice(start, end);
+  const atIndex = core.indexOf('@');
+  if (atIndex <= 0 || atIndex !== core.lastIndexOf('@')) {
+    return token;
+  }
+  const local = core.slice(0, atIndex);
+  const domain = core.slice(atIndex + 1);
+  if (!local || !domain || !domain.includes('.')) {
+    return token;
+  }
+  return `${leading}${maskEmail(core)}${trailing}`;
+}
+
+function maskFreeText(value: string) {
+  const maskedEmails = value
+    .split(/(\s+)/)
+    .map((token) => (token.trim() ? maskEmailLikeToken(token) : token))
+    .join('');
+  return maskedEmails.replace(/\b\d{10,13}\b/g, (match) => maskId(match));
+}
+
+function maskExternalUrl(value: string) {
+  const raw = value.trim();
+  if (!raw) return raw;
+  try {
+    const parsed = new URL(raw);
+    return `${parsed.protocol}//${parsed.host}/***`;
+  } catch {
+    return maskFreeText(raw);
+  }
+}
+
 export function buildEvidencePackJsonExport(input: {
   exportedAt: Date;
   exportedBy?: string | null;
@@ -116,5 +195,79 @@ export function buildEvidencePackJsonExport(input: {
     format: 'json',
     payload,
     integrity,
+  };
+}
+
+export function maskEvidencePackJsonExport(
+  source: EvidencePackJsonExport,
+): EvidencePackJsonExport {
+  const payload = JSON.parse(JSON.stringify(source.payload)) as ExportPayload;
+  if (payload.exportedBy) {
+    payload.exportedBy = payload.exportedBy.includes('@')
+      ? maskEmail(payload.exportedBy)
+      : maskId(payload.exportedBy);
+  }
+  if (payload.approval.createdBy) {
+    payload.approval.createdBy = payload.approval.createdBy.includes('@')
+      ? maskEmail(payload.approval.createdBy)
+      : maskId(payload.approval.createdBy);
+  }
+  if (payload.snapshot.capturedBy) {
+    payload.snapshot.capturedBy = payload.snapshot.capturedBy.includes('@')
+      ? maskEmail(payload.snapshot.capturedBy)
+      : maskId(payload.snapshot.capturedBy);
+  }
+
+  const items = (payload.snapshot.items ?? null) as {
+    notes?: unknown;
+    externalUrls?: unknown;
+    internalRefs?: unknown;
+    chatMessages?: unknown;
+  } | null;
+  if (items && typeof items === 'object') {
+    if (typeof items.notes === 'string') {
+      items.notes = maskFreeText(items.notes);
+    }
+    if (Array.isArray(items.externalUrls)) {
+      items.externalUrls = items.externalUrls.map((value) =>
+        typeof value === 'string' ? maskExternalUrl(value) : value,
+      );
+    }
+    if (Array.isArray(items.internalRefs)) {
+      items.internalRefs = items.internalRefs.map((ref) => {
+        if (!ref || typeof ref !== 'object') return ref;
+        const row = { ...(ref as Record<string, unknown>) };
+        if (typeof row.label === 'string') {
+          row.label = maskFreeText(row.label);
+        }
+        return row;
+      });
+    }
+    if (Array.isArray(items.chatMessages)) {
+      items.chatMessages = items.chatMessages.map((message) => {
+        if (!message || typeof message !== 'object') return message;
+        const row = { ...(message as Record<string, unknown>) };
+        if (typeof row.userId === 'string') {
+          row.userId = row.userId.includes('@')
+            ? maskEmail(row.userId)
+            : maskId(row.userId);
+        }
+        if (typeof row.excerpt === 'string') {
+          row.excerpt = maskFreeText(row.excerpt);
+        }
+        return row;
+      });
+    }
+  }
+
+  const canonicalPayload = JSON.stringify(stableClone(payload));
+  return {
+    format: 'json',
+    payload,
+    integrity: {
+      algorithm: 'sha256',
+      digest: sha256Hex(canonicalPayload),
+      canonicalization: 'json-stable-sort-keys-v1',
+    },
   };
 }

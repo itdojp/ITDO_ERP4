@@ -1195,6 +1195,16 @@
             }
           },
           {
+            "in": "query",
+            "name": "mask",
+            "required": false,
+            "schema": {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
             "in": "path",
             "name": "id",
             "required": true,
