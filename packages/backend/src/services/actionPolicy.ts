@@ -494,12 +494,17 @@ async function evaluateGuards(guards: unknown, ctx: GuardEvalContext) {
 
   const failures: ActionPolicyGuardFailure[] = [];
   for (const item of guards) {
-    if (!item || typeof item !== 'object') {
+    let type = '';
+    if (typeof item === 'string') {
+      // Backward-compatible shorthand: ["chat_ack_completed"].
+      type = normalizeString(item);
+    } else if (item && typeof item === 'object') {
+      const guard = item as Record<string, unknown>;
+      type = normalizeString(guard.type);
+    } else {
       failures.push({ type: 'guard', reason: 'invalid_item' });
       continue;
     }
-    const guard = item as Record<string, unknown>;
-    const type = normalizeString(guard.type);
     if (!type) {
       failures.push({ type: 'guard', reason: 'type_required' });
       continue;
