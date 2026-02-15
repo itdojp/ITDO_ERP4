@@ -2,6 +2,7 @@
 set -euo pipefail
 
 # Preflight checker for S3 backup destination settings used by scripts/backup-prod.sh.
+# Output includes bucket/key/KMS identifiers for operational diagnosis.
 #
 # Required:
 #   S3_BUCKET
@@ -141,7 +142,7 @@ check_bucket_encryption() {
   if [[ -n "$SSE_KMS_KEY_ID" ]]; then
     if [[ -z "$kms" || "$kms" == "None" ]]; then
       warn "SSE_KMS_KEY_ID is set but bucket encryption has no KMS key"
-    elif [[ "$kms" != "$SSE_KMS_KEY_ID" && "$kms" != *"$SSE_KMS_KEY_ID"* ]]; then
+    elif ! kms_id_matches "$SSE_KMS_KEY_ID" "$kms"; then
       warn "KMS key mismatch (expected=${SSE_KMS_KEY_ID}, actual=${kms})"
     fi
   fi
@@ -165,18 +166,30 @@ check_lifecycle() {
 }
 
 check_public_access_block() {
-  local block
-  if ! block=$(aws_s3 s3api get-public-access-block \
+  local values
+  if ! values=$(aws_s3 s3api get-public-access-block \
     --bucket "$S3_BUCKET" \
-    --query 'PublicAccessBlockConfiguration' \
-    --output json 2>/dev/null); then
+    --query '[PublicAccessBlockConfiguration.BlockPublicAcls,PublicAccessBlockConfiguration.IgnorePublicAcls,PublicAccessBlockConfiguration.BlockPublicPolicy,PublicAccessBlockConfiguration.RestrictPublicBuckets]' \
+    --output text 2>/dev/null); then
     warn "public access block is not configured"
     return 0
   fi
 
-  # Keep this check simple and robust without jq.
-  if [[ "$block" == *"false"* ]]; then
-    warn "public access block contains false; review bucket exposure"
+  local names=(
+    "BlockPublicAcls"
+    "IgnorePublicAcls"
+    "BlockPublicPolicy"
+    "RestrictPublicBuckets"
+  )
+  local idx=0 value
+  for value in $values; do
+    if [[ "$value" != "True" ]]; then
+      warn "public access block ${names[$idx]} is not True (current=$value)"
+    fi
+    idx=$((idx + 1))
+  done
+  if (( idx != 4 )); then
+    warn "public access block check returned unexpected field count (${idx})"
   else
     log "public access block: configured"
   fi
@@ -187,8 +200,14 @@ check_kms_key() {
     return 0
   fi
 
+  local key_state
   log "checking KMS key: ${SSE_KMS_KEY_ID}"
-  aws_kms kms describe-key --key-id "$SSE_KMS_KEY_ID" --query 'KeyMetadata.KeyState' --output text >/dev/null
+  key_state=$(aws_kms kms describe-key --key-id "$SSE_KMS_KEY_ID" --query 'KeyMetadata.KeyState' --output text)
+  if [[ "$key_state" != "Enabled" ]]; then
+    warn "KMS key state is not Enabled (current=${key_state})"
+  else
+    log "KMS key state: Enabled"
+  fi
 }
 
 check_write_probe() {
@@ -196,9 +215,14 @@ check_write_probe() {
     return 0
   fi
 
-  local stamp probe_key
+  local stamp probe_prefix probe_key
   stamp=$(date -u +%Y%m%dT%H%M%SZ)
-  probe_key="${S3_PREFIX%/}/_preflight/${stamp}.txt"
+  probe_prefix="${S3_PREFIX%/}"
+  if [[ -n "$probe_prefix" ]]; then
+    probe_key="${probe_prefix}/_preflight/${stamp}.txt"
+  else
+    probe_key="_preflight/${stamp}.txt"
+  fi
   log "write probe: s3://${S3_BUCKET}/${probe_key}"
 
   local put_args=(s3api put-object --bucket "$S3_BUCKET" --key "$probe_key" --body /dev/null)
@@ -215,7 +239,9 @@ check_write_probe() {
   esac
 
   aws_s3 "${put_args[@]}" >/dev/null
-  aws_s3 s3api delete-object --bucket "$S3_BUCKET" --key "$probe_key" >/dev/null
+  if ! aws_s3 s3api delete-object --bucket "$S3_BUCKET" --key "$probe_key" >/dev/null; then
+    warn "write probe cleanup failed: s3://${S3_BUCKET}/${probe_key} remains"
+  fi
 }
 
 main() {
@@ -233,7 +259,7 @@ main() {
 
   if (( warn_count > 0 )); then
     if [[ "$STRICT" == "1" ]]; then
-      die "completed with ${warn_count} warning(s)"
+      die "failed with ${warn_count} warning(s)"
     fi
     log "completed with ${warn_count} warning(s)"
     exit 0
@@ -243,3 +269,23 @@ main() {
 }
 
 main "$@"
+kms_id_matches() {
+  local expected="$1"
+  local actual="$2"
+  if [[ -z "$expected" || -z "$actual" || "$actual" == "None" ]]; then
+    return 1
+  fi
+  if [[ "$expected" == "$actual" ]]; then
+    return 0
+  fi
+  if [[ "$expected" == arn:* ]]; then
+    return 1
+  fi
+  if [[ "$expected" == alias/* ]]; then
+    [[ "$actual" == *":$expected" ]] && return 0
+    return 1
+  fi
+  [[ "$actual" == *"/$expected" ]] && return 0
+  [[ "$actual" == *":key/$expected" ]] && return 0
+  return 1
+}
