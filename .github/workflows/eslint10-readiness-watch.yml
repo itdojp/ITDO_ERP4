@@ -61,7 +61,7 @@ jobs:
           PARSER_PEER: ${{ steps.check.outputs.parser_peer }}
         run: |
           marker="<!-- eslint10-readiness-watch -->"
-          if gh issue view 914 --json comments --jq '.comments[].body' | grep -F "${marker}" >/dev/null 2>&1; then
+          if gh api "repos/${GITHUB_REPOSITORY}/issues/914/comments" --paginate --jq '.[].body' | grep -F "${marker}" >/dev/null 2>&1; then
             echo "Issue #914 already has readiness notification."
             exit 0
           fi
