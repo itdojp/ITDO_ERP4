@@ -4,6 +4,7 @@ import test from 'node:test';
 import { Value } from '@sinclair/typebox/value';
 
 import {
+  evidencePackArchiveBodySchema,
   evidencePackExportQuerySchema,
   evidenceSnapshotCreateSchema,
   evidenceSnapshotHistoryQuerySchema,
@@ -72,6 +73,31 @@ test('evidencePackExportQuerySchema: rejects invalid mask', () => {
   const ok = Value.Check(evidencePackExportQuerySchema.querystring, {
     format: 'json',
     mask: 2,
+  });
+  assert.equal(ok, false);
+});
+
+test('evidencePackArchiveBodySchema: accepts json payload', () => {
+  const ok = Value.Check(evidencePackArchiveBodySchema.body, {
+    format: 'json',
+    version: 1,
+    mask: 1,
+  });
+  assert.equal(ok, true);
+});
+
+test('evidencePackArchiveBodySchema: accepts pdf payload', () => {
+  const ok = Value.Check(evidencePackArchiveBodySchema.body, {
+    format: 'pdf',
+    version: 2,
+    mask: 0,
+  });
+  assert.equal(ok, true);
+});
+
+test('evidencePackArchiveBodySchema: rejects unknown format', () => {
+  const ok = Value.Check(evidencePackArchiveBodySchema.body, {
+    format: 'csv',
   });
   assert.equal(ok, false);
 });

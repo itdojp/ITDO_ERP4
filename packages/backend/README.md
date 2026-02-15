@@ -122,6 +122,22 @@ npm run test
   - PDF_EXTERNAL_MAX_BYTES / PDF_EXTERNAL_TIMEOUT_MS
 - 備考: external は PDF バイナリを返すエンドポイントを想定。
 
+## Evidence Pack Archive
+- env (local):
+  - EVIDENCE_ARCHIVE_PROVIDER=local
+  - EVIDENCE_ARCHIVE_LOCAL_DIR=/tmp/erp4/evidence-archives
+- env (s3):
+  - EVIDENCE_ARCHIVE_PROVIDER=s3
+  - EVIDENCE_ARCHIVE_S3_BUCKET
+  - EVIDENCE_ARCHIVE_S3_REGION（または AWS_REGION / AWS_DEFAULT_REGION）
+  - EVIDENCE_ARCHIVE_S3_PREFIX（optional）
+  - EVIDENCE_ARCHIVE_S3_ENDPOINT_URL（optional; S3互換ストレージ向け）
+  - EVIDENCE_ARCHIVE_S3_FORCE_PATH_STYLE（optional）
+  - EVIDENCE_ARCHIVE_S3_SSE / EVIDENCE_ARCHIVE_S3_KMS_KEY_ID（optional）
+- API:
+  - `POST /approval-instances/:id/evidence-pack/archive`
+- 備考: content本体に加えて `.metadata.json` を同時保存し、digest/形式/対象versionを長期保全用に記録します。
+
 ### SMTP smoke test
 ```
 npx ts-node --project packages/backend/tsconfig.json scripts/smoke-email.ts

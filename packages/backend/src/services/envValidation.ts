@@ -211,6 +211,76 @@ export function assertValidBackendEnv() {
     }
   }
 
+  const evidenceArchiveProvider = (
+    process.env.EVIDENCE_ARCHIVE_PROVIDER || 'local'
+  )
+    .trim()
+    .toLowerCase();
+  const allowedEvidenceArchiveProviders = new Set(['local', 's3']);
+  if (!allowedEvidenceArchiveProviders.has(evidenceArchiveProvider)) {
+    addIssue(
+      issues,
+      'EVIDENCE_ARCHIVE_PROVIDER',
+      'local|s3 のいずれかを指定してください',
+    );
+  }
+  if (evidenceArchiveProvider === 's3') {
+    assertRequired(
+      issues,
+      'EVIDENCE_ARCHIVE_S3_BUCKET',
+      process.env.EVIDENCE_ARCHIVE_S3_BUCKET,
+    );
+    const region =
+      normalizeString(process.env.EVIDENCE_ARCHIVE_S3_REGION) ||
+      normalizeString(process.env.AWS_REGION) ||
+      normalizeString(process.env.AWS_DEFAULT_REGION);
+    if (!region) {
+      addIssue(
+        issues,
+        'EVIDENCE_ARCHIVE_S3_REGION/AWS_REGION',
+        'いずれかを指定してください',
+      );
+    }
+
+    const endpoint = normalizeString(
+      process.env.EVIDENCE_ARCHIVE_S3_ENDPOINT_URL,
+    );
+    if (endpoint && !isHttpUrl(endpoint)) {
+      addIssue(
+        issues,
+        'EVIDENCE_ARCHIVE_S3_ENDPOINT_URL',
+        'http(s) URL を指定してください',
+      );
+    }
+
+    const forcePathStyleRaw = normalizeString(
+      process.env.EVIDENCE_ARCHIVE_S3_FORCE_PATH_STYLE,
+    );
+    if (forcePathStyleRaw && parseBoolean(forcePathStyleRaw) === undefined) {
+      addIssue(
+        issues,
+        'EVIDENCE_ARCHIVE_S3_FORCE_PATH_STYLE',
+        'true|false|1|0 のいずれかを指定してください',
+      );
+    }
+
+    const sse = normalizeString(process.env.EVIDENCE_ARCHIVE_S3_SSE);
+    if (sse && sse !== 'AES256' && sse !== 'aws:kms') {
+      addIssue(
+        issues,
+        'EVIDENCE_ARCHIVE_S3_SSE',
+        'AES256|aws:kms のいずれかを指定してください',
+      );
+    }
+    if (sse === 'aws:kms') {
+      assertRequired(
+        issues,
+        'EVIDENCE_ARCHIVE_S3_KMS_KEY_ID',
+        process.env.EVIDENCE_ARCHIVE_S3_KMS_KEY_ID,
+      );
+    }
+  }
+
   const externalLlmProvider = (
     process.env.CHAT_EXTERNAL_LLM_PROVIDER || 'disabled'
   )

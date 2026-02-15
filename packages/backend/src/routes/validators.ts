@@ -943,6 +943,19 @@ export const evidencePackExportQuerySchema = {
   ),
 };
 
+export const evidencePackArchiveBodySchema = {
+  body: Type.Object(
+    {
+      format: Type.Optional(
+        Type.Union([Type.Literal('json'), Type.Literal('pdf')]),
+      ),
+      version: Type.Optional(Type.Integer({ minimum: 1 })),
+      mask: Type.Optional(Type.Integer({ minimum: 0, maximum: 1 })),
+    },
+    { additionalProperties: false },
+  ),
+};
+
 const approvalStepSchema = Type.Object(
   {
     stepOrder: Type.Optional(Type.Number({ minimum: 1 })),

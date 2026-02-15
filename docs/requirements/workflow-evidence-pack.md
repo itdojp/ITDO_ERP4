@@ -89,6 +89,20 @@
   - `format=pdf`: JSON出力と同一内容をPDF化した添付ファイル（監査提出向け）
 - 監査ログ: `action=evidence_pack_exported`
 
+### POST /approval-instances/:id/evidence-pack/archive
+
+- 概要: 指定承認インスタンスの Snapshot を外部保管向けにアーカイブ
+- RBAC: `admin/mgmt`
+- body:
+  - `format=json|pdf`（省略時は `json`）
+  - `version`（省略時は最新）
+  - `mask=1|0`（省略時は `1`）
+- 動作:
+  - `format=json`: エクスポートJSON本体を保存
+  - `format=pdf`: JSON出力と同一内容のPDFを保存
+  - content本体と `.metadata.json`（digest/対象version/mask/actor）を同時保存
+- 監査ログ: `action=evidence_pack_archived`
+
 ## UI案（承認画面）
 
 - `エビデンス（注釈）` セクションに Snapshot 情報を追加:
@@ -121,7 +135,8 @@
 - [x] detached metadata 方式（SHA-256 digest + canonicalization）
 - [x] マスキングポリシー（PII/機微情報）適用（JSON export）
 - [x] PDF出力（JSONと同一内容をPDF化）
-- [ ] 外部保管連携（S3等）
+- [x] 外部保管連携の抽象化（`local` / `s3`）
+- [x] archive 操作の監査ログ（`evidence_pack_archived`）
 
 ## 受け入れ条件（MVP）
 

@@ -8,8 +8,10 @@ import {
   maskEvidencePackJsonExport,
   renderEvidencePackPdf,
 } from '../services/evidencePackExport.js';
+import { archiveEvidencePack } from '../services/evidencePackArchive.js';
 import { createEvidenceSnapshotForApproval } from '../services/evidenceSnapshot.js';
 import {
+  evidencePackArchiveBodySchema,
   evidencePackExportQuerySchema,
   evidenceSnapshotCreateSchema,
   evidenceSnapshotHistoryQuerySchema,
@@ -56,6 +58,35 @@ function canReadApprovalInstance(
   if (approval.projectId && projectIds.includes(approval.projectId))
     return true;
   return false;
+}
+
+async function findEvidenceSnapshotForPack(
+  approvalInstanceId: string,
+  version?: number,
+) {
+  if (version) {
+    return prisma.evidenceSnapshot.findUnique({
+      where: {
+        approvalInstanceId_version: {
+          approvalInstanceId,
+          version,
+        },
+      },
+    });
+  }
+  return prisma.evidenceSnapshot.findFirst({
+    where: { approvalInstanceId },
+    orderBy: { version: 'desc' },
+  });
+}
+
+function resolveAuditErrorCode(error: unknown) {
+  if (!(error instanceof Error)) return 'UNKNOWN_ERROR';
+  if (error.message === 'PDF_EXPORT_FAILED') return 'PDF_EXPORT_FAILED';
+  if (error.message.startsWith('evidence_archive_')) {
+    return error.message.toUpperCase();
+  }
+  return 'EVIDENCE_ARCHIVE_FAILED';
 }
 
 export async function registerEvidenceSnapshotRoutes(app: FastifyInstance) {
@@ -231,6 +262,210 @@ export async function registerEvidenceSnapshotRoutes(app: FastifyInstance) {
     },
   );
 
+  app.post(
+    '/approval-instances/:id/evidence-pack/archive',
+    {
+      preHandler: requireRole(['admin', 'mgmt']),
+      schema: evidencePackArchiveBodySchema,
+      config: {
+        rateLimit: {
+          max: 30,
+          timeWindow: '1 minute',
+        },
+      },
+    },
+    async (req, reply) => {
+      const { id } = req.params as { id: string };
+      const body = req.body as {
+        format?: 'json' | 'pdf';
+        version?: number;
+        mask?: number;
+      };
+
+      const approval = await prisma.approvalInstance.findUnique({
+        where: { id },
+        select: {
+          id: true,
+          flowType: true,
+          targetTable: true,
+          targetId: true,
+          status: true,
+          currentStep: true,
+          projectId: true,
+          createdAt: true,
+          createdBy: true,
+        },
+      });
+      if (!approval) {
+        return reply.status(404).send({
+          error: { code: 'NOT_FOUND', message: 'Approval instance not found' },
+        });
+      }
+      if (!canReadApprovalInstance(approval, req.user ?? null)) {
+        return reply.status(403).send({
+          error: { code: 'FORBIDDEN', message: 'Access denied' },
+        });
+      }
+
+      const snapshot = await findEvidenceSnapshotForPack(
+        approval.id,
+        body.version,
+      );
+      if (!snapshot) {
+        return reply.status(404).send({
+          error: {
+            code: 'SNAPSHOT_NOT_FOUND',
+            message: 'Evidence snapshot not found',
+          },
+        });
+      }
+
+      const format = body.format ?? 'json';
+      const shouldMask = body.mask === undefined ? true : body.mask === 1;
+      const rawExported = buildEvidencePackJsonExport({
+        exportedAt: new Date(),
+        exportedBy: req.user?.userId ?? null,
+        approval,
+        snapshot,
+      });
+      const exported = shouldMask
+        ? maskEvidencePackJsonExport(rawExported)
+        : rawExported;
+
+      let content: Buffer;
+      let contentType: string;
+      if (format === 'pdf') {
+        try {
+          content = await renderEvidencePackPdf(exported);
+          contentType = 'application/pdf';
+        } catch {
+          await logAudit({
+            action: 'evidence_pack_archived',
+            targetTable: 'approval_instances',
+            targetId: approval.id,
+            metadata: {
+              approvalInstanceId: approval.id,
+              snapshotId: snapshot.id,
+              snapshotVersion: snapshot.version,
+              format,
+              digest: exported.integrity.digest,
+              mask: shouldMask,
+              success: false,
+              errorCode: 'PDF_EXPORT_FAILED',
+            } as Prisma.InputJsonValue,
+            ...auditContextFromRequest(req),
+          });
+          return reply.status(500).send({
+            error: {
+              code: 'PDF_EXPORT_FAILED',
+              message: 'Failed to render evidence pack PDF',
+            },
+          });
+        }
+      } else {
+        try {
+          content = Buffer.from(
+            `${JSON.stringify(exported, null, 2)}\n`,
+            'utf8',
+          );
+          contentType = 'application/json; charset=utf-8';
+        } catch {
+          await logAudit({
+            action: 'evidence_pack_archived',
+            targetTable: 'approval_instances',
+            targetId: approval.id,
+            metadata: {
+              approvalInstanceId: approval.id,
+              snapshotId: snapshot.id,
+              snapshotVersion: snapshot.version,
+              format,
+              digest: exported.integrity.digest,
+              mask: shouldMask,
+              success: false,
+              errorCode: 'JSON_EXPORT_FAILED',
+            } as Prisma.InputJsonValue,
+            ...auditContextFromRequest(req),
+          });
+          return reply.status(500).send({
+            error: {
+              code: 'JSON_EXPORT_FAILED',
+              message: 'Failed to serialize evidence pack JSON',
+            },
+          });
+        }
+      }
+
+      try {
+        const archived = await archiveEvidencePack({
+          approvalInstanceId: approval.id,
+          snapshotId: snapshot.id,
+          snapshotVersion: snapshot.version,
+          format,
+          mask: shouldMask,
+          digest: exported.integrity.digest,
+          exportedAt: new Date(exported.payload.exportedAt),
+          archivedBy: req.user?.userId ?? null,
+          content,
+          contentType,
+        });
+        await logAudit({
+          action: 'evidence_pack_archived',
+          targetTable: 'approval_instances',
+          targetId: approval.id,
+          metadata: {
+            approvalInstanceId: approval.id,
+            snapshotId: snapshot.id,
+            snapshotVersion: snapshot.version,
+            format,
+            digest: exported.integrity.digest,
+            mask: shouldMask,
+            provider: archived.provider,
+            objectKey: archived.objectKey,
+            metadataKey: archived.metadataKey,
+            archiveUri: archived.archiveUri,
+            sizeBytes: archived.sizeBytes,
+            contentSha256: archived.checksumSha256,
+            success: true,
+          } as Prisma.InputJsonValue,
+          ...auditContextFromRequest(req),
+        });
+        return {
+          archived: true,
+          archive: {
+            ...archived,
+            digest: exported.integrity.digest,
+            format,
+            mask: shouldMask,
+          },
+        };
+      } catch (error) {
+        const errorCode = resolveAuditErrorCode(error);
+        await logAudit({
+          action: 'evidence_pack_archived',
+          targetTable: 'approval_instances',
+          targetId: approval.id,
+          metadata: {
+            approvalInstanceId: approval.id,
+            snapshotId: snapshot.id,
+            snapshotVersion: snapshot.version,
+            format,
+            digest: exported.integrity.digest,
+            mask: shouldMask,
+            success: false,
+            errorCode,
+          } as Prisma.InputJsonValue,
+          ...auditContextFromRequest(req),
+        });
+        return reply.status(500).send({
+          error: {
+            code: 'EVIDENCE_ARCHIVE_FAILED',
+            message: 'Failed to archive evidence pack',
+          },
+        });
+      }
+    },
+  );
+
   app.get(
     '/approval-instances/:id/evidence-pack/export',
     {
@@ -275,19 +510,10 @@ export async function registerEvidenceSnapshotRoutes(app: FastifyInstance) {
         });
       }
 
-      const snapshot = query.version
-        ? await prisma.evidenceSnapshot.findUnique({
-            where: {
-              approvalInstanceId_version: {
-                approvalInstanceId: approval.id,
-                version: query.version,
-              },
-            },
-          })
-        : await prisma.evidenceSnapshot.findFirst({
-            where: { approvalInstanceId: approval.id },
-            orderBy: { version: 'desc' },
-          });
+      const snapshot = await findEvidenceSnapshotForPack(
+        approval.id,
+        query.version,
+      );
       if (!snapshot) {
         return reply.status(404).send({
           error: {

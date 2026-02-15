@@ -1171,6 +1171,63 @@
         }
       }
     },
+    "/approval-instances/{id}/evidence-pack/archive": {
+      "post": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "format": {
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "json"
+                        ],
+                        "type": "string"
+                      },
+                      {
+                        "enum": [
+                          "pdf"
+                        ],
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "mask": {
+                    "maximum": 1,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "version": {
+                    "minimum": 1,
+                    "type": "integer"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
     "/approval-instances/{id}/evidence-pack/export": {
       "get": {
         "parameters": [
