@@ -9,6 +9,7 @@ APPLY="${APPLY:-0}"
 RUN_INTEGRITY="${RUN_INTEGRITY:-0}"
 INTEGRITY_SQL="${INTEGRITY_SQL:-$ROOT_DIR/scripts/checks/migration-po-integrity.sql}"
 LOG_DIR="${LOG_DIR:-$ROOT_DIR/tmp/migration/logs/po-real-$(date +%Y%m%d-%H%M%S)}"
+INPUT_DIR_RESOLVED=""
 
 usage() {
   cat <<USAGE
@@ -47,6 +48,58 @@ require_cmd() {
   fi
 }
 
+resolve_absolute_path() {
+  local input="$1"
+  if [[ "$input" = /* ]]; then
+    printf '%s\n' "$input"
+  else
+    printf '%s\n' "$ROOT_DIR/$input"
+  fi
+}
+
+strip_prisma_url_params() {
+  local raw="$1"
+  local base="${raw%%\?*}"
+  if [[ "$raw" != *\?* ]]; then
+    printf '%s\n' "$raw"
+    return
+  fi
+
+  local query="${raw#*\?}"
+  local filtered=()
+  local pair key
+  IFS='&' read -r -a parts <<< "$query"
+  for pair in "${parts[@]}"; do
+    [[ -z "$pair" ]] && continue
+    key="${pair%%=*}"
+    # Prisma向けのschema/search_path指定は psql では不正オプションになりうるため除外する。
+    if [[ "$key" == "schema" || "$key" == "search_path" ]]; then
+      continue
+    fi
+    filtered+=("$pair")
+  done
+
+  if (( ${#filtered[@]} == 0 )); then
+    printf '%s\n' "$base"
+    return
+  fi
+
+  local joined
+  (
+    IFS='&'
+    joined="${filtered[*]}"
+    printf '%s\n' "${base}?${joined}"
+  )
+}
+
+ensure_backend_build() {
+  local dist_dir="$ROOT_DIR/packages/backend/dist"
+  local dist_db="$dist_dir/services/db.js"
+  if [[ ! -f "$dist_db" ]]; then
+    die "backend build artifacts not found: $dist_db (run 'npm run build --prefix packages/backend' first)"
+  fi
+}
+
 validate_input() {
   if [[ -z "$INPUT_DIR" ]]; then
     usage
@@ -65,14 +118,9 @@ validate_input() {
     die "RUN_INTEGRITY=1 requires APPLY=1"
   fi
 
-  local resolved_input
-  if [[ "$INPUT_DIR" = /* ]]; then
-    resolved_input="$INPUT_DIR"
-  else
-    resolved_input="$ROOT_DIR/$INPUT_DIR"
-  fi
-  if [[ ! -d "$resolved_input" ]]; then
-    die "input dir not found: $resolved_input"
+  INPUT_DIR_RESOLVED="$(resolve_absolute_path "$INPUT_DIR")"
+  if [[ ! -d "$INPUT_DIR_RESOLVED" ]]; then
+    die "input dir not found: $INPUT_DIR_RESOLVED"
   fi
 }
 
@@ -86,7 +134,7 @@ run_migration() {
     ts-node
     --project "$ROOT_DIR/packages/backend/tsconfig.json"
     "$ROOT_DIR/scripts/migrate-po.ts"
-    "--input-dir=$INPUT_DIR"
+    "--input-dir=$INPUT_DIR_RESOLVED"
     "--input-format=$INPUT_FORMAT"
   )
 
@@ -116,12 +164,15 @@ run_integrity_check() {
   fi
 
   log "running integrity SQL: $INTEGRITY_SQL"
-  psql "$DATABASE_URL" -f "$INTEGRITY_SQL" 2>&1 | tee "$log_file"
+  local psql_database_url
+  psql_database_url="$(strip_prisma_url_params "$DATABASE_URL")"
+  psql "$psql_database_url" -f "$INTEGRITY_SQL" 2>&1 | tee "$log_file"
 }
 
 main() {
   require_cmd npx
   validate_input
+  ensure_backend_build
 
   mkdir -p "$LOG_DIR"
   local dry_log="$LOG_DIR/dry-run.log"

@@ -53,6 +53,9 @@ INPUT_DIR=tmp/migration/po INPUT_FORMAT=csv APPLY=1 RUN_INTEGRITY=1 \
 補足:
 - 実行ログは `tmp/migration/logs/po-real-<timestamp>/` に保存される。
 - `RUN_INTEGRITY=1` の場合は `DATABASE_URL` と `psql` が必要。
+  - ラッパーは `DATABASE_URL` の `schema` / `search_path` パラメータを除去して `psql` を実行する。
+- `INPUT_DIR` は実行ディレクトリに依らず、リポジトリルート基準で絶対化して実行される。
+- `packages/backend/dist/services/db.js` が無い場合は事前に `npm run build --prefix packages/backend` が必要。
 - 結果記録テンプレート: `docs/test-results/po-migration-rehearsal-template.md`
 
 ### 3.1 dry-run（DBへ書き込まない）
