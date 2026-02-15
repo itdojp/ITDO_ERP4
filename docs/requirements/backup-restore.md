@@ -70,6 +70,7 @@
 - `DB_HOST`/`DB_PORT`/`DB_USER`/`DB_PASSWORD`/`DB_NAME`
 - `S3_BUCKET`/`S3_PREFIX`/`S3_REGION`/`S3_ENDPOINT_URL`
 - `SSE_KMS_KEY_ID` または `SSE_S3`（例: `AES256`）
+- `KMS_ENDPOINT_URL`（S3互換環境でKMSエンドポイントが別の場合）
 - `ASSET_DIR`（PDF/添付をローカル保存している場合のルート）
 - `GPG_RECIPIENT`（二重暗号化が必要な場合）
 - `BACKUP_FILE`/`BACKUP_GLOBALS_FILE`/`BACKUP_ASSETS_FILE`（特定バックアップを upload/restore する場合）
@@ -114,6 +115,15 @@
 - Versioning/Lifecycle: 保持期間に合わせたルールを設定
 - IAM権限: 書き込み専用/読み取り専用のロール分離
 - バケットポリシー: 退避先のアクセス制限（IP制限やVPCエンドポイント）
+
+#### S3 事前検証コマンド
+- `scripts/check-backup-s3-readiness.sh` で設定値とS3状態を検証できる
+  - 例（読み取り中心の検証）:
+    - `S3_BUCKET=erp4-backups S3_REGION=ap-northeast-1 EXPECT_SSE=aws:kms SSE_KMS_KEY_ID=alias/erp4-backup make backup-s3-readiness-check`
+  - 例（書き込み権限も検証）:
+    - `S3_BUCKET=erp4-backups S3_REGION=ap-northeast-1 EXPECT_SSE=aws:kms SSE_KMS_KEY_ID=alias/erp4-backup CHECK_WRITE=1 make backup-s3-readiness-check`
+  - KMSの接続先がS3と異なる環境は `KMS_ENDPOINT_URL` を指定する。
+  - `STRICT=1`（既定）では警告も失敗扱い。確認目的のみなら `STRICT=0` を指定。
 
 ## S3/OSS 移行の開始条件（叩き台）
 - バケット/KMS/権限分離の準備が完了している
