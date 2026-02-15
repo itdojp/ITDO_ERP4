@@ -37,6 +37,24 @@ export DATABASE_URL='postgresql://postgres:postgres@localhost:55440/postgres?sch
 ```
 
 ## 3. リハーサル手順（推奨）
+### 3.0 ラッパースクリプト（ログ収集付き）
+`scripts/run-po-migration-rehearsal.sh` で dry-run/apply/integrity を一連で実行できる。
+
+```bash
+# dry-runのみ
+INPUT_DIR=tmp/migration/po INPUT_FORMAT=csv \
+  ./scripts/run-po-migration-rehearsal.sh
+
+# apply + integrity まで
+INPUT_DIR=tmp/migration/po INPUT_FORMAT=csv APPLY=1 RUN_INTEGRITY=1 \
+  ./scripts/run-po-migration-rehearsal.sh
+```
+
+補足:
+- 実行ログは `tmp/migration/logs/po-real-<timestamp>/` に保存される。
+- `RUN_INTEGRITY=1` の場合は `DATABASE_URL` と `psql` が必要。
+- 結果記録テンプレート: `docs/test-results/po-migration-rehearsal-template.md`
+
 ### 3.1 dry-run（DBへ書き込まない）
 ```bash
 npx --prefix packages/backend ts-node --project packages/backend/tsconfig.json scripts/migrate-po.ts \
