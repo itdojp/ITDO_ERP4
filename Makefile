@@ -1,4 +1,4 @@
-.PHONY: lint format-check typecheck build test e2e ui-evidence pr-comments audit design-system-package-check eslint10-readiness-check av-staging-evidence av-staging-gate av-staging-readiness
+.PHONY: lint format-check typecheck build test e2e ui-evidence pr-comments audit design-system-package-check eslint10-readiness-check backup-s3-readiness-check av-staging-evidence av-staging-gate av-staging-readiness
 
 lint:
 	npm run lint --prefix packages/backend
@@ -38,6 +38,9 @@ design-system-package-check:
 
 eslint10-readiness-check:
 	./scripts/check-eslint10-readiness.sh
+
+backup-s3-readiness-check:
+	./scripts/check-backup-s3-readiness.sh
 
 av-staging-evidence:
 	./scripts/record-chat-attachments-av-staging.sh
