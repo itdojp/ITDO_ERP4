@@ -139,7 +139,11 @@ async function createRoomAckRequest(
   return payload.id as string;
 }
 
-async function createProjectWithMember(request: any, suffix: string, userId: string) {
+async function createProjectWithMember(
+  request: any,
+  suffix: string,
+  userId: string,
+) {
   const projectRes = await request.post(`${apiBase}/projects`, {
     data: {
       code: `E2E-NTF-${suffix}`,
@@ -227,6 +231,67 @@ async function createProjectChatMessage(
   return payload.id as string;
 }
 
+async function createGroup(request: any, displayName: string) {
+  const res = await request.post(`${apiBase}/groups`, {
+    data: { displayName, active: true },
+    headers: adminHeaders,
+  });
+  await ensureOk(res);
+  const payload = await res.json();
+  const id = (payload?.id ?? '') as string;
+  expect(id).toBeTruthy();
+  return id;
+}
+
+async function patchGroupActive(
+  request: any,
+  groupId: string,
+  active: boolean,
+) {
+  const res = await request.patch(
+    `${apiBase}/groups/${encodeURIComponent(groupId)}`,
+    {
+      data: { active },
+      headers: adminHeaders,
+    },
+  );
+  await ensureOk(res);
+}
+
+async function createPrivateGroupRoom(request: any, name: string) {
+  const res = await request.post(`${apiBase}/chat-rooms`, {
+    data: {
+      type: 'private_group',
+      name,
+      memberUserIds: [recipientUserId],
+    },
+    headers: adminHeaders,
+  });
+  await ensureOk(res);
+  const payload = await res.json();
+  const id = (payload?.id ?? '') as string;
+  expect(id).toBeTruthy();
+  return id;
+}
+
+async function patchChatRoomGroups(
+  request: any,
+  roomId: string,
+  body: {
+    viewerGroupIds?: string[];
+    posterGroupIds?: string[];
+  },
+) {
+  const res = await request.patch(
+    `${apiBase}/chat-rooms/${encodeURIComponent(roomId)}`,
+    {
+      data: body,
+      headers: adminHeaders,
+    },
+  );
+  await ensureOk(res);
+}
+
 test('chat_ack_required notifications: global mute and room mention settings suppress delivery @core', async ({
   request,
 }) => {
@@ -250,12 +315,14 @@ test('chat_ack_required notifications: global mute and room mention settings sup
       [recipientUserId],
     );
     expect(
-      (await listNotificationsByMessage(
-        request,
-        recipientHeaders,
-        'chat_ack_required',
-        baselineMessageId,
-      )).length,
+      (
+        await listNotificationsByMessage(
+          request,
+          recipientHeaders,
+          'chat_ack_required',
+          baselineMessageId,
+        )
+      ).length,
     ).toBeGreaterThan(0);
 
     const muteAllUntil = new Date(Date.now() + 60 * 60 * 1000).toISOString();
@@ -282,10 +349,15 @@ test('chat_ack_required notifications: global mute and room mention settings sup
     await patchNotificationPreference(request, recipientHeaders, {
       muteAllUntil: null,
     });
-    await patchRoomNotificationSetting(request, recipientHeaders, companyRoomId, {
-      notifyMentions: false,
-      muteUntil: null,
-    });
+    await patchRoomNotificationSetting(
+      request,
+      recipientHeaders,
+      companyRoomId,
+      {
+        notifyMentions: false,
+        muteUntil: null,
+      },
+    );
     const mutedByNotifyMentionsFalseMessageId = await createRoomAckRequest(
       request,
       companyRoomId,
@@ -304,10 +376,15 @@ test('chat_ack_required notifications: global mute and room mention settings sup
     ).toBe(0);
 
     const roomMuteUntil = new Date(Date.now() + 60 * 60 * 1000).toISOString();
-    await patchRoomNotificationSetting(request, recipientHeaders, companyRoomId, {
-      notifyMentions: true,
-      muteUntil: roomMuteUntil,
-    });
+    await patchRoomNotificationSetting(
+      request,
+      recipientHeaders,
+      companyRoomId,
+      {
+        notifyMentions: true,
+        muteUntil: roomMuteUntil,
+      },
+    );
     const mutedByRoomMuteMessageId = await createRoomAckRequest(
       request,
       companyRoomId,
@@ -325,10 +402,15 @@ test('chat_ack_required notifications: global mute and room mention settings sup
       ).length,
     ).toBe(0);
 
-    await patchRoomNotificationSetting(request, recipientHeaders, companyRoomId, {
-      notifyMentions: true,
-      muteUntil: null,
-    });
+    await patchRoomNotificationSetting(
+      request,
+      recipientHeaders,
+      companyRoomId,
+      {
+        notifyMentions: true,
+        muteUntil: null,
+      },
+    );
     const recoveredMessageId = await createRoomAckRequest(
       request,
       companyRoomId,
@@ -336,21 +418,28 @@ test('chat_ack_required notifications: global mute and room mention settings sup
       [recipientUserId],
     );
     expect(
-      (await listNotificationsByMessage(
-        request,
-        recipientHeaders,
-        'chat_ack_required',
-        recoveredMessageId,
-      )).length,
+      (
+        await listNotificationsByMessage(
+          request,
+          recipientHeaders,
+          'chat_ack_required',
+          recoveredMessageId,
+        )
+      ).length,
     ).toBeGreaterThan(0);
   } finally {
     await patchNotificationPreference(request, recipientHeaders, {
       muteAllUntil: null,
     });
-    await patchRoomNotificationSetting(request, recipientHeaders, companyRoomId, {
-      notifyMentions: true,
-      muteUntil: null,
-    });
+    await patchRoomNotificationSetting(
+      request,
+      recipientHeaders,
+      companyRoomId,
+      {
+        notifyMentions: true,
+        muteUntil: null,
+      },
+    );
   }
 });
 
@@ -359,7 +448,11 @@ test('chat_message notifications: notifyAllPosts and mute settings suppress deli
 }) => {
   test.setTimeout(120_000);
   const suffix = runId();
-  const projectId = await createProjectWithMember(request, suffix, recipientUserId);
+  const projectId = await createProjectWithMember(
+    request,
+    suffix,
+    recipientUserId,
+  );
 
   const recipientProjectHeaders = buildHeaders({
     userId: recipientUserId,
@@ -590,10 +683,13 @@ test('daily_report_missing notifications: global mute bypass delivers notificati
       muteAllUntil,
     });
 
-    const runRes = await request.post(`${apiBase}/jobs/daily-report-missing/run`, {
-      data: { targetDate },
-      headers: adminHeaders,
-    });
+    const runRes = await request.post(
+      `${apiBase}/jobs/daily-report-missing/run`,
+      {
+        data: { targetDate },
+        headers: adminHeaders,
+      },
+    );
     await ensureOk(runRes);
     const runPayload = await runRes.json();
     expect(runPayload?.targetDate).toBe(targetDate);
@@ -612,6 +708,73 @@ test('daily_report_missing notifications: global mute bypass delivers notificati
     await patchNotificationPreference(request, recipientHeaders, {
       muteAllUntil: null,
     });
+  }
+});
+
+test('chat_room_acl_mismatch notifications: global mute bypass delivers notification @core', async ({
+  request,
+}) => {
+  test.setTimeout(120_000);
+  const suffix = runId();
+  let viewerGroupId: string | null = null;
+  let posterGroupId: string | null = null;
+  let roomId: string | null = null;
+
+  await patchNotificationPreference(request, adminHeaders, {
+    muteAllUntil: null,
+  });
+  try {
+    viewerGroupId = await createGroup(request, `E2E ACL Viewer ${suffix}`);
+    posterGroupId = await createGroup(request, `E2E ACL Poster ${suffix}`);
+    roomId = await createPrivateGroupRoom(request, `E2E ACL Room ${suffix}`);
+
+    await patchChatRoomGroups(request, roomId, {
+      viewerGroupIds: [viewerGroupId],
+      posterGroupIds: [viewerGroupId, posterGroupId],
+    });
+
+    const muteAllUntil = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    await patchNotificationPreference(request, adminHeaders, {
+      muteAllUntil,
+    });
+
+    const runRes = await request.post(
+      `${apiBase}/jobs/chat-room-acl-alerts/run`,
+      {
+        data: {},
+        headers: adminHeaders,
+      },
+    );
+    await ensureOk(runRes);
+    const runPayload = await runRes.json();
+    expect(runPayload?.mismatchedRooms).toBeGreaterThan(0);
+
+    expect(
+      (
+        await listNotificationsByMessage(
+          request,
+          adminHeaders,
+          'chat_room_acl_mismatch',
+          roomId,
+        )
+      ).length,
+    ).toBeGreaterThan(0);
+  } finally {
+    await patchNotificationPreference(request, adminHeaders, {
+      muteAllUntil: null,
+    });
+    if (roomId && viewerGroupId) {
+      await patchChatRoomGroups(request, roomId, {
+        viewerGroupIds: [viewerGroupId],
+        posterGroupIds: [viewerGroupId],
+      });
+    }
+    if (viewerGroupId) {
+      await patchGroupActive(request, viewerGroupId, false);
+    }
+    if (posterGroupId) {
+      await patchGroupActive(request, posterGroupId, false);
+    }
   }
 });
 
