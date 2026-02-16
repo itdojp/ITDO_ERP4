@@ -9,6 +9,17 @@ const apiBase = process.env.E2E_API_BASE || 'http://localhost:3002';
 
 const runId = () => `${Date.now().toString().slice(-6)}-${randomUUID()}`;
 
+function buildUniqueWeekdayDate(seed: string) {
+  const numericSeed = Number(seed.replace(/\D/g, '').slice(-8) || '0');
+  const month = (numericSeed % 12) + 1;
+  const day = (Math.floor(numericSeed / 12) % 28) + 1;
+  const date = new Date(Date.UTC(2099, month - 1, day));
+  while (date.getUTCDay() === 0 || date.getUTCDay() === 6) {
+    date.setUTCDate(date.getUTCDate() + 1);
+  }
+  return date.toISOString().slice(0, 10);
+}
+
 const buildHeaders = (input: {
   userId: string;
   roles: string[];
@@ -558,5 +569,47 @@ test('approval_pending notifications: global mute bypass delivers notification @
     if (approvalRuleId) {
       await deactivateApprovalRule(request, adminHeaders, approvalRuleId);
     }
+  }
+});
+
+test('daily_report_missing notifications: global mute bypass delivers notification @core', async ({
+  request,
+}) => {
+  test.setTimeout(120_000);
+  const suffix = runId();
+  const targetDate = buildUniqueWeekdayDate(suffix);
+  const messageId = `daily-report-missing:${targetDate}`;
+
+  await patchNotificationPreference(request, recipientHeaders, {
+    muteAllUntil: null,
+  });
+  try {
+    const muteAllUntil = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    await patchNotificationPreference(request, recipientHeaders, {
+      muteAllUntil,
+    });
+
+    const runRes = await request.post(`${apiBase}/jobs/daily-report-missing/run`, {
+      data: { targetDate },
+      headers: adminHeaders,
+    });
+    await ensureOk(runRes);
+    const runPayload = await runRes.json();
+    expect(runPayload?.targetDate).toBe(targetDate);
+
+    expect(
+      (
+        await listNotificationsByMessage(
+          request,
+          recipientHeaders,
+          'daily_report_missing',
+          messageId,
+        )
+      ).length,
+    ).toBeGreaterThan(0);
+  } finally {
+    await patchNotificationPreference(request, recipientHeaders, {
+      muteAllUntil: null,
+    });
   }
 });
