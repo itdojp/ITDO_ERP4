@@ -34,7 +34,12 @@ E2E_GREP="frontend smoke" ./scripts/e2e-ui-evidence.sh
 
 タイムアウトを伸ばす（環境が重い場合）:
 ```bash
-E2E_ACTION_TIMEOUT_MS=15000 make ui-evidence
+E2E_ACTION_TIMEOUT_MS=30000 make ui-evidence
+```
+
+起動待機時間も調整する（バックエンド/フロントの立ち上がりが遅い場合）:
+```bash
+E2E_SERVICE_READY_TIMEOUT_SEC=120 E2E_SERVICE_READY_INTERVAL_SEC=2 make ui-evidence
 ```
 
 ## 注意

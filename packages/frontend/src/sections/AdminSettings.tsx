@@ -1257,7 +1257,10 @@ export const AdminSettings: React.FC = () => {
     try {
       return JSON.parse(raw);
     } catch (err) {
-      logError(`parseJson ${label} failed`, err);
+      // Invalid JSON from manual input is an expected validation case.
+      if (import.meta.env.DEV) {
+        console.warn(`[AdminSettings] parseJson ${label} failed`, err);
+      }
       setMessage(`${label} のJSONが不正です`);
       return null;
     }

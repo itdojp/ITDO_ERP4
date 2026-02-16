@@ -69,7 +69,13 @@ E2E_SKIP_PLAYWRIGHT_INSTALL=1 E2E_CAPTURE=0 E2E_SCOPE=core ./scripts/e2e-fronten
 ## タイムアウトを調整する（任意）
 CIやローカル環境が重い場合、E2E の UI 操作系の待ち時間（ms）を調整できます。
 ```bash
-E2E_ACTION_TIMEOUT_MS=15000 E2E_CAPTURE=0 E2E_SCOPE=core ./scripts/e2e-frontend.sh
+E2E_ACTION_TIMEOUT_MS=30000 E2E_CAPTURE=0 E2E_SCOPE=core ./scripts/e2e-frontend.sh
+```
+
+バックエンド/フロントの起動待機時間（秒）を調整する場合:
+```bash
+E2E_SERVICE_READY_TIMEOUT_SEC=120 E2E_SERVICE_READY_INTERVAL_SEC=2 \
+E2E_CAPTURE=0 E2E_SCOPE=core ./scripts/e2e-frontend.sh
 ```
 
 ## 失敗時の診断（最小）
