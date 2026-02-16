@@ -39,11 +39,11 @@ import { resolveRoomAudienceUserIds } from '../services/chatMentionRecipients.js
 import { resolveGroupCandidatesBySelector } from '../services/groupCandidates.js';
 import {
   normalizeStringArray,
-  parseDateParam,
   parseLimit,
   parseLimitNumber,
   parseNonNegativeInt,
 } from './chat/shared/inputParsers.js';
+import { parseDateParam } from '../utils/date.js';
 
 function parseMaxBytes(raw: string | undefined, fallback: number) {
   if (!raw) return fallback;

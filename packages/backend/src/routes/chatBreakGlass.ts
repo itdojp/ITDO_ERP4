@@ -8,7 +8,8 @@ import {
   chatBreakGlassRejectSchema,
   chatBreakGlassRequestSchema,
 } from './validators.js';
-import { parseDateParam, parseLimit } from './chat/shared/inputParsers.js';
+import { parseLimit } from './chat/shared/inputParsers.js';
+import { parseDateParam } from '../utils/date.js';
 
 function resolveEffectiveApproverRole(roles: string[]) {
   if (roles.includes('exec')) return 'exec';

@@ -42,11 +42,11 @@ import {
 } from './validators.js';
 import {
   normalizeStringArray,
-  parseDateParam,
   parseLimit,
   parseLimitNumber,
   parseNonNegativeInt,
 } from './chat/shared/inputParsers.js';
+import { parseDateParam } from '../utils/date.js';
 
 export async function registerChatRoomRoutes(app: FastifyInstance) {
   const chatRoles = ['admin', 'mgmt', 'user', 'hr', 'exec', 'external_chat'];

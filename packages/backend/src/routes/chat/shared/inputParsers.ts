@@ -1,10 +1,3 @@
-export function parseDateParam(value?: string) {
-  if (!value) return null;
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return null;
-  return parsed;
-}
-
 export function parseLimit(value?: string, fallback = 50) {
   if (!value) return fallback;
   const parsed = Number(value);
