@@ -217,11 +217,21 @@ async function createProjectChatMessage(
   request: any,
   projectId: string,
   body: string,
+  options?: {
+    mentions?: {
+      userIds?: string[];
+      groupIds?: string[];
+      all?: boolean;
+    };
+  },
 ) {
   const res = await request.post(
     `${apiBase}/projects/${encodeURIComponent(projectId)}/chat-messages`,
     {
-      data: { body },
+      data: {
+        body,
+        mentions: options?.mentions,
+      },
       headers: adminHeaders,
     },
   );
@@ -497,6 +507,182 @@ test('chat_ack_required notifications: global mute and room mention settings sup
       request,
       recipientHeaders,
       companyRoomId,
+      {
+        notifyMentions: true,
+        muteUntil: null,
+      },
+    );
+  }
+});
+
+test('chat_mention notifications: global mute and room mention settings suppress delivery @core', async ({
+  request,
+}) => {
+  test.setTimeout(120_000);
+  const suffix = runId();
+  const projectId = await createProjectWithMember(
+    request,
+    suffix,
+    recipientUserId,
+  );
+
+  const recipientProjectHeaders = buildHeaders({
+    userId: recipientUserId,
+    roles: ['user'],
+    projectIds: [projectId],
+  });
+
+  await patchNotificationPreference(request, recipientProjectHeaders, {
+    muteAllUntil: null,
+  });
+  await patchRoomNotificationSetting(
+    request,
+    recipientProjectHeaders,
+    projectId,
+    {
+      notifyMentions: true,
+      muteUntil: null,
+    },
+  );
+
+  try {
+    const baselineMessageId = await createProjectChatMessage(
+      request,
+      projectId,
+      `E2E project mention baseline ${suffix}`,
+      {
+        mentions: { userIds: [recipientUserId] },
+      },
+    );
+    expect(
+      (
+        await listNotificationsByMessage(
+          request,
+          recipientProjectHeaders,
+          'chat_mention',
+          baselineMessageId,
+        )
+      ).length,
+    ).toBeGreaterThan(0);
+
+    const muteAllUntil = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    await patchNotificationPreference(request, recipientProjectHeaders, {
+      muteAllUntil,
+    });
+    const mutedByGlobalMessageId = await createProjectChatMessage(
+      request,
+      projectId,
+      `E2E project mention muted global ${suffix}`,
+      {
+        mentions: { userIds: [recipientUserId] },
+      },
+    );
+    expect(
+      (
+        await listNotificationsByMessage(
+          request,
+          recipientProjectHeaders,
+          'chat_mention',
+          mutedByGlobalMessageId,
+        )
+      ).length,
+    ).toBe(0);
+
+    await patchNotificationPreference(request, recipientProjectHeaders, {
+      muteAllUntil: null,
+    });
+    await patchRoomNotificationSetting(
+      request,
+      recipientProjectHeaders,
+      projectId,
+      {
+        notifyMentions: false,
+        muteUntil: null,
+      },
+    );
+    const mutedByNotifyMentionsFalseMessageId = await createProjectChatMessage(
+      request,
+      projectId,
+      `E2E project mention muted room notifyMentions ${suffix}`,
+      {
+        mentions: { userIds: [recipientUserId] },
+      },
+    );
+    expect(
+      (
+        await listNotificationsByMessage(
+          request,
+          recipientProjectHeaders,
+          'chat_mention',
+          mutedByNotifyMentionsFalseMessageId,
+        )
+      ).length,
+    ).toBe(0);
+
+    const roomMuteUntil = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    await patchRoomNotificationSetting(
+      request,
+      recipientProjectHeaders,
+      projectId,
+      {
+        notifyMentions: true,
+        muteUntil: roomMuteUntil,
+      },
+    );
+    const mutedByRoomMuteMessageId = await createProjectChatMessage(
+      request,
+      projectId,
+      `E2E project mention muted room muteUntil ${suffix}`,
+      {
+        mentions: { userIds: [recipientUserId] },
+      },
+    );
+    expect(
+      (
+        await listNotificationsByMessage(
+          request,
+          recipientProjectHeaders,
+          'chat_mention',
+          mutedByRoomMuteMessageId,
+        )
+      ).length,
+    ).toBe(0);
+
+    await patchRoomNotificationSetting(
+      request,
+      recipientProjectHeaders,
+      projectId,
+      {
+        notifyMentions: true,
+        muteUntil: null,
+      },
+    );
+    const recoveredMessageId = await createProjectChatMessage(
+      request,
+      projectId,
+      `E2E project mention recovered ${suffix}`,
+      {
+        mentions: { userIds: [recipientUserId] },
+      },
+    );
+    expect(
+      (
+        await listNotificationsByMessage(
+          request,
+          recipientProjectHeaders,
+          'chat_mention',
+          recoveredMessageId,
+        )
+      ).length,
+    ).toBeGreaterThan(0);
+  } finally {
+    await patchNotificationPreference(request, recipientProjectHeaders, {
+      muteAllUntil: null,
+    });
+    await patchRoomNotificationSetting(
+      request,
+      recipientProjectHeaders,
+      projectId,
       {
         notifyMentions: true,
         muteUntil: null,
