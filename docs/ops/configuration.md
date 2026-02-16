@@ -16,12 +16,12 @@ backend は起動時に環境変数の検証を行い、不正/不足があれ�
 基本:
 
 - `DATABASE_URL`（必須、`postgresql://` または `postgres://`）
-- `PORT`（任意、指定時は `1-65535`）
-- `ALLOWED_ORIGINS`（任意、指定時は `http(s)` URL のカンマ区切り）
+- `PORT`（任意、指定時は `1-65535`、未指定時は `3001`）
+- `ALLOWED_ORIGINS`（任意、指定時は `http(s)` URL のカンマ区切り。未設定/空の場合は Fastify の CORS 設定で `origin: false` となり、全オリジン拒否）
 
 認証:
 
-- `AUTH_MODE=header|jwt|hybrid`
+- `AUTH_MODE=header|jwt|hybrid`（未設定時は `header`）
 - `AUTH_MODE=jwt|hybrid` の場合は以下を必須
   - `JWT_ISSUER`
   - `JWT_AUDIENCE`
