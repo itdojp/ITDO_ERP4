@@ -104,6 +104,18 @@ async function listUnreadNotifications(
   return Array.isArray(payload?.items) ? payload.items : [];
 }
 
+async function markNotificationRead(
+  page: Page,
+  headers: Record<string, string>,
+  notificationId: string,
+) {
+  const res = await page.request.post(
+    `${apiBase}/notifications/${encodeURIComponent(notificationId)}/read`,
+    { headers, data: {} },
+  );
+  await ensureOk(res);
+}
+
 async function findCompanyRoomId(page: Page, headers: Record<string, string>) {
   const roomRes = await page.request.get(`${apiBase}/chat-rooms`, { headers });
   await ensureOk(roomRes);
@@ -444,6 +456,7 @@ test('dashboard notification cards route to chat/leave/expense targets @core', a
   await expect(
     page.locator('main').getByRole('heading', { name: '休暇', level: 2, exact: true }),
   ).toBeVisible({ timeout: actionTimeout });
+  await markNotificationRead(page, targetHeaders, leaveNotification.id);
 
   await openHome(page);
   const dashboardSectionAfterHome = page
@@ -463,6 +476,7 @@ test('dashboard notification cards route to chat/leave/expense targets @core', a
       .locator('main')
       .getByRole('heading', { name: '経費入力', level: 2, exact: true }),
   ).toBeVisible({ timeout: actionTimeout });
+  await markNotificationRead(page, targetHeaders, expenseNotification.id);
 
   // chat_ack_required notification (active user account is required)
   await prepare(page, chatTargetState);
@@ -522,4 +536,5 @@ test('dashboard notification cards route to chat/leave/expense targets @core', a
   await expect(page.locator('main').getByText(ackBody)).toBeVisible({
     timeout: actionTimeout,
   });
+  await markNotificationRead(page, chatTargetHeaders, ackNotification.id);
 });
