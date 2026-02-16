@@ -24,7 +24,7 @@ declare module 'fastify' {
 
 type AuthMode = 'header' | 'jwt' | 'hybrid';
 
-const AUTH_MODE_RAW = (process.env.AUTH_MODE || 'header').toLowerCase();
+const AUTH_MODE_RAW = (process.env.AUTH_MODE || 'header').trim().toLowerCase();
 const RESOLVED_AUTH_MODE: AuthMode =
   AUTH_MODE_RAW === 'jwt' || AUTH_MODE_RAW === 'hybrid'
     ? AUTH_MODE_RAW
@@ -54,15 +54,8 @@ const AUTH_DB_USER_CONTEXT_CACHE_TTL_SECONDS = Number(
   process.env.AUTH_DB_USER_CONTEXT_CACHE_TTL_SECONDS || 0,
 );
 
-if (
-  IS_PRODUCTION &&
-  RESOLVED_AUTH_MODE === 'header' &&
-  !AUTH_ALLOW_HEADER_FALLBACK_IN_PROD
-) {
-  throw new Error(
-    'AUTH_MODE=header is not allowed in production unless AUTH_ALLOW_HEADER_FALLBACK_IN_PROD=true',
-  );
-}
+const AUTH_HEADER_MODE_FORBIDDEN_ERROR_MESSAGE =
+  'AUTH_MODE=header is not allowed in production unless AUTH_ALLOW_HEADER_FALLBACK_IN_PROD=true';
 
 const GROUP_TO_ROLE_MAP = parseGroupToRoleMap(AUTH_GROUP_TO_ROLE_MAP_RAW);
 
@@ -388,7 +381,18 @@ function respondUnauthorized(req: any, reply: any, reason?: string) {
   );
 }
 
+function assertRuntimeAuthConfig() {
+  if (
+    IS_PRODUCTION &&
+    RESOLVED_AUTH_MODE === 'header' &&
+    !AUTH_ALLOW_HEADER_FALLBACK_IN_PROD
+  ) {
+    throw new Error(AUTH_HEADER_MODE_FORBIDDEN_ERROR_MESSAGE);
+  }
+}
+
 async function authPlugin(fastify: any) {
+  assertRuntimeAuthConfig();
   fastify.addHook('onRequest', async (req: any, reply: any) => {
     if (
       typeof req.url === 'string' &&
