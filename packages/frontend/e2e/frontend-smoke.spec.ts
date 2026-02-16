@@ -1394,6 +1394,83 @@ test('frontend smoke reports masters settings @extended', async ({ page }) => {
   await captureSection(settingsSection, '11-admin-settings.png');
 });
 
+test('frontend smoke current-user notification settings @extended', async ({
+  page,
+}) => {
+  await prepare(page);
+
+  const currentUserSection = page.locator('.card', {
+    has: page.locator('strong', { hasText: '現在のユーザー' }),
+  });
+  await expect(currentUserSection.getByText('ID: demo-user')).toBeVisible({
+    timeout: actionTimeout,
+  });
+
+  const emailModeSelect = currentUserSection.getByLabel('メール通知');
+  const digestIntervalInput = currentUserSection.getByLabel('集約間隔（分）');
+  const muteUntilInput = currentUserSection.getByLabel('期限（任意）');
+  const saveButton = currentUserSection
+    .getByRole('button', { name: '保存' })
+    .first();
+  const reloadButton = currentUserSection
+    .getByRole('button', { name: '再読込' })
+    .first();
+
+  const initialMode = await emailModeSelect.inputValue();
+  const initialInterval = await digestIntervalInput.inputValue();
+
+  await emailModeSelect.selectOption('digest');
+  await expect(digestIntervalInput).toBeEnabled({ timeout: actionTimeout });
+  await digestIntervalInput.fill('15');
+  await currentUserSection.getByRole('button', { name: '10分' }).click();
+  expect(await muteUntilInput.inputValue()).not.toBe('');
+
+  await saveButton.click();
+  await expect(
+    currentUserSection.getByText('通知設定を保存しました'),
+  ).toBeVisible({
+    timeout: actionTimeout,
+  });
+
+  await reloadButton.click();
+  await expect(emailModeSelect).toHaveValue('digest', {
+    timeout: actionTimeout,
+  });
+  await expect(digestIntervalInput).toHaveValue('15', {
+    timeout: actionTimeout,
+  });
+
+  await emailModeSelect.selectOption('realtime');
+  await expect(digestIntervalInput).toBeDisabled({ timeout: actionTimeout });
+  await saveButton.click();
+  await expect(
+    currentUserSection.getByText('通知設定を保存しました'),
+  ).toBeVisible({
+    timeout: actionTimeout,
+  });
+
+  const restoreMode = initialMode === 'realtime' ? 'realtime' : 'digest';
+  await emailModeSelect.selectOption(restoreMode);
+  if (restoreMode === 'digest') {
+    await expect(digestIntervalInput).toBeEnabled({ timeout: actionTimeout });
+    await digestIntervalInput.fill(initialInterval || '10');
+  }
+  await currentUserSection
+    .getByRole('button', { name: '解除', exact: true })
+    .click();
+  await saveButton.click();
+  await expect(
+    currentUserSection.getByText('通知設定を保存しました'),
+  ).toBeVisible({
+    timeout: actionTimeout,
+  });
+
+  await captureSection(
+    currentUserSection,
+    '00-current-user-notification-settings.png',
+  );
+});
+
 test('frontend smoke chat hr analytics @extended', async ({ page }) => {
   test.setTimeout(180_000);
   const id = runId();
