@@ -208,20 +208,40 @@ async function createApprovalRuleForAmount(
   approverUserId: string,
   totalAmount: number,
 ) {
+  return createApprovalRule(request, headers, {
+    flowType: 'estimate',
+    conditions: {
+      amountMin: totalAmount,
+      amountMax: totalAmount,
+    },
+    steps: [
+      {
+        stepOrder: 1,
+        approverUserId,
+      },
+    ],
+  });
+}
+
+async function createApprovalRule(
+  request: any,
+  headers: Record<string, string>,
+  input: {
+    flowType: string;
+    conditions?: Record<string, unknown>;
+    steps: Array<{
+      stepOrder: number;
+      approverUserId?: string;
+      approverGroupId?: string;
+    }>;
+  },
+) {
   const res = await request.post(`${apiBase}/approval-rules`, {
     data: {
-      flowType: 'estimate',
+      flowType: input.flowType,
       isActive: true,
-      conditions: {
-        amountMin: totalAmount,
-        amountMax: totalAmount,
-      },
-      steps: [
-        {
-          stepOrder: 1,
-          approverUserId,
-        },
-      ],
+      conditions: input.conditions,
+      steps: input.steps,
     },
     headers,
   });
@@ -230,6 +250,81 @@ async function createApprovalRuleForAmount(
   const id = (payload?.id ?? '') as string;
   expect(id).toBeTruthy();
   return id;
+}
+
+async function createLeaveRequest(
+  request: any,
+  headers: Record<string, string>,
+  body: {
+    userId: string;
+    leaveType: string;
+    startDate: string;
+    endDate: string;
+    notes?: string;
+  },
+) {
+  const res = await request.post(`${apiBase}/leave-requests`, {
+    data: body,
+    headers,
+  });
+  await ensureOk(res);
+  const payload = await res.json();
+  const id = (payload?.id ?? '') as string;
+  expect(id).toBeTruthy();
+  return id;
+}
+
+async function submitLeaveRequest(
+  request: any,
+  headers: Record<string, string>,
+  leaveRequestId: string,
+) {
+  const res = await request.post(
+    `${apiBase}/leave-requests/${encodeURIComponent(leaveRequestId)}/submit`,
+    {
+      data: {},
+      headers,
+    },
+  );
+  await ensureOk(res);
+}
+
+async function findLeaveApprovalInstanceId(
+  request: any,
+  leaveRequestId: string,
+) {
+  const res = await request.get(
+    `${apiBase}/approval-instances?flowType=leave`,
+    {
+      headers: adminHeaders,
+    },
+  );
+  await ensureOk(res);
+  const payload = await res.json();
+  const item = (payload?.items ?? []).find(
+    (entry: any) =>
+      entry?.targetTable === 'leave_requests' &&
+      entry?.targetId === leaveRequestId &&
+      entry?.status !== 'approved' &&
+      entry?.status !== 'rejected' &&
+      entry?.status !== 'cancelled',
+  );
+  expect(item?.id).toBeTruthy();
+  return item.id as string;
+}
+
+async function approveApprovalInstance(
+  request: any,
+  approvalInstanceId: string,
+) {
+  const res = await request.post(
+    `${apiBase}/approval-instances/${encodeURIComponent(approvalInstanceId)}/act`,
+    {
+      data: { action: 'approve' },
+      headers: adminHeaders,
+    },
+  );
+  await ensureOk(res);
 }
 
 async function deactivateApprovalRule(
@@ -939,6 +1034,154 @@ test('project_member_added notifications: global mute suppresses delivery @core'
     await patchNotificationPreference(request, recipient2Headers, {
       muteAllUntil: null,
     });
+  }
+});
+
+test('leave_upcoming notifications: global mute suppresses delivery @core', async ({
+  request,
+}) => {
+  test.setTimeout(120_000);
+  const suffix = runId();
+  const targetDate = buildUniqueWeekdayDate(suffix);
+  let leaveRuleId: string | null = null;
+
+  await patchNotificationPreference(request, recipient2Headers, {
+    muteAllUntil: null,
+  });
+  try {
+    leaveRuleId = await createApprovalRule(request, adminHeaders, {
+      flowType: 'leave',
+      conditions: {},
+      steps: [
+        {
+          stepOrder: 1,
+          approverUserId: adminHeaders['x-user-id'],
+        },
+      ],
+    });
+
+    const baselineLeaveId = await createLeaveRequest(
+      request,
+      recipient2Headers,
+      {
+        userId: recipientUserId2,
+        leaveType: 'paid',
+        startDate: targetDate,
+        endDate: targetDate,
+        notes: `E2E leave baseline ${suffix}`,
+      },
+    );
+    await submitLeaveRequest(request, recipient2Headers, baselineLeaveId);
+    const baselineApprovalId = await findLeaveApprovalInstanceId(
+      request,
+      baselineLeaveId,
+    );
+    await approveApprovalInstance(request, baselineApprovalId);
+
+    const baselineRunRes = await request.post(
+      `${apiBase}/jobs/leave-upcoming/run`,
+      {
+        data: { targetDate },
+        headers: adminHeaders,
+      },
+    );
+    await ensureOk(baselineRunRes);
+    expect(
+      (
+        await listNotificationsByMessage(
+          request,
+          recipient2Headers,
+          'leave_upcoming',
+          baselineLeaveId,
+        )
+      ).length,
+    ).toBeGreaterThan(0);
+
+    const muteAllUntil = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    await patchNotificationPreference(request, recipient2Headers, {
+      muteAllUntil,
+    });
+
+    const mutedLeaveId = await createLeaveRequest(request, recipient2Headers, {
+      userId: recipientUserId2,
+      leaveType: 'paid',
+      startDate: targetDate,
+      endDate: targetDate,
+      notes: `E2E leave muted ${suffix}`,
+    });
+    await submitLeaveRequest(request, recipient2Headers, mutedLeaveId);
+    const mutedApprovalId = await findLeaveApprovalInstanceId(
+      request,
+      mutedLeaveId,
+    );
+    await approveApprovalInstance(request, mutedApprovalId);
+
+    const mutedRunRes = await request.post(
+      `${apiBase}/jobs/leave-upcoming/run`,
+      {
+        data: { targetDate },
+        headers: adminHeaders,
+      },
+    );
+    await ensureOk(mutedRunRes);
+    expect(
+      (
+        await listNotificationsByMessage(
+          request,
+          recipient2Headers,
+          'leave_upcoming',
+          mutedLeaveId,
+        )
+      ).length,
+    ).toBe(0);
+
+    await patchNotificationPreference(request, recipient2Headers, {
+      muteAllUntil: null,
+    });
+
+    const recoveredLeaveId = await createLeaveRequest(
+      request,
+      recipient2Headers,
+      {
+        userId: recipientUserId2,
+        leaveType: 'paid',
+        startDate: targetDate,
+        endDate: targetDate,
+        notes: `E2E leave recovered ${suffix}`,
+      },
+    );
+    await submitLeaveRequest(request, recipient2Headers, recoveredLeaveId);
+    const recoveredApprovalId = await findLeaveApprovalInstanceId(
+      request,
+      recoveredLeaveId,
+    );
+    await approveApprovalInstance(request, recoveredApprovalId);
+
+    const recoveredRunRes = await request.post(
+      `${apiBase}/jobs/leave-upcoming/run`,
+      {
+        data: { targetDate },
+        headers: adminHeaders,
+      },
+    );
+    await ensureOk(recoveredRunRes);
+    expect(
+      (
+        await listNotificationsByMessage(
+          request,
+          recipient2Headers,
+          'leave_upcoming',
+          recoveredLeaveId,
+        )
+      ).length,
+    ).toBeGreaterThan(0);
+  } finally {
+    await patchNotificationPreference(request, recipient2Headers, {
+      muteAllUntil: null,
+    });
+    if (leaveRuleId) {
+      await deactivateApprovalRule(request, adminHeaders, leaveRuleId);
+    }
   }
 });
 
