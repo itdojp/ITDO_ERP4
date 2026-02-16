@@ -22,6 +22,9 @@ backend は起動時に環境変数の検証を行い、不正/不足があれ�
 認証:
 
 - `AUTH_MODE=header|jwt|hybrid`（未設定時は `header`）
+- `AUTH_ALLOW_HEADER_FALLBACK_IN_PROD`（任意、指定時は `true|false|1|0`）
+- `NODE_ENV=production` で `AUTH_MODE=header` を使う場合は、`AUTH_ALLOW_HEADER_FALLBACK_IN_PROD=true` の明示が必須（非推奨）
+- `NODE_ENV=production` で `AUTH_MODE=hybrid` かつ `AUTH_ALLOW_HEADER_FALLBACK_IN_PROD` 未設定/false の場合、Bearer トークン無しリクエストは 401
 - `AUTH_MODE=jwt|hybrid` の場合は以下を必須
   - `JWT_ISSUER`
   - `JWT_AUDIENCE`
