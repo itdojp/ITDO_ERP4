@@ -221,6 +221,78 @@ async function waitForInvoiceByAmount(
   return matched as InvoiceSnapshot;
 }
 
+type VendorApprovalFixture = {
+  projectId: string;
+  vendorId: string;
+  purchaseOrderId: string;
+  purchaseOrderNo: string;
+};
+
+async function seedVendorApprovalFixture(page: Page): Promise<VendorApprovalFixture> {
+  const suffix = runId();
+  const projectId = authState.projectIds[0];
+  const vendorRes = await page.request.post(`${apiBase}/vendors`, {
+    headers: buildAuthHeaders(),
+    data: {
+      code: `E2E-VAP-${suffix}`,
+      name: `E2E Vendor Approval ${suffix}`,
+      status: 'active',
+    },
+  });
+  await ensureOk(vendorRes);
+  const vendorPayload = await vendorRes.json();
+  const vendorId = String(vendorPayload?.id || '');
+  expect(vendorId.length).toBeGreaterThan(0);
+
+  const poRes = await page.request.post(
+    `${apiBase}/projects/${encodeURIComponent(projectId)}/purchase-orders`,
+    {
+      headers: buildAuthHeaders(),
+      data: {
+        vendorId,
+        totalAmount: 12000,
+        currency: 'JPY',
+      },
+    },
+  );
+  await ensureOk(poRes);
+  const poPayload = await poRes.json();
+  const purchaseOrderId = String(poPayload?.id || '');
+  const purchaseOrderNo = String(poPayload?.poNo || '');
+  expect(purchaseOrderId.length).toBeGreaterThan(0);
+  expect(purchaseOrderNo.length).toBeGreaterThan(0);
+
+  const quoteRes = await page.request.post(`${apiBase}/vendor-quotes`, {
+    headers: buildAuthHeaders(),
+    data: {
+      projectId,
+      vendorId,
+      totalAmount: 12000,
+      currency: 'JPY',
+      quoteNo: `VQ-${suffix}`,
+    },
+  });
+  await ensureOk(quoteRes);
+
+  const invoiceRes = await page.request.post(`${apiBase}/vendor-invoices`, {
+    headers: buildAuthHeaders(),
+    data: {
+      projectId,
+      vendorId,
+      totalAmount: 12000,
+      currency: 'JPY',
+      vendorInvoiceNo: `VI-${suffix}`,
+    },
+  });
+  await ensureOk(invoiceRes);
+
+  return {
+    projectId,
+    vendorId,
+    purchaseOrderId,
+    purchaseOrderNo,
+  };
+}
 test('frontend smoke core @core', async ({ page }) => {
   await prepare(page);
 
@@ -1043,6 +1115,7 @@ test('frontend smoke approvals ack guard requires override reason @extended', as
 test('frontend smoke vendor approvals @extended', async ({ page }) => {
   test.setTimeout(180_000);
   await prepare(page);
+  const fixture = await seedVendorApprovalFixture(page);
 
   await navigateToSection(page, '仕入/発注');
   const vendorSection = page
@@ -1054,52 +1127,26 @@ test('frontend smoke vendor approvals @extended', async ({ page }) => {
   const poBlock = vendorSection
     .locator('h3', { hasText: '発注書' })
     .locator('..');
-  await safeClick(poBlock.getByRole('button', { name: '再読込' }), 'po reload');
-  const poReady = await waitForList(poBlock.locator('ul.list li'), 'po list');
-  const poSubmitButton = poBlock.getByRole('button', { name: '承認依頼' });
-  if (
-    poReady &&
-    (await poSubmitButton.count()) > 0 &&
-    (await poSubmitButton
-      .first()
-      .isEnabled({ timeout: actionTimeout })
-      .catch(() => false))
-  ) {
-    if (await safeClick(poSubmitButton.first(), 'po submit')) {
-      await expect(poBlock.getByText('発注書を承認依頼しました')).toBeVisible({
-        timeout: actionTimeout,
-      });
-    }
-  }
-
-  const quoteBlock = vendorSection
-    .locator('h3', { hasText: '仕入見積' })
-    .locator('..');
-  await safeClick(
-    quoteBlock.getByRole('button', { name: '再読込' }),
-    'quote reload',
-  );
-  const quoteReady = await waitForList(
-    quoteBlock.locator('ul.list li'),
-    'quote list',
-  );
-
-  const invoiceBlock = vendorSection
-    .locator('h3', { hasText: '仕入請求' })
-    .locator('..');
-  await safeClick(
-    invoiceBlock.getByRole('button', { name: '再読込' }),
-    'invoice reload',
-  );
-  const invoiceReady = await waitForList(
-    invoiceBlock.locator('ul.list li'),
-    'invoice list',
-  );
-
-  if (!poReady || !quoteReady || !invoiceReady) {
-    await captureSection(vendorSection, '06-vendor-docs.png');
-    return;
-  }
+  await poBlock.getByRole('button', { name: /再取得|再読込/ }).click();
+  const poRow = poBlock
+    .locator('tbody tr', { hasText: fixture.purchaseOrderNo })
+    .first();
+  await expect(poRow).toBeVisible({ timeout: actionTimeout });
+  const poSubmitButton = poRow.getByRole('button', { name: '承認依頼' });
+  await expect(poSubmitButton).toBeVisible({ timeout: actionTimeout });
+  await expect(poSubmitButton).toBeEnabled({ timeout: actionTimeout });
+  await poSubmitButton.click();
+  await expect(
+    page.getByText('発注書を承認依頼しますか？'),
+  ).toBeVisible({
+    timeout: actionTimeout,
+  });
+  await page.getByRole('button', { name: '実行' }).click();
+  await expect(
+    page.getByText('発注書を承認依頼しますか？'),
+  ).toBeHidden({
+    timeout: actionTimeout,
+  });
 
   await captureSection(vendorSection, '06-vendor-docs.png');
 
@@ -1109,23 +1156,19 @@ test('frontend smoke vendor approvals @extended', async ({ page }) => {
     .locator('h2', { hasText: '承認一覧' })
     .locator('..');
   await approvalsSection.scrollIntoViewIfNeeded();
-  await safeClick(
-    approvalsSection.getByRole('button', { name: '再読込' }),
-    'approvals reload',
-  );
-  const approveButtons = approvalsSection.getByRole('button', { name: '承認' });
-  if (
-    await approveButtons
-      .first()
-      .isEnabled({ timeout: actionTimeout })
-      .catch(() => false)
-  ) {
-    if (await safeClick(approveButtons.first(), 'approval act')) {
-      await expect(approvalsSection.getByText('承認しました')).toBeVisible({
-        timeout: actionTimeout,
-      });
-    }
-  }
+  await selectByLabelOrFirst(approvalsSection.locator('select').first(), '発注');
+  await approvalsSection.getByRole('button', { name: '再読込' }).click();
+  const approvalItem = approvalsSection
+    .locator('li', { hasText: `purchase_orders:${fixture.purchaseOrderId}` })
+    .first();
+  await expect(approvalItem).toBeVisible({ timeout: actionTimeout });
+  const approveButton = approvalItem.getByRole('button', { name: '承認' });
+  await expect(approveButton).toBeVisible({ timeout: actionTimeout });
+  await expect(approveButton).toBeEnabled({ timeout: actionTimeout });
+  await approveButton.click();
+  await expect(approvalsSection.getByText('承認しました')).toBeVisible({
+    timeout: actionTimeout,
+  });
   await captureSection(approvalsSection, '07-approvals.png');
 });
 
