@@ -1189,6 +1189,14 @@ test('frontend smoke reports masters settings @extended', async ({ page }) => {
     .locator('strong', { hasText: 'ActionPolicy（権限/ロック）' })
     .locator('..');
   const actionPolicyKey = `submit.e2e.${id}`;
+  await actionPolicyBlock.getByLabel('subjects (JSON)').fill('{');
+  await actionPolicyBlock.getByRole('button', { name: '作成' }).first().click();
+  await expect(
+    settingsSection.getByText('subjects のJSONが不正です'),
+  ).toBeVisible({
+    timeout: actionTimeout,
+  });
+  await actionPolicyBlock.getByLabel('subjects (JSON)').fill('');
   await actionPolicyBlock.getByLabel('actionKey').fill(actionPolicyKey);
   await actionPolicyBlock.getByRole('button', { name: '作成' }).first().click();
   await expect(
