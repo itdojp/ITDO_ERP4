@@ -4803,6 +4803,10 @@
                     "maximum": 500,
                     "minimum": 1,
                     "type": "integer"
+                  },
+                  "now": {
+                    "format": "date-time",
+                    "type": "string"
                   }
                 },
                 "type": "object"
