@@ -8,20 +8,7 @@ import {
   chatBreakGlassRejectSchema,
   chatBreakGlassRequestSchema,
 } from './validators.js';
-
-function parseDateParam(value?: string) {
-  if (!value) return null;
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return null;
-  return parsed;
-}
-
-function parseLimit(value?: string, fallback = 50) {
-  if (!value) return fallback;
-  const parsed = Number(value);
-  if (!Number.isInteger(parsed) || parsed <= 0) return null;
-  return Math.min(parsed, 200);
-}
+import { parseDateParam, parseLimit } from './chat/shared/inputParsers.js';
 
 function resolveEffectiveApproverRole(roles: string[]) {
   if (roles.includes('exec')) return 'exec';
