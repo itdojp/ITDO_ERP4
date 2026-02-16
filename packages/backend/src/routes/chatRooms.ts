@@ -40,16 +40,18 @@ import {
   projectChatMessageSchema,
   projectChatSummarySchema,
 } from './validators.js';
+import { CHAT_ADMIN_ROLES, CHAT_ROLES } from './chat/shared/constants.js';
 import {
   normalizeStringArray,
   parseLimit,
   parseLimitNumber,
   parseNonNegativeInt,
 } from './chat/shared/inputParsers.js';
+import { normalizeMentions } from './chat/shared/mentions.js';
 import { parseDateParam } from '../utils/date.js';
 
 export async function registerChatRoomRoutes(app: FastifyInstance) {
-  const chatRoles = ['admin', 'mgmt', 'user', 'hr', 'exec', 'external_chat'];
+  const chatRoles = CHAT_ROLES;
   const chatSettingId = 'default';
   const companyRoomId = 'company';
   const companyRoomName = '全社';
@@ -546,39 +548,6 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
     }
 
     return true;
-  }
-
-  function normalizeMentions(value: unknown) {
-    if (!value || typeof value !== 'object') {
-      return {
-        mentions: undefined as Prisma.InputJsonValue | undefined,
-        mentionsAll: false,
-        mentionUserIds: [] as string[],
-        mentionGroupIds: [] as string[],
-      };
-    }
-    const record = value as {
-      userIds?: unknown;
-      groupIds?: unknown;
-      all?: unknown;
-    };
-    const mentionUserIds = normalizeStringArray(record.userIds, {
-      dedupe: true,
-      max: 50,
-    });
-    const mentionGroupIds = normalizeStringArray(record.groupIds, {
-      dedupe: true,
-      max: 20,
-    });
-    const mentionsAll = record.all === true;
-    const mentions =
-      mentionUserIds.length || mentionGroupIds.length
-        ? ({
-            userIds: mentionUserIds.length ? mentionUserIds : undefined,
-            groupIds: mentionGroupIds.length ? mentionGroupIds : undefined,
-          } as Prisma.InputJsonValue)
-        : undefined;
-    return { mentions, mentionsAll, mentionUserIds, mentionGroupIds };
   }
 
   async function tryCreateRoomChatMentionNotifications(options: {
@@ -1295,7 +1264,10 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
 
   app.patch(
     '/chat-rooms/:roomId',
-    { preHandler: requireRole(['admin', 'mgmt']), schema: chatRoomPatchSchema },
+    {
+      preHandler: requireRole(CHAT_ADMIN_ROLES),
+      schema: chatRoomPatchSchema,
+    },
     async (req, reply) => {
       const userId = req.user?.userId;
       if (!userId) {
