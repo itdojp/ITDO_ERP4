@@ -92,3 +92,9 @@ test('computeDueDate: leap year February end is handled correctly', () => {
   assert.equal(result.getHours(), 23);
   assert.equal(result.getMinutes(), 59);
 });
+
+test('computeDueDate: null/undefined rule returns null', () => {
+  const runAt = new Date(2026, 0, 15, 12, 0, 0);
+  assert.equal(computeDueDate(runAt, null), null);
+  assert.equal(computeDueDate(runAt, undefined), null);
+});

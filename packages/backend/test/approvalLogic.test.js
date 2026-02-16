@@ -165,6 +165,33 @@ test('matchesRuleCondition: amount range and flow flags', () => {
   );
 });
 
+test('matchesRuleCondition: amountMin/amountMax boundaries are inclusive', () => {
+  assert.equal(
+    matchesRuleCondition(
+      'invoice',
+      { totalAmount: 50000 },
+      { amountMin: 50000, amountMax: 50000 },
+    ),
+    true,
+  );
+  assert.equal(
+    matchesRuleCondition(
+      'invoice',
+      { totalAmount: 49999 },
+      { amountMin: 50000, amountMax: 50000 },
+    ),
+    false,
+  );
+  assert.equal(
+    matchesRuleCondition(
+      'invoice',
+      { totalAmount: 50001 },
+      { amountMin: 50000, amountMax: 50000 },
+    ),
+    false,
+  );
+});
+
 test('normalizeRuleStepsWithPolicy: stages format returns steps and stagePolicy', () => {
   const result = normalizeRuleStepsWithPolicy({
     stages: [
