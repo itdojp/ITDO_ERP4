@@ -1,14 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '../api';
 import {
-  AuditTimeline,
-  DiffViewer,
   FormWizard,
   PolicyFormBuilder,
   createLocalStorageDraftAutosaveAdapter,
   useDraftAutosave,
 } from '../ui';
-import type { AuditEvent, PolicyFormSchema, PolicyFormValue } from '../ui';
+import type { PolicyFormSchema, PolicyFormValue } from '../ui';
+import { AuditHistoryPanel } from './admin-settings/AuditHistoryPanel';
 import { ChatSettingsCard } from './ChatSettingsCard';
 import { ChatRoomSettingsCard } from './ChatRoomSettingsCard';
 import { GroupManagementCard } from './GroupManagementCard';
@@ -321,156 +320,6 @@ function formatJson(value: unknown): string {
   } catch {
     return '-';
   }
-}
-
-function resolveAuditEventTone(action: string): AuditEvent['tone'] {
-  const normalized = action.toLowerCase();
-  if (
-    normalized.includes('fail') ||
-    normalized.includes('error') ||
-    normalized.includes('reject')
-  ) {
-    return 'error';
-  }
-  if (
-    normalized.includes('delete') ||
-    normalized.includes('disable') ||
-    normalized.includes('cancel')
-  ) {
-    return 'warning';
-  }
-  if (
-    normalized.includes('create') ||
-    normalized.includes('enable') ||
-    normalized.includes('approve')
-  ) {
-    return 'success';
-  }
-  if (normalized.includes('update') || normalized.includes('edit')) {
-    return 'info';
-  }
-  return 'default';
-}
-
-function parseAuditMetadata(metadata?: Record<string, unknown> | null): {
-  raw: Record<string, unknown>;
-  before: unknown;
-  after: unknown;
-  patch: unknown;
-  hasBeforeAfter: boolean;
-  hasPatch: boolean;
-} {
-  const raw =
-    metadata && typeof metadata === 'object'
-      ? (metadata as Record<string, unknown>)
-      : {};
-  const before = raw.before;
-  const after = raw.after;
-  const patch = raw.patch;
-  return {
-    raw,
-    before,
-    after,
-    patch,
-    hasBeforeAfter: before !== undefined || after !== undefined,
-    hasPatch: patch !== undefined,
-  };
-}
-
-function toAuditEvent(log: AuditLogItem): AuditEvent {
-  const reason =
-    log.reasonCode || log.reasonText
-      ? `reason: ${log.reasonCode || '-'} / ${log.reasonText || '-'}`
-      : undefined;
-  return {
-    id: log.id,
-    time: formatDateTime(log.createdAt),
-    actor: `${log.actorRole || '-'} / ${log.userId || '-'}`,
-    action: log.action,
-    target: `${log.targetTable || '-'} / ${log.targetId || '-'}`,
-    summary: reason,
-    tone: resolveAuditEventTone(log.action),
-  };
-}
-
-function renderAuditHistoryPanel(params: {
-  logs: AuditLogItem[];
-  selectedLogId?: string;
-  onSelectLog: (logId: string) => void;
-}): React.ReactNode {
-  const { logs, selectedLogId, onSelectLog } = params;
-  if (logs.length === 0) {
-    return null;
-  }
-  const events = logs.map(toAuditEvent);
-  const selectedLog = logs.find((log) => log.id === selectedLogId) || logs[0];
-  const selectedMeta = parseAuditMetadata(selectedLog.metadata);
-  return (
-    <div style={{ display: 'grid', gap: 8 }}>
-      <AuditTimeline
-        events={events}
-        selectedEventId={selectedLog.id}
-        onSelectEvent={(event) => onSelectLog(event.id)}
-      />
-      <div className="card" style={{ padding: 10 }}>
-        <div style={{ fontSize: 12, color: '#475569' }}>
-          {formatDateTime(selectedLog.createdAt)} / {selectedLog.action} /{' '}
-          {selectedLog.actorRole || '-'} / {selectedLog.userId || '-'}
-        </div>
-        {(selectedLog.reasonText || selectedLog.reasonCode) && (
-          <div style={{ color: '#475569', marginTop: 6, fontSize: 12 }}>
-            reason: {selectedLog.reasonCode || '-'} /{' '}
-            {selectedLog.reasonText || '-'}
-          </div>
-        )}
-        <div style={{ marginTop: 8 }}>
-          {selectedMeta.hasBeforeAfter ? (
-            <DiffViewer
-              before={selectedMeta.before}
-              after={selectedMeta.after}
-              format="json"
-            />
-          ) : (
-            <pre
-              style={{
-                margin: 0,
-                padding: 10,
-                whiteSpace: 'pre-wrap',
-                borderRadius: 6,
-                background: '#0f172a',
-                color: '#e2e8f0',
-                fontSize: 12,
-              }}
-            >
-              {formatJson(selectedMeta.raw)}
-            </pre>
-          )}
-        </div>
-        {selectedMeta.hasPatch && (
-          <details style={{ marginTop: 8 }}>
-            <summary
-              style={{ cursor: 'pointer', fontSize: 12, color: '#475569' }}
-            >
-              patch
-            </summary>
-            <pre
-              style={{
-                margin: '6px 0 0',
-                padding: 10,
-                whiteSpace: 'pre-wrap',
-                borderRadius: 6,
-                background: '#0f172a',
-                color: '#e2e8f0',
-                fontSize: 12,
-              }}
-            >
-              {formatJson(selectedMeta.patch)}
-            </pre>
-          </details>
-        )}
-      </div>
-    </div>
-  );
 }
 
 const createDefaultAlertForm = () => ({
@@ -2379,17 +2228,18 @@ export const AdminSettings: React.FC = () => {
                           履歴なし
                         </div>
                       )}
-                      {!isHistoryLoading &&
-                        renderAuditHistoryPanel({
-                          logs: auditLogs,
-                          selectedLogId: approvalRuleAuditSelected[rule.id],
-                          onSelectLog: (logId) => {
+                      {!isHistoryLoading && (
+                        <AuditHistoryPanel
+                          logs={auditLogs}
+                          selectedLogId={approvalRuleAuditSelected[rule.id]}
+                          onSelectLog={(logId) => {
                             setApprovalRuleAuditSelected((prev) => ({
                               ...prev,
                               [rule.id]: logId,
                             }));
-                          },
-                        })}
+                          }}
+                        />
+                      )}
                     </div>
                   )}
                 </div>
@@ -2544,17 +2394,18 @@ export const AdminSettings: React.FC = () => {
                           履歴なし
                         </div>
                       )}
-                      {!isHistoryLoading &&
-                        renderAuditHistoryPanel({
-                          logs: auditLogs,
-                          selectedLogId: actionPolicyAuditSelected[item.id],
-                          onSelectLog: (logId) => {
+                      {!isHistoryLoading && (
+                        <AuditHistoryPanel
+                          logs={auditLogs}
+                          selectedLogId={actionPolicyAuditSelected[item.id]}
+                          onSelectLog={(logId) => {
                             setActionPolicyAuditSelected((prev) => ({
                               ...prev,
                               [item.id]: logId,
                             }));
-                          },
-                        })}
+                          }}
+                        />
+                      )}
                     </div>
                   )}
                 </div>
