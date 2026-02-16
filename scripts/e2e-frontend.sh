@@ -170,11 +170,12 @@ wait_for_url() {
     echo "E2E_SERVICE_READY_INTERVAL_SEC must be a positive integer" >&2
     return 1
   fi
-
-  attempts=$((timeout / interval))
-  if [[ "$attempts" -lt 1 ]]; then
-    attempts=1
+  if [[ "$interval" -gt "$timeout" ]]; then
+    echo "E2E_SERVICE_READY_INTERVAL_SEC must be <= E2E_SERVICE_READY_TIMEOUT_SEC" >&2
+    return 1
   fi
+
+  attempts=$(((timeout + interval - 1) / interval))
 
   for _ in $(seq 1 "$attempts"); do
     if curl -sf "$url" >/dev/null 2>&1; then

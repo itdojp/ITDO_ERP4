@@ -78,6 +78,9 @@ E2E_SERVICE_READY_TIMEOUT_SEC=120 E2E_SERVICE_READY_INTERVAL_SEC=2 \
 E2E_CAPTURE=0 E2E_SCOPE=core ./scripts/e2e-frontend.sh
 ```
 
+補足:
+- `E2E_SERVICE_READY_INTERVAL_SEC` は `E2E_SERVICE_READY_TIMEOUT_SEC` 以下を指定してください。
+
 ## 失敗時の診断（最小）
 - 起動失敗やAPI例外は `tmp/e2e-backend.log` / `tmp/e2e-frontend.log` を確認
 - 該当ケースだけ再実行する場合は `E2E_GREP` で対象を絞る

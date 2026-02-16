@@ -42,6 +42,9 @@ E2E_ACTION_TIMEOUT_MS=30000 make ui-evidence
 E2E_SERVICE_READY_TIMEOUT_SEC=120 E2E_SERVICE_READY_INTERVAL_SEC=2 make ui-evidence
 ```
 
+補足:
+- `E2E_SERVICE_READY_INTERVAL_SEC` は `E2E_SERVICE_READY_TIMEOUT_SEC` 以下を指定してください。
+
 ## 注意
 - 既存の証跡を上書きしない方針です（同名が存在する場合はエラーになります）
 - 取得した証跡を UI マニュアルに反映する場合は、`docs/manual/ui-manual-*.md` の参照先（画像パス）も更新してください
