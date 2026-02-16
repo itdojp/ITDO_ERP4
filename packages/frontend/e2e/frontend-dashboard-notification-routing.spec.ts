@@ -4,7 +4,13 @@ import { expect, test, type Page } from '@playwright/test';
 const baseUrl = process.env.E2E_BASE_URL || 'http://localhost:5173';
 const apiBase = process.env.E2E_API_BASE || 'http://localhost:3002';
 const defaultProjectId = '00000000-0000-0000-0000-000000000001';
-const actionTimeout = process.env.CI ? 30_000 : 12_000;
+const actionTimeoutEnv = process.env.E2E_ACTION_TIMEOUT_MS;
+const actionTimeout =
+  actionTimeoutEnv != null && !Number.isNaN(Number.parseInt(actionTimeoutEnv, 10))
+    ? Number.parseInt(actionTimeoutEnv, 10)
+    : process.env.CI
+      ? 30_000
+      : 12_000;
 
 type AuthState = {
   userId: string;
@@ -54,6 +60,19 @@ async function ensureOk(res: { ok(): boolean; status(): number; text(): any }) {
 }
 
 async function prepare(page: Page, authState: AuthState) {
+  if (page.listenerCount('pageerror') === 0) {
+    page.on('pageerror', (error) => {
+      console.error('[dashboard-notification-routing] pageerror:', error);
+    });
+  }
+  if (page.listenerCount('console') === 0) {
+    page.on('console', (msg) => {
+      if (msg.type() === 'error') {
+        console.error('[dashboard-notification-routing] console.error:', msg.text());
+      }
+    });
+  }
+
   await page.addInitScript((state) => {
     window.localStorage.setItem('erp4_auth', JSON.stringify(state));
     window.localStorage.removeItem('erp4_active_section');
@@ -138,6 +157,7 @@ async function approveUntilApproved(
   flowType: string,
   targetTable: string,
   targetId: string,
+  runSeed: string,
 ) {
   for (let attempt = 0; attempt < 20; attempt += 1) {
     const instance = await findApprovalInstance(
@@ -164,7 +184,8 @@ async function approveUntilApproved(
     }
 
     const actorUserId =
-      actionable.approverUserId?.trim() || `e2e-approver-${runId()}-${attempt}`;
+      actionable.approverUserId?.trim() ||
+      `e2e-approver-${runSeed}-${attempt}`;
     const actorGroupIds = actionable.approverGroupId?.trim()
       ? [actionable.approverGroupId.trim(), 'mgmt']
       : ['mgmt'];
@@ -252,14 +273,41 @@ async function expectOpenEventRecorded(page: Page, kind: string, id: string) {
     .toBe(true);
 }
 
+async function waitForUnreadNotification(
+  page: Page,
+  headers: Record<string, string>,
+  predicate: (item: AppNotification) => boolean,
+): Promise<AppNotification> {
+  let found: AppNotification | undefined;
+  await expect
+    .poll(
+      async () => {
+        const items = await listUnreadNotifications(page, headers);
+        found = items.find(predicate);
+        return Boolean(found?.id);
+      },
+      { timeout: actionTimeout },
+    )
+    .toBe(true);
+  if (!found) {
+    throw new Error('[e2e] notification not found');
+  }
+  return found;
+}
+
 test('dashboard notification cards route to chat/leave/expense targets @core', async ({
   page,
 }) => {
-  test.setTimeout(180_000);
+  // This scenario executes multiple workflow transitions; keep the timeout conservative.
+  test.setTimeout(actionTimeout * 6);
   const run = runId();
   const targetUserId = `e2e-dash-notify-${run}@example.com`;
   const chatTargetUserId = 'e2e-member-2@example.com';
-  const leaveDate = `2099-01-${String((Number(run.slice(0, 2)) % 20) + 1).padStart(2, '0')}`;
+  const runNumeric = Array.from(run).reduce(
+    (sum, ch) => sum + ch.charCodeAt(0),
+    0,
+  );
+  const leaveDate = `2099-01-${String((runNumeric % 28) + 1).padStart(2, '0')}`;
   const expenseAmount = 50_000 + (Number(run.slice(0, 3)) % 9_000);
   const ackBody = `E2E dashboard ack ${run}`;
 
@@ -314,6 +362,7 @@ test('dashboard notification cards route to chat/leave/expense targets @core', a
     'leave',
     'leave_requests',
     leaveRequestId,
+    run,
   );
 
   const leaveJobRes = await page.request.post(`${apiBase}/jobs/leave-upcoming/run`, {
@@ -321,10 +370,11 @@ test('dashboard notification cards route to chat/leave/expense targets @core', a
     data: { targetDate: leaveDate },
   });
   await ensureOk(leaveJobRes);
-  const leaveNotification = (
-    await listUnreadNotifications(page, targetHeaders)
-  ).find(
-    (item) => item.kind === 'leave_upcoming' && item.messageId === leaveRequestId,
+  const leaveNotification = await waitForUnreadNotification(
+    page,
+    targetHeaders,
+    (item) =>
+      item.kind === 'leave_upcoming' && item.messageId === leaveRequestId,
   );
   expect(leaveNotification?.id).toBeTruthy();
 
@@ -351,17 +401,25 @@ test('dashboard notification cards route to chat/leave/expense targets @core', a
     { headers: targetHeaders, data: {} },
   );
   await ensureOk(expenseSubmitRes);
-  await approveUntilApproved(page, adminHeaders, 'expense', 'expenses', expenseId);
+  await approveUntilApproved(
+    page,
+    adminHeaders,
+    'expense',
+    'expenses',
+    expenseId,
+    run,
+  );
 
   const markPaidRes = await page.request.post(
     `${apiBase}/expenses/${encodeURIComponent(expenseId)}/mark-paid`,
     { headers: adminHeaders, data: {} },
   );
   await ensureOk(markPaidRes);
-  const expenseNotification = (
-    await listUnreadNotifications(page, targetHeaders)
-  ).find(
-    (item) => item.kind === 'expense_mark_paid' && item.messageId === expenseId,
+  const expenseNotification = await waitForUnreadNotification(
+    page,
+    targetHeaders,
+    (item) =>
+      item.kind === 'expense_mark_paid' && item.messageId === expenseId,
   );
   expect(expenseNotification?.id).toBeTruthy();
 
@@ -388,7 +446,11 @@ test('dashboard notification cards route to chat/leave/expense targets @core', a
   ).toBeVisible({ timeout: actionTimeout });
 
   await openHome(page);
-  const expenseItem = dashboardSection
+  const dashboardSectionAfterHome = page
+    .locator('main')
+    .locator('h2', { hasText: 'Dashboard' })
+    .locator('..');
+  const expenseItem = dashboardSectionAfterHome
     .locator('strong', { hasText: '経費支払完了' })
     .locator('xpath=ancestor::div[2]')
     .first();
@@ -404,6 +466,7 @@ test('dashboard notification cards route to chat/leave/expense targets @core', a
 
   // chat_ack_required notification (active user account is required)
   await prepare(page, chatTargetState);
+  // prepare() navigates to baseUrl and resets window context, so recorder is reinstalled later.
   const companyRoomId = await findCompanyRoomId(page, adminHeaders);
   const ackRes = await page.request.post(
     `${apiBase}/chat-rooms/${encodeURIComponent(companyRoomId)}/ack-requests`,
@@ -421,10 +484,11 @@ test('dashboard notification cards route to chat/leave/expense targets @core', a
   const ackPayload = (await ackRes.json()) as { id?: string };
   const ackMessageId = String(ackPayload?.id || '');
   expect(ackMessageId.length).toBeGreaterThan(0);
-  const ackNotification = (
-    await listUnreadNotifications(page, chatTargetHeaders)
-  ).find(
-    (item) => item.kind === 'chat_ack_required' && item.messageId === ackMessageId,
+  const ackNotification = await waitForUnreadNotification(
+    page,
+    chatTargetHeaders,
+    (item) =>
+      item.kind === 'chat_ack_required' && item.messageId === ackMessageId,
   );
   expect(ackNotification?.id).toBeTruthy();
 
