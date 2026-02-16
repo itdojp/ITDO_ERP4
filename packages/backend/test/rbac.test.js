@@ -54,6 +54,42 @@ test('requireRoleOrSelf: allows self and denies other user', async () => {
   assert.equal(denyReply.payload?.error?.category, 'permission');
 });
 
+test('requireRoleOrSelf: allows admin to access other users', async () => {
+  const guard = requireRoleOrSelf(['admin'], (req) => req.params?.userId);
+
+  const allowReq = {
+    user: { roles: ['admin'], userId: 'admin-user' },
+    params: { userId: 'u2' },
+  };
+  const allowReply = createReplyMock();
+  await guard(allowReq, allowReply);
+  assert.equal(allowReply.statusCode, null);
+});
+
+test('requireRoleOrSelf: denies when target or requester user id is missing', async () => {
+  const guard = requireRoleOrSelf(['admin'], (req) => req.params?.userId);
+
+  const missingTargetReq = {
+    user: { roles: ['user'], userId: 'u1' },
+    params: {},
+  };
+  const missingTargetReply = createReplyMock();
+  await guard(missingTargetReq, missingTargetReply);
+  assert.equal(missingTargetReply.statusCode, 403);
+  assert.equal(missingTargetReply.payload?.error?.code, 'forbidden');
+  assert.equal(missingTargetReply.payload?.error?.category, 'permission');
+
+  const missingUserReq = {
+    user: { roles: ['user'], userId: undefined },
+    params: { userId: 'u1' },
+  };
+  const missingUserReply = createReplyMock();
+  await guard(missingUserReq, missingUserReply);
+  assert.equal(missingUserReply.statusCode, 403);
+  assert.equal(missingUserReply.payload?.error?.code, 'forbidden');
+  assert.equal(missingUserReply.payload?.error?.category, 'permission');
+});
+
 test('requireProjectAccess: denies non-member project and allows admin', async () => {
   const guard = requireProjectAccess((req) => req.params?.projectId);
 
@@ -74,4 +110,35 @@ test('requireProjectAccess: denies non-member project and allows admin', async (
   const allowReply = createReplyMock();
   await guard(allowReq, allowReply);
   assert.equal(allowReply.statusCode, null);
+});
+
+test('requireProjectAccess: allows mgmt and member access', async () => {
+  const guard = requireProjectAccess((req) => req.params?.projectId);
+
+  const mgmtReq = {
+    user: { roles: ['mgmt'], projectIds: [] },
+    params: { projectId: 'p2' },
+  };
+  const mgmtReply = createReplyMock();
+  await guard(mgmtReq, mgmtReply);
+  assert.equal(mgmtReply.statusCode, null);
+
+  const memberReq = {
+    user: { roles: ['user'], projectIds: ['p1'] },
+    params: { projectId: 'p1' },
+  };
+  const memberReply = createReplyMock();
+  await guard(memberReq, memberReply);
+  assert.equal(memberReply.statusCode, null);
+});
+
+test('requireProjectAccess: allows when projectId is undefined', async () => {
+  const guard = requireProjectAccess(() => undefined);
+
+  const req = {
+    user: { roles: ['user'], projectIds: ['p1'] },
+  };
+  const reply = createReplyMock();
+  await guard(req, reply);
+  assert.equal(reply.statusCode, null);
 });
