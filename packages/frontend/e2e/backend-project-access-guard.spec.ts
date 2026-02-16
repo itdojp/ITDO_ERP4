@@ -29,7 +29,7 @@ async function ensureOk(res: { ok(): boolean; status(): number; text(): any }) {
   throw new Error(`[e2e] api failed: ${res.status()} ${body}`);
 }
 
-test('project access guard: route/query projectId is enforced @core', async ({
+test('project access guard: route/query/body projectId is enforced @core', async ({
   request,
 }) => {
   const suffix = runId();
@@ -102,4 +102,52 @@ test('project access guard: route/query projectId is enforced @core', async ({
     { headers: mgmtHeaders },
   );
   await ensureOk(timeEntriesMgmtBypassRes);
+
+  const today = new Date().toISOString().slice(0, 10);
+  const timeEntryForbiddenCreateRes = await request.post(
+    `${apiBase}/time-entries`,
+    {
+      data: {
+        projectId,
+        userId: 'other-user@example.com',
+        workDate: today,
+        minutes: 30,
+      },
+      headers: outsiderHeaders,
+    },
+  );
+  expect(timeEntryForbiddenCreateRes.status()).toBe(403);
+  const timeEntryForbiddenCreate = await timeEntryForbiddenCreateRes.json();
+  expect(timeEntryForbiddenCreate?.error?.code).toBe('forbidden_project');
+
+  const timeEntryMemberCreateRes = await request.post(
+    `${apiBase}/time-entries`,
+    {
+      data: {
+        projectId,
+        userId: 'other-user@example.com',
+        workDate: today,
+        minutes: 30,
+      },
+      headers: memberHeaders,
+    },
+  );
+  await ensureOk(timeEntryMemberCreateRes);
+  const timeEntryMember = await timeEntryMemberCreateRes.json();
+  expect(timeEntryMember?.projectId).toBe(projectId);
+  expect(timeEntryMember?.userId).toBe('e2e-member@example.com');
+
+  const timeEntryMgmtCreateRes = await request.post(`${apiBase}/time-entries`, {
+    data: {
+      projectId,
+      userId: 'e2e-mgmt@example.com',
+      workDate: today,
+      minutes: 30,
+    },
+    headers: mgmtHeaders,
+  });
+  await ensureOk(timeEntryMgmtCreateRes);
+  const timeEntryMgmt = await timeEntryMgmtCreateRes.json();
+  expect(timeEntryMgmt?.projectId).toBe(projectId);
+  expect(timeEntryMgmt?.userId).toBe('e2e-mgmt@example.com');
 });
