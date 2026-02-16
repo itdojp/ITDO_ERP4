@@ -4,7 +4,13 @@ import { expect, test, type Locator, type Page } from '@playwright/test';
 const baseUrl = process.env.E2E_BASE_URL || 'http://localhost:5173';
 const apiBase = process.env.E2E_API_BASE || 'http://localhost:3002';
 const defaultProjectId = '00000000-0000-0000-0000-000000000001';
-const actionTimeout = process.env.CI ? 30_000 : 12_000;
+const actionTimeoutEnv = process.env.E2E_ACTION_TIMEOUT_MS;
+const actionTimeout =
+  actionTimeoutEnv != null && !Number.isNaN(Number.parseInt(actionTimeoutEnv, 10))
+    ? Number.parseInt(actionTimeoutEnv, 10)
+    : process.env.CI
+      ? 30_000
+      : 12_000;
 
 const runId = () => randomUUID().slice(0, 10);
 
@@ -36,6 +42,19 @@ async function ensureOk(res: { ok(): boolean; status(): number; text(): any }) {
 }
 
 async function prepare(page: Page) {
+  if (page.listenerCount('pageerror') === 0) {
+    page.on('pageerror', (error) => {
+      console.error('[mobile-smoke] pageerror:', error);
+    });
+  }
+  if (page.listenerCount('console') === 0) {
+    page.on('console', (msg) => {
+      if (msg.type() === 'error') {
+        console.error('[mobile-smoke] console.error:', msg.text());
+      }
+    });
+  }
+
   await page.addInitScript((state) => {
     window.localStorage.setItem('erp4_auth', JSON.stringify(state));
     window.localStorage.removeItem('erp4_active_section');
@@ -79,13 +98,23 @@ async function selectByValue(select: Locator, value: string) {
   await expect
     .poll(() => select.locator('option').count(), { timeout: actionTimeout })
     .toBeGreaterThan(1);
+  const hasValue = await select
+    .locator('option')
+    .evaluateAll(
+      (options, target) =>
+        options.some((option) => option.value === target),
+      value,
+    );
+  if (!hasValue) {
+    throw new Error(`selectByValue: option with value "${value}" not found`);
+  }
   await select.selectOption({ value });
 }
 
 test.describe('mobile smoke 375x667 @core', () => {
   test.use({ viewport: { width: 375, height: 667 } });
 
-  test('invoices / vendor-documents / admin-jobs operate on mobile viewport @core', async ({
+  test('invoices / vendor-documents / admin-jobs operate on mobile viewport', async ({
     page,
   }) => {
     test.setTimeout(180_000);
@@ -245,7 +274,7 @@ test.describe('mobile smoke 375x667 @core', () => {
           vendorInvoiceRow
             .innerText()
             .then((value) => value.includes(poNo))
-            .catch(() => true),
+            .catch(() => false),
         { timeout: actionTimeout },
       )
       .toBe(false);
