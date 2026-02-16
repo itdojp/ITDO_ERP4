@@ -16,6 +16,15 @@ type NextNumberOptions = {
   client?: NumberingClient;
   maxRetries?: number;
 };
+const DEFAULT_MAX_RETRIES = 3;
+const MAX_MAX_RETRIES = 10;
+
+function normalizeMaxRetries(value: number | undefined): number {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 1) {
+    return DEFAULT_MAX_RETRIES;
+  }
+  return Math.min(Math.floor(value), MAX_MAX_RETRIES);
+}
 
 function isRetryableError(err: unknown): err is RetryableError {
   return !!err && typeof err === 'object' && 'code' in err;
@@ -32,10 +41,7 @@ export async function nextNumber(
   if (!prefix) throw new Error(`Unsupported kind: ${kind}`);
 
   const client = options.client ?? prisma;
-  const maxRetries =
-    typeof options.maxRetries === 'number' && options.maxRetries >= 1
-      ? Math.floor(options.maxRetries)
-      : 3;
+  const maxRetries = normalizeMaxRetries(options.maxRetries);
   let lastError: unknown;
   for (let attempt = 0; attempt < maxRetries; attempt += 1) {
     try {

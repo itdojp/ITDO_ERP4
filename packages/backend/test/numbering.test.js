@@ -105,3 +105,50 @@ test('nextNumber: respects maxRetries for retryable errors', async () => {
   );
   assert.equal(getCalls(), 2);
 });
+
+test('nextNumber: falls back to default retries when maxRetries is Infinity', async () => {
+  const retryable1 = Object.assign(new Error('serialization failed #1'), {
+    code: 'P2034',
+  });
+  const retryable2 = Object.assign(new Error('serialization failed #2'), {
+    code: 'P2034',
+  });
+  const retryable3 = Object.assign(new Error('serialization failed #3'), {
+    code: 'P2034',
+  });
+  const { client, getCalls } = createMockClient([
+    { error: retryable1 },
+    { error: retryable2 },
+    { error: retryable3 },
+    { serial: 77 },
+  ]);
+
+  await assert.rejects(
+    nextNumber('invoice', new Date('2026-02-10T00:00:00Z'), {
+      client,
+      maxRetries: Number.POSITIVE_INFINITY,
+    }),
+    /serialization failed #3/,
+  );
+  assert.equal(getCalls(), 3);
+});
+
+test('nextNumber: clamps excessive maxRetries to upper bound', async () => {
+  const retryableErrors = Array.from({ length: 10 }, (_, i) =>
+    Object.assign(new Error(`serialization failed #${i + 1}`), {
+      code: 'P2034',
+    }),
+  );
+  const { client, getCalls } = createMockClient(
+    retryableErrors.map((error) => ({ error })),
+  );
+
+  await assert.rejects(
+    nextNumber('invoice', new Date('2026-02-10T00:00:00Z'), {
+      client,
+      maxRetries: 1000,
+    }),
+    /serialization failed #10/,
+  );
+  assert.equal(getCalls(), 10);
+});
