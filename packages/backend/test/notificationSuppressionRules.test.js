@@ -6,10 +6,30 @@ import { filterNotificationRecipients } from '../dist/services/appNotifications.
 function createClient({ roomSettings = [], userPreferences = [] } = {}) {
   return {
     chatRoomNotificationSetting: {
-      findMany: async () => roomSettings,
+      findMany: async ({ where } = {}) =>
+        roomSettings.filter((item) => {
+          if (where?.roomId && item.roomId !== where.roomId) return false;
+          if (where?.userId?.in && !where.userId.in.includes(item.userId)) {
+            return false;
+          }
+          return true;
+        }),
     },
     userNotificationPreference: {
-      findMany: async () => userPreferences,
+      findMany: async ({ where } = {}) =>
+        userPreferences.filter((item) => {
+          if (where?.userId?.in && !where.userId.in.includes(item.userId)) {
+            return false;
+          }
+          const muteAllUntil =
+            item.muteAllUntil instanceof Date ? item.muteAllUntil : null;
+          if (where?.muteAllUntil?.gt) {
+            return Boolean(
+              muteAllUntil && muteAllUntil > where.muteAllUntil.gt,
+            );
+          }
+          return true;
+        }),
     },
   };
 }
@@ -58,13 +78,20 @@ test('filterNotificationRecipients: chat mention scope applies room settings', a
   const now = new Date('2026-01-01T00:00:00.000Z');
   const client = createClient({
     roomSettings: [
-      { userId: 'u1', notifyMentions: false, muteUntil: null },
       {
+        roomId: 'room-1',
+        userId: 'u1',
+        notifyMentions: false,
+        muteUntil: null,
+      },
+      {
+        roomId: 'room-1',
         userId: 'u2',
         notifyMentions: true,
         muteUntil: new Date('2026-02-01T00:00:00.000Z'),
       },
       {
+        roomId: 'room-1',
         userId: 'u3',
         notifyMentions: true,
         muteUntil: new Date('2025-12-01T00:00:00.000Z'),
@@ -86,6 +113,82 @@ test('filterNotificationRecipients: chat mention scope applies room settings', a
 
   assert.deepEqual(res.allowed.sort(), ['u3', 'u5'].sort());
   assert.deepEqual(res.muted.sort(), ['u1', 'u2', 'u4'].sort());
+});
+
+test('filterNotificationRecipients: chat all posts scope applies room settings', async () => {
+  const now = new Date('2026-01-01T00:00:00.000Z');
+  const client = createClient({
+    roomSettings: [
+      {
+        roomId: 'room-1',
+        userId: 'u1',
+        notifyAllPosts: false,
+        muteUntil: null,
+      },
+      {
+        roomId: 'room-1',
+        userId: 'u2',
+        notifyAllPosts: true,
+        muteUntil: new Date('2026-02-01T00:00:00.000Z'),
+      },
+      {
+        roomId: 'room-1',
+        userId: 'u3',
+        notifyAllPosts: true,
+        muteUntil: new Date('2025-12-01T00:00:00.000Z'),
+      },
+      {
+        roomId: 'room-2',
+        userId: 'u5',
+        notifyAllPosts: false,
+        muteUntil: null,
+      },
+    ],
+    userPreferences: [
+      { userId: 'u4', muteAllUntil: new Date('2026-03-01T00:00:00.000Z') },
+    ],
+  });
+
+  const res = await filterNotificationRecipients({
+    kind: 'chat_message',
+    scope: 'chat_all_posts',
+    roomId: 'room-1',
+    userIds: ['u1', 'u2', 'u3', 'u4', 'u5'],
+    client,
+    now,
+  });
+
+  assert.deepEqual(res.allowed.sort(), ['u3', 'u5'].sort());
+  assert.deepEqual(res.muted.sort(), ['u1', 'u2', 'u4'].sort());
+});
+
+test('filterNotificationRecipients: normalizes duplicate user ids', async () => {
+  const now = new Date('2026-01-01T00:00:00.000Z');
+  const client = createClient({
+    roomSettings: [
+      {
+        roomId: 'room-1',
+        userId: 'u1',
+        notifyAllPosts: false,
+        muteUntil: null,
+      },
+    ],
+    userPreferences: [
+      { userId: 'u2', muteAllUntil: new Date('2026-03-01T00:00:00.000Z') },
+    ],
+  });
+
+  const res = await filterNotificationRecipients({
+    kind: 'chat_message',
+    scope: 'chat_all_posts',
+    roomId: 'room-1',
+    userIds: [' u1 ', 'u1', '', 'u2', 'u2'],
+    client,
+    now,
+  });
+
+  assert.deepEqual(res.allowed, []);
+  assert.deepEqual(res.muted, ['u1', 'u2']);
 });
 
 test('filterNotificationRecipients: bypass kinds can be overridden by env', async () => {
