@@ -168,11 +168,10 @@ const buildAuthHeaders = (override?: Partial<typeof authState>) => {
   };
 };
 
-async function ensureOk(res: { ok(): boolean; status(): number }) {
-  expect(res.ok()).toBeTruthy();
-  if (!res.ok()) {
-    throw new Error(`Request failed with status ${res.status()}`);
-  }
+async function ensureOk(res: { ok(): boolean; status(): number; text(): any }) {
+  if (res.ok()) return;
+  const body = await res.text();
+  throw new Error(`[e2e] api failed: ${res.status()} ${body}`);
 }
 
 type InvoiceSnapshot = {
