@@ -10,6 +10,8 @@ type RunLeaveUpcomingOptions = {
   targetDate?: string;
   dryRun?: boolean;
   actorId?: string | null;
+  client?: typeof prisma;
+  resolveRoleRecipients?: typeof resolveRoleRecipientUserIds;
 };
 
 type RunLeaveUpcomingResult = {
@@ -52,6 +54,9 @@ function normalizeId(value: unknown) {
 export async function runLeaveUpcomingNotifications(
   options: RunLeaveUpcomingOptions = {},
 ): Promise<RunLeaveUpcomingResult> {
+  const client = options.client ?? prisma;
+  const resolveRoleRecipients =
+    options.resolveRoleRecipients ?? resolveRoleRecipientUserIds;
   const dryRun = Boolean(options.dryRun);
   const target = resolveTargetDate(options.targetDate);
   if (!target) {
@@ -59,7 +64,7 @@ export async function runLeaveUpcomingNotifications(
   }
 
   const next = new Date(target.getTime() + 24 * 60 * 60 * 1000);
-  const leaveRequests = await prisma.leaveRequest.findMany({
+  const leaveRequests = await client.leaveRequest.findMany({
     where: {
       status: 'approved',
       startDate: { gte: target, lt: next },
@@ -85,7 +90,7 @@ export async function runLeaveUpcomingNotifications(
     };
   }
 
-  const roleRecipients = await resolveRoleRecipientUserIds(['admin', 'mgmt']);
+  const roleRecipients = await resolveRoleRecipients(['admin', 'mgmt']);
   let createdNotifications = 0;
   let skippedExistingNotifications = 0;
   const sampleLeaveRequestIds: string[] = [];
@@ -106,10 +111,11 @@ export async function runLeaveUpcomingNotifications(
       kind: 'leave_upcoming',
       userIds: targetUserIds,
       scope: 'global',
+      client,
     });
     if (!filtered.allowed.length) continue;
 
-    const existing = await prisma.appNotification.findMany({
+    const existing = await client.appNotification.findMany({
       where: {
         kind: 'leave_upcoming',
         messageId: leaveRequestId,
@@ -140,7 +146,7 @@ export async function runLeaveUpcomingNotifications(
       continue;
     }
 
-    const result = await prisma.appNotification.createMany({
+    const result = await client.appNotification.createMany({
       data: targets.map((recipientId) => ({
         userId: recipientId,
         kind: 'leave_upcoming',
