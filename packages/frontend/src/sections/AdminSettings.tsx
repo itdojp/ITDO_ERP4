@@ -1,12 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '../api';
 import {
-  FormWizard,
   PolicyFormBuilder,
   createLocalStorageDraftAutosaveAdapter,
   useDraftAutosave,
 } from '../ui';
 import type { PolicyFormSchema, PolicyFormValue } from '../ui';
+import { AlertSettingsCard } from './admin-settings/AlertSettingsCard';
 import { AuditHistoryPanel } from './admin-settings/AuditHistoryPanel';
 import { ChatSettingsCard } from './ChatSettingsCard';
 import { ChatRoomSettingsCard } from './ChatRoomSettingsCard';
@@ -1853,99 +1853,45 @@ export const AdminSettings: React.FC = () => {
         <ScimSettingsCard />
         <RateCardSettingsCard />
         <WorklogSettingsCard />
-        <div className="card" style={{ padding: 12 }}>
-          <strong>アラート設定（簡易モック）</strong>
-          <div style={{ marginTop: 8 }}>
-            <FormWizard
-              steps={alertWizardSteps}
-              value={alertWizardStep}
-              onValueChange={setAlertWizardStep}
-              canSubmit={canSubmitAlertForm}
-              isDirty={alertDraft.isDirty}
-              protectUnsavedChanges
-              autosave={{
-                status: alertDraft.status,
-                lastSavedAt: alertDraft.lastSavedAt
-                  ? new Date(alertDraft.lastSavedAt).toLocaleString()
-                  : undefined,
-                message: alertDraft.errorMessage,
-                onRestoreDraft: alertDraft.hasRestorableDraft
-                  ? alertDraft.restoreDraft
-                  : undefined,
-                onRetrySave: () => {
-                  void alertDraft.saveNow();
-                },
-              }}
-              labels={{
-                back: '戻る',
-                next: '次へ',
-                submit: editingAlertId ? '更新' : '作成',
-                cancel: editingAlertId ? 'キャンセル' : 'クリア',
-                optional: '任意',
-                autosavePrefix: '下書き',
-              }}
-              onSubmit={submitAlertSetting}
-              onCancel={() => {
-                resetAlertForm();
-                void alertDraft.clearDraft();
-              }}
-            />
-            <div className="row" style={{ marginTop: 8 }}>
-              <button className="button secondary" onClick={loadAlertSettings}>
-                再読込
-              </button>
-            </div>
-          </div>
-          <div
-            className="list"
-            style={{ display: 'grid', gap: 8, marginTop: 8 }}
-          >
-            {alertItems.length === 0 && <div className="card">設定なし</div>}
-            {alertItems.map((item) => (
-              <div key={item.id} className="card" style={{ padding: 12 }}>
-                <div
-                  className="row"
-                  style={{ justifyContent: 'space-between' }}
-                >
-                  <div>
-                    <strong>{item.type}</strong> / {item.period} / threshold{' '}
-                    {item.threshold}
-                  </div>
-                  <span className="badge">
-                    {item.isEnabled ? 'enabled' : 'disabled'}
-                  </span>
-                </div>
-                <div style={{ fontSize: 12, color: '#475569', marginTop: 4 }}>
-                  channels: {(item.channels || []).join(', ') || '-'} / emails:{' '}
-                  {(item.recipients?.emails || []).join(', ') || '-'}
-                </div>
-                <div style={{ fontSize: 12, color: '#475569', marginTop: 4 }}>
-                  remindAfterHours: {item.remindAfterHours ?? '-'} / maxCount:{' '}
-                  {item.remindMaxCount ?? '-'}
-                </div>
-                <div style={{ fontSize: 12, color: '#475569', marginTop: 4 }}>
-                  Slack:{' '}
-                  {(item.recipients?.slackWebhooks || []).join(', ') || '-'} /
-                  Webhook: {(item.recipients?.webhooks || []).join(', ') || '-'}
-                </div>
-                <div className="row" style={{ marginTop: 6 }}>
-                  <button
-                    className="button secondary"
-                    onClick={() => toggleAlert(item.id, item.isEnabled)}
-                  >
-                    {(item.isEnabled ?? true) ? '無効化' : '有効化'}
-                  </button>
-                  <button
-                    className="button secondary"
-                    onClick={() => startEditAlert(item)}
-                  >
-                    編集
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
+        <AlertSettingsCard
+          wizard={{
+            steps: alertWizardSteps,
+            value: alertWizardStep,
+            onValueChange: setAlertWizardStep,
+            canSubmit: canSubmitAlertForm,
+            isDirty: alertDraft.isDirty,
+            autosave: {
+              status: alertDraft.status,
+              lastSavedAt: alertDraft.lastSavedAt
+                ? new Date(alertDraft.lastSavedAt).toLocaleString()
+                : undefined,
+              message: alertDraft.errorMessage,
+              onRestoreDraft: alertDraft.hasRestorableDraft
+                ? alertDraft.restoreDraft
+                : undefined,
+              onRetrySave: () => {
+                void alertDraft.saveNow();
+              },
+            },
+            labels: {
+              back: '戻る',
+              next: '次へ',
+              submit: editingAlertId ? '更新' : '作成',
+              cancel: editingAlertId ? 'キャンセル' : 'クリア',
+              optional: '任意',
+              autosavePrefix: '下書き',
+            },
+            onSubmit: submitAlertSetting,
+            onCancel: () => {
+              resetAlertForm();
+              void alertDraft.clearDraft();
+            },
+          }}
+          onReload={loadAlertSettings}
+          items={alertItems}
+          onToggle={toggleAlert}
+          onEdit={startEditAlert}
+        />
 
         <div className="card" style={{ padding: 12 }}>
           <strong>承認ルール（簡易モック）</strong>
