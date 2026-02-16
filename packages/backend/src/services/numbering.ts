@@ -11,22 +11,35 @@ const prefixMap: Record<string, string> = {
 };
 
 type RetryableError = { code?: string };
+type NumberingClient = Pick<typeof prisma, '$transaction'>;
+type NextNumberOptions = {
+  client?: NumberingClient;
+  maxRetries?: number;
+};
 
 function isRetryableError(err: unknown): err is RetryableError {
   return !!err && typeof err === 'object' && 'code' in err;
 }
 
-export async function nextNumber(kind: keyof typeof prefixMap, date: Date) {
+export async function nextNumber(
+  kind: keyof typeof prefixMap,
+  date: Date,
+  options: NextNumberOptions = {},
+) {
   const year = date.getUTCFullYear();
   const month = date.getUTCMonth() + 1;
   const prefix = prefixMap[kind];
   if (!prefix) throw new Error(`Unsupported kind: ${kind}`);
 
-  const maxRetries = 3;
+  const client = options.client ?? prisma;
+  const maxRetries =
+    typeof options.maxRetries === 'number' && options.maxRetries >= 1
+      ? Math.floor(options.maxRetries)
+      : 3;
   let lastError: unknown;
   for (let attempt = 0; attempt < maxRetries; attempt += 1) {
     try {
-      return await prisma.$transaction(
+      return await client.$transaction(
         async (tx: any) => {
           const seq = await tx.numberSequence.upsert({
             where: { kind_year_month: { kind, year, month } },
