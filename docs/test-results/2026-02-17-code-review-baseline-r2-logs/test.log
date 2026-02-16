@@ -1,0 +1,1075 @@
+npm run test --prefix packages/backend
+
+> erp4-backend-poc@0.1.0 test
+> npm run build && node scripts/run-tests.js
+
+
+> erp4-backend-poc@0.1.0 build
+> tsc -p tsconfig.json
+
+TAP version 13
+# Subtest: evaluateActionPolicyWithFallback: allow when no policy exists
+ok 1 - evaluateActionPolicyWithFallback: allow when no policy exists
+  ---
+  duration_ms: 1.899745
+  type: 'test'
+  ...
+# Subtest: evaluateActionPolicyWithFallback: deny when policy exists
+ok 2 - evaluateActionPolicyWithFallback: deny when policy exists
+  ---
+  duration_ms: 0.850152
+  type: 'test'
+  ...
+# Subtest: evaluateActionPolicy: deny by default when no policy exists
+ok 3 - evaluateActionPolicy: deny by default when no policy exists
+  ---
+  duration_ms: 0.31169
+  type: 'test'
+  ...
+# Subtest: evaluateActionPolicy: requireReason is enforced (no fallback)
+ok 4 - evaluateActionPolicy: requireReason is enforced (no fallback)
+  ---
+  duration_ms: 0.284068
+  type: 'test'
+  ...
+# Subtest: evaluateActionPolicy: approval_open guard can be bypassed by a lower policy (e.g. admin override)
+ok 5 - evaluateActionPolicy: approval_open guard can be bypassed by a lower policy (e.g. admin override)
+  ---
+  duration_ms: 3.413767
+  type: 'test'
+  ...
+# Subtest: evaluateActionPolicy: unknown guard type is fail-safe (guard_failed)
+ok 6 - evaluateActionPolicy: unknown guard type is fail-safe (guard_failed)
+  ---
+  duration_ms: 0.820256
+  type: 'test'
+  ...
+# Subtest: evaluateActionPolicy: project_closed guard rejects when project is closed
+ok 7 - evaluateActionPolicy: project_closed guard rejects when project is closed
+  ---
+  duration_ms: 1.167363
+  type: 'test'
+  ...
+# Subtest: evaluateActionPolicy: project_closed guard passes when project is not closed
+ok 8 - evaluateActionPolicy: project_closed guard passes when project is not closed
+  ---
+  duration_ms: 0.540225
+  type: 'test'
+  ...
+# Subtest: evaluateActionPolicy: period_lock guard rejects when period is locked
+ok 9 - evaluateActionPolicy: period_lock guard rejects when period is locked
+  ---
+  duration_ms: 1.132227
+  type: 'test'
+  ...
+# Subtest: evaluateActionPolicy: period_lock guard passes when period is not locked
+ok 10 - evaluateActionPolicy: period_lock guard passes when period is not locked
+  ---
+  duration_ms: 0.892551
+  type: 'test'
+  ...
+# Subtest: evaluateActionPolicy: period_lock guard batches queries for multiple period/project pairs
+ok 11 - evaluateActionPolicy: period_lock guard batches queries for multiple period/project pairs
+  ---
+  duration_ms: 0.593184
+  type: 'test'
+  ...
+# Subtest: evaluateActionPolicy: editable_days guard rejects when outside editable window
+ok 12 - evaluateActionPolicy: editable_days guard rejects when outside editable window
+  ---
+  duration_ms: 0.896829
+  type: 'test'
+  ...
+# Subtest: evaluateActionPolicy: editable_days guard passes when within editable window
+ok 13 - evaluateActionPolicy: editable_days guard passes when within editable window
+  ---
+  duration_ms: 0.456961
+  type: 'test'
+  ...
+# Subtest: evaluateActionPolicy: chat_ack_completed guard rejects when link missing
+ok 14 - evaluateActionPolicy: chat_ack_completed guard rejects when link missing
+  ---
+  duration_ms: 0.581312
+  type: 'test'
+  ...
+# Subtest: evaluateActionPolicy: supports string guard shorthand
+ok 15 - evaluateActionPolicy: supports string guard shorthand
+  ---
+  duration_ms: 0.625514
+  type: 'test'
+  ...
+# Subtest: evaluateActionPolicy: chat_ack_completed guard passes when all acked
+ok 16 - evaluateActionPolicy: chat_ack_completed guard passes when all acked
+  ---
+  duration_ms: 0.559702
+  type: 'test'
+  ...
+# Subtest: evaluateActionPolicyWithFallback: chat_ack_completed guard can be overridden by admin with reason
+ok 17 - evaluateActionPolicyWithFallback: chat_ack_completed guard can be overridden by admin with reason
+  ---
+  duration_ms: 0.351434
+  type: 'test'
+  ...
+# Subtest: evaluateActionPolicy: chat_ack_completed guard handles canceled and expired
+ok 18 - evaluateActionPolicy: chat_ack_completed guard handles canceled and expired
+  ---
+  duration_ms: 0.692919
+  type: 'test'
+  ...
+# Subtest: evaluateActionPolicy: chat_ack_completed guard handles message missing/deleted and empty required
+ok 19 - evaluateActionPolicy: chat_ack_completed guard handles message missing/deleted and empty required
+  ---
+  duration_ms: 0.985634
+  type: 'test'
+  ...
+# Subtest: createApprovalFor: returns existing open approval instance
+ok 20 - createApprovalFor: returns existing open approval instance
+  ---
+  duration_ms: 2.02821
+  type: 'test'
+  ...
+# Subtest: createApprovalFor: falls back to existing when create hits unique violation
+ok 21 - createApprovalFor: falls back to existing when create hits unique violation
+  ---
+  duration_ms: 0.828241
+  type: 'test'
+  ...
+# Subtest: matchApprovalSteps: default thresholds
+ok 22 - matchApprovalSteps: default thresholds
+  ---
+  duration_ms: 3.969458
+  type: 'test'
+  ...
+# Subtest: matchApprovalSteps: recurring can skip exec under threshold
+ok 23 - matchApprovalSteps: recurring can skip exec under threshold
+  ---
+  duration_ms: 0.28462
+  type: 'test'
+  ...
+# Subtest: normalizeRuleSteps: explicit order is preserved
+ok 24 - normalizeRuleSteps: explicit order is preserved
+  ---
+  duration_ms: 0.409893
+  type: 'test'
+  ...
+# Subtest: normalizeRuleSteps: parallelKey groups steps into the same stepOrder
+ok 25 - normalizeRuleSteps: parallelKey groups steps into the same stepOrder
+  ---
+  duration_ms: 0.227113
+  type: 'test'
+  ...
+# Subtest: normalizeRuleSteps: sequential input without explicit order is normalized
+ok 26 - normalizeRuleSteps: sequential input without explicit order is normalized
+  ---
+  duration_ms: 0.270814
+  type: 'test'
+  ...
+# Subtest: matchesRuleCondition: amount range and flow flags
+ok 27 - matchesRuleCondition: amount range and flow flags
+  ---
+  duration_ms: 0.414151
+  type: 'test'
+  ...
+# Subtest: matchesRuleCondition: amountMin/amountMax boundaries are inclusive
+ok 28 - matchesRuleCondition: amountMin/amountMax boundaries are inclusive
+  ---
+  duration_ms: 0.23653
+  type: 'test'
+  ...
+# Subtest: normalizeRuleStepsWithPolicy: stages format returns steps and stagePolicy
+ok 29 - normalizeRuleStepsWithPolicy: stages format returns steps and stagePolicy
+  ---
+  duration_ms: 0.572876
+  type: 'test'
+  ...
+# Subtest: normalizeRuleStepsWithPolicy: rejects duplicate stage order
+ok 30 - normalizeRuleStepsWithPolicy: rejects duplicate stage order
+  ---
+  duration_ms: 0.364689
+  type: 'test'
+  ...
+# Subtest: normalizeRuleStepsWithPolicy: rejects invalid quorum
+ok 31 - normalizeRuleStepsWithPolicy: rejects invalid quorum
+  ---
+  duration_ms: 0.43566
+  type: 'test'
+  ...
+# Subtest: createApprovalFor: rule query filters isActive and effectiveFrom<=now
+ok 32 - createApprovalFor: rule query filters isActive and effectiveFrom<=now
+  ---
+  duration_ms: 4.549847
+  type: 'test'
+  ...
+# Subtest: createApprovalFor: selects the first matching rule from ordered candidates
+ok 33 - createApprovalFor: selects the first matching rule from ordered candidates
+  ---
+  duration_ms: 0.542549
+  type: 'test'
+  ...
+# Subtest: isAllowedChatAckLinkTargetTable: approval_instances only
+ok 34 - isAllowedChatAckLinkTargetTable: approval_instances only
+  ---
+  duration_ms: 1.12312
+  type: 'test'
+  ...
+# Subtest: validateChatAckLinkTarget: rejects invalid table
+ok 35 - validateChatAckLinkTarget: rejects invalid table
+  ---
+  duration_ms: 1.668785
+  type: 'test'
+  ...
+# Subtest: validateChatAckLinkTarget: rejects missing target
+ok 36 - validateChatAckLinkTarget: rejects missing target
+  ---
+  duration_ms: 0.551527
+  type: 'test'
+  ...
+# Subtest: validateChatAckLinkTarget: accepts approval instance
+ok 37 - validateChatAckLinkTarget: accepts approval instance
+  ---
+  duration_ms: 0.301531
+  type: 'test'
+  ...
+# Subtest: previewChatAckRecipients: expands group/role and enforces limits
+ok 38 - previewChatAckRecipients: expands group/role and enforces limits
+  ---
+  duration_ms: 4.352473
+  type: 'test'
+  ...
+# Subtest: previewChatAckRecipients: returns reason and slices invalid list
+ok 39 - previewChatAckRecipients: returns reason and slices invalid list
+  ---
+  duration_ms: 0.702297
+  type: 'test'
+  ...
+# Subtest: resolveChatAckRequiredRecipientUserIds: merges direct+group+role targets with stable ordering
+ok 40 - resolveChatAckRequiredRecipientUserIds: merges direct+group+role targets with stable ordering
+  ---
+  duration_ms: 22.261635
+  type: 'test'
+  ...
+# Subtest: resolveChatAckRequiredRecipientUserIds: accepts UUID selectors for requiredGroupIds
+ok 41 - resolveChatAckRequiredRecipientUserIds: accepts UUID selectors for requiredGroupIds
+  ---
+  duration_ms: 0.758522
+  type: 'test'
+  ...
+# Subtest: resolveChatAckRequiredRecipientUserIds: accepts UUID selectors for role-mapped groups
+ok 42 - resolveChatAckRequiredRecipientUserIds: accepts UUID selectors for role-mapped groups
+  ---
+  duration_ms: 1.05326
+  type: 'test'
+  ...
+# Subtest: resolveChatAckRequiredRecipientUserIds: preserves group order
+ok 43 - resolveChatAckRequiredRecipientUserIds: preserves group order
+  ---
+  duration_ms: 1.326689
+  type: 'test'
+  ...
+# Subtest: resolveChatAckRequiredRecipientUserIds: prefers UUID selector over displayName collisions
+ok 44 - resolveChatAckRequiredRecipientUserIds: prefers UUID selector over displayName collisions
+  ---
+  duration_ms: 0.568908
+  type: 'test'
+  ...
+# Subtest: validateChatAckRequiredRecipientsForRoom: project rejects non-members
+ok 45 - validateChatAckRequiredRecipientsForRoom: project rejects non-members
+  ---
+  duration_ms: 7.921472
+  type: 'test'
+  ...
+# Subtest: validateChatAckRequiredRecipientsForRoom: project allowExternalUsers allows room members
+ok 46 - validateChatAckRequiredRecipientsForRoom: project allowExternalUsers allows room members
+  ---
+  duration_ms: 0.682771
+  type: 'test'
+  ...
+# Subtest: validateChatAckRequiredRecipientsForRoom: project allows admin/mgmt via group mapping
+ok 47 - validateChatAckRequiredRecipientsForRoom: project allows admin/mgmt via group mapping
+  ---
+  duration_ms: 0.481596
+  type: 'test'
+  ...
+# Subtest: validateChatAckRequiredRecipientsForRoom: department requires group membership
+ok 48 - validateChatAckRequiredRecipientsForRoom: department requires group membership
+  ---
+  duration_ms: 0.450258
+  type: 'test'
+  ...
+# Subtest: validateChatAckRequiredRecipientsForRoom: department allowExternalUsers allows room members
+ok 49 - validateChatAckRequiredRecipientsForRoom: department allowExternalUsers allows room members
+  ---
+  duration_ms: 0.46253
+  type: 'test'
+  ...
+# Subtest: validateChatAckRequiredRecipientsForRoom: private_group requires room membership
+ok 50 - validateChatAckRequiredRecipientsForRoom: private_group requires room membership
+  ---
+  duration_ms: 0.554122
+  type: 'test'
+  ...
+# Subtest: validateChatAckRequiredRecipientsForRoom: mixed inactive+forbidden uses required_users_invalid
+ok 51 - validateChatAckRequiredRecipientsForRoom: mixed inactive+forbidden uses required_users_invalid
+  ---
+  duration_ms: 0.65575
+  type: 'test'
+  ...
+# Subtest: validateChatAckRequiredRecipientsForRoom: company without ACL skips access check but rejects inactive
+ok 52 - validateChatAckRequiredRecipientsForRoom: company without ACL skips access check but rejects inactive
+  ---
+  duration_ms: 0.615264
+  type: 'test'
+  ...
+# Subtest: validateChatAckRequiredRecipientsForRoom: company with viewerGroupIds enforces membership
+ok 53 - validateChatAckRequiredRecipientsForRoom: company with viewerGroupIds enforces membership
+  ---
+  duration_ms: 2.547951
+  type: 'test'
+  ...
+# Subtest: runChatAckReminders: chat_ack_escalation is delivered even when user is globally muted
+ok 54 - runChatAckReminders: chat_ack_escalation is delivered even when user is globally muted
+  ---
+  duration_ms: 3.328214
+  type: 'test'
+  ...
+# Subtest: runChatAckReminders: chat_ack_required reminder is muted by muteAllUntil
+ok 55 - runChatAckReminders: chat_ack_required reminder is muted by muteAllUntil
+  ---
+  duration_ms: 1.328141
+  type: 'test'
+  ...
+# Subtest: chatAckTemplateSchema: accepts template with due/escalation
+ok 56 - chatAckTemplateSchema: accepts template with due/escalation
+  ---
+  duration_ms: 1.567287
+  type: 'test'
+  ...
+# Subtest: chatAckTemplateSchema: rejects missing messageBody
+ok 57 - chatAckTemplateSchema: rejects missing messageBody
+  ---
+  duration_ms: 0.395666
+  type: 'test'
+  ...
+# Subtest: chatAckTemplateSchema: rejects invalid dueInHours
+ok 58 - chatAckTemplateSchema: rejects invalid dueInHours
+  ---
+  duration_ms: 0.496514
+  type: 'test'
+  ...
+# Subtest: chatAckTemplatePatchSchema: accepts partial update
+ok 59 - chatAckTemplatePatchSchema: accepts partial update
+  ---
+  duration_ms: 0.303896
+  type: 'test'
+  ...
+# Subtest: filterChatMentionRecipients: returns all when roomId missing
+ok 60 - filterChatMentionRecipients: returns all when roomId missing
+  ---
+  duration_ms: 1.450109
+  type: 'test'
+  ...
+# Subtest: filterChatMentionRecipients: respects muteAllUntil and room settings
+ok 61 - filterChatMentionRecipients: respects muteAllUntil and room settings
+  ---
+  duration_ms: 1.129782
+  type: 'test'
+  ...
+# Subtest: filterChatAllPostRecipients: respects muteAllUntil and room settings
+ok 62 - filterChatAllPostRecipients: respects muteAllUntil and room settings
+  ---
+  duration_ms: 0.555734
+  type: 'test'
+  ...
+# Subtest: resolveRoomAudienceUserIds: private_group uses room members
+ok 63 - resolveRoomAudienceUserIds: private_group uses room members
+  ---
+  duration_ms: 2.225581
+  type: 'test'
+  ...
+# Subtest: resolveRoomAudienceUserIds: department resolves group members
+ok 64 - resolveRoomAudienceUserIds: department resolves group members
+  ---
+  duration_ms: 1.652981
+  type: 'test'
+  ...
+# Subtest: resolveRoomAudienceUserIds: company uses viewerGroupIds when set
+ok 65 - resolveRoomAudienceUserIds: company uses viewerGroupIds when set
+  ---
+  duration_ms: 0.489641
+  type: 'test'
+  ...
+# Subtest: expandRoomMentionRecipients: skips group members when audience empty
+ok 66 - expandRoomMentionRecipients: skips group members when audience empty
+  ---
+  duration_ms: 0.640362
+  type: 'test'
+  ...
+# Subtest: expandRoomMentionRecipients: intersects group mentions with audience
+ok 67 - expandRoomMentionRecipients: intersects group mentions with audience
+  ---
+  duration_ms: 0.616427
+  type: 'test'
+  ...
+# Subtest: expandRoomMentionRecipients: @all adds room audience
+ok 68 - expandRoomMentionRecipients: @all adds room audience
+  ---
+  duration_ms: 4.813037
+  type: 'test'
+  ...
+# Subtest: ensureChatRoomContentAccess: department allows groupAccountIds match
+ok 69 - ensureChatRoomContentAccess: department allows groupAccountIds match
+  ---
+  duration_ms: 1.310148
+  type: 'test'
+  ...
+# Subtest: ensureChatRoomContentAccess: department allows groupIds match
+ok 70 - ensureChatRoomContentAccess: department allows groupIds match
+  ---
+  duration_ms: 0.265213
+  type: 'test'
+  ...
+# Subtest: ensureChatRoomContentAccess: department denies when no group match
+ok 71 - ensureChatRoomContentAccess: department denies when no group match
+  ---
+  duration_ms: 0.321518
+  type: 'test'
+  ...
+# Subtest: ensureChatRoomContentAccess: viewerGroupIds restricts read access
+ok 72 - ensureChatRoomContentAccess: viewerGroupIds restricts read access
+  ---
+  duration_ms: 0.443816
+  type: 'test'
+  ...
+# Subtest: ensureChatRoomContentAccess: viewerGroupIds allows read when matched
+ok 73 - ensureChatRoomContentAccess: viewerGroupIds allows read when matched
+  ---
+  duration_ms: 0.522832
+  type: 'test'
+  ...
+# Subtest: ensureChatRoomContentAccess: posterGroupIds restricts post access only
+ok 74 - ensureChatRoomContentAccess: posterGroupIds restricts post access only
+  ---
+  duration_ms: 0.434769
+  type: 'test'
+  ...
+# Subtest: ensureChatRoomContentAccess: posterGroupIds allows post when matched
+ok 75 - ensureChatRoomContentAccess: posterGroupIds allows post when matched
+  ---
+  duration_ms: 0.310057
+  type: 'test'
+  ...
+# Subtest: ensureChatRoomContentAccess: post can be allowed without view when posterGroupIds differ
+ok 76 - ensureChatRoomContentAccess: post can be allowed without view when posterGroupIds differ
+  ---
+  duration_ms: 0.603533
+  type: 'test'
+  ...
+# Subtest: parseDueDateRule: null/undefined returns null
+ok 77 - parseDueDateRule: null/undefined returns null
+  ---
+  duration_ms: 2.118052
+  type: 'test'
+  ...
+# Subtest: parseDueDateRule: invalid payload throws
+ok 78 - parseDueDateRule: invalid payload throws
+  ---
+  duration_ms: 3.999628
+  type: 'test'
+  ...
+# Subtest: parseDueDateRule: accepts numeric string and boundaries
+ok 79 - parseDueDateRule: accepts numeric string and boundaries
+  ---
+  duration_ms: 0.996004
+  type: 'test'
+  ...
+# Subtest: computeDueDate: end of month + offset
+ok 80 - computeDueDate: end of month + offset
+  ---
+  duration_ms: 0.583035
+  type: 'test'
+  ...
+# Subtest: computeDueDate: offset moves to next month
+ok 81 - computeDueDate: offset moves to next month
+  ---
+  duration_ms: 0.880708
+  type: 'test'
+  ...
+# Subtest: computeDueDate: max offset can cross year boundary
+ok 82 - computeDueDate: max offset can cross year boundary
+  ---
+  duration_ms: 0.281594
+  type: 'test'
+  ...
+# Subtest: computeDueDate: leap year February end is handled correctly
+ok 83 - computeDueDate: leap year February end is handled correctly
+  ---
+  duration_ms: 6.430957
+  type: 'test'
+  ...
+# Subtest: computeDueDate: null/undefined rule returns null
+ok 84 - computeDueDate: null/undefined rule returns null
+  ---
+  duration_ms: 0.211003
+  type: 'test'
+  ...
+# Subtest: envValidation: production + AUTH_MODE=header is rejected by default
+ok 85 - envValidation: production + AUTH_MODE=header is rejected by default
+  ---
+  duration_ms: 67.346094
+  type: 'test'
+  ...
+# Subtest: envValidation: production + AUTH_MODE=header is allowed with explicit flag
+ok 86 - envValidation: production + AUTH_MODE=header is allowed with explicit flag
+  ---
+  duration_ms: 69.000217
+  type: 'test'
+  ...
+# Subtest: envValidation: AUTH_ALLOW_HEADER_FALLBACK_IN_PROD validates boolean values
+ok 87 - envValidation: AUTH_ALLOW_HEADER_FALLBACK_IN_PROD validates boolean values
+  ---
+  duration_ms: 75.280483
+  type: 'test'
+  ...
+# Subtest: auth plugin: production + AUTH_MODE=hybrid rejects missing bearer token by default
+ok 88 - auth plugin: production + AUTH_MODE=hybrid rejects missing bearer token by default
+  ---
+  duration_ms: 1618.474076
+  type: 'test'
+  ...
+# Subtest: auth plugin: production + AUTH_MODE=hybrid allows header fallback with explicit flag
+ok 89 - auth plugin: production + AUTH_MODE=hybrid allows header fallback with explicit flag
+  ---
+  duration_ms: 1511.999168
+  type: 'test'
+  ...
+# Subtest: archiveEvidencePack: local provider stores content and metadata
+ok 90 - archiveEvidencePack: local provider stores content and metadata
+  ---
+  duration_ms: 32.242108
+  type: 'test'
+  ...
+# Subtest: archiveEvidencePack: s3 provider validates required config
+ok 91 - archiveEvidencePack: s3 provider validates required config
+  ---
+  duration_ms: 1.418159
+  type: 'test'
+  ...
+# Subtest: buildEvidencePackJsonExport: returns stable sha256 digest
+ok 92 - buildEvidencePackJsonExport: returns stable sha256 digest
+  ---
+  duration_ms: 4.484515
+  type: 'test'
+  ...
+# Subtest: maskEvidencePackJsonExport: masks sensitive fields and rehashes
+ok 93 - maskEvidencePackJsonExport: masks sensitive fields and rehashes
+  ---
+  duration_ms: 2.190446
+  type: 'test'
+  ...
+# Subtest: renderEvidencePackPdf: returns pdf buffer
+ok 94 - renderEvidencePackPdf: returns pdf buffer
+  ---
+  duration_ms: 32.096194
+  type: 'test'
+  ...
+# Subtest: evidenceSnapshotCreateSchema: accepts forceRegenerate with reasonText
+ok 95 - evidenceSnapshotCreateSchema: accepts forceRegenerate with reasonText
+  ---
+  duration_ms: 4.257737
+  type: 'test'
+  ...
+# Subtest: evidenceSnapshotCreateSchema: rejects too long reasonText
+ok 96 - evidenceSnapshotCreateSchema: rejects too long reasonText
+  ---
+  duration_ms: 0.611995
+  type: 'test'
+  ...
+# Subtest: evidenceSnapshotHistoryQuerySchema: accepts valid limit
+ok 97 - evidenceSnapshotHistoryQuerySchema: accepts valid limit
+  ---
+  duration_ms: 0.550976
+  type: 'test'
+  ...
+# Subtest: evidenceSnapshotHistoryQuerySchema: rejects out-of-range limit
+ok 98 - evidenceSnapshotHistoryQuerySchema: rejects out-of-range limit
+  ---
+  duration_ms: 0.577348
+  type: 'test'
+  ...
+# Subtest: evidencePackExportQuerySchema: accepts json format with version
+ok 99 - evidencePackExportQuerySchema: accepts json format with version
+  ---
+  duration_ms: 0.593504
+  type: 'test'
+  ...
+# Subtest: evidencePackExportQuerySchema: accepts pdf format
+ok 100 - evidencePackExportQuerySchema: accepts pdf format
+  ---
+  duration_ms: 0.380668
+  type: 'test'
+  ...
+# Subtest: evidencePackExportQuerySchema: rejects invalid format
+ok 101 - evidencePackExportQuerySchema: rejects invalid format
+  ---
+  duration_ms: 0.20422
+  type: 'test'
+  ...
+# Subtest: evidencePackExportQuerySchema: rejects invalid mask
+ok 102 - evidencePackExportQuerySchema: rejects invalid mask
+  ---
+  duration_ms: 0.285271
+  type: 'test'
+  ...
+# Subtest: evidencePackArchiveBodySchema: accepts json payload
+ok 103 - evidencePackArchiveBodySchema: accepts json payload
+  ---
+  duration_ms: 0.489981
+  type: 'test'
+  ...
+# Subtest: evidencePackArchiveBodySchema: accepts pdf payload
+ok 104 - evidencePackArchiveBodySchema: accepts pdf payload
+  ---
+  duration_ms: 0.52169
+  type: 'test'
+  ...
+# Subtest: evidencePackArchiveBodySchema: rejects unknown format
+ok 105 - evidencePackArchiveBodySchema: rejects unknown format
+  ---
+  duration_ms: 0.249585
+  type: 'test'
+  ...
+# Subtest: resolveEvidenceSnapshotTargetKind: supports singular/plural aliases
+ok 106 - resolveEvidenceSnapshotTargetKind: supports singular/plural aliases
+  ---
+  duration_ms: 1.041859
+  type: 'test'
+  ...
+# Subtest: createEvidenceSnapshotForApproval: returns unsupportedTarget for unsupported table
+ok 107 - createEvidenceSnapshotForApproval: returns unsupportedTarget for unsupported table
+  ---
+  duration_ms: 0.481055
+  type: 'test'
+  ...
+# Subtest: createEvidenceSnapshotForApproval: reuses latest snapshot when forceRegenerate=false
+ok 108 - createEvidenceSnapshotForApproval: reuses latest snapshot when forceRegenerate=false
+  ---
+  duration_ms: 0.296572
+  type: 'test'
+  ...
+# Subtest: createEvidenceSnapshotForApproval: normalizes annotation and captures chat evidence
+ok 109 - createEvidenceSnapshotForApproval: normalizes annotation and captures chat evidence
+  ---
+  duration_ms: 2.814788
+  type: 'test'
+  ...
+# Subtest: createEvidenceSnapshotForApproval: forceRegenerate creates next version
+ok 110 - createEvidenceSnapshotForApproval: forceRegenerate creates next version
+  ---
+  duration_ms: 0.518254
+  type: 'test'
+  ...
+# Subtest: runLeaveUpcomingNotifications: global mute suppresses leave_upcoming for non-bypass kind
+ok 111 - runLeaveUpcomingNotifications: global mute suppresses leave_upcoming for non-bypass kind
+  ---
+  duration_ms: 5.979047
+  type: 'test'
+  ...
+# Subtest: runLeaveUpcomingNotifications: skips existing recipient notifications and creates for remaining recipients
+ok 112 - runLeaveUpcomingNotifications: skips existing recipient notifications and creates for remaining recipients
+  ---
+  duration_ms: 4.545934
+  type: 'test'
+  ...
+# Subtest: runLeaveUpcomingNotifications: dryRun reports candidate count without creating records
+ok 113 - runLeaveUpcomingNotifications: dryRun reports candidate count without creating records
+  ---
+  duration_ms: 0.751509
+  type: 'test'
+  ...
+# Subtest: parseCsvRaw: basic csv
+ok 114 - parseCsvRaw: basic csv
+  ---
+  duration_ms: 1.882362
+  type: 'test'
+  ...
+# Subtest: parseCsvRaw: quoted fields and escaped quotes
+ok 115 - parseCsvRaw: quoted fields and escaped quotes
+  ---
+  duration_ms: 0.326988
+  type: 'test'
+  ...
+# Subtest: parseCsvRaw: supports CRLF and skips empty rows
+ok 116 - parseCsvRaw: supports CRLF and skips empty rows
+  ---
+  duration_ms: 1.815509
+  type: 'test'
+  ...
+# Subtest: parseCsvRaw: strips UTF-8 BOM
+ok 117 - parseCsvRaw: strips UTF-8 BOM
+  ---
+  duration_ms: 0.305689
+  type: 'test'
+  ...
+# Subtest: parseCsvBoolean: parses common values
+ok 118 - parseCsvBoolean: parses common values
+  ---
+  duration_ms: 0.332539
+  type: 'test'
+  ...
+# Subtest: makePoMigrationId: deterministic and valid uuid
+ok 119 - makePoMigrationId: deterministic and valid uuid
+  ---
+  duration_ms: 2.595099
+  type: 'test'
+  ...
+# Subtest: makePoMigrationId: kind is part of the name
+ok 120 - makePoMigrationId: kind is part of the name
+  ---
+  duration_ms: 0.536819
+  type: 'test'
+  ...
+# Subtest: makePoMigrationId: legacyId affects output
+ok 121 - makePoMigrationId: legacyId affects output
+  ---
+  duration_ms: 0.544754
+  type: 'test'
+  ...
+# Subtest: notificationPreferencePatchSchema: accepts digest with interval
+ok 122 - notificationPreferencePatchSchema: accepts digest with interval
+  ---
+  duration_ms: 3.31029
+  type: 'test'
+  ...
+# Subtest: notificationPreferencePatchSchema: rejects invalid digest interval
+ok 123 - notificationPreferencePatchSchema: rejects invalid digest interval
+  ---
+  duration_ms: 0.251438
+  type: 'test'
+  ...
+# Subtest: chatRoomNotificationSettingPatchSchema: accepts notify flags
+ok 124 - chatRoomNotificationSettingPatchSchema: accepts notify flags
+  ---
+  duration_ms: 0.417346
+  type: 'test'
+  ...
+# Subtest: chatRoomNotificationSettingPatchSchema: rejects invalid muteUntil
+ok 125 - chatRoomNotificationSettingPatchSchema: rejects invalid muteUntil
+  ---
+  duration_ms: 0.630163
+  type: 'test'
+  ...
+# Subtest: isNotificationPushKindEnabled: uses default allowlist
+ok 126 - isNotificationPushKindEnabled: uses default allowlist
+  ---
+  duration_ms: 4.388446
+  type: 'test'
+  ...
+# Subtest: isNotificationPushKindEnabled: wildcard enables all kinds
+ok 127 - isNotificationPushKindEnabled: wildcard enables all kinds
+  ---
+  duration_ms: 0.244164
+  type: 'test'
+  ...
+# Subtest: dispatchNotificationPushes: skips when kind is disabled
+ok 128 - dispatchNotificationPushes: skips when kind is disabled
+  ---
+  duration_ms: 0.392771
+  type: 'test'
+  ...
+# Subtest: dispatchNotificationPushes: dispatches and disables stale subscriptions
+ok 129 - dispatchNotificationPushes: dispatches and disables stale subscriptions
+  ---
+  duration_ms: 1.382292
+  type: 'test'
+  ...
+# Subtest: dispatchNotificationPushes: supports app-notification kinds added by env
+ok 130 - dispatchNotificationPushes: supports app-notification kinds added by env
+  ---
+  duration_ms: 1.906353
+  type: 'test'
+  ...
+# Subtest: filterNotificationRecipients: global scope applies muteAllUntil
+ok 131 - filterNotificationRecipients: global scope applies muteAllUntil
+  ---
+  duration_ms: 2.148689
+  type: 'test'
+  ...
+# Subtest: filterNotificationRecipients: bypass kinds are not muted
+ok 132 - filterNotificationRecipients: bypass kinds are not muted
+  ---
+  duration_ms: 0.249193
+  type: 'test'
+  ...
+# Subtest: filterNotificationRecipients: chat mention scope applies room settings
+ok 133 - filterNotificationRecipients: chat mention scope applies room settings
+  ---
+  duration_ms: 0.420988
+  type: 'test'
+  ...
+# Subtest: filterNotificationRecipients: chat all posts scope applies room settings
+ok 134 - filterNotificationRecipients: chat all posts scope applies room settings
+  ---
+  duration_ms: 0.242201
+  type: 'test'
+  ...
+# Subtest: filterNotificationRecipients: normalizes duplicate user ids
+ok 135 - filterNotificationRecipients: normalizes duplicate user ids
+  ---
+  duration_ms: 0.280162
+  type: 'test'
+  ...
+# Subtest: filterNotificationRecipients: bypass kinds can be overridden by env
+ok 136 - filterNotificationRecipients: bypass kinds can be overridden by env
+  ---
+  duration_ms: 0.39198
+  type: 'test'
+  ...
+# Subtest: filterNotificationRecipients: empty bypass env disables defaults
+ok 137 - filterNotificationRecipients: empty bypass env disables defaults
+  ---
+  duration_ms: 0.336436
+  type: 'test'
+  ...
+# Subtest: nextNumber: returns formatted number with padded month and serial
+ok 138 - nextNumber: returns formatted number with padded month and serial
+  ---
+  duration_ms: 2.033695
+  type: 'test'
+  ...
+# Subtest: nextNumber: rejects unsupported kind
+ok 139 - nextNumber: rejects unsupported kind
+  ---
+  duration_ms: 0.658415
+  type: 'test'
+  ...
+# Subtest: nextNumber: rejects serial overflow without retry
+ok 140 - nextNumber: rejects serial overflow without retry
+  ---
+  duration_ms: 0.391077
+  type: 'test'
+  ...
+# Subtest: nextNumber: retries on P2034 and succeeds
+ok 141 - nextNumber: retries on P2034 and succeeds
+  ---
+  duration_ms: 0.275853
+  type: 'test'
+  ...
+# Subtest: nextNumber: does not retry non-retryable error
+ok 142 - nextNumber: does not retry non-retryable error
+  ---
+  duration_ms: 0.216253
+  type: 'test'
+  ...
+# Subtest: nextNumber: respects maxRetries for retryable errors
+ok 143 - nextNumber: respects maxRetries for retryable errors
+  ---
+  duration_ms: 0.303244
+  type: 'test'
+  ...
+# Subtest: nextNumber: falls back to default retries when maxRetries is Infinity
+ok 144 - nextNumber: falls back to default retries when maxRetries is Infinity
+  ---
+  duration_ms: 0.412768
+  type: 'test'
+  ...
+# Subtest: nextNumber: clamps excessive maxRetries to upper bound
+ok 145 - nextNumber: clamps excessive maxRetries to upper bound
+  ---
+  duration_ms: 0.661602
+  type: 'test'
+  ...
+# Subtest: request-id is attached to responses
+ok 146 - request-id is attached to responses
+  ---
+  duration_ms: 1578.421943
+  type: 'test'
+  ...
+# Subtest: inbound request-id is echoed if safe
+ok 147 - inbound request-id is echoed if safe
+  ---
+  duration_ms: 247.65106
+  type: 'test'
+  ...
+# Subtest: legacy error responses are normalized
+ok 148 - legacy error responses are normalized
+  ---
+  duration_ms: 197.249001
+  type: 'test'
+  ...
+# Subtest: validation errors are returned with unified envelope
+ok 149 - validation errors are returned with unified envelope
+  ---
+  duration_ms: 179.198809
+  type: 'test'
+  ...
+# Subtest: hasProjectAccess: admin/mgmt are always allowed
+ok 150 - hasProjectAccess: admin/mgmt are always allowed
+  ---
+  duration_ms: 4.290815
+  type: 'test'
+  ...
+# Subtest: hasProjectAccess: user requires project membership
+ok 151 - hasProjectAccess: user requires project membership
+  ---
+  duration_ms: 0.254704
+  type: 'test'
+  ...
+# Subtest: requireRoleOrSelf: allows self and denies other user
+ok 152 - requireRoleOrSelf: allows self and denies other user
+  ---
+  duration_ms: 0.497296
+  type: 'test'
+  ...
+# Subtest: requireRoleOrSelf: allows admin to access other users
+ok 153 - requireRoleOrSelf: allows admin to access other users
+  ---
+  duration_ms: 0.205272
+  type: 'test'
+  ...
+# Subtest: requireRoleOrSelf: denies when target or requester user id is missing
+ok 154 - requireRoleOrSelf: denies when target or requester user id is missing
+  ---
+  duration_ms: 0.277517
+  type: 'test'
+  ...
+# Subtest: requireProjectAccess: denies non-member project and allows admin
+ok 155 - requireProjectAccess: denies non-member project and allows admin
+  ---
+  duration_ms: 0.250967
+  type: 'test'
+  ...
+# Subtest: requireProjectAccess: allows mgmt and member access
+ok 156 - requireProjectAccess: allows mgmt and member access
+  ---
+  duration_ms: 0.20955
+  type: 'test'
+  ...
+# Subtest: requireProjectAccess: allows when projectId is undefined
+ok 157 - requireProjectAccess: allows when projectId is undefined
+  ---
+  duration_ms: 0.168102
+  type: 'test'
+  ...
+# Subtest: readiness report: db ok
+ok 158 - readiness report: db ok
+  ---
+  duration_ms: 2.665661
+  type: 'test'
+  ...
+# Subtest: readiness report: db unavailable
+ok 159 - readiness report: db unavailable
+  ---
+  duration_ms: 0.389505
+  type: 'test'
+  ...
+# Subtest: task dependency graph: reachability
+ok 160 - task dependency graph: reachability
+  ---
+  duration_ms: 1.024506
+  type: 'test'
+  ...
+# Subtest: task dependency graph: add/remove edges
+ok 161 - task dependency graph: add/remove edges
+  ---
+  duration_ms: 0.2634
+  type: 'test'
+  ...
+# Subtest: normalizeParentId: trims and converts to null
+ok 162 - normalizeParentId: trims and converts to null
+  ---
+  duration_ms: 0.181027
+  type: 'test'
+  ...
+# Subtest: normalizeVendorInvoiceAllocations: computes taxAmount when missing
+ok 163 - normalizeVendorInvoiceAllocations: computes taxAmount when missing
+  ---
+  duration_ms: 1.585109
+  type: 'test'
+  ...
+# Subtest: normalizeVendorInvoiceAllocations: auto-adjusts diff on last item
+ok 164 - normalizeVendorInvoiceAllocations: auto-adjusts diff on last item
+  ---
+  duration_ms: 0.323401
+  type: 'test'
+  ...
+# Subtest: normalizeVendorInvoiceAllocations: keeps diff when autoAdjust disabled
+ok 165 - normalizeVendorInvoiceAllocations: keeps diff when autoAdjust disabled
+  ---
+  duration_ms: 0.243323
+  type: 'test'
+  ...
+# Subtest: findExceededPurchaseOrderLineQuantities: allows partial invoice within PO quantity
+ok 166 - findExceededPurchaseOrderLineQuantities: allows partial invoice within PO quantity
+  ---
+  duration_ms: 1.355322
+  type: 'test'
+  ...
+# Subtest: findExceededPurchaseOrderLineQuantities: detects exceeded quantity by line
+ok 167 - findExceededPurchaseOrderLineQuantities: detects exceeded quantity by line
+  ---
+  duration_ms: 1.887713
+  type: 'test'
+  ...
+# Subtest: findExceededPurchaseOrderLineQuantities: tolerates floating point boundary
+ok 168 - findExceededPurchaseOrderLineQuantities: tolerates floating point boundary
+  ---
+  duration_ms: 0.330946
+  type: 'test'
+  ...
+# Subtest: findExceededPurchaseOrderLineQuantities: ignores malformed and unknown line ids
+ok 169 - findExceededPurchaseOrderLineQuantities: ignores malformed and unknown line ids
+  ---
+  duration_ms: 0.223726
+  type: 'test'
+  ...
+# Subtest: summarizePurchaseOrderLineQuantities: returns remaining quantity per PO line
+ok 170 - summarizePurchaseOrderLineQuantities: returns remaining quantity per PO line
+  ---
+  duration_ms: 0.46197
+  type: 'test'
+  ...
+# Subtest: summarizePurchaseOrderLineQuantities: marks exceeded when quantity is over PO
+ok 171 - summarizePurchaseOrderLineQuantities: marks exceeded when quantity is over PO
+  ---
+  duration_ms: 0.216362
+  type: 'test'
+  ...
+# Subtest: normalizeVendorInvoiceLines: computes amount/tax/gross when omitted
+ok 172 - normalizeVendorInvoiceLines: computes amount/tax/gross when omitted
+  ---
+  duration_ms: 1.086361
+  type: 'test'
+  ...
+# Subtest: normalizeVendorInvoiceLines: auto-adjusts diff by last line taxAmount
+ok 173 - normalizeVendorInvoiceLines: auto-adjusts diff by last line taxAmount
+  ---
+  duration_ms: 0.165868
+  type: 'test'
+  ...
+# Subtest: normalizeVendorInvoiceLines: keeps diff when autoAdjust disabled
+ok 174 - normalizeVendorInvoiceLines: keeps diff when autoAdjust disabled
+  ---
+  duration_ms: 0.151953
+  type: 'test'
+  ...
+# Subtest: normalizeVendorInvoiceLines: uses explicit amount even when quantity*unitPrice differs
+ok 175 - normalizeVendorInvoiceLines: uses explicit amount even when quantity*unitPrice differs
+  ---
+  duration_ms: 0.244154
+  type: 'test'
+  ...
+# Subtest: normalizeVendorInvoiceLines: keeps diff when autoAdjust would make tax negative
+ok 176 - normalizeVendorInvoiceLines: keeps diff when autoAdjust would make tax negative
+  ---
+  duration_ms: 0.144759
+  type: 'test'
+  ...
+1..176
+# tests 176
+# suites 0
+# pass 176
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 3626.387407

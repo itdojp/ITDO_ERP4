@@ -1,0 +1,14 @@
+npm run format:check --prefix packages/backend
+
+> erp4-backend-poc@0.1.0 format:check
+> prettier --check "src/**/*.{ts,tsx,js,jsx,json,md}"
+
+Checking formatting...
+All matched files use Prettier code style!
+npm run format:check --prefix packages/frontend
+
+> erp4-frontend-poc@0.1.0 format:check
+> prettier --check "src/**/*.{ts,tsx,jsx,js,css,json,md}"
+
+Checking formatting...
+All matched files use Prettier code style!

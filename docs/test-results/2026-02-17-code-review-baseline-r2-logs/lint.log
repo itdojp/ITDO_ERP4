@@ -1,0 +1,10 @@
+npm run lint --prefix packages/backend
+
+> erp4-backend-poc@0.1.0 lint
+> eslint "src/**/*.{ts,tsx}"
+
+npm run lint --prefix packages/frontend
+
+> erp4-frontend-poc@0.1.0 lint
+> eslint "src/**/*.{ts,tsx,jsx,js}"
+
