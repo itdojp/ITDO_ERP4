@@ -18,7 +18,7 @@
 | PoC導線（UI） | ダッシュボード→日報→工数→請求 | Playwright E2E（`packages/frontend/e2e`） | A | 重要導線の最小ケースを安定化（flaky排除） |
 | PoC導線（API） | プロジェクト/見積/請求/工数/経費のハッピーパス | E2E間接 + 手動スモーク（`scripts/smoke-backend.sh`） | A | unit/integration を追加し、APIの分岐を早期検知 |
 | 承認（ルール/ステップ） | 金額閾値/定期案件/並列承認の判定 | backend unit（`packages/backend/test/approvalLogic.test.js`） | A | 追加の分岐（条件マッチ/順序正規化）を継続拡張 |
-| 通知抑制（チャット） | `muteAllUntil` / `notifyMentions` / `notifyAllPosts` が通知作成を抑止 | backend unit（`packages/backend/test/chatMentionNotifications.test.js`） + E2E（`packages/frontend/e2e/backend-notification-suppression.spec.ts`） | A | chat_ack_escalation 等のバイパス種別のE2Eを追加 |
+| 通知抑制（チャット） | `muteAllUntil` / `notifyMentions` / `notifyAllPosts` が通知作成を抑止 | backend unit（`packages/backend/test/chatMentionNotifications.test.js` / `packages/backend/test/chatAckReminders.test.js`） + E2E（`packages/frontend/e2e/backend-notification-suppression.spec.ts`） | A | chat_ack_escalation 等のバイパス種別のE2Eを追加 |
 | RBAC/可視範囲 | 非管理ロールの取得制限（self / project） | backend unit（一部: `packages/backend/test/rbac.test.js`） | A | 主要APIの integration を追加し、実動作も担保 |
 | 期日/アラート | 納期・承認遅延・残業等の計算 | backend unit（一部: `packages/backend/test/dueDateRule.test.js`） | A | アラート閾値/集計の境界条件を追加 |
 | レポート | 月次/案件別/個人別の集計 | E2E一部 + 手動 | B | 集計の境界条件を unit/integration で追加 |

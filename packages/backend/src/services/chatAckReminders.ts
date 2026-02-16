@@ -11,6 +11,9 @@ type RunChatAckReminderOptions = {
   dryRun?: boolean;
   limit?: number;
   actorId?: string | null;
+  now?: Date;
+  client?: typeof prisma;
+  resolveRecipients?: typeof resolveChatAckRequiredRecipientUserIds;
 };
 
 export type RunChatAckReminderResult = {
@@ -76,6 +79,9 @@ function buildExcerpt(body: string) {
 export async function runChatAckReminders(
   options: RunChatAckReminderOptions = {},
 ): Promise<RunChatAckReminderResult> {
+  const client = options.client ?? prisma;
+  const resolveRecipients =
+    options.resolveRecipients ?? resolveChatAckRequiredRecipientUserIds;
   const dryRun = Boolean(options.dryRun);
   const limit = Math.min(
     Math.max(1, Math.floor(options.limit ?? DEFAULT_LIMIT)),
@@ -90,12 +96,12 @@ export async function runChatAckReminders(
     DEFAULT_MIN_INTERVAL_HOURS,
   );
 
-  const now = new Date();
+  const now = options.now ?? new Date();
   const lookbackFrom = new Date(
     now.getTime() - lookbackDays * 24 * 60 * 60 * 1000,
   );
 
-  const requests = await prisma.chatAckRequest.findMany({
+  const requests = await client.chatAckRequest.findMany({
     where: {
       dueAt: {
         not: null,
@@ -189,7 +195,7 @@ export async function runChatAckReminders(
         request.dueAt.getTime() + escalationAfterHours * 3600 * 1000,
       );
       if (now >= escalationDueAt) {
-        const escalationUserIds = await resolveChatAckRequiredRecipientUserIds({
+        const escalationUserIds = await resolveRecipients({
           requiredUserIds: normalizeStringArray(request.escalationUserIds, {
             dedupe: true,
             max: 200,
@@ -202,6 +208,7 @@ export async function runChatAckReminders(
             dedupe: true,
             max: 200,
           }),
+          client,
         });
         for (const userId of escalationUserIds) {
           escalationCandidates.push({
@@ -236,7 +243,7 @@ export async function runChatAckReminders(
   );
 
   const existingReminders = uniqueMessageIds.length
-    ? await prisma.appNotification.findMany({
+    ? await client.appNotification.findMany({
         where: {
           kind: reminderKind,
           messageId: { in: uniqueMessageIds },
@@ -258,7 +265,7 @@ export async function runChatAckReminders(
   }
 
   const existingEscalations = uniqueMessageIds.length
-    ? await prisma.appNotification.findMany({
+    ? await client.appNotification.findMany({
         where: {
           kind: escalationKind,
           messageId: { in: uniqueMessageIds },
@@ -332,6 +339,8 @@ export async function runChatAckReminders(
         roomId: group.roomId,
         userIds: Array.from(group.userIds),
         scope: group.scope,
+        client,
+        now,
       });
       return [key, new Set(filtered.allowed)] as const;
     }),
@@ -350,7 +359,7 @@ export async function runChatAckReminders(
   const createdNotifications = dryRun
     ? filteredToCreate.length
     : (
-        await prisma.appNotification.createMany({
+        await client.appNotification.createMany({
           data: filteredToCreate.map((item) => ({
             userId: item.userId,
             kind: item.kind,
