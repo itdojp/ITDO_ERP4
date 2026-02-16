@@ -696,3 +696,85 @@ test('approval_approved notifications: global mute bypass delivers notification 
     }
   }
 });
+
+test('approval_rejected notifications: global mute bypass delivers notification @core', async ({
+  request,
+}) => {
+  test.setTimeout(120_000);
+  const suffix = runId();
+  const requesterUserId = `e2e-reject-requester-${suffix}@example.com`;
+  const requesterHeaders = buildHeaders({
+    userId: requesterUserId,
+    roles: ['admin', 'mgmt'],
+    groupIds: ['mgmt'],
+  });
+  const totalAmount = Number(`7${Date.now().toString().slice(-5)}`);
+  let approvalRuleId: string | null = null;
+
+  await patchNotificationPreference(request, requesterHeaders, {
+    muteAllUntil: null,
+  });
+  try {
+    const muteAllUntil = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    await patchNotificationPreference(request, requesterHeaders, {
+      muteAllUntil,
+    });
+
+    const { projectId, estimateId } = await createProjectAndEstimate({
+      request,
+      apiBase,
+      headers: requesterHeaders,
+      project: {
+        code: `E2E-NTF-APR-REJ-${suffix}`,
+        name: `E2E Notification Approval Reject ${suffix}`,
+      },
+      estimate: {
+        totalAmount,
+        currency: 'JPY',
+        notes: `E2E notification approval reject ${suffix}`,
+      },
+    });
+    approvalRuleId = await createApprovalRuleForAmount(
+      request,
+      adminHeaders,
+      adminHeaders['x-user-id'],
+      totalAmount,
+    );
+    const approval = await submitAndFindApprovalInstance({
+      request,
+      apiBase,
+      headers: requesterHeaders,
+      flowType: 'estimate',
+      projectId,
+      targetTable: 'estimates',
+      targetId: estimateId,
+    });
+
+    const rejectRes = await request.post(
+      `${apiBase}/approval-instances/${encodeURIComponent(approval.id)}/act`,
+      {
+        data: { action: 'reject', reason: `e2e reject ${suffix}` },
+        headers: adminHeaders,
+      },
+    );
+    await ensureOk(rejectRes);
+
+    expect(
+      (
+        await listNotificationsByMessage(
+          request,
+          requesterHeaders,
+          'approval_rejected',
+          approval.id,
+        )
+      ).length,
+    ).toBeGreaterThan(0);
+  } finally {
+    await patchNotificationPreference(request, requesterHeaders, {
+      muteAllUntil: null,
+    });
+    if (approvalRuleId) {
+      await deactivateApprovalRule(request, adminHeaders, approvalRuleId);
+    }
+  }
+});
