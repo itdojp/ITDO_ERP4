@@ -13,12 +13,12 @@ Issue: #993
 
 | 領域 | 初回差分 | 方針 | 現在状態 |
 | --- | --- | --- | --- |
-| workflow | policy/guard変更後のUI検証不足 | 実装維持 + テスト補強（backend guardを先行） | 進行中（`packages/frontend/e2e/backend-action-policy-ack-guard.spec.ts`） |
+| workflow | policy/guard変更後のUI検証不足 | 実装維持 + テスト補強（backend guardを先行） | 対応済み（`packages/frontend/e2e/backend-action-policy-ack-guard.spec.ts` + `packages/frontend/e2e/frontend-smoke.spec.ts` の `approvals ack guard requires override reason`） |
 | notifications | digest/emailMode UI/E2E不足 | テスト補強 | 対応済み（`packages/frontend/e2e/frontend-smoke.spec.ts` の current-user notification settings） |
 | vendor-doc-linking | admin例外/監査表示E2E不足 | テスト補強 | 対応済み（`packages/frontend/e2e/backend-vendor-invoice-linking.spec.ts`） |
 | chat/ack | ack linkライフサイクルUI不足 | テスト補強 | 対応済み（`packages/frontend/e2e/frontend-smoke.spec.ts` の approval ack link lifecycle） |
 | access-control | UIからの反映確認が浅い | backend権限制御テストを先行、UIは後続Issueで補強 | 進行中（`packages/frontend/e2e/backend-project-access-guard.spec.ts`） |
-| delivery-invoice-flow | send/mark-paid一貫シナリオ不足 | テスト補強 | 一部対応済み（`packages/frontend/e2e/backend-time-invoice.spec.ts`） |
+| delivery-invoice-flow | send/mark-paid一貫シナリオ不足 | テスト補強 | 対応済み（`packages/frontend/e2e/backend-time-invoice.spec.ts` + `packages/frontend/e2e/frontend-smoke.spec.ts` の `invoice send and mark-paid lifecycle`） |
 | estimate-invoice-po-ui | 一覧UX回帰（検索/ページング）不足 | 仕様更新 + 後続IssueでE2E追加 | 後続（#543, #544 に集約） |
 | ack-workflow-linking | guard失敗時UI誘導不足 | テスト補強 | 対応済み（`packages/frontend/e2e/backend-action-policy-ack-guard.spec.ts`） |
 
