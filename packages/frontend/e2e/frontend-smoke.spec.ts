@@ -628,6 +628,120 @@ test('frontend smoke workflow evidence chat references @extended', async ({
   await captureSection(approvalsSection, '07-approvals-evidence.png');
 });
 
+test('frontend smoke approval ack link lifecycle @extended', async ({
+  page,
+}) => {
+  test.setTimeout(180_000);
+  const id = runId();
+  const projectId = authState.projectIds[0];
+  const ackTargetUserId = 'e2e-member-1@example.com';
+  await prepare(page);
+
+  const memberRes = await page.request.post(
+    `${apiBase}/projects/${encodeURIComponent(projectId)}/members`,
+    {
+      headers: buildAuthHeaders(),
+      data: { userId: ackTargetUserId, role: 'member' },
+    },
+  );
+  if (!memberRes.ok() && memberRes.status() !== 409) {
+    throw new Error(
+      `Failed to ensure project member: status=${memberRes.status()}`,
+    );
+  }
+
+  const ackRes = await page.request.post(
+    `${apiBase}/projects/${encodeURIComponent(projectId)}/chat-ack-requests`,
+    {
+      headers: buildAuthHeaders(),
+      data: {
+        body: `E2E approval ack link ${id}`,
+        requiredUserIds: [ackTargetUserId],
+        tags: ['e2e', 'ack', 'approval-link'],
+      },
+    },
+  );
+  await ensureOk(ackRes);
+  const ackPayload = (await ackRes.json()) as {
+    id?: string;
+    messageId?: string;
+    ackRequest?: { id?: string };
+  };
+  const ackMessageId =
+    typeof ackPayload.id === 'string'
+      ? ackPayload.id
+      : typeof ackPayload.messageId === 'string'
+        ? ackPayload.messageId
+        : '';
+  expect(ackMessageId).toBeTruthy();
+  expect(typeof ackPayload.ackRequest?.id).toBe('string');
+
+  const estimateCreateRes = await page.request.post(
+    `${apiBase}/projects/${encodeURIComponent(projectId)}/estimates`,
+    {
+      headers: buildAuthHeaders(),
+      data: {
+        totalAmount: 130000,
+        currency: 'JPY',
+        notes: `E2E approval ack link estimate ${id}`,
+      },
+    },
+  );
+  await ensureOk(estimateCreateRes);
+  const estimateCreatePayload = (await estimateCreateRes.json()) as {
+    estimate?: { id?: string };
+  };
+  const estimateId = estimateCreatePayload.estimate?.id || '';
+  expect(estimateId).toBeTruthy();
+
+  const estimateSubmitRes = await page.request.post(
+    `${apiBase}/estimates/${encodeURIComponent(estimateId)}/submit`,
+    {
+      headers: buildAuthHeaders(),
+      data: { reasonText: 'e2e approval ack link lifecycle' },
+    },
+  );
+  await ensureOk(estimateSubmitRes);
+
+  await navigateToSection(page, '承認', '承認一覧');
+  const approvalsSection = page
+    .locator('main')
+    .locator('h2', { hasText: '承認一覧' })
+    .locator('..');
+  await approvalsSection.scrollIntoViewIfNeeded();
+  await selectByLabelOrFirst(
+    approvalsSection.locator('select').first(),
+    '見積',
+  );
+  await approvalsSection.getByRole('button', { name: '再読込' }).click();
+
+  const approvalItem = approvalsSection
+    .locator('li', { hasText: estimateId })
+    .first();
+  await expect(approvalItem).toBeVisible({ timeout: actionTimeout });
+
+  const ackInput = approvalItem.getByPlaceholder(
+    '発言URL / Markdown / messageId',
+  );
+  await expect(ackInput).toBeVisible({ timeout: actionTimeout });
+  await approvalItem.getByRole('button', { name: '更新' }).click();
+  await ackInput.fill(ackMessageId);
+  await approvalItem.getByRole('button', { name: '追加' }).click();
+  await expect(approvalItem.getByText(ackMessageId)).toBeVisible({
+    timeout: actionTimeout,
+  });
+
+  page.once('dialog', (dialog) => dialog.accept().catch(() => undefined));
+  await approvalItem.getByRole('button', { name: '削除' }).first().click();
+  await expect(
+    approvalItem.getByText('登録済みリンクはありません'),
+  ).toBeVisible({
+    timeout: actionTimeout,
+  });
+
+  await captureSection(approvalsSection, '07-approvals-ack-link-lifecycle.png');
+});
+
 test('frontend smoke vendor approvals @extended', async ({ page }) => {
   test.setTimeout(180_000);
   await prepare(page);
