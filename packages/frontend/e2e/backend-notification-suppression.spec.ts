@@ -1,5 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import { expect, test } from '@playwright/test';
+import {
+  createProjectAndEstimate,
+  submitAndFindApprovalInstance,
+} from './approval-e2e-helpers';
 
 const apiBase = process.env.E2E_API_BASE || 'http://localhost:3002';
 
@@ -148,44 +152,6 @@ async function createProjectWithMember(request: any, suffix: string, userId: str
   return projectId;
 }
 
-async function createProjectAndEstimate(
-  request: any,
-  headers: Record<string, string>,
-  suffix: string,
-  totalAmount: number,
-) {
-  const projectRes = await request.post(`${apiBase}/projects`, {
-    data: {
-      code: `E2E-NTF-APR-${suffix}`,
-      name: `E2E Notification Approval ${suffix}`,
-      status: 'active',
-    },
-    headers,
-  });
-  await ensureOk(projectRes);
-  const projectPayload = await projectRes.json();
-  const projectId = (projectPayload?.id ?? '') as string;
-  expect(projectId).toBeTruthy();
-
-  const estimateRes = await request.post(
-    `${apiBase}/projects/${encodeURIComponent(projectId)}/estimates`,
-    {
-      data: {
-        totalAmount,
-        currency: 'JPY',
-        notes: `E2E notification approval ${suffix}`,
-      },
-      headers,
-    },
-  );
-  await ensureOk(estimateRes);
-  const estimatePayload = await estimateRes.json();
-  const estimateId = (estimatePayload?.id ?? estimatePayload?.estimate?.id ?? '') as string;
-  expect(estimateId).toBeTruthy();
-
-  return { projectId, estimateId };
-}
-
 async function createApprovalRuleForAmount(
   request: any,
   headers: Record<string, string>,
@@ -229,36 +195,6 @@ async function deactivateApprovalRule(
     },
   );
   await ensureOk(res);
-}
-
-async function submitEstimateAndFindApprovalInstance(
-  request: any,
-  headers: Record<string, string>,
-  projectId: string,
-  estimateId: string,
-) {
-  const submitRes = await request.post(
-    `${apiBase}/estimates/${encodeURIComponent(estimateId)}/submit`,
-    { headers },
-  );
-  await ensureOk(submitRes);
-
-  const instancesRes = await request.get(
-    `${apiBase}/approval-instances?flowType=estimate&projectId=${encodeURIComponent(projectId)}`,
-    { headers },
-  );
-  await ensureOk(instancesRes);
-  const instancesPayload = await instancesRes.json();
-  const approval = (instancesPayload?.items ?? []).find(
-    (item: any) =>
-      item?.targetTable === 'estimates' &&
-      item?.targetId === estimateId &&
-      item?.status !== 'approved' &&
-      item?.status !== 'rejected' &&
-      item?.status !== 'cancelled',
-  );
-  expect(approval?.id).toBeTruthy();
-  return approval as { id: string; currentStep?: number | null };
 }
 
 async function createProjectChatMessage(
@@ -574,24 +510,35 @@ test('approval_pending notifications: global mute bypass delivers notification @
       muteAllUntil,
     });
 
-    const { projectId, estimateId } = await createProjectAndEstimate(
+    const { projectId, estimateId } = await createProjectAndEstimate({
       request,
-      adminHeaders,
-      suffix,
-      totalAmount,
-    );
+      apiBase,
+      headers: adminHeaders,
+      project: {
+        code: `E2E-NTF-APR-${suffix}`,
+        name: `E2E Notification Approval ${suffix}`,
+      },
+      estimate: {
+        totalAmount,
+        currency: 'JPY',
+        notes: `E2E notification approval ${suffix}`,
+      },
+    });
     approvalRuleId = await createApprovalRuleForAmount(
       request,
       adminHeaders,
       recipientUserIdForApproval,
       totalAmount,
     );
-    const approval = await submitEstimateAndFindApprovalInstance(
+    const approval = await submitAndFindApprovalInstance({
       request,
-      adminHeaders,
+      apiBase,
+      headers: adminHeaders,
+      flowType: 'estimate',
       projectId,
-      estimateId,
-    );
+      targetTable: 'estimates',
+      targetId: estimateId,
+    });
     const messageId = `${approval.id}:${approval.currentStep ?? 1}`;
 
     expect(
