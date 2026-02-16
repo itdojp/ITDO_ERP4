@@ -49,6 +49,24 @@ test('delivery due report @core', async ({ request }) => {
   await ensureOk(milestoneRes);
   const milestone = await milestoneRes.json();
 
+  const outOfRangeDate = new Date(dueDate);
+  outOfRangeDate.setUTCDate(outOfRangeDate.getUTCDate() + 1);
+  const outOfRangeDateStr = outOfRangeDate.toISOString().slice(0, 10);
+  const outOfRangeMilestoneRes = await request.post(
+    `${apiBase}/projects/${project.id}/milestones`,
+    {
+      data: {
+        name: `OutOfRange ${suffix}`,
+        amount: 2000,
+        billUpon: 'date',
+        dueDate: outOfRangeDateStr,
+      },
+      headers: authHeaders,
+    },
+  );
+  await ensureOk(outOfRangeMilestoneRes);
+  const outOfRangeMilestone = await outOfRangeMilestoneRes.json();
+
   const reportRes = await request.get(
     `${apiBase}/reports/delivery-due?projectId=${encodeURIComponent(project.id)}&from=${dueDateStr}&to=${dueDateStr}`,
     { headers: authHeaders },
@@ -59,5 +77,7 @@ test('delivery due report @core', async ({ request }) => {
   expect(items.some((item: any) => item.milestoneId === milestone.id)).toBe(
     true,
   );
+  expect(
+    items.some((item: any) => item.milestoneId === outOfRangeMilestone.id),
+  ).toBe(false);
 });
-
