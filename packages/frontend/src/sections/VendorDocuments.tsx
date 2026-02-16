@@ -28,6 +28,7 @@ import {
 } from '../ui';
 import type { DataTableColumn, DataTableRow } from '../ui';
 import { formatDateForFilename, openResponseInNewTab } from '../utils/download';
+import { PurchaseOrderSendLogsDialog } from './vendor-documents/PurchaseOrderSendLogsDialog';
 
 type ProjectOption = {
   id: string;
@@ -189,12 +190,6 @@ const normalizeInvoiceStatusFilter = (value: string, options: string[]) => {
 
 const formatDate = (value?: string | null) =>
   value ? value.slice(0, 10) : '-';
-const formatDateTime = (value?: string | null) => {
-  if (!value) return '-';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString();
-};
 
 const parseNumberValue = (value: number | string | null | undefined) => {
   if (typeof value === 'number') return Number.isFinite(value) ? value : null;
@@ -2608,85 +2603,20 @@ export const VendorDocuments: React.FC = () => {
           </section>
         </div>
       </div>
-      <Dialog
+      <PurchaseOrderSendLogsDialog
         open={Boolean(poSendLogDialogId)}
+        purchaseOrderId={poSendLogDialogId}
+        purchaseOrderStatus={activePo?.status}
+        purchaseOrderNo={activePo?.poNo}
+        missingNumberLabel={missingNumberLabel}
+        message={activePoSendLogMessage}
+        loading={Boolean(activePoSendLogLoading)}
+        logs={activePoSendLogs}
         onClose={() => setPoSendLogDialogId(null)}
-        title="発注書: 送信履歴"
-        size="large"
-        footer={
-          <Button
-            variant="secondary"
-            onClick={() => setPoSendLogDialogId(null)}
-          >
-            閉じる
-          </Button>
-        }
-      >
-        {poSendLogDialogId && (
-          <div style={{ display: 'grid', gap: 12 }}>
-            <div style={{ fontSize: 12, color: '#64748b' }}>
-              <StatusBadge
-                status={activePo?.status || 'draft'}
-                dictionary={erpStatusDictionary}
-                size="sm"
-              />{' '}
-              {activePo?.poNo || missingNumberLabel}
-            </div>
-            {activePoSendLogMessage && (
-              <Alert variant="error">{activePoSendLogMessage}</Alert>
-            )}
-            {activePoSendLogLoading && (
-              <AsyncStatePanel state="loading" loadingText="送信履歴を取得中" />
-            )}
-            {!activePoSendLogLoading && activePoSendLogs.length === 0 && (
-              <AsyncStatePanel
-                state="empty"
-                empty={{
-                  title: '履歴なし',
-                  description: '送信履歴がありません',
-                }}
-              />
-            )}
-            {!activePoSendLogLoading && activePoSendLogs.length > 0 && (
-              <DataTable
-                columns={[
-                  { key: 'status', header: '状態' },
-                  { key: 'channel', header: 'チャネル' },
-                  { key: 'createdAt', header: '送信日時' },
-                  { key: 'error', header: 'エラー' },
-                  { key: 'logId', header: 'ログID' },
-                ]}
-                rows={activePoSendLogs.map((log) => ({
-                  id: log.id,
-                  status: (
-                    <StatusBadge
-                      status={log.status}
-                      dictionary={erpStatusDictionary}
-                      size="sm"
-                    />
-                  ),
-                  channel: log.channel,
-                  createdAt: formatDateTime(log.createdAt),
-                  error: log.error || '-',
-                  logId: log.id,
-                  pdfUrl: log.pdfUrl || '',
-                }))}
-                rowActions={[
-                  {
-                    key: 'open-pdf',
-                    label: 'PDFを開く',
-                    onSelect: (row: DataTableRow) => {
-                      const pdfUrl = String(row.pdfUrl || '');
-                      if (!poSendLogDialogId) return;
-                      void openPurchaseOrderPdf(poSendLogDialogId, pdfUrl);
-                    },
-                  },
-                ]}
-              />
-            )}
-          </div>
-        )}
-      </Dialog>
+        onOpenPdf={(purchaseOrderId, pdfUrl) => {
+          void openPurchaseOrderPdf(purchaseOrderId, pdfUrl);
+        }}
+      />
       <ConfirmActionDialog
         open={Boolean(confirmAction)}
         title={
