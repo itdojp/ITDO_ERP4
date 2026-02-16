@@ -1,0 +1,123 @@
+./scripts/e2e-frontend.sh
+Port 55433 is unavailable; falling back to 55438
+postgres ready: erp4-pg-e2e
+[dotenv@17.2.4] injecting env (0) from packages/backend/.env -- tip: 🔐 encrypt with Dotenvx: https://dotenvx.com
+Loaded Prisma config from packages/backend/prisma.config.ts.
+
+Prisma schema loaded from packages/backend/prisma/schema.prisma.
+Datasource "db": PostgreSQL database "postgres", schema "public" at "localhost:5432"
+
+🚀  Your database is now in sync with your Prisma schema. Done in 3.00s
+
+npm notice
+npm notice New major version of npm available! 10.8.2 -> 11.10.0
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v11.10.0
+npm notice To update run: npm install -g npm@11.10.0
+npm notice
+postgres ready: erp4-pg-e2e
+INSERT 0 2
+INSERT 0 1
+INSERT 0 1
+INSERT 0 2
+INSERT 0 7
+INSERT 0 1
+INSERT 0 1
+INSERT 0 1
+INSERT 0 1
+INSERT 0 1
+INSERT 0 1
+INSERT 0 1
+INSERT 0 1
+
+> erp4-backend-poc@0.1.0 prisma:generate
+> prisma generate
+
+[dotenv@17.2.4] injecting env (0) from .env -- tip: 🔄 add secrets lifecycle management: https://dotenvx.com/ops
+Loaded Prisma config from prisma.config.ts.
+
+Prisma schema loaded from prisma/schema.prisma.
+
+✔ Generated Prisma Client (v7.3.0) to ./node_modules/@prisma/client in 471ms
+
+Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+
+
+
+> erp4-backend-poc@0.1.0 build
+> tsc -p tsconfig.json
+
+backend ready
+frontend ready
+
+Running 61 tests using 1 worker
+
+(node:1788308) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:1788308) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓   1 packages/frontend/e2e/backend-action-policy-ack-guard.spec.ts:115:1 › action policy chat_ack_completed: incomplete ack requires override reason @core (495ms)
+  ✓   2 packages/frontend/e2e/backend-action-policy-ack-guard.spec.ts:199:1 › action policy chat_ack_completed: ack完了は理由不要、未完了は理由付きoverrideで承認可能 @core (617ms)
+  ✓   3 packages/frontend/e2e/backend-delivery-due.spec.ts:20:1 › delivery due report @core (88ms)
+  ✓   4 packages/frontend/e2e/backend-evidence-pack.spec.ts:140:1 › evidence pack flow: snapshot/export/archive and audit log consistency @core (396ms)
+  ✓   5 packages/frontend/e2e/backend-evidence-pack.spec.ts:267:1 › evidence pack archive is restricted to admin/mgmt while export is readable for project user @core (135ms)
+  ✓   6 packages/frontend/e2e/backend-evidence-pack.spec.ts:297:1 › evidence snapshot regenerate requires reason and history keeps versions @core (209ms)
+  ✓   7 packages/frontend/e2e/backend-leave-time-conflict.spec.ts:27:1 › leave submit blocks when time entries exist @core (92ms)
+  ✓   8 packages/frontend/e2e/backend-manual-checklist.spec.ts:35:1 › backend manual checklist: documents & send logs @extended (133ms)
+  ✓   9 packages/frontend/e2e/backend-manual-checklist.spec.ts:110:1 › backend manual checklist: alerts/templates/reports jobs @extended (267ms)
+  ✓  10 packages/frontend/e2e/backend-manual-checklist.spec.ts:238:1 › backend manual checklist: members/vendors/time/expenses/wellbeing @extended (298ms)
+  ✓  11 packages/frontend/e2e/backend-milestone-sync.spec.ts:26:1 › milestone invoice sync @core (129ms)
+  ✓  12 packages/frontend/e2e/backend-notification-suppression.spec.ts:496:1 › chat_ack_required notifications: global mute and room mention settings suppress delivery @core (310ms)
+  ✓  13 packages/frontend/e2e/backend-notification-suppression.spec.ts:647:1 › chat_mention notifications: global mute and room mention settings suppress delivery @core (309ms)
+  ✓  14 packages/frontend/e2e/backend-notification-suppression.spec.ts:823:1 › chat_message notifications: notifyAllPosts and mute settings suppress delivery @core (282ms)
+  ✓  15 packages/frontend/e2e/backend-notification-suppression.spec.ts:972:1 › project_member_added notifications: global mute suppresses delivery @core (193ms)
+  ✓  16 packages/frontend/e2e/backend-notification-suppression.spec.ts:1040:1 › leave_upcoming notifications: global mute suppresses delivery @core (421ms)
+  ✓  17 packages/frontend/e2e/backend-notification-suppression.spec.ts:1188:1 › approval_pending notifications: global mute bypass delivers notification @core (134ms)
+  ✓  18 packages/frontend/e2e/backend-notification-suppression.spec.ts:1262:1 › daily_report_missing notifications: global mute bypass delivers notification @core (58ms)
+  ✓  19 packages/frontend/e2e/backend-notification-suppression.spec.ts:1307:1 › chat_room_acl_mismatch notifications: global mute bypass delivers notification @core (154ms)
+  ✓  20 packages/frontend/e2e/backend-notification-suppression.spec.ts:1374:1 › chat_ack_escalation notifications: global mute bypass delivers notification @core (297ms)
+  ✓  21 packages/frontend/e2e/backend-notification-suppression.spec.ts:1504:1 › approval_approved notifications: global mute bypass delivers notification @core (182ms)
+  ✓  22 packages/frontend/e2e/backend-notification-suppression.spec.ts:1586:1 › approval_rejected notifications: global mute bypass delivers notification @core (173ms)
+  ✓  23 packages/frontend/e2e/backend-project-access-guard.spec.ts:32:1 › project access guard: route/query/body projectId is enforced @core (79ms)
+  ✓  24 packages/frontend/e2e/backend-project-baselines.spec.ts:22:1 › project baseline can snapshot tasks @extended (60ms)
+  ✓  25 packages/frontend/e2e/backend-project-burndown.spec.ts:20:1 › project burndown returns daily remaining minutes @extended (50ms)
+  ✓  26 packages/frontend/e2e/backend-project-effort-variance.spec.ts:20:1 › project effort includes plan variance @core (37ms)
+  ✓  27 packages/frontend/e2e/backend-project-effort-variance.spec.ts:72:1 › project effort variance handles null planHours @core (23ms)
+  ✓  28 packages/frontend/e2e/backend-project-evm.spec.ts:22:1 › project evm returns daily pv/ev/ac/spi/cpi @extended (73ms)
+  ✓  29 packages/frontend/e2e/backend-project-parent.spec.ts:20:1 › project parent can be updated with reason @extended (59ms)
+  ✓  30 packages/frontend/e2e/backend-project-period.spec.ts:20:1 › project can set and clear period dates @extended (32ms)
+  ✓  31 packages/frontend/e2e/backend-rate-card-profit.spec.ts:20:1 › rate card affects profit report @core (57ms)
+  ✓  32 packages/frontend/e2e/backend-recurring-template.spec.ts:20:1 › recurring template generates draft invoice @core (81ms)
+  ✓  33 packages/frontend/e2e/backend-task-dependencies.spec.ts:22:1 › task dependencies can be set/cleared and prevents cycles @extended (89ms)
+  ✓  34 packages/frontend/e2e/backend-task-parent.spec.ts:22:1 › task parent can be updated and cleared @extended (92ms)
+  ✓  35 packages/frontend/e2e/backend-task-period.spec.ts:29:1 › task plan/actual dates can be set, cleared, validated @extended (51ms)
+  ✓  36 packages/frontend/e2e/backend-task-progress.spec.ts:22:1 › task progress percent can be set, cleared, validated @extended (41ms)
+  ✓  37 packages/frontend/e2e/backend-time-invoice.spec.ts:26:1 › time entries to invoice draft @core (108ms)
+  ✓  38 packages/frontend/e2e/backend-time-invoice.spec.ts:149:1 › invoice mark paid updates status and validates input @extended (63ms)
+  ✓  39 packages/frontend/e2e/backend-vendor-invoice-linking.spec.ts:96:1 › vendor invoice po linking: post-submit unlink requires reason @core (189ms)
+  ✓  40 packages/frontend/e2e/backend-vendor-invoice-linking.spec.ts:167:1 › vendor invoice po linking: link/unlink is forbidden for non-admin roles @core (70ms)
+  ✓  41 packages/frontend/e2e/frontend-offline.spec.ts:42:1 › frontend offline queue @extended (1.9s)
+  ✓  42 packages/frontend/e2e/frontend-pwa.spec.ts:145:1 › pwa offline duplicate time entries @pwa @extended (2.2s)
+  -  43 packages/frontend/e2e/frontend-pwa.spec.ts:255:1 › pwa push subscribe flow @pwa
+  ✓  44 packages/frontend/e2e/frontend-pwa.spec.ts:304:1 › pwa service worker cache refresh @pwa @extended (1.3s)
+  ✓  45 packages/frontend/e2e/frontend-smoke.spec.ts:296:1 › frontend smoke core @core (7.2s)
+  ✓  46 packages/frontend/e2e/frontend-smoke.spec.ts:554:1 › frontend smoke invoice send and mark-paid lifecycle @extended (1.6s)
+  ✓  47 packages/frontend/e2e/frontend-smoke.spec.ts:629:1 › frontend smoke workflow evidence chat references @extended (2.9s)
+  ✓  48 packages/frontend/e2e/frontend-smoke.spec.ts:825:1 › frontend smoke approval ack link lifecycle @extended (1.6s)
+[e2e][console.error] Failed to load resource: the server responded with a status of 400 (Bad Request)
+  ✓  49 packages/frontend/e2e/frontend-smoke.spec.ts:939:1 › frontend smoke approvals ack guard requires override reason @extended (1.6s)
+  ✓  50 packages/frontend/e2e/frontend-smoke.spec.ts:1115:1 › frontend smoke vendor approvals @extended (2.1s)
+  ✓  51 packages/frontend/e2e/frontend-smoke.spec.ts:1175:1 › frontend smoke vendor docs create @extended (4.0s)
+  ✓  52 packages/frontend/e2e/frontend-smoke.spec.ts:1374:1 › frontend smoke reports masters settings @extended (10.1s)
+  ✓  53 packages/frontend/e2e/frontend-smoke.spec.ts:1738:1 › frontend smoke current-user notification settings @extended (1.5s)
+  ✓  54 packages/frontend/e2e/frontend-smoke.spec.ts:1815:1 › frontend smoke chat hr analytics @extended (10.7s)
+  ✓  55 packages/frontend/e2e/frontend-smoke.spec.ts:2090:1 › frontend smoke room chat (private_group/dm) @extended (3.5s)
+  ✓  56 packages/frontend/e2e/frontend-smoke.spec.ts:2238:1 › frontend smoke room chat external summary @extended (2.4s)
+  ✓  57 packages/frontend/e2e/frontend-smoke.spec.ts:2310:1 › frontend smoke external chat invited rooms @extended (3.6s)
+  ✓  58 packages/frontend/e2e/frontend-smoke.spec.ts:2449:1 › frontend smoke additional sections @extended (2.3s)
+  ✓  59 packages/frontend/e2e/frontend-smoke.spec.ts:2532:1 › frontend smoke admin ops @extended (3.2s)
+  ✓  60 packages/frontend/e2e/frontend-task-time-entry.spec.ts:84:1 › task to time entry link @core (1.2s)
+  ✓  61 packages/frontend/e2e/frontend-ux-quality.spec.ts:41:1 › ux-quality baseline (labels/errors/keyboard) @core (1.3s)
+
+  1 skipped
+  60 passed (1.2m)
+e2e evidence saved: /home/devuser/work/CodeX/ITDO_ERP4/docs/test-results/2026-02-17-frontend-e2e
