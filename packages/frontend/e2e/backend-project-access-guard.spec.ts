@@ -29,7 +29,7 @@ async function ensureOk(res: { ok(): boolean; status(): number; text(): any }) {
   throw new Error(`[e2e] api failed: ${res.status()} ${body}`);
 }
 
-test('project access guard: route/query projectId is enforced @core', async ({
+test('project access guard: route/query/body projectId is enforced @core', async ({
   request,
 }) => {
   const suffix = runId();
@@ -147,4 +147,7 @@ test('project access guard: route/query projectId is enforced @core', async ({
     headers: mgmtHeaders,
   });
   await ensureOk(timeEntryMgmtCreateRes);
+  const timeEntryMgmt = await timeEntryMgmtCreateRes.json();
+  expect(timeEntryMgmt?.projectId).toBe(projectId);
+  expect(timeEntryMgmt?.userId).toBe('e2e-mgmt@example.com');
 });
