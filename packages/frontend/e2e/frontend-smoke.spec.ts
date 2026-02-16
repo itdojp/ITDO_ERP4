@@ -1191,12 +1191,11 @@ test('frontend smoke reports masters settings @extended', async ({ page }) => {
   const actionPolicyKey = `submit.e2e.${id}`;
   await actionPolicyBlock.getByLabel('subjects (JSON)').fill('{');
   await actionPolicyBlock.getByRole('button', { name: '作成' }).first().click();
-  await expect(
-    settingsSection.getByText('subjects のJSONが不正です'),
-  ).toBeVisible({
+  const settingsMessage = settingsSection.locator(':scope > p').first();
+  await expect(settingsMessage).toHaveText('subjects のJSONが不正です', {
     timeout: actionTimeout,
   });
-  await actionPolicyBlock.getByLabel('subjects (JSON)').fill('');
+  await actionPolicyBlock.getByLabel('subjects (JSON)').fill('{}');
   await actionPolicyBlock.getByLabel('actionKey').fill(actionPolicyKey);
   await actionPolicyBlock.getByRole('button', { name: '作成' }).first().click();
   await expect(
