@@ -7,8 +7,11 @@ export type AuditHistoryLog = {
   action: string;
   userId?: string | null;
   actorRole?: string | null;
+  actorGroupId?: string | null;
   reasonCode?: string | null;
   reasonText?: string | null;
+  targetTable?: string | null;
+  targetId?: string | null;
   createdAt: string;
   metadata?: Record<string, unknown> | null;
 };
@@ -31,7 +34,7 @@ function formatJson(value: unknown): string {
   try {
     return JSON.stringify(value, null, 2);
   } catch {
-    return String(value);
+    return '-';
   }
 }
 
@@ -99,7 +102,7 @@ function toAuditEvent(log: AuditHistoryLog): AuditEvent {
     time: formatDateTime(log.createdAt),
     actor: `${log.actorRole || '-'} / ${log.userId || '-'}`,
     action: log.action,
-    target: '-',
+    target: `${log.targetTable || '-'} / ${log.targetId || '-'}`,
     summary: reason,
     tone: resolveAuditEventTone(log.action),
   };
