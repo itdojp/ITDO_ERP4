@@ -1,5 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import { expect, test } from '@playwright/test';
+import {
+  createProjectAndEstimate,
+  submitAndFindApprovalInstance,
+} from './approval-e2e-helpers';
 
 const apiBase = process.env.E2E_API_BASE || 'http://localhost:3002';
 
@@ -21,79 +25,6 @@ async function ensureOk(res: { ok(): boolean; status(): number; text(): any }) {
   if (res.ok()) return;
   const body = await res.text();
   throw new Error(`[e2e] api failed: ${res.status()} ${body}`);
-}
-
-async function createProjectAndEstimate(request: any, headers: any, suffix: string) {
-  const projectRes = await request.post(`${apiBase}/projects`, {
-    data: {
-      code: `E2E-ACK-GUARD-${suffix}`,
-      name: `E2E Ack Guard ${suffix}`,
-      status: 'active',
-    },
-    headers,
-  });
-  await ensureOk(projectRes);
-  const projectPayload = await projectRes.json();
-  const projectId = (projectPayload?.id ?? projectPayload?.project?.id ?? '') as string;
-  if (!projectId) {
-    throw new Error(`[e2e] project id missing: ${JSON.stringify(projectPayload)}`);
-  }
-
-  const estimateRes = await request.post(
-    `${apiBase}/projects/${encodeURIComponent(projectId)}/estimates`,
-    {
-      data: {
-        totalAmount: 123456,
-        currency: 'JPY',
-        notes: `E2E ack guard estimate ${suffix}`,
-      },
-      headers,
-    },
-  );
-  await ensureOk(estimateRes);
-  const estimatePayload = await estimateRes.json();
-  const estimateId = (estimatePayload?.id ??
-    estimatePayload?.estimate?.id ??
-    '') as string;
-  if (!estimateId) {
-    throw new Error(
-      `[e2e] estimate id missing: ${JSON.stringify(estimatePayload)}`,
-    );
-  }
-
-  return { projectId, estimateId };
-}
-
-async function submitAndFindApprovalInstance(
-  request: any,
-  headers: any,
-  projectId: string,
-  estimateId: string,
-) {
-  const submitRes = await request.post(
-    `${apiBase}/estimates/${encodeURIComponent(estimateId)}/submit`,
-    {
-      headers,
-    },
-  );
-  await ensureOk(submitRes);
-
-  const instancesRes = await request.get(
-    `${apiBase}/approval-instances?flowType=estimate&projectId=${encodeURIComponent(projectId)}`,
-    { headers },
-  );
-  await ensureOk(instancesRes);
-  const instancesPayload = await instancesRes.json();
-  const approval = (instancesPayload?.items ?? []).find(
-    (item: any) =>
-      item?.targetTable === 'estimates' &&
-      item?.targetId === estimateId &&
-      item?.status !== 'approved' &&
-      item?.status !== 'rejected' &&
-      item?.status !== 'cancelled',
-  );
-  expect(approval?.id).toBeTruthy();
-  return approval.id as string;
 }
 
 async function findCompanyRoomId(request: any, headers: any) {
@@ -193,17 +124,30 @@ test('action policy chat_ack_completed: incomplete ack requires override reason 
     groupIds: ['mgmt'],
   });
 
-  const { projectId, estimateId } = await createProjectAndEstimate(
+  const { projectId, estimateId } = await createProjectAndEstimate({
     request,
-    actorHeaders,
-    suffix,
-  );
-  const approvalInstanceId = await submitAndFindApprovalInstance(
+    apiBase,
+    headers: actorHeaders,
+    project: {
+      code: `E2E-ACK-GUARD-${suffix}`,
+      name: `E2E Ack Guard ${suffix}`,
+    },
+    estimate: {
+      totalAmount: 123456,
+      currency: 'JPY',
+      notes: `E2E ack guard estimate ${suffix}`,
+    },
+  });
+  const approvalInstance = await submitAndFindApprovalInstance({
     request,
-    actorHeaders,
+    apiBase,
+    headers: actorHeaders,
+    flowType: 'estimate',
     projectId,
-    estimateId,
-  );
+    targetTable: 'estimates',
+    targetId: estimateId,
+  });
+  const approvalInstanceId = approvalInstance.id;
   const companyRoomId = await findCompanyRoomId(request, actorHeaders);
   const requiredUserId = 'e2e-member-1@example.com';
   const ackRequestId = await createAckRequestForRoom(
@@ -274,17 +218,29 @@ test('action policy chat_ack_completed: ack完了は理由不要、未完了は�
 
   const setupApproval = async (label: string) => {
     const setupSuffix = `${suffix}-${label}`;
-    const { projectId, estimateId } = await createProjectAndEstimate(
+    const { projectId, estimateId } = await createProjectAndEstimate({
       request,
-      actorHeaders,
-      setupSuffix,
-    );
-    const approvalInstanceId = await submitAndFindApprovalInstance(
+      apiBase,
+      headers: actorHeaders,
+      project: {
+        code: `E2E-ACK-GUARD-${setupSuffix}`,
+        name: `E2E Ack Guard ${setupSuffix}`,
+      },
+      estimate: {
+        totalAmount: 123456,
+        currency: 'JPY',
+        notes: `E2E ack guard estimate ${setupSuffix}`,
+      },
+    });
+    const approvalInstance = await submitAndFindApprovalInstance({
       request,
-      actorHeaders,
+      apiBase,
+      headers: actorHeaders,
+      flowType: 'estimate',
       projectId,
-      estimateId,
-    );
+      targetTable: 'estimates',
+      targetId: estimateId,
+    });
     const ackRequestId = await createAckRequestForRoom(
       request,
       actorHeaders,
@@ -292,8 +248,8 @@ test('action policy chat_ack_completed: ack完了は理由不要、未完了は�
       setupSuffix,
       requiredUserId,
     );
-    await createAckLink(request, actorHeaders, ackRequestId, approvalInstanceId);
-    return { approvalInstanceId, ackRequestId };
+    await createAckLink(request, actorHeaders, ackRequestId, approvalInstance.id);
+    return { approvalInstanceId: approvalInstance.id, ackRequestId };
   };
 
   const completed = await setupApproval('completed');
