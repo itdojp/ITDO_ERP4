@@ -148,6 +148,119 @@ async function createProjectWithMember(request: any, suffix: string, userId: str
   return projectId;
 }
 
+async function createProjectAndEstimate(
+  request: any,
+  headers: Record<string, string>,
+  suffix: string,
+  totalAmount: number,
+) {
+  const projectRes = await request.post(`${apiBase}/projects`, {
+    data: {
+      code: `E2E-NTF-APR-${suffix}`,
+      name: `E2E Notification Approval ${suffix}`,
+      status: 'active',
+    },
+    headers,
+  });
+  await ensureOk(projectRes);
+  const projectPayload = await projectRes.json();
+  const projectId = (projectPayload?.id ?? '') as string;
+  expect(projectId).toBeTruthy();
+
+  const estimateRes = await request.post(
+    `${apiBase}/projects/${encodeURIComponent(projectId)}/estimates`,
+    {
+      data: {
+        totalAmount,
+        currency: 'JPY',
+        notes: `E2E notification approval ${suffix}`,
+      },
+      headers,
+    },
+  );
+  await ensureOk(estimateRes);
+  const estimatePayload = await estimateRes.json();
+  const estimateId = (estimatePayload?.id ?? estimatePayload?.estimate?.id ?? '') as string;
+  expect(estimateId).toBeTruthy();
+
+  return { projectId, estimateId };
+}
+
+async function createApprovalRuleForAmount(
+  request: any,
+  headers: Record<string, string>,
+  approverUserId: string,
+  totalAmount: number,
+) {
+  const res = await request.post(`${apiBase}/approval-rules`, {
+    data: {
+      flowType: 'estimate',
+      isActive: true,
+      conditions: {
+        amountMin: totalAmount,
+        amountMax: totalAmount,
+      },
+      steps: [
+        {
+          stepOrder: 1,
+          approverUserId,
+        },
+      ],
+    },
+    headers,
+  });
+  await ensureOk(res);
+  const payload = await res.json();
+  const id = (payload?.id ?? '') as string;
+  expect(id).toBeTruthy();
+  return id;
+}
+
+async function deactivateApprovalRule(
+  request: any,
+  headers: Record<string, string>,
+  ruleId: string,
+) {
+  const res = await request.patch(
+    `${apiBase}/approval-rules/${encodeURIComponent(ruleId)}`,
+    {
+      data: { isActive: false },
+      headers,
+    },
+  );
+  await ensureOk(res);
+}
+
+async function submitEstimateAndFindApprovalInstance(
+  request: any,
+  headers: Record<string, string>,
+  projectId: string,
+  estimateId: string,
+) {
+  const submitRes = await request.post(
+    `${apiBase}/estimates/${encodeURIComponent(estimateId)}/submit`,
+    { headers },
+  );
+  await ensureOk(submitRes);
+
+  const instancesRes = await request.get(
+    `${apiBase}/approval-instances?flowType=estimate&projectId=${encodeURIComponent(projectId)}`,
+    { headers },
+  );
+  await ensureOk(instancesRes);
+  const instancesPayload = await instancesRes.json();
+  const approval = (instancesPayload?.items ?? []).find(
+    (item: any) =>
+      item?.targetTable === 'estimates' &&
+      item?.targetId === estimateId &&
+      item?.status !== 'approved' &&
+      item?.status !== 'rejected' &&
+      item?.status !== 'cancelled',
+  );
+  expect(approval?.id).toBeTruthy();
+  return approval as { id: string; currentStep?: number | null };
+}
+
 async function createProjectChatMessage(
   request: any,
   projectId: string,
@@ -435,5 +548,68 @@ test('chat_message notifications: notifyAllPosts and mute settings suppress deli
       projectId,
       { notifyAllPosts: true, muteUntil: null },
     );
+  }
+});
+
+test('approval_pending notifications: global mute bypass delivers notification @core', async ({
+  request,
+}) => {
+  test.setTimeout(120_000);
+  const suffix = runId();
+  const recipientUserIdForApproval = `e2e-approval-muted-${suffix}@example.com`;
+  const recipientApprovalHeaders = buildHeaders({
+    userId: recipientUserIdForApproval,
+    roles: ['user'],
+  });
+  const totalAmount = Number(`9${Date.now().toString().slice(-5)}`);
+
+  let approvalRuleId: string | null = null;
+
+  await patchNotificationPreference(request, recipientApprovalHeaders, {
+    muteAllUntil: null,
+  });
+  try {
+    const muteAllUntil = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    await patchNotificationPreference(request, recipientApprovalHeaders, {
+      muteAllUntil,
+    });
+
+    const { projectId, estimateId } = await createProjectAndEstimate(
+      request,
+      adminHeaders,
+      suffix,
+      totalAmount,
+    );
+    approvalRuleId = await createApprovalRuleForAmount(
+      request,
+      adminHeaders,
+      recipientUserIdForApproval,
+      totalAmount,
+    );
+    const approval = await submitEstimateAndFindApprovalInstance(
+      request,
+      adminHeaders,
+      projectId,
+      estimateId,
+    );
+    const messageId = `${approval.id}:${approval.currentStep ?? 1}`;
+
+    expect(
+      (
+        await listNotificationsByMessage(
+          request,
+          recipientApprovalHeaders,
+          'approval_pending',
+          messageId,
+        )
+      ).length,
+    ).toBeGreaterThan(0);
+  } finally {
+    await patchNotificationPreference(request, recipientApprovalHeaders, {
+      muteAllUntil: null,
+    });
+    if (approvalRuleId) {
+      await deactivateApprovalRule(request, adminHeaders, approvalRuleId);
+    }
   }
 });
