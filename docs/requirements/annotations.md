@@ -25,7 +25,7 @@
 - `externalUrls`: `http/https` URL 配列
 - `internalRefs`: `{ kind, id, label? }` 配列
   - `kind` は業務エンティティ種別（`invoice` / `project` / `chat_message` など）
-- 履歴は `annotation_logs` に保存し、更新時の `reasonCode` / `reasonText` / `actorRole` を保持する。
+- 履歴は Prisma の `AnnotationLog` モデル（`prisma.annotationLog`）に保存し、更新時の `reasonCode` / `reasonText` / `actorRole` を保持する。
 
 ## アクセス制御
 
@@ -59,6 +59,8 @@
   - `maxExternalUrlTotalLength`: 16384
   - `maxNotesLength`: 20000
 - 更新権限: `admin` / `mgmt`
+- 制約
+  - `maxExternalUrlCount > 0` の場合、`maxExternalUrlTotalLength` は `maxExternalUrlLength` 以上である必要がある（満たさない場合は 400 `INVALID_ANNOTATION_SETTING`）
 - 設定更新は監査ログ `annotation_setting_updated` に記録する。
 
 ## 監査ログ
