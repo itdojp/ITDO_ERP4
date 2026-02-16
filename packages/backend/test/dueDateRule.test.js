@@ -24,14 +24,27 @@ test('parseDueDateRule: invalid payload throws', () => {
 });
 
 test('parseDueDateRule: accepts numeric string and boundaries', () => {
-  assert.deepEqual(parseDueDateRule({ type: 'periodEndPlusOffset', offsetDays: 0 }), {
-    type: 'periodEndPlusOffset',
-    offsetDays: 0,
-  });
-  assert.deepEqual(parseDueDateRule({ type: 'periodEndPlusOffset', offsetDays: '365' }), {
-    type: 'periodEndPlusOffset',
-    offsetDays: 365,
-  });
+  assert.deepEqual(
+    parseDueDateRule({ type: 'periodEndPlusOffset', offsetDays: 0 }),
+    {
+      type: 'periodEndPlusOffset',
+      offsetDays: 0,
+    },
+  );
+  assert.deepEqual(
+    parseDueDateRule({ type: 'periodEndPlusOffset', offsetDays: '0' }),
+    {
+      type: 'periodEndPlusOffset',
+      offsetDays: 0,
+    },
+  );
+  assert.deepEqual(
+    parseDueDateRule({ type: 'periodEndPlusOffset', offsetDays: '365' }),
+    {
+      type: 'periodEndPlusOffset',
+      offsetDays: 365,
+    },
+  );
 });
 
 test('computeDueDate: end of month + offset', () => {
@@ -56,3 +69,26 @@ test('computeDueDate: offset moves to next month', () => {
   assert.equal(result.getDate(), 1);
 });
 
+test('computeDueDate: max offset can cross year boundary', () => {
+  const runAt = new Date(2026, 11, 5, 10, 0, 0);
+  const rule = { type: 'periodEndPlusOffset', offsetDays: 365 };
+  const result = computeDueDate(runAt, rule);
+  assert.ok(result);
+  assert.equal(result.getFullYear(), 2027);
+  assert.equal(result.getMonth(), 11);
+  assert.equal(result.getDate(), 31);
+  assert.equal(result.getHours(), 23);
+  assert.equal(result.getMinutes(), 59);
+});
+
+test('computeDueDate: leap year February end is handled correctly', () => {
+  const runAt = new Date(2024, 1, 10, 8, 0, 0);
+  const rule = { type: 'periodEndPlusOffset', offsetDays: 0 };
+  const result = computeDueDate(runAt, rule);
+  assert.ok(result);
+  assert.equal(result.getFullYear(), 2024);
+  assert.equal(result.getMonth(), 1);
+  assert.equal(result.getDate(), 29);
+  assert.equal(result.getHours(), 23);
+  assert.equal(result.getMinutes(), 59);
+});

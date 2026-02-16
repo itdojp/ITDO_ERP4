@@ -8,14 +8,12 @@ import {
 } from '../dist/services/approvalLogic.js';
 
 test('matchApprovalSteps: default thresholds', () => {
-  assert.deepEqual(
-    matchApprovalSteps('invoice', { totalAmount: 10 }),
-    [{ approverGroupId: 'mgmt', stepOrder: 1 }],
-  );
-  assert.deepEqual(
-    matchApprovalSteps('invoice', { totalAmount: 49999 }),
-    [{ approverGroupId: 'mgmt', stepOrder: 1 }],
-  );
+  assert.deepEqual(matchApprovalSteps('invoice', { totalAmount: 10 }), [
+    { approverGroupId: 'mgmt', stepOrder: 1 },
+  ]);
+  assert.deepEqual(matchApprovalSteps('invoice', { totalAmount: 49999 }), [
+    { approverGroupId: 'mgmt', stepOrder: 1 },
+  ]);
   assert.deepEqual(matchApprovalSteps('invoice', { totalAmount: 50000 }), [
     { approverGroupId: 'mgmt', stepOrder: 1 },
   ]);
@@ -67,6 +65,21 @@ test('normalizeRuleSteps: parallelKey groups steps into the same stepOrder', () 
   );
 });
 
+test('normalizeRuleSteps: sequential input without explicit order is normalized', () => {
+  assert.deepEqual(
+    normalizeRuleSteps([
+      { approverGroupId: 'mgmt' },
+      { approverUserId: 'u1' },
+      { approverGroupId: 'exec' },
+    ]),
+    [
+      { approverGroupId: 'mgmt', approverUserId: undefined, stepOrder: 1 },
+      { approverGroupId: undefined, approverUserId: 'u1', stepOrder: 2 },
+      { approverGroupId: 'exec', approverUserId: undefined, stepOrder: 3 },
+    ],
+  );
+});
+
 test('matchesRuleCondition: amount range and flow flags', () => {
   assert.equal(
     matchesRuleCondition(
@@ -97,6 +110,56 @@ test('matchesRuleCondition: amount range and flow flags', () => {
       'estimate',
       { totalAmount: 1000 },
       { flowFlags: { invoice: true } },
+    ),
+    false,
+  );
+  assert.equal(
+    matchesRuleCondition(
+      'invoice',
+      {
+        totalAmount: 1000,
+        projectType: 'supply',
+        customerId: 'customer-a',
+        orgUnitId: 'org-x',
+      },
+      {
+        projectType: 'supply',
+        customerId: 'customer-a',
+        orgUnitId: 'org-x',
+      },
+    ),
+    true,
+  );
+  assert.equal(
+    matchesRuleCondition(
+      'invoice',
+      {
+        totalAmount: 1000,
+        projectType: 'services',
+        customerId: 'customer-a',
+        orgUnitId: 'org-x',
+      },
+      {
+        projectType: 'supply',
+        customerId: 'customer-a',
+        orgUnitId: 'org-x',
+      },
+    ),
+    false,
+  );
+  assert.equal(
+    matchesRuleCondition(
+      'invoice',
+      { totalAmount: 1000 },
+      { appliesTo: ['invoice', 'estimate'] },
+    ),
+    true,
+  );
+  assert.equal(
+    matchesRuleCondition(
+      'leave',
+      { totalAmount: 1000 },
+      { appliesTo: ['invoice', 'estimate'] },
     ),
     false,
   );
