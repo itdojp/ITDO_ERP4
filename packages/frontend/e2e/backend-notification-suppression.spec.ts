@@ -44,6 +44,11 @@ const recipientHeaders = buildHeaders({
   userId: recipientUserId,
   roles: ['user'],
 });
+const recipientUserId2 = 'e2e-member-2@example.com';
+const recipient2Headers = buildHeaders({
+  userId: recipientUserId2,
+  roles: ['user'],
+});
 
 async function ensureOk(res: { ok(): boolean; status(): number; text(): any }) {
   if (res.ok()) return;
@@ -77,6 +82,22 @@ async function listNotificationsByMessage(
   const payload = await res.json();
   return (payload?.items ?? []).filter(
     (item: any) => item?.kind === kind && item?.messageId === messageId,
+  );
+}
+
+async function listNotificationsByProject(
+  request: any,
+  headers: Record<string, string>,
+  kind: string,
+  projectId: string,
+) {
+  const res = await request.get(`${apiBase}/notifications?unread=1&limit=200`, {
+    headers,
+  });
+  await ensureOk(res);
+  const payload = await res.json();
+  return (payload?.items ?? []).filter(
+    (item: any) => item?.kind === kind && item?.projectId === projectId,
   );
 }
 
@@ -144,6 +165,12 @@ async function createProjectWithMember(
   suffix: string,
   userId: string,
 ) {
+  const projectId = await createProject(request, suffix);
+  await addProjectMember(request, projectId, userId);
+  return projectId;
+}
+
+async function createProject(request: any, suffix: string) {
   const projectRes = await request.post(`${apiBase}/projects`, {
     data: {
       code: `E2E-NTF-${suffix}`,
@@ -156,16 +183,23 @@ async function createProjectWithMember(
   const projectPayload = await projectRes.json();
   const projectId = (projectPayload?.id ?? '') as string;
   expect(projectId).toBeTruthy();
+  return projectId;
+}
 
+async function addProjectMember(
+  request: any,
+  projectId: string,
+  userId: string,
+  role: 'member' | 'leader' = 'member',
+) {
   const memberRes = await request.post(
     `${apiBase}/projects/${encodeURIComponent(projectId)}/members`,
     {
-      data: { userId, role: 'member' },
+      data: { userId, role },
       headers: adminHeaders,
     },
   );
   await ensureOk(memberRes);
-  return projectId;
 }
 
 async function createApprovalRuleForAmount(
@@ -837,6 +871,74 @@ test('chat_message notifications: notifyAllPosts and mute settings suppress deli
       projectId,
       { notifyAllPosts: true, muteUntil: null },
     );
+  }
+});
+
+test('project_member_added notifications: global mute suppresses delivery @core', async ({
+  request,
+}) => {
+  test.setTimeout(120_000);
+  const suffix = runId();
+  const firstProjectId = await createProject(request, `${suffix}-1`);
+  const secondProjectId = await createProject(request, `${suffix}-2`);
+
+  await patchNotificationPreference(request, recipientHeaders, {
+    muteAllUntil: null,
+  });
+  await patchNotificationPreference(request, recipient2Headers, {
+    muteAllUntil: null,
+  });
+
+  try {
+    await addProjectMember(request, firstProjectId, recipientUserId);
+    expect(
+      (
+        await listNotificationsByProject(
+          request,
+          recipientHeaders,
+          'project_member_added',
+          firstProjectId,
+        )
+      ).length,
+    ).toBeGreaterThan(0);
+
+    const muteAllUntil = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    await patchNotificationPreference(request, recipient2Headers, {
+      muteAllUntil,
+    });
+    await addProjectMember(request, firstProjectId, recipientUserId2);
+    expect(
+      (
+        await listNotificationsByProject(
+          request,
+          recipient2Headers,
+          'project_member_added',
+          firstProjectId,
+        )
+      ).length,
+    ).toBe(0);
+
+    await patchNotificationPreference(request, recipient2Headers, {
+      muteAllUntil: null,
+    });
+    await addProjectMember(request, secondProjectId, recipientUserId2);
+    expect(
+      (
+        await listNotificationsByProject(
+          request,
+          recipient2Headers,
+          'project_member_added',
+          secondProjectId,
+        )
+      ).length,
+    ).toBeGreaterThan(0);
+  } finally {
+    await patchNotificationPreference(request, recipientHeaders, {
+      muteAllUntil: null,
+    });
+    await patchNotificationPreference(request, recipient2Headers, {
+      muteAllUntil: null,
+    });
   }
 });
 
