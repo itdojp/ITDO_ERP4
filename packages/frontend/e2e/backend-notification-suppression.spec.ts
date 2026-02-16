@@ -11,9 +11,10 @@ const runId = () => `${Date.now().toString().slice(-6)}-${randomUUID()}`;
 
 function buildUniqueWeekdayDate(seed: string) {
   const numericSeed = Number(seed.replace(/\D/g, '').slice(-8) || '0');
+  const baseYear = 2000 + (numericSeed % 100);
   const month = (numericSeed % 12) + 1;
   const day = (Math.floor(numericSeed / 12) % 28) + 1;
-  const date = new Date(Date.UTC(2099, month - 1, day));
+  const date = new Date(Date.UTC(baseYear, month - 1, day));
   while (date.getUTCDay() === 0 || date.getUTCDay() === 6) {
     date.setUTCDate(date.getUTCDate() + 1);
   }
