@@ -10,13 +10,6 @@ updates:
     open-pull-requests-limit: 10
     labels:
       - "dependencies"
-    ignore:
-      - dependency-name: "eslint"
-        update-types:
-          - "version-update:semver-major"
-      - dependency-name: "@eslint/js"
-        update-types:
-          - "version-update:semver-major"
     groups:
       backend-minor-patch:
         patterns:
@@ -35,13 +28,6 @@ updates:
     open-pull-requests-limit: 10
     labels:
       - "dependencies"
-    ignore:
-      - dependency-name: "eslint"
-        update-types:
-          - "version-update:semver-major"
-      - dependency-name: "@eslint/js"
-        update-types:
-          - "version-update:semver-major"
     groups:
       frontend-minor-patch:
         patterns:
