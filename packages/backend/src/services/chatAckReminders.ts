@@ -208,6 +208,7 @@ export async function runChatAckReminders(
             dedupe: true,
             max: 200,
           }),
+          client,
         });
         for (const userId of escalationUserIds) {
           escalationCandidates.push({
@@ -339,6 +340,7 @@ export async function runChatAckReminders(
         userIds: Array.from(group.userIds),
         scope: group.scope,
         client,
+        now,
       });
       return [key, new Set(filtered.allowed)] as const;
     }),
