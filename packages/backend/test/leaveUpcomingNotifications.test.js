@@ -11,7 +11,16 @@ function createClient({
   const createdNotifications = [];
   const client = {
     leaveRequest: {
-      findMany: async () => leaveRequests,
+      findMany: async ({ where } = {}) =>
+        leaveRequests.filter((item) => {
+          if (where?.status && item.status !== where.status) return false;
+          const start = item.startDate instanceof Date ? item.startDate : null;
+          if (!start) return false;
+          if (where?.startDate?.gte && start < where.startDate.gte)
+            return false;
+          if (where?.startDate?.lt && start >= where.startDate.lt) return false;
+          return true;
+        }),
     },
     userNotificationPreference: {
       findMany: async ({ where }) =>
@@ -50,6 +59,7 @@ test('runLeaveUpcomingNotifications: global mute suppresses leave_upcoming for n
       {
         id: 'leave-1',
         userId: 'employee-1',
+        status: 'approved',
         leaveType: 'paid',
         startDate: new Date('2026-03-15T00:00:00.000Z'),
         endDate: new Date('2026-03-15T00:00:00.000Z'),
@@ -82,6 +92,7 @@ test('runLeaveUpcomingNotifications: skips existing recipient notifications and 
       {
         id: 'leave-2',
         userId: 'employee-2',
+        status: 'approved',
         leaveType: 'paid',
         startDate: new Date('2026-03-16T00:00:00.000Z'),
         endDate: new Date('2026-03-17T00:00:00.000Z'),
@@ -120,6 +131,7 @@ test('runLeaveUpcomingNotifications: dryRun reports candidate count without crea
       {
         id: 'leave-3',
         userId: 'employee-3',
+        status: 'approved',
         leaveType: 'paid',
         startDate: new Date('2026-03-18T00:00:00.000Z'),
         endDate: new Date('2026-03-18T00:00:00.000Z'),
