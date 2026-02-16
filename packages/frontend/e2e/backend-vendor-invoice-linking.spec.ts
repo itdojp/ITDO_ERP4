@@ -32,6 +32,7 @@ async function ensureOk(res: { ok(): boolean; status(): number; text(): any }) {
 async function setupVendorInvoiceFixture(
   request: APIRequestContext,
   suffix: string,
+  options?: { withPurchaseOrderLine?: boolean },
 ) {
   const projectRes = await request.post(`${apiBase}/projects`, {
     headers: adminHeaders,
@@ -67,6 +68,15 @@ async function setupVendorInvoiceFixture(
         vendorId,
         totalAmount: 12000,
         currency: 'JPY',
+        lines: options?.withPurchaseOrderLine
+          ? [
+              {
+                description: `E2E PO line ${suffix}`,
+                quantity: 1,
+                unitPrice: 12000,
+              },
+            ]
+          : [],
       },
     },
   );
@@ -74,6 +84,12 @@ async function setupVendorInvoiceFixture(
   const po = await poRes.json();
   const purchaseOrderId = po.id as string;
   expect(purchaseOrderId).toBeTruthy();
+  const purchaseOrderLineId = options?.withPurchaseOrderLine
+    ? ((po.lines?.[0]?.id ?? '') as string)
+    : '';
+  if (options?.withPurchaseOrderLine) {
+    expect(purchaseOrderLineId).toBeTruthy();
+  }
 
   const viRes = await request.post(`${apiBase}/vendor-invoices`, {
     headers: adminHeaders,
@@ -90,7 +106,13 @@ async function setupVendorInvoiceFixture(
   const vendorInvoiceId = vi.id as string;
   expect(vendorInvoiceId).toBeTruthy();
 
-  return { projectId, vendorId, purchaseOrderId, vendorInvoiceId };
+  return {
+    projectId,
+    vendorId,
+    purchaseOrderId,
+    vendorInvoiceId,
+    purchaseOrderLineId,
+  };
 }
 
 test('vendor invoice po linking: post-submit unlink requires reason @core', async ({
@@ -197,4 +219,76 @@ test('vendor invoice po linking: link/unlink is forbidden for non-admin roles @c
   expect(unlinkForbiddenRes.status()).toBe(403);
   const unlinkForbidden = await unlinkForbiddenRes.json();
   expect(unlinkForbidden?.error?.code).toBe('forbidden');
+});
+
+test('vendor invoice lines: quantity must not exceed linked purchase order line @core', async ({
+  request,
+}) => {
+  const suffix = runId();
+  const fixture = await setupVendorInvoiceFixture(request, suffix, {
+    withPurchaseOrderLine: true,
+  });
+  expect(fixture.purchaseOrderLineId).toBeTruthy();
+
+  const linkRes = await request.post(
+    `${apiBase}/vendor-invoices/${encodeURIComponent(fixture.vendorInvoiceId)}/link-po`,
+    {
+      headers: adminHeaders,
+      data: { purchaseOrderId: fixture.purchaseOrderId },
+    },
+  );
+  await ensureOk(linkRes);
+
+  const normalUpdateRes = await request.put(
+    `${apiBase}/vendor-invoices/${encodeURIComponent(fixture.vendorInvoiceId)}/lines`,
+    {
+      headers: adminHeaders,
+      data: {
+        lines: [
+          {
+            lineNo: 1,
+            description: `E2E VI line ${suffix}`,
+            quantity: 1,
+            unitPrice: 12000,
+            purchaseOrderLineId: fixture.purchaseOrderLineId,
+          },
+        ],
+      },
+    },
+  );
+  await ensureOk(normalUpdateRes);
+  const normalUpdate = await normalUpdateRes.json();
+  expect(Array.isArray(normalUpdate?.items)).toBeTruthy();
+  expect(normalUpdate?.items?.length).toBe(1);
+  expect(Number(normalUpdate?.totals?.diff ?? Number.NaN)).toBe(0);
+
+  const exceededRes = await request.put(
+    `${apiBase}/vendor-invoices/${encodeURIComponent(fixture.vendorInvoiceId)}/lines`,
+    {
+      headers: adminHeaders,
+      data: {
+        lines: [
+          {
+            lineNo: 1,
+            description: `E2E VI line exceeded ${suffix}`,
+            quantity: 2,
+            unitPrice: 6000,
+            purchaseOrderLineId: fixture.purchaseOrderLineId,
+          },
+        ],
+      },
+    },
+  );
+  expect(exceededRes.status()).toBe(400);
+  const exceeded = await exceededRes.json();
+  expect(exceeded?.error?.code).toBe('PO_LINE_QUANTITY_EXCEEDED');
+  expect(exceeded?.error?.message).toBe(
+    'Requested quantity exceeds purchase order line quantity',
+  );
+  expect(
+    exceeded?.error?.details?.exceeded?.some(
+      (item: { purchaseOrderLineId?: string }) =>
+        item?.purchaseOrderLineId === fixture.purchaseOrderLineId,
+    ) ?? false,
+  ).toBeTruthy();
 });
