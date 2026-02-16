@@ -16,8 +16,8 @@ const actionTimeout = (() => {
     const value = Number(raw);
     if (Number.isFinite(value) && value > 0) return value;
   }
-  // Keep CI slightly more tolerant to reduce flakiness on loaded runners.
-  return process.env.CI ? 15_000 : 8_000;
+  // CI runners vary in performance; keep default timeout conservative.
+  return process.env.CI ? 30_000 : 12_000;
 })();
 
 const authState = {

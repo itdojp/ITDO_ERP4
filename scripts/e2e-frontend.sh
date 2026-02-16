@@ -131,6 +131,8 @@ E2E_BASE_URL="${E2E_BASE_URL:-http://localhost:${FRONTEND_PORT}}"
 E2E_CAPTURE="${E2E_CAPTURE:-1}"
 E2E_SCOPE="${E2E_SCOPE:-full}"
 E2E_GREP="${E2E_GREP:-}"
+E2E_SERVICE_READY_TIMEOUT_SEC="${E2E_SERVICE_READY_TIMEOUT_SEC:-80}"
+E2E_SERVICE_READY_INTERVAL_SEC="${E2E_SERVICE_READY_INTERVAL_SEC:-1}"
 
 BACKEND_LOG="$ROOT_DIR/tmp/e2e-backend.log"
 FRONTEND_LOG="$ROOT_DIR/tmp/e2e-frontend.log"
@@ -156,14 +158,33 @@ trap cleanup EXIT
 wait_for_url() {
   local url=$1
   local name=$2
-  for _ in $(seq 1 40); do
+  local timeout="${E2E_SERVICE_READY_TIMEOUT_SEC}"
+  local interval="${E2E_SERVICE_READY_INTERVAL_SEC}"
+  local attempts
+
+  if ! [[ "$timeout" =~ ^[0-9]+$ ]] || [[ "$timeout" -lt 1 ]]; then
+    echo "E2E_SERVICE_READY_TIMEOUT_SEC must be a positive integer" >&2
+    return 1
+  fi
+  if ! [[ "$interval" =~ ^[0-9]+$ ]] || [[ "$interval" -lt 1 ]]; then
+    echo "E2E_SERVICE_READY_INTERVAL_SEC must be a positive integer" >&2
+    return 1
+  fi
+  if [[ "$interval" -gt "$timeout" ]]; then
+    echo "E2E_SERVICE_READY_INTERVAL_SEC must be <= E2E_SERVICE_READY_TIMEOUT_SEC" >&2
+    return 1
+  fi
+
+  attempts=$(((timeout + interval - 1) / interval))
+
+  for _ in $(seq 1 "$attempts"); do
     if curl -sf "$url" >/dev/null 2>&1; then
       echo "$name ready"
       return 0
     fi
-    sleep 1
+    sleep "$interval"
   done
-  echo "$name not ready" >&2
+  echo "$name not ready after ${timeout}s" >&2
   return 1
 }
 
