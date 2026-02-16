@@ -2,7 +2,7 @@
 
 ## 背景
 - 対象: `packages/frontend/e2e/frontend-smoke.spec.ts`
-- 現状: 1ファイル 2,658行、15シナリオ（`@core` 1件 + `@extended` 14件）
+- 現状: 1ファイル 2,659行、15シナリオ（`@core` 1件 + `@extended` 14件）
 - 課題:
   - 単一ファイル肥大化により、失敗時の影響範囲とレビュー負荷が大きい
   - `.first()` / `nth()` を起点にしたセレクタが散在し、将来のUI変更で不安定化しやすい
@@ -44,6 +44,8 @@
 - 既存タグ（`@core` / `@extended`）は維持
 - 既存ヘルパー（`prepare` / `navigateToSection` / `ensureOk` 等）は
   `e2e/helpers/frontend-smoke-helpers.ts` に抽出し重複を削減
+  （従来は `packages/frontend/e2e/*.ts` 直置きだったが、本計画では
+  `helpers/` サブディレクトリ導入を許容する）
 - 仕様変更は行わず、ファイル再配置＋セレクタ安定化に限定
 
 ## Flaky低減の優先修正候補（先行）
