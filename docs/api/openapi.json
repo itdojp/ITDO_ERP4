@@ -122,12 +122,7 @@
                       }
                     ]
                   },
-                  "guards": {
-                    "items": {},
-                    "minItems": 0,
-                    "nullable": true,
-                    "type": "array"
-                  },
+                  "guards": {},
                   "isEnabled": {
                     "type": "boolean"
                   },
@@ -279,12 +274,7 @@
                       }
                     ]
                   },
-                  "guards": {
-                    "items": {},
-                    "minItems": 0,
-                    "nullable": true,
-                    "type": "array"
-                  },
+                  "guards": {},
                   "isEnabled": {
                     "type": "boolean"
                   },

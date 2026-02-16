@@ -171,7 +171,7 @@ async function createApprovePolicy(
       subjects: { userIds: [actorUserId] },
       stateConstraints: { statusIn: ['pending_qa', 'pending_exec'] },
       requireReason: false,
-      guards: ['chat_ack_completed'],
+      guards: [{ type: 'chat_ack_completed' }],
     },
     headers,
   });
