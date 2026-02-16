@@ -292,6 +292,68 @@ async function patchChatRoomGroups(
   await ensureOk(res);
 }
 
+async function createChatAckTemplate(
+  request: any,
+  body: {
+    flowType: string;
+    actionKey: string;
+    messageBody: string;
+    requiredUserIds?: string[];
+    dueInHours?: number;
+    escalationAfterHours?: number;
+    escalationUserIds?: string[];
+    isEnabled?: boolean;
+  },
+) {
+  const res = await request.post(`${apiBase}/chat-ack-templates`, {
+    data: body,
+    headers: adminHeaders,
+  });
+  await ensureOk(res);
+  const payload = await res.json();
+  const id = (payload?.id ?? '') as string;
+  expect(id).toBeTruthy();
+  return id;
+}
+
+async function patchChatAckTemplateEnabled(
+  request: any,
+  id: string,
+  isEnabled: boolean,
+) {
+  const res = await request.patch(
+    `${apiBase}/chat-ack-templates/${encodeURIComponent(id)}`,
+    {
+      data: { isEnabled },
+      headers: adminHeaders,
+    },
+  );
+  await ensureOk(res);
+}
+
+async function findChatAckLinkMessageId(
+  request: any,
+  targetTable: string,
+  targetId: string,
+) {
+  const query = new URLSearchParams({
+    targetTable,
+    targetId,
+    limit: '20',
+  });
+  const res = await request.get(
+    `${apiBase}/chat-ack-links?${query.toString()}`,
+    {
+      headers: adminHeaders,
+    },
+  );
+  await ensureOk(res);
+  const payload = await res.json();
+  const first = (payload?.items ?? [])[0];
+  expect(first?.messageId).toBeTruthy();
+  return first.messageId as string;
+}
+
 test('chat_ack_required notifications: global mute and room mention settings suppress delivery @core', async ({
   request,
 }) => {
@@ -774,6 +836,136 @@ test('chat_room_acl_mismatch notifications: global mute bypass delivers notifica
     }
     if (posterGroupId) {
       await patchGroupActive(request, posterGroupId, false);
+    }
+  }
+});
+
+test('chat_ack_escalation notifications: global mute bypass delivers notification @core', async ({
+  request,
+}) => {
+  test.setTimeout(120_000);
+  const suffix = runId();
+  const requesterUserId = `e2e-ack-requester-${suffix}@example.com`;
+  const approverUserId = `e2e-ack-approver-${suffix}@example.com`;
+  const requesterHeaders = buildHeaders({
+    userId: requesterUserId,
+    roles: ['admin', 'mgmt'],
+    groupIds: ['mgmt'],
+  });
+  const approverHeaders = buildHeaders({
+    userId: approverUserId,
+    roles: ['admin', 'mgmt'],
+    groupIds: ['mgmt'],
+  });
+  const totalAmount = Number(`6${Date.now().toString().slice(-5)}`);
+
+  let templateId: string | null = null;
+  let approvalRuleId: string | null = null;
+
+  await patchNotificationPreference(request, adminHeaders, {
+    muteAllUntil: null,
+  });
+  try {
+    templateId = await createChatAckTemplate(request, {
+      flowType: 'estimate',
+      actionKey: 'approve',
+      messageBody: `E2E ack escalation ${suffix}`,
+      requiredUserIds: [recipientUserId],
+      dueInHours: 0,
+      escalationAfterHours: 1,
+      escalationUserIds: [adminHeaders['x-user-id']],
+      isEnabled: true,
+    });
+
+    const muteAllUntil = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    await patchNotificationPreference(request, adminHeaders, {
+      muteAllUntil,
+    });
+
+    const { projectId, estimateId } = await createProjectAndEstimate({
+      request,
+      apiBase,
+      headers: requesterHeaders,
+      project: {
+        code: `E2E-NTF-ACK-ESC-${suffix}`,
+        name: `E2E Notification Ack Escalation ${suffix}`,
+      },
+      estimate: {
+        totalAmount,
+        currency: 'JPY',
+        notes: `E2E notification ack escalation ${suffix}`,
+      },
+    });
+    const memberRes = await request.post(
+      `${apiBase}/projects/${encodeURIComponent(projectId)}/members`,
+      {
+        data: { userId: recipientUserId, role: 'member' },
+        headers: adminHeaders,
+      },
+    );
+    await ensureOk(memberRes);
+    approvalRuleId = await createApprovalRuleForAmount(
+      request,
+      adminHeaders,
+      approverUserId,
+      totalAmount,
+    );
+    const approval = await submitAndFindApprovalInstance({
+      request,
+      apiBase,
+      headers: requesterHeaders,
+      flowType: 'estimate',
+      projectId,
+      targetTable: 'estimates',
+      targetId: estimateId,
+    });
+
+    const approveRes = await request.post(
+      `${apiBase}/approval-instances/${encodeURIComponent(approval.id)}/act`,
+      {
+        data: { action: 'approve' },
+        headers: approverHeaders,
+      },
+    );
+    await ensureOk(approveRes);
+
+    const messageId = await findChatAckLinkMessageId(
+      request,
+      'approval_instances',
+      approval.id,
+    );
+
+    const runNow = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
+    const runRes = await request.post(
+      `${apiBase}/jobs/chat-ack-reminders/run`,
+      {
+        data: { now: runNow },
+        headers: adminHeaders,
+      },
+    );
+    await ensureOk(runRes);
+    const runPayload = await runRes.json();
+    expect(runPayload?.candidateEscalations).toBeGreaterThan(0);
+
+    expect(
+      (
+        await listNotificationsByMessage(
+          request,
+          adminHeaders,
+          'chat_ack_escalation',
+          messageId,
+        )
+      ).length,
+    ).toBeGreaterThan(0);
+  } finally {
+    await patchNotificationPreference(request, adminHeaders, {
+      muteAllUntil: null,
+    });
+    if (templateId) {
+      await patchChatAckTemplateEnabled(request, templateId, false);
+    }
+    if (approvalRuleId) {
+      await deactivateApprovalRule(request, adminHeaders, approvalRuleId);
     }
   }
 });

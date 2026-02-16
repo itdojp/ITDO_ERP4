@@ -53,12 +53,26 @@ export async function registerNotificationJobRoutes(app: FastifyInstance) {
       preHandler: requireRole(['admin', 'mgmt']),
       schema: chatAckReminderRunSchema,
     },
-    async (req) => {
-      const body = (req.body || {}) as { dryRun?: boolean; limit?: number };
+    async (req, reply) => {
+      const body = (req.body || {}) as {
+        dryRun?: boolean;
+        limit?: number;
+        now?: string;
+      };
+      const now =
+        typeof body.now === 'string' && body.now.trim()
+          ? new Date(body.now)
+          : undefined;
+      if (body.now && (!now || Number.isNaN(now.getTime()))) {
+        return reply.status(400).send({
+          error: { code: 'INVALID_DATE', message: 'Invalid now date-time' },
+        });
+      }
       const result = await runChatAckReminders({
         actorId: req.user?.userId,
         dryRun: body.dryRun,
         limit: body.limit,
+        now,
       });
 
       await logAudit({

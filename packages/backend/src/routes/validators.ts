@@ -1315,6 +1315,7 @@ export const chatAckReminderRunSchema = {
     {
       dryRun: Type.Optional(Type.Boolean()),
       limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 500 })),
+      now: Type.Optional(Type.String({ format: 'date-time' })),
     },
     { additionalProperties: false },
   ),
