@@ -105,6 +105,33 @@ export function assertValidBackendEnv() {
       'header|jwt|hybrid のいずれかを指定してください',
     );
   }
+  const nodeEnv = (process.env.NODE_ENV || '').trim().toLowerCase();
+  const allowHeaderFallbackRaw = normalizeString(
+    process.env.AUTH_ALLOW_HEADER_FALLBACK_IN_PROD,
+  );
+  const allowHeaderFallback =
+    parseBoolean(process.env.AUTH_ALLOW_HEADER_FALLBACK_IN_PROD) === true;
+  if (
+    allowHeaderFallbackRaw &&
+    parseBoolean(process.env.AUTH_ALLOW_HEADER_FALLBACK_IN_PROD) === undefined
+  ) {
+    addIssue(
+      issues,
+      'AUTH_ALLOW_HEADER_FALLBACK_IN_PROD',
+      'true|false|1|0 のいずれかを指定してください',
+    );
+  }
+  if (
+    nodeEnv === 'production' &&
+    authMode === 'header' &&
+    !allowHeaderFallback
+  ) {
+    addIssue(
+      issues,
+      'AUTH_MODE',
+      'production では AUTH_MODE=header は使用できません（必要時のみ AUTH_ALLOW_HEADER_FALLBACK_IN_PROD=true で明示的に許可）',
+    );
+  }
 
   if (authMode === 'jwt' || authMode === 'hybrid') {
     assertRequired(issues, 'JWT_ISSUER', process.env.JWT_ISSUER);

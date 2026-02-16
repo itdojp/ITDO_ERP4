@@ -29,6 +29,11 @@ const RESOLVED_AUTH_MODE: AuthMode =
   AUTH_MODE_RAW === 'jwt' || AUTH_MODE_RAW === 'hybrid'
     ? AUTH_MODE_RAW
     : 'header';
+const NODE_ENV_RAW = (process.env.NODE_ENV || '').trim().toLowerCase();
+const IS_PRODUCTION = NODE_ENV_RAW === 'production';
+const AUTH_ALLOW_HEADER_FALLBACK_IN_PROD = ['1', 'true'].includes(
+  (process.env.AUTH_ALLOW_HEADER_FALLBACK_IN_PROD || '').trim().toLowerCase(),
+);
 const JWT_JWKS_URL = process.env.JWT_JWKS_URL;
 const JWT_PUBLIC_KEY = process.env.JWT_PUBLIC_KEY;
 const JWT_ISSUER = process.env.JWT_ISSUER;
@@ -48,6 +53,16 @@ const AUTH_GROUP_TO_ROLE_MAP_RAW = process.env.AUTH_GROUP_TO_ROLE_MAP || '';
 const AUTH_DB_USER_CONTEXT_CACHE_TTL_SECONDS = Number(
   process.env.AUTH_DB_USER_CONTEXT_CACHE_TTL_SECONDS || 0,
 );
+
+if (
+  IS_PRODUCTION &&
+  RESOLVED_AUTH_MODE === 'header' &&
+  !AUTH_ALLOW_HEADER_FALLBACK_IN_PROD
+) {
+  throw new Error(
+    'AUTH_MODE=header is not allowed in production unless AUTH_ALLOW_HEADER_FALLBACK_IN_PROD=true',
+  );
+}
 
 const GROUP_TO_ROLE_MAP = parseGroupToRoleMap(AUTH_GROUP_TO_ROLE_MAP_RAW);
 
@@ -390,6 +405,9 @@ async function authPlugin(fastify: any) {
     const token = parseBearerToken(req);
     if (!token) {
       if (mode === 'jwt') {
+        return respondUnauthorized(req, reply, 'missing_token');
+      }
+      if (IS_PRODUCTION && !AUTH_ALLOW_HEADER_FALLBACK_IN_PROD) {
         return respondUnauthorized(req, reply, 'missing_token');
       }
       applyHeaderAuth(req);
