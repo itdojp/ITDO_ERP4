@@ -174,7 +174,14 @@ async function ensureOk(res: { ok(): boolean; status(): number }) {
   }
 }
 
-async function seedVendorApprovalFixture(page: Page) {
+type VendorApprovalFixture = {
+  projectId: string;
+  vendorId: string;
+  purchaseOrderId: string;
+  purchaseOrderNo: string;
+};
+
+async function seedVendorApprovalFixture(page: Page): Promise<VendorApprovalFixture> {
   const suffix = runId();
   const projectId = authState.projectIds[0];
   const vendorRes = await page.request.post(`${apiBase}/vendors`, {
@@ -202,6 +209,11 @@ async function seedVendorApprovalFixture(page: Page) {
     },
   );
   await ensureOk(poRes);
+  const poPayload = await poRes.json();
+  const purchaseOrderId = String(poPayload?.id || '');
+  const purchaseOrderNo = String(poPayload?.poNo || '');
+  expect(purchaseOrderId.length).toBeGreaterThan(0);
+  expect(purchaseOrderNo.length).toBeGreaterThan(0);
 
   const quoteRes = await page.request.post(`${apiBase}/vendor-quotes`, {
     headers: buildAuthHeaders(),
@@ -226,20 +238,13 @@ async function seedVendorApprovalFixture(page: Page) {
     },
   });
   await ensureOk(invoiceRes);
-}
 
-async function clickFirstEnabledButton(buttons: Locator) {
-  const count = await buttons.count();
-  for (let i = 0; i < count; i += 1) {
-    const candidate = buttons.nth(i);
-    const enabled = await candidate
-      .isEnabled({ timeout: actionTimeout })
-      .catch(() => false);
-    if (!enabled) continue;
-    await candidate.click({ timeout: actionTimeout });
-    return true;
-  }
-  return false;
+  return {
+    projectId,
+    vendorId,
+    purchaseOrderId,
+    purchaseOrderNo,
+  };
 }
 
 test('frontend smoke core @core', async ({ page }) => {
@@ -813,7 +818,7 @@ test('frontend smoke approval ack link lifecycle @extended', async ({
 test('frontend smoke vendor approvals @extended', async ({ page }) => {
   test.setTimeout(180_000);
   await prepare(page);
-  await seedVendorApprovalFixture(page);
+  const fixture = await seedVendorApprovalFixture(page);
 
   await navigateToSection(page, '仕入/発注');
   const vendorSection = page
@@ -826,8 +831,14 @@ test('frontend smoke vendor approvals @extended', async ({ page }) => {
     .locator('h3', { hasText: '発注書' })
     .locator('..');
   await poBlock.getByRole('button', { name: /再取得|再読込/ }).click();
-  const poSubmitButton = poBlock.getByRole('button', { name: '承認依頼' });
-  expect(await clickFirstEnabledButton(poSubmitButton)).toBeTruthy();
+  const poRow = poBlock
+    .locator('tbody tr', { hasText: fixture.purchaseOrderNo })
+    .first();
+  await expect(poRow).toBeVisible({ timeout: actionTimeout });
+  const poSubmitButton = poRow.getByRole('button', { name: '承認依頼' });
+  await expect(poSubmitButton).toBeVisible({ timeout: actionTimeout });
+  await expect(poSubmitButton).toBeEnabled({ timeout: actionTimeout });
+  await poSubmitButton.click();
   await expect(
     page.getByText('発注書を承認依頼しますか？'),
   ).toBeVisible({
@@ -848,9 +859,19 @@ test('frontend smoke vendor approvals @extended', async ({ page }) => {
     .locator('h2', { hasText: '承認一覧' })
     .locator('..');
   await approvalsSection.scrollIntoViewIfNeeded();
+  await selectByLabelOrFirst(approvalsSection.locator('select').first(), '発注');
   await approvalsSection.getByRole('button', { name: '再読込' }).click();
-  const approveButtons = approvalsSection.getByRole('button', { name: '承認' });
-  expect(await clickFirstEnabledButton(approveButtons)).toBeTruthy();
+  const approvalItem = approvalsSection
+    .locator('li', { hasText: `purchase_orders:${fixture.purchaseOrderId}` })
+    .first();
+  await expect(approvalItem).toBeVisible({ timeout: actionTimeout });
+  const approveButton = approvalItem.getByRole('button', { name: '承認' });
+  await expect(approveButton).toBeVisible({ timeout: actionTimeout });
+  await expect(approveButton).toBeEnabled({ timeout: actionTimeout });
+  await approveButton.click();
+  await expect(approvalsSection.getByText('承認しました')).toBeVisible({
+    timeout: actionTimeout,
+  });
   await captureSection(approvalsSection, '07-approvals.png');
 });
 
