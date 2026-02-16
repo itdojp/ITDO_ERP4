@@ -16,6 +16,7 @@ const actionTimeout = (() => {
     const value = Number(raw);
     if (Number.isFinite(value) && value > 0) return value;
   }
+  // CI runners vary in performance; keep default timeout conservative.
   return process.env.CI ? 30_000 : 12_000;
 })();
 
@@ -42,7 +43,7 @@ async function captureSection(locator: Locator, filename: string) {
     try {
       await locator.page().screenshot({ path: capturePath, fullPage: true });
     } catch {
-      // ignore capture failures
+      // ignore capture failures to avoid blocking the test flow
     }
   }
 }
@@ -57,7 +58,8 @@ async function safeClick(locator: Locator, label: string) {
   }
 }
 
-async function prepare(page: Page) {
+async function prepare(page: Page, override?: Partial<typeof authState>) {
+  const effectiveState = { ...authState, ...(override ?? {}) };
   ensureEvidenceDir();
   page.on('pageerror', (error) => {
     console.error('[e2e][pageerror]', error);
@@ -70,13 +72,14 @@ async function prepare(page: Page) {
   await page.addInitScript((state) => {
     window.localStorage.setItem('erp4_auth', JSON.stringify(state));
     window.localStorage.removeItem('erp4_active_section');
-  }, authState);
+  }, effectiveState);
   await page.goto(baseUrl);
   await expect(
     page.getByRole('heading', { name: 'ERP4 MVP PoC' }),
   ).toBeVisible();
 }
 
+// Use exact matching to avoid collisions like '承認' vs '承認依頼'
 async function navigateToSection(page: Page, label: string, heading?: string) {
   await page.getByRole('button', { name: label, exact: true }).click();
   const targetHeading = heading || label;
@@ -103,12 +106,15 @@ const shiftDateKey = (dateKey: string, deltaDays: number) => {
   return base.toISOString().slice(0, 10);
 };
 
-const buildAuthHeaders = () => ({
-  'x-user-id': authState.userId,
-  'x-roles': authState.roles.join(','),
-  'x-project-ids': (authState.projectIds ?? []).join(','),
-  'x-group-ids': (authState.groupIds ?? []).join(','),
-});
+const buildAuthHeaders = (override?: Partial<typeof authState>) => {
+  const effectiveState = { ...authState, ...(override ?? {}) };
+  return {
+    'x-user-id': effectiveState.userId,
+    'x-roles': effectiveState.roles.join(','),
+    'x-project-ids': (effectiveState.projectIds ?? []).join(','),
+    'x-group-ids': (effectiveState.groupIds ?? []).join(','),
+  };
+};
 
 async function ensureOk(res: { ok(): boolean; status(): number; text(): any }) {
   if (res.ok()) return;
