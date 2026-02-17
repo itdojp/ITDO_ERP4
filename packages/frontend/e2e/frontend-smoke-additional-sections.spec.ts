@@ -37,10 +37,10 @@ async function captureSection(locator: Locator, filename: string) {
     await locator.scrollIntoViewIfNeeded({ timeout: 5000 });
     await expect(locator).toBeVisible({ timeout: 5000 });
     await locator.screenshot({ path: capturePath });
-  } catch {
+  } catch (err) {
     try {
       await locator.page().screenshot({ path: capturePath, fullPage: true });
-    } catch {
+    } catch (err) {
       // ignore capture failures to avoid blocking the test flow
     }
   }
@@ -118,6 +118,7 @@ test('frontend smoke additional sections @extended', async ({ page }) => {
   await breakGlassSection.scrollIntoViewIfNeeded();
   await captureSection(breakGlassSection, '24-chat-break-glass.png');
 
+  // DateTimeRangePicker regression: break-glass form is available for mgmt without admin role.
   const breakGlassMgmtPage = await page.context().newPage();
   breakGlassMgmtPage.on('pageerror', (error) => {
     console.error('[e2e][breakGlassMgmtPage][pageerror]', error);
