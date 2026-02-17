@@ -137,6 +137,7 @@ test('frontend smoke vendor docs create @extended', async ({ page }) => {
   const poAmount = base + 1000;
   const quoteAmount = base + 2000;
   const invoiceAmount = base + 3000;
+  const allocationDraftAmount = invoiceAmount - 1;
   await prepare(page);
 
   await navigateToSection(page, '仕入/発注');
@@ -155,7 +156,9 @@ test('frontend smoke vendor docs create @extended', async ({ page }) => {
   await selectByLabelOrFirst(poVendorSelect);
   const vendorDocsProjectId = await poProjectSelect.inputValue();
   const vendorDocsVendorId = await poVendorSelect.inputValue();
-  await poBlock.getByPlaceholder('金額', { exact: true }).fill(String(poAmount));
+  await poBlock
+    .getByPlaceholder('金額', { exact: true })
+    .fill(String(poAmount));
   await poBlock.getByRole('button', { name: '登録' }).click();
   await expect(poBlock.getByText('発注書を登録しました')).toBeVisible();
   await expect(
@@ -180,12 +183,17 @@ test('frontend smoke vendor docs create @extended', async ({ page }) => {
     quoteBlock,
     '案件を選択',
   );
-  const quoteVendorSelect = await findSelectByOptionText(quoteBlock, '業者を選択');
+  const quoteVendorSelect = await findSelectByOptionText(
+    quoteBlock,
+    '業者を選択',
+  );
   await selectByValue(quoteProjectSelect, vendorDocsProjectId);
   await selectByValue(quoteVendorSelect, vendorDocsVendorId);
   const quoteNo = `VQ-E2E-${id}`;
   await quoteBlock.getByPlaceholder('見積番号', { exact: true }).fill(quoteNo);
-  await quoteBlock.getByPlaceholder('金額', { exact: true }).fill(String(quoteAmount));
+  await quoteBlock
+    .getByPlaceholder('金額', { exact: true })
+    .fill(String(quoteAmount));
   await quoteBlock.getByRole('button', { name: '登録' }).click();
   await expect(quoteBlock.getByText('仕入見積を登録しました')).toBeVisible();
   await expect(quoteBlock.getByText(quoteNo)).toBeVisible();
@@ -272,7 +280,7 @@ test('frontend smoke vendor docs create @extended', async ({ page }) => {
     )
     .toBe(false);
 
-  // (3) 配賦明細ダイアログ → トグル → 明細追加 → 更新成功メッセージ
+  // (3) 配賦明細ダイアログ: 差分表示と自動調整（端数補正）を確認
   await createdInvoiceItem.scrollIntoViewIfNeeded();
   await createdInvoiceItem.getByRole('button', { name: '配賦明細' }).click();
   const allocationDialog = page.getByRole('dialog');
@@ -302,7 +310,15 @@ test('frontend smoke vendor docs create @extended', async ({ page }) => {
   }
   await allocationRow
     .locator('td:nth-child(2) input[type="number"]')
-    .fill(String(invoiceAmount));
+    .fill(String(allocationDraftAmount));
+  await expect(
+    allocationDialog.getByText('差分: 1 JPY', { exact: false }),
+  ).toBeVisible({ timeout: actionTimeout });
+  await expect(
+    allocationDialog.getByText(
+      '差分が解消できない場合は理由を添えて管理者へエスカレーションしてください',
+    ),
+  ).toBeVisible({ timeout: actionTimeout });
   await allocationDialog.getByRole('button', { name: '更新' }).click();
   const allocationSuccessMessage = allocationDialog.locator('p', {
     hasText: '配賦明細を更新しました',
@@ -314,8 +330,96 @@ test('frontend smoke vendor docs create @extended', async ({ page }) => {
   await expect(allocationSuccessMessage).toBeVisible({
     timeout: actionTimeout,
   });
+  await expect(
+    allocationDialog.getByText('差分: 0 JPY', { exact: false }),
+  ).toBeVisible({ timeout: actionTimeout });
+  await expect(
+    allocationRow.locator('td:nth-child(4) input[type="number"]'),
+  ).toHaveValue('1', { timeout: actionTimeout });
   await allocationDialog.getByRole('button', { name: '閉じる' }).click();
   await expect(allocationDialog).toBeHidden({ timeout: actionTimeout });
+
+  // (4) 承認依頼後（pending_qa）は PO 紐づけ更新で変更理由が必須
+  await createdInvoiceItem.scrollIntoViewIfNeeded();
+  await createdInvoiceItem.getByRole('button', { name: '承認依頼' }).click();
+  const submitConfirmDialog = page.getByRole('dialog', {
+    name: '仕入請求を承認依頼しますか？',
+  });
+  await expect(submitConfirmDialog).toBeVisible({ timeout: actionTimeout });
+  await submitConfirmDialog.getByRole('button', { name: '実行' }).click();
+  await expect(
+    invoiceBlock.getByText('仕入請求を承認依頼しました'),
+  ).toBeVisible({ timeout: actionTimeout });
+
+  await createdInvoiceItem.scrollIntoViewIfNeeded();
+  await createdInvoiceItem.getByRole('button', { name: 'PO紐づけ' }).click();
+  const poReasonRequiredDialog = page.getByRole('dialog');
+  await expect(
+    poReasonRequiredDialog.getByText('仕入請求: 関連発注書（PO）'),
+  ).toBeVisible({
+    timeout: actionTimeout,
+  });
+  const poReasonRequiredSelect = await findSelectByOptionText(
+    poReasonRequiredDialog,
+    '紐づけなし',
+  );
+  await selectByLabelOrFirst(poReasonRequiredSelect, poNoValue);
+  await poReasonRequiredDialog.getByRole('button', { name: '更新' }).click();
+  await expect(
+    poReasonRequiredDialog.getByText('変更理由を入力してください'),
+  ).toBeVisible({ timeout: actionTimeout });
+  await poReasonRequiredDialog
+    .getByPlaceholder('変更理由（必須）')
+    .fill('e2e: pending_qa でのPO紐づけ');
+  await poReasonRequiredDialog.getByRole('button', { name: '更新' }).click();
+  await expect(poReasonRequiredDialog).toBeHidden({ timeout: actionTimeout });
+  await expect
+    .poll(
+      () =>
+        createdInvoiceItem
+          .innerText()
+          .then((value) => value.includes(poNoValue)),
+      { timeout: actionTimeout },
+    )
+    .toBe(true);
+
+  await createdInvoiceItem.scrollIntoViewIfNeeded();
+  await createdInvoiceItem.getByRole('button', { name: 'PO紐づけ' }).click();
+  const poReasonRequiredUnlinkDialog = page.getByRole('dialog');
+  await expect(
+    poReasonRequiredUnlinkDialog.getByText('仕入請求: 関連発注書（PO）'),
+  ).toBeVisible({
+    timeout: actionTimeout,
+  });
+  const poReasonRequiredUnlinkSelect = await findSelectByOptionText(
+    poReasonRequiredUnlinkDialog,
+    '紐づけなし',
+  );
+  await selectByLabelOrFirst(poReasonRequiredUnlinkSelect, '紐づけなし');
+  await poReasonRequiredUnlinkDialog
+    .getByRole('button', { name: '更新' })
+    .click();
+  await expect(
+    poReasonRequiredUnlinkDialog.getByText('変更理由を入力してください'),
+  ).toBeVisible({ timeout: actionTimeout });
+  await poReasonRequiredUnlinkDialog
+    .getByPlaceholder('変更理由（必須）')
+    .fill('e2e: pending_qa でのPO解除');
+  await poReasonRequiredUnlinkDialog
+    .getByRole('button', { name: '更新' })
+    .click();
+  await expect(poReasonRequiredUnlinkDialog).toBeHidden({
+    timeout: actionTimeout,
+  });
+  await expect
+    .poll(
+      () =>
+        createdInvoiceItem
+          .innerText()
+          .then((value) => value.includes(poNoValue)),
+      { timeout: actionTimeout },
+    )
+    .toBe(false);
 
   await createdInvoiceItem.getByRole('button', { name: '注釈' }).click();
   const annotationDialog = page.getByRole('dialog');
