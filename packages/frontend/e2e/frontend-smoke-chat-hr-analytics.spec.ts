@@ -191,18 +191,16 @@ test('frontend smoke chat hr analytics @extended', async ({ page }) => {
     },
   );
   const chatItem = chatSection.locator('li', { hasText: chatMessage });
+  await expect(chatItem).toHaveCount(1, { timeout: actionTimeout });
   await expect(chatItem.getByText(`@${mentionTarget}`)).toBeVisible();
   await expect(
     chatSection.getByRole('button', { name: uploadName }),
   ).toBeVisible();
-  const reactionButton = chatSection.getByRole('button', { name: /^👍/ });
+  const reactionButton = chatItem.getByRole('button', { name: /^👍/ });
   if (
-    await reactionButton
-      .first()
-      .isEnabled()
-      .catch(() => false)
+    await reactionButton.isEnabled().catch(() => false)
   ) {
-    await reactionButton.first().click();
+    await reactionButton.click();
   }
   await expect(chatSection.getByRole('button', { name: '投稿' })).toBeDisabled({
     timeout: actionTimeout,
@@ -284,21 +282,23 @@ test('frontend smoke chat hr analytics @extended', async ({ page }) => {
   await hrSection.getByLabel('開始日').fill(toDateInputValue(hrRangeFrom));
   await hrSection.getByLabel('終了日').fill(toDateInputValue(hrRangeTo));
   await hrSection.getByLabel('閾値').fill('1');
-  await hrSection.getByRole('button', { name: '更新' }).first().click();
+  const groupUpdateRow = hrSection.locator('.row', {
+    has: hrSection.getByLabel('開始日'),
+  });
+  await groupUpdateRow.getByRole('button', { name: '更新' }).click();
   await expect(hrSection.locator('ul.list li')).not.toHaveCount(0);
   const groupSelect = hrSection.getByRole('combobox');
   if (await groupSelect.locator('option', { hasText: 'hr-group' }).count()) {
     await groupSelect.selectOption({ label: 'hr-group' });
   }
-  const updateButtons = hrSection.getByRole('button', { name: '更新' });
-  if (
-    (await updateButtons.count()) > 1 &&
-    (await updateButtons
-      .nth(1)
-      .isEnabled()
-      .catch(() => false))
-  ) {
-    await updateButtons.nth(1).click();
+  const monthlyUpdateRow = hrSection.locator('.row', {
+    has: hrSection.locator('strong', { hasText: '時系列' }),
+  });
+  const monthlyUpdateButton = monthlyUpdateRow.getByRole('button', {
+    name: '更新',
+  });
+  if (await monthlyUpdateButton.isEnabled().catch(() => false)) {
+    await monthlyUpdateButton.click();
   }
   await captureSection(hrSection, '13-hr-analytics.png');
 
