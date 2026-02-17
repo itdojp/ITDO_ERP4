@@ -120,6 +120,15 @@ test('backend manual checklist: alerts/templates/reports jobs @extended', async 
     (item: any) => item?.kind === 'invoice',
   );
   expect(invoiceTemplate?.id).toBeTruthy();
+  const templateDetailRes = await request.get(
+    `${apiBase}/pdf-templates/${encodeURIComponent(invoiceTemplate.id)}`,
+    {
+      headers: adminHeaders,
+    },
+  );
+  await ensureOk(templateDetailRes);
+  const templateDetail = await templateDetailRes.json();
+  expect(templateDetail?.id).toBe(invoiceTemplate.id);
 
   const templateSettingRes = await request.post(
     `${apiBase}/template-settings`,
@@ -147,6 +156,19 @@ test('backend manual checklist: alerts/templates/reports jobs @extended', async 
     (item: any) => item?.id === templateSetting.id,
   );
   expect(templateExists).toBeTruthy();
+  const updatedNumberRule = `PYYYY-MM-NNNN-${suffix.replace(/[^A-Za-z0-9_-]/g, '')}`;
+  const templatePatchRes = await request.patch(
+    `${apiBase}/template-settings/${encodeURIComponent(templateSetting.id)}`,
+    {
+      data: { numberRule: updatedNumberRule },
+      headers: adminHeaders,
+    },
+  );
+  await ensureOk(templatePatchRes);
+  const patchedTemplate = await templatePatchRes.json();
+  expect(String(patchedTemplate?.numberRule ?? '')).toContain(
+    updatedNumberRule,
+  );
 
   const alertRes = await request.post(`${apiBase}/alert-settings`, {
     data: {
@@ -201,6 +223,25 @@ test('backend manual checklist: alerts/templates/reports jobs @extended', async 
   await ensureOk(reportRes);
   const reportSubscription = await reportRes.json();
   expect(reportSubscription?.id).toBeTruthy();
+  const reportListRes = await request.get(`${apiBase}/report-subscriptions`, {
+    headers: adminHeaders,
+  });
+  await ensureOk(reportListRes);
+  const reportListPayload = await reportListRes.json();
+  const reportExists = (reportListPayload?.items ?? []).some(
+    (item: any) => item?.id === reportSubscription.id,
+  );
+  expect(reportExists).toBeTruthy();
+  const reportPatchRes = await request.patch(
+    `${apiBase}/report-subscriptions/${encodeURIComponent(reportSubscription.id)}`,
+    {
+      data: { name: `E2E report patched ${suffix}` },
+      headers: adminHeaders,
+    },
+  );
+  await ensureOk(reportPatchRes);
+  const patchedReport = await reportPatchRes.json();
+  expect(String(patchedReport?.name ?? '')).toContain(`patched ${suffix}`);
 
   const reportRunRes = await request.post(
     `${apiBase}/report-subscriptions/${encodeURIComponent(
@@ -215,6 +256,20 @@ test('backend manual checklist: alerts/templates/reports jobs @extended', async 
   const reportRunPayload = await reportRunRes.json();
   expect(Array.isArray(reportRunPayload.deliveries)).toBeTruthy();
   expect(reportRunPayload.deliveries.length).toBeGreaterThan(0);
+  const reportDeliveryListRes = await request.get(
+    `${apiBase}/report-deliveries?subscriptionId=${encodeURIComponent(
+      reportSubscription.id,
+    )}`,
+    {
+      headers: adminHeaders,
+    },
+  );
+  await ensureOk(reportDeliveryListRes);
+  const reportDeliveryPayload = await reportDeliveryListRes.json();
+  const hasReportDelivery = (reportDeliveryPayload?.items ?? []).some(
+    (item: any) => item?.subscriptionId === reportSubscription.id,
+  );
+  expect(hasReportDelivery).toBeTruthy();
 
   const reportJobRes = await request.post(
     `${apiBase}/jobs/report-subscriptions/run`,
@@ -685,6 +740,10 @@ test('backend manual checklist: members/vendors/time/expenses/wellbeing @extende
     },
   );
   await ensureOk(approvalPatchRes);
+  const approvalPatched = await approvalPatchRes.json();
+  const amountMin = Number(approvalPatched?.conditions?.amountMin ?? NaN);
+  expect(Number.isFinite(amountMin)).toBeTruthy();
+  expect(amountMin).toBe(0);
 
   const ackRequiredUserId = 'e2e-member-1@example.com';
   const ensureAckMemberRes = await request.post(

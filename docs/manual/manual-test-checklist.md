@@ -8,14 +8,14 @@
 - [x] POST/GET /time-entries（非管理ロールは自分のデータのみ取得できる）
 - [x] /alert-settings CRUD と /jobs/alerts/run で alert が保存される
 - [x] /jobs/approval-escalations/run で承認期限エスカレーションが保存される
-- [ ] /approval-rules CRUD のハッピーパス
+- [x] POST/GET（一覧）/PATCH /approval-rules のハッピーパス
 - [x] /projects/:id/members の GET/POST/DELETE が動作する
 - [x] /projects/:id/member-candidates?q= の候補検索が動作する
 - [x] /projects/:id/members/bulk で複数メンバーの追加が動作する
-- [ ] /pdf-templates と /template-settings CRUD が動作する
+- [x] GET /pdf-templates（一覧/詳細）と POST/GET/PATCH /template-settings が動作する
 - [x] /document-send-logs/:id と /document-send-logs/:id/events が取得できる
 - [x] /document-send-logs/:id/retry で再送が記録される
-- [ ] /report-subscriptions CRUD → /report-subscriptions/:id/run で report_deliveries が作成される
+- [x] POST/GET/PATCH /report-subscriptions → /report-subscriptions/:id/run で report_deliveries が作成される
 - [x] /jobs/report-subscriptions/run と /jobs/report-deliveries/retry が動作する
 
 ### チャット（確認依頼 ack required）
