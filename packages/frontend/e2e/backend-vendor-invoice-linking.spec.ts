@@ -292,3 +292,59 @@ test('vendor invoice lines: quantity must not exceed linked purchase order line 
     ) ?? false,
   ).toBeTruthy();
 });
+
+test('vendor invoice lines: summed split quantities must not exceed linked purchase order line @core', async ({
+  request,
+}) => {
+  const suffix = runId();
+  const fixture = await setupVendorInvoiceFixture(request, suffix, {
+    withPurchaseOrderLine: true,
+  });
+  expect(fixture.purchaseOrderLineId).toBeTruthy();
+
+  const linkRes = await request.post(
+    `${apiBase}/vendor-invoices/${encodeURIComponent(fixture.vendorInvoiceId)}/link-po`,
+    {
+      headers: adminHeaders,
+      data: { purchaseOrderId: fixture.purchaseOrderId },
+    },
+  );
+  await ensureOk(linkRes);
+
+  const splitExceededRes = await request.put(
+    `${apiBase}/vendor-invoices/${encodeURIComponent(fixture.vendorInvoiceId)}/lines`,
+    {
+      headers: adminHeaders,
+      data: {
+        lines: [
+          {
+            lineNo: 1,
+            description: `E2E VI split line A ${suffix}`,
+            quantity: 1,
+            unitPrice: 6000,
+            purchaseOrderLineId: fixture.purchaseOrderLineId,
+          },
+          {
+            lineNo: 2,
+            description: `E2E VI split line B ${suffix}`,
+            quantity: 1,
+            unitPrice: 6000,
+            purchaseOrderLineId: fixture.purchaseOrderLineId,
+          },
+        ],
+      },
+    },
+  );
+  expect(splitExceededRes.status()).toBe(400);
+  const splitExceeded = await splitExceededRes.json();
+  expect(splitExceeded?.error?.code).toBe('PO_LINE_QUANTITY_EXCEEDED');
+  expect(splitExceeded?.error?.message).toBe(
+    'Requested quantity exceeds purchase order line quantity',
+  );
+  expect(
+    splitExceeded?.error?.details?.exceeded?.some(
+      (item: { purchaseOrderLineId?: string }) =>
+        item?.purchaseOrderLineId === fixture.purchaseOrderLineId,
+    ) ?? false,
+  ).toBeTruthy();
+});
