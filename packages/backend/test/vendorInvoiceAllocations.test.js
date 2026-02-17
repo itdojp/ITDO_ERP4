@@ -38,3 +38,14 @@ test('normalizeVendorInvoiceAllocations: keeps diff when autoAdjust disabled', (
   assert.equal(result.totals.grossTotal, 1650);
   assert.equal(result.totals.diff, -49);
 });
+
+test('normalizeVendorInvoiceAllocations: keeps diff when autoAdjust would make tax negative', () => {
+  const result = normalizeVendorInvoiceAllocations(
+    [{ amount: 100, taxRate: null, taxAmount: 0 }],
+    50,
+    { autoAdjust: true },
+  );
+  assert.equal(result.items[0].taxAmount, 0);
+  assert.equal(result.totals.grossTotal, 100);
+  assert.equal(result.totals.diff, -50);
+});
