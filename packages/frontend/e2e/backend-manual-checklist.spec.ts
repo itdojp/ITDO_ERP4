@@ -156,7 +156,7 @@ test('backend manual checklist: alerts/templates/reports jobs @extended', async 
     (item: any) => item?.id === templateSetting.id,
   );
   expect(templateExists).toBeTruthy();
-  const updatedNumberRule = `PYYYY-MM-NNNN-${suffix.replace(/[^A-Za-z0-9_-]/g, '')}`;
+  const updatedNumberRule = `PYYYY-MM-NNNN-${suffix}`;
   const templatePatchRes = await request.patch(
     `${apiBase}/template-settings/${encodeURIComponent(templateSetting.id)}`,
     {
