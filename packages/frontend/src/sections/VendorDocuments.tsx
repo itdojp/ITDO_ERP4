@@ -35,6 +35,7 @@ import { VendorDocumentsVendorInvoicesSection } from './vendor-documents/VendorD
 import { VendorInvoiceLineDialog } from './vendor-documents/VendorInvoiceLineDialog';
 import { VendorInvoicePoLinkDialog } from './vendor-documents/VendorInvoicePoLinkDialog';
 import { VendorInvoiceSavedViewBar } from './vendor-documents/VendorInvoiceSavedViewBar';
+import { buildVendorInvoiceLinePayload } from './vendor-documents/vendorInvoiceLinePayload';
 import {
   defaultPurchaseOrderForm,
   defaultVendorInvoiceForm,
@@ -988,144 +989,21 @@ export const VendorDocuments: React.FC = () => {
       });
       return;
     }
-
-    const payload: {
-      lines: Array<{
-        lineNo: number;
-        description: string;
-        quantity: number;
-        unitPrice: number;
-        amount?: number | null;
-        taxRate?: number | null;
-        taxAmount?: number | null;
-        purchaseOrderLineId?: string | null;
-      }>;
-      reasonText?: string;
-    } = { lines: [] };
-
-    const lineNos = new Set<number>();
-    for (let i = 0; i < invoiceLines.length; i += 1) {
-      const entry = invoiceLines[i];
-      const lineNoRaw =
-        entry.lineNo === undefined || entry.lineNo === null
-          ? i + 1
-          : parseNumberValue(entry.lineNo);
-      if (
-        lineNoRaw == null ||
-        !Number.isInteger(lineNoRaw) ||
-        Number(lineNoRaw) <= 0
-      ) {
-        setInvoiceLineMessage({
-          text: `請求明細 ${i + 1} の行番号が不正です`,
-          type: 'error',
-        });
-        return;
-      }
-      const lineNo = Number(lineNoRaw);
-      if (lineNos.has(lineNo)) {
-        setInvoiceLineMessage({
-          text: `請求明細 ${i + 1} の行番号が重複しています`,
-          type: 'error',
-        });
-        return;
-      }
-      lineNos.add(lineNo);
-
-      const description = entry.description.trim();
-      if (!description) {
-        setInvoiceLineMessage({
-          text: `請求明細 ${i + 1} の内容を入力してください`,
-          type: 'error',
-        });
-        return;
-      }
-      const quantity = parseNumberValue(entry.quantity);
-      if (quantity == null || quantity <= 0) {
-        setInvoiceLineMessage({
-          text: `請求明細 ${i + 1} の数量が不正です`,
-          type: 'error',
-        });
-        return;
-      }
-      const unitPrice = parseNumberValue(entry.unitPrice);
-      if (unitPrice == null || unitPrice < 0) {
-        setInvoiceLineMessage({
-          text: `請求明細 ${i + 1} の単価が不正です`,
-          type: 'error',
-        });
-        return;
-      }
-      const amount =
-        entry.amount === undefined ||
-        entry.amount === null ||
-        entry.amount === ''
-          ? null
-          : parseNumberValue(entry.amount);
-      if (
-        entry.amount != null &&
-        entry.amount !== '' &&
-        (amount == null || amount < 0)
-      ) {
-        setInvoiceLineMessage({
-          text: `請求明細 ${i + 1} の金額が不正です`,
-          type: 'error',
-        });
-        return;
-      }
-      const taxRate =
-        entry.taxRate === undefined ||
-        entry.taxRate === null ||
-        entry.taxRate === ''
-          ? null
-          : parseNumberValue(entry.taxRate);
-      if (
-        entry.taxRate != null &&
-        entry.taxRate !== '' &&
-        (taxRate == null || taxRate < 0)
-      ) {
-        setInvoiceLineMessage({
-          text: `請求明細 ${i + 1} の税率が不正です`,
-          type: 'error',
-        });
-        return;
-      }
-      const taxAmount =
-        entry.taxAmount === undefined ||
-        entry.taxAmount === null ||
-        entry.taxAmount === ''
-          ? null
-          : parseNumberValue(entry.taxAmount);
-      if (
-        entry.taxAmount != null &&
-        entry.taxAmount !== '' &&
-        (taxAmount == null || taxAmount < 0)
-      ) {
-        setInvoiceLineMessage({
-          text: `請求明細 ${i + 1} の税額が不正です`,
-          type: 'error',
-        });
-        return;
-      }
-      const purchaseOrderLineId = entry.purchaseOrderLineId?.trim();
-      payload.lines.push({
-        lineNo,
-        description,
-        quantity,
-        unitPrice,
-        amount,
-        taxRate,
-        taxAmount,
-        purchaseOrderLineId: purchaseOrderLineId || null,
-      });
+    const payloadResult = buildVendorInvoiceLinePayload(
+      invoiceLines,
+      reasonText,
+    );
+    if (!payloadResult.ok) {
+      setInvoiceLineMessage({ text: payloadResult.errorText, type: 'error' });
+      return;
     }
-    if (reasonText) payload.reasonText = reasonText;
 
     try {
       setInvoiceLineSaving(true);
       setInvoiceLineMessage(null);
       await api(`/vendor-invoices/${invoice.id}/lines`, {
         method: 'PUT',
-        body: JSON.stringify(payload),
+        body: JSON.stringify(payloadResult.payload),
       });
       setInvoiceLineMessage({
         text: '請求明細を更新しました',
