@@ -80,15 +80,19 @@ test('frontend smoke current-user notification settings @extended', async ({
     timeout: actionTimeout,
   });
 
-  const emailModeSelect = currentUserSection.getByLabel('メール通知');
-  const digestIntervalInput = currentUserSection.getByLabel('集約間隔（分）');
-  const muteUntilInput = currentUserSection.getByLabel('期限（任意）');
-  const saveButton = currentUserSection
-    .getByRole('button', { name: '保存' })
-    .first();
-  const reloadButton = currentUserSection
-    .getByRole('button', { name: '再読込' })
-    .first();
+  const notificationSettingsSection = currentUserSection
+    .locator('strong', { hasText: '通知設定' })
+    .locator('..');
+  const emailModeSelect = notificationSettingsSection.getByLabel('メール通知');
+  const digestIntervalInput =
+    notificationSettingsSection.getByLabel('集約間隔（分）');
+  const muteUntilInput = notificationSettingsSection.getByLabel('期限（任意）');
+  const saveButton = notificationSettingsSection.getByRole('button', {
+    name: '保存',
+  });
+  const reloadButton = notificationSettingsSection.getByRole('button', {
+    name: '再読込',
+  });
 
   const initialMode = await emailModeSelect.inputValue();
   const initialInterval = await digestIntervalInput.inputValue();
@@ -96,12 +100,12 @@ test('frontend smoke current-user notification settings @extended', async ({
   await emailModeSelect.selectOption('digest');
   await expect(digestIntervalInput).toBeEnabled({ timeout: actionTimeout });
   await digestIntervalInput.fill('15');
-  await currentUserSection.getByRole('button', { name: '10分' }).click();
+  await notificationSettingsSection.getByRole('button', { name: '10分' }).click();
   expect(await muteUntilInput.inputValue()).not.toBe('');
 
   await saveButton.click();
   await expect(
-    currentUserSection.getByText('通知設定を保存しました'),
+    notificationSettingsSection.getByText('通知設定を保存しました'),
   ).toBeVisible({
     timeout: actionTimeout,
   });
@@ -118,7 +122,7 @@ test('frontend smoke current-user notification settings @extended', async ({
   await expect(digestIntervalInput).toBeDisabled({ timeout: actionTimeout });
   await saveButton.click();
   await expect(
-    currentUserSection.getByText('通知設定を保存しました'),
+    notificationSettingsSection.getByText('通知設定を保存しました'),
   ).toBeVisible({
     timeout: actionTimeout,
   });
@@ -134,7 +138,7 @@ test('frontend smoke current-user notification settings @extended', async ({
     .click();
   await saveButton.click();
   await expect(
-    currentUserSection.getByText('通知設定を保存しました'),
+    notificationSettingsSection.getByText('通知設定を保存しました'),
   ).toBeVisible({
     timeout: actionTimeout,
   });
