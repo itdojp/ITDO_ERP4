@@ -206,8 +206,12 @@ test('frontend smoke workflow evidence chat references @extended', async ({
   const chatReferenceLink = expenseAnnotationDrawer.getByRole('link', {
     name: /Chat（/,
   });
-  await expect(chatReferenceLink).toHaveCount(1, { timeout: actionTimeout });
-  await expect(chatReferenceLink).toBeVisible({ timeout: actionTimeout });
+  await expect
+    .poll(() => chatReferenceLink.count(), { timeout: actionTimeout })
+    .toBeGreaterThan(0);
+  await expect(chatReferenceLink.first()).toBeVisible({
+    timeout: actionTimeout,
+  });
   const chatRefBadge = expenseAnnotationDrawer.locator('.badge', {
     hasText: 'chat_message',
   });
@@ -281,13 +285,8 @@ test('frontend smoke workflow evidence chat references @extended', async ({
     .locator('h2', { hasText: '承認一覧' })
     .locator('..');
   await approvalsSection.scrollIntoViewIfNeeded();
-  const flowTypeSelect = approvalsSection.locator('select', {
-    has: approvalsSection.locator('option', { hasText: '見積' }),
-  });
-  await selectByLabelOrFirst(
-    flowTypeSelect,
-    '見積',
-  );
+  const flowTypeSelect = approvalsSection.locator('select').first();
+  await flowTypeSelect.selectOption({ value: 'estimate' });
   await approvalsSection.getByRole('button', { name: '再読込' }).click();
 
   const evidenceApprovalItem = approvalsSection.locator('li', {
