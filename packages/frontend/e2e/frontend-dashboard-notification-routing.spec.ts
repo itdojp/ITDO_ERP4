@@ -520,9 +520,10 @@ test('dashboard notification cards route to chat/leave/expense targets @core', a
     .locator('main')
     .locator('h2', { hasText: 'Dashboard' })
     .locator('..');
-  const chatItem = chatDashboardSection.locator('.card', {
-    has: chatDashboardSection.getByText(ackBody, { exact: false }),
-  });
+  const chatItem = chatDashboardSection
+    .getByText(ackBody, { exact: false })
+    .locator('..')
+    .locator('..');
   await expect(chatItem).toHaveCount(1, { timeout: actionTimeout });
   await expect(chatItem).toBeVisible({ timeout: actionTimeout });
   await resetOpenEventRecorder(page);
