@@ -123,13 +123,14 @@ async function findSelectByOptionText(scope: Locator, optionText: string) {
 test.describe('mobile smoke 375x667 @core', () => {
   test.use({ viewport: { width: 375, height: 667 } });
 
-  test('invoices / vendor-documents / admin-jobs operate on mobile viewport', async ({
+  test('invoices / vendor-documents / admin-jobs / audit-logs / period-locks operate on mobile viewport', async ({
     page,
   }) => {
     test.setTimeout(180_000);
     const id = runId();
     const invoiceAmount = 12000 + (Number(id.replace(/\D/g, '').slice(0, 3)) || 123);
     const vendorInvoiceNo = `VI-MOB-${id}`;
+    const lockPeriod = new Date().toISOString().slice(0, 7);
 
     await prepare(page);
 
@@ -201,6 +202,15 @@ test.describe('mobile smoke 375x667 @core', () => {
       },
     });
     await ensureOk(vendorInvoiceRes);
+
+    // Seed period lock for list/filter actions.
+    const lockRes = await page.request.post(`${apiBase}/period-locks`, {
+      headers: adminHeaders,
+      data: { period: lockPeriod, scope: 'global', reason: `e2e-mobile-${id}` },
+    });
+    if (!lockRes.ok() && lockRes.status() !== 409) {
+      throw new Error(`Failed to create period lock: ${lockRes.status()}`);
+    }
 
     // Invoices: list / filter / row action (detail)
     await navigateToSection(page, '請求');
@@ -340,5 +350,36 @@ test.describe('mobile smoke 375x667 @core', () => {
     });
     await resultDialog.getByRole('button', { name: '閉じる' }).click();
     await expect(resultDialog).toBeHidden({ timeout: actionTimeout });
+
+    // AuditLogs: filter + search
+    await navigateToSection(page, '監査ログ');
+    const auditLogSection = page
+      .locator('main')
+      .getByRole('heading', { name: '監査ログ', level: 2, exact: true })
+      .locator('..');
+    await auditLogSection.scrollIntoViewIfNeeded();
+    const auditTo = new Date().toISOString().slice(0, 10);
+    const auditFrom = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
+      .toISOString()
+      .slice(0, 10);
+    await auditLogSection.getByLabel('from', { exact: true }).fill(auditFrom);
+    await auditLogSection.getByLabel('to', { exact: true }).fill(auditTo);
+    await auditLogSection.getByRole('button', { name: '検索' }).click();
+    await expect(auditLogSection.getByText('監査ログ一覧')).toBeVisible({
+      timeout: actionTimeout,
+    });
+
+    // PeriodLocks: filter + search
+    await navigateToSection(page, '期間締め');
+    const periodLockSection = page
+      .locator('main')
+      .locator('h2', { hasText: '期間締め' })
+      .locator('..');
+    await periodLockSection.scrollIntoViewIfNeeded();
+    await periodLockSection.getByLabel('period').fill(lockPeriod);
+    await periodLockSection.getByRole('button', { name: '検索' }).click();
+    await expect(periodLockSection.getByText('締め一覧')).toBeVisible({
+      timeout: actionTimeout,
+    });
   });
 });
