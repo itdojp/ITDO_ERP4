@@ -14,6 +14,20 @@ const actionTimeout =
 
 const runId = () => randomUUID().slice(0, 10);
 
+const pad2 = (value: number) => String(value).padStart(2, '0');
+
+const toDateInputValue = (date: Date) =>
+  `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
+
+const toPeriodValue = (date: Date) =>
+  `${date.getFullYear()}-${pad2(date.getMonth() + 1)}`;
+
+const shiftDate = (date: Date, deltaDays: number) => {
+  const next = new Date(date);
+  next.setDate(next.getDate() + deltaDays);
+  return next;
+};
+
 const authState = {
   userId: 'demo-user',
   roles: ['admin', 'mgmt'],
@@ -130,7 +144,7 @@ test.describe('mobile smoke 375x667 @core', () => {
     const id = runId();
     const invoiceAmount = 12000 + (Number(id.replace(/\D/g, '').slice(0, 3)) || 123);
     const vendorInvoiceNo = `VI-MOB-${id}`;
-    const lockPeriod = new Date().toISOString().slice(0, 7);
+    const lockPeriod = toPeriodValue(new Date());
 
     await prepare(page);
 
@@ -358,16 +372,38 @@ test.describe('mobile smoke 375x667 @core', () => {
       .getByRole('heading', { name: '監査ログ', level: 2, exact: true })
       .locator('..');
     await auditLogSection.scrollIntoViewIfNeeded();
-    const auditTo = new Date().toISOString().slice(0, 10);
-    const auditFrom = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
-      .toISOString()
-      .slice(0, 10);
+    const auditToDate = new Date();
+    const auditFromDate = shiftDate(auditToDate, -7);
+    const auditTo = toDateInputValue(auditToDate);
+    const auditFrom = toDateInputValue(auditFromDate);
     await auditLogSection.getByLabel('from', { exact: true }).fill(auditFrom);
     await auditLogSection.getByLabel('to', { exact: true }).fill(auditTo);
     await auditLogSection.getByRole('button', { name: '検索' }).click();
-    await expect(auditLogSection.getByText('監査ログ一覧')).toBeVisible({
-      timeout: actionTimeout,
-    });
+    await expect
+      .poll(
+        async () => {
+          const loadingVisible = await auditLogSection
+            .getByText('監査ログを取得中')
+            .isVisible()
+            .catch(() => false);
+          if (loadingVisible) return 'loading';
+          const rowCount = await auditLogSection.locator('tbody tr').count();
+          if (rowCount > 0) return 'rows';
+          const emptyVisible = await auditLogSection
+            .getByText('監査ログなし')
+            .isVisible()
+            .catch(() => false);
+          if (emptyVisible) return 'empty';
+          const errorVisible = await auditLogSection
+            .getByText('監査ログの取得に失敗しました')
+            .isVisible()
+            .catch(() => false);
+          if (errorVisible) return 'error';
+          return 'waiting';
+        },
+        { timeout: actionTimeout },
+      )
+      .toMatch(/rows|empty/);
 
     // PeriodLocks: filter + search
     await navigateToSection(page, '期間締め');
@@ -378,12 +414,11 @@ test.describe('mobile smoke 375x667 @core', () => {
     await periodLockSection.scrollIntoViewIfNeeded();
     await periodLockSection.getByLabel('period', { exact: true }).fill(lockPeriod);
     await periodLockSection.getByRole('button', { name: '検索' }).click();
-    await expect(
-      periodLockSection.getByRole('heading', {
-        name: '締め一覧',
-        level: 2,
-        exact: true,
-      }),
-    ).toBeVisible({ timeout: actionTimeout });
+    const periodRows = periodLockSection.locator('tbody tr', {
+      hasText: lockPeriod,
+    });
+    await expect
+      .poll(() => periodRows.count(), { timeout: actionTimeout })
+      .toBeGreaterThan(0);
   });
 });
