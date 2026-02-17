@@ -152,6 +152,8 @@ test('frontend smoke room chat (private_group/dm) @extended', async ({
   ).toHaveCount(1);
 
   await selectByLabelOrFirst(roomSelect, 'company: 全社');
+  const companyRoomId = await roomSelect.inputValue();
+
   const companyText = `E2E company message ${run}`;
   await roomChatSection.getByPlaceholder('Markdownで入力').fill(companyText);
   await roomChatSection.getByRole('checkbox', { name: 'プレビュー' }).check();
@@ -169,7 +171,6 @@ test('frontend smoke room chat (private_group/dm) @extended', async ({
   await expect(companyMessageCard).toBeVisible({ timeout: actionTimeout });
 
   // Ack-required (overdue) on company room so that membership checks do not block.
-  const companyRoomId = await roomSelect.inputValue();
   const overdueRoomDueAt = new Date(Date.now() - 60_000).toISOString();
   const overdueRoomAckMessage = `E2E room ack overdue ${run}`;
   const overdueRoomAckRes = await page.request.post(
@@ -317,10 +318,7 @@ test('frontend smoke room chat external summary @extended', async ({
     .locator('h2', { hasText: 'チャット（全社/部門/private_group/DM）' })
     .locator('..');
   await roomChatSection.scrollIntoViewIfNeeded();
-  const roomHeaderRow = roomChatSection.locator('.row', {
-    has: roomChatSection.getByLabel('ルーム'),
-  });
-  await roomHeaderRow.getByRole('button', { name: '再読込' }).click();
+  await roomChatSection.getByRole('button', { name: '再読込' }).first().click();
 
   const roomSelect = roomChatSection.getByLabel('ルーム');
   await expect
