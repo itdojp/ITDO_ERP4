@@ -378,8 +378,12 @@ test.describe('mobile smoke 375x667 @core', () => {
     await periodLockSection.scrollIntoViewIfNeeded();
     await periodLockSection.getByLabel('period', { exact: true }).fill(lockPeriod);
     await periodLockSection.getByRole('button', { name: '検索' }).click();
-    await expect(periodLockSection.getByText('締め一覧')).toBeVisible({
-      timeout: actionTimeout,
-    });
+    await expect(
+      periodLockSection.getByRole('heading', {
+        name: '締め一覧',
+        level: 2,
+        exact: true,
+      }),
+    ).toBeVisible({ timeout: actionTimeout });
   });
 });
