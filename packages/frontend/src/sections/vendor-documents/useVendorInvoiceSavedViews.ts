@@ -1,8 +1,5 @@
 import { useMemo } from 'react';
-import {
-  createLocalStorageSavedViewsAdapter,
-  useSavedViews,
-} from '../../ui';
+import { createLocalStorageSavedViewsAdapter, useSavedViews } from '../../ui';
 import type { UseSavedViewsResult } from '../../ui';
 import type { InvoiceSavedFilterPayload } from './vendorDocumentsShared';
 
