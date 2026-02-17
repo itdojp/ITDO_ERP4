@@ -387,11 +387,21 @@ test('frontend smoke reports masters settings @extended', async ({ page }) => {
     timeout: actionTimeout,
   });
   await createdActionPolicyCard.getByRole('button', { name: '編集' }).click();
+  const actionPolicyUpdateButtons = actionPolicyBlock.getByRole('button', {
+    name: '更新',
+  });
+  await expect(actionPolicyUpdateButtons).toHaveCount(1, {
+    timeout: actionTimeout,
+  });
+  await expect(actionPolicyBlock.getByLabel('actionKey')).toHaveValue(
+    actionPolicyKey,
+    { timeout: actionTimeout },
+  );
   const updatedSubjectsJson = '{"scope":"project","mode":"e2e"}';
   await actionPolicyBlock
     .getByLabel('subjects (JSON)')
     .fill(updatedSubjectsJson);
-  await actionPolicyBlock.getByRole('button', { name: '更新' }).click();
+  await actionPolicyUpdateButtons.click();
   await expect(
     settingsSection.getByText('ActionPolicy を更新しました'),
   ).toBeVisible({ timeout: actionTimeout });
