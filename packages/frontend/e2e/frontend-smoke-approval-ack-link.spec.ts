@@ -198,15 +198,17 @@ test('frontend smoke approval ack link lifecycle @extended', async ({
     .locator('h2', { hasText: '承認一覧' })
     .locator('..');
   await approvalsSection.scrollIntoViewIfNeeded();
+  const flowTypeSelect = approvalsSection.locator('select', {
+    has: approvalsSection.locator('option', { hasText: '見積' }),
+  });
   await selectByLabelOrFirst(
-    approvalsSection.locator('select').first(),
+    flowTypeSelect,
     '見積',
   );
   await approvalsSection.getByRole('button', { name: '再読込' }).click();
 
-  const approvalItem = approvalsSection
-    .locator('li', { hasText: estimateId })
-    .first();
+  const approvalItem = approvalsSection.locator('li', { hasText: estimateId });
+  await expect(approvalItem).toHaveCount(1, { timeout: actionTimeout });
   await expect(approvalItem).toBeVisible({ timeout: actionTimeout });
 
   const ackInput = approvalItem.getByPlaceholder(
@@ -221,7 +223,7 @@ test('frontend smoke approval ack link lifecycle @extended', async ({
   });
 
   page.once('dialog', (dialog) => dialog.accept().catch(() => undefined));
-  await approvalItem.getByRole('button', { name: '削除' }).first().click();
+  await approvalItem.getByRole('button', { name: '削除' }).click();
   await expect(
     approvalItem.getByText('登録済みリンクはありません'),
   ).toBeVisible({

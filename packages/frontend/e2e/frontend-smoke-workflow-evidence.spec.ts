@@ -165,9 +165,10 @@ test('frontend smoke workflow evidence chat references @extended', async ({
   await expenseSection.getByRole('button', { name: '追加' }).click();
   await expect(expenseSection.getByText('経費を保存しました')).toBeVisible();
 
-  const createdExpenseItem = expenseSection
-    .locator('li', { hasText: expenseAmountPattern })
-    .first();
+  const createdExpenseItem = expenseSection.locator('li', {
+    hasText: expenseAmountPattern,
+  });
+  await expect(createdExpenseItem).toHaveCount(1, { timeout: actionTimeout });
   await expect(createdExpenseItem).toBeVisible({ timeout: actionTimeout });
   const expenseAnnotationButton = createdExpenseItem.getByRole('button', {
     name: /注釈（経費）:/,
@@ -202,14 +203,16 @@ test('frontend smoke workflow evidence chat references @extended', async ({
   await evidencePickerDrawer.getByRole('button', { name: '閉じる' }).click();
   await expect(evidencePickerDrawer).toBeHidden({ timeout: actionTimeout });
 
-  await expect(
-    expenseAnnotationDrawer.getByRole('link', { name: /Chat（/ }).first(),
-  ).toBeVisible({ timeout: actionTimeout });
-  await expect(
-    expenseAnnotationDrawer
-      .locator('.badge', { hasText: 'chat_message' })
-      .first(),
-  ).toBeVisible({ timeout: actionTimeout });
+  const chatReferenceLink = expenseAnnotationDrawer.getByRole('link', {
+    name: /Chat（/,
+  });
+  await expect(chatReferenceLink).toHaveCount(1, { timeout: actionTimeout });
+  await expect(chatReferenceLink).toBeVisible({ timeout: actionTimeout });
+  const chatRefBadge = expenseAnnotationDrawer.locator('.badge', {
+    hasText: 'chat_message',
+  });
+  await expect(chatRefBadge).toHaveCount(1, { timeout: actionTimeout });
+  await expect(chatRefBadge).toBeVisible({ timeout: actionTimeout });
   await expect(
     expenseAnnotationDrawer.getByLabel('メモ（Markdown）'),
   ).toHaveValue(new RegExp(messageId), { timeout: actionTimeout });
@@ -278,15 +281,19 @@ test('frontend smoke workflow evidence chat references @extended', async ({
     .locator('h2', { hasText: '承認一覧' })
     .locator('..');
   await approvalsSection.scrollIntoViewIfNeeded();
+  const flowTypeSelect = approvalsSection.locator('select', {
+    has: approvalsSection.locator('option', { hasText: '見積' }),
+  });
   await selectByLabelOrFirst(
-    approvalsSection.locator('select').first(),
+    flowTypeSelect,
     '見積',
   );
   await approvalsSection.getByRole('button', { name: '再読込' }).click();
 
-  const evidenceApprovalItem = approvalsSection
-    .locator('li', { hasText: estimateId })
-    .first();
+  const evidenceApprovalItem = approvalsSection.locator('li', {
+    hasText: estimateId,
+  });
+  await expect(evidenceApprovalItem).toHaveCount(1, { timeout: actionTimeout });
   await expect(evidenceApprovalItem).toBeVisible({ timeout: actionTimeout });
   await evidenceApprovalItem.getByRole('button', { name: '表示' }).click();
   await expect(evidenceApprovalItem.getByText('状態: 生成済み')).toBeVisible({
