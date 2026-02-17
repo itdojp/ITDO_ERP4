@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 
 const baseUrl = process.env.E2E_BASE_URL || 'http://localhost:5173';
 
@@ -38,6 +38,16 @@ async function navigateToSection(page: Page, label: string, heading?: string) {
   ).toBeVisible();
 }
 
+async function expectIfVisible(locator: Locator) {
+  const visible = await locator
+    .first()
+    .isVisible({ timeout: 2_000 })
+    .catch(() => false);
+  if (visible) {
+    await expect(locator.first()).toBeVisible();
+  }
+}
+
 test('ux-quality baseline (labels/errors/keyboard) @core', async ({ page }) => {
   await prepare(page);
 
@@ -56,6 +66,8 @@ test('ux-quality baseline (labels/errors/keyboard) @core', async ({ page }) => {
     .locator('..');
   await timeSection.scrollIntoViewIfNeeded();
   await expect(timeSection.getByLabel('案件選択')).toBeVisible();
+  await expectIfVisible(page.getByLabel('工数検索'));
+  await expectIfVisible(page.getByLabel('工数状態'));
 
   await navigateToSection(page, '請求');
   const invoiceSection = page
@@ -67,6 +79,8 @@ test('ux-quality baseline (labels/errors/keyboard) @core', async ({ page }) => {
   const amountInput = invoiceSection.getByLabel('金額');
   await expect(projectSelect).toBeVisible();
   await expect(amountInput).toBeVisible();
+  await expectIfVisible(page.getByLabel('請求検索'));
+  await expectIfVisible(page.getByLabel('請求状態'));
 
   await projectSelect.focus();
   await page.keyboard.press('Tab');

@@ -416,17 +416,19 @@ const TimesheetGrid: React.FC<{
             }}
           >
             <Input
+              label="工数検索"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="検索（案件名/メモ/状態 など）"
               aria-label="工数検索"
             />
             <Select
+              label="工数状態"
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
-              aria-label="状態フィルタ"
+              aria-label="工数状態"
             >
-              <option value="all">状態: 全て</option>
+              <option value="all">全て</option>
               {statusOptions.map((value) => (
                 <option key={value} value={value}>
                   {value}
