@@ -8,6 +8,7 @@
 ## 結果サマリ
 - backend: low=0 / moderate=7 / high=0 / critical=0
 - frontend: low=0 / moderate=0 / high=0 / critical=0
+- 本記録の判定対象は low（Dependabot alert #10）のみ。moderate は別トリアージで扱う。
 - Dependabot alert: 1件 open（low）
   - Alert: `#10` / `GHSA-w7fw-mjwx-w883` / `CVE-2026-2391`
   - package: `qs`（transitive, runtime）
