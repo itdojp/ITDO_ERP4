@@ -1,6 +1,7 @@
 import type { Prisma } from '@prisma/client';
 import { prisma } from './db.js';
 import { dispatchNotificationPushes } from './notificationPushes.js';
+import { parseGroupToRoleMap } from '../utils/authGroupToRoleMap.js';
 
 type ChatMentionNotificationOptions = {
   projectId?: string | null;
@@ -377,14 +378,33 @@ async function resolveGroupMemberUserIds(groupIds: string[]) {
 }
 
 function resolveGroupIdsForRoles(roles: string[]) {
-  const raw = process.env.AUTH_GROUP_TO_ROLE_MAP || '';
-  return raw
-    .split(',')
-    .map((item) => item.trim())
-    .filter(Boolean)
-    .map((pair) => pair.split('=').map((value) => value.trim()))
-    .filter(([groupId, role]) => groupId && role && roles.includes(role))
-    .map(([groupId]) => groupId);
+  const normalizedRoles = Array.from(
+    new Set(
+      roles
+        .map((role) => (typeof role === 'string' ? role.trim() : ''))
+        .filter(Boolean),
+    ),
+  );
+  if (!normalizedRoles.length) return [] as string[];
+  const groupToRole = parseGroupToRoleMap(
+    process.env.AUTH_GROUP_TO_ROLE_MAP || '',
+  );
+  return Array.from(
+    new Set(
+      Object.entries(groupToRole)
+        .filter(([groupId, role]) => {
+          const normalizedGroupId = groupId.trim();
+          const normalizedRole = role.trim();
+          return (
+            normalizedGroupId.length > 0 &&
+            normalizedRole.length > 0 &&
+            normalizedRoles.includes(normalizedRole)
+          );
+        })
+        .map(([groupId]) => groupId.trim())
+        .filter(Boolean),
+    ),
+  );
 }
 
 export async function resolveRoleRecipientUserIds(roles: string[]) {
