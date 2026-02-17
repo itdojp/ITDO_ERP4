@@ -109,4 +109,7 @@ EOF
 echo "ui evidence saved:"
 echo "- $EVIDENCE_DIR"
 echo "- $LOG_FILE"
+echo
+echo "mobile regression log helper:"
+echo "- ./scripts/new-mobile-regression-log.sh --date ${E2E_DATE} --run ${E2E_RUN}"
 exit "$status"

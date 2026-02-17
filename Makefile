@@ -1,4 +1,4 @@
-.PHONY: lint format-check typecheck build test e2e ui-evidence frontend-dev-api podman-smoke pr-comments audit design-system-package-check eslint10-readiness-check backup-s3-readiness-check av-staging-evidence av-staging-gate av-staging-readiness
+.PHONY: lint format-check typecheck build test e2e ui-evidence mobile-regression-log frontend-dev-api podman-smoke pr-comments audit design-system-package-check eslint10-readiness-check backup-s3-readiness-check av-staging-evidence av-staging-gate av-staging-readiness
 
 lint:
 	npm run lint --prefix packages/backend
@@ -31,6 +31,9 @@ frontend-dev-api:
 podman-smoke:
 	./scripts/podman-poc.sh reset
 	./scripts/smoke-backend.sh
+
+mobile-regression-log:
+	./scripts/new-mobile-regression-log.sh
 
 pr-comments:
 	@test -n "$(PR)" || (echo "Usage: make pr-comments PR=<number> [OUT_DIR=...]" >&2; exit 1)
