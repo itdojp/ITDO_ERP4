@@ -15,54 +15,63 @@ type RoomAccessErrorResponse = {
   body: {
     error: {
       code: RoomAccessErrorCode;
-      message: 'Access to this room is forbidden';
+      message: typeof ROOM_ACCESS_FORBIDDEN_MESSAGE;
     };
   };
 };
 
+const ROOM_ACCESS_FORBIDDEN_MESSAGE =
+  'Access to this room is forbidden' as const;
+
+function assertNever(value: never): never {
+  throw new Error(`Unhandled RoomAccessDeniedReason: ${value}`);
+}
+
 export function buildRoomAccessErrorResponse(
   reason: RoomAccessDeniedReason,
 ): RoomAccessErrorResponse {
-  if (reason === 'not_found') {
-    return {
-      status: 404,
-      body: {
-        error: {
-          code: 'NOT_FOUND',
-          message: 'Access to this room is forbidden',
+  switch (reason) {
+    case 'not_found':
+      return {
+        status: 404,
+        body: {
+          error: {
+            code: 'NOT_FOUND',
+            message: ROOM_ACCESS_FORBIDDEN_MESSAGE,
+          },
         },
-      },
-    };
-  }
-  if (reason === 'forbidden_project') {
-    return {
-      status: 403,
-      body: {
-        error: {
-          code: 'FORBIDDEN_PROJECT',
-          message: 'Access to this room is forbidden',
+      };
+    case 'forbidden_project':
+      return {
+        status: 403,
+        body: {
+          error: {
+            code: 'FORBIDDEN_PROJECT',
+            message: ROOM_ACCESS_FORBIDDEN_MESSAGE,
+          },
         },
-      },
-    };
-  }
-  if (reason === 'forbidden_external_room') {
-    return {
-      status: 403,
-      body: {
-        error: {
-          code: 'FORBIDDEN_EXTERNAL_ROOM',
-          message: 'Access to this room is forbidden',
+      };
+    case 'forbidden_external_room':
+      return {
+        status: 403,
+        body: {
+          error: {
+            code: 'FORBIDDEN_EXTERNAL_ROOM',
+            message: ROOM_ACCESS_FORBIDDEN_MESSAGE,
+          },
         },
-      },
-    };
+      };
+    case 'forbidden_room_member':
+      return {
+        status: 403,
+        body: {
+          error: {
+            code: 'FORBIDDEN_ROOM_MEMBER',
+            message: ROOM_ACCESS_FORBIDDEN_MESSAGE,
+          },
+        },
+      };
+    default:
+      return assertNever(reason);
   }
-  return {
-    status: 403,
-    body: {
-      error: {
-        code: 'FORBIDDEN_ROOM_MEMBER',
-        message: 'Access to this room is forbidden',
-      },
-    },
-  };
 }
