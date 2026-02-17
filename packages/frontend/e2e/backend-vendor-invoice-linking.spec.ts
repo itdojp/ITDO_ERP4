@@ -390,7 +390,9 @@ test('vendor invoice lines: quantity must be greater than zero @core', async ({
       invalidQuantity?.error?.code,
     );
     if (invalidQuantity?.error?.code === 'INVALID_INPUT') {
-      expect(String(invalidQuantity?.error?.message ?? '')).toMatch(/quantity/i);
+      expect(String(invalidQuantity?.error?.message ?? '')).toMatch(
+        /quantity/i,
+      );
     }
   };
 
@@ -502,4 +504,104 @@ test('vendor invoice lines: get lines includes poLineUsage summary @core', async
     5,
   );
   expect(poLineUsage?.exceeds).toBe(false);
+});
+
+test('vendor invoice lines: purchaseOrderLineId must belong to linked purchase order @core', async ({
+  request,
+}) => {
+  const suffix = runId();
+  const fixture = await setupVendorInvoiceFixture(request, suffix, {
+    withPurchaseOrderLine: true,
+  });
+  expect(fixture.purchaseOrderLineId).toBeTruthy();
+
+  const putLinesWithPurchaseOrderLine = async (purchaseOrderLineId: string) =>
+    request.put(
+      `${apiBase}/vendor-invoices/${encodeURIComponent(fixture.vendorInvoiceId)}/lines`,
+      {
+        headers: adminHeaders,
+        data: {
+          lines: [
+            {
+              lineNo: 1,
+              description: `E2E VI line purchase order line validation ${suffix}`,
+              quantity: 1,
+              unitPrice: 12000,
+              purchaseOrderLineId,
+            },
+          ],
+        },
+      },
+    );
+
+  const unlinkedInvoiceRes = await putLinesWithPurchaseOrderLine(
+    fixture.purchaseOrderLineId,
+  );
+  expect(unlinkedInvoiceRes.status()).toBe(400);
+  const unlinkedInvoice = await unlinkedInvoiceRes.json();
+  expect(unlinkedInvoice?.error?.code).toBe('INVALID_PURCHASE_ORDER_LINE');
+  expect(unlinkedInvoice?.error?.message).toBe(
+    'purchaseOrderId is not linked to the invoice',
+  );
+
+  const linkRes = await request.post(
+    `${apiBase}/vendor-invoices/${encodeURIComponent(fixture.vendorInvoiceId)}/link-po`,
+    {
+      headers: adminHeaders,
+      data: { purchaseOrderId: fixture.purchaseOrderId },
+    },
+  );
+  await ensureOk(linkRes);
+
+  const anotherPoRes = await request.post(
+    `${apiBase}/projects/${encodeURIComponent(fixture.projectId)}/purchase-orders`,
+    {
+      headers: adminHeaders,
+      data: {
+        vendorId: fixture.vendorId,
+        totalAmount: 12000,
+        currency: 'JPY',
+        lines: [
+          {
+            description: `E2E PO line outside linked PO ${suffix}`,
+            quantity: 1,
+            unitPrice: 12000,
+          },
+        ],
+      },
+    },
+  );
+  await ensureOk(anotherPoRes);
+  const anotherPo = await anotherPoRes.json();
+  const anotherPoLineId = anotherPo?.lines?.[0]?.id as string | undefined;
+  expect(anotherPoLineId).toBeTruthy();
+
+  const outsideLinkedPoRes = await putLinesWithPurchaseOrderLine(
+    anotherPoLineId as string,
+  );
+  expect(outsideLinkedPoRes.status()).toBe(400);
+  const outsideLinkedPo = await outsideLinkedPoRes.json();
+  expect(outsideLinkedPo?.error?.code).toBe('INVALID_PURCHASE_ORDER_LINE');
+  expect(outsideLinkedPo?.error?.message).toBe(
+    'Purchase order line does not belong to the linked PO',
+  );
+  expect(
+    outsideLinkedPo?.error?.details?.invalidPurchaseOrderLineIds?.includes(
+      anotherPoLineId,
+    ) ?? false,
+  ).toBeTruthy();
+
+  const missingPurchaseOrderLineId = `missing-po-line-${suffix}`;
+  const missingLineRes = await putLinesWithPurchaseOrderLine(
+    missingPurchaseOrderLineId,
+  );
+  expect(missingLineRes.status()).toBe(404);
+  const missingLine = await missingLineRes.json();
+  expect(missingLine?.error?.code).toBe('NOT_FOUND');
+  expect(missingLine?.error?.message).toBe('Purchase order line not found');
+  expect(
+    missingLine?.error?.details?.missingPurchaseOrderLineIds?.includes(
+      missingPurchaseOrderLineId,
+    ) ?? false,
+  ).toBeTruthy();
 });
