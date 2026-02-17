@@ -611,7 +611,7 @@ export async function registerChatRoutes(app: FastifyInstance) {
     async (req, reply) => {
       const { projectId } = req.params as { projectId: string };
       const userId = requireUserId(reply, req.user?.userId);
-      if (!userId) return;
+      if (typeof userId !== 'string') return userId;
       const state = await prisma.chatReadState.findUnique({
         where: { roomId_userId: { roomId: projectId, userId } },
         select: { lastReadAt: true },
@@ -641,7 +641,7 @@ export async function registerChatRoutes(app: FastifyInstance) {
     async (req, reply) => {
       const { projectId } = req.params as { projectId: string };
       const userId = requireUserId(reply, req.user?.userId);
-      if (!userId) return;
+      if (typeof userId !== 'string') return userId;
       if (!(await ensureProjectRoom(projectId, userId))) {
         return reply.status(404).send({
           error: { code: 'NOT_FOUND', message: 'Project not found' },
@@ -1078,7 +1078,7 @@ export async function registerChatRoutes(app: FastifyInstance) {
       }
 
       const userId = requireUserId(reply, req.user?.userId);
-      if (!userId) return;
+      if (typeof userId !== 'string') return userId;
 
       const roles = req.user?.roles || [];
       const projectIds = req.user?.projectIds || [];
@@ -1186,7 +1186,7 @@ export async function registerChatRoutes(app: FastifyInstance) {
       }
 
       const userId = requireUserId(reply, req.user?.userId);
-      if (!userId) return;
+      if (typeof userId !== 'string') return userId;
 
       const roles = req.user?.roles || [];
       const projectIds = req.user?.projectIds || [];
@@ -1249,7 +1249,7 @@ export async function registerChatRoutes(app: FastifyInstance) {
       }
 
       const userId = requireUserId(reply, req.user?.userId);
-      if (!userId) return;
+      if (typeof userId !== 'string') return userId;
 
       const roles = req.user?.roles || [];
       const projectIds = req.user?.projectIds || [];
@@ -1353,7 +1353,7 @@ export async function registerChatRoutes(app: FastifyInstance) {
       }
 
       const userId = requireUserId(reply, req.user?.userId);
-      if (!userId) return;
+      if (typeof userId !== 'string') return userId;
 
       const roles = req.user?.roles || [];
       const projectIds = req.user?.projectIds || [];
@@ -1448,7 +1448,7 @@ export async function registerChatRoutes(app: FastifyInstance) {
         });
       }
       const userId = requireUserId(reply, req.user?.userId);
-      if (!userId) return;
+      if (typeof userId !== 'string') return userId;
 
       const roles = req.user?.roles || [];
       const projectIds = req.user?.projectIds || [];
@@ -1550,7 +1550,7 @@ export async function registerChatRoutes(app: FastifyInstance) {
         });
       }
       const userId = requireUserId(reply, req.user?.userId);
-      if (!userId) return;
+      if (typeof userId !== 'string') return userId;
 
       const roles = req.user?.roles || [];
       const projectIds = req.user?.projectIds || [];
@@ -1749,7 +1749,7 @@ export async function registerChatRoutes(app: FastifyInstance) {
           .send({ error: { code: 'NOT_FOUND', message: 'Not found' } });
       }
       const userId = requireUserId(reply, req.user?.userId);
-      if (!userId) return;
+      if (typeof userId !== 'string') return userId;
       const roles = req.user?.roles || [];
       const projectIds = req.user?.projectIds || [];
       const groupIds = Array.isArray(req.user?.groupIds)
