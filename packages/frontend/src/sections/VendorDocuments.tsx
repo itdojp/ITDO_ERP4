@@ -29,6 +29,7 @@ import {
 import type { DataTableColumn, DataTableRow } from '../ui';
 import { formatDateForFilename, openResponseInNewTab } from '../utils/download';
 import { PurchaseOrderSendLogsDialog } from './vendor-documents/PurchaseOrderSendLogsDialog';
+import { VendorInvoiceAllocationDialog } from './vendor-documents/VendorInvoiceAllocationDialog';
 import { VendorInvoiceLineDialog } from './vendor-documents/VendorInvoiceLineDialog';
 import { VendorInvoicePoLinkDialog } from './vendor-documents/VendorInvoicePoLinkDialog';
 
@@ -2672,354 +2673,34 @@ export const VendorDocuments: React.FC = () => {
         parseNumberValue={parseNumberValue}
         formatAmount={formatAmount}
       />
-      <Dialog
+      <VendorInvoiceAllocationDialog
         open={Boolean(invoiceAllocationDialog)}
+        dialog={invoiceAllocationDialog}
+        saving={invoiceAllocationSaving}
+        loading={invoiceAllocationLoading}
+        expanded={invoiceAllocationExpanded}
+        allocations={invoiceAllocations}
+        projects={projects}
+        purchaseOrderDetails={purchaseOrderDetails}
+        missingNumberLabel={missingNumberLabel}
+        allocationTotals={allocationTotals}
+        allocationTaxRateSummary={allocationTaxRateSummary}
+        reason={invoiceAllocationReason}
+        message={invoiceAllocationMessage}
         onClose={() => setInvoiceAllocationDialog(null)}
-        title="仕入請求: 配賦明細"
-        size="large"
-        footer={
-          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-            <Button
-              variant="secondary"
-              onClick={() => setInvoiceAllocationDialog(null)}
-              disabled={invoiceAllocationSaving}
-            >
-              閉じる
-            </Button>
-            <Button
-              onClick={saveVendorInvoiceAllocations}
-              disabled={invoiceAllocationSaving}
-            >
-              {invoiceAllocationSaving ? '更新中' : '更新'}
-            </Button>
-          </div>
-        }
-      >
-        {invoiceAllocationDialog && (
-          <div style={{ display: 'grid', gap: 12 }}>
-            <div style={{ fontSize: 12, color: '#64748b' }}>
-              <StatusBadge
-                status={invoiceAllocationDialog.invoice.status}
-                dictionary={erpStatusDictionary}
-                size="sm"
-              />{' '}
-              {invoiceAllocationDialog.invoice.vendorInvoiceNo ||
-                missingNumberLabel}
-              {' / '}
-              {renderProject(invoiceAllocationDialog.invoice.projectId)}
-              {' / '}
-              {renderVendor(invoiceAllocationDialog.invoice.vendorId)}
-              {' / '}
-              {formatAmount(
-                invoiceAllocationDialog.invoice.totalAmount,
-                invoiceAllocationDialog.invoice.currency,
-              )}
-            </div>
-            <div>
-              <div style={{ fontSize: 12, color: '#64748b' }}>請求書PDF</div>
-              {!invoiceAllocationDialog.invoice.documentUrl && (
-                <div style={{ fontSize: 12, color: '#94a3b8' }}>PDF未登録</div>
-              )}
-              {invoiceAllocationDialog.invoice.documentUrl && (
-                <div style={{ display: 'grid', gap: 8 }}>
-                  <a
-                    href={invoiceAllocationDialog.invoice.documentUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    style={{ fontSize: 12 }}
-                  >
-                    PDFを開く
-                  </a>
-                  {isPdfUrl(invoiceAllocationDialog.invoice.documentUrl) && (
-                    <iframe
-                      title="vendor-invoice-pdf"
-                      src={invoiceAllocationDialog.invoice.documentUrl}
-                      sandbox="allow-scripts allow-same-origin"
-                      style={{
-                        width: '100%',
-                        height: 320,
-                        border: '1px solid #e2e8f0',
-                        borderRadius: 8,
-                      }}
-                    />
-                  )}
-                </div>
-              )}
-            </div>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              <Button
-                variant="secondary"
-                onClick={() => setInvoiceAllocationExpanded((prev) => !prev)}
-              >
-                {invoiceAllocationExpanded
-                  ? '配賦明細を隠す'
-                  : '配賦明細を入力'}
-              </Button>
-              <span style={{ fontSize: 12, color: '#64748b' }}>
-                配賦明細は必要時のみ入力（未入力でも保存可）
-              </span>
-            </div>
-            {invoiceAllocationLoading && (
-              <div style={{ fontSize: 12, color: '#64748b' }}>
-                配賦明細を読み込み中...
-              </div>
-            )}
-            {invoiceAllocationExpanded && !invoiceAllocationLoading && (
-              <div style={{ display: 'grid', gap: 8 }}>
-                <div>
-                  <button
-                    className="button secondary"
-                    onClick={addVendorInvoiceAllocationRow}
-                  >
-                    明細追加
-                  </button>
-                </div>
-                {invoiceAllocations.length === 0 && (
-                  <div style={{ fontSize: 12, color: '#94a3b8' }}>
-                    配賦明細は未入力です
-                  </div>
-                )}
-                {invoiceAllocations.length > 0 && (
-                  <div style={{ overflowX: 'auto' }}>
-                    <table className="table">
-                      <thead>
-                        <tr>
-                          <th>案件</th>
-                          <th>金額</th>
-                          <th>税率</th>
-                          <th>税額</th>
-                          {invoiceAllocationDialog.invoice.purchaseOrderId && (
-                            <th>PO明細</th>
-                          )}
-                          <th>操作</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {invoiceAllocations.map((entry, index) => {
-                          const amountValue = parseNumberValue(entry.amount);
-                          const taxRateValue = parseNumberValue(entry.taxRate);
-                          const computedTax =
-                            amountValue != null && taxRateValue != null
-                              ? Math.round((amountValue * taxRateValue) / 100)
-                              : null;
-                          const poDetail = invoiceAllocationDialog.invoice
-                            .purchaseOrderId
-                            ? purchaseOrderDetails[
-                                invoiceAllocationDialog.invoice.purchaseOrderId
-                              ]
-                            : null;
-                          return (
-                            <tr key={`alloc-${index}`}>
-                              <td>
-                                <select
-                                  value={entry.projectId}
-                                  onChange={(e) =>
-                                    updateVendorInvoiceAllocation(index, {
-                                      projectId: e.target.value,
-                                    })
-                                  }
-                                >
-                                  <option value="">案件を選択</option>
-                                  {projects.map((project) => (
-                                    <option key={project.id} value={project.id}>
-                                      {project.code} / {project.name}
-                                    </option>
-                                  ))}
-                                </select>
-                              </td>
-                              <td>
-                                <input
-                                  type="number"
-                                  min={0}
-                                  value={entry.amount}
-                                  onChange={(e) =>
-                                    updateVendorInvoiceAllocation(index, {
-                                      amount: e.target.value,
-                                    })
-                                  }
-                                  style={{ width: 120 }}
-                                />
-                              </td>
-                              <td>
-                                <input
-                                  type="number"
-                                  min={0}
-                                  value={entry.taxRate ?? ''}
-                                  onChange={(e) =>
-                                    updateVendorInvoiceAllocation(index, {
-                                      taxRate: e.target.value,
-                                    })
-                                  }
-                                  style={{ width: 80 }}
-                                />
-                              </td>
-                              <td>
-                                <input
-                                  type="number"
-                                  min={0}
-                                  value={entry.taxAmount ?? ''}
-                                  onChange={(e) =>
-                                    updateVendorInvoiceAllocation(index, {
-                                      taxAmount: e.target.value,
-                                    })
-                                  }
-                                  style={{ width: 120 }}
-                                />
-                                {computedTax != null && (
-                                  <div
-                                    style={{
-                                      fontSize: 11,
-                                      color: '#94a3b8',
-                                    }}
-                                  >
-                                    自動計算: {computedTax}
-                                  </div>
-                                )}
-                              </td>
-                              {invoiceAllocationDialog.invoice
-                                .purchaseOrderId && (
-                                <td>
-                                  <select
-                                    value={entry.purchaseOrderLineId ?? ''}
-                                    onChange={(e) =>
-                                      updateVendorInvoiceAllocation(index, {
-                                        purchaseOrderLineId: e.target.value,
-                                      })
-                                    }
-                                  >
-                                    <option value="">紐づけなし</option>
-                                    {(poDetail?.lines || []).map((line) => (
-                                      <option key={line.id} value={line.id}>
-                                        {line.description} / {line.quantity} x{' '}
-                                        {line.unitPrice}
-                                      </option>
-                                    ))}
-                                  </select>
-                                </td>
-                              )}
-                              <td>
-                                <button
-                                  className="button secondary"
-                                  onClick={() =>
-                                    removeVendorInvoiceAllocation(index)
-                                  }
-                                >
-                                  削除
-                                </button>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-            )}
-            {allocationTotals && (
-              <div
-                style={{
-                  border: '1px solid #e2e8f0',
-                  borderRadius: 8,
-                  padding: 12,
-                  background: '#f8fafc',
-                  fontSize: 12,
-                }}
-              >
-                <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-                  <div>
-                    税抜合計:{' '}
-                    {formatAmount(
-                      allocationTotals.amountTotal,
-                      invoiceAllocationDialog.invoice.currency,
-                    )}
-                  </div>
-                  <div>
-                    税額合計:{' '}
-                    {formatAmount(
-                      allocationTotals.taxTotal,
-                      invoiceAllocationDialog.invoice.currency,
-                    )}
-                  </div>
-                  <div>
-                    配賦合計:{' '}
-                    {formatAmount(
-                      allocationTotals.grossTotal,
-                      invoiceAllocationDialog.invoice.currency,
-                    )}
-                  </div>
-                  <div>
-                    請求合計:{' '}
-                    {formatAmount(
-                      invoiceAllocationDialog.invoice.totalAmount,
-                      invoiceAllocationDialog.invoice.currency,
-                    )}
-                  </div>
-                  {allocationTotals.diff != null && (
-                    <div
-                      style={{
-                        color:
-                          Math.abs(allocationTotals.diff) > 0.00001
-                            ? '#dc2626'
-                            : '#16a34a',
-                      }}
-                    >
-                      差分: {allocationTotals.diff.toLocaleString()}{' '}
-                      {invoiceAllocationDialog.invoice.currency}
-                    </div>
-                  )}
-                </div>
-                {allocationTaxRateSummary.length > 0 && (
-                  <div style={{ marginTop: 8 }}>
-                    <div style={{ color: '#64748b' }}>税率別合計</div>
-                    <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-                      {allocationTaxRateSummary.map((entry) => (
-                        <div key={entry.key}>
-                          {entry.key}:{' '}
-                          {formatAmount(
-                            entry.amount + entry.tax,
-                            invoiceAllocationDialog.invoice.currency,
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                {allocationTotals.diff != null &&
-                  Math.abs(allocationTotals.diff) > 0.00001 && (
-                    <div style={{ marginTop: 8, color: '#dc2626' }}>
-                      差分が解消できない場合は理由を添えて管理者へエスカレーションしてください
-                    </div>
-                  )}
-              </div>
-            )}
-            <input
-              type="text"
-              value={invoiceAllocationReason}
-              onChange={(e) => setInvoiceAllocationReason(e.target.value)}
-              placeholder={
-                isVendorInvoiceAllocationReasonRequiredStatus(
-                  invoiceAllocationDialog.invoice.status,
-                )
-                  ? '変更理由（必須）'
-                  : '変更理由（任意）'
-              }
-            />
-            {invoiceAllocationMessage && (
-              <p
-                style={{
-                  color:
-                    invoiceAllocationMessage.type === 'error'
-                      ? '#dc2626'
-                      : '#16a34a',
-                }}
-              >
-                {invoiceAllocationMessage.text}
-              </p>
-            )}
-          </div>
-        )}
-      </Dialog>
+        onSave={saveVendorInvoiceAllocations}
+        onToggleExpanded={() => setInvoiceAllocationExpanded((prev) => !prev)}
+        onAddRow={addVendorInvoiceAllocationRow}
+        onUpdateAllocation={updateVendorInvoiceAllocation}
+        onRemoveAllocation={removeVendorInvoiceAllocation}
+        onChangeReason={setInvoiceAllocationReason}
+        renderProject={renderProject}
+        renderVendor={renderVendor}
+        formatAmount={formatAmount}
+        parseNumberValue={parseNumberValue}
+        isPdfUrl={isPdfUrl}
+        isReasonRequiredStatus={isVendorInvoiceAllocationReasonRequiredStatus}
+      />
       <VendorInvoiceLineDialog
         open={Boolean(invoiceLineDialog)}
         dialog={invoiceLineDialog}
