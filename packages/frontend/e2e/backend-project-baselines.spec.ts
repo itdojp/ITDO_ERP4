@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { expect, test } from '@playwright/test';
 
 const apiBase = process.env.E2E_API_BASE || 'http://localhost:3002';
@@ -10,8 +11,7 @@ const authHeaders = {
 
 const demoProjectId = '00000000-0000-0000-0000-000000000001';
 
-const runId = () =>
-  `${Date.now().toString().slice(-6)}-${Math.floor(Math.random() * 90 + 10)}`;
+const runId = () => `${Date.now().toString().slice(-6)}-${randomUUID()}`;
 
 async function ensureOk(res: { ok(): boolean; status(): number; text(): any }) {
   if (res.ok()) return;
@@ -100,4 +100,3 @@ test('project baseline can snapshot tasks @extended', async ({ request }) => {
   expect(String(snapB.planStart)).toContain('2026-01-11');
   expect(String(snapB.planEnd)).toContain('2026-01-20');
 });
-

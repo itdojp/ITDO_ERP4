@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { expect, test, type Locator, type Page } from '@playwright/test';
 
 const baseUrl = process.env.E2E_BASE_URL || 'http://localhost:5173';
@@ -28,7 +29,7 @@ const authHeaders = {
 
 const runId = () =>
   process.env.E2E_RUN_ID ||
-  `${Date.now().toString().slice(-6)}-${Math.floor(Math.random() * 90 + 10)}`;
+  `${Date.now().toString().slice(-6)}-${randomUUID()}`;
 
 async function ensureOk(res: { ok(): boolean; status(): number; text(): any }) {
   if (res.ok()) return;
