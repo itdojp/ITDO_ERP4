@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import fs from 'fs';
 import path from 'path';
 import { expect, test, type Locator, type Page } from '@playwright/test';
@@ -21,7 +22,7 @@ const authState = {
 
 const runId = () =>
   process.env.E2E_RUN_ID ||
-  `${Date.now().toString().slice(-6)}-${Math.floor(Math.random() * 90 + 10)}`;
+  `${Date.now().toString().slice(-6)}-${randomUUID()}`;
 
 function ensureEvidenceDir() {
   if (!captureEnabled) return;
@@ -53,6 +54,7 @@ async function prepare(
   if (options?.mockPush) {
     await page.addInitScript(() => {
       if (!('PushManager' in window)) return;
+      let fallbackSeq = 0;
       const randomBytes = (size: number) => {
         const bytes = new Uint8Array(size);
         if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
@@ -60,7 +62,7 @@ async function prepare(
           return bytes;
         }
         for (let i = 0; i < size; i += 1) {
-          bytes[i] = Math.floor(Math.random() * 256);
+          bytes[i] = (i * 73 + 19) & 0xff;
         }
         return bytes;
       };
@@ -75,7 +77,8 @@ async function prepare(
         if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
           return crypto.randomUUID();
         }
-        return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+        fallbackSeq += 1;
+        return `${Date.now()}-${fallbackSeq}`;
       };
       const makeSubscription = () => {
         const endpoint = `https://example.com/push/${makeId()}`;
@@ -98,9 +101,12 @@ async function prepare(
           (window as { __testPushSub?: unknown }).__testPushSub = subscription;
           return subscription;
         };
-        PushManager.prototype.getSubscription = async function getSubscription() {
-          return (window as { __testPushSub?: unknown }).__testPushSub || null;
-        };
+        PushManager.prototype.getSubscription =
+          async function getSubscription() {
+            return (
+              (window as { __testPushSub?: unknown }).__testPushSub || null
+            );
+          };
       } catch {
         // ignore
       }
@@ -111,7 +117,9 @@ async function prepare(
     window.localStorage.removeItem('erp4_active_section');
   }, authState);
   await page.goto(baseUrl);
-  await expect(page.getByRole('heading', { name: 'ERP4 MVP PoC' })).toBeVisible();
+  await expect(
+    page.getByRole('heading', { name: 'ERP4 MVP PoC' }),
+  ).toBeVisible();
 }
 
 async function selectByLabelOrFirst(select: Locator, label: string) {
@@ -236,7 +244,9 @@ test('pwa offline duplicate time entries @pwa @extended', async ({
     .locator('h2', { hasText: '工数入力' })
     .locator('..');
   await timeSectionReload.scrollIntoViewIfNeeded();
-  const dupItems = timeSectionReload.locator('.itdo-card', { hasText: workTag });
+  const dupItems = timeSectionReload.locator('.itdo-card', {
+    hasText: workTag,
+  });
   await expect(dupItems).toHaveCount(2);
   const normalizedTexts = (await dupItems.allTextContents()).map((text) =>
     text.replace(/\s+/g, ' ').trim(),
