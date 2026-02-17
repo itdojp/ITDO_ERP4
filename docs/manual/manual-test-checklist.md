@@ -125,10 +125,10 @@
 
 - [ ] `docs/test-results/mobile-regression-template.md` をコピーし、PR単位の証跡ファイル（`YYYY-MM-DD-mobile-regression-*.md`）を作成する
 - [x] Invoices: 一覧/フィルタ/行アクションが `375x667` で崩れず操作できる
-- [ ] VendorDocuments: PO紐づけ/解除、配賦明細または請求明細入力が `375x667` で操作できる
-- [ ] AuditLogs: 検索フォーム/一覧/CSV出力が `375x667` で操作できる
-- [ ] PeriodLocks: 登録/解除導線が `375x667` で操作できる
-- [ ] AdminJobs: dryRun切替/実行/結果確認が `375x667` で操作できる
+- [x] VendorDocuments: PO紐づけ/解除、配賦明細または請求明細入力が `375x667` で操作できる
+- [x] AuditLogs: 検索フォーム/一覧/CSV出力が `375x667` で操作できる
+- [x] PeriodLocks: 登録/解除導線が `375x667` で操作できる
+- [x] AdminJobs: dryRun切替/実行/結果確認が `375x667` で操作できる
 - [ ] PR本文に証跡ファイルとスクリーンショット格納ディレクトリ（`docs/test-results/...`）のリンクを記載する
 
 ## 環境・その他

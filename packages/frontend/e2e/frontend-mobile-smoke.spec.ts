@@ -6,7 +6,8 @@ const apiBase = process.env.E2E_API_BASE || 'http://localhost:3002';
 const defaultProjectId = '00000000-0000-0000-0000-000000000001';
 const actionTimeoutEnv = process.env.E2E_ACTION_TIMEOUT_MS;
 const actionTimeout =
-  actionTimeoutEnv != null && !Number.isNaN(Number.parseInt(actionTimeoutEnv, 10))
+  actionTimeoutEnv != null &&
+  !Number.isNaN(Number.parseInt(actionTimeoutEnv, 10))
     ? Number.parseInt(actionTimeoutEnv, 10)
     : process.env.CI
       ? 30_000
@@ -25,6 +26,12 @@ const toPeriodValue = (date: Date) =>
 const shiftDate = (date: Date, deltaDays: number) => {
   const next = new Date(date);
   next.setDate(next.getDate() + deltaDays);
+  return next;
+};
+
+const shiftMonth = (date: Date, deltaMonths: number) => {
+  const next = new Date(date);
+  next.setMonth(next.getMonth() + deltaMonths);
   return next;
 };
 
@@ -74,21 +81,21 @@ async function prepare(page: Page) {
     window.localStorage.removeItem('erp4_active_section');
   }, authState);
   await page.goto(baseUrl);
-  await expect(page.getByRole('heading', { name: 'ERP4 MVP PoC' })).toBeVisible({
-    timeout: actionTimeout,
-  });
+  await expect(page.getByRole('heading', { name: 'ERP4 MVP PoC' })).toBeVisible(
+    {
+      timeout: actionTimeout,
+    },
+  );
 }
 
 async function navigateToSection(page: Page, label: string, heading?: string) {
   await page.getByRole('button', { name: label, exact: true }).click();
   await expect(
-    page
-      .locator('main')
-      .getByRole('heading', {
-        name: heading || label,
-        level: 2,
-        exact: true,
-      }),
+    page.locator('main').getByRole('heading', {
+      name: heading || label,
+      level: 2,
+      exact: true,
+    }),
   ).toBeVisible({ timeout: actionTimeout });
 }
 
@@ -115,8 +122,7 @@ async function selectByValue(select: Locator, value: string) {
   const hasValue = await select
     .locator('option')
     .evaluateAll(
-      (options, target) =>
-        options.some((option) => option.value === target),
+      (options, target) => options.some((option) => option.value === target),
       value,
     );
   if (!hasValue) {
@@ -142,9 +148,16 @@ test.describe('mobile smoke 375x667 @core', () => {
   }) => {
     test.setTimeout(180_000);
     const id = runId();
-    const invoiceAmount = 12000 + (Number(id.replace(/\D/g, '').slice(0, 3)) || 123);
+    const invoiceAmount =
+      12000 + (Number(id.replace(/\D/g, '').slice(0, 3)) || 123);
     const vendorInvoiceNo = `VI-MOB-${id}`;
     const lockPeriod = toPeriodValue(new Date());
+    const lockPeriodOffset =
+      6 + ((Number(id.replace(/\D/g, '').slice(0, 2)) || 0) % 12);
+    const mobileLockPeriod = toPeriodValue(
+      shiftMonth(new Date(), lockPeriodOffset),
+    );
+    const mobileLockReason = `e2e-mobile-lock-${id}`;
 
     await prepare(page);
 
@@ -205,16 +218,19 @@ test.describe('mobile smoke 375x667 @core', () => {
     const poNo = String(poPayload?.poNo || '');
     expect(poNo.length).toBeGreaterThan(0);
 
-    const vendorInvoiceRes = await page.request.post(`${apiBase}/vendor-invoices`, {
-      headers: adminHeaders,
-      data: {
-        projectId: defaultProjectId,
-        vendorId,
-        totalAmount: invoiceAmount,
-        currency: 'JPY',
-        vendorInvoiceNo,
+    const vendorInvoiceRes = await page.request.post(
+      `${apiBase}/vendor-invoices`,
+      {
+        headers: adminHeaders,
+        data: {
+          projectId: defaultProjectId,
+          vendorId,
+          totalAmount: invoiceAmount,
+          currency: 'JPY',
+          vendorInvoiceNo,
+        },
       },
-    });
+    );
     await ensureOk(vendorInvoiceRes);
 
     // Seed period lock for list/filter actions.
@@ -291,9 +307,9 @@ test.describe('mobile smoke 375x667 @core', () => {
 
     await vendorInvoiceRow.getByRole('button', { name: 'PO紐づけ' }).click();
     const poDialog = page.getByRole('dialog');
-    await expect(
-      poDialog.getByText('仕入請求: 関連発注書（PO）'),
-    ).toBeVisible({ timeout: actionTimeout });
+    await expect(poDialog.getByText('仕入請求: 関連発注書（PO）')).toBeVisible({
+      timeout: actionTimeout,
+    });
     const poLinkSelect = await findSelectByOptionText(poDialog, '紐づけなし');
     await selectByLabelOrFirst(poLinkSelect, poNo);
     await poDialog.getByRole('button', { name: '更新' }).click();
@@ -329,6 +345,53 @@ test.describe('mobile smoke 375x667 @core', () => {
       )
       .toBe(false);
 
+    // VendorDocuments: allocation input + PDF stub warning
+    await vendorInvoiceRow.getByRole('button', { name: '配賦明細' }).click();
+    const allocationDialog = page.getByRole('dialog');
+    await expect(allocationDialog.getByText('仕入請求: 配賦明細')).toBeVisible({
+      timeout: actionTimeout,
+    });
+    await expect(allocationDialog.getByText('PDF未登録')).toBeVisible({
+      timeout: actionTimeout,
+    });
+    await expect(
+      allocationDialog.getByText('配賦明細を読み込み中...'),
+    ).toHaveCount(0, { timeout: actionTimeout });
+    const allocationExpandButton = allocationDialog.getByRole('button', {
+      name: '配賦明細を入力',
+    });
+    if ((await allocationExpandButton.count()) > 0) {
+      await allocationExpandButton.click();
+    }
+    await expect(
+      allocationDialog.getByRole('button', { name: '配賦明細を隠す' }),
+    ).toBeVisible({ timeout: actionTimeout });
+    await allocationDialog.getByRole('button', { name: '明細追加' }).click();
+    const allocationRows = allocationDialog.locator('table tbody tr');
+    await expect
+      .poll(() => allocationRows.count(), { timeout: actionTimeout })
+      .toBeGreaterThan(0);
+    const allocationRow = allocationRows.first();
+    await expect(allocationRow).toBeVisible({ timeout: actionTimeout });
+    const allocationProjectSelect = await findSelectByOptionText(
+      allocationRow,
+      '案件を選択',
+    );
+    if ((await allocationProjectSelect.inputValue()) === '') {
+      await selectByValue(allocationProjectSelect, defaultProjectId);
+    }
+    await allocationRow
+      .locator('td:nth-child(2) input[type="number"]')
+      .fill(String(invoiceAmount));
+    await allocationDialog.getByRole('button', { name: '更新' }).click();
+    await expect(
+      allocationDialog.getByText('配賦明細を更新しました'),
+    ).toBeVisible({
+      timeout: actionTimeout,
+    });
+    await allocationDialog.getByRole('button', { name: '閉じる' }).click();
+    await expect(allocationDialog).toBeHidden({ timeout: actionTimeout });
+
     // AdminJobs: run + result detail
     await navigateToSection(page, 'ジョブ管理', '運用ジョブ');
     const jobsSection = page
@@ -336,11 +399,17 @@ test.describe('mobile smoke 375x667 @core', () => {
       .locator('h2', { hasText: '運用ジョブ' })
       .locator('..');
     await jobsSection.scrollIntoViewIfNeeded();
+    await jobsSection
+      .getByRole('checkbox', { name: '通知配信 dryRun' })
+      .check();
+    await jobsSection.getByLabel('通知 limit').fill('5');
     await jobsSection.getByLabel('ジョブ検索').fill('通知配信');
     const notificationJobRows = jobsSection.locator('tbody tr', {
       hasText: '通知配信',
     });
-    await expect(notificationJobRows).toHaveCount(1, { timeout: actionTimeout });
+    await expect(notificationJobRows).toHaveCount(1, {
+      timeout: actionTimeout,
+    });
     const notificationJobRow = notificationJobRows;
     await expect(notificationJobRow).toBeVisible({ timeout: actionTimeout });
     await notificationJobRow.getByRole('button', { name: '実行' }).click();
@@ -350,6 +419,19 @@ test.describe('mobile smoke 375x667 @core', () => {
           notificationJobRow
             .innerText()
             .then((value) => /完了|実行中/.test(value))
+            .catch(() => false),
+        { timeout: actionTimeout },
+      )
+      .toBe(true);
+    await expect
+      .poll(
+        () =>
+          notificationJobRow
+            .innerText()
+            .then(
+              (value) =>
+                value.includes('dryRun=true') && value.includes('limit=5'),
+            )
             .catch(() => false),
         { timeout: actionTimeout },
       )
@@ -404,15 +486,63 @@ test.describe('mobile smoke 375x667 @core', () => {
         { timeout: actionTimeout },
       )
       .toMatch(/rows|empty/);
+    const [auditCsvDownload] = await Promise.all([
+      page.waitForEvent('download'),
+      auditLogSection.getByRole('button', { name: 'CSV出力' }).click(),
+    ]);
+    expect(auditCsvDownload.suggestedFilename().toLowerCase()).toContain(
+      'audit',
+    );
 
-    // PeriodLocks: filter + search
+    // PeriodLocks: create + unlock + filter/search
     await navigateToSection(page, '期間締め');
     const periodLockSection = page
       .locator('main')
       .locator('h2', { hasText: '期間締め' })
       .locator('..');
     await periodLockSection.scrollIntoViewIfNeeded();
-    await periodLockSection.getByLabel('period', { exact: true }).fill(lockPeriod);
+    await periodLockSection
+      .getByLabel('period (YYYY-MM)', { exact: true })
+      .fill(mobileLockPeriod);
+    await periodLockSection
+      .getByLabel('scope', { exact: true })
+      .first()
+      .selectOption({
+        value: 'project',
+      });
+    await selectByValue(
+      periodLockSection.getByLabel('project', { exact: true }).first(),
+      defaultProjectId,
+    );
+    await periodLockSection
+      .getByLabel('reason', { exact: true })
+      .fill(mobileLockReason);
+    await periodLockSection.getByRole('button', { name: '締め登録' }).click();
+    await periodLockSection
+      .getByLabel('period', { exact: true })
+      .fill(mobileLockPeriod);
+    await periodLockSection.getByRole('button', { name: '検索' }).click();
+    const createdLockRows = periodLockSection.locator('tbody tr', {
+      hasText: mobileLockReason,
+    });
+    await expect
+      .poll(() => createdLockRows.count(), { timeout: actionTimeout })
+      .toBeGreaterThan(0);
+    const createdLockRow = createdLockRows.first();
+    await createdLockRow.getByRole('button', { name: '解除' }).click();
+    const unlockDialog = page.getByRole('dialog', {
+      name: '期間締めを解除しますか？',
+    });
+    await expect(unlockDialog).toBeVisible({ timeout: actionTimeout });
+    await unlockDialog.getByRole('button', { name: '解除' }).click();
+    await expect(unlockDialog).toBeHidden({ timeout: actionTimeout });
+    await expect
+      .poll(() => createdLockRows.count(), { timeout: actionTimeout })
+      .toBe(0);
+
+    await periodLockSection
+      .getByLabel('period', { exact: true })
+      .fill(lockPeriod);
     await periodLockSection.getByRole('button', { name: '検索' }).click();
     const periodRows = periodLockSection.locator('tbody tr', {
       hasText: lockPeriod,
