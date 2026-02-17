@@ -189,13 +189,15 @@ test('frontend smoke workflow evidence chat references @extended', async ({
   await expect(evidencePickerDrawer.getByText(evidenceMessage)).toBeVisible({
     timeout: actionTimeout,
   });
-  await evidencePickerDrawer
-    .getByRole('button', { name: '追加' })
-    .first()
-    .click();
-  await evidencePickerDrawer
+  const evidenceCandidateCard = evidencePickerDrawer.locator('.itdo-card', {
+    hasText: evidenceMessage,
+  });
+  await expect(evidenceCandidateCard).toHaveCount(1, {
+    timeout: actionTimeout,
+  });
+  await evidenceCandidateCard.getByRole('button', { name: '追加' }).click();
+  await evidenceCandidateCard
     .getByRole('button', { name: 'メモへ挿入' })
-    .first()
     .click();
   await evidencePickerDrawer.getByRole('button', { name: '閉じる' }).click();
   await expect(evidencePickerDrawer).toBeHidden({ timeout: actionTimeout });
@@ -303,9 +305,9 @@ test('frontend smoke workflow evidence chat references @extended', async ({
   await expect(
     evidenceApprovalItem.getByRole('link', { name: evidenceUrl }),
   ).toBeVisible({ timeout: actionTimeout });
-  const previewButton = evidenceApprovalItem
-    .getByRole('button', { name: 'プレビュー' })
-    .first();
+  const previewButton = evidenceApprovalItem.getByRole('button', {
+    name: 'プレビュー',
+  });
   await previewButton.click();
   await expect(evidenceApprovalItem.getByText(evidenceMessage)).toBeVisible({
     timeout: actionTimeout,
