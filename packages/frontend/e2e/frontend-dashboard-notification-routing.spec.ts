@@ -445,9 +445,10 @@ test('dashboard notification cards route to chat/leave/expense targets @core', a
     .locator('main')
     .locator('h2', { hasText: 'Dashboard' })
     .locator('..');
-  const leaveItem = dashboardSection.locator('.card', {
-    has: dashboardSection.locator('strong', { hasText: '休暇予定' }),
-  });
+  const leaveItem = dashboardSection
+    .locator('strong', { hasText: '休暇予定' })
+    .locator('..')
+    .locator('..');
   await expect(leaveItem).toHaveCount(1, { timeout: actionTimeout });
   await expect(leaveItem).toBeVisible({ timeout: actionTimeout });
   await resetOpenEventRecorder(page);
@@ -463,11 +464,12 @@ test('dashboard notification cards route to chat/leave/expense targets @core', a
     .locator('main')
     .locator('h2', { hasText: 'Dashboard' })
     .locator('..');
-  const expenseItem = dashboardSectionAfterHome.locator('.card', {
-    has: dashboardSectionAfterHome.locator('strong', {
+  const expenseItem = dashboardSectionAfterHome
+    .locator('strong', {
       hasText: '経費支払完了',
-    }),
-  });
+    })
+    .locator('..')
+    .locator('..');
   await expect(expenseItem).toHaveCount(1, { timeout: actionTimeout });
   await expect(expenseItem).toBeVisible({ timeout: actionTimeout });
   await resetOpenEventRecorder(page);
