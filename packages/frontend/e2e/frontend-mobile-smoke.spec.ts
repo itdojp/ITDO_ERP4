@@ -111,6 +111,14 @@ async function selectByValue(select: Locator, value: string) {
   await select.selectOption({ value });
 }
 
+async function findSelectByOptionText(scope: Locator, optionText: string) {
+  const options = scope.locator('option', { hasText: optionText });
+  await expect(options).toHaveCount(1, { timeout: actionTimeout });
+  const select = options.locator('xpath=ancestor::select[1]');
+  await expect(select).toHaveCount(1, { timeout: actionTimeout });
+  return select;
+}
+
 test.describe('mobile smoke 375x667 @core', () => {
   test.use({ viewport: { width: 375, height: 667 } });
 
@@ -209,9 +217,11 @@ test.describe('mobile smoke 375x667 @core', () => {
     const invoiceAmountPattern = new RegExp(
       `¥${invoiceAmount.toLocaleString().replace(/,/g, ',?')}`,
     );
-    const invoiceRow = invoiceSection
-      .locator('tbody tr', { hasText: invoiceAmountPattern })
-      .first();
+    const invoiceRows = invoiceSection.locator('tbody tr', {
+      hasText: invoiceAmountPattern,
+    });
+    await expect(invoiceRows).toHaveCount(1, { timeout: actionTimeout });
+    const invoiceRow = invoiceRows;
     await expect(invoiceRow).toBeVisible({ timeout: actionTimeout });
     await invoiceSection.getByLabel('請求検索').fill(String(invoiceAmount));
     await expect(invoiceRow).toBeVisible({ timeout: actionTimeout });
@@ -235,13 +245,23 @@ test.describe('mobile smoke 375x667 @core', () => {
     const invoiceBlock = vendorSection
       .locator('h3', { hasText: '仕入請求' })
       .locator('..');
-    await selectByValue(invoiceBlock.locator('select').first(), defaultProjectId);
-    await selectByValue(invoiceBlock.locator('select').nth(1), vendorId);
+    const invoiceProjectSelect = await findSelectByOptionText(
+      invoiceBlock,
+      '案件を選択',
+    );
+    const invoiceVendorSelect = await findSelectByOptionText(
+      invoiceBlock,
+      '業者を選択',
+    );
+    await selectByValue(invoiceProjectSelect, defaultProjectId);
+    await selectByValue(invoiceVendorSelect, vendorId);
     await invoiceBlock.getByRole('button', { name: '再取得' }).click();
 
-    const vendorInvoiceRow = invoiceBlock
-      .locator('tbody tr', { hasText: vendorInvoiceNo })
-      .first();
+    const vendorInvoiceRows = invoiceBlock.locator('tbody tr', {
+      hasText: vendorInvoiceNo,
+    });
+    await expect(vendorInvoiceRows).toHaveCount(1, { timeout: actionTimeout });
+    const vendorInvoiceRow = vendorInvoiceRows;
     await expect(vendorInvoiceRow).toBeVisible({ timeout: actionTimeout });
 
     await vendorInvoiceRow.getByRole('button', { name: 'PO紐づけ' }).click();
@@ -249,7 +269,8 @@ test.describe('mobile smoke 375x667 @core', () => {
     await expect(
       poDialog.getByText('仕入請求: 関連発注書（PO）'),
     ).toBeVisible({ timeout: actionTimeout });
-    await selectByLabelOrFirst(poDialog.locator('select').first(), poNo);
+    const poLinkSelect = await findSelectByOptionText(poDialog, '紐づけなし');
+    await selectByLabelOrFirst(poLinkSelect, poNo);
     await poDialog.getByRole('button', { name: '更新' }).click();
     await expect(poDialog).toBeHidden({ timeout: actionTimeout });
     await expect
@@ -265,7 +286,11 @@ test.describe('mobile smoke 375x667 @core', () => {
 
     await vendorInvoiceRow.getByRole('button', { name: 'PO紐づけ' }).click();
     const poUnlinkDialog = page.getByRole('dialog');
-    await selectByLabelOrFirst(poUnlinkDialog.locator('select').first(), '紐づけなし');
+    const poUnlinkSelect = await findSelectByOptionText(
+      poUnlinkDialog,
+      '紐づけなし',
+    );
+    await selectByLabelOrFirst(poUnlinkSelect, '紐づけなし');
     await poUnlinkDialog.getByRole('button', { name: '更新' }).click();
     await expect(poUnlinkDialog).toBeHidden({ timeout: actionTimeout });
     await expect
@@ -287,9 +312,11 @@ test.describe('mobile smoke 375x667 @core', () => {
       .locator('..');
     await jobsSection.scrollIntoViewIfNeeded();
     await jobsSection.getByLabel('ジョブ検索').fill('通知配信');
-    const notificationJobRow = jobsSection
-      .locator('tbody tr', { hasText: '通知配信' })
-      .first();
+    const notificationJobRows = jobsSection.locator('tbody tr', {
+      hasText: '通知配信',
+    });
+    await expect(notificationJobRows).toHaveCount(1, { timeout: actionTimeout });
+    const notificationJobRow = notificationJobRows;
     await expect(notificationJobRow).toBeVisible({ timeout: actionTimeout });
     await notificationJobRow.getByRole('button', { name: '実行' }).click();
     await expect

@@ -120,6 +120,14 @@ async function selectByValue(select: Locator, value: string) {
   await select.selectOption({ value });
 }
 
+async function findSelectByOptionText(scope: Locator, optionText: string) {
+  const options = scope.locator('option', { hasText: optionText });
+  await expect(options).toHaveCount(1, { timeout: actionTimeout });
+  const select = options.locator('xpath=ancestor::select[1]');
+  await expect(select).toHaveCount(1, { timeout: actionTimeout });
+  return select;
+}
+
 test('frontend smoke vendor docs create @extended', async ({ page }) => {
   test.setTimeout(180_000);
   const id = runId();
@@ -140,21 +148,23 @@ test('frontend smoke vendor docs create @extended', async ({ page }) => {
   const poBlock = vendorSection
     .locator('h3', { hasText: '発注書' })
     .locator('..');
-  const poProjectSelect = poBlock.locator('select').first();
-  const poVendorSelect = poBlock.locator('select').nth(1);
+  const poProjectSelect = await findSelectByOptionText(poBlock, '案件を選択');
+  const poVendorSelect = await findSelectByOptionText(poBlock, '業者を選択');
   await selectByLabelOrFirst(poProjectSelect);
   await selectByLabelOrFirst(poVendorSelect);
   const vendorDocsProjectId = await poProjectSelect.inputValue();
   const vendorDocsVendorId = await poVendorSelect.inputValue();
-  await poBlock.locator('input[type="number"]').first().fill(String(poAmount));
+  await poBlock.getByPlaceholder('金額', { exact: true }).fill(String(poAmount));
   await poBlock.getByRole('button', { name: '登録' }).click();
   await expect(poBlock.getByText('発注書を登録しました')).toBeVisible();
   await expect(
     poBlock.getByText(`${poAmount.toLocaleString()} JPY`),
   ).toBeVisible();
-  const createdPoItem = poBlock
-    .locator('tbody tr', { hasText: `${poAmount.toLocaleString()} JPY` })
-    .first();
+  const createdPoRows = poBlock.locator('tbody tr', {
+    hasText: `${poAmount.toLocaleString()} JPY`,
+  });
+  await expect(createdPoRows).toHaveCount(1, { timeout: actionTimeout });
+  const createdPoItem = createdPoRows;
   await expect(createdPoItem).toBeVisible({ timeout: actionTimeout });
   const createdPoText = await createdPoItem.innerText();
   const poNo = createdPoText.match(/PO\d{4}-\d{2}-\d{4}/)?.[0];
@@ -165,16 +175,16 @@ test('frontend smoke vendor docs create @extended', async ({ page }) => {
   const quoteBlock = vendorSection
     .locator('h3', { hasText: '仕入見積' })
     .locator('..');
-  const quoteProjectSelect = quoteBlock.locator('select').first();
-  const quoteVendorSelect = quoteBlock.locator('select').nth(1);
+  const quoteProjectSelect = await findSelectByOptionText(
+    quoteBlock,
+    '案件を選択',
+  );
+  const quoteVendorSelect = await findSelectByOptionText(quoteBlock, '業者を選択');
   await selectByValue(quoteProjectSelect, vendorDocsProjectId);
   await selectByValue(quoteVendorSelect, vendorDocsVendorId);
   const quoteNo = `VQ-E2E-${id}`;
   await quoteBlock.getByPlaceholder('見積番号', { exact: true }).fill(quoteNo);
-  await quoteBlock
-    .locator('input[type="number"]')
-    .first()
-    .fill(String(quoteAmount));
+  await quoteBlock.getByPlaceholder('金額', { exact: true }).fill(String(quoteAmount));
   await quoteBlock.getByRole('button', { name: '登録' }).click();
   await expect(quoteBlock.getByText('仕入見積を登録しました')).toBeVisible();
   await expect(quoteBlock.getByText(quoteNo)).toBeVisible();
@@ -183,8 +193,14 @@ test('frontend smoke vendor docs create @extended', async ({ page }) => {
   const invoiceBlock = vendorSection
     .locator('h3', { hasText: '仕入請求' })
     .locator('..');
-  const invoiceProjectSelect = invoiceBlock.locator('select').first();
-  const invoiceVendorSelect = invoiceBlock.locator('select').nth(1);
+  const invoiceProjectSelect = await findSelectByOptionText(
+    invoiceBlock,
+    '案件を選択',
+  );
+  const invoiceVendorSelect = await findSelectByOptionText(
+    invoiceBlock,
+    '業者を選択',
+  );
   await selectByValue(invoiceProjectSelect, vendorDocsProjectId);
   await selectByValue(invoiceVendorSelect, vendorDocsVendorId);
   const vendorInvoiceNo = `VI-E2E-${id}`;
@@ -192,19 +208,18 @@ test('frontend smoke vendor docs create @extended', async ({ page }) => {
     .getByPlaceholder('請求番号', { exact: true })
     .fill(vendorInvoiceNo);
   await invoiceBlock
-    .locator('input[type="number"]')
-    .first()
+    .getByPlaceholder('金額', { exact: true })
     .fill(String(invoiceAmount));
   await invoiceBlock.getByRole('button', { name: '登録' }).click();
   await expect(invoiceBlock.getByText('仕入請求を登録しました')).toBeVisible();
   await expect(invoiceBlock.getByText(vendorInvoiceNo)).toBeVisible();
 
   const annotationText = `E2E注釈: ${id}`;
-  const createdInvoiceItem = invoiceBlock
-    .locator('tbody tr', {
-      hasText: vendorInvoiceNo,
-    })
-    .first();
+  const createdInvoiceRows = invoiceBlock.locator('tbody tr', {
+    hasText: vendorInvoiceNo,
+  });
+  await expect(createdInvoiceRows).toHaveCount(1, { timeout: actionTimeout });
+  const createdInvoiceItem = createdInvoiceRows;
   await expect(createdInvoiceItem).toBeVisible({ timeout: actionTimeout });
 
   // (1) PO紐づけ → 一覧に PO番号表示
@@ -216,7 +231,7 @@ test('frontend smoke vendor docs create @extended', async ({ page }) => {
   ).toBeVisible({
     timeout: actionTimeout,
   });
-  const poLinkSelect = poLinkDialog.locator('select').first();
+  const poLinkSelect = await findSelectByOptionText(poLinkDialog, '紐づけなし');
   await selectByLabelOrFirst(poLinkSelect, poNoValue);
   await poLinkDialog.getByRole('button', { name: '更新' }).click();
   await expect(poLinkDialog).toBeHidden({ timeout: actionTimeout });
@@ -239,7 +254,10 @@ test('frontend smoke vendor docs create @extended', async ({ page }) => {
   ).toBeVisible({
     timeout: actionTimeout,
   });
-  const poUnlinkSelect = poUnlinkDialog.locator('select').first();
+  const poUnlinkSelect = await findSelectByOptionText(
+    poUnlinkDialog,
+    '紐づけなし',
+  );
   await selectByLabelOrFirst(poUnlinkSelect, '紐づけなし');
   await poUnlinkDialog.getByRole('button', { name: '更新' }).click();
   await expect(poUnlinkDialog).toBeHidden({ timeout: actionTimeout });
@@ -270,15 +288,19 @@ test('frontend smoke vendor docs create @extended', async ({ page }) => {
     allocationDialog.getByRole('button', { name: '配賦明細を隠す' }),
   ).toBeVisible({ timeout: actionTimeout });
   await allocationDialog.getByRole('button', { name: '明細追加' }).click();
-  const allocationRow = allocationDialog.locator('table tbody tr').first();
+  const allocationRows = allocationDialog.locator('table tbody tr');
+  await expect(allocationRows).toHaveCount(1, { timeout: actionTimeout });
+  const allocationRow = allocationRows;
   await expect(allocationRow).toBeVisible({ timeout: actionTimeout });
-  const allocationProjectSelect = allocationRow.locator('select').first();
+  const allocationProjectSelect = await findSelectByOptionText(
+    allocationRow,
+    '案件を選択',
+  );
   if ((await allocationProjectSelect.inputValue()) === '') {
     await selectByLabelOrFirst(allocationProjectSelect);
   }
   await allocationRow
-    .locator('input[type="number"]')
-    .first()
+    .locator('td:nth-child(2) input[type="number"]')
     .fill(String(invoiceAmount));
   await allocationDialog.getByRole('button', { name: '更新' }).click();
   const allocationSuccessMessage = allocationDialog.locator('p', {
