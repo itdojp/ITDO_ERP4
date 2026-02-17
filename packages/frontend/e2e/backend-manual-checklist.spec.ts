@@ -699,6 +699,7 @@ test('backend manual checklist: members/vendors/time/expenses/wellbeing @extende
     roles: ['user'],
     projectIds: [defaultProjectId],
   });
+  const recentPastDueAt = new Date(Date.now() - 60 * 60 * 1000).toISOString();
 
   const chatAckRequestRes = await request.post(
     `${apiBase}/projects/${encodeURIComponent(defaultProjectId)}/chat-ack-requests`,
@@ -707,7 +708,7 @@ test('backend manual checklist: members/vendors/time/expenses/wellbeing @extende
       data: {
         body: `e2e ack request ${suffix}`,
         requiredUserIds: [ackRequiredUserId],
-        dueAt: '2000-01-01T00:00:00.000Z',
+        dueAt: recentPastDueAt,
       },
     },
   );
@@ -727,11 +728,30 @@ test('backend manual checklist: members/vendors/time/expenses/wellbeing @extende
   );
   expect(ackByAdmin).toBeTruthy();
 
+  const pendingChatAckRes = await request.post(
+    `${apiBase}/projects/${encodeURIComponent(defaultProjectId)}/chat-ack-requests`,
+    {
+      headers: adminHeaders,
+      data: {
+        body: `e2e pending ack request ${suffix}`,
+        requiredUserIds: [ackRequiredUserId],
+        dueAt: recentPastDueAt,
+      },
+    },
+  );
+  await ensureOk(pendingChatAckRes);
+
   const chatAckReminderJobRes = await request.post(
     `${apiBase}/jobs/chat-ack-reminders/run`,
     { headers: adminHeaders, data: { dryRun: true, limit: 20 } },
   );
   await ensureOk(chatAckReminderJobRes);
+  const chatAckReminderJob = await chatAckReminderJobRes.json();
+  expect(chatAckReminderJob?.ok).toBe(true);
+  expect(Number(chatAckReminderJob?.scannedRequests ?? 0)).toBeGreaterThan(0);
+  expect(
+    Number(chatAckReminderJob?.candidateNotifications ?? 0),
+  ).toBeGreaterThan(0);
 
   await expectAuditAction({
     action: 'vendor_invoice_link_po',
