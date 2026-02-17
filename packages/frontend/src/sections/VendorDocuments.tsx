@@ -31,6 +31,7 @@ import { formatDateForFilename, openResponseInNewTab } from '../utils/download';
 import { PurchaseOrderSendLogsDialog } from './vendor-documents/PurchaseOrderSendLogsDialog';
 import { VendorInvoiceAllocationDialog } from './vendor-documents/VendorInvoiceAllocationDialog';
 import { VendorDocumentsPurchaseOrdersSection } from './vendor-documents/VendorDocumentsPurchaseOrdersSection';
+import { VendorDocumentsVendorQuotesSection } from './vendor-documents/VendorDocumentsVendorQuotesSection';
 import { VendorInvoiceLineDialog } from './vendor-documents/VendorInvoiceLineDialog';
 import { VendorInvoicePoLinkDialog } from './vendor-documents/VendorInvoicePoLinkDialog';
 
@@ -2060,166 +2061,31 @@ export const VendorDocuments: React.FC = () => {
             normalizeCurrency={normalizeCurrency}
           />
 
-          <section
-            hidden={activeDocumentTab !== 'vendor-quotes'}
-            style={{
-              display: activeDocumentTab === 'vendor-quotes' ? 'block' : 'none',
+          <VendorDocumentsVendorQuotesSection
+            active={activeDocumentTab === 'vendor-quotes'}
+            quoteForm={quoteForm}
+            projects={projects}
+            vendors={vendors}
+            isQuoteSaving={isQuoteSaving}
+            onChangeQuoteForm={setQuoteForm}
+            onCreateVendorQuote={createVendorQuote}
+            quoteResult={quoteResult}
+            onDismissQuoteResult={() => setQuoteResult(null)}
+            onReloadVendorQuotes={() => {
+              void loadVendorQuotes();
             }}
-          >
-            <h3>仕入見積</h3>
-            <div className="card" style={{ marginBottom: 12 }}>
-              <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
-                <select
-                  value={quoteForm.projectId}
-                  onChange={(e) =>
-                    setQuoteForm({ ...quoteForm, projectId: e.target.value })
-                  }
-                >
-                  <option value="">案件を選択</option>
-                  {projects.map((project) => (
-                    <option key={project.id} value={project.id}>
-                      {project.code} / {project.name}
-                    </option>
-                  ))}
-                </select>
-                <select
-                  value={quoteForm.vendorId}
-                  onChange={(e) =>
-                    setQuoteForm({ ...quoteForm, vendorId: e.target.value })
-                  }
-                >
-                  <option value="">業者を選択</option>
-                  {vendors.map((vendor) => (
-                    <option key={vendor.id} value={vendor.id}>
-                      {vendor.code} / {vendor.name}
-                    </option>
-                  ))}
-                </select>
-                <input
-                  type="text"
-                  value={quoteForm.quoteNo}
-                  onChange={(e) =>
-                    setQuoteForm({ ...quoteForm, quoteNo: e.target.value })
-                  }
-                  placeholder="見積番号"
-                />
-                <input
-                  type="number"
-                  min={0}
-                  value={quoteForm.totalAmount}
-                  onChange={(e) =>
-                    setQuoteForm({
-                      ...quoteForm,
-                      totalAmount: Number(e.target.value),
-                    })
-                  }
-                  placeholder="金額"
-                  style={{ width: 120 }}
-                />
-                <input
-                  type="text"
-                  value={quoteForm.currency}
-                  onChange={(e) =>
-                    setQuoteForm({
-                      ...quoteForm,
-                      currency: normalizeCurrency(e.target.value),
-                    })
-                  }
-                  placeholder="通貨"
-                  style={{ width: 80 }}
-                  maxLength={3}
-                />
-                <input
-                  type="date"
-                  value={quoteForm.issueDate}
-                  onChange={(e) =>
-                    setQuoteForm({ ...quoteForm, issueDate: e.target.value })
-                  }
-                />
-                <input
-                  type="text"
-                  value={quoteForm.documentUrl}
-                  onChange={(e) =>
-                    setQuoteForm({ ...quoteForm, documentUrl: e.target.value })
-                  }
-                  placeholder="書類URL"
-                  style={{ minWidth: 180 }}
-                />
-                <Button onClick={createVendorQuote} disabled={isQuoteSaving}>
-                  {isQuoteSaving ? '登録中' : '登録'}
-                </Button>
-              </div>
-            </div>
-            {quoteResult && (
-              <div style={{ marginBottom: 12 }}>
-                <Toast
-                  variant={quoteResult.type}
-                  title={quoteResult.type === 'error' ? 'エラー' : '完了'}
-                  description={quoteResult.text}
-                  dismissible
-                  onClose={() => setQuoteResult(null)}
-                />
-              </div>
-            )}
-            <CrudList
-              title="仕入見積一覧"
-              description="仕入見積の検索と注釈登録を実行できます。"
-              filters={
-                <FilterBar
-                  actions={
-                    <Button
-                      variant="ghost"
-                      onClick={() => {
-                        void loadVendorQuotes();
-                      }}
-                    >
-                      再取得
-                    </Button>
-                  }
-                >
-                  <div
-                    style={{
-                      display: 'flex',
-                      gap: 12,
-                      flexWrap: 'wrap',
-                      alignItems: 'center',
-                    }}
-                  >
-                    <Input
-                      value={quoteSearch}
-                      onChange={(e) => setQuoteSearch(e.target.value)}
-                      placeholder="見積番号 / 案件 / 業者 / 金額で検索"
-                      aria-label="仕入見積検索"
-                    />
-                    <Select
-                      value={quoteStatusFilter}
-                      onChange={(e) => setQuoteStatusFilter(e.target.value)}
-                      aria-label="仕入見積状態フィルタ"
-                    >
-                      <option value="all">状態: 全て</option>
-                      {quoteStatusOptions.map((status) => (
-                        <option key={status} value={status}>
-                          {status}
-                        </option>
-                      ))}
-                    </Select>
-                    {(quoteSearch || quoteStatusFilter !== 'all') && (
-                      <Button
-                        variant="ghost"
-                        onClick={() => {
-                          setQuoteSearch('');
-                          setQuoteStatusFilter('all');
-                        }}
-                      >
-                        条件クリア
-                      </Button>
-                    )}
-                  </div>
-                </FilterBar>
-              }
-              table={vendorQuoteListContent}
-            />
-          </section>
+            quoteSearch={quoteSearch}
+            onChangeQuoteSearch={setQuoteSearch}
+            quoteStatusFilter={quoteStatusFilter}
+            onChangeQuoteStatusFilter={setQuoteStatusFilter}
+            quoteStatusOptions={quoteStatusOptions}
+            onClearQuoteFilters={() => {
+              setQuoteSearch('');
+              setQuoteStatusFilter('all');
+            }}
+            vendorQuoteListContent={vendorQuoteListContent}
+            normalizeCurrency={normalizeCurrency}
+          />
 
           <section
             hidden={activeDocumentTab !== 'vendor-invoices'}
