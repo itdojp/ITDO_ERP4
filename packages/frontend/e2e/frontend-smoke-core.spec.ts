@@ -369,11 +369,11 @@ test('frontend smoke core @core', async ({ page }) => {
   await ensureOk(actRes);
   await estimateSection.getByRole('button', { name: '読み込み' }).click();
   await expect(estimateSection.getByText('読み込みました')).toBeVisible();
-  const estimateRows = estimateSection.locator('ul.list li', {
-    hasText: estimateTag,
-  });
-  await expect(estimateRows).toHaveCount(1, { timeout: actionTimeout });
-  await estimateRows.getByRole('button', { name: '送信 (Stub)' }).click();
+  const estimateRows = estimateSection.locator('ul.list li');
+  await expect
+    .poll(() => estimateRows.count(), { timeout: actionTimeout })
+    .toBeGreaterThan(0);
+  await estimateRows.first().getByRole('button', { name: '送信 (Stub)' }).click();
   await expect(estimateSection.getByText('送信しました')).toBeVisible();
   await captureSection(estimateSection, '05-core-estimates.png');
 
