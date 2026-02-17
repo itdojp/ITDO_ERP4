@@ -52,24 +52,28 @@ export function normalizeVendorInvoiceAllocations(
     if (Math.abs(diff) > 0.00001) {
       const lastIndex = normalized.length - 1;
       const last = normalized[lastIndex];
-      normalized[lastIndex] = {
-        ...last,
-        taxAmount: (last.taxAmount ?? 0) + diff,
-      };
-      adjusted = true;
-      const recalculated = normalized.reduce(
-        (acc, item) => {
-          acc.amountTotal += item.amount;
-          acc.taxTotal += item.taxAmount ?? 0;
-          acc.grossTotal += item.amount + (item.taxAmount ?? 0);
-          return acc;
-        },
-        { amountTotal: 0, taxTotal: 0, grossTotal: 0 },
-      );
-      totals.amountTotal = recalculated.amountTotal;
-      totals.taxTotal = recalculated.taxTotal;
-      totals.grossTotal = recalculated.grossTotal;
-      diff = invoiceTotal - totals.grossTotal;
+      const nextTaxAmount = (last.taxAmount ?? 0) + diff;
+      const nextGrossAmount = last.amount + nextTaxAmount;
+      if (nextTaxAmount >= -0.00001 && nextGrossAmount >= -0.00001) {
+        normalized[lastIndex] = {
+          ...last,
+          taxAmount: nextTaxAmount,
+        };
+        adjusted = true;
+        const recalculated = normalized.reduce(
+          (acc, item) => {
+            acc.amountTotal += item.amount;
+            acc.taxTotal += item.taxAmount ?? 0;
+            acc.grossTotal += item.amount + (item.taxAmount ?? 0);
+            return acc;
+          },
+          { amountTotal: 0, taxTotal: 0, grossTotal: 0 },
+        );
+        totals.amountTotal = recalculated.amountTotal;
+        totals.taxTotal = recalculated.taxTotal;
+        totals.grossTotal = recalculated.grossTotal;
+        diff = invoiceTotal - totals.grossTotal;
+      }
     }
   }
 
