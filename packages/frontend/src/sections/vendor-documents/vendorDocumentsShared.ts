@@ -33,7 +33,9 @@ export type PurchaseOrderLine = {
   expenseId?: string | null;
 };
 
-export type PurchaseOrderDetail = PurchaseOrder & { lines?: PurchaseOrderLine[] };
+export type PurchaseOrderDetail = PurchaseOrder & {
+  lines?: PurchaseOrderLine[];
+};
 
 export type VendorInvoiceAllocation = {
   id?: string;
@@ -152,7 +154,10 @@ export type DocumentTabId = (typeof documentTabIds)[number];
 export const isDocumentTabId = (value: string): value is DocumentTabId =>
   (documentTabIds as readonly string[]).includes(value);
 
-export const normalizeInvoiceStatusFilter = (value: string, options: string[]) => {
+export const normalizeInvoiceStatusFilter = (
+  value: string,
+  options: string[],
+) => {
   if (value === 'all') return 'all';
   return options.includes(value) ? value : 'all';
 };
@@ -160,9 +165,7 @@ export const normalizeInvoiceStatusFilter = (value: string, options: string[]) =
 export const formatDate = (value?: string | null) =>
   value ? value.slice(0, 10) : '-';
 
-export const parseNumberValue = (
-  value: number | string | null | undefined,
-) => {
+export const parseNumberValue = (value: number | string | null | undefined) => {
   if (typeof value === 'number') return Number.isFinite(value) ? value : null;
   if (typeof value === 'string') {
     if (!value.trim()) return null;
