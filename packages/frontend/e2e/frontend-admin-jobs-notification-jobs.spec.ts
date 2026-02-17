@@ -19,6 +19,8 @@ const runId = () =>
   `${Date.now().toString().slice(-6)}-${randomUUID()}`;
 
 function hasAnyRoleMapping(targetRoles: string[]) {
+  // Keep this aligned with backend leave-upcoming recipient expansion:
+  // services/appNotifications.ts resolveGroupIdsForRoles reads raw env only.
   const raw = process.env.AUTH_GROUP_TO_ROLE_MAP || '';
   return raw
     .split(',')
