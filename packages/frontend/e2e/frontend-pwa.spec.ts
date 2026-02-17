@@ -191,7 +191,7 @@ test('pwa offline duplicate time entries @pwa @extended', async ({
     has: page.locator('strong', { hasText: '現在のユーザー' }),
   });
   await currentSection.scrollIntoViewIfNeeded();
-  await currentSection.getByRole('button', { name: '再読込' }).first().click();
+  await currentSection.getByRole('button', { name: '再読込' }).click();
   await expect
     .poll(
       async () => {

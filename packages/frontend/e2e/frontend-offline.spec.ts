@@ -74,7 +74,7 @@ test('frontend offline queue @extended', async ({ page, context }) => {
     has: page.locator('strong', { hasText: '現在のユーザー' }),
   });
   await currentSection.scrollIntoViewIfNeeded();
-  await currentSection.getByRole('button', { name: '再読込' }).first().click();
+  await currentSection.getByRole('button', { name: '再読込' }).click();
 
   const statusLine = currentSection.getByText(/件数:/);
   await expect
