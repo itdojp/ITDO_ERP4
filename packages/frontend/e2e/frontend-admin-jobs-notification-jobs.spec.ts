@@ -72,6 +72,19 @@ async function navigateToSection(page: Page, label: string, heading?: string) {
   ).toBeVisible({ timeout: actionTimeout });
 }
 
+async function waitForJobCompletion(row: ReturnType<Page['locator']>) {
+  await expect
+    .poll(
+      () =>
+        row
+          .innerText()
+          .then((text) => text.includes('完了'))
+          .catch(() => false),
+      { timeout: actionTimeout },
+    )
+    .toBe(true);
+}
+
 async function findApprovalInstance(
   page: Page,
   flowType: string,
@@ -258,16 +271,7 @@ test('frontend admin jobs: chat ack reminder / leave upcoming run and dashboard 
   });
   await expect(chatAckRow).toHaveCount(1, { timeout: actionTimeout });
   await chatAckRow.getByRole('button', { name: '実行' }).click();
-  await expect
-    .poll(
-      () =>
-        chatAckRow
-          .innerText()
-          .then((text) => /完了|実行中/.test(text))
-          .catch(() => false),
-      { timeout: actionTimeout },
-    )
-    .toBe(true);
+  await waitForJobCompletion(chatAckRow);
   await chatAckRow.getByRole('button', { name: '詳細' }).click();
 
   const resultDialog = page.getByRole('dialog');
@@ -276,6 +280,9 @@ test('frontend admin jobs: chat ack reminder / leave upcoming run and dashboard 
       name: /ジョブ結果: 確認依頼リマインド/,
     }),
   ).toBeVisible({ timeout: actionTimeout });
+  await expect(resultDialog.locator('pre')).toBeVisible({
+    timeout: actionTimeout,
+  });
   const chatAckResultText = await resultDialog.locator('pre').innerText();
   const chatAckResult = JSON.parse(chatAckResultText) as {
     ok?: boolean;
@@ -297,21 +304,15 @@ test('frontend admin jobs: chat ack reminder / leave upcoming run and dashboard 
   const leaveRow = jobsSection.locator('tbody tr', { hasText: '休暇予定通知' });
   await expect(leaveRow).toHaveCount(1, { timeout: actionTimeout });
   await leaveRow.getByRole('button', { name: '実行' }).click();
-  await expect
-    .poll(
-      () =>
-        leaveRow
-          .innerText()
-          .then((text) => /完了|実行中/.test(text))
-          .catch(() => false),
-      { timeout: actionTimeout },
-    )
-    .toBe(true);
+  await waitForJobCompletion(leaveRow);
   await leaveRow.getByRole('button', { name: '詳細' }).click();
 
   await expect(
     resultDialog.getByRole('heading', { name: /ジョブ結果: 休暇予定通知/ }),
   ).toBeVisible({ timeout: actionTimeout });
+  await expect(resultDialog.locator('pre')).toBeVisible({
+    timeout: actionTimeout,
+  });
   const leaveResultText = await resultDialog.locator('pre').innerText();
   const leaveResult = JSON.parse(leaveResultText) as {
     ok?: boolean;
