@@ -35,221 +35,38 @@ import { VendorDocumentsVendorQuotesSection } from './vendor-documents/VendorDoc
 import { VendorDocumentsVendorInvoicesSection } from './vendor-documents/VendorDocumentsVendorInvoicesSection';
 import { VendorInvoiceLineDialog } from './vendor-documents/VendorInvoiceLineDialog';
 import { VendorInvoicePoLinkDialog } from './vendor-documents/VendorInvoicePoLinkDialog';
-
-type ProjectOption = {
-  id: string;
-  code: string;
-  name: string;
-};
-
-type VendorOption = {
-  id: string;
-  code: string;
-  name: string;
-};
-
-type PurchaseOrder = {
-  id: string;
-  poNo?: string | null;
-  projectId: string;
-  vendorId: string;
-  issueDate?: string | null;
-  dueDate?: string | null;
-  currency: string;
-  totalAmount: number | string;
-  status: string;
-};
-
-type PurchaseOrderLine = {
-  id: string;
-  purchaseOrderId: string;
-  description: string;
-  quantity: number | string;
-  unitPrice: number | string;
-  taxRate?: number | string | null;
-  taskId?: string | null;
-  expenseId?: string | null;
-};
-
-type PurchaseOrderDetail = PurchaseOrder & { lines?: PurchaseOrderLine[] };
-
-type VendorInvoiceAllocation = {
-  id?: string;
-  projectId: string;
-  amount: number | string;
-  taxRate?: number | string | null;
-  taxAmount?: number | string | null;
-  purchaseOrderLineId?: string | null;
-};
-
-type VendorInvoiceLine = {
-  id?: string;
-  tempId?: string;
-  lineNo?: number | string;
-  description: string;
-  quantity: number | string;
-  unitPrice: number | string;
-  amount?: number | string | null;
-  taxRate?: number | string | null;
-  taxAmount?: number | string | null;
-  grossAmount?: number | string | null;
-  purchaseOrderLineId?: string | null;
-};
-
-type VendorInvoicePoLineUsage = {
-  purchaseOrderLineId: string;
-  purchaseOrderQuantity: number;
-  existingQuantity: number;
-  requestedQuantity: number;
-  remainingQuantity: number;
-  exceeds: boolean;
-};
-
-type DocumentSendLog = {
-  id: string;
-  channel: string;
-  status: string;
-  createdAt: string;
-  error?: string | null;
-  pdfUrl?: string | null;
-};
-
-type VendorQuote = {
-  id: string;
-  quoteNo?: string | null;
-  projectId: string;
-  vendorId: string;
-  issueDate?: string | null;
-  currency: string;
-  totalAmount: number | string;
-  status: string;
-};
-
-type VendorInvoice = {
-  id: string;
-  vendorInvoiceNo?: string | null;
-  projectId: string;
-  vendorId: string;
-  purchaseOrderId?: string | null;
-  purchaseOrder?: { id: string; poNo?: string | null } | null;
-  receivedDate?: string | null;
-  dueDate?: string | null;
-  currency: string;
-  totalAmount: number | string;
-  status: string;
-  documentUrl?: string | null;
-};
-
-type MessageState = { text: string; type: 'success' | 'error' } | null;
-type ListStatus = 'idle' | 'loading' | 'error' | 'success';
-
-type PurchaseOrderForm = {
-  projectId: string;
-  vendorId: string;
-  issueDate: string;
-  dueDate: string;
-  currency: string;
-  totalAmount: number;
-};
-
-type VendorQuoteForm = {
-  projectId: string;
-  vendorId: string;
-  quoteNo: string;
-  issueDate: string;
-  currency: string;
-  totalAmount: number;
-  documentUrl: string;
-};
-
-type VendorInvoiceForm = {
-  projectId: string;
-  vendorId: string;
-  purchaseOrderId?: string;
-  vendorInvoiceNo: string;
-  receivedDate: string;
-  dueDate: string;
-  currency: string;
-  totalAmount: number;
-  documentUrl: string;
-};
-
-type InvoiceSavedFilterPayload = {
-  search: string;
-  status: string;
-};
-
-const documentTabIds = [
-  'purchase-orders',
-  'vendor-quotes',
-  'vendor-invoices',
-] as const;
-type DocumentTabId = (typeof documentTabIds)[number];
-
-const isDocumentTabId = (value: string): value is DocumentTabId =>
-  (documentTabIds as readonly string[]).includes(value);
-
-const normalizeInvoiceStatusFilter = (value: string, options: string[]) => {
-  if (value === 'all') return 'all';
-  return options.includes(value) ? value : 'all';
-};
-
-const formatDate = (value?: string | null) =>
-  value ? value.slice(0, 10) : '-';
-
-const parseNumberValue = (value: number | string | null | undefined) => {
-  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
-  if (typeof value === 'string') {
-    if (!value.trim()) return null;
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : null;
-  }
-  return null;
-};
-
-const formatAmount = (value: number | string, currency: string) => {
-  const amount = parseNumberValue(value);
-  if (amount === null) return `- ${currency}`;
-  return `${amount.toLocaleString()} ${currency}`;
-};
-
-const isPdfUrl = (value?: string | null) => {
-  if (!value) return false;
-  return /\.pdf($|[?#])/i.test(value);
-};
-
-const today = new Date().toISOString().slice(0, 10);
-
-const defaultPurchaseOrderForm: PurchaseOrderForm = {
-  projectId: '',
-  vendorId: '',
-  issueDate: today,
-  dueDate: '',
-  currency: 'JPY',
-  totalAmount: 0,
-};
-
-const defaultVendorQuoteForm: VendorQuoteForm = {
-  projectId: '',
-  vendorId: '',
-  quoteNo: '',
-  issueDate: today,
-  currency: 'JPY',
-  totalAmount: 0,
-  documentUrl: '',
-};
-
-const defaultVendorInvoiceForm: VendorInvoiceForm = {
-  projectId: '',
-  vendorId: '',
-  purchaseOrderId: '',
-  vendorInvoiceNo: '',
-  receivedDate: today,
-  dueDate: '',
-  currency: 'JPY',
-  totalAmount: 0,
-  documentUrl: '',
-};
+import {
+  defaultPurchaseOrderForm,
+  defaultVendorInvoiceForm,
+  defaultVendorQuoteForm,
+  documentTabIds,
+  formatAmount,
+  formatDate,
+  isDocumentTabId,
+  isPdfUrl,
+  normalizeInvoiceStatusFilter,
+  parseNumberValue,
+} from './vendor-documents/vendorDocumentsShared';
+import type {
+  DocumentSendLog,
+  DocumentTabId,
+  InvoiceSavedFilterPayload,
+  ListStatus,
+  MessageState,
+  ProjectOption,
+  PurchaseOrder,
+  PurchaseOrderDetail,
+  PurchaseOrderForm,
+  PurchaseOrderLine,
+  VendorInvoice,
+  VendorInvoiceAllocation,
+  VendorInvoiceForm,
+  VendorInvoiceLine,
+  VendorInvoicePoLineUsage,
+  VendorOption,
+  VendorQuote,
+  VendorQuoteForm,
+} from './vendor-documents/vendorDocumentsShared';
 
 export const VendorDocuments: React.FC = () => {
   const [annotationTarget, setAnnotationTarget] = useState<{
