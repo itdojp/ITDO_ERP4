@@ -31,6 +31,6 @@
 - backend に `qs` 直接利用を追加する場合、`comma:true` を禁止し回帰テストを追加する。
 
 ## 参照
-- https://github.com/itdojp/ITDO_ERP4/security/dependabot/10
 - https://github.com/advisories/GHSA-w7fw-mjwx-w883
+- Dependabot alert: `itdojp/ITDO_ERP4#10`（private URL のためドキュメント直リンクは省略）
 - 集約Issue: #1001
