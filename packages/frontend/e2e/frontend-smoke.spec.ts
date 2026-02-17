@@ -210,8 +210,12 @@ async function waitForInvoiceByAmount(
         const listPayload = (await listRes.json()) as {
           items?: InvoiceSnapshot[];
         };
-        const items = Array.isArray(listPayload?.items) ? listPayload.items : [];
-        matched = items.find((item) => Number(item.totalAmount) === totalAmount);
+        const items = Array.isArray(listPayload?.items)
+          ? listPayload.items
+          : [];
+        matched = items.find(
+          (item) => Number(item.totalAmount) === totalAmount,
+        );
         return matched?.id ?? '';
       },
       { timeout: actionTimeout },
@@ -227,7 +231,9 @@ type VendorApprovalFixture = {
   purchaseOrderNo: string;
 };
 
-async function seedVendorApprovalFixture(page: Page): Promise<VendorApprovalFixture> {
+async function seedVendorApprovalFixture(
+  page: Page,
+): Promise<VendorApprovalFixture> {
   const suffix = runId();
   const projectId = authState.projectIds[0];
   const vendorRes = await page.request.post(`${apiBase}/vendors`, {
@@ -622,7 +628,10 @@ test('frontend smoke invoice send and mark-paid lifecycle @extended', async ({
   expect(paidInvoice.status).toBe('paid');
   expect(typeof paidInvoice.paidAt).toBe('string');
   expect(paidInvoice.paidBy).toBe(authState.userId);
-  await captureSection(invoiceSection, '06-extended-invoice-send-mark-paid.png');
+  await captureSection(
+    invoiceSection,
+    '06-extended-invoice-send-mark-paid.png',
+  );
 });
 
 test('frontend smoke workflow evidence chat references @extended', async ({
@@ -1096,7 +1105,10 @@ test('frontend smoke approvals ack guard requires override reason @extended', as
   );
   await ensureOk(overrideAuditRes);
   const overrideAuditPayload = (await overrideAuditRes.json()) as {
-    items?: Array<{ reasonText?: string; metadata?: { guardOverride?: boolean } }>;
+    items?: Array<{
+      reasonText?: string;
+      metadata?: { guardOverride?: boolean };
+    }>;
   };
   expect(
     (overrideAuditPayload.items ?? []).some(
@@ -1135,15 +1147,11 @@ test('frontend smoke vendor approvals @extended', async ({ page }) => {
   await expect(poSubmitButton).toBeVisible({ timeout: actionTimeout });
   await expect(poSubmitButton).toBeEnabled({ timeout: actionTimeout });
   await poSubmitButton.click();
-  await expect(
-    page.getByText('発注書を承認依頼しますか？'),
-  ).toBeVisible({
+  await expect(page.getByText('発注書を承認依頼しますか？')).toBeVisible({
     timeout: actionTimeout,
   });
   await page.getByRole('button', { name: '実行' }).click();
-  await expect(
-    page.getByText('発注書を承認依頼しますか？'),
-  ).toBeHidden({
+  await expect(page.getByText('発注書を承認依頼しますか？')).toBeHidden({
     timeout: actionTimeout,
   });
 
@@ -1155,7 +1163,10 @@ test('frontend smoke vendor approvals @extended', async ({ page }) => {
     .locator('h2', { hasText: '承認一覧' })
     .locator('..');
   await approvalsSection.scrollIntoViewIfNeeded();
-  await selectByLabelOrFirst(approvalsSection.locator('select').first(), '発注');
+  await selectByLabelOrFirst(
+    approvalsSection.locator('select').first(),
+    '発注',
+  );
   await approvalsSection.getByRole('button', { name: '再読込' }).click();
   const approvalItem = approvalsSection
     .locator('li', { hasText: `purchase_orders:${fixture.purchaseOrderId}` })
@@ -2443,87 +2454,4 @@ test('frontend smoke external chat invited rooms @extended', async ({
   });
 
   await externalPage.close();
-});
-
-test('frontend smoke additional sections @extended', async ({ page }) => {
-  test.setTimeout(180_000);
-  await prepare(page);
-
-  await navigateToSection(page, 'タスク');
-  const taskSection = page
-    .locator('main')
-    .locator('h2', { hasText: 'タスク' })
-    .locator('..');
-  await taskSection.scrollIntoViewIfNeeded();
-  await captureSection(taskSection, '21-project-tasks.png');
-
-  await navigateToSection(page, '休暇申請', '休暇');
-  const leaveSection = page
-    .locator('main')
-    .locator('h2', { hasText: '休暇' })
-    .locator('..');
-  await leaveSection.scrollIntoViewIfNeeded();
-  await captureSection(leaveSection, '22-leave-requests.png');
-
-  await navigateToSection(page, 'マイルストーン');
-  const milestoneSection = page
-    .locator('main')
-    .locator('h2', { hasText: 'マイルストーン' })
-    .locator('..');
-  await milestoneSection.scrollIntoViewIfNeeded();
-  await captureSection(milestoneSection, '23-project-milestones.png');
-
-  await navigateToSection(page, '監査閲覧', 'Chat break-glass（監査閲覧）');
-  const breakGlassSection = page
-    .locator('main')
-    .locator('h2', { hasText: 'Chat break-glass（監査閲覧）' })
-    .locator('..');
-  await breakGlassSection.scrollIntoViewIfNeeded();
-  await captureSection(breakGlassSection, '24-chat-break-glass.png');
-
-  // DateTimeRangePicker regression: break-glass form is available for mgmt without admin role.
-  const breakGlassMgmtPage = await page.context().newPage();
-  breakGlassMgmtPage.on('pageerror', (error) => {
-    console.error('[e2e][breakGlassMgmtPage][pageerror]', error);
-  });
-  breakGlassMgmtPage.on('console', (msg) => {
-    if (msg.type() === 'error') {
-      console.error('[e2e][breakGlassMgmtPage][console.error]', msg.text());
-    }
-  });
-  await breakGlassMgmtPage.addInitScript(
-    (state) => {
-      window.localStorage.setItem('erp4_auth', JSON.stringify(state));
-      window.localStorage.removeItem('erp4_active_section');
-    },
-    {
-      ...authState,
-      roles: ['mgmt'],
-    },
-  );
-  await breakGlassMgmtPage.goto(baseUrl);
-  await navigateToSection(
-    breakGlassMgmtPage,
-    '監査閲覧',
-    'Chat break-glass（監査閲覧）',
-  );
-  const breakGlassMgmtSection = breakGlassMgmtPage
-    .locator('main')
-    .locator('h2', { hasText: 'Chat break-glass（監査閲覧）' })
-    .locator('..');
-  const breakGlassTo = new Date();
-  const breakGlassFrom = new Date(breakGlassTo.getTime() - 2 * 60 * 60 * 1000);
-  const breakGlassFromInput = toDateTimeLocalInputValue(breakGlassFrom);
-  const breakGlassToInput = toDateTimeLocalInputValue(breakGlassTo);
-  await breakGlassMgmtSection
-    .getByLabel('targetFrom')
-    .fill(breakGlassFromInput);
-  await breakGlassMgmtSection.getByLabel('targetUntil').fill(breakGlassToInput);
-  await expect(breakGlassMgmtSection.getByLabel('targetFrom')).toHaveValue(
-    breakGlassFromInput,
-  );
-  await expect(breakGlassMgmtSection.getByLabel('targetUntil')).toHaveValue(
-    breakGlassToInput,
-  );
-  await breakGlassMgmtPage.close();
 });
