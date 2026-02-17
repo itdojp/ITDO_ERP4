@@ -20,13 +20,13 @@
 
 ### チャット（確認依頼 ack required）
 
-- [ ] GET /projects/:projectId/chat-ack-candidates?q= で候補（users/groups）が取得できる（q は2文字以上）
-- [ ] POST /projects/:projectId/chat-ack-requests/preview で requiredUserIds の展開結果が確認できる
-- [ ] POST /projects/:projectId/chat-ack-requests（dueAt 任意）で確認依頼を作成できる（message.ackRequest が作成される）
-- [ ] GET /chat-ack-requests/:id で dueAt/canceledAt/acks が取得できる
-- [ ] POST /chat-ack-requests/:id/ack で requiredUserIds のユーザが OK できる（冪等）
-- [ ] POST /chat-ack-requests/:id/revoke で OK 取消できる
-- [ ] POST /chat-ack-requests/:id/cancel で作成者または admin/mgmt が撤回できる（canceledAt/canceledBy）
+- [x] GET /projects/:projectId/chat-ack-candidates?q= で候補（users/groups）が取得できる（q は2文字以上）
+- [x] POST /projects/:projectId/chat-ack-requests/preview で requiredUserIds の展開結果が確認できる
+- [x] POST /projects/:projectId/chat-ack-requests（dueAt 任意）で確認依頼を作成できる（message.ackRequest が作成される）
+- [x] GET /chat-ack-requests/:id で dueAt/canceledAt/acks が取得できる
+- [x] POST /chat-ack-requests/:id/ack で requiredUserIds のユーザが OK できる（冪等）
+- [x] POST /chat-ack-requests/:id/revoke で OK 取消できる
+- [x] POST /chat-ack-requests/:id/cancel で作成者または admin/mgmt が撤回できる（canceledAt/canceledBy）
 
 ### 通知ジョブ（運用）
 
@@ -110,8 +110,8 @@
 
 ### 運用ジョブ（AdminJobs）
 
-- [ ] AdminJobs: chat ack reminders / leave upcoming を dryRun/実行でき、結果(JSON)が表示される
-- [ ] 実行後、通知カードに反映される（必要に応じて /notifications で確認）
+- [x] AdminJobs: chat ack reminders / leave upcoming を dryRun/実行でき、結果(JSON)が表示される
+- [x] 実行後、通知カードに反映される（必要に応じて /notifications で確認）
 
 ### 管理設定/監査（design-system 1.1.0）
 
