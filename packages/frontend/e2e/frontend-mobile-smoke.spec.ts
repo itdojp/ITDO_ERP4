@@ -31,7 +31,15 @@ const shiftDate = (date: Date, deltaDays: number) => {
 
 const shiftMonth = (date: Date, deltaMonths: number) => {
   const next = new Date(date);
+  const originalDay = next.getDate();
+  next.setDate(1);
   next.setMonth(next.getMonth() + deltaMonths);
+  const lastDayOfTargetMonth = new Date(
+    next.getFullYear(),
+    next.getMonth() + 1,
+    0,
+  ).getDate();
+  next.setDate(Math.min(originalDay, lastDayOfTargetMonth));
   return next;
 };
 
