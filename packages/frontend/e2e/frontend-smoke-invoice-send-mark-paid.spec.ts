@@ -239,3 +239,73 @@ test('frontend smoke invoice send and mark-paid lifecycle @extended', async ({
     '06-extended-invoice-send-mark-paid.png',
   );
 });
+
+test('invoice mark-paid action is hidden for non-admin roles @core', async ({
+  page,
+}) => {
+  test.setTimeout(180_000);
+  const projectId = authState.projectIds[0];
+  const uniqueAmount = Number(String(Date.now()).slice(-6)) + 300000;
+
+  const createRes = await page.request.post(
+    `${apiBase}/projects/${encodeURIComponent(projectId)}/invoices`,
+    {
+      headers: buildAuthHeaders(),
+      data: {
+        totalAmount: uniqueAmount,
+        currency: 'JPY',
+        lines: [
+          {
+            description: `E2E non-admin mark-paid ${uniqueAmount}`,
+            quantity: 1,
+            unitPrice: uniqueAmount,
+          },
+        ],
+      },
+    },
+  );
+  await ensureOk(createRes);
+  const created = (await createRes.json()) as InvoiceSnapshot;
+  expect(created.id).toBeTruthy();
+
+  const sendRes = await page.request.post(
+    `${apiBase}/invoices/${encodeURIComponent(created.id)}/send`,
+    { headers: buildAuthHeaders(), data: {} },
+  );
+  await ensureOk(sendRes);
+
+  await expect
+    .poll(async () => (await fetchInvoiceById(page, created.id)).status, {
+      timeout: actionTimeout,
+    })
+    .toBe('sent');
+  const sentInvoice = await fetchInvoiceById(page, created.id);
+  expect(sentInvoice.invoiceNo).toBeTruthy();
+
+  await prepare(page, {
+    userId: `e2e-user-${Date.now()}@example.com`,
+    roles: ['user'],
+    projectIds: [projectId],
+    groupIds: [],
+  });
+  await navigateToSection(page, '請求');
+  const invoiceSection = page
+    .locator('main')
+    .locator('h2', { hasText: '請求' })
+    .locator('..');
+  await invoiceSection.scrollIntoViewIfNeeded();
+  await selectByLabelOrFirst(
+    invoiceSection.getByLabel('案件選択'),
+    'PRJ-DEMO-1 / Demo Project 1',
+  );
+  await invoiceSection
+    .getByLabel('請求検索')
+    .fill(String(sentInvoice.invoiceNo));
+  const targetRow = invoiceSection.locator('tbody tr', {
+    hasText: String(sentInvoice.invoiceNo),
+  });
+  await expect(targetRow).toBeVisible({ timeout: actionTimeout });
+  await expect(
+    targetRow.getByRole('button', { name: '入金確認' }),
+  ).toHaveCount(0);
+});
