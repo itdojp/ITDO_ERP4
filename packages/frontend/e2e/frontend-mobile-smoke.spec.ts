@@ -376,7 +376,7 @@ test.describe('mobile smoke 375x667 @core', () => {
       .locator('h2', { hasText: '期間締め' })
       .locator('..');
     await periodLockSection.scrollIntoViewIfNeeded();
-    await periodLockSection.getByLabel('period').fill(lockPeriod);
+    await periodLockSection.getByLabel('period', { exact: true }).fill(lockPeriod);
     await periodLockSection.getByRole('button', { name: '検索' }).click();
     await expect(periodLockSection.getByText('締め一覧')).toBeVisible({
       timeout: actionTimeout,
