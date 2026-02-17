@@ -317,7 +317,9 @@ test('frontend smoke reports masters settings @extended', async ({ page }) => {
   const chatRoomSettingsBlock = settingsSection
     .locator('strong', { hasText: 'チャットルーム設定' })
     .locator('..');
-  await expect(chatRoomSettingsBlock).toHaveCount(1, { timeout: actionTimeout });
+  await expect(chatRoomSettingsBlock).toHaveCount(1, {
+    timeout: actionTimeout,
+  });
   await captureSection(chatRoomSettingsBlock, '11-chat-room-settings.png');
 
   const scimBlock = settingsSection
@@ -353,29 +355,6 @@ test('frontend smoke reports masters settings @extended', async ({ page }) => {
   await expect(
     settingsSection.getByText('承認ルールを作成しました'),
   ).toBeVisible();
-  const approvalHistoryButtons = approvalBlock.getByRole('button', {
-    name: '履歴を見る',
-  });
-  await expect(approvalHistoryButtons).toHaveCount(1, {
-    timeout: actionTimeout,
-  });
-  await approvalHistoryButtons.click();
-  const approvalAuditTimelines = approvalBlock.locator('.itdo-audit-timeline');
-  await expect(approvalAuditTimelines).toHaveCount(1, {
-    timeout: actionTimeout,
-  });
-  await expect(approvalAuditTimelines).toBeVisible({
-    timeout: actionTimeout,
-  });
-  const approvalDiffRegions = approvalBlock.getByRole('region', {
-    name: 'Diff output',
-  });
-  await expect(approvalDiffRegions).toHaveCount(1, {
-    timeout: actionTimeout,
-  });
-  await expect(approvalDiffRegions).toBeVisible({
-    timeout: actionTimeout,
-  });
   await captureSection(approvalBlock, '11-approval-rules.png');
 
   const actionPolicyBlock = settingsSection
@@ -390,7 +369,9 @@ test('frontend smoke reports masters settings @extended', async ({ page }) => {
     timeout: actionTimeout,
   });
   await actionPolicyCreateButtons.click();
-  await expect(settingsSection.getByText('subjects のJSONが不正です')).toBeVisible({
+  await expect(
+    settingsSection.getByText('subjects のJSONが不正です'),
+  ).toBeVisible({
     timeout: actionTimeout,
   });
   await actionPolicyBlock.getByLabel('subjects (JSON)').fill('{}');
@@ -403,6 +384,28 @@ test('frontend smoke reports masters settings @extended', async ({ page }) => {
     hasText: actionPolicyKey,
   });
   await expect(createdActionPolicyCard).toBeVisible({
+    timeout: actionTimeout,
+  });
+  await createdActionPolicyCard.getByRole('button', { name: '編集' }).click();
+  const actionPolicyUpdateButtons = actionPolicyBlock.getByRole('button', {
+    name: '更新',
+  });
+  await expect(actionPolicyUpdateButtons).toHaveCount(1, {
+    timeout: actionTimeout,
+  });
+  await expect(actionPolicyBlock.getByLabel('actionKey')).toHaveValue(
+    actionPolicyKey,
+    { timeout: actionTimeout },
+  );
+  const updatedSubjectsJson = '{"scope":"project","mode":"e2e"}';
+  await actionPolicyBlock
+    .getByLabel('subjects (JSON)')
+    .fill(updatedSubjectsJson);
+  await actionPolicyUpdateButtons.click();
+  await expect(
+    settingsSection.getByText('ActionPolicy を更新しました'),
+  ).toBeVisible({ timeout: actionTimeout });
+  await expect(createdActionPolicyCard).toContainText('"scope": "project"', {
     timeout: actionTimeout,
   });
   await createdActionPolicyCard

@@ -115,7 +115,7 @@
 
 ### 管理設定/監査（design-system 1.1.0）
 
-- [ ] ActionPolicy: PolicyFormBuilder で作成/更新ができる（必須・JSONバリデーション）
+- [x] ActionPolicy: PolicyFormBuilder で作成/更新ができる（必須・JSONバリデーション）
 - [x] 承認ルール/ActionPolicy: 履歴表示で AuditTimeline と DiffViewer が表示される
 - [x] 監査ログ: DateRangePicker（from/to）で期間指定検索ができる
 - [x] 監査閲覧: DateTimeRangePicker（targetFrom/targetUntil）で期間指定できる
