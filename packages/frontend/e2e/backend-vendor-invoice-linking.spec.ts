@@ -397,3 +397,109 @@ test('vendor invoice lines: quantity must be greater than zero @core', async ({
   await assertInvalidQuantity(0);
   await assertInvalidQuantity(-1);
 });
+
+test('vendor invoice lines: get lines includes poLineUsage summary @core', async ({
+  request,
+}) => {
+  const suffix = runId();
+  const fixture = await setupVendorInvoiceFixture(request, suffix, {
+    withPurchaseOrderLine: true,
+  });
+  expect(fixture.purchaseOrderLineId).toBeTruthy();
+
+  const siblingInvoiceRes = await request.post(`${apiBase}/vendor-invoices`, {
+    headers: adminHeaders,
+    data: {
+      projectId: fixture.projectId,
+      vendorId: fixture.vendorId,
+      totalAmount: 12000,
+      currency: 'JPY',
+      vendorInvoiceNo: `INV-SIB-${suffix}`,
+    },
+  });
+  await ensureOk(siblingInvoiceRes);
+  const siblingInvoice = await siblingInvoiceRes.json();
+  const siblingInvoiceId = siblingInvoice.id as string;
+  expect(siblingInvoiceId).toBeTruthy();
+
+  const linkToPurchaseOrder = async (vendorInvoiceId: string) => {
+    const res = await request.post(
+      `${apiBase}/vendor-invoices/${encodeURIComponent(vendorInvoiceId)}/link-po`,
+      {
+        headers: adminHeaders,
+        data: { purchaseOrderId: fixture.purchaseOrderId },
+      },
+    );
+    await ensureOk(res);
+  };
+  await linkToPurchaseOrder(fixture.vendorInvoiceId);
+  await linkToPurchaseOrder(siblingInvoiceId);
+
+  const updateSingleLine = async (
+    vendorInvoiceId: string,
+    quantity: number,
+    unitPrice: number,
+  ) => {
+    const res = await request.put(
+      `${apiBase}/vendor-invoices/${encodeURIComponent(vendorInvoiceId)}/lines`,
+      {
+        headers: adminHeaders,
+        data: {
+          lines: [
+            {
+              lineNo: 1,
+              description: `E2E VI line usage ${suffix} ${vendorInvoiceId}`,
+              quantity,
+              unitPrice,
+              purchaseOrderLineId: fixture.purchaseOrderLineId,
+            },
+          ],
+        },
+      },
+    );
+    await ensureOk(res);
+  };
+
+  // sibling invoice contributes "existingQuantity" when reading fixture invoice lines.
+  await updateSingleLine(siblingInvoiceId, 0.4, 30000);
+  await updateSingleLine(fixture.vendorInvoiceId, 0.5, 24000);
+
+  const linesRes = await request.get(
+    `${apiBase}/vendor-invoices/${encodeURIComponent(fixture.vendorInvoiceId)}/lines`,
+    { headers: adminHeaders },
+  );
+  await ensureOk(linesRes);
+  const linesPayload = await linesRes.json();
+  const poLineUsage = (linesPayload?.poLineUsage ?? []).find(
+    (entry: { purchaseOrderLineId?: string }) =>
+      entry?.purchaseOrderLineId === fixture.purchaseOrderLineId,
+  ) as
+    | {
+        purchaseOrderLineId: string;
+        purchaseOrderQuantity: number;
+        existingQuantity: number;
+        requestedQuantity: number;
+        remainingQuantity: number;
+        exceeds: boolean;
+      }
+    | undefined;
+  expect(poLineUsage).toBeTruthy();
+  expect(poLineUsage?.purchaseOrderLineId).toBe(fixture.purchaseOrderLineId);
+  expect(Number(poLineUsage?.purchaseOrderQuantity ?? Number.NaN)).toBeCloseTo(
+    1,
+    5,
+  );
+  expect(Number(poLineUsage?.existingQuantity ?? Number.NaN)).toBeCloseTo(
+    0.4,
+    5,
+  );
+  expect(Number(poLineUsage?.requestedQuantity ?? Number.NaN)).toBeCloseTo(
+    0.5,
+    5,
+  );
+  expect(Number(poLineUsage?.remainingQuantity ?? Number.NaN)).toBeCloseTo(
+    0.1,
+    5,
+  );
+  expect(poLineUsage?.exceeds).toBe(false);
+});
