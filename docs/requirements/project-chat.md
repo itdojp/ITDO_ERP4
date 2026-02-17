@@ -326,7 +326,8 @@
 
 ## テスト
 - E2Eスモークに「投稿/リアクション」含む
-  - `packages/frontend/e2e/frontend-smoke.spec.ts`
+  - `packages/frontend/e2e/frontend-smoke-chat-hr-analytics.spec.ts`
+  - `packages/frontend/e2e/frontend-smoke-room-chat.spec.ts`
 
 ## 未実装/後続スコープ
 - ルーム機能（部門/全社/DM/私的グループ）と管理者設定（DM無効化）

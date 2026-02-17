@@ -33,8 +33,8 @@
 
 ## テスト対応
 
-- 既存: `packages/frontend/e2e/frontend-smoke.spec.ts` のチャット/ack required シナリオ
-- 追加: `packages/frontend/e2e/frontend-smoke.spec.ts` の `frontend smoke workflow evidence chat references @extended`
+- 既存: `packages/frontend/e2e/frontend-smoke-approval-ack-link.spec.ts` / `packages/frontend/e2e/frontend-smoke-approvals-ack-guard.spec.ts` の ack required シナリオ
+- 追加: `packages/frontend/e2e/frontend-smoke-workflow-evidence.spec.ts` の `frontend smoke workflow evidence chat references @extended`
   - 注釈の `エビデンス追加`（検索/追加/メモ挿入）
   - `参照状態を確認` の表示
   - 承認画面 `エビデンス（注釈）` の件数・メモ・外部URL・チャット抜粋確認
