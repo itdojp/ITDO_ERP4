@@ -40,6 +40,7 @@ async function findApprovalInstance(
   },
   flowType: string,
   targetId: string,
+  options?: { targetTable?: string },
 ) {
   let approvalInstanceId = '';
   let approvalStatus = '';
@@ -55,9 +56,17 @@ async function findApprovalInstance(
         );
         if (!listRes.ok()) return '';
         const payload = await listRes.json();
-        const matched = (payload?.items ?? []).find(
-          (item: any) => item?.targetId === targetId,
-        );
+        const matched = (payload?.items ?? []).find((item: any) => {
+          if (!item || item?.targetId !== targetId) return false;
+          if (
+            options?.targetTable &&
+            String(item?.targetTable ?? '') !== options.targetTable
+          ) {
+            return false;
+          }
+          const status = String(item?.status ?? '');
+          return !['approved', 'rejected', 'cancelled'].includes(status);
+        });
         approvalInstanceId = typeof matched?.id === 'string' ? matched.id : '';
         approvalStatus = String(matched?.status ?? '');
         return approvalInstanceId;
@@ -108,24 +117,46 @@ async function expectAuditAction(
       init: { headers: Record<string, string> },
     ) => Promise<any>;
   },
-  action: string,
+  input: {
+    action: string;
+    targetTable?: string;
+    targetId?: string;
+    userId?: string;
+    from?: string;
+  },
 ) {
   await expect
     .poll(
       async () => {
         const query = new URLSearchParams({
-          action,
+          action: input.action,
           format: 'json',
           mask: '0',
           limit: '50',
         });
+        if (input.targetTable) query.set('targetTable', input.targetTable);
+        if (input.targetId) query.set('targetId', input.targetId);
+        if (input.userId) query.set('userId', input.userId);
+        if (input.from) query.set('from', input.from);
         const res = await request.get(`${apiBase}/audit-logs?${query}`, {
           headers: adminHeaders,
         });
         if (!res.ok()) return false;
         const payload = await res.json();
         return (
-          (payload?.items ?? []).some((item: any) => item?.action === action) ??
+          (payload?.items ?? []).some((item: any) => {
+            if (!item || item?.action !== input.action) return false;
+            if (input.targetTable && item?.targetTable !== input.targetTable) {
+              return false;
+            }
+            if (input.targetId && item?.targetId !== input.targetId) {
+              return false;
+            }
+            if (input.userId && item?.userId !== input.userId) {
+              return false;
+            }
+            return true;
+          }) ??
           false
         );
       },
@@ -138,6 +169,7 @@ test('backend e2e: chat ack lifecycle endpoints @extended', async ({
   request,
 }) => {
   test.setTimeout(120_000);
+  const testStartedAt = new Date().toISOString();
   const suffix = runId();
 
   const ackUserId = 'e2e-member-1@example.com';
@@ -284,16 +316,37 @@ test('backend e2e: chat ack lifecycle endpoints @extended', async ({
   );
   expect(ackAfterCancelRes.status()).toBe(409);
 
-  await expectAuditAction(request, 'chat_ack_request_created');
-  await expectAuditAction(request, 'chat_ack_added');
-  await expectAuditAction(request, 'chat_ack_revoked');
-  await expectAuditAction(request, 'chat_ack_request_canceled');
+  await expectAuditAction(request, {
+    action: 'chat_ack_request_created',
+    targetTable: 'chat_ack_requests',
+    targetId: ackRequestId,
+    from: testStartedAt,
+  });
+  await expectAuditAction(request, {
+    action: 'chat_ack_added',
+    targetTable: 'chat_ack_requests',
+    targetId: ackRequestId,
+    from: testStartedAt,
+  });
+  await expectAuditAction(request, {
+    action: 'chat_ack_revoked',
+    targetTable: 'chat_ack_requests',
+    targetId: ackRequestId,
+    from: testStartedAt,
+  });
+  await expectAuditAction(request, {
+    action: 'chat_ack_request_canceled',
+    targetTable: 'chat_ack_requests',
+    targetId: ackRequestId,
+    from: testStartedAt,
+  });
 });
 
 test('backend e2e: leave-upcoming notification job dry-run @extended', async ({
   request,
 }) => {
   test.setTimeout(120_000);
+  const testStartedAt = new Date().toISOString();
   const suffix = runId();
 
   const leaveUserId = 'e2e-member-1@example.com';
@@ -330,7 +383,9 @@ test('backend e2e: leave-upcoming notification job dry-run @extended', async ({
   );
   await ensureOk(submitRes);
 
-  const leaveApproval = await findApprovalInstance(request, 'leave', leaveId);
+  const leaveApproval = await findApprovalInstance(request, 'leave', leaveId, {
+    targetTable: 'leave_requests',
+  });
   const leaveApprovalStatus = await approveInstanceUntilClosed(
     request,
     leaveApproval.approvalInstanceId,
@@ -354,5 +409,10 @@ test('backend e2e: leave-upcoming notification job dry-run @extended', async ({
   expect(Array.isArray(leaveUpcoming?.sampleLeaveRequestIds)).toBeTruthy();
   expect(leaveUpcoming?.sampleLeaveRequestIds ?? []).toContain(leaveId);
 
-  await expectAuditAction(request, 'leave_upcoming_run');
+  await expectAuditAction(request, {
+    action: 'leave_upcoming_run',
+    targetTable: 'app_notifications',
+    userId: 'demo-user',
+    from: testStartedAt,
+  });
 });
