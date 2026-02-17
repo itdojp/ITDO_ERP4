@@ -76,6 +76,10 @@ CIで何を検査しているか、どれを「必須ゲート（ブロック）
 - Playwright の E2E を `scripts/e2e-frontend.sh` で実行
 - DB: GitHub Actions の `postgres:15` service（`E2E_DB_MODE=direct`）
 - 証跡: CIでは `E2E_CAPTURE=0`（キャプチャ出力なし）
+- 失敗時のみ診断artifactを保存
+  - `tmp/e2e-backend.log`
+  - `tmp/e2e-frontend.log`
+  - `packages/frontend/test-results/**/*`（Playwright trace を含む）
 - 実行条件:
   - PR: 実行（`E2E_SCOPE=core`）
   - schedule: 実行（`E2E_SCOPE=full`）

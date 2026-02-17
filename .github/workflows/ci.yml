@@ -130,9 +130,21 @@ jobs:
           E2E_DB_MODE: direct
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres?schema=public
           E2E_CAPTURE: 0
+          E2E_TRACE_ON_FAILURE: 1
           E2E_SKIP_PLAYWRIGHT_INSTALL: 1
           E2E_SCOPE: ${{ github.event_name == 'pull_request' && 'core' || 'full' }}
         run: ./scripts/e2e-frontend.sh
+      - name: Upload e2e diagnostics (failure only)
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: e2e-failure-${{ github.run_id }}-${{ github.sha }}
+          path: |
+            tmp/e2e-backend.log
+            tmp/e2e-frontend.log
+            packages/frontend/test-results/**/*
+          if-no-files-found: warn
+          retention-days: 14
 
   api-schema:
     runs-on: ubuntu-latest
