@@ -150,10 +150,13 @@ PR_LABEL="$(normalize_pr_number "$PR_NUMBER")"
 GIT_REF="$(git -C "$ROOT_DIR" rev-parse --short HEAD 2>/dev/null || echo unknown)"
 GIT_BRANCH="$(git -C "$ROOT_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)"
 
-if [[ -e "$LOG_PATH" ]]; then
-  echo "log file already exists: $LOG_PATH" >&2
-  exit 1
-fi
+tmp_file=""
+cleanup_tmp_file() {
+  if [[ -n "${tmp_file:-}" && -f "$tmp_file" ]]; then
+    rm -f "$tmp_file"
+  fi
+}
+trap cleanup_tmp_file EXIT
 
 SCREEN_DIR_LABEL=""
 if [[ -n "$SCREEN_DIR" ]]; then
@@ -166,8 +169,16 @@ else
 fi
 
 if [[ "$DRY_RUN" == "1" ]]; then
-  echo "[dry-run] create: docs/test-results/${LOG_FILENAME}"
+  if [[ -e "$LOG_PATH" ]]; then
+    echo "[dry-run] already exists: docs/test-results/${LOG_FILENAME}"
+  else
+    echo "[dry-run] create: docs/test-results/${LOG_FILENAME}"
+  fi
 else
+  if [[ -e "$LOG_PATH" ]]; then
+    echo "log file already exists: $LOG_PATH" >&2
+    exit 1
+  fi
   cp "$TEMPLATE_PATH" "$LOG_PATH"
   tmp_file="$(mktemp)"
   awk \
@@ -182,6 +193,7 @@ else
       { print }
     ' "$LOG_PATH" >"$tmp_file"
   mv "$tmp_file" "$LOG_PATH"
+  tmp_file=""
 
   echo "created: docs/test-results/${LOG_FILENAME}"
 fi
