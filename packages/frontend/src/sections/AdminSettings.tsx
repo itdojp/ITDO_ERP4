@@ -8,6 +8,7 @@ import {
 import type { PolicyFormSchema, PolicyFormValue } from '../ui';
 import { AlertSettingsCard } from './admin-settings/AlertSettingsCard';
 import { AuditHistoryPanel } from './admin-settings/AuditHistoryPanel';
+import { IntegrationSettingsCard } from './admin-settings/IntegrationSettingsCard';
 import { ReportSubscriptionsCard } from './admin-settings/ReportSubscriptionsCard';
 import { ChatSettingsCard } from './ChatSettingsCard';
 import { ChatRoomSettingsCard } from './ChatRoomSettingsCard';
@@ -2861,222 +2862,24 @@ export const AdminSettings: React.FC = () => {
           formatDateTime={formatDateTime}
         />
 
-        <div className="card" style={{ padding: 12 }}>
-          <strong>外部連携設定（HR/CRM）</strong>
-          <div className="row" style={{ marginTop: 8, flexWrap: 'wrap' }}>
-            <label>
-              種別
-              <select
-                value={integrationForm.type}
-                onChange={(e) =>
-                  setIntegrationForm({
-                    ...integrationForm,
-                    type: e.target.value,
-                  })
-                }
-              >
-                {integrationTypes.map((type) => (
-                  <option key={type} value={type}>
-                    {type}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              名称
-              <input
-                type="text"
-                value={integrationForm.name}
-                onChange={(e) =>
-                  setIntegrationForm({
-                    ...integrationForm,
-                    name: e.target.value,
-                  })
-                }
-                placeholder="例: HRIS接続"
-              />
-            </label>
-            <label>
-              プロバイダ
-              <input
-                type="text"
-                value={integrationForm.provider}
-                onChange={(e) =>
-                  setIntegrationForm({
-                    ...integrationForm,
-                    provider: e.target.value,
-                  })
-                }
-                placeholder="例: azure_ad"
-              />
-            </label>
-            <label>
-              ステータス
-              <select
-                value={integrationForm.status}
-                onChange={(e) =>
-                  setIntegrationForm({
-                    ...integrationForm,
-                    status: e.target.value,
-                  })
-                }
-              >
-                {integrationStatuses.map((status) => (
-                  <option key={status} value={status}>
-                    {status}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              スケジュール
-              <input
-                type="text"
-                value={integrationForm.schedule}
-                onChange={(e) =>
-                  setIntegrationForm({
-                    ...integrationForm,
-                    schedule: e.target.value,
-                  })
-                }
-                placeholder="例: 0 3 * * *"
-              />
-            </label>
-          </div>
-          <div className="row" style={{ marginTop: 8 }}>
-            <label style={{ flex: 1, minWidth: 240 }}>
-              config (JSON)
-              <textarea
-                value={integrationForm.configJson}
-                onChange={(e) =>
-                  setIntegrationForm({
-                    ...integrationForm,
-                    configJson: e.target.value,
-                  })
-                }
-                rows={3}
-                style={{ width: '100%' }}
-                placeholder='{"tenant":"example","clientId":"..."}'
-              />
-            </label>
-          </div>
-          <div className="row" style={{ marginTop: 8 }}>
-            <button className="button" onClick={submitIntegrationSetting}>
-              {editingIntegrationId ? '更新' : '作成'}
-            </button>
-            <button className="button secondary" onClick={resetIntegrationForm}>
-              {editingIntegrationId ? 'キャンセル' : 'クリア'}
-            </button>
-            <button
-              className="button secondary"
-              onClick={loadIntegrationSettings}
-            >
-              再読込
-            </button>
-            <button
-              className="button secondary"
-              onClick={() =>
-                loadIntegrationRuns(integrationRunFilterId.trim() || undefined)
-              }
-            >
-              履歴表示
-            </button>
-          </div>
-          <div className="row" style={{ marginTop: 8, flexWrap: 'wrap' }}>
-            <label>
-              履歴フィルタ
-              <select
-                value={integrationRunFilterId}
-                onChange={(e) => setIntegrationRunFilterId(e.target.value)}
-              >
-                <option value="">すべて</option>
-                {integrationItems.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.type}
-                    {item.name ? ` / ${item.name}` : ''}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-          <div
-            className="list"
-            style={{ display: 'grid', gap: 8, marginTop: 8 }}
-          >
-            {integrationItems.length === 0 && (
-              <div className="card">設定なし</div>
-            )}
-            {integrationItems.map((item) => (
-              <div key={item.id} className="card" style={{ padding: 12 }}>
-                <div
-                  className="row"
-                  style={{ justifyContent: 'space-between' }}
-                >
-                  <div>
-                    <strong>{item.type}</strong>
-                    {item.name ? ` / ${item.name}` : ''}
-                  </div>
-                  <span className="badge">{item.status || 'active'}</span>
-                </div>
-                <div style={{ fontSize: 12, color: '#475569', marginTop: 4 }}>
-                  provider: {item.provider || '-'} / schedule:{' '}
-                  {item.schedule || '-'}
-                </div>
-                <div style={{ fontSize: 12, color: '#475569', marginTop: 4 }}>
-                  lastRun: {formatDateTime(item.lastRunAt)} / status:{' '}
-                  {item.lastRunStatus || '-'}
-                </div>
-                <div className="row" style={{ marginTop: 6 }}>
-                  <button
-                    className="button secondary"
-                    onClick={() => startEditIntegration(item)}
-                  >
-                    編集
-                  </button>
-                  <button
-                    className="button secondary"
-                    onClick={() => runIntegrationSetting(item.id)}
-                    disabled={item.status === 'disabled'}
-                  >
-                    実行
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-          <div
-            className="list"
-            style={{ display: 'grid', gap: 8, marginTop: 12 }}
-          >
-            {integrationRuns.length === 0 && (
-              <div className="card">連携履歴なし</div>
-            )}
-            {integrationRuns.map((run) => (
-              <div key={run.id} className="card" style={{ padding: 12 }}>
-                <div
-                  className="row"
-                  style={{ justifyContent: 'space-between' }}
-                >
-                  <div>
-                    <strong>{run.status || '-'}</strong> / retry:{' '}
-                    {run.retryCount ?? 0}
-                  </div>
-                  <span className="badge">{formatDateTime(run.startedAt)}</span>
-                </div>
-                <div style={{ fontSize: 12, color: '#475569', marginTop: 4 }}>
-                  finished: {formatDateTime(run.finishedAt)} / nextRetry:{' '}
-                  {formatDateTime(run.nextRetryAt)}
-                </div>
-                <div style={{ fontSize: 12, color: '#475569', marginTop: 4 }}>
-                  message: {run.message || '-'}
-                </div>
-                <div style={{ fontSize: 12, color: '#475569', marginTop: 4 }}>
-                  setting: {run.settingId}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
+        <IntegrationSettingsCard
+          integrationForm={integrationForm}
+          setIntegrationForm={setIntegrationForm}
+          integrationTypes={integrationTypes}
+          integrationStatuses={integrationStatuses}
+          editingIntegrationId={editingIntegrationId}
+          onSubmit={submitIntegrationSetting}
+          onReset={resetIntegrationForm}
+          onReload={loadIntegrationSettings}
+          onShowRuns={loadIntegrationRuns}
+          integrationRunFilterId={integrationRunFilterId}
+          setIntegrationRunFilterId={setIntegrationRunFilterId}
+          items={integrationItems}
+          onEdit={startEditIntegration}
+          onRun={runIntegrationSetting}
+          runs={integrationRuns}
+          formatDateTime={formatDateTime}
+        />
       </div>
     </div>
   );
