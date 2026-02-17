@@ -325,6 +325,7 @@ test('backend manual checklist: members/vendors/time/expenses/wellbeing @extende
   expect(submittedVendorInvoice?.status).toBe('pending_qa');
 
   let approvalInstanceId = '';
+  let approvalStatus = '';
   await expect
     .poll(
       async () => {
@@ -338,14 +339,14 @@ test('backend manual checklist: members/vendors/time/expenses/wellbeing @extende
           (item: any) => item?.targetId === vendorInvoice.id,
         );
         approvalInstanceId = typeof matched?.id === 'string' ? matched.id : '';
+        approvalStatus = String(matched?.status ?? '');
         return approvalInstanceId;
       },
       { timeout: 5000 },
     )
     .not.toBe('');
   expect(approvalInstanceId).toBeTruthy();
-
-  let approvalStatus = String(submittedVendorInvoice?.status ?? '');
+  expect(approvalStatus.length).toBeGreaterThan(0);
 
   for (
     let i = 0;
