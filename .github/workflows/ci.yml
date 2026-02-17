@@ -135,7 +135,7 @@ jobs:
           E2E_SCOPE: ${{ github.event_name == 'pull_request' && 'core' || 'full' }}
         run: ./scripts/e2e-frontend.sh
       - name: Upload e2e diagnostics (failure only)
-        if: failure()
+        if: failure() || cancelled()
         uses: actions/upload-artifact@v6
         with:
           name: e2e-failure-${{ github.run_id }}-${{ github.sha }}
