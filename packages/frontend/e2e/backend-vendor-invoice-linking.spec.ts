@@ -292,7 +292,6 @@ test('vendor invoice lines: quantity must not exceed linked purchase order line 
     ) ?? false,
   ).toBeTruthy();
 });
-
 test('vendor invoice lines: summed split quantities must not exceed linked purchase order line @core', async ({
   request,
 }) => {
@@ -347,4 +346,54 @@ test('vendor invoice lines: summed split quantities must not exceed linked purch
         item?.purchaseOrderLineId === fixture.purchaseOrderLineId,
     ) ?? false,
   ).toBeTruthy();
+});
+
+test('vendor invoice lines: quantity must be greater than zero @core', async ({
+  request,
+}) => {
+  const suffix = runId();
+  const fixture = await setupVendorInvoiceFixture(request, suffix, {
+    withPurchaseOrderLine: true,
+  });
+  expect(fixture.purchaseOrderLineId).toBeTruthy();
+
+  const linkRes = await request.post(
+    `${apiBase}/vendor-invoices/${encodeURIComponent(fixture.vendorInvoiceId)}/link-po`,
+    {
+      headers: adminHeaders,
+      data: { purchaseOrderId: fixture.purchaseOrderId },
+    },
+  );
+  await ensureOk(linkRes);
+
+  const assertInvalidQuantity = async (quantity: number) => {
+    const invalidQuantityRes = await request.put(
+      `${apiBase}/vendor-invoices/${encodeURIComponent(fixture.vendorInvoiceId)}/lines`,
+      {
+        headers: adminHeaders,
+        data: {
+          lines: [
+            {
+              lineNo: 1,
+              description: `E2E VI line invalid quantity ${suffix} (${quantity})`,
+              quantity,
+              unitPrice: 12000,
+              purchaseOrderLineId: fixture.purchaseOrderLineId,
+            },
+          ],
+        },
+      },
+    );
+    expect(invalidQuantityRes.status()).toBe(400);
+    const invalidQuantity = await invalidQuantityRes.json();
+    expect(['INVALID_INPUT', 'VALIDATION_ERROR']).toContain(
+      invalidQuantity?.error?.code,
+    );
+    if (invalidQuantity?.error?.code === 'INVALID_INPUT') {
+      expect(String(invalidQuantity?.error?.message ?? '')).toMatch(/quantity/i);
+    }
+  };
+
+  await assertInvalidQuantity(0);
+  await assertInvalidQuantity(-1);
 });
