@@ -9,7 +9,6 @@ type VendorInvoice = {
   currency: string;
   totalAmount: number | string;
   status: string;
-  documentUrl?: string | null;
 };
 
 type PurchaseOrder = {
@@ -58,7 +57,6 @@ type VendorInvoicePoLinkDialogProps = {
     value: number | string | null | undefined,
   ) => number | null;
   formatAmount: (value: number | string, currency: string) => string;
-  isPdfUrl: (value?: string | null) => boolean;
 };
 
 export const VendorInvoicePoLinkDialog = ({
@@ -81,7 +79,6 @@ export const VendorInvoicePoLinkDialog = ({
   isReasonRequiredStatus,
   parseNumberValue,
   formatAmount,
-  isPdfUrl,
 }: VendorInvoicePoLinkDialogProps) => (
   <Dialog
     open={open}
@@ -272,31 +269,6 @@ export const VendorInvoicePoLinkDialog = ({
                   </div>
                 </div>
               </>
-            )}
-          </div>
-        )}
-        {dialog.invoice.documentUrl && (
-          <div style={{ display: 'grid', gap: 8 }}>
-            <a
-              href={dialog.invoice.documentUrl}
-              target="_blank"
-              rel="noreferrer"
-              style={{ fontSize: 12, color: '#1d4ed8' }}
-            >
-              添付PDFを別タブで開く
-            </a>
-            {isPdfUrl(dialog.invoice.documentUrl) && (
-              <iframe
-                src={dialog.invoice.documentUrl}
-                style={{
-                  width: '100%',
-                  minHeight: 320,
-                  border: '1px solid #e2e8f0',
-                  borderRadius: 8,
-                  background: '#fff',
-                }}
-                title="invoice-document-preview"
-              />
             )}
           </div>
         )}

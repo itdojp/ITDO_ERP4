@@ -2670,7 +2670,6 @@ export const VendorDocuments: React.FC = () => {
         isReasonRequiredStatus={isVendorInvoicePoLinkReasonRequiredStatus}
         parseNumberValue={parseNumberValue}
         formatAmount={formatAmount}
-        isPdfUrl={isPdfUrl}
       />
       <Dialog
         open={Boolean(invoiceAllocationDialog)}
