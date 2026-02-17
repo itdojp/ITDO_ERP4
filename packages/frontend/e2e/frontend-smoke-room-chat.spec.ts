@@ -318,7 +318,11 @@ test('frontend smoke room chat external summary @extended', async ({
     .locator('h2', { hasText: 'チャット（全社/部門/private_group/DM）' })
     .locator('..');
   await roomChatSection.scrollIntoViewIfNeeded();
-  await roomChatSection.getByRole('button', { name: '再読込' }).first().click();
+  const roomReloadButton = roomChatSection.getByRole('button', {
+    name: '再読込',
+  });
+  await expect(roomReloadButton).toHaveCount(1, { timeout: actionTimeout });
+  await roomReloadButton.click();
 
   const roomSelect = roomChatSection.getByLabel('ルーム');
   await expect

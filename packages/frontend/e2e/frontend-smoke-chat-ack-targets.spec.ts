@@ -231,10 +231,8 @@ test('frontend smoke project chat mention composer selects user/group targets @e
     const groupOption = chatSection.getByRole('option', {
       name: new RegExp(mentionGroupDisplayName, 'i'),
     });
-    await expect
-      .poll(() => groupOption.count(), { timeout: actionTimeout })
-      .toBeGreaterThan(0);
-    await groupOption.first().click();
+    await expect(groupOption).toHaveCount(1, { timeout: actionTimeout });
+    await groupOption.click();
 
     await chatSection.getByPlaceholder('メッセージを書く').fill(messageBody);
     await chatSection.getByRole('button', { name: '投稿' }).click();

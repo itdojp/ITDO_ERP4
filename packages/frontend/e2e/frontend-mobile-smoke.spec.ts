@@ -374,12 +374,13 @@ test.describe('mobile smoke 375x667 @core', () => {
     await expect(
       allocationDialog.getByRole('button', { name: '配賦明細を隠す' }),
     ).toBeVisible({ timeout: actionTimeout });
-    await allocationDialog.getByRole('button', { name: '明細追加' }).click();
     const allocationRows = allocationDialog.locator('table tbody tr');
-    await expect
-      .poll(() => allocationRows.count(), { timeout: actionTimeout })
-      .toBeGreaterThan(0);
-    const allocationRow = allocationRows.first();
+    const allocationRowCountBefore = await allocationRows.count();
+    await allocationDialog.getByRole('button', { name: '明細追加' }).click();
+    await expect(allocationRows).toHaveCount(allocationRowCountBefore + 1, {
+      timeout: actionTimeout,
+    });
+    const allocationRow = allocationDialog.locator('table tbody tr:last-child');
     await expect(allocationRow).toBeVisible({ timeout: actionTimeout });
     const allocationProjectSelect = await findSelectByOptionText(
       allocationRow,
@@ -509,23 +510,24 @@ test.describe('mobile smoke 375x667 @core', () => {
       .locator('h2', { hasText: '期間締め' })
       .locator('..');
     await periodLockSection.scrollIntoViewIfNeeded();
-    await periodLockSection
+    const periodCreateCard = periodLockSection.locator('.itdo-card', {
+      has: periodLockSection.getByRole('button', { name: '締め登録' }),
+    });
+    await expect(periodCreateCard).toHaveCount(1, { timeout: actionTimeout });
+    await periodCreateCard
       .getByLabel('period (YYYY-MM)', { exact: true })
       .fill(mobileLockPeriod);
-    await periodLockSection
+    await periodCreateCard
       .getByLabel('scope', { exact: true })
-      .first()
-      .selectOption({
-        value: 'project',
-      });
+      .selectOption({ value: 'project' });
     await selectByValue(
-      periodLockSection.getByLabel('project', { exact: true }).first(),
+      periodCreateCard.getByLabel('project', { exact: true }),
       defaultProjectId,
     );
-    await periodLockSection
+    await periodCreateCard
       .getByLabel('reason', { exact: true })
       .fill(mobileLockReason);
-    await periodLockSection.getByRole('button', { name: '締め登録' }).click();
+    await periodCreateCard.getByRole('button', { name: '締め登録' }).click();
     await periodLockSection
       .getByLabel('period', { exact: true })
       .fill(mobileLockPeriod);
@@ -533,11 +535,8 @@ test.describe('mobile smoke 375x667 @core', () => {
     const createdLockRows = periodLockSection.locator('tbody tr', {
       hasText: mobileLockReason,
     });
-    await expect
-      .poll(() => createdLockRows.count(), { timeout: actionTimeout })
-      .toBeGreaterThan(0);
-    const createdLockRow = createdLockRows.first();
-    await createdLockRow.getByRole('button', { name: '解除' }).click();
+    await expect(createdLockRows).toHaveCount(1, { timeout: actionTimeout });
+    await createdLockRows.getByRole('button', { name: '解除' }).click();
     const unlockDialog = page.getByRole('dialog', {
       name: '期間締めを解除しますか？',
     });

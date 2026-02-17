@@ -203,13 +203,13 @@ test('frontend smoke workflow evidence chat references @extended', async ({
   await evidencePickerDrawer.getByRole('button', { name: '閉じる' }).click();
   await expect(evidencePickerDrawer).toBeHidden({ timeout: actionTimeout });
 
-  const chatReferenceLink = expenseAnnotationDrawer.getByRole('link', {
-    name: /Chat（/,
+  const chatReferenceLink = expenseAnnotationDrawer.locator(
+    `a[href*="${messageId}"]`,
+  );
+  await expect(chatReferenceLink).toHaveCount(1, {
+    timeout: actionTimeout,
   });
-  await expect
-    .poll(() => chatReferenceLink.count(), { timeout: actionTimeout })
-    .toBeGreaterThan(0);
-  await expect(chatReferenceLink.first()).toBeVisible({
+  await expect(chatReferenceLink).toBeVisible({
     timeout: actionTimeout,
   });
   const chatRefBadge = expenseAnnotationDrawer.locator('.badge', {
@@ -285,7 +285,10 @@ test('frontend smoke workflow evidence chat references @extended', async ({
     .locator('h2', { hasText: '承認一覧' })
     .locator('..');
   await approvalsSection.scrollIntoViewIfNeeded();
-  const flowTypeSelect = approvalsSection.locator('select').first();
+  const flowTypeSelect = approvalsSection
+    .locator('select')
+    .filter({ has: approvalsSection.locator('option[value=\"estimate\"]') });
+  await expect(flowTypeSelect).toHaveCount(1, { timeout: actionTimeout });
   await flowTypeSelect.selectOption({ value: 'estimate' });
   await approvalsSection.getByRole('button', { name: '再読込' }).click();
 
