@@ -206,8 +206,7 @@ test('frontend smoke admin ops @extended', async ({ page }) => {
   await navigateToSection(page, 'アクセスレビュー', 'アクセス棚卸し');
   const accessReviewSection = page
     .locator('main')
-    .locator('h2', { hasText: 'アクセス棚卸し' })
-    .first()
+    .getByRole('heading', { name: 'アクセス棚卸し', level: 2, exact: true })
     .locator('..');
   await accessReviewSection.scrollIntoViewIfNeeded();
   await safeClick(
@@ -222,8 +221,7 @@ test('frontend smoke admin ops @extended', async ({ page }) => {
   await navigateToSection(page, '監査ログ');
   const auditLogSection = page
     .locator('main')
-    .locator('h2', { hasText: '監査ログ' })
-    .first()
+    .getByRole('heading', { name: '監査ログ', level: 2, exact: true })
     .locator('..');
   await auditLogSection.scrollIntoViewIfNeeded();
   const auditRangeTo = toDateInputValue(new Date());

@@ -274,10 +274,13 @@ test('frontend smoke core @core', async ({ page }) => {
 
   // 経費注釈（Drawer + EntityReferencePicker）: 保存 → 再表示で永続化を確認
   const expenseAnnotationText = `E2E経費注釈: ${runId()}`;
-  await expenseSection
-    .getByRole('button', { name: /注釈（経費）: .* 2000 JPY/ })
-    .first()
-    .click();
+  const expenseAnnotationButtons = expenseSection.getByRole('button', {
+    name: /注釈（経費）: .* 2000 JPY/,
+  });
+  await expect(expenseAnnotationButtons).toHaveCount(1, {
+    timeout: actionTimeout,
+  });
+  await expenseAnnotationButtons.click();
   const expenseAnnotationDrawer = page.getByRole('dialog', { name: /経費:/ });
   await expect(expenseAnnotationDrawer).toBeVisible({ timeout: actionTimeout });
   await expenseAnnotationDrawer
@@ -285,11 +288,11 @@ test('frontend smoke core @core', async ({ page }) => {
     .fill(expenseAnnotationText);
   const referencePickerInput = expenseAnnotationDrawer.getByLabel('候補検索');
   await referencePickerInput.fill('PRJ-DEMO-1');
-  const firstReferenceCandidate = expenseAnnotationDrawer
-    .getByRole('option')
-    .first();
-  await expect(firstReferenceCandidate).toBeVisible({ timeout: actionTimeout });
-  await firstReferenceCandidate.click();
+  const referenceCandidate = expenseAnnotationDrawer.getByRole('option', {
+    name: /PRJ-DEMO-1/,
+  });
+  await expect(referenceCandidate).toHaveCount(1, { timeout: actionTimeout });
+  await referenceCandidate.click();
   await expect(
     expenseAnnotationDrawer.getByRole('list', { name: 'Selected references' }),
   ).toBeVisible({ timeout: actionTimeout });
@@ -300,10 +303,7 @@ test('frontend smoke core @core', async ({ page }) => {
   await expenseAnnotationDrawer.getByRole('button', { name: '閉じる' }).click();
   await expect(expenseAnnotationDrawer).toBeHidden({ timeout: actionTimeout });
 
-  await expenseSection
-    .getByRole('button', { name: /注釈（経費）: .* 2000 JPY/ })
-    .first()
-    .click();
+  await expenseAnnotationButtons.click();
   const expenseAnnotationDrawer2 = page.getByRole('dialog', { name: /経費:/ });
   await expect(
     expenseAnnotationDrawer2.getByLabel('メモ（Markdown）'),
@@ -369,8 +369,11 @@ test('frontend smoke core @core', async ({ page }) => {
   await ensureOk(actRes);
   await estimateSection.getByRole('button', { name: '読み込み' }).click();
   await expect(estimateSection.getByText('読み込みました')).toBeVisible();
-  const estimateFirstRow = estimateSection.locator('ul.list li').first();
-  await estimateFirstRow.getByRole('button', { name: '送信 (Stub)' }).click();
+  const estimateRows = estimateSection.locator('ul.list li');
+  await expect
+    .poll(() => estimateRows.count(), { timeout: actionTimeout })
+    .toBeGreaterThan(0);
+  await estimateRows.first().getByRole('button', { name: '送信 (Stub)' }).click();
   await expect(estimateSection.getByText('送信しました')).toBeVisible();
   await captureSection(estimateSection, '05-core-estimates.png');
 

@@ -155,9 +155,12 @@ test('frontend smoke chat hr analytics @extended', async ({ page }) => {
     'メンション対象を検索（ユーザ/グループ）',
   );
   await mentionComposerInput.fill('e2e-member-1');
-  const mentionComposerOption = chatSection
-    .getByRole('option', { name: /e2e-member-1@example\.com/i })
-    .first();
+  const mentionComposerOption = chatSection.getByRole('option', {
+    name: /e2e-member-1@example\.com/i,
+  });
+  await expect(mentionComposerOption).toHaveCount(1, {
+    timeout: actionTimeout,
+  });
   await expect(mentionComposerOption).toBeVisible({ timeout: actionTimeout });
   await mentionComposerOption.click();
   const chatMessage = `E2E chat message ${id}`;
@@ -174,11 +177,10 @@ test('frontend smoke chat hr analytics @extended', async ({ page }) => {
     timeout: actionTimeout,
   });
   await chatSection.getByPlaceholder('タグ (comma separated)').fill('e2e,chat');
-  const addFilesButton = chatSection
-    .getByRole('button', {
-      name: /ファイルを選択|Add files/,
-    })
-    .first();
+  const addFilesButton = chatSection.getByRole('button', {
+    name: /ファイルを選択|Add files/,
+  });
+  await expect(addFilesButton).toHaveCount(1, { timeout: actionTimeout });
   const [fileChooser] = await Promise.all([
     page.waitForEvent('filechooser'),
     addFilesButton.click(),
