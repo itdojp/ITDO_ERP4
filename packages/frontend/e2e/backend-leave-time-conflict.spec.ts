@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { expect, test } from '@playwright/test';
 
 const apiBase = process.env.E2E_API_BASE || 'http://localhost:3002';
@@ -8,8 +9,7 @@ const authHeaders = {
   'x-group-ids': 'mgmt,hr-group',
 };
 
-const runId = () =>
-  `${Date.now().toString().slice(-6)}-${Math.floor(Math.random() * 90 + 10)}`;
+const runId = () => `${Date.now().toString().slice(-6)}-${randomUUID()}`;
 
 async function ensureOk(res: { ok(): boolean; status(): number; text(): any }) {
   if (res.ok()) return;
@@ -24,7 +24,9 @@ function toDateInput(value: Date) {
   return `${year}-${month}-${day}`;
 }
 
-test('leave submit blocks when time entries exist @core', async ({ request }) => {
+test('leave submit blocks when time entries exist @core', async ({
+  request,
+}) => {
   const suffix = runId();
   const today = new Date();
   const tomorrow = new Date(today);
@@ -100,4 +102,3 @@ test('leave submit blocks when time entries exist @core', async ({ request }) =>
   const submitted = await submitOkRes.json();
   expect(submitted.status).toBe('pending_manager');
 });
-

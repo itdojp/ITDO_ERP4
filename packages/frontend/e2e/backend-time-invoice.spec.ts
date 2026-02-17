@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { expect, test } from '@playwright/test';
 
 const apiBase = process.env.E2E_API_BASE || 'http://localhost:3002';
@@ -8,8 +9,7 @@ const authHeaders = {
   'x-group-ids': 'mgmt,hr-group',
 };
 
-const runId = () =>
-  `${Date.now().toString().slice(-6)}-${Math.floor(Math.random() * 90 + 10)}`;
+const runId = () => `${Date.now().toString().slice(-6)}-${randomUUID()}`;
 
 const toNumber = (value: unknown) => {
   if (typeof value === 'number') return value;
@@ -38,10 +38,13 @@ test('time entries to invoice draft @core', async ({ request }) => {
   await ensureOk(projectRes);
   const project = await projectRes.json();
 
-  const taskRes = await request.post(`${apiBase}/projects/${project.id}/tasks`, {
-    data: { name: `Task ${suffix}` },
-    headers: authHeaders,
-  });
+  const taskRes = await request.post(
+    `${apiBase}/projects/${project.id}/tasks`,
+    {
+      data: { name: `Task ${suffix}` },
+      headers: authHeaders,
+    },
+  );
   await ensureOk(taskRes);
   const task = await taskRes.json();
 
@@ -113,8 +116,9 @@ test('time entries to invoice draft @core', async ({ request }) => {
   await ensureOk(timeListRes);
   const timeList = await timeListRes.json();
   const timeItems = Array.isArray(timeList.items) ? timeList.items : [];
-  expect(timeItems.filter((item: any) => item.billedInvoiceId === invoice.id))
-    .toHaveLength(3);
+  expect(
+    timeItems.filter((item: any) => item.billedInvoiceId === invoice.id),
+  ).toHaveLength(3);
 
   const patchRes = await request.patch(`${apiBase}/time-entries/${entry1.id}`, {
     data: { minutes: 90 },
