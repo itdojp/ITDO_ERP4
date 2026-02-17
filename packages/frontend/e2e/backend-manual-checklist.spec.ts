@@ -238,6 +238,91 @@ test('backend manual checklist: members/vendors/time/expenses/wellbeing @extende
 }) => {
   test.setTimeout(120_000);
   const suffix = runId();
+  const findApprovalInstance = async (flowType: string, targetId: string) => {
+    let approvalInstanceId = '';
+    let approvalStatus = '';
+    await expect
+      .poll(
+        async () => {
+          const listRes = await request.get(
+            `${apiBase}/approval-instances?flowType=${encodeURIComponent(flowType)}&projectId=${encodeURIComponent(defaultProjectId)}`,
+            { headers: adminHeaders },
+          );
+          if (!listRes.ok()) return '';
+          const payload = await listRes.json();
+          const matched = (payload?.items ?? []).find(
+            (item: any) => item?.targetId === targetId,
+          );
+          approvalInstanceId =
+            typeof matched?.id === 'string' ? matched.id : '';
+          approvalStatus = String(matched?.status ?? '');
+          return approvalInstanceId;
+        },
+        { timeout: 5000 },
+      )
+      .not.toBe('');
+    expect(approvalInstanceId).toBeTruthy();
+    expect(approvalStatus.length).toBeGreaterThan(0);
+    return { approvalInstanceId, approvalStatus };
+  };
+  const approveInstanceUntilClosed = async (
+    approvalInstanceId: string,
+    initialStatus: string,
+  ) => {
+    const maxApprovalTransitions = 8;
+    let approvalStatus = initialStatus;
+    for (
+      let i = 0;
+      i < maxApprovalTransitions &&
+      (approvalStatus === 'pending_qa' || approvalStatus === 'pending_exec');
+      i += 1
+    ) {
+      const actRes = await request.post(
+        `${apiBase}/approval-instances/${encodeURIComponent(approvalInstanceId)}/act`,
+        {
+          data: { action: 'approve' },
+          headers: adminHeaders,
+        },
+      );
+      await ensureOk(actRes);
+      const acted = await actRes.json();
+      approvalStatus = String(acted?.status ?? '');
+    }
+    return approvalStatus;
+  };
+  const expectAuditAction = async (input: {
+    action: string;
+    targetTable?: string;
+    targetId?: string;
+  }) => {
+    await expect
+      .poll(
+        async () => {
+          const params = new URLSearchParams({
+            action: input.action,
+            format: 'json',
+            mask: '0',
+            limit: '50',
+          });
+          if (input.targetTable) params.set('targetTable', input.targetTable);
+          if (input.targetId) params.set('targetId', input.targetId);
+          const res = await request.get(`${apiBase}/audit-logs?${params}`, {
+            headers: adminHeaders,
+          });
+          if (!res.ok()) return false;
+          const payload = await res.json();
+          return (
+            (payload?.items ?? []).some(
+              (item: any) =>
+                item?.action === input.action &&
+                (input.targetId ? item?.targetId === input.targetId : true),
+            ) ?? false
+          );
+        },
+        { timeout: 5000 },
+      )
+      .toBe(true);
+  };
 
   const candidatesRes = await request.get(
     `${apiBase}/projects/${encodeURIComponent(
@@ -255,6 +340,11 @@ test('backend manual checklist: members/vendors/time/expenses/wellbeing @extende
     { data: { userId: memberUserId, role: 'member' }, headers: adminHeaders },
   );
   await ensureOk(memberRes);
+  const memberHeaders = buildHeaders({
+    userId: memberUserId,
+    roles: ['user'],
+    projectIds: [defaultProjectId],
+  });
 
   const membersRes = await request.get(
     `${apiBase}/projects/${encodeURIComponent(defaultProjectId)}/members`,
@@ -280,6 +370,52 @@ test('backend manual checklist: members/vendors/time/expenses/wellbeing @extende
     },
   );
   await ensureOk(bulkRes);
+
+  await expect
+    .poll(
+      async () => {
+        const unreadCountRes = await request.get(
+          `${apiBase}/notifications/unread-count`,
+          { headers: memberHeaders },
+        );
+        if (!unreadCountRes.ok()) return 0;
+        const payload = await unreadCountRes.json();
+        return Number(payload?.unreadCount ?? 0);
+      },
+      { timeout: 5000 },
+    )
+    .toBeGreaterThan(0);
+
+  const memberNotificationsRes = await request.get(
+    `${apiBase}/notifications?unread=1&limit=200`,
+    { headers: memberHeaders },
+  );
+  await ensureOk(memberNotificationsRes);
+  const memberNotifications = await memberNotificationsRes.json();
+  const memberAddedNotification = (memberNotifications?.items ?? []).find(
+    (item: any) =>
+      item?.kind === 'project_member_added' &&
+      item?.projectId === defaultProjectId,
+  );
+  expect(memberAddedNotification?.id).toBeTruthy();
+
+  const readNotificationRes = await request.post(
+    `${apiBase}/notifications/${encodeURIComponent(memberAddedNotification.id)}/read`,
+    { headers: memberHeaders },
+  );
+  await ensureOk(readNotificationRes);
+
+  const memberNotificationsAfterReadRes = await request.get(
+    `${apiBase}/notifications?unread=1&limit=200`,
+    { headers: memberHeaders },
+  );
+  await ensureOk(memberNotificationsAfterReadRes);
+  const memberNotificationsAfterRead =
+    await memberNotificationsAfterReadRes.json();
+  const isStillUnread = (memberNotificationsAfterRead?.items ?? []).some(
+    (item: any) => item?.id === memberAddedNotification.id,
+  );
+  expect(isStillUnread).toBeFalsy();
 
   const deleteRes = await request.delete(
     `${apiBase}/projects/${encodeURIComponent(
@@ -316,6 +452,35 @@ test('backend manual checklist: members/vendors/time/expenses/wellbeing @extende
   });
   await ensureOk(vendorInvoiceRes);
   const vendorInvoice = await vendorInvoiceRes.json();
+
+  const purchaseOrderRes = await request.post(
+    `${apiBase}/projects/${encodeURIComponent(defaultProjectId)}/purchase-orders`,
+    {
+      data: {
+        vendorId: defaultVendorId,
+        totalAmount: 12000,
+        currency: 'JPY',
+      },
+      headers: adminHeaders,
+    },
+  );
+  await ensureOk(purchaseOrderRes);
+  const purchaseOrder = await purchaseOrderRes.json();
+  const purchaseOrderId = String(purchaseOrder?.id || '');
+  expect(purchaseOrderId.length).toBeGreaterThan(0);
+
+  const linkPoRes = await request.post(
+    `${apiBase}/vendor-invoices/${encodeURIComponent(vendorInvoice.id)}/link-po`,
+    { data: { purchaseOrderId }, headers: adminHeaders },
+  );
+  await ensureOk(linkPoRes);
+
+  const unlinkPoRes = await request.post(
+    `${apiBase}/vendor-invoices/${encodeURIComponent(vendorInvoice.id)}/unlink-po`,
+    { headers: adminHeaders, data: {} },
+  );
+  await ensureOk(unlinkPoRes);
+
   const submitRes = await request.post(
     `${apiBase}/vendor-invoices/${encodeURIComponent(vendorInvoice.id)}/submit`,
     { headers: adminHeaders },
@@ -324,48 +489,15 @@ test('backend manual checklist: members/vendors/time/expenses/wellbeing @extende
   const submittedVendorInvoice = await submitRes.json();
   expect(submittedVendorInvoice?.status).toBe('pending_qa');
 
-  let approvalInstanceId = '';
-  let approvalStatus = '';
-  await expect
-    .poll(
-      async () => {
-        const listRes = await request.get(
-          `${apiBase}/approval-instances?flowType=vendor_invoice&projectId=${encodeURIComponent(defaultProjectId)}`,
-          { headers: adminHeaders },
-        );
-        if (!listRes.ok()) return '';
-        const payload = await listRes.json();
-        const matched = (payload?.items ?? []).find(
-          (item: any) => item?.targetId === vendorInvoice.id,
-        );
-        approvalInstanceId = typeof matched?.id === 'string' ? matched.id : '';
-        approvalStatus = String(matched?.status ?? '');
-        return approvalInstanceId;
-      },
-      { timeout: 5000 },
-    )
-    .not.toBe('');
-  expect(approvalInstanceId).toBeTruthy();
-  expect(approvalStatus.length).toBeGreaterThan(0);
-
-  for (
-    let i = 0;
-    i < 5 &&
-    (approvalStatus === 'pending_qa' || approvalStatus === 'pending_exec');
-    i += 1
-  ) {
-    const actRes = await request.post(
-      `${apiBase}/approval-instances/${encodeURIComponent(approvalInstanceId)}/act`,
-      {
-        data: { action: 'approve' },
-        headers: adminHeaders,
-      },
-    );
-    await ensureOk(actRes);
-    const acted = await actRes.json();
-    approvalStatus = String(acted?.status ?? '');
-  }
-  expect(approvalStatus).toBe('approved');
+  const vendorApproval = await findApprovalInstance(
+    'vendor_invoice',
+    vendorInvoice.id as string,
+  );
+  const vendorApprovalStatus = await approveInstanceUntilClosed(
+    vendorApproval.approvalInstanceId,
+    vendorApproval.approvalStatus,
+  );
+  expect(vendorApprovalStatus).toBe('approved');
 
   const approvedVendorInvoiceRes = await request.get(
     `${apiBase}/vendor-invoices/${encodeURIComponent(vendorInvoice.id)}`,
@@ -458,6 +590,43 @@ test('backend manual checklist: members/vendors/time/expenses/wellbeing @extende
   );
   expect(expenseVisibleOther).toBeFalsy();
 
+  const expenseSubmitRes = await request.post(
+    `${apiBase}/expenses/${encodeURIComponent(expense.id)}/submit`,
+    { headers: userHeaders, data: {} },
+  );
+  await ensureOk(expenseSubmitRes);
+  const submittedExpense = await expenseSubmitRes.json();
+  expect(submittedExpense?.status).toBe('pending_qa');
+
+  const expenseApproval = await findApprovalInstance(
+    'expense',
+    expense.id as string,
+  );
+  const expenseApprovalStatus = await approveInstanceUntilClosed(
+    expenseApproval.approvalInstanceId,
+    expenseApproval.approvalStatus,
+  );
+  expect(expenseApprovalStatus).toBe('approved');
+
+  const markPaidRes = await request.post(
+    `${apiBase}/expenses/${encodeURIComponent(expense.id)}/mark-paid`,
+    { headers: adminHeaders, data: {} },
+  );
+  await ensureOk(markPaidRes);
+  const paidExpense = await markPaidRes.json();
+  expect(paidExpense?.settlementStatus).toBe('paid');
+
+  const unmarkPaidRes = await request.post(
+    `${apiBase}/expenses/${encodeURIComponent(expense.id)}/unmark-paid`,
+    {
+      headers: adminHeaders,
+      data: { reasonText: `e2e unmark ${suffix}` },
+    },
+  );
+  await ensureOk(unmarkPaidRes);
+  const unpaidExpense = await unmarkPaidRes.json();
+  expect(unpaidExpense?.settlementStatus).toBe('unpaid');
+
   const wellbeingRes = await request.post(`${apiBase}/wellbeing-entries`, {
     data: {
       entryDate: '2026-01-02',
@@ -516,4 +685,107 @@ test('backend manual checklist: members/vendors/time/expenses/wellbeing @extende
     },
   );
   await ensureOk(approvalPatchRes);
+
+  const ackRequiredUserId = 'e2e-member-1@example.com';
+  const ensureAckMemberRes = await request.post(
+    `${apiBase}/projects/${encodeURIComponent(defaultProjectId)}/members`,
+    {
+      data: { userId: ackRequiredUserId, role: 'member' },
+      headers: adminHeaders,
+    },
+  );
+  await ensureOk(ensureAckMemberRes);
+  const ackRequiredUserHeaders = buildHeaders({
+    userId: ackRequiredUserId,
+    roles: ['user'],
+    projectIds: [defaultProjectId],
+  });
+  const recentPastDueAt = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+
+  const chatAckRequestRes = await request.post(
+    `${apiBase}/projects/${encodeURIComponent(defaultProjectId)}/chat-ack-requests`,
+    {
+      headers: adminHeaders,
+      data: {
+        body: `e2e ack request ${suffix}`,
+        requiredUserIds: [ackRequiredUserId],
+        dueAt: recentPastDueAt,
+      },
+    },
+  );
+  await ensureOk(chatAckRequestRes);
+  const chatAckMessage = await chatAckRequestRes.json();
+  const chatAckRequestId = String(chatAckMessage?.ackRequest?.id || '');
+  expect(chatAckRequestId.length).toBeGreaterThan(0);
+
+  const chatAckRes = await request.post(
+    `${apiBase}/chat-ack-requests/${encodeURIComponent(chatAckRequestId)}/ack`,
+    { headers: ackRequiredUserHeaders, data: {} },
+  );
+  await ensureOk(chatAckRes);
+  const chatAck = await chatAckRes.json();
+  const ackByRequiredUser = (chatAck?.acks ?? []).some(
+    (item: any) => item?.userId === ackRequiredUserId,
+  );
+  expect(ackByRequiredUser).toBeTruthy();
+
+  const pendingChatAckRes = await request.post(
+    `${apiBase}/projects/${encodeURIComponent(defaultProjectId)}/chat-ack-requests`,
+    {
+      headers: adminHeaders,
+      data: {
+        body: `e2e pending ack request ${suffix}`,
+        requiredUserIds: [ackRequiredUserId],
+        dueAt: recentPastDueAt,
+      },
+    },
+  );
+  await ensureOk(pendingChatAckRes);
+
+  const chatAckReminderJobRes = await request.post(
+    `${apiBase}/jobs/chat-ack-reminders/run`,
+    { headers: adminHeaders, data: { dryRun: true, limit: 20 } },
+  );
+  await ensureOk(chatAckReminderJobRes);
+  const chatAckReminderJob = await chatAckReminderJobRes.json();
+  expect(chatAckReminderJob?.ok).toBe(true);
+  expect(Number(chatAckReminderJob?.scannedRequests ?? 0)).toBeGreaterThan(0);
+  expect(
+    Number(chatAckReminderJob?.candidateNotifications ?? 0),
+  ).toBeGreaterThan(0);
+
+  await expectAuditAction({
+    action: 'vendor_invoice_link_po',
+    targetTable: 'vendor_invoices',
+    targetId: vendorInvoice.id,
+  });
+  await expectAuditAction({
+    action: 'vendor_invoice_unlink_po',
+    targetTable: 'vendor_invoices',
+    targetId: vendorInvoice.id,
+  });
+  await expectAuditAction({
+    action: 'expense_mark_paid',
+    targetTable: 'Expense',
+    targetId: expense.id,
+  });
+  await expectAuditAction({
+    action: 'expense_unmark_paid',
+    targetTable: 'Expense',
+    targetId: expense.id,
+  });
+  await expectAuditAction({
+    action: 'chat_ack_request_created',
+    targetTable: 'chat_ack_requests',
+    targetId: chatAckRequestId,
+  });
+  await expectAuditAction({
+    action: 'chat_ack_added',
+    targetTable: 'chat_ack_requests',
+    targetId: chatAckRequestId,
+  });
+  await expectAuditAction({
+    action: 'chat_ack_reminders_run',
+    targetTable: 'app_notifications',
+  });
 });

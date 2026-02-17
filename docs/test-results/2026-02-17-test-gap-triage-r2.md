@@ -4,7 +4,7 @@ Issue: #1001
 
 ## 対象
 
-- `docs/manual/manual-test-checklist.md`（未チェック 70 項目）
+- `docs/manual/manual-test-checklist.md`（未チェック 51 項目）
 - 高優先ドメイン: 承認/通知/仕入請求(PO↔VI)/権限
 
 ## 先行判定（高優先のみ）

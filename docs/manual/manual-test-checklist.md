@@ -4,19 +4,19 @@
 
 ### 基本（案件/請求/工数）
 
-- [ ] POST /projects → /projects/:id/estimates → /projects/:id/invoices → /invoices/:id/send のハッピーパスが通る
-- [ ] POST/GET /time-entries（非管理ロールは自分のデータのみ取得できる）
-- [ ] /alert-settings CRUD と /jobs/alerts/run で alert が保存される
-- [ ] /jobs/approval-escalations/run で承認期限エスカレーションが保存される
+- [x] POST /projects → /projects/:id/estimates → /projects/:id/invoices → /invoices/:id/send のハッピーパスが通る
+- [x] POST/GET /time-entries（非管理ロールは自分のデータのみ取得できる）
+- [x] /alert-settings CRUD と /jobs/alerts/run で alert が保存される
+- [x] /jobs/approval-escalations/run で承認期限エスカレーションが保存される
 - [ ] /approval-rules CRUD のハッピーパス
-- [ ] /projects/:id/members の GET/POST/DELETE が動作する
-- [ ] /projects/:id/member-candidates?q= の候補検索が動作する
-- [ ] /projects/:id/members/bulk で複数メンバーの追加が動作する
+- [x] /projects/:id/members の GET/POST/DELETE が動作する
+- [x] /projects/:id/member-candidates?q= の候補検索が動作する
+- [x] /projects/:id/members/bulk で複数メンバーの追加が動作する
 - [ ] /pdf-templates と /template-settings CRUD が動作する
-- [ ] /document-send-logs/:id と /document-send-logs/:id/events が取得できる
-- [ ] /document-send-logs/:id/retry で再送が記録される
+- [x] /document-send-logs/:id と /document-send-logs/:id/events が取得できる
+- [x] /document-send-logs/:id/retry で再送が記録される
 - [ ] /report-subscriptions CRUD → /report-subscriptions/:id/run で report_deliveries が作成される
-- [ ] /jobs/report-subscriptions/run と /jobs/report-deliveries/retry が動作する
+- [x] /jobs/report-subscriptions/run と /jobs/report-deliveries/retry が動作する
 
 ### チャット（確認依頼 ack required）
 
@@ -30,15 +30,15 @@
 
 ### 通知ジョブ（運用）
 
-- [ ] POST /jobs/chat-ack-reminders/run（dryRun/limit）で期限到来（dueAt<=now）の未完了確認依頼に対し、通知候補/生成件数が返る
+- [x] POST /jobs/chat-ack-reminders/run（dryRun/limit）で期限到来（dueAt<=now）の未完了確認依頼に対し、通知候補/生成件数が返る
 - [ ] POST /jobs/leave-upcoming/run（targetDate/dryRun）で休暇開始日の通知（leave_upcoming）が生成される（本人+admin/mgmt）
 
 ### 経費（支払状態）
 
-- [ ] POST/GET /expenses（非管理ロールは自分のデータのみ取得できる）
-- [ ] POST /expenses/:id/submit で承認依頼できる
-- [ ] （承認後）POST /expenses/:id/mark-paid で settlementStatus=paid / paidAt / paidBy が設定される（監査ログ、通知 expense_mark_paid）
-- [ ] POST /expenses/:id/unmark-paid は reasonText 必須で、settlementStatus=unpaid に戻る（paidAt/paidBy クリア、監査ログ）
+- [x] POST/GET /expenses（非管理ロールは自分のデータのみ取得できる）
+- [x] POST /expenses/:id/submit で承認依頼できる
+- [x] （承認後）POST /expenses/:id/mark-paid で settlementStatus=paid / paidAt / paidBy が設定される（監査ログ、通知 expense_mark_paid）
+- [x] POST /expenses/:id/unmark-paid は reasonText 必須で、settlementStatus=unpaid に戻る（paidAt/paidBy クリア、監査ログ）
 
 ### 仕入/発注（PO↔VI、配賦明細）
 
@@ -53,9 +53,9 @@
 
 ### その他
 
-- [ ] /wellbeing-entries POST → HR/Admin で GET できる
-- [ ] /notifications の取得/既読化が動作する（unread-count、read）
-- [ ] /audit-logs で主要操作の監査ログが参照できる（`chat_ack_*`、`expense_mark_paid`/`expense_unmark_paid`、`vendor_invoice_*`、`*_run`）
+- [x] /wellbeing-entries POST → HR/Admin で GET できる
+- [x] /notifications の取得/既読化が動作する（unread-count、read）
+- [x] /audit-logs で主要操作の監査ログが参照できる（`chat_ack_*`、`expense_mark_paid`/`expense_unmark_paid`、`vendor_invoice_*`、`*_run`）
 
 ## フロント PoC
 
