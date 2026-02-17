@@ -386,17 +386,27 @@ test('frontend smoke core @core', async ({ page }) => {
     .locator('h2', { hasText: '請求' })
     .locator('..');
   await invoiceSection.scrollIntoViewIfNeeded();
+  const invoiceAmount =
+    150000 + (Number(String(runId()).replace(/\D/g, '').slice(-4)) || 1234);
   await selectByLabelOrFirst(
     invoiceSection.getByLabel('案件選択'),
     'PRJ-DEMO-1 / Demo Project 1',
   );
-  await invoiceSection.getByPlaceholder('金額').fill('150000');
+  await invoiceSection.getByPlaceholder('金額').fill(String(invoiceAmount));
   await invoiceSection.getByRole('button', { name: /^作成$/ }).click();
   await expect(invoiceSection.getByText('作成しました')).toBeVisible();
+  await invoiceSection.getByLabel('請求検索').fill(String(invoiceAmount));
   await captureSection(invoiceSection, '06-core-invoices.png');
 
   // 注釈UI（Invoices）: 作成 → 注釈保存 → 再表示で永続化を確認
-  await invoiceSection.getByRole('button', { name: '詳細' }).last().click();
+  const invoiceAmountPattern = new RegExp(
+    `¥${invoiceAmount.toLocaleString().replace(/,/g, ',?')}`,
+  );
+  const createdInvoiceRows = invoiceSection.locator('tbody tr', {
+    hasText: invoiceAmountPattern,
+  });
+  await expect(createdInvoiceRows).toHaveCount(1, { timeout: actionTimeout });
+  await createdInvoiceRows.getByRole('button', { name: '詳細' }).click();
   const invoiceDetailDrawer = page.getByRole('dialog', { name: /請求詳細/ });
   await expect(invoiceDetailDrawer).toBeVisible({ timeout: actionTimeout });
   await expect(
