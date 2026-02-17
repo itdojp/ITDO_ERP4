@@ -4,7 +4,7 @@ Issue: #1001
 
 ## 対象
 
-- `docs/manual/manual-test-checklist.md`（未チェック 72 項目）
+- `docs/manual/manual-test-checklist.md`（未チェック 70 項目）
 - 高優先ドメイン: 承認/通知/仕入請求(PO↔VI)/権限
 
 ## 先行判定（高優先のみ）
@@ -27,6 +27,8 @@ Issue: #1001
      - `PO_LINE_QUANTITY_EXCEEDED`（単一行/分割行）と `quantity <= 0` の境界をカバー
      - `GET /vendor-invoices/:id/lines` の `poLineUsage` をカバー
      - `purchaseOrderLineId` の異常系（PO未紐づけ=400 / 別PO line=400 / 不存在line=404）をカバー
+     - `PUT /vendor-invoices/:id/allocations` の `autoAdjust` 境界、`allocations=[]` クリア、監査ログをカバー
+     - allocations の `purchaseOrderLineId` 異常系（PO未紐づけ=400 / 別PO line=400 / 不存在line=404）をカバー
    - PR: #1054, #1057, #1059（main 反映済み）
 3. モバイル回帰（375x667）
    - 対応: `packages/frontend/e2e/frontend-mobile-smoke.spec.ts`
