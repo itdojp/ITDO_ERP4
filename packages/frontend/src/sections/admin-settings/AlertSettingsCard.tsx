@@ -19,8 +19,11 @@ export type AlertSettingsCardItem = {
   type: string;
   threshold: number;
   period: string;
+  scopeProjectId?: string | null;
   recipients?: {
     emails?: string[];
+    roles?: string[];
+    users?: string[];
     slackWebhooks?: string[];
     webhooks?: string[];
   } | null;
