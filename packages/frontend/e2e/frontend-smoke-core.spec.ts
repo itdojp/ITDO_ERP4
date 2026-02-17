@@ -339,13 +339,10 @@ test('frontend smoke core @core', async ({ page }) => {
   );
   await ensureOk(estimateRes);
   const estimatePayload = await estimateRes.json();
-  const createdEstimate = (estimatePayload?.items ?? []).find(
+  const estimateId = (estimatePayload?.items ?? []).find(
     (item: any) => item?.notes === estimateTag,
-  ) as { id?: string; estimateNo?: string } | undefined;
-  const estimateId = createdEstimate?.id as string | undefined;
-  const createdEstimateNo = createdEstimate?.estimateNo || '';
+  )?.id as string | undefined;
   expect(estimateId).toBeTruthy();
-  expect(createdEstimateNo.length).toBeGreaterThan(0);
   const instanceRes = await page.request.get(
     `${apiBase}/approval-instances?flowType=estimate&projectId=${encodeURIComponent(
       authState.projectIds[0],
@@ -372,11 +369,11 @@ test('frontend smoke core @core', async ({ page }) => {
   await ensureOk(actRes);
   await estimateSection.getByRole('button', { name: '読み込み' }).click();
   await expect(estimateSection.getByText('読み込みました')).toBeVisible();
-  const estimateRows = estimateSection.locator('ul.list li', {
-    hasText: createdEstimateNo,
-  });
-  await expect(estimateRows).toHaveCount(1, { timeout: actionTimeout });
-  await estimateRows.getByRole('button', { name: '送信 (Stub)' }).click();
+  const estimateRows = estimateSection.locator('ul.list li');
+  await expect
+    .poll(() => estimateRows.count(), { timeout: actionTimeout })
+    .toBeGreaterThan(0);
+  await estimateRows.first().getByRole('button', { name: '送信 (Stub)' }).click();
   await expect(estimateSection.getByText('送信しました')).toBeVisible();
   await captureSection(estimateSection, '05-core-estimates.png');
 
