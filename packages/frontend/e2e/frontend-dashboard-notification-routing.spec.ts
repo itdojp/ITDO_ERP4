@@ -1,12 +1,13 @@
 import { randomUUID } from 'node:crypto';
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 
 const baseUrl = process.env.E2E_BASE_URL || 'http://localhost:5173';
 const apiBase = process.env.E2E_API_BASE || 'http://localhost:3002';
 const defaultProjectId = '00000000-0000-0000-0000-000000000001';
 const actionTimeoutEnv = process.env.E2E_ACTION_TIMEOUT_MS;
 const actionTimeout =
-  actionTimeoutEnv != null && !Number.isNaN(Number.parseInt(actionTimeoutEnv, 10))
+  actionTimeoutEnv != null &&
+  !Number.isNaN(Number.parseInt(actionTimeoutEnv, 10))
     ? Number.parseInt(actionTimeoutEnv, 10)
     : process.env.CI
       ? 30_000
@@ -68,7 +69,10 @@ async function prepare(page: Page, authState: AuthState) {
   if (page.listenerCount('console') === 0) {
     page.on('console', (msg) => {
       if (msg.type() === 'error') {
-        console.error('[dashboard-notification-routing] console.error:', msg.text());
+        console.error(
+          '[dashboard-notification-routing] console.error:',
+          msg.text(),
+        );
       }
     });
   }
@@ -78,9 +82,11 @@ async function prepare(page: Page, authState: AuthState) {
     window.localStorage.removeItem('erp4_active_section');
   }, authState);
   await page.goto(baseUrl);
-  await expect(page.getByRole('heading', { name: 'ERP4 MVP PoC' })).toBeVisible({
-    timeout: actionTimeout,
-  });
+  await expect(page.getByRole('heading', { name: 'ERP4 MVP PoC' })).toBeVisible(
+    {
+      timeout: actionTimeout,
+    },
+  );
 }
 
 async function openHome(page: Page) {
@@ -92,13 +98,26 @@ async function openHome(page: Page) {
   ).toBeVisible({ timeout: actionTimeout });
 }
 
+function resolveAlertsUi(dashboardSection: Locator) {
+  const alertsBadge = dashboardSection
+    .locator('p.badge', { hasText: /^Alerts / })
+    .first();
+  const alertsList = alertsBadge.locator(
+    'xpath=ancestor::div[contains(@class,"row")]/following-sibling::div[1]',
+  );
+  return { alertsBadge, alertsList };
+}
+
 async function listUnreadNotifications(
   page: Page,
   headers: Record<string, string>,
 ) {
-  const res = await page.request.get(`${apiBase}/notifications?unread=1&limit=200`, {
-    headers,
-  });
+  const res = await page.request.get(
+    `${apiBase}/notifications?unread=1&limit=200`,
+    {
+      headers,
+    },
+  );
   await ensureOk(res);
   const payload = (await res.json()) as { items?: AppNotification[] };
   return Array.isArray(payload?.items) ? payload.items : [];
@@ -196,8 +215,7 @@ async function approveUntilApproved(
     }
 
     const actorUserId =
-      actionable.approverUserId?.trim() ||
-      `e2e-approver-${runSeed}-${attempt}`;
+      actionable.approverUserId?.trim() || `e2e-approver-${runSeed}-${attempt}`;
     const actorGroupIds = actionable.approverGroupId?.trim()
       ? [actionable.approverGroupId.trim(), 'mgmt']
       : ['mgmt'];
@@ -246,7 +264,8 @@ async function installOpenEventRecorder(page: Page) {
       const detail = (event as CustomEvent<{ messageId?: string }>).detail;
       w.__e2eOpenEvents?.push({
         kind: 'chat_message',
-        id: typeof detail?.messageId === 'string' ? detail.messageId : undefined,
+        id:
+          typeof detail?.messageId === 'string' ? detail.messageId : undefined,
       });
     });
   });
@@ -377,10 +396,13 @@ test('dashboard notification cards route to chat/leave/expense targets @core', a
     run,
   );
 
-  const leaveJobRes = await page.request.post(`${apiBase}/jobs/leave-upcoming/run`, {
-    headers: adminHeaders,
-    data: { targetDate: leaveDate },
-  });
+  const leaveJobRes = await page.request.post(
+    `${apiBase}/jobs/leave-upcoming/run`,
+    {
+      headers: adminHeaders,
+      data: { targetDate: leaveDate },
+    },
+  );
   await ensureOk(leaveJobRes);
   const leaveNotification = await waitForUnreadNotification(
     page,
@@ -430,15 +452,16 @@ test('dashboard notification cards route to chat/leave/expense targets @core', a
   const expenseNotification = await waitForUnreadNotification(
     page,
     targetHeaders,
-    (item) =>
-      item.kind === 'expense_mark_paid' && item.messageId === expenseId,
+    (item) => item.kind === 'expense_mark_paid' && item.messageId === expenseId,
   );
   expect(expenseNotification?.id).toBeTruthy();
 
   await page.reload();
-  await expect(page.getByRole('heading', { name: 'ERP4 MVP PoC' })).toBeVisible({
-    timeout: actionTimeout,
-  });
+  await expect(page.getByRole('heading', { name: 'ERP4 MVP PoC' })).toBeVisible(
+    {
+      timeout: actionTimeout,
+    },
+  );
   await openHome(page);
   await installOpenEventRecorder(page);
   const dashboardSection = page
@@ -455,7 +478,9 @@ test('dashboard notification cards route to chat/leave/expense targets @core', a
   await leaveItem.getByRole('button', { name: '開く' }).click();
   await expectOpenEventRecorded(page, 'leave_request', leaveRequestId);
   await expect(
-    page.locator('main').getByRole('heading', { name: '休暇', level: 2, exact: true }),
+    page
+      .locator('main')
+      .getByRole('heading', { name: '休暇', level: 2, exact: true }),
   ).toBeVisible({ timeout: actionTimeout });
   await markNotificationRead(page, targetHeaders, leaveNotification.id);
 
@@ -511,9 +536,11 @@ test('dashboard notification cards route to chat/leave/expense targets @core', a
   expect(ackNotification?.id).toBeTruthy();
 
   await page.reload();
-  await expect(page.getByRole('heading', { name: 'ERP4 MVP PoC' })).toBeVisible({
-    timeout: actionTimeout,
-  });
+  await expect(page.getByRole('heading', { name: 'ERP4 MVP PoC' })).toBeVisible(
+    {
+      timeout: actionTimeout,
+    },
+  );
   await openHome(page);
   await installOpenEventRecorder(page);
   const chatDashboardSection = page
@@ -530,16 +557,109 @@ test('dashboard notification cards route to chat/leave/expense targets @core', a
   await chatItem.getByRole('button', { name: '開く' }).click();
   await expectOpenEventRecorded(page, 'chat_message', ackMessageId);
   await expect(
-    page
-      .locator('main')
-      .getByRole('heading', {
-        name: 'チャット（全社/部門/private_group/DM）',
-        level: 2,
-        exact: true,
-      }),
+    page.locator('main').getByRole('heading', {
+      name: 'チャット（全社/部門/private_group/DM）',
+      level: 2,
+      exact: true,
+    }),
   ).toBeVisible({ timeout: actionTimeout });
   await expect(page.locator('main').getByText(ackBody)).toBeVisible({
     timeout: actionTimeout,
   });
   await markNotificationRead(page, chatTargetHeaders, ackNotification.id);
+});
+
+test('dashboard alert cards show latest5 and empty placeholder @extended', async ({
+  page,
+}) => {
+  test.setTimeout(actionTimeout * 3);
+  const adminState: AuthState = {
+    userId: 'demo-user',
+    roles: ['admin', 'mgmt'],
+    projectIds: [defaultProjectId],
+    groupIds: ['mgmt', 'hr-group'],
+  };
+  const buildAlertItems = (count: number) =>
+    Array.from({ length: count }, (_, index) => ({
+      id: `e2e-alert-${index + 1}`,
+      type: 'budget_overrun',
+      targetRef: `${defaultProjectId}-${index + 1}`,
+      status: 'open',
+      sentChannels: ['dashboard'],
+      triggeredAt: new Date(Date.now() - index * 60_000).toISOString(),
+    }));
+  const routePattern = '**/alerts';
+  const alertItems = buildAlertItems(6);
+
+  await page.route(routePattern, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ items: alertItems }),
+    });
+  });
+  await prepare(page, adminState);
+  await openHome(page);
+
+  const dashboardSection = page
+    .locator('main')
+    .locator('h2', { hasText: 'Dashboard' })
+    .locator('..');
+  const { alertsBadge, alertsList } = resolveAlertsUi(dashboardSection);
+  const alertTypeLabels = alertsList.locator('strong', {
+    hasText: 'budget_overrun',
+  });
+
+  await expect(alertsBadge).toContainText('最新5件');
+  await expect(alertTypeLabels).toHaveCount(5, { timeout: actionTimeout });
+  const showAllButton = dashboardSection.getByRole('button', {
+    name: 'すべて表示',
+  });
+  await expect(showAllButton).toHaveCount(1, {
+    timeout: actionTimeout,
+  });
+  await showAllButton.click();
+  await expect(alertsBadge).toContainText('全6件');
+  await expect(alertTypeLabels).toHaveCount(6, { timeout: actionTimeout });
+
+  const latestOnlyButton = dashboardSection.getByRole('button', {
+    name: '最新のみ',
+  });
+  await expect(latestOnlyButton).toHaveCount(1, {
+    timeout: actionTimeout,
+  });
+  await latestOnlyButton.click();
+  await expect(alertsBadge).toContainText('最新5件');
+  await expect(alertTypeLabels).toHaveCount(5, { timeout: actionTimeout });
+
+  await page.unroute(routePattern);
+  await page.route(routePattern, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ items: [] }),
+    });
+  });
+  await page.reload();
+  await expect(page.getByRole('heading', { name: 'ERP4 MVP PoC' })).toBeVisible(
+    {
+      timeout: actionTimeout,
+    },
+  );
+  await openHome(page);
+
+  const dashboardSectionEmpty = page
+    .locator('main')
+    .locator('h2', { hasText: 'Dashboard' })
+    .locator('..');
+  const { alertsBadge: emptyBadge, alertsList: emptyList } = resolveAlertsUi(
+    dashboardSectionEmpty,
+  );
+  await expect(emptyBadge).toContainText('最新0件');
+  await expect(emptyList.locator('strong')).toHaveCount(0, {
+    timeout: actionTimeout,
+  });
+  await expect(emptyList.getByText('アラートなし')).toBeVisible({
+    timeout: actionTimeout,
+  });
 });
