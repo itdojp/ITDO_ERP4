@@ -31,6 +31,80 @@ async function ensureOk(res: { ok(): boolean; status(): number; text(): any }) {
   throw new Error(`[e2e] api failed: ${res.status()} ${body}`);
 }
 
+async function listNotificationsByMessage(
+  request: {
+    get: (
+      url: string,
+      init: { headers: Record<string, string> },
+    ) => Promise<any>;
+  },
+  headers: Record<string, string>,
+  kind: string,
+  messageId: string,
+) {
+  const res = await request.get(`${apiBase}/notifications?unread=1&limit=200`, {
+    headers,
+  });
+  await ensureOk(res);
+  const payload = await res.json();
+  return (payload?.items ?? []).filter(
+    (item: any) => item?.kind === kind && item?.messageId === messageId,
+  );
+}
+
+async function ensureRoleRecipientGroupMember(
+  request: {
+    get: (
+      url: string,
+      init: { headers: Record<string, string> },
+    ) => Promise<any>;
+    post: (
+      url: string,
+      init: { headers: Record<string, string>; data: unknown },
+    ) => Promise<any>;
+  },
+  userId: string,
+) {
+  const groupListRes = await request.get(`${apiBase}/groups`, {
+    headers: adminHeaders,
+  });
+  await ensureOk(groupListRes);
+  const groupPayload = await groupListRes.json();
+  const groups = Array.isArray(groupPayload?.items) ? groupPayload.items : [];
+  for (const selector of ['admin', 'mgmt']) {
+    let targetGroup = groups.find(
+      (group: any) =>
+        group?.displayName === selector && group?.isScimManaged !== true,
+    );
+    if (!targetGroup) {
+      const selectorExists = groups.some(
+        (group: any) => group?.displayName === selector,
+      );
+      if (selectorExists) {
+        continue;
+      }
+      const createRes = await request.post(`${apiBase}/groups`, {
+        headers: adminHeaders,
+        data: { displayName: selector },
+      });
+      await ensureOk(createRes);
+      targetGroup = await createRes.json();
+    }
+    const groupId = String(targetGroup?.id || '').trim();
+    if (!groupId) continue;
+    const addMemberRes = await request.post(
+      `${apiBase}/groups/${encodeURIComponent(groupId)}/members`,
+      {
+        headers: adminHeaders,
+        data: { userIds: [userId] },
+      },
+    );
+    await ensureOk(addMemberRes);
+    return { selector, groupId };
+  }
+  return null;
+}
+
 async function findApprovalInstance(
   request: {
     get: (
@@ -156,8 +230,7 @@ async function expectAuditAction(
               return false;
             }
             return true;
-          }) ??
-          false
+          }) ?? false
         );
       },
       { timeout: 5000 },
@@ -350,14 +423,25 @@ test('backend e2e: leave-upcoming notification job dry-run @extended', async ({
   const suffix = runId();
 
   const leaveUserId = 'e2e-member-1@example.com';
+  const roleRecipientUserId = 'e2e-member-2@example.com';
   const leaveUserHeaders = buildHeaders({
     userId: leaveUserId,
     roles: ['user'],
     projectIds: [defaultProjectId],
   });
+  const roleRecipientHeaders = buildHeaders({
+    userId: roleRecipientUserId,
+    roles: ['user'],
+  });
 
   const start = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000);
   const startDate = start.toISOString().slice(0, 10);
+
+  const roleRecipientBinding = await ensureRoleRecipientGroupMember(
+    request,
+    roleRecipientUserId,
+  );
+  expect(roleRecipientBinding).not.toBeNull();
 
   const leaveCreateRes = await request.post(`${apiBase}/leave-requests`, {
     headers: leaveUserHeaders,
@@ -408,6 +492,50 @@ test('backend e2e: leave-upcoming notification job dry-run @extended', async ({
   expect(Number(leaveUpcoming?.createdNotifications ?? 0)).toBeGreaterThan(0);
   expect(Array.isArray(leaveUpcoming?.sampleLeaveRequestIds)).toBeTruthy();
   expect(leaveUpcoming?.sampleLeaveRequestIds ?? []).toContain(leaveId);
+
+  const leaveUpcomingExecuteRes = await request.post(
+    `${apiBase}/jobs/leave-upcoming/run`,
+    {
+      headers: adminHeaders,
+      data: { targetDate: startDate, dryRun: false },
+    },
+  );
+  await ensureOk(leaveUpcomingExecuteRes);
+  const leaveUpcomingExecute = await leaveUpcomingExecuteRes.json();
+  expect(leaveUpcomingExecute?.ok).toBe(true);
+  expect(
+    Number(leaveUpcomingExecute?.createdNotifications ?? 0),
+  ).toBeGreaterThan(0);
+
+  await expect
+    .poll(
+      async () =>
+        (
+          await listNotificationsByMessage(
+            request,
+            leaveUserHeaders,
+            'leave_upcoming',
+            leaveId,
+          )
+        ).length,
+      { timeout: 5000 },
+    )
+    .toBeGreaterThan(0);
+
+  await expect
+    .poll(
+      async () =>
+        (
+          await listNotificationsByMessage(
+            request,
+            roleRecipientHeaders,
+            'leave_upcoming',
+            leaveId,
+          )
+        ).length,
+      { timeout: 5000 },
+    )
+    .toBeGreaterThan(0);
 
   await expectAuditAction(request, {
     action: 'leave_upcoming_run',

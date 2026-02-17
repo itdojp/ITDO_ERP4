@@ -31,7 +31,7 @@
 ### 通知ジョブ（運用）
 
 - [x] POST /jobs/chat-ack-reminders/run（dryRun/limit）で期限到来（dueAt<=now）の未完了確認依頼に対し、通知候補/生成件数が返る
-- [ ] POST /jobs/leave-upcoming/run（targetDate/dryRun）で休暇開始日の通知（leave_upcoming）が生成される（本人+admin/mgmt）
+- [x] POST /jobs/leave-upcoming/run（targetDate/dryRun）で休暇開始日の通知（leave_upcoming）が生成される（本人+admin/mgmt）
 
 ### 経費（支払状態）
 
@@ -61,7 +61,7 @@
 
 ### ダッシュボード/通知
 
-- [ ] ダッシュボード: アラートカードが最新5件表示される（なければプレースホルダ）
+- [x] ダッシュボード: アラートカードが最新5件表示される（なければプレースホルダ）
 - [x] ダッシュボード: 通知カードが表示され、クリックで該当画面に遷移できる（chat/休暇/経費）
 
 ### チャット
@@ -81,32 +81,32 @@
 
 ### 日報+工数
 
-- [ ] 日報+WB: Good/Not Good 送信、Not Good時タグ/コメント/ヘルプ導線
+- [x] 日報+WB: Good/Not Good 送信、Not Good時タグ/コメント/ヘルプ導線
 - [ ] 工数入力: プロジェクト/タスク/日付/時間/作業種別/場所を入力→一覧に反映
 
 ### 請求
 
-- [ ] 請求: 作成→送信、詳細モックの表示
+- [x] 請求: 作成→送信、詳細モックの表示
 
 ### 案件
 
-- [ ] 案件: メンバー管理（一覧/追加/削除/権限更新）が動作する
-- [ ] 案件: メンバー候補検索で候補が表示され、選択できる
-- [ ] 案件: CSVインポート/エクスポートが動作する
+- [x] 案件: メンバー管理（一覧/追加/削除/権限更新）が動作する
+- [x] 案件: メンバー候補検索で候補が表示され、選択できる
+- [x] 案件: CSVインポート/エクスポートが動作する
 
 ### 経費
 
 - [ ] 経費入力: プロジェクト/区分/日付/金額/通貨/共通経費/領収書URL を入力→一覧に反映
-- [ ] 経費: 支払完了通知（expense_mark_paid）が通知カードに表示され、対象経費に遷移できる
-- [ ] 経費: 注釈 Drawer でメモを保存し、再表示で保持される
-- [ ] 経費: 注釈の EntityReferencePicker で内部参照候補を追加できる
+- [x] 経費: 支払完了通知（expense_mark_paid）が通知カードに表示され、対象経費に遷移できる
+- [x] 経費: 注釈 Drawer でメモを保存し、再表示で保持される
+- [x] 経費: 注釈の EntityReferencePicker で内部参照候補を追加できる
 
 ### 仕入/発注（PO↔VI）
 
-- [ ] 仕入/発注: VI 一覧が取得でき、PO 連携状態が表示される
+- [x] 仕入/発注: VI 一覧が取得でき、PO 連携状態が表示される
 - [ ] 仕入/発注: VI の PO 紐づけ/解除ができる（ステータスにより理由入力の要否が変わる）
 - [ ] 仕入/発注: VI の配賦明細が表示/更新できる（合計、差分、端数調整の挙動）
-- [ ] 仕入/発注: 必要に応じて PO/VI のPDFを参照できる（stub の場合は警告表示）
+- [x] 仕入/発注: 必要に応じて PO/VI のPDFを参照できる（stub の場合は警告表示）
 
 ### 運用ジョブ（AdminJobs）
 
@@ -116,19 +116,19 @@
 ### 管理設定/監査（design-system 1.1.0）
 
 - [x] ActionPolicy: PolicyFormBuilder で作成/更新ができる（必須・JSONバリデーション）
-- [ ] 承認ルール/ActionPolicy: 履歴表示で AuditTimeline と DiffViewer が表示される
+- [x] 承認ルール/ActionPolicy: 履歴表示で AuditTimeline と DiffViewer が表示される
 - [x] 監査ログ: DateRangePicker（from/to）で期間指定検索ができる
-- [ ] 監査閲覧: DateTimeRangePicker（targetFrom/targetUntil）で期間指定できる
-- [ ] HR分析: DateRangePicker（開始日/終了日）で集計範囲を変更できる
+- [x] 監査閲覧: DateTimeRangePicker（targetFrom/targetUntil）で期間指定できる
+- [x] HR分析: DateRangePicker（開始日/終了日）で集計範囲を変更できる
 
 ### モバイル回帰（design-system適用後）
 
 - [ ] `docs/test-results/mobile-regression-template.md` をコピーし、PR単位の証跡ファイル（`YYYY-MM-DD-mobile-regression-*.md`）を作成する
 - [x] Invoices: 一覧/フィルタ/行アクションが `375x667` で崩れず操作できる
-- [ ] VendorDocuments: PO紐づけ/解除、配賦明細または請求明細入力が `375x667` で操作できる
-- [ ] AuditLogs: 検索フォーム/一覧/CSV出力が `375x667` で操作できる
-- [ ] PeriodLocks: 登録/解除導線が `375x667` で操作できる
-- [ ] AdminJobs: dryRun切替/実行/結果確認が `375x667` で操作できる
+- [x] VendorDocuments: PO紐づけ/解除、配賦明細または請求明細入力が `375x667` で操作できる
+- [x] AuditLogs: 検索フォーム/一覧/CSV出力が `375x667` で操作できる
+- [x] PeriodLocks: 登録/解除導線が `375x667` で操作できる
+- [x] AdminJobs: dryRun切替/実行/結果確認が `375x667` で操作できる
 - [ ] PR本文に証跡ファイルとスクリーンショット格納ディレクトリ（`docs/test-results/...`）のリンクを記載する
 
 ## 環境・その他
