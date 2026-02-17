@@ -1,7 +1,5 @@
 type ReplyLike = {
-  status: (
-    statusCode: number,
-  ) => {
+  status: (statusCode: number) => {
     send: (payload: unknown) => unknown;
   };
 };
