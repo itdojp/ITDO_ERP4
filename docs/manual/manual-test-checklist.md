@@ -42,7 +42,7 @@
 
 ### 仕入/発注（PO↔VI、配賦明細）
 
-- [ ] /vendor-quotes 作成と /vendor-invoices 作成 → /vendor-invoices/:id/submit → /vendor-invoices/:id/approve のハッピーパスが通る
+- [x] /vendor-quotes 作成と /vendor-invoices 作成 → /vendor-invoices/:id/submit → /vendor-invoices/:id/approve のハッピーパスが通る
 - [x] POST /vendor-invoices/:id/link-po で PO を紐づけできる（案件/業者一致、監査ログ）
 - [x] POST /vendor-invoices/:id/unlink-po で PO 紐づけを解除できる（監査ログ）
 - [x] GET /vendor-invoices/:id/lines で `poLineUsage`（他VI利用数量/入力数量/残数量）が取得できる

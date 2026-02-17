@@ -81,9 +81,7 @@ test('backend manual checklist: documents & send logs @extended', async ({
   );
   await ensureOk(sendLogsRes);
   const sendLogsPayload = await sendLogsRes.json();
-  const sendLogId = (sendLogsPayload?.items ?? [])[0]?.id as
-    | string
-    | undefined;
+  const sendLogId = (sendLogsPayload?.items ?? [])[0]?.id as string | undefined;
   expect(sendLogId).toBeTruthy();
 
   const docLogRes = await request.get(
@@ -318,11 +316,63 @@ test('backend manual checklist: members/vendors/time/expenses/wellbeing @extende
   });
   await ensureOk(vendorInvoiceRes);
   const vendorInvoice = await vendorInvoiceRes.json();
-  const approveRes = await request.post(
+  const submitRes = await request.post(
     `${apiBase}/vendor-invoices/${encodeURIComponent(vendorInvoice.id)}/submit`,
     { headers: adminHeaders },
   );
-  await ensureOk(approveRes);
+  await ensureOk(submitRes);
+  const submittedVendorInvoice = await submitRes.json();
+  expect(submittedVendorInvoice?.status).toBe('pending_qa');
+
+  let approvalInstanceId = '';
+  await expect
+    .poll(
+      async () => {
+        const listRes = await request.get(
+          `${apiBase}/approval-instances?flowType=vendor_invoice&projectId=${encodeURIComponent(defaultProjectId)}`,
+          { headers: adminHeaders },
+        );
+        if (!listRes.ok()) return '';
+        const payload = await listRes.json();
+        const matched = (payload?.items ?? []).find(
+          (item: any) => item?.targetId === vendorInvoice.id,
+        );
+        approvalInstanceId = typeof matched?.id === 'string' ? matched.id : '';
+        return approvalInstanceId;
+      },
+      { timeout: 5000 },
+    )
+    .not.toBe('');
+  expect(approvalInstanceId).toBeTruthy();
+
+  let approvalStatus = String(submittedVendorInvoice?.status ?? '');
+
+  for (
+    let i = 0;
+    i < 5 &&
+    (approvalStatus === 'pending_qa' || approvalStatus === 'pending_exec');
+    i += 1
+  ) {
+    const actRes = await request.post(
+      `${apiBase}/approval-instances/${encodeURIComponent(approvalInstanceId)}/act`,
+      {
+        data: { action: 'approve' },
+        headers: adminHeaders,
+      },
+    );
+    await ensureOk(actRes);
+    const acted = await actRes.json();
+    approvalStatus = String(acted?.status ?? '');
+  }
+  expect(approvalStatus).toBe('approved');
+
+  const approvedVendorInvoiceRes = await request.get(
+    `${apiBase}/vendor-invoices/${encodeURIComponent(vendorInvoice.id)}`,
+    { headers: adminHeaders },
+  );
+  await ensureOk(approvedVendorInvoiceRes);
+  const approvedVendorInvoice = await approvedVendorInvoiceRes.json();
+  expect(approvedVendorInvoice?.status).toBe('approved');
 
   const userId = `e2e-user-${suffix}`;
   const userHeaders = buildHeaders({
@@ -426,10 +476,9 @@ test('backend manual checklist: members/vendors/time/expenses/wellbeing @extende
     roles: ['hr'],
     groupIds: ['hr-group'],
   });
-  const wellbeingListRes = await request.get(
-    `${apiBase}/wellbeing-entries`,
-    { headers: hrHeaders },
-  );
+  const wellbeingListRes = await request.get(`${apiBase}/wellbeing-entries`, {
+    headers: hrHeaders,
+  });
   await ensureOk(wellbeingListRes);
   const wellbeingPayload = await wellbeingListRes.json();
   const wellbeingVisible = (wellbeingPayload?.items ?? []).some(
