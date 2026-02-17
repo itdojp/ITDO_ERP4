@@ -1,4 +1,4 @@
-export const CHAT_ROLES: string[] = [
+export const CHAT_ROLES: ReadonlyArray<string> = [
   'admin',
   'mgmt',
   'user',
@@ -7,4 +7,4 @@ export const CHAT_ROLES: string[] = [
   'external_chat',
 ];
 
-export const CHAT_ADMIN_ROLES: string[] = ['admin', 'mgmt'];
+export const CHAT_ADMIN_ROLES: ReadonlyArray<string> = ['admin', 'mgmt'];

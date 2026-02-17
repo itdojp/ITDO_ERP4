@@ -1,7 +1,7 @@
 import { FastifyReply, FastifyRequest } from 'fastify';
 import { createApiErrorResponse } from './errors.js';
 
-export function requireRole(allowed: string[]) {
+export function requireRole(allowed: readonly string[]) {
   return async (req: FastifyRequest, reply: FastifyReply) => {
     const roles = req.user?.roles || [];
     if (!allowed.some((r) => roles.includes(r))) {
