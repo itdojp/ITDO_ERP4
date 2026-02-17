@@ -76,7 +76,11 @@ export function buildVendorInvoiceLinePayload(
       entry.amount === undefined || entry.amount === null || entry.amount === ''
         ? null
         : parseNumberValue(entry.amount);
-    if (entry.amount != null && entry.amount !== '' && (amount == null || amount < 0)) {
+    if (
+      entry.amount != null &&
+      entry.amount !== '' &&
+      (amount == null || amount < 0)
+    ) {
       return {
         ok: false,
         errorText: `請求明細 ${i + 1} の金額が不正です`,
@@ -88,7 +92,11 @@ export function buildVendorInvoiceLinePayload(
       entry.taxRate === ''
         ? null
         : parseNumberValue(entry.taxRate);
-    if (entry.taxRate != null && entry.taxRate !== '' && (taxRate == null || taxRate < 0)) {
+    if (
+      entry.taxRate != null &&
+      entry.taxRate !== '' &&
+      (taxRate == null || taxRate < 0)
+    ) {
       return {
         ok: false,
         errorText: `請求明細 ${i + 1} の税率が不正です`,
