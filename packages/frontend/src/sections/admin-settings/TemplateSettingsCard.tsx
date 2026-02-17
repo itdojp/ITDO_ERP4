@@ -84,7 +84,9 @@ export const TemplateSettingsCard: React.FC<TemplateSettingsCardProps> = ({
               })
             }
           >
-            {templatesForKind.length === 0 && <option value="">テンプレなし</option>}
+            {templatesForKind.length === 0 && (
+              <option value="">テンプレなし</option>
+            )}
             {templatesForKind.map((template) => (
               <option key={template.id} value={template.id}>
                 {template.name}
@@ -189,7 +191,8 @@ export const TemplateSettingsCard: React.FC<TemplateSettingsCardProps> = ({
               </span>
             </div>
             <div style={{ fontSize: 12, color: '#475569', marginTop: 4 }}>
-              logo: {item.logoUrl || '-'} / signature: {item.signatureText || '-'}
+              logo: {item.logoUrl || '-'} / signature:{' '}
+              {item.signatureText || '-'}
             </div>
             <div className="row" style={{ marginTop: 6 }}>
               <button className="button secondary" onClick={() => onEdit(item)}>
