@@ -74,9 +74,12 @@ test('frontend offline queue @extended', async ({ page, context }) => {
     has: page.locator('strong', { hasText: '現在のユーザー' }),
   });
   await currentSection.scrollIntoViewIfNeeded();
-  await currentSection.getByRole('button', { name: '再読込' }).first().click();
+  const offlineQueueSection = currentSection
+    .locator('strong', { hasText: 'オフライン送信キュー' })
+    .locator('..');
+  await offlineQueueSection.getByRole('button', { name: '再読込' }).click();
 
-  const statusLine = currentSection.getByText(/件数:/);
+  const statusLine = offlineQueueSection.getByText(/件数:/);
   await expect
     .poll(
       async () => {
@@ -89,6 +92,8 @@ test('frontend offline queue @extended', async ({ page, context }) => {
     .toBeGreaterThan(0);
 
   await context.setOffline(false);
-  await expect(currentSection.getByText('送信待ちを処理しました')).toBeVisible();
-  await captureSection(currentSection, '15-offline-queue-retry.png');
+  await expect(
+    offlineQueueSection.getByText('送信待ちを処理しました'),
+  ).toBeVisible();
+  await captureSection(offlineQueueSection, '15-offline-queue-retry.png');
 });
