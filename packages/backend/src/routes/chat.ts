@@ -107,7 +107,7 @@ export async function registerChatRoutes(app: FastifyInstance) {
     userId: string;
   }) {
     const rateLimit = await enforceAllMentionRateLimit({
-      projectId: options.projectId,
+      roomId: options.projectId,
       userId: options.userId,
       now: new Date(),
     });

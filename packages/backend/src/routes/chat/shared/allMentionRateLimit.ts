@@ -17,7 +17,7 @@ export type AllMentionRateLimit =
     };
 
 export async function enforceAllMentionRateLimit(options: {
-  projectId: string;
+  roomId: string;
   userId: string;
   now: Date;
 }): Promise<AllMentionRateLimit> {
@@ -36,7 +36,7 @@ export async function enforceAllMentionRateLimit(options: {
     minIntervalSeconds > 0
       ? prisma.chatMessage.findFirst({
           where: {
-            roomId: options.projectId,
+            roomId: options.roomId,
             userId: options.userId,
             mentionsAll: true,
             deletedAt: null,
@@ -48,7 +48,7 @@ export async function enforceAllMentionRateLimit(options: {
     maxPer24h > 0
       ? prisma.chatMessage.count({
           where: {
-            roomId: options.projectId,
+            roomId: options.roomId,
             userId: options.userId,
             mentionsAll: true,
             deletedAt: null,
