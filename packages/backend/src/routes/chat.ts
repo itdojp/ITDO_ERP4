@@ -37,12 +37,14 @@ import {
 } from '../services/appNotifications.js';
 import { resolveRoomAudienceUserIds } from '../services/chatMentionRecipients.js';
 import { resolveGroupCandidatesBySelector } from '../services/groupCandidates.js';
+import { CHAT_ROLES } from './chat/shared/constants.js';
 import {
   normalizeStringArray,
   parseLimit,
   parseLimitNumber,
   parseNonNegativeInt,
 } from './chat/shared/inputParsers.js';
+import { normalizeMentions } from './chat/shared/mentions.js';
 import { parseDateParam } from '../utils/date.js';
 
 function parseMaxBytes(raw: string | undefined, fallback: number) {
@@ -69,7 +71,7 @@ async function readFileBuffer(
 }
 
 export async function registerChatRoutes(app: FastifyInstance) {
-  const chatRoles = ['admin', 'mgmt', 'user', 'hr', 'exec', 'external_chat'];
+  const chatRoles = CHAT_ROLES;
 
   type AllMentionRateLimit =
     | { allowed: true }
@@ -85,39 +87,6 @@ export async function registerChatRoutes(app: FastifyInstance) {
         maxPer24h: number;
         windowStart: Date;
       };
-
-  function normalizeMentions(value: unknown) {
-    if (!value || typeof value !== 'object') {
-      return {
-        mentions: undefined as Prisma.InputJsonValue | undefined,
-        mentionsAll: false,
-        mentionUserIds: [] as string[],
-        mentionGroupIds: [] as string[],
-      };
-    }
-    const record = value as {
-      userIds?: unknown;
-      groupIds?: unknown;
-      all?: unknown;
-    };
-    const mentionUserIds = normalizeStringArray(record.userIds, {
-      dedupe: true,
-      max: 50,
-    });
-    const mentionGroupIds = normalizeStringArray(record.groupIds, {
-      dedupe: true,
-      max: 20,
-    });
-    const mentionsAll = record.all === true;
-    const mentions =
-      mentionUserIds.length || mentionGroupIds.length
-        ? ({
-            userIds: mentionUserIds.length ? mentionUserIds : undefined,
-            groupIds: mentionGroupIds.length ? mentionGroupIds : undefined,
-          } as Prisma.InputJsonValue)
-        : undefined;
-    return { mentions, mentionsAll, mentionUserIds, mentionGroupIds };
-  }
 
   async function ensureProjectRoom(projectId: string, userId: string | null) {
     const existing = await prisma.chatRoom.findUnique({

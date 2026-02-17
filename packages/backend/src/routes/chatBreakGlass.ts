@@ -8,6 +8,7 @@ import {
   chatBreakGlassRejectSchema,
   chatBreakGlassRequestSchema,
 } from './validators.js';
+import { CHAT_ROLES } from './chat/shared/constants.js';
 import { parseLimit } from './chat/shared/inputParsers.js';
 import { parseDateParam } from '../utils/date.js';
 
@@ -23,7 +24,7 @@ function addHours(date: Date, hours: number) {
 
 export async function registerChatBreakGlassRoutes(app: FastifyInstance) {
   const allowedRoles = ['mgmt', 'exec'];
-  const chatRoles = ['admin', 'mgmt', 'user', 'hr', 'exec', 'external_chat'];
+  const chatRoles = CHAT_ROLES;
 
   app.get(
     '/projects/:projectId/chat-break-glass-events',

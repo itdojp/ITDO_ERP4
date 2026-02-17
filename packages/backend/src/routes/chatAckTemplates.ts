@@ -4,6 +4,7 @@ import { prisma } from '../services/db.js';
 import { requireRole } from '../services/rbac.js';
 import { auditContextFromRequest, logAudit } from '../services/audit.js';
 import { FlowTypeValue, type FlowType } from '../types.js';
+import { CHAT_ADMIN_ROLES } from './chat/shared/constants.js';
 import {
   chatAckTemplatePatchSchema,
   chatAckTemplateSchema,
@@ -38,7 +39,7 @@ function parseFlowType(value: string): FlowType | null {
 export async function registerChatAckTemplateRoutes(app: FastifyInstance) {
   app.get(
     '/chat-ack-templates',
-    { preHandler: requireRole(['admin', 'mgmt']) },
+    { preHandler: requireRole(CHAT_ADMIN_ROLES) },
     async (req, reply) => {
       const { flowType, actionKey } = req.query as {
         flowType?: string;
@@ -66,7 +67,7 @@ export async function registerChatAckTemplateRoutes(app: FastifyInstance) {
   app.post(
     '/chat-ack-templates',
     {
-      preHandler: requireRole(['admin', 'mgmt']),
+      preHandler: requireRole(CHAT_ADMIN_ROLES),
       schema: chatAckTemplateSchema,
     },
     async (req, reply) => {
@@ -122,7 +123,7 @@ export async function registerChatAckTemplateRoutes(app: FastifyInstance) {
   app.patch(
     '/chat-ack-templates/:id',
     {
-      preHandler: requireRole(['admin', 'mgmt']),
+      preHandler: requireRole(CHAT_ADMIN_ROLES),
       schema: chatAckTemplatePatchSchema,
     },
     async (req, reply) => {

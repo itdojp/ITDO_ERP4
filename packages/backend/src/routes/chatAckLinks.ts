@@ -7,6 +7,7 @@ import {
   isAllowedChatAckLinkTargetTable,
   validateChatAckLinkTarget,
 } from '../services/chatAckLinkTargets.js';
+import { CHAT_ADMIN_ROLES } from './chat/shared/constants.js';
 import {
   chatAckLinkCreateSchema,
   chatAckLinkQuerySchema,
@@ -32,7 +33,7 @@ export async function registerChatAckLinkRoutes(app: FastifyInstance) {
   app.get(
     '/chat-ack-links',
     {
-      preHandler: requireRole(['admin', 'mgmt']),
+      preHandler: requireRole(CHAT_ADMIN_ROLES),
       schema: chatAckLinkQuerySchema,
     },
     async (req, reply) => {
@@ -91,7 +92,7 @@ export async function registerChatAckLinkRoutes(app: FastifyInstance) {
   app.post(
     '/chat-ack-links',
     {
-      preHandler: requireRole(['admin', 'mgmt']),
+      preHandler: requireRole(CHAT_ADMIN_ROLES),
       schema: chatAckLinkCreateSchema,
     },
     async (req, reply) => {
@@ -236,7 +237,7 @@ export async function registerChatAckLinkRoutes(app: FastifyInstance) {
 
   app.delete(
     '/chat-ack-links/:id',
-    { preHandler: requireRole(['admin', 'mgmt']) },
+    { preHandler: requireRole(CHAT_ADMIN_ROLES) },
     async (req, reply) => {
       const { id } = req.params as { id: string };
       const existing = await prisma.chatAckLink.findUnique({ where: { id } });

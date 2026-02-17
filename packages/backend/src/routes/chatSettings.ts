@@ -3,13 +3,14 @@ import { prisma } from '../services/db.js';
 import { requireRole } from '../services/rbac.js';
 import { chatSettingPatchSchema } from './validators.js';
 import { auditContextFromRequest, logAudit } from '../services/audit.js';
+import { CHAT_ADMIN_ROLES } from './chat/shared/constants.js';
 
 const CHAT_SETTING_ID = 'default';
 
 export async function registerChatSettingRoutes(app: FastifyInstance) {
   app.get(
     '/chat-settings',
-    { preHandler: requireRole(['admin', 'mgmt']) },
+    { preHandler: requireRole(CHAT_ADMIN_ROLES) },
     async () => {
       const existing = await prisma.chatSetting.findUnique({
         where: { id: CHAT_SETTING_ID },
@@ -24,7 +25,7 @@ export async function registerChatSettingRoutes(app: FastifyInstance) {
   app.patch(
     '/chat-settings',
     {
-      preHandler: requireRole(['admin', 'mgmt']),
+      preHandler: requireRole(CHAT_ADMIN_ROLES),
       schema: chatSettingPatchSchema,
     },
     async (req) => {
