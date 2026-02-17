@@ -445,10 +445,10 @@ test('dashboard notification cards route to chat/leave/expense targets @core', a
     .locator('main')
     .locator('h2', { hasText: 'Dashboard' })
     .locator('..');
-  const leaveItem = dashboardSection
-    .locator('strong', { hasText: '休暇予定' })
-    .locator('xpath=ancestor::div[2]')
-    .first();
+  const leaveItem = dashboardSection.locator('.card', {
+    has: dashboardSection.locator('strong', { hasText: '休暇予定' }),
+  });
+  await expect(leaveItem).toHaveCount(1, { timeout: actionTimeout });
   await expect(leaveItem).toBeVisible({ timeout: actionTimeout });
   await resetOpenEventRecorder(page);
   await leaveItem.getByRole('button', { name: '開く' }).click();
@@ -463,10 +463,12 @@ test('dashboard notification cards route to chat/leave/expense targets @core', a
     .locator('main')
     .locator('h2', { hasText: 'Dashboard' })
     .locator('..');
-  const expenseItem = dashboardSectionAfterHome
-    .locator('strong', { hasText: '経費支払完了' })
-    .locator('xpath=ancestor::div[2]')
-    .first();
+  const expenseItem = dashboardSectionAfterHome.locator('.card', {
+    has: dashboardSectionAfterHome.locator('strong', {
+      hasText: '経費支払完了',
+    }),
+  });
+  await expect(expenseItem).toHaveCount(1, { timeout: actionTimeout });
   await expect(expenseItem).toBeVisible({ timeout: actionTimeout });
   await resetOpenEventRecorder(page);
   await expenseItem.getByRole('button', { name: '開く' }).click();
@@ -516,10 +518,10 @@ test('dashboard notification cards route to chat/leave/expense targets @core', a
     .locator('main')
     .locator('h2', { hasText: 'Dashboard' })
     .locator('..');
-  const chatItem = chatDashboardSection
-    .getByText(ackBody, { exact: false })
-    .locator('xpath=ancestor::div[2]')
-    .first();
+  const chatItem = chatDashboardSection.locator('.card', {
+    has: chatDashboardSection.getByText(ackBody, { exact: false }),
+  });
+  await expect(chatItem).toHaveCount(1, { timeout: actionTimeout });
   await expect(chatItem).toBeVisible({ timeout: actionTimeout });
   await resetOpenEventRecorder(page);
   await chatItem.getByRole('button', { name: '開く' }).click();
