@@ -1,28 +1,11 @@
 import React from 'react';
 import { Button, CrudList, FilterBar, Input, Select, Toast } from '../../ui';
-
-type ProjectOption = {
-  id: string;
-  code: string;
-  name: string;
-};
-
-type VendorOption = {
-  id: string;
-  code: string;
-  name: string;
-};
-
-type PurchaseOrderForm = {
-  projectId: string;
-  vendorId: string;
-  issueDate: string;
-  dueDate: string;
-  currency: string;
-  totalAmount: number;
-};
-
-type MessageState = { text: string; type: 'success' | 'error' } | null;
+import type {
+  MessageState,
+  ProjectOption,
+  PurchaseOrderForm,
+  VendorOption,
+} from './vendorDocumentsShared';
 
 type VendorDocumentsPurchaseOrdersSectionProps = {
   active: boolean;

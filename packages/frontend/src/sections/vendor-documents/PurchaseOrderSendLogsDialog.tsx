@@ -9,15 +9,7 @@ import {
   erpStatusDictionary,
 } from '../../ui';
 import type { DataTableRow } from '../../ui';
-
-export type PurchaseOrderSendLog = {
-  id: string;
-  channel: string;
-  status: string;
-  createdAt: string;
-  error?: string | null;
-  pdfUrl?: string | null;
-};
+import type { DocumentSendLog } from './vendorDocumentsShared';
 
 type PurchaseOrderSendLogsDialogProps = {
   open: boolean;
@@ -27,7 +19,7 @@ type PurchaseOrderSendLogsDialogProps = {
   missingNumberLabel: string;
   message: string;
   loading: boolean;
-  logs: PurchaseOrderSendLog[];
+  logs: DocumentSendLog[];
   onClose: () => void;
   onOpenPdf: (purchaseOrderId: string, pdfUrl: string) => void;
 };
