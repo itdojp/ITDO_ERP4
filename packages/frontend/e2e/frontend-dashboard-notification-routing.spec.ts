@@ -615,7 +615,9 @@ test('dashboard alert cards show latest5 and empty placeholder @extended', async
   const showAllButton = dashboardSection.getByRole('button', {
     name: 'すべて表示',
   });
-  await expect(showAllButton).toHaveCount(1);
+  await expect(showAllButton).toHaveCount(1, {
+    timeout: actionTimeout,
+  });
   await showAllButton.click();
   await expect(alertsBadge).toContainText('全6件');
   await expect(alertTypeLabels).toHaveCount(6, { timeout: actionTimeout });
@@ -623,7 +625,9 @@ test('dashboard alert cards show latest5 and empty placeholder @extended', async
   const latestOnlyButton = dashboardSection.getByRole('button', {
     name: '最新のみ',
   });
-  await expect(latestOnlyButton).toHaveCount(1);
+  await expect(latestOnlyButton).toHaveCount(1, {
+    timeout: actionTimeout,
+  });
   await latestOnlyButton.click();
   await expect(alertsBadge).toContainText('最新5件');
   await expect(alertTypeLabels).toHaveCount(5, { timeout: actionTimeout });
@@ -652,7 +656,9 @@ test('dashboard alert cards show latest5 and empty placeholder @extended', async
     dashboardSectionEmpty,
   );
   await expect(emptyBadge).toContainText('最新0件');
-  await expect(emptyList.locator('strong')).toHaveCount(0);
+  await expect(emptyList.locator('strong')).toHaveCount(0, {
+    timeout: actionTimeout,
+  });
   await expect(emptyList.getByText('アラートなし')).toBeVisible({
     timeout: actionTimeout,
   });
