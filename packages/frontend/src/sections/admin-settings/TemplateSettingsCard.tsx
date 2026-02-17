@@ -1,6 +1,6 @@
 import React from 'react';
 
-type TemplateFormValue = {
+export type TemplateFormValue = {
   kind: string;
   templateId: string;
   numberRule: string;
@@ -15,11 +15,12 @@ type TemplateOption = {
   name: string;
 };
 
-type TemplateSettingItem = {
+export type TemplateSettingItem = {
   id: string;
   kind: string;
   templateId: string;
   numberRule: string;
+  layoutConfig?: Record<string, unknown> | null;
   logoUrl?: string | null;
   signatureText?: string | null;
   isDefault?: boolean | null;
