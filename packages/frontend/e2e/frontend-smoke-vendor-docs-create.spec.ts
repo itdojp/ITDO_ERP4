@@ -121,9 +121,9 @@ async function selectByValue(select: Locator, value: string) {
 }
 
 async function findSelectByOptionText(scope: Locator, optionText: string) {
-  const select = scope.locator('select', {
-    has: scope.locator('option', { hasText: optionText }),
-  });
+  const options = scope.locator('option', { hasText: optionText });
+  await expect(options).toHaveCount(1, { timeout: actionTimeout });
+  const select = options.locator('xpath=ancestor::select[1]');
   await expect(select).toHaveCount(1, { timeout: actionTimeout });
   return select;
 }
