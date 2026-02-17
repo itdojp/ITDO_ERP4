@@ -17,7 +17,6 @@ import {
   Dialog,
   FilterBar,
   Input,
-  SavedViewBar,
   Select,
   StatusBadge,
   Tabs,
@@ -35,6 +34,7 @@ import { VendorDocumentsVendorQuotesSection } from './vendor-documents/VendorDoc
 import { VendorDocumentsVendorInvoicesSection } from './vendor-documents/VendorDocumentsVendorInvoicesSection';
 import { VendorInvoiceLineDialog } from './vendor-documents/VendorInvoiceLineDialog';
 import { VendorInvoicePoLinkDialog } from './vendor-documents/VendorInvoicePoLinkDialog';
+import { VendorInvoiceSavedViewBar } from './vendor-documents/VendorInvoiceSavedViewBar';
 import {
   defaultPurchaseOrderForm,
   defaultVendorInvoiceForm,
@@ -1928,64 +1928,14 @@ export const VendorDocuments: React.FC = () => {
             invoiceResult={invoiceResult}
             onDismissInvoiceResult={() => setInvoiceResult(null)}
             invoiceSavedViewBar={
-              <SavedViewBar
-                views={invoiceSavedViews.views}
-                activeViewId={invoiceSavedViews.activeViewId}
-                onSelectView={(viewId) => {
-                  invoiceSavedViews.selectView(viewId);
-                  const selected = invoiceSavedViews.views.find(
-                    (view) => view.id === viewId,
-                  );
-                  if (!selected) return;
-                  setInvoiceSearch(selected.payload.search);
-                  setInvoiceStatusFilter(
-                    normalizeInvoiceStatusFilter(
-                      selected.payload.status,
-                      invoiceStatusOptions,
-                    ),
-                  );
-                }}
-                onSaveAs={(name) => {
-                  const normalizedStatus = normalizeInvoiceStatusFilter(
-                    invoiceStatusFilter,
-                    invoiceStatusOptions,
-                  );
-                  invoiceSavedViews.createView(name, {
-                    search: invoiceSearch,
-                    status: normalizedStatus,
-                  });
-                }}
-                onUpdateView={(viewId) => {
-                  const normalizedStatus = normalizeInvoiceStatusFilter(
-                    invoiceStatusFilter,
-                    invoiceStatusOptions,
-                  );
-                  invoiceSavedViews.updateView(viewId, {
-                    payload: {
-                      search: invoiceSearch,
-                      status: normalizedStatus,
-                    },
-                  });
-                }}
-                onDuplicateView={(viewId) => {
-                  invoiceSavedViews.duplicateView(viewId);
-                }}
-                onShareView={(viewId) => {
-                  invoiceSavedViews.toggleShared(viewId, true);
-                }}
-                onDeleteView={(viewId) => {
-                  invoiceSavedViews.deleteView(viewId);
-                }}
-                labels={{
-                  title: '仕入請求フィルタ保存',
-                  saveAsPlaceholder: 'ビュー名',
-                  saveAsButton: '保存',
-                  update: '更新',
-                  duplicate: '複製',
-                  share: '共有',
-                  delete: '削除',
-                  active: '現在のビュー',
-                }}
+              <VendorInvoiceSavedViewBar
+                savedViews={invoiceSavedViews}
+                invoiceSearch={invoiceSearch}
+                invoiceStatusFilter={invoiceStatusFilter}
+                invoiceStatusOptions={invoiceStatusOptions}
+                onChangeInvoiceSearch={setInvoiceSearch}
+                onChangeInvoiceStatusFilter={setInvoiceStatusFilter}
+                normalizeInvoiceStatusFilter={normalizeInvoiceStatusFilter}
               />
             }
             onReloadVendorInvoices={() => {
