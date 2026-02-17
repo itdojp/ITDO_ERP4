@@ -18,6 +18,20 @@ const runId = () =>
   process.env.E2E_RUN_ID ||
   `${Date.now().toString().slice(-6)}-${randomUUID()}`;
 
+function hasAnyRoleMapping(targetRoles: string[]) {
+  // Keep this aligned with backend leave-upcoming recipient expansion:
+  // services/appNotifications.ts resolveGroupIdsForRoles reads raw env only.
+  const raw = process.env.AUTH_GROUP_TO_ROLE_MAP || '';
+  return raw
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .some((pair) => {
+      const [groupId, role] = pair.split('=').map((value) => value.trim());
+      return Boolean(groupId && role && targetRoles.includes(role));
+    });
+}
+
 const adminAuthState = {
   userId: 'demo-user',
   roles: ['admin', 'mgmt'],
@@ -41,6 +55,31 @@ async function ensureOk(res: { ok(): boolean; status(): number; text(): any }) {
   if (res.ok()) return;
   const body = await res.text();
   throw new Error(`[e2e] api failed: ${res.status()} ${body}`);
+}
+
+async function clearUnreadNotifications(
+  page: Page,
+  headers: Record<string, string>,
+) {
+  const unreadRes = await page.request.get(
+    `${apiBase}/notifications?unread=1&limit=200`,
+    {
+      headers,
+    },
+  );
+  await ensureOk(unreadRes);
+  const unreadPayload = await unreadRes.json();
+  for (const item of unreadPayload?.items ?? []) {
+    if (!item?.id) continue;
+    const readRes = await page.request.post(
+      `${apiBase}/notifications/${encodeURIComponent(item.id)}/read`,
+      {
+        headers,
+        data: {},
+      },
+    );
+    await ensureOk(readRes);
+  }
 }
 
 async function prepare(page: Page, authState = adminAuthState) {
@@ -180,23 +219,17 @@ test('frontend admin jobs: chat ack reminder / leave upcoming run and dashboard 
   );
   await ensureOk(clearMuteRes);
 
-  const unreadBeforeRes = await page.request.get(
-    `${apiBase}/notifications?unread=1&limit=200`,
-    { headers: leaveUserHeaders },
+  const clearAdminMuteRes = await page.request.patch(
+    `${apiBase}/notification-preferences`,
+    {
+      headers: adminHeaders,
+      data: { muteAllUntil: null },
+    },
   );
-  await ensureOk(unreadBeforeRes);
-  const unreadBefore = await unreadBeforeRes.json();
-  for (const item of unreadBefore?.items ?? []) {
-    if (!item?.id) continue;
-    const markReadRes = await page.request.post(
-      `${apiBase}/notifications/${encodeURIComponent(item.id)}/read`,
-      {
-        headers: leaveUserHeaders,
-        data: {},
-      },
-    );
-    await ensureOk(markReadRes);
-  }
+  await ensureOk(clearAdminMuteRes);
+
+  await clearUnreadNotifications(page, leaveUserHeaders);
+  await clearUnreadNotifications(page, adminHeaders);
 
   const overdueDueAt = new Date(Date.now() - 60 * 60 * 1000).toISOString();
   const ackCreateRes = await page.request.post(
@@ -328,6 +361,28 @@ test('frontend admin jobs: chat ack reminder / leave upcoming run and dashboard 
   expect(Number(leaveResult.createdNotifications ?? 0)).toBeGreaterThan(0);
   await resultDialog.getByRole('button', { name: '閉じる' }).click();
   await expect(resultDialog).toBeHidden({ timeout: actionTimeout });
+
+  if (hasAnyRoleMapping(['admin', 'mgmt'])) {
+    await expect
+      .poll(
+        async () => {
+          const listRes = await page.request.get(
+            `${apiBase}/notifications?unread=1&limit=50`,
+            {
+              headers: adminHeaders,
+            },
+          );
+          if (!listRes.ok()) return false;
+          const payload = await listRes.json();
+          return (payload?.items ?? []).some(
+            (item: any) =>
+              item?.kind === 'leave_upcoming' && item?.messageId === leaveId,
+          );
+        },
+        { timeout: 5000 },
+      )
+      .toBe(true);
+  }
 
   await expect
     .poll(
