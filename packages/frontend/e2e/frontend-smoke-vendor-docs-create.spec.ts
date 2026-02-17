@@ -15,6 +15,7 @@ const actionTimeout = (() => {
     const value = Number(raw);
     if (Number.isFinite(value) && value > 0) return value;
   }
+  // CI runners vary in performance; keep default timeout conservative.
   return process.env.CI ? 30_000 : 12_000;
 })();
 
@@ -72,6 +73,7 @@ async function prepare(page: Page, override?: Partial<typeof authState>) {
 }
 
 async function navigateToSection(page: Page, label: string, heading?: string) {
+  // Use exact matching to avoid collisions like "承認" vs "承認依頼".
   await page.getByRole('button', { name: label, exact: true }).click();
   const targetHeading = heading || label;
   await expect(
@@ -108,9 +110,7 @@ async function selectByValue(select: Locator, value: string) {
           .locator('option')
           .evaluateAll(
             (options, expected) =>
-              options.some(
-                (option) => (option as HTMLOptionElement).value === expected,
-              ),
+              options.some((option) => (option as any).value === expected),
             value,
           ),
       { timeout: actionTimeout },
@@ -206,6 +206,7 @@ test('frontend smoke vendor docs create @extended', async ({ page }) => {
     .first();
   await expect(createdInvoiceItem).toBeVisible({ timeout: actionTimeout });
 
+  // (1) PO紐づけ → 一覧に PO番号表示
   await createdInvoiceItem.scrollIntoViewIfNeeded();
   await createdInvoiceItem.getByRole('button', { name: 'PO紐づけ' }).click();
   const poLinkDialog = page.getByRole('dialog');
@@ -228,6 +229,7 @@ test('frontend smoke vendor docs create @extended', async ({ page }) => {
     )
     .toBe(true);
 
+  // (2) 紐づけ解除
   await createdInvoiceItem.scrollIntoViewIfNeeded();
   await createdInvoiceItem.getByRole('button', { name: 'PO紐づけ' }).click();
   const poUnlinkDialog = page.getByRole('dialog');
@@ -250,6 +252,7 @@ test('frontend smoke vendor docs create @extended', async ({ page }) => {
     )
     .toBe(false);
 
+  // (3) 配賦明細ダイアログ → トグル → 明細追加 → 更新成功メッセージ
   await createdInvoiceItem.scrollIntoViewIfNeeded();
   await createdInvoiceItem.getByRole('button', { name: '配賦明細' }).click();
   const allocationDialog = page.getByRole('dialog');
