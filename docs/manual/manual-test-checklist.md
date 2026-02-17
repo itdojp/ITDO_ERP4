@@ -47,8 +47,8 @@
 - [x] POST /vendor-invoices/:id/unlink-po で PO 紐づけを解除できる（監査ログ）
 - [x] GET /vendor-invoices/:id/lines で `poLineUsage`（他VI利用数量/入力数量/残数量）が取得できる
 - [x] PUT /vendor-invoices/:id/lines で部分請求数量を更新できる（同一PO明細の未請求残が負値になる更新は 400）
-- [ ] PUT /vendor-invoices/:id/allocations で配賦明細を更新できる（合計=請求合計、autoAdjust による端数調整）
-- [ ] allocations を空配列で送ると配賦明細をクリアできる（監査ログ）
+- [x] PUT /vendor-invoices/:id/allocations で配賦明細を更新できる（合計=請求合計、autoAdjust による端数調整）
+- [x] allocations を空配列で送ると配賦明細をクリアできる（監査ログ）
 - [x] purchaseOrderLineId 指定時、VI が PO 未紐づけの場合は 400、別 PO の line は 400、存在しない line は 404
 
 ### その他

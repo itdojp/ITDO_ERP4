@@ -605,3 +605,241 @@ test('vendor invoice lines: purchaseOrderLineId must belong to linked purchase o
     ) ?? false,
   ).toBeTruthy();
 });
+
+test('vendor invoice allocations: autoAdjust controls mismatch handling and clear leaves empty allocations @core', async ({
+  request,
+}) => {
+  const suffix = runId();
+  const fixture = await setupVendorInvoiceFixture(request, suffix, {
+    withPurchaseOrderLine: true,
+  });
+
+  const putAllocations = async (
+    allocations: Array<{
+      projectId: string;
+      amount: number;
+      taxRate?: number;
+      taxAmount?: number;
+      purchaseOrderLineId?: string;
+    }>,
+    options?: { autoAdjust?: boolean; reasonText?: string },
+  ) =>
+    request.put(
+      `${apiBase}/vendor-invoices/${encodeURIComponent(fixture.vendorInvoiceId)}/allocations`,
+      {
+        headers: adminHeaders,
+        data: {
+          allocations,
+          ...(options?.autoAdjust !== undefined
+            ? { autoAdjust: options.autoAdjust }
+            : {}),
+          ...(options?.reasonText ? { reasonText: options.reasonText } : {}),
+        },
+      },
+    );
+
+  const mismatchRes = await putAllocations(
+    [
+      {
+        projectId: fixture.projectId,
+        amount: 10000,
+        taxAmount: 0,
+      },
+    ],
+    { autoAdjust: false },
+  );
+  expect(mismatchRes.status()).toBe(400);
+  const mismatch = await mismatchRes.json();
+  expect(mismatch?.error?.code).toBe('ALLOCATION_MISMATCH');
+
+  const adjustedRes = await putAllocations([
+    {
+      projectId: fixture.projectId,
+      amount: 10000,
+      taxAmount: 0,
+    },
+  ]);
+  await ensureOk(adjustedRes);
+  const adjusted = await adjustedRes.json();
+  expect(Array.isArray(adjusted?.items)).toBeTruthy();
+  expect(adjusted?.items?.length).toBe(1);
+  expect(Number(adjusted?.items?.[0]?.amount ?? Number.NaN)).toBe(10000);
+  // autoAdjust=true(default) adjusts the last row taxAmount to absorb invoice diff.
+  expect(Number(adjusted?.items?.[0]?.taxAmount ?? Number.NaN)).toBe(2000);
+  expect(Number(adjusted?.totals?.diff ?? Number.NaN)).toBe(0);
+
+  const getUpdatedRes = await request.get(
+    `${apiBase}/vendor-invoices/${encodeURIComponent(fixture.vendorInvoiceId)}/allocations`,
+    { headers: adminHeaders },
+  );
+  await ensureOk(getUpdatedRes);
+  const getUpdated = await getUpdatedRes.json();
+  expect(Array.isArray(getUpdated?.items)).toBeTruthy();
+  expect(getUpdated?.items?.length).toBe(1);
+
+  const clearRes = await putAllocations([], {
+    reasonText: 'e2e clear allocations',
+  });
+  await ensureOk(clearRes);
+  const cleared = await clearRes.json();
+  expect(Array.isArray(cleared?.items)).toBeTruthy();
+  expect(cleared?.items?.length).toBe(0);
+
+  const getClearedRes = await request.get(
+    `${apiBase}/vendor-invoices/${encodeURIComponent(fixture.vendorInvoiceId)}/allocations`,
+    { headers: adminHeaders },
+  );
+  await ensureOk(getClearedRes);
+  const getCleared = await getClearedRes.json();
+  expect(Array.isArray(getCleared?.items)).toBeTruthy();
+  expect(getCleared?.items?.length).toBe(0);
+
+  await expect
+    .poll(
+      async () => {
+        const res = await request.get(
+          `${apiBase}/audit-logs?action=vendor_invoice_allocations_update&targetTable=vendor_invoices&targetId=${encodeURIComponent(fixture.vendorInvoiceId)}&format=json&mask=0&limit=20`,
+          { headers: adminHeaders },
+        );
+        if (!res.ok()) return false;
+        const body = await res.json();
+        return (
+          body?.items?.some(
+            (item: {
+              action?: string;
+              metadata?: { after?: { count?: number } };
+            }) =>
+              item?.action === 'vendor_invoice_allocations_update' &&
+              Number(item?.metadata?.after?.count ?? Number.NaN) === 1,
+          ) ?? false
+        );
+      },
+      { timeout: 5000 },
+    )
+    .toBe(true);
+
+  await expect
+    .poll(
+      async () => {
+        const res = await request.get(
+          `${apiBase}/audit-logs?action=vendor_invoice_allocations_clear&targetTable=vendor_invoices&targetId=${encodeURIComponent(fixture.vendorInvoiceId)}&format=json&mask=0&limit=20`,
+          { headers: adminHeaders },
+        );
+        if (!res.ok()) return false;
+        const body = await res.json();
+        return (
+          body?.items?.some(
+            (item: {
+              action?: string;
+              metadata?: { after?: { count?: number } };
+            }) =>
+              item?.action === 'vendor_invoice_allocations_clear' &&
+              Number(item?.metadata?.after?.count ?? Number.NaN) === 0,
+          ) ?? false
+        );
+      },
+      { timeout: 5000 },
+    )
+    .toBe(true);
+});
+
+test('vendor invoice allocations: purchaseOrderLineId must belong to linked purchase order @core', async ({
+  request,
+}) => {
+  const suffix = runId();
+  const fixture = await setupVendorInvoiceFixture(request, suffix, {
+    withPurchaseOrderLine: true,
+  });
+  expect(fixture.purchaseOrderLineId).toBeTruthy();
+
+  const putAllocationsWithPurchaseOrderLine = async (
+    purchaseOrderLineId: string,
+  ) =>
+    request.put(
+      `${apiBase}/vendor-invoices/${encodeURIComponent(fixture.vendorInvoiceId)}/allocations`,
+      {
+        headers: adminHeaders,
+        data: {
+          allocations: [
+            {
+              projectId: fixture.projectId,
+              amount: 12000,
+              taxAmount: 0,
+              purchaseOrderLineId,
+            },
+          ],
+        },
+      },
+    );
+
+  const unlinkedInvoiceRes = await putAllocationsWithPurchaseOrderLine(
+    fixture.purchaseOrderLineId,
+  );
+  expect(unlinkedInvoiceRes.status()).toBe(400);
+  const unlinkedInvoice = await unlinkedInvoiceRes.json();
+  expect(unlinkedInvoice?.error?.code).toBe('INVALID_PURCHASE_ORDER_LINE');
+  expect(unlinkedInvoice?.error?.message).toBe(
+    'purchaseOrderId is not linked to the invoice',
+  );
+
+  const linkRes = await request.post(
+    `${apiBase}/vendor-invoices/${encodeURIComponent(fixture.vendorInvoiceId)}/link-po`,
+    {
+      headers: adminHeaders,
+      data: { purchaseOrderId: fixture.purchaseOrderId },
+    },
+  );
+  await ensureOk(linkRes);
+
+  const anotherPoRes = await request.post(
+    `${apiBase}/projects/${encodeURIComponent(fixture.projectId)}/purchase-orders`,
+    {
+      headers: adminHeaders,
+      data: {
+        vendorId: fixture.vendorId,
+        totalAmount: 12000,
+        currency: 'JPY',
+        lines: [
+          {
+            description: `E2E PO allocation line outside linked PO ${suffix}`,
+            quantity: 1,
+            unitPrice: 12000,
+          },
+        ],
+      },
+    },
+  );
+  await ensureOk(anotherPoRes);
+  const anotherPo = await anotherPoRes.json();
+  const anotherPoLineId = anotherPo?.lines?.[0]?.id as string | undefined;
+  expect(anotherPoLineId).toBeTruthy();
+
+  const outsideLinkedPoRes = await putAllocationsWithPurchaseOrderLine(
+    anotherPoLineId as string,
+  );
+  expect(outsideLinkedPoRes.status()).toBe(400);
+  const outsideLinkedPo = await outsideLinkedPoRes.json();
+  expect(outsideLinkedPo?.error?.code).toBe('INVALID_PURCHASE_ORDER_LINE');
+  expect(outsideLinkedPo?.error?.message).toBe(
+    'Purchase order line does not belong to the linked PO',
+  );
+  expect(
+    outsideLinkedPo?.error?.details?.invalidPurchaseOrderLineIds?.includes(
+      anotherPoLineId,
+    ) ?? false,
+  ).toBeTruthy();
+
+  const missingPurchaseOrderLineId = `missing-po-line-allocation-${suffix}`;
+  const missingLineRes = await putAllocationsWithPurchaseOrderLine(
+    missingPurchaseOrderLineId,
+  );
+  expect(missingLineRes.status()).toBe(404);
+  const missingLine = await missingLineRes.json();
+  expect(missingLine?.error?.code).toBe('NOT_FOUND');
+  expect(missingLine?.error?.message).toBe('Purchase order line not found');
+  expect(
+    missingLine?.error?.details?.missingPurchaseOrderLineIds?.includes(
+      missingPurchaseOrderLineId,
+    ) ?? false,
+  ).toBeTruthy();
+});
