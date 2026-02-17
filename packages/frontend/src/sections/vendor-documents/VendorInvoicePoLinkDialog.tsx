@@ -1,33 +1,11 @@
 import React from 'react';
 import { Button, Dialog, StatusBadge, erpStatusDictionary } from '../../ui';
-
-type VendorInvoice = {
-  id: string;
-  vendorInvoiceNo?: string | null;
-  projectId: string;
-  vendorId: string;
-  currency: string;
-  totalAmount: number | string;
-  status: string;
-};
-
-type PurchaseOrder = {
-  id: string;
-  poNo?: string | null;
-  currency: string;
-  totalAmount: number | string;
-};
-
-type PurchaseOrderLine = {
-  id: string;
-  description: string;
-  quantity: number | string;
-  unitPrice: number | string;
-};
-
-type PurchaseOrderDetail = PurchaseOrder & { lines?: PurchaseOrderLine[] };
-
-type MessageState = { text: string; type: 'success' | 'error' } | null;
+import type {
+  MessageState,
+  PurchaseOrder,
+  PurchaseOrderDetail,
+  VendorInvoice,
+} from './vendorDocumentsShared';
 
 type InvoicePoLinkDialogState = {
   invoice: VendorInvoice;

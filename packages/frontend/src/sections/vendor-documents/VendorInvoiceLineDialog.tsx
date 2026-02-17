@@ -1,46 +1,12 @@
 import React from 'react';
 import { Button, Dialog, StatusBadge, erpStatusDictionary } from '../../ui';
-
-type VendorInvoice = {
-  id: string;
-  vendorInvoiceNo?: string | null;
-  projectId: string;
-  vendorId: string;
-  purchaseOrderId?: string | null;
-  currency: string;
-  totalAmount: number | string;
-  status: string;
-  documentUrl?: string | null;
-};
-
-type VendorInvoiceLine = {
-  id?: string;
-  tempId?: string;
-  lineNo?: number | string;
-  description: string;
-  quantity: number | string;
-  unitPrice: number | string;
-  amount?: number | string | null;
-  taxRate?: number | string | null;
-  taxAmount?: number | string | null;
-  purchaseOrderLineId?: string | null;
-};
-
-type VendorInvoicePoLineUsage = {
-  existingQuantity: number;
-};
-
-type PurchaseOrderLine = {
-  id: string;
-  description: string;
-  quantity: number | string;
-  unitPrice: number | string;
-};
-
-type PurchaseOrderDetail = {
-  id: string;
-  lines?: PurchaseOrderLine[];
-};
+import type {
+  MessageState,
+  PurchaseOrderDetail,
+  VendorInvoice,
+  VendorInvoiceLine,
+  VendorInvoicePoLineUsage,
+} from './vendorDocumentsShared';
 
 type InvoiceLineDialogState = {
   invoice: VendorInvoice;
@@ -53,8 +19,6 @@ type InvoiceLineTotals = {
   invoiceTotal: number | null;
   diff: number | null;
 };
-
-type MessageState = { text: string; type: 'success' | 'error' } | null;
 
 type VendorInvoiceLineDialogProps = {
   open: boolean;

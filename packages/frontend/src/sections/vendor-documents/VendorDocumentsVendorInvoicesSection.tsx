@@ -1,43 +1,19 @@
 import React from 'react';
 import { Button, CrudList, FilterBar, Input, Select, Toast } from '../../ui';
-
-type ProjectOption = {
-  id: string;
-  code: string;
-  name: string;
-};
-
-type VendorOption = {
-  id: string;
-  code: string;
-  name: string;
-};
-
-type PurchaseOrderOption = {
-  id: string;
-  poNo?: string | null;
-};
-
-type VendorInvoiceForm = {
-  projectId: string;
-  vendorId: string;
-  purchaseOrderId?: string;
-  vendorInvoiceNo: string;
-  receivedDate: string;
-  dueDate: string;
-  currency: string;
-  totalAmount: number;
-  documentUrl: string;
-};
-
-type MessageState = { text: string; type: 'success' | 'error' } | null;
+import type {
+  MessageState,
+  ProjectOption,
+  PurchaseOrder,
+  VendorInvoiceForm,
+  VendorOption,
+} from './vendorDocumentsShared';
 
 type VendorDocumentsVendorInvoicesSectionProps = {
   active: boolean;
   invoiceForm: VendorInvoiceForm;
   projects: ProjectOption[];
   vendors: VendorOption[];
-  availablePurchaseOrders: PurchaseOrderOption[];
+  availablePurchaseOrders: PurchaseOrder[];
   missingNumberLabel: string;
   isInvoiceSaving: boolean;
   onChangeInvoiceForm: (next: VendorInvoiceForm) => void;

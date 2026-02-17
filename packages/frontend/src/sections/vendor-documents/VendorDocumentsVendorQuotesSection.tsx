@@ -1,29 +1,11 @@
 import React from 'react';
 import { Button, CrudList, FilterBar, Input, Select, Toast } from '../../ui';
-
-type ProjectOption = {
-  id: string;
-  code: string;
-  name: string;
-};
-
-type VendorOption = {
-  id: string;
-  code: string;
-  name: string;
-};
-
-type VendorQuoteForm = {
-  projectId: string;
-  vendorId: string;
-  quoteNo: string;
-  issueDate: string;
-  currency: string;
-  totalAmount: number;
-  documentUrl: string;
-};
-
-type MessageState = { text: string; type: 'success' | 'error' } | null;
+import type {
+  MessageState,
+  ProjectOption,
+  VendorOption,
+  VendorQuoteForm,
+} from './vendorDocumentsShared';
 
 type VendorDocumentsVendorQuotesSectionProps = {
   active: boolean;

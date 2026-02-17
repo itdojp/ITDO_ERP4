@@ -1,43 +1,12 @@
 import React from 'react';
 import { Button, Dialog, StatusBadge, erpStatusDictionary } from '../../ui';
-
-type VendorInvoice = {
-  id: string;
-  vendorInvoiceNo?: string | null;
-  projectId: string;
-  vendorId: string;
-  purchaseOrderId?: string | null;
-  currency: string;
-  totalAmount: number | string;
-  status: string;
-  documentUrl?: string | null;
-};
-
-type ProjectOption = {
-  id: string;
-  code: string;
-  name: string;
-};
-
-type VendorInvoiceAllocation = {
-  projectId: string;
-  amount: number | string;
-  taxRate?: number | string | null;
-  taxAmount?: number | string | null;
-  purchaseOrderLineId?: string | null;
-};
-
-type PurchaseOrderLine = {
-  id: string;
-  description: string;
-  quantity: number | string;
-  unitPrice: number | string;
-};
-
-type PurchaseOrderDetail = {
-  id: string;
-  lines?: PurchaseOrderLine[];
-};
+import type {
+  MessageState,
+  ProjectOption,
+  PurchaseOrderDetail,
+  VendorInvoice,
+  VendorInvoiceAllocation,
+} from './vendorDocumentsShared';
 
 type InvoiceAllocationDialogState = {
   invoice: VendorInvoice;
@@ -56,8 +25,6 @@ type AllocationTaxRateSummaryEntry = {
   amount: number;
   tax: number;
 };
-
-type MessageState = { text: string; type: 'success' | 'error' } | null;
 
 type VendorInvoiceAllocationDialogProps = {
   open: boolean;
