@@ -267,15 +267,49 @@ test('frontend smoke core @core', async ({ page }) => {
     expenseSection.getByLabel('案件選択'),
     'PRJ-DEMO-1 / Demo Project 1',
   );
-  await expenseSection.locator('input[type="number"]').fill('2000');
+  const expenseRunTag = runId().slice(0, 6);
+  const expenseCategory = `通信費-${expenseRunTag}`;
+  const expenseAmount = 2345;
+  const expenseCurrency = 'USD';
+  const expenseDate = shiftDateKey(new Date().toISOString().slice(0, 10), -2);
+  const expenseReceiptUrl = `https://example.com/receipt/${expenseRunTag}`;
+  await expenseSection.getByPlaceholder('区分').fill(expenseCategory);
+  await expenseSection
+    .locator('input[type="number"]')
+    .fill(String(expenseAmount));
+  await expenseSection.getByPlaceholder('通貨').fill(expenseCurrency);
+  await expenseSection.locator('input[type="date"]').fill(expenseDate);
+  await expenseSection.getByLabel('共通経費').check();
+  await expenseSection
+    .getByPlaceholder('領収書URL (任意)')
+    .fill(expenseReceiptUrl);
   await expenseSection.getByRole('button', { name: '追加' }).click();
   await expect(expenseSection.getByText('経費を保存しました')).toBeVisible();
+  const createdExpenseItem = expenseSection.locator('li', {
+    hasText: expenseCategory,
+  });
+  await expect(createdExpenseItem).toHaveCount(1, { timeout: actionTimeout });
+  await expect(createdExpenseItem).toContainText(expenseDate, {
+    timeout: actionTimeout,
+  });
+  await expect(createdExpenseItem).toContainText(
+    `${expenseAmount} ${expenseCurrency}`,
+    { timeout: actionTimeout },
+  );
+  await expect(createdExpenseItem).toContainText('共通', {
+    timeout: actionTimeout,
+  });
+  await expect(
+    createdExpenseItem.getByRole('link', { name: '領収書' }),
+  ).toHaveAttribute('href', expenseReceiptUrl);
   await captureSection(expenseSection, '04-core-expenses.png');
 
   // 経費注釈（Drawer + EntityReferencePicker）: 保存 → 再表示で永続化を確認
   const expenseAnnotationText = `E2E経費注釈: ${runId()}`;
   const expenseAnnotationButtons = expenseSection.getByRole('button', {
-    name: /注釈（経費）: .* 2000 JPY/,
+    name: new RegExp(
+      `注釈（経費）: .* ${expenseCategory} ${expenseAmount} ${expenseCurrency}`,
+    ),
   });
   await expect(expenseAnnotationButtons).toHaveCount(1, {
     timeout: actionTimeout,

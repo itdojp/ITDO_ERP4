@@ -1022,6 +1022,16 @@ export const VendorDocuments: React.FC = () => {
     const invoice = invoicePoLinkDialog.invoice;
     const purchaseOrderId = invoicePoLinkDialog.purchaseOrderId.trim();
     const reasonText = invoicePoLinkDialog.reasonText.trim();
+    if (
+      isVendorInvoicePoLinkReasonRequiredStatus(invoice.status) &&
+      !reasonText
+    ) {
+      setInvoicePoLinkResult({
+        text: '変更理由を入力してください',
+        type: 'error',
+      });
+      return;
+    }
     try {
       setInvoicePoLinkBusy(true);
       setInvoicePoLinkResult(null);
