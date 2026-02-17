@@ -540,7 +540,7 @@ export const Invoices: React.FC = () => {
                   label="請求状態"
                   value={statusFilter}
                   onChange={(e) => setStatusFilter(e.target.value)}
-                  aria-label="請求状態フィルタ"
+                  aria-label="請求状態"
                 >
                   <option value="all">全て</option>
                   {statusOptions.map((status) => (

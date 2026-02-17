@@ -426,7 +426,7 @@ const TimesheetGrid: React.FC<{
               label="工数状態"
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
-              aria-label="状態フィルタ"
+              aria-label="工数状態"
             >
               <option value="all">全て</option>
               {statusOptions.map((value) => (

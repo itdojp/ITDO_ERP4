@@ -56,6 +56,8 @@ test('ux-quality baseline (labels/errors/keyboard) @core', async ({ page }) => {
     .locator('..');
   await timeSection.scrollIntoViewIfNeeded();
   await expect(timeSection.getByLabel('案件選択')).toBeVisible();
+  await expect(page.getByLabel('工数検索')).toBeVisible();
+  await expect(page.getByLabel('工数状態')).toBeVisible();
 
   await navigateToSection(page, '請求');
   const invoiceSection = page
@@ -67,6 +69,8 @@ test('ux-quality baseline (labels/errors/keyboard) @core', async ({ page }) => {
   const amountInput = invoiceSection.getByLabel('金額');
   await expect(projectSelect).toBeVisible();
   await expect(amountInput).toBeVisible();
+  await expect(page.getByLabel('請求検索')).toBeVisible();
+  await expect(page.getByLabel('請求状態')).toBeVisible();
 
   await projectSelect.focus();
   await page.keyboard.press('Tab');
