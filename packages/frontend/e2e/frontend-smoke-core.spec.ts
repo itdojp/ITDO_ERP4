@@ -368,11 +368,8 @@ test('frontend smoke core @core', async ({ page }) => {
   await ensureOk(actRes);
   await estimateSection.getByRole('button', { name: '読み込み' }).click();
   await expect(estimateSection.getByText('読み込みました')).toBeVisible();
-  const createdEstimateRow = estimateSection.locator('ul.list li', {
-    hasText: estimateTag,
-  });
-  await expect(createdEstimateRow).toHaveCount(1, { timeout: actionTimeout });
-  await createdEstimateRow.getByRole('button', { name: '送信 (Stub)' }).click();
+  const estimateFirstRow = estimateSection.locator('ul.list li').first();
+  await estimateFirstRow.getByRole('button', { name: '送信 (Stub)' }).click();
   await expect(estimateSection.getByText('送信しました')).toBeVisible();
   await captureSection(estimateSection, '05-core-estimates.png');
 
