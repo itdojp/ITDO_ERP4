@@ -32,6 +32,7 @@ import { PurchaseOrderSendLogsDialog } from './vendor-documents/PurchaseOrderSen
 import { VendorInvoiceAllocationDialog } from './vendor-documents/VendorInvoiceAllocationDialog';
 import { VendorDocumentsPurchaseOrdersSection } from './vendor-documents/VendorDocumentsPurchaseOrdersSection';
 import { VendorDocumentsVendorQuotesSection } from './vendor-documents/VendorDocumentsVendorQuotesSection';
+import { VendorDocumentsVendorInvoicesSection } from './vendor-documents/VendorDocumentsVendorInvoicesSection';
 import { VendorInvoiceLineDialog } from './vendor-documents/VendorInvoiceLineDialog';
 import { VendorInvoicePoLinkDialog } from './vendor-documents/VendorInvoicePoLinkDialog';
 
@@ -2087,264 +2088,94 @@ export const VendorDocuments: React.FC = () => {
             normalizeCurrency={normalizeCurrency}
           />
 
-          <section
-            hidden={activeDocumentTab !== 'vendor-invoices'}
-            style={{
-              display:
-                activeDocumentTab === 'vendor-invoices' ? 'block' : 'none',
-            }}
-          >
-            <h3>仕入請求</h3>
-            <div className="card" style={{ marginBottom: 12 }}>
-              <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
-                <select
-                  value={invoiceForm.projectId}
-                  onChange={(e) =>
-                    setInvoiceForm({
-                      ...invoiceForm,
-                      projectId: e.target.value,
-                    })
-                  }
-                >
-                  <option value="">案件を選択</option>
-                  {projects.map((project) => (
-                    <option key={project.id} value={project.id}>
-                      {project.code} / {project.name}
-                    </option>
-                  ))}
-                </select>
-                <select
-                  value={invoiceForm.vendorId}
-                  onChange={(e) =>
-                    setInvoiceForm({ ...invoiceForm, vendorId: e.target.value })
-                  }
-                >
-                  <option value="">業者を選択</option>
-                  {vendors.map((vendor) => (
-                    <option key={vendor.id} value={vendor.id}>
-                      {vendor.code} / {vendor.name}
-                    </option>
-                  ))}
-                </select>
-                <select
-                  value={invoiceForm.purchaseOrderId}
-                  onChange={(e) =>
-                    setInvoiceForm({
-                      ...invoiceForm,
-                      purchaseOrderId: e.target.value,
-                    })
-                  }
-                >
-                  <option value="">関連発注書 (任意)</option>
-                  {availablePurchaseOrders.map((po) => (
-                    <option key={po.id} value={po.id}>
-                      {po.poNo || missingNumberLabel}
-                    </option>
-                  ))}
-                </select>
-                <input
-                  type="text"
-                  value={invoiceForm.vendorInvoiceNo}
-                  onChange={(e) =>
-                    setInvoiceForm({
-                      ...invoiceForm,
-                      vendorInvoiceNo: e.target.value,
-                    })
-                  }
-                  placeholder="請求番号"
-                />
-                <input
-                  type="number"
-                  min={0}
-                  value={invoiceForm.totalAmount}
-                  onChange={(e) =>
-                    setInvoiceForm({
-                      ...invoiceForm,
-                      totalAmount: Number(e.target.value),
-                    })
-                  }
-                  placeholder="金額"
-                  style={{ width: 120 }}
-                />
-                <input
-                  type="text"
-                  value={invoiceForm.currency}
-                  onChange={(e) =>
-                    setInvoiceForm({
-                      ...invoiceForm,
-                      currency: normalizeCurrency(e.target.value),
-                    })
-                  }
-                  placeholder="通貨"
-                  style={{ width: 80 }}
-                  maxLength={3}
-                />
-                <input
-                  type="date"
-                  value={invoiceForm.receivedDate}
-                  onChange={(e) =>
-                    setInvoiceForm({
-                      ...invoiceForm,
-                      receivedDate: e.target.value,
-                    })
-                  }
-                />
-                <input
-                  type="date"
-                  value={invoiceForm.dueDate}
-                  onChange={(e) =>
-                    setInvoiceForm({ ...invoiceForm, dueDate: e.target.value })
-                  }
-                />
-                <input
-                  type="text"
-                  value={invoiceForm.documentUrl}
-                  onChange={(e) =>
-                    setInvoiceForm({
-                      ...invoiceForm,
-                      documentUrl: e.target.value,
-                    })
-                  }
-                  placeholder="書類URL"
-                  style={{ minWidth: 180 }}
-                />
-                <Button
-                  onClick={createVendorInvoice}
-                  disabled={isInvoiceSaving}
-                >
-                  {isInvoiceSaving ? '登録中' : '登録'}
-                </Button>
-              </div>
-            </div>
-            {invoiceResult && (
-              <div style={{ marginBottom: 12 }}>
-                <Toast
-                  variant={invoiceResult.type}
-                  title={invoiceResult.type === 'error' ? 'エラー' : '完了'}
-                  description={invoiceResult.text}
-                  dismissible
-                  onClose={() => setInvoiceResult(null)}
-                />
-              </div>
-            )}
-            <SavedViewBar
-              views={invoiceSavedViews.views}
-              activeViewId={invoiceSavedViews.activeViewId}
-              onSelectView={(viewId) => {
-                invoiceSavedViews.selectView(viewId);
-                const selected = invoiceSavedViews.views.find(
-                  (view) => view.id === viewId,
-                );
-                if (!selected) return;
-                setInvoiceSearch(selected.payload.search);
-                setInvoiceStatusFilter(
-                  normalizeInvoiceStatusFilter(
-                    selected.payload.status,
+          <VendorDocumentsVendorInvoicesSection
+            active={activeDocumentTab === 'vendor-invoices'}
+            invoiceForm={invoiceForm}
+            projects={projects}
+            vendors={vendors}
+            availablePurchaseOrders={availablePurchaseOrders}
+            missingNumberLabel={missingNumberLabel}
+            isInvoiceSaving={isInvoiceSaving}
+            onChangeInvoiceForm={setInvoiceForm}
+            onCreateVendorInvoice={createVendorInvoice}
+            invoiceResult={invoiceResult}
+            onDismissInvoiceResult={() => setInvoiceResult(null)}
+            invoiceSavedViewBar={
+              <SavedViewBar
+                views={invoiceSavedViews.views}
+                activeViewId={invoiceSavedViews.activeViewId}
+                onSelectView={(viewId) => {
+                  invoiceSavedViews.selectView(viewId);
+                  const selected = invoiceSavedViews.views.find(
+                    (view) => view.id === viewId,
+                  );
+                  if (!selected) return;
+                  setInvoiceSearch(selected.payload.search);
+                  setInvoiceStatusFilter(
+                    normalizeInvoiceStatusFilter(
+                      selected.payload.status,
+                      invoiceStatusOptions,
+                    ),
+                  );
+                }}
+                onSaveAs={(name) => {
+                  const normalizedStatus = normalizeInvoiceStatusFilter(
+                    invoiceStatusFilter,
                     invoiceStatusOptions,
-                  ),
-                );
-              }}
-              onSaveAs={(name) => {
-                const normalizedStatus = normalizeInvoiceStatusFilter(
-                  invoiceStatusFilter,
-                  invoiceStatusOptions,
-                );
-                invoiceSavedViews.createView(name, {
-                  search: invoiceSearch,
-                  status: normalizedStatus,
-                });
-              }}
-              onUpdateView={(viewId) => {
-                const normalizedStatus = normalizeInvoiceStatusFilter(
-                  invoiceStatusFilter,
-                  invoiceStatusOptions,
-                );
-                invoiceSavedViews.updateView(viewId, {
-                  payload: {
+                  );
+                  invoiceSavedViews.createView(name, {
                     search: invoiceSearch,
                     status: normalizedStatus,
-                  },
-                });
-              }}
-              onDuplicateView={(viewId) => {
-                invoiceSavedViews.duplicateView(viewId);
-              }}
-              onShareView={(viewId) => {
-                invoiceSavedViews.toggleShared(viewId, true);
-              }}
-              onDeleteView={(viewId) => {
-                invoiceSavedViews.deleteView(viewId);
-              }}
-              labels={{
-                title: '仕入請求フィルタ保存',
-                saveAsPlaceholder: 'ビュー名',
-                saveAsButton: '保存',
-                update: '更新',
-                duplicate: '複製',
-                share: '共有',
-                delete: '削除',
-                active: '現在のビュー',
-              }}
-            />
-            <CrudList
-              title="仕入請求一覧"
-              description="承認依頼・PO紐づけ・配賦明細編集・請求明細編集を一覧から実行できます。"
-              filters={
-                <FilterBar
-                  actions={
-                    <Button
-                      variant="ghost"
-                      onClick={() => {
-                        void loadVendorInvoices();
-                      }}
-                    >
-                      再取得
-                    </Button>
-                  }
-                >
-                  <div
-                    style={{
-                      display: 'flex',
-                      gap: 12,
-                      flexWrap: 'wrap',
-                      alignItems: 'center',
-                    }}
-                  >
-                    <Input
-                      value={invoiceSearch}
-                      onChange={(e) => setInvoiceSearch(e.target.value)}
-                      placeholder="請求番号 / 案件 / 業者 / PO番号で検索"
-                      aria-label="仕入請求検索"
-                    />
-                    <Select
-                      value={invoiceStatusFilter}
-                      onChange={(e) => setInvoiceStatusFilter(e.target.value)}
-                      aria-label="仕入請求状態フィルタ"
-                    >
-                      <option value="all">状態: 全て</option>
-                      {invoiceStatusOptions.map((status) => (
-                        <option key={status} value={status}>
-                          {status}
-                        </option>
-                      ))}
-                    </Select>
-                    {(invoiceSearch || invoiceStatusFilter !== 'all') && (
-                      <Button
-                        variant="ghost"
-                        onClick={() => {
-                          setInvoiceSearch('');
-                          setInvoiceStatusFilter('all');
-                        }}
-                      >
-                        条件クリア
-                      </Button>
-                    )}
-                  </div>
-                </FilterBar>
-              }
-              table={vendorInvoiceListContent}
-            />
-          </section>
+                  });
+                }}
+                onUpdateView={(viewId) => {
+                  const normalizedStatus = normalizeInvoiceStatusFilter(
+                    invoiceStatusFilter,
+                    invoiceStatusOptions,
+                  );
+                  invoiceSavedViews.updateView(viewId, {
+                    payload: {
+                      search: invoiceSearch,
+                      status: normalizedStatus,
+                    },
+                  });
+                }}
+                onDuplicateView={(viewId) => {
+                  invoiceSavedViews.duplicateView(viewId);
+                }}
+                onShareView={(viewId) => {
+                  invoiceSavedViews.toggleShared(viewId, true);
+                }}
+                onDeleteView={(viewId) => {
+                  invoiceSavedViews.deleteView(viewId);
+                }}
+                labels={{
+                  title: '仕入請求フィルタ保存',
+                  saveAsPlaceholder: 'ビュー名',
+                  saveAsButton: '保存',
+                  update: '更新',
+                  duplicate: '複製',
+                  share: '共有',
+                  delete: '削除',
+                  active: '現在のビュー',
+                }}
+              />
+            }
+            onReloadVendorInvoices={() => {
+              void loadVendorInvoices();
+            }}
+            invoiceSearch={invoiceSearch}
+            onChangeInvoiceSearch={setInvoiceSearch}
+            invoiceStatusFilter={invoiceStatusFilter}
+            onChangeInvoiceStatusFilter={setInvoiceStatusFilter}
+            invoiceStatusOptions={invoiceStatusOptions}
+            onClearInvoiceFilters={() => {
+              setInvoiceSearch('');
+              setInvoiceStatusFilter('all');
+            }}
+            vendorInvoiceListContent={vendorInvoiceListContent}
+            normalizeCurrency={normalizeCurrency}
+          />
         </div>
       </div>
       <PurchaseOrderSendLogsDialog
