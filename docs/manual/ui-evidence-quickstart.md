@@ -17,9 +17,15 @@ Makefile を使う場合:
 make ui-evidence
 ```
 
+モバイル回帰証跡ファイル（テンプレート）を作成する場合:
+```bash
+make mobile-regression-log
+```
+
 生成物:
 - `docs/test-results/<YYYY-MM-DD>-frontend-e2e-rN/`（証跡ディレクトリ）
 - `docs/test-results/<YYYY-MM-DD>-frontend-e2e-rN.md`（実行ログ）
+- `docs/test-results/<YYYY-MM-DD>-mobile-regression-rN.md`（モバイル回帰記録。`make mobile-regression-log` 実行時）
 
 ## 代表的なオプション
 同日に複数回実行する（run番号を固定）:
