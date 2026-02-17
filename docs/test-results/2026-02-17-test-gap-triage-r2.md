@@ -10,28 +10,30 @@ Issue: #1001
 
 | ドメイン | チェック項目（代表） | 既存自動テスト根拠 | 判定 | 次アクション |
 | --- | --- | --- | --- | --- |
-| 承認(Workflow) | 承認一覧で承認実行、ack guard時の理由必須、リンク作成/削除 | `packages/frontend/e2e/frontend-smoke.spec.ts` (`approval ack link lifecycle`, `approvals ack guard requires override reason`), `packages/frontend/e2e/backend-action-policy-ack-guard.spec.ts` | 自動E2E済み | 失敗時メッセージの文言変更耐性（code基準）を追加検討 |
-| 通知 | 通知抑止、current-user通知設定、digest/realtime | `packages/frontend/e2e/backend-notification-suppression.spec.ts`, `packages/frontend/e2e/frontend-smoke.spec.ts` (`current-user notification settings`) | 自動E2E済み | 通知カード遷移（dashboard click-through）を追加 |
-| 仕入請求(PO↔VI) | link/unlink、submit後理由必須、配賦/明細整合 | `packages/frontend/e2e/backend-vendor-invoice-linking.spec.ts`, `packages/frontend/e2e/frontend-smoke.spec.ts` (`vendor docs create`, `vendor approvals`) | 概ね自動E2E済み | `GET/PUT /vendor-invoices/:id/lines` の負値境界を追加 |
-| 権限境界 | project access、non-admin制限、override監査 | `packages/frontend/e2e/backend-project-access-guard.spec.ts`, `packages/frontend/e2e/backend-vendor-invoice-linking.spec.ts`, `packages/frontend/e2e/backend-action-policy-ack-guard.spec.ts` | 自動E2E済み | 非管理ロールのUI非表示/無効化のE2Eを追加 |
+| 承認(Workflow) | 承認一覧で承認実行、ack guard時の理由必須、リンク作成/削除 | `packages/frontend/e2e/frontend-smoke-approval-ack-link.spec.ts`, `packages/frontend/e2e/frontend-smoke-approvals-ack-guard.spec.ts`, `packages/frontend/e2e/backend-action-policy-ack-guard.spec.ts` | 自動E2E済み | 失敗時の分岐（schema validation含む）の code基準維持を継続 |
+| 通知 | 通知抑止、current-user通知設定、digest/realtime | `packages/frontend/e2e/backend-notification-suppression.spec.ts`, `packages/frontend/e2e/frontend-smoke-current-user-notification-settings.spec.ts`, `packages/frontend/e2e/frontend-dashboard-notification-routing.spec.ts` | 自動E2E済み | 高優先ギャップ解消済み |
+| 仕入請求(PO↔VI) | link/unlink、submit後理由必須、配賦/明細整合 | `packages/frontend/e2e/backend-vendor-invoice-linking.spec.ts`, `packages/frontend/e2e/frontend-smoke-vendor-docs-create.spec.ts`, `packages/frontend/e2e/frontend-smoke-vendor-approvals.spec.ts` | 自動E2E済み | 高優先ギャップ解消済み |
+| 権限境界 | project access、non-admin制限、override監査 | `packages/frontend/e2e/backend-project-access-guard.spec.ts`, `packages/frontend/e2e/backend-vendor-invoice-linking.spec.ts`, `packages/frontend/e2e/backend-action-policy-ack-guard.spec.ts`, `packages/frontend/e2e/frontend-smoke-invoice-send-mark-paid.spec.ts` | 自動E2E済み | 高優先ギャップ解消済み |
 
-## 未カバー（優先）
+## 優先ギャップの対応状況（2026-02-17 更新）
 
 1. Dashboard通知カードの遷移検証（chat/休暇/経費）
-   - チェックリスト: 「ダッシュボード: 通知カードが表示され、クリックで該当画面に遷移」
-   - 現状: APIレベルと設定UIは網羅、カード遷移は未自動化
+   - 対応: `packages/frontend/e2e/frontend-dashboard-notification-routing.spec.ts`
+   - 状態: main 反映済み
 2. Vendor invoice lines 境界（部分請求残が負値になる更新は 400）
-   - チェックリスト: `PUT /vendor-invoices/:id/lines` の境界
-   - 現状: link/unlink と submit後制御は網羅、lines負値境界の直接E2Eは不足
+   - 対応:
+     - `packages/frontend/e2e/backend-vendor-invoice-linking.spec.ts`
+     - `PO_LINE_QUANTITY_EXCEEDED`（単一行/分割行）と `quantity <= 0` の境界をカバー
+   - PR: #1054, #1057（main 反映済み）
 3. モバイル回帰（375x667）
-   - チェックリスト: Invoices/VendorDocuments/AuditLogs/PeriodLocks/AdminJobs
-   - 現状: 画面単位のモバイル検証シナリオ未整備
+   - 対応: `packages/frontend/e2e/frontend-mobile-smoke.spec.ts`
+   - 範囲: Invoices / VendorDocuments / AdminJobs / AuditLogs / PeriodLocks
+   - PR: #1056（main 反映済み）
 
 ## 次PR候補（小粒）
 
-- PR-A: dashboard notification card click-through E2E
-- PR-B: vendor-invoice lines negative-remaining boundary E2E
-- PR-C: mobile smoke for Invoices/VendorDocuments/AdminJobs (375x667)
+- 高優先4ドメインの直近ギャップは解消済み
+- 次段は `docs/manual/manual-test-checklist.md` の未消化項目から低優先項目を分割する
 
 ## 備考
 - 現時点では高優先4ドメインの「機能自体の回帰防止」は成立。

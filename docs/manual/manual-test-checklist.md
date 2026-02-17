@@ -43,10 +43,10 @@
 ### 仕入/発注（PO↔VI、配賦明細）
 
 - [ ] /vendor-quotes 作成と /vendor-invoices 作成 → /vendor-invoices/:id/submit → /vendor-invoices/:id/approve のハッピーパスが通る
-- [ ] POST /vendor-invoices/:id/link-po で PO を紐づけできる（案件/業者一致、監査ログ）
-- [ ] POST /vendor-invoices/:id/unlink-po で PO 紐づけを解除できる（監査ログ）
+- [x] POST /vendor-invoices/:id/link-po で PO を紐づけできる（案件/業者一致、監査ログ）
+- [x] POST /vendor-invoices/:id/unlink-po で PO 紐づけを解除できる（監査ログ）
 - [ ] GET /vendor-invoices/:id/lines で `poLineUsage`（他VI利用数量/入力数量/残数量）が取得できる
-- [ ] PUT /vendor-invoices/:id/lines で部分請求数量を更新できる（同一PO明細の未請求残が負値になる更新は 400）
+- [x] PUT /vendor-invoices/:id/lines で部分請求数量を更新できる（同一PO明細の未請求残が負値になる更新は 400）
 - [ ] PUT /vendor-invoices/:id/allocations で配賦明細を更新できる（合計=請求合計、autoAdjust による端数調整）
 - [ ] allocations を空配列で送ると配賦明細をクリアできる（監査ログ）
 - [ ] purchaseOrderLineId 指定時、VI が PO 未紐づけの場合は 400、別 PO の line は 400、存在しない line は 404
@@ -62,7 +62,7 @@
 ### ダッシュボード/通知
 
 - [ ] ダッシュボード: アラートカードが最新5件表示される（なければプレースホルダ）
-- [ ] ダッシュボード: 通知カードが表示され、クリックで該当画面に遷移できる（chat/休暇/経費）
+- [x] ダッシュボード: 通知カードが表示され、クリックで該当画面に遷移できる（chat/休暇/経費）
 
 ### チャット
 
@@ -117,14 +117,14 @@
 
 - [ ] ActionPolicy: PolicyFormBuilder で作成/更新ができる（必須・JSONバリデーション）
 - [ ] 承認ルール/ActionPolicy: 履歴表示で AuditTimeline と DiffViewer が表示される
-- [ ] 監査ログ: DateRangePicker（from/to）で期間指定検索ができる
+- [x] 監査ログ: DateRangePicker（from/to）で期間指定検索ができる
 - [ ] 監査閲覧: DateTimeRangePicker（targetFrom/targetUntil）で期間指定できる
 - [ ] HR分析: DateRangePicker（開始日/終了日）で集計範囲を変更できる
 
 ### モバイル回帰（design-system適用後）
 
 - [ ] `docs/test-results/mobile-regression-template.md` をコピーし、PR単位の証跡ファイル（`YYYY-MM-DD-mobile-regression-*.md`）を作成する
-- [ ] Invoices: 一覧/フィルタ/行アクションが `375x667` で崩れず操作できる
+- [x] Invoices: 一覧/フィルタ/行アクションが `375x667` で崩れず操作できる
 - [ ] VendorDocuments: PO紐づけ/解除、配賦明細または請求明細入力が `375x667` で操作できる
 - [ ] AuditLogs: 検索フォーム/一覧/CSV出力が `375x667` で操作できる
 - [ ] PeriodLocks: 登録/解除導線が `375x667` で操作できる
