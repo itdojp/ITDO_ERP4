@@ -269,10 +269,11 @@ test('backend manual checklist: members/vendors/time/expenses/wellbeing @extende
     approvalInstanceId: string,
     initialStatus: string,
   ) => {
+    const maxApprovalTransitions = 8;
     let approvalStatus = initialStatus;
     for (
       let i = 0;
-      i < 5 &&
+      i < maxApprovalTransitions &&
       (approvalStatus === 'pending_qa' || approvalStatus === 'pending_exec');
       i += 1
     ) {
@@ -723,10 +724,10 @@ test('backend manual checklist: members/vendors/time/expenses/wellbeing @extende
   );
   await ensureOk(chatAckRes);
   const chatAck = await chatAckRes.json();
-  const ackByAdmin = (chatAck?.acks ?? []).some(
+  const ackByRequiredUser = (chatAck?.acks ?? []).some(
     (item: any) => item?.userId === ackRequiredUserId,
   );
-  expect(ackByAdmin).toBeTruthy();
+  expect(ackByRequiredUser).toBeTruthy();
 
   const pendingChatAckRes = await request.post(
     `${apiBase}/projects/${encodeURIComponent(defaultProjectId)}/chat-ack-requests`,
