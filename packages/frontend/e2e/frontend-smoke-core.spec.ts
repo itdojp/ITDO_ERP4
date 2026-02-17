@@ -175,7 +175,22 @@ async function ensureOk(res: { ok(): boolean; status(): number; text(): any }) {
   throw new Error(`[e2e] api failed: ${res.status()} ${body}`);
 }
 
-test('frontend smoke core @core', async ({ page }) => {
+test('frontend smoke core @core', async ({ page, request }) => {
+  const timeTaskName = `E2Eタスク-${runId().slice(0, 8)}`;
+  const timeTaskCreateRes = await request.post(
+    `${apiBase}/projects/${authState.projectIds[0]}/tasks`,
+    {
+      headers: buildAuthHeaders(),
+      data: {
+        name: timeTaskName,
+      },
+    },
+  );
+  await ensureOk(timeTaskCreateRes);
+  const timeTask = (await timeTaskCreateRes.json()) as { id?: string };
+  const timeTaskId = String(timeTask.id || '');
+  expect(timeTaskId.length).toBeGreaterThan(0);
+
   await prepare(page);
 
   const currentUserSection = page.locator('.card', {
@@ -232,15 +247,77 @@ test('frontend smoke core @core', async ({ page }) => {
     .locator('h2', { hasText: '工数入力' })
     .locator('..');
   await timeSection.scrollIntoViewIfNeeded();
+  const timeMinutes = 135;
+  const timeWorkType = 'レビュー';
+  const timeLocation = 'remote';
+  const timeNote = `E2E工数メモ: ${runId()}`;
   await selectByLabelOrFirst(
     timeSection.getByLabel('案件選択'),
     'PRJ-DEMO-1 / Demo Project 1',
   );
-  await timeSection.locator('input[type="number"]').fill('120');
+  const timeTaskSelect = timeSection.getByLabel('タスク選択');
+  await expect
+    .poll(() => timeTaskSelect.locator('option').count(), {
+      timeout: actionTimeout,
+    })
+    .toBeGreaterThan(0);
+  await expect
+    .poll(
+      () => timeTaskSelect.locator('option', { hasText: timeTaskName }).count(),
+      { timeout: actionTimeout },
+    )
+    .toBeGreaterThan(0);
+  await timeTaskSelect.selectOption({ label: timeTaskName });
+  await timeSection.getByLabel('日付').fill(deepLinkDailyReportDate);
+  await timeSection.getByLabel('工数 (分)').fill(String(timeMinutes));
+  await timeSection.getByLabel('作業種別').fill(timeWorkType);
+  await timeSection.getByLabel('場所').fill(timeLocation);
+  await timeSection.getByLabel('作業メモ').fill(timeNote);
   await timeSection.getByRole('button', { name: '追加' }).click();
   await expect(timeSection.getByText('保存しました')).toBeVisible();
+  await expect(timeSection.getByText(timeNote)).toBeVisible({
+    timeout: actionTimeout,
+  });
+  await expect(timeSection.getByText(deepLinkDailyReportDate)).toBeVisible({
+    timeout: actionTimeout,
+  });
+  await expect(timeSection.getByText(`${timeMinutes}分`)).toBeVisible({
+    timeout: actionTimeout,
+  });
+  await expect(timeSection.getByText(timeWorkType)).toBeVisible({
+    timeout: actionTimeout,
+  });
+  await expect(timeSection.getByText(timeLocation)).toBeVisible({
+    timeout: actionTimeout,
+  });
+  const timeListRes = await page.request.get(
+    `${apiBase}/time-entries?projectId=${encodeURIComponent(authState.projectIds[0])}`,
+    { headers: buildAuthHeaders() },
+  );
+  await ensureOk(timeListRes);
+  const timeListPayload = (await timeListRes.json()) as {
+    items?: Array<{
+      taskId?: string | null;
+      notes?: string | null;
+      minutes?: number | null;
+      workType?: string | null;
+      location?: string | null;
+      workDate?: string | null;
+    }>;
+  };
+  const createdTimeEntry = (timeListPayload.items || []).find(
+    (item) => item.notes === timeNote,
+  );
+  expect(createdTimeEntry).toBeTruthy();
+  expect(createdTimeEntry?.taskId || '').toBe(timeTaskId);
+  expect(Number(createdTimeEntry?.minutes)).toBe(timeMinutes);
+  expect(createdTimeEntry?.workType || '').toBe(timeWorkType);
+  expect(createdTimeEntry?.location || '').toBe(timeLocation);
+  expect((createdTimeEntry?.workDate || '').slice(0, 10)).toBe(
+    deepLinkDailyReportDate,
+  );
   await captureSection(timeSection, '03-core-time-entries.png');
-  await timeSection.locator('input[type="date"]').fill(deepLinkDailyReportDate);
+  await timeSection.getByLabel('日付').fill(deepLinkDailyReportDate);
   await timeSection.getByRole('button', { name: '日報を開く' }).click();
   await expect(
     page.locator('main').getByRole('heading', {
