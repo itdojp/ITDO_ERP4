@@ -162,9 +162,11 @@ test('frontend smoke room chat (private_group/dm) @extended', async ({
     timeout: actionTimeout,
   });
   await roomChatSection.getByRole('button', { name: '送信' }).click();
-  await expect(
-    messageList.locator('.card', { hasText: companyText }).first(),
-  ).toBeVisible({ timeout: actionTimeout });
+  const companyMessageCard = messageList.locator('.card', {
+    hasText: companyText,
+  });
+  await expect(companyMessageCard).toHaveCount(1, { timeout: actionTimeout });
+  await expect(companyMessageCard).toBeVisible({ timeout: actionTimeout });
 
   // Ack-required (overdue) on company room so that membership checks do not block.
   const companyRoomId = await roomSelect.inputValue();
@@ -187,9 +189,10 @@ test('frontend smoke room chat (private_group/dm) @extended', async ({
     .locator('strong', { hasText: '投稿' })
     .locator('..');
   await postCard.getByRole('button', { name: '再読込' }).click();
-  const overdueRoomAckItem = messageList
-    .locator('.card', { hasText: overdueRoomAckMessage })
-    .first();
+  const overdueRoomAckItem = messageList.locator('.card', {
+    hasText: overdueRoomAckMessage,
+  });
+  await expect(overdueRoomAckItem).toHaveCount(1, { timeout: actionTimeout });
   await expect(overdueRoomAckItem).toBeVisible({ timeout: actionTimeout });
   const overdueRoomDueLabel = overdueRoomAckItem.getByText(/期限:/);
   await expect(overdueRoomDueLabel).toBeVisible();
@@ -198,9 +201,7 @@ test('frontend smoke room chat (private_group/dm) @extended', async ({
 
   await messageList.getByLabel('検索（本文）').fill(`company message ${run}`);
   await messageList.getByRole('button', { name: '適用' }).click();
-  await expect(
-    messageList.locator('.card', { hasText: companyText }).first(),
-  ).toBeVisible({ timeout: actionTimeout });
+  await expect(companyMessageCard).toBeVisible({ timeout: actionTimeout });
   await messageList.getByRole('button', { name: 'クリア' }).click();
 
   const globalSearchCard = roomChatSection
@@ -218,9 +219,13 @@ test('frontend smoke room chat (private_group/dm) @extended', async ({
   const departmentText = `E2E department message ${run}`;
   await roomChatSection.getByPlaceholder('Markdownで入力').fill(departmentText);
   await roomChatSection.getByRole('button', { name: '送信' }).click();
-  await expect(
-    messageList.locator('.card', { hasText: departmentText }).first(),
-  ).toBeVisible({ timeout: actionTimeout });
+  const departmentMessageCard = messageList.locator('.card', {
+    hasText: departmentText,
+  });
+  await expect(departmentMessageCard).toHaveCount(1, {
+    timeout: actionTimeout,
+  });
+  await expect(departmentMessageCard).toBeVisible({ timeout: actionTimeout });
 
   const groupName = `e2e-private-${run}`;
 
@@ -235,9 +240,13 @@ test('frontend smoke room chat (private_group/dm) @extended', async ({
   const messageText = `E2E room message ${run}`;
   await roomChatSection.getByPlaceholder('Markdownで入力').fill(messageText);
   await roomChatSection.getByRole('button', { name: '送信' }).click();
-  await expect(
-    messageList.locator('.card', { hasText: messageText }).first(),
-  ).toBeVisible({ timeout: actionTimeout });
+  const privateGroupMessageCard = messageList.locator('.card', {
+    hasText: messageText,
+  });
+  await expect(privateGroupMessageCard).toHaveCount(1, {
+    timeout: actionTimeout,
+  });
+  await expect(privateGroupMessageCard).toBeVisible({ timeout: actionTimeout });
 
   const previousRoomId = await roomSelect.inputValue();
   const partnerUserId = `e2e-partner-${run}`;
@@ -253,9 +262,9 @@ test('frontend smoke room chat (private_group/dm) @extended', async ({
   const dmText = `E2E dm message ${run}`;
   await roomChatSection.getByPlaceholder('Markdownで入力').fill(dmText);
   await roomChatSection.getByRole('button', { name: '送信' }).click();
-  await expect(
-    messageList.locator('.card', { hasText: dmText }).first(),
-  ).toBeVisible({ timeout: actionTimeout });
+  const dmMessageCard = messageList.locator('.card', { hasText: dmText });
+  await expect(dmMessageCard).toHaveCount(1, { timeout: actionTimeout });
+  await expect(dmMessageCard).toBeVisible({ timeout: actionTimeout });
 
   await roomChatSection.getByRole('button', { name: '要約' }).click();
   const summaryBlock = roomChatSection.getByText('要約（スタブ）');
@@ -308,7 +317,10 @@ test('frontend smoke room chat external summary @extended', async ({
     .locator('h2', { hasText: 'チャット（全社/部門/private_group/DM）' })
     .locator('..');
   await roomChatSection.scrollIntoViewIfNeeded();
-  await roomChatSection.getByRole('button', { name: '再読込' }).first().click();
+  const roomHeaderRow = roomChatSection.locator('.row', {
+    has: roomChatSection.getByLabel('ルーム'),
+  });
+  await roomHeaderRow.getByRole('button', { name: '再読込' }).click();
 
   const roomSelect = roomChatSection.getByLabel('ルーム');
   await expect
