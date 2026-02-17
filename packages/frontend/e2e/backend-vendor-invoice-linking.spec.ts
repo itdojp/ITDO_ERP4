@@ -292,7 +292,6 @@ test('vendor invoice lines: quantity must not exceed linked purchase order line 
     ) ?? false,
   ).toBeTruthy();
 });
-
 test('vendor invoice lines: summed split quantities must not exceed linked purchase order line @core', async ({
   request,
 }) => {
