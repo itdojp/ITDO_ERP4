@@ -421,6 +421,76 @@ test('frontend smoke vendor docs create @extended', async ({ page }) => {
     )
     .toBe(false);
 
+  // (5) pending_qa では配賦明細/請求明細の更新にも変更理由が必須
+  await createdInvoiceItem.scrollIntoViewIfNeeded();
+  await createdInvoiceItem.getByRole('button', { name: '配賦明細' }).click();
+  const allocationReasonRequiredDialog = page.getByRole('dialog');
+  await expect(
+    allocationReasonRequiredDialog.getByText('仕入請求: 配賦明細'),
+  ).toBeVisible({
+    timeout: actionTimeout,
+  });
+  await expect(
+    allocationReasonRequiredDialog.getByText('配賦明細を読み込み中...'),
+  ).toHaveCount(0, { timeout: actionTimeout });
+  await allocationReasonRequiredDialog
+    .getByRole('button', { name: '更新' })
+    .click();
+  await expect(
+    allocationReasonRequiredDialog.getByText('変更理由を入力してください'),
+  ).toBeVisible({ timeout: actionTimeout });
+  await allocationReasonRequiredDialog
+    .getByPlaceholder('変更理由（必須）')
+    .fill('e2e: pending_qa での配賦明細更新');
+  await allocationReasonRequiredDialog
+    .getByRole('button', { name: '更新' })
+    .click();
+  await expect(
+    allocationReasonRequiredDialog.getByText('配賦明細を更新しました'),
+  ).toBeVisible({
+    timeout: actionTimeout,
+  });
+  await allocationReasonRequiredDialog
+    .getByRole('button', { name: '閉じる' })
+    .click();
+  await expect(allocationReasonRequiredDialog).toBeHidden({
+    timeout: actionTimeout,
+  });
+
+  await createdInvoiceItem.scrollIntoViewIfNeeded();
+  await createdInvoiceItem.getByRole('button', { name: '請求明細' }).click();
+  const lineReasonRequiredDialog = page.getByRole('dialog');
+  await expect(
+    lineReasonRequiredDialog.getByText('仕入請求: 請求明細'),
+  ).toBeVisible({
+    timeout: actionTimeout,
+  });
+  await expect(
+    lineReasonRequiredDialog.getByText('請求明細を読み込み中...'),
+  ).toHaveCount(0, { timeout: actionTimeout });
+  await lineReasonRequiredDialog
+    .getByRole('button', { name: '請求明細を入力' })
+    .click();
+  await lineReasonRequiredDialog.getByRole('button', { name: '更新' }).click();
+  await expect(
+    lineReasonRequiredDialog.getByText('変更理由を入力してください'),
+  ).toBeVisible({ timeout: actionTimeout });
+  await lineReasonRequiredDialog
+    .getByPlaceholder('変更理由（必須）')
+    .fill('e2e: pending_qa での請求明細更新');
+  await lineReasonRequiredDialog.getByRole('button', { name: '更新' }).click();
+  await expect(
+    lineReasonRequiredDialog.getByText('請求明細を更新しました'),
+  ).toBeVisible({
+    timeout: actionTimeout,
+  });
+  await lineReasonRequiredDialog
+    .getByRole('button', { name: '閉じる' })
+    .click();
+  await expect(lineReasonRequiredDialog).toBeHidden({
+    timeout: actionTimeout,
+  });
+
   await createdInvoiceItem.getByRole('button', { name: '注釈' }).click();
   const annotationDialog = page.getByRole('dialog');
   await expect(

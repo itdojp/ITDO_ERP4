@@ -115,6 +115,22 @@ async function setupVendorInvoiceFixture(
   };
 }
 
+async function submitVendorInvoice(
+  request: APIRequestContext,
+  vendorInvoiceId: string,
+  reasonText: string = 'e2e submit vendor invoice',
+) {
+  const submitRes = await request.post(
+    `${apiBase}/vendor-invoices/${encodeURIComponent(vendorInvoiceId)}/submit`,
+    {
+      headers: adminHeaders,
+      data: { reasonText },
+    },
+  );
+  await ensureOk(submitRes);
+  return submitRes.json();
+}
+
 test('vendor invoice po linking: post-submit unlink requires reason @core', async ({
   request,
 }) => {
@@ -152,15 +168,7 @@ test('vendor invoice po linking: post-submit unlink requires reason @core', asyn
   );
   await ensureOk(relinkRes);
 
-  const submitRes = await request.post(
-    `${apiBase}/vendor-invoices/${encodeURIComponent(fixture.vendorInvoiceId)}/submit`,
-    {
-      headers: adminHeaders,
-      data: { reasonText: 'e2e submit vendor invoice' },
-    },
-  );
-  await ensureOk(submitRes);
-  const submitted = await submitRes.json();
+  const submitted = await submitVendorInvoice(request, fixture.vendorInvoiceId);
   expect(submitted.status).toBe('pending_qa');
 
   const unlinkNoReasonRes = await request.post(
@@ -184,6 +192,74 @@ test('vendor invoice po linking: post-submit unlink requires reason @core', asyn
   await ensureOk(unlinkWithReasonRes);
   const unlinkWithReason = await unlinkWithReasonRes.json();
   expect(unlinkWithReason.purchaseOrder).toBeNull();
+});
+
+test('vendor invoice allocations: post-submit update requires reason @core', async ({
+  request,
+}) => {
+  const suffix = runId();
+  const fixture = await setupVendorInvoiceFixture(request, suffix);
+  const submitted = await submitVendorInvoice(request, fixture.vendorInvoiceId);
+  expect(submitted.status).toBe('pending_qa');
+
+  const updateNoReasonRes = await request.put(
+    `${apiBase}/vendor-invoices/${encodeURIComponent(fixture.vendorInvoiceId)}/allocations`,
+    {
+      headers: adminHeaders,
+      data: { allocations: [] },
+    },
+  );
+  expect(updateNoReasonRes.status()).toBe(400);
+  const updateNoReason = await updateNoReasonRes.json();
+  expect(updateNoReason?.error?.code).toBe('REASON_REQUIRED');
+
+  const updateWithReasonRes = await request.put(
+    `${apiBase}/vendor-invoices/${encodeURIComponent(fixture.vendorInvoiceId)}/allocations`,
+    {
+      headers: adminHeaders,
+      data: {
+        allocations: [],
+        reasonText: 'e2e override allocation update after submit',
+      },
+    },
+  );
+  await ensureOk(updateWithReasonRes);
+  const updateWithReason = await updateWithReasonRes.json();
+  expect(Array.isArray(updateWithReason?.items)).toBeTruthy();
+});
+
+test('vendor invoice lines: post-submit update requires reason @core', async ({
+  request,
+}) => {
+  const suffix = runId();
+  const fixture = await setupVendorInvoiceFixture(request, suffix);
+  const submitted = await submitVendorInvoice(request, fixture.vendorInvoiceId);
+  expect(submitted.status).toBe('pending_qa');
+
+  const updateNoReasonRes = await request.put(
+    `${apiBase}/vendor-invoices/${encodeURIComponent(fixture.vendorInvoiceId)}/lines`,
+    {
+      headers: adminHeaders,
+      data: { lines: [] },
+    },
+  );
+  expect(updateNoReasonRes.status()).toBe(400);
+  const updateNoReason = await updateNoReasonRes.json();
+  expect(updateNoReason?.error?.code).toBe('REASON_REQUIRED');
+
+  const updateWithReasonRes = await request.put(
+    `${apiBase}/vendor-invoices/${encodeURIComponent(fixture.vendorInvoiceId)}/lines`,
+    {
+      headers: adminHeaders,
+      data: {
+        lines: [],
+        reasonText: 'e2e override line update after submit',
+      },
+    },
+  );
+  await ensureOk(updateWithReasonRes);
+  const updateWithReason = await updateWithReasonRes.json();
+  expect(Array.isArray(updateWithReason?.items)).toBeTruthy();
 });
 
 test('vendor invoice po linking: link/unlink is forbidden for non-admin roles @core', async ({
