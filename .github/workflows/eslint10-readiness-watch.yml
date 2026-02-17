@@ -29,6 +29,8 @@ jobs:
           ready=$(grep -E '^ready:' tmp/eslint10-readiness.log | tail -n1 | sed 's/^ready:[[:space:]]*//')
           plugin_peer=$(grep -E '^pluginPeerEslint:' tmp/eslint10-readiness.log | tail -n1 | sed 's/^pluginPeerEslint:[[:space:]]*//')
           parser_peer=$(grep -E '^parserPeerEslint:' tmp/eslint10-readiness.log | tail -n1 | sed 's/^parserPeerEslint:[[:space:]]*//')
+          react_plugin_peer=$(grep -E '^reactPluginPeerEslint:' tmp/eslint10-readiness.log | tail -n1 | sed 's/^reactPluginPeerEslint:[[:space:]]*//')
+          react_hooks_plugin_peer=$(grep -E '^reactHooksPluginPeerEslint:' tmp/eslint10-readiness.log | tail -n1 | sed 's/^reactHooksPluginPeerEslint:[[:space:]]*//')
           echo "status=${status}" >> "$GITHUB_OUTPUT"
           echo "ready=${ready:-false}" >> "$GITHUB_OUTPUT"
           echo "plugin_peer<<EOF" >> "$GITHUB_OUTPUT"
@@ -36,6 +38,12 @@ jobs:
           echo "EOF" >> "$GITHUB_OUTPUT"
           echo "parser_peer<<EOF" >> "$GITHUB_OUTPUT"
           echo "${parser_peer}" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+          echo "react_plugin_peer<<EOF" >> "$GITHUB_OUTPUT"
+          echo "${react_plugin_peer}" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+          echo "react_hooks_plugin_peer<<EOF" >> "$GITHUB_OUTPUT"
+          echo "${react_hooks_plugin_peer}" >> "$GITHUB_OUTPUT"
           echo "EOF" >> "$GITHUB_OUTPUT"
           exit 0
 
@@ -47,6 +55,8 @@ jobs:
             echo "- ready: ${{ steps.check.outputs.ready }}"
             echo "- plugin peer: \`${{ steps.check.outputs.plugin_peer }}\`"
             echo "- parser peer: \`${{ steps.check.outputs.parser_peer }}\`"
+            echo "- react plugin peer: \`${{ steps.check.outputs.react_plugin_peer }}\`"
+            echo "- react hooks plugin peer: \`${{ steps.check.outputs.react_hooks_plugin_peer }}\`"
             echo "- script status: ${{ steps.check.outputs.status }}"
             echo ""
             echo "Manual check command:"
@@ -59,6 +69,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           PLUGIN_PEER: ${{ steps.check.outputs.plugin_peer }}
           PARSER_PEER: ${{ steps.check.outputs.parser_peer }}
+          REACT_PLUGIN_PEER: ${{ steps.check.outputs.react_plugin_peer }}
+          REACT_HOOKS_PLUGIN_PEER: ${{ steps.check.outputs.react_hooks_plugin_peer }}
         run: |
           marker="<!-- eslint10-readiness-watch -->"
           if gh api "repos/${GITHUB_REPOSITORY}/issues/914/comments" --paginate --jq '.[].body' | grep -F "${marker}" >/dev/null 2>&1; then
@@ -70,6 +82,8 @@ jobs:
 
           - @typescript-eslint/eslint-plugin peerDependencies.eslint: \`${PLUGIN_PEER}\`
           - @typescript-eslint/parser peerDependencies.eslint: \`${PARSER_PEER}\`
+          - eslint-plugin-react peerDependencies.eslint: \`${REACT_PLUGIN_PEER}\`
+          - eslint-plugin-react-hooks peerDependencies.eslint: \`${REACT_HOOKS_PLUGIN_PEER}\`
 
           #914 の未完了タスク（ignore解除・Dependabot再開）を実施してください。
           <!-- eslint10-readiness-watch -->
