@@ -316,8 +316,8 @@ test('frontend smoke reports masters settings @extended', async ({ page }) => {
 
   const chatRoomSettingsBlock = settingsSection
     .locator('strong', { hasText: 'チャットルーム設定' })
-    .first()
     .locator('..');
+  await expect(chatRoomSettingsBlock).toHaveCount(1, { timeout: actionTimeout });
   await captureSection(chatRoomSettingsBlock, '11-chat-room-settings.png');
 
   const scimBlock = settingsSection
@@ -353,18 +353,27 @@ test('frontend smoke reports masters settings @extended', async ({ page }) => {
   await expect(
     settingsSection.getByText('承認ルールを作成しました'),
   ).toBeVisible();
-  await approvalBlock
-    .getByRole('button', { name: '履歴を見る' })
-    .first()
-    .click();
-  await expect(
-    approvalBlock.locator('.itdo-audit-timeline').first(),
-  ).toBeVisible({
+  const approvalHistoryButtons = approvalBlock.getByRole('button', {
+    name: '履歴を見る',
+  });
+  await expect(approvalHistoryButtons).toHaveCount(1, {
     timeout: actionTimeout,
   });
-  await expect(
-    approvalBlock.getByRole('region', { name: 'Diff output' }).first(),
-  ).toBeVisible({
+  await approvalHistoryButtons.click();
+  const approvalAuditTimelines = approvalBlock.locator('.itdo-audit-timeline');
+  await expect(approvalAuditTimelines).toHaveCount(1, {
+    timeout: actionTimeout,
+  });
+  await expect(approvalAuditTimelines).toBeVisible({
+    timeout: actionTimeout,
+  });
+  const approvalDiffRegions = approvalBlock.getByRole('region', {
+    name: 'Diff output',
+  });
+  await expect(approvalDiffRegions).toHaveCount(1, {
+    timeout: actionTimeout,
+  });
+  await expect(approvalDiffRegions).toBeVisible({
     timeout: actionTimeout,
   });
   await captureSection(approvalBlock, '11-approval-rules.png');
@@ -374,14 +383,19 @@ test('frontend smoke reports masters settings @extended', async ({ page }) => {
     .locator('..');
   const actionPolicyKey = `submit.e2e.${id}`;
   await actionPolicyBlock.getByLabel('subjects (JSON)').fill('{');
-  await actionPolicyBlock.getByRole('button', { name: '作成' }).first().click();
-  const settingsMessage = settingsSection.locator(':scope > p').first();
-  await expect(settingsMessage).toHaveText('subjects のJSONが不正です', {
+  const actionPolicyCreateButtons = actionPolicyBlock.getByRole('button', {
+    name: '作成',
+  });
+  await expect(actionPolicyCreateButtons).toHaveCount(1, {
+    timeout: actionTimeout,
+  });
+  await actionPolicyCreateButtons.click();
+  await expect(settingsSection.getByText('subjects のJSONが不正です')).toBeVisible({
     timeout: actionTimeout,
   });
   await actionPolicyBlock.getByLabel('subjects (JSON)').fill('{}');
   await actionPolicyBlock.getByLabel('actionKey').fill(actionPolicyKey);
-  await actionPolicyBlock.getByRole('button', { name: '作成' }).first().click();
+  await actionPolicyCreateButtons.click();
   await expect(
     settingsSection.getByText('ActionPolicy を作成しました'),
   ).toBeVisible({ timeout: actionTimeout });
