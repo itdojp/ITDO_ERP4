@@ -38,31 +38,31 @@
 | --- | --- | --- |
 | `POST /projects → /projects/:id/estimates → /projects/:id/invoices → /invoices/:id/send` | `scripts/smoke-backend.sh` / `packages/frontend/e2e/backend-manual-checklist.spec.ts @extended` |  |
 | `POST/GET /time-entries`（非管理ロールは self のみ取得） | `packages/frontend/e2e/backend-time-invoice.spec.ts @core` / `packages/frontend/e2e/frontend-task-time-entry.spec.ts @core` / `packages/frontend/e2e/backend-manual-checklist.spec.ts @extended` | 非管理ロールの取得制限を追加カバー |
-| `POST/GET /expenses`（非管理ロールは self のみ取得） | `packages/frontend/e2e/frontend-smoke.spec.ts @core` / `packages/frontend/e2e/backend-manual-checklist.spec.ts @extended` | 非管理ロールの取得制限を追加カバー |
-| `/alert-settings` CRUD と `/jobs/alerts/run` で alert が保存される | `packages/frontend/e2e/frontend-smoke.spec.ts @core`（alert-settings 作成） / `scripts/smoke-backend.sh`（alerts job 実行） | job が alert を保存することの確認は smoke 側 |
+| `POST/GET /expenses`（非管理ロールは self のみ取得） | `packages/frontend/e2e/frontend-smoke-core.spec.ts @core` / `packages/frontend/e2e/backend-manual-checklist.spec.ts @extended` | 非管理ロールの取得制限を追加カバー |
+| `/alert-settings` CRUD と `/jobs/alerts/run` で alert が保存される | `packages/frontend/e2e/frontend-smoke-core.spec.ts @core`（alert-settings 作成） / `scripts/smoke-backend.sh`（alerts job 実行） | job が alert を保存することの確認は smoke 側 |
 | `/jobs/approval-escalations/run` で承認期限エスカレーションが保存される | `packages/frontend/e2e/backend-manual-checklist.spec.ts @extended` |  |
-| `/pdf-templates` と `/template-settings` CRUD が動作する | `packages/frontend/e2e/frontend-smoke.spec.ts @core`（template-settings 作成） / `packages/frontend/e2e/backend-manual-checklist.spec.ts @extended` |  |
-| `/document-send-logs/:id` と `/document-send-logs/:id/events` が取得できる | `packages/frontend/e2e/frontend-smoke.spec.ts @extended`（admin ops） / `packages/frontend/e2e/backend-manual-checklist.spec.ts @extended` |  |
+| `/pdf-templates` と `/template-settings` CRUD が動作する | `packages/frontend/e2e/frontend-smoke-core.spec.ts @core`（template-settings 作成） / `packages/frontend/e2e/backend-manual-checklist.spec.ts @extended` |  |
+| `/document-send-logs/:id` と `/document-send-logs/:id/events` が取得できる | `packages/frontend/e2e/frontend-smoke-admin-ops.spec.ts @extended`（admin ops） / `packages/frontend/e2e/backend-manual-checklist.spec.ts @extended` |  |
 | `/document-send-logs/:id/retry` で再送が記録される | `packages/frontend/e2e/backend-manual-checklist.spec.ts @extended` | 成功/抑止（already_sent/429）を許容 |
-| `/report-subscriptions` CRUD → `/report-subscriptions/:id/run` で report_deliveries が作成される | `packages/frontend/e2e/frontend-smoke.spec.ts @core` / `packages/frontend/e2e/backend-manual-checklist.spec.ts @extended` |  |
+| `/report-subscriptions` CRUD → `/report-subscriptions/:id/run` で report_deliveries が作成される | `packages/frontend/e2e/frontend-smoke-core.spec.ts @core` / `packages/frontend/e2e/backend-manual-checklist.spec.ts @extended` |  |
 | `/jobs/report-subscriptions/run` と `/jobs/report-deliveries/retry` が動作する | `packages/frontend/e2e/backend-manual-checklist.spec.ts @extended` |  |
-| `/approval-rules` CRUD のハッピーパス | `packages/frontend/e2e/frontend-smoke.spec.ts @core`（作成） / `packages/frontend/e2e/backend-manual-checklist.spec.ts @extended` | DELETEは未提供 |
-| `/projects/:id/members` のGET/POST/DELETEが動作する | `packages/frontend/e2e/frontend-smoke.spec.ts @extended`（一覧/追加/CSV） / `packages/frontend/e2e/backend-manual-checklist.spec.ts @extended` |  |
-| `/projects/:id/member-candidates?q=` の候補検索が動作する | `packages/frontend/e2e/frontend-smoke.spec.ts @extended`（候補検索） |  |
-| `/projects/:id/members/bulk` で複数メンバーの追加が動作する | `packages/frontend/e2e/frontend-smoke.spec.ts @extended`（CSVインポート） / `packages/frontend/e2e/backend-manual-checklist.spec.ts @extended` | CSVインポート経由で利用 |
-| `/vendor-quotes` 作成と `/vendor-invoices` 作成→approve が通る | `packages/frontend/e2e/frontend-smoke.spec.ts @extended`（vendor docs create + approvals） / `scripts/smoke-backend.sh`（vendor invoice approve） |  |
-| `/wellbeing-entries` POST → HR/AdminでGETできる | `packages/frontend/e2e/frontend-smoke.spec.ts @core`（送信/履歴） / `packages/frontend/e2e/backend-manual-checklist.spec.ts @extended` | HR閲覧を追加カバー |
+| `/approval-rules` CRUD のハッピーパス | `packages/frontend/e2e/frontend-smoke-core.spec.ts @core`（作成） / `packages/frontend/e2e/backend-manual-checklist.spec.ts @extended` | DELETEは未提供 |
+| `/projects/:id/members` のGET/POST/DELETEが動作する | `packages/frontend/e2e/frontend-smoke-reports-masters-settings.spec.ts @extended`（一覧/追加/CSV） / `packages/frontend/e2e/backend-manual-checklist.spec.ts @extended` |  |
+| `/projects/:id/member-candidates?q=` の候補検索が動作する | `packages/frontend/e2e/frontend-smoke-reports-masters-settings.spec.ts @extended`（候補検索） |  |
+| `/projects/:id/members/bulk` で複数メンバーの追加が動作する | `packages/frontend/e2e/frontend-smoke-reports-masters-settings.spec.ts @extended`（CSVインポート） / `packages/frontend/e2e/backend-manual-checklist.spec.ts @extended` | CSVインポート経由で利用 |
+| `/vendor-quotes` 作成と `/vendor-invoices` 作成→approve が通る | `packages/frontend/e2e/frontend-smoke-vendor-docs-create.spec.ts @extended`（vendor docs create） / `packages/frontend/e2e/frontend-smoke-vendor-approvals.spec.ts @extended`（vendor approvals） / `scripts/smoke-backend.sh`（vendor invoice approve） |  |
+| `/wellbeing-entries` POST → HR/AdminでGETできる | `packages/frontend/e2e/frontend-smoke-core.spec.ts @core`（送信/履歴） / `packages/frontend/e2e/backend-manual-checklist.spec.ts @extended` | HR閲覧を追加カバー |
 
 ### フロント PoC
 | 手動確認項目 | 自動テスト（現状） |
 | --- | --- |
-| ダッシュボード: アラートカードが最新5件表示（なければプレースホルダ） | `packages/frontend/e2e/frontend-smoke.spec.ts @core` |
-| 日報+WB: Good/Not Good 送信、Not Good時タグ/コメント/ヘルプ導線 | `packages/frontend/e2e/frontend-smoke.spec.ts @core` |
-| 工数入力: 入力→一覧に反映 | `packages/frontend/e2e/frontend-smoke.spec.ts @core` / `packages/frontend/e2e/frontend-task-time-entry.spec.ts @core` |
-| 請求: 作成→送信、詳細モックの表示 | `packages/frontend/e2e/frontend-smoke.spec.ts @core`（作成/表示） |
-| 案件: メンバー管理（一覧/追加/削除/権限更新） | `packages/frontend/e2e/frontend-smoke.spec.ts @extended`（一覧/追加/CSV）※削除/権限更新は未カバー |
-| 案件: メンバー候補検索 | `packages/frontend/e2e/frontend-smoke.spec.ts @extended` |
-| 案件: CSVインポート/エクスポート | `packages/frontend/e2e/frontend-smoke.spec.ts @extended` |
+| ダッシュボード: アラートカードが最新5件表示（なければプレースホルダ） | `packages/frontend/e2e/frontend-smoke-core.spec.ts @core` |
+| 日報+WB: Good/Not Good 送信、Not Good時タグ/コメント/ヘルプ導線 | `packages/frontend/e2e/frontend-smoke-core.spec.ts @core` |
+| 工数入力: 入力→一覧に反映 | `packages/frontend/e2e/frontend-smoke-core.spec.ts @core` / `packages/frontend/e2e/frontend-task-time-entry.spec.ts @core` |
+| 請求: 作成→送信、詳細モックの表示 | `packages/frontend/e2e/frontend-smoke-core.spec.ts @core`（作成/表示） |
+| 案件: メンバー管理（一覧/追加/削除/権限更新） | `packages/frontend/e2e/frontend-smoke-reports-masters-settings.spec.ts @extended`（一覧/追加/CSV）※削除/権限更新は未カバー |
+| 案件: メンバー候補検索 | `packages/frontend/e2e/frontend-smoke-reports-masters-settings.spec.ts @extended` |
+| 案件: CSVインポート/エクスポート | `packages/frontend/e2e/frontend-smoke-reports-masters-settings.spec.ts @extended` |
 
 ### 環境・その他
 | 手動確認項目 | 自動検査/手順（現状） |
