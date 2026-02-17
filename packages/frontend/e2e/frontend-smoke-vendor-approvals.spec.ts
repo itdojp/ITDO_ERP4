@@ -208,9 +208,8 @@ test('frontend smoke vendor approvals @extended', async ({ page }) => {
     .locator('h3', { hasText: '発注書' })
     .locator('..');
   await poBlock.getByRole('button', { name: /再取得|再読込/ }).click();
-  const poRow = poBlock
-    .locator('tbody tr', { hasText: fixture.purchaseOrderNo })
-    .first();
+  const poRow = poBlock.locator('tbody tr', { hasText: fixture.purchaseOrderNo });
+  await expect(poRow).toHaveCount(1, { timeout: actionTimeout });
   await expect(poRow).toBeVisible({ timeout: actionTimeout });
   const poSubmitButton = poRow.getByRole('button', { name: '承認依頼' });
   await expect(poSubmitButton).toBeVisible({ timeout: actionTimeout });
@@ -232,14 +231,18 @@ test('frontend smoke vendor approvals @extended', async ({ page }) => {
     .locator('h2', { hasText: '承認一覧' })
     .locator('..');
   await approvalsSection.scrollIntoViewIfNeeded();
+  const flowTypeSelect = approvalsSection.locator('select', {
+    has: approvalsSection.locator('option', { hasText: '発注' }),
+  });
   await selectByLabelOrFirst(
-    approvalsSection.locator('select').first(),
+    flowTypeSelect,
     '発注',
   );
   await approvalsSection.getByRole('button', { name: '再読込' }).click();
-  const approvalItem = approvalsSection
-    .locator('li', { hasText: `purchase_orders:${fixture.purchaseOrderId}` })
-    .first();
+  const approvalItem = approvalsSection.locator('li', {
+    hasText: `purchase_orders:${fixture.purchaseOrderId}`,
+  });
+  await expect(approvalItem).toHaveCount(1, { timeout: actionTimeout });
   await expect(approvalItem).toBeVisible({ timeout: actionTimeout });
   const approveButton = approvalItem.getByRole('button', { name: '承認' });
   await expect(approveButton).toBeVisible({ timeout: actionTimeout });
