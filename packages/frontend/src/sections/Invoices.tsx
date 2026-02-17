@@ -530,17 +530,19 @@ export const Invoices: React.FC = () => {
                 }}
               >
                 <Input
+                  label="請求検索"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   placeholder="請求番号 / 案件 / 状態で検索"
                   aria-label="請求検索"
                 />
                 <Select
+                  label="請求状態"
                   value={statusFilter}
                   onChange={(e) => setStatusFilter(e.target.value)}
                   aria-label="請求状態フィルタ"
                 >
-                  <option value="all">状態: 全て</option>
+                  <option value="all">全て</option>
                   {statusOptions.map((status) => (
                     <option key={status} value={status}>
                       {status}
