@@ -102,9 +102,11 @@ test('task to time entry link @core', async ({ page, request }) => {
   await taskSection.getByLabel('タスク名').fill(taskName);
   await taskSection.getByRole('button', { name: /^作成$/ }).click();
   await expect(taskSection.getByText('作成しました')).toBeVisible();
-  await expect(
-    taskSection.locator('ul.list li', { hasText: taskName }).first(),
-  ).toBeVisible();
+  const createdTaskRows = taskSection.locator('ul.list li', {
+    hasText: taskName,
+  });
+  await expect(createdTaskRows).toHaveCount(1, { timeout: actionTimeout });
+  await expect(createdTaskRows).toBeVisible({ timeout: actionTimeout });
 
   const tasksRes = await request.get(`${apiBase}/projects/${projectId}/tasks`, {
     headers: authHeaders,
