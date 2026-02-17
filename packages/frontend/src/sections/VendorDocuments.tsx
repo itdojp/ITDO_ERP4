@@ -30,6 +30,7 @@ import type { DataTableColumn, DataTableRow } from '../ui';
 import { formatDateForFilename, openResponseInNewTab } from '../utils/download';
 import { PurchaseOrderSendLogsDialog } from './vendor-documents/PurchaseOrderSendLogsDialog';
 import { VendorInvoiceAllocationDialog } from './vendor-documents/VendorInvoiceAllocationDialog';
+import { VendorDocumentsPurchaseOrdersSection } from './vendor-documents/VendorDocumentsPurchaseOrdersSection';
 import { VendorInvoiceLineDialog } from './vendor-documents/VendorInvoiceLineDialog';
 import { VendorInvoicePoLinkDialog } from './vendor-documents/VendorInvoicePoLinkDialog';
 
@@ -2033,157 +2034,31 @@ export const VendorDocuments: React.FC = () => {
           })}
         />
         <div style={{ display: 'grid', gap: 24 }}>
-          <section
-            hidden={activeDocumentTab !== 'purchase-orders'}
-            style={{
-              display:
-                activeDocumentTab === 'purchase-orders' ? 'block' : 'none',
+          <VendorDocumentsPurchaseOrdersSection
+            active={activeDocumentTab === 'purchase-orders'}
+            poForm={poForm}
+            projects={projects}
+            vendors={vendors}
+            isPoSaving={isPoSaving}
+            onChangePoForm={setPoForm}
+            onCreatePurchaseOrder={createPurchaseOrder}
+            poResult={poResult}
+            onDismissPoResult={() => setPoResult(null)}
+            onReloadPurchaseOrders={() => {
+              void loadPurchaseOrders();
             }}
-          >
-            <h3>発注書</h3>
-            <div className="card" style={{ marginBottom: 12 }}>
-              <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
-                <select
-                  value={poForm.projectId}
-                  onChange={(e) =>
-                    setPoForm({ ...poForm, projectId: e.target.value })
-                  }
-                >
-                  <option value="">案件を選択</option>
-                  {projects.map((project) => (
-                    <option key={project.id} value={project.id}>
-                      {project.code} / {project.name}
-                    </option>
-                  ))}
-                </select>
-                <select
-                  value={poForm.vendorId}
-                  onChange={(e) =>
-                    setPoForm({ ...poForm, vendorId: e.target.value })
-                  }
-                >
-                  <option value="">業者を選択</option>
-                  {vendors.map((vendor) => (
-                    <option key={vendor.id} value={vendor.id}>
-                      {vendor.code} / {vendor.name}
-                    </option>
-                  ))}
-                </select>
-                <input
-                  type="number"
-                  min={0}
-                  value={poForm.totalAmount}
-                  onChange={(e) =>
-                    setPoForm({
-                      ...poForm,
-                      totalAmount: Number(e.target.value),
-                    })
-                  }
-                  placeholder="金額"
-                  style={{ width: 120 }}
-                />
-                <input
-                  type="text"
-                  value={poForm.currency}
-                  onChange={(e) =>
-                    setPoForm({
-                      ...poForm,
-                      currency: normalizeCurrency(e.target.value),
-                    })
-                  }
-                  placeholder="通貨"
-                  style={{ width: 80 }}
-                  maxLength={3}
-                />
-                <input
-                  type="date"
-                  value={poForm.issueDate}
-                  onChange={(e) =>
-                    setPoForm({ ...poForm, issueDate: e.target.value })
-                  }
-                />
-                <input
-                  type="date"
-                  value={poForm.dueDate}
-                  onChange={(e) =>
-                    setPoForm({ ...poForm, dueDate: e.target.value })
-                  }
-                />
-                <Button onClick={createPurchaseOrder} disabled={isPoSaving}>
-                  {isPoSaving ? '登録中' : '登録'}
-                </Button>
-              </div>
-            </div>
-            {poResult && (
-              <div style={{ marginBottom: 12 }}>
-                <Toast
-                  variant={poResult.type}
-                  title={poResult.type === 'error' ? 'エラー' : '完了'}
-                  description={poResult.text}
-                  dismissible
-                  onClose={() => setPoResult(null)}
-                />
-              </div>
-            )}
-            <CrudList
-              title="発注書一覧"
-              description="発注書の検索・状態絞り込みと主要操作を実行できます。"
-              filters={
-                <FilterBar
-                  actions={
-                    <Button
-                      variant="ghost"
-                      onClick={() => {
-                        void loadPurchaseOrders();
-                      }}
-                    >
-                      再取得
-                    </Button>
-                  }
-                >
-                  <div
-                    style={{
-                      display: 'flex',
-                      gap: 12,
-                      flexWrap: 'wrap',
-                      alignItems: 'center',
-                    }}
-                  >
-                    <Input
-                      value={poSearch}
-                      onChange={(e) => setPoSearch(e.target.value)}
-                      placeholder="発注番号 / 案件 / 業者 / 請求番号で検索"
-                      aria-label="発注書検索"
-                    />
-                    <Select
-                      value={poStatusFilter}
-                      onChange={(e) => setPoStatusFilter(e.target.value)}
-                      aria-label="発注書状態フィルタ"
-                    >
-                      <option value="all">状態: 全て</option>
-                      {poStatusOptions.map((status) => (
-                        <option key={status} value={status}>
-                          {status}
-                        </option>
-                      ))}
-                    </Select>
-                    {(poSearch || poStatusFilter !== 'all') && (
-                      <Button
-                        variant="ghost"
-                        onClick={() => {
-                          setPoSearch('');
-                          setPoStatusFilter('all');
-                        }}
-                      >
-                        条件クリア
-                      </Button>
-                    )}
-                  </div>
-                </FilterBar>
-              }
-              table={purchaseOrderListContent}
-            />
-          </section>
+            poSearch={poSearch}
+            onChangePoSearch={setPoSearch}
+            poStatusFilter={poStatusFilter}
+            onChangePoStatusFilter={setPoStatusFilter}
+            poStatusOptions={poStatusOptions}
+            onClearPoFilters={() => {
+              setPoSearch('');
+              setPoStatusFilter('all');
+            }}
+            purchaseOrderListContent={purchaseOrderListContent}
+            normalizeCurrency={normalizeCurrency}
+          />
 
           <section
             hidden={activeDocumentTab !== 'vendor-quotes'}
