@@ -48,6 +48,7 @@ import {
   buildAllMentionBlockedMetadata,
   enforceAllMentionRateLimit,
 } from './chat/shared/allMentionRateLimit.js';
+import { resolveAckRequiredTarget } from './chat/shared/ackRequiredTarget.js';
 import { normalizeMentions } from './chat/shared/mentions.js';
 import { parseDateParam } from '../utils/date.js';
 
@@ -1121,13 +1122,11 @@ export async function registerChatRoutes(app: FastifyInstance) {
           },
         });
       }
-      const requiredUserIds = normalizeStringArray(
+      const ackTarget = resolveAckRequiredTarget(
         requestItem.requiredUserIds,
-        {
-          dedupe: true,
-        },
+        userId,
       );
-      if (!requiredUserIds.includes(userId)) {
+      if (!ackTarget.isRequired) {
         return reply.status(403).send({
           error: {
             code: 'NOT_REQUIRED',
@@ -1166,7 +1165,7 @@ export async function registerChatRoutes(app: FastifyInstance) {
             roomId: requestItem.roomId,
             messageId: requestItem.messageId,
             userId,
-            requiredUserCount: requiredUserIds.length,
+            requiredUserCount: ackTarget.requiredUserCount,
             ackedCount: updated?.acks?.length ?? null,
           } as Prisma.InputJsonValue,
           ...auditContextFromRequest(req, { userId }),
@@ -1411,11 +1410,11 @@ export async function registerChatRoutes(app: FastifyInstance) {
         });
       }
 
-      const requiredUserIds = normalizeStringArray(
+      const ackTarget = resolveAckRequiredTarget(
         requestItem.requiredUserIds,
-        { dedupe: true },
+        userId,
       );
-      if (!requiredUserIds.includes(userId)) {
+      if (!ackTarget.isRequired) {
         return reply.status(403).send({
           error: {
             code: 'NOT_REQUIRED',
@@ -1443,7 +1442,7 @@ export async function registerChatRoutes(app: FastifyInstance) {
             roomId: requestItem.roomId,
             messageId: requestItem.messageId,
             userId,
-            requiredUserCount: requiredUserIds.length,
+            requiredUserCount: ackTarget.requiredUserCount,
             ackedCount: updated?.acks?.length ?? null,
           } as Prisma.InputJsonValue,
           ...auditContextFromRequest(req, { userId }),
