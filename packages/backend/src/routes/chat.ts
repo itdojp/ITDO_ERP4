@@ -42,6 +42,7 @@ import {
   normalizeStringArray,
   parseLimit,
   parseLimitNumber,
+  parsePositiveInt,
 } from './chat/shared/inputParsers.js';
 import {
   buildAllMentionBlockedMetadata,
@@ -49,13 +50,6 @@ import {
 } from './chat/shared/allMentionRateLimit.js';
 import { normalizeMentions } from './chat/shared/mentions.js';
 import { parseDateParam } from '../utils/date.js';
-
-function parseMaxBytes(raw: string | undefined, fallback: number) {
-  if (!raw) return fallback;
-  const parsed = Number(raw);
-  if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
-  return Math.floor(parsed);
-}
 
 async function readFileBuffer(
   stream: AsyncIterable<Buffer>,
@@ -1568,7 +1562,7 @@ export async function registerChatRoutes(app: FastifyInstance) {
     '/chat-messages/:id/attachments',
     {
       preHandler: requireRole(chatRoles),
-      bodyLimit: parseMaxBytes(
+      bodyLimit: parsePositiveInt(
         process.env.CHAT_ATTACHMENT_MAX_BYTES,
         10 * 1024 * 1024,
       ),
@@ -1622,7 +1616,7 @@ export async function registerChatRoutes(app: FastifyInstance) {
         });
       }
 
-      const maxBytes = parseMaxBytes(
+      const maxBytes = parsePositiveInt(
         process.env.CHAT_ATTACHMENT_MAX_BYTES,
         10 * 1024 * 1024,
       );

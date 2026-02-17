@@ -20,6 +20,13 @@ export function parseNonNegativeInt(raw: string | undefined, fallback: number) {
   return Math.floor(parsed);
 }
 
+export function parsePositiveInt(raw: string | undefined, fallback: number) {
+  if (!raw) return fallback;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+  return Math.floor(parsed);
+}
+
 export function normalizeStringArray(
   value: unknown,
   options?: { dedupe?: boolean; max?: number },
