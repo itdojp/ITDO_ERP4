@@ -9,6 +9,10 @@ REACT_PLUGIN_PACKAGE="${REACT_PLUGIN_PACKAGE:-eslint-plugin-react}"
 REACT_PLUGIN_VERSION="${REACT_PLUGIN_VERSION:-latest}"
 REACT_HOOKS_PLUGIN_PACKAGE="${REACT_HOOKS_PLUGIN_PACKAGE:-eslint-plugin-react-hooks}"
 REACT_HOOKS_PLUGIN_VERSION="${REACT_HOOKS_PLUGIN_VERSION:-latest}"
+# NOTE:
+# This repository tracks eslint major readiness for the whole CI gate, so
+# frontend lint dependencies are included in the default readiness criteria.
+# Backend-only checks can still be run by overriding REACT_* targets if needed.
 STRICT="${STRICT:-1}"
 
 read_npm_field() {
