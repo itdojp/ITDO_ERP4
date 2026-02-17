@@ -65,13 +65,13 @@ async function ensureRoleRecipientGroupMember(
   },
   userId: string,
 ) {
+  const groupListRes = await request.get(`${apiBase}/groups`, {
+    headers: adminHeaders,
+  });
+  await ensureOk(groupListRes);
+  const groupPayload = await groupListRes.json();
+  const groups = Array.isArray(groupPayload?.items) ? groupPayload.items : [];
   for (const selector of ['admin', 'mgmt']) {
-    const groupListRes = await request.get(`${apiBase}/groups`, {
-      headers: adminHeaders,
-    });
-    await ensureOk(groupListRes);
-    const groupPayload = await groupListRes.json();
-    const groups = Array.isArray(groupPayload?.items) ? groupPayload.items : [];
     let targetGroup = groups.find(
       (group: any) =>
         group?.displayName === selector && group?.isScimManaged !== true,
