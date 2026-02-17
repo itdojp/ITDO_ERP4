@@ -17,6 +17,7 @@ const authState = {
   roles: ['admin', 'mgmt'],
   projectIds: ['00000000-0000-0000-0000-000000000001'],
   groupIds: ['mgmt', 'hr-group'],
+  groupAccountIds: [] as string[],
 };
 
 const runId = () =>
@@ -76,6 +77,7 @@ const buildAuthHeaders = (override?: Partial<typeof authState>) => {
     'x-roles': resolved.roles.join(','),
     'x-project-ids': (resolved.projectIds ?? []).join(','),
     'x-group-ids': (resolved.groupIds ?? []).join(','),
+    'x-group-account-ids': (resolved.groupAccountIds ?? []).join(','),
   };
 };
 
@@ -140,4 +142,122 @@ test('frontend smoke project chat ack targets (user/group/role) @extended', asyn
   await expect(ackItem.getByText('確認状況:')).toBeVisible({
     timeout: actionTimeout,
   });
+});
+
+test('frontend smoke project chat mention composer selects user/group targets @extended', async ({
+  page,
+}) => {
+  test.setTimeout(180_000);
+  const id = runId();
+  const projectId = authState.projectIds[0];
+  const targetUser = 'e2e-member-1@example.com';
+  const messageBody = `E2E mention composer ${id}`;
+  const mentionGroupDisplayName = `e2e-mention-${id}`;
+  let mentionGroupId = '';
+
+  try {
+    const createGroupRes = await page.request.post(`${apiBase}/groups`, {
+      headers: buildAuthHeaders(),
+      data: { displayName: mentionGroupDisplayName },
+    });
+    await ensureOk(createGroupRes);
+    const createdGroup = (await createGroupRes.json()) as {
+      id?: string;
+      displayName?: string;
+    };
+    mentionGroupId = String(createdGroup.id || '').trim();
+    expect(mentionGroupId.length).toBeGreaterThan(0);
+
+    const mentionAuthState: Partial<typeof authState> = {
+      groupIds: Array.from(
+        new Set([...authState.groupIds, mentionGroupDisplayName]),
+      ),
+      groupAccountIds: Array.from(
+        new Set([...(authState.groupAccountIds ?? []), mentionGroupId]),
+      ),
+    };
+
+    await prepare(page, mentionAuthState);
+
+    const addMemberRes = await page.request.post(
+      `${apiBase}/projects/${encodeURIComponent(projectId)}/members`,
+      {
+        headers: buildAuthHeaders(mentionAuthState),
+        data: { userId: targetUser, role: 'member' },
+      },
+    );
+    await ensureOk(addMemberRes);
+
+    const mentionCandidatesRes = await page.request.get(
+      `${apiBase}/projects/${encodeURIComponent(
+        projectId,
+      )}/chat-mention-candidates`,
+      {
+        headers: buildAuthHeaders(mentionAuthState),
+      },
+    );
+    await ensureOk(mentionCandidatesRes);
+    const mentionCandidates = (await mentionCandidatesRes.json()) as {
+      groups?: Array<{ groupId?: string | null }>;
+    };
+    expect(
+      mentionCandidates.groups?.some(
+        (group) => group.groupId === mentionGroupId,
+      ),
+    ).toBeTruthy();
+
+    await navigateToSection(page, 'プロジェクトチャット');
+    const chatSection = page
+      .locator('main')
+      .locator('h2', { hasText: 'プロジェクトチャット' })
+      .locator('..');
+    await chatSection.scrollIntoViewIfNeeded();
+    await selectByLabelOrFirst(
+      chatSection.getByLabel('案件選択'),
+      'PRJ-DEMO-1 / Demo Project 1',
+    );
+
+    const mentionInput = chatSection.getByPlaceholder(
+      'メンション対象を検索（ユーザ/グループ）',
+    );
+    await mentionInput.fill('e2e-member-1');
+    const userOption = chatSection.getByRole('option', {
+      name: /e2e-member-1@example\.com/i,
+    });
+    await expect(userOption).toHaveCount(1, { timeout: actionTimeout });
+    await userOption.click();
+
+    await mentionInput.fill(mentionGroupDisplayName);
+    const groupOption = chatSection.getByRole('option', {
+      name: new RegExp(mentionGroupDisplayName, 'i'),
+    });
+    await expect
+      .poll(() => groupOption.count(), { timeout: actionTimeout })
+      .toBeGreaterThan(0);
+    await groupOption.first().click();
+
+    await chatSection.getByPlaceholder('メッセージを書く').fill(messageBody);
+    await chatSection.getByRole('button', { name: '投稿' }).click();
+
+    const messageItem = chatSection.locator('li', { hasText: messageBody });
+    await expect(messageItem).toHaveCount(1, { timeout: actionTimeout });
+    await expect(messageItem).toBeVisible({ timeout: actionTimeout });
+    await expect(
+      messageItem.getByLabel(`メンション対象ユーザ: ${targetUser}`),
+    ).toBeVisible({ timeout: actionTimeout });
+    await expect(
+      messageItem.getByLabel(`メンション対象グループ: ${mentionGroupId}`),
+    ).toBeVisible({ timeout: actionTimeout });
+  } finally {
+    if (mentionGroupId) {
+      const deactivateRes = await page.request.patch(
+        `${apiBase}/groups/${encodeURIComponent(mentionGroupId)}`,
+        {
+          headers: buildAuthHeaders(),
+          data: { active: false },
+        },
+      );
+      await ensureOk(deactivateRes);
+    }
+  }
 });
