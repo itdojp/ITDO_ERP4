@@ -191,13 +191,14 @@ test('pwa offline duplicate time entries @pwa @extended', async ({
     has: page.locator('strong', { hasText: '現在のユーザー' }),
   });
   await currentSection.scrollIntoViewIfNeeded();
-  await currentSection.getByRole('button', { name: '再読込' }).click();
+  const offlineQueueSection = currentSection
+    .locator('strong', { hasText: 'オフライン送信キュー' })
+    .locator('..');
+  await offlineQueueSection.getByRole('button', { name: '再読込' }).click();
   await expect
     .poll(
       async () => {
-        const statusText = await currentSection
-          .getByText(/件数:/)
-          .textContent();
+        const statusText = await offlineQueueSection.getByText(/件数:/).textContent();
         const match = statusText?.match(/件数:\s*(\d+)/);
         return match ? Number(match[1]) : 0;
       },
@@ -207,16 +208,14 @@ test('pwa offline duplicate time entries @pwa @extended', async ({
 
   await context.setOffline(false);
 
-  const resendButton = currentSection.getByRole('button', { name: '再送' });
+  const resendButton = offlineQueueSection.getByRole('button', { name: '再送' });
   if (await resendButton.isEnabled().catch(() => false)) {
     await resendButton.click();
   }
   await expect
     .poll(
       async () => {
-        const statusText = await currentSection
-          .getByText(/件数:/)
-          .textContent();
+        const statusText = await offlineQueueSection.getByText(/件数:/).textContent();
         const match = statusText?.match(/件数:\s*(\d+)/);
         return match ? Number(match[1]) : 0;
       },
