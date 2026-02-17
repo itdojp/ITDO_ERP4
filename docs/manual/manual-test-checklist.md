@@ -136,4 +136,6 @@
 - [ ] CI (backend/frontend/lint/lychee) が緑
 - [ ] prisma format/validate が通る（DATABASE_URL ダミー設定でOK）
 - [ ] フロント確認時は `VITE_API_BASE=http://localhost:3001` を指定して API を参照できる
+- [ ] （実行補助）`make frontend-dev-api` で API 接続付きフロントを起動できる
 - [ ] Podman 検証は `./scripts/podman-poc.sh reset` → `./scripts/smoke-backend.sh` で完走する
+- [ ] （実行補助）`make podman-smoke` で Podman reset + backend smoke を連続実行できる

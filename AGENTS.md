@@ -56,6 +56,16 @@ E2E_SCOPE=core E2E_CAPTURE=0 ./scripts/e2e-frontend.sh
 make ui-evidence
 ```
 
+### フロントをAPI接続で起動（任意）
+```bash
+make frontend-dev-api
+```
+
+### Podmanスモーク検証（任意）
+```bash
+make podman-smoke
+```
+
 ### PRレビューコメント出力（任意）
 GraphQL互換問題（Projects classic等）で `gh pr view --comments` が失敗する場合の代替です。
 ```bash
