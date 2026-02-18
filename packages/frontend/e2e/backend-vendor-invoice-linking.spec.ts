@@ -194,6 +194,150 @@ test('vendor invoice po linking: post-submit unlink requires reason @core', asyn
   expect(unlinkWithReason.purchaseOrder).toBeNull();
 });
 
+test('vendor invoice po linking: purchase order project/vendor must match invoice @core', async ({
+  request,
+}) => {
+  const suffix = runId();
+  const fixture = await setupVendorInvoiceFixture(request, suffix);
+
+  const anotherProjectRes = await request.post(`${apiBase}/projects`, {
+    headers: adminHeaders,
+    data: {
+      code: `E2E-VI-PROJ-${suffix}`,
+      name: `E2E Vendor Invoice Project ${suffix}`,
+      status: 'active',
+    },
+  });
+  await ensureOk(anotherProjectRes);
+  const anotherProject = await anotherProjectRes.json();
+  const anotherProjectId = anotherProject.id as string;
+  expect(anotherProjectId).toBeTruthy();
+
+  const projectMismatchPoRes = await request.post(
+    `${apiBase}/projects/${encodeURIComponent(anotherProjectId)}/purchase-orders`,
+    {
+      headers: adminHeaders,
+      data: {
+        vendorId: fixture.vendorId,
+        totalAmount: 12000,
+        currency: 'JPY',
+      },
+    },
+  );
+  await ensureOk(projectMismatchPoRes);
+  const projectMismatchPo = await projectMismatchPoRes.json();
+  const projectMismatchPoId = projectMismatchPo.id as string;
+  expect(projectMismatchPoId).toBeTruthy();
+
+  const projectMismatchLinkRes = await request.post(
+    `${apiBase}/vendor-invoices/${encodeURIComponent(fixture.vendorInvoiceId)}/link-po`,
+    {
+      headers: adminHeaders,
+      data: { purchaseOrderId: projectMismatchPoId },
+    },
+  );
+  expect(projectMismatchLinkRes.status()).toBe(400);
+  const projectMismatchLink = await projectMismatchLinkRes.json();
+  expect(projectMismatchLink?.error?.code).toBe('INVALID_PURCHASE_ORDER');
+  expect(projectMismatchLink?.error?.message).toBe(
+    'Purchase order project does not match',
+  );
+
+  const anotherVendorRes = await request.post(`${apiBase}/vendors`, {
+    headers: adminHeaders,
+    data: {
+      code: `E2E-VND-MISMATCH-${suffix}`,
+      name: `E2E Vendor Mismatch ${suffix}`,
+      status: 'active',
+    },
+  });
+  await ensureOk(anotherVendorRes);
+  const anotherVendor = await anotherVendorRes.json();
+  const anotherVendorId = anotherVendor.id as string;
+  expect(anotherVendorId).toBeTruthy();
+
+  const vendorMismatchPoRes = await request.post(
+    `${apiBase}/projects/${encodeURIComponent(fixture.projectId)}/purchase-orders`,
+    {
+      headers: adminHeaders,
+      data: {
+        vendorId: anotherVendorId,
+        totalAmount: 12000,
+        currency: 'JPY',
+      },
+    },
+  );
+  await ensureOk(vendorMismatchPoRes);
+  const vendorMismatchPo = await vendorMismatchPoRes.json();
+  const vendorMismatchPoId = vendorMismatchPo.id as string;
+  expect(vendorMismatchPoId).toBeTruthy();
+
+  const vendorMismatchLinkRes = await request.post(
+    `${apiBase}/vendor-invoices/${encodeURIComponent(fixture.vendorInvoiceId)}/link-po`,
+    {
+      headers: adminHeaders,
+      data: { purchaseOrderId: vendorMismatchPoId },
+    },
+  );
+  expect(vendorMismatchLinkRes.status()).toBe(400);
+  const vendorMismatchLink = await vendorMismatchLinkRes.json();
+  expect(vendorMismatchLink?.error?.code).toBe('INVALID_PURCHASE_ORDER');
+  expect(vendorMismatchLink?.error?.message).toBe(
+    'Purchase order vendor does not match',
+  );
+});
+
+test('vendor invoice po linking: post-submit link requires reason @core', async ({
+  request,
+}) => {
+  const suffix = runId();
+  const fixture = await setupVendorInvoiceFixture(request, suffix);
+
+  const secondPoRes = await request.post(
+    `${apiBase}/projects/${encodeURIComponent(fixture.projectId)}/purchase-orders`,
+    {
+      headers: adminHeaders,
+      data: {
+        vendorId: fixture.vendorId,
+        totalAmount: 12000,
+        currency: 'JPY',
+      },
+    },
+  );
+  await ensureOk(secondPoRes);
+  const secondPo = await secondPoRes.json();
+  const secondPoId = secondPo.id as string;
+  expect(secondPoId).toBeTruthy();
+
+  const submitted = await submitVendorInvoice(request, fixture.vendorInvoiceId);
+  expect(submitted.status).toBe('pending_qa');
+
+  const linkNoReasonRes = await request.post(
+    `${apiBase}/vendor-invoices/${encodeURIComponent(fixture.vendorInvoiceId)}/link-po`,
+    {
+      headers: adminHeaders,
+      data: { purchaseOrderId: secondPoId },
+    },
+  );
+  expect(linkNoReasonRes.status()).toBe(400);
+  const linkNoReason = await linkNoReasonRes.json();
+  expect(linkNoReason?.error?.code).toBe('REASON_REQUIRED');
+
+  const linkWithReasonRes = await request.post(
+    `${apiBase}/vendor-invoices/${encodeURIComponent(fixture.vendorInvoiceId)}/link-po`,
+    {
+      headers: adminHeaders,
+      data: {
+        purchaseOrderId: secondPoId,
+        reasonText: 'e2e override link after submit',
+      },
+    },
+  );
+  await ensureOk(linkWithReasonRes);
+  const linkWithReason = await linkWithReasonRes.json();
+  expect(linkWithReason?.purchaseOrder?.id).toBe(secondPoId);
+});
+
 test('vendor invoice allocations: post-submit update requires reason @core', async ({
   request,
 }) => {
