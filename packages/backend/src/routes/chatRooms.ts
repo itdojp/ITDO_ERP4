@@ -1991,6 +1991,7 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
         roomId,
         userId,
         accessContext,
+        accessLevel: 'post',
       });
       if (!access) return;
 
