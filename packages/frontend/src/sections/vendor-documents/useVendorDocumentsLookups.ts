@@ -56,7 +56,7 @@ export function useVendorDocumentsLookups(
   }, [params.invoicePoLinkDialog, params.purchaseOrders]);
 
   const selectedPurchaseOrderId =
-    params.invoicePoLinkDialog?.purchaseOrderId.trim();
+    params.invoicePoLinkDialog?.purchaseOrderId?.trim();
   const selectedPurchaseOrder = selectedPurchaseOrderId
     ? params.purchaseOrderDetails[selectedPurchaseOrderId] || null
     : null;
