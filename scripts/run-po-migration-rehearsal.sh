@@ -7,8 +7,12 @@ INPUT_FORMAT="${INPUT_FORMAT:-csv}"
 ONLY="${ONLY:-}"
 APPLY="${APPLY:-0}"
 RUN_INTEGRITY="${RUN_INTEGRITY:-0}"
+RUN_PREFLIGHT="${RUN_PREFLIGHT:-1}"
+PREFLIGHT_STRICT="${PREFLIGHT_STRICT:-1}"
+GENERATE_REPORT="${GENERATE_REPORT:-1}"
 INTEGRITY_SQL="${INTEGRITY_SQL:-$ROOT_DIR/scripts/checks/migration-po-integrity.sql}"
 LOG_DIR="${LOG_DIR:-$ROOT_DIR/tmp/migration/logs/po-real-$(date +%Y%m%d-%H%M%S)}"
+REPORT_FILE="${REPORT_FILE:-}"
 INPUT_DIR_RESOLVED=""
 
 usage() {
@@ -24,6 +28,10 @@ Optional env:
   ONLY=users,projects,...
   APPLY=1              # run --apply after dry-run
   RUN_INTEGRITY=1      # run migration integrity SQL after APPLY=1
+  RUN_PREFLIGHT=1      # run input file preflight before migrate-po.ts (default: 1)
+  PREFLIGHT_STRICT=1   # pass-through to preflight STRICT (default: 1)
+  GENERATE_REPORT=1    # generate markdown report into LOG_DIR (default: 1)
+  REPORT_FILE=...      # default: LOG_DIR/rehearsal-report.md
   INTEGRITY_SQL=...    # default: scripts/checks/migration-po-integrity.sql
   LOG_DIR=...          # default: tmp/migration/logs/po-real-<timestamp>
 
@@ -117,11 +125,33 @@ validate_input() {
   if [[ "$RUN_INTEGRITY" == "1" && "$APPLY" != "1" ]]; then
     die "RUN_INTEGRITY=1 requires APPLY=1"
   fi
+  if [[ "$RUN_PREFLIGHT" != "0" && "$RUN_PREFLIGHT" != "1" ]]; then
+    die "RUN_PREFLIGHT must be 0|1"
+  fi
+  if [[ "$PREFLIGHT_STRICT" != "0" && "$PREFLIGHT_STRICT" != "1" ]]; then
+    die "PREFLIGHT_STRICT must be 0|1"
+  fi
+  if [[ "$GENERATE_REPORT" != "0" && "$GENERATE_REPORT" != "1" ]]; then
+    die "GENERATE_REPORT must be 0|1"
+  fi
 
   INPUT_DIR_RESOLVED="$(resolve_absolute_path "$INPUT_DIR")"
   if [[ ! -d "$INPUT_DIR_RESOLVED" ]]; then
     die "input dir not found: $INPUT_DIR_RESOLVED"
   fi
+}
+
+run_preflight() {
+  local preflight_script="$ROOT_DIR/scripts/check-po-migration-input-readiness.sh"
+  if [[ ! -f "$preflight_script" ]]; then
+    die "preflight script not found: $preflight_script"
+  fi
+  log "running preflight: $preflight_script"
+  INPUT_DIR="$INPUT_DIR_RESOLVED" \
+  INPUT_FORMAT="$INPUT_FORMAT" \
+  ONLY="$ONLY" \
+  STRICT="$PREFLIGHT_STRICT" \
+    "$preflight_script"
 }
 
 run_migration() {
@@ -169,6 +199,46 @@ run_integrity_check() {
   psql "$psql_database_url" -f "$INTEGRITY_SQL" 2>&1 | tee "$log_file"
 }
 
+generate_report() {
+  local exit_code="$1"
+  if [[ "$GENERATE_REPORT" != "1" ]]; then
+    return 0
+  fi
+  if [[ ! -d "$LOG_DIR" ]]; then
+    return 0
+  fi
+  if ! command -v node >/dev/null 2>&1; then
+    warn "node command not found; skip report generation"
+    return 0
+  fi
+  local report_file
+  report_file="${REPORT_FILE:-$LOG_DIR/rehearsal-report.md}"
+  local report_script="$ROOT_DIR/scripts/generate-po-migration-report.mjs"
+  if [[ ! -f "$report_script" ]]; then
+    warn "report script not found: $report_script"
+    return 0
+  fi
+  node "$report_script" \
+    --log-dir="$LOG_DIR" \
+    --output="$report_file" \
+    --exit-code="$exit_code" || warn "failed to generate report"
+  if [[ -f "$report_file" ]]; then
+    log "report: $report_file"
+  fi
+}
+
+warn() {
+  echo "[po-migration-rehearsal][WARN] $*" >&2
+}
+
+on_exit() {
+  local status="$1"
+  set +e
+  generate_report "$status"
+}
+
+trap 'on_exit "$?"' EXIT
+
 main() {
   require_cmd npx
   validate_input
@@ -178,6 +248,10 @@ main() {
   local dry_log="$LOG_DIR/dry-run.log"
   local apply_log="$LOG_DIR/apply.log"
   local integrity_log="$LOG_DIR/integrity.log"
+
+  if [[ "$RUN_PREFLIGHT" == "1" ]]; then
+    run_preflight
+  fi
 
   run_migration dry-run "$dry_log"
 

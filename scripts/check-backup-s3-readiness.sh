@@ -247,6 +247,12 @@ check_write_probe() {
 main() {
   require_cmd aws
   require_env S3_BUCKET
+  case "$EXPECT_SSE" in
+    aws:kms|AES256|any) ;;
+    *)
+      die "EXPECT_SSE must be one of: aws:kms | AES256 | any (got: ${EXPECT_SSE})"
+      ;;
+  esac
 
   check_bucket_access
   check_bucket_region
@@ -267,8 +273,6 @@ main() {
 
   log "readiness check passed"
 }
-
-main "$@"
 kms_id_matches() {
   local expected="$1"
   local actual="$2"
@@ -289,3 +293,5 @@ kms_id_matches() {
   [[ "$actual" == *":key/$expected" ]] && return 0
   return 1
 }
+
+main "$@"

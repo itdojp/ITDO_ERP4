@@ -52,6 +52,12 @@ INPUT_DIR=tmp/migration/po INPUT_FORMAT=csv APPLY=1 RUN_INTEGRITY=1 \
 
 補足:
 - 実行ログは `tmp/migration/logs/po-real-<timestamp>/` に保存される。
+- 既定で入力ファイルのpreflight（`scripts/check-po-migration-input-readiness.sh`）を実行する。
+  - 無効化: `RUN_PREFLIGHT=0`
+  - 厳格モード調整: `PREFLIGHT_STRICT=0|1`
+- 実行終了時に `rehearsal-report.md`（要約レポート）を自動生成する。
+  - 無効化: `GENERATE_REPORT=0`
+  - 出力先変更: `REPORT_FILE=/path/to/report.md`
 - `RUN_INTEGRITY=1` の場合は `DATABASE_URL` と `psql` が必要。
   - ラッパーは `DATABASE_URL` の `schema` / `search_path` パラメータを除去して `psql` を実行する。
 - `INPUT_DIR` は実行ディレクトリに依らず、リポジトリルート基準で絶対化して実行される。
