@@ -2,8 +2,8 @@ import { createWriteStream } from 'fs';
 import { promises as fs } from 'fs';
 import path from 'path';
 import { randomUUID } from 'crypto';
-import net from 'net';
 import PDFDocument from 'pdfkit';
+import { safeFetch } from './safeHttpClient.js';
 
 type PdfPayload = Record<string, unknown>;
 
@@ -71,12 +71,27 @@ const EXTERNAL_TIMEOUT_MS = parsePositiveInt(
   process.env.PDF_EXTERNAL_TIMEOUT_MS,
   DEFAULT_EXTERNAL_TIMEOUT_MS,
 );
-const ALLOWED_ASSET_HOSTS = new Set(
-  (process.env.PDF_ASSET_ALLOWED_HOSTS || '')
-    .split(',')
-    .map((value) => value.trim().toLowerCase())
-    .filter(Boolean),
+function parseAllowedHosts(raw: string | undefined) {
+  return new Set(
+    (raw || '')
+      .split(',')
+      .map((value) => value.trim().toLowerCase())
+      .filter(Boolean),
+  );
+}
+
+const ALLOWED_ASSET_HOSTS = parseAllowedHosts(
+  process.env.PDF_ASSET_ALLOWED_HOSTS,
 );
+const ALLOWED_EXTERNAL_HOSTS = parseAllowedHosts(
+  process.env.PDF_EXTERNAL_ALLOWED_HOSTS,
+);
+const PDF_ASSET_ALLOW_HTTP = process.env.PDF_ASSET_ALLOW_HTTP === 'true';
+const PDF_EXTERNAL_ALLOW_HTTP = process.env.PDF_EXTERNAL_ALLOW_HTTP === 'true';
+const PDF_ASSET_ALLOW_PRIVATE_IP =
+  process.env.PDF_ASSET_ALLOW_PRIVATE_IP === 'true';
+const PDF_EXTERNAL_ALLOW_PRIVATE_IP =
+  process.env.PDF_EXTERNAL_ALLOW_PRIVATE_IP === 'true';
 
 export function resolvePdfStorageDir() {
   return process.env.PDF_STORAGE_DIR || '/tmp/erp4/pdfs';
@@ -152,35 +167,6 @@ function isHttpUrl(value: string) {
   }
 }
 
-function isPrivateHost(hostname: string) {
-  if (hostname === 'localhost' || hostname.endsWith('.local')) return true;
-  const ipVersion = net.isIP(hostname);
-  if (!ipVersion) return false;
-  if (ipVersion === 4) {
-    const parts = hostname.split('.').map((value) => Number(value));
-    if (parts.length !== 4 || parts.some((value) => Number.isNaN(value))) {
-      return true;
-    }
-    const [a, b] = parts;
-    if (a === 10 || a === 127) return true;
-    if (a === 169 && b === 254) return true;
-    if (a === 172 && b >= 16 && b <= 31) return true;
-    if (a === 192 && b === 168) return true;
-    return false;
-  }
-  const lowered = hostname.toLowerCase();
-  if (lowered === '::1') return true;
-  if (lowered.startsWith('fc') || lowered.startsWith('fd')) return true;
-  if (lowered.startsWith('fe80')) return true;
-  return false;
-}
-
-function isAllowedAssetHost(hostname: string) {
-  if (isPrivateHost(hostname)) return false;
-  if (ALLOWED_ASSET_HOSTS.size === 0) return true;
-  return ALLOWED_ASSET_HOSTS.has(hostname.toLowerCase());
-}
-
 function isAllowedAssetMime(value?: string | null) {
   if (!value) return true;
   const normalized = value.split(';')[0].trim().toLowerCase();
@@ -216,20 +202,6 @@ async function readResponseWithLimit(
   return Buffer.from(arrayBuffer);
 }
 
-async function fetchWithTimeout(
-  url: string,
-  timeoutMs: number,
-  init?: RequestInit,
-) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    return await fetch(url, { ...init, signal: controller.signal });
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
 function parseDataUrl(dataUrl: string) {
   const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
   if (!match) return null;
@@ -250,9 +222,12 @@ async function loadAssetBuffer(value?: string | null) {
   }
   if (isHttpUrl(value)) {
     try {
-      const parsedUrl = new URL(value);
-      if (!isAllowedAssetHost(parsedUrl.hostname)) return null;
-      const res = await fetchWithTimeout(value, ASSET_TIMEOUT_MS);
+      const res = await safeFetch(value, {}, {
+        timeoutMs: ASSET_TIMEOUT_MS,
+        allowedHosts: ALLOWED_ASSET_HOSTS,
+        allowHttp: PDF_ASSET_ALLOW_HTTP,
+        allowPrivateIp: PDF_ASSET_ALLOW_PRIVATE_IP,
+      });
       if (!res.ok) return null;
       const contentLength = res.headers.get('content-length');
       if (contentLength) {
@@ -369,7 +344,9 @@ async function requestExternalPdf(
   if (!endpoint) {
     throw new Error('PDF_EXTERNAL_URL is required for external provider');
   }
-  const res = await fetchWithTimeout(endpoint, EXTERNAL_TIMEOUT_MS, {
+  const res = await safeFetch(
+    endpoint,
+    {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -382,7 +359,14 @@ async function requestExternalPdf(
       payload,
       options,
     }),
-  });
+    },
+    {
+      timeoutMs: EXTERNAL_TIMEOUT_MS,
+      allowedHosts: ALLOWED_EXTERNAL_HOSTS,
+      allowHttp: PDF_EXTERNAL_ALLOW_HTTP,
+      allowPrivateIp: PDF_EXTERNAL_ALLOW_PRIVATE_IP,
+    },
+  );
   if (!res.ok) {
     const text = await res.text();
     throw new Error(`external_pdf_failed:${res.status}:${text.slice(0, 200)}`);
