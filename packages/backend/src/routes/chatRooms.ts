@@ -50,12 +50,17 @@ import {
 import { normalizeMentions } from './chat/shared/mentions.js';
 import { requireUserId } from './chat/shared/requireUserId.js';
 import { parseDateParam } from '../utils/date.js';
+import { getRouteRateLimitOptions } from '../services/rateLimitOverrides.js';
 
 export async function registerChatRoomRoutes(app: FastifyInstance) {
   const chatRoles = CHAT_ROLES;
   const chatSettingId = 'default';
   const companyRoomId = 'company';
   const companyRoomName = '全社';
+  const aiSummaryRateLimit = getRouteRateLimitOptions('RATE_LIMIT_AI_SUMMARY', {
+    max: 20,
+    timeWindow: '1 hour',
+  });
 
   type DepartmentRoomTarget = {
     roomId: string;
@@ -2352,7 +2357,11 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
 
   app.post(
     '/chat-rooms/:roomId/ai-summary',
-    { preHandler: requireRole(chatRoles), schema: projectChatSummarySchema },
+    {
+      preHandler: requireRole(chatRoles),
+      schema: projectChatSummarySchema,
+      config: { rateLimit: aiSummaryRateLimit },
+    },
     async (req, reply) => {
       const { roomId } = req.params as { roomId: string };
       const body = req.body as {

@@ -18,6 +18,21 @@ backend は起動時に環境変数の検証を行い、不正/不足があれ�
 - `DATABASE_URL`（必須、`postgresql://` または `postgres://`）
 - `PORT`（任意、指定時は `1-65535`、未指定時は `3001`）
 - `ALLOWED_ORIGINS`（任意、指定時は `http(s)` URL のカンマ区切り。未設定/空の場合は Fastify の CORS 設定で `origin: false` となり、全オリジン拒否）
+- レート制限
+  - グローバル
+    - `RATE_LIMIT_ENABLED=1` で有効化（`NODE_ENV=production` は自動有効）
+    - `RATE_LIMIT_MAX`（任意、既定: `600`）
+    - `RATE_LIMIT_WINDOW`（任意、既定: `1 minute`）
+  - 分散（複数インスタンス）構成
+    - `RATE_LIMIT_REDIS_URL`（任意、`redis(s)://`）
+    - `RATE_LIMIT_REDIS_NAMESPACE`（任意、既定: `erp4-rate-limit-`）
+    - `RATE_LIMIT_REDIS_CONNECT_TIMEOUT_MS`（任意、既定: `3000`）
+  - 高負荷APIの個別制限（任意、未指定時は既定値）
+    - 検索: `RATE_LIMIT_SEARCH_MAX` / `RATE_LIMIT_SEARCH_WINDOW`
+    - 外部LLM要約: `RATE_LIMIT_AI_SUMMARY_MAX` / `RATE_LIMIT_AI_SUMMARY_WINDOW`
+    - チャット添付アップロード: `RATE_LIMIT_ATTACHMENT_UPLOAD_MAX` / `RATE_LIMIT_ATTACHMENT_UPLOAD_WINDOW`
+    - 文書送信（見積/請求/発注）: `RATE_LIMIT_DOC_SEND_MAX` / `RATE_LIMIT_DOC_SEND_WINDOW`
+    - 文書再送: `RATE_LIMIT_DOC_SEND_RETRY_MAX` / `RATE_LIMIT_DOC_SEND_RETRY_WINDOW`
 
 セキュリティヘッダ/CORS（固定ポリシー）:
 

@@ -52,6 +52,7 @@ import { normalizeMentions } from './chat/shared/mentions.js';
 import { ensureRoomAccessWithReasonError } from './chat/shared/roomAccessGuard.js';
 import { requireUserId } from './chat/shared/requireUserId.js';
 import { parseDateParam } from '../utils/date.js';
+import { getRouteRateLimitOptions } from '../services/rateLimitOverrides.js';
 
 async function readFileBuffer(
   stream: AsyncIterable<Buffer>,
@@ -71,6 +72,13 @@ async function readFileBuffer(
 
 export async function registerChatRoutes(app: FastifyInstance) {
   const chatRoles = CHAT_ROLES;
+  const attachmentUploadRateLimit = getRouteRateLimitOptions(
+    'RATE_LIMIT_ATTACHMENT_UPLOAD',
+    {
+      max: 30,
+      timeWindow: '1 minute',
+    },
+  );
 
   async function ensureProjectRoom(projectId: string, userId: string | null) {
     const existing = await prisma.chatRoom.findUnique({
@@ -1442,6 +1450,9 @@ export async function registerChatRoutes(app: FastifyInstance) {
         process.env.CHAT_ATTACHMENT_MAX_BYTES,
         10 * 1024 * 1024,
       ),
+      config: {
+        rateLimit: attachmentUploadRateLimit,
+      },
     },
     async (req, reply) => {
       const { id } = req.params as { id: string };

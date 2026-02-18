@@ -28,6 +28,17 @@ const CACHE_CONTROL_HEADER = 'cache-control';
 const PRAGMA_HEADER = 'pragma';
 const CACHE_CONTROL_NO_STORE = 'no-store';
 const PRAGMA_NO_CACHE = 'no-cache';
+const READY_ROUTE_RATE_LIMIT = {
+  max: 600,
+  timeWindow: '1 minute',
+};
+
+type RateLimitRedisClient = {
+  ping: () => Promise<unknown>;
+  quit: () => Promise<unknown>;
+  disconnect: () => void;
+  on: (event: string, handler: (...args: unknown[]) => void) => unknown;
+};
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
@@ -196,6 +207,14 @@ function buildLoggerOptions() {
   };
 }
 
+function parsePositiveInt(value: string | undefined, fallback: number) {
+  const normalized = String(value ?? '').trim();
+  if (!normalized) return fallback;
+  const parsed = Number(normalized);
+  if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+  return Math.floor(parsed);
+}
+
 export async function buildServer(
   options: BuildServerOptions = {},
 ): Promise<FastifyInstance> {
@@ -261,20 +280,42 @@ export async function buildServer(
     process.env.RATE_LIMIT_ENABLED === '1' ||
     process.env.NODE_ENV === 'production';
   if (rateLimitEnabled) {
-    const maxRaw = Number(process.env.RATE_LIMIT_MAX || 600);
-    const max =
-      Number.isFinite(maxRaw) && maxRaw > 0 ? Math.floor(maxRaw) : 600;
+    const max = parsePositiveInt(process.env.RATE_LIMIT_MAX, 600);
     const timeWindow = process.env.RATE_LIMIT_WINDOW || '1 minute';
+    const redisUrl = (process.env.RATE_LIMIT_REDIS_URL || '').trim();
+    const redisNamespace =
+      (process.env.RATE_LIMIT_REDIS_NAMESPACE || '').trim() ||
+      'erp4-rate-limit-';
+    const redisConnectTimeoutMs = parsePositiveInt(
+      process.env.RATE_LIMIT_REDIS_CONNECT_TIMEOUT_MS,
+      3000,
+    );
+    let redisClient: RateLimitRedisClient | null = null;
+    if (redisUrl) {
+      const { default: IORedis } = await import('ioredis');
+      redisClient = new IORedis(redisUrl, {
+        connectTimeout: redisConnectTimeoutMs,
+        maxRetriesPerRequest: 1,
+        enableOfflineQueue: false,
+      }) as unknown as RateLimitRedisClient;
+      redisClient.on('error', (err) => {
+        server.log.warn({ err }, 'rate-limit redis connection error');
+      });
+      await redisClient.ping();
+    }
     await server.register(rateLimit, {
       global: true,
       max,
       timeWindow,
+      ...(redisClient
+        ? {
+            redis: redisClient,
+            nameSpace: redisNamespace,
+          }
+        : {}),
       allowList: (req) => {
         const url = req.url;
-        return (
-          typeof url === 'string' &&
-          (url.startsWith('/health') || url.startsWith('/ready'))
-        );
+        return typeof url === 'string' && url.startsWith('/health');
       },
     });
   }
@@ -293,17 +334,25 @@ export async function buildServer(
 
   server.get('/health', async () => ({ ok: true }));
   server.get('/healthz', async () => ({ ok: true }));
-  server.get('/readyz', async (req, reply) => {
-    const report = await getReadinessReport(prisma);
-    if (!report.ok) {
-      const error = report.checks.db.error;
-      if (error) {
-        req.log.error({ err: error }, 'readiness check failed');
+  server.get(
+    '/readyz',
+    {
+      config: {
+        rateLimit: READY_ROUTE_RATE_LIMIT,
+      },
+    },
+    async (req, reply) => {
+      const report = await getReadinessReport(prisma);
+      if (!report.ok) {
+        const error = report.checks.db.error;
+        if (error) {
+          req.log.error({ err: error }, 'readiness check failed');
+        }
       }
-    }
-    const publicReport = toPublicReadinessReport(report);
-    return reply.code(report.ok ? 200 : 503).send(publicReport);
-  });
+      const publicReport = toPublicReadinessReport(report);
+      return reply.code(report.ok ? 200 : 503).send(publicReport);
+    },
+  );
 
   server.setNotFoundHandler(async (_req, reply) => {
     return reply.code(404).send(
