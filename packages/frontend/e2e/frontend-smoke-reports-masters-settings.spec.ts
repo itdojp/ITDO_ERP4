@@ -203,6 +203,39 @@ test('frontend smoke reports masters settings @extended', async ({ page }) => {
     },
   );
 
+  await page.reload();
+  await expect(
+    page.getByRole('heading', { name: 'ERP4 MVP PoC' }),
+  ).toBeVisible();
+  await navigateToSection(page, '案件');
+  const projectsSectionReloaded = page
+    .locator('main')
+    .locator('h2', { hasText: '案件' })
+    .locator('..');
+  const projectItemReloaded = projectsSectionReloaded.locator('li', {
+    hasText: `E2E-PRJ-${id}`,
+  });
+  await expect(projectItemReloaded).toBeVisible();
+  await projectItemReloaded
+    .getByRole('button', { name: 'メンバー管理' })
+    .click();
+  const memberCardReloaded = projectItemReloaded.locator('.card', {
+    hasText: 'メンバー管理',
+  });
+  const member1ItemReloaded = memberCardReloaded.locator('li', {
+    hasText: 'e2e-member-1@example.com',
+  });
+  await expect(
+    member1ItemReloaded.getByLabel('案件メンバーの権限'),
+  ).toHaveValue('leader', {
+    timeout: actionTimeout,
+  });
+  await expect(
+    memberCardReloaded.getByText('e2e-member-2@example.com'),
+  ).toHaveCount(0, {
+    timeout: actionTimeout,
+  });
+
   await navigateToSection(page, 'マスタ管理', '顧客/業者マスタ');
   const masterSection = page
     .locator('main')
