@@ -130,6 +130,34 @@ export async function registerChatRoutes(app: FastifyInstance) {
     return true;
   }
 
+  async function ensureRoomContentAccessFromRequest(options: {
+    req: any;
+    reply: any;
+    roomId: string;
+    userId: string;
+  }) {
+    const roles = options.req.user?.roles || [];
+    const projectIds = options.req.user?.projectIds || [];
+    const groupIds = Array.isArray(options.req.user?.groupIds)
+      ? options.req.user.groupIds
+      : [];
+    const groupAccountIds = Array.isArray(options.req.user?.groupAccountIds)
+      ? options.req.user.groupAccountIds
+      : [];
+    const access = await ensureChatRoomContentAccess({
+      roomId: options.roomId,
+      userId: options.userId,
+      roles,
+      projectIds,
+      groupIds,
+      groupAccountIds,
+    });
+    if (access.ok) return access;
+    const roomAccessError = buildRoomAccessErrorResponse(access.reason);
+    options.reply.status(roomAccessError.status).send(roomAccessError.body);
+    return null;
+  }
+
   async function logChatMessageMentions(options: {
     req: any;
     messageId: string;
@@ -1080,26 +1108,15 @@ export async function registerChatRoutes(app: FastifyInstance) {
 
       const userId = requireUserId(reply, req.user?.userId);
       if (typeof userId !== 'string') return userId;
-
-      const roles = req.user?.roles || [];
-      const projectIds = req.user?.projectIds || [];
-      const groupIds = Array.isArray(req.user?.groupIds)
-        ? req.user.groupIds
-        : [];
-      const groupAccountIds = Array.isArray(req.user?.groupAccountIds)
-        ? req.user.groupAccountIds
-        : [];
-      const access = await ensureChatRoomContentAccess({
-        roomId: requestItem.roomId,
-        userId,
-        roles,
-        projectIds,
-        groupIds,
-        groupAccountIds,
-      });
-      if (!access.ok) {
-        const roomAccessError = buildRoomAccessErrorResponse(access.reason);
-        return reply.status(roomAccessError.status).send(roomAccessError.body);
+      if (
+        !(await ensureRoomContentAccessFromRequest({
+          req,
+          reply,
+          roomId: requestItem.roomId,
+          userId,
+        }))
+      ) {
+        return;
       }
       const ackTarget = resolveAckRequiredTarget(
         requestItem.requiredUserIds,
@@ -1177,26 +1194,15 @@ export async function registerChatRoutes(app: FastifyInstance) {
 
       const userId = requireUserId(reply, req.user?.userId);
       if (typeof userId !== 'string') return userId;
-
-      const roles = req.user?.roles || [];
-      const projectIds = req.user?.projectIds || [];
-      const groupIds = Array.isArray(req.user?.groupIds)
-        ? req.user.groupIds
-        : [];
-      const groupAccountIds = Array.isArray(req.user?.groupAccountIds)
-        ? req.user.groupAccountIds
-        : [];
-      const access = await ensureChatRoomContentAccess({
-        roomId: requestItem.roomId,
-        userId,
-        roles,
-        projectIds,
-        groupIds,
-        groupAccountIds,
-      });
-      if (!access.ok) {
-        const roomAccessError = buildRoomAccessErrorResponse(access.reason);
-        return reply.status(roomAccessError.status).send(roomAccessError.body);
+      if (
+        !(await ensureRoomContentAccessFromRequest({
+          req,
+          reply,
+          roomId: requestItem.roomId,
+          userId,
+        }))
+      ) {
+        return;
       }
 
       return requestItem;
@@ -1229,26 +1235,16 @@ export async function registerChatRoutes(app: FastifyInstance) {
 
       const userId = requireUserId(reply, req.user?.userId);
       if (typeof userId !== 'string') return userId;
-
       const roles = req.user?.roles || [];
-      const projectIds = req.user?.projectIds || [];
-      const groupIds = Array.isArray(req.user?.groupIds)
-        ? req.user.groupIds
-        : [];
-      const groupAccountIds = Array.isArray(req.user?.groupAccountIds)
-        ? req.user.groupAccountIds
-        : [];
-      const access = await ensureChatRoomContentAccess({
-        roomId: requestItem.roomId,
-        userId,
-        roles,
-        projectIds,
-        groupIds,
-        groupAccountIds,
-      });
-      if (!access.ok) {
-        const roomAccessError = buildRoomAccessErrorResponse(access.reason);
-        return reply.status(roomAccessError.status).send(roomAccessError.body);
+      if (
+        !(await ensureRoomContentAccessFromRequest({
+          req,
+          reply,
+          roomId: requestItem.roomId,
+          userId,
+        }))
+      ) {
+        return;
       }
 
       const isPrivileged = roles.includes('admin') || roles.includes('mgmt');
@@ -1322,26 +1318,15 @@ export async function registerChatRoutes(app: FastifyInstance) {
 
       const userId = requireUserId(reply, req.user?.userId);
       if (typeof userId !== 'string') return userId;
-
-      const roles = req.user?.roles || [];
-      const projectIds = req.user?.projectIds || [];
-      const groupIds = Array.isArray(req.user?.groupIds)
-        ? req.user.groupIds
-        : [];
-      const groupAccountIds = Array.isArray(req.user?.groupAccountIds)
-        ? req.user.groupAccountIds
-        : [];
-      const access = await ensureChatRoomContentAccess({
-        roomId: requestItem.roomId,
-        userId,
-        roles,
-        projectIds,
-        groupIds,
-        groupAccountIds,
-      });
-      if (!access.ok) {
-        const roomAccessError = buildRoomAccessErrorResponse(access.reason);
-        return reply.status(roomAccessError.status).send(roomAccessError.body);
+      if (
+        !(await ensureRoomContentAccessFromRequest({
+          req,
+          reply,
+          roomId: requestItem.roomId,
+          userId,
+        }))
+      ) {
+        return;
       }
 
       const ackTarget = resolveAckRequiredTarget(
@@ -1406,26 +1391,14 @@ export async function registerChatRoutes(app: FastifyInstance) {
       }
       const userId = requireUserId(reply, req.user?.userId);
       if (typeof userId !== 'string') return userId;
-
-      const roles = req.user?.roles || [];
-      const projectIds = req.user?.projectIds || [];
-      const groupIds = Array.isArray(req.user?.groupIds)
-        ? req.user.groupIds
-        : [];
-      const groupAccountIds = Array.isArray(req.user?.groupAccountIds)
-        ? req.user.groupAccountIds
-        : [];
-      const access = await ensureChatRoomContentAccess({
+      const access = await ensureRoomContentAccessFromRequest({
+        req,
+        reply,
         roomId: message.roomId,
         userId,
-        roles,
-        projectIds,
-        groupIds,
-        groupAccountIds,
       });
-      if (!access.ok) {
-        const roomAccessError = buildRoomAccessErrorResponse(access.reason);
-        return reply.status(roomAccessError.status).send(roomAccessError.body);
+      if (!access) {
+        return;
       }
       const trimmedEmoji = body.emoji.trim();
       if (!trimmedEmoji) {
@@ -1497,26 +1470,14 @@ export async function registerChatRoutes(app: FastifyInstance) {
       }
       const userId = requireUserId(reply, req.user?.userId);
       if (typeof userId !== 'string') return userId;
-
-      const roles = req.user?.roles || [];
-      const projectIds = req.user?.projectIds || [];
-      const groupIds = Array.isArray(req.user?.groupIds)
-        ? req.user.groupIds
-        : [];
-      const groupAccountIds = Array.isArray(req.user?.groupAccountIds)
-        ? req.user.groupAccountIds
-        : [];
-      const access = await ensureChatRoomContentAccess({
+      const access = await ensureRoomContentAccessFromRequest({
+        req,
+        reply,
         roomId: message.roomId,
         userId,
-        roles,
-        projectIds,
-        groupIds,
-        groupAccountIds,
       });
-      if (!access.ok) {
-        const roomAccessError = buildRoomAccessErrorResponse(access.reason);
-        return reply.status(roomAccessError.status).send(roomAccessError.body);
+      if (!access) {
+        return;
       }
 
       const maxBytes = parsePositiveInt(
@@ -1685,25 +1646,14 @@ export async function registerChatRoutes(app: FastifyInstance) {
       }
       const userId = requireUserId(reply, req.user?.userId);
       if (typeof userId !== 'string') return userId;
-      const roles = req.user?.roles || [];
-      const projectIds = req.user?.projectIds || [];
-      const groupIds = Array.isArray(req.user?.groupIds)
-        ? req.user.groupIds
-        : [];
-      const groupAccountIds = Array.isArray(req.user?.groupAccountIds)
-        ? req.user.groupAccountIds
-        : [];
-      const access = await ensureChatRoomContentAccess({
+      const access = await ensureRoomContentAccessFromRequest({
+        req,
+        reply,
         roomId: attachment.message.roomId,
         userId,
-        roles,
-        projectIds,
-        groupIds,
-        groupAccountIds,
       });
-      if (!access.ok) {
-        const roomAccessError = buildRoomAccessErrorResponse(access.reason);
-        return reply.status(roomAccessError.status).send(roomAccessError.body);
+      if (!access) {
+        return;
       }
 
       const safeFilename = attachment.originalName.replace(/["\\\r\n]/g, '_');
