@@ -32,9 +32,10 @@ PoC→運用フェーズに向けて、最低限のセキュリティ基準（�
   - API bodyLimit（1MB）
   - 添付ファイルサイズ上限（既定 10MB、`CHAT_ATTACHMENT_MAX_BYTES` で調整）
 - レート制限（最小）
-  - `@fastify/rate-limit`（in-memory）を導入
+  - `@fastify/rate-limit` を導入（in-memory / Redis 分散の両対応）
   - `RATE_LIMIT_ENABLED=1` または `NODE_ENV=production` で有効化
   - 設定: `RATE_LIMIT_MAX`（既定 600）/ `RATE_LIMIT_WINDOW`（既定 `1 minute`）
+  - `RATE_LIMIT_REDIS_URL` 指定時は Redis backend を利用
 - 可観測性
   - request-id（`x-request-id`）付与と統一エラー応答（`docs/ops/observability.md`）
 - 監査ログ
@@ -55,8 +56,16 @@ GitHub Actions で `npm audit --audit-level=high` を実行する。
 - high/critical が検出された場合は CI を失敗させる
 - moderate/low は運用で優先度を付けて対応（別途 Issue 化）
 
+### Secret scanning（漏洩検知）
+- `.github/workflows/ci.yml` の `secret-scan` job で `scripts/secret-scan.sh` を blocking 実行
+- 検知時は CI を失敗させる
+
+### SAST / DAST
+- SAST: `.github/workflows/codeql.yml` で `CodeQL / analyze` を定期実行
+- DAST: `.github/workflows/dast-zap.yml` で OWASP ZAP baseline + API scan を定期実行（初期運用は non-blocking）
+
 ## 残課題（別Issue管理）
-- SAST（CodeQL 等）の導入可否（リポジトリ公開範囲/契約制約に依存）
+- DAST の blocking 化（誤検知抑制と検知品質の安定化が前提）
+- 依存脆弱性の moderate triage 運用定着（受容基準・期限・承認）
 - IDOR の重点点検（主要API）
-- Secrets 管理（環境変数/鍵/ローテーション）
 - 添付のAVスキャン/隔離/最終保管（#560 等）

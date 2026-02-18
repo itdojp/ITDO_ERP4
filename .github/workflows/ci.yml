@@ -191,3 +191,13 @@ jobs:
           fetch-depth: 0
       - name: Basic secret scan (blocking)
         run: ./scripts/secret-scan.sh
+        env:
+          SECRET_SCAN_REPORT_PATH: tmp/secret-scan-report.tsv
+      - name: Upload secret scan report
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: secret-scan-${{ github.run_id }}-${{ github.sha }}
+          path: tmp/secret-scan-report.tsv
+          if-no-files-found: warn
+          retention-days: 14

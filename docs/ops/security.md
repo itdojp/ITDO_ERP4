@@ -8,6 +8,7 @@
 - 権限（RBAC/プロジェクト所属）の棚卸し
 - 監査ログ/権限変更ログの確認（必要に応じて）
 - 依存脆弱性（`security-audit`）の継続対応
+- `secret-scan` artifact（`secret-scan-<run_id>-<sha>`）で検知詳細を確認
 
 ## キャッシュ/Push 方針（運用前提）
 - APIレスポンスは `Cache-Control: no-store` / `Pragma: no-cache` を前提とする
@@ -19,10 +20,12 @@
   - `schedule`: 毎週月曜 06:00 UTC
   - `workflow_dispatch`: 手動実行可能
 - スキャン方式:
-  - backend を CI 上で起動し、`http://127.0.0.1:3002/healthz` を ZAP baseline で検査
-  - 初期運用は non-blocking（`Run ZAP baseline` ステップは `continue-on-error: true`）
+  - backend を CI 上で起動し、`http://127.0.0.1:3002/readyz` を ZAP baseline で検査
+  - `scripts/export-openapi.mjs` で OpenAPI を出力し、`zap-api-scan.py` で API 面を追加検査
+  - API scan は `x-user-id` / `x-roles` ヘッダーを付与して主要導線を走査する
+- 初期運用は non-blocking（`Run ZAP baseline` / `Run ZAP API scan` は `continue-on-error: true`）
 - 成果物:
-  - `zap-report-<run_id>`（`zap-report.html` / `zap-report.json` / `zap-report.md`）
+  - `zap-report-<run_id>`（`zap-report*.{html,json,md}` / `zap-api-report*.{html,json,md}` / `openapi.json`）
   - `dast-backend-log-<run_id>`（backend 起動ログ）
 - 指摘対応:
   1. Medium/High の新規検知は Security ラベル付き Issue を起票
