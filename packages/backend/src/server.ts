@@ -24,6 +24,10 @@ type BuildServerOptions = {
 
 const REQUEST_ID_HEADER = 'x-request-id';
 const REQUEST_ID_SAFE_PATTERN = /^[A-Za-z0-9._-]{1,128}$/;
+const CACHE_CONTROL_HEADER = 'cache-control';
+const PRAGMA_HEADER = 'pragma';
+const CACHE_CONTROL_NO_STORE = 'no-store';
+const PRAGMA_NO_CACHE = 'no-cache';
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
@@ -212,6 +216,12 @@ export async function buildServer(
 
   server.addHook('onSend', async (req, reply, payload) => {
     reply.header(REQUEST_ID_HEADER, req.id);
+    if (!reply.hasHeader(CACHE_CONTROL_HEADER)) {
+      reply.header(CACHE_CONTROL_HEADER, CACHE_CONTROL_NO_STORE);
+    }
+    if (!reply.hasHeader(PRAGMA_HEADER)) {
+      reply.header(PRAGMA_HEADER, PRAGMA_NO_CACHE);
+    }
     return payload;
   });
 

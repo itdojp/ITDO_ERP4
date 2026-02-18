@@ -31,6 +31,24 @@ test('inbound request-id is echoed if safe', async () => {
   await server.close();
 });
 
+test('cache-control no-store headers are attached to success responses', async () => {
+  const server = await buildTestServer();
+  const res = await server.inject({ method: 'GET', url: '/healthz' });
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.headers['cache-control'], 'no-store');
+  assert.equal(res.headers.pragma, 'no-cache');
+  await server.close();
+});
+
+test('cache-control no-store headers are attached to error responses', async () => {
+  const server = await buildTestServer();
+  const res = await server.inject({ method: 'GET', url: '/missing-path' });
+  assert.equal(res.statusCode, 404);
+  assert.equal(res.headers['cache-control'], 'no-store');
+  assert.equal(res.headers.pragma, 'no-cache');
+  await server.close();
+});
+
 test('legacy error responses are normalized', async () => {
   const server = await buildTestServer();
   const res = await server.inject({

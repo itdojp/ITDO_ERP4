@@ -11,7 +11,7 @@ const evidenceDir =
 const captureEnabled = process.env.E2E_CAPTURE !== '0';
 const baseUrl = process.env.E2E_BASE_URL || 'http://localhost:5173';
 const pushPublicKey = (process.env.VITE_PUSH_PUBLIC_KEY || '').trim();
-const swCacheName = 'erp4-pwa-v1';
+const swCacheName = 'erp4-pwa-v2';
 
 const authState = {
   userId: 'demo-user',
@@ -310,6 +310,18 @@ test('pwa push subscribe flow @pwa', async ({ page, context }) => {
   await captureSection(pushSection, '19-push-resubscribed.png');
 });
 
+test('pwa sw push URL guard is present @pwa', async ({ page }) => {
+  test.setTimeout(120_000);
+  await prepare(page);
+  const swSource = await page.evaluate(async () => {
+    const response = await fetch('/sw.js', { cache: 'no-store' });
+    return response.text();
+  });
+  expect(swSource).toContain('normalizeNotificationPath');
+  expect(swSource).toContain('data: { url: normalizeNotificationPath(payload.url) }');
+  expect(swSource).toContain('self.clients.openWindow(target.toString())');
+});
+
 test('pwa service worker cache refresh @pwa @extended', async ({ page }) => {
   test.setTimeout(120_000);
   await prepare(page);
@@ -361,4 +373,41 @@ test('pwa service worker cache refresh @pwa @extended', async ({ page }) => {
     .locator('h2', { hasText: 'Dashboard' })
     .locator('..');
   await captureSection(dashboardSection, '20-sw-cache-refresh.png');
+});
+
+test('pwa service worker does not cache api responses @pwa @extended', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await prepare(page);
+
+  const swReady = await ensureServiceWorker(page);
+  if (!swReady) {
+    test.skip(true, 'Service Worker が利用できないためスキップ');
+  }
+
+  const nonce = randomUUID();
+  await page.route('**/api/cache-check*', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      headers: {
+        'cache-control': 'no-store',
+      },
+      body: JSON.stringify({ ok: true, nonce }),
+    });
+  });
+
+  const result = await page.evaluate(async (value) => {
+    const res = await fetch(`/api/cache-check?nonce=${value}`);
+    return res.json();
+  }, nonce);
+  expect(result.ok).toBe(true);
+
+  const containsApiEntry = await page.evaluate(async () => {
+    const cache = await caches.open('erp4-pwa-v2');
+    const keys = await cache.keys();
+    return keys.some((request) => new URL(request.url).pathname.startsWith('/api/'));
+  });
+  expect(containsApiEntry).toBe(false);
 });
