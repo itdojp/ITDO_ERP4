@@ -302,13 +302,9 @@ export async function buildServer(
         server.log.warn({ err }, 'rate-limit redis connection error');
       });
       await redisClient.ping();
-      server.addHook('onClose', async () => {
+      server.addHook('onClose', () => {
         if (!redisClient) return;
-        try {
-          await redisClient.quit();
-        } catch {
-          redisClient.disconnect();
-        }
+        redisClient.disconnect();
       });
     }
     await server.register(rateLimit, {
