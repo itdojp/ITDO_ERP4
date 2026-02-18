@@ -28,6 +28,10 @@ const CACHE_CONTROL_HEADER = 'cache-control';
 const PRAGMA_HEADER = 'pragma';
 const CACHE_CONTROL_NO_STORE = 'no-store';
 const PRAGMA_NO_CACHE = 'no-cache';
+const READY_ROUTE_RATE_LIMIT = {
+  max: 600,
+  timeWindow: '1 minute',
+};
 
 type RateLimitRedisClient = {
   ping: () => Promise<unknown>;
@@ -321,7 +325,7 @@ export async function buildServer(
         const url = req.url;
         return (
           typeof url === 'string' &&
-          (url.startsWith('/health') || url.startsWith('/ready'))
+          url.startsWith('/health')
         );
       },
     });
@@ -341,17 +345,25 @@ export async function buildServer(
 
   server.get('/health', async () => ({ ok: true }));
   server.get('/healthz', async () => ({ ok: true }));
-  server.get('/readyz', async (req, reply) => {
-    const report = await getReadinessReport(prisma);
-    if (!report.ok) {
-      const error = report.checks.db.error;
-      if (error) {
-        req.log.error({ err: error }, 'readiness check failed');
+  server.get(
+    '/readyz',
+    {
+      config: {
+        rateLimit: READY_ROUTE_RATE_LIMIT,
       }
-    }
-    const publicReport = toPublicReadinessReport(report);
-    return reply.code(report.ok ? 200 : 503).send(publicReport);
-  });
+    },
+    async (req, reply) => {
+      const report = await getReadinessReport(prisma);
+      if (!report.ok) {
+        const error = report.checks.db.error;
+        if (error) {
+          req.log.error({ err: error }, 'readiness check failed');
+        }
+      }
+      const publicReport = toPublicReadinessReport(report);
+      return reply.code(report.ok ? 200 : 503).send(publicReport);
+    },
+  );
 
   server.setNotFoundHandler(async (_req, reply) => {
     return reply.code(404).send(
