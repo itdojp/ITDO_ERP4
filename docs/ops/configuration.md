@@ -46,6 +46,9 @@ backend は起動時に環境変数の検証を行い、不正/不足があれ�
 - `MAIL_TRANSPORT=sendgrid` の場合
   - `SENDGRID_API_KEY` 必須
   - `SENDGRID_BASE_URL` 指定時は `http(s)` URL
+  - `SENDGRID_ALLOWED_HOSTS`（任意、カンマ区切り）で送信先ホストを制限（未設定時は全ホスト許可）
+  - `SENDGRID_TIMEOUT_MS`（任意、既定: `5000`）
+  - `SENDGRID_ALLOW_HTTP` / `SENDGRID_ALLOW_PRIVATE_IP`（任意、既定: `false`）
 - `MAIL_TRANSPORT=smtp` の場合
   - `SMTP_HOST` 必須
   - `SMTP_PORT` 必須（`1-65535`）
@@ -56,6 +59,11 @@ PDF:
 - `PDF_PROVIDER=local|external`（既定: `local`）
 - `PDF_PROVIDER=external` の場合
   - `PDF_EXTERNAL_URL` 必須（`http(s)` URL）
+  - `PDF_EXTERNAL_ALLOWED_HOSTS`（任意、カンマ区切り）で送信先ホストを制限（未設定時は全ホスト許可）
+  - `PDF_EXTERNAL_ALLOW_HTTP` / `PDF_EXTERNAL_ALLOW_PRIVATE_IP`（任意、既定: `false`）
+- 画像アセット取得時（logo/signature）
+  - `PDF_ASSET_ALLOWED_HOSTS`（任意、カンマ区切り）で取得先ホストを制限（未設定時は全ホスト許可）
+  - `PDF_ASSET_ALLOW_HTTP` / `PDF_ASSET_ALLOW_PRIVATE_IP`（任意、既定: `false`）
 
 Evidence Pack アーカイブ:
 
@@ -77,6 +85,8 @@ Evidence Pack アーカイブ:
 - `CHAT_EXTERNAL_LLM_PROVIDER=openai` の場合
   - `CHAT_EXTERNAL_LLM_OPENAI_API_KEY` 必須
   - `CHAT_EXTERNAL_LLM_OPENAI_BASE_URL` 指定時は `http(s)` URL
+  - `CHAT_EXTERNAL_LLM_ALLOWED_HOSTS`（任意、カンマ区切り）で接続先ホストを制限（未設定時は全ホスト許可）
+  - `CHAT_EXTERNAL_LLM_ALLOW_HTTP` / `CHAT_EXTERNAL_LLM_ALLOW_PRIVATE_IP`（任意、既定: `false`）
 
 ## バックアップ/リストア
 

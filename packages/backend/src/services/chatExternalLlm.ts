@@ -1,3 +1,5 @@
+import { safeFetch } from './safeHttpClient.js';
+
 type ExternalLlmProvider = 'disabled' | 'stub' | 'openai';
 
 type ChatExternalLlmConfig =
@@ -34,6 +36,14 @@ function parsePositiveInt(raw: string | undefined, fallback: number) {
   const parsed = Number(raw);
   if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
   return Math.floor(parsed);
+}
+
+function parseAllowedHosts(raw: string | undefined) {
+  if (!raw) return [];
+  return raw
+    .split(',')
+    .map((value) => value.trim().toLowerCase())
+    .filter(Boolean);
 }
 
 export function getChatExternalLlmConfig(): ChatExternalLlmConfig {
@@ -107,20 +117,6 @@ function buildSummaryPrompt(options: { bodies: string[] }) {
   return { system, user };
 }
 
-async function fetchWithTimeout(
-  input: string,
-  init: RequestInit,
-  timeoutMs: number,
-) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    return await fetch(input, { ...init, signal: controller.signal });
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
 export async function summarizeWithExternalLlm(options: {
   bodies: string[];
 }): Promise<ExternalLlmSummaryResult> {
@@ -147,7 +143,10 @@ export async function summarizeWithExternalLlm(options: {
 
   const prompt = buildSummaryPrompt({ bodies: options.bodies });
   const url = `${config.baseUrl}/chat/completions`;
-  const res = await fetchWithTimeout(
+  const allowedHosts = parseAllowedHosts(
+    process.env.CHAT_EXTERNAL_LLM_ALLOWED_HOSTS,
+  );
+  const res = await safeFetch(
     url,
     {
       method: 'POST',
@@ -165,7 +164,12 @@ export async function summarizeWithExternalLlm(options: {
         max_tokens: 600,
       }),
     },
-    config.timeoutMs,
+    {
+      timeoutMs: config.timeoutMs,
+      allowedHosts,
+      allowHttp: process.env.CHAT_EXTERNAL_LLM_ALLOW_HTTP === 'true',
+      allowPrivateIp: process.env.CHAT_EXTERNAL_LLM_ALLOW_PRIVATE_IP === 'true',
+    },
   );
 
   if (!res.ok) {

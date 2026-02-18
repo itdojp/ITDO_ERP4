@@ -4,6 +4,7 @@ import { lookup as dnsLookup } from 'node:dns/promises';
 import { isIP } from 'node:net';
 import nodemailer from 'nodemailer';
 import type { Transporter } from 'nodemailer';
+import { safeFetch } from './safeHttpClient.js';
 
 export type NotifyResult = {
   channel: string;
@@ -42,6 +43,22 @@ let cachedError: string | null = null;
 let cachedConfigKey: string | null = null;
 
 const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function parsePositiveInt(raw: string | undefined, fallback: number) {
+  if (!raw) return fallback;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+  return Math.floor(parsed);
+}
+
+function parseAllowedHosts(raw: string | undefined) {
+  return new Set(
+    (raw || '')
+      .split(',')
+      .map((value) => value.trim().toLowerCase())
+      .filter(Boolean),
+  );
+}
 
 function resolveMailConfig(): MailTransportConfig {
   const transportRaw = (process.env.MAIL_TRANSPORT || 'stub').toLowerCase();
@@ -244,14 +261,23 @@ async function sendEmailSendGrid(
     ...(attachments ? { attachments } : {}),
   };
   try {
-    const res = await fetch(`${baseUrl.replace(/\/$/, '')}/mail/send`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${config.sendgridApiKey}`,
-        'Content-Type': 'application/json',
+    const res = await safeFetch(
+      `${baseUrl.replace(/\/$/, '')}/mail/send`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${config.sendgridApiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
       },
-      body: JSON.stringify(payload),
-    });
+      {
+        timeoutMs: parsePositiveInt(process.env.SENDGRID_TIMEOUT_MS, 5000),
+        allowedHosts: parseAllowedHosts(process.env.SENDGRID_ALLOWED_HOSTS),
+        allowHttp: process.env.SENDGRID_ALLOW_HTTP === 'true',
+        allowPrivateIp: process.env.SENDGRID_ALLOW_PRIVATE_IP === 'true',
+      },
+    );
     if (!res.ok) {
       const text = await res.text();
       const body =
