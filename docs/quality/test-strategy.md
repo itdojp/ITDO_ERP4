@@ -78,7 +78,7 @@
 1. まずCIログから失敗行を抽出し、対象specとlocatorを特定する
    - `gh pr checks <PR番号> --watch=false`
    - `gh api repos/itdojp/ITDO_ERP4/actions/jobs/<job_id>/logs > /tmp/e2e.log`
-   - `rg -n \"toHaveCount|toBeVisible|Timeout|Expected|Received\" /tmp/e2e.log`
+   - `rg -n "toHaveCount|toBeVisible|Timeout|Expected|Received" /tmp/e2e.log`
 2. locatorに以下のアンチパターンが無いか確認する
    - `first()/nth()` による曖昧選択
    - `xpath=ancestor::...` などDOM構造依存
