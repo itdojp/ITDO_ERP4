@@ -5,12 +5,13 @@ const STATIC_CACHE_PATHS = new Set(CORE_ASSETS);
 const STATIC_CACHE_PREFIXES = ['/assets/'];
 
 function isApiLikePath(pathname) {
+  const lowerPath = pathname.toLowerCase();
   return (
-    pathname.startsWith('/api') ||
-    pathname.startsWith('/health') ||
-    pathname.startsWith('/healthz') ||
-    pathname.startsWith('/ready') ||
-    pathname.startsWith('/readyz')
+    lowerPath.startsWith('/api') ||
+    lowerPath.startsWith('/health') ||
+    lowerPath.startsWith('/healthz') ||
+    lowerPath.startsWith('/ready') ||
+    lowerPath.startsWith('/readyz')
   );
 }
 
