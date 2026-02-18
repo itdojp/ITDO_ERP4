@@ -34,6 +34,7 @@ type SubmitAndFindApprovalInstanceOptions = {
   projectId: string;
   targetTable: string;
   targetId: string;
+  submitData?: Record<string, unknown>;
 };
 
 async function ensureOk(res: ApiResponse) {
@@ -41,6 +42,7 @@ async function ensureOk(res: ApiResponse) {
   const body = await res.text();
   throw new Error(`[e2e] api failed: ${res.status()} ${body}`);
 }
+export { ensureOk };
 
 export async function createProjectAndEstimate(
   options: CreateProjectAndEstimateOptions,
@@ -55,9 +57,13 @@ export async function createProjectAndEstimate(
   });
   await ensureOk(projectRes);
   const projectPayload = await projectRes.json();
-  const projectId = (projectPayload?.id ?? projectPayload?.project?.id ?? '') as string;
+  const projectId = (projectPayload?.id ??
+    projectPayload?.project?.id ??
+    '') as string;
   if (!projectId) {
-    throw new Error(`[e2e] project id missing: ${JSON.stringify(projectPayload)}`);
+    throw new Error(
+      `[e2e] project id missing: ${JSON.stringify(projectPayload)}`,
+    );
   }
 
   const estimateRes = await options.request.post(
@@ -73,7 +79,9 @@ export async function createProjectAndEstimate(
   );
   await ensureOk(estimateRes);
   const estimatePayload = await estimateRes.json();
-  const estimateId = (estimatePayload?.id ?? estimatePayload?.estimate?.id ?? '') as string;
+  const estimateId = (estimatePayload?.id ??
+    estimatePayload?.estimate?.id ??
+    '') as string;
   if (!estimateId) {
     throw new Error(
       `[e2e] estimate id missing: ${JSON.stringify(estimatePayload)}`,
@@ -86,11 +94,15 @@ export async function createProjectAndEstimate(
 export async function submitAndFindApprovalInstance(
   options: SubmitAndFindApprovalInstanceOptions,
 ) {
+  const submitOptions: { headers: Record<string, string>; data?: unknown } = {
+    headers: options.headers,
+  };
+  if (options.submitData !== undefined) {
+    submitOptions.data = options.submitData;
+  }
   const submitRes = await options.request.post(
     `${options.apiBase}/${options.targetTable}/${encodeURIComponent(options.targetId)}/submit`,
-    {
-      headers: options.headers,
-    },
+    submitOptions,
   );
   await ensureOk(submitRes);
 
@@ -114,5 +126,9 @@ export async function submitAndFindApprovalInstance(
       `[e2e] approval instance missing: ${JSON.stringify(instancesPayload)}`,
     );
   }
-  return approval as { id: string; currentStep?: number | null; status?: string };
+  return approval as {
+    id: string;
+    currentStep?: number | null;
+    status?: string;
+  };
 }
