@@ -1,5 +1,9 @@
+import type { FastifyReply, FastifyRequest } from 'fastify';
 import { ensureChatRoomContentAccess } from '../../../services/chatRoomAccess.js';
 import { buildRoomAccessErrorResponse } from './roomAccessError.js';
+
+type RoomAccessResult = Awaited<ReturnType<typeof ensureChatRoomContentAccess>>;
+type RoomAccessSuccess = Extract<RoomAccessResult, { ok: true }>;
 
 type RoomAccessContext = {
   roles: string[];
@@ -8,31 +12,22 @@ type RoomAccessContext = {
   groupAccountIds: string[];
 };
 
-export function readRoomAccessContext(req: {
-  user?: {
-    roles?: string[];
-    projectIds?: string[];
-    groupIds?: unknown;
-    groupAccountIds?: unknown;
-  };
-}): RoomAccessContext {
+export function readRoomAccessContext(req: FastifyRequest): RoomAccessContext {
   return {
     roles: req.user?.roles || [],
     projectIds: req.user?.projectIds || [],
-    groupIds: Array.isArray(req.user?.groupIds) ? req.user.groupIds : [],
-    groupAccountIds: Array.isArray(req.user?.groupAccountIds)
-      ? req.user.groupAccountIds
-      : [],
+    groupIds: req.user?.groupIds || [],
+    groupAccountIds: req.user?.groupAccountIds || [],
   };
 }
 
 export async function ensureRoomAccessWithReasonError(options: {
-  req: any;
-  reply: any;
+  req: FastifyRequest;
+  reply: FastifyReply;
   roomId: string;
   userId: string;
   accessLevel?: 'read' | 'post';
-}) {
+}): Promise<RoomAccessSuccess | null> {
   const accessContext = readRoomAccessContext(options.req);
   const access = await ensureChatRoomContentAccess({
     roomId: options.roomId,
