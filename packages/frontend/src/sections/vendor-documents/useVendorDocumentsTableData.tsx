@@ -81,22 +81,20 @@ export function useVendorDocumentsTableData(
   const filteredPurchaseOrders = useMemo(() => {
     const needle = poSearch.trim().toLowerCase();
     return purchaseOrders.filter((item) => {
-      if (
-        poStatusFilter !== 'all' &&
-        item.status !== poStatusFilter
-      ) {
+      if (poStatusFilter !== 'all' && item.status !== poStatusFilter) {
         return false;
       }
       if (!needle) return true;
-      const linkedInvoices =
-        vendorInvoicesByPurchaseOrderId.get(item.id) || [];
+      const linkedInvoices = vendorInvoicesByPurchaseOrderId.get(item.id) || [];
       const target = [
         item.poNo || missingNumberLabel,
         item.status,
         renderProject(item.projectId),
         renderVendor(item.vendorId),
         `${item.totalAmount}`,
-        linkedInvoices.map((invoice) => invoice.vendorInvoiceNo || '').join(' '),
+        linkedInvoices
+          .map((invoice) => invoice.vendorInvoiceNo || '')
+          .join(' '),
       ]
         .join(' ')
         .toLowerCase();
@@ -115,10 +113,7 @@ export function useVendorDocumentsTableData(
   const filteredVendorQuotes = useMemo(() => {
     const needle = quoteSearch.trim().toLowerCase();
     return vendorQuotes.filter((item) => {
-      if (
-        quoteStatusFilter !== 'all' &&
-        item.status !== quoteStatusFilter
-      ) {
+      if (quoteStatusFilter !== 'all' && item.status !== quoteStatusFilter) {
         return false;
       }
       if (!needle) return true;
@@ -225,12 +220,7 @@ export function useVendorDocumentsTableData(
         totalAmount: formatAmount(item.totalAmount, item.currency),
         issueDate: formatDate(item.issueDate),
       })),
-    [
-      filteredVendorQuotes,
-      missingNumberLabel,
-      renderProject,
-      renderVendor,
-    ],
+    [filteredVendorQuotes, missingNumberLabel, renderProject, renderVendor],
   );
 
   const vendorInvoiceRows = useMemo<DataTableRow[]>(
@@ -247,12 +237,7 @@ export function useVendorDocumentsTableData(
         )}`,
         purchaseOrder: item.purchaseOrder?.poNo || item.purchaseOrderId || '-',
       })),
-    [
-      filteredVendorInvoices,
-      missingNumberLabel,
-      renderProject,
-      renderVendor,
-    ],
+    [filteredVendorInvoices, missingNumberLabel, renderProject, renderVendor],
   );
 
   const purchaseOrderColumns = useMemo<DataTableColumn[]>(
