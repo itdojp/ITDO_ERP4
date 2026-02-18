@@ -1,5 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import { expect, test, type APIRequestContext } from '@playwright/test';
+import {
+  createProjectAndEstimate,
+  ensureOk,
+  submitAndFindApprovalInstance,
+} from './approval-e2e-helpers';
 
 const apiBase = process.env.E2E_API_BASE || 'http://localhost:3002';
 
@@ -23,104 +28,38 @@ const adminHeaders = buildHeaders({
   groupIds: ['mgmt'],
 });
 
-async function ensureOk(res: { ok(): boolean; status(): number; text(): any }) {
-  if (res.ok()) return;
-  const body = await res.text();
-  throw new Error(`[e2e] api failed: ${res.status()} ${body}`);
-}
-
 async function createEstimateFixture(
   request: APIRequestContext,
   suffix: string,
   label: string,
 ) {
-  const projectRes = await request.post(`${apiBase}/projects`, {
+  const fixture = await createProjectAndEstimate({
+    request,
+    apiBase,
     headers: adminHeaders,
-    data: {
+    project: {
       code: `E2E-APR-${label}-${suffix}`,
       name: `E2E Approval ${label} ${suffix}`,
       status: 'active',
     },
+    estimate: {
+      totalAmount: 100000,
+      notes: `E2E estimate ${label} ${suffix}`,
+    },
   });
-  await ensureOk(projectRes);
-  const project = await projectRes.json();
-  const projectId = project.id as string;
-  expect(projectId).toBeTruthy();
-
-  const estimateRes = await request.post(
-    `${apiBase}/projects/${encodeURIComponent(projectId)}/estimates`,
-    {
-      headers: adminHeaders,
-      data: {
-        totalAmount: 100000,
-        notes: `E2E estimate ${label} ${suffix}`,
-      },
-    },
-  );
-  await ensureOk(estimateRes);
-  const estimatePayload = await estimateRes.json();
-  const estimateId = estimatePayload?.estimate?.id as string;
-  expect(estimateId).toBeTruthy();
-
-  return { projectId, estimateId };
+  expect(fixture.projectId).toBeTruthy();
+  expect(fixture.estimateId).toBeTruthy();
+  return fixture;
 }
 
-async function submitEstimate(
-  request: APIRequestContext,
-  estimateId: string,
-  reasonText: string,
-) {
-  const submitRes = await request.post(
-    `${apiBase}/estimates/${encodeURIComponent(estimateId)}/submit`,
-    {
-      headers: adminHeaders,
-      data: { reasonText },
-    },
-  );
-  await ensureOk(submitRes);
-  const submitted = await submitRes.json();
-  expect(submitted?.status).toBe('pending_qa');
-}
-
-async function findApprovalInstance(
-  request: APIRequestContext,
-  projectId: string,
-  targetId: string,
-) {
-  let approvalInstanceId = '';
-  await expect
-    .poll(
-      async () => {
-        const listRes = await request.get(
-          `${apiBase}/approval-instances?flowType=estimate&projectId=${encodeURIComponent(projectId)}`,
-          {
-            headers: adminHeaders,
-          },
-        );
-        if (!listRes.ok()) return '';
-        const payload = await listRes.json();
-        const matched = (payload?.items ?? []).find(
-          (item: any) =>
-            item?.targetId === targetId &&
-            item?.status !== 'approved' &&
-            item?.status !== 'rejected',
-        );
-        approvalInstanceId = String(matched?.id ?? '');
-        return approvalInstanceId;
-      },
-      { timeout: 5000 },
-    )
-    .not.toBe('');
-  return approvalInstanceId;
-}
+const MAX_APPROVAL_TRANSITIONS = 8;
 
 async function approveUntilClosed(
   request: APIRequestContext,
   approvalInstanceId: string,
 ) {
-  const maxTransitions = 8;
   let status = '';
-  for (let index = 0; index < maxTransitions; index += 1) {
+  for (let index = 0; index < MAX_APPROVAL_TRANSITIONS; index += 1) {
     const actRes = await request.post(
       `${apiBase}/approval-instances/${encodeURIComponent(approvalInstanceId)}/act`,
       {
@@ -157,9 +96,8 @@ async function expectAuditAction(
         });
         if (!res.ok()) return false;
         const payload = await res.json();
-        return (
-          (payload?.items ?? []).some((item: any) => item?.action === action) ??
-          false
+        return (payload?.items ?? []).some(
+          (item: any) => item?.action === action,
         );
       },
       { timeout: 5000 },
@@ -167,26 +105,26 @@ async function expectAuditAction(
     .toBe(true);
 }
 
-test('approval flow: submit -> approve/reject with guard and audit @core', async ({
+test('approval flow: submit -> approve with guard and audit @core', async ({
   request,
 }) => {
   const suffix = runId();
-
   const approveFixture = await createEstimateFixture(
     request,
     suffix,
     'approve',
   );
-  await submitEstimate(
+  const approveApproval = await submitAndFindApprovalInstance({
     request,
-    approveFixture.estimateId,
-    `e2e submit approve ${suffix}`,
-  );
-  const approveApprovalId = await findApprovalInstance(
-    request,
-    approveFixture.projectId,
-    approveFixture.estimateId,
-  );
+    apiBase,
+    headers: adminHeaders,
+    flowType: 'estimate',
+    projectId: approveFixture.projectId,
+    targetTable: 'estimates',
+    targetId: approveFixture.estimateId,
+    submitData: { reasonText: `e2e submit approve ${suffix}` },
+  });
+  const approveApprovalId = approveApproval.id;
   expect(approveApprovalId).toBeTruthy();
 
   const nonApproverHeaders = buildHeaders({
@@ -219,18 +157,24 @@ test('approval flow: submit -> approve/reject with guard and audit @core', async
   const approvedEstimate = await approvedEstimateRes.json();
   expect(approvedEstimate?.status).toBe('approved');
   await expectAuditAction(request, 'approval_approve', approveApprovalId);
+});
 
+test('approval flow: submit -> reject with audit @core', async ({
+  request,
+}) => {
+  const suffix = runId();
   const rejectFixture = await createEstimateFixture(request, suffix, 'reject');
-  await submitEstimate(
+  const rejectApproval = await submitAndFindApprovalInstance({
     request,
-    rejectFixture.estimateId,
-    `e2e submit reject ${suffix}`,
-  );
-  const rejectApprovalId = await findApprovalInstance(
-    request,
-    rejectFixture.projectId,
-    rejectFixture.estimateId,
-  );
+    apiBase,
+    headers: adminHeaders,
+    flowType: 'estimate',
+    projectId: rejectFixture.projectId,
+    targetTable: 'estimates',
+    targetId: rejectFixture.estimateId,
+    submitData: { reasonText: `e2e submit reject ${suffix}` },
+  });
+  const rejectApprovalId = rejectApproval.id;
   expect(rejectApprovalId).toBeTruthy();
 
   const rejectRes = await request.post(
