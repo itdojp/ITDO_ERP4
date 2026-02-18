@@ -35,6 +35,7 @@ import { VendorInvoicePoLinkDialog } from './vendor-documents/VendorInvoicePoLin
 import { VendorInvoiceSavedViewBar } from './vendor-documents/VendorInvoiceSavedViewBar';
 import { buildVendorInvoiceLinePayload } from './vendor-documents/vendorInvoiceLinePayload';
 import { useVendorInvoiceSavedViews } from './vendor-documents/useVendorInvoiceSavedViews';
+import { useVendorDocumentsLookups } from './vendor-documents/useVendorDocumentsLookups';
 import {
   defaultPurchaseOrderForm,
   defaultVendorInvoiceForm,
@@ -180,48 +181,23 @@ export const VendorDocuments: React.FC = () => {
     invoiceLineTempIdRef.current += 1;
     return `tmp-line-${invoiceLineTempIdRef.current}`;
   }, []);
-
-  const projectMap = useMemo(() => {
-    return new Map(projects.map((project) => [project.id, project]));
-  }, [projects]);
-
-  const vendorMap = useMemo(() => {
-    return new Map(vendors.map((vendor) => [vendor.id, vendor]));
-  }, [vendors]);
-
-  const availablePurchaseOrders = useMemo(() => {
-    return purchaseOrders.filter(
-      (po) =>
-        po.projectId === invoiceForm.projectId &&
-        po.vendorId === invoiceForm.vendorId,
-    );
-  }, [purchaseOrders, invoiceForm.projectId, invoiceForm.vendorId]);
-
-  const availablePurchaseOrdersForInvoicePoLink = useMemo(() => {
-    if (!invoicePoLinkDialog) return [];
-    const invoice = invoicePoLinkDialog.invoice;
-    return purchaseOrders.filter(
-      (po) =>
-        po.projectId === invoice.projectId && po.vendorId === invoice.vendorId,
-    );
-  }, [invoicePoLinkDialog, purchaseOrders]);
-
-  const selectedPurchaseOrderId = invoicePoLinkDialog?.purchaseOrderId.trim();
-  const selectedPurchaseOrder = selectedPurchaseOrderId
-    ? purchaseOrderDetails[selectedPurchaseOrderId] || null
-    : null;
-
-  const vendorInvoicesByPurchaseOrderId = useMemo(() => {
-    const map = new Map<string, VendorInvoice[]>();
-    vendorInvoices.forEach((invoice) => {
-      const poId = invoice.purchaseOrderId;
-      if (!poId) return;
-      const list = map.get(poId) || [];
-      list.push(invoice);
-      map.set(poId, list);
-    });
-    return map;
-  }, [vendorInvoices]);
+  const {
+    availablePurchaseOrders,
+    availablePurchaseOrdersForInvoicePoLink,
+    selectedPurchaseOrderId,
+    selectedPurchaseOrder,
+    vendorInvoicesByPurchaseOrderId,
+    renderProject,
+    renderVendor,
+  } = useVendorDocumentsLookups({
+    projects,
+    vendors,
+    purchaseOrders,
+    vendorInvoices,
+    invoiceForm,
+    invoicePoLinkDialog,
+    purchaseOrderDetails,
+  });
 
   const loadPurchaseOrderDetail = useCallback(
     async (purchaseOrderId: string, signal?: AbortSignal) => {
@@ -449,22 +425,6 @@ export const VendorDocuments: React.FC = () => {
       setInvoiceForm((prev) => ({ ...prev, purchaseOrderId: '' }));
     }
   }, [availablePurchaseOrders, invoiceForm.purchaseOrderId]);
-
-  const renderProject = useCallback(
-    (projectId: string) => {
-      const project = projectMap.get(projectId);
-      return project ? `${project.code} / ${project.name}` : projectId;
-    },
-    [projectMap],
-  );
-
-  const renderVendor = useCallback(
-    (vendorId: string) => {
-      const vendor = vendorMap.get(vendorId);
-      return vendor ? `${vendor.code} / ${vendor.name}` : vendorId;
-    },
-    [vendorMap],
-  );
 
   const missingNumberLabel = '(番号未設定)';
   const isVendorInvoiceSubmittableStatus = (status: string) =>
