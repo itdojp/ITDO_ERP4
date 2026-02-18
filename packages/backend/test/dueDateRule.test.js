@@ -14,7 +14,21 @@ test('parseDueDateRule: invalid payload throws', () => {
   assert.throws(() => parseDueDateRule('x'), /invalid_due_date_rule/);
   assert.throws(() => parseDueDateRule({}), /invalid_due_date_rule/);
   assert.throws(
+    () => parseDueDateRule({ type: 'periodEndPlusOffset', offsetDays: '' }),
+    /invalid_due_date_rule/,
+  );
+  assert.throws(
     () => parseDueDateRule({ type: 'periodEndPlusOffset', offsetDays: 1.2 }),
+    /invalid_due_date_rule/,
+  );
+  assert.throws(
+    () =>
+      parseDueDateRule({ type: 'periodEndPlusOffset', offsetDays: '365.5' }),
+    /invalid_due_date_rule/,
+  );
+  assert.throws(
+    () =>
+      parseDueDateRule({ type: 'periodEndPlusOffset', offsetDays: '-1' }),
     /invalid_due_date_rule/,
   );
   assert.throws(
@@ -91,6 +105,17 @@ test('computeDueDate: leap year February end is handled correctly', () => {
   assert.equal(result.getDate(), 29);
   assert.equal(result.getHours(), 23);
   assert.equal(result.getMinutes(), 59);
+});
+
+test('computeDueDate: runAt itself is not mutated', () => {
+  const runAt = new Date(2026, 3, 3, 9, 45, 12, 123);
+  const original = runAt.toISOString();
+  const result = computeDueDate(runAt, {
+    type: 'periodEndPlusOffset',
+    offsetDays: 2,
+  });
+  assert.ok(result);
+  assert.equal(runAt.toISOString(), original);
 });
 
 test('computeDueDate: null/undefined rule returns null', () => {

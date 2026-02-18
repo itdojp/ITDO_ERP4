@@ -15,6 +15,12 @@ export function parseDueDateRule(input: unknown): DueDateRule | null {
   if (payload.type !== 'periodEndPlusOffset') {
     throw new Error('invalid_due_date_rule');
   }
+  if (
+    typeof payload.offsetDays === 'string' &&
+    payload.offsetDays.trim().length === 0
+  ) {
+    throw new Error('invalid_due_date_rule');
+  }
   const parsedOffset =
     typeof payload.offsetDays === 'number'
       ? payload.offsetDays

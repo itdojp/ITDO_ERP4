@@ -478,6 +478,53 @@ type ProfitBreakdownItem = {
   minutes: number;
 };
 
+export type ProfitAllocationMethod = 'labor_cost' | 'minutes' | 'none';
+
+export function resolveProfitAllocationMethod(
+  totalLaborCost: number,
+  totalMinutes: number,
+): ProfitAllocationMethod {
+  if (Number.isFinite(totalLaborCost) && totalLaborCost > 0) {
+    return 'labor_cost';
+  }
+  if (Number.isFinite(totalMinutes) && totalMinutes > 0) {
+    return 'minutes';
+  }
+  return 'none';
+}
+
+export function resolveProfitAllocationShare(input: {
+  allocationMethod: ProfitAllocationMethod;
+  userLaborCost: number;
+  totalLaborCost: number;
+  userMinutes: number;
+  totalMinutes: number;
+}): number {
+  if (input.allocationMethod === 'labor_cost') {
+    if (
+      !Number.isFinite(input.userLaborCost) ||
+      !Number.isFinite(input.totalLaborCost) ||
+      input.userLaborCost <= 0 ||
+      input.totalLaborCost <= 0
+    ) {
+      return 0;
+    }
+    return input.userLaborCost / input.totalLaborCost;
+  }
+  if (input.allocationMethod === 'minutes') {
+    if (
+      !Number.isFinite(input.userMinutes) ||
+      !Number.isFinite(input.totalMinutes) ||
+      input.userMinutes <= 0 ||
+      input.totalMinutes <= 0
+    ) {
+      return 0;
+    }
+    return input.userMinutes / input.totalMinutes;
+  }
+  return 0;
+}
+
 export async function reportProjectProfitByUser(
   projectId: string,
   from?: Date,
@@ -590,8 +637,10 @@ export async function reportProjectProfitByUser(
     0,
   );
 
-  const allocationMethod =
-    totalLaborCost > 0 ? 'labor_cost' : totalMinutes > 0 ? 'minutes' : 'none';
+  const allocationMethod = resolveProfitAllocationMethod(
+    totalLaborCost,
+    totalMinutes,
+  );
 
   const expenseByUser = new Map<string, number>();
   for (const row of expenseAgg) {
@@ -609,12 +658,13 @@ export async function reportProjectProfitByUser(
   const items: ProfitBreakdownItem[] = filteredUserIds.map((userId) => {
     const laborItem = labor.items.get(userId) ?? { cost: 0, minutes: 0 };
     const expenseCost = expenseByUser.get(userId) ?? 0;
-    const share =
-      allocationMethod === 'labor_cost' && totalLaborCost > 0
-        ? laborItem.cost / totalLaborCost
-        : allocationMethod === 'minutes' && totalMinutes > 0
-          ? laborItem.minutes / totalMinutes
-          : 0;
+    const share = resolveProfitAllocationShare({
+      allocationMethod,
+      userLaborCost: laborItem.cost,
+      totalLaborCost,
+      userMinutes: laborItem.minutes,
+      totalMinutes,
+    });
     const allocatedRevenue = revenue * share;
     const allocatedVendorCost = vendorCost * share;
     const totalCost = laborItem.cost + expenseCost + allocatedVendorCost;
