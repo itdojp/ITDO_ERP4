@@ -5,6 +5,7 @@
 
 ## 参照
 - セキュリティベースライン: `docs/security/security-baseline.md`
+- 監査ログ必須イベント: `docs/security/audit-required-events.md`
 - サプライチェーン対策: `docs/security/supply-chain.md`
 - 品質目標: `docs/quality/quality-goals.md`
 
