@@ -1,6 +1,64 @@
-const CACHE_NAME = 'erp4-pwa-v1';
+const CACHE_NAME = 'erp4-pwa-v2';
 const CORE_ASSETS = ['/', '/index.html', '/manifest.webmanifest', '/icon.svg'];
 const OFFLINE_URL = '/index.html';
+const STATIC_CACHE_PATHS = new Set(CORE_ASSETS);
+const STATIC_CACHE_PREFIXES = ['/assets/'];
+
+function isApiLikePath(pathname) {
+  return (
+    pathname.startsWith('/api') ||
+    pathname.startsWith('/health') ||
+    pathname.startsWith('/healthz') ||
+    pathname.startsWith('/ready') ||
+    pathname.startsWith('/readyz')
+  );
+}
+
+function isStaticAssetRequest(request, url) {
+  if (request.mode === 'navigate') return false;
+  if (isApiLikePath(url.pathname)) return false;
+  if (STATIC_CACHE_PATHS.has(url.pathname)) return true;
+  return STATIC_CACHE_PREFIXES.some((prefix) => url.pathname.startsWith(prefix));
+}
+
+function canStoreResponse(response) {
+  if (!response || !response.ok) return false;
+  const cacheControl = (response.headers.get('cache-control') || '').toLowerCase();
+  if (cacheControl.includes('no-store') || cacheControl.includes('private')) {
+    return false;
+  }
+  return true;
+}
+
+function normalizeNotificationPath(value) {
+  if (typeof value !== 'string') return '/';
+  const trimmed = value.trim();
+  if (!trimmed || !trimmed.startsWith('/')) return '/';
+  try {
+    const resolved = new URL(trimmed, self.location.origin);
+    if (resolved.origin !== self.location.origin) return '/';
+    return `${resolved.pathname}${resolved.search}${resolved.hash}`;
+  } catch {
+    return '/';
+  }
+}
+
+function getNotificationPayload(value) {
+  const base = {
+    title: 'ERP4',
+    body: '',
+    url: '/',
+    icon: '/icon.svg',
+  };
+  if (!value || typeof value !== 'object') return base;
+  const data = value;
+  return {
+    title: typeof data.title === 'string' ? data.title : base.title,
+    body: typeof data.body === 'string' ? data.body : base.body,
+    icon: typeof data.icon === 'string' ? data.icon : base.icon,
+    url: normalizeNotificationPath(data.url),
+  };
+}
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -36,7 +94,7 @@ self.addEventListener('fetch', (event) => {
       (async () => {
         try {
           const response = await fetch(event.request);
-          if (response && response.ok) {
+          if (canStoreResponse(response)) {
             const cache = await caches.open(CACHE_NAME);
             cache.put(OFFLINE_URL, response.clone()).catch(() => undefined);
           }
@@ -53,13 +111,15 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
+  if (!isStaticAssetRequest(event.request, url)) return;
+
   event.respondWith(
     (async () => {
       const cached = await caches.match(event.request);
       if (cached) return cached;
       try {
         const response = await fetch(event.request);
-        if (response && response.ok) {
+        if (canStoreResponse(response)) {
           const cache = await caches.open(CACHE_NAME);
           cache.put(event.request, response.clone()).catch(() => undefined);
         }
@@ -75,25 +135,22 @@ self.addEventListener('fetch', (event) => {
 });
 
 self.addEventListener('push', (event) => {
-  let payload = {
-    title: 'ERP4',
-    body: '',
-    url: '/',
-    icon: '/icon.svg',
-  };
+  let payload = getNotificationPayload();
   if (event.data) {
     try {
-      const data = event.data.json();
-      payload = { ...payload, ...data };
+      payload = getNotificationPayload(event.data.json());
     } catch {
-      payload.body = event.data.text();
+      payload = {
+        ...payload,
+        body: event.data.text(),
+      };
     }
   }
   event.waitUntil(
     self.registration.showNotification(payload.title || 'ERP4', {
       body: payload.body,
       icon: payload.icon || '/icon.svg',
-      data: { url: payload.url || '/' },
+      data: { url: normalizeNotificationPath(payload.url) },
     }),
   );
 });
@@ -101,23 +158,23 @@ self.addEventListener('push', (event) => {
 self.addEventListener('message', (event) => {
   const data = event.data;
   if (!data || data.type !== 'PUSH_TEST') return;
-  const payload = data.payload || {};
+  const payload = getNotificationPayload(data.payload || {});
   event.waitUntil(
     self.registration.showNotification(payload.title || 'ERP4', {
-      body: payload.body || '',
+      body: payload.body,
       icon: payload.icon || '/icon.svg',
-      data: { url: payload.url || '/' },
+      data: { url: normalizeNotificationPath(payload.url) },
     }),
   );
 });
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
-  const targetUrl = event.notification?.data?.url || '/';
+  const targetPath = normalizeNotificationPath(event.notification?.data?.url);
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(
       (clientList) => {
-        const target = new URL(targetUrl, self.location.origin);
+        const target = new URL(targetPath, self.location.origin);
         for (const client of clientList) {
           let clientUrl;
           try {
@@ -134,7 +191,7 @@ self.addEventListener('notificationclick', (event) => {
           }
         }
         if (self.clients.openWindow) {
-          return self.clients.openWindow(targetUrl);
+          return self.clients.openWindow(target.toString());
         }
         return undefined;
       },

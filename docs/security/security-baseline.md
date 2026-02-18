@@ -37,6 +37,11 @@ PoC→運用フェーズに向けて、最低限のセキュリティ基準（�
   - 設定: `RATE_LIMIT_MAX`（既定 600）/ `RATE_LIMIT_WINDOW`（既定 `1 minute`）
 - 可観測性
   - request-id（`x-request-id`）付与と統一エラー応答（`docs/ops/observability.md`）
+- キャッシュ制御
+  - backend API は `Cache-Control: no-store` / `Pragma: no-cache` を既定付与
+  - Service Worker は静的アセット（`/assets/*` とコアファイル）のみキャッシュし、`/api*`・`/health*`・`/ready*` はキャッシュしない
+- Push通知
+  - 通知URLは same-origin の相対パスのみ許可し、外部URLは `/` にフォールバック
 - 添付
   - 方式は別Issueで継続（例: #560）
 
