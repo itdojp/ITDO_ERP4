@@ -1,10 +1,20 @@
-import { sendEmail } from '../packages/backend/src/services/notifier.js';
-
 type TestResult = {
   name: string;
   ok: boolean;
   details?: string;
 };
+
+type SendEmailResult = {
+  channel?: string;
+  status: string;
+  error?: string;
+};
+
+type SendEmailFn = (
+  to: string[],
+  subject: string,
+  body: string,
+) => Promise<SendEmailResult>;
 
 function expect(condition: boolean, message: string) {
   if (!condition) {
@@ -13,6 +23,10 @@ function expect(condition: boolean, message: string) {
 }
 
 async function runTests() {
+  // Dist JS is imported for runtime portability; type is narrowed below.
+  // @ts-ignore no declaration file is emitted for dist JS modules.
+  const notifierModule = await import('../packages/backend/dist/services/notifier.js');
+  const { sendEmail } = notifierModule as { sendEmail: SendEmailFn };
   const results: TestResult[] = [];
 
   async function test(name: string, fn: () => Promise<void>) {

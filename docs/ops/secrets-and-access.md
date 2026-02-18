@@ -55,13 +55,15 @@
 
 四半期に1回を目安に、以下を更新します。
 
-| 種別    | 名前                                     | 利用箇所         | 保管場所                  | 所有者       | ローテーション          | 失効手順                                                                  |
-| ------- | ---------------------------------------- | ---------------- | ------------------------- | ------------ | ----------------------- | ------------------------------------------------------------------------- |
-| OAuth   | `CHAT_ATTACHMENT_GDRIVE_*`               | chat attachments | GitHub Secrets / 実行環境 | Platform/Ops | 半年ごと + 事象発生時   | Google Cloud Console で旧 credential を revoke し、refresh token を再発行 |
-| API key | `SENDGRID_API_KEY`                       | notifier         | GitHub Secrets / 実行環境 | Platform/Ops | 四半期ごと + 事象発生時 | SendGrid Dashboard で旧 key revoke → 新 key 作成                          |
-| API key | `CHAT_EXTERNAL_LLM_OPENAI_API_KEY`       | chat summary     | GitHub Secrets / 実行環境 | Platform/Ops | 四半期ごと + 事象発生時 | OpenAI console で旧 key revoke → 新 key 作成                              |
-| JWT     | `JWT_PUBLIC_KEY` / `JWT_JWKS_URL`        | 認証             | GitHub Secrets / 実行環境 | Platform/Ops | 半年ごと + 事象発生時   | 新鍵を配備し、旧鍵を無効化（重複期間を短期で設定）                        |
-| Push    | `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` | Web Push         | GitHub Secrets / 実行環境 | Platform/Ops | 半年ごと + 事象発生時   | 新鍵ペア配備後に旧鍵での送信を停止                                        |
+| 種別    | 名前                                     | 利用箇所         | 保管場所                  | 所有者       | ローテーション          | 最終棚卸し日 | 最終ローテーション/演習日 | 失効手順                                                                  |
+| ------- | ---------------------------------------- | ---------------- | ------------------------- | ------------ | ----------------------- | ------------ | ------------------------- | ------------------------------------------------------------------------- |
+| OAuth   | `CHAT_ATTACHMENT_GDRIVE_*`               | chat attachments | GitHub Secrets / 実行環境 | Platform/Ops | 半年ごと + 事象発生時   | 2026-02-19   | 未記録                    | Google Cloud Console で旧 credential を revoke し、refresh token を再発行 |
+| API key | `SENDGRID_API_KEY`                       | notifier         | GitHub Secrets / 実行環境 | Platform/Ops | 四半期ごと + 事象発生時 | 2026-02-19   | 2026-02-18（演習）        | SendGrid Dashboard で旧 key revoke → 新 key 作成                          |
+| API key | `CHAT_EXTERNAL_LLM_OPENAI_API_KEY`       | chat summary     | GitHub Secrets / 実行環境 | Platform/Ops | 四半期ごと + 事象発生時 | 2026-02-19   | 未記録                    | OpenAI console で旧 key revoke → 新 key 作成                              |
+| JWT     | `JWT_PUBLIC_KEY` / `JWT_JWKS_URL`        | 認証             | GitHub Secrets / 実行環境 | Platform/Ops | 半年ごと + 事象発生時   | 2026-02-19   | 未記録                    | 新鍵を配備し、旧鍵を無効化（重複期間を短期で設定）                        |
+| Push    | `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` | Web Push         | GitHub Secrets / 実行環境 | Platform/Ops | 半年ごと + 事象発生時   | 2026-02-19   | 未記録                    | 新鍵ペア配備後に旧鍵での送信を停止                                        |
+
+- `未記録` の項目は次回の実ローテーション実施時に日付を追記する。
 
 ## 失効/再発行手順（主要シークレット）
 
@@ -98,7 +100,7 @@
 - backend 基本疎通:
   - `BASE_URL=http://localhost:3001 ./scripts/smoke-backend.sh`
 - メール通知（stub/smtp 設定確認を含む最小チェック）:
-  - `npx ts-node --esm scripts/smoke-email.ts`（実行環境に依存。失敗時はログを Issue に添付）
+  - `npx ts-node --project packages/backend/tsconfig.json scripts/smoke-email.ts`
 - 実施結果は `docs/test-results/` の記録と運用Issueに残す（成功/失敗と原因）。
 
 ## 演習記録
