@@ -517,18 +517,17 @@ test.describe('mobile smoke 375x667 @core', () => {
     await expect(periodCreatePeriodInput).toBeVisible({
       timeout: actionTimeout,
     });
-    const periodCreatePanel = periodCreatePeriodInput.locator('..').locator('..');
+    const periodCreateProjectSelect = periodLockSection
+      .getByRole('combobox', { name: 'project' })
+      .filter({ hasText: '案件を選択' });
+    await expect(periodCreateProjectSelect).toHaveCount(1, {
+      timeout: actionTimeout,
+    });
     await periodCreatePeriodInput.fill(mobileLockPeriod);
-    await periodCreatePanel
-      .getByLabel('scope', { exact: true })
-      .selectOption({ value: 'project' });
-    await selectByValue(
-      periodCreatePanel.getByLabel('project', { exact: true }),
-      defaultProjectId,
-    );
-    await periodCreatePanel.getByLabel('reason', { exact: true }).fill(
-      mobileLockReason,
-    );
+    await selectByValue(periodCreateProjectSelect, defaultProjectId);
+    await periodLockSection
+      .getByLabel('reason', { exact: true })
+      .fill(mobileLockReason);
     await periodLockSection.getByRole('button', { name: '締め登録' }).click();
     await periodLockSection
       .getByLabel('period', { exact: true })
