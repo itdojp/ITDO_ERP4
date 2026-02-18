@@ -517,15 +517,14 @@ test.describe('mobile smoke 375x667 @core', () => {
     await expect(periodCreatePeriodInput).toBeVisible({
       timeout: actionTimeout,
     });
+    const periodCreateProjectSelect = periodLockSection
+      .getByRole('combobox', { name: 'project' })
+      .filter({ hasText: '案件を選択' });
+    await expect(periodCreateProjectSelect).toHaveCount(1, {
+      timeout: actionTimeout,
+    });
     await periodCreatePeriodInput.fill(mobileLockPeriod);
-    await periodLockSection
-      .getByLabel('scope', { exact: true })
-      .first()
-      .selectOption({ value: 'project' });
-    await selectByValue(
-      periodLockSection.getByLabel('project', { exact: true }).first(),
-      defaultProjectId,
-    );
+    await selectByValue(periodCreateProjectSelect, defaultProjectId);
     await periodLockSection
       .getByLabel('reason', { exact: true })
       .fill(mobileLockReason);
