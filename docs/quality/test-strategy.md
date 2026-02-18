@@ -73,6 +73,28 @@
 - E2Eセレクタは決定的にする（`first()/nth()` 依存を避け、`toHaveCount(1)` と `label/role/value` で特定）
 - 待機は固定時間ではなく状態待ちを使う（`toBeVisible` / `toHaveCount` / `poll`）
 
+### flaky診断チェック（E2E）
+
+1. まずCIログから失敗行を抽出し、対象specとlocatorを特定する
+   - `gh pr checks <PR番号> --watch=false`
+   - `gh api repos/itdojp/ITDO_ERP4/actions/jobs/<job_id>/logs > /tmp/e2e.log`
+   - `rg -n \"toHaveCount|toBeVisible|Timeout|Expected|Received\" /tmp/e2e.log`
+2. locatorに以下のアンチパターンが無いか確認する
+   - `first()/nth()` による曖昧選択
+   - `xpath=ancestor::...` などDOM構造依存
+   - `.badge` や `.card` などスタイルclass依存
+3. 修正方針は次を優先する
+   - `getByRole/getByLabel/getByTestId` へ置換
+   - 同名要素がある場合はセクションを先に特定し、その配下で探索
+   - 期待件数が1件前提なら `toHaveCount(1)` を先に置く
+4. 修正後は失敗specを最小grepで再実行し、最後に `E2E_SCOPE=core` で再確認する
+
+### 最近の典型修正例
+
+- `p.badge + xpath` 依存 → `data-testid` を最小追加して直接参照
+- `locator.first()` 依存 → セクション配下の一意な `label` を使用
+- 状態検証を見た目文字列に依存 → `select` の `value` 検証へ切替
+
 ## 実行方法（入口）
 
 詳細は `docs/quality/quality-gates.md` を参照。
