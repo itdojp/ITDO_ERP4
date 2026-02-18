@@ -41,7 +41,8 @@
 | API key | `CHAT_EXTERNAL_LLM_OPENAI_API_KEY` | chat summary | GitHub Secrets / 実行環境 | - | - | - |
 
 ## 監視（漏洩検知）
-- CI で secret scanning を実行（非ブロッキング）: `.github/workflows/ci.yml` の `secret-scan` job
+- CI で secret scanning を実行（blocking）: `.github/workflows/ci.yml` の `secret-scan` job
+- 誤検知は `scripts/secret-scan.allowlist` で最小範囲で除外する
 - 検知した場合は該当コミット/PRを特定し、即時失効/再発行を実施
 
 ## 最小権限（例）
