@@ -323,10 +323,7 @@ export async function buildServer(
         : {}),
       allowList: (req) => {
         const url = req.url;
-        return (
-          typeof url === 'string' &&
-          url.startsWith('/health')
-        );
+        return typeof url === 'string' && url.startsWith('/health');
       },
     });
   }
@@ -350,7 +347,7 @@ export async function buildServer(
     {
       config: {
         rateLimit: READY_ROUTE_RATE_LIMIT,
-      }
+      },
     },
     async (req, reply) => {
       const report = await getReadinessReport(prisma);
