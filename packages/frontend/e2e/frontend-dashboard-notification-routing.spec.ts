@@ -99,12 +99,8 @@ async function openHome(page: Page) {
 }
 
 function resolveAlertsUi(dashboardSection: Locator) {
-  const alertsBadge = dashboardSection
-    .locator('p.badge', { hasText: /^Alerts / })
-    .first();
-  const alertsList = alertsBadge.locator(
-    'xpath=ancestor::div[contains(@class,"row")]/following-sibling::div[1]',
-  );
+  const alertsBadge = dashboardSection.getByTestId('dashboard-alerts-badge');
+  const alertsList = dashboardSection.getByTestId('dashboard-alerts-list');
   return { alertsBadge, alertsList };
 }
 

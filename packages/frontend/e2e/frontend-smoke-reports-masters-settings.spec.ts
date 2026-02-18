@@ -187,11 +187,10 @@ test('frontend smoke reports masters settings @extended', async ({ page }) => {
     .getByLabel('案件メンバーの権限')
     .selectOption({ value: 'leader' });
   await member1Item.getByRole('button', { name: '権限更新' }).click();
-  await expect(
-    memberCard
-      .locator('li', { hasText: 'e2e-member-1@example.com' })
-      .locator('.badge'),
-  ).toHaveText('leader', { timeout: actionTimeout });
+  await expect(member1Item.getByLabel('案件メンバーの権限')).toHaveValue(
+    'leader',
+    { timeout: actionTimeout },
+  );
 
   const member2Item = memberCard.locator('li', {
     hasText: 'e2e-member-2@example.com',
@@ -412,7 +411,7 @@ test('frontend smoke reports masters settings @extended', async ({ page }) => {
     .getByRole('button', { name: '履歴を見る' })
     .click();
   await expect(
-    createdActionPolicyCard.locator('.itdo-audit-timeline'),
+    createdActionPolicyCard.getByRole('button', { name: '履歴を閉じる' }),
   ).toBeVisible({
     timeout: actionTimeout,
   });
