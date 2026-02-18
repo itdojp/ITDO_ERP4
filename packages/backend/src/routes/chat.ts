@@ -51,6 +51,7 @@ import {
 import { resolveAckRequiredTarget } from './chat/shared/ackRequiredTarget.js';
 import { buildRoomAccessErrorResponse } from './chat/shared/roomAccessError.js';
 import { normalizeMentions } from './chat/shared/mentions.js';
+import { requireUserId } from './chat/shared/requireUserId.js';
 import { parseDateParam } from '../utils/date.js';
 
 async function readFileBuffer(
@@ -610,12 +611,8 @@ export async function registerChatRoutes(app: FastifyInstance) {
     },
     async (req, reply) => {
       const { projectId } = req.params as { projectId: string };
-      const userId = req.user?.userId;
-      if (!userId) {
-        return reply.status(400).send({
-          error: { code: 'MISSING_USER_ID', message: 'user id is required' },
-        });
-      }
+      const userId = requireUserId(reply, req.user?.userId);
+      if (typeof userId !== 'string') return userId;
       const state = await prisma.chatReadState.findUnique({
         where: { roomId_userId: { roomId: projectId, userId } },
         select: { lastReadAt: true },
@@ -644,12 +641,8 @@ export async function registerChatRoutes(app: FastifyInstance) {
     },
     async (req, reply) => {
       const { projectId } = req.params as { projectId: string };
-      const userId = req.user?.userId;
-      if (!userId) {
-        return reply.status(400).send({
-          error: { code: 'MISSING_USER_ID', message: 'user id is required' },
-        });
-      }
+      const userId = requireUserId(reply, req.user?.userId);
+      if (typeof userId !== 'string') return userId;
       if (!(await ensureProjectRoom(projectId, userId))) {
         return reply.status(404).send({
           error: { code: 'NOT_FOUND', message: 'Project not found' },
@@ -1085,12 +1078,8 @@ export async function registerChatRoutes(app: FastifyInstance) {
         });
       }
 
-      const userId = req.user?.userId;
-      if (!userId) {
-        return reply.status(400).send({
-          error: { code: 'MISSING_USER_ID', message: 'user id is required' },
-        });
-      }
+      const userId = requireUserId(reply, req.user?.userId);
+      if (typeof userId !== 'string') return userId;
 
       const roles = req.user?.roles || [];
       const projectIds = req.user?.projectIds || [];
@@ -1186,12 +1175,8 @@ export async function registerChatRoutes(app: FastifyInstance) {
         });
       }
 
-      const userId = req.user?.userId;
-      if (!userId) {
-        return reply.status(400).send({
-          error: { code: 'MISSING_USER_ID', message: 'user id is required' },
-        });
-      }
+      const userId = requireUserId(reply, req.user?.userId);
+      if (typeof userId !== 'string') return userId;
 
       const roles = req.user?.roles || [];
       const projectIds = req.user?.projectIds || [];
@@ -1242,12 +1227,8 @@ export async function registerChatRoutes(app: FastifyInstance) {
         });
       }
 
-      const userId = req.user?.userId;
-      if (!userId) {
-        return reply.status(400).send({
-          error: { code: 'MISSING_USER_ID', message: 'user id is required' },
-        });
-      }
+      const userId = requireUserId(reply, req.user?.userId);
+      if (typeof userId !== 'string') return userId;
 
       const roles = req.user?.roles || [];
       const projectIds = req.user?.projectIds || [];
@@ -1339,12 +1320,8 @@ export async function registerChatRoutes(app: FastifyInstance) {
         });
       }
 
-      const userId = req.user?.userId;
-      if (!userId) {
-        return reply.status(400).send({
-          error: { code: 'MISSING_USER_ID', message: 'user id is required' },
-        });
-      }
+      const userId = requireUserId(reply, req.user?.userId);
+      if (typeof userId !== 'string') return userId;
 
       const roles = req.user?.roles || [];
       const projectIds = req.user?.projectIds || [];
@@ -1427,12 +1404,8 @@ export async function registerChatRoutes(app: FastifyInstance) {
           error: { code: 'NOT_FOUND', message: 'Message not found' },
         });
       }
-      const userId = req.user?.userId;
-      if (!userId) {
-        return reply.status(400).send({
-          error: { code: 'MISSING_USER_ID', message: 'user id is required' },
-        });
-      }
+      const userId = requireUserId(reply, req.user?.userId);
+      if (typeof userId !== 'string') return userId;
 
       const roles = req.user?.roles || [];
       const projectIds = req.user?.projectIds || [];
@@ -1522,12 +1495,8 @@ export async function registerChatRoutes(app: FastifyInstance) {
           error: { code: 'NOT_FOUND', message: 'Message not found' },
         });
       }
-      const userId = req.user?.userId;
-      if (!userId) {
-        return reply.status(400).send({
-          error: { code: 'MISSING_USER_ID', message: 'user id is required' },
-        });
-      }
+      const userId = requireUserId(reply, req.user?.userId);
+      if (typeof userId !== 'string') return userId;
 
       const roles = req.user?.roles || [];
       const projectIds = req.user?.projectIds || [];
@@ -1714,12 +1683,8 @@ export async function registerChatRoutes(app: FastifyInstance) {
           .status(404)
           .send({ error: { code: 'NOT_FOUND', message: 'Not found' } });
       }
-      const userId = req.user?.userId;
-      if (!userId) {
-        return reply.status(400).send({
-          error: { code: 'MISSING_USER_ID', message: 'user id is required' },
-        });
-      }
+      const userId = requireUserId(reply, req.user?.userId);
+      if (typeof userId !== 'string') return userId;
       const roles = req.user?.roles || [];
       const projectIds = req.user?.projectIds || [];
       const groupIds = Array.isArray(req.user?.groupIds)
