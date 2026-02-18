@@ -48,6 +48,7 @@ import {
   parseNonNegativeInt,
 } from './chat/shared/inputParsers.js';
 import { normalizeMentions } from './chat/shared/mentions.js';
+import { requireUserId } from './chat/shared/requireUserId.js';
 import { parseDateParam } from '../utils/date.js';
 
 export async function registerChatRoomRoutes(app: FastifyInstance) {
@@ -1037,12 +1038,8 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
         limit?: string;
         before?: string;
       };
-      const userId = req.user?.userId;
-      if (!userId) {
-        return reply.status(400).send({
-          error: { code: 'MISSING_USER_ID', message: 'user id is required' },
-        });
-      }
+      const userId = requireUserId(reply, req.user?.userId);
+      if (typeof userId !== 'string') return userId;
 
       const take = parseLimit(limit);
       if (!take) {
@@ -1172,12 +1169,8 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
     { preHandler: requireRole(chatRoles) },
     async (req, reply) => {
       const { id } = req.params as { id: string };
-      const userId = req.user?.userId;
-      if (!userId) {
-        return reply.status(400).send({
-          error: { code: 'MISSING_USER_ID', message: 'user id is required' },
-        });
-      }
+      const userId = requireUserId(reply, req.user?.userId);
+      if (typeof userId !== 'string') return userId;
 
       const message = await prisma.chatMessage.findUnique({
         where: { id },
@@ -1269,12 +1262,8 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
       schema: chatRoomPatchSchema,
     },
     async (req, reply) => {
-      const userId = req.user?.userId;
-      if (!userId) {
-        return reply.status(400).send({
-          error: { code: 'MISSING_USER_ID', message: 'user id is required' },
-        });
-      }
+      const userId = requireUserId(reply, req.user?.userId);
+      if (typeof userId !== 'string') return userId;
 
       const { roomId } = req.params as { roomId: string };
       const body = req.body as {
@@ -1449,12 +1438,8 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
     '/chat-rooms',
     { preHandler: requireRole(chatRoles), schema: chatRoomCreateSchema },
     async (req, reply) => {
-      const userId = req.user?.userId;
-      if (!userId) {
-        return reply.status(400).send({
-          error: { code: 'MISSING_USER_ID', message: 'user id is required' },
-        });
-      }
+      const userId = requireUserId(reply, req.user?.userId);
+      if (typeof userId !== 'string') return userId;
       const roles = req.user?.roles || [];
       const canCreateRooms =
         roles.includes('admin') ||
@@ -1662,12 +1647,8 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
     '/chat-rooms/:roomId/members',
     { preHandler: requireRole(chatRoles), schema: chatRoomMemberAddSchema },
     async (req, reply) => {
-      const userId = req.user?.userId;
-      if (!userId) {
-        return reply.status(400).send({
-          error: { code: 'MISSING_USER_ID', message: 'user id is required' },
-        });
-      }
+      const userId = requireUserId(reply, req.user?.userId);
+      if (typeof userId !== 'string') return userId;
       const roles = req.user?.roles || [];
       const { roomId } = req.params as { roomId: string };
       const room = await prisma.chatRoom.findUnique({
@@ -1769,12 +1750,8 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
     { preHandler: requireRole(chatRoles) },
     async (req, reply) => {
       const { roomId } = req.params as { roomId: string };
-      const userId = req.user?.userId;
-      if (!userId) {
-        return reply.status(400).send({
-          error: { code: 'MISSING_USER_ID', message: 'user id is required' },
-        });
-      }
+      const userId = requireUserId(reply, req.user?.userId);
+      if (typeof userId !== 'string') return userId;
       const roles = req.user?.roles || [];
       const projectIds = req.user?.projectIds || [];
       const groupIds = Array.isArray(req.user?.groupIds)
@@ -1847,12 +1824,8 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
       if (keyword.length < 2) {
         return { users: [], groups: [] };
       }
-      const userId = req.user?.userId;
-      if (!userId) {
-        return reply.status(400).send({
-          error: { code: 'MISSING_USER_ID', message: 'user id is required' },
-        });
-      }
+      const userId = requireUserId(reply, req.user?.userId);
+      if (typeof userId !== 'string') return userId;
       const roles = req.user?.roles || [];
       const projectIds = req.user?.projectIds || [];
       const groupIds = Array.isArray(req.user?.groupIds)
@@ -1884,12 +1857,8 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
     { preHandler: requireRole(chatRoles) },
     async (req, reply) => {
       const { roomId } = req.params as { roomId: string };
-      const userId = req.user?.userId;
-      if (!userId) {
-        return reply.status(400).send({
-          error: { code: 'MISSING_USER_ID', message: 'user id is required' },
-        });
-      }
+      const userId = requireUserId(reply, req.user?.userId);
+      if (typeof userId !== 'string') return userId;
       const roles = req.user?.roles || [];
       const projectIds = req.user?.projectIds || [];
       const groupIds = Array.isArray(req.user?.groupIds)
@@ -1935,12 +1904,8 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
     { preHandler: requireRole(chatRoles) },
     async (req, reply) => {
       const { roomId } = req.params as { roomId: string };
-      const userId = req.user?.userId;
-      if (!userId) {
-        return reply.status(400).send({
-          error: { code: 'MISSING_USER_ID', message: 'user id is required' },
-        });
-      }
+      const userId = requireUserId(reply, req.user?.userId);
+      if (typeof userId !== 'string') return userId;
       const roles = req.user?.roles || [];
       const projectIds = req.user?.projectIds || [];
       const groupIds = Array.isArray(req.user?.groupIds)
@@ -1983,12 +1948,8 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
     { preHandler: requireRole(chatRoles) },
     async (req, reply) => {
       const { roomId } = req.params as { roomId: string };
-      const userId = req.user?.userId;
-      if (!userId) {
-        return reply.status(400).send({
-          error: { code: 'MISSING_USER_ID', message: 'user id is required' },
-        });
-      }
+      const userId = requireUserId(reply, req.user?.userId);
+      if (typeof userId !== 'string') return userId;
       const roles = req.user?.roles || [];
       const projectIds = req.user?.projectIds || [];
       const groupIds = Array.isArray(req.user?.groupIds)
@@ -2046,12 +2007,8 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
     },
     async (req, reply) => {
       const { roomId } = req.params as { roomId: string };
-      const userId = req.user?.userId;
-      if (!userId) {
-        return reply.status(400).send({
-          error: { code: 'MISSING_USER_ID', message: 'user id is required' },
-        });
-      }
+      const userId = requireUserId(reply, req.user?.userId);
+      if (typeof userId !== 'string') return userId;
       const roles = req.user?.roles || [];
       const projectIds = req.user?.projectIds || [];
       const groupIds = Array.isArray(req.user?.groupIds)
@@ -2177,12 +2134,8 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
         tag?: string;
         q?: string;
       };
-      const userId = req.user?.userId;
-      if (!userId) {
-        return reply.status(400).send({
-          error: { code: 'MISSING_USER_ID', message: 'user id is required' },
-        });
-      }
+      const userId = requireUserId(reply, req.user?.userId);
+      if (typeof userId !== 'string') return userId;
       const roles = req.user?.roles || [];
       const projectIds = req.user?.projectIds || [];
       const groupIds = Array.isArray(req.user?.groupIds)
@@ -2289,12 +2242,8 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
         limit?: number;
       };
 
-      const userId = req.user?.userId;
-      if (!userId) {
-        return reply.status(400).send({
-          error: { code: 'MISSING_USER_ID', message: 'user id is required' },
-        });
-      }
+      const userId = requireUserId(reply, req.user?.userId);
+      if (typeof userId !== 'string') return userId;
 
       const roles = req.user?.roles || [];
       const projectIds = req.user?.projectIds || [];
@@ -2474,12 +2423,8 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
         limit?: number;
       };
 
-      const userId = req.user?.userId;
-      if (!userId) {
-        return reply.status(400).send({
-          error: { code: 'MISSING_USER_ID', message: 'user id is required' },
-        });
-      }
+      const userId = requireUserId(reply, req.user?.userId);
+      if (typeof userId !== 'string') return userId;
 
       const config = getChatExternalLlmConfig();
       if (config.provider === 'disabled') {
@@ -2711,12 +2656,8 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
         tags?: string[];
         mentions?: unknown;
       };
-      const userId = req.user?.userId;
-      if (!userId) {
-        return reply.status(400).send({
-          error: { code: 'MISSING_USER_ID', message: 'user id is required' },
-        });
-      }
+      const userId = requireUserId(reply, req.user?.userId);
+      if (typeof userId !== 'string') return userId;
       const roles = req.user?.roles || [];
       const projectIds = req.user?.projectIds || [];
       const groupIds = Array.isArray(req.user?.groupIds)
@@ -2823,12 +2764,8 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
         requiredGroupIds?: string[];
         requiredRoles?: string[];
       };
-      const userId = req.user?.userId;
-      if (!userId) {
-        return reply.status(400).send({
-          error: { code: 'MISSING_USER_ID', message: 'user id is required' },
-        });
-      }
+      const userId = requireUserId(reply, req.user?.userId);
+      if (typeof userId !== 'string') return userId;
       const roles = req.user?.roles || [];
       const projectIds = req.user?.projectIds || [];
       const groupIds = Array.isArray(req.user?.groupIds)
@@ -2915,12 +2852,8 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
         tags?: string[];
         mentions?: unknown;
       };
-      const userId = req.user?.userId;
-      if (!userId) {
-        return reply.status(400).send({
-          error: { code: 'MISSING_USER_ID', message: 'user id is required' },
-        });
-      }
+      const userId = requireUserId(reply, req.user?.userId);
+      if (typeof userId !== 'string') return userId;
       const roles = req.user?.roles || [];
       const projectIds = req.user?.projectIds || [];
       const groupIds = Array.isArray(req.user?.groupIds)
