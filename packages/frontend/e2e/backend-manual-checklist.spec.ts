@@ -400,6 +400,19 @@ test('backend manual checklist: members/vendors/time/expenses/wellbeing @extende
     roles: ['user'],
     projectIds: [defaultProjectId],
   });
+  const forbiddenMemberAddRes = await request.post(
+    `${apiBase}/projects/${encodeURIComponent(defaultProjectId)}/members`,
+    {
+      data: {
+        userId: `e2e-member-forbidden-add-${suffix}@example.com`,
+        role: 'member',
+      },
+      headers: memberHeaders,
+    },
+  );
+  expect(forbiddenMemberAddRes.status()).toBe(403);
+  const forbiddenMemberAddBody = await forbiddenMemberAddRes.json();
+  expect(forbiddenMemberAddBody?.error).toBe('forbidden_project');
 
   const membersRes = await request.get(
     `${apiBase}/projects/${encodeURIComponent(defaultProjectId)}/members`,
@@ -425,6 +438,15 @@ test('backend manual checklist: members/vendors/time/expenses/wellbeing @extende
     },
   );
   await ensureOk(bulkRes);
+  const forbiddenMemberDeleteRes = await request.delete(
+    `${apiBase}/projects/${encodeURIComponent(
+      defaultProjectId,
+    )}/members/${encodeURIComponent(`e2e-bulk-${suffix}-1@example.com`)}`,
+    { headers: memberHeaders },
+  );
+  expect(forbiddenMemberDeleteRes.status()).toBe(403);
+  const forbiddenMemberDeleteBody = await forbiddenMemberDeleteRes.json();
+  expect(forbiddenMemberDeleteBody?.error).toBe('forbidden_project');
 
   await expect
     .poll(

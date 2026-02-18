@@ -70,6 +70,7 @@ test('project access guard: route/query/body projectId is enforced @core', async
   expect(chatForbiddenRes.status()).toBe(403);
   const chatForbidden = await chatForbiddenRes.json();
   expect(chatForbidden?.error?.code).toBe('forbidden_project');
+  expect(chatForbidden?.error?.category).toBe('permission');
 
   const chatAllowedRes = await request.get(
     `${apiBase}/projects/${encodeURIComponent(projectId)}/chat-messages?limit=1`,
@@ -90,6 +91,7 @@ test('project access guard: route/query/body projectId is enforced @core', async
   expect(timeEntriesForbiddenRes.status()).toBe(403);
   const timeEntriesForbidden = await timeEntriesForbiddenRes.json();
   expect(timeEntriesForbidden?.error?.code).toBe('forbidden_project');
+  expect(timeEntriesForbidden?.error?.category).toBe('permission');
 
   const timeEntriesAllowedRes = await request.get(
     `${apiBase}/time-entries?projectId=${encodeURIComponent(projectId)}`,
@@ -119,6 +121,43 @@ test('project access guard: route/query/body projectId is enforced @core', async
   expect(timeEntryForbiddenCreateRes.status()).toBe(403);
   const timeEntryForbiddenCreate = await timeEntryForbiddenCreateRes.json();
   expect(timeEntryForbiddenCreate?.error?.code).toBe('forbidden_project');
+  expect(timeEntryForbiddenCreate?.error?.category).toBe('permission');
+
+  const expenseForbiddenListRes = await request.get(
+    `${apiBase}/expenses?projectId=${encodeURIComponent(projectId)}`,
+    { headers: outsiderHeaders },
+  );
+  expect(expenseForbiddenListRes.status()).toBe(403);
+  const expenseForbiddenList = await expenseForbiddenListRes.json();
+  expect(expenseForbiddenList?.error?.code).toBe('forbidden_project');
+  expect(expenseForbiddenList?.error?.category).toBe('permission');
+
+  const expenseForbiddenCreateRes = await request.post(`${apiBase}/expenses`, {
+    data: {
+      projectId,
+      userId: 'someone-else@example.com',
+      amount: 1200,
+      category: 'travel',
+      currency: 'JPY',
+      incurredOn: new Date().toISOString().slice(0, 10),
+    },
+    headers: outsiderHeaders,
+  });
+  expect(expenseForbiddenCreateRes.status()).toBe(403);
+  const expenseForbiddenCreate = await expenseForbiddenCreateRes.json();
+  expect(expenseForbiddenCreate?.error?.code).toBe('forbidden_project');
+  expect(expenseForbiddenCreate?.error?.category).toBe('permission');
+
+  const wellbeingForbiddenRes = await request.get(
+    `${apiBase}/wellbeing-entries`,
+    {
+      headers: outsiderHeaders,
+    },
+  );
+  expect(wellbeingForbiddenRes.status()).toBe(403);
+  const wellbeingForbidden = await wellbeingForbiddenRes.json();
+  expect(wellbeingForbidden?.error?.code).toBe('forbidden');
+  expect(wellbeingForbidden?.error?.category).toBe('permission');
 
   const timeEntryMemberCreateRes = await request.post(
     `${apiBase}/time-entries`,
