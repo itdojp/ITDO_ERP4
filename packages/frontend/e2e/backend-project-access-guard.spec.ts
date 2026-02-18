@@ -29,7 +29,7 @@ async function ensureOk(res: { ok(): boolean; status(): number; text(): any }) {
   throw new Error(`[e2e] api failed: ${res.status()} ${body}`);
 }
 
-test('project access guard: route/query/body projectId is enforced @core', async ({
+test('api access guard: project/role boundaries are enforced @core', async ({
   request,
 }) => {
   const suffix = runId();
