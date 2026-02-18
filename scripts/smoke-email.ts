@@ -1,10 +1,44 @@
-import { sendEmail } from '../packages/backend/src/services/notifier.js';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import type { NotifyResult } from '../packages/backend/src/services/notifier.js';
 
 type TestResult = {
   name: string;
   ok: boolean;
   details?: string;
 };
+
+type SendEmailFn = (
+  to: string[],
+  subject: string,
+  body: string,
+) => Promise<NotifyResult>;
+
+const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
+const NOTIFIER_DIST_PATH = path.resolve(
+  SCRIPT_DIR,
+  '../packages/backend/dist/services/notifier.js',
+);
+
+async function loadSendEmail(): Promise<SendEmailFn> {
+  if (!fs.existsSync(NOTIFIER_DIST_PATH)) {
+    throw new Error(
+      [
+        'notifier dist module not found.',
+        'run: npm run build --prefix packages/backend',
+      ].join(' '),
+    );
+  }
+  const notifierModulePath = pathToFileURL(NOTIFIER_DIST_PATH).href;
+  const notifierModule = (await import(notifierModulePath)) as {
+    sendEmail: SendEmailFn;
+  };
+  if (typeof notifierModule.sendEmail !== 'function') {
+    throw new Error('notifier module does not export sendEmail');
+  }
+  return notifierModule.sendEmail;
+}
 
 function expect(condition: boolean, message: string) {
   if (!condition) {
@@ -13,6 +47,7 @@ function expect(condition: boolean, message: string) {
 }
 
 async function runTests() {
+  const sendEmail = await loadSendEmail();
   const results: TestResult[] = [];
 
   async function test(name: string, fn: () => Promise<void>) {

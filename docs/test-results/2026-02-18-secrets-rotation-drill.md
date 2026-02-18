@@ -26,11 +26,16 @@
 ## 結果
 
 - 手順定義: **OK**
-- スモーク実行: **NG**
+- スモーク実行（初回 2026-02-18）: **NG**
   - 失敗内容: `ERR_MODULE_NOT_FOUND`（`packages/backend/src/services/notifier.js` 解決不可）
   - 判定: Runbook には記載したが、PoC 環境での実行前提（ts 実行環境/参照パス）が不足
+- スモーク再実行（再実施 2026-02-19）: **OK**
+  - 実行コマンド:
+    - `npm run build --prefix packages/backend`
+    - `npx ts-node --project packages/backend/tsconfig.json scripts/smoke-email.ts`
+  - 結果: `stub: invalid recipients fail / stub: valid recipients pass / smtp: missing config fails` が全て PASS
 
 ## フォローアップ
 
-- `scripts/smoke-email.ts` を CI/ローカル双方で実行可能な形に修正する（ts 実行方法の固定 or dist 参照へ変更）
-- 次回演習で再実行し、成功ログを本ファイルへ追記する
+- Issue: #1148（`scripts/smoke-email.ts` の実行互換性修正）
+- 対応: dist 参照へ修正し、Runbook と演習記録を更新済み
