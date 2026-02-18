@@ -2366,6 +2366,16 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
 
       const config = getChatExternalLlmConfig();
       if (config.provider === 'disabled') {
+        await logAudit({
+          action: 'chat_external_llm_blocked',
+          targetTable: 'chat_rooms',
+          targetId: roomId,
+          metadata: {
+            reason: 'provider_not_configured',
+            roomId,
+          } as Prisma.InputJsonValue,
+          ...auditContextFromRequest(req),
+        });
         return reply.status(503).send({
           error: {
             code: 'EXTERNAL_LLM_NOT_CONFIGURED',
@@ -2399,6 +2409,19 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
         });
       }
       if (!room.isOfficial || !room.allowExternalIntegrations) {
+        await logAudit({
+          action: 'chat_external_llm_blocked',
+          targetTable: 'chat_rooms',
+          targetId: room.id,
+          metadata: {
+            reason: 'external_integrations_disabled',
+            roomId: room.id,
+            roomType: room.type,
+            isOfficial: room.isOfficial,
+            allowExternalIntegrations: room.allowExternalIntegrations,
+          } as Prisma.InputJsonValue,
+          ...auditContextFromRequest(req),
+        });
         return reply.status(403).send({
           error: {
             code: 'EXTERNAL_INTEGRATIONS_DISABLED',
@@ -2467,6 +2490,20 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
         }),
       ]);
       if (userCount >= limits.userPerHour || roomCount >= limits.roomPerHour) {
+        await logAudit({
+          action: 'chat_external_llm_rate_limited',
+          targetTable: 'chat_rooms',
+          targetId: room.id,
+          metadata: {
+            roomId: room.id,
+            roomType: room.type,
+            userCount,
+            roomCount,
+            userPerHour: limits.userPerHour,
+            roomPerHour: limits.roomPerHour,
+          } as Prisma.InputJsonValue,
+          ...auditContextFromRequest(req),
+        });
         return reply.status(429).send({
           error: {
             code: 'RATE_LIMITED',

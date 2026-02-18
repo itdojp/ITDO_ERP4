@@ -37,6 +37,8 @@ PoC→運用フェーズに向けて、最低限のセキュリティ基準（�
   - 設定: `RATE_LIMIT_MAX`（既定 600）/ `RATE_LIMIT_WINDOW`（既定 `1 minute`）
 - 可観測性
   - request-id（`x-request-id`）付与と統一エラー応答（`docs/ops/observability.md`）
+- 監査ログ
+  - 必須イベント一覧と最小項目を定義（`docs/security/audit-required-events.md`）
 - キャッシュ制御
   - backend API は `Cache-Control: no-store` / `Pragma: no-cache` を既定付与
   - Service Worker は静的アセット（`/assets/*` とコアファイル）のみキャッシュし、`/api*`・`/health*`・`/ready*` はキャッシュしない

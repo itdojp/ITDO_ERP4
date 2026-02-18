@@ -408,6 +408,18 @@ export async function registerProjectRoutes(app: FastifyInstance) {
         });
       }
       if (statusChanged) {
+        await logAudit({
+          action: 'project_status_updated',
+          targetTable: 'projects',
+          targetId: projectId,
+          reasonText: reasonText || undefined,
+          metadata: {
+            fromStatus: current.status,
+            toStatus: project.status,
+            ownerUserId: project.ownerUserId,
+          } as Prisma.InputJsonValue,
+          ...auditContextFromRequest(req),
+        });
         try {
           await createProjectStatusChangedNotifications({
             projectId,
