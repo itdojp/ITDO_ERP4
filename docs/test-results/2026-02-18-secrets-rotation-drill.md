@@ -30,7 +30,9 @@
   - 失敗内容: `ERR_MODULE_NOT_FOUND`（`packages/backend/src/services/notifier.js` 解決不可）
   - 判定: Runbook には記載したが、PoC 環境での実行前提（ts 実行環境/参照パス）が不足
 - スモーク再実行（再実施 2026-02-19）: **OK**
-  - 実行コマンド: `npx ts-node --project packages/backend/tsconfig.json scripts/smoke-email.ts`
+  - 実行コマンド:
+    - `npm run build --prefix packages/backend`
+    - `npx ts-node --project packages/backend/tsconfig.json scripts/smoke-email.ts`
   - 結果: `stub: invalid recipients fail / stub: valid recipients pass / smtp: missing config fails` が全て PASS
 
 ## フォローアップ

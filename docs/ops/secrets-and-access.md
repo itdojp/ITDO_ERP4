@@ -100,6 +100,7 @@
 - backend 基本疎通:
   - `BASE_URL=http://localhost:3001 ./scripts/smoke-backend.sh`
 - メール通知（stub/smtp 設定確認を含む最小チェック）:
+  - `npm run build --prefix packages/backend`
   - `npx ts-node --project packages/backend/tsconfig.json scripts/smoke-email.ts`
 - 実施結果は `docs/test-results/` の記録と運用Issueに残す（成功/失敗と原因）。
 
