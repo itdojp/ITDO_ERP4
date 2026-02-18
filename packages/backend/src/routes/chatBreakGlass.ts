@@ -10,6 +10,7 @@ import {
 } from './validators.js';
 import { CHAT_ROLES } from './chat/shared/constants.js';
 import { parseLimit } from './chat/shared/inputParsers.js';
+import { requireUserId } from './chat/shared/requireUserId.js';
 import { parseDateParam } from '../utils/date.js';
 
 function resolveEffectiveApproverRole(roles: string[]) {
@@ -78,18 +79,15 @@ export async function registerChatBreakGlassRoutes(app: FastifyInstance) {
     async (req, reply) => {
       const { roomId } = req.params as { roomId: string };
       const roles = req.user?.roles || [];
-      const userId = req.user?.userId || '';
+      const candidateUserId = req.user?.userId || '';
 
       const canSeeAllRooms =
         roles.includes('admin') ||
         roles.includes('mgmt') ||
         roles.includes('exec');
       if (!canSeeAllRooms) {
-        if (!userId) {
-          return reply.status(400).send({
-            error: { code: 'MISSING_USER_ID', message: 'user id is required' },
-          });
-        }
+        const userId = requireUserId(reply, candidateUserId);
+        if (typeof userId !== 'string') return userId;
         const projectIds = req.user?.projectIds || [];
         const groupIds = Array.isArray(req.user?.groupIds)
           ? req.user.groupIds
@@ -162,12 +160,8 @@ export async function registerChatBreakGlassRoutes(app: FastifyInstance) {
           error: { code: 'FORBIDDEN_ROLE', message: 'admin cannot request' },
         });
       }
-      const requesterUserId = req.user?.userId;
-      if (!requesterUserId) {
-        return reply.status(400).send({
-          error: { code: 'MISSING_USER_ID', message: 'user id is required' },
-        });
-      }
+      const requesterUserId = requireUserId(reply, req.user?.userId);
+      if (typeof requesterUserId !== 'string') return requesterUserId;
       const body = req.body as {
         projectId?: string;
         roomId?: string;
@@ -307,12 +301,8 @@ export async function registerChatBreakGlassRoutes(app: FastifyInstance) {
           error: { code: 'FORBIDDEN_ROLE', message: 'admin cannot approve' },
         });
       }
-      const approverUserId = req.user?.userId;
-      if (!approverUserId) {
-        return reply.status(400).send({
-          error: { code: 'MISSING_USER_ID', message: 'user id is required' },
-        });
-      }
+      const approverUserId = requireUserId(reply, req.user?.userId);
+      if (typeof approverUserId !== 'string') return approverUserId;
       const approverRole = resolveEffectiveApproverRole(roles);
       if (!approverRole) {
         return reply.status(403).send({
@@ -446,12 +436,8 @@ export async function registerChatBreakGlassRoutes(app: FastifyInstance) {
           error: { code: 'FORBIDDEN_ROLE', message: 'admin cannot reject' },
         });
       }
-      const rejecterUserId = req.user?.userId;
-      if (!rejecterUserId) {
-        return reply.status(400).send({
-          error: { code: 'MISSING_USER_ID', message: 'user id is required' },
-        });
-      }
+      const rejecterUserId = requireUserId(reply, req.user?.userId);
+      if (typeof rejecterUserId !== 'string') return rejecterUserId;
       const rejecterRole = resolveEffectiveApproverRole(roles);
       if (!rejecterRole) {
         return reply.status(403).send({
@@ -650,12 +636,8 @@ export async function registerChatBreakGlassRoutes(app: FastifyInstance) {
           error: { code: 'FORBIDDEN_ROLE', message: 'admin cannot access' },
         });
       }
-      const actorUserId = req.user?.userId;
-      if (!actorUserId) {
-        return reply.status(400).send({
-          error: { code: 'MISSING_USER_ID', message: 'user id is required' },
-        });
-      }
+      const actorUserId = requireUserId(reply, req.user?.userId);
+      if (typeof actorUserId !== 'string') return actorUserId;
 
       const { id } = req.params as { id: string };
       const request = await prisma.chatBreakGlassRequest.findUnique({
