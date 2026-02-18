@@ -10,7 +10,6 @@ import {
 } from './validators.js';
 import { prisma } from '../services/db.js';
 import { requireProjectAccess, requireRole } from '../services/rbac.js';
-import { ensureChatRoomContentAccess } from '../services/chatRoomAccess.js';
 import { auditContextFromRequest, logAudit } from '../services/audit.js';
 import {
   logChatAckRequestCreated,
@@ -49,8 +48,8 @@ import {
   enforceAllMentionRateLimit,
 } from './chat/shared/allMentionRateLimit.js';
 import { resolveAckRequiredTarget } from './chat/shared/ackRequiredTarget.js';
-import { buildRoomAccessErrorResponse } from './chat/shared/roomAccessError.js';
 import { normalizeMentions } from './chat/shared/mentions.js';
+import { ensureRoomAccessWithReasonError } from './chat/shared/roomAccessGuard.js';
 import { requireUserId } from './chat/shared/requireUserId.js';
 import { parseDateParam } from '../utils/date.js';
 
@@ -136,26 +135,12 @@ export async function registerChatRoutes(app: FastifyInstance) {
     roomId: string;
     userId: string;
   }) {
-    const roles = options.req.user?.roles || [];
-    const projectIds = options.req.user?.projectIds || [];
-    const groupIds = Array.isArray(options.req.user?.groupIds)
-      ? options.req.user.groupIds
-      : [];
-    const groupAccountIds = Array.isArray(options.req.user?.groupAccountIds)
-      ? options.req.user.groupAccountIds
-      : [];
-    const access = await ensureChatRoomContentAccess({
+    return ensureRoomAccessWithReasonError({
+      req: options.req,
+      reply: options.reply,
       roomId: options.roomId,
       userId: options.userId,
-      roles,
-      projectIds,
-      groupIds,
-      groupAccountIds,
     });
-    if (access.ok) return access;
-    const roomAccessError = buildRoomAccessErrorResponse(access.reason);
-    options.reply.status(roomAccessError.status).send(roomAccessError.body);
-    return null;
   }
 
   async function logChatMessageMentions(options: {

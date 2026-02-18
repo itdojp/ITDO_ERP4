@@ -3,13 +3,13 @@ import type { Prisma } from '@prisma/client';
 import { prisma } from '../services/db.js';
 import { hasProjectAccess, requireRole } from '../services/rbac.js';
 import { auditContextFromRequest, logAudit } from '../services/audit.js';
-import { ensureChatRoomContentAccess } from '../services/chatRoomAccess.js';
 import {
   chatBreakGlassRejectSchema,
   chatBreakGlassRequestSchema,
 } from './validators.js';
 import { CHAT_ROLES } from './chat/shared/constants.js';
 import { parseLimit } from './chat/shared/inputParsers.js';
+import { ensureRoomAccessWithReasonError } from './chat/shared/roomAccessGuard.js';
 import { requireUserId } from './chat/shared/requireUserId.js';
 import { parseDateParam } from '../utils/date.js';
 
@@ -88,36 +88,13 @@ export async function registerChatBreakGlassRoutes(app: FastifyInstance) {
       if (!canSeeAllRooms) {
         const userId = requireUserId(reply, candidateUserId);
         if (typeof userId !== 'string') return userId;
-        const projectIds = req.user?.projectIds || [];
-        const groupIds = Array.isArray(req.user?.groupIds)
-          ? req.user.groupIds
-          : [];
-        const groupAccountIds = Array.isArray(req.user?.groupAccountIds)
-          ? req.user.groupAccountIds
-          : [];
-        const access = await ensureChatRoomContentAccess({
+        const access = await ensureRoomAccessWithReasonError({
+          req,
+          reply,
           roomId,
           userId,
-          roles,
-          projectIds,
-          groupIds,
-          groupAccountIds,
         });
-        if (!access.ok) {
-          return reply.status(access.reason === 'not_found' ? 404 : 403).send({
-            error: {
-              code:
-                access.reason === 'not_found'
-                  ? 'NOT_FOUND'
-                  : access.reason === 'forbidden_project'
-                    ? 'FORBIDDEN_PROJECT'
-                    : access.reason === 'forbidden_external_room'
-                      ? 'FORBIDDEN_EXTERNAL_ROOM'
-                      : 'FORBIDDEN_ROOM_MEMBER',
-              message: 'Access to this room is forbidden',
-            },
-          });
-        }
+        if (!access) return;
       }
 
       const items = await prisma.chatBreakGlassRequest.findMany({
