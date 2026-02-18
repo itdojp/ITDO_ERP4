@@ -92,6 +92,42 @@ test('envValidation: AUTH_ALLOW_HEADER_FALLBACK_IN_PROD validates boolean values
   assert.match(result.stderr, /AUTH_ALLOW_HEADER_FALLBACK_IN_PROD/);
 });
 
+test('envValidation: RATE_LIMIT_REDIS_URL validates redis scheme', () => {
+  const result = runEnvValidation({
+    RATE_LIMIT_REDIS_URL: 'https://example.com:6379',
+  });
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /RATE_LIMIT_REDIS_URL/);
+});
+
+test('envValidation: RATE_LIMIT_REDIS_CONNECT_TIMEOUT_MS validates positive integer', () => {
+  const result = runEnvValidation({
+    RATE_LIMIT_REDIS_CONNECT_TIMEOUT_MS: '0',
+  });
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /RATE_LIMIT_REDIS_CONNECT_TIMEOUT_MS/);
+});
+
+test('envValidation: RATE_LIMIT_MAX validates positive integer', () => {
+  const result = runEnvValidation({
+    RATE_LIMIT_MAX: '0',
+  });
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /RATE_LIMIT_MAX/);
+});
+
+test('envValidation: RATE_LIMIT_DOC_SEND_MAX validates positive integer', () => {
+  const result = runEnvValidation({
+    RATE_LIMIT_DOC_SEND_MAX: '-5',
+  });
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /RATE_LIMIT_DOC_SEND_MAX/);
+});
+
 test('auth plugin: production + AUTH_MODE=hybrid rejects missing bearer token by default', () => {
   const result = runCurrentUserRequest(
     {

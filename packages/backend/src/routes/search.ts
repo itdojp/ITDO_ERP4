@@ -4,6 +4,7 @@ import { prisma } from '../services/db.js';
 import { requireUserContext } from '../services/authContext.js';
 import { requireRole } from '../services/rbac.js';
 import { auditContextFromRequest, logAudit } from '../services/audit.js';
+import { getRouteRateLimitOptions } from '../services/rateLimitOverrides.js';
 
 function parseLimit(raw: string | undefined, fallback: number) {
   if (!raw) return fallback;
@@ -19,10 +20,17 @@ function normalizeQuery(value: unknown) {
 
 export async function registerSearchRoutes(app: FastifyInstance) {
   const allowedRoles = ['admin', 'mgmt', 'exec', 'user', 'hr', 'external_chat'];
+  const searchRateLimit = getRouteRateLimitOptions('RATE_LIMIT_SEARCH', {
+    max: 120,
+    timeWindow: '1 minute',
+  });
 
   app.get(
     '/search',
-    { preHandler: requireRole(allowedRoles) },
+    {
+      preHandler: requireRole(allowedRoles),
+      config: { rateLimit: searchRateLimit },
+    },
     async (req, reply) => {
       const { userId, roles, projectIds = [] } = requireUserContext(req);
       if (!userId) {

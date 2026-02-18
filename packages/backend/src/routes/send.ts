@@ -17,6 +17,7 @@ import { prisma } from '../services/db.js';
 import type { NotifyResult } from '../services/notifier.js';
 import { evaluateActionPolicyWithFallback } from '../services/actionPolicy.js';
 import { logActionPolicyOverrideIfNeeded } from '../services/actionPolicyAudit.js';
+import { getRouteRateLimitOptions } from '../services/rateLimitOverrides.js';
 
 type TemplateResolveResult = {
   template: PdfTemplate | null;
@@ -271,9 +272,24 @@ function extractTemplateSettingId(metadata: unknown) {
 }
 
 export async function registerSendRoutes(app: FastifyInstance) {
+  const sendRouteRateLimit = getRouteRateLimitOptions('RATE_LIMIT_DOC_SEND', {
+    max: 20,
+    timeWindow: '1 minute',
+  });
+  const sendRetryRateLimit = getRouteRateLimitOptions(
+    'RATE_LIMIT_DOC_SEND_RETRY',
+    {
+      max: 10,
+      timeWindow: '1 minute',
+    },
+  );
+
   app.post(
     '/estimates/:id/send',
-    { preHandler: requireRole(['admin', 'mgmt']) },
+    {
+      preHandler: requireRole(['admin', 'mgmt']),
+      config: { rateLimit: sendRouteRateLimit },
+    },
     async (req, reply) => {
       const { id } = req.params as { id: string };
       const {
@@ -447,7 +463,10 @@ export async function registerSendRoutes(app: FastifyInstance) {
 
   app.post(
     '/invoices/:id/send',
-    { preHandler: requireRole(['admin', 'mgmt']) },
+    {
+      preHandler: requireRole(['admin', 'mgmt']),
+      config: { rateLimit: sendRouteRateLimit },
+    },
     async (req, reply) => {
       const { id } = req.params as { id: string };
       const {
@@ -621,7 +640,10 @@ export async function registerSendRoutes(app: FastifyInstance) {
 
   app.post(
     '/purchase-orders/:id/send',
-    { preHandler: requireRole(['admin', 'mgmt']) },
+    {
+      preHandler: requireRole(['admin', 'mgmt']),
+      config: { rateLimit: sendRouteRateLimit },
+    },
     async (req, reply) => {
       const { id } = req.params as { id: string };
       const {
@@ -821,7 +843,10 @@ export async function registerSendRoutes(app: FastifyInstance) {
 
   app.post(
     '/document-send-logs/:id/retry',
-    { preHandler: requireRole(['admin', 'mgmt']) },
+    {
+      preHandler: requireRole(['admin', 'mgmt']),
+      config: { rateLimit: sendRetryRateLimit },
+    },
     async (req, reply) => {
       const { id } = req.params as { id: string };
       const sendLog = await prisma.documentSendLog.findUnique({

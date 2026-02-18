@@ -39,6 +39,33 @@ function isHttpUrl(value: string) {
   }
 }
 
+function isRedisUrl(value: string) {
+  try {
+    const url = new URL(value);
+    return url.protocol === 'redis:' || url.protocol === 'rediss:';
+  } catch {
+    return false;
+  }
+}
+
+function isPositiveInteger(value: string | undefined) {
+  const normalized = normalizeString(value);
+  if (!normalized) return false;
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) && parsed > 0 && Number.isInteger(parsed);
+}
+
+function assertPositiveIntegerEnv(
+  issues: ValidationIssue[],
+  key: string,
+  message = '1以上の整数で指定してください',
+) {
+  const raw = normalizeString(process.env[key]);
+  if (raw && !isPositiveInteger(raw)) {
+    addIssue(issues, key, message);
+  }
+}
+
 function assertRequired(
   issues: ValidationIssue[],
   key: string,
@@ -95,6 +122,18 @@ export function assertValidBackendEnv() {
       }
     }
   }
+
+  const rateLimitRedisUrl = normalizeString(process.env.RATE_LIMIT_REDIS_URL);
+  if (rateLimitRedisUrl && !isRedisUrl(rateLimitRedisUrl)) {
+    addIssue(issues, 'RATE_LIMIT_REDIS_URL', 'redis(s) URL を指定してください');
+  }
+  assertPositiveIntegerEnv(issues, 'RATE_LIMIT_MAX');
+  assertPositiveIntegerEnv(issues, 'RATE_LIMIT_REDIS_CONNECT_TIMEOUT_MS');
+  assertPositiveIntegerEnv(issues, 'RATE_LIMIT_SEARCH_MAX');
+  assertPositiveIntegerEnv(issues, 'RATE_LIMIT_AI_SUMMARY_MAX');
+  assertPositiveIntegerEnv(issues, 'RATE_LIMIT_ATTACHMENT_UPLOAD_MAX');
+  assertPositiveIntegerEnv(issues, 'RATE_LIMIT_DOC_SEND_MAX');
+  assertPositiveIntegerEnv(issues, 'RATE_LIMIT_DOC_SEND_RETRY_MAX');
 
   const authMode = (process.env.AUTH_MODE || 'header').trim().toLowerCase();
   const allowedAuthModes = new Set(['header', 'jwt', 'hybrid']);
