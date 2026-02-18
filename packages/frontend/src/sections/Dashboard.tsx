@@ -954,7 +954,7 @@ export const Dashboard: React.FC = () => {
         </div>
       </Card>
       <div className="row" style={{ alignItems: 'center' }}>
-        <p className="badge">
+        <p className="badge" data-testid="dashboard-alerts-badge">
           Alerts{' '}
           {showAll
             ? `(全${alerts.length}件)`
@@ -968,7 +968,11 @@ export const Dashboard: React.FC = () => {
           </div>
         )}
       </div>
-      <div className="list" style={{ display: 'grid', gap: 8 }}>
+      <div
+        className="list"
+        style={{ display: 'grid', gap: 8 }}
+        data-testid="dashboard-alerts-list"
+      >
         {visibleAlerts.map((a) => (
           <Card key={a.id} padding="small">
             <div className="row" style={{ justifyContent: 'space-between' }}>
