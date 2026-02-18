@@ -21,9 +21,7 @@ import {
   StatusBadge,
   Tabs,
   Toast,
-  createLocalStorageSavedViewsAdapter,
   erpStatusDictionary,
-  useSavedViews,
 } from '../ui';
 import type { DataTableColumn, DataTableRow } from '../ui';
 import { formatDateForFilename, openResponseInNewTab } from '../utils/download';
@@ -36,6 +34,7 @@ import { VendorInvoiceLineDialog } from './vendor-documents/VendorInvoiceLineDia
 import { VendorInvoicePoLinkDialog } from './vendor-documents/VendorInvoicePoLinkDialog';
 import { VendorInvoiceSavedViewBar } from './vendor-documents/VendorInvoiceSavedViewBar';
 import { buildVendorInvoiceLinePayload } from './vendor-documents/vendorInvoiceLinePayload';
+import { useVendorInvoiceSavedViews } from './vendor-documents/useVendorInvoiceSavedViews';
 import {
   defaultPurchaseOrderForm,
   defaultVendorInvoiceForm,
@@ -51,7 +50,6 @@ import {
 import type {
   DocumentSendLog,
   DocumentTabId,
-  InvoiceSavedFilterPayload,
   ListStatus,
   MessageState,
   ProjectOption,
@@ -153,26 +151,7 @@ export const VendorDocuments: React.FC = () => {
   } | null>(null);
   const [invoiceLines, setInvoiceLines] = useState<VendorInvoiceLine[]>([]);
   const [invoiceLineLoading, setInvoiceLineLoading] = useState(false);
-  const invoiceInitialViewTimestamp = useMemo(
-    () => new Date().toISOString(),
-    [],
-  );
-  const invoiceSavedViews = useSavedViews<InvoiceSavedFilterPayload>({
-    initialViews: [
-      {
-        id: 'default',
-        name: '既定',
-        payload: { search: '', status: 'all' },
-        createdAt: invoiceInitialViewTimestamp,
-        updatedAt: invoiceInitialViewTimestamp,
-      },
-    ],
-    initialActiveViewId: 'default',
-    storageAdapter:
-      createLocalStorageSavedViewsAdapter<InvoiceSavedFilterPayload>(
-        'erp4-vendor-invoice-filter-saved-views',
-      ),
-  });
+  const invoiceSavedViews = useVendorInvoiceSavedViews();
   const [invoiceLineSaving, setInvoiceLineSaving] = useState(false);
   const [invoiceLineMessage, setInvoiceLineMessage] =
     useState<MessageState>(null);

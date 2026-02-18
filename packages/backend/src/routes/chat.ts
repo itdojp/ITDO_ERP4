@@ -49,6 +49,7 @@ import {
   enforceAllMentionRateLimit,
 } from './chat/shared/allMentionRateLimit.js';
 import { resolveAckRequiredTarget } from './chat/shared/ackRequiredTarget.js';
+import { buildRoomAccessErrorResponse } from './chat/shared/roomAccessError.js';
 import { normalizeMentions } from './chat/shared/mentions.js';
 import { parseDateParam } from '../utils/date.js';
 
@@ -1108,19 +1109,8 @@ export async function registerChatRoutes(app: FastifyInstance) {
         groupAccountIds,
       });
       if (!access.ok) {
-        return reply.status(access.reason === 'not_found' ? 404 : 403).send({
-          error: {
-            code:
-              access.reason === 'not_found'
-                ? 'NOT_FOUND'
-                : access.reason === 'forbidden_project'
-                  ? 'FORBIDDEN_PROJECT'
-                  : access.reason === 'forbidden_external_room'
-                    ? 'FORBIDDEN_EXTERNAL_ROOM'
-                    : 'FORBIDDEN_ROOM_MEMBER',
-            message: 'Access to this room is forbidden',
-          },
-        });
+        const roomAccessError = buildRoomAccessErrorResponse(access.reason);
+        return reply.status(roomAccessError.status).send(roomAccessError.body);
       }
       const ackTarget = resolveAckRequiredTarget(
         requestItem.requiredUserIds,
@@ -1220,19 +1210,8 @@ export async function registerChatRoutes(app: FastifyInstance) {
         groupAccountIds,
       });
       if (!access.ok) {
-        return reply.status(access.reason === 'not_found' ? 404 : 403).send({
-          error: {
-            code:
-              access.reason === 'not_found'
-                ? 'NOT_FOUND'
-                : access.reason === 'forbidden_project'
-                  ? 'FORBIDDEN_PROJECT'
-                  : access.reason === 'forbidden_external_room'
-                    ? 'FORBIDDEN_EXTERNAL_ROOM'
-                    : 'FORBIDDEN_ROOM_MEMBER',
-            message: 'Access to this room is forbidden',
-          },
-        });
+        const roomAccessError = buildRoomAccessErrorResponse(access.reason);
+        return reply.status(roomAccessError.status).send(roomAccessError.body);
       }
 
       return requestItem;
@@ -1287,19 +1266,8 @@ export async function registerChatRoutes(app: FastifyInstance) {
         groupAccountIds,
       });
       if (!access.ok) {
-        return reply.status(access.reason === 'not_found' ? 404 : 403).send({
-          error: {
-            code:
-              access.reason === 'not_found'
-                ? 'NOT_FOUND'
-                : access.reason === 'forbidden_project'
-                  ? 'FORBIDDEN_PROJECT'
-                  : access.reason === 'forbidden_external_room'
-                    ? 'FORBIDDEN_EXTERNAL_ROOM'
-                    : 'FORBIDDEN_ROOM_MEMBER',
-            message: 'Access to this room is forbidden',
-          },
-        });
+        const roomAccessError = buildRoomAccessErrorResponse(access.reason);
+        return reply.status(roomAccessError.status).send(roomAccessError.body);
       }
 
       const isPrivileged = roles.includes('admin') || roles.includes('mgmt');
@@ -1395,19 +1363,8 @@ export async function registerChatRoutes(app: FastifyInstance) {
         groupAccountIds,
       });
       if (!access.ok) {
-        return reply.status(access.reason === 'not_found' ? 404 : 403).send({
-          error: {
-            code:
-              access.reason === 'not_found'
-                ? 'NOT_FOUND'
-                : access.reason === 'forbidden_project'
-                  ? 'FORBIDDEN_PROJECT'
-                  : access.reason === 'forbidden_external_room'
-                    ? 'FORBIDDEN_EXTERNAL_ROOM'
-                    : 'FORBIDDEN_ROOM_MEMBER',
-            message: 'Access to this room is forbidden',
-          },
-        });
+        const roomAccessError = buildRoomAccessErrorResponse(access.reason);
+        return reply.status(roomAccessError.status).send(roomAccessError.body);
       }
 
       const ackTarget = resolveAckRequiredTarget(
@@ -1494,19 +1451,8 @@ export async function registerChatRoutes(app: FastifyInstance) {
         groupAccountIds,
       });
       if (!access.ok) {
-        return reply.status(access.reason === 'not_found' ? 404 : 403).send({
-          error: {
-            code:
-              access.reason === 'not_found'
-                ? 'NOT_FOUND'
-                : access.reason === 'forbidden_project'
-                  ? 'FORBIDDEN_PROJECT'
-                  : access.reason === 'forbidden_external_room'
-                    ? 'FORBIDDEN_EXTERNAL_ROOM'
-                    : 'FORBIDDEN_ROOM_MEMBER',
-            message: 'Access to this room is forbidden',
-          },
-        });
+        const roomAccessError = buildRoomAccessErrorResponse(access.reason);
+        return reply.status(roomAccessError.status).send(roomAccessError.body);
       }
       const trimmedEmoji = body.emoji.trim();
       if (!trimmedEmoji) {
@@ -1600,19 +1546,8 @@ export async function registerChatRoutes(app: FastifyInstance) {
         groupAccountIds,
       });
       if (!access.ok) {
-        return reply.status(access.reason === 'not_found' ? 404 : 403).send({
-          error: {
-            code:
-              access.reason === 'not_found'
-                ? 'NOT_FOUND'
-                : access.reason === 'forbidden_project'
-                  ? 'FORBIDDEN_PROJECT'
-                  : access.reason === 'forbidden_external_room'
-                    ? 'FORBIDDEN_EXTERNAL_ROOM'
-                    : 'FORBIDDEN_ROOM_MEMBER',
-            message: 'Access to this room is forbidden',
-          },
-        });
+        const roomAccessError = buildRoomAccessErrorResponse(access.reason);
+        return reply.status(roomAccessError.status).send(roomAccessError.body);
       }
 
       const maxBytes = parsePositiveInt(
@@ -1802,19 +1737,8 @@ export async function registerChatRoutes(app: FastifyInstance) {
         groupAccountIds,
       });
       if (!access.ok) {
-        return reply.status(access.reason === 'not_found' ? 404 : 403).send({
-          error: {
-            code:
-              access.reason === 'not_found'
-                ? 'NOT_FOUND'
-                : access.reason === 'forbidden_project'
-                  ? 'FORBIDDEN_PROJECT'
-                  : access.reason === 'forbidden_external_room'
-                    ? 'FORBIDDEN_EXTERNAL_ROOM'
-                    : 'FORBIDDEN_ROOM_MEMBER',
-            message: 'Access to this room is forbidden',
-          },
-        });
+        const roomAccessError = buildRoomAccessErrorResponse(access.reason);
+        return reply.status(roomAccessError.status).send(roomAccessError.body);
       }
 
       const safeFilename = attachment.originalName.replace(/["\\\r\n]/g, '_');
