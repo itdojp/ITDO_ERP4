@@ -677,6 +677,47 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
     return [];
   }
 
+  type RoomAccessContext = {
+    roles: string[];
+    projectIds: string[];
+    groupIds: string[];
+    groupAccountIds: string[];
+  };
+
+  function readRoomAccessContext(req: any): RoomAccessContext {
+    return {
+      roles: req.user?.roles || [],
+      projectIds: req.user?.projectIds || [],
+      groupIds: Array.isArray(req.user?.groupIds) ? req.user.groupIds : [],
+      groupAccountIds: Array.isArray(req.user?.groupAccountIds)
+        ? req.user.groupAccountIds
+        : [],
+    };
+  }
+
+  async function ensureRoomAccessWithReasonError(options: {
+    reply: any;
+    roomId: string;
+    userId: string;
+    accessContext: RoomAccessContext;
+    accessLevel?: 'read' | 'post';
+  }) {
+    const access = await ensureChatRoomContentAccess({
+      roomId: options.roomId,
+      userId: options.userId,
+      roles: options.accessContext.roles,
+      projectIds: options.accessContext.projectIds,
+      groupIds: options.accessContext.groupIds,
+      groupAccountIds: options.accessContext.groupAccountIds,
+      accessLevel: options.accessLevel,
+    });
+    if (access.ok) return access;
+    options.reply
+      .status(access.reason === 'not_found' ? 404 : 403)
+      .send({ error: access.reason });
+    return null;
+  }
+
   app.get(
     '/chat-rooms',
     { preHandler: requireRole(chatRoles) },
@@ -1752,28 +1793,15 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
       const { roomId } = req.params as { roomId: string };
       const userId = requireUserId(reply, req.user?.userId);
       if (typeof userId !== 'string') return userId;
-      const roles = req.user?.roles || [];
-      const projectIds = req.user?.projectIds || [];
-      const groupIds = Array.isArray(req.user?.groupIds)
-        ? req.user.groupIds
-        : [];
-      const groupAccountIds = Array.isArray(req.user?.groupAccountIds)
-        ? req.user.groupAccountIds
-        : [];
-      const access = await ensureChatRoomContentAccess({
+      const accessContext = readRoomAccessContext(req);
+      const access = await ensureRoomAccessWithReasonError({
+        reply,
         roomId,
         userId,
-        roles,
-        projectIds,
-        groupIds,
-        groupAccountIds,
+        accessContext,
         accessLevel: 'read',
       });
-      if (!access.ok) {
-        return reply
-          .status(access.reason === 'not_found' ? 404 : 403)
-          .send({ error: access.reason });
-      }
+      if (!access) return;
 
       const members =
         access.room.type === 'project'
@@ -1806,8 +1834,8 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
         }))
         .sort((a, b) => a.userId.localeCompare(b.userId));
       const groups = await resolveGroupCandidatesBySelector([
-        ...groupIds,
-        ...groupAccountIds,
+        ...accessContext.groupIds,
+        ...accessContext.groupAccountIds,
       ]);
       const allowAll = true;
       return { users, groups, allowAll };
@@ -1826,28 +1854,15 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
       }
       const userId = requireUserId(reply, req.user?.userId);
       if (typeof userId !== 'string') return userId;
-      const roles = req.user?.roles || [];
-      const projectIds = req.user?.projectIds || [];
-      const groupIds = Array.isArray(req.user?.groupIds)
-        ? req.user.groupIds
-        : [];
-      const groupAccountIds = Array.isArray(req.user?.groupAccountIds)
-        ? req.user.groupAccountIds
-        : [];
-      const access = await ensureChatRoomContentAccess({
+      const accessContext = readRoomAccessContext(req);
+      const access = await ensureRoomAccessWithReasonError({
+        reply,
         roomId,
         userId,
-        roles,
-        projectIds,
-        groupIds,
-        groupAccountIds,
+        accessContext,
         accessLevel: 'read',
       });
-      if (!access.ok) {
-        return reply
-          .status(access.reason === 'not_found' ? 404 : 403)
-          .send({ error: access.reason });
-      }
+      if (!access) return;
       return searchChatAckCandidates({ room: access.room, q: keyword });
     },
   );
@@ -1859,28 +1874,15 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
       const { roomId } = req.params as { roomId: string };
       const userId = requireUserId(reply, req.user?.userId);
       if (typeof userId !== 'string') return userId;
-      const roles = req.user?.roles || [];
-      const projectIds = req.user?.projectIds || [];
-      const groupIds = Array.isArray(req.user?.groupIds)
-        ? req.user.groupIds
-        : [];
-      const groupAccountIds = Array.isArray(req.user?.groupAccountIds)
-        ? req.user.groupAccountIds
-        : [];
-      const access = await ensureChatRoomContentAccess({
+      const accessContext = readRoomAccessContext(req);
+      const access = await ensureRoomAccessWithReasonError({
+        reply,
         roomId,
         userId,
-        roles,
-        projectIds,
-        groupIds,
-        groupAccountIds,
+        accessContext,
         accessLevel: 'read',
       });
-      if (!access.ok) {
-        return reply
-          .status(access.reason === 'not_found' ? 404 : 403)
-          .send({ error: access.reason });
-      }
+      if (!access) return;
       const state = await prisma.chatReadState.findUnique({
         where: { roomId_userId: { roomId: access.room.id, userId } },
         select: { lastReadAt: true },
@@ -1906,28 +1908,15 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
       const { roomId } = req.params as { roomId: string };
       const userId = requireUserId(reply, req.user?.userId);
       if (typeof userId !== 'string') return userId;
-      const roles = req.user?.roles || [];
-      const projectIds = req.user?.projectIds || [];
-      const groupIds = Array.isArray(req.user?.groupIds)
-        ? req.user.groupIds
-        : [];
-      const groupAccountIds = Array.isArray(req.user?.groupAccountIds)
-        ? req.user.groupAccountIds
-        : [];
-      const access = await ensureChatRoomContentAccess({
+      const accessContext = readRoomAccessContext(req);
+      const access = await ensureRoomAccessWithReasonError({
+        reply,
         roomId,
         userId,
-        roles,
-        projectIds,
-        groupIds,
-        groupAccountIds,
+        accessContext,
         accessLevel: 'post',
       });
-      if (!access.ok) {
-        return reply
-          .status(access.reason === 'not_found' ? 404 : 403)
-          .send({ error: access.reason });
-      }
+      if (!access) return;
       const now = new Date();
       const updated = await prisma.chatReadState.upsert({
         where: { roomId_userId: { roomId: access.room.id, userId } },
@@ -1950,28 +1939,15 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
       const { roomId } = req.params as { roomId: string };
       const userId = requireUserId(reply, req.user?.userId);
       if (typeof userId !== 'string') return userId;
-      const roles = req.user?.roles || [];
-      const projectIds = req.user?.projectIds || [];
-      const groupIds = Array.isArray(req.user?.groupIds)
-        ? req.user.groupIds
-        : [];
-      const groupAccountIds = Array.isArray(req.user?.groupAccountIds)
-        ? req.user.groupAccountIds
-        : [];
-      const access = await ensureChatRoomContentAccess({
+      const accessContext = readRoomAccessContext(req);
+      const access = await ensureRoomAccessWithReasonError({
+        reply,
         roomId,
         userId,
-        roles,
-        projectIds,
-        groupIds,
-        groupAccountIds,
+        accessContext,
         accessLevel: 'post',
       });
-      if (!access.ok) {
-        return reply
-          .status(access.reason === 'not_found' ? 404 : 403)
-          .send({ error: access.reason });
-      }
+      if (!access) return;
 
       const current = await prisma.chatRoomNotificationSetting.findUnique({
         where: { roomId_userId: { roomId: access.room.id, userId } },
@@ -2009,27 +1985,14 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
       const { roomId } = req.params as { roomId: string };
       const userId = requireUserId(reply, req.user?.userId);
       if (typeof userId !== 'string') return userId;
-      const roles = req.user?.roles || [];
-      const projectIds = req.user?.projectIds || [];
-      const groupIds = Array.isArray(req.user?.groupIds)
-        ? req.user.groupIds
-        : [];
-      const groupAccountIds = Array.isArray(req.user?.groupAccountIds)
-        ? req.user.groupAccountIds
-        : [];
-      const access = await ensureChatRoomContentAccess({
+      const accessContext = readRoomAccessContext(req);
+      const access = await ensureRoomAccessWithReasonError({
+        reply,
         roomId,
         userId,
-        roles,
-        projectIds,
-        groupIds,
-        groupAccountIds,
+        accessContext,
       });
-      if (!access.ok) {
-        return reply
-          .status(access.reason === 'not_found' ? 404 : 403)
-          .send({ error: access.reason });
-      }
+      if (!access) return;
 
       const body = req.body as {
         notifyAllPosts?: boolean;
@@ -2136,27 +2099,14 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
       };
       const userId = requireUserId(reply, req.user?.userId);
       if (typeof userId !== 'string') return userId;
-      const roles = req.user?.roles || [];
-      const projectIds = req.user?.projectIds || [];
-      const groupIds = Array.isArray(req.user?.groupIds)
-        ? req.user.groupIds
-        : [];
-      const groupAccountIds = Array.isArray(req.user?.groupAccountIds)
-        ? req.user.groupAccountIds
-        : [];
-      const access = await ensureChatRoomContentAccess({
+      const accessContext = readRoomAccessContext(req);
+      const access = await ensureRoomAccessWithReasonError({
+        reply,
         roomId,
         userId,
-        roles,
-        projectIds,
-        groupIds,
-        groupAccountIds,
+        accessContext,
       });
-      if (!access.ok) {
-        return reply
-          .status(access.reason === 'not_found' ? 404 : 403)
-          .send({ error: access.reason });
-      }
+      if (!access) return;
 
       const take = parseLimit(limit);
       if (!take) {
@@ -2245,27 +2195,14 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
       const userId = requireUserId(reply, req.user?.userId);
       if (typeof userId !== 'string') return userId;
 
-      const roles = req.user?.roles || [];
-      const projectIds = req.user?.projectIds || [];
-      const groupIds = Array.isArray(req.user?.groupIds)
-        ? req.user.groupIds
-        : [];
-      const groupAccountIds = Array.isArray(req.user?.groupAccountIds)
-        ? req.user.groupAccountIds
-        : [];
-      const access = await ensureChatRoomContentAccess({
+      const accessContext = readRoomAccessContext(req);
+      const access = await ensureRoomAccessWithReasonError({
+        reply,
         roomId,
         userId,
-        roles,
-        projectIds,
-        groupIds,
-        groupAccountIds,
+        accessContext,
       });
-      if (!access.ok) {
-        return reply
-          .status(access.reason === 'not_found' ? 404 : 403)
-          .send({ error: access.reason });
-      }
+      if (!access) return;
 
       const since = parseDateParam(body.since);
       if (body.since && !since) {
@@ -2436,27 +2373,14 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
         });
       }
 
-      const roles = req.user?.roles || [];
-      const projectIds = req.user?.projectIds || [];
-      const groupIds = Array.isArray(req.user?.groupIds)
-        ? req.user.groupIds
-        : [];
-      const groupAccountIds = Array.isArray(req.user?.groupAccountIds)
-        ? req.user.groupAccountIds
-        : [];
-      const access = await ensureChatRoomContentAccess({
+      const accessContext = readRoomAccessContext(req);
+      const access = await ensureRoomAccessWithReasonError({
+        reply,
         roomId,
         userId,
-        roles,
-        projectIds,
-        groupIds,
-        groupAccountIds,
+        accessContext,
       });
-      if (!access.ok) {
-        return reply
-          .status(access.reason === 'not_found' ? 404 : 403)
-          .send({ error: access.reason });
-      }
+      if (!access) return;
 
       const room = await prisma.chatRoom.findUnique({
         where: { id: access.room.id },
@@ -2658,27 +2582,14 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
       };
       const userId = requireUserId(reply, req.user?.userId);
       if (typeof userId !== 'string') return userId;
-      const roles = req.user?.roles || [];
-      const projectIds = req.user?.projectIds || [];
-      const groupIds = Array.isArray(req.user?.groupIds)
-        ? req.user.groupIds
-        : [];
-      const groupAccountIds = Array.isArray(req.user?.groupAccountIds)
-        ? req.user.groupAccountIds
-        : [];
-      const access = await ensureChatRoomContentAccess({
+      const accessContext = readRoomAccessContext(req);
+      const access = await ensureRoomAccessWithReasonError({
+        reply,
         roomId,
         userId,
-        roles,
-        projectIds,
-        groupIds,
-        groupAccountIds,
+        accessContext,
       });
-      if (!access.ok) {
-        return reply
-          .status(access.reason === 'not_found' ? 404 : 403)
-          .send({ error: access.reason });
-      }
+      if (!access) return;
 
       const { mentions, mentionsAll, mentionUserIds, mentionGroupIds } =
         normalizeMentions(body.mentions);
@@ -2766,28 +2677,15 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
       };
       const userId = requireUserId(reply, req.user?.userId);
       if (typeof userId !== 'string') return userId;
-      const roles = req.user?.roles || [];
-      const projectIds = req.user?.projectIds || [];
-      const groupIds = Array.isArray(req.user?.groupIds)
-        ? req.user.groupIds
-        : [];
-      const groupAccountIds = Array.isArray(req.user?.groupAccountIds)
-        ? req.user.groupAccountIds
-        : [];
-      const access = await ensureChatRoomContentAccess({
+      const accessContext = readRoomAccessContext(req);
+      const access = await ensureRoomAccessWithReasonError({
+        reply,
         roomId,
         userId,
-        roles,
-        projectIds,
-        groupIds,
-        groupAccountIds,
+        accessContext,
         accessLevel: 'post',
       });
-      if (!access.ok) {
-        return reply
-          .status(access.reason === 'not_found' ? 404 : 403)
-          .send({ error: access.reason });
-      }
+      if (!access) return;
 
       const limits = await getChatAckLimits();
       const requiredUserIds = normalizeStringArray(body.requiredUserIds, {
@@ -2854,28 +2752,15 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
       };
       const userId = requireUserId(reply, req.user?.userId);
       if (typeof userId !== 'string') return userId;
-      const roles = req.user?.roles || [];
-      const projectIds = req.user?.projectIds || [];
-      const groupIds = Array.isArray(req.user?.groupIds)
-        ? req.user.groupIds
-        : [];
-      const groupAccountIds = Array.isArray(req.user?.groupAccountIds)
-        ? req.user.groupAccountIds
-        : [];
-      const access = await ensureChatRoomContentAccess({
+      const accessContext = readRoomAccessContext(req);
+      const access = await ensureRoomAccessWithReasonError({
+        reply,
         roomId,
         userId,
-        roles,
-        projectIds,
-        groupIds,
-        groupAccountIds,
+        accessContext,
         accessLevel: 'post',
       });
-      if (!access.ok) {
-        return reply
-          .status(access.reason === 'not_found' ? 404 : 403)
-          .send({ error: access.reason });
-      }
+      if (!access) return;
 
       const limits = await getChatAckLimits();
       const requestedUserIds = normalizeStringArray(body.requiredUserIds, {
