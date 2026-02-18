@@ -160,6 +160,17 @@ export async function safeFetch(
   const userAgent = (options.userAgent || '').trim() || 'ITDO_ERP4/0.1';
 
   const controller = new AbortController();
+  const callerSignal = init.signal;
+  const abortFromCaller = () => {
+    controller.abort();
+  };
+  if (callerSignal) {
+    if (callerSignal.aborted) {
+      abortFromCaller();
+    } else {
+      callerSignal.addEventListener('abort', abortFromCaller, { once: true });
+    }
+  }
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const headers = new Headers(init.headers || {});
@@ -174,5 +185,8 @@ export async function safeFetch(
     });
   } finally {
     clearTimeout(timer);
+    if (callerSignal) {
+      callerSignal.removeEventListener('abort', abortFromCaller);
+    }
   }
 }

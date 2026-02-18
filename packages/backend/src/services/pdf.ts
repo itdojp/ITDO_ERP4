@@ -222,12 +222,16 @@ async function loadAssetBuffer(value?: string | null) {
   }
   if (isHttpUrl(value)) {
     try {
-      const res = await safeFetch(value, {}, {
-        timeoutMs: ASSET_TIMEOUT_MS,
-        allowedHosts: ALLOWED_ASSET_HOSTS,
-        allowHttp: PDF_ASSET_ALLOW_HTTP,
-        allowPrivateIp: PDF_ASSET_ALLOW_PRIVATE_IP,
-      });
+      const res = await safeFetch(
+        value,
+        {},
+        {
+          timeoutMs: ASSET_TIMEOUT_MS,
+          allowedHosts: ALLOWED_ASSET_HOSTS,
+          allowHttp: PDF_ASSET_ALLOW_HTTP,
+          allowPrivateIp: PDF_ASSET_ALLOW_PRIVATE_IP,
+        },
+      );
       if (!res.ok) return null;
       const contentLength = res.headers.get('content-length');
       if (contentLength) {
@@ -347,18 +351,18 @@ async function requestExternalPdf(
   const res = await safeFetch(
     endpoint,
     {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(process.env.PDF_EXTERNAL_API_KEY
-        ? { Authorization: `Bearer ${process.env.PDF_EXTERNAL_API_KEY}` }
-        : {}),
-    },
-    body: JSON.stringify({
-      templateId,
-      payload,
-      options,
-    }),
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(process.env.PDF_EXTERNAL_API_KEY
+          ? { Authorization: `Bearer ${process.env.PDF_EXTERNAL_API_KEY}` }
+          : {}),
+      },
+      body: JSON.stringify({
+        templateId,
+        payload,
+        options,
+      }),
     },
     {
       timeoutMs: EXTERNAL_TIMEOUT_MS,

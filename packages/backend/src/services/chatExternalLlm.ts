@@ -168,8 +168,7 @@ export async function summarizeWithExternalLlm(options: {
       timeoutMs: config.timeoutMs,
       allowedHosts,
       allowHttp: process.env.CHAT_EXTERNAL_LLM_ALLOW_HTTP === 'true',
-      allowPrivateIp:
-        process.env.CHAT_EXTERNAL_LLM_ALLOW_PRIVATE_IP === 'true',
+      allowPrivateIp: process.env.CHAT_EXTERNAL_LLM_ALLOW_PRIVATE_IP === 'true',
     },
   );
 
