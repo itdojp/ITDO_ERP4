@@ -4,6 +4,10 @@ set -euo pipefail
 tmp_dir="$(mktemp -d)"
 trap 'rm -rf "$tmp_dir"' EXIT
 
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+allowlist_file="${SECRET_SCAN_ALLOWLIST:-${script_dir}/secret-scan.allowlist}"
+compiled_allowlist="${tmp_dir}/allowlist.regex"
+
 patterns=(
   '-----BEGIN (RSA|EC|OPENSSH) PRIVATE KEY-----'
   '-----BEGIN PRIVATE KEY-----'
@@ -17,7 +21,14 @@ found=0
 files_file="${tmp_dir}/files.txt"
 git ls-files > "$files_file"
 
+if [[ -f "$allowlist_file" ]]; then
+  grep -Ev '^[[:space:]]*(#|$)' "$allowlist_file" > "$compiled_allowlist" || true
+fi
+
 echo "[secret-scan] scanning tracked files (baseline patterns)"
+if [[ -s "$compiled_allowlist" ]]; then
+  echo "[secret-scan] allowlist enabled: ${allowlist_file}"
+fi
 
 for pattern in "${patterns[@]}"; do
   matches_file="${tmp_dir}/matches.txt"
@@ -25,6 +36,12 @@ for pattern in "${patterns[@]}"; do
 
   if xargs -a "$files_file" grep -nE -- "$pattern" > "$matches_file" 2>/dev/null; then
     :
+  fi
+
+  if [[ -s "$compiled_allowlist" ]]; then
+    filtered_file="${tmp_dir}/filtered.txt"
+    grep -Ev -f "$compiled_allowlist" "$matches_file" > "$filtered_file" || true
+    mv "$filtered_file" "$matches_file"
   fi
 
   if [[ -s "$matches_file" ]]; then

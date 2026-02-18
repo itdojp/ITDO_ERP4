@@ -18,7 +18,7 @@ CIで何を検査しているか、どれを「必須ゲート（ブロック）
 - `CI / data-quality`（非ブロッキング）
 - `Link Check / lychee`
 - `CodeQL / analyze`
-- `CI / secret-scan`（非ブロッキング）
+- `CI / secret-scan`
 
 ## ゲート定義（必須/任意）
 ### Pull Request で必須（ブロック）
@@ -27,6 +27,7 @@ CIで何を検査しているか、どれを「必須ゲート（ブロック）
 - `CI / lint`
 - `CI / e2e-frontend`（PRでは `E2E_SCOPE=core`）
 - `CI / security-audit`
+- `CI / secret-scan`
 - `Link Check / lychee`
 
 ### main（デフォルトブランチ）で必須（ブロック）
@@ -35,13 +36,12 @@ CIで何を検査しているか、どれを「必須ゲート（ブロック）
 - `CI / lint`
 - `CI / e2e-frontend`（main では `E2E_SCOPE=full`）
 - `CI / security-audit`
+- `CI / secret-scan`
 - `Link Check / lychee`
 
 ### 任意（非ブロッキング）
 - `CI / data-quality`（`continue-on-error: true` かつ `|| true` で常に成功扱い）
   - 目的: リグレッション検知の「参考情報」（ゲート化は別Issueで検討）
-- `CI / secret-scan`（`continue-on-error: true`）
-  - 目的: 既知パターンの秘密情報を検出（検知時は通知して対応）
 - `CodeQL / analyze`（段階導入）
   - 目的: 静的解析による脆弱性の早期検出
 

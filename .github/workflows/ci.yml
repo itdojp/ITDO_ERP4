@@ -189,6 +189,5 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-      - name: Basic secret scan (non-blocking)
-        continue-on-error: true
+      - name: Basic secret scan (blocking)
         run: ./scripts/secret-scan.sh
