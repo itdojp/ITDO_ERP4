@@ -19,6 +19,15 @@ backend は起動時に環境変数の検証を行い、不正/不足があれ�
 - `PORT`（任意、指定時は `1-65535`、未指定時は `3001`）
 - `ALLOWED_ORIGINS`（任意、指定時は `http(s)` URL のカンマ区切り。未設定/空の場合は Fastify の CORS 設定で `origin: false` となり、全オリジン拒否）
 
+セキュリティヘッダ/CORS（固定ポリシー）:
+
+- CORS
+  - `ALLOWED_ORIGINS` 設定時: 指定オリジンのみ許可
+  - `ALLOWED_ORIGINS` 未設定/空: 全オリジン拒否（`Access-Control-Allow-Origin` を返さない）
+- CSP（`@fastify/helmet`）
+  - 既定: `default-src 'self'`, `script-src 'self'`, `style-src 'self'`, `img-src 'self'`, `connect-src 'self'`, `font-src 'self'`, `object-src 'none'`, `frame-ancestors 'self'`, `base-uri 'self'`
+  - 埋め込み要件などで `frame-ancestors` を変更する場合は、コード変更 + セキュリティレビューを必須とする
+
 認証:
 
 - `AUTH_MODE=header|jwt|hybrid`（未設定時は `header`）

@@ -39,5 +39,4 @@
 
 ### 注意
 - TLS は reverse proxy 側で終端する前提（アプリ単体でのTLS終端は扱わない）
-- `ALLOWED_ORIGINS` を本番の配信元に合わせる
-
+- `ALLOWED_ORIGINS` を本番の配信元に合わせる（未設定/空の場合は CORS 全拒否）
