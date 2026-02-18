@@ -24,8 +24,8 @@ const buildHeaders = (input: {
 
 const adminHeaders = buildHeaders({
   userId: 'demo-user',
-  roles: ['admin', 'mgmt'],
-  groupIds: ['mgmt'],
+  roles: ['admin', 'mgmt', 'exec'],
+  groupIds: ['mgmt', 'exec'],
 });
 
 async function createEstimateFixture(
