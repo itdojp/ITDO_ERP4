@@ -510,24 +510,26 @@ test.describe('mobile smoke 375x667 @core', () => {
       .locator('h2', { hasText: '期間締め' })
       .locator('..');
     await periodLockSection.scrollIntoViewIfNeeded();
-    const periodCreateCard = periodLockSection.locator('.itdo-card', {
-      has: periodLockSection.getByRole('button', { name: '締め登録' }),
+    const periodCreatePeriodInput = periodLockSection.getByLabel(
+      'period (YYYY-MM)',
+      { exact: true },
+    );
+    await expect(periodCreatePeriodInput).toBeVisible({
+      timeout: actionTimeout,
     });
-    await expect(periodCreateCard).toHaveCount(1, { timeout: actionTimeout });
-    await periodCreateCard
-      .getByLabel('period (YYYY-MM)', { exact: true })
-      .fill(mobileLockPeriod);
-    await periodCreateCard
+    await periodCreatePeriodInput.fill(mobileLockPeriod);
+    await periodLockSection
       .getByLabel('scope', { exact: true })
+      .first()
       .selectOption({ value: 'project' });
     await selectByValue(
-      periodCreateCard.getByLabel('project', { exact: true }),
+      periodLockSection.getByLabel('project', { exact: true }).first(),
       defaultProjectId,
     );
-    await periodCreateCard
+    await periodLockSection
       .getByLabel('reason', { exact: true })
       .fill(mobileLockReason);
-    await periodCreateCard.getByRole('button', { name: '締め登録' }).click();
+    await periodLockSection.getByRole('button', { name: '締め登録' }).click();
     await periodLockSection
       .getByLabel('period', { exact: true })
       .fill(mobileLockPeriod);
