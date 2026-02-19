@@ -69,3 +69,21 @@ test('logExpenseStateTransition: writes row when state changed', async () => {
   assert.equal(writes[0].toSettlementStatus, 'unpaid');
   assert.equal(result.id, 'log-1');
 });
+
+test('logExpenseStateTransition: throws when to.status is null', async () => {
+  const client = {
+    expenseStateTransitionLog: {
+      create: async () => ({ id: 'unexpected' }),
+    },
+  };
+  await assert.rejects(
+    async () =>
+      await logExpenseStateTransition({
+        client,
+        expenseId: 'exp-1',
+        from: { status: 'draft', settlementStatus: 'unpaid' },
+        to: { status: null, settlementStatus: 'unpaid' },
+      }),
+    { message: 'to.status and to.settlementStatus are required' },
+  );
+});

@@ -343,6 +343,7 @@ async function updateTargetStatus(
   targetTable: string,
   targetId: string,
   newStatus: string,
+  actorUserId?: string,
 ) {
   if (
     newStatus !== DocStatusValue.approved &&
@@ -373,10 +374,9 @@ async function updateTargetStatus(
       data: { status: newStatus },
     });
     if (current) {
-      const nextStatus =
-        newStatus === DocStatusValue.approved
-          ? DocStatusValue.approved
-          : DocStatusValue.rejected;
+      const nextStatus = newStatus as
+        | typeof DocStatusValue.approved
+        | typeof DocStatusValue.rejected;
       await logExpenseStateTransition({
         client: tx,
         expenseId: targetId,
@@ -388,6 +388,7 @@ async function updateTargetStatus(
           status: nextStatus,
           settlementStatus: current.settlementStatus,
         },
+        actorUserId: actorUserId || null,
         metadata: { trigger: 'approval_act' },
       });
     }
@@ -617,6 +618,7 @@ export async function act(
       instance.targetTable,
       instance.targetId,
       newStatus,
+      userId,
     );
     await logAudit({
       action: `approval_${action}`,
