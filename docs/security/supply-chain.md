@@ -22,6 +22,11 @@
 - コマンド:
   - `npm audit --audit-level=high`（backend/frontend）
 
+### moderate の扱い
+- moderate は CI で即 fail にはせず、トリアージ運用で管理する
+- 判断基準: `docs/security/dependency-vulnerability-policy.md`
+- 最新台帳: `docs/security/dependency-vulnerability-register.md`
+
 例外/抑制が必要な場合は、以下を必須として Issue 化します。
 - 対象（パッケージ/CVE など）
 - 影響範囲（runtime / dev など）

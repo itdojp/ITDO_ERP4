@@ -42,26 +42,31 @@ jobs:
       - run: npm run build --prefix packages/backend
         env:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres?schema=public
+      - name: Export OpenAPI for ZAP API scan
+        run: node scripts/export-openapi.mjs --out tmp/zap-report/openapi.json
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres?schema=public
 
       - name: Start backend
         env:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres?schema=public
           PORT: "3002"
           ALLOWED_ORIGINS: http://localhost:5173,http://127.0.0.1:5173
+          AUTH_MODE: header
         run: |
           mkdir -p tmp
           node packages/backend/dist/index.js > tmp/dast-backend.log 2>&1 &
           echo $! > tmp/dast-backend.pid
 
-      - name: Wait backend health
+      - name: Wait backend readiness
         run: |
           for i in $(seq 1 60); do
-            if curl -fsS "http://localhost:3002/healthz" >/dev/null 2>&1; then
+            if curl -fsS "http://localhost:3002/readyz" >/dev/null 2>&1; then
               exit 0
             fi
             sleep 1
           done
-          echo "backend not ready" >&2
+          echo "backend /readyz not ready" >&2
           tail -n 200 tmp/dast-backend.log >&2 || true
           exit 1
 
@@ -73,11 +78,36 @@ jobs:
             -v "$PWD/tmp/zap-report:/zap/wrk/:rw" \
             ghcr.io/zaproxy/zaproxy:stable \
             zap-baseline.py \
-              -t "http://127.0.0.1:3002/healthz" \
+              -t "http://127.0.0.1:3002/readyz" \
               -J "zap-report.json" \
               -r "zap-report.html" \
               -w "zap-report.md" \
               -m 1 \
+              -I
+
+      - name: Run ZAP API scan (OpenAPI, non-blocking)
+        continue-on-error: true
+        run: |
+          docker run --rm --network=host \
+            -v "$PWD/tmp/zap-report:/zap/wrk/:rw" \
+            ghcr.io/zaproxy/zaproxy:stable \
+            zap-api-scan.py \
+              -t "/zap/wrk/openapi.json" \
+              -f "openapi" \
+              -J "zap-api-report.json" \
+              -r "zap-api-report.html" \
+              -w "zap-api-report.md" \
+              -z "\
+                -config replacer.full_list(0).description=x-user-id \
+                -config replacer.full_list(0).enabled=true \
+                -config replacer.full_list(0).matchtype=REQ_HEADER \
+                -config replacer.full_list(0).matchstr=x-user-id \
+                -config replacer.full_list(0).replacement=zap-security-bot \
+                -config replacer.full_list(1).description=x-roles \
+                -config replacer.full_list(1).enabled=true \
+                -config replacer.full_list(1).matchtype=REQ_HEADER \
+                -config replacer.full_list(1).matchstr=x-roles \
+                -config replacer.full_list(1).replacement=admin,mgmt,user" \
               -I
 
       - name: Upload ZAP report artifacts

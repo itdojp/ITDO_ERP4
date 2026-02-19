@@ -7,6 +7,8 @@
 - セキュリティベースライン: `docs/security/security-baseline.md`
 - 監査ログ必須イベント: `docs/security/audit-required-events.md`
 - サプライチェーン対策: `docs/security/supply-chain.md`
+- 依存脆弱性トリアージ運用: `docs/security/dependency-vulnerability-policy.md`
+- 依存脆弱性台帳: `docs/security/dependency-vulnerability-register.md`
 - 品質目標: `docs/quality/quality-goals.md`
 
 ## 資産（守る対象）
