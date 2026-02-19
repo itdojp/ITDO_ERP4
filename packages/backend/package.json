@@ -54,9 +54,11 @@
     "typescript": "^5.3.3"
   },
   "overrides": {
+    "@mrleebo/prisma-ast": "^0.14.0",
     "diff": "^4.0.4",
     "fast-xml-parser": "5.3.6",
     "hono": "^4.11.4",
+    "lodash": "^4.17.23",
     "minimatch": "^10.2.1",
     "qs": "^6.15.0"
   }
