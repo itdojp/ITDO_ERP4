@@ -1072,7 +1072,6 @@ model ExpenseLine {
   updatedBy   String?
 
   @@unique([expenseId, lineNo])
-  @@index([expenseId, lineNo])
 }
 
 model ExpenseAttachment {

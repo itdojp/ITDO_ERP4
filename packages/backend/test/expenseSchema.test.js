@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import Fastify from 'fastify';
 
+import { buildExpenseCreateDraft } from '../dist/routes/expenses.js';
 import {
   expenseCommentCreateSchema,
   expenseSchema,
@@ -10,7 +11,7 @@ import {
 
 async function buildValidatorServer(path, schema) {
   const app = Fastify();
-  app.post(path, { schema }, async (req) => req.body);
+  app.post(path, { schema }, async () => ({ ok: true }));
   await app.ready();
   return app;
 }
@@ -113,4 +114,106 @@ test('expenseCommentCreateSchema: rejects empty body', async () => {
 
   assert.equal(res.statusCode, 400);
   await app.close();
+});
+
+test('buildExpenseCreateDraft: rejects duplicated lineNo', () => {
+  const result = buildExpenseCreateDraft({
+    body: {
+      projectId: 'project-1',
+      userId: 'user-1',
+      category: 'travel',
+      amount: 1000,
+      currency: 'JPY',
+      incurredOn: '2026-02-19',
+      lines: [
+        {
+          lineNo: 1,
+          description: 'taxi',
+          amount: 500,
+          currency: 'JPY',
+        },
+        {
+          lineNo: 1,
+          description: 'train',
+          amount: 500,
+          currency: 'JPY',
+        },
+      ],
+    },
+    actorUserId: 'user-1',
+  });
+  assert.equal(result.ok, false);
+  if (result.ok) return;
+  assert.equal(result.error.code, 'INVALID_LINE');
+  assert.equal(result.error.message, 'lines[1].lineNo is duplicated');
+});
+
+test('buildExpenseCreateDraft: rejects when lines total mismatches amount', () => {
+  const result = buildExpenseCreateDraft({
+    body: {
+      projectId: 'project-1',
+      userId: 'user-1',
+      category: 'travel',
+      amount: 1000,
+      currency: 'JPY',
+      incurredOn: '2026-02-19',
+      lines: [
+        {
+          lineNo: 1,
+          description: 'taxi',
+          amount: 900,
+          currency: 'JPY',
+        },
+      ],
+    },
+    actorUserId: 'user-1',
+  });
+  assert.equal(result.ok, false);
+  if (result.ok) return;
+  assert.equal(result.error.code, 'INVALID_AMOUNT');
+  assert.equal(result.error.message, 'sum(lines.amount) must match amount');
+});
+
+test('buildExpenseCreateDraft: rejects empty attachment fileUrl', () => {
+  const result = buildExpenseCreateDraft({
+    body: {
+      projectId: 'project-1',
+      userId: 'user-1',
+      category: 'travel',
+      amount: 1000,
+      currency: 'JPY',
+      incurredOn: '2026-02-19',
+      attachments: [
+        {
+          fileUrl: '   ',
+        },
+      ],
+    },
+    actorUserId: 'user-1',
+  });
+  assert.equal(result.ok, false);
+  if (result.ok) return;
+  assert.equal(result.error.code, 'INVALID_ATTACHMENT');
+  assert.equal(
+    result.error.message,
+    'attachments[0].fileUrl is required',
+  );
+});
+
+test('buildExpenseCreateDraft: validates amount even when lines are omitted', () => {
+  const result = buildExpenseCreateDraft({
+    body: {
+      projectId: 'project-1',
+      userId: 'user-1',
+      category: 'travel',
+      amount: -1,
+      currency: 'JPY',
+      incurredOn: '2026-02-19',
+    },
+    actorUserId: 'user-1',
+  });
+  assert.equal(result.ok, false);
+  if (result.ok) return;
+  assert.equal(result.error.code, 'INVALID_AMOUNT');
+  assert.equal(result.error.message, 'amount is invalid');
 });

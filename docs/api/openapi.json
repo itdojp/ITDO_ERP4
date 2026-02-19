@@ -3958,6 +3958,35 @@
                     "minimum": 0,
                     "type": "number"
                   },
+                  "attachments": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "contentType": {
+                          "type": "string"
+                        },
+                        "fileHash": {
+                          "type": "string"
+                        },
+                        "fileName": {
+                          "type": "string"
+                        },
+                        "fileSizeBytes": {
+                          "minimum": 0,
+                          "type": "number"
+                        },
+                        "fileUrl": {
+                          "minLength": 1,
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "fileUrl"
+                      ],
+                      "type": "object"
+                    },
+                    "type": "array"
+                  },
                   "category": {
                     "type": "string"
                   },
@@ -3971,6 +4000,51 @@
                   },
                   "isShared": {
                     "type": "boolean"
+                  },
+                  "lines": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "amount": {
+                          "minimum": 0,
+                          "type": "number"
+                        },
+                        "category": {
+                          "type": "string"
+                        },
+                        "currency": {
+                          "default": "JPY",
+                          "type": "string"
+                        },
+                        "description": {
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "expenseDate": {
+                          "format": "date",
+                          "type": "string"
+                        },
+                        "lineNo": {
+                          "minimum": 1,
+                          "type": "number"
+                        },
+                        "taxAmount": {
+                          "minimum": 0,
+                          "type": "number"
+                        },
+                        "taxRate": {
+                          "minimum": 0,
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "lineNo",
+                        "description",
+                        "amount"
+                      ],
+                      "type": "object"
+                    },
+                    "type": "array"
                   },
                   "projectId": {
                     "type": "string"
@@ -3989,6 +4063,68 @@
                   "amount",
                   "currency",
                   "incurredOn"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/expenses/{id}": {
+      "get": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/expenses/{id}/comments": {
+      "post": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "body": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "kind": {
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "body"
                 ],
                 "type": "object"
               }

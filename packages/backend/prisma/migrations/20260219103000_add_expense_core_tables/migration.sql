@@ -48,8 +48,6 @@ CREATE TABLE "ExpenseComment" (
 
 CREATE UNIQUE INDEX "ExpenseLine_expenseId_lineNo_key"
   ON "ExpenseLine"("expenseId", "lineNo");
-CREATE INDEX "ExpenseLine_expenseId_lineNo_idx"
-  ON "ExpenseLine"("expenseId", "lineNo");
 CREATE INDEX "ExpenseAttachment_expenseId_createdAt_idx"
   ON "ExpenseAttachment"("expenseId", "createdAt");
 CREATE INDEX "ExpenseComment_expenseId_createdAt_idx"
