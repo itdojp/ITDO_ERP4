@@ -2,6 +2,7 @@ import { DocStatusValue } from '../types.js';
 import { prisma } from './db.js';
 import { logAudit, type AuditContext } from './audit.js';
 import { createEvidenceSnapshotForApproval } from './evidenceSnapshot.js';
+import { logExpenseStateTransition } from './expenseStateTransitionLog.js';
 import {
   matchApprovalSteps as computeApprovalSteps,
   matchesRuleCondition,
@@ -363,10 +364,33 @@ async function updateTargetStatus(
     return;
   }
   if (targetTable === 'expenses') {
+    const current = await tx.expense.findUnique({
+      where: { id: targetId },
+      select: { status: true, settlementStatus: true },
+    });
     await tx.expense.update({
       where: { id: targetId },
       data: { status: newStatus },
     });
+    if (current) {
+      const nextStatus =
+        newStatus === DocStatusValue.approved
+          ? DocStatusValue.approved
+          : DocStatusValue.rejected;
+      await logExpenseStateTransition({
+        client: tx,
+        expenseId: targetId,
+        from: {
+          status: current.status,
+          settlementStatus: current.settlementStatus,
+        },
+        to: {
+          status: nextStatus,
+          settlementStatus: current.settlementStatus,
+        },
+        metadata: { trigger: 'approval_act' },
+      });
+    }
     return;
   }
   if (targetTable === 'purchase_orders') {

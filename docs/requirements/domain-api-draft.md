@@ -75,6 +75,7 @@
 - Expense
   - `POST /expenses` {project_id, category, amount, currency, incurred_on, is_shared, receipt_url?}
   - `POST /expenses/:id/submit` → 承認フロー起動
+  - `GET /expenses/:id/state-transitions` → 状態遷移履歴（status/settlementStatus）
 - Leave
   - `POST /leave-requests` {leave_type, start_date, end_date, hours?, notes}
   - `POST /leave-requests/:id/submit` → 承認フロー起動

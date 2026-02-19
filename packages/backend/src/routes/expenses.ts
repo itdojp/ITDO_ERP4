@@ -19,6 +19,7 @@ import { parseDateParam } from '../utils/date.js';
 import { findPeriodLock, toPeriodKey } from '../services/periodLock.js';
 import { evaluateActionPolicyWithFallback } from '../services/actionPolicy.js';
 import { logActionPolicyOverrideIfNeeded } from '../services/actionPolicyAudit.js';
+import { logExpenseStateTransition } from '../services/expenseStateTransitionLog.js';
 
 export async function registerExpenseRoutes(app: FastifyInstance) {
   const parseDate = (value?: string) => {
@@ -56,6 +57,17 @@ export async function registerExpenseRoutes(app: FastifyInstance) {
       }
       const expense = await prisma.expense.create({
         data: { ...body, incurredOn },
+      });
+      await logExpenseStateTransition({
+        client: prisma,
+        expenseId: expense.id,
+        from: { status: null, settlementStatus: null },
+        to: {
+          status: expense.status,
+          settlementStatus: expense.settlementStatus,
+        },
+        actorUserId: req.user?.userId || null,
+        metadata: { trigger: 'create' },
       });
       return expense;
     },
@@ -101,6 +113,34 @@ export async function registerExpenseRoutes(app: FastifyInstance) {
         where,
         orderBy: { incurredOn: 'desc' },
         take: 200,
+      });
+      return { items };
+    },
+  );
+
+  app.get(
+    '/expenses/:id/state-transitions',
+    { preHandler: requireRole(['admin', 'mgmt', 'user']) },
+    async (req, reply) => {
+      const { id } = req.params as { id: string };
+      const { limit } = req.query as { limit?: number };
+      const expense = await prisma.expense.findUnique({
+        where: { id },
+        select: { id: true, userId: true },
+      });
+      if (!expense) {
+        return reply.code(404).send({ error: 'not_found' });
+      }
+      const roles = req.user?.roles || [];
+      const isPrivileged = roles.includes('admin') || roles.includes('mgmt');
+      if (!isPrivileged && expense.userId !== req.user?.userId) {
+        return reply.code(403).send({ error: 'forbidden' });
+      }
+      const cappedLimit = Math.min(Math.max(Number(limit || 100), 1), 500);
+      const items = await prisma.expenseStateTransitionLog.findMany({
+        where: { expenseId: id },
+        orderBy: { createdAt: 'desc' },
+        take: cappedLimit,
       });
       return { items };
     },
@@ -184,6 +224,24 @@ export async function registerExpenseRoutes(app: FastifyInstance) {
             data: { status: DocStatusValue.pending_qa },
           }),
         createdBy: userId,
+      });
+      await logExpenseStateTransition({
+        client: prisma,
+        expenseId: id,
+        from: {
+          status: expense.status,
+          settlementStatus: expense.settlementStatus,
+        },
+        to: {
+          status: updated.status,
+          settlementStatus: updated.settlementStatus,
+        },
+        actorUserId: actorUserId,
+        reasonText: reasonText || null,
+        metadata: {
+          trigger: 'submit',
+          approvalInstanceId: approval.id,
+        },
       });
       await createApprovalPendingNotifications({
         approvalInstanceId: approval.id,
@@ -302,6 +360,24 @@ export async function registerExpenseRoutes(app: FastifyInstance) {
           updatedBy: actorId,
         },
       });
+      await logExpenseStateTransition({
+        client: prisma,
+        expenseId: id,
+        from: {
+          status: expense.status,
+          settlementStatus: expense.settlementStatus,
+        },
+        to: {
+          status: updated.status,
+          settlementStatus: updated.settlementStatus,
+        },
+        actorUserId: actorId,
+        reasonText: reasonText || null,
+        metadata: {
+          trigger: 'mark_paid',
+          paidAt: updated.paidAt?.toISOString() ?? null,
+        },
+      });
 
       await createExpenseMarkPaidNotification({
         expenseId: id,
@@ -415,6 +491,21 @@ export async function registerExpenseRoutes(app: FastifyInstance) {
           paidBy: null,
           updatedBy: actorId,
         },
+      });
+      await logExpenseStateTransition({
+        client: prisma,
+        expenseId: id,
+        from: {
+          status: expense.status,
+          settlementStatus: expense.settlementStatus,
+        },
+        to: {
+          status: updated.status,
+          settlementStatus: updated.settlementStatus,
+        },
+        actorUserId: actorId,
+        reasonText,
+        metadata: { trigger: 'unmark_paid' },
       });
 
       await logAudit({
