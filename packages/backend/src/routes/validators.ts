@@ -311,7 +311,48 @@ export const expenseSchema = {
     incurredOn: Type.String({ format: 'date' }),
     isShared: Type.Optional(Type.Boolean()),
     receiptUrl: Type.Optional(Type.String()),
+    lines: Type.Optional(
+      Type.Array(
+        Type.Object(
+          {
+            lineNo: Type.Number({ minimum: 1 }),
+            expenseDate: Type.Optional(Type.String({ format: 'date' })),
+            category: Type.Optional(Type.String()),
+            description: Type.String({ minLength: 1 }),
+            amount: Type.Number({ minimum: 0 }),
+            taxRate: Type.Optional(Type.Number({ minimum: 0 })),
+            taxAmount: Type.Optional(Type.Number({ minimum: 0 })),
+            currency: Type.Optional(Type.String({ default: 'JPY' })),
+          },
+          { additionalProperties: false },
+        ),
+      ),
+    ),
+    attachments: Type.Optional(
+      Type.Array(
+        Type.Object(
+          {
+            fileUrl: Type.String({ minLength: 1 }),
+            fileName: Type.Optional(Type.String()),
+            contentType: Type.Optional(Type.String()),
+            fileSizeBytes: Type.Optional(Type.Number({ minimum: 0 })),
+            fileHash: Type.Optional(Type.String()),
+          },
+          { additionalProperties: false },
+        ),
+      ),
+    ),
   }),
+};
+
+export const expenseCommentCreateSchema = {
+  body: Type.Object(
+    {
+      kind: Type.Optional(Type.String({ minLength: 1 })),
+      body: Type.String({ minLength: 1 }),
+    },
+    { additionalProperties: false },
+  ),
 };
 
 export const estimateSchema = {

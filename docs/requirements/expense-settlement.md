@@ -5,6 +5,7 @@
 
 ## 現状（ERP4）
 - Expense は明細単位で `draft/pending_*/approved/rejected` を持つ
+- Expense の内訳として `ExpenseLine`（明細）、`ExpenseAttachment`（証憑メタ）、`ExpenseComment`（コメント）を保持できる
 - 申請承認フローは approval_rules に準拠
 - 支払状態（MVP）は実装済み（`settlementStatus=unpaid/paid` + `paidAt/paidBy`、支払済み/取消 API、通知/監査ログ）
 

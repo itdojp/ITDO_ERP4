@@ -5,6 +5,7 @@ import {
   createExpenseMarkPaidNotification,
 } from '../services/appNotifications.js';
 import {
+  expenseCommentCreateSchema,
   expenseMarkPaidSchema,
   expenseReassignSchema,
   expenseSchema,
@@ -54,8 +55,189 @@ export async function registerExpenseRoutes(app: FastifyInstance) {
           error: { code: 'INVALID_DATE', message: 'Invalid incurredOn' },
         });
       }
-      const expense = await prisma.expense.create({
-        data: { ...body, incurredOn },
+      type ExpenseLineDraft = {
+        lineNo: number;
+        expenseDate: Date | null;
+        category: string | null;
+        description: string;
+        amount: number;
+        taxRate: number | null;
+        taxAmount: number | null;
+        currency: string;
+        createdBy: string | null;
+        updatedBy: string | null;
+      };
+      type ExpenseAttachmentDraft = {
+        fileUrl: string;
+        fileName: string | null;
+        contentType: string | null;
+        fileSizeBytes: number | null;
+        fileHash: string | null;
+        createdBy: string | null;
+        updatedBy: string | null;
+      };
+      const actorUserId = req.user?.userId || null;
+      const rawLines = Array.isArray(body.lines) ? body.lines : [];
+      const rawAttachments = Array.isArray(body.attachments)
+        ? body.attachments
+        : [];
+      const seenLineNos = new Set<number>();
+      const lines: ExpenseLineDraft[] = [];
+      let linesTotal = 0;
+      for (const [index, line] of rawLines.entries()) {
+        const lineNo = Number(line?.lineNo);
+        if (!Number.isInteger(lineNo) || lineNo < 1) {
+          return reply.status(400).send({
+            error: {
+              code: 'INVALID_LINE',
+              message: `lines[${index}].lineNo must be >= 1`,
+            },
+          });
+        }
+        if (seenLineNos.has(lineNo)) {
+          return reply.status(400).send({
+            error: {
+              code: 'INVALID_LINE',
+              message: `lines[${index}].lineNo is duplicated`,
+            },
+          });
+        }
+        seenLineNos.add(lineNo);
+        const expenseDate = line?.expenseDate
+          ? parseDateParam(String(line.expenseDate))
+          : null;
+        if (line?.expenseDate && !expenseDate) {
+          return reply.status(400).send({
+            error: {
+              code: 'INVALID_LINE',
+              message: `lines[${index}].expenseDate is invalid`,
+            },
+          });
+        }
+        const amount = Number(line?.amount);
+        if (!Number.isFinite(amount) || amount < 0) {
+          return reply.status(400).send({
+            error: {
+              code: 'INVALID_LINE',
+              message: `lines[${index}].amount is invalid`,
+            },
+          });
+        }
+        const taxRate =
+          line?.taxRate === undefined || line?.taxRate === null
+            ? null
+            : Number(line.taxRate);
+        if (taxRate !== null && (!Number.isFinite(taxRate) || taxRate < 0)) {
+          return reply.status(400).send({
+            error: {
+              code: 'INVALID_LINE',
+              message: `lines[${index}].taxRate is invalid`,
+            },
+          });
+        }
+        const taxAmount =
+          line?.taxAmount === undefined || line?.taxAmount === null
+            ? null
+            : Number(line.taxAmount);
+        if (
+          taxAmount !== null &&
+          (!Number.isFinite(taxAmount) || taxAmount < 0)
+        ) {
+          return reply.status(400).send({
+            error: {
+              code: 'INVALID_LINE',
+              message: `lines[${index}].taxAmount is invalid`,
+            },
+          });
+        }
+        linesTotal += amount;
+        lines.push({
+          lineNo,
+          expenseDate,
+          category: line?.category ?? null,
+          description: String(line?.description ?? ''),
+          amount,
+          taxRate,
+          taxAmount,
+          currency: line?.currency || body.currency,
+          createdBy: actorUserId,
+          updatedBy: actorUserId,
+        });
+      }
+      if (lines.length > 0) {
+        const declaredAmount = Number(body.amount);
+        if (!Number.isFinite(declaredAmount) || declaredAmount < 0) {
+          return reply.status(400).send({
+            error: {
+              code: 'INVALID_AMOUNT',
+              message: 'amount is invalid',
+            },
+          });
+        }
+        if (Math.abs(linesTotal - declaredAmount) > 0.01) {
+          return reply.status(400).send({
+            error: {
+              code: 'INVALID_AMOUNT',
+              message: 'sum(lines.amount) must match amount',
+            },
+          });
+        }
+      }
+      const attachments: ExpenseAttachmentDraft[] = rawAttachments.map(
+        (attachment: unknown) => {
+          const value =
+            attachment && typeof attachment === 'object'
+              ? (attachment as Record<string, unknown>)
+              : {};
+          return {
+            fileUrl: String(value.fileUrl ?? ''),
+            fileName:
+              value.fileName === undefined || value.fileName === null
+                ? null
+                : String(value.fileName),
+            contentType:
+              value.contentType === undefined || value.contentType === null
+                ? null
+                : String(value.contentType),
+            fileSizeBytes:
+              value.fileSizeBytes === undefined || value.fileSizeBytes === null
+                ? null
+                : Number(value.fileSizeBytes),
+            fileHash:
+              value.fileHash === undefined || value.fileHash === null
+                ? null
+                : String(value.fileHash),
+            createdBy: actorUserId,
+            updatedBy: actorUserId,
+          };
+        },
+      );
+      const expense = await prisma.$transaction(async (tx) => {
+        const {
+          lines: _ignoredLines,
+          attachments: _ignoredAttachments,
+          ...raw
+        } = body;
+        const created = await tx.expense.create({
+          data: { ...raw, incurredOn },
+        });
+        if (lines.length > 0) {
+          await tx.expenseLine.createMany({
+            data: lines.map((line) => ({
+              ...line,
+              expenseId: created.id,
+            })),
+          });
+        }
+        if (attachments.length > 0) {
+          await tx.expenseAttachment.createMany({
+            data: attachments.map((attachment) => ({
+              ...attachment,
+              expenseId: created.id,
+            })),
+          });
+        }
+        return created;
       });
       return expense;
     },
@@ -103,6 +285,70 @@ export async function registerExpenseRoutes(app: FastifyInstance) {
         take: 200,
       });
       return { items };
+    },
+  );
+
+  app.get(
+    '/expenses/:id',
+    { preHandler: requireRole(['admin', 'mgmt', 'user']) },
+    async (req, reply) => {
+      const { id } = req.params as { id: string };
+      const expense = await prisma.expense.findUnique({
+        where: { id },
+        include: {
+          lines: { orderBy: { lineNo: 'asc' } },
+          attachments: { orderBy: { createdAt: 'asc' } },
+          comments: { orderBy: { createdAt: 'asc' } },
+        },
+      });
+      if (!expense) {
+        return reply.code(404).send({ error: 'not_found' });
+      }
+      const roles = req.user?.roles || [];
+      const isPrivileged = roles.includes('admin') || roles.includes('mgmt');
+      if (!isPrivileged && expense.userId !== req.user?.userId) {
+        return reply.code(403).send({ error: 'forbidden' });
+      }
+      return expense;
+    },
+  );
+
+  app.post(
+    '/expenses/:id/comments',
+    {
+      preHandler: requireRole(['admin', 'mgmt', 'user']),
+      schema: expenseCommentCreateSchema,
+    },
+    async (req, reply) => {
+      const { id } = req.params as { id: string };
+      const body = req.body as { kind?: string; body: string };
+      const expense = await prisma.expense.findUnique({ where: { id } });
+      if (!expense) {
+        return reply.code(404).send({ error: 'not_found' });
+      }
+      const roles = req.user?.roles || [];
+      const isPrivileged = roles.includes('admin') || roles.includes('mgmt');
+      if (!isPrivileged && expense.userId !== req.user?.userId) {
+        return reply.code(403).send({ error: 'forbidden' });
+      }
+      const actorUserId = req.user?.userId || null;
+      const created = await prisma.expenseComment.create({
+        data: {
+          expenseId: id,
+          kind: body.kind?.trim() || 'general',
+          body: body.body.trim(),
+          createdBy: actorUserId,
+          updatedBy: actorUserId,
+        },
+      });
+      await logAudit({
+        ...auditContextFromRequest(req),
+        action: 'expense_comment_add',
+        targetTable: 'ExpenseComment',
+        targetId: created.id,
+        metadata: { expenseId: id, kind: created.kind },
+      });
+      return created;
     },
   );
 
