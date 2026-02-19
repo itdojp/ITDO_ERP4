@@ -58,15 +58,15 @@ jobs:
           node packages/backend/dist/index.js > tmp/dast-backend.log 2>&1 &
           echo $! > tmp/dast-backend.pid
 
-      - name: Wait backend health
+      - name: Wait backend readiness
         run: |
           for i in $(seq 1 60); do
-            if curl -fsS "http://localhost:3002/healthz" >/dev/null 2>&1; then
+            if curl -fsS "http://localhost:3002/readyz" >/dev/null 2>&1; then
               exit 0
             fi
             sleep 1
           done
-          echo "backend not ready" >&2
+          echo "backend /readyz not ready" >&2
           tail -n 200 tmp/dast-backend.log >&2 || true
           exit 1
 

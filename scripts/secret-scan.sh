@@ -31,7 +31,7 @@ scanned_files_count="$(wc -l < "$files_file" | tr -d ' ')"
 if [[ -n "$report_file" ]]; then
   mkdir -p "$(dirname "$report_file")"
   {
-    echo -e "pattern\tpath:line:snippet"
+    echo -e "pattern\tpath:line"
   } > "$report_file"
 fi
 
@@ -77,12 +77,14 @@ for pattern in "${patterns[@]}"; do
   if [[ -s "$matches_file" ]]; then
     match_count="$(wc -l < "$matches_file" | tr -d ' ')"
     match_counts["$pattern"]="$match_count"
+    locations_file="${tmp_dir}/locations.txt"
+    awk -F: 'NF >= 2 { print $1 ":" $2 }' "$matches_file" > "$locations_file"
     echo "[secret-scan] matched: ${pattern}"
-    head -n 20 "$matches_file"
+    head -n 20 "$locations_file"
     if [[ -n "$report_file" ]]; then
-      while IFS= read -r line; do
-        printf '%s\t%s\n' "$pattern" "$line" >> "$report_file"
-      done < "$matches_file"
+      while IFS= read -r location; do
+        printf '%s\t%s\n' "$pattern" "$location" >> "$report_file"
+      done < "$locations_file"
     fi
     found=1
   fi
