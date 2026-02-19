@@ -55,7 +55,7 @@ test('expenseSchema: accepts lines and attachments payload', async () => {
   await app.close();
 });
 
-test('expenseSchema: rejects line without description', async () => {
+test('expenseSchema: keeps backward-compatible lines payload', async () => {
   const app = await buildValidatorServer('/validate/expense', expenseSchema);
   const res = await app.inject({
     method: 'POST',
@@ -76,7 +76,7 @@ test('expenseSchema: rejects line without description', async () => {
     },
   });
 
-  assert.equal(res.statusCode, 400);
+  assert.equal(res.statusCode, 200);
   await app.close();
 });
 

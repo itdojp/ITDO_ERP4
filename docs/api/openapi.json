@@ -3958,35 +3958,7 @@
                     "minimum": 0,
                     "type": "number"
                   },
-                  "attachments": {
-                    "items": {
-                      "additionalProperties": false,
-                      "properties": {
-                        "contentType": {
-                          "type": "string"
-                        },
-                        "fileHash": {
-                          "type": "string"
-                        },
-                        "fileName": {
-                          "type": "string"
-                        },
-                        "fileSizeBytes": {
-                          "minimum": 0,
-                          "type": "number"
-                        },
-                        "fileUrl": {
-                          "minLength": 1,
-                          "type": "string"
-                        }
-                      },
-                      "required": [
-                        "fileUrl"
-                      ],
-                      "type": "object"
-                    },
-                    "type": "array"
-                  },
+                  "attachments": {},
                   "category": {
                     "type": "string"
                   },
@@ -4001,51 +3973,7 @@
                   "isShared": {
                     "type": "boolean"
                   },
-                  "lines": {
-                    "items": {
-                      "additionalProperties": false,
-                      "properties": {
-                        "amount": {
-                          "minimum": 0,
-                          "type": "number"
-                        },
-                        "category": {
-                          "type": "string"
-                        },
-                        "currency": {
-                          "default": "JPY",
-                          "type": "string"
-                        },
-                        "description": {
-                          "minLength": 1,
-                          "type": "string"
-                        },
-                        "expenseDate": {
-                          "format": "date",
-                          "type": "string"
-                        },
-                        "lineNo": {
-                          "minimum": 1,
-                          "type": "number"
-                        },
-                        "taxAmount": {
-                          "minimum": 0,
-                          "type": "number"
-                        },
-                        "taxRate": {
-                          "minimum": 0,
-                          "type": "number"
-                        }
-                      },
-                      "required": [
-                        "lineNo",
-                        "description",
-                        "amount"
-                      ],
-                      "type": "object"
-                    },
-                    "type": "array"
-                  },
+                  "lines": {},
                   "projectId": {
                     "type": "string"
                   },
