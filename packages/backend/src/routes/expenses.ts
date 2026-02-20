@@ -505,6 +505,9 @@ export async function registerExpenseRoutes(app: FastifyInstance) {
       if (!expense) {
         return reply.code(404).send({ error: 'not_found' });
       }
+      if (expense.deletedAt) {
+        return reply.code(404).send({ error: 'not_found' });
+      }
       const roles = req.user?.roles || [];
       const userId = req.user?.userId;
       if (
@@ -514,21 +517,27 @@ export async function registerExpenseRoutes(app: FastifyInstance) {
       ) {
         return reply.code(403).send({ error: 'forbidden' });
       }
-      const attachmentCount = await prisma.expenseAttachment.count({
-        where: { expenseId: id },
+      const hasReceiptEvidence = hasExpenseSubmitEvidence({
+        receiptUrl: expense.receiptUrl,
+        attachmentCount: 0,
       });
-      if (
-        !hasExpenseSubmitEvidence({
-          receiptUrl: expense.receiptUrl,
-          attachmentCount,
-        })
-      ) {
-        return reply.status(400).send({
-          error: {
-            code: 'RECEIPT_REQUIRED',
-            message: 'At least one expense receipt is required',
-          },
+      if (!hasReceiptEvidence) {
+        const attachmentCount = await prisma.expenseAttachment.count({
+          where: { expenseId: id },
         });
+        if (
+          !hasExpenseSubmitEvidence({
+            receiptUrl: expense.receiptUrl,
+            attachmentCount,
+          })
+        ) {
+          return reply.status(400).send({
+            error: {
+              code: 'RECEIPT_REQUIRED',
+              message: 'At least one expense receipt is required',
+            },
+          });
+        }
       }
 
       const policyRes = await evaluateActionPolicyWithFallback({
