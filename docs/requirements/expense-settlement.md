@@ -61,6 +61,10 @@
     - 金額: Expense に保持する精算対象金額（`Expense.amount`）を記録する
     - 支払方法: MVP は任意項目とし、未指定の場合は `null` またはフィールド省略とする（実装でどちらかに統一）
   - `expense_unmark_paid`（理由必須）
+- 状態遷移ログ:
+  - `ExpenseStateTransitionLog` に `fromStatus/fromSettlementStatus -> toStatus/toSettlementStatus` を保存する
+  - 作成/申請/承認確定/支払済み/支払取消の遷移を保存する
+  - `GET /expenses/:id/state-transitions` で履歴参照可能
 - 通知: 支払完了は申請者へアプリ内通知（`kind=expense_mark_paid`）。メールは運用次第（通知体系は `docs/requirements/notifications.md` に準拠）
 
 ## 後続検討

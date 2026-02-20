@@ -77,6 +77,7 @@
   - `GET /expenses/:id` → 明細/添付/コメントを含む詳細
   - `POST /expenses/:id/comments` {kind?, body}
   - `POST /expenses/:id/submit` → 承認フロー起動
+  - `GET /expenses/:id/state-transitions` → 状態遷移履歴（status/settlementStatus）
 - Leave
   - `POST /leave-requests` {leave_type, start_date, end_date, hours?, notes}
   - `POST /leave-requests/:id/submit` → 承認フロー起動
