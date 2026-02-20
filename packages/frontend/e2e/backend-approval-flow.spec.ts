@@ -52,6 +52,28 @@ async function createEstimateFixture(
   return fixture;
 }
 
+async function createProjectFixture(
+  request: APIRequestContext,
+  suffix: string,
+  label: string,
+) {
+  const projectRes = await request.post(`${apiBase}/projects`, {
+    headers: adminHeaders,
+    data: {
+      code: `E2E-APR-${label}-${suffix}`,
+      name: `E2E Approval ${label} ${suffix}`,
+      status: 'active',
+    },
+  });
+  await ensureOk(projectRes);
+  const projectPayload = await projectRes.json();
+  const projectId = (projectPayload?.id ?? projectPayload?.project?.id ?? '')
+    .toString()
+    .trim();
+  expect(projectId).toBeTruthy();
+  return { projectId };
+}
+
 const MAX_APPROVAL_TRANSITIONS = 8;
 
 async function approveUntilClosed(
@@ -204,11 +226,7 @@ test('approval flow: expense requires qa stage before exec stage @core', async (
   request,
 }) => {
   const suffix = runId();
-  const expenseFixture = await createEstimateFixture(
-    request,
-    suffix,
-    'expense',
-  );
+  const expenseFixture = await createProjectFixture(request, suffix, 'expense');
   const requesterHeaders = buildHeaders({
     userId: `e2e-expense-requester-${suffix}@example.com`,
     roles: ['user'],
@@ -231,6 +249,17 @@ test('approval flow: expense requires qa stage before exec stage @core', async (
   });
   await ensureOk(ruleRes);
   const createdRule = await ruleRes.json();
+  const deactivateRule = async () => {
+    if (!createdRule?.id) return;
+    const deactivateRes = await request.patch(
+      `${apiBase}/approval-rules/${encodeURIComponent(createdRule.id)}`,
+      {
+        headers: adminHeaders,
+        data: { isActive: false },
+      },
+    );
+    await ensureOk(deactivateRes);
+  };
 
   try {
     const expenseRes = await request.post(`${apiBase}/expenses`, {
@@ -259,6 +288,8 @@ test('approval flow: expense requires qa stage before exec stage @core', async (
       submitData: {},
     });
     expect(approval.status).toBe('pending_qa');
+    // Approval instance has already persisted steps; deactivate early to reduce test cross-impact.
+    await deactivateRule();
 
     const qaApproveRes = await request.post(
       `${apiBase}/approval-instances/${encodeURIComponent(approval.id)}/act`,
@@ -295,15 +326,6 @@ test('approval flow: expense requires qa stage before exec stage @core', async (
     const approvedExpense = await approvedExpenseRes.json();
     expect(approvedExpense?.status).toBe('approved');
   } finally {
-    if (createdRule?.id) {
-      const deactivateRes = await request.patch(
-        `${apiBase}/approval-rules/${encodeURIComponent(createdRule.id)}`,
-        {
-          headers: adminHeaders,
-          data: { isActive: false },
-        },
-      );
-      await ensureOk(deactivateRes);
-    }
+    await deactivateRule();
   }
 });
