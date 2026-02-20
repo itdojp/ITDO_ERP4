@@ -1045,10 +1045,27 @@ model Expense {
   updatedBy     String?
   deletedAt     DateTime?
   deletedReason String?
+  stateTransitions ExpenseStateTransitionLog[]
 
   @@index([projectId, deletedAt])
   @@index([userId, incurredOn])
   @@index([status])
+}
+
+model ExpenseStateTransitionLog {
+  id                   String                  @id @default(uuid())
+  expense              Expense                 @relation(fields: [expenseId], references: [id], onDelete: Restrict)
+  expenseId            String
+  fromStatus           DocStatus?
+  toStatus             DocStatus
+  fromSettlementStatus ExpenseSettlementStatus?
+  toSettlementStatus   ExpenseSettlementStatus
+  actorUserId          String?
+  reasonText           String?
+  metadata             Json?
+  createdAt            DateTime                @default(now())
+
+  @@index([expenseId, createdAt])
 }
 
 model LeaveRequest {
