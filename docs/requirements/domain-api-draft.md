@@ -73,7 +73,9 @@
 - Reports
   - `GET /reports/delivery-due` filters {from, to, project_id}
 - Expense
-  - `POST /expenses` {project_id, category, amount, currency, incurred_on, is_shared, receipt_url?}
+  - `POST /expenses` {project_id, category, amount, currency, incurred_on, is_shared, receipt_url?, lines?, attachments?}
+  - `GET /expenses/:id` → 明細/添付/コメントを含む詳細
+  - `POST /expenses/:id/comments` {kind?, body}
   - `POST /expenses/:id/submit` → 承認フロー起動
   - `GET /expenses/:id/state-transitions` → 状態遷移履歴（status/settlementStatus）
 - Leave

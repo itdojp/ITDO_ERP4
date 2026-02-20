@@ -5,13 +5,18 @@ import {
   createExpenseMarkPaidNotification,
 } from '../services/appNotifications.js';
 import {
+  expenseCommentCreateSchema,
   expenseMarkPaidSchema,
   expenseReassignSchema,
   expenseSchema,
   expenseUnmarkPaidSchema,
 } from './validators.js';
 import { DocStatusValue, FlowTypeValue } from '../types.js';
-import { requireProjectAccess, requireRole } from '../services/rbac.js';
+import {
+  hasProjectAccess,
+  requireProjectAccess,
+  requireRole,
+} from '../services/rbac.js';
 import { prisma } from '../services/db.js';
 import { auditContextFromRequest, logAudit } from '../services/audit.js';
 import { logReassignment } from '../services/reassignmentLog.js';
@@ -20,6 +25,223 @@ import { findPeriodLock, toPeriodKey } from '../services/periodLock.js';
 import { evaluateActionPolicyWithFallback } from '../services/actionPolicy.js';
 import { logActionPolicyOverrideIfNeeded } from '../services/actionPolicyAudit.js';
 import { logExpenseStateTransition } from '../services/expenseStateTransitionLog.js';
+
+type ExpenseLineDraft = {
+  lineNo: number;
+  expenseDate: Date | null;
+  category: string | null;
+  description: string;
+  amount: number;
+  taxRate: number | null;
+  taxAmount: number | null;
+  currency: string;
+  createdBy: string | null;
+  updatedBy: string | null;
+};
+
+type ExpenseAttachmentDraft = {
+  fileUrl: string;
+  fileName: string | null;
+  contentType: string | null;
+  fileSizeBytes: number | null;
+  fileHash: string | null;
+  createdBy: string | null;
+  updatedBy: string | null;
+};
+
+type ExpenseCreateDraftResult =
+  | {
+      ok: true;
+      declaredAmount: number;
+      lines: ExpenseLineDraft[];
+      attachments: ExpenseAttachmentDraft[];
+      sanitizedBody: Record<string, unknown>;
+    }
+  | {
+      ok: false;
+      statusCode: number;
+      error: { code: string; message: string };
+    };
+
+export function buildExpenseCreateDraft(input: {
+  body: Record<string, unknown>;
+  actorUserId: string | null;
+}): ExpenseCreateDraftResult {
+  const { body, actorUserId } = input;
+  const rawLines = Array.isArray(body.lines) ? body.lines : [];
+  const rawAttachments = Array.isArray(body.attachments)
+    ? body.attachments
+    : [];
+  const declaredAmount = Number(body.amount);
+  if (!Number.isFinite(declaredAmount) || declaredAmount < 0) {
+    return {
+      ok: false,
+      statusCode: 400,
+      error: {
+        code: 'INVALID_AMOUNT',
+        message: 'amount is invalid',
+      },
+    };
+  }
+
+  const seenLineNos = new Set<number>();
+  const lines: ExpenseLineDraft[] = [];
+  let linesTotal = 0;
+  for (const [index, line] of rawLines.entries()) {
+    const lineNo = Number((line as any)?.lineNo);
+    if (!Number.isInteger(lineNo) || lineNo < 1) {
+      return {
+        ok: false,
+        statusCode: 400,
+        error: {
+          code: 'INVALID_LINE',
+          message: `lines[${index}].lineNo must be >= 1`,
+        },
+      };
+    }
+    if (seenLineNos.has(lineNo)) {
+      return {
+        ok: false,
+        statusCode: 400,
+        error: {
+          code: 'INVALID_LINE',
+          message: `lines[${index}].lineNo is duplicated`,
+        },
+      };
+    }
+    seenLineNos.add(lineNo);
+    const expenseDate = (line as any)?.expenseDate
+      ? parseDateParam(String((line as any).expenseDate))
+      : null;
+    if ((line as any)?.expenseDate && !expenseDate) {
+      return {
+        ok: false,
+        statusCode: 400,
+        error: {
+          code: 'INVALID_LINE',
+          message: `lines[${index}].expenseDate is invalid`,
+        },
+      };
+    }
+    const amount = Number((line as any)?.amount);
+    if (!Number.isFinite(amount) || amount < 0) {
+      return {
+        ok: false,
+        statusCode: 400,
+        error: {
+          code: 'INVALID_LINE',
+          message: `lines[${index}].amount is invalid`,
+        },
+      };
+    }
+    const taxRate =
+      (line as any)?.taxRate === undefined || (line as any)?.taxRate === null
+        ? null
+        : Number((line as any).taxRate);
+    if (taxRate !== null && (!Number.isFinite(taxRate) || taxRate < 0)) {
+      return {
+        ok: false,
+        statusCode: 400,
+        error: {
+          code: 'INVALID_LINE',
+          message: `lines[${index}].taxRate is invalid`,
+        },
+      };
+    }
+    const taxAmount =
+      (line as any)?.taxAmount === undefined ||
+      (line as any)?.taxAmount === null
+        ? null
+        : Number((line as any).taxAmount);
+    if (taxAmount !== null && (!Number.isFinite(taxAmount) || taxAmount < 0)) {
+      return {
+        ok: false,
+        statusCode: 400,
+        error: {
+          code: 'INVALID_LINE',
+          message: `lines[${index}].taxAmount is invalid`,
+        },
+      };
+    }
+    linesTotal += amount;
+    lines.push({
+      lineNo,
+      expenseDate,
+      category: (line as any)?.category ?? null,
+      description: String((line as any)?.description ?? ''),
+      amount,
+      taxRate,
+      taxAmount,
+      currency: (line as any)?.currency || String(body.currency || 'JPY'),
+      createdBy: actorUserId,
+      updatedBy: actorUserId,
+    });
+  }
+  if (lines.length > 0 && Math.abs(linesTotal - declaredAmount) > 0.01) {
+    return {
+      ok: false,
+      statusCode: 400,
+      error: {
+        code: 'INVALID_AMOUNT',
+        message: 'sum(lines.amount) must match amount',
+      },
+    };
+  }
+
+  const attachments: ExpenseAttachmentDraft[] = [];
+  for (const [index, attachment] of rawAttachments.entries()) {
+    const value =
+      attachment && typeof attachment === 'object'
+        ? (attachment as Record<string, unknown>)
+        : {};
+    const fileUrl =
+      typeof value.fileUrl === 'string' ? value.fileUrl.trim() : '';
+    if (!fileUrl) {
+      return {
+        ok: false,
+        statusCode: 400,
+        error: {
+          code: 'INVALID_ATTACHMENT',
+          message: `attachments[${index}].fileUrl is required`,
+        },
+      };
+    }
+    attachments.push({
+      fileUrl,
+      fileName:
+        value.fileName === undefined || value.fileName === null
+          ? null
+          : String(value.fileName),
+      contentType:
+        value.contentType === undefined || value.contentType === null
+          ? null
+          : String(value.contentType),
+      fileSizeBytes:
+        value.fileSizeBytes === undefined || value.fileSizeBytes === null
+          ? null
+          : Number(value.fileSizeBytes),
+      fileHash:
+        value.fileHash === undefined || value.fileHash === null
+          ? null
+          : String(value.fileHash),
+      createdBy: actorUserId,
+      updatedBy: actorUserId,
+    });
+  }
+
+  const {
+    lines: _ignoredLines,
+    attachments: _ignoredAttachments,
+    ...raw
+  } = body;
+  return {
+    ok: true,
+    declaredAmount,
+    lines,
+    attachments,
+    sanitizedBody: raw,
+  };
+}
 
 export async function registerExpenseRoutes(app: FastifyInstance) {
   const parseDate = (value?: string) => {
@@ -55,8 +277,35 @@ export async function registerExpenseRoutes(app: FastifyInstance) {
           error: { code: 'INVALID_DATE', message: 'Invalid incurredOn' },
         });
       }
-      const expense = await prisma.expense.create({
-        data: { ...body, incurredOn },
+      const actorUserId = req.user?.userId || null;
+      const createDraft = buildExpenseCreateDraft({ body, actorUserId });
+      if (!createDraft.ok) {
+        return reply.status(createDraft.statusCode).send({
+          error: createDraft.error,
+        });
+      }
+      const { lines, attachments, sanitizedBody } = createDraft;
+      const expense = await prisma.$transaction(async (tx) => {
+        const created = await tx.expense.create({
+          data: { ...(sanitizedBody as any), incurredOn },
+        });
+        if (lines.length > 0) {
+          await tx.expenseLine.createMany({
+            data: lines.map((line) => ({
+              ...line,
+              expenseId: created.id,
+            })),
+          });
+        }
+        if (attachments.length > 0) {
+          await tx.expenseAttachment.createMany({
+            data: attachments.map((attachment) => ({
+              ...attachment,
+              expenseId: created.id,
+            })),
+          });
+        }
+        return created;
       });
       await logExpenseStateTransition({
         client: prisma,
@@ -119,6 +368,91 @@ export async function registerExpenseRoutes(app: FastifyInstance) {
   );
 
   app.get(
+    '/expenses/:id',
+    { preHandler: requireRole(['admin', 'mgmt', 'user']) },
+    async (req, reply) => {
+      const { id } = req.params as { id: string };
+      const expense = await prisma.expense.findUnique({
+        where: { id },
+        include: {
+          lines: { orderBy: { lineNo: 'asc' } },
+          attachments: { orderBy: { createdAt: 'asc' } },
+          comments: { orderBy: { createdAt: 'asc' } },
+        },
+      });
+      if (!expense) {
+        return reply.code(404).send({ error: 'not_found' });
+      }
+      const roles = req.user?.roles || [];
+      const isPrivileged = roles.includes('admin') || roles.includes('mgmt');
+      if (!isPrivileged) {
+        if (expense.userId !== req.user?.userId) {
+          return reply.code(403).send({ error: 'forbidden' });
+        }
+        if (
+          !hasProjectAccess(
+            roles,
+            req.user?.projectIds || [],
+            expense.projectId,
+          )
+        ) {
+          return reply.code(403).send({ error: 'forbidden_project' });
+        }
+      }
+      return expense;
+    },
+  );
+
+  app.post(
+    '/expenses/:id/comments',
+    {
+      preHandler: requireRole(['admin', 'mgmt', 'user']),
+      schema: expenseCommentCreateSchema,
+    },
+    async (req, reply) => {
+      const { id } = req.params as { id: string };
+      const body = req.body as { kind?: string; body: string };
+      const expense = await prisma.expense.findUnique({ where: { id } });
+      if (!expense) {
+        return reply.code(404).send({ error: 'not_found' });
+      }
+      const roles = req.user?.roles || [];
+      const isPrivileged = roles.includes('admin') || roles.includes('mgmt');
+      if (!isPrivileged) {
+        if (expense.userId !== req.user?.userId) {
+          return reply.code(403).send({ error: 'forbidden' });
+        }
+        if (
+          !hasProjectAccess(
+            roles,
+            req.user?.projectIds || [],
+            expense.projectId,
+          )
+        ) {
+          return reply.code(403).send({ error: 'forbidden_project' });
+        }
+      }
+      const actorUserId = req.user?.userId || null;
+      const created = await prisma.expenseComment.create({
+        data: {
+          expenseId: id,
+          kind: body.kind?.trim() || 'general',
+          body: body.body.trim(),
+          createdBy: actorUserId,
+          updatedBy: actorUserId,
+        },
+      });
+      await logAudit({
+        ...auditContextFromRequest(req),
+        action: 'expense_comment_add',
+        targetTable: 'ExpenseComment',
+        targetId: created.id,
+        metadata: { expenseId: id, kind: created.kind },
+      });
+      return created;
+    },
+  );
+  app.get(
     '/expenses/:id/state-transitions',
     { preHandler: requireRole(['admin', 'mgmt', 'user']) },
     async (req, reply) => {
@@ -145,7 +479,6 @@ export async function registerExpenseRoutes(app: FastifyInstance) {
       return { items };
     },
   );
-
   app.post(
     '/expenses/:id/submit',
     { preHandler: requireRole(['admin', 'mgmt', 'user']) },

@@ -311,7 +311,20 @@ export const expenseSchema = {
     incurredOn: Type.String({ format: 'date' }),
     isShared: Type.Optional(Type.Boolean()),
     receiptUrl: Type.Optional(Type.String()),
+    // Keep OpenAPI backward-compatible; detailed validation runs in route logic.
+    lines: Type.Optional(Type.Any()),
+    attachments: Type.Optional(Type.Any()),
   }),
+};
+
+export const expenseCommentCreateSchema = {
+  body: Type.Object(
+    {
+      kind: Type.Optional(Type.String({ minLength: 1 })),
+      body: Type.String({ minLength: 1 }),
+    },
+    { additionalProperties: false },
+  ),
 };
 
 export const estimateSchema = {

@@ -1045,11 +1045,65 @@ model Expense {
   updatedBy     String?
   deletedAt     DateTime?
   deletedReason String?
+  lines         ExpenseLine[]
+  attachments   ExpenseAttachment[]
+  comments      ExpenseComment[]
   stateTransitions ExpenseStateTransitionLog[]
 
   @@index([projectId, deletedAt])
   @@index([userId, incurredOn])
   @@index([status])
+}
+
+model ExpenseLine {
+  id          String   @id @default(uuid())
+  expense     Expense  @relation(fields: [expenseId], references: [id], onDelete: Restrict)
+  expenseId   String
+  lineNo      Int
+  expenseDate DateTime?
+  category    String?
+  description String
+  amount      Decimal
+  taxRate     Decimal?
+  taxAmount   Decimal?
+  currency    String
+  createdAt   DateTime @default(now())
+  createdBy   String?
+  updatedAt   DateTime @updatedAt
+  updatedBy   String?
+
+  @@unique([expenseId, lineNo])
+}
+
+model ExpenseAttachment {
+  id            String   @id @default(uuid())
+  expense       Expense  @relation(fields: [expenseId], references: [id], onDelete: Restrict)
+  expenseId     String
+  fileUrl       String
+  fileName      String?
+  contentType   String?
+  fileSizeBytes Int?
+  fileHash      String?
+  createdAt     DateTime @default(now())
+  createdBy     String?
+  updatedAt     DateTime @updatedAt
+  updatedBy     String?
+
+  @@index([expenseId, createdAt])
+}
+
+model ExpenseComment {
+  id        String   @id @default(uuid())
+  expense   Expense  @relation(fields: [expenseId], references: [id], onDelete: Restrict)
+  expenseId String
+  kind      String   @default("general")
+  body      String
+  createdAt DateTime @default(now())
+  createdBy String?
+  updatedAt DateTime @updatedAt
+  updatedBy String?
+
+  @@index([expenseId, createdAt])
 }
 
 model ExpenseStateTransitionLog {

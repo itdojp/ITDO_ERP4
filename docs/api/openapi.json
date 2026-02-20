@@ -3958,6 +3958,7 @@
                     "minimum": 0,
                     "type": "number"
                   },
+                  "attachments": {},
                   "category": {
                     "type": "string"
                   },
@@ -3972,6 +3973,7 @@
                   "isShared": {
                     "type": "boolean"
                   },
+                  "lines": {},
                   "projectId": {
                     "type": "string"
                   },
@@ -3989,6 +3991,68 @@
                   "amount",
                   "currency",
                   "incurredOn"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/expenses/{id}": {
+      "get": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/expenses/{id}/comments": {
+      "post": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "body": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "kind": {
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "body"
                 ],
                 "type": "object"
               }
