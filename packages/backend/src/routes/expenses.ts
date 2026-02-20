@@ -1,5 +1,8 @@
 import { FastifyInstance } from 'fastify';
-import { submitApprovalWithUpdate } from '../services/approval.js';
+import {
+  ExpenseQaStageRequiredError,
+  submitApprovalWithUpdate,
+} from '../services/approval.js';
 import {
   createApprovalPendingNotifications,
   createExpenseMarkPaidNotification,
@@ -586,17 +589,32 @@ export async function registerExpenseRoutes(app: FastifyInstance) {
         result: policyRes,
       });
       const actorUserId = req.user?.userId || 'system';
-      const { updated, approval } = await submitApprovalWithUpdate({
-        flowType: FlowTypeValue.expense,
-        targetTable: 'expenses',
-        targetId: id,
-        update: (tx) =>
-          tx.expense.update({
-            where: { id },
-            data: { status: DocStatusValue.pending_qa },
-          }),
-        createdBy: userId,
-      });
+      let submitResult: Awaited<ReturnType<typeof submitApprovalWithUpdate>>;
+      try {
+        submitResult = await submitApprovalWithUpdate({
+          flowType: FlowTypeValue.expense,
+          targetTable: 'expenses',
+          targetId: id,
+          update: (tx) =>
+            tx.expense.update({
+              where: { id },
+              data: { status: DocStatusValue.pending_qa },
+            }),
+          createdBy: userId,
+        });
+      } catch (error) {
+        if (error instanceof ExpenseQaStageRequiredError) {
+          return reply.status(409).send({
+            error: {
+              code: 'EXPENSE_QA_STAGE_REQUIRED',
+              message:
+                'expense approval rule must include a non-exec stage before exec stage',
+            },
+          });
+        }
+        throw error;
+      }
+      const { updated, approval } = submitResult;
       await logExpenseStateTransition({
         client: prisma,
         expenseId: id,

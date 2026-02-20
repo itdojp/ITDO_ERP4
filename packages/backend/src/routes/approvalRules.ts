@@ -18,6 +18,10 @@ import { DocStatusValue, TimeStatusValue } from '../types.js';
 import { auditContextFromRequest, logAudit } from '../services/audit.js';
 import { parseDateParam } from '../utils/date.js';
 import { applyChatAckTemplates } from '../services/chatAckTemplates.js';
+import {
+  hasQaStageBeforeExec,
+  normalizeRuleStepsWithPolicy,
+} from '../services/approvalLogic.js';
 
 function hasValidSteps(steps: unknown) {
   if (Array.isArray(steps)) {
@@ -48,6 +52,14 @@ function hasValidSteps(steps: unknown) {
     }
   }
   return true;
+}
+
+function violatesExpenseQaGate(flowType: unknown, steps: unknown) {
+  if (flowType !== 'expense') return false;
+  if (steps === undefined || steps === null) return false;
+  const normalized = normalizeRuleStepsWithPolicy(steps);
+  if (!normalized) return false;
+  return !hasQaStageBeforeExec(normalized.steps);
 }
 
 function ruleSnapshotForAudit(rule: any) {
@@ -327,6 +339,13 @@ export async function registerApprovalRuleRoutes(app: FastifyInstance) {
             'steps must be either an array of steps (approverGroupId/approverUserId) or {stages:[{order, approvers:[{type,id}], completion?}]}; stage.order must be unique; quorum must be <= approvers.length',
         });
       }
+      if (violatesExpenseQaGate(body.flowType, body.steps)) {
+        return reply.code(400).send({
+          error: 'expense_requires_qa_before_exec',
+          message:
+            'expense approval steps must include at least one non-exec stage before exec stage',
+        });
+      }
       let effectiveFrom: Date | undefined;
       if (body.effectiveFrom !== undefined) {
         const parsed = parseDateParam(body.effectiveFrom);
@@ -371,6 +390,13 @@ export async function registerApprovalRuleRoutes(app: FastifyInstance) {
     async (req, reply) => {
       const { id } = req.params as { id: string };
       const body = req.body as any;
+      const currentRule = await prisma.approvalRule.findUnique({
+        where: { id },
+        select: { id: true, flowType: true, steps: true },
+      });
+      if (!currentRule) {
+        return reply.code(404).send({ error: 'not_found' });
+      }
       if (body.steps !== undefined) {
         try {
           body.steps = await resolveApprovalStepsGroupIds(body.steps);
@@ -390,6 +416,15 @@ export async function registerApprovalRuleRoutes(app: FastifyInstance) {
           error: 'invalid_steps',
           message:
             'steps must be either an array of steps (approverGroupId/approverUserId) or {stages:[{order, approvers:[{type,id}], completion?}]}; stage.order must be unique; quorum must be <= approvers.length',
+        });
+      }
+      const flowType = body.flowType ?? currentRule.flowType;
+      const effectiveSteps = body.steps ?? currentRule.steps;
+      if (violatesExpenseQaGate(flowType, effectiveSteps)) {
+        return reply.code(400).send({
+          error: 'expense_requires_qa_before_exec',
+          message:
+            'expense approval steps must include at least one non-exec stage before exec stage',
         });
       }
       let effectiveFrom: Date | undefined;

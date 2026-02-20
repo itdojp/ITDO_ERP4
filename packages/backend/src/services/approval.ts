@@ -4,6 +4,7 @@ import { logAudit, type AuditContext } from './audit.js';
 import { createEvidenceSnapshotForApproval } from './evidenceSnapshot.js';
 import { logExpenseStateTransition } from './expenseStateTransitionLog.js';
 import {
+  hasQaStageBeforeExec,
   matchApprovalSteps as computeApprovalSteps,
   matchesRuleCondition,
   normalizeRuleStepsWithPolicy,
@@ -14,6 +15,13 @@ import {
 } from './approvalLogic.js';
 
 export { matchApprovalSteps } from './approvalLogic.js';
+
+export class ExpenseQaStageRequiredError extends Error {
+  constructor() {
+    super('expense_requires_qa_before_exec');
+    this.name = 'ExpenseQaStageRequiredError';
+  }
+}
 
 type ActOptions = {
   reason?: string;
@@ -88,6 +96,12 @@ function isPrismaUniqueError(err: unknown) {
   return (
     Boolean(err) && typeof err === 'object' && (err as any).code === 'P2002'
   );
+}
+
+function assertExpenseQaGate(flowType: string, steps: Step[]) {
+  if (flowType !== 'expense') return;
+  if (hasQaStageBeforeExec(steps)) return;
+  throw new ExpenseQaStageRequiredError();
 }
 
 async function findOpenApprovalInstance(options: {
@@ -167,6 +181,7 @@ async function createApprovalWithClient(
     ...s,
     stepOrder: s.stepOrder ?? idx + 1,
   }));
+  assertExpenseQaGate(flowType, normalizedSteps);
   const currentStep = normalizedSteps.length
     ? Math.min(...normalizedSteps.map((s) => s.stepOrder || 1))
     : null;

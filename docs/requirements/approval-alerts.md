@@ -11,6 +11,7 @@
 
 ### 経費
 - ステート: `draft` → `pending_qa`(管理部 or 経理) → `pending_exec`(金額閾値超の場合) → `approved` / `rejected`。
+- `approval_rules(flowType=expense)` で `exec` を設定する場合、`pending_qa` 相当の non-exec ステージを先行させる（`exec` 先頭ステージは禁止）。
 - 共通経費は is_shared=true で期別疑似案件に紐付け。
 
 ### 休暇
