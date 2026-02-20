@@ -220,6 +220,26 @@ async function approveUntilApproved(
       roles: ['mgmt'],
       groupIds: actorGroupIds,
     });
+    if (flowType === 'expense' && instance.status === 'pending_qa') {
+      const checklistRes = await page.request.put(
+        `${apiBase}/expenses/${encodeURIComponent(targetId)}/qa-checklist`,
+        {
+          headers: actorHeaders,
+          data: {
+            amountVerified: true,
+            receiptVerified: true,
+            journalPrepared: true,
+            projectLinked: true,
+            budgetChecked: true,
+          },
+        },
+      );
+      if (!checklistRes.ok()) {
+        throw new Error(
+          `[e2e] expense checklist failed: ${checklistRes.status()} ${await checklistRes.text()} (target=${targetId})`,
+        );
+      }
+    }
     const actRes = await page.request.post(
       `${apiBase}/approval-instances/${encodeURIComponent(instance.id)}/act`,
       {

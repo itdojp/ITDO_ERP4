@@ -4120,6 +4120,76 @@
         }
       }
     },
+    "/expenses/{id}/qa-checklist": {
+      "get": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      },
+      "put": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "minProperties": 1,
+                "properties": {
+                  "amountVerified": {
+                    "type": "boolean"
+                  },
+                  "budgetChecked": {
+                    "type": "boolean"
+                  },
+                  "journalPrepared": {
+                    "type": "boolean"
+                  },
+                  "notes": {
+                    "maxLength": 2000,
+                    "nullable": true,
+                    "type": "string"
+                  },
+                  "projectLinked": {
+                    "type": "boolean"
+                  },
+                  "receiptVerified": {
+                    "type": "boolean"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
     "/expenses/{id}/reassign": {
       "post": {
         "parameters": [

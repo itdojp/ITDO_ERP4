@@ -298,8 +298,37 @@ test('approval flow: expense requires qa stage before exec stage @core', async (
         data: { action: 'approve', reason: `e2e expense qa approve ${suffix}` },
       },
     );
-    await ensureOk(qaApproveRes);
-    const qaApproved = await qaApproveRes.json();
+    expect(qaApproveRes.status()).toBe(409);
+    const qaApproveBlocked = await qaApproveRes.json();
+    expect(qaApproveBlocked?.error?.code).toBe('EXPENSE_QA_CHECKLIST_REQUIRED');
+
+    const checklistRes = await request.put(
+      `${apiBase}/expenses/${encodeURIComponent(expense.id)}/qa-checklist`,
+      {
+        headers: adminHeaders,
+        data: {
+          amountVerified: true,
+          receiptVerified: true,
+          journalPrepared: true,
+          projectLinked: true,
+          budgetChecked: true,
+          notes: `e2e checklist ${suffix}`,
+        },
+      },
+    );
+    await ensureOk(checklistRes);
+    const checklist = await checklistRes.json();
+    expect(checklist?.isComplete).toBe(true);
+
+    const qaApproveRes2 = await request.post(
+      `${apiBase}/approval-instances/${encodeURIComponent(approval.id)}/act`,
+      {
+        headers: adminHeaders,
+        data: { action: 'approve', reason: `e2e expense qa approve ${suffix}` },
+      },
+    );
+    await ensureOk(qaApproveRes2);
+    const qaApproved = await qaApproveRes2.json();
     expect(qaApproved?.status).toBe('pending_exec');
 
     const execApproveRes = await request.post(

@@ -1049,10 +1049,31 @@ model Expense {
   attachments   ExpenseAttachment[]
   comments      ExpenseComment[]
   stateTransitions ExpenseStateTransitionLog[]
+  qaChecklist   ExpenseQaChecklist?
 
   @@index([projectId, deletedAt])
   @@index([userId, incurredOn])
   @@index([status])
+}
+
+model ExpenseQaChecklist {
+  id                String   @id @default(uuid())
+  expense           Expense  @relation(fields: [expenseId], references: [id], onDelete: Restrict)
+  expenseId         String   @unique
+  amountVerified    Boolean  @default(false)
+  receiptVerified   Boolean  @default(false)
+  journalPrepared   Boolean  @default(false)
+  projectLinked     Boolean  @default(false)
+  budgetChecked     Boolean  @default(false)
+  notes             String?
+  completedAt       DateTime?
+  completedBy       String?
+  createdAt         DateTime @default(now())
+  createdBy         String?
+  updatedAt         DateTime @updatedAt
+  updatedBy         String?
+
+  @@index([completedAt])
 }
 
 model ExpenseLine {

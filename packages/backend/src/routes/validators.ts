@@ -327,6 +327,22 @@ export const expenseCommentCreateSchema = {
   ),
 };
 
+export const expenseQaChecklistPatchSchema = {
+  body: Type.Object(
+    {
+      amountVerified: Type.Optional(Type.Boolean()),
+      receiptVerified: Type.Optional(Type.Boolean()),
+      journalPrepared: Type.Optional(Type.Boolean()),
+      projectLinked: Type.Optional(Type.Boolean()),
+      budgetChecked: Type.Optional(Type.Boolean()),
+      notes: Type.Optional(
+        Type.Union([Type.String({ maxLength: 2000 }), Type.Null()]),
+      ),
+    },
+    { additionalProperties: false, minProperties: 1 },
+  ),
+};
+
 export const estimateSchema = {
   body: Type.Object({
     lines: Type.Optional(Type.Array(Type.Any())),
