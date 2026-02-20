@@ -199,3 +199,111 @@ test('approval flow: submit -> reject with audit @core', async ({
   expect(rejectedEstimate?.status).toBe('rejected');
   await expectAuditAction(request, 'approval_reject', rejectApprovalId);
 });
+
+test('approval flow: expense requires qa stage before exec stage @core', async ({
+  request,
+}) => {
+  const suffix = runId();
+  const expenseFixture = await createEstimateFixture(
+    request,
+    suffix,
+    'expense',
+  );
+  const requesterHeaders = buildHeaders({
+    userId: `e2e-expense-requester-${suffix}@example.com`,
+    roles: ['user'],
+    projectIds: [expenseFixture.projectId],
+  });
+
+  const ruleRes = await request.post(`${apiBase}/approval-rules`, {
+    headers: adminHeaders,
+    data: {
+      flowType: 'expense',
+      conditions: {
+        amountMin: 110000,
+        amountMax: 130000,
+      },
+      steps: [
+        { stepOrder: 1, approverGroupId: 'mgmt' },
+        { stepOrder: 2, approverGroupId: 'exec' },
+      ],
+    },
+  });
+  await ensureOk(ruleRes);
+  const createdRule = await ruleRes.json();
+
+  try {
+    const expenseRes = await request.post(`${apiBase}/expenses`, {
+      headers: requesterHeaders,
+      data: {
+        projectId: expenseFixture.projectId,
+        userId: requesterHeaders['x-user-id'],
+        category: 'travel',
+        amount: 120000,
+        currency: 'JPY',
+        incurredOn: '2026-01-02',
+        receiptUrl: `https://example.com/e2e-expense-receipt-${suffix}.pdf`,
+      },
+    });
+    await ensureOk(expenseRes);
+    const expense = await expenseRes.json();
+
+    const approval = await submitAndFindApprovalInstance({
+      request,
+      apiBase,
+      headers: requesterHeaders,
+      flowType: 'expense',
+      projectId: expenseFixture.projectId,
+      targetTable: 'expenses',
+      targetId: expense.id as string,
+      submitData: {},
+    });
+    expect(approval.status).toBe('pending_qa');
+
+    const qaApproveRes = await request.post(
+      `${apiBase}/approval-instances/${encodeURIComponent(approval.id)}/act`,
+      {
+        headers: adminHeaders,
+        data: { action: 'approve', reason: `e2e expense qa approve ${suffix}` },
+      },
+    );
+    await ensureOk(qaApproveRes);
+    const qaApproved = await qaApproveRes.json();
+    expect(qaApproved?.status).toBe('pending_exec');
+
+    const execApproveRes = await request.post(
+      `${apiBase}/approval-instances/${encodeURIComponent(approval.id)}/act`,
+      {
+        headers: adminHeaders,
+        data: {
+          action: 'approve',
+          reason: `e2e expense exec approve ${suffix}`,
+        },
+      },
+    );
+    await ensureOk(execApproveRes);
+    const execApproved = await execApproveRes.json();
+    expect(execApproved?.status).toBe('approved');
+
+    const approvedExpenseRes = await request.get(
+      `${apiBase}/expenses/${encodeURIComponent(expense.id)}`,
+      {
+        headers: adminHeaders,
+      },
+    );
+    await ensureOk(approvedExpenseRes);
+    const approvedExpense = await approvedExpenseRes.json();
+    expect(approvedExpense?.status).toBe('approved');
+  } finally {
+    if (createdRule?.id) {
+      const deactivateRes = await request.patch(
+        `${apiBase}/approval-rules/${encodeURIComponent(createdRule.id)}`,
+        {
+          headers: adminHeaders,
+          data: { isActive: false },
+        },
+      );
+      await ensureOk(deactivateRes);
+    }
+  }
+});
