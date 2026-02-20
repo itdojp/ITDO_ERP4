@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  hasQaStageBeforeExec,
   matchApprovalSteps,
   matchesRuleCondition,
   normalizeRuleSteps,
@@ -257,5 +258,32 @@ test('normalizeRuleStepsWithPolicy: rejects invalid quorum', () => {
       ],
     }),
     null,
+  );
+});
+
+test('hasQaStageBeforeExec: returns true when qa stage precedes exec stage', () => {
+  assert.equal(
+    hasQaStageBeforeExec([
+      { approverGroupId: 'mgmt', stepOrder: 1 },
+      { approverGroupId: 'exec', stepOrder: 2 },
+    ]),
+    true,
+  );
+});
+
+test('hasQaStageBeforeExec: returns false when first stage is exec only', () => {
+  assert.equal(
+    hasQaStageBeforeExec([{ approverGroupId: 'exec', stepOrder: 1 }]),
+    false,
+  );
+});
+
+test('hasQaStageBeforeExec: returns false when exec is parallel with first stage', () => {
+  assert.equal(
+    hasQaStageBeforeExec([
+      { approverGroupId: 'mgmt', stepOrder: 1 },
+      { approverGroupId: 'exec', stepOrder: 1 },
+    ]),
+    false,
   );
 });

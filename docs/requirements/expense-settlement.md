@@ -44,6 +44,7 @@
 
 ### 状態遷移（MVP確定）
 - 申請承認（既存）: `draft` → `pending_qa` → `pending_exec` → `approved` / `rejected`
+  - 経理一次チェックを先行させるため、`approval_rules(flowType=expense)` の先頭ステージに `exec` は設定不可（`exec` を使う場合は先に non-exec ステージが必要）
   - `POST /expenses/:id/submit` 実行時、`ExpenseAttachment` が1件以上、または `receiptUrl` が設定されていることを必須とする
 - 精算（追加）: `settlementStatus=unpaid` → `paid`
   - `status=approved` のみ `paid` へ遷移可能

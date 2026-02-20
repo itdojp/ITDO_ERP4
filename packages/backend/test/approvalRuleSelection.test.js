@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { createApprovalFor } from '../dist/services/approval.js';
+import {
+  createApprovalFor,
+  ExpenseQaStageRequiredError,
+} from '../dist/services/approval.js';
 
 test('createApprovalFor: rule query filters isActive and effectiveFrom<=now', async () => {
   const now = new Date('2026-01-01T00:00:00.000Z');
@@ -98,3 +101,38 @@ test('createApprovalFor: selects the first matching rule from ordered candidates
   assert.equal(createdArgs.data.ruleId, 'r2');
 });
 
+test('createApprovalFor: blocks expense rules that skip qa stage before exec', async () => {
+  let createCalled = false;
+  const fakeClient = {
+    approvalRule: {
+      findMany: async () => [
+        {
+          id: 'r-expense',
+          flowType: 'expense',
+          conditions: {},
+          steps: [{ approverGroupId: 'exec', stepOrder: 1 }],
+        },
+      ],
+    },
+    approvalInstance: {
+      findFirst: async () => null,
+      create: async () => {
+        createCalled = true;
+        return { id: 'a1', status: 'pending_exec', currentStep: 1, steps: [] };
+      },
+    },
+  };
+
+  await assert.rejects(
+    () =>
+      createApprovalFor(
+        'expense',
+        'expenses',
+        'exp1',
+        { amount: 120000 },
+        { client: fakeClient, createdBy: 'u1' },
+      ),
+    (error) => error instanceof ExpenseQaStageRequiredError,
+  );
+  assert.equal(createCalled, false);
+});

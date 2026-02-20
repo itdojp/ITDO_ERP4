@@ -62,6 +62,35 @@ export function resolvePendingStatus(
   return isExec ? DocStatusValue.pending_exec : DocStatusValue.pending_qa;
 }
 
+function normalizeStepOrder(stepOrder: number | undefined, fallback: number) {
+  const parsed = Number(stepOrder);
+  if (Number.isInteger(parsed) && parsed > 0) return parsed;
+  return fallback;
+}
+
+export function hasQaStageBeforeExec(
+  steps: Array<{ stepOrder?: number; approverGroupId?: string }>,
+): boolean {
+  if (!Array.isArray(steps) || steps.length < 1) return true;
+  let earliestExecOrder: number | null = null;
+  for (let index = 0; index < steps.length; index += 1) {
+    const step = steps[index];
+    if (step?.approverGroupId !== 'exec') continue;
+    const order = normalizeStepOrder(step.stepOrder, index + 1);
+    if (earliestExecOrder === null || order < earliestExecOrder) {
+      earliestExecOrder = order;
+    }
+  }
+  if (earliestExecOrder === null) return true;
+  for (let index = 0; index < steps.length; index += 1) {
+    const step = steps[index];
+    if (step?.approverGroupId === 'exec') continue;
+    const order = normalizeStepOrder(step.stepOrder, index + 1);
+    if (order < earliestExecOrder) return true;
+  }
+  return false;
+}
+
 export function extractAmount(payload: Record<string, unknown>): number {
   const raw = payload.totalAmount ?? payload.amount ?? 0;
   const amount = typeof raw === 'string' ? Number(raw) : Number(raw || 0);
