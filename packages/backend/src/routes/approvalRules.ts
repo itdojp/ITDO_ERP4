@@ -392,7 +392,7 @@ export async function registerApprovalRuleRoutes(app: FastifyInstance) {
       const body = req.body as any;
       const currentRule = await prisma.approvalRule.findUnique({
         where: { id },
-        select: { id: true, flowType: true },
+        select: { id: true, flowType: true, steps: true },
       });
       if (!currentRule) {
         return reply.code(404).send({ error: 'not_found' });
@@ -419,7 +419,8 @@ export async function registerApprovalRuleRoutes(app: FastifyInstance) {
         });
       }
       const flowType = body.flowType ?? currentRule.flowType;
-      if (violatesExpenseQaGate(flowType, body.steps)) {
+      const effectiveSteps = body.steps ?? currentRule.steps;
+      if (violatesExpenseQaGate(flowType, effectiveSteps)) {
         return reply.code(400).send({
           error: 'expense_requires_qa_before_exec',
           message:
