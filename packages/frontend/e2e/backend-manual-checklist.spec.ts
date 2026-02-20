@@ -639,6 +639,7 @@ test('backend manual checklist: members/vendors/time/expenses/wellbeing @extende
       amount: 500,
       currency: 'JPY',
       incurredOn: '2026-01-02',
+      receiptUrl: `https://example.com/receipts/manual-${run}`,
     },
     headers: userHeaders,
   });

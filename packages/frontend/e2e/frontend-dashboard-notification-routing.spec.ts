@@ -419,6 +419,7 @@ test('dashboard notification cards route to chat/leave/expense targets @core', a
       currency: 'JPY',
       incurredOn: '2099-02-01',
       isShared: false,
+      receiptUrl: `https://example.com/receipts/${run}`,
     },
   });
   await ensureOk(expenseCreateRes);
