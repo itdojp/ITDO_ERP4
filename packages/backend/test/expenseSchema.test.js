@@ -3,7 +3,10 @@ import test from 'node:test';
 
 import Fastify from 'fastify';
 
-import { buildExpenseCreateDraft } from '../dist/routes/expenses.js';
+import {
+  buildExpenseCreateDraft,
+  hasExpenseSubmitEvidence,
+} from '../dist/routes/expenses.js';
 import {
   expenseCommentCreateSchema,
   expenseSchema,
@@ -194,10 +197,7 @@ test('buildExpenseCreateDraft: rejects empty attachment fileUrl', () => {
   assert.equal(result.ok, false);
   if (result.ok) return;
   assert.equal(result.error.code, 'INVALID_ATTACHMENT');
-  assert.equal(
-    result.error.message,
-    'attachments[0].fileUrl is required',
-  );
+  assert.equal(result.error.message, 'attachments[0].fileUrl is required');
 });
 
 test('buildExpenseCreateDraft: validates amount even when lines are omitted', () => {
@@ -216,4 +216,28 @@ test('buildExpenseCreateDraft: validates amount even when lines are omitted', ()
   if (result.ok) return;
   assert.equal(result.error.code, 'INVALID_AMOUNT');
   assert.equal(result.error.message, 'amount is invalid');
+});
+
+test('hasExpenseSubmitEvidence: true when receiptUrl exists', () => {
+  const ok = hasExpenseSubmitEvidence({
+    receiptUrl: 'https://example.com/legacy-receipt.pdf',
+    attachmentCount: 0,
+  });
+  assert.equal(ok, true);
+});
+
+test('hasExpenseSubmitEvidence: true when attachments exist', () => {
+  const ok = hasExpenseSubmitEvidence({
+    receiptUrl: null,
+    attachmentCount: 2,
+  });
+  assert.equal(ok, true);
+});
+
+test('hasExpenseSubmitEvidence: false when no receipt evidence exists', () => {
+  const ok = hasExpenseSubmitEvidence({
+    receiptUrl: '   ',
+    attachmentCount: 0,
+  });
+  assert.equal(ok, false);
 });

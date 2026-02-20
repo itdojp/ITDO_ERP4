@@ -63,6 +63,11 @@ type ExpenseCreateDraftResult =
       error: { code: string; message: string };
     };
 
+type ExpenseSubmitEvidenceInput = {
+  receiptUrl: string | null;
+  attachmentCount: number;
+};
+
 export function buildExpenseCreateDraft(input: {
   body: Record<string, unknown>;
   actorUserId: string | null;
@@ -241,6 +246,15 @@ export function buildExpenseCreateDraft(input: {
     attachments,
     sanitizedBody: raw,
   };
+}
+
+export function hasExpenseSubmitEvidence(
+  input: ExpenseSubmitEvidenceInput,
+): boolean {
+  const hasReceiptUrl =
+    typeof input.receiptUrl === 'string' && input.receiptUrl.trim().length > 0;
+  if (hasReceiptUrl) return true;
+  return Number.isFinite(input.attachmentCount) && input.attachmentCount > 0;
 }
 
 export async function registerExpenseRoutes(app: FastifyInstance) {
@@ -499,6 +513,22 @@ export async function registerExpenseRoutes(app: FastifyInstance) {
         expense.userId !== userId
       ) {
         return reply.code(403).send({ error: 'forbidden' });
+      }
+      const attachmentCount = await prisma.expenseAttachment.count({
+        where: { expenseId: id },
+      });
+      if (
+        !hasExpenseSubmitEvidence({
+          receiptUrl: expense.receiptUrl,
+          attachmentCount,
+        })
+      ) {
+        return reply.status(400).send({
+          error: {
+            code: 'RECEIPT_REQUIRED',
+            message: 'At least one expense receipt is required',
+          },
+        });
       }
 
       const policyRes = await evaluateActionPolicyWithFallback({

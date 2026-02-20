@@ -44,6 +44,7 @@
 
 ### 状態遷移（MVP確定）
 - 申請承認（既存）: `draft` → `pending_qa` → `pending_exec` → `approved` / `rejected`
+  - `POST /expenses/:id/submit` 実行時、`ExpenseAttachment` が1件以上、または `receiptUrl` が設定されていることを必須とする
 - 精算（追加）: `settlementStatus=unpaid` → `paid`
   - `status=approved` のみ `paid` へ遷移可能
   - `paid` の取消（`paid` → `unpaid`）は admin/mgmt のみ（理由必須、監査ログ対象）
