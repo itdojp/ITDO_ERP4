@@ -38,7 +38,11 @@
   - upstream 最新版（`googleapis` / `googleapis-common`）
 - 手動確認コマンド:
   - `make dependabot-alerts-check`
+- API認証（任意）:
+  - `DEPENDABOT_ALERTS_TOKEN`（repo secret）を設定すると、workflow が Dependabot Alert API を安定取得できる
+  - 未設定時は `github.token` を使用し、APIアクセス不可の場合は `script status != 0` となる
 - 追跡Issue（#1153）の状態同期:
+  - `script status == 0` のときのみ bot ステータスコメントを更新
   - `actionRequired=true` または alert `#10` が `OPEN` の場合は open を維持（closed なら再オープン）
   - alert `#10` が `OPEN` でなく `actionRequired=false` の場合は自動クローズ
 

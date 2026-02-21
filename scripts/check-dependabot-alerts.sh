@@ -39,12 +39,26 @@ REPO_NAME="${REPOSITORY##*/}"
 
 read_alert() {
   local alert_number="$1"
-  gh api graphql \
-    -f query='query($owner:String!,$repo:String!,$num:Int!){repository(owner:$owner,name:$repo){vulnerabilityAlert(number:$num){number state vulnerableManifestPath vulnerableRequirements securityVulnerability{severity package{name} firstPatchedVersion{identifier}} securityAdvisory{ghsaId summary}}}}' \
-    -F owner="${REPO_OWNER}" \
-    -F repo="${REPO_NAME}" \
-    -F num="${alert_number}" \
-    --jq '.data.repository.vulnerabilityAlert'
+  gh api "repos/${REPO_OWNER}/${REPO_NAME}/dependabot/alerts/${alert_number}" \
+    --jq '{
+      number: .number,
+      state: ((.state // "unknown") | ascii_upcase),
+      vulnerableManifestPath: (.dependency.manifest_path // ""),
+      vulnerableRequirements: (.security_vulnerability.vulnerable_version_range // ""),
+      securityVulnerability: {
+        severity: ((.security_vulnerability.severity // "") | ascii_upcase),
+        package: {
+          name: (.dependency.package.name // "")
+        },
+        firstPatchedVersion: {
+          identifier: (.security_vulnerability.first_patched_version.identifier // "")
+        }
+      },
+      securityAdvisory: {
+        ghsaId: (.security_advisory.ghsa_id // ""),
+        summary: (.security_advisory.summary // "")
+      }
+    }'
 }
 
 normalize_json_scalar() {
