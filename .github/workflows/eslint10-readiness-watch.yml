@@ -63,6 +63,41 @@ jobs:
             echo "\`make eslint10-readiness-check\`"
           } >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Sync issue #914 status comment
+        env:
+          GH_TOKEN: ${{ github.token }}
+          READY: ${{ steps.check.outputs.ready }}
+          PLUGIN_PEER: ${{ steps.check.outputs.plugin_peer }}
+          PARSER_PEER: ${{ steps.check.outputs.parser_peer }}
+          REACT_PLUGIN_PEER: ${{ steps.check.outputs.react_plugin_peer }}
+          REACT_HOOKS_PLUGIN_PEER: ${{ steps.check.outputs.react_hooks_plugin_peer }}
+        run: |
+          marker="<!-- eslint10-readiness-status -->"
+          run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          now="$(date -u +'%Y-%m-%d %H:%M:%S UTC')"
+          body="$(cat <<EOF
+          eslint@10 readiness 週次監視（自動更新）
+
+          - 実行時刻: ${now}
+          - ready: \`${READY}\`
+          - @typescript-eslint/eslint-plugin peer: \`${PLUGIN_PEER}\`
+          - @typescript-eslint/parser peer: \`${PARSER_PEER}\`
+          - eslint-plugin-react peer: \`${REACT_PLUGIN_PEER}\`
+          - eslint-plugin-react-hooks peer: \`${REACT_HOOKS_PLUGIN_PEER}\`
+
+          workflow run: ${run_url}
+          ${marker}
+          EOF
+          )"
+
+          existing_id="$(gh api "repos/${GITHUB_REPOSITORY}/issues/914/comments" --paginate --jq '.[] | select(.user.login=="github-actions[bot]") | select(.body | contains("<!-- eslint10-readiness-status -->")) | .id' | tail -n1)"
+
+          if [[ -n "${existing_id}" ]]; then
+            gh api -X PATCH "repos/${GITHUB_REPOSITORY}/issues/comments/${existing_id}" -f body="${body}" >/dev/null
+          else
+            gh issue comment 914 --body "${body}" >/dev/null
+          fi
+
       - name: Notify issue #914 when ready
         if: steps.check.outputs.ready == 'true'
         env:
