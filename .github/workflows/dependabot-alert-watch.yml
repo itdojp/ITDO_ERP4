@@ -70,8 +70,8 @@ jobs:
               echo "INVALID_REPOSITORY"
               return
             fi
-            if grep -qi 'No such file or directory' tmp/dependabot-alert-watch.log; then
-              echo "FILE_NOT_FOUND"
+            if grep -q 'No such file or directory' tmp/dependabot-alert-watch.log; then
+              echo "NO_SUCH_FILE_OR_DIRECTORY"
               return
             fi
             echo "UNKNOWN_FAILURE"
@@ -116,7 +116,7 @@ jobs:
             echo "| upstream updated | \`${{ steps.check.outputs.upstream_updated }}\` |"
             echo "| action required | \`${{ steps.check.outputs.action_required }}\` |"
             echo "| script status | \`${{ steps.check.outputs.status }}\` |"
-            echo "| failure reason | \`${{ steps.check.outputs.failure_reason }}\` |"
+            echo "| result reason | \`${{ steps.check.outputs.failure_reason }}\` |"
             echo ""
             echo "Manual check command:"
             echo "\`make dependabot-alerts-check\`"
@@ -185,7 +185,7 @@ jobs:
               "- 実行時刻: ${now}" \
               "- status: \`BLOCKED\`" \
               "- script status: \`${CHECK_STATUS}\`" \
-              "- failure reason: \`${FAILURE_REASON}\`" \
+              "- result reason: \`${FAILURE_REASON}\`" \
               "- note: チェックスクリプトが失敗したため、#1153 の状態同期をスキップしました。" \
               "- action: ${action_message}" \
               "" \
