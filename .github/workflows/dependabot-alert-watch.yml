@@ -1,0 +1,134 @@
+name: Dependabot Alert Watch
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "30 3 * * 1"
+
+permissions:
+  contents: read
+  issues: write
+  security-events: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 20.19.0
+
+      - name: Check dependabot alerts
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p tmp
+          set +e
+          STRICT=0 ./scripts/check-dependabot-alerts.sh > tmp/dependabot-alert-watch.log 2>&1
+          status=$?
+          cat tmp/dependabot-alert-watch.log
+
+          extract() {
+            local key="$1"
+            grep -E "^${key}:" tmp/dependabot-alert-watch.log | tail -n1 | sed "s/^${key}:[[:space:]]*//"
+          }
+
+          echo "status=${status}" >> "$GITHUB_OUTPUT"
+          echo "alert_low_state=$(extract alertLowState)" >> "$GITHUB_OUTPUT"
+          echo "alert_low_ghsa=$(extract alertLowGhsa)" >> "$GITHUB_OUTPUT"
+          echo "alert_high_state=$(extract alertHighState)" >> "$GITHUB_OUTPUT"
+          echo "alert_high_ghsa=$(extract alertHighGhsa)" >> "$GITHUB_OUTPUT"
+          echo "qs_version=$(extract qsResolvedVersion)" >> "$GITHUB_OUTPUT"
+          echo "qs_patched=$(extract qsPatched)" >> "$GITHUB_OUTPUT"
+          echo "fast_xml_version=$(extract fastXmlResolvedVersion)" >> "$GITHUB_OUTPUT"
+          echo "fast_xml_patched=$(extract fastXmlPatched)" >> "$GITHUB_OUTPUT"
+          echo "googleapis_current=$(extract googleapisCurrent)" >> "$GITHUB_OUTPUT"
+          echo "googleapis_latest=$(extract googleapisLatest)" >> "$GITHUB_OUTPUT"
+          echo "googleapis_common_current=$(extract googleapisCommonCurrent)" >> "$GITHUB_OUTPUT"
+          echo "googleapis_common_latest=$(extract googleapisCommonLatest)" >> "$GITHUB_OUTPUT"
+          echo "upstream_updated=$(extract upstreamUpdated)" >> "$GITHUB_OUTPUT"
+          echo "action_required=$(extract actionRequired)" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Write summary
+        run: |
+          {
+            echo "## Dependabot alert watch"
+            echo ""
+            echo "| item | value |"
+            echo "| --- | --- |"
+            echo "| alert #10 state | \`${{ steps.check.outputs.alert_low_state }}\` |"
+            echo "| alert #10 GHSA | \`${{ steps.check.outputs.alert_low_ghsa }}\` |"
+            echo "| alert #11 state | \`${{ steps.check.outputs.alert_high_state }}\` |"
+            echo "| alert #11 GHSA | \`${{ steps.check.outputs.alert_high_ghsa }}\` |"
+            echo "| qs resolved version | \`${{ steps.check.outputs.qs_version }}\` |"
+            echo "| qs patched | \`${{ steps.check.outputs.qs_patched }}\` |"
+            echo "| fast-xml-parser resolved version | \`${{ steps.check.outputs.fast_xml_version }}\` |"
+            echo "| fast-xml-parser patched | \`${{ steps.check.outputs.fast_xml_patched }}\` |"
+            echo "| googleapis current/latest | \`${{ steps.check.outputs.googleapis_current }}\` / \`${{ steps.check.outputs.googleapis_latest }}\` |"
+            echo "| googleapis-common current/latest | \`${{ steps.check.outputs.googleapis_common_current }}\` / \`${{ steps.check.outputs.googleapis_common_latest }}\` |"
+            echo "| upstream updated | \`${{ steps.check.outputs.upstream_updated }}\` |"
+            echo "| action required | \`${{ steps.check.outputs.action_required }}\` |"
+            echo "| script status | \`${{ steps.check.outputs.status }}\` |"
+            echo ""
+            echo "Manual check command:"
+            echo "\`make dependabot-alerts-check\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Sync issue #1153 status comment
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ALERT_LOW_STATE: ${{ steps.check.outputs.alert_low_state }}
+          ALERT_LOW_GHSA: ${{ steps.check.outputs.alert_low_ghsa }}
+          ALERT_HIGH_STATE: ${{ steps.check.outputs.alert_high_state }}
+          ALERT_HIGH_GHSA: ${{ steps.check.outputs.alert_high_ghsa }}
+          QS_VERSION: ${{ steps.check.outputs.qs_version }}
+          QS_PATCHED: ${{ steps.check.outputs.qs_patched }}
+          FAST_XML_VERSION: ${{ steps.check.outputs.fast_xml_version }}
+          FAST_XML_PATCHED: ${{ steps.check.outputs.fast_xml_patched }}
+          GOOGLEAPIS_CURRENT: ${{ steps.check.outputs.googleapis_current }}
+          GOOGLEAPIS_LATEST: ${{ steps.check.outputs.googleapis_latest }}
+          GOOGLEAPIS_COMMON_CURRENT: ${{ steps.check.outputs.googleapis_common_current }}
+          GOOGLEAPIS_COMMON_LATEST: ${{ steps.check.outputs.googleapis_common_latest }}
+          UPSTREAM_UPDATED: ${{ steps.check.outputs.upstream_updated }}
+          ACTION_REQUIRED: ${{ steps.check.outputs.action_required }}
+        run: |
+          marker="<!-- dependabot-alert-watch -->"
+          run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          now="$(date -u +'%Y-%m-%d %H:%M:%S UTC')"
+          body="$(cat <<EOF
+          Dependabot alert 週次監視（自動更新）
+
+          - 実行時刻: ${now}
+          - alert #10 (${ALERT_LOW_GHSA}): \`${ALERT_LOW_STATE}\`
+          - alert #11 (${ALERT_HIGH_GHSA}): \`${ALERT_HIGH_STATE}\`
+          - qs resolved/patched: \`${QS_VERSION}\` / \`${QS_PATCHED}\`
+          - fast-xml-parser resolved/patched: \`${FAST_XML_VERSION}\` / \`${FAST_XML_PATCHED}\`
+          - googleapis current/latest: \`${GOOGLEAPIS_CURRENT}\` / \`${GOOGLEAPIS_LATEST}\`
+          - googleapis-common current/latest: \`${GOOGLEAPIS_COMMON_CURRENT}\` / \`${GOOGLEAPIS_COMMON_LATEST}\`
+          - upstream updated: \`${UPSTREAM_UPDATED}\`
+          - action required: \`${ACTION_REQUIRED}\`
+
+          workflow run: ${run_url}
+          ${marker}
+          EOF
+          )"
+
+          existing_id="$(gh api "repos/${GITHUB_REPOSITORY}/issues/1153/comments" --paginate --jq '.[] | select(.user.login=="github-actions[bot]") | select(.body | contains("<!-- dependabot-alert-watch -->")) | .id' | tail -n1)"
+
+          if [[ -n "${existing_id}" ]]; then
+            gh api -X PATCH "repos/${GITHUB_REPOSITORY}/issues/comments/${existing_id}" -f body="${body}" >/dev/null
+          else
+            gh issue comment 1153 --body "${body}" >/dev/null
+          fi
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: dependabot-alert-watch-${{ github.run_id }}
+          path: tmp/dependabot-alert-watch.log
+          if-no-files-found: error
+          retention-days: 14

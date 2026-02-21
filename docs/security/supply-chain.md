@@ -27,6 +27,18 @@
 - 判断基準: `docs/security/dependency-vulnerability-policy.md`
 - 最新台帳: `docs/security/dependency-vulnerability-register.md`
 
+### Dependabot alert の週次監視
+- workflow: `.github/workflows/dependabot-alert-watch.yml`
+- 監視対象:
+  - alert `#10` (`qs`, low)
+  - alert `#11` (`fast-xml-parser`, high)
+- 収集項目:
+  - alert state / GHSA
+  - lockfile 解決バージョン（`qs` / `fast-xml-parser`）
+  - upstream 最新版（`googleapis` / `googleapis-common`）
+- 手動確認コマンド:
+  - `make dependabot-alerts-check`
+
 例外/抑制が必要な場合は、以下を必須として Issue 化します。
 - 対象（パッケージ/CVE など）
 - 影響範囲（runtime / dev など）
