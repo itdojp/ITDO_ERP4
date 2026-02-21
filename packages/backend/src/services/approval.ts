@@ -5,6 +5,11 @@ import { createEvidenceSnapshotForApproval } from './evidenceSnapshot.js';
 import { logExpenseStateTransition } from './expenseStateTransitionLog.js';
 import { isExpenseQaChecklistComplete } from './expenseQaChecklist.js';
 import {
+  evaluateExpenseBudget,
+  hasExpenseBudgetEscalationFields,
+  missingExpenseBudgetEscalationFields,
+} from './expenseBudget.js';
+import {
   hasQaStageBeforeExec,
   matchApprovalSteps as computeApprovalSteps,
   matchesRuleCondition,
@@ -28,6 +33,28 @@ export class ExpenseQaChecklistIncompleteError extends Error {
   constructor() {
     super('expense_qa_checklist_incomplete');
     this.name = 'ExpenseQaChecklistIncompleteError';
+  }
+}
+
+export class ExpenseBudgetEscalationRequiredError extends Error {
+  details: {
+    overrunAmount: number;
+    budgetCost: number | null;
+    projectedAmount: number;
+    periodKey: string;
+    missingFields: string[];
+  };
+
+  constructor(details: {
+    overrunAmount: number;
+    budgetCost: number | null;
+    projectedAmount: number;
+    periodKey: string;
+    missingFields: string[];
+  }) {
+    super('expense_budget_escalation_required');
+    this.name = 'ExpenseBudgetEscalationRequiredError';
+    this.details = details;
   }
 }
 
@@ -490,6 +517,56 @@ export async function act(
       if (!isExpenseQaChecklistComplete(checklist)) {
         throw new ExpenseQaChecklistIncompleteError();
       }
+    }
+    if (
+      action === 'approve' &&
+      instance.targetTable === 'expenses' &&
+      (instance.status === DocStatusValue.pending_qa ||
+        instance.status === DocStatusValue.pending_exec)
+    ) {
+      const expense = await tx.expense.findUnique({
+        where: { id: instance.targetId },
+        select: {
+          id: true,
+          projectId: true,
+          amount: true,
+          currency: true,
+          incurredOn: true,
+          status: true,
+          budgetEscalationReason: true,
+          budgetEscalationImpact: true,
+          budgetEscalationAlternative: true,
+        },
+      });
+      if (!expense) {
+        throw new Error('Expense not found');
+      }
+      const budgetEvaluation = await evaluateExpenseBudget({
+        client: tx,
+        expense,
+      });
+      if (
+        budgetEvaluation.requiresEscalation &&
+        !hasExpenseBudgetEscalationFields(expense)
+      ) {
+        throw new ExpenseBudgetEscalationRequiredError({
+          overrunAmount: budgetEvaluation.snapshot.overrunAmount,
+          budgetCost: budgetEvaluation.snapshot.budgetCost,
+          projectedAmount: budgetEvaluation.snapshot.projectedAmount,
+          periodKey: budgetEvaluation.snapshot.periodKey,
+          missingFields: missingExpenseBudgetEscalationFields(expense),
+        });
+      }
+      await tx.expense.update({
+        where: { id: instance.targetId },
+        data: {
+          budgetSnapshot: budgetEvaluation.snapshot as unknown as object,
+          budgetOverrunAmount: budgetEvaluation.requiresEscalation
+            ? budgetEvaluation.snapshot.overrunAmount
+            : null,
+          updatedBy: userId,
+        },
+      });
     }
     if (!instance.currentStep) throw new Error('No current step');
     const currentSteps = instance.steps.filter(

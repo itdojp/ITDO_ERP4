@@ -1039,6 +1039,12 @@ model Expense {
   paidAt        DateTime?
   paidBy        String?
   receiptUrl    String?
+  budgetSnapshot Json?
+  budgetOverrunAmount Decimal?
+  budgetEscalationReason String?
+  budgetEscalationImpact String?
+  budgetEscalationAlternative String?
+  budgetEscalationUpdatedAt DateTime?
   createdAt     DateTime  @default(now())
   createdBy     String?
   updatedAt     DateTime  @updatedAt

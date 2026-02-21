@@ -422,6 +422,50 @@ export const expenseUnmarkPaidSchema = {
   ),
 };
 
+export const expenseSubmitSchema = {
+  body: Type.Object(
+    {
+      reasonText: Type.Optional(Type.String({ minLength: 1 })),
+      budgetEscalationReason: Type.Optional(
+        Type.String({ minLength: 1, maxLength: 2000 }),
+      ),
+      budgetEscalationImpact: Type.Optional(
+        Type.String({ minLength: 1, maxLength: 2000 }),
+      ),
+      budgetEscalationAlternative: Type.Optional(
+        Type.String({ minLength: 1, maxLength: 2000 }),
+      ),
+    },
+    { additionalProperties: false },
+  ),
+};
+
+export const expenseBudgetEscalationSchema = {
+  body: Type.Object(
+    {
+      budgetEscalationReason: Type.Optional(
+        Type.Union([
+          Type.String({ minLength: 1, maxLength: 2000 }),
+          Type.Null(),
+        ]),
+      ),
+      budgetEscalationImpact: Type.Optional(
+        Type.Union([
+          Type.String({ minLength: 1, maxLength: 2000 }),
+          Type.Null(),
+        ]),
+      ),
+      budgetEscalationAlternative: Type.Optional(
+        Type.Union([
+          Type.String({ minLength: 1, maxLength: 2000 }),
+          Type.Null(),
+        ]),
+      ),
+    },
+    { additionalProperties: false, minProperties: 1 },
+  ),
+};
+
 export const purchaseOrderSchema = {
   body: Type.Object({
     vendorId: Type.String(),

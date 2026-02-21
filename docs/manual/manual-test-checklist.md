@@ -36,7 +36,10 @@
 ### 経費（支払状態）
 
 - [x] POST/GET /expenses（非管理ロールは自分のデータのみ取得できる）
-- [x] POST /expenses/:id/submit で承認依頼できる
+- [x] PUT /expenses/:id/budget-escalation で予算超過エスカレーション（理由/影響/代替案）を更新できる
+- [x] POST /expenses/:id/submit は予算超過時にエスカレーション未入力だと `BUDGET_ESCALATION_REQUIRED` で拒否される
+- [x] POST /expenses/:id/submit で承認依頼できる（予算条件を満たす場合）
+- [x] pending_qa 承認時は QA チェックリスト未完了だと `EXPENSE_QA_CHECKLIST_REQUIRED` で拒否される
 - [x] （承認後）POST /expenses/:id/mark-paid で settlementStatus=paid / paidAt / paidBy が設定される（監査ログ、通知 expense_mark_paid）
 - [x] POST /expenses/:id/unmark-paid は reasonText 必須で、settlementStatus=unpaid に戻る（paidAt/paidBy クリア、監査ログ）
 

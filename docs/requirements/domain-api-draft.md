@@ -81,7 +81,8 @@
   - `POST /expenses/:id/comments` {kind?, body}
   - `GET /expenses/:id/qa-checklist` → 経理一次チェック（突合/仕訳/案件/予算）の状態取得
   - `PUT /expenses/:id/qa-checklist` {amountVerified?, receiptVerified?, journalPrepared?, projectLinked?, budgetChecked?, notes?}
-  - `POST /expenses/:id/submit` → 承認フロー起動（証憑必須: `attachments` 1件以上 or `receipt_url`、かつ expense で `exec` を使う場合は先頭 non-exec ステージ必須）
+  - `PUT /expenses/:id/budget-escalation` {budgetEscalationReason?, budgetEscalationImpact?, budgetEscalationAlternative?}
+  - `POST /expenses/:id/submit` → 承認フロー起動（証憑必須: `attachments` 1件以上 or `receipt_url`、かつ expense で `exec` を使う場合は先頭 non-exec ステージ必須。予算超過時はエスカレーション理由/影響/代替案を必須化）
   - `GET /expenses/:id/state-transitions` → 状態遷移履歴（status/settlementStatus）
 - Leave
   - `POST /leave-requests` {leave_type, start_date, end_date, hours?, notes}

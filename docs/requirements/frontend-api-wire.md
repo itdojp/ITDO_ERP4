@@ -96,7 +96,8 @@
 - POST `/expenses` { projectId, userId, category, amount, currency?, incurredOn, isShared?, receiptUrl? }
 - GET `/expenses/:id/qa-checklist`
 - PUT `/expenses/:id/qa-checklist` { amountVerified?, receiptVerified?, journalPrepared?, projectLinked?, budgetChecked?, notes? }
-- POST `/expenses/:id/submit`
+- PUT `/expenses/:id/budget-escalation` { budgetEscalationReason?, budgetEscalationImpact?, budgetEscalationAlternative? }
+- POST `/expenses/:id/submit` { reasonText?, budgetEscalationReason?, budgetEscalationImpact?, budgetEscalationAlternative? }
 
 ## leave
 

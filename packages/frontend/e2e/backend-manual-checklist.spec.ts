@@ -678,7 +678,14 @@ test('backend manual checklist: members/vendors/time/expenses/wellbeing @extende
 
   const expenseSubmitRes = await request.post(
     `${apiBase}/expenses/${encodeURIComponent(expense.id)}/submit`,
-    { headers: userHeaders, data: {} },
+    {
+      headers: userHeaders,
+      data: {
+        budgetEscalationReason: `manual budget reason ${suffix}`,
+        budgetEscalationImpact: `manual budget impact ${suffix}`,
+        budgetEscalationAlternative: `manual budget alternative ${suffix}`,
+      },
+    },
   );
   await ensureOk(expenseSubmitRes);
   const submittedExpense = await expenseSubmitRes.json();
