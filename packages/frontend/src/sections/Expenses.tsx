@@ -193,7 +193,11 @@ export const Expenses: React.FC = () => {
           }
           if (listFilter.paidTo) {
             const to = parseDateSafe(listFilter.paidTo);
-            if (to && paidAt > to) return false;
+            if (to) {
+              const nextDay = new Date(to);
+              nextDay.setDate(nextDay.getDate() + 1);
+              if (paidAt >= nextDay) return false;
+            }
           }
         }
         return true;
@@ -357,6 +361,7 @@ export const Expenses: React.FC = () => {
           />
           <input
             type="date"
+            aria-label="経費日付"
             value={form.incurredOn}
             onChange={(e) => setForm({ ...form, incurredOn: e.target.value })}
           />

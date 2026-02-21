@@ -306,6 +306,10 @@ export function buildExpenseCreateDraft(input: {
     attachments: _ignoredAttachments,
     ...raw
   } = body;
+  if (typeof raw.receiptUrl === 'string') {
+    const normalizedReceiptUrl = raw.receiptUrl.trim();
+    raw.receiptUrl = normalizedReceiptUrl || null;
+  }
   return {
     ok: true,
     declaredAmount,
@@ -500,10 +504,16 @@ export async function registerExpenseRoutes(app: FastifyInstance) {
       if (paidFromDate || paidToDate) {
         where.paidAt = {};
         if (paidFromDate) where.paidAt.gte = paidFromDate;
-        if (paidToDate) where.paidAt.lte = paidToDate;
+        if (paidToDate) {
+          const paidToExclusive = new Date(paidToDate);
+          paidToExclusive.setDate(paidToExclusive.getDate() + 1);
+          where.paidAt.lt = paidToExclusive;
+        }
       }
       if (hasReceiptValue !== undefined) {
-        where.receiptUrl = hasReceiptValue ? { not: null } : null;
+        where.receiptUrl = hasReceiptValue
+          ? { notIn: [null, ''] }
+          : { in: [null, ''] };
       }
       const items = await prisma.expense.findMany({
         where,
