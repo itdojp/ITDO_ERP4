@@ -79,7 +79,7 @@ jobs:
       - name: Warn when check script failed
         if: steps.check.outputs.status != '0'
         run: |
-          echo "::warning title=eslint10 readiness check::check script failed (status=${{ steps.check.outputs.status }}). Issue #914 status comment is marked as BLOCKED."
+          echo "::warning title=eslint10 readiness check::check script failed (status=${{ steps.check.outputs.status }}). Issue #914 status comment will be attempted to be marked as BLOCKED by the following sync step."
 
       - name: Sync issue #914 status comment
         env:
@@ -116,7 +116,7 @@ jobs:
               "- 実行時刻: ${now}" \
               "- status: \`BLOCKED\`" \
               "- script status: \`${CHECK_STATUS}\`" \
-              "- note: チェックスクリプトが失敗したため、再開判定の同期をスキップしました（詳細は workflow ログ/artifact を参照）。" \
+              "- note: チェックスクリプトが失敗したため、再開判定の詳細取得/評価に失敗し、詳細の更新を省略しました（詳細は workflow ログ/artifact を参照）。" \
               "" \
               "workflow run: ${run_url}" \
               "${marker}" \
