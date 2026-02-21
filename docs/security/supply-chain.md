@@ -38,9 +38,13 @@
   - upstream 最新版（`googleapis` / `googleapis-common`）
 - 手動確認コマンド:
   - `make dependabot-alerts-check`
+  - `make dependabot-token-readiness-check`（token設定/権限の事前確認）
 - API認証（任意）:
   - `DEPENDABOT_ALERTS_TOKEN`（repo secret）を設定すると、workflow が Dependabot Alert API を安定取得できる
   - 未設定時は `github.token` を使用し、APIアクセス不可の場合は `script status != 0` となる
+  - 事前確認（失敗時は原因コードを出力）:
+    - `make dependabot-token-readiness-check`
+    - `STRICT=1 make dependabot-token-readiness-check`
 - 追跡Issue（#1153）の状態同期:
   - bot ステータスコメントは毎回更新する
   - `script status == 0` のときは alert詳細をコメントし、Issue状態同期も実行する
