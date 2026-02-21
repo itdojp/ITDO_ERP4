@@ -1,6 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import {
   act,
+  ExpenseBudgetEscalationRequiredError,
   ExpenseQaChecklistIncompleteError,
 } from '../services/approval.js';
 import { requireRole } from '../services/rbac.js';
@@ -681,6 +682,16 @@ export async function registerApprovalRuleRoutes(app: FastifyInstance) {
             error: {
               code: 'EXPENSE_QA_CHECKLIST_REQUIRED',
               message: 'expense QA checklist must be completed before approval',
+            },
+          });
+        }
+        if (err instanceof ExpenseBudgetEscalationRequiredError) {
+          return reply.code(409).send({
+            error: {
+              code: 'BUDGET_ESCALATION_REQUIRED',
+              message:
+                'budget escalation details are required when projected expense exceeds budget',
+              details: err.details,
             },
           });
         }

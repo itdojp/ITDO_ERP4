@@ -8,6 +8,7 @@ import {
   createExpenseMarkPaidNotification,
 } from '../services/appNotifications.js';
 import {
+  expenseBudgetEscalationSchema,
   expenseCommentCreateSchema,
   expenseMarkPaidSchema,
   expenseQaChecklistPatchSchema,
@@ -33,6 +34,11 @@ import {
   isExpenseQaChecklistComplete,
   normalizeExpenseQaChecklist,
 } from '../services/expenseQaChecklist.js';
+import {
+  evaluateExpenseBudget,
+  hasExpenseBudgetEscalationFields,
+  missingExpenseBudgetEscalationFields,
+} from '../services/expenseBudget.js';
 
 type ExpenseLineDraft = {
   lineNo: number;
@@ -76,6 +82,12 @@ type ExpenseSubmitEvidenceInput = {
   attachmentCount: number;
 };
 
+type ExpenseBudgetEscalationInput = {
+  budgetEscalationReason?: string | null;
+  budgetEscalationImpact?: string | null;
+  budgetEscalationAlternative?: string | null;
+};
+
 type ExpenseQaChecklistRecord = {
   id: string;
   expenseId: string;
@@ -111,6 +123,15 @@ function toExpenseQaChecklistResponse(
     updatedAt: checklist?.updatedAt?.toISOString() ?? null,
     updatedBy: checklist?.updatedBy ?? null,
   };
+}
+
+function normalizeOptionalTrimmedValue(
+  value: unknown,
+): string | null | undefined {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+  const normalized = String(value).trim();
+  return normalized || null;
 }
 
 export function buildExpenseCreateDraft(input: {
@@ -632,6 +653,123 @@ export async function registerExpenseRoutes(app: FastifyInstance) {
     },
   );
 
+  app.put(
+    '/expenses/:id/budget-escalation',
+    {
+      preHandler: requireRole(['admin', 'mgmt', 'user']),
+      schema: expenseBudgetEscalationSchema,
+    },
+    async (req, reply) => {
+      const { id } = req.params as { id: string };
+      const body = req.body as ExpenseBudgetEscalationInput;
+      const expense = await prisma.expense.findUnique({
+        where: { id },
+      });
+      if (!expense || expense.deletedAt) {
+        return reply.code(404).send({ error: 'not_found' });
+      }
+      const roles = req.user?.roles || [];
+      const isPrivileged = roles.includes('admin') || roles.includes('mgmt');
+      if (!isPrivileged) {
+        if (expense.userId !== req.user?.userId) {
+          return reply.code(403).send({ error: 'forbidden' });
+        }
+        if (
+          !hasProjectAccess(
+            roles,
+            req.user?.projectIds || [],
+            expense.projectId,
+          )
+        ) {
+          return reply.code(403).send({ error: 'forbidden_project' });
+        }
+      }
+      if (
+        expense.status === DocStatusValue.approved ||
+        expense.status === DocStatusValue.rejected
+      ) {
+        return reply.code(409).send({
+          error: {
+            code: 'EXPENSE_CLOSED',
+            message: 'Budget escalation cannot be updated after close',
+          },
+        });
+      }
+      const budgetEscalationReason = normalizeOptionalTrimmedValue(
+        body.budgetEscalationReason,
+      );
+      const budgetEscalationImpact = normalizeOptionalTrimmedValue(
+        body.budgetEscalationImpact,
+      );
+      const budgetEscalationAlternative = normalizeOptionalTrimmedValue(
+        body.budgetEscalationAlternative,
+      );
+      const updateData: Record<string, unknown> = {};
+      if (budgetEscalationReason !== undefined) {
+        updateData.budgetEscalationReason = budgetEscalationReason;
+      }
+      if (budgetEscalationImpact !== undefined) {
+        updateData.budgetEscalationImpact = budgetEscalationImpact;
+      }
+      if (budgetEscalationAlternative !== undefined) {
+        updateData.budgetEscalationAlternative = budgetEscalationAlternative;
+      }
+      updateData.budgetEscalationUpdatedAt = new Date();
+      updateData.updatedBy = req.user?.userId || null;
+
+      const patched = {
+        ...expense,
+        ...(budgetEscalationReason !== undefined
+          ? { budgetEscalationReason }
+          : {}),
+        ...(budgetEscalationImpact !== undefined
+          ? { budgetEscalationImpact }
+          : {}),
+        ...(budgetEscalationAlternative !== undefined
+          ? { budgetEscalationAlternative }
+          : {}),
+      };
+      const evaluation = await evaluateExpenseBudget({
+        client: prisma,
+        expense: patched,
+      });
+      updateData.budgetSnapshot = evaluation.snapshot as unknown as object;
+      updateData.budgetOverrunAmount = evaluation.requiresEscalation
+        ? evaluation.snapshot.overrunAmount
+        : null;
+
+      const updated = await prisma.expense.update({
+        where: { id },
+        data: updateData as any,
+      });
+      await logAudit({
+        ...auditContextFromRequest(req),
+        action: 'expense_budget_escalation_update',
+        targetTable: 'Expense',
+        targetId: id,
+        metadata: {
+          requiresEscalation: evaluation.requiresEscalation,
+          overrunAmount: evaluation.snapshot.overrunAmount,
+          hasEscalation: hasExpenseBudgetEscalationFields(updated as any),
+        },
+      });
+      return {
+        expenseId: id,
+        budgetSnapshot: updated.budgetSnapshot ?? null,
+        budgetOverrunAmount:
+          updated.budgetOverrunAmount == null
+            ? null
+            : Number(updated.budgetOverrunAmount),
+        budgetEscalationReason: updated.budgetEscalationReason ?? null,
+        budgetEscalationImpact: updated.budgetEscalationImpact ?? null,
+        budgetEscalationAlternative:
+          updated.budgetEscalationAlternative ?? null,
+        budgetEscalationUpdatedAt:
+          updated.budgetEscalationUpdatedAt?.toISOString() ?? null,
+      };
+    },
+  );
+
   app.get(
     '/expenses/:id/state-transitions',
     { preHandler: requireRole(['admin', 'mgmt', 'user']) },
@@ -661,7 +799,9 @@ export async function registerExpenseRoutes(app: FastifyInstance) {
   );
   app.post(
     '/expenses/:id/submit',
-    { preHandler: requireRole(['admin', 'mgmt', 'user']) },
+    {
+      preHandler: requireRole(['admin', 'mgmt', 'user']),
+    },
     async (req, reply) => {
       const { id } = req.params as { id: string };
       const body = req.body as any;
@@ -704,6 +844,51 @@ export async function registerExpenseRoutes(app: FastifyInstance) {
             },
           });
         }
+      }
+      const budgetEscalationReason = normalizeOptionalTrimmedValue(
+        body?.budgetEscalationReason,
+      );
+      const budgetEscalationImpact = normalizeOptionalTrimmedValue(
+        body?.budgetEscalationImpact,
+      );
+      const budgetEscalationAlternative = normalizeOptionalTrimmedValue(
+        body?.budgetEscalationAlternative,
+      );
+      const effectiveExpense = {
+        ...expense,
+        ...(budgetEscalationReason !== undefined
+          ? { budgetEscalationReason }
+          : {}),
+        ...(budgetEscalationImpact !== undefined
+          ? { budgetEscalationImpact }
+          : {}),
+        ...(budgetEscalationAlternative !== undefined
+          ? { budgetEscalationAlternative }
+          : {}),
+      };
+      const budgetEvaluation = await evaluateExpenseBudget({
+        client: prisma,
+        expense: effectiveExpense,
+      });
+      if (
+        budgetEvaluation.requiresEscalation &&
+        !hasExpenseBudgetEscalationFields(effectiveExpense)
+      ) {
+        return reply.status(400).send({
+          error: {
+            code: 'BUDGET_ESCALATION_REQUIRED',
+            message:
+              'budget escalation details are required when projected expense exceeds budget',
+            details: {
+              overrunAmount: budgetEvaluation.snapshot.overrunAmount,
+              budgetCost: budgetEvaluation.snapshot.budgetCost,
+              projectedAmount: budgetEvaluation.snapshot.projectedAmount,
+              periodKey: budgetEvaluation.snapshot.periodKey,
+              missingFields:
+                missingExpenseBudgetEscalationFields(effectiveExpense),
+            },
+          },
+        });
       }
 
       const policyRes = await evaluateActionPolicyWithFallback({
@@ -751,6 +936,30 @@ export async function registerExpenseRoutes(app: FastifyInstance) {
         reasonText,
         result: policyRes,
       });
+      const submitUpdateData: Record<string, unknown> = {
+        status: DocStatusValue.pending_qa,
+        budgetSnapshot: budgetEvaluation.snapshot as unknown as object,
+        budgetOverrunAmount: budgetEvaluation.requiresEscalation
+          ? budgetEvaluation.snapshot.overrunAmount
+          : null,
+      };
+      if (budgetEscalationReason !== undefined) {
+        submitUpdateData.budgetEscalationReason = budgetEscalationReason;
+      }
+      if (budgetEscalationImpact !== undefined) {
+        submitUpdateData.budgetEscalationImpact = budgetEscalationImpact;
+      }
+      if (budgetEscalationAlternative !== undefined) {
+        submitUpdateData.budgetEscalationAlternative =
+          budgetEscalationAlternative;
+      }
+      if (
+        budgetEscalationReason !== undefined ||
+        budgetEscalationImpact !== undefined ||
+        budgetEscalationAlternative !== undefined
+      ) {
+        submitUpdateData.budgetEscalationUpdatedAt = new Date();
+      }
       const actorUserId = req.user?.userId || 'system';
       let submitResult: Awaited<ReturnType<typeof submitApprovalWithUpdate>>;
       try {
@@ -761,7 +970,7 @@ export async function registerExpenseRoutes(app: FastifyInstance) {
           update: (tx) =>
             tx.expense.update({
               where: { id },
-              data: { status: DocStatusValue.pending_qa },
+              data: submitUpdateData as any,
             }),
           createdBy: userId,
         });

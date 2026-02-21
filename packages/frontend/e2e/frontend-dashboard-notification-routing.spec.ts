@@ -449,7 +449,14 @@ test('dashboard notification cards route to chat/leave/expense targets @core', a
 
   const expenseSubmitRes = await page.request.post(
     `${apiBase}/expenses/${encodeURIComponent(expenseId)}/submit`,
-    { headers: targetHeaders, data: {} },
+    {
+      headers: targetHeaders,
+      data: {
+        budgetEscalationReason: `dashboard budget reason ${run}`,
+        budgetEscalationImpact: `dashboard budget impact ${run}`,
+        budgetEscalationAlternative: `dashboard budget alternative ${run}`,
+      },
+    },
   );
   await ensureOk(expenseSubmitRes);
   await approveUntilApproved(

@@ -8,8 +8,10 @@ import {
   hasExpenseSubmitEvidence,
 } from '../dist/routes/expenses.js';
 import {
+  expenseBudgetEscalationSchema,
   expenseCommentCreateSchema,
   expenseQaChecklistPatchSchema,
+  expenseSubmitSchema,
   expenseSchema,
 } from '../dist/routes/validators.js';
 
@@ -146,6 +148,41 @@ test('expenseQaChecklistPatchSchema: rejects empty payload', async () => {
   const res = await app.inject({
     method: 'POST',
     url: '/validate/expense-qa-checklist',
+    payload: {},
+  });
+
+  assert.equal(res.statusCode, 400);
+  await app.close();
+});
+
+test('expenseSubmitSchema: accepts escalation fields payload', async () => {
+  const app = await buildValidatorServer(
+    '/validate/expense-submit',
+    expenseSubmitSchema,
+  );
+  const res = await app.inject({
+    method: 'POST',
+    url: '/validate/expense-submit',
+    payload: {
+      reasonText: 'submit',
+      budgetEscalationReason: '予算超過理由',
+      budgetEscalationImpact: '影響',
+      budgetEscalationAlternative: '代替案',
+    },
+  });
+
+  assert.equal(res.statusCode, 200);
+  await app.close();
+});
+
+test('expenseBudgetEscalationSchema: rejects empty payload', async () => {
+  const app = await buildValidatorServer(
+    '/validate/expense-budget-escalation',
+    expenseBudgetEscalationSchema,
+  );
+  const res = await app.inject({
+    method: 'POST',
+    url: '/validate/expense-budget-escalation',
     payload: {},
   });
 
