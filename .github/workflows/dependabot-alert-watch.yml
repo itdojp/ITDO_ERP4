@@ -127,10 +127,25 @@ jobs:
       - name: Keep issue #1153 state in sync
         env:
           GH_TOKEN: ${{ github.token }}
+          CHECK_STATUS: ${{ steps.check.outputs.status }}
           ALERT_LOW_STATE: ${{ steps.check.outputs.alert_low_state }}
           ACTION_REQUIRED: ${{ steps.check.outputs.action_required }}
         run: |
           issue_number="1153"
+
+          if [[ "${CHECK_STATUS}" != "0" ]]; then
+            echo "Skip issue state sync because check step status is not 0: ${CHECK_STATUS}"
+            exit 0
+          fi
+          if [[ -z "${ALERT_LOW_STATE}" ]] || [[ -z "${ACTION_REQUIRED}" ]]; then
+            echo "Skip issue state sync because required outputs are empty."
+            exit 0
+          fi
+          if [[ "${ACTION_REQUIRED}" != "true" ]] && [[ "${ACTION_REQUIRED}" != "false" ]]; then
+            echo "Skip issue state sync because actionRequired has unexpected value: ${ACTION_REQUIRED}"
+            exit 0
+          fi
+
           current_state="$(gh api "repos/${GITHUB_REPOSITORY}/issues/${issue_number}" --jq '.state')"
 
           if [[ "${ACTION_REQUIRED}" == "true" ]] || [[ "${ALERT_LOW_STATE}" == "OPEN" ]]; then
@@ -141,7 +156,7 @@ jobs:
             exit 0
           fi
 
-          if [[ "${current_state}" == "open" ]]; then
+          if [[ "${ACTION_REQUIRED}" == "false" ]] && [[ "${ALERT_LOW_STATE}" != "OPEN" ]] && [[ "${current_state}" == "open" ]]; then
             gh issue comment "${issue_number}" --body "Dependabot alert watch で alert #10 が OPEN でないこと、および actionRequired=false を確認したためクローズします。" >/dev/null
             gh api -X PATCH "repos/${GITHUB_REPOSITORY}/issues/${issue_number}" -f state='closed' >/dev/null
           fi
