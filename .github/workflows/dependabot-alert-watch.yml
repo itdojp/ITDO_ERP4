@@ -6,8 +6,9 @@ on:
     - cron: "30 3 * * 1"
 
 permissions:
-  contents: read
+  contents: write
   issues: write
+  pull-requests: write
   security-events: read
 
 jobs:
@@ -140,6 +141,8 @@ jobs:
             echo "::warning title=dependabot alert watch::check script failed (status=${{ steps.check.outputs.status }}, reason=${FAILURE_REASON}). Set DEPENDABOT_ALERTS_TOKEN to restore issue sync."
           elif [[ "${FAILURE_REASON}" == "PERMISSION_DENIED" ]]; then
             echo "::warning title=dependabot alert watch::check script failed (status=${{ steps.check.outputs.status }}, reason=${FAILURE_REASON}). Update DEPENDABOT_ALERTS_TOKEN permissions to restore issue sync."
+          elif [[ "${FAILURE_REASON}" == "BAD_CREDENTIALS" ]]; then
+            echo "::warning title=dependabot alert watch::check script failed (status=${{ steps.check.outputs.status }}, reason=${FAILURE_REASON}). Verify DEPENDABOT_ALERTS_TOKEN value and permissions."
           else
             echo "::warning title=dependabot alert watch::check script failed (status=${{ steps.check.outputs.status }}, reason=${FAILURE_REASON}). Check workflow logs/artifacts and rerun after fixing."
           fi
@@ -316,6 +319,128 @@ jobs:
             gh issue comment "${issue_number}" --body "Dependabot alert watch で alert #10 が OPEN でないこと、および actionRequired=false を確認したためクローズします。" >/dev/null
             gh api -X PATCH "repos/${GITHUB_REPOSITORY}/issues/${issue_number}" -f state='closed' >/dev/null
           fi
+
+      - name: Create dependency update PR when upstream updated
+        if: steps.check.outputs.status == '0' && steps.check.outputs.upstream_updated == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GOOGLEAPIS_CURRENT: ${{ steps.check.outputs.googleapis_current }}
+          GOOGLEAPIS_LATEST: ${{ steps.check.outputs.googleapis_latest }}
+          GOOGLEAPIS_COMMON_CURRENT: ${{ steps.check.outputs.googleapis_common_current }}
+          GOOGLEAPIS_COMMON_LATEST: ${{ steps.check.outputs.googleapis_common_latest }}
+        run: |
+          sanitize_branch_part() {
+            echo "$1" | tr -c '[:alnum:]._+-' '-'
+          }
+
+          is_valid_version() {
+            local value="$1"
+            [[ "${value}" =~ ^[0-9]+(\.[0-9]+){1,3}([-.][0-9A-Za-z.+-]+)?$ ]]
+          }
+
+          require_version_var() {
+            local name="$1"
+            local value="${!name:-}"
+            if [[ -z "${value}" ]] || [[ "${value}" == "UNKNOWN" ]] || [[ "${value}" == "unknown" ]]; then
+              echo "Invalid ${name}: ${value}" >&2
+              exit 1
+            fi
+            if ! is_valid_version "${value}"; then
+              echo "Unexpected ${name}: ${value}" >&2
+              exit 1
+            fi
+          }
+
+          require_version_var "GOOGLEAPIS_CURRENT"
+          require_version_var "GOOGLEAPIS_LATEST"
+          require_version_var "GOOGLEAPIS_COMMON_CURRENT"
+          require_version_var "GOOGLEAPIS_COMMON_LATEST"
+
+          googleapis_latest_slug="$(sanitize_branch_part "${GOOGLEAPIS_LATEST}")"
+          googleapis_common_latest_slug="$(sanitize_branch_part "${GOOGLEAPIS_COMMON_LATEST}")"
+          base_branch_name="chore/dependabot-upstream-${googleapis_latest_slug}-${googleapis_common_latest_slug}"
+          branch="${base_branch_name}"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin main
+
+          merged_pr_number="$(gh pr list --state merged --head "${base_branch_name}" --base main --json number --jq '.[0].number // empty')"
+          if [[ -n "${merged_pr_number}" ]]; then
+            # A merged PR already exists for this base branch. Use a unique branch name.
+            branch="${base_branch_name}-${GITHUB_RUN_ID}"
+            git switch -c "${branch}" origin/main
+          elif git ls-remote --exit-code --heads origin "${branch}" >/dev/null 2>&1; then
+            git fetch origin "${branch}:${branch}"
+            git switch "${branch}"
+            if ! git merge --ff-only origin/main; then
+              git merge --no-edit origin/main
+            fi
+          else
+            git switch -c "${branch}" origin/main
+          fi
+
+          if ! npm update --prefix packages/backend googleapis googleapis-common; then
+            echo "npm update failed; aborting PR creation." >&2
+            exit 1
+          fi
+
+          git add packages/backend/package-lock.json packages/backend/package.json
+          if git diff --cached --quiet; then
+            echo "No dependency changes detected after npm update. Skipping PR creation."
+            exit 0
+          fi
+
+          commit_title="chore(deps): refresh googleapis lockfile"
+          git commit \
+            -m "${commit_title}" \
+            -m "googleapis: ${GOOGLEAPIS_CURRENT} -> ${GOOGLEAPIS_LATEST}" \
+            -m "googleapis-common: ${GOOGLEAPIS_COMMON_CURRENT} -> ${GOOGLEAPIS_COMMON_LATEST}"
+
+          push_attempts=0
+          push_max_attempts=3
+          push_delay_seconds=5
+          until git push --set-upstream origin "${branch}" --force-with-lease; do
+            push_attempts=$((push_attempts + 1))
+            if [[ "${push_attempts}" -ge "${push_max_attempts}" ]]; then
+              echo "Failed to push branch '${branch}' after ${push_max_attempts} attempts." >&2
+              exit 1
+            fi
+            echo "git push failed (attempt ${push_attempts}/${push_max_attempts}). Retrying in ${push_delay_seconds}s..."
+            sleep "${push_delay_seconds}"
+          done
+
+          existing_pr_number="$(gh pr list --state open --head "${branch}" --base main --json number --jq '.[0].number // empty')"
+          pr_title="chore(deps): upstream refresh googleapis ${GOOGLEAPIS_CURRENT} -> ${GOOGLEAPIS_LATEST}"
+          pr_body="$(printf '%s\n' \
+            "## 概要" \
+            "- Dependabot Alert Watch で upstream 更新を検知したため、自動で lockfile 更新を作成" \
+            "- 対象: \`packages/backend\`" \
+            "" \
+            "## 変更" \
+            "- \`npm update --prefix packages/backend googleapis googleapis-common\` 実行結果を反映" \
+            "- \`googleapis\`: \`${GOOGLEAPIS_CURRENT}\` -> \`${GOOGLEAPIS_LATEST}\`" \
+            "- \`googleapis-common\`: \`${GOOGLEAPIS_COMMON_CURRENT}\` -> \`${GOOGLEAPIS_COMMON_LATEST}\`" \
+            "" \
+            "## 関連" \
+            "- #1153" \
+          )"
+
+          if [[ -n "${existing_pr_number}" ]]; then
+            gh pr edit "${existing_pr_number}" --title "${pr_title}" --body "${pr_body}"
+            gh pr comment "${existing_pr_number}" --body "Dependabot Alert Watch により自動更新しました（latest: ${GOOGLEAPIS_LATEST} / ${GOOGLEAPIS_COMMON_LATEST}）。"
+            exit 0
+          fi
+
+          closed_pr_number="$(gh pr list --state closed --head "${branch}" --base main --json number --jq '.[0].number // empty')"
+          if [[ -n "${closed_pr_number}" ]]; then
+            gh pr reopen "${closed_pr_number}"
+            gh pr edit "${closed_pr_number}" --title "${pr_title}" --body "${pr_body}"
+            gh pr comment "${closed_pr_number}" --body "Dependabot Alert Watch により再オープンして更新しました（latest: ${GOOGLEAPIS_LATEST} / ${GOOGLEAPIS_COMMON_LATEST}）。"
+            exit 0
+          fi
+
+          gh pr create --base main --head "${branch}" --title "${pr_title}" --body "${pr_body}"
 
       - name: Upload logs
         if: always()
