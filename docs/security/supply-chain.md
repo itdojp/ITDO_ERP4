@@ -45,6 +45,7 @@
   - bot ステータスコメントは毎回更新する
   - `script status == 0` のときは alert詳細をコメントし、Issue状態同期も実行する
   - `script status != 0` のときは warning を出し、botステータスコメントを `BLOCKED` として更新する（Issue状態同期は行わない）
+  - `result reason`（失敗時理由コード）を併記し、`PERMISSION_DENIED` の場合は `DEPENDABOT_ALERTS_TOKEN` 設定を優先確認する
   - `actionRequired=true` または alert `#10` が `OPEN` の場合は open を維持（closed なら再オープン）
   - alert `#10` が `OPEN` でなく `actionRequired=false` の場合は自動クローズ
 

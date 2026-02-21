@@ -41,7 +41,45 @@ jobs:
             fi
           }
 
+          detect_failure_reason() {
+            if [[ "${status}" == "0" ]]; then
+              echo "NONE"
+              return
+            fi
+            if grep -qi 'Resource not accessible by integration' tmp/dependabot-alert-watch.log; then
+              echo "PERMISSION_DENIED"
+              return
+            fi
+            if grep -qi 'gh CLI is required' tmp/dependabot-alert-watch.log; then
+              echo "MISSING_GH"
+              return
+            fi
+            if grep -qi 'npm is required' tmp/dependabot-alert-watch.log; then
+              echo "MISSING_NPM"
+              return
+            fi
+            if grep -qi 'node is required' tmp/dependabot-alert-watch.log; then
+              echo "MISSING_NODE"
+              return
+            fi
+            if grep -qi 'jq is required' tmp/dependabot-alert-watch.log; then
+              echo "MISSING_JQ"
+              return
+            fi
+            if grep -qi 'Invalid GITHUB_REPOSITORY' tmp/dependabot-alert-watch.log; then
+              echo "INVALID_REPOSITORY"
+              return
+            fi
+            if grep -q 'No such file or directory' tmp/dependabot-alert-watch.log; then
+              echo "NO_SUCH_FILE_OR_DIRECTORY"
+              return
+            fi
+            echo "UNKNOWN_FAILURE"
+          }
+
+          failure_reason="$(detect_failure_reason)"
           echo "status=${status}" >> "$GITHUB_OUTPUT"
+          echo "failure_reason=${failure_reason}" >> "$GITHUB_OUTPUT"
           echo "alert_low_state=$(extract alertLowState)" >> "$GITHUB_OUTPUT"
           echo "alert_low_ghsa=$(extract alertLowGhsa)" >> "$GITHUB_OUTPUT"
           echo "alert_high_state=$(extract alertHighState)" >> "$GITHUB_OUTPUT"
@@ -78,6 +116,7 @@ jobs:
             echo "| upstream updated | \`${{ steps.check.outputs.upstream_updated }}\` |"
             echo "| action required | \`${{ steps.check.outputs.action_required }}\` |"
             echo "| script status | \`${{ steps.check.outputs.status }}\` |"
+            echo "| result reason | \`${{ steps.check.outputs.failure_reason }}\` |"
             echo ""
             echo "Manual check command:"
             echo "\`make dependabot-alerts-check\`"
@@ -85,13 +124,20 @@ jobs:
 
       - name: Warn when check script failed
         if: steps.check.outputs.status != '0'
+        env:
+          FAILURE_REASON: ${{ steps.check.outputs.failure_reason }}
         run: |
-          echo "::warning title=dependabot alert watch::check script failed (status=${{ steps.check.outputs.status }}). Set DEPENDABOT_ALERTS_TOKEN to restore issue sync."
+          if [[ "${FAILURE_REASON}" == "PERMISSION_DENIED" ]]; then
+            echo "::warning title=dependabot alert watch::check script failed (status=${{ steps.check.outputs.status }}, reason=${FAILURE_REASON}). Set DEPENDABOT_ALERTS_TOKEN to restore issue sync."
+          else
+            echo "::warning title=dependabot alert watch::check script failed (status=${{ steps.check.outputs.status }}, reason=${FAILURE_REASON}). Check workflow logs/artifacts and rerun after fixing."
+          fi
 
       - name: Sync issue #1153 status comment
         env:
           GH_TOKEN: ${{ github.token }}
           CHECK_STATUS: ${{ steps.check.outputs.status }}
+          FAILURE_REASON: ${{ steps.check.outputs.failure_reason }}
           ALERT_LOW_STATE: ${{ steps.check.outputs.alert_low_state }}
           ALERT_LOW_GHSA: ${{ steps.check.outputs.alert_low_ghsa }}
           ALERT_HIGH_STATE: ${{ steps.check.outputs.alert_high_state }}
@@ -129,14 +175,19 @@ jobs:
               "${marker}" \
             )"
           else
+            action_message="workflow ログ/artifact を確認し、失敗要因を解消して再実行してください。"
+            if [[ "${FAILURE_REASON}" == "PERMISSION_DENIED" ]]; then
+              action_message="\`DEPENDABOT_ALERTS_TOKEN\` と権限設定を確認して再実行してください。"
+            fi
             body="$(printf '%s\n' \
               "Dependabot alert 週次監視（自動更新）" \
               "" \
               "- 実行時刻: ${now}" \
               "- status: \`BLOCKED\`" \
               "- script status: \`${CHECK_STATUS}\`" \
-              "- note: チェックスクリプトが失敗したため、#1153 の状態同期をスキップしました（詳細は workflow ログ/artifact を参照）。" \
-              "- action: \`DEPENDABOT_ALERTS_TOKEN\` と workflow 実行環境を確認し、再実行してください。" \
+              "- result reason: \`${FAILURE_REASON}\`" \
+              "- note: チェックスクリプトが失敗したため、#1153 の状態同期をスキップしました。" \
+              "- action: ${action_message}" \
               "" \
               "workflow run: ${run_url}" \
               "${marker}" \
