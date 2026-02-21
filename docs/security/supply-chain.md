@@ -48,7 +48,7 @@
   - `DISMISSED`（reason: `inaccurate`）
   - 根拠: lockfile が `fast-xml-parser@5.3.6`（first patched）を解決し、`npm audit --audit-level=high` で high/critical 未検知
 
-追跡 Issue: `#1153`
+追跡 Issue: #1153
 
 例外/抑制が必要な場合は、以下を必須として Issue 化します。
 - 対象（パッケージ/CVE など）
