@@ -33,7 +33,7 @@ jobs:
           extract() {
             local key="$1"
             local value
-            value="$(grep -E "^${key}:" tmp/dependabot-alert-watch.log | tail -n1 | sed "s/^${key}:[[:space:]]*//" || true)"
+            value="$(grep -E "^${key}:" tmp/dependabot-alert-watch.log | tail -n1 | sed "s/^${key}:[[:space:]]*//")"
             if [[ -z "${value}" ]]; then
               echo "UNKNOWN"
             else
