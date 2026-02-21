@@ -124,6 +124,28 @@ jobs:
             gh issue comment 1153 --body "${body}" >/dev/null
           fi
 
+      - name: Keep issue #1153 state in sync
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ALERT_LOW_STATE: ${{ steps.check.outputs.alert_low_state }}
+          ACTION_REQUIRED: ${{ steps.check.outputs.action_required }}
+        run: |
+          issue_number="1153"
+          current_state="$(gh api "repos/${GITHUB_REPOSITORY}/issues/${issue_number}" --jq '.state')"
+
+          if [[ "${ACTION_REQUIRED}" == "true" ]] || [[ "${ALERT_LOW_STATE}" == "OPEN" ]]; then
+            if [[ "${current_state}" == "closed" ]]; then
+              gh api -X PATCH "repos/${GITHUB_REPOSITORY}/issues/${issue_number}" -f state='open' >/dev/null
+              gh issue comment "${issue_number}" --body "Dependabot alert watch により再オープンしました（actionRequired=true または alert #10 が OPEN）。" >/dev/null
+            fi
+            exit 0
+          fi
+
+          if [[ "${current_state}" == "open" ]]; then
+            gh issue comment "${issue_number}" --body "Dependabot alert watch で alert #10 が OPEN でないこと、および actionRequired=false を確認したためクローズします。" >/dev/null
+            gh api -X PATCH "repos/${GITHUB_REPOSITORY}/issues/${issue_number}" -f state='closed' >/dev/null
+          fi
+
       - name: Upload logs
         if: always()
         uses: actions/upload-artifact@v6

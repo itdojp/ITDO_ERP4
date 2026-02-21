@@ -38,6 +38,9 @@
   - upstream 最新版（`googleapis` / `googleapis-common`）
 - 手動確認コマンド:
   - `make dependabot-alerts-check`
+- 追跡Issue（#1153）の状態同期:
+  - `actionRequired=true` または alert `#10` が `OPEN` の場合は open を維持（closed なら再オープン）
+  - alert `#10` が `OPEN` でなく `actionRequired=false` の場合は自動クローズ
 
 ### 監視対象の最新判断（2026-02-21）
 - alert `#10` (`GHSA-w7fw-mjwx-w883`, low):
