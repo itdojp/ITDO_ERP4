@@ -55,6 +55,10 @@ jobs:
               echo "PERMISSION_DENIED"
               return
             fi
+            if grep -qi 'Bad credentials' tmp/dependabot-alert-watch.log; then
+              echo "BAD_CREDENTIALS"
+              return
+            fi
             if grep -qi 'gh CLI is required' tmp/dependabot-alert-watch.log; then
               echo "MISSING_GH"
               return
