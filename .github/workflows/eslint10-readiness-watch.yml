@@ -26,13 +26,26 @@ jobs:
           STRICT=0 ./scripts/check-eslint10-readiness.sh > tmp/eslint10-readiness.log 2>&1
           status=$?
           cat tmp/eslint10-readiness.log
-          ready=$(grep -E '^ready:' tmp/eslint10-readiness.log | tail -n1 | sed 's/^ready:[[:space:]]*//')
-          plugin_peer=$(grep -E '^pluginPeerEslint:' tmp/eslint10-readiness.log | tail -n1 | sed 's/^pluginPeerEslint:[[:space:]]*//')
-          parser_peer=$(grep -E '^parserPeerEslint:' tmp/eslint10-readiness.log | tail -n1 | sed 's/^parserPeerEslint:[[:space:]]*//')
-          react_plugin_peer=$(grep -E '^reactPluginPeerEslint:' tmp/eslint10-readiness.log | tail -n1 | sed 's/^reactPluginPeerEslint:[[:space:]]*//')
-          react_hooks_plugin_peer=$(grep -E '^reactHooksPluginPeerEslint:' tmp/eslint10-readiness.log | tail -n1 | sed 's/^reactHooksPluginPeerEslint:[[:space:]]*//')
+
+          extract() {
+            local key="$1"
+            local value
+            value="$(grep -E "^${key}:" tmp/eslint10-readiness.log | tail -n1 | sed "s/^${key}:[[:space:]]*//")"
+            if [[ -z "${value}" ]]; then
+              echo "UNKNOWN"
+            else
+              echo "${value}"
+            fi
+          }
+
+          ready="$(extract ready)"
+          plugin_peer="$(extract pluginPeerEslint)"
+          parser_peer="$(extract parserPeerEslint)"
+          react_plugin_peer="$(extract reactPluginPeerEslint)"
+          react_hooks_plugin_peer="$(extract reactHooksPluginPeerEslint)"
+
           echo "status=${status}" >> "$GITHUB_OUTPUT"
-          echo "ready=${ready:-false}" >> "$GITHUB_OUTPUT"
+          echo "ready=${ready}" >> "$GITHUB_OUTPUT"
           echo "plugin_peer<<EOF" >> "$GITHUB_OUTPUT"
           echo "${plugin_peer}" >> "$GITHUB_OUTPUT"
           echo "EOF" >> "$GITHUB_OUTPUT"
@@ -63,9 +76,16 @@ jobs:
             echo "\`make eslint10-readiness-check\`"
           } >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Warn when check script failed
+        if: steps.check.outputs.status != '0'
+        run: |
+          echo "::warning title=eslint10 readiness check::check script failed (status=${{ steps.check.outputs.status }}). Skip syncing issue #914 status comment."
+
       - name: Sync issue #914 status comment
+        if: steps.check.outputs.status == '0'
         env:
           GH_TOKEN: ${{ github.token }}
+          CHECK_STATUS: ${{ steps.check.outputs.status }}
           READY: ${{ steps.check.outputs.ready }}
           PLUGIN_PEER: ${{ steps.check.outputs.plugin_peer }}
           PARSER_PEER: ${{ steps.check.outputs.parser_peer }}
@@ -84,6 +104,7 @@ jobs:
           - @typescript-eslint/parser peer: \`${PARSER_PEER}\`
           - eslint-plugin-react peer: \`${REACT_PLUGIN_PEER}\`
           - eslint-plugin-react-hooks peer: \`${REACT_HOOKS_PLUGIN_PEER}\`
+          - script status: \`${CHECK_STATUS}\`
 
           workflow run: ${run_url}
           ${marker}
