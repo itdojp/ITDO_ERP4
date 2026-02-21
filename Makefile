@@ -1,4 +1,4 @@
-.PHONY: lint format-check typecheck build test e2e ui-evidence mobile-regression-log frontend-dev-api podman-smoke pr-comments audit design-system-package-check eslint10-readiness-check dependabot-alerts-check backup-s3-readiness-check po-migration-input-readiness-check po-migration-record av-staging-evidence av-staging-gate av-staging-readiness
+.PHONY: lint format-check typecheck build test e2e ui-evidence mobile-regression-log frontend-dev-api podman-smoke pr-comments audit design-system-package-check eslint10-readiness-check dependabot-alerts-check dependabot-token-readiness-check backup-s3-readiness-check po-migration-input-readiness-check po-migration-record av-staging-evidence av-staging-gate av-staging-readiness
 
 lint:
 	npm run lint --prefix packages/backend
@@ -51,6 +51,9 @@ eslint10-readiness-check:
 
 dependabot-alerts-check:
 	./scripts/check-dependabot-alerts.sh
+
+dependabot-token-readiness-check:
+	./scripts/check-dependabot-alerts-token.sh
 
 backup-s3-readiness-check:
 	./scripts/check-backup-s3-readiness.sh
