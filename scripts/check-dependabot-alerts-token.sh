@@ -28,26 +28,44 @@ if [[ -n "${TOKEN_ENV_VALUE}" ]]; then
   TOKEN_ENV_SET=true
 fi
 
-set +e
-api_output="$(gh api "repos/${REPO_OWNER}/${REPO_NAME}/dependabot/alerts?per_page=1&state=open" --jq 'length' 2>&1)"
-status=$?
-set -e
+missing_token_reason() {
+  if [[ "${TOKEN_ENV_NAME}" == "DEPENDABOT_ALERTS_TOKEN" ]]; then
+    echo "MISSING_DEPENDABOT_ALERTS_TOKEN"
+  else
+    echo "MISSING_TOKEN"
+  fi
+}
 
 reason="NONE"
 ready=true
+status=0
+api_output=""
+
+if [[ "${TOKEN_ENV_SET}" == "true" ]]; then
+  set +e
+  api_output="$(GH_TOKEN="${TOKEN_ENV_VALUE}" gh api "repos/${REPO_OWNER}/${REPO_NAME}/dependabot/alerts?per_page=1&state=open" --jq 'length' 2>&1)"
+  status=$?
+  set -e
+else
+  ready=false
+  status=1
+  reason="$(missing_token_reason)"
+  api_output="Token environment variable ${TOKEN_ENV_NAME} is not set."
+fi
+
 if [[ "${status}" != "0" ]]; then
   ready=false
   if grep -qi 'Resource not accessible by integration' <<<"${api_output}"; then
     if [[ "${TOKEN_ENV_SET}" == "true" ]]; then
       reason="PERMISSION_DENIED"
     else
-      reason="MISSING_DEPENDABOT_ALERTS_TOKEN"
+      reason="$(missing_token_reason)"
     fi
   elif grep -qi 'Bad credentials' <<<"${api_output}"; then
     reason="BAD_CREDENTIALS"
   elif grep -qi 'Could not resolve host' <<<"${api_output}"; then
     reason="NETWORK_ERROR"
-  else
+  elif [[ "${reason}" == "NONE" ]]; then
     reason="UNKNOWN_FAILURE"
   fi
 fi
