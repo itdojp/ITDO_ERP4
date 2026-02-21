@@ -2,17 +2,21 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { api, getAuthState } from '../api';
 import { AnnotationsCard } from '../components/AnnotationsCard';
 import { useProjects } from '../hooks/useProjects';
-import { Button, Drawer } from '../ui';
+import { Button, Dialog, Drawer } from '../ui';
 import { enqueueOfflineItem, isOfflineError } from '../utils/offlineQueue';
 
 type Expense = {
   id: string;
   projectId: string;
+  userId: string;
   category: string;
   amount: number;
   currency: string;
   incurredOn: string;
   status: string;
+  settlementStatus?: 'paid' | 'unpaid' | string;
+  paidAt?: string | null;
+  paidBy?: string | null;
   receiptUrl?: string | null;
   isShared?: boolean | null;
 };
@@ -29,6 +33,14 @@ type FormState = {
 
 type MessageState = { text: string; type: 'success' | 'error' } | null;
 
+type ListFilterState = {
+  status: string;
+  settlementStatus: 'all' | 'unpaid' | 'paid';
+  receipt: 'all' | 'with' | 'without';
+  paidFrom: string;
+  paidTo: string;
+};
+
 const defaultForm: FormState = {
   projectId: 'demo-project',
   category: '交通費',
@@ -37,6 +49,14 @@ const defaultForm: FormState = {
   incurredOn: new Date().toISOString().slice(0, 10),
   isShared: false,
   receiptUrl: '',
+};
+
+const defaultListFilter: ListFilterState = {
+  status: 'all',
+  settlementStatus: 'all',
+  receipt: 'all',
+  paidFrom: '',
+  paidTo: '',
 };
 
 export const Expenses: React.FC = () => {
@@ -69,7 +89,22 @@ export const Expenses: React.FC = () => {
   } | null>(null);
   const [message, setMessage] = useState<MessageState>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [isSettlementUpdating, setIsSettlementUpdating] = useState(false);
+  const [listFilter, setListFilter] =
+    useState<ListFilterState>(defaultListFilter);
+  const [markPaidTarget, setMarkPaidTarget] = useState<Expense | null>(null);
+  const [markPaidDate, setMarkPaidDate] = useState(() =>
+    new Date().toISOString().slice(0, 10),
+  );
+  const [markPaidReason, setMarkPaidReason] = useState('');
+  const [unmarkPaidTarget, setUnmarkPaidTarget] = useState<Expense | null>(
+    null,
+  );
+  const [unmarkPaidReason, setUnmarkPaidReason] = useState('');
   const [showMissingOnly, setShowMissingOnly] = useState(false);
+  const canManageSettlement = Boolean(
+    auth?.roles?.some((role) => role === 'admin' || role === 'mgmt'),
+  );
   const amountValue = Number.isFinite(form.amount) ? form.amount : 0;
   const amountError =
     amountValue <= 0
@@ -92,11 +127,25 @@ export const Expenses: React.FC = () => {
     ? '案件 / 区分 / 日付 / 通貨は必須です'
     : amountError || currencyError;
 
-  useEffect(() => {
-    api<{ items: Expense[] }>('/expenses')
-      .then((res) => setItems(res.items))
-      .catch(() => setItems([]));
+  const parseDateSafe = (value?: string | null) => {
+    if (!value) return null;
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return null;
+    return parsed;
+  };
+
+  const loadItems = useCallback(async () => {
+    try {
+      const res = await api<{ items: Expense[] }>('/expenses');
+      setItems(res.items);
+    } catch {
+      setItems([]);
+    }
   }, []);
+
+  useEffect(() => {
+    void loadItems();
+  }, [loadItems]);
 
   useEffect(() => {
     if (!message || message.type !== 'success') return;
@@ -113,9 +162,44 @@ export const Expenses: React.FC = () => {
     () => items.filter((item) => !item.receiptUrl).length,
     [items],
   );
-  const visibleItems = showMissingOnly
-    ? items.filter((item) => !item.receiptUrl)
-    : items;
+  const statusOptions = useMemo(
+    () =>
+      Array.from(new Set(items.map((item) => item.status)))
+        .filter(Boolean)
+        .sort(),
+    [items],
+  );
+  const visibleItems = useMemo(
+    () =>
+      items.filter((item) => {
+        if (showMissingOnly && item.receiptUrl) return false;
+        if (listFilter.status !== 'all' && item.status !== listFilter.status) {
+          return false;
+        }
+        if (
+          listFilter.settlementStatus !== 'all' &&
+          item.settlementStatus !== listFilter.settlementStatus
+        ) {
+          return false;
+        }
+        if (listFilter.receipt === 'with' && !item.receiptUrl) return false;
+        if (listFilter.receipt === 'without' && item.receiptUrl) return false;
+        if (listFilter.paidFrom || listFilter.paidTo) {
+          const paidAt = parseDateSafe(item.paidAt);
+          if (!paidAt) return false;
+          if (listFilter.paidFrom) {
+            const from = parseDateSafe(listFilter.paidFrom);
+            if (from && paidAt < from) return false;
+          }
+          if (listFilter.paidTo) {
+            const to = parseDateSafe(listFilter.paidTo);
+            if (to && paidAt > to) return false;
+          }
+        }
+        return true;
+      }),
+    [items, listFilter, showMissingOnly],
+  );
 
   const add = async () => {
     if (!isValid) {
@@ -146,9 +230,8 @@ export const Expenses: React.FC = () => {
       });
       setMessage({ text: '経費を保存しました', type: 'success' });
       try {
-        const updated = await api<{ items: Expense[] }>('/expenses');
-        setItems(updated.items);
-      } catch (e) {
+        await loadItems();
+      } catch {
         setMessage({
           text: '保存しましたが一覧の更新に失敗しました',
           type: 'error',
@@ -172,6 +255,58 @@ export const Expenses: React.FC = () => {
       }
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const applyMarkPaid = async () => {
+    if (!markPaidTarget) return;
+    try {
+      setIsSettlementUpdating(true);
+      const body: Record<string, string> = {};
+      if (markPaidDate) body.paidAt = markPaidDate;
+      if (markPaidReason.trim()) body.reasonText = markPaidReason.trim();
+      const updated = await api<Expense>(
+        `/expenses/${encodeURIComponent(markPaidTarget.id)}/mark-paid`,
+        {
+          method: 'POST',
+          body: JSON.stringify(body),
+        },
+      );
+      setItems((prev) =>
+        prev.map((item) => (item.id === updated.id ? updated : item)),
+      );
+      setMarkPaidTarget(null);
+      setMarkPaidDate(new Date().toISOString().slice(0, 10));
+      setMarkPaidReason('');
+      setMessage({ text: '支払済みに更新しました', type: 'success' });
+    } catch {
+      setMessage({ text: '支払済み更新に失敗しました', type: 'error' });
+    } finally {
+      setIsSettlementUpdating(false);
+    }
+  };
+
+  const applyUnmarkPaid = async () => {
+    if (!unmarkPaidTarget || !unmarkPaidReason.trim()) return;
+    try {
+      setIsSettlementUpdating(true);
+      const updated = await api<Expense>(
+        `/expenses/${encodeURIComponent(unmarkPaidTarget.id)}/unmark-paid`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ reasonText: unmarkPaidReason.trim() }),
+        },
+      );
+      setItems((prev) =>
+        prev.map((item) => (item.id === updated.id ? updated : item)),
+      );
+      setUnmarkPaidTarget(null);
+      setUnmarkPaidReason('');
+      setMessage({ text: '支払済みを取り消しました', type: 'success' });
+    } catch {
+      setMessage({ text: '支払取消に失敗しました', type: 'error' });
+    } finally {
+      setIsSettlementUpdating(false);
     }
   };
 
@@ -262,7 +397,10 @@ export const Expenses: React.FC = () => {
           </p>
         )}
       </div>
-      <div className="row" style={{ marginBottom: 8 }}>
+      <div
+        className="row"
+        style={{ marginBottom: 8, gap: 8, flexWrap: 'wrap' }}
+      >
         <span className="badge">領収書未登録: {missingReceiptCount}件</span>
         <button
           className="button secondary"
@@ -270,14 +408,106 @@ export const Expenses: React.FC = () => {
         >
           {showMissingOnly ? '全件表示' : '未登録のみ表示'}
         </button>
+        <button className="button secondary" onClick={() => void loadItems()}>
+          再読み込み
+        </button>
+      </div>
+      <div
+        className="row"
+        style={{ marginBottom: 8, gap: 8, flexWrap: 'wrap', alignItems: 'end' }}
+      >
+        <label>
+          状態
+          <select
+            aria-label="経費状態フィルタ"
+            value={listFilter.status}
+            onChange={(e) =>
+              setListFilter((prev) => ({ ...prev, status: e.target.value }))
+            }
+          >
+            <option value="all">すべて</option>
+            {statusOptions.map((status) => (
+              <option key={status} value={status}>
+                {status}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          精算
+          <select
+            aria-label="経費精算フィルタ"
+            value={listFilter.settlementStatus}
+            onChange={(e) =>
+              setListFilter((prev) => ({
+                ...prev,
+                settlementStatus: e.target
+                  .value as ListFilterState['settlementStatus'],
+              }))
+            }
+          >
+            <option value="all">すべて</option>
+            <option value="unpaid">未払い</option>
+            <option value="paid">支払済み</option>
+          </select>
+        </label>
+        <label>
+          領収書
+          <select
+            aria-label="経費領収書フィルタ"
+            value={listFilter.receipt}
+            onChange={(e) =>
+              setListFilter((prev) => ({
+                ...prev,
+                receipt: e.target.value as ListFilterState['receipt'],
+              }))
+            }
+          >
+            <option value="all">すべて</option>
+            <option value="with">登録あり</option>
+            <option value="without">未登録</option>
+          </select>
+        </label>
+        <label>
+          支払日(開始)
+          <input
+            aria-label="支払日開始"
+            type="date"
+            value={listFilter.paidFrom}
+            onChange={(e) =>
+              setListFilter((prev) => ({ ...prev, paidFrom: e.target.value }))
+            }
+          />
+        </label>
+        <label>
+          支払日(終了)
+          <input
+            aria-label="支払日終了"
+            type="date"
+            value={listFilter.paidTo}
+            onChange={(e) =>
+              setListFilter((prev) => ({ ...prev, paidTo: e.target.value }))
+            }
+          />
+        </label>
+        <button
+          className="button secondary"
+          onClick={() => setListFilter(defaultListFilter)}
+        >
+          条件クリア
+        </button>
       </div>
       <ul className="list">
         {visibleItems.map((item) => (
           <li key={item.id}>
             <span className="badge">{item.status}</span>{' '}
+            <span className="badge">
+              {item.settlementStatus === 'paid' ? '支払済み' : '未払い'}
+            </span>{' '}
             {item.incurredOn.slice(0, 10)} / {renderProject(item.projectId)} /{' '}
             {item.category} / {item.amount} {item.currency}
             {item.isShared && <> / 共通</>}
+            {item.paidAt ? <> / 支払日: {item.paidAt.slice(0, 10)}</> : null}
             {item.receiptUrl ? (
               <>
                 {' '}
@@ -317,6 +547,33 @@ export const Expenses: React.FC = () => {
               >
                 注釈
               </button>
+              {canManageSettlement &&
+                item.status === 'approved' &&
+                item.settlementStatus !== 'paid' && (
+                  <button
+                    className="button secondary"
+                    style={{ marginLeft: 8 }}
+                    onClick={() => {
+                      setMarkPaidTarget(item);
+                      setMarkPaidDate(new Date().toISOString().slice(0, 10));
+                      setMarkPaidReason('');
+                    }}
+                  >
+                    支払済みにする
+                  </button>
+                )}
+              {canManageSettlement && item.settlementStatus === 'paid' && (
+                <button
+                  className="button secondary"
+                  style={{ marginLeft: 8 }}
+                  onClick={() => {
+                    setUnmarkPaidTarget(item);
+                    setUnmarkPaidReason('');
+                  }}
+                >
+                  支払取消
+                </button>
+              )}
             </div>
           </li>
         ))}
@@ -352,6 +609,97 @@ export const Expenses: React.FC = () => {
           />
         )}
       </Drawer>
+      <Dialog
+        open={Boolean(markPaidTarget)}
+        onClose={() => setMarkPaidTarget(null)}
+        title="経費を支払済みに更新"
+        size="small"
+        footer={
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+            <Button
+              variant="secondary"
+              onClick={() => setMarkPaidTarget(null)}
+              disabled={isSettlementUpdating}
+            >
+              キャンセル
+            </Button>
+            <Button
+              onClick={() => void applyMarkPaid()}
+              disabled={isSettlementUpdating}
+            >
+              支払済みにする
+            </Button>
+          </div>
+        }
+      >
+        <div style={{ display: 'grid', gap: 8 }}>
+          <p style={{ margin: 0 }}>
+            {markPaidTarget
+              ? `対象: ${markPaidTarget.incurredOn.slice(0, 10)} / ${markPaidTarget.category} / ${markPaidTarget.amount} ${markPaidTarget.currency}`
+              : ''}
+          </p>
+          <label>
+            支払日
+            <input
+              aria-label="支払日入力"
+              type="date"
+              value={markPaidDate}
+              onChange={(e) => setMarkPaidDate(e.target.value)}
+            />
+          </label>
+          <label>
+            理由（任意）
+            <input
+              aria-label="支払更新理由"
+              type="text"
+              value={markPaidReason}
+              onChange={(e) => setMarkPaidReason(e.target.value)}
+              placeholder="任意"
+            />
+          </label>
+        </div>
+      </Dialog>
+      <Dialog
+        open={Boolean(unmarkPaidTarget)}
+        onClose={() => setUnmarkPaidTarget(null)}
+        title="経費の支払済みを取り消し"
+        size="small"
+        footer={
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+            <Button
+              variant="secondary"
+              onClick={() => setUnmarkPaidTarget(null)}
+              disabled={isSettlementUpdating}
+            >
+              キャンセル
+            </Button>
+            <Button
+              onClick={() => void applyUnmarkPaid()}
+              disabled={isSettlementUpdating || !unmarkPaidReason.trim()}
+            >
+              支払取消
+            </Button>
+          </div>
+        }
+      >
+        <div style={{ display: 'grid', gap: 8 }}>
+          <p style={{ margin: 0 }}>
+            {unmarkPaidTarget
+              ? `対象: ${unmarkPaidTarget.incurredOn.slice(0, 10)} / ${unmarkPaidTarget.category} / ${unmarkPaidTarget.amount} ${unmarkPaidTarget.currency}`
+              : ''}
+          </p>
+          <label>
+            取消理由（必須）
+            <input
+              aria-label="支払取消理由"
+              type="text"
+              value={unmarkPaidReason}
+              onChange={(e) => setUnmarkPaidReason(e.target.value)}
+              placeholder="取消理由を入力してください"
+            />
+          </label>
+        </div>
+      </Dialog>
     </div>
   );
 };
