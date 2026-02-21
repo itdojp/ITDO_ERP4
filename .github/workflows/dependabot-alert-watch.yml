@@ -32,7 +32,13 @@ jobs:
 
           extract() {
             local key="$1"
-            grep -E "^${key}:" tmp/dependabot-alert-watch.log | tail -n1 | sed "s/^${key}:[[:space:]]*//"
+            local value
+            value="$(grep -E "^${key}:" tmp/dependabot-alert-watch.log | tail -n1 | sed "s/^${key}:[[:space:]]*//")"
+            if [[ -z "${value}" ]]; then
+              echo "UNKNOWN"
+            else
+              echo "${value}"
+            fi
           }
 
           echo "status=${status}" >> "$GITHUB_OUTPUT"
@@ -80,6 +86,7 @@ jobs:
       - name: Sync issue #1153 status comment
         env:
           GH_TOKEN: ${{ github.token }}
+          CHECK_STATUS: ${{ steps.check.outputs.status }}
           ALERT_LOW_STATE: ${{ steps.check.outputs.alert_low_state }}
           ALERT_LOW_GHSA: ${{ steps.check.outputs.alert_low_ghsa }}
           ALERT_HIGH_STATE: ${{ steps.check.outputs.alert_high_state }}
@@ -110,6 +117,7 @@ jobs:
           - googleapis-common current/latest: \`${GOOGLEAPIS_COMMON_CURRENT}\` / \`${GOOGLEAPIS_COMMON_LATEST}\`
           - upstream updated: \`${UPSTREAM_UPDATED}\`
           - action required: \`${ACTION_REQUIRED}\`
+          - script status: \`${CHECK_STATUS}\`
 
           workflow run: ${run_url}
           ${marker}
