@@ -83,6 +83,11 @@ jobs:
             echo "\`make dependabot-alerts-check\`"
           } >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Warn when check script failed
+        if: steps.check.outputs.status != '0'
+        run: |
+          echo "::warning title=dependabot alert watch::check script failed (status=${{ steps.check.outputs.status }}). Set DEPENDABOT_ALERTS_TOKEN to restore issue sync."
+
       - name: Sync issue #1153 status comment
         if: steps.check.outputs.status == '0'
         env:
@@ -134,18 +139,13 @@ jobs:
           fi
 
       - name: Keep issue #1153 state in sync
+        if: steps.check.outputs.status == '0'
         env:
           GH_TOKEN: ${{ github.token }}
-          CHECK_STATUS: ${{ steps.check.outputs.status }}
           ALERT_LOW_STATE: ${{ steps.check.outputs.alert_low_state }}
           ACTION_REQUIRED: ${{ steps.check.outputs.action_required }}
         run: |
           issue_number="1153"
-
-          if [[ "${CHECK_STATUS}" != "0" ]]; then
-            echo "Skip issue state sync because check step status is not 0: ${CHECK_STATUS}"
-            exit 0
-          fi
           if [[ -z "${ALERT_LOW_STATE}" ]] || [[ -z "${ACTION_REQUIRED}" ]]; then
             echo "Skip issue state sync because required outputs are empty."
             exit 0
