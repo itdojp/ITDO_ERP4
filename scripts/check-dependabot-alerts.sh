@@ -159,9 +159,6 @@ fi
 if [[ "${alert_low_state}" == "OPEN" ]] && [[ "${qs_patched}" != "true" ]]; then
   action_required=true
 fi
-if [[ "${alert_high_state}" == "OPEN" ]] && [[ "${fast_xml_patched}" != "true" ]]; then
-  action_required=true
-fi
 if [[ "${upstream_updated}" == "true" ]]; then
   action_required=true
 fi
