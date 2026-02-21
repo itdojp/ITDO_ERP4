@@ -23,6 +23,7 @@ jobs:
         id: check
         env:
           GH_TOKEN: ${{ secrets.DEPENDABOT_ALERTS_TOKEN != '' && secrets.DEPENDABOT_ALERTS_TOKEN || github.token }}
+          DEPENDABOT_ALERTS_TOKEN_SET: ${{ secrets.DEPENDABOT_ALERTS_TOKEN != '' }}
         run: |
           mkdir -p tmp
           set +e
@@ -44,6 +45,10 @@ jobs:
           detect_failure_reason() {
             if [[ "${status}" == "0" ]]; then
               echo "NONE"
+              return
+            fi
+            if [[ "${DEPENDABOT_ALERTS_TOKEN_SET}" != "true" ]] && grep -qi 'Resource not accessible by integration' tmp/dependabot-alert-watch.log; then
+              echo "MISSING_DEPENDABOT_ALERTS_TOKEN"
               return
             fi
             if grep -qi 'Resource not accessible by integration' tmp/dependabot-alert-watch.log; then
@@ -127,8 +132,10 @@ jobs:
         env:
           FAILURE_REASON: ${{ steps.check.outputs.failure_reason }}
         run: |
-          if [[ "${FAILURE_REASON}" == "PERMISSION_DENIED" ]]; then
+          if [[ "${FAILURE_REASON}" == "MISSING_DEPENDABOT_ALERTS_TOKEN" ]]; then
             echo "::warning title=dependabot alert watch::check script failed (status=${{ steps.check.outputs.status }}, reason=${FAILURE_REASON}). Set DEPENDABOT_ALERTS_TOKEN to restore issue sync."
+          elif [[ "${FAILURE_REASON}" == "PERMISSION_DENIED" ]]; then
+            echo "::warning title=dependabot alert watch::check script failed (status=${{ steps.check.outputs.status }}, reason=${FAILURE_REASON}). Update DEPENDABOT_ALERTS_TOKEN permissions to restore issue sync."
           else
             echo "::warning title=dependabot alert watch::check script failed (status=${{ steps.check.outputs.status }}, reason=${FAILURE_REASON}). Check workflow logs/artifacts and rerun after fixing."
           fi
@@ -176,7 +183,9 @@ jobs:
             )"
           else
             action_message="workflow ログ/artifact を確認し、失敗要因を解消して再実行してください。"
-            if [[ "${FAILURE_REASON}" == "PERMISSION_DENIED" ]]; then
+            if [[ "${FAILURE_REASON}" == "MISSING_DEPENDABOT_ALERTS_TOKEN" ]]; then
+              action_message="\`DEPENDABOT_ALERTS_TOKEN\`（Dependabot alerts 読み取り権限付き）を repository secret に設定して再実行してください。"
+            elif [[ "${FAILURE_REASON}" == "PERMISSION_DENIED" ]]; then
               action_message="\`DEPENDABOT_ALERTS_TOKEN\` と権限設定を確認して再実行してください。"
             fi
             body="$(printf '%s\n' \
