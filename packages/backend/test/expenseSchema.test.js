@@ -9,6 +9,7 @@ import {
 } from '../dist/routes/expenses.js';
 import {
   expenseCommentCreateSchema,
+  expenseQaChecklistPatchSchema,
   expenseSchema,
 } from '../dist/routes/validators.js';
 
@@ -113,6 +114,39 @@ test('expenseCommentCreateSchema: rejects empty body', async () => {
       kind: 'review',
       body: '',
     },
+  });
+
+  assert.equal(res.statusCode, 400);
+  await app.close();
+});
+
+test('expenseQaChecklistPatchSchema: accepts partial payload', async () => {
+  const app = await buildValidatorServer(
+    '/validate/expense-qa-checklist',
+    expenseQaChecklistPatchSchema,
+  );
+  const res = await app.inject({
+    method: 'POST',
+    url: '/validate/expense-qa-checklist',
+    payload: {
+      receiptVerified: true,
+      notes: 'e2e checklist',
+    },
+  });
+
+  assert.equal(res.statusCode, 200);
+  await app.close();
+});
+
+test('expenseQaChecklistPatchSchema: rejects empty payload', async () => {
+  const app = await buildValidatorServer(
+    '/validate/expense-qa-checklist',
+    expenseQaChecklistPatchSchema,
+  );
+  const res = await app.inject({
+    method: 'POST',
+    url: '/validate/expense-qa-checklist',
+    payload: {},
   });
 
   assert.equal(res.statusCode, 400);

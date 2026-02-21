@@ -3,6 +3,7 @@ import { prisma } from './db.js';
 import { logAudit, type AuditContext } from './audit.js';
 import { createEvidenceSnapshotForApproval } from './evidenceSnapshot.js';
 import { logExpenseStateTransition } from './expenseStateTransitionLog.js';
+import { isExpenseQaChecklistComplete } from './expenseQaChecklist.js';
 import {
   hasQaStageBeforeExec,
   matchApprovalSteps as computeApprovalSteps,
@@ -20,6 +21,13 @@ export class ExpenseQaStageRequiredError extends Error {
   constructor() {
     super('expense_requires_qa_before_exec');
     this.name = 'ExpenseQaStageRequiredError';
+  }
+}
+
+export class ExpenseQaChecklistIncompleteError extends Error {
+  constructor() {
+    super('expense_qa_checklist_incomplete');
+    this.name = 'ExpenseQaChecklistIncompleteError';
   }
 }
 
@@ -463,6 +471,25 @@ export async function act(
       instance.status === DocStatusValue.rejected
     ) {
       throw new Error('Instance already closed');
+    }
+    if (
+      action === 'approve' &&
+      instance.targetTable === 'expenses' &&
+      instance.status === DocStatusValue.pending_qa
+    ) {
+      const checklist = await tx.expenseQaChecklist.findUnique({
+        where: { expenseId: instance.targetId },
+        select: {
+          amountVerified: true,
+          receiptVerified: true,
+          journalPrepared: true,
+          projectLinked: true,
+          budgetChecked: true,
+        },
+      });
+      if (!isExpenseQaChecklistComplete(checklist)) {
+        throw new ExpenseQaChecklistIncompleteError();
+      }
     }
     if (!instance.currentStep) throw new Error('No current step');
     const currentSteps = instance.steps.filter(

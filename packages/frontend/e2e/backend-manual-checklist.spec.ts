@@ -412,7 +412,11 @@ test('backend manual checklist: members/vendors/time/expenses/wellbeing @extende
   );
   expect(forbiddenMemberAddRes.status()).toBe(403);
   const forbiddenMemberAddBody = await forbiddenMemberAddRes.json();
-  expect(forbiddenMemberAddBody?.error).toBe('forbidden_project');
+  const forbiddenMemberAddCode =
+    typeof forbiddenMemberAddBody?.error === 'string'
+      ? forbiddenMemberAddBody.error
+      : forbiddenMemberAddBody?.error?.code;
+  expect(forbiddenMemberAddCode).toBe('forbidden_project');
 
   const membersRes = await request.get(
     `${apiBase}/projects/${encodeURIComponent(defaultProjectId)}/members`,
@@ -446,7 +450,11 @@ test('backend manual checklist: members/vendors/time/expenses/wellbeing @extende
   );
   expect(forbiddenMemberDeleteRes.status()).toBe(403);
   const forbiddenMemberDeleteBody = await forbiddenMemberDeleteRes.json();
-  expect(forbiddenMemberDeleteBody?.error).toBe('forbidden_project');
+  const forbiddenMemberDeleteCode =
+    typeof forbiddenMemberDeleteBody?.error === 'string'
+      ? forbiddenMemberDeleteBody.error
+      : forbiddenMemberDeleteBody?.error?.code;
+  expect(forbiddenMemberDeleteCode).toBe('forbidden_project');
 
   await expect
     .poll(
@@ -639,7 +647,7 @@ test('backend manual checklist: members/vendors/time/expenses/wellbeing @extende
       amount: 500,
       currency: 'JPY',
       incurredOn: '2026-01-02',
-      receiptUrl: `https://example.com/receipts/manual-${run}`,
+      receiptUrl: `https://example.com/receipts/manual-${suffix}`,
     },
     headers: userHeaders,
   });
@@ -680,6 +688,24 @@ test('backend manual checklist: members/vendors/time/expenses/wellbeing @extende
     'expense',
     expense.id as string,
   );
+  const expenseChecklistRes = await request.put(
+    `${apiBase}/expenses/${encodeURIComponent(expense.id)}/qa-checklist`,
+    {
+      headers: adminHeaders,
+      data: {
+        amountVerified: true,
+        receiptVerified: true,
+        journalPrepared: true,
+        projectLinked: true,
+        budgetChecked: true,
+        notes: `manual checklist ${suffix}`,
+      },
+    },
+  );
+  await ensureOk(expenseChecklistRes);
+  const expenseChecklist = await expenseChecklistRes.json();
+  expect(expenseChecklist?.isComplete).toBe(true);
+
   const expenseApprovalStatus = await approveInstanceUntilClosed(
     expenseApproval.approvalInstanceId,
     expenseApproval.approvalStatus,

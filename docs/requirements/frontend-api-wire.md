@@ -1,14 +1,17 @@
 # フロント→バック API ワイヤ（PoC）
 
 ## auth
+
 - GET `/me`
   - headers: `x-user-id`, `x-roles`, `x-org-id`, `x-project-ids`
   - res: `{ user: { userId, roles, orgId, ownerOrgId, ownerProjects } }`
 
 ## dashboard
+
 - GET `/alerts` → ダッシュボード表示
 
 ## projects
+
 - GET `/projects/:projectId/members`
 - GET `/projects/:projectId/member-candidates?q=<keyword>`
 - POST `/projects/:projectId/members` { userId, role? }
@@ -21,6 +24,7 @@
 - POST `/jobs/recurring-projects/run`
 
 ## reports
+
 - GET `/reports/delivery-due?from=YYYY-MM-DD&to=YYYY-MM-DD&projectId?&format=csv|pdf?&layout=default?`
 - GET `/reports/project-effort/:projectId?from=YYYY-MM-DD&to=YYYY-MM-DD&format=csv|pdf?&layout=default?`
 - GET `/reports/project-profit/:projectId?from=YYYY-MM-DD&to=YYYY-MM-DD&format=csv|pdf?&layout=default?`
@@ -30,6 +34,7 @@
 - GET `/reports/overtime/:userId?from=YYYY-MM-DD&to=YYYY-MM-DD&format=csv|pdf?&layout=default?`
 
 ## report subscriptions
+
 - GET `/report-subscriptions`
 - POST `/report-subscriptions`
 - PATCH `/report-subscriptions/:id`
@@ -41,6 +46,7 @@
 - `format=pdf` 指定時は `{ format, templateId, url }` を返す（`url=/pdf-files/:filename`）
 
 ## daily report / wellbeing
+
 - POST `/daily-reports` { content, reportDate, linkedProjectIds?, status }
 - POST `/wellbeing-entries` { entryDate, status, notes?, helpRequested?, notGoodTags?, visibilityGroupId }
 - (人事向け) GET `/wellbeing-entries` → HRのみ
@@ -48,49 +54,58 @@
   - 備考: `minUsers` のデフォルトは `5`、`groupBy` のデフォルトは `group`
 
 ## time entries
+
 - GET `/time-entries?projectId?&userId?`
 - POST `/time-entries` { projectId, userId, workDate, minutes, taskId?, workType?, location?, notes? }
 - PATCH `/time-entries/:id`
 - POST `/time-entries/:id/submit`
 
 ## invoices / estimates
+
 - GET `/projects/:projectId/estimates` (list)
 - POST `/projects/:projectId/estimates` { lines, totalAmount, currency, validUntil?, notes }
 - POST `/estimates/:id/submit`
 - POST `/estimates/:id/send?templateId?&templateSettingId?`
-- GET  `/estimates/:id/send-logs`
+- GET `/estimates/:id/send-logs`
 - GET `/projects/:projectId/invoices` (list)
 - POST `/projects/:projectId/invoices` { estimateId?, milestoneId?, lines, issueDate?, dueDate?, currency, totalAmount }
 - POST `/invoices/:id/submit`
 - POST `/invoices/:id/send?templateId?&templateSettingId?`
-- GET  `/invoices/:id/send-logs`
-- GET  `/alerts` (承認遅延/予算超過の表示用)
+- GET `/invoices/:id/send-logs`
+- GET `/alerts` (承認遅延/予算超過の表示用)
 
 ## purchase orders / vendor docs
+
 - POST `/projects/:projectId/purchase-orders` { vendorId, lines, totals... }
 - POST `/purchase-orders/:id/submit`
 - POST `/purchase-orders/:id/send?templateId?&templateSettingId?`
-- GET  `/purchase-orders/:id/send-logs`
+- GET `/purchase-orders/:id/send-logs`
 - POST `/vendor-quotes` { projectId, vendorId, quote_no?, ... }
 - POST `/vendor-invoices` { projectId, vendorId, vendor_invoice_no?, ... }
 - POST `/vendor-invoices/:id/submit`（承認フロー起動、後方互換: `/approve` も残す）
 
 ## project chat
+
 - GET `/projects/:projectId/chat-messages?limit=&before=&tag=`
 - POST `/projects/:projectId/chat-messages` { body, tags? }
 - POST `/chat-messages/:id/reactions` { emoji }
 
 ## expenses
+
 - GET `/expenses?projectId?&userId?`
 - POST `/expenses` { projectId, userId, category, amount, currency?, incurredOn, isShared?, receiptUrl? }
+- GET `/expenses/:id/qa-checklist`
+- PUT `/expenses/:id/qa-checklist` { amountVerified?, receiptVerified?, journalPrepared?, projectLinked?, budgetChecked?, notes? }
 - POST `/expenses/:id/submit`
 
 ## leave
+
 - GET `/leave-requests?userId?`
 - POST `/leave-requests` { userId, leaveType, startDate, endDate, hours?, notes }
 - POST `/leave-requests/:id/submit`
 
 ## settings (admin/mgmt)
+
 - GET/POST/PATCH `/alert-settings`, `/alert-settings/:id/enable|disable`
 - GET/POST/PATCH `/approval-rules`
 - GET `/pdf-templates?kind=`
@@ -104,6 +119,7 @@
 - POST `/jobs/approval-escalations/run` (承認期限エスカレーション)
 
 ## role/permission policy (PoC)
+
 - headers: `x-roles` = admin, mgmt, user, hr を想定
 - HRのみ: `/wellbeing-entries` GET
 - admin/mgmt: alert/approval設定

@@ -3,6 +3,7 @@
 目的: スコープ合意 (#4) を実装に落とすためのエンティティ・関係・主要APIのたたき台。UUIDを内部IDとし、業務コードは別カラムで管理する。監査用に `created_at/by`, `updated_at/by`, 状態遷移ログを保持する。
 
 ## コアエンティティ概要
+
 - **customers**: `id`, `code`, `name`, `invoice_registration_id`, `tax_region`, `billing_address`, `primary_contact_id`, `status`, `external_source/id`。
 - **vendors**: `id`, `code`, `name`, `bank_info`, `tax_region`, `status`, `external_source/id`。
 - **projects**: `id`, `code`, `name`, `status`, `project_type`, `parent_id`, `customer_id`, `owner_user_id`, `org_unit_id`, `start/end`, `currency`, `recurring_template_id`。
@@ -29,6 +30,7 @@
 - **wellbeing_entries**: `id`, `user_id`, `entry_date`, `status`(good/not_good), `help_requested`, `notes?` (非必須), 閲覧は人事グループのみ。
 
 ## 関係メモ
+
 - Project は Customer/Vendor と紐づき、Task/Milestone/Estimate/Invoice/Time/Expense を親として持つ。
 - Recurring Template は Project に紐づき、生成時に Estimate/Invoice を起案。
 - Approval Rules は flow_type + 条件でマッチングし Approval Instance を生成。状態遷移はログに保存。
@@ -37,6 +39,7 @@
 - Wellbeing は User と 1:n。閲覧は人事グループ限定。監査ログ必須。
 
 ## API I/O たたき台（REST想定）
+
 - Project
   - `POST /projects` {code?, name, customer_id, parent_id?, start/end, type, currency}
   - `GET /projects/:id` /list with filters (customer, status, owner, hierarchy)
@@ -76,6 +79,8 @@
   - `POST /expenses` {project_id, category, amount, currency, incurred_on, is_shared, receipt_url?, lines?, attachments?}
   - `GET /expenses/:id` → 明細/添付/コメントを含む詳細
   - `POST /expenses/:id/comments` {kind?, body}
+  - `GET /expenses/:id/qa-checklist` → 経理一次チェック（突合/仕訳/案件/予算）の状態取得
+  - `PUT /expenses/:id/qa-checklist` {amountVerified?, receiptVerified?, journalPrepared?, projectLinked?, budgetChecked?, notes?}
   - `POST /expenses/:id/submit` → 承認フロー起動（証憑必須: `attachments` 1件以上 or `receipt_url`、かつ expense で `exec` を使う場合は先頭 non-exec ステージ必須）
   - `GET /expenses/:id/state-transitions` → 状態遷移履歴（status/settlementStatus）
 - Leave
@@ -99,19 +104,22 @@
   - `GET /wellbeing-analytics` (人事のみ) {from?, to?, minUsers?, groupBy=group|month, visibilityGroupId?}
 
 ## データモデルの注記
+
 - ID: 全テーブル UUID（またはCUID）。人間可読コード（project_code, customer_code, invoice_no）は別管理。
 - 監査: `created_at/by`, `updated_at/by`, 状態遷移ログ（who/when/from/to/reason）。
 - 金額: 通貨は必須。税率は明示的に保持。インボイス番号は連番ポリシーを別途定義。
 - 権限: RBAC + プロジェクトスコープ。Wellbeing は人事グループのみ閲覧。
-- Recurring: frequency, next_run_at, due_date_rule, should_generate_* を保持し、スキップ/スライドは初期スコープ外。
+- Recurring: frequency, next*run_at, due_date_rule, should_generate*\* を保持し、スキップ/スライドは初期スコープ外。
 - 性能: タイムシート月10万件想定。主要テーブルに period/user/project でインデックス。
 
 ## 番号体系（見積/納品/請求/仕入）
+
 - 形式: `PYYYY-MM-NNNN`。P は Q=見積、D=納品、I=請求。YYYY は西暦、MM は月、NNNN は区分ごとの通し番号。
 - 発番: 区分ごと・年月ごとに連番を管理する発番テーブルを持ち、楽観ロックで重複を防止する。
 - 仕入関連: 発注書/注文請書/業者見積/業者請求も種別ごとに連番管理（例: POYYYY-MM-NNNN, VQYYYY-MM-NNNN, VIYYYY-MM-NNNN 等）。発番テーブルで重複防止し、番号を必須入力/自動採番の両対応とする。
 
 ## 次ステップ
+
 - PRISMA/SQLスケッチで属性を具体化
 - GraphQL 対応が必要な場合はクエリ/入力型を整理
 - バッチ（定期案件生成、アラート計算）のジョブ仕様を追加

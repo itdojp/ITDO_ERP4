@@ -10,6 +10,7 @@ import {
 import {
   expenseCommentCreateSchema,
   expenseMarkPaidSchema,
+  expenseQaChecklistPatchSchema,
   expenseReassignSchema,
   expenseSchema,
   expenseUnmarkPaidSchema,
@@ -28,6 +29,10 @@ import { findPeriodLock, toPeriodKey } from '../services/periodLock.js';
 import { evaluateActionPolicyWithFallback } from '../services/actionPolicy.js';
 import { logActionPolicyOverrideIfNeeded } from '../services/actionPolicyAudit.js';
 import { logExpenseStateTransition } from '../services/expenseStateTransitionLog.js';
+import {
+  isExpenseQaChecklistComplete,
+  normalizeExpenseQaChecklist,
+} from '../services/expenseQaChecklist.js';
 
 type ExpenseLineDraft = {
   lineNo: number;
@@ -70,6 +75,43 @@ type ExpenseSubmitEvidenceInput = {
   receiptUrl: string | null;
   attachmentCount: number;
 };
+
+type ExpenseQaChecklistRecord = {
+  id: string;
+  expenseId: string;
+  amountVerified: boolean;
+  receiptVerified: boolean;
+  journalPrepared: boolean;
+  projectLinked: boolean;
+  budgetChecked: boolean;
+  notes: string | null;
+  completedAt: Date | null;
+  completedBy: string | null;
+  createdAt: Date;
+  createdBy: string | null;
+  updatedAt: Date;
+  updatedBy: string | null;
+};
+
+function toExpenseQaChecklistResponse(
+  expenseId: string,
+  checklist: Partial<ExpenseQaChecklistRecord> | null | undefined,
+) {
+  const normalized = normalizeExpenseQaChecklist(checklist);
+  return {
+    expenseId,
+    ...normalized,
+    notes:
+      checklist && typeof checklist.notes === 'string' ? checklist.notes : null,
+    isComplete: isExpenseQaChecklistComplete(normalized),
+    completedAt: checklist?.completedAt?.toISOString() ?? null,
+    completedBy: checklist?.completedBy ?? null,
+    createdAt: checklist?.createdAt?.toISOString() ?? null,
+    createdBy: checklist?.createdBy ?? null,
+    updatedAt: checklist?.updatedAt?.toISOString() ?? null,
+    updatedBy: checklist?.updatedBy ?? null,
+  };
+}
 
 export function buildExpenseCreateDraft(input: {
   body: Record<string, unknown>;
@@ -469,6 +511,127 @@ export async function registerExpenseRoutes(app: FastifyInstance) {
       return created;
     },
   );
+  app.get(
+    '/expenses/:id/qa-checklist',
+    { preHandler: requireRole(['admin', 'mgmt', 'user']) },
+    async (req, reply) => {
+      const { id } = req.params as { id: string };
+      const expense = await prisma.expense.findUnique({
+        where: { id },
+        select: { id: true, userId: true, projectId: true, deletedAt: true },
+      });
+      if (!expense || expense.deletedAt) {
+        return reply.code(404).send({ error: 'not_found' });
+      }
+      const roles = req.user?.roles || [];
+      const isPrivileged = roles.includes('admin') || roles.includes('mgmt');
+      if (!isPrivileged) {
+        if (expense.userId !== req.user?.userId) {
+          return reply.code(403).send({ error: 'forbidden' });
+        }
+        if (
+          !hasProjectAccess(
+            roles,
+            req.user?.projectIds || [],
+            expense.projectId,
+          )
+        ) {
+          return reply.code(403).send({ error: 'forbidden_project' });
+        }
+      }
+      const checklist = await prisma.expenseQaChecklist.findUnique({
+        where: { expenseId: id },
+      });
+      return toExpenseQaChecklistResponse(id, checklist);
+    },
+  );
+
+  app.put(
+    '/expenses/:id/qa-checklist',
+    {
+      preHandler: requireRole(['admin', 'mgmt']),
+      schema: expenseQaChecklistPatchSchema,
+    },
+    async (req, reply) => {
+      const { id } = req.params as { id: string };
+      const body = req.body as {
+        amountVerified?: boolean;
+        receiptVerified?: boolean;
+        journalPrepared?: boolean;
+        projectLinked?: boolean;
+        budgetChecked?: boolean;
+        notes?: string | null;
+      };
+      const expense = await prisma.expense.findUnique({
+        where: { id },
+        select: { id: true, deletedAt: true },
+      });
+      if (!expense || expense.deletedAt) {
+        return reply.code(404).send({ error: 'not_found' });
+      }
+      const actorUserId = req.user?.userId || null;
+      const current = await prisma.expenseQaChecklist.findUnique({
+        where: { expenseId: id },
+      });
+      const merged = {
+        amountVerified: body.amountVerified ?? current?.amountVerified ?? false,
+        receiptVerified:
+          body.receiptVerified ?? current?.receiptVerified ?? false,
+        journalPrepared:
+          body.journalPrepared ?? current?.journalPrepared ?? false,
+        projectLinked: body.projectLinked ?? current?.projectLinked ?? false,
+        budgetChecked: body.budgetChecked ?? current?.budgetChecked ?? false,
+      };
+      const isComplete = isExpenseQaChecklistComplete(merged);
+      const notesProvided = Object.prototype.hasOwnProperty.call(body, 'notes');
+      const rawNotes =
+        notesProvided && typeof body.notes === 'string'
+          ? body.notes.trim()
+          : '';
+      const nextNotes = notesProvided
+        ? rawNotes || null
+        : (current?.notes ?? null);
+      const nextCompletedAt = isComplete
+        ? (current?.completedAt ?? new Date())
+        : null;
+      const nextCompletedBy = isComplete
+        ? (current?.completedBy ?? actorUserId)
+        : null;
+      const saved = await prisma.expenseQaChecklist.upsert({
+        where: { expenseId: id },
+        create: {
+          expenseId: id,
+          ...merged,
+          notes: nextNotes,
+          completedAt: nextCompletedAt,
+          completedBy: nextCompletedBy,
+          createdBy: actorUserId,
+          updatedBy: actorUserId,
+        },
+        update: {
+          ...merged,
+          notes: nextNotes,
+          completedAt: nextCompletedAt,
+          completedBy: nextCompletedBy,
+          updatedBy: actorUserId,
+        },
+      });
+      await logAudit({
+        ...auditContextFromRequest(req),
+        action: 'expense_qa_checklist_upsert',
+        targetTable: 'ExpenseQaChecklist',
+        targetId: saved.id,
+        metadata: {
+          expenseId: id,
+          isComplete,
+          checklist: merged,
+          notesUpdated: notesProvided,
+        },
+      });
+      return toExpenseQaChecklistResponse(id, saved);
+    },
+  );
+
   app.get(
     '/expenses/:id/state-transitions',
     { preHandler: requireRole(['admin', 'mgmt', 'user']) },

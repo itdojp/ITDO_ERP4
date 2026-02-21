@@ -1,5 +1,8 @@
 import { FastifyInstance } from 'fastify';
-import { act } from '../services/approval.js';
+import {
+  act,
+  ExpenseQaChecklistIncompleteError,
+} from '../services/approval.js';
 import { requireRole } from '../services/rbac.js';
 import { prisma } from '../services/db.js';
 import {
@@ -673,6 +676,14 @@ export async function registerApprovalRuleRoutes(app: FastifyInstance) {
         }
         return result;
       } catch (err: any) {
+        if (err instanceof ExpenseQaChecklistIncompleteError) {
+          return reply.code(409).send({
+            error: {
+              code: 'EXPENSE_QA_CHECKLIST_REQUIRED',
+              message: 'expense QA checklist must be completed before approval',
+            },
+          });
+        }
         return reply.code(400).send({
           error: 'approval_action_failed',
           message: err?.message || 'failed',
