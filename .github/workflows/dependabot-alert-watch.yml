@@ -89,7 +89,6 @@ jobs:
           echo "::warning title=dependabot alert watch::check script failed (status=${{ steps.check.outputs.status }}). Set DEPENDABOT_ALERTS_TOKEN to restore issue sync."
 
       - name: Sync issue #1153 status comment
-        if: steps.check.outputs.status == '0'
         env:
           GH_TOKEN: ${{ github.token }}
           CHECK_STATUS: ${{ steps.check.outputs.status }}
@@ -111,24 +110,38 @@ jobs:
           marker="<!-- dependabot-alert-watch -->"
           run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
           now="$(date -u +'%Y-%m-%d %H:%M:%S UTC')"
-          body="$(cat <<EOF
-          Dependabot alert 週次監視（自動更新）
-
-          - 実行時刻: ${now}
-          - alert #10 (${ALERT_LOW_GHSA}): \`${ALERT_LOW_STATE}\`
-          - alert #11 (${ALERT_HIGH_GHSA}): \`${ALERT_HIGH_STATE}\`
-          - qs resolved/patched: \`${QS_VERSION}\` / \`${QS_PATCHED}\`
-          - fast-xml-parser resolved/patched: \`${FAST_XML_VERSION}\` / \`${FAST_XML_PATCHED}\`
-          - googleapis current/latest: \`${GOOGLEAPIS_CURRENT}\` / \`${GOOGLEAPIS_LATEST}\`
-          - googleapis-common current/latest: \`${GOOGLEAPIS_COMMON_CURRENT}\` / \`${GOOGLEAPIS_COMMON_LATEST}\`
-          - upstream updated: \`${UPSTREAM_UPDATED}\`
-          - action required: \`${ACTION_REQUIRED}\`
-          - script status: \`${CHECK_STATUS}\`
-
-          workflow run: ${run_url}
-          ${marker}
-          EOF
-          )"
+          if [[ "${CHECK_STATUS}" == "0" ]]; then
+            body="$(printf '%s\n' \
+              "Dependabot alert 週次監視（自動更新）" \
+              "" \
+              "- 実行時刻: ${now}" \
+              "- alert #10 (${ALERT_LOW_GHSA}): \`${ALERT_LOW_STATE}\`" \
+              "- alert #11 (${ALERT_HIGH_GHSA}): \`${ALERT_HIGH_STATE}\`" \
+              "- qs resolved/patched: \`${QS_VERSION}\` / \`${QS_PATCHED}\`" \
+              "- fast-xml-parser resolved/patched: \`${FAST_XML_VERSION}\` / \`${FAST_XML_PATCHED}\`" \
+              "- googleapis current/latest: \`${GOOGLEAPIS_CURRENT}\` / \`${GOOGLEAPIS_LATEST}\`" \
+              "- googleapis-common current/latest: \`${GOOGLEAPIS_COMMON_CURRENT}\` / \`${GOOGLEAPIS_COMMON_LATEST}\`" \
+              "- upstream updated: \`${UPSTREAM_UPDATED}\`" \
+              "- action required: \`${ACTION_REQUIRED}\`" \
+              "- script status: \`${CHECK_STATUS}\`" \
+              "" \
+              "workflow run: ${run_url}" \
+              "${marker}" \
+            )"
+          else
+            body="$(printf '%s\n' \
+              "Dependabot alert 週次監視（自動更新）" \
+              "" \
+              "- 実行時刻: ${now}" \
+              "- status: \`BLOCKED\`" \
+              "- script status: \`${CHECK_STATUS}\`" \
+              "- note: チェックスクリプトが失敗したため、#1153 の状態同期をスキップしました（詳細は workflow ログ/artifact を参照）。" \
+              "- action: \`DEPENDABOT_ALERTS_TOKEN\` と workflow 実行環境を確認し、再実行してください。" \
+              "" \
+              "workflow run: ${run_url}" \
+              "${marker}" \
+            )"
+          fi
 
           existing_id="$(gh api "repos/${GITHUB_REPOSITORY}/issues/1153/comments" --paginate --jq '.[] | select(.user.login=="github-actions[bot]") | select(.body | contains("<!-- dependabot-alert-watch -->")) | .id' | tail -n1)"
 
