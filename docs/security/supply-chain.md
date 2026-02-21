@@ -57,6 +57,7 @@
   - `script status == 0` のときは `READY` として記録し、Issue #1176 を自動クローズする
   - `script status != 0` かつ `MISSING_DEPENDABOT_ALERTS_TOKEN` / `PERMISSION_DENIED` / `BAD_CREDENTIALS` のときは `BLOCKED` を記録し、Issue #1176 を open に維持する（closed なら再オープン）
   - token 非依存の失敗理由（例: `NETWORK_ERROR`）はコメント更新のみ行い、Issue状態は変更しない
+  - `upstreamUpdated=true` の場合は backend lockfile 更新PRを自動作成/更新する（`npm update --prefix packages/backend googleapis googleapis-common`）
 
 ### 監視対象の最新判断（2026-02-21）
 - alert `#10` (`GHSA-w7fw-mjwx-w883`, low):
