@@ -355,7 +355,7 @@ test('frontend smoke core @core', async ({ page, request }) => {
     .locator('input[type="number"]')
     .fill(String(expenseAmount));
   await expenseSection.getByPlaceholder('通貨').fill(expenseCurrency);
-  await expenseSection.locator('input[type="date"]').fill(expenseDate);
+  await expenseSection.getByLabel('経費日付').fill(expenseDate);
   await expenseSection.getByLabel('共通経費').check();
   await expenseSection
     .getByPlaceholder('領収書URL (任意)')

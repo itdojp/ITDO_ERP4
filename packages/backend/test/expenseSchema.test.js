@@ -10,6 +10,7 @@ import {
 import {
   expenseBudgetEscalationSchema,
   expenseCommentCreateSchema,
+  expenseListQuerySchema,
   expenseQaChecklistPatchSchema,
   expenseSubmitSchema,
   expenseSchema,
@@ -18,6 +19,13 @@ import {
 async function buildValidatorServer(path, schema) {
   const app = Fastify();
   app.post(path, { schema }, async () => ({ ok: true }));
+  await app.ready();
+  return app;
+}
+
+async function buildQueryValidatorServer(path, schema) {
+  const app = Fastify();
+  app.get(path, { schema }, async () => ({ ok: true }));
   await app.ready();
   return app;
 }
@@ -189,7 +197,31 @@ test('expenseBudgetEscalationSchema: rejects empty payload', async () => {
   assert.equal(res.statusCode, 400);
   await app.close();
 });
+test('expenseListQuerySchema: accepts settlement/receipt/date filters', async () => {
+  const app = await buildQueryValidatorServer(
+    '/validate/expense-list',
+    expenseListQuerySchema,
+  );
+  const res = await app.inject({
+    method: 'GET',
+    url: '/validate/expense-list?status=approved&settlementStatus=paid&hasReceipt=true&paidFrom=2026-02-01&paidTo=2026-02-28',
+  });
+  assert.equal(res.statusCode, 200);
+  await app.close();
+});
 
+test('expenseListQuerySchema: rejects invalid settlementStatus', async () => {
+  const app = await buildQueryValidatorServer(
+    '/validate/expense-list',
+    expenseListQuerySchema,
+  );
+  const res = await app.inject({
+    method: 'GET',
+    url: '/validate/expense-list?settlementStatus=invalid',
+  });
+  assert.equal(res.statusCode, 400);
+  await app.close();
+});
 test('buildExpenseCreateDraft: rejects duplicated lineNo', () => {
   const result = buildExpenseCreateDraft({
     body: {

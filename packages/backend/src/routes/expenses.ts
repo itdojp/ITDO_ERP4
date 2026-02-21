@@ -10,6 +10,7 @@ import {
 import {
   expenseBudgetEscalationSchema,
   expenseCommentCreateSchema,
+  expenseListQuerySchema,
   expenseMarkPaidSchema,
   expenseQaChecklistPatchSchema,
   expenseReassignSchema,
@@ -305,6 +306,10 @@ export function buildExpenseCreateDraft(input: {
     attachments: _ignoredAttachments,
     ...raw
   } = body;
+  if (typeof raw.receiptUrl === 'string') {
+    const normalizedReceiptUrl = raw.receiptUrl.trim();
+    raw.receiptUrl = normalizedReceiptUrl || null;
+  }
   return {
     ok: true,
     declaredAmount,
@@ -329,6 +334,16 @@ export async function registerExpenseRoutes(app: FastifyInstance) {
     const parsed = new Date(value);
     if (Number.isNaN(parsed.getTime())) return null;
     return parsed;
+  };
+  const parseBooleanQuery = (
+    value: string | boolean | undefined,
+  ): boolean | null | undefined => {
+    if (value === undefined) return undefined;
+    if (typeof value === 'boolean') return value;
+    const normalized = value.trim().toLowerCase();
+    if (normalized === 'true' || normalized === '1') return true;
+    if (normalized === 'false' || normalized === '0') return false;
+    return null;
   };
 
   app.post(
@@ -405,22 +420,64 @@ export async function registerExpenseRoutes(app: FastifyInstance) {
   app.get(
     '/expenses',
     {
+      schema: expenseListQuerySchema,
       preHandler: [
         requireRole(['admin', 'mgmt', 'user']),
         requireProjectAccess((req) => (req.query as any)?.projectId),
       ],
     },
-    async (req) => {
-      const { projectId, userId, from, to } = req.query as {
+    async (req, reply) => {
+      const {
+        projectId,
+        userId,
+        from,
+        to,
+        status,
+        settlementStatus,
+        paidFrom,
+        paidTo,
+        hasReceipt,
+      } = req.query as {
         projectId?: string;
         userId?: string;
         from?: string;
         to?: string;
+        status?: string;
+        settlementStatus?: 'paid' | 'unpaid';
+        paidFrom?: string;
+        paidTo?: string;
+        hasReceipt?: string | boolean;
       };
       const roles = req.user?.roles || [];
       const isPrivileged = roles.includes('admin') || roles.includes('mgmt');
       const currentUserId = req.user?.userId;
       const projectIds = req.user?.projectIds || [];
+      const fromDate = from ? parseDate(from) : null;
+      const toDate = to ? parseDate(to) : null;
+      const paidFromDate = paidFrom ? parseDate(paidFrom) : null;
+      const paidToDate = paidTo ? parseDate(paidTo) : null;
+      const hasReceiptValue = parseBooleanQuery(hasReceipt);
+      if ((from && !fromDate) || (to && !toDate)) {
+        return reply.status(400).send({
+          error: { code: 'INVALID_DATE', message: 'from/to is invalid' },
+        });
+      }
+      if ((paidFrom && !paidFromDate) || (paidTo && !paidToDate)) {
+        return reply.status(400).send({
+          error: {
+            code: 'INVALID_DATE',
+            message: 'paidFrom/paidTo is invalid',
+          },
+        });
+      }
+      if (hasReceiptValue === null) {
+        return reply.status(400).send({
+          error: {
+            code: 'INVALID_BOOLEAN',
+            message: 'hasReceipt must be true/false/1/0',
+          },
+        });
+      }
       const where: any = {};
       if (projectId) {
         where.projectId = projectId;
@@ -433,10 +490,30 @@ export async function registerExpenseRoutes(app: FastifyInstance) {
       } else if (userId) {
         where.userId = userId;
       }
-      if (from || to) {
+      if (fromDate || toDate) {
         where.incurredOn = {};
-        if (from) where.incurredOn.gte = new Date(from);
-        if (to) where.incurredOn.lte = new Date(to);
+        if (fromDate) where.incurredOn.gte = fromDate;
+        if (toDate) where.incurredOn.lte = toDate;
+      }
+      if (status) {
+        where.status = status;
+      }
+      if (settlementStatus) {
+        where.settlementStatus = settlementStatus;
+      }
+      if (paidFromDate || paidToDate) {
+        where.paidAt = {};
+        if (paidFromDate) where.paidAt.gte = paidFromDate;
+        if (paidToDate) {
+          const paidToExclusive = new Date(paidToDate);
+          paidToExclusive.setDate(paidToExclusive.getDate() + 1);
+          where.paidAt.lt = paidToExclusive;
+        }
+      }
+      if (hasReceiptValue !== undefined) {
+        where.receiptUrl = hasReceiptValue
+          ? { notIn: [null, ''] }
+          : { in: [null, ''] };
       }
       const items = await prisma.expense.findMany({
         where,

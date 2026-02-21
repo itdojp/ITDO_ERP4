@@ -317,6 +317,42 @@ export const expenseSchema = {
   }),
 };
 
+const expenseStatusFilterSchema = Type.Union([
+  Type.Literal('draft'),
+  Type.Literal('pending_qa'),
+  Type.Literal('pending_exec'),
+  Type.Literal('approved'),
+  Type.Literal('rejected'),
+  Type.Literal('cancelled'),
+]);
+
+const booleanQuerySchema = Type.Union([
+  Type.Boolean(),
+  Type.Literal('true'),
+  Type.Literal('false'),
+  Type.Literal('1'),
+  Type.Literal('0'),
+]);
+
+export const expenseListQuerySchema = {
+  querystring: Type.Object(
+    {
+      projectId: Type.Optional(Type.String({ minLength: 1 })),
+      userId: Type.Optional(Type.String({ minLength: 1 })),
+      from: Type.Optional(Type.String({ minLength: 1 })),
+      to: Type.Optional(Type.String({ minLength: 1 })),
+      status: Type.Optional(expenseStatusFilterSchema),
+      settlementStatus: Type.Optional(
+        Type.Union([Type.Literal('unpaid'), Type.Literal('paid')]),
+      ),
+      paidFrom: Type.Optional(Type.String({ minLength: 1 })),
+      paidTo: Type.Optional(Type.String({ minLength: 1 })),
+      hasReceipt: Type.Optional(booleanQuerySchema),
+    },
+    { additionalProperties: false },
+  ),
+};
+
 export const expenseCommentCreateSchema = {
   body: Type.Object(
     {
