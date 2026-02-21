@@ -22,7 +22,7 @@ jobs:
       - name: Check dependabot alerts
         id: check
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.DEPENDABOT_ALERTS_TOKEN != '' && secrets.DEPENDABOT_ALERTS_TOKEN || github.token }}
         run: |
           mkdir -p tmp
           set +e
@@ -84,6 +84,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Sync issue #1153 status comment
+        if: steps.check.outputs.status == '0'
         env:
           GH_TOKEN: ${{ github.token }}
           CHECK_STATUS: ${{ steps.check.outputs.status }}
