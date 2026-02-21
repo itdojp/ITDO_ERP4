@@ -79,10 +79,9 @@ jobs:
       - name: Warn when check script failed
         if: steps.check.outputs.status != '0'
         run: |
-          echo "::warning title=eslint10 readiness check::check script failed (status=${{ steps.check.outputs.status }}). Skip syncing issue #914 status comment."
+          echo "::warning title=eslint10 readiness check::check script failed (status=${{ steps.check.outputs.status }}). Issue #914 status comment is marked as BLOCKED."
 
       - name: Sync issue #914 status comment
-        if: steps.check.outputs.status == '0'
         env:
           GH_TOKEN: ${{ github.token }}
           CHECK_STATUS: ${{ steps.check.outputs.status }}
@@ -95,21 +94,34 @@ jobs:
           marker="<!-- eslint10-readiness-status -->"
           run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
           now="$(date -u +'%Y-%m-%d %H:%M:%S UTC')"
-          body="$(cat <<EOF
-          eslint@10 readiness 週次監視（自動更新）
-
-          - 実行時刻: ${now}
-          - ready: \`${READY}\`
-          - @typescript-eslint/eslint-plugin peer: \`${PLUGIN_PEER}\`
-          - @typescript-eslint/parser peer: \`${PARSER_PEER}\`
-          - eslint-plugin-react peer: \`${REACT_PLUGIN_PEER}\`
-          - eslint-plugin-react-hooks peer: \`${REACT_HOOKS_PLUGIN_PEER}\`
-          - script status: \`${CHECK_STATUS}\`
-
-          workflow run: ${run_url}
-          ${marker}
-          EOF
-          )"
+          if [[ "${CHECK_STATUS}" == "0" ]]; then
+            body="$(printf '%s\n' \
+              "eslint@10 readiness 週次監視（自動更新）" \
+              "" \
+              "- 実行時刻: ${now}" \
+              "- ready: \`${READY}\`" \
+              "- @typescript-eslint/eslint-plugin peer: \`${PLUGIN_PEER}\`" \
+              "- @typescript-eslint/parser peer: \`${PARSER_PEER}\`" \
+              "- eslint-plugin-react peer: \`${REACT_PLUGIN_PEER}\`" \
+              "- eslint-plugin-react-hooks peer: \`${REACT_HOOKS_PLUGIN_PEER}\`" \
+              "- script status: \`${CHECK_STATUS}\`" \
+              "" \
+              "workflow run: ${run_url}" \
+              "${marker}" \
+            )"
+          else
+            body="$(printf '%s\n' \
+              "eslint@10 readiness 週次監視（自動更新）" \
+              "" \
+              "- 実行時刻: ${now}" \
+              "- status: \`BLOCKED\`" \
+              "- script status: \`${CHECK_STATUS}\`" \
+              "- note: チェックスクリプトが失敗したため、再開判定の同期をスキップしました（詳細は workflow ログ/artifact を参照）。" \
+              "" \
+              "workflow run: ${run_url}" \
+              "${marker}" \
+            )"
+          fi
 
           existing_id="$(gh api "repos/${GITHUB_REPOSITORY}/issues/914/comments" --paginate --jq '.[] | select(.user.login=="github-actions[bot]") | select(.body | contains("<!-- eslint10-readiness-status -->")) | .id' | tail -n1)"
 
@@ -120,7 +132,7 @@ jobs:
           fi
 
       - name: Notify issue #914 when ready
-        if: steps.check.outputs.ready == 'true'
+        if: steps.check.outputs.status == '0' && steps.check.outputs.ready == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           PLUGIN_PEER: ${{ steps.check.outputs.plugin_peer }}
