@@ -285,25 +285,16 @@ test('approval flow: expense requires qa stage before exec stage @core', async (
     await ensureOk(expenseRes);
     const expense = await expenseRes.json();
 
-    let approval: any = null;
-    for (let i = 0; i < 20; i += 1) {
-      const approvalListRes = await request.get(
-        `${apiBase}/approval-instances?flowType=expense&projectId=${encodeURIComponent(expenseFixture.projectId)}`,
-        { headers: requesterHeaders },
-      );
-      await ensureOk(approvalListRes);
-      const approvalList = await approvalListRes.json();
-      approval = (approvalList?.items ?? []).find(
-        (item: any) =>
-          item?.targetTable === 'expenses' &&
-          item?.targetId === expense.id &&
-          item?.status !== 'approved' &&
-          item?.status !== 'rejected' &&
-          item?.status !== 'cancelled',
-      );
-      if (approval?.id) break;
-      await new Promise((resolve) => setTimeout(resolve, 150));
-    }
+    const approval = await submitAndFindApprovalInstance({
+      request,
+      apiBase,
+      headers: requesterHeaders,
+      flowType: 'expense',
+      projectId: expenseFixture.projectId,
+      targetTable: 'expenses',
+      targetId: expense.id as string,
+      submitData: {},
+    });
     expect(String(approval?.id ?? '')).not.toBe('');
     expect(String(approval?.status ?? '')).toBe('pending_qa');
     // Approval instance has already persisted steps; deactivate early to reduce test cross-impact.
@@ -451,25 +442,6 @@ test('approval flow: expense over budget requires escalation details @core', asy
       'BUDGET_ESCALATION_REQUIRED',
     );
 
-    const submitWithEscalationRes = await request.post(
-      `${apiBase}/expenses/${encodeURIComponent(expense.id)}/submit`,
-      {
-        headers: requesterHeaders,
-        data: {
-          budgetEscalationReason: `budget reason ${suffix}`,
-          budgetEscalationImpact: `budget impact ${suffix}`,
-          budgetEscalationAlternative: `budget alternative ${suffix}`,
-        },
-      },
-    );
-    await ensureOk(submitWithEscalationRes);
-    const submitted = await submitWithEscalationRes.json();
-    expect(submitted?.status).toBe('pending_qa');
-    expect(String(submitted?.budgetEscalationReason || '')).toContain(
-      `budget reason ${suffix}`,
-    );
-    expect(Number(submitted?.budgetOverrunAmount ?? 0)).toBeGreaterThan(0);
-
     const approval = await submitAndFindApprovalInstance({
       request,
       apiBase,
@@ -478,9 +450,29 @@ test('approval flow: expense over budget requires escalation details @core', asy
       projectId: expenseFixture.projectId,
       targetTable: 'expenses',
       targetId: expense.id as string,
-      submitData: {},
+      submitData: {
+        budgetEscalationReason: `budget reason ${suffix}`,
+        budgetEscalationImpact: `budget impact ${suffix}`,
+        budgetEscalationAlternative: `budget alternative ${suffix}`,
+      },
     });
     expect(approval.status).toBe('pending_qa');
+
+    const submittedExpenseRes = await request.get(
+      `${apiBase}/expenses/${encodeURIComponent(expense.id)}`,
+      {
+        headers: requesterHeaders,
+      },
+    );
+    await ensureOk(submittedExpenseRes);
+    const submittedExpense = await submittedExpenseRes.json();
+    expect(submittedExpense?.status).toBe('pending_qa');
+    expect(String(submittedExpense?.budgetEscalationReason || '')).toContain(
+      `budget reason ${suffix}`,
+    );
+    expect(Number(submittedExpense?.budgetOverrunAmount ?? 0)).toBeGreaterThan(
+      0,
+    );
     await deactivateRule();
 
     const checklistRes = await request.put(

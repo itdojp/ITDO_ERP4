@@ -4350,38 +4350,6 @@
             }
           }
         ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "additionalProperties": false,
-                "properties": {
-                  "budgetEscalationAlternative": {
-                    "maxLength": 2000,
-                    "minLength": 1,
-                    "type": "string"
-                  },
-                  "budgetEscalationImpact": {
-                    "maxLength": 2000,
-                    "minLength": 1,
-                    "type": "string"
-                  },
-                  "budgetEscalationReason": {
-                    "maxLength": 2000,
-                    "minLength": 1,
-                    "type": "string"
-                  },
-                  "reasonText": {
-                    "minLength": 1,
-                    "type": "string"
-                  }
-                },
-                "type": "object"
-              }
-            }
-          },
-          "required": true
-        },
         "responses": {
           "200": {
             "description": "Default Response"

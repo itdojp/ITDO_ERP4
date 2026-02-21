@@ -14,7 +14,6 @@ import {
   expenseQaChecklistPatchSchema,
   expenseReassignSchema,
   expenseSchema,
-  expenseSubmitSchema,
   expenseUnmarkPaidSchema,
 } from './validators.js';
 import { DocStatusValue, FlowTypeValue } from '../types.js';
@@ -802,7 +801,6 @@ export async function registerExpenseRoutes(app: FastifyInstance) {
     '/expenses/:id/submit',
     {
       preHandler: requireRole(['admin', 'mgmt', 'user']),
-      schema: expenseSubmitSchema,
     },
     async (req, reply) => {
       const { id } = req.params as { id: string };
