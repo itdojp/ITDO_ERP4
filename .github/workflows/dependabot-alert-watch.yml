@@ -132,8 +132,10 @@ jobs:
         env:
           FAILURE_REASON: ${{ steps.check.outputs.failure_reason }}
         run: |
-          if [[ "${FAILURE_REASON}" == "MISSING_DEPENDABOT_ALERTS_TOKEN" ]] || [[ "${FAILURE_REASON}" == "PERMISSION_DENIED" ]]; then
+          if [[ "${FAILURE_REASON}" == "MISSING_DEPENDABOT_ALERTS_TOKEN" ]]; then
             echo "::warning title=dependabot alert watch::check script failed (status=${{ steps.check.outputs.status }}, reason=${FAILURE_REASON}). Set DEPENDABOT_ALERTS_TOKEN to restore issue sync."
+          elif [[ "${FAILURE_REASON}" == "PERMISSION_DENIED" ]]; then
+            echo "::warning title=dependabot alert watch::check script failed (status=${{ steps.check.outputs.status }}, reason=${FAILURE_REASON}). Update DEPENDABOT_ALERTS_TOKEN permissions to restore issue sync."
           else
             echo "::warning title=dependabot alert watch::check script failed (status=${{ steps.check.outputs.status }}, reason=${FAILURE_REASON}). Check workflow logs/artifacts and rerun after fixing."
           fi
