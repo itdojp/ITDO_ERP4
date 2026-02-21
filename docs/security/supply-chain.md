@@ -39,6 +39,17 @@
 - 手動確認コマンド:
   - `make dependabot-alerts-check`
 
+### 監視対象の最新判断（2026-02-21）
+- alert `#10` (`GHSA-w7fw-mjwx-w883`, low):
+  - `OPEN` のまま監視継続
+  - lockfile は `qs@6.15.0`（patched `>=6.14.2`）を解決
+  - `googleapis` / `googleapis-common` の upstream 更新待ち
+- alert `#11` (`GHSA-jmr7-xgp7-cmfj`, high):
+  - `DISMISSED`（reason: `inaccurate`）
+  - 根拠: lockfile が `fast-xml-parser@5.3.6`（first patched）を解決し、`npm audit --audit-level=high` で high/critical 未検知
+
+追跡 Issue: #1153
+
 例外/抑制が必要な場合は、以下を必須として Issue 化します。
 - 対象（パッケージ/CVE など）
 - 影響範囲（runtime / dev など）
