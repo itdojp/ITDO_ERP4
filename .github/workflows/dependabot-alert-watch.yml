@@ -55,6 +55,10 @@ jobs:
               echo "PERMISSION_DENIED"
               return
             fi
+            if grep -qi 'Bad credentials' tmp/dependabot-alert-watch.log; then
+              echo "BAD_CREDENTIALS"
+              return
+            fi
             if grep -qi 'gh CLI is required' tmp/dependabot-alert-watch.log; then
               echo "MISSING_GH"
               return
@@ -209,6 +213,76 @@ jobs:
             gh api -X PATCH "repos/${GITHUB_REPOSITORY}/issues/comments/${existing_id}" -f body="${body}" >/dev/null
           else
             gh issue comment 1153 --body "${body}" >/dev/null
+          fi
+
+      - name: Sync issue #1176 token readiness
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHECK_STATUS: ${{ steps.check.outputs.status }}
+          FAILURE_REASON: ${{ steps.check.outputs.failure_reason }}
+        run: |
+          issue_number="1176"
+          marker="<!-- dependabot-token-readiness -->"
+          run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          now="$(date -u +'%Y-%m-%d %H:%M:%S UTC')"
+          current_state="$(gh api "repos/${GITHUB_REPOSITORY}/issues/${issue_number}" --jq '.state')"
+
+          token_blocked=false
+          case "${FAILURE_REASON}" in
+            MISSING_DEPENDABOT_ALERTS_TOKEN|PERMISSION_DENIED|BAD_CREDENTIALS)
+              token_blocked=true
+              ;;
+          esac
+
+          if [[ "${CHECK_STATUS}" == "0" ]]; then
+            body="$(printf '%s\n' \
+              "Dependabot token readiness（自動更新）" \
+              "" \
+              "- 実行時刻: ${now}" \
+              "- status: \`READY\`" \
+              "- script status: \`${CHECK_STATUS}\`" \
+              "- result reason: \`NONE\`" \
+              "- note: Dependabot Alert API にアクセス可能なため、#1153 の状態同期が継続実行されます。" \
+              "" \
+              "workflow run: ${run_url}" \
+              "${marker}" \
+            )"
+          else
+            action_message="workflow ログ/artifact を確認し、失敗要因を解消して再実行してください。"
+            if [[ "${FAILURE_REASON}" == "MISSING_DEPENDABOT_ALERTS_TOKEN" ]]; then
+              action_message="\`DEPENDABOT_ALERTS_TOKEN\`（Dependabot alerts 読み取り権限付き）を repository secret に設定して再実行してください。"
+            elif [[ "${FAILURE_REASON}" == "PERMISSION_DENIED" ]] || [[ "${FAILURE_REASON}" == "BAD_CREDENTIALS" ]]; then
+              action_message="\`DEPENDABOT_ALERTS_TOKEN\` の値と権限設定を確認して再実行してください。"
+            fi
+            body="$(printf '%s\n' \
+              "Dependabot token readiness（自動更新）" \
+              "" \
+              "- 実行時刻: ${now}" \
+              "- status: \`BLOCKED\`" \
+              "- script status: \`${CHECK_STATUS}\`" \
+              "- result reason: \`${FAILURE_REASON}\`" \
+              "- action: ${action_message}" \
+              "" \
+              "workflow run: ${run_url}" \
+              "${marker}" \
+            )"
+          fi
+
+          existing_id="$(gh api "repos/${GITHUB_REPOSITORY}/issues/${issue_number}/comments" --paginate --jq '.[] | select(.user.login=="github-actions[bot]") | select(.body | contains("<!-- dependabot-token-readiness -->")) | .id' | tail -n1)"
+
+          if [[ -n "${existing_id}" ]]; then
+            gh api -X PATCH "repos/${GITHUB_REPOSITORY}/issues/comments/${existing_id}" -f body="${body}" >/dev/null
+          else
+            gh issue comment "${issue_number}" --body "${body}" >/dev/null
+          fi
+
+          if [[ "${CHECK_STATUS}" == "0" ]] && [[ "${current_state}" == "open" ]]; then
+            gh api -X PATCH "repos/${GITHUB_REPOSITORY}/issues/${issue_number}" -f state='closed' >/dev/null
+            exit 0
+          fi
+
+          if [[ "${CHECK_STATUS}" != "0" ]] && [[ "${token_blocked}" == "true" ]] && [[ "${current_state}" == "closed" ]]; then
+            gh api -X PATCH "repos/${GITHUB_REPOSITORY}/issues/${issue_number}" -f state='open' >/dev/null
           fi
 
       - name: Keep issue #1153 state in sync

@@ -52,6 +52,11 @@
   - `result reason`（失敗時理由コード）を併記し、`MISSING_DEPENDABOT_ALERTS_TOKEN` / `PERMISSION_DENIED` の場合は `DEPENDABOT_ALERTS_TOKEN` 設定を優先確認する
   - `actionRequired=true` または alert `#10` が `OPEN` の場合は open を維持（closed なら再オープン）
   - alert `#10` が `OPEN` でなく `actionRequired=false` の場合は自動クローズ
+- token 設定Issue（#1176）の状態同期:
+  - bot ステータスコメント（marker: `dependabot-token-readiness`）を毎回更新する
+  - `script status == 0` のときは `READY` として記録し、Issue #1176 を自動クローズする
+  - `script status != 0` かつ `MISSING_DEPENDABOT_ALERTS_TOKEN` / `PERMISSION_DENIED` / `BAD_CREDENTIALS` のときは `BLOCKED` を記録し、Issue #1176 を open に維持する（closed なら再オープン）
+  - token 非依存の失敗理由（例: `NETWORK_ERROR`）はコメント更新のみ行い、Issue状態は変更しない
 
 ### 監視対象の最新判断（2026-02-21）
 - alert `#10` (`GHSA-w7fw-mjwx-w883`, low):
