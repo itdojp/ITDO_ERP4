@@ -56,6 +56,7 @@
 - [x] GET /expenses?projectId=... の `settlementStatus=paid` と `paidFrom/paidTo` が支払日で正しく絞り込まれる
 - [x] GET /expenses?projectId=... の `paidFrom` 単体 / `paidTo` 単体でも境界日を含めて正しく絞り込まれる
 - [x] GET /expenses?projectId=... の `from` / `to` / `paidFrom` / `paidTo` に不正日付を指定すると `INVALID_DATE` で拒否される
+- [x] GET /expenses?projectId=... の `from/to` と `paidFrom/paidTo` で開始日 > 終了日の場合は `INVALID_DATE_RANGE` で拒否される
 - [x] 一般ユーザによる PUT /expenses/:id/qa-checklist は `forbidden` で拒否される
 - [x] 一般ユーザによる POST /expenses/:id/mark-paid / unmark-paid は `forbidden` で拒否される
 
