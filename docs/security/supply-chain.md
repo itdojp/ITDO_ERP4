@@ -46,7 +46,7 @@
     - 例（repo secret 設定）:
       - `gh secret set DEPENDABOT_ALERTS_TOKEN --repo itdojp/ITDO_ERP4 < token.txt`
     - 例（ローカル一時検証）:
-      - `DEPENDABOT_ALERTS_TOKEN=\"$(cat token.txt)\" STRICT=1 make dependabot-token-readiness-check`
+      - `DEPENDABOT_ALERTS_TOKEN="$(cat token.txt)" STRICT=1 make dependabot-token-readiness-check`
       - `resultReason: NONE` / `ready: true` を確認してから secret 設定する
     - `token.txt` はリポジトリにコミットしない
     - 個人用の広権限トークンを流用する場合は、権限範囲・有効期限・漏えい時の影響を確認する
