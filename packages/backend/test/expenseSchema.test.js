@@ -5,6 +5,7 @@ import Fastify from 'fastify';
 
 import {
   applyExpenseHasReceiptFilter,
+  applyExpensePaidAtDateRangeFilter,
   buildExpenseCreateDraft,
   hasExpenseSubmitEvidence,
 } from '../dist/routes/expenses.js';
@@ -373,4 +374,25 @@ test('applyExpenseHasReceiptFilter: hasReceipt=false keeps existing AND and appe
       { attachments: { none: {} } },
     ],
   });
+});
+
+test('applyExpensePaidAtDateRangeFilter: applies paidFrom/paidTo with paidTo exclusive', () => {
+  const where = {};
+  applyExpensePaidAtDateRangeFilter(
+    where,
+    new Date('2026-02-01T00:00:00.000Z'),
+    new Date('2026-02-28T00:00:00.000Z'),
+  );
+  assert.deepEqual(where, {
+    paidAt: {
+      gte: new Date('2026-02-01T00:00:00.000Z'),
+      lt: new Date('2026-03-01T00:00:00.000Z'),
+    },
+  });
+});
+
+test('applyExpensePaidAtDateRangeFilter: no-op when both bounds are absent', () => {
+  const where = { status: 'approved' };
+  applyExpensePaidAtDateRangeFilter(where, null, null);
+  assert.deepEqual(where, { status: 'approved' });
 });
