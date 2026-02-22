@@ -108,6 +108,9 @@
 - `INVALID_STATUS`（精算系）
   - 原因: `approved` 以外で `mark-paid` 実行、または未払いに対する `unmark-paid`
   - 対処: 承認状態・精算状態を確認し、正しい順序で再実行
+- `INVALID_REASON`（支払取消）
+  - 原因: `unmark-paid` 実行時に `reasonText` が空文字/空白のみ
+  - 対処: 取消理由を入力して再実行
 
 ## 関連UI/手順
 
