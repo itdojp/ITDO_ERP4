@@ -515,15 +515,20 @@ export async function registerExpenseRoutes(app: FastifyInstance) {
         if (hasReceiptValue) {
           where.AND = [
             ...andConditions,
-            { receiptUrl: { not: null } },
-            { receiptUrl: { not: '' } },
+            {
+              OR: [
+                {
+                  AND: [{ receiptUrl: { not: null } }, { receiptUrl: { not: '' } }],
+                },
+                { attachments: { some: {} } },
+              ],
+            },
           ];
         } else {
           where.AND = [
             ...andConditions,
-            {
-              OR: [{ receiptUrl: null }, { receiptUrl: '' }],
-            },
+            { OR: [{ receiptUrl: null }, { receiptUrl: '' }] },
+            { attachments: { none: {} } },
           ];
         }
       }

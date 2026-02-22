@@ -1123,6 +1123,30 @@ test('approval flow: expense list filters (receipt/settlement/paid date) work as
     const unpaidExpenseId = String(withoutReceiptExpense?.id ?? '');
     expect(unpaidExpenseId).not.toBe('');
 
+    const attachmentOnlyRes = await request.post(`${apiBase}/expenses`, {
+      headers: ownerHeaders,
+      data: {
+        projectId: expenseFixture.projectId,
+        userId: ownerHeaders['x-user-id'],
+        category: 'supplies',
+        amount: 7200,
+        currency: 'JPY',
+        incurredOn: '2026-02-19',
+        attachments: [
+          {
+            fileUrl: `https://example.com/e2e/list-filter-attachment-only-${suffix}.pdf`,
+            fileName: `list-filter-attachment-only-${suffix}.pdf`,
+            contentType: 'application/pdf',
+            fileSizeBytes: 1024,
+          },
+        ],
+      },
+    });
+    await ensureOk(attachmentOnlyRes);
+    const attachmentOnlyExpense = await attachmentOnlyRes.json();
+    const attachmentOnlyExpenseId = String(attachmentOnlyExpense?.id ?? '');
+    expect(attachmentOnlyExpenseId).not.toBe('');
+
     const paidOnlyRes = await request.get(
       `${apiBase}/expenses?projectId=${encodeURIComponent(expenseFixture.projectId)}&settlementStatus=paid`,
       {
@@ -1149,6 +1173,7 @@ test('approval flow: expense list filters (receipt/settlement/paid date) work as
       (withReceiptOnly?.items ?? []).map((item: any) => String(item?.id ?? '')),
     );
     expect(withReceiptIds.has(paidExpenseId)).toBe(true);
+    expect(withReceiptIds.has(attachmentOnlyExpenseId)).toBe(true);
     expect(withReceiptIds.has(unpaidExpenseId)).toBe(false);
 
     const withoutReceiptOnlyRes = await request.get(
@@ -1165,6 +1190,7 @@ test('approval flow: expense list filters (receipt/settlement/paid date) work as
       ),
     );
     expect(withoutReceiptIds.has(paidExpenseId)).toBe(false);
+    expect(withoutReceiptIds.has(attachmentOnlyExpenseId)).toBe(false);
     expect(withoutReceiptIds.has(unpaidExpenseId)).toBe(true);
 
     const paidRangeHitRes = await request.get(
