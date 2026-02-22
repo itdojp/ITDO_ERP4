@@ -4,6 +4,7 @@ import test from 'node:test';
 import Fastify from 'fastify';
 
 import {
+  applyExpenseHasReceiptFilter,
   buildExpenseCreateDraft,
   hasExpenseSubmitEvidence,
 } from '../dist/routes/expenses.js';
@@ -343,4 +344,33 @@ test('hasExpenseSubmitEvidence: false when no receipt evidence exists', () => {
     attachmentCount: 0,
   });
   assert.equal(ok, false);
+});
+
+test('applyExpenseHasReceiptFilter: hasReceipt=true adds receipt-or-attachment condition', () => {
+  const where = {};
+  applyExpenseHasReceiptFilter(where, true);
+  assert.deepEqual(where, {
+    AND: [
+      {
+        OR: [
+          {
+            AND: [{ receiptUrl: { not: null } }, { receiptUrl: { not: '' } }],
+          },
+          { attachments: { some: {} } },
+        ],
+      },
+    ],
+  });
+});
+
+test('applyExpenseHasReceiptFilter: hasReceipt=false keeps existing AND and appends none condition', () => {
+  const where = { AND: [{ status: 'approved' }] };
+  applyExpenseHasReceiptFilter(where, false);
+  assert.deepEqual(where, {
+    AND: [
+      { status: 'approved' },
+      { OR: [{ receiptUrl: null }, { receiptUrl: '' }] },
+      { attachments: { none: {} } },
+    ],
+  });
 });
