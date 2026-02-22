@@ -814,3 +814,173 @@ test('approval flow: expense submit requires receipt evidence and transition log
   );
   expect(transitionsAsOtherRes.status()).toBe(403);
 });
+
+test('approval flow: expense settlement guards reject invalid transitions and missing reason @core', async ({
+  request,
+}) => {
+  const suffix = runId();
+  const expenseFixture = await createProjectFixture(
+    request,
+    suffix,
+    'expense-settlement-guard',
+    {
+      budgetCost: 180000,
+      currency: 'JPY',
+    },
+  );
+  const ownerHeaders = buildHeaders({
+    userId: `e2e-expense-settlement-guard-${suffix}@example.com`,
+    roles: ['user'],
+    projectIds: [expenseFixture.projectId],
+  });
+
+  const ruleRes = await request.post(`${apiBase}/approval-rules`, {
+    headers: adminHeaders,
+    data: {
+      flowType: 'expense',
+      conditions: {
+        amountMin: 18000,
+        amountMax: 22000,
+      },
+      steps: [
+        { stepOrder: 1, approverGroupId: 'mgmt' },
+        { stepOrder: 2, approverGroupId: 'exec' },
+      ],
+    },
+  });
+  await ensureOk(ruleRes);
+  const createdRule = await ruleRes.json();
+  const deactivateRule = async () => {
+    if (!createdRule?.id) return;
+    const deactivateRes = await request.patch(
+      `${apiBase}/approval-rules/${encodeURIComponent(createdRule.id)}`,
+      {
+        headers: adminHeaders,
+        data: { isActive: false },
+      },
+    );
+    await ensureOk(deactivateRes);
+  };
+
+  try {
+    const createRes = await request.post(`${apiBase}/expenses`, {
+      headers: ownerHeaders,
+      data: {
+        projectId: expenseFixture.projectId,
+        userId: ownerHeaders['x-user-id'],
+        category: 'travel',
+        amount: 20000,
+        currency: 'JPY',
+        incurredOn: '2026-02-16',
+        receiptUrl: `https://example.com/e2e/settlement-guard-${suffix}.pdf`,
+      },
+    });
+    await ensureOk(createRes);
+    const expense = await createRes.json();
+    const expenseId = String(expense?.id ?? '');
+    expect(expenseId).not.toBe('');
+
+    const markPaidBeforeApproveRes = await request.post(
+      `${apiBase}/expenses/${encodeURIComponent(expenseId)}/mark-paid`,
+      {
+        headers: adminHeaders,
+        data: { reasonText: `mark before approve ${suffix}` },
+      },
+    );
+    expect(markPaidBeforeApproveRes.status()).toBe(409);
+    const markPaidBeforeApprove = await markPaidBeforeApproveRes.json();
+    expect(markPaidBeforeApprove?.error?.code).toBe('INVALID_STATUS');
+
+    const unmarkBeforePaidRes = await request.post(
+      `${apiBase}/expenses/${encodeURIComponent(expenseId)}/unmark-paid`,
+      {
+        headers: adminHeaders,
+        data: { reasonText: `unmark before paid ${suffix}` },
+      },
+    );
+    expect(unmarkBeforePaidRes.status()).toBe(409);
+    const unmarkBeforePaid = await unmarkBeforePaidRes.json();
+    expect(unmarkBeforePaid?.error?.code).toBe('INVALID_STATUS');
+
+    const approval = await submitAndFindApprovalInstance({
+      request,
+      apiBase,
+      headers: ownerHeaders,
+      flowType: 'expense',
+      projectId: expenseFixture.projectId,
+      targetTable: 'expenses',
+      targetId: expenseId,
+      submitData: {},
+    });
+    expect(approval.status).toBe('pending_qa');
+    await deactivateRule();
+
+    const checklistRes = await request.put(
+      `${apiBase}/expenses/${encodeURIComponent(expenseId)}/qa-checklist`,
+      {
+        headers: adminHeaders,
+        data: {
+          amountVerified: true,
+          receiptVerified: true,
+          journalPrepared: true,
+          projectLinked: true,
+          budgetChecked: true,
+        },
+      },
+    );
+    await ensureOk(checklistRes);
+
+    const qaApproveRes = await request.post(
+      `${apiBase}/approval-instances/${encodeURIComponent(approval.id)}/act`,
+      {
+        headers: adminHeaders,
+        data: { action: 'approve', reason: `qa approve ${suffix}` },
+      },
+    );
+    await ensureOk(qaApproveRes);
+
+    const execApproveRes = await request.post(
+      `${apiBase}/approval-instances/${encodeURIComponent(approval.id)}/act`,
+      {
+        headers: adminHeaders,
+        data: { action: 'approve', reason: `exec approve ${suffix}` },
+      },
+    );
+    await ensureOk(execApproveRes);
+    const execApproved = await execApproveRes.json();
+    expect(execApproved?.status).toBe('approved');
+
+    const markPaidRes = await request.post(
+      `${apiBase}/expenses/${encodeURIComponent(expenseId)}/mark-paid`,
+      {
+        headers: adminHeaders,
+        data: { reasonText: `mark paid ${suffix}` },
+      },
+    );
+    await ensureOk(markPaidRes);
+
+    const unmarkMissingReasonRes = await request.post(
+      `${apiBase}/expenses/${encodeURIComponent(expenseId)}/unmark-paid`,
+      {
+        headers: adminHeaders,
+        data: { reasonText: '   ' },
+      },
+    );
+    expect(unmarkMissingReasonRes.status()).toBe(400);
+    const unmarkMissingReason = await unmarkMissingReasonRes.json();
+    expect(unmarkMissingReason?.error?.code).toBe('INVALID_REASON');
+
+    const unmarkPaidRes = await request.post(
+      `${apiBase}/expenses/${encodeURIComponent(expenseId)}/unmark-paid`,
+      {
+        headers: adminHeaders,
+        data: { reasonText: `unmark paid ${suffix}` },
+      },
+    );
+    await ensureOk(unmarkPaidRes);
+    const unmarked = await unmarkPaidRes.json();
+    expect(unmarked?.settlementStatus).toBe('unpaid');
+  } finally {
+    await deactivateRule();
+  }
+});

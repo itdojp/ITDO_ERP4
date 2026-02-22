@@ -49,6 +49,9 @@
 - [x] POST /expenses/:id/unmark-paid は reasonText 必須で、settlementStatus=unpaid に戻る（paidAt/paidBy クリア、監査ログ）
 - [x] GET /expenses/:id/state-transitions で `create/submit/mark_paid/unmark_paid` の遷移履歴を確認できる
 - [x] GET /expenses/:id/state-transitions は一般ユーザだと作成者本人のみ参照できる（他ユーザは 403）
+- [x] `approved` 以外で POST /expenses/:id/mark-paid を実行すると `INVALID_STATUS` で拒否される
+- [x] `settlementStatus=unpaid` の POST /expenses/:id/unmark-paid は `INVALID_STATUS` で拒否される
+- [x] POST /expenses/:id/unmark-paid は reasonText が空文字/空白のみだと `INVALID_REASON` で拒否される
 
 ### 仕入/発注（PO↔VI、配賦明細）
 
