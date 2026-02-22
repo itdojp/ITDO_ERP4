@@ -512,6 +512,22 @@ export async function registerExpenseRoutes(app: FastifyInstance) {
           },
         });
       }
+      if (fromDate && toDate && fromDate > toDate) {
+        return reply.status(400).send({
+          error: {
+            code: 'INVALID_DATE_RANGE',
+            message: 'from must be <= to',
+          },
+        });
+      }
+      if (paidFromDate && paidToDate && paidFromDate > paidToDate) {
+        return reply.status(400).send({
+          error: {
+            code: 'INVALID_DATE_RANGE',
+            message: 'paidFrom must be <= paidTo',
+          },
+        });
+      }
       if (hasReceiptValue === null) {
         return reply.status(400).send({
           error: {
