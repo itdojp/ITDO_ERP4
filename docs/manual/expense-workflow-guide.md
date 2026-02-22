@@ -76,6 +76,7 @@
 - 一覧確認（運用向け）:
   - `GET /expenses` で `settlementStatus` / `hasReceipt` / `paidFrom` / `paidTo` を使い、未精算・証憑不足・支払期間を横断確認する
   - `hasReceipt=true` は `receiptUrl` だけでなく添付 (`attachments`) ありの申請も含む
+  - `paidTo` は指定日の終端までを含む（内部的には翌日 00:00 未満で比較）
 
 ## 監査・追跡
 

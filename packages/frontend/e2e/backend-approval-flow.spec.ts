@@ -1236,6 +1236,60 @@ test('approval flow: expense list filters (receipt/settlement/paid date) work as
     );
     expect(paidRangeMissIds.has(paidExpenseId)).toBe(false);
 
+    const paidFromOnlyHitRes = await request.get(
+      `${apiBase}/expenses?projectId=${encodeURIComponent(expenseFixture.projectId)}&paidFrom=2026-02-20`,
+      {
+        headers: adminHeaders,
+      },
+    );
+    await ensureOk(paidFromOnlyHitRes);
+    const paidFromOnlyHit = await paidFromOnlyHitRes.json();
+    const paidFromOnlyHitIds = new Set(
+      (paidFromOnlyHit?.items ?? []).map((item: any) => String(item?.id ?? '')),
+    );
+    expect(paidFromOnlyHitIds.has(paidExpenseId)).toBe(true);
+
+    const paidFromOnlyMissRes = await request.get(
+      `${apiBase}/expenses?projectId=${encodeURIComponent(expenseFixture.projectId)}&paidFrom=2026-02-21`,
+      {
+        headers: adminHeaders,
+      },
+    );
+    await ensureOk(paidFromOnlyMissRes);
+    const paidFromOnlyMiss = await paidFromOnlyMissRes.json();
+    const paidFromOnlyMissIds = new Set(
+      (paidFromOnlyMiss?.items ?? []).map((item: any) =>
+        String(item?.id ?? ''),
+      ),
+    );
+    expect(paidFromOnlyMissIds.has(paidExpenseId)).toBe(false);
+
+    const paidToOnlyHitRes = await request.get(
+      `${apiBase}/expenses?projectId=${encodeURIComponent(expenseFixture.projectId)}&paidTo=2026-02-20`,
+      {
+        headers: adminHeaders,
+      },
+    );
+    await ensureOk(paidToOnlyHitRes);
+    const paidToOnlyHit = await paidToOnlyHitRes.json();
+    const paidToOnlyHitIds = new Set(
+      (paidToOnlyHit?.items ?? []).map((item: any) => String(item?.id ?? '')),
+    );
+    expect(paidToOnlyHitIds.has(paidExpenseId)).toBe(true);
+
+    const paidToOnlyMissRes = await request.get(
+      `${apiBase}/expenses?projectId=${encodeURIComponent(expenseFixture.projectId)}&paidTo=2026-02-19`,
+      {
+        headers: adminHeaders,
+      },
+    );
+    await ensureOk(paidToOnlyMissRes);
+    const paidToOnlyMiss = await paidToOnlyMissRes.json();
+    const paidToOnlyMissIds = new Set(
+      (paidToOnlyMiss?.items ?? []).map((item: any) => String(item?.id ?? '')),
+    );
+    expect(paidToOnlyMissIds.has(paidExpenseId)).toBe(false);
+
     const invalidBooleanRes = await request.get(
       `${apiBase}/expenses?projectId=${encodeURIComponent(expenseFixture.projectId)}&hasReceipt=maybe`,
       {
