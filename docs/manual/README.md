@@ -23,6 +23,7 @@
 ### 業務別ガイド
 - 案件リーダー運用: [project-leader-guide](project-leader-guide.md)
 - 見積/請求/発注/仕入（経理・管理部）: [accounting-guide](accounting-guide.md)
+- 経費ワークフロー（申請/承認/精算）: [expense-workflow-guide](expense-workflow-guide.md)
 - 承認運用（ルール/遅延/監査）: [approval-operations](approval-operations.md)
 - レポート/アラート運用: [reporting-guide](reporting-guide.md)
 - チャット運用（ルーム/既読/メンション/添付/監査）: [chat-guide](chat-guide.md)
