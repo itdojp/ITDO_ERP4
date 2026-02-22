@@ -511,9 +511,21 @@ export async function registerExpenseRoutes(app: FastifyInstance) {
         }
       }
       if (hasReceiptValue !== undefined) {
-        where.receiptUrl = hasReceiptValue
-          ? { notIn: [null, ''] }
-          : { in: [null, ''] };
+        const andConditions = Array.isArray(where.AND) ? where.AND : [];
+        if (hasReceiptValue) {
+          where.AND = [
+            ...andConditions,
+            { receiptUrl: { not: null } },
+            { receiptUrl: { not: '' } },
+          ];
+        } else {
+          where.AND = [
+            ...andConditions,
+            {
+              OR: [{ receiptUrl: null }, { receiptUrl: '' }],
+            },
+          ];
+        }
       }
       const items = await prisma.expense.findMany({
         where,

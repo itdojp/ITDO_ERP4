@@ -984,3 +984,229 @@ test('approval flow: expense settlement guards reject invalid transitions and mi
     await deactivateRule();
   }
 });
+
+test('approval flow: expense list filters (receipt/settlement/paid date) work as expected @core', async ({
+  request,
+}) => {
+  const suffix = runId();
+  const expenseFixture = await createProjectFixture(
+    request,
+    suffix,
+    'expense-list-filters',
+    {
+      budgetCost: 300000,
+      currency: 'JPY',
+    },
+  );
+  const ownerHeaders = buildHeaders({
+    userId: `e2e-expense-list-filter-${suffix}@example.com`,
+    roles: ['user'],
+    projectIds: [expenseFixture.projectId],
+  });
+  const ruleRes = await request.post(`${apiBase}/approval-rules`, {
+    headers: adminHeaders,
+    data: {
+      flowType: 'expense',
+      conditions: {
+        amountMin: 19000,
+        amountMax: 21000,
+      },
+      steps: [
+        { stepOrder: 1, approverGroupId: 'mgmt' },
+        { stepOrder: 2, approverGroupId: 'exec' },
+      ],
+    },
+  });
+  await ensureOk(ruleRes);
+  const createdRule = await ruleRes.json();
+  const deactivateRule = async () => {
+    if (!createdRule?.id) return;
+    const deactivateRes = await request.patch(
+      `${apiBase}/approval-rules/${encodeURIComponent(createdRule.id)}`,
+      {
+        headers: adminHeaders,
+        data: { isActive: false },
+      },
+    );
+    await ensureOk(deactivateRes);
+  };
+
+  try {
+    const withReceiptRes = await request.post(`${apiBase}/expenses`, {
+      headers: ownerHeaders,
+      data: {
+        projectId: expenseFixture.projectId,
+        userId: ownerHeaders['x-user-id'],
+        category: 'travel',
+        amount: 20000,
+        currency: 'JPY',
+        incurredOn: '2026-02-18',
+        receiptUrl: `https://example.com/e2e/list-filter-with-receipt-${suffix}.pdf`,
+      },
+    });
+    await ensureOk(withReceiptRes);
+    const withReceiptExpense = await withReceiptRes.json();
+    const paidExpenseId = String(withReceiptExpense?.id ?? '');
+    expect(paidExpenseId).not.toBe('');
+
+    const approval = await submitAndFindApprovalInstance({
+      request,
+      apiBase,
+      headers: ownerHeaders,
+      flowType: 'expense',
+      projectId: expenseFixture.projectId,
+      targetTable: 'expenses',
+      targetId: paidExpenseId,
+      submitData: {},
+    });
+    expect(approval.status).toBe('pending_qa');
+    await deactivateRule();
+
+    const checklistRes = await request.put(
+      `${apiBase}/expenses/${encodeURIComponent(paidExpenseId)}/qa-checklist`,
+      {
+        headers: adminHeaders,
+        data: {
+          amountVerified: true,
+          receiptVerified: true,
+          journalPrepared: true,
+          projectLinked: true,
+          budgetChecked: true,
+        },
+      },
+    );
+    await ensureOk(checklistRes);
+
+    const qaApproveRes = await request.post(
+      `${apiBase}/approval-instances/${encodeURIComponent(approval.id)}/act`,
+      {
+        headers: adminHeaders,
+        data: { action: 'approve', reason: `qa approve ${suffix}` },
+      },
+    );
+    await ensureOk(qaApproveRes);
+
+    const execApproveRes = await request.post(
+      `${apiBase}/approval-instances/${encodeURIComponent(approval.id)}/act`,
+      {
+        headers: adminHeaders,
+        data: { action: 'approve', reason: `exec approve ${suffix}` },
+      },
+    );
+    await ensureOk(execApproveRes);
+
+    const markPaidRes = await request.post(
+      `${apiBase}/expenses/${encodeURIComponent(paidExpenseId)}/mark-paid`,
+      {
+        headers: adminHeaders,
+        data: {
+          paidAt: '2026-02-20',
+          reasonText: `mark paid for filter ${suffix}`,
+        },
+      },
+    );
+    await ensureOk(markPaidRes);
+
+    const withoutReceiptRes = await request.post(`${apiBase}/expenses`, {
+      headers: ownerHeaders,
+      data: {
+        projectId: expenseFixture.projectId,
+        userId: ownerHeaders['x-user-id'],
+        category: 'meal',
+        amount: 5000,
+        currency: 'JPY',
+        incurredOn: '2026-02-19',
+      },
+    });
+    await ensureOk(withoutReceiptRes);
+    const withoutReceiptExpense = await withoutReceiptRes.json();
+    const unpaidExpenseId = String(withoutReceiptExpense?.id ?? '');
+    expect(unpaidExpenseId).not.toBe('');
+
+    const paidOnlyRes = await request.get(
+      `${apiBase}/expenses?projectId=${encodeURIComponent(expenseFixture.projectId)}&settlementStatus=paid`,
+      {
+        headers: adminHeaders,
+      },
+    );
+    await ensureOk(paidOnlyRes);
+    const paidOnly = await paidOnlyRes.json();
+    const paidOnlyIds = new Set(
+      (paidOnly?.items ?? []).map((item: any) => String(item?.id ?? '')),
+    );
+    expect(paidOnlyIds.has(paidExpenseId)).toBe(true);
+    expect(paidOnlyIds.has(unpaidExpenseId)).toBe(false);
+
+    const withReceiptOnlyRes = await request.get(
+      `${apiBase}/expenses?projectId=${encodeURIComponent(expenseFixture.projectId)}&hasReceipt=true`,
+      {
+        headers: adminHeaders,
+      },
+    );
+    await ensureOk(withReceiptOnlyRes);
+    const withReceiptOnly = await withReceiptOnlyRes.json();
+    const withReceiptIds = new Set(
+      (withReceiptOnly?.items ?? []).map((item: any) => String(item?.id ?? '')),
+    );
+    expect(withReceiptIds.has(paidExpenseId)).toBe(true);
+    expect(withReceiptIds.has(unpaidExpenseId)).toBe(false);
+
+    const withoutReceiptOnlyRes = await request.get(
+      `${apiBase}/expenses?projectId=${encodeURIComponent(expenseFixture.projectId)}&hasReceipt=false`,
+      {
+        headers: adminHeaders,
+      },
+    );
+    await ensureOk(withoutReceiptOnlyRes);
+    const withoutReceiptOnly = await withoutReceiptOnlyRes.json();
+    const withoutReceiptIds = new Set(
+      (withoutReceiptOnly?.items ?? []).map((item: any) =>
+        String(item?.id ?? ''),
+      ),
+    );
+    expect(withoutReceiptIds.has(paidExpenseId)).toBe(false);
+    expect(withoutReceiptIds.has(unpaidExpenseId)).toBe(true);
+
+    const paidRangeHitRes = await request.get(
+      `${apiBase}/expenses?projectId=${encodeURIComponent(expenseFixture.projectId)}&paidFrom=2026-02-19&paidTo=2026-02-21`,
+      {
+        headers: adminHeaders,
+      },
+    );
+    await ensureOk(paidRangeHitRes);
+    const paidRangeHit = await paidRangeHitRes.json();
+    const paidRangeHitIds = new Set(
+      (paidRangeHit?.items ?? []).map((item: any) => String(item?.id ?? '')),
+    );
+    expect(paidRangeHitIds.has(paidExpenseId)).toBe(true);
+
+    const paidRangeMissRes = await request.get(
+      `${apiBase}/expenses?projectId=${encodeURIComponent(expenseFixture.projectId)}&paidFrom=2026-02-21&paidTo=2026-02-21`,
+      {
+        headers: adminHeaders,
+      },
+    );
+    await ensureOk(paidRangeMissRes);
+    const paidRangeMiss = await paidRangeMissRes.json();
+    const paidRangeMissIds = new Set(
+      (paidRangeMiss?.items ?? []).map((item: any) => String(item?.id ?? '')),
+    );
+    expect(paidRangeMissIds.has(paidExpenseId)).toBe(false);
+
+    const invalidBooleanRes = await request.get(
+      `${apiBase}/expenses?projectId=${encodeURIComponent(expenseFixture.projectId)}&hasReceipt=maybe`,
+      {
+        headers: adminHeaders,
+      },
+    );
+    expect(invalidBooleanRes.status()).toBe(400);
+    const invalidBoolean = await invalidBooleanRes.json();
+    expect(
+      ['INVALID_BOOLEAN', 'VALIDATION_ERROR'].includes(
+        String(invalidBoolean?.error?.code ?? ''),
+      ),
+    ).toBe(true);
+  } finally {
+    await deactivateRule();
+  }
+});

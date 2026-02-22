@@ -71,6 +71,8 @@
 - 支払取消: `POST /expenses/:id/unmark-paid`
   - `admin/mgmt` のみ
   - `reasonText` 必須
+- 一覧確認（運用向け）:
+  - `GET /expenses` で `settlementStatus` / `hasReceipt` / `paidFrom` / `paidTo` を使い、未精算・証憑不足・支払期間を横断確認する
 
 ## 監査・追跡
 
