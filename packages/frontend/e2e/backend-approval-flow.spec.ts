@@ -1146,148 +1146,62 @@ test('approval flow: expense list filters (receipt/settlement/paid date) work as
     const attachmentOnlyExpenseId = String(attachmentOnlyExpense?.id ?? '');
     expect(attachmentOnlyExpenseId).not.toBe('');
 
-    const paidOnlyRes = await request.get(
-      `${apiBase}/expenses?projectId=${encodeURIComponent(expenseFixture.projectId)}&settlementStatus=paid`,
-      {
-        headers: adminHeaders,
-      },
-    );
-    await ensureOk(paidOnlyRes);
-    const paidOnly = await paidOnlyRes.json();
-    const paidOnlyIds = new Set(
-      (paidOnly?.items ?? []).map((item: any) => String(item?.id ?? '')),
-    );
+    const fetchExpenseIds = async (query: string) => {
+      const res = await request.get(
+        `${apiBase}/expenses?projectId=${encodeURIComponent(expenseFixture.projectId)}&${query}`,
+        {
+          headers: adminHeaders,
+        },
+      );
+      await ensureOk(res);
+      const payload = await res.json();
+      return new Set(
+        (payload?.items ?? []).map((item: any) => String(item?.id ?? '')),
+      );
+    };
+
+    const paidOnlyIds = await fetchExpenseIds('settlementStatus=paid');
     expect(paidOnlyIds.has(paidExpenseId)).toBe(true);
     expect(paidOnlyIds.has(attachmentOnlyExpenseId)).toBe(false);
     expect(paidOnlyIds.has(unpaidExpenseId)).toBe(false);
 
-    const unpaidOnlyRes = await request.get(
-      `${apiBase}/expenses?projectId=${encodeURIComponent(expenseFixture.projectId)}&settlementStatus=unpaid`,
-      {
-        headers: adminHeaders,
-      },
-    );
-    await ensureOk(unpaidOnlyRes);
-    const unpaidOnly = await unpaidOnlyRes.json();
-    const unpaidOnlyIds = new Set(
-      (unpaidOnly?.items ?? []).map((item: any) => String(item?.id ?? '')),
-    );
+    const unpaidOnlyIds = await fetchExpenseIds('settlementStatus=unpaid');
     expect(unpaidOnlyIds.has(unpaidExpenseId)).toBe(true);
     expect(unpaidOnlyIds.has(attachmentOnlyExpenseId)).toBe(true);
     expect(unpaidOnlyIds.has(paidExpenseId)).toBe(false);
 
-    const withReceiptOnlyRes = await request.get(
-      `${apiBase}/expenses?projectId=${encodeURIComponent(expenseFixture.projectId)}&hasReceipt=true`,
-      {
-        headers: adminHeaders,
-      },
-    );
-    await ensureOk(withReceiptOnlyRes);
-    const withReceiptOnly = await withReceiptOnlyRes.json();
-    const withReceiptIds = new Set(
-      (withReceiptOnly?.items ?? []).map((item: any) => String(item?.id ?? '')),
-    );
+    const withReceiptIds = await fetchExpenseIds('hasReceipt=true');
     expect(withReceiptIds.has(paidExpenseId)).toBe(true);
     expect(withReceiptIds.has(attachmentOnlyExpenseId)).toBe(true);
     expect(withReceiptIds.has(unpaidExpenseId)).toBe(false);
 
-    const withoutReceiptOnlyRes = await request.get(
-      `${apiBase}/expenses?projectId=${encodeURIComponent(expenseFixture.projectId)}&hasReceipt=false`,
-      {
-        headers: adminHeaders,
-      },
-    );
-    await ensureOk(withoutReceiptOnlyRes);
-    const withoutReceiptOnly = await withoutReceiptOnlyRes.json();
-    const withoutReceiptIds = new Set(
-      (withoutReceiptOnly?.items ?? []).map((item: any) =>
-        String(item?.id ?? ''),
-      ),
-    );
+    const withoutReceiptIds = await fetchExpenseIds('hasReceipt=false');
     expect(withoutReceiptIds.has(paidExpenseId)).toBe(false);
     expect(withoutReceiptIds.has(attachmentOnlyExpenseId)).toBe(false);
     expect(withoutReceiptIds.has(unpaidExpenseId)).toBe(true);
 
-    const paidRangeHitRes = await request.get(
-      `${apiBase}/expenses?projectId=${encodeURIComponent(expenseFixture.projectId)}&paidFrom=2026-02-19&paidTo=2026-02-21`,
-      {
-        headers: adminHeaders,
-      },
-    );
-    await ensureOk(paidRangeHitRes);
-    const paidRangeHit = await paidRangeHitRes.json();
-    const paidRangeHitIds = new Set(
-      (paidRangeHit?.items ?? []).map((item: any) => String(item?.id ?? '')),
+    const paidRangeHitIds = await fetchExpenseIds(
+      'paidFrom=2026-02-19&paidTo=2026-02-21',
     );
     expect(paidRangeHitIds.has(paidExpenseId)).toBe(true);
     expect(paidRangeHitIds.has(attachmentOnlyExpenseId)).toBe(false);
     expect(paidRangeHitIds.has(unpaidExpenseId)).toBe(false);
 
-    const paidRangeMissRes = await request.get(
-      `${apiBase}/expenses?projectId=${encodeURIComponent(expenseFixture.projectId)}&paidFrom=2026-02-21&paidTo=2026-02-21`,
-      {
-        headers: adminHeaders,
-      },
-    );
-    await ensureOk(paidRangeMissRes);
-    const paidRangeMiss = await paidRangeMissRes.json();
-    const paidRangeMissIds = new Set(
-      (paidRangeMiss?.items ?? []).map((item: any) => String(item?.id ?? '')),
+    const paidRangeMissIds = await fetchExpenseIds(
+      'paidFrom=2026-02-21&paidTo=2026-02-21',
     );
     expect(paidRangeMissIds.has(paidExpenseId)).toBe(false);
 
-    const paidFromOnlyHitRes = await request.get(
-      `${apiBase}/expenses?projectId=${encodeURIComponent(expenseFixture.projectId)}&paidFrom=2026-02-20`,
-      {
-        headers: adminHeaders,
-      },
-    );
-    await ensureOk(paidFromOnlyHitRes);
-    const paidFromOnlyHit = await paidFromOnlyHitRes.json();
-    const paidFromOnlyHitIds = new Set(
-      (paidFromOnlyHit?.items ?? []).map((item: any) => String(item?.id ?? '')),
-    );
+    const paidFromOnlyHitIds = await fetchExpenseIds('paidFrom=2026-02-20');
     expect(paidFromOnlyHitIds.has(paidExpenseId)).toBe(true);
 
-    const paidFromOnlyMissRes = await request.get(
-      `${apiBase}/expenses?projectId=${encodeURIComponent(expenseFixture.projectId)}&paidFrom=2026-02-21`,
-      {
-        headers: adminHeaders,
-      },
-    );
-    await ensureOk(paidFromOnlyMissRes);
-    const paidFromOnlyMiss = await paidFromOnlyMissRes.json();
-    const paidFromOnlyMissIds = new Set(
-      (paidFromOnlyMiss?.items ?? []).map((item: any) =>
-        String(item?.id ?? ''),
-      ),
-    );
+    const paidFromOnlyMissIds = await fetchExpenseIds('paidFrom=2026-02-21');
     expect(paidFromOnlyMissIds.has(paidExpenseId)).toBe(false);
 
-    const paidToOnlyHitRes = await request.get(
-      `${apiBase}/expenses?projectId=${encodeURIComponent(expenseFixture.projectId)}&paidTo=2026-02-20`,
-      {
-        headers: adminHeaders,
-      },
-    );
-    await ensureOk(paidToOnlyHitRes);
-    const paidToOnlyHit = await paidToOnlyHitRes.json();
-    const paidToOnlyHitIds = new Set(
-      (paidToOnlyHit?.items ?? []).map((item: any) => String(item?.id ?? '')),
-    );
+    const paidToOnlyHitIds = await fetchExpenseIds('paidTo=2026-02-20');
     expect(paidToOnlyHitIds.has(paidExpenseId)).toBe(true);
 
-    const paidToOnlyMissRes = await request.get(
-      `${apiBase}/expenses?projectId=${encodeURIComponent(expenseFixture.projectId)}&paidTo=2026-02-19`,
-      {
-        headers: adminHeaders,
-      },
-    );
-    await ensureOk(paidToOnlyMissRes);
-    const paidToOnlyMiss = await paidToOnlyMissRes.json();
-    const paidToOnlyMissIds = new Set(
-      (paidToOnlyMiss?.items ?? []).map((item: any) => String(item?.id ?? '')),
-    );
+    const paidToOnlyMissIds = await fetchExpenseIds('paidTo=2026-02-19');
     expect(paidToOnlyMissIds.has(paidExpenseId)).toBe(false);
 
     const invalidBooleanRes = await request.get(
