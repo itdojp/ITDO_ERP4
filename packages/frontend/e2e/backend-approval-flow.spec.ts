@@ -742,3 +742,75 @@ test('approval flow: expense attachments/comments and transition history are tra
     await deactivateRule();
   }
 });
+
+test('approval flow: expense submit requires receipt evidence and transition log access is owner-only @core', async ({
+  request,
+}) => {
+  const suffix = runId();
+  const expenseFixture = await createProjectFixture(
+    request,
+    suffix,
+    'expense-evidence',
+  );
+  const ownerHeaders = buildHeaders({
+    userId: `e2e-expense-evidence-owner-${suffix}@example.com`,
+    roles: ['user'],
+    projectIds: [expenseFixture.projectId],
+  });
+  const otherUserHeaders = buildHeaders({
+    userId: `e2e-expense-evidence-other-${suffix}@example.com`,
+    roles: ['user'],
+    projectIds: [expenseFixture.projectId],
+  });
+
+  const createRes = await request.post(`${apiBase}/expenses`, {
+    headers: ownerHeaders,
+    data: {
+      projectId: expenseFixture.projectId,
+      userId: ownerHeaders['x-user-id'],
+      category: 'travel',
+      amount: 12000,
+      currency: 'JPY',
+      incurredOn: '2026-02-15',
+    },
+  });
+  await ensureOk(createRes);
+  const expense = await createRes.json();
+  const expenseId = String(expense?.id ?? '');
+  expect(expenseId).not.toBe('');
+
+  const submitRes = await request.post(
+    `${apiBase}/expenses/${encodeURIComponent(expenseId)}/submit`,
+    {
+      headers: ownerHeaders,
+      data: {},
+    },
+  );
+  expect(submitRes.status()).toBe(400);
+  const submitPayload = await submitRes.json();
+  expect(submitPayload?.error?.code).toBe('RECEIPT_REQUIRED');
+
+  const transitionsAsOwnerRes = await request.get(
+    `${apiBase}/expenses/${encodeURIComponent(expenseId)}/state-transitions?limit=20`,
+    {
+      headers: ownerHeaders,
+    },
+  );
+  await ensureOk(transitionsAsOwnerRes);
+  const transitionsAsOwner = await transitionsAsOwnerRes.json();
+  const ownerTriggers = new Set(
+    (transitionsAsOwner?.items ?? []).map((item: any) =>
+      String(item?.metadata?.trigger ?? ''),
+    ),
+  );
+  expect(ownerTriggers.has('create')).toBe(true);
+  expect(ownerTriggers.has('submit')).toBe(false);
+
+  const transitionsAsOtherRes = await request.get(
+    `${apiBase}/expenses/${encodeURIComponent(expenseId)}/state-transitions?limit=20`,
+    {
+      headers: otherUserHeaders,
+    },
+  );
+  expect(transitionsAsOtherRes.status()).toBe(403);
+});
