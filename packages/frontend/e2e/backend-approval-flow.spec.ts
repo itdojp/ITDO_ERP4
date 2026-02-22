@@ -1222,6 +1222,41 @@ test('approval flow: expense list filters (receipt/settlement/paid date) work as
   }
 });
 
+test('approval flow: expense list filters reject invalid date parameters @core', async ({
+  request,
+}) => {
+  const invalidFromRes = await request.get(`${apiBase}/expenses?from=invalid`, {
+    headers: adminHeaders,
+  });
+  expect(invalidFromRes.status()).toBe(400);
+  const invalidFrom = await invalidFromRes.json();
+  expect(invalidFrom?.error?.code).toBe('INVALID_DATE');
+
+  const invalidToRes = await request.get(`${apiBase}/expenses?to=invalid`, {
+    headers: adminHeaders,
+  });
+  expect(invalidToRes.status()).toBe(400);
+  const invalidTo = await invalidToRes.json();
+  expect(invalidTo?.error?.code).toBe('INVALID_DATE');
+
+  const invalidPaidFromRes = await request.get(
+    `${apiBase}/expenses?paidFrom=invalid`,
+    {
+      headers: adminHeaders,
+    },
+  );
+  expect(invalidPaidFromRes.status()).toBe(400);
+  const invalidPaidFrom = await invalidPaidFromRes.json();
+  expect(invalidPaidFrom?.error?.code).toBe('INVALID_DATE');
+
+  const invalidPaidToRes = await request.get(`${apiBase}/expenses?paidTo=invalid`, {
+    headers: adminHeaders,
+  });
+  expect(invalidPaidToRes.status()).toBe(400);
+  const invalidPaidTo = await invalidPaidToRes.json();
+  expect(invalidPaidTo?.error?.code).toBe('INVALID_DATE');
+});
+
 test('approval flow: expense settlement and qa checklist updates are forbidden for non-admin roles @core', async ({
   request,
 }) => {
