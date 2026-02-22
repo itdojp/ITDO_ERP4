@@ -52,6 +52,8 @@
 - [x] `approved` 以外で POST /expenses/:id/mark-paid を実行すると `INVALID_STATUS` で拒否される
 - [x] `settlementStatus=unpaid` の POST /expenses/:id/unmark-paid は `INVALID_STATUS` で拒否される
 - [x] POST /expenses/:id/unmark-paid は reasonText が空文字/空白のみだと `INVALID_REASON` で拒否される
+- [x] 一般ユーザによる PUT /expenses/:id/qa-checklist は `forbidden` で拒否される
+- [x] 一般ユーザによる POST /expenses/:id/mark-paid / unmark-paid は `forbidden` で拒否される
 
 ### 仕入/発注（PO↔VI、配賦明細）
 
