@@ -1159,7 +1159,23 @@ test('approval flow: expense list filters (receipt/settlement/paid date) work as
       (paidOnly?.items ?? []).map((item: any) => String(item?.id ?? '')),
     );
     expect(paidOnlyIds.has(paidExpenseId)).toBe(true);
+    expect(paidOnlyIds.has(attachmentOnlyExpenseId)).toBe(false);
     expect(paidOnlyIds.has(unpaidExpenseId)).toBe(false);
+
+    const unpaidOnlyRes = await request.get(
+      `${apiBase}/expenses?projectId=${encodeURIComponent(expenseFixture.projectId)}&settlementStatus=unpaid`,
+      {
+        headers: adminHeaders,
+      },
+    );
+    await ensureOk(unpaidOnlyRes);
+    const unpaidOnly = await unpaidOnlyRes.json();
+    const unpaidOnlyIds = new Set(
+      (unpaidOnly?.items ?? []).map((item: any) => String(item?.id ?? '')),
+    );
+    expect(unpaidOnlyIds.has(unpaidExpenseId)).toBe(true);
+    expect(unpaidOnlyIds.has(attachmentOnlyExpenseId)).toBe(true);
+    expect(unpaidOnlyIds.has(paidExpenseId)).toBe(false);
 
     const withReceiptOnlyRes = await request.get(
       `${apiBase}/expenses?projectId=${encodeURIComponent(expenseFixture.projectId)}&hasReceipt=true`,
@@ -1205,6 +1221,8 @@ test('approval flow: expense list filters (receipt/settlement/paid date) work as
       (paidRangeHit?.items ?? []).map((item: any) => String(item?.id ?? '')),
     );
     expect(paidRangeHitIds.has(paidExpenseId)).toBe(true);
+    expect(paidRangeHitIds.has(attachmentOnlyExpenseId)).toBe(false);
+    expect(paidRangeHitIds.has(unpaidExpenseId)).toBe(false);
 
     const paidRangeMissRes = await request.get(
       `${apiBase}/expenses?projectId=${encodeURIComponent(expenseFixture.projectId)}&paidFrom=2026-02-21&paidTo=2026-02-21`,
