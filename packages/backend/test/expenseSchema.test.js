@@ -4,6 +4,8 @@ import test from 'node:test';
 import Fastify from 'fastify';
 
 import {
+  applyExpenseHasReceiptFilter,
+  applyExpensePaidAtDateRangeFilter,
   buildExpenseCreateDraft,
   hasExpenseSubmitEvidence,
 } from '../dist/routes/expenses.js';
@@ -343,4 +345,54 @@ test('hasExpenseSubmitEvidence: false when no receipt evidence exists', () => {
     attachmentCount: 0,
   });
   assert.equal(ok, false);
+});
+
+test('applyExpenseHasReceiptFilter: hasReceipt=true adds receipt-or-attachment condition', () => {
+  const where = {};
+  applyExpenseHasReceiptFilter(where, true);
+  assert.deepEqual(where, {
+    AND: [
+      {
+        OR: [
+          {
+            AND: [{ receiptUrl: { not: null } }, { receiptUrl: { not: '' } }],
+          },
+          { attachments: { some: {} } },
+        ],
+      },
+    ],
+  });
+});
+
+test('applyExpenseHasReceiptFilter: hasReceipt=false keeps existing AND and appends none condition', () => {
+  const where = { AND: [{ status: 'approved' }] };
+  applyExpenseHasReceiptFilter(where, false);
+  assert.deepEqual(where, {
+    AND: [
+      { status: 'approved' },
+      { OR: [{ receiptUrl: null }, { receiptUrl: '' }] },
+      { attachments: { none: {} } },
+    ],
+  });
+});
+
+test('applyExpensePaidAtDateRangeFilter: applies paidFrom/paidTo with paidTo exclusive', () => {
+  const where = {};
+  applyExpensePaidAtDateRangeFilter(
+    where,
+    new Date('2026-02-01T00:00:00.000Z'),
+    new Date('2026-02-28T00:00:00.000Z'),
+  );
+  assert.deepEqual(where, {
+    paidAt: {
+      gte: new Date('2026-02-01T00:00:00.000Z'),
+      lt: new Date('2026-03-01T00:00:00.000Z'),
+    },
+  });
+});
+
+test('applyExpensePaidAtDateRangeFilter: no-op when both bounds are absent', () => {
+  const where = { status: 'approved' };
+  applyExpensePaidAtDateRangeFilter(where, null, null);
+  assert.deepEqual(where, { status: 'approved' });
 });

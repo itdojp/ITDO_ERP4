@@ -328,6 +328,48 @@ export function hasExpenseSubmitEvidence(
   return Number.isFinite(input.attachmentCount) && input.attachmentCount > 0;
 }
 
+export function applyExpenseHasReceiptFilter(
+  where: Record<string, unknown>,
+  hasReceipt: boolean,
+): void {
+  const andConditions = Array.isArray(where.AND) ? where.AND : [];
+  if (hasReceipt) {
+    where.AND = [
+      ...andConditions,
+      {
+        OR: [
+          {
+            AND: [{ receiptUrl: { not: null } }, { receiptUrl: { not: '' } }],
+          },
+          { attachments: { some: {} } },
+        ],
+      },
+    ];
+    return;
+  }
+  where.AND = [
+    ...andConditions,
+    { OR: [{ receiptUrl: null }, { receiptUrl: '' }] },
+    { attachments: { none: {} } },
+  ];
+}
+
+export function applyExpensePaidAtDateRangeFilter(
+  where: Record<string, unknown>,
+  paidFromDate: Date | null,
+  paidToDate: Date | null,
+): void {
+  if (!paidFromDate && !paidToDate) return;
+  const paidAt: { gte?: Date; lt?: Date } = {};
+  if (paidFromDate) paidAt.gte = paidFromDate;
+  if (paidToDate) {
+    const paidToExclusive = new Date(paidToDate);
+    paidToExclusive.setDate(paidToExclusive.getDate() + 1);
+    paidAt.lt = paidToExclusive;
+  }
+  where.paidAt = paidAt;
+}
+
 export async function registerExpenseRoutes(app: FastifyInstance) {
   const parseDate = (value?: string) => {
     if (!value) return null;
@@ -501,39 +543,9 @@ export async function registerExpenseRoutes(app: FastifyInstance) {
       if (settlementStatus) {
         where.settlementStatus = settlementStatus;
       }
-      if (paidFromDate || paidToDate) {
-        where.paidAt = {};
-        if (paidFromDate) where.paidAt.gte = paidFromDate;
-        if (paidToDate) {
-          const paidToExclusive = new Date(paidToDate);
-          paidToExclusive.setDate(paidToExclusive.getDate() + 1);
-          where.paidAt.lt = paidToExclusive;
-        }
-      }
+      applyExpensePaidAtDateRangeFilter(where, paidFromDate, paidToDate);
       if (hasReceiptValue !== undefined) {
-        const andConditions = Array.isArray(where.AND) ? where.AND : [];
-        if (hasReceiptValue) {
-          where.AND = [
-            ...andConditions,
-            {
-              OR: [
-                {
-                  AND: [
-                    { receiptUrl: { not: null } },
-                    { receiptUrl: { not: '' } },
-                  ],
-                },
-                { attachments: { some: {} } },
-              ],
-            },
-          ];
-        } else {
-          where.AND = [
-            ...andConditions,
-            { OR: [{ receiptUrl: null }, { receiptUrl: '' }] },
-            { attachments: { none: {} } },
-          ];
-        }
+        applyExpenseHasReceiptFilter(where, hasReceiptValue);
       }
       const items = await prisma.expense.findMany({
         where,
