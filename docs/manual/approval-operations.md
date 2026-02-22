@@ -47,6 +47,15 @@ conditions/steps の例は [approval-alerts](../requirements/approval-alerts.md)
 
 監査ログの参照方法は [ui-manual-admin](ui-manual-admin.md) を参照。
 
+## 7. 経費フローの固有ルール
+- `flowType=expense` は `pending_qa`（経理一次）を通過する構成を維持する
+- 申請時は証憑必須（`receiptUrl` または `attachments`）を前提に運用する
+- 予算超過時はエスカレーション項目（理由/影響/代替案）が必須
+- `pending_qa` 承認前に QA チェックリスト（5項目）を完了させる
+- 精算操作（`mark-paid`/`unmark-paid`）は admin/mgmt で統制し、取消理由を必須にする
+
+経費の詳細手順は [expense-workflow-guide](expense-workflow-guide.md) を参照。
+
 ## 関連画面（証跡）
 ![承認](../test-results/2026-02-05-frontend-e2e-r1/07-approvals.png)
 

@@ -516,3 +516,229 @@ test('approval flow: expense over budget requires escalation details @core', asy
     await deactivateRule();
   }
 });
+
+test('approval flow: expense attachments/comments and transition history are tracked @core', async ({
+  request,
+}) => {
+  const suffix = runId();
+  const expenseFixture = await createProjectFixture(
+    request,
+    suffix,
+    'expense-history',
+    {
+      budgetCost: 200000,
+      currency: 'JPY',
+    },
+  );
+  const requesterHeaders = buildHeaders({
+    userId: `e2e-expense-history-${suffix}@example.com`,
+    roles: ['user'],
+    projectIds: [expenseFixture.projectId],
+  });
+  const ruleRes = await request.post(`${apiBase}/approval-rules`, {
+    headers: adminHeaders,
+    data: {
+      flowType: 'expense',
+      conditions: {
+        amountMin: 25000,
+        amountMax: 35000,
+      },
+      steps: [
+        { stepOrder: 1, approverGroupId: 'mgmt' },
+        { stepOrder: 2, approverGroupId: 'exec' },
+      ],
+    },
+  });
+  await ensureOk(ruleRes);
+  const createdRule = await ruleRes.json();
+  const deactivateRule = async () => {
+    if (!createdRule?.id) return;
+    const deactivateRes = await request.patch(
+      `${apiBase}/approval-rules/${encodeURIComponent(createdRule.id)}`,
+      {
+        headers: adminHeaders,
+        data: { isActive: false },
+      },
+    );
+    await ensureOk(deactivateRes);
+  };
+
+  try {
+    const createRes = await request.post(`${apiBase}/expenses`, {
+      headers: requesterHeaders,
+      data: {
+        projectId: expenseFixture.projectId,
+        userId: requesterHeaders['x-user-id'],
+        category: 'travel',
+        amount: 30000,
+        currency: 'JPY',
+        incurredOn: '2026-02-12',
+        lines: [
+          {
+            lineNo: 1,
+            expenseDate: '2026-02-11',
+            category: 'travel',
+            description: `taxi ${suffix}`,
+            amount: 18000,
+            taxRate: 10,
+            taxAmount: 1800,
+            currency: 'JPY',
+          },
+          {
+            lineNo: 2,
+            expenseDate: '2026-02-12',
+            category: 'meal',
+            description: `meal ${suffix}`,
+            amount: 12000,
+            taxRate: 10,
+            taxAmount: 1200,
+            currency: 'JPY',
+          },
+        ],
+        attachments: [
+          {
+            fileUrl: `https://example.com/e2e/expense-history-${suffix}.pdf`,
+            fileName: `expense-history-${suffix}.pdf`,
+            contentType: 'application/pdf',
+          },
+        ],
+      },
+    });
+    await ensureOk(createRes);
+    const expense = await createRes.json();
+    const expenseId = String(expense?.id ?? '');
+    expect(expenseId).not.toBe('');
+
+    const detailRes = await request.get(
+      `${apiBase}/expenses/${encodeURIComponent(expenseId)}`,
+      {
+        headers: requesterHeaders,
+      },
+    );
+    await ensureOk(detailRes);
+    const detail = await detailRes.json();
+    expect(String(detail?.receiptUrl ?? '')).toBe('');
+    expect(detail?.lines).toHaveLength(2);
+    expect(detail?.attachments).toHaveLength(1);
+
+    const commentRes = await request.post(
+      `${apiBase}/expenses/${encodeURIComponent(expenseId)}/comments`,
+      {
+        headers: requesterHeaders,
+        data: {
+          kind: 'review',
+          body: `e2e expense comment ${suffix}`,
+        },
+      },
+    );
+    await ensureOk(commentRes);
+
+    // Submit without receiptUrl and verify attachment evidence is accepted.
+    const approval = await submitAndFindApprovalInstance({
+      request,
+      apiBase,
+      headers: requesterHeaders,
+      flowType: 'expense',
+      projectId: expenseFixture.projectId,
+      targetTable: 'expenses',
+      targetId: expenseId,
+      submitData: {},
+    });
+    expect(approval.status).toBe('pending_qa');
+    await deactivateRule();
+
+    const checklistRes = await request.put(
+      `${apiBase}/expenses/${encodeURIComponent(expenseId)}/qa-checklist`,
+      {
+        headers: adminHeaders,
+        data: {
+          amountVerified: true,
+          receiptVerified: true,
+          journalPrepared: true,
+          projectLinked: true,
+          budgetChecked: true,
+          notes: `e2e qa checklist ${suffix}`,
+        },
+      },
+    );
+    await ensureOk(checklistRes);
+
+    const qaApproveRes = await request.post(
+      `${apiBase}/approval-instances/${encodeURIComponent(approval.id)}/act`,
+      {
+        headers: adminHeaders,
+        data: { action: 'approve', reason: `e2e qa approve ${suffix}` },
+      },
+    );
+    await ensureOk(qaApproveRes);
+    const qaApproved = await qaApproveRes.json();
+    expect(qaApproved?.status).toBe('pending_exec');
+
+    const execApproveRes = await request.post(
+      `${apiBase}/approval-instances/${encodeURIComponent(approval.id)}/act`,
+      {
+        headers: adminHeaders,
+        data: { action: 'approve', reason: `e2e exec approve ${suffix}` },
+      },
+    );
+    await ensureOk(execApproveRes);
+    const execApproved = await execApproveRes.json();
+    expect(execApproved?.status).toBe('approved');
+
+    const markPaidRes = await request.post(
+      `${apiBase}/expenses/${encodeURIComponent(expenseId)}/mark-paid`,
+      {
+        headers: adminHeaders,
+        data: { reasonText: `e2e mark paid ${suffix}` },
+      },
+    );
+    await ensureOk(markPaidRes);
+    const paid = await markPaidRes.json();
+    expect(paid?.settlementStatus).toBe('paid');
+
+    const unmarkPaidRes = await request.post(
+      `${apiBase}/expenses/${encodeURIComponent(expenseId)}/unmark-paid`,
+      {
+        headers: adminHeaders,
+        data: { reasonText: `e2e unmark paid ${suffix}` },
+      },
+    );
+    await ensureOk(unmarkPaidRes);
+    const unpaid = await unmarkPaidRes.json();
+    expect(unpaid?.settlementStatus).toBe('unpaid');
+
+    const transitionsRes = await request.get(
+      `${apiBase}/expenses/${encodeURIComponent(expenseId)}/state-transitions?limit=20`,
+      {
+        headers: adminHeaders,
+      },
+    );
+    await ensureOk(transitionsRes);
+    const transitions = await transitionsRes.json();
+    const triggers = new Set(
+      (transitions?.items ?? []).map((item: any) =>
+        String(item?.metadata?.trigger ?? ''),
+      ),
+    );
+    expect(triggers.has('create')).toBe(true);
+    expect(triggers.has('submit')).toBe(true);
+    expect(triggers.has('mark_paid')).toBe(true);
+    expect(triggers.has('unmark_paid')).toBe(true);
+
+    const updatedDetailRes = await request.get(
+      `${apiBase}/expenses/${encodeURIComponent(expenseId)}`,
+      {
+        headers: adminHeaders,
+      },
+    );
+    await ensureOk(updatedDetailRes);
+    const updatedDetail = await updatedDetailRes.json();
+    expect(
+      (updatedDetail?.comments ?? []).some(
+        (item: any) => String(item?.body ?? '').indexOf(suffix) >= 0,
+      ),
+    ).toBe(true);
+  } finally {
+    await deactivateRule();
+  }
+});

@@ -12,6 +12,7 @@
 - UI要件（見積/請求/発注/仕入）: [estimate-invoice-po-ui](../requirements/estimate-invoice-po-ui.md)
 - 承認/アラート（要件）: [approval-alerts](../requirements/approval-alerts.md)
 - PDF/メール（要件）: [pdf-email](../requirements/pdf-email.md)
+- 経費ワークフロー運用: [expense-workflow-guide](expense-workflow-guide.md)
 - UI 操作（管理者）: [ui-manual-admin](ui-manual-admin.md)
 
 ## ドキュメント種別
