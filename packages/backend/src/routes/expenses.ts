@@ -518,7 +518,10 @@ export async function registerExpenseRoutes(app: FastifyInstance) {
             {
               OR: [
                 {
-                  AND: [{ receiptUrl: { not: null } }, { receiptUrl: { not: '' } }],
+                  AND: [
+                    { receiptUrl: { not: null } },
+                    { receiptUrl: { not: '' } },
+                  ],
                 },
                 { attachments: { some: {} } },
               ],
