@@ -71,6 +71,8 @@
 - 支払取消: `POST /expenses/:id/unmark-paid`
   - `admin/mgmt` のみ
   - `reasonText` 必須
+- QA チェックリスト更新: `PUT /expenses/:id/qa-checklist`
+  - `admin/mgmt` のみ
 - 一覧確認（運用向け）:
   - `GET /expenses` で `settlementStatus` / `hasReceipt` / `paidFrom` / `paidTo` を使い、未精算・証憑不足・支払期間を横断確認する
   - `hasReceipt=true` は `receiptUrl` だけでなく添付 (`attachments`) ありの申請も含む

@@ -54,6 +54,8 @@
 - [x] POST /expenses/:id/unmark-paid は reasonText が空文字/空白のみだと `INVALID_REASON` で拒否される
 - [x] GET /expenses?projectId=... の `hasReceipt=true/false` で証憑有無（`receiptUrl` または添付）を正しく絞り込める
 - [x] GET /expenses?projectId=... の `settlementStatus=paid` と `paidFrom/paidTo` が支払日で正しく絞り込まれる
+- [x] 一般ユーザによる PUT /expenses/:id/qa-checklist は `forbidden` で拒否される
+- [x] 一般ユーザによる POST /expenses/:id/mark-paid / unmark-paid は `forbidden` で拒否される
 
 ### 仕入/発注（PO↔VI、配賦明細）
 
