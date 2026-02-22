@@ -984,3 +984,70 @@ test('approval flow: expense settlement guards reject invalid transitions and mi
     await deactivateRule();
   }
 });
+
+test('approval flow: expense settlement and qa checklist updates are forbidden for non-admin roles @core', async ({
+  request,
+}) => {
+  const suffix = runId();
+  const expenseFixture = await createProjectFixture(
+    request,
+    suffix,
+    'expense-settlement-rbac',
+  );
+  const userHeaders = buildHeaders({
+    userId: `e2e-expense-settlement-rbac-${suffix}@example.com`,
+    roles: ['user'],
+    projectIds: [expenseFixture.projectId],
+  });
+  const createRes = await request.post(`${apiBase}/expenses`, {
+    headers: userHeaders,
+    data: {
+      projectId: expenseFixture.projectId,
+      userId: userHeaders['x-user-id'],
+      category: 'travel',
+      amount: 15000,
+      currency: 'JPY',
+      incurredOn: '2026-02-17',
+      receiptUrl: `https://example.com/e2e/settlement-rbac-${suffix}.pdf`,
+    },
+  });
+  await ensureOk(createRes);
+  const expense = await createRes.json();
+  const expenseId = String(expense?.id ?? '');
+  expect(expenseId).not.toBe('');
+
+  const qaChecklistForbiddenRes = await request.put(
+    `${apiBase}/expenses/${encodeURIComponent(expenseId)}/qa-checklist`,
+    {
+      headers: userHeaders,
+      data: {
+        amountVerified: true,
+      },
+    },
+  );
+  expect(qaChecklistForbiddenRes.status()).toBe(403);
+  const qaChecklistForbidden = await qaChecklistForbiddenRes.json();
+  expect(qaChecklistForbidden?.error?.code).toBe('forbidden');
+
+  const markPaidForbiddenRes = await request.post(
+    `${apiBase}/expenses/${encodeURIComponent(expenseId)}/mark-paid`,
+    {
+      headers: userHeaders,
+      data: { reasonText: `forbidden mark paid ${suffix}` },
+    },
+  );
+  expect(markPaidForbiddenRes.status()).toBe(403);
+  const markPaidForbidden = await markPaidForbiddenRes.json();
+  expect(markPaidForbidden?.error?.code).toBe('forbidden');
+
+  const unmarkPaidForbiddenRes = await request.post(
+    `${apiBase}/expenses/${encodeURIComponent(expenseId)}/unmark-paid`,
+    {
+      headers: userHeaders,
+      data: { reasonText: `forbidden unmark paid ${suffix}` },
+    },
+  );
+  expect(unmarkPaidForbiddenRes.status()).toBe(403);
+  const unmarkPaidForbidden = await unmarkPaidForbiddenRes.json();
+  expect(unmarkPaidForbidden?.error?.code).toBe('forbidden');
+});

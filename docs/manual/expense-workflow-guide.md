@@ -71,6 +71,8 @@
 - 支払取消: `POST /expenses/:id/unmark-paid`
   - `admin/mgmt` のみ
   - `reasonText` 必須
+- QA チェックリスト更新: `PUT /expenses/:id/qa-checklist`
+  - `admin/mgmt` のみ
 
 ## 監査・追跡
 
