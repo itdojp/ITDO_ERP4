@@ -48,6 +48,7 @@
 - `action=evidence_snapshot_created`
 - `action=evidence_snapshot_viewed`
 - `action=evidence_snapshot_regenerated`
+- `action=evidence_snapshot_diff_viewed`
 
 ## API案
 
@@ -75,6 +76,17 @@
 
 - 概要: 再生成履歴（version一覧）
 - RBAC: `admin/mgmt`（MVP）
+
+### GET /approval-instances/:id/evidence-snapshot/diff?fromVersion=...&toVersion=...
+
+- 概要: 2つの Snapshot version の `items` 差分（トップレベルkey）を返却
+- RBAC: 承認閲覧可能ユーザ
+- query:
+  - `fromVersion` / `toVersion`（両方省略時は最新2件を比較）
+- 出力:
+  - `fromSnapshot` / `toSnapshot`
+  - `changedKeys` / `changeCount` / `changes[]`
+- 監査ログ: `action=evidence_snapshot_diff_viewed`
 
 ### GET /approval-instances/:id/evidence-pack/export?format=json|pdf&version=...
 

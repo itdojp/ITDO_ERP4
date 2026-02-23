@@ -1039,6 +1039,16 @@ export const evidenceSnapshotHistoryQuerySchema = {
   ),
 };
 
+export const evidenceSnapshotDiffQuerySchema = {
+  querystring: Type.Object(
+    {
+      fromVersion: Type.Optional(Type.Integer({ minimum: 1 })),
+      toVersion: Type.Optional(Type.Integer({ minimum: 1 })),
+    },
+    { additionalProperties: false },
+  ),
+};
+
 export const evidencePackExportQuerySchema = {
   querystring: Type.Object(
     {

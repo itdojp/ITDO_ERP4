@@ -7,6 +7,7 @@ import {
   evidencePackArchiveBodySchema,
   evidencePackExportQuerySchema,
   evidenceSnapshotCreateSchema,
+  evidenceSnapshotDiffQuerySchema,
   evidenceSnapshotHistoryQuerySchema,
 } from '../dist/routes/validators.js';
 
@@ -42,6 +43,32 @@ test('evidenceSnapshotHistoryQuerySchema: rejects out-of-range limit', () => {
   });
   assert.equal(low, false);
   assert.equal(high, false);
+});
+
+test('evidenceSnapshotDiffQuerySchema: accepts empty query for latest diff', () => {
+  const ok = Value.Check(evidenceSnapshotDiffQuerySchema.querystring, {});
+  assert.equal(ok, true);
+});
+
+test('evidenceSnapshotDiffQuerySchema: accepts explicit version pair', () => {
+  const ok = Value.Check(evidenceSnapshotDiffQuerySchema.querystring, {
+    fromVersion: 1,
+    toVersion: 2,
+  });
+  assert.equal(ok, true);
+});
+
+test('evidenceSnapshotDiffQuerySchema: rejects invalid versions', () => {
+  const low = Value.Check(evidenceSnapshotDiffQuerySchema.querystring, {
+    fromVersion: 0,
+    toVersion: 1,
+  });
+  const invalid = Value.Check(evidenceSnapshotDiffQuerySchema.querystring, {
+    fromVersion: 1.1,
+    toVersion: 2,
+  });
+  assert.equal(low, false);
+  assert.equal(invalid, false);
 });
 
 test('evidencePackExportQuerySchema: accepts json format with version', () => {
