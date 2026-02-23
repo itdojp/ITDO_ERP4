@@ -37,14 +37,14 @@ function extractErrorCode(payload) {
   return '';
 }
 
-test('POST /jobs/alerts/run returns 403 for non-admin role', async () => {
+async function assertForbiddenForUserRole(url) {
   process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
   process.env.AUTH_MODE = 'header';
   const server = await buildServer({ logger: false });
   try {
     const res = await server.inject({
       method: 'POST',
-      url: '/jobs/alerts/run',
+      url,
       headers: {
         'x-user-id': 'user-1',
         'x-roles': 'user',
@@ -56,30 +56,9 @@ test('POST /jobs/alerts/run returns 403 for non-admin role', async () => {
   } finally {
     await server.close();
   }
-});
+}
 
-test('POST /jobs/approval-escalations/run returns 403 for non-admin role', async () => {
-  process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
-  process.env.AUTH_MODE = 'header';
-  const server = await buildServer({ logger: false });
-  try {
-    const res = await server.inject({
-      method: 'POST',
-      url: '/jobs/approval-escalations/run',
-      headers: {
-        'x-user-id': 'user-1',
-        'x-roles': 'user',
-      },
-    });
-    assert.equal(res.statusCode, 403, res.body);
-    const body = JSON.parse(res.body);
-    assert.equal(String(extractErrorCode(body)), 'forbidden');
-  } finally {
-    await server.close();
-  }
-});
-
-test('POST /jobs/alerts/run and /jobs/approval-escalations/run return 200 for admin role', async () => {
+async function assertAllowedForRole(role) {
   process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
   process.env.AUTH_MODE = 'header';
   await withPrismaStubs(
@@ -93,8 +72,8 @@ test('POST /jobs/alerts/run and /jobs/approval-escalations/run return 200 for ad
           method: 'POST',
           url: '/jobs/alerts/run',
           headers: {
-            'x-user-id': 'admin-1',
-            'x-roles': 'admin',
+            'x-user-id': `${role}-1`,
+            'x-roles': role,
           },
         });
         assert.equal(alertJobRes.statusCode, 200, alertJobRes.body);
@@ -104,8 +83,8 @@ test('POST /jobs/alerts/run and /jobs/approval-escalations/run return 200 for ad
           method: 'POST',
           url: '/jobs/approval-escalations/run',
           headers: {
-            'x-user-id': 'admin-1',
-            'x-roles': 'admin',
+            'x-user-id': `${role}-1`,
+            'x-roles': role,
           },
         });
         assert.equal(escalationJobRes.statusCode, 200, escalationJobRes.body);
@@ -115,4 +94,20 @@ test('POST /jobs/alerts/run and /jobs/approval-escalations/run return 200 for ad
       }
     },
   );
+}
+
+test('POST /jobs/alerts/run returns 403 for non-admin role', async () => {
+  await assertForbiddenForUserRole('/jobs/alerts/run');
+});
+
+test('POST /jobs/approval-escalations/run returns 403 for non-admin role', async () => {
+  await assertForbiddenForUserRole('/jobs/approval-escalations/run');
+});
+
+test('POST /jobs/alerts/run and /jobs/approval-escalations/run return 200 for admin role', async () => {
+  await assertAllowedForRole('admin');
+});
+
+test('POST /jobs/alerts/run and /jobs/approval-escalations/run return 200 for mgmt role', async () => {
+  await assertAllowedForRole('mgmt');
 });
