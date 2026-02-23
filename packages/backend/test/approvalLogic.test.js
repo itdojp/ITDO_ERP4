@@ -38,6 +38,36 @@ test('matchApprovalSteps: recurring can skip exec under threshold', () => {
   );
 });
 
+test('matchApprovalSteps: threshold boundaries around skipUnder/execThreshold', () => {
+  const conditions = { skipUnder: 50000, execThreshold: 100000 };
+  assert.deepEqual(
+    matchApprovalSteps('invoice', { totalAmount: 49999 }, conditions),
+    [{ approverGroupId: 'mgmt', stepOrder: 1 }],
+  );
+  assert.deepEqual(
+    matchApprovalSteps('invoice', { totalAmount: 50000 }, conditions),
+    [{ approverGroupId: 'mgmt', stepOrder: 1 }],
+  );
+  assert.deepEqual(
+    matchApprovalSteps('invoice', { totalAmount: 99999 }, conditions),
+    [{ approverGroupId: 'mgmt', stepOrder: 1 }],
+  );
+  assert.deepEqual(
+    matchApprovalSteps('invoice', { totalAmount: 100000 }, conditions),
+    [
+      { approverGroupId: 'mgmt', stepOrder: 1 },
+      { approverGroupId: 'exec', stepOrder: 2 },
+    ],
+  );
+  assert.deepEqual(
+    matchApprovalSteps('invoice', { totalAmount: 100001 }, conditions),
+    [
+      { approverGroupId: 'mgmt', stepOrder: 1 },
+      { approverGroupId: 'exec', stepOrder: 2 },
+    ],
+  );
+});
+
 test('normalizeRuleSteps: explicit order is preserved', () => {
   assert.deepEqual(
     normalizeRuleSteps([

@@ -101,6 +101,158 @@ test('createApprovalFor: selects the first matching rule from ordered candidates
   assert.equal(createdArgs.data.ruleId, 'r2');
 });
 
+test('createApprovalFor: prioritizes the top-most matching rule when multiple rules match', async () => {
+  let createdArgs;
+  const fakeClient = {
+    approvalRule: {
+      findMany: async () => [
+        {
+          id: 'r-new',
+          flowType: 'invoice',
+          conditions: { amountMin: 1000 },
+          steps: [{ approverGroupId: 'mgmt', stepOrder: 1 }],
+        },
+        {
+          id: 'r-old',
+          flowType: 'invoice',
+          conditions: { amountMin: 500 },
+          steps: [{ approverGroupId: 'exec', stepOrder: 1 }],
+        },
+      ],
+    },
+    approvalInstance: {
+      findFirst: async () => null,
+      create: async (args) => {
+        createdArgs = args;
+        return {
+          id: 'a-priority',
+          status: 'pending_qa',
+          currentStep: 1,
+          steps: [],
+        };
+      },
+    },
+  };
+
+  await createApprovalFor(
+    'invoice',
+    'invoices',
+    'inv-priority',
+    { amount: 2000 },
+    { client: fakeClient, createdBy: 'u1' },
+  );
+
+  assert.ok(createdArgs);
+  assert.equal(createdArgs.data.ruleId, 'r-new');
+});
+
+test('createApprovalFor: amount boundary (+/-1) switches matched rules', async () => {
+  const createdRuleIds = [];
+  const fakeClient = {
+    approvalRule: {
+      findMany: async () => [
+        {
+          id: 'r-boundary',
+          flowType: 'invoice',
+          conditions: { amountMax: 100000 },
+          steps: [{ approverGroupId: 'mgmt', stepOrder: 1 }],
+        },
+        {
+          id: 'r-fallback',
+          flowType: 'invoice',
+          conditions: {},
+          steps: [{ approverGroupId: 'exec', stepOrder: 1 }],
+        },
+      ],
+    },
+    approvalInstance: {
+      findFirst: async () => null,
+      create: async (args) => {
+        createdRuleIds.push(String(args?.data?.ruleId ?? ''));
+        return {
+          id: `a-boundary-${createdRuleIds.length}`,
+          status: 'pending_qa',
+          currentStep: 1,
+          steps: [],
+        };
+      },
+    },
+  };
+
+  await createApprovalFor(
+    'invoice',
+    'invoices',
+    'inv-amount-on-boundary',
+    { amount: 100000 },
+    { client: fakeClient, createdBy: 'u1' },
+  );
+  await createApprovalFor(
+    'invoice',
+    'invoices',
+    'inv-amount-over-boundary',
+    { amount: 100001 },
+    { client: fakeClient, createdBy: 'u1' },
+  );
+
+  assert.deepEqual(createdRuleIds, ['r-boundary', 'r-fallback']);
+});
+
+test('createApprovalFor: stage order derives currentStep/status from the smallest stepOrder', async () => {
+  let createdArgs;
+  const fakeClient = {
+    approvalRule: {
+      findMany: async () => [
+        {
+          id: 'r-stage-order',
+          flowType: 'invoice',
+          conditions: {},
+          steps: {
+            stages: [
+              {
+                order: 3,
+                completion: { mode: 'any' },
+                approvers: [{ type: 'group', id: 'exec' }],
+              },
+              {
+                order: 2,
+                approvers: [{ type: 'group', id: 'mgmt' }],
+              },
+            ],
+          },
+        },
+      ],
+    },
+    approvalInstance: {
+      findFirst: async () => null,
+      create: async (args) => {
+        createdArgs = args;
+        return {
+          id: 'a-stage-order',
+          status: String(args?.data?.status ?? ''),
+          currentStep: Number(args?.data?.currentStep ?? 0),
+          steps: [],
+        };
+      },
+    },
+  };
+
+  await createApprovalFor(
+    'invoice',
+    'invoices',
+    'inv-stage-order',
+    { amount: 90000 },
+    { client: fakeClient, createdBy: 'u1' },
+  );
+
+  assert.ok(createdArgs);
+  assert.equal(createdArgs.data.currentStep, 2);
+  assert.equal(createdArgs.data.status, 'pending_qa');
+  assert.deepEqual(createdArgs.data.stagePolicy, {
+    2: { mode: 'all' },
+    3: { mode: 'any' },
+  });
+});
+
 test('createApprovalFor: blocks expense rules that skip qa stage before exec', async () => {
   let createCalled = false;
   const fakeClient = {

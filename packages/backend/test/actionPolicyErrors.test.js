@@ -36,7 +36,7 @@ test('resolveActionPolicyDeniedCode: reason_required keeps ACTION_POLICY_DENIED'
   assert.equal(code, 'ACTION_POLICY_DENIED');
 });
 
-test('resolveActionPolicyDeniedCode: fallback-allowed result keeps ACTION_POLICY_DENIED', () => {
+test('resolveActionPolicyDeniedCode: defensive fallback keeps ACTION_POLICY_DENIED when unexpectedly allowed', () => {
   const code = resolveActionPolicyDeniedCode({
     allowed: true,
     policyApplied: false,
