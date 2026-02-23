@@ -225,11 +225,10 @@ export function evaluateDelegatedScope(
   return { allowed: false, reason: 'scope_denied' };
 }
 
-function enforceDelegatedScope(req: any, reply: any): boolean {
+function enforceDelegatedScope(req: any, reply: any): any | null {
   const decision = evaluateDelegatedScope(req.user, req.method);
-  if (decision.allowed) return true;
-  respondForbidden(req, reply, decision.reason);
-  return false;
+  if (decision.allowed) return null;
+  return respondForbidden(req, reply, decision.reason);
 }
 
 async function resolveProjectIdsFromDb(userId: string) {
@@ -600,8 +599,9 @@ async function authPlugin(fastify: any) {
     }
     try {
       req.user = await authenticateJwt(token);
-      if (!enforceDelegatedScope(req, reply)) return;
       if (!(await validateAndEnrichUserContext(req, reply))) return;
+      const scopeDenied = enforceDelegatedScope(req, reply);
+      if (scopeDenied) return scopeDenied;
       await ensureProjectIds(req);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'invalid_token';

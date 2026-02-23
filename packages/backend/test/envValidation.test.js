@@ -64,6 +64,7 @@ function runDelegatedJwtRequest({
   payload = {},
   method = 'GET',
   url = '/me',
+  stubDb = false,
 }) {
   const script = `
     import { SignJWT, exportSPKI, generateKeyPair } from 'jose';
@@ -80,6 +81,12 @@ function runDelegatedJwtRequest({
     const publicKeyPem = await exportSPKI(publicKey);
     process.env.AUTH_MODE = process.env.AUTH_MODE || 'jwt';
     process.env.JWT_PUBLIC_KEY = process.env.JWT_PUBLIC_KEY || publicKeyPem;
+
+    if (process.env.TEST_STUB_DB === '1') {
+      const { prisma } = await import('./dist/services/db.js');
+      prisma.userAccount.findUnique = async () => null;
+      prisma.projectMember.findMany = async () => [];
+    }
 
     const { buildServer } = await import('./dist/server.js');
 
@@ -111,6 +118,7 @@ function runDelegatedJwtRequest({
     TEST_JWT_PAYLOAD: JSON.stringify(payload),
     TEST_METHOD: method,
     TEST_URL: url,
+    TEST_STUB_DB: stubDb ? '1' : '0',
   });
 }
 
@@ -243,4 +251,25 @@ test('auth plugin: jwt with revoked jti is rejected', () => {
   assert.equal(result.status, 0);
   const payload = JSON.parse(result.stdout);
   assert.equal(payload.statusCode, 401);
+});
+
+test('auth plugin: delegated read-only scope returns 403 scope_denied for write method', () => {
+  const result = runDelegatedJwtRequest({
+    payload: {
+      sub: 'principal-user',
+      act: { sub: 'agent-bot' },
+      scp: ['read-only'],
+      roles: ['user'],
+      jti: 'tok-allow',
+    },
+    method: 'POST',
+    url: '/me',
+    stubDb: true,
+  });
+
+  assert.equal(result.status, 0);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.statusCode, 403);
+  const body = JSON.parse(payload.body);
+  assert.equal(body.error?.code, 'scope_denied');
 });
