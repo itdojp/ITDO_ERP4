@@ -30,6 +30,7 @@ UIは、決裁・例外処理・監査確認のための導線に集中させる
 ## 4. オープンクエスチョンの扱い（確定）
 
 - 委任認証は専用Issueで設計確定する（#1208）。
+- 委任認証の確定仕様: `docs/requirements/agent-delegated-auth.md`
 - AgentRun/DecisionRequest は比較検討Issueで方式決定する（#1209）。
 - ActionPolicy必須化は高リスクAPIから段階導入する（#1206）。
 - 360ビューの最小セットは Project 360 / Billing 360 とする（#1205）。

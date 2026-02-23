@@ -13,6 +13,12 @@ export type AuditContext = {
   source?: string;
   reasonCode?: string;
   reasonText?: string;
+  principalUserId?: string;
+  actorUserId?: string;
+  authScopes?: string[];
+  authTokenId?: string;
+  authAudience?: string[];
+  authExpiresAt?: number;
 };
 
 type AuditInput = AuditContext & {
@@ -39,10 +45,57 @@ function resolveActorRole(user?: UserContext): string | undefined {
   return roles.length ? roles[0] : undefined;
 }
 
+function normalizeStringArray(
+  value: string[] | undefined,
+): Prisma.InputJsonValue | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const normalized = value.map((item) => item.trim()).filter(Boolean);
+  if (!normalized.length) return undefined;
+  return normalized as Prisma.InputJsonValue;
+}
+
+export function buildAuditMetadata(
+  entry: AuditInput,
+): Prisma.InputJsonValue | undefined {
+  const metadata: Record<string, Prisma.InputJsonValue> =
+    entry.metadata &&
+    typeof entry.metadata === 'object' &&
+    !Array.isArray(entry.metadata)
+      ? { ...(entry.metadata as Record<string, Prisma.InputJsonValue>) }
+      : {};
+
+  if (entry.metadata !== undefined && Object.keys(metadata).length === 0) {
+    metadata._raw = entry.metadata;
+  }
+
+  const auth: Record<string, Prisma.InputJsonValue> = {};
+  if (entry.principalUserId) auth.principalUserId = entry.principalUserId;
+  if (entry.actorUserId) auth.actorUserId = entry.actorUserId;
+  const normalizedScopes = normalizeStringArray(entry.authScopes);
+  if (normalizedScopes) auth.scopes = normalizedScopes;
+  if (entry.authTokenId) auth.tokenId = entry.authTokenId;
+  const normalizedAudience = normalizeStringArray(entry.authAudience);
+  if (normalizedAudience) auth.audience = normalizedAudience;
+  if (typeof entry.authExpiresAt === 'number')
+    auth.expiresAt = entry.authExpiresAt;
+  if (Object.keys(auth).length > 0) metadata._auth = auth;
+
+  const requestInfo: Record<string, Prisma.InputJsonValue> = {};
+  if (entry.requestId) requestInfo.id = entry.requestId;
+  if (entry.source) requestInfo.source = entry.source;
+  if (Object.keys(requestInfo).length > 0) metadata._request = requestInfo;
+
+  return Object.keys(metadata).length > 0
+    ? (metadata as Prisma.InputJsonObject)
+    : undefined;
+}
+
 export function auditContextFromRequest(
   req: FastifyRequest,
   overrides: Partial<AuditContext> = {},
 ): AuditContext {
+  const principalUserId = req.user?.auth?.principalUserId ?? req.user?.userId;
+  const actorUserId = req.user?.auth?.actorUserId ?? req.user?.userId;
   return {
     userId: req.user?.userId,
     // Use primary role/group for filtering; full list is available in auth context.
@@ -51,7 +104,13 @@ export function auditContextFromRequest(
     requestId: resolveRequestId(req),
     ipAddress: req.ip,
     userAgent: resolveUserAgent(req),
-    source: 'api',
+    source: req.user?.auth?.delegated ? 'agent' : 'api',
+    principalUserId,
+    actorUserId,
+    authScopes: req.user?.auth?.scopes ?? undefined,
+    authTokenId: req.user?.auth?.tokenId,
+    authAudience: req.user?.auth?.audience ?? undefined,
+    authExpiresAt: req.user?.auth?.expiresAt,
     ...overrides,
   };
 }
@@ -72,7 +131,7 @@ export async function logAudit(entry: AuditInput) {
         reasonText: entry.reasonText,
         targetTable: entry.targetTable,
         targetId: entry.targetId,
-        metadata: entry.metadata ?? undefined,
+        metadata: buildAuditMetadata(entry),
       },
     });
   } catch (err) {

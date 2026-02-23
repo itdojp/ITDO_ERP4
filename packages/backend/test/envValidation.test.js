@@ -59,6 +59,69 @@ function runCurrentUserRequest(overrides = {}, headers = {}) {
   });
 }
 
+function runDelegatedJwtRequest({
+  overrides = {},
+  payload = {},
+  method = 'GET',
+  url = '/me',
+  stubDb = false,
+}) {
+  const script = `
+    import { SignJWT, exportSPKI, generateKeyPair } from 'jose';
+
+    const claims = process.env.TEST_JWT_PAYLOAD
+      ? JSON.parse(process.env.TEST_JWT_PAYLOAD)
+      : {};
+    const method = process.env.TEST_METHOD || 'GET';
+    const url = process.env.TEST_URL || '/me';
+    const issuer = process.env.JWT_ISSUER || 'test-issuer';
+    const audience = process.env.JWT_AUDIENCE || 'test-audience';
+
+    const { privateKey, publicKey } = await generateKeyPair('RS256');
+    const publicKeyPem = await exportSPKI(publicKey);
+    process.env.AUTH_MODE = process.env.AUTH_MODE || 'jwt';
+    process.env.JWT_PUBLIC_KEY = process.env.JWT_PUBLIC_KEY || publicKeyPem;
+
+    if (process.env.TEST_STUB_DB === '1') {
+      const { prisma } = await import('./dist/services/db.js');
+      prisma.userAccount.findUnique = async () => null;
+      prisma.projectMember.findMany = async () => [];
+    }
+
+    const { buildServer } = await import('./dist/server.js');
+
+    const token = await new SignJWT(claims)
+      .setProtectedHeader({ alg: 'RS256' })
+      .setIssuer(issuer)
+      .setAudience(audience)
+      .setIssuedAt()
+      .setExpirationTime('10m')
+      .sign(privateKey);
+
+    const server = await buildServer({ logger: false });
+    try {
+      const res = await server.inject({
+        method,
+        url,
+        headers: { authorization: 'Bearer ' + token },
+      });
+      process.stdout.write(JSON.stringify({ statusCode: res.statusCode, body: res.body }));
+    } finally {
+      await server.close();
+    }
+  `;
+  return runNodeScript(script, {
+    ...overrides,
+    AUTH_MODE: 'jwt',
+    JWT_ISSUER: overrides.JWT_ISSUER || 'test-issuer',
+    JWT_AUDIENCE: overrides.JWT_AUDIENCE || 'test-audience',
+    TEST_JWT_PAYLOAD: JSON.stringify(payload),
+    TEST_METHOD: method,
+    TEST_URL: url,
+    TEST_STUB_DB: stubDb ? '1' : '0',
+  });
+}
+
 test('envValidation: production + AUTH_MODE=header is rejected by default', () => {
   const result = runEnvValidation({
     NODE_ENV: 'production',
@@ -170,4 +233,43 @@ test('auth plugin: production + AUTH_MODE=hybrid allows header fallback with exp
   assert.equal(payload.statusCode, 200);
   const body = JSON.parse(payload.body);
   assert.equal(body.user?.userId, 'header-user');
+});
+
+test('auth plugin: jwt with revoked jti is rejected', () => {
+  const result = runDelegatedJwtRequest({
+    overrides: {
+      JWT_REVOKED_JTI: 'tok-revoked',
+    },
+    payload: {
+      sub: 'principal-user',
+      scp: ['read-only'],
+      roles: ['user'],
+      jti: 'tok-revoked',
+    },
+  });
+
+  assert.equal(result.status, 0);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.statusCode, 401);
+});
+
+test('auth plugin: delegated read-only scope returns 403 scope_denied for write method', () => {
+  const result = runDelegatedJwtRequest({
+    payload: {
+      sub: 'principal-user',
+      act: { sub: 'agent-bot' },
+      scp: ['read-only'],
+      roles: ['user'],
+      jti: 'tok-allow',
+    },
+    method: 'POST',
+    url: '/me',
+    stubDb: true,
+  });
+
+  assert.equal(result.status, 0);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.statusCode, 403);
+  const body = JSON.parse(payload.body);
+  assert.equal(body.error?.code, 'scope_denied');
 });

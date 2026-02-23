@@ -14,6 +14,22 @@ export type UserContext = {
   // Canonical group identifier (GroupAccount.id). Keep groupIds (displayName)
   // during the migration period.
   groupAccountIds?: string[];
+  auth?: DelegatedAuthContext;
+};
+
+export type DelegatedAuthContext = {
+  principalUserId: string;
+  actorUserId: string;
+  scopes: string[];
+  tokenId?: string;
+  audience?: string[];
+  expiresAt?: number;
+  delegated: boolean;
+};
+
+export type DelegatedScopeDecision = {
+  allowed: boolean;
+  reason?: 'scope_denied';
 };
 
 declare module 'fastify' {
@@ -47,11 +63,47 @@ const JWT_ROLE_CLAIM = process.env.JWT_ROLE_CLAIM || 'roles';
 const JWT_GROUP_CLAIM = process.env.JWT_GROUP_CLAIM || 'group_ids';
 const JWT_PROJECT_CLAIM = process.env.JWT_PROJECT_CLAIM || 'project_ids';
 const JWT_ORG_CLAIM = process.env.JWT_ORG_CLAIM || 'org_id';
+const JWT_SCOPE_CLAIM = process.env.JWT_SCOPE_CLAIM || 'scp';
+const JWT_ACTOR_SUB_CLAIM = process.env.JWT_ACTOR_SUB_CLAIM || 'act.sub';
+const JWT_TOKEN_ID_CLAIM = process.env.JWT_TOKEN_ID_CLAIM || 'jti';
 const AUTH_DEFAULT_ROLE = process.env.AUTH_DEFAULT_ROLE || 'user';
 const USER_ROLE_ALIASES = new Set(['project_lead', 'employee', 'probationary']);
 const AUTH_GROUP_TO_ROLE_MAP_RAW = process.env.AUTH_GROUP_TO_ROLE_MAP || '';
 const AUTH_DB_USER_CONTEXT_CACHE_TTL_SECONDS = Number(
   process.env.AUTH_DB_USER_CONTEXT_CACHE_TTL_SECONDS || 0,
+);
+const JWT_REVOKED_JTI = new Set(
+  (process.env.JWT_REVOKED_JTI || '')
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean),
+);
+const AGENT_SCOPE_READ = new Set(
+  (
+    process.env.AUTH_AGENT_READ_SCOPES ||
+    'read-only,read,agent:read-only,agent:read'
+  )
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean),
+);
+const AGENT_SCOPE_WRITE = new Set(
+  (
+    process.env.AUTH_AGENT_WRITE_SCOPES ||
+    'write-limited,write,agent:write-limited,agent:write'
+  )
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean),
+);
+const AGENT_SCOPE_APPROVAL = new Set(
+  (
+    process.env.AUTH_AGENT_APPROVAL_SCOPES ||
+    'approval-required,agent:approval-required'
+  )
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean),
 );
 
 const AUTH_HEADER_MODE_FORBIDDEN_ERROR_MESSAGE =
@@ -101,7 +153,20 @@ function expandRoles(roles: string[]): string[] {
 }
 
 function resolveClaim(payload: JWTPayload, claim: string): unknown {
-  return (payload as Record<string, unknown>)[claim];
+  if (!claim.includes('.')) {
+    return (payload as Record<string, unknown>)[claim];
+  }
+  const parts = claim
+    .split('.')
+    .map((part) => part.trim())
+    .filter(Boolean);
+  if (!parts.length) return undefined;
+  let current: unknown = payload as Record<string, unknown>;
+  for (const part of parts) {
+    if (!current || typeof current !== 'object') return undefined;
+    current = (current as Record<string, unknown>)[part];
+  }
+  return current;
 }
 
 function resolveUserId(payload: JWTPayload): string | null {
@@ -112,6 +177,58 @@ function resolveUserId(payload: JWTPayload): string | null {
   const alt = resolveClaim(payload, 'preferred_username');
   if (typeof alt === 'string' && alt.trim()) return alt.trim();
   return null;
+}
+
+function normalizeAudience(value: unknown): string[] {
+  if (typeof value === 'string' && value.trim()) return [value.trim()];
+  if (!Array.isArray(value)) return [];
+  return value.map((item) => String(item).trim()).filter(Boolean);
+}
+
+function normalizeExpiresAt(value: unknown): number | undefined {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return undefined;
+  return Math.floor(value);
+}
+
+function hasAnyScope(scopes: string[], expected: Set<string>): boolean {
+  return scopes.some((scope) => expected.has(scope));
+}
+
+function isReadMethod(method: string | undefined): boolean {
+  const normalized = (method || '').toUpperCase();
+  return (
+    normalized === 'GET' || normalized === 'HEAD' || normalized === 'OPTIONS'
+  );
+}
+
+export function evaluateDelegatedScope(
+  user: UserContext | undefined,
+  method: string | undefined,
+): DelegatedScopeDecision {
+  const auth = user?.auth;
+  if (!auth?.delegated) return { allowed: true };
+
+  const scopes = auth.scopes ?? [];
+  const canRead =
+    hasAnyScope(scopes, AGENT_SCOPE_READ) ||
+    hasAnyScope(scopes, AGENT_SCOPE_WRITE) ||
+    hasAnyScope(scopes, AGENT_SCOPE_APPROVAL);
+  const canWrite =
+    hasAnyScope(scopes, AGENT_SCOPE_WRITE) ||
+    hasAnyScope(scopes, AGENT_SCOPE_APPROVAL);
+
+  if (isReadMethod(method)) {
+    if (canRead) return { allowed: true };
+    return { allowed: false, reason: 'scope_denied' };
+  }
+  if (canWrite) return { allowed: true };
+  return { allowed: false, reason: 'scope_denied' };
+}
+
+function enforceDelegatedScope(req: any, reply: any): any | null {
+  const decision = evaluateDelegatedScope(req.user, req.method);
+  if (decision.allowed) return null;
+  return respondForbidden(req, reply, decision.reason);
 }
 
 async function resolveProjectIdsFromDb(userId: string) {
@@ -279,8 +396,22 @@ async function ensureProjectIds(req: any) {
 }
 
 function buildUserContext(payload: JWTPayload): UserContext | null {
-  const userId = resolveUserId(payload);
-  if (!userId) return null;
+  const principalUserId = resolveUserId(payload);
+  if (!principalUserId) return null;
+  const actorClaim = resolveClaim(payload, JWT_ACTOR_SUB_CLAIM);
+  const actorUserId =
+    typeof actorClaim === 'string' && actorClaim.trim()
+      ? actorClaim.trim()
+      : principalUserId;
+  const scopes = normalizeList(resolveClaim(payload, JWT_SCOPE_CLAIM));
+  const tokenIdClaim = resolveClaim(payload, JWT_TOKEN_ID_CLAIM);
+  const tokenId =
+    typeof tokenIdClaim === 'string' && tokenIdClaim.trim()
+      ? tokenIdClaim.trim()
+      : undefined;
+  const audience = normalizeAudience(resolveClaim(payload, 'aud'));
+  const expiresAt = normalizeExpiresAt(resolveClaim(payload, 'exp'));
+  const delegated = actorUserId !== principalUserId || scopes.length > 0;
   const roles = expandRoles(
     normalizeList(resolveClaim(payload, JWT_ROLE_CLAIM)),
   );
@@ -293,12 +424,27 @@ function buildUserContext(payload: JWTPayload): UserContext | null {
       ? [AUTH_DEFAULT_ROLE]
       : [];
   return {
-    userId,
+    userId: principalUserId,
     roles: normalizedRoles,
     orgId: typeof orgId === 'string' ? orgId : undefined,
     projectIds,
     groupIds,
+    auth: {
+      principalUserId,
+      actorUserId,
+      scopes,
+      tokenId,
+      audience: audience.length ? audience : undefined,
+      expiresAt,
+      delegated,
+    },
   };
+}
+
+export function buildUserContextFromJwtPayload(
+  payload: JWTPayload,
+): UserContext | null {
+  return buildUserContext(payload);
 }
 
 async function resolveJwtKey(): Promise<CryptoKey | JWTVerifyGetKey | null> {
@@ -338,6 +484,13 @@ async function authenticateJwt(token: string): Promise<UserContext> {
   if (!context) {
     throw new Error('jwt_missing_user');
   }
+  if (
+    context.auth?.tokenId &&
+    JWT_REVOKED_JTI.size > 0 &&
+    JWT_REVOKED_JTI.has(context.auth.tokenId)
+  ) {
+    throw new Error('jwt_revoked');
+  }
   return context;
 }
 
@@ -367,7 +520,20 @@ function applyHeaderAuth(req: any) {
     .split(',')
     .map((g: string) => g.trim())
     .filter(Boolean);
-  req.user = { userId, roles, orgId, projectIds, groupIds, groupAccountIds };
+  req.user = {
+    userId,
+    roles,
+    orgId,
+    projectIds,
+    groupIds,
+    groupAccountIds,
+    auth: {
+      principalUserId: userId,
+      actorUserId: userId,
+      scopes: [],
+      delegated: false,
+    },
+  };
 }
 
 function respondUnauthorized(req: any, reply: any, reason?: string) {
@@ -377,6 +543,19 @@ function respondUnauthorized(req: any, reply: any, reason?: string) {
   return reply.code(401).send(
     createApiErrorResponse('unauthorized', 'Unauthorized', {
       category: 'auth',
+      details: reason ? { reason } : undefined,
+    }),
+  );
+}
+
+function respondForbidden(req: any, reply: any, reason?: string) {
+  if (req.log && typeof req.log.warn === 'function') {
+    req.log.warn({ reason }, 'Forbidden request');
+  }
+  return reply.code(403).send(
+    createApiErrorResponse('scope_denied', 'Forbidden', {
+      category: 'permission',
+      details: reason ? { reason } : undefined,
     }),
   );
 }
@@ -421,6 +600,8 @@ async function authPlugin(fastify: any) {
     try {
       req.user = await authenticateJwt(token);
       if (!(await validateAndEnrichUserContext(req, reply))) return;
+      const scopeDenied = enforceDelegatedScope(req, reply);
+      if (scopeDenied) return scopeDenied;
       await ensureProjectIds(req);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'invalid_token';
