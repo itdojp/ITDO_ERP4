@@ -228,3 +228,138 @@ test('POST /integration-settings/:id/run returns 409 when setting is disabled', 
     },
   );
 });
+
+test('GET /integration-runs/metrics aggregates status, duration, reasons and type breakdown', async () => {
+  process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
+  process.env.AUTH_MODE = 'header';
+
+  await withPrismaStubs(
+    {
+      'integrationRun.findMany': async () => [
+        {
+          id: 'run-success-crm',
+          status: 'success',
+          startedAt: new Date('2026-02-23T10:00:00.000Z'),
+          finishedAt: new Date('2026-02-23T10:00:10.000Z'),
+          nextRetryAt: null,
+          message: null,
+          setting: { id: 'setting-crm', type: 'crm', name: 'CRM' },
+        },
+        {
+          id: 'run-failed-crm',
+          status: 'failed',
+          startedAt: new Date('2026-02-23T10:10:00.000Z'),
+          finishedAt: new Date('2026-02-23T10:10:30.000Z'),
+          nextRetryAt: new Date('2026-02-23T11:10:00.000Z'),
+          message: 'timeout',
+          setting: { id: 'setting-crm', type: 'crm', name: 'CRM' },
+        },
+        {
+          id: 'run-running-hr',
+          status: 'running',
+          startedAt: new Date('2026-02-23T10:20:00.000Z'),
+          finishedAt: null,
+          nextRetryAt: null,
+          message: null,
+          setting: { id: 'setting-hr', type: 'hr', name: 'HR' },
+        },
+        {
+          id: 'run-failed-hr',
+          status: 'failed',
+          startedAt: new Date('2026-02-23T10:30:00.000Z'),
+          finishedAt: new Date('2026-02-23T10:30:05.000Z'),
+          nextRetryAt: null,
+          message: 'timeout',
+          setting: { id: 'setting-hr', type: 'hr', name: 'HR' },
+        },
+      ],
+    },
+    async () => {
+      const server = await buildServer({ logger: false });
+      try {
+        const res = await server.inject({
+          method: 'GET',
+          url: '/integration-runs/metrics?days=30&limit=100',
+          headers: {
+            'x-user-id': 'admin-user',
+            'x-roles': 'admin',
+          },
+        });
+        assert.equal(res.statusCode, 200, res.body);
+        const body = JSON.parse(res.body);
+        assert.equal(body.summary.totalRuns, 4);
+        assert.equal(body.summary.successRuns, 1);
+        assert.equal(body.summary.failedRuns, 2);
+        assert.equal(body.summary.runningRuns, 1);
+        assert.equal(body.summary.retryScheduledRuns, 1);
+        assert.equal(body.summary.successRate, 25);
+        assert.equal(body.summary.avgDurationMs, 15000);
+        assert.equal(body.summary.p95DurationMs, 30000);
+        assert.deepEqual(body.failureReasons, [{ reason: 'timeout', count: 2 }]);
+        assert.deepEqual(body.byType, [
+          {
+            type: 'crm',
+            totalRuns: 2,
+            successRuns: 1,
+            failedRuns: 1,
+            runningRuns: 0,
+            successRate: 50,
+          },
+          {
+            type: 'hr',
+            totalRuns: 2,
+            successRuns: 0,
+            failedRuns: 1,
+            runningRuns: 1,
+            successRate: 0,
+          },
+        ]);
+      } finally {
+        await server.close();
+      }
+    },
+  );
+});
+
+test('GET /integration-runs/metrics forwards settingId filter and validates role', async () => {
+  process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
+  process.env.AUTH_MODE = 'header';
+
+  let capturedFindManyArgs = null;
+  await withPrismaStubs(
+    {
+      'integrationRun.findMany': async (args) => {
+        capturedFindManyArgs = args;
+        return [];
+      },
+    },
+    async () => {
+      const server = await buildServer({ logger: false });
+      try {
+        const forbidden = await server.inject({
+          method: 'GET',
+          url: '/integration-runs/metrics?settingId=setting-filtered',
+          headers: {
+            'x-user-id': 'normal-user',
+            'x-roles': 'user',
+          },
+        });
+        assert.equal(forbidden.statusCode, 403, forbidden.body);
+
+        const res = await server.inject({
+          method: 'GET',
+          url: '/integration-runs/metrics?settingId=setting-filtered&days=7',
+          headers: {
+            'x-user-id': 'admin-user',
+            'x-roles': 'admin',
+          },
+        });
+        assert.equal(res.statusCode, 200, res.body);
+      } finally {
+        await server.close();
+      }
+    },
+  );
+
+  assert.equal(capturedFindManyArgs?.where?.settingId, 'setting-filtered');
+});

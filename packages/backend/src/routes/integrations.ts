@@ -8,6 +8,7 @@ import { prisma } from '../services/db.js';
 import { requireRole } from '../services/rbac.js';
 import { triggerAlert } from '../services/alert.js';
 import {
+  integrationRunMetricsQuerySchema,
   integrationSettingPatchSchema,
   integrationSettingSchema,
 } from './validators.js';
@@ -43,6 +44,35 @@ function parseOffset(raw: string | undefined) {
   const parsed = Number(raw);
   if (!Number.isFinite(parsed) || parsed < 0) return 0;
   return parsed;
+}
+
+function parseBoundedInteger(input: unknown, defaultValue: number, maxValue: number) {
+  if (typeof input === 'number' && Number.isFinite(input)) {
+    return Math.min(maxValue, Math.max(1, Math.floor(input)));
+  }
+  if (typeof input === 'string' && input.trim().length > 0) {
+    const parsed = Number(input);
+    if (Number.isFinite(parsed)) {
+      return Math.min(maxValue, Math.max(1, Math.floor(parsed)));
+    }
+  }
+  return defaultValue;
+}
+
+function calculateDurationMetrics(durations: number[]) {
+  if (!durations.length) {
+    return { avgDurationMs: null, p95DurationMs: null };
+  }
+  const sorted = [...durations].sort((left, right) => left - right);
+  const avgDurationMs = Math.round(
+    sorted.reduce((sum, value) => sum + value, 0) / sorted.length,
+  );
+  const p95Index = Math.min(
+    sorted.length - 1,
+    Math.max(0, Math.ceil(sorted.length * 0.95) - 1),
+  );
+  const p95DurationMs = Math.round(sorted[p95Index]);
+  return { avgDurationMs, p95DurationMs };
 }
 
 const DEFAULT_RETRY_MAX = 3;
@@ -378,6 +408,144 @@ export async function registerIntegrationRoutes(app: FastifyInstance) {
         skip,
       });
       return { items, limit: take, offset: skip };
+    },
+  );
+
+  app.get(
+    '/integration-runs/metrics',
+    {
+      preHandler: requireRole(['admin', 'mgmt']),
+      schema: integrationRunMetricsQuerySchema,
+    },
+    async (req) => {
+      const query = req.query as {
+        settingId?: string;
+        days?: number | string;
+        limit?: number | string;
+      };
+      const days = parseBoundedInteger(query.days, 14, 90);
+      const limit = parseBoundedInteger(query.limit, 2000, 5000);
+      const now = new Date();
+      const from = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
+      const where = {
+        startedAt: { gte: from, lte: now },
+        ...(query.settingId ? { settingId: query.settingId } : {}),
+      };
+      const runs = await prisma.integrationRun.findMany({
+        where,
+        include: {
+          setting: {
+            select: { id: true, type: true, name: true },
+          },
+        },
+        orderBy: { startedAt: 'desc' },
+        take: limit,
+      });
+
+      let successRuns = 0;
+      let failedRuns = 0;
+      let runningRuns = 0;
+      let retryScheduledRuns = 0;
+      const durations: number[] = [];
+      const failureReasonCounts = new Map<string, number>();
+      const byType = new Map<
+        string,
+        {
+          type: string;
+          totalRuns: number;
+          successRuns: number;
+          failedRuns: number;
+          runningRuns: number;
+        }
+      >();
+
+      for (const run of runs) {
+        const typeKey = run.setting?.type ?? 'unknown';
+        const typeSummary =
+          byType.get(typeKey) ??
+          {
+            type: typeKey,
+            totalRuns: 0,
+            successRuns: 0,
+            failedRuns: 0,
+            runningRuns: 0,
+          };
+        typeSummary.totalRuns += 1;
+
+        if (run.status === IntegrationRunStatus.success) {
+          successRuns += 1;
+          typeSummary.successRuns += 1;
+        } else if (run.status === IntegrationRunStatus.failed) {
+          failedRuns += 1;
+          typeSummary.failedRuns += 1;
+          if (run.nextRetryAt) {
+            retryScheduledRuns += 1;
+          }
+          const reason = String(run.message || 'unknown_error').trim();
+          failureReasonCounts.set(reason, (failureReasonCounts.get(reason) ?? 0) + 1);
+        } else {
+          runningRuns += 1;
+          typeSummary.runningRuns += 1;
+        }
+
+        if (run.finishedAt instanceof Date && run.startedAt instanceof Date) {
+          const durationMs = run.finishedAt.getTime() - run.startedAt.getTime();
+          if (Number.isFinite(durationMs) && durationMs >= 0) {
+            durations.push(durationMs);
+          }
+        }
+        byType.set(typeKey, typeSummary);
+      }
+
+      const totalRuns = runs.length;
+      const successRate = totalRuns
+        ? Number(((successRuns / totalRuns) * 100).toFixed(2))
+        : null;
+      const durationMetrics = calculateDurationMetrics(durations);
+
+      const failureReasons = Array.from(failureReasonCounts.entries())
+        .map(([reason, count]) => ({ reason, count }))
+        .sort((left, right) =>
+          left.count === right.count
+            ? left.reason.localeCompare(right.reason)
+            : right.count - left.count,
+        )
+        .slice(0, 10);
+
+      const byTypeItems = Array.from(byType.values())
+        .map((item) => ({
+          ...item,
+          successRate:
+            item.totalRuns > 0
+              ? Number(((item.successRuns / item.totalRuns) * 100).toFixed(2))
+              : null,
+        }))
+        .sort((left, right) =>
+          left.totalRuns === right.totalRuns
+            ? left.type.localeCompare(right.type)
+            : right.totalRuns - left.totalRuns,
+        );
+
+      return {
+        window: {
+          from: from.toISOString(),
+          to: now.toISOString(),
+          days,
+          limit,
+        },
+        summary: {
+          totalRuns,
+          successRuns,
+          failedRuns,
+          runningRuns,
+          retryScheduledRuns,
+          successRate,
+          avgDurationMs: durationMetrics.avgDurationMs,
+          p95DurationMs: durationMetrics.p95DurationMs,
+        },
+        failureReasons,
+        byType: byTypeItems,
+      };
     },
   );
 

@@ -8,7 +8,10 @@ import {
 import type { PolicyFormSchema, PolicyFormValue } from '../ui';
 import { AlertSettingsCard } from './admin-settings/AlertSettingsCard';
 import { AuditHistoryPanel } from './admin-settings/AuditHistoryPanel';
-import { IntegrationSettingsCard } from './admin-settings/IntegrationSettingsCard';
+import {
+  IntegrationSettingsCard,
+  type IntegrationRunMetrics,
+} from './admin-settings/IntegrationSettingsCard';
 import { ReportSubscriptionsCard } from './admin-settings/ReportSubscriptionsCard';
 import { TemplateSettingsCard } from './admin-settings/TemplateSettingsCard';
 import { ChatSettingsCard } from './ChatSettingsCard';
@@ -443,6 +446,8 @@ export const AdminSettings: React.FC = () => {
     IntegrationSetting[]
   >([]);
   const [integrationRuns, setIntegrationRuns] = useState<IntegrationRun[]>([]);
+  const [integrationRunMetrics, setIntegrationRunMetrics] =
+    useState<IntegrationRunMetrics | null>(null);
   const [integrationRunFilterId, setIntegrationRunFilterId] =
     useState<string>('');
   const [reportItems, setReportItems] = useState<ReportSubscription[]>([]);
@@ -1012,20 +1017,39 @@ export const AdminSettings: React.FC = () => {
 
   const loadIntegrationRuns = useCallback(
     async (settingId?: string) => {
-      try {
-        const query = new URLSearchParams();
-        if (settingId) {
-          query.set('settingId', settingId);
-        }
-        query.set('limit', '50');
-        const suffix = query.toString();
-        const res = await api<{ items: IntegrationRun[] }>(
-          `/integration-runs${suffix ? `?${suffix}` : ''}`,
-        );
-        setIntegrationRuns(res.items || []);
-      } catch (err) {
-        logError('loadIntegrationRuns failed', err);
+      const runQuery = new URLSearchParams();
+      if (settingId) {
+        runQuery.set('settingId', settingId);
+      }
+      runQuery.set('limit', '50');
+      const runSuffix = runQuery.toString();
+      const metricsQuery = new URLSearchParams();
+      if (settingId) {
+        metricsQuery.set('settingId', settingId);
+      }
+      metricsQuery.set('days', '30');
+      const metricsSuffix = metricsQuery.toString();
+      const [runsResult, metricsResult] = await Promise.allSettled([
+        api<{ items: IntegrationRun[] }>(
+          `/integration-runs${runSuffix ? `?${runSuffix}` : ''}`,
+        ),
+        api<IntegrationRunMetrics>(
+          `/integration-runs/metrics${metricsSuffix ? `?${metricsSuffix}` : ''}`,
+        ),
+      ]);
+
+      if (runsResult.status === 'fulfilled') {
+        setIntegrationRuns(runsResult.value.items || []);
+      } else {
+        logError('loadIntegrationRuns failed', runsResult.reason);
         setIntegrationRuns([]);
+      }
+
+      if (metricsResult.status === 'fulfilled') {
+        setIntegrationRunMetrics(metricsResult.value || null);
+      } else {
+        logError('loadIntegrationRunMetrics failed', metricsResult.reason);
+        setIntegrationRunMetrics(null);
       }
     },
     [logError],
@@ -2729,6 +2753,7 @@ export const AdminSettings: React.FC = () => {
           onEdit={startEditIntegration}
           onRun={runIntegrationSetting}
           runs={integrationRuns}
+          metrics={integrationRunMetrics}
           formatDateTime={formatDateTime}
         />
       </div>
