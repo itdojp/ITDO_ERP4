@@ -7,6 +7,7 @@ import { estimateSchema } from './validators.js';
 import { requireProjectAccess, requireRole } from '../services/rbac.js';
 import { prisma } from '../services/db.js';
 import { evaluateActionPolicyWithFallback } from '../services/actionPolicy.js';
+import { resolveActionPolicyDeniedCode } from '../services/actionPolicyErrors.js';
 import { logActionPolicyOverrideIfNeeded } from '../services/actionPolicyAudit.js';
 
 export async function registerEstimateRoutes(app: FastifyInstance) {
@@ -157,7 +158,7 @@ export async function registerEstimateRoutes(app: FastifyInstance) {
           }
           return reply.status(403).send({
             error: {
-              code: 'ACTION_POLICY_DENIED',
+              code: resolveActionPolicyDeniedCode(policyRes),
               message: 'Estimate cannot be submitted',
               details: {
                 reason: policyRes.reason,

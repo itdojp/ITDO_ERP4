@@ -29,6 +29,7 @@ import { logReassignment } from '../services/reassignmentLog.js';
 import { parseDateParam } from '../utils/date.js';
 import { findPeriodLock, toPeriodKey } from '../services/periodLock.js';
 import { evaluateActionPolicyWithFallback } from '../services/actionPolicy.js';
+import { resolveActionPolicyDeniedCode } from '../services/actionPolicyErrors.js';
 import { logActionPolicyOverrideIfNeeded } from '../services/actionPolicyAudit.js';
 import { logExpenseStateTransition } from '../services/expenseStateTransitionLog.js';
 import {
@@ -1042,7 +1043,7 @@ export async function registerExpenseRoutes(app: FastifyInstance) {
         }
         return reply.status(403).send({
           error: {
-            code: 'ACTION_POLICY_DENIED',
+            code: resolveActionPolicyDeniedCode(policyRes),
             message: 'Expense cannot be submitted',
             details: {
               reason: policyRes.reason,
@@ -1200,7 +1201,7 @@ export async function registerExpenseRoutes(app: FastifyInstance) {
         }
         return reply.status(403).send({
           error: {
-            code: 'ACTION_POLICY_DENIED',
+            code: resolveActionPolicyDeniedCode(policyRes),
             message: 'Expense cannot be marked as paid',
             details: {
               reason: policyRes.reason,
@@ -1340,7 +1341,7 @@ export async function registerExpenseRoutes(app: FastifyInstance) {
       if (policyRes.policyApplied && !policyRes.allowed) {
         return reply.status(403).send({
           error: {
-            code: 'ACTION_POLICY_DENIED',
+            code: resolveActionPolicyDeniedCode(policyRes),
             message: 'Expense cannot be unmarked as paid',
             details: {
               reason: policyRes.reason,

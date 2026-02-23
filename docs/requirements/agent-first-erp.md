@@ -55,6 +55,7 @@ UIは、決裁・例外処理・監査確認のための導線に集中させる
   - Draft生成API
   - 高リスクmutating APIへのActionPolicy必須化
   - 承認と証跡必須化
+  - 標準エラーコード（`REASON_REQUIRED` / `ACTION_POLICY_DENIED` / `APPROVAL_REQUIRED`）
 
 ### Phase 3: External Integrations
 

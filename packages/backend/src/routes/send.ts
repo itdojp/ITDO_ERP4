@@ -16,6 +16,7 @@ import { requireRole } from '../services/rbac.js';
 import { prisma } from '../services/db.js';
 import type { NotifyResult } from '../services/notifier.js';
 import { evaluateActionPolicyWithFallback } from '../services/actionPolicy.js';
+import { resolveActionPolicyDeniedCode } from '../services/actionPolicyErrors.js';
 import { logActionPolicyOverrideIfNeeded } from '../services/actionPolicyAudit.js';
 import { getRouteRateLimitOptions } from '../services/rateLimitOverrides.js';
 
@@ -334,7 +335,7 @@ export async function registerSendRoutes(app: FastifyInstance) {
         }
         return reply.status(403).send({
           error: {
-            code: 'ACTION_POLICY_DENIED',
+            code: resolveActionPolicyDeniedCode(policyRes),
             message: 'Estimate cannot be sent',
             details: {
               reason: policyRes.reason,
@@ -511,7 +512,7 @@ export async function registerSendRoutes(app: FastifyInstance) {
         }
         return reply.status(403).send({
           error: {
-            code: 'ACTION_POLICY_DENIED',
+            code: resolveActionPolicyDeniedCode(policyRes),
             message: 'Invoice cannot be sent',
             details: {
               reason: policyRes.reason,
@@ -688,7 +689,7 @@ export async function registerSendRoutes(app: FastifyInstance) {
         }
         return reply.status(403).send({
           error: {
-            code: 'ACTION_POLICY_DENIED',
+            code: resolveActionPolicyDeniedCode(policyRes),
             message: 'PurchaseOrder cannot be sent',
             details: {
               reason: policyRes.reason,

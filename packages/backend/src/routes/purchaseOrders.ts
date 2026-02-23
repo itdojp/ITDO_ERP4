@@ -3,6 +3,7 @@ import { nextNumber } from '../services/numbering.js';
 import { submitApprovalWithUpdate } from '../services/approval.js';
 import { createApprovalPendingNotifications } from '../services/appNotifications.js';
 import { evaluateActionPolicyWithFallback } from '../services/actionPolicy.js';
+import { resolveActionPolicyDeniedCode } from '../services/actionPolicyErrors.js';
 import { logActionPolicyOverrideIfNeeded } from '../services/actionPolicyAudit.js';
 import { FlowTypeValue, DocStatusValue } from '../types.js';
 import { purchaseOrderSchema } from './validators.js';
@@ -131,7 +132,7 @@ export async function registerPurchaseOrderRoutes(app: FastifyInstance) {
           }
           return reply.status(403).send({
             error: {
-              code: 'ACTION_POLICY_DENIED',
+              code: resolveActionPolicyDeniedCode(policyRes),
               message: 'Purchase order cannot be submitted',
               details: {
                 reason: policyRes.reason,

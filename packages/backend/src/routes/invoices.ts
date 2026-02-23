@@ -3,6 +3,7 @@ import { nextNumber } from '../services/numbering.js';
 import { submitApprovalWithUpdate } from '../services/approval.js';
 import { createApprovalPendingNotifications } from '../services/appNotifications.js';
 import { evaluateActionPolicyWithFallback } from '../services/actionPolicy.js';
+import { resolveActionPolicyDeniedCode } from '../services/actionPolicyErrors.js';
 import { FlowTypeValue, DocStatusValue, TimeStatusValue } from '../types.js';
 import {
   invoiceFromTimeEntriesSchema,
@@ -440,7 +441,7 @@ export async function registerInvoiceRoutes(app: FastifyInstance) {
         }
         return reply.status(403).send({
           error: {
-            code: 'ACTION_POLICY_DENIED',
+            code: resolveActionPolicyDeniedCode(policyRes),
             message: 'Invoice cannot be marked as paid',
             details: {
               reason: policyRes.reason,
@@ -536,7 +537,7 @@ export async function registerInvoiceRoutes(app: FastifyInstance) {
           }
           return reply.status(403).send({
             error: {
-              code: 'ACTION_POLICY_DENIED',
+              code: resolveActionPolicyDeniedCode(policyRes),
               message: 'Invoice cannot be submitted',
               details: {
                 reason: policyRes.reason,
