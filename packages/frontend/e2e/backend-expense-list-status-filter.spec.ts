@@ -75,6 +75,24 @@ async function createExpense(
   return expenseId;
 }
 
+async function fetchExpenseIdsByStatus(
+  request: APIRequestContext,
+  input: {
+    projectId: string;
+    userId: string;
+    headers: Record<string, string>;
+    status: string;
+  },
+) {
+  const res = await request.get(
+    `${apiBase}/expenses?projectId=${encodeURIComponent(input.projectId)}&userId=${encodeURIComponent(input.userId)}&status=${encodeURIComponent(input.status)}`,
+    { headers: input.headers },
+  );
+  await ensureOk(res);
+  const payload = await res.json();
+  return new Set((payload?.items ?? []).map((item: any) => String(item?.id ?? '')));
+}
+
 test('expense list filters by status (draft/pending_qa/approved/rejected) @core', async ({
   request,
 }) => {
@@ -214,37 +232,45 @@ test('expense list filters by status (draft/pending_qa/approved/rejected) @core'
     const rejectedPayload = await rejectRes.json();
     expect(String(rejectedPayload?.status ?? '')).toBe('rejected');
 
-    const fetchIds = async (status: string) => {
-      const res = await request.get(
-        `${apiBase}/expenses?projectId=${encodeURIComponent(projectId)}&status=${encodeURIComponent(status)}`,
-        { headers: requesterHeaders },
-      );
-      await ensureOk(res);
-      const payload = await res.json();
-      return new Set(
-        (payload?.items ?? []).map((item: any) => String(item?.id ?? '')),
-      );
-    };
-
-    const draftIds = await fetchIds('draft');
+    const draftIds = await fetchExpenseIdsByStatus(request, {
+      projectId,
+      userId: requesterUserId,
+      headers: requesterHeaders,
+      status: 'draft',
+    });
     expect(draftIds.has(draftExpenseId)).toBe(true);
     expect(draftIds.has(pendingExpenseId)).toBe(false);
     expect(draftIds.has(approvedExpenseId)).toBe(false);
     expect(draftIds.has(rejectedExpenseId)).toBe(false);
 
-    const pendingIds = await fetchIds('pending_qa');
+    const pendingIds = await fetchExpenseIdsByStatus(request, {
+      projectId,
+      userId: requesterUserId,
+      headers: requesterHeaders,
+      status: 'pending_qa',
+    });
     expect(pendingIds.has(draftExpenseId)).toBe(false);
     expect(pendingIds.has(pendingExpenseId)).toBe(true);
     expect(pendingIds.has(approvedExpenseId)).toBe(false);
     expect(pendingIds.has(rejectedExpenseId)).toBe(false);
 
-    const approvedIds = await fetchIds('approved');
+    const approvedIds = await fetchExpenseIdsByStatus(request, {
+      projectId,
+      userId: requesterUserId,
+      headers: requesterHeaders,
+      status: 'approved',
+    });
     expect(approvedIds.has(draftExpenseId)).toBe(false);
     expect(approvedIds.has(pendingExpenseId)).toBe(false);
     expect(approvedIds.has(approvedExpenseId)).toBe(true);
     expect(approvedIds.has(rejectedExpenseId)).toBe(false);
 
-    const rejectedIds = await fetchIds('rejected');
+    const rejectedIds = await fetchExpenseIdsByStatus(request, {
+      projectId,
+      userId: requesterUserId,
+      headers: requesterHeaders,
+      status: 'rejected',
+    });
     expect(rejectedIds.has(draftExpenseId)).toBe(false);
     expect(rejectedIds.has(pendingExpenseId)).toBe(false);
     expect(rejectedIds.has(approvedExpenseId)).toBe(false);
@@ -252,4 +278,153 @@ test('expense list filters by status (draft/pending_qa/approved/rejected) @core'
   } finally {
     await deactivateRule();
   }
+});
+
+test('expense list keeps expense status at pending_qa while approval instance is pending_exec @core', async ({
+  request,
+}) => {
+  const suffix = runId();
+  const projectId = await createProjectFixture(request, suffix);
+  const requesterUserId = `e2e-expense-status-pending-exec-${suffix}@example.com`;
+  const requesterHeaders = buildHeaders({
+    userId: requesterUserId,
+    roles: ['user'],
+    projectIds: [projectId],
+  });
+
+  const ruleRes = await request.post(`${apiBase}/approval-rules`, {
+    headers: adminHeaders,
+    data: {
+      flowType: 'expense',
+      conditions: {
+        amountMin: 61100,
+        amountMax: 61200,
+      },
+      steps: [
+        { stepOrder: 1, approverGroupId: 'mgmt' },
+        { stepOrder: 2, approverGroupId: 'exec' },
+      ],
+    },
+  });
+  await ensureOk(ruleRes);
+  const createdRule = await ruleRes.json();
+  const deactivateRule = async () => {
+    if (!createdRule?.id) return;
+    const res = await request.patch(
+      `${apiBase}/approval-rules/${encodeURIComponent(createdRule.id)}`,
+      {
+        headers: adminHeaders,
+        data: { isActive: false },
+      },
+    );
+    await ensureOk(res);
+  };
+
+  try {
+    const expenseId = await createExpense(request, {
+      projectId,
+      userId: requesterUserId,
+      headers: requesterHeaders,
+      amount: 61150,
+      label: 'pending-exec',
+      suffix,
+    });
+    const approval = await submitAndFindApprovalInstance({
+      request,
+      apiBase,
+      headers: requesterHeaders,
+      flowType: 'expense',
+      projectId,
+      targetTable: 'expenses',
+      targetId: expenseId,
+      submitData: {},
+    });
+    expect(String(approval?.status ?? '')).toBe('pending_qa');
+
+    const checklistRes = await request.put(
+      `${apiBase}/expenses/${encodeURIComponent(expenseId)}/qa-checklist`,
+      {
+        headers: adminHeaders,
+        data: {
+          amountVerified: true,
+          receiptVerified: true,
+          journalPrepared: true,
+          projectLinked: true,
+          budgetChecked: true,
+        },
+      },
+    );
+    await ensureOk(checklistRes);
+
+    const qaApproveRes = await request.post(
+      `${apiBase}/approval-instances/${encodeURIComponent(approval.id)}/act`,
+      {
+        headers: adminHeaders,
+        data: { action: 'approve', reason: `e2e qa approve ${suffix}` },
+      },
+    );
+    await ensureOk(qaApproveRes);
+    const qaApprovedPayload = await qaApproveRes.json();
+    expect(String(qaApprovedPayload?.status ?? '')).toBe('pending_exec');
+
+    const pendingExecIds = await fetchExpenseIdsByStatus(request, {
+      projectId,
+      userId: requesterUserId,
+      headers: requesterHeaders,
+      status: 'pending_exec',
+    });
+    expect(pendingExecIds.has(expenseId)).toBe(false);
+
+    const pendingQaIds = await fetchExpenseIdsByStatus(request, {
+      projectId,
+      userId: requesterUserId,
+      headers: requesterHeaders,
+      status: 'pending_qa',
+    });
+    expect(pendingQaIds.has(expenseId)).toBe(true);
+
+    const cancelRes = await request.post(
+      `${apiBase}/approval-instances/${encodeURIComponent(approval.id)}/cancel`,
+      {
+        headers: requesterHeaders,
+        data: { reason: `e2e cancel ${suffix}` },
+      },
+    );
+    await ensureOk(cancelRes);
+    const cancelPayload = await cancelRes.json();
+    expect(String(cancelPayload?.status ?? '')).toBe('cancelled');
+
+    const draftIds = await fetchExpenseIdsByStatus(request, {
+      projectId,
+      userId: requesterUserId,
+      headers: requesterHeaders,
+      status: 'draft',
+    });
+    expect(draftIds.has(expenseId)).toBe(true);
+
+    const cancelledIds = await fetchExpenseIdsByStatus(request, {
+      projectId,
+      userId: requesterUserId,
+      headers: requesterHeaders,
+      status: 'cancelled',
+    });
+    expect(cancelledIds.has(expenseId)).toBe(false);
+  } finally {
+    await deactivateRule();
+  }
+});
+
+test('expense list rejects invalid status filter values @core', async ({
+  request,
+}) => {
+  const res = await request.get(`${apiBase}/expenses?status=invalid_status`, {
+    headers: adminHeaders,
+  });
+  expect(res.status()).toBe(400);
+  const payload = await res.json();
+  expect(
+    ['VALIDATION_ERROR', 'INVALID_STATUS_FILTER'].includes(
+      String(payload?.error?.code ?? ''),
+    ),
+  ).toBe(true);
 });
