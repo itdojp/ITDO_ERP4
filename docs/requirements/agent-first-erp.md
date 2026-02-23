@@ -43,7 +43,7 @@ UIは、決裁・例外処理・監査確認のための導線に集中させる
 - 実装Issue: #1205
 - 主要成果物:
   - OpenAPI整合性ルールとCI検証
-  - Agent利用ガイド
+  - Agent利用ガイド（`docs/manual/agent-read-api-guide.md`）
   - Project 360 / Billing 360
   - 監査メタ標準化（source=agent, requestId, principal, actor）
 
