@@ -288,6 +288,56 @@ test('expenseListQuerySchema: rejects invalid settlementStatus', async () => {
   assert.equal(res.statusCode, 400);
   await app.close();
 });
+
+test('expenseListQuerySchema: accepts all status filter values', async () => {
+  const app = await buildQueryValidatorServer(
+    '/validate/expense-list',
+    expenseListQuerySchema,
+  );
+  try {
+    for (const status of [
+      'draft',
+      'pending_qa',
+      'pending_exec',
+      'approved',
+      'rejected',
+      'cancelled',
+    ]) {
+      const res = await app.inject({
+        method: 'GET',
+        url: `/validate/expense-list?status=${encodeURIComponent(status)}`,
+      });
+      assert.equal(res.statusCode, 200);
+    }
+  } finally {
+    await app.close();
+  }
+});
+
+test('expenseListQuerySchema: allows unknown query keys for backward compatibility', async () => {
+  const app = Fastify();
+  app.get(
+    '/validate/expense-list',
+    { schema: expenseListQuerySchema },
+    async (req) => ({ query: req.query }),
+  );
+  await app.ready();
+  try {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/validate/expense-list?status=draft&unknownParam=1',
+    });
+    assert.equal(res.statusCode, 200);
+    const payload = await res.json();
+    assert.equal(payload?.query?.status, 'draft');
+    assert.equal(
+      Object.prototype.hasOwnProperty.call(payload?.query ?? {}, 'unknownParam'),
+      false,
+    );
+  } finally {
+    await app.close();
+  }
+});
 test('buildExpenseCreateDraft: rejects duplicated lineNo', () => {
   const result = buildExpenseCreateDraft({
     body: {
