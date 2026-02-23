@@ -121,7 +121,7 @@ test('GET /approval-instances/:id/evidence-snapshot/diff requires version pair w
     async () => {
       const server = await buildServer({ logger: false });
       try {
-        const res = await server.inject({
+        const fromOnlyRes = await server.inject({
           method: 'GET',
           url: '/approval-instances/approval-002/evidence-snapshot/diff?fromVersion=1',
           headers: {
@@ -129,9 +129,24 @@ test('GET /approval-instances/:id/evidence-snapshot/diff requires version pair w
             'x-roles': 'user',
           },
         });
-        assert.equal(res.statusCode, 400, res.body);
-        const body = JSON.parse(res.body);
-        assert.equal(body?.error?.code, 'SNAPSHOT_VERSION_PAIR_REQUIRED');
+        assert.equal(fromOnlyRes.statusCode, 400, fromOnlyRes.body);
+        const fromOnlyBody = JSON.parse(fromOnlyRes.body);
+        assert.equal(
+          fromOnlyBody?.error?.code,
+          'SNAPSHOT_VERSION_PAIR_REQUIRED',
+        );
+
+        const toOnlyRes = await server.inject({
+          method: 'GET',
+          url: '/approval-instances/approval-002/evidence-snapshot/diff?toVersion=2',
+          headers: {
+            'x-user-id': 'owner-002',
+            'x-roles': 'user',
+          },
+        });
+        assert.equal(toOnlyRes.statusCode, 400, toOnlyRes.body);
+        const toOnlyBody = JSON.parse(toOnlyRes.body);
+        assert.equal(toOnlyBody?.error?.code, 'SNAPSHOT_VERSION_PAIR_REQUIRED');
       } finally {
         await server.close();
       }

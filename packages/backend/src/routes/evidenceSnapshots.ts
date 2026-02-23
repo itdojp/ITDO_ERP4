@@ -447,7 +447,8 @@ export async function registerEvidenceSnapshotRoutes(app: FastifyInstance) {
           id: resolved.toSnapshot.id,
           version: resolved.toSnapshot.version,
           capturedAt: resolved.toSnapshot.capturedAt,
-          sourceAnnotationUpdatedAt: resolved.toSnapshot.sourceAnnotationUpdatedAt,
+          sourceAnnotationUpdatedAt:
+            resolved.toSnapshot.sourceAnnotationUpdatedAt,
         },
         hasChanges: diff.length > 0,
         changeCount: diff.length,
