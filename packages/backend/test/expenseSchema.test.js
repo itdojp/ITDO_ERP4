@@ -217,18 +217,21 @@ test('expenseListQuerySchema: accepts hasReceipt as 1/0', async () => {
     '/validate/expense-list',
     expenseListQuerySchema,
   );
-  const oneRes = await app.inject({
-    method: 'GET',
-    url: '/validate/expense-list?hasReceipt=1',
-  });
-  assert.equal(oneRes.statusCode, 200);
+  try {
+    const oneRes = await app.inject({
+      method: 'GET',
+      url: '/validate/expense-list?hasReceipt=1',
+    });
+    assert.equal(oneRes.statusCode, 200);
 
-  const zeroRes = await app.inject({
-    method: 'GET',
-    url: '/validate/expense-list?hasReceipt=0',
-  });
-  assert.equal(zeroRes.statusCode, 200);
-  await app.close();
+    const zeroRes = await app.inject({
+      method: 'GET',
+      url: '/validate/expense-list?hasReceipt=0',
+    });
+    assert.equal(zeroRes.statusCode, 200);
+  } finally {
+    await app.close();
+  }
 });
 
 test('expenseListQuerySchema: rejects invalid hasReceipt forms', async () => {
@@ -236,18 +239,21 @@ test('expenseListQuerySchema: rejects invalid hasReceipt forms', async () => {
     '/validate/expense-list',
     expenseListQuerySchema,
   );
-  const upperRes = await app.inject({
-    method: 'GET',
-    url: '/validate/expense-list?hasReceipt=TRUE',
-  });
-  assert.equal(upperRes.statusCode, 400);
+  try {
+    const upperRes = await app.inject({
+      method: 'GET',
+      url: '/validate/expense-list?hasReceipt=TRUE',
+    });
+    assert.equal(upperRes.statusCode, 400);
 
-  const spacedRes = await app.inject({
-    method: 'GET',
-    url: '/validate/expense-list?hasReceipt=%20true%20',
-  });
-  assert.equal(spacedRes.statusCode, 400);
-  await app.close();
+    const spacedRes = await app.inject({
+      method: 'GET',
+      url: '/validate/expense-list?hasReceipt=%20true%20',
+    });
+    assert.equal(spacedRes.statusCode, 400);
+  } finally {
+    await app.close();
+  }
 });
 
 test('expenseListQuerySchema: rejects invalid settlementStatus', async () => {
