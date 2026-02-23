@@ -272,9 +272,7 @@ export const IntegrationSettingsCard = ({
         <div className="card" style={{ padding: 12 }}>
           <div className="row" style={{ justifyContent: 'space-between' }}>
             <strong>実行メトリクス</strong>
-            <span className="badge">
-              直近 {metrics.window?.days ?? '-'} 日
-            </span>
+            <span className="badge">直近 {metrics.window?.days ?? '-'} 日</span>
           </div>
           <div style={{ fontSize: 12, color: '#475569', marginTop: 6 }}>
             total: {metrics.summary?.totalRuns ?? 0} / success:{' '}
@@ -283,8 +281,11 @@ export const IntegrationSettingsCard = ({
             {metrics.summary?.runningRuns ?? 0}
           </div>
           <div style={{ fontSize: 12, color: '#475569', marginTop: 4 }}>
-            successRate: {metrics.summary?.successRate ?? '-'}% / avg(ms):{' '}
-            {metrics.summary?.avgDurationMs ?? '-'} / p95(ms):{' '}
+            successRate:{' '}
+            {metrics.summary?.successRate != null
+              ? `${metrics.summary.successRate}%`
+              : '-'}{' '}
+            / avg(ms): {metrics.summary?.avgDurationMs ?? '-'} / p95(ms):{' '}
             {metrics.summary?.p95DurationMs ?? '-'}
           </div>
           <div style={{ fontSize: 12, color: '#475569', marginTop: 4 }}>

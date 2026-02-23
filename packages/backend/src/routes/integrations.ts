@@ -46,7 +46,11 @@ function parseOffset(raw: string | undefined) {
   return parsed;
 }
 
-function parseBoundedInteger(input: unknown, defaultValue: number, maxValue: number) {
+function parseBoundedInteger(
+  input: unknown,
+  defaultValue: number,
+  maxValue: number,
+) {
   if (typeof input === 'number' && Number.isFinite(input)) {
     return Math.min(maxValue, Math.max(1, Math.floor(input)));
   }
@@ -461,15 +465,13 @@ export async function registerIntegrationRoutes(app: FastifyInstance) {
 
       for (const run of runs) {
         const typeKey = run.setting?.type ?? 'unknown';
-        const typeSummary =
-          byType.get(typeKey) ??
-          {
-            type: typeKey,
-            totalRuns: 0,
-            successRuns: 0,
-            failedRuns: 0,
-            runningRuns: 0,
-          };
+        const typeSummary = byType.get(typeKey) ?? {
+          type: typeKey,
+          totalRuns: 0,
+          successRuns: 0,
+          failedRuns: 0,
+          runningRuns: 0,
+        };
         typeSummary.totalRuns += 1;
 
         if (run.status === IntegrationRunStatus.success) {
@@ -482,7 +484,10 @@ export async function registerIntegrationRoutes(app: FastifyInstance) {
             retryScheduledRuns += 1;
           }
           const reason = String(run.message || 'unknown_error').trim();
-          failureReasonCounts.set(reason, (failureReasonCounts.get(reason) ?? 0) + 1);
+          failureReasonCounts.set(
+            reason,
+            (failureReasonCounts.get(reason) ?? 0) + 1,
+          );
         } else {
           runningRuns += 1;
           typeSummary.runningRuns += 1;
