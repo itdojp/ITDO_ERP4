@@ -114,6 +114,12 @@
 - 失敗理由を監査ログに残す
 
 ## 運用検証（手順）
+### 自動テスト（backend integration）
+- `packages/backend/test/integrationRetryRoutes.test.js`
+  - `/jobs/integrations/run` が `nextRetryAt <= now` かつ `retryCount < retryMax` の失敗 run のみ再実行すること
+  - `simulateFailure=true` 時に `retryCount` と `nextRetryAt`（指数バックオフ）が更新されること
+  - `status=disabled` の setting が `/integration-settings/:id/run` で拒否されること
+
 ### 手動実行
 - `/integration-settings/:id/run` を実行し、`integration_runs` に status=success が記録されることを確認。
 - `metrics` に件数（CRM指標: customers/vendors/contacts、HR指標: users/wellbeing）が入ることを確認。
