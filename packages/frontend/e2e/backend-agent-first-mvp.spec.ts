@@ -127,6 +127,7 @@ async function waitAuditEvent(
   action: string,
   targetTable: string,
   targetId?: string,
+  requestId?: string,
 ) {
   const fetchEvent = async () => {
     const params = new URLSearchParams({
@@ -137,14 +138,16 @@ async function waitAuditEvent(
       limit: '20',
     });
     if (targetId) params.set('targetId', targetId);
+    if (requestId) params.set('requestId', requestId);
     const res = await request.get(`${apiBase}/audit-logs?${params}`, {
       headers: adminHeaders,
     });
-    if (!res.ok()) return null;
+    await ensureOk(res);
     const payload = await res.json();
     return (payload?.items ?? []).find(
       (item: any) =>
         item?.action === action &&
+        (requestId ? String(item?.requestId || '') === requestId : true) &&
         (targetId ? String(item?.targetId || '') === targetId : true),
     );
   };
@@ -165,10 +168,12 @@ test('agent read api: project-360/billing-360 are UI非依存で利用でき監�
   const suffix = runId();
   const projectId = await createProject(request, suffix, '360');
   const invoice = await createInvoice(request, projectId, 32100);
+  const project360RequestId = `e2e-project-360-${suffix}`;
+  const billing360RequestId = `e2e-billing-360-${suffix}`;
 
   const project360Res = await request.get(
     `${apiBase}/project-360?projectId=${encodeURIComponent(projectId)}`,
-    { headers: adminHeaders },
+    { headers: { ...adminHeaders, 'x-request-id': project360RequestId } },
   );
   await ensureOk(project360Res);
   const project360 = await project360Res.json();
@@ -179,7 +184,7 @@ test('agent read api: project-360/billing-360 are UI非依存で利用でき監�
 
   const billing360Res = await request.get(
     `${apiBase}/billing-360?projectId=${encodeURIComponent(projectId)}`,
-    { headers: adminHeaders },
+    { headers: { ...adminHeaders, 'x-request-id': billing360RequestId } },
   );
   await ensureOk(billing360Res);
   const billing360 = await billing360Res.json();
@@ -204,6 +209,8 @@ test('agent read api: project-360/billing-360 are UI非依存で利用でき監�
     request,
     'project_360_viewed',
     'project_360',
+    undefined,
+    project360RequestId,
   );
   expect(projectAudit?.metadata?._request?.source).toBe('api');
   expect(projectAudit?.metadata?._request?.id).toBeTruthy();
@@ -214,6 +221,8 @@ test('agent read api: project-360/billing-360 are UI非依存で利用でき監�
     request,
     'billing_360_viewed',
     'billing_360',
+    undefined,
+    billing360RequestId,
   );
   expect(billingAudit?.metadata?._request?.source).toBe('api');
   expect(billingAudit?.metadata?._auth?.principalUserId).toBe('demo-user');

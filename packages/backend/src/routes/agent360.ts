@@ -48,9 +48,22 @@ const rangeQuerySchema = {
   additionalProperties: false,
   properties: {
     projectId: { type: 'string', minLength: 1 },
-    // date/date-time の双方を許容（実際の妥当性は parseDateRange で判定）。
-    from: { type: 'string' },
-    to: { type: 'string' },
+    from: {
+      anyOf: [
+        { type: 'string', format: 'date' },
+        { type: 'string', format: 'date-time' },
+      ],
+      description:
+        'Start of range (inclusive). Accepts ISO 8601 date (YYYY-MM-DD) or date-time.',
+    },
+    to: {
+      anyOf: [
+        { type: 'string', format: 'date' },
+        { type: 'string', format: 'date-time' },
+      ],
+      description:
+        'End of range (inclusive). Accepts ISO 8601 date (YYYY-MM-DD) or date-time.',
+    },
   },
 } as const;
 

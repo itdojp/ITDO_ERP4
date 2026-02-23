@@ -318,7 +318,7 @@ test('auth plugin: delegated read-only scope allows GET /project-360', () => {
   assert.equal(body.approvals?.pendingTotal, 1);
 });
 
-test('auth plugin: delegated write-limited scope passes auth guard for POST /projects', () => {
+test('auth plugin: delegated write-limited scope passes auth guard for write method', () => {
   const result = runDelegatedJwtRequest({
     payload: {
       sub: 'principal-user',
@@ -328,11 +328,12 @@ test('auth plugin: delegated write-limited scope passes auth guard for POST /pro
       jti: 'tok-agent-write',
     },
     method: 'POST',
-    url: '/projects',
+    // No route: use 404 to verify auth guard passed (and avoid DB dependency).
+    url: '/__agent-write-guard-check',
     stubDb: true,
   });
 
   assert.equal(result.status, 0);
   const payload = JSON.parse(result.stdout);
-  assert.notEqual(payload.statusCode, 403);
+  assert.equal(payload.statusCode, 404);
 });

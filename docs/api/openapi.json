@@ -2001,19 +2001,39 @@
             }
           },
           {
+            "description": "Start of range (inclusive). Accepts ISO 8601 date (YYYY-MM-DD) or date-time.",
             "in": "query",
             "name": "from",
             "required": false,
             "schema": {
-              "type": "string"
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "format": "date-time",
+                  "type": "string"
+                }
+              ]
             }
           },
           {
+            "description": "End of range (inclusive). Accepts ISO 8601 date (YYYY-MM-DD) or date-time.",
             "in": "query",
             "name": "to",
             "required": false,
             "schema": {
-              "type": "string"
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "format": "date-time",
+                  "type": "string"
+                }
+              ]
             }
           }
         ],
@@ -5975,19 +5995,39 @@
             }
           },
           {
+            "description": "Start of range (inclusive). Accepts ISO 8601 date (YYYY-MM-DD) or date-time.",
             "in": "query",
             "name": "from",
             "required": false,
             "schema": {
-              "type": "string"
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "format": "date-time",
+                  "type": "string"
+                }
+              ]
             }
           },
           {
+            "description": "End of range (inclusive). Accepts ISO 8601 date (YYYY-MM-DD) or date-time.",
             "in": "query",
             "name": "to",
             "required": false,
             "schema": {
-              "type": "string"
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "format": "date-time",
+                  "type": "string"
+                }
+              ]
             }
           }
         ],
