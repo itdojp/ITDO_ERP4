@@ -38,14 +38,19 @@ Phase 2 で先行する Draft は以下を対象とする。
 
 ## 4. ActionPolicy テンプレート
 
+注記:
+- 以下の `guards` 名はテンプレート上の概念名を含む。
+- 現行実装で利用中の guard type は `approval_open` / `project_closed` / `period_lock` / `editable_days` / `chat_ack_completed`。
+- ステータス・ロール・スコープの判定は、現時点では `stateConstraints` や route 側の `requireRole`、subjects matching で表現する。
+
 ### T1: Approval-gated irreversible
 
 - 目的: 送信・支払確定・外部連携実行など不可逆寄りの操作
 - `requireReason`: 必須
 - `guards`:
   - `approval_open`（有効な承認インスタンスが存在）
-  - `status_allowed`（対象状態が実行可能）
-  - `actor_role`（admin/mgmt など）
+  - ステータスに基づくガードの例（対象状態が実行可能かを確認。現状は `stateConstraints` で表現）
+  - ロールに基づくガードの例（admin/mgmt など。現状は route 側の `requireRole` で表現）
 - `stateConstraints`:
   - 終端状態（paid/sent/cancelled 等）では拒否
   - 例外上書き時は管理ロール + 理由必須 + 監査ログ必須
@@ -55,8 +60,9 @@ Phase 2 で先行する Draft は以下を対象とする。
 - 目的: 差戻し・再申請・一部更新など可逆操作
 - `requireReason`: 推奨（監査対象）
 - `guards`:
-  - `approval_open` または `approval_not_required`
-  - `status_transition_allowed`
+  - `approval_open`（承認が必要な操作）
+  - 承認不要な操作は approval 系 guard を付与しない
+  - 状態遷移の可否は専用 guard ではなく `stateConstraints`（`statusIn` / `statusNotIn`）で表現
 - `stateConstraints`:
   - 遷移前後の整合（例: `approved -> draft` は取消理由必須）
 
@@ -65,8 +71,8 @@ Phase 2 で先行する Draft は以下を対象とする。
 - 目的: 承認ルール/通知ルール/権限設定の変更
 - `requireReason`: 必須
 - `guards`:
-  - `actor_role`（admin/mgmt）
-  - `scope_match`（適用範囲一致）
+  - ロールに基づくチェック（admin/mgmt。現状は route 側の `requireRole` で表現）
+  - 適用範囲一致チェック（例: subjects matching による scope 検証）
 - `stateConstraints`:
   - 有効期間・重複定義・段階整合（step order / quorum）を検証
 
