@@ -46,10 +46,10 @@ test('GET /project-360 returns aggregated response', async () => {
       'expense.groupBy': async () => [
         { status: 'approved', _count: { _all: 2 }, _sum: { amount: 300 } },
       ],
-      'approvalInstance.groupBy': async () => [
-        { status: 'pending_qa', flowType: 'invoice', _count: { _all: 2 } },
-        { status: 'approved', flowType: 'expense', _count: { _all: 1 } },
-      ],
+      'approvalInstance.groupBy': async (args) => {
+        assert.deepEqual(args.where?.status, { in: ['pending_qa', 'pending_exec'] });
+        return [{ status: 'pending_qa', flowType: 'invoice', _count: { _all: 2 } }];
+      },
       'auditLog.create': async () => ({ id: 'audit-1' }),
     },
     async () => {
@@ -68,7 +68,7 @@ test('GET /project-360 returns aggregated response', async () => {
         const body = JSON.parse(res.body);
         assert.equal(body.projects.total, 3);
         assert.equal(body.billing.totalAmount, 900);
-        assert.equal(body.effort.timeEntries.totalAmount, 600);
+        assert.equal(body.effort.timeEntries.totalMinutes, 600);
         assert.equal(body.approvals.pendingTotal, 2);
       } finally {
         await server.close();
@@ -83,10 +83,18 @@ test('GET /billing-360 returns receivable/payable summary', async () => {
 
   await withPrismaStubs(
     {
-      'invoice.groupBy': async () => [
-        { status: 'approved', _count: { _all: 2 }, _sum: { totalAmount: 800 } },
-        { status: 'paid', _count: { _all: 1 }, _sum: { totalAmount: 200 } },
-      ],
+      'invoice.groupBy': async (args) => {
+        const lte = args.where?.issueDate?.lte;
+        assert.equal(lte instanceof Date, true);
+        if (lte instanceof Date) {
+          assert.equal(lte.getUTCHours(), 23);
+          assert.equal(lte.getUTCMinutes(), 59);
+        }
+        return [
+          { status: 'approved', _count: { _all: 2 }, _sum: { totalAmount: 800 } },
+          { status: 'paid', _count: { _all: 1 }, _sum: { totalAmount: 200 } },
+        ];
+      },
       'invoice.aggregate': async (args) => {
         const where = args?.where || {};
         if (where.status?.in) {
@@ -108,7 +116,7 @@ test('GET /billing-360 returns receivable/payable summary', async () => {
       try {
         const res = await server.inject({
           method: 'GET',
-          url: '/billing-360',
+          url: '/billing-360?to=2026-02-23',
           headers: {
             'x-user-id': 'admin-user',
             'x-roles': 'admin',

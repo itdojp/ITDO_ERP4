@@ -28,6 +28,28 @@ const ALLOWED_ROLES = ['admin', 'mgmt', 'exec', 'user'];
 const PENDING_APPROVAL_STATUSES: DocStatus[] = ['pending_qa', 'pending_exec'];
 const OPEN_RECEIVABLE_STATUSES: DocStatus[] = ['approved', 'sent'];
 const OPEN_PAYABLE_STATUSES: DocStatus[] = ['received', 'approved'];
+const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+type RangeCondition = {
+  gte?: Date;
+  lte?: Date;
+};
+
+function isDateOnlyString(value: string | undefined): boolean {
+  return typeof value === 'string' && DATE_ONLY_PATTERN.test(value.trim());
+}
+
+function toStartOfDayUtc(value: Date): Date {
+  const normalized = new Date(value);
+  normalized.setUTCHours(0, 0, 0, 0);
+  return normalized;
+}
+
+function toEndOfDayUtc(value: Date): Date {
+  const normalized = new Date(value);
+  normalized.setUTCHours(23, 59, 59, 999);
+  return normalized;
+}
 
 function parseDateRange(query: Record<string, unknown>): {
   range?: DateRange;
@@ -43,7 +65,10 @@ function parseDateRange(query: Record<string, unknown>): {
   if (toRaw && !to) {
     return { error: { code: 'INVALID_DATE', message: 'Invalid to date' } };
   }
-  if (from && to && from.getTime() > to.getTime()) {
+  const normalizedFrom =
+    from && isDateOnlyString(fromRaw) ? toStartOfDayUtc(from) : from;
+  const normalizedTo = to && isDateOnlyString(toRaw) ? toEndOfDayUtc(to) : to;
+  if (normalizedFrom && normalizedTo && normalizedFrom > normalizedTo) {
     return {
       error: {
         code: 'INVALID_DATE_RANGE',
@@ -51,8 +76,13 @@ function parseDateRange(query: Record<string, unknown>): {
       },
     };
   }
-  if (!from && !to) return {};
-  return { range: { from: from ?? undefined, to: to ?? undefined } };
+  if (!normalizedFrom && !normalizedTo) return {};
+  return {
+    range: {
+      from: normalizedFrom ?? undefined,
+      to: normalizedTo ?? undefined,
+    },
+  };
 }
 
 function resolveScope(
@@ -75,15 +105,12 @@ function resolveScope(
   return { scopeProjectIds: allowedProjectIds, scopeMode: 'assigned' };
 }
 
-function buildRangeFilter(
-  field: string,
-  range?: DateRange,
-): Prisma.InputJsonValue | undefined {
+function buildRangeCondition(range?: DateRange): RangeCondition | undefined {
   if (!range?.from && !range?.to) return undefined;
-  const value: Record<string, Date> = {};
+  const value: RangeCondition = {};
   if (range.from) value.gte = range.from;
   if (range.to) value.lte = range.to;
-  return { [field]: value } as Prisma.InputJsonValue;
+  return value;
 }
 
 function summarizeStatusRows(
@@ -149,6 +176,10 @@ export async function registerAgent360Routes(app: FastifyInstance) {
           ? { projectId: { in: scope.scopeProjectIds } }
           : {}),
       };
+      const issueDateRange = buildRangeCondition(parsed.range);
+      const workDateRange = buildRangeCondition(parsed.range);
+      const incurredOnRange = buildRangeCondition(parsed.range);
+      const approvalCreatedAtRange = buildRangeCondition(parsed.range);
 
       const [projectRows, invoiceRows, timeRows, expenseRows, approvalRows] =
         await Promise.all([
@@ -163,10 +194,7 @@ export async function registerAgent360Routes(app: FastifyInstance) {
             _sum: { totalAmount: true },
             where: {
               ...recordProjectWhere,
-              ...(buildRangeFilter(
-                'issueDate',
-                parsed.range,
-              ) as Prisma.InvoiceWhereInput),
+              ...(issueDateRange ? { issueDate: issueDateRange } : {}),
             },
           }),
           prisma.timeEntry.groupBy({
@@ -175,10 +203,7 @@ export async function registerAgent360Routes(app: FastifyInstance) {
             _sum: { minutes: true },
             where: {
               ...recordProjectWhere,
-              ...(buildRangeFilter(
-                'workDate',
-                parsed.range,
-              ) as Prisma.TimeEntryWhereInput),
+              ...(workDateRange ? { workDate: workDateRange } : {}),
             },
           }),
           prisma.expense.groupBy({
@@ -187,23 +212,20 @@ export async function registerAgent360Routes(app: FastifyInstance) {
             _sum: { amount: true },
             where: {
               ...recordProjectWhere,
-              ...(buildRangeFilter(
-                'incurredOn',
-                parsed.range,
-              ) as Prisma.ExpenseWhereInput),
+              ...(incurredOnRange ? { incurredOn: incurredOnRange } : {}),
             },
           }),
           prisma.approvalInstance.groupBy({
             by: ['status', 'flowType'],
             _count: { _all: true },
             where: {
+              status: { in: PENDING_APPROVAL_STATUSES },
               ...(scope.scopeProjectIds
                 ? { projectId: { in: scope.scopeProjectIds } }
                 : {}),
-              ...(buildRangeFilter(
-                'createdAt',
-                parsed.range,
-              ) as Prisma.ApprovalInstanceWhereInput),
+              ...(approvalCreatedAtRange
+                ? { createdAt: approvalCreatedAtRange }
+                : {}),
             },
           }),
         ]);
@@ -214,18 +236,31 @@ export async function registerAgent360Routes(app: FastifyInstance) {
       }
 
       const invoiceSummary = summarizeStatusRows(invoiceRows, 'totalAmount');
-      const timeSummary = summarizeStatusRows(timeRows, 'minutes');
+      const timeSummaryRaw = summarizeStatusRows(timeRows, 'minutes');
       const expenseSummary = summarizeStatusRows(expenseRows, 'amount');
+      const timeSummary = {
+        totalCount: timeSummaryRaw.totalCount,
+        totalMinutes: timeSummaryRaw.totalAmount,
+        byStatus: Object.fromEntries(
+          Object.entries(timeSummaryRaw.byStatus).map(([status, summary]) => [
+            status,
+            {
+              count: summary.count,
+              ...(typeof summary.amount === 'number'
+                ? { minutes: summary.amount }
+                : {}),
+            },
+          ]),
+        ),
+      };
 
       const approvalByFlow: Record<string, number> = {};
       let pendingApprovals = 0;
       for (const row of approvalRows) {
         const count = row._count._all || 0;
-        if (PENDING_APPROVAL_STATUSES.includes(row.status)) {
-          pendingApprovals += count;
-          approvalByFlow[row.flowType] =
-            (approvalByFlow[row.flowType] || 0) + count;
-        }
+        pendingApprovals += count;
+        approvalByFlow[row.flowType] =
+          (approvalByFlow[row.flowType] || 0) + count;
       }
 
       const response = {
@@ -293,26 +328,26 @@ export async function registerAgent360Routes(app: FastifyInstance) {
         );
       }
 
-      const invoiceWhere = {
+      const invoiceWhere: Prisma.InvoiceWhereInput = {
         deletedAt: null,
         ...(scope.scopeProjectIds
           ? { projectId: { in: scope.scopeProjectIds } }
           : {}),
-        ...(buildRangeFilter(
-          'issueDate',
-          parsed.range,
-        ) as Prisma.InvoiceWhereInput),
       };
-      const vendorInvoiceWhere = {
+      const issueDateRange = buildRangeCondition(parsed.range);
+      if (issueDateRange) {
+        invoiceWhere.issueDate = issueDateRange;
+      }
+      const vendorInvoiceWhere: Prisma.VendorInvoiceWhereInput = {
         deletedAt: null,
         ...(scope.scopeProjectIds
           ? { projectId: { in: scope.scopeProjectIds } }
           : {}),
-        ...(buildRangeFilter(
-          'receivedDate',
-          parsed.range,
-        ) as Prisma.VendorInvoiceWhereInput),
       };
+      const receivedDateRange = buildRangeCondition(parsed.range);
+      if (receivedDateRange) {
+        vendorInvoiceWhere.receivedDate = receivedDateRange;
+      }
 
       const now = new Date();
       const [invoiceRows, openReceivableAgg, paidAgg, overdueAgg, vendorRows] =
