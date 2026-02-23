@@ -219,7 +219,9 @@ test('POST /integration-settings/:id/run returns 409 when setting is disabled', 
         });
         assert.equal(res.statusCode, 409, res.body);
         const body = JSON.parse(res.body);
-        assert.equal(String(body?.error?.code ?? ''), 'disabled');
+        const errorCode =
+          typeof body.error === 'string' ? body.error : body?.error?.code;
+        assert.equal(String(errorCode ?? ''), 'disabled');
       } finally {
         await server.close();
       }

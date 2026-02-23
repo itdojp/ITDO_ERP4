@@ -16,6 +16,7 @@ import { prisma } from '../services/db.js';
 import { checkProjectAndVendor } from '../services/entityChecks.js';
 import { parseDateParam } from '../utils/date.js';
 import { evaluateActionPolicyWithFallback } from '../services/actionPolicy.js';
+import { resolveActionPolicyDeniedCode } from '../services/actionPolicyErrors.js';
 import { logActionPolicyOverrideIfNeeded } from '../services/actionPolicyAudit.js';
 import { auditContextFromRequest, logAudit } from '../services/audit.js';
 import { normalizeVendorInvoiceAllocations } from '../services/vendorInvoiceAllocations.js';
@@ -454,7 +455,7 @@ export async function registerVendorDocRoutes(app: FastifyInstance) {
         }
         return reply.status(403).send({
           error: {
-            code: 'ACTION_POLICY_DENIED',
+            code: resolveActionPolicyDeniedCode(policyRes),
             message: 'VendorInvoice allocations cannot be updated',
             details: {
               reason: policyRes.reason,
@@ -800,7 +801,7 @@ export async function registerVendorDocRoutes(app: FastifyInstance) {
         }
         return reply.status(403).send({
           error: {
-            code: 'ACTION_POLICY_DENIED',
+            code: resolveActionPolicyDeniedCode(policyRes),
             message: 'Vendor invoice lines cannot be updated',
             details: {
               reason: policyRes.reason,
@@ -1255,7 +1256,7 @@ export async function registerVendorDocRoutes(app: FastifyInstance) {
         }
         return reply.status(403).send({
           error: {
-            code: 'ACTION_POLICY_DENIED',
+            code: resolveActionPolicyDeniedCode(policyRes),
             message: 'VendorInvoice purchase order cannot be linked',
             details: {
               reason: policyRes.reason,
@@ -1415,7 +1416,7 @@ export async function registerVendorDocRoutes(app: FastifyInstance) {
         }
         return reply.status(403).send({
           error: {
-            code: 'ACTION_POLICY_DENIED',
+            code: resolveActionPolicyDeniedCode(policyRes),
             message: 'VendorInvoice purchase order cannot be unlinked',
             details: {
               reason: policyRes.reason,
@@ -1534,7 +1535,7 @@ export async function registerVendorDocRoutes(app: FastifyInstance) {
         }
         return reply.status(403).send({
           error: {
-            code: 'ACTION_POLICY_DENIED',
+            code: resolveActionPolicyDeniedCode(policyRes),
             message: 'VendorInvoice cannot be submitted',
             details: {
               reason: policyRes.reason,

@@ -11,6 +11,7 @@ import {
   createApprovalPendingNotifications,
 } from '../services/appNotifications.js';
 import { evaluateActionPolicyWithFallback } from '../services/actionPolicy.js';
+import { resolveActionPolicyDeniedCode } from '../services/actionPolicyErrors.js';
 import { logActionPolicyOverrideIfNeeded } from '../services/actionPolicyAudit.js';
 import {
   approvalActionSchema,
@@ -587,7 +588,7 @@ export async function registerApprovalRuleRoutes(app: FastifyInstance) {
           }
           return reply.status(403).send({
             error: {
-              code: 'ACTION_POLICY_DENIED',
+              code: resolveActionPolicyDeniedCode(policyRes),
               message: 'Approval action is not allowed',
               details: {
                 reason: policyRes.reason,

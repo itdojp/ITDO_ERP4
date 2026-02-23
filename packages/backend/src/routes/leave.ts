@@ -7,6 +7,7 @@ import { requireRole } from '../services/rbac.js';
 import { leaveRequestSchema } from './validators.js';
 import { endOfDay, parseDateParam } from '../utils/date.js';
 import { evaluateActionPolicyWithFallback } from '../services/actionPolicy.js';
+import { resolveActionPolicyDeniedCode } from '../services/actionPolicyErrors.js';
 import { logActionPolicyOverrideIfNeeded } from '../services/actionPolicyAudit.js';
 
 export async function registerLeaveRoutes(app: FastifyInstance) {
@@ -116,7 +117,7 @@ export async function registerLeaveRoutes(app: FastifyInstance) {
         }
         return reply.status(403).send({
           error: {
-            code: 'ACTION_POLICY_DENIED',
+            code: resolveActionPolicyDeniedCode(policyRes),
             message: 'LeaveRequest cannot be submitted',
             details: {
               reason: policyRes.reason,

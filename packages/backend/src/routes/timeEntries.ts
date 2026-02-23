@@ -20,6 +20,7 @@ import { isWithinEditableDays, parseDateParam } from '../utils/date.js';
 import { findPeriodLock, toPeriodKey } from '../services/periodLock.js';
 import { getEditableDays } from '../services/worklogSetting.js';
 import { evaluateActionPolicyWithFallback } from '../services/actionPolicy.js';
+import { resolveActionPolicyDeniedCode } from '../services/actionPolicyErrors.js';
 import { logActionPolicyOverrideIfNeeded } from '../services/actionPolicyAudit.js';
 
 async function validateTaskId(
@@ -261,7 +262,7 @@ export async function registerTimeEntryRoutes(app: FastifyInstance) {
         }
         return reply.status(403).send({
           error: {
-            code: 'ACTION_POLICY_DENIED',
+            code: resolveActionPolicyDeniedCode(policyRes),
             message: 'Time entry cannot be modified',
             details: {
               reason: policyRes.reason,
@@ -445,7 +446,7 @@ export async function registerTimeEntryRoutes(app: FastifyInstance) {
           }
           return reply.status(403).send({
             error: {
-              code: 'ACTION_POLICY_DENIED',
+              code: resolveActionPolicyDeniedCode(policyRes),
               message: 'Time entry cannot be submitted',
               details: {
                 reason: policyRes.reason,
