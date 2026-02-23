@@ -1990,11 +1990,278 @@
     },
     "/billing-360": {
       "get": {
+        "parameters": [
+          {
+            "in": "query",
+            "name": "projectId",
+            "required": false,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "from",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "generatedAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "invoices": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "byStatus": {
+                          "additionalProperties": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "amount": {
+                                "type": "number"
+                              },
+                              "count": {
+                                "type": "integer"
+                              }
+                            },
+                            "required": [
+                              "count"
+                            ],
+                            "type": "object"
+                          },
+                          "type": "object"
+                        },
+                        "totalAmount": {
+                          "type": "number"
+                        },
+                        "totalCount": {
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "totalCount",
+                        "totalAmount",
+                        "byStatus"
+                      ],
+                      "type": "object"
+                    },
+                    "payables": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "openAmount": {
+                          "type": "number"
+                        },
+                        "vendorInvoices": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "byStatus": {
+                              "additionalProperties": {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "amount": {
+                                    "type": "number"
+                                  },
+                                  "count": {
+                                    "type": "integer"
+                                  }
+                                },
+                                "required": [
+                                  "count"
+                                ],
+                                "type": "object"
+                              },
+                              "type": "object"
+                            },
+                            "totalAmount": {
+                              "type": "number"
+                            },
+                            "totalCount": {
+                              "type": "integer"
+                            }
+                          },
+                          "required": [
+                            "totalCount",
+                            "totalAmount",
+                            "byStatus"
+                          ],
+                          "type": "object"
+                        }
+                      },
+                      "required": [
+                        "vendorInvoices",
+                        "openAmount"
+                      ],
+                      "type": "object"
+                    },
+                    "receivables": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "openAmount": {
+                          "type": "number"
+                        },
+                        "overdueAmount": {
+                          "type": "number"
+                        },
+                        "overdueCount": {
+                          "type": "integer"
+                        },
+                        "paidAmount": {
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "openAmount",
+                        "paidAmount",
+                        "overdueAmount",
+                        "overdueCount"
+                      ],
+                      "type": "object"
+                    },
+                    "scope": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "from": {
+                          "format": "date-time",
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "mode": {
+                          "enum": [
+                            "all",
+                            "assigned",
+                            "project"
+                          ],
+                          "type": "string"
+                        },
+                        "projectCount": {
+                          "nullable": true,
+                          "type": "integer"
+                        },
+                        "projectId": {
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "to": {
+                          "format": "date-time",
+                          "nullable": true,
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "mode",
+                        "projectId",
+                        "projectCount",
+                        "from",
+                        "to"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "generatedAt",
+                    "scope",
+                    "invoices",
+                    "receivables",
+                    "payables"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "category": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "category": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
             "description": "Default Response"
           }
-        }
+        },
+        "summary": "Billing 360 summary"
       }
     },
     "/chat-ack-links": {
@@ -5697,11 +5964,325 @@
     },
     "/project-360": {
       "get": {
+        "parameters": [
+          {
+            "in": "query",
+            "name": "projectId",
+            "required": false,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "from",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "approvals": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "pendingByFlow": {
+                          "additionalProperties": {
+                            "type": "integer"
+                          },
+                          "type": "object"
+                        },
+                        "pendingTotal": {
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "pendingTotal",
+                        "pendingByFlow"
+                      ],
+                      "type": "object"
+                    },
+                    "billing": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "byStatus": {
+                          "additionalProperties": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "amount": {
+                                "type": "number"
+                              },
+                              "count": {
+                                "type": "integer"
+                              }
+                            },
+                            "required": [
+                              "count"
+                            ],
+                            "type": "object"
+                          },
+                          "type": "object"
+                        },
+                        "totalAmount": {
+                          "type": "number"
+                        },
+                        "totalCount": {
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "totalCount",
+                        "totalAmount",
+                        "byStatus"
+                      ],
+                      "type": "object"
+                    },
+                    "effort": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "expenses": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "byStatus": {
+                              "additionalProperties": {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "amount": {
+                                    "type": "number"
+                                  },
+                                  "count": {
+                                    "type": "integer"
+                                  }
+                                },
+                                "required": [
+                                  "count"
+                                ],
+                                "type": "object"
+                              },
+                              "type": "object"
+                            },
+                            "totalAmount": {
+                              "type": "number"
+                            },
+                            "totalCount": {
+                              "type": "integer"
+                            }
+                          },
+                          "required": [
+                            "totalCount",
+                            "totalAmount",
+                            "byStatus"
+                          ],
+                          "type": "object"
+                        },
+                        "timeEntries": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "byStatus": {
+                              "additionalProperties": {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "count": {
+                                    "type": "integer"
+                                  },
+                                  "minutes": {
+                                    "type": "number"
+                                  }
+                                },
+                                "required": [
+                                  "count"
+                                ],
+                                "type": "object"
+                              },
+                              "type": "object"
+                            },
+                            "totalCount": {
+                              "type": "integer"
+                            },
+                            "totalMinutes": {
+                              "type": "number"
+                            }
+                          },
+                          "required": [
+                            "totalCount",
+                            "totalMinutes",
+                            "byStatus"
+                          ],
+                          "type": "object"
+                        }
+                      },
+                      "required": [
+                        "timeEntries",
+                        "expenses"
+                      ],
+                      "type": "object"
+                    },
+                    "generatedAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "projects": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "byStatus": {
+                          "additionalProperties": {
+                            "type": "integer"
+                          },
+                          "type": "object"
+                        },
+                        "total": {
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "byStatus",
+                        "total"
+                      ],
+                      "type": "object"
+                    },
+                    "scope": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "from": {
+                          "format": "date-time",
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "mode": {
+                          "enum": [
+                            "all",
+                            "assigned",
+                            "project"
+                          ],
+                          "type": "string"
+                        },
+                        "projectCount": {
+                          "nullable": true,
+                          "type": "integer"
+                        },
+                        "projectId": {
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "to": {
+                          "format": "date-time",
+                          "nullable": true,
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "mode",
+                        "projectId",
+                        "projectCount",
+                        "from",
+                        "to"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "generatedAt",
+                    "scope",
+                    "projects",
+                    "billing",
+                    "effort",
+                    "approvals"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "category": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "category": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
             "description": "Default Response"
           }
-        }
+        },
+        "summary": "Project 360 summary"
       }
     },
     "/projects": {
