@@ -5,6 +5,7 @@ import multipart from '@fastify/multipart';
 import rateLimit from '@fastify/rate-limit';
 import crypto from 'node:crypto';
 import authPlugin from './plugins/auth.js';
+import agentRunPlugin from './plugins/agentRuns.js';
 import { registerRoutes } from './routes/index.js';
 import { prisma } from './services/db.js';
 import { assertValidBackendEnv } from './services/envValidation.js';
@@ -274,6 +275,7 @@ export async function buildServer(
   });
 
   await server.register(authPlugin);
+  await server.register(agentRunPlugin);
   await registerOpenApiIfEnabled(server);
 
   const rateLimitEnabled =

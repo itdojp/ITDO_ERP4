@@ -19,6 +19,8 @@ export type AuditContext = {
   authTokenId?: string;
   authAudience?: string[];
   authExpiresAt?: number;
+  agentRunId?: string;
+  decisionRequestId?: string;
 };
 
 type AuditInput = AuditContext & {
@@ -85,6 +87,12 @@ export function buildAuditMetadata(
   if (entry.source) requestInfo.source = entry.source;
   if (Object.keys(requestInfo).length > 0) metadata._request = requestInfo;
 
+  const agentInfo: Record<string, Prisma.InputJsonValue> = {};
+  if (entry.agentRunId) agentInfo.runId = entry.agentRunId;
+  if (entry.decisionRequestId)
+    agentInfo.decisionRequestId = entry.decisionRequestId;
+  if (Object.keys(agentInfo).length > 0) metadata._agent = agentInfo;
+
   return Object.keys(metadata).length > 0
     ? (metadata as Prisma.InputJsonObject)
     : undefined;
@@ -111,6 +119,8 @@ export function auditContextFromRequest(
     authTokenId: req.user?.auth?.tokenId,
     authAudience: req.user?.auth?.audience ?? undefined,
     authExpiresAt: req.user?.auth?.expiresAt,
+    agentRunId: req.agentRun?.runId,
+    decisionRequestId: req.agentRun?.decisionRequestId,
     ...overrides,
   };
 }

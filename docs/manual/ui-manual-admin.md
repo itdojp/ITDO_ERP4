@@ -487,14 +487,15 @@
 
 - 目的: 重要操作の監査ログを検索し、CSVでエクスポートする
 - 補足: ack required 参照リンクは targetTable=chat_ack_links で検索
-- 主な操作: 条件指定（期間/actor/target/reason など）、検索、CSV出力
+- 主な操作: 条件指定（期間/actor/target/reason など）、検索、CSV出力、AgentRun詳細ドリルダウン
 - 補足: 取得件数（limit）を指定可能
 
 ### 詳細操作
 
 1. 期間（from/to）を指定し、必要なフィルタ（userId/action/targetTable/targetId 等）を入力する（任意）
 2. `検索` を押して一覧を取得する
-3. `CSV出力` を押してCSVを取得する
+3. `AgentRun` 列の `詳細` で実行履歴（run/step/decision）を確認する（該当ログのみ）
+4. `CSV出力` を押してCSVを取得する
 
 ### 補足（保存ビュー）
 

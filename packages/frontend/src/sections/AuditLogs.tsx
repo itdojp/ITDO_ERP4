@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { api, apiResponse } from '../api';
 import {
   Alert,
@@ -36,7 +36,22 @@ type AuditLogItem = {
   reasonText?: string | null;
   targetTable?: string | null;
   targetId?: string | null;
+  agentRunId?: string | null;
+  agentRunPath?: string | null;
   createdAt: string;
+  metadata?: Record<string, unknown> | null;
+};
+
+type AgentRunDetail = {
+  id: string;
+  status?: string | null;
+  httpStatus?: number | null;
+  method?: string | null;
+  path?: string | null;
+  startedAt?: string | null;
+  finishedAt?: string | null;
+  steps?: unknown[];
+  decisionRequests?: unknown[];
   metadata?: Record<string, unknown> | null;
 };
 
@@ -135,6 +150,11 @@ export const AuditLogs: React.FC = () => {
   const [listError, setListError] = useState('');
   const [message, setMessage] = useState('');
   const [isDownloading, setIsDownloading] = useState(false);
+  const [agentRunDetail, setAgentRunDetail] = useState<AgentRunDetail | null>(
+    null,
+  );
+  const [agentRunLoading, setAgentRunLoading] = useState(false);
+  const [agentRunError, setAgentRunError] = useState('');
   const initialSavedViewTimestamp = useMemo(() => new Date().toISOString(), []);
   const savedViews = useSavedViews<SavedFilterPayload>({
     initialViews: [
@@ -187,6 +207,24 @@ export const AuditLogs: React.FC = () => {
     }
   };
 
+  const loadAgentRun = useCallback(async (runId: string) => {
+    const normalized = String(runId || '').trim();
+    if (!normalized) return;
+    try {
+      setAgentRunLoading(true);
+      setAgentRunError('');
+      const detail = await api<AgentRunDetail>(
+        `/agent-runs/${encodeURIComponent(normalized)}`,
+      );
+      setAgentRunDetail(detail);
+    } catch (err) {
+      setAgentRunDetail(null);
+      setAgentRunError('AgentRun詳細の取得に失敗しました');
+    } finally {
+      setAgentRunLoading(false);
+    }
+  }, []);
+
   const rows = useMemo<DataTableRow[]>(
     () =>
       items.map((item) => ({
@@ -198,6 +236,8 @@ export const AuditLogs: React.FC = () => {
         roleGroup: `${item.actorRole || '-'} / ${item.actorGroupId || '-'}`,
         reason: `${item.reasonCode || '-'} ${item.reasonText || ''}`.trim(),
         sourceRequest: `${item.source || '-'} / ${item.requestId || '-'}`,
+        agentRunId: item.agentRunId || '',
+        agentRun: item.agentRunId || '-',
         metadata: formatMetadata(item.metadata),
       })),
     [items],
@@ -222,9 +262,31 @@ export const AuditLogs: React.FC = () => {
       { key: 'roleGroup', header: 'ロール/グループ' },
       { key: 'reason', header: '理由' },
       { key: 'sourceRequest', header: 'ソース/RequestID' },
+      {
+        key: 'agentRun',
+        header: 'AgentRun',
+        cell: (row) => {
+          const runId = String(row.agentRunId || '').trim();
+          if (!runId) return '-';
+          return (
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <code>{runId.slice(0, 12)}</code>
+              <Button
+                size="small"
+                variant="secondary"
+                onClick={() => {
+                  void loadAgentRun(runId);
+                }}
+              >
+                詳細
+              </Button>
+            </div>
+          );
+        },
+      },
       { key: 'metadata', header: 'metadata' },
     ],
-    [],
+    [loadAgentRun],
   );
 
   const listContent = (() => {
@@ -258,6 +320,37 @@ export const AuditLogs: React.FC = () => {
       );
     }
     return <DataTable columns={columns} rows={rows} />;
+  })();
+
+  const agentRunPanel = (() => {
+    if (agentRunLoading) {
+      return (
+        <div style={{ marginTop: 12 }}>
+          <AsyncStatePanel state="loading" loadingText="AgentRun詳細を取得中" />
+        </div>
+      );
+    }
+    if (agentRunError) {
+      return (
+        <div style={{ marginTop: 12 }}>
+          <Alert variant="error">{agentRunError}</Alert>
+        </div>
+      );
+    }
+    if (!agentRunDetail) return null;
+    return (
+      <div style={{ marginTop: 12 }}>
+        <CrudList
+          title={`AgentRun ${agentRunDetail.id}`}
+          description="監査ログからドリルダウンした実行詳細"
+          table={
+            <pre style={{ margin: 0, whiteSpace: 'pre-wrap' }}>
+              {JSON.stringify(agentRunDetail, null, 2)}
+            </pre>
+          }
+        />
+      </div>
+    );
   })();
 
   return (
@@ -447,7 +540,12 @@ export const AuditLogs: React.FC = () => {
               </div>
             </FilterBar>
           }
-          table={listContent}
+          table={
+            <div>
+              {listContent}
+              {agentRunPanel}
+            </div>
+          }
         />
       </div>
     </div>

@@ -5,6 +5,7 @@ import { requireRole } from '../services/rbac.js';
 import { endOfDay, parseDateParam } from '../utils/date.js';
 import { sendCsv, toCsv } from '../utils/csv.js';
 import type { Prisma } from '@prisma/client';
+import { extractAgentRunIdFromMetadata } from '../services/agentRuns.js';
 
 const DEFAULT_LIMIT = 200;
 const MAX_LIMIT = 1000;
@@ -146,6 +147,19 @@ function maskAuditLog(item: {
   };
 }
 
+function withAgentRunReference<
+  T extends {
+    metadata: Prisma.JsonValue | null;
+  },
+>(item: T) {
+  const agentRunId = extractAgentRunIdFromMetadata(item.metadata);
+  return {
+    ...item,
+    agentRunId,
+    agentRunPath: agentRunId ? `/agent-runs/${agentRunId}` : null,
+  };
+}
+
 export async function registerAuditLogRoutes(app: FastifyInstance) {
   app.get(
     '/audit-logs',
@@ -247,7 +261,9 @@ export async function registerAuditLogRoutes(app: FastifyInstance) {
         },
         ...auditContextFromRequest(req),
       });
-      const outputItems = shouldMask ? items.map(maskAuditLog) : items;
+      const outputItems = (shouldMask ? items.map(maskAuditLog) : items).map(
+        withAgentRunReference,
+      );
       if (normalizedFormat === 'csv') {
         const headers = [
           'id',
@@ -263,6 +279,8 @@ export async function registerAuditLogRoutes(app: FastifyInstance) {
           'reasonText',
           'targetTable',
           'targetId',
+          'agentRunId',
+          'agentRunPath',
           'createdAt',
           'metadata',
         ];
@@ -280,6 +298,8 @@ export async function registerAuditLogRoutes(app: FastifyInstance) {
           item.reasonText || '',
           item.targetTable || '',
           item.targetId || '',
+          item.agentRunId || '',
+          item.agentRunPath || '',
           item.createdAt.toISOString(),
           item.metadata ? JSON.stringify(item.metadata) : '',
         ]);

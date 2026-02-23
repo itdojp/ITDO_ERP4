@@ -34,11 +34,11 @@
 
 ## 案比較
 
-| 案 | 概要 | 実装コスト | 運用負荷 | 監査再現性 | 評価 |
-| --- | --- | --- | --- | --- | --- |
-| A | AuditLog metadata 拡張のみ | 低 | 低 | 中 | Phase 1 には適合、長期不足 |
-| B | AgentRun/AgentStep/DecisionRequest 新設 | 高 | 中 | 高 | 最終形だが初期投入が重い |
-| C | Phase1=A, Phase2以降でB | 中 | 中 | 高 | 段階導入に最適（採用） |
+| 案  | 概要                                    | 実装コスト | 運用負荷 | 監査再現性 | 評価                       |
+| --- | --------------------------------------- | ---------- | -------- | ---------- | -------------------------- |
+| A   | AuditLog metadata 拡張のみ              | 低         | 低       | 中         | Phase 1 には適合、長期不足 |
+| B   | AgentRun/AgentStep/DecisionRequest 新設 | 高         | 中       | 高         | 最終形だが初期投入が重い   |
+| C   | Phase1=A, Phase2以降でB                 | 中         | 中       | 高         | 段階導入に最適（採用）     |
 
 ## クエリ要件（Phase 2で満たす）
 
@@ -61,3 +61,32 @@
 
 - Phase 2 導入後も `AuditLog` を継続記録するため、
   新テーブル機能を無効化しても監査連続性は保持される。
+
+## 実装（Issue #1214 / 2026-02-23）
+
+- DBモデル:
+  - `AgentRun`（run単位）
+  - `AgentStep`（step単位）
+  - `DecisionRequest`（承認/例外判断要求）
+- write path:
+  - 委任認証（`auth.delegated=true`）のリクエストで `AgentRun`/`AgentStep` を自動記録
+  - `policy_denied` / `approval_required` 応答時は `DecisionRequest` を自動作成
+- 監査連携:
+  - `AuditLog.metadata._agent.runId` / `decisionRequestId` を追加
+  - `/audit-logs` のレスポンスに `agentRunId` / `agentRunPath` を追加
+- Run詳細API:
+  - `GET /agent-runs/:id`（admin/mgmt/exec）
+
+## 移行/ロールバック手順（運用）
+
+### 適用
+
+1. `packages/backend/prisma/migrations/20260223193000_add_agent_ops_models/migration.sql` を適用
+2. backend を再起動（Fastify hook でAgentRun記録が有効化）
+3. 監査画面（`/audit-logs`）で AgentRun ドリルダウンが利用可能
+
+### ロールバック
+
+1. 一時停止が必要な場合は backend 側で `plugins/agentRuns.ts` の登録を外して再起動
+2. 既存監査は `AuditLog` に残るため、監査追跡は継続可能
+3. DBロールバックが必要な場合は上記migrationで追加した3テーブルを削除（データ退避後）

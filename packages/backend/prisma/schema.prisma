@@ -1388,6 +1388,78 @@ model IntegrationRun {
   @@index([status, startedAt])
 }
 
+model AgentRun {
+  id               String            @id @default(uuid())
+  requestId        String?
+  source           String?
+  principalUserId  String?
+  actorUserId      String?
+  scopes           Json?
+  method           String?
+  path             String?
+  status           String            @default("running")
+  httpStatus       Int?
+  errorCode        String?
+  metadata         Json?
+  startedAt        DateTime          @default(now())
+  finishedAt       DateTime?
+  createdAt        DateTime          @default(now())
+  steps            AgentStep[]
+  decisionRequests DecisionRequest[]
+
+  @@index([requestId])
+  @@index([principalUserId, startedAt])
+  @@index([actorUserId, startedAt])
+  @@index([status, startedAt])
+}
+
+model AgentStep {
+  id           String        @id @default(uuid())
+  run          AgentRun      @relation(fields: [runId], references: [id], onDelete: Cascade)
+  runId        String
+  stepOrder    Int
+  kind         String
+  name         String?
+  status       String        @default("running")
+  errorCode    String?
+  input        Json?
+  output       Json?
+  metadata     Json?
+  startedAt    DateTime      @default(now())
+  finishedAt   DateTime?
+  createdAt    DateTime      @default(now())
+  decisions    DecisionRequest[]
+
+  @@index([runId, stepOrder])
+  @@index([runId, startedAt])
+}
+
+model DecisionRequest {
+  id             String    @id @default(uuid())
+  run            AgentRun  @relation(fields: [runId], references: [id], onDelete: Cascade)
+  runId          String
+  step           AgentStep? @relation(fields: [stepId], references: [id], onDelete: SetNull)
+  stepId         String?
+  decisionType   String
+  status         String    @default("open")
+  title          String?
+  reasonText     String?
+  targetTable    String?
+  targetId       String?
+  requestedBy    String?
+  requestedAt    DateTime  @default(now())
+  resolvedBy     String?
+  resolvedAt     DateTime?
+  resolutionNote String?
+  metadata       Json?
+  createdAt      DateTime  @default(now())
+
+  @@index([runId, requestedAt])
+  @@index([stepId, requestedAt])
+  @@index([status, requestedAt])
+  @@index([targetTable, targetId])
+}
+
 model DocumentSendLog {
   id                String              @id @default(uuid())
   kind              TemplateKind
