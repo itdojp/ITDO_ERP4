@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { api, apiResponse } from '../api';
 import {
   Alert,
@@ -36,7 +36,22 @@ type AuditLogItem = {
   reasonText?: string | null;
   targetTable?: string | null;
   targetId?: string | null;
+  agentRunId?: string | null;
+  agentRunPath?: string | null;
   createdAt: string;
+  metadata?: Record<string, unknown> | null;
+};
+
+type AgentRunDetail = {
+  id: string;
+  status?: string | null;
+  httpStatus?: number | null;
+  method?: string | null;
+  path?: string | null;
+  startedAt?: string | null;
+  finishedAt?: string | null;
+  steps?: unknown[];
+  decisionRequests?: unknown[];
   metadata?: Record<string, unknown> | null;
 };
 
@@ -126,6 +141,50 @@ const formatMetadata = (value: Record<string, unknown> | null | undefined) => {
   }
 };
 
+const DETAIL_SENSITIVE_KEYS = [
+  'token',
+  'authorization',
+  'password',
+  'secret',
+  'cookie',
+];
+
+const DETAIL_MASKED_ID_KEYS = [
+  'userid',
+  'actoruserid',
+  'principaluserid',
+  'requestid',
+  'runid',
+];
+
+const maskIdentifier = (value: string) => {
+  if (value.length <= 4) return '*'.repeat(value.length || 4);
+  const keep = Math.min(4, Math.max(2, Math.ceil(value.length / 3)));
+  return `${value.slice(0, keep)}${'*'.repeat(Math.max(value.length - keep, 4))}`;
+};
+
+const sanitizeAgentRunDetail = (value: unknown): unknown => {
+  if (Array.isArray(value)) return value.map(sanitizeAgentRunDetail);
+  if (!value || typeof value !== 'object') return value;
+  const output: Record<string, unknown> = {};
+  for (const [key, child] of Object.entries(value)) {
+    const normalizedKey = key.toLowerCase();
+    if (DETAIL_SENSITIVE_KEYS.some((item) => normalizedKey.includes(item))) {
+      output[key] = '[REDACTED]';
+      continue;
+    }
+    if (
+      typeof child === 'string' &&
+      DETAIL_MASKED_ID_KEYS.some((item) => normalizedKey.includes(item))
+    ) {
+      output[key] = maskIdentifier(child);
+      continue;
+    }
+    output[key] = sanitizeAgentRunDetail(child);
+  }
+  return output;
+};
+
 export const AuditLogs: React.FC = () => {
   const [filters, setFilters] = useState<FilterState>(defaultFilters);
   const [items, setItems] = useState<AuditLogItem[]>([]);
@@ -135,6 +194,13 @@ export const AuditLogs: React.FC = () => {
   const [listError, setListError] = useState('');
   const [message, setMessage] = useState('');
   const [isDownloading, setIsDownloading] = useState(false);
+  const [agentRunDetail, setAgentRunDetail] = useState<AgentRunDetail | null>(
+    null,
+  );
+  const [agentRunLoading, setAgentRunLoading] = useState(false);
+  const [agentRunError, setAgentRunError] = useState('');
+  const [activeAgentRunId, setActiveAgentRunId] = useState('');
+  const agentRunRequestSeqRef = useRef(0);
   const initialSavedViewTimestamp = useMemo(() => new Date().toISOString(), []);
   const savedViews = useSavedViews<SavedFilterPayload>({
     initialViews: [
@@ -187,6 +253,39 @@ export const AuditLogs: React.FC = () => {
     }
   };
 
+  const loadAgentRun = useCallback(async (runId: string) => {
+    const normalizedId = String(runId || '').trim();
+    if (!normalizedId) return;
+    const requestSeq = agentRunRequestSeqRef.current + 1;
+    agentRunRequestSeqRef.current = requestSeq;
+    setActiveAgentRunId(normalizedId);
+    try {
+      setAgentRunLoading(true);
+      setAgentRunError('');
+      const detail = await api<AgentRunDetail>(
+        `/agent-runs/${encodeURIComponent(normalizedId)}`,
+      );
+      if (agentRunRequestSeqRef.current !== requestSeq) return;
+      setAgentRunDetail(detail);
+    } catch (err) {
+      if (agentRunRequestSeqRef.current !== requestSeq) return;
+      setAgentRunDetail(null);
+      setAgentRunError('AgentRun詳細の取得に失敗しました');
+    } finally {
+      if (agentRunRequestSeqRef.current === requestSeq) {
+        setAgentRunLoading(false);
+      }
+    }
+  }, []);
+
+  const closeAgentRunPanel = useCallback(() => {
+    agentRunRequestSeqRef.current += 1;
+    setAgentRunLoading(false);
+    setAgentRunError('');
+    setAgentRunDetail(null);
+    setActiveAgentRunId('');
+  }, []);
+
   const rows = useMemo<DataTableRow[]>(
     () =>
       items.map((item) => ({
@@ -198,6 +297,8 @@ export const AuditLogs: React.FC = () => {
         roleGroup: `${item.actorRole || '-'} / ${item.actorGroupId || '-'}`,
         reason: `${item.reasonCode || '-'} ${item.reasonText || ''}`.trim(),
         sourceRequest: `${item.source || '-'} / ${item.requestId || '-'}`,
+        agentRunId: item.agentRunId || '',
+        agentRun: item.agentRunId || '-',
         metadata: formatMetadata(item.metadata),
       })),
     [items],
@@ -222,9 +323,34 @@ export const AuditLogs: React.FC = () => {
       { key: 'roleGroup', header: 'ロール/グループ' },
       { key: 'reason', header: '理由' },
       { key: 'sourceRequest', header: 'ソース/RequestID' },
+      {
+        key: 'agentRun',
+        header: 'AgentRun',
+        cell: (row) => {
+          const runId = String(row.agentRunId || '').trim();
+          if (!runId) return '-';
+          const isActive =
+            runId === activeAgentRunId &&
+            (agentRunLoading || Boolean(agentRunDetail));
+          return (
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <code>{runId.slice(0, 12)}</code>
+              <Button
+                size="small"
+                variant={isActive ? 'primary' : 'secondary'}
+                onClick={() => {
+                  void loadAgentRun(runId);
+                }}
+              >
+                {isActive ? '表示中' : '詳細'}
+              </Button>
+            </div>
+          );
+        },
+      },
       { key: 'metadata', header: 'metadata' },
     ],
-    [],
+    [activeAgentRunId, agentRunDetail, agentRunLoading, loadAgentRun],
   );
 
   const listContent = (() => {
@@ -258,6 +384,48 @@ export const AuditLogs: React.FC = () => {
       );
     }
     return <DataTable columns={columns} rows={rows} />;
+  })();
+
+  const agentRunPanel = (() => {
+    if (agentRunLoading) {
+      return (
+        <div style={{ marginTop: 12 }}>
+          <AsyncStatePanel state="loading" loadingText="AgentRun詳細を取得中" />
+        </div>
+      );
+    }
+    if (agentRunError) {
+      return (
+        <div style={{ marginTop: 12 }}>
+          <Alert variant="error">{agentRunError}</Alert>
+        </div>
+      );
+    }
+    if (!agentRunDetail) return null;
+    return (
+      <div style={{ marginTop: 12 }}>
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'flex-end',
+            marginBottom: 8,
+          }}
+        >
+          <Button size="small" variant="ghost" onClick={closeAgentRunPanel}>
+            閉じる
+          </Button>
+        </div>
+        <CrudList
+          title={`AgentRun ${agentRunDetail.id}`}
+          description="監査ログからドリルダウンした実行詳細"
+          table={
+            <pre style={{ margin: 0, whiteSpace: 'pre-wrap' }}>
+              {JSON.stringify(sanitizeAgentRunDetail(agentRunDetail), null, 2)}
+            </pre>
+          }
+        />
+      </div>
+    );
   })();
 
   return (
@@ -447,7 +615,12 @@ export const AuditLogs: React.FC = () => {
               </div>
             </FilterBar>
           }
-          table={listContent}
+          table={
+            <div>
+              {listContent}
+              {agentRunPanel}
+            </div>
+          }
         />
       </div>
     </div>

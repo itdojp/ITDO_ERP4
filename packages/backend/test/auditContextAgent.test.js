@@ -11,6 +11,7 @@ test('auditContextFromRequest: delegated auth uses source=agent and principal/ac
     id: 'req-001',
     ip: '127.0.0.1',
     headers: { 'user-agent': 'node-test' },
+    agentRun: { runId: 'run-001', stepId: 'step-001' },
     user: {
       userId: 'principal-user',
       roles: ['user'],
@@ -35,6 +36,7 @@ test('auditContextFromRequest: delegated auth uses source=agent and principal/ac
   assert.equal(ctx.authTokenId, 'tok-001');
   assert.deepEqual(ctx.authAudience, ['erp4-agent']);
   assert.equal(ctx.authExpiresAt, 1900000000);
+  assert.equal(ctx.agentRunId, 'run-001');
 });
 
 test('auditContextFromRequest: non delegated auth keeps source=api', () => {
@@ -66,6 +68,8 @@ test('buildAuditMetadata: merges delegated context with existing metadata', () =
     action: 'test_action',
     requestId: 'req-003',
     source: 'agent',
+    agentRunId: 'run-003',
+    decisionRequestId: 'decision-003',
     principalUserId: 'principal-user',
     actorUserId: 'agent-bot',
     authScopes: ['read-only'],
@@ -77,6 +81,10 @@ test('buildAuditMetadata: merges delegated context with existing metadata', () =
 
   assert.equal(metadata.existing, 'value');
   assert.deepEqual(metadata._request, { id: 'req-003', source: 'agent' });
+  assert.deepEqual(metadata._agent, {
+    runId: 'run-003',
+    decisionRequestId: 'decision-003',
+  });
   assert.deepEqual(metadata._auth, {
     principalUserId: 'principal-user',
     actorUserId: 'agent-bot',
