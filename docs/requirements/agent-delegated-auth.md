@@ -76,3 +76,12 @@ MVPでは次の3段階を扱う。
 
 - route単位の細粒度scope（例: `invoice:send`）は未導入
 - `approval-required` の業務フロー連携（承認ID必須化）は Phase 2 で実装
+
+## 検証
+
+- backend integration:
+  - `packages/backend/test/authDelegated.test.js`
+  - `packages/backend/test/envValidation.test.js`
+    - delegated read-only: write拒否（`403 scope_denied`）
+    - delegated read-only: `GET /project-360` 許可
+    - delegated write-limited: write系 API で auth guard 通過

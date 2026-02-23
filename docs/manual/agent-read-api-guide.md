@@ -7,6 +7,11 @@
 
 UIを開かずにプロジェクト状況と請求状況を把握するためのRead API利用手順を示す。
 
+## 関連仕様
+
+- Agent-First方針: `docs/requirements/agent-first-erp.md`
+- OpenAPI契約ルール: `docs/requirements/openapi-contract-rules.md`
+
 ## 対象エンドポイント
 
 - `GET /project-360`
@@ -55,3 +60,10 @@ UIを開かずにプロジェクト状況と請求状況を把握するための
 - `400 INVALID_DATE`: 日付形式不正
 - `400 INVALID_DATE_RANGE`: `from > to`
 - `403 forbidden_project`: スコープ外案件
+
+## テスト観点（MVP）
+
+- `packages/frontend/e2e/backend-agent-first-mvp.spec.ts`
+  - `project-360` / `billing-360` のUI非依存取得
+  - スコープ外プロジェクト拒否（`forbidden_project`）
+  - 監査ログ上の `_request` / `_auth` メタ確認

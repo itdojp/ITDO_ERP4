@@ -32,6 +32,7 @@ UIは、決裁・例外処理・監査確認のための導線に集中させる
 - 委任認証は専用Issueで設計確定する（#1208）。
 - 委任認証の確定仕様: `docs/requirements/agent-delegated-auth.md`
 - AgentRun/DecisionRequest は比較検討Issueで方式決定する（#1209）。
+- AgentOpsログモデル決定: `docs/requirements/agentops-log-model.md`
 - ActionPolicy必須化は高リスクAPIから段階導入する（#1206）。
 - 360ビューの最小セットは Project 360 / Billing 360 とする（#1205）。
 - MVP受け入れ条件は検証計画IssueでE2E化する（#1210）。
@@ -42,7 +43,7 @@ UIは、決裁・例外処理・監査確認のための導線に集中させる
 
 - 実装Issue: #1205
 - 主要成果物:
-  - OpenAPI整合性ルールとCI検証
+  - OpenAPI整合性ルールとCI検証（`docs/requirements/openapi-contract-rules.md`）
   - Agent利用ガイド（`docs/manual/agent-read-api-guide.md`）
   - Project 360 / Billing 360
   - 監査メタ標準化（source=agent, requestId, principal, actor）
@@ -70,6 +71,7 @@ UIは、決裁・例外処理・監査確認のための導線に集中させる
 - UI非依存で Project 360 を取得し説明可能である。
 - 請求ドラフト生成→承認→送信を理由・証跡付きで追跡可能である。
 - エージェント実行を監査から再現可能である（権限主体・根拠・実行API）。
+- 検証計画: `docs/quality/agent-first-mvp-test-plan.md`
 
 ## 7. 実施順序（推奨）
 

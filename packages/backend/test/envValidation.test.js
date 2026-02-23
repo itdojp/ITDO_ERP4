@@ -65,6 +65,7 @@ function runDelegatedJwtRequest({
   method = 'GET',
   url = '/me',
   stubDb = false,
+  stubAgent360 = false,
 }) {
   const script = `
     import { SignJWT, exportSPKI, generateKeyPair } from 'jose';
@@ -86,6 +87,25 @@ function runDelegatedJwtRequest({
       const { prisma } = await import('./dist/services/db.js');
       prisma.userAccount.findUnique = async () => null;
       prisma.projectMember.findMany = async () => [];
+
+      if (process.env.TEST_STUB_AGENT360 === '1') {
+        prisma.project.groupBy = async () => [
+          { status: 'active', _count: { _all: 1 } },
+        ];
+        prisma.invoice.groupBy = async () => [
+          { status: 'draft', _count: { _all: 1 }, _sum: { totalAmount: 1000 } },
+        ];
+        prisma.timeEntry.groupBy = async () => [
+          { status: 'approved', _count: { _all: 1 }, _sum: { minutes: 60 } },
+        ];
+        prisma.expense.groupBy = async () => [
+          { status: 'approved', _count: { _all: 1 }, _sum: { amount: 500 } },
+        ];
+        prisma.approvalInstance.groupBy = async () => [
+          { status: 'pending_qa', flowType: 'invoice', _count: { _all: 1 } },
+        ];
+        prisma.auditLog.create = async () => ({ id: 'audit-stub' });
+      }
     }
 
     const { buildServer } = await import('./dist/server.js');
@@ -119,6 +139,7 @@ function runDelegatedJwtRequest({
     TEST_METHOD: method,
     TEST_URL: url,
     TEST_STUB_DB: stubDb ? '1' : '0',
+    TEST_STUB_AGENT360: stubAgent360 ? '1' : '0',
   });
 }
 
@@ -272,4 +293,47 @@ test('auth plugin: delegated read-only scope returns 403 scope_denied for write 
   assert.equal(payload.statusCode, 403);
   const body = JSON.parse(payload.body);
   assert.equal(body.error?.code, 'scope_denied');
+});
+
+test('auth plugin: delegated read-only scope allows GET /project-360', () => {
+  const result = runDelegatedJwtRequest({
+    payload: {
+      sub: 'principal-user',
+      act: { sub: 'agent-bot' },
+      scp: ['read-only'],
+      roles: ['admin'],
+      jti: 'tok-agent-read',
+    },
+    method: 'GET',
+    url: '/project-360',
+    stubDb: true,
+    stubAgent360: true,
+  });
+
+  assert.equal(result.status, 0);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.statusCode, 200);
+  const body = JSON.parse(payload.body);
+  assert.equal(body.projects?.total, 1);
+  assert.equal(body.approvals?.pendingTotal, 1);
+});
+
+test('auth plugin: delegated write-limited scope passes auth guard for write method', () => {
+  const result = runDelegatedJwtRequest({
+    payload: {
+      sub: 'principal-user',
+      act: { sub: 'agent-bot' },
+      scp: ['write-limited'],
+      roles: ['admin'],
+      jti: 'tok-agent-write',
+    },
+    method: 'POST',
+    // No route: use 404 to verify auth guard passed (and avoid DB dependency).
+    url: '/__agent-write-guard-check',
+    stubDb: true,
+  });
+
+  assert.equal(result.status, 0);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.statusCode, 404);
 });

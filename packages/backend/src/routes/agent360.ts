@@ -24,6 +24,203 @@ type StatusSummary = {
   byStatus: Record<string, { count: number; amount?: number }>;
 };
 
+const errorResponseSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['error'],
+  properties: {
+    error: {
+      type: 'object',
+      additionalProperties: true,
+      required: ['code', 'message'],
+      properties: {
+        code: { type: 'string' },
+        message: { type: 'string' },
+        category: { type: 'string' },
+        details: {},
+      },
+    },
+  },
+} as const;
+
+const rangeQuerySchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    projectId: { type: 'string', minLength: 1 },
+    from: {
+      anyOf: [
+        { type: 'string', format: 'date' },
+        { type: 'string', format: 'date-time' },
+      ],
+      description:
+        'Start of range (inclusive). Accepts ISO 8601 date (YYYY-MM-DD) or date-time.',
+    },
+    to: {
+      anyOf: [
+        { type: 'string', format: 'date' },
+        { type: 'string', format: 'date-time' },
+      ],
+      description:
+        'End of range (inclusive). Accepts ISO 8601 date (YYYY-MM-DD) or date-time.',
+    },
+  },
+} as const;
+
+const statusCountSummarySchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['totalCount', 'totalAmount', 'byStatus'],
+  properties: {
+    totalCount: { type: 'integer' },
+    totalAmount: { type: 'number' },
+    byStatus: {
+      type: 'object',
+      additionalProperties: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['count'],
+        properties: {
+          count: { type: 'integer' },
+          amount: { type: 'number' },
+        },
+      },
+    },
+  },
+} as const;
+
+const project360ResponseSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: [
+    'generatedAt',
+    'scope',
+    'projects',
+    'billing',
+    'effort',
+    'approvals',
+  ],
+  properties: {
+    generatedAt: { type: 'string', format: 'date-time' },
+    scope: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['mode', 'projectId', 'projectCount', 'from', 'to'],
+      properties: {
+        mode: { type: 'string', enum: ['all', 'assigned', 'project'] },
+        projectId: { anyOf: [{ type: 'string' }, { type: 'null' }] },
+        projectCount: { anyOf: [{ type: 'integer' }, { type: 'null' }] },
+        from: {
+          anyOf: [{ type: 'string', format: 'date-time' }, { type: 'null' }],
+        },
+        to: {
+          anyOf: [{ type: 'string', format: 'date-time' }, { type: 'null' }],
+        },
+      },
+    },
+    projects: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['byStatus', 'total'],
+      properties: {
+        byStatus: {
+          type: 'object',
+          additionalProperties: { type: 'integer' },
+        },
+        total: { type: 'integer' },
+      },
+    },
+    billing: statusCountSummarySchema,
+    effort: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['timeEntries', 'expenses'],
+      properties: {
+        timeEntries: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['totalCount', 'totalMinutes', 'byStatus'],
+          properties: {
+            totalCount: { type: 'integer' },
+            totalMinutes: { type: 'number' },
+            byStatus: {
+              type: 'object',
+              additionalProperties: {
+                type: 'object',
+                additionalProperties: false,
+                required: ['count'],
+                properties: {
+                  count: { type: 'integer' },
+                  minutes: { type: 'number' },
+                },
+              },
+            },
+          },
+        },
+        expenses: statusCountSummarySchema,
+      },
+    },
+    approvals: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['pendingTotal', 'pendingByFlow'],
+      properties: {
+        pendingTotal: { type: 'integer' },
+        pendingByFlow: {
+          type: 'object',
+          additionalProperties: { type: 'integer' },
+        },
+      },
+    },
+  },
+} as const;
+
+const billing360ResponseSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['generatedAt', 'scope', 'invoices', 'receivables', 'payables'],
+  properties: {
+    generatedAt: { type: 'string', format: 'date-time' },
+    scope: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['mode', 'projectId', 'projectCount', 'from', 'to'],
+      properties: {
+        mode: { type: 'string', enum: ['all', 'assigned', 'project'] },
+        projectId: { anyOf: [{ type: 'string' }, { type: 'null' }] },
+        projectCount: { anyOf: [{ type: 'integer' }, { type: 'null' }] },
+        from: {
+          anyOf: [{ type: 'string', format: 'date-time' }, { type: 'null' }],
+        },
+        to: {
+          anyOf: [{ type: 'string', format: 'date-time' }, { type: 'null' }],
+        },
+      },
+    },
+    invoices: statusCountSummarySchema,
+    receivables: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['openAmount', 'paidAmount', 'overdueAmount', 'overdueCount'],
+      properties: {
+        openAmount: { type: 'number' },
+        paidAmount: { type: 'number' },
+        overdueAmount: { type: 'number' },
+        overdueCount: { type: 'integer' },
+      },
+    },
+    payables: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['vendorInvoices', 'openAmount'],
+      properties: {
+        vendorInvoices: statusCountSummarySchema,
+        openAmount: { type: 'number' },
+      },
+    },
+  },
+} as const;
+
 const ALLOWED_ROLES = ['admin', 'mgmt', 'exec', 'user'];
 const PENDING_APPROVAL_STATUSES: DocStatus[] = ['pending_qa', 'pending_exec'];
 const OPEN_RECEIVABLE_STATUSES: DocStatus[] = ['approved', 'sent'];
@@ -141,7 +338,18 @@ function summarizeStatusRows(
 export async function registerAgent360Routes(app: FastifyInstance) {
   app.get(
     '/project-360',
-    { preHandler: requireRole(ALLOWED_ROLES) },
+    {
+      preHandler: requireRole(ALLOWED_ROLES),
+      schema: {
+        summary: 'Project 360 summary',
+        querystring: rangeQuerySchema,
+        response: {
+          200: project360ResponseSchema,
+          400: errorResponseSchema,
+          403: errorResponseSchema,
+        },
+      },
+    },
     async (req, reply) => {
       const user = requireUserContext(req);
       const query = (req.query || {}) as {
@@ -303,7 +511,18 @@ export async function registerAgent360Routes(app: FastifyInstance) {
 
   app.get(
     '/billing-360',
-    { preHandler: requireRole(ALLOWED_ROLES) },
+    {
+      preHandler: requireRole(ALLOWED_ROLES),
+      schema: {
+        summary: 'Billing 360 summary',
+        querystring: rangeQuerySchema,
+        response: {
+          200: billing360ResponseSchema,
+          400: errorResponseSchema,
+          403: errorResponseSchema,
+        },
+      },
+    },
     async (req, reply) => {
       const user = requireUserContext(req);
       const query = (req.query || {}) as {
