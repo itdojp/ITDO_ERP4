@@ -288,6 +288,47 @@ test('expenseListQuerySchema: rejects invalid settlementStatus', async () => {
   assert.equal(res.statusCode, 400);
   await app.close();
 });
+
+test('expenseListQuerySchema: accepts all status filter values', async () => {
+  const app = await buildQueryValidatorServer(
+    '/validate/expense-list',
+    expenseListQuerySchema,
+  );
+  try {
+    for (const status of [
+      'draft',
+      'pending_qa',
+      'pending_exec',
+      'approved',
+      'rejected',
+      'cancelled',
+    ]) {
+      const res = await app.inject({
+        method: 'GET',
+        url: `/validate/expense-list?status=${encodeURIComponent(status)}`,
+      });
+      assert.equal(res.statusCode, 200);
+    }
+  } finally {
+    await app.close();
+  }
+});
+
+test('expenseListQuerySchema: allows unknown query keys for backward compatibility', async () => {
+  const app = await buildQueryValidatorServer(
+    '/validate/expense-list',
+    expenseListQuerySchema,
+  );
+  try {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/validate/expense-list?unknownParam=1',
+    });
+    assert.equal(res.statusCode, 200);
+  } finally {
+    await app.close();
+  }
+});
 test('buildExpenseCreateDraft: rejects duplicated lineNo', () => {
   const result = buildExpenseCreateDraft({
     body: {
