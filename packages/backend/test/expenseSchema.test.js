@@ -315,16 +315,25 @@ test('expenseListQuerySchema: accepts all status filter values', async () => {
 });
 
 test('expenseListQuerySchema: allows unknown query keys for backward compatibility', async () => {
-  const app = await buildQueryValidatorServer(
+  const app = Fastify();
+  app.get(
     '/validate/expense-list',
-    expenseListQuerySchema,
+    { schema: expenseListQuerySchema },
+    async (req) => ({ query: req.query }),
   );
+  await app.ready();
   try {
     const res = await app.inject({
       method: 'GET',
-      url: '/validate/expense-list?unknownParam=1',
+      url: '/validate/expense-list?status=draft&unknownParam=1',
     });
     assert.equal(res.statusCode, 200);
+    const payload = await res.json();
+    assert.equal(payload?.query?.status, 'draft');
+    assert.equal(
+      Object.prototype.hasOwnProperty.call(payload?.query ?? {}, 'unknownParam'),
+      false,
+    );
   } finally {
     await app.close();
   }
