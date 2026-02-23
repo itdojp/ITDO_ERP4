@@ -98,3 +98,108 @@ test('GET /agent-runs/:id returns run details for admin role', async () => {
     },
   );
 });
+
+test('GET /agent-runs/:id returns 404 when run is not found', async () => {
+  process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
+  process.env.AUTH_MODE = 'header';
+
+  await withPrismaStubs(
+    {
+      'agentRun.findUnique': async () => null,
+    },
+    async () => {
+      const server = await buildServer({ logger: false });
+      try {
+        const res = await server.inject({
+          method: 'GET',
+          url: '/agent-runs/run-missing',
+          headers: {
+            'x-user-id': 'admin-user',
+            'x-roles': 'admin',
+          },
+        });
+        assert.equal(res.statusCode, 404, res.body);
+      } finally {
+        await server.close();
+      }
+    },
+  );
+});
+
+test('GET /agent-runs/:id denies non privileged role', async () => {
+  process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
+  process.env.AUTH_MODE = 'header';
+
+  const server = await buildServer({ logger: false });
+  try {
+    const res = await server.inject({
+      method: 'GET',
+      url: '/agent-runs/run-001',
+      headers: {
+        'x-user-id': 'normal-user',
+        'x-roles': 'user',
+      },
+    });
+    assert.equal(res.statusCode, 403, res.body);
+  } finally {
+    await server.close();
+  }
+});
+
+test('GET /agent-runs/:id writes structured audit metadata', async () => {
+  process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
+  process.env.AUTH_MODE = 'header';
+
+  const run = {
+    id: 'run-audit-001',
+    status: 'completed',
+    requestId: 'req-audit-001',
+    source: 'agent',
+    principalUserId: 'principal-user',
+    actorUserId: 'agent-bot',
+    method: 'GET',
+    path: '/project-360',
+    httpStatus: 200,
+    errorCode: null,
+    metadata: { routePath: '/project-360' },
+    startedAt: new Date('2026-02-23T13:00:00.000Z'),
+    finishedAt: new Date('2026-02-23T13:00:01.000Z'),
+    createdAt: new Date('2026-02-23T13:00:00.000Z'),
+    steps: [{ id: 'step-audit-001', decisions: [] }],
+    decisionRequests: [],
+  };
+
+  let capturedAuditArgs = null;
+  await withPrismaStubs(
+    {
+      'agentRun.findUnique': async () => run,
+      'auditLog.create': async (args) => {
+        capturedAuditArgs = args;
+        return { id: 'audit-captured-001' };
+      },
+    },
+    async () => {
+      const server = await buildServer({ logger: false });
+      try {
+        const res = await server.inject({
+          method: 'GET',
+          url: '/agent-runs/run-audit-001',
+          headers: {
+            'x-user-id': 'admin-user',
+            'x-roles': 'admin',
+          },
+        });
+        assert.equal(res.statusCode, 200, res.body);
+      } finally {
+        await server.close();
+      }
+    },
+  );
+
+  assert.equal(typeof capturedAuditArgs, 'object');
+  assert.equal(capturedAuditArgs?.data?.action, 'agent_run_viewed');
+  assert.equal(capturedAuditArgs?.data?.targetTable, 'agent_runs');
+  assert.equal(capturedAuditArgs?.data?.targetId, 'run-audit-001');
+  assert.equal(capturedAuditArgs?.data?.metadata?.stepCount, 1);
+  assert.equal(capturedAuditArgs?.data?.metadata?.decisionCount, 0);
+});

@@ -68,6 +68,8 @@
   - `AgentRun`（run単位）
   - `AgentStep`（step単位）
   - `DecisionRequest`（承認/例外判断要求）
+    - run単位の判断要求は `stepId=null`
+    - step単位の判断要求は `stepId` を設定
 - write path:
   - 委任認証（`auth.delegated=true`）のリクエストで `AgentRun`/`AgentStep` を自動記録
   - `policy_denied` / `approval_required` 応答時は `DecisionRequest` を自動作成

@@ -1411,6 +1411,7 @@ model AgentRun {
   @@index([principalUserId, startedAt])
   @@index([actorUserId, startedAt])
   @@index([status, startedAt])
+  @@index([status, errorCode, startedAt])
 }
 
 model AgentStep {
@@ -1438,6 +1439,7 @@ model DecisionRequest {
   id             String    @id @default(uuid())
   run            AgentRun  @relation(fields: [runId], references: [id], onDelete: Cascade)
   runId          String
+  // run-level decision requests keep stepId=null, step-level requests set stepId.
   step           AgentStep? @relation(fields: [stepId], references: [id], onDelete: SetNull)
   stepId         String?
   decisionType   String

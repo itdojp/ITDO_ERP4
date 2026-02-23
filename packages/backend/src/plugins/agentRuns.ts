@@ -16,6 +16,14 @@ type AgentRunRequestContext = {
   decisionRequestId?: string;
 };
 
+type DecisionRequestMetadata = {
+  requestId: string;
+  routePath: string;
+  method: string;
+  statusCode: number;
+  errorCode: string | null;
+};
+
 declare module 'fastify' {
   interface FastifyRequest {
     agentRun?: AgentRunRequestContext;
@@ -62,6 +70,44 @@ function resolveTargetTableFromPath(pathname: string) {
   if (normalized.startsWith('/time-entries/')) return 'time_entries';
   if (normalized.startsWith('/leave/')) return 'leave_requests';
   return null;
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function toMetadataObject(value: unknown): Record<string, unknown> {
+  if (isPlainObject(value)) return { ...value };
+  return {};
+}
+
+function shouldExtractErrorCode(payload: unknown) {
+  if (typeof payload === 'string') return true;
+  if (!payload || typeof payload !== 'object') return false;
+  if (Array.isArray(payload)) return false;
+  if (Buffer.isBuffer(payload)) return false;
+  if (ArrayBuffer.isView(payload)) return false;
+  const raw = payload as Record<string, unknown>;
+  if (typeof raw.pipe === 'function' || typeof raw.on === 'function') {
+    return false;
+  }
+  return true;
+}
+
+function buildDecisionRequestMetadata(input: {
+  requestId: string;
+  routePath: string;
+  method: string;
+  statusCode: number;
+  errorCode: string | null;
+}): DecisionRequestMetadata {
+  return {
+    requestId: input.requestId,
+    routePath: input.routePath,
+    method: input.method,
+    statusCode: input.statusCode,
+    errorCode: input.errorCode,
+  };
 }
 
 async function initializeAgentRun(req: FastifyRequest) {
@@ -131,6 +177,10 @@ async function finalizeAgentRun(req: FastifyRequest) {
   const targetTable = resolveTargetTableFromPath(routePath);
   try {
     await prisma.$transaction(async (tx) => {
+      const currentRun = await tx.agentRun.findUnique({
+        where: { id: context.runId },
+        select: { metadata: true },
+      });
       await tx.agentStep.update({
         where: { id: context.stepId },
         data: {
@@ -157,18 +207,24 @@ async function finalizeAgentRun(req: FastifyRequest) {
             targetId: targetId ?? undefined,
             requestedBy: req.user?.auth?.actorUserId ?? req.user?.userId,
             requestedAt: finishedAt,
-            metadata: {
+            metadata: buildDecisionRequestMetadata({
               requestId: req.id,
               routePath,
               method: req.method.toUpperCase(),
               statusCode,
               errorCode: normalizedError,
-            },
+            }),
           },
           select: { id: true },
         });
         decisionRequestId = decision.id;
       }
+      const mergedMetadata = {
+        ...toMetadataObject(currentRun?.metadata),
+        routePath,
+        requestId: req.id,
+        decisionRequestId: decisionRequestId ?? null,
+      };
       await tx.agentRun.update({
         where: { id: context.runId },
         data: {
@@ -176,11 +232,7 @@ async function finalizeAgentRun(req: FastifyRequest) {
           finishedAt,
           httpStatus: statusCode,
           errorCode: normalizedError ?? undefined,
-          metadata: {
-            routePath,
-            requestId: req.id,
-            decisionRequestId: decisionRequestId ?? null,
-          },
+          metadata: mergedMetadata,
         },
       });
       if (decisionRequestId) {
@@ -201,7 +253,9 @@ export default fp(async (app) => {
     const context = req.agentRun;
     if (!context) return payload;
     context.statusCode = reply.statusCode;
-    context.errorCode = extractAgentErrorCode(payload);
+    if (shouldExtractErrorCode(payload)) {
+      context.errorCode = extractAgentErrorCode(payload);
+    }
     return payload;
   });
 

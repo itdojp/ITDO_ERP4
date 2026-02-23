@@ -8,7 +8,13 @@ const MIN_DATABASE_URL = 'postgresql://user:pass@localhost:5432/postgres';
 const TEST_DIR = dirname(fileURLToPath(import.meta.url));
 const BACKEND_DIR = resolve(TEST_DIR, '..');
 
-function runRecorderCheck() {
+function runRecorderCheck(options = {}) {
+  const tokenClaims = options.tokenClaims || {
+    sub: 'principal-user',
+    act: { sub: 'agent-bot' },
+    scp: ['read-only'],
+    roles: ['admin'],
+  };
   const script = `
     import { SignJWT, exportSPKI, generateKeyPair } from 'jose';
 
@@ -16,6 +22,7 @@ function runRecorderCheck() {
     process.env.AUTH_MODE = 'jwt';
     process.env.JWT_ISSUER = 'test-issuer';
     process.env.JWT_AUDIENCE = 'test-audience';
+    const tokenClaims = JSON.parse(process.env.TEST_TOKEN_CLAIMS || '{}');
 
     const { privateKey, publicKey } = await generateKeyPair('RS256');
     process.env.JWT_PUBLIC_KEY = await exportSPKI(publicKey);
@@ -35,6 +42,9 @@ function runRecorderCheck() {
       capture.runCreate = data;
       return { id: 'run-001' };
     };
+    prisma.agentRun.findUnique = async () => ({
+      metadata: { routePath: '/project-360' },
+    });
     prisma.agentStep.create = async ({ data }) => {
       capture.stepCreate = data;
       return { id: 'step-001' };
@@ -60,12 +70,7 @@ function runRecorderCheck() {
       return arg(prisma);
     };
 
-    const token = await new SignJWT({
-      sub: 'principal-user',
-      act: { sub: 'agent-bot' },
-      scp: ['read-only'],
-      roles: ['admin'],
-    })
+    const token = await new SignJWT(tokenClaims)
       .setProtectedHeader({ alg: 'RS256' })
       .setIssuer(process.env.JWT_ISSUER)
       .setAudience(process.env.JWT_AUDIENCE)
@@ -92,7 +97,11 @@ function runRecorderCheck() {
 
   return spawnSync(process.execPath, ['-e', script], {
     cwd: BACKEND_DIR,
-    env: { ...process.env, DATABASE_URL: MIN_DATABASE_URL },
+    env: {
+      ...process.env,
+      DATABASE_URL: MIN_DATABASE_URL,
+      TEST_TOKEN_CLAIMS: JSON.stringify(tokenClaims),
+    },
     encoding: 'utf8',
   });
 }
@@ -126,4 +135,23 @@ test('agent run recorder: delegated request stores run/step and links audit meta
   const auditCreate = payload.capture?.auditCreate;
   assert.equal(auditCreate?.action, 'project_360_viewed');
   assert.equal(auditCreate?.metadata?._agent?.runId, 'run-001');
+});
+
+test('agent run recorder: non delegated token does not create agent run records', () => {
+  const result = runRecorderCheck({
+    tokenClaims: {
+      sub: 'principal-user',
+      roles: ['admin'],
+    },
+  });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const payload = JSON.parse(result.stdout || '{}');
+  assert.equal(payload.statusCode, 200);
+  assert.equal(payload.capture?.runCreate, undefined);
+  assert.equal(payload.capture?.stepCreate, undefined);
+  assert.equal(payload.capture?.runUpdate, undefined);
+  assert.equal(payload.capture?.stepUpdate, undefined);
+  assert.equal(payload.capture?.decisionCreate, undefined);
+  const auditCreate = payload.capture?.auditCreate;
+  assert.equal(auditCreate?.metadata?._agent, undefined);
 });

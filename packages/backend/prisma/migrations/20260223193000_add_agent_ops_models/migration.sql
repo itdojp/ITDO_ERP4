@@ -61,6 +61,7 @@ CREATE INDEX "AgentRun_requestId_idx" ON "AgentRun"("requestId");
 CREATE INDEX "AgentRun_principalUserId_startedAt_idx" ON "AgentRun"("principalUserId", "startedAt");
 CREATE INDEX "AgentRun_actorUserId_startedAt_idx" ON "AgentRun"("actorUserId", "startedAt");
 CREATE INDEX "AgentRun_status_startedAt_idx" ON "AgentRun"("status", "startedAt");
+CREATE INDEX "AgentRun_status_errorCode_startedAt_idx" ON "AgentRun"("status", "errorCode", "startedAt");
 
 CREATE INDEX "AgentStep_runId_stepOrder_idx" ON "AgentStep"("runId", "stepOrder");
 CREATE INDEX "AgentStep_runId_startedAt_idx" ON "AgentStep"("runId", "startedAt");
