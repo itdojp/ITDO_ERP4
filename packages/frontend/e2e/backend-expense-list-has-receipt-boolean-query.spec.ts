@@ -47,9 +47,11 @@ test('expense list hasReceipt query accepts true/false and 1/0 forms @core', asy
         amount: 1000,
         currency: 'JPY',
         incurredOn: '2026-04-01',
-        receiptUrl: withReceipt
-          ? `https://example.com/e2e/receipt-query-${suffix}.pdf`
-          : null,
+        ...(withReceipt
+          ? {
+              receiptUrl: `https://example.com/e2e/receipt-query-${suffix}.pdf`,
+            }
+          : {}),
       },
     });
     await ensureOk(createRes);
