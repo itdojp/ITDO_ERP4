@@ -232,37 +232,45 @@ test('expense list filters by status (draft/pending_qa/approved/rejected) @core'
     const rejectedPayload = await rejectRes.json();
     expect(String(rejectedPayload?.status ?? '')).toBe('rejected');
 
-    const fetchIds = async (status: string) => {
-      const res = await request.get(
-        `${apiBase}/expenses?projectId=${encodeURIComponent(projectId)}&status=${encodeURIComponent(status)}`,
-        { headers: requesterHeaders },
-      );
-      await ensureOk(res);
-      const payload = await res.json();
-      return new Set(
-        (payload?.items ?? []).map((item: any) => String(item?.id ?? '')),
-      );
-    };
-
-    const draftIds = await fetchIds('draft');
+    const draftIds = await fetchExpenseIdsByStatus(request, {
+      projectId,
+      userId: requesterUserId,
+      headers: requesterHeaders,
+      status: 'draft',
+    });
     expect(draftIds.has(draftExpenseId)).toBe(true);
     expect(draftIds.has(pendingExpenseId)).toBe(false);
     expect(draftIds.has(approvedExpenseId)).toBe(false);
     expect(draftIds.has(rejectedExpenseId)).toBe(false);
 
-    const pendingIds = await fetchIds('pending_qa');
+    const pendingIds = await fetchExpenseIdsByStatus(request, {
+      projectId,
+      userId: requesterUserId,
+      headers: requesterHeaders,
+      status: 'pending_qa',
+    });
     expect(pendingIds.has(draftExpenseId)).toBe(false);
     expect(pendingIds.has(pendingExpenseId)).toBe(true);
     expect(pendingIds.has(approvedExpenseId)).toBe(false);
     expect(pendingIds.has(rejectedExpenseId)).toBe(false);
 
-    const approvedIds = await fetchIds('approved');
+    const approvedIds = await fetchExpenseIdsByStatus(request, {
+      projectId,
+      userId: requesterUserId,
+      headers: requesterHeaders,
+      status: 'approved',
+    });
     expect(approvedIds.has(draftExpenseId)).toBe(false);
     expect(approvedIds.has(pendingExpenseId)).toBe(false);
     expect(approvedIds.has(approvedExpenseId)).toBe(true);
     expect(approvedIds.has(rejectedExpenseId)).toBe(false);
 
-    const rejectedIds = await fetchIds('rejected');
+    const rejectedIds = await fetchExpenseIdsByStatus(request, {
+      projectId,
+      userId: requesterUserId,
+      headers: requesterHeaders,
+      status: 'rejected',
+    });
     expect(rejectedIds.has(draftExpenseId)).toBe(false);
     expect(rejectedIds.has(pendingExpenseId)).toBe(false);
     expect(rejectedIds.has(approvedExpenseId)).toBe(false);
