@@ -110,8 +110,16 @@ test('wellbeing rbac: user cannot spoof userId and read endpoints are hr/admin o
   expect(listedIds.has(String(userEntry?.id ?? ''))).toBe(true);
   expect(listedIds.has(String(adminEntry?.id ?? ''))).toBe(true);
 
+  const analyticsQuery = new URLSearchParams({
+    from: entryDate,
+    to: entryDate,
+    minUsers: '1',
+    groupBy: 'group',
+    visibilityGroupId,
+  }).toString();
+
   const hrAnalyticsRes = await request.get(
-    `${apiBase}/wellbeing-analytics?from=2026-04-01&to=2026-04-01&minUsers=1&groupBy=group&visibilityGroupId=${encodeURIComponent(visibilityGroupId)}`,
+    `${apiBase}/wellbeing-analytics?${analyticsQuery}`,
     {
       headers: hrHeaders,
     },
@@ -124,4 +132,25 @@ test('wellbeing rbac: user cannot spoof userId and read endpoints are hr/admin o
   );
   expect(Boolean(bucket)).toBe(true);
   expect(Number(bucket?.users ?? 0)).toBeGreaterThanOrEqual(1);
+
+  const adminListRes = await request.get(`${apiBase}/wellbeing-entries`, {
+    headers: adminHeaders,
+  });
+  await ensureOk(adminListRes);
+  const adminListPayload = await adminListRes.json();
+  const adminListedIds = new Set(
+    (adminListPayload?.items ?? []).map((item: any) => String(item?.id ?? '')),
+  );
+  expect(adminListedIds.has(String(userEntry?.id ?? ''))).toBe(true);
+  expect(adminListedIds.has(String(adminEntry?.id ?? ''))).toBe(true);
+
+  const adminAnalyticsRes = await request.get(
+    `${apiBase}/wellbeing-analytics?${analyticsQuery}`,
+    {
+      headers: adminHeaders,
+    },
+  );
+  await ensureOk(adminAnalyticsRes);
+  const adminAnalytics = await adminAnalyticsRes.json();
+  expect(String(adminAnalytics?.meta?.groupBy ?? '')).toBe('group');
 });
