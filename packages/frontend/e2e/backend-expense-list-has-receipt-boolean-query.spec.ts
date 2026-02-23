@@ -37,7 +37,10 @@ test('expense list hasReceipt query accepts true/false and 1/0 forms @core', asy
   const suffix = runId();
   const expenseUserId = `e2e-expense-receipt-query-${suffix}@example.com`;
 
-  const createExpense = async (withReceipt: boolean) => {
+  const createExpense = async (input: {
+    withReceipt: boolean;
+    withAttachment?: boolean;
+  }) => {
     const createRes = await request.post(`${apiBase}/expenses`, {
       headers: adminHeaders,
       data: {
@@ -47,9 +50,21 @@ test('expense list hasReceipt query accepts true/false and 1/0 forms @core', asy
         amount: 1000,
         currency: 'JPY',
         incurredOn: '2026-04-01',
-        ...(withReceipt
+        ...(input.withReceipt
           ? {
               receiptUrl: `https://example.com/e2e/receipt-query-${suffix}.pdf`,
+            }
+          : {}),
+        ...(input.withAttachment
+          ? {
+              attachments: [
+                {
+                  fileUrl: `https://example.com/e2e/receipt-query-attachment-${suffix}.pdf`,
+                  fileName: `receipt-query-attachment-${suffix}.pdf`,
+                  contentType: 'application/pdf',
+                  fileSizeBytes: 2048,
+                },
+              ],
             }
           : {}),
       },
@@ -61,8 +76,12 @@ test('expense list hasReceipt query accepts true/false and 1/0 forms @core', asy
     return expenseId;
   };
 
-  const withReceiptId = await createExpense(true);
-  const withoutReceiptId = await createExpense(false);
+  const withReceiptId = await createExpense({ withReceipt: true });
+  const withAttachmentOnlyId = await createExpense({
+    withReceipt: false,
+    withAttachment: true,
+  });
+  const withoutReceiptId = await createExpense({ withReceipt: false });
 
   const fetchIds = async (hasReceipt: string) => {
     const res = await request.get(
@@ -73,18 +92,22 @@ test('expense list hasReceipt query accepts true/false and 1/0 forms @core', asy
     );
     await ensureOk(res);
     const payload = await res.json();
-    return new Set((payload?.items ?? []).map((item: any) => String(item?.id ?? '')));
+    return new Set(
+      (payload?.items ?? []).map((item: any) => String(item?.id ?? '')),
+    );
   };
 
   for (const queryValue of ['true', '1']) {
     const ids = await fetchIds(queryValue);
     expect(ids.has(withReceiptId)).toBe(true);
+    expect(ids.has(withAttachmentOnlyId)).toBe(true);
     expect(ids.has(withoutReceiptId)).toBe(false);
   }
 
   for (const queryValue of ['false', '0']) {
     const ids = await fetchIds(queryValue);
     expect(ids.has(withReceiptId)).toBe(false);
+    expect(ids.has(withAttachmentOnlyId)).toBe(false);
     expect(ids.has(withoutReceiptId)).toBe(true);
   }
 

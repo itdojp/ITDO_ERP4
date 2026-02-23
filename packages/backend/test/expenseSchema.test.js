@@ -96,6 +96,26 @@ test('expenseSchema: keeps backward-compatible lines payload', async () => {
   await app.close();
 });
 
+test('expenseSchema: accepts null receiptUrl payload for backward compatibility', async () => {
+  const app = await buildValidatorServer('/validate/expense', expenseSchema);
+  const res = await app.inject({
+    method: 'POST',
+    url: '/validate/expense',
+    payload: {
+      projectId: 'project-1',
+      userId: 'user-1',
+      category: 'travel',
+      amount: 1000,
+      currency: 'JPY',
+      incurredOn: '2026-02-19',
+      receiptUrl: null,
+    },
+  });
+
+  assert.equal(res.statusCode, 200);
+  await app.close();
+});
+
 test('expenseCommentCreateSchema: accepts kind/body', async () => {
   const app = await buildValidatorServer(
     '/validate/comment',
@@ -323,6 +343,45 @@ test('buildExpenseCreateDraft: validates amount even when lines are omitted', ()
   assert.equal(result.error.message, 'amount is invalid');
 });
 
+test('buildExpenseCreateDraft: normalizes blank receiptUrl to null', () => {
+  const result = buildExpenseCreateDraft({
+    body: {
+      projectId: 'project-1',
+      userId: 'user-1',
+      category: 'travel',
+      amount: 1000,
+      currency: 'JPY',
+      incurredOn: '2026-02-19',
+      receiptUrl: '   ',
+    },
+    actorUserId: 'user-1',
+  });
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  assert.equal(result.sanitizedBody.receiptUrl, null);
+});
+
+test('buildExpenseCreateDraft: trims receiptUrl when provided', () => {
+  const result = buildExpenseCreateDraft({
+    body: {
+      projectId: 'project-1',
+      userId: 'user-1',
+      category: 'travel',
+      amount: 1000,
+      currency: 'JPY',
+      incurredOn: '2026-02-19',
+      receiptUrl: ' https://example.com/receipt.pdf ',
+    },
+    actorUserId: 'user-1',
+  });
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  assert.equal(
+    result.sanitizedBody.receiptUrl,
+    'https://example.com/receipt.pdf',
+  );
+});
+
 test('hasExpenseSubmitEvidence: true when receiptUrl exists', () => {
   const ok = hasExpenseSubmitEvidence({
     receiptUrl: 'https://example.com/legacy-receipt.pdf',
@@ -364,6 +423,24 @@ test('applyExpenseHasReceiptFilter: hasReceipt=true adds receipt-or-attachment c
   });
 });
 
+test('applyExpenseHasReceiptFilter: hasReceipt=true keeps existing AND conditions', () => {
+  const where = { AND: [{ status: 'approved' }] };
+  applyExpenseHasReceiptFilter(where, true);
+  assert.deepEqual(where, {
+    AND: [
+      { status: 'approved' },
+      {
+        OR: [
+          {
+            AND: [{ receiptUrl: { not: null } }, { receiptUrl: { not: '' } }],
+          },
+          { attachments: { some: {} } },
+        ],
+      },
+    ],
+  });
+});
+
 test('applyExpenseHasReceiptFilter: hasReceipt=false keeps existing AND and appends none condition', () => {
   const where = { AND: [{ status: 'approved' }] };
   applyExpenseHasReceiptFilter(where, false);
@@ -386,6 +463,34 @@ test('applyExpensePaidAtDateRangeFilter: applies paidFrom/paidTo with paidTo exc
   assert.deepEqual(where, {
     paidAt: {
       gte: new Date('2026-02-01T00:00:00.000Z'),
+      lt: new Date('2026-03-01T00:00:00.000Z'),
+    },
+  });
+});
+
+test('applyExpensePaidAtDateRangeFilter: applies paidFrom only', () => {
+  const where = {};
+  applyExpensePaidAtDateRangeFilter(
+    where,
+    new Date('2026-02-01T00:00:00.000Z'),
+    null,
+  );
+  assert.deepEqual(where, {
+    paidAt: {
+      gte: new Date('2026-02-01T00:00:00.000Z'),
+    },
+  });
+});
+
+test('applyExpensePaidAtDateRangeFilter: applies paidTo only with exclusive bound', () => {
+  const where = {};
+  applyExpensePaidAtDateRangeFilter(
+    where,
+    null,
+    new Date('2026-02-28T00:00:00.000Z'),
+  );
+  assert.deepEqual(where, {
+    paidAt: {
       lt: new Date('2026-03-01T00:00:00.000Z'),
     },
   });
