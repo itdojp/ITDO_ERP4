@@ -113,6 +113,31 @@
 - 永続失敗は管理者に通知し、手動再送の導線を用意
 - 失敗理由を監査ログに残す
 
+## 運用ポリシー（Phase 3）
+
+### 失敗分類
+- `simulate_failure`: テスト用強制失敗（運用時は設定禁止）
+- `invalid_updatedSince`: 差分同期キーの入力不正
+- `unknown_error`: 上記以外（message 監査ログで確認）
+
+### リトライ
+- 設定値: `config.retryMax`（0..10）, `config.retryBaseMinutes`（1..1440）
+- 算出: 指数バックオフ（`retryBaseMinutes * 2^(retryCount-1)`）
+- 失敗時に `retryCount` / `nextRetryAt` を更新し、`/jobs/integrations/run` が期限到来分を再実行
+
+### 信頼境界チェック（入力検証）
+- `schedule`: 文字列のみ、最大200文字
+- `config`: object/null のみ、最大100キー、最大32KB
+- `config.retryMax`, `config.retryBaseMinutes`, `config.simulateFailure`, `config.updatedSince` を型・範囲検証
+- 不正入力は `400 invalid_config` / `400 invalid_schedule` で拒否
+
+### 監査
+- `integration_setting_created`
+- `integration_setting_updated`
+- `integration_run_executed`（trigger: manual/retry/scheduled）
+- `integration_jobs_run_executed`
+- 監査メタデータは機微キー（token/secret/password/apiKey 等）を `[REDACTED]` でマスク
+
 ## 運用検証（手順）
 ### 自動テスト（backend integration）
 - `packages/backend/test/integrationRetryRoutes.test.js`

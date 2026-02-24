@@ -7,6 +7,7 @@ import {
 import { prisma } from '../services/db.js';
 import { requireRole } from '../services/rbac.js';
 import { triggerAlert } from '../services/alert.js';
+import { auditContextFromRequest, logAudit } from '../services/audit.js';
 import {
   integrationRunMetricsQuerySchema,
   integrationSettingPatchSchema,
@@ -115,6 +116,162 @@ function parseUpdatedSince(raw?: string) {
   const parsed = new Date(raw);
   if (Number.isNaN(parsed.getTime())) return null;
   return parsed;
+}
+
+const MAX_INTEGRATION_CONFIG_KEYS = 100;
+const MAX_INTEGRATION_CONFIG_BYTES = 32768;
+const MAX_INTEGRATION_SCHEDULE_LENGTH = 200;
+const MAX_INTEGRATION_AUDIT_TEXT_LENGTH = 500;
+const MAX_INTEGRATION_AUDIT_ARRAY_ITEMS = 20;
+const SENSITIVE_CONFIG_KEY_PATTERN =
+  /(token|secret|password|api[_-]?key|private[_-]?key|access[_-]?key)/i;
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return (
+    value !== null &&
+    typeof value === 'object' &&
+    !Array.isArray(value) &&
+    Object.getPrototypeOf(value) === Object.prototype
+  );
+}
+
+function truncateForAudit(value: unknown) {
+  if (typeof value !== 'string') return value;
+  if (value.length <= MAX_INTEGRATION_AUDIT_TEXT_LENGTH) return value;
+  return `${value.slice(0, MAX_INTEGRATION_AUDIT_TEXT_LENGTH)}...`;
+}
+
+function sanitizeAuditValue(value: unknown, depth = 0): unknown {
+  if (depth >= 4) return '[depth_truncated]';
+  if (typeof value === 'string') return truncateForAudit(value);
+  if (
+    typeof value === 'number' ||
+    typeof value === 'boolean' ||
+    value === null ||
+    value === undefined
+  ) {
+    return value ?? null;
+  }
+  if (Array.isArray(value)) {
+    return value
+      .slice(0, MAX_INTEGRATION_AUDIT_ARRAY_ITEMS)
+      .map((item) => sanitizeAuditValue(item, depth + 1));
+  }
+  if (isPlainObject(value)) {
+    const out: Record<string, unknown> = {};
+    for (const [key, item] of Object.entries(value)) {
+      out[key] = sanitizeAuditValue(item, depth + 1);
+    }
+    return out;
+  }
+  return String(value);
+}
+
+function sanitizeConfigForAudit(value: unknown, depth = 0): unknown {
+  if (depth >= 4) return '[depth_truncated]';
+  if (Array.isArray(value)) {
+    return value
+      .slice(0, MAX_INTEGRATION_AUDIT_ARRAY_ITEMS)
+      .map((item) => sanitizeConfigForAudit(item, depth + 1));
+  }
+  if (!isPlainObject(value)) {
+    return sanitizeAuditValue(value, depth + 1);
+  }
+
+  const out: Record<string, unknown> = {};
+  for (const [key, item] of Object.entries(value)) {
+    if (SENSITIVE_CONFIG_KEY_PATTERN.test(key)) {
+      out[key] = '[REDACTED]';
+      continue;
+    }
+    out[key] = sanitizeConfigForAudit(item, depth + 1);
+  }
+  return out;
+}
+
+function validateIntegrationSchedule(
+  raw: unknown,
+): { ok: true } | { ok: false; message: string } {
+  if (raw === undefined || raw === null) return { ok: true };
+  if (typeof raw !== 'string') {
+    return { ok: false, message: 'schedule must be a string' };
+  }
+  if (raw.length > MAX_INTEGRATION_SCHEDULE_LENGTH) {
+    return {
+      ok: false,
+      message: `schedule must be <= ${MAX_INTEGRATION_SCHEDULE_LENGTH} chars`,
+    };
+  }
+  return { ok: true };
+}
+
+function validateIntegrationConfig(
+  raw: unknown,
+): { ok: true } | { ok: false; message: string } {
+  if (raw === undefined || raw === null) return { ok: true };
+  if (!isPlainObject(raw)) {
+    return { ok: false, message: 'config must be an object or null' };
+  }
+  const keys = Object.keys(raw);
+  if (keys.length > MAX_INTEGRATION_CONFIG_KEYS) {
+    return {
+      ok: false,
+      message: `config key count must be <= ${MAX_INTEGRATION_CONFIG_KEYS}`,
+    };
+  }
+
+  try {
+    const bytes = Buffer.byteLength(JSON.stringify(raw), 'utf8');
+    if (bytes > MAX_INTEGRATION_CONFIG_BYTES) {
+      return {
+        ok: false,
+        message: `config payload must be <= ${MAX_INTEGRATION_CONFIG_BYTES} bytes`,
+      };
+    }
+  } catch {
+    return { ok: false, message: 'config must be JSON serializable' };
+  }
+
+  const retryMax = raw.retryMax;
+  if (
+    retryMax !== undefined &&
+    (typeof retryMax !== 'number' ||
+      !Number.isInteger(retryMax) ||
+      retryMax < 0 ||
+      retryMax > 10)
+  ) {
+    return { ok: false, message: 'retryMax must be an integer in range 0..10' };
+  }
+
+  const retryBaseMinutes = raw.retryBaseMinutes;
+  if (
+    retryBaseMinutes !== undefined &&
+    (typeof retryBaseMinutes !== 'number' ||
+      !Number.isInteger(retryBaseMinutes) ||
+      retryBaseMinutes < 1 ||
+      retryBaseMinutes > 1440)
+  ) {
+    return {
+      ok: false,
+      message: 'retryBaseMinutes must be an integer in range 1..1440',
+    };
+  }
+
+  const simulateFailure = raw.simulateFailure;
+  if (simulateFailure !== undefined && typeof simulateFailure !== 'boolean') {
+    return { ok: false, message: 'simulateFailure must be a boolean' };
+  }
+
+  const updatedSince = raw.updatedSince;
+  if (updatedSince !== undefined) {
+    if (typeof updatedSince !== 'string') {
+      return { ok: false, message: 'updatedSince must be an ISO date-time' };
+    }
+    if (parseUpdatedSince(updatedSince) === null) {
+      return { ok: false, message: 'updatedSince must be an ISO date-time' };
+    }
+  }
+  return { ok: true };
 }
 
 async function closeIntegrationFailureAlerts(settingId: string) {
@@ -302,6 +459,33 @@ async function runIntegrationSetting(
   }
 }
 
+function buildIntegrationRunAuditMetadata(input: {
+  trigger: 'manual' | 'retry' | 'scheduled';
+  settingId: string;
+  settingType: string;
+  run: {
+    id: string;
+    status: string;
+    retryCount: number | null;
+    nextRetryAt: Date | null;
+    message: string | null;
+    startedAt?: Date | null;
+    finishedAt?: Date | null;
+  };
+}) {
+  return {
+    trigger: input.trigger,
+    settingId: input.settingId,
+    settingType: input.settingType,
+    status: input.run.status,
+    retryCount: input.run.retryCount ?? 0,
+    nextRetryAt: input.run.nextRetryAt?.toISOString() ?? null,
+    startedAt: input.run.startedAt?.toISOString?.() ?? null,
+    finishedAt: input.run.finishedAt?.toISOString() ?? null,
+    message: truncateForAudit(input.run.message ?? null),
+  };
+}
+
 export async function registerIntegrationRoutes(app: FastifyInstance) {
   app.get(
     '/integration-settings',
@@ -320,8 +504,22 @@ export async function registerIntegrationRoutes(app: FastifyInstance) {
       preHandler: requireRole(['admin', 'mgmt']),
       schema: integrationSettingSchema,
     },
-    async (req) => {
+    async (req, reply) => {
       const body = req.body as IntegrationSettingBody;
+      const scheduleValidation = validateIntegrationSchedule(body.schedule);
+      if (!scheduleValidation.ok) {
+        return reply.code(400).send({
+          error: 'invalid_schedule',
+          message: scheduleValidation.message,
+        });
+      }
+      const configValidation = validateIntegrationConfig(body.config);
+      if (!configValidation.ok) {
+        return reply.code(400).send({
+          error: 'invalid_config',
+          message: configValidation.message,
+        });
+      }
       const userId = req.user?.userId;
       const config = normalizeConfig(body.config);
       const created = await prisma.integrationSetting.create({
@@ -335,6 +533,20 @@ export async function registerIntegrationRoutes(app: FastifyInstance) {
           createdBy: userId,
           updatedBy: userId,
         },
+      });
+      await logAudit({
+        ...auditContextFromRequest(req),
+        action: 'integration_setting_created',
+        targetTable: 'integration_settings',
+        targetId: created.id,
+        metadata: {
+          type: created.type,
+          name: truncateForAudit(created.name ?? null),
+          provider: truncateForAudit(created.provider ?? null),
+          status: created.status,
+          schedule: truncateForAudit(created.schedule ?? null),
+          config: sanitizeConfigForAudit(created.config),
+        } as Prisma.InputJsonValue,
       });
       return created;
     },
@@ -355,6 +567,20 @@ export async function registerIntegrationRoutes(app: FastifyInstance) {
       if (!current) {
         return reply.code(404).send({ error: 'not_found' });
       }
+      const scheduleValidation = validateIntegrationSchedule(body.schedule);
+      if (!scheduleValidation.ok) {
+        return reply.code(400).send({
+          error: 'invalid_schedule',
+          message: scheduleValidation.message,
+        });
+      }
+      const configValidation = validateIntegrationConfig(body.config);
+      if (!configValidation.ok) {
+        return reply.code(400).send({
+          error: 'invalid_config',
+          message: configValidation.message,
+        });
+      }
       const userId = req.user?.userId;
       const config =
         body.config !== undefined ? normalizeConfig(body.config) : undefined;
@@ -369,6 +595,30 @@ export async function registerIntegrationRoutes(app: FastifyInstance) {
           config,
           updatedBy: userId,
         },
+      });
+      await logAudit({
+        ...auditContextFromRequest(req),
+        action: 'integration_setting_updated',
+        targetTable: 'integration_settings',
+        targetId: updated.id,
+        metadata: {
+          before: {
+            type: current.type,
+            name: truncateForAudit(current.name ?? null),
+            provider: truncateForAudit(current.provider ?? null),
+            status: current.status,
+            schedule: truncateForAudit(current.schedule ?? null),
+            config: sanitizeConfigForAudit(current.config),
+          },
+          after: {
+            type: updated.type,
+            name: truncateForAudit(updated.name ?? null),
+            provider: truncateForAudit(updated.provider ?? null),
+            status: updated.status,
+            schedule: truncateForAudit(updated.schedule ?? null),
+            config: sanitizeConfigForAudit(updated.config),
+          },
+        } as Prisma.InputJsonValue,
       });
       return updated;
     },
@@ -390,6 +640,18 @@ export async function registerIntegrationRoutes(app: FastifyInstance) {
       }
       const userId = req.user?.userId;
       const run = await runIntegrationSetting(setting, userId);
+      await logAudit({
+        ...auditContextFromRequest(req),
+        action: 'integration_run_executed',
+        targetTable: 'integration_runs',
+        targetId: run.id,
+        metadata: buildIntegrationRunAuditMetadata({
+          trigger: 'manual',
+          settingId: setting.id,
+          settingType: setting.type,
+          run,
+        }) as Prisma.InputJsonValue,
+      });
       return run;
     },
   );
@@ -580,6 +842,18 @@ export async function registerIntegrationRoutes(app: FastifyInstance) {
           retryCount: run.retryCount,
         });
         retryResults.push({ id: updated.id, status: updated.status });
+        await logAudit({
+          ...auditContextFromRequest(req),
+          action: 'integration_run_executed',
+          targetTable: 'integration_runs',
+          targetId: updated.id,
+          metadata: buildIntegrationRunAuditMetadata({
+            trigger: 'retry',
+            settingId: run.setting.id,
+            settingType: run.setting.type,
+            run: updated,
+          }) as Prisma.InputJsonValue,
+        });
       }
 
       const scheduledSettings = await prisma.integrationSetting.findMany({
@@ -594,7 +868,28 @@ export async function registerIntegrationRoutes(app: FastifyInstance) {
         }
         const run = await runIntegrationSetting(setting, userId);
         scheduledResults.push({ id: run.id, status: run.status });
+        await logAudit({
+          ...auditContextFromRequest(req),
+          action: 'integration_run_executed',
+          targetTable: 'integration_runs',
+          targetId: run.id,
+          metadata: buildIntegrationRunAuditMetadata({
+            trigger: 'scheduled',
+            settingId: setting.id,
+            settingType: setting.type,
+            run,
+          }) as Prisma.InputJsonValue,
+        });
       }
+      await logAudit({
+        ...auditContextFromRequest(req),
+        action: 'integration_jobs_run_executed',
+        targetTable: 'integration_runs',
+        metadata: {
+          retryCount: retryResults.length,
+          scheduledCount: scheduledResults.length,
+        } as Prisma.InputJsonValue,
+      });
       return {
         ok: true,
         retryCount: retryResults.length,
