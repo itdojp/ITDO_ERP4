@@ -1,4 +1,4 @@
-import { FastifyInstance } from 'fastify';
+import { FastifyInstance, FastifyRequest } from 'fastify';
 import type { Prisma } from '@prisma/client';
 import {
   sendEstimateEmail,
@@ -214,6 +214,17 @@ function shouldMarkSent(result: NotifyResult) {
   return SUCCESS_NOTIFY_STATUSES.has(result.status);
 }
 
+function resolveEvidenceRequiredActionsOverride(req: FastifyRequest) {
+  if (process.env.E2E_ENABLE_TEST_HOOKS !== '1') return undefined;
+  const raw = req.headers['x-e2e-approval-evidence-required-actions'];
+  if (typeof raw === 'string' && raw.trim()) return raw.trim();
+  if (Array.isArray(raw)) {
+    const joined = raw.join(',').trim();
+    return joined || undefined;
+  }
+  return undefined;
+}
+
 async function createSendLog(db: SendLogClient, input: SendLogInput) {
   return db.documentSendLog.create({
     data: {
@@ -351,7 +362,7 @@ export async function registerSendRoutes(app: FastifyInstance) {
         actionKey: 'send',
         targetTable: 'estimates',
         targetId: id,
-      });
+      }, resolveEvidenceRequiredActionsOverride(req));
       if (!approvalEvidenceGate.allowed) {
         return reply.status(403).send({
           error: {
@@ -546,7 +557,7 @@ export async function registerSendRoutes(app: FastifyInstance) {
         actionKey: 'send',
         targetTable: 'invoices',
         targetId: id,
-      });
+      }, resolveEvidenceRequiredActionsOverride(req));
       if (!approvalEvidenceGate.allowed) {
         return reply.status(403).send({
           error: {
@@ -741,7 +752,7 @@ export async function registerSendRoutes(app: FastifyInstance) {
         actionKey: 'send',
         targetTable: 'purchase_orders',
         targetId: id,
-      });
+      }, resolveEvidenceRequiredActionsOverride(req));
       if (!approvalEvidenceGate.allowed) {
         return reply.status(403).send({
           error: {
