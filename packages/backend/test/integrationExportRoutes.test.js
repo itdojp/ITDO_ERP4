@@ -71,6 +71,7 @@ test('GET /integrations/hr/exports/users supports updatedSince and pagination', 
 
   assert.equal(capturedFindMany?.take, 10);
   assert.equal(capturedFindMany?.skip, 2);
+  assert.deepEqual(capturedFindMany?.orderBy, { createdAt: 'desc' });
   assert.equal(
     capturedFindMany?.where?.updatedAt?.gt instanceof Date,
     true,
