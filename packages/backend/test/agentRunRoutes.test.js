@@ -33,7 +33,7 @@ test('GET /agent-runs/:id returns run details for admin role', async () => {
 
   const run = {
     id: 'run-001',
-    status: 'completed',
+    status: 'failed',
     requestId: 'req-001',
     source: 'agent',
     principalUserId: 'principal-user',
@@ -94,7 +94,7 @@ test('GET /agent-runs/:id returns run details for admin role', async () => {
         assert.equal(body.method, 'POST');
         assert.equal(body.path, '/invoices/1/submit');
         assert.equal(body.httpStatus, 403);
-        assert.equal(body.status, 'completed');
+        assert.equal(body.status, 'failed');
         assert.equal(body.errorCode, 'policy_denied');
         assert.equal(Array.isArray(body.steps), true);
         assert.equal(body.steps.length, 1);
@@ -141,7 +141,7 @@ test('GET /agent-runs/:id returns 404 when run is not found', async () => {
   );
 });
 
-test('GET /agent-runs/:id returns 400 when id is empty after trim', async () => {
+test('GET /agent-runs/:id returns 400 when id is whitespace-only', async () => {
   process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
   process.env.AUTH_MODE = 'header';
 
@@ -157,7 +157,7 @@ test('GET /agent-runs/:id returns 400 when id is empty after trim', async () => 
     });
     assert.equal(res.statusCode, 400, res.body);
     const body = JSON.parse(res.body);
-    assert.equal(body.error?.code, 'INVALID_ID');
+    assert.equal(body.error?.code, 'VALIDATION_ERROR');
   } finally {
     await server.close();
   }

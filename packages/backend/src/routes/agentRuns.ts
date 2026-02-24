@@ -128,7 +128,7 @@ export async function registerAgentRunRoutes(app: FastifyInstance) {
           additionalProperties: false,
           required: ['id'],
           properties: {
-            id: { type: 'string', minLength: 1 },
+            id: { type: 'string', minLength: 1, pattern: '\\S' },
           },
         },
         response: {

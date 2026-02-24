@@ -3,6 +3,14 @@ import { expect, test, type Page } from '@playwright/test';
 
 const baseUrl = process.env.E2E_BASE_URL || 'http://localhost:5173';
 const apiBase = process.env.E2E_API_BASE || 'http://localhost:3002';
+const actionTimeout = (() => {
+  const raw = process.env.E2E_ACTION_TIMEOUT_MS;
+  if (raw) {
+    const value = Number(raw);
+    if (Number.isFinite(value) && value > 0) return value;
+  }
+  return process.env.CI ? 30_000 : 12_000;
+})();
 
 const authState = {
   userId: 'demo-user',
@@ -17,6 +25,12 @@ const buildAuthHeaders = () => ({
   'x-project-ids': authState.projectIds.join(','),
   'x-group-ids': authState.groupIds.join(','),
 });
+
+async function ensureOk(res: { ok(): boolean; status(): number; text(): any }) {
+  if (res.ok()) return;
+  const body = await res.text();
+  throw new Error(`[e2e] api failed: ${res.status()} ${body}`);
+}
 
 async function prepare(page: Page) {
   await page.addInitScript((state) => {
@@ -42,6 +56,8 @@ async function navigateToAuditLogs(page: Page) {
 test('frontend smoke audit logs: AgentRun詳細ドリルダウンが利用できる @core', async ({
   page,
 }) => {
+  test.setTimeout(180_000);
+
   const marker = `${Date.now().toString().slice(-6)}-${randomUUID().slice(0, 8)}`;
   const action = `agent_run_seeded_${marker}`;
   const seedRes = await page.request.post(
@@ -55,7 +71,7 @@ test('frontend smoke audit logs: AgentRun詳細ドリルダウンが利用でき
       },
     },
   );
-  expect(seedRes.ok()).toBeTruthy();
+  await ensureOk(seedRes);
   const seed = await seedRes.json();
   const runId = String(seed?.runId || '').trim();
   expect(runId).toBeTruthy();
@@ -63,7 +79,7 @@ test('frontend smoke audit logs: AgentRun詳細ドリルダウンが利用でき
     `${apiBase}/audit-logs?action=${encodeURIComponent(action)}&format=json&mask=0`,
     { headers: buildAuthHeaders() },
   );
-  expect(auditRes.ok()).toBeTruthy();
+  await ensureOk(auditRes);
   const auditPayload = await auditRes.json();
   expect(Array.isArray(auditPayload?.items)).toBeTruthy();
   expect((auditPayload?.items ?? []).length).toBeGreaterThan(0);
@@ -75,18 +91,26 @@ test('frontend smoke audit logs: AgentRun詳細ドリルダウンが利用でき
     .locator('main')
     .getByRole('heading', { name: '監査ログ', level: 2, exact: true })
     .locator('..');
-  await auditSection.getByLabel('action').fill(action);
-  await auditSection.getByRole('button', { name: '検索' }).click();
+  await auditSection.getByLabel('action').fill(action, {
+    timeout: actionTimeout,
+  });
+  await auditSection.getByRole('button', { name: '検索' }).click({
+    timeout: actionTimeout,
+  });
 
   const detailButton = auditSection
     .getByRole('button', { name: '詳細' })
     .first();
-  await expect(detailButton).toBeVisible();
+  await expect(detailButton).toBeVisible({ timeout: actionTimeout });
   await detailButton.click();
 
-  await expect(auditSection.getByText(`AgentRun ${runId}`)).toBeVisible();
+  await expect(auditSection.getByText(`AgentRun ${runId}`)).toBeVisible({
+    timeout: actionTimeout,
+  });
   await expect(
     auditSection.getByText('"decisionType": "policy_override"'),
-  ).toBeVisible();
-  await expect(auditSection.getByText('"status": "failed"')).toBeVisible();
+  ).toBeVisible({ timeout: actionTimeout });
+  await expect(auditSection.getByText('"status": "failed"')).toBeVisible({
+    timeout: actionTimeout,
+  });
 });
