@@ -92,7 +92,10 @@ function parseRequiredActions(
       return { flow, action } satisfies ActionPolicyRequiredActionItem;
     })
     .filter((item): item is ActionPolicyRequiredActionItem => item !== null);
-  if (invalidTokens.length && !warnedInvalidActionPolicyRequiredActions.has(raw)) {
+  if (
+    invalidTokens.length &&
+    !warnedInvalidActionPolicyRequiredActions.has(raw)
+  ) {
     warnedInvalidActionPolicyRequiredActions.add(raw);
     console.warn(
       `[actionPolicy] invalid ACTION_POLICY_REQUIRED_ACTIONS token(s) ignored: ${invalidTokens.join(', ')}`,
@@ -115,7 +118,8 @@ function isPolicyMatchRequiredByEnv(
   if (!normalizedFlowType || !normalizedActionKey) return false;
   for (const item of items) {
     const flowMatched = item.flow === '*' || item.flow === normalizedFlowType;
-    const actionMatched = item.action === '*' || item.action === normalizedActionKey;
+    const actionMatched =
+      item.action === '*' || item.action === normalizedActionKey;
     if (flowMatched && actionMatched) return true;
   }
   return false;
