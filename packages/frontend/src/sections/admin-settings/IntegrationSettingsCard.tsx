@@ -32,6 +32,34 @@ export type IntegrationRunItem = {
   nextRetryAt?: string | null;
 };
 
+export type IntegrationRunMetrics = {
+  window?: {
+    from?: string;
+    to?: string;
+    days?: number;
+    limit?: number;
+  } | null;
+  summary?: {
+    totalRuns?: number;
+    successRuns?: number;
+    failedRuns?: number;
+    runningRuns?: number;
+    retryScheduledRuns?: number;
+    successRate?: number | null;
+    avgDurationMs?: number | null;
+    p95DurationMs?: number | null;
+  } | null;
+  failureReasons?: Array<{ reason: string; count: number }> | null;
+  byType?: Array<{
+    type: string;
+    totalRuns: number;
+    successRuns: number;
+    failedRuns: number;
+    runningRuns: number;
+    successRate?: number | null;
+  }> | null;
+};
+
 type IntegrationSettingsCardProps = {
   integrationForm: IntegrationFormState;
   setIntegrationForm: React.Dispatch<
@@ -50,6 +78,7 @@ type IntegrationSettingsCardProps = {
   onEdit: (item: IntegrationSettingsCardItem) => void;
   onRun: (id: string) => void;
   runs: IntegrationRunItem[];
+  metrics: IntegrationRunMetrics | null;
   formatDateTime: (value?: string | null) => string;
 };
 
@@ -69,6 +98,7 @@ export const IntegrationSettingsCard = ({
   onEdit,
   onRun,
   runs,
+  metrics,
   formatDateTime,
 }: IntegrationSettingsCardProps) => (
   <div className="card" style={{ padding: 12 }}>
@@ -238,6 +268,50 @@ export const IntegrationSettingsCard = ({
       ))}
     </div>
     <div className="list" style={{ display: 'grid', gap: 8, marginTop: 12 }}>
+      {metrics && (
+        <div className="card" style={{ padding: 12 }}>
+          <div className="row" style={{ justifyContent: 'space-between' }}>
+            <strong>実行メトリクス</strong>
+            <span className="badge">直近 {metrics.window?.days ?? '-'} 日</span>
+          </div>
+          <div style={{ fontSize: 12, color: '#475569', marginTop: 6 }}>
+            total: {metrics.summary?.totalRuns ?? 0} / success:{' '}
+            {metrics.summary?.successRuns ?? 0} / failed:{' '}
+            {metrics.summary?.failedRuns ?? 0} / running:{' '}
+            {metrics.summary?.runningRuns ?? 0}
+          </div>
+          <div style={{ fontSize: 12, color: '#475569', marginTop: 4 }}>
+            successRate:{' '}
+            {metrics.summary?.successRate != null
+              ? `${metrics.summary.successRate}%`
+              : '-'}{' '}
+            / avg(ms): {metrics.summary?.avgDurationMs ?? '-'} / p95(ms):{' '}
+            {metrics.summary?.p95DurationMs ?? '-'}
+          </div>
+          <div style={{ fontSize: 12, color: '#475569', marginTop: 4 }}>
+            retryScheduled: {metrics.summary?.retryScheduledRuns ?? 0}
+          </div>
+          <div style={{ fontSize: 12, color: '#475569', marginTop: 6 }}>
+            failureReasons:{' '}
+            {(metrics.failureReasons ?? []).length > 0
+              ? (metrics.failureReasons ?? [])
+                  .map((item) => `${item.reason} (${item.count})`)
+                  .join(', ')
+              : '-'}
+          </div>
+          <div style={{ fontSize: 12, color: '#475569', marginTop: 6 }}>
+            byType:{' '}
+            {(metrics.byType ?? []).length > 0
+              ? (metrics.byType ?? [])
+                  .map(
+                    (item) =>
+                      `${item.type}: ${item.totalRuns} (ok ${item.successRuns} / ng ${item.failedRuns})`,
+                  )
+                  .join(' | ')
+              : '-'}
+          </div>
+        </div>
+      )}
       {runs.length === 0 && <div className="card">連携履歴なし</div>}
       {runs.map((run) => (
         <div key={run.id} className="card" style={{ padding: 12 }}>

@@ -119,6 +119,7 @@
   - `/jobs/integrations/run` が `nextRetryAt <= now` かつ `retryCount < retryMax` の失敗 run のみ再実行すること
   - `simulateFailure=true` 時に `retryCount` と `nextRetryAt`（指数バックオフ）が更新されること
   - `status=disabled` の setting が `/integration-settings/:id/run` で拒否されること
+  - `/integration-runs/metrics` が成功率・遅延（avg/p95）・失敗理由・type別集計を返すこと
 
 ### 手動実行
 - `/integration-settings/:id/run` を実行し、`integration_runs` に status=success が記録されることを確認。
@@ -141,6 +142,14 @@
 - 実行件数（runs/day）、失敗件数、リトライ件数
 - delta件数（updatedSinceを指定した場合の customers/vendors/contacts/users/wellbeing）
 - 実行時間（startedAt/finishedAt）
+
+### 追加API（運用向け）
+- `GET /integration-runs/metrics`
+  - query: `settingId?`, `days?`（既定14）, `limit?`（既定2000）
+  - response:
+    - `summary`: `totalRuns/successRuns/failedRuns/runningRuns/retryScheduledRuns/successRate/avgDurationMs/p95DurationMs`
+    - `failureReasons`: 失敗理由の上位件数
+    - `byType`: `hr` / `crm` など type別集計
 
 ## オープン事項
 - CRM 側のフィールド定義

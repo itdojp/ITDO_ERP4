@@ -1537,6 +1537,17 @@ export const integrationSettingPatchSchema = {
   body: Type.Partial(integrationSettingSchema.body),
 };
 
+export const integrationRunMetricsQuerySchema = {
+  querystring: Type.Object(
+    {
+      settingId: Type.Optional(Type.String({ minLength: 1 })),
+      days: Type.Optional(Type.Integer({ minimum: 1, maximum: 90 })),
+      limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 5000 })),
+    },
+    { additionalProperties: false },
+  ),
+};
+
 export const chatSettingPatchSchema = {
   body: Type.Object(
     {
