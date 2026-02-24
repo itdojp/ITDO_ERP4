@@ -266,6 +266,8 @@ test('agent mvp: 請求ドラフト生成→承認→送信の通しが成立す
   await ensureOk(regenerateRes);
   const regeneratedDraft = await regenerateRes.json();
   expect(regeneratedDraft?.kind).toBe('invoice_send');
+  expect(typeof regeneratedDraft?.draft?.subject).toBe('string');
+  expect(typeof regeneratedDraft?.draft?.body).toBe('string');
   expect(Number(regeneratedDraft?.diff?.changeCount ?? 0)).toBeGreaterThan(0);
 
   const submitRes = await request.post(
