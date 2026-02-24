@@ -64,6 +64,7 @@ test('ensureApprovalEvidenceReady: denies when approved instance is missing', as
         assert.equal(args.where.flowType, 'invoice');
         assert.equal(args.where.targetTable, 'invoices');
         assert.equal(args.where.targetId, 'inv-1');
+        assert.equal(Object.hasOwn(args.where, 'status'), false);
         return null;
       },
     },
@@ -88,10 +89,37 @@ test('ensureApprovalEvidenceReady: denies when approved instance is missing', as
   assert.equal(res.code, 'APPROVAL_REQUIRED');
 });
 
+test('ensureApprovalEvidenceReady: denies when latest approval is not approved', async () => {
+  const client = {
+    approvalInstance: {
+      findFirst: async () => ({ id: 'approval-latest', status: 'pending_qa' }),
+    },
+    evidenceSnapshot: {
+      findFirst: async () => {
+        throw new Error('should not be called');
+      },
+    },
+  };
+  const res = await ensureApprovalEvidenceReady(
+    client,
+    {
+      flowType: 'invoice',
+      actionKey: 'send',
+      targetTable: 'invoices',
+      targetId: 'inv-1',
+    },
+    'invoice:send',
+  );
+  assert.equal(res.required, true);
+  assert.equal(res.allowed, false);
+  assert.equal(res.code, 'APPROVAL_REQUIRED');
+  assert.equal(res.approvalInstanceId, 'approval-latest');
+});
+
 test('ensureApprovalEvidenceReady: denies when evidence snapshot is missing', async () => {
   const client = {
     approvalInstance: {
-      findFirst: async () => ({ id: 'approval-1' }),
+      findFirst: async () => ({ id: 'approval-1', status: 'approved' }),
     },
     evidenceSnapshot: {
       findFirst: async (args) => {
@@ -119,7 +147,7 @@ test('ensureApprovalEvidenceReady: denies when evidence snapshot is missing', as
 test('ensureApprovalEvidenceReady: allows when approved instance and snapshot exist', async () => {
   const client = {
     approvalInstance: {
-      findFirst: async () => ({ id: 'approval-1' }),
+      findFirst: async () => ({ id: 'approval-1', status: 'approved' }),
     },
     evidenceSnapshot: {
       findFirst: async () => ({ id: 'snapshot-1' }),

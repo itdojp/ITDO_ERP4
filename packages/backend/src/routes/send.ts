@@ -346,15 +346,6 @@ export async function registerSendRoutes(app: FastifyInstance) {
           },
         });
       }
-      await logActionPolicyOverrideIfNeeded({
-        req,
-        flowType: FlowTypeValue.estimate,
-        actionKey: 'send',
-        targetTable: 'estimates',
-        targetId: id,
-        reasonText,
-        result: policyRes,
-      });
       const approvalEvidenceGate = await ensureApprovalEvidenceReady(prisma, {
         flowType: FlowTypeValue.estimate,
         actionKey: 'send',
@@ -373,6 +364,15 @@ export async function registerSendRoutes(app: FastifyInstance) {
           },
         });
       }
+      await logActionPolicyOverrideIfNeeded({
+        req,
+        flowType: FlowTypeValue.estimate,
+        actionKey: 'send',
+        targetTable: 'estimates',
+        targetId: id,
+        reasonText,
+        result: policyRes,
+      });
       const resolved = await resolveTemplateContext('estimate', {
         templateId,
         templateSettingId,
@@ -541,15 +541,6 @@ export async function registerSendRoutes(app: FastifyInstance) {
           },
         });
       }
-      await logActionPolicyOverrideIfNeeded({
-        req,
-        flowType: FlowTypeValue.invoice,
-        actionKey: 'send',
-        targetTable: 'invoices',
-        targetId: id,
-        reasonText,
-        result: policyRes,
-      });
       const approvalEvidenceGate = await ensureApprovalEvidenceReady(prisma, {
         flowType: FlowTypeValue.invoice,
         actionKey: 'send',
@@ -568,6 +559,15 @@ export async function registerSendRoutes(app: FastifyInstance) {
           },
         });
       }
+      await logActionPolicyOverrideIfNeeded({
+        req,
+        flowType: FlowTypeValue.invoice,
+        actionKey: 'send',
+        targetTable: 'invoices',
+        targetId: id,
+        reasonText,
+        result: policyRes,
+      });
       const resolved = await resolveTemplateContext('invoice', {
         templateId,
         templateSettingId,
@@ -736,15 +736,6 @@ export async function registerSendRoutes(app: FastifyInstance) {
           },
         });
       }
-      await logActionPolicyOverrideIfNeeded({
-        req,
-        flowType: FlowTypeValue.purchase_order,
-        actionKey: 'send',
-        targetTable: 'purchase_orders',
-        targetId: id,
-        reasonText,
-        result: policyRes,
-      });
       const approvalEvidenceGate = await ensureApprovalEvidenceReady(prisma, {
         flowType: FlowTypeValue.purchase_order,
         actionKey: 'send',
@@ -763,6 +754,15 @@ export async function registerSendRoutes(app: FastifyInstance) {
           },
         });
       }
+      await logActionPolicyOverrideIfNeeded({
+        req,
+        flowType: FlowTypeValue.purchase_order,
+        actionKey: 'send',
+        targetTable: 'purchase_orders',
+        targetId: id,
+        reasonText,
+        result: policyRes,
+      });
       const resolved = await resolveTemplateContext('purchase_order', {
         templateId,
         templateSettingId,
