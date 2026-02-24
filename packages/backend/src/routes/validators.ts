@@ -1527,12 +1527,7 @@ export const integrationSettingSchema = {
       provider: Type.Optional(Type.String()),
       status: Type.Optional(integrationStatusSchema),
       schedule: Type.Optional(Type.String()),
-      config: Type.Optional(
-        Type.Union([
-          Type.Object({}, { additionalProperties: true }),
-          Type.Null(),
-        ]),
-      ),
+      config: Type.Optional(Type.Any()),
     },
     { additionalProperties: false },
   ),
