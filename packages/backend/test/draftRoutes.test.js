@@ -218,6 +218,78 @@ test('POST /drafts returns target_required for invoice_send without targetId', a
   });
 });
 
+test('POST /drafts generates notification_report without targetId', async () => {
+  process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
+  process.env.AUTH_MODE = 'header';
+
+  let capturedAudit = null;
+  await withPrismaStubs(
+    {
+      'auditLog.create': async (args) => {
+        capturedAudit = args;
+        return { id: 'audit-draft-004' };
+      },
+    },
+    async () => {
+      const server = await buildServer({ logger: false });
+      try {
+        const res = await server.inject({
+          method: 'POST',
+          url: '/drafts',
+          headers: {
+            'x-user-id': 'admin-user',
+            'x-roles': 'admin',
+          },
+          payload: {
+            kind: 'notification_report',
+            context: {
+              reportName: '月次サマリ',
+              period: '2026-02',
+              highlights: ['売上増', '原価減'],
+            },
+          },
+        });
+        assert.equal(res.statusCode, 200, res.body);
+        const body = JSON.parse(res.body);
+        assert.equal(body.kind, 'notification_report');
+        assert.match(String(body?.draft?.subject ?? ''), /月次サマリ/);
+        assert.match(String(body?.draft?.body ?? ''), /売上増/);
+        assert.equal(body?.metadata?.targetTable, 'report_notifications');
+        assert.match(String(body?.metadata?.targetId ?? ''), /^report-/);
+      } finally {
+        await server.close();
+      }
+    },
+  );
+
+  assert.equal(capturedAudit?.data?.action, 'draft_generated');
+});
+
+test('POST /drafts returns 403 for non-admin role', async () => {
+  process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
+  process.env.AUTH_MODE = 'header';
+
+  await withPrismaStubs({}, async () => {
+    const server = await buildServer({ logger: false });
+    try {
+      const res = await server.inject({
+        method: 'POST',
+        url: '/drafts',
+        headers: {
+          'x-user-id': 'normal-user',
+          'x-roles': 'user',
+        },
+        payload: {
+          kind: 'notification_report',
+        },
+      });
+      assert.equal(res.statusCode, 403, res.body);
+    } finally {
+      await server.close();
+    }
+  });
+});
+
 test('POST /drafts returns 404 when approval target does not exist', async () => {
   process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
   process.env.AUTH_MODE = 'header';
@@ -239,6 +311,78 @@ test('POST /drafts returns 404 when approval target does not exist', async () =>
           payload: {
             kind: 'approval_request',
             targetId: 'approval-unknown',
+          },
+        });
+        assert.equal(res.statusCode, 404, res.body);
+        const body = JSON.parse(res.body);
+        const errorCode =
+          typeof body.error === 'string' ? body.error : body?.error?.code;
+        assert.equal(errorCode, 'not_found');
+      } finally {
+        await server.close();
+      }
+    },
+  );
+});
+
+test('POST /drafts/regenerate returns target_required without targetId for approval_request', async () => {
+  process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
+  process.env.AUTH_MODE = 'header';
+
+  await withPrismaStubs({}, async () => {
+    const server = await buildServer({ logger: false });
+    try {
+      const res = await server.inject({
+        method: 'POST',
+        url: '/drafts/regenerate',
+        headers: {
+          'x-user-id': 'admin-user',
+          'x-roles': 'admin',
+        },
+        payload: {
+          kind: 'approval_request',
+          previous: {
+            subject: '旧件名',
+            body: '旧本文',
+          },
+        },
+      });
+      assert.equal(res.statusCode, 400, res.body);
+      const body = JSON.parse(res.body);
+      const errorCode =
+        typeof body.error === 'string' ? body.error : body?.error?.code;
+      assert.equal(errorCode, 'target_required');
+    } finally {
+      await server.close();
+    }
+  });
+});
+
+test('POST /drafts/regenerate returns 404 when approval target does not exist', async () => {
+  process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
+  process.env.AUTH_MODE = 'header';
+
+  await withPrismaStubs(
+    {
+      'approvalInstance.findUnique': async () => null,
+    },
+    async () => {
+      const server = await buildServer({ logger: false });
+      try {
+        const res = await server.inject({
+          method: 'POST',
+          url: '/drafts/regenerate',
+          headers: {
+            'x-user-id': 'admin-user',
+            'x-roles': 'admin',
+          },
+          payload: {
+            kind: 'approval_request',
+            targetId: 'approval-unknown',
+            previous: {
+              subject: '旧件名',
+              body: '旧本文',
+            },
           },
         });
         assert.equal(res.statusCode, 404, res.body);
