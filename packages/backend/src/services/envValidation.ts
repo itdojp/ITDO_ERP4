@@ -79,7 +79,9 @@ function validateFlowActionCsv(
     .filter(Boolean)
     .filter((token) => {
       const [flow, action, extra] = token.split(':');
-      return !flow || !action || typeof extra !== 'undefined';
+      const flowName = flow?.trim();
+      const actionName = action?.trim();
+      return !flowName || !actionName || typeof extra !== 'undefined';
     });
   if (invalidTokens.length) {
     addIssue(
