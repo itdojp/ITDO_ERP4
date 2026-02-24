@@ -101,6 +101,41 @@
   - CRM データ: 各システムの REST API 等による API 同期
 - 頻度: 日次 or イベント駆動（必要に応じて再送）
 
+## 代表コネクタ PoC（Phase 3 v1）
+
+### CRM コネクタ（実装済み）
+- `GET /integrations/crm/exports/customers`
+- `GET /integrations/crm/exports/vendors`
+- `GET /integrations/crm/exports/contacts`
+
+### HR コネクタ（実装済み）
+- `GET /integrations/hr/exports/users`
+- `GET /integrations/hr/exports/wellbeing`
+
+共通仕様:
+- query: `updatedSince?`, `limit?`, `offset?`
+- 認可: `admin` / `mgmt`
+- `updatedSince` は `updatedAt > updatedSince` 判定
+- 不正な `updatedSince` は `400 invalid_updatedSince`
+
+## EvidencePack と外部連携実行の関連付け仕様（確定）
+
+v1 方針:
+- SoR は `integration_runs.id` と `approval_instances.id` を基準に紐付ける。
+- 監査再現は audit log を主経路にする（`targetTable=integration_runs`, `targetId=<runId>`）。
+- 参照キーは以下を標準化する。
+  - `approvalInstanceId`（必須）
+  - `evidenceSnapshotVersion`（任意）
+  - `evidencePackDigest`（任意、PDF/JSON export の SHA-256）
+
+運用ルール:
+- 外部連携を承認付き操作として扱う場合、少なくとも `approvalInstanceId` を記録する。
+- digest が存在する場合は再計算可能な形式（SHA-256 hex）で保持する。
+- 監査時は `integration_runs` と EvidenceSnapshot/EvidencePack を上記キーで突合する。
+
+段階導入:
+- Phase 3 v1 では仕様を固定し、関連付け情報の記録経路を audit metadata に順次追加する。
+
 ## 匿名化/閲覧制御（HR）
 - wellbeing の閲覧は人事グループのみ
 - 集計は 5人未満を非表示（既存ルール）
