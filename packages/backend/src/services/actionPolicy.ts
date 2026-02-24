@@ -48,25 +48,74 @@ export type EvaluateActionPolicyWithFallbackResult =
   | (EvaluateActionPolicyResult & { policyApplied: true })
   | { allowed: true; policyApplied: false };
 
+type ActionPolicyRequiredActionItem = {
+  flow: string;
+  action: string;
+};
+
+const actionPolicyRequiredActionsCache: {
+  raw?: string;
+  items: ActionPolicyRequiredActionItem[];
+} = {
+  raw: undefined,
+  items: [],
+};
+
+const warnedInvalidActionPolicyRequiredActions = new Set<string>();
+
 function normalizeFlowType(value: unknown) {
   return typeof value === 'string' ? value.trim().toLowerCase() : '';
 }
 
-function isPolicyMatchRequiredByEnv(flowType: FlowType, actionKey: string) {
-  const raw = process.env.ACTION_POLICY_REQUIRED_ACTIONS;
-  if (!raw) return false;
-  const normalizedFlowType = normalizeFlowType(flowType);
-  const normalizedActionKey = normalizeString(actionKey).toLowerCase();
-  if (!normalizedFlowType || !normalizedActionKey) return false;
+function parseRequiredActions(
+  raw: string | undefined,
+): ActionPolicyRequiredActionItem[] {
+  if (actionPolicyRequiredActionsCache.raw === raw) {
+    return actionPolicyRequiredActionsCache.items;
+  }
+  if (!raw) {
+    actionPolicyRequiredActionsCache.raw = raw;
+    actionPolicyRequiredActionsCache.items = [];
+    return [];
+  }
+  const invalidTokens: string[] = [];
   const items = raw
     .split(',')
     .map((item) => item.trim().toLowerCase())
-    .filter(Boolean);
+    .filter(Boolean)
+    .map((item) => {
+      const [flow, action] = item.split(':');
+      if (!flow || !action) {
+        invalidTokens.push(item);
+        return null;
+      }
+      return { flow, action } satisfies ActionPolicyRequiredActionItem;
+    })
+    .filter((item): item is ActionPolicyRequiredActionItem => item !== null);
+  if (invalidTokens.length && !warnedInvalidActionPolicyRequiredActions.has(raw)) {
+    warnedInvalidActionPolicyRequiredActions.add(raw);
+    console.warn(
+      `[actionPolicy] invalid ACTION_POLICY_REQUIRED_ACTIONS token(s) ignored: ${invalidTokens.join(', ')}`,
+    );
+  }
+  actionPolicyRequiredActionsCache.raw = raw;
+  actionPolicyRequiredActionsCache.items = items;
+  return items;
+}
+
+function isPolicyMatchRequiredByEnv(
+  flowType: FlowType,
+  actionKey: string,
+  rawText: string | undefined = process.env.ACTION_POLICY_REQUIRED_ACTIONS,
+) {
+  const items = parseRequiredActions(rawText);
+  if (!items.length) return false;
+  const normalizedFlowType = normalizeFlowType(flowType);
+  const normalizedActionKey = normalizeString(actionKey).toLowerCase();
+  if (!normalizedFlowType || !normalizedActionKey) return false;
   for (const item of items) {
-    const [flow, action] = item.split(':');
-    if (!flow || !action) continue;
-    const flowMatched = flow === '*' || flow === normalizedFlowType;
-    const actionMatched = action === '*' || action === normalizedActionKey;
+    const flowMatched = item.flow === '*' || item.flow === normalizedFlowType;
+    const actionMatched = item.action === '*' || item.action === normalizedActionKey;
     if (flowMatched && actionMatched) return true;
   }
   return false;
@@ -639,14 +688,22 @@ export async function evaluateActionPolicy(
  */
 export async function evaluateActionPolicyWithFallback(
   input: EvaluateActionPolicyInput,
-  options?: { client?: any; requirePolicyMatch?: boolean },
+  options?: {
+    client?: any;
+    requirePolicyMatch?: boolean;
+    requiredActionsText?: string;
+  },
 ): Promise<EvaluateActionPolicyWithFallbackResult> {
   const res = await evaluateActionPolicy(input, options);
   if (res.allowed) return { ...res, policyApplied: true } as const;
   if (res.reason === 'no_matching_policy') {
     const requirePolicyMatch =
       options?.requirePolicyMatch ??
-      isPolicyMatchRequiredByEnv(input.flowType, input.actionKey);
+      isPolicyMatchRequiredByEnv(
+        input.flowType,
+        input.actionKey,
+        options?.requiredActionsText,
+      );
     if (requirePolicyMatch) {
       return { ...res, policyApplied: true } as const;
     }

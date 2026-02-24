@@ -36,9 +36,29 @@ test('evaluateActionPolicyWithFallback: deny when no policy and requirePolicyMat
   assert.equal(res.reason, 'no_matching_policy');
 });
 
-test('evaluateActionPolicyWithFallback: ACTION_POLICY_REQUIRED_ACTIONS can require policy match', async () => {
-  const prev = process.env.ACTION_POLICY_REQUIRED_ACTIONS;
-  process.env.ACTION_POLICY_REQUIRED_ACTIONS = 'invoice:edit';
+test('evaluateActionPolicyWithFallback: requiredActionsText can require policy match', async () => {
+  const res = await evaluateActionPolicyWithFallback(
+    {
+      flowType: 'invoice',
+      actionKey: 'edit',
+      actor: { userId: 'u1', roles: ['admin'], groupIds: [] },
+    },
+    {
+      client: { actionPolicy: { findMany: async () => [] } },
+      requiredActionsText: 'invoice:edit',
+    },
+  );
+  assert.equal(res.policyApplied, true);
+  assert.equal(res.allowed, false);
+  assert.equal(res.reason, 'no_matching_policy');
+});
+
+test('evaluateActionPolicyWithFallback: malformed requiredActionsText token is ignored', async () => {
+  const originalWarn = console.warn;
+  const warnings = [];
+  console.warn = (...args) => {
+    warnings.push(args.map((item) => String(item)).join(' '));
+  };
   try {
     const res = await evaluateActionPolicyWithFallback(
       {
@@ -46,18 +66,18 @@ test('evaluateActionPolicyWithFallback: ACTION_POLICY_REQUIRED_ACTIONS can requi
         actionKey: 'edit',
         actor: { userId: 'u1', roles: ['admin'], groupIds: [] },
       },
-      { client: { actionPolicy: { findMany: async () => [] } } },
+      {
+        client: { actionPolicy: { findMany: async () => [] } },
+        requiredActionsText: 'invoice:edit,broken-token',
+      },
     );
     assert.equal(res.policyApplied, true);
     assert.equal(res.allowed, false);
     assert.equal(res.reason, 'no_matching_policy');
   } finally {
-    if (prev === undefined) {
-      delete process.env.ACTION_POLICY_REQUIRED_ACTIONS;
-    } else {
-      process.env.ACTION_POLICY_REQUIRED_ACTIONS = prev;
-    }
+    console.warn = originalWarn;
   }
+  assert.equal(warnings.length, 1);
 });
 
 test('evaluateActionPolicyWithFallback: deny when policy exists', async () => {
