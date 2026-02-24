@@ -4,6 +4,7 @@ import { findPeriodLock, toPeriodKey } from './periodLock.js';
 import { getEditableDays } from './worklogSetting.js';
 import { isWithinEditableDays, parseDateParam } from '../utils/date.js';
 import { isAllowedChatAckLinkTargetTable } from './chatAckLinkTargets.js';
+import { resolveActionPolicyRequiredActionsText } from './policyEnforcementPreset.js';
 
 export type ActionPolicyActor = {
   userId: string | null;
@@ -109,7 +110,7 @@ function parseRequiredActions(
 function isPolicyMatchRequiredByEnv(
   flowType: FlowType,
   actionKey: string,
-  rawText: string | undefined = process.env.ACTION_POLICY_REQUIRED_ACTIONS,
+  rawText: string | undefined = resolveActionPolicyRequiredActionsText(),
 ) {
   const items = parseRequiredActions(rawText);
   if (!items.length) return false;

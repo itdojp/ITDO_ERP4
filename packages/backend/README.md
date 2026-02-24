@@ -1,6 +1,7 @@
 # ERP4 Backend PoC
 
 ## Setup
+
 ```
 cd packages/backend
 npm install
@@ -8,14 +9,17 @@ cp .env.example .env  # set DATABASE_URL
 npm run prisma:generate
 npm run dev
 ```
+
 本番ビルド確認: `npm run build && node dist/index.js`
 補足: Prisma 7 は `prisma.config.ts` を利用します（`DATABASE_URL` が必須）。
 
 ## Tests
+
 ```
 cd packages/backend
 npm run test
 ```
+
 - `npm run test` / `npm run test:ci` は `node --test` を直接実行せず、`scripts/run-tests.js` を経由します。
 - `DATABASE_URL` が未設定の場合、tests 実行時のみ既定値を補完します（CIと同値）:
   - `postgresql://user:pass@localhost:5432/postgres?schema=public`
@@ -23,6 +27,7 @@ npm run test
 - 注意: アプリの起動（`npm run dev` / `node dist/index.js`）では従来通り `DATABASE_URL` が必須です（安全性維持）。
 
 ## API (PoC)
+
 - health: GET /health
 - auth mock: GET /me (x-user-id, x-roles headers)
 - projects: GET/POST /projects
@@ -39,8 +44,12 @@ npm run test
 - settings: alert-settings CRUD, approval-rules CRUD
 
 ## Notes
+
 - Numbering: PYYYY-MM-NNNN per kind via number_sequences
 - Auth/RBAC: header mock by default; JWT (OIDC) mode available
+- ActionPolicy rollout:
+  - `ACTION_POLICY_ENFORCEMENT_PRESET=phase2_core` で高リスク操作の mandatory 設定を既定適用（明示CSV未指定時）
+  - 明示指定は `ACTION_POLICY_REQUIRED_ACTIONS` / `APPROVAL_EVIDENCE_REQUIRED_ACTIONS`（`flowType:actionKey` CSV）
 - Notifications:
   - Email: SMTP/SendGrid 設定があれば送信、未設定なら stub
   - Slack/Webhook: `WEBHOOK_ALLOWED_HOSTS` 設定時のみ送信（未設定は skipped）
@@ -49,6 +58,7 @@ npm run test
 - Validation: TypeBox for some routes; expand as needed
 
 ## Email (SMTP)
+
 - env:
   - MAIL_TRANSPORT=smtp
   - MAIL_FROM=from@example.com
@@ -58,6 +68,7 @@ npm run test
 - セキュリティ: SMTP資格情報は secrets manager 等で管理し、リポジトリにコミットしないこと。
 
 ## Email (SendGrid)
+
 - env:
   - MAIL_TRANSPORT=sendgrid
   - MAIL_FROM=from@example.com
@@ -70,6 +81,7 @@ npm run test
 - 備考: 添付はbase64で送信するため、ファイルサイズに注意。
 
 ## Slack/Webhook（外部通知）
+
 - env:
   - WEBHOOK_ALLOWED_HOSTS=hooks.slack.com,example.com（ホスト名の完全一致。未設定は無効）
   - WEBHOOK_TIMEOUT_MS (optional; default 5000)
@@ -81,6 +93,7 @@ npm run test
   - 本番で有効化する場合は送信先の統制（運用ルール/監査）を前提にする
 
 ## Push (WebPush)
+
 - env:
   - VAPID_SUBJECT / VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY
   - フロント側は `VITE_PUSH_PUBLIC_KEY` に同じ公開鍵を設定する
@@ -88,16 +101,18 @@ npm run test
   - `POST /push-notifications/test`
 
 ## Auth (JWT/OIDC)
+
 - env:
   - AUTH_MODE=jwt|hybrid|header
   - JWT_JWKS_URL or JWT_PUBLIC_KEY
   - JWT_ISSUER / JWT_AUDIENCE / JWT_ALGS
-  - JWT_*_CLAIM (roles/group_ids/project_ids/org_id)
+  - JWT\_\*\_CLAIM (roles/group_ids/project_ids/org_id)
   - AUTH_DEFAULT_ROLE (rolesが無い場合のデフォルト)
 - 補足: hybridはAuthorizationが無い場合にヘッダ認証へフォールバックする。
 - 注意: headerは開発用のモック。インターネット公開環境では使用しない。
 
 ## SCIM (Provisioning)
+
 - env:
   - SCIM_BEARER_TOKEN
   - SCIM_PAGE_MAX (optional)
@@ -107,6 +122,7 @@ npm run test
 - 認証: `Authorization: Bearer <SCIM_BEARER_TOKEN>`
 
 ## PDF
+
 - env (local):
   - PDF_PROVIDER=local
   - PDF_STORAGE_DIR=/tmp/erp4/pdfs
@@ -123,6 +139,7 @@ npm run test
 - 備考: external は PDF バイナリを返すエンドポイントを想定。
 
 ## Evidence Pack Archive
+
 - env (local):
   - EVIDENCE_ARCHIVE_PROVIDER=local
   - EVIDENCE_ARCHIVE_LOCAL_DIR=/tmp/erp4/evidence-archives
@@ -139,6 +156,7 @@ npm run test
 - 備考: content本体に加えて `.metadata.json` を同時保存し、digest/形式/対象versionを長期保全用に記録します。
 
 ### SMTP smoke test
+
 ```
 npx ts-node --project packages/backend/tsconfig.json scripts/smoke-email.ts
 ```
