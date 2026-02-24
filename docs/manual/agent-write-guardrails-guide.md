@@ -59,7 +59,7 @@
   - 対処: snapshot取得後に再実行
 - `REASON_REQUIRED`
   - 原因: `requireReason=true` の policy で理由未入力
-  - 対処: `reasonText` を補完して再実行
+  - 対処: エンドポイント仕様に合わせて理由項目を補完して再実行（例: 承認APIは body の `reason`、送信系は query の `reasonText`）
 
 ## 監査確認ポイント
 
