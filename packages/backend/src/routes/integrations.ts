@@ -679,4 +679,54 @@ export async function registerIntegrationRoutes(app: FastifyInstance) {
       return { items, limit: take, offset: skip };
     },
   );
+
+  app.get(
+    '/integrations/hr/exports/users',
+    { preHandler: requireRole(['admin', 'mgmt']) },
+    async (req, reply) => {
+      const { limit, offset, updatedSince } = req.query as {
+        limit?: string;
+        offset?: string;
+        updatedSince?: string;
+      };
+      const since = parseUpdatedSince(updatedSince);
+      if (since === null) {
+        return reply.code(400).send({ error: 'invalid_updatedSince' });
+      }
+      const take = parseLimit(limit, 500, 2000);
+      const skip = parseOffset(offset);
+      const items = await prisma.userAccount.findMany({
+        where: since ? { updatedAt: { gt: since } } : undefined,
+        orderBy: { createdAt: 'desc' },
+        take,
+        skip,
+      });
+      return { items, limit: take, offset: skip };
+    },
+  );
+
+  app.get(
+    '/integrations/hr/exports/wellbeing',
+    { preHandler: requireRole(['admin', 'mgmt']) },
+    async (req, reply) => {
+      const { limit, offset, updatedSince } = req.query as {
+        limit?: string;
+        offset?: string;
+        updatedSince?: string;
+      };
+      const since = parseUpdatedSince(updatedSince);
+      if (since === null) {
+        return reply.code(400).send({ error: 'invalid_updatedSince' });
+      }
+      const take = parseLimit(limit, 500, 2000);
+      const skip = parseOffset(offset);
+      const items = await prisma.wellbeingEntry.findMany({
+        where: since ? { updatedAt: { gt: since } } : undefined,
+        orderBy: { entryDate: 'desc' },
+        take,
+        skip,
+      });
+      return { items, limit: take, offset: skip };
+    },
+  );
 }

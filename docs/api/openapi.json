@@ -5367,6 +5367,24 @@
         }
       }
     },
+    "/integrations/hr/exports/users": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/integrations/hr/exports/wellbeing": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
     "/invoices": {
       "get": {
         "responses": {
