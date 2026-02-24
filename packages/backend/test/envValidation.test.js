@@ -212,6 +212,60 @@ test('envValidation: RATE_LIMIT_DOC_SEND_MAX validates positive integer', () => 
   assert.match(result.stderr, /RATE_LIMIT_DOC_SEND_MAX/);
 });
 
+test('envValidation: ACTION_POLICY_ENFORCEMENT_PRESET validates allowed values', () => {
+  const result = runEnvValidation({
+    ACTION_POLICY_ENFORCEMENT_PRESET: 'phase2',
+  });
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /ACTION_POLICY_ENFORCEMENT_PRESET/);
+});
+
+test('envValidation: ACTION_POLICY_REQUIRED_ACTIONS validates flowType:actionKey format', () => {
+  const result = runEnvValidation({
+    ACTION_POLICY_REQUIRED_ACTIONS: 'invoice-send',
+  });
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /ACTION_POLICY_REQUIRED_ACTIONS/);
+});
+
+test('envValidation: ACTION_POLICY_REQUIRED_ACTIONS rejects whitespace-only flow/action tokens', () => {
+  const result = runEnvValidation({
+    ACTION_POLICY_REQUIRED_ACTIONS: 'invoice:send,  :  ,estimate:send',
+  });
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /ACTION_POLICY_REQUIRED_ACTIONS/);
+});
+
+test('envValidation: ACTION_POLICY_REQUIRED_ACTIONS rejects tokens with extra colon', () => {
+  const result = runEnvValidation({
+    ACTION_POLICY_REQUIRED_ACTIONS: 'invoice:send:extra',
+  });
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /ACTION_POLICY_REQUIRED_ACTIONS/);
+});
+
+test('envValidation: APPROVAL_EVIDENCE_REQUIRED_ACTIONS validates flowType:actionKey format', () => {
+  const result = runEnvValidation({
+    APPROVAL_EVIDENCE_REQUIRED_ACTIONS: 'invoice',
+  });
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /APPROVAL_EVIDENCE_REQUIRED_ACTIONS/);
+});
+
+test('envValidation: APPROVAL_EVIDENCE_REQUIRED_ACTIONS accepts mixed valid wildcard tokens', () => {
+  const result = runEnvValidation({
+    APPROVAL_EVIDENCE_REQUIRED_ACTIONS: 'invoice:send,*:send',
+  });
+
+  assert.equal(result.status, 0);
+  assert.match(result.stdout.toString(), /OK/);
+});
+
 test('auth plugin: production + AUTH_MODE=hybrid rejects missing bearer token by default', () => {
   const result = runCurrentUserRequest(
     {

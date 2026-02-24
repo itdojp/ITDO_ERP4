@@ -1,4 +1,5 @@
 import { DocStatusValue, type FlowType } from '../types.js';
+import { resolveApprovalEvidenceRequiredActionsText } from './policyEnforcementPreset.js';
 
 function normalizeString(value: unknown) {
   return typeof value === 'string' ? value.trim() : '';
@@ -15,7 +16,7 @@ function parseRules(raw: string | undefined) {
 export function isApprovalEvidenceGateEnabled(
   flowType: FlowType,
   actionKey: string,
-  ruleText: string | undefined = process.env.APPROVAL_EVIDENCE_REQUIRED_ACTIONS,
+  ruleText: string | undefined = resolveApprovalEvidenceRequiredActionsText(),
 ) {
   const flow = normalizeString(flowType).toLowerCase();
   const action = normalizeString(actionKey).toLowerCase();
@@ -56,7 +57,7 @@ type EnsureApprovalEvidenceResult =
 export async function ensureApprovalEvidenceReady(
   client: any,
   input: EnsureApprovalEvidenceInput,
-  ruleText: string | undefined = process.env.APPROVAL_EVIDENCE_REQUIRED_ACTIONS,
+  ruleText: string | undefined = resolveApprovalEvidenceRequiredActionsText(),
 ): Promise<EnsureApprovalEvidenceResult> {
   if (
     !isApprovalEvidenceGateEnabled(input.flowType, input.actionKey, ruleText)

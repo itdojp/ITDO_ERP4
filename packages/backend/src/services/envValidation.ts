@@ -66,6 +66,32 @@ function assertPositiveIntegerEnv(
   }
 }
 
+function validateFlowActionCsv(
+  issues: ValidationIssue[],
+  key: string,
+  value: string | undefined,
+) {
+  const raw = normalizeString(value);
+  if (!raw) return;
+  const invalidTokens = raw
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .filter((token) => {
+      const [flow, action, extra] = token.split(':');
+      const flowName = flow?.trim();
+      const actionName = action?.trim();
+      return !flowName || !actionName || typeof extra !== 'undefined';
+    });
+  if (invalidTokens.length) {
+    addIssue(
+      issues,
+      key,
+      `flowType:actionKey 形式のCSVで指定してください（invalid: ${invalidTokens.join(', ')}）`,
+    );
+  }
+}
+
 function assertRequired(
   issues: ValidationIssue[],
   key: string,
@@ -144,6 +170,29 @@ export function assertValidBackendEnv() {
       'header|jwt|hybrid のいずれかを指定してください',
     );
   }
+  const actionPolicyPresetRaw = normalizeString(
+    process.env.ACTION_POLICY_ENFORCEMENT_PRESET,
+  );
+  if (
+    actionPolicyPresetRaw &&
+    !new Set(['off', 'phase2_core']).has(actionPolicyPresetRaw.toLowerCase())
+  ) {
+    addIssue(
+      issues,
+      'ACTION_POLICY_ENFORCEMENT_PRESET',
+      'off|phase2_core のいずれかを指定してください',
+    );
+  }
+  validateFlowActionCsv(
+    issues,
+    'ACTION_POLICY_REQUIRED_ACTIONS',
+    process.env.ACTION_POLICY_REQUIRED_ACTIONS,
+  );
+  validateFlowActionCsv(
+    issues,
+    'APPROVAL_EVIDENCE_REQUIRED_ACTIONS',
+    process.env.APPROVAL_EVIDENCE_REQUIRED_ACTIONS,
+  );
   const nodeEnv = (process.env.NODE_ENV || '').trim().toLowerCase();
   const allowHeaderFallbackRaw = normalizeString(
     process.env.AUTH_ALLOW_HEADER_FALLBACK_IN_PROD,

@@ -116,6 +116,27 @@ Phase 2 で先行する Draft は以下を対象とする。
 
 初期導入は feature flag で制御し、既存運用を壊さずに段階展開する。
 
+### 6.1 推奨有効化プリセット（phase2_core）
+
+`ACTION_POLICY_ENFORCEMENT_PRESET=phase2_core` を設定すると、明示CSV未設定時に以下を既定適用する。
+
+- ActionPolicy mandatory（`ACTION_POLICY_REQUIRED_ACTIONS`）
+  - `estimate:submit,estimate:send`
+  - `invoice:submit,invoice:mark_paid,invoice:send`
+  - `purchase_order:submit,purchase_order:send`
+  - `expense:submit,expense:mark_paid,expense:unmark_paid`
+  - `time:edit,time:submit`
+  - `leave:submit`
+  - `vendor_invoice:update_allocations,vendor_invoice:update_lines,vendor_invoice:link_po,vendor_invoice:unlink_po,vendor_invoice:submit`
+  - `*:approve,*:reject`
+- Approval + Evidence mandatory（`APPROVAL_EVIDENCE_REQUIRED_ACTIONS`）
+  - `estimate:send,invoice:send,purchase_order:send`
+
+運用ルール:
+
+- 明示CSV（`ACTION_POLICY_REQUIRED_ACTIONS` / `APPROVAL_EVIDENCE_REQUIRED_ACTIONS`）が設定されている場合は、プリセットより明示CSVを優先する。
+- 本番反映は段階的に行い、まず `phase2_core` で有効化し、業務影響を確認後に明示CSVへ移行する。
+
 ## 7. 実装時チェックリスト（Phase 2）
 
 - 対象APIの pre-action で ActionPolicy を評価している
