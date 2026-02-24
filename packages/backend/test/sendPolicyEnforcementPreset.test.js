@@ -259,6 +259,82 @@ test('POST /invoices/:id/send: phase2_core returns EVIDENCE_REQUIRED when approv
   );
 });
 
+test('POST /invoices/:id/send: reason override writes action_policy_override audit with reason metadata', async () => {
+  await withEnv(
+    {
+      DATABASE_URL: process.env.DATABASE_URL || MIN_DATABASE_URL,
+      AUTH_MODE: 'header',
+      ACTION_POLICY_ENFORCEMENT_PRESET: 'off',
+      ACTION_POLICY_REQUIRED_ACTIONS: '',
+      APPROVAL_EVIDENCE_REQUIRED_ACTIONS: '',
+    },
+    async () => {
+      const auditEntries = [];
+      await withPrismaStubs(
+        {
+          'invoice.findUnique': async () => invoiceDraft(),
+          'actionPolicy.findMany': async () => [
+            {
+              id: 'policy-reason-override',
+              flowType: 'invoice',
+              actionKey: 'send',
+              priority: 100,
+              isEnabled: true,
+              subjects: null,
+              stateConstraints: null,
+              requireReason: true,
+              guards: null,
+            },
+          ],
+          'approvalInstance.findFirst': async () => approvalInstanceApproved(),
+          'evidenceSnapshot.findFirst': async () => ({ id: 'snapshot-001' }),
+          'auditLog.create': async ({ data }) => {
+            auditEntries.push(data);
+            return { id: `audit-${auditEntries.length}` };
+          },
+        },
+        async () => {
+          const server = await buildServer({ logger: false });
+          try {
+            const res = await server.inject({
+              method: 'POST',
+              url: '/invoices/inv-001/send?templateId=missing-template&reasonText=override-send',
+              headers: adminHeaders(),
+            });
+            assert.equal(res.statusCode, 404, res.body);
+            const payload = JSON.parse(res.body);
+            assert.equal(payload?.error?.code, 'template_not_found');
+          } finally {
+            await server.close();
+          }
+        },
+      );
+
+      const overrideAudit = auditEntries.find(
+        (entry) => entry?.action === 'action_policy_override',
+      );
+      assert.ok(overrideAudit, 'action_policy_override audit should be logged');
+      assert.equal(overrideAudit?.reasonText, 'override-send');
+      assert.equal(overrideAudit?.targetTable, 'invoices');
+      assert.equal(overrideAudit?.targetId, 'inv-001');
+      assert.equal(overrideAudit?.metadata?.flowType, 'invoice');
+      assert.equal(overrideAudit?.metadata?.actionKey, 'send');
+      assert.equal(
+        overrideAudit?.metadata?.matchedPolicyId,
+        'policy-reason-override',
+      );
+      assert.equal(overrideAudit?.metadata?.guardOverride, false);
+      assert.ok(
+        typeof overrideAudit?.metadata?._request?.id === 'string' &&
+          overrideAudit.metadata._request.id.length > 0,
+      );
+      assert.equal(overrideAudit?.metadata?._request?.source, 'api');
+      assert.equal(overrideAudit?.metadata?._auth?.principalUserId, 'admin-user');
+      assert.equal(overrideAudit?.metadata?._auth?.actorUserId, 'admin-user');
+    },
+  );
+});
+
 test('POST /invoices/:id/send: explicit ACTION_POLICY_REQUIRED_ACTIONS works even when preset is off', async () => {
   await withEnv(
     {
