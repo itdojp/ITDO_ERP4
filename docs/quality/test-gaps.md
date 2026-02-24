@@ -23,7 +23,7 @@
 | --- | --- | --- |
 | Phase2 send系ガード（preset + policy + approval/evidence） | 部分実装 | `EVIDENCE_REQUIRED` の route-level 検証、explicit env が preset より優先される境界 |
 | 承認アクションガード（approve/reject） | 部分実装 | `phase2_core` と explicit env の組合せ境界を追加 |
-| Agent-First E2E（失敗系） | 未実装 | 承認不足/証跡不足/理由不足の拒否シナリオをAPI通しで検証 |
+| Agent-First E2E（失敗系） | 部分実装 | 承認不足/理由不足の拒否シナリオはE2E追加済み。証跡不足（`EVIDENCE_REQUIRED`）はE2Eで状態を作る操作が未提供のため、backend route testで継続保証 |
 | manual-test-checklist と自動テスト対応 | 部分実装 | Agent-First失敗系の自動テスト参照を明示 |
 | #543 preflight（入力不足/形式不正） | 未実装 | `check-po-migration-input-readiness.sh` の主要失敗分岐を自動テスト化 |
 | #544 readiness（前提不足時の失敗理由） | 未実装 | `check-backup-s3-readiness.sh` の前提検証をモック化して自動テスト化 |

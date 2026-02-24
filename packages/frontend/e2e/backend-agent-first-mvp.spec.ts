@@ -156,10 +156,59 @@ async function waitAuditEvent(
     .poll(async () => {
       const item = await fetchEvent();
       return item ? 'ok' : null;
-    })
+    }, { timeout: 20_000, intervals: [250, 500, 1_000] })
     .toBe('ok');
 
   return fetchEvent();
+}
+
+async function fetchAuditEventsByRequestId(
+  request: APIRequestContext,
+  requestId: string,
+) {
+  const params = new URLSearchParams({
+    requestId,
+    format: 'json',
+    mask: '0',
+    limit: '50',
+  });
+  const res = await request.get(`${apiBase}/audit-logs?${params}`, {
+    headers: adminHeaders,
+  });
+  await ensureOk(res);
+  const payload = await res.json();
+  return Array.isArray(payload?.items) ? payload.items : [];
+}
+
+async function createActionPolicy(
+  request: APIRequestContext,
+  headers: Record<string, string>,
+  input: {
+    actorUserId: string;
+    requireReason: boolean;
+    statusIn?: string[];
+    guards?: Array<{ type: string }>;
+  },
+) {
+  const policyRes = await request.post(`${apiBase}/action-policies`, {
+    headers,
+    data: {
+      flowType: 'invoice',
+      actionKey: 'send',
+      priority: 999,
+      isEnabled: true,
+      subjects: { userIds: [input.actorUserId] },
+      stateConstraints: {
+        statusIn: input.statusIn ?? ['draft', 'pending_qa', 'approved'],
+      },
+      requireReason: input.requireReason,
+      guards: input.guards ?? [],
+    },
+  });
+  await ensureOk(policyRes);
+  const payload = await policyRes.json();
+  expect(payload?.id).toBeTruthy();
+  return String(payload.id);
 }
 
 test('agent read api: project-360/billing-360 are UI非依存で利用でき監査可能 @core', async ({
@@ -339,4 +388,131 @@ test('agent mvp: 請求ドラフト生成→承認→送信の通しが成立す
     approval.id,
   );
   expect(approvalAudit?.metadata?._request?.id).toBeTruthy();
+});
+
+test('agent mvp guard: 承認未完了のsendはAPPROVAL_REQUIREDで拒否される @core', async ({
+  request,
+}) => {
+  const suffix = runId();
+  const actorUserId = `e2e-agent-approval-required-${suffix}@example.com`;
+  const actorHeaders = buildHeaders({
+    userId: actorUserId,
+    roles: ['admin', 'mgmt', 'exec'],
+    groupIds: ['mgmt', 'exec'],
+  });
+  const projectId = await createProject(request, suffix, 'approval-required');
+  const invoice = await createInvoice(request, projectId, 38000);
+  const submitRes = await request.post(
+    `${apiBase}/invoices/${encodeURIComponent(invoice.id)}/submit`,
+    {
+      headers: actorHeaders,
+      data: { reasonText: `e2e submit approval-required ${suffix}` },
+    },
+  );
+  await ensureOk(submitRes);
+  await createActionPolicy(request, actorHeaders, {
+    actorUserId,
+    requireReason: false,
+    statusIn: ['pending_qa', 'pending_exec'],
+    guards: [{ type: 'approval_open' }],
+  });
+
+  const requestId = `e2e-send-approval-required-${suffix}`;
+  const sendRes = await request.post(
+    `${apiBase}/invoices/${encodeURIComponent(invoice.id)}/send`,
+    {
+      headers: { ...actorHeaders, 'x-request-id': requestId },
+    },
+  );
+  expect(sendRes.status()).toBe(403);
+  const sendPayload = await sendRes.json();
+  expect(sendPayload?.error?.code).toBe('APPROVAL_REQUIRED');
+  expect(sendPayload?.error?.details?.reason).toBe('guard_failed');
+  expect(sendPayload?.error?.details?.guardFailures?.[0]?.type).toBe(
+    'approval_open',
+  );
+
+  const audits = await fetchAuditEventsByRequestId(request, requestId);
+  expect(
+    audits.some((item: any) => item?.action === 'action_policy_override'),
+  ).toBeFalsy();
+});
+
+test('agent mvp guard: reason未指定はREASON_REQUIRED、理由ありは監査付きで評価される @core', async ({
+  request,
+}) => {
+  const suffix = runId();
+  const actorUserId = `e2e-agent-reason-required-${suffix}@example.com`;
+  const actorHeaders = buildHeaders({
+    userId: actorUserId,
+    roles: ['admin', 'mgmt', 'exec'],
+    groupIds: ['mgmt', 'exec'],
+  });
+  const projectId = await createProject(request, suffix, 'reason-required');
+  const invoice = await createInvoice(request, projectId, 46000);
+  const policyId = await createActionPolicy(request, actorHeaders, {
+    actorUserId,
+    requireReason: true,
+  });
+
+  const missingReasonRequestId = `e2e-send-reason-missing-${suffix}`;
+  const missingReasonRes = await request.post(
+    `${apiBase}/invoices/${encodeURIComponent(invoice.id)}/send`,
+    {
+      headers: { ...actorHeaders, 'x-request-id': missingReasonRequestId },
+    },
+  );
+  expect(missingReasonRes.status()).toBe(400);
+  const missingReasonPayload = await missingReasonRes.json();
+  expect(missingReasonPayload?.error?.code).toBe('REASON_REQUIRED');
+  expect(missingReasonPayload?.error?.details?.matchedPolicyId).toBe(policyId);
+  const missingReasonAudits = await fetchAuditEventsByRequestId(
+    request,
+    missingReasonRequestId,
+  );
+  expect(
+    missingReasonAudits.some(
+      (item: any) => item?.action === 'action_policy_override',
+    ),
+  ).toBeFalsy();
+
+  const submitRes = await request.post(
+    `${apiBase}/invoices/${encodeURIComponent(invoice.id)}/submit`,
+    {
+      headers: actorHeaders,
+      data: { reasonText: `e2e submit reason-required ${suffix}` },
+    },
+  );
+  await ensureOk(submitRes);
+  const approval = await findOpenApprovalInstance(
+    request,
+    'invoice',
+    projectId,
+    'invoices',
+    invoice.id,
+  );
+  const finalStatus = await approveUntilClosed(request, approval.id);
+  expect(finalStatus).toBe('approved');
+
+  const withReasonRequestId = `e2e-send-reason-ok-${suffix}`;
+  const withReasonRes = await request.post(
+    `${apiBase}/invoices/${encodeURIComponent(invoice.id)}/send?templateId=missing-template&reasonText=${encodeURIComponent(`e2e override ${suffix}`)}`,
+    {
+      headers: { ...actorHeaders, 'x-request-id': withReasonRequestId },
+    },
+  );
+  expect(withReasonRes.status()).toBe(404);
+  const withReasonPayload = await withReasonRes.json();
+  expect(withReasonPayload?.error?.code).toBe('template_not_found');
+
+  const overrideAudit = await waitAuditEvent(
+    request,
+    'action_policy_override',
+    'invoices',
+    invoice.id,
+    withReasonRequestId,
+  );
+  expect(overrideAudit?.reasonText).toBe(`e2e override ${suffix}`);
+  expect(overrideAudit?.metadata?.matchedPolicyId).toBe(policyId);
+  expect(overrideAudit?.metadata?._request?.id).toBe(withReasonRequestId);
 });
