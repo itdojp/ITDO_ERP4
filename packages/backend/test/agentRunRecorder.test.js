@@ -15,6 +15,7 @@ function runRecorderCheck(options = {}) {
     scp: ['read-only'],
     roles: ['admin'],
   };
+  const scenario = options.scenario || 'readSuccess';
   const script = `
     import { SignJWT, exportSPKI, generateKeyPair } from 'jose';
 
@@ -22,7 +23,11 @@ function runRecorderCheck(options = {}) {
     process.env.AUTH_MODE = 'jwt';
     process.env.JWT_ISSUER = 'test-issuer';
     process.env.JWT_AUDIENCE = 'test-audience';
+    process.env.ACTION_POLICY_ENFORCEMENT_PRESET = 'phase2_core';
+    process.env.ACTION_POLICY_REQUIRED_ACTIONS = '';
+    process.env.APPROVAL_EVIDENCE_REQUIRED_ACTIONS = '';
     const tokenClaims = JSON.parse(process.env.TEST_TOKEN_CLAIMS || '{}');
+    const scenario = String(process.env.TEST_SCENARIO || 'readSuccess');
 
     const { privateKey, publicKey } = await generateKeyPair('RS256');
     process.env.JWT_PUBLIC_KEY = await exportSPKI(publicKey);
@@ -32,11 +37,39 @@ function runRecorderCheck(options = {}) {
 
     prisma.userAccount.findUnique = async () => null;
     prisma.projectMember.findMany = async () => [];
-    prisma.project.groupBy = async () => [{ status: 'active', _count: { _all: 1 } }];
-    prisma.invoice.groupBy = async () => [{ status: 'draft', _count: { _all: 1 }, _sum: { totalAmount: 1000 } }];
-    prisma.timeEntry.groupBy = async () => [{ status: 'approved', _count: { _all: 1 }, _sum: { minutes: 60 } }];
-    prisma.expense.groupBy = async () => [{ status: 'approved', _count: { _all: 1 }, _sum: { amount: 500 } }];
-    prisma.approvalInstance.groupBy = async () => [{ status: 'pending_qa', flowType: 'invoice', _count: { _all: 1 } }];
+    if (scenario === 'readSuccess') {
+      prisma.project.groupBy = async () => [{ status: 'active', _count: { _all: 1 } }];
+      prisma.invoice.groupBy = async () => [{ status: 'draft', _count: { _all: 1 }, _sum: { totalAmount: 1000 } }];
+      prisma.timeEntry.groupBy = async () => [{ status: 'approved', _count: { _all: 1 }, _sum: { minutes: 60 } }];
+      prisma.expense.groupBy = async () => [{ status: 'approved', _count: { _all: 1 }, _sum: { amount: 500 } }];
+      prisma.approvalInstance.groupBy = async () => [{ status: 'pending_qa', flowType: 'invoice', _count: { _all: 1 } }];
+    }
+    if (scenario === 'policyDenied' || scenario === 'approvalRequired') {
+      prisma.invoice.findUnique = async () => ({
+        id: 'inv-001',
+        status: 'approved',
+        projectId: 'proj-001',
+        invoiceNo: 'INV-001',
+      });
+      if (scenario === 'policyDenied') {
+        prisma.actionPolicy.findMany = async () => [];
+      } else {
+        prisma.actionPolicy.findMany = async () => [
+          {
+            id: 'policy-allow-send',
+            flowType: 'invoice',
+            actionKey: 'send',
+            priority: 100,
+            isEnabled: true,
+            subjects: null,
+            stateConstraints: null,
+            requireReason: false,
+            guards: null,
+          },
+        ];
+        prisma.approvalInstance.findFirst = async () => null;
+      }
+    }
 
     prisma.agentRun.create = async ({ data }) => {
       capture.runCreate = data;
@@ -81,9 +114,15 @@ function runRecorderCheck(options = {}) {
     const { buildServer } = await import('./dist/server.js');
     const server = await buildServer({ logger: false });
     try {
+      const req = (() => {
+        if (scenario === 'policyDenied' || scenario === 'approvalRequired') {
+          return { method: 'POST', url: '/invoices/inv-001/send' };
+        }
+        return { method: 'GET', url: '/project-360' };
+      })();
       const res = await server.inject({
-        method: 'GET',
-        url: '/project-360',
+        method: req.method,
+        url: req.url,
         headers: { authorization: 'Bearer ' + token },
       });
       process.stdout.write(JSON.stringify({
@@ -101,6 +140,7 @@ function runRecorderCheck(options = {}) {
       ...process.env,
       DATABASE_URL: MIN_DATABASE_URL,
       TEST_TOKEN_CLAIMS: JSON.stringify(tokenClaims),
+      TEST_SCENARIO: scenario,
     },
     encoding: 'utf8',
   });
@@ -154,4 +194,70 @@ test('agent run recorder: non delegated token does not create agent run records'
   assert.equal(payload.capture?.decisionCreate, undefined);
   const auditCreate = payload.capture?.auditCreate;
   assert.equal(auditCreate?.metadata?._agent, undefined);
+});
+
+test('agent run recorder: policy_denied opens policy_override decision request', () => {
+  const result = runRecorderCheck({
+    scenario: 'policyDenied',
+    tokenClaims: {
+      sub: 'principal-user',
+      act: { sub: 'agent-bot' },
+      scp: ['write-limited'],
+      roles: ['admin'],
+    },
+  });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const payload = JSON.parse(result.stdout || '{}');
+  assert.equal(payload.statusCode, 403);
+
+  const runUpdate = payload.capture?.runUpdate;
+  assert.equal(runUpdate?.status, 'failed');
+  assert.equal(runUpdate?.httpStatus, 403);
+  assert.equal(runUpdate?.errorCode, 'policy_denied');
+  assert.equal(typeof runUpdate?.metadata?.decisionRequestId, 'string');
+
+  const stepUpdate = payload.capture?.stepUpdate;
+  assert.equal(stepUpdate?.status, 'failed');
+  assert.equal(stepUpdate?.errorCode, 'policy_denied');
+  assert.equal(stepUpdate?.output?.statusCode, 403);
+
+  const decisionCreate = payload.capture?.decisionCreate;
+  assert.equal(decisionCreate?.decisionType, 'policy_override');
+  assert.equal(decisionCreate?.status, 'open');
+  assert.equal(decisionCreate?.reasonText, 'policy_denied');
+  assert.equal(decisionCreate?.metadata?.method, 'POST');
+  assert.equal(decisionCreate?.metadata?.statusCode, 403);
+});
+
+test('agent run recorder: approval_required opens approval_required decision request', () => {
+  const result = runRecorderCheck({
+    scenario: 'approvalRequired',
+    tokenClaims: {
+      sub: 'principal-user',
+      act: { sub: 'agent-bot' },
+      scp: ['write-limited'],
+      roles: ['admin'],
+    },
+  });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const payload = JSON.parse(result.stdout || '{}');
+  assert.equal(payload.statusCode, 403);
+
+  const runUpdate = payload.capture?.runUpdate;
+  assert.equal(runUpdate?.status, 'failed');
+  assert.equal(runUpdate?.httpStatus, 403);
+  assert.equal(runUpdate?.errorCode, 'approval_required');
+  assert.equal(typeof runUpdate?.metadata?.decisionRequestId, 'string');
+
+  const stepUpdate = payload.capture?.stepUpdate;
+  assert.equal(stepUpdate?.status, 'failed');
+  assert.equal(stepUpdate?.errorCode, 'approval_required');
+  assert.equal(stepUpdate?.output?.statusCode, 403);
+
+  const decisionCreate = payload.capture?.decisionCreate;
+  assert.equal(decisionCreate?.decisionType, 'approval_required');
+  assert.equal(decisionCreate?.status, 'open');
+  assert.equal(decisionCreate?.reasonText, 'approval_required');
+  assert.equal(decisionCreate?.metadata?.method, 'POST');
+  assert.equal(decisionCreate?.metadata?.statusCode, 403);
 });

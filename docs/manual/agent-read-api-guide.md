@@ -55,6 +55,17 @@ UIを開かずにプロジェクト状況と請求状況を把握するための
 - `metadata`: 返却サマリ（scope/rangeを含む）
 - 委任認証時は `source=agent` と `_auth` が付与される
 
+### AgentRun との突合（監査ドリルダウン）
+
+1. `GET /audit-logs?requestId=...&format=json&mask=0` で対象イベントを取得する
+2. `metadata._agent.runId`（または `agentRunId`）を確認する
+3. `GET /agent-runs/:id` で run/step/decision を取得し、実行経路を確認する
+
+補足:
+
+- 監査UI（管理画面の監査ログ）では `AgentRun` 列の `詳細` から同等の確認が可能。
+- `GET /agent-runs/:id` は `admin/mgmt/exec` のみ参照可能。
+
 ## エラー
 
 - `400 INVALID_DATE`: 日付形式不正

@@ -153,6 +153,8 @@
 - [x] ActionPolicy: PolicyFormBuilder で作成/更新ができる（必須・JSONバリデーション）
 - [x] 承認ルール/ActionPolicy: 履歴表示で AuditTimeline と DiffViewer が表示される
 - [x] 監査ログ: DateRangePicker（from/to）で期間指定検索ができる
+- [x] 監査ログ: AgentRun 列の `詳細` で run/step/decision のドリルダウンを確認できる
+  - 参照: `packages/frontend/e2e/frontend-smoke-audit-agent-run.spec.ts`
 - [x] 監査閲覧: DateTimeRangePicker（targetFrom/targetUntil）で期間指定できる
 - [x] HR分析: DateRangePicker（開始日/終了日）で集計範囲を変更できる
 

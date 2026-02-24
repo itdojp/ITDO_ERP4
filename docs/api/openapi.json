@@ -481,15 +481,399 @@
             "name": "id",
             "required": true,
             "schema": {
+              "minLength": 1,
               "type": "string"
             }
           }
         ],
         "responses": {
           "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "properties": {
+                    "actorUserId": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "createdAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "decisionRequests": {
+                      "items": {
+                        "additionalProperties": true,
+                        "properties": {
+                          "createdAt": {
+                            "format": "date-time",
+                            "type": "string"
+                          },
+                          "decisionType": {
+                            "type": "string"
+                          },
+                          "id": {
+                            "type": "string"
+                          },
+                          "metadata": {},
+                          "reasonText": {
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "requestedAt": {
+                            "format": "date-time",
+                            "type": "string"
+                          },
+                          "requestedBy": {
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "resolutionNote": {
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "resolvedAt": {
+                            "format": "date-time",
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "resolvedBy": {
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "runId": {
+                            "type": "string"
+                          },
+                          "status": {
+                            "type": "string"
+                          },
+                          "stepId": {
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "targetId": {
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "targetTable": {
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "title": {
+                            "nullable": true,
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "runId",
+                          "decisionType",
+                          "status"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
+                    "errorCode": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "finishedAt": {
+                      "format": "date-time",
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "httpStatus": {
+                      "nullable": true,
+                      "type": "integer"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "metadata": {},
+                    "method": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "path": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "principalUserId": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "requestId": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "scopes": {},
+                    "source": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "startedAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "steps": {
+                      "items": {
+                        "additionalProperties": true,
+                        "properties": {
+                          "createdAt": {
+                            "format": "date-time",
+                            "type": "string"
+                          },
+                          "decisions": {
+                            "items": {
+                              "additionalProperties": true,
+                              "properties": {
+                                "createdAt": {
+                                  "format": "date-time",
+                                  "type": "string"
+                                },
+                                "decisionType": {
+                                  "type": "string"
+                                },
+                                "id": {
+                                  "type": "string"
+                                },
+                                "metadata": {},
+                                "reasonText": {
+                                  "nullable": true,
+                                  "type": "string"
+                                },
+                                "requestedAt": {
+                                  "format": "date-time",
+                                  "type": "string"
+                                },
+                                "requestedBy": {
+                                  "nullable": true,
+                                  "type": "string"
+                                },
+                                "resolutionNote": {
+                                  "nullable": true,
+                                  "type": "string"
+                                },
+                                "resolvedAt": {
+                                  "format": "date-time",
+                                  "nullable": true,
+                                  "type": "string"
+                                },
+                                "resolvedBy": {
+                                  "nullable": true,
+                                  "type": "string"
+                                },
+                                "runId": {
+                                  "type": "string"
+                                },
+                                "status": {
+                                  "type": "string"
+                                },
+                                "stepId": {
+                                  "nullable": true,
+                                  "type": "string"
+                                },
+                                "targetId": {
+                                  "nullable": true,
+                                  "type": "string"
+                                },
+                                "targetTable": {
+                                  "nullable": true,
+                                  "type": "string"
+                                },
+                                "title": {
+                                  "nullable": true,
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "runId",
+                                "decisionType",
+                                "status"
+                              ],
+                              "type": "object"
+                            },
+                            "type": "array"
+                          },
+                          "errorCode": {
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "finishedAt": {
+                            "format": "date-time",
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "id": {
+                            "type": "string"
+                          },
+                          "input": {},
+                          "kind": {
+                            "type": "string"
+                          },
+                          "metadata": {},
+                          "name": {
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "output": {},
+                          "runId": {
+                            "type": "string"
+                          },
+                          "startedAt": {
+                            "format": "date-time",
+                            "type": "string"
+                          },
+                          "status": {
+                            "type": "string"
+                          },
+                          "stepOrder": {
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "runId",
+                          "stepOrder",
+                          "kind",
+                          "status",
+                          "decisions"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "status",
+                    "steps",
+                    "decisionRequests"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "category": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "category": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "category": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
             "description": "Default Response"
           }
-        }
+        },
+        "summary": "Get AgentRun detail",
+        "tags": [
+          "audit"
+        ]
       }
     },
     "/alert-settings": {
