@@ -67,6 +67,24 @@ function invoiceDraft() {
   };
 }
 
+function estimateDraft() {
+  return {
+    id: 'est-001',
+    status: 'approved',
+    projectId: 'proj-001',
+    estimateNo: 'EST-001',
+  };
+}
+
+function purchaseOrderDraft() {
+  return {
+    id: 'po-001',
+    status: 'approved',
+    projectId: 'proj-001',
+    poNo: 'PO-001',
+  };
+}
+
 test('POST /invoices/:id/send: phase2_core preset denies when policy is missing', async () => {
   await withEnv(
     {
@@ -171,6 +189,89 @@ test('POST /invoices/:id/send: phase2_core requires approval+evidence after poli
             const res = await server.inject({
               method: 'POST',
               url: '/invoices/inv-001/send',
+              headers: adminHeaders(),
+            });
+            assert.equal(res.statusCode, 403, res.body);
+            const payload = JSON.parse(res.body);
+            assert.equal(payload?.error?.code, 'APPROVAL_REQUIRED');
+          } finally {
+            await server.close();
+          }
+        },
+      );
+    },
+  );
+});
+
+test('POST /estimates/:id/send: phase2_core preset denies when policy is missing', async () => {
+  await withEnv(
+    {
+      DATABASE_URL: process.env.DATABASE_URL || MIN_DATABASE_URL,
+      AUTH_MODE: 'header',
+      ACTION_POLICY_ENFORCEMENT_PRESET: 'phase2_core',
+      ACTION_POLICY_REQUIRED_ACTIONS: '',
+      APPROVAL_EVIDENCE_REQUIRED_ACTIONS: '',
+    },
+    async () => {
+      await withPrismaStubs(
+        {
+          'estimate.findUnique': async () => estimateDraft(),
+          'actionPolicy.findMany': async () => [],
+        },
+        async () => {
+          const server = await buildServer({ logger: false });
+          try {
+            const res = await server.inject({
+              method: 'POST',
+              url: '/estimates/est-001/send',
+              headers: adminHeaders(),
+            });
+            assert.equal(res.statusCode, 403, res.body);
+            const payload = JSON.parse(res.body);
+            assert.equal(payload?.error?.code, 'ACTION_POLICY_DENIED');
+          } finally {
+            await server.close();
+          }
+        },
+      );
+    },
+  );
+});
+
+test('POST /purchase-orders/:id/send: phase2_core requires approval+evidence after policy allow', async () => {
+  await withEnv(
+    {
+      DATABASE_URL: process.env.DATABASE_URL || MIN_DATABASE_URL,
+      AUTH_MODE: 'header',
+      ACTION_POLICY_ENFORCEMENT_PRESET: 'phase2_core',
+      ACTION_POLICY_REQUIRED_ACTIONS: '',
+      APPROVAL_EVIDENCE_REQUIRED_ACTIONS: '',
+    },
+    async () => {
+      await withPrismaStubs(
+        {
+          'purchaseOrder.findUnique': async () => purchaseOrderDraft(),
+          'actionPolicy.findMany': async () => [
+            {
+              id: 'policy-allow-po-send',
+              flowType: 'purchase_order',
+              actionKey: 'send',
+              priority: 100,
+              isEnabled: true,
+              subjects: null,
+              stateConstraints: null,
+              requireReason: false,
+              guards: null,
+            },
+          ],
+          'approvalInstance.findFirst': async () => null,
+        },
+        async () => {
+          const server = await buildServer({ logger: false });
+          try {
+            const res = await server.inject({
+              method: 'POST',
+              url: '/purchase-orders/po-001/send',
               headers: adminHeaders(),
             });
             assert.equal(res.statusCode, 403, res.body);
