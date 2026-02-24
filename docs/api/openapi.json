@@ -1352,6 +1352,43 @@
         }
       }
     },
+    "/approval-instances/{id}/evidence-snapshot/diff": {
+      "get": {
+        "parameters": [
+          {
+            "in": "query",
+            "name": "fromVersion",
+            "required": false,
+            "schema": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "toVersion",
+            "required": false,
+            "schema": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
     "/approval-instances/{id}/evidence-snapshot/history": {
       "get": {
         "parameters": [

@@ -1,4 +1,5 @@
 import { FastifyInstance } from 'fastify';
+import { isDeepStrictEqual } from 'node:util';
 import { Prisma } from '@prisma/client';
 import { prisma } from '../services/db.js';
 import { auditContextFromRequest, logAudit } from '../services/audit.js';
@@ -14,6 +15,7 @@ import {
   evidencePackArchiveBodySchema,
   evidencePackExportQuerySchema,
   evidenceSnapshotCreateSchema,
+  evidenceSnapshotDiffQuerySchema,
   evidenceSnapshotHistoryQuerySchema,
 } from './validators.js';
 
@@ -87,6 +89,94 @@ function resolveAuditErrorCode(error: unknown) {
     return error.message.toUpperCase();
   }
   return 'EVIDENCE_ARCHIVE_FAILED';
+}
+
+function createEvidenceSnapshotDiff(
+  fromItems: unknown,
+  toItems: unknown,
+): Array<{
+  key: string;
+  before: unknown;
+  after: unknown;
+  beforeMissing: boolean;
+  afterMissing: boolean;
+}> {
+  const from =
+    fromItems && typeof fromItems === 'object' && !Array.isArray(fromItems)
+      ? (fromItems as Record<string, unknown>)
+      : {};
+  const to =
+    toItems && typeof toItems === 'object' && !Array.isArray(toItems)
+      ? (toItems as Record<string, unknown>)
+      : {};
+
+  const keys = Array.from(new Set([...Object.keys(from), ...Object.keys(to)]));
+  keys.sort((left, right) => left.localeCompare(right));
+
+  return keys
+    .filter((key) => !isDeepStrictEqual(from[key], to[key]))
+    .map((key) => {
+      const hasBefore = Object.prototype.hasOwnProperty.call(from, key);
+      const hasAfter = Object.prototype.hasOwnProperty.call(to, key);
+      return {
+        key,
+        before: hasBefore ? from[key] : null,
+        after: hasAfter ? to[key] : null,
+        beforeMissing: !hasBefore,
+        afterMissing: !hasAfter,
+      };
+    });
+}
+
+async function resolveEvidenceSnapshotDiffRange(
+  approvalInstanceId: string,
+  query: { fromVersion?: number; toVersion?: number },
+) {
+  const fromVersion = query.fromVersion;
+  const toVersion = query.toVersion;
+  if (fromVersion === undefined && toVersion === undefined) {
+    const latestTwo = await prisma.evidenceSnapshot.findMany({
+      where: { approvalInstanceId },
+      orderBy: { version: 'desc' },
+      take: 2,
+    });
+    if (latestTwo.length < 2) {
+      return { errorCode: 'SNAPSHOT_HISTORY_INSUFFICIENT' as const };
+    }
+    const toSnapshot = latestTwo[0];
+    const fromSnapshot = latestTwo[1];
+    return { fromSnapshot, toSnapshot };
+  }
+  if (fromVersion === undefined || toVersion === undefined) {
+    return { errorCode: 'SNAPSHOT_VERSION_PAIR_REQUIRED' as const };
+  }
+  if (fromVersion === toVersion) {
+    return { errorCode: 'SNAPSHOT_VERSION_RANGE_INVALID' as const };
+  }
+  const minVersion = Math.min(fromVersion, toVersion);
+  const maxVersion = Math.max(fromVersion, toVersion);
+  const [fromSnapshot, toSnapshot] = await Promise.all([
+    prisma.evidenceSnapshot.findUnique({
+      where: {
+        approvalInstanceId_version: {
+          approvalInstanceId,
+          version: minVersion,
+        },
+      },
+    }),
+    prisma.evidenceSnapshot.findUnique({
+      where: {
+        approvalInstanceId_version: {
+          approvalInstanceId,
+          version: maxVersion,
+        },
+      },
+    }),
+  ]);
+  if (!fromSnapshot || !toSnapshot) {
+    return { errorCode: 'SNAPSHOT_NOT_FOUND' as const };
+  }
+  return { fromSnapshot, toSnapshot };
 }
 
 export async function registerEvidenceSnapshotRoutes(app: FastifyInstance) {
@@ -259,6 +349,112 @@ export async function registerEvidenceSnapshotRoutes(app: FastifyInstance) {
         take: normalizeLimit(query.limit),
       });
       return { items };
+    },
+  );
+
+  app.get(
+    '/approval-instances/:id/evidence-snapshot/diff',
+    {
+      preHandler: requireRole(['admin', 'mgmt', 'exec', 'user']),
+      schema: evidenceSnapshotDiffQuerySchema,
+    },
+    async (req, reply) => {
+      const { id } = req.params as { id: string };
+      const query = req.query as { fromVersion?: number; toVersion?: number };
+      const approval = await prisma.approvalInstance.findUnique({
+        where: { id },
+        select: {
+          id: true,
+          projectId: true,
+          createdBy: true,
+        },
+      });
+      if (!approval) {
+        return reply.status(404).send({
+          error: { code: 'NOT_FOUND', message: 'Approval instance not found' },
+        });
+      }
+      if (!canReadApprovalInstance(approval, req.user ?? null)) {
+        return reply.status(403).send({
+          error: { code: 'FORBIDDEN', message: 'Access denied' },
+        });
+      }
+
+      const resolved = await resolveEvidenceSnapshotDiffRange(approval.id, {
+        fromVersion: query.fromVersion,
+        toVersion: query.toVersion,
+      });
+      if (resolved.errorCode === 'SNAPSHOT_HISTORY_INSUFFICIENT') {
+        return reply.status(409).send({
+          error: {
+            code: resolved.errorCode,
+            message: 'At least two snapshot versions are required',
+          },
+        });
+      }
+      if (resolved.errorCode === 'SNAPSHOT_VERSION_PAIR_REQUIRED') {
+        return reply.status(400).send({
+          error: {
+            code: resolved.errorCode,
+            message: 'fromVersion and toVersion must be specified together',
+          },
+        });
+      }
+      if (resolved.errorCode === 'SNAPSHOT_VERSION_RANGE_INVALID') {
+        return reply.status(400).send({
+          error: {
+            code: resolved.errorCode,
+            message: 'fromVersion and toVersion must be different',
+          },
+        });
+      }
+      if (resolved.errorCode === 'SNAPSHOT_NOT_FOUND') {
+        return reply.status(404).send({
+          error: {
+            code: resolved.errorCode,
+            message: 'Snapshot version not found',
+          },
+        });
+      }
+
+      const diff = createEvidenceSnapshotDiff(
+        resolved.fromSnapshot.items,
+        resolved.toSnapshot.items,
+      );
+
+      await logAudit({
+        action: 'evidence_snapshot_diff_viewed',
+        targetTable: 'evidence_snapshots',
+        targetId: resolved.toSnapshot.id,
+        metadata: {
+          approvalInstanceId: approval.id,
+          fromVersion: resolved.fromSnapshot.version,
+          toVersion: resolved.toSnapshot.version,
+          changeCount: diff.length,
+        } as Prisma.InputJsonValue,
+        ...auditContextFromRequest(req),
+      });
+
+      return {
+        fromSnapshot: {
+          id: resolved.fromSnapshot.id,
+          version: resolved.fromSnapshot.version,
+          capturedAt: resolved.fromSnapshot.capturedAt,
+          sourceAnnotationUpdatedAt:
+            resolved.fromSnapshot.sourceAnnotationUpdatedAt,
+        },
+        toSnapshot: {
+          id: resolved.toSnapshot.id,
+          version: resolved.toSnapshot.version,
+          capturedAt: resolved.toSnapshot.capturedAt,
+          sourceAnnotationUpdatedAt:
+            resolved.toSnapshot.sourceAnnotationUpdatedAt,
+        },
+        hasChanges: diff.length > 0,
+        changeCount: diff.length,
+        changedKeys: diff.map((item) => item.key),
+        changes: diff,
+      };
     },
   );
 

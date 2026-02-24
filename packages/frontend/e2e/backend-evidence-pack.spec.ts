@@ -322,6 +322,26 @@ test('evidence snapshot regenerate requires reason and history keeps versions @c
   const missingReasonPayload = await missingReasonRes.json();
   expect(missingReasonPayload?.error?.code).toBe('REASON_REQUIRED');
 
+  const updatedNote = `owner updated-${suffix}@example.com`;
+  const annotationUpdateRes = await request.patch(
+    `${apiBase}/annotations/estimate/${encodeURIComponent(target.estimateId)}`,
+    {
+      data: {
+        notes: updatedNote,
+        externalUrls: [`https://example.com/evidence/updated-${suffix}`],
+        internalRefs: [
+          {
+            kind: 'chat_message',
+            id: target.chatMessageId,
+            label: `E2E chat ref ${suffix}`,
+          },
+        ],
+      },
+      headers: adminHeaders,
+    },
+  );
+  await ensureOk(annotationUpdateRes);
+
   const regenerateReason = `e2e regenerate ${suffix}`;
   const regenerateRes = await request.post(
     `${apiBase}/approval-instances/${encodeURIComponent(target.approvalInstanceId)}/evidence-snapshot`,
@@ -347,6 +367,27 @@ test('evidence snapshot regenerate requires reason and history keeps versions @c
   const versions = (historyPayload?.items ?? []).map((item: any) => item?.version);
   expect(versions[0]).toBe(initialVersion + 1);
   expect(versions).toContain(initialVersion);
+
+  const diffRes = await request.get(
+    `${apiBase}/approval-instances/${encodeURIComponent(target.approvalInstanceId)}/evidence-snapshot/diff?fromVersion=${initialVersion}&toVersion=${initialVersion + 1}`,
+    { headers: adminHeaders },
+  );
+  await ensureOk(diffRes);
+  const diffPayload = await diffRes.json();
+  expect(diffPayload?.fromSnapshot?.version).toBe(initialVersion);
+  expect(diffPayload?.toSnapshot?.version).toBe(initialVersion + 1);
+  expect(diffPayload?.hasChanges).toBeTruthy();
+  expect(diffPayload?.changeCount).toBeGreaterThan(0);
+  expect(diffPayload?.changedKeys).toContain('notes');
+
+  const diffLatestRes = await request.get(
+    `${apiBase}/approval-instances/${encodeURIComponent(target.approvalInstanceId)}/evidence-snapshot/diff`,
+    { headers: adminHeaders },
+  );
+  await ensureOk(diffLatestRes);
+  const diffLatestPayload = await diffLatestRes.json();
+  expect(diffLatestPayload?.fromSnapshot?.version).toBe(initialVersion);
+  expect(diffLatestPayload?.toSnapshot?.version).toBe(initialVersion + 1);
 
   const projectUserHeaders = buildHeaders({
     userId: `project-user-history-${suffix}`,
