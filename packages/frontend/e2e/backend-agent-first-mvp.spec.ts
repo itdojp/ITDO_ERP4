@@ -211,6 +211,20 @@ async function createActionPolicy(
   return String(payload.id);
 }
 
+async function resetEvidenceSnapshots(
+  request: APIRequestContext,
+  headers: Record<string, string>,
+  approvalInstanceId: string,
+) {
+  const res = await request.post(`${apiBase}/__test__/evidence-snapshots/reset`, {
+    headers,
+    data: { approvalInstanceId },
+  });
+  await ensureOk(res);
+  const payload = await res.json();
+  return Number(payload?.deletedCount ?? 0);
+}
+
 test('agent read api: project-360/billing-360 are UI非依存で利用でき監査可能 @core', async ({
   request,
 }) => {
@@ -431,6 +445,71 @@ test('agent mvp guard: 承認未完了のsendはAPPROVAL_REQUIREDで拒否され
   expect(sendPayload?.error?.details?.guardFailures?.[0]?.type).toBe(
     'approval_open',
   );
+
+  const audits = await fetchAuditEventsByRequestId(request, requestId);
+  expect(
+    audits.some((item: any) => item?.action === 'action_policy_override'),
+  ).toBeFalsy();
+});
+
+test('agent mvp guard: 承認済みでも証跡欠落時はEVIDENCE_REQUIREDで拒否される @core', async ({
+  request,
+}) => {
+  const suffix = runId();
+  const actorUserId = `e2e-agent-evidence-required-${suffix}@example.com`;
+  const actorHeaders = buildHeaders({
+    userId: actorUserId,
+    roles: ['admin', 'mgmt', 'exec'],
+    groupIds: ['mgmt', 'exec'],
+  });
+  const projectId = await createProject(request, suffix, 'evidence-required');
+  const invoice = await createInvoice(request, projectId, 47000);
+  await createActionPolicy(request, actorHeaders, {
+    actorUserId,
+    requireReason: false,
+    statusIn: ['approved'],
+  });
+
+  const submitRes = await request.post(
+    `${apiBase}/invoices/${encodeURIComponent(invoice.id)}/submit`,
+    {
+      headers: actorHeaders,
+      data: { reasonText: `e2e submit evidence-required ${suffix}` },
+    },
+  );
+  await ensureOk(submitRes);
+  const approval = await findOpenApprovalInstance(
+    request,
+    'invoice',
+    projectId,
+    'invoices',
+    invoice.id,
+  );
+  const finalStatus = await approveUntilClosed(request, approval.id);
+  expect(finalStatus).toBe('approved');
+
+  const deletedCount = await resetEvidenceSnapshots(
+    request,
+    actorHeaders,
+    approval.id,
+  );
+  expect(deletedCount).toBeGreaterThan(0);
+
+  const requestId = `e2e-send-evidence-required-${suffix}`;
+  const sendRes = await request.post(
+    `${apiBase}/invoices/${encodeURIComponent(invoice.id)}/send`,
+    {
+      headers: {
+        ...actorHeaders,
+        'x-request-id': requestId,
+        'x-e2e-approval-evidence-required-actions': 'invoice:send',
+      },
+    },
+  );
+  expect(sendRes.status()).toBe(403);
+  const sendPayload = await sendRes.json();
+  expect(sendPayload?.error?.code).toBe('EVIDENCE_REQUIRED');
+  expect(sendPayload?.error?.details?.approvalInstanceId).toBe(approval.id);
 
   const audits = await fetchAuditEventsByRequestId(request, requestId);
   expect(

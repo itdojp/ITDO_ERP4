@@ -259,6 +259,60 @@ test('POST /invoices/:id/send: phase2_core returns EVIDENCE_REQUIRED when approv
   );
 });
 
+test('POST /invoices/:id/send: e2e header override can enable evidence gate when preset is off', async () => {
+  await withEnv(
+    {
+      DATABASE_URL: process.env.DATABASE_URL || MIN_DATABASE_URL,
+      AUTH_MODE: 'header',
+      E2E_ENABLE_TEST_HOOKS: '1',
+      ACTION_POLICY_ENFORCEMENT_PRESET: 'off',
+      ACTION_POLICY_REQUIRED_ACTIONS: '',
+      APPROVAL_EVIDENCE_REQUIRED_ACTIONS: '',
+    },
+    async () => {
+      await withPrismaStubs(
+        {
+          'invoice.findUnique': async () => invoiceDraft(),
+          'actionPolicy.findMany': async () => [
+            {
+              id: 'policy-allow-send',
+              flowType: 'invoice',
+              actionKey: 'send',
+              priority: 100,
+              isEnabled: true,
+              subjects: null,
+              stateConstraints: null,
+              requireReason: false,
+              guards: null,
+            },
+          ],
+          'approvalInstance.findFirst': async () => approvalInstanceApproved(),
+          'evidenceSnapshot.findFirst': async () => null,
+        },
+        async () => {
+          const server = await buildServer({ logger: false });
+          try {
+            const res = await server.inject({
+              method: 'POST',
+              url: '/invoices/inv-001/send',
+              headers: {
+                ...adminHeaders(),
+                'x-e2e-approval-evidence-required-actions': 'invoice:send',
+              },
+            });
+            assert.equal(res.statusCode, 403, res.body);
+            const payload = JSON.parse(res.body);
+            assert.equal(payload?.error?.code, 'EVIDENCE_REQUIRED');
+            assert.equal(payload?.error?.details?.approvalInstanceId, 'approval-001');
+          } finally {
+            await server.close();
+          }
+        },
+      );
+    },
+  );
+});
+
 test('POST /invoices/:id/send: reason override writes action_policy_override audit with reason metadata', async () => {
   await withEnv(
     {

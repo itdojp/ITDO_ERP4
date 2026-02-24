@@ -53,6 +53,7 @@ import { registerEvidenceSnapshotRoutes } from './evidenceSnapshots.js';
 import { registerAgent360Routes } from './agent360.js';
 import { registerAgentRunRoutes } from './agentRuns.js';
 import { registerDraftRoutes } from './drafts.js';
+import { registerTestHookRoutes } from './testHooks.js';
 
 export async function registerRoutes(app: FastifyInstance) {
   await registerAuthRoutes(app);
@@ -109,4 +110,5 @@ export async function registerRoutes(app: FastifyInstance) {
   await registerAccessReviewRoutes(app);
   await registerInsightRoutes(app);
   await registerEvidenceSnapshotRoutes(app);
+  await registerTestHookRoutes(app);
 }
