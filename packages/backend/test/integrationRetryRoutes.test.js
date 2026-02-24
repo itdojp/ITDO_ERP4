@@ -81,6 +81,7 @@ test('POST /jobs/integrations/run retries eligible failed runs and skips over-li
       'contact.count': async () => 1,
       'alertSetting.findMany': async () => [],
       'alert.updateMany': async () => ({ count: 0 }),
+      'auditLog.create': async () => ({ id: 'audit-001' }),
     },
     async () => {
       const server = await buildServer({ logger: false });
@@ -158,6 +159,7 @@ test('POST /integration-settings/:id/run sets retry metadata with exponential ba
       'integrationSetting.update': async () => ({ id: setting.id }),
       'alertSetting.findMany': async () => [],
       'alert.updateMany': async () => ({ count: 0 }),
+      'auditLog.create': async () => ({ id: 'audit-002' }),
     },
     async () => {
       const server = await buildServer({ logger: false });
@@ -193,6 +195,69 @@ test('POST /integration-settings/:id/run sets retry metadata with exponential ba
   assert.ok(failedUpdateCall?.data?.nextRetryAt instanceof Date);
 });
 
+test('POST /integration-settings/:id/run clamps retry policy from persisted config values', async () => {
+  process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
+  process.env.AUTH_MODE = 'header';
+
+  const setting = {
+    id: 'setting-failed-run-clamped',
+    type: 'crm',
+    status: 'active',
+    config: {
+      simulateFailure: true,
+      retryMax: 999,
+      retryBaseMinutes: 999999,
+    },
+  };
+
+  await withPrismaStubs(
+    {
+      'integrationSetting.findUnique': async () => setting,
+      'integrationRun.create': async () => ({
+        id: 'run-failed-clamped',
+        retryCount: 0,
+      }),
+      'integrationRun.update': async (args) => ({
+        id: 'run-failed-clamped',
+        status: args?.data?.status,
+        retryCount: args?.data?.retryCount ?? 0,
+        nextRetryAt: args?.data?.nextRetryAt ?? null,
+        message: args?.data?.message ?? null,
+      }),
+      'integrationSetting.update': async () => ({ id: setting.id }),
+      'alertSetting.findMany': async () => [],
+      'alert.updateMany': async () => ({ count: 0 }),
+      'auditLog.create': async () => ({ id: 'audit-clamped-001' }),
+    },
+    async () => {
+      const server = await buildServer({ logger: false });
+      const before = Date.now();
+      try {
+        const res = await server.inject({
+          method: 'POST',
+          url: `/integration-settings/${encodeURIComponent(setting.id)}/run`,
+          headers: {
+            'x-user-id': 'admin-user',
+            'x-roles': 'admin',
+          },
+        });
+        assert.equal(res.statusCode, 200, res.body);
+        const body = JSON.parse(res.body);
+        assert.equal(body.status, 'failed');
+        assert.equal(body.retryCount, 1);
+        assert.equal(typeof body.nextRetryAt, 'string');
+        const nextRetryMs = new Date(body.nextRetryAt).getTime();
+        const maxPolicyMs = 1440 * 60 * 1000;
+        // Runtime retry policy should be bounded even when persisted config is out-of-range.
+        assert.ok(nextRetryMs >= before + maxPolicyMs - 2000);
+        assert.ok(nextRetryMs <= Date.now() + maxPolicyMs + 2000);
+      } finally {
+        await server.close();
+      }
+    },
+  );
+});
+
 test('POST /integration-settings/:id/run returns 409 when setting is disabled', async () => {
   process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
   process.env.AUTH_MODE = 'header';
@@ -226,6 +291,151 @@ test('POST /integration-settings/:id/run returns 409 when setting is disabled', 
         await server.close();
       }
     },
+  );
+});
+
+test('POST /integration-settings rejects invalid config values', async () => {
+  process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
+  process.env.AUTH_MODE = 'header';
+
+  let createCalled = false;
+  await withPrismaStubs(
+    {
+      'integrationSetting.create': async () => {
+        createCalled = true;
+        return { id: 'setting-created' };
+      },
+    },
+    async () => {
+      const server = await buildServer({ logger: false });
+      try {
+        const res = await server.inject({
+          method: 'POST',
+          url: '/integration-settings',
+          headers: {
+            'x-user-id': 'admin-user',
+            'x-roles': 'admin',
+          },
+          payload: {
+            type: 'crm',
+            config: { retryMax: 100 },
+          },
+        });
+        assert.equal(res.statusCode, 400, res.body);
+        const body = JSON.parse(res.body);
+        assert.equal(body.error, 'invalid_config');
+      } finally {
+        await server.close();
+      }
+    },
+  );
+
+  assert.equal(createCalled, false);
+});
+
+test('PATCH /integration-settings/:id rejects invalid schedule values', async () => {
+  process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
+  process.env.AUTH_MODE = 'header';
+
+  let updateCalled = false;
+  await withPrismaStubs(
+    {
+      'integrationSetting.findUnique': async () => ({
+        id: 'setting-001',
+        type: 'crm',
+        name: 'CRM',
+        provider: 'provider',
+        status: 'active',
+        schedule: null,
+        config: {},
+      }),
+      'integrationSetting.update': async () => {
+        updateCalled = true;
+        return { id: 'setting-001' };
+      },
+    },
+    async () => {
+      const server = await buildServer({ logger: false });
+      try {
+        const res = await server.inject({
+          method: 'PATCH',
+          url: '/integration-settings/setting-001',
+          headers: {
+            'x-user-id': 'admin-user',
+            'x-roles': 'admin',
+          },
+          payload: {
+            schedule: 'x'.repeat(250),
+          },
+        });
+        assert.equal(res.statusCode, 400, res.body);
+        const body = JSON.parse(res.body);
+        assert.equal(body.error, 'invalid_schedule');
+      } finally {
+        await server.close();
+      }
+    },
+  );
+  assert.equal(updateCalled, false);
+});
+
+test('POST /integration-settings writes audit log with redacted config fields', async () => {
+  process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
+  process.env.AUTH_MODE = 'header';
+
+  let capturedAuditArgs = null;
+  await withPrismaStubs(
+    {
+      'integrationSetting.create': async (args) => ({
+        id: 'setting-created-001',
+        type: args?.data?.type ?? 'crm',
+        name: args?.data?.name ?? null,
+        provider: args?.data?.provider ?? null,
+        status: args?.data?.status ?? 'active',
+        schedule: args?.data?.schedule ?? null,
+        config: args?.data?.config ?? null,
+      }),
+      'auditLog.create': async (args) => {
+        capturedAuditArgs = args;
+        return { id: 'audit-created-001' };
+      },
+    },
+    async () => {
+      const server = await buildServer({ logger: false });
+      try {
+        const res = await server.inject({
+          method: 'POST',
+          url: '/integration-settings',
+          headers: {
+            'x-user-id': 'admin-user',
+            'x-roles': 'admin',
+          },
+          payload: {
+            type: 'crm',
+            config: {
+              retryMax: 3,
+              apiToken: 'super-secret-token',
+              nested: { clientSecret: 'super-secret-client' },
+            },
+          },
+        });
+        assert.equal(res.statusCode, 200, res.body);
+      } finally {
+        await server.close();
+      }
+    },
+  );
+
+  assert.equal(capturedAuditArgs?.data?.action, 'integration_setting_created');
+  assert.equal(capturedAuditArgs?.data?.targetTable, 'integration_settings');
+  assert.equal(capturedAuditArgs?.data?.targetId, 'setting-created-001');
+  assert.equal(
+    capturedAuditArgs?.data?.metadata?.config?.apiToken,
+    '[REDACTED]',
+  );
+  assert.equal(
+    capturedAuditArgs?.data?.metadata?.config?.nested?.clientSecret,
+    '[REDACTED]',
   );
 });
 
