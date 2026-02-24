@@ -4207,6 +4207,215 @@
         }
       }
     },
+    "/drafts": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "context": {
+                    "additionalProperties": true,
+                    "nullable": true,
+                    "properties": {},
+                    "type": "object"
+                  },
+                  "instruction": {
+                    "maxLength": 2000,
+                    "type": "string"
+                  },
+                  "kind": {
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "invoice_send"
+                        ],
+                        "type": "string"
+                      },
+                      {
+                        "enum": [
+                          "approval_request"
+                        ],
+                        "type": "string"
+                      },
+                      {
+                        "enum": [
+                          "notification_report"
+                        ],
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "targetId": {
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/drafts/diff": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "after": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "body": {
+                        "maxLength": 20000,
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "subject": {
+                        "maxLength": 500,
+                        "minLength": 1,
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "subject",
+                      "body"
+                    ],
+                    "type": "object"
+                  },
+                  "before": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "body": {
+                        "maxLength": 20000,
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "subject": {
+                        "maxLength": 500,
+                        "minLength": 1,
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "subject",
+                      "body"
+                    ],
+                    "type": "object"
+                  }
+                },
+                "required": [
+                  "before",
+                  "after"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/drafts/regenerate": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "context": {
+                    "additionalProperties": true,
+                    "nullable": true,
+                    "properties": {},
+                    "type": "object"
+                  },
+                  "instruction": {
+                    "maxLength": 2000,
+                    "type": "string"
+                  },
+                  "kind": {
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "invoice_send"
+                        ],
+                        "type": "string"
+                      },
+                      {
+                        "enum": [
+                          "approval_request"
+                        ],
+                        "type": "string"
+                      },
+                      {
+                        "enum": [
+                          "notification_report"
+                        ],
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "previous": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "body": {
+                        "maxLength": 20000,
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "subject": {
+                        "maxLength": 500,
+                        "minLength": 1,
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "subject",
+                      "body"
+                    ],
+                    "type": "object"
+                  },
+                  "targetId": {
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "previous"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
     "/estimates": {
       "get": {
         "responses": {

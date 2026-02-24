@@ -23,6 +23,20 @@ Phase 2 で先行する Draft は以下を対象とする。
 - Draft は「下書き」扱いであり、実行（送信/確定）は必ず別APIで承認ガードを通す。
 - 生成物そのものは Evidence として保持可能だが、真実データ（SoR）は既存業務テーブルを正とする。
 
+### Draft API v1（実装）
+
+- `POST /drafts`
+  - 目的: 下書き作成
+  - kind: `invoice_send` / `approval_request` / `notification_report`
+- `POST /drafts/regenerate`
+  - 目的: 下書き再生成
+  - 旧下書き（`previous`）を受け取り、差分を返す
+- `POST /drafts/diff`
+  - 目的: 下書き同士の差分比較
+
+注記:
+- v1 は「生成/再生成/差分比較」に限定し、実行（送信/確定）は既存の高リスクAPI経路で承認ガードを適用する。
+
 ## 3. 高リスクmutating APIカタログ（Phase 2 対象）
 
 詳細パスは各 route 実装を正とする（`packages/backend/src/routes/*.ts`）。
