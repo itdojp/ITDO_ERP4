@@ -105,6 +105,7 @@ Phase 2 で先行する Draft は以下を対象とする。
 
 - `approval_open` 系 guard 失敗は `APPROVAL_REQUIRED` に正規化する。
 - それ以外の policy deny は `ACTION_POLICY_DENIED` に統一する。
+- `REASON_REQUIRED` の入力項目はエンドポイントで異なる（`/approval-instances/:id/act` は body `reason`、送信系は query `reasonText`）。
 
 ## 6. Approval + Evidence 必須化（段階導入）
 

@@ -15,6 +15,19 @@
 - B: 重要だが当面は手動/限定範囲で許容（段階導入）
 - C: 改善/拡張（後回しでよい）
 
+## A優先の再分類（2026-02-24）
+
+`#1236` の実施開始時点で、A優先のうち「着手対象」を以下に固定する。
+
+| 項目 | 現状 | 不足ケース（次PRで消し込む対象） |
+| --- | --- | --- |
+| Phase2 send系ガード（preset + policy + approval/evidence） | 部分実装 | `EVIDENCE_REQUIRED` の route-level 検証、explicit env が preset より優先される境界 |
+| 承認アクションガード（approve/reject） | 部分実装 | `phase2_core` と explicit env の組合せ境界を追加 |
+| Agent-First E2E（失敗系） | 未実装 | 承認不足/証跡不足/理由不足の拒否シナリオをAPI通しで検証 |
+| manual-test-checklist と自動テスト対応 | 部分実装 | Agent-First失敗系の自動テスト参照を明示 |
+| #543 preflight（入力不足/形式不正） | 未実装 | `check-po-migration-input-readiness.sh` の主要失敗分岐を自動テスト化 |
+| #544 readiness（前提不足時の失敗理由） | 未実装 | `check-backup-s3-readiness.sh` の前提検証をモック化して自動テスト化 |
+
 ## 領域別の整理（現状）
 
 | 領域                    | 代表シナリオ                                                                 | 現状の自動テスト                                                                                                                                                                                                                                                                                                                                                | 優先度 | 次の一手                                                           |

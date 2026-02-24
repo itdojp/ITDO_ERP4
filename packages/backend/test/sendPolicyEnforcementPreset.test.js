@@ -85,6 +85,13 @@ function purchaseOrderDraft() {
   };
 }
 
+function approvalInstanceApproved() {
+  return {
+    id: 'approval-001',
+    status: 'approved',
+  };
+}
+
 test('POST /invoices/:id/send: phase2_core preset denies when policy is missing', async () => {
   await withEnv(
     {
@@ -194,6 +201,125 @@ test('POST /invoices/:id/send: phase2_core requires approval+evidence after poli
             assert.equal(res.statusCode, 403, res.body);
             const payload = JSON.parse(res.body);
             assert.equal(payload?.error?.code, 'APPROVAL_REQUIRED');
+          } finally {
+            await server.close();
+          }
+        },
+      );
+    },
+  );
+});
+
+test('POST /invoices/:id/send: phase2_core returns EVIDENCE_REQUIRED when approval exists without snapshot', async () => {
+  await withEnv(
+    {
+      DATABASE_URL: process.env.DATABASE_URL || MIN_DATABASE_URL,
+      AUTH_MODE: 'header',
+      ACTION_POLICY_ENFORCEMENT_PRESET: 'phase2_core',
+      ACTION_POLICY_REQUIRED_ACTIONS: '',
+      APPROVAL_EVIDENCE_REQUIRED_ACTIONS: '',
+    },
+    async () => {
+      await withPrismaStubs(
+        {
+          'invoice.findUnique': async () => invoiceDraft(),
+          'actionPolicy.findMany': async () => [
+            {
+              id: 'policy-allow-send',
+              flowType: 'invoice',
+              actionKey: 'send',
+              priority: 100,
+              isEnabled: true,
+              subjects: null,
+              stateConstraints: null,
+              requireReason: false,
+              guards: null,
+            },
+          ],
+          'approvalInstance.findFirst': async () => approvalInstanceApproved(),
+          'evidenceSnapshot.findFirst': async () => null,
+        },
+        async () => {
+          const server = await buildServer({ logger: false });
+          try {
+            const res = await server.inject({
+              method: 'POST',
+              url: '/invoices/inv-001/send',
+              headers: adminHeaders(),
+            });
+            assert.equal(res.statusCode, 403, res.body);
+            const payload = JSON.parse(res.body);
+            assert.equal(payload?.error?.code, 'EVIDENCE_REQUIRED');
+          } finally {
+            await server.close();
+          }
+        },
+      );
+    },
+  );
+});
+
+test('POST /invoices/:id/send: explicit ACTION_POLICY_REQUIRED_ACTIONS works even when preset is off', async () => {
+  await withEnv(
+    {
+      DATABASE_URL: process.env.DATABASE_URL || MIN_DATABASE_URL,
+      AUTH_MODE: 'header',
+      ACTION_POLICY_ENFORCEMENT_PRESET: 'off',
+      ACTION_POLICY_REQUIRED_ACTIONS: 'invoice:send',
+      APPROVAL_EVIDENCE_REQUIRED_ACTIONS: 'vendor_invoice:submit',
+    },
+    async () => {
+      await withPrismaStubs(
+        {
+          'invoice.findUnique': async () => invoiceDraft(),
+          'actionPolicy.findMany': async () => [],
+        },
+        async () => {
+          const server = await buildServer({ logger: false });
+          try {
+            const res = await server.inject({
+              method: 'POST',
+              url: '/invoices/inv-001/send',
+              headers: adminHeaders(),
+            });
+            assert.equal(res.statusCode, 403, res.body);
+            const payload = JSON.parse(res.body);
+            assert.equal(payload?.error?.code, 'ACTION_POLICY_DENIED');
+          } finally {
+            await server.close();
+          }
+        },
+      );
+    },
+  );
+});
+
+test('POST /invoices/:id/send: explicit env rules override phase2_core preset', async () => {
+  await withEnv(
+    {
+      DATABASE_URL: process.env.DATABASE_URL || MIN_DATABASE_URL,
+      AUTH_MODE: 'header',
+      ACTION_POLICY_ENFORCEMENT_PRESET: 'phase2_core',
+      ACTION_POLICY_REQUIRED_ACTIONS: 'vendor_invoice:submit',
+      APPROVAL_EVIDENCE_REQUIRED_ACTIONS: 'vendor_invoice:submit',
+    },
+    async () => {
+      await withPrismaStubs(
+        {
+          'invoice.findUnique': async () => invoiceDraft(),
+          'actionPolicy.findMany': async () => [],
+        },
+        async () => {
+          const server = await buildServer({ logger: false });
+          try {
+            const res = await server.inject({
+              method: 'POST',
+              url: '/invoices/inv-001/send?templateId=missing-template',
+              headers: adminHeaders(),
+            });
+            assert.equal(res.statusCode, 404, res.body);
+            const payload = JSON.parse(res.body);
+            assert.equal(payload?.error?.code, 'template_not_found');
           } finally {
             await server.close();
           }

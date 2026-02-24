@@ -18,6 +18,17 @@
 - [x] POST/GET/PATCH /report-subscriptions → /report-subscriptions/:id/run で report_deliveries が作成される
 - [x] /jobs/report-subscriptions/run と /jobs/report-deliveries/retry が動作する
 
+### Agent-First ガードレール（自動テスト参照）
+
+- [x] `ACTION_POLICY_ENFORCEMENT_PRESET=phase2_core` で send 系が policy 未定義時に拒否される（`ACTION_POLICY_DENIED`）
+  - 参照: `packages/backend/test/sendPolicyEnforcementPreset.test.js`
+- [x] send 系で承認不足/証跡不足が拒否される（`APPROVAL_REQUIRED` / `EVIDENCE_REQUIRED`）
+  - 参照: `packages/backend/test/sendPolicyEnforcementPreset.test.js`, `packages/backend/test/approvalEvidenceGate.test.js`
+- [x] 承認アクション（`/approval-instances/:id/act`）で preset 強制時に policy 未定義拒否となる
+  - 参照: `packages/backend/test/approvalActionPolicyPreset.test.js`
+- [x] `ACTION_POLICY_REQUIRED_ACTIONS` 明示指定が preset より優先される
+  - 参照: `packages/backend/test/sendPolicyEnforcementPreset.test.js`
+
 ### チャット（確認依頼 ack required）
 
 - [x] GET /projects/:projectId/chat-ack-candidates?q= で候補（users/groups）が取得できる（q は2文字以上）
