@@ -5,6 +5,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BACKEND_PORT="${BACKEND_PORT:-3002}"
 FRONTEND_PORT="${FRONTEND_PORT:-5173}"
 E2E_DB_MODE="${E2E_DB_MODE:-podman}"
+E2E_AUTH_MODE="${E2E_AUTH_MODE:-header}"
 E2E_PODMAN_CONTAINER_NAME="${E2E_PODMAN_CONTAINER_NAME:-erp4-pg-e2e}"
 E2E_PODMAN_HOST_PORT_EXPLICIT=0
 if [[ -n "${E2E_PODMAN_HOST_PORT+x}" && -n "${E2E_PODMAN_HOST_PORT:-}" ]]; then
@@ -12,6 +13,15 @@ if [[ -n "${E2E_PODMAN_HOST_PORT+x}" && -n "${E2E_PODMAN_HOST_PORT:-}" ]]; then
 fi
 E2E_PODMAN_HOST_PORT="${E2E_PODMAN_HOST_PORT:-55433}"
 E2E_PODMAN_RESET="${E2E_PODMAN_RESET:-1}"
+
+case "$E2E_AUTH_MODE" in
+  header|jwt)
+    ;;
+  *)
+    echo "Unknown E2E_AUTH_MODE: $E2E_AUTH_MODE (expected: header|jwt)" >&2
+    exit 1
+    ;;
+esac
 
 port_in_use() {
   local port="$1"
@@ -210,6 +220,90 @@ wait_for_db() {
   return 1
 }
 
+generate_agent_first_jwt_bundle() {
+  local issuer="$1"
+  local audience="$2"
+  (
+    cd "$ROOT_DIR/packages/backend"
+    E2E_JWT_ISSUER="$issuer" E2E_JWT_AUDIENCE="$audience" node --input-type=module <<'EOF'
+import { randomUUID } from 'node:crypto';
+import { SignJWT, exportSPKI, generateKeyPair } from 'jose';
+
+const issuer = process.env.E2E_JWT_ISSUER || 'e2e-agent-first-issuer';
+const audience = process.env.E2E_JWT_AUDIENCE || 'erp4-e2e';
+const now = Math.floor(Date.now() / 1000);
+const { privateKey, publicKey } = await generateKeyPair('RS256');
+const publicKeyPem = await exportSPKI(publicKey);
+
+async function signToken(claims) {
+  return new SignJWT(claims)
+    .setProtectedHeader({ alg: 'RS256' })
+    .setIssuer(issuer)
+    .setAudience(audience)
+    .setIssuedAt(now)
+    .setExpirationTime(now + 60 * 60 * 2)
+    .setJti(randomUUID())
+    .sign(privateKey);
+}
+
+const delegatedActor = { sub: 'agent-bot' };
+const delegatedScopes = ['write-limited'];
+
+const tokens = {
+  admin: await signToken({
+    sub: 'demo-user',
+    roles: ['admin', 'mgmt', 'exec'],
+    project_ids: ['00000000-0000-0000-0000-000000000001'],
+    group_ids: ['mgmt', 'exec'],
+    scp: delegatedScopes,
+    act: delegatedActor,
+  }),
+  outsider: await signToken({
+    sub: 'e2e-agent-outsider@example.com',
+    roles: ['user'],
+    project_ids: [],
+    group_ids: [],
+    scp: delegatedScopes,
+    act: delegatedActor,
+  }),
+  approvalRequired: await signToken({
+    sub: 'e2e-agent-approval-required@example.com',
+    roles: ['admin', 'mgmt', 'exec'],
+    project_ids: ['00000000-0000-0000-0000-000000000001'],
+    group_ids: ['mgmt', 'exec'],
+    scp: delegatedScopes,
+    act: delegatedActor,
+  }),
+  evidenceRequired: await signToken({
+    sub: 'e2e-agent-evidence-required@example.com',
+    roles: ['admin', 'mgmt', 'exec'],
+    project_ids: ['00000000-0000-0000-0000-000000000001'],
+    group_ids: ['mgmt', 'exec'],
+    scp: delegatedScopes,
+    act: delegatedActor,
+  }),
+  reasonRequired: await signToken({
+    sub: 'e2e-agent-reason-required@example.com',
+    roles: ['admin', 'mgmt', 'exec'],
+    project_ids: ['00000000-0000-0000-0000-000000000001'],
+    group_ids: ['mgmt', 'exec'],
+    scp: delegatedScopes,
+    act: delegatedActor,
+  }),
+};
+
+process.stdout.write(
+  JSON.stringify({
+    issuer,
+    audience,
+    publicKey: publicKeyPem,
+    tokens,
+  }),
+);
+EOF
+  )
+}
+
 case "$E2E_DB_MODE" in
   podman)
     if [[ "$E2E_PODMAN_RESET" == "1" ]]; then
@@ -243,10 +337,34 @@ esac
 DATABASE_URL="$DATABASE_URL" npm run prisma:generate --prefix "$ROOT_DIR/packages/backend"
 npm run build --prefix "$ROOT_DIR/packages/backend"
 
-PORT="$BACKEND_PORT" AUTH_MODE=header DATABASE_URL="$DATABASE_URL" \
+E2E_JWT_ISSUER="${E2E_JWT_ISSUER:-e2e-agent-first-issuer}"
+E2E_JWT_AUDIENCE="${E2E_JWT_AUDIENCE:-erp4-e2e}"
+E2E_JWT_PUBLIC_KEY=""
+E2E_JWT_TOKEN_ADMIN="${E2E_JWT_TOKEN_ADMIN:-}"
+E2E_JWT_TOKEN_OUTSIDER="${E2E_JWT_TOKEN_OUTSIDER:-}"
+E2E_JWT_TOKEN_APPROVAL_REQUIRED="${E2E_JWT_TOKEN_APPROVAL_REQUIRED:-}"
+E2E_JWT_TOKEN_EVIDENCE_REQUIRED="${E2E_JWT_TOKEN_EVIDENCE_REQUIRED:-}"
+E2E_JWT_TOKEN_REASON_REQUIRED="${E2E_JWT_TOKEN_REASON_REQUIRED:-}"
+
+if [[ "$E2E_AUTH_MODE" == "jwt" ]]; then
+  JWT_BUNDLE_FILE="$ROOT_DIR/tmp/e2e-agent-first-jwt.json"
+  generate_agent_first_jwt_bundle "$E2E_JWT_ISSUER" "$E2E_JWT_AUDIENCE" >"$JWT_BUNDLE_FILE"
+  E2E_JWT_PUBLIC_KEY="$(node --input-type=module -e "import fs from 'node:fs'; const data = JSON.parse(fs.readFileSync(process.argv[1], 'utf8')); process.stdout.write(String(data.publicKey || ''));" "$JWT_BUNDLE_FILE")"
+  E2E_JWT_TOKEN_ADMIN="$(node --input-type=module -e "import fs from 'node:fs'; const data = JSON.parse(fs.readFileSync(process.argv[1], 'utf8')); process.stdout.write(String(data.tokens?.admin || ''));" "$JWT_BUNDLE_FILE")"
+  E2E_JWT_TOKEN_OUTSIDER="$(node --input-type=module -e "import fs from 'node:fs'; const data = JSON.parse(fs.readFileSync(process.argv[1], 'utf8')); process.stdout.write(String(data.tokens?.outsider || ''));" "$JWT_BUNDLE_FILE")"
+  E2E_JWT_TOKEN_APPROVAL_REQUIRED="$(node --input-type=module -e "import fs from 'node:fs'; const data = JSON.parse(fs.readFileSync(process.argv[1], 'utf8')); process.stdout.write(String(data.tokens?.approvalRequired || ''));" "$JWT_BUNDLE_FILE")"
+  E2E_JWT_TOKEN_EVIDENCE_REQUIRED="$(node --input-type=module -e "import fs from 'node:fs'; const data = JSON.parse(fs.readFileSync(process.argv[1], 'utf8')); process.stdout.write(String(data.tokens?.evidenceRequired || ''));" "$JWT_BUNDLE_FILE")"
+  E2E_JWT_TOKEN_REASON_REQUIRED="$(node --input-type=module -e "import fs from 'node:fs'; const data = JSON.parse(fs.readFileSync(process.argv[1], 'utf8')); process.stdout.write(String(data.tokens?.reasonRequired || ''));" "$JWT_BUNDLE_FILE")"
+  rm -f "$JWT_BUNDLE_FILE"
+fi
+
+PORT="$BACKEND_PORT" AUTH_MODE="$E2E_AUTH_MODE" DATABASE_URL="$DATABASE_URL" \
 E2E_ENABLE_TEST_HOOKS="${E2E_ENABLE_TEST_HOOKS:-1}" \
 ALLOWED_ORIGINS="http://localhost:${FRONTEND_PORT},http://127.0.0.1:${FRONTEND_PORT}" \
 CHAT_EXTERNAL_LLM_PROVIDER="${CHAT_EXTERNAL_LLM_PROVIDER:-stub}" \
+JWT_ISSUER="$E2E_JWT_ISSUER" \
+JWT_AUDIENCE="$E2E_JWT_AUDIENCE" \
+JWT_PUBLIC_KEY="$E2E_JWT_PUBLIC_KEY" \
   node "$ROOT_DIR/packages/backend/dist/index.js" >"$BACKEND_LOG" 2>&1 &
 BACKEND_PID=$!
 if ! wait_for_url "http://localhost:${BACKEND_PORT}/health" "backend"; then
@@ -295,6 +413,12 @@ E2E_EVIDENCE_DIR="$E2E_EVIDENCE_DIR" \
 E2E_BASE_URL="$E2E_BASE_URL" \
 E2E_API_BASE="http://localhost:${BACKEND_PORT}" \
 E2E_CAPTURE="$E2E_CAPTURE" \
+E2E_AUTH_MODE="$E2E_AUTH_MODE" \
+E2E_JWT_TOKEN_ADMIN="$E2E_JWT_TOKEN_ADMIN" \
+E2E_JWT_TOKEN_OUTSIDER="$E2E_JWT_TOKEN_OUTSIDER" \
+E2E_JWT_TOKEN_APPROVAL_REQUIRED="$E2E_JWT_TOKEN_APPROVAL_REQUIRED" \
+E2E_JWT_TOKEN_EVIDENCE_REQUIRED="$E2E_JWT_TOKEN_EVIDENCE_REQUIRED" \
+E2E_JWT_TOKEN_REASON_REQUIRED="$E2E_JWT_TOKEN_REASON_REQUIRED" \
   npx --prefix "$ROOT_DIR/packages/frontend" playwright test --config "$ROOT_DIR/packages/frontend/playwright.config.ts" ${E2E_GREP:+--grep "$E2E_GREP"}
 
 echo "e2e evidence saved: $E2E_EVIDENCE_DIR"
