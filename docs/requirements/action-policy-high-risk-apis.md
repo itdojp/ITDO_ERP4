@@ -137,7 +137,17 @@ Phase 2 で先行する Draft は以下を対象とする。
 - 明示CSV（`ACTION_POLICY_REQUIRED_ACTIONS` / `APPROVAL_EVIDENCE_REQUIRED_ACTIONS`）が設定されている場合は、プリセットより明示CSVを優先する。
 - 本番反映は段階的に行い、まず `phase2_core` で有効化し、業務影響を確認後に明示CSVへ移行する。
 
-## 7. 実装時チェックリスト（Phase 2）
+## 7. テストカバレッジ（2026-02-24時点）
+
+| 観点                                  | テスト                                         |
+| ------------------------------------- | ---------------------------------------------- |
+| Draft作成/再生成/差分                 | `packages/backend/test/draftRoutes.test.js`    |
+| 送信系のpreset enforce（deny/approve） | `packages/backend/test/sendPolicyEnforcementPreset.test.js` |
+| 承認アクションのpreset enforce         | `packages/backend/test/approvalActionPolicyPreset.test.js` |
+| Approval + Evidence gate              | `packages/backend/test/approvalEvidenceGate.test.js` |
+| denyコード正規化                      | `packages/backend/test/actionPolicyErrors.test.js` |
+
+## 8. 実装時チェックリスト（Phase 2）
 
 - 対象APIの pre-action で ActionPolicy を評価している
 - 高リスクAPIは `ACTION_POLICY_REQUIRED_ACTIONS`（`flowType:actionKey` 形式）で段階的に「policy未定義時deny」へ切り替え可能
