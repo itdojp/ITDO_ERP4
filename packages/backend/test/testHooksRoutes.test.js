@@ -58,6 +58,13 @@ function adminHeaders() {
   };
 }
 
+function userHeaders() {
+  return {
+    'x-user-id': 'normal-user',
+    'x-roles': 'user',
+  };
+}
+
 test('test hook route is disabled unless E2E_ENABLE_TEST_HOOKS=1', async () => {
   await withEnv(
     {
@@ -65,6 +72,59 @@ test('test hook route is disabled unless E2E_ENABLE_TEST_HOOKS=1', async () => {
       AUTH_MODE: 'header',
       NODE_ENV: 'test',
       E2E_ENABLE_TEST_HOOKS: '0',
+    },
+    async () => {
+      const server = await buildServer({ logger: false });
+      try {
+        const res = await server.inject({
+          method: 'POST',
+          url: '/__test__/evidence-snapshots/reset',
+          headers: adminHeaders(),
+          payload: { approvalInstanceId: 'approval-001' },
+        });
+        assert.equal(res.statusCode, 404);
+      } finally {
+        await server.close();
+      }
+    },
+  );
+});
+
+test('test hook route requires admin or mgmt role', async () => {
+  await withEnv(
+    {
+      DATABASE_URL: process.env.DATABASE_URL || MIN_DATABASE_URL,
+      AUTH_MODE: 'header',
+      NODE_ENV: 'test',
+      E2E_ENABLE_TEST_HOOKS: '1',
+    },
+    async () => {
+      const server = await buildServer({ logger: false });
+      try {
+        const res = await server.inject({
+          method: 'POST',
+          url: '/__test__/evidence-snapshots/reset',
+          headers: userHeaders(),
+          payload: { approvalInstanceId: 'approval-001' },
+        });
+        assert.equal(res.statusCode, 403, res.body);
+        const payload = JSON.parse(res.body);
+        assert.equal(payload?.error?.code, 'forbidden');
+      } finally {
+        await server.close();
+      }
+    },
+  );
+});
+
+test('test hook route is disabled in production even when E2E_ENABLE_TEST_HOOKS=1', async () => {
+  await withEnv(
+    {
+      DATABASE_URL: process.env.DATABASE_URL || MIN_DATABASE_URL,
+      AUTH_MODE: 'header',
+      AUTH_ALLOW_HEADER_FALLBACK_IN_PROD: 'true',
+      NODE_ENV: 'production',
+      E2E_ENABLE_TEST_HOOKS: '1',
     },
     async () => {
       const server = await buildServer({ logger: false });
