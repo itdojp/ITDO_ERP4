@@ -195,6 +195,69 @@ test('POST /integration-settings/:id/run sets retry metadata with exponential ba
   assert.ok(failedUpdateCall?.data?.nextRetryAt instanceof Date);
 });
 
+test('POST /integration-settings/:id/run clamps retry policy from persisted config values', async () => {
+  process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
+  process.env.AUTH_MODE = 'header';
+
+  const setting = {
+    id: 'setting-failed-run-clamped',
+    type: 'crm',
+    status: 'active',
+    config: {
+      simulateFailure: true,
+      retryMax: 999,
+      retryBaseMinutes: 999999,
+    },
+  };
+
+  await withPrismaStubs(
+    {
+      'integrationSetting.findUnique': async () => setting,
+      'integrationRun.create': async () => ({
+        id: 'run-failed-clamped',
+        retryCount: 0,
+      }),
+      'integrationRun.update': async (args) => ({
+        id: 'run-failed-clamped',
+        status: args?.data?.status,
+        retryCount: args?.data?.retryCount ?? 0,
+        nextRetryAt: args?.data?.nextRetryAt ?? null,
+        message: args?.data?.message ?? null,
+      }),
+      'integrationSetting.update': async () => ({ id: setting.id }),
+      'alertSetting.findMany': async () => [],
+      'alert.updateMany': async () => ({ count: 0 }),
+      'auditLog.create': async () => ({ id: 'audit-clamped-001' }),
+    },
+    async () => {
+      const server = await buildServer({ logger: false });
+      const before = Date.now();
+      try {
+        const res = await server.inject({
+          method: 'POST',
+          url: `/integration-settings/${encodeURIComponent(setting.id)}/run`,
+          headers: {
+            'x-user-id': 'admin-user',
+            'x-roles': 'admin',
+          },
+        });
+        assert.equal(res.statusCode, 200, res.body);
+        const body = JSON.parse(res.body);
+        assert.equal(body.status, 'failed');
+        assert.equal(body.retryCount, 1);
+        assert.equal(typeof body.nextRetryAt, 'string');
+        const nextRetryMs = new Date(body.nextRetryAt).getTime();
+        const maxPolicyMs = 1440 * 60 * 1000;
+        // Runtime retry policy should be bounded even when persisted config is out-of-range.
+        assert.ok(nextRetryMs >= before + maxPolicyMs - 2000);
+        assert.ok(nextRetryMs <= Date.now() + maxPolicyMs + 2000);
+      } finally {
+        await server.close();
+      }
+    },
+  );
+});
+
 test('POST /integration-settings/:id/run returns 409 when setting is disabled', async () => {
   process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
   process.env.AUTH_MODE = 'header';

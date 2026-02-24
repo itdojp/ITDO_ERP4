@@ -5188,7 +5188,12 @@
               "schema": {
                 "additionalProperties": false,
                 "properties": {
-                  "config": {},
+                  "config": {
+                    "additionalProperties": true,
+                    "nullable": true,
+                    "properties": {},
+                    "type": "object"
+                  },
                   "name": {
                     "type": "string"
                   },
@@ -5265,7 +5270,12 @@
               "schema": {
                 "additionalProperties": false,
                 "properties": {
-                  "config": {},
+                  "config": {
+                    "additionalProperties": true,
+                    "nullable": true,
+                    "properties": {},
+                    "type": "object"
+                  },
                   "name": {
                     "type": "string"
                   },

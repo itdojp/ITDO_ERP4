@@ -82,6 +82,8 @@ function calculateDurationMetrics(durations: number[]) {
 
 const DEFAULT_RETRY_MAX = 3;
 const DEFAULT_RETRY_BASE_MINUTES = 60;
+const MAX_RETRY_MAX = 10;
+const MAX_RETRY_BASE_MINUTES = 1440;
 
 function getRetryPolicy(config: unknown) {
   const record =
@@ -92,11 +94,11 @@ function getRetryPolicy(config: unknown) {
   const retryBaseRaw = record.retryBaseMinutes;
   const retryMax =
     typeof retryMaxRaw === 'number' && Number.isFinite(retryMaxRaw)
-      ? Math.max(0, Math.floor(retryMaxRaw))
+      ? Math.min(MAX_RETRY_MAX, Math.max(0, Math.floor(retryMaxRaw)))
       : DEFAULT_RETRY_MAX;
   const retryBaseMinutes =
     typeof retryBaseRaw === 'number' && Number.isFinite(retryBaseRaw)
-      ? Math.max(1, Math.floor(retryBaseRaw))
+      ? Math.min(MAX_RETRY_BASE_MINUTES, Math.max(1, Math.floor(retryBaseRaw)))
       : DEFAULT_RETRY_BASE_MINUTES;
   return { retryMax, retryBaseMinutes };
 }
@@ -238,9 +240,12 @@ function validateIntegrationConfig(
     (typeof retryMax !== 'number' ||
       !Number.isInteger(retryMax) ||
       retryMax < 0 ||
-      retryMax > 10)
+      retryMax > MAX_RETRY_MAX)
   ) {
-    return { ok: false, message: 'retryMax must be an integer in range 0..10' };
+    return {
+      ok: false,
+      message: `retryMax must be an integer in range 0..${MAX_RETRY_MAX}`,
+    };
   }
 
   const retryBaseMinutes = raw.retryBaseMinutes;
@@ -249,11 +254,11 @@ function validateIntegrationConfig(
     (typeof retryBaseMinutes !== 'number' ||
       !Number.isInteger(retryBaseMinutes) ||
       retryBaseMinutes < 1 ||
-      retryBaseMinutes > 1440)
+      retryBaseMinutes > MAX_RETRY_BASE_MINUTES)
   ) {
     return {
       ok: false,
-      message: 'retryBaseMinutes must be an integer in range 1..1440',
+      message: `retryBaseMinutes must be an integer in range 1..${MAX_RETRY_BASE_MINUTES}`,
     };
   }
 
@@ -480,7 +485,7 @@ function buildIntegrationRunAuditMetadata(input: {
     status: input.run.status,
     retryCount: input.run.retryCount ?? 0,
     nextRetryAt: input.run.nextRetryAt?.toISOString() ?? null,
-    startedAt: input.run.startedAt?.toISOString?.() ?? null,
+    startedAt: input.run.startedAt?.toISOString() ?? null,
     finishedAt: input.run.finishedAt?.toISOString() ?? null,
     message: truncateForAudit(input.run.message ?? null),
   };
@@ -821,6 +826,8 @@ export async function registerIntegrationRoutes(app: FastifyInstance) {
     { preHandler: requireRole(['admin', 'mgmt']) },
     async (req) => {
       const userId = req.user?.userId;
+      const auditContext = auditContextFromRequest(req);
+      const auditTasks: Array<Promise<unknown>> = [];
       const now = new Date();
       const retryRuns = await prisma.integrationRun.findMany({
         where: {
@@ -842,18 +849,20 @@ export async function registerIntegrationRoutes(app: FastifyInstance) {
           retryCount: run.retryCount,
         });
         retryResults.push({ id: updated.id, status: updated.status });
-        await logAudit({
-          ...auditContextFromRequest(req),
-          action: 'integration_run_executed',
-          targetTable: 'integration_runs',
-          targetId: updated.id,
-          metadata: buildIntegrationRunAuditMetadata({
-            trigger: 'retry',
-            settingId: run.setting.id,
-            settingType: run.setting.type,
-            run: updated,
-          }) as Prisma.InputJsonValue,
-        });
+        auditTasks.push(
+          logAudit({
+            ...auditContext,
+            action: 'integration_run_executed',
+            targetTable: 'integration_runs',
+            targetId: updated.id,
+            metadata: buildIntegrationRunAuditMetadata({
+              trigger: 'retry',
+              settingId: run.setting.id,
+              settingType: run.setting.type,
+              run: updated,
+            }) as Prisma.InputJsonValue,
+          }),
+        );
       }
 
       const scheduledSettings = await prisma.integrationSetting.findMany({
@@ -868,28 +877,33 @@ export async function registerIntegrationRoutes(app: FastifyInstance) {
         }
         const run = await runIntegrationSetting(setting, userId);
         scheduledResults.push({ id: run.id, status: run.status });
-        await logAudit({
-          ...auditContextFromRequest(req),
-          action: 'integration_run_executed',
-          targetTable: 'integration_runs',
-          targetId: run.id,
-          metadata: buildIntegrationRunAuditMetadata({
-            trigger: 'scheduled',
-            settingId: setting.id,
-            settingType: setting.type,
-            run,
-          }) as Prisma.InputJsonValue,
-        });
+        auditTasks.push(
+          logAudit({
+            ...auditContext,
+            action: 'integration_run_executed',
+            targetTable: 'integration_runs',
+            targetId: run.id,
+            metadata: buildIntegrationRunAuditMetadata({
+              trigger: 'scheduled',
+              settingId: setting.id,
+              settingType: setting.type,
+              run,
+            }) as Prisma.InputJsonValue,
+          }),
+        );
       }
-      await logAudit({
-        ...auditContextFromRequest(req),
-        action: 'integration_jobs_run_executed',
-        targetTable: 'integration_runs',
-        metadata: {
-          retryCount: retryResults.length,
-          scheduledCount: scheduledResults.length,
-        } as Prisma.InputJsonValue,
-      });
+      auditTasks.push(
+        logAudit({
+          ...auditContext,
+          action: 'integration_jobs_run_executed',
+          targetTable: 'integration_runs',
+          metadata: {
+            retryCount: retryResults.length,
+            scheduledCount: scheduledResults.length,
+          } as Prisma.InputJsonValue,
+        }),
+      );
+      await Promise.allSettled(auditTasks);
       return {
         ok: true,
         retryCount: retryResults.length,
