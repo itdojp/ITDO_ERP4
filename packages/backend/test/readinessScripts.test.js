@@ -310,3 +310,125 @@ test('record-po-migration-rehearsal: auto increments run suffix when RUN_LABEL i
     );
   });
 });
+
+test('run-and-record-po-migration-rehearsal: records report when run succeeds', () => {
+  withTempDir((dir) => {
+    const runStub = path.join(dir, 'run-stub.sh');
+    const recordStub = path.join(dir, 'record-stub.sh');
+    const logDir = path.join(dir, 'logs');
+    const outDir = path.join(dir, 'out');
+
+    writeFileSync(
+      runStub,
+      [
+        '#!/usr/bin/env bash',
+        'set -euo pipefail',
+        'mkdir -p "${LOG_DIR}"',
+        'echo "run-ok" > "${LOG_DIR}/run.log"',
+      ].join('\n'),
+    );
+    writeFileSync(
+      recordStub,
+      [
+        '#!/usr/bin/env bash',
+        'set -euo pipefail',
+        'mkdir -p "${LOG_DIR}"',
+        'echo "${DATE_STAMP}|${RUN_LABEL}|${OUT_DIR:-}" > "${LOG_DIR}/record.log"',
+      ].join('\n'),
+    );
+    chmodSync(runStub, 0o755);
+    chmodSync(recordStub, 0o755);
+
+    const res = runScript('run-and-record-po-migration-rehearsal.sh', {
+      RUN_SCRIPT_PATH: runStub,
+      RECORD_SCRIPT_PATH: recordStub,
+      LOG_DIR: logDir,
+      DATE_STAMP: '2026-02-24',
+      RUN_LABEL: 'r1',
+      OUT_DIR: outDir,
+    });
+    assert.equal(res.status, 0, `${res.stderr}\n${res.stdout}`);
+    assert.equal(existsSync(path.join(logDir, 'run.log')), true);
+    assert.equal(existsSync(path.join(logDir, 'record.log')), true);
+    const record = readFileSync(path.join(logDir, 'record.log'), 'utf8');
+    assert.match(record, /2026-02-24\|r1\|/);
+  });
+});
+
+test('run-and-record-po-migration-rehearsal: records even when run fails if RECORD_ON_FAIL=1', () => {
+  withTempDir((dir) => {
+    const runStub = path.join(dir, 'run-stub.sh');
+    const recordStub = path.join(dir, 'record-stub.sh');
+    const logDir = path.join(dir, 'logs');
+
+    writeFileSync(
+      runStub,
+      [
+        '#!/usr/bin/env bash',
+        'set -euo pipefail',
+        'mkdir -p "${LOG_DIR}"',
+        'echo "run-fail" > "${LOG_DIR}/run.log"',
+        'exit 33',
+      ].join('\n'),
+    );
+    writeFileSync(
+      recordStub,
+      [
+        '#!/usr/bin/env bash',
+        'set -euo pipefail',
+        'mkdir -p "${LOG_DIR}"',
+        'echo "record-on-fail" > "${LOG_DIR}/record.log"',
+      ].join('\n'),
+    );
+    chmodSync(runStub, 0o755);
+    chmodSync(recordStub, 0o755);
+
+    const res = runScript('run-and-record-po-migration-rehearsal.sh', {
+      RUN_SCRIPT_PATH: runStub,
+      RECORD_SCRIPT_PATH: recordStub,
+      LOG_DIR: logDir,
+      RECORD_ON_FAIL: '1',
+    });
+    assert.equal(res.status, 33);
+    assert.equal(existsSync(path.join(logDir, 'record.log')), true);
+  });
+});
+
+test('run-and-record-po-migration-rehearsal: skips record when run fails and RECORD_ON_FAIL=0', () => {
+  withTempDir((dir) => {
+    const runStub = path.join(dir, 'run-stub.sh');
+    const recordStub = path.join(dir, 'record-stub.sh');
+    const logDir = path.join(dir, 'logs');
+
+    writeFileSync(
+      runStub,
+      [
+        '#!/usr/bin/env bash',
+        'set -euo pipefail',
+        'mkdir -p "${LOG_DIR}"',
+        'echo "run-fail" > "${LOG_DIR}/run.log"',
+        'exit 34',
+      ].join('\n'),
+    );
+    writeFileSync(
+      recordStub,
+      [
+        '#!/usr/bin/env bash',
+        'set -euo pipefail',
+        'mkdir -p "${LOG_DIR}"',
+        'echo "should-not-run" > "${LOG_DIR}/record.log"',
+      ].join('\n'),
+    );
+    chmodSync(runStub, 0o755);
+    chmodSync(recordStub, 0o755);
+
+    const res = runScript('run-and-record-po-migration-rehearsal.sh', {
+      RUN_SCRIPT_PATH: runStub,
+      RECORD_SCRIPT_PATH: recordStub,
+      LOG_DIR: logDir,
+      RECORD_ON_FAIL: '0',
+    });
+    assert.equal(res.status, 34);
+    assert.equal(existsSync(path.join(logDir, 'record.log')), false);
+  });
+});

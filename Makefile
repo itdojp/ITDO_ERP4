@@ -1,4 +1,4 @@
-.PHONY: lint format-check typecheck build test e2e ui-evidence mobile-regression-log frontend-dev-api podman-smoke pr-comments audit design-system-package-check eslint10-readiness-check dependabot-alerts-check dependabot-token-readiness-check backup-s3-readiness-check backup-s3-readiness-record po-migration-input-readiness-check po-migration-record av-staging-evidence av-staging-gate av-staging-readiness
+.PHONY: lint format-check typecheck build test e2e ui-evidence mobile-regression-log frontend-dev-api podman-smoke pr-comments audit design-system-package-check eslint10-readiness-check dependabot-alerts-check dependabot-token-readiness-check backup-s3-readiness-check backup-s3-readiness-record po-migration-input-readiness-check po-migration-record po-migration-run-and-record av-staging-evidence av-staging-gate av-staging-readiness
 
 lint:
 	npm run lint --prefix packages/backend
@@ -66,6 +66,9 @@ po-migration-input-readiness-check:
 
 po-migration-record:
 	./scripts/record-po-migration-rehearsal.sh
+
+po-migration-run-and-record:
+	./scripts/run-and-record-po-migration-rehearsal.sh
 
 av-staging-evidence:
 	./scripts/record-chat-attachments-av-staging.sh
