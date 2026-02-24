@@ -57,6 +57,7 @@ UIは、決裁・例外処理・監査確認のための導線に集中させる
   - 承認と証跡必須化
   - 標準エラーコード（`REASON_REQUIRED` / `ACTION_POLICY_DENIED` / `APPROVAL_REQUIRED`）
   - 高リスクAPIカタログとテンプレート（`docs/requirements/action-policy-high-risk-apis.md`）
+  - 運用ガイド（`docs/manual/agent-write-guardrails-guide.md`）
 
 ### Phase 3: External Integrations
 

@@ -19,6 +19,8 @@
 - 権限/ロールと可視範囲: [role-permissions](role-permissions.md)
 - 初回利用・共通操作: [user-onboarding](user-onboarding.md)
 - トラブルシュート: [troubleshooting](troubleshooting.md)
+- Agent Read API（Phase 1）: [agent-read-api-guide](agent-read-api-guide.md)
+- Agent Write ガードレール（Phase 2）: [agent-write-guardrails-guide](agent-write-guardrails-guide.md)
 
 ### 業務別ガイド
 - 案件リーダー運用: [project-leader-guide](project-leader-guide.md)
