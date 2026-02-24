@@ -66,6 +66,20 @@ INPUT_DIR=tmp/migration/po INPUT_FORMAT=csv APPLY=1 RUN_INTEGRITY=1 \
 - `packages/backend/dist/services/db.js` が無い場合は事前に `npm run build --prefix packages/backend` が必要。
 - 結果記録テンプレート: `docs/test-results/po-migration-rehearsal-template.md`
 
+### 3.0.1 実行 + 記録を一括で行う（推奨）
+`scripts/run-and-record-po-migration-rehearsal.sh` は、リハーサル実行と `docs/test-results` への記録を一括で行う。
+
+```bash
+INPUT_DIR=tmp/migration/po INPUT_FORMAT=csv APPLY=1 RUN_INTEGRITY=1 \
+  ./scripts/run-and-record-po-migration-rehearsal.sh
+```
+
+補足:
+- `RECORD_ON_FAIL=1`（既定）のため、実行失敗時も記録を残せる。
+- `RUN_LABEL=r1` / `DATE_STAMP=YYYY-MM-DD` / `OUT_DIR=...` で出力先を制御できる。
+- Makefile 経由でも実行可能:
+  - `INPUT_DIR=tmp/migration/po INPUT_FORMAT=csv APPLY=1 RUN_INTEGRITY=1 make po-migration-run-and-record`
+
 ### 3.1 dry-run（DBへ書き込まない）
 ```bash
 npx --prefix packages/backend ts-node --project packages/backend/tsconfig.json scripts/migrate-po.ts \
