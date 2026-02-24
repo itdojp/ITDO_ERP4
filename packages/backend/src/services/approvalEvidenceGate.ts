@@ -64,27 +64,27 @@ export async function ensureApprovalEvidenceReady(
     return { required: false, allowed: true };
   }
 
-  const approved = await client.approvalInstance.findFirst({
+  const latest = await client.approvalInstance.findFirst({
     where: {
       flowType: input.flowType,
       targetTable: input.targetTable,
       targetId: input.targetId,
-      status: DocStatusValue.approved,
     },
     orderBy: { updatedAt: 'desc' },
-    select: { id: true },
+    select: { id: true, status: true },
   });
-  if (!approved?.id) {
+  if (!latest?.id || latest.status !== DocStatusValue.approved) {
     return {
       required: true,
       allowed: false,
       code: 'APPROVAL_REQUIRED',
       message: 'Approval is required before this operation',
+      approvalInstanceId: latest?.id ?? undefined,
     };
   }
 
   const snapshot = await client.evidenceSnapshot.findFirst({
-    where: { approvalInstanceId: approved.id },
+    where: { approvalInstanceId: latest.id },
     orderBy: { capturedAt: 'desc' },
     select: { id: true },
   });
@@ -94,14 +94,14 @@ export async function ensureApprovalEvidenceReady(
       allowed: false,
       code: 'EVIDENCE_REQUIRED',
       message: 'Evidence snapshot is required before this operation',
-      approvalInstanceId: approved.id,
+      approvalInstanceId: latest.id,
     };
   }
 
   return {
     required: true,
     allowed: true,
-    approvalInstanceId: approved.id,
+    approvalInstanceId: latest.id,
     snapshotId: snapshot.id,
   };
 }
