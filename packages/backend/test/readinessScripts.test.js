@@ -253,3 +253,60 @@ test('record-backup-s3-readiness: runs CHECK_SCRIPT and respects FAIL_ON_CHECK',
     assert.equal(res2.status, 42);
   });
 });
+
+test('record-po-migration-rehearsal: writes report from provided rehearsal report', () => {
+  withTempDir((dir) => {
+    const logDir = path.join(dir, 'logs');
+    mkdirSync(logDir, { recursive: true });
+    const sourceReport = path.join(logDir, 'rehearsal-report.md');
+    const outDir = path.join(dir, 'out');
+
+    writeFileSync(sourceReport, '## migration summary\n\n- errors: 0\n');
+
+    const res = runScript('record-po-migration-rehearsal.sh', {
+      LOG_DIR: logDir,
+      REPORT_SOURCE: sourceReport,
+      OUT_DIR: outDir,
+      DATE_STAMP: '2026-02-24',
+      RUN_LABEL: 'r1',
+    });
+    assert.equal(res.status, 0, `${res.stderr}\n${res.stdout}`);
+
+    const reportPath = path.join(
+      outDir,
+      '2026-02-24-po-migration-rehearsal-r1.md',
+    );
+    assert.equal(existsSync(reportPath), true);
+    const report = readFileSync(reportPath, 'utf8');
+    assert.match(report, /# PO移行リハーサル記録/);
+    assert.match(report, /## migration summary/);
+    assert.match(report, /sourceLogDir:/);
+  });
+});
+
+test('record-po-migration-rehearsal: auto increments run suffix when RUN_LABEL is omitted', () => {
+  withTempDir((dir) => {
+    const logDir = path.join(dir, 'logs');
+    const sourceReport = path.join(logDir, 'rehearsal-report.md');
+    const outDir = path.join(dir, 'out');
+    mkdirSync(logDir, { recursive: true });
+    mkdirSync(outDir, { recursive: true });
+    writeFileSync(sourceReport, '## migration summary\n\n- errors: 0\n');
+    writeFileSync(
+      path.join(outDir, '2026-02-24-po-migration-rehearsal-r1.md'),
+      '# existing report',
+    );
+
+    const res = runScript('record-po-migration-rehearsal.sh', {
+      LOG_DIR: logDir,
+      REPORT_SOURCE: sourceReport,
+      OUT_DIR: outDir,
+      DATE_STAMP: '2026-02-24',
+    });
+    assert.equal(res.status, 0, `${res.stderr}\n${res.stdout}`);
+    assert.equal(
+      existsSync(path.join(outDir, '2026-02-24-po-migration-rehearsal-r2.md')),
+      true,
+    );
+  });
+});
