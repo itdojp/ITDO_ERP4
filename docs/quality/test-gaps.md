@@ -25,8 +25,8 @@
 | 承認アクションガード（approve/reject） | 部分実装 | `phase2_core` と explicit env の組合せ境界を追加 |
 | Agent-First E2E（失敗系） | 完了 | 承認不足（`APPROVAL_REQUIRED`）/証跡不足（`EVIDENCE_REQUIRED`）/理由不足（`REASON_REQUIRED`）を `packages/frontend/e2e/backend-agent-first-mvp.spec.ts` で検証 |
 | manual-test-checklist と自動テスト対応 | 部分実装 | Agent-First失敗系の自動テスト参照を明示 |
-| #543 preflight（入力不足/形式不正） | 未実装 | `check-po-migration-input-readiness.sh` の主要失敗分岐を自動テスト化 |
-| #544 readiness（前提不足時の失敗理由） | 未実装 | `check-backup-s3-readiness.sh` の前提検証をモック化して自動テスト化 |
+| #543 preflight（入力不足/形式不正） | 完了 | `packages/backend/test/readinessScripts.test.js` で `check-po-migration-input-readiness.sh` の主要失敗分岐（INPUT_DIR未指定 / ONLY不正 / STRICT=0）を自動検証 |
+| #544 readiness（前提不足時の失敗理由） | 完了 | `packages/backend/test/readinessScripts.test.js` で `check-backup-s3-readiness.sh` の主要失敗分岐（aws未導入 / EXPECT_SSE不正）を自動検証 |
 
 ## 領域別の整理（現状）
 
