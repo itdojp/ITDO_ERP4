@@ -1519,6 +1519,61 @@ export const pushTestSchema = {
     { additionalProperties: false },
   ),
 };
+
+const draftKindSchema = Type.Union([
+  Type.Literal('invoice_send'),
+  Type.Literal('approval_request'),
+  Type.Literal('notification_report'),
+]);
+
+const draftTextSchema = Type.Object(
+  {
+    subject: Type.String({ minLength: 1, maxLength: 500 }),
+    body: Type.String({ minLength: 1, maxLength: 20000 }),
+  },
+  { additionalProperties: false },
+);
+
+const draftContextSchema = Type.Union([
+  Type.Object({}, { additionalProperties: true }),
+  Type.Null(),
+]);
+
+export const draftGenerateSchema = {
+  body: Type.Object(
+    {
+      kind: draftKindSchema,
+      targetId: Type.Optional(Type.String({ minLength: 1 })),
+      context: Type.Optional(draftContextSchema),
+      instruction: Type.Optional(Type.String({ maxLength: 2000 })),
+    },
+    { additionalProperties: false },
+  ),
+};
+
+export const draftRegenerateSchema = {
+  body: Type.Object(
+    {
+      kind: draftKindSchema,
+      targetId: Type.Optional(Type.String({ minLength: 1 })),
+      context: Type.Optional(draftContextSchema),
+      instruction: Type.Optional(Type.String({ maxLength: 2000 })),
+      previous: draftTextSchema,
+    },
+    { additionalProperties: false },
+  ),
+};
+
+export const draftDiffSchema = {
+  body: Type.Object(
+    {
+      before: draftTextSchema,
+      after: draftTextSchema,
+    },
+    { additionalProperties: false },
+  ),
+};
+
 export const integrationSettingSchema = {
   body: Type.Object(
     {

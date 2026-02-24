@@ -52,6 +52,7 @@ import { registerGroupRoutes } from './groups.js';
 import { registerEvidenceSnapshotRoutes } from './evidenceSnapshots.js';
 import { registerAgent360Routes } from './agent360.js';
 import { registerAgentRunRoutes } from './agentRuns.js';
+import { registerDraftRoutes } from './drafts.js';
 
 export async function registerRoutes(app: FastifyInstance) {
   await registerAuthRoutes(app);
@@ -70,6 +71,7 @@ export async function registerRoutes(app: FastifyInstance) {
   await registerGroupRoutes(app);
   await registerReportSubscriptionRoutes(app);
   await registerIntegrationRoutes(app);
+  await registerDraftRoutes(app);
   await registerWorklogSettingRoutes(app);
   await registerAnnotationSettingRoutes(app);
   await registerAnnotationRoutes(app);
