@@ -102,9 +102,21 @@ Phase 2 で先行する Draft は以下を対象とする。
 - `approval_open` 系 guard 失敗は `APPROVAL_REQUIRED` に正規化する。
 - それ以外の policy deny は `ACTION_POLICY_DENIED` に統一する。
 
-## 6. 実装時チェックリスト（Phase 2）
+## 6. Approval + Evidence 必須化（段階導入）
+
+送信系（`estimate:send` / `invoice:send` / `purchase_order:send`）は、  
+`APPROVAL_EVIDENCE_REQUIRED_ACTIONS`（`flowType:actionKey` 形式）で段階的に有効化する。
+
+- `APPROVAL_REQUIRED`: 対象の approved な ApprovalInstance が存在しない
+- `EVIDENCE_REQUIRED`: approved な ApprovalInstance はあるが EvidenceSnapshot が存在しない
+
+初期導入は feature flag で制御し、既存運用を壊さずに段階展開する。
+
+## 7. 実装時チェックリスト（Phase 2）
 
 - 対象APIの pre-action で ActionPolicy を評価している
+- 高リスクAPIは `ACTION_POLICY_REQUIRED_ACTIONS`（`flowType:actionKey` 形式）で段階的に「policy未定義時deny」へ切り替え可能
+- 送信系は `APPROVAL_EVIDENCE_REQUIRED_ACTIONS` で「承認＋証跡」の必須化を段階導入できる
 - deny 時に標準エラーコードを返している
 - 成功時に reason/evidence/approval 情報を監査ログへ残している
 - E2E で「ドラフト生成 -> 承認 -> 実行」の監査再現を検証している
