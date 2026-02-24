@@ -20,6 +20,7 @@ Phase 2 で先行する Draft は以下を対象とする。
    - レポート配信文面・送付対象の下書きを生成
 
 注記:
+
 - Draft は「下書き」扱いであり、実行（送信/確定）は必ず別APIで承認ガードを通す。
 - 生成物そのものは Evidence として保持可能だが、真実データ（SoR）は既存業務テーブルを正とする。
 
@@ -35,24 +36,26 @@ Phase 2 で先行する Draft は以下を対象とする。
   - 目的: 下書き同士の差分比較
 
 注記:
+
 - v1 は「生成/再生成/差分比較」に限定し、実行（送信/確定）は既存の高リスクAPI経路で承認ガードを適用する。
 
 ## 3. 高リスクmutating APIカタログ（Phase 2 対象）
 
 詳細パスは各 route 実装を正とする（`packages/backend/src/routes/*.ts`）。
 
-| ドメイン | 代表操作（高リスク） | 優先テンプレート | 現状 |
-| --- | --- | --- | --- |
-| 請求/見積/発注送信 | submit / approve / send / retry-send | T1 | ActionPolicy 適用済み（段階導入） |
-| 経費 | submit / qa-checklist / mark-paid / unmark-paid | T1 / T2 | ActionPolicy 適用済み（段階導入） |
-| 工数/休暇 | submit / approve / reject | T2 | ActionPolicy 適用済み（段階導入） |
-| 仕入見積/仕入請求 | submit / approve / reject / link変更 | T1 / T2 | ActionPolicy 適用済み（段階導入） |
-| 承認ルール設定 | create / patch / simulate | T3 | ActionPolicy 適用済み（段階導入） |
-| 外部連携実行 | integration run / retry | T1 | Integration 設計に合わせて継続拡張（#1207） |
+| ドメイン           | 代表操作（高リスク）                            | 優先テンプレート | 現状                                        |
+| ------------------ | ----------------------------------------------- | ---------------- | ------------------------------------------- |
+| 請求/見積/発注送信 | submit / approve / send / retry-send            | T1               | ActionPolicy 適用済み（段階導入）           |
+| 経費               | submit / qa-checklist / mark-paid / unmark-paid | T1 / T2          | ActionPolicy 適用済み（段階導入）           |
+| 工数/休暇          | submit / approve / reject                       | T2               | ActionPolicy 適用済み（段階導入）           |
+| 仕入見積/仕入請求  | submit / approve / reject / link変更            | T1 / T2          | ActionPolicy 適用済み（段階導入）           |
+| 承認ルール設定     | create / patch / simulate                       | T3               | ActionPolicy 適用済み（段階導入）           |
+| 外部連携実行       | integration run / retry                         | T1               | Integration 設計に合わせて継続拡張（#1207） |
 
 ## 4. ActionPolicy テンプレート
 
 注記:
+
 - 以下の `guards` 名はテンプレート上の概念名を含む。
 - 現行実装で利用中の guard type は `approval_open` / `project_closed` / `period_lock` / `editable_days` / `chat_ack_completed`。
 - ステータス・ロール・スコープの判定は、現時点では `stateConstraints` や route 側の `requireRole`、subjects matching で表現する。
@@ -92,19 +95,21 @@ Phase 2 で先行する Draft は以下を対象とする。
 
 ## 5. 標準エラーコード運用
 
-| code | 意味 | 代表対処 |
-| --- | --- | --- |
-| `REASON_REQUIRED` | 理由入力不足 | 理由を補完して再実行 |
+| code                   | 意味                | 代表対処                   |
+| ---------------------- | ------------------- | -------------------------- |
+| `REASON_REQUIRED`      | 理由入力不足        | 理由を補完して再実行       |
 | `ACTION_POLICY_DENIED` | Policy/guard 不一致 | 権限・状態・承認条件を修正 |
-| `APPROVAL_REQUIRED` | 承認未了/承認必須 | 承認フローを完了して再実行 |
+| `APPROVAL_REQUIRED`    | 承認未了/承認必須   | 承認フローを完了して再実行 |
 
 注記:
+
 - `approval_open` 系 guard 失敗は `APPROVAL_REQUIRED` に正規化する。
 - それ以外の policy deny は `ACTION_POLICY_DENIED` に統一する。
 
 ## 6. 実装時チェックリスト（Phase 2）
 
 - 対象APIの pre-action で ActionPolicy を評価している
+- 高リスクAPIは `ACTION_POLICY_REQUIRED_ACTIONS`（`flowType:actionKey` 形式）で段階的に「policy未定義時deny」へ切り替え可能
 - deny 時に標準エラーコードを返している
 - 成功時に reason/evidence/approval 情報を監査ログへ残している
 - E2E で「ドラフト生成 -> 承認 -> 実行」の監査再現を検証している

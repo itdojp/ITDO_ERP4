@@ -48,6 +48,30 @@ export type EvaluateActionPolicyWithFallbackResult =
   | (EvaluateActionPolicyResult & { policyApplied: true })
   | { allowed: true; policyApplied: false };
 
+function normalizeFlowType(value: unknown) {
+  return typeof value === 'string' ? value.trim().toLowerCase() : '';
+}
+
+function isPolicyMatchRequiredByEnv(flowType: FlowType, actionKey: string) {
+  const raw = process.env.ACTION_POLICY_REQUIRED_ACTIONS;
+  if (!raw) return false;
+  const normalizedFlowType = normalizeFlowType(flowType);
+  const normalizedActionKey = normalizeString(actionKey).toLowerCase();
+  if (!normalizedFlowType || !normalizedActionKey) return false;
+  const items = raw
+    .split(',')
+    .map((item) => item.trim().toLowerCase())
+    .filter(Boolean);
+  for (const item of items) {
+    const [flow, action] = item.split(':');
+    if (!flow || !action) continue;
+    const flowMatched = flow === '*' || flow === normalizedFlowType;
+    const actionMatched = action === '*' || action === normalizedActionKey;
+    if (flowMatched && actionMatched) return true;
+  }
+  return false;
+}
+
 function normalizeString(value: unknown) {
   return typeof value === 'string' ? value.trim() : '';
 }
@@ -615,11 +639,17 @@ export async function evaluateActionPolicy(
  */
 export async function evaluateActionPolicyWithFallback(
   input: EvaluateActionPolicyInput,
-  options?: { client?: any },
+  options?: { client?: any; requirePolicyMatch?: boolean },
 ): Promise<EvaluateActionPolicyWithFallbackResult> {
   const res = await evaluateActionPolicy(input, options);
   if (res.allowed) return { ...res, policyApplied: true } as const;
   if (res.reason === 'no_matching_policy') {
+    const requirePolicyMatch =
+      options?.requirePolicyMatch ??
+      isPolicyMatchRequiredByEnv(input.flowType, input.actionKey);
+    if (requirePolicyMatch) {
+      return { ...res, policyApplied: true } as const;
+    }
     return { allowed: true, policyApplied: false } as const;
   }
   const guardFailures = res.guardFailures ?? [];
