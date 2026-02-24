@@ -186,6 +186,8 @@ async function createActionPolicy(
   input: {
     actorUserId: string;
     requireReason: boolean;
+    statusIn?: string[];
+    guards?: Array<{ type: string }>;
   },
 ) {
   const policyRes = await request.post(`${apiBase}/action-policies`, {
@@ -196,9 +198,11 @@ async function createActionPolicy(
       priority: 999,
       isEnabled: true,
       subjects: { userIds: [input.actorUserId] },
-      stateConstraints: { statusIn: ['draft', 'pending_qa', 'approved'] },
+      stateConstraints: {
+        statusIn: input.statusIn ?? ['draft', 'pending_qa', 'approved'],
+      },
       requireReason: input.requireReason,
-      guards: [],
+      guards: input.guards ?? [],
     },
   });
   await ensureOk(policyRes);
@@ -398,9 +402,19 @@ test('agent mvp guard: 承認未完了のsendはAPPROVAL_REQUIREDで拒否され
   });
   const projectId = await createProject(request, suffix, 'approval-required');
   const invoice = await createInvoice(request, projectId, 38000);
+  const submitRes = await request.post(
+    `${apiBase}/invoices/${encodeURIComponent(invoice.id)}/submit`,
+    {
+      headers: actorHeaders,
+      data: { reasonText: `e2e submit approval-required ${suffix}` },
+    },
+  );
+  await ensureOk(submitRes);
   await createActionPolicy(request, actorHeaders, {
     actorUserId,
     requireReason: false,
+    statusIn: ['pending_qa', 'pending_exec'],
+    guards: [{ type: 'approval_open' }],
   });
 
   const requestId = `e2e-send-approval-required-${suffix}`;
@@ -413,7 +427,10 @@ test('agent mvp guard: 承認未完了のsendはAPPROVAL_REQUIREDで拒否され
   expect(sendRes.status()).toBe(403);
   const sendPayload = await sendRes.json();
   expect(sendPayload?.error?.code).toBe('APPROVAL_REQUIRED');
-  expect(sendPayload?.error?.details?.approvalInstanceId ?? null).toBeNull();
+  expect(sendPayload?.error?.details?.reason).toBe('guard_failed');
+  expect(sendPayload?.error?.details?.guardFailures?.[0]?.type).toBe(
+    'approval_open',
+  );
 
   const audits = await fetchAuditEventsByRequestId(request, requestId);
   expect(
