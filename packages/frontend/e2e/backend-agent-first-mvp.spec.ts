@@ -237,6 +237,37 @@ test('agent mvp: 請求ドラフト生成→承認→送信の通しが成立す
   const invoice = await createInvoice(request, projectId, 45000);
   expect(invoice.status).toBe('draft');
 
+  const draftRes = await request.post(`${apiBase}/drafts`, {
+    headers: adminHeaders,
+    data: {
+      kind: 'invoice_send',
+      targetId: invoice.id,
+    },
+  });
+  await ensureOk(draftRes);
+  const generatedDraft = await draftRes.json();
+  expect(generatedDraft?.kind).toBe('invoice_send');
+  expect(typeof generatedDraft?.draft?.subject).toBe('string');
+  expect(typeof generatedDraft?.draft?.body).toBe('string');
+  expect(String(generatedDraft?.metadata?.targetId ?? '')).toBe(invoice.id);
+
+  const regenerateRes = await request.post(`${apiBase}/drafts/regenerate`, {
+    headers: adminHeaders,
+    data: {
+      kind: 'invoice_send',
+      targetId: invoice.id,
+      instruction: `e2e regenerate ${suffix}`,
+      previous: {
+        subject: String(generatedDraft?.draft?.subject ?? ''),
+        body: String(generatedDraft?.draft?.body ?? ''),
+      },
+    },
+  });
+  await ensureOk(regenerateRes);
+  const regeneratedDraft = await regenerateRes.json();
+  expect(regeneratedDraft?.kind).toBe('invoice_send');
+  expect(Number(regeneratedDraft?.diff?.changeCount ?? 0)).toBeGreaterThan(0);
+
   const submitRes = await request.post(
     `${apiBase}/invoices/${encodeURIComponent(invoice.id)}/submit`,
     {
@@ -282,6 +313,22 @@ test('agent mvp: 請求ドラフト生成→承認→送信の通しが成立す
   const sendLogs = await sendLogsRes.json();
   expect(Array.isArray(sendLogs?.items)).toBeTruthy();
   expect((sendLogs?.items ?? []).length).toBeGreaterThan(0);
+
+  const draftAudit = await waitAuditEvent(
+    request,
+    'draft_generated',
+    'drafts',
+    invoice.id,
+  );
+  expect(draftAudit?.metadata?._request?.id).toBeTruthy();
+
+  const regenerateAudit = await waitAuditEvent(
+    request,
+    'draft_regenerated',
+    'drafts',
+    invoice.id,
+  );
+  expect(regenerateAudit?.metadata?._request?.id).toBeTruthy();
 
   const approvalAudit = await waitAuditEvent(
     request,
