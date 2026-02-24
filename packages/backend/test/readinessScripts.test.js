@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import {
+  existsSync,
   mkdtempSync,
+  readFileSync,
   rmSync,
   writeFileSync,
   chmodSync,
@@ -101,5 +103,60 @@ test('check-backup-s3-readiness: validates EXPECT_SSE value before AWS calls', (
     });
     assert.notEqual(res.status, 0);
     assert.match(String(res.stderr), /EXPECT_SSE must be one of/);
+  });
+});
+
+test('record-backup-s3-readiness: writes a report from an existing log file', () => {
+  withTempDir((dir) => {
+    const logPath = path.join(dir, 'backup-s3-readiness.log');
+    const outDir = path.join(dir, 'out');
+    writeFileSync(
+      logPath,
+      [
+        '[backup-s3-preflight] checking bucket access: s3://example-bucket',
+        '[backup-s3-preflight][WARN] bucket lifecycle rule is empty',
+        '[backup-s3-preflight][ERROR] failed with 1 warning(s)',
+      ].join('\n'),
+    );
+
+    const res = runScript('record-backup-s3-readiness.sh', {
+      LOG_FILE: logPath,
+      OUT_DIR: outDir,
+      DATE_STAMP: '2026-02-24',
+      RUN_LABEL: 'r1',
+    });
+    assert.equal(res.status, 0, `${res.stderr}\n${res.stdout}`);
+
+    const reportPath = path.join(
+      outDir,
+      '2026-02-24-backup-s3-readiness-r1.md',
+    );
+    assert.equal(existsSync(reportPath), true);
+    const report = readFileSync(reportPath, 'utf8');
+    assert.match(report, /summaryStatus: fail/);
+    assert.match(report, /warningCount: 1/);
+    assert.match(report, /errorCount: 1/);
+  });
+});
+
+test('record-backup-s3-readiness: auto increments run suffix when RUN_LABEL is omitted', () => {
+  withTempDir((dir) => {
+    const logPath = path.join(dir, 'backup-s3-readiness.log');
+    const outDir = path.join(dir, 'out');
+    mkdirSync(outDir, { recursive: true });
+    writeFileSync(
+      path.join(outDir, '2026-02-24-backup-s3-readiness-r1.md'),
+      '# existing report',
+    );
+    writeFileSync(logPath, '[backup-s3-preflight] readiness check passed\n');
+
+    const res = runScript('record-backup-s3-readiness.sh', {
+      LOG_FILE: logPath,
+      OUT_DIR: outDir,
+      DATE_STAMP: '2026-02-24',
+    });
+    assert.equal(res.status, 0, `${res.stderr}\n${res.stdout}`);
+    const generated = path.join(outDir, '2026-02-24-backup-s3-readiness-r2.md');
+    assert.equal(existsSync(generated), true);
   });
 });

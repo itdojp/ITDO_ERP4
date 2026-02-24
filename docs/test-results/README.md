@@ -12,6 +12,7 @@
 - 入口: docs/test-results/perf/README.md
 
 ### Template
+- S3バックアップ readiness 記録テンプレート: docs/test-results/backup-s3-readiness-template.md
 - チャット添付AV（Staging）検証テンプレート: docs/test-results/chat-attachments-av-staging-template.md
 - DRリストア運用検証テンプレート: docs/test-results/dr-restore-template.md
 - モバイル回帰証跡テンプレート: docs/test-results/mobile-regression-template.md

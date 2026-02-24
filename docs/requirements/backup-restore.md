@@ -124,6 +124,13 @@
     - `S3_BUCKET=erp4-backups S3_REGION=ap-northeast-1 EXPECT_SSE=aws:kms SSE_KMS_KEY_ID=alias/erp4-backup CHECK_WRITE=1 make backup-s3-readiness-check`
   - KMSの接続先がS3と異なる環境は `KMS_ENDPOINT_URL` を指定する。
   - `STRICT=1`（既定）では警告も失敗扱い。確認目的のみなら `STRICT=0` を指定。
+- 実行結果は `scripts/record-backup-s3-readiness.sh` で `docs/test-results/` に記録できる
+  - 既存ログを記録する:
+    - `LOG_FILE=tmp/backup-s3-readiness/backup-s3-readiness-YYYYMMDD-HHMMSS.log make backup-s3-readiness-record`
+  - 検証実行と記録を一度に行う:
+    - `RUN_CHECK=1 S3_BUCKET=erp4-backups S3_REGION=ap-northeast-1 EXPECT_SSE=aws:kms SSE_KMS_KEY_ID=alias/erp4-backup make backup-s3-readiness-record`
+  - 失敗時にコマンドを非0終了させる:
+    - `RUN_CHECK=1 FAIL_ON_CHECK=1 ... make backup-s3-readiness-record`
 
 ## S3/OSS 移行の開始条件（叩き台）
 - バケット/KMS/権限分離の準備が完了している
