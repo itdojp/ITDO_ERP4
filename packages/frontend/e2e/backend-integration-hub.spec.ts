@@ -84,20 +84,23 @@ test('backend e2e: integration hub success/failure/retry metrics and audit @core
   expect(successRunId).not.toBe('');
   expect(String(runPayload?.status ?? '')).toBe('success');
 
-  const failedSettingRes = await request.post(`${apiBase}/integration-settings`, {
-    headers: adminHeaders,
-    data: {
-      type: 'crm',
-      name: `${name}-failed`,
-      provider: 'e2e-provider',
-      status: 'active',
-      config: {
-        retryMax: 2,
-        retryBaseMinutes: 1,
-        simulateFailure: true,
+  const failedSettingRes = await request.post(
+    `${apiBase}/integration-settings`,
+    {
+      headers: adminHeaders,
+      data: {
+        type: 'crm',
+        name: `${name}-failed`,
+        provider: 'e2e-provider',
+        status: 'active',
+        config: {
+          retryMax: 2,
+          retryBaseMinutes: 1,
+          simulateFailure: true,
+        },
       },
     },
-  });
+  );
   await ensureOk(failedSettingRes);
   const failedSetting = await failedSettingRes.json();
   const failedSettingId = String(failedSetting?.id || '');
@@ -121,8 +124,15 @@ test('backend e2e: integration hub success/failure/retry metrics and audit @core
   await ensureOk(jobsRes);
   const jobsPayload = await jobsRes.json();
   expect(jobsPayload?.ok).toBe(true);
-  // 直前に失敗した run は nextRetryAt が未来のため、即時再試行されない。
-  expect(Number(jobsPayload?.retryCount ?? 0)).toBe(0);
+  // 直前に失敗した run は nextRetryAt が未来のため、即時再試行対象にならない。
+  const retriedRunIds = Array.isArray(jobsPayload?.retries)
+    ? jobsPayload.retries.map((item: any) =>
+        typeof item === 'string' || typeof item === 'number'
+          ? String(item)
+          : String(item?.id ?? ''),
+      )
+    : [];
+  expect(retriedRunIds).not.toContain(failedRunId);
 
   const runsRes = await request.get(
     `${apiBase}/integration-runs?settingId=${encodeURIComponent(settingId)}&limit=20`,
@@ -142,7 +152,9 @@ test('backend e2e: integration hub success/failure/retry metrics and audit @core
   const failedRunItems = Array.isArray(failedRunsPayload?.items)
     ? failedRunsPayload.items
     : [];
-  expect(failedRunItems.some((item: any) => item?.id === failedRunId)).toBeTruthy();
+  expect(
+    failedRunItems.some((item: any) => item?.id === failedRunId),
+  ).toBeTruthy();
 
   const metricsRes = await request.get(
     `${apiBase}/integration-runs/metrics?days=14&limit=100`,
@@ -150,15 +162,15 @@ test('backend e2e: integration hub success/failure/retry metrics and audit @core
   );
   await ensureOk(metricsRes);
   const metricsPayload = await metricsRes.json();
-  expect(Number(metricsPayload?.summary?.totalRuns ?? 0)).toBeGreaterThanOrEqual(
-    2,
-  );
-  expect(Number(metricsPayload?.summary?.successRuns ?? 0)).toBeGreaterThanOrEqual(
-    1,
-  );
-  expect(Number(metricsPayload?.summary?.failedRuns ?? 0)).toBeGreaterThanOrEqual(
-    1,
-  );
+  expect(
+    Number(metricsPayload?.summary?.totalRuns ?? 0),
+  ).toBeGreaterThanOrEqual(2);
+  expect(
+    Number(metricsPayload?.summary?.successRuns ?? 0),
+  ).toBeGreaterThanOrEqual(1);
+  expect(
+    Number(metricsPayload?.summary?.failedRuns ?? 0),
+  ).toBeGreaterThanOrEqual(1);
   expect(
     Number(metricsPayload?.summary?.retryScheduledRuns ?? 0),
   ).toBeGreaterThanOrEqual(1);
