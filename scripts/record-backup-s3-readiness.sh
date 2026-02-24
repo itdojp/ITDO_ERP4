@@ -49,6 +49,37 @@ resolve_absolute_path() {
   fi
 }
 
+max_int() {
+  local max=0
+  local value
+  for value in "$@"; do
+    if [[ "$value" =~ ^[0-9]+$ ]] && (( value > max )); then
+      max="$value"
+    fi
+  done
+  printf '%s\n' "$max"
+}
+
+extract_summary_warning_count() {
+  local log_file="$1"
+  local count
+  count="$(
+    grep -Eo '(completed|failed) with [0-9]+ warning\(s\)' "$log_file" \
+      | grep -Eo '[0-9]+' \
+      | tail -n 1 || true
+  )"
+  if [[ "$count" =~ ^[0-9]+$ ]]; then
+    printf '%s\n' "$count"
+  else
+    printf '0\n'
+  fi
+}
+
+has_failed_summary() {
+  local log_file="$1"
+  grep -Eq 'failed with [0-9]+ warning\(s\)' "$log_file"
+}
+
 find_latest_log_file() {
   local latest
   latest="$(ls -1t "$LOG_DIR"/backup-s3-readiness-*.log 2>/dev/null | head -n 1 || true)"
@@ -82,10 +113,15 @@ run_check_and_capture() {
     die "check script not found: $CHECK_SCRIPT"
   fi
 
-  mkdir -p "$LOG_DIR"
-  local timestamp
-  timestamp="$(date +%Y%m%d-%H%M%S)"
-  LOG_FILE="$LOG_DIR/backup-s3-readiness-${timestamp}.log"
+  if [[ -z "$LOG_FILE" ]]; then
+    mkdir -p "$LOG_DIR"
+    local timestamp
+    timestamp="$(date +%Y%m%d-%H%M%S)"
+    LOG_FILE="$LOG_DIR/backup-s3-readiness-${timestamp}.log"
+  else
+    LOG_FILE="$(resolve_absolute_path "$LOG_FILE")"
+    mkdir -p "$(dirname "$LOG_FILE")"
+  fi
 
   log "running check script: $CHECK_SCRIPT"
   set +e
@@ -99,9 +135,24 @@ write_report() {
   local log_file="$1"
   local output_file="$2"
   local warnings errors summary_status
+  local warnings_by_lines warnings_by_summary
+  local errors_by_lines errors_by_summary errors_by_status
 
-  warnings="$(grep -c "\\[backup-s3-preflight\\]\\[WARN\\]" "$log_file" || true)"
-  errors="$(grep -c "\\[backup-s3-preflight\\]\\[ERROR\\]" "$log_file" || true)"
+  warnings_by_lines="$(grep -c "\\[backup-s3-preflight\\]\\[WARN\\]" "$log_file" || true)"
+  errors_by_lines="$(grep -c "\\[backup-s3-preflight\\]\\[ERROR\\]" "$log_file" || true)"
+  warnings_by_summary="$(extract_summary_warning_count "$log_file")"
+  errors_by_summary=0
+  errors_by_status=0
+
+  if has_failed_summary "$log_file"; then
+    errors_by_summary=1
+  fi
+  if [[ -n "$check_status" && "$check_status" != "0" ]]; then
+    errors_by_status=1
+  fi
+
+  warnings="$(max_int "$warnings_by_lines" "$warnings_by_summary")"
+  errors="$(max_int "$errors_by_lines" "$errors_by_summary" "$errors_by_status")"
 
   summary_status="fail"
   if grep -q "readiness check passed" "$log_file"; then
