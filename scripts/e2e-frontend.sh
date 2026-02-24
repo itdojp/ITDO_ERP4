@@ -244,6 +244,7 @@ DATABASE_URL="$DATABASE_URL" npm run prisma:generate --prefix "$ROOT_DIR/package
 npm run build --prefix "$ROOT_DIR/packages/backend"
 
 PORT="$BACKEND_PORT" AUTH_MODE=header DATABASE_URL="$DATABASE_URL" \
+E2E_ENABLE_TEST_HOOKS="${E2E_ENABLE_TEST_HOOKS:-1}" \
 ALLOWED_ORIGINS="http://localhost:${FRONTEND_PORT},http://127.0.0.1:${FRONTEND_PORT}" \
 CHAT_EXTERNAL_LLM_PROVIDER="${CHAT_EXTERNAL_LLM_PROVIDER:-stub}" \
   node "$ROOT_DIR/packages/backend/dist/index.js" >"$BACKEND_LOG" 2>&1 &
