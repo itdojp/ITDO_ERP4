@@ -19,6 +19,7 @@ import { evaluateActionPolicyWithFallback } from '../services/actionPolicy.js';
 import { resolveActionPolicyDeniedCode } from '../services/actionPolicyErrors.js';
 import { logActionPolicyOverrideIfNeeded } from '../services/actionPolicyAudit.js';
 import { getRouteRateLimitOptions } from '../services/rateLimitOverrides.js';
+import { ensureApprovalEvidenceReady } from '../services/approvalEvidenceGate.js';
 
 type TemplateResolveResult = {
   template: PdfTemplate | null;
@@ -354,6 +355,24 @@ export async function registerSendRoutes(app: FastifyInstance) {
         reasonText,
         result: policyRes,
       });
+      const approvalEvidenceGate = await ensureApprovalEvidenceReady(prisma, {
+        flowType: FlowTypeValue.estimate,
+        actionKey: 'send',
+        targetTable: 'estimates',
+        targetId: id,
+      });
+      if (!approvalEvidenceGate.allowed) {
+        return reply.status(403).send({
+          error: {
+            code: approvalEvidenceGate.code,
+            message: approvalEvidenceGate.message,
+            details: {
+              approvalInstanceId:
+                approvalEvidenceGate.approvalInstanceId ?? null,
+            },
+          },
+        });
+      }
       const resolved = await resolveTemplateContext('estimate', {
         templateId,
         templateSettingId,
@@ -531,6 +550,24 @@ export async function registerSendRoutes(app: FastifyInstance) {
         reasonText,
         result: policyRes,
       });
+      const approvalEvidenceGate = await ensureApprovalEvidenceReady(prisma, {
+        flowType: FlowTypeValue.invoice,
+        actionKey: 'send',
+        targetTable: 'invoices',
+        targetId: id,
+      });
+      if (!approvalEvidenceGate.allowed) {
+        return reply.status(403).send({
+          error: {
+            code: approvalEvidenceGate.code,
+            message: approvalEvidenceGate.message,
+            details: {
+              approvalInstanceId:
+                approvalEvidenceGate.approvalInstanceId ?? null,
+            },
+          },
+        });
+      }
       const resolved = await resolveTemplateContext('invoice', {
         templateId,
         templateSettingId,
@@ -708,6 +745,24 @@ export async function registerSendRoutes(app: FastifyInstance) {
         reasonText,
         result: policyRes,
       });
+      const approvalEvidenceGate = await ensureApprovalEvidenceReady(prisma, {
+        flowType: FlowTypeValue.purchase_order,
+        actionKey: 'send',
+        targetTable: 'purchase_orders',
+        targetId: id,
+      });
+      if (!approvalEvidenceGate.allowed) {
+        return reply.status(403).send({
+          error: {
+            code: approvalEvidenceGate.code,
+            message: approvalEvidenceGate.message,
+            details: {
+              approvalInstanceId:
+                approvalEvidenceGate.approvalInstanceId ?? null,
+            },
+          },
+        });
+      }
       const resolved = await resolveTemplateContext('purchase_order', {
         templateId,
         templateSettingId,

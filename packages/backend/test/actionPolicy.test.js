@@ -19,6 +19,67 @@ test('evaluateActionPolicyWithFallback: allow when no policy exists', async () =
   assert.equal(res.policyApplied, false);
 });
 
+test('evaluateActionPolicyWithFallback: deny when no policy and requirePolicyMatch=true', async () => {
+  const res = await evaluateActionPolicyWithFallback(
+    {
+      flowType: 'invoice',
+      actionKey: 'edit',
+      actor: { userId: 'u1', roles: ['admin'], groupIds: [] },
+    },
+    {
+      client: { actionPolicy: { findMany: async () => [] } },
+      requirePolicyMatch: true,
+    },
+  );
+  assert.equal(res.policyApplied, true);
+  assert.equal(res.allowed, false);
+  assert.equal(res.reason, 'no_matching_policy');
+});
+
+test('evaluateActionPolicyWithFallback: requiredActionsText can require policy match', async () => {
+  const res = await evaluateActionPolicyWithFallback(
+    {
+      flowType: 'invoice',
+      actionKey: 'edit',
+      actor: { userId: 'u1', roles: ['admin'], groupIds: [] },
+    },
+    {
+      client: { actionPolicy: { findMany: async () => [] } },
+      requiredActionsText: 'invoice:edit',
+    },
+  );
+  assert.equal(res.policyApplied, true);
+  assert.equal(res.allowed, false);
+  assert.equal(res.reason, 'no_matching_policy');
+});
+
+test('evaluateActionPolicyWithFallback: malformed requiredActionsText token is ignored', async () => {
+  const originalWarn = console.warn;
+  const warnings = [];
+  console.warn = (...args) => {
+    warnings.push(args.map((item) => String(item)).join(' '));
+  };
+  try {
+    const res = await evaluateActionPolicyWithFallback(
+      {
+        flowType: 'invoice',
+        actionKey: 'edit',
+        actor: { userId: 'u1', roles: ['admin'], groupIds: [] },
+      },
+      {
+        client: { actionPolicy: { findMany: async () => [] } },
+        requiredActionsText: 'invoice:edit,broken-token',
+      },
+    );
+    assert.equal(res.policyApplied, true);
+    assert.equal(res.allowed, false);
+    assert.equal(res.reason, 'no_matching_policy');
+  } finally {
+    console.warn = originalWarn;
+  }
+  assert.equal(warnings.length, 1);
+});
+
 test('evaluateActionPolicyWithFallback: deny when policy exists', async () => {
   const policies = [
     {
