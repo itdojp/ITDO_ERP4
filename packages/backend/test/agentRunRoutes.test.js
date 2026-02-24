@@ -33,7 +33,7 @@ test('GET /agent-runs/:id returns run details for admin role', async () => {
 
   const run = {
     id: 'run-001',
-    status: 'completed',
+    status: 'failed',
     requestId: 'req-001',
     source: 'agent',
     principalUserId: 'principal-user',
@@ -58,6 +58,8 @@ test('GET /agent-runs/:id returns run details for admin role', async () => {
         decisions: [
           {
             id: 'decision-001',
+            runId: 'run-001',
+            stepId: 'step-001',
             decisionType: 'policy_override',
             status: 'open',
             requestedAt: new Date('2026-02-23T10:00:03.000Z'),
@@ -89,9 +91,22 @@ test('GET /agent-runs/:id returns run details for admin role', async () => {
         assert.equal(res.statusCode, 200, res.body);
         const body = JSON.parse(res.body);
         assert.equal(body.id, 'run-001');
+        assert.equal(body.method, 'POST');
+        assert.equal(body.path, '/invoices/1/submit');
+        assert.equal(body.httpStatus, 403);
+        assert.equal(body.status, 'failed');
+        assert.equal(body.errorCode, 'policy_denied');
         assert.equal(Array.isArray(body.steps), true);
         assert.equal(body.steps.length, 1);
+        assert.equal(body.steps[0].id, 'step-001');
+        assert.equal(body.steps[0].status, 'failed');
+        assert.equal(body.steps[0].kind, 'api_request');
         assert.equal(body.steps[0].decisions.length, 1);
+        assert.equal(body.steps[0].decisions[0].id, 'decision-001');
+        assert.equal(
+          body.steps[0].decisions[0].decisionType,
+          'policy_override',
+        );
       } finally {
         await server.close();
       }
@@ -124,6 +139,28 @@ test('GET /agent-runs/:id returns 404 when run is not found', async () => {
       }
     },
   );
+});
+
+test('GET /agent-runs/:id returns 400 when id is whitespace-only', async () => {
+  process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
+  process.env.AUTH_MODE = 'header';
+
+  const server = await buildServer({ logger: false });
+  try {
+    const res = await server.inject({
+      method: 'GET',
+      url: '/agent-runs/%20%20',
+      headers: {
+        'x-user-id': 'admin-user',
+        'x-roles': 'admin',
+      },
+    });
+    assert.equal(res.statusCode, 400, res.body);
+    const body = JSON.parse(res.body);
+    assert.equal(body.error?.code, 'VALIDATION_ERROR');
+  } finally {
+    await server.close();
+  }
 });
 
 test('GET /agent-runs/:id denies non privileged role', async () => {
@@ -165,7 +202,16 @@ test('GET /agent-runs/:id writes structured audit metadata', async () => {
     startedAt: new Date('2026-02-23T13:00:00.000Z'),
     finishedAt: new Date('2026-02-23T13:00:01.000Z'),
     createdAt: new Date('2026-02-23T13:00:00.000Z'),
-    steps: [{ id: 'step-audit-001', decisions: [] }],
+    steps: [
+      {
+        id: 'step-audit-001',
+        runId: 'run-audit-001',
+        stepOrder: 1,
+        kind: 'api_request',
+        status: 'completed',
+        decisions: [],
+      },
+    ],
     decisionRequests: [],
   };
 

@@ -40,10 +40,10 @@
 
 ## 実行フロー（請求送信の標準例）
 
-1. `POST /drafts` で送信文面ドラフトを生成  
-2. 対象請求を `submit` して承認インスタンスを作成  
-3. `POST /approval-instances/:id/act` で承認完了  
-4. Evidence Snapshot を取得済みであることを確認  
+1. `POST /drafts` で送信文面ドラフトを生成
+2. 対象請求を `submit` して承認インスタンスを作成
+3. `POST /approval-instances/:id/act` で承認完了
+4. Evidence Snapshot を取得済みであることを確認
 5. `POST /invoices/:id/send` を実行
 
 ## 代表エラーコードと対処
@@ -70,9 +70,20 @@
   - 根拠（approval/evidence）
 - deny時の `error.code` が標準コード（上記4種）であることを確認する。
 
+### deny時の確認手順（AgentRun）
+
+1. `GET /audit-logs` で対象 deny イベント（`ACTION_POLICY_DENIED` / `APPROVAL_REQUIRED` / `EVIDENCE_REQUIRED` / `REASON_REQUIRED`）を検索する
+2. `metadata._agent.runId`（または `agentRunId`）を特定する
+3. `GET /agent-runs/:id` で `steps[].errorCode` と `steps[].decisions[]` を確認する
+   - `policy_denied` の場合: `decisionType=policy_override`
+   - `approval_required` の場合: `decisionType=approval_required`
+4. override を行う場合は理由を付与し、監査ログの `action_policy_override` を確認する
+
 ## テスト参照
 
 - `packages/backend/test/draftRoutes.test.js`
 - `packages/backend/test/sendPolicyEnforcementPreset.test.js`
 - `packages/backend/test/approvalActionPolicyPreset.test.js`
 - `packages/backend/test/approvalEvidenceGate.test.js`
+- `packages/backend/test/agentRunRecorder.test.js`
+- `packages/frontend/e2e/frontend-smoke-audit-agent-run.spec.ts`
