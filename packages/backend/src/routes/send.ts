@@ -357,12 +357,16 @@ export async function registerSendRoutes(app: FastifyInstance) {
           },
         });
       }
-      const approvalEvidenceGate = await ensureApprovalEvidenceReady(prisma, {
-        flowType: FlowTypeValue.estimate,
-        actionKey: 'send',
-        targetTable: 'estimates',
-        targetId: id,
-      }, resolveEvidenceRequiredActionsOverride(req));
+      const approvalEvidenceGate = await ensureApprovalEvidenceReady(
+        prisma,
+        {
+          flowType: FlowTypeValue.estimate,
+          actionKey: 'send',
+          targetTable: 'estimates',
+          targetId: id,
+        },
+        resolveEvidenceRequiredActionsOverride(req),
+      );
       if (!approvalEvidenceGate.allowed) {
         return reply.status(403).send({
           error: {
@@ -552,12 +556,16 @@ export async function registerSendRoutes(app: FastifyInstance) {
           },
         });
       }
-      const approvalEvidenceGate = await ensureApprovalEvidenceReady(prisma, {
-        flowType: FlowTypeValue.invoice,
-        actionKey: 'send',
-        targetTable: 'invoices',
-        targetId: id,
-      }, resolveEvidenceRequiredActionsOverride(req));
+      const approvalEvidenceGate = await ensureApprovalEvidenceReady(
+        prisma,
+        {
+          flowType: FlowTypeValue.invoice,
+          actionKey: 'send',
+          targetTable: 'invoices',
+          targetId: id,
+        },
+        resolveEvidenceRequiredActionsOverride(req),
+      );
       if (!approvalEvidenceGate.allowed) {
         return reply.status(403).send({
           error: {
@@ -747,12 +755,16 @@ export async function registerSendRoutes(app: FastifyInstance) {
           },
         });
       }
-      const approvalEvidenceGate = await ensureApprovalEvidenceReady(prisma, {
-        flowType: FlowTypeValue.purchase_order,
-        actionKey: 'send',
-        targetTable: 'purchase_orders',
-        targetId: id,
-      }, resolveEvidenceRequiredActionsOverride(req));
+      const approvalEvidenceGate = await ensureApprovalEvidenceReady(
+        prisma,
+        {
+          flowType: FlowTypeValue.purchase_order,
+          actionKey: 'send',
+          targetTable: 'purchase_orders',
+          targetId: id,
+        },
+        resolveEvidenceRequiredActionsOverride(req),
+      );
       if (!approvalEvidenceGate.allowed) {
         return reply.status(403).send({
           error: {
