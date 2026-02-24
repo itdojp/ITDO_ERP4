@@ -31,7 +31,7 @@ async function ensureOk(res: { ok(): boolean; status(): number; text(): any }) {
   throw new Error(`[e2e] api failed: ${res.status()} ${body}`);
 }
 
-test('backend e2e: integration hub validation/run/metrics/audit @core', async ({
+test('backend e2e: integration hub success/failure/retry metrics and audit @core', async ({
   request,
 }) => {
   test.setTimeout(120_000);
@@ -80,9 +80,49 @@ test('backend e2e: integration hub validation/run/metrics/audit @core', async ({
   );
   await ensureOk(runRes);
   const runPayload = await runRes.json();
-  const runIdValue = String(runPayload?.id || '');
-  expect(runIdValue).not.toBe('');
-  expect(['success', 'failed']).toContain(String(runPayload?.status ?? ''));
+  const successRunId = String(runPayload?.id || '');
+  expect(successRunId).not.toBe('');
+  expect(String(runPayload?.status ?? '')).toBe('success');
+
+  const failedSettingRes = await request.post(`${apiBase}/integration-settings`, {
+    headers: adminHeaders,
+    data: {
+      type: 'crm',
+      name: `${name}-failed`,
+      provider: 'e2e-provider',
+      status: 'active',
+      config: {
+        retryMax: 2,
+        retryBaseMinutes: 1,
+        simulateFailure: true,
+      },
+    },
+  });
+  await ensureOk(failedSettingRes);
+  const failedSetting = await failedSettingRes.json();
+  const failedSettingId = String(failedSetting?.id || '');
+  expect(failedSettingId).not.toBe('');
+
+  const failedRunRes = await request.post(
+    `${apiBase}/integration-settings/${encodeURIComponent(failedSettingId)}/run`,
+    { headers: adminHeaders },
+  );
+  await ensureOk(failedRunRes);
+  const failedRunPayload = await failedRunRes.json();
+  const failedRunId = String(failedRunPayload?.id || '');
+  expect(failedRunId).not.toBe('');
+  expect(String(failedRunPayload?.status ?? '')).toBe('failed');
+  expect(Number(failedRunPayload?.retryCount ?? 0)).toBe(1);
+  expect(typeof failedRunPayload?.nextRetryAt).toBe('string');
+
+  const jobsRes = await request.post(`${apiBase}/jobs/integrations/run`, {
+    headers: adminHeaders,
+  });
+  await ensureOk(jobsRes);
+  const jobsPayload = await jobsRes.json();
+  expect(jobsPayload?.ok).toBe(true);
+  // 直前に失敗した run は nextRetryAt が未来のため、即時再試行されない。
+  expect(Number(jobsPayload?.retryCount ?? 0)).toBe(0);
 
   const runsRes = await request.get(
     `${apiBase}/integration-runs?settingId=${encodeURIComponent(settingId)}&limit=20`,
@@ -91,15 +131,37 @@ test('backend e2e: integration hub validation/run/metrics/audit @core', async ({
   await ensureOk(runsRes);
   const runsPayload = await runsRes.json();
   const runItems = Array.isArray(runsPayload?.items) ? runsPayload.items : [];
-  expect(runItems.some((item: any) => item?.id === runIdValue)).toBeTruthy();
+  expect(runItems.some((item: any) => item?.id === successRunId)).toBeTruthy();
+
+  const failedRunsRes = await request.get(
+    `${apiBase}/integration-runs?settingId=${encodeURIComponent(failedSettingId)}&limit=20`,
+    { headers: adminHeaders },
+  );
+  await ensureOk(failedRunsRes);
+  const failedRunsPayload = await failedRunsRes.json();
+  const failedRunItems = Array.isArray(failedRunsPayload?.items)
+    ? failedRunsPayload.items
+    : [];
+  expect(failedRunItems.some((item: any) => item?.id === failedRunId)).toBeTruthy();
 
   const metricsRes = await request.get(
-    `${apiBase}/integration-runs/metrics?settingId=${encodeURIComponent(settingId)}&days=14&limit=100`,
+    `${apiBase}/integration-runs/metrics?days=14&limit=100`,
     { headers: adminHeaders },
   );
   await ensureOk(metricsRes);
   const metricsPayload = await metricsRes.json();
-  expect(Number(metricsPayload?.summary?.totalRuns ?? 0)).toBeGreaterThan(0);
+  expect(Number(metricsPayload?.summary?.totalRuns ?? 0)).toBeGreaterThanOrEqual(
+    2,
+  );
+  expect(Number(metricsPayload?.summary?.successRuns ?? 0)).toBeGreaterThanOrEqual(
+    1,
+  );
+  expect(Number(metricsPayload?.summary?.failedRuns ?? 0)).toBeGreaterThanOrEqual(
+    1,
+  );
+  expect(
+    Number(metricsPayload?.summary?.retryScheduledRuns ?? 0),
+  ).toBeGreaterThanOrEqual(1);
   expect(Array.isArray(metricsPayload?.byType)).toBeTruthy();
   expect(
     (metricsPayload?.byType ?? []).some((item: any) => item?.type === 'crm'),
@@ -135,7 +197,7 @@ test('backend e2e: integration hub validation/run/metrics/audit @core', async ({
         const query = new URLSearchParams({
           action: 'integration_run_executed',
           targetTable: 'integration_runs',
-          targetId: runIdValue,
+          targetId: successRunId,
           from: startedAt,
           format: 'json',
           mask: '0',
@@ -148,6 +210,33 @@ test('backend e2e: integration hub validation/run/metrics/audit @core', async ({
         const payload = await auditRes.json();
         const item = (payload?.items ?? [])[0];
         return item?.metadata?.settingId === settingId;
+      },
+      { timeout: 10000 },
+    )
+    .toBe(true);
+
+  await expect
+    .poll(
+      async () => {
+        const query = new URLSearchParams({
+          action: 'integration_run_executed',
+          targetTable: 'integration_runs',
+          targetId: failedRunId,
+          from: startedAt,
+          format: 'json',
+          mask: '0',
+          limit: '50',
+        });
+        const auditRes = await request.get(`${apiBase}/audit-logs?${query}`, {
+          headers: adminHeaders,
+        });
+        if (!auditRes.ok()) return false;
+        const payload = await auditRes.json();
+        const item = (payload?.items ?? [])[0];
+        return (
+          item?.metadata?.status === 'failed' &&
+          Number(item?.metadata?.retryCount ?? 0) >= 1
+        );
       },
       { timeout: 10000 },
     )
