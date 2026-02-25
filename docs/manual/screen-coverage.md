@@ -4,6 +4,9 @@
 - PoC の UI（セクション）に対して、**操作マニュアル**と**画面キャプチャ（証跡）**の対応関係を追跡する
 - 未カバーの画面/状態を発見し、追加作業を計画できるようにする
 
+## 利用者向けチュートリアル
+- 主要導線を順番に確認する場合は `docs/manual/user-tutorial.md` を参照する
+
 ## 最新の証跡
 - 最新の証跡ディレクトリは `docs/manual/ui-manual.md`（分冊入口）の「証跡」セクションを参照
   - 必要に応じて `docs/manual/ui-manual-user.md` / `docs/manual/ui-manual-admin.md` の前提も参照
