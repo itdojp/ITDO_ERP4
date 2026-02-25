@@ -158,6 +158,24 @@ test('POST /projects/:projectId/invoices/from-time-entries rejects malformed fro
   });
 });
 
+test('POST /projects/:projectId/invoices/from-time-entries requires admin or mgmt', async () => {
+  await withServer(async (server) => {
+    const res = await server.inject({
+      method: 'POST',
+      url: '/projects/proj-1/invoices/from-time-entries',
+      headers: userHeaders('proj-1'),
+      payload: {
+        from: '2026-01-01',
+        to: '2026-01-31',
+        unitPrice: 4000,
+      },
+    });
+    assert.equal(res.statusCode, 403, res.body);
+    const body = JSON.parse(res.body);
+    assert.equal(body?.error?.code, 'forbidden');
+  });
+});
+
 test('POST /projects/:projectId/invoices/from-time-entries validates date range', async () => {
   await withServer(async (server) => {
     const res = await server.inject({
@@ -269,6 +287,19 @@ test('POST /invoices/:id/release-time-entries returns NOT_FOUND for unknown invo
   );
 });
 
+test('POST /invoices/:id/release-time-entries requires admin or mgmt', async () => {
+  await withServer(async (server) => {
+    const res = await server.inject({
+      method: 'POST',
+      url: '/invoices/inv-1/release-time-entries',
+      headers: userHeaders('proj-1'),
+    });
+    assert.equal(res.statusCode, 403, res.body);
+    const body = JSON.parse(res.body);
+    assert.equal(body?.error?.code, 'forbidden');
+  });
+});
+
 test('POST /invoices/:id/release-time-entries rejects non-draft invoice', async () => {
   await withPrismaStubs(
     {
@@ -322,4 +353,39 @@ test('POST /invoices/:id/release-time-entries clears billedInvoiceId and billedA
     where: { billedInvoiceId: 'inv-1' },
     data: { billedInvoiceId: null, billedAt: null },
   });
+});
+
+test('POST /invoices/:id/mark-paid validates paidAt format in handler', async () => {
+  await withServer(async (server) => {
+    const res = await server.inject({
+      method: 'POST',
+      url: '/invoices/inv-1/mark-paid',
+      headers: adminHeaders(),
+      payload: { paidAt: 'not-a-date' },
+    });
+    assert.equal(res.statusCode, 400, res.body);
+    const body = JSON.parse(res.body);
+    assert.equal(body?.error?.code, 'INVALID_DATE');
+  });
+});
+
+test('POST /invoices/:id/mark-paid returns NOT_FOUND when invoice does not exist', async () => {
+  await withPrismaStubs(
+    {
+      'invoice.findUnique': async () => null,
+    },
+    async () => {
+      await withServer(async (server) => {
+        const res = await server.inject({
+          method: 'POST',
+          url: '/invoices/inv-missing/mark-paid',
+          headers: adminHeaders(),
+          payload: {},
+        });
+        assert.equal(res.statusCode, 404, res.body);
+        const body = JSON.parse(res.body);
+        assert.equal(body?.error?.code, 'NOT_FOUND');
+      });
+    },
+  );
 });
