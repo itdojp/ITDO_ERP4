@@ -8,6 +8,7 @@
 - 管理者（`admin/mgmt`）
 
 ## 参照
+- クイック導線（画面キャプチャ付き）: [project-leader-tutorial](project-leader-tutorial.md)
 - 案件メンバー運用（要件）: [project-member-ops](../requirements/project-member-ops.md)
 - タスク/マイルストーン/請求連動（要件）: [project-task-milestone-flow](../requirements/project-task-milestone-flow.md)
 - UI 操作（管理者）: [ui-manual-admin](ui-manual-admin.md)

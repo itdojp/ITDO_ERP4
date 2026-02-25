@@ -28,6 +28,11 @@
 - 20〜30分で管理操作の主要導線を確認する場合は、`docs/manual/admin-tutorial.md` を先に参照してください。
 - 詳細操作や入力制約は `docs/manual/ui-manual-admin.md` を参照してください。
 
+## まず最初に読むガイド（案件リーダー向け）
+
+- 15〜25分で案件運用の主要導線を確認する場合は、`docs/manual/project-leader-tutorial.md` を先に参照してください。
+- 運用ルールや監査観点は `docs/manual/project-leader-guide.md` を参照してください。
+
 ## 画面キャプチャ（証跡）
 PoC の E2E 実行時に取得した画面キャプチャです。
 
