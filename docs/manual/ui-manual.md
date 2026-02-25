@@ -5,6 +5,7 @@
 
 ## 分冊
 - 利用者チュートリアル（画面キャプチャ付き）: [user-tutorial](user-tutorial.md)
+- 案件リーダーチュートリアル（画面キャプチャ付き）: [project-leader-tutorial](project-leader-tutorial.md)
 - 管理者チュートリアル（画面キャプチャ付き）: [admin-tutorial](admin-tutorial.md)
 - 利用者向け: [ui-manual-user](ui-manual-user.md)
 - 管理者向け: [ui-manual-admin](ui-manual-admin.md)

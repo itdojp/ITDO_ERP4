@@ -6,6 +6,7 @@
 
 ## チュートリアル
 - 利用者向けの主要導線は `docs/manual/user-tutorial.md` を参照する
+- 案件リーダー向けの主要導線は `docs/manual/project-leader-tutorial.md` を参照する
 - 管理者向けの主要導線は `docs/manual/admin-tutorial.md` を参照する
 
 ## 最新の証跡
