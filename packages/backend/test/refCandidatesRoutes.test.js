@@ -81,19 +81,26 @@ test('GET /ref-candidates rejects too short query', async () => {
 test('GET /ref-candidates rejects project outside user scope', async () => {
   process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
   process.env.AUTH_MODE = 'header';
-  const server = await buildServer({ logger: false });
-  try {
-    const res = await server.inject({
-      method: 'GET',
-      url: '/ref-candidates?projectId=proj-other&q=INV',
-      headers: userHeaders('proj-allowed'),
-    });
-    assert.equal(res.statusCode, 403, res.body);
-    const body = JSON.parse(res.body);
-    assert.equal(body?.error?.code, 'forbidden_project');
-  } finally {
-    await server.close();
-  }
+  await withPrismaStubs(
+    {
+      'projectMember.findMany': async () => [],
+    },
+    async () => {
+      const server = await buildServer({ logger: false });
+      try {
+        const res = await server.inject({
+          method: 'GET',
+          url: '/ref-candidates?projectId=proj-other&q=INV',
+          headers: userHeaders('proj-allowed'),
+        });
+        assert.equal(res.statusCode, 403, res.body);
+        const body = JSON.parse(res.body);
+        assert.equal(body?.error?.code, 'forbidden_project');
+      } finally {
+        await server.close();
+      }
+    },
+  );
 });
 
 test('GET /ref-candidates returns project_not_found when root project is missing', async () => {
@@ -135,6 +142,7 @@ test('GET /ref-candidates hides customer/vendor types for non-admin role', async
         deletedAt: null,
       }),
       'project.findMany': async () => [],
+      'projectMember.findMany': async () => [],
       'customer.findMany': async () => {
         customerQueryCalled = true;
         return [];
@@ -267,6 +275,7 @@ test('GET /ref-candidates narrows project scope for non-admin before querying do
           )
           .map((project) => ({ id: project.id }));
       },
+      'projectMember.findMany': async () => [],
       'invoice.findMany': async (args) => {
         invoiceArgs = args;
         return [];
