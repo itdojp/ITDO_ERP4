@@ -1,6 +1,6 @@
 # Agent-First MVP 検証計画
 
-更新日: 2026-02-23  
+更新日: 2026-02-24  
 関連Issue: #1210, #1200
 
 ## 目的
@@ -28,9 +28,12 @@ npm run test --prefix packages/backend -- test/sendPolicyEnforcementPreset.test.
 
 # e2e（対象シナリオのみ）
 E2E_SCOPE=core E2E_GREP="agent read api|agent mvp|agent mvp guard|AgentRun詳細ドリルダウン" E2E_CAPTURE=0 ./scripts/e2e-frontend.sh
+
+# e2e（delegated JWT 経路）
+E2E_SCOPE=core E2E_AUTH_MODE=jwt E2E_GREP="agent read api|agent mvp|agent mvp guard|AgentRun詳細ドリルダウン" E2E_CAPTURE=0 ./scripts/e2e-frontend.sh
 ```
 
 ## 補足
 
-- E2E 実行基盤は `AUTH_MODE=header` 固定のため、delegated JWT の境界は backend integration で補完している。
-- delegated JWT のフルE2Eは別タスクとして追加検討する。
+- E2E 実行基盤は `E2E_AUTH_MODE=header|jwt` を切り替え可能。
+- `E2E_AUTH_MODE=jwt` では一時鍵・委任JWTを起動スクリプト側で自動生成し、Agent-First 対象シナリオの delegated 経路を検証できる。

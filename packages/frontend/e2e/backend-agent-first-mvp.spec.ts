@@ -3,20 +3,51 @@ import { expect, test, type APIRequestContext } from '@playwright/test';
 import { ensureOk } from './approval-e2e-helpers';
 
 const apiBase = process.env.E2E_API_BASE || 'http://localhost:3002';
+const e2eAuthMode = (process.env.E2E_AUTH_MODE || 'header')
+  .trim()
+  .toLowerCase();
+const useJwtAuth = e2eAuthMode === 'jwt';
+const jwtActorUsers = {
+  outsider: 'e2e-agent-outsider@example.com',
+  approvalRequired: 'e2e-agent-approval-required@example.com',
+  evidenceRequired: 'e2e-agent-evidence-required@example.com',
+  reasonRequired: 'e2e-agent-reason-required@example.com',
+} as const;
+const jwtTokenByUserId: Record<string, string | undefined> = {
+  'demo-user': process.env.E2E_JWT_TOKEN_ADMIN,
+  [jwtActorUsers.outsider]: process.env.E2E_JWT_TOKEN_OUTSIDER,
+  [jwtActorUsers.approvalRequired]:
+    process.env.E2E_JWT_TOKEN_APPROVAL_REQUIRED,
+  [jwtActorUsers.evidenceRequired]:
+    process.env.E2E_JWT_TOKEN_EVIDENCE_REQUIRED,
+  [jwtActorUsers.reasonRequired]: process.env.E2E_JWT_TOKEN_REASON_REQUIRED,
+};
 
 const runId = () => `${Date.now().toString().slice(-6)}-${randomUUID()}`;
+
+const resolveJwtToken = (userId: string): string => {
+  const token = jwtTokenByUserId[userId];
+  if (token && token.trim()) return token.trim();
+  throw new Error(`[e2e] JWT token is not configured for userId=${userId}`);
+};
 
 const buildHeaders = (input: {
   userId: string;
   roles: string[];
   projectIds?: string[];
   groupIds?: string[];
-}) => ({
-  'x-user-id': input.userId,
-  'x-roles': input.roles.join(','),
-  'x-project-ids': (input.projectIds ?? []).join(','),
-  'x-group-ids': (input.groupIds ?? []).join(','),
-});
+}) => {
+  const headers: Record<string, string> = {
+    'x-user-id': input.userId,
+    'x-roles': input.roles.join(','),
+    'x-project-ids': (input.projectIds ?? []).join(','),
+    'x-group-ids': (input.groupIds ?? []).join(','),
+  };
+  if (useJwtAuth) {
+    headers.Authorization = `Bearer ${resolveJwtToken(input.userId)}`;
+  }
+  return headers;
+};
 
 const adminHeaders = buildHeaders({
   userId: 'demo-user',
@@ -256,7 +287,9 @@ test('agent read api: project-360/billing-360 are UI非依存で利用でき監�
   expect(billing360?.invoices?.byStatus?.draft?.count ?? 0).toBeGreaterThan(0);
 
   const outsiderHeaders = buildHeaders({
-    userId: `e2e-agent-outsider-${suffix}@example.com`,
+    userId: useJwtAuth
+      ? jwtActorUsers.outsider
+      : `e2e-agent-outsider-${suffix}@example.com`,
     roles: ['user'],
     projectIds: [],
   });
@@ -275,10 +308,14 @@ test('agent read api: project-360/billing-360 are UI非依存で利用でき監�
     undefined,
     project360RequestId,
   );
-  expect(projectAudit?.metadata?._request?.source).toBe('api');
+  expect(projectAudit?.metadata?._request?.source).toBe(
+    useJwtAuth ? 'agent' : 'api',
+  );
   expect(projectAudit?.metadata?._request?.id).toBeTruthy();
   expect(projectAudit?.metadata?._auth?.principalUserId).toBe('demo-user');
-  expect(projectAudit?.metadata?._auth?.actorUserId).toBe('demo-user');
+  expect(projectAudit?.metadata?._auth?.actorUserId).toBe(
+    useJwtAuth ? 'agent-bot' : 'demo-user',
+  );
 
   const billingAudit = await waitAuditEvent(
     request,
@@ -287,8 +324,13 @@ test('agent read api: project-360/billing-360 are UI非依存で利用でき監�
     undefined,
     billing360RequestId,
   );
-  expect(billingAudit?.metadata?._request?.source).toBe('api');
+  expect(billingAudit?.metadata?._request?.source).toBe(
+    useJwtAuth ? 'agent' : 'api',
+  );
   expect(billingAudit?.metadata?._auth?.principalUserId).toBe('demo-user');
+  expect(billingAudit?.metadata?._auth?.actorUserId).toBe(
+    useJwtAuth ? 'agent-bot' : 'demo-user',
+  );
   expect(String(invoice?.id || '')).toBeTruthy();
 });
 
@@ -408,7 +450,9 @@ test('agent mvp guard: 承認未完了のsendはAPPROVAL_REQUIREDで拒否され
   request,
 }) => {
   const suffix = runId();
-  const actorUserId = `e2e-agent-approval-required-${suffix}@example.com`;
+  const actorUserId = useJwtAuth
+    ? jwtActorUsers.approvalRequired
+    : `e2e-agent-approval-required-${suffix}@example.com`;
   const actorHeaders = buildHeaders({
     userId: actorUserId,
     roles: ['admin', 'mgmt', 'exec'],
@@ -456,7 +500,9 @@ test('agent mvp guard: 承認済みでも証跡欠落時はEVIDENCE_REQUIREDで�
   request,
 }) => {
   const suffix = runId();
-  const actorUserId = `e2e-agent-evidence-required-${suffix}@example.com`;
+  const actorUserId = useJwtAuth
+    ? jwtActorUsers.evidenceRequired
+    : `e2e-agent-evidence-required-${suffix}@example.com`;
   const actorHeaders = buildHeaders({
     userId: actorUserId,
     roles: ['admin', 'mgmt', 'exec'],
@@ -521,7 +567,9 @@ test('agent mvp guard: reason未指定はREASON_REQUIRED、理由ありは監査
   request,
 }) => {
   const suffix = runId();
-  const actorUserId = `e2e-agent-reason-required-${suffix}@example.com`;
+  const actorUserId = useJwtAuth
+    ? jwtActorUsers.reasonRequired
+    : `e2e-agent-reason-required-${suffix}@example.com`;
   const actorHeaders = buildHeaders({
     userId: actorUserId,
     roles: ['admin', 'mgmt', 'exec'],

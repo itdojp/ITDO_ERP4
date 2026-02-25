@@ -3,6 +3,11 @@ import { expect, test, type Page } from '@playwright/test';
 
 const baseUrl = process.env.E2E_BASE_URL || 'http://localhost:5173';
 const apiBase = process.env.E2E_API_BASE || 'http://localhost:3002';
+const e2eAuthMode = (process.env.E2E_AUTH_MODE || 'header')
+  .trim()
+  .toLowerCase();
+const useJwtAuth = e2eAuthMode === 'jwt';
+const adminJwtToken = (process.env.E2E_JWT_TOKEN_ADMIN || '').trim();
 const actionTimeout = (() => {
   const raw = process.env.E2E_ACTION_TIMEOUT_MS;
   if (raw) {
@@ -17,14 +22,24 @@ const authState = {
   roles: ['admin', 'mgmt'],
   projectIds: ['00000000-0000-0000-0000-000000000001'],
   groupIds: ['mgmt'],
+  token: useJwtAuth ? adminJwtToken : undefined,
 };
 
-const buildAuthHeaders = () => ({
-  'x-user-id': authState.userId,
-  'x-roles': authState.roles.join(','),
-  'x-project-ids': authState.projectIds.join(','),
-  'x-group-ids': authState.groupIds.join(','),
-});
+const buildAuthHeaders = () => {
+  const headers: Record<string, string> = {
+    'x-user-id': authState.userId,
+    'x-roles': authState.roles.join(','),
+    'x-project-ids': authState.projectIds.join(','),
+    'x-group-ids': authState.groupIds.join(','),
+  };
+  if (useJwtAuth) {
+    if (!adminJwtToken) {
+      throw new Error('[e2e] E2E_JWT_TOKEN_ADMIN is required in jwt mode');
+    }
+    headers.Authorization = `Bearer ${adminJwtToken}`;
+  }
+  return headers;
+};
 
 async function ensureOk(res: { ok(): boolean; status(): number; text(): any }) {
   if (res.ok()) return;
