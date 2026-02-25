@@ -12,6 +12,7 @@
 ## マニュアル構成
 ### UI操作（ロール別）
 - 入口（分冊）: [ui-manual](ui-manual.md)
+- 利用者チュートリアル（画面キャプチャ付き）: [user-tutorial](user-tutorial.md)
 - 利用者: [ui-manual-user](ui-manual-user.md)
 - 管理者: [ui-manual-admin](ui-manual-admin.md)
 
