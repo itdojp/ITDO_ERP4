@@ -31,7 +31,7 @@ function withEnv(overrides, fn) {
   const prev = new Map();
   for (const [key, value] of Object.entries(overrides)) {
     prev.set(key, process.env[key]);
-    if (value === undefined || value === null) {
+    if (value === undefined) {
       delete process.env[key];
     } else {
       process.env[key] = value;
@@ -53,7 +53,7 @@ function withEnv(overrides, fn) {
 function adminHeaders() {
   return {
     'x-user-id': 'admin-user',
-    'x-roles': 'admin',
+    'x-roles': 'admin,mgmt',
   };
 }
 
