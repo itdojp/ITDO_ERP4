@@ -146,8 +146,12 @@ E2E_SERVICE_READY_INTERVAL_SEC="${E2E_SERVICE_READY_INTERVAL_SEC:-1}"
 
 BACKEND_LOG="$ROOT_DIR/tmp/e2e-backend.log"
 FRONTEND_LOG="$ROOT_DIR/tmp/e2e-frontend.log"
+JWT_BUNDLE_FILE=""
 
 cleanup() {
+  if [[ -n "${JWT_BUNDLE_FILE:-}" ]] && [[ -f "$JWT_BUNDLE_FILE" ]]; then
+    rm -f "$JWT_BUNDLE_FILE" || true
+  fi
   if [[ -n "${FRONTEND_PID:-}" ]] && kill -0 "$FRONTEND_PID" >/dev/null 2>&1; then
     pkill -P "$FRONTEND_PID" >/dev/null 2>&1 || true
     kill "$FRONTEND_PID" || true
@@ -347,7 +351,7 @@ E2E_JWT_TOKEN_EVIDENCE_REQUIRED="${E2E_JWT_TOKEN_EVIDENCE_REQUIRED:-}"
 E2E_JWT_TOKEN_REASON_REQUIRED="${E2E_JWT_TOKEN_REASON_REQUIRED:-}"
 
 if [[ "$E2E_AUTH_MODE" == "jwt" ]]; then
-  JWT_BUNDLE_FILE="$ROOT_DIR/tmp/e2e-agent-first-jwt.json"
+  JWT_BUNDLE_FILE="$(mktemp "$ROOT_DIR/tmp/e2e-agent-first-jwt.XXXXXX.json")"
   generate_agent_first_jwt_bundle "$E2E_JWT_ISSUER" "$E2E_JWT_AUDIENCE" >"$JWT_BUNDLE_FILE"
   E2E_JWT_PUBLIC_KEY="$(node --input-type=module -e "import fs from 'node:fs'; const data = JSON.parse(fs.readFileSync(process.argv[1], 'utf8')); process.stdout.write(String(data.publicKey || ''));" "$JWT_BUNDLE_FILE")"
   E2E_JWT_TOKEN_ADMIN="$(node --input-type=module -e "import fs from 'node:fs'; const data = JSON.parse(fs.readFileSync(process.argv[1], 'utf8')); process.stdout.write(String(data.tokens?.admin || ''));" "$JWT_BUNDLE_FILE")"
@@ -355,7 +359,6 @@ if [[ "$E2E_AUTH_MODE" == "jwt" ]]; then
   E2E_JWT_TOKEN_APPROVAL_REQUIRED="$(node --input-type=module -e "import fs from 'node:fs'; const data = JSON.parse(fs.readFileSync(process.argv[1], 'utf8')); process.stdout.write(String(data.tokens?.approvalRequired || ''));" "$JWT_BUNDLE_FILE")"
   E2E_JWT_TOKEN_EVIDENCE_REQUIRED="$(node --input-type=module -e "import fs from 'node:fs'; const data = JSON.parse(fs.readFileSync(process.argv[1], 'utf8')); process.stdout.write(String(data.tokens?.evidenceRequired || ''));" "$JWT_BUNDLE_FILE")"
   E2E_JWT_TOKEN_REASON_REQUIRED="$(node --input-type=module -e "import fs from 'node:fs'; const data = JSON.parse(fs.readFileSync(process.argv[1], 'utf8')); process.stdout.write(String(data.tokens?.reasonRequired || ''));" "$JWT_BUNDLE_FILE")"
-  rm -f "$JWT_BUNDLE_FILE"
 fi
 
 PORT="$BACKEND_PORT" AUTH_MODE="$E2E_AUTH_MODE" DATABASE_URL="$DATABASE_URL" \
