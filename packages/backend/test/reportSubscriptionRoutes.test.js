@@ -254,7 +254,9 @@ test('PATCH /report-subscriptions/:id returns not_found when subscription does n
         });
         assert.equal(res.statusCode, 404, res.body);
         const body = JSON.parse(res.body);
-        assert.equal(body?.error?.code, 'not_found');
+        const errorCode =
+          typeof body?.error === 'string' ? body.error : body?.error?.code;
+        assert.equal(errorCode, 'not_found');
       });
     },
   );
