@@ -137,7 +137,7 @@ if [[ -z "${DATABASE_URL_PSQL:-}" ]]; then
 fi
 E2E_DATE="${E2E_DATE:-$(date +%Y-%m-%d)}"
 E2E_EVIDENCE_DIR="${E2E_EVIDENCE_DIR:-$ROOT_DIR/docs/test-results/${E2E_DATE}-frontend-e2e}"
-E2E_BASE_URL="${E2E_BASE_URL:-http://localhost:${FRONTEND_PORT}}"
+E2E_BASE_URL="${E2E_BASE_URL:-http://127.0.0.1:${FRONTEND_PORT}}"
 E2E_API_BASE="${E2E_API_BASE:-http://127.0.0.1:${BACKEND_PORT}}"
 E2E_CAPTURE="${E2E_CAPTURE:-1}"
 E2E_SCOPE="${E2E_SCOPE:-full}"
@@ -383,7 +383,7 @@ VITE_API_BASE="$E2E_API_BASE" \
   npm run dev --prefix "$ROOT_DIR/packages/frontend" -- --host 0.0.0.0 --port "$FRONTEND_PORT" \
   >"$FRONTEND_LOG" 2>&1 &
 FRONTEND_PID=$!
-if ! wait_for_url "http://localhost:${FRONTEND_PORT}/" "frontend"; then
+if ! wait_for_url "${E2E_BASE_URL%/}/" "frontend"; then
   if [[ -f "$FRONTEND_LOG" ]]; then
     echo "frontend log:" >&2
     tail -n 200 "$FRONTEND_LOG" >&2
