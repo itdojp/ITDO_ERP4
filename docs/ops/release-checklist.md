@@ -7,11 +7,11 @@
 - [ ] バックアップ手順を実施可能（`docs/ops/backup-restore.md`）
 
 ## 試験稼働 Go/No-Go（2026-02-26 時点）
-- [ ] `main` の `CI` が2連続成功（直近失敗: `22425842948` / `e2e-frontend`、対処PR: `#1262`）
-- [x] `Link Check` は直近5実行で成功（例: `22425842966`）
-- [x] `security-audit` は最新実行で成功（`22425842948` の `security-audit` job）
-- [ ] 既知の運用残課題を解消または受容判断（`#543` `#544` `#914` `#1153`）
-- [ ] Go/No-Go 判定ログを `#1260` に集約
+- [ ] `main` の `CI` が2連続成功（直近失敗: [22425842948](https://github.com/itdojp/ITDO_ERP4/actions/runs/22425842948) / `e2e-frontend`、対処PR: #1262）
+- [x] `Link Check` は直近5実行で成功（例: [22425842966](https://github.com/itdojp/ITDO_ERP4/actions/runs/22425842966)）
+- [x] `security-audit` は最新実行で成功（[22425842948](https://github.com/itdojp/ITDO_ERP4/actions/runs/22425842948) の `security-audit` job）
+- [ ] 既知の運用残課題を解消または受容判断（#543 #544 #914 #1153）
+- [ ] Go/No-Go 判定ログを #1260 に集約
 
 ## 実施
 - [ ] タグ付け（`vX.Y.Z`）
