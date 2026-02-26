@@ -129,6 +129,8 @@ jobs:
         env:
           E2E_DB_MODE: direct
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres?schema=public
+          E2E_API_BASE: http://127.0.0.1:3002
+          E2E_BASE_URL: http://127.0.0.1:5173
           E2E_CAPTURE: 0
           E2E_TRACE_ON_FAILURE: 1
           E2E_SKIP_PLAYWRIGHT_INSTALL: 1
