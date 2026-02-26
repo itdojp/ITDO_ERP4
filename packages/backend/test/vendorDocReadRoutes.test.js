@@ -217,6 +217,26 @@ test('GET /vendor-invoices/:id/allocations returns NOT_FOUND for deleted invoice
   );
 });
 
+test('GET /vendor-invoices/:id/allocations returns NOT_FOUND when invoice is missing', async () => {
+  await withPrismaStubs(
+    {
+      'vendorInvoice.findUnique': async () => null,
+    },
+    async () => {
+      await withServer(async (server) => {
+        const res = await server.inject({
+          method: 'GET',
+          url: '/vendor-invoices/vi-missing/allocations',
+          headers: adminHeaders(),
+        });
+        assert.equal(res.statusCode, 404, res.body);
+        const body = JSON.parse(res.body);
+        assert.equal(body?.error?.code, 'NOT_FOUND');
+      });
+    },
+  );
+});
+
 test('GET /vendor-invoices/:id/allocations returns invoice and allocation rows', async () => {
   let capturedAllocArgs = null;
   await withPrismaStubs(
