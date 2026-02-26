@@ -138,6 +138,7 @@ fi
 E2E_DATE="${E2E_DATE:-$(date +%Y-%m-%d)}"
 E2E_EVIDENCE_DIR="${E2E_EVIDENCE_DIR:-$ROOT_DIR/docs/test-results/${E2E_DATE}-frontend-e2e}"
 E2E_BASE_URL="${E2E_BASE_URL:-http://localhost:${FRONTEND_PORT}}"
+E2E_API_BASE="${E2E_API_BASE:-http://127.0.0.1:${BACKEND_PORT}}"
 E2E_CAPTURE="${E2E_CAPTURE:-1}"
 E2E_SCOPE="${E2E_SCOPE:-full}"
 E2E_GREP="${E2E_GREP:-}"
@@ -370,7 +371,7 @@ JWT_AUDIENCE="$E2E_JWT_AUDIENCE" \
 JWT_PUBLIC_KEY="$E2E_JWT_PUBLIC_KEY" \
   node "$ROOT_DIR/packages/backend/dist/index.js" >"$BACKEND_LOG" 2>&1 &
 BACKEND_PID=$!
-if ! wait_for_url "http://localhost:${BACKEND_PORT}/health" "backend"; then
+if ! wait_for_url "${E2E_API_BASE}/health" "backend"; then
   if [[ -f "$BACKEND_LOG" ]]; then
     echo "backend log:" >&2
     tail -n 200 "$BACKEND_LOG" >&2
@@ -378,7 +379,7 @@ if ! wait_for_url "http://localhost:${BACKEND_PORT}/health" "backend"; then
   exit 1
 fi
 
-VITE_API_BASE="http://localhost:${BACKEND_PORT}" \
+VITE_API_BASE="$E2E_API_BASE" \
   npm run dev --prefix "$ROOT_DIR/packages/frontend" -- --host 0.0.0.0 --port "$FRONTEND_PORT" \
   >"$FRONTEND_LOG" 2>&1 &
 FRONTEND_PID=$!
@@ -414,7 +415,7 @@ fi
 E2E_ROOT_DIR="$ROOT_DIR" \
 E2E_EVIDENCE_DIR="$E2E_EVIDENCE_DIR" \
 E2E_BASE_URL="$E2E_BASE_URL" \
-E2E_API_BASE="http://localhost:${BACKEND_PORT}" \
+E2E_API_BASE="$E2E_API_BASE" \
 E2E_CAPTURE="$E2E_CAPTURE" \
 E2E_AUTH_MODE="$E2E_AUTH_MODE" \
 E2E_JWT_TOKEN_ADMIN="$E2E_JWT_TOKEN_ADMIN" \
