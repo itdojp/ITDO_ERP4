@@ -86,19 +86,26 @@ async function navigateToSection(page: Page, label: string, heading?: string) {
 }
 
 async function selectByLabelOrFirst(select: Locator, label?: string) {
+  const targetSelect = select.first();
+  await expect(targetSelect).toBeVisible({ timeout: actionTimeout });
   await expect
-    .poll(() => select.locator('option').count(), { timeout: actionTimeout })
+    .poll(() => targetSelect.locator('option').count(), {
+      timeout: actionTimeout,
+    })
     .toBeGreaterThan(1);
   if (label) {
     await expect
-      .poll(() => select.locator('option', { hasText: label }).count(), {
-        timeout: actionTimeout,
-      })
+      .poll(
+        () => targetSelect.locator('option', { hasText: label }).count(),
+        {
+          timeout: actionTimeout,
+        },
+      )
       .toBeGreaterThan(0);
-    await select.selectOption({ label });
+    await targetSelect.selectOption({ label });
     return;
   }
-  await select.selectOption({ index: 1 });
+  await targetSelect.selectOption({ index: 1 });
 }
 
 const buildAuthHeaders = (override?: Partial<typeof authState>) => {
@@ -229,11 +236,10 @@ test('frontend smoke vendor approvals @extended', async ({ page }) => {
   const approvalsSection = page
     .locator('main')
     .locator('h2', { hasText: '承認一覧' })
-    .locator('..');
+    .locator('..')
+    .first();
   await approvalsSection.scrollIntoViewIfNeeded();
-  const flowTypeSelect = approvalsSection.locator('select', {
-    has: approvalsSection.locator('option', { hasText: '発注' }),
-  });
+  const flowTypeSelect = approvalsSection.getByRole('combobox').first();
   await selectByLabelOrFirst(
     flowTypeSelect,
     '発注',

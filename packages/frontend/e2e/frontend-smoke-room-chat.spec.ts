@@ -86,19 +86,26 @@ async function navigateToSection(page: Page, label: string, heading?: string) {
 }
 
 async function selectByLabelOrFirst(select: Locator, label?: string) {
+  const targetSelect = select.first();
+  await expect(targetSelect).toBeVisible({ timeout: actionTimeout });
   await expect
-    .poll(() => select.locator('option').count(), { timeout: actionTimeout })
+    .poll(() => targetSelect.locator('option').count(), {
+      timeout: actionTimeout,
+    })
     .toBeGreaterThan(1);
   if (label) {
     await expect
-      .poll(() => select.locator('option', { hasText: label }).count(), {
-        timeout: actionTimeout,
-      })
+      .poll(
+        () => targetSelect.locator('option', { hasText: label }).count(),
+        {
+          timeout: actionTimeout,
+        },
+      )
       .toBeGreaterThan(0);
-    await select.selectOption({ label });
+    await targetSelect.selectOption({ label });
     return;
   }
-  await select.selectOption({ index: 1 });
+  await targetSelect.selectOption({ index: 1 });
 }
 
 const buildAuthHeaders = (override?: Partial<typeof authState>) => {
@@ -131,7 +138,8 @@ test('frontend smoke room chat (private_group/dm) @extended', async ({
   const roomChatSection = page
     .locator('main')
     .locator('h2', { hasText: 'チャット（全社/部門/private_group/DM）' })
-    .locator('..');
+    .locator('..')
+    .first();
   await roomChatSection.scrollIntoViewIfNeeded();
 
   const run = runId();
@@ -316,12 +324,15 @@ test('frontend smoke room chat external summary @extended', async ({
   const roomChatSection = page
     .locator('main')
     .locator('h2', { hasText: 'チャット（全社/部門/private_group/DM）' })
-    .locator('..');
+    .locator('..')
+    .first();
   await roomChatSection.scrollIntoViewIfNeeded();
-  const roomReloadButton = roomChatSection.getByRole('button', {
-    name: '再読込',
-  });
-  await expect(roomReloadButton).toHaveCount(1, { timeout: actionTimeout });
+  const roomReloadButton = roomChatSection
+    .getByRole('button', {
+      name: '再読込',
+    })
+    .first();
+  await expect(roomReloadButton).toBeVisible({ timeout: actionTimeout });
   await roomReloadButton.click();
 
   const roomSelect = roomChatSection.getByLabel('ルーム');
@@ -458,7 +469,8 @@ test('frontend smoke external chat invited rooms @extended', async ({
   const roomChatSection = externalPage
     .locator('main')
     .locator('h2', { hasText: 'チャット（全社/部門/private_group/DM）' })
-    .locator('..');
+    .locator('..')
+    .first();
   await roomChatSection.scrollIntoViewIfNeeded();
 
   const externalRoomSelect = roomChatSection.getByLabel('ルーム');

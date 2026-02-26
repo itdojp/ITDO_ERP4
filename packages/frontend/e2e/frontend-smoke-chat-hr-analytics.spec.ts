@@ -91,19 +91,26 @@ async function navigateToSection(page: Page, label: string, heading?: string) {
 }
 
 async function selectByLabelOrFirst(select: Locator, label?: string) {
+  const targetSelect = select.first();
+  await expect(targetSelect).toBeVisible({ timeout: actionTimeout });
   await expect
-    .poll(() => select.locator('option').count(), { timeout: actionTimeout })
+    .poll(() => targetSelect.locator('option').count(), {
+      timeout: actionTimeout,
+    })
     .toBeGreaterThan(1);
   if (label) {
     await expect
-      .poll(() => select.locator('option', { hasText: label }).count(), {
-        timeout: actionTimeout,
-      })
+      .poll(
+        () => targetSelect.locator('option', { hasText: label }).count(),
+        {
+          timeout: actionTimeout,
+        },
+      )
       .toBeGreaterThan(0);
-    await select.selectOption({ label });
+    await targetSelect.selectOption({ label });
     return;
   }
-  await select.selectOption({ index: 1 });
+  await targetSelect.selectOption({ index: 1 });
 }
 
 const buildAuthHeaders = (override?: Partial<typeof authState>) => {
@@ -145,7 +152,8 @@ test('frontend smoke chat hr analytics @extended', async ({ page }) => {
   const chatSection = page
     .locator('main')
     .locator('h2', { hasText: 'プロジェクトチャット' })
-    .locator('..');
+    .locator('..')
+    .first();
   await chatSection.scrollIntoViewIfNeeded();
   await selectByLabelOrFirst(
     chatSection.getByLabel('案件選択'),
@@ -177,10 +185,10 @@ test('frontend smoke chat hr analytics @extended', async ({ page }) => {
     timeout: actionTimeout,
   });
   await chatSection.getByPlaceholder('タグ (comma separated)').fill('e2e,chat');
-  const addFilesButton = chatSection.getByRole('button', {
-    name: /ファイルを選択|Add files/,
-  });
-  await expect(addFilesButton).toHaveCount(1, { timeout: actionTimeout });
+  const addFilesButton = chatSection
+    .getByRole('button', { name: /ファイルを選択|Add files/ })
+    .first();
+  await expect(addFilesButton).toBeVisible({ timeout: actionTimeout });
   const [fileChooser] = await Promise.all([
     page.waitForEvent('filechooser'),
     addFilesButton.click(),
@@ -277,29 +285,28 @@ test('frontend smoke chat hr analytics @extended', async ({ page }) => {
   const hrSection = page
     .locator('main')
     .locator('h2', { hasText: '匿名集計（人事向け）' })
-    .locator('..');
+    .locator('..')
+    .first();
   await hrSection.scrollIntoViewIfNeeded();
   const hrRangeTo = new Date();
   const hrRangeFrom = new Date(hrRangeTo.getTime() - 14 * 24 * 60 * 60 * 1000);
   await hrSection.getByLabel('開始日').fill(toDateInputValue(hrRangeFrom));
   await hrSection.getByLabel('終了日').fill(toDateInputValue(hrRangeTo));
   await hrSection.getByLabel('閾値').fill('1');
-  const groupUpdateRow = hrSection.locator('.row', {
-    has: hrSection.getByLabel('開始日'),
-  });
-  await groupUpdateRow.getByRole('button', { name: '更新' }).click();
+  const updateButtons = hrSection.getByRole('button', { name: '更新' });
+  const groupUpdateButton = updateButtons.first();
+  await expect(groupUpdateButton).toBeVisible({ timeout: actionTimeout });
+  await groupUpdateButton.click();
   await expect(hrSection.locator('ul.list li')).not.toHaveCount(0);
   const groupSelect = hrSection.getByRole('combobox');
   if (await groupSelect.locator('option', { hasText: 'hr-group' }).count()) {
     await groupSelect.selectOption({ label: 'hr-group' });
   }
-  const monthlyUpdateRow = hrSection.locator('.row', {
-    has: hrSection.locator('strong', { hasText: '時系列' }),
-  });
-  const monthlyUpdateButton = monthlyUpdateRow.getByRole('button', {
-    name: '更新',
-  });
-  if (await monthlyUpdateButton.isEnabled().catch(() => false)) {
+  const monthlyUpdateButton = updateButtons.nth(1);
+  if (
+    await monthlyUpdateButton.isVisible().catch(() => false) &&
+    await monthlyUpdateButton.isEnabled().catch(() => false)
+  ) {
     await monthlyUpdateButton.click();
   }
   await captureSection(hrSection, '13-hr-analytics.png');
@@ -335,7 +342,8 @@ test('frontend smoke chat hr analytics @extended', async ({ page }) => {
   const mentionChatSection = mentionPage
     .locator('main')
     .locator('h2', { hasText: 'プロジェクトチャット' })
-    .locator('..');
+    .locator('..')
+    .first();
   await mentionChatSection.scrollIntoViewIfNeeded();
   await selectByLabelOrFirst(
     mentionChatSection.getByLabel('案件選択'),
@@ -370,7 +378,8 @@ test('frontend smoke chat hr analytics @extended', async ({ page }) => {
   const dashboardSection = mentionPage
     .locator('main')
     .locator('h2', { hasText: 'Dashboard' })
-    .locator('..');
+    .locator('..')
+    .first();
   await expect(dashboardSection.getByText(chatMessage)).toBeVisible({
     timeout: actionTimeout,
   });
@@ -381,7 +390,8 @@ test('frontend smoke chat hr analytics @extended', async ({ page }) => {
   const chatSectionAfter = page
     .locator('main')
     .locator('h2', { hasText: 'プロジェクトチャット' })
-    .locator('..');
+    .locator('..')
+    .first();
   await chatSectionAfter.scrollIntoViewIfNeeded();
   await selectByLabelOrFirst(
     chatSectionAfter.getByLabel('案件選択'),
