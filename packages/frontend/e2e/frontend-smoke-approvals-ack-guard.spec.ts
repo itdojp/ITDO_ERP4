@@ -111,6 +111,31 @@ async function selectByLabelOrFirst(select: Locator, label?: string) {
   await targetSelect.selectOption({ index: 1 });
 }
 
+async function findSelectContainingOption(
+  root: Locator,
+  optionLabel: string,
+): Promise<Locator> {
+  const selects = root.getByRole('combobox');
+  let matchedIndex = -1;
+  await expect
+    .poll(async () => {
+      const count = await selects.count();
+      for (let i = 0; i < count; i += 1) {
+        const optionCount = await selects
+          .nth(i)
+          .locator('option', { hasText: optionLabel })
+          .count();
+        if (optionCount > 0) {
+          matchedIndex = i;
+          return i;
+        }
+      }
+      return -1;
+    }, { timeout: actionTimeout })
+    .toBeGreaterThanOrEqual(0);
+  return selects.nth(matchedIndex);
+}
+
 const buildAuthHeaders = (override?: Partial<typeof authState>) => {
   const resolved = { ...authState, ...(override ?? {}) };
   return {
@@ -256,11 +281,11 @@ test('frontend smoke approvals ack guard requires override reason @extended', as
     .locator('..')
     .first();
   await approvalsSection.scrollIntoViewIfNeeded();
-  const flowTypeSelect = approvalsSection.getByRole('combobox').first();
-  await selectByLabelOrFirst(
-    flowTypeSelect,
+  const flowTypeSelect = await findSelectContainingOption(
+    approvalsSection,
     '見積',
   );
+  await selectByLabelOrFirst(flowTypeSelect, '見積');
   await approvalsSection.getByRole('button', { name: '再読込' }).click();
 
   const approvalItem = approvalsSection.locator('li', { hasText: estimateId });
