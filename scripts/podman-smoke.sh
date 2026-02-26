@@ -10,6 +10,12 @@ BACKEND_LOG="${BACKEND_LOG:-$ROOT_DIR/tmp/podman-smoke-backend.log}"
 
 BACKEND_PID=""
 
+ensure_backend_deps() {
+  if [[ ! -d "$ROOT_DIR/packages/backend/node_modules" ]]; then
+    npm install --prefix "$ROOT_DIR/packages/backend"
+  fi
+}
+
 cleanup() {
   if [[ -n "$BACKEND_PID" ]] && kill -0 "$BACKEND_PID" >/dev/null 2>&1; then
     kill "$BACKEND_PID" >/dev/null 2>&1 || true
@@ -30,6 +36,8 @@ wait_for_backend() {
 mkdir -p "$ROOT_DIR/tmp"
 
 HOST_PORT="$HOST_PORT" "$ROOT_DIR/scripts/podman-poc.sh" reset
+ensure_backend_deps
+DATABASE_URL="$DATABASE_URL" npm run prisma:generate --prefix "$ROOT_DIR/packages/backend"
 npm run build --prefix "$ROOT_DIR/packages/backend"
 
 DATABASE_URL="$DATABASE_URL" PORT="$BACKEND_PORT" \

@@ -2,7 +2,7 @@
 
 ## メタ情報
 
-- PR: `#(this PR)`
+- PR: `#1266`
 - 実施日: `2026-02-26`
 - 実施者: `Codex`
 - 対象ブランチ/コミット: `chore/preflight-gate-sync-1265 / a58f30f0`
