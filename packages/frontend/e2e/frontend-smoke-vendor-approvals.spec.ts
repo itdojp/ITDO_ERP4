@@ -86,6 +86,9 @@ async function navigateToSection(page: Page, label: string, heading?: string) {
 }
 
 async function selectByLabelOrFirst(select: Locator, label?: string) {
+  await expect
+    .poll(() => select.count(), { timeout: actionTimeout })
+    .toBeGreaterThan(0);
   const targetSelect = select.first();
   await expect(targetSelect).toBeVisible({ timeout: actionTimeout });
   await expect

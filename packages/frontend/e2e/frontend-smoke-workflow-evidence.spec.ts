@@ -86,6 +86,9 @@ async function navigateToSection(page: Page, label: string, heading?: string) {
 }
 
 async function selectByLabelOrFirst(select: Locator, label?: string) {
+  await expect
+    .poll(() => select.count(), { timeout: actionTimeout })
+    .toBeGreaterThan(0);
   const targetSelect = select.first();
   await expect(targetSelect).toBeVisible({ timeout: actionTimeout });
   await expect
@@ -219,9 +222,6 @@ test('frontend smoke workflow evidence chat references @extended', async ({
     })
     .toBeGreaterThan(0);
   const chatReferenceLink = chatReferenceLinks.first();
-  await expect(chatReferenceLink).toHaveCount(1, {
-    timeout: actionTimeout,
-  });
   await expect(chatReferenceLink).toBeVisible({
     timeout: actionTimeout,
   });
@@ -234,7 +234,6 @@ test('frontend smoke workflow evidence chat references @extended', async ({
     })
     .toBeGreaterThan(0);
   const chatRefBadge = chatRefBadges.first();
-  await expect(chatRefBadge).toHaveCount(1, { timeout: actionTimeout });
   await expect(chatRefBadge).toBeVisible({ timeout: actionTimeout });
   await expect(
     expenseAnnotationDrawer.getByLabel('メモ（Markdown）'),

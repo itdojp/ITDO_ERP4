@@ -91,6 +91,9 @@ async function navigateToSection(page: Page, label: string, heading?: string) {
 }
 
 async function selectByLabelOrFirst(select: Locator, label?: string) {
+  await expect
+    .poll(() => select.count(), { timeout: actionTimeout })
+    .toBeGreaterThan(0);
   const targetSelect = select.first();
   await expect(targetSelect).toBeVisible({ timeout: actionTimeout });
   await expect
@@ -293,8 +296,9 @@ test('frontend smoke chat hr analytics @extended', async ({ page }) => {
   await hrSection.getByLabel('開始日').fill(toDateInputValue(hrRangeFrom));
   await hrSection.getByLabel('終了日').fill(toDateInputValue(hrRangeTo));
   await hrSection.getByLabel('閾値').fill('1');
-  const updateButtons = hrSection.getByRole('button', { name: '更新' });
-  const groupUpdateButton = updateButtons.first();
+  const groupUpdateButton = hrSection.getByRole('button', {
+    name: '更新',
+  }).first();
   await expect(groupUpdateButton).toBeVisible({ timeout: actionTimeout });
   await groupUpdateButton.click();
   await expect(hrSection.locator('ul.list li')).not.toHaveCount(0);
@@ -302,7 +306,12 @@ test('frontend smoke chat hr analytics @extended', async ({ page }) => {
   if (await groupSelect.locator('option', { hasText: 'hr-group' }).count()) {
     await groupSelect.selectOption({ label: 'hr-group' });
   }
-  const monthlyUpdateButton = updateButtons.nth(1);
+  const monthlyUpdateButton = hrSection
+    .locator('.row', {
+      has: hrSection.locator('strong', { hasText: '時系列' }),
+    })
+    .getByRole('button', { name: '更新' })
+    .first();
   if (
     await monthlyUpdateButton.isVisible().catch(() => false) &&
     await monthlyUpdateButton.isEnabled().catch(() => false)
