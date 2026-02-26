@@ -118,7 +118,7 @@ require_id "time_id" "$time_id"
 echo "time_id=$time_id"
 
 echo "[6/9] create expense and submit"
-expense_resp=$(post_json "$BASE_URL/expenses" "{\"projectId\":\"$project_id\",\"userId\":\"$USER_ID\",\"category\":\"travel\",\"amount\":5000,\"currency\":\"JPY\",\"incurredOn\":\"$work_date\"}")
+expense_resp=$(post_json "$BASE_URL/expenses" "{\"projectId\":\"$project_id\",\"userId\":\"$USER_ID\",\"category\":\"travel\",\"amount\":5000,\"currency\":\"JPY\",\"incurredOn\":\"$work_date\",\"receiptUrl\":\"https://example.com/smoke-receipt-${PROJECT_CODE}.pdf\"}")
 expense_id=$(echo "$expense_resp" | json_get "id")
 require_id "expense_id" "$expense_id"
 post_json "$BASE_URL/expenses/$expense_id/submit" '{}' >/dev/null
