@@ -389,3 +389,89 @@ test('POST /invoices/:id/mark-paid returns NOT_FOUND when invoice does not exist
     },
   );
 });
+
+test('POST /invoices/:id/mark-paid rejects cancelled invoice status', async () => {
+  let updateCalled = false;
+  await withPrismaStubs(
+    {
+      'actionPolicy.findMany': async () => [],
+      'invoice.findUnique': async () => ({
+        id: 'inv-1',
+        status: 'cancelled',
+        projectId: 'proj-1',
+        deletedAt: null,
+      }),
+      'invoice.update': async () => {
+        updateCalled = true;
+        return null;
+      },
+    },
+    async () => {
+      await withServer(async (server) => {
+        const res = await server.inject({
+          method: 'POST',
+          url: '/invoices/inv-1/mark-paid',
+          headers: adminHeaders(),
+          payload: {},
+        });
+        assert.equal(res.statusCode, 409, res.body);
+        const body = JSON.parse(res.body);
+        assert.equal(body?.error?.code, 'INVALID_STATUS');
+      });
+    },
+  );
+  assert.equal(updateCalled, false);
+});
+
+test('POST /invoices/:id/mark-paid updates invoice and writes audit log', async () => {
+  const paidAt = new Date('2026-02-01T00:00:00.000Z');
+  let capturedUpdateArgs = null;
+  const auditActions = [];
+  await withPrismaStubs(
+    {
+      'actionPolicy.findMany': async () => [],
+      'invoice.findUnique': async () => ({
+        id: 'inv-1',
+        status: 'approved',
+        projectId: 'proj-1',
+        deletedAt: null,
+      }),
+      'invoice.update': async (args) => {
+        capturedUpdateArgs = args;
+        return {
+          id: 'inv-1',
+          status: 'paid',
+          paidAt,
+          paidBy: 'admin-user',
+          updatedBy: 'admin-user',
+          lines: [],
+        };
+      },
+      'auditLog.create': async (args) => {
+        auditActions.push(args?.data?.action);
+        return { id: `audit-${auditActions.length}` };
+      },
+    },
+    async () => {
+      await withServer(async (server) => {
+        const res = await server.inject({
+          method: 'POST',
+          url: '/invoices/inv-1/mark-paid',
+          headers: adminHeaders(),
+          payload: { paidAt: '2026-02-01' },
+        });
+        assert.equal(res.statusCode, 200, res.body);
+        const body = JSON.parse(res.body);
+        assert.equal(body?.status, 'paid');
+        assert.equal(body?.paidBy, 'admin-user');
+      });
+    },
+  );
+  assert.equal(capturedUpdateArgs?.where?.id, 'inv-1');
+  assert.equal(capturedUpdateArgs?.data?.status, 'paid');
+  assert.equal(capturedUpdateArgs?.data?.paidBy, 'admin-user');
+  assert.equal(capturedUpdateArgs?.data?.updatedBy, 'admin-user');
+  assert.equal(capturedUpdateArgs?.data?.paidAt?.getTime(), paidAt.getTime());
+  assert.deepEqual(capturedUpdateArgs?.include, { lines: true });
+  assert.deepEqual(auditActions, ['invoice_mark_paid']);
+});
