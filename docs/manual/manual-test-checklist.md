@@ -160,19 +160,19 @@
 
 ### モバイル回帰（design-system適用後）
 
-- [ ] `docs/test-results/mobile-regression-template.md` をコピーし、PR単位の証跡ファイル（`YYYY-MM-DD-mobile-regression-*.md`）を作成する
+- [x] `docs/test-results/mobile-regression-template.md` をコピーし、PR単位の証跡ファイル（`YYYY-MM-DD-mobile-regression-*.md`）を作成する
 - [x] Invoices: 一覧/フィルタ/行アクションが `375x667` で崩れず操作できる
 - [x] VendorDocuments: PO紐づけ/解除、配賦明細または請求明細入力が `375x667` で操作できる
 - [x] AuditLogs: 検索フォーム/一覧/CSV出力が `375x667` で操作できる
 - [x] PeriodLocks: 登録/解除導線が `375x667` で操作できる
 - [x] AdminJobs: dryRun切替/実行/結果確認が `375x667` で操作できる
-- [ ] PR本文に証跡ファイルとスクリーンショット格納ディレクトリ（`docs/test-results/...`）のリンクを記載する
+- [x] PR本文に証跡ファイルとスクリーンショット格納ディレクトリ（`docs/test-results/...`）のリンクを記載する
 
 ## 環境・その他
 
-- [ ] CI (backend/frontend/lint/lychee) が緑
-- [ ] prisma format/validate が通る（DATABASE_URL ダミー設定でOK）
-- [ ] フロント確認時は `VITE_API_BASE=http://localhost:3001` を指定して API を参照できる
-- [ ] （実行補助）`make frontend-dev-api` で API 接続付きフロントを起動できる
-- [ ] Podman 検証は `./scripts/podman-poc.sh reset` → `./scripts/smoke-backend.sh` で完走する
-- [ ] （実行補助）`make podman-smoke` で Podman reset + backend smoke を連続実行できる
+- [x] CI (backend/frontend/lint/lychee) が緑
+- [x] prisma format/validate が通る（DATABASE_URL ダミー設定でOK）
+- [x] フロント確認時は `VITE_API_BASE=http://localhost:3001` を指定して API を参照できる
+- [x] （実行補助）`make frontend-dev-api` で API 接続付きフロントを起動できる
+- [x] Podman 検証は `./scripts/podman-poc.sh reset` → `./scripts/smoke-backend.sh` で完走する
+- [x] （実行補助）`make podman-smoke` で Podman reset + backend smoke を連続実行できる

@@ -29,8 +29,7 @@ frontend-dev-api:
 	VITE_API_BASE=http://localhost:3001 npm run dev --prefix packages/frontend
 
 podman-smoke:
-	./scripts/podman-poc.sh reset
-	./scripts/smoke-backend.sh
+	./scripts/podman-smoke.sh
 
 mobile-regression-log:
 	./scripts/new-mobile-regression-log.sh
