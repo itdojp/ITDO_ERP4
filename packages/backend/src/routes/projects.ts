@@ -452,7 +452,7 @@ export async function registerProjectRoutes(app: FastifyInstance) {
       const roles = req.user?.roles || [];
       if (!isPrivilegedRole(roles)) {
         const allowed = await ensureProjectLeader(req, reply, projectId);
-        if (!allowed) return;
+        if (!allowed) return reply;
       }
       const items = await prisma.projectMember.findMany({
         where: { projectId },
@@ -476,7 +476,7 @@ export async function registerProjectRoutes(app: FastifyInstance) {
       const roles = req.user?.roles || [];
       if (!isPrivilegedRole(roles)) {
         const allowed = await ensureProjectLeader(req, reply, projectId);
-        if (!allowed) return;
+        if (!allowed) return reply;
       }
       const keyword = (q || '').trim().slice(0, 64);
       if (keyword.length < 2) {
@@ -539,7 +539,7 @@ export async function registerProjectRoutes(app: FastifyInstance) {
       const isPrivileged = isPrivilegedRole(roles);
       if (!isPrivileged) {
         const allowed = await ensureProjectLeader(req, reply, projectId);
-        if (!allowed) return;
+        if (!allowed) return reply;
       }
       const project = await prisma.project.findUnique({
         where: { id: projectId },
@@ -687,7 +687,7 @@ export async function registerProjectRoutes(app: FastifyInstance) {
       const isPrivileged = isPrivilegedRole(roles);
       if (!isPrivileged) {
         const allowed = await ensureProjectLeader(req, reply, projectId);
-        if (!allowed) return;
+        if (!allowed) return reply;
       }
       const project = await prisma.project.findUnique({
         where: { id: projectId },
@@ -824,7 +824,7 @@ export async function registerProjectRoutes(app: FastifyInstance) {
       const isPrivileged = isPrivilegedRole(roles);
       if (!isPrivileged) {
         const allowed = await ensureProjectLeader(req, reply, projectId);
-        if (!allowed) return;
+        if (!allowed) return reply;
       }
       const member = await prisma.projectMember.findUnique({
         where: { projectId_userId: { projectId, userId: targetUserId } },
@@ -1658,7 +1658,7 @@ export async function registerProjectRoutes(app: FastifyInstance) {
       const isPrivileged = isPrivilegedRole(roles);
       if (!isPrivileged) {
         const allowed = await ensureProjectLeader(req, reply, projectId);
-        if (!allowed) return;
+        if (!allowed) return reply;
       }
       const body = req.body as any;
       const name = typeof body.name === 'string' ? body.name.trim() : '';
