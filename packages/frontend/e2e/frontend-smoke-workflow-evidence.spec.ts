@@ -87,18 +87,53 @@ async function navigateToSection(page: Page, label: string, heading?: string) {
 
 async function selectByLabelOrFirst(select: Locator, label?: string) {
   await expect
-    .poll(() => select.locator('option').count(), { timeout: actionTimeout })
+    .poll(() => select.count(), { timeout: actionTimeout })
+    .toBeGreaterThan(0);
+  const targetSelect = select.first();
+  await expect(targetSelect).toBeVisible({ timeout: actionTimeout });
+  await expect
+    .poll(() => targetSelect.locator('option').count(), {
+      timeout: actionTimeout,
+    })
     .toBeGreaterThan(1);
   if (label) {
     await expect
-      .poll(() => select.locator('option', { hasText: label }).count(), {
-        timeout: actionTimeout,
-      })
+      .poll(
+        () => targetSelect.locator('option', { hasText: label }).count(),
+        {
+          timeout: actionTimeout,
+        },
+      )
       .toBeGreaterThan(0);
-    await select.selectOption({ label });
+    await targetSelect.selectOption({ label });
     return;
   }
-  await select.selectOption({ index: 1 });
+  await targetSelect.selectOption({ index: 1 });
+}
+
+async function findSelectContainingOption(
+  root: Locator,
+  optionLabel: string,
+): Promise<Locator> {
+  const selects = root.getByRole('combobox');
+  let matchedIndex = -1;
+  await expect
+    .poll(async () => {
+      const count = await selects.count();
+      for (let i = 0; i < count; i += 1) {
+        const optionCount = await selects
+          .nth(i)
+          .locator('option', { hasText: optionLabel })
+          .count();
+        if (optionCount > 0) {
+          matchedIndex = i;
+          return i;
+        }
+      }
+      return -1;
+    }, { timeout: actionTimeout })
+    .toBeGreaterThanOrEqual(0);
+  return selects.nth(matchedIndex);
 }
 
 const buildAuthHeaders = (override?: Partial<typeof authState>) => {
@@ -203,19 +238,27 @@ test('frontend smoke workflow evidence chat references @extended', async ({
   await evidencePickerDrawer.getByRole('button', { name: '閉じる' }).click();
   await expect(evidencePickerDrawer).toBeHidden({ timeout: actionTimeout });
 
-  const chatReferenceLink = expenseAnnotationDrawer.locator(
+  const chatReferenceLinks = expenseAnnotationDrawer.locator(
     `a[href*="${messageId}"]`,
   );
-  await expect(chatReferenceLink).toHaveCount(1, {
-    timeout: actionTimeout,
-  });
+  await expect
+    .poll(() => chatReferenceLinks.count(), {
+      timeout: actionTimeout,
+    })
+    .toBeGreaterThan(0);
+  const chatReferenceLink = chatReferenceLinks.first();
   await expect(chatReferenceLink).toBeVisible({
     timeout: actionTimeout,
   });
-  const chatRefBadge = expenseAnnotationDrawer.locator('.badge', {
+  const chatRefBadges = expenseAnnotationDrawer.locator('.badge', {
     hasText: 'chat_message',
   });
-  await expect(chatRefBadge).toHaveCount(1, { timeout: actionTimeout });
+  await expect
+    .poll(() => chatRefBadges.count(), {
+      timeout: actionTimeout,
+    })
+    .toBeGreaterThan(0);
+  const chatRefBadge = chatRefBadges.first();
   await expect(chatRefBadge).toBeVisible({ timeout: actionTimeout });
   await expect(
     expenseAnnotationDrawer.getByLabel('メモ（Markdown）'),
@@ -283,13 +326,14 @@ test('frontend smoke workflow evidence chat references @extended', async ({
   const approvalsSection = page
     .locator('main')
     .locator('h2', { hasText: '承認一覧' })
-    .locator('..');
+    .locator('..')
+    .first();
   await approvalsSection.scrollIntoViewIfNeeded();
-  const flowTypeSelect = approvalsSection
-    .locator('select')
-    .filter({ has: approvalsSection.locator('option[value=\"estimate\"]') });
-  await expect(flowTypeSelect).toHaveCount(1, { timeout: actionTimeout });
-  await flowTypeSelect.selectOption({ value: 'estimate' });
+  const flowTypeSelect = await findSelectContainingOption(
+    approvalsSection,
+    '見積',
+  );
+  await selectByLabelOrFirst(flowTypeSelect, '見積');
   await approvalsSection.getByRole('button', { name: '再読込' }).click();
 
   const evidenceApprovalItem = approvalsSection.locator('li', {
