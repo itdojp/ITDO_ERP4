@@ -76,17 +76,38 @@ npm ci --prefix packages/frontend
 
 ```bash
 cd /opt/itdo/ITDO_ERP4
-CONTAINER_NAME=erp4-pg-trial HOST_PORT=55432 ./scripts/podman-poc.sh start
-CONTAINER_NAME=erp4-pg-trial HOST_PORT=55432 ./scripts/podman-poc.sh migrate
+CONTAINER_NAME=erp4-pg-trial HOST_PORT=55432 \
+DB_USER=erp4 DB_PASSWORD='REPLACE_WITH_STRONG_PASSWORD' \
+./scripts/podman-poc.sh start
+
+CONTAINER_NAME=erp4-pg-trial HOST_PORT=55432 \
+DB_USER=erp4 DB_PASSWORD='REPLACE_WITH_STRONG_PASSWORD' \
+./scripts/podman-poc.sh migrate
 ```
 
-再起動後もDBを自動復帰させる場合（任意）:
+再起動後も DB コンテナを自動復帰させる場合（任意・rootless想定）:
+
+1. コンテナに `--restart=always` を設定する:
 ```bash
 podman update --restart=always erp4-pg-trial
 ```
 
+2. rootless では boot 時に `systemd --user` から Podman を起動する設定が必要:
+```bash
+sudo loginctl enable-linger "$(id -un)"
+mkdir -p ~/.config/systemd/user
+cd /opt/itdo/ITDO_ERP4
+
+podman generate systemd --name erp4-pg-trial --files --new
+mv container-erp4-pg-trial.service ~/.config/systemd/user/
+
+systemctl --user daemon-reload
+systemctl --user enable --now container-erp4-pg-trial.service
+systemctl --user status container-erp4-pg-trial.service
+```
+
 接続先（backend用）:
-- `DATABASE_URL=postgresql://postgres:postgres@localhost:55432/postgres?schema=public`
+- `DATABASE_URL=postgresql://erp4:REPLACE_WITH_STRONG_PASSWORD@localhost:55432/postgres?schema=public`
 
 ## 5. backend 起動
 
@@ -98,12 +119,16 @@ cp packages/backend/.env.example packages/backend/.env.vps
 
 `packages/backend/.env.vps` の最小設定例:
 ```dotenv
-DATABASE_URL=postgresql://postgres:postgres@localhost:55432/postgres?schema=public
+DATABASE_URL=postgresql://erp4:REPLACE_WITH_STRONG_PASSWORD@localhost:55432/postgres?schema=public
 PORT=3001
 NODE_ENV=production
-AUTH_MODE=header
-ALLOWED_ORIGINS=https://app.example.com
+AUTH_MODE=jwt
+ALLOWED_ORIGINS=https://app.example.com,http://<host>:4173
 ```
+
+補足:
+- `AUTH_MODE=header` はインターネット公開環境では非推奨。どうしても使う場合は、信頼できる reverse proxy 配下に限定し、`AUTH_ALLOW_HEADER_FALLBACK_IN_PROD=true` を明示する。
+- `ALLOWED_ORIGINS` は frontend の実アクセス元（`vite preview` を使う場合は `http://<host>:4173`）を必ず含める。
 
 ### 5-2. build と起動
 ```bash
@@ -169,7 +194,7 @@ Wants=network-online.target
 Type=simple
 WorkingDirectory=/opt/itdo/ITDO_ERP4
 EnvironmentFile=/opt/itdo/ITDO_ERP4/packages/backend/.env.vps
-ExecStart=/usr/bin/node /opt/itdo/ITDO_ERP4/packages/backend/dist/index.js
+ExecStart=/usr/bin/bash -lc 'export NVM_DIR="$HOME/.nvm"; [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"; node /opt/itdo/ITDO_ERP4/packages/backend/dist/index.js'
 Restart=always
 RestartSec=5
 
@@ -195,7 +220,7 @@ Wants=network-online.target
 [Service]
 Type=simple
 WorkingDirectory=/opt/itdo/ITDO_ERP4/packages/frontend
-ExecStart=/usr/bin/npm run preview -- --host 0.0.0.0 --port 4173
+ExecStart=/usr/bin/bash -lc 'export NVM_DIR="$HOME/.nvm"; [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"; npm run preview -- --host 0.0.0.0 --port 4173'
 Restart=always
 RestartSec=5
 
