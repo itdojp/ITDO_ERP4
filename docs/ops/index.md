@@ -6,6 +6,7 @@
 ## 目次
 ### 起動/デプロイ
 - ローカル/PoC 起動: [deploy-start](deploy-start.md)
+- さくらVPS（Ubuntu単体）+ Podman 試験動作: [sakura-vps-podman-trial](sakura-vps-podman-trial.md)
 - 設定（環境変数/シークレット）: [configuration](configuration.md)
 - Secrets/アクセス権限: [secrets-and-access](secrets-and-access.md)
   - DBユーザ最小権限（ロール分離）: [db-roles](db-roles.md)
