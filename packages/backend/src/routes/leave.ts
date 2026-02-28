@@ -137,8 +137,7 @@ export async function registerLeaveRoutes(app: FastifyInstance) {
         const unit = setting.timeUnitMinutes;
         if (
           startTimeMinutes % unit !== 0 ||
-          endTimeMinutes % unit !== 0 ||
-          (endTimeMinutes - startTimeMinutes) % unit !== 0
+          endTimeMinutes % unit !== 0
         ) {
           return reply.status(400).send({
             error: {
@@ -276,6 +275,9 @@ export async function registerLeaveRoutes(app: FastifyInstance) {
         const existingMinutes = aggregate._sum.minutes ?? 0;
         const totalMinutes = existingMinutes + leave.minutes;
         if (totalMinutes > setting.defaultWorkdayMinutes) {
+          const conflictCount = await prisma.timeEntry.count({
+            where: hourlyWhere,
+          });
           const conflicts = await prisma.timeEntry.findMany({
             where: hourlyWhere,
             select: {
@@ -297,7 +299,7 @@ export async function registerLeaveRoutes(app: FastifyInstance) {
               existingMinutes,
               requestedLeaveMinutes: leave.minutes,
               totalMinutes,
-              conflictCount: conflicts.length,
+              conflictCount,
               conflicts: conflicts.map((entry) => ({
                 id: entry.id,
                 projectId: entry.projectId,
