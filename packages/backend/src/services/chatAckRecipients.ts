@@ -117,14 +117,15 @@ async function resolveMemberUserIdsForGroups(options: {
     },
     select: {
       groupId: true,
-      user: { select: { userName: true } },
+      user: { select: { userName: true, externalId: true } },
     },
   });
 
   const byGroupAccountId = new Map<string, string[]>();
   for (const membership of memberships) {
     const groupId = normalizeId(membership?.groupId);
-    const userId = normalizeId(membership?.user?.userName);
+    const resolved = membership?.user?.externalId || membership?.user?.userName;
+    const userId = normalizeId(resolved);
     if (!groupId || !userId) continue;
     const list = byGroupAccountId.get(groupId) || [];
     list.push(userId);
@@ -215,17 +216,19 @@ export async function validateChatAckRequiredRecipientsForRoom(options: {
 
   const accounts = await client.userAccount.findMany({
     where: {
-      userName: { in: requested },
       active: true,
       deletedAt: null,
+      OR: [{ userName: { in: requested } }, { externalId: { in: requested } }],
     },
-    select: { userName: true },
+    select: { userName: true, externalId: true },
   });
-  const activeSet = new Set(
-    normalizeIdList(
-      accounts.map((item: { userName?: unknown }) => item.userName),
-    ),
-  );
+  const activeSet = new Set<string>();
+  for (const account of accounts) {
+    const userName = normalizeId(account?.userName);
+    if (userName) activeSet.add(userName);
+    const externalId = normalizeId(account?.externalId);
+    if (externalId) activeSet.add(externalId);
+  }
   // Preserve requested order for UI/audit readability.
   const activeUserIds = requested.filter((userId) => activeSet.has(userId));
 
@@ -317,20 +320,23 @@ export async function validateChatAckRequiredRecipientsForRoom(options: {
         const privileged = await client.userGroup.findMany({
           where: {
             user: {
-              userName: { in: activeUserIds },
+              OR: [
+                { userName: { in: activeUserIds } },
+                { externalId: { in: activeUserIds } },
+              ],
               active: true,
               deletedAt: null,
             },
             groupId: { in: adminMgmtAccountIds },
             group: { active: true },
           },
-          select: { user: { select: { userName: true } } },
+          select: { user: { select: { userName: true, externalId: true } } },
         });
-        normalizeIdList(
-          privileged.map(
-            (row: { user?: { userName?: unknown } }) => row.user?.userName,
-          ),
-        ).forEach((id) => allowed.add(id));
+        for (const row of privileged) {
+          const resolved = row.user?.externalId || row.user?.userName;
+          const id = normalizeId(resolved);
+          if (id) allowed.add(id);
+        }
       }
     }
 
@@ -365,20 +371,23 @@ export async function validateChatAckRequiredRecipientsForRoom(options: {
     const members = await client.userGroup.findMany({
       where: {
         user: {
-          userName: { in: activeUserIds },
+          OR: [
+            { userName: { in: activeUserIds } },
+            { externalId: { in: activeUserIds } },
+          ],
           active: true,
           deletedAt: null,
         },
         groupId: groupAccountId,
         group: { active: true },
       },
-      select: { user: { select: { userName: true } } },
+      select: { user: { select: { userName: true, externalId: true } } },
     });
-    normalizeIdList(
-      members.map(
-        (row: { user?: { userName?: unknown } }) => row.user?.userName,
-      ),
-    ).forEach((id) => allowed.add(id));
+    for (const row of members) {
+      const resolved = row.user?.externalId || row.user?.userName;
+      const id = normalizeId(resolved);
+      if (id) allowed.add(id);
+    }
   } else {
     // private_group/dm/other: membership-based access.
     const members = await client.chatRoomMember.findMany({

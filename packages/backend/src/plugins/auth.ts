@@ -240,19 +240,26 @@ async function resolveProjectIdsFromDb(userId: string) {
 }
 
 async function resolveUserGroupsFromDb(userId: string) {
-  const user = await prisma.userAccount.findUnique({
-    where: { userName: userId },
-    select: {
-      active: true,
-      deletedAt: true,
-      organization: true,
-      memberships: {
-        include: {
-          group: { select: { id: true, displayName: true, active: true } },
-        },
+  const select = {
+    active: true,
+    deletedAt: true,
+    organization: true,
+    memberships: {
+      include: {
+        group: { select: { id: true, displayName: true, active: true } },
       },
     },
-  });
+  } as const;
+
+  const user =
+    (await prisma.userAccount.findUnique({
+      where: { userName: userId },
+      select,
+    })) ||
+    (await prisma.userAccount.findUnique({
+      where: { externalId: userId },
+      select,
+    }));
   if (!user) return null;
   if (!user.active || user.deletedAt) {
     return { blocked: true as const };

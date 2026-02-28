@@ -94,7 +94,7 @@ export async function registerChatBreakGlassRoutes(app: FastifyInstance) {
           roomId,
           userId,
         });
-        if (!access) return;
+        if (!access) return reply;
       }
 
       const items = await prisma.chatBreakGlassRequest.findMany({

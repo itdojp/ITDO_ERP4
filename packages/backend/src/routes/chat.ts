@@ -553,19 +553,22 @@ export async function registerChatRoutes(app: FastifyInstance) {
       const accounts = userIds.length
         ? await prisma.userAccount.findMany({
             where: {
-              userName: { in: userIds },
+              OR: [
+                { userName: { in: userIds } },
+                { externalId: { in: userIds } },
+              ],
               deletedAt: null,
               active: true,
             },
-            select: { userName: true, displayName: true },
+            select: { userName: true, externalId: true, displayName: true },
           })
         : [];
-      const displayMap = new Map(
-        accounts.map((account) => [
-          account.userName,
-          account.displayName || null,
-        ]),
-      );
+      const displayMap = new Map<string, string | null>();
+      for (const account of accounts) {
+        const name = account.displayName || null;
+        displayMap.set(account.userName, name);
+        if (account.externalId) displayMap.set(account.externalId, name);
+      }
       const users = userIds
         .map((userId) => ({
           userId,

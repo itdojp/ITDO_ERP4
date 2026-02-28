@@ -99,9 +99,11 @@ async function fetchActiveUserIdsByGroupAccountIds(options: {
       group: { active: true },
       user: { active: true, deletedAt: null },
     },
-    select: { user: { select: { userName: true } } },
+    select: { user: { select: { userName: true, externalId: true } } },
   });
-  return normalizeIdList(rows.map((row) => row.user?.userName));
+  return normalizeIdList(
+    rows.map((row) => row.user?.externalId || row.user?.userName),
+  );
 }
 
 async function fetchActiveProjectMemberUserIds(options: {
@@ -109,10 +111,10 @@ async function fetchActiveProjectMemberUserIds(options: {
   client: typeof prisma;
 }) {
   const rows = await options.client.$queryRaw<Array<{ userId: string | null }>>`
-    SELECT DISTINCT ua."userName" AS "userId"
+    SELECT DISTINCT pm."userId" AS "userId"
     FROM "ProjectMember" AS pm
     INNER JOIN "UserAccount" AS ua
-      ON ua."userName" = pm."userId"
+      ON (ua."externalId" = pm."userId" OR ua."userName" = pm."userId")
     WHERE pm."projectId" = ${options.projectId}
       AND ua."active" = true
       AND ua."deletedAt" IS NULL
@@ -125,10 +127,10 @@ async function fetchActiveChatRoomMemberUserIds(options: {
   client: typeof prisma;
 }) {
   const rows = await options.client.$queryRaw<Array<{ userId: string | null }>>`
-    SELECT DISTINCT ua."userName" AS "userId"
+    SELECT DISTINCT crm."userId" AS "userId"
     FROM "ChatRoomMember" AS crm
     INNER JOIN "UserAccount" AS ua
-      ON ua."userName" = crm."userId"
+      ON (ua."externalId" = crm."userId" OR ua."userName" = crm."userId")
     WHERE crm."roomId" = ${options.roomId}
       AND crm."deletedAt" IS NULL
       AND ua."active" = true
@@ -242,11 +244,11 @@ async function searchUserCandidates(options: {
   const allowedIds = Array.from(options.allowedUserIds);
   const allowedClause = options.allowedAll
     ? Prisma.sql``
-    : Prisma.sql`AND ua."userName" IN (${Prisma.join(allowedIds)})`;
+    : Prisma.sql`AND (ua."externalId" IN (${Prisma.join(allowedIds)}) OR ua."userName" IN (${Prisma.join(allowedIds)}))`;
   const rows = await options.client.$queryRaw<
     Array<{ userId: string | null; displayName: string | null }>
   >`
-    SELECT ua."userName" AS "userId", ua."displayName"
+    SELECT COALESCE(ua."externalId", ua."userName") AS "userId", ua."displayName"
     FROM "UserAccount" AS ua
     WHERE ua."active" = true
       AND ua."deletedAt" IS NULL
@@ -258,7 +260,7 @@ async function searchUserCandidates(options: {
         OR ua."department" ILIKE ${likePattern} ESCAPE '\\'
       )
       ${allowedClause}
-    ORDER BY ua."userName" ASC
+    ORDER BY COALESCE(ua."externalId", ua."userName") ASC
     LIMIT ${limit}
   `;
   return rows
@@ -297,12 +299,16 @@ async function searchGroupCandidates(options: {
       group: { active: true },
       user: { active: true, deletedAt: null },
     },
-    select: { groupId: true, user: { select: { userName: true } } },
+    select: {
+      groupId: true,
+      user: { select: { userName: true, externalId: true } },
+    },
   });
   const membersByGroup = new Map<string, string[]>();
   for (const membership of memberships) {
     const groupId = normalizeId(membership.groupId);
-    const userId = normalizeId(membership.user?.userName);
+    const resolved = membership.user?.externalId || membership.user?.userName;
+    const userId = normalizeId(resolved);
     if (!groupId || !userId) continue;
     const list = membersByGroup.get(groupId) || [];
     list.push(userId);

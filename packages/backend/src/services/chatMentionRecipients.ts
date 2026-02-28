@@ -4,6 +4,7 @@ import { resolveChatAckRequiredRecipientUserIds } from './chatAckRecipients.js';
 type RoomForMention = {
   id: string;
   type: string;
+  isOfficial?: boolean;
   groupId: string | null;
   viewerGroupIds?: unknown;
   allowExternalUsers: boolean;
@@ -87,6 +88,16 @@ export async function resolveRoomAudienceUserIds(options: {
       const userId = normalizeId(member?.userId);
       if (userId) audience.add(userId);
     });
+  }
+
+  // Official private_group can include viewerGroupIds as additional audience.
+  if (
+    (room.type === 'private_group' || room.type === 'dm') &&
+    room.isOfficial === true &&
+    viewerGroupIds.length > 0
+  ) {
+    viewerGroupMembers.forEach((userId) => audience.add(userId));
+    return audience;
   }
 
   if (viewerGroupIds.length > 0) {

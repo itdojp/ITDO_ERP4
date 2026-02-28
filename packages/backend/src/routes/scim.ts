@@ -4,6 +4,7 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '../services/db.js';
 import { auditContextFromRequest, logAudit } from '../services/audit.js';
 import { requireRole } from '../services/rbac.js';
+import { ensurePersonalGeneralAffairsChatRoom } from '../services/personalGaChatRoom.js';
 
 const SCIM_USER_SCHEMA = 'urn:ietf:params:scim:schemas:core:2.0:User';
 const SCIM_GROUP_SCHEMA = 'urn:ietf:params:scim:schemas:core:2.0:Group';
@@ -548,33 +549,51 @@ export async function registerScimRoutes(app: FastifyInstance) {
     if (requireScimAuth(req, reply)) return;
     const payload = req.body as ScimUserPayload;
     const normalized = normalizeUserPayload(payload);
-    if (!normalized.userName) {
+    const userName = normalized.userName;
+    if (!userName) {
       return reply.code(400).send(scimError(400, 'userName_required'));
     }
-    if (await isUserNameTaken(normalized.userName)) {
+    if (await isUserNameTaken(userName)) {
       return reply.code(409).send(scimError(409, 'user_exists'));
     }
     if (await isUserExternalIdTaken(normalized.externalId)) {
       return reply.code(409).send(scimError(409, 'externalId_exists'));
     }
     let created;
+    let personalGaRoomId: string | null = null;
     try {
-      created = await prisma.userAccount.create({
-        data: {
-          externalId: normalized.externalId,
-          userName: normalized.userName,
-          displayName: normalized.displayName,
-          givenName: normalized.givenName,
-          familyName: normalized.familyName,
-          active: normalized.active ?? true,
-          emails: normalized.emails as Prisma.InputJsonValue | undefined,
-          phoneNumbers: normalized.phones as Prisma.InputJsonValue | undefined,
-          department: normalized.department,
-          organization: normalized.organization,
-          managerUserId: normalized.managerUserId,
-          scimMeta: payload as Prisma.InputJsonValue,
-        },
+      const result = await prisma.$transaction(async (tx) => {
+        const user = await tx.userAccount.create({
+          data: {
+            externalId: normalized.externalId,
+            userName,
+            displayName: normalized.displayName,
+            givenName: normalized.givenName,
+            familyName: normalized.familyName,
+            active: normalized.active ?? true,
+            emails: normalized.emails as Prisma.InputJsonValue | undefined,
+            phoneNumbers: normalized.phones as
+              | Prisma.InputJsonValue
+              | undefined,
+            department: normalized.department,
+            organization: normalized.organization,
+            managerUserId: normalized.managerUserId,
+            scimMeta: payload as Prisma.InputJsonValue,
+          },
+        });
+        const internalUserId = user.externalId ?? user.userName;
+        const ensured = await ensurePersonalGeneralAffairsChatRoom({
+          userAccountId: user.id,
+          userId: internalUserId,
+          userName: user.userName,
+          displayName: user.displayName,
+          createdBy: internalUserId,
+          client: tx,
+        });
+        return { user, personalGaRoomId: ensured.roomId };
       });
+      created = result.user;
+      personalGaRoomId = result.personalGaRoomId;
     } catch (err) {
       if (
         err instanceof Prisma.PrismaClientKnownRequestError &&
@@ -588,9 +607,22 @@ export async function registerScimRoutes(app: FastifyInstance) {
       action: 'scim_user_create',
       targetTable: 'UserAccount',
       targetId: created.id,
-      metadata: { externalId: created.externalId, userName: created.userName },
+      metadata: {
+        externalId: created.externalId,
+        userName: created.userName,
+        personalGaRoomId,
+      },
       ...auditContextFromRequest(req, { source: 'scim' }),
     });
+    if (personalGaRoomId) {
+      await logAudit({
+        action: 'chat_personal_ga_room_ensured',
+        targetTable: 'chat_rooms',
+        targetId: personalGaRoomId,
+        metadata: { userId: created.externalId ?? created.userName },
+        ...auditContextFromRequest(req, { source: 'scim' }),
+      });
+    }
     return reply.code(201).send(buildUserResource(created));
   });
 
@@ -605,6 +637,13 @@ export async function registerScimRoutes(app: FastifyInstance) {
     const current = await prisma.userAccount.findUnique({ where: { id } });
     if (!current) {
       return reply.code(404).send(scimError(404, 'user_not_found'));
+    }
+    if (normalized.userName !== current.userName && !current.externalId) {
+      // When externalId is unset, this system treats userName as the stable identifier.
+      // Allowing userName changes would break historical references.
+      return reply
+        .code(400)
+        .send(scimError(400, 'externalId_required_for_userName_update'));
     }
     if (normalized.userName !== current.userName) {
       if (await isUserNameTaken(normalized.userName, id)) {
@@ -740,6 +779,19 @@ export async function registerScimRoutes(app: FastifyInstance) {
         if (path === 'name.familyName') update.familyName = null;
         if (path === 'active') update.active = false;
       }
+    }
+    const current = await prisma.userAccount.findUnique({ where: { id } });
+    if (!current) {
+      return reply.code(404).send(scimError(404, 'user_not_found'));
+    }
+    if (
+      typeof update.userName === 'string' &&
+      update.userName !== current.userName &&
+      !current.externalId
+    ) {
+      return reply
+        .code(400)
+        .send(scimError(400, 'externalId_required_for_userName_update'));
     }
     try {
       const updated = await prisma.userAccount.update({

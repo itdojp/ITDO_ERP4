@@ -4,6 +4,7 @@ import { hasProjectAccess } from './rbac.js';
 type ChatRoomBase = {
   id: string;
   type: string;
+  isOfficial: boolean;
   groupId: string | null;
   viewerGroupIds?: unknown;
   posterGroupIds?: unknown;
@@ -55,6 +56,7 @@ export async function ensureChatRoomContentAccess(options: {
     select: {
       id: true,
       type: true,
+      isOfficial: true,
       groupId: true,
       viewerGroupIds: true,
       posterGroupIds: true,
@@ -75,21 +77,29 @@ export async function ensureChatRoomContentAccess(options: {
   const viewerGroupIds = normalizeRoomGroupIds(room.viewerGroupIds);
   const posterGroupIds = normalizeRoomGroupIds(room.posterGroupIds);
   const groupAccessSet = new Set([...groupIdSet, ...groupAccountIdSet]);
+
+  const groupAllowsRead =
+    viewerGroupIds.length > 0 &&
+    viewerGroupIds.some((groupId) => groupAccessSet.has(groupId));
+  const groupAllowsPost =
+    posterGroupIds.length === 0
+      ? groupAllowsRead
+      : posterGroupIds.some((groupId) => groupAccessSet.has(groupId));
+
+  // Default behavior: viewerGroupIds/posterGroupIds restrict access.
   const hasViewerAccess =
     viewerGroupIds.length === 0 ||
     viewerGroupIds.some((groupId) => groupAccessSet.has(groupId));
   const hasPosterAccess =
-    posterGroupIds.length === 0
-      ? hasViewerAccess
-      : posterGroupIds.some((groupId) => groupAccessSet.has(groupId));
-  if (accessLevel === 'read' && !hasViewerAccess) {
-    return { ok: false, reason: 'forbidden_room_member' };
-  }
-  if (accessLevel === 'post' && !hasPosterAccess) {
-    return { ok: false, reason: 'forbidden_room_member' };
-  }
+    posterGroupIds.length === 0 ? hasViewerAccess : groupAllowsPost;
 
   if (room.type === 'project') {
+    if (accessLevel === 'read' && !hasViewerAccess) {
+      return { ok: false, reason: 'forbidden_room_member' };
+    }
+    if (accessLevel === 'post' && !hasPosterAccess) {
+      return { ok: false, reason: 'forbidden_room_member' };
+    }
     if (hasProjectAccess(options.roles, options.projectIds, room.id)) {
       return {
         ok: true,
@@ -120,6 +130,12 @@ export async function ensureChatRoomContentAccess(options: {
   }
 
   if (room.type === 'company') {
+    if (accessLevel === 'read' && !hasViewerAccess) {
+      return { ok: false, reason: 'forbidden_room_member' };
+    }
+    if (accessLevel === 'post' && !hasPosterAccess) {
+      return { ok: false, reason: 'forbidden_room_member' };
+    }
     return {
       ok: true,
       room,
@@ -130,6 +146,12 @@ export async function ensureChatRoomContentAccess(options: {
   }
 
   if (room.type === 'department') {
+    if (accessLevel === 'read' && !hasViewerAccess) {
+      return { ok: false, reason: 'forbidden_room_member' };
+    }
+    if (accessLevel === 'post' && !hasPosterAccess) {
+      return { ok: false, reason: 'forbidden_room_member' };
+    }
     const groupId = typeof room.groupId === 'string' ? room.groupId.trim() : '';
     if (
       !groupId ||
@@ -144,6 +166,40 @@ export async function ensureChatRoomContentAccess(options: {
         ? { postWithoutView: true }
         : {}),
     };
+  }
+
+  // private_group/dm: membership-based rooms.
+  // Official private_group can additionally grant read/post to viewerGroupIds/posterGroupIds
+  // without requiring explicit members (e.g., personal GA rooms).
+  if (room.type === 'private_group' && room.isOfficial) {
+    const member = await client.chatRoomMember.findFirst({
+      where: { roomId: room.id, userId: options.userId, deletedAt: null },
+      select: { role: true },
+    });
+    const isMember = Boolean(member);
+    const canRead = isMember || groupAllowsRead;
+    const canPost = isMember || groupAllowsPost;
+    if (accessLevel === 'read' && !canRead) {
+      return { ok: false, reason: 'forbidden_room_member' };
+    }
+    if (accessLevel === 'post' && !canPost) {
+      return { ok: false, reason: 'forbidden_room_member' };
+    }
+    return {
+      ok: true,
+      room,
+      ...(member ? { memberRole: member.role } : {}),
+      ...(accessLevel === 'post' && canPost && !canRead
+        ? { postWithoutView: true }
+        : {}),
+    };
+  }
+
+  if (accessLevel === 'read' && !hasViewerAccess) {
+    return { ok: false, reason: 'forbidden_room_member' };
+  }
+  if (accessLevel === 'post' && !hasPosterAccess) {
+    return { ok: false, reason: 'forbidden_room_member' };
   }
 
   const member = await client.chatRoomMember.findFirst({
