@@ -14,6 +14,7 @@ type AnnotationTargetKind =
   | 'vendor_quote'
   | 'vendor_invoice'
   | 'expense'
+  | 'leave_request'
   | 'project'
   | 'customer'
   | 'vendor';
@@ -267,6 +268,19 @@ async function resolveAnnotationTarget(kind: AnnotationTargetKind, id: string) {
       ownerUserId: found.userId,
     };
   }
+  if (kind === 'leave_request') {
+    const found = await prisma.leaveRequest.findUnique({
+      where: { id },
+      select: { id: true, status: true, userId: true },
+    });
+    if (!found) return null;
+    return {
+      targetTable: 'leave_requests',
+      projectId: null,
+      status: found.status,
+      ownerUserId: found.userId,
+    };
+  }
   if (kind === 'purchase_order') {
     const found = await prisma.purchaseOrder.findUnique({
       where: { id },
@@ -367,11 +381,7 @@ export async function registerAnnotationRoutes(app: FastifyInstance) {
         if (target.projectId && !projectIds.includes(target.projectId)) {
           return reply.status(403).send({ error: 'forbidden_project' });
         }
-        if (
-          kind === 'expense' &&
-          target.ownerUserId &&
-          target.ownerUserId !== userId
-        ) {
+        if (target.ownerUserId && target.ownerUserId !== userId) {
           return reply.status(403).send({ error: 'forbidden' });
         }
       }
@@ -425,11 +435,7 @@ export async function registerAnnotationRoutes(app: FastifyInstance) {
         if (target.projectId && !projectIds.includes(target.projectId)) {
           return reply.status(403).send({ error: 'forbidden_project' });
         }
-        if (
-          kind === 'expense' &&
-          target.ownerUserId &&
-          target.ownerUserId !== userId
-        ) {
+        if (target.ownerUserId && target.ownerUserId !== userId) {
           return reply.status(403).send({ error: 'forbidden' });
         }
       }
@@ -486,11 +492,7 @@ export async function registerAnnotationRoutes(app: FastifyInstance) {
         if (target.projectId && !projectIds.includes(target.projectId)) {
           return reply.status(403).send({ error: 'forbidden_project' });
         }
-        if (
-          kind === 'expense' &&
-          target.ownerUserId &&
-          target.ownerUserId !== userId
-        ) {
+        if (target.ownerUserId && target.ownerUserId !== userId) {
           return reply.status(403).send({ error: 'forbidden' });
         }
         if (target.status && isLockedAfterApproval(target.status)) {

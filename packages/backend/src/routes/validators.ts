@@ -1009,6 +1009,17 @@ export const leaveRequestSchema = {
   }),
 };
 
+export const leaveSubmitSchema = {
+  body: Type.Object(
+    {
+      reasonText: Type.Optional(Type.String({ maxLength: 2000 })),
+      noConsultationConfirmed: Type.Optional(Type.Boolean()),
+      noConsultationReason: Type.Optional(Type.String({ maxLength: 2000 })),
+    },
+    { additionalProperties: false },
+  ),
+};
+
 export const approvalActionSchema = {
   body: Type.Object({
     action: Type.Union([Type.Literal('approve'), Type.Literal('reject')]),
