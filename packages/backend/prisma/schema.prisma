@@ -642,6 +642,16 @@ model WorklogSetting {
   updatedBy    String?
 }
 
+model LeaveSetting {
+  id                    String   @id @default("default")
+  timeUnitMinutes       Int      @default(10)
+  defaultWorkdayMinutes Int      @default(480)
+  createdAt             DateTime @default(now())
+  createdBy             String?
+  updatedAt             DateTime @updatedAt
+  updatedBy             String?
+}
+
 model AnnotationSetting {
   id                       String   @id @default("default")
   maxExternalUrlCount      Int      @default(20)
@@ -1156,6 +1166,9 @@ model LeaveRequest {
   startDate DateTime
   endDate   DateTime
   hours     Int?
+  minutes   Int?
+  startTimeMinutes Int?
+  endTimeMinutes   Int?
   status    LeaveStatus @default(draft)
   notes     String?
   createdAt DateTime    @default(now())

@@ -11,5 +11,7 @@ export default defineConfig({
   engine: 'classic',
   datasource: {
     url: env('DATABASE_URL'),
+    // Optional, but required when diffing a migrations directory.
+    shadowDatabaseUrl: process.env.SHADOW_DATABASE_URL || undefined,
   },
 });

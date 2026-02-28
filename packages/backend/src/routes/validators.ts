@@ -999,6 +999,11 @@ export const leaveRequestSchema = {
     leaveType: Type.String(),
     startDate: Type.String({ format: 'date' }),
     endDate: Type.String({ format: 'date' }),
+    // NOTE: `openapi-diff` flags it as a breaking change to introduce a new field with a
+    // stricter schema when the previous schema allowed unknown properties. We keep these
+    // fields schema-loose and validate in the handler.
+    startTime: Type.Optional(Type.Any()),
+    endTime: Type.Optional(Type.Any()),
     hours: Type.Optional(Type.Number({ minimum: 0 })),
     notes: Type.Optional(Type.String()),
   }),
@@ -1626,6 +1631,18 @@ export const worklogSettingPatchSchema = {
   body: Type.Object(
     {
       editableDays: Type.Optional(Type.Integer({ minimum: 1, maximum: 365 })),
+    },
+    { additionalProperties: false },
+  ),
+};
+
+export const leaveSettingPatchSchema = {
+  body: Type.Object(
+    {
+      timeUnitMinutes: Type.Optional(Type.Integer({ minimum: 1, maximum: 60 })),
+      defaultWorkdayMinutes: Type.Optional(
+        Type.Integer({ minimum: 1, maximum: 1440 }),
+      ),
     },
     { additionalProperties: false },
   ),
