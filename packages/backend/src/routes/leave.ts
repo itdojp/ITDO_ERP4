@@ -4,7 +4,7 @@ import { submitApprovalWithUpdate } from '../services/approval.js';
 import { createApprovalPendingNotifications } from '../services/appNotifications.js';
 import { FlowTypeValue, TimeStatusValue } from '../types.js';
 import { requireRole } from '../services/rbac.js';
-import { leaveRequestSchema } from './validators.js';
+import { leaveRequestSchema, leaveSubmitSchema } from './validators.js';
 import { endOfDay, parseDateParam } from '../utils/date.js';
 import { evaluateActionPolicyWithFallback } from '../services/actionPolicy.js';
 import { resolveActionPolicyDeniedCode } from '../services/actionPolicyErrors.js';
@@ -148,12 +148,20 @@ export async function registerLeaveRoutes(app: FastifyInstance) {
 
   app.post(
     '/leave-requests/:id/submit',
-    { preHandler: requireRole(['admin', 'mgmt', 'user']) },
+    {
+      preHandler: requireRole(['admin', 'mgmt', 'user']),
+      schema: leaveSubmitSchema,
+    },
     async (req, reply) => {
       const { id } = req.params as { id: string };
       const body = req.body as any;
       const reasonText =
         typeof body?.reasonText === 'string' ? body.reasonText.trim() : '';
+      const noConsultationConfirmed = body?.noConsultationConfirmed === true;
+      const noConsultationReason =
+        typeof body?.noConsultationReason === 'string'
+          ? body.noConsultationReason.trim()
+          : '';
       const leave = await prisma.leaveRequest.findUnique({ where: { id } });
       if (!leave) {
         return reply.code(404).send({ error: 'not_found' });
@@ -324,6 +332,41 @@ export async function registerLeaveRoutes(app: FastifyInstance) {
           });
         }
       }
+
+      const annotation = await prisma.annotation.findUnique({
+        where: {
+          targetKind_targetId: { targetKind: 'leave_request', targetId: id },
+        },
+        select: { internalRefs: true },
+      });
+      const internalRefs = Array.isArray(annotation?.internalRefs)
+        ? (annotation?.internalRefs as Array<Record<string, unknown>>)
+        : [];
+      const hasConsultationEvidence = internalRefs.some((ref) => {
+        if (!ref || typeof ref !== 'object') return false;
+        const kind = typeof ref.kind === 'string' ? ref.kind.trim() : '';
+        const refId = typeof ref.id === 'string' ? ref.id.trim() : '';
+        return kind === 'chat_message' && Boolean(refId);
+      });
+
+      if (!hasConsultationEvidence) {
+        if (!noConsultationConfirmed || !noConsultationReason) {
+          return reply.status(400).send({
+            error: {
+              code: 'NO_CONSULTATION_REASON_REQUIRED',
+              message:
+                'Consultation evidence is missing. Confirm no consultation and provide a reason.',
+            },
+          });
+        }
+      }
+
+      const noConsultationUpdate = hasConsultationEvidence
+        ? { noConsultationConfirmed: null, noConsultationReason: null }
+        : {
+            noConsultationConfirmed: true,
+            noConsultationReason,
+          };
       const actorUserId = req.user?.userId || 'system';
       const { updated, approval } = await submitApprovalWithUpdate({
         flowType: FlowTypeValue.leave,
@@ -332,7 +375,7 @@ export async function registerLeaveRoutes(app: FastifyInstance) {
         update: (tx) =>
           tx.leaveRequest.update({
             where: { id },
-            data: { status: 'pending_manager' },
+            data: { status: 'pending_manager', ...noConsultationUpdate },
           }),
         payload: {
           hours: leave.hours || 0,
