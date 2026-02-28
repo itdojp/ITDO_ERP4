@@ -374,6 +374,7 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
         room: {
           select: {
             type: true,
+            isOfficial: true,
             allowExternalUsers: true,
             viewerGroupIds: true,
           },
@@ -385,7 +386,12 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
       const room = row.room;
       if (!room) return;
       if (room.type === 'project' && !room.allowExternalUsers) return;
-      if (!hasViewerAccess(room.viewerGroupIds)) return;
+      if (
+        !(room.type === 'private_group' && room.isOfficial) &&
+        !hasViewerAccess(room.viewerGroupIds)
+      ) {
+        return;
+      }
       roomIds.add(row.roomId);
     });
 
@@ -962,22 +968,60 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
             })
           : Promise.resolve([]);
 
-      const [projectRooms, metaRooms, memberRooms, officialRooms] =
-        await Promise.all([
-          projectRoomsPromise,
-          metaRoomsPromise,
-          memberRoomsPromise,
-          officialRoomsPromise,
-        ]);
+      const groupSelectors = Array.from(
+        new Set(
+          [...groupIds, ...groupAccountIds]
+            .map((value) => value.trim())
+            .filter(Boolean),
+        ),
+      );
+      const groupAclRoomsPromise =
+        !canSeeAllMeta && groupSelectors.length > 0
+          ? prisma.chatRoom.findMany({
+              where: {
+                type: 'private_group',
+                isOfficial: true,
+                deletedAt: null,
+                OR: groupSelectors.map((groupId) => ({
+                  viewerGroupIds: { array_contains: [groupId] },
+                })),
+              },
+              orderBy: { createdAt: 'desc' },
+              take: 200,
+              select: roomSelect,
+            })
+          : Promise.resolve([]);
+
+      const [
+        projectRooms,
+        metaRooms,
+        memberRooms,
+        officialRooms,
+        groupAclRooms,
+      ] = await Promise.all([
+        projectRoomsPromise,
+        metaRoomsPromise,
+        memberRoomsPromise,
+        officialRoomsPromise,
+        groupAclRoomsPromise,
+      ]);
 
       const filteredProjectRooms = projectRooms.filter(hasViewerAccess);
       const filteredMetaRooms = metaRooms.filter(hasViewerAccess);
-      const filteredMemberRooms = memberRooms.filter(hasViewerAccess);
+      const filteredMemberRooms = memberRooms.filter((room) => {
+        if (room.type === 'private_group' && room.isOfficial) return true;
+        return hasViewerAccess(room);
+      });
       const filteredOfficialRooms = officialRooms.filter(hasViewerAccess);
+      const filteredGroupAclRooms = groupAclRooms.filter(hasViewerAccess);
 
       const otherRoomsRaw = canSeeAllMeta
         ? filteredMetaRooms
-        : [...filteredMemberRooms, ...filteredOfficialRooms];
+        : [
+            ...filteredMemberRooms,
+            ...filteredOfficialRooms,
+            ...filteredGroupAclRooms,
+          ];
 
       const otherRooms = (() => {
         if (otherRoomsRaw.length <= 1) return otherRoomsRaw;
@@ -2111,6 +2155,7 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
         roomId,
         userId,
         accessContext,
+        accessLevel: 'post',
       });
       if (!access) return;
 
