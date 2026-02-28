@@ -9,6 +9,18 @@ const authHeaders = {
   'x-group-ids': 'mgmt,hr-group',
 };
 
+function userHeaders(options: {
+  userId: string;
+  roles?: string;
+  projectIds?: string;
+}) {
+  return {
+    'x-user-id': options.userId,
+    'x-roles': options.roles ?? 'user',
+    ...(options.projectIds ? { 'x-project-ids': options.projectIds } : {}),
+  };
+}
+
 const runId = () => `${Date.now().toString().slice(-6)}-${randomUUID()}`;
 
 async function ensureOk(res: { ok(): boolean; status(): number; text(): any }) {
@@ -217,4 +229,100 @@ test('leave submit allows when chat evidence is attached @core', async ({
   await ensureOk(submitOkRes);
   const submitted = await submitOkRes.json();
   expect(submitted.status).toBe('pending_manager');
+});
+
+test('project leader can view submitted leave list without reasons @core', async ({
+  request,
+}) => {
+  const suffix = runId();
+  const leaderUserId = `leader-${suffix}`;
+  const memberUserId = `member-${suffix}`;
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const tomorrowStr = toDateInput(tomorrow);
+
+  const projectRes = await request.post(`${apiBase}/projects`, {
+    data: {
+      code: `E2E-LEAVE-LEADER-${suffix}`,
+      name: `E2E Leave Leader ${suffix}`,
+      status: 'active',
+    },
+    headers: authHeaders,
+  });
+  await ensureOk(projectRes);
+  const project = await projectRes.json();
+
+  const addLeaderRes = await request.post(
+    `${apiBase}/projects/${project.id}/members`,
+    {
+      data: { userId: leaderUserId, role: 'leader' },
+      headers: authHeaders,
+    },
+  );
+  await ensureOk(addLeaderRes);
+
+  const addMemberRes = await request.post(
+    `${apiBase}/projects/${project.id}/members`,
+    {
+      data: { userId: memberUserId, role: 'member' },
+      headers: authHeaders,
+    },
+  );
+  await ensureOk(addMemberRes);
+
+  const leaveRes = await request.post(`${apiBase}/leave-requests`, {
+    data: {
+      userId: memberUserId,
+      leaveType: 'paid',
+      startDate: tomorrowStr,
+      endDate: tomorrowStr,
+      hours: 8,
+      notes: `leader-visible-${suffix}`,
+    },
+    headers: userHeaders({ userId: memberUserId, projectIds: project.id }),
+  });
+  await ensureOk(leaveRes);
+  const leave = await leaveRes.json();
+
+  const submitRes = await request.post(
+    `${apiBase}/leave-requests/${leave.id}/submit`,
+    {
+      data: {
+        noConsultationConfirmed: true,
+        noConsultationReason: `no-consult-${suffix}`,
+      },
+      headers: userHeaders({ userId: memberUserId, projectIds: project.id }),
+    },
+  );
+  await ensureOk(submitRes);
+
+  const leaderListRes = await request.get(
+    `${apiBase}/leave-requests/leader?userId=${encodeURIComponent(memberUserId)}`,
+    {
+      headers: userHeaders({ userId: leaderUserId, projectIds: project.id }),
+    },
+  );
+  await ensureOk(leaderListRes);
+  const leaderListJson = (await leaderListRes.json()) as {
+    items?: Array<{
+      id: string;
+      status: string;
+      notes?: string;
+      noConsultationReason?: string;
+      visibleProjectIds?: string[];
+    }>;
+  };
+  const target = (leaderListJson.items || []).find(
+    (item) => item.id === leave.id,
+  );
+  expect(target).toBeTruthy();
+  expect(target?.status).toBe('pending_manager');
+  expect(target?.notes).toBeUndefined();
+  expect(target?.noConsultationReason).toBeUndefined();
+  expect(target?.visibleProjectIds).toContain(project.id);
+
+  const nonLeaderListRes = await request.get(`${apiBase}/leave-requests/leader`, {
+    headers: userHeaders({ userId: memberUserId, projectIds: project.id }),
+  });
+  expect(nonLeaderListRes.status()).toBe(403);
 });

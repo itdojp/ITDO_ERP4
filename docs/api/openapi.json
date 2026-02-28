@@ -6481,38 +6481,56 @@
         }
       }
     },
-    "/leave-settings": {
+    "/leave-requests/leader": {
       "get": {
-        "responses": {
-          "200": {
-            "description": "Default Response"
-          }
-        }
-      },
-      "patch": {
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "additionalProperties": false,
-                "properties": {
-                  "defaultWorkdayMinutes": {
-                    "maximum": 1440,
-                    "minimum": 1,
-                    "type": "integer"
-                  },
-                  "timeUnitMinutes": {
-                    "maximum": 60,
-                    "minimum": 1,
-                    "type": "integer"
-                  }
-                },
-                "type": "object"
-              }
+        "parameters": [
+          {
+            "in": "query",
+            "name": "userId",
+            "required": false,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
             }
           },
-          "required": true
-        },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "pending_manager"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "enum": [
+                    "approved"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "enum": [
+                    "rejected"
+                  ],
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "maximum": 300,
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Default Response"
