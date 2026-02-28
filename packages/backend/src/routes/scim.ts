@@ -581,10 +581,13 @@ export async function registerScimRoutes(app: FastifyInstance) {
             scimMeta: payload as Prisma.InputJsonValue,
           },
         });
+        const internalUserId = user.externalId ?? user.userName;
         const ensured = await ensurePersonalGeneralAffairsChatRoom({
-          userId: user.userName,
+          userAccountId: user.id,
+          userId: internalUserId,
+          userName: user.userName,
           displayName: user.displayName,
-          createdBy: user.userName,
+          createdBy: internalUserId,
           client: tx,
         });
         return { user, personalGaRoomId: ensured.roomId };
@@ -616,7 +619,7 @@ export async function registerScimRoutes(app: FastifyInstance) {
         action: 'chat_personal_ga_room_ensured',
         targetTable: 'chat_rooms',
         targetId: personalGaRoomId,
-        metadata: { userId: created.userName },
+        metadata: { userId: created.externalId ?? created.userName },
         ...auditContextFromRequest(req, { source: 'scim' }),
       });
     }
@@ -634,6 +637,13 @@ export async function registerScimRoutes(app: FastifyInstance) {
     const current = await prisma.userAccount.findUnique({ where: { id } });
     if (!current) {
       return reply.code(404).send(scimError(404, 'user_not_found'));
+    }
+    if (normalized.userName !== current.userName && !current.externalId) {
+      // When externalId is unset, this system treats userName as the stable identifier.
+      // Allowing userName changes would break historical references.
+      return reply
+        .code(400)
+        .send(scimError(400, 'externalId_required_for_userName_update'));
     }
     if (normalized.userName !== current.userName) {
       if (await isUserNameTaken(normalized.userName, id)) {
@@ -769,6 +779,19 @@ export async function registerScimRoutes(app: FastifyInstance) {
         if (path === 'name.familyName') update.familyName = null;
         if (path === 'active') update.active = false;
       }
+    }
+    const current = await prisma.userAccount.findUnique({ where: { id } });
+    if (!current) {
+      return reply.code(404).send(scimError(404, 'user_not_found'));
+    }
+    if (
+      typeof update.userName === 'string' &&
+      update.userName !== current.userName &&
+      !current.externalId
+    ) {
+      return reply
+        .code(400)
+        .send(scimError(400, 'externalId_required_for_userName_update'));
     }
     try {
       const updated = await prisma.userAccount.update({

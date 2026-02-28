@@ -143,7 +143,10 @@ async function resolveEmails(recipients: AlertRecipients | null | undefined) {
   if (userNameLookups.length) {
     const accounts = await prisma.userAccount.findMany({
       where: {
-        userName: { in: userNameLookups },
+        OR: [
+          { userName: { in: userNameLookups } },
+          { externalId: { in: userNameLookups } },
+        ],
         active: true,
         deletedAt: null,
       },

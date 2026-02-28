@@ -1850,7 +1850,7 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
         accessContext,
         accessLevel: 'read',
       });
-      if (!access) return;
+      if (!access) return reply;
 
       const members =
         access.room.type === 'project'
@@ -1865,16 +1865,25 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
       const userIds = Array.from(userIdSet);
       const accounts = userIds.length
         ? await prisma.userAccount.findMany({
-            where: { userName: { in: userIds }, deletedAt: null, active: true },
-            select: { userName: true, displayName: true },
+            where: {
+              deletedAt: null,
+              active: true,
+              OR: [
+                { userName: { in: userIds } },
+                { externalId: { in: userIds } },
+              ],
+            },
+            select: { userName: true, externalId: true, displayName: true },
           })
         : [];
-      const displayMap = new Map(
-        accounts.map((account) => [
-          account.userName,
-          account.displayName || null,
-        ]),
-      );
+      const displayMap = new Map<string, string | null>();
+      for (const account of accounts) {
+        const name = account.displayName || null;
+        displayMap.set(account.userName, name);
+        if (account.externalId) {
+          displayMap.set(account.externalId, name);
+        }
+      }
 
       const users = userIds
         .map((entry) => ({
@@ -1911,7 +1920,7 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
         accessContext,
         accessLevel: 'read',
       });
-      if (!access) return;
+      if (!access) return reply;
       return searchChatAckCandidates({ room: access.room, q: keyword });
     },
   );
@@ -1931,7 +1940,7 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
         accessContext,
         accessLevel: 'read',
       });
-      if (!access) return;
+      if (!access) return reply;
       const state = await prisma.chatReadState.findUnique({
         where: { roomId_userId: { roomId: access.room.id, userId } },
         select: { lastReadAt: true },
@@ -1963,9 +1972,9 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
         roomId,
         userId,
         accessContext,
-        accessLevel: 'post',
+        accessLevel: 'read',
       });
-      if (!access) return;
+      if (!access) return reply;
       const now = new Date();
       const updated = await prisma.chatReadState.upsert({
         where: { roomId_userId: { roomId: access.room.id, userId } },
@@ -1994,9 +2003,9 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
         roomId,
         userId,
         accessContext,
-        accessLevel: 'post',
+        accessLevel: 'read',
       });
-      if (!access) return;
+      if (!access) return reply;
 
       const current = await prisma.chatRoomNotificationSetting.findUnique({
         where: { roomId_userId: { roomId: access.room.id, userId } },
@@ -2040,9 +2049,9 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
         roomId,
         userId,
         accessContext,
-        accessLevel: 'post',
+        accessLevel: 'read',
       });
-      if (!access) return;
+      if (!access) return reply;
 
       const body = req.body as {
         notifyAllPosts?: boolean;
@@ -2155,9 +2164,9 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
         roomId,
         userId,
         accessContext,
-        accessLevel: 'post',
+        accessLevel: 'read',
       });
-      if (!access) return;
+      if (!access) return reply;
 
       const take = parseLimit(limit);
       if (!take) {
@@ -2253,7 +2262,7 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
         userId,
         accessContext,
       });
-      if (!access) return;
+      if (!access) return reply;
 
       const since = parseDateParam(body.since);
       if (body.since && !since) {
@@ -2445,7 +2454,7 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
         userId,
         accessContext,
       });
-      if (!access) return;
+      if (!access) return reply;
 
       const room = await prisma.chatRoom.findUnique({
         where: { id: access.room.id },
@@ -2681,7 +2690,7 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
         userId,
         accessContext,
       });
-      if (!access) return;
+      if (!access) return reply;
 
       const { mentions, mentionsAll, mentionUserIds, mentionGroupIds } =
         normalizeMentions(body.mentions);
@@ -2777,7 +2786,7 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
         accessContext,
         accessLevel: 'post',
       });
-      if (!access) return;
+      if (!access) return reply;
 
       const limits = await getChatAckLimits();
       const requiredUserIds = normalizeStringArray(body.requiredUserIds, {
@@ -2852,7 +2861,7 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
         accessContext,
         accessLevel: 'post',
       });
-      if (!access) return;
+      if (!access) return reply;
 
       const limits = await getChatAckLimits();
       const requestedUserIds = normalizeStringArray(body.requiredUserIds, {

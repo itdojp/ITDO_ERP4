@@ -31,8 +31,10 @@ test('personal GA room is created on SCIM user create and is accessible to GA on
   const scimHeaders = { authorization: `Bearer ${scimToken}` };
 
   const gaUserName = `e2e-ga-${suffix}@example.com`;
+  const gaExternalId = `e2e-ga-ext-${suffix}`;
   const gaUserCreateRes = await request.post(`${apiBase}/scim/v2/Users`, {
     data: {
+      externalId: gaExternalId,
       userName: gaUserName,
       displayName: `E2E GA ${suffix}`,
       active: true,
@@ -44,18 +46,29 @@ test('personal GA room is created on SCIM user create and is accessible to GA on
   const gaUserId = gaUser.id as string;
   expect(gaUserId).toBeTruthy();
 
-  const groupCreateRes = await request.post(`${apiBase}/scim/v2/Groups`, {
-    data: {
-      displayName: 'general_affairs',
-      members: [{ value: gaUserId }],
+  const groupAddRes = await request.patch(
+    `${apiBase}/scim/v2/Groups/general_affairs`,
+    {
+      data: {
+        schemas: ['urn:ietf:params:scim:api:messages:2.0:PatchOp'],
+        Operations: [
+          {
+            op: 'add',
+            path: 'members',
+            value: { members: [{ value: gaUserId }] },
+          },
+        ],
+      },
+      headers: scimHeaders,
     },
-    headers: scimHeaders,
-  });
-  await ensureOk(groupCreateRes);
+  );
+  await ensureOk(groupAddRes);
 
   const employeeUserName = `e2e-employee-${suffix}@example.com`;
+  const employeeExternalId = `e2e-employee-ext-${suffix}`;
   const employeeCreateRes = await request.post(`${apiBase}/scim/v2/Users`, {
     data: {
+      externalId: employeeExternalId,
       userName: employeeUserName,
       displayName: `E2E Employee ${suffix}`,
       active: true,
@@ -63,13 +76,16 @@ test('personal GA room is created on SCIM user create and is accessible to GA on
     headers: scimHeaders,
   });
   await ensureOk(employeeCreateRes);
+  const employeeUser = await employeeCreateRes.json();
+  const employeeUserScimId = employeeUser.id as string;
+  expect(employeeUserScimId).toBeTruthy();
 
   const employeeHeaders = buildHeaders({
-    userId: employeeUserName,
+    userId: employeeExternalId,
     roles: ['user'],
   });
   const gaHeaders = buildHeaders({
-    userId: gaUserName,
+    userId: gaExternalId,
     roles: ['hr'],
     groupIds: ['general_affairs'],
   });
@@ -91,8 +107,8 @@ test('personal GA room is created on SCIM user create and is accessible to GA on
     (room) =>
       room?.type === 'private_group' &&
       room?.isOfficial === true &&
-      typeof room?.name === 'string' &&
-      room.name.includes(employeeUserName),
+      typeof room?.id === 'string' &&
+      room.id.startsWith('pga_'),
   );
   expect(personalRoom).toBeTruthy();
   const roomId = personalRoom.id as string;
@@ -117,7 +133,7 @@ test('personal GA room is created on SCIM user create and is accessible to GA on
   await ensureOk(postRes);
   const posted = await postRes.json();
   expect(posted?.roomId).toBe(roomId);
-  expect(posted?.userId).toBe(gaUserName);
+  expect(posted?.userId).toBe(gaExternalId);
   expect(posted?.body).toBe(messageBody);
 
   const employeeMessagesRes = await request.get(
@@ -130,8 +146,34 @@ test('personal GA room is created on SCIM user create and is accessible to GA on
     ? (employeeMessages.items as any[])
     : [];
   expect(
-    msgItems.some((item) => item?.body === messageBody && item?.userId === gaUserName),
+    msgItems.some((item) => item?.body === messageBody && item?.userId === gaExternalId),
   ).toBe(true);
+
+  const renamedEmployeeUserName = `e2e-employee-renamed-${suffix}@example.com`;
+  const scimEmployeeUpdateRes = await request.put(
+    `${apiBase}/scim/v2/Users/${encodeURIComponent(employeeUserScimId)}`,
+    {
+      data: {
+        id: employeeUserScimId,
+        externalId: employeeExternalId,
+        userName: renamedEmployeeUserName,
+        displayName: `E2E Employee ${suffix}`,
+        active: true,
+      },
+      headers: scimHeaders,
+    },
+  );
+  await ensureOk(scimEmployeeUpdateRes);
+
+  const employeeRoomsAfterRenameRes = await request.get(`${apiBase}/chat-rooms`, {
+    headers: employeeHeaders,
+  });
+  await ensureOk(employeeRoomsAfterRenameRes);
+  const employeeRoomsAfterRename = await employeeRoomsAfterRenameRes.json();
+  const itemsAfterRename = Array.isArray(employeeRoomsAfterRename.items)
+    ? (employeeRoomsAfterRename.items as any[])
+    : [];
+  expect(itemsAfterRename.some((room) => room?.id === roomId)).toBe(true);
 
   const pmReadRes = await request.get(
     `${apiBase}/chat-rooms/${encodeURIComponent(roomId)}/messages?limit=1`,
@@ -139,7 +181,9 @@ test('personal GA room is created on SCIM user create and is accessible to GA on
   );
   expect(pmReadRes.status()).toBe(403);
   const pmReadBody = await pmReadRes.json();
-  expect(pmReadBody?.error).toBe('forbidden_room_member');
+  expect(pmReadBody?.error?.code ?? pmReadBody?.error).toBe(
+    'forbidden_room_member',
+  );
 
   const pmPostRes = await request.post(
     `${apiBase}/chat-rooms/${encodeURIComponent(roomId)}/messages`,
@@ -147,6 +191,7 @@ test('personal GA room is created on SCIM user create and is accessible to GA on
   );
   expect(pmPostRes.status()).toBe(403);
   const pmPostBody = await pmPostRes.json();
-  expect(pmPostBody?.error).toBe('forbidden_room_member');
+  expect(pmPostBody?.error?.code ?? pmPostBody?.error).toBe(
+    'forbidden_room_member',
+  );
 });
-

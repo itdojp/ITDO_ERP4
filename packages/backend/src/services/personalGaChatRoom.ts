@@ -2,15 +2,11 @@ import crypto from 'node:crypto';
 
 import { prisma } from './db.js';
 
-const DEFAULT_GA_GROUP_SELECTOR = 'general_affairs';
+// System-initialized GroupAccount.id (created via Prisma migration).
+const GENERAL_AFFAIRS_GROUP_ACCOUNT_ID = 'general_affairs';
 
-function resolveGeneralAffairsGroupSelector() {
-  const raw = (process.env.CHAT_PERSONAL_GA_GROUP_ID || '').trim();
-  return raw || DEFAULT_GA_GROUP_SELECTOR;
-}
-
-export function buildPersonalGeneralAffairsRoomId(userId: string) {
-  const normalized = userId.trim();
+export function buildPersonalGeneralAffairsRoomId(userAccountId: string) {
+  const normalized = userAccountId.trim();
   const digest = crypto
     .createHash('sha256')
     .update(normalized)
@@ -20,38 +16,59 @@ export function buildPersonalGeneralAffairsRoomId(userId: string) {
 }
 
 export function buildPersonalGeneralAffairsRoomName(options: {
-  userId: string;
+  userName: string;
   displayName?: string | null;
 }) {
-  const userId = options.userId.trim();
+  const userName = options.userName.trim();
   const displayName =
     typeof options.displayName === 'string' ? options.displayName.trim() : '';
-  const label =
-    displayName && displayName !== userId
-      ? `${displayName} (${userId})`
-      : userId;
-  return `総務連絡:${label}`;
+  const label = displayName || userName;
+  return `総務連絡:${label || 'unknown'}`;
 }
 
 export async function ensurePersonalGeneralAffairsChatRoom(options: {
+  userAccountId: string;
+  // Internal user identifier used in ChatRoomMember/ChatMessage/etc.
   userId: string;
+  // Human readable name (SCIM userName; can change).
+  userName: string;
   displayName?: string | null;
   createdBy?: string | null;
   client?: any;
 }) {
   const client = options.client ?? prisma;
+  const userAccountId = options.userAccountId.trim();
   const userId = options.userId.trim();
   if (!userId) {
     throw new Error('userId is required');
   }
+  if (!userAccountId) {
+    throw new Error('userAccountId is required');
+  }
 
-  const groupSelector = resolveGeneralAffairsGroupSelector();
-  const roomId = buildPersonalGeneralAffairsRoomId(userId);
+  const roomId = buildPersonalGeneralAffairsRoomId(userAccountId);
   const name = buildPersonalGeneralAffairsRoomName({
-    userId,
+    userName: options.userName,
     displayName: options.displayName,
   });
   const actor = (options.createdBy ?? userId).trim() || null;
+
+  // Ensure the system GA group exists (db push does not execute migrations).
+  await client.groupAccount.upsert({
+    where: { id: GENERAL_AFFAIRS_GROUP_ACCOUNT_ID },
+    create: {
+      id: GENERAL_AFFAIRS_GROUP_ACCOUNT_ID,
+      displayName: GENERAL_AFFAIRS_GROUP_ACCOUNT_ID,
+      active: true,
+      createdBy: actor,
+      updatedBy: actor,
+    },
+    update: {
+      active: true,
+      updatedBy: actor,
+    },
+    select: { id: true },
+  });
 
   const room = await client.chatRoom.upsert({
     where: { id: roomId },
@@ -60,8 +77,8 @@ export async function ensurePersonalGeneralAffairsChatRoom(options: {
       type: 'private_group',
       name,
       isOfficial: true,
-      viewerGroupIds: [groupSelector],
-      posterGroupIds: [groupSelector],
+      viewerGroupIds: [GENERAL_AFFAIRS_GROUP_ACCOUNT_ID],
+      posterGroupIds: [GENERAL_AFFAIRS_GROUP_ACCOUNT_ID],
       allowExternalUsers: false,
       allowExternalIntegrations: false,
       createdBy: actor,
@@ -69,10 +86,10 @@ export async function ensurePersonalGeneralAffairsChatRoom(options: {
     },
     update: {
       type: 'private_group',
-      name,
       isOfficial: true,
-      viewerGroupIds: [groupSelector],
-      posterGroupIds: [groupSelector],
+      // Keep the room name user-editable (do not overwrite on ensure).
+      viewerGroupIds: [GENERAL_AFFAIRS_GROUP_ACCOUNT_ID],
+      posterGroupIds: [GENERAL_AFFAIRS_GROUP_ACCOUNT_ID],
       allowExternalUsers: false,
       allowExternalIntegrations: false,
       deletedAt: null,

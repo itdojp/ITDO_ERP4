@@ -63,18 +63,20 @@ async function main() {
     },
     orderBy: { createdAt: 'asc' },
     take: limit,
-    select: { userName: true, displayName: true },
+    select: { id: true, userName: true, externalId: true, displayName: true },
   });
 
   let ensuredCount = 0;
   const errors: string[] = [];
 
   for (const user of users) {
-    const userId = (user.userName || '').trim();
+    const userId = (user.externalId || user.userName || '').trim();
     if (!userId) continue;
     try {
       await ensurePersonalGeneralAffairsChatRoom({
+        userAccountId: user.id,
         userId,
+        userName: user.userName,
         displayName: user.displayName,
         createdBy: userId,
       });
@@ -107,4 +109,3 @@ main().catch((err) => {
   console.error(err);
   process.exit(1);
 });
-

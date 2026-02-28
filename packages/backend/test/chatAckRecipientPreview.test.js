@@ -39,6 +39,25 @@ function createGroupAccountStub(groups = []) {
   };
 }
 
+function extractUserIdsFromUserAccountWhere(where) {
+  const ids = new Set();
+  const pushList = (list) => {
+    if (!Array.isArray(list)) return;
+    for (const item of list) {
+      if (typeof item === 'string' && item.trim()) ids.add(item.trim());
+    }
+  };
+  pushList(where?.userName?.in);
+  pushList(where?.externalId?.in);
+  if (Array.isArray(where?.OR)) {
+    for (const clause of where.OR) {
+      pushList(clause?.userName?.in);
+      pushList(clause?.externalId?.in);
+    }
+  }
+  return Array.from(ids);
+}
+
 test('previewChatAckRecipients: expands group/role and enforces limits', async () => {
   const original = process.env.AUTH_GROUP_TO_ROLE_MAP;
   process.env.AUTH_GROUP_TO_ROLE_MAP = 'role-group-id=customrole';
@@ -65,7 +84,10 @@ test('previewChatAckRecipients: expands group/role and enforces limits', async (
       },
       userAccount: {
         findMany: async ({ where }) =>
-          (where?.userName?.in || []).map((userName) => ({ userName })),
+          extractUserIdsFromUserAccountWhere(where).map((userId) => ({
+            userName: userId,
+            externalId: null,
+          })),
       },
       chatRoomMember: { findMany: async () => [] },
       projectMember: { findMany: async () => [] },
@@ -99,7 +121,10 @@ test('previewChatAckRecipients: returns reason and slices invalid list', async (
   const client = {
     userAccount: {
       findMany: async ({ where }) =>
-        (where?.userName?.in || []).map((userName) => ({ userName })),
+        extractUserIdsFromUserAccountWhere(where).map((userId) => ({
+          userName: userId,
+          externalId: null,
+        })),
     },
     chatRoomMember: { findMany: async () => [] },
     groupAccount: createGroupAccountStub([]),
