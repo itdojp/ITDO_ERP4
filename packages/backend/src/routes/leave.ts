@@ -93,7 +93,8 @@ export async function registerLeaveRoutes(app: FastifyInstance) {
           return reply.status(400).send({
             error: {
               code: 'INVALID_DATE_RANGE',
-              message: 'hourly leave must be a single day (startDate == endDate)',
+              message:
+                'hourly leave must be a single day (startDate == endDate)',
             },
           });
         }

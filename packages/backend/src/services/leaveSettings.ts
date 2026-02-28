@@ -7,10 +7,12 @@ export const DEFAULT_LEAVE_SETTING = {
   defaultWorkdayMinutes: 480,
 } as const;
 
-export async function ensureLeaveSetting(options: {
-  actorId?: string | null;
-  client?: typeof prisma;
-} = {}) {
+export async function ensureLeaveSetting(
+  options: {
+    actorId?: string | null;
+    client?: typeof prisma;
+  } = {},
+) {
   const client = options.client ?? prisma;
   const actorId = options.actorId ?? null;
   return client.leaveSetting.upsert({
@@ -24,4 +26,3 @@ export async function ensureLeaveSetting(options: {
     update: {},
   });
 }
-

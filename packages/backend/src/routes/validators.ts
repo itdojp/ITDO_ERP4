@@ -1640,9 +1640,7 @@ export const worklogSettingPatchSchema = {
 export const leaveSettingPatchSchema = {
   body: Type.Object(
     {
-      timeUnitMinutes: Type.Optional(
-        Type.Integer({ minimum: 1, maximum: 60 }),
-      ),
+      timeUnitMinutes: Type.Optional(Type.Integer({ minimum: 1, maximum: 60 })),
       defaultWorkdayMinutes: Type.Optional(
         Type.Integer({ minimum: 1, maximum: 1440 }),
       ),
