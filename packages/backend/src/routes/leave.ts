@@ -61,6 +61,30 @@ export async function registerLeaveRoutes(app: FastifyInstance) {
       }
       const startTimeMinutes = parseTimeToMinutes(body.startTime);
       const endTimeMinutes = parseTimeToMinutes(body.endTime);
+      if (
+        typeof body.startTime === 'string' &&
+        body.startTime.trim() &&
+        startTimeMinutes === null
+      ) {
+        return reply.status(400).send({
+          error: {
+            code: 'INVALID_TIME_FORMAT',
+            message: 'startTime must be in HH:MM format',
+          },
+        });
+      }
+      if (
+        typeof body.endTime === 'string' &&
+        body.endTime.trim() &&
+        endTimeMinutes === null
+      ) {
+        return reply.status(400).send({
+          error: {
+            code: 'INVALID_TIME_FORMAT',
+            message: 'endTime must be in HH:MM format',
+          },
+        });
+      }
       const usesHourlyLeave =
         startTimeMinutes !== null || endTimeMinutes !== null;
 
