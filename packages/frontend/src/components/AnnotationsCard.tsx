@@ -41,6 +41,7 @@ type AnnotationTargetKind =
   | 'vendor_quote'
   | 'vendor_invoice'
   | 'expense'
+  | 'leave_request'
   | 'project'
   | 'customer'
   | 'vendor';

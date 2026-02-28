@@ -73,7 +73,7 @@ test('leave submit blocks when time entries exist @core', async ({
 
   const submitConflictRes = await request.post(
     `${apiBase}/leave-requests/${leaveConflict.id}/submit`,
-    { headers: authHeaders },
+    { data: {}, headers: authHeaders },
   );
   expect(submitConflictRes.status()).toBe(409);
   const submitConflictJson = await submitConflictRes.json();
@@ -96,7 +96,123 @@ test('leave submit blocks when time entries exist @core', async ({
 
   const submitOkRes = await request.post(
     `${apiBase}/leave-requests/${leaveOk.id}/submit`,
-    { headers: authHeaders },
+    {
+      data: {
+        noConsultationConfirmed: true,
+        noConsultationReason: `e2e-${suffix}`,
+      },
+      headers: authHeaders,
+    },
+  );
+  await ensureOk(submitOkRes);
+  const submitted = await submitOkRes.json();
+  expect(submitted.status).toBe('pending_manager');
+});
+
+test('leave submit requires consultation reason when no evidence @core', async ({
+  request,
+}) => {
+  const suffix = runId();
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const tomorrowStr = toDateInput(tomorrow);
+
+  const leaveRes = await request.post(`${apiBase}/leave-requests`, {
+    data: {
+      userId: 'demo-user',
+      leaveType: 'paid',
+      startDate: tomorrowStr,
+      endDate: tomorrowStr,
+      hours: 8,
+      notes: `no-evidence-${suffix}`,
+    },
+    headers: authHeaders,
+  });
+  await ensureOk(leaveRes);
+  const leave = await leaveRes.json();
+
+  const submitMissingRes = await request.post(
+    `${apiBase}/leave-requests/${leave.id}/submit`,
+    { data: {}, headers: authHeaders },
+  );
+  expect(submitMissingRes.status()).toBe(400);
+  const submitMissingJson = await submitMissingRes.json();
+  expect(submitMissingJson?.error?.code).toBe(
+    'NO_CONSULTATION_REASON_REQUIRED',
+  );
+
+  const submitOkRes = await request.post(
+    `${apiBase}/leave-requests/${leave.id}/submit`,
+    {
+      data: {
+        noConsultationConfirmed: true,
+        noConsultationReason: `e2e-${suffix}`,
+      },
+      headers: authHeaders,
+    },
+  );
+  await ensureOk(submitOkRes);
+  const submitted = await submitOkRes.json();
+  expect(submitted.status).toBe('pending_manager');
+});
+
+test('leave submit allows when chat evidence is attached @core', async ({
+  request,
+}) => {
+  const suffix = runId();
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const tomorrowStr = toDateInput(tomorrow);
+
+  const projectRes = await request.post(`${apiBase}/projects`, {
+    data: {
+      code: `E2E-LEAVE-EVID-${suffix}`,
+      name: `E2E Leave Evidence ${suffix}`,
+      status: 'active',
+    },
+    headers: authHeaders,
+  });
+  await ensureOk(projectRes);
+  const project = await projectRes.json();
+
+  const messageRes = await request.post(
+    `${apiBase}/projects/${project.id}/chat-messages`,
+    {
+      data: { body: `consult-${suffix}` },
+      headers: authHeaders,
+    },
+  );
+  await ensureOk(messageRes);
+  const message = await messageRes.json();
+
+  const leaveRes = await request.post(`${apiBase}/leave-requests`, {
+    data: {
+      userId: 'demo-user',
+      leaveType: 'paid',
+      startDate: tomorrowStr,
+      endDate: tomorrowStr,
+      hours: 8,
+      notes: `with-evidence-${suffix}`,
+    },
+    headers: authHeaders,
+  });
+  await ensureOk(leaveRes);
+  const leave = await leaveRes.json();
+
+  const annotationRes = await request.patch(
+    `${apiBase}/annotations/leave_request/${leave.id}`,
+    {
+      data: {
+        internalRefs: [{ kind: 'chat_message', id: message.id }],
+      },
+      headers: authHeaders,
+    },
+  );
+  await ensureOk(annotationRes);
+
+  const submitOkRes = await request.post(
+    `${apiBase}/leave-requests/${leave.id}/submit`,
+    { data: {}, headers: authHeaders },
   );
   await ensureOk(submitOkRes);
   const submitted = await submitOkRes.json();

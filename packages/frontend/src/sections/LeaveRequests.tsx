@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { api, apiResponse, getAuthState } from '../api';
+import { AnnotationsCard } from '../components/AnnotationsCard';
 
 type LeaveRequest = {
   id: string;
@@ -17,6 +18,10 @@ type LeaveSubmitError = {
     code?: string;
     message?: string;
     conflictCount?: number;
+    existingMinutes?: number;
+    requestedLeaveMinutes?: number;
+    totalMinutes?: number;
+    defaultWorkdayMinutes?: number;
     conflicts?: {
       id: string;
       projectId: string;
@@ -25,6 +30,12 @@ type LeaveSubmitError = {
       minutes: number;
     }[];
   };
+};
+
+type LeaveDraftExtra = {
+  detailsOpen: boolean;
+  noConsultationConfirmed: boolean;
+  noConsultationReason: string;
 };
 
 function formatDateInput(value: Date) {
@@ -53,6 +64,9 @@ export const LeaveRequests: React.FC = () => {
   const [message, setMessage] = useState('');
   const [submitConflict, setSubmitConflict] =
     useState<LeaveSubmitError['error']>(undefined);
+  const [draftExtraById, setDraftExtraById] = useState<
+    Record<string, LeaveDraftExtra>
+  >({});
 
   const canOperate = useMemo(() => Boolean(userId), [userId]);
 
@@ -132,8 +146,14 @@ export const LeaveRequests: React.FC = () => {
   const submit = async (id: string) => {
     setSubmitConflict(undefined);
     try {
+      const extra = draftExtraById[id];
+      const submitPayload = {
+        noConsultationConfirmed: extra?.noConsultationConfirmed || undefined,
+        noConsultationReason: extra?.noConsultationReason?.trim() || undefined,
+      };
       const res = await apiResponse(`/leave-requests/${id}/submit`, {
         method: 'POST',
+        body: JSON.stringify(submitPayload),
       });
       if (res.ok) {
         const updated = (await res.json()) as LeaveRequest;
@@ -148,6 +168,17 @@ export const LeaveRequests: React.FC = () => {
         setSubmitConflict(payload.error);
         setMessage(
           `休暇期間に工数が存在します（${payload.error.conflictCount ?? 0}件）`,
+        );
+        return;
+      }
+      if (payload.error?.code === 'TIME_ENTRY_OVERBOOKED') {
+        setSubmitConflict(payload.error);
+        setMessage('工数と時間休の合計が所定労働時間を超過します');
+        return;
+      }
+      if (payload.error?.code === 'NO_CONSULTATION_REASON_REQUIRED') {
+        setMessage(
+          '相談証跡が未添付の場合は「相談無し」の確認と理由の入力が必要です',
         );
         return;
       }
@@ -247,7 +278,92 @@ export const LeaveRequests: React.FC = () => {
               >
                 申請
               </button>
+              <button
+                className="button secondary"
+                onClick={() =>
+                  setDraftExtraById((prev) => {
+                    const current = prev[item.id];
+                    const next: LeaveDraftExtra = {
+                      detailsOpen: !(current?.detailsOpen ?? false),
+                      noConsultationConfirmed:
+                        current?.noConsultationConfirmed ?? false,
+                      noConsultationReason: current?.noConsultationReason ?? '',
+                    };
+                    return { ...prev, [item.id]: next };
+                  })
+                }
+              >
+                詳細
+              </button>
             </div>
+            {draftExtraById[item.id]?.detailsOpen && (
+              <div style={{ marginTop: 12 }}>
+                <div style={{ marginBottom: 12 }}>
+                  <AnnotationsCard
+                    targetKind="leave_request"
+                    targetId={item.id}
+                    title="相談証跡/メモ"
+                  />
+                </div>
+                <div
+                  className="row"
+                  style={{
+                    gap: 8,
+                    alignItems: 'center',
+                    flexWrap: 'wrap',
+                    marginBottom: 8,
+                  }}
+                >
+                  <label
+                    className="row"
+                    style={{ gap: 6, alignItems: 'center' }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={
+                        draftExtraById[item.id]?.noConsultationConfirmed ??
+                        false
+                      }
+                      onChange={(e) =>
+                        setDraftExtraById((prev) => ({
+                          ...prev,
+                          [item.id]: {
+                            detailsOpen: prev[item.id]?.detailsOpen ?? true,
+                            noConsultationConfirmed: e.target.checked,
+                            noConsultationReason:
+                              prev[item.id]?.noConsultationReason ?? '',
+                          },
+                        }))
+                      }
+                      disabled={item.status !== 'draft'}
+                    />
+                    <span>
+                      相談無し（証跡未添付の場合に必須。理由を入力してください）
+                    </span>
+                  </label>
+                </div>
+                <div>
+                  <textarea
+                    aria-label="相談無しの理由"
+                    value={draftExtraById[item.id]?.noConsultationReason ?? ''}
+                    onChange={(e) =>
+                      setDraftExtraById((prev) => ({
+                        ...prev,
+                        [item.id]: {
+                          detailsOpen: prev[item.id]?.detailsOpen ?? true,
+                          noConsultationConfirmed:
+                            prev[item.id]?.noConsultationConfirmed ?? false,
+                          noConsultationReason: e.target.value,
+                        },
+                      }))
+                    }
+                    placeholder="相談無しの理由（証跡未添付の場合に必須）"
+                    style={{ width: '100%', minHeight: 72 }}
+                    disabled={item.status !== 'draft'}
+                  />
+                </div>
+              </div>
+            )}
           </li>
         ))}
         {items.length === 0 && <li>データなし</li>}

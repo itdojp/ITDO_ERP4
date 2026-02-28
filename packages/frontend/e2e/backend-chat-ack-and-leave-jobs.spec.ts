@@ -462,7 +462,10 @@ test('backend e2e: leave-upcoming notification job dry-run @extended', async ({
     `${apiBase}/leave-requests/${encodeURIComponent(leaveId)}/submit`,
     {
       headers: leaveUserHeaders,
-      data: {},
+      data: {
+        noConsultationConfirmed: true,
+        noConsultationReason: `e2e-${suffix}`,
+      },
     },
   );
   await ensureOk(submitRes);
