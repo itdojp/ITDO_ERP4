@@ -13,8 +13,8 @@ export async function registerLeaveSettingRoutes(app: FastifyInstance) {
   app.get(
     '/leave-settings',
     { preHandler: requireRole(['admin', 'mgmt', 'user']) },
-    async (req) => {
-      return ensureLeaveSetting({ actorId: req.user?.userId ?? null });
+    async () => {
+      return ensureLeaveSetting({ actorId: null });
     },
   );
 
