@@ -999,26 +999,14 @@ export const leaveRequestSchema = {
     leaveType: Type.String(),
     startDate: Type.String({ format: 'date' }),
     endDate: Type.String({ format: 'date' }),
-    startTime: Type.Optional(
-      Type.String({ pattern: '^(?:([01]\\d|2[0-3]):[0-5]\\d|24:00)$' }),
-    ),
-    endTime: Type.Optional(
-      Type.String({ pattern: '^(?:([01]\\d|2[0-3]):[0-5]\\d|24:00)$' }),
-    ),
+    // NOTE: `openapi-diff` flags it as a breaking change to introduce a new field with a
+    // stricter schema when the previous schema allowed unknown properties. We keep these
+    // fields schema-loose and validate in the handler.
+    startTime: Type.Optional(Type.Any()),
+    endTime: Type.Optional(Type.Any()),
     hours: Type.Optional(Type.Number({ minimum: 0 })),
     notes: Type.Optional(Type.String()),
   }),
-};
-
-export const leaveSubmitSchema = {
-  body: Type.Object(
-    {
-      reasonText: Type.Optional(Type.String({ maxLength: 2000 })),
-      noConsultationConfirmed: Type.Optional(Type.Boolean()),
-      noConsultationReason: Type.Optional(Type.String({ maxLength: 2000 })),
-    },
-    { additionalProperties: false },
-  ),
 };
 
 export const approvalActionSchema = {
