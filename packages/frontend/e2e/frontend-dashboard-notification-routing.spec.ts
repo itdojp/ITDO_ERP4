@@ -400,7 +400,13 @@ test('dashboard notification cards route to chat/leave/expense targets @core', a
 
   const leaveSubmitRes = await page.request.post(
     `${apiBase}/leave-requests/${encodeURIComponent(leaveRequestId)}/submit`,
-    { headers: targetHeaders, data: {} },
+    {
+      headers: targetHeaders,
+      data: {
+        noConsultationConfirmed: true,
+        noConsultationReason: `e2e-${run}`,
+      },
+    },
   );
   await ensureOk(leaveSubmitRes);
   await approveUntilApproved(
