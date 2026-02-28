@@ -6399,6 +6399,10 @@
                     "format": "date",
                     "type": "string"
                   },
+                  "endTime": {
+                    "pattern": "^(?:([01]\\d|2[0-3]):[0-5]\\d|24:00)$",
+                    "type": "string"
+                  },
                   "hours": {
                     "minimum": 0,
                     "type": "number"
@@ -6411,6 +6415,10 @@
                   },
                   "startDate": {
                     "format": "date",
+                    "type": "string"
+                  },
+                  "startTime": {
+                    "pattern": "^(?:([01]\\d|2[0-3]):[0-5]\\d|24:00)$",
                     "type": "string"
                   },
                   "userId": {
@@ -6448,6 +6456,45 @@
             }
           }
         ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/leave-settings": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      },
+      "patch": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "defaultWorkdayMinutes": {
+                    "maximum": 1440,
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "timeUnitMinutes": {
+                    "maximum": 60,
+                    "minimum": 1,
+                    "type": "integer"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "Default Response"
