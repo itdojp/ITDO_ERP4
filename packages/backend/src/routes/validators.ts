@@ -999,6 +999,12 @@ export const leaveRequestSchema = {
     leaveType: Type.String(),
     startDate: Type.String({ format: 'date' }),
     endDate: Type.String({ format: 'date' }),
+    startTime: Type.Optional(
+      Type.String({ pattern: '^(?:([01]\\d|2[0-3]):[0-5]\\d|24:00)$' }),
+    ),
+    endTime: Type.Optional(
+      Type.String({ pattern: '^(?:([01]\\d|2[0-3]):[0-5]\\d|24:00)$' }),
+    ),
     hours: Type.Optional(Type.Number({ minimum: 0 })),
     notes: Type.Optional(Type.String()),
   }),
@@ -1626,6 +1632,20 @@ export const worklogSettingPatchSchema = {
   body: Type.Object(
     {
       editableDays: Type.Optional(Type.Integer({ minimum: 1, maximum: 365 })),
+    },
+    { additionalProperties: false },
+  ),
+};
+
+export const leaveSettingPatchSchema = {
+  body: Type.Object(
+    {
+      timeUnitMinutes: Type.Optional(
+        Type.Integer({ minimum: 1, maximum: 60 }),
+      ),
+      defaultWorkdayMinutes: Type.Optional(
+        Type.Integer({ minimum: 1, maximum: 1440 }),
+      ),
     },
     { additionalProperties: false },
   ),

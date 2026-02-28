@@ -9,6 +9,22 @@ import { endOfDay, parseDateParam } from '../utils/date.js';
 import { evaluateActionPolicyWithFallback } from '../services/actionPolicy.js';
 import { resolveActionPolicyDeniedCode } from '../services/actionPolicyErrors.js';
 import { logActionPolicyOverrideIfNeeded } from '../services/actionPolicyAudit.js';
+import { ensureLeaveSetting } from '../services/leaveSettings.js';
+
+function parseTimeToMinutes(value: unknown) {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  if (trimmed === '24:00') return 24 * 60;
+  const match = /^(\d{2}):(\d{2})$/.exec(trimmed);
+  if (!match) return null;
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  if (!Number.isInteger(hours) || !Number.isInteger(minutes)) return null;
+  if (hours < 0 || hours > 23) return null;
+  if (minutes < 0 || minutes > 59) return null;
+  return hours * 60 + minutes;
+}
 
 export async function registerLeaveRoutes(app: FastifyInstance) {
   app.post(
@@ -43,6 +59,11 @@ export async function registerLeaveRoutes(app: FastifyInstance) {
           },
         });
       }
+      const startTimeMinutes = parseTimeToMinutes(body.startTime);
+      const endTimeMinutes = parseTimeToMinutes(body.endTime);
+      const usesHourlyLeave =
+        startTimeMinutes !== null || endTimeMinutes !== null;
+
       let hours = undefined as number | undefined;
       if (body.hours !== undefined && body.hours !== null) {
         hours = Number(body.hours);
@@ -55,6 +76,58 @@ export async function registerLeaveRoutes(app: FastifyInstance) {
           });
         }
       }
+
+      let minutes = undefined as number | undefined;
+      let storedStartTimeMinutes = undefined as number | undefined;
+      let storedEndTimeMinutes = undefined as number | undefined;
+      if (usesHourlyLeave) {
+        if (startTimeMinutes === null || endTimeMinutes === null) {
+          return reply.status(400).send({
+            error: {
+              code: 'INVALID_TIME_RANGE',
+              message: 'startTime and endTime are required for hourly leave',
+            },
+          });
+        }
+        if (startDate.getTime() !== endDate.getTime()) {
+          return reply.status(400).send({
+            error: {
+              code: 'INVALID_DATE_RANGE',
+              message: 'hourly leave must be a single day (startDate == endDate)',
+            },
+          });
+        }
+        if (endTimeMinutes <= startTimeMinutes) {
+          return reply.status(400).send({
+            error: {
+              code: 'INVALID_TIME_RANGE',
+              message: 'endTime must be after startTime',
+            },
+          });
+        }
+
+        const setting = await ensureLeaveSetting({
+          actorId: req.user?.userId ?? null,
+        });
+        const unit = setting.timeUnitMinutes;
+        if (
+          startTimeMinutes % unit !== 0 ||
+          endTimeMinutes % unit !== 0 ||
+          (endTimeMinutes - startTimeMinutes) % unit !== 0
+        ) {
+          return reply.status(400).send({
+            error: {
+              code: 'INVALID_TIME_UNIT',
+              message: `time must align to ${unit} minutes`,
+            },
+          });
+        }
+
+        storedStartTimeMinutes = startTimeMinutes;
+        storedEndTimeMinutes = endTimeMinutes;
+        minutes = endTimeMinutes - startTimeMinutes;
+        hours = undefined;
+      }
       const leave = await prisma.leaveRequest.create({
         data: {
           userId: body.userId,
@@ -63,6 +136,9 @@ export async function registerLeaveRoutes(app: FastifyInstance) {
           startDate,
           endDate,
           hours: hours ?? undefined,
+          minutes: minutes ?? undefined,
+          startTimeMinutes: storedStartTimeMinutes ?? undefined,
+          endTimeMinutes: storedEndTimeMinutes ?? undefined,
         },
       });
       return leave;
@@ -141,43 +217,111 @@ export async function registerLeaveRoutes(app: FastifyInstance) {
         TimeStatusValue.submitted,
         TimeStatusValue.approved,
       ];
-      const conflictWhere = {
-        userId: leave.userId,
-        deletedAt: null,
-        status: { in: conflictStatuses },
-        minutes: { gt: 0 },
-        workDate: { gte: leave.startDate, lte: workDateEnd },
-      };
-      const conflictCount = await prisma.timeEntry.count({
-        where: conflictWhere,
-      });
-      if (conflictCount) {
-        const conflicts = await prisma.timeEntry.findMany({
+
+      const isHourlyLeave =
+        leave.startTimeMinutes !== null || leave.endTimeMinutes !== null;
+      if (isHourlyLeave) {
+        if (
+          leave.startTimeMinutes === null ||
+          leave.endTimeMinutes === null ||
+          leave.minutes === null
+        ) {
+          return reply.status(400).send({
+            error: {
+              code: 'INVALID_HOURLY_LEAVE',
+              message: 'hourly leave requires start/end time and minutes',
+            },
+          });
+        }
+        const setting = await ensureLeaveSetting({
+          actorId: req.user?.userId ?? null,
+        });
+        const dayEnd = endOfDay(leave.startDate);
+        const hourlyWhere = {
+          userId: leave.userId,
+          deletedAt: null,
+          status: { in: conflictStatuses },
+          minutes: { gt: 0 },
+          workDate: { gte: leave.startDate, lte: dayEnd },
+        };
+        const aggregate = await prisma.timeEntry.aggregate({
+          where: hourlyWhere,
+          _sum: { minutes: true },
+        });
+        const existingMinutes = aggregate._sum.minutes ?? 0;
+        const totalMinutes = existingMinutes + leave.minutes;
+        if (totalMinutes > setting.defaultWorkdayMinutes) {
+          const conflicts = await prisma.timeEntry.findMany({
+            where: hourlyWhere,
+            select: {
+              id: true,
+              projectId: true,
+              taskId: true,
+              workDate: true,
+              minutes: true,
+            },
+            orderBy: { workDate: 'asc' },
+            take: 50,
+          });
+          return reply.status(409).send({
+            error: {
+              code: 'TIME_ENTRY_OVERBOOKED',
+              message:
+                'Time entries and hourly leave exceed defaultWorkdayMinutes',
+              defaultWorkdayMinutes: setting.defaultWorkdayMinutes,
+              existingMinutes,
+              requestedLeaveMinutes: leave.minutes,
+              totalMinutes,
+              conflictCount: conflicts.length,
+              conflicts: conflicts.map((entry) => ({
+                id: entry.id,
+                projectId: entry.projectId,
+                taskId: entry.taskId,
+                workDate: entry.workDate,
+                minutes: entry.minutes,
+              })),
+            },
+          });
+        }
+      } else {
+        const conflictWhere = {
+          userId: leave.userId,
+          deletedAt: null,
+          status: { in: conflictStatuses },
+          minutes: { gt: 0 },
+          workDate: { gte: leave.startDate, lte: workDateEnd },
+        };
+        const conflictCount = await prisma.timeEntry.count({
           where: conflictWhere,
-          select: {
-            id: true,
-            projectId: true,
-            taskId: true,
-            workDate: true,
-            minutes: true,
-          },
-          orderBy: { workDate: 'asc' },
-          take: 50,
         });
-        return reply.status(409).send({
-          error: {
-            code: 'TIME_ENTRY_CONFLICT',
-            message: 'Time entries exist in leave period',
-            conflictCount,
-            conflicts: conflicts.map((entry) => ({
-              id: entry.id,
-              projectId: entry.projectId,
-              taskId: entry.taskId,
-              workDate: entry.workDate,
-              minutes: entry.minutes,
-            })),
-          },
-        });
+        if (conflictCount) {
+          const conflicts = await prisma.timeEntry.findMany({
+            where: conflictWhere,
+            select: {
+              id: true,
+              projectId: true,
+              taskId: true,
+              workDate: true,
+              minutes: true,
+            },
+            orderBy: { workDate: 'asc' },
+            take: 50,
+          });
+          return reply.status(409).send({
+            error: {
+              code: 'TIME_ENTRY_CONFLICT',
+              message: 'Time entries exist in leave period',
+              conflictCount,
+              conflicts: conflicts.map((entry) => ({
+                id: entry.id,
+                projectId: entry.projectId,
+                taskId: entry.taskId,
+                workDate: entry.workDate,
+                minutes: entry.minutes,
+              })),
+            },
+          });
+        }
       }
       const actorUserId = req.user?.userId || 'system';
       const { updated, approval } = await submitApprovalWithUpdate({
@@ -189,7 +333,10 @@ export async function registerLeaveRoutes(app: FastifyInstance) {
             where: { id },
             data: { status: 'pending_manager' },
           }),
-        payload: { hours: leave.hours || 0 },
+        payload: {
+          hours: leave.hours || 0,
+          minutes: leave.minutes ?? (leave.hours || 0) * 60,
+        },
         createdBy: userId,
       });
       await createApprovalPendingNotifications({

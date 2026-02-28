@@ -13,6 +13,7 @@ import { registerExpenseRoutes } from './expenses.js';
 import { registerPurchaseOrderRoutes } from './purchaseOrders.js';
 import { registerVendorDocRoutes } from './vendorDocs.js';
 import { registerLeaveRoutes } from './leave.js';
+import { registerLeaveSettingRoutes } from './leaveSettings.js';
 import { registerAuthRoutes } from './auth.js';
 import { registerAlertSettingRoutes } from './alertSettings.js';
 import { registerApprovalRuleRoutes } from './approvalRules.js';
@@ -76,6 +77,7 @@ export async function registerRoutes(app: FastifyInstance) {
   await registerWorklogSettingRoutes(app);
   await registerAnnotationSettingRoutes(app);
   await registerAnnotationRoutes(app);
+  await registerLeaveSettingRoutes(app);
   await registerPeriodLockRoutes(app);
   await registerRateCardRoutes(app);
   await registerMetricJobRoutes(app);
