@@ -1,21 +1,21 @@
-import { FastifyInstance } from "fastify";
-import { prisma } from "../services/db.js";
-import { submitApprovalWithUpdate } from "../services/approval.js";
-import { createApprovalPendingNotifications } from "../services/appNotifications.js";
-import { FlowTypeValue, TimeStatusValue } from "../types.js";
-import { requireRole } from "../services/rbac.js";
-import { leaveRequestSchema } from "./validators.js";
-import { endOfDay, parseDateParam } from "../utils/date.js";
-import { evaluateActionPolicyWithFallback } from "../services/actionPolicy.js";
-import { resolveActionPolicyDeniedCode } from "../services/actionPolicyErrors.js";
-import { logActionPolicyOverrideIfNeeded } from "../services/actionPolicyAudit.js";
-import { ensureLeaveSetting } from "../services/leaveSettings.js";
+import { FastifyInstance } from 'fastify';
+import { prisma } from '../services/db.js';
+import { submitApprovalWithUpdate } from '../services/approval.js';
+import { createApprovalPendingNotifications } from '../services/appNotifications.js';
+import { FlowTypeValue, TimeStatusValue } from '../types.js';
+import { requireRole } from '../services/rbac.js';
+import { leaveRequestSchema } from './validators.js';
+import { endOfDay, parseDateParam } from '../utils/date.js';
+import { evaluateActionPolicyWithFallback } from '../services/actionPolicy.js';
+import { resolveActionPolicyDeniedCode } from '../services/actionPolicyErrors.js';
+import { logActionPolicyOverrideIfNeeded } from '../services/actionPolicyAudit.js';
+import { ensureLeaveSetting } from '../services/leaveSettings.js';
 
 function parseTimeToMinutes(value: unknown) {
-  if (typeof value !== "string") return null;
+  if (typeof value !== 'string') return null;
   const trimmed = value.trim();
   if (!trimmed) return null;
-  if (trimmed === "24:00") return 24 * 60;
+  if (trimmed === '24:00') return 24 * 60;
   const match = /^(\d{2}):(\d{2})$/.exec(trimmed);
   if (!match) return null;
   const hours = Number(match[1]);
@@ -28,19 +28,19 @@ function parseTimeToMinutes(value: unknown) {
 
 export async function registerLeaveRoutes(app: FastifyInstance) {
   app.post(
-    "/leave-requests",
+    '/leave-requests',
     {
-      preHandler: requireRole(["admin", "mgmt", "user"]),
+      preHandler: requireRole(['admin', 'mgmt', 'user']),
       schema: leaveRequestSchema,
     },
     async (req, reply) => {
       const body = req.body as any;
       const roles = req.user?.roles || [];
-      const isPrivileged = roles.includes("admin") || roles.includes("mgmt");
+      const isPrivileged = roles.includes('admin') || roles.includes('mgmt');
       const currentUserId = req.user?.userId;
       if (!isPrivileged) {
         if (!currentUserId) {
-          return reply.code(403).send({ error: "forbidden" });
+          return reply.code(403).send({ error: 'forbidden' });
         }
         body.userId = currentUserId;
       }
@@ -48,40 +48,40 @@ export async function registerLeaveRoutes(app: FastifyInstance) {
       const endDate = parseDateParam(body.endDate);
       if (!startDate || !endDate) {
         return reply.status(400).send({
-          error: { code: "INVALID_DATE", message: "Invalid startDate/endDate" },
+          error: { code: 'INVALID_DATE', message: 'Invalid startDate/endDate' },
         });
       }
       if (startDate.getTime() > endDate.getTime()) {
         return reply.status(400).send({
           error: {
-            code: "INVALID_DATE_RANGE",
-            message: "startDate must be <= endDate",
+            code: 'INVALID_DATE_RANGE',
+            message: 'startDate must be <= endDate',
           },
         });
       }
       const startTimeMinutes = parseTimeToMinutes(body.startTime);
       const endTimeMinutes = parseTimeToMinutes(body.endTime);
       if (
-        typeof body.startTime === "string" &&
+        typeof body.startTime === 'string' &&
         body.startTime.trim() &&
         startTimeMinutes === null
       ) {
         return reply.status(400).send({
           error: {
-            code: "INVALID_TIME_FORMAT",
-            message: "startTime must be in HH:MM format",
+            code: 'INVALID_TIME_FORMAT',
+            message: 'startTime must be in HH:MM format',
           },
         });
       }
       if (
-        typeof body.endTime === "string" &&
+        typeof body.endTime === 'string' &&
         body.endTime.trim() &&
         endTimeMinutes === null
       ) {
         return reply.status(400).send({
           error: {
-            code: "INVALID_TIME_FORMAT",
-            message: "endTime must be in HH:MM format",
+            code: 'INVALID_TIME_FORMAT',
+            message: 'endTime must be in HH:MM format',
           },
         });
       }
@@ -94,8 +94,8 @@ export async function registerLeaveRoutes(app: FastifyInstance) {
         if (!Number.isFinite(hours) || hours < 0 || !Number.isInteger(hours)) {
           return reply.status(400).send({
             error: {
-              code: "INVALID_HOURS",
-              message: "hours must be a non-negative integer",
+              code: 'INVALID_HOURS',
+              message: 'hours must be a non-negative integer',
             },
           });
         }
@@ -108,25 +108,25 @@ export async function registerLeaveRoutes(app: FastifyInstance) {
         if (startTimeMinutes === null || endTimeMinutes === null) {
           return reply.status(400).send({
             error: {
-              code: "INVALID_TIME_RANGE",
-              message: "startTime and endTime are required for hourly leave",
+              code: 'INVALID_TIME_RANGE',
+              message: 'startTime and endTime are required for hourly leave',
             },
           });
         }
         if (startDate.getTime() !== endDate.getTime()) {
           return reply.status(400).send({
             error: {
-              code: "INVALID_DATE_RANGE",
+              code: 'INVALID_DATE_RANGE',
               message:
-                "hourly leave must be a single day (startDate == endDate)",
+                'hourly leave must be a single day (startDate == endDate)',
             },
           });
         }
         if (endTimeMinutes <= startTimeMinutes) {
           return reply.status(400).send({
             error: {
-              code: "INVALID_TIME_RANGE",
-              message: "endTime must be after startTime",
+              code: 'INVALID_TIME_RANGE',
+              message: 'endTime must be after startTime',
             },
           });
         }
@@ -138,7 +138,7 @@ export async function registerLeaveRoutes(app: FastifyInstance) {
         if (startTimeMinutes % unit !== 0 || endTimeMinutes % unit !== 0) {
           return reply.status(400).send({
             error: {
-              code: "INVALID_TIME_UNIT",
+              code: 'INVALID_TIME_UNIT',
               message: `time must align to ${unit} minutes`,
             },
           });
@@ -167,30 +167,30 @@ export async function registerLeaveRoutes(app: FastifyInstance) {
   );
 
   app.post(
-    "/leave-requests/:id/submit",
-    { preHandler: requireRole(["admin", "mgmt", "user"]) },
+    '/leave-requests/:id/submit',
+    { preHandler: requireRole(['admin', 'mgmt', 'user']) },
     async (req, reply) => {
       const { id } = req.params as { id: string };
       const body = req.body as any;
       const reasonText =
-        typeof body?.reasonText === "string" ? body.reasonText.trim() : "";
+        typeof body?.reasonText === 'string' ? body.reasonText.trim() : '';
       const leave = await prisma.leaveRequest.findUnique({ where: { id } });
       if (!leave) {
-        return reply.code(404).send({ error: "not_found" });
+        return reply.code(404).send({ error: 'not_found' });
       }
       const roles = req.user?.roles || [];
       const userId = req.user?.userId;
       if (
-        !roles.includes("admin") &&
-        !roles.includes("mgmt") &&
+        !roles.includes('admin') &&
+        !roles.includes('mgmt') &&
         leave.userId !== userId
       ) {
-        return reply.code(403).send({ error: "forbidden" });
+        return reply.code(403).send({ error: 'forbidden' });
       }
 
       const policyRes = await evaluateActionPolicyWithFallback({
         flowType: FlowTypeValue.leave,
-        actionKey: "submit",
+        actionKey: 'submit',
         actor: {
           userId: req.user?.userId ?? null,
           roles: req.user?.roles || [],
@@ -199,15 +199,15 @@ export async function registerLeaveRoutes(app: FastifyInstance) {
         },
         reasonText,
         state: { status: leave.status },
-        targetTable: "leave_requests",
+        targetTable: 'leave_requests',
         targetId: id,
       });
       if (policyRes.policyApplied && !policyRes.allowed) {
-        if (policyRes.reason === "reason_required") {
+        if (policyRes.reason === 'reason_required') {
           return reply.status(400).send({
             error: {
-              code: "REASON_REQUIRED",
-              message: "reasonText is required for override",
+              code: 'REASON_REQUIRED',
+              message: 'reasonText is required for override',
               details: { matchedPolicyId: policyRes.matchedPolicyId ?? null },
             },
           });
@@ -215,7 +215,7 @@ export async function registerLeaveRoutes(app: FastifyInstance) {
         return reply.status(403).send({
           error: {
             code: resolveActionPolicyDeniedCode(policyRes),
-            message: "LeaveRequest cannot be submitted",
+            message: 'LeaveRequest cannot be submitted',
             details: {
               reason: policyRes.reason,
               matchedPolicyId: policyRes.matchedPolicyId ?? null,
@@ -227,8 +227,8 @@ export async function registerLeaveRoutes(app: FastifyInstance) {
       await logActionPolicyOverrideIfNeeded({
         req,
         flowType: FlowTypeValue.leave,
-        actionKey: "submit",
-        targetTable: "leave_requests",
+        actionKey: 'submit',
+        targetTable: 'leave_requests',
         targetId: id,
         reasonText,
         result: policyRes,
@@ -249,8 +249,8 @@ export async function registerLeaveRoutes(app: FastifyInstance) {
         ) {
           return reply.status(400).send({
             error: {
-              code: "INVALID_HOURLY_LEAVE",
-              message: "hourly leave requires start/end time and minutes",
+              code: 'INVALID_HOURLY_LEAVE',
+              message: 'hourly leave requires start/end time and minutes',
             },
           });
         }
@@ -284,14 +284,14 @@ export async function registerLeaveRoutes(app: FastifyInstance) {
               workDate: true,
               minutes: true,
             },
-            orderBy: { workDate: "asc" },
+            orderBy: { workDate: 'asc' },
             take: 50,
           });
           return reply.status(409).send({
             error: {
-              code: "TIME_ENTRY_OVERBOOKED",
+              code: 'TIME_ENTRY_OVERBOOKED',
               message:
-                "Time entries and hourly leave exceed defaultWorkdayMinutes",
+                'Time entries and hourly leave exceed defaultWorkdayMinutes',
               defaultWorkdayMinutes: setting.defaultWorkdayMinutes,
               existingMinutes,
               requestedLeaveMinutes: leave.minutes,
@@ -328,13 +328,13 @@ export async function registerLeaveRoutes(app: FastifyInstance) {
               workDate: true,
               minutes: true,
             },
-            orderBy: { workDate: "asc" },
+            orderBy: { workDate: 'asc' },
             take: 50,
           });
           return reply.status(409).send({
             error: {
-              code: "TIME_ENTRY_CONFLICT",
-              message: "Time entries exist in leave period",
+              code: 'TIME_ENTRY_CONFLICT',
+              message: 'Time entries exist in leave period',
               conflictCount,
               conflicts: conflicts.map((entry) => ({
                 id: entry.id,
@@ -347,15 +347,15 @@ export async function registerLeaveRoutes(app: FastifyInstance) {
           });
         }
       }
-      const actorUserId = req.user?.userId || "system";
+      const actorUserId = req.user?.userId || 'system';
       const { updated, approval } = await submitApprovalWithUpdate({
         flowType: FlowTypeValue.leave,
-        targetTable: "leave_requests",
+        targetTable: 'leave_requests',
         targetId: id,
         update: (tx) =>
           tx.leaveRequest.update({
             where: { id },
-            data: { status: "pending_manager" },
+            data: { status: 'pending_manager' },
           }),
         payload: {
           hours: leave.hours || 0,
@@ -379,22 +379,22 @@ export async function registerLeaveRoutes(app: FastifyInstance) {
   );
 
   app.get(
-    "/leave-requests",
+    '/leave-requests',
     {
-      preHandler: requireRole(["admin", "mgmt", "user"]),
+      preHandler: requireRole(['admin', 'mgmt', 'user']),
     },
     async (req, reply) => {
       const { userId } = req.query as { userId?: string };
       const roles = req.user?.roles || [];
-      const isPrivileged = roles.includes("admin") || roles.includes("mgmt");
+      const isPrivileged = roles.includes('admin') || roles.includes('mgmt');
       const currentUserId = req.user?.userId;
       const where: { userId?: string } = {};
       if (!isPrivileged) {
         if (!currentUserId) {
-          return reply.code(401).send({ error: "unauthorized" });
+          return reply.code(401).send({ error: 'unauthorized' });
         }
         if (userId && userId !== currentUserId) {
-          return reply.code(403).send({ error: "forbidden" });
+          return reply.code(403).send({ error: 'forbidden' });
         }
         where.userId = currentUserId;
       } else if (userId) {
@@ -402,7 +402,7 @@ export async function registerLeaveRoutes(app: FastifyInstance) {
       }
       const items = await prisma.leaveRequest.findMany({
         where,
-        orderBy: { startDate: "desc" },
+        orderBy: { startDate: 'desc' },
         take: 100,
       });
       return { items };
