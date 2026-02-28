@@ -1,27 +1,27 @@
-import { FastifyInstance } from 'fastify';
-import { prisma } from '../services/db.js';
-import { requireRole } from '../services/rbac.js';
-import { auditContextFromRequest, logAudit } from '../services/audit.js';
+import { FastifyInstance } from "fastify";
+import { prisma } from "../services/db.js";
+import { requireRole } from "../services/rbac.js";
+import { auditContextFromRequest, logAudit } from "../services/audit.js";
 import {
   DEFAULT_LEAVE_SETTING,
   LEAVE_SETTING_ID,
   ensureLeaveSetting,
-} from '../services/leaveSettings.js';
-import { leaveSettingPatchSchema } from './validators.js';
+} from "../services/leaveSettings.js";
+import { leaveSettingPatchSchema } from "./validators.js";
 
 export async function registerLeaveSettingRoutes(app: FastifyInstance) {
   app.get(
-    '/leave-settings',
-    { preHandler: requireRole(['admin', 'mgmt', 'user']) },
+    "/leave-settings",
+    { preHandler: requireRole(["admin", "mgmt", "user"]) },
     async () => {
       return ensureLeaveSetting({ actorId: null });
     },
   );
 
   app.patch(
-    '/leave-settings',
+    "/leave-settings",
     {
-      preHandler: requireRole(['admin', 'mgmt']),
+      preHandler: requireRole(["admin", "mgmt"]),
       schema: leaveSettingPatchSchema,
     },
     async (req, reply) => {
@@ -44,8 +44,8 @@ export async function registerLeaveSettingRoutes(app: FastifyInstance) {
       ) {
         return reply.status(400).send({
           error: {
-            code: 'INVALID_LEAVE_SETTING',
-            message: 'timeUnitMinutes must be an integer between 1 and 60',
+            code: "INVALID_LEAVE_SETTING",
+            message: "timeUnitMinutes must be an integer between 1 and 60",
           },
         });
       }
@@ -56,9 +56,9 @@ export async function registerLeaveSettingRoutes(app: FastifyInstance) {
       ) {
         return reply.status(400).send({
           error: {
-            code: 'INVALID_LEAVE_SETTING',
+            code: "INVALID_LEAVE_SETTING",
             message:
-              'defaultWorkdayMinutes must be an integer between 1 and 1440',
+              "defaultWorkdayMinutes must be an integer between 1 and 1440",
           },
         });
       }
@@ -76,8 +76,8 @@ export async function registerLeaveSettingRoutes(app: FastifyInstance) {
         },
       });
       await logAudit({
-        action: 'leave_setting_updated',
-        targetTable: 'leave_settings',
+        action: "leave_setting_updated",
+        targetTable: "leave_settings",
         targetId: updated.id,
         metadata: {
           timeUnitMinutes: updated.timeUnitMinutes,
