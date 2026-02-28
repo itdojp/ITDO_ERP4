@@ -267,7 +267,10 @@ test('frontend admin jobs: chat ack reminder / leave upcoming run and dashboard 
     `${apiBase}/leave-requests/${encodeURIComponent(leaveId)}/submit`,
     {
       headers: leaveUserHeaders,
-      data: {},
+      data: {
+        noConsultationConfirmed: true,
+        noConsultationReason: `e2e-${suffix}`,
+      },
     },
   );
   await ensureOk(leaveSubmitRes);
