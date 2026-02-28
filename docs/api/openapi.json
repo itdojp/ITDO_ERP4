@@ -6399,10 +6399,7 @@
                     "format": "date",
                     "type": "string"
                   },
-                  "endTime": {
-                    "pattern": "^(?:([01]\\d|2[0-3]):[0-5]\\d|24:00)$",
-                    "type": "string"
-                  },
+                  "endTime": {},
                   "hours": {
                     "minimum": 0,
                     "type": "number"
@@ -6417,10 +6414,7 @@
                     "format": "date",
                     "type": "string"
                   },
-                  "startTime": {
-                    "pattern": "^(?:([01]\\d|2[0-3]):[0-5]\\d|24:00)$",
-                    "type": "string"
-                  },
+                  "startTime": {},
                   "userId": {
                     "type": "string"
                   }
