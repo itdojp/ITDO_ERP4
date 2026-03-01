@@ -1026,6 +1026,51 @@ export const leaveLeaderListQuerySchema = {
   ),
 };
 
+export const leaveCompanyHolidayListQuerySchema = {
+  querystring: Type.Object(
+    {
+      from: Type.Optional(Type.String({ format: 'date' })),
+      to: Type.Optional(Type.String({ format: 'date' })),
+      limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 366 })),
+    },
+    { additionalProperties: false },
+  ),
+};
+
+export const leaveCompanyHolidayUpsertSchema = {
+  body: Type.Object(
+    {
+      holidayDate: Type.String({ format: 'date' }),
+      name: Type.Optional(Type.String({ maxLength: 200 })),
+    },
+    { additionalProperties: false },
+  ),
+};
+
+export const leaveWorkdayOverrideListQuerySchema = {
+  querystring: Type.Object(
+    {
+      userId: Type.Optional(Type.String({ minLength: 1 })),
+      from: Type.Optional(Type.String({ format: 'date' })),
+      to: Type.Optional(Type.String({ format: 'date' })),
+      limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 366 })),
+    },
+    { additionalProperties: false },
+  ),
+};
+
+export const leaveWorkdayOverrideUpsertSchema = {
+  body: Type.Object(
+    {
+      userId: Type.String({ minLength: 1 }),
+      workDate: Type.String({ format: 'date' }),
+      workMinutes: Type.Integer({ minimum: 0, maximum: 1440 }),
+      reasonText: Type.Optional(Type.String({ maxLength: 2000 })),
+    },
+    { additionalProperties: false },
+  ),
+};
+
 export const leaveEntitlementBalanceQuerySchema = {
   querystring: Type.Object(
     {

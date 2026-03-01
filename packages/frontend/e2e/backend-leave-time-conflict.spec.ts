@@ -397,6 +397,106 @@ test('hourly leave submit blocks when day total exceeds defaultWorkdayMinutes @c
   );
 });
 
+test('hourly leave submit uses per-user workday override for overbook check @core', async ({
+  request,
+}) => {
+  const suffix = runId();
+  const targetUserId = `leave-override-${suffix}`;
+  const target = new Date();
+  target.setDate(target.getDate() + 1);
+  const targetDate = toDateInput(target);
+
+  await withLeaveSetting(
+    request,
+    { timeUnitMinutes: 10, defaultWorkdayMinutes: 480 },
+    async () => {
+      const projectRes = await request.post(`${apiBase}/projects`, {
+        data: {
+          code: `E2E-LEAVE-OVR-${suffix}`,
+          name: `E2E Leave Override ${suffix}`,
+          status: 'active',
+        },
+        headers: authHeaders,
+      });
+      await ensureOk(projectRes);
+      const project = await projectRes.json();
+
+      const timeRes = await request.post(`${apiBase}/time-entries`, {
+        data: {
+          projectId: project.id,
+          userId: targetUserId,
+          workDate: targetDate,
+          minutes: 250,
+        },
+        headers: authHeaders,
+      });
+      await ensureOk(timeRes);
+
+      const overrideRes = await request.post(
+        `${apiBase}/leave-calendar/workday-overrides`,
+        {
+          data: {
+            userId: targetUserId,
+            workDate: targetDate,
+            workMinutes: 360,
+            reasonText: `override-${suffix}`,
+          },
+          headers: authHeaders,
+        },
+      );
+      await ensureOk(overrideRes);
+      const override = await overrideRes.json();
+
+      try {
+        const leaveRes = await request.post(`${apiBase}/leave-requests`, {
+          data: {
+            userId: targetUserId,
+            leaveType: 'paid',
+            startDate: targetDate,
+            endDate: targetDate,
+            startTime: '14:00',
+            endTime: '16:00',
+            notes: `hourly-override-${suffix}`,
+          },
+          headers: authHeaders,
+        });
+        await ensureOk(leaveRes);
+        const leave = await leaveRes.json();
+
+        const submitRes = await request.post(
+          `${apiBase}/leave-requests/${leave.id}/submit`,
+          {
+            data: {
+              noConsultationConfirmed: true,
+              noConsultationReason: `overbooked-override-${suffix}`,
+            },
+            headers: authHeaders,
+          },
+        );
+        expect(submitRes.status()).toBe(409);
+        const submitJson = await submitRes.json();
+        expect(submitJson?.error?.code).toBe('TIME_ENTRY_OVERBOOKED');
+        expect(submitJson?.error?.existingMinutes).toBe(250);
+        expect(submitJson?.error?.requestedLeaveMinutes).toBe(120);
+        expect(submitJson?.error?.totalMinutes).toBe(370);
+        expect(submitJson?.error?.defaultWorkdayMinutes).toBe(360);
+        expect(submitJson?.error?.workdayMinutes).toBe(360);
+        expect(submitJson?.error?.workdayMinutesSource).toBe('user_override');
+      } finally {
+        const deleteOverrideRes = await request.delete(
+          `${apiBase}/leave-calendar/workday-overrides/${encodeURIComponent(
+            String(override.id),
+          )}`,
+          {
+            headers: authHeaders,
+          },
+        );
+        await ensureOk(deleteOverrideRes);
+      }
+    },
+  );
+});
+
 test('project leader can view submitted leave list without reasons @core', async ({
   request,
 }) => {

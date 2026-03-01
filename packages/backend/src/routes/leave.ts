@@ -17,6 +17,7 @@ import {
   computePaidLeaveBalance,
   resolveLeaveRequestMinutes,
 } from '../services/leaveEntitlements.js';
+import { resolveUserWorkdayMinutes } from '../services/leaveWorkdayCalendar.js';
 
 function parseTimeToMinutes(value: unknown) {
   if (typeof value !== 'string') return null;
@@ -325,8 +326,13 @@ export async function registerLeaveRoutes(app: FastifyInstance) {
           _sum: { minutes: true },
         });
         const existingMinutes = aggregate._sum.minutes ?? 0;
+        const workday = await resolveUserWorkdayMinutes({
+          userId: leave.userId,
+          targetDate: leave.startDate,
+          defaultWorkdayMinutes: setting.defaultWorkdayMinutes,
+        });
         const totalMinutes = existingMinutes + leave.minutes;
-        if (totalMinutes > setting.defaultWorkdayMinutes) {
+        if (totalMinutes > workday.workMinutes) {
           const conflictCount = await prisma.timeEntry.count({
             where: hourlyWhere,
           });
@@ -345,9 +351,11 @@ export async function registerLeaveRoutes(app: FastifyInstance) {
           return reply.status(409).send({
             error: {
               code: 'TIME_ENTRY_OVERBOOKED',
-              message:
-                'Time entries and hourly leave exceed defaultWorkdayMinutes',
-              defaultWorkdayMinutes: setting.defaultWorkdayMinutes,
+              message: 'Time entries and hourly leave exceed workday minutes',
+              // Keep backward compatibility with existing frontend payload field.
+              defaultWorkdayMinutes: workday.workMinutes,
+              workdayMinutes: workday.workMinutes,
+              workdayMinutesSource: workday.source,
               existingMinutes,
               requestedLeaveMinutes: leave.minutes,
               totalMinutes,
