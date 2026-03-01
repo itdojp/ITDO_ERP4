@@ -1637,18 +1637,26 @@ export const RoomChat: React.FC = () => {
   }, [rooms, currentUserId, roomListScope, roomListQuery]);
 
   useEffect(() => {
-    if (!displayedRooms.length) {
+    if (!rooms.length) {
       if (roomId) setRoomId('');
       return;
     }
     if (!roomId) {
-      setRoomId(displayedRooms[0].id);
+      if (displayedRooms.length) {
+        setRoomId(displayedRooms[0].id);
+      }
       return;
     }
-    if (!displayedRooms.some((room) => room.id === roomId)) {
-      setRoomId(displayedRooms[0].id);
+
+    const existsInAllRooms = rooms.some((room) => room.id === roomId);
+    if (!existsInAllRooms) {
+      if (displayedRooms.length) {
+        setRoomId(displayedRooms[0].id);
+      } else {
+        setRoomId('');
+      }
     }
-  }, [displayedRooms, roomId]);
+  }, [displayedRooms, roomId, rooms]);
 
   const renderMessageBody = (text: string) => (
     <ReactMarkdown
