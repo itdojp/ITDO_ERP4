@@ -435,6 +435,125 @@ async function removeGroupMembers(groupId: string, memberIds: string[]) {
   });
 }
 
+type ScimUserSnapshot = {
+  id: string;
+  externalId?: string | null;
+  userName: string;
+  displayName?: string | null;
+  active: boolean;
+};
+
+function resolveChatUserId(user: {
+  externalId?: string | null;
+  userName?: string | null;
+}) {
+  const externalId =
+    typeof user.externalId === 'string' ? user.externalId.trim() : '';
+  if (externalId) return externalId;
+  const userName =
+    typeof user.userName === 'string' ? user.userName.trim() : '';
+  return userName;
+}
+
+async function syncPersonalGaRoomMembership(options: {
+  req: FastifyRequest;
+  before: ScimUserSnapshot;
+  after: ScimUserSnapshot;
+  client?: Prisma.TransactionClient;
+}) {
+  const { req, before, after } = options;
+  const client = options.client ?? prisma;
+  const beforeChatUserId = resolveChatUserId(before);
+  const afterChatUserId = resolveChatUserId(after);
+  const activeChanged = before.active !== after.active;
+  const identifierChanged = beforeChatUserId !== afterChatUserId;
+  if (!activeChanged && !identifierChanged) {
+    return;
+  }
+
+  const auditContext = auditContextFromRequest(req, { source: 'scim' });
+  const actor =
+    afterChatUserId || beforeChatUserId || after.userName.trim() || null;
+
+  if (after.active && afterChatUserId) {
+    const ensured = await ensurePersonalGeneralAffairsChatRoom({
+      userAccountId: after.id,
+      userId: afterChatUserId,
+      userName: after.userName,
+      displayName: after.displayName,
+      createdBy: actor,
+      client,
+    });
+    await logAudit({
+      action: 'personal_ga_room_member_reactivated',
+      targetTable: 'chat_room_members',
+      targetId: `${ensured.roomId}:${afterChatUserId}`,
+      metadata: {
+        userAccountId: after.id,
+        userId: afterChatUserId,
+        roomId: ensured.roomId,
+        reason: activeChanged
+          ? 'scim_user_reactivated'
+          : 'scim_user_identifier_changed',
+      },
+      ...auditContext,
+    });
+
+    if (identifierChanged && beforeChatUserId) {
+      const deactivated = await deactivatePersonalGeneralAffairsChatRoomMember({
+        userAccountId: before.id,
+        userId: beforeChatUserId,
+        updatedBy: actor,
+        reason: 'scim_user_identifier_changed',
+        client,
+      });
+      if (deactivated.updatedCount > 0) {
+        await logAudit({
+          action: 'personal_ga_room_member_deactivated',
+          targetTable: 'chat_room_members',
+          targetId: `${deactivated.roomId}:${beforeChatUserId}`,
+          metadata: {
+            userAccountId: before.id,
+            userId: beforeChatUserId,
+            roomId: deactivated.roomId,
+            reason: 'scim_user_identifier_changed',
+            replacedByUserId: afterChatUserId,
+          },
+          ...auditContext,
+        });
+      }
+    }
+    return;
+  }
+
+  const deactivateTargets = new Set<string>();
+  if (beforeChatUserId) deactivateTargets.add(beforeChatUserId);
+  if (afterChatUserId) deactivateTargets.add(afterChatUserId);
+  for (const targetUserId of deactivateTargets) {
+    const deactivated = await deactivatePersonalGeneralAffairsChatRoomMember({
+      userAccountId: after.id,
+      userId: targetUserId,
+      updatedBy: actor,
+      reason: 'scim_user_deactivated',
+      client,
+    });
+    if (deactivated.updatedCount > 0) {
+      await logAudit({
+        action: 'personal_ga_room_member_deactivated',
+        targetTable: 'chat_room_members',
+        targetId: `${deactivated.roomId}:${targetUserId}`,
+        metadata: {
+          userAccountId: after.id,
+          userId: targetUserId,
+          roomId: deactivated.roomId,
+          reason: 'scim_user_deactivated',
+        },
+        ...auditContext,
+      });
+    }
+  }
+}
+
 export async function registerScimRoutes(app: FastifyInstance) {
   app.get(
     '/scim/status',
@@ -660,22 +779,45 @@ export async function registerScimRoutes(app: FastifyInstance) {
     }
     let updated;
     try {
-      updated = await prisma.userAccount.update({
-        where: { id },
-        data: {
-          externalId: normalized.externalId,
-          userName: normalized.userName,
-          displayName: normalized.displayName,
-          givenName: normalized.givenName,
-          familyName: normalized.familyName,
-          active: normalized.active ?? true,
-          emails: normalized.emails as Prisma.InputJsonValue | undefined,
-          phoneNumbers: normalized.phones as Prisma.InputJsonValue | undefined,
-          department: normalized.department,
-          organization: normalized.organization,
-          managerUserId: normalized.managerUserId,
-          scimMeta: payload as Prisma.InputJsonValue,
-        },
+      updated = await prisma.$transaction(async (tx) => {
+        const next = await tx.userAccount.update({
+          where: { id },
+          data: {
+            externalId: normalized.externalId,
+            userName: normalized.userName,
+            displayName: normalized.displayName,
+            givenName: normalized.givenName,
+            familyName: normalized.familyName,
+            active: normalized.active ?? true,
+            emails: normalized.emails as Prisma.InputJsonValue | undefined,
+            phoneNumbers: normalized.phones as
+              | Prisma.InputJsonValue
+              | undefined,
+            department: normalized.department,
+            organization: normalized.organization,
+            managerUserId: normalized.managerUserId,
+            scimMeta: payload as Prisma.InputJsonValue,
+          },
+        });
+        await syncPersonalGaRoomMembership({
+          req,
+          before: {
+            id: current.id,
+            externalId: current.externalId,
+            userName: current.userName,
+            displayName: current.displayName,
+            active: current.active,
+          },
+          after: {
+            id: next.id,
+            externalId: next.externalId,
+            userName: next.userName,
+            displayName: next.displayName,
+            active: next.active,
+          },
+          client: tx,
+        });
+        return next;
       });
     } catch (err) {
       if (
@@ -797,55 +939,31 @@ export async function registerScimRoutes(app: FastifyInstance) {
         .send(scimError(400, 'externalId_required_for_userName_update'));
     }
     try {
-      const updated = await prisma.userAccount.update({
-        where: { id },
-        data: update,
+      const updated = await prisma.$transaction(async (tx) => {
+        const next = await tx.userAccount.update({
+          where: { id },
+          data: update,
+        });
+        await syncPersonalGaRoomMembership({
+          req,
+          before: {
+            id: current.id,
+            externalId: current.externalId,
+            userName: current.userName,
+            displayName: current.displayName,
+            active: current.active,
+          },
+          after: {
+            id: next.id,
+            externalId: next.externalId,
+            userName: next.userName,
+            displayName: next.displayName,
+            active: next.active,
+          },
+          client: tx,
+        });
+        return next;
       });
-      const chatUserId = (updated.externalId || updated.userName || '').trim();
-      const activeChanged = current.active !== updated.active;
-      if (activeChanged && chatUserId) {
-        if (updated.active) {
-          const ensured = await ensurePersonalGeneralAffairsChatRoom({
-            userAccountId: updated.id,
-            userId: chatUserId,
-            userName: updated.userName,
-            displayName: updated.displayName,
-            createdBy: chatUserId,
-          });
-          await logAudit({
-            action: 'personal_ga_room_member_reactivated',
-            targetTable: 'chat_room_members',
-            targetId: `${ensured.roomId}:${chatUserId}`,
-            metadata: {
-              userAccountId: updated.id,
-              userId: chatUserId,
-              roomId: ensured.roomId,
-            },
-            ...auditContextFromRequest(req, { source: 'scim' }),
-          });
-        } else {
-          const deactivated =
-            await deactivatePersonalGeneralAffairsChatRoomMember({
-              userAccountId: updated.id,
-              userId: chatUserId,
-              updatedBy: chatUserId,
-              reason: 'scim_user_deactivated',
-            });
-          if (deactivated.updatedCount > 0) {
-            await logAudit({
-              action: 'personal_ga_room_member_deactivated',
-              targetTable: 'chat_room_members',
-              targetId: `${deactivated.roomId}:${chatUserId}`,
-              metadata: {
-                userAccountId: updated.id,
-                userId: chatUserId,
-                roomId: deactivated.roomId,
-              },
-              ...auditContextFromRequest(req, { source: 'scim' }),
-            });
-          }
-        }
-      }
       await logAudit({
         action: 'scim_user_patch',
         targetTable: 'UserAccount',
