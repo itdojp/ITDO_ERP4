@@ -216,9 +216,11 @@ export async function registerLeaveRoutes(app: FastifyInstance) {
         }
         update.name = trimmedName;
       }
-      if (typeof body.description === 'string' || body.description === null) {
-        update.description =
-          typeof body.description === 'string' ? body.description.trim() : null;
+      if (typeof body.description === 'string') {
+        const trimmedDescription = body.description.trim();
+        update.description = trimmedDescription || null;
+      } else if (body.description === null) {
+        update.description = null;
       }
       if (typeof body.isPaid === 'boolean') update.isPaid = body.isPaid;
       if (typeof body.requiresApproval === 'boolean') {
@@ -706,12 +708,8 @@ export async function registerLeaveRoutes(app: FastifyInstance) {
         leave,
         defaultWorkdayMinutes: setting.defaultWorkdayMinutes,
       });
-      const leaveType = await findLeaveTypeByCode({
-        code: leave.leaveType,
-        includeInactive: true,
-      });
       const paidLeaveBalance =
-        leaveType?.isPaid === true
+        normalizeLeaveTypeInput(leave.leaveType) === 'paid'
           ? await computePaidLeaveBalance({
               userId: leave.userId,
               additionalRequestedMinutes: requestedLeaveMinutes,

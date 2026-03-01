@@ -269,11 +269,12 @@ export const LeaveRequests: React.FC = () => {
 
   useEffect(() => {
     const loadLeaveMetadata = async () => {
-      try {
-        const [setting, leaveTypesRes] = await Promise.all([
-          api<LeaveSetting>('/leave-settings'),
-          api<{ items?: LeaveTypeOption[] }>('/leave-types'),
-        ]);
+      const [settingResult, leaveTypesResult] = await Promise.allSettled([
+        api<LeaveSetting>('/leave-settings'),
+        api<{ items?: LeaveTypeOption[] }>('/leave-types'),
+      ]);
+      if (settingResult.status === 'fulfilled') {
+        const setting = settingResult.value;
         if (
           Number.isInteger(setting.timeUnitMinutes) &&
           setting.timeUnitMinutes > 0 &&
@@ -285,12 +286,12 @@ export const LeaveRequests: React.FC = () => {
             defaultWorkdayMinutes: setting.defaultWorkdayMinutes,
           });
         }
-        const items = Array.isArray(leaveTypesRes.items)
-          ? leaveTypesRes.items
+      }
+      if (leaveTypesResult.status === 'fulfilled') {
+        const items = Array.isArray(leaveTypesResult.value.items)
+          ? leaveTypesResult.value.items
           : [];
         setLeaveTypes(items.filter((item) => item.active !== false));
-      } catch {
-        // noop: fallback defaults are used when leave-setting API is unavailable.
       }
     };
     void load({ silent: true });

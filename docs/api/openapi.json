@@ -6944,6 +6944,234 @@
         }
       }
     },
+    "/leave-types": {
+      "get": {
+        "parameters": [
+          {
+            "in": "query",
+            "name": "includeInactive",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      },
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "active": {
+                    "type": "boolean"
+                  },
+                  "attachmentPolicy": {
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "required"
+                        ],
+                        "type": "string"
+                      },
+                      {
+                        "enum": [
+                          "optional"
+                        ],
+                        "type": "string"
+                      },
+                      {
+                        "enum": [
+                          "none"
+                        ],
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "code": {
+                    "maxLength": 50,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "description": {
+                    "maxLength": 500,
+                    "nullable": true,
+                    "type": "string"
+                  },
+                  "displayOrder": {
+                    "maximum": 100000,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "effectiveFrom": {
+                    "format": "date-time",
+                    "type": "string"
+                  },
+                  "isPaid": {
+                    "type": "boolean"
+                  },
+                  "name": {
+                    "maxLength": 100,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "requiresApproval": {
+                    "type": "boolean"
+                  },
+                  "unit": {
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "daily"
+                        ],
+                        "type": "string"
+                      },
+                      {
+                        "enum": [
+                          "hourly"
+                        ],
+                        "type": "string"
+                      },
+                      {
+                        "enum": [
+                          "mixed"
+                        ],
+                        "type": "string"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "code",
+                  "name",
+                  "isPaid",
+                  "unit",
+                  "requiresApproval",
+                  "attachmentPolicy"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/leave-types/{code}": {
+      "patch": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "code",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "active": {
+                    "type": "boolean"
+                  },
+                  "attachmentPolicy": {
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "required"
+                        ],
+                        "type": "string"
+                      },
+                      {
+                        "enum": [
+                          "optional"
+                        ],
+                        "type": "string"
+                      },
+                      {
+                        "enum": [
+                          "none"
+                        ],
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "description": {
+                    "maxLength": 500,
+                    "nullable": true,
+                    "type": "string"
+                  },
+                  "displayOrder": {
+                    "maximum": 100000,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "effectiveFrom": {
+                    "format": "date-time",
+                    "type": "string"
+                  },
+                  "isPaid": {
+                    "type": "boolean"
+                  },
+                  "name": {
+                    "maxLength": 100,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "requiresApproval": {
+                    "type": "boolean"
+                  },
+                  "unit": {
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "daily"
+                        ],
+                        "type": "string"
+                      },
+                      {
+                        "enum": [
+                          "hourly"
+                        ],
+                        "type": "string"
+                      },
+                      {
+                        "enum": [
+                          "mixed"
+                        ],
+                        "type": "string"
+                      }
+                    ]
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
     "/me": {
       "get": {
         "responses": {

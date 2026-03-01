@@ -206,3 +206,29 @@ test('POST /leave-types rejects blank name', async () => {
     assert.equal(body?.error?.code, 'INVALID_LEAVE_TYPE_NAME');
   });
 });
+
+test('PATCH /leave-types normalizes blank description to null', async () => {
+  let updatePayload = null;
+  await withPrismaStubs(
+    {
+      'leaveType.update': async (args) => {
+        updatePayload = args?.data;
+        return { id: 'lt-1', code: 'paid', ...args?.data };
+      },
+    },
+    async () => {
+      await withServer(async (server) => {
+        const res = await server.inject({
+          method: 'PATCH',
+          url: '/leave-types/paid',
+          headers: adminHeaders(),
+          payload: {
+            description: '   ',
+          },
+        });
+        assert.equal(res.statusCode, 200, res.body);
+      });
+    },
+  );
+  assert.equal(updatePayload?.description, null);
+});
