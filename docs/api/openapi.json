@@ -4147,6 +4147,15 @@
         }
       }
     },
+    "/chat-rooms/personal-general-affairs": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
     "/chat-settings": {
       "get": {
         "responses": {

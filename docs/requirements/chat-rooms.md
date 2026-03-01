@@ -36,8 +36,16 @@ DB上は `type` として表現し、ポリシー（公式/私的、外部連携
 - `project`: `ChatRoom.id = Project.id`（`roomId = projectId`）
 - `company`: 固定（`ChatRoom.id = "company"`）
 - `department`: 決定的ID（`ChatRoom.id = "dept_" + sha256(groupAccountId).slice(0,32)`）、`ChatRoom.groupId = GroupAccount.id (UUID)`
+- `personal_general_affairs`: 決定的ID（`ChatRoom.id = "pga_" + sha256(userAccountId).slice(0,32)`）
 - `private_group`: `uuid`
 - `dm`: 決定的ID（`ChatRoom.id = "dm_" + sha256(userA + "\\n" + userB).slice(0,32)`）
+
+補足（個人総務チャット）:
+
+- `type=private_group` + `isOfficial=true` として扱う。
+- 社員登録（SCIM `POST /scim/v2/Users`）時に自動作成し、本人を `ChatRoomMember(role=owner)` として常設する。
+- 閲覧/投稿ACLは `viewerGroupIds/posterGroupIds = ["general_affairs"]` を設定し、総務グループへ展開する。
+- 本人向け導線は `GET /chat-rooms/personal-general-affairs` でルームIDを解決して遷移する。
 
 ## データモデル（案）
 

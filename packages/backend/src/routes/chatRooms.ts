@@ -30,6 +30,7 @@ import {
   getChatExternalLlmRateLimit,
   summarizeWithExternalLlm,
 } from '../services/chatExternalLlm.js';
+import { ensurePersonalGeneralAffairsChatRoom } from '../services/personalGaChatRoom.js';
 import {
   chatRoomCreateSchema,
   chatRoomMemberAddSchema,
@@ -1116,6 +1117,82 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
       ];
 
       return { items };
+    },
+  );
+
+  app.get(
+    '/chat-rooms/personal-general-affairs',
+    { preHandler: requireRole(chatRoles) },
+    async (req, reply) => {
+      const actorUserId = requireUserId(reply, req.user?.userId);
+      if (typeof actorUserId !== 'string') return actorUserId;
+
+      const normalizedActorUserId = actorUserId.trim();
+      const account = await prisma.userAccount.findFirst({
+        where: {
+          active: true,
+          OR: [
+            { externalId: normalizedActorUserId },
+            { userName: normalizedActorUserId },
+          ],
+        },
+        select: {
+          id: true,
+          externalId: true,
+          userName: true,
+          displayName: true,
+        },
+      });
+      if (!account) {
+        return reply.status(404).send({
+          error: {
+            code: 'USER_NOT_FOUND',
+            message: 'User account not found',
+          },
+        });
+      }
+
+      const memberUserId = (account.externalId ?? account.userName)?.trim();
+      if (!memberUserId) {
+        return reply.status(400).send({
+          error: {
+            code: 'INVALID_USER',
+            message: 'User identifier is required',
+          },
+        });
+      }
+
+      const ensured = await ensurePersonalGeneralAffairsChatRoom({
+        userAccountId: account.id,
+        userId: memberUserId,
+        userName: account.userName,
+        displayName: account.displayName,
+        createdBy: normalizedActorUserId,
+      });
+      const room = await prisma.chatRoom.findUnique({
+        where: { id: ensured.roomId },
+        select: {
+          id: true,
+          name: true,
+          type: true,
+          isOfficial: true,
+          viewerGroupIds: true,
+          posterGroupIds: true,
+        },
+      });
+
+      return {
+        roomId: ensured.roomId,
+        name: room?.name ?? null,
+        type: room?.type ?? 'private_group',
+        isOfficial: room?.isOfficial ?? true,
+        viewerGroupIds: normalizeStringArray(room?.viewerGroupIds, {
+          dedupe: true,
+        }),
+        posterGroupIds: normalizeStringArray(room?.posterGroupIds, {
+          dedupe: true,
+        }),
+      };
     },
   );
 
