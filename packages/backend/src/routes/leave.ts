@@ -7,7 +7,6 @@ import { requireRole } from '../services/rbac.js';
 import {
   leaveLeaderListQuerySchema,
   leaveRequestSchema,
-  leaveSubmitSchema,
 } from './validators.js';
 import { endOfDay, parseDateParam } from '../utils/date.js';
 import { evaluateActionPolicyWithFallback } from '../services/actionPolicy.js';
@@ -177,18 +176,53 @@ export async function registerLeaveRoutes(app: FastifyInstance) {
 
   app.post(
     '/leave-requests/:id/submit',
-    {
-      preHandler: requireRole(['admin', 'mgmt', 'user']),
-      schema: leaveSubmitSchema,
-    },
+    { preHandler: requireRole(['admin', 'mgmt', 'user']) },
     async (req, reply) => {
       const { id } = req.params as { id: string };
-      const body = req.body as any;
+      const body =
+        req.body && typeof req.body === 'object'
+          ? (req.body as Record<string, unknown>)
+          : {};
+      if (
+        body.reasonText !== undefined &&
+        (typeof body.reasonText !== 'string' || body.reasonText.length > 2000)
+      ) {
+        return reply.status(400).send({
+          error: {
+            code: 'INVALID_PAYLOAD',
+            message: 'reasonText must be a string up to 2000 characters',
+          },
+        });
+      }
+      if (
+        body.noConsultationConfirmed !== undefined &&
+        typeof body.noConsultationConfirmed !== 'boolean'
+      ) {
+        return reply.status(400).send({
+          error: {
+            code: 'INVALID_PAYLOAD',
+            message: 'noConsultationConfirmed must be a boolean',
+          },
+        });
+      }
+      if (
+        body.noConsultationReason !== undefined &&
+        (typeof body.noConsultationReason !== 'string' ||
+          body.noConsultationReason.length > 2000)
+      ) {
+        return reply.status(400).send({
+          error: {
+            code: 'INVALID_PAYLOAD',
+            message:
+              'noConsultationReason must be a string up to 2000 characters',
+          },
+        });
+      }
       const reasonText =
-        typeof body?.reasonText === 'string' ? body.reasonText.trim() : '';
-      const noConsultationConfirmed = body?.noConsultationConfirmed === true;
+        typeof body.reasonText === 'string' ? body.reasonText.trim() : '';
+      const noConsultationConfirmed = body.noConsultationConfirmed === true;
       const noConsultationReason =
-        typeof body?.noConsultationReason === 'string'
+        typeof body.noConsultationReason === 'string'
           ? body.noConsultationReason.trim()
           : '';
       const leave = await prisma.leaveRequest.findUnique({ where: { id } });

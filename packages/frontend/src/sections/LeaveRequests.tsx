@@ -63,6 +63,20 @@ function formatDateInput(value: Date) {
   return `${year}-${month}-${day}`;
 }
 
+function formatDateLabel(value: string) {
+  if (typeof value === 'string' && value.length >= 10) {
+    const datePart = value.slice(0, 10);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(datePart)) {
+      return datePart;
+    }
+  }
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return value;
+  }
+  return parsed.toISOString().slice(0, 10);
+}
+
 function formatClock(minutes: number) {
   const safeMinutes = Math.max(0, Math.min(24 * 60, minutes));
   const hours = String(Math.floor(safeMinutes / 60)).padStart(2, '0');
@@ -329,8 +343,8 @@ export const LeaveRequests: React.FC = () => {
           <ul className="list">
             {submitConflict.conflicts.map((item) => (
               <li key={item.id}>
-                {new Date(item.workDate).toLocaleDateString()} / {item.minutes}
-                min / project:{item.projectId}
+                {formatDateLabel(item.workDate)} / {item.minutes}min / project:
+                {item.projectId}
               </li>
             ))}
           </ul>
@@ -342,8 +356,8 @@ export const LeaveRequests: React.FC = () => {
           return (
             <li key={item.id}>
               <span className="badge">{item.status}</span> {item.leaveType} /{' '}
-              {new Date(item.startDate).toLocaleDateString()}〜
-              {new Date(item.endDate).toLocaleDateString()}
+              {formatDateLabel(item.startDate)}〜
+              {formatDateLabel(item.endDate)}
               {duration ? ` / ${duration}` : ''}
               <div>
                 <button
@@ -470,8 +484,8 @@ export const LeaveRequests: React.FC = () => {
                   ? `${item.userDisplayName} (${item.userId})`
                   : item.userId}{' '}
                 / {item.leaveType} /{' '}
-                {new Date(item.startDate).toLocaleDateString()}〜
-                {new Date(item.endDate).toLocaleDateString()}
+                {formatDateLabel(item.startDate)}〜
+                {formatDateLabel(item.endDate)}
                 {duration ? ` / ${duration}` : ''}
                 {item.visibleProjectIds?.length
                   ? ` / project: ${item.visibleProjectIds.join(', ')}`
