@@ -243,4 +243,45 @@ test('personal GA room is created on SCIM user create and is accessible to GA on
   expect(pmPostBody?.error?.code ?? pmPostBody?.error).toBe(
     'forbidden_room_member',
   );
+
+  const scimDeactivateRes = await request.delete(
+    `${apiBase}/scim/v2/Users/${encodeURIComponent(employeeUserScimId)}`,
+    { headers: scimHeaders },
+  );
+  expect(scimDeactivateRes.status()).toBe(204);
+
+  const messageAfterDeactivate = `E2E personal GA message after deactivate ${suffix}`;
+  const postAfterDeactivateRes = await request.post(
+    `${apiBase}/chat-rooms/${encodeURIComponent(roomId)}/messages`,
+    {
+      data: { body: messageAfterDeactivate },
+      headers: gaHeaders,
+    },
+  );
+  await ensureOk(postAfterDeactivateRes);
+  const postedAfterDeactivate = await postAfterDeactivateRes.json();
+  expect(postedAfterDeactivate?.roomId).toBe(roomId);
+  expect(typeof postedAfterDeactivate?.id).toBe('string');
+
+  const employeeNotificationsAfterDeactivateRes = await request.get(
+    `${apiBase}/notifications?unread=1&limit=200`,
+    { headers: employeeHeaders },
+  );
+  if (employeeNotificationsAfterDeactivateRes.status() === 200) {
+    const employeeNotificationPayload =
+      await employeeNotificationsAfterDeactivateRes.json();
+    const employeeItems = Array.isArray(employeeNotificationPayload?.items)
+      ? employeeNotificationPayload.items
+      : [];
+    const matched = employeeItems.filter(
+      (item: any) =>
+        item?.kind === 'chat_message' &&
+        item?.messageId === postedAfterDeactivate.id,
+    );
+    expect(matched.length).toBe(0);
+  } else {
+    expect([401, 403]).toContain(
+      employeeNotificationsAfterDeactivateRes.status(),
+    );
+  }
 });
