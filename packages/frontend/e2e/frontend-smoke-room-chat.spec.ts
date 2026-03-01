@@ -11,6 +11,7 @@ const evidenceDir =
 const captureEnabled = process.env.E2E_CAPTURE !== '0';
 const baseUrl = process.env.E2E_BASE_URL || 'http://localhost:5173';
 const apiBase = process.env.E2E_API_BASE || 'http://localhost:3002';
+const scimToken = process.env.E2E_SCIM_BEARER_TOKEN || 'e2e-scim-token';
 const actionTimeout = (() => {
   const raw = process.env.E2E_ACTION_TIMEOUT_MS;
   if (raw) {
@@ -26,6 +27,7 @@ const authState = {
   roles: ['admin', 'mgmt'],
   projectIds: ['00000000-0000-0000-0000-000000000001'],
   groupIds: ['mgmt', 'hr-group'],
+  groupAccountIds: ['mgmt'],
 };
 
 const runId = () =>
@@ -98,12 +100,9 @@ async function selectByLabelOrFirst(select: Locator, label?: string) {
     .toBeGreaterThan(1);
   if (label) {
     await expect
-      .poll(
-        () => targetSelect.locator('option', { hasText: label }).count(),
-        {
-          timeout: actionTimeout,
-        },
-      )
+      .poll(() => targetSelect.locator('option', { hasText: label }).count(), {
+        timeout: actionTimeout,
+      })
       .toBeGreaterThan(0);
     await targetSelect.selectOption({ label });
     return;
@@ -113,12 +112,16 @@ async function selectByLabelOrFirst(select: Locator, label?: string) {
 
 const buildAuthHeaders = (override?: Partial<typeof authState>) => {
   const resolved = { ...authState, ...(override ?? {}) };
-  return {
+  const headers: Record<string, string> = {
     'x-user-id': resolved.userId,
     'x-roles': resolved.roles.join(','),
     'x-project-ids': (resolved.projectIds ?? []).join(','),
     'x-group-ids': (resolved.groupIds ?? []).join(','),
   };
+  if (Array.isArray(resolved.groupAccountIds)) {
+    headers['x-group-account-ids'] = resolved.groupAccountIds.join(',');
+  }
+  return headers;
 };
 
 async function ensureOk(res: { ok(): boolean; status(): number; text(): any }) {
@@ -146,7 +149,9 @@ test('frontend smoke room chat (private_group/dm) @extended', async ({
   await roomChatSection.scrollIntoViewIfNeeded();
 
   const run = runId();
-  const roomSelect = roomChatSection.getByLabel('ルーム');
+  const roomSelect = roomChatSection
+    .locator('select:has(option[value=""])')
+    .first();
   const messageList = roomChatSection
     .locator('strong', { hasText: '一覧' })
     .locator('..');
@@ -286,6 +291,124 @@ test('frontend smoke room chat (private_group/dm) @extended', async ({
   await captureSection(roomChatSection, '14-room-chat.png');
 });
 
+test('frontend room chat filters ga scope/search @extended', async ({
+  page,
+  request,
+}) => {
+  test.setTimeout(180_000);
+  const suffix = runId();
+  const employeeExternalId = `e2e-ga-ui-ext-${suffix}`;
+  const employeeUserName = `e2e-ga-ui-${suffix}@example.com`;
+  const scimHeaders = { authorization: `Bearer ${scimToken}` };
+
+  const createUserRes = await request.post(`${apiBase}/scim/v2/Users`, {
+    data: {
+      externalId: employeeExternalId,
+      userName: employeeUserName,
+      displayName: `E2E GA UI ${suffix}`,
+      active: true,
+    },
+    headers: scimHeaders,
+  });
+  await ensureOk(createUserRes);
+  const createdUser = await createUserRes.json();
+
+  const addGaGroupRes = await request.patch(
+    `${apiBase}/scim/v2/Groups/general_affairs`,
+    {
+      data: {
+        schemas: ['urn:ietf:params:scim:api:messages:2.0:PatchOp'],
+        Operations: [
+          {
+            op: 'add',
+            path: 'members',
+            value: { members: [{ value: createdUser.id }] },
+          },
+        ],
+      },
+      headers: scimHeaders,
+    },
+  );
+  await ensureOk(addGaGroupRes);
+
+  const gaAuth = {
+    userId: employeeExternalId,
+    roles: ['admin', 'mgmt'],
+    groupIds: ['mgmt', 'general_affairs'],
+    groupAccountIds: ['general_affairs'],
+  };
+
+  const personalGaRes = await request.get(
+    `${apiBase}/chat-rooms/personal-general-affairs`,
+    {
+      headers: buildAuthHeaders(gaAuth),
+    },
+  );
+  await ensureOk(personalGaRes);
+  const personalGaBody = await personalGaRes.json();
+  const personalGaRoomId = String(personalGaBody?.roomId || '');
+  expect(personalGaRoomId.startsWith('pga_')).toBe(true);
+
+  await prepare(page, gaAuth);
+  await navigateToSection(
+    page,
+    'ルームチャット',
+    'チャット（全社/部門/private_group/DM）',
+  );
+  const roomChatSection = page
+    .locator('main')
+    .locator('h2', { hasText: 'チャット（全社/部門/private_group/DM）' })
+    .locator('..')
+    .first();
+  await roomChatSection.scrollIntoViewIfNeeded();
+
+  const roomSelect = roomChatSection
+    .locator('select:has(option[value=""])')
+    .first();
+  const scopeSelect = roomChatSection.locator(
+    'label:has-text("表示範囲") select',
+  );
+  const roomSearchInput = roomChatSection.getByLabel('ルーム検索');
+  await expect(scopeSelect).toBeVisible({ timeout: actionTimeout });
+  await expect(roomSearchInput).toBeVisible({ timeout: actionTimeout });
+
+  await expect
+    .poll(() => roomSelect.locator('option').count(), {
+      timeout: actionTimeout,
+    })
+    .toBeGreaterThan(0);
+  const initialOptionCount = await roomSelect.locator('option').count();
+  expect(initialOptionCount).toBeGreaterThan(1);
+
+  await roomSearchInput.fill(`no-match-${suffix}`);
+  await expect
+    .poll(() => roomSelect.locator('option').count(), {
+      timeout: actionTimeout,
+    })
+    .toBe(1);
+
+  await roomSearchInput.fill(suffix);
+  await expect(
+    roomSelect.locator(`option[value=\"${personalGaRoomId}\"]`),
+  ).toHaveCount(1);
+
+  await roomSearchInput.fill('');
+  await scopeSelect.selectOption('ga_personal');
+  await expect
+    .poll(() => roomSelect.locator('option').count(), {
+      timeout: actionTimeout,
+    })
+    .toBeGreaterThan(0);
+  const optionValues = await roomSelect
+    .locator('option')
+    .evaluateAll((nodes) =>
+      nodes.map((node) => (node as HTMLOptionElement).value),
+    );
+  const candidateValues = optionValues.filter((value) => value.length > 0);
+  expect(candidateValues.length).toBeGreaterThan(0);
+  expect(candidateValues.every((value) => value.startsWith('pga_'))).toBe(true);
+});
+
 test('frontend smoke room chat external summary @extended', async ({
   page,
 }) => {
@@ -304,7 +427,7 @@ test('frontend smoke room chat external summary @extended', async ({
     .locator('..');
   await roomSettingsCard.scrollIntoViewIfNeeded();
   await roomSettingsCard.getByRole('button', { name: '再読込' }).click();
-  const settingsRoomSelect = roomSettingsCard.getByLabel('ルーム');
+  const settingsRoomSelect = roomSettingsCard.getByLabel('ルーム').first();
   await expect
     .poll(() => settingsRoomSelect.locator('option').count(), {
       timeout: actionTimeout,
@@ -338,7 +461,9 @@ test('frontend smoke room chat external summary @extended', async ({
   await expect(roomReloadButton).toBeVisible({ timeout: actionTimeout });
   await roomReloadButton.click();
 
-  const roomSelect = roomChatSection.getByLabel('ルーム');
+  const roomSelect = roomChatSection
+    .locator('select:has(option[value=""])')
+    .first();
   await expect
     .poll(() => roomSelect.locator('option').count(), {
       timeout: actionTimeout,
@@ -385,7 +510,7 @@ test('frontend smoke external chat invited rooms @extended', async ({
   await roomSettingsCard.scrollIntoViewIfNeeded();
 
   await roomSettingsCard.getByRole('button', { name: '再読込' }).click();
-  const roomSelect = roomSettingsCard.getByLabel('ルーム');
+  const roomSelect = roomSettingsCard.getByLabel('ルーム').first();
   await expect
     .poll(() => roomSelect.locator('option').count(), {
       timeout: actionTimeout,
@@ -476,7 +601,9 @@ test('frontend smoke external chat invited rooms @extended', async ({
     .first();
   await roomChatSection.scrollIntoViewIfNeeded();
 
-  const externalRoomSelect = roomChatSection.getByLabel('ルーム');
+  const externalRoomSelect = roomChatSection
+    .locator('select:has(option[value=""])')
+    .first();
   await expect
     .poll(() => externalRoomSelect.locator('option').count(), {
       timeout: actionTimeout,
