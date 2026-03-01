@@ -153,6 +153,46 @@ test('POST /leave-requests rejects unknown leave type', async () => {
   );
 });
 
+test('POST /leave-requests rejects unit mismatch for leave type', async () => {
+  await withPrismaStubs(
+    {
+      'leaveType.findMany': async () => [
+        { code: 'paid' },
+        { code: 'special' },
+        { code: 'substitute' },
+        { code: 'compensatory' },
+        { code: 'unpaid' },
+      ],
+      'leaveType.findFirst': async () => ({
+        code: 'special',
+        unit: 'daily',
+        active: true,
+      }),
+    },
+    async () => {
+      await withServer(async (server) => {
+        const res = await server.inject({
+          method: 'POST',
+          url: '/leave-requests',
+          headers: userHeaders(),
+          payload: {
+            userId: 'normal-user',
+            leaveType: 'special',
+            leaveUnit: 'hourly',
+            startDate: '2026-03-01',
+            endDate: '2026-03-01',
+            startTime: '09:00',
+            endTime: '10:00',
+          },
+        });
+        assert.equal(res.statusCode, 400, res.body);
+        const body = JSON.parse(res.body);
+        assert.equal(body?.error?.code, 'LEAVE_TYPE_UNIT_MISMATCH');
+      });
+    },
+  );
+});
+
 test('POST /leave-types creates a leave type as admin', async () => {
   let created = null;
   await withPrismaStubs(

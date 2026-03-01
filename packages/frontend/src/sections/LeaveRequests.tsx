@@ -313,6 +313,41 @@ export const LeaveRequests: React.FC = () => {
       ),
     [leaveTypes],
   );
+  const selectedLeaveType = useMemo(
+    () => leaveTypes.find((item) => item.code === form.leaveType) ?? null,
+    [leaveTypes, form.leaveType],
+  );
+  const allowedRequestUnits = useMemo<Array<'daily' | 'hourly'>>(() => {
+    if (selectedLeaveType?.unit === 'daily') return ['daily'];
+    if (selectedLeaveType?.unit === 'hourly') return ['hourly'];
+    return ['daily', 'hourly'];
+  }, [selectedLeaveType]);
+
+  const normalizeRequestUnit = (
+    prev: typeof form,
+    requestUnit: 'daily' | 'hourly',
+  ) => {
+    if (requestUnit === 'hourly') {
+      return {
+        ...prev,
+        requestUnit,
+        endDate: prev.startDate,
+        hours: '',
+      };
+    }
+    return {
+      ...prev,
+      requestUnit,
+      startTime: '',
+      endTime: '',
+    };
+  };
+
+  useEffect(() => {
+    if (allowedRequestUnits.includes(form.requestUnit)) return;
+    setForm((prev) => normalizeRequestUnit(prev, allowedRequestUnits[0]));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allowedRequestUnits, form.requestUnit]);
 
   const create = async () => {
     if (!canOperate) {
@@ -341,6 +376,7 @@ export const LeaveRequests: React.FC = () => {
     const payload: {
       userId: string;
       leaveType: string;
+      leaveUnit?: 'daily' | 'hourly';
       startDate: string;
       endDate: string;
       hours?: number;
@@ -352,8 +388,17 @@ export const LeaveRequests: React.FC = () => {
       leaveType,
       startDate,
       endDate,
+      leaveUnit: requestUnit,
       notes: form.notes.trim() || undefined,
     };
+    if (selectedLeaveType?.unit === 'daily' && requestUnit === 'hourly') {
+      setMessage('選択した休暇種別は終日申請のみ可能です');
+      return;
+    }
+    if (selectedLeaveType?.unit === 'hourly' && requestUnit === 'daily') {
+      setMessage('選択した休暇種別は時間休申請のみ可能です');
+      return;
+    }
     if (requestUnit === 'hourly') {
       if (!form.startTime || !form.endTime) {
         setMessage('時間休では開始時刻/終了時刻が必須です');
@@ -732,28 +777,20 @@ export const LeaveRequests: React.FC = () => {
               aria-label="休暇申請単位"
               value={form.requestUnit}
               onChange={(e) =>
-                setForm((prev) => {
-                  const requestUnit =
-                    e.target.value === 'hourly' ? 'hourly' : 'daily';
-                  if (requestUnit === 'hourly') {
-                    return {
-                      ...prev,
-                      requestUnit,
-                      endDate: prev.startDate,
-                      hours: '',
-                    };
-                  }
-                  return {
-                    ...prev,
-                    requestUnit,
-                    startTime: '',
-                    endTime: '',
-                  };
-                })
+                setForm((prev) =>
+                  normalizeRequestUnit(
+                    prev,
+                    e.target.value === 'hourly' ? 'hourly' : 'daily',
+                  ),
+                )
               }
             >
-              <option value="daily">終日</option>
-              <option value="hourly">時間休</option>
+              {allowedRequestUnits.includes('daily') ? (
+                <option value="daily">終日</option>
+              ) : null}
+              {allowedRequestUnits.includes('hourly') ? (
+                <option value="hourly">時間休</option>
+              ) : null}
             </select>
           </label>
           {leaveTypes.length > 0 ? (
@@ -781,6 +818,11 @@ export const LeaveRequests: React.FC = () => {
               placeholder="例: paid"
             />
           )}
+          {selectedLeaveType?.attachmentPolicy === 'required' ? (
+            <span style={{ fontSize: 12 }}>
+              この休暇種別は申請前に証跡添付が必須です（詳細の「相談証跡/メモ」に内部参照または外部URLを追加）。
+            </span>
+          ) : null}
           <label className="row" style={{ gap: 6, alignItems: 'center' }}>
             <span>開始</span>
             <input
