@@ -1009,6 +1009,23 @@ export const leaveRequestSchema = {
   }),
 };
 
+export const leaveLeaderListQuerySchema = {
+  querystring: Type.Object(
+    {
+      userId: Type.Optional(Type.String({ minLength: 1 })),
+      status: Type.Optional(
+        Type.Union([
+          Type.Literal('pending_manager'),
+          Type.Literal('approved'),
+          Type.Literal('rejected'),
+        ]),
+      ),
+      limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 300 })),
+    },
+    { additionalProperties: false },
+  ),
+};
+
 export const approvalActionSchema = {
   body: Type.Object({
     action: Type.Union([Type.Literal('approve'), Type.Literal('reject')]),

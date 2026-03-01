@@ -282,7 +282,10 @@ async function submitLeaveRequest(
   const res = await request.post(
     `${apiBase}/leave-requests/${encodeURIComponent(leaveRequestId)}/submit`,
     {
-      data: {},
+      data: {
+        noConsultationConfirmed: true,
+        noConsultationReason: 'e2e',
+      },
       headers,
     },
   );

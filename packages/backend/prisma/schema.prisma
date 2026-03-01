@@ -1169,6 +1169,8 @@ model LeaveRequest {
   minutes   Int?
   startTimeMinutes Int?
   endTimeMinutes   Int?
+  noConsultationConfirmed Boolean?
+  noConsultationReason    String?
   status    LeaveStatus @default(draft)
   notes     String?
   createdAt DateTime    @default(now())

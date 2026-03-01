@@ -6457,6 +6457,63 @@
         }
       }
     },
+    "/leave-requests/leader": {
+      "get": {
+        "parameters": [
+          {
+            "in": "query",
+            "name": "userId",
+            "required": false,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "pending_manager"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "enum": [
+                    "approved"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "enum": [
+                    "rejected"
+                  ],
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "maximum": 300,
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
     "/leave-settings": {
       "get": {
         "responses": {

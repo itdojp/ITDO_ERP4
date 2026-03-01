@@ -4,7 +4,10 @@ import { submitApprovalWithUpdate } from '../services/approval.js';
 import { createApprovalPendingNotifications } from '../services/appNotifications.js';
 import { FlowTypeValue, TimeStatusValue } from '../types.js';
 import { requireRole } from '../services/rbac.js';
-import { leaveRequestSchema } from './validators.js';
+import {
+  leaveLeaderListQuerySchema,
+  leaveRequestSchema,
+} from './validators.js';
 import { endOfDay, parseDateParam } from '../utils/date.js';
 import { evaluateActionPolicyWithFallback } from '../services/actionPolicy.js';
 import { resolveActionPolicyDeniedCode } from '../services/actionPolicyErrors.js';
@@ -24,6 +27,11 @@ function parseTimeToMinutes(value: unknown) {
   if (hours < 0 || hours > 23) return null;
   if (minutes < 0 || minutes > 59) return null;
   return hours * 60 + minutes;
+}
+
+function normalizeListLimit(value: unknown) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return 100;
+  return Math.max(1, Math.min(300, Math.floor(value)));
 }
 
 export async function registerLeaveRoutes(app: FastifyInstance) {
@@ -171,9 +179,52 @@ export async function registerLeaveRoutes(app: FastifyInstance) {
     { preHandler: requireRole(['admin', 'mgmt', 'user']) },
     async (req, reply) => {
       const { id } = req.params as { id: string };
-      const body = req.body as any;
+      const body =
+        req.body && typeof req.body === 'object'
+          ? (req.body as Record<string, unknown>)
+          : {};
+      if (
+        body.reasonText !== undefined &&
+        (typeof body.reasonText !== 'string' || body.reasonText.length > 2000)
+      ) {
+        return reply.status(400).send({
+          error: {
+            code: 'INVALID_PAYLOAD',
+            message: 'reasonText must be a string up to 2000 characters',
+          },
+        });
+      }
+      if (
+        body.noConsultationConfirmed !== undefined &&
+        typeof body.noConsultationConfirmed !== 'boolean'
+      ) {
+        return reply.status(400).send({
+          error: {
+            code: 'INVALID_PAYLOAD',
+            message: 'noConsultationConfirmed must be a boolean',
+          },
+        });
+      }
+      if (
+        body.noConsultationReason !== undefined &&
+        (typeof body.noConsultationReason !== 'string' ||
+          body.noConsultationReason.length > 2000)
+      ) {
+        return reply.status(400).send({
+          error: {
+            code: 'INVALID_PAYLOAD',
+            message:
+              'noConsultationReason must be a string up to 2000 characters',
+          },
+        });
+      }
       const reasonText =
-        typeof body?.reasonText === 'string' ? body.reasonText.trim() : '';
+        typeof body.reasonText === 'string' ? body.reasonText.trim() : '';
+      const noConsultationConfirmed = body.noConsultationConfirmed === true;
+      const noConsultationReason =
+        typeof body.noConsultationReason === 'string'
+          ? body.noConsultationReason.trim()
+          : '';
       const leave = await prisma.leaveRequest.findUnique({ where: { id } });
       if (!leave) {
         return reply.code(404).send({ error: 'not_found' });
@@ -347,6 +398,41 @@ export async function registerLeaveRoutes(app: FastifyInstance) {
           });
         }
       }
+
+      const annotation = await prisma.annotation.findUnique({
+        where: {
+          targetKind_targetId: { targetKind: 'leave_request', targetId: id },
+        },
+        select: { internalRefs: true },
+      });
+      const internalRefs = Array.isArray(annotation?.internalRefs)
+        ? (annotation?.internalRefs as Array<Record<string, unknown>>)
+        : [];
+      const hasConsultationEvidence = internalRefs.some((ref) => {
+        if (!ref || typeof ref !== 'object') return false;
+        const kind = typeof ref.kind === 'string' ? ref.kind.trim() : '';
+        const refId = typeof ref.id === 'string' ? ref.id.trim() : '';
+        return kind === 'chat_message' && Boolean(refId);
+      });
+
+      if (!hasConsultationEvidence) {
+        if (!noConsultationConfirmed || !noConsultationReason) {
+          return reply.status(400).send({
+            error: {
+              code: 'NO_CONSULTATION_REASON_REQUIRED',
+              message:
+                'Consultation evidence is missing. Confirm no consultation and provide a reason.',
+            },
+          });
+        }
+      }
+
+      const noConsultationUpdate = hasConsultationEvidence
+        ? { noConsultationConfirmed: null, noConsultationReason: null }
+        : {
+            noConsultationConfirmed: true,
+            noConsultationReason,
+          };
       const actorUserId = req.user?.userId || 'system';
       const { updated, approval } = await submitApprovalWithUpdate({
         flowType: FlowTypeValue.leave,
@@ -355,7 +441,7 @@ export async function registerLeaveRoutes(app: FastifyInstance) {
         update: (tx) =>
           tx.leaveRequest.update({
             where: { id },
-            data: { status: 'pending_manager' },
+            data: { status: 'pending_manager', ...noConsultationUpdate },
           }),
         payload: {
           hours: leave.hours || 0,
@@ -375,6 +461,127 @@ export async function registerLeaveRoutes(app: FastifyInstance) {
         steps: approval.steps,
       });
       return updated;
+    },
+  );
+
+  app.get(
+    '/leave-requests/leader',
+    {
+      preHandler: requireRole(['admin', 'mgmt', 'user']),
+      schema: leaveLeaderListQuerySchema,
+    },
+    async (req, reply) => {
+      const {
+        userId: requestedUserId,
+        status,
+        limit,
+      } = req.query as {
+        userId?: string;
+        status?: 'pending_manager' | 'approved' | 'rejected';
+        limit?: number;
+      };
+      const roles = req.user?.roles || [];
+      const currentUserId = req.user?.userId ?? null;
+      const isPrivileged = roles.includes('admin') || roles.includes('mgmt');
+      const take = normalizeListLimit(limit);
+
+      let allowedUserIds: string[] = [];
+      const visibleProjectIdsByUser = new Map<string, Set<string>>();
+
+      if (!isPrivileged) {
+        if (!currentUserId) {
+          return reply.code(401).send({ error: 'unauthorized' });
+        }
+        const leaderRows = await prisma.projectMember.findMany({
+          where: { userId: currentUserId, role: 'leader' },
+          select: { projectId: true },
+        });
+        const leaderProjectIds = Array.from(
+          new Set(
+            leaderRows
+              .map((row) => row.projectId)
+              .filter((projectId): projectId is string => Boolean(projectId)),
+          ),
+        );
+        if (!leaderProjectIds.length) {
+          return reply.code(403).send({ error: 'forbidden' });
+        }
+        const memberRows = await prisma.projectMember.findMany({
+          where: { projectId: { in: leaderProjectIds } },
+          select: { userId: true, projectId: true },
+        });
+        for (const row of memberRows) {
+          const bucket =
+            visibleProjectIdsByUser.get(row.userId) ?? new Set<string>();
+          bucket.add(row.projectId);
+          visibleProjectIdsByUser.set(row.userId, bucket);
+        }
+        allowedUserIds = Array.from(visibleProjectIdsByUser.keys());
+      }
+
+      if (requestedUserId && !isPrivileged) {
+        if (!allowedUserIds.includes(requestedUserId)) {
+          return { items: [] as Array<Record<string, unknown>> };
+        }
+        allowedUserIds = [requestedUserId];
+      } else if (requestedUserId) {
+        allowedUserIds = [requestedUserId];
+      }
+
+      if (!isPrivileged && !allowedUserIds.length) {
+        return { items: [] as Array<Record<string, unknown>> };
+      }
+
+      const where = {
+        ...(status ? { status } : { status: { not: 'draft' as const } }),
+        ...(allowedUserIds.length ? { userId: { in: allowedUserIds } } : {}),
+      };
+
+      const items = await prisma.leaveRequest.findMany({
+        where,
+        select: {
+          id: true,
+          userId: true,
+          leaveType: true,
+          startDate: true,
+          endDate: true,
+          hours: true,
+          minutes: true,
+          startTimeMinutes: true,
+          endTimeMinutes: true,
+          status: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+        orderBy: [{ startDate: 'desc' }, { createdAt: 'desc' }],
+        take,
+      });
+
+      const userIds = Array.from(
+        new Set(items.map((item) => item.userId).filter(Boolean)),
+      );
+      const userAccounts = userIds.length
+        ? await prisma.userAccount.findMany({
+            where: { userName: { in: userIds } },
+            select: {
+              userName: true,
+              displayName: true,
+            },
+          })
+        : [];
+      const displayNameByUserName = new Map<string, string | null>(
+        userAccounts.map((item) => [item.userName, item.displayName]),
+      );
+
+      return {
+        items: items.map((item) => ({
+          ...item,
+          userDisplayName: displayNameByUserName.get(item.userId) ?? null,
+          visibleProjectIds: Array.from(
+            visibleProjectIdsByUser.get(item.userId) ?? new Set<string>(),
+          ).sort(),
+        })),
+      };
     },
   );
 
