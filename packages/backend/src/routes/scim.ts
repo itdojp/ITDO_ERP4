@@ -824,14 +824,13 @@ export async function registerScimRoutes(app: FastifyInstance) {
             ...auditContextFromRequest(req, { source: 'scim' }),
           });
         } else {
-          const deactivated = await deactivatePersonalGeneralAffairsChatRoomMember(
-            {
+          const deactivated =
+            await deactivatePersonalGeneralAffairsChatRoomMember({
               userAccountId: updated.id,
               userId: chatUserId,
               updatedBy: chatUserId,
               reason: 'scim_user_deactivated',
-            },
-          );
+            });
           if (deactivated.updatedCount > 0) {
             await logAudit({
               action: 'personal_ga_room_member_deactivated',
@@ -881,14 +880,13 @@ export async function registerScimRoutes(app: FastifyInstance) {
       });
       const chatUserId = (updated.externalId || updated.userName || '').trim();
       if (chatUserId) {
-        const deactivated = await deactivatePersonalGeneralAffairsChatRoomMember(
-          {
+        const deactivated =
+          await deactivatePersonalGeneralAffairsChatRoomMember({
             userAccountId: updated.id,
             userId: chatUserId,
             updatedBy: chatUserId,
             reason: 'scim_user_deactivated',
-          },
-        );
+          });
         if (deactivated.updatedCount > 0) {
           await logAudit({
             action: 'personal_ga_room_member_deactivated',
