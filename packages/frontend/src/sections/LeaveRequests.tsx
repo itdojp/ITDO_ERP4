@@ -96,7 +96,10 @@ function parseClock(value: string) {
   const hour = Number(matched[1]);
   const minute = Number(matched[2]);
   if (!Number.isInteger(hour) || !Number.isInteger(minute)) return null;
-  if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return null;
+  if (minute < 0 || minute > 59) return null;
+  // Align with backend parser: allow 24:00 as end-of-day.
+  if (hour === 24 && minute === 0) return 24 * 60;
+  if (hour < 0 || hour > 23) return null;
   return hour * 60 + minute;
 }
 
@@ -501,7 +504,43 @@ export const LeaveRequests: React.FC = () => {
           </button>
         </div>
       </div>
-      {submitConflict?.conflicts?.length ? (
+      {submitConflict?.code === 'TIME_ENTRY_OVERBOOKED' ? (
+        <div className="card" style={{ marginTop: 12, padding: 12 }}>
+          <strong>工数と時間休の合計超過</strong>
+          <p style={{ marginTop: 8, marginBottom: 8, fontSize: 12 }}>
+            所定労働時間を超えています。工数または時間休を調整してください。
+          </p>
+          <ul className="list">
+            <li>
+              既存工数: {submitConflict.existingMinutes ?? 0}min / 申請時間休:{' '}
+              {submitConflict.requestedLeaveMinutes ?? 0}min
+            </li>
+            <li>
+              合計: {submitConflict.totalMinutes ?? 0}min / 所定労働時間:{' '}
+              {submitConflict.defaultWorkdayMinutes ?? 0}min
+            </li>
+            <li>
+              超過:{' '}
+              {Math.max(
+                0,
+                (submitConflict.totalMinutes ?? 0) -
+                  (submitConflict.defaultWorkdayMinutes ?? 0),
+              )}
+              min
+            </li>
+          </ul>
+          {submitConflict.conflicts?.length ? (
+            <ul className="list" style={{ marginTop: 8 }}>
+              {submitConflict.conflicts.map((item) => (
+                <li key={item.id}>
+                  {formatDateLabel(item.workDate)} / {item.minutes}min /
+                  project:{item.projectId}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
+      ) : submitConflict?.conflicts?.length ? (
         <div className="card" style={{ marginTop: 12, padding: 12 }}>
           <strong>工数の重複</strong>
           <p style={{ marginTop: 8, marginBottom: 8, fontSize: 12 }}>
