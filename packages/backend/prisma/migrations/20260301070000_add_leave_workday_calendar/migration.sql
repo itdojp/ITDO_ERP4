@@ -13,9 +13,6 @@ CREATE TABLE IF NOT EXISTS "LeaveCompanyHoliday" (
 CREATE UNIQUE INDEX IF NOT EXISTS "LeaveCompanyHoliday_holidayDate_key"
   ON "LeaveCompanyHoliday"("holidayDate");
 
-CREATE INDEX IF NOT EXISTS "LeaveCompanyHoliday_holidayDate_idx"
-  ON "LeaveCompanyHoliday"("holidayDate");
-
 CREATE TABLE IF NOT EXISTS "LeaveWorkdayOverride" (
   "id" TEXT NOT NULL,
   "userId" TEXT NOT NULL,
@@ -30,9 +27,6 @@ CREATE TABLE IF NOT EXISTS "LeaveWorkdayOverride" (
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS "LeaveWorkdayOverride_userId_workDate_key"
-  ON "LeaveWorkdayOverride"("userId", "workDate");
-
-CREATE INDEX IF NOT EXISTS "LeaveWorkdayOverride_userId_workDate_idx"
   ON "LeaveWorkdayOverride"("userId", "workDate");
 
 CREATE INDEX IF NOT EXISTS "LeaveWorkdayOverride_workDate_idx"

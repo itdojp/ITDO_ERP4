@@ -664,22 +664,20 @@ model LeaveCompanyHoliday {
   updatedBy   String?
 
   @@unique([holidayDate])
-  @@index([holidayDate])
 }
 
 model LeaveWorkdayOverride {
-  id         String   @id @default(uuid())
-  userId     String
-  workDate   DateTime
+  id          String   @id @default(uuid())
+  userId      String
+  workDate    DateTime
   workMinutes Int
-  reasonText String?
-  createdAt  DateTime @default(now())
-  createdBy  String?
-  updatedAt  DateTime @updatedAt
-  updatedBy  String?
+  reasonText  String?
+  createdAt   DateTime @default(now())
+  createdBy   String?
+  updatedAt   DateTime @updatedAt
+  updatedBy   String?
 
   @@unique([userId, workDate])
-  @@index([userId, workDate])
   @@index([workDate])
 }
 

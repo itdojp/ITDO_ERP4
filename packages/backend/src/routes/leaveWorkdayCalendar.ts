@@ -161,7 +161,7 @@ export async function registerLeaveWorkdayCalendarRoutes(app: FastifyInstance) {
         targetId: existing.id,
         metadata: {
           holidayDate: existing.holidayDate.toISOString().slice(0, 10),
-          updatedBy: actorId,
+          deletedBy: actorId,
         },
         ...auditContextFromRequest(req),
       });
@@ -198,7 +198,13 @@ export async function registerLeaveWorkdayCalendarRoutes(app: FastifyInstance) {
         });
       }
       if (!isPrivileged && actorUserId !== targetUserId) {
-        return reply.status(403).send({ error: { code: 'FORBIDDEN' } });
+        return reply.status(403).send({
+          error: {
+            code: 'FORBIDDEN',
+            message:
+              'You are not allowed to access workday overrides for another user',
+          },
+        });
       }
 
       const fromDate = normalizeDateOnly(from);
