@@ -36,7 +36,7 @@ DB上は `type` として表現し、ポリシー（公式/私的、外部連携
 - `project`: `ChatRoom.id = Project.id`（`roomId = projectId`）
 - `company`: 固定（`ChatRoom.id = "company"`）
 - `department`: 決定的ID（`ChatRoom.id = "dept_" + sha256(groupAccountId).slice(0,32)`）、`ChatRoom.groupId = GroupAccount.id (UUID)`
-- `personal_general_affairs`: 決定的ID（`ChatRoom.id = "pga_" + sha256(userAccountId).slice(0,32)`）
+- （個人総務チャット用）`personal_general_affairs`: 決定的ID（`ChatRoom.id = "pga_" + sha256(userAccountId).slice(0,32)`）※ DB上の`type`値ではなく、`type=private_group` + `isOfficial=true` 用のID命名規則
 - `private_group`: `uuid`
 - `dm`: 決定的ID（`ChatRoom.id = "dm_" + sha256(userA + "\\n" + userB).slice(0,32)`）
 

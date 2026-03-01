@@ -450,12 +450,11 @@ export const LeaveRequests: React.FC = () => {
         '/chat-rooms/personal-general-affairs',
       );
       if (!room?.roomId) {
-        throw new Error('personal_ga_room_not_found');
+        throw new Error('総務チャットルームの取得に失敗しました');
       }
       navigateToOpen({ kind: 'room_chat', id: room.roomId });
-    } catch (e: unknown) {
-      const message = e instanceof Error ? e.message : '';
-      setPersonalGaRoomError(message || '総務チャットの取得に失敗しました');
+    } catch (_e: unknown) {
+      setPersonalGaRoomError('総務チャットルームの取得に失敗しました');
     } finally {
       setOpeningPersonalGaRoom(false);
     }
@@ -918,7 +917,7 @@ export const LeaveRequests: React.FC = () => {
                     </p>
                     {personalGaRoomError ? (
                       <p
-                        role="status"
+                        role="alert"
                         style={{
                           marginTop: 8,
                           marginBottom: 0,
