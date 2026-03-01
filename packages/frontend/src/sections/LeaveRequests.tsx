@@ -356,8 +356,7 @@ export const LeaveRequests: React.FC = () => {
           return (
             <li key={item.id}>
               <span className="badge">{item.status}</span> {item.leaveType} /{' '}
-              {formatDateLabel(item.startDate)}〜
-              {formatDateLabel(item.endDate)}
+              {formatDateLabel(item.startDate)}〜{formatDateLabel(item.endDate)}
               {duration ? ` / ${duration}` : ''}
               <div>
                 <button
@@ -483,8 +482,7 @@ export const LeaveRequests: React.FC = () => {
                 {item.userDisplayName
                   ? `${item.userDisplayName} (${item.userId})`
                   : item.userId}{' '}
-                / {item.leaveType} /{' '}
-                {formatDateLabel(item.startDate)}〜
+                / {item.leaveType} / {formatDateLabel(item.startDate)}〜
                 {formatDateLabel(item.endDate)}
                 {duration ? ` / ${duration}` : ''}
                 {item.visibleProjectIds?.length
