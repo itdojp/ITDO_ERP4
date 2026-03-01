@@ -6788,6 +6788,9 @@
                   "leaveType": {
                     "type": "string"
                   },
+                  "leaveUnit": {
+                    "description": "Leave request unit. Allowed values are 'daily' and 'hourly' (validated in handler for backward compatibility)."
+                  },
                   "notes": {
                     "type": "string"
                   },

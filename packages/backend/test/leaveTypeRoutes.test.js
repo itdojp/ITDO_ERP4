@@ -153,6 +153,46 @@ test('POST /leave-requests rejects unknown leave type', async () => {
   );
 });
 
+test('POST /leave-requests rejects unit mismatch for leave type', async () => {
+  await withPrismaStubs(
+    {
+      'leaveType.findMany': async () => [
+        { code: 'paid' },
+        { code: 'special' },
+        { code: 'substitute' },
+        { code: 'compensatory' },
+        { code: 'unpaid' },
+      ],
+      'leaveType.findFirst': async () => ({
+        code: 'special',
+        unit: 'daily',
+        active: true,
+      }),
+    },
+    async () => {
+      await withServer(async (server) => {
+        const res = await server.inject({
+          method: 'POST',
+          url: '/leave-requests',
+          headers: userHeaders(),
+          payload: {
+            userId: 'normal-user',
+            leaveType: 'special',
+            leaveUnit: 'hourly',
+            startDate: '2026-03-01',
+            endDate: '2026-03-01',
+            startTime: '09:00',
+            endTime: '10:00',
+          },
+        });
+        assert.equal(res.statusCode, 400, res.body);
+        const body = JSON.parse(res.body);
+        assert.equal(body?.error?.code, 'LEAVE_TYPE_UNIT_MISMATCH');
+      });
+    },
+  );
+});
+
 test('POST /leave-types creates a leave type as admin', async () => {
   let created = null;
   await withPrismaStubs(
@@ -231,4 +271,114 @@ test('PATCH /leave-types normalizes blank description to null', async () => {
     },
   );
   assert.equal(updatePayload?.description, null);
+});
+
+test('POST /leave-requests/:id/submit rejects required attachment when missing evidence', async () => {
+  await withPrismaStubs(
+    {
+      'leaveType.findMany': async () => [
+        { code: 'paid' },
+        { code: 'special' },
+        { code: 'substitute' },
+        { code: 'compensatory' },
+        { code: 'unpaid' },
+      ],
+      'leaveRequest.findUnique': async () => ({
+        id: 'leave-1',
+        userId: 'normal-user',
+        status: 'draft',
+        leaveType: 'special',
+        startDate: new Date('2026-03-01T00:00:00.000Z'),
+        endDate: new Date('2026-03-01T00:00:00.000Z'),
+        startTimeMinutes: null,
+        endTimeMinutes: null,
+        minutes: null,
+        hours: 8,
+      }),
+      'actionPolicy.findMany': async () => [],
+      'leaveSetting.upsert': async () => ({
+        id: 'default',
+        timeUnitMinutes: 10,
+        defaultWorkdayMinutes: 480,
+      }),
+      'timeEntry.count': async () => 0,
+      'annotation.findUnique': async () => ({
+        internalRefs: [],
+        externalUrls: [],
+      }),
+      'leaveType.findFirst': async () => ({
+        code: 'special',
+        attachmentPolicy: 'required',
+        active: true,
+      }),
+    },
+    async () => {
+      await withServer(async (server) => {
+        const res = await server.inject({
+          method: 'POST',
+          url: '/leave-requests/leave-1/submit',
+          headers: userHeaders(),
+          payload: {},
+        });
+        assert.equal(res.statusCode, 400, res.body);
+        const body = JSON.parse(res.body);
+        assert.equal(body?.error?.code, 'ATTACHMENT_EVIDENCE_REQUIRED');
+      });
+    },
+  );
+});
+
+test('POST /leave-requests/:id/submit proceeds past attachment check when evidence exists', async () => {
+  await withPrismaStubs(
+    {
+      'leaveType.findMany': async () => [
+        { code: 'paid' },
+        { code: 'special' },
+        { code: 'substitute' },
+        { code: 'compensatory' },
+        { code: 'unpaid' },
+      ],
+      'leaveRequest.findUnique': async () => ({
+        id: 'leave-2',
+        userId: 'normal-user',
+        status: 'draft',
+        leaveType: 'special',
+        startDate: new Date('2026-03-01T00:00:00.000Z'),
+        endDate: new Date('2026-03-01T00:00:00.000Z'),
+        startTimeMinutes: null,
+        endTimeMinutes: null,
+        minutes: null,
+        hours: 8,
+      }),
+      'actionPolicy.findMany': async () => [],
+      'leaveSetting.upsert': async () => ({
+        id: 'default',
+        timeUnitMinutes: 10,
+        defaultWorkdayMinutes: 480,
+      }),
+      'timeEntry.count': async () => 0,
+      'annotation.findUnique': async () => ({
+        internalRefs: [],
+        externalUrls: ['https://example.com/evidence'],
+      }),
+      'leaveType.findFirst': async () => ({
+        code: 'special',
+        attachmentPolicy: 'required',
+        active: true,
+      }),
+    },
+    async () => {
+      await withServer(async (server) => {
+        const res = await server.inject({
+          method: 'POST',
+          url: '/leave-requests/leave-2/submit',
+          headers: userHeaders(),
+          payload: {},
+        });
+        assert.equal(res.statusCode, 400, res.body);
+        const body = JSON.parse(res.body);
+        assert.equal(body?.error?.code, 'NO_CONSULTATION_REASON_REQUIRED');
+      });
+    },
+  );
 });

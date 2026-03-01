@@ -345,6 +345,40 @@ export async function registerLeaveRoutes(app: FastifyInstance) {
       }
       const usesHourlyLeave =
         startTimeMinutes !== null || endTimeMinutes !== null;
+      const hasLeaveUnit =
+        body !== null &&
+        typeof body === 'object' &&
+        Object.prototype.hasOwnProperty.call(body, 'leaveUnit');
+      if (hasLeaveUnit && typeof body.leaveUnit !== 'string') {
+        return reply.status(400).send({
+          error: {
+            code: 'INVALID_LEAVE_UNIT',
+            message: 'leaveUnit must be daily or hourly',
+          },
+        });
+      }
+      const requestedLeaveUnitRaw =
+        typeof body.leaveUnit === 'string'
+          ? body.leaveUnit.trim().toLowerCase()
+          : '';
+      if (
+        requestedLeaveUnitRaw &&
+        requestedLeaveUnitRaw !== 'daily' &&
+        requestedLeaveUnitRaw !== 'hourly'
+      ) {
+        return reply.status(400).send({
+          error: {
+            code: 'INVALID_LEAVE_UNIT',
+            message: 'leaveUnit must be daily or hourly',
+          },
+        });
+      }
+      const requestedLeaveUnit: 'daily' | 'hourly' =
+        requestedLeaveUnitRaw === 'daily' || requestedLeaveUnitRaw === 'hourly'
+          ? requestedLeaveUnitRaw
+          : usesHourlyLeave
+            ? 'hourly'
+            : 'daily';
 
       let hours = undefined as number | undefined;
       if (body.hours !== undefined && body.hours !== null) {
@@ -375,7 +409,39 @@ export async function registerLeaveRoutes(app: FastifyInstance) {
           },
         });
       }
-      if (usesHourlyLeave) {
+      if (requestedLeaveUnit === 'hourly' && !usesHourlyLeave) {
+        return reply.status(400).send({
+          error: {
+            code: 'INVALID_TIME_RANGE',
+            message: 'startTime and endTime are required for hourly leave',
+          },
+        });
+      }
+      if (requestedLeaveUnit === 'daily' && usesHourlyLeave) {
+        return reply.status(400).send({
+          error: {
+            code: 'INVALID_LEAVE_UNIT',
+            message: 'startTime/endTime can be used only with hourly leaveUnit',
+          },
+        });
+      }
+      if (leaveType.unit === 'daily' && requestedLeaveUnit === 'hourly') {
+        return reply.status(400).send({
+          error: {
+            code: 'LEAVE_TYPE_UNIT_MISMATCH',
+            message: 'selected leaveType allows daily requests only',
+          },
+        });
+      }
+      if (leaveType.unit === 'hourly' && requestedLeaveUnit === 'daily') {
+        return reply.status(400).send({
+          error: {
+            code: 'LEAVE_TYPE_UNIT_MISMATCH',
+            message: 'selected leaveType allows hourly requests only',
+          },
+        });
+      }
+      if (requestedLeaveUnit === 'hourly') {
         if (startTimeMinutes === null || endTimeMinutes === null) {
           return reply.status(400).send({
             error: {
@@ -674,17 +740,47 @@ export async function registerLeaveRoutes(app: FastifyInstance) {
         where: {
           targetKind_targetId: { targetKind: 'leave_request', targetId: id },
         },
-        select: { internalRefs: true },
+        select: { internalRefs: true, externalUrls: true },
       });
-      const internalRefs = Array.isArray(annotation?.internalRefs)
+      const rawInternalRefs = Array.isArray(annotation?.internalRefs)
         ? (annotation?.internalRefs as Array<Record<string, unknown>>)
         : [];
-      const hasConsultationEvidence = internalRefs.some((ref) => {
-        if (!ref || typeof ref !== 'object') return false;
+      const normalizedInternalRefs = rawInternalRefs.flatMap((ref) => {
+        if (!ref || typeof ref !== 'object') return [];
         const kind = typeof ref.kind === 'string' ? ref.kind.trim() : '';
         const refId = typeof ref.id === 'string' ? ref.id.trim() : '';
-        return kind === 'chat_message' && Boolean(refId);
+        if (!kind || !refId) return [];
+        return [{ kind, refId }];
       });
+      const externalUrls = Array.isArray(annotation?.externalUrls)
+        ? annotation.externalUrls
+            .filter(
+              (value): value is string =>
+                typeof value === 'string' && Boolean(value.trim()),
+            )
+            .map((value) => value.trim())
+        : [];
+      const leaveType = await findLeaveTypeByCode({
+        code: leave.leaveType,
+        includeInactive: true,
+      });
+      const hasAttachmentEvidence =
+        externalUrls.length > 0 || normalizedInternalRefs.length > 0;
+      if (
+        leaveType?.attachmentPolicy === 'required' &&
+        !hasAttachmentEvidence
+      ) {
+        return reply.status(400).send({
+          error: {
+            code: 'ATTACHMENT_EVIDENCE_REQUIRED',
+            message:
+              'This leave type requires at least one attachment or reference before submit',
+          },
+        });
+      }
+      const hasConsultationEvidence = normalizedInternalRefs.some(
+        (ref) => ref.kind === 'chat_message',
+      );
 
       if (!hasConsultationEvidence) {
         if (!noConsultationConfirmed || !noConsultationReason) {
