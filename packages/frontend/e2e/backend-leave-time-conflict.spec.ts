@@ -401,6 +401,7 @@ test('hourly leave submit uses per-user workday override for overbook check @cor
   request,
 }) => {
   const suffix = runId();
+  const targetUserId = `leave-override-${suffix}`;
   const target = new Date();
   target.setDate(target.getDate() + 1);
   const targetDate = toDateInput(target);
@@ -423,7 +424,7 @@ test('hourly leave submit uses per-user workday override for overbook check @cor
       const timeRes = await request.post(`${apiBase}/time-entries`, {
         data: {
           projectId: project.id,
-          userId: 'demo-user',
+          userId: targetUserId,
           workDate: targetDate,
           minutes: 250,
         },
@@ -435,7 +436,7 @@ test('hourly leave submit uses per-user workday override for overbook check @cor
         `${apiBase}/leave-calendar/workday-overrides`,
         {
           data: {
-            userId: 'demo-user',
+            userId: targetUserId,
             workDate: targetDate,
             workMinutes: 360,
             reasonText: `override-${suffix}`,
@@ -449,7 +450,7 @@ test('hourly leave submit uses per-user workday override for overbook check @cor
       try {
         const leaveRes = await request.post(`${apiBase}/leave-requests`, {
           data: {
-            userId: 'demo-user',
+            userId: targetUserId,
             leaveType: 'paid',
             startDate: targetDate,
             endDate: targetDate,
