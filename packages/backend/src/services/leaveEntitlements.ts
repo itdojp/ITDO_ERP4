@@ -1,6 +1,7 @@
 import type { LeaveRequest } from '@prisma/client';
 import { prisma } from './db.js';
 import { ensureLeaveSetting } from './leaveSettings.js';
+import { resolveUserWorkdayMinutes } from './leaveWorkdayCalendar.js';
 import { diffInDays, endOfDay, toDateOnly } from '../utils/date.js';
 
 export const GENERAL_AFFAIRS_GROUP_ACCOUNT_ID = 'general_affairs';
@@ -93,6 +94,67 @@ export function resolveLeaveRequestMinutes(options: {
 
   const days = resolveInclusiveDayCount(leave.startDate, leave.endDate);
   return normalizeNonNegativeInt(days * defaultWorkdayMinutes);
+}
+
+function isLeaveMinutesExplicit(leave: LeaveRequestForMinutes) {
+  if (
+    leave.startTimeMinutes !== null &&
+    leave.startTimeMinutes !== undefined &&
+    leave.endTimeMinutes !== null &&
+    leave.endTimeMinutes !== undefined
+  ) {
+    return true;
+  }
+  return (
+    (leave.minutes !== null && leave.minutes !== undefined) ||
+    (leave.hours !== null && leave.hours !== undefined)
+  );
+}
+
+export async function resolveLeaveRequestMinutesWithCalendar(options: {
+  leave: LeaveRequestForMinutes;
+  userId: string;
+  defaultWorkdayMinutes: number;
+  client?: typeof prisma;
+  workdayMinutesCache?: Map<string, number>;
+}) {
+  const { leave } = options;
+  if (isLeaveMinutesExplicit(leave)) {
+    return resolveLeaveRequestMinutes({
+      leave,
+      defaultWorkdayMinutes: options.defaultWorkdayMinutes,
+    });
+  }
+
+  const client = options.client ?? prisma;
+  const defaultWorkdayMinutes = normalizeNonNegativeInt(
+    options.defaultWorkdayMinutes,
+  );
+  const workdayMinutesCache = options.workdayMinutesCache ?? new Map();
+  const startDate = toDateOnly(leave.startDate);
+  const days = resolveInclusiveDayCount(leave.startDate, leave.endDate);
+  let total = 0;
+  for (let i = 0; i < days; i += 1) {
+    const workDate = new Date(startDate.getTime() + i * 24 * 60 * 60 * 1000);
+    const key = toDateKey(workDate);
+    if (!key) continue;
+    const cached = workdayMinutesCache.get(key);
+    if (cached !== undefined) {
+      total += cached;
+      continue;
+    }
+    const resolved = await resolveUserWorkdayMinutes({
+      userId: options.userId,
+      targetDate: workDate,
+      defaultWorkdayMinutes,
+      client,
+    });
+    const minutes = normalizeNonNegativeInt(resolved.workMinutes);
+    workdayMinutesCache.set(key, minutes);
+    total += minutes;
+  }
+
+  return normalizeNonNegativeInt(total);
 }
 
 function buildShortageWarning(options: {
@@ -202,10 +264,14 @@ export async function computePaidLeaveBalance(options: {
 
   let usedApprovedMinutes = 0;
   let reservedPendingMinutes = 0;
+  const workdayMinutesCache = new Map<string, number>();
   for (const leave of consumedLeaves) {
-    const minutes = resolveLeaveRequestMinutes({
+    const minutes = await resolveLeaveRequestMinutesWithCalendar({
       leave,
+      userId,
       defaultWorkdayMinutes: setting.defaultWorkdayMinutes,
+      client,
+      workdayMinutesCache,
     });
     if (leave.status === 'approved') {
       usedApprovedMinutes += minutes;

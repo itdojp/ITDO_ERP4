@@ -24,6 +24,27 @@ async function ensureOk(res: { ok(): boolean; status(): number; text(): any }) {
   throw new Error(`[e2e] api failed: ${res.status()} ${body}`);
 }
 
+async function listNotificationsByMessage(
+  request: {
+    get: (
+      url: string,
+      init: { headers: Record<string, string> },
+    ) => Promise<any>;
+  },
+  headers: Record<string, string>,
+  messageId: string,
+) {
+  const res = await request.get(`${apiBase}/notifications?unread=1&limit=200`, {
+    headers,
+  });
+  await ensureOk(res);
+  const payload = await res.json();
+  const items = Array.isArray(payload?.items) ? payload.items : [];
+  return items.filter(
+    (item: any) => item?.kind === 'chat_message' && item?.messageId === messageId,
+  );
+}
+
 test('personal GA room is created on SCIM user create and is accessible to GA only @core', async ({
   request,
 }) => {
@@ -143,6 +164,21 @@ test('personal GA room is created on SCIM user create and is accessible to GA on
   expect(posted?.roomId).toBe(roomId);
   expect(posted?.userId).toBe(gaExternalId);
   expect(posted?.body).toBe(messageBody);
+  expect(typeof posted?.id).toBe('string');
+
+  const employeeNotifications = await listNotificationsByMessage(
+    request,
+    employeeHeaders,
+    posted.id as string,
+  );
+  expect(employeeNotifications.length).toBeGreaterThan(0);
+
+  const pmNotifications = await listNotificationsByMessage(
+    request,
+    pmHeaders,
+    posted.id as string,
+  );
+  expect(pmNotifications.length).toBe(0);
 
   const employeeMessagesRes = await request.get(
     `${apiBase}/chat-rooms/${encodeURIComponent(roomId)}/messages?limit=10`,
