@@ -1026,6 +1026,78 @@ export const leaveLeaderListQuerySchema = {
   ),
 };
 
+export const leaveTypeListQuerySchema = {
+  querystring: Type.Object(
+    {
+      includeInactive: Type.Optional(Type.Boolean()),
+    },
+    { additionalProperties: false },
+  ),
+};
+
+export const leaveTypeCreateSchema = {
+  body: Type.Object(
+    {
+      code: Type.String({ minLength: 1, maxLength: 50 }),
+      name: Type.String({ minLength: 1, maxLength: 100 }),
+      description: Type.Optional(
+        Type.Union([Type.String({ maxLength: 500 }), Type.Null()]),
+      ),
+      isPaid: Type.Boolean(),
+      unit: Type.Union([
+        Type.Literal('daily'),
+        Type.Literal('hourly'),
+        Type.Literal('mixed'),
+      ]),
+      requiresApproval: Type.Boolean(),
+      attachmentPolicy: Type.Union([
+        Type.Literal('required'),
+        Type.Literal('optional'),
+        Type.Literal('none'),
+      ]),
+      displayOrder: Type.Optional(
+        Type.Integer({ minimum: 0, maximum: 100000 }),
+      ),
+      active: Type.Optional(Type.Boolean()),
+      effectiveFrom: Type.Optional(Type.String({ format: 'date-time' })),
+    },
+    { additionalProperties: false },
+  ),
+};
+
+export const leaveTypeUpdateSchema = {
+  body: Type.Object(
+    {
+      name: Type.Optional(Type.String({ minLength: 1, maxLength: 100 })),
+      description: Type.Optional(
+        Type.Union([Type.String({ maxLength: 500 }), Type.Null()]),
+      ),
+      isPaid: Type.Optional(Type.Boolean()),
+      unit: Type.Optional(
+        Type.Union([
+          Type.Literal('daily'),
+          Type.Literal('hourly'),
+          Type.Literal('mixed'),
+        ]),
+      ),
+      requiresApproval: Type.Optional(Type.Boolean()),
+      attachmentPolicy: Type.Optional(
+        Type.Union([
+          Type.Literal('required'),
+          Type.Literal('optional'),
+          Type.Literal('none'),
+        ]),
+      ),
+      displayOrder: Type.Optional(
+        Type.Integer({ minimum: 0, maximum: 100000 }),
+      ),
+      active: Type.Optional(Type.Boolean()),
+      effectiveFrom: Type.Optional(Type.String({ format: 'date-time' })),
+    },
+    { additionalProperties: false },
+  ),
+};
+
 export const leaveCompanyHolidayListQuerySchema = {
   querystring: Type.Object(
     {
