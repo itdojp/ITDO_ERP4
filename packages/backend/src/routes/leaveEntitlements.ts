@@ -6,7 +6,7 @@ import { auditContextFromRequest, logAudit } from '../services/audit.js';
 import {
   computePaidLeaveBalance,
   GENERAL_AFFAIRS_GROUP_ACCOUNT_ID,
-  resolveLeaveRequestMinutes,
+  resolveLeaveRequestMinutesWithCalendar,
 } from '../services/leaveEntitlements.js';
 import {
   leaveEntitlementBalanceQuerySchema,
@@ -105,10 +105,12 @@ export async function registerLeaveEntitlementRoutes(app: FastifyInstance) {
             where: { id: 'default' },
             select: { defaultWorkdayMinutes: true },
           });
-          additionalRequestedMinutes = resolveLeaveRequestMinutes({
-            leave,
-            defaultWorkdayMinutes: setting?.defaultWorkdayMinutes ?? 480,
-          });
+          additionalRequestedMinutes =
+            await resolveLeaveRequestMinutesWithCalendar({
+              leave,
+              userId: targetUserId,
+              defaultWorkdayMinutes: setting?.defaultWorkdayMinutes ?? 480,
+            });
         }
       }
 

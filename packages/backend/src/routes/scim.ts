@@ -4,7 +4,10 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '../services/db.js';
 import { auditContextFromRequest, logAudit } from '../services/audit.js';
 import { requireRole } from '../services/rbac.js';
-import { ensurePersonalGeneralAffairsChatRoom } from '../services/personalGaChatRoom.js';
+import {
+  deactivatePersonalGeneralAffairsChatRoomMember,
+  ensurePersonalGeneralAffairsChatRoom,
+} from '../services/personalGaChatRoom.js';
 
 const SCIM_USER_SCHEMA = 'urn:ietf:params:scim:schemas:core:2.0:User';
 const SCIM_GROUP_SCHEMA = 'urn:ietf:params:scim:schemas:core:2.0:Group';
@@ -798,6 +801,51 @@ export async function registerScimRoutes(app: FastifyInstance) {
         where: { id },
         data: update,
       });
+      const chatUserId = (updated.externalId || updated.userName || '').trim();
+      const activeChanged = current.active !== updated.active;
+      if (activeChanged && chatUserId) {
+        if (updated.active) {
+          const ensured = await ensurePersonalGeneralAffairsChatRoom({
+            userAccountId: updated.id,
+            userId: chatUserId,
+            userName: updated.userName,
+            displayName: updated.displayName,
+            createdBy: chatUserId,
+          });
+          await logAudit({
+            action: 'personal_ga_room_member_reactivated',
+            targetTable: 'chat_room_members',
+            targetId: `${ensured.roomId}:${chatUserId}`,
+            metadata: {
+              userAccountId: updated.id,
+              userId: chatUserId,
+              roomId: ensured.roomId,
+            },
+            ...auditContextFromRequest(req, { source: 'scim' }),
+          });
+        } else {
+          const deactivated =
+            await deactivatePersonalGeneralAffairsChatRoomMember({
+              userAccountId: updated.id,
+              userId: chatUserId,
+              updatedBy: chatUserId,
+              reason: 'scim_user_deactivated',
+            });
+          if (deactivated.updatedCount > 0) {
+            await logAudit({
+              action: 'personal_ga_room_member_deactivated',
+              targetTable: 'chat_room_members',
+              targetId: `${deactivated.roomId}:${chatUserId}`,
+              metadata: {
+                userAccountId: updated.id,
+                userId: chatUserId,
+                roomId: deactivated.roomId,
+              },
+              ...auditContextFromRequest(req, { source: 'scim' }),
+            });
+          }
+        }
+      }
       await logAudit({
         action: 'scim_user_patch',
         targetTable: 'UserAccount',
@@ -830,6 +878,29 @@ export async function registerScimRoutes(app: FastifyInstance) {
         where: { id },
         data: { active: false, deletedAt: new Date() },
       });
+      const chatUserId = (updated.externalId || updated.userName || '').trim();
+      if (chatUserId) {
+        const deactivated =
+          await deactivatePersonalGeneralAffairsChatRoomMember({
+            userAccountId: updated.id,
+            userId: chatUserId,
+            updatedBy: chatUserId,
+            reason: 'scim_user_deactivated',
+          });
+        if (deactivated.updatedCount > 0) {
+          await logAudit({
+            action: 'personal_ga_room_member_deactivated',
+            targetTable: 'chat_room_members',
+            targetId: `${deactivated.roomId}:${chatUserId}`,
+            metadata: {
+              userAccountId: updated.id,
+              userId: chatUserId,
+              roomId: deactivated.roomId,
+            },
+            ...auditContextFromRequest(req, { source: 'scim' }),
+          });
+        }
+      }
       await logAudit({
         action: 'scim_user_deactivate',
         targetTable: 'UserAccount',

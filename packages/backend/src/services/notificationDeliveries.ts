@@ -113,7 +113,11 @@ async function resolveDeliveryEmailTarget(userId: string) {
   if (!trimmed) return null;
   if (emailRegex.test(trimmed)) return trimmed;
   const account = await prisma.userAccount.findFirst({
-    where: { OR: [{ userName: trimmed }, { externalId: trimmed }] },
+    where: {
+      active: true,
+      deletedAt: null,
+      OR: [{ userName: trimmed }, { externalId: trimmed }],
+    },
     select: { emails: true },
   });
   const email = pickPrimaryEmail(account?.emails);

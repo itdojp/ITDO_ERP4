@@ -24,6 +24,27 @@ async function ensureOk(res: { ok(): boolean; status(): number; text(): any }) {
   throw new Error(`[e2e] api failed: ${res.status()} ${body}`);
 }
 
+async function listNotificationsByMessage(
+  request: {
+    get: (
+      url: string,
+      init: { headers: Record<string, string> },
+    ) => Promise<any>;
+  },
+  headers: Record<string, string>,
+  messageId: string,
+) {
+  const res = await request.get(`${apiBase}/notifications?unread=1&limit=200`, {
+    headers,
+  });
+  await ensureOk(res);
+  const payload = await res.json();
+  const items = Array.isArray(payload?.items) ? payload.items : [];
+  return items.filter(
+    (item: any) => item?.kind === 'chat_message' && item?.messageId === messageId,
+  );
+}
+
 test('personal GA room is created on SCIM user create and is accessible to GA only @core', async ({
   request,
 }) => {
@@ -143,6 +164,30 @@ test('personal GA room is created on SCIM user create and is accessible to GA on
   expect(posted?.roomId).toBe(roomId);
   expect(posted?.userId).toBe(gaExternalId);
   expect(posted?.body).toBe(messageBody);
+  expect(typeof posted?.id).toBe('string');
+
+  await expect
+    .poll(
+      async () =>
+        (
+          await listNotificationsByMessage(
+            request,
+            employeeHeaders,
+            posted.id as string,
+          )
+        ).length,
+      { timeout: 3000 },
+    )
+    .toBeGreaterThan(0);
+
+  await expect
+    .poll(
+      async () =>
+        (await listNotificationsByMessage(request, pmHeaders, posted.id as string))
+          .length,
+      { timeout: 3000 },
+    )
+    .toBe(0);
 
   const employeeMessagesRes = await request.get(
     `${apiBase}/chat-rooms/${encodeURIComponent(roomId)}/messages?limit=10`,
@@ -207,4 +252,45 @@ test('personal GA room is created on SCIM user create and is accessible to GA on
   expect(pmPostBody?.error?.code ?? pmPostBody?.error).toBe(
     'forbidden_room_member',
   );
+
+  const scimDeactivateRes = await request.delete(
+    `${apiBase}/scim/v2/Users/${encodeURIComponent(employeeUserScimId)}`,
+    { headers: scimHeaders },
+  );
+  expect(scimDeactivateRes.status()).toBe(204);
+
+  const messageAfterDeactivate = `E2E personal GA message after deactivate ${suffix}`;
+  const postAfterDeactivateRes = await request.post(
+    `${apiBase}/chat-rooms/${encodeURIComponent(roomId)}/messages`,
+    {
+      data: { body: messageAfterDeactivate },
+      headers: gaHeaders,
+    },
+  );
+  await ensureOk(postAfterDeactivateRes);
+  const postedAfterDeactivate = await postAfterDeactivateRes.json();
+  expect(postedAfterDeactivate?.roomId).toBe(roomId);
+  expect(typeof postedAfterDeactivate?.id).toBe('string');
+
+  const employeeNotificationsAfterDeactivateRes = await request.get(
+    `${apiBase}/notifications?unread=1&limit=200`,
+    { headers: employeeHeaders },
+  );
+  if (employeeNotificationsAfterDeactivateRes.status() === 200) {
+    const employeeNotificationPayload =
+      await employeeNotificationsAfterDeactivateRes.json();
+    const employeeItems = Array.isArray(employeeNotificationPayload?.items)
+      ? employeeNotificationPayload.items
+      : [];
+    const matched = employeeItems.filter(
+      (item: any) =>
+        item?.kind === 'chat_message' &&
+        item?.messageId === postedAfterDeactivate.id,
+    );
+    expect(matched.length).toBe(0);
+  } else {
+    expect([401, 403]).toContain(
+      employeeNotificationsAfterDeactivateRes.status(),
+    );
+  }
 });

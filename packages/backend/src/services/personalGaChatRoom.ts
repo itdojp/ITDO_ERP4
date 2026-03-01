@@ -118,3 +118,34 @@ export async function ensurePersonalGeneralAffairsChatRoom(options: {
 
   return { roomId: room.id };
 }
+
+export async function deactivatePersonalGeneralAffairsChatRoomMember(options: {
+  userAccountId: string;
+  userId: string;
+  reason?: string | null;
+  updatedBy?: string | null;
+  client?: any;
+}) {
+  const client = options.client ?? prisma;
+  const userAccountId = options.userAccountId.trim();
+  const userId = options.userId.trim();
+  if (!userAccountId || !userId) {
+    return { roomId: '', updatedCount: 0 };
+  }
+  const roomId = buildPersonalGeneralAffairsRoomId(userAccountId);
+  const actor = (options.updatedBy ?? userId).trim() || null;
+  const now = new Date();
+  const updated = await client.chatRoomMember.updateMany({
+    where: {
+      roomId,
+      userId,
+      deletedAt: null,
+    },
+    data: {
+      deletedAt: now,
+      deletedReason: (options.reason ?? 'user_deactivated').trim() || null,
+      updatedBy: actor,
+    },
+  });
+  return { roomId, updatedCount: updated.count };
+}
