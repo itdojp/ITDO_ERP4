@@ -654,6 +654,27 @@ model LeaveSetting {
   updatedBy             String?
 }
 
+model LeaveType {
+  id               String   @id @default(uuid())
+  code             String   @unique
+  name             String
+  description      String?
+  isPaid           Boolean  @default(false)
+  unit             String   @default("daily") // daily/hourly/mixed
+  requiresApproval Boolean  @default(true)
+  attachmentPolicy String   @default("optional") // required/optional/none
+  active           Boolean  @default(true)
+  displayOrder     Int      @default(100)
+  effectiveFrom    DateTime @default(now())
+  createdAt        DateTime @default(now())
+  createdBy        String?
+  updatedAt        DateTime @updatedAt
+  updatedBy        String?
+
+  @@index([active, displayOrder, code])
+  @@index([effectiveFrom])
+}
+
 model LeaveCompanyHoliday {
   id          String   @id @default(uuid())
   holidayDate DateTime

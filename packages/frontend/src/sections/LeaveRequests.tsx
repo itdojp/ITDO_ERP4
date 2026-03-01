@@ -95,6 +95,16 @@ type LeaveSetting = {
   paidLeaveAdvanceRequireNextGrantWithinDays?: number;
 };
 
+type LeaveTypeOption = {
+  code: string;
+  name: string;
+  isPaid: boolean;
+  unit: 'daily' | 'hourly' | 'mixed';
+  attachmentPolicy: 'required' | 'optional' | 'none';
+  active: boolean;
+  displayOrder: number;
+};
+
 type PersonalGeneralAffairsRoomResponse = {
   roomId: string;
   name?: string | null;
@@ -213,6 +223,7 @@ export const LeaveRequests: React.FC = () => {
     timeUnitMinutes: 10,
     defaultWorkdayMinutes: 480,
   });
+  const [leaveTypes, setLeaveTypes] = useState<LeaveTypeOption[]>([]);
   const [openingPersonalGaRoom, setOpeningPersonalGaRoom] = useState(false);
   const [personalGaRoomError, setPersonalGaRoomError] = useState('');
 
@@ -257,29 +268,51 @@ export const LeaveRequests: React.FC = () => {
   };
 
   useEffect(() => {
-    const loadLeaveSetting = async () => {
-      try {
-        const res = await api<LeaveSetting>('/leave-settings');
+    const loadLeaveMetadata = async () => {
+      const [settingResult, leaveTypesResult] = await Promise.allSettled([
+        api<LeaveSetting>('/leave-settings'),
+        api<{ items?: LeaveTypeOption[] }>('/leave-types'),
+      ]);
+      if (settingResult.status === 'fulfilled') {
+        const setting = settingResult.value;
         if (
-          Number.isInteger(res.timeUnitMinutes) &&
-          res.timeUnitMinutes > 0 &&
-          Number.isInteger(res.defaultWorkdayMinutes) &&
-          res.defaultWorkdayMinutes > 0
+          Number.isInteger(setting.timeUnitMinutes) &&
+          setting.timeUnitMinutes > 0 &&
+          Number.isInteger(setting.defaultWorkdayMinutes) &&
+          setting.defaultWorkdayMinutes > 0
         ) {
           setLeaveSetting({
-            timeUnitMinutes: res.timeUnitMinutes,
-            defaultWorkdayMinutes: res.defaultWorkdayMinutes,
+            timeUnitMinutes: setting.timeUnitMinutes,
+            defaultWorkdayMinutes: setting.defaultWorkdayMinutes,
           });
         }
-      } catch {
-        // noop: fallback defaults are used when leave-setting API is unavailable.
+      }
+      if (leaveTypesResult.status === 'fulfilled') {
+        const items = Array.isArray(leaveTypesResult.value.items)
+          ? leaveTypesResult.value.items
+          : [];
+        setLeaveTypes(items.filter((item) => item.active !== false));
       }
     };
     void load({ silent: true });
-    void loadLeaveSetting();
+    void loadLeaveMetadata();
     void loadPaidLeaveBalance({ silent: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (!leaveTypes.length) return;
+    if (leaveTypes.some((item) => item.code === form.leaveType)) return;
+    setForm((prev) => ({ ...prev, leaveType: leaveTypes[0].code }));
+  }, [leaveTypes, form.leaveType]);
+
+  const leaveTypeLabelByCode = useMemo(
+    () =>
+      new Map(
+        leaveTypes.map((item) => [item.code, `${item.name} (${item.code})`]),
+      ),
+    [leaveTypes],
+  );
 
   const create = async () => {
     if (!canOperate) {
@@ -289,6 +322,13 @@ export const LeaveRequests: React.FC = () => {
     const leaveType = form.leaveType.trim();
     if (!leaveType) {
       setMessage('休暇種別は必須です');
+      return;
+    }
+    if (
+      leaveTypes.length > 0 &&
+      !leaveTypes.some((item) => item.code === leaveType)
+    ) {
+      setMessage('休暇種別が不正です');
       return;
     }
     const startDate = form.startDate;
@@ -716,12 +756,31 @@ export const LeaveRequests: React.FC = () => {
               <option value="hourly">時間休</option>
             </select>
           </label>
-          <input
-            aria-label="休暇種別"
-            value={form.leaveType}
-            onChange={(e) => setForm({ ...form, leaveType: e.target.value })}
-            placeholder="例: paid"
-          />
+          {leaveTypes.length > 0 ? (
+            <label className="row" style={{ gap: 6, alignItems: 'center' }}>
+              <span>休暇種別</span>
+              <select
+                aria-label="休暇種別"
+                value={form.leaveType}
+                onChange={(e) =>
+                  setForm((prev) => ({ ...prev, leaveType: e.target.value }))
+                }
+              >
+                {leaveTypes.map((item) => (
+                  <option key={item.code} value={item.code}>
+                    {item.name} ({item.code})
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : (
+            <input
+              aria-label="休暇種別"
+              value={form.leaveType}
+              onChange={(e) => setForm({ ...form, leaveType: e.target.value })}
+              placeholder="例: paid"
+            />
+          )}
           <label className="row" style={{ gap: 6, alignItems: 'center' }}>
             <span>開始</span>
             <input
@@ -863,7 +922,8 @@ export const LeaveRequests: React.FC = () => {
           const duration = formatLeaveDuration(item);
           return (
             <li key={item.id}>
-              <span className="badge">{item.status}</span> {item.leaveType} /{' '}
+              <span className="badge">{item.status}</span>{' '}
+              {leaveTypeLabelByCode.get(item.leaveType) ?? item.leaveType} /{' '}
               {formatDateLabel(item.startDate)}〜{formatDateLabel(item.endDate)}
               {duration ? ` / ${duration}` : ''}
               <div>
@@ -1016,7 +1076,8 @@ export const LeaveRequests: React.FC = () => {
                 {item.userDisplayName
                   ? `${item.userDisplayName} (${item.userId})`
                   : item.userId}{' '}
-                / {item.leaveType} / {formatDateLabel(item.startDate)}〜
+                / {leaveTypeLabelByCode.get(item.leaveType) ?? item.leaveType} /{' '}
+                {formatDateLabel(item.startDate)}〜
                 {formatDateLabel(item.endDate)}
                 {duration ? ` / ${duration}` : ''}
                 {item.visibleProjectIds?.length

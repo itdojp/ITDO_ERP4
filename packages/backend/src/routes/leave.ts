@@ -5,6 +5,9 @@ import { createApprovalPendingNotifications } from '../services/appNotifications
 import { FlowTypeValue, TimeStatusValue } from '../types.js';
 import { requireRole } from '../services/rbac.js';
 import {
+  leaveTypeCreateSchema,
+  leaveTypeListQuerySchema,
+  leaveTypeUpdateSchema,
   leaveLeaderListQuerySchema,
   leaveRequestSchema,
 } from './validators.js';
@@ -18,6 +21,14 @@ import {
   resolveLeaveRequestMinutes,
 } from '../services/leaveEntitlements.js';
 import { resolveUserWorkdayMinutes } from '../services/leaveWorkdayCalendar.js';
+import {
+  ensureDefaultLeaveTypes,
+  findLeaveTypeByCode,
+  leaveTypeAttachmentPolicies,
+  leaveTypeUnits,
+  listLeaveTypes,
+  normalizeLeaveTypeInput,
+} from '../services/leaveTypes.js';
 
 function parseTimeToMinutes(value: unknown) {
   if (typeof value !== 'string') return null;
@@ -40,6 +51,239 @@ function normalizeListLimit(value: unknown) {
 }
 
 export async function registerLeaveRoutes(app: FastifyInstance) {
+  app.get(
+    '/leave-types',
+    {
+      preHandler: requireRole(['admin', 'mgmt', 'user']),
+      schema: leaveTypeListQuerySchema,
+    },
+    async (req) => {
+      const actorId = req.user?.userId ?? null;
+      await ensureDefaultLeaveTypes({ actorId });
+      const roles = req.user?.roles || [];
+      const includeInactive =
+        (roles.includes('admin') || roles.includes('mgmt')) &&
+        (req.query as { includeInactive?: boolean })?.includeInactive === true;
+      const items = await listLeaveTypes({ includeInactive });
+      return {
+        items: items.map((item) => ({
+          code: item.code,
+          name: item.name,
+          description: item.description,
+          isPaid: item.isPaid,
+          unit: item.unit,
+          requiresApproval: item.requiresApproval,
+          attachmentPolicy: item.attachmentPolicy,
+          active: item.active,
+          displayOrder: item.displayOrder,
+          effectiveFrom: item.effectiveFrom,
+        })),
+      };
+    },
+  );
+
+  app.post(
+    '/leave-types',
+    {
+      preHandler: requireRole(['admin', 'mgmt']),
+      schema: leaveTypeCreateSchema,
+    },
+    async (req, reply) => {
+      const body = req.body as {
+        code: string;
+        name: string;
+        description?: string | null;
+        isPaid: boolean;
+        unit: string;
+        requiresApproval: boolean;
+        attachmentPolicy: string;
+        displayOrder?: number;
+        active?: boolean;
+        effectiveFrom?: string;
+      };
+      const code = normalizeLeaveTypeInput(body.code);
+      if (!code) {
+        return reply.status(400).send({
+          error: {
+            code: 'INVALID_LEAVE_TYPE_CODE',
+            message: 'code is required',
+          },
+        });
+      }
+      const trimmedName = body.name.trim();
+      if (!trimmedName) {
+        return reply.status(400).send({
+          error: {
+            code: 'INVALID_LEAVE_TYPE_NAME',
+            message: 'name is required',
+          },
+        });
+      }
+      if (
+        !leaveTypeUnits.includes(body.unit as (typeof leaveTypeUnits)[number])
+      ) {
+        return reply.status(400).send({
+          error: { code: 'INVALID_LEAVE_TYPE_UNIT', message: 'invalid unit' },
+        });
+      }
+      if (
+        !leaveTypeAttachmentPolicies.includes(
+          body.attachmentPolicy as (typeof leaveTypeAttachmentPolicies)[number],
+        )
+      ) {
+        return reply.status(400).send({
+          error: {
+            code: 'INVALID_ATTACHMENT_POLICY',
+            message: 'invalid attachmentPolicy',
+          },
+        });
+      }
+      const effectiveFrom = body.effectiveFrom
+        ? new Date(body.effectiveFrom)
+        : new Date();
+      if (Number.isNaN(effectiveFrom.getTime())) {
+        return reply.status(400).send({
+          error: {
+            code: 'INVALID_EFFECTIVE_FROM',
+            message: 'effectiveFrom must be a valid date-time',
+          },
+        });
+      }
+      try {
+        const created = await prisma.leaveType.create({
+          data: {
+            code,
+            name: trimmedName,
+            description: body.description?.trim() || null,
+            isPaid: body.isPaid,
+            unit: body.unit,
+            requiresApproval: body.requiresApproval,
+            attachmentPolicy: body.attachmentPolicy,
+            displayOrder: body.displayOrder ?? 100,
+            active: body.active ?? true,
+            effectiveFrom,
+            createdBy: req.user?.userId ?? null,
+            updatedBy: req.user?.userId ?? null,
+          },
+        });
+        return created;
+      } catch (error: any) {
+        if (error?.code === 'P2002') {
+          return reply.status(409).send({
+            error: {
+              code: 'LEAVE_TYPE_EXISTS',
+              message: 'leave type code already exists',
+            },
+          });
+        }
+        throw error;
+      }
+    },
+  );
+
+  app.patch(
+    '/leave-types/:code',
+    {
+      preHandler: requireRole(['admin', 'mgmt']),
+      schema: leaveTypeUpdateSchema,
+    },
+    async (req, reply) => {
+      const { code: rawCode } = req.params as { code: string };
+      const code = normalizeLeaveTypeInput(rawCode);
+      if (!code) {
+        return reply.status(400).send({
+          error: { code: 'INVALID_LEAVE_TYPE_CODE', message: 'invalid code' },
+        });
+      }
+      const body = req.body as Record<string, unknown>;
+      if (Object.keys(body).length === 0) {
+        return reply.status(400).send({
+          error: { code: 'INVALID_PAYLOAD', message: 'body is required' },
+        });
+      }
+      const update: Record<string, unknown> = {
+        updatedBy: req.user?.userId ?? null,
+      };
+      if (typeof body.name === 'string') {
+        const trimmedName = body.name.trim();
+        if (!trimmedName) {
+          return reply.status(400).send({
+            error: {
+              code: 'INVALID_LEAVE_TYPE_NAME',
+              message: 'name is required',
+            },
+          });
+        }
+        update.name = trimmedName;
+      }
+      if (typeof body.description === 'string') {
+        const trimmedDescription = body.description.trim();
+        update.description = trimmedDescription || null;
+      } else if (body.description === null) {
+        update.description = null;
+      }
+      if (typeof body.isPaid === 'boolean') update.isPaid = body.isPaid;
+      if (typeof body.requiresApproval === 'boolean') {
+        update.requiresApproval = body.requiresApproval;
+      }
+      if (typeof body.displayOrder === 'number') {
+        update.displayOrder = Math.max(0, Math.floor(body.displayOrder));
+      }
+      if (typeof body.active === 'boolean') update.active = body.active;
+      if (typeof body.unit === 'string') {
+        if (
+          !leaveTypeUnits.includes(body.unit as (typeof leaveTypeUnits)[number])
+        ) {
+          return reply.status(400).send({
+            error: { code: 'INVALID_LEAVE_TYPE_UNIT', message: 'invalid unit' },
+          });
+        }
+        update.unit = body.unit;
+      }
+      if (typeof body.attachmentPolicy === 'string') {
+        if (
+          !leaveTypeAttachmentPolicies.includes(
+            body.attachmentPolicy as (typeof leaveTypeAttachmentPolicies)[number],
+          )
+        ) {
+          return reply.status(400).send({
+            error: {
+              code: 'INVALID_ATTACHMENT_POLICY',
+              message: 'invalid attachmentPolicy',
+            },
+          });
+        }
+        update.attachmentPolicy = body.attachmentPolicy;
+      }
+      if (typeof body.effectiveFrom === 'string') {
+        const effectiveFrom = new Date(body.effectiveFrom);
+        if (Number.isNaN(effectiveFrom.getTime())) {
+          return reply.status(400).send({
+            error: {
+              code: 'INVALID_EFFECTIVE_FROM',
+              message: 'effectiveFrom must be a valid date-time',
+            },
+          });
+        }
+        update.effectiveFrom = effectiveFrom;
+      }
+      try {
+        const updated = await prisma.leaveType.update({
+          where: { code },
+          data: update,
+        });
+        return updated;
+      } catch (error: any) {
+        if (error?.code === 'P2025') {
+          return reply.status(404).send({
+            error: { code: 'NOT_FOUND', message: 'leave type not found' },
+          });
+        }
+        throw error;
+      }
+    },
+  );
+
   app.post(
     '/leave-requests',
     {
@@ -48,6 +292,7 @@ export async function registerLeaveRoutes(app: FastifyInstance) {
     },
     async (req, reply) => {
       const body = req.body as any;
+      await ensureDefaultLeaveTypes({ actorId: req.user?.userId ?? null });
       const roles = req.user?.roles || [];
       const isPrivileged = roles.includes('admin') || roles.includes('mgmt');
       const currentUserId = req.user?.userId;
@@ -117,6 +362,19 @@ export async function registerLeaveRoutes(app: FastifyInstance) {
       let minutes = undefined as number | undefined;
       let storedStartTimeMinutes = undefined as number | undefined;
       let storedEndTimeMinutes = undefined as number | undefined;
+      const leaveTypeCode = normalizeLeaveTypeInput(body.leaveType);
+      const leaveType = await findLeaveTypeByCode({
+        code: leaveTypeCode,
+        includeInactive: false,
+      });
+      if (!leaveType) {
+        return reply.status(400).send({
+          error: {
+            code: 'INVALID_LEAVE_TYPE',
+            message: 'leaveType must be an active leave type code',
+          },
+        });
+      }
       if (usesHourlyLeave) {
         if (startTimeMinutes === null || endTimeMinutes === null) {
           return reply.status(400).send({
@@ -165,7 +423,7 @@ export async function registerLeaveRoutes(app: FastifyInstance) {
       const leave = await prisma.leaveRequest.create({
         data: {
           userId: body.userId,
-          leaveType: body.leaveType,
+          leaveType: leaveType.code,
           notes: body.notes,
           startDate,
           endDate,
@@ -234,6 +492,7 @@ export async function registerLeaveRoutes(app: FastifyInstance) {
       if (!leave) {
         return reply.code(404).send({ error: 'not_found' });
       }
+      await ensureDefaultLeaveTypes({ actorId: req.user?.userId ?? null });
       const roles = req.user?.roles || [];
       const userId = req.user?.userId;
       if (
@@ -450,7 +709,7 @@ export async function registerLeaveRoutes(app: FastifyInstance) {
         defaultWorkdayMinutes: setting.defaultWorkdayMinutes,
       });
       const paidLeaveBalance =
-        leave.leaveType === 'paid'
+        normalizeLeaveTypeInput(leave.leaveType) === 'paid'
           ? await computePaidLeaveBalance({
               userId: leave.userId,
               additionalRequestedMinutes: requestedLeaveMinutes,
