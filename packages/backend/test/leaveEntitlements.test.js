@@ -39,36 +39,38 @@ function createClient({
       findMany: async () => leaveRequests,
     },
     leaveWorkdayOverride: {
-      findFirst: async ({ where }) => {
+      findMany: async ({ where }) => {
         const range = where?.workDate || {};
         const gte = range.gte ? toMillis(range.gte) : Number.NEGATIVE_INFINITY;
         const lt = range.lt ? toMillis(range.lt) : Number.POSITIVE_INFINITY;
-        const matches = workdayOverrides
+        return workdayOverrides
           .filter((item) => {
             if (where?.userId && item.userId !== where.userId) return false;
             const target = toMillis(item.workDate);
             return target >= gte && target < lt;
           })
+          .map((item) => ({
+            workDate: item.workDate,
+            workMinutes: item.workMinutes,
+            createdAt: item.createdAt || item.workDate,
+          }))
           .sort(
             (a, b) =>
-              toMillis(b.createdAt || b.workDate) -
-              toMillis(a.createdAt || a.workDate),
+              toMillis(b.createdAt) - toMillis(a.createdAt),
           );
-        if (!matches.length) return null;
-        return { workMinutes: matches[0].workMinutes };
       },
     },
     leaveCompanyHoliday: {
-      findFirst: async ({ where }) => {
+      findMany: async ({ where }) => {
         const range = where?.holidayDate || {};
         const gte = range.gte ? toMillis(range.gte) : Number.NEGATIVE_INFINITY;
         const lt = range.lt ? toMillis(range.lt) : Number.POSITIVE_INFINITY;
-        const match = companyHolidays.find((item) => {
-          const target = toMillis(item.holidayDate);
-          return target >= gte && target < lt;
-        });
-        if (!match) return null;
-        return { id: match.id || 'holiday' };
+        return companyHolidays
+          .filter((item) => {
+            const target = toMillis(item.holidayDate);
+            return target >= gte && target < lt;
+          })
+          .map((item) => ({ holidayDate: item.holidayDate }));
       },
     },
   };

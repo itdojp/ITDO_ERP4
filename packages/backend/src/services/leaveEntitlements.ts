@@ -1,7 +1,7 @@
 import type { LeaveRequest } from '@prisma/client';
 import { prisma } from './db.js';
 import { ensureLeaveSetting } from './leaveSettings.js';
-import { resolveUserWorkdayMinutes } from './leaveWorkdayCalendar.js';
+import { resolveUserWorkdayMinutesForDates } from './leaveWorkdayCalendar.js';
 import { diffInDays, endOfDay, toDateOnly } from '../utils/date.js';
 
 export const GENERAL_AFFAIRS_GROUP_ACCOUNT_ID = 'general_affairs';
@@ -133,6 +133,7 @@ export async function resolveLeaveRequestMinutesWithCalendar(options: {
   const workdayMinutesCache = options.workdayMinutesCache ?? new Map();
   const startDate = toDateOnly(leave.startDate);
   const days = resolveInclusiveDayCount(leave.startDate, leave.endDate);
+  const unresolved: Array<{ key: string; workDate: Date }> = [];
   let total = 0;
   for (let i = 0; i < days; i += 1) {
     const workDate = new Date(startDate.getTime() + i * 24 * 60 * 60 * 1000);
@@ -143,15 +144,24 @@ export async function resolveLeaveRequestMinutesWithCalendar(options: {
       total += cached;
       continue;
     }
-    const resolved = await resolveUserWorkdayMinutes({
+    unresolved.push({ key, workDate });
+  }
+
+  if (unresolved.length > 0) {
+    const resolved = await resolveUserWorkdayMinutesForDates({
       userId: options.userId,
-      targetDate: workDate,
+      targetDates: unresolved.map((item) => item.workDate),
       defaultWorkdayMinutes,
       client,
     });
-    const minutes = normalizeNonNegativeInt(resolved.workMinutes);
-    workdayMinutesCache.set(key, minutes);
-    total += minutes;
+    for (const item of unresolved) {
+      const row = resolved.get(item.key);
+      const minutes = normalizeNonNegativeInt(
+        row?.workMinutes ?? defaultWorkdayMinutes,
+      );
+      workdayMinutesCache.set(item.key, minutes);
+      total += minutes;
+    }
   }
 
   return normalizeNonNegativeInt(total);
@@ -265,6 +275,29 @@ export async function computePaidLeaveBalance(options: {
   let usedApprovedMinutes = 0;
   let reservedPendingMinutes = 0;
   const workdayMinutesCache = new Map<string, number>();
+  const prefetchDates = new Map<string, Date>();
+  for (const leave of consumedLeaves) {
+    if (isLeaveMinutesExplicit(leave)) continue;
+    const startDate = toDateOnly(leave.startDate);
+    const days = resolveInclusiveDayCount(leave.startDate, leave.endDate);
+    for (let i = 0; i < days; i += 1) {
+      const workDate = new Date(startDate.getTime() + i * 24 * 60 * 60 * 1000);
+      const key = toDateKey(workDate);
+      if (!key || prefetchDates.has(key)) continue;
+      prefetchDates.set(key, workDate);
+    }
+  }
+  if (prefetchDates.size > 0) {
+    const prefetched = await resolveUserWorkdayMinutesForDates({
+      userId,
+      targetDates: Array.from(prefetchDates.values()),
+      defaultWorkdayMinutes: setting.defaultWorkdayMinutes,
+      client,
+    });
+    for (const [key, row] of prefetched.entries()) {
+      workdayMinutesCache.set(key, normalizeNonNegativeInt(row.workMinutes));
+    }
+  }
   for (const leave of consumedLeaves) {
     const minutes = await resolveLeaveRequestMinutesWithCalendar({
       leave,

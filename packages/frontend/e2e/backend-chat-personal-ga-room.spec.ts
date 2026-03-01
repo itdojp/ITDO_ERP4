@@ -166,19 +166,28 @@ test('personal GA room is created on SCIM user create and is accessible to GA on
   expect(posted?.body).toBe(messageBody);
   expect(typeof posted?.id).toBe('string');
 
-  const employeeNotifications = await listNotificationsByMessage(
-    request,
-    employeeHeaders,
-    posted.id as string,
-  );
-  expect(employeeNotifications.length).toBeGreaterThan(0);
+  await expect
+    .poll(
+      async () =>
+        (
+          await listNotificationsByMessage(
+            request,
+            employeeHeaders,
+            posted.id as string,
+          )
+        ).length,
+      { timeout: 3000 },
+    )
+    .toBeGreaterThan(0);
 
-  const pmNotifications = await listNotificationsByMessage(
-    request,
-    pmHeaders,
-    posted.id as string,
-  );
-  expect(pmNotifications.length).toBe(0);
+  await expect
+    .poll(
+      async () =>
+        (await listNotificationsByMessage(request, pmHeaders, posted.id as string))
+          .length,
+      { timeout: 3000 },
+    )
+    .toBe(0);
 
   const employeeMessagesRes = await request.get(
     `${apiBase}/chat-rooms/${encodeURIComponent(roomId)}/messages?limit=10`,
