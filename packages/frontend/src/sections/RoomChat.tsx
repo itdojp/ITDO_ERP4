@@ -223,7 +223,20 @@ function formatRoomLabel(room: ChatRoom, currentUserId: string) {
 export const RoomChat: React.FC = () => {
   const auth = getAuthState();
   const roles = auth?.roles || [];
+  const authGroupIds = useMemo(
+    () =>
+      new Set(
+        [
+          ...(Array.isArray(auth?.groupIds) ? auth.groupIds : []),
+          ...(Array.isArray(auth?.groupAccountIds) ? auth.groupAccountIds : []),
+        ]
+          .map((value) => value.trim())
+          .filter(Boolean),
+      ),
+    [auth?.groupAccountIds, auth?.groupIds],
+  );
   const currentUserId = auth?.userId || 'demo-user';
+  const canUseGeneralAffairsInbox = authGroupIds.has('general_affairs');
   const canSeeAllMeta =
     roles.includes('admin') || roles.includes('mgmt') || roles.includes('exec');
   const canUseProjectChat =
@@ -616,6 +629,10 @@ export const RoomChat: React.FC = () => {
   const [createPrivateMembers, setCreatePrivateMembers] = useState('');
   const [createDmPartner, setCreateDmPartner] = useState('');
   const [inviteMembers, setInviteMembers] = useState('');
+  const [roomListScope, setRoomListScope] = useState<'all' | 'ga_personal'>(
+    'all',
+  );
+  const [roomListQuery, setRoomListQuery] = useState('');
 
   const loadRooms = async () => {
     try {
@@ -1525,6 +1542,11 @@ export const RoomChat: React.FC = () => {
   }, [roomId]);
 
   useEffect(() => {
+    if (canUseGeneralAffairsInbox) return;
+    setRoomListScope('all');
+  }, [canUseGeneralAffairsInbox]);
+
+  useEffect(() => {
     if (!roomId) {
       setMentionCandidates({});
       return;
@@ -1589,11 +1611,44 @@ export const RoomChat: React.FC = () => {
   }, [roomId, ackCandidateQuery]);
 
   const displayedRooms = useMemo(() => {
-    return rooms.map((room) => ({
-      ...room,
-      label: `${room.type}: ${formatRoomLabel(room, currentUserId)}`,
-    }));
-  }, [rooms, currentUserId]);
+    const keyword = roomListQuery.trim().toLowerCase();
+    return rooms
+      .filter((room) => {
+        if (roomListScope !== 'ga_personal') return true;
+        return (
+          room.type === 'private_group' &&
+          room.isOfficial === true &&
+          room.id.startsWith('pga_')
+        );
+      })
+      .filter((room) => {
+        if (!keyword) return true;
+        const label = formatRoomLabel(room, currentUserId).toLowerCase();
+        return (
+          label.includes(keyword) ||
+          room.name.toLowerCase().includes(keyword) ||
+          room.type.toLowerCase().includes(keyword)
+        );
+      })
+      .map((room) => ({
+        ...room,
+        label: `${room.type}: ${formatRoomLabel(room, currentUserId)}`,
+      }));
+  }, [rooms, currentUserId, roomListScope, roomListQuery]);
+
+  useEffect(() => {
+    if (!displayedRooms.length) {
+      if (roomId) setRoomId('');
+      return;
+    }
+    if (!roomId) {
+      setRoomId(displayedRooms[0].id);
+      return;
+    }
+    if (!displayedRooms.some((room) => room.id === roomId)) {
+      setRoomId(displayedRooms[0].id);
+    }
+  }, [displayedRooms, roomId]);
 
   const renderMessageBody = (text: string) => (
     <ReactMarkdown
@@ -1634,6 +1689,31 @@ export const RoomChat: React.FC = () => {
       <h2>チャット（全社/部門/private_group/DM）</h2>
       {roomMessage && <p>{roomMessage}</p>}
       <div className="row" style={{ gap: 12, flexWrap: 'wrap' }}>
+        {canUseGeneralAffairsInbox && (
+          <label>
+            表示範囲
+            <select
+              value={roomListScope}
+              onChange={(e) =>
+                setRoomListScope(
+                  e.target.value === 'ga_personal' ? 'ga_personal' : 'all',
+                )
+              }
+            >
+              <option value="all">全ルーム</option>
+              <option value="ga_personal">総務相談のみ</option>
+            </select>
+          </label>
+        )}
+        <label>
+          ルーム検索
+          <input
+            type="text"
+            value={roomListQuery}
+            onChange={(e) => setRoomListQuery(e.target.value)}
+            placeholder="ルーム名/種別"
+          />
+        </label>
         <label>
           ルーム
           <select value={roomId} onChange={(e) => setRoomId(e.target.value)}>

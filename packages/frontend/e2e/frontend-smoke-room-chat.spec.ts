@@ -146,7 +146,9 @@ test('frontend smoke room chat (private_group/dm) @extended', async ({
   await roomChatSection.scrollIntoViewIfNeeded();
 
   const run = runId();
-  const roomSelect = roomChatSection.getByLabel('ルーム');
+  const roomSelect = roomChatSection
+    .locator('label:has-text("ルーム") select')
+    .first();
   const messageList = roomChatSection
     .locator('strong', { hasText: '一覧' })
     .locator('..');
@@ -304,7 +306,9 @@ test('frontend smoke room chat external summary @extended', async ({
     .locator('..');
   await roomSettingsCard.scrollIntoViewIfNeeded();
   await roomSettingsCard.getByRole('button', { name: '再読込' }).click();
-  const settingsRoomSelect = roomSettingsCard.getByLabel('ルーム');
+  const settingsRoomSelect = roomSettingsCard
+    .locator('label:has-text("ルーム") select')
+    .first();
   await expect
     .poll(() => settingsRoomSelect.locator('option').count(), {
       timeout: actionTimeout,
@@ -338,7 +342,9 @@ test('frontend smoke room chat external summary @extended', async ({
   await expect(roomReloadButton).toBeVisible({ timeout: actionTimeout });
   await roomReloadButton.click();
 
-  const roomSelect = roomChatSection.getByLabel('ルーム');
+  const roomSelect = roomChatSection
+    .locator('label:has-text("ルーム") select')
+    .first();
   await expect
     .poll(() => roomSelect.locator('option').count(), {
       timeout: actionTimeout,
@@ -385,7 +391,9 @@ test('frontend smoke external chat invited rooms @extended', async ({
   await roomSettingsCard.scrollIntoViewIfNeeded();
 
   await roomSettingsCard.getByRole('button', { name: '再読込' }).click();
-  const roomSelect = roomSettingsCard.getByLabel('ルーム');
+  const roomSelect = roomSettingsCard
+    .locator('label:has-text("ルーム") select')
+    .first();
   await expect
     .poll(() => roomSelect.locator('option').count(), {
       timeout: actionTimeout,
@@ -476,7 +484,9 @@ test('frontend smoke external chat invited rooms @extended', async ({
     .first();
   await roomChatSection.scrollIntoViewIfNeeded();
 
-  const externalRoomSelect = roomChatSection.getByLabel('ルーム');
+  const externalRoomSelect = roomChatSection
+    .locator('label:has-text("ルーム") select')
+    .first();
   await expect
     .poll(() => externalRoomSelect.locator('option').count(), {
       timeout: actionTimeout,
