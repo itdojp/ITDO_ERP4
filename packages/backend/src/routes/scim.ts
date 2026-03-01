@@ -459,8 +459,10 @@ async function syncPersonalGaRoomMembership(options: {
   req: FastifyRequest;
   before: ScimUserSnapshot;
   after: ScimUserSnapshot;
+  client?: Prisma.TransactionClient;
 }) {
   const { req, before, after } = options;
+  const client = options.client ?? prisma;
   const beforeChatUserId = resolveChatUserId(before);
   const afterChatUserId = resolveChatUserId(after);
   const activeChanged = before.active !== after.active;
@@ -480,6 +482,7 @@ async function syncPersonalGaRoomMembership(options: {
       userName: after.userName,
       displayName: after.displayName,
       createdBy: actor,
+      client,
     });
     await logAudit({
       action: 'personal_ga_room_member_reactivated',
@@ -502,6 +505,7 @@ async function syncPersonalGaRoomMembership(options: {
         userId: beforeChatUserId,
         updatedBy: actor,
         reason: 'scim_user_identifier_changed',
+        client,
       });
       if (deactivated.updatedCount > 0) {
         await logAudit({
@@ -531,6 +535,7 @@ async function syncPersonalGaRoomMembership(options: {
       userId: targetUserId,
       updatedBy: actor,
       reason: 'scim_user_deactivated',
+      client,
     });
     if (deactivated.updatedCount > 0) {
       await logAudit({
@@ -774,22 +779,45 @@ export async function registerScimRoutes(app: FastifyInstance) {
     }
     let updated;
     try {
-      updated = await prisma.userAccount.update({
-        where: { id },
-        data: {
-          externalId: normalized.externalId,
-          userName: normalized.userName,
-          displayName: normalized.displayName,
-          givenName: normalized.givenName,
-          familyName: normalized.familyName,
-          active: normalized.active ?? true,
-          emails: normalized.emails as Prisma.InputJsonValue | undefined,
-          phoneNumbers: normalized.phones as Prisma.InputJsonValue | undefined,
-          department: normalized.department,
-          organization: normalized.organization,
-          managerUserId: normalized.managerUserId,
-          scimMeta: payload as Prisma.InputJsonValue,
-        },
+      updated = await prisma.$transaction(async (tx) => {
+        const next = await tx.userAccount.update({
+          where: { id },
+          data: {
+            externalId: normalized.externalId,
+            userName: normalized.userName,
+            displayName: normalized.displayName,
+            givenName: normalized.givenName,
+            familyName: normalized.familyName,
+            active: normalized.active ?? true,
+            emails: normalized.emails as Prisma.InputJsonValue | undefined,
+            phoneNumbers: normalized.phones as
+              | Prisma.InputJsonValue
+              | undefined,
+            department: normalized.department,
+            organization: normalized.organization,
+            managerUserId: normalized.managerUserId,
+            scimMeta: payload as Prisma.InputJsonValue,
+          },
+        });
+        await syncPersonalGaRoomMembership({
+          req,
+          before: {
+            id: current.id,
+            externalId: current.externalId,
+            userName: current.userName,
+            displayName: current.displayName,
+            active: current.active,
+          },
+          after: {
+            id: next.id,
+            externalId: next.externalId,
+            userName: next.userName,
+            displayName: next.displayName,
+            active: next.active,
+          },
+          client: tx,
+        });
+        return next;
       });
     } catch (err) {
       if (
@@ -800,23 +828,6 @@ export async function registerScimRoutes(app: FastifyInstance) {
       }
       throw err;
     }
-    await syncPersonalGaRoomMembership({
-      req,
-      before: {
-        id: current.id,
-        externalId: current.externalId,
-        userName: current.userName,
-        displayName: current.displayName,
-        active: current.active,
-      },
-      after: {
-        id: updated.id,
-        externalId: updated.externalId,
-        userName: updated.userName,
-        displayName: updated.displayName,
-        active: updated.active,
-      },
-    });
     await logAudit({
       action: 'scim_user_update',
       targetTable: 'UserAccount',
@@ -928,26 +939,30 @@ export async function registerScimRoutes(app: FastifyInstance) {
         .send(scimError(400, 'externalId_required_for_userName_update'));
     }
     try {
-      const updated = await prisma.userAccount.update({
-        where: { id },
-        data: update,
-      });
-      await syncPersonalGaRoomMembership({
-        req,
-        before: {
-          id: current.id,
-          externalId: current.externalId,
-          userName: current.userName,
-          displayName: current.displayName,
-          active: current.active,
-        },
-        after: {
-          id: updated.id,
-          externalId: updated.externalId,
-          userName: updated.userName,
-          displayName: updated.displayName,
-          active: updated.active,
-        },
+      const updated = await prisma.$transaction(async (tx) => {
+        const next = await tx.userAccount.update({
+          where: { id },
+          data: update,
+        });
+        await syncPersonalGaRoomMembership({
+          req,
+          before: {
+            id: current.id,
+            externalId: current.externalId,
+            userName: current.userName,
+            displayName: current.displayName,
+            active: current.active,
+          },
+          after: {
+            id: next.id,
+            externalId: next.externalId,
+            userName: next.userName,
+            displayName: next.displayName,
+            active: next.active,
+          },
+          client: tx,
+        });
+        return next;
       });
       await logAudit({
         action: 'scim_user_patch',
