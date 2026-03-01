@@ -1026,6 +1026,54 @@ export const leaveLeaderListQuerySchema = {
   ),
 };
 
+export const leaveEntitlementBalanceQuerySchema = {
+  querystring: Type.Object(
+    {
+      userId: Type.Optional(Type.String({ minLength: 1 })),
+      leaveRequestId: Type.Optional(Type.String({ minLength: 1 })),
+    },
+    { additionalProperties: false },
+  ),
+};
+
+export const leaveEntitlementProfileUpsertSchema = {
+  body: Type.Object(
+    {
+      userId: Type.String({ minLength: 1 }),
+      paidLeaveBaseDate: Type.String({ format: 'date' }),
+      nextGrantDueDate: Type.Optional(
+        Type.Union([Type.String({ format: 'date' }), Type.Null()]),
+      ),
+    },
+    { additionalProperties: false },
+  ),
+};
+
+export const leaveGrantCreateSchema = {
+  body: Type.Object(
+    {
+      userId: Type.String({ minLength: 1 }),
+      grantedMinutes: Type.Integer({ minimum: 1, maximum: 527040 }),
+      grantDate: Type.Optional(Type.String({ format: 'date' })),
+      expiresAt: Type.Optional(
+        Type.Union([Type.String({ format: 'date' }), Type.Null()]),
+      ),
+      reasonText: Type.String({ minLength: 1, maxLength: 2000 }),
+    },
+    { additionalProperties: false },
+  ),
+};
+
+export const leaveGrantListQuerySchema = {
+  querystring: Type.Object(
+    {
+      userId: Type.Optional(Type.String({ minLength: 1 })),
+      limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 300 })),
+    },
+    { additionalProperties: false },
+  ),
+};
+
 export const approvalActionSchema = {
   body: Type.Object({
     action: Type.Union([Type.Literal('approve'), Type.Literal('reject')]),
@@ -1502,6 +1550,16 @@ export const leaveUpcomingRunSchema = {
   ),
 };
 
+export const leaveEntitlementReminderRunSchema = {
+  body: Type.Object(
+    {
+      targetDate: Type.Optional(Type.String()),
+      dryRun: Type.Optional(Type.Boolean()),
+    },
+    { additionalProperties: false },
+  ),
+};
+
 export const pushSubscriptionSchema = {
   body: Type.Object(
     {
@@ -1659,6 +1717,12 @@ export const leaveSettingPatchSchema = {
       timeUnitMinutes: Type.Optional(Type.Integer({ minimum: 1, maximum: 60 })),
       defaultWorkdayMinutes: Type.Optional(
         Type.Integer({ minimum: 1, maximum: 1440 }),
+      ),
+      paidLeaveAdvanceMaxMinutes: Type.Optional(
+        Type.Integer({ minimum: 0, maximum: 10080 }),
+      ),
+      paidLeaveAdvanceRequireNextGrantWithinDays: Type.Optional(
+        Type.Integer({ minimum: 0, maximum: 366 }),
       ),
     },
     { additionalProperties: false },

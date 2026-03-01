@@ -8,16 +8,24 @@ const authHeaders = {
   'x-project-ids': '00000000-0000-0000-0000-000000000001',
   'x-group-ids': 'mgmt,hr-group',
 };
+const gaHeaders = {
+  ...authHeaders,
+  'x-group-account-ids': 'general_affairs',
+};
 
 function userHeaders(options: {
   userId: string;
   roles?: string;
   projectIds?: string;
+  groupAccountIds?: string;
 }) {
   return {
     'x-user-id': options.userId,
     'x-roles': options.roles ?? 'user',
     ...(options.projectIds ? { 'x-project-ids': options.projectIds } : {}),
+    ...(options.groupAccountIds
+      ? { 'x-group-account-ids': options.groupAccountIds }
+      : {}),
   };
 }
 
@@ -486,4 +494,112 @@ test('project leader can view submitted leave list without reasons @core', async
     },
   );
   expect(nonLeaderListRes.status()).toBe(403);
+});
+
+test('paid leave entitlement APIs enforce GA group and submit returns shortage warning @core', async ({
+  request,
+}) => {
+  const suffix = runId();
+  const targetUserId = `leave-user-${suffix}`;
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const day2 = new Date(tomorrow);
+  day2.setDate(day2.getDate() + 1);
+  const baseDate = toDateInput(new Date('2025-04-01T00:00:00.000Z'));
+  const nextGrantDueDate = toDateInput(new Date('2026-04-15T00:00:00.000Z'));
+
+  const forbiddenGrantRes = await request.post(
+    `${apiBase}/leave-entitlements/grants`,
+    {
+      data: {
+        userId: targetUserId,
+        grantedMinutes: 480,
+        reasonText: `forbidden-${suffix}`,
+      },
+      headers: authHeaders,
+    },
+  );
+  expect(forbiddenGrantRes.status()).toBe(403);
+  const forbiddenGrantJson = await forbiddenGrantRes.json();
+  expect(forbiddenGrantJson?.error?.code).toBe('GENERAL_AFFAIRS_REQUIRED');
+
+  const profileRes = await request.post(
+    `${apiBase}/leave-entitlements/profiles`,
+    {
+      data: {
+        userId: targetUserId,
+        paidLeaveBaseDate: baseDate,
+        nextGrantDueDate,
+      },
+      headers: gaHeaders,
+    },
+  );
+  await ensureOk(profileRes);
+
+  const grantRes = await request.post(`${apiBase}/leave-entitlements/grants`, {
+    data: {
+      userId: targetUserId,
+      grantedMinutes: 480,
+      grantDate: baseDate,
+      reasonText: `grant-${suffix}`,
+    },
+    headers: gaHeaders,
+  });
+  await ensureOk(grantRes);
+
+  const firstLeaveRes = await request.post(`${apiBase}/leave-requests`, {
+    data: {
+      userId: targetUserId,
+      leaveType: 'paid',
+      startDate: toDateInput(tomorrow),
+      endDate: toDateInput(tomorrow),
+      hours: 8,
+      notes: `first-${suffix}`,
+    },
+    headers: userHeaders({ userId: targetUserId }),
+  });
+  await ensureOk(firstLeaveRes);
+  const firstLeave = await firstLeaveRes.json();
+  const firstSubmitRes = await request.post(
+    `${apiBase}/leave-requests/${firstLeave.id}/submit`,
+    {
+      data: {
+        noConsultationConfirmed: true,
+        noConsultationReason: `first-${suffix}`,
+      },
+      headers: userHeaders({ userId: targetUserId }),
+    },
+  );
+  await ensureOk(firstSubmitRes);
+
+  const secondLeaveRes = await request.post(`${apiBase}/leave-requests`, {
+    data: {
+      userId: targetUserId,
+      leaveType: 'paid',
+      startDate: toDateInput(day2),
+      endDate: toDateInput(day2),
+      hours: 4,
+      notes: `second-${suffix}`,
+    },
+    headers: userHeaders({ userId: targetUserId }),
+  });
+  await ensureOk(secondLeaveRes);
+  const secondLeave = await secondLeaveRes.json();
+  const secondSubmitRes = await request.post(
+    `${apiBase}/leave-requests/${secondLeave.id}/submit`,
+    {
+      data: {
+        noConsultationConfirmed: true,
+        noConsultationReason: `second-${suffix}`,
+      },
+      headers: userHeaders({ userId: targetUserId }),
+    },
+  );
+  await ensureOk(secondSubmitRes);
+  const secondSubmit = await secondSubmitRes.json();
+  expect(secondSubmit.status).toBe('pending_manager');
+  expect(secondSubmit.shortageWarning?.code).toBe('PAID_LEAVE_ADVANCE_WARNING');
+  expect(secondSubmit.shortageWarning?.shortageMinutes).toBe(240);
+  expect(secondSubmit.paidLeaveBalance?.remainingMinutes).toBe(0);
+  expect(secondSubmit.paidLeaveBalance?.projectedRemainingMinutes).toBe(-240);
 });

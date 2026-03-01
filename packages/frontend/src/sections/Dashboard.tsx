@@ -144,6 +144,21 @@ function resolveLeaveRange(payload: unknown) {
   return { startDate: start, endDate: end, leaveType: type };
 }
 
+function resolveLeaveGrantReminder(payload: unknown) {
+  if (!payload || typeof payload !== 'object') return null;
+  const userId = (payload as { userId?: unknown }).userId;
+  const nextGrantDueDate = (payload as { nextGrantDueDate?: unknown })
+    .nextGrantDueDate;
+  const normalizedUserId =
+    typeof userId === 'string' && userId.trim() ? userId.trim() : null;
+  const normalizedDueDate =
+    typeof nextGrantDueDate === 'string' && nextGrantDueDate.trim()
+      ? nextGrantDueDate.trim()
+      : null;
+  if (!normalizedUserId && !normalizedDueDate) return null;
+  return { userId: normalizedUserId, nextGrantDueDate: normalizedDueDate };
+}
+
 function resolveExpenseId(payload: unknown) {
   if (!payload || typeof payload !== 'object') return null;
   const value = (payload as { expenseId?: unknown }).expenseId;
@@ -330,6 +345,17 @@ function formatNotificationLabel(item: AppNotification) {
     const range = resolveLeaveRange(item.payload);
     const label = range ? formatLeaveRange(range) : '';
     return label ? `休暇予定 (${label})` : '休暇予定';
+  }
+  if (item.kind === 'leave_grant_reminder') {
+    const payload = resolveLeaveGrantReminder(item.payload);
+    if (payload?.userId && payload.nextGrantDueDate) {
+      return `有給付与確認 (${payload.userId} / ${payload.nextGrantDueDate})`;
+    }
+    if (payload?.userId) return `有給付与確認 (${payload.userId})`;
+    if (payload?.nextGrantDueDate) {
+      return `有給付与確認 (${payload.nextGrantDueDate})`;
+    }
+    return '有給付与確認';
   }
   if (item.kind === 'daily_report_submitted') {
     const reportDate = resolveReportDate(item.payload);
@@ -794,6 +820,7 @@ export const Dashboard: React.FC = () => {
               resolveEscalation(item.payload);
             const roomId = resolveRoomId(item.payload);
             const leaveRange = resolveLeaveRange(item.payload);
+            const leaveGrantReminder = resolveLeaveGrantReminder(item.payload);
             const expenseAmount = resolveExpenseAmount(item.payload);
             const canOpen =
               ((item.kind === 'chat_mention' ||
@@ -866,6 +893,14 @@ export const Dashboard: React.FC = () => {
                           : ''}
                       </div>
                     )}
+                    {item.kind === 'leave_grant_reminder' &&
+                      leaveGrantReminder && (
+                        <div style={{ fontSize: 12, color: '#475569' }}>
+                          対象: {leaveGrantReminder.userId || '-'} /
+                          次回付与予定:{' '}
+                          {leaveGrantReminder.nextGrantDueDate || '-'}
+                        </div>
+                      )}
                     {excerpt && (
                       <div style={{ fontSize: 12, color: '#475569' }}>
                         {excerpt}

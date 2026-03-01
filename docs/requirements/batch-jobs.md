@@ -1,12 +1,14 @@
 # バッチ/ジョブ仕様たたき台
 
 ## 発番ジョブ（number_sequences）
+
 - 対象: 見積(Q)/納品(D)/請求(I)、発注書(PO)、業者見積(VQ)、業者請求(VI)。
 - 方式: kind+year+month の row に対して `current_serial` を楽観ロックで+1し、`PYYYY-MM-NNNN` を生成。アプリ側トランザクション内で実行。
 - リセット: 月跨ぎ時に row が無ければ自動作成。月またぎの繰返し案件でも月単位で連番がリセットされる。
 - エラー: 楽観ロック失敗時はリトライ上限3回。桁あふれは 9999 で検出しアラート。
 
 ### 擬似コード
+
 ```
 tx {
   seq = select ... for update where kind=? and year=? and month=?
@@ -21,12 +23,14 @@ retry on conflict up to N times
 ```
 
 ## 定期案件テンプレ生成
+
 - 対象: recurring_project_templates (frequency: monthly/quarterly/semiannual/annual)。
 - 処理: next_run_at <= now のテンプレを取得し、案件に紐づく見積/請求ドラフトを自動起案。起案時にテンプレのデフォルト金額/条件をコピーし、番号は発番ジョブで採番。
 - スケジュール: 1日1回（タイムゾーン考慮）。
 - ログ/リカバリ: 生成結果を記録し、失敗時は再実行可能にする（idempotentに同月重複を防ぐ）。
 
 ### 擬似コード
+
 ```
 jobs = select templates where is_active and next_run_at <= now()
 for each t:
@@ -39,6 +43,7 @@ for each t:
 ```
 
 ### シーケンス図（Mermaid）
+
 ```mermaid
 sequenceDiagram
   participant Cron
@@ -58,6 +63,7 @@ sequenceDiagram
 ```
 
 ## アラート計算
+
 - 対象: alert_settings (type: budget_overrun/overtime/approval_delay/approval_escalation/delivery_due)。
 - 入力データ: 工数集計/予算値、残業時間（time_entries）、承認待ち経過時間（approval_instances）。
 - 処理: 設定の閾値・期間に基づき集計し、超過時に alerts レコードを作成し通知をトリガ。通知はメール/ダッシュボード（将来拡張: webhook/Slack）。
@@ -69,6 +75,7 @@ sequenceDiagram
 - 承認期限エスカレーション: approval_steps の currentStep が閾値超過の場合に発火（/jobs/approval-escalations/run）。
 
 ### 擬似コード
+
 ```
 for setting in alert_settings where is_enabled:
   metric = compute(setting.type, setting.scope, setting.period)
@@ -85,6 +92,7 @@ for setting in alert_settings where is_enabled:
 ```
 
 ## レポート購読/配信ジョブ
+
 - 対象: report_subscriptions / report_deliveries。
 - `/jobs/report-subscriptions/run`: isEnabled=true の購読を順次実行して report_deliveries を作成。現状は schedule を判定しないため、運用の cron 側で頻度を制御する。
 - `/jobs/report-deliveries/retry`: status=failed かつ retryCount<REPORT_DELIVERY_RETRY_MAX, nextRetryAt<=now を再送。更新時に status=retrying で再送ロック。
@@ -94,6 +102,7 @@ for setting in alert_settings where is_enabled:
 - 運用補助: `scripts/run-report-deliveries.sh`（DRY_RUN=1 で検証可能）
 
 ## 通知（メール配信）ジョブ（MVP）
+
 - 対象: app_notifications / app_notification_deliveries。
 - `/jobs/notification-deliveries/run`: 未配信（pending/failed）の通知をメールで送る。
   - 初期スコープ: `kind=chat_mention` / `daily_report_missing`。
@@ -105,19 +114,30 @@ for setting in alert_settings where is_enabled:
   - 送信対象の遡及範囲: `NOTIFICATION_DELIVERY_LOOKBACK_DAYS`（既定 30日）
 
 ## 日報未提出通知ジョブ
+
 - `/jobs/daily-report-missing/run`: 対象日の未提出ユーザを抽出し、AppNotification を生成する。
 - 既定の対象日は `DAILY_REPORT_MISSING_TARGET_OFFSET_DAYS`（既定 1）日だけ遡及。
 - `DAILY_REPORT_MISSING_SKIP_WEEKEND=true` の場合は土日をスキップ。
 - `DAILY_REPORT_MISSING_REQUIRE_TIME_ENTRY=true` の場合は当日の工数入力があるユーザのみ対象。
 
 ## 休暇予定通知ジョブ（MVP）
+
 - `/jobs/leave-upcoming/run`: 対象日の休暇開始（`status=approved` かつ `startDate` が targetDate のもの）を抽出し、AppNotification（`kind=leave_upcoming`）を生成する。
 - 既定の対象日は `LEAVE_UPCOMING_TARGET_OFFSET_DAYS`（既定 1）日だけ先の日付（例: 明日の休暇）を対象にする。
 - 通知先は本人 + `admin/mgmt`（role宛に展開）を基本とする。
 - 冪等性: `kind=leave_upcoming` + `messageId=leaveRequestId` + `userId` の既存通知がある場合はスキップする。
 - 監査: `/jobs/leave-upcoming/run` 実行は `leave_upcoming_run` として監査ログに記録する。
 
+## 有給付与リマインドジョブ（MVP）
+
+- `/jobs/leave-entitlement-reminders/run`: `LeaveEntitlementProfile.nextGrantDueDate` が対象日のユーザを抽出し、総務グループへ AppNotification（`kind=leave_grant_reminder`）を生成する。
+- 既定の対象日は `LEAVE_ENTITLEMENT_TARGET_OFFSET_DAYS`（既定 0）日で制御する。
+- 通知先は `general_affairs` グループに展開されたアクティブユーザ。
+- 冪等性: `kind=leave_grant_reminder` + `messageId=profileId:targetDate` + `userId` の既存通知がある場合はスキップする。
+- 監査: `/jobs/leave-entitlement-reminders/run` 実行は `leave_entitlement_reminders_run` として監査ログに記録する。
+
 ## 確認依頼（ack required）期限リマインドジョブ（MVP）
+
 - `/jobs/chat-ack-reminders/run`: 期限（dueAt）を過ぎた未完了の確認依頼を抽出し、未確認者へ `kind=chat_ack_required` の AppNotification を追加で生成する。
 - 対象: `chat_ack_requests.due_at <= now` かつ requiredUserIds のうち未ackが残っているもの（message.deletedAt は除外）。
 - リマインド抑止: `CHAT_ACK_REMINDER_MIN_INTERVAL_HOURS`（既定 24h）以内に通知済みのユーザ（同一messageId）はスキップ。
@@ -125,15 +145,18 @@ for setting in alert_settings where is_enabled:
 - 探索範囲: `CHAT_ACK_REMINDER_LOOKBACK_DAYS`（既定 30日）より過去の dueAt は対象外。
 
 ## 承認タイムアウト（将来）
+
 - 設定された承認期限を超過した approval_step を検出し、エスカレーション先へ通知。初期スコープでは未実装、後続で追加。
 
 ## バッチ共通
+
 - ログ: 成功/失敗をジョブログに記録し、監査用途で保持。
 - 冪等性: 発番以外のジョブも同日再実行しても重複作成しないようキーを持つ（例: recurring生成は project_id+period でユニーク性チェック）。
 - 監視: 失敗時はアラート発報（メール）し、ダッシュボードに表示。
 - 設定: ジョブスケジュール/閾値は DB の設定値から取得し、管理画面から変更可能にする前提。ジョブは設定を走査して動的に動くように設計。
 
 ### 定期案件テンプレ生成シーケンス（簡易）
+
 1. cron起動 → `recurring_project_templates` で `is_active` かつ `next_run_at <= now` を取得
 2. project_id + year-month で既存生成履歴がないか確認（重複防止）
 3. Project/Milestone/Estimate/Invoice のドラフトを作成（テンプレのdefaultAmount/termsをコピー、採番は number_sequences で生成）

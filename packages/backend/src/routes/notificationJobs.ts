@@ -7,12 +7,14 @@ import { runDailyReportMissingNotifications } from '../services/dailyReportMissi
 import { runChatAckReminders } from '../services/chatAckReminders.js';
 import { runChatRoomAclMismatchAlerts } from '../services/chatRoomAclAlerts.js';
 import { runLeaveUpcomingNotifications } from '../services/leaveUpcomingNotifications.js';
+import { runLeaveEntitlementReminders } from '../services/leaveEntitlementReminders.js';
 import {
   dailyReportMissingRunSchema,
   chatAckReminderRunSchema,
   chatRoomAclAlertRunSchema,
   notificationDeliveryRunSchema,
   leaveUpcomingRunSchema,
+  leaveEntitlementReminderRunSchema,
 } from './validators.js';
 
 export async function registerNotificationJobRoutes(app: FastifyInstance) {
@@ -172,6 +174,40 @@ export async function registerNotificationJobRoutes(app: FastifyInstance) {
           targetDate: result.targetDate,
           dryRun: result.dryRun,
           matchedCount: result.matchedCount,
+          createdNotifications: result.createdNotifications,
+          skippedExistingNotifications: result.skippedExistingNotifications,
+        } as Prisma.InputJsonValue,
+        ...auditContextFromRequest(req, { source: 'job' }),
+      });
+
+      return result;
+    },
+  );
+
+  app.post(
+    '/jobs/leave-entitlement-reminders/run',
+    {
+      preHandler: requireRole(['admin', 'mgmt']),
+      schema: leaveEntitlementReminderRunSchema,
+    },
+    async (req) => {
+      const body = (req.body || {}) as {
+        targetDate?: string;
+        dryRun?: boolean;
+      };
+      const result = await runLeaveEntitlementReminders({
+        targetDate: body.targetDate,
+        dryRun: body.dryRun,
+        actorId: req.user?.userId,
+      });
+
+      await logAudit({
+        action: 'leave_entitlement_reminders_run',
+        targetTable: 'app_notifications',
+        metadata: {
+          targetDate: result.targetDate,
+          dryRun: result.dryRun,
+          matchedProfiles: result.matchedProfiles,
           createdNotifications: result.createdNotifications,
           skippedExistingNotifications: result.skippedExistingNotifications,
         } as Prisma.InputJsonValue,

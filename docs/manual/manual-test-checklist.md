@@ -43,6 +43,14 @@
 
 - [x] POST /jobs/chat-ack-reminders/run（dryRun/limit）で期限到来（dueAt<=now）の未完了確認依頼に対し、通知候補/生成件数が返る
 - [x] POST /jobs/leave-upcoming/run（targetDate/dryRun）で休暇開始日の通知（leave_upcoming）が生成される（本人+admin/mgmt）
+- [x] POST /jobs/leave-entitlement-reminders/run（targetDate/dryRun）で有給付与期限の通知（leave_grant_reminder）が生成される（総務グループ）
+
+### 休暇（有給付与/残高）
+
+- [x] POST /leave-entitlements/profiles は `general_affairs` 所属のみ実行できる（非所属は 403 / GENERAL_AFFAIRS_REQUIRED）
+- [x] POST /leave-entitlements/grants は理由必須で登録できる（監査ログ `leave_grant_created`）
+- [x] GET /leave-entitlements/balance で付与/消化/引当/残高が取得できる
+- [x] 有給申請 submit 時に不足がある場合、申請は継続しつつ `shortageWarning` が返る
 
 ### 経費（拡張ワークフロー）
 

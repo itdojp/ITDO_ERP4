@@ -50,6 +50,37 @@ type LeaveSubmitError = {
   };
 };
 
+type PaidLeaveShortageWarning = {
+  code: 'PAID_LEAVE_ADVANCE_WARNING' | 'PAID_LEAVE_SHORTAGE_WARNING';
+  message: string;
+  shortageMinutes: number;
+  advanceAllowed: boolean;
+  withinAdvanceLimit: boolean;
+  withinNextGrantWindow: boolean;
+  nextGrantDueDate: string | null;
+  daysUntilNextGrant: number | null;
+};
+
+type PaidLeaveBalance = {
+  userId: string;
+  asOfDate: string;
+  paidLeaveBaseDate: string | null;
+  nextGrantDueDate: string | null;
+  totalGrantedMinutes: number;
+  usedApprovedMinutes: number;
+  reservedPendingMinutes: number;
+  consumedMinutes: number;
+  remainingMinutes: number;
+  requestedMinutes: number;
+  projectedRemainingMinutes: number;
+  shortageWarning?: PaidLeaveShortageWarning | null;
+};
+
+type LeaveSubmitResponse = LeaveRequest & {
+  shortageWarning?: PaidLeaveShortageWarning | null;
+  paidLeaveBalance?: PaidLeaveBalance | null;
+};
+
 type LeaveDraftExtra = {
   detailsOpen: boolean;
   noConsultationConfirmed: boolean;
@@ -59,6 +90,8 @@ type LeaveDraftExtra = {
 type LeaveSetting = {
   timeUnitMinutes: number;
   defaultWorkdayMinutes: number;
+  paidLeaveAdvanceMaxMinutes?: number;
+  paidLeaveAdvanceRequireNextGrantWithinDays?: number;
 };
 
 function formatDateInput(value: Date) {
@@ -155,6 +188,21 @@ export const LeaveRequests: React.FC = () => {
   >({});
   const [leaderItems, setLeaderItems] = useState<LeaderLeaveRequest[]>([]);
   const [leaderMessage, setLeaderMessage] = useState('');
+  const [paidLeaveBalance, setPaidLeaveBalance] =
+    useState<PaidLeaveBalance | null>(null);
+  const [paidLeaveWarning, setPaidLeaveWarning] =
+    useState<PaidLeaveShortageWarning | null>(null);
+  const canManageLeaveGrant = Boolean(
+    auth?.groupAccountIds?.includes('general_affairs'),
+  );
+  const [grantTargetUserId, setGrantTargetUserId] = useState(() => userId);
+  const [profileBaseDate, setProfileBaseDate] = useState('');
+  const [profileNextDueDate, setProfileNextDueDate] = useState('');
+  const [grantMinutes, setGrantMinutes] = useState('480');
+  const [grantDate, setGrantDate] = useState('');
+  const [grantExpiresAt, setGrantExpiresAt] = useState('');
+  const [grantReasonText, setGrantReasonText] = useState('');
+  const [grantMessage, setGrantMessage] = useState('');
   const [leaveSetting, setLeaveSetting] = useState<LeaveSetting>({
     timeUnitMinutes: 10,
     defaultWorkdayMinutes: 480,
@@ -179,6 +227,27 @@ export const LeaveRequests: React.FC = () => {
     }
   };
 
+  const loadPaidLeaveBalance = async (options?: {
+    targetUserId?: string;
+    silent?: boolean;
+  }) => {
+    if (!canOperate) return;
+    const targetUserId = (options?.targetUserId || userId).trim();
+    if (!targetUserId) return;
+    try {
+      const query = `?userId=${encodeURIComponent(targetUserId)}`;
+      const balance = await api<PaidLeaveBalance>(
+        `/leave-entitlements/balance${query}`,
+      );
+      setPaidLeaveBalance(balance);
+      setPaidLeaveWarning(balance.shortageWarning ?? null);
+    } catch {
+      if (!options?.silent) {
+        setMessage('有給残高の取得に失敗しました');
+      }
+    }
+  };
+
   useEffect(() => {
     const loadLeaveSetting = async () => {
       try {
@@ -200,6 +269,7 @@ export const LeaveRequests: React.FC = () => {
     };
     void load({ silent: true });
     void loadLeaveSetting();
+    void loadPaidLeaveBalance({ silent: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -289,7 +359,9 @@ export const LeaveRequests: React.FC = () => {
       setItems((prev) => [created, ...prev]);
       setMessage('作成しました');
       setSubmitConflict(undefined);
+      setPaidLeaveWarning(null);
       setForm(buildInitialForm());
+      void loadPaidLeaveBalance({ silent: true });
     } catch (err) {
       setMessage('作成に失敗しました');
     }
@@ -317,11 +389,20 @@ export const LeaveRequests: React.FC = () => {
         body: JSON.stringify(submitPayload),
       });
       if (res.ok) {
-        const updated = (await res.json()) as LeaveRequest;
+        const updated = (await res.json()) as LeaveSubmitResponse;
         setItems((prev) =>
           prev.map((item) => (item.id === updated.id ? updated : item)),
         );
-        setMessage('申請しました');
+        const warning = updated.shortageWarning ?? null;
+        setPaidLeaveWarning(warning);
+        if (updated.paidLeaveBalance) {
+          setPaidLeaveBalance(updated.paidLeaveBalance);
+        } else {
+          void loadPaidLeaveBalance({ silent: true });
+        }
+        setMessage(
+          warning ? `申請しました（警告: ${warning.message}）` : '申請しました',
+        );
         return;
       }
       const payload = (await res.json().catch(() => ({}))) as LeaveSubmitError;
@@ -372,6 +453,71 @@ export const LeaveRequests: React.FC = () => {
     setLeaderMessage('上長向け一覧の読み込みに失敗しました');
   };
 
+  const upsertEntitlementProfile = async () => {
+    const targetUserId = grantTargetUserId.trim();
+    if (!targetUserId) {
+      setGrantMessage('対象ユーザIDを入力してください');
+      return;
+    }
+    if (!profileBaseDate.trim()) {
+      setGrantMessage('基準日を入力してください');
+      return;
+    }
+    try {
+      await api('/leave-entitlements/profiles', {
+        method: 'POST',
+        body: JSON.stringify({
+          userId: targetUserId,
+          paidLeaveBaseDate: profileBaseDate.trim(),
+          nextGrantDueDate: profileNextDueDate.trim() || null,
+        }),
+      });
+      setGrantMessage('有給付与プロファイルを更新しました');
+      void loadPaidLeaveBalance({ targetUserId, silent: true });
+    } catch {
+      setGrantMessage('有給付与プロファイルの更新に失敗しました');
+    }
+  };
+
+  const createLeaveGrant = async () => {
+    const targetUserId = grantTargetUserId.trim();
+    const minutes = Number(grantMinutes.trim());
+    const reasonText = grantReasonText.trim();
+    if (!targetUserId) {
+      setGrantMessage('対象ユーザIDを入力してください');
+      return;
+    }
+    if (
+      !Number.isFinite(minutes) ||
+      minutes <= 0 ||
+      !Number.isInteger(minutes)
+    ) {
+      setGrantMessage('付与分数は1以上の整数で入力してください');
+      return;
+    }
+    if (!reasonText) {
+      setGrantMessage('理由を入力してください');
+      return;
+    }
+    try {
+      await api('/leave-entitlements/grants', {
+        method: 'POST',
+        body: JSON.stringify({
+          userId: targetUserId,
+          grantedMinutes: minutes,
+          grantDate: grantDate.trim() || undefined,
+          expiresAt: grantExpiresAt.trim() || null,
+          reasonText,
+        }),
+      });
+      setGrantMessage('有給付与を登録しました');
+      setGrantReasonText('');
+      void loadPaidLeaveBalance({ targetUserId, silent: true });
+    } catch {
+      setGrantMessage('有給付与の登録に失敗しました');
+    }
+  };
+
   return (
     <div>
       <h2>休暇</h2>
@@ -379,8 +525,134 @@ export const LeaveRequests: React.FC = () => {
         <button className="button secondary" onClick={() => load()}>
           読み込み
         </button>
+        <button
+          className="button secondary"
+          onClick={() => loadPaidLeaveBalance()}
+          disabled={!canOperate}
+        >
+          有給残高を再計算
+        </button>
       </div>
       {message && <p>{message}</p>}
+      <div className="card" style={{ marginTop: 12, padding: 12 }}>
+        <strong>有給残高（概算）</strong>
+        {paidLeaveBalance ? (
+          <ul className="list" style={{ marginTop: 8 }}>
+            <li>
+              付与: {paidLeaveBalance.totalGrantedMinutes}min / 消化(承認済):{' '}
+              {paidLeaveBalance.usedApprovedMinutes}min / 引当(申請中):{' '}
+              {paidLeaveBalance.reservedPendingMinutes}min
+            </li>
+            <li>残高: {paidLeaveBalance.remainingMinutes}min</li>
+            <li>
+              基準日: {paidLeaveBalance.paidLeaveBaseDate ?? '-'} /
+              次回付与予定: {paidLeaveBalance.nextGrantDueDate ?? '-'}
+            </li>
+          </ul>
+        ) : (
+          <p style={{ marginTop: 8, marginBottom: 0, fontSize: 12 }}>
+            有給残高は未取得です
+          </p>
+        )}
+        {paidLeaveWarning ? (
+          <p
+            style={{
+              marginTop: 8,
+              marginBottom: 0,
+              fontSize: 12,
+              color:
+                paidLeaveWarning.code === 'PAID_LEAVE_SHORTAGE_WARNING'
+                  ? '#991b1b'
+                  : '#92400e',
+            }}
+          >
+            警告: {paidLeaveWarning.message}（不足:{' '}
+            {paidLeaveWarning.shortageMinutes}min）
+          </p>
+        ) : null}
+      </div>
+      {canManageLeaveGrant ? (
+        <div className="card" style={{ marginTop: 12, padding: 12 }}>
+          <strong>総務向け: 有給付与管理</strong>
+          {grantMessage ? (
+            <p style={{ marginTop: 8, marginBottom: 0 }}>{grantMessage}</p>
+          ) : null}
+          <div
+            className="row"
+            style={{ gap: 8, flexWrap: 'wrap', marginTop: 8, marginBottom: 8 }}
+          >
+            <input
+              aria-label="有給付与対象ユーザID"
+              value={grantTargetUserId}
+              onChange={(e) => setGrantTargetUserId(e.target.value)}
+              placeholder="対象ユーザID"
+            />
+            <label className="row" style={{ gap: 6, alignItems: 'center' }}>
+              <span>基準日</span>
+              <input
+                aria-label="有給付与基準日"
+                type="date"
+                value={profileBaseDate}
+                onChange={(e) => setProfileBaseDate(e.target.value)}
+              />
+            </label>
+            <label className="row" style={{ gap: 6, alignItems: 'center' }}>
+              <span>次回付与予定日</span>
+              <input
+                aria-label="有給次回付与予定日"
+                type="date"
+                value={profileNextDueDate}
+                onChange={(e) => setProfileNextDueDate(e.target.value)}
+              />
+            </label>
+            <button
+              className="button secondary"
+              onClick={upsertEntitlementProfile}
+            >
+              プロファイル更新
+            </button>
+          </div>
+          <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+            <input
+              aria-label="有給付与分数"
+              type="number"
+              min={1}
+              step={1}
+              value={grantMinutes}
+              onChange={(e) => setGrantMinutes(e.target.value)}
+              placeholder="付与分数"
+            />
+            <label className="row" style={{ gap: 6, alignItems: 'center' }}>
+              <span>付与日</span>
+              <input
+                aria-label="有給付与日"
+                type="date"
+                value={grantDate}
+                onChange={(e) => setGrantDate(e.target.value)}
+              />
+            </label>
+            <label className="row" style={{ gap: 6, alignItems: 'center' }}>
+              <span>失効日</span>
+              <input
+                aria-label="有給失効日"
+                type="date"
+                value={grantExpiresAt}
+                onChange={(e) => setGrantExpiresAt(e.target.value)}
+              />
+            </label>
+            <input
+              aria-label="有給付与理由"
+              value={grantReasonText}
+              onChange={(e) => setGrantReasonText(e.target.value)}
+              placeholder="理由（必須）"
+              style={{ minWidth: 260 }}
+            />
+            <button className="button" onClick={createLeaveGrant}>
+              付与登録
+            </button>
+          </div>
+        </div>
+      ) : null}
       <div className="card" style={{ marginTop: 12, padding: 12 }}>
         <strong>新規申請</strong>
         <div className="row" style={{ gap: 8, flexWrap: 'wrap', marginTop: 8 }}>

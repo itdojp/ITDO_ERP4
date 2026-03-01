@@ -5,6 +5,8 @@ export const LEAVE_SETTING_ID = 'default';
 export const DEFAULT_LEAVE_SETTING = {
   timeUnitMinutes: 10,
   defaultWorkdayMinutes: 480,
+  paidLeaveAdvanceMaxMinutes: 480,
+  paidLeaveAdvanceRequireNextGrantWithinDays: 60,
 } as const;
 
 export async function ensureLeaveSetting(
