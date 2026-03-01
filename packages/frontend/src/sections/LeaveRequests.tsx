@@ -322,6 +322,9 @@ export const LeaveRequests: React.FC = () => {
     if (selectedLeaveType?.unit === 'hourly') return ['hourly'];
     return ['daily', 'hourly'];
   }, [selectedLeaveType]);
+  const effectiveRequestUnit = allowedRequestUnits.includes(form.requestUnit)
+    ? form.requestUnit
+    : allowedRequestUnits[0];
 
   const normalizeRequestUnit = (
     prev: typeof form,
@@ -372,7 +375,7 @@ export const LeaveRequests: React.FC = () => {
       setMessage('開始日/終了日は必須です');
       return;
     }
-    const requestUnit = form.requestUnit;
+    const requestUnit = effectiveRequestUnit;
     const payload: {
       userId: string;
       leaveType: string;
@@ -775,7 +778,7 @@ export const LeaveRequests: React.FC = () => {
             <span>申請単位</span>
             <select
               aria-label="休暇申請単位"
-              value={form.requestUnit}
+              value={effectiveRequestUnit}
               onChange={(e) =>
                 setForm((prev) =>
                   normalizeRequestUnit(
@@ -834,7 +837,7 @@ export const LeaveRequests: React.FC = () => {
                   ...prev,
                   startDate: e.target.value,
                   endDate:
-                    prev.requestUnit === 'hourly'
+                    effectiveRequestUnit === 'hourly'
                       ? e.target.value
                       : prev.endDate,
                 }))
@@ -848,10 +851,10 @@ export const LeaveRequests: React.FC = () => {
               type="date"
               value={form.endDate}
               onChange={(e) => setForm({ ...form, endDate: e.target.value })}
-              disabled={form.requestUnit === 'hourly'}
+              disabled={effectiveRequestUnit === 'hourly'}
             />
           </label>
-          {form.requestUnit === 'hourly' ? (
+          {effectiveRequestUnit === 'hourly' ? (
             <>
               <label className="row" style={{ gap: 6, alignItems: 'center' }}>
                 <span>開始時刻</span>

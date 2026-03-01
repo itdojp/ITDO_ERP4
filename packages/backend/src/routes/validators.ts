@@ -1002,7 +1002,12 @@ export const leaveRequestSchema = {
     // NOTE: `openapi-diff` flags it as a breaking change to introduce a new field with a
     // stricter schema when the previous schema allowed unknown properties. We keep these
     // fields schema-loose and validate in the handler.
-    leaveUnit: Type.Optional(Type.Any()),
+    leaveUnit: Type.Optional(
+      Type.Any({
+        description:
+          "Leave request unit. Allowed values are 'daily' and 'hourly' (validated in handler for backward compatibility).",
+      }),
+    ),
     startTime: Type.Optional(Type.Any()),
     endTime: Type.Optional(Type.Any()),
     hours: Type.Optional(Type.Number({ minimum: 0 })),

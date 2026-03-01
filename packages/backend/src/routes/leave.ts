@@ -345,6 +345,18 @@ export async function registerLeaveRoutes(app: FastifyInstance) {
       }
       const usesHourlyLeave =
         startTimeMinutes !== null || endTimeMinutes !== null;
+      const hasLeaveUnit =
+        body !== null &&
+        typeof body === 'object' &&
+        Object.prototype.hasOwnProperty.call(body, 'leaveUnit');
+      if (hasLeaveUnit && typeof body.leaveUnit !== 'string') {
+        return reply.status(400).send({
+          error: {
+            code: 'INVALID_LEAVE_UNIT',
+            message: 'leaveUnit must be daily or hourly',
+          },
+        });
+      }
       const requestedLeaveUnitRaw =
         typeof body.leaveUnit === 'string'
           ? body.leaveUnit.trim().toLowerCase()
@@ -730,9 +742,16 @@ export async function registerLeaveRoutes(app: FastifyInstance) {
         },
         select: { internalRefs: true, externalUrls: true },
       });
-      const internalRefs = Array.isArray(annotation?.internalRefs)
+      const rawInternalRefs = Array.isArray(annotation?.internalRefs)
         ? (annotation?.internalRefs as Array<Record<string, unknown>>)
         : [];
+      const normalizedInternalRefs = rawInternalRefs.flatMap((ref) => {
+        if (!ref || typeof ref !== 'object') return [];
+        const kind = typeof ref.kind === 'string' ? ref.kind.trim() : '';
+        const refId = typeof ref.id === 'string' ? ref.id.trim() : '';
+        if (!kind || !refId) return [];
+        return [{ kind, refId }];
+      });
       const externalUrls = Array.isArray(annotation?.externalUrls)
         ? annotation.externalUrls
             .filter(
@@ -746,7 +765,7 @@ export async function registerLeaveRoutes(app: FastifyInstance) {
         includeInactive: true,
       });
       const hasAttachmentEvidence =
-        externalUrls.length > 0 || internalRefs.length > 0;
+        externalUrls.length > 0 || normalizedInternalRefs.length > 0;
       if (
         leaveType?.attachmentPolicy === 'required' &&
         !hasAttachmentEvidence
@@ -759,12 +778,9 @@ export async function registerLeaveRoutes(app: FastifyInstance) {
           },
         });
       }
-      const hasConsultationEvidence = internalRefs.some((ref) => {
-        if (!ref || typeof ref !== 'object') return false;
-        const kind = typeof ref.kind === 'string' ? ref.kind.trim() : '';
-        const refId = typeof ref.id === 'string' ? ref.id.trim() : '';
-        return kind === 'chat_message' && Boolean(refId);
-      });
+      const hasConsultationEvidence = normalizedInternalRefs.some(
+        (ref) => ref.kind === 'chat_message',
+      );
 
       if (!hasConsultationEvidence) {
         if (!noConsultationConfirmed || !noConsultationReason) {
