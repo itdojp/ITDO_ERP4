@@ -646,10 +646,46 @@ model LeaveSetting {
   id                    String   @id @default("default")
   timeUnitMinutes       Int      @default(10)
   defaultWorkdayMinutes Int      @default(480)
+  paidLeaveAdvanceMaxMinutes Int @default(480)
+  paidLeaveAdvanceRequireNextGrantWithinDays Int @default(60)
   createdAt             DateTime @default(now())
   createdBy             String?
   updatedAt             DateTime @updatedAt
   updatedBy             String?
+}
+
+model LeaveEntitlementProfile {
+  id                String      @id @default(uuid())
+  userId            String      @unique
+  paidLeaveBaseDate DateTime
+  nextGrantDueDate  DateTime?
+  grants            LeaveGrant[]
+  createdAt         DateTime    @default(now())
+  createdBy         String?
+  updatedAt         DateTime    @updatedAt
+  updatedBy         String?
+
+  @@index([nextGrantDueDate])
+}
+
+model LeaveGrant {
+  id              String                  @id @default(uuid())
+  profile         LeaveEntitlementProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  profileId       String
+  userId          String
+  grantDate       DateTime
+  grantedMinutes  Int
+  expiresAt       DateTime?
+  reasonText      String
+  metadata        Json?
+  createdAt       DateTime                @default(now())
+  createdBy       String?
+  updatedAt       DateTime                @updatedAt
+  updatedBy       String?
+
+  @@index([profileId, grantDate])
+  @@index([userId, grantDate])
+  @@index([expiresAt])
 }
 
 model AnnotationSetting {

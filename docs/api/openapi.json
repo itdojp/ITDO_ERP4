@@ -6264,6 +6264,34 @@
         }
       }
     },
+    "/jobs/leave-entitlement-reminders/run": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "dryRun": {
+                    "type": "boolean"
+                  },
+                  "targetDate": {
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
     "/jobs/leave-upcoming/run": {
       "post": {
         "requestBody": {
@@ -6368,6 +6396,152 @@
                     "type": "boolean"
                   }
                 },
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/leave-entitlements/balance": {
+      "get": {
+        "parameters": [
+          {
+            "in": "query",
+            "name": "userId",
+            "required": false,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "leaveRequestId",
+            "required": false,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/leave-entitlements/grants": {
+      "get": {
+        "parameters": [
+          {
+            "in": "query",
+            "name": "userId",
+            "required": false,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "maximum": 300,
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      },
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "expiresAt": {
+                    "format": "date",
+                    "nullable": true,
+                    "type": "string"
+                  },
+                  "grantDate": {
+                    "format": "date",
+                    "type": "string"
+                  },
+                  "grantedMinutes": {
+                    "maximum": 527040,
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "reasonText": {
+                    "maxLength": 2000,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "userId": {
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "userId",
+                  "grantedMinutes",
+                  "reasonText"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/leave-entitlements/profiles": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "nextGrantDueDate": {
+                    "format": "date",
+                    "nullable": true,
+                    "type": "string"
+                  },
+                  "paidLeaveBaseDate": {
+                    "format": "date",
+                    "type": "string"
+                  },
+                  "userId": {
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "userId",
+                  "paidLeaveBaseDate"
+                ],
                 "type": "object"
               }
             }
@@ -6532,6 +6706,16 @@
                   "defaultWorkdayMinutes": {
                     "maximum": 1440,
                     "minimum": 1,
+                    "type": "integer"
+                  },
+                  "paidLeaveAdvanceMaxMinutes": {
+                    "maximum": 10080,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "paidLeaveAdvanceRequireNextGrantWithinDays": {
+                    "maximum": 366,
+                    "minimum": 0,
                     "type": "integer"
                   },
                   "timeUnitMinutes": {

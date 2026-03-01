@@ -35,6 +35,12 @@ export async function registerLeaveSettingRoutes(app: FastifyInstance) {
         timeUnitMinutes: body.timeUnitMinutes ?? currentLimits.timeUnitMinutes,
         defaultWorkdayMinutes:
           body.defaultWorkdayMinutes ?? currentLimits.defaultWorkdayMinutes,
+        paidLeaveAdvanceMaxMinutes:
+          body.paidLeaveAdvanceMaxMinutes ??
+          currentLimits.paidLeaveAdvanceMaxMinutes,
+        paidLeaveAdvanceRequireNextGrantWithinDays:
+          body.paidLeaveAdvanceRequireNextGrantWithinDays ??
+          currentLimits.paidLeaveAdvanceRequireNextGrantWithinDays,
       } as const;
 
       if (
@@ -62,6 +68,34 @@ export async function registerLeaveSettingRoutes(app: FastifyInstance) {
           },
         });
       }
+      if (
+        !Number.isInteger(nextLimits.paidLeaveAdvanceMaxMinutes) ||
+        nextLimits.paidLeaveAdvanceMaxMinutes < 0 ||
+        nextLimits.paidLeaveAdvanceMaxMinutes > 7 * 24 * 60
+      ) {
+        return reply.status(400).send({
+          error: {
+            code: 'INVALID_LEAVE_SETTING',
+            message:
+              'paidLeaveAdvanceMaxMinutes must be an integer between 0 and 10080',
+          },
+        });
+      }
+      if (
+        !Number.isInteger(
+          nextLimits.paidLeaveAdvanceRequireNextGrantWithinDays,
+        ) ||
+        nextLimits.paidLeaveAdvanceRequireNextGrantWithinDays < 0 ||
+        nextLimits.paidLeaveAdvanceRequireNextGrantWithinDays > 366
+      ) {
+        return reply.status(400).send({
+          error: {
+            code: 'INVALID_LEAVE_SETTING',
+            message:
+              'paidLeaveAdvanceRequireNextGrantWithinDays must be an integer between 0 and 366',
+          },
+        });
+      }
       const updated = await prisma.leaveSetting.upsert({
         where: { id: LEAVE_SETTING_ID },
         create: {
@@ -82,6 +116,9 @@ export async function registerLeaveSettingRoutes(app: FastifyInstance) {
         metadata: {
           timeUnitMinutes: updated.timeUnitMinutes,
           defaultWorkdayMinutes: updated.defaultWorkdayMinutes,
+          paidLeaveAdvanceMaxMinutes: updated.paidLeaveAdvanceMaxMinutes,
+          paidLeaveAdvanceRequireNextGrantWithinDays:
+            updated.paidLeaveAdvanceRequireNextGrantWithinDays,
         },
         ...auditContextFromRequest(req),
       });

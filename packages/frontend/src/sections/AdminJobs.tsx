@@ -36,6 +36,7 @@ type JobKey =
   | 'notificationDeliveries'
   | 'chatAckReminders'
   | 'leaveUpcoming'
+  | 'leaveEntitlementReminders'
   | 'chatRoomAclAlerts'
   | 'dailyReportMissing'
   | 'recurringProjects'
@@ -63,6 +64,11 @@ const JOB_DEFINITIONS: JobDescriptor[] = [
   { key: 'reportDeliveries', group: 'レポート', label: '配信リトライ' },
   { key: 'notificationDeliveries', group: '通知', label: '通知配信' },
   { key: 'leaveUpcoming', group: '通知', label: '休暇予定通知' },
+  {
+    key: 'leaveEntitlementReminders',
+    group: '通知',
+    label: '有給付与リマインド',
+  },
   { key: 'chatAckReminders', group: '通知', label: '確認依頼リマインド' },
   { key: 'chatRoomAclAlerts', group: '通知', label: 'ACL不整合通知' },
   { key: 'recurringProjects', group: '定期/連携', label: '定期案件生成' },
@@ -91,6 +97,7 @@ const buildInitialState = (): Record<JobKey, JobState> => ({
   notificationDeliveries: { result: null, error: '', loading: false },
   chatAckReminders: { result: null, error: '', loading: false },
   leaveUpcoming: { result: null, error: '', loading: false },
+  leaveEntitlementReminders: { result: null, error: '', loading: false },
   chatRoomAclAlerts: { result: null, error: '', loading: false },
   dailyReportMissing: { result: null, error: '', loading: false },
   recurringProjects: { result: null, error: '', loading: false },
@@ -149,6 +156,9 @@ export const AdminJobs: React.FC = () => {
   const [chatAckReminderLimit, setChatAckReminderLimit] = useState('200');
   const [leaveUpcomingDryRun, setLeaveUpcomingDryRun] = useState(false);
   const [leaveUpcomingTargetDate, setLeaveUpcomingTargetDate] = useState('');
+  const [leaveEntitlementDryRun, setLeaveEntitlementDryRun] = useState(false);
+  const [leaveEntitlementTargetDate, setLeaveEntitlementTargetDate] =
+    useState('');
   const [chatRoomAclDryRun, setChatRoomAclDryRun] = useState(false);
   const [chatRoomAclLimit, setChatRoomAclLimit] = useState('200');
   const [dailyReportDryRun, setDailyReportDryRun] = useState(false);
@@ -276,6 +286,18 @@ export const AdminJobs: React.FC = () => {
             dryRun: leaveUpcomingDryRun,
           });
           return;
+        case 'leaveEntitlementReminders':
+          void runJob(
+            'leaveEntitlementReminders',
+            '/jobs/leave-entitlement-reminders/run',
+            {
+              ...(leaveEntitlementTargetDate.trim()
+                ? { targetDate: leaveEntitlementTargetDate.trim() }
+                : {}),
+              dryRun: leaveEntitlementDryRun,
+            },
+          );
+          return;
         case 'chatRoomAclAlerts': {
           const limitRaw = chatRoomAclLimit.trim();
           const limit = limitRaw ? Number(limitRaw) : undefined;
@@ -325,6 +347,8 @@ export const AdminJobs: React.FC = () => {
       dailyReportTargetDate,
       leaveUpcomingDryRun,
       leaveUpcomingTargetDate,
+      leaveEntitlementDryRun,
+      leaveEntitlementTargetDate,
       notificationDryRun,
       notificationLimit,
       notificationLimitError,
@@ -348,6 +372,8 @@ export const AdminJobs: React.FC = () => {
           return `dryRun=${chatAckReminderDryRun}, limit=${chatAckReminderLimit || '-'}`;
         case 'leaveUpcoming':
           return `dryRun=${leaveUpcomingDryRun}, targetDate=${leaveUpcomingTargetDate || '-'}`;
+        case 'leaveEntitlementReminders':
+          return `dryRun=${leaveEntitlementDryRun}, targetDate=${leaveEntitlementTargetDate || '-'}`;
         case 'chatRoomAclAlerts':
           return `dryRun=${chatRoomAclDryRun}, limit=${chatRoomAclLimit || '-'}`;
         case 'dailyReportMissing':
@@ -365,6 +391,8 @@ export const AdminJobs: React.FC = () => {
       dailyReportTargetDate,
       leaveUpcomingDryRun,
       leaveUpcomingTargetDate,
+      leaveEntitlementDryRun,
+      leaveEntitlementTargetDate,
       notificationDryRun,
       notificationLimit,
       reportDryRun,
@@ -549,6 +577,20 @@ export const AdminJobs: React.FC = () => {
               value={leaveUpcomingTargetDate}
               onChange={(e) => setLeaveUpcomingTargetDate(e.target.value)}
               placeholder="休暇対象日 YYYY-MM-DD"
+              style={{ width: 180 }}
+            />
+            <label style={checkboxLabelStyle}>
+              <input
+                type="checkbox"
+                checked={leaveEntitlementDryRun}
+                onChange={(e) => setLeaveEntitlementDryRun(e.target.checked)}
+              />
+              有給付与リマインド dryRun
+            </label>
+            <Input
+              value={leaveEntitlementTargetDate}
+              onChange={(e) => setLeaveEntitlementTargetDate(e.target.value)}
+              placeholder="付与対象日 YYYY-MM-DD"
               style={{ width: 180 }}
             />
           </div>

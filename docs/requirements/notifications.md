@@ -71,6 +71,7 @@
 - `chat_room_acl_mismatch`: ルームACL不整合の警告（owner/admin に対して作成、ジョブ）
 - `daily_report_missing`: 日報未提出通知（ジョブで作成）
 - `leave_upcoming`: 休暇予定の事前通知（本人/管理者に対して作成、ジョブ）
+- `leave_grant_reminder`: 有給付与期限の確認通知（総務グループに対して作成、ジョブ）
 - `daily_report_submitted`: 日報提出（本人に対して作成）
 - `daily_report_updated`: 日報修正（本人に対して作成）
 - `project_created`: 案件作成（admin/mgmt に対して作成）
@@ -84,6 +85,7 @@
 補足:
 
 - `leave_upcoming` は `/jobs/leave-upcoming/run` で生成する。
+- `leave_grant_reminder` は `/jobs/leave-entitlement-reminders/run` で生成する。
 - 既定の対象日は `LEAVE_UPCOMING_TARGET_OFFSET_DAYS`（既定: 1）で制御する。
 
 ### メール配信の対象（実装済み）

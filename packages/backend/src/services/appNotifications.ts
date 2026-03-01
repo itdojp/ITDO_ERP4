@@ -419,6 +419,16 @@ export async function resolveRoleRecipientUserIds(roles: string[]) {
   return Array.from(recipients);
 }
 
+export async function resolveGroupRecipientUserIds(groupIds: string[]) {
+  if (!groupIds.length) return [] as string[];
+  const groupMemberMap = await resolveGroupMemberUserIds(groupIds);
+  const recipients = new Set<string>();
+  for (const userIds of groupMemberMap.values()) {
+    userIds.forEach((userId) => recipients.add(userId));
+  }
+  return Array.from(recipients);
+}
+
 export async function createChatMentionNotifications(
   options: ChatMentionNotificationOptions,
 ) {

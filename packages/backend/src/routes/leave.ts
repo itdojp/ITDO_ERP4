@@ -13,6 +13,10 @@ import { evaluateActionPolicyWithFallback } from '../services/actionPolicy.js';
 import { resolveActionPolicyDeniedCode } from '../services/actionPolicyErrors.js';
 import { logActionPolicyOverrideIfNeeded } from '../services/actionPolicyAudit.js';
 import { ensureLeaveSetting } from '../services/leaveSettings.js';
+import {
+  computePaidLeaveBalance,
+  resolveLeaveRequestMinutes,
+} from '../services/leaveEntitlements.js';
 
 function parseTimeToMinutes(value: unknown) {
   if (typeof value !== 'string') return null;
@@ -285,6 +289,9 @@ export async function registerLeaveRoutes(app: FastifyInstance) {
         result: policyRes,
       });
       const workDateEnd = endOfDay(leave.endDate);
+      const setting = await ensureLeaveSetting({
+        actorId: req.user?.userId ?? null,
+      });
       const conflictStatuses = [
         TimeStatusValue.submitted,
         TimeStatusValue.approved,
@@ -305,9 +312,6 @@ export async function registerLeaveRoutes(app: FastifyInstance) {
             },
           });
         }
-        const setting = await ensureLeaveSetting({
-          actorId: req.user?.userId ?? null,
-        });
         const dayEnd = endOfDay(leave.startDate);
         const hourlyWhere = {
           userId: leave.userId,
@@ -433,6 +437,18 @@ export async function registerLeaveRoutes(app: FastifyInstance) {
             noConsultationConfirmed: true,
             noConsultationReason,
           };
+      const requestedLeaveMinutes = resolveLeaveRequestMinutes({
+        leave,
+        defaultWorkdayMinutes: setting.defaultWorkdayMinutes,
+      });
+      const paidLeaveBalance =
+        leave.leaveType === 'paid'
+          ? await computePaidLeaveBalance({
+              userId: leave.userId,
+              additionalRequestedMinutes: requestedLeaveMinutes,
+              actorId: req.user?.userId ?? null,
+            })
+          : null;
       const actorUserId = req.user?.userId || 'system';
       const { updated, approval } = await submitApprovalWithUpdate({
         flowType: FlowTypeValue.leave,
@@ -445,7 +461,7 @@ export async function registerLeaveRoutes(app: FastifyInstance) {
           }),
         payload: {
           hours: leave.hours || 0,
-          minutes: leave.minutes ?? (leave.hours || 0) * 60,
+          minutes: requestedLeaveMinutes,
         },
         createdBy: userId,
       });
@@ -460,7 +476,11 @@ export async function registerLeaveRoutes(app: FastifyInstance) {
         currentStep: approval.currentStep,
         steps: approval.steps,
       });
-      return updated;
+      return {
+        ...updated,
+        paidLeaveBalance,
+        shortageWarning: paidLeaveBalance?.shortageWarning ?? null,
+      };
     },
   );
 
