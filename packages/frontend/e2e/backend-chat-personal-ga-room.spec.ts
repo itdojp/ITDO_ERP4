@@ -114,6 +114,14 @@ test('personal GA room is created on SCIM user create and is accessible to GA on
   const roomId = personalRoom.id as string;
   expect(roomId).toBeTruthy();
 
+  const personalGaRes = await request.get(
+    `${apiBase}/chat-rooms/personal-general-affairs`,
+    { headers: employeeHeaders },
+  );
+  await ensureOk(personalGaRes);
+  const personalGaBody = await personalGaRes.json();
+  expect(personalGaBody?.roomId).toBe(roomId);
+
   const gaRoomsRes = await request.get(`${apiBase}/chat-rooms`, {
     headers: gaHeaders,
   });
@@ -146,7 +154,9 @@ test('personal GA room is created on SCIM user create and is accessible to GA on
     ? (employeeMessages.items as any[])
     : [];
   expect(
-    msgItems.some((item) => item?.body === messageBody && item?.userId === gaExternalId),
+    msgItems.some(
+      (item) => item?.body === messageBody && item?.userId === gaExternalId,
+    ),
   ).toBe(true);
 
   const renamedEmployeeUserName = `e2e-employee-renamed-${suffix}@example.com`;
@@ -165,9 +175,12 @@ test('personal GA room is created on SCIM user create and is accessible to GA on
   );
   await ensureOk(scimEmployeeUpdateRes);
 
-  const employeeRoomsAfterRenameRes = await request.get(`${apiBase}/chat-rooms`, {
-    headers: employeeHeaders,
-  });
+  const employeeRoomsAfterRenameRes = await request.get(
+    `${apiBase}/chat-rooms`,
+    {
+      headers: employeeHeaders,
+    },
+  );
   await ensureOk(employeeRoomsAfterRenameRes);
   const employeeRoomsAfterRename = await employeeRoomsAfterRenameRes.json();
   const itemsAfterRename = Array.isArray(employeeRoomsAfterRename.items)

@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { api, apiResponse, getAuthState } from '../api';
 import { AnnotationsCard } from '../components/AnnotationsCard';
+import { navigateToOpen } from '../utils/deepLink';
 
 type LeaveRequest = {
   id: string;
@@ -92,6 +93,11 @@ type LeaveSetting = {
   defaultWorkdayMinutes: number;
   paidLeaveAdvanceMaxMinutes?: number;
   paidLeaveAdvanceRequireNextGrantWithinDays?: number;
+};
+
+type PersonalGeneralAffairsRoomResponse = {
+  roomId: string;
+  name?: string | null;
 };
 
 function formatDateInput(value: Date) {
@@ -207,6 +213,8 @@ export const LeaveRequests: React.FC = () => {
     timeUnitMinutes: 10,
     defaultWorkdayMinutes: 480,
   });
+  const [openingPersonalGaRoom, setOpeningPersonalGaRoom] = useState(false);
+  const [personalGaRoomError, setPersonalGaRoomError] = useState('');
 
   const canOperate = useMemo(() => Boolean(userId), [userId]);
 
@@ -427,6 +435,28 @@ export const LeaveRequests: React.FC = () => {
       setMessage('申請に失敗しました');
     } catch {
       setMessage('申請に失敗しました');
+    }
+  };
+
+  const openPersonalGaRoom = async () => {
+    if (!canOperate) {
+      setPersonalGaRoomError('ログインしてください');
+      return;
+    }
+    setOpeningPersonalGaRoom(true);
+    setPersonalGaRoomError('');
+    try {
+      const room = await api<PersonalGeneralAffairsRoomResponse>(
+        '/chat-rooms/personal-general-affairs',
+      );
+      if (!room?.roomId) {
+        throw new Error('総務チャットルームの取得に失敗しました');
+      }
+      navigateToOpen({ kind: 'room_chat', id: room.roomId });
+    } catch (_e: unknown) {
+      setPersonalGaRoomError('総務チャットルームの取得に失敗しました');
+    } finally {
+      setOpeningPersonalGaRoom(false);
     }
   };
 
@@ -871,6 +901,32 @@ export const LeaveRequests: React.FC = () => {
                       targetId={item.id}
                       title="相談証跡/メモ"
                     />
+                  </div>
+                  <div style={{ marginBottom: 12 }}>
+                    <button
+                      className="button secondary"
+                      onClick={openPersonalGaRoom}
+                      disabled={openingPersonalGaRoom || !canOperate}
+                    >
+                      {openingPersonalGaRoom
+                        ? '総務へ相談チャットを開いています...'
+                        : '総務へ相談チャットを開く'}
+                    </button>
+                    <p style={{ marginTop: 8, marginBottom: 0, fontSize: 12 }}>
+                      公開チャットに書きにくい事務連絡は個人総務チャットで相談し、共有可能な範囲を案件チャットへ共有してください。
+                    </p>
+                    {personalGaRoomError ? (
+                      <p
+                        role="alert"
+                        style={{
+                          marginTop: 8,
+                          marginBottom: 0,
+                          color: '#b00020',
+                        }}
+                      >
+                        {personalGaRoomError}
+                      </p>
+                    ) : null}
                   </div>
                   <div
                     className="row"
