@@ -108,6 +108,25 @@ export async function runLeaveEntitlementReminders(
         .map((item: { id: string }) => item.id),
     };
   }
+  const filteredRecipients = await filterNotificationRecipients({
+    kind: 'leave_grant_reminder',
+    userIds: gaRecipients,
+    scope: 'global',
+    client,
+  });
+  if (!filteredRecipients.allowed.length) {
+    return {
+      ok: true,
+      targetDate: dateKey(target),
+      dryRun,
+      matchedProfiles: profiles.length,
+      createdNotifications: 0,
+      skippedExistingNotifications: 0,
+      sampleProfileIds: profiles
+        .slice(0, 20)
+        .map((item: { id: string }) => item.id),
+    };
+  }
 
   let createdNotifications = 0;
   let skippedExistingNotifications = 0;
@@ -123,20 +142,12 @@ export async function runLeaveEntitlementReminders(
       sampleProfileIds.push(profileId);
     }
 
-    const filtered = await filterNotificationRecipients({
-      kind: 'leave_grant_reminder',
-      userIds: gaRecipients,
-      scope: 'global',
-      client,
-    });
-    if (!filtered.allowed.length) continue;
-
     const messageId = `${profileId}:${targetDateLabel}`;
     const existing = await client.appNotification.findMany({
       where: {
         kind: 'leave_grant_reminder',
         messageId,
-        userId: { in: filtered.allowed },
+        userId: { in: filteredRecipients.allowed },
       },
       select: { userId: true },
     });
@@ -145,7 +156,9 @@ export async function runLeaveEntitlementReminders(
     );
     skippedExistingNotifications += existingUsers.size;
 
-    const targets = filtered.allowed.filter((id) => !existingUsers.has(id));
+    const targets = filteredRecipients.allowed.filter(
+      (id) => !existingUsers.has(id),
+    );
     if (!targets.length) continue;
 
     const payload = {

@@ -501,12 +501,17 @@ test('paid leave entitlement APIs enforce GA group and submit returns shortage w
 }) => {
   const suffix = runId();
   const targetUserId = `leave-user-${suffix}`;
-  const tomorrow = new Date();
+  const now = new Date();
+  const tomorrow = new Date(now);
   tomorrow.setDate(tomorrow.getDate() + 1);
   const day2 = new Date(tomorrow);
   day2.setDate(day2.getDate() + 1);
-  const baseDate = toDateInput(new Date('2025-04-01T00:00:00.000Z'));
-  const nextGrantDueDate = toDateInput(new Date('2026-04-15T00:00:00.000Z'));
+  const baseDate = toDateInput(
+    new Date(now.getFullYear() - 1, now.getMonth(), now.getDate()),
+  );
+  const nextGrantDueDate = toDateInput(
+    new Date(now.getFullYear(), now.getMonth(), now.getDate() + 30),
+  );
 
   const forbiddenGrantRes = await request.post(
     `${apiBase}/leave-entitlements/grants`,

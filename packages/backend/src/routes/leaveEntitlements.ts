@@ -53,8 +53,9 @@ export async function registerLeaveEntitlementRoutes(app: FastifyInstance) {
       const roles = req.user?.roles || [];
       const privileged = isPrivileged(roles);
       const currentUserId = req.user?.userId ?? null;
+      const requestedUserId = (query.userId || '').trim();
       const targetUserId = resolveTargetUserId({
-        requestedUserId: query.userId,
+        requestedUserId,
         currentUserId,
         privileged,
       });
@@ -66,7 +67,7 @@ export async function registerLeaveEntitlementRoutes(app: FastifyInstance) {
           },
         });
       }
-      if (!privileged && query.userId && query.userId !== targetUserId) {
+      if (!privileged && requestedUserId && requestedUserId !== targetUserId) {
         return reply.code(403).send({ error: 'forbidden' });
       }
 
@@ -78,6 +79,7 @@ export async function registerLeaveEntitlementRoutes(app: FastifyInstance) {
           select: {
             id: true,
             userId: true,
+            leaveType: true,
             status: true,
             startDate: true,
             endDate: true,
@@ -95,7 +97,10 @@ export async function registerLeaveEntitlementRoutes(app: FastifyInstance) {
             },
           });
         }
-        if (leave.status === 'draft' || leave.status === 'rejected') {
+        if (
+          leave.leaveType === 'paid' &&
+          (leave.status === 'draft' || leave.status === 'rejected')
+        ) {
           const setting = await prisma.leaveSetting.findUnique({
             where: { id: 'default' },
             select: { defaultWorkdayMinutes: true },
@@ -127,8 +132,9 @@ export async function registerLeaveEntitlementRoutes(app: FastifyInstance) {
       const roles = req.user?.roles || [];
       const privileged = isPrivileged(roles);
       const currentUserId = req.user?.userId ?? null;
+      const requestedUserId = (query.userId || '').trim();
       const targetUserId = resolveTargetUserId({
-        requestedUserId: query.userId,
+        requestedUserId,
         currentUserId,
         privileged,
       });
@@ -140,7 +146,7 @@ export async function registerLeaveEntitlementRoutes(app: FastifyInstance) {
           },
         });
       }
-      if (!privileged && query.userId && query.userId !== targetUserId) {
+      if (!privileged && requestedUserId && requestedUserId !== targetUserId) {
         return reply.code(403).send({ error: 'forbidden' });
       }
       const take = normalizeListLimit(query.limit);
@@ -228,6 +234,10 @@ export async function registerLeaveEntitlementRoutes(app: FastifyInstance) {
           updatedBy: actorId,
         },
       });
+      const paidLeaveBaseDateStr = paidLeaveBaseDate.toISOString().slice(0, 10);
+      const nextGrantDueDateStr = nextGrantDueDate
+        ? nextGrantDueDate.toISOString().slice(0, 10)
+        : null;
 
       await logAudit({
         action: 'leave_entitlement_profile_upserted',
@@ -235,8 +245,8 @@ export async function registerLeaveEntitlementRoutes(app: FastifyInstance) {
         targetId: profile.id,
         metadata: {
           userId,
-          paidLeaveBaseDate,
-          nextGrantDueDate: nextGrantDueDate ?? null,
+          paidLeaveBaseDate: paidLeaveBaseDateStr,
+          nextGrantDueDate: nextGrantDueDateStr,
         },
         ...auditContextFromRequest(req),
       });
@@ -364,8 +374,8 @@ export async function registerLeaveEntitlementRoutes(app: FastifyInstance) {
         metadata: {
           userId,
           profileId: profile.id,
-          grantDate,
-          expiresAt,
+          grantDate: grantDate.toISOString().slice(0, 10),
+          expiresAt: expiresAt ? expiresAt.toISOString().slice(0, 10) : null,
           grantedMinutes,
         },
         ...auditContextFromRequest(req),
