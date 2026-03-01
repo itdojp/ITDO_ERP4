@@ -231,6 +231,126 @@ test('leave submit allows when chat evidence is attached @core', async ({
   expect(submitted.status).toBe('pending_manager');
 });
 
+test('hourly leave create validates time unit and stores minutes @core', async ({
+  request,
+}) => {
+  const suffix = runId();
+  const target = new Date();
+  target.setDate(target.getDate() + 1);
+  const targetDate = toDateInput(target);
+
+  const leaveSettingRes = await request.patch(`${apiBase}/leave-settings`, {
+    data: { timeUnitMinutes: 10, defaultWorkdayMinutes: 480 },
+    headers: authHeaders,
+  });
+  await ensureOk(leaveSettingRes);
+
+  const invalidUnitRes = await request.post(`${apiBase}/leave-requests`, {
+    data: {
+      userId: 'demo-user',
+      leaveType: 'paid',
+      startDate: targetDate,
+      endDate: targetDate,
+      startTime: '09:05',
+      endTime: '10:00',
+      notes: `hourly-invalid-${suffix}`,
+    },
+    headers: authHeaders,
+  });
+  expect(invalidUnitRes.status()).toBe(400);
+  const invalidUnitJson = await invalidUnitRes.json();
+  expect(invalidUnitJson?.error?.code).toBe('INVALID_TIME_UNIT');
+
+  const leaveRes = await request.post(`${apiBase}/leave-requests`, {
+    data: {
+      userId: 'demo-user',
+      leaveType: 'paid',
+      startDate: targetDate,
+      endDate: targetDate,
+      startTime: '09:00',
+      endTime: '10:30',
+      notes: `hourly-ok-${suffix}`,
+    },
+    headers: authHeaders,
+  });
+  await ensureOk(leaveRes);
+  const leave = await leaveRes.json();
+  expect(leave.minutes).toBe(90);
+  expect(leave.startTimeMinutes).toBe(9 * 60);
+  expect(leave.endTimeMinutes).toBe(10 * 60 + 30);
+  expect(leave.hours).toBeNull();
+});
+
+test('hourly leave submit blocks when day total exceeds defaultWorkdayMinutes @core', async ({
+  request,
+}) => {
+  const suffix = runId();
+  const target = new Date();
+  target.setDate(target.getDate() + 1);
+  const targetDate = toDateInput(target);
+
+  const leaveSettingRes = await request.patch(`${apiBase}/leave-settings`, {
+    data: { timeUnitMinutes: 10, defaultWorkdayMinutes: 480 },
+    headers: authHeaders,
+  });
+  await ensureOk(leaveSettingRes);
+
+  const projectRes = await request.post(`${apiBase}/projects`, {
+    data: {
+      code: `E2E-LEAVE-OVER-${suffix}`,
+      name: `E2E Leave Overbooked ${suffix}`,
+      status: 'active',
+    },
+    headers: authHeaders,
+  });
+  await ensureOk(projectRes);
+  const project = await projectRes.json();
+
+  const timeRes = await request.post(`${apiBase}/time-entries`, {
+    data: {
+      projectId: project.id,
+      userId: 'demo-user',
+      workDate: targetDate,
+      minutes: 450,
+    },
+    headers: authHeaders,
+  });
+  await ensureOk(timeRes);
+
+  const leaveRes = await request.post(`${apiBase}/leave-requests`, {
+    data: {
+      userId: 'demo-user',
+      leaveType: 'paid',
+      startDate: targetDate,
+      endDate: targetDate,
+      startTime: '16:00',
+      endTime: '17:00',
+      notes: `hourly-over-${suffix}`,
+    },
+    headers: authHeaders,
+  });
+  await ensureOk(leaveRes);
+  const leave = await leaveRes.json();
+
+  const submitRes = await request.post(
+    `${apiBase}/leave-requests/${leave.id}/submit`,
+    {
+      data: {
+        noConsultationConfirmed: true,
+        noConsultationReason: `overbooked-${suffix}`,
+      },
+      headers: authHeaders,
+    },
+  );
+  expect(submitRes.status()).toBe(409);
+  const submitJson = await submitRes.json();
+  expect(submitJson?.error?.code).toBe('TIME_ENTRY_OVERBOOKED');
+  expect(submitJson?.error?.existingMinutes).toBe(450);
+  expect(submitJson?.error?.requestedLeaveMinutes).toBe(60);
+  expect(submitJson?.error?.totalMinutes).toBe(510);
+  expect(submitJson?.error?.defaultWorkdayMinutes).toBe(480);
+});
+
 test('project leader can view submitted leave list without reasons @core', async ({
   request,
 }) => {
@@ -321,8 +441,11 @@ test('project leader can view submitted leave list without reasons @core', async
   expect(target?.noConsultationReason).toBeUndefined();
   expect(target?.visibleProjectIds).toContain(project.id);
 
-  const nonLeaderListRes = await request.get(`${apiBase}/leave-requests/leader`, {
-    headers: userHeaders({ userId: memberUserId, projectIds: project.id }),
-  });
+  const nonLeaderListRes = await request.get(
+    `${apiBase}/leave-requests/leader`,
+    {
+      headers: userHeaders({ userId: memberUserId, projectIds: project.id }),
+    },
+  );
   expect(nonLeaderListRes.status()).toBe(403);
 });

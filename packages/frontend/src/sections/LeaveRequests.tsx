@@ -56,6 +56,11 @@ type LeaveDraftExtra = {
   noConsultationReason: string;
 };
 
+type LeaveSetting = {
+  timeUnitMinutes: number;
+  defaultWorkdayMinutes: number;
+};
+
 function formatDateInput(value: Date) {
   const year = value.getFullYear();
   const month = String(value.getMonth() + 1).padStart(2, '0');
@@ -82,6 +87,17 @@ function formatClock(minutes: number) {
   const hours = String(Math.floor(safeMinutes / 60)).padStart(2, '0');
   const mins = String(safeMinutes % 60).padStart(2, '0');
   return `${hours}:${mins}`;
+}
+
+function parseClock(value: string) {
+  const trimmed = value.trim();
+  const matched = /^(\d{2}):(\d{2})$/.exec(trimmed);
+  if (!matched) return null;
+  const hour = Number(matched[1]);
+  const minute = Number(matched[2]);
+  if (!Number.isInteger(hour) || !Number.isInteger(minute)) return null;
+  if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return null;
+  return hour * 60 + minute;
 }
 
 function formatLeaveDuration(item: {
@@ -112,10 +128,13 @@ function formatLeaveDuration(item: {
 const buildInitialForm = () => {
   const today = formatDateInput(new Date());
   return {
+    requestUnit: 'daily' as 'daily' | 'hourly',
     leaveType: 'paid',
     startDate: today,
     endDate: today,
     hours: '',
+    startTime: '',
+    endTime: '',
     notes: '',
   };
 };
@@ -133,6 +152,10 @@ export const LeaveRequests: React.FC = () => {
   >({});
   const [leaderItems, setLeaderItems] = useState<LeaderLeaveRequest[]>([]);
   const [leaderMessage, setLeaderMessage] = useState('');
+  const [leaveSetting, setLeaveSetting] = useState<LeaveSetting>({
+    timeUnitMinutes: 10,
+    defaultWorkdayMinutes: 480,
+  });
 
   const canOperate = useMemo(() => Boolean(userId), [userId]);
 
@@ -154,7 +177,26 @@ export const LeaveRequests: React.FC = () => {
   };
 
   useEffect(() => {
+    const loadLeaveSetting = async () => {
+      try {
+        const res = await api<LeaveSetting>('/leave-settings');
+        if (
+          Number.isInteger(res.timeUnitMinutes) &&
+          res.timeUnitMinutes > 0 &&
+          Number.isInteger(res.defaultWorkdayMinutes) &&
+          res.defaultWorkdayMinutes > 0
+        ) {
+          setLeaveSetting({
+            timeUnitMinutes: res.timeUnitMinutes,
+            defaultWorkdayMinutes: res.defaultWorkdayMinutes,
+          });
+        }
+      } catch {
+        // noop: fallback defaults are used when leave-setting API is unavailable.
+      }
+    };
     void load({ silent: true });
+    void loadLeaveSetting();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -174,31 +216,72 @@ export const LeaveRequests: React.FC = () => {
       setMessage('開始日/終了日は必須です');
       return;
     }
-    const hoursRaw = form.hours.trim();
-    let hours: number | undefined;
-    if (hoursRaw) {
-      const parsedHours = Number(hoursRaw);
-      if (!Number.isFinite(parsedHours) || parsedHours < 0) {
-        setMessage('時間が不正です');
+    const requestUnit = form.requestUnit;
+    const payload: {
+      userId: string;
+      leaveType: string;
+      startDate: string;
+      endDate: string;
+      hours?: number;
+      startTime?: string;
+      endTime?: string;
+      notes?: string;
+    } = {
+      userId,
+      leaveType,
+      startDate,
+      endDate,
+      notes: form.notes.trim() || undefined,
+    };
+    if (requestUnit === 'hourly') {
+      if (!form.startTime || !form.endTime) {
+        setMessage('時間休では開始時刻/終了時刻が必須です');
         return;
       }
-      if (!Number.isInteger(parsedHours)) {
-        setMessage('時間は整数で入力してください');
+      if (startDate !== endDate) {
+        setMessage('時間休は同一日で入力してください');
         return;
       }
-      hours = parsedHours;
+      const startMinutes = parseClock(form.startTime);
+      const endMinutes = parseClock(form.endTime);
+      if (startMinutes === null || endMinutes === null) {
+        setMessage('開始時刻/終了時刻は HH:MM で入力してください');
+        return;
+      }
+      if (endMinutes <= startMinutes) {
+        setMessage('終了時刻は開始時刻より後にしてください');
+        return;
+      }
+      if (
+        startMinutes % leaveSetting.timeUnitMinutes !== 0 ||
+        endMinutes % leaveSetting.timeUnitMinutes !== 0
+      ) {
+        setMessage(
+          `時刻は ${leaveSetting.timeUnitMinutes} 分単位で入力してください`,
+        );
+        return;
+      }
+      payload.startTime = form.startTime;
+      payload.endTime = form.endTime;
+    } else {
+      const hoursRaw = form.hours.trim();
+      if (hoursRaw) {
+        const parsedHours = Number(hoursRaw);
+        if (!Number.isFinite(parsedHours) || parsedHours < 0) {
+          setMessage('時間が不正です');
+          return;
+        }
+        if (!Number.isInteger(parsedHours)) {
+          setMessage('時間は整数で入力してください');
+          return;
+        }
+        payload.hours = parsedHours;
+      }
     }
     try {
       const created = await api<LeaveRequest>('/leave-requests', {
         method: 'POST',
-        body: JSON.stringify({
-          userId,
-          leaveType,
-          startDate,
-          endDate,
-          hours,
-          notes: form.notes.trim() || undefined,
-        }),
+        body: JSON.stringify(payload),
       });
       setItems((prev) => [created, ...prev]);
       setMessage('作成しました');
@@ -208,6 +291,15 @@ export const LeaveRequests: React.FC = () => {
       setMessage('作成に失敗しました');
     }
   };
+
+  const hourlyMinutes = useMemo(() => {
+    if (form.requestUnit !== 'hourly') return null;
+    const startMinutes = parseClock(form.startTime);
+    const endMinutes = parseClock(form.endTime);
+    if (startMinutes === null || endMinutes === null) return null;
+    if (endMinutes <= startMinutes) return null;
+    return endMinutes - startMinutes;
+  }, [form.endTime, form.requestUnit, form.startTime]);
 
   const submit = async (id: string) => {
     setSubmitConflict(undefined);
@@ -289,6 +381,36 @@ export const LeaveRequests: React.FC = () => {
       <div className="card" style={{ marginTop: 12, padding: 12 }}>
         <strong>新規申請</strong>
         <div className="row" style={{ gap: 8, flexWrap: 'wrap', marginTop: 8 }}>
+          <label className="row" style={{ gap: 6, alignItems: 'center' }}>
+            <span>申請単位</span>
+            <select
+              aria-label="休暇申請単位"
+              value={form.requestUnit}
+              onChange={(e) =>
+                setForm((prev) => {
+                  const requestUnit =
+                    e.target.value === 'hourly' ? 'hourly' : 'daily';
+                  if (requestUnit === 'hourly') {
+                    return {
+                      ...prev,
+                      requestUnit,
+                      endDate: prev.startDate,
+                      hours: '',
+                    };
+                  }
+                  return {
+                    ...prev,
+                    requestUnit,
+                    startTime: '',
+                    endTime: '',
+                  };
+                })
+              }
+            >
+              <option value="daily">終日</option>
+              <option value="hourly">時間休</option>
+            </select>
+          </label>
           <input
             aria-label="休暇種別"
             value={form.leaveType}
@@ -301,7 +423,16 @@ export const LeaveRequests: React.FC = () => {
               aria-label="休暇開始日"
               type="date"
               value={form.startDate}
-              onChange={(e) => setForm({ ...form, startDate: e.target.value })}
+              onChange={(e) =>
+                setForm((prev) => ({
+                  ...prev,
+                  startDate: e.target.value,
+                  endDate:
+                    prev.requestUnit === 'hourly'
+                      ? e.target.value
+                      : prev.endDate,
+                }))
+              }
             />
           </label>
           <label className="row" style={{ gap: 6, alignItems: 'center' }}>
@@ -311,18 +442,54 @@ export const LeaveRequests: React.FC = () => {
               type="date"
               value={form.endDate}
               onChange={(e) => setForm({ ...form, endDate: e.target.value })}
+              disabled={form.requestUnit === 'hourly'}
             />
           </label>
-          <input
-            aria-label="休暇時間(任意)"
-            type="number"
-            min={0}
-            step={1}
-            value={form.hours}
-            onChange={(e) => setForm({ ...form, hours: e.target.value })}
-            placeholder="時間(任意, 整数)"
-            inputMode="numeric"
-          />
+          {form.requestUnit === 'hourly' ? (
+            <>
+              <label className="row" style={{ gap: 6, alignItems: 'center' }}>
+                <span>開始時刻</span>
+                <input
+                  aria-label="時間休開始時刻"
+                  type="time"
+                  step={leaveSetting.timeUnitMinutes * 60}
+                  value={form.startTime}
+                  onChange={(e) =>
+                    setForm((prev) => ({ ...prev, startTime: e.target.value }))
+                  }
+                />
+              </label>
+              <label className="row" style={{ gap: 6, alignItems: 'center' }}>
+                <span>終了時刻</span>
+                <input
+                  aria-label="時間休終了時刻"
+                  type="time"
+                  step={leaveSetting.timeUnitMinutes * 60}
+                  value={form.endTime}
+                  onChange={(e) =>
+                    setForm((prev) => ({ ...prev, endTime: e.target.value }))
+                  }
+                />
+              </label>
+              <span style={{ fontSize: 12 }}>
+                {hourlyMinutes !== null
+                  ? `申請時間: ${hourlyMinutes}分`
+                  : '申請時間: --'}
+                {` / 最小単位: ${leaveSetting.timeUnitMinutes}分`}
+              </span>
+            </>
+          ) : (
+            <input
+              aria-label="休暇時間(任意)"
+              type="number"
+              min={0}
+              step={1}
+              value={form.hours}
+              onChange={(e) => setForm({ ...form, hours: e.target.value })}
+              placeholder="時間(任意, 整数)"
+              inputMode="numeric"
+            />
+          )}
           <input
             aria-label="備考(任意)"
             value={form.notes}
