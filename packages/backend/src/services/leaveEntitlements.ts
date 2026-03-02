@@ -1,4 +1,4 @@
-import type { LeaveRequest } from '@prisma/client';
+import type { LeaveRequest, Prisma } from '@prisma/client';
 import { prisma } from './db.js';
 import { ensureLeaveSetting } from './leaveSettings.js';
 import { resolveUserWorkdayMinutesForDates } from './leaveWorkdayCalendar.js';
@@ -115,7 +115,7 @@ export async function resolveLeaveRequestMinutesWithCalendar(options: {
   leave: LeaveRequestForMinutes;
   userId: string;
   defaultWorkdayMinutes: number;
-  client?: typeof prisma;
+  client?: Prisma.TransactionClient | typeof prisma;
   workdayMinutesCache?: Map<string, number>;
 }) {
   const { leave } = options;
@@ -221,7 +221,7 @@ export async function computePaidLeaveBalance(options: {
   additionalRequestedMinutes?: number;
   actorId?: string | null;
   asOfDate?: Date;
-  client?: typeof prisma;
+  client?: Prisma.TransactionClient | typeof prisma;
 }) {
   const client = options.client ?? prisma;
   const userId = options.userId.trim();

@@ -1,3 +1,4 @@
+import type { Prisma } from '@prisma/client';
 import { prisma } from './db.js';
 import { toDateOnly } from '../utils/date.js';
 
@@ -25,7 +26,7 @@ export async function resolveUserWorkdayMinutesForDates(options: {
   userId: string;
   targetDates: Date[];
   defaultWorkdayMinutes: number;
-  client?: typeof prisma;
+  client?: Prisma.TransactionClient | typeof prisma;
 }) {
   const client = options.client ?? prisma;
   const userId = options.userId.trim();
@@ -110,7 +111,7 @@ export async function resolveUserWorkdayMinutes(options: {
   userId: string;
   targetDate: Date;
   defaultWorkdayMinutes: number;
-  client?: typeof prisma;
+  client?: Prisma.TransactionClient | typeof prisma;
 }) {
   const map = await resolveUserWorkdayMinutesForDates({
     userId: options.userId,

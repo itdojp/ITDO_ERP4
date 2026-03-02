@@ -6645,6 +6645,185 @@
         }
       }
     },
+    "/leave-entitlements/comp-balance": {
+      "get": {
+        "parameters": [
+          {
+            "in": "query",
+            "name": "userId",
+            "required": false,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "leaveType",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "compensatory"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "enum": [
+                    "substitute"
+                  ],
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "asOfDate",
+            "required": false,
+            "schema": {
+              "format": "date",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/leave-entitlements/comp-grants": {
+      "get": {
+        "parameters": [
+          {
+            "in": "query",
+            "name": "userId",
+            "required": false,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "leaveType",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "compensatory"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "enum": [
+                    "substitute"
+                  ],
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "maximum": 300,
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      },
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "expiresAt": {
+                    "format": "date",
+                    "type": "string"
+                  },
+                  "grantDate": {
+                    "format": "date",
+                    "type": "string"
+                  },
+                  "grantedMinutes": {
+                    "maximum": 527040,
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "leaveType": {
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "compensatory"
+                        ],
+                        "type": "string"
+                      },
+                      {
+                        "enum": [
+                          "substitute"
+                        ],
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "reasonText": {
+                    "maxLength": 2000,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "sourceDate": {
+                    "format": "date",
+                    "type": "string"
+                  },
+                  "sourceTimeEntryIds": {
+                    "items": {
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "maxItems": 200,
+                    "type": "array"
+                  },
+                  "userId": {
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "userId",
+                  "leaveType",
+                  "sourceDate",
+                  "expiresAt",
+                  "grantedMinutes",
+                  "reasonText"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
     "/leave-entitlements/grants": {
       "get": {
         "parameters": [

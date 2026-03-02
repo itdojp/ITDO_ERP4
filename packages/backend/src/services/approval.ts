@@ -10,6 +10,12 @@ import {
   missingExpenseBudgetEscalationFields,
 } from './expenseBudget.js';
 import {
+  consumeCompLeaveForRequest,
+  normalizeCompLeaveType,
+} from './leaveCompGrants.js';
+import { resolveLeaveRequestMinutesWithCalendar } from './leaveEntitlements.js';
+import { ensureLeaveSetting } from './leaveSettings.js';
+import {
   hasQaStageBeforeExec,
   matchApprovalSteps as computeApprovalSteps,
   matchesRuleCondition,
@@ -474,7 +480,45 @@ async function updateTargetStatus(
   if (targetTable === 'leave_requests') {
     const status =
       newStatus === DocStatusValue.approved ? 'approved' : 'rejected';
-    await tx.leaveRequest.update({ where: { id: targetId }, data: { status } });
+    const leave = await tx.leaveRequest.update({
+      where: { id: targetId },
+      data: { status },
+      select: {
+        id: true,
+        userId: true,
+        leaveType: true,
+        startDate: true,
+        endDate: true,
+        hours: true,
+        minutes: true,
+        startTimeMinutes: true,
+        endTimeMinutes: true,
+      },
+    });
+    if (status === 'approved') {
+      const compLeaveType = normalizeCompLeaveType(leave.leaveType);
+      if (compLeaveType) {
+        const setting = await ensureLeaveSetting({
+          actorId: actorUserId ?? null,
+          client: tx,
+        });
+        const requestedMinutes = await resolveLeaveRequestMinutesWithCalendar({
+          leave,
+          userId: leave.userId,
+          defaultWorkdayMinutes: setting.defaultWorkdayMinutes,
+          client: tx,
+        });
+        await consumeCompLeaveForRequest({
+          leaveRequestId: leave.id,
+          userId: leave.userId,
+          leaveType: compLeaveType,
+          requestedMinutes,
+          leaveStartDate: leave.startDate,
+          actorId: actorUserId ?? null,
+          client: tx,
+        });
+      }
+    }
   }
 }
 

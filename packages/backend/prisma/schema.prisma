@@ -47,6 +47,13 @@ enum LeaveStatus {
   rejected
 }
 
+enum LeaveCompGrantStatus {
+  active
+  consumed
+  expired
+  revoked
+}
+
 enum ExpenseSettlementStatus {
   unpaid
   paid
@@ -737,6 +744,48 @@ model LeaveGrant {
   @@index([expiresAt])
 }
 
+model LeaveCompGrant {
+  id                String              @id @default(uuid())
+  userId            String
+  leaveType         String
+  sourceDate        DateTime
+  grantDate         DateTime
+  expiresAt         DateTime
+  grantedMinutes    Int
+  remainingMinutes  Int
+  status            LeaveCompGrantStatus @default(active)
+  reasonText        String?
+  sourceTimeEntryIds Json?
+  metadata          Json?
+  consumedAt        DateTime?
+  expiredAt         DateTime?
+  revokedAt         DateTime?
+  createdAt         DateTime            @default(now())
+  createdBy         String?
+  updatedAt         DateTime            @updatedAt
+  updatedBy         String?
+  consumptions      LeaveCompConsumption[]
+
+  @@index([userId, leaveType, status, expiresAt])
+  @@index([status, expiresAt])
+  @@index([sourceDate])
+}
+
+model LeaveCompConsumption {
+  id            String        @id @default(uuid())
+  grant         LeaveCompGrant @relation(fields: [grantId], references: [id], onDelete: Cascade)
+  grantId       String
+  leaveRequest  LeaveRequest   @relation(fields: [leaveRequestId], references: [id], onDelete: Cascade)
+  leaveRequestId String
+  consumedMinutes Int
+  consumedAt    DateTime      @default(now())
+  createdAt     DateTime      @default(now())
+  createdBy     String?
+
+  @@index([leaveRequestId, consumedAt])
+  @@unique([grantId, leaveRequestId])
+}
+
 model AnnotationSetting {
   id                       String   @id @default("default")
   maxExternalUrlCount      Int      @default(20)
@@ -1262,6 +1311,7 @@ model LeaveRequest {
   createdBy String?
   updatedAt DateTime    @updatedAt
   updatedBy String?
+  compConsumptions LeaveCompConsumption[]
 
   @@index([userId, startDate])
   @@index([status])

@@ -464,3 +464,145 @@ test('POST /leave-requests/:id/submit proceeds past attachment check when eviden
     },
   );
 });
+
+test('POST /leave-requests/:id/submit rejects compensatory leave when balance is insufficient', async () => {
+  await withPrismaStubs(
+    {
+      'leaveType.findMany': async () => [
+        { code: 'paid' },
+        { code: 'special' },
+        { code: 'substitute' },
+        { code: 'compensatory' },
+        { code: 'unpaid' },
+      ],
+      'leaveRequest.findUnique': async () => ({
+        id: 'leave-comp-1',
+        userId: 'normal-user',
+        status: 'draft',
+        leaveType: 'compensatory',
+        startDate: new Date('2026-03-11T00:00:00.000Z'),
+        endDate: new Date('2026-03-11T00:00:00.000Z'),
+        startTimeMinutes: 540,
+        endTimeMinutes: 660,
+        minutes: 120,
+        hours: null,
+      }),
+      'actionPolicy.findMany': async () => [],
+      'leaveSetting.upsert': async () => ({
+        id: 'default',
+        timeUnitMinutes: 10,
+        defaultWorkdayMinutes: 480,
+      }),
+      'leaveCompanyHoliday.findMany': async () => [],
+      'leaveWorkdayOverride.findMany': async () => [],
+      'timeEntry.aggregate': async () => ({ _sum: { minutes: 0 } }),
+      'timeEntry.count': async () => 0,
+      'annotation.findUnique': async () => ({
+        internalRefs: [{ kind: 'chat_message', id: 'chat-msg-1' }],
+        externalUrls: [],
+      }),
+      'leaveType.findFirst': async () => ({
+        code: 'compensatory',
+        attachmentPolicy: 'none',
+        active: true,
+      }),
+      'leaveCompGrant.updateMany': async () => ({ count: 0 }),
+      'leaveCompGrant.findMany': async () => [],
+      'leaveRequest.findMany': async () => [],
+    },
+    async () => {
+      await withServer(async (server) => {
+        const res = await server.inject({
+          method: 'POST',
+          url: '/leave-requests/leave-comp-1/submit',
+          headers: userHeaders(),
+          payload: {},
+        });
+        assert.equal(res.statusCode, 400, res.body);
+        const body = JSON.parse(res.body);
+        assert.equal(body?.error?.code, 'LEAVE_COMP_BALANCE_SHORTAGE');
+      });
+    },
+  );
+});
+
+test('POST /leave-entitlements/comp-grants requires general_affairs group', async () => {
+  await withServer(async (server) => {
+    const res = await server.inject({
+      method: 'POST',
+      url: '/leave-entitlements/comp-grants',
+      headers: userHeaders('normal-user'),
+      payload: {
+        userId: 'normal-user',
+        leaveType: 'compensatory',
+        sourceDate: '2026-03-01',
+        expiresAt: '2026-04-30',
+        grantedMinutes: 480,
+        reasonText: '休日出勤の代休付与',
+      },
+    });
+    assert.equal(res.statusCode, 403, res.body);
+    const body = JSON.parse(res.body);
+    assert.equal(body?.error?.code, 'GENERAL_AFFAIRS_REQUIRED');
+  });
+});
+
+test('POST /leave-entitlements/comp-grants creates grant for general_affairs member', async () => {
+  let created = null;
+  await withPrismaStubs(
+    {
+      'leaveCompGrant.create': async (args) => {
+        created = args?.data;
+        return { id: 'cg-1', ...args?.data };
+      },
+    },
+    async () => {
+      await withServer(async (server) => {
+        const res = await server.inject({
+          method: 'POST',
+          url: '/leave-entitlements/comp-grants',
+          headers: userHeaders('ga-user', {
+            groupAccountIds: ['general_affairs'],
+          }),
+          payload: {
+            userId: 'employee-1',
+            leaveType: 'substitute',
+            sourceDate: '2026-03-01',
+            grantDate: '2026-03-02',
+            expiresAt: '2026-08-31',
+            grantedMinutes: 480,
+            reasonText: '休日勤務による振替休日',
+          },
+        });
+        assert.equal(res.statusCode, 200, res.body);
+      });
+    },
+  );
+  assert.equal(created?.userId, 'employee-1');
+  assert.equal(created?.leaveType, 'substitute');
+  assert.equal(created?.remainingMinutes, 480);
+});
+
+test('POST /leave-entitlements/comp-grants rejects when grantDate is before sourceDate', async () => {
+  await withServer(async (server) => {
+    const res = await server.inject({
+      method: 'POST',
+      url: '/leave-entitlements/comp-grants',
+      headers: userHeaders('ga-user', {
+        groupAccountIds: ['general_affairs'],
+      }),
+      payload: {
+        userId: 'employee-1',
+        leaveType: 'compensatory',
+        sourceDate: '2026-03-10',
+        grantDate: '2026-03-09',
+        expiresAt: '2026-03-20',
+        grantedMinutes: 120,
+        reasonText: '日付整合テスト',
+      },
+    });
+    assert.equal(res.statusCode, 400, res.body);
+    const body = JSON.parse(res.body);
+    assert.equal(body?.error?.code, 'INVALID_DATE_RANGE');
+  });
+});
