@@ -33,6 +33,7 @@ import {
 } from '../services/leaveTypes.js';
 import {
   computeCompLeaveBalance,
+  consumeCompLeaveForRequest,
   normalizeCompLeaveType,
 } from '../services/leaveCompGrants.js';
 
@@ -1028,6 +1029,36 @@ export async function registerLeaveRoutes(app: FastifyInstance) {
               actorId: req.user?.userId ?? null,
             })
           : null;
+      const requiresApproval = leaveType?.requiresApproval !== false;
+      if (!requiresApproval) {
+        const updated = compLeaveType
+          ? await prisma.$transaction(async (tx) => {
+              const updated = await tx.leaveRequest.update({
+                where: { id },
+                data: { status: 'approved', ...noConsultationUpdate },
+              });
+              await consumeCompLeaveForRequest({
+                leaveRequestId: id,
+                userId: leave.userId,
+                leaveType: compLeaveType,
+                requestedMinutes: requestedLeaveMinutes,
+                leaveStartDate: leave.startDate,
+                actorId: req.user?.userId ?? null,
+                client: tx,
+              });
+              return updated;
+            })
+          : await prisma.leaveRequest.update({
+              where: { id },
+              data: { status: 'approved', ...noConsultationUpdate },
+            });
+        return {
+          ...updated,
+          paidLeaveBalance,
+          compLeaveBalance,
+          shortageWarning: paidLeaveBalance?.shortageWarning ?? null,
+        };
+      }
       const actorUserId = req.user?.userId || 'system';
       const { updated, approval } = await submitApprovalWithUpdate({
         flowType: FlowTypeValue.leave,

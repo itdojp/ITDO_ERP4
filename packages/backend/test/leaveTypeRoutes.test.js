@@ -10,6 +10,17 @@ function withPrismaStubs(stubs, fn) {
   const restores = [];
   for (const [path, stub] of Object.entries(stubs)) {
     const [model, method] = path.split('.');
+    if (!method) {
+      if (typeof prisma[model] !== 'function') {
+        throw new Error(`invalid stub target: ${path}`);
+      }
+      const original = prisma[model];
+      prisma[model] = stub;
+      restores.push(() => {
+        prisma[model] = original;
+      });
+      continue;
+    }
     const target = prisma[model];
     if (!target || typeof target[method] !== 'function') {
       throw new Error(`invalid stub target: ${path}`);
@@ -467,6 +478,177 @@ test('POST /leave-requests/:id/submit proceeds past attachment check when eviden
       });
     },
   );
+});
+
+test('POST /leave-requests/:id/submit auto-approves leave type without approval', async () => {
+  await withPrismaStubs(
+    {
+      'leaveType.findMany': async () => [
+        { code: 'paid' },
+        { code: 'special' },
+        { code: 'substitute' },
+        { code: 'compensatory' },
+        { code: 'unpaid' },
+      ],
+      'leaveRequest.findUnique': async () => ({
+        id: 'leave-auto-approve',
+        userId: 'normal-user',
+        status: 'draft',
+        leaveType: 'special',
+        startDate: new Date('2026-03-03T00:00:00.000Z'),
+        endDate: new Date('2026-03-03T00:00:00.000Z'),
+        startTimeMinutes: null,
+        endTimeMinutes: null,
+        minutes: null,
+        hours: 8,
+      }),
+      'actionPolicy.findMany': async () => [],
+      'leaveSetting.upsert': async () => ({
+        id: 'default',
+        timeUnitMinutes: 10,
+        defaultWorkdayMinutes: 480,
+      }),
+      'timeEntry.count': async () => 0,
+      'leaveRequest.count': async () => 0,
+      'leaveRequest.findMany': async () => [],
+      'annotation.findUnique': async () => ({
+        internalRefs: [],
+        externalUrls: [],
+      }),
+      'leaveType.findFirst': async () => ({
+        code: 'special',
+        attachmentPolicy: 'none',
+        requiresApproval: false,
+        active: true,
+      }),
+      'leaveRequest.update': async () => ({
+        id: 'leave-auto-approve',
+        userId: 'normal-user',
+        status: 'approved',
+      }),
+    },
+    async () => {
+      await withServer(async (server) => {
+        const res = await server.inject({
+          method: 'POST',
+          url: '/leave-requests/leave-auto-approve/submit',
+          headers: userHeaders(),
+          payload: {
+            noConsultationConfirmed: true,
+            noConsultationReason: 'e2e-auto-approve',
+          },
+        });
+        assert.equal(res.statusCode, 200, res.body);
+        const body = JSON.parse(res.body);
+        assert.equal(body?.status, 'approved');
+      });
+    },
+  );
+});
+
+test('POST /leave-requests/:id/submit auto-approves compensatory leave and consumes grant', async () => {
+  let transactionCount = 0;
+  let consumedMinutes = 0;
+  await withPrismaStubs(
+    {
+      $transaction: async (fn) => {
+        transactionCount += 1;
+        return fn(prisma);
+      },
+      'leaveType.findMany': async () => [
+        { code: 'paid' },
+        { code: 'special' },
+        { code: 'substitute' },
+        { code: 'compensatory' },
+        { code: 'unpaid' },
+      ],
+      'leaveRequest.findUnique': async () => ({
+        id: 'leave-auto-approve-comp',
+        userId: 'normal-user',
+        status: 'draft',
+        leaveType: 'compensatory',
+        startDate: new Date('2026-03-11T00:00:00.000Z'),
+        endDate: new Date('2026-03-11T00:00:00.000Z'),
+        startTimeMinutes: 540,
+        endTimeMinutes: 660,
+        minutes: 120,
+        hours: null,
+      }),
+      'actionPolicy.findMany': async () => [],
+      'leaveSetting.upsert': async () => ({
+        id: 'default',
+        timeUnitMinutes: 10,
+        defaultWorkdayMinutes: 480,
+        paidLeaveAdvanceMaxMinutes: 480,
+        paidLeaveAdvanceRequireNextGrantWithinDays: 60,
+      }),
+      'leaveCompanyHoliday.findMany': async () => [],
+      'leaveWorkdayOverride.findMany': async () => [],
+      'timeEntry.aggregate': async () => ({ _sum: { minutes: 0 } }),
+      'timeEntry.count': async () => 0,
+      'leaveRequest.count': async () => 0,
+      'annotation.findUnique': async () => ({
+        internalRefs: [],
+        externalUrls: [],
+      }),
+      'leaveType.findFirst': async () => ({
+        code: 'compensatory',
+        attachmentPolicy: 'none',
+        requiresApproval: false,
+        active: true,
+      }),
+      'leaveCompGrant.updateMany': async (args) => {
+        const decrement = args?.data?.remainingMinutes?.decrement;
+        if (typeof decrement === 'number') {
+          return { count: 1 };
+        }
+        return { count: 0 };
+      },
+      'leaveCompGrant.findMany': async () => [
+        {
+          id: 'grant-comp-1',
+          remainingMinutes: 240,
+          expiresAt: new Date('2026-12-31T00:00:00.000Z'),
+          sourceDate: new Date('2026-01-01T00:00:00.000Z'),
+          createdAt: new Date('2026-01-01T00:00:00.000Z'),
+        },
+      ],
+      'leaveCompGrant.findUnique': async () => ({ remainingMinutes: 0 }),
+      'leaveCompGrant.update': async () => ({
+        id: 'grant-comp-1',
+        status: 'consumed',
+      }),
+      'leaveCompConsumption.findMany': async () => [],
+      'leaveCompConsumption.create': async (args) => {
+        consumedMinutes += Number(args?.data?.consumedMinutes ?? 0);
+        return { id: 'comp-consume-1', ...args?.data };
+      },
+      'leaveRequest.findMany': async () => [],
+      'leaveRequest.update': async () => ({
+        id: 'leave-auto-approve-comp',
+        userId: 'normal-user',
+        status: 'approved',
+      }),
+    },
+    async () => {
+      await withServer(async (server) => {
+        const res = await server.inject({
+          method: 'POST',
+          url: '/leave-requests/leave-auto-approve-comp/submit',
+          headers: userHeaders(),
+          payload: {
+            noConsultationConfirmed: true,
+            noConsultationReason: 'auto-approve-comp',
+          },
+        });
+        assert.equal(res.statusCode, 200, res.body);
+        const body = JSON.parse(res.body);
+        assert.equal(body?.status, 'approved');
+      });
+    },
+  );
+  assert.equal(transactionCount, 1);
+  assert.equal(consumedMinutes, 120);
 });
 
 test('POST /leave-requests/:id/submit rejects compensatory leave when balance is insufficient', async () => {

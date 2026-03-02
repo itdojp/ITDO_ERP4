@@ -281,6 +281,202 @@ test('leave submit allows when chat evidence is attached @core', async ({
   expect(submitted.status).toBe('pending_manager');
 });
 
+test('leave submit auto-approves when leave type does not require approval @core', async ({
+  request,
+}) => {
+  const suffix = runId();
+  const leaveTypeCode = `e2e_auto_${Date.now().toString(36)}_${randomUUID().slice(
+    0,
+    6,
+  )}`.toLowerCase();
+  const leaveUserId = `leave-auto-${suffix}`;
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const tomorrowStr = toDateInput(tomorrow);
+
+  const leaveTypeRes = await request.post(`${apiBase}/leave-types`, {
+    data: {
+      code: leaveTypeCode,
+      name: `E2E Auto Approve ${suffix}`,
+      isPaid: true,
+      unit: 'daily',
+      requiresApproval: false,
+      attachmentPolicy: 'none',
+      active: true,
+    },
+    headers: authHeaders,
+  });
+  await ensureOk(leaveTypeRes);
+
+  const leaveRes = await request.post(`${apiBase}/leave-requests`, {
+    data: {
+      userId: leaveUserId,
+      leaveType: leaveTypeCode,
+      startDate: tomorrowStr,
+      endDate: tomorrowStr,
+      hours: 8,
+      notes: `auto-approve-${suffix}`,
+    },
+    headers: authHeaders,
+  });
+  await ensureOk(leaveRes);
+  const leave = await leaveRes.json();
+
+  const submitRes = await request.post(
+    `${apiBase}/leave-requests/${leave.id}/submit`,
+    {
+      data: {
+        noConsultationConfirmed: true,
+        noConsultationReason: `auto-approve-${suffix}`,
+      },
+      headers: authHeaders,
+    },
+  );
+  await ensureOk(submitRes);
+  const submitted = await submitRes.json();
+  expect(submitted.status).toBe('approved');
+
+  const instancesRes = await request.get(
+    `${apiBase}/approval-instances?flowType=leave`,
+    { headers: authHeaders },
+  );
+  await ensureOk(instancesRes);
+  const instancesPayload = (await instancesRes.json()) as {
+    items?: Array<{ targetId?: string; status?: string }>;
+  };
+  const matched = (instancesPayload.items || []).find(
+    (item) =>
+      item?.targetId === leave.id &&
+      item?.status !== 'approved' &&
+      item?.status !== 'rejected' &&
+      item?.status !== 'cancelled',
+  );
+  expect(matched).toBeUndefined();
+});
+
+test('compensatory leave auto-approve consumes comp grant balance @core', async ({
+  request,
+}) => {
+  const suffix = runId();
+  const leaveUserId = `leave-comp-auto-${suffix}`;
+  const start = new Date();
+  start.setDate(start.getDate() + 2);
+  const startDate = toDateInput(start);
+  const expiresAt = toDateInput(new Date(start.getTime() + 60 * 86400000));
+
+  const leaveTypesRes = await request.get(
+    `${apiBase}/leave-types?includeInactive=true`,
+    {
+      headers: authHeaders,
+    },
+  );
+  await ensureOk(leaveTypesRes);
+  const leaveTypesPayload = (await leaveTypesRes.json()) as {
+    items?: Array<{
+      code: string;
+      unit?: 'daily' | 'hourly' | 'mixed';
+      requiresApproval?: boolean;
+    }>;
+  };
+  const compensatoryType = (leaveTypesPayload.items || []).find(
+    (item) => item.code === 'compensatory',
+  );
+  expect(compensatoryType).toBeTruthy();
+  const previousUnit = compensatoryType?.unit ?? 'mixed';
+  const previousRequiresApproval = compensatoryType?.requiresApproval !== false;
+
+  const enableAutoApproveRes = await request.patch(
+    `${apiBase}/leave-types/compensatory`,
+    {
+      headers: authHeaders,
+      data: {
+        unit: 'mixed',
+        requiresApproval: false,
+      },
+    },
+  );
+  await ensureOk(enableAutoApproveRes);
+
+  try {
+    const grantRes = await request.post(
+      `${apiBase}/leave-entitlements/comp-grants`,
+      {
+        headers: gaHeaders,
+        data: {
+          userId: leaveUserId,
+          leaveType: 'compensatory',
+          sourceDate: startDate,
+          grantedMinutes: 180,
+          expiresAt,
+          reasonText: `auto-approve-comp-${suffix}`,
+        },
+      },
+    );
+    await ensureOk(grantRes);
+
+    const leaveRes = await request.post(`${apiBase}/leave-requests`, {
+      headers: userHeaders({ userId: leaveUserId }),
+      data: {
+        userId: leaveUserId,
+        leaveType: 'compensatory',
+        startDate,
+        endDate: startDate,
+        startTime: '09:00',
+        endTime: '11:00',
+        notes: `auto-approve-comp-${suffix}`,
+      },
+    });
+    await ensureOk(leaveRes);
+    const leave = await leaveRes.json();
+
+    const submitRes = await request.post(
+      `${apiBase}/leave-requests/${leave.id}/submit`,
+      {
+        headers: userHeaders({ userId: leaveUserId }),
+        data: {
+          noConsultationConfirmed: true,
+          noConsultationReason: `auto-approve-comp-${suffix}`,
+        },
+      },
+    );
+    await ensureOk(submitRes);
+    const submitted = await submitRes.json();
+    expect(submitted?.status).toBe('approved');
+
+    const balanceRes = await request.get(
+      `${apiBase}/leave-entitlements/comp-balance?userId=${encodeURIComponent(
+        leaveUserId,
+      )}&leaveType=compensatory`,
+      {
+        headers: userHeaders({ userId: leaveUserId }),
+      },
+    );
+    await ensureOk(balanceRes);
+    const balance = (await balanceRes.json()) as {
+      items?: Array<{
+        leaveType?: string;
+        remainingMinutes?: number;
+      }>;
+    };
+    const compensatoryBalance = (balance.items || []).find(
+      (item) => item.leaveType === 'compensatory',
+    );
+    expect(compensatoryBalance?.remainingMinutes).toBe(60);
+  } finally {
+    const restoreRes = await request.patch(
+      `${apiBase}/leave-types/compensatory`,
+      {
+        headers: authHeaders,
+        data: {
+          unit: previousUnit,
+          requiresApproval: previousRequiresApproval,
+        },
+      },
+    );
+    await ensureOk(restoreRes);
+  }
+});
+
 test('hourly leave create validates time unit and stores minutes @core', async ({
   request,
 }) => {
