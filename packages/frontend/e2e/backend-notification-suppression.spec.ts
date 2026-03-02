@@ -1045,7 +1045,9 @@ test('leave_upcoming notifications: global mute suppresses delivery @core', asyn
 }) => {
   test.setTimeout(120_000);
   const suffix = runId();
-  const targetDate = buildUniqueWeekdayDate(suffix);
+  const baselineDate = buildUniqueWeekdayDate(`${suffix}-1`);
+  const mutedDate = buildUniqueWeekdayDate(`${suffix}-2`);
+  const recoveredDate = buildUniqueWeekdayDate(`${suffix}-3`);
   let leaveRuleId: string | null = null;
 
   await patchNotificationPreference(request, recipient2Headers, {
@@ -1069,8 +1071,8 @@ test('leave_upcoming notifications: global mute suppresses delivery @core', asyn
       {
         userId: recipientUserId2,
         leaveType: 'paid',
-        startDate: targetDate,
-        endDate: targetDate,
+        startDate: baselineDate,
+        endDate: baselineDate,
         notes: `E2E leave baseline ${suffix}`,
       },
     );
@@ -1084,7 +1086,7 @@ test('leave_upcoming notifications: global mute suppresses delivery @core', asyn
     const baselineRunRes = await request.post(
       `${apiBase}/jobs/leave-upcoming/run`,
       {
-        data: { targetDate },
+        data: { targetDate: baselineDate },
         headers: adminHeaders,
       },
     );
@@ -1108,8 +1110,8 @@ test('leave_upcoming notifications: global mute suppresses delivery @core', asyn
     const mutedLeaveId = await createLeaveRequest(request, recipient2Headers, {
       userId: recipientUserId2,
       leaveType: 'paid',
-      startDate: targetDate,
-      endDate: targetDate,
+      startDate: mutedDate,
+      endDate: mutedDate,
       notes: `E2E leave muted ${suffix}`,
     });
     await submitLeaveRequest(request, recipient2Headers, mutedLeaveId);
@@ -1122,7 +1124,7 @@ test('leave_upcoming notifications: global mute suppresses delivery @core', asyn
     const mutedRunRes = await request.post(
       `${apiBase}/jobs/leave-upcoming/run`,
       {
-        data: { targetDate },
+        data: { targetDate: mutedDate },
         headers: adminHeaders,
       },
     );
@@ -1148,8 +1150,8 @@ test('leave_upcoming notifications: global mute suppresses delivery @core', asyn
       {
         userId: recipientUserId2,
         leaveType: 'paid',
-        startDate: targetDate,
-        endDate: targetDate,
+        startDate: recoveredDate,
+        endDate: recoveredDate,
         notes: `E2E leave recovered ${suffix}`,
       },
     );
@@ -1163,7 +1165,7 @@ test('leave_upcoming notifications: global mute suppresses delivery @core', asyn
     const recoveredRunRes = await request.post(
       `${apiBase}/jobs/leave-upcoming/run`,
       {
-        data: { targetDate },
+        data: { targetDate: recoveredDate },
         headers: adminHeaders,
       },
     );
