@@ -43,6 +43,24 @@
   - ローカル保存時は保存先を限定し、共有ドライブへの無制限転送を避ける
   - 運用レビュー後に不要ファイルを削除する
 
+## 休暇 export dispatch（最小手順）
+- 対象API:
+  - `GET /integrations/hr/exports/leaves`（対象件数/ペイロード確認）
+  - `POST /integrations/hr/exports/leaves/dispatch`（エクスポート実行）
+  - `GET /integrations/hr/exports/leaves/dispatch-logs`（実行履歴確認）
+- 利用条件:
+  - `admin` または `mgmt` が必須（`hr` 単独ロールでは実行不可）
+  - PoC 時点では専用UI未提供のため、API クライアント（OpenAPI/curl 等）で実行
+- 最小手順:
+  1. `GET /integrations/hr/exports/leaves?target=attendance|payroll&updatedSince=...` で対象件数を確認する
+  2. `POST /integrations/hr/exports/leaves/dispatch` に `idempotencyKey` を付与して実行する
+  3. 応答の `payload.exportedCount` と `log.status` を確認する
+  4. `GET /integrations/hr/exports/leaves/dispatch-logs?idempotencyKey=...` で履歴（status/message/件数）を確認する
+- 注意点:
+  - `updatedSince` は date-time 形式。不正値は `400 invalid_updatedSince`
+  - 同一 `idempotencyKey` で条件不一致の場合は `409 idempotency_conflict`
+  - 同一 `idempotencyKey` が実行中の場合は `409 dispatch_in_progress`
+
 ## 関連画面（証跡）
 ![日報（ウェルビーイング）](../test-results/2026-02-05-frontend-e2e-r1/02-core-daily-report.png)
 
