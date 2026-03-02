@@ -171,27 +171,29 @@ test('leave submit requires consultation reason when no evidence @core', async (
   request,
 }) => {
   const suffix = runId();
+  const targetUserId = `leave-no-evidence-${suffix}`;
   const tomorrow = new Date();
   tomorrow.setDate(tomorrow.getDate() + 1);
   const tomorrowStr = toDateInput(tomorrow);
+  const targetHeaders = userHeaders({ userId: targetUserId });
 
   const leaveRes = await request.post(`${apiBase}/leave-requests`, {
     data: {
-      userId: 'demo-user',
+      userId: targetUserId,
       leaveType: 'paid',
       startDate: tomorrowStr,
       endDate: tomorrowStr,
       hours: 8,
       notes: `no-evidence-${suffix}`,
     },
-    headers: authHeaders,
+    headers: targetHeaders,
   });
   await ensureOk(leaveRes);
   const leave = await leaveRes.json();
 
   const submitMissingRes = await request.post(
     `${apiBase}/leave-requests/${leave.id}/submit`,
-    { data: {}, headers: authHeaders },
+    { data: {}, headers: targetHeaders },
   );
   expect(submitMissingRes.status()).toBe(400);
   const submitMissingJson = await submitMissingRes.json();
@@ -206,7 +208,7 @@ test('leave submit requires consultation reason when no evidence @core', async (
         noConsultationConfirmed: true,
         noConsultationReason: `e2e-${suffix}`,
       },
-      headers: authHeaders,
+      headers: targetHeaders,
     },
   );
   await ensureOk(submitOkRes);
@@ -218,9 +220,11 @@ test('leave submit allows when chat evidence is attached @core', async ({
   request,
 }) => {
   const suffix = runId();
+  const targetUserId = `leave-evidence-${suffix}`;
   const tomorrow = new Date();
   tomorrow.setDate(tomorrow.getDate() + 1);
   const tomorrowStr = toDateInput(tomorrow);
+  const targetHeaders = userHeaders({ userId: targetUserId });
 
   const projectRes = await request.post(`${apiBase}/projects`, {
     data: {
@@ -245,14 +249,14 @@ test('leave submit allows when chat evidence is attached @core', async ({
 
   const leaveRes = await request.post(`${apiBase}/leave-requests`, {
     data: {
-      userId: 'demo-user',
+      userId: targetUserId,
       leaveType: 'paid',
       startDate: tomorrowStr,
       endDate: tomorrowStr,
       hours: 8,
       notes: `with-evidence-${suffix}`,
     },
-    headers: authHeaders,
+    headers: targetHeaders,
   });
   await ensureOk(leaveRes);
   const leave = await leaveRes.json();
@@ -270,7 +274,7 @@ test('leave submit allows when chat evidence is attached @core', async ({
 
   const submitOkRes = await request.post(
     `${apiBase}/leave-requests/${leave.id}/submit`,
-    { data: {}, headers: authHeaders },
+    { data: {}, headers: targetHeaders },
   );
   await ensureOk(submitOkRes);
   const submitted = await submitOkRes.json();

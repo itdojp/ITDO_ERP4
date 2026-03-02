@@ -1,5 +1,5 @@
 import { FastifyInstance } from 'fastify';
-import { Prisma } from '@prisma/client';
+import { LeaveStatus, Prisma } from '@prisma/client';
 import { prisma } from '../services/db.js';
 import { submitApprovalWithUpdate } from '../services/approval.js';
 import { createApprovalPendingNotifications } from '../services/appNotifications.js';
@@ -60,6 +60,10 @@ function hasGroupIntersection(lhs: string[], rhs: string[]) {
   if (!lhs.length || !rhs.length) return false;
   const set = new Set(lhs);
   return rhs.some((value) => set.has(value));
+}
+
+function toDateOnlyString(value: Date) {
+  return value.toISOString().slice(0, 10);
 }
 
 export async function registerLeaveRoutes(app: FastifyInstance) {
@@ -861,6 +865,67 @@ export async function registerLeaveRoutes(app: FastifyInstance) {
             },
           });
         }
+      }
+
+      const overlapStatuses: LeaveStatus[] = ['pending_manager', 'approved'];
+      const baseLeaveConflictWhere = {
+        userId: leave.userId,
+        id: { not: leave.id },
+        status: { in: overlapStatuses },
+        startDate: { lte: leave.endDate },
+        endDate: { gte: leave.startDate },
+      };
+      const targetStartTimeMinutes = leave.startTimeMinutes;
+      const targetEndTimeMinutes = leave.endTimeMinutes;
+      const leaveConflictWhere =
+        targetStartTimeMinutes !== null && targetEndTimeMinutes !== null
+          ? {
+              ...baseLeaveConflictWhere,
+              OR: [
+                { OR: [{ startTimeMinutes: null }, { endTimeMinutes: null }] },
+                {
+                  startDate: { lte: leave.startDate },
+                  endDate: { gte: leave.startDate },
+                  startTimeMinutes: { not: null, lt: targetEndTimeMinutes },
+                  endTimeMinutes: { not: null, gt: targetStartTimeMinutes },
+                },
+              ],
+            }
+          : baseLeaveConflictWhere;
+      const leaveConflictCount = await prisma.leaveRequest.count({
+        where: leaveConflictWhere,
+      });
+      if (leaveConflictCount > 0) {
+        const leaveConflicts = await prisma.leaveRequest.findMany({
+          where: leaveConflictWhere,
+          select: {
+            id: true,
+            status: true,
+            leaveType: true,
+            startDate: true,
+            endDate: true,
+            startTimeMinutes: true,
+            endTimeMinutes: true,
+          },
+          orderBy: [{ startDate: 'asc' }, { id: 'asc' }],
+          take: 50,
+        });
+        return reply.status(409).send({
+          error: {
+            code: 'LEAVE_REQUEST_CONFLICT',
+            message: 'Overlapping leave request exists in requested period',
+            conflictCount: leaveConflictCount,
+            conflicts: leaveConflicts.map((item) => ({
+              id: item.id,
+              status: item.status,
+              leaveType: item.leaveType,
+              startDate: toDateOnlyString(item.startDate),
+              endDate: toDateOnlyString(item.endDate),
+              startTimeMinutes: item.startTimeMinutes,
+              endTimeMinutes: item.endTimeMinutes,
+            })),
+          },
+        });
       }
 
       const annotation = await prisma.annotation.findUnique({
