@@ -281,7 +281,11 @@ test('leave submit auto-approves when leave type does not require approval @core
   request,
 }) => {
   const suffix = runId();
-  const leaveTypeCode = `e2e_auto_${Date.now().toString(36)}_${randomUUID().slice(0, 6)}`.toLowerCase();
+  const leaveTypeCode = `e2e_auto_${Date.now().toString(36)}_${randomUUID().slice(
+    0,
+    6,
+  )}`.toLowerCase();
+  const leaveUserId = `leave-auto-${suffix}`;
   const tomorrow = new Date();
   tomorrow.setDate(tomorrow.getDate() + 1);
   const tomorrowStr = toDateInput(tomorrow);
@@ -302,7 +306,7 @@ test('leave submit auto-approves when leave type does not require approval @core
 
   const leaveRes = await request.post(`${apiBase}/leave-requests`, {
     data: {
-      userId: 'demo-user',
+      userId: leaveUserId,
       leaveType: leaveTypeCode,
       startDate: tomorrowStr,
       endDate: tomorrowStr,

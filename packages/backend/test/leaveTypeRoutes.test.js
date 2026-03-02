@@ -582,6 +582,7 @@ test('POST /leave-requests/:id/submit auto-approves compensatory leave and consu
       'leaveWorkdayOverride.findMany': async () => [],
       'timeEntry.aggregate': async () => ({ _sum: { minutes: 0 } }),
       'timeEntry.count': async () => 0,
+      'leaveRequest.count': async () => 0,
       'annotation.findUnique': async () => ({
         internalRefs: [],
         externalUrls: [],
