@@ -9,6 +9,7 @@
 
 ## 参照
 - ウェルビーイング入力ポリシー: [wellbeing-policy](../requirements/wellbeing-policy.md)
+- 休暇集計/台帳CSV仕様: [leave-hr-reporting](../requirements/leave-hr-reporting.md)
 - 権限/可視範囲: [role-permissions](role-permissions.md)
 - UI 操作（管理者）: [ui-manual-admin](ui-manual-admin.md)（HR分析/監査ログ）
 - UI 操作（利用者）: [ui-manual-user](ui-manual-user.md)（日報+WB）
@@ -26,6 +27,17 @@
 ## 匿名集計
 匿名性確保の条件（例: N>=5 など）はポリシーに従う。
 実装状況と差分がある場合は Issue として追跡する。
+
+## 休暇集計/台帳CSV（試験運用）
+- 対象API:
+  - `GET /leave-entitlements/hr-summary`（滞留申請/失効見込み）
+  - `GET /leave-entitlements/hr-ledger?format=csv`（付与/取得/失効予定）
+- 利用条件:
+  - `general_affairs` グループ所属が必須
+  - 目的外利用（評価利用/私的利用）を禁止
+- 出力データの扱い:
+  - ローカル保存時は保存先を限定し、共有ドライブへの無制限転送を避ける
+  - 運用レビュー後に不要ファイルを削除する
 
 ## 関連画面（証跡）
 ![日報（ウェルビーイング）](../test-results/2026-02-05-frontend-e2e-r1/02-core-daily-report.png)
