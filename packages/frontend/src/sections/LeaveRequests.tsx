@@ -101,6 +101,7 @@ type LeaveTypeOption = {
   isPaid: boolean;
   unit: 'daily' | 'hourly' | 'mixed';
   attachmentPolicy: 'required' | 'optional' | 'none';
+  applicableGroupIds?: string[];
   active: boolean;
   displayOrder: number;
 };

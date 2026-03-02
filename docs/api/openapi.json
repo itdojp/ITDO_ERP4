@@ -6975,6 +6975,15 @@
                   "active": {
                     "type": "boolean"
                   },
+                  "applicableGroupIds": {
+                    "items": {
+                      "maxLength": 200,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "maxItems": 200,
+                    "type": "array"
+                  },
                   "attachmentPolicy": {
                     "anyOf": [
                       {
@@ -7091,6 +7100,16 @@
                 "properties": {
                   "active": {
                     "type": "boolean"
+                  },
+                  "applicableGroupIds": {
+                    "items": {
+                      "maxLength": 200,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "maxItems": 200,
+                    "nullable": true,
+                    "type": "array"
                   },
                   "attachmentPolicy": {
                     "anyOf": [
