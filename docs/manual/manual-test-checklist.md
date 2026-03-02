@@ -52,6 +52,17 @@
 - [x] GET /leave-entitlements/balance で付与/消化/引当/残高が取得できる
 - [x] 有給申請 submit 時に不足がある場合、申請は継続しつつ `shortageWarning` が返る
 
+### 休暇（種別ルール/連携export）
+
+- [x] GET /leave-types?includeInactive=true で有効/無効を含む休暇種別一覧を取得できる
+- [x] POST /leave-types で `requiresApproval` / `attachmentPolicy` / `submitLeadDays` / `allowRetroactiveSubmit` を含む種別を登録できる
+- [x] PATCH /leave-types/:code でルール更新ができ、未知の `applicableGroupIds` は `INVALID_APPLICABLE_GROUP_IDS` で拒否される
+- [x] POST /leave-requests/:id/submit は既存休暇重複時に `LEAVE_REQUEST_CONFLICT` を返す（日単位/時間単位）
+- [x] `requiresApproval=false` の休暇種別では submit 後に状態が `approved` へ自動遷移する
+- [x] GET /integrations/hr/exports/leaves は `status=approved` の申請のみを返し、leave type メタデータを含む
+- [x] POST /integrations/hr/exports/leaves/dispatch は同一キー同条件で `replayed=true`、同一キー異条件で `409 idempotency_conflict`
+- [x] GET /integrations/hr/exports/leaves/dispatch-logs は `target/idempotencyKey` フィルタと `limit/offset` が機能する
+
 ### 経費（拡張ワークフロー）
 
 - [x] POST/GET /expenses（非管理ロールは自分のデータのみ取得できる）
@@ -143,6 +154,13 @@
 - [x] 経費: 支払完了通知（expense_mark_paid）が通知カードに表示され、対象経費に遷移できる
 - [x] 経費: 注釈 Drawer でメモを保存し、再表示で保持される
 - [x] 経費: 注釈の EntityReferencePicker で内部参照候補を追加できる
+
+### 休暇
+
+- [x] 休暇申請: 既存休暇が重複する場合、submit が `LEAVE_REQUEST_CONFLICT` で失敗し状態が更新されない
+- [x] 休暇申請: 時間休+工数の超過時に `TIME_ENTRY_OVERBOOKED` が返り、超過カードが表示される
+- [x] 休暇申請: `承認不要` 種別は submit 後に `approved` 表示へ遷移する
+- [x] 休暇申請: 証跡未添付かつ「相談無し」理由未入力の場合、`NO_CONSULTATION_REASON_REQUIRED` で失敗する
 
 ### 仕入/発注（PO↔VI）
 

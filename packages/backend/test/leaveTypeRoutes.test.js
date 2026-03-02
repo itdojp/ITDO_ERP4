@@ -72,6 +72,17 @@ function withServer(fn) {
   );
 }
 
+function dateAtUtcDayOffset(offsetDays) {
+  const now = new Date();
+  return new Date(
+    Date.UTC(
+      now.getUTCFullYear(),
+      now.getUTCMonth(),
+      now.getUTCDate() + offsetDays,
+    ),
+  );
+}
+
 function userHeaders(userId = 'normal-user', options = {}) {
   const headers = {
     'x-user-id': 'normal-user',
@@ -546,6 +557,67 @@ test('POST /leave-requests/:id/submit rejects when lead days requirement is not 
   );
 });
 
+test('POST /leave-requests/:id/submit allows submit when lead days requirement is exactly met', async () => {
+  const boundaryDate = dateAtUtcDayOffset(2);
+  await withPrismaStubs(
+    {
+      'leaveType.findMany': async () => [
+        { code: 'paid' },
+        { code: 'special' },
+        { code: 'substitute' },
+        { code: 'compensatory' },
+        { code: 'unpaid' },
+      ],
+      'leaveRequest.findUnique': async () => ({
+        id: 'leave-lead-days-boundary',
+        userId: 'normal-user',
+        status: 'draft',
+        leaveType: 'special',
+        startDate: boundaryDate,
+        endDate: boundaryDate,
+        startTimeMinutes: null,
+        endTimeMinutes: null,
+        minutes: null,
+        hours: 8,
+      }),
+      'actionPolicy.findMany': async () => [],
+      'leaveSetting.upsert': async () => ({
+        id: 'default',
+        timeUnitMinutes: 10,
+        defaultWorkdayMinutes: 480,
+      }),
+      'timeEntry.count': async () => 0,
+      'leaveRequest.count': async () => 0,
+      'annotation.findUnique': async () => ({
+        internalRefs: [],
+        externalUrls: [],
+      }),
+      'leaveType.findFirst': async () => ({
+        code: 'special',
+        attachmentPolicy: 'none',
+        requiresApproval: true,
+        submitLeadDays: 2,
+        allowRetroactiveSubmit: true,
+        retroactiveLimitDays: null,
+        active: true,
+      }),
+    },
+    async () => {
+      await withServer(async (server) => {
+        const res = await server.inject({
+          method: 'POST',
+          url: '/leave-requests/leave-lead-days-boundary/submit',
+          headers: userHeaders(),
+          payload: {},
+        });
+        assert.equal(res.statusCode, 400, res.body);
+        const body = JSON.parse(res.body);
+        assert.equal(body?.error?.code, 'NO_CONSULTATION_REASON_REQUIRED');
+      });
+    },
+  );
+});
+
 test('POST /leave-requests/:id/submit rejects retroactive submit when disabled', async () => {
   const now = new Date();
   const yesterday = new Date(now);
@@ -607,6 +679,67 @@ test('POST /leave-requests/:id/submit rejects retroactive submit when disabled',
         assert.equal(res.statusCode, 400, res.body);
         const body = JSON.parse(res.body);
         assert.equal(body?.error?.code, 'LEAVE_RETROACTIVE_SUBMIT_FORBIDDEN');
+      });
+    },
+  );
+});
+
+test('POST /leave-requests/:id/submit allows retroactive submit at limit boundary', async () => {
+  const boundaryDate = dateAtUtcDayOffset(-3);
+  await withPrismaStubs(
+    {
+      'leaveType.findMany': async () => [
+        { code: 'paid' },
+        { code: 'special' },
+        { code: 'substitute' },
+        { code: 'compensatory' },
+        { code: 'unpaid' },
+      ],
+      'leaveRequest.findUnique': async () => ({
+        id: 'leave-retro-limit-boundary',
+        userId: 'normal-user',
+        status: 'draft',
+        leaveType: 'special',
+        startDate: boundaryDate,
+        endDate: boundaryDate,
+        startTimeMinutes: null,
+        endTimeMinutes: null,
+        minutes: null,
+        hours: 8,
+      }),
+      'actionPolicy.findMany': async () => [],
+      'leaveSetting.upsert': async () => ({
+        id: 'default',
+        timeUnitMinutes: 10,
+        defaultWorkdayMinutes: 480,
+      }),
+      'timeEntry.count': async () => 0,
+      'leaveRequest.count': async () => 0,
+      'annotation.findUnique': async () => ({
+        internalRefs: [],
+        externalUrls: [],
+      }),
+      'leaveType.findFirst': async () => ({
+        code: 'special',
+        attachmentPolicy: 'none',
+        requiresApproval: true,
+        submitLeadDays: 0,
+        allowRetroactiveSubmit: true,
+        retroactiveLimitDays: 3,
+        active: true,
+      }),
+    },
+    async () => {
+      await withServer(async (server) => {
+        const res = await server.inject({
+          method: 'POST',
+          url: '/leave-requests/leave-retro-limit-boundary/submit',
+          headers: userHeaders(),
+          payload: {},
+        });
+        assert.equal(res.statusCode, 400, res.body);
+        const body = JSON.parse(res.body);
+        assert.equal(body?.error?.code, 'NO_CONSULTATION_REASON_REQUIRED');
       });
     },
   );
@@ -676,6 +809,71 @@ test('POST /leave-requests/:id/submit rejects when retroactive limit is exceeded
       });
     },
   );
+});
+
+test('POST /leave-requests/:id/submit treats hourly boundary where existing leave ends at start as non-overlap', async () => {
+  let capturedConflictWhere = null;
+  await withPrismaStubs(
+    {
+      'leaveType.findMany': async () => [
+        { code: 'paid' },
+        { code: 'special' },
+        { code: 'substitute' },
+        { code: 'compensatory' },
+        { code: 'unpaid' },
+      ],
+      'leaveRequest.findUnique': async () => ({
+        id: 'leave-hourly-start-boundary-target',
+        userId: 'normal-user',
+        status: 'draft',
+        leaveType: 'special',
+        startDate: new Date('2026-04-11T00:00:00.000Z'),
+        endDate: new Date('2026-04-11T00:00:00.000Z'),
+        startTimeMinutes: 540,
+        endTimeMinutes: 600,
+        minutes: 60,
+        hours: null,
+      }),
+      'actionPolicy.findMany': async () => [],
+      'leaveSetting.upsert': async () => ({
+        id: 'default',
+        timeUnitMinutes: 10,
+        defaultWorkdayMinutes: 480,
+      }),
+      'leaveCompanyHoliday.findMany': async () => [],
+      'leaveWorkdayOverride.findMany': async () => [],
+      'timeEntry.aggregate': async () => ({ _sum: { minutes: 0 } }),
+      'timeEntry.count': async () => 0,
+      'leaveRequest.count': async (args) => {
+        capturedConflictWhere = args?.where ?? null;
+        return 0;
+      },
+      'annotation.findUnique': async () => ({
+        internalRefs: [],
+        externalUrls: [],
+      }),
+      'leaveType.findFirst': async () => ({
+        code: 'special',
+        attachmentPolicy: 'none',
+        active: true,
+      }),
+    },
+    async () => {
+      await withServer(async (server) => {
+        const res = await server.inject({
+          method: 'POST',
+          url: '/leave-requests/leave-hourly-start-boundary-target/submit',
+          headers: userHeaders(),
+          payload: {},
+        });
+        assert.equal(res.statusCode, 400, res.body);
+        const body = JSON.parse(res.body);
+        assert.equal(body?.error?.code, 'NO_CONSULTATION_REASON_REQUIRED');
+      });
+    },
+  );
+  assert.equal(capturedConflictWhere?.OR?.[1]?.startTimeMinutes?.lt, 600);
+  assert.equal(capturedConflictWhere?.OR?.[1]?.endTimeMinutes?.gt, 540);
 });
 
 test('POST /leave-requests/:id/submit auto-approves leave type without approval', async () => {

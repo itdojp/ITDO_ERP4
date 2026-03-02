@@ -435,6 +435,79 @@ test('POST /integrations/hr/exports/leaves/dispatch replays previous success wit
   assert.equal(createCalled, false);
 });
 
+test('POST /integrations/hr/exports/leaves/dispatch returns 409 while same request is running', async () => {
+  process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
+  process.env.AUTH_MODE = 'header';
+
+  const requestHash = createHash('sha256')
+    .update(
+      JSON.stringify({
+        target: 'attendance',
+        updatedSince: null,
+        limit: 5,
+        offset: 0,
+      }),
+      'utf8',
+    )
+    .digest('hex');
+  let createCalled = false;
+  let auditCreateCount = 0;
+  await withPrismaStubs(
+    {
+      'leaveIntegrationExportLog.findUnique': async () => ({
+        id: 'export-log-002-running',
+        target: 'attendance',
+        idempotencyKey: 'export-key-002-running',
+        requestHash,
+        updatedSince: null,
+        exportedUntil: new Date('2026-02-22T10:00:00.000Z'),
+        status: 'running',
+        exportedCount: 0,
+        payload: null,
+        startedAt: new Date('2026-02-22T09:59:00.000Z'),
+        finishedAt: null,
+        message: null,
+      }),
+      'leaveIntegrationExportLog.create': async () => {
+        createCalled = true;
+        return { id: 'unexpected' };
+      },
+      'auditLog.create': async () => {
+        auditCreateCount += 1;
+        return { id: 'audit-running' };
+      },
+    },
+    async () => {
+      const server = await buildServer({ logger: false });
+      try {
+        const res = await server.inject({
+          method: 'POST',
+          url: '/integrations/hr/exports/leaves/dispatch',
+          headers: {
+            'x-user-id': 'admin-user',
+            'x-roles': 'admin',
+          },
+          payload: {
+            target: 'attendance',
+            idempotencyKey: 'export-key-002-running',
+            limit: 5,
+            offset: 0,
+          },
+        });
+        assert.equal(res.statusCode, 409, res.body);
+        const body = JSON.parse(res.body);
+        assert.equal(body.error, 'dispatch_in_progress');
+        assert.equal(body.logId, 'export-log-002-running');
+      } finally {
+        await server.close();
+      }
+    },
+  );
+
+  assert.equal(createCalled, false);
+  assert.equal(auditCreateCount, 0);
+});
+
 test('POST /integrations/hr/exports/leaves/dispatch returns 409 on idempotency conflict', async () => {
   process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
   process.env.AUTH_MODE = 'header';

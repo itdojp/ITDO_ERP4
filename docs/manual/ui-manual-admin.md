@@ -14,7 +14,7 @@
 ## 目次
 
 - 共通: 現在のユーザー / ダッシュボード / ERP横断検索 / コマンドパレット
-- 管理者向け: 承認 / レポート / 案件 / 定期案件テンプレ / マイルストーン / マスタ / ベンダー書類 / 管理設定 / 運用ジョブ / ドキュメント送信ログ / PDFファイル一覧 / アクセス棚卸し / 監査ログ / 期間締め / 監査閲覧 / HR分析
+- 管理者向け: 承認 / レポート / 案件 / 定期案件テンプレ / マイルストーン / マスタ / ベンダー書類 / 管理設定 / 休暇運用（種別ルール・連携エクスポート） / 運用ジョブ / ドキュメント送信ログ / PDFファイル一覧 / アクセス棚卸し / 監査ログ / 期間締め / 監査閲覧 / HR分析
 - 補足: PWA キャッシュ更新
 
 ## 共通: 現在のユーザー
@@ -414,6 +414,46 @@
 - チャットルーム設定は admin/mgmt のみ
 
 ![管理設定](../test-results/2026-02-05-frontend-e2e-r1/11-admin-settings.png)
+
+### 休暇運用（休暇種別ルール / HR連携エクスポート）
+
+- 目的: 休暇種別ルールの運用（申請ルール/承認要否/適用範囲）と、HR外部連携向けの休暇エクスポート実行履歴を管理する
+- 主な操作: `GET/POST/PATCH /leave-types`、`GET /integrations/hr/exports/leaves`、`POST /integrations/hr/exports/leaves/dispatch`、`GET /integrations/hr/exports/leaves/dispatch-logs`
+- 補足: PoC 時点では専用管理UIがないため、OpenAPI/HTTP クライアントで実行する運用を想定する
+
+### 詳細操作（休暇種別ルール）
+
+1. `GET /leave-types?includeInactive=true` で現行ルール（有効/無効含む）を確認する
+2. 新規種別が必要な場合は `POST /leave-types` で `code/name/isPaid/unit/requiresApproval/attachmentPolicy` を登録する
+3. 申請期限や事後申請ルールを変更する場合は `submitLeadDays` / `allowRetroactiveSubmit` / `retroactiveLimitDays` を更新する
+4. 承認フローをスキップする種別は `requiresApproval=false` を設定する（submit 直後に `approved` へ遷移）
+5. 対象グループを限定する場合は `applicableGroupIds` を設定し、適用対象外ユーザからの申請を抑止する
+6. 既存種別の運用変更は `PATCH /leave-types/{code}` で反映する
+
+### 入力項目/制約（休暇種別ルール）
+
+- `unit` は `daily` / `hourly` / `mixed` のみ指定可能
+- `attachmentPolicy` は `required` / `optional` / `none` のみ指定可能
+- `applicableGroupIds` には既存グループIDのみ指定可能（不正値は `INVALID_APPLICABLE_GROUP_IDS`）
+- `code` 重複は `LEAVE_TYPE_EXISTS`、未存在コード更新は `NOT_FOUND`
+- `effectiveFrom` は date-time 形式
+
+### 詳細操作（leave export / dispatch / dispatch-logs）
+
+1. `GET /integrations/hr/exports/leaves` を実行し、`target`（`attendance`/`payroll`）と `updatedSince` 条件で対象件数を事前確認する
+2. 実送信時は `POST /integrations/hr/exports/leaves/dispatch` を実行し、`idempotencyKey` を付与する
+3. 応答の `payload.exportedCount` と `log.status`（`success/failed/running`）を確認する
+4. 同一条件の再実行は同一 `idempotencyKey` を使用し、`replayed=true` 応答で重複送信を回避する
+5. 実行履歴は `GET /integrations/hr/exports/leaves/dispatch-logs` で `target` / `idempotencyKey` / `limit` / `offset` を指定して確認する
+
+### 入力項目/制約（leave export）
+
+- 実行権限は `admin/mgmt` のみ
+- `updatedSince` は ISO date-time 形式（不正値は `400 invalid_updatedSince`）
+- `limit` は `1..2000`、`offset` は `0..100000`（dispatch-logs の `limit` は `1..1000`）
+- 同一 `idempotencyKey` でリクエスト条件が異なる場合は `409 idempotency_conflict`
+- 同一 `idempotencyKey` が実行中（`running`）の場合は `409 dispatch_in_progress`
+- エクスポート対象は `status=approved` の休暇申請のみ（種別メタデータ `leaveTypeName/unit/isPaid` を付与）
 
 ### 運用ジョブ
 

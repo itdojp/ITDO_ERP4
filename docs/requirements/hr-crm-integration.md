@@ -111,12 +111,31 @@
 ### HR コネクタ（実装済み）
 - `GET /integrations/hr/exports/users`
 - `GET /integrations/hr/exports/wellbeing`
+- `GET /integrations/hr/exports/leaves`
+- `POST /integrations/hr/exports/leaves/dispatch`
+- `GET /integrations/hr/exports/leaves/dispatch-logs`
 
-共通仕様:
+共通仕様（GET export）:
 - query: `updatedSince?`, `limit?`, `offset?`
 - 認可: `admin` / `mgmt`
 - `updatedSince` は `updatedAt > updatedSince` 判定
 - 不正な `updatedSince` は `400 invalid_updatedSince`
+
+休暇 export 系 API（追加仕様）:
+- `GET /integrations/hr/exports/leaves`
+  - query: `target?`（`attendance|payroll`）、`updatedSince?`、`limit?`（1..2000）、`offset?`（0..100000）
+  - 連携対象: `status=approved` の休暇申請のみ
+  - ペイロード: `leaveTypeName` / `leaveTypeUnit` / `leaveTypeIsPaid` / `requestedMinutes` を含む
+- `POST /integrations/hr/exports/leaves/dispatch`
+  - body: `target`（必須）、`idempotencyKey`（必須）、`updatedSince?`、`limit?`、`offset?`
+  - 応答: `replayed`（再利用判定）、`payload`（export結果）、`log`（実行ログ）
+  - 冪等制御:
+    - 同一 `idempotencyKey` + 同一条件: 前回成功/失敗結果を再利用（`replayed=true`）
+    - 同一 `idempotencyKey` + 異なる条件: `409 idempotency_conflict`
+    - 同一 `idempotencyKey` の実行中再入: `409 dispatch_in_progress`
+- `GET /integrations/hr/exports/leaves/dispatch-logs`
+  - query: `target?`, `idempotencyKey?`, `limit?`（1..1000）, `offset?`（0..100000）
+  - 監査確認項目: `status` / `exportedCount` / `updatedSince` / `exportedUntil` / `message`
 
 ## EvidencePack と外部連携実行の関連付け仕様（確定）
 
