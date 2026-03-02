@@ -62,6 +62,78 @@ function hasGroupIntersection(lhs: string[], rhs: string[]) {
   return rhs.some((value) => set.has(value));
 }
 
+function hasDateRangeOverlap(
+  leftStart: Date,
+  leftEnd: Date,
+  rightStart: Date,
+  rightEnd: Date,
+) {
+  return (
+    leftStart.getTime() <= rightEnd.getTime() &&
+    rightStart.getTime() <= leftEnd.getTime()
+  );
+}
+
+function hasTimeRangeOverlap(
+  leftStartMinutes: number,
+  leftEndMinutes: number,
+  rightStartMinutes: number,
+  rightEndMinutes: number,
+) {
+  return (
+    leftStartMinutes < rightEndMinutes && rightStartMinutes < leftEndMinutes
+  );
+}
+
+type LeaveOverlapTarget = {
+  startDate: Date;
+  endDate: Date;
+  startTimeMinutes: number | null;
+  endTimeMinutes: number | null;
+};
+
+function isHourlyLeave(target: LeaveOverlapTarget) {
+  return target.startTimeMinutes !== null && target.endTimeMinutes !== null;
+}
+
+function toDateOnlyString(value: Date) {
+  return value.toISOString().slice(0, 10);
+}
+
+function hasLeaveRequestOverlap(
+  left: LeaveOverlapTarget,
+  right: LeaveOverlapTarget,
+) {
+  if (
+    !hasDateRangeOverlap(
+      left.startDate,
+      left.endDate,
+      right.startDate,
+      right.endDate,
+    )
+  ) {
+    return false;
+  }
+
+  const leftHourly = isHourlyLeave(left);
+  const rightHourly = isHourlyLeave(right);
+  if (!leftHourly || !rightHourly) {
+    return true;
+  }
+
+  if (toDateOnlyString(left.startDate) !== toDateOnlyString(right.startDate)) {
+    // Defensive fallback for malformed hourly ranges.
+    return true;
+  }
+
+  return hasTimeRangeOverlap(
+    left.startTimeMinutes!,
+    left.endTimeMinutes!,
+    right.startTimeMinutes!,
+    right.endTimeMinutes!,
+  );
+}
+
 export async function registerLeaveRoutes(app: FastifyInstance) {
   app.get(
     '/leave-types',
@@ -861,6 +933,48 @@ export async function registerLeaveRoutes(app: FastifyInstance) {
             },
           });
         }
+      }
+
+      const overlappingLeaveCandidates = await prisma.leaveRequest.findMany({
+        where: {
+          userId: leave.userId,
+          id: { not: leave.id },
+          status: { in: ['pending_manager', 'approved'] },
+          startDate: { lte: leave.endDate },
+          endDate: { gte: leave.startDate },
+        },
+        select: {
+          id: true,
+          status: true,
+          leaveType: true,
+          startDate: true,
+          endDate: true,
+          startTimeMinutes: true,
+          endTimeMinutes: true,
+        },
+        orderBy: [{ startDate: 'asc' }, { id: 'asc' }],
+        take: 50,
+      });
+      const leaveConflicts = overlappingLeaveCandidates.filter((candidate) =>
+        hasLeaveRequestOverlap(leave, candidate),
+      );
+      if (leaveConflicts.length > 0) {
+        return reply.status(409).send({
+          error: {
+            code: 'LEAVE_REQUEST_CONFLICT',
+            message: 'Overlapping leave request exists in requested period',
+            conflictCount: leaveConflicts.length,
+            conflicts: leaveConflicts.map((item) => ({
+              id: item.id,
+              status: item.status,
+              leaveType: item.leaveType,
+              startDate: item.startDate.toISOString().slice(0, 10),
+              endDate: item.endDate.toISOString().slice(0, 10),
+              startTimeMinutes: item.startTimeMinutes,
+              endTimeMinutes: item.endTimeMinutes,
+            })),
+          },
+        });
       }
 
       const annotation = await prisma.annotation.findUnique({

@@ -384,6 +384,7 @@ test('POST /leave-requests/:id/submit rejects required attachment when missing e
         defaultWorkdayMinutes: 480,
       }),
       'timeEntry.count': async () => 0,
+      'leaveRequest.findMany': async () => [],
       'annotation.findUnique': async () => ({
         internalRefs: [],
         externalUrls: [],
@@ -439,6 +440,7 @@ test('POST /leave-requests/:id/submit proceeds past attachment check when eviden
         defaultWorkdayMinutes: 480,
       }),
       'timeEntry.count': async () => 0,
+      'leaveRequest.findMany': async () => [],
       'annotation.findUnique': async () => ({
         internalRefs: [],
         externalUrls: ['https://example.com/evidence'],
@@ -521,6 +523,133 @@ test('POST /leave-requests/:id/submit rejects compensatory leave when balance is
         assert.equal(res.statusCode, 400, res.body);
         const body = JSON.parse(res.body);
         assert.equal(body?.error?.code, 'LEAVE_COMP_BALANCE_SHORTAGE');
+      });
+    },
+  );
+});
+
+test('POST /leave-requests/:id/submit rejects overlapping leave requests', async () => {
+  await withPrismaStubs(
+    {
+      'leaveType.findMany': async () => [
+        { code: 'paid' },
+        { code: 'special' },
+        { code: 'substitute' },
+        { code: 'compensatory' },
+        { code: 'unpaid' },
+      ],
+      'leaveRequest.findUnique': async () => ({
+        id: 'leave-overlap-target',
+        userId: 'normal-user',
+        status: 'draft',
+        leaveType: 'special',
+        startDate: new Date('2026-04-10T00:00:00.000Z'),
+        endDate: new Date('2026-04-10T00:00:00.000Z'),
+        startTimeMinutes: null,
+        endTimeMinutes: null,
+        minutes: null,
+        hours: 8,
+      }),
+      'actionPolicy.findMany': async () => [],
+      'leaveSetting.upsert': async () => ({
+        id: 'default',
+        timeUnitMinutes: 10,
+        defaultWorkdayMinutes: 480,
+      }),
+      'timeEntry.count': async () => 0,
+      'leaveRequest.findMany': async () => [
+        {
+          id: 'leave-overlap-existing',
+          status: 'pending_manager',
+          leaveType: 'special',
+          startDate: new Date('2026-04-10T00:00:00.000Z'),
+          endDate: new Date('2026-04-10T00:00:00.000Z'),
+          startTimeMinutes: null,
+          endTimeMinutes: null,
+        },
+      ],
+    },
+    async () => {
+      await withServer(async (server) => {
+        const res = await server.inject({
+          method: 'POST',
+          url: '/leave-requests/leave-overlap-target/submit',
+          headers: userHeaders(),
+          payload: {},
+        });
+        assert.equal(res.statusCode, 409, res.body);
+        const body = JSON.parse(res.body);
+        assert.equal(body?.error?.code, 'LEAVE_REQUEST_CONFLICT');
+        assert.equal(body?.error?.conflictCount, 1);
+      });
+    },
+  );
+});
+
+test('POST /leave-requests/:id/submit allows non-overlapping hourly leave requests', async () => {
+  await withPrismaStubs(
+    {
+      'leaveType.findMany': async () => [
+        { code: 'paid' },
+        { code: 'special' },
+        { code: 'substitute' },
+        { code: 'compensatory' },
+        { code: 'unpaid' },
+      ],
+      'leaveRequest.findUnique': async () => ({
+        id: 'leave-hourly-target',
+        userId: 'normal-user',
+        status: 'draft',
+        leaveType: 'special',
+        startDate: new Date('2026-04-11T00:00:00.000Z'),
+        endDate: new Date('2026-04-11T00:00:00.000Z'),
+        startTimeMinutes: 540,
+        endTimeMinutes: 600,
+        minutes: 60,
+        hours: null,
+      }),
+      'actionPolicy.findMany': async () => [],
+      'leaveSetting.upsert': async () => ({
+        id: 'default',
+        timeUnitMinutes: 10,
+        defaultWorkdayMinutes: 480,
+      }),
+      'leaveCompanyHoliday.findMany': async () => [],
+      'leaveWorkdayOverride.findMany': async () => [],
+      'timeEntry.aggregate': async () => ({ _sum: { minutes: 0 } }),
+      'timeEntry.count': async () => 0,
+      'leaveRequest.findMany': async () => [
+        {
+          id: 'leave-hourly-existing',
+          status: 'pending_manager',
+          leaveType: 'special',
+          startDate: new Date('2026-04-11T00:00:00.000Z'),
+          endDate: new Date('2026-04-11T00:00:00.000Z'),
+          startTimeMinutes: 600,
+          endTimeMinutes: 660,
+        },
+      ],
+      'annotation.findUnique': async () => ({
+        internalRefs: [],
+        externalUrls: [],
+      }),
+      'leaveType.findFirst': async () => ({
+        code: 'special',
+        attachmentPolicy: 'none',
+        active: true,
+      }),
+    },
+    async () => {
+      await withServer(async (server) => {
+        const res = await server.inject({
+          method: 'POST',
+          url: '/leave-requests/leave-hourly-target/submit',
+          headers: userHeaders(),
+          payload: {},
+        });
+        assert.equal(res.statusCode, 400, res.body);
+        const body = JSON.parse(res.body);
+        assert.equal(body?.error?.code, 'NO_CONSULTATION_REASON_REQUIRED');
       });
     },
   );
