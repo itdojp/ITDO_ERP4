@@ -10,6 +10,10 @@ import {
 const baseUrl = process.env.E2E_BASE_URL || 'http://localhost:5173';
 const apiBase = process.env.E2E_API_BASE || 'http://localhost:3002';
 const defaultProjectId = '00000000-0000-0000-0000-000000000001';
+const defaultAuthRoles = ['admin', 'mgmt'];
+const defaultAuthProjectIds = [defaultProjectId];
+const defaultAuthGroupIds = ['mgmt', 'hr-group'];
+const defaultAuthGroupAccountIds = ['mgmt', 'hr-group'];
 const actionTimeout = (() => {
   const raw = process.env.E2E_ACTION_TIMEOUT_MS;
   if (raw) {
@@ -19,19 +23,33 @@ const actionTimeout = (() => {
   return process.env.CI ? 30_000 : 12_000;
 })();
 
-const authState = {
-  userId: 'demo-user',
-  roles: ['admin', 'mgmt'],
-  projectIds: [defaultProjectId],
-  groupIds: ['mgmt', 'hr-group'],
+type E2EAuthState = {
+  userId: string;
+  roles: string[];
+  projectIds: string[];
+  groupIds: string[];
+  groupAccountIds: string[];
 };
 
-const authHeaders = {
-  'x-user-id': authState.userId,
-  'x-roles': authState.roles.join(','),
-  'x-project-ids': authState.projectIds.join(','),
-  'x-group-ids': authState.groupIds.join(','),
-};
+function createAuthState(userId: string): E2EAuthState {
+  return {
+    userId,
+    roles: [...defaultAuthRoles],
+    projectIds: [...defaultAuthProjectIds],
+    groupIds: [...defaultAuthGroupIds],
+    groupAccountIds: [...defaultAuthGroupAccountIds],
+  };
+}
+
+function buildAuthHeaders(authState: E2EAuthState) {
+  return {
+    'x-user-id': authState.userId,
+    'x-roles': authState.roles.join(','),
+    'x-project-ids': authState.projectIds.join(','),
+    'x-group-ids': authState.groupIds.join(','),
+    'x-group-account-ids': authState.groupAccountIds.join(','),
+  };
+}
 
 type SubmitErrorPayload = {
   error?: {
@@ -55,7 +73,7 @@ async function ensureOk(res: { ok(): boolean; status(): number; text(): any }) {
   throw new Error(`[e2e] api failed: ${res.status()} ${body}`);
 }
 
-async function prepare(page: Page) {
+async function prepare(page: Page, authState: E2EAuthState) {
   page.on('pageerror', (error) => {
     console.error('[leave-submit-validation] pageerror:', error);
   });
@@ -90,6 +108,7 @@ async function openLeaveSection(page: Page) {
 
 async function createLeaveType(
   request: APIRequestContext,
+  authHeaders: Record<string, string>,
   options: {
     code: string;
     name: string;
@@ -116,7 +135,7 @@ async function createLeaveType(
 
 async function setLeaveType(leaveSection: Locator, leaveTypeCode: string) {
   const selectControl = leaveSection.locator('select[aria-label="休暇種別"]');
-  if ((await selectControl.count()) > 0) {
+  try {
     await expect(selectControl).toBeVisible({ timeout: actionTimeout });
     await expect
       .poll(
@@ -129,6 +148,8 @@ async function setLeaveType(leaveSection: Locator, leaveTypeCode: string) {
       .toBeGreaterThan(0);
     await selectControl.selectOption({ value: leaveTypeCode });
     return;
+  } catch {
+    // Fallback for legacy UI where leave type is a text input.
   }
   const textControl = leaveSection.locator('input[aria-label="休暇種別"]');
   await expect(textControl).toBeVisible({ timeout: actionTimeout });
@@ -199,6 +220,8 @@ test('frontend leave submit validation for lead/retroactive/time conflict @core'
   test.setTimeout(180_000);
 
   const suffix = runId();
+  const authState = createAuthState(`e2e-leave-${suffix}`);
+  const authHeaders = buildAuthHeaders(authState);
   const now = new Date();
   const tomorrow = new Date(now);
   tomorrow.setDate(now.getDate() + 1);
@@ -214,13 +237,13 @@ test('frontend leave submit validation for lead/retroactive/time conflict @core'
   const leadRetroTypeLabel = `E2E Leave Window ${suffix} (${leadRetroTypeCode})`;
   const conflictTypeLabel = `E2E Leave Conflict ${suffix} (${conflictTypeCode})`;
 
-  await createLeaveType(request, {
+  await createLeaveType(request, authHeaders, {
     code: leadRetroTypeCode,
     name: `E2E Leave Window ${suffix}`,
     submitLeadDays: 3,
     allowRetroactiveSubmit: false,
   });
-  await createLeaveType(request, {
+  await createLeaveType(request, authHeaders, {
     code: conflictTypeCode,
     name: `E2E Leave Conflict ${suffix}`,
     submitLeadDays: 0,
@@ -251,7 +274,7 @@ test('frontend leave submit validation for lead/retroactive/time conflict @core'
   });
   await ensureOk(timeEntryRes);
 
-  await prepare(page);
+  await prepare(page, authState);
   const leaveSection = await openLeaveSection(page);
   const sectionMessage = leaveSection.locator(':scope > p').first();
 
