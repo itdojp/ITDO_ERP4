@@ -277,6 +277,75 @@ test('leave submit allows when chat evidence is attached @core', async ({
   expect(submitted.status).toBe('pending_manager');
 });
 
+test('leave submit auto-approves when leave type does not require approval @core', async ({
+  request,
+}) => {
+  const suffix = runId();
+  const leaveTypeCode = `e2e_auto_${Date.now().toString(36)}_${randomUUID().slice(0, 6)}`.toLowerCase();
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const tomorrowStr = toDateInput(tomorrow);
+
+  const leaveTypeRes = await request.post(`${apiBase}/leave-types`, {
+    data: {
+      code: leaveTypeCode,
+      name: `E2E Auto Approve ${suffix}`,
+      isPaid: true,
+      unit: 'daily',
+      requiresApproval: false,
+      attachmentPolicy: 'none',
+      active: true,
+    },
+    headers: authHeaders,
+  });
+  await ensureOk(leaveTypeRes);
+
+  const leaveRes = await request.post(`${apiBase}/leave-requests`, {
+    data: {
+      userId: 'demo-user',
+      leaveType: leaveTypeCode,
+      startDate: tomorrowStr,
+      endDate: tomorrowStr,
+      hours: 8,
+      notes: `auto-approve-${suffix}`,
+    },
+    headers: authHeaders,
+  });
+  await ensureOk(leaveRes);
+  const leave = await leaveRes.json();
+
+  const submitRes = await request.post(
+    `${apiBase}/leave-requests/${leave.id}/submit`,
+    {
+      data: {
+        noConsultationConfirmed: true,
+        noConsultationReason: `auto-approve-${suffix}`,
+      },
+      headers: authHeaders,
+    },
+  );
+  await ensureOk(submitRes);
+  const submitted = await submitRes.json();
+  expect(submitted.status).toBe('approved');
+
+  const instancesRes = await request.get(
+    `${apiBase}/approval-instances?flowType=leave`,
+    { headers: authHeaders },
+  );
+  await ensureOk(instancesRes);
+  const instancesPayload = (await instancesRes.json()) as {
+    items?: Array<{ targetId?: string; status?: string }>;
+  };
+  const matched = (instancesPayload.items || []).find(
+    (item) =>
+      item?.targetId === leave.id &&
+      item?.status !== 'approved' &&
+      item?.status !== 'rejected' &&
+      item?.status !== 'cancelled',
+  );
+  expect(matched).toBeUndefined();
+});
+
 test('hourly leave create validates time unit and stores minutes @core', async ({
   request,
 }) => {
