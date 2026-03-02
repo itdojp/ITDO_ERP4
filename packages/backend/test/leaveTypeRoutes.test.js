@@ -480,6 +480,204 @@ test('POST /leave-requests/:id/submit proceeds past attachment check when eviden
   );
 });
 
+test('POST /leave-requests/:id/submit rejects when lead days requirement is not met', async () => {
+  const now = new Date();
+  const tomorrow = new Date(now);
+  tomorrow.setDate(now.getDate() + 1);
+  await withPrismaStubs(
+    {
+      'leaveType.findMany': async () => [
+        { code: 'paid' },
+        { code: 'special' },
+        { code: 'substitute' },
+        { code: 'compensatory' },
+        { code: 'unpaid' },
+      ],
+      'leaveRequest.findUnique': async () => ({
+        id: 'leave-lead-days',
+        userId: 'normal-user',
+        status: 'draft',
+        leaveType: 'special',
+        startDate: tomorrow,
+        endDate: tomorrow,
+        startTimeMinutes: null,
+        endTimeMinutes: null,
+        minutes: null,
+        hours: 8,
+      }),
+      'actionPolicy.findMany': async () => [],
+      'leaveSetting.upsert': async () => ({
+        id: 'default',
+        timeUnitMinutes: 10,
+        defaultWorkdayMinutes: 480,
+      }),
+      'timeEntry.count': async () => 0,
+      'leaveRequest.count': async () => 0,
+      'annotation.findUnique': async () => ({
+        internalRefs: [],
+        externalUrls: [],
+      }),
+      'leaveType.findFirst': async () => ({
+        code: 'special',
+        attachmentPolicy: 'none',
+        requiresApproval: true,
+        submitLeadDays: 2,
+        allowRetroactiveSubmit: true,
+        retroactiveLimitDays: null,
+        active: true,
+      }),
+    },
+    async () => {
+      await withServer(async (server) => {
+        const res = await server.inject({
+          method: 'POST',
+          url: '/leave-requests/leave-lead-days/submit',
+          headers: userHeaders(),
+          payload: {
+            noConsultationConfirmed: true,
+            noConsultationReason: 'lead-days',
+          },
+        });
+        assert.equal(res.statusCode, 400, res.body);
+        const body = JSON.parse(res.body);
+        assert.equal(body?.error?.code, 'LEAVE_SUBMIT_LEAD_DAYS_REQUIRED');
+      });
+    },
+  );
+});
+
+test('POST /leave-requests/:id/submit rejects retroactive submit when disabled', async () => {
+  const now = new Date();
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  await withPrismaStubs(
+    {
+      'leaveType.findMany': async () => [
+        { code: 'paid' },
+        { code: 'special' },
+        { code: 'substitute' },
+        { code: 'compensatory' },
+        { code: 'unpaid' },
+      ],
+      'leaveRequest.findUnique': async () => ({
+        id: 'leave-retro-disabled',
+        userId: 'normal-user',
+        status: 'draft',
+        leaveType: 'special',
+        startDate: yesterday,
+        endDate: yesterday,
+        startTimeMinutes: null,
+        endTimeMinutes: null,
+        minutes: null,
+        hours: 8,
+      }),
+      'actionPolicy.findMany': async () => [],
+      'leaveSetting.upsert': async () => ({
+        id: 'default',
+        timeUnitMinutes: 10,
+        defaultWorkdayMinutes: 480,
+      }),
+      'timeEntry.count': async () => 0,
+      'leaveRequest.count': async () => 0,
+      'annotation.findUnique': async () => ({
+        internalRefs: [],
+        externalUrls: [],
+      }),
+      'leaveType.findFirst': async () => ({
+        code: 'special',
+        attachmentPolicy: 'none',
+        requiresApproval: true,
+        submitLeadDays: 0,
+        allowRetroactiveSubmit: false,
+        retroactiveLimitDays: null,
+        active: true,
+      }),
+    },
+    async () => {
+      await withServer(async (server) => {
+        const res = await server.inject({
+          method: 'POST',
+          url: '/leave-requests/leave-retro-disabled/submit',
+          headers: userHeaders(),
+          payload: {
+            noConsultationConfirmed: true,
+            noConsultationReason: 'retro-disabled',
+          },
+        });
+        assert.equal(res.statusCode, 400, res.body);
+        const body = JSON.parse(res.body);
+        assert.equal(body?.error?.code, 'LEAVE_RETROACTIVE_SUBMIT_FORBIDDEN');
+      });
+    },
+  );
+});
+
+test('POST /leave-requests/:id/submit rejects when retroactive limit is exceeded', async () => {
+  const now = new Date();
+  const fiveDaysAgo = new Date(now);
+  fiveDaysAgo.setDate(now.getDate() - 5);
+  await withPrismaStubs(
+    {
+      'leaveType.findMany': async () => [
+        { code: 'paid' },
+        { code: 'special' },
+        { code: 'substitute' },
+        { code: 'compensatory' },
+        { code: 'unpaid' },
+      ],
+      'leaveRequest.findUnique': async () => ({
+        id: 'leave-retro-limit',
+        userId: 'normal-user',
+        status: 'draft',
+        leaveType: 'special',
+        startDate: fiveDaysAgo,
+        endDate: fiveDaysAgo,
+        startTimeMinutes: null,
+        endTimeMinutes: null,
+        minutes: null,
+        hours: 8,
+      }),
+      'actionPolicy.findMany': async () => [],
+      'leaveSetting.upsert': async () => ({
+        id: 'default',
+        timeUnitMinutes: 10,
+        defaultWorkdayMinutes: 480,
+      }),
+      'timeEntry.count': async () => 0,
+      'leaveRequest.count': async () => 0,
+      'annotation.findUnique': async () => ({
+        internalRefs: [],
+        externalUrls: [],
+      }),
+      'leaveType.findFirst': async () => ({
+        code: 'special',
+        attachmentPolicy: 'none',
+        requiresApproval: true,
+        submitLeadDays: 0,
+        allowRetroactiveSubmit: true,
+        retroactiveLimitDays: 3,
+        active: true,
+      }),
+    },
+    async () => {
+      await withServer(async (server) => {
+        const res = await server.inject({
+          method: 'POST',
+          url: '/leave-requests/leave-retro-limit/submit',
+          headers: userHeaders(),
+          payload: {
+            noConsultationConfirmed: true,
+            noConsultationReason: 'retro-limit',
+          },
+        });
+        assert.equal(res.statusCode, 400, res.body);
+        const body = JSON.parse(res.body);
+        assert.equal(body?.error?.code, 'LEAVE_RETROACTIVE_LIMIT_EXCEEDED');
+      });
+    },
+  );
+});
+
 test('POST /leave-requests/:id/submit auto-approves leave type without approval', async () => {
   await withPrismaStubs(
     {

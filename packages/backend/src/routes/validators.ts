@@ -1061,6 +1061,11 @@ export const leaveTypeCreateSchema = {
         Type.Literal('optional'),
         Type.Literal('none'),
       ]),
+      submitLeadDays: Type.Optional(Type.Integer({ minimum: 0, maximum: 365 })),
+      allowRetroactiveSubmit: Type.Optional(Type.Boolean()),
+      retroactiveLimitDays: Type.Optional(
+        Type.Union([Type.Integer({ minimum: 0, maximum: 365 }), Type.Null()]),
+      ),
       applicableGroupIds: Type.Optional(
         Type.Array(Type.String({ minLength: 1, maxLength: 200 }), {
           maxItems: 200,
@@ -1098,6 +1103,11 @@ export const leaveTypeUpdateSchema = {
           Type.Literal('optional'),
           Type.Literal('none'),
         ]),
+      ),
+      submitLeadDays: Type.Optional(Type.Integer({ minimum: 0, maximum: 365 })),
+      allowRetroactiveSubmit: Type.Optional(Type.Boolean()),
+      retroactiveLimitDays: Type.Optional(
+        Type.Union([Type.Integer({ minimum: 0, maximum: 365 }), Type.Null()]),
       ),
       applicableGroupIds: Type.Optional(
         Type.Union([
