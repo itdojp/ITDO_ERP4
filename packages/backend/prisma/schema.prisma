@@ -767,6 +767,7 @@ model LeaveCompGrant {
   consumptions      LeaveCompConsumption[]
 
   @@index([userId, leaveType, status, expiresAt])
+  @@index([status, expiresAt])
   @@index([sourceDate])
 }
 

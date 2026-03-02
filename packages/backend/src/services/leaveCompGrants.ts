@@ -1,6 +1,7 @@
 import type { Prisma } from '@prisma/client';
 import { prisma } from './db.js';
-import { diffInDays } from '../utils/date.js';
+import { resolveLeaveRequestMinutesWithCalendar } from './leaveEntitlements.js';
+import { ensureLeaveSetting } from './leaveSettings.js';
 import { toDateOnly } from '../utils/date.js';
 
 export const COMP_LEAVE_TYPES = ['compensatory', 'substitute'] as const;
@@ -42,32 +43,6 @@ function normalizeInt(value: unknown) {
   const num = Number(value);
   if (!Number.isFinite(num)) return 0;
   return Math.max(0, Math.floor(num));
-}
-
-function resolvePendingLeaveMinutes(leave: {
-  startDate: Date;
-  endDate: Date;
-  minutes: number | null;
-  hours: number | null;
-  startTimeMinutes: number | null;
-  endTimeMinutes: number | null;
-}) {
-  if (leave.minutes !== null && leave.minutes !== undefined) {
-    return normalizeInt(leave.minutes);
-  }
-  if (
-    leave.startTimeMinutes !== null &&
-    leave.startTimeMinutes !== undefined &&
-    leave.endTimeMinutes !== null &&
-    leave.endTimeMinutes !== undefined
-  ) {
-    return normalizeInt(leave.endTimeMinutes - leave.startTimeMinutes);
-  }
-  if (leave.hours !== null && leave.hours !== undefined) {
-    return normalizeInt(leave.hours * 60);
-  }
-  const days = Math.max(1, diffInDays(leave.startDate, leave.endDate) + 1);
-  return days * 480;
 }
 
 function dateKey(value: Date) {
@@ -127,6 +102,10 @@ export async function computeCompLeaveBalance(options: {
     options.additionalRequestedMinutes,
   );
   const excludeLeaveRequestId = options.excludeLeaveRequestId?.trim() || '';
+  const setting = await ensureLeaveSetting({
+    actorId: options.actorId ?? null,
+    client,
+  });
 
   await expireCompLeaveGrants({
     asOfDate,
@@ -175,11 +154,20 @@ export async function computeCompLeaveBalance(options: {
     0,
   );
 
-  const reservedPendingMinutes = pendingLeaves
-    .filter(
-      (leave) => toDateOnly(leave.startDate).getTime() >= asOfDate.getTime(),
-    )
-    .reduce((sum, leave) => sum + resolvePendingLeaveMinutes(leave), 0);
+  const workdayMinutesCache = new Map<string, number>();
+  let reservedPendingMinutes = 0;
+  const futurePendingLeaves = pendingLeaves.filter(
+    (leave) => toDateOnly(leave.startDate).getTime() >= asOfDate.getTime(),
+  );
+  for (const leave of futurePendingLeaves) {
+    reservedPendingMinutes += await resolveLeaveRequestMinutesWithCalendar({
+      leave,
+      userId,
+      defaultWorkdayMinutes: setting.defaultWorkdayMinutes,
+      client,
+      workdayMinutesCache,
+    });
+  }
 
   const projectedRemainingMinutes =
     remainingMinutes - reservedPendingMinutes - additionalRequestedMinutes;
@@ -232,7 +220,7 @@ export async function consumeCompLeaveForRequest(options: {
   const existing = await client.leaveCompConsumption.findMany({
     where: { leaveRequestId },
     select: { grantId: true, consumedMinutes: true },
-    orderBy: { consumedAt: 'asc' },
+    orderBy: [{ consumedAt: 'asc' }, { id: 'asc' }],
   });
   if (existing.length > 0) {
     return {
@@ -301,24 +289,59 @@ export async function consumeCompLeaveForRequest(options: {
   const now = options.consumedAt ?? new Date();
   const actorId = options.actorId ?? null;
   for (const allocation of allocations) {
-    const grant = await client.leaveCompGrant.findUnique({
-      where: { id: allocation.grantId },
-      select: { remainingMinutes: true, status: true },
-    });
-    const currentRemaining = normalizeInt(grant?.remainingMinutes);
-    const nextRemaining = Math.max(
-      0,
-      currentRemaining - allocation.consumedMinutes,
-    );
-    await client.leaveCompGrant.update({
-      where: { id: allocation.grantId },
+    const updateResult = await client.leaveCompGrant.updateMany({
+      where: {
+        id: allocation.grantId,
+        status: 'active',
+        expiresAt: { gte: leaveStartDate },
+        remainingMinutes: {
+          gte: allocation.consumedMinutes,
+        },
+      },
       data: {
-        remainingMinutes: nextRemaining,
-        status: nextRemaining === 0 ? 'consumed' : 'active',
-        consumedAt: nextRemaining === 0 ? now : null,
+        remainingMinutes: {
+          decrement: allocation.consumedMinutes,
+        },
+        status: 'active',
         updatedBy: actorId,
       },
     });
+    if (updateResult.count !== 1) {
+      const balance = await computeCompLeaveBalance({
+        userId,
+        leaveType,
+        additionalRequestedMinutes: requestedMinutes,
+        asOfDate: leaveStartDate,
+        client,
+        actorId: options.actorId ?? null,
+      });
+      throw new LeaveCompBalanceShortageError({
+        leaveType,
+        requestedMinutes,
+        availableMinutes: balance.remainingMinutes,
+        reservedPendingMinutes: balance.reservedPendingMinutes,
+        projectedRemainingMinutes: balance.projectedRemainingMinutes,
+        shortageMinutes: Math.max(1, balance.shortageMinutes),
+        asOfDate: balance.asOfDate,
+      });
+    }
+    const updatedGrant = await client.leaveCompGrant.findUnique({
+      where: { id: allocation.grantId },
+      select: { remainingMinutes: true },
+    });
+    const remainingAfterConsumption = normalizeInt(
+      updatedGrant?.remainingMinutes,
+    );
+    if (remainingAfterConsumption === 0) {
+      await client.leaveCompGrant.update({
+        where: { id: allocation.grantId },
+        data: {
+          status: 'consumed',
+          consumedAt: now,
+          updatedBy: actorId,
+        },
+      });
+    }
     await client.leaveCompConsumption.create({
       data: {
         grantId: allocation.grantId,

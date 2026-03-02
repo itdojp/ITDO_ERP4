@@ -43,6 +43,9 @@ CREATE TABLE "LeaveCompConsumption" (
 CREATE INDEX "LeaveCompGrant_userId_leaveType_status_expiresAt_idx" ON "LeaveCompGrant"("userId", "leaveType", "status", "expiresAt");
 
 -- CreateIndex
+CREATE INDEX "LeaveCompGrant_status_expiresAt_idx" ON "LeaveCompGrant"("status", "expiresAt");
+
+-- CreateIndex
 CREATE INDEX "LeaveCompGrant_sourceDate_idx" ON "LeaveCompGrant"("sourceDate");
 
 -- CreateIndex

@@ -331,11 +331,23 @@ export async function registerLeaveEntitlementRoutes(app: FastifyInstance) {
           },
         });
       }
-      if (expiresAt.getTime() < sourceDate.getTime()) {
+      if (grantDate.getTime() < sourceDate.getTime()) {
         return reply.status(400).send({
           error: {
             code: 'INVALID_DATE_RANGE',
-            message: 'expiresAt must be equal to or after sourceDate',
+            message: 'grantDate must be equal to or after sourceDate',
+          },
+        });
+      }
+      const effectiveStartTime = Math.max(
+        sourceDate.getTime(),
+        grantDate.getTime(),
+      );
+      if (expiresAt.getTime() < effectiveStartTime) {
+        return reply.status(400).send({
+          error: {
+            code: 'INVALID_DATE_RANGE',
+            message: 'expiresAt must be equal to or after sourceDate/grantDate',
           },
         });
       }

@@ -582,3 +582,27 @@ test('POST /leave-entitlements/comp-grants creates grant for general_affairs mem
   assert.equal(created?.leaveType, 'substitute');
   assert.equal(created?.remainingMinutes, 480);
 });
+
+test('POST /leave-entitlements/comp-grants rejects when grantDate is before sourceDate', async () => {
+  await withServer(async (server) => {
+    const res = await server.inject({
+      method: 'POST',
+      url: '/leave-entitlements/comp-grants',
+      headers: userHeaders('ga-user', {
+        groupAccountIds: ['general_affairs'],
+      }),
+      payload: {
+        userId: 'employee-1',
+        leaveType: 'compensatory',
+        sourceDate: '2026-03-10',
+        grantDate: '2026-03-09',
+        expiresAt: '2026-03-20',
+        grantedMinutes: 120,
+        reasonText: '日付整合テスト',
+      },
+    });
+    assert.equal(res.statusCode, 400, res.body);
+    const body = JSON.parse(res.body);
+    assert.equal(body?.error?.code, 'INVALID_DATE_RANGE');
+  });
+});

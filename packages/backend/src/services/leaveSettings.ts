@@ -1,3 +1,4 @@
+import type { Prisma } from '@prisma/client';
 import { prisma } from './db.js';
 
 export const LEAVE_SETTING_ID = 'default';
@@ -12,7 +13,7 @@ export const DEFAULT_LEAVE_SETTING = {
 export async function ensureLeaveSetting(
   options: {
     actorId?: string | null;
-    client?: typeof prisma;
+    client?: Prisma.TransactionClient | typeof prisma;
   } = {},
 ) {
   const client = options.client ?? prisma;
