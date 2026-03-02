@@ -1,4 +1,5 @@
 import { FastifyInstance } from 'fastify';
+import { Prisma } from '@prisma/client';
 import { prisma } from '../services/db.js';
 import { submitApprovalWithUpdate } from '../services/approval.js';
 import { createApprovalPendingNotifications } from '../services/appNotifications.js';
@@ -27,6 +28,7 @@ import {
   leaveTypeAttachmentPolicies,
   leaveTypeUnits,
   listLeaveTypes,
+  normalizeLeaveTypeApplicableGroupIds,
   normalizeLeaveTypeInput,
 } from '../services/leaveTypes.js';
 
@@ -50,6 +52,12 @@ function normalizeListLimit(value: unknown) {
   return Math.max(1, Math.min(300, Math.floor(value)));
 }
 
+function hasGroupIntersection(lhs: string[], rhs: string[]) {
+  if (!lhs.length || !rhs.length) return false;
+  const set = new Set(lhs);
+  return rhs.some((value) => set.has(value));
+}
+
 export async function registerLeaveRoutes(app: FastifyInstance) {
   app.get(
     '/leave-types',
@@ -64,9 +72,22 @@ export async function registerLeaveRoutes(app: FastifyInstance) {
       const includeInactive =
         (roles.includes('admin') || roles.includes('mgmt')) &&
         (req.query as { includeInactive?: boolean })?.includeInactive === true;
+      const actorGroupIds = Array.isArray(req.user?.groupAccountIds)
+        ? req.user.groupAccountIds
+        : [];
+      const isPrivileged = roles.includes('admin') || roles.includes('mgmt');
       const items = await listLeaveTypes({ includeInactive });
+      const visibleItems = isPrivileged
+        ? items
+        : items.filter((item) => {
+            const applicableGroupIds = normalizeLeaveTypeApplicableGroupIds(
+              item.applicableGroupIds,
+            );
+            if (!applicableGroupIds.length) return true;
+            return hasGroupIntersection(applicableGroupIds, actorGroupIds);
+          });
       return {
-        items: items.map((item) => ({
+        items: visibleItems.map((item) => ({
           code: item.code,
           name: item.name,
           description: item.description,
@@ -74,6 +95,9 @@ export async function registerLeaveRoutes(app: FastifyInstance) {
           unit: item.unit,
           requiresApproval: item.requiresApproval,
           attachmentPolicy: item.attachmentPolicy,
+          applicableGroupIds: normalizeLeaveTypeApplicableGroupIds(
+            item.applicableGroupIds,
+          ),
           active: item.active,
           displayOrder: item.displayOrder,
           effectiveFrom: item.effectiveFrom,
@@ -97,6 +121,7 @@ export async function registerLeaveRoutes(app: FastifyInstance) {
         unit: string;
         requiresApproval: boolean;
         attachmentPolicy: string;
+        applicableGroupIds?: string[];
         displayOrder?: number;
         active?: boolean;
         effectiveFrom?: string;
@@ -138,6 +163,35 @@ export async function registerLeaveRoutes(app: FastifyInstance) {
           },
         });
       }
+      let applicableGroupIds: string[] = [];
+      if (body.applicableGroupIds !== undefined) {
+        if (!Array.isArray(body.applicableGroupIds)) {
+          return reply.status(400).send({
+            error: {
+              code: 'INVALID_APPLICABLE_GROUP_IDS',
+              message: 'applicableGroupIds must be an array of group ids',
+            },
+          });
+        }
+        applicableGroupIds = normalizeLeaveTypeApplicableGroupIds(
+          body.applicableGroupIds,
+        );
+        const existing = await prisma.groupAccount.findMany({
+          where: { id: { in: applicableGroupIds } },
+          select: { id: true },
+        });
+        const existingSet = new Set(existing.map((item) => item.id));
+        const missing = applicableGroupIds.filter((id) => !existingSet.has(id));
+        if (missing.length) {
+          return reply.status(400).send({
+            error: {
+              code: 'INVALID_APPLICABLE_GROUP_IDS',
+              message: 'unknown group ids are included in applicableGroupIds',
+              details: { missingGroupIds: missing },
+            },
+          });
+        }
+      }
       const effectiveFrom = body.effectiveFrom
         ? new Date(body.effectiveFrom)
         : new Date();
@@ -159,6 +213,9 @@ export async function registerLeaveRoutes(app: FastifyInstance) {
             unit: body.unit,
             requiresApproval: body.requiresApproval,
             attachmentPolicy: body.attachmentPolicy,
+            applicableGroupIds: applicableGroupIds.length
+              ? applicableGroupIds
+              : undefined,
             displayOrder: body.displayOrder ?? 100,
             active: body.active ?? true,
             effectiveFrom,
@@ -254,6 +311,43 @@ export async function registerLeaveRoutes(app: FastifyInstance) {
           });
         }
         update.attachmentPolicy = body.attachmentPolicy;
+      }
+      if (Object.prototype.hasOwnProperty.call(body, 'applicableGroupIds')) {
+        if (body.applicableGroupIds === null) {
+          update.applicableGroupIds = Prisma.DbNull;
+        } else {
+          if (!Array.isArray(body.applicableGroupIds)) {
+            return reply.status(400).send({
+              error: {
+                code: 'INVALID_APPLICABLE_GROUP_IDS',
+                message: 'applicableGroupIds must be an array of group ids',
+              },
+            });
+          }
+          const applicableGroupIds = normalizeLeaveTypeApplicableGroupIds(
+            body.applicableGroupIds,
+          );
+          const existing = await prisma.groupAccount.findMany({
+            where: { id: { in: applicableGroupIds } },
+            select: { id: true },
+          });
+          const existingSet = new Set(existing.map((item) => item.id));
+          const missing = applicableGroupIds.filter(
+            (id) => !existingSet.has(id),
+          );
+          if (missing.length) {
+            return reply.status(400).send({
+              error: {
+                code: 'INVALID_APPLICABLE_GROUP_IDS',
+                message: 'unknown group ids are included in applicableGroupIds',
+                details: { missingGroupIds: missing },
+              },
+            });
+          }
+          update.applicableGroupIds = applicableGroupIds.length
+            ? applicableGroupIds
+            : Prisma.DbNull;
+        }
       }
       if (typeof body.effectiveFrom === 'string') {
         const effectiveFrom = new Date(body.effectiveFrom);
@@ -408,6 +502,35 @@ export async function registerLeaveRoutes(app: FastifyInstance) {
             message: 'leaveType must be an active leave type code',
           },
         });
+      }
+      const applicableGroupIds = normalizeLeaveTypeApplicableGroupIds(
+        leaveType.applicableGroupIds,
+      );
+      if (applicableGroupIds.length) {
+        let targetUserGroupIds = Array.isArray(req.user?.groupAccountIds)
+          ? req.user.groupAccountIds
+          : [];
+        if (!targetUserGroupIds.length || currentUserId !== body.userId) {
+          const targetUser = await prisma.userAccount.findUnique({
+            where: { userName: body.userId },
+            select: {
+              memberships: {
+                select: { group: { select: { id: true } } },
+              },
+            },
+          });
+          targetUserGroupIds = (targetUser?.memberships ?? []).map(
+            (item) => item.group.id,
+          );
+        }
+        if (!hasGroupIntersection(applicableGroupIds, targetUserGroupIds)) {
+          return reply.status(403).send({
+            error: {
+              code: 'LEAVE_TYPE_NOT_APPLICABLE',
+              message: 'selected leaveType is not applicable to this user',
+            },
+          });
+        }
       }
       if (requestedLeaveUnit === 'hourly' && !usesHourlyLeave) {
         return reply.status(400).send({

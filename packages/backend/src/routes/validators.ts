@@ -1061,6 +1061,11 @@ export const leaveTypeCreateSchema = {
         Type.Literal('optional'),
         Type.Literal('none'),
       ]),
+      applicableGroupIds: Type.Optional(
+        Type.Array(Type.String({ minLength: 1, maxLength: 200 }), {
+          maxItems: 200,
+        }),
+      ),
       displayOrder: Type.Optional(
         Type.Integer({ minimum: 0, maximum: 100000 }),
       ),
@@ -1092,6 +1097,14 @@ export const leaveTypeUpdateSchema = {
           Type.Literal('required'),
           Type.Literal('optional'),
           Type.Literal('none'),
+        ]),
+      ),
+      applicableGroupIds: Type.Optional(
+        Type.Union([
+          Type.Array(Type.String({ minLength: 1, maxLength: 200 }), {
+            maxItems: 200,
+          }),
+          Type.Null(),
         ]),
       ),
       displayOrder: Type.Optional(

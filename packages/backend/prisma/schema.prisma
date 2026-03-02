@@ -663,6 +663,7 @@ model LeaveType {
   unit             String   @default("daily") // daily/hourly/mixed
   requiresApproval Boolean  @default(true)
   attachmentPolicy String   @default("optional") // required/optional/none
+  applicableGroupIds Json? // target groupAccount ids. null/empty means applicable to all.
   active           Boolean  @default(true)
   displayOrder     Int      @default(100)
   effectiveFrom    DateTime @default(now())

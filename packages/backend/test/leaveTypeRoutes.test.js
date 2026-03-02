@@ -61,11 +61,19 @@ function withServer(fn) {
   );
 }
 
-function userHeaders() {
-  return {
+function userHeaders(userId = 'normal-user', options = {}) {
+  const headers = {
     'x-user-id': 'normal-user',
     'x-roles': 'user',
   };
+  headers['x-user-id'] = userId;
+  if (
+    Array.isArray(options.groupAccountIds) &&
+    options.groupAccountIds.length > 0
+  ) {
+    headers['x-group-account-ids'] = options.groupAccountIds.join(',');
+  }
+  return headers;
 }
 
 function adminHeaders() {
@@ -188,6 +196,80 @@ test('POST /leave-requests rejects unit mismatch for leave type', async () => {
         assert.equal(res.statusCode, 400, res.body);
         const body = JSON.parse(res.body);
         assert.equal(body?.error?.code, 'LEAVE_TYPE_UNIT_MISMATCH');
+      });
+    },
+  );
+});
+
+test('POST /leave-requests rejects leave type not applicable for user groups', async () => {
+  await withPrismaStubs(
+    {
+      'leaveType.findMany': async () => [
+        { code: 'paid' },
+        { code: 'special' },
+        { code: 'substitute' },
+        { code: 'compensatory' },
+        { code: 'unpaid' },
+      ],
+      'leaveType.findFirst': async () => ({
+        code: 'special',
+        unit: 'daily',
+        active: true,
+        applicableGroupIds: ['employment-fulltime'],
+      }),
+    },
+    async () => {
+      await withServer(async (server) => {
+        const res = await server.inject({
+          method: 'POST',
+          url: '/leave-requests',
+          headers: userHeaders('normal-user', {
+            groupAccountIds: ['employment-contract'],
+          }),
+          payload: {
+            userId: 'normal-user',
+            leaveType: 'special',
+            leaveUnit: 'daily',
+            startDate: '2026-03-01',
+            endDate: '2026-03-01',
+          },
+        });
+        assert.equal(res.statusCode, 403, res.body);
+        const body = JSON.parse(res.body);
+        assert.equal(body?.error?.code, 'LEAVE_TYPE_NOT_APPLICABLE');
+      });
+    },
+  );
+});
+
+test('POST /leave-requests rejects non-string leaveUnit payload', async () => {
+  await withPrismaStubs(
+    {
+      'leaveType.findMany': async () => [
+        { code: 'paid' },
+        { code: 'special' },
+        { code: 'substitute' },
+        { code: 'compensatory' },
+        { code: 'unpaid' },
+      ],
+    },
+    async () => {
+      await withServer(async (server) => {
+        const res = await server.inject({
+          method: 'POST',
+          url: '/leave-requests',
+          headers: userHeaders(),
+          payload: {
+            userId: 'normal-user',
+            leaveType: 'special',
+            leaveUnit: { invalid: true },
+            startDate: '2026-03-01',
+            endDate: '2026-03-01',
+          },
+        });
+        assert.equal(res.statusCode, 400, res.body);
+        const body = JSON.parse(res.body);
+        assert.equal(body?.error?.code, 'INVALID_LEAVE_UNIT');
       });
     },
   );

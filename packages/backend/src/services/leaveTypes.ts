@@ -72,6 +72,18 @@ function normalizeLeaveTypeCode(code: string) {
   return code.trim().toLowerCase();
 }
 
+export function normalizeLeaveTypeApplicableGroupIds(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  const ids: string[] = [];
+  for (const entry of value) {
+    if (typeof entry !== 'string') continue;
+    const trimmed = entry.trim();
+    if (!trimmed) continue;
+    ids.push(trimmed);
+  }
+  return Array.from(new Set(ids));
+}
+
 export async function ensureDefaultLeaveTypes(options?: {
   actorId?: string | null;
   client?: Prisma.TransactionClient | typeof prisma;
