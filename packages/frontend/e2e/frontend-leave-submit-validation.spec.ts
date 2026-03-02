@@ -369,7 +369,7 @@ test('frontend leave submit validation leader list hides reasons @core', async (
   expect(projectId.length).toBeGreaterThan(0);
 
   const addLeaderRes = await request.post(
-    `${apiBase}/projects/${projectId}/members`,
+    `${apiBase}/projects/${encodeURIComponent(projectId)}/members`,
     {
       headers: adminAuthHeaders,
       data: { userId: leaderUserId, role: 'leader' },
@@ -378,7 +378,7 @@ test('frontend leave submit validation leader list hides reasons @core', async (
   await ensureOk(addLeaderRes);
 
   const addMemberRes = await request.post(
-    `${apiBase}/projects/${projectId}/members`,
+    `${apiBase}/projects/${encodeURIComponent(projectId)}/members`,
     {
       headers: adminAuthHeaders,
       data: { userId: memberUserId, role: 'member' },
@@ -402,13 +402,16 @@ test('frontend leave submit validation leader list hides reasons @core', async (
   const leaveId = String(leave.id || '');
   expect(leaveId.length).toBeGreaterThan(0);
 
-  const submitRes = await request.post(`${apiBase}/leave-requests/${leaveId}/submit`, {
-    headers: memberAuthHeaders,
-    data: {
-      noConsultationConfirmed: true,
-      noConsultationReason: noConsultReason,
+  const submitRes = await request.post(
+    `${apiBase}/leave-requests/${encodeURIComponent(leaveId)}/submit`,
+    {
+      headers: memberAuthHeaders,
+      data: {
+        noConsultationConfirmed: true,
+        noConsultationReason: noConsultReason,
+      },
     },
-  });
+  );
   await ensureOk(submitRes);
 
   await prepare(
