@@ -708,3 +708,186 @@ test('paid leave entitlement APIs enforce GA group and submit returns shortage w
   expect(secondSubmit.paidLeaveBalance?.remainingMinutes).toBe(0);
   expect(secondSubmit.paidLeaveBalance?.projectedRemainingMinutes).toBe(-240);
 });
+
+test('hr leave report APIs expose upper-bound semantics and enforce date range guard @core', async ({
+  request,
+}) => {
+  const suffix = runId();
+  const targetUserId = `leave-hr-${suffix}`;
+  const baseDate = '2098-01-01';
+  const grantDate = '2098-12-31';
+  const expiresAt = '2099-01-10';
+  const expiresAtBoundary = '2099-01-31';
+  const expiresAtOutside = '2099-02-01';
+
+  const profileRes = await request.post(
+    `${apiBase}/leave-entitlements/profiles`,
+    {
+      data: {
+        userId: targetUserId,
+        paidLeaveBaseDate: baseDate,
+      },
+      headers: gaHeaders,
+    },
+  );
+  await ensureOk(profileRes);
+
+  const paidGrantRes = await request.post(
+    `${apiBase}/leave-entitlements/grants`,
+    {
+      data: {
+        userId: targetUserId,
+        grantedMinutes: 480,
+        grantDate,
+        expiresAt,
+        reasonText: `hr-paid-${suffix}`,
+      },
+      headers: gaHeaders,
+    },
+  );
+  await ensureOk(paidGrantRes);
+
+  const paidGrantBoundaryRes = await request.post(
+    `${apiBase}/leave-entitlements/grants`,
+    {
+      data: {
+        userId: targetUserId,
+        grantedMinutes: 60,
+        grantDate,
+        expiresAt: expiresAtBoundary,
+        reasonText: `hr-paid-boundary-${suffix}`,
+      },
+      headers: gaHeaders,
+    },
+  );
+  await ensureOk(paidGrantBoundaryRes);
+
+  const paidGrantOutsideRes = await request.post(
+    `${apiBase}/leave-entitlements/grants`,
+    {
+      data: {
+        userId: targetUserId,
+        grantedMinutes: 30,
+        grantDate,
+        expiresAt: expiresAtOutside,
+        reasonText: `hr-paid-outside-${suffix}`,
+      },
+      headers: gaHeaders,
+    },
+  );
+  await ensureOk(paidGrantOutsideRes);
+
+  const compGrantRes = await request.post(
+    `${apiBase}/leave-entitlements/comp-grants`,
+    {
+      data: {
+        userId: targetUserId,
+        leaveType: 'compensatory',
+        sourceDate: '2098-12-20',
+        grantDate: '2098-12-20',
+        expiresAt,
+        grantedMinutes: 120,
+        reasonText: `hr-comp-${suffix}`,
+      },
+      headers: gaHeaders,
+    },
+  );
+  await ensureOk(compGrantRes);
+
+  const forbiddenSummaryRes = await request.get(
+    `${apiBase}/leave-entitlements/hr-summary?asOfDate=2099-01-01&expiringWithinDays=30`,
+    { headers: authHeaders },
+  );
+  expect(forbiddenSummaryRes.status()).toBe(403);
+  const forbiddenSummaryBody = await forbiddenSummaryRes.json();
+  expect(forbiddenSummaryBody?.error?.code).toBe('GENERAL_AFFAIRS_REQUIRED');
+
+  const summaryRes = await request.get(
+    `${apiBase}/leave-entitlements/hr-summary?asOfDate=2099-01-01&expiringWithinDays=30&limit=200`,
+    { headers: gaHeaders },
+  );
+  await ensureOk(summaryRes);
+  const summary = (await summaryRes.json()) as {
+    expiring?: {
+      paidGrantUpperBoundMinutes?: number;
+      paidGrantItems?: Array<{
+        userId?: string;
+        expiresAt?: string | null;
+        grantedUpperBoundMinutes?: number;
+      }>;
+      compGrantRemainingMinutes?: number;
+      compGrantItems?: Array<{
+        userId?: string;
+        leaveType?: string;
+        expiresAt?: string | null;
+        remainingMinutes?: number;
+      }>;
+      paidGrantMinutes?: number;
+    };
+  };
+  expect(summary.expiring?.paidGrantUpperBoundMinutes).not.toBeUndefined();
+  expect(summary.expiring?.compGrantRemainingMinutes).not.toBeUndefined();
+  expect(summary.expiring?.paidGrantMinutes).toBeUndefined();
+  const paidGrantItem = (summary.expiring?.paidGrantItems || []).find(
+    (item) => item.userId === targetUserId && item.expiresAt === expiresAt,
+  );
+  expect(paidGrantItem?.grantedUpperBoundMinutes).toBe(480);
+  const paidGrantBoundaryItem = (summary.expiring?.paidGrantItems || []).find(
+    (item) =>
+      item.userId === targetUserId && item.expiresAt === expiresAtBoundary,
+  );
+  expect(paidGrantBoundaryItem?.grantedUpperBoundMinutes).toBe(60);
+  const paidGrantOutsideItem = (summary.expiring?.paidGrantItems || []).find(
+    (item) =>
+      item.userId === targetUserId && item.expiresAt === expiresAtOutside,
+  );
+  expect(paidGrantOutsideItem).toBeUndefined();
+  const compGrantItem = (summary.expiring?.compGrantItems || []).find(
+    (item) =>
+      item.userId === targetUserId &&
+      item.leaveType === 'compensatory' &&
+      item.expiresAt === expiresAt,
+  );
+  expect(compGrantItem?.remainingMinutes).toBe(120);
+
+  const ledgerJsonRes = await request.get(
+    `${apiBase}/leave-entitlements/hr-ledger?userId=${encodeURIComponent(targetUserId)}&from=2098-12-01&to=2099-01-31&limit=200`,
+    { headers: gaHeaders },
+  );
+  await ensureOk(ledgerJsonRes);
+  const ledgerJson = (await ledgerJsonRes.json()) as {
+    items?: Array<{
+      userId?: string;
+      eventType?: string;
+      direction?: string;
+    }>;
+  };
+  expect(
+    (ledgerJson.items || []).some(
+      (item) =>
+        item.userId === targetUserId &&
+        item.eventType === 'expiry_scheduled' &&
+        item.direction === 'upper_bound_debit',
+    ),
+  ).toBeTruthy();
+
+  const ledgerCsvRes = await request.get(
+    `${apiBase}/leave-entitlements/hr-ledger?userId=${encodeURIComponent(targetUserId)}&from=2098-12-01&to=2099-01-31&format=csv&limit=200`,
+    { headers: gaHeaders },
+  );
+  await ensureOk(ledgerCsvRes);
+  expect(String(ledgerCsvRes.headers()['content-type'] || '')).toMatch(
+    /text\/csv/i,
+  );
+  const ledgerCsv = await ledgerCsvRes.text();
+  expect(ledgerCsv).toContain('upper_bound_debit');
+  expect(ledgerCsv).toContain(targetUserId);
+
+  const invalidRangeRes = await request.get(
+    `${apiBase}/leave-entitlements/hr-ledger?from=2097-01-01&to=2099-01-31`,
+    { headers: gaHeaders },
+  );
+  expect(invalidRangeRes.status()).toBe(400);
+  const invalidRangeBody = await invalidRangeRes.json();
+  expect(invalidRangeBody?.error?.code).toBe('INVALID_DATE_RANGE');
+});
