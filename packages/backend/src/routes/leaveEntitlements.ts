@@ -1,13 +1,15 @@
 import { FastifyInstance, FastifyRequest } from 'fastify';
 import { prisma } from '../services/db.js';
 import { requireRole } from '../services/rbac.js';
-import { parseDateParam } from '../utils/date.js';
+import { diffInDays, parseDateParam, toDateOnly } from '../utils/date.js';
 import { auditContextFromRequest, logAudit } from '../services/audit.js';
+import { sendCsv, toCsv } from '../utils/csv.js';
 import {
   computePaidLeaveBalance,
   GENERAL_AFFAIRS_GROUP_ACCOUNT_ID,
   resolveLeaveRequestMinutesWithCalendar,
 } from '../services/leaveEntitlements.js';
+import { ensureLeaveSetting } from '../services/leaveSettings.js';
 import {
   COMP_LEAVE_TYPES,
   computeCompLeaveBalance,
@@ -22,6 +24,8 @@ import {
   leaveEntitlementProfileUpsertSchema,
   leaveGrantCreateSchema,
   leaveGrantListQuerySchema,
+  leaveHrLedgerQuerySchema,
+  leaveHrSummaryQuerySchema,
 } from './validators.js';
 
 function normalizeListLimit(value: unknown) {
@@ -54,6 +58,22 @@ function normalizeDateOnlyString(value: Date | null | undefined) {
   if (!value) return null;
   return value.toISOString().slice(0, 10);
 }
+
+function normalizeBoundedInt(
+  value: unknown,
+  defaultValue: number,
+  minValue: number,
+  maxValue: number,
+) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return defaultValue;
+  return Math.min(maxValue, Math.max(minValue, Math.floor(value)));
+}
+
+function addDays(date: Date, days: number) {
+  return new Date(date.getTime() + days * 24 * 60 * 60 * 1000);
+}
+
+const MAX_HR_LEDGER_RANGE_DAYS = 366;
 
 export async function registerLeaveEntitlementRoutes(app: FastifyInstance) {
   app.get(
@@ -709,6 +729,383 @@ export async function registerLeaveEntitlementRoutes(app: FastifyInstance) {
       });
 
       return { grant, balance };
+    },
+  );
+
+  app.get(
+    '/leave-entitlements/hr-summary',
+    {
+      preHandler: requireRole(['admin', 'mgmt', 'user']),
+      schema: leaveHrSummaryQuerySchema,
+    },
+    async (req, reply) => {
+      if (!hasGeneralAffairsGroup(req)) {
+        return reply.status(403).send({
+          error: {
+            code: 'GENERAL_AFFAIRS_REQUIRED',
+            message: 'general_affairs group membership is required',
+          },
+        });
+      }
+      const query = req.query as {
+        asOfDate?: string;
+        staleDays?: number;
+        expiringWithinDays?: number;
+        limit?: number;
+      };
+      const asOfDateRaw = (query.asOfDate || '').trim();
+      const asOfDate = asOfDateRaw ? parseDateParam(asOfDateRaw) : new Date();
+      if (!asOfDate) {
+        return reply.status(400).send({
+          error: {
+            code: 'INVALID_DATE',
+            message: 'asOfDate must be YYYY-MM-DD',
+          },
+        });
+      }
+      const asOf = toDateOnly(asOfDate);
+      const staleDays = normalizeBoundedInt(query.staleDays, 14, 1, 365);
+      const expiringWithinDays = normalizeBoundedInt(
+        query.expiringWithinDays,
+        60,
+        1,
+        365,
+      );
+      const limit = normalizeBoundedInt(query.limit, 50, 1, 200);
+      const staleBefore = addDays(asOf, -staleDays);
+      const expiringUntil = addDays(asOf, expiringWithinDays + 1);
+
+      const [pendingTotal, stalePendingCount, stalePendingItems] =
+        await Promise.all([
+          prisma.leaveRequest.count({
+            where: { status: 'pending_manager' },
+          }),
+          prisma.leaveRequest.count({
+            where: {
+              status: 'pending_manager',
+              createdAt: { lt: staleBefore },
+            },
+          }),
+          prisma.leaveRequest.findMany({
+            where: {
+              status: 'pending_manager',
+              createdAt: { lt: staleBefore },
+            },
+            select: {
+              id: true,
+              userId: true,
+              leaveType: true,
+              startDate: true,
+              endDate: true,
+              createdAt: true,
+            },
+            orderBy: { createdAt: 'asc' },
+            take: limit,
+          }),
+        ]);
+      const [paidExpiringItems, compExpiringItems] = await Promise.all([
+        prisma.leaveGrant.findMany({
+          where: {
+            expiresAt: {
+              not: null,
+              gte: asOf,
+              lt: expiringUntil,
+            },
+          },
+          select: {
+            id: true,
+            userId: true,
+            grantDate: true,
+            expiresAt: true,
+            grantedMinutes: true,
+          },
+          orderBy: { expiresAt: 'asc' },
+          take: limit,
+        }),
+        prisma.leaveCompGrant.findMany({
+          where: {
+            status: 'active',
+            expiresAt: {
+              gte: asOf,
+              lt: expiringUntil,
+            },
+          },
+          select: {
+            id: true,
+            userId: true,
+            leaveType: true,
+            grantDate: true,
+            expiresAt: true,
+            remainingMinutes: true,
+          },
+          orderBy: { expiresAt: 'asc' },
+          take: limit,
+        }),
+      ]);
+      const paidExpiringMinutes = paidExpiringItems.reduce(
+        (sum, item) => sum + Math.max(0, item.grantedMinutes),
+        0,
+      );
+      const compExpiringMinutes = compExpiringItems.reduce(
+        (sum, item) => sum + Math.max(0, item.remainingMinutes),
+        0,
+      );
+      return {
+        asOfDate: normalizeDateOnlyString(asOf),
+        staleDays,
+        expiringWithinDays,
+        pending: {
+          total: pendingTotal,
+          stale: stalePendingCount,
+          staleItems: stalePendingItems.map((item) => ({
+            id: item.id,
+            userId: item.userId,
+            leaveType: item.leaveType,
+            startDate: normalizeDateOnlyString(item.startDate),
+            endDate: normalizeDateOnlyString(item.endDate),
+            createdAt: item.createdAt.toISOString(),
+          })),
+        },
+        expiring: {
+          paidGrantCount: paidExpiringItems.length,
+          paidGrantUpperBoundMinutes: paidExpiringMinutes,
+          paidGrantItems: paidExpiringItems.map((item) => ({
+            id: item.id,
+            userId: item.userId,
+            grantDate: normalizeDateOnlyString(item.grantDate),
+            expiresAt: normalizeDateOnlyString(item.expiresAt),
+            grantedUpperBoundMinutes: item.grantedMinutes,
+          })),
+          compGrantCount: compExpiringItems.length,
+          compGrantRemainingMinutes: compExpiringMinutes,
+          compGrantItems: compExpiringItems.map((item) => ({
+            id: item.id,
+            userId: item.userId,
+            leaveType: item.leaveType,
+            grantDate: normalizeDateOnlyString(item.grantDate),
+            expiresAt: normalizeDateOnlyString(item.expiresAt),
+            remainingMinutes: item.remainingMinutes,
+          })),
+        },
+      };
+    },
+  );
+
+  app.get(
+    '/leave-entitlements/hr-ledger',
+    {
+      preHandler: requireRole(['admin', 'mgmt', 'user']),
+      schema: leaveHrLedgerQuerySchema,
+    },
+    async (req, reply) => {
+      if (!hasGeneralAffairsGroup(req)) {
+        return reply.status(403).send({
+          error: {
+            code: 'GENERAL_AFFAIRS_REQUIRED',
+            message: 'general_affairs group membership is required',
+          },
+        });
+      }
+      const query = req.query as {
+        userId?: string;
+        from?: string;
+        to?: string;
+        limit?: number;
+        offset?: number;
+        format?: 'json' | 'csv';
+      };
+      const format = query.format === 'csv' ? 'csv' : 'json';
+      const from = query.from?.trim()
+        ? parseDateParam(query.from.trim())
+        : null;
+      const to = query.to?.trim() ? parseDateParam(query.to.trim()) : null;
+      if ((query.from && !from) || (query.to && !to)) {
+        return reply.status(400).send({
+          error: {
+            code: 'INVALID_DATE',
+            message: 'from/to must be YYYY-MM-DD',
+          },
+        });
+      }
+      const toDateOnlyDefault = toDateOnly(new Date());
+      const rangeTo = to ? toDateOnly(to) : toDateOnlyDefault;
+      const rangeFrom = from ? toDateOnly(from) : addDays(rangeTo, -90);
+      if (rangeFrom.getTime() > rangeTo.getTime()) {
+        return reply.status(400).send({
+          error: {
+            code: 'INVALID_DATE_RANGE',
+            message: 'from must be equal to or before to',
+          },
+        });
+      }
+      const rangeDays = diffInDays(rangeFrom, rangeTo);
+      if (rangeDays > MAX_HR_LEDGER_RANGE_DAYS) {
+        return reply.status(400).send({
+          error: {
+            code: 'INVALID_DATE_RANGE',
+            message: `from/to range must be within ${MAX_HR_LEDGER_RANGE_DAYS} days`,
+          },
+        });
+      }
+      const rangeToExclusive = addDays(rangeTo, 1);
+      const limit = normalizeBoundedInt(query.limit, 500, 1, 2000);
+      const offset = normalizeBoundedInt(query.offset, 0, 0, 100000);
+      const userId = (query.userId || '').trim();
+
+      const [paidGrants, approvedPaidLeaves, expiringPaidGrants] =
+        await Promise.all([
+          prisma.leaveGrant.findMany({
+            where: {
+              ...(userId ? { userId } : {}),
+              grantDate: { gte: rangeFrom, lt: rangeToExclusive },
+            },
+            select: {
+              id: true,
+              userId: true,
+              grantDate: true,
+              expiresAt: true,
+              grantedMinutes: true,
+              reasonText: true,
+            },
+            orderBy: [{ grantDate: 'asc' }, { id: 'asc' }],
+          }),
+          prisma.leaveRequest.findMany({
+            where: {
+              ...(userId ? { userId } : {}),
+              status: 'approved',
+              leaveType: 'paid',
+              startDate: { lt: rangeToExclusive },
+              endDate: { gte: rangeFrom },
+            },
+            select: {
+              id: true,
+              userId: true,
+              leaveType: true,
+              startDate: true,
+              endDate: true,
+              hours: true,
+              minutes: true,
+              startTimeMinutes: true,
+              endTimeMinutes: true,
+              notes: true,
+            },
+            orderBy: [{ startDate: 'asc' }, { id: 'asc' }],
+          }),
+          prisma.leaveGrant.findMany({
+            where: {
+              ...(userId ? { userId } : {}),
+              expiresAt: { not: null, gte: rangeFrom, lt: rangeToExclusive },
+            },
+            select: {
+              id: true,
+              userId: true,
+              expiresAt: true,
+              grantedMinutes: true,
+            },
+            orderBy: [{ expiresAt: 'asc' }, { id: 'asc' }],
+          }),
+        ]);
+      const leaveSetting = await ensureLeaveSetting({
+        actorId: req.user?.userId ?? null,
+      });
+      const workdayMinutesCacheByUser = new Map<string, Map<string, number>>();
+      const usageRows = await Promise.all(
+        approvedPaidLeaves.map(async (leave) => {
+          const cache =
+            workdayMinutesCacheByUser.get(leave.userId) ??
+            new Map<string, number>();
+          workdayMinutesCacheByUser.set(leave.userId, cache);
+          const minutes = await resolveLeaveRequestMinutesWithCalendar({
+            leave,
+            userId: leave.userId,
+            defaultWorkdayMinutes: leaveSetting.defaultWorkdayMinutes,
+            workdayMinutesCache: cache,
+          });
+          return {
+            eventDate: normalizeDateOnlyString(leave.startDate) || '',
+            userId: leave.userId,
+            eventType: 'usage',
+            direction: 'debit',
+            minutes,
+            sourceTable: 'leave_requests',
+            sourceId: leave.id,
+            expiresAt: null as string | null,
+            note: leave.notes || null,
+          };
+        }),
+      );
+      const ledgerRows = [
+        ...paidGrants.map((grant) => ({
+          eventDate: normalizeDateOnlyString(grant.grantDate) || '',
+          userId: grant.userId,
+          eventType: 'grant',
+          direction: 'credit',
+          minutes: grant.grantedMinutes,
+          sourceTable: 'leave_grants',
+          sourceId: grant.id,
+          expiresAt: normalizeDateOnlyString(grant.expiresAt),
+          note: grant.reasonText || null,
+        })),
+        ...usageRows,
+        ...expiringPaidGrants.map((grant) => ({
+          eventDate: normalizeDateOnlyString(grant.expiresAt) || '',
+          userId: grant.userId,
+          eventType: 'expiry_scheduled',
+          direction: 'upper_bound_debit',
+          minutes: grant.grantedMinutes,
+          sourceTable: 'leave_grants',
+          sourceId: grant.id,
+          expiresAt: normalizeDateOnlyString(grant.expiresAt),
+          note: 'Upper bound based on granted minutes; actual expired minutes may be lower.' as
+            | string
+            | null,
+        })),
+      ].sort((left, right) => {
+        if (left.eventDate !== right.eventDate) {
+          return left.eventDate.localeCompare(right.eventDate);
+        }
+        if (left.userId !== right.userId) {
+          return left.userId.localeCompare(right.userId);
+        }
+        return left.sourceId.localeCompare(right.sourceId);
+      });
+      const totalCount = ledgerRows.length;
+      const pagedRows = ledgerRows.slice(offset, offset + limit);
+      if (format === 'csv') {
+        const headers = [
+          'eventDate',
+          'userId',
+          'eventType',
+          'direction',
+          'minutes',
+          'sourceTable',
+          'sourceId',
+          'expiresAt',
+          'note',
+        ];
+        const rows = pagedRows.map((item) => [
+          item.eventDate,
+          item.userId,
+          item.eventType,
+          item.direction,
+          item.minutes,
+          item.sourceTable,
+          item.sourceId,
+          item.expiresAt,
+          item.note,
+        ]);
+        const csv = toCsv(headers, rows);
+        const filename = `leave-ledger-${normalizeDateOnlyString(rangeFrom)}-${normalizeDateOnlyString(rangeTo)}.csv`;
+        return sendCsv(reply, filename, csv);
+      }
+      return {
+        from: normalizeDateOnlyString(rangeFrom),
+        to: normalizeDateOnlyString(rangeTo),
+        totalCount,
+        limit,
+        offset,
+        items: pagedRows,
+      };
     },
   );
 }

@@ -1259,6 +1259,36 @@ export const leaveCompBalanceQuerySchema = {
   ),
 };
 
+export const leaveHrSummaryQuerySchema = {
+  querystring: Type.Object(
+    {
+      asOfDate: Type.Optional(Type.String({ format: 'date' })),
+      staleDays: Type.Optional(Type.Integer({ minimum: 1, maximum: 365 })),
+      expiringWithinDays: Type.Optional(
+        Type.Integer({ minimum: 1, maximum: 365 }),
+      ),
+      limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 200 })),
+    },
+    { additionalProperties: false },
+  ),
+};
+
+export const leaveHrLedgerQuerySchema = {
+  querystring: Type.Object(
+    {
+      userId: Type.Optional(Type.String({ minLength: 1 })),
+      from: Type.Optional(Type.String({ format: 'date' })),
+      to: Type.Optional(Type.String({ format: 'date' })),
+      limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 2000 })),
+      offset: Type.Optional(Type.Integer({ minimum: 0, maximum: 100000 })),
+      format: Type.Optional(
+        Type.Union([Type.Literal('json'), Type.Literal('csv')]),
+      ),
+    },
+    { additionalProperties: false },
+  ),
+};
+
 export const approvalActionSchema = {
   body: Type.Object({
     action: Type.Union([Type.Literal('approve'), Type.Literal('reject')]),
