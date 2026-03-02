@@ -25,8 +25,21 @@ const stripTitlePart = (value) => {
   return match ? match[1] : value;
 };
 
+const extractPathPart = (raw) => {
+  const trimmed = raw.trim();
+  if (!trimmed.startsWith('<')) {
+    return stripTitlePart(trimmed);
+  }
+  const closingIndex = trimmed.indexOf('>');
+  if (closingIndex > 0) {
+    // Markdown allows spaces inside angle-bracketed destinations.
+    return trimmed.slice(1, closingIndex).trim();
+  }
+  return stripTitlePart(trimAngleBrackets(trimmed));
+};
+
 const normalizeTarget = (raw) => {
-  const cleaned = stripTitlePart(trimAngleBrackets(raw.trim()));
+  const cleaned = trimAngleBrackets(extractPathPart(raw));
   return cleaned.split('#')[0].split('?')[0];
 };
 
