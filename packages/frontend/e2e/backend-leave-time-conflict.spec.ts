@@ -717,6 +717,8 @@ test('hr leave report APIs expose upper-bound semantics and enforce date range g
   const baseDate = '2098-01-01';
   const grantDate = '2098-12-31';
   const expiresAt = '2099-01-10';
+  const expiresAtBoundary = '2099-01-31';
+  const expiresAtOutside = '2099-02-01';
 
   const profileRes = await request.post(
     `${apiBase}/leave-entitlements/profiles`,
@@ -744,6 +746,36 @@ test('hr leave report APIs expose upper-bound semantics and enforce date range g
     },
   );
   await ensureOk(paidGrantRes);
+
+  const paidGrantBoundaryRes = await request.post(
+    `${apiBase}/leave-entitlements/grants`,
+    {
+      data: {
+        userId: targetUserId,
+        grantedMinutes: 60,
+        grantDate,
+        expiresAt: expiresAtBoundary,
+        reasonText: `hr-paid-boundary-${suffix}`,
+      },
+      headers: gaHeaders,
+    },
+  );
+  await ensureOk(paidGrantBoundaryRes);
+
+  const paidGrantOutsideRes = await request.post(
+    `${apiBase}/leave-entitlements/grants`,
+    {
+      data: {
+        userId: targetUserId,
+        grantedMinutes: 30,
+        grantDate,
+        expiresAt: expiresAtOutside,
+        reasonText: `hr-paid-outside-${suffix}`,
+      },
+      headers: gaHeaders,
+    },
+  );
+  await ensureOk(paidGrantOutsideRes);
 
   const compGrantRes = await request.post(
     `${apiBase}/leave-entitlements/comp-grants`,
@@ -800,6 +832,16 @@ test('hr leave report APIs expose upper-bound semantics and enforce date range g
     (item) => item.userId === targetUserId && item.expiresAt === expiresAt,
   );
   expect(paidGrantItem?.grantedUpperBoundMinutes).toBe(480);
+  const paidGrantBoundaryItem = (summary.expiring?.paidGrantItems || []).find(
+    (item) =>
+      item.userId === targetUserId && item.expiresAt === expiresAtBoundary,
+  );
+  expect(paidGrantBoundaryItem?.grantedUpperBoundMinutes).toBe(60);
+  const paidGrantOutsideItem = (summary.expiring?.paidGrantItems || []).find(
+    (item) =>
+      item.userId === targetUserId && item.expiresAt === expiresAtOutside,
+  );
+  expect(paidGrantOutsideItem).toBeUndefined();
   const compGrantItem = (summary.expiring?.compGrantItems || []).find(
     (item) =>
       item.userId === targetUserId &&
