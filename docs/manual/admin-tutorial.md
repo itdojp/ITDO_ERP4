@@ -1,6 +1,6 @@
 # ERP4 管理者チュートリアル（画面キャプチャ付き）
 
-更新日: 2026-02-25
+更新日: 2026-03-02
 
 ## 目的
 
@@ -109,8 +109,21 @@
 ![Step8 ドキュメント送信ログ](../test-results/2026-02-05-frontend-e2e-r1/26-document-send-logs.png)
 ![Step8 PDFファイル一覧](../test-results/2026-02-05-frontend-e2e-r1/27-pdf-files.png)
 
+### Step 9: 休暇運用（種別ルール・HR export dispatch）を確認する
+
+1. 管理者マニュアルの「休暇運用」手順に従い、`GET /leave-types?includeInactive=true` で現行ルールを確認する  
+2. `POST/PATCH /leave-types` の入力制約（承認要否、申請期限、事後申請可否、適用グループ）を確認する  
+3. `GET /integrations/hr/exports/leaves` → `POST /integrations/hr/exports/leaves/dispatch` の順で dry-run 相当の確認を行う  
+4. `GET /integrations/hr/exports/leaves/dispatch-logs` で idempotencyKey 単位の履歴を確認する
+
+完了条件:
+- 休暇種別ルール運用とHR連携エクスポートの運用導線を把握できる
+
+![Step9 設定](../test-results/2026-02-05-frontend-e2e-r1/11-admin-settings.png)
+
 ## 次の参照先
 
 - 管理者向け詳細操作: `docs/manual/ui-manual-admin.md`
 - 承認運用: `docs/manual/approval-operations.md`
 - 経理運用: `docs/manual/accounting-guide.md`
+- 休暇運用（管理者）: `docs/manual/ui-manual-admin.md`（休暇運用セクション）
