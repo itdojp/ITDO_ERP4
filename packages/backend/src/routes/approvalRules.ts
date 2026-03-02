@@ -23,6 +23,7 @@ import { DocStatusValue, TimeStatusValue } from '../types.js';
 import { auditContextFromRequest, logAudit } from '../services/audit.js';
 import { parseDateParam } from '../utils/date.js';
 import { applyChatAckTemplates } from '../services/chatAckTemplates.js';
+import { LeaveCompBalanceShortageError } from '../services/leaveCompGrants.js';
 import {
   hasQaStageBeforeExec,
   normalizeRuleStepsWithPolicy,
@@ -692,6 +693,16 @@ export async function registerApprovalRuleRoutes(app: FastifyInstance) {
               code: 'BUDGET_ESCALATION_REQUIRED',
               message:
                 'budget escalation details are required when projected expense exceeds budget',
+              details: err.details,
+            },
+          });
+        }
+        if (err instanceof LeaveCompBalanceShortageError) {
+          return reply.code(409).send({
+            error: {
+              code: err.code,
+              message:
+                'Compensatory/substitute leave balance is insufficient at approval time',
               details: err.details,
             },
           });

@@ -19,7 +19,7 @@ import { logActionPolicyOverrideIfNeeded } from '../services/actionPolicyAudit.j
 import { ensureLeaveSetting } from '../services/leaveSettings.js';
 import {
   computePaidLeaveBalance,
-  resolveLeaveRequestMinutes,
+  resolveLeaveRequestMinutesWithCalendar,
 } from '../services/leaveEntitlements.js';
 import { resolveUserWorkdayMinutes } from '../services/leaveWorkdayCalendar.js';
 import {
@@ -31,6 +31,10 @@ import {
   normalizeLeaveTypeApplicableGroupIds,
   normalizeLeaveTypeInput,
 } from '../services/leaveTypes.js';
+import {
+  computeCompLeaveBalance,
+  normalizeCompLeaveType,
+} from '../services/leaveCompGrants.js';
 
 function parseTimeToMinutes(value: unknown) {
   if (typeof value !== 'string') return null;
@@ -923,12 +927,36 @@ export async function registerLeaveRoutes(app: FastifyInstance) {
             noConsultationConfirmed: true,
             noConsultationReason,
           };
-      const requestedLeaveMinutes = resolveLeaveRequestMinutes({
-        leave,
-        defaultWorkdayMinutes: setting.defaultWorkdayMinutes,
-      });
+      const requestedLeaveMinutes =
+        await resolveLeaveRequestMinutesWithCalendar({
+          leave,
+          userId: leave.userId,
+          defaultWorkdayMinutes: setting.defaultWorkdayMinutes,
+        });
+      const normalizedLeaveType = normalizeLeaveTypeInput(leave.leaveType);
+      const compLeaveType = normalizeCompLeaveType(normalizedLeaveType);
+      const compLeaveBalance = compLeaveType
+        ? await computeCompLeaveBalance({
+            userId: leave.userId,
+            leaveType: compLeaveType,
+            additionalRequestedMinutes: requestedLeaveMinutes,
+            excludeLeaveRequestId: leave.id,
+            asOfDate: leave.startDate,
+            actorId: req.user?.userId ?? null,
+          })
+        : null;
+      if (compLeaveBalance?.shortage) {
+        return reply.status(400).send({
+          error: {
+            code: 'LEAVE_COMP_BALANCE_SHORTAGE',
+            message:
+              'Compensatory/substitute leave balance is insufficient for this request',
+            details: compLeaveBalance,
+          },
+        });
+      }
       const paidLeaveBalance =
-        normalizeLeaveTypeInput(leave.leaveType) === 'paid'
+        normalizedLeaveType === 'paid'
           ? await computePaidLeaveBalance({
               userId: leave.userId,
               additionalRequestedMinutes: requestedLeaveMinutes,
@@ -965,6 +993,7 @@ export async function registerLeaveRoutes(app: FastifyInstance) {
       return {
         ...updated,
         paidLeaveBalance,
+        compLeaveBalance,
         shortageWarning: paidLeaveBalance?.shortageWarning ?? null,
       };
     },

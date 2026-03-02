@@ -9,6 +9,15 @@ import {
   resolveLeaveRequestMinutesWithCalendar,
 } from '../services/leaveEntitlements.js';
 import {
+  COMP_LEAVE_TYPES,
+  computeCompLeaveBalance,
+  expireCompLeaveGrants,
+  normalizeCompLeaveType,
+} from '../services/leaveCompGrants.js';
+import {
+  leaveCompBalanceQuerySchema,
+  leaveCompGrantCreateSchema,
+  leaveCompGrantListQuerySchema,
   leaveEntitlementBalanceQuerySchema,
   leaveEntitlementProfileUpsertSchema,
   leaveGrantCreateSchema,
@@ -39,6 +48,11 @@ function resolveTargetUserId(options: {
     return requested || (options.currentUserId ?? null);
   }
   return options.currentUserId ?? null;
+}
+
+function normalizeDateOnlyString(value: Date | null | undefined) {
+  if (!value) return null;
+  return value.toISOString().slice(0, 10);
 }
 
 export async function registerLeaveEntitlementRoutes(app: FastifyInstance) {
@@ -120,6 +134,300 @@ export async function registerLeaveEntitlementRoutes(app: FastifyInstance) {
         actorId: req.user?.userId ?? null,
       });
       return balance;
+    },
+  );
+
+  app.get(
+    '/leave-entitlements/comp-balance',
+    {
+      preHandler: requireRole(['admin', 'mgmt', 'user']),
+      schema: leaveCompBalanceQuerySchema,
+    },
+    async (req, reply) => {
+      const query = req.query as {
+        userId?: string;
+        leaveType?: string;
+        asOfDate?: string;
+      };
+      const roles = req.user?.roles || [];
+      const privileged = isPrivileged(roles);
+      const currentUserId = req.user?.userId ?? null;
+      const requestedUserId = (query.userId || '').trim();
+      const targetUserId = resolveTargetUserId({
+        requestedUserId,
+        currentUserId,
+        privileged,
+      });
+      if (!targetUserId) {
+        return reply.status(400).send({
+          error: { code: 'INVALID_USER_ID', message: 'userId is required' },
+        });
+      }
+      if (!privileged && requestedUserId && requestedUserId !== targetUserId) {
+        return reply.code(403).send({ error: 'forbidden' });
+      }
+      const leaveType = normalizeCompLeaveType(query.leaveType);
+      if (query.leaveType !== undefined && !leaveType) {
+        return reply.status(400).send({
+          error: {
+            code: 'INVALID_LEAVE_TYPE',
+            message: 'leaveType must be compensatory or substitute',
+          },
+        });
+      }
+      const asOfDateRaw = (query.asOfDate || '').trim();
+      const asOfDate = asOfDateRaw ? parseDateParam(asOfDateRaw) : new Date();
+      if (!asOfDate) {
+        return reply.status(400).send({
+          error: {
+            code: 'INVALID_DATE',
+            message: 'asOfDate must be YYYY-MM-DD',
+          },
+        });
+      }
+      const targets = leaveType ? [leaveType] : [...COMP_LEAVE_TYPES];
+      const items = await Promise.all(
+        targets.map((targetLeaveType) =>
+          computeCompLeaveBalance({
+            userId: targetUserId,
+            leaveType: targetLeaveType,
+            asOfDate,
+            actorId: req.user?.userId ?? null,
+          }),
+        ),
+      );
+      return {
+        userId: targetUserId,
+        asOfDate: asOfDate.toISOString().slice(0, 10),
+        items,
+      };
+    },
+  );
+
+  app.get(
+    '/leave-entitlements/comp-grants',
+    {
+      preHandler: requireRole(['admin', 'mgmt', 'user']),
+      schema: leaveCompGrantListQuerySchema,
+    },
+    async (req, reply) => {
+      const query = req.query as {
+        userId?: string;
+        leaveType?: string;
+        limit?: number;
+      };
+      const roles = req.user?.roles || [];
+      const privileged = isPrivileged(roles);
+      const currentUserId = req.user?.userId ?? null;
+      const requestedUserId = (query.userId || '').trim();
+      const targetUserId = resolveTargetUserId({
+        requestedUserId,
+        currentUserId,
+        privileged,
+      });
+      if (!targetUserId) {
+        return reply.status(400).send({
+          error: { code: 'INVALID_USER_ID', message: 'userId is required' },
+        });
+      }
+      if (!privileged && requestedUserId && requestedUserId !== targetUserId) {
+        return reply.code(403).send({ error: 'forbidden' });
+      }
+      const leaveType = normalizeCompLeaveType(query.leaveType);
+      if (query.leaveType !== undefined && !leaveType) {
+        return reply.status(400).send({
+          error: {
+            code: 'INVALID_LEAVE_TYPE',
+            message: 'leaveType must be compensatory or substitute',
+          },
+        });
+      }
+      await expireCompLeaveGrants({
+        actorId: req.user?.userId ?? null,
+      });
+      const take = normalizeListLimit(query.limit);
+      const items = await prisma.leaveCompGrant.findMany({
+        where: {
+          userId: targetUserId,
+          ...(leaveType ? { leaveType } : {}),
+        },
+        select: {
+          id: true,
+          userId: true,
+          leaveType: true,
+          sourceDate: true,
+          grantDate: true,
+          expiresAt: true,
+          grantedMinutes: true,
+          remainingMinutes: true,
+          status: true,
+          reasonText: true,
+          sourceTimeEntryIds: true,
+          consumedAt: true,
+          expiredAt: true,
+          revokedAt: true,
+          createdAt: true,
+          createdBy: true,
+        },
+        orderBy: [
+          { expiresAt: 'asc' },
+          { sourceDate: 'asc' },
+          { createdAt: 'asc' },
+        ],
+        take,
+      });
+      return { items };
+    },
+  );
+
+  app.post(
+    '/leave-entitlements/comp-grants',
+    {
+      preHandler: requireRole(['admin', 'mgmt', 'user']),
+      schema: leaveCompGrantCreateSchema,
+    },
+    async (req, reply) => {
+      if (!hasGeneralAffairsGroup(req)) {
+        return reply.status(403).send({
+          error: {
+            code: 'GENERAL_AFFAIRS_REQUIRED',
+            message: 'general_affairs group membership is required',
+          },
+        });
+      }
+      const body = req.body as {
+        userId: string;
+        leaveType: string;
+        sourceDate: string;
+        grantDate?: string;
+        expiresAt: string;
+        grantedMinutes: number;
+        reasonText: string;
+        sourceTimeEntryIds?: string[];
+      };
+      const userId = body.userId.trim();
+      const leaveType = normalizeCompLeaveType(body.leaveType);
+      const reasonText = body.reasonText.trim();
+      if (!userId || !leaveType || !reasonText) {
+        return reply.status(400).send({
+          error: {
+            code: 'INVALID_PAYLOAD',
+            message: 'userId, leaveType, reasonText are required',
+          },
+        });
+      }
+      const sourceDate = parseDateParam(body.sourceDate);
+      const grantDateRaw =
+        typeof body.grantDate === 'string' ? body.grantDate.trim() : '';
+      const grantDate = grantDateRaw
+        ? parseDateParam(grantDateRaw)
+        : sourceDate;
+      const expiresAt = parseDateParam(body.expiresAt);
+      if (!sourceDate || !grantDate || !expiresAt) {
+        return reply.status(400).send({
+          error: {
+            code: 'INVALID_DATE',
+            message: 'sourceDate/grantDate/expiresAt must be YYYY-MM-DD',
+          },
+        });
+      }
+      if (expiresAt.getTime() < sourceDate.getTime()) {
+        return reply.status(400).send({
+          error: {
+            code: 'INVALID_DATE_RANGE',
+            message: 'expiresAt must be equal to or after sourceDate',
+          },
+        });
+      }
+      const grantedMinutes = Math.floor(Number(body.grantedMinutes));
+      if (!Number.isFinite(grantedMinutes) || grantedMinutes < 1) {
+        return reply.status(400).send({
+          error: {
+            code: 'INVALID_PAYLOAD',
+            message: 'grantedMinutes must be a positive integer',
+          },
+        });
+      }
+      const sourceTimeEntryIds = Array.from(
+        new Set(
+          Array.isArray(body.sourceTimeEntryIds)
+            ? body.sourceTimeEntryIds
+                .map((item) => (typeof item === 'string' ? item.trim() : ''))
+                .filter(Boolean)
+            : [],
+        ),
+      );
+      if (sourceTimeEntryIds.length > 0) {
+        const entries = await prisma.timeEntry.findMany({
+          where: { id: { in: sourceTimeEntryIds } },
+          select: {
+            id: true,
+            userId: true,
+            workDate: true,
+            status: true,
+            deletedAt: true,
+          },
+        });
+        if (entries.length !== sourceTimeEntryIds.length) {
+          return reply.status(400).send({
+            error: {
+              code: 'INVALID_SOURCE_TIME_ENTRIES',
+              message: 'some sourceTimeEntryIds were not found',
+            },
+          });
+        }
+        const sourceDateKey = normalizeDateOnlyString(sourceDate);
+        const invalid = entries.some((entry) => {
+          if (entry.deletedAt) return true;
+          if (entry.userId !== userId) return true;
+          if (entry.status !== 'approved') return true;
+          return normalizeDateOnlyString(entry.workDate) !== sourceDateKey;
+        });
+        if (invalid) {
+          return reply.status(400).send({
+            error: {
+              code: 'INVALID_SOURCE_TIME_ENTRIES',
+              message:
+                'sourceTimeEntryIds must be approved entries for the same user/sourceDate',
+            },
+          });
+        }
+      }
+      const actorId = req.user?.userId ?? null;
+      const grant = await prisma.leaveCompGrant.create({
+        data: {
+          userId,
+          leaveType,
+          sourceDate,
+          grantDate,
+          expiresAt,
+          grantedMinutes,
+          remainingMinutes: grantedMinutes,
+          status: 'active',
+          reasonText,
+          sourceTimeEntryIds:
+            sourceTimeEntryIds.length > 0 ? sourceTimeEntryIds : undefined,
+          createdBy: actorId,
+          updatedBy: actorId,
+        },
+      });
+      await logAudit({
+        action: 'leave_comp_grant_created',
+        targetTable: 'leave_comp_grants',
+        targetId: grant.id,
+        reasonText,
+        metadata: {
+          userId,
+          leaveType,
+          sourceDate: sourceDate.toISOString().slice(0, 10),
+          grantDate: grantDate.toISOString().slice(0, 10),
+          expiresAt: expiresAt.toISOString().slice(0, 10),
+          grantedMinutes,
+          sourceTimeEntryIds,
+        },
+        ...auditContextFromRequest(req),
+      });
+      return grant;
     },
   );
 

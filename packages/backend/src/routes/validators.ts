@@ -1210,6 +1210,55 @@ export const leaveGrantListQuerySchema = {
   ),
 };
 
+export const leaveCompGrantCreateSchema = {
+  body: Type.Object(
+    {
+      userId: Type.String({ minLength: 1 }),
+      leaveType: Type.Union([
+        Type.Literal('compensatory'),
+        Type.Literal('substitute'),
+      ]),
+      sourceDate: Type.String({ format: 'date' }),
+      grantDate: Type.Optional(Type.String({ format: 'date' })),
+      expiresAt: Type.String({ format: 'date' }),
+      grantedMinutes: Type.Integer({ minimum: 1, maximum: 527040 }),
+      reasonText: Type.String({ minLength: 1, maxLength: 2000 }),
+      sourceTimeEntryIds: Type.Optional(
+        Type.Array(Type.String({ minLength: 1 }), {
+          maxItems: 200,
+        }),
+      ),
+    },
+    { additionalProperties: false },
+  ),
+};
+
+export const leaveCompGrantListQuerySchema = {
+  querystring: Type.Object(
+    {
+      userId: Type.Optional(Type.String({ minLength: 1 })),
+      leaveType: Type.Optional(
+        Type.Union([Type.Literal('compensatory'), Type.Literal('substitute')]),
+      ),
+      limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 300 })),
+    },
+    { additionalProperties: false },
+  ),
+};
+
+export const leaveCompBalanceQuerySchema = {
+  querystring: Type.Object(
+    {
+      userId: Type.Optional(Type.String({ minLength: 1 })),
+      leaveType: Type.Optional(
+        Type.Union([Type.Literal('compensatory'), Type.Literal('substitute')]),
+      ),
+      asOfDate: Type.Optional(Type.String({ format: 'date' })),
+    },
+    { additionalProperties: false },
+  ),
+};
+
 export const approvalActionSchema = {
   body: Type.Object({
     action: Type.Union([Type.Literal('approve'), Type.Literal('reject')]),
