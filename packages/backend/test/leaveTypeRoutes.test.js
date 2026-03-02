@@ -465,6 +465,72 @@ test('POST /leave-requests/:id/submit proceeds past attachment check when eviden
   );
 });
 
+test('POST /leave-requests/:id/submit auto-approves leave type without approval', async () => {
+  await withPrismaStubs(
+    {
+      'leaveType.findMany': async () => [
+        { code: 'paid' },
+        { code: 'special' },
+        { code: 'substitute' },
+        { code: 'compensatory' },
+        { code: 'unpaid' },
+      ],
+      'leaveRequest.findUnique': async () => ({
+        id: 'leave-auto-approve',
+        userId: 'normal-user',
+        status: 'draft',
+        leaveType: 'special',
+        startDate: new Date('2026-03-03T00:00:00.000Z'),
+        endDate: new Date('2026-03-03T00:00:00.000Z'),
+        startTimeMinutes: null,
+        endTimeMinutes: null,
+        minutes: null,
+        hours: 8,
+      }),
+      'actionPolicy.findMany': async () => [],
+      'leaveSetting.upsert': async () => ({
+        id: 'default',
+        timeUnitMinutes: 10,
+        defaultWorkdayMinutes: 480,
+      }),
+      'timeEntry.count': async () => 0,
+      'leaveRequest.count': async () => 0,
+      'leaveRequest.findMany': async () => [],
+      'annotation.findUnique': async () => ({
+        internalRefs: [],
+        externalUrls: [],
+      }),
+      'leaveType.findFirst': async () => ({
+        code: 'special',
+        attachmentPolicy: 'none',
+        requiresApproval: false,
+        active: true,
+      }),
+      'leaveRequest.update': async () => ({
+        id: 'leave-auto-approve',
+        userId: 'normal-user',
+        status: 'approved',
+      }),
+    },
+    async () => {
+      await withServer(async (server) => {
+        const res = await server.inject({
+          method: 'POST',
+          url: '/leave-requests/leave-auto-approve/submit',
+          headers: userHeaders(),
+          payload: {
+            noConsultationConfirmed: true,
+            noConsultationReason: 'e2e-auto-approve',
+          },
+        });
+        assert.equal(res.statusCode, 200, res.body);
+        const body = JSON.parse(res.body);
+        assert.equal(body?.status, 'approved');
+      });
+    },
+  );
+});
+
 test('POST /leave-requests/:id/submit rejects compensatory leave when balance is insufficient', async () => {
   await withPrismaStubs(
     {
