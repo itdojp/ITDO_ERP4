@@ -245,7 +245,9 @@ test('frontend admin jobs: chat ack reminder / leave upcoming run and dashboard 
   );
   await ensureOk(ackCreateRes);
 
-  const leaveDate = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000)
+  const suffixDigits = Number(suffix.replace(/\D/g, '').slice(-3) || '0');
+  const leaveOffsetDays = 7 + (suffixDigits % 20);
+  const leaveDate = new Date(Date.now() + leaveOffsetDays * 24 * 60 * 60 * 1000)
     .toISOString()
     .slice(0, 10);
   const leaveCreateRes = await page.request.post(`${apiBase}/leave-requests`, {
