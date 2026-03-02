@@ -1868,6 +1868,50 @@ export const integrationRunMetricsQuerySchema = {
   ),
 };
 
+const leaveExportTargetSchema = Type.Union([
+  Type.Literal('attendance'),
+  Type.Literal('payroll'),
+]);
+
+export const integrationHrLeaveExportQuerySchema = {
+  querystring: Type.Object(
+    {
+      target: Type.Optional(leaveExportTargetSchema),
+      updatedSince: Type.Optional(Type.String({ format: 'date-time' })),
+      limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 2000 })),
+      offset: Type.Optional(Type.Integer({ minimum: 0, maximum: 100000 })),
+    },
+    { additionalProperties: false },
+  ),
+};
+
+export const integrationHrLeaveExportDispatchSchema = {
+  body: Type.Object(
+    {
+      target: leaveExportTargetSchema,
+      idempotencyKey: Type.String({ minLength: 1, maxLength: 200 }),
+      updatedSince: Type.Optional(Type.String({ format: 'date-time' })),
+      limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 2000 })),
+      offset: Type.Optional(Type.Integer({ minimum: 0, maximum: 100000 })),
+    },
+    { additionalProperties: false },
+  ),
+};
+
+export const integrationHrLeaveExportLogListQuerySchema = {
+  querystring: Type.Object(
+    {
+      target: Type.Optional(leaveExportTargetSchema),
+      limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 1000 })),
+      offset: Type.Optional(Type.Integer({ minimum: 0, maximum: 100000 })),
+      idempotencyKey: Type.Optional(
+        Type.String({ minLength: 1, maxLength: 200 }),
+      ),
+    },
+    { additionalProperties: false },
+  ),
+};
+
 export const chatSettingPatchSchema = {
   body: Type.Object(
     {
