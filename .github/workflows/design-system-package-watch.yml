@@ -65,7 +65,7 @@ jobs:
 
       - name: Upload logs
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: design-system-package-check-${{ github.run_id }}
           path: tmp/design-system-package-*.log

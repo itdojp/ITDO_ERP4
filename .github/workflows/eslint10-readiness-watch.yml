@@ -160,7 +160,7 @@ jobs:
 
       - name: Upload logs
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: eslint10-readiness-${{ github.run_id }}
           path: tmp/eslint10-readiness.log
