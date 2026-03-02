@@ -256,6 +256,29 @@ async function resetEvidenceSnapshots(
   return Number(payload?.deletedCount ?? 0);
 }
 
+async function seedAgentRunAudit(
+  request: APIRequestContext,
+  suffix: string,
+) {
+  const action = `agent_run_seeded_${suffix}`;
+  const res = await request.post(`${apiBase}/__test__/agent-runs/seed-audit-log`, {
+    headers: adminHeaders,
+    data: {
+      action,
+      targetTable: 'invoices',
+      targetId: `inv-${suffix}`,
+    },
+  });
+  await ensureOk(res);
+  const payload = await res.json();
+  const runId = String(payload?.runId || '').trim();
+  expect(runId).toBeTruthy();
+  return {
+    runId,
+    action,
+  };
+}
+
 test('agent read api: project-360/billing-360 are UI非依存で利用でき監査可能 @core', async ({
   request,
 }) => {
@@ -332,6 +355,56 @@ test('agent read api: project-360/billing-360 are UI非依存で利用でき監�
     useJwtAuth ? 'agent-bot' : 'demo-user',
   );
   expect(String(invoice?.id || '')).toBeTruthy();
+});
+
+test('agent run api: detail閲覧は権限制御され、監査ログが記録される @core', async ({
+  request,
+}) => {
+  const suffix = runId();
+  const seeded = await seedAgentRunAudit(request, suffix);
+  const outsiderHeaders = buildHeaders({
+    userId: useJwtAuth
+      ? jwtActorUsers.outsider
+      : `e2e-agent-run-outsider-${suffix}@example.com`,
+    roles: ['user'],
+    projectIds: [],
+  });
+
+  const forbiddenRes = await request.get(
+    `${apiBase}/agent-runs/${encodeURIComponent(seeded.runId)}`,
+    { headers: outsiderHeaders },
+  );
+  expect(forbiddenRes.status()).toBe(403);
+  const forbidden = await forbiddenRes.json();
+  expect(forbidden?.error?.code).toBe('forbidden');
+
+  const requestId = `e2e-agent-run-view-${suffix}`;
+  const detailRes = await request.get(
+    `${apiBase}/agent-runs/${encodeURIComponent(seeded.runId)}`,
+    { headers: { ...adminHeaders, 'x-request-id': requestId } },
+  );
+  await ensureOk(detailRes);
+  const detail = await detailRes.json();
+  expect(detail?.id).toBe(seeded.runId);
+  expect(Array.isArray(detail?.steps)).toBeTruthy();
+  expect((detail?.steps ?? []).length).toBeGreaterThan(0);
+  expect(
+    (detail?.steps ?? []).some(
+      (step: any) =>
+        (step?.decisions ?? []).some(
+          (decision: any) => decision?.decisionType === 'policy_override',
+        ),
+    ),
+  ).toBeTruthy();
+
+  const audit = await waitAuditEvent(
+    request,
+    'agent_run_viewed',
+    'agent_runs',
+    seeded.runId,
+    requestId,
+  );
+  expect(Number(audit?.metadata?.stepCount ?? 0)).toBeGreaterThan(0);
 });
 
 test('agent mvp: 請求ドラフト生成→承認→送信の通しが成立する @core', async ({
