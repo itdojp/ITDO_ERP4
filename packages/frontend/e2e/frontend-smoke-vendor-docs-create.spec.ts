@@ -339,6 +339,45 @@ test('frontend smoke vendor docs create @extended', async ({ page }) => {
   await allocationDialog.getByRole('button', { name: '閉じる' }).click();
   await expect(allocationDialog).toBeHidden({ timeout: actionTimeout });
 
+  // (3.1) 再表示時にも配賦明細の自動補正結果が保持されることを確認
+  await createdInvoiceItem.scrollIntoViewIfNeeded();
+  await createdInvoiceItem.getByRole('button', { name: '配賦明細' }).click();
+  const allocationPersistDialog = page.getByRole('dialog');
+  await expect(
+    allocationPersistDialog.getByText('仕入請求: 配賦明細'),
+  ).toBeVisible({
+    timeout: actionTimeout,
+  });
+  await expect(
+    allocationPersistDialog.getByText('配賦明細を読み込み中...'),
+  ).toHaveCount(0, { timeout: actionTimeout });
+  const showAllocationsButton = allocationPersistDialog.getByRole('button', {
+    name: '配賦明細を入力',
+  });
+  if ((await showAllocationsButton.count()) > 0) {
+    await showAllocationsButton.click();
+  }
+  const persistedAllocationRows = allocationPersistDialog.locator(
+    'table tbody tr',
+  );
+  await expect(persistedAllocationRows).toHaveCount(1, {
+    timeout: actionTimeout,
+  });
+  const persistedAllocationRow = persistedAllocationRows;
+  await expect(
+    persistedAllocationRow.locator('td:nth-child(2) input[type="number"]'),
+  ).toHaveValue(String(allocationDraftAmount), { timeout: actionTimeout });
+  await expect(
+    persistedAllocationRow.locator('td:nth-child(4) input[type="number"]'),
+  ).toHaveValue('1', { timeout: actionTimeout });
+  await expect(
+    allocationPersistDialog.getByText('差分: 0 JPY', { exact: false }),
+  ).toBeVisible({ timeout: actionTimeout });
+  await allocationPersistDialog.getByRole('button', { name: '閉じる' }).click();
+  await expect(allocationPersistDialog).toBeHidden({
+    timeout: actionTimeout,
+  });
+
   // (4) 承認依頼後（pending_qa）は PO 紐づけ更新で変更理由が必須
   await createdInvoiceItem.scrollIntoViewIfNeeded();
   await createdInvoiceItem.getByRole('button', { name: '承認依頼' }).click();

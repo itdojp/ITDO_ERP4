@@ -111,3 +111,11 @@ E2E_CAPTURE=0 E2E_SCOPE=core ./scripts/e2e-frontend.sh
 - PR本文に、証跡ファイル（`docs/test-results/YYYY-MM-DD-*.md`）と証跡ディレクトリ（`docs/test-results/YYYY-MM-DD-*/`）のリンクを記載する
 - モバイル回帰を含む場合は `docs/test-results/mobile-regression-template.md` を基に記録し、対象画面（Invoices/VendorDocuments/AuditLogs/PeriodLocks/AdminJobs）の結果を添付する
 - モバイル回帰の記録ファイル作成は `./scripts/new-mobile-regression-log.sh`（または `make mobile-regression-log`）で自動化できる
+
+証跡更新要否の判断:
+- 更新必須: 画面の見た目/導線/文言の変更、新規UI追加、主要導線の挙動変更
+- 更新不要: UIに影響しない実装（例: API内部のみ、テストコードのみ）
+- 更新不要の場合も、PR本文に理由を明記する
+
+補足:
+- PR完了条件は `docs/quality/definition-of-done.md` の「UI変更PRにおける証跡更新の判断」を参照
