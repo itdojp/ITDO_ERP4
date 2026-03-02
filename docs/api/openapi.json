@@ -7467,6 +7467,9 @@
                   "active": {
                     "type": "boolean"
                   },
+                  "allowRetroactiveSubmit": {
+                    "type": "boolean"
+                  },
                   "applicableGroupIds": {
                     "items": {
                       "maxLength": 200,
@@ -7527,6 +7530,17 @@
                   },
                   "requiresApproval": {
                     "type": "boolean"
+                  },
+                  "retroactiveLimitDays": {
+                    "maximum": 365,
+                    "minimum": 0,
+                    "nullable": true,
+                    "type": "integer"
+                  },
+                  "submitLeadDays": {
+                    "maximum": 365,
+                    "minimum": 0,
+                    "type": "integer"
                   },
                   "unit": {
                     "anyOf": [
@@ -7593,6 +7607,9 @@
                   "active": {
                     "type": "boolean"
                   },
+                  "allowRetroactiveSubmit": {
+                    "type": "boolean"
+                  },
                   "applicableGroupIds": {
                     "items": {
                       "maxLength": 200,
@@ -7649,6 +7666,17 @@
                   },
                   "requiresApproval": {
                     "type": "boolean"
+                  },
+                  "retroactiveLimitDays": {
+                    "maximum": 365,
+                    "minimum": 0,
+                    "nullable": true,
+                    "type": "integer"
+                  },
+                  "submitLeadDays": {
+                    "maximum": 365,
+                    "minimum": 0,
+                    "type": "integer"
                   },
                   "unit": {
                     "anyOf": [

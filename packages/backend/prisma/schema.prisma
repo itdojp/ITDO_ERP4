@@ -670,6 +670,9 @@ model LeaveType {
   unit             String   @default("daily") // daily/hourly/mixed
   requiresApproval Boolean  @default(true)
   attachmentPolicy String   @default("optional") // required/optional/none
+  submitLeadDays   Int      @default(0) // minimum days before startDate required at submit
+  allowRetroactiveSubmit Boolean @default(true) // allow submit when startDate is in the past
+  retroactiveLimitDays Int? // max past days allowed at submit. null means unlimited when retroactive submit is allowed
   applicableGroupIds Json? // target groupAccount ids. null/empty means applicable to all.
   active           Boolean  @default(true)
   displayOrder     Int      @default(100)

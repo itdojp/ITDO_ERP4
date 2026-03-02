@@ -12,7 +12,7 @@ import {
   leaveLeaderListQuerySchema,
   leaveRequestSchema,
 } from './validators.js';
-import { endOfDay, parseDateParam } from '../utils/date.js';
+import { diffInDays, endOfDay, parseDateParam } from '../utils/date.js';
 import { evaluateActionPolicyWithFallback } from '../services/actionPolicy.js';
 import { resolveActionPolicyDeniedCode } from '../services/actionPolicyErrors.js';
 import { logActionPolicyOverrideIfNeeded } from '../services/actionPolicyAudit.js';
@@ -104,6 +104,9 @@ export async function registerLeaveRoutes(app: FastifyInstance) {
           unit: item.unit,
           requiresApproval: item.requiresApproval,
           attachmentPolicy: item.attachmentPolicy,
+          submitLeadDays: item.submitLeadDays,
+          allowRetroactiveSubmit: item.allowRetroactiveSubmit,
+          retroactiveLimitDays: item.retroactiveLimitDays,
           applicableGroupIds: normalizeLeaveTypeApplicableGroupIds(
             item.applicableGroupIds,
           ),
@@ -130,6 +133,9 @@ export async function registerLeaveRoutes(app: FastifyInstance) {
         unit: string;
         requiresApproval: boolean;
         attachmentPolicy: string;
+        submitLeadDays?: number;
+        allowRetroactiveSubmit?: boolean;
+        retroactiveLimitDays?: number | null;
         applicableGroupIds?: string[];
         displayOrder?: number;
         active?: boolean;
@@ -222,6 +228,9 @@ export async function registerLeaveRoutes(app: FastifyInstance) {
             unit: body.unit,
             requiresApproval: body.requiresApproval,
             attachmentPolicy: body.attachmentPolicy,
+            submitLeadDays: body.submitLeadDays ?? 0,
+            allowRetroactiveSubmit: body.allowRetroactiveSubmit ?? true,
+            retroactiveLimitDays: body.retroactiveLimitDays ?? null,
             applicableGroupIds: applicableGroupIds.length
               ? applicableGroupIds
               : undefined,
@@ -320,6 +329,29 @@ export async function registerLeaveRoutes(app: FastifyInstance) {
           });
         }
         update.attachmentPolicy = body.attachmentPolicy;
+      }
+      if (typeof body.submitLeadDays === 'number') {
+        update.submitLeadDays = Math.max(0, Math.floor(body.submitLeadDays));
+      }
+      if (typeof body.allowRetroactiveSubmit === 'boolean') {
+        update.allowRetroactiveSubmit = body.allowRetroactiveSubmit;
+      }
+      if (Object.prototype.hasOwnProperty.call(body, 'retroactiveLimitDays')) {
+        if (body.retroactiveLimitDays === null) {
+          update.retroactiveLimitDays = null;
+        } else if (typeof body.retroactiveLimitDays === 'number') {
+          update.retroactiveLimitDays = Math.max(
+            0,
+            Math.floor(body.retroactiveLimitDays),
+          );
+        } else {
+          return reply.status(400).send({
+            error: {
+              code: 'INVALID_RETROACTIVE_LIMIT_DAYS',
+              message: 'retroactiveLimitDays must be an integer or null',
+            },
+          });
+        }
       }
       if (Object.prototype.hasOwnProperty.call(body, 'applicableGroupIds')) {
         if (body.applicableGroupIds === null) {
@@ -929,6 +961,66 @@ export async function registerLeaveRoutes(app: FastifyInstance) {
         });
       }
 
+      const leaveType = await findLeaveTypeByCode({
+        code: leave.leaveType,
+        includeInactive: true,
+      });
+      const daysUntilStart = diffInDays(new Date(), leave.startDate);
+      const submitLeadDays = Number.isInteger(leaveType?.submitLeadDays)
+        ? Math.max(0, Math.floor(leaveType?.submitLeadDays ?? 0))
+        : 0;
+      if (daysUntilStart >= 0 && daysUntilStart < submitLeadDays) {
+        return reply.status(400).send({
+          error: {
+            code: 'LEAVE_SUBMIT_LEAD_DAYS_REQUIRED',
+            message:
+              'Leave request must be submitted before the required lead days',
+            details: {
+              submitLeadDays,
+              daysUntilStart,
+              leaveStartDate: toDateOnlyString(leave.startDate),
+            },
+          },
+        });
+      }
+      if (daysUntilStart < 0) {
+        const allowRetroactiveSubmit =
+          leaveType?.allowRetroactiveSubmit !== false;
+        const retroactiveDays = Math.abs(daysUntilStart);
+        if (!allowRetroactiveSubmit) {
+          return reply.status(400).send({
+            error: {
+              code: 'LEAVE_RETROACTIVE_SUBMIT_FORBIDDEN',
+              message: 'Retroactive submit is disabled for this leave type',
+              details: {
+                leaveStartDate: toDateOnlyString(leave.startDate),
+                retroactiveDays,
+              },
+            },
+          });
+        }
+        const retroactiveLimitDays =
+          typeof leaveType?.retroactiveLimitDays === 'number'
+            ? Math.max(0, Math.floor(leaveType.retroactiveLimitDays))
+            : null;
+        if (
+          retroactiveLimitDays !== null &&
+          retroactiveDays > retroactiveLimitDays
+        ) {
+          return reply.status(400).send({
+            error: {
+              code: 'LEAVE_RETROACTIVE_LIMIT_EXCEEDED',
+              message: 'Retroactive submit exceeds the allowed backdate window',
+              details: {
+                retroactiveLimitDays,
+                retroactiveDays,
+                leaveStartDate: toDateOnlyString(leave.startDate),
+              },
+            },
+          });
+        }
+      }
+
       const annotation = await prisma.annotation.findUnique({
         where: {
           targetKind_targetId: { targetKind: 'leave_request', targetId: id },
@@ -953,10 +1045,6 @@ export async function registerLeaveRoutes(app: FastifyInstance) {
             )
             .map((value) => value.trim())
         : [];
-      const leaveType = await findLeaveTypeByCode({
-        code: leave.leaveType,
-        includeInactive: true,
-      });
       const hasAttachmentEvidence =
         externalUrls.length > 0 || normalizedInternalRefs.length > 0;
       if (

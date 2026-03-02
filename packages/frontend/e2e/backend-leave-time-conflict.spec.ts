@@ -285,10 +285,11 @@ test('leave submit auto-approves when leave type does not require approval @core
   request,
 }) => {
   const suffix = runId();
-  const leaveTypeCode = `e2e_auto_${Date.now().toString(36)}_${randomUUID().slice(
-    0,
-    6,
-  )}`.toLowerCase();
+  const leaveTypeCode =
+    `e2e_auto_${Date.now().toString(36)}_${randomUUID().slice(
+      0,
+      6,
+    )}`.toLowerCase();
   const leaveUserId = `leave-auto-${suffix}`;
   const tomorrow = new Date();
   tomorrow.setDate(tomorrow.getDate() + 1);
@@ -475,6 +476,97 @@ test('compensatory leave auto-approve consumes comp grant balance @core', async 
     );
     await ensureOk(restoreRes);
   }
+});
+
+test('leave submit enforces lead days and retroactive policy by leave type @core', async ({
+  request,
+}) => {
+  const suffix = runId();
+  const leaveTypeCode =
+    `e2e_window_${Date.now().toString(36)}_${randomUUID().slice(
+      0,
+      6,
+    )}`.toLowerCase();
+  const leaveUserId = `leave-window-${suffix}`;
+  const now = new Date();
+  const tomorrow = new Date(now);
+  tomorrow.setDate(now.getDate() + 1);
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  const tomorrowStr = toDateInput(tomorrow);
+  const yesterdayStr = toDateInput(yesterday);
+
+  const leaveTypeRes = await request.post(`${apiBase}/leave-types`, {
+    data: {
+      code: leaveTypeCode,
+      name: `E2E Leave Window ${suffix}`,
+      isPaid: true,
+      unit: 'daily',
+      requiresApproval: true,
+      attachmentPolicy: 'none',
+      submitLeadDays: 3,
+      allowRetroactiveSubmit: false,
+      active: true,
+    },
+    headers: authHeaders,
+  });
+  await ensureOk(leaveTypeRes);
+
+  const leadLeaveRes = await request.post(`${apiBase}/leave-requests`, {
+    data: {
+      userId: leaveUserId,
+      leaveType: leaveTypeCode,
+      startDate: tomorrowStr,
+      endDate: tomorrowStr,
+      hours: 8,
+      notes: `window-lead-${suffix}`,
+    },
+    headers: authHeaders,
+  });
+  await ensureOk(leadLeaveRes);
+  const leadLeave = await leadLeaveRes.json();
+  const leadSubmitRes = await request.post(
+    `${apiBase}/leave-requests/${leadLeave.id}/submit`,
+    {
+      data: {
+        noConsultationConfirmed: true,
+        noConsultationReason: `window-lead-${suffix}`,
+      },
+      headers: authHeaders,
+    },
+  );
+  expect(leadSubmitRes.status()).toBe(400);
+  const leadSubmitJson = await leadSubmitRes.json();
+  expect(leadSubmitJson?.error?.code).toBe('LEAVE_SUBMIT_LEAD_DAYS_REQUIRED');
+
+  const retroLeaveRes = await request.post(`${apiBase}/leave-requests`, {
+    data: {
+      userId: leaveUserId,
+      leaveType: leaveTypeCode,
+      startDate: yesterdayStr,
+      endDate: yesterdayStr,
+      hours: 8,
+      notes: `window-retro-${suffix}`,
+    },
+    headers: authHeaders,
+  });
+  await ensureOk(retroLeaveRes);
+  const retroLeave = await retroLeaveRes.json();
+  const retroSubmitRes = await request.post(
+    `${apiBase}/leave-requests/${retroLeave.id}/submit`,
+    {
+      data: {
+        noConsultationConfirmed: true,
+        noConsultationReason: `window-retro-${suffix}`,
+      },
+      headers: authHeaders,
+    },
+  );
+  expect(retroSubmitRes.status()).toBe(400);
+  const retroSubmitJson = await retroSubmitRes.json();
+  expect(retroSubmitJson?.error?.code).toBe(
+    'LEAVE_RETROACTIVE_SUBMIT_FORBIDDEN',
+  );
 });
 
 test('hourly leave create validates time unit and stores minutes @core', async ({
