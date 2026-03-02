@@ -1,4 +1,5 @@
 import { FastifyInstance } from 'fastify';
+import { createHash } from 'node:crypto';
 import {
   IntegrationRunStatus,
   IntegrationStatus,
@@ -8,7 +9,13 @@ import { prisma } from '../services/db.js';
 import { requireRole } from '../services/rbac.js';
 import { triggerAlert } from '../services/alert.js';
 import { auditContextFromRequest, logAudit } from '../services/audit.js';
+import { ensureLeaveSetting } from '../services/leaveSettings.js';
+import { resolveLeaveRequestMinutesWithCalendar } from '../services/leaveEntitlements.js';
+import { normalizeLeaveTypeInput } from '../services/leaveTypes.js';
 import {
+  integrationHrLeaveExportDispatchSchema,
+  integrationHrLeaveExportLogListQuerySchema,
+  integrationHrLeaveExportQuerySchema,
   integrationRunMetricsQuerySchema,
   integrationSettingPatchSchema,
   integrationSettingSchema,
@@ -59,6 +66,23 @@ function parseBoundedInteger(
     const parsed = Number(input);
     if (Number.isFinite(parsed)) {
       return Math.min(maxValue, Math.max(1, Math.floor(parsed)));
+    }
+  }
+  return defaultValue;
+}
+
+function parseBoundedNonNegativeInteger(
+  input: unknown,
+  defaultValue: number,
+  maxValue: number,
+) {
+  if (typeof input === 'number' && Number.isFinite(input)) {
+    return Math.min(maxValue, Math.max(0, Math.floor(input)));
+  }
+  if (typeof input === 'string' && input.trim().length > 0) {
+    const parsed = Number(input);
+    if (Number.isFinite(parsed)) {
+      return Math.min(maxValue, Math.max(0, Math.floor(parsed)));
     }
   }
   return defaultValue;
@@ -118,6 +142,210 @@ function parseUpdatedSince(raw?: string) {
   const parsed = new Date(raw);
   if (Number.isNaN(parsed.getTime())) return null;
   return parsed;
+}
+
+type LeaveExportTarget = 'attendance' | 'payroll';
+
+const DEFAULT_LEAVE_EXPORT_LIMIT = 500;
+const MAX_LEAVE_EXPORT_LIMIT = 2000;
+const DEFAULT_LEAVE_EXPORT_LOG_LIMIT = 100;
+const MAX_LEAVE_EXPORT_LOG_LIMIT = 1000;
+const MAX_LEAVE_EXPORT_OFFSET = 100000;
+
+function normalizeLeaveExportTarget(value: unknown): LeaveExportTarget {
+  return value === 'payroll' ? 'payroll' : 'attendance';
+}
+
+function buildLeaveExportRequestHash(input: {
+  target: LeaveExportTarget;
+  updatedSince: string | null;
+  limit: number;
+  offset: number;
+}) {
+  return createHash('sha256')
+    .update(JSON.stringify(input), 'utf8')
+    .digest('hex');
+}
+
+type HrLeaveExportQuery = {
+  target?: LeaveExportTarget;
+  updatedSince?: string;
+  limit?: number | string;
+  offset?: number | string;
+};
+
+type HrLeaveExportPayload = {
+  target: LeaveExportTarget;
+  exportedAt: string;
+  updatedSince: string | null;
+  limit: number;
+  offset: number;
+  exportedCount: number;
+  items: Array<{
+    id: string;
+    userId: string;
+    leaveType: string;
+    leaveTypeName: string | null;
+    leaveTypeUnit: string | null;
+    leaveTypeIsPaid: boolean | null;
+    status: 'approved';
+    startDate: string;
+    endDate: string;
+    startTimeMinutes: number | null;
+    endTimeMinutes: number | null;
+    requestedMinutes: number;
+    notes: string | null;
+    createdAt: string;
+    updatedAt: string;
+  }>;
+};
+
+function parseLeaveExportQuery(query: HrLeaveExportQuery) {
+  const target = normalizeLeaveExportTarget(query.target);
+  const since = parseUpdatedSince(query.updatedSince);
+  if (since === null) {
+    return { ok: false as const };
+  }
+  const limit = parseBoundedInteger(
+    query.limit,
+    DEFAULT_LEAVE_EXPORT_LIMIT,
+    MAX_LEAVE_EXPORT_LIMIT,
+  );
+  const offset = parseBoundedNonNegativeInteger(
+    query.offset,
+    0,
+    MAX_LEAVE_EXPORT_OFFSET,
+  );
+  return {
+    ok: true as const,
+    target,
+    updatedSince: since,
+    limit,
+    offset,
+  };
+}
+
+async function buildHrLeaveExportPayload(input: {
+  target: LeaveExportTarget;
+  updatedSince?: Date;
+  limit: number;
+  offset: number;
+  actorId?: string | null;
+}): Promise<HrLeaveExportPayload> {
+  const leaveSetting = await ensureLeaveSetting({
+    actorId: input.actorId ?? null,
+  });
+  const leaves = await prisma.leaveRequest.findMany({
+    where: {
+      status: 'approved',
+      ...(input.updatedSince ? { updatedAt: { gt: input.updatedSince } } : {}),
+    },
+    select: {
+      id: true,
+      userId: true,
+      leaveType: true,
+      startDate: true,
+      endDate: true,
+      hours: true,
+      minutes: true,
+      startTimeMinutes: true,
+      endTimeMinutes: true,
+      notes: true,
+      createdAt: true,
+      updatedAt: true,
+    },
+    orderBy: [{ updatedAt: 'asc' }, { id: 'asc' }],
+    take: input.limit,
+    skip: input.offset,
+  });
+  const leaveTypeCodes = Array.from(
+    new Set(
+      leaves
+        .map((item) => normalizeLeaveTypeInput(item.leaveType))
+        .filter((item) => item.length > 0),
+    ),
+  );
+  const leaveTypes = leaveTypeCodes.length
+    ? await prisma.leaveType.findMany({
+        where: { code: { in: leaveTypeCodes } },
+        select: {
+          code: true,
+          name: true,
+          unit: true,
+          isPaid: true,
+        },
+      })
+    : [];
+  const leaveTypeByCode = new Map(
+    leaveTypes.map((item) => [item.code, item] as const),
+  );
+  const workdayMinutesCacheByUser = new Map<string, Map<string, number>>();
+  const items: HrLeaveExportPayload['items'] = [];
+  for (const leave of leaves) {
+    const normalizedLeaveType = normalizeLeaveTypeInput(leave.leaveType);
+    const leaveType = leaveTypeByCode.get(normalizedLeaveType);
+    const cache =
+      workdayMinutesCacheByUser.get(leave.userId) ?? new Map<string, number>();
+    workdayMinutesCacheByUser.set(leave.userId, cache);
+    const requestedMinutes = await resolveLeaveRequestMinutesWithCalendar({
+      leave,
+      userId: leave.userId,
+      defaultWorkdayMinutes: leaveSetting.defaultWorkdayMinutes,
+      workdayMinutesCache: cache,
+    });
+    items.push({
+      id: leave.id,
+      userId: leave.userId,
+      leaveType: normalizedLeaveType || leave.leaveType,
+      leaveTypeName: leaveType?.name ?? null,
+      leaveTypeUnit: leaveType?.unit ?? null,
+      leaveTypeIsPaid: leaveType?.isPaid ?? null,
+      status: 'approved',
+      startDate: leave.startDate.toISOString(),
+      endDate: leave.endDate.toISOString(),
+      startTimeMinutes: leave.startTimeMinutes,
+      endTimeMinutes: leave.endTimeMinutes,
+      requestedMinutes,
+      notes: leave.notes ?? null,
+      createdAt: leave.createdAt.toISOString(),
+      updatedAt: leave.updatedAt.toISOString(),
+    });
+  }
+  return {
+    target: input.target,
+    exportedAt: new Date().toISOString(),
+    updatedSince: input.updatedSince?.toISOString() ?? null,
+    limit: input.limit,
+    offset: input.offset,
+    exportedCount: items.length,
+    items,
+  };
+}
+
+function buildLeaveExportLogResponse(item: {
+  id: string;
+  target: string;
+  idempotencyKey: string;
+  status: IntegrationRunStatus;
+  updatedSince: Date | null;
+  exportedUntil: Date;
+  exportedCount: number;
+  startedAt: Date;
+  finishedAt: Date | null;
+  message: string | null;
+}) {
+  return {
+    id: item.id,
+    target: item.target,
+    idempotencyKey: item.idempotencyKey,
+    status: item.status,
+    updatedSince: item.updatedSince,
+    exportedUntil: item.exportedUntil,
+    exportedCount: item.exportedCount,
+    startedAt: item.startedAt,
+    finishedAt: item.finishedAt,
+    message: item.message,
+  };
 }
 
 const MAX_INTEGRATION_CONFIG_KEYS = 100;
@@ -1036,6 +1264,221 @@ export async function registerIntegrationRoutes(app: FastifyInstance) {
         skip,
       });
       return { items, limit: take, offset: skip };
+    },
+  );
+
+  app.get(
+    '/integrations/hr/exports/leaves',
+    {
+      preHandler: requireRole(['admin', 'mgmt']),
+      schema: integrationHrLeaveExportQuerySchema,
+    },
+    async (req, reply) => {
+      const parsed = parseLeaveExportQuery(req.query as HrLeaveExportQuery);
+      if (!parsed.ok) {
+        return reply.code(400).send({ error: 'invalid_updatedSince' });
+      }
+      const payload = await buildHrLeaveExportPayload({
+        target: parsed.target,
+        updatedSince: parsed.updatedSince,
+        limit: parsed.limit,
+        offset: parsed.offset,
+        actorId: req.user?.userId ?? null,
+      });
+      return payload;
+    },
+  );
+
+  app.post(
+    '/integrations/hr/exports/leaves/dispatch',
+    {
+      preHandler: requireRole(['admin', 'mgmt']),
+      schema: integrationHrLeaveExportDispatchSchema,
+    },
+    async (req, reply) => {
+      const body = req.body as HrLeaveExportQuery & { idempotencyKey: string };
+      const parsed = parseLeaveExportQuery(body);
+      if (!parsed.ok) {
+        return reply.code(400).send({ error: 'invalid_updatedSince' });
+      }
+      const idempotencyKey = body.idempotencyKey.trim();
+      if (!idempotencyKey) {
+        return reply.code(400).send({ error: 'invalid_idempotencyKey' });
+      }
+      const requestHash = buildLeaveExportRequestHash({
+        target: parsed.target,
+        updatedSince: parsed.updatedSince?.toISOString() ?? null,
+        limit: parsed.limit,
+        offset: parsed.offset,
+      });
+      const existing = await prisma.leaveIntegrationExportLog.findUnique({
+        where: {
+          target_idempotencyKey: {
+            target: parsed.target,
+            idempotencyKey,
+          },
+        },
+      });
+      if (existing) {
+        if (existing.requestHash !== requestHash) {
+          await logAudit({
+            ...auditContextFromRequest(req),
+            action: 'integration_hr_leave_export_dispatch_conflict',
+            targetTable: 'leave_integration_export_logs',
+            targetId: existing.id,
+            metadata: {
+              target: parsed.target,
+              idempotencyKey,
+              requestHash,
+              existingRequestHash: existing.requestHash,
+            } as Prisma.InputJsonValue,
+          });
+          return reply.code(409).send({ error: 'idempotency_conflict' });
+        }
+        if (existing.status === IntegrationRunStatus.running) {
+          return reply.code(409).send({
+            error: 'dispatch_in_progress',
+            logId: existing.id,
+          });
+        }
+        await logAudit({
+          ...auditContextFromRequest(req),
+          action: 'integration_hr_leave_export_dispatch_replayed',
+          targetTable: 'leave_integration_export_logs',
+          targetId: existing.id,
+          metadata: {
+            target: parsed.target,
+            idempotencyKey,
+            status: existing.status,
+            exportedCount: existing.exportedCount,
+          } as Prisma.InputJsonValue,
+        });
+        return {
+          replayed: true,
+          payload: existing.payload,
+          log: buildLeaveExportLogResponse(existing),
+        };
+      }
+
+      const startedAt = new Date();
+      const log = await prisma.leaveIntegrationExportLog.create({
+        data: {
+          target: parsed.target,
+          idempotencyKey,
+          requestHash,
+          updatedSince: parsed.updatedSince ?? null,
+          exportedUntil: startedAt,
+          status: IntegrationRunStatus.running,
+          startedAt,
+          createdBy: req.user?.userId ?? null,
+        },
+      });
+
+      try {
+        const payload = await buildHrLeaveExportPayload({
+          target: parsed.target,
+          updatedSince: parsed.updatedSince,
+          limit: parsed.limit,
+          offset: parsed.offset,
+          actorId: req.user?.userId ?? null,
+        });
+        const finishedAt = new Date();
+        const updated = await prisma.leaveIntegrationExportLog.update({
+          where: { id: log.id },
+          data: {
+            status: IntegrationRunStatus.success,
+            exportedCount: payload.exportedCount,
+            payload: payload as Prisma.InputJsonValue,
+            message: payload.exportedCount ? 'exported' : 'no_changes',
+            exportedUntil: finishedAt,
+            finishedAt,
+          },
+        });
+        await logAudit({
+          ...auditContextFromRequest(req),
+          action: 'integration_hr_leave_export_dispatched',
+          targetTable: 'leave_integration_export_logs',
+          targetId: updated.id,
+          metadata: {
+            target: parsed.target,
+            idempotencyKey,
+            exportedCount: payload.exportedCount,
+          } as Prisma.InputJsonValue,
+        });
+        return {
+          replayed: false,
+          payload,
+          log: buildLeaveExportLogResponse(updated),
+        };
+      } catch (error) {
+        const finishedAt = new Date();
+        const message = error instanceof Error ? error.message : String(error);
+        const failed = await prisma.leaveIntegrationExportLog.update({
+          where: { id: log.id },
+          data: {
+            status: IntegrationRunStatus.failed,
+            message,
+            exportedUntil: finishedAt,
+            finishedAt,
+          },
+        });
+        await logAudit({
+          ...auditContextFromRequest(req),
+          action: 'integration_hr_leave_export_dispatch_failed',
+          targetTable: 'leave_integration_export_logs',
+          targetId: failed.id,
+          metadata: {
+            target: parsed.target,
+            idempotencyKey,
+            message: truncateForAudit(message),
+          } as Prisma.InputJsonValue,
+        });
+        throw error;
+      }
+    },
+  );
+
+  app.get(
+    '/integrations/hr/exports/leaves/dispatch-logs',
+    {
+      preHandler: requireRole(['admin', 'mgmt']),
+      schema: integrationHrLeaveExportLogListQuerySchema,
+    },
+    async (req) => {
+      const query = req.query as {
+        target?: LeaveExportTarget;
+        limit?: number | string;
+        offset?: number | string;
+        idempotencyKey?: string;
+      };
+      const limit = parseBoundedInteger(
+        query.limit,
+        DEFAULT_LEAVE_EXPORT_LOG_LIMIT,
+        MAX_LEAVE_EXPORT_LOG_LIMIT,
+      );
+      const offset = parseBoundedNonNegativeInteger(
+        query.offset,
+        0,
+        MAX_LEAVE_EXPORT_OFFSET,
+      );
+      const idempotencyKey =
+        typeof query.idempotencyKey === 'string'
+          ? query.idempotencyKey.trim()
+          : '';
+      const target =
+        typeof query.target === 'string'
+          ? normalizeLeaveExportTarget(query.target)
+          : undefined;
+      const items = await prisma.leaveIntegrationExportLog.findMany({
+        where: {
+          ...(target ? { target } : {}),
+          ...(idempotencyKey ? { idempotencyKey } : {}),
+        },
+        orderBy: [{ startedAt: 'desc' }, { id: 'desc' }],
+        take: limit,
+        skip: offset,
+      });
+      return { items, limit, offset };
     },
   );
 }

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { createHash } from 'node:crypto';
 
 import { buildServer } from '../dist/server.js';
 import { prisma } from '../dist/services/db.js';
@@ -72,10 +73,7 @@ test('GET /integrations/hr/exports/users supports updatedSince and pagination', 
   assert.equal(capturedFindMany?.take, 10);
   assert.equal(capturedFindMany?.skip, 2);
   assert.deepEqual(capturedFindMany?.orderBy, { createdAt: 'desc' });
-  assert.equal(
-    capturedFindMany?.where?.updatedAt?.gt instanceof Date,
-    true,
-  );
+  assert.equal(capturedFindMany?.where?.updatedAt?.gt instanceof Date, true);
 });
 
 test('GET /integrations/hr/exports/users returns 400 for invalid updatedSince', async () => {
@@ -158,4 +156,375 @@ test('GET /integrations/hr/exports/wellbeing returns data and enforces role', as
 
   assert.equal(capturedFindMany?.take, 5);
   assert.equal(capturedFindMany?.orderBy?.entryDate, 'desc');
+});
+
+test('GET /integrations/hr/exports/leaves returns approved leave exports with leave type metadata', async () => {
+  process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
+  process.env.AUTH_MODE = 'header';
+
+  let capturedLeaveFindMany = null;
+  let capturedLeaveTypeFindMany = null;
+  await withPrismaStubs(
+    {
+      'leaveSetting.upsert': async () => ({
+        id: 'default',
+        defaultWorkdayMinutes: 480,
+      }),
+      'leaveRequest.findMany': async (args) => {
+        capturedLeaveFindMany = args;
+        return [
+          {
+            id: 'leave-001',
+            userId: 'user-001',
+            leaveType: 'paid',
+            startDate: new Date('2026-02-20T00:00:00.000Z'),
+            endDate: new Date('2026-02-20T00:00:00.000Z'),
+            hours: null,
+            minutes: 120,
+            startTimeMinutes: 540,
+            endTimeMinutes: 660,
+            notes: '午後休',
+            createdAt: new Date('2026-02-19T12:00:00.000Z'),
+            updatedAt: new Date('2026-02-20T12:00:00.000Z'),
+          },
+        ];
+      },
+      'leaveType.findMany': async (args) => {
+        capturedLeaveTypeFindMany = args;
+        return [
+          {
+            code: 'paid',
+            name: '年次有給休暇',
+            unit: 'mixed',
+            isPaid: true,
+          },
+        ];
+      },
+    },
+    async () => {
+      const server = await buildServer({ logger: false });
+      try {
+        const res = await server.inject({
+          method: 'GET',
+          url: '/integrations/hr/exports/leaves?target=payroll&updatedSince=2026-02-01T00:00:00.000Z&limit=10&offset=3',
+          headers: {
+            'x-user-id': 'admin-user',
+            'x-roles': 'admin',
+          },
+        });
+        assert.equal(res.statusCode, 200, res.body);
+        const body = JSON.parse(res.body);
+        assert.equal(body.target, 'payroll');
+        assert.equal(body.limit, 10);
+        assert.equal(body.offset, 3);
+        assert.equal(body.exportedCount, 1);
+        assert.equal(body.items[0].id, 'leave-001');
+        assert.equal(body.items[0].requestedMinutes, 120);
+        assert.equal(body.items[0].leaveTypeName, '年次有給休暇');
+        assert.equal(body.items[0].leaveTypeUnit, 'mixed');
+        assert.equal(body.items[0].leaveTypeIsPaid, true);
+      } finally {
+        await server.close();
+      }
+    },
+  );
+
+  assert.equal(capturedLeaveFindMany?.take, 10);
+  assert.equal(capturedLeaveFindMany?.skip, 3);
+  assert.equal(capturedLeaveFindMany?.where?.status, 'approved');
+  assert.equal(
+    capturedLeaveFindMany?.where?.updatedAt?.gt instanceof Date,
+    true,
+  );
+  assert.deepEqual(capturedLeaveTypeFindMany?.where, {
+    code: { in: ['paid'] },
+  });
+});
+
+test('POST /integrations/hr/exports/leaves/dispatch creates export log and persists payload', async () => {
+  process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
+  process.env.AUTH_MODE = 'header';
+
+  let createCall = null;
+  let updateCall = null;
+  await withPrismaStubs(
+    {
+      'leaveIntegrationExportLog.findUnique': async () => null,
+      'leaveIntegrationExportLog.create': async (args) => {
+        createCall = args;
+        return {
+          id: 'export-log-001',
+          target: args.data.target,
+          idempotencyKey: args.data.idempotencyKey,
+          requestHash: args.data.requestHash,
+          updatedSince: args.data.updatedSince ?? null,
+          exportedUntil: args.data.exportedUntil,
+          status: 'running',
+          exportedCount: 0,
+          payload: null,
+          message: null,
+          startedAt: args.data.startedAt,
+          finishedAt: null,
+        };
+      },
+      'leaveSetting.upsert': async () => ({
+        id: 'default',
+        defaultWorkdayMinutes: 480,
+      }),
+      'leaveRequest.findMany': async () => [
+        {
+          id: 'leave-002',
+          userId: 'user-002',
+          leaveType: 'paid',
+          startDate: new Date('2026-02-21T00:00:00.000Z'),
+          endDate: new Date('2026-02-21T00:00:00.000Z'),
+          hours: null,
+          minutes: 60,
+          startTimeMinutes: 600,
+          endTimeMinutes: 660,
+          notes: null,
+          createdAt: new Date('2026-02-20T12:00:00.000Z'),
+          updatedAt: new Date('2026-02-21T12:00:00.000Z'),
+        },
+      ],
+      'leaveType.findMany': async () => [
+        {
+          code: 'paid',
+          name: '年次有給休暇',
+          unit: 'mixed',
+          isPaid: true,
+        },
+      ],
+      'leaveIntegrationExportLog.update': async (args) => {
+        updateCall = args;
+        return {
+          id: 'export-log-001',
+          target: 'attendance',
+          idempotencyKey: 'export-key-001',
+          status: args.data.status,
+          updatedSince: new Date('2026-02-01T00:00:00.000Z'),
+          exportedUntil: args.data.exportedUntil,
+          exportedCount: args.data.exportedCount ?? 0,
+          startedAt: new Date('2026-02-22T10:00:00.000Z'),
+          finishedAt: args.data.finishedAt ?? null,
+          message: args.data.message ?? null,
+        };
+      },
+      'auditLog.create': async () => ({ id: 'audit-001' }),
+    },
+    async () => {
+      const server = await buildServer({ logger: false });
+      try {
+        const res = await server.inject({
+          method: 'POST',
+          url: '/integrations/hr/exports/leaves/dispatch',
+          headers: {
+            'x-user-id': 'admin-user',
+            'x-roles': 'admin',
+          },
+          payload: {
+            target: 'attendance',
+            idempotencyKey: 'export-key-001',
+            updatedSince: '2026-02-01T00:00:00.000Z',
+            limit: 10,
+            offset: 2,
+          },
+        });
+        assert.equal(res.statusCode, 200, res.body);
+        const body = JSON.parse(res.body);
+        assert.equal(body.replayed, false);
+        assert.equal(body.payload.target, 'attendance');
+        assert.equal(body.payload.exportedCount, 1);
+        assert.equal(body.log.status, 'success');
+      } finally {
+        await server.close();
+      }
+    },
+  );
+
+  assert.equal(createCall?.data?.target, 'attendance');
+  assert.equal(createCall?.data?.idempotencyKey, 'export-key-001');
+  assert.equal(typeof createCall?.data?.requestHash, 'string');
+  assert.equal(updateCall?.data?.status, 'success');
+  assert.equal(updateCall?.data?.exportedCount, 1);
+});
+
+test('POST /integrations/hr/exports/leaves/dispatch replays previous success with same idempotency key', async () => {
+  process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
+  process.env.AUTH_MODE = 'header';
+
+  const updatedSince = '2026-02-01T00:00:00.000Z';
+  const requestHash = createHash('sha256')
+    .update(
+      JSON.stringify({
+        target: 'attendance',
+        updatedSince,
+        limit: 10,
+        offset: 2,
+      }),
+      'utf8',
+    )
+    .digest('hex');
+  let createCalled = false;
+  await withPrismaStubs(
+    {
+      'leaveIntegrationExportLog.findUnique': async () => ({
+        id: 'export-log-002',
+        target: 'attendance',
+        idempotencyKey: 'export-key-002',
+        requestHash,
+        updatedSince: new Date(updatedSince),
+        exportedUntil: new Date('2026-02-22T10:00:00.000Z'),
+        status: 'success',
+        exportedCount: 1,
+        payload: {
+          target: 'attendance',
+          exportedAt: '2026-02-22T10:00:00.000Z',
+          updatedSince,
+          limit: 10,
+          offset: 2,
+          exportedCount: 1,
+          items: [{ id: 'leave-003' }],
+        },
+        startedAt: new Date('2026-02-22T09:59:00.000Z'),
+        finishedAt: new Date('2026-02-22T10:00:00.000Z'),
+        message: 'exported',
+      }),
+      'leaveIntegrationExportLog.create': async () => {
+        createCalled = true;
+        return { id: 'unexpected' };
+      },
+      'auditLog.create': async () => ({ id: 'audit-002' }),
+    },
+    async () => {
+      const server = await buildServer({ logger: false });
+      try {
+        const res = await server.inject({
+          method: 'POST',
+          url: '/integrations/hr/exports/leaves/dispatch',
+          headers: {
+            'x-user-id': 'admin-user',
+            'x-roles': 'admin',
+          },
+          payload: {
+            target: 'attendance',
+            idempotencyKey: 'export-key-002',
+            updatedSince,
+            limit: 10,
+            offset: 2,
+          },
+        });
+        assert.equal(res.statusCode, 200, res.body);
+        const body = JSON.parse(res.body);
+        assert.equal(body.replayed, true);
+        assert.equal(body.payload.exportedCount, 1);
+        assert.equal(body.log.id, 'export-log-002');
+      } finally {
+        await server.close();
+      }
+    },
+  );
+
+  assert.equal(createCalled, false);
+});
+
+test('POST /integrations/hr/exports/leaves/dispatch returns 409 on idempotency conflict', async () => {
+  process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
+  process.env.AUTH_MODE = 'header';
+
+  await withPrismaStubs(
+    {
+      'leaveIntegrationExportLog.findUnique': async () => ({
+        id: 'export-log-003',
+        target: 'payroll',
+        idempotencyKey: 'export-key-003',
+        requestHash: 'different-hash',
+        updatedSince: null,
+        exportedUntil: new Date('2026-02-22T10:00:00.000Z'),
+        status: 'success',
+        exportedCount: 0,
+        payload: null,
+        startedAt: new Date('2026-02-22T09:59:00.000Z'),
+        finishedAt: new Date('2026-02-22T10:00:00.000Z'),
+        message: null,
+      }),
+      'auditLog.create': async () => ({ id: 'audit-003' }),
+    },
+    async () => {
+      const server = await buildServer({ logger: false });
+      try {
+        const res = await server.inject({
+          method: 'POST',
+          url: '/integrations/hr/exports/leaves/dispatch',
+          headers: {
+            'x-user-id': 'admin-user',
+            'x-roles': 'admin',
+          },
+          payload: {
+            target: 'payroll',
+            idempotencyKey: 'export-key-003',
+            limit: 5,
+            offset: 0,
+          },
+        });
+        assert.equal(res.statusCode, 409, res.body);
+        const body = JSON.parse(res.body);
+        const errorCode =
+          typeof body.error === 'string' ? body.error : body?.error?.code;
+        assert.equal(errorCode, 'idempotency_conflict');
+      } finally {
+        await server.close();
+      }
+    },
+  );
+});
+
+test('GET /integrations/hr/exports/leaves/dispatch-logs supports filters and pagination', async () => {
+  process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
+  process.env.AUTH_MODE = 'header';
+
+  let capturedFindMany = null;
+  await withPrismaStubs(
+    {
+      'leaveIntegrationExportLog.findMany': async (args) => {
+        capturedFindMany = args;
+        return [
+          {
+            id: 'export-log-004',
+            target: 'attendance',
+            idempotencyKey: 'export-key-004',
+            status: 'success',
+          },
+        ];
+      },
+    },
+    async () => {
+      const server = await buildServer({ logger: false });
+      try {
+        const res = await server.inject({
+          method: 'GET',
+          url: '/integrations/hr/exports/leaves/dispatch-logs?target=attendance&idempotencyKey=export-key-004&limit=5&offset=4',
+          headers: {
+            'x-user-id': 'admin-user',
+            'x-roles': 'admin',
+          },
+        });
+        assert.equal(res.statusCode, 200, res.body);
+        const body = JSON.parse(res.body);
+        assert.equal(body.limit, 5);
+        assert.equal(body.offset, 4);
+        assert.equal(Array.isArray(body.items), true);
+        assert.equal(body.items.length, 1);
+      } finally {
+        await server.close();
+      }
+    },
+  );
+
+  assert.equal(capturedFindMany?.take, 5);
+  assert.equal(capturedFindMany?.skip, 4);
+  assert.deepEqual(capturedFindMany?.where, {
+    target: 'attendance',
+    idempotencyKey: 'export-key-004',
+  });
 });
