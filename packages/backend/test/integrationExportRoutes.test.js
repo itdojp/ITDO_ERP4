@@ -217,6 +217,7 @@ test('GET /integrations/hr/exports/leaves returns approved leave exports with le
         assert.equal(body.target, 'payroll');
         assert.equal(body.limit, 10);
         assert.equal(body.offset, 3);
+        assert.equal(typeof body.exportedUntil, 'string');
         assert.equal(body.exportedCount, 1);
         assert.equal(body.items[0].id, 'leave-001');
         assert.equal(body.items[0].requestedMinutes, 120);
@@ -234,6 +235,10 @@ test('GET /integrations/hr/exports/leaves returns approved leave exports with le
   assert.equal(capturedLeaveFindMany?.where?.status, 'approved');
   assert.equal(
     capturedLeaveFindMany?.where?.updatedAt?.gt instanceof Date,
+    true,
+  );
+  assert.equal(
+    capturedLeaveFindMany?.where?.updatedAt?.lte instanceof Date,
     true,
   );
   assert.deepEqual(capturedLeaveTypeFindMany?.where, {
@@ -303,7 +308,7 @@ test('POST /integrations/hr/exports/leaves/dispatch creates export log and persi
           idempotencyKey: 'export-key-001',
           status: args.data.status,
           updatedSince: new Date('2026-02-01T00:00:00.000Z'),
-          exportedUntil: args.data.exportedUntil,
+          exportedUntil: new Date('2026-02-22T10:00:00.000Z'),
           exportedCount: args.data.exportedCount ?? 0,
           startedAt: new Date('2026-02-22T10:00:00.000Z'),
           finishedAt: args.data.finishedAt ?? null,
@@ -347,6 +352,7 @@ test('POST /integrations/hr/exports/leaves/dispatch creates export log and persi
   assert.equal(typeof createCall?.data?.requestHash, 'string');
   assert.equal(updateCall?.data?.status, 'success');
   assert.equal(updateCall?.data?.exportedCount, 1);
+  assert.equal(updateCall?.data?.exportedUntil, undefined);
 });
 
 test('POST /integrations/hr/exports/leaves/dispatch replays previous success with same idempotency key', async () => {
@@ -380,6 +386,7 @@ test('POST /integrations/hr/exports/leaves/dispatch replays previous success wit
         payload: {
           target: 'attendance',
           exportedAt: '2026-02-22T10:00:00.000Z',
+          exportedUntil: '2026-02-22T09:59:00.000Z',
           updatedSince,
           limit: 10,
           offset: 2,
@@ -494,6 +501,12 @@ test('GET /integrations/hr/exports/leaves/dispatch-logs supports filters and pag
             target: 'attendance',
             idempotencyKey: 'export-key-004',
             status: 'success',
+            updatedSince: new Date('2026-02-01T00:00:00.000Z'),
+            exportedUntil: new Date('2026-02-22T10:00:00.000Z'),
+            exportedCount: 3,
+            startedAt: new Date('2026-02-22T10:00:00.000Z'),
+            finishedAt: new Date('2026-02-22T10:00:10.000Z'),
+            message: 'exported',
           },
         ];
       },
@@ -515,6 +528,9 @@ test('GET /integrations/hr/exports/leaves/dispatch-logs supports filters and pag
         assert.equal(body.offset, 4);
         assert.equal(Array.isArray(body.items), true);
         assert.equal(body.items.length, 1);
+        assert.equal(body.items[0].idempotencyKey, 'export-key-004');
+        assert.equal(body.items[0].payload, undefined);
+        assert.equal(body.items[0].requestHash, undefined);
       } finally {
         await server.close();
       }
@@ -526,5 +542,17 @@ test('GET /integrations/hr/exports/leaves/dispatch-logs supports filters and pag
   assert.deepEqual(capturedFindMany?.where, {
     target: 'attendance',
     idempotencyKey: 'export-key-004',
+  });
+  assert.deepEqual(capturedFindMany?.select, {
+    id: true,
+    target: true,
+    idempotencyKey: true,
+    status: true,
+    updatedSince: true,
+    exportedUntil: true,
+    exportedCount: true,
+    startedAt: true,
+    finishedAt: true,
+    message: true,
   });
 });

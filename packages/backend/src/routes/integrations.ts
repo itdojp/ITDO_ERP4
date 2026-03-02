@@ -12,6 +12,8 @@ import { auditContextFromRequest, logAudit } from '../services/audit.js';
 import { ensureLeaveSetting } from '../services/leaveSettings.js';
 import { resolveLeaveRequestMinutesWithCalendar } from '../services/leaveEntitlements.js';
 import { normalizeLeaveTypeInput } from '../services/leaveTypes.js';
+import { resolveUserWorkdayMinutesForDates } from '../services/leaveWorkdayCalendar.js';
+import { toDateOnly } from '../utils/date.js';
 import {
   integrationHrLeaveExportDispatchSchema,
   integrationHrLeaveExportLogListQuerySchema,
@@ -177,6 +179,7 @@ type HrLeaveExportQuery = {
 type HrLeaveExportPayload = {
   target: LeaveExportTarget;
   exportedAt: string;
+  exportedUntil: string;
   updatedSince: string | null;
   limit: number;
   offset: number;
@@ -199,6 +202,81 @@ type HrLeaveExportPayload = {
     updatedAt: string;
   }>;
 };
+
+type LeaveRequestForExport = {
+  id: string;
+  userId: string;
+  leaveType: string;
+  startDate: Date;
+  endDate: Date;
+  hours: number | null;
+  minutes: number | null;
+  startTimeMinutes: number | null;
+  endTimeMinutes: number | null;
+  notes: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+function isLeaveMinutesExplicitForExport(leave: LeaveRequestForExport) {
+  if (
+    leave.startTimeMinutes !== null &&
+    leave.startTimeMinutes !== undefined &&
+    leave.endTimeMinutes !== null &&
+    leave.endTimeMinutes !== undefined
+  ) {
+    return true;
+  }
+  return (
+    (leave.minutes !== null && leave.minutes !== undefined) ||
+    (leave.hours !== null && leave.hours !== undefined)
+  );
+}
+
+function collectLeaveDateKeys(leave: LeaveRequestForExport) {
+  const keys = new Map<string, Date>();
+  const start = toDateOnly(leave.startDate);
+  const end = toDateOnly(leave.endDate);
+  for (
+    let current = start.getTime();
+    current <= end.getTime();
+    current += 24 * 60 * 60 * 1000
+  ) {
+    const workDate = new Date(current);
+    keys.set(workDate.toISOString().slice(0, 10), workDate);
+  }
+  return keys;
+}
+
+async function prefillLeaveWorkdayMinutesCache(options: {
+  leaves: LeaveRequestForExport[];
+  defaultWorkdayMinutes: number;
+  cacheByUser: Map<string, Map<string, number>>;
+}) {
+  const datesByUser = new Map<string, Map<string, Date>>();
+  for (const leave of options.leaves) {
+    if (isLeaveMinutesExplicitForExport(leave)) continue;
+    const dateBucket = datesByUser.get(leave.userId) ?? new Map<string, Date>();
+    datesByUser.set(leave.userId, dateBucket);
+    for (const [key, date] of collectLeaveDateKeys(leave).entries()) {
+      dateBucket.set(key, date);
+    }
+  }
+  for (const [userId, dates] of datesByUser.entries()) {
+    const targetDates = Array.from(dates.values());
+    if (!targetDates.length) continue;
+    const resolved = await resolveUserWorkdayMinutesForDates({
+      userId,
+      targetDates,
+      defaultWorkdayMinutes: options.defaultWorkdayMinutes,
+    });
+    const cache = options.cacheByUser.get(userId) ?? new Map<string, number>();
+    options.cacheByUser.set(userId, cache);
+    for (const [key, row] of resolved.entries()) {
+      cache.set(key, row.workMinutes);
+    }
+  }
+}
 
 function parseLeaveExportQuery(query: HrLeaveExportQuery) {
   const target = normalizeLeaveExportTarget(query.target);
@@ -228,6 +306,7 @@ function parseLeaveExportQuery(query: HrLeaveExportQuery) {
 async function buildHrLeaveExportPayload(input: {
   target: LeaveExportTarget;
   updatedSince?: Date;
+  exportedUntil?: Date;
   limit: number;
   offset: number;
   actorId?: string | null;
@@ -235,10 +314,14 @@ async function buildHrLeaveExportPayload(input: {
   const leaveSetting = await ensureLeaveSetting({
     actorId: input.actorId ?? null,
   });
+  const exportedUntil = input.exportedUntil ?? new Date();
   const leaves = await prisma.leaveRequest.findMany({
     where: {
       status: 'approved',
-      ...(input.updatedSince ? { updatedAt: { gt: input.updatedSince } } : {}),
+      updatedAt: {
+        ...(input.updatedSince ? { gt: input.updatedSince } : {}),
+        lte: exportedUntil,
+      },
     },
     select: {
       id: true,
@@ -280,6 +363,11 @@ async function buildHrLeaveExportPayload(input: {
     leaveTypes.map((item) => [item.code, item] as const),
   );
   const workdayMinutesCacheByUser = new Map<string, Map<string, number>>();
+  await prefillLeaveWorkdayMinutesCache({
+    leaves,
+    defaultWorkdayMinutes: leaveSetting.defaultWorkdayMinutes,
+    cacheByUser: workdayMinutesCacheByUser,
+  });
   const items: HrLeaveExportPayload['items'] = [];
   for (const leave of leaves) {
     const normalizedLeaveType = normalizeLeaveTypeInput(leave.leaveType);
@@ -314,6 +402,7 @@ async function buildHrLeaveExportPayload(input: {
   return {
     target: input.target,
     exportedAt: new Date().toISOString(),
+    exportedUntil: exportedUntil.toISOString(),
     updatedSince: input.updatedSince?.toISOString() ?? null,
     limit: input.limit,
     offset: input.offset,
@@ -1378,6 +1467,7 @@ export async function registerIntegrationRoutes(app: FastifyInstance) {
         const payload = await buildHrLeaveExportPayload({
           target: parsed.target,
           updatedSince: parsed.updatedSince,
+          exportedUntil: startedAt,
           limit: parsed.limit,
           offset: parsed.offset,
           actorId: req.user?.userId ?? null,
@@ -1390,7 +1480,6 @@ export async function registerIntegrationRoutes(app: FastifyInstance) {
             exportedCount: payload.exportedCount,
             payload: payload as Prisma.InputJsonValue,
             message: payload.exportedCount ? 'exported' : 'no_changes',
-            exportedUntil: finishedAt,
             finishedAt,
           },
         });
@@ -1418,7 +1507,6 @@ export async function registerIntegrationRoutes(app: FastifyInstance) {
           data: {
             status: IntegrationRunStatus.failed,
             message,
-            exportedUntil: finishedAt,
             finishedAt,
           },
         });
@@ -1474,11 +1562,27 @@ export async function registerIntegrationRoutes(app: FastifyInstance) {
           ...(target ? { target } : {}),
           ...(idempotencyKey ? { idempotencyKey } : {}),
         },
+        select: {
+          id: true,
+          target: true,
+          idempotencyKey: true,
+          status: true,
+          updatedSince: true,
+          exportedUntil: true,
+          exportedCount: true,
+          startedAt: true,
+          finishedAt: true,
+          message: true,
+        },
         orderBy: [{ startedAt: 'desc' }, { id: 'desc' }],
         take: limit,
         skip: offset,
       });
-      return { items, limit, offset };
+      return {
+        items: items.map((item) => buildLeaveExportLogResponse(item)),
+        limit,
+        offset,
+      };
     },
   );
 }
