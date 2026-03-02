@@ -56,8 +56,8 @@ fi
 mkdir -p "$ROOT_DIR/docs/test-results"
 mkdir -p "$EVIDENCE_DIR"
 
-# Default: UI evidence focused subset.
-E2E_GREP_DEFAULT="frontend smoke|frontend offline queue|pwa offline duplicate time entries|pwa service worker cache refresh"
+# Default: UI evidence focused subset (core + recent critical flows).
+E2E_GREP_DEFAULT="frontend smoke core|frontend leave submit validation|frontend smoke workflow evidence chat references|frontend smoke vendor approvals|frontend smoke approval ack link lifecycle|frontend smoke audit logs: AgentRun詳細ドリルダウンが利用できる|frontend offline queue|pwa offline duplicate time entries|pwa service worker cache refresh"
 E2E_GREP="${E2E_GREP:-$E2E_GREP_DEFAULT}"
 
 START_AT_UTC="$(date -u +%Y-%m-%dT%H:%M:%SZ)"

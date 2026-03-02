@@ -13,6 +13,15 @@
 - 最新の証跡ディレクトリは `docs/manual/ui-manual.md`（分冊入口）の「証跡」セクションを参照
   - 必要に応じて `docs/manual/ui-manual-user.md` / `docs/manual/ui-manual-admin.md` の前提も参照
 
+## 2026-03-02 時点の更新方針
+- 既定の証跡取得（`./scripts/e2e-ui-evidence.sh`）に以下の導線を追加済み:
+  - 休暇 submit バリデーション
+  - ワークフローエビデンス（chat参照）
+  - 仕入/発注 承認導線
+  - 承認 × ack link 導線
+  - 監査ログ AgentRun ドリルダウン
+- 上記導線の画面キャプチャは、次回証跡再取得ラン（`docs/test-results/<YYYY-MM-DD>-frontend-e2e-rN/`）を正本として本表に反映する
+
 ## 画面（セクション）一覧
 | 画面（UIセクション） | 対象ロール（目安） | 証跡（スクショ） | 操作マニュアル（主要） |
 | --- | --- | --- | --- |

@@ -31,13 +31,18 @@ type E2EAuthState = {
   groupAccountIds: string[];
 };
 
-function createAuthState(userId: string): E2EAuthState {
+function createAuthState(
+  userId: string,
+  override?: Partial<Omit<E2EAuthState, 'userId'>>,
+): E2EAuthState {
   return {
     userId,
-    roles: [...defaultAuthRoles],
-    projectIds: [...defaultAuthProjectIds],
-    groupIds: [...defaultAuthGroupIds],
-    groupAccountIds: [...defaultAuthGroupAccountIds],
+    roles: [...(override?.roles ?? defaultAuthRoles)],
+    projectIds: [...(override?.projectIds ?? defaultAuthProjectIds)],
+    groupIds: [...(override?.groupIds ?? defaultAuthGroupIds)],
+    groupAccountIds: [
+      ...(override?.groupAccountIds ?? defaultAuthGroupAccountIds),
+    ],
   };
 }
 
@@ -225,8 +230,8 @@ test('frontend leave submit validation for lead/retroactive/time conflict @core'
   const now = new Date();
   const tomorrow = new Date(now);
   tomorrow.setDate(now.getDate() + 1);
-  const yesterday = new Date(now);
-  yesterday.setDate(now.getDate() - 1);
+  const retroDate = new Date(now);
+  retroDate.setDate(now.getDate() - 7);
   const conflictDate = new Date(now);
   conflictDate.setDate(now.getDate() + 5);
 
@@ -295,7 +300,7 @@ test('frontend leave submit validation for lead/retroactive/time conflict @core'
   const retroDraftRow = await createLeaveDraft(leaveSection, {
     leaveTypeCode: leadRetroTypeCode,
     leaveTypeLabel: leadRetroTypeLabel,
-    date: toDateInput(yesterday),
+    date: toDateInput(retroDate),
     notes: `retroactive-${suffix}`,
   });
   await setNoConsultationReason(retroDraftRow, `retroactive-${suffix}`);
@@ -323,4 +328,113 @@ test('frontend leave submit validation for lead/retroactive/time conflict @core'
       .getByText(/工数の重複|休暇期間に工数が存在します/, { exact: false })
       .first(),
   ).toBeVisible({ timeout: actionTimeout });
+});
+
+test('frontend leave submit validation leader list hides reasons @core', async ({
+  page,
+  request,
+}) => {
+  test.setTimeout(180_000);
+
+  const suffix = runId();
+  const leaderUserId = `leader-${suffix}`;
+  const memberUserId = `member-${suffix}`;
+  const adminAuthState = createAuthState(`admin-${suffix}`);
+  const adminAuthHeaders = buildAuthHeaders(adminAuthState);
+  const memberAuthHeaders = buildAuthHeaders(
+    createAuthState(memberUserId, {
+      roles: ['user'],
+      projectIds: [],
+      groupIds: [],
+      groupAccountIds: [],
+    }),
+  );
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const tomorrowStr = toDateInput(tomorrow);
+  const notesText = `leader-hidden-notes-${suffix}`;
+  const noConsultReason = `leader-hidden-reason-${suffix}`;
+
+  const projectRes = await request.post(`${apiBase}/projects`, {
+    headers: adminAuthHeaders,
+    data: {
+      code: `E2E-LEAD-${suffix}`.slice(0, 30),
+      name: `E2E Leave Leader ${suffix}`,
+      status: 'active',
+    },
+  });
+  await ensureOk(projectRes);
+  const project = (await projectRes.json()) as { id?: string };
+  const projectId = String(project.id || '');
+  expect(projectId.length).toBeGreaterThan(0);
+
+  const addLeaderRes = await request.post(
+    `${apiBase}/projects/${encodeURIComponent(projectId)}/members`,
+    {
+      headers: adminAuthHeaders,
+      data: { userId: leaderUserId, role: 'leader' },
+    },
+  );
+  await ensureOk(addLeaderRes);
+
+  const addMemberRes = await request.post(
+    `${apiBase}/projects/${encodeURIComponent(projectId)}/members`,
+    {
+      headers: adminAuthHeaders,
+      data: { userId: memberUserId, role: 'member' },
+    },
+  );
+  await ensureOk(addMemberRes);
+
+  const leaveRes = await request.post(`${apiBase}/leave-requests`, {
+    headers: memberAuthHeaders,
+    data: {
+      userId: memberUserId,
+      leaveType: 'paid',
+      startDate: tomorrowStr,
+      endDate: tomorrowStr,
+      hours: 8,
+      notes: notesText,
+    },
+  });
+  await ensureOk(leaveRes);
+  const leave = (await leaveRes.json()) as { id?: string };
+  const leaveId = String(leave.id || '');
+  expect(leaveId.length).toBeGreaterThan(0);
+
+  const submitRes = await request.post(
+    `${apiBase}/leave-requests/${encodeURIComponent(leaveId)}/submit`,
+    {
+      headers: memberAuthHeaders,
+      data: {
+        noConsultationConfirmed: true,
+        noConsultationReason: noConsultReason,
+      },
+    },
+  );
+  await ensureOk(submitRes);
+
+  await prepare(
+    page,
+    createAuthState(leaderUserId, {
+      roles: ['user'],
+      projectIds: [projectId],
+      groupIds: [],
+      groupAccountIds: [],
+    }),
+  );
+  const leaveSection = await openLeaveSection(page);
+  await leaveSection
+    .getByRole('button', { name: '上長向け一覧を読み込み', exact: true })
+    .click();
+  await expect(leaveSection.getByText('上長向け一覧を読み込みました')).toBeVisible({
+    timeout: actionTimeout,
+  });
+
+  const leaderRow = leaveSection.locator('li', { hasText: memberUserId }).first();
+  await expect(leaderRow).toContainText('pending_manager', {
+    timeout: actionTimeout,
+  });
+  await expect(leaderRow).not.toContainText(notesText);
+  await expect(leaderRow).not.toContainText(noConsultReason);
 });

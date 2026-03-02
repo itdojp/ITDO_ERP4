@@ -27,6 +27,15 @@ make mobile-regression-log
 - `docs/test-results/<YYYY-MM-DD>-frontend-e2e-rN.md`（実行ログ）
 - `docs/test-results/<YYYY-MM-DD>-mobile-regression-rN.md`（モバイル回帰記録。`make mobile-regression-log` 実行時）
 
+既定で取得対象に含まれる主要導線:
+- core smoke（主要セクション横断）
+- 休暇 submit バリデーション（期限/重複）
+- ワークフローエビデンス（chat参照）
+- 仕入/発注 承認導線（vendor approvals）
+- 承認 × ack link 導線
+- 監査ログ AgentRun ドリルダウン
+- offline queue / pwa cache refresh
+
 ## 代表的なオプション
 同日に複数回実行する（run番号を固定）:
 ```bash

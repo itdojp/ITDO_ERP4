@@ -43,7 +43,18 @@ make mobile-regression-log
 - ポートを固定したい場合は `E2E_PODMAN_HOST_PORT=55435` のように明示指定します（競合時はエラーで停止）。
 
 保存先（既定）:
-- `docs/test-results/<YYYY-MM-DD>-frontend-e2e/`
+- `docs/test-results/<YYYY-MM-DD>-frontend-e2e-rN/`（`scripts/e2e-ui-evidence.sh` 実行時）
+
+`scripts/e2e-ui-evidence.sh` の既定取得対象:
+- `frontend smoke core`
+- `frontend leave submit validation`
+- `frontend smoke workflow evidence chat references`
+- `frontend smoke vendor approvals`
+- `frontend smoke approval ack link lifecycle`
+- `frontend smoke audit logs: AgentRun詳細ドリルダウンが利用できる`
+- `frontend offline queue`
+- `pwa offline duplicate time entries`
+- `pwa service worker cache refresh`
 
 任意で保存先を固定する場合:
 ```bash

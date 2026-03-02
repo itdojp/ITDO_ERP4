@@ -21,6 +21,9 @@
 ### 2026-03-02
 - ISSUE #1293 品質強化証跡: docs/test-results/2026-03-02-issue-1293-leave-quality.md
 
+### 2026-03-03
+- ISSUE #1299 初回実行証跡（Phase 1-3）: docs/test-results/2026-03-03-issue-1299-phase1.md
+
 ### 2026-02-06
 - チャット添付AV（ClamAV/clamd）再検証 r2: docs/test-results/2026-02-06-chat-attachments-av-r2.md
 
