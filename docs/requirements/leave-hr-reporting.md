@@ -17,8 +17,8 @@
   - `limit`（明細件数上限, 既定50）
 - 主な返却:
   - `pending.total` / `pending.stale` / `pending.staleItems`
-  - `expiring.paidGrantCount` / `expiring.paidGrantMinutes`
-  - `expiring.compGrantCount` / `expiring.compGrantMinutes`
+  - `expiring.paidGrantCount` / `expiring.paidGrantUpperBoundMinutes`
+  - `expiring.compGrantCount` / `expiring.compGrantRemainingMinutes`
 
 ### 2) 休暇台帳（JSON/CSV）
 
@@ -26,6 +26,7 @@
 - 主なクエリ:
   - `userId`（任意）
   - `from` / `to` (`YYYY-MM-DD`, 任意。未指定時は直近90日)
+  - `from` / `to` の期間は最大366日（超過時は `400 INVALID_DATE_RANGE`）
   - `limit` / `offset`
   - `format` (`json` | `csv`)
 - `format=csv` の出力列:
@@ -43,7 +44,7 @@
 ## 実装上の前提
 
 - `usage` の分数は `resolveLeaveRequestMinutesWithCalendar` で算出する。
-- `expiry_scheduled` は `leave_grants.expiresAt` に基づく予定値であり、最終的な失効実績は運用時点の残高計算に依存する。
+- `expiry_scheduled` は `leave_grants.expiresAt` に基づく予定値であり、`direction=upper_bound_debit` / `minutes=grantedMinutes`（上限値）として返す。最終的な失効実績は運用時点の残高計算に依存する。
 
 ## 参照
 

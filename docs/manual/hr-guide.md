@@ -35,6 +35,10 @@
 - 利用条件:
   - `general_affairs` グループ所属が必須
   - 目的外利用（評価利用/私的利用）を禁止
+- 注意点:
+  - `hr-summary` の有給失効見込みは `paidGrantUpperBoundMinutes`（上限値）として扱う
+  - `hr-ledger` の `expiry_scheduled` は `upper_bound_debit`（上限値）として扱う
+  - `hr-ledger` の `from/to` は最大366日
 - 出力データの扱い:
   - ローカル保存時は保存先を限定し、共有ドライブへの無制限転送を避ける
   - 運用レビュー後に不要ファイルを削除する

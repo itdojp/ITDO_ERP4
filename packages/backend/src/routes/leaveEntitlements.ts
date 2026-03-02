@@ -1,7 +1,7 @@
 import { FastifyInstance, FastifyRequest } from 'fastify';
 import { prisma } from '../services/db.js';
 import { requireRole } from '../services/rbac.js';
-import { parseDateParam } from '../utils/date.js';
+import { diffInDays, parseDateParam, toDateOnly } from '../utils/date.js';
 import { auditContextFromRequest, logAudit } from '../services/audit.js';
 import { sendCsv, toCsv } from '../utils/csv.js';
 import {
@@ -69,15 +69,11 @@ function normalizeBoundedInt(
   return Math.min(maxValue, Math.max(minValue, Math.floor(value)));
 }
 
-function toDateOnly(value: Date) {
-  return new Date(
-    Date.UTC(value.getUTCFullYear(), value.getUTCMonth(), value.getUTCDate()),
-  );
-}
-
 function addDays(date: Date, days: number) {
   return new Date(date.getTime() + days * 24 * 60 * 60 * 1000);
 }
+
+const MAX_HR_LEDGER_RANGE_DAYS = 366;
 
 export async function registerLeaveEntitlementRoutes(app: FastifyInstance) {
   app.get(
@@ -872,16 +868,16 @@ export async function registerLeaveEntitlementRoutes(app: FastifyInstance) {
         },
         expiring: {
           paidGrantCount: paidExpiringItems.length,
-          paidGrantMinutes: paidExpiringMinutes,
+          paidGrantUpperBoundMinutes: paidExpiringMinutes,
           paidGrantItems: paidExpiringItems.map((item) => ({
             id: item.id,
             userId: item.userId,
             grantDate: normalizeDateOnlyString(item.grantDate),
             expiresAt: normalizeDateOnlyString(item.expiresAt),
-            grantedMinutes: item.grantedMinutes,
+            grantedUpperBoundMinutes: item.grantedMinutes,
           })),
           compGrantCount: compExpiringItems.length,
-          compGrantMinutes: compExpiringMinutes,
+          compGrantRemainingMinutes: compExpiringMinutes,
           compGrantItems: compExpiringItems.map((item) => ({
             id: item.id,
             userId: item.userId,
@@ -939,6 +935,15 @@ export async function registerLeaveEntitlementRoutes(app: FastifyInstance) {
           error: {
             code: 'INVALID_DATE_RANGE',
             message: 'from must be equal to or before to',
+          },
+        });
+      }
+      const rangeDays = diffInDays(rangeFrom, rangeTo);
+      if (rangeDays > MAX_HR_LEDGER_RANGE_DAYS) {
+        return reply.status(400).send({
+          error: {
+            code: 'INVALID_DATE_RANGE',
+            message: `from/to range must be within ${MAX_HR_LEDGER_RANGE_DAYS} days`,
           },
         });
       }
@@ -1046,12 +1051,14 @@ export async function registerLeaveEntitlementRoutes(app: FastifyInstance) {
           eventDate: normalizeDateOnlyString(grant.expiresAt) || '',
           userId: grant.userId,
           eventType: 'expiry_scheduled',
-          direction: 'estimate_debit',
+          direction: 'upper_bound_debit',
           minutes: grant.grantedMinutes,
           sourceTable: 'leave_grants',
           sourceId: grant.id,
           expiresAt: normalizeDateOnlyString(grant.expiresAt),
-          note: null as string | null,
+          note: 'Upper bound based on granted minutes; actual expired minutes may be lower.' as
+            | string
+            | null,
         })),
       ].sort((left, right) => {
         if (left.eventDate !== right.eventDate) {

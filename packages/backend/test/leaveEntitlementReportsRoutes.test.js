@@ -117,9 +117,9 @@ test('GET /leave-entitlements/hr-summary returns stale pending and expiring metr
         assert.equal(body.pending.stale, 2);
         assert.equal(body.pending.staleItems.length, 1);
         assert.equal(body.expiring.paidGrantCount, 1);
-        assert.equal(body.expiring.paidGrantMinutes, 480);
+        assert.equal(body.expiring.paidGrantUpperBoundMinutes, 480);
         assert.equal(body.expiring.compGrantCount, 1);
-        assert.equal(body.expiring.compGrantMinutes, 120);
+        assert.equal(body.expiring.compGrantRemainingMinutes, 120);
       } finally {
         await server.close();
       }
@@ -196,6 +196,7 @@ test('GET /leave-entitlements/hr-ledger supports csv export', async () => {
         assert.match(res.body, /grant/);
         assert.match(res.body, /usage/);
         assert.match(res.body, /expiry_scheduled/);
+        assert.match(res.body, /upper_bound_debit/);
       } finally {
         await server.close();
       }
@@ -203,4 +204,25 @@ test('GET /leave-entitlements/hr-ledger supports csv export', async () => {
   );
 
   assert.equal(leaveGrantCallCount, 2);
+});
+
+test('GET /leave-entitlements/hr-ledger rejects too-wide date range', async () => {
+  process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
+  process.env.AUTH_MODE = 'header';
+
+  await withPrismaStubs({}, async () => {
+    const server = await buildServer({ logger: false });
+    try {
+      const res = await server.inject({
+        method: 'GET',
+        url: '/leave-entitlements/hr-ledger?from=2025-01-01&to=2026-06-01',
+        headers: headers({ groupAccountIds: ['general_affairs'] }),
+      });
+      assert.equal(res.statusCode, 400, res.body);
+      const body = JSON.parse(res.body);
+      assert.equal(body?.error?.code, 'INVALID_DATE_RANGE');
+    } finally {
+      await server.close();
+    }
+  });
 });
