@@ -27,6 +27,30 @@ function withPrismaStubs(stubs, fn) {
     });
 }
 
+function withEnv(overrides, fn) {
+  const previous = new Map();
+  for (const key of Object.keys(overrides)) {
+    previous.set(key, process.env[key]);
+    const value = overrides[key];
+    if (value === undefined) {
+      delete process.env[key];
+    } else {
+      process.env[key] = value;
+    }
+  }
+  return Promise.resolve()
+    .then(fn)
+    .finally(() => {
+      for (const [key, value] of previous.entries()) {
+        if (value === undefined) {
+          delete process.env[key];
+        } else {
+          process.env[key] = value;
+        }
+      }
+    });
+}
+
 function adminHeaders() {
   return {
     'x-user-id': 'admin-user',
@@ -268,6 +292,122 @@ test('POST /vendor-invoices/:id/unlink-po clears PO and writes override/unlink a
       } finally {
         await server.close();
       }
+    },
+  );
+});
+
+test('vendor invoice PO link/unlink: explicit required-actions deny when policy is missing', async () => {
+  await withEnv(
+    {
+      DATABASE_URL: process.env.DATABASE_URL || MIN_DATABASE_URL,
+      AUTH_MODE: 'header',
+      ACTION_POLICY_ENFORCEMENT_PRESET: 'off',
+      ACTION_POLICY_REQUIRED_ACTIONS:
+        'vendor_invoice:link_po,vendor_invoice:unlink_po',
+      APPROVAL_EVIDENCE_REQUIRED_ACTIONS: '',
+    },
+    async () => {
+      await withPrismaStubs(
+        {
+          'actionPolicy.findMany': async () => [],
+          'vendorInvoice.findUnique': async () => ({
+            id: 'vi-001',
+            status: 'approved',
+            projectId: 'project-001',
+            vendorId: 'vendor-001',
+            purchaseOrderId: 'po-001',
+            deletedAt: null,
+          }),
+        },
+        async () => {
+          const server = await buildServer({ logger: false });
+          try {
+            const linkRes = await server.inject({
+              method: 'POST',
+              url: '/vendor-invoices/vi-001/link-po',
+              headers: adminHeaders(),
+              payload: { purchaseOrderId: 'po-002' },
+            });
+            assert.equal(linkRes.statusCode, 403, linkRes.body);
+            const linkBody = JSON.parse(linkRes.body);
+            assert.equal(linkBody?.error?.code, 'ACTION_POLICY_DENIED');
+
+            const unlinkRes = await server.inject({
+              method: 'POST',
+              url: '/vendor-invoices/vi-001/unlink-po',
+              headers: adminHeaders(),
+              payload: {},
+            });
+            assert.equal(unlinkRes.statusCode, 403, unlinkRes.body);
+            const unlinkBody = JSON.parse(unlinkRes.body);
+            assert.equal(unlinkBody?.error?.code, 'ACTION_POLICY_DENIED');
+          } finally {
+            await server.close();
+          }
+        },
+      );
+    },
+  );
+});
+
+test('POST /vendor-invoices/:id/unlink-po: explicit required-actions allows policy-defined path without fallback reason', async () => {
+  await withEnv(
+    {
+      DATABASE_URL: process.env.DATABASE_URL || MIN_DATABASE_URL,
+      AUTH_MODE: 'header',
+      ACTION_POLICY_ENFORCEMENT_PRESET: 'off',
+      ACTION_POLICY_REQUIRED_ACTIONS:
+        'vendor_invoice:link_po,vendor_invoice:unlink_po',
+      APPROVAL_EVIDENCE_REQUIRED_ACTIONS: '',
+    },
+    async () => {
+      await withPrismaStubs(
+        {
+          'actionPolicy.findMany': async () => [
+            {
+              id: 'policy-allow-vi-unlink',
+              flowType: 'vendor_invoice',
+              actionKey: 'unlink_po',
+              priority: 100,
+              isEnabled: true,
+              subjects: null,
+              stateConstraints: null,
+              requireReason: false,
+              guards: null,
+            },
+          ],
+          'vendorInvoice.findUnique': async () => ({
+            id: 'vi-001',
+            status: 'approved',
+            projectId: 'project-001',
+            vendorId: 'vendor-001',
+            purchaseOrderId: 'po-001',
+            deletedAt: null,
+          }),
+          'vendorInvoice.update': async () => ({
+            id: 'vi-001',
+            purchaseOrderId: null,
+            purchaseOrder: null,
+          }),
+          'auditLog.create': async () => ({ id: 'audit-1' }),
+        },
+        async () => {
+          const server = await buildServer({ logger: false });
+          try {
+            const res = await server.inject({
+              method: 'POST',
+              url: '/vendor-invoices/vi-001/unlink-po',
+              headers: adminHeaders(),
+              payload: {},
+            });
+            assert.equal(res.statusCode, 200, res.body);
+            const body = JSON.parse(res.body);
+            assert.equal(body?.purchaseOrderId, null);
+          } finally {
+            await server.close();
+          }
+        },
+      );
     },
   );
 });
