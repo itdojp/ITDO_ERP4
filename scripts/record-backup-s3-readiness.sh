@@ -106,7 +106,14 @@ validate_date_stamp() {
   fi
 
   local normalized
-  normalized="$(date -u -d "$DATE_STAMP" +%F 2>/dev/null || true)"
+  normalized=""
+  if normalized="$(date -u -d "$DATE_STAMP" +%F 2>/dev/null)"; then
+    :
+  elif normalized="$(date -j -u -f '%Y-%m-%d' "$DATE_STAMP" +%F 2>/dev/null)"; then
+    :
+  else
+    normalized=""
+  fi
   if [[ "$normalized" != "$DATE_STAMP" ]]; then
     die "DATE_STAMP is not a valid calendar date (got: ${DATE_STAMP})"
   fi

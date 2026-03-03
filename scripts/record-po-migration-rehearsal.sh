@@ -50,7 +50,14 @@ validate_date_stamp() {
     die "DATE_STAMP must be YYYY-MM-DD"
   fi
   local parsed
-  parsed="$(date -d "$DATE_STAMP" +%F 2>/dev/null || true)"
+  parsed=""
+  if parsed="$(date -d "$DATE_STAMP" +%F 2>/dev/null)"; then
+    :
+  elif parsed="$(date -j -f '%Y-%m-%d' "$DATE_STAMP" +%F 2>/dev/null)"; then
+    :
+  else
+    parsed=""
+  fi
   if [[ "$parsed" != "$DATE_STAMP" ]]; then
     die "DATE_STAMP is not a valid calendar date: $DATE_STAMP"
   fi
