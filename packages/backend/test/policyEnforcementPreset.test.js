@@ -7,11 +7,19 @@ import {
   resolveApprovalEvidenceRequiredActionsText,
 } from '../dist/services/policyEnforcementPreset.js';
 
-test('getActionPolicyEnforcementPreset: supports off and phase2_core', () => {
+test('getActionPolicyEnforcementPreset: supports off/phase2_core/phase3_strict', () => {
   assert.equal(getActionPolicyEnforcementPreset(undefined), 'off');
   assert.equal(getActionPolicyEnforcementPreset('off'), 'off');
   assert.equal(getActionPolicyEnforcementPreset('phase2_core'), 'phase2_core');
   assert.equal(getActionPolicyEnforcementPreset('PHASE2_CORE'), 'phase2_core');
+  assert.equal(
+    getActionPolicyEnforcementPreset('phase3_strict'),
+    'phase3_strict',
+  );
+  assert.equal(
+    getActionPolicyEnforcementPreset('PHASE3_STRICT'),
+    'phase3_strict',
+  );
   assert.equal(getActionPolicyEnforcementPreset('unsupported'), 'off');
 });
 
@@ -32,10 +40,26 @@ test('resolveActionPolicyRequiredActionsText: phase2_core preset provides high-r
   assert.match(result, /\*:approve/);
 });
 
+test('resolveActionPolicyRequiredActionsText: phase3_strict preset enforces all flow actions', () => {
+  const result = resolveActionPolicyRequiredActionsText('', 'phase3_strict');
+  assert.equal(result, '*:*');
+});
+
 test('resolveApprovalEvidenceRequiredActionsText: phase2_core preset provides send defaults', () => {
   const result = resolveApprovalEvidenceRequiredActionsText(
     undefined,
     'phase2_core',
+  );
+  assert.equal(typeof result, 'string');
+  assert.match(result, /estimate:send/);
+  assert.match(result, /invoice:send/);
+  assert.match(result, /purchase_order:send/);
+});
+
+test('resolveApprovalEvidenceRequiredActionsText: phase3_strict keeps send defaults', () => {
+  const result = resolveApprovalEvidenceRequiredActionsText(
+    undefined,
+    'phase3_strict',
   );
   assert.equal(typeof result, 'string');
   assert.match(result, /estimate:send/);

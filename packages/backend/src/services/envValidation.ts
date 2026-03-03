@@ -175,12 +175,14 @@ export function assertValidBackendEnv() {
   );
   if (
     actionPolicyPresetRaw &&
-    !new Set(['off', 'phase2_core']).has(actionPolicyPresetRaw.toLowerCase())
+    !new Set(['off', 'phase2_core', 'phase3_strict']).has(
+      actionPolicyPresetRaw.toLowerCase(),
+    )
   ) {
     addIssue(
       issues,
       'ACTION_POLICY_ENFORCEMENT_PRESET',
-      'off|phase2_core のいずれかを指定してください',
+      'off|phase2_core|phase3_strict のいずれかを指定してください',
     );
   }
   validateFlowActionCsv(

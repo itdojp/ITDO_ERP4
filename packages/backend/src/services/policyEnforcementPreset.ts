@@ -27,7 +27,9 @@ const PHASE2_APPROVAL_EVIDENCE_REQUIRED_ACTIONS = [
   'purchase_order:send',
 ] as const;
 
-type ActionPolicyEnforcementPreset = 'off' | 'phase2_core';
+const PHASE3_ACTION_POLICY_REQUIRED_ACTIONS = ['*:*'] as const;
+
+type ActionPolicyEnforcementPreset = 'off' | 'phase2_core' | 'phase3_strict';
 
 function normalizeString(value: string | undefined) {
   const trimmed = (value ?? '').trim();
@@ -39,6 +41,7 @@ function normalizePreset(
 ): ActionPolicyEnforcementPreset {
   const normalized = normalizeString(presetText)?.toLowerCase();
   if (normalized === 'phase2_core') return 'phase2_core';
+  if (normalized === 'phase3_strict') return 'phase3_strict';
   return 'off';
 }
 
@@ -63,6 +66,9 @@ export function resolveActionPolicyRequiredActionsText(
   if (preset === 'phase2_core') {
     return toCsv(PHASE2_ACTION_POLICY_REQUIRED_ACTIONS);
   }
+  if (preset === 'phase3_strict') {
+    return toCsv(PHASE3_ACTION_POLICY_REQUIRED_ACTIONS);
+  }
   return undefined;
 }
 
@@ -74,7 +80,7 @@ export function resolveApprovalEvidenceRequiredActionsText(
   const explicit = normalizeString(requiredActionsText);
   if (explicit) return explicit;
   const preset = normalizePreset(presetText);
-  if (preset === 'phase2_core') {
+  if (preset === 'phase2_core' || preset === 'phase3_strict') {
     return toCsv(PHASE2_APPROVAL_EVIDENCE_REQUIRED_ACTIONS);
   }
   return undefined;

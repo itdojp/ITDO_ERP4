@@ -138,6 +138,20 @@ Phase 2 で先行する Draft は以下を対象とする。
 - 明示CSV（`ACTION_POLICY_REQUIRED_ACTIONS` / `APPROVAL_EVIDENCE_REQUIRED_ACTIONS`）が設定されている場合は、プリセットより明示CSVを優先する。
 - 本番反映は段階的に行い、まず `phase2_core` で有効化し、業務影響を確認後に明示CSVへ移行する。
 
+### 6.2 fail-safe 拡張プリセット（phase3_strict）
+
+`ACTION_POLICY_ENFORCEMENT_PRESET=phase3_strict` を設定すると、明示CSV未設定時に以下を適用する。
+
+- ActionPolicy mandatory（`ACTION_POLICY_REQUIRED_ACTIONS`）
+  - `*:*`（全 flowType / 全 actionKey で policy 未定義時 deny）
+- Approval + Evidence mandatory（`APPROVAL_EVIDENCE_REQUIRED_ACTIONS`）
+  - `estimate:send,invoice:send,purchase_order:send`（`phase2_core` と同一）
+
+運用ルール:
+
+- まず `phase2_core` で監査ログ（`action_policy_fallback_allowed`）を収束させた後に `phase3_strict` へ移行する。
+- 緊急回避時は `ACTION_POLICY_REQUIRED_ACTIONS` の明示CSVで対象を限定し、ロールバック可能性を残す。
+
 ## 7. テストカバレッジ（2026-02-24時点）
 
 | 観点                                  | テスト                                         |

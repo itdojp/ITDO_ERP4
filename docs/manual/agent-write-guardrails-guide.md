@@ -37,6 +37,7 @@
 
 - 未指定時は `phase2_core` の既定 action 一覧を適用する。
 - 明示CSVを設定した場合は明示値を優先する。
+- `phase3_strict` は `ACTION_POLICY_REQUIRED_ACTIONS=*:*` 相当の fail-safe モードとして利用できる（段階移行後に適用）。
 
 ## 実行フロー（請求送信の標準例）
 

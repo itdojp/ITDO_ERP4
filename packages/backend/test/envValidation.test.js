@@ -221,6 +221,15 @@ test('envValidation: ACTION_POLICY_ENFORCEMENT_PRESET validates allowed values',
   assert.match(result.stderr, /ACTION_POLICY_ENFORCEMENT_PRESET/);
 });
 
+test('envValidation: ACTION_POLICY_ENFORCEMENT_PRESET accepts phase3_strict', () => {
+  const result = runEnvValidation({
+    ACTION_POLICY_ENFORCEMENT_PRESET: 'phase3_strict',
+  });
+
+  assert.equal(result.status, 0);
+  assert.equal(result.stdout, 'OK');
+});
+
 test('envValidation: ACTION_POLICY_REQUIRED_ACTIONS validates flowType:actionKey format', () => {
   const result = runEnvValidation({
     ACTION_POLICY_REQUIRED_ACTIONS: 'invoice-send',
