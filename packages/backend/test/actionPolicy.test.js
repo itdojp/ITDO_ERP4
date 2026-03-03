@@ -53,6 +53,23 @@ test('evaluateActionPolicyWithFallback: requiredActionsText can require policy m
   assert.equal(res.reason, 'no_matching_policy');
 });
 
+test('evaluateActionPolicyWithFallback: wildcard requiredActionsText enforces fail-safe for all actions', async () => {
+  const res = await evaluateActionPolicyWithFallback(
+    {
+      flowType: 'leave',
+      actionKey: 'submit',
+      actor: { userId: 'u1', roles: ['member'], groupIds: [] },
+    },
+    {
+      client: { actionPolicy: { findMany: async () => [] } },
+      requiredActionsText: '*:*',
+    },
+  );
+  assert.equal(res.policyApplied, true);
+  assert.equal(res.allowed, false);
+  assert.equal(res.reason, 'no_matching_policy');
+});
+
 test('evaluateActionPolicyWithFallback: malformed requiredActionsText token is ignored', async () => {
   const originalWarn = console.warn;
   const warnings = [];

@@ -35,8 +35,10 @@
 
 補足:
 
-- 未指定時は `phase2_core` の既定 action 一覧を適用する。
+- `ACTION_POLICY_REQUIRED_ACTIONS` / `APPROVAL_EVIDENCE_REQUIRED_ACTIONS` の明示CSVが未指定で、`ACTION_POLICY_ENFORCEMENT_PRESET=phase2_core` のときに既定 action 一覧を適用する。
+- `ACTION_POLICY_ENFORCEMENT_PRESET` 自体が未指定の場合は `off` として扱う。
 - 明示CSVを設定した場合は明示値を優先する。
+- `phase3_strict` は `ACTION_POLICY_REQUIRED_ACTIONS=*:*` 相当の fail-safe モードとして利用できる（段階移行後に適用）。
 
 ## 実行フロー（請求送信の標準例）
 
