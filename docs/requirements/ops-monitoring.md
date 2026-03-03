@@ -15,6 +15,9 @@
    - 送信失敗（document_send_logs / report_deliveries / mail logs）
 3. **API/DB 基盤**
    - API 5xx 率、遅延、DB 接続数、遅いクエリ
+4. **依存/開発運用監視（GitHub Actions）**
+   - Dependabot Alert Watch（依存脆弱性の状態同期）
+   - ESLint 10 Readiness Watch（lint基盤更新の再開条件監視）
 
 ## 監視指標（例）
 - ジョブ失敗: 1回でも失敗 → 通知
@@ -43,7 +46,11 @@
 - 日次: 失敗ジョブ数/アラート遅延件数の確認
 - 日次: レポート配信の failed_permanent / retry待ち件数の確認
 - 週次: 送信失敗の再送状況確認
+- 週次: `Dependabot Alert Watch` と `ESLint 10 Readiness Watch` の結果確認
+  - Dependabot: `#1153` の bot ステータスコメント更新を確認
+  - ESLint readiness: `#914` の bot ステータスコメント更新を確認
 
 ## TODO
 - [x] 監視の閾値を管理画面で設定できるようにする（AlertSettingで対応）
 - [x] 送信失敗の再送ポリシー（回数/間隔）を明文化
+- [x] 依存/開発運用監視の週次定期実行（GitHub Actions workflow）
