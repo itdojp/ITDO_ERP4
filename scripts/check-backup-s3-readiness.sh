@@ -56,6 +56,24 @@ require_env() {
   fi
 }
 
+validate_binary_flag() {
+  local name="$1"
+  local value="${!name}"
+  case "$value" in
+    0|1) ;;
+    *)
+      die "${name} must be 0|1 (got: ${value})"
+      ;;
+  esac
+}
+
+emit_summary() {
+  local status="$1"
+  local warning_count="$2"
+  local error_count="$3"
+  log "SUMMARY status=${status} warning_count=${warning_count} error_count=${error_count} strict=${STRICT} check_write=${CHECK_WRITE}"
+}
+
 aws_args=()
 if [[ -n "$S3_REGION" ]]; then
   aws_args+=(--region "$S3_REGION")
@@ -245,14 +263,16 @@ check_write_probe() {
 }
 
 main() {
-  require_cmd aws
-  require_env S3_BUCKET
+  validate_binary_flag STRICT
+  validate_binary_flag CHECK_WRITE
   case "$EXPECT_SSE" in
     aws:kms|AES256|any) ;;
     *)
       die "EXPECT_SSE must be one of: aws:kms | AES256 | any (got: ${EXPECT_SSE})"
       ;;
   esac
+  require_cmd aws
+  require_env S3_BUCKET
 
   check_bucket_access
   check_bucket_region
@@ -265,12 +285,15 @@ main() {
 
   if (( warn_count > 0 )); then
     if [[ "$STRICT" == "1" ]]; then
+      emit_summary fail "$warn_count" 1
       die "failed with ${warn_count} warning(s)"
     fi
+    emit_summary warn "$warn_count" 0
     log "completed with ${warn_count} warning(s)"
     exit 0
   fi
 
+  emit_summary pass 0 0
   log "readiness check passed"
 }
 kms_id_matches() {

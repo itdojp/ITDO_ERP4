@@ -8,6 +8,7 @@ ONLY="${ONLY:-}"
 STRICT="${STRICT:-1}"
 
 ALL_SCOPES=(
+  users
   customers
   vendors
   projects
