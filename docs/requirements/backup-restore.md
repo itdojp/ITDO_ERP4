@@ -129,7 +129,7 @@
   - KMSの接続先がS3と異なる環境は `KMS_ENDPOINT_URL` を指定する。
   - `STRICT=1`（既定）では警告も失敗扱い。確認目的のみなら `STRICT=0` を指定。
   - 出力の末尾に機械可読行を出力する:
-    - 例: `SUMMARY status=warn warning_count=2 error_count=0 strict=0 check_write=1`
+    - 例: `[backup-s3-preflight] SUMMARY status=warn warning_count=2 error_count=0 strict=0 check_write=1`
     - `status`: `pass|warn|fail`
 - 実行結果は `scripts/record-backup-s3-readiness.sh` で `docs/test-results/` に記録できる
   - 既存ログを記録する:
@@ -142,7 +142,7 @@
     - `DATE_STAMP`: `YYYY-MM-DD` かつ実在日付のみ
     - `RUN_LABEL`: `^[A-Za-z0-9][A-Za-z0-9._-]*$`
   - 記録レポートには `summarySource` を出力する（`summary-line` / `legacy-log-scan`）。
-    - `summary-line`: `SUMMARY ...` を解析した結果
+    - `summary-line`: `[backup-s3-preflight] SUMMARY ...` 行を解析した結果
     - `legacy-log-scan`: 旧形式ログの文言解析結果
   - 日付検証は GNU/BSD 両方の `date` 実装に対応（Linux/macOS の混在環境で実行可能）。
 

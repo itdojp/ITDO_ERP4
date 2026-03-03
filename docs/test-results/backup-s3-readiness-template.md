@@ -14,7 +14,7 @@
 - CHECK_WRITE: 0|1
 - STRICT: 0|1
 - DATE_STAMP: YYYY-MM-DD
-- RUN_LABEL: r1|r2|...
+- RUN_LABEL: r1|r2|...（任意。未指定時は r1, r2, ... を自動採番）
 
 ## 実行コマンド
 ```bash
