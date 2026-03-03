@@ -70,6 +70,217 @@ function canReadApprovalInstance(
   return false;
 }
 
+function extractChatMessageIdsFromSnapshotItems(items: unknown): string[] {
+  if (!items || typeof items !== 'object' || Array.isArray(items)) return [];
+  const refs = (items as Record<string, unknown>).internalRefs;
+  if (!Array.isArray(refs)) return [];
+  const ids = new Set<string>();
+  for (const entry of refs) {
+    if (!entry || typeof entry !== 'object') continue;
+    const row = entry as Record<string, unknown>;
+    const kind = normalizeString(row.kind);
+    const id = normalizeString(row.id);
+    if (kind !== 'chat_message' || !id) continue;
+    ids.add(id);
+  }
+  return Array.from(ids);
+}
+
+function normalizeSha256(value: unknown): {
+  sha256: string | null;
+  hashRaw?: string | null;
+} {
+  const raw = normalizeString(value);
+  if (!raw) return { sha256: null };
+  const hex = raw.toLowerCase();
+  if (/^[a-f0-9]{64}$/.test(hex)) return { sha256: hex };
+  return { sha256: null, hashRaw: raw };
+}
+
+async function buildEvidencePackWorkflowHistory(approvalInstanceId: string) {
+  const steps = await prisma.approvalStep.findMany({
+    where: { instanceId: approvalInstanceId },
+    orderBy: [{ stepOrder: 'asc' }, { createdAt: 'asc' }],
+    select: {
+      id: true,
+      stepOrder: true,
+      approverGroupId: true,
+      approverUserId: true,
+      status: true,
+      actedBy: true,
+      actedAt: true,
+      createdAt: true,
+    },
+  });
+  const stepIds = steps.map((step) => step.id);
+
+  const instanceEventActions = [
+    'approval_approve',
+    'approval_reject',
+    'approval_cancel',
+    'approval_stage_auto_cancel',
+  ];
+  const stepEventActions = ['approval_step_approve', 'approval_step_reject'];
+
+  const [instanceEvents, stepEvents] = await Promise.all([
+    prisma.auditLog.findMany({
+      where: {
+        targetTable: 'approval_instances',
+        targetId: approvalInstanceId,
+        action: { in: instanceEventActions },
+      },
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+      select: {
+        id: true,
+        action: true,
+        createdAt: true,
+        targetTable: true,
+        targetId: true,
+        userId: true,
+        actorRole: true,
+        actorGroupId: true,
+        reasonText: true,
+        metadata: true,
+      },
+    }),
+    stepIds.length
+      ? prisma.auditLog.findMany({
+          where: {
+            targetTable: 'approval_steps',
+            targetId: { in: stepIds },
+            action: { in: stepEventActions },
+          },
+          orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+          select: {
+            id: true,
+            action: true,
+            createdAt: true,
+            targetTable: true,
+            targetId: true,
+            userId: true,
+            actorRole: true,
+            actorGroupId: true,
+            reasonText: true,
+            metadata: true,
+          },
+        })
+      : [],
+  ]);
+
+  const events = [...instanceEvents, ...stepEvents].sort((left, right) => {
+    const leftTime = left.createdAt.getTime();
+    const rightTime = right.createdAt.getTime();
+    if (leftTime !== rightTime) return leftTime - rightTime;
+    return left.id.localeCompare(right.id);
+  });
+
+  return {
+    steps: steps.map((step) => ({
+      id: step.id,
+      stepOrder: step.stepOrder,
+      approverGroupId: step.approverGroupId ?? null,
+      approverUserId: step.approverUserId ?? null,
+      status: String(step.status ?? ''),
+      actedBy: step.actedBy ?? null,
+      actedAt: step.actedAt ? step.actedAt.toISOString() : null,
+      createdAt: step.createdAt.toISOString(),
+    })),
+    events: events.map((event) => ({
+      id: event.id,
+      action: event.action,
+      occurredAt: event.createdAt.toISOString(),
+      targetTable: event.targetTable ?? null,
+      targetId: event.targetId ?? null,
+      userId: event.userId ?? null,
+      actorRole: event.actorRole ?? null,
+      actorGroupId: event.actorGroupId ?? null,
+      reasonText: event.reasonText ?? null,
+      metadata: event.metadata ?? null,
+    })),
+  };
+}
+
+async function buildEvidencePackAttachments(
+  approval: {
+    targetTable: string;
+    targetId: string;
+  },
+  snapshot: { items: unknown },
+) {
+  const attachments: Array<{
+    kind: 'expense_attachment' | 'chat_attachment';
+    id: string;
+    sourceTable: string;
+    sourceId: string;
+    filename: string | null;
+    contentType: string | null;
+    sizeBytes: number | null;
+    sha256: string | null;
+    hashRaw?: string | null;
+  }> = [];
+
+  const targetTable = normalizeString(approval.targetTable).toLowerCase();
+  if (targetTable === 'expenses' || targetTable === 'expense') {
+    const rows = await prisma.expenseAttachment.findMany({
+      where: { expenseId: approval.targetId },
+      select: {
+        id: true,
+        expenseId: true,
+        fileName: true,
+        contentType: true,
+        fileSizeBytes: true,
+        fileHash: true,
+      },
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+    });
+    for (const row of rows) {
+      const hash = normalizeSha256(row.fileHash);
+      attachments.push({
+        kind: 'expense_attachment',
+        id: row.id,
+        sourceTable: 'expenses',
+        sourceId: row.expenseId,
+        filename: row.fileName ?? null,
+        contentType: row.contentType ?? null,
+        sizeBytes:
+          typeof row.fileSizeBytes === 'number' ? row.fileSizeBytes : null,
+        sha256: hash.sha256,
+        ...(hash.hashRaw ? { hashRaw: hash.hashRaw } : {}),
+      });
+    }
+  }
+
+  const chatMessageIds = extractChatMessageIdsFromSnapshotItems(snapshot.items);
+  if (chatMessageIds.length) {
+    const rows = await prisma.chatAttachment.findMany({
+      where: { messageId: { in: chatMessageIds }, deletedAt: null },
+      select: {
+        id: true,
+        messageId: true,
+        sha256: true,
+        sizeBytes: true,
+        mimeType: true,
+        originalName: true,
+      },
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+    });
+    for (const row of rows) {
+      attachments.push({
+        kind: 'chat_attachment',
+        id: row.id,
+        sourceTable: 'chat_messages',
+        sourceId: row.messageId,
+        filename: row.originalName,
+        contentType: row.mimeType ?? null,
+        sizeBytes: typeof row.sizeBytes === 'number' ? row.sizeBytes : null,
+        sha256: row.sha256 ?? null,
+      });
+    }
+  }
+
+  return attachments;
+}
+
 async function findEvidenceSnapshotForPack(
   approvalInstanceId: string,
   version?: number,
@@ -528,11 +739,17 @@ export async function registerEvidenceSnapshotRoutes(app: FastifyInstance) {
 
       const format = body.format ?? 'json';
       const shouldMask = body.mask === undefined ? true : body.mask === 1;
+      const [workflowHistory, attachments] = await Promise.all([
+        buildEvidencePackWorkflowHistory(approval.id),
+        buildEvidencePackAttachments(approval, snapshot),
+      ]);
       const rawExported = buildEvidencePackJsonExport({
         exportedAt: new Date(),
         exportedBy: req.user?.userId ?? null,
         approval,
         snapshot,
+        workflowHistory,
+        attachments,
       });
       const exported = shouldMask
         ? maskEvidencePackJsonExport(rawExported)
@@ -730,13 +947,32 @@ export async function registerEvidenceSnapshotRoutes(app: FastifyInstance) {
       }
 
       const format = query.format ?? 'json';
+      const shouldMask = query.mask === undefined ? true : query.mask === 1;
+      if (!shouldMask) {
+        const roles = req.user?.roles ?? [];
+        const allowedUnmasked =
+          roles.includes('admin') || roles.includes('mgmt');
+        if (!allowedUnmasked) {
+          return reply.status(403).send({
+            error: {
+              code: 'UNMASKED_EXPORT_FORBIDDEN',
+              message: 'Unmasked export (mask=0) is restricted to admin/mgmt',
+            },
+          });
+        }
+      }
+      const [workflowHistory, attachments] = await Promise.all([
+        buildEvidencePackWorkflowHistory(approval.id),
+        buildEvidencePackAttachments(approval, snapshot),
+      ]);
       const rawExported = buildEvidencePackJsonExport({
         exportedAt: new Date(),
         exportedBy: req.user?.userId ?? null,
         approval,
         snapshot,
+        workflowHistory,
+        attachments,
       });
-      const shouldMask = query.mask === undefined ? true : query.mask === 1;
       const exported = shouldMask
         ? maskEvidencePackJsonExport(rawExported)
         : rawExported;
