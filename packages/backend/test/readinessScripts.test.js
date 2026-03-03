@@ -192,6 +192,19 @@ test('check-po-migration-input-readiness: STRICT=0 passes with empty input direc
   });
 });
 
+test('check-po-migration-input-readiness: ONLY=users is accepted', () => {
+  withTempDir((dir) => {
+    const res = runScript('check-po-migration-input-readiness.sh', {
+      INPUT_DIR: dir,
+      INPUT_FORMAT: 'csv',
+      ONLY: 'users',
+      STRICT: '0',
+    });
+    assert.equal(res.status, 0, `${res.stderr}\n${res.stdout}`);
+    assert.match(String(res.stdout), /preflight completed/);
+  });
+});
+
 test('check-backup-s3-readiness: fails when aws command is missing', () => {
   const res = runScript('check-backup-s3-readiness.sh', {
     S3_BUCKET: 'dummy-bucket',
@@ -210,6 +223,41 @@ test('check-backup-s3-readiness: validates EXPECT_SSE value before AWS calls', (
     });
     assert.notEqual(res.status, 0);
     assert.match(String(res.stderr), /EXPECT_SSE must be one of/);
+  });
+});
+
+test('check-backup-s3-readiness: validates STRICT value before AWS calls', () => {
+  const res = runScript('check-backup-s3-readiness.sh', {
+    S3_BUCKET: 'dummy-bucket',
+    STRICT: '2',
+    PATH: '/non-existent-path',
+  });
+  assert.notEqual(res.status, 0);
+  assert.match(String(res.stderr), /STRICT must be 0\|1/);
+});
+
+test('check-backup-s3-readiness: validates CHECK_WRITE value before AWS calls', () => {
+  const res = runScript('check-backup-s3-readiness.sh', {
+    S3_BUCKET: 'dummy-bucket',
+    CHECK_WRITE: 'yes',
+    PATH: '/non-existent-path',
+  });
+  assert.notEqual(res.status, 0);
+  assert.match(String(res.stderr), /CHECK_WRITE must be 0\|1/);
+});
+
+test('check-backup-s3-readiness: emits machine-readable SUMMARY line', () => {
+  withFakeAwsBin((binDir) => {
+    const res = runScript('check-backup-s3-readiness.sh', {
+      S3_BUCKET: 'dummy-bucket',
+      STRICT: '0',
+      PATH: `${binDir}:${process.env.PATH || ''}`,
+    });
+    assert.equal(res.status, 0, `${res.stderr}\n${res.stdout}`);
+    assert.match(
+      String(res.stdout),
+      /SUMMARY status=warn warning_count=[0-9]+ error_count=0 strict=0 check_write=0/,
+    );
   });
 });
 
@@ -296,6 +344,75 @@ test('record-backup-s3-readiness: uses summary warning count when WARN lines are
     assert.match(report, /summaryStatus: warn/);
     assert.match(report, /warningCount: 3/);
     assert.match(report, /errorCount: 0/);
+  });
+});
+
+test('record-backup-s3-readiness: uses machine-readable SUMMARY line when available', () => {
+  withTempDir((dir) => {
+    const logPath = path.join(dir, 'backup-s3-readiness.log');
+    const outDir = path.join(dir, 'out');
+    writeFileSync(
+      logPath,
+      [
+        '[backup-s3-preflight][WARN] this warning count is lower than SUMMARY',
+        '[backup-s3-preflight] SUMMARY status=warn warning_count=4 error_count=0 strict=0 check_write=1',
+      ].join('\n'),
+    );
+
+    const res = runScript('record-backup-s3-readiness.sh', {
+      LOG_FILE: logPath,
+      OUT_DIR: outDir,
+      DATE_STAMP: '2026-02-24',
+      RUN_LABEL: 'r-machine-summary',
+    });
+    assert.equal(res.status, 0, `${res.stderr}\n${res.stdout}`);
+
+    const reportPath = path.join(
+      outDir,
+      '2026-02-24-backup-s3-readiness-r-machine-summary.md',
+    );
+    const report = readFileSync(reportPath, 'utf8');
+    assert.match(report, /summarySource: summary-line/);
+    assert.match(report, /summaryStatus: warn/);
+    assert.match(report, /warningCount: 4/);
+    assert.match(report, /errorCount: 0/);
+  });
+});
+
+test('record-backup-s3-readiness: validates DATE_STAMP as a calendar date', () => {
+  withTempDir((dir) => {
+    const logPath = path.join(dir, 'backup-s3-readiness.log');
+    const outDir = path.join(dir, 'out');
+    writeFileSync(logPath, '[backup-s3-preflight] readiness check passed\n');
+
+    const res = runScript('record-backup-s3-readiness.sh', {
+      LOG_FILE: logPath,
+      OUT_DIR: outDir,
+      DATE_STAMP: '2026-02-30',
+      RUN_LABEL: 'r-date',
+    });
+    assert.notEqual(res.status, 0);
+    assert.match(
+      String(res.stderr),
+      /DATE_STAMP is not a valid calendar date/,
+    );
+  });
+});
+
+test('record-backup-s3-readiness: validates RUN_LABEL format', () => {
+  withTempDir((dir) => {
+    const logPath = path.join(dir, 'backup-s3-readiness.log');
+    const outDir = path.join(dir, 'out');
+    writeFileSync(logPath, '[backup-s3-preflight] readiness check passed\n');
+
+    const res = runScript('record-backup-s3-readiness.sh', {
+      LOG_FILE: logPath,
+      OUT_DIR: outDir,
+      DATE_STAMP: '2026-02-24',
+      RUN_LABEL: '../r1',
+    });
+    assert.notEqual(res.status, 0);
+    assert.match(String(res.stderr), /RUN_LABEL must match/);
   });
 });
 
@@ -414,6 +531,82 @@ test('record-po-migration-rehearsal: auto increments run suffix when RUN_LABEL i
       existsSync(path.join(outDir, '2026-02-24-po-migration-rehearsal-r2.md')),
       true,
     );
+  });
+});
+
+test('record-po-migration-rehearsal: validates DATE_STAMP and RUN_LABEL', () => {
+  withTempDir((dir) => {
+    const logDir = path.join(dir, 'logs');
+    const sourceReport = path.join(logDir, 'rehearsal-report.md');
+    const outDir = path.join(dir, 'out');
+    mkdirSync(logDir, { recursive: true });
+    writeFileSync(sourceReport, '## migration summary\n\n- errors: 0\n');
+
+    const invalidDate = runScript('record-po-migration-rehearsal.sh', {
+      LOG_DIR: logDir,
+      REPORT_SOURCE: sourceReport,
+      OUT_DIR: outDir,
+      DATE_STAMP: '2026-02-30',
+      RUN_LABEL: 'r1',
+    });
+    assert.notEqual(invalidDate.status, 0);
+    assert.match(
+      String(invalidDate.stderr),
+      /DATE_STAMP is not a valid calendar date/,
+    );
+
+    const invalidLabel = runScript('record-po-migration-rehearsal.sh', {
+      LOG_DIR: logDir,
+      REPORT_SOURCE: sourceReport,
+      OUT_DIR: outDir,
+      DATE_STAMP: '2026-02-24',
+      RUN_LABEL: '../r1',
+    });
+    assert.notEqual(invalidLabel.status, 0);
+    assert.match(String(invalidLabel.stderr), /RUN_LABEL must match/);
+  });
+});
+
+test('record-po-migration-rehearsal: fails when RUN_LABEL output already exists', () => {
+  withTempDir((dir) => {
+    const logDir = path.join(dir, 'logs');
+    const sourceReport = path.join(logDir, 'rehearsal-report.md');
+    const outDir = path.join(dir, 'out');
+    mkdirSync(logDir, { recursive: true });
+    mkdirSync(outDir, { recursive: true });
+    writeFileSync(sourceReport, '## migration summary\n\n- errors: 0\n');
+    writeFileSync(
+      path.join(outDir, '2026-02-24-po-migration-rehearsal-r1.md'),
+      '# existing report',
+    );
+
+    const res = runScript('record-po-migration-rehearsal.sh', {
+      LOG_DIR: logDir,
+      REPORT_SOURCE: sourceReport,
+      OUT_DIR: outDir,
+      DATE_STAMP: '2026-02-24',
+      RUN_LABEL: 'r1',
+    });
+    assert.notEqual(res.status, 0);
+    assert.match(String(res.stderr), /output file already exists/);
+  });
+});
+
+test('run-po-migration-rehearsal: validates ONLY even when RUN_PREFLIGHT=0', () => {
+  withTempDir((dir) => {
+    const inputDir = path.join(dir, 'input');
+    mkdirSync(inputDir, { recursive: true });
+
+    const res = runScript('run-po-migration-rehearsal.sh', {
+      INPUT_DIR: inputDir,
+      ONLY: 'invalid_scope',
+      RUN_PREFLIGHT: '0',
+      GENERATE_REPORT: '0',
+      RUN_INTEGRITY: '0',
+      APPLY: '0',
+    });
+    assert.notEqual(res.status, 0);
+    assert.match(String(res.stderr), /invalid scope in ONLY/);
   });
 });
 
@@ -554,18 +747,18 @@ test('check-dependabot-alerts: treats optional high alert 404 as NOT_FOUND', (t)
         npm: makeDependabotNpmStub(),
       },
       (binDir) => {
-      const res = runScript('check-dependabot-alerts.sh', {
-        GITHUB_REPOSITORY: 'itdojp/ITDO_ERP4',
-        ALERT_LOW_NUMBER: '10',
-        ALERT_HIGH_NUMBER: '11',
-        BACKEND_LOCKFILE: lockfile,
-        STRICT: '0',
-        PATH: `${binDir}:${process.env.PATH || ''}`,
-      });
-      assert.equal(res.status, 0, `${res.stderr}\n${res.stdout}`);
-      assert.match(String(res.stderr), /treating as NOT_FOUND/);
-      assert.match(String(res.stdout), /alertHighState: NOT_FOUND/);
-      assert.match(String(res.stdout), /actionRequired: false/);
+        const res = runScript('check-dependabot-alerts.sh', {
+          GITHUB_REPOSITORY: 'itdojp/ITDO_ERP4',
+          ALERT_LOW_NUMBER: '10',
+          ALERT_HIGH_NUMBER: '11',
+          BACKEND_LOCKFILE: lockfile,
+          STRICT: '0',
+          PATH: `${binDir}:${process.env.PATH || ''}`,
+        });
+        assert.equal(res.status, 0, `${res.stderr}\n${res.stdout}`);
+        assert.match(String(res.stderr), /treating as NOT_FOUND/);
+        assert.match(String(res.stdout), /alertHighState: NOT_FOUND/);
+        assert.match(String(res.stdout), /actionRequired: false/);
       },
     );
   });
@@ -586,21 +779,21 @@ test('check-dependabot-alerts: exits with STRICT error when high alert is OPEN',
         npm: makeDependabotNpmStub(),
       },
       (binDir) => {
-      const res = runScript('check-dependabot-alerts.sh', {
-        GITHUB_REPOSITORY: 'itdojp/ITDO_ERP4',
-        ALERT_LOW_NUMBER: '10',
-        ALERT_HIGH_NUMBER: '11',
-        BACKEND_LOCKFILE: lockfile,
-        STRICT: '1',
-        PATH: `${binDir}:${process.env.PATH || ''}`,
-      });
-      assert.equal(res.status, 2, `${res.stderr}\n${res.stdout}`);
-      assert.match(
-        String(res.stderr),
-        /Dependabot alerts require follow-up/,
-      );
-      assert.match(String(res.stdout), /alertHighState: OPEN/);
-      assert.match(String(res.stdout), /actionRequired: true/);
+        const res = runScript('check-dependabot-alerts.sh', {
+          GITHUB_REPOSITORY: 'itdojp/ITDO_ERP4',
+          ALERT_LOW_NUMBER: '10',
+          ALERT_HIGH_NUMBER: '11',
+          BACKEND_LOCKFILE: lockfile,
+          STRICT: '1',
+          PATH: `${binDir}:${process.env.PATH || ''}`,
+        });
+        assert.equal(res.status, 2, `${res.stderr}\n${res.stdout}`);
+        assert.match(
+          String(res.stderr),
+          /Dependabot alerts require follow-up/,
+        );
+        assert.match(String(res.stdout), /alertHighState: OPEN/);
+        assert.match(String(res.stdout), /actionRequired: true/);
       },
     );
   });

@@ -55,11 +55,17 @@ INPUT_DIR=tmp/migration/po INPUT_FORMAT=csv APPLY=1 RUN_INTEGRITY=1 \
 - 既定で入力ファイルのpreflight（`scripts/check-po-migration-input-readiness.sh`）を実行する。
   - 無効化: `RUN_PREFLIGHT=0`
   - 厳格モード調整: `PREFLIGHT_STRICT=0|1`
+  - `RUN_PREFLIGHT=0` でも `ONLY` は事前検証される（不正スコープは実行前に失敗）。
+  - `ONLY` の許容値: `users,customers,vendors,projects,tasks,milestones,estimates,invoices,purchase_orders,vendor_quotes,vendor_invoices,time_entries,expenses`
 - 実行終了時に `rehearsal-report.md`（要約レポート）を自動生成する。
   - 無効化: `GENERATE_REPORT=0`
   - 出力先変更: `REPORT_FILE=/path/to/report.md`
 - `scripts/record-po-migration-rehearsal.sh` で最新ログから `docs/test-results/YYYY-MM-DD-po-migration-rehearsal-rN.md` を生成できる。
   - 例: `make po-migration-record`
+  - `DATE_STAMP` は `YYYY-MM-DD` の実在日付のみ許容。
+  - `RUN_LABEL` は `^[A-Za-z0-9][A-Za-z0-9._-]*$` を満たす必要がある。
+  - 既存ファイルの上書きは行わない（同名出力はエラー）。
+  - `OUT_DIR` が相対パスの場合、リポジトリルート基準で解決される。
 - `RUN_INTEGRITY=1` の場合は `DATABASE_URL` と `psql` が必要。
   - ラッパーは `DATABASE_URL` の `schema` / `search_path` パラメータを除去して `psql` を実行する。
 - `INPUT_DIR` は実行ディレクトリに依らず、リポジトリルート基準で絶対化して実行される。
@@ -77,6 +83,7 @@ INPUT_DIR=tmp/migration/po INPUT_FORMAT=csv APPLY=1 RUN_INTEGRITY=1 \
 補足:
 - `RECORD_ON_FAIL=1`（既定）のため、実行失敗時も記録を残せる。
 - `RUN_LABEL=r1` / `DATE_STAMP=YYYY-MM-DD` / `OUT_DIR=...` で出力先を制御できる。
+  - `RUN_LABEL` / `DATE_STAMP` の検証と、既存ファイル上書き防止は `record-po-migration-rehearsal.sh` と同一仕様。
 - Makefile 経由でも実行可能:
   - `INPUT_DIR=tmp/migration/po INPUT_FORMAT=csv APPLY=1 RUN_INTEGRITY=1 make po-migration-run-and-record`
 

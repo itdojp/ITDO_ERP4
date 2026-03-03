@@ -14,6 +14,21 @@ INTEGRITY_SQL="${INTEGRITY_SQL:-$ROOT_DIR/scripts/checks/migration-po-integrity.
 LOG_DIR="${LOG_DIR:-$ROOT_DIR/tmp/migration/logs/po-real-$(date +%Y%m%d-%H%M%S)}"
 REPORT_FILE="${REPORT_FILE:-}"
 INPUT_DIR_RESOLVED=""
+ALL_SCOPES=(
+  users
+  customers
+  vendors
+  projects
+  tasks
+  milestones
+  estimates
+  invoices
+  purchase_orders
+  vendor_quotes
+  vendor_invoices
+  time_entries
+  expenses
+)
 
 usage() {
   cat <<USAGE
@@ -38,6 +53,7 @@ Optional env:
 Notes:
 - RUN_INTEGRITY=1 requires DATABASE_URL and psql command.
 - This script wraps scripts/migrate-po.ts and stores logs for issue reports.
+- ONLY は users,customers,vendors,projects,tasks,milestones,estimates,invoices,purchase_orders,vendor_quotes,vendor_invoices,time_entries,expenses を受け付ける。
 USAGE
 }
 
@@ -63,6 +79,45 @@ resolve_absolute_path() {
   else
     printf '%s\n' "$ROOT_DIR/$input"
   fi
+}
+
+contains_scope() {
+  local target="$1"
+  local scope
+  for scope in "${ALL_SCOPES[@]}"; do
+    if [[ "$scope" == "$target" ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+normalize_only_scope_list() {
+  if [[ -z "$ONLY" ]]; then
+    return 0
+  fi
+
+  local raw=()
+  IFS=',' read -r -a raw <<< "$ONLY"
+  local normalized=()
+  local scope
+  for scope in "${raw[@]}"; do
+    scope="$(echo "$scope" | xargs)"
+    [[ -z "$scope" ]] && continue
+    if ! contains_scope "$scope"; then
+      die "invalid scope in ONLY: $scope"
+    fi
+    normalized+=("$scope")
+  done
+
+  if (( ${#normalized[@]} == 0 )); then
+    die "ONLY did not contain valid scopes"
+  fi
+
+  (
+    IFS=','
+    printf '%s\n' "${normalized[*]}"
+  )
 }
 
 strip_prisma_url_params() {
@@ -135,6 +190,7 @@ validate_input() {
     die "GENERATE_REPORT must be 0|1"
   fi
 
+  ONLY="$(normalize_only_scope_list)"
   INPUT_DIR_RESOLVED="$(resolve_absolute_path "$INPUT_DIR")"
   if [[ ! -d "$INPUT_DIR_RESOLVED" ]]; then
     die "input dir not found: $INPUT_DIR_RESOLVED"
