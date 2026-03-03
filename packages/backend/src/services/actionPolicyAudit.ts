@@ -23,7 +23,7 @@ type ActionPolicyFallbackAllowedAuditParams = {
   result: EvaluateActionPolicyWithFallbackResult;
 };
 
-// Avoid high-volume audit logs: record once per process per action/targetTable combination.
+// Avoid high-volume audit logs: record once per process per flowType/actionKey/targetTable combination.
 const loggedFallbackAllowedKeys = new Set<string>();
 
 // Unified audit event for "admin override" (or other configured overrides) when ActionPolicy requires a reason.

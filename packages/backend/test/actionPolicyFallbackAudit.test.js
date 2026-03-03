@@ -24,11 +24,32 @@ test('logActionPolicyFallbackAllowedIfNeeded: writes audit once per key', async 
         auth: {},
       },
     };
+
+    await logActionPolicyFallbackAllowedIfNeeded({
+      req,
+      flowType: 'invoice',
+      actionKey: 'edit',
+      targetTable: 'invoices',
+      targetId: 'inv-0',
+      result: { allowed: true, policyApplied: true },
+    });
+    assert.equal(calls.length, 0);
+
+    await logActionPolicyFallbackAllowedIfNeeded({
+      req,
+      flowType: 'invoice',
+      actionKey: 'edit',
+      targetTable: 'invoices',
+      targetId: 'inv-0b',
+      result: { allowed: false, policyApplied: false },
+    });
+    assert.equal(calls.length, 0);
+
     const result = { allowed: true, policyApplied: false };
 
     await logActionPolicyFallbackAllowedIfNeeded({
       req,
-      flowType: 'test_flow',
+      flowType: 'invoice',
       actionKey: 'edit',
       targetTable: 'invoices',
       targetId: 'inv-1',
@@ -36,7 +57,7 @@ test('logActionPolicyFallbackAllowedIfNeeded: writes audit once per key', async 
     });
     await logActionPolicyFallbackAllowedIfNeeded({
       req,
-      flowType: 'test_flow',
+      flowType: 'invoice',
       actionKey: 'edit',
       targetTable: 'invoices',
       targetId: 'inv-2',
@@ -50,7 +71,6 @@ test('logActionPolicyFallbackAllowedIfNeeded: writes audit once per key', async 
   assert.equal(calls[0]?.data?.action, 'action_policy_fallback_allowed');
   assert.equal(calls[0]?.data?.targetTable, 'invoices');
   assert.equal(calls[0]?.data?.targetId, 'inv-1');
-  assert.equal(calls[0]?.data?.metadata?.flowType, 'test_flow');
+  assert.equal(calls[0]?.data?.metadata?.flowType, 'invoice');
   assert.equal(calls[0]?.data?.metadata?.actionKey, 'edit');
 });
-
