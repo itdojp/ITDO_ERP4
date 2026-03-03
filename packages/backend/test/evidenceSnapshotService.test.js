@@ -16,7 +16,18 @@ test('resolveEvidenceSnapshotTargetKind: supports singular/plural aliases', () =
     resolveEvidenceSnapshotTargetKind('purchase_orders'),
     'purchase_order',
   );
-  assert.equal(resolveEvidenceSnapshotTargetKind('vendor_invoice'), 'vendor_invoice');
+  assert.equal(
+    resolveEvidenceSnapshotTargetKind('vendor_invoice'),
+    'vendor_invoice',
+  );
+  assert.equal(
+    resolveEvidenceSnapshotTargetKind('leave_request'),
+    'leave_request',
+  );
+  assert.equal(
+    resolveEvidenceSnapshotTargetKind('leave_requests'),
+    'leave_request',
+  );
   assert.equal(resolveEvidenceSnapshotTargetKind('unknown_kind'), null);
 });
 
@@ -180,6 +191,166 @@ test('createEvidenceSnapshotForApproval: normalizes annotation and captures chat
       bodyHash: createHash('sha256').update('Evidence message body').digest('hex'),
     },
   ]);
+});
+
+test('createEvidenceSnapshotForApproval: captures subject snapshot for time_entries without annotation', async () => {
+  let createInput;
+  const client = {
+    evidenceSnapshot: {
+      findFirst: async () => null,
+      create: async ({ data }) => {
+        createInput = data;
+        return {
+          id: 'snap-time-1',
+          approvalInstanceId: data.approvalInstanceId,
+          targetTable: data.targetTable,
+          targetId: data.targetId,
+          sourceAnnotationUpdatedAt: data.sourceAnnotationUpdatedAt,
+          capturedAt: new Date('2026-03-01T00:00:00.000Z'),
+          capturedBy: data.capturedBy,
+          version: data.version,
+          items: data.items,
+        };
+      },
+    },
+    annotation: {
+      findUnique: async () => {
+        throw new Error('unexpected_annotation_lookup');
+      },
+    },
+    chatMessage: {
+      findMany: async () => {
+        throw new Error('unexpected_chat_lookup');
+      },
+    },
+    timeEntry: {
+      findUnique: async () => ({
+        id: 'time-1',
+        userId: 'user-1',
+        projectId: 'project-1',
+        taskId: null,
+        workDate: new Date('2026-02-28T00:00:00.000Z'),
+        minutes: 60,
+        workType: null,
+        location: null,
+        notes: 'note',
+        status: 'submitted',
+      }),
+    },
+  };
+
+  const result = await createEvidenceSnapshotForApproval(client, {
+    approvalInstanceId: 'ap-time-1',
+    targetTable: 'time_entries',
+    targetId: 'time-1',
+    capturedBy: 'actor-1',
+    forceRegenerate: false,
+  });
+
+  assert.equal(result.created, true);
+  assert.equal(result.unsupportedTarget, false);
+  assert.equal(result.snapshot.id, 'snap-time-1');
+  assert.equal(createInput.sourceAnnotationUpdatedAt, null);
+  assert.equal(createInput.items.notes, null);
+  assert.deepEqual(createInput.items.externalUrls, []);
+  assert.deepEqual(createInput.items.internalRefs, []);
+  assert.deepEqual(createInput.items.chatMessages, []);
+  assert.deepEqual(createInput.items.subject, {
+    kind: 'time_entry',
+    timeEntry: {
+      id: 'time-1',
+      userId: 'user-1',
+      projectId: 'project-1',
+      taskId: null,
+      workDate: '2026-02-28T00:00:00.000Z',
+      minutes: 60,
+      workType: null,
+      location: null,
+      notes: 'note',
+      status: 'submitted',
+    },
+  });
+});
+
+test('createEvidenceSnapshotForApproval: captures subject snapshot for leave_requests with empty annotation', async () => {
+  let createInput;
+  const client = {
+    evidenceSnapshot: {
+      findFirst: async () => null,
+      create: async ({ data }) => {
+        createInput = data;
+        return {
+          id: 'snap-leave-1',
+          approvalInstanceId: data.approvalInstanceId,
+          targetTable: data.targetTable,
+          targetId: data.targetId,
+          sourceAnnotationUpdatedAt: data.sourceAnnotationUpdatedAt,
+          capturedAt: new Date('2026-03-01T00:00:00.000Z'),
+          capturedBy: data.capturedBy,
+          version: data.version,
+          items: data.items,
+        };
+      },
+    },
+    annotation: {
+      findUnique: async () => null,
+    },
+    chatMessage: {
+      findMany: async () => [],
+    },
+    leaveRequest: {
+      findUnique: async () => ({
+        id: 'leave-1',
+        userId: 'user-1',
+        leaveType: 'paid',
+        startDate: new Date('2026-03-05T00:00:00.000Z'),
+        endDate: new Date('2026-03-05T00:00:00.000Z'),
+        hours: null,
+        minutes: 120,
+        startTimeMinutes: 600,
+        endTimeMinutes: 720,
+        noConsultationConfirmed: true,
+        noConsultationReason: 'confidential',
+        status: 'draft',
+        notes: 'notes@example.com',
+      }),
+    },
+  };
+
+  const result = await createEvidenceSnapshotForApproval(client, {
+    approvalInstanceId: 'ap-leave-1',
+    targetTable: 'leave_requests',
+    targetId: 'leave-1',
+    capturedBy: 'actor-1',
+    forceRegenerate: false,
+  });
+
+  assert.equal(result.created, true);
+  assert.equal(result.unsupportedTarget, false);
+  assert.equal(result.snapshot.id, 'snap-leave-1');
+  assert.equal(createInput.sourceAnnotationUpdatedAt, null);
+  assert.equal(createInput.items.notes, null);
+  assert.deepEqual(createInput.items.externalUrls, []);
+  assert.deepEqual(createInput.items.internalRefs, []);
+  assert.deepEqual(createInput.items.chatMessages, []);
+  assert.deepEqual(createInput.items.subject, {
+    kind: 'leave_request',
+    leaveRequest: {
+      id: 'leave-1',
+      userId: 'user-1',
+      leaveType: 'paid',
+      startDate: '2026-03-05T00:00:00.000Z',
+      endDate: '2026-03-05T00:00:00.000Z',
+      hours: null,
+      minutes: 120,
+      startTimeMinutes: 600,
+      endTimeMinutes: 720,
+      noConsultationConfirmed: true,
+      noConsultationReason: 'confidential',
+      status: 'draft',
+      notes: 'notes@example.com',
+    },
+  });
 });
 
 test('createEvidenceSnapshotForApproval: forceRegenerate creates next version', async () => {

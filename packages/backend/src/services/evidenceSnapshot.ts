@@ -16,8 +16,47 @@ type SnapshotChatMessage = {
   bodyHash?: string;
 };
 
+type SnapshotSubject =
+  | {
+      kind: 'time_entry';
+      timeEntry: {
+        id: string;
+        userId: string;
+        projectId: string;
+        taskId: string | null;
+        workDate: string;
+        minutes: number;
+        workType: string | null;
+        location: string | null;
+        notes: string | null;
+        status: string;
+      };
+    }
+  | {
+      kind: 'leave_request';
+      leaveRequest: {
+        id: string;
+        userId: string;
+        leaveType: string;
+        startDate: string;
+        endDate: string;
+        hours: number | null;
+        minutes: number | null;
+        startTimeMinutes: number | null;
+        endTimeMinutes: number | null;
+        noConsultationConfirmed: boolean | null;
+        noConsultationReason: string | null;
+        status: string;
+        notes: string | null;
+      };
+    };
+
 function normalizeString(value: unknown) {
   return typeof value === 'string' ? value.trim() : '';
+}
+
+function normalizeTargetTable(value: string) {
+  return value.trim().toLowerCase();
 }
 
 export function resolveEvidenceSnapshotTargetKind(targetTable: string) {
@@ -50,6 +89,9 @@ export function resolveEvidenceSnapshotTargetKind(targetTable: string) {
     case 'vendor':
     case 'vendors':
       return 'vendor';
+    case 'leave_request':
+    case 'leave_requests':
+      return 'leave_request';
     default:
       return null;
   }
@@ -98,6 +140,96 @@ function hashBody(body: string) {
   const normalized = body.trim();
   if (!normalized) return '';
   return createHash('sha256').update(normalized).digest('hex');
+}
+
+async function buildSnapshotSubject(
+  client: any,
+  input: { targetTable: string; targetId: string },
+): Promise<SnapshotSubject | null> {
+  const normalized = normalizeTargetTable(input.targetTable);
+  if (normalized === 'time_entry' || normalized === 'time_entries') {
+    const entry = await client.timeEntry?.findUnique?.({
+      where: { id: input.targetId },
+      select: {
+        id: true,
+        userId: true,
+        projectId: true,
+        taskId: true,
+        workDate: true,
+        minutes: true,
+        workType: true,
+        location: true,
+        notes: true,
+        status: true,
+      },
+    });
+    if (!entry) return null;
+    return {
+      kind: 'time_entry',
+      timeEntry: {
+        id: entry.id,
+        userId: entry.userId,
+        projectId: entry.projectId,
+        taskId: entry.taskId ?? null,
+        workDate: new Date(entry.workDate).toISOString(),
+        minutes: Number(entry.minutes ?? 0),
+        workType: entry.workType ?? null,
+        location: entry.location ?? null,
+        notes: entry.notes ?? null,
+        status: String(entry.status ?? ''),
+      },
+    };
+  }
+  if (normalized === 'leave_request' || normalized === 'leave_requests') {
+    const request = await client.leaveRequest?.findUnique?.({
+      where: { id: input.targetId },
+      select: {
+        id: true,
+        userId: true,
+        leaveType: true,
+        startDate: true,
+        endDate: true,
+        hours: true,
+        minutes: true,
+        startTimeMinutes: true,
+        endTimeMinutes: true,
+        noConsultationConfirmed: true,
+        noConsultationReason: true,
+        status: true,
+        notes: true,
+      },
+    });
+    if (!request) return null;
+    return {
+      kind: 'leave_request',
+      leaveRequest: {
+        id: request.id,
+        userId: request.userId,
+        leaveType: request.leaveType,
+        startDate: new Date(request.startDate).toISOString(),
+        endDate: new Date(request.endDate).toISOString(),
+        hours: typeof request.hours === 'number' ? Number(request.hours) : null,
+        minutes:
+          typeof request.minutes === 'number' ? Number(request.minutes) : null,
+        startTimeMinutes:
+          typeof request.startTimeMinutes === 'number'
+            ? Number(request.startTimeMinutes)
+            : null,
+        endTimeMinutes:
+          typeof request.endTimeMinutes === 'number'
+            ? Number(request.endTimeMinutes)
+            : null,
+        noConsultationConfirmed:
+          typeof request.noConsultationConfirmed === 'boolean'
+            ? request.noConsultationConfirmed
+            : null,
+        noConsultationReason: request.noConsultationReason ?? null,
+        status: String(request.status ?? ''),
+        notes: request.notes ?? null,
+      },
+    };
+  }
+  return null;
 }
 
 async function buildSnapshotChatMessages(
@@ -171,7 +303,13 @@ export async function createEvidenceSnapshotForApproval(
   }
 
   const targetKind = resolveEvidenceSnapshotTargetKind(input.targetTable);
-  if (!targetKind) {
+  const subject = await buildSnapshotSubject(client, {
+    targetTable: input.targetTable,
+    targetId: input.targetId,
+  });
+
+  // Some targets are supported without Annotation (e.g. time_entries); others require it.
+  if (!targetKind && !subject) {
     return {
       created: false as const,
       unsupportedTarget: true as const,
@@ -179,25 +317,28 @@ export async function createEvidenceSnapshotForApproval(
     };
   }
 
-  const annotation = await client.annotation.findUnique({
-    where: {
-      targetKind_targetId: {
-        targetKind,
-        targetId: input.targetId,
-      },
-    },
-    select: {
-      notes: true,
-      externalUrls: true,
-      internalRefs: true,
-      updatedAt: true,
-    },
-  });
+  const annotation = targetKind
+    ? await client.annotation.findUnique({
+        where: {
+          targetKind_targetId: {
+            targetKind,
+            targetId: input.targetId,
+          },
+        },
+        select: {
+          notes: true,
+          externalUrls: true,
+          internalRefs: true,
+          updatedAt: true,
+        },
+      })
+    : null;
 
   const internalRefs = normalizeInternalRefs(annotation?.internalRefs);
   const externalUrls = normalizeExternalUrls(annotation?.externalUrls);
   const chatMessages = await buildSnapshotChatMessages(client, internalRefs);
   const items = {
+    ...(subject ? { subject } : {}),
     notes: annotation?.notes ?? null,
     externalUrls,
     internalRefs,

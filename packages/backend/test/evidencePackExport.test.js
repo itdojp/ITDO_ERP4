@@ -81,6 +81,15 @@ test('maskEvidencePackJsonExport: masks sensitive fields and rehashes', () => {
       sourceAnnotationUpdatedAt: new Date('2026-02-13T11:00:00.000Z'),
       items: {
         notes: 'contact foo@example.com and 09012345678',
+        subject: {
+          kind: 'time_entry',
+          timeEntry: {
+            id: 't-1',
+            userId: 'u99999',
+            projectId: 'p-1',
+            notes: 'mail foo@example.com',
+          },
+        },
         externalUrls: ['https://example.com/private/path?a=1'],
         internalRefs: [{ kind: 'chat_message', id: 'm-1', label: 'secret 09011112222' }],
         chatMessages: [
@@ -104,6 +113,11 @@ test('maskEvidencePackJsonExport: masks sensitive fields and rehashes', () => {
   );
   const maskedItems = masked.payload.snapshot.items;
   assert.equal(maskedItems.notes.includes('foo@example.com'), false);
+  assert.notEqual(maskedItems.subject.timeEntry.userId, 'u99999');
+  assert.equal(
+    maskedItems.subject.timeEntry.notes.includes('foo@example.com'),
+    false,
+  );
   assert.equal(maskedItems.externalUrls[0], 'https://example.com/***');
   assert.equal(
     maskedItems.chatMessages[0].excerpt.includes('foo@example.com'),
