@@ -38,6 +38,7 @@ function canReadApprovalInstance(
   approval: {
     projectId: string | null;
     createdBy: string | null;
+    targetTable?: string | null;
   },
   user: {
     userId?: string;
@@ -56,6 +57,13 @@ function canReadApprovalInstance(
   const userId = normalizeString(user?.userId);
   if (!userId) return false;
   if (approval.createdBy === userId) return true;
+
+  // Fail-safe: time entries are personal data and should not be readable just by project membership.
+  const targetTable = normalizeString(approval.targetTable).toLowerCase();
+  if (targetTable === 'time_entries' || targetTable === 'time_entry') {
+    return false;
+  }
+
   const projectIds = user?.projectIds ?? [];
   if (approval.projectId && projectIds.includes(approval.projectId))
     return true;
@@ -286,6 +294,7 @@ export async function registerEvidenceSnapshotRoutes(app: FastifyInstance) {
         where: { id },
         select: {
           id: true,
+          targetTable: true,
           projectId: true,
           createdBy: true,
         },
@@ -365,6 +374,7 @@ export async function registerEvidenceSnapshotRoutes(app: FastifyInstance) {
         where: { id },
         select: {
           id: true,
+          targetTable: true,
           projectId: true,
           createdBy: true,
         },

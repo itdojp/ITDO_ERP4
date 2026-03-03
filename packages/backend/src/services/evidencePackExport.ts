@@ -224,6 +224,7 @@ export function maskEvidencePackJsonExport(
     externalUrls?: unknown;
     internalRefs?: unknown;
     chatMessages?: unknown;
+    subject?: unknown;
   } | null;
   if (items && typeof items === 'object') {
     if (typeof items.notes === 'string') {
@@ -258,6 +259,45 @@ export function maskEvidencePackJsonExport(
         }
         return row;
       });
+    }
+    if (items.subject && typeof items.subject === 'object') {
+      const subject = items.subject as Record<string, unknown>;
+      const maskedSubject = { ...subject };
+
+      const maskRecord = (value: unknown) => {
+        if (!value || typeof value !== 'object' || Array.isArray(value))
+          return value;
+        const row = { ...(value as Record<string, unknown>) };
+        for (const [key, raw] of Object.entries(row)) {
+          if (typeof raw !== 'string') continue;
+          const lower = key.toLowerCase();
+          const maskedId =
+            lower === 'userid' ||
+            lower.endsWith('id') ||
+            lower === 'createdby' ||
+            lower === 'updatedby' ||
+            lower === 'approvedby';
+          if (maskedId) {
+            row[key] = raw.includes('@') ? maskEmail(raw) : maskId(raw);
+            continue;
+          }
+          const maskedFreeText =
+            lower === 'notes' || lower.endsWith('reason') || lower === 'reason';
+          if (maskedFreeText) {
+            row[key] = maskFreeText(raw);
+          }
+        }
+        return row;
+      };
+
+      if (maskedSubject.kind === 'time_entry') {
+        maskedSubject.timeEntry = maskRecord(maskedSubject.timeEntry);
+      }
+      if (maskedSubject.kind === 'leave_request') {
+        maskedSubject.leaveRequest = maskRecord(maskedSubject.leaveRequest);
+      }
+
+      items.subject = maskedSubject;
     }
   }
 
