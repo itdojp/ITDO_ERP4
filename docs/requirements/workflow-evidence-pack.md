@@ -1,6 +1,6 @@
-# Workflow Evidence Pack（Issue #957 / #961）設計メモ
+# Workflow Evidence Pack（Issue #957 / #961 / #1308 A2/A3）設計メモ
 
-最終更新: 2026-02-14
+最終更新: 2026-03-04
 
 ## 目的
 
@@ -41,6 +41,10 @@
   - `internalRefs`: { kind, id, label? }[]
   - `chatMessages`: { id, roomId, createdAt, userId, excerpt, bodyHash? }[]
     - `bodyHash?`: 将来の改ざん検知/整合性検証用。現行 `ChatMessage` には未定義のため、MVPでは未実装可。
+  - `subject?`: 承認対象テーブルの最小スナップショット（domain固有値）
+    - 例（実装済み）:
+      - `time_entries`: `kind=time_entry` + `timeEntry{ id,userId,projectId,taskId,workDate,minutes,workType,location,notes,status }`
+      - `leave_requests`: `kind=leave_request` + `leaveRequest{ id,userId,leaveType,startDate,endDate,hours,minutes,startTimeMinutes,endTimeMinutes,noConsultationConfirmed,noConsultationReason,status,notes }`
 - `createdAt` / `updatedAt`
 
 ### AuditLog（既存モデル、テーブル: `audit_logs`）
@@ -98,6 +102,10 @@
   - `mask=1|0`（省略時は `1`。PIIマスク適用）
 - 出力:
   - `format=json`: `payload` + `integrity`（sha256/digest/canonicalization）
+    - 現行実装: `payload.schemaVersion` は `evidence-pack/v1`
+    - 将来予定（Issue #1308 A3）: `evidence-pack/v2` で以下を追加
+      - `payload.workflowHistory`（承認step + 監査イベント）
+      - `payload.attachments`（添付のメタデータ + ハッシュ。添付本体は含めない）
   - `format=pdf`: JSON出力と同一内容をPDF化した添付ファイル（監査提出向け）
 - 監査ログ: `action=evidence_pack_exported`
 
@@ -137,9 +145,12 @@
 
 - 生成/再生成: `admin/mgmt`
 - 閲覧: 当該承認を閲覧できるユーザ
+  - 例外（実装済み）: `time_entries` は個人情報性が高いため、証跡（snapshot/pack）の閲覧を「作成者 + admin/mgmt/exec」に限定する
 - 再生成時は `reasonText` 必須 + 監査ログ
 - 監査提出JSONのエクスポートは監査ログに `digest` を記録
 - JSONエクスポート既定は `mask=1` とし、外部URL/抜粋/ユーザ識別子等をPIIマスクする
+  - 現行実装: `mask=0`（unmasked）も利用可能（承認閲覧可能ユーザ）
+  - 将来予定（Issue #1308 A3）: `mask=0` は `admin/mgmt` のみに制限する（外部提出用途を想定）
 
 ## Phase2（Issue #961）進捗
 
