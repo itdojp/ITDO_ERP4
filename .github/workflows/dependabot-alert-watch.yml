@@ -48,11 +48,19 @@ jobs:
               echo "NONE"
               return
             fi
+            if grep -qi 'No alert found for alert number' tmp/dependabot-alert-watch.log; then
+              echo "ALERT_NOT_FOUND"
+              return
+            fi
             if [[ "${DEPENDABOT_ALERTS_TOKEN_SET}" != "true" ]] && grep -qi 'Resource not accessible by integration' tmp/dependabot-alert-watch.log; then
               echo "MISSING_DEPENDABOT_ALERTS_TOKEN"
               return
             fi
             if grep -qi 'Resource not accessible by integration' tmp/dependabot-alert-watch.log; then
+              echo "PERMISSION_DENIED"
+              return
+            fi
+            if grep -qi 'admin:repo_hook' tmp/dependabot-alert-watch.log; then
               echo "PERMISSION_DENIED"
               return
             fi
@@ -139,6 +147,8 @@ jobs:
         run: |
           if [[ "${FAILURE_REASON}" == "MISSING_DEPENDABOT_ALERTS_TOKEN" ]]; then
             echo "::warning title=dependabot alert watch::check script failed (status=${{ steps.check.outputs.status }}, reason=${FAILURE_REASON}). Set DEPENDABOT_ALERTS_TOKEN to restore issue sync."
+          elif [[ "${FAILURE_REASON}" == "ALERT_NOT_FOUND" ]]; then
+            echo "::warning title=dependabot alert watch::check script failed (status=${{ steps.check.outputs.status }}, reason=${FAILURE_REASON}). Verify configured alert numbers and update issue/watch settings."
           elif [[ "${FAILURE_REASON}" == "PERMISSION_DENIED" ]]; then
             echo "::warning title=dependabot alert watch::check script failed (status=${{ steps.check.outputs.status }}, reason=${FAILURE_REASON}). Update DEPENDABOT_ALERTS_TOKEN permissions to restore issue sync."
           elif [[ "${FAILURE_REASON}" == "BAD_CREDENTIALS" ]]; then
@@ -192,6 +202,8 @@ jobs:
             action_message="workflow ログ/artifact を確認し、失敗要因を解消して再実行してください。"
             if [[ "${FAILURE_REASON}" == "MISSING_DEPENDABOT_ALERTS_TOKEN" ]]; then
               action_message="\`DEPENDABOT_ALERTS_TOKEN\`（Dependabot alerts 読み取り権限付き）を repository secret に設定して再実行してください。"
+            elif [[ "${FAILURE_REASON}" == "ALERT_NOT_FOUND" ]]; then
+              action_message="監視対象 Alert 番号（`ALERT_LOW_NUMBER` / `ALERT_HIGH_NUMBER`）と current alert 状態を確認し、必要なら監視設定を更新してください。"
             elif [[ "${FAILURE_REASON}" == "PERMISSION_DENIED" ]]; then
               action_message="\`DEPENDABOT_ALERTS_TOKEN\` と権限設定を確認して再実行してください。"
             fi
