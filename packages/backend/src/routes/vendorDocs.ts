@@ -17,7 +17,10 @@ import { checkProjectAndVendor } from '../services/entityChecks.js';
 import { parseDateParam } from '../utils/date.js';
 import { evaluateActionPolicyWithFallback } from '../services/actionPolicy.js';
 import { resolveActionPolicyDeniedCode } from '../services/actionPolicyErrors.js';
-import { logActionPolicyOverrideIfNeeded } from '../services/actionPolicyAudit.js';
+import {
+  logActionPolicyFallbackAllowedIfNeeded,
+  logActionPolicyOverrideIfNeeded,
+} from '../services/actionPolicyAudit.js';
 import { auditContextFromRequest, logAudit } from '../services/audit.js';
 import { normalizeVendorInvoiceAllocations } from '../services/vendorInvoiceAllocations.js';
 import { normalizeVendorInvoiceLines } from '../services/vendorInvoiceLines.js';
@@ -465,6 +468,14 @@ export async function registerVendorDocRoutes(app: FastifyInstance) {
           },
         });
       }
+      await logActionPolicyFallbackAllowedIfNeeded({
+        req,
+        flowType: FlowTypeValue.vendor_invoice,
+        actionKey: 'update_allocations',
+        targetTable: 'vendor_invoices',
+        targetId: id,
+        result: policyRes,
+      });
       await logActionPolicyOverrideIfNeeded({
         req,
         flowType: FlowTypeValue.vendor_invoice,
@@ -811,6 +822,14 @@ export async function registerVendorDocRoutes(app: FastifyInstance) {
           },
         });
       }
+      await logActionPolicyFallbackAllowedIfNeeded({
+        req,
+        flowType: FlowTypeValue.vendor_invoice,
+        actionKey: 'update_lines',
+        targetTable: 'vendor_invoices',
+        targetId: id,
+        result: policyRes,
+      });
       await logActionPolicyOverrideIfNeeded({
         req,
         flowType: FlowTypeValue.vendor_invoice,
@@ -1266,6 +1285,14 @@ export async function registerVendorDocRoutes(app: FastifyInstance) {
           },
         });
       }
+      await logActionPolicyFallbackAllowedIfNeeded({
+        req,
+        flowType: FlowTypeValue.vendor_invoice,
+        actionKey: 'link_po',
+        targetTable: 'vendor_invoices',
+        targetId: id,
+        result: policyRes,
+      });
       await logActionPolicyOverrideIfNeeded({
         req,
         flowType: FlowTypeValue.vendor_invoice,
@@ -1426,6 +1453,14 @@ export async function registerVendorDocRoutes(app: FastifyInstance) {
           },
         });
       }
+      await logActionPolicyFallbackAllowedIfNeeded({
+        req,
+        flowType: FlowTypeValue.vendor_invoice,
+        actionKey: 'unlink_po',
+        targetTable: 'vendor_invoices',
+        targetId: id,
+        result: policyRes,
+      });
       await logActionPolicyOverrideIfNeeded({
         req,
         flowType: FlowTypeValue.vendor_invoice,
@@ -1545,6 +1580,14 @@ export async function registerVendorDocRoutes(app: FastifyInstance) {
           },
         });
       }
+      await logActionPolicyFallbackAllowedIfNeeded({
+        req,
+        flowType: FlowTypeValue.vendor_invoice,
+        actionKey: 'submit',
+        targetTable: 'vendor_invoices',
+        targetId: id,
+        result: policyRes,
+      });
       await logActionPolicyOverrideIfNeeded({
         req,
         flowType: FlowTypeValue.vendor_invoice,

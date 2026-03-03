@@ -30,7 +30,10 @@ import { parseDateParam } from '../utils/date.js';
 import { findPeriodLock, toPeriodKey } from '../services/periodLock.js';
 import { evaluateActionPolicyWithFallback } from '../services/actionPolicy.js';
 import { resolveActionPolicyDeniedCode } from '../services/actionPolicyErrors.js';
-import { logActionPolicyOverrideIfNeeded } from '../services/actionPolicyAudit.js';
+import {
+  logActionPolicyFallbackAllowedIfNeeded,
+  logActionPolicyOverrideIfNeeded,
+} from '../services/actionPolicyAudit.js';
 import { logExpenseStateTransition } from '../services/expenseStateTransitionLog.js';
 import {
   isExpenseQaChecklistComplete,
@@ -1053,6 +1056,14 @@ export async function registerExpenseRoutes(app: FastifyInstance) {
           },
         });
       }
+      await logActionPolicyFallbackAllowedIfNeeded({
+        req,
+        flowType: FlowTypeValue.expense,
+        actionKey: 'submit',
+        targetTable: 'expenses',
+        targetId: id,
+        result: policyRes,
+      });
       await logActionPolicyOverrideIfNeeded({
         req,
         flowType: FlowTypeValue.expense,
@@ -1211,6 +1222,14 @@ export async function registerExpenseRoutes(app: FastifyInstance) {
           },
         });
       }
+      await logActionPolicyFallbackAllowedIfNeeded({
+        req,
+        flowType: FlowTypeValue.expense,
+        actionKey: 'mark_paid',
+        targetTable: 'expenses',
+        targetId: id,
+        result: policyRes,
+      });
       await logActionPolicyOverrideIfNeeded({
         req,
         flowType: FlowTypeValue.expense,
@@ -1351,6 +1370,14 @@ export async function registerExpenseRoutes(app: FastifyInstance) {
           },
         });
       }
+      await logActionPolicyFallbackAllowedIfNeeded({
+        req,
+        flowType: FlowTypeValue.expense,
+        actionKey: 'unmark_paid',
+        targetTable: 'expenses',
+        targetId: id,
+        result: policyRes,
+      });
       await logActionPolicyOverrideIfNeeded({
         req,
         flowType: FlowTypeValue.expense,

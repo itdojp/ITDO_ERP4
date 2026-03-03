@@ -17,7 +17,10 @@ import { prisma } from '../services/db.js';
 import type { NotifyResult } from '../services/notifier.js';
 import { evaluateActionPolicyWithFallback } from '../services/actionPolicy.js';
 import { resolveActionPolicyDeniedCode } from '../services/actionPolicyErrors.js';
-import { logActionPolicyOverrideIfNeeded } from '../services/actionPolicyAudit.js';
+import {
+  logActionPolicyFallbackAllowedIfNeeded,
+  logActionPolicyOverrideIfNeeded,
+} from '../services/actionPolicyAudit.js';
 import { getRouteRateLimitOptions } from '../services/rateLimitOverrides.js';
 import { ensureApprovalEvidenceReady } from '../services/approvalEvidenceGate.js';
 
@@ -379,6 +382,14 @@ export async function registerSendRoutes(app: FastifyInstance) {
           },
         });
       }
+      await logActionPolicyFallbackAllowedIfNeeded({
+        req,
+        flowType: FlowTypeValue.estimate,
+        actionKey: 'send',
+        targetTable: 'estimates',
+        targetId: id,
+        result: policyRes,
+      });
       await logActionPolicyOverrideIfNeeded({
         req,
         flowType: FlowTypeValue.estimate,
@@ -578,6 +589,14 @@ export async function registerSendRoutes(app: FastifyInstance) {
           },
         });
       }
+      await logActionPolicyFallbackAllowedIfNeeded({
+        req,
+        flowType: FlowTypeValue.invoice,
+        actionKey: 'send',
+        targetTable: 'invoices',
+        targetId: id,
+        result: policyRes,
+      });
       await logActionPolicyOverrideIfNeeded({
         req,
         flowType: FlowTypeValue.invoice,
@@ -777,6 +796,14 @@ export async function registerSendRoutes(app: FastifyInstance) {
           },
         });
       }
+      await logActionPolicyFallbackAllowedIfNeeded({
+        req,
+        flowType: FlowTypeValue.purchase_order,
+        actionKey: 'send',
+        targetTable: 'purchase_orders',
+        targetId: id,
+        result: policyRes,
+      });
       await logActionPolicyOverrideIfNeeded({
         req,
         flowType: FlowTypeValue.purchase_order,
