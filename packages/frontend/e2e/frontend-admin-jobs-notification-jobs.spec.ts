@@ -245,7 +245,13 @@ test('frontend admin jobs: chat ack reminder / leave upcoming run and dashboard 
   );
   await ensureOk(ackCreateRes);
 
-  const leaveDate = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000)
+  const suffixHash = Array.from(suffix).reduce(
+    (acc, ch) => acc + ch.charCodeAt(0),
+    0,
+  );
+  // Spread test leave dates over a 7-26 day window to reduce cross-run collisions.
+  const leaveOffsetDays = 7 + (suffixHash % 20);
+  const leaveDate = new Date(Date.now() + leaveOffsetDays * 24 * 60 * 60 * 1000)
     .toISOString()
     .slice(0, 10);
   const leaveCreateRes = await page.request.post(`${apiBase}/leave-requests`, {
