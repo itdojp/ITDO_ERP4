@@ -4,7 +4,10 @@ import { submitApprovalWithUpdate } from '../services/approval.js';
 import { createApprovalPendingNotifications } from '../services/appNotifications.js';
 import { evaluateActionPolicyWithFallback } from '../services/actionPolicy.js';
 import { resolveActionPolicyDeniedCode } from '../services/actionPolicyErrors.js';
-import { logActionPolicyOverrideIfNeeded } from '../services/actionPolicyAudit.js';
+import {
+  logActionPolicyFallbackAllowedIfNeeded,
+  logActionPolicyOverrideIfNeeded,
+} from '../services/actionPolicyAudit.js';
 import { FlowTypeValue, DocStatusValue } from '../types.js';
 import { purchaseOrderSchema } from './validators.js';
 import { requireRole } from '../services/rbac.js';
@@ -142,6 +145,14 @@ export async function registerPurchaseOrderRoutes(app: FastifyInstance) {
             },
           });
         }
+        await logActionPolicyFallbackAllowedIfNeeded({
+          req,
+          flowType: FlowTypeValue.purchase_order,
+          actionKey: 'submit',
+          targetTable: 'purchase_orders',
+          targetId: id,
+          result: policyRes,
+        });
         await logActionPolicyOverrideIfNeeded({
           req,
           flowType: FlowTypeValue.purchase_order,

@@ -15,7 +15,10 @@ import {
 import { diffInDays, endOfDay, parseDateParam } from '../utils/date.js';
 import { evaluateActionPolicyWithFallback } from '../services/actionPolicy.js';
 import { resolveActionPolicyDeniedCode } from '../services/actionPolicyErrors.js';
-import { logActionPolicyOverrideIfNeeded } from '../services/actionPolicyAudit.js';
+import {
+  logActionPolicyFallbackAllowedIfNeeded,
+  logActionPolicyOverrideIfNeeded,
+} from '../services/actionPolicyAudit.js';
 import { ensureLeaveSetting } from '../services/leaveSettings.js';
 import {
   computePaidLeaveBalance,
@@ -769,6 +772,14 @@ export async function registerLeaveRoutes(app: FastifyInstance) {
           },
         });
       }
+      await logActionPolicyFallbackAllowedIfNeeded({
+        req,
+        flowType: FlowTypeValue.leave,
+        actionKey: 'submit',
+        targetTable: 'leave_requests',
+        targetId: id,
+        result: policyRes,
+      });
       await logActionPolicyOverrideIfNeeded({
         req,
         flowType: FlowTypeValue.leave,

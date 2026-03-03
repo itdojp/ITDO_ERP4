@@ -12,7 +12,10 @@ import {
 } from '../services/appNotifications.js';
 import { evaluateActionPolicyWithFallback } from '../services/actionPolicy.js';
 import { resolveActionPolicyDeniedCode } from '../services/actionPolicyErrors.js';
-import { logActionPolicyOverrideIfNeeded } from '../services/actionPolicyAudit.js';
+import {
+  logActionPolicyFallbackAllowedIfNeeded,
+  logActionPolicyOverrideIfNeeded,
+} from '../services/actionPolicyAudit.js';
 import {
   approvalActionSchema,
   approvalCancelSchema,
@@ -599,6 +602,14 @@ export async function registerApprovalRuleRoutes(app: FastifyInstance) {
             },
           });
         }
+        await logActionPolicyFallbackAllowedIfNeeded({
+          req,
+          flowType: instance.flowType,
+          actionKey: body.action,
+          targetTable: 'approval_instances',
+          targetId: instance.id,
+          result: policyRes,
+        });
         const result = await act(id, userId, body.action, {
           reason: body.reason,
           actorGroupId,

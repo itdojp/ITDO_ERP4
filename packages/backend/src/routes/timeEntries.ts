@@ -21,7 +21,10 @@ import { findPeriodLock, toPeriodKey } from '../services/periodLock.js';
 import { getEditableDays } from '../services/worklogSetting.js';
 import { evaluateActionPolicyWithFallback } from '../services/actionPolicy.js';
 import { resolveActionPolicyDeniedCode } from '../services/actionPolicyErrors.js';
-import { logActionPolicyOverrideIfNeeded } from '../services/actionPolicyAudit.js';
+import {
+  logActionPolicyFallbackAllowedIfNeeded,
+  logActionPolicyOverrideIfNeeded,
+} from '../services/actionPolicyAudit.js';
 
 async function validateTaskId(
   taskId: unknown,
@@ -272,6 +275,14 @@ export async function registerTimeEntryRoutes(app: FastifyInstance) {
           },
         });
       }
+      await logActionPolicyFallbackAllowedIfNeeded({
+        req,
+        flowType: FlowTypeValue.time,
+        actionKey: 'edit',
+        targetTable: 'time_entries',
+        targetId: id,
+        result: policyRes,
+      });
       await logActionPolicyOverrideIfNeeded({
         req,
         flowType: FlowTypeValue.time,
@@ -456,6 +467,14 @@ export async function registerTimeEntryRoutes(app: FastifyInstance) {
             },
           });
         }
+        await logActionPolicyFallbackAllowedIfNeeded({
+          req,
+          flowType: FlowTypeValue.time,
+          actionKey: 'submit',
+          targetTable: 'time_entries',
+          targetId: id,
+          result: policyRes,
+        });
         await logActionPolicyOverrideIfNeeded({
           req,
           flowType: FlowTypeValue.time,

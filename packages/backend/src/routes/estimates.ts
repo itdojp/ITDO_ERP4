@@ -8,7 +8,10 @@ import { requireProjectAccess, requireRole } from '../services/rbac.js';
 import { prisma } from '../services/db.js';
 import { evaluateActionPolicyWithFallback } from '../services/actionPolicy.js';
 import { resolveActionPolicyDeniedCode } from '../services/actionPolicyErrors.js';
-import { logActionPolicyOverrideIfNeeded } from '../services/actionPolicyAudit.js';
+import {
+  logActionPolicyFallbackAllowedIfNeeded,
+  logActionPolicyOverrideIfNeeded,
+} from '../services/actionPolicyAudit.js';
 
 export async function registerEstimateRoutes(app: FastifyInstance) {
   app.get(
@@ -168,6 +171,14 @@ export async function registerEstimateRoutes(app: FastifyInstance) {
             },
           });
         }
+        await logActionPolicyFallbackAllowedIfNeeded({
+          req,
+          flowType: FlowTypeValue.estimate,
+          actionKey: 'submit',
+          targetTable: 'estimates',
+          targetId: id,
+          result: policyRes,
+        });
         await logActionPolicyOverrideIfNeeded({
           req,
           flowType: FlowTypeValue.estimate,
