@@ -291,6 +291,7 @@ export function maskEvidencePackJsonExport(
       ? history.events.map((event) => ({
           ...event,
           id: event.id ? maskId(event.id) : event.id,
+          targetId: event.targetId ? maskId(event.targetId) : event.targetId,
           userId: event.userId
             ? event.userId.includes('@')
               ? maskEmail(event.userId)

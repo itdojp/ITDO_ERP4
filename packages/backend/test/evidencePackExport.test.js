@@ -155,6 +155,7 @@ test('maskEvidencePackJsonExport: masks sensitive fields and rehashes', () => {
   );
   assert.notEqual(masked.payload.workflowHistory.steps[0].actedBy, 'u99999');
   assert.notEqual(masked.payload.workflowHistory.events[0].userId, 'u99999');
+  assert.notEqual(masked.payload.workflowHistory.events[0].targetId, 'step-1');
   assert.equal(
     masked.payload.workflowHistory.events[0].reasonText.includes(
       'foo@example.com',
