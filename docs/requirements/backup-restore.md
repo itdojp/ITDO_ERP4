@@ -118,12 +118,19 @@
 
 #### S3 事前検証コマンド
 - `scripts/check-backup-s3-readiness.sh` で設定値とS3状態を検証できる
+  - 入力値バリデーション:
+    - `STRICT`: `0|1`（既定: `1`）
+    - `CHECK_WRITE`: `0|1`（既定: `0`）
+    - `EXPECT_SSE`: `aws:kms|AES256|any`
   - 例（読み取り中心の検証）:
     - `S3_BUCKET=erp4-backups S3_REGION=ap-northeast-1 EXPECT_SSE=aws:kms SSE_KMS_KEY_ID=alias/erp4-backup make backup-s3-readiness-check`
   - 例（書き込み権限も検証）:
     - `S3_BUCKET=erp4-backups S3_REGION=ap-northeast-1 EXPECT_SSE=aws:kms SSE_KMS_KEY_ID=alias/erp4-backup CHECK_WRITE=1 make backup-s3-readiness-check`
   - KMSの接続先がS3と異なる環境は `KMS_ENDPOINT_URL` を指定する。
   - `STRICT=1`（既定）では警告も失敗扱い。確認目的のみなら `STRICT=0` を指定。
+  - 出力の末尾に機械可読行を出力する:
+    - 例: `SUMMARY status=warn warning_count=2 error_count=0 strict=0 check_write=1`
+    - `status`: `pass|warn|fail`
 - 実行結果は `scripts/record-backup-s3-readiness.sh` で `docs/test-results/` に記録できる
   - 既存ログを記録する:
     - `LOG_FILE=tmp/backup-s3-readiness/backup-s3-readiness-YYYYMMDD-HHMMSS.log make backup-s3-readiness-record`
@@ -131,6 +138,13 @@
     - `RUN_CHECK=1 S3_BUCKET=erp4-backups S3_REGION=ap-northeast-1 EXPECT_SSE=aws:kms SSE_KMS_KEY_ID=alias/erp4-backup make backup-s3-readiness-record`
   - 失敗時にコマンドを非0終了させる:
     - `RUN_CHECK=1 FAIL_ON_CHECK=1 ... make backup-s3-readiness-record`
+  - 記録時の入力制約:
+    - `DATE_STAMP`: `YYYY-MM-DD` かつ実在日付のみ
+    - `RUN_LABEL`: `^[A-Za-z0-9][A-Za-z0-9._-]*$`
+  - 記録レポートには `summarySource` を出力する（`summary-line` / `legacy-log-scan`）。
+    - `summary-line`: `SUMMARY ...` を解析した結果
+    - `legacy-log-scan`: 旧形式ログの文言解析結果
+  - 日付検証は GNU/BSD 両方の `date` 実装に対応（Linux/macOS の混在環境で実行可能）。
 
 ## S3/OSS 移行の開始条件（叩き台）
 - バケット/KMS/権限分離の準備が完了している
