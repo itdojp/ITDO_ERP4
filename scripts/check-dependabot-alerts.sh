@@ -37,9 +37,37 @@ fi
 REPO_OWNER="${REPOSITORY%%/*}"
 REPO_NAME="${REPOSITORY##*/}"
 
+empty_alert_json() {
+  local alert_number="$1"
+  local state="$2"
+  jq -cn \
+    --arg number "$alert_number" \
+    --arg state "$state" \
+    '{
+      number: ($number | tonumber),
+      state: $state,
+      vulnerableManifestPath: "",
+      vulnerableRequirements: "",
+      securityVulnerability: {
+        severity: "",
+        package: { name: "" },
+        firstPatchedVersion: { identifier: "" }
+      },
+      securityAdvisory: {
+        ghsaId: "",
+        summary: ""
+      }
+    }'
+}
+
 read_alert() {
   local alert_number="$1"
-  gh api "repos/${REPO_OWNER}/${REPO_NAME}/dependabot/alerts/${alert_number}" \
+  local optional_not_found="${2:-0}"
+  local err_file
+  err_file="$(mktemp)"
+  local output=""
+  set +e
+  output="$(gh api "repos/${REPO_OWNER}/${REPO_NAME}/dependabot/alerts/${alert_number}" \
     --jq '{
       number: .number,
       state: ((.state // "unknown") | ascii_upcase),
@@ -58,7 +86,28 @@ read_alert() {
         ghsaId: (.security_advisory.ghsa_id // ""),
         summary: (.security_advisory.summary // "")
       }
-    }'
+    }' 2>"${err_file}")"
+  local status=$?
+  set -e
+
+  if [[ "${status}" == "0" ]]; then
+    rm -f "${err_file}"
+    echo "${output}"
+    return 0
+  fi
+
+  local error_message
+  error_message="$(cat "${err_file}")"
+  rm -f "${err_file}"
+
+  if [[ "${optional_not_found}" == "1" ]] && grep -qi 'No alert found for alert number' <<<"${error_message}"; then
+    echo "WARN: alert #${alert_number} not found; treating as NOT_FOUND" >&2
+    empty_alert_json "${alert_number}" "NOT_FOUND"
+    return 0
+  fi
+
+  echo "${error_message}" >&2
+  return "${status}"
 }
 
 normalize_json_scalar() {
@@ -125,7 +174,7 @@ read_latest_version() {
 }
 
 alert_low_json="$(read_alert "${ALERT_LOW_NUMBER}")"
-alert_high_json="$(read_alert "${ALERT_HIGH_NUMBER}")"
+alert_high_json="$(read_alert "${ALERT_HIGH_NUMBER}" "1")"
 lock_versions_json="$(read_lock_versions "${BACKEND_LOCKFILE}")"
 
 alert_low_state="$(echo "${alert_low_json}" | jq -r '.state // "UNKNOWN"')"
