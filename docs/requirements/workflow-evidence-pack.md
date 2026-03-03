@@ -102,8 +102,7 @@
   - `mask=1|0`（省略時は `1`。PIIマスク適用）
 - 出力:
   - `format=json`: `payload` + `integrity`（sha256/digest/canonicalization）
-    - 現行実装: `payload.schemaVersion` は `evidence-pack/v1`
-    - 将来予定（Issue #1308 A3）: `evidence-pack/v2` で以下を追加
+    - 現行実装: `payload.schemaVersion` は `evidence-pack/v2`
       - `payload.workflowHistory`（承認step + 監査イベント）
       - `payload.attachments`（添付のメタデータ + ハッシュ。添付本体は含めない）
   - `format=pdf`: JSON出力と同一内容をPDF化した添付ファイル（監査提出向け）
@@ -149,8 +148,7 @@
 - 再生成時は `reasonText` 必須 + 監査ログ
 - 監査提出JSONのエクスポートは監査ログに `digest` を記録
 - JSONエクスポート既定は `mask=1` とし、外部URL/抜粋/ユーザ識別子等をPIIマスクする
-  - 現行実装: `mask=0`（unmasked）も利用可能（承認閲覧可能ユーザ）
-  - 将来予定（Issue #1308 A3）: `mask=0` は `admin/mgmt` のみに制限する（外部提出用途を想定）
+  - 現行実装: `mask=0`（unmasked）は `admin/mgmt` のみに制限する（外部提出用途を想定）
 
 ## Phase2（Issue #961）進捗
 

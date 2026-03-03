@@ -1600,6 +1600,7 @@
                     ]
                   },
                   "mask": {
+                    "description": "0 は admin/mgmt のみ利用可能",
                     "maximum": 1,
                     "minimum": 0,
                     "type": "integer"
@@ -1618,6 +1619,9 @@
         "responses": {
           "200": {
             "description": "Default Response"
+          },
+          "403": {
+            "description": "Forbidden (mask=0 requires admin/mgmt)"
           }
         }
       }
@@ -1660,6 +1664,7 @@
             "name": "mask",
             "required": false,
             "schema": {
+              "description": "0 は admin/mgmt のみ利用可能",
               "maximum": 1,
               "minimum": 0,
               "type": "integer"
@@ -1677,6 +1682,9 @@
         "responses": {
           "200": {
             "description": "Default Response"
+          },
+          "403": {
+            "description": "Forbidden (mask=0 requires admin/mgmt)"
           }
         }
       }
