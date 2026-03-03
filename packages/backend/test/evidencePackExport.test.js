@@ -91,7 +91,9 @@ test('maskEvidencePackJsonExport: masks sensitive fields and rehashes', () => {
           },
         },
         externalUrls: ['https://example.com/private/path?a=1'],
-        internalRefs: [{ kind: 'chat_message', id: 'm-1', label: 'secret 09011112222' }],
+        internalRefs: [
+          { kind: 'chat_message', id: 'm-1', label: 'secret 09011112222' },
+        ],
         chatMessages: [
           {
             id: 'm-1',
@@ -103,6 +105,46 @@ test('maskEvidencePackJsonExport: masks sensitive fields and rehashes', () => {
         ],
       },
     },
+    workflowHistory: {
+      steps: [
+        {
+          id: 'step-1',
+          stepOrder: 1,
+          approverGroupId: 'g-1',
+          approverUserId: 'u-approver',
+          status: 'approved',
+          actedBy: 'u99999',
+          actedAt: '2026-02-14T00:00:00.000Z',
+          createdAt: '2026-02-13T00:00:00.000Z',
+        },
+      ],
+      events: [
+        {
+          id: 'audit-1',
+          action: 'approval_step_approve',
+          occurredAt: '2026-02-14T00:00:00.000Z',
+          targetTable: 'approval_steps',
+          targetId: 'step-1',
+          userId: 'u99999',
+          actorRole: 'user',
+          actorGroupId: 'g-1',
+          reasonText: 'mail foo@example.com',
+          metadata: { step: 1 },
+        },
+      ],
+    },
+    attachments: [
+      {
+        kind: 'chat_attachment',
+        id: 'att-1',
+        sourceTable: 'chat_messages',
+        sourceId: 'm-1',
+        filename: 'secret foo@example.com.png',
+        contentType: 'image/png',
+        sizeBytes: 1,
+        sha256: 'a'.repeat(64),
+      },
+    ],
   });
   const masked = maskEvidencePackJsonExport(base);
   assert.notEqual(masked.integrity.digest, base.integrity.digest);
@@ -110,6 +152,19 @@ test('maskEvidencePackJsonExport: masks sensitive fields and rehashes', () => {
   assert.notEqual(
     masked.payload.snapshot.capturedBy,
     base.payload.snapshot.capturedBy,
+  );
+  assert.notEqual(masked.payload.workflowHistory.steps[0].actedBy, 'u99999');
+  assert.notEqual(masked.payload.workflowHistory.events[0].userId, 'u99999');
+  assert.notEqual(masked.payload.workflowHistory.events[0].targetId, 'step-1');
+  assert.equal(
+    masked.payload.workflowHistory.events[0].reasonText.includes(
+      'foo@example.com',
+    ),
+    false,
+  );
+  assert.equal(
+    masked.payload.attachments[0].filename.includes('foo@example.com'),
+    false,
   );
   const maskedItems = masked.payload.snapshot.items;
   assert.equal(maskedItems.notes.includes('foo@example.com'), false);

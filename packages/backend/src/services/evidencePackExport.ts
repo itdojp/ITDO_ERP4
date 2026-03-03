@@ -22,12 +22,55 @@ type SnapshotSummary = {
   items: unknown;
 };
 
+type WorkflowHistoryStep = {
+  id: string;
+  stepOrder: number;
+  approverGroupId: string | null;
+  approverUserId: string | null;
+  status: string;
+  actedBy: string | null;
+  actedAt: string | null;
+  createdAt: string;
+};
+
+type WorkflowHistoryEvent = {
+  id: string;
+  action: string;
+  occurredAt: string;
+  targetTable: string | null;
+  targetId: string | null;
+  userId: string | null;
+  actorRole: string | null;
+  actorGroupId: string | null;
+  reasonText: string | null;
+  metadata: unknown;
+};
+
+type WorkflowHistory = {
+  steps: WorkflowHistoryStep[];
+  events: WorkflowHistoryEvent[];
+};
+
+type AttachmentEvidence = {
+  kind: 'expense_attachment' | 'chat_attachment';
+  id: string;
+  sourceTable: string;
+  sourceId: string;
+  filename: string | null;
+  contentType: string | null;
+  sizeBytes: number | null;
+  sha256: string | null;
+  hashRaw?: string | null;
+};
+
 type ExportPayload = {
   schemaVersion: string;
   exportedAt: string;
   exportedBy: string | null;
   approval: ApprovalSummary;
   snapshot: SnapshotSummary;
+  workflowHistory: WorkflowHistory;
+  attachments: AttachmentEvidence[];
 };
 
 type ExportIntegrity = {
@@ -158,9 +201,11 @@ export function buildEvidencePackJsonExport(input: {
     sourceAnnotationUpdatedAt: Date | null;
     items: unknown;
   };
+  workflowHistory?: WorkflowHistory;
+  attachments?: AttachmentEvidence[];
 }): EvidencePackJsonExport {
   const payload: ExportPayload = {
-    schemaVersion: 'evidence-pack/v1',
+    schemaVersion: 'evidence-pack/v2',
     exportedAt: input.exportedAt.toISOString(),
     exportedBy: input.exportedBy ?? null,
     approval: {
@@ -183,6 +228,8 @@ export function buildEvidencePackJsonExport(input: {
         input.snapshot.sourceAnnotationUpdatedAt?.toISOString() ?? null,
       items: input.snapshot.items,
     },
+    workflowHistory: input.workflowHistory ?? { steps: [], events: [] },
+    attachments: input.attachments ?? [],
   };
 
   const canonicalPayload = JSON.stringify(stableClone(payload));
@@ -217,6 +264,59 @@ export function maskEvidencePackJsonExport(
     payload.snapshot.capturedBy = payload.snapshot.capturedBy.includes('@')
       ? maskEmail(payload.snapshot.capturedBy)
       : maskId(payload.snapshot.capturedBy);
+  }
+
+  if (payload.workflowHistory && typeof payload.workflowHistory === 'object') {
+    const history = payload.workflowHistory as WorkflowHistory;
+    history.steps = Array.isArray(history.steps)
+      ? history.steps.map((step) => ({
+          ...step,
+          id: step.id ? maskId(step.id) : step.id,
+          approverGroupId: step.approverGroupId
+            ? maskId(step.approverGroupId)
+            : null,
+          approverUserId: step.approverUserId
+            ? step.approverUserId.includes('@')
+              ? maskEmail(step.approverUserId)
+              : maskId(step.approverUserId)
+            : null,
+          actedBy: step.actedBy
+            ? step.actedBy.includes('@')
+              ? maskEmail(step.actedBy)
+              : maskId(step.actedBy)
+            : null,
+        }))
+      : [];
+    history.events = Array.isArray(history.events)
+      ? history.events.map((event) => ({
+          ...event,
+          id: event.id ? maskId(event.id) : event.id,
+          targetId: event.targetId ? maskId(event.targetId) : event.targetId,
+          userId: event.userId
+            ? event.userId.includes('@')
+              ? maskEmail(event.userId)
+              : maskId(event.userId)
+            : null,
+          actorGroupId: event.actorGroupId
+            ? maskId(event.actorGroupId)
+            : event.actorGroupId,
+          reasonText:
+            typeof event.reasonText === 'string'
+              ? maskFreeText(event.reasonText)
+              : event.reasonText,
+        }))
+      : [];
+  }
+
+  if (Array.isArray(payload.attachments)) {
+    payload.attachments = payload.attachments.map((attachment) => ({
+      ...attachment,
+      id: attachment.id ? maskId(attachment.id) : attachment.id,
+      filename:
+        typeof attachment.filename === 'string'
+          ? maskFreeText(attachment.filename)
+          : attachment.filename,
+    }));
   }
 
   const items = (payload.snapshot.items ?? null) as {
