@@ -79,10 +79,19 @@ test('GET /approval-instances/:id/evidence-snapshot denies project member for ti
         const body = JSON.parse(allowed.body);
         assert.equal(body.exists, true);
         assert.equal(body.snapshot.id, snapshot.id);
+
+        const adminAllowed = await server.inject({
+          method: 'GET',
+          url: `/approval-instances/${approval.id}/evidence-snapshot`,
+          headers: {
+            'x-user-id': 'admin-user',
+            'x-roles': 'admin',
+          },
+        });
+        assert.equal(adminAllowed.statusCode, 200, adminAllowed.body);
       } finally {
         await server.close();
       }
     },
   );
 });
-

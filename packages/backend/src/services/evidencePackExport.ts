@@ -273,7 +273,7 @@ export function maskEvidencePackJsonExport(
           const lower = key.toLowerCase();
           const maskedId =
             lower === 'userid' ||
-            lower.endsWith('id') ||
+            lower.endsWith('userid') ||
             lower === 'createdby' ||
             lower === 'updatedby' ||
             lower === 'approvedby';
