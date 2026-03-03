@@ -54,6 +54,19 @@ function withFakeAwsBin(fn) {
   });
 }
 
+function withMockBin(commands, fn) {
+  return withTempDir((dir) => {
+    const binDir = path.join(dir, 'bin');
+    mkdirSync(binDir, { recursive: true });
+    for (const [name, content] of Object.entries(commands)) {
+      const cmdPath = path.join(binDir, name);
+      writeFileSync(cmdPath, content);
+      chmodSync(cmdPath, 0o755);
+    }
+    return fn(binDir);
+  });
+}
+
 test('check-po-migration-input-readiness: fails when INPUT_DIR is missing', () => {
   const res = runScript('check-po-migration-input-readiness.sh', {
     INPUT_DIR: '',
@@ -430,5 +443,159 @@ test('run-and-record-po-migration-rehearsal: skips record when run fails and REC
     });
     assert.equal(res.status, 34);
     assert.equal(existsSync(path.join(logDir, 'record.log')), false);
+  });
+});
+
+test('check-dependabot-alerts: treats optional high alert 404 as NOT_FOUND', () => {
+  withTempDir((dir) => {
+    const lockfile = path.join(dir, 'package-lock.json');
+    writeFileSync(
+      lockfile,
+      JSON.stringify(
+        {
+          packages: {
+            'node_modules/googleapis': { version: '171.4.0' },
+            'node_modules/googleapis-common': { version: '8.0.1' },
+            'node_modules/qs': { version: '6.15.0' },
+            'node_modules/fast-xml-parser': { version: '5.3.6' },
+          },
+        },
+        null,
+        2,
+      ),
+    );
+
+    const ghStub = [
+      '#!/usr/bin/env bash',
+      'set -euo pipefail',
+      'if [[ "$1" != "api" ]]; then',
+      '  echo "unexpected gh invocation: $*" >&2',
+      '  exit 2',
+      'fi',
+      'case "$2" in',
+      '  repos/*/dependabot/alerts/10)',
+      "    cat <<'JSON'",
+      '{"number":10,"state":"OPEN","vulnerableManifestPath":"packages/backend/package-lock.json","vulnerableRequirements":">= 6.7.0, <= 6.14.1","securityVulnerability":{"severity":"LOW","package":{"name":"qs"},"firstPatchedVersion":{"identifier":"6.14.2"}},"securityAdvisory":{"ghsaId":"GHSA-w7fw-mjwx-w883","summary":"qs advisory"}}',
+      'JSON',
+      '    ;;',
+      '  repos/*/dependabot/alerts/11)',
+      '    echo "gh: No alert found for alert number 11 (HTTP 404)" >&2',
+      '    exit 1',
+      '    ;;',
+      '  *)',
+      '    echo "unexpected gh api path: $2" >&2',
+      '    exit 2',
+      '    ;;',
+      'esac',
+    ].join('\n');
+
+    const npmStub = [
+      '#!/usr/bin/env bash',
+      'set -euo pipefail',
+      'if [[ "$1" == "view" && "$3" == "version" && "$4" == "--json" ]]; then',
+      '  case "$2" in',
+      '    googleapis) echo \'\"171.4.0\"\' ;;',
+      '    googleapis-common) echo \'\"8.0.1\"\' ;;',
+      '    *) echo "null" ;;',
+      '  esac',
+      '  exit 0',
+      'fi',
+      'echo "unexpected npm invocation: $*" >&2',
+      'exit 2',
+    ].join('\n');
+
+    withMockBin({ gh: ghStub, npm: npmStub }, (binDir) => {
+      const res = runScript('check-dependabot-alerts.sh', {
+        GITHUB_REPOSITORY: 'itdojp/ITDO_ERP4',
+        ALERT_LOW_NUMBER: '10',
+        ALERT_HIGH_NUMBER: '11',
+        BACKEND_LOCKFILE: lockfile,
+        STRICT: '0',
+        PATH: `${binDir}:${process.env.PATH || ''}`,
+      });
+      assert.equal(res.status, 0, `${res.stderr}\n${res.stdout}`);
+      assert.match(String(res.stderr), /treating as NOT_FOUND/);
+      assert.match(String(res.stdout), /alertHighState: NOT_FOUND/);
+      assert.match(String(res.stdout), /actionRequired: false/);
+    });
+  });
+});
+
+test('check-dependabot-alerts: exits with STRICT error when high alert is OPEN', () => {
+  withTempDir((dir) => {
+    const lockfile = path.join(dir, 'package-lock.json');
+    writeFileSync(
+      lockfile,
+      JSON.stringify(
+        {
+          packages: {
+            'node_modules/googleapis': { version: '171.4.0' },
+            'node_modules/googleapis-common': { version: '8.0.1' },
+            'node_modules/qs': { version: '6.15.0' },
+            'node_modules/fast-xml-parser': { version: '5.3.6' },
+          },
+        },
+        null,
+        2,
+      ),
+    );
+
+    const ghStub = [
+      '#!/usr/bin/env bash',
+      'set -euo pipefail',
+      'if [[ "$1" != "api" ]]; then',
+      '  echo "unexpected gh invocation: $*" >&2',
+      '  exit 2',
+      'fi',
+      'case "$2" in',
+      '  repos/*/dependabot/alerts/10)',
+      "    cat <<'JSON'",
+      '{"number":10,"state":"OPEN","vulnerableManifestPath":"packages/backend/package-lock.json","vulnerableRequirements":">= 6.7.0, <= 6.14.1","securityVulnerability":{"severity":"LOW","package":{"name":"qs"},"firstPatchedVersion":{"identifier":"6.14.2"}},"securityAdvisory":{"ghsaId":"GHSA-w7fw-mjwx-w883","summary":"qs advisory"}}',
+      'JSON',
+      '    ;;',
+      '  repos/*/dependabot/alerts/11)',
+      "    cat <<'JSON'",
+      '{"number":11,"state":"OPEN","vulnerableManifestPath":"packages/backend/package-lock.json","vulnerableRequirements":"< 5.3.6","securityVulnerability":{"severity":"HIGH","package":{"name":"fast-xml-parser"},"firstPatchedVersion":{"identifier":"5.3.6"}},"securityAdvisory":{"ghsaId":"GHSA-jmr7-xgp7-cmfj","summary":"fast-xml-parser advisory"}}',
+      'JSON',
+      '    ;;',
+      '  *)',
+      '    echo "unexpected gh api path: $2" >&2',
+      '    exit 2',
+      '    ;;',
+      'esac',
+    ].join('\n');
+
+    const npmStub = [
+      '#!/usr/bin/env bash',
+      'set -euo pipefail',
+      'if [[ "$1" == "view" && "$3" == "version" && "$4" == "--json" ]]; then',
+      '  case "$2" in',
+      '    googleapis) echo \'\"171.4.0\"\' ;;',
+      '    googleapis-common) echo \'\"8.0.1\"\' ;;',
+      '    *) echo "null" ;;',
+      '  esac',
+      '  exit 0',
+      'fi',
+      'echo "unexpected npm invocation: $*" >&2',
+      'exit 2',
+    ].join('\n');
+
+    withMockBin({ gh: ghStub, npm: npmStub }, (binDir) => {
+      const res = runScript('check-dependabot-alerts.sh', {
+        GITHUB_REPOSITORY: 'itdojp/ITDO_ERP4',
+        ALERT_LOW_NUMBER: '10',
+        ALERT_HIGH_NUMBER: '11',
+        BACKEND_LOCKFILE: lockfile,
+        STRICT: '1',
+        PATH: `${binDir}:${process.env.PATH || ''}`,
+      });
+      assert.equal(res.status, 2, `${res.stderr}\n${res.stdout}`);
+      assert.match(
+        String(res.stderr),
+        /Dependabot alerts require follow-up/,
+      );
+      assert.match(String(res.stdout), /alertHighState: OPEN/);
+      assert.match(String(res.stdout), /actionRequired: true/);
+    });
   });
 });
