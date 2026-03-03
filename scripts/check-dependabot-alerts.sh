@@ -44,7 +44,7 @@ empty_alert_json() {
     --arg number "$alert_number" \
     --arg state "$state" \
     '{
-      number: $number,
+      number: ($number | tonumber),
       state: $state,
       vulnerableManifestPath: "",
       vulnerableRequirements: "",
