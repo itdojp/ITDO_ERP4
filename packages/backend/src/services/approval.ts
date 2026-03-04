@@ -1,6 +1,7 @@
+import type { Prisma } from '@prisma/client';
 import { DocStatusValue } from '../types.js';
 import { prisma } from './db.js';
-import { logAudit, type AuditContext } from './audit.js';
+import { buildAuditMetadata, logAudit, type AuditContext } from './audit.js';
 import { createEvidenceSnapshotForApproval } from './evidenceSnapshot.js';
 import { logExpenseStateTransition } from './expenseStateTransitionLog.js';
 import { isExpenseQaChecklistComplete } from './expenseQaChecklist.js';
@@ -221,11 +222,99 @@ async function resolveRule(
     },
     orderBy: [{ effectiveFrom: 'desc' }, { createdAt: 'desc' }],
   });
-  if (!rules.length) return null;
+  if (!rules.length) {
+    return {
+      rule: null,
+      fallbackReason: 'rule_not_found' as const,
+    };
+  }
   const matched = rules.find((r: { conditions?: unknown }) =>
     matchesRuleCondition(flowType, payload, r.conditions as ApprovalCondition),
   );
-  return matched || rules[0];
+  if (matched) {
+    return {
+      rule: matched,
+      fallbackReason: null,
+    };
+  }
+  return {
+    rule: rules[0],
+    fallbackReason: 'rule_condition_unmatched_first_rule' as const,
+  };
+}
+
+function toAuditJsonPrimitive(value: unknown): Prisma.InputJsonValue {
+  if (value === null || value === undefined) return 'null';
+  if (typeof value === 'string' || typeof value === 'boolean') return value;
+  if (typeof value === 'number') {
+    if (Number.isFinite(value)) return value;
+    return String(value);
+  }
+  if (typeof value === 'bigint') return value.toString();
+  if (value instanceof Date) return value.toISOString();
+  return String(value);
+}
+
+function approvalFallbackPayloadHints(
+  payload: Record<string, unknown>,
+): Prisma.InputJsonObject {
+  const pick = (key: string): Prisma.InputJsonValue =>
+    toAuditJsonPrimitive(payload[key]);
+  return {
+    amount: pick('amount'),
+    totalAmount: pick('totalAmount'),
+    projectId: pick('projectId'),
+    projectType: pick('projectType'),
+    customerId: pick('customerId'),
+    orgUnitId: pick('orgUnitId'),
+  };
+}
+
+async function logApprovalRuleFallbackIfNeeded(options: {
+  client: any;
+  flowType: string;
+  targetTable: string;
+  targetId: string;
+  approvalInstanceId: string;
+  ruleId: string | null;
+  fallbackReasons: string[];
+  payload: Record<string, unknown>;
+  createdBy?: string;
+}) {
+  if (!options.fallbackReasons.length) return;
+  const metadata = {
+    flowType: options.flowType,
+    targetTable: options.targetTable,
+    targetId: options.targetId,
+    approvalInstanceId: options.approvalInstanceId,
+    selectedRuleId: options.ruleId,
+    fallbackReasons: options.fallbackReasons,
+    payloadHints: approvalFallbackPayloadHints(options.payload),
+  };
+  const baseData = {
+    action: 'approval_rule_fallback_used',
+    targetTable: options.targetTable,
+    targetId: options.targetId,
+    userId: options.createdBy,
+    source: 'system',
+    reasonCode: options.fallbackReasons[0],
+    metadata,
+  };
+  const normalizedMetadata = buildAuditMetadata(baseData);
+  const auditData = {
+    ...baseData,
+    metadata: normalizedMetadata,
+  };
+  try {
+    if (options.client && options.client !== prisma) {
+      if (typeof options.client.auditLog?.create !== 'function') return;
+      await options.client.auditLog.create({ data: auditData });
+      return;
+    }
+    await prisma.auditLog.create({ data: auditData });
+  } catch (err) {
+    console.error('[approval fallback audit failed]', err);
+  }
 }
 
 async function createApprovalWithClient(
@@ -247,7 +336,7 @@ async function createApprovalWithClient(
     targetTable,
     targetId,
   });
-  if (existing) return existing;
+  if (existing) return { instance: existing, created: false };
 
   const normalizedSteps = steps.map((s, idx) => ({
     ...s,
@@ -285,7 +374,7 @@ async function createApprovalWithClient(
       },
       include: { steps: true },
     });
-    return instance;
+    return { instance, created: true };
   } catch (err) {
     if (!isPrismaUniqueError(err)) {
       throw err;
@@ -296,7 +385,7 @@ async function createApprovalWithClient(
       targetTable,
       targetId,
     });
-    if (fallback) return fallback;
+    if (fallback) return { instance: fallback, created: false };
     throw err;
   }
 }
@@ -313,7 +402,7 @@ export async function createApproval(
   ruleVersion?: number,
   ruleSnapshot?: Record<string, unknown> | null,
 ) {
-  return prisma.$transaction(async (tx: any) =>
+  const result = await prisma.$transaction(async (tx: any) =>
     createApprovalWithClient(
       tx,
       flowType,
@@ -328,6 +417,7 @@ export async function createApproval(
       ruleSnapshot,
     ),
   );
+  return result.instance;
 }
 
 export async function createApprovalFor(
@@ -339,13 +429,21 @@ export async function createApprovalFor(
 ) {
   const client = options.client ?? prisma;
   const enrichedPayload = await enrichProjectFields(payload, client);
-  const rule = await resolveRule(
+  const ruleResolution = await resolveRule(
     flowType,
     enrichedPayload,
     client,
     options.now,
   );
+  const rule = ruleResolution.rule;
+  const fallbackReasons: string[] = [];
+  if (ruleResolution.fallbackReason) {
+    fallbackReasons.push(ruleResolution.fallbackReason);
+  }
   const normalized = normalizeRuleStepsWithPolicy(rule?.steps);
+  if (rule && !normalized) {
+    fallbackReasons.push('rule_invalid_steps');
+  }
   const steps =
     normalized?.steps ||
     computeApprovalSteps(
@@ -361,8 +459,29 @@ export async function createApprovalFor(
   const ruleVersion =
     typeof rule?.version === 'number' ? rule.version : undefined;
   const ruleSnapshot = buildRuleSnapshot(rule);
+  if (!rule) {
+    fallbackReasons.push('rule_id_auto_used');
+  }
+  let approvalResult;
   if (client === prisma) {
-    return createApproval(
+    approvalResult = await prisma.$transaction(async (tx: any) =>
+      createApprovalWithClient(
+        tx,
+        flowType,
+        targetTable,
+        targetId,
+        steps,
+        rule?.id || 'auto',
+        options.createdBy,
+        projectId,
+        stagePolicy,
+        ruleVersion,
+        ruleSnapshot,
+      ),
+    );
+  } else {
+    approvalResult = await createApprovalWithClient(
+      client,
       flowType,
       targetTable,
       targetId,
@@ -375,19 +494,21 @@ export async function createApprovalFor(
       ruleSnapshot,
     );
   }
-  return createApprovalWithClient(
-    client,
-    flowType,
-    targetTable,
-    targetId,
-    steps,
-    rule?.id || 'auto',
-    options.createdBy,
-    projectId,
-    stagePolicy,
-    ruleVersion,
-    ruleSnapshot,
-  );
+  const approval = approvalResult.instance;
+  if (approvalResult.created) {
+    await logApprovalRuleFallbackIfNeeded({
+      client,
+      flowType,
+      targetTable,
+      targetId,
+      approvalInstanceId: approval.id,
+      ruleId: rule?.id ?? null,
+      fallbackReasons,
+      payload: enrichedPayload,
+      createdBy: options.createdBy,
+    });
+  }
+  return approval;
 }
 
 /**
