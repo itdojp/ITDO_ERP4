@@ -455,6 +455,19 @@ export async function registerApprovalRuleRoutes(app: FastifyInstance) {
     async (req, reply) => {
       const { id } = req.params as { id: string };
       const body = req.body as any;
+      if (body.version !== undefined) {
+        return reply.code(400).send({
+          error: 'invalid_version',
+          message: 'version is server-managed and not allowed on patch',
+        });
+      }
+      if (body.supersedesRuleId !== undefined) {
+        return reply.code(400).send({
+          error: 'invalid_supersedesRuleId',
+          message:
+            'supersedesRuleId is server-managed and not allowed on patch',
+        });
+      }
       const currentRule = await prisma.approvalRule.findUnique({
         where: { id },
         select: {
@@ -471,6 +484,26 @@ export async function registerApprovalRuleRoutes(app: FastifyInstance) {
       });
       if (!currentRule) {
         return reply.code(404).send({ error: 'not_found' });
+      }
+      if (
+        body.flowType !== undefined &&
+        String(body.flowType) !== String(currentRule.flowType)
+      ) {
+        return reply.code(400).send({
+          error: 'flow_type_immutable',
+          message: 'flowType cannot be changed for an existing rule series',
+        });
+      }
+      const latestRuleInSeries = await prisma.approvalRule.findFirst({
+        where: { ruleKey: currentRule.ruleKey },
+        select: { id: true, version: true },
+        orderBy: [{ version: 'desc' }, { createdAt: 'desc' }],
+      });
+      if (latestRuleInSeries && latestRuleInSeries.id !== currentRule.id) {
+        return reply.code(409).send({
+          error: 'stale_rule_version',
+          message: 'only the latest rule version in the series can be patched',
+        });
       }
       const patchKeys = Object.keys(body || {});
       const deactivateOnly = patchKeys.length === 1 && body.isActive === false;
