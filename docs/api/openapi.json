@@ -1617,6 +1617,16 @@
           "required": true
         },
         "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Default Response"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
           "403": {
             "content": {
               "application/json": {
@@ -1770,6 +1780,16 @@
           }
         ],
         "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Default Response"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
           "403": {
             "content": {
               "application/json": {

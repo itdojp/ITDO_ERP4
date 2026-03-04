@@ -37,6 +37,9 @@ const apiErrorResponseSchema = {
 } as const;
 
 const evidencePackErrorResponses = {
+  200: {
+    description: 'Default Response',
+  },
   403: apiErrorResponseSchema,
   404: apiErrorResponseSchema,
   500: apiErrorResponseSchema,
