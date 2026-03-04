@@ -105,7 +105,7 @@ test('frontend project chat uses room API after project room resolution @extende
   const id = runId();
   const message = `E2E room-first path ${id}`;
   const projectId = authState.projectIds[0];
-  const projectChatRoutePattern = `**/projects/${projectId}/chat-*`;
+  const projectChatRoutePattern = `**/projects/${projectId}/chat-**`;
   const blockedProjectUrls: string[] = [];
 
   await prepare(page);
@@ -145,7 +145,7 @@ test('frontend smoke project chat ack targets (user/group/role) @extended', asyn
   test.setTimeout(180_000);
   const id = runId();
   const projectId = authState.projectIds[0];
-  const projectChatRoutePattern = `**/projects/${projectId}/chat-*`;
+  const projectChatRoutePattern = `**/projects/${projectId}/chat-**`;
   const blockedProjectUrls: string[] = [];
   const targetUser = 'e2e-member-1@example.com';
   const ackMessage = `E2E ack target set ${id}`;
@@ -214,7 +214,7 @@ test('frontend smoke project chat mention composer selects user/group targets @e
   test.setTimeout(180_000);
   const id = runId();
   const projectId = authState.projectIds[0];
-  const projectChatRoutePattern = `**/projects/${projectId}/chat-*`;
+  const projectChatRoutePattern = `**/projects/${projectId}/chat-**`;
   const blockedProjectUrls: string[] = [];
   const targetUser = 'e2e-member-1@example.com';
   const messageBody = `E2E mention composer ${id}`;
