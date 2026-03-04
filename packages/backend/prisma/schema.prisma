@@ -1324,12 +1324,18 @@ model LeaveRequest {
 model ApprovalRule {
   id            String             @id @default(uuid())
   flowType      FlowType
+  // Stable key across appended versions.
+  ruleKey       String
   conditions    Json // amountMin/amountMax/isRecurring/skipUnder/projectType/customerId/orgUnitId/flowFlags
   steps         Json // [{stepOrder, approverGroupId?, approverUserId?, parallelKey?}]
   // Versioning/activation fields for rule selection.
   version       Int                @default(1)
   isActive      Boolean            @default(true)
   effectiveFrom DateTime           @default(now())
+  effectiveTo   DateTime?
+  supersedesRuleId String?
+  supersedesRule ApprovalRule?     @relation("ApprovalRuleSupersede", fields: [supersedesRuleId], references: [id], onDelete: SetNull)
+  supersededBy  ApprovalRule[]     @relation("ApprovalRuleSupersede")
   instances     ApprovalInstance[]
   createdAt     DateTime           @default(now())
   createdBy     String?
@@ -1338,6 +1344,9 @@ model ApprovalRule {
 
   @@index([flowType])
   @@index([flowType, isActive, effectiveFrom])
+  @@index([flowType, ruleKey, version])
+  @@index([flowType, ruleKey, isActive, effectiveFrom])
+  @@index([supersedesRuleId])
 }
 
 model ApprovalInstance {
@@ -1354,6 +1363,9 @@ model ApprovalInstance {
   stagePolicy Json?
   rule        ApprovalRule   @relation(fields: [ruleId], references: [id])
   ruleId      String
+  ruleVersion Int?
+  // Immutable snapshot of the rule selected at submission time.
+  ruleSnapshot Json?
   steps       ApprovalStep[]
   evidenceSnapshots EvidenceSnapshot[]
   createdAt   DateTime       @default(now())

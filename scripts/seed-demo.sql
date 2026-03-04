@@ -18,14 +18,14 @@ insert into "UserAccount" (id, "userName", "displayName", "givenName", "familyNa
   ('90000000-0000-0000-0000-000000000002','e2e-member-2@example.com','E2E Member 2','E2E','Member 2','Sales', true, now(), now())
 on conflict do nothing;
 
-insert into "ApprovalRule" (id, "flowType", conditions, steps, "createdAt", "updatedAt") values
-  ('50000000-0000-0000-0000-000000000001','estimate','{}','[]', now(), now()),
-  ('50000000-0000-0000-0000-000000000002','invoice','{}','[]', now(), now()),
-  ('50000000-0000-0000-0000-000000000003','expense','{}','[]', now(), now()),
-  ('50000000-0000-0000-0000-000000000004','time','{}','[]', now(), now()),
-  ('50000000-0000-0000-0000-000000000005','purchase_order','{}','[]', now(), now()),
-  ('50000000-0000-0000-0000-000000000006','vendor_invoice','{}','[]', now(), now()),
-  ('50000000-0000-0000-0000-000000000007','leave','{}','[]', now(), now())
+insert into "ApprovalRule" (id, "flowType", "ruleKey", conditions, steps, "createdAt", "updatedAt") values
+  ('50000000-0000-0000-0000-000000000001','estimate','50000000-0000-0000-0000-000000000001','{}','[]', now(), now()),
+  ('50000000-0000-0000-0000-000000000002','invoice','50000000-0000-0000-0000-000000000002','{}','[]', now(), now()),
+  ('50000000-0000-0000-0000-000000000003','expense','50000000-0000-0000-0000-000000000003','{}','[]', now(), now()),
+  ('50000000-0000-0000-0000-000000000004','time','50000000-0000-0000-0000-000000000004','{}','[]', now(), now()),
+  ('50000000-0000-0000-0000-000000000005','purchase_order','50000000-0000-0000-0000-000000000005','{}','[]', now(), now()),
+  ('50000000-0000-0000-0000-000000000006','vendor_invoice','50000000-0000-0000-0000-000000000006','{}','[]', now(), now()),
+  ('50000000-0000-0000-0000-000000000007','leave','50000000-0000-0000-0000-000000000007','{}','[]', now(), now())
 on conflict do nothing;
 
 insert into "Estimate" (id, "projectId", "estimateNo", version, "totalAmount", currency, status, "numberingSerial", "createdAt", "updatedAt")
