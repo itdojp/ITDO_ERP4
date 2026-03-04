@@ -81,6 +81,17 @@ function assertNotFound(res, expectedMessage) {
   assert.equal(body?.error?.message, expectedMessage);
 }
 
+function deletedProjectRoom(roomId = 'p1') {
+  return {
+    id: roomId,
+    type: 'project',
+    groupId: null,
+    viewerGroupIds: null,
+    deletedAt: new Date('2026-03-01T00:00:00.000Z'),
+    allowExternalUsers: false,
+  };
+}
+
 test('GET /projects/:projectId/chat-unread returns 404 when project does not exist', async () => {
   await withPrismaStubs(
     {
@@ -100,24 +111,48 @@ test('GET /projects/:projectId/chat-unread returns 404 when project does not exi
   );
 });
 
-test('GET /projects/:projectId/chat-unread returns 404 when project room is deleted', async () => {
-  let findUniqueCalls = 0;
+test('POST /projects/:projectId/chat-read returns 404 when project does not exist', async () => {
   await withPrismaStubs(
     {
-      'chatRoom.findUnique': async () => {
-        findUniqueCalls += 1;
-        if (findUniqueCalls === 1) {
-          return { id: 'p1' };
-        }
-        return {
-          id: 'p1',
-          type: 'project',
-          groupId: null,
-          viewerGroupIds: null,
-          deletedAt: new Date('2026-03-01T00:00:00.000Z'),
-          allowExternalUsers: false,
-        };
-      },
+      'chatRoom.findUnique': async () => null,
+      'project.findUnique': async () => null,
+    },
+    async () => {
+      await withServer(async (server) => {
+        const res = await server.inject({
+          method: 'POST',
+          url: '/projects/project-missing/chat-read',
+          headers: adminHeaders(),
+        });
+        assertNotFound(res, 'Project not found');
+      });
+    },
+  );
+});
+
+test('GET /projects/:projectId/chat-ack-candidates returns 404 when project does not exist', async () => {
+  await withPrismaStubs(
+    {
+      'chatRoom.findUnique': async () => null,
+      'project.findUnique': async () => null,
+    },
+    async () => {
+      await withServer(async (server) => {
+        const res = await server.inject({
+          method: 'GET',
+          url: '/projects/project-missing/chat-ack-candidates?q=ab',
+          headers: adminHeaders(),
+        });
+        assertNotFound(res, 'Project not found');
+      });
+    },
+  );
+});
+
+test('GET /projects/:projectId/chat-unread returns 404 when project room is deleted', async () => {
+  await withPrismaStubs(
+    {
+      'chatRoom.findUnique': async () => deletedProjectRoom('p1'),
     },
     async () => {
       await withServer(async (server) => {
@@ -133,23 +168,9 @@ test('GET /projects/:projectId/chat-unread returns 404 when project room is dele
 });
 
 test('POST /projects/:projectId/chat-read returns 404 when project room is deleted', async () => {
-  let findUniqueCalls = 0;
   await withPrismaStubs(
     {
-      'chatRoom.findUnique': async () => {
-        findUniqueCalls += 1;
-        if (findUniqueCalls === 1) {
-          return { id: 'p1' };
-        }
-        return {
-          id: 'p1',
-          type: 'project',
-          groupId: null,
-          viewerGroupIds: null,
-          deletedAt: new Date('2026-03-01T00:00:00.000Z'),
-          allowExternalUsers: false,
-        };
-      },
+      'chatRoom.findUnique': async () => deletedProjectRoom('p1'),
     },
     async () => {
       await withServer(async (server) => {
@@ -165,23 +186,9 @@ test('POST /projects/:projectId/chat-read returns 404 when project room is delet
 });
 
 test('GET /projects/:projectId/chat-ack-candidates returns 404 when project room is deleted', async () => {
-  let findUniqueCalls = 0;
   await withPrismaStubs(
     {
-      'chatRoom.findUnique': async () => {
-        findUniqueCalls += 1;
-        if (findUniqueCalls === 1) {
-          return { id: 'p1' };
-        }
-        return {
-          id: 'p1',
-          type: 'project',
-          groupId: null,
-          viewerGroupIds: null,
-          deletedAt: new Date('2026-03-01T00:00:00.000Z'),
-          allowExternalUsers: false,
-        };
-      },
+      'chatRoom.findUnique': async () => deletedProjectRoom('p1'),
     },
     async () => {
       await withServer(async (server) => {

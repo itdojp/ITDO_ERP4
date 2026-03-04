@@ -58,6 +58,12 @@ import { requireUserId } from './chat/shared/requireUserId.js';
 import { parseDateParam } from '../utils/date.js';
 import { getRouteRateLimitOptions } from '../services/rateLimitOverrides.js';
 
+function isUniqueConstraintError(err: unknown) {
+  return (
+    Boolean(err) && typeof err === 'object' && (err as any).code === 'P2002'
+  );
+}
+
 async function readFileBuffer(
   stream: AsyncIterable<Buffer>,
   maxBytes: number,
@@ -95,16 +101,23 @@ export async function registerChatRoutes(app: FastifyInstance) {
       select: { id: true, code: true, deletedAt: true },
     });
     if (!project || project.deletedAt) return false;
-    await prisma.chatRoom.create({
-      data: {
-        id: project.id,
-        type: 'project',
-        name: project.code,
-        isOfficial: true,
-        projectId: project.id,
-        createdBy: userId,
-      },
-    });
+    try {
+      await prisma.chatRoom.create({
+        data: {
+          id: project.id,
+          type: 'project',
+          name: project.code,
+          isOfficial: true,
+          projectId: project.id,
+          createdBy: userId,
+        },
+      });
+    } catch (err) {
+      if (isUniqueConstraintError(err)) {
+        return true;
+      }
+      throw err;
+    }
     return true;
   }
 
