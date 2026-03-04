@@ -84,14 +84,14 @@
 
 ## 4. 機能差分（現状）
 
-| 観点 | project系 | room系 | 統合時の注記 |
-| --- | --- | --- | --- |
-| 検索 | `q` 非対応 | `q` 対応 + 横断検索あり | room系に寄せると機能は強化される |
-| メンション候補 | projectMember 中心 | room member/group 中心 | project room で候補不足になる差分あり |
-| 通知設定 | 専用APIなし | 専用APIあり | 既に `ProjectChat` も room API を利用 |
-| アクセス制御 | `requireProjectAccess` 中心 | `ensureChatRoomContentAccess`（viewer/poster/member/group） | room正規化で 403 が増える可能性 |
-| ack-required | あり | あり（`accessLevel:'post'` 強制） | room系に統一可能 |
-| 添付/reaction | 共通API | 共通API | 差分なし |
+| 観点           | project系                   | room系                                                                                   | 統合時の注記                          |
+| -------------- | --------------------------- | ---------------------------------------------------------------------------------------- | ------------------------------------- |
+| 検索           | `q` 非対応                  | `q` 対応 + 横断検索あり                                                                  | room系に寄せると機能は強化される      |
+| メンション候補 | projectMember 中心          | project room時は `projectMember` + （`allowExternalUsers=true` 時のみ）room member/group | PR #1333 で候補不足差分を是正済み     |
+| 通知設定       | 専用APIなし                 | 専用APIあり                                                                              | 既に `ProjectChat` も room API を利用 |
+| アクセス制御   | `requireProjectAccess` 中心 | `ensureChatRoomContentAccess`（viewer/poster/member/group）                              | room正規化で 403 が増える可能性       |
+| ack-required   | あり                        | あり（`accessLevel:'post'` 強制）                                                        | room系に統一可能                      |
+| 添付/reaction  | 共通API                     | 共通API                                                                                  | 差分なし                              |
 
 ## 5. 初期統合方針（TODO1）
 
@@ -108,7 +108,8 @@
 
 ## 5.3 deprecate方針（初期）
 
-- 旧project系経路の利用時に audit/ログで `legacy_project_chat_path_used` を記録。
+- 旧project系経路の利用時に `Deprecation: true` ヘッダを返す（backend共通フックで付与）。
+- 旧project系経路の利用時に audit/ログで `legacy_project_chat_path_used` を記録（後続実装）。
 - OpenAPI と docs に deprecate 注記を追加。
 - Sunset 日付は実利用データを見て確定（現時点では未確定）。
 

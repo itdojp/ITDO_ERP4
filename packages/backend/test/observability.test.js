@@ -49,6 +49,28 @@ test('cache-control no-store headers are attached to error responses', async () 
   await server.close();
 });
 
+test('deprecation header is attached to legacy project chat endpoints', async () => {
+  const server = await buildTestServer();
+  const res = await server.inject({
+    method: 'GET',
+    url: '/projects/p1/chat-messages',
+  });
+  assert.ok(res.statusCode >= 400);
+  assert.equal(res.headers.deprecation, 'true');
+  await server.close();
+});
+
+test('deprecation header is not attached to non-legacy endpoints', async () => {
+  const server = await buildTestServer();
+  const res = await server.inject({
+    method: 'GET',
+    url: '/healthz',
+  });
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.headers.deprecation, undefined);
+  await server.close();
+});
+
 test('legacy error responses are normalized', async () => {
   const server = await buildTestServer();
   const res = await server.inject({
