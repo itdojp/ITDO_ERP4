@@ -465,7 +465,11 @@ export const App: React.FC = () => {
           }
 
           const roomId =
-            typeof payload.roomId === 'string' ? payload.roomId : '';
+            typeof payload.roomId === 'string'
+              ? payload.roomId
+              : typeof payload.room?.id === 'string'
+                ? payload.room.id
+                : '';
           const createdAt =
             typeof payload.createdAt === 'string' ? payload.createdAt : '';
           const roomType =

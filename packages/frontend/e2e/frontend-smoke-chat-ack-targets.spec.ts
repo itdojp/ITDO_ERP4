@@ -213,7 +213,7 @@ test('frontend smoke room chat ack targets (user/group/role) @extended', async (
   expect(blockedProjectUrls).toEqual([]);
 });
 
-test('frontend smoke room chat mention composer selects user/group targets @extended', async ({
+test('frontend smoke room chat mention composer selects user targets @extended', async ({
   page,
 }) => {
   test.setTimeout(180_000);

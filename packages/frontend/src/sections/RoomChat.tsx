@@ -261,6 +261,8 @@ export const RoomChat: React.FC = () => {
       const nextRoomId =
         detail && typeof detail.roomId === 'string' ? detail.roomId : '';
       if (!nextRoomId) return;
+      setRoomListScope('all');
+      setRoomListQuery('');
       setRoomId(nextRoomId);
     };
     window.addEventListener('erp4_open_room_chat', handler as EventListener);
@@ -573,6 +575,8 @@ export const RoomChat: React.FC = () => {
       const isRoomChange = targetRoomId !== currentRoomId;
       if (isRoomChange) {
         skipNextRoomAutoLoadRef.current = true;
+        setRoomListScope('all');
+        setRoomListQuery('');
         setRoomId(targetRoomId);
       } else {
         // 同一ルーム内の deep link では roomId の change が発生せず、
@@ -641,6 +645,8 @@ export const RoomChat: React.FC = () => {
         (room) => room.type === 'project' && room.projectId === projectId,
       );
       if (existingRoom) {
+        setRoomListScope('all');
+        setRoomListQuery('');
         setRoomId(existingRoom.id);
         setRoomMessage('');
         setMessage('');
@@ -655,6 +661,8 @@ export const RoomChat: React.FC = () => {
           (room) => room.type === 'project' && room.projectId === projectId,
         );
         if (nextRoom) {
+          setRoomListScope('all');
+          setRoomListQuery('');
           setRoomId(nextRoom.id);
           setRoomMessage('');
           setMessage('');
@@ -676,11 +684,18 @@ export const RoomChat: React.FC = () => {
       const joinedRooms = filterVisibleRooms(items);
       setRooms(joinedRooms);
       setRoomMessage('');
-      if (!roomId && joinedRooms.length) {
-        setRoomId(joinedRooms[0].id);
-      } else if (roomId && !joinedRooms.some((room) => room.id === roomId)) {
-        setRoomId(joinedRooms[0]?.id || '');
-      }
+      setRoomId((currentRoomId) => {
+        if (!currentRoomId && joinedRooms.length) {
+          return joinedRooms[0].id;
+        }
+        if (
+          currentRoomId &&
+          !joinedRooms.some((room) => room.id === currentRoomId)
+        ) {
+          return joinedRooms[0]?.id || '';
+        }
+        return currentRoomId;
+      });
     } catch (err) {
       console.error('Failed to load chat rooms.', err);
       setRooms([]);
@@ -865,7 +880,12 @@ export const RoomChat: React.FC = () => {
 
   useEffect(() => {
     if (!pendingOpenMessage) return;
-    if (pendingOpenMessage.roomId !== roomId) return;
+    if (pendingOpenMessage.roomId !== roomId) {
+      if (pendingOpenMessage.roomId) {
+        setRoomId(pendingOpenMessage.roomId);
+      }
+      return;
+    }
     const { messageId, createdAt } = pendingOpenMessage;
     setPendingOpenMessage(null);
     const before = buildBeforeForCreatedAt(createdAt);
@@ -1672,7 +1692,6 @@ export const RoomChat: React.FC = () => {
 
   useEffect(() => {
     if (!rooms.length) {
-      if (roomId) setRoomId('');
       return;
     }
     if (!roomId) {
