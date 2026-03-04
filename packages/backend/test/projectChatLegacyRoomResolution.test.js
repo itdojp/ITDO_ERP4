@@ -111,6 +111,25 @@ test('GET /projects/:projectId/chat-unread returns 404 when project does not exi
   );
 });
 
+test('GET /projects/:projectId/chat-messages returns 404 when project does not exist', async () => {
+  await withPrismaStubs(
+    {
+      'chatRoom.findUnique': async () => null,
+      'project.findUnique': async () => null,
+    },
+    async () => {
+      await withServer(async (server) => {
+        const res = await server.inject({
+          method: 'GET',
+          url: '/projects/project-missing/chat-messages',
+          headers: adminHeaders(),
+        });
+        assertNotFound(res, 'Project not found');
+      });
+    },
+  );
+});
+
 test('POST /projects/:projectId/chat-summary returns 404 when project does not exist', async () => {
   await withPrismaStubs(
     {
@@ -150,6 +169,25 @@ test('POST /projects/:projectId/chat-read returns 404 when project does not exis
   );
 });
 
+test('GET /projects/:projectId/chat-mention-candidates returns 404 when project does not exist', async () => {
+  await withPrismaStubs(
+    {
+      'chatRoom.findUnique': async () => null,
+      'project.findUnique': async () => null,
+    },
+    async () => {
+      await withServer(async (server) => {
+        const res = await server.inject({
+          method: 'GET',
+          url: '/projects/project-missing/chat-mention-candidates',
+          headers: adminHeaders(),
+        });
+        assertNotFound(res, 'Project not found');
+      });
+    },
+  );
+});
+
 test('GET /projects/:projectId/chat-ack-candidates returns 404 when project does not exist', async () => {
   await withPrismaStubs(
     {
@@ -162,6 +200,26 @@ test('GET /projects/:projectId/chat-ack-candidates returns 404 when project does
           method: 'GET',
           url: '/projects/project-missing/chat-ack-candidates?q=ab',
           headers: adminHeaders(),
+        });
+        assertNotFound(res, 'Project not found');
+      });
+    },
+  );
+});
+
+test('POST /projects/:projectId/chat-messages returns 404 when project does not exist', async () => {
+  await withPrismaStubs(
+    {
+      'chatRoom.findUnique': async () => null,
+      'project.findUnique': async () => null,
+    },
+    async () => {
+      await withServer(async (server) => {
+        const res = await server.inject({
+          method: 'POST',
+          url: '/projects/project-missing/chat-messages',
+          headers: adminHeaders(),
+          payload: { body: 'hello' },
         });
         assertNotFound(res, 'Project not found');
       });
@@ -190,6 +248,30 @@ test('POST /projects/:projectId/chat-ack-requests/preview returns 404 when proje
   );
 });
 
+test('POST /projects/:projectId/chat-ack-requests returns 404 when project does not exist', async () => {
+  await withPrismaStubs(
+    {
+      'chatSetting.findUnique': async () => null,
+      'chatRoom.findUnique': async () => null,
+      'project.findUnique': async () => null,
+    },
+    async () => {
+      await withServer(async (server) => {
+        const res = await server.inject({
+          method: 'POST',
+          url: '/projects/project-missing/chat-ack-requests',
+          headers: adminHeaders(),
+          payload: {
+            body: 'ack please',
+            requiredUserIds: ['u-1'],
+          },
+        });
+        assertNotFound(res, 'Project not found');
+      });
+    },
+  );
+});
+
 test('GET /projects/:projectId/chat-unread returns 404 when project room is deleted', async () => {
   await withPrismaStubs(
     {
@@ -200,6 +282,24 @@ test('GET /projects/:projectId/chat-unread returns 404 when project room is dele
         const res = await server.inject({
           method: 'GET',
           url: '/projects/p1/chat-unread',
+          headers: adminHeaders(),
+        });
+        assertNotFound(res, 'Room not found');
+      });
+    },
+  );
+});
+
+test('GET /projects/:projectId/chat-messages returns 404 when project room is deleted', async () => {
+  await withPrismaStubs(
+    {
+      'chatRoom.findUnique': async () => deletedProjectRoom('p1'),
+    },
+    async () => {
+      await withServer(async (server) => {
+        const res = await server.inject({
+          method: 'GET',
+          url: '/projects/p1/chat-messages',
           headers: adminHeaders(),
         });
         assertNotFound(res, 'Room not found');
@@ -227,6 +327,24 @@ test('POST /projects/:projectId/chat-summary returns 404 when project room is de
   );
 });
 
+test('GET /projects/:projectId/chat-mention-candidates returns 404 when project room is deleted', async () => {
+  await withPrismaStubs(
+    {
+      'chatRoom.findUnique': async () => deletedProjectRoom('p1'),
+    },
+    async () => {
+      await withServer(async (server) => {
+        const res = await server.inject({
+          method: 'GET',
+          url: '/projects/p1/chat-mention-candidates',
+          headers: adminHeaders(),
+        });
+        assertNotFound(res, 'Room not found');
+      });
+    },
+  );
+});
+
 test('POST /projects/:projectId/chat-read returns 404 when project room is deleted', async () => {
   await withPrismaStubs(
     {
@@ -238,6 +356,25 @@ test('POST /projects/:projectId/chat-read returns 404 when project room is delet
           method: 'POST',
           url: '/projects/p1/chat-read',
           headers: adminHeaders(),
+        });
+        assertNotFound(res, 'Room not found');
+      });
+    },
+  );
+});
+
+test('POST /projects/:projectId/chat-messages returns 404 when project room is deleted', async () => {
+  await withPrismaStubs(
+    {
+      'chatRoom.findUnique': async () => deletedProjectRoom('p1'),
+    },
+    async () => {
+      await withServer(async (server) => {
+        const res = await server.inject({
+          method: 'POST',
+          url: '/projects/p1/chat-messages',
+          headers: adminHeaders(),
+          payload: { body: 'hello' },
         });
         assertNotFound(res, 'Room not found');
       });
@@ -258,6 +395,29 @@ test('POST /projects/:projectId/chat-ack-requests/preview returns 404 when proje
           url: '/projects/p1/chat-ack-requests/preview',
           headers: adminHeaders(),
           payload: { requiredUserIds: ['u-1'] },
+        });
+        assertNotFound(res, 'Room not found');
+      });
+    },
+  );
+});
+
+test('POST /projects/:projectId/chat-ack-requests returns 404 when project room is deleted', async () => {
+  await withPrismaStubs(
+    {
+      'chatSetting.findUnique': async () => null,
+      'chatRoom.findUnique': async () => deletedProjectRoom('p1'),
+    },
+    async () => {
+      await withServer(async (server) => {
+        const res = await server.inject({
+          method: 'POST',
+          url: '/projects/p1/chat-ack-requests',
+          headers: adminHeaders(),
+          payload: {
+            body: 'ack please',
+            requiredUserIds: ['u-1'],
+          },
         });
         assertNotFound(res, 'Room not found');
       });

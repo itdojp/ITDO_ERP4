@@ -156,11 +156,11 @@ export async function registerChatRoutes(app: FastifyInstance) {
   async function ensureAllMentionAllowed(options: {
     req: any;
     reply: any;
-    projectId: string;
+    roomId: string;
     userId: string;
   }) {
     const rateLimit = await enforceAllMentionRateLimit({
-      roomId: options.projectId,
+      roomId: options.roomId,
       userId: options.userId,
       now: new Date(),
     });
@@ -169,7 +169,7 @@ export async function registerChatRoutes(app: FastifyInstance) {
         action: 'chat_all_mention_blocked',
         targetTable: 'chat_messages',
         metadata: buildAllMentionBlockedMetadata(
-          options.projectId,
+          options.roomId,
           rateLimit,
         ) as Prisma.InputJsonValue,
         ...auditContextFromRequest(options.req),
@@ -241,6 +241,7 @@ export async function registerChatRoutes(app: FastifyInstance) {
   async function tryCreateChatMentionNotifications(options: {
     req: any;
     projectId: string;
+    roomId: string;
     messageId: string;
     messageBody: string;
     senderUserId: string;
@@ -251,7 +252,7 @@ export async function registerChatRoutes(app: FastifyInstance) {
     try {
       const notificationResult = await createChatMentionNotifications({
         projectId: options.projectId,
-        roomId: options.projectId,
+        roomId: options.roomId,
         messageId: options.messageId,
         messageBody: options.messageBody,
         senderUserId: options.senderUserId,
@@ -269,6 +270,7 @@ export async function registerChatRoutes(app: FastifyInstance) {
         targetId: options.messageId,
         metadata: {
           projectId: options.projectId,
+          roomId: options.roomId,
           messageId: options.messageId,
           createdCount: notificationResult.created,
           recipientCount: notificationResult.recipients.length,
@@ -382,8 +384,14 @@ export async function registerChatRoutes(app: FastifyInstance) {
           error: { code: 'INVALID_DATE', message: 'Invalid before date' },
         });
       }
+      const room = await resolveActiveProjectRoom({
+        projectId,
+        userId: req.user?.userId || null,
+        reply,
+      });
+      if (!room) return reply;
       const where: Prisma.ChatMessageWhereInput = {
-        roomId: projectId,
+        roomId: room.id,
         deletedAt: null,
       };
       if (beforeDate) {
@@ -552,7 +560,7 @@ export async function registerChatRoutes(app: FastifyInstance) {
         action: 'chat_summary_generated',
         targetTable: 'chat_messages',
         metadata: {
-          projectId: room.id,
+          projectId,
           limit: take,
           since: body.since || null,
           until: body.until || null,
@@ -567,7 +575,7 @@ export async function registerChatRoutes(app: FastifyInstance) {
           ? summaryLines.join('\n')
           : '対象メッセージがありません',
         stats: {
-          projectId: room.id,
+          projectId,
           messageCount: items.length,
           userCount: users.size,
           mentionAllCount,
@@ -588,8 +596,14 @@ export async function registerChatRoutes(app: FastifyInstance) {
         requireProjectAccess((req) => (req.params as any)?.projectId),
       ],
     },
-    async (req) => {
+    async (req, reply) => {
       const { projectId } = req.params as { projectId: string };
+      const room = await resolveActiveProjectRoom({
+        projectId,
+        userId: req.user?.userId || null,
+        reply,
+      });
+      if (!room) return reply;
       const currentUserId = req.user?.userId || '';
       const groupIds = Array.isArray(req.user?.groupIds)
         ? req.user.groupIds
@@ -598,10 +612,9 @@ export async function registerChatRoutes(app: FastifyInstance) {
         ? req.user.groupAccountIds
         : [];
       return buildChatMentionCandidates({
+        // legacy project endpoint keeps project-only candidates during compatibility period.
         room: {
-          id: projectId,
-          type: 'project',
-          // project系は現行挙動を維持し、外部メンバーは候補に含めない
+          ...room,
           allowExternalUsers: false,
         },
         requesterUserId: currentUserId,
@@ -702,24 +715,25 @@ export async function registerChatRoutes(app: FastifyInstance) {
       const userId = req.user?.userId || 'demo-user';
       const { mentions, mentionsAll, mentionUserIds, mentionGroupIds } =
         normalizeMentions(body.mentions);
+      const room = await resolveActiveProjectRoom({
+        projectId,
+        userId,
+        reply,
+      });
+      if (!room) return reply;
 
       if (mentionsAll) {
         const ok = await ensureAllMentionAllowed({
           req,
           reply,
-          projectId,
+          roomId: room.id,
           userId,
         });
         if (!ok) return;
       }
-      if (!(await ensureProjectRoom(projectId, userId))) {
-        return reply.status(404).send({
-          error: { code: 'NOT_FOUND', message: 'Project not found' },
-        });
-      }
       const message = await prisma.chatMessage.create({
         data: {
-          roomId: projectId,
+          roomId: room.id,
           userId,
           body: body.body,
           tags: normalizeStringArray(body.tags, { max: 8 }) || undefined,
@@ -740,6 +754,7 @@ export async function registerChatRoutes(app: FastifyInstance) {
       const mentionRecipients = await tryCreateChatMentionNotifications({
         req,
         projectId,
+        roomId: room.id,
         messageId: message.id,
         messageBody: message.body,
         senderUserId: userId,
@@ -747,26 +762,14 @@ export async function registerChatRoutes(app: FastifyInstance) {
         mentionUserIds,
         mentionGroupIds,
       });
-      const room = await prisma.chatRoom.findUnique({
-        where: { id: projectId },
-        select: {
-          id: true,
-          type: true,
-          groupId: true,
-          viewerGroupIds: true,
-          allowExternalUsers: true,
-        },
+      await tryCreateProjectChatMessageNotifications({
+        req,
+        room,
+        messageId: message.id,
+        messageBody: message.body,
+        senderUserId: userId,
+        excludeUserIds: mentionRecipients,
       });
-      if (room) {
-        await tryCreateProjectChatMessageNotifications({
-          req,
-          room,
-          messageId: message.id,
-          messageBody: message.body,
-          senderUserId: userId,
-          excludeUserIds: mentionRecipients,
-        });
-      }
       return message;
     },
   );
@@ -893,6 +896,31 @@ export async function registerChatRoutes(app: FastifyInstance) {
           },
         });
       }
+      const dueAt = parseDateParam(body.dueAt);
+      if (body.dueAt && !dueAt) {
+        return reply.status(400).send({
+          error: { code: 'INVALID_DATE', message: 'Invalid dueAt date-time' },
+        });
+      }
+
+      const { mentions, mentionsAll, mentionUserIds, mentionGroupIds } =
+        normalizeMentions(body.mentions);
+      const room = await resolveActiveProjectRoom({
+        projectId,
+        userId,
+        reply,
+      });
+      if (!room) return reply;
+      if (mentionsAll) {
+        const ok = await ensureAllMentionAllowed({
+          req,
+          reply,
+          roomId: room.id,
+          userId,
+        });
+        if (!ok) return;
+      }
+
       const requiredUserIds = await resolveChatAckRequiredRecipientUserIds({
         requiredUserIds: requestedUserIds,
         requiredGroupIds: requestedGroupIds,
@@ -919,46 +947,6 @@ export async function registerChatRoutes(app: FastifyInstance) {
           },
         });
       }
-      const dueAt = parseDateParam(body.dueAt);
-      if (body.dueAt && !dueAt) {
-        return reply.status(400).send({
-          error: { code: 'INVALID_DATE', message: 'Invalid dueAt date-time' },
-        });
-      }
-
-      const { mentions, mentionsAll, mentionUserIds, mentionGroupIds } =
-        normalizeMentions(body.mentions);
-      if (mentionsAll) {
-        const ok = await ensureAllMentionAllowed({
-          req,
-          reply,
-          projectId,
-          userId,
-        });
-        if (!ok) return;
-      }
-
-      if (!(await ensureProjectRoom(projectId, userId))) {
-        return reply.status(404).send({
-          error: { code: 'NOT_FOUND', message: 'Project not found' },
-        });
-      }
-
-      const room = await prisma.chatRoom.findUnique({
-        where: { id: projectId },
-        select: {
-          id: true,
-          type: true,
-          groupId: true,
-          deletedAt: true,
-          allowExternalUsers: true,
-        },
-      });
-      if (!room || room.deletedAt) {
-        return reply.status(404).send({
-          error: { code: 'NOT_FOUND', message: 'Room not found' },
-        });
-      }
       const recipientValidation =
         await validateChatAckRequiredRecipientsForRoom({
           room,
@@ -981,7 +969,7 @@ export async function registerChatRoutes(app: FastifyInstance) {
 
       const message = await prisma.chatMessage.create({
         data: {
-          roomId: projectId,
+          roomId: room.id,
           userId,
           body: body.body,
           tags: normalizeStringArray(body.tags, { max: 8 }) || undefined,
@@ -991,7 +979,7 @@ export async function registerChatRoutes(app: FastifyInstance) {
           updatedBy: userId,
           ackRequest: {
             create: {
-              roomId: projectId,
+              roomId: room.id,
               requiredUserIds: validatedRequiredUserIds,
               requestedUserIds,
               requestedGroupIds,
@@ -1014,7 +1002,7 @@ export async function registerChatRoutes(app: FastifyInstance) {
         req,
         actorUserId: userId,
         projectId,
-        roomId: projectId,
+        roomId: room.id,
         messageId: message.id,
         ackRequestId: message.ackRequest.id,
         requiredUserIds: validatedRequiredUserIds,
@@ -1034,6 +1022,7 @@ export async function registerChatRoutes(app: FastifyInstance) {
       await tryCreateChatMentionNotifications({
         req,
         projectId,
+        roomId: room.id,
         messageId: message.id,
         messageBody: message.body,
         senderUserId: userId,
@@ -1045,7 +1034,7 @@ export async function registerChatRoutes(app: FastifyInstance) {
         req,
         actorUserId: userId,
         projectId,
-        roomId: projectId,
+        roomId: room.id,
         messageId: message.id,
         messageBody: message.body,
         requiredUserIds: validatedRequiredUserIds,
