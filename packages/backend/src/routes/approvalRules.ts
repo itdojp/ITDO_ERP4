@@ -1,4 +1,5 @@
 import { FastifyInstance } from 'fastify';
+import { randomUUID } from 'node:crypto';
 import {
   act,
   ExpenseBudgetEscalationRequiredError,
@@ -82,9 +83,12 @@ function ruleSnapshotForAudit(rule: any) {
   return {
     id: rule?.id,
     flowType: rule?.flowType,
+    ruleKey: rule?.ruleKey ?? null,
     version: rule?.version,
     isActive: rule?.isActive,
     effectiveFrom: toIso(rule?.effectiveFrom),
+    effectiveTo: toIso(rule?.effectiveTo),
+    supersedesRuleId: rule?.supersedesRuleId ?? null,
     conditions: rule?.conditions ?? null,
     steps: rule?.steps ?? null,
     createdAt: toIso(rule?.createdAt),
@@ -366,14 +370,43 @@ export async function registerApprovalRuleRoutes(app: FastifyInstance) {
         }
         effectiveFrom = parsed;
       }
+      let effectiveTo: Date | null | undefined;
+      if (body.effectiveTo !== undefined) {
+        if (body.effectiveTo === null) {
+          effectiveTo = null;
+        } else {
+          const parsed = parseDateParam(body.effectiveTo);
+          if (!parsed) {
+            return reply.code(400).send({
+              error: 'invalid_effectiveTo',
+              message: 'effectiveTo must be null or a valid date-time string',
+            });
+          }
+          effectiveTo = parsed;
+        }
+      }
+      if (
+        effectiveFrom !== undefined &&
+        effectiveTo instanceof Date &&
+        effectiveTo <= effectiveFrom
+      ) {
+        return reply.code(400).send({
+          error: 'invalid_effective_range',
+          message: 'effectiveTo must be greater than effectiveFrom',
+        });
+      }
       // Prisma schema requires `conditions` even when empty. Keep request schema backward compatible.
       if (body.conditions === undefined) {
         body.conditions = {};
       }
+      const id = randomUUID();
       const created = await prisma.approvalRule.create({
         data: {
+          id,
           ...body,
+          ruleKey: id,
           ...(effectiveFrom !== undefined ? { effectiveFrom } : {}),
+          ...(effectiveTo !== undefined ? { effectiveTo } : {}),
         },
       });
       await logAudit({
@@ -401,7 +434,13 @@ export async function registerApprovalRuleRoutes(app: FastifyInstance) {
       const body = req.body as any;
       const currentRule = await prisma.approvalRule.findUnique({
         where: { id },
-        select: { id: true, flowType: true, steps: true },
+        select: {
+          id: true,
+          flowType: true,
+          steps: true,
+          effectiveFrom: true,
+          effectiveTo: true,
+        },
       });
       if (!currentRule) {
         return reply.code(404).send({ error: 'not_found' });
@@ -447,6 +486,35 @@ export async function registerApprovalRuleRoutes(app: FastifyInstance) {
         }
         effectiveFrom = parsed;
       }
+      let effectiveTo: Date | null | undefined;
+      if (body.effectiveTo !== undefined) {
+        if (body.effectiveTo === null) {
+          effectiveTo = null;
+        } else {
+          const parsed = parseDateParam(body.effectiveTo);
+          if (!parsed) {
+            return reply.code(400).send({
+              error: 'invalid_effectiveTo',
+              message: 'effectiveTo must be null or a valid date-time string',
+            });
+          }
+          effectiveTo = parsed;
+        }
+      }
+      const rangeStart =
+        effectiveFrom !== undefined ? effectiveFrom : currentRule.effectiveFrom;
+      const rangeEnd =
+        effectiveTo !== undefined ? effectiveTo : currentRule.effectiveTo;
+      if (
+        rangeStart instanceof Date &&
+        rangeEnd instanceof Date &&
+        rangeEnd <= rangeStart
+      ) {
+        return reply.code(400).send({
+          error: 'invalid_effective_range',
+          message: 'effectiveTo must be greater than effectiveFrom',
+        });
+      }
       const { before, updated } = await prisma.$transaction(async (tx) => {
         const before = await tx.approvalRule.findUnique({ where: { id } });
         const updated = await tx.approvalRule.update({
@@ -454,6 +522,7 @@ export async function registerApprovalRuleRoutes(app: FastifyInstance) {
           data: {
             ...body,
             ...(effectiveFrom !== undefined ? { effectiveFrom } : {}),
+            ...(effectiveTo !== undefined ? { effectiveTo } : {}),
           },
         });
         return { before, updated };

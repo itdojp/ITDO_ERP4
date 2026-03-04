@@ -1457,6 +1457,10 @@ export const approvalRuleSchema = {
       version: Type.Optional(Type.Integer({ minimum: 1 })),
       isActive: Type.Optional(Type.Boolean()),
       effectiveFrom: Type.Optional(Type.String({ format: 'date-time' })),
+      effectiveTo: Type.Optional(
+        Type.Union([Type.String({ format: 'date-time' }), Type.Null()]),
+      ),
+      supersedesRuleId: Type.Optional(Type.Union([Type.String(), Type.Null()])),
       conditions: Type.Optional(approvalConditionSchema),
       steps: Type.Union([
         Type.Array(approvalStepSchema, { minItems: 1 }),

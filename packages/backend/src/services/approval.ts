@@ -72,6 +72,30 @@ type ActOptions = {
   auditContext?: AuditContext;
 };
 type CreateApprovalOptions = { client?: any; createdBy?: string; now?: Date };
+
+function toIsoDateStringOrNull(value: unknown): string | null {
+  if (!value) return null;
+  if (value instanceof Date) return value.toISOString();
+  const parsed = new Date(String(value));
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed.toISOString();
+}
+
+function buildRuleSnapshot(rule: any) {
+  if (!rule) return null;
+  return {
+    id: rule.id ?? null,
+    flowType: rule.flowType ?? null,
+    ruleKey: rule.ruleKey ?? null,
+    version: typeof rule.version === 'number' ? rule.version : null,
+    isActive: typeof rule.isActive === 'boolean' ? rule.isActive : null,
+    effectiveFrom: toIsoDateStringOrNull(rule.effectiveFrom),
+    effectiveTo: toIsoDateStringOrNull(rule.effectiveTo),
+    supersedesRuleId: rule.supersedesRuleId ?? null,
+    conditions: rule.conditions ?? null,
+    steps: rule.steps ?? null,
+  };
+}
 /**
  * Options for submitApprovalWithUpdate.
  * update() runs in a transaction and should return the updated entity.
@@ -189,7 +213,12 @@ async function resolveRule(
   now: Date = new Date(),
 ) {
   const rules = await client.approvalRule.findMany({
-    where: { flowType, isActive: true, effectiveFrom: { lte: now } },
+    where: {
+      flowType,
+      isActive: true,
+      effectiveFrom: { lte: now },
+      OR: [{ effectiveTo: null }, { effectiveTo: { gt: now } }],
+    },
     orderBy: [{ effectiveFrom: 'desc' }, { createdAt: 'desc' }],
   });
   if (!rules.length) return null;
@@ -209,6 +238,8 @@ async function createApprovalWithClient(
   createdBy?: string,
   projectId?: string,
   stagePolicy?: ApprovalStagePolicy,
+  ruleVersion?: number,
+  ruleSnapshot?: Record<string, unknown> | null,
 ) {
   const existing = await findOpenApprovalInstance({
     client,
@@ -240,6 +271,8 @@ async function createApprovalWithClient(
             ? stagePolicy
             : undefined,
         ruleId,
+        ruleVersion,
+        ...(ruleSnapshot ? { ruleSnapshot } : {}),
         createdBy,
         steps: {
           create: normalizedSteps.map((s: any) => ({
@@ -277,6 +310,8 @@ export async function createApproval(
   createdBy?: string,
   projectId?: string,
   stagePolicy?: ApprovalStagePolicy,
+  ruleVersion?: number,
+  ruleSnapshot?: Record<string, unknown> | null,
 ) {
   return prisma.$transaction(async (tx: any) =>
     createApprovalWithClient(
@@ -289,6 +324,8 @@ export async function createApproval(
       createdBy,
       projectId,
       stagePolicy,
+      ruleVersion,
+      ruleSnapshot,
     ),
   );
 }
@@ -321,6 +358,9 @@ export async function createApprovalFor(
     typeof enrichedPayload.projectId === 'string'
       ? enrichedPayload.projectId
       : undefined;
+  const ruleVersion =
+    typeof rule?.version === 'number' ? rule.version : undefined;
+  const ruleSnapshot = buildRuleSnapshot(rule);
   if (client === prisma) {
     return createApproval(
       flowType,
@@ -331,6 +371,8 @@ export async function createApprovalFor(
       options.createdBy,
       projectId,
       stagePolicy,
+      ruleVersion,
+      ruleSnapshot,
     );
   }
   return createApprovalWithClient(
@@ -343,6 +385,8 @@ export async function createApprovalFor(
     options.createdBy,
     projectId,
     stagePolicy,
+    ruleVersion,
+    ruleSnapshot,
   );
 }
 

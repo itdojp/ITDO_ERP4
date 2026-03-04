@@ -49,6 +49,10 @@ test('createApprovalFor: rule query filters isActive and effectiveFrom<=now', as
     findManyArgs.where.effectiveFrom.lte.toISOString(),
     now.toISOString(),
   );
+  assert.deepEqual(findManyArgs.where.OR, [
+    { effectiveTo: null },
+    { effectiveTo: { gt: now } },
+  ]);
   assert.deepEqual(findManyArgs.orderBy, [
     { effectiveFrom: 'desc' },
     { createdAt: 'desc' },
@@ -250,6 +254,66 @@ test('createApprovalFor: stage order derives currentStep/status from the smalles
   assert.deepEqual(createdArgs.data.stagePolicy, {
     2: { mode: 'all' },
     3: { mode: 'any' },
+  });
+});
+
+test('createApprovalFor: stores selected rule version and snapshot on the instance', async () => {
+  let createdArgs;
+  const effectiveFrom = new Date('2026-01-01T00:00:00.000Z');
+  const effectiveTo = new Date('2026-12-31T23:59:59.000Z');
+  const fakeClient = {
+    approvalRule: {
+      findMany: async () => [
+        {
+          id: 'r-versioned',
+          flowType: 'invoice',
+          ruleKey: 'invoice-default',
+          version: 3,
+          isActive: true,
+          effectiveFrom,
+          effectiveTo,
+          supersedesRuleId: 'r-versioned-v2',
+          conditions: { amountMin: 0 },
+          steps: [{ approverGroupId: 'mgmt', stepOrder: 1 }],
+        },
+      ],
+    },
+    approvalInstance: {
+      findFirst: async () => null,
+      create: async (args) => {
+        createdArgs = args;
+        return {
+          id: 'a-versioned',
+          status: 'pending_qa',
+          currentStep: 1,
+          steps: [],
+        };
+      },
+    },
+  };
+
+  await createApprovalFor(
+    'invoice',
+    'invoices',
+    'inv-versioned',
+    { amount: 10000 },
+    { client: fakeClient, createdBy: 'u1' },
+  );
+
+  assert.ok(createdArgs);
+  assert.equal(createdArgs.data.ruleId, 'r-versioned');
+  assert.equal(createdArgs.data.ruleVersion, 3);
+  assert.deepEqual(createdArgs.data.ruleSnapshot, {
+    id: 'r-versioned',
+    flowType: 'invoice',
+    ruleKey: 'invoice-default',
+    version: 3,
+    isActive: true,
+    effectiveFrom: effectiveFrom.toISOString(),
+    effectiveTo: effectiveTo.toISOString(),
+    supersedesRuleId: 'r-versioned-v2',
+    conditions: { amountMin: 0 },
+    steps: [{ approverGroupId: 'mgmt', stepOrder: 1 }],
   });
 });
 
