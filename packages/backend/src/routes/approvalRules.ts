@@ -385,15 +385,14 @@ export async function registerApprovalRuleRoutes(app: FastifyInstance) {
           effectiveTo = parsed;
         }
       }
-      if (
-        effectiveFrom !== undefined &&
-        effectiveTo instanceof Date &&
-        effectiveTo <= effectiveFrom
-      ) {
-        return reply.code(400).send({
-          error: 'invalid_effective_range',
-          message: 'effectiveTo must be greater than effectiveFrom',
-        });
+      if (effectiveTo instanceof Date) {
+        const lowerBound = effectiveFrom ?? new Date();
+        if (effectiveTo <= lowerBound) {
+          return reply.code(400).send({
+            error: 'invalid_effective_range',
+            message: 'effectiveTo must be greater than effectiveFrom',
+          });
+        }
       }
       // Prisma schema requires `conditions` even when empty. Keep request schema backward compatible.
       if (body.conditions === undefined) {

@@ -42,8 +42,17 @@ SET
     'version', ar."version",
     'flowType', ar."flowType",
     'isActive', ar."isActive",
-    'effectiveFrom', ar."effectiveFrom",
-    'effectiveTo', ar."effectiveTo",
+    'effectiveFrom', to_char(
+      ar."effectiveFrom" AT TIME ZONE 'UTC',
+      'YYYY-MM-DD\"T\"HH24:MI:SS.MS\"Z\"'
+    ),
+    'effectiveTo', CASE
+      WHEN ar."effectiveTo" IS NULL THEN NULL
+      ELSE to_char(
+        ar."effectiveTo" AT TIME ZONE 'UTC',
+        'YYYY-MM-DD\"T\"HH24:MI:SS.MS\"Z\"'
+      )
+    END,
     'supersedesRuleId', ar."supersedesRuleId",
     'conditions', ar."conditions",
     'steps', ar."steps"
