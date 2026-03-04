@@ -373,6 +373,15 @@ export const ProjectChat: React.FC = () => {
   const [highlightMessageId, setHighlightMessageId] = useState('');
   const projectRoomId =
     rooms.find((room) => room.projectId === projectId)?.id || '';
+  const buildProjectChatEndpoint = useCallback(
+    (projectSuffix: string, roomSuffix: string) => {
+      if (projectRoomId) {
+        return `/chat-rooms/${projectRoomId}${roomSuffix}`;
+      }
+      return `/projects/${projectId}${projectSuffix}`;
+    },
+    [projectId, projectRoomId],
+  );
   const [notificationSetting, setNotificationSetting] = useState<{
     notifyAllPosts: boolean;
     notifyMentions: boolean;
@@ -777,7 +786,7 @@ export const ProjectChat: React.FC = () => {
       let remoteGroups: { groupId: string; displayName?: string | null }[] = [];
       try {
         const response = await api<MentionCandidates>(
-          `/projects/${projectId}/chat-ack-candidates?q=${encodeURIComponent(
+          `${buildProjectChatEndpoint('/chat-ack-candidates', '/ack-candidates')}?q=${encodeURIComponent(
             query.trim(),
           )}`,
         );
@@ -811,7 +820,12 @@ export const ProjectChat: React.FC = () => {
           label: label === groupId ? groupId : `${label} (${groupId})`,
         }));
     },
-    [mentionCandidates.groups, mentionCandidates.users, projectId],
+    [
+      buildProjectChatEndpoint,
+      mentionCandidates.groups,
+      mentionCandidates.users,
+      projectId,
+    ],
   );
 
   const uploadAttachment = async (messageId: string, file: File) => {
@@ -845,7 +859,7 @@ export const ProjectChat: React.FC = () => {
 
   const fetchUnreadState = async () => {
     const res = await api<{ unreadCount?: number; lastReadAt?: string | null }>(
-      `/projects/${projectId}/chat-unread`,
+      buildProjectChatEndpoint('/chat-unread', '/unread'),
     );
     const nextUnread =
       typeof res.unreadCount === 'number' ? res.unreadCount : 0;
@@ -861,7 +875,7 @@ export const ProjectChat: React.FC = () => {
       setIsSummarizing(true);
       setSummary('');
       const res = await api<{ summary?: string }>(
-        `/projects/${projectId}/chat-summary`,
+        buildProjectChatEndpoint('/chat-summary', '/summary'),
         {
           method: 'POST',
           body: JSON.stringify({}),
@@ -881,7 +895,10 @@ export const ProjectChat: React.FC = () => {
     const run = async () => {
       try {
         const res = await api<MentionCandidates>(
-          `/projects/${projectId}/chat-mention-candidates`,
+          buildProjectChatEndpoint(
+            '/chat-mention-candidates',
+            '/mention-candidates',
+          ),
         );
         if (!cancelled) {
           setMentionCandidates(res || {});
@@ -897,7 +914,7 @@ export const ProjectChat: React.FC = () => {
     return () => {
       cancelled = true;
     };
-  }, [projectId]);
+  }, [buildProjectChatEndpoint, projectId]);
 
   useEffect(() => {
     setAckCandidateQuery('');
@@ -914,7 +931,7 @@ export const ProjectChat: React.FC = () => {
     const controller = new AbortController();
     const handle = window.setTimeout(() => {
       api<MentionCandidates>(
-        `/projects/${projectId}/chat-ack-candidates?q=${encodeURIComponent(
+        `${buildProjectChatEndpoint('/chat-ack-candidates', '/ack-candidates')}?q=${encodeURIComponent(
           keyword,
         )}`,
         { signal: controller.signal },
@@ -933,7 +950,7 @@ export const ProjectChat: React.FC = () => {
       controller.abort();
       window.clearTimeout(handle);
     };
-  }, [projectId, ackCandidateQuery]);
+  }, [buildProjectChatEndpoint, projectId, ackCandidateQuery]);
 
   useEffect(() => {
     let cancelled = false;
@@ -944,7 +961,10 @@ export const ProjectChat: React.FC = () => {
       }
       try {
         const res = await api<{ items?: BreakGlassEvent[] }>(
-          `/projects/${projectId}/chat-break-glass-events`,
+          buildProjectChatEndpoint(
+            '/chat-break-glass-events',
+            '/chat-break-glass-events',
+          ),
         );
         if (!cancelled) {
           setBreakGlassEvents(Array.isArray(res.items) ? res.items : []);
@@ -958,7 +978,7 @@ export const ProjectChat: React.FC = () => {
     return () => {
       cancelled = true;
     };
-  }, [projectId]);
+  }, [buildProjectChatEndpoint, projectId]);
 
   const addAckTargetUser = (rawValue?: string) => {
     const value = (rawValue ?? ackTargetInput).trim();
@@ -1030,14 +1050,20 @@ export const ProjectChat: React.FC = () => {
         exceedsLimit: boolean;
         invalidUserIds: string[];
         reason?: string;
-      }>(`/projects/${projectId}/chat-ack-requests/preview`, {
-        method: 'POST',
-        body: JSON.stringify({
-          requiredUserIds: uniqueTargets,
-          requiredGroupIds: uniqueGroupIds,
-          requiredRoles: uniqueRoles,
-        }),
-      });
+      }>(
+        buildProjectChatEndpoint(
+          '/chat-ack-requests/preview',
+          '/ack-requests/preview',
+        ),
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            requiredUserIds: uniqueTargets,
+            requiredGroupIds: uniqueGroupIds,
+            requiredRoles: uniqueRoles,
+          }),
+        },
+      );
       setAckPreview(res);
     } catch (error) {
       console.error('確認対象の展開に失敗しました', error);
@@ -1045,7 +1071,13 @@ export const ProjectChat: React.FC = () => {
     } finally {
       setAckPreviewLoading(false);
     }
-  }, [ackTargetGroupIdList, ackTargetRoleList, ackTargetUserIds, projectId]);
+  }, [
+    ackTargetGroupIdList,
+    ackTargetRoleList,
+    ackTargetUserIds,
+    buildProjectChatEndpoint,
+    projectId,
+  ]);
 
   const load = async () => {
     try {
@@ -1062,13 +1094,15 @@ export const ProjectChat: React.FC = () => {
         query.set('tag', trimmedTag);
       }
       const res = await api<{ items: ChatMessage[] }>(
-        `/projects/${projectId}/chat-messages?${query.toString()}`,
+        `${buildProjectChatEndpoint('/chat-messages', '/messages')}?${query.toString()}`,
       );
       setItems(res.items || []);
       setHasMore((res.items || []).length === pageSize);
       if (unreadBefore > 0) {
         try {
-          await api(`/projects/${projectId}/chat-read`, { method: 'POST' });
+          await api(buildProjectChatEndpoint('/chat-read', '/read'), {
+            method: 'POST',
+          });
           setUnreadCount(0);
         } catch (error) {
           console.warn('既読更新に失敗しました', error);
@@ -1097,7 +1131,7 @@ export const ProjectChat: React.FC = () => {
         query.set('tag', trimmedTag);
       }
       const res = await api<{ items: ChatMessage[] }>(
-        `/projects/${projectId}/chat-messages?${query.toString()}`,
+        `${buildProjectChatEndpoint('/chat-messages', '/messages')}?${query.toString()}`,
       );
       const nextItems = res.items || [];
       setItems((prevItems) => [...prevItems, ...nextItems]);
@@ -1120,7 +1154,7 @@ export const ProjectChat: React.FC = () => {
       const query = new URLSearchParams({ limit: String(pageSize) });
       if (before) query.set('before', before);
       const res = await api<{ items: ChatMessage[] }>(
-        `/projects/${projectId}/chat-messages?${query.toString()}`,
+        `${buildProjectChatEndpoint('/chat-messages', '/messages')}?${query.toString()}`,
       );
       const nextItems = res.items || [];
       setItems(nextItems);
@@ -1189,14 +1223,17 @@ export const ProjectChat: React.FC = () => {
     try {
       setIsPosting(true);
       const mentions = buildMentionsPayload();
-      const res = await apiResponse(`/projects/${projectId}/chat-messages`, {
-        method: 'POST',
-        body: JSON.stringify({
-          body: trimmedBody,
-          tags: parsedTags,
-          mentions,
-        }),
-      });
+      const res = await apiResponse(
+        buildProjectChatEndpoint('/chat-messages', '/messages'),
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            body: trimmedBody,
+            tags: parsedTags,
+            mentions,
+          }),
+        },
+      );
       if (!res.ok) {
         const text = await res.text().catch(() => '');
         if (res.status === 429) {
@@ -1281,7 +1318,7 @@ export const ProjectChat: React.FC = () => {
       setIsPosting(true);
       const mentions = buildMentionsPayload();
       const res = await apiResponse(
-        `/projects/${projectId}/chat-ack-requests`,
+        buildProjectChatEndpoint('/chat-ack-requests', '/ack-requests'),
         {
           method: 'POST',
           body: JSON.stringify({
