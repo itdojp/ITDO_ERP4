@@ -152,6 +152,11 @@ Phase 2 で先行する Draft は以下を対象とする。
 - まず `phase2_core` で監査ログ（`action_policy_fallback_allowed`）を収束させた後に `phase3_strict` へ移行する。
 - 緊急回避時は `ACTION_POLICY_REQUIRED_ACTIONS` の明示CSVで対象を限定し、ロールバック可能性を残す。
 
+### 6.3 棚卸レポート（Issue #1312）
+
+fail-safe 移行の棚卸（callsites一覧、fallback監査、例外運用）は以下を参照する。  
+[docs/requirements/action-policy-failsafe-inventory.md](./action-policy-failsafe-inventory.md)
+
 ## 7. テストカバレッジ（2026-03-04時点）
 
 | 観点                                  | テスト                                         |
