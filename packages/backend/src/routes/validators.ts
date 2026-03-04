@@ -1351,7 +1351,13 @@ export const evidencePackExportQuerySchema = {
         Type.Union([Type.Literal('json'), Type.Literal('pdf')]),
       ),
       version: Type.Optional(Type.Integer({ minimum: 1 })),
-      mask: Type.Optional(Type.Integer({ minimum: 0, maximum: 1 })),
+      mask: Type.Optional(
+        Type.Integer({
+          minimum: 0,
+          maximum: 1,
+          description: '0 is available only for admin/mgmt',
+        }),
+      ),
     },
     { additionalProperties: false },
   ),
@@ -1364,7 +1370,13 @@ export const evidencePackArchiveBodySchema = {
         Type.Union([Type.Literal('json'), Type.Literal('pdf')]),
       ),
       version: Type.Optional(Type.Integer({ minimum: 1 })),
-      mask: Type.Optional(Type.Integer({ minimum: 0, maximum: 1 })),
+      mask: Type.Optional(
+        Type.Integer({
+          minimum: 0,
+          maximum: 1,
+          description: '0 is available only for admin/mgmt',
+        }),
+      ),
     },
     { additionalProperties: false },
   ),
