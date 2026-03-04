@@ -507,7 +507,10 @@ export async function registerApprovalRuleRoutes(app: FastifyInstance) {
       const now = new Date();
       const minimumEffectiveFrom =
         currentRule.effectiveFrom > now ? currentRule.effectiveFrom : now;
-      if (effectiveFrom instanceof Date && effectiveFrom < minimumEffectiveFrom) {
+      if (
+        effectiveFrom instanceof Date &&
+        effectiveFrom < minimumEffectiveFrom
+      ) {
         return reply.code(400).send({
           error: 'invalid_effectiveFrom',
           message:
@@ -545,7 +548,9 @@ export async function registerApprovalRuleRoutes(app: FastifyInstance) {
             ruleKey: currentRule.ruleKey,
             version: nextVersion,
             isActive:
-              body.isActive !== undefined ? body.isActive : currentRule.isActive,
+              body.isActive !== undefined
+                ? body.isActive
+                : currentRule.isActive,
             effectiveFrom: nextEffectiveFrom,
             effectiveTo: nextEffectiveTo,
             supersedesRuleId: currentRule.id,
