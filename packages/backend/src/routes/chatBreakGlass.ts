@@ -1,7 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import type { Prisma } from '@prisma/client';
 import { prisma } from '../services/db.js';
-import { hasProjectAccess, requireRole } from '../services/rbac.js';
+import { requireRole } from '../services/rbac.js';
 import { auditContextFromRequest, logAudit } from '../services/audit.js';
 import {
   chatBreakGlassRejectSchema,
@@ -12,6 +12,12 @@ import { parseLimit } from './chat/shared/inputParsers.js';
 import { ensureRoomAccessWithReasonError } from './chat/shared/roomAccessGuard.js';
 import { requireUserId } from './chat/shared/requireUserId.js';
 import { parseDateParam } from '../utils/date.js';
+
+function isUniqueConstraintError(err: unknown) {
+  return (
+    Boolean(err) && typeof err === 'object' && (err as any).code === 'P2002'
+  );
+}
 
 function resolveEffectiveApproverRole(roles: string[]) {
   if (roles.includes('exec')) return 'exec';
@@ -27,6 +33,62 @@ export async function registerChatBreakGlassRoutes(app: FastifyInstance) {
   const allowedRoles = ['mgmt', 'exec'];
   const chatRoles = CHAT_ROLES;
 
+  async function ensureProjectRoom(projectId: string, userId: string | null) {
+    const existing = await prisma.chatRoom.findUnique({
+      where: { id: projectId },
+      select: { id: true },
+    });
+    if (existing) return true;
+    const project = await prisma.project.findUnique({
+      where: { id: projectId },
+      select: { id: true, code: true, deletedAt: true },
+    });
+    if (!project || project.deletedAt) return false;
+    try {
+      await prisma.chatRoom.create({
+        data: {
+          id: project.id,
+          type: 'project',
+          name: project.code,
+          isOfficial: true,
+          projectId: project.id,
+          createdBy: userId,
+        },
+      });
+    } catch (err) {
+      if (isUniqueConstraintError(err)) {
+        return true;
+      }
+      throw err;
+    }
+    return true;
+  }
+
+  async function resolveActiveProjectRoom(options: {
+    projectId: string;
+    userId: string | null;
+    reply: any;
+  }) {
+    const { projectId, userId, reply } = options;
+    if (!(await ensureProjectRoom(projectId, userId))) {
+      reply.status(404).send({
+        error: { code: 'NOT_FOUND', message: 'Project not found' },
+      });
+      return null;
+    }
+    const room = await prisma.chatRoom.findUnique({
+      where: { id: projectId },
+      select: { id: true, deletedAt: true },
+    });
+    if (!room || room.deletedAt) {
+      reply.status(404).send({
+        error: { code: 'NOT_FOUND', message: 'Room not found' },
+      });
+      return null;
+    }
+    return room;
+  }
+
   app.get(
     '/projects/:projectId/chat-break-glass-events',
     {
@@ -36,21 +98,32 @@ export async function registerChatBreakGlassRoutes(app: FastifyInstance) {
     async (req, reply) => {
       const { projectId } = req.params as { projectId: string };
       const roles = req.user?.roles || [];
-      const projectIds = req.user?.projectIds || [];
-      if (
-        !roles.includes('exec') &&
-        !hasProjectAccess(roles, projectIds, projectId)
-      ) {
-        return reply.status(403).send({
-          error: {
-            code: 'FORBIDDEN_PROJECT',
-            message: 'Access to this project is forbidden',
-          },
+      const candidateUserId = req.user?.userId || '';
+      const room = await resolveActiveProjectRoom({
+        projectId,
+        userId: candidateUserId || null,
+        reply,
+      });
+      if (!room) return reply;
+
+      const canSeeAllRooms =
+        roles.includes('admin') ||
+        roles.includes('mgmt') ||
+        roles.includes('exec');
+      if (!canSeeAllRooms) {
+        const userId = requireUserId(reply, candidateUserId);
+        if (typeof userId !== 'string') return userId;
+        const access = await ensureRoomAccessWithReasonError({
+          req,
+          reply,
+          roomId: room.id,
+          userId,
         });
+        if (!access) return reply;
       }
 
       const items = await prisma.chatBreakGlassRequest.findMany({
-        where: { projectId },
+        where: { roomId: room.id },
         orderBy: { createdAt: 'desc' },
         take: 20,
         select: {
