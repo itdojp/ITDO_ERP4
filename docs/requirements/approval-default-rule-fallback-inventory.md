@@ -15,7 +15,7 @@
 - estimate:submit
 - invoice:submit
 - purchase_order:submit
-- vendor_invoice:submit（`/vendor-invoices/:id/submit`, `/approve` alias）
+- vendor_invoice:submit（`/approve` 既存, `/vendor-invoices/:id/submit` はその alias。後方互換のため `/approve` を残置）
 - expense:submit
 - leave:submit（`requiresApproval=true` の場合）
 - time:edit（承認影響がある変更時）
@@ -49,8 +49,9 @@
 
 ### 3.5 ruleId の暫定固定値依存
 
-- ルール未解決時に `ruleId='auto'` / `'manual'` を使う経路がある。
-- `ApprovalInstance.ruleId` は必須 FK のため、実データとの整合が運用依存になる。
+- `createApprovalFor` では、ルール未解決時に `rule?.id || 'auto'` として `ruleId='auto'` をフォールバックに使う。
+- 一方 `createApproval` / `createApprovalWithClient` はデフォルト `ruleId='manual'` を持ち、手動作成用途の経路として残っている。
+- `ApprovalInstance.ruleId` は必須 FK のため、`auto` / `manual` の実体管理が運用依存になりやすい。
 
 ## 4. B2観点の主要論点
 
