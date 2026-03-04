@@ -138,6 +138,118 @@ test('POST /approval-instances/:id/act reject: phase2_core preset denies when po
   );
 });
 
+test('POST /approval-instances/:id/act approve: policy allow reaches act path (not ACTION_POLICY_DENIED)', async () => {
+  await withEnv(
+    {
+      DATABASE_URL: process.env.DATABASE_URL || MIN_DATABASE_URL,
+      AUTH_MODE: 'header',
+      ACTION_POLICY_ENFORCEMENT_PRESET: 'phase2_core',
+      ACTION_POLICY_REQUIRED_ACTIONS: '',
+    },
+    async () => {
+      const originalTransaction = prisma.$transaction;
+      prisma.$transaction = async () => {
+        throw new Error('mock-act-failure');
+      };
+      try {
+        await withPrismaStubs(
+          {
+            'approvalInstance.findUnique': async () => approvalInstanceDraft(),
+            'actionPolicy.findMany': async () => [
+              {
+                id: 'policy-approval-allow',
+                flowType: 'invoice',
+                actionKey: 'approve',
+                priority: 100,
+                isEnabled: true,
+                subjects: null,
+                stateConstraints: null,
+                guards: null,
+                requireReason: false,
+              },
+            ],
+          },
+          async () => {
+            const server = await buildServer({ logger: false });
+            try {
+              const res = await server.inject({
+                method: 'POST',
+                url: '/approval-instances/approval-001/act',
+                headers: adminHeaders(),
+                payload: { action: 'approve' },
+              });
+              assert.equal(res.statusCode, 400, res.body);
+              const payload = JSON.parse(res.body);
+              assert.equal(payload?.error, 'approval_action_failed');
+              assert.notEqual(payload?.error?.code, 'ACTION_POLICY_DENIED');
+            } finally {
+              await server.close();
+            }
+          },
+        );
+      } finally {
+        prisma.$transaction = originalTransaction;
+      }
+    },
+  );
+});
+
+test('POST /approval-instances/:id/act reject: policy allow reaches act path (not ACTION_POLICY_DENIED)', async () => {
+  await withEnv(
+    {
+      DATABASE_URL: process.env.DATABASE_URL || MIN_DATABASE_URL,
+      AUTH_MODE: 'header',
+      ACTION_POLICY_ENFORCEMENT_PRESET: 'phase2_core',
+      ACTION_POLICY_REQUIRED_ACTIONS: '',
+    },
+    async () => {
+      const originalTransaction = prisma.$transaction;
+      prisma.$transaction = async () => {
+        throw new Error('mock-act-failure');
+      };
+      try {
+        await withPrismaStubs(
+          {
+            'approvalInstance.findUnique': async () => approvalInstanceDraft(),
+            'actionPolicy.findMany': async () => [
+              {
+                id: 'policy-reject-allow',
+                flowType: 'invoice',
+                actionKey: 'reject',
+                priority: 100,
+                isEnabled: true,
+                subjects: null,
+                stateConstraints: null,
+                guards: null,
+                requireReason: false,
+              },
+            ],
+          },
+          async () => {
+            const server = await buildServer({ logger: false });
+            try {
+              const res = await server.inject({
+                method: 'POST',
+                url: '/approval-instances/approval-001/act',
+                headers: adminHeaders(),
+                payload: { action: 'reject' },
+              });
+              assert.equal(res.statusCode, 400, res.body);
+              const payload = JSON.parse(res.body);
+              assert.equal(payload?.error, 'approval_action_failed');
+              assert.notEqual(payload?.error?.code, 'ACTION_POLICY_DENIED');
+            } finally {
+              await server.close();
+            }
+          },
+        );
+      } finally {
+        prisma.$transaction = originalTransaction;
+      }
+    },
+  );
+});
+
 test('POST /approval-instances/:id/act approve: reason required policy returns REASON_REQUIRED', async () => {
   await withEnv(
     {
