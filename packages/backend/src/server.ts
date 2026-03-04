@@ -29,7 +29,7 @@ const CACHE_CONTROL_HEADER = 'cache-control';
 const PRAGMA_HEADER = 'pragma';
 const CACHE_CONTROL_NO_STORE = 'no-store';
 const PRAGMA_NO_CACHE = 'no-cache';
-const DEPRECATION_HEADER = 'deprecation';
+const DEPRECATION_HEADER = 'Deprecation';
 const READY_ROUTE_RATE_LIMIT = {
   max: 600,
   timeWindow: '1 minute',
