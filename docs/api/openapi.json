@@ -1600,7 +1600,7 @@
                     ]
                   },
                   "mask": {
-                    "description": "0 は admin/mgmt のみ利用可能",
+                    "description": "0 is available only for admin/mgmt",
                     "maximum": 1,
                     "minimum": 0,
                     "type": "integer"
@@ -1621,7 +1621,14 @@
             "description": "Default Response"
           },
           "403": {
-            "description": "Forbidden (mask=0 requires admin/mgmt)"
+            "description": "Forbidden (mask=0 requires admin/mgmt)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -1664,7 +1671,7 @@
             "name": "mask",
             "required": false,
             "schema": {
-              "description": "0 は admin/mgmt のみ利用可能",
+              "description": "0 is available only for admin/mgmt",
               "maximum": 1,
               "minimum": 0,
               "type": "integer"
@@ -1684,7 +1691,14 @@
             "description": "Default Response"
           },
           "403": {
-            "description": "Forbidden (mask=0 requires admin/mgmt)"
+            "description": "Forbidden (mask=0 requires admin/mgmt)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
           }
         }
       }

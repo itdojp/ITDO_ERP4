@@ -99,7 +99,7 @@
 - query:
   - `format=json|pdf`（省略時は `json`）
   - `version`（省略時は最新）
-  - `mask=1|0`（省略時は `1`。PIIマスク適用）
+  - `mask=1|0`（省略時は `1`。PIIマスク適用。`mask=0` は `admin/mgmt` のみ）
 - 出力:
   - `format=json`: `payload` + `integrity`（sha256/digest/canonicalization）
     - 現行実装: `payload.schemaVersion` は `evidence-pack/v2`
