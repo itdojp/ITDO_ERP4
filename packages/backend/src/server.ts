@@ -261,11 +261,19 @@ export async function buildServer(
     if (!reply.hasHeader(PRAGMA_HEADER)) {
       reply.header(PRAGMA_HEADER, PRAGMA_NO_CACHE);
     }
-    if (
-      isLegacyProjectChatRouteTemplate(req.routeOptions?.url) &&
-      !reply.hasHeader(DEPRECATION_HEADER)
-    ) {
-      reply.header(DEPRECATION_HEADER, 'true');
+    const routeTemplate = req.routeOptions?.url;
+    if (isLegacyProjectChatRouteTemplate(routeTemplate)) {
+      if (!reply.hasHeader(DEPRECATION_HEADER)) {
+        reply.header(DEPRECATION_HEADER, 'true');
+      }
+      req.log.info(
+        {
+          routeTemplate,
+          method: req.method,
+          userId: req.user?.userId ?? null,
+        },
+        'legacy_project_chat_path_used',
+      );
     }
     return payload;
   });
