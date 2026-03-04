@@ -53,16 +53,18 @@
 
 ## 3. 呼び出し元棚卸（frontend）
 
-## 3.1 project系呼び出し
+## 3.1 project系呼び出し（互換フォールバック）
 
 主呼び出し元: `packages/frontend/src/sections/ProjectChat.tsx`
 
-- 一覧/投稿: `/projects/:projectId/chat-messages`
-- 未読/既読: `/projects/:projectId/chat-unread`, `/projects/:projectId/chat-read`
-- メンション候補: `/projects/:projectId/chat-mention-candidates`
-- ack-required: `/projects/:projectId/chat-ack-candidates`, `/projects/:projectId/chat-ack-requests*`
-- 要約: `/projects/:projectId/chat-summary`
-- break-glass履歴: `/projects/:projectId/chat-break-glass-events`
+- `ProjectChat` は `projectRoomId` 解決後に room API を優先利用する。
+- `projectRoomId` が未解決の場合のみ、以下 project系 endpoint にフォールバックする。
+  - 一覧/投稿: `/projects/:projectId/chat-messages`
+  - 未読/既読: `/projects/:projectId/chat-unread`, `/projects/:projectId/chat-read`
+  - メンション候補: `/projects/:projectId/chat-mention-candidates`
+  - ack-required: `/projects/:projectId/chat-ack-candidates`, `/projects/:projectId/chat-ack-requests*`
+  - 要約: `/projects/:projectId/chat-summary`
+  - break-glass履歴: `/projects/:projectId/chat-break-glass-events`
 
 ## 3.2 room系呼び出し
 
@@ -74,6 +76,13 @@
 - 通知設定: `/chat-rooms/:roomId/notification-setting`（`ProjectChat` 側も利用）
 - ack-required: `/chat-rooms/:roomId/ack-*`
 - 要約: `/chat-rooms/:roomId/summary`, `/chat-rooms/:roomId/ai-summary`
+- `ProjectChat`（Phase 3）でも以下は room API 優先
+  - `/chat-rooms/:roomId/messages`
+  - `/chat-rooms/:roomId/unread`, `/chat-rooms/:roomId/read`
+  - `/chat-rooms/:roomId/mention-candidates`, `/chat-rooms/:roomId/ack-candidates`
+  - `/chat-rooms/:roomId/ack-requests`, `/chat-rooms/:roomId/ack-requests/preview`
+  - `/chat-rooms/:roomId/summary`
+  - `/chat-rooms/:roomId/chat-break-glass-events`
 
 ## 3.3 横断呼び出し（証跡/検索）
 
@@ -129,4 +138,7 @@
    - 先行実装: mention-candidates の候補解決ロジックを `chatMentionCandidates` サービスへ共通化
    - 追補実装: project系 `chat-messages` / `chat-summary` / `chat-mention-candidates` / `chat-ack-candidates` / `chat-unread` / `chat-read` / `chat-ack-requests/preview` / `chat-ack-requests` の room 解決を `resolveActiveProjectRoom` に統一
 4. **Phase 3（frontend統合）**: `ProjectChat` 呼び出しを room API へ段階移行
+   - 実装済み: room API 優先 + project API フォールバック
+   - 実装済み: E2Eで room優先経路 / fallback経路を追加検証
+   - 残課題: fallback利用率が 0 になった段階で frontend 側 fallback を除去
 5. **Phase 4（deprecate）**: 旧project系経路の無通信確認後に削除

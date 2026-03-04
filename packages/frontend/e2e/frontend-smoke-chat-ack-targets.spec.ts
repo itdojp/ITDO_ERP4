@@ -87,6 +87,60 @@ async function ensureOk(res: { ok(): boolean; status(): number; text(): any }) {
   throw new Error(`[e2e] api failed: ${res.status()} ${body}`);
 }
 
+async function openProjectChatSection(page: Page, projectLabel?: string) {
+  await navigateToSection(page, 'プロジェクトチャット');
+  const chatSection = page
+    .locator('main')
+    .locator('h2', { hasText: 'プロジェクトチャット' })
+    .locator('..');
+  await chatSection.scrollIntoViewIfNeeded();
+  await selectByLabelOrFirst(chatSection.getByLabel('案件選択'), projectLabel);
+  return chatSection;
+}
+
+test('frontend project chat uses room API after project room resolution @extended', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  const id = runId();
+  const message = `E2E room-first path ${id}`;
+  const projectId = authState.projectIds[0];
+  const projectPattern = new RegExp(`/projects/${projectId}/chat-`);
+  const blockedProjectUrls: string[] = [];
+
+  await prepare(page);
+  const chatSection = await openProjectChatSection(
+    page,
+    'PRJ-DEMO-1 / Demo Project 1',
+  );
+
+  // roomIdが解決されるまで待ち、以降の操作がroom API経路になることを確認する。
+  await expect(
+    chatSection.getByRole('checkbox', { name: '全投稿通知' }),
+  ).toBeVisible({
+    timeout: actionTimeout,
+  });
+
+  await page.route('**/projects/*/chat-*', async (route) => {
+    blockedProjectUrls.push(route.request().url());
+    await route.abort();
+  });
+
+  try {
+    await chatSection.getByPlaceholder('メッセージを書く').fill(message);
+    await chatSection.getByRole('button', { name: '投稿' }).click();
+    const messageItem = chatSection.locator('li', { hasText: message });
+    await expect(messageItem).toHaveCount(1, { timeout: actionTimeout });
+    await expect(messageItem).toBeVisible({ timeout: actionTimeout });
+  } finally {
+    await page.unroute('**/projects/*/chat-*');
+  }
+
+  expect(blockedProjectUrls.filter((url) => projectPattern.test(url))).toEqual(
+    [],
+  );
+});
+
 test('frontend smoke project chat ack targets (user/group/role) @extended', async ({
   page,
 }) => {
@@ -107,14 +161,8 @@ test('frontend smoke project chat ack targets (user/group/role) @extended', asyn
   );
   await ensureOk(addMemberRes);
 
-  await navigateToSection(page, 'プロジェクトチャット');
-  const chatSection = page
-    .locator('main')
-    .locator('h2', { hasText: 'プロジェクトチャット' })
-    .locator('..');
-  await chatSection.scrollIntoViewIfNeeded();
-  await selectByLabelOrFirst(
-    chatSection.getByLabel('案件選択'),
+  const chatSection = await openProjectChatSection(
+    page,
     'PRJ-DEMO-1 / Demo Project 1',
   );
 
@@ -206,14 +254,8 @@ test('frontend smoke project chat mention composer selects user/group targets @e
       ),
     ).toBeTruthy();
 
-    await navigateToSection(page, 'プロジェクトチャット');
-    const chatSection = page
-      .locator('main')
-      .locator('h2', { hasText: 'プロジェクトチャット' })
-      .locator('..');
-    await chatSection.scrollIntoViewIfNeeded();
-    await selectByLabelOrFirst(
-      chatSection.getByLabel('案件選択'),
+    const chatSection = await openProjectChatSection(
+      page,
       'PRJ-DEMO-1 / Demo Project 1',
     );
 
