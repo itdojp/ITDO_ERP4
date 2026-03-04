@@ -139,6 +139,6 @@
    - 追補実装: project系 `chat-messages` / `chat-summary` / `chat-mention-candidates` / `chat-ack-candidates` / `chat-unread` / `chat-read` / `chat-ack-requests/preview` / `chat-ack-requests` の room 解決を `resolveActiveProjectRoom` に統一
 4. **Phase 3（frontend統合）**: `ProjectChat` 呼び出しを room API へ段階移行
    - 実装済み: room API 優先 + project API フォールバック
-   - 実装済み: E2Eで room優先経路 / fallback経路を追加検証
+   - 実装済み: E2Eで room優先経路を追加検証
    - 残課題: fallback利用率が 0 になった段階で frontend 側 fallback を除去
 5. **Phase 4（deprecate）**: 旧project系経路の無通信確認後に削除

@@ -105,7 +105,7 @@ test('frontend project chat uses room API after project room resolution @extende
   const id = runId();
   const message = `E2E room-first path ${id}`;
   const projectId = authState.projectIds[0];
-  const projectPattern = new RegExp(`/projects/${projectId}/chat-`);
+  const projectChatRoutePattern = `**/projects/${projectId}/chat-*`;
   const blockedProjectUrls: string[] = [];
 
   await prepare(page);
@@ -121,7 +121,7 @@ test('frontend project chat uses room API after project room resolution @extende
     timeout: actionTimeout,
   });
 
-  await page.route('**/projects/*/chat-*', async (route) => {
+  await page.route(projectChatRoutePattern, async (route) => {
     blockedProjectUrls.push(route.request().url());
     await route.abort();
   });
@@ -133,12 +133,10 @@ test('frontend project chat uses room API after project room resolution @extende
     await expect(messageItem).toHaveCount(1, { timeout: actionTimeout });
     await expect(messageItem).toBeVisible({ timeout: actionTimeout });
   } finally {
-    await page.unroute('**/projects/*/chat-*');
+    await page.unroute(projectChatRoutePattern);
   }
 
-  expect(blockedProjectUrls.filter((url) => projectPattern.test(url))).toEqual(
-    [],
-  );
+  expect(blockedProjectUrls).toEqual([]);
 });
 
 test('frontend smoke project chat ack targets (user/group/role) @extended', async ({
