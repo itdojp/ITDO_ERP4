@@ -29,10 +29,22 @@ const CACHE_CONTROL_HEADER = 'cache-control';
 const PRAGMA_HEADER = 'pragma';
 const CACHE_CONTROL_NO_STORE = 'no-store';
 const PRAGMA_NO_CACHE = 'no-cache';
+const DEPRECATION_HEADER = 'Deprecation';
 const READY_ROUTE_RATE_LIMIT = {
   max: 600,
   timeWindow: '1 minute',
 };
+const LEGACY_PROJECT_CHAT_ROUTE_TEMPLATES = new Set([
+  '/projects/:projectId/chat-messages',
+  '/projects/:projectId/chat-summary',
+  '/projects/:projectId/chat-mention-candidates',
+  '/projects/:projectId/chat-ack-candidates',
+  '/projects/:projectId/chat-unread',
+  '/projects/:projectId/chat-read',
+  '/projects/:projectId/chat-ack-requests/preview',
+  '/projects/:projectId/chat-ack-requests',
+  '/projects/:projectId/chat-break-glass-events',
+]);
 
 type RateLimitRedisClient = {
   ping: () => Promise<unknown>;
@@ -216,6 +228,13 @@ function parsePositiveInt(value: string | undefined, fallback: number) {
   return Math.floor(parsed);
 }
 
+function isLegacyProjectChatRouteTemplate(routeTemplate: string | undefined) {
+  return (
+    typeof routeTemplate === 'string' &&
+    LEGACY_PROJECT_CHAT_ROUTE_TEMPLATES.has(routeTemplate)
+  );
+}
+
 export async function buildServer(
   options: BuildServerOptions = {},
 ): Promise<FastifyInstance> {
@@ -241,6 +260,20 @@ export async function buildServer(
     }
     if (!reply.hasHeader(PRAGMA_HEADER)) {
       reply.header(PRAGMA_HEADER, PRAGMA_NO_CACHE);
+    }
+    const routeTemplate = req.routeOptions?.url;
+    if (isLegacyProjectChatRouteTemplate(routeTemplate)) {
+      if (!reply.hasHeader(DEPRECATION_HEADER)) {
+        reply.header(DEPRECATION_HEADER, 'true');
+      }
+      req.log.info(
+        {
+          routeTemplate,
+          method: req.method,
+          userId: req.user?.userId ?? null,
+        },
+        'legacy_project_chat_path_used',
+      );
     }
     return payload;
   });
