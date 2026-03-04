@@ -191,6 +191,16 @@ test('GET /projects/:projectId/chat-mention-candidates keeps project-only candid
   let chatRoomMemberCalled = false;
   await withPrismaStubs(
     {
+      'chatRoom.findUnique': async () => ({
+        id: 'proj-1',
+        type: 'project',
+        isOfficial: true,
+        groupId: null,
+        viewerGroupIds: [],
+        posterGroupIds: [],
+        deletedAt: null,
+        allowExternalUsers: true,
+      }),
       'chatRoomMember.findMany': async () => {
         chatRoomMemberCalled = true;
         return [{ userId: 'external-member' }];

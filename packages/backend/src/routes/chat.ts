@@ -610,7 +610,11 @@ export async function registerChatRoutes(app: FastifyInstance) {
         ? req.user.groupAccountIds
         : [];
       return buildChatMentionCandidates({
-        room,
+        // legacy project endpoint keeps project-only candidates during compatibility period.
+        room: {
+          ...room,
+          allowExternalUsers: false,
+        },
         requesterUserId: currentUserId,
         groupIds,
         groupAccountIds,
