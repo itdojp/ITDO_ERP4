@@ -259,6 +259,7 @@ test('createApprovalFor: stage order derives currentStep/status from the smalles
 
 test('createApprovalFor: stores selected rule version and snapshot on the instance', async () => {
   let createdArgs;
+  const now = new Date('2026-06-01T00:00:00.000Z');
   const effectiveFrom = new Date('2026-01-01T00:00:00.000Z');
   const effectiveTo = new Date('2026-12-31T23:59:59.000Z');
   const fakeClient = {
@@ -297,7 +298,7 @@ test('createApprovalFor: stores selected rule version and snapshot on the instan
     'invoices',
     'inv-versioned',
     { amount: 10000 },
-    { client: fakeClient, createdBy: 'u1' },
+    { client: fakeClient, createdBy: 'u1', now },
   );
 
   assert.ok(createdArgs);

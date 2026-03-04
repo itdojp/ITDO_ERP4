@@ -1344,6 +1344,7 @@ model ApprovalRule {
 
   @@index([flowType])
   @@index([flowType, isActive, effectiveFrom])
+  @@unique([flowType, ruleKey, version])
   @@index([flowType, ruleKey, version])
   @@index([flowType, ruleKey, isActive, effectiveFrom])
   @@index([supersedesRuleId])
