@@ -1929,15 +1929,27 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
       });
       if (!access) return reply;
 
-      const members =
-        access.room.type === 'project'
-          ? []
-          : await prisma.chatRoomMember.findMany({
+      const chatRoomMembers =
+        access.room.type !== 'project' || access.room.allowExternalUsers
+          ? await prisma.chatRoomMember.findMany({
               where: { roomId: access.room.id, deletedAt: null },
               select: { userId: true },
               orderBy: { userId: 'asc' },
-            });
-      const userIdSet = new Set(members.map((member) => member.userId));
+            })
+          : [];
+      const projectMembers =
+        access.room.type === 'project'
+          ? await prisma.projectMember.findMany({
+              where: { projectId: access.room.id },
+              select: { userId: true },
+              orderBy: { userId: 'asc' },
+            })
+          : [];
+
+      const userIdSet = new Set([
+        ...chatRoomMembers.map((member) => member.userId),
+        ...projectMembers.map((member) => member.userId),
+      ]);
       userIdSet.add(userId);
       const userIds = Array.from(userIdSet);
       const accounts = userIds.length
