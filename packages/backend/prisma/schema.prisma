@@ -611,6 +611,7 @@ model ChatBreakGlassRequest {
 
   @@index([status, createdAt])
   @@index([projectId, createdAt])
+  @@index([roomId, createdAt])
   @@index([viewerUserId, createdAt])
 }
 
