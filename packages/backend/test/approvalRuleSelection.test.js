@@ -242,6 +242,52 @@ test('createApprovalFor: logs fallback reasons when no active rule is found', as
   ]);
 });
 
+test('createApprovalFor: writes normalized fallback metadata in tx path', async () => {
+  const auditLogs = [];
+  const fakeClient = {
+    approvalRule: {
+      findMany: async () => [],
+    },
+    project: { findUnique: async () => null },
+    approvalInstance: {
+      findFirst: async () => null,
+      create: async () => ({
+        id: 'a-fallback-normalized',
+        status: 'pending_qa',
+        currentStep: 1,
+        steps: [],
+      }),
+    },
+    auditLog: {
+      create: async ({ data }) => {
+        auditLogs.push(data);
+        return { id: 'audit-normalized' };
+      },
+    },
+  };
+
+  await createApprovalFor(
+    'invoice',
+    'invoices',
+    'inv-normalized',
+    {
+      amount: BigInt(10),
+      totalAmount: Number.POSITIVE_INFINITY,
+      projectType: new Date('2026-01-01T00:00:00.000Z'),
+    },
+    { client: fakeClient, createdBy: 'u1' },
+  );
+
+  assert.equal(auditLogs.length, 1);
+  assert.equal(auditLogs[0].metadata._request.source, 'system');
+  assert.equal(auditLogs[0].metadata.payloadHints.amount, '10');
+  assert.equal(auditLogs[0].metadata.payloadHints.totalAmount, 'Infinity');
+  assert.equal(
+    auditLogs[0].metadata.payloadHints.projectType,
+    '2026-01-01T00:00:00.000Z',
+  );
+});
+
 test('createApprovalFor: logs fallback reason when first rule is used without condition match', async () => {
   const auditLogs = [];
   const fakeClient = {
@@ -329,6 +375,54 @@ test('createApprovalFor: logs fallback reason when selected rule has invalid ste
   assert.deepEqual(auditLogs[0].metadata.fallbackReasons, [
     'rule_invalid_steps',
   ]);
+});
+
+test('createApprovalFor: does not log fallback when open approval already exists', async () => {
+  const auditLogs = [];
+  let createCalled = false;
+  const fakeClient = {
+    approvalRule: {
+      findMany: async () => [],
+    },
+    approvalInstance: {
+      findFirst: async () => ({
+        id: 'a-existing',
+        flowType: 'invoice',
+        targetTable: 'invoices',
+        targetId: 'inv-existing',
+        status: 'pending_qa',
+        currentStep: 1,
+        steps: [],
+      }),
+      create: async () => {
+        createCalled = true;
+        return {
+          id: 'a-created',
+          status: 'pending_qa',
+          currentStep: 1,
+          steps: [],
+        };
+      },
+    },
+    auditLog: {
+      create: async ({ data }) => {
+        auditLogs.push(data);
+        return { id: 'audit-duplicate' };
+      },
+    },
+  };
+
+  const approval = await createApprovalFor(
+    'invoice',
+    'invoices',
+    'inv-existing',
+    { amount: 50 },
+    { client: fakeClient, createdBy: 'u1' },
+  );
+
+  assert.equal(createCalled, false);
+  assert.equal(approval.id, 'a-existing');
+  assert.equal(auditLogs.length, 0);
 });
 
 test('createApprovalFor: stage order derives currentStep/status from the smallest stepOrder', async () => {
