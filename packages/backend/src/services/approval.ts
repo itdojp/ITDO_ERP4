@@ -161,10 +161,7 @@ function defaultRuleSeedsForFlow(flowType: string): DefaultRuleSeed[] {
   return [];
 }
 
-async function ensureDefaultRulesForFlow(
-  flowType: string,
-  client: any,
-) {
+async function ensureDefaultRulesForFlow(flowType: string, client: any) {
   if (typeof client?.approvalRule?.create !== 'function') return;
   const seeds = defaultRuleSeedsForFlow(flowType);
   if (!seeds.length) return;
