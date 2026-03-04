@@ -1929,11 +1929,14 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
       });
       if (!access) return reply;
 
-      const chatRoomMembers = await prisma.chatRoomMember.findMany({
-        where: { roomId: access.room.id, deletedAt: null },
-        select: { userId: true },
-        orderBy: { userId: 'asc' },
-      });
+      const chatRoomMembers =
+        access.room.type !== 'project' || access.room.allowExternalUsers
+          ? await prisma.chatRoomMember.findMany({
+              where: { roomId: access.room.id, deletedAt: null },
+              select: { userId: true },
+              orderBy: { userId: 'asc' },
+            })
+          : [];
       const projectMembers =
         access.room.type === 'project'
           ? await prisma.projectMember.findMany({

@@ -77,6 +77,7 @@ function headers() {
 }
 
 test('GET /chat-rooms/:roomId/mention-candidates includes project members for project room', async () => {
+  let chatRoomMemberCalled = false;
   await withPrismaStubs(
     {
       'chatRoom.findUnique': async () => ({
@@ -88,6 +89,61 @@ test('GET /chat-rooms/:roomId/mention-candidates includes project members for pr
         posterGroupIds: [],
         deletedAt: null,
         allowExternalUsers: false,
+      }),
+      'chatRoomMember.findMany': async () => {
+        chatRoomMemberCalled = true;
+        return [{ userId: 'external-member' }];
+      },
+      'projectMember.findMany': async () => [{ userId: 'project-member' }],
+      'userAccount.findMany': async () => [
+        {
+          userName: 'requester',
+          externalId: 'requester',
+          displayName: 'Requester',
+        },
+        {
+          userName: 'project-member',
+          externalId: 'project-member',
+          displayName: 'Project Member',
+        },
+        {
+          userName: 'external-member',
+          externalId: 'external-member',
+          displayName: 'External Member',
+        },
+      ],
+    },
+    async () => {
+      await withServer(async (server) => {
+        const res = await server.inject({
+          method: 'GET',
+          url: '/chat-rooms/proj-1/mention-candidates',
+          headers: headers(),
+        });
+        assert.equal(res.statusCode, 200, res.body);
+        const body = JSON.parse(res.body);
+        const userIds = Array.isArray(body?.users)
+          ? body.users.map((user) => user.userId).sort()
+          : [];
+        assert.deepEqual(userIds, ['project-member', 'requester']);
+      });
+    },
+  );
+  assert.equal(chatRoomMemberCalled, false);
+});
+
+test('GET /chat-rooms/:roomId/mention-candidates includes room members when project room allows external users', async () => {
+  await withPrismaStubs(
+    {
+      'chatRoom.findUnique': async () => ({
+        id: 'proj-1',
+        type: 'project',
+        isOfficial: true,
+        groupId: null,
+        viewerGroupIds: [],
+        posterGroupIds: [],
+        deletedAt: null,
+        allowExternalUsers: true,
       }),
       'chatRoomMember.findMany': async () => [{ userId: 'external-member' }],
       'projectMember.findMany': async () => [{ userId: 'project-member' }],
