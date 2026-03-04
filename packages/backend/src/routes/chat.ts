@@ -309,6 +309,7 @@ export async function registerChatRoutes(app: FastifyInstance) {
   app.get(
     '/projects/:projectId/chat-messages',
     {
+      schema: { deprecated: true },
       preHandler: [
         requireRole(chatRoles),
         requireProjectAccess((req) => (req.params as any)?.projectId),
@@ -383,7 +384,7 @@ export async function registerChatRoutes(app: FastifyInstance) {
   app.post(
     '/projects/:projectId/chat-summary',
     {
-      schema: projectChatSummarySchema,
+      schema: { ...projectChatSummarySchema, deprecated: true },
       preHandler: [
         requireRole(chatRoles),
         requireProjectAccess((req) => (req.params as any)?.projectId),
@@ -530,6 +531,7 @@ export async function registerChatRoutes(app: FastifyInstance) {
   app.get(
     '/projects/:projectId/chat-mention-candidates',
     {
+      schema: { deprecated: true },
       preHandler: [
         requireRole(chatRoles),
         requireProjectAccess((req) => (req.params as any)?.projectId),
@@ -591,6 +593,7 @@ export async function registerChatRoutes(app: FastifyInstance) {
   app.get(
     '/projects/:projectId/chat-ack-candidates',
     {
+      schema: { deprecated: true },
       preHandler: [
         requireRole(chatRoles),
         requireProjectAccess((req) => (req.params as any)?.projectId),
@@ -632,6 +635,7 @@ export async function registerChatRoutes(app: FastifyInstance) {
   app.get(
     '/projects/:projectId/chat-unread',
     {
+      schema: { deprecated: true },
       preHandler: [
         requireRole(chatRoles),
         requireProjectAccess((req) => (req.params as any)?.projectId),
@@ -648,6 +652,7 @@ export async function registerChatRoutes(app: FastifyInstance) {
   app.post(
     '/projects/:projectId/chat-read',
     {
+      schema: { deprecated: true },
       preHandler: [
         requireRole(chatRoles),
         requireProjectAccess((req) => (req.params as any)?.projectId),
@@ -669,7 +674,7 @@ export async function registerChatRoutes(app: FastifyInstance) {
   app.post(
     '/projects/:projectId/chat-messages',
     {
-      schema: projectChatMessageSchema,
+      schema: { ...projectChatMessageSchema, deprecated: true },
       preHandler: [
         requireRole(chatRoles),
         requireProjectAccess((req) => (req.params as any)?.projectId),
@@ -757,7 +762,7 @@ export async function registerChatRoutes(app: FastifyInstance) {
   app.post(
     '/projects/:projectId/chat-ack-requests/preview',
     {
-      schema: chatAckPreviewSchema,
+      schema: { ...chatAckPreviewSchema, deprecated: true },
       preHandler: [
         requireRole(chatRoles),
         requireProjectAccess((req) => (req.params as any)?.projectId),
@@ -845,7 +850,7 @@ export async function registerChatRoutes(app: FastifyInstance) {
   app.post(
     '/projects/:projectId/chat-ack-requests',
     {
-      schema: projectChatAckRequestSchema,
+      schema: { ...projectChatAckRequestSchema, deprecated: true },
       preHandler: [
         requireRole(chatRoles),
         requireProjectAccess((req) => (req.params as any)?.projectId),

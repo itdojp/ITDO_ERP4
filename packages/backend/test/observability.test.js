@@ -57,6 +57,10 @@ test('deprecation header is attached to legacy project chat endpoints', async ()
   });
   assert.ok(res.statusCode >= 400);
   assert.equal(res.headers.deprecation, 'true');
+  assert.equal(
+    res.headers.link,
+    '</chat-rooms/p1/messages>; rel=\"successor-version\"',
+  );
   await server.close();
 });
 
@@ -68,6 +72,7 @@ test('deprecation header is not attached to non-legacy endpoints', async () => {
   });
   assert.equal(res.statusCode, 200);
   assert.equal(res.headers.deprecation, undefined);
+  assert.equal(res.headers.link, undefined);
   await server.close();
 });
 

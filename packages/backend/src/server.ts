@@ -1,4 +1,4 @@
-import Fastify, { FastifyInstance } from 'fastify';
+import Fastify, { FastifyInstance, FastifyReply } from 'fastify';
 import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
 import multipart from '@fastify/multipart';
@@ -30,6 +30,10 @@ const PRAGMA_HEADER = 'pragma';
 const CACHE_CONTROL_NO_STORE = 'no-store';
 const PRAGMA_NO_CACHE = 'no-cache';
 const DEPRECATION_HEADER = 'Deprecation';
+const LINK_HEADER = 'Link';
+const SUNSET_HEADER = 'Sunset';
+const LEGACY_PROJECT_CHAT_SUNSET_ENV = 'LEGACY_PROJECT_CHAT_SUNSET';
+const LEGACY_PROJECT_CHAT_SUCCESSOR_REL = 'successor-version';
 const READY_ROUTE_RATE_LIMIT = {
   max: 600,
   timeWindow: '1 minute',
@@ -45,6 +49,22 @@ const LEGACY_PROJECT_CHAT_ROUTE_TEMPLATES = new Set([
   '/projects/:projectId/chat-ack-requests',
   '/projects/:projectId/chat-break-glass-events',
 ]);
+const LEGACY_PROJECT_CHAT_SUCCESSOR_ROUTE_MAP: Record<string, string> = {
+  '/projects/:projectId/chat-messages': '/chat-rooms/:projectId/messages',
+  '/projects/:projectId/chat-summary': '/chat-rooms/:projectId/summary',
+  '/projects/:projectId/chat-mention-candidates':
+    '/chat-rooms/:projectId/mention-candidates',
+  '/projects/:projectId/chat-ack-candidates':
+    '/chat-rooms/:projectId/ack-candidates',
+  '/projects/:projectId/chat-unread': '/chat-rooms/:projectId/unread',
+  '/projects/:projectId/chat-read': '/chat-rooms/:projectId/read',
+  '/projects/:projectId/chat-ack-requests/preview':
+    '/chat-rooms/:projectId/ack-requests/preview',
+  '/projects/:projectId/chat-ack-requests':
+    '/chat-rooms/:projectId/ack-requests',
+  '/projects/:projectId/chat-break-glass-events':
+    '/chat-rooms/:projectId/chat-break-glass-events',
+};
 
 type RateLimitRedisClient = {
   ping: () => Promise<unknown>;
@@ -235,6 +255,44 @@ function isLegacyProjectChatRouteTemplate(routeTemplate: string | undefined) {
   );
 }
 
+function readProjectIdFromParams(params: unknown): string | null {
+  if (!isPlainObject(params)) return null;
+  const projectIdRaw = params.projectId;
+  if (typeof projectIdRaw !== 'string') return null;
+  const projectId = projectIdRaw.trim();
+  return projectId ? projectId : null;
+}
+
+function buildLegacyProjectChatSuccessorPath(options: {
+  routeTemplate: string | undefined;
+  params: unknown;
+}) {
+  if (typeof options.routeTemplate !== 'string') return null;
+  const successorTemplate =
+    LEGACY_PROJECT_CHAT_SUCCESSOR_ROUTE_MAP[options.routeTemplate];
+  if (!successorTemplate) return null;
+  const projectId = readProjectIdFromParams(options.params);
+  if (!projectId) return null;
+  return successorTemplate.replace(':projectId', encodeURIComponent(projectId));
+}
+
+function appendLinkHeader(reply: FastifyReply, linkValue: string) {
+  const existing = reply.getHeader(LINK_HEADER);
+  if (typeof existing !== 'string' || !existing.trim()) {
+    reply.header(LINK_HEADER, linkValue);
+    return;
+  }
+  reply.header(LINK_HEADER, `${existing}, ${linkValue}`);
+}
+
+function normalizeSunsetHeaderValue(value: string | undefined) {
+  const raw = value?.trim();
+  if (!raw) return null;
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed.toUTCString();
+}
+
 export async function buildServer(
   options: BuildServerOptions = {},
 ): Promise<FastifyInstance> {
@@ -265,6 +323,22 @@ export async function buildServer(
     if (isLegacyProjectChatRouteTemplate(routeTemplate)) {
       if (!reply.hasHeader(DEPRECATION_HEADER)) {
         reply.header(DEPRECATION_HEADER, 'true');
+      }
+      const successorPath = buildLegacyProjectChatSuccessorPath({
+        routeTemplate,
+        params: req.params,
+      });
+      if (successorPath) {
+        appendLinkHeader(
+          reply,
+          `<${successorPath}>; rel="${LEGACY_PROJECT_CHAT_SUCCESSOR_REL}"`,
+        );
+      }
+      const sunset = normalizeSunsetHeaderValue(
+        process.env[LEGACY_PROJECT_CHAT_SUNSET_ENV],
+      );
+      if (sunset && !reply.hasHeader(SUNSET_HEADER)) {
+        reply.header(SUNSET_HEADER, sunset);
       }
       req.log.info(
         {
