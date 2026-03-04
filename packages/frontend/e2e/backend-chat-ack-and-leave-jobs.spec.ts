@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { expect, test } from '@playwright/test';
+import { resolveProjectRoomId } from './chat-room-e2e-helpers';
 
 const apiBase = process.env.E2E_API_BASE || 'http://localhost:3002';
 const defaultProjectId = '00000000-0000-0000-0000-000000000001';
@@ -260,9 +261,15 @@ test('backend e2e: chat ack lifecycle endpoints @extended', async ({
     roles: ['user'],
     projectIds: [defaultProjectId],
   });
+  const roomId = await resolveProjectRoomId({
+    request,
+    apiBase,
+    projectId: defaultProjectId,
+    headers: adminHeaders,
+  });
 
   const shortCandidatesRes = await request.get(
-    `${apiBase}/projects/${encodeURIComponent(defaultProjectId)}/chat-ack-candidates?q=e`,
+    `${apiBase}/chat-rooms/${encodeURIComponent(roomId)}/ack-candidates?q=e`,
     { headers: adminHeaders },
   );
   await ensureOk(shortCandidatesRes);
@@ -271,7 +278,7 @@ test('backend e2e: chat ack lifecycle endpoints @extended', async ({
   expect(shortCandidates?.groups ?? []).toEqual([]);
 
   const candidatesRes = await request.get(
-    `${apiBase}/projects/${encodeURIComponent(defaultProjectId)}/chat-ack-candidates?q=e2e`,
+    `${apiBase}/chat-rooms/${encodeURIComponent(roomId)}/ack-candidates?q=e2e`,
     { headers: adminHeaders },
   );
   await ensureOk(candidatesRes);
@@ -283,7 +290,7 @@ test('backend e2e: chat ack lifecycle endpoints @extended', async ({
   expect(Array.isArray(candidates?.groups)).toBeTruthy();
 
   const previewRes = await request.post(
-    `${apiBase}/projects/${encodeURIComponent(defaultProjectId)}/chat-ack-requests/preview`,
+    `${apiBase}/chat-rooms/${encodeURIComponent(roomId)}/ack-requests/preview`,
     {
       headers: adminHeaders,
       data: {
@@ -300,7 +307,7 @@ test('backend e2e: chat ack lifecycle endpoints @extended', async ({
 
   const dueAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
   const createRes = await request.post(
-    `${apiBase}/projects/${encodeURIComponent(defaultProjectId)}/chat-ack-requests`,
+    `${apiBase}/chat-rooms/${encodeURIComponent(roomId)}/ack-requests`,
     {
       headers: adminHeaders,
       data: {

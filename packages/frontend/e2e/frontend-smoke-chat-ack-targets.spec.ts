@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { expect, test, type Locator, type Page } from '@playwright/test';
+import { resolveProjectRoomId } from './chat-room-e2e-helpers';
 
 const baseUrl = process.env.E2E_BASE_URL || 'http://localhost:5173';
 const apiBase = process.env.E2E_API_BASE || 'http://localhost:3002';
@@ -178,7 +179,9 @@ test('frontend smoke project chat ack targets (user/group/role) @extended', asyn
 
   try {
     await chatSection.getByPlaceholder('メッセージを書く').fill(ackMessage);
-    await chatSection.getByPlaceholder('タグ (comma separated)').fill('e2e,ack');
+    await chatSection
+      .getByPlaceholder('タグ (comma separated)')
+      .fill('e2e,ack');
     await chatSection
       .getByPlaceholder('確認対象ユーザID (comma separated)')
       .fill(targetUser);
@@ -253,11 +256,15 @@ test('frontend smoke project chat mention composer selects user/group targets @e
       },
     );
     await ensureOk(addMemberRes);
+    const projectRoomId = await resolveProjectRoomId({
+      request: page.request,
+      apiBase,
+      projectId,
+      headers: buildAuthHeaders(mentionAuthState),
+    });
 
     const mentionCandidatesRes = await page.request.get(
-      `${apiBase}/projects/${encodeURIComponent(
-        projectId,
-      )}/chat-mention-candidates`,
+      `${apiBase}/chat-rooms/${encodeURIComponent(projectRoomId)}/mention-candidates`,
       {
         headers: buildAuthHeaders(mentionAuthState),
       },

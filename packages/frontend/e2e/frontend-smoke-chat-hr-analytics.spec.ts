@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import fs from 'fs';
 import path from 'path';
 import { expect, test, type Locator, type Page } from '@playwright/test';
+import { resolveProjectRoomId } from './chat-room-e2e-helpers';
 
 const dateTag = new Date().toISOString().slice(0, 10);
 const rootDir = process.env.E2E_ROOT_DIR || process.cwd();
@@ -103,12 +104,9 @@ async function selectByLabelOrFirst(select: Locator, label?: string) {
     .toBeGreaterThan(1);
   if (label) {
     await expect
-      .poll(
-        () => targetSelect.locator('option', { hasText: label }).count(),
-        {
-          timeout: actionTimeout,
-        },
-      )
+      .poll(() => targetSelect.locator('option', { hasText: label }).count(), {
+        timeout: actionTimeout,
+      })
       .toBeGreaterThan(0);
     await targetSelect.selectOption({ label });
     return;
@@ -136,14 +134,18 @@ test('frontend smoke chat hr analytics @extended', async ({ page }) => {
   test.setTimeout(180_000);
   const id = runId();
   const mentionTarget = 'e2e-member-1@example.com';
+  const projectId = authState.projectIds[0];
+  const projectChatRoutePattern = `**/projects/${projectId}/chat-**`;
+  const blockedProjectUrls: string[] = [];
   await prepare(page);
+  const roomId = await resolveProjectRoomId({ projectId });
 
   await expect(page.getByText('ID: demo-user')).toBeVisible();
   await expect(page.getByText('Roles: admin, mgmt')).toBeVisible();
 
   // Ensure the ack-required target user can access the project room.
   const projectMemberRes = await page.request.post(
-    `${apiBase}/projects/${encodeURIComponent(authState.projectIds[0])}/members`,
+    `${apiBase}/projects/${encodeURIComponent(projectId)}/members`,
     {
       headers: buildAuthHeaders(),
       data: { userId: mentionTarget, role: 'member' },
@@ -151,6 +153,10 @@ test('frontend smoke chat hr analytics @extended', async ({ page }) => {
   );
   await ensureOk(projectMemberRes);
 
+  await page.route(projectChatRoutePattern, async (route) => {
+    blockedProjectUrls.push(route.request().url());
+    await route.abort();
+  });
   await navigateToSection(page, 'プロジェクトチャット');
   const chatSection = page
     .locator('main')
@@ -162,6 +168,11 @@ test('frontend smoke chat hr analytics @extended', async ({ page }) => {
     chatSection.getByLabel('案件選択'),
     'PRJ-DEMO-1 / Demo Project 1',
   );
+  await expect(
+    chatSection.getByRole('checkbox', { name: '全投稿通知' }),
+  ).toBeVisible({
+    timeout: actionTimeout,
+  });
   const mentionComposerInput = chatSection.getByPlaceholder(
     'メンション対象を検索（ユーザ/グループ）',
   );
@@ -210,9 +221,7 @@ test('frontend smoke chat hr analytics @extended', async ({ page }) => {
     chatSection.getByRole('button', { name: uploadName }),
   ).toBeVisible();
   const reactionButton = chatItem.getByRole('button', { name: /^👍/ });
-  if (
-    await reactionButton.isEnabled().catch(() => false)
-  ) {
+  if (await reactionButton.isEnabled().catch(() => false)) {
     await reactionButton.click();
   }
   await expect(chatSection.getByRole('button', { name: '投稿' })).toBeDisabled({
@@ -258,7 +267,7 @@ test('frontend smoke chat hr analytics @extended', async ({ page }) => {
   const overdueDueAt = new Date(Date.now() - 60_000).toISOString();
   const overdueAckMessage = `E2E ack overdue ${id}`;
   const overdueAckRes = await page.request.post(
-    `${apiBase}/projects/${authState.projectIds[0]}/chat-ack-requests`,
+    `${apiBase}/chat-rooms/${encodeURIComponent(roomId)}/ack-requests`,
     {
       data: {
         body: overdueAckMessage,
@@ -283,6 +292,8 @@ test('frontend smoke chat hr analytics @extended', async ({ page }) => {
   const summaryBlock = chatSection.getByText('要約（スタブ）');
   await expect(summaryBlock).toBeVisible();
   await expect(chatSection.locator('pre')).toContainText('取得件数');
+  await page.unroute(projectChatRoutePattern);
+  expect(blockedProjectUrls).toEqual([]);
 
   await navigateToSection(page, 'HR分析', '匿名集計（人事向け）');
   const hrSection = page
@@ -296,9 +307,11 @@ test('frontend smoke chat hr analytics @extended', async ({ page }) => {
   await hrSection.getByLabel('開始日').fill(toDateInputValue(hrRangeFrom));
   await hrSection.getByLabel('終了日').fill(toDateInputValue(hrRangeTo));
   await hrSection.getByLabel('閾値').fill('1');
-  const groupUpdateButton = hrSection.getByRole('button', {
-    name: '更新',
-  }).first();
+  const groupUpdateButton = hrSection
+    .getByRole('button', {
+      name: '更新',
+    })
+    .first();
   await expect(groupUpdateButton).toBeVisible({ timeout: actionTimeout });
   await groupUpdateButton.click();
   await expect(hrSection.locator('ul.list li')).not.toHaveCount(0);
@@ -313,8 +326,8 @@ test('frontend smoke chat hr analytics @extended', async ({ page }) => {
     .getByRole('button', { name: '更新' })
     .first();
   if (
-    await monthlyUpdateButton.isVisible().catch(() => false) &&
-    await monthlyUpdateButton.isEnabled().catch(() => false)
+    (await monthlyUpdateButton.isVisible().catch(() => false)) &&
+    (await monthlyUpdateButton.isEnabled().catch(() => false))
   ) {
     await monthlyUpdateButton.click();
   }
@@ -328,6 +341,11 @@ test('frontend smoke chat hr analytics @extended', async ({ page }) => {
     if (msg.type() === 'error') {
       console.error('[e2e][mentionPage][console.error]', msg.text());
     }
+  });
+  const mentionBlockedProjectUrls: string[] = [];
+  await mentionPage.route(projectChatRoutePattern, async (route) => {
+    mentionBlockedProjectUrls.push(route.request().url());
+    await route.abort();
   });
   await mentionPage.addInitScript(
     (state) => {
@@ -358,6 +376,11 @@ test('frontend smoke chat hr analytics @extended', async ({ page }) => {
     mentionChatSection.getByLabel('案件選択'),
     'PRJ-DEMO-1 / Demo Project 1',
   );
+  await expect(
+    mentionChatSection.getByRole('checkbox', { name: '全投稿通知' }),
+  ).toBeVisible({
+    timeout: actionTimeout,
+  });
   await mentionChatSection.getByRole('button', { name: '読み込み' }).click();
   const mentionAckItem = mentionChatSection.locator('li', {
     hasText: ackMessage,
@@ -377,6 +400,8 @@ test('frontend smoke chat hr analytics @extended', async ({ page }) => {
   await expect(mentionAckItem.getByText('確認状況: 0/1')).toBeVisible({
     timeout: actionTimeout,
   });
+  await mentionPage.unroute(projectChatRoutePattern);
+  expect(mentionBlockedProjectUrls).toEqual([]);
 
   await mentionPage.getByRole('button', { name: 'ホーム' }).click();
   await expect(

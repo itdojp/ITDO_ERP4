@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { expect, test } from '@playwright/test';
+import { resolveProjectRoomId } from './chat-room-e2e-helpers';
 
 const apiBase = process.env.E2E_API_BASE || 'http://localhost:3002';
 const defaultProjectId = '00000000-0000-0000-0000-000000000001';
@@ -810,9 +811,12 @@ test('backend manual checklist: members/vendors/time/expenses/wellbeing @extende
   const amountMin = Number(approvalPatched?.conditions?.amountMin ?? NaN);
   expect(Number.isFinite(amountMin)).toBeTruthy();
   expect(amountMin).toBe(0);
-  const approvalListAfterPatchRes = await request.get(`${apiBase}/approval-rules`, {
-    headers: adminHeaders,
-  });
+  const approvalListAfterPatchRes = await request.get(
+    `${apiBase}/approval-rules`,
+    {
+      headers: adminHeaders,
+    },
+  );
   await ensureOk(approvalListAfterPatchRes);
   const approvalListAfterPatchPayload = await approvalListAfterPatchRes.json();
   const versionedRules = (approvalListAfterPatchPayload?.items ?? []).filter(
@@ -838,10 +842,16 @@ test('backend manual checklist: members/vendors/time/expenses/wellbeing @extende
     roles: ['user'],
     projectIds: [defaultProjectId],
   });
+  const defaultProjectRoomId = await resolveProjectRoomId({
+    request,
+    apiBase,
+    projectId: defaultProjectId,
+    headers: adminHeaders,
+  });
   const recentPastDueAt = new Date(Date.now() - 60 * 60 * 1000).toISOString();
 
   const chatAckRequestRes = await request.post(
-    `${apiBase}/projects/${encodeURIComponent(defaultProjectId)}/chat-ack-requests`,
+    `${apiBase}/chat-rooms/${encodeURIComponent(defaultProjectRoomId)}/ack-requests`,
     {
       headers: adminHeaders,
       data: {
@@ -868,7 +878,7 @@ test('backend manual checklist: members/vendors/time/expenses/wellbeing @extende
   expect(ackByRequiredUser).toBeTruthy();
 
   const pendingChatAckRes = await request.post(
-    `${apiBase}/projects/${encodeURIComponent(defaultProjectId)}/chat-ack-requests`,
+    `${apiBase}/chat-rooms/${encodeURIComponent(defaultProjectRoomId)}/ack-requests`,
     {
       headers: adminHeaders,
       data: {

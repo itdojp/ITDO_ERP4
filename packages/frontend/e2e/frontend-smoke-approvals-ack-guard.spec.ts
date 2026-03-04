@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import fs from 'fs';
 import path from 'path';
 import { expect, test, type Locator, type Page } from '@playwright/test';
+import { resolveProjectRoomId } from './chat-room-e2e-helpers';
 
 const dateTag = new Date().toISOString().slice(0, 10);
 const rootDir = process.env.E2E_ROOT_DIR || process.cwd();
@@ -98,12 +99,9 @@ async function selectByLabelOrFirst(select: Locator, label?: string) {
     .toBeGreaterThan(1);
   if (label) {
     await expect
-      .poll(
-        () => targetSelect.locator('option', { hasText: label }).count(),
-        {
-          timeout: actionTimeout,
-        },
-      )
+      .poll(() => targetSelect.locator('option', { hasText: label }).count(), {
+        timeout: actionTimeout,
+      })
       .toBeGreaterThan(0);
     await targetSelect.selectOption({ label });
     return;
@@ -118,20 +116,23 @@ async function findSelectContainingOption(
   const selects = root.getByRole('combobox');
   let matchedIndex = -1;
   await expect
-    .poll(async () => {
-      const count = await selects.count();
-      for (let i = 0; i < count; i += 1) {
-        const optionCount = await selects
-          .nth(i)
-          .locator('option', { hasText: optionLabel })
-          .count();
-        if (optionCount > 0) {
-          matchedIndex = i;
-          return i;
+    .poll(
+      async () => {
+        const count = await selects.count();
+        for (let i = 0; i < count; i += 1) {
+          const optionCount = await selects
+            .nth(i)
+            .locator('option', { hasText: optionLabel })
+            .count();
+          if (optionCount > 0) {
+            matchedIndex = i;
+            return i;
+          }
         }
-      }
-      return -1;
-    }, { timeout: actionTimeout })
+        return -1;
+      },
+      { timeout: actionTimeout },
+    )
     .toBeGreaterThanOrEqual(0);
   return selects.nth(matchedIndex);
 }
@@ -177,9 +178,15 @@ test('frontend smoke approvals ack guard requires override reason @extended', as
       `Failed to ensure project member: status=${memberRes.status()}`,
     );
   }
+  const projectRoomId = await resolveProjectRoomId({
+    request: page.request,
+    apiBase,
+    projectId,
+    headers: scopedHeaders,
+  });
 
   const ackRes = await page.request.post(
-    `${apiBase}/projects/${encodeURIComponent(projectId)}/chat-ack-requests`,
+    `${apiBase}/chat-rooms/${encodeURIComponent(projectRoomId)}/ack-requests`,
     {
       headers: scopedHeaders,
       data: {

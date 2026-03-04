@@ -3,6 +3,7 @@
 ## 方針
 - backend（Fastify）のルート定義から OpenAPI を生成し、`docs/api/openapi.json` を「契約（contract）」として扱う
 - 破壊的変更は CI で検知し、原則として PR をブロックする
+- チャットAPIは `/chat-rooms/{roomId}/*` を正とし、`/projects/{projectId}/chat-*` は互換維持の非推奨経路として扱う
 
 ## 生成手順
 1. backend を build
@@ -21,4 +22,3 @@ PR（pull_request）では以下を実施する。
 
 ## 備考
 - エラー応答の共通スキーマは `ApiErrorResponse` として `components.schemas` に定義する（後続で各エンドポイントへ適用範囲を拡大）
-

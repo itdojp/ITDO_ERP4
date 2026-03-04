@@ -182,8 +182,8 @@
 
 ## API
 ### 現行API
-※ 内部実装は room-based（Chat*）へ移行済み（外部APIは互換維持）。
-### GET `/projects/:projectId/chat-messages`
+※ 正規経路は room-based（`/chat-rooms/:roomId/*`）。`/projects/:projectId/chat-*` は互換alias。
+### GET `/chat-rooms/:roomId/messages`
 **Query**
 - `limit` (default 50, max 200)
 - `before` (ISO日時。これ以前のメッセージを取得)
@@ -199,7 +199,7 @@
 - `before` が不正な日付の場合は 400
 - `tag` が 32 文字超の場合は 400
 
-### POST `/projects/:projectId/chat-messages`
+### POST `/chat-rooms/:roomId/messages`
 **Body**
 - `body` (1〜2000文字)
 - `tags` (任意: 0〜8件、各32文字まで)
@@ -218,7 +218,7 @@
   - `CHAT_ALL_MENTION_MAX_PER_24H` (default: 3)
   - 超過時は 429 を返す
 
-### POST `/projects/:projectId/chat-ack-requests`
+### POST `/chat-rooms/:roomId/ack-requests`
 **Body**
 - `body` (1〜2000文字)
 - `requiredUserIds` (1〜50件)
@@ -230,11 +230,11 @@
   - `all` (任意: `true` の場合は @all 扱い)
 
 **挙動**
-- 通常メッセージ + `ProjectChatAckRequest` を1トランザクションで作成する
+- 通常メッセージ + `ChatAckRequest` を1トランザクションで作成する
 - `requiredUserIds` はトリムして重複排除する（API側で正規化）
 - `mentions.all=true` の場合は投稿回数制限（rate limit）を適用する（詳細は `POST /chat-messages` と同様）
 
-### GET `/projects/:projectId/chat-mention-candidates`
+### GET `/chat-rooms/:roomId/mention-candidates`
 **挙動**
 - UIでの補完選択用に、ユーザ候補（案件メンバー中心）とグループ候補（JWTの `group_ids`）を返す
 - `allowAll=false` の場合、UIは @all を選べない（例: ルーム/ポリシーで @all を無効化）
@@ -261,15 +261,15 @@
 - ERPの権限チェック（案件アクセス）を通過した場合のみダウンロード可能
 - 認証はヘッダベースのため、UI側は `fetch` で取得してダウンロードする（直リンクではない）
 
-### GET `/projects/:projectId/chat-unread`
+### GET `/chat-rooms/:roomId/unread`
 **挙動**
 - 自分の未読件数と `lastReadAt` を返す（他人の既読/未読は返さない）
 
-### POST `/projects/:projectId/chat-read`
+### POST `/chat-rooms/:roomId/read`
 **挙動**
 - 自分の `lastReadAt` を `now()` に更新する（MVPは「読み込み」時点で更新する運用）
 
-### POST `/projects/:projectId/chat-summary`
+### POST `/chat-rooms/:roomId/summary`
 **Body**
 - `since` (任意: ISO日時)
 - `until` (任意: ISO日時)

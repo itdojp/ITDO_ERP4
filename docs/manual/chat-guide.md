@@ -12,8 +12,8 @@
 
 ## 参照
 
-- チャット仕様: [project-chat](../requirements/project-chat.md)
-- ルーム仕様: [chat-rooms](../requirements/chat-rooms.md)
+- チャット仕様（正）: [chat-rooms](../requirements/chat-rooms.md)
+- プロジェクトチャット統合の背景: [project-chat](../requirements/project-chat.md)
 - 添付（Google Drive）: [chat-attachments-google-drive](../requirements/chat-attachments-google-drive.md)
 - 添付（ウイルス対策）: [chat-attachments-antivirus](../requirements/chat-attachments-antivirus.md)
 - UI 操作: [ui-manual-user](ui-manual-user.md) / [ui-manual-admin](ui-manual-admin.md)
@@ -21,7 +21,7 @@
 
 ## ルーム種別（概要）
 
-運用上の扱いは [project-chat](../requirements/project-chat.md) を優先します。
+運用上の扱いは [chat-rooms](../requirements/chat-rooms.md) を優先します。
 
 - `project`: 案件ルーム（案件に紐づく）
 - `department`: 部門/グループ

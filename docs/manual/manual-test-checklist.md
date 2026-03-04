@@ -31,9 +31,9 @@
 
 ### チャット（確認依頼 ack required）
 
-- [x] GET /projects/:projectId/chat-ack-candidates?q= で候補（users/groups）が取得できる（q は2文字以上）
-- [x] POST /projects/:projectId/chat-ack-requests/preview で requiredUserIds の展開結果が確認できる
-- [x] POST /projects/:projectId/chat-ack-requests（dueAt 任意）で確認依頼を作成できる（message.ackRequest が作成される）
+- [x] GET /chat-rooms/:roomId/ack-candidates?q= で候補（users/groups）が取得できる（q は2文字以上）
+- [x] POST /chat-rooms/:roomId/ack-requests/preview で requiredUserIds の展開結果が確認できる
+- [x] POST /chat-rooms/:roomId/ack-requests（dueAt 任意）で確認依頼を作成できる（message.ackRequest が作成される）
 - [x] GET /chat-ack-requests/:id で dueAt/canceledAt/acks が取得できる
 - [x] POST /chat-ack-requests/:id/ack で requiredUserIds のユーザが OK できる（冪等）
 - [x] POST /chat-ack-requests/:id/revoke で OK 取消できる

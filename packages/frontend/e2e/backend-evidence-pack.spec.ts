@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { expect, test } from '@playwright/test';
+import { resolveProjectRoomId } from './chat-room-e2e-helpers';
 
 const apiBase = process.env.E2E_API_BASE || 'http://localhost:3002';
 const defaultProjectId = '00000000-0000-0000-0000-000000000001';
@@ -67,9 +68,10 @@ async function createEstimateWithPendingApproval(request: any, suffix: string) {
       `[e2e] estimate id missing: ${JSON.stringify(estimatePayload)}`,
     );
   }
+  const roomId = await resolveProjectRoomId({ projectId });
 
   const chatMessageRes = await request.post(
-    `${apiBase}/projects/${encodeURIComponent(projectId)}/chat-messages`,
+    `${apiBase}/chat-rooms/${encodeURIComponent(roomId)}/messages`,
     {
       data: {
         body: `Evidence chat message ${suffix}`,
@@ -79,7 +81,9 @@ async function createEstimateWithPendingApproval(request: any, suffix: string) {
   );
   await ensureOk(chatMessageRes);
   const chatMessage = await chatMessageRes.json();
-  const chatMessageId = (chatMessage?.id ?? chatMessage?.message?.id ?? '') as string;
+  const chatMessageId = (chatMessage?.id ??
+    chatMessage?.message?.id ??
+    '') as string;
   if (!chatMessageId) {
     throw new Error(
       `[e2e] chat message id missing: ${JSON.stringify(chatMessage)}`,
@@ -174,7 +178,9 @@ test('evidence pack flow: snapshot/export/archive and audit log consistency @cor
   const exportJson = await exportJsonRes.json();
   expect(exportJson?.format).toBe('json');
   expect(exportJson?.payload?.snapshot?.id).toBe(snapshotPayload.snapshot.id);
-  expect(exportJson?.payload?.snapshot?.items?.notes).toContain('qa@example.com');
+  expect(exportJson?.payload?.snapshot?.items?.notes).toContain(
+    'qa@example.com',
+  );
   expect(exportJson?.payload?.snapshot?.items?.externalUrls?.[0]).toBe(
     `https://example.com/evidence/${suffix}`,
   );
@@ -364,7 +370,9 @@ test('evidence snapshot regenerate requires reason and history keeps versions @c
   );
   await ensureOk(historyRes);
   const historyPayload = await historyRes.json();
-  const versions = (historyPayload?.items ?? []).map((item: any) => item?.version);
+  const versions = (historyPayload?.items ?? []).map(
+    (item: any) => item?.version,
+  );
   expect(versions[0]).toBe(initialVersion + 1);
   expect(versions).toContain(initialVersion);
 
@@ -407,7 +415,9 @@ test('evidence snapshot regenerate requires reason and history keeps versions @c
   );
   await ensureOk(exportOldVersionRes);
   const exportOldVersionPayload = await exportOldVersionRes.json();
-  expect(exportOldVersionPayload?.payload?.snapshot?.version).toBe(initialVersion);
+  expect(exportOldVersionPayload?.payload?.snapshot?.version).toBe(
+    initialVersion,
+  );
 
   const regenAuditRes = await request.get(
     `${apiBase}/audit-logs?action=evidence_snapshot_regenerated&targetTable=evidence_snapshots&targetId=${encodeURIComponent(regenerated?.snapshot?.id ?? '')}&format=json&mask=0&limit=20`,
