@@ -156,11 +156,11 @@ export async function registerChatRoutes(app: FastifyInstance) {
   async function ensureAllMentionAllowed(options: {
     req: any;
     reply: any;
-    projectId: string;
+    roomId: string;
     userId: string;
   }) {
     const rateLimit = await enforceAllMentionRateLimit({
-      roomId: options.projectId,
+      roomId: options.roomId,
       userId: options.userId,
       now: new Date(),
     });
@@ -169,7 +169,7 @@ export async function registerChatRoutes(app: FastifyInstance) {
         action: 'chat_all_mention_blocked',
         targetTable: 'chat_messages',
         metadata: buildAllMentionBlockedMetadata(
-          options.projectId,
+          options.roomId,
           rateLimit,
         ) as Prisma.InputJsonValue,
         ...auditContextFromRequest(options.req),
@@ -241,6 +241,7 @@ export async function registerChatRoutes(app: FastifyInstance) {
   async function tryCreateChatMentionNotifications(options: {
     req: any;
     projectId: string;
+    roomId: string;
     messageId: string;
     messageBody: string;
     senderUserId: string;
@@ -251,7 +252,7 @@ export async function registerChatRoutes(app: FastifyInstance) {
     try {
       const notificationResult = await createChatMentionNotifications({
         projectId: options.projectId,
-        roomId: options.projectId,
+        roomId: options.roomId,
         messageId: options.messageId,
         messageBody: options.messageBody,
         senderUserId: options.senderUserId,
@@ -269,6 +270,7 @@ export async function registerChatRoutes(app: FastifyInstance) {
         targetId: options.messageId,
         metadata: {
           projectId: options.projectId,
+          roomId: options.roomId,
           messageId: options.messageId,
           createdCount: notificationResult.created,
           recipientCount: notificationResult.recipients.length,
@@ -558,7 +560,7 @@ export async function registerChatRoutes(app: FastifyInstance) {
         action: 'chat_summary_generated',
         targetTable: 'chat_messages',
         metadata: {
-          projectId: room.id,
+          projectId,
           limit: take,
           since: body.since || null,
           until: body.until || null,
@@ -573,7 +575,7 @@ export async function registerChatRoutes(app: FastifyInstance) {
           ? summaryLines.join('\n')
           : '対象メッセージがありません',
         stats: {
-          projectId: room.id,
+          projectId,
           messageCount: items.length,
           userCount: users.size,
           mentionAllCount,
@@ -724,7 +726,7 @@ export async function registerChatRoutes(app: FastifyInstance) {
         const ok = await ensureAllMentionAllowed({
           req,
           reply,
-          projectId: room.id,
+          roomId: room.id,
           userId,
         });
         if (!ok) return;
@@ -744,14 +746,15 @@ export async function registerChatRoutes(app: FastifyInstance) {
       await logChatMessageMentions({
         req,
         messageId: message.id,
-        projectId: room.id,
+        projectId,
         mentionsAll,
         mentionUserIds,
         mentionGroupIds,
       });
       const mentionRecipients = await tryCreateChatMentionNotifications({
         req,
-        projectId: room.id,
+        projectId,
+        roomId: room.id,
         messageId: message.id,
         messageBody: message.body,
         senderUserId: userId,
@@ -912,7 +915,7 @@ export async function registerChatRoutes(app: FastifyInstance) {
         const ok = await ensureAllMentionAllowed({
           req,
           reply,
-          projectId: room.id,
+          roomId: room.id,
           userId,
         });
         if (!ok) return;
@@ -998,7 +1001,7 @@ export async function registerChatRoutes(app: FastifyInstance) {
       await logChatAckRequestCreated({
         req,
         actorUserId: userId,
-        projectId: room.id,
+        projectId,
         roomId: room.id,
         messageId: message.id,
         ackRequestId: message.ackRequest.id,
@@ -1011,14 +1014,15 @@ export async function registerChatRoutes(app: FastifyInstance) {
       await logChatMessageMentions({
         req,
         messageId: message.id,
-        projectId: room.id,
+        projectId,
         mentionsAll,
         mentionUserIds,
         mentionGroupIds,
       });
       await tryCreateChatMentionNotifications({
         req,
-        projectId: room.id,
+        projectId,
+        roomId: room.id,
         messageId: message.id,
         messageBody: message.body,
         senderUserId: userId,
@@ -1029,7 +1033,7 @@ export async function registerChatRoutes(app: FastifyInstance) {
       await tryCreateChatAckRequiredNotificationsWithAudit({
         req,
         actorUserId: userId,
-        projectId: room.id,
+        projectId,
         roomId: room.id,
         messageId: message.id,
         messageBody: message.body,
