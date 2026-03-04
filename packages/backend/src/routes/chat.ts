@@ -463,6 +463,12 @@ export async function registerChatRoutes(app: FastifyInstance) {
           },
         });
       }
+      const room = await resolveActiveProjectRoom({
+        projectId,
+        userId: req.user?.userId || null,
+        reply,
+      });
+      if (!room) return reply;
 
       const createdAt =
         since && until
@@ -475,7 +481,7 @@ export async function registerChatRoutes(app: FastifyInstance) {
 
       const items = await prisma.chatMessage.findMany({
         where: {
-          roomId: projectId,
+          roomId: room.id,
           deletedAt: null,
           createdAt,
         },
@@ -529,7 +535,7 @@ export async function registerChatRoutes(app: FastifyInstance) {
 
       const summaryLines = [
         '（スタブ要約: 集計ベース）',
-        `- projectId: ${projectId}`,
+        `- projectId: ${room.id}`,
         `- 取得件数: ${items.length}件`,
         `- 投稿者数: ${users.size}名`,
         `- @all: ${mentionAllCount}件`,
@@ -546,7 +552,7 @@ export async function registerChatRoutes(app: FastifyInstance) {
         action: 'chat_summary_generated',
         targetTable: 'chat_messages',
         metadata: {
-          projectId,
+          projectId: room.id,
           limit: take,
           since: body.since || null,
           until: body.until || null,
@@ -561,7 +567,7 @@ export async function registerChatRoutes(app: FastifyInstance) {
           ? summaryLines.join('\n')
           : '対象メッセージがありません',
         stats: {
-          projectId,
+          projectId: room.id,
           messageCount: items.length,
           userCount: users.size,
           mentionAllCount,
