@@ -78,6 +78,24 @@ node scripts/report-action-policy-required-action-gaps.mjs --format=text
 
 - `ACTION_POLICY_REQUIRED_ACTIONS=*:*`（未定義=拒否）
 
+### 4.1 flowType別の既定方針（A1時点）
+
+| flowType | 最低 actionKey | subjects 既定 | stateConstraints 既定 | guards 既定 |
+| --- | --- | --- | --- | --- |
+| `estimate` | `submit`, `send` | 案件スコープ一致（project） | `send` は承認済み状態のみ | `approval_open`（send系） |
+| `invoice` | `submit`, `mark_paid`, `send` | 案件/請求書主体一致 | `mark_paid` は未入金状態のみ、`send` は送信可能状態のみ | `approval_open`（send系） |
+| `purchase_order` | `submit`, `send` | 案件/発注主体一致 | 終端状態（cancelled/closed）では拒否 | `approval_open`（send系） |
+| `vendor_invoice` | `update_allocations`, `update_lines`, `link_po`, `unlink_po`, `submit` | 仕入請求書主体一致 | `paid` は原則変更不可、`pending_qa` 以降は管理者のみ変更可 | `approval_open`（submit）、必要時 `chat_ack_completed` |
+| `expense` | `submit`, `mark_paid`, `unmark_paid` | 本人申請 + 経理ロール | `mark_paid` は支払前のみ、`unmark_paid` は支払済みのみ | `approval_open`（submit） |
+| `time` | `edit`, `submit` | 本人/管理者（対象メンバー） | editableDays/期間ロックに従う | `editable_days`, `period_lock` |
+| `leave` | `submit` | 本人申請 | 期間ロックと重複申請制約に従う | `period_lock` |
+| `*` | `approve`, `reject` | 承認者一致 | 承認インスタンス有効時のみ | `approval_open` |
+
+注記:
+
+- `subjects/stateConstraints/guards` の最終表現は ActionPolicy レコードと route 前段チェックの組み合わせで実装する。
+- 上表は fail-safe 移行時の「最低限守るべき既定」を定義したもの。
+
 ## 5. 例外運用（admin/mgmt override）
 
 ### 5.1 共通ルール
