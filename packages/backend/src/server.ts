@@ -278,11 +278,31 @@ function buildLegacyProjectChatSuccessorPath(options: {
 
 function appendLinkHeader(reply: FastifyReply, linkValue: string) {
   const existing = reply.getHeader(LINK_HEADER);
-  if (typeof existing !== 'string' || !existing.trim()) {
+  let normalizedExisting: string | null = null;
+  if (Array.isArray(existing)) {
+    const parts = existing
+      .map((value) => (typeof value === 'string' ? value : String(value)))
+      .map((value) => value.trim())
+      .filter((value) => value.length > 0);
+    if (parts.length > 0) {
+      normalizedExisting = parts.join(', ');
+    }
+  } else if (typeof existing === 'string') {
+    const trimmed = existing.trim();
+    if (trimmed) {
+      normalizedExisting = trimmed;
+    }
+  } else if (existing != null) {
+    const value = String(existing).trim();
+    if (value) {
+      normalizedExisting = value;
+    }
+  }
+  if (!normalizedExisting) {
     reply.header(LINK_HEADER, linkValue);
     return;
   }
-  reply.header(LINK_HEADER, `${existing}, ${linkValue}`);
+  reply.header(LINK_HEADER, `${normalizedExisting}, ${linkValue}`);
 }
 
 function normalizeSunsetHeaderValue(value: string | undefined) {

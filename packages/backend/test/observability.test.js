@@ -11,6 +11,29 @@ async function buildTestServer() {
   return server;
 }
 
+function withEnv(overrides, fn) {
+  const previous = new Map();
+  for (const [key, value] of Object.entries(overrides)) {
+    previous.set(key, process.env[key]);
+    if (value === undefined) {
+      delete process.env[key];
+    } else {
+      process.env[key] = value;
+    }
+  }
+  return Promise.resolve()
+    .then(fn)
+    .finally(() => {
+      for (const [key, value] of previous.entries()) {
+        if (value === undefined) {
+          delete process.env[key];
+        } else {
+          process.env[key] = value;
+        }
+      }
+    });
+}
+
 test('request-id is attached to responses', async () => {
   const server = await buildTestServer();
   const res = await server.inject({ method: 'GET', url: '/healthz' });
@@ -75,6 +98,44 @@ test('deprecation header is not attached to non-legacy endpoints', async () => {
   assert.equal(res.headers.link, undefined);
   await server.close();
 });
+
+test(
+  'sunset header is attached to legacy project chat endpoint when configured',
+  async () => {
+    await withEnv(
+      { LEGACY_PROJECT_CHAT_SUNSET: '2026-12-31T00:00:00.000Z' },
+      async () => {
+        const server = await buildTestServer();
+        const res = await server.inject({
+          method: 'GET',
+          url: '/projects/p1/chat-messages',
+        });
+        assert.ok(res.statusCode >= 400);
+        assert.equal(
+          res.headers.sunset,
+          new Date('2026-12-31T00:00:00.000Z').toUTCString(),
+        );
+        await server.close();
+      },
+    );
+  },
+);
+
+test(
+  'sunset header is omitted when sunset configuration is invalid',
+  async () => {
+    await withEnv({ LEGACY_PROJECT_CHAT_SUNSET: 'invalid-date' }, async () => {
+      const server = await buildTestServer();
+      const res = await server.inject({
+        method: 'GET',
+        url: '/projects/p1/chat-messages',
+      });
+      assert.ok(res.statusCode >= 400);
+      assert.equal(res.headers.sunset, undefined);
+      await server.close();
+    });
+  },
+);
 
 test('legacy error responses are normalized', async () => {
   const server = await buildTestServer();
