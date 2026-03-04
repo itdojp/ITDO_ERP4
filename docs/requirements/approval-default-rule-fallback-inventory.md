@@ -74,3 +74,13 @@
 - 組織共通の最小既定ルールを flowType ごとに定義する。
 - 既定ルール投入方式（seed / migration / 初期化API）を決定する。
 - 段階削除計画を定義する（ログ化 → 警告 → deny-by-default）。
+
+## 7. 実装メモ（2026-03-05）
+
+- `ApprovalRule` の flowType 別システム既定ルールを migration で投入
+  - `packages/backend/prisma/migrations/20260305113000_add_approval_rule_db_defaults/migration.sql`
+  - amount系は `low/high` 2段（`mgmt` / `mgmt->exec`）、`leave/time` は `mgmt` 1段
+- `createApprovalFor` の rule 0件時は、対応flowで既定ルール作成を試行後に再検索
+  - `packages/backend/src/services/approval.ts`
+- demo seed の ApprovalRule も空stepsを廃止し、既定ルール形へ更新
+  - `scripts/seed-demo.sql`

@@ -18,14 +18,21 @@ insert into "UserAccount" (id, "userName", "displayName", "givenName", "familyNa
   ('90000000-0000-0000-0000-000000000002','e2e-member-2@example.com','E2E Member 2','E2E','Member 2','Sales', true, now(), now())
 on conflict do nothing;
 
-insert into "ApprovalRule" (id, "flowType", "ruleKey", conditions, steps, "createdAt", "updatedAt") values
-  ('50000000-0000-0000-0000-000000000001','estimate','50000000-0000-0000-0000-000000000001','{}','[]', now(), now()),
-  ('50000000-0000-0000-0000-000000000002','invoice','50000000-0000-0000-0000-000000000002','{}','[]', now(), now()),
-  ('50000000-0000-0000-0000-000000000003','expense','50000000-0000-0000-0000-000000000003','{}','[]', now(), now()),
-  ('50000000-0000-0000-0000-000000000004','time','50000000-0000-0000-0000-000000000004','{}','[]', now(), now()),
-  ('50000000-0000-0000-0000-000000000005','purchase_order','50000000-0000-0000-0000-000000000005','{}','[]', now(), now()),
-  ('50000000-0000-0000-0000-000000000006','vendor_invoice','50000000-0000-0000-0000-000000000006','{}','[]', now(), now()),
-  ('50000000-0000-0000-0000-000000000007','leave','50000000-0000-0000-0000-000000000007','{}','[]', now(), now())
+insert into "ApprovalRule" (id, "flowType", "ruleKey", version, "isActive", "effectiveFrom", conditions, steps, "createdAt", "updatedAt", "createdBy") values
+  ('50000000-0000-0000-0000-000000000001','estimate','system-default:estimate:low',1,true,'2000-01-01 00:00:00','{"amountMax":99999}','[{"approverGroupId":"mgmt","stepOrder":1}]', now(), now(), 'system'),
+  ('50000000-0000-0000-0000-000000000002','estimate','system-default:estimate:high',1,true,'2000-01-01 00:00:00','{"amountMin":100000}','[{"approverGroupId":"mgmt","stepOrder":1},{"approverGroupId":"exec","stepOrder":2}]', now(), now(), 'system'),
+  ('50000000-0000-0000-0000-000000000003','invoice','system-default:invoice:low',1,true,'2000-01-01 00:00:00','{"amountMax":99999}','[{"approverGroupId":"mgmt","stepOrder":1}]', now(), now(), 'system'),
+  ('50000000-0000-0000-0000-000000000004','invoice','system-default:invoice:high',1,true,'2000-01-01 00:00:00','{"amountMin":100000}','[{"approverGroupId":"mgmt","stepOrder":1},{"approverGroupId":"exec","stepOrder":2}]', now(), now(), 'system'),
+  ('50000000-0000-0000-0000-000000000005','expense','system-default:expense:low',1,true,'2000-01-01 00:00:00','{"amountMax":99999}','[{"approverGroupId":"mgmt","stepOrder":1}]', now(), now(), 'system'),
+  ('50000000-0000-0000-0000-000000000006','expense','system-default:expense:high',1,true,'2000-01-01 00:00:00','{"amountMin":100000}','[{"approverGroupId":"mgmt","stepOrder":1},{"approverGroupId":"exec","stepOrder":2}]', now(), now(), 'system'),
+  ('50000000-0000-0000-0000-000000000007','purchase_order','system-default:purchase_order:low',1,true,'2000-01-01 00:00:00','{"amountMax":99999}','[{"approverGroupId":"mgmt","stepOrder":1}]', now(), now(), 'system'),
+  ('50000000-0000-0000-0000-000000000008','purchase_order','system-default:purchase_order:high',1,true,'2000-01-01 00:00:00','{"amountMin":100000}','[{"approverGroupId":"mgmt","stepOrder":1},{"approverGroupId":"exec","stepOrder":2}]', now(), now(), 'system'),
+  ('50000000-0000-0000-0000-000000000009','vendor_invoice','system-default:vendor_invoice:low',1,true,'2000-01-01 00:00:00','{"amountMax":99999}','[{"approverGroupId":"mgmt","stepOrder":1}]', now(), now(), 'system'),
+  ('50000000-0000-0000-0000-000000000010','vendor_invoice','system-default:vendor_invoice:high',1,true,'2000-01-01 00:00:00','{"amountMin":100000}','[{"approverGroupId":"mgmt","stepOrder":1},{"approverGroupId":"exec","stepOrder":2}]', now(), now(), 'system'),
+  ('50000000-0000-0000-0000-000000000011','vendor_quote','system-default:vendor_quote:low',1,true,'2000-01-01 00:00:00','{"amountMax":99999}','[{"approverGroupId":"mgmt","stepOrder":1}]', now(), now(), 'system'),
+  ('50000000-0000-0000-0000-000000000012','vendor_quote','system-default:vendor_quote:high',1,true,'2000-01-01 00:00:00','{"amountMin":100000}','[{"approverGroupId":"mgmt","stepOrder":1},{"approverGroupId":"exec","stepOrder":2}]', now(), now(), 'system'),
+  ('50000000-0000-0000-0000-000000000013','leave','system-default:leave',1,true,'2000-01-01 00:00:00','{}','[{"approverGroupId":"mgmt","stepOrder":1}]', now(), now(), 'system'),
+  ('50000000-0000-0000-0000-000000000014','time','system-default:time',1,true,'2000-01-01 00:00:00','{}','[{"approverGroupId":"mgmt","stepOrder":1}]', now(), now(), 'system')
 on conflict do nothing;
 
 insert into "Estimate" (id, "projectId", "estimateNo", version, "totalAmount", currency, status, "numberingSerial", "createdAt", "updatedAt")

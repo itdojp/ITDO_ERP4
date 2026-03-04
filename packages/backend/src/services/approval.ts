@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import type { Prisma } from '@prisma/client';
 import { DocStatusValue } from '../types.js';
 import { prisma } from './db.js';
@@ -115,6 +116,77 @@ const OPEN_APPROVAL_STATUSES = [
   DocStatusValue.pending_qa,
   DocStatusValue.pending_exec,
 ] as const;
+const DEFAULT_RULE_EFFECTIVE_FROM = new Date('2000-01-01T00:00:00.000Z');
+
+type DefaultRuleSeed = {
+  ruleKey: string;
+  conditions: ApprovalCondition;
+  steps: Step[];
+};
+
+function defaultRuleSeedsForFlow(flowType: string): DefaultRuleSeed[] {
+  if (
+    flowType === 'estimate' ||
+    flowType === 'invoice' ||
+    flowType === 'expense' ||
+    flowType === 'purchase_order' ||
+    flowType === 'vendor_invoice' ||
+    flowType === 'vendor_quote'
+  ) {
+    return [
+      {
+        ruleKey: `system-default:${flowType}:low`,
+        conditions: { amountMax: 99_999 },
+        steps: [{ approverGroupId: 'mgmt', stepOrder: 1 }],
+      },
+      {
+        ruleKey: `system-default:${flowType}:high`,
+        conditions: { amountMin: 100_000 },
+        steps: [
+          { approverGroupId: 'mgmt', stepOrder: 1 },
+          { approverGroupId: 'exec', stepOrder: 2 },
+        ],
+      },
+    ];
+  }
+  if (flowType === 'leave' || flowType === 'time') {
+    return [
+      {
+        ruleKey: `system-default:${flowType}`,
+        conditions: {},
+        steps: [{ approverGroupId: 'mgmt', stepOrder: 1 }],
+      },
+    ];
+  }
+  return [];
+}
+
+async function ensureDefaultRulesForFlow(flowType: string, client: any) {
+  if (typeof client?.approvalRule?.create !== 'function') return;
+  const seeds = defaultRuleSeedsForFlow(flowType);
+  if (!seeds.length) return;
+  for (const seed of seeds) {
+    try {
+      await client.approvalRule.create({
+        data: {
+          id: randomUUID(),
+          flowType,
+          ruleKey: seed.ruleKey,
+          version: 1,
+          isActive: true,
+          effectiveFrom: DEFAULT_RULE_EFFECTIVE_FROM,
+          conditions: seed.conditions,
+          steps: seed.steps,
+          createdBy: 'system',
+        },
+      });
+    } catch (err) {
+      if (!isPrismaUniqueError(err)) {
+        throw err;
+      }
+    }
+  }
+}
 
 function isPendingStatus(status: string) {
   return (
@@ -213,7 +285,7 @@ async function resolveRule(
   client: any = prisma,
   now: Date = new Date(),
 ) {
-  const rules = await client.approvalRule.findMany({
+  const query = {
     where: {
       flowType,
       isActive: true,
@@ -221,12 +293,17 @@ async function resolveRule(
       OR: [{ effectiveTo: null }, { effectiveTo: { gt: now } }],
     },
     orderBy: [{ effectiveFrom: 'desc' }, { createdAt: 'desc' }],
-  });
+  };
+  let rules = await client.approvalRule.findMany(query);
   if (!rules.length) {
-    return {
-      rule: null,
-      fallbackReason: 'rule_not_found' as const,
-    };
+    await ensureDefaultRulesForFlow(flowType, client);
+    rules = await client.approvalRule.findMany(query);
+    if (!rules.length) {
+      return {
+        rule: null,
+        fallbackReason: 'rule_not_found' as const,
+      };
+    }
   }
   const matched = rules.find((r: { conditions?: unknown }) =>
     matchesRuleCondition(flowType, payload, r.conditions as ApprovalCondition),
