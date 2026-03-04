@@ -127,5 +127,6 @@
 3. **Phase 2（backend統合）**: project path を alias 化し、roomロジックへ委譲
    - 先行実装: unread/read の集計・既読更新ロジックを `chatReadState` サービスへ共通化
    - 先行実装: mention-candidates の候補解決ロジックを `chatMentionCandidates` サービスへ共通化
+   - 追補実装: project系 `chat-unread` / `chat-read` / `chat-ack-candidates` の room 解決を `resolveActiveProjectRoom` に統一
 4. **Phase 3（frontend統合）**: `ProjectChat` 呼び出しを room API へ段階移行
 5. **Phase 4（deprecate）**: 旧project系経路の無通信確認後に削除
