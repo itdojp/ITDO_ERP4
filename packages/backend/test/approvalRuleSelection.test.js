@@ -105,6 +105,52 @@ test('createApprovalFor: selects the first matching rule from ordered candidates
   assert.equal(createdArgs.data.ruleId, 'r2');
 });
 
+test('createApprovalFor: does not seed default rules when a matching active rule already exists', async () => {
+  let createCalls = 0;
+  let createdArgs;
+  const fakeClient = {
+    approvalRule: {
+      findMany: async () => [
+        {
+          id: 'r-existing',
+          flowType: 'invoice',
+          conditions: {},
+          steps: [{ approverGroupId: 'mgmt', stepOrder: 1 }],
+        },
+      ],
+      create: async () => {
+        createCalls += 1;
+        return {
+          id: 'unexpected-default-rule',
+        };
+      },
+    },
+    approvalInstance: {
+      findFirst: async () => null,
+      create: async (args) => {
+        createdArgs = args;
+        return {
+          id: 'a-existing-rule',
+          status: 'pending_qa',
+          currentStep: 1,
+          steps: [],
+        };
+      },
+    },
+  };
+
+  await createApprovalFor(
+    'invoice',
+    'invoices',
+    'inv-existing-rule',
+    { amount: 10_000 },
+    { client: fakeClient, createdBy: 'u1' },
+  );
+
+  assert.equal(createCalls, 0);
+  assert.equal(createdArgs.data.ruleId, 'r-existing');
+});
+
 test('createApprovalFor: prioritizes the top-most matching rule when multiple rules match', async () => {
   let createdArgs;
   const fakeClient = {
@@ -201,7 +247,70 @@ test('createApprovalFor: amount boundary (+/-1) switches matched rules', async (
   assert.deepEqual(createdRuleIds, ['r-boundary', 'r-fallback']);
 });
 
-test('createApprovalFor: logs fallback reasons when no active rule is found', async () => {
+test('createApprovalFor: seeds DB default rules when no active rule is found for supported flow', async () => {
+  let findManyCalls = 0;
+  const createdRules = [];
+  let approvalCreateArgs;
+  const auditLogs = [];
+  const fakeClient = {
+    approvalRule: {
+      findMany: async () => {
+        findManyCalls += 1;
+        return createdRules.slice();
+      },
+      create: async ({ data }) => {
+        createdRules.push({
+          id: data.id,
+          flowType: data.flowType,
+          ruleKey: data.ruleKey,
+          version: data.version,
+          isActive: data.isActive,
+          effectiveFrom: new Date(),
+          effectiveTo: null,
+          conditions: data.conditions,
+          steps: data.steps,
+        });
+        return createdRules[createdRules.length - 1];
+      },
+    },
+    project: { findUnique: async () => null },
+    approvalInstance: {
+      findFirst: async () => null,
+      create: async (args) => {
+        approvalCreateArgs = args;
+        return {
+          id: 'a-default-seeded',
+          status: 'pending_exec',
+          currentStep: 2,
+          steps: [],
+        };
+      },
+    },
+    auditLog: {
+      create: async ({ data }) => {
+        auditLogs.push(data);
+        return { id: 'audit-default-seeded' };
+      },
+    },
+  };
+
+  await createApprovalFor(
+    'invoice',
+    'invoices',
+    'inv-default-seeded',
+    { amount: 120000 },
+    { client: fakeClient, createdBy: 'u1' },
+  );
+
+  assert.equal(findManyCalls, 2);
+  assert.equal(createdRules.length, 2);
+  const highRule = createdRules.find((rule) => rule.ruleKey.endsWith(':high'));
+  assert.ok(highRule);
+  assert.equal(approvalCreateArgs.data.ruleId, highRule.id);
+  assert.equal(auditLogs.length, 0);
+});
+
+test('createApprovalFor: logs fallback reasons when no active rule is found for unsupported flow', async () => {
   const auditLogs = [];
   const fakeClient = {
     approvalRule: {
@@ -226,9 +335,9 @@ test('createApprovalFor: logs fallback reasons when no active rule is found', as
   };
 
   await createApprovalFor(
-    'invoice',
-    'invoices',
-    'inv-no-rule',
+    'custom_flow',
+    'custom_docs',
+    'custom-no-rule',
     { amount: 120000 },
     { client: fakeClient, createdBy: 'u1' },
   );
