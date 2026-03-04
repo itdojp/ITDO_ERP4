@@ -181,7 +181,8 @@ test('POST /approval-instances/:id/act approve: policy allow reaches act path (n
               assert.equal(res.statusCode, 400, res.body);
               const payload = JSON.parse(res.body);
               assert.equal(payload?.error, 'approval_action_failed');
-              assert.notEqual(payload?.error?.code, 'ACTION_POLICY_DENIED');
+              assert.equal(payload?.message, 'mock-act-failure');
+              assert.equal(typeof payload?.error, 'string');
             } finally {
               await server.close();
             }
@@ -237,7 +238,8 @@ test('POST /approval-instances/:id/act reject: policy allow reaches act path (no
               assert.equal(res.statusCode, 400, res.body);
               const payload = JSON.parse(res.body);
               assert.equal(payload?.error, 'approval_action_failed');
-              assert.notEqual(payload?.error?.code, 'ACTION_POLICY_DENIED');
+              assert.equal(payload?.message, 'mock-act-failure');
+              assert.equal(typeof payload?.error, 'string');
             } finally {
               await server.close();
             }
