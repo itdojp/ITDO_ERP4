@@ -16,7 +16,8 @@
 - `POST /approval-rules`
 - `PATCH /approval-rules/:id`
 - `GET /approval-instances`
-- `POST /approval-instances/:id/action`
+- `POST /approval-instances/:id/act`
+- `POST /approval-instances/:id/cancel`
 
 補足:
 
@@ -36,9 +37,9 @@
 ### 3.2 ApprovalInstance
 
 - 主キー: `id`
-- 主要列: `flowType`, `targetTable`, `targetId`, `status`, `currentStepNo`
+- 主要列: `flowType`, `targetTable`, `targetId`, `status`, `currentStep`, `projectId`
 - 参照: `ruleId`（必須、`ApprovalRule.id` への FK）
-- 保持情報: `stagePolicy`, `completedAt`, `createdAt`
+- 保持情報: `stagePolicy`, `createdAt`
 - 子要素: `ApprovalStep[]`
 
 ### 3.3 参照整合
