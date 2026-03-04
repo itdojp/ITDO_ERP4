@@ -186,3 +186,52 @@ test('GET /chat-rooms/:roomId/mention-candidates includes room members when proj
     },
   );
 });
+
+test('GET /projects/:projectId/chat-mention-candidates keeps project-only candidates', async () => {
+  let chatRoomMemberCalled = false;
+  await withPrismaStubs(
+    {
+      'chatRoomMember.findMany': async () => {
+        chatRoomMemberCalled = true;
+        return [{ userId: 'external-member' }];
+      },
+      'projectMember.findMany': async () => [{ userId: 'project-member' }],
+      'userAccount.findMany': async () => [
+        {
+          userName: 'requester',
+          externalId: 'requester',
+          displayName: 'Requester',
+        },
+        {
+          userName: 'project-member',
+          externalId: 'project-member',
+          displayName: 'Project Member',
+        },
+        {
+          userName: 'external-member',
+          externalId: 'external-member',
+          displayName: 'External Member',
+        },
+      ],
+    },
+    async () => {
+      await withServer(async (server) => {
+        const res = await server.inject({
+          method: 'GET',
+          url: '/projects/proj-1/chat-mention-candidates',
+          headers: {
+            'x-user-id': 'requester',
+            'x-roles': 'admin',
+          },
+        });
+        assert.equal(res.statusCode, 200, res.body);
+        const body = JSON.parse(res.body);
+        const userIds = Array.isArray(body?.users)
+          ? body.users.map((user) => user.userId).sort()
+          : [];
+        assert.deepEqual(userIds, ['project-member', 'requester']);
+      });
+    },
+  );
+  assert.equal(chatRoomMemberCalled, false);
+});

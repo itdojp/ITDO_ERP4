@@ -20,6 +20,7 @@ import {
   previewChatAckRecipients,
 } from '../services/chatAckRecipients.js';
 import { getChatAckLimits } from '../services/chatAckLimits.js';
+import { buildChatMentionCandidates } from '../services/chatMentionCandidates.js';
 import {
   expandRoomMentionRecipients,
   resolveRoomAudienceUserIds,
@@ -28,7 +29,6 @@ import {
   getChatUnreadSummary,
   markChatAsRead,
 } from '../services/chatReadState.js';
-import { resolveGroupCandidatesBySelector } from '../services/groupCandidates.js';
 import {
   getChatExternalLlmConfig,
   getChatExternalLlmRateLimit,
@@ -1932,64 +1932,16 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
         accessLevel: 'read',
       });
       if (!access) return reply;
-
-      const chatRoomMembers =
-        access.room.type !== 'project' || access.room.allowExternalUsers
-          ? await prisma.chatRoomMember.findMany({
-              where: { roomId: access.room.id, deletedAt: null },
-              select: { userId: true },
-              orderBy: { userId: 'asc' },
-            })
-          : [];
-      const projectMembers =
-        access.room.type === 'project'
-          ? await prisma.projectMember.findMany({
-              where: { projectId: access.room.id },
-              select: { userId: true },
-              orderBy: { userId: 'asc' },
-            })
-          : [];
-
-      const userIdSet = new Set([
-        ...chatRoomMembers.map((member) => member.userId),
-        ...projectMembers.map((member) => member.userId),
-      ]);
-      userIdSet.add(userId);
-      const userIds = Array.from(userIdSet);
-      const accounts = userIds.length
-        ? await prisma.userAccount.findMany({
-            where: {
-              deletedAt: null,
-              active: true,
-              OR: [
-                { userName: { in: userIds } },
-                { externalId: { in: userIds } },
-              ],
-            },
-            select: { userName: true, externalId: true, displayName: true },
-          })
-        : [];
-      const displayMap = new Map<string, string | null>();
-      for (const account of accounts) {
-        const name = account.displayName || null;
-        displayMap.set(account.userName, name);
-        if (account.externalId) {
-          displayMap.set(account.externalId, name);
-        }
-      }
-
-      const users = userIds
-        .map((entry) => ({
-          userId: entry,
-          displayName: displayMap.get(entry) || null,
-        }))
-        .sort((a, b) => a.userId.localeCompare(b.userId));
-      const groups = await resolveGroupCandidatesBySelector([
-        ...accessContext.groupIds,
-        ...accessContext.groupAccountIds,
-      ]);
-      const allowAll = true;
-      return { users, groups, allowAll };
+      return buildChatMentionCandidates({
+        room: {
+          id: access.room.id,
+          type: access.room.type,
+          allowExternalUsers: access.room.allowExternalUsers,
+        },
+        requesterUserId: userId,
+        groupIds: accessContext.groupIds,
+        groupAccountIds: accessContext.groupAccountIds,
+      });
     },
   );
 
