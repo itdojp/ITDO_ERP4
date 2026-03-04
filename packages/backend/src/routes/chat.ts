@@ -820,27 +820,12 @@ export async function registerChatRoutes(app: FastifyInstance) {
         });
       }
 
-      if (!(await ensureProjectRoom(projectId, userId))) {
-        return reply.status(404).send({
-          error: { code: 'NOT_FOUND', message: 'Project not found' },
-        });
-      }
-      const room = await prisma.chatRoom.findUnique({
-        where: { id: projectId },
-        select: {
-          id: true,
-          type: true,
-          groupId: true,
-          viewerGroupIds: true,
-          deletedAt: true,
-          allowExternalUsers: true,
-        },
+      const room = await resolveActiveProjectRoom({
+        projectId,
+        userId,
+        reply,
       });
-      if (!room || room.deletedAt) {
-        return reply.status(404).send({
-          error: { code: 'NOT_FOUND', message: 'Room not found' },
-        });
-      }
+      if (!room) return reply;
 
       const preview = await previewChatAckRecipients({
         room,
