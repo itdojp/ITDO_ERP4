@@ -31,6 +31,16 @@ node scripts/report-action-policy-fallback-allowed.mjs --format=text
 - 監査ログ `action_policy_fallback_allowed` の発生キーを集計
 - 監査件数は重複抑制の影響を受けるため、定期集計ジョブで推移を追う
 
+### 2.3 required actions ギャップレポート
+
+```bash
+node scripts/report-action-policy-required-action-gaps.mjs --format=text
+```
+
+- `policyEnforcementPreset.ts` の `PHASE2_CORE_ACTION_POLICY_REQUIRED_ACTIONS` を読み取り
+- static callsite と required actions の差分を検出
+- dynamic callsite（例: `instance.flowType/body.action`）を別枠で可視化
+
 ## 3. 呼び出し箇所（2026-03-04時点）
 
 合計 19 callsites（routeのみ）。
@@ -89,4 +99,4 @@ node scripts/report-action-policy-fallback-allowed.mjs --format=text
 - `phase3_strict` 移行条件:
   - fallbackレポートで高リスクキー 0
   - 主要業務の回帰テスト（send/vendor_invoice/time/leave）が green
-
+  - required actions ギャップレポートで static callsite の missing 0
