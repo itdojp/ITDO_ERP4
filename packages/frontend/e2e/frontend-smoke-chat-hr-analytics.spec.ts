@@ -28,6 +28,7 @@ const authState = {
   projectIds: ['00000000-0000-0000-0000-000000000001'],
   groupIds: ['mgmt', 'hr-group'],
 };
+const projectRoomLabel = 'project: PRJ-DEMO-1 / Demo Project 1';
 
 const runId = () =>
   process.env.E2E_RUN_ID ||
@@ -130,7 +131,36 @@ async function ensureOk(res: { ok(): boolean; status(): number; text(): any }) {
   throw new Error(`[e2e] api failed: ${res.status()} ${body}`);
 }
 
-test('frontend smoke chat hr analytics @extended', async ({ page }) => {
+async function openRoomChatSection(page: Page, roomLabel?: string) {
+  await navigateToSection(page, 'ルームチャット', 'チャット（全社/部門/private_group/DM）');
+  const chatSection = page
+    .locator('main')
+    .locator('h2', { hasText: 'チャット（全社/部門/private_group/DM）' })
+    .locator('..')
+    .first();
+  await chatSection.scrollIntoViewIfNeeded();
+  const roomReloadButton = chatSection
+    .getByRole('button', {
+      name: '再読込',
+    })
+    .first();
+  await expect(roomReloadButton).toBeVisible({ timeout: actionTimeout });
+  await roomReloadButton.click();
+  const roomSelect = chatSection.locator('select:has(option[value=""])').first();
+  await selectByLabelOrFirst(
+    roomSelect,
+    roomLabel || projectRoomLabel,
+  );
+  await expect(
+    chatSection.getByRole('checkbox', { name: '全投稿通知' }),
+  ).toBeVisible({
+    timeout: actionTimeout,
+  });
+  const messageList = chatSection.locator('strong', { hasText: '一覧' }).locator('..');
+  return { chatSection, messageList };
+}
+
+test('frontend smoke room chat hr analytics @extended', async ({ page }) => {
   test.setTimeout(180_000);
   const id = runId();
   const mentionTarget = 'e2e-member-1@example.com';
@@ -138,7 +168,12 @@ test('frontend smoke chat hr analytics @extended', async ({ page }) => {
   const projectChatRoutePattern = `**/projects/${projectId}/chat-**`;
   const blockedProjectUrls: string[] = [];
   await prepare(page);
-  const roomId = await resolveProjectRoomId({ projectId });
+  const roomId = await resolveProjectRoomId({
+    request: page.request,
+    apiBase,
+    headers: buildAuthHeaders(),
+    projectId,
+  });
 
   await expect(page.getByText('ID: demo-user')).toBeVisible();
   await expect(page.getByText('Roles: admin, mgmt')).toBeVisible();
@@ -157,22 +192,8 @@ test('frontend smoke chat hr analytics @extended', async ({ page }) => {
     blockedProjectUrls.push(route.request().url());
     await route.abort();
   });
-  await navigateToSection(page, 'プロジェクトチャット');
-  const chatSection = page
-    .locator('main')
-    .locator('h2', { hasText: 'プロジェクトチャット' })
-    .locator('..')
-    .first();
-  await chatSection.scrollIntoViewIfNeeded();
-  await selectByLabelOrFirst(
-    chatSection.getByLabel('案件選択'),
-    'PRJ-DEMO-1 / Demo Project 1',
-  );
-  await expect(
-    chatSection.getByRole('checkbox', { name: '全投稿通知' }),
-  ).toBeVisible({
-    timeout: actionTimeout,
-  });
+  const { chatSection, messageList } = await openRoomChatSection(page);
+  const postCard = chatSection.locator('strong', { hasText: '投稿' }).locator('..');
   const mentionComposerInput = chatSection.getByPlaceholder(
     'メンション対象を検索（ユーザ/グループ）',
   );
@@ -190,7 +211,7 @@ test('frontend smoke chat hr analytics @extended', async ({ page }) => {
   const uploadPath = path.join(rootDir, 'tmp', uploadName);
   fs.mkdirSync(path.dirname(uploadPath), { recursive: true });
   fs.writeFileSync(uploadPath, `e2e upload ${id}`);
-  await chatSection.getByPlaceholder('メッセージを書く').fill(chatMessage);
+  await chatSection.getByPlaceholder('Markdownで入力').fill(chatMessage);
   await chatSection.getByRole('checkbox', { name: 'プレビュー' }).check();
   const projectPreview = chatSection.getByRole('region', {
     name: 'Markdownプレビュー',
@@ -198,7 +219,7 @@ test('frontend smoke chat hr analytics @extended', async ({ page }) => {
   await expect(projectPreview.getByText(chatMessage)).toBeVisible({
     timeout: actionTimeout,
   });
-  await chatSection.getByPlaceholder('タグ (comma separated)').fill('e2e,chat');
+  await chatSection.getByPlaceholder('tag1,tag2').fill('e2e,chat');
   const addFilesButton = chatSection
     .getByRole('button', { name: /ファイルを選択|Add files/ })
     .first();
@@ -208,23 +229,17 @@ test('frontend smoke chat hr analytics @extended', async ({ page }) => {
     addFilesButton.click(),
   ]);
   await fileChooser.setFiles(uploadPath);
-  await chatSection.getByRole('button', { name: '投稿' }).click();
-  await expect(chatSection.locator('li', { hasText: chatMessage })).toBeVisible(
-    {
-      timeout: actionTimeout,
-    },
-  );
-  const chatItem = chatSection.locator('li', { hasText: chatMessage });
+  await chatSection.getByRole('button', { name: '送信' }).click();
+  const chatItem = messageList.locator('.card', { hasText: chatMessage });
+  await expect(chatItem).toBeVisible({ timeout: actionTimeout });
   await expect(chatItem).toHaveCount(1, { timeout: actionTimeout });
   await expect(chatItem.getByText(`@${mentionTarget}`)).toBeVisible();
-  await expect(
-    chatSection.getByRole('button', { name: uploadName }),
-  ).toBeVisible();
+  await expect(chatItem.getByRole('button', { name: uploadName })).toBeVisible();
   const reactionButton = chatItem.getByRole('button', { name: /^👍/ });
   if (await reactionButton.isEnabled().catch(() => false)) {
     await reactionButton.click();
   }
-  await expect(chatSection.getByRole('button', { name: '投稿' })).toBeDisabled({
+  await expect(chatSection.getByRole('button', { name: '送信' })).toBeDisabled({
     timeout: actionTimeout,
   });
 
@@ -254,15 +269,14 @@ test('frontend smoke chat hr analytics @extended', async ({ page }) => {
   ).toBeTruthy();
 
   const ackMessage = `E2E ack request ${id}`;
-  await chatSection.getByPlaceholder('メッセージを書く').fill(ackMessage);
-  await chatSection.getByPlaceholder('タグ (comma separated)').fill('e2e,ack');
-  await chatSection
-    .getByPlaceholder('確認対象ユーザID (comma separated)')
-    .fill(mentionTarget);
+  await chatSection.getByPlaceholder('Markdownで入力').fill(ackMessage);
+  await chatSection.getByPlaceholder('tag1,tag2').fill('e2e,ack');
+  await chatSection.getByLabel('確認対象(requiredUserIds)').fill(mentionTarget);
   await chatSection.getByRole('button', { name: '確認依頼' }).click();
-  const ackItem = chatSection.locator('li', { hasText: ackMessage });
+  const ackItem = messageList.locator('.card', { hasText: ackMessage });
   await expect(ackItem).toBeVisible();
-  await expect(ackItem.getByText('確認状況: 0/1')).toBeVisible();
+  await expect(ackItem.getByText(`required: ${mentionTarget}`)).toBeVisible();
+  await expect(ackItem.getByText('acked: -')).toBeVisible();
 
   const overdueDueAt = new Date(Date.now() - 60_000).toISOString();
   const overdueAckMessage = `E2E ack overdue ${id}`;
@@ -279,8 +293,8 @@ test('frontend smoke chat hr analytics @extended', async ({ page }) => {
     },
   );
   expect(overdueAckRes.ok()).toBeTruthy();
-  await chatSection.getByRole('button', { name: '読み込み' }).click();
-  const overdueItem = chatSection.locator('li', { hasText: overdueAckMessage });
+  await postCard.getByRole('button', { name: '再読込' }).click();
+  const overdueItem = messageList.locator('.card', { hasText: overdueAckMessage });
   await expect(overdueItem).toBeVisible({ timeout: actionTimeout });
   const overdueDueLabel = overdueItem.getByText(/期限:/);
   await expect(overdueDueLabel).toBeVisible();
@@ -365,39 +379,30 @@ test('frontend smoke chat hr analytics @extended', async ({ page }) => {
   ).toBeVisible();
 
   // Ack / revoke is performed by the required user (mentionTarget).
-  await navigateToSection(mentionPage, 'プロジェクトチャット');
-  const mentionChatSection = mentionPage
-    .locator('main')
-    .locator('h2', { hasText: 'プロジェクトチャット' })
-    .locator('..')
-    .first();
-  await mentionChatSection.scrollIntoViewIfNeeded();
-  await selectByLabelOrFirst(
-    mentionChatSection.getByLabel('案件選択'),
-    'PRJ-DEMO-1 / Demo Project 1',
-  );
-  await expect(
-    mentionChatSection.getByRole('checkbox', { name: '全投稿通知' }),
-  ).toBeVisible({
-    timeout: actionTimeout,
-  });
-  await mentionChatSection.getByRole('button', { name: '読み込み' }).click();
-  const mentionAckItem = mentionChatSection.locator('li', {
+  const { chatSection: mentionChatSection, messageList: mentionMessageList } =
+    await openRoomChatSection(mentionPage);
+  const mentionPostCard = mentionChatSection
+    .locator('strong', { hasText: '投稿' })
+    .locator('..');
+  await mentionPostCard.getByRole('button', { name: '再読込' }).click();
+  const mentionAckItem = mentionMessageList.locator('.card', {
     hasText: ackMessage,
   });
   await expect(mentionAckItem).toBeVisible({ timeout: actionTimeout });
-  await expect(mentionAckItem.getByText('確認状況: 0/1')).toBeVisible({
+  await expect(mentionAckItem.getByText('acked: -')).toBeVisible({
     timeout: actionTimeout,
   });
   await mentionAckItem.getByRole('button', { name: 'OK' }).click();
-  await expect(mentionAckItem.getByText('確認状況: 1/1')).toBeVisible({
-    timeout: actionTimeout,
-  });
-  mentionPage.once('dialog', (dialog) =>
-    dialog.accept().catch(() => undefined),
+  await expect(mentionAckItem.getByText(`acked: ${mentionTarget}`)).toBeVisible(
+    {
+      timeout: actionTimeout,
+    },
   );
   await mentionAckItem.getByRole('button', { name: 'OK取消' }).click();
-  await expect(mentionAckItem.getByText('確認状況: 0/1')).toBeVisible({
+  await expect(mentionPage.getByText('OK取消を保留しています')).toBeVisible({
+    timeout: actionTimeout,
+  });
+  await expect(mentionAckItem.getByText('acked: -')).toBeVisible({
     timeout: actionTimeout,
   });
   await mentionPage.unroute(projectChatRoutePattern);
@@ -420,19 +425,13 @@ test('frontend smoke chat hr analytics @extended', async ({ page }) => {
   await mentionPage.close();
 
   // Cancel the ack-request as the creator/admin (demo-user).
-  await navigateToSection(page, 'プロジェクトチャット');
-  const chatSectionAfter = page
-    .locator('main')
-    .locator('h2', { hasText: 'プロジェクトチャット' })
-    .locator('..')
-    .first();
-  await chatSectionAfter.scrollIntoViewIfNeeded();
-  await selectByLabelOrFirst(
-    chatSectionAfter.getByLabel('案件選択'),
-    'PRJ-DEMO-1 / Demo Project 1',
-  );
-  await chatSectionAfter.getByRole('button', { name: '読み込み' }).click();
-  const ackItemAfter = chatSectionAfter.locator('li', { hasText: ackMessage });
+  const { chatSection: chatSectionAfter, messageList: messageListAfter } =
+    await openRoomChatSection(page);
+  const postCardAfter = chatSectionAfter
+    .locator('strong', { hasText: '投稿' })
+    .locator('..');
+  await postCardAfter.getByRole('button', { name: '再読込' }).click();
+  const ackItemAfter = messageListAfter.locator('.card', { hasText: ackMessage });
   await expect(ackItemAfter).toBeVisible({ timeout: actionTimeout });
   page.once('dialog', (dialog) =>
     dialog.accept('e2e cancel').catch(() => undefined),

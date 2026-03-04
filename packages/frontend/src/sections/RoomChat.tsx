@@ -239,11 +239,6 @@ export const RoomChat: React.FC = () => {
   const canUseGeneralAffairsInbox = authGroupIds.has('general_affairs');
   const canSeeAllMeta =
     roles.includes('admin') || roles.includes('mgmt') || roles.includes('exec');
-  const canUseProjectChat =
-    roles.includes('admin') ||
-    roles.includes('mgmt') ||
-    roles.includes('exec') ||
-    (auth?.projectIds?.length ?? 0) > 0;
 
   const [rooms, setRooms] = useState<ChatRoom[]>([]);
   const [roomId, setRoomId] = useState('');
@@ -633,18 +628,52 @@ export const RoomChat: React.FC = () => {
     'all',
   );
   const [roomListQuery, setRoomListQuery] = useState('');
+  const filterVisibleRooms = useCallback(
+    (sourceRooms: ChatRoom[]) =>
+      canSeeAllMeta
+        ? sourceRooms.filter((room) => room.isMember !== false)
+        : sourceRooms,
+    [canSeeAllMeta],
+  );
+  const resolveProjectRoom = useCallback(
+    async (projectId: string) => {
+      const existingRoom = rooms.find(
+        (room) => room.type === 'project' && room.projectId === projectId,
+      );
+      if (existingRoom) {
+        setRoomId(existingRoom.id);
+        setRoomMessage('');
+        setMessage('');
+        return;
+      }
+      try {
+        const res = await api<{ items?: ChatRoom[] }>('/chat-rooms');
+        const items = Array.isArray(res.items) ? res.items : [];
+        const visibleRooms = filterVisibleRooms(items);
+        setRooms(visibleRooms);
+        const nextRoom = visibleRooms.find(
+          (room) => room.type === 'project' && room.projectId === projectId,
+        );
+        if (nextRoom) {
+          setRoomId(nextRoom.id);
+          setRoomMessage('');
+          setMessage('');
+          return;
+        }
+        setRoomMessage('指定された案件ルームが見つかりません');
+      } catch (err) {
+        console.error('Failed to resolve project room.', err);
+        setRoomMessage('指定された案件ルームの解決に失敗しました');
+      }
+    },
+    [filterVisibleRooms, rooms],
+  );
 
   const loadRooms = async () => {
     try {
       const res = await api<{ items?: ChatRoom[] }>('/chat-rooms');
       const items = Array.isArray(res.items) ? res.items : [];
-      const showProjectRooms = !canUseProjectChat;
-      const visibleRooms = showProjectRooms
-        ? items
-        : items.filter((room) => room.type !== 'project');
-      const joinedRooms = canSeeAllMeta
-        ? visibleRooms.filter((room) => room.isMember !== false)
-        : visibleRooms;
+      const joinedRooms = filterVisibleRooms(items);
       setRooms(joinedRooms);
       setRoomMessage('');
       if (!roomId && joinedRooms.length) {
@@ -658,6 +687,23 @@ export const RoomChat: React.FC = () => {
       setRoomMessage('ルーム一覧の取得に失敗しました');
     }
   };
+
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent<{ projectId?: unknown }>).detail;
+      const projectId =
+        detail && typeof detail.projectId === 'string' ? detail.projectId : '';
+      if (!projectId) return;
+      resolveProjectRoom(projectId).catch(() => undefined);
+    };
+    window.addEventListener('erp4_open_project_chat', handler as EventListener);
+    return () => {
+      window.removeEventListener(
+        'erp4_open_project_chat',
+        handler as EventListener,
+      );
+    };
+  }, [resolveProjectRoom]);
 
   const loadNotificationSetting = useCallback(async (targetRoomId: string) => {
     setIsNotificationSettingLoading(true);
@@ -857,18 +903,6 @@ export const RoomChat: React.FC = () => {
   }, [roomId, loadNotificationSetting]);
 
   const openSearchResult = (item: ChatSearchItem) => {
-    if (item.room.type === 'project' && item.room.projectId) {
-      if (!canUseProjectChat) {
-        setRoomId(item.room.id);
-        return;
-      }
-      window.dispatchEvent(
-        new CustomEvent('erp4_open_project_chat', {
-          detail: { projectId: item.room.projectId },
-        }),
-      );
-      return;
-    }
     setRoomId(item.room.id);
     setMessage('');
   };
