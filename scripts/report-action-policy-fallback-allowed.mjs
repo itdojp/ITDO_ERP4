@@ -217,25 +217,29 @@ async function run() {
     throw err;
   }
 
-  const rows = await loadRows(prisma, options);
-  const result = aggregateRows(rows);
+  try {
+    const rows = await loadRows(prisma, options);
+    const result = aggregateRows(rows);
 
-  if (options.format === 'json') {
-    process.stdout.write(
-      `${JSON.stringify(
-        {
-          from: options.from.toISOString(),
-          to: options.to.toISOString(),
-          ...result,
-        },
-        null,
-        2,
-      )}\n`,
-    );
-    return;
+    if (options.format === 'json') {
+      process.stdout.write(
+        `${JSON.stringify(
+          {
+            from: options.from.toISOString(),
+            to: options.to.toISOString(),
+            ...result,
+          },
+          null,
+          2,
+        )}\n`,
+      );
+      return;
+    }
+
+    process.stdout.write(renderText(result, options));
+  } finally {
+    await prisma.$disconnect();
   }
-
-  process.stdout.write(renderText(result, options));
 }
 
 const runAsScript =
