@@ -30,7 +30,6 @@ import {
 import {
   APPROVAL_DEFAULT_RULE_EFFECTIVE_FROM_ISO,
   defaultRuleSeedsForFlow,
-  type DefaultRuleSeed,
 } from './approvalDefaultRules.js';
 
 export { matchApprovalSteps } from './approvalLogic.js';

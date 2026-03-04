@@ -76,7 +76,7 @@ export function defaultRuleSeedsForFlow(flowType: string): DefaultRuleSeed[] {
     (spec) => spec.flowType === flowType,
   ).map((spec) => ({
     ruleKey: spec.ruleKey,
-    conditions: { ...(spec.conditions as Record<string, unknown>) },
+    conditions: { ...spec.conditions },
     steps: cloneSteps(spec.steps),
-  })) as DefaultRuleSeed[];
+  }));
 }
