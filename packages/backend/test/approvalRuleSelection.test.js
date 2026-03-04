@@ -345,6 +345,62 @@ test('createApprovalFor: logs fallback reasons when no active rule is found for 
   assert.equal(auditLogs.length, 1);
   assert.equal(auditLogs[0].action, 'approval_rule_fallback_used');
   assert.equal(auditLogs[0].reasonCode, 'rule_not_found');
+  assert.equal(auditLogs[0].metadata.fallbackMode, 'legacy');
+  assert.deepEqual(auditLogs[0].metadata.fallbackReasons, [
+    'rule_not_found',
+    'rule_id_auto_used',
+  ]);
+});
+
+test('createApprovalFor: db_default_only mode skips in-code default rule seeding', async () => {
+  const auditLogs = [];
+  let createRuleCalls = 0;
+  const prevMode = process.env.APPROVAL_RULE_FALLBACK_MODE;
+  process.env.APPROVAL_RULE_FALLBACK_MODE = 'db_default_only';
+  try {
+    const fakeClient = {
+      approvalRule: {
+        findMany: async () => [],
+        create: async () => {
+          createRuleCalls += 1;
+          return { id: `seeded-${createRuleCalls}` };
+        },
+      },
+      approvalInstance: {
+        findFirst: async () => null,
+        create: async () => ({
+          id: 'a-db-default-only',
+          status: 'pending_qa',
+          currentStep: 1,
+          steps: [],
+        }),
+      },
+      auditLog: {
+        create: async ({ data }) => {
+          auditLogs.push(data);
+          return { id: 'audit-db-default-only' };
+        },
+      },
+    };
+
+    await createApprovalFor(
+      'invoice',
+      'invoices',
+      'inv-db-default-only',
+      { amount: 120000 },
+      { client: fakeClient, createdBy: 'u1' },
+    );
+  } finally {
+    if (prevMode === undefined) {
+      delete process.env.APPROVAL_RULE_FALLBACK_MODE;
+    } else {
+      process.env.APPROVAL_RULE_FALLBACK_MODE = prevMode;
+    }
+  }
+
+  assert.equal(createRuleCalls, 0);
+  assert.equal(auditLogs.length, 1);
+  assert.equal(auditLogs[0].metadata.fallbackMode, 'db_default_only');
   assert.deepEqual(auditLogs[0].metadata.fallbackReasons, [
     'rule_not_found',
     'rule_id_auto_used',

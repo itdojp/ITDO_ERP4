@@ -195,6 +195,21 @@ export function assertValidBackendEnv() {
     'APPROVAL_EVIDENCE_REQUIRED_ACTIONS',
     process.env.APPROVAL_EVIDENCE_REQUIRED_ACTIONS,
   );
+  const approvalRuleFallbackModeRaw = normalizeString(
+    process.env.APPROVAL_RULE_FALLBACK_MODE,
+  );
+  if (
+    approvalRuleFallbackModeRaw &&
+    !new Set(['legacy', 'db_default_only', 'strict']).has(
+      approvalRuleFallbackModeRaw.toLowerCase(),
+    )
+  ) {
+    addIssue(
+      issues,
+      'APPROVAL_RULE_FALLBACK_MODE',
+      'legacy|db_default_only|strict のいずれかを指定してください',
+    );
+  }
   const nodeEnv = (process.env.NODE_ENV || '').trim().toLowerCase();
   const allowHeaderFallbackRaw = normalizeString(
     process.env.AUTH_ALLOW_HEADER_FALLBACK_IN_PROD,

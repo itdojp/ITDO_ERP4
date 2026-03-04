@@ -124,6 +124,26 @@ const DEFAULT_RULE_EFFECTIVE_FROM = new Date(
   APPROVAL_DEFAULT_RULE_EFFECTIVE_FROM_ISO,
 );
 
+const APPROVAL_RULE_FALLBACK_MODES = new Set([
+  'legacy',
+  'db_default_only',
+  'strict',
+] as const);
+export type ApprovalRuleFallbackMode =
+  | 'legacy'
+  | 'db_default_only'
+  | 'strict';
+
+export function resolveApprovalRuleFallbackMode(
+  rawValue: string | undefined = process.env.APPROVAL_RULE_FALLBACK_MODE,
+): ApprovalRuleFallbackMode {
+  const normalized = (rawValue || '').trim().toLowerCase();
+  if (APPROVAL_RULE_FALLBACK_MODES.has(normalized as ApprovalRuleFallbackMode)) {
+    return normalized as ApprovalRuleFallbackMode;
+  }
+  return 'legacy';
+}
+
 async function ensureDefaultRulesForFlow(flowType: string, client: any) {
   if (typeof client?.approvalRule?.create !== 'function') return;
   const seeds = defaultRuleSeedsForFlow(flowType);
@@ -247,6 +267,7 @@ async function resolveRule(
   payload: Record<string, unknown>,
   client: any = prisma,
   now: Date = new Date(),
+  fallbackMode: ApprovalRuleFallbackMode = resolveApprovalRuleFallbackMode(),
 ) {
   const query = {
     where: {
@@ -258,15 +279,15 @@ async function resolveRule(
     orderBy: [{ effectiveFrom: 'desc' }, { createdAt: 'desc' }],
   };
   let rules = await client.approvalRule.findMany(query);
-  if (!rules.length) {
+  if (!rules.length && fallbackMode === 'legacy') {
     await ensureDefaultRulesForFlow(flowType, client);
     rules = await client.approvalRule.findMany(query);
-    if (!rules.length) {
-      return {
-        rule: null,
-        fallbackReason: 'rule_not_found' as const,
-      };
-    }
+  }
+  if (!rules.length) {
+    return {
+      rule: null,
+      fallbackReason: 'rule_not_found' as const,
+    };
   }
   const matched = rules.find((r: { conditions?: unknown }) =>
     matchesRuleCondition(flowType, payload, r.conditions as ApprovalCondition),
@@ -317,6 +338,7 @@ async function logApprovalRuleFallbackIfNeeded(options: {
   targetId: string;
   approvalInstanceId: string;
   ruleId: string | null;
+  fallbackMode: ApprovalRuleFallbackMode;
   fallbackReasons: string[];
   payload: Record<string, unknown>;
   createdBy?: string;
@@ -328,6 +350,7 @@ async function logApprovalRuleFallbackIfNeeded(options: {
     targetId: options.targetId,
     approvalInstanceId: options.approvalInstanceId,
     selectedRuleId: options.ruleId,
+    fallbackMode: options.fallbackMode,
     fallbackReasons: options.fallbackReasons,
     payloadHints: approvalFallbackPayloadHints(options.payload),
   };
@@ -468,12 +491,14 @@ export async function createApprovalFor(
   options: CreateApprovalOptions = {},
 ) {
   const client = options.client ?? prisma;
+  const fallbackMode = resolveApprovalRuleFallbackMode();
   const enrichedPayload = await enrichProjectFields(payload, client);
   const ruleResolution = await resolveRule(
     flowType,
     enrichedPayload,
     client,
     options.now,
+    fallbackMode,
   );
   const rule = ruleResolution.rule;
   const fallbackReasons: string[] = [];
@@ -543,6 +568,7 @@ export async function createApprovalFor(
       targetId,
       approvalInstanceId: approval.id,
       ruleId: rule?.id ?? null,
+      fallbackMode,
       fallbackReasons,
       payload: enrichedPayload,
       createdBy: options.createdBy,

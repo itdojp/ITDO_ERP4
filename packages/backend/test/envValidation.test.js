@@ -275,6 +275,24 @@ test('envValidation: APPROVAL_EVIDENCE_REQUIRED_ACTIONS accepts mixed valid wild
   assert.match(result.stdout.toString(), /OK/);
 });
 
+test('envValidation: APPROVAL_RULE_FALLBACK_MODE validates allowed values', () => {
+  const result = runEnvValidation({
+    APPROVAL_RULE_FALLBACK_MODE: 'db_only',
+  });
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /APPROVAL_RULE_FALLBACK_MODE/);
+});
+
+test('envValidation: APPROVAL_RULE_FALLBACK_MODE accepts db_default_only', () => {
+  const result = runEnvValidation({
+    APPROVAL_RULE_FALLBACK_MODE: 'db_default_only',
+  });
+
+  assert.equal(result.status, 0);
+  assert.equal(result.stdout, 'OK');
+});
+
 test('auth plugin: production + AUTH_MODE=hybrid rejects missing bearer token by default', () => {
   const result = runCurrentUserRequest(
     {
