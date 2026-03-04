@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { expect, test, type APIRequestContext } from '@playwright/test';
 import {
   createProjectAndEstimate,
+  deactivateApprovalRuleVersion,
   ensureOk,
   submitAndFindApprovalInstance,
 } from './approval-e2e-helpers';
@@ -258,15 +259,12 @@ test('approval flow: expense requires qa stage before exec stage @core', async (
   await ensureOk(ruleRes);
   const createdRule = await ruleRes.json();
   const deactivateRule = async () => {
-    if (!createdRule?.id) return;
-    const deactivateRes = await request.patch(
-      `${apiBase}/approval-rules/${encodeURIComponent(createdRule.id)}`,
-      {
-        headers: adminHeaders,
-        data: { isActive: false },
-      },
-    );
-    await ensureOk(deactivateRes);
+    await deactivateApprovalRuleVersion({
+      request,
+      apiBase,
+      headers: adminHeaders,
+      ruleId: createdRule?.id,
+    });
   };
 
   try {
@@ -403,15 +401,12 @@ test('approval flow: expense over budget requires escalation details @core', asy
   await ensureOk(ruleRes);
   const createdRule = await ruleRes.json();
   const deactivateRule = async () => {
-    if (!createdRule?.id) return;
-    const deactivateRes = await request.patch(
-      `${apiBase}/approval-rules/${encodeURIComponent(createdRule.id)}`,
-      {
-        headers: adminHeaders,
-        data: { isActive: false },
-      },
-    );
-    await ensureOk(deactivateRes);
+    await deactivateApprovalRuleVersion({
+      request,
+      apiBase,
+      headers: adminHeaders,
+      ruleId: createdRule?.id,
+    });
   };
   try {
     const expenseRes = await request.post(`${apiBase}/expenses`, {
@@ -552,15 +547,12 @@ test('approval flow: expense attachments/comments and transition history are tra
   await ensureOk(ruleRes);
   const createdRule = await ruleRes.json();
   const deactivateRule = async () => {
-    if (!createdRule?.id) return;
-    const deactivateRes = await request.patch(
-      `${apiBase}/approval-rules/${encodeURIComponent(createdRule.id)}`,
-      {
-        headers: adminHeaders,
-        data: { isActive: false },
-      },
-    );
-    await ensureOk(deactivateRes);
+    await deactivateApprovalRuleVersion({
+      request,
+      apiBase,
+      headers: adminHeaders,
+      ruleId: createdRule?.id,
+    });
   };
 
   try {
@@ -851,15 +843,12 @@ test('approval flow: expense settlement guards reject invalid transitions and mi
   await ensureOk(ruleRes);
   const createdRule = await ruleRes.json();
   const deactivateRule = async () => {
-    if (!createdRule?.id) return;
-    const deactivateRes = await request.patch(
-      `${apiBase}/approval-rules/${encodeURIComponent(createdRule.id)}`,
-      {
-        headers: adminHeaders,
-        data: { isActive: false },
-      },
-    );
-    await ensureOk(deactivateRes);
+    await deactivateApprovalRuleVersion({
+      request,
+      apiBase,
+      headers: adminHeaders,
+      ruleId: createdRule?.id,
+    });
   };
 
   try {
@@ -1019,15 +1008,12 @@ test('approval flow: expense list filters (receipt/settlement/paid date) work as
   await ensureOk(ruleRes);
   const createdRule = await ruleRes.json();
   const deactivateRule = async () => {
-    if (!createdRule?.id) return;
-    const deactivateRes = await request.patch(
-      `${apiBase}/approval-rules/${encodeURIComponent(createdRule.id)}`,
-      {
-        headers: adminHeaders,
-        data: { isActive: false },
-      },
-    );
-    await ensureOk(deactivateRes);
+    await deactivateApprovalRuleVersion({
+      request,
+      apiBase,
+      headers: adminHeaders,
+      ruleId: createdRule?.id,
+    });
   };
 
   try {
