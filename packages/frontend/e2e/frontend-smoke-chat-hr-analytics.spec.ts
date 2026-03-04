@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import fs from 'fs';
 import path from 'path';
 import { expect, test, type Locator, type Page } from '@playwright/test';
+import { resolveProjectRoomId } from './chat-room-e2e-helpers';
 
 const dateTag = new Date().toISOString().slice(0, 10);
 const rootDir = process.env.E2E_ROOT_DIR || process.cwd();
@@ -129,30 +130,6 @@ async function ensureOk(res: { ok(): boolean; status(): number; text(): any }) {
   throw new Error(`[e2e] api failed: ${res.status()} ${body}`);
 }
 
-async function resolveProjectRoomId(page: Page, projectId: string) {
-  const roomsRes = await page.request.get(`${apiBase}/chat-rooms`, {
-    headers: buildAuthHeaders(),
-  });
-  await ensureOk(roomsRes);
-  const roomsPayload = (await roomsRes.json()) as {
-    items?: Array<{
-      id?: string;
-      type?: string;
-      projectId?: string | null;
-    }>;
-  };
-  const room = (roomsPayload.items ?? []).find(
-    (item) =>
-      item?.type === 'project' &&
-      (item.projectId === projectId || item.id === projectId),
-  );
-  const roomId = typeof room?.id === 'string' ? room.id : '';
-  if (!roomId) {
-    throw new Error(`[e2e] project room not found: ${projectId}`);
-  }
-  return roomId;
-}
-
 test('frontend smoke chat hr analytics @extended', async ({ page }) => {
   test.setTimeout(180_000);
   const id = runId();
@@ -161,7 +138,7 @@ test('frontend smoke chat hr analytics @extended', async ({ page }) => {
   const projectChatRoutePattern = `**/projects/${projectId}/chat-**`;
   const blockedProjectUrls: string[] = [];
   await prepare(page);
-  const roomId = await resolveProjectRoomId(page, projectId);
+  const roomId = await resolveProjectRoomId({ projectId });
 
   await expect(page.getByText('ID: demo-user')).toBeVisible();
   await expect(page.getByText('Roles: admin, mgmt')).toBeVisible();
@@ -176,6 +153,10 @@ test('frontend smoke chat hr analytics @extended', async ({ page }) => {
   );
   await ensureOk(projectMemberRes);
 
+  await page.route(projectChatRoutePattern, async (route) => {
+    blockedProjectUrls.push(route.request().url());
+    await route.abort();
+  });
   await navigateToSection(page, 'プロジェクトチャット');
   const chatSection = page
     .locator('main')
@@ -191,10 +172,6 @@ test('frontend smoke chat hr analytics @extended', async ({ page }) => {
     chatSection.getByRole('checkbox', { name: '全投稿通知' }),
   ).toBeVisible({
     timeout: actionTimeout,
-  });
-  await page.route(projectChatRoutePattern, async (route) => {
-    blockedProjectUrls.push(route.request().url());
-    await route.abort();
   });
   const mentionComposerInput = chatSection.getByPlaceholder(
     'メンション対象を検索（ユーザ/グループ）',
@@ -365,6 +342,11 @@ test('frontend smoke chat hr analytics @extended', async ({ page }) => {
       console.error('[e2e][mentionPage][console.error]', msg.text());
     }
   });
+  const mentionBlockedProjectUrls: string[] = [];
+  await mentionPage.route(projectChatRoutePattern, async (route) => {
+    mentionBlockedProjectUrls.push(route.request().url());
+    await route.abort();
+  });
   await mentionPage.addInitScript(
     (state) => {
       window.localStorage.setItem('erp4_auth', JSON.stringify(state));
@@ -389,7 +371,6 @@ test('frontend smoke chat hr analytics @extended', async ({ page }) => {
     .locator('h2', { hasText: 'プロジェクトチャット' })
     .locator('..')
     .first();
-  const mentionBlockedProjectUrls: string[] = [];
   await mentionChatSection.scrollIntoViewIfNeeded();
   await selectByLabelOrFirst(
     mentionChatSection.getByLabel('案件選択'),
@@ -399,10 +380,6 @@ test('frontend smoke chat hr analytics @extended', async ({ page }) => {
     mentionChatSection.getByRole('checkbox', { name: '全投稿通知' }),
   ).toBeVisible({
     timeout: actionTimeout,
-  });
-  await mentionPage.route(projectChatRoutePattern, async (route) => {
-    mentionBlockedProjectUrls.push(route.request().url());
-    await route.abort();
   });
   await mentionChatSection.getByRole('button', { name: '読み込み' }).click();
   const mentionAckItem = mentionChatSection.locator('li', {

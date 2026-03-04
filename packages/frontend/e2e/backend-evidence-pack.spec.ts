@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { expect, test } from '@playwright/test';
+import { resolveProjectRoomId } from './chat-room-e2e-helpers';
 
 const apiBase = process.env.E2E_API_BASE || 'http://localhost:3002';
 const defaultProjectId = '00000000-0000-0000-0000-000000000001';
@@ -29,30 +30,6 @@ async function ensureOk(res: { ok(): boolean; status(): number; text(): any }) {
   if (res.ok()) return;
   const body = await res.text();
   throw new Error(`[e2e] api failed: ${res.status()} ${body}`);
-}
-
-async function resolveProjectRoomId(request: any, projectId: string) {
-  const roomsRes = await request.get(`${apiBase}/chat-rooms`, {
-    headers: adminHeaders,
-  });
-  await ensureOk(roomsRes);
-  const roomsPayload = (await roomsRes.json()) as {
-    items?: Array<{
-      id?: string;
-      type?: string;
-      projectId?: string | null;
-    }>;
-  };
-  const room = (roomsPayload.items ?? []).find(
-    (item) =>
-      item?.type === 'project' &&
-      (item.projectId === projectId || item.id === projectId),
-  );
-  const roomId = typeof room?.id === 'string' ? room.id : '';
-  if (!roomId) {
-    throw new Error(`[e2e] project room not found: ${projectId}`);
-  }
-  return roomId;
 }
 
 async function createEstimateWithPendingApproval(request: any, suffix: string) {
@@ -91,7 +68,7 @@ async function createEstimateWithPendingApproval(request: any, suffix: string) {
       `[e2e] estimate id missing: ${JSON.stringify(estimatePayload)}`,
     );
   }
-  const roomId = await resolveProjectRoomId(request, projectId);
+  const roomId = await resolveProjectRoomId({ projectId });
 
   const chatMessageRes = await request.post(
     `${apiBase}/chat-rooms/${encodeURIComponent(roomId)}/messages`,

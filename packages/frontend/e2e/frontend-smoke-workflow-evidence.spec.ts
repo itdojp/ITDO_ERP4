@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import fs from 'fs';
 import path from 'path';
 import { expect, test, type Locator, type Page } from '@playwright/test';
+import { resolveProjectRoomId } from './chat-room-e2e-helpers';
 
 const dateTag = new Date().toISOString().slice(0, 10);
 const rootDir = process.env.E2E_ROOT_DIR || process.cwd();
@@ -152,30 +153,6 @@ async function ensureOk(res: { ok(): boolean; status(): number; text(): any }) {
   throw new Error(`[e2e] api failed: ${res.status()} ${body}`);
 }
 
-async function resolveProjectRoomId(page: Page, projectId: string) {
-  const roomsRes = await page.request.get(`${apiBase}/chat-rooms`, {
-    headers: buildAuthHeaders(),
-  });
-  await ensureOk(roomsRes);
-  const roomsPayload = (await roomsRes.json()) as {
-    items?: Array<{
-      id?: string;
-      type?: string;
-      projectId?: string | null;
-    }>;
-  };
-  const room = (roomsPayload.items ?? []).find(
-    (item) =>
-      item?.type === 'project' &&
-      (item.projectId === projectId || item.id === projectId),
-  );
-  const roomId = typeof room?.id === 'string' ? room.id : '';
-  if (!roomId) {
-    throw new Error(`[e2e] project room not found: ${projectId}`);
-  }
-  return roomId;
-}
-
 test('frontend smoke workflow evidence chat references @extended', async ({
   page,
 }) => {
@@ -192,7 +169,7 @@ test('frontend smoke workflow evidence chat references @extended', async ({
     `(${expenseAmountLabel.replace(/,/g, ',?')}|${expenseAmount})\\s+JPY`,
   );
   await prepare(page);
-  const roomId = await resolveProjectRoomId(page, projectId);
+  const roomId = await resolveProjectRoomId({ projectId });
 
   const chatMessageRes = await page.request.post(
     `${apiBase}/chat-rooms/${encodeURIComponent(roomId)}/messages`,
