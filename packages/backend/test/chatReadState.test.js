@@ -69,7 +69,6 @@ test('markChatAsRead upserts and returns ISO timestamp', async () => {
         return { lastReadAt: at };
       },
     },
-    chatMessage: { count: async () => 0 },
   };
 
   const result = await markChatAsRead({
@@ -85,5 +84,6 @@ test('markChatAsRead upserts and returns ISO timestamp', async () => {
   });
   assert.equal(upsertArgs.create.roomId, 'room-3');
   assert.equal(upsertArgs.create.userId, 'user-3');
+  assert.equal(upsertArgs.create.lastReadAt, at);
   assert.equal(upsertArgs.update.lastReadAt, at);
 });

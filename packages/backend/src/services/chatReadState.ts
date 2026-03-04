@@ -13,7 +13,7 @@ type MarkChatAsReadInput = {
   roomId: string;
   userId: string;
   at?: Date;
-  client?: ChatReadStateClient;
+  client?: Pick<PrismaClient, 'chatReadState'>;
 };
 
 export async function getChatUnreadSummary(options: GetChatUnreadSummaryInput) {
