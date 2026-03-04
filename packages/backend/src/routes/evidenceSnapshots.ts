@@ -19,6 +19,29 @@ import {
   evidenceSnapshotHistoryQuerySchema,
 } from './validators.js';
 
+const apiErrorResponseSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['error'],
+  properties: {
+    error: {
+      type: 'object',
+      additionalProperties: true,
+      required: ['code', 'message'],
+      properties: {
+        code: { type: 'string' },
+        message: { type: 'string' },
+      },
+    },
+  },
+} as const;
+
+const evidencePackErrorResponses = {
+  403: apiErrorResponseSchema,
+  404: apiErrorResponseSchema,
+  500: apiErrorResponseSchema,
+} as const;
+
 function normalizeString(value: unknown) {
   return typeof value === 'string' ? value.trim() : '';
 }
@@ -683,7 +706,10 @@ export async function registerEvidenceSnapshotRoutes(app: FastifyInstance) {
     '/approval-instances/:id/evidence-pack/archive',
     {
       preHandler: requireRole(['admin', 'mgmt']),
-      schema: evidencePackArchiveBodySchema,
+      schema: {
+        ...evidencePackArchiveBodySchema,
+        response: evidencePackErrorResponses,
+      },
       config: {
         rateLimit: {
           max: 30,
@@ -893,7 +919,10 @@ export async function registerEvidenceSnapshotRoutes(app: FastifyInstance) {
     '/approval-instances/:id/evidence-pack/export',
     {
       preHandler: requireRole(['admin', 'mgmt', 'exec', 'user']),
-      schema: evidencePackExportQuerySchema,
+      schema: {
+        ...evidencePackExportQuerySchema,
+        response: evidencePackErrorResponses,
+      },
       config: {
         rateLimit: {
           max: 60,
