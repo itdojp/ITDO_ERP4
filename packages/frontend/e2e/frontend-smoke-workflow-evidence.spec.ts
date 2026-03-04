@@ -98,12 +98,9 @@ async function selectByLabelOrFirst(select: Locator, label?: string) {
     .toBeGreaterThan(1);
   if (label) {
     await expect
-      .poll(
-        () => targetSelect.locator('option', { hasText: label }).count(),
-        {
-          timeout: actionTimeout,
-        },
-      )
+      .poll(() => targetSelect.locator('option', { hasText: label }).count(), {
+        timeout: actionTimeout,
+      })
       .toBeGreaterThan(0);
     await targetSelect.selectOption({ label });
     return;
@@ -118,20 +115,23 @@ async function findSelectContainingOption(
   const selects = root.getByRole('combobox');
   let matchedIndex = -1;
   await expect
-    .poll(async () => {
-      const count = await selects.count();
-      for (let i = 0; i < count; i += 1) {
-        const optionCount = await selects
-          .nth(i)
-          .locator('option', { hasText: optionLabel })
-          .count();
-        if (optionCount > 0) {
-          matchedIndex = i;
-          return i;
+    .poll(
+      async () => {
+        const count = await selects.count();
+        for (let i = 0; i < count; i += 1) {
+          const optionCount = await selects
+            .nth(i)
+            .locator('option', { hasText: optionLabel })
+            .count();
+          if (optionCount > 0) {
+            matchedIndex = i;
+            return i;
+          }
         }
-      }
-      return -1;
-    }, { timeout: actionTimeout })
+        return -1;
+      },
+      { timeout: actionTimeout },
+    )
     .toBeGreaterThanOrEqual(0);
   return selects.nth(matchedIndex);
 }
@@ -152,6 +152,30 @@ async function ensureOk(res: { ok(): boolean; status(): number; text(): any }) {
   throw new Error(`[e2e] api failed: ${res.status()} ${body}`);
 }
 
+async function resolveProjectRoomId(page: Page, projectId: string) {
+  const roomsRes = await page.request.get(`${apiBase}/chat-rooms`, {
+    headers: buildAuthHeaders(),
+  });
+  await ensureOk(roomsRes);
+  const roomsPayload = (await roomsRes.json()) as {
+    items?: Array<{
+      id?: string;
+      type?: string;
+      projectId?: string | null;
+    }>;
+  };
+  const room = (roomsPayload.items ?? []).find(
+    (item) =>
+      item?.type === 'project' &&
+      (item.projectId === projectId || item.id === projectId),
+  );
+  const roomId = typeof room?.id === 'string' ? room.id : '';
+  if (!roomId) {
+    throw new Error(`[e2e] project room not found: ${projectId}`);
+  }
+  return roomId;
+}
+
 test('frontend smoke workflow evidence chat references @extended', async ({
   page,
 }) => {
@@ -168,9 +192,10 @@ test('frontend smoke workflow evidence chat references @extended', async ({
     `(${expenseAmountLabel.replace(/,/g, ',?')}|${expenseAmount})\\s+JPY`,
   );
   await prepare(page);
+  const roomId = await resolveProjectRoomId(page, projectId);
 
   const chatMessageRes = await page.request.post(
-    `${apiBase}/projects/${encodeURIComponent(projectId)}/chat-messages`,
+    `${apiBase}/chat-rooms/${encodeURIComponent(roomId)}/messages`,
     {
       headers: buildAuthHeaders(),
       data: {

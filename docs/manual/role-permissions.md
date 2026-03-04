@@ -38,7 +38,7 @@
 
 ### チャット
 - ルームの閲覧/投稿は viewer/poster グループ + ルームメンバーで制御
-- 監査閲覧（break-glass）は `mgmt/exec` を想定（詳細: [project-chat](../requirements/project-chat.md)）
+- 監査閲覧（break-glass）は `mgmt/exec` を想定（詳細: [chat-rooms](../requirements/chat-rooms.md)）
 
 ## 403（権限不足）の一次切り分け
 1. **ロール不足**（機能自体が許可されていない）
