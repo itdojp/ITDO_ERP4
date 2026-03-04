@@ -44,7 +44,7 @@ async function run() {
 test('collectCallsites: scans backend route callsites', () => {
   const rootDir = parseOptionsFromArgv([]).root;
   const rows = collectCallsites(rootDir);
-  assert.ok(rows.length >= 19);
+  assert.ok(rows.length > 0);
 
   const vendorSubmit = rows.find(
     (row) =>

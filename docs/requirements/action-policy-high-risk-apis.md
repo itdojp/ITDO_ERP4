@@ -155,7 +155,7 @@ Phase 2 で先行する Draft は以下を対象とする。
 ### 6.3 棚卸レポート（Issue #1312）
 
 fail-safe 移行の棚卸（callsites一覧、fallback監査、例外運用）は以下を参照する。  
-`docs/requirements/action-policy-failsafe-inventory.md`
+[docs/requirements/action-policy-failsafe-inventory.md](./action-policy-failsafe-inventory.md)
 
 ## 7. テストカバレッジ（2026-02-24時点）
 
