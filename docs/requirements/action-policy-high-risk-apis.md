@@ -169,8 +169,9 @@ Phase 2 で先行する Draft は以下を対象とする。
 - 日次集計コマンド
   - `make action-policy-fallback-report`
   - `make action-policy-fallback-report-json`
-- 集計対象: `audit_logs.action='action_policy_fallback_allowed'`
+- 集計対象: AuditLog の `action='action_policy_fallback_allowed'`
 - 集計キー: `flowType:actionKey:targetTable`
+- 補足: `action_policy_fallback_allowed` は実装上、`flowType/actionKey/targetTable` ごとにプロセス内で 1 回だけ監査ログを記録するため、日次レポートの `count` は厳密件数ではなく「少なくとも当該キーで発生した」下限値として解釈する。
 
 ## 9. 実装時チェックリスト（Phase 2）
 

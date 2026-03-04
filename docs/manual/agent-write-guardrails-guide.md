@@ -67,6 +67,7 @@
    - `make action-policy-fallback-report`
    - `make action-policy-fallback-report-json`
 3. 集計キー（`flowType:actionKey:targetTable`）で未収束箇所を特定し、ポリシー追加に反映する。
+4. 補足: `action_policy_fallback_allowed` は実装上、`flowType/actionKey/targetTable` ごとにプロセス内で 1 回だけ記録されるため、レポートの `count` は実発生回数ではなくキー検出用の下限値として扱う。
 
 ## 実行フロー（請求送信の標準例）
 
