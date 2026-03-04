@@ -2338,7 +2338,7 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
         roomId,
         userId,
         accessContext,
-        accessLevel: 'post',
+        accessLevel: 'read',
       });
       if (!access) return reply;
 
@@ -2531,7 +2531,7 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
         roomId,
         userId,
         accessContext,
-        accessLevel: 'post',
+        accessLevel: 'read',
       });
       if (!access) return reply;
 
