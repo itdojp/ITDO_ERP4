@@ -1,6 +1,6 @@
 # ApprovalRule 版管理（B1）現状棚卸
 
-更新日: 2026-03-04  
+更新日: 2026-03-05  
 関連Issue: #1315, #1308
 
 ## 1. 目的
@@ -22,7 +22,7 @@
 補足:
 
 - ApprovalRule に対する `DELETE` API は未提供。
-- `PATCH /approval-rules/:id` は同一レコード更新（上書き）であり、新版作成にはなっていない。
+- `PATCH /approval-rules/:id` は追記型の新版作成として動作し、`supersedesRuleId` で前版を参照する。
 
 ## 3. 現行データモデル（Prisma）
 
@@ -31,7 +31,7 @@
 ### 3.1 ApprovalRule
 
 - 主キー: `id`
-- 主要列: `flowType`, `version`, `isActive`, `effectiveFrom`, `conditions`, `steps`
+- 主要列: `flowType`, `ruleKey`, `version`, `isActive`, `effectiveFrom`, `effectiveTo`, `supersedesRuleId`, `conditions`, `steps`
 - 監査列: `createdAt`, `updatedAt`, `createdBy`, `updatedBy`
 
 ### 3.2 ApprovalInstance
@@ -39,7 +39,7 @@
 - 主キー: `id`
 - 主要列: `flowType`, `targetTable`, `targetId`, `status`, `currentStep`, `projectId`
 - 参照: `ruleId`（必須、`ApprovalRule.id` への FK）
-- 保持情報: `stagePolicy`, `createdAt`
+- 保持情報: `stagePolicy`, `ruleVersion`, `ruleSnapshot`, `createdAt`
 - 子要素: `ApprovalStep[]`
 
 ### 3.3 参照整合
@@ -73,18 +73,14 @@
 
 ## 5. B1 観点での主要ギャップ
 
-1. **上書き更新**
-   - ルール更新が追記型ではなく、同一 `id` の上書き更新。
-2. **version の実効性不足**
-   - `version` 列はあるが、ルール選択時のキーとして利用されていない。
-   - `(flowType, version)` 等の一意制約も未定義。
-3. **instance の版固定情報不足**
-   - `ruleId` は保持するが、`ruleVersion` や `ruleSnapshot` を明示保持していない。
-4. **未解決時の暫定ID依存**
+1. **version 一意性の制約不足**
+   - `(flowType, ruleKey, version)` は index のみで unique 制約が未定義。
+2. **系列操作API不足**
+   - 専用の「履歴参照」「版比較」「activate 切替」APIが未整備。
+3. **未解決時の暫定ID依存**
    - `ruleId='auto'` / `'manual'` を使う経路があり、実体 rule の運用前提が曖昧。
-5. **編集ガード不足**
-   - `PATCH` で `flowType` / `steps` / `conditions` / `version` が直接更新可能。
-   - 進行中 instance との整合を守る「派生新規版作成」強制がない。
+4. **編集ガード不足（latest 指向）**
+   - `PATCH` は新版作成化済みだが、最新版のみ編集可とするガードは未導入。
 
 ## 6. 次アクション（#1315 TODO1 への入力）
 

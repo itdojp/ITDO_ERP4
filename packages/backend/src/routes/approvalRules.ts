@@ -331,6 +331,13 @@ export async function registerApprovalRuleRoutes(app: FastifyInstance) {
     { preHandler: requireRole(['admin', 'mgmt']), schema: approvalRuleSchema },
     async (req, reply) => {
       const body = req.body as any;
+      if (body.supersedesRuleId !== undefined) {
+        return reply.code(400).send({
+          error: 'invalid_supersedesRuleId',
+          message:
+            'supersedesRuleId is server-managed and not allowed on create',
+        });
+      }
       if (body.steps !== undefined) {
         try {
           body.steps = await resolveApprovalStepsGroupIds(body.steps);
@@ -385,9 +392,10 @@ export async function registerApprovalRuleRoutes(app: FastifyInstance) {
           effectiveTo = parsed;
         }
       }
+      const now = new Date();
+      const effectiveFromForCreate = effectiveFrom ?? now;
       if (effectiveTo instanceof Date) {
-        const lowerBound = effectiveFrom ?? new Date();
-        if (effectiveTo <= lowerBound) {
+        if (effectiveTo <= effectiveFromForCreate) {
           return reply.code(400).send({
             error: 'invalid_effective_range',
             message: 'effectiveTo must be greater than effectiveFrom',
@@ -399,15 +407,31 @@ export async function registerApprovalRuleRoutes(app: FastifyInstance) {
         body.conditions = {};
       }
       const id = randomUUID();
-      const created = await prisma.approvalRule.create({
-        data: {
-          id,
-          ...body,
-          ruleKey: id,
-          ...(effectiveFrom !== undefined ? { effectiveFrom } : {}),
-          ...(effectiveTo !== undefined ? { effectiveTo } : {}),
-        },
-      });
+      let created;
+      try {
+        created = await prisma.approvalRule.create({
+          data: {
+            id,
+            flowType: body.flowType,
+            ruleKey: id,
+            ...(body.version !== undefined ? { version: body.version } : {}),
+            ...(body.isActive !== undefined ? { isActive: body.isActive } : {}),
+            effectiveFrom: effectiveFromForCreate,
+            ...(effectiveTo !== undefined ? { effectiveTo } : {}),
+            conditions: body.conditions,
+            steps: body.steps,
+            createdBy: req.user?.userId,
+          },
+        });
+      } catch (err: any) {
+        if (err?.code === 'P2002') {
+          return reply.code(409).send({
+            error: 'duplicate_rule_version',
+            message: 'rule version already exists for this flow and rule key',
+          });
+        }
+        throw err;
+      }
       await logAudit({
         action: 'approval_rule_created',
         targetTable: 'approval_rules',
@@ -435,14 +459,23 @@ export async function registerApprovalRuleRoutes(app: FastifyInstance) {
         where: { id },
         select: {
           id: true,
+          ruleKey: true,
+          version: true,
           flowType: true,
+          conditions: true,
           steps: true,
+          isActive: true,
           effectiveFrom: true,
           effectiveTo: true,
         },
       });
       if (!currentRule) {
         return reply.code(404).send({ error: 'not_found' });
+      }
+      const patchKeys = Object.keys(body || {});
+      const deactivateOnly = patchKeys.length === 1 && body.isActive === false;
+      if (deactivateOnly && !currentRule.isActive) {
+        return currentRule;
       }
       if (body.steps !== undefined) {
         try {
@@ -500,45 +533,125 @@ export async function registerApprovalRuleRoutes(app: FastifyInstance) {
           effectiveTo = parsed;
         }
       }
-      const rangeStart =
-        effectiveFrom !== undefined ? effectiveFrom : currentRule.effectiveFrom;
-      const rangeEnd =
+      const now = new Date();
+      const minimumEffectiveFrom =
+        currentRule.effectiveFrom > now ? currentRule.effectiveFrom : now;
+      if (
+        effectiveFrom instanceof Date &&
+        effectiveFrom < minimumEffectiveFrom
+      ) {
+        return reply.code(400).send({
+          error: 'invalid_effectiveFrom',
+          message:
+            'effectiveFrom must be greater than or equal to current effectiveFrom and now',
+        });
+      }
+      const nextEffectiveFrom = effectiveFrom ?? minimumEffectiveFrom;
+      const nextEffectiveTo =
         effectiveTo !== undefined ? effectiveTo : currentRule.effectiveTo;
       if (
-        rangeStart instanceof Date &&
-        rangeEnd instanceof Date &&
-        rangeEnd <= rangeStart
+        nextEffectiveFrom instanceof Date &&
+        nextEffectiveTo instanceof Date &&
+        nextEffectiveTo <= nextEffectiveFrom
       ) {
         return reply.code(400).send({
           error: 'invalid_effective_range',
           message: 'effectiveTo must be greater than effectiveFrom',
         });
       }
-      const { before, updated } = await prisma.$transaction(async (tx) => {
-        const before = await tx.approvalRule.findUnique({ where: { id } });
-        const updated = await tx.approvalRule.update({
-          where: { id },
-          data: {
-            ...body,
-            ...(effectiveFrom !== undefined ? { effectiveFrom } : {}),
-            ...(effectiveTo !== undefined ? { effectiveTo } : {}),
-          },
+      let transactionResult: { before: any; created: any } | null = null;
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        try {
+          transactionResult = await prisma.$transaction(async (tx) => {
+            const before = await tx.approvalRule.findUnique({ where: { id } });
+            const latestVersion = await tx.approvalRule.findFirst({
+              where: { ruleKey: currentRule.ruleKey },
+              select: { version: true },
+              orderBy: [{ version: 'desc' }, { createdAt: 'desc' }],
+            });
+            const nextVersion = Math.max(
+              currentRule.version + 1,
+              (latestVersion?.version ?? currentRule.version) + 1,
+            );
+            const created = await tx.approvalRule.create({
+              data: {
+                id: randomUUID(),
+                flowType: body.flowType ?? currentRule.flowType,
+                ruleKey: currentRule.ruleKey,
+                version: nextVersion,
+                isActive:
+                  body.isActive !== undefined
+                    ? body.isActive
+                    : currentRule.isActive,
+                effectiveFrom: nextEffectiveFrom,
+                effectiveTo: nextEffectiveTo,
+                supersedesRuleId: currentRule.id,
+                conditions:
+                  body.conditions !== undefined
+                    ? body.conditions
+                    : currentRule.conditions,
+                steps: effectiveSteps,
+                createdBy: req.user?.userId,
+              },
+            });
+            const shouldCloseCurrentAtNextStart =
+              !(currentRule.effectiveTo instanceof Date) ||
+              currentRule.effectiveTo > nextEffectiveFrom;
+            if (shouldCloseCurrentAtNextStart) {
+              const closeCurrentData: {
+                effectiveTo: Date;
+                updatedBy?: string;
+                isActive?: boolean;
+              } = {
+                effectiveTo: nextEffectiveFrom,
+                updatedBy: req.user?.userId,
+              };
+              if (nextEffectiveFrom <= now) {
+                closeCurrentData.isActive = false;
+              }
+              await tx.approvalRule.update({
+                where: { id: currentRule.id },
+                data: closeCurrentData,
+              });
+            } else if (
+              currentRule.effectiveTo instanceof Date &&
+              currentRule.effectiveTo <= now &&
+              currentRule.isActive
+            ) {
+              await tx.approvalRule.update({
+                where: { id: currentRule.id },
+                data: { isActive: false, updatedBy: req.user?.userId },
+              });
+            }
+            return { before, created };
+          });
+          break;
+        } catch (err: any) {
+          if (err?.code === 'P2002' && attempt === 0) continue;
+          throw err;
+        }
+      }
+      if (!transactionResult) {
+        return reply.code(409).send({
+          error: 'duplicate_rule_version',
+          message: 'rule version already exists for this flow and rule key',
         });
-        return { before, updated };
-      });
+      }
+      const { before, created } = transactionResult;
       await logAudit({
         action: 'approval_rule_updated',
         targetTable: 'approval_rules',
-        targetId: updated.id,
+        targetId: created.id,
         metadata: {
-          flowType: updated.flowType,
+          flowType: created.flowType,
+          supersedesRuleId: currentRule.id,
           before: before ? ruleSnapshotForAudit(before) : null,
-          after: ruleSnapshotForAudit(updated),
+          after: ruleSnapshotForAudit(created),
           patch: body,
         },
         ...auditContextFromRequest(req),
       });
-      return updated;
+      return created;
     },
   );
 

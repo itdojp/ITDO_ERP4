@@ -797,9 +797,32 @@ test('backend manual checklist: members/vendors/time/expenses/wellbeing @extende
   );
   await ensureOk(approvalPatchRes);
   const approvalPatched = await approvalPatchRes.json();
+  expect(String(approvalPatched?.id ?? '')).not.toBe(String(approvalRule.id));
+  expect(String(approvalPatched?.ruleKey ?? '')).toBe(
+    String(approvalRule?.ruleKey ?? ''),
+  );
+  expect(Number(approvalPatched?.version ?? NaN)).toBe(
+    Number(approvalRule?.version ?? 1) + 1,
+  );
+  expect(String(approvalPatched?.supersedesRuleId ?? '')).toBe(
+    String(approvalRule.id),
+  );
   const amountMin = Number(approvalPatched?.conditions?.amountMin ?? NaN);
   expect(Number.isFinite(amountMin)).toBeTruthy();
   expect(amountMin).toBe(0);
+  const approvalListAfterPatchRes = await request.get(`${apiBase}/approval-rules`, {
+    headers: adminHeaders,
+  });
+  await ensureOk(approvalListAfterPatchRes);
+  const approvalListAfterPatchPayload = await approvalListAfterPatchRes.json();
+  const versionedRules = (approvalListAfterPatchPayload?.items ?? []).filter(
+    (item: any) => item?.ruleKey === approvalRule?.ruleKey,
+  );
+  expect(versionedRules.length).toBeGreaterThanOrEqual(2);
+  const previousVersion = versionedRules.find(
+    (item: any) => item?.id === approvalRule.id,
+  );
+  expect(String(previousVersion?.effectiveTo ?? '')).not.toBe('');
 
   const ackRequiredUserId = 'e2e-member-1@example.com';
   const ensureAckMemberRes = await request.post(
