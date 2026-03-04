@@ -2,7 +2,7 @@
 
 更新日: 2026-03-04  
 関連Issue: #1315, #1308  
-前提ドキュメント: `docs/requirements/approval-rule-versioning-inventory.md`
+前提ドキュメント: ApprovalRule 現状棚卸（PR #1345 で追加予定）
 
 ## 1. 目的
 
@@ -25,7 +25,7 @@
 
 ## 3. データモデル案
 
-## 3.1 ApprovalRule（既存テーブル拡張）
+### 3.1 ApprovalRule（既存テーブル拡張）
 
 追加/整理案:
 
@@ -37,15 +37,25 @@
 - `isActive` (bool, not null)
 - `effectiveFrom` (datetime, not null)
 - `effectiveTo` (datetime, nullable)
-- `supersedesRuleId` (text, nullable)
-  - どの版から派生したかの監査用参照。
+- `supersedesRuleId` (same type as `ApprovalRule.id`, nullable)
+  - どの版から派生したかの監査用参照（`ApprovalRule.id` への参照）。
 
-推奨制約:
+推奨制約（DB制約で担保し、運用のみには依存しない）:
 
 - `unique(flowType, ruleKey, version)`
 - `index(flowType, ruleKey, isActive, effectiveFrom)`
+- `foreign key (supersedesRuleId) references ApprovalRule(id)`
+- （PostgreSQL 想定）同一 `(flowType, ruleKey)` の open active 版を1件に制限
+  - モデル前提: open active 版は `isActive=true` かつ `effectiveTo is null`
+  - DDL 例:
+    ```sql
+    CREATE UNIQUE INDEX ux_approval_rule_active_one_per_key
+      ON "ApprovalRule"("flowType", "ruleKey")
+      WHERE "isActive" = TRUE
+        AND "effectiveTo" IS NULL;
+    ```
 
-## 3.2 ApprovalInstance（版固定情報の保持）
+### 3.2 ApprovalInstance（版固定情報の保持）
 
 追加案:
 
@@ -60,21 +70,24 @@
 
 ## 4. 適用ロジック案
 
-## 4.1 ルール解決
+### 4.1 ルール解決
 
 - `resolveRule(flowType, payload)` は以下順で判定:
   1. `isActive=true`
   2. `effectiveFrom <= now`
   3. `effectiveTo is null or effectiveTo > now`
   4. 条件評価一致
-- 同一 `(flowType, ruleKey)` は最大1版 active とし、曖昧一致を防ぐ。
+  5. 条件一致候補が複数ある場合は優先順位で1件を選ぶ
+     - 推奨優先順位: `priority desc`（新設）→ `effectiveFrom desc` → `createdAt desc`
+     - 同順位同条件が残る場合は設定不正としてエラー
+- 同一 `(flowType, ruleKey)` は最大1版 active とし、ruleKey内の曖昧一致を防ぐ。
 
-## 4.2 instance 作成
+### 4.2 instance 作成
 
 - `createApprovalFor` で採用版の `id/version` と `ruleSnapshot` を保存。
 - `rule` JOIN なしでも instance 単体で表示再現可能にする。
 
-## 4.3 既存 PATCH の扱い
+### 4.3 既存 PATCH の扱い
 
 - `PATCH /approval-rules/:id` は非推奨化。
 - 置換 API:
@@ -88,6 +101,7 @@
   - `includeHistory=true` で版履歴を返却
 - `GET /approval-rules/:id/versions`
   - 版一覧（差分比較向け）
+  - `:id` は「任意の版ID」で受け付け、`id -> (flowType, ruleKey)` を解決して系列全体を返す
 
 管理操作の監査:
 
