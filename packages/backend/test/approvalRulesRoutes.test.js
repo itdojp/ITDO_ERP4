@@ -9,8 +9,10 @@ const MIN_DATABASE_URL = 'postgresql://user:pass@localhost:5432/postgres';
 function withPrismaStubs(stubs, fn) {
   const restores = [];
   for (const [path, stub] of Object.entries(stubs)) {
-    const [model, method] = path.split('.');
-    const target = prisma[model];
+    const parts = path.split('.');
+    const model = parts.length > 1 ? parts[0] : null;
+    const method = parts.length > 1 ? parts[1] : path;
+    const target = model ? prisma[model] : prisma;
     if (!target || typeof target[method] !== 'function') {
       throw new Error(`invalid stub target: ${path}`);
     }
@@ -145,10 +147,16 @@ test('PATCH /approval-rules/:id rejects non-latest version patch', async () => {
   await withPrismaStubs(
     {
       'approvalRule.findUnique': async () => sampleCurrentRule(),
-      'approvalRule.findFirst': async () => ({
-        id: 'rule-v2',
-        version: 2,
-      }),
+      $transaction: async (callback) =>
+        callback({
+          approvalRule: {
+            findUnique: async () => sampleCurrentRule(),
+            findFirst: async () => ({
+              id: 'rule-v2',
+              version: 2,
+            }),
+          },
+        }),
     },
     async () => {
       await withServer(async (server) => {

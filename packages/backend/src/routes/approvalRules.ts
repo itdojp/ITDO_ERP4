@@ -458,14 +458,14 @@ export async function registerApprovalRuleRoutes(app: FastifyInstance) {
       if (body.version !== undefined) {
         return reply.code(400).send({
           error: 'invalid_version',
-          message: 'version is server-managed and not allowed on patch',
+          message: 'version cannot be modified via PATCH; omit this field.',
         });
       }
       if (body.supersedesRuleId !== undefined) {
         return reply.code(400).send({
           error: 'invalid_supersedesRuleId',
           message:
-            'supersedesRuleId is server-managed and not allowed on patch',
+            'supersedesRuleId cannot be modified via PATCH; omit this field.',
         });
       }
       const currentRule = await prisma.approvalRule.findUnique({
@@ -492,17 +492,6 @@ export async function registerApprovalRuleRoutes(app: FastifyInstance) {
         return reply.code(400).send({
           error: 'flow_type_immutable',
           message: 'flowType cannot be changed for an existing rule series',
-        });
-      }
-      const latestRuleInSeries = await prisma.approvalRule.findFirst({
-        where: { ruleKey: currentRule.ruleKey },
-        select: { id: true, version: true },
-        orderBy: [{ version: 'desc' }, { createdAt: 'desc' }],
-      });
-      if (latestRuleInSeries && latestRuleInSeries.id !== currentRule.id) {
-        return reply.code(409).send({
-          error: 'stale_rule_version',
-          message: 'only the latest rule version in the series can be patched',
         });
       }
       const patchKeys = Object.keys(body || {});
@@ -597,6 +586,19 @@ export async function registerApprovalRuleRoutes(app: FastifyInstance) {
         try {
           transactionResult = await prisma.$transaction(async (tx) => {
             const before = await tx.approvalRule.findUnique({ where: { id } });
+            const latestRuleInSeries = await tx.approvalRule.findFirst({
+              where: { ruleKey: currentRule.ruleKey },
+              select: { id: true, version: true },
+              orderBy: [{ version: 'desc' }, { createdAt: 'desc' }],
+            });
+            if (
+              latestRuleInSeries &&
+              latestRuleInSeries.id !== currentRule.id
+            ) {
+              const staleError = new Error('stale_rule_version');
+              (staleError as any).code = 'STALE_RULE_VERSION';
+              throw staleError;
+            }
             const latestVersion = await tx.approvalRule.findFirst({
               where: { ruleKey: currentRule.ruleKey },
               select: { version: true },
@@ -660,6 +662,13 @@ export async function registerApprovalRuleRoutes(app: FastifyInstance) {
           });
           break;
         } catch (err: any) {
+          if (err?.code === 'STALE_RULE_VERSION') {
+            return reply.code(409).send({
+              error: 'stale_rule_version',
+              message:
+                'only the latest rule version in the series can be patched',
+            });
+          }
           if (err?.code === 'P2002' && attempt === 0) continue;
           throw err;
         }
