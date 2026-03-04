@@ -435,8 +435,12 @@ export async function registerApprovalRuleRoutes(app: FastifyInstance) {
         where: { id },
         select: {
           id: true,
+          ruleKey: true,
+          version: true,
           flowType: true,
+          conditions: true,
           steps: true,
+          isActive: true,
           effectiveFrom: true,
           effectiveTo: true,
         },
@@ -500,45 +504,104 @@ export async function registerApprovalRuleRoutes(app: FastifyInstance) {
           effectiveTo = parsed;
         }
       }
-      const rangeStart =
-        effectiveFrom !== undefined ? effectiveFrom : currentRule.effectiveFrom;
-      const rangeEnd =
+      const now = new Date();
+      const minimumEffectiveFrom =
+        currentRule.effectiveFrom > now ? currentRule.effectiveFrom : now;
+      if (effectiveFrom instanceof Date && effectiveFrom < minimumEffectiveFrom) {
+        return reply.code(400).send({
+          error: 'invalid_effectiveFrom',
+          message:
+            'effectiveFrom must be greater than or equal to current effectiveFrom and now',
+        });
+      }
+      const nextEffectiveFrom = effectiveFrom ?? minimumEffectiveFrom;
+      const nextEffectiveTo =
         effectiveTo !== undefined ? effectiveTo : currentRule.effectiveTo;
       if (
-        rangeStart instanceof Date &&
-        rangeEnd instanceof Date &&
-        rangeEnd <= rangeStart
+        nextEffectiveFrom instanceof Date &&
+        nextEffectiveTo instanceof Date &&
+        nextEffectiveTo <= nextEffectiveFrom
       ) {
         return reply.code(400).send({
           error: 'invalid_effective_range',
           message: 'effectiveTo must be greater than effectiveFrom',
         });
       }
-      const { before, updated } = await prisma.$transaction(async (tx) => {
+      const { before, created } = await prisma.$transaction(async (tx) => {
         const before = await tx.approvalRule.findUnique({ where: { id } });
-        const updated = await tx.approvalRule.update({
-          where: { id },
+        const latestVersion = await tx.approvalRule.findFirst({
+          where: { ruleKey: currentRule.ruleKey },
+          select: { version: true },
+          orderBy: [{ version: 'desc' }, { createdAt: 'desc' }],
+        });
+        const nextVersion = Math.max(
+          currentRule.version + 1,
+          (latestVersion?.version ?? currentRule.version) + 1,
+        );
+        const created = await tx.approvalRule.create({
           data: {
-            ...body,
-            ...(effectiveFrom !== undefined ? { effectiveFrom } : {}),
-            ...(effectiveTo !== undefined ? { effectiveTo } : {}),
+            id: randomUUID(),
+            flowType: body.flowType ?? currentRule.flowType,
+            ruleKey: currentRule.ruleKey,
+            version: nextVersion,
+            isActive:
+              body.isActive !== undefined ? body.isActive : currentRule.isActive,
+            effectiveFrom: nextEffectiveFrom,
+            effectiveTo: nextEffectiveTo,
+            supersedesRuleId: currentRule.id,
+            conditions:
+              body.conditions !== undefined
+                ? body.conditions
+                : currentRule.conditions,
+            steps: effectiveSteps,
+            createdBy: req.user?.userId,
           },
         });
-        return { before, updated };
+        const shouldCloseCurrentAtNextStart =
+          !(currentRule.effectiveTo instanceof Date) ||
+          currentRule.effectiveTo > nextEffectiveFrom;
+        if (shouldCloseCurrentAtNextStart) {
+          const closeCurrentData: {
+            effectiveTo: Date;
+            updatedBy?: string;
+            isActive?: boolean;
+          } = {
+            effectiveTo: nextEffectiveFrom,
+            updatedBy: req.user?.userId,
+          };
+          if (nextEffectiveFrom <= now) {
+            closeCurrentData.isActive = false;
+          }
+          await tx.approvalRule.update({
+            where: { id: currentRule.id },
+            data: closeCurrentData,
+          });
+        } else if (
+          currentRule.effectiveTo instanceof Date &&
+          currentRule.effectiveTo <= now &&
+          currentRule.isActive
+        ) {
+          await tx.approvalRule.update({
+            where: { id: currentRule.id },
+            data: { isActive: false, updatedBy: req.user?.userId },
+          });
+        }
+        return { before, created };
       });
       await logAudit({
         action: 'approval_rule_updated',
         targetTable: 'approval_rules',
-        targetId: updated.id,
+        targetId: created.id,
         metadata: {
-          flowType: updated.flowType,
+          flowType: created.flowType,
+          supersedesRuleId: currentRule.id,
           before: before ? ruleSnapshotForAudit(before) : null,
-          after: ruleSnapshotForAudit(updated),
+          after: ruleSnapshotForAudit(created),
           patch: body,
         },
         ...auditContextFromRequest(req),
       });
-      return updated;
+      return created;
     },
   );
 

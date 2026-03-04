@@ -1,6 +1,6 @@
 # ApprovalRule 追記型版管理 仕様ドラフト（B1 / TODO1）
 
-更新日: 2026-03-04  
+更新日: 2026-03-05  
 関連Issue: #1315, #1308  
 前提ドキュメント: ApprovalRule 現状棚卸（PR #1345 で追加予定）
 
@@ -89,8 +89,12 @@
 
 ### 4.3 既存 PATCH の扱い
 
-- `PATCH /approval-rules/:id` は非推奨化。
-- 置換 API:
+- 互換維持のため、`PATCH /approval-rules/:id` は残しつつ、内部実装を「新版作成」に置換する。
+- PATCH の期待動作:
+  - 返却値は新規作成された版（`id` が変わる）
+  - `supersedesRuleId` に元版 `id` を保持
+  - `version` は系列内で増分
+- 置換 API（将来拡張案）:
   - `POST /approval-rules/:id/versions`（既存版から新規版を作成）
   - `POST /approval-rules/:id/activate`（有効版切替）
 
