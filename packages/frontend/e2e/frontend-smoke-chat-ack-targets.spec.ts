@@ -105,7 +105,7 @@ test('frontend project chat uses room API after project room resolution @extende
   const id = runId();
   const message = `E2E room-first path ${id}`;
   const projectId = authState.projectIds[0];
-  const projectChatRoutePattern = `**/projects/${projectId}/chat-*`;
+  const projectChatRoutePattern = `**/projects/${projectId}/chat-**`;
   const blockedProjectUrls: string[] = [];
 
   await prepare(page);
@@ -145,6 +145,8 @@ test('frontend smoke project chat ack targets (user/group/role) @extended', asyn
   test.setTimeout(180_000);
   const id = runId();
   const projectId = authState.projectIds[0];
+  const projectChatRoutePattern = `**/projects/${projectId}/chat-**`;
+  const blockedProjectUrls: string[] = [];
   const targetUser = 'e2e-member-1@example.com';
   const ackMessage = `E2E ack target set ${id}`;
 
@@ -163,31 +165,47 @@ test('frontend smoke project chat ack targets (user/group/role) @extended', asyn
     page,
     'PRJ-DEMO-1 / Demo Project 1',
   );
-
-  await chatSection.getByPlaceholder('メッセージを書く').fill(ackMessage);
-  await chatSection.getByPlaceholder('タグ (comma separated)').fill('e2e,ack');
-  await chatSection
-    .getByPlaceholder('確認対象ユーザID (comma separated)')
-    .fill(targetUser);
-  await chatSection
-    .getByPlaceholder('確認対象グループID (comma separated)')
-    .fill('mgmt');
-  await chatSection
-    .getByPlaceholder('確認対象ロール (comma separated)')
-    .fill('admin');
-
-  await chatSection.getByRole('button', { name: '対象者を確認' }).click();
-  await expect(chatSection.getByText(/展開対象:\s*\d+人/)).toBeVisible({
+  await expect(
+    chatSection.getByRole('checkbox', { name: '全投稿通知' }),
+  ).toBeVisible({
     timeout: actionTimeout,
   });
 
-  await chatSection.getByRole('button', { name: '確認依頼' }).click();
-  const ackItem = chatSection.locator('li', { hasText: ackMessage });
-  await expect(ackItem).toHaveCount(1, { timeout: actionTimeout });
-  await expect(ackItem).toBeVisible({ timeout: actionTimeout });
-  await expect(ackItem.getByText('確認状況:')).toBeVisible({
-    timeout: actionTimeout,
+  await page.route(projectChatRoutePattern, async (route) => {
+    blockedProjectUrls.push(route.request().url());
+    await route.abort();
   });
+
+  try {
+    await chatSection.getByPlaceholder('メッセージを書く').fill(ackMessage);
+    await chatSection.getByPlaceholder('タグ (comma separated)').fill('e2e,ack');
+    await chatSection
+      .getByPlaceholder('確認対象ユーザID (comma separated)')
+      .fill(targetUser);
+    await chatSection
+      .getByPlaceholder('確認対象グループID (comma separated)')
+      .fill('mgmt');
+    await chatSection
+      .getByPlaceholder('確認対象ロール (comma separated)')
+      .fill('admin');
+
+    await chatSection.getByRole('button', { name: '対象者を確認' }).click();
+    await expect(chatSection.getByText(/展開対象:\s*\d+人/)).toBeVisible({
+      timeout: actionTimeout,
+    });
+
+    await chatSection.getByRole('button', { name: '確認依頼' }).click();
+    const ackItem = chatSection.locator('li', { hasText: ackMessage });
+    await expect(ackItem).toHaveCount(1, { timeout: actionTimeout });
+    await expect(ackItem).toBeVisible({ timeout: actionTimeout });
+    await expect(ackItem.getByText('確認状況:')).toBeVisible({
+      timeout: actionTimeout,
+    });
+  } finally {
+    await page.unroute(projectChatRoutePattern);
+  }
+
+  expect(blockedProjectUrls).toEqual([]);
 });
 
 test('frontend smoke project chat mention composer selects user/group targets @extended', async ({
@@ -196,6 +214,8 @@ test('frontend smoke project chat mention composer selects user/group targets @e
   test.setTimeout(180_000);
   const id = runId();
   const projectId = authState.projectIds[0];
+  const projectChatRoutePattern = `**/projects/${projectId}/chat-**`;
+  const blockedProjectUrls: string[] = [];
   const targetUser = 'e2e-member-1@example.com';
   const messageBody = `E2E mention composer ${id}`;
   const mentionGroupDisplayName = `e2e-mention-${id}`;
@@ -256,36 +276,51 @@ test('frontend smoke project chat mention composer selects user/group targets @e
       page,
       'PRJ-DEMO-1 / Demo Project 1',
     );
-
-    const mentionInput = chatSection.getByPlaceholder(
-      'メンション対象を検索（ユーザ/グループ）',
-    );
-    await mentionInput.fill('e2e-member-1');
-    const userOption = chatSection.getByRole('option', {
-      name: /e2e-member-1@example\.com/i,
-    });
-    await expect(userOption).toHaveCount(1, { timeout: actionTimeout });
-    await userOption.click();
-
-    await mentionInput.fill(mentionGroupDisplayName);
-    const groupOption = chatSection.getByRole('option', {
-      name: new RegExp(mentionGroupDisplayName, 'i'),
-    });
-    await expect(groupOption).toHaveCount(1, { timeout: actionTimeout });
-    await groupOption.click();
-
-    await chatSection.getByPlaceholder('メッセージを書く').fill(messageBody);
-    await chatSection.getByRole('button', { name: '投稿' }).click();
-
-    const messageItem = chatSection.locator('li', { hasText: messageBody });
-    await expect(messageItem).toHaveCount(1, { timeout: actionTimeout });
-    await expect(messageItem).toBeVisible({ timeout: actionTimeout });
     await expect(
-      messageItem.getByLabel(`メンション対象ユーザ: ${targetUser}`),
-    ).toBeVisible({ timeout: actionTimeout });
-    await expect(
-      messageItem.getByLabel(`メンション対象グループ: ${mentionGroupId}`),
-    ).toBeVisible({ timeout: actionTimeout });
+      chatSection.getByRole('checkbox', { name: '全投稿通知' }),
+    ).toBeVisible({
+      timeout: actionTimeout,
+    });
+    await page.route(projectChatRoutePattern, async (route) => {
+      blockedProjectUrls.push(route.request().url());
+      await route.abort();
+    });
+
+    try {
+      const mentionInput = chatSection.getByPlaceholder(
+        'メンション対象を検索（ユーザ/グループ）',
+      );
+      await mentionInput.fill('e2e-member-1');
+      const userOption = chatSection.getByRole('option', {
+        name: /e2e-member-1@example\.com/i,
+      });
+      await expect(userOption).toHaveCount(1, { timeout: actionTimeout });
+      await userOption.click();
+
+      await mentionInput.fill(mentionGroupDisplayName);
+      const groupOption = chatSection.getByRole('option', {
+        name: new RegExp(mentionGroupDisplayName, 'i'),
+      });
+      await expect(groupOption).toHaveCount(1, { timeout: actionTimeout });
+      await groupOption.click();
+
+      await chatSection.getByPlaceholder('メッセージを書く').fill(messageBody);
+      await chatSection.getByRole('button', { name: '投稿' }).click();
+
+      const messageItem = chatSection.locator('li', { hasText: messageBody });
+      await expect(messageItem).toHaveCount(1, { timeout: actionTimeout });
+      await expect(messageItem).toBeVisible({ timeout: actionTimeout });
+      await expect(
+        messageItem.getByLabel(`メンション対象ユーザ: ${targetUser}`),
+      ).toBeVisible({ timeout: actionTimeout });
+      await expect(
+        messageItem.getByLabel(`メンション対象グループ: ${mentionGroupId}`),
+      ).toBeVisible({ timeout: actionTimeout });
+    } finally {
+      await page.unroute(projectChatRoutePattern);
+    }
+
+    expect(blockedProjectUrls).toEqual([]);
   } finally {
     if (mentionGroupId) {
       const deactivateRes = await page.request.patch(
