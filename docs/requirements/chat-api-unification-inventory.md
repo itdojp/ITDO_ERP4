@@ -125,5 +125,6 @@
 2. **Phase 1（安全性先行）**: room投稿の `accessLevel:'post'` を徹底（権限境界の是正）
 3. **Phase 2（backend統合）**: project path を alias 化し、roomロジックへ委譲
    - 先行実装: unread/read の集計・既読更新ロジックを `chatReadState` サービスへ共通化
+   - 先行実装: mention-candidates の候補解決ロジックを `chatMentionCandidates` サービスへ共通化
 4. **Phase 3（frontend統合）**: `ProjectChat` 呼び出しを room API へ段階移行
 5. **Phase 4（deprecate）**: 旧project系経路の無通信確認後に削除

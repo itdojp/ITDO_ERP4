@@ -22,6 +22,7 @@ import {
   previewChatAckRecipients,
 } from '../services/chatAckRecipients.js';
 import { getChatAckLimits } from '../services/chatAckLimits.js';
+import { buildChatMentionCandidates } from '../services/chatMentionCandidates.js';
 import {
   openAttachment,
   storeAttachment,
@@ -39,7 +40,6 @@ import {
   getChatUnreadSummary,
   markChatAsRead,
 } from '../services/chatReadState.js';
-import { resolveGroupCandidatesBySelector } from '../services/groupCandidates.js';
 import { CHAT_ROLES } from './chat/shared/constants.js';
 import {
   normalizeStringArray,
@@ -544,47 +544,17 @@ export async function registerChatRoutes(app: FastifyInstance) {
       const groupAccountIds = Array.isArray(req.user?.groupAccountIds)
         ? req.user.groupAccountIds
         : [];
-      const members = await prisma.projectMember.findMany({
-        where: { projectId },
-        select: { userId: true, role: true },
-        orderBy: { userId: 'asc' },
+      return buildChatMentionCandidates({
+        room: {
+          id: projectId,
+          type: 'project',
+          // project系は現行挙動を維持し、外部メンバーは候補に含めない
+          allowExternalUsers: false,
+        },
+        requesterUserId: currentUserId,
+        groupIds,
+        groupAccountIds,
       });
-      const userIdSet = new Set(members.map((member) => member.userId));
-      if (currentUserId) {
-        userIdSet.add(currentUserId);
-      }
-      const userIds = Array.from(userIdSet);
-      const accounts = userIds.length
-        ? await prisma.userAccount.findMany({
-            where: {
-              OR: [
-                { userName: { in: userIds } },
-                { externalId: { in: userIds } },
-              ],
-              deletedAt: null,
-              active: true,
-            },
-            select: { userName: true, externalId: true, displayName: true },
-          })
-        : [];
-      const displayMap = new Map<string, string | null>();
-      for (const account of accounts) {
-        const name = account.displayName || null;
-        displayMap.set(account.userName, name);
-        if (account.externalId) displayMap.set(account.externalId, name);
-      }
-      const users = userIds
-        .map((userId) => ({
-          userId,
-          displayName: displayMap.get(userId) || null,
-        }))
-        .sort((a, b) => a.userId.localeCompare(b.userId));
-      const groups = await resolveGroupCandidatesBySelector([
-        ...groupIds,
-        ...groupAccountIds,
-      ]);
-      const allowAll = true;
-      return { users, groups, allowAll };
     },
   );
 
