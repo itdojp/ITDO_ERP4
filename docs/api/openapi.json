@@ -8905,6 +8905,7 @@
     },
     "/projects/{projectId}/chat-ack-candidates": {
       "get": {
+        "deprecated": true,
         "parameters": [
           {
             "in": "path",
@@ -8924,6 +8925,7 @@
     },
     "/projects/{projectId}/chat-ack-requests": {
       "post": {
+        "deprecated": true,
         "parameters": [
           {
             "in": "path",
@@ -9025,6 +9027,7 @@
     },
     "/projects/{projectId}/chat-ack-requests/preview": {
       "post": {
+        "deprecated": true,
         "parameters": [
           {
             "in": "path",
@@ -9081,6 +9084,7 @@
     },
     "/projects/{projectId}/chat-break-glass-events": {
       "get": {
+        "deprecated": true,
         "parameters": [
           {
             "in": "path",
@@ -9100,6 +9104,7 @@
     },
     "/projects/{projectId}/chat-mention-candidates": {
       "get": {
+        "deprecated": true,
         "parameters": [
           {
             "in": "path",
@@ -9119,6 +9124,7 @@
     },
     "/projects/{projectId}/chat-messages": {
       "get": {
+        "deprecated": true,
         "parameters": [
           {
             "in": "path",
@@ -9136,6 +9142,7 @@
         }
       },
       "post": {
+        "deprecated": true,
         "parameters": [
           {
             "in": "path",
@@ -9209,6 +9216,7 @@
     },
     "/projects/{projectId}/chat-read": {
       "post": {
+        "deprecated": true,
         "parameters": [
           {
             "in": "path",
@@ -9228,6 +9236,7 @@
     },
     "/projects/{projectId}/chat-summary": {
       "post": {
+        "deprecated": true,
         "parameters": [
           {
             "in": "path",
@@ -9273,6 +9282,7 @@
     },
     "/projects/{projectId}/chat-unread": {
       "get": {
+        "deprecated": true,
         "parameters": [
           {
             "in": "path",

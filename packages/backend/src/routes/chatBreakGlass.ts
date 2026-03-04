@@ -29,7 +29,10 @@ export async function registerChatBreakGlassRoutes(app: FastifyInstance) {
 
   app.get(
     '/projects/:projectId/chat-break-glass-events',
-    { preHandler: requireRole(chatRoles) },
+    {
+      schema: { deprecated: true },
+      preHandler: requireRole(chatRoles),
+    },
     async (req, reply) => {
       const { projectId } = req.params as { projectId: string };
       const roles = req.user?.roles || [];

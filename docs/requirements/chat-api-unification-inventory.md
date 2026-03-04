@@ -109,9 +109,10 @@
 ## 5.3 deprecate方針（初期）
 
 - 旧project系経路の利用時に `Deprecation: true` ヘッダを返す（backend共通フックで付与）。
-- 旧project系経路の利用時に audit/ログで `legacy_project_chat_path_used` を記録（後続実装）。
-- OpenAPI と docs に deprecate 注記を追加。
-- Sunset 日付は実利用データを見て確定（現時点では未確定）。
+- 旧project系経路の利用時に `Link: </chat-rooms/...>; rel="successor-version"` を返し、後継 room API を明示する。
+- 旧project系経路の利用時に audit/ログで `legacy_project_chat_path_used` を記録する。
+- OpenAPI（project系 chat endpoint）に `deprecated: true` を付与する。
+- `Sunset` は `LEGACY_PROJECT_CHAT_SUNSET` 環境変数で有効化し、日付確定後に設定する（未設定時は返却しない）。
 
 ## 6. 先行で解消すべきリスク
 
