@@ -35,6 +35,10 @@ import {
   createChatMessageNotifications,
 } from '../services/appNotifications.js';
 import { resolveRoomAudienceUserIds } from '../services/chatMentionRecipients.js';
+import {
+  getChatUnreadSummary,
+  markChatAsRead,
+} from '../services/chatReadState.js';
 import { resolveGroupCandidatesBySelector } from '../services/groupCandidates.js';
 import { CHAT_ROLES } from './chat/shared/constants.js';
 import {
@@ -637,21 +641,7 @@ export async function registerChatRoutes(app: FastifyInstance) {
       const { projectId } = req.params as { projectId: string };
       const userId = requireUserId(reply, req.user?.userId);
       if (typeof userId !== 'string') return userId;
-      const state = await prisma.chatReadState.findUnique({
-        where: { roomId_userId: { roomId: projectId, userId } },
-        select: { lastReadAt: true },
-      });
-      const unreadCount = await prisma.chatMessage.count({
-        where: {
-          roomId: projectId,
-          deletedAt: null,
-          createdAt: state?.lastReadAt ? { gt: state.lastReadAt } : undefined,
-        },
-      });
-      return {
-        unreadCount,
-        lastReadAt: state?.lastReadAt ? state.lastReadAt.toISOString() : null,
-      };
+      return getChatUnreadSummary({ roomId: projectId, userId });
     },
   );
 
@@ -672,18 +662,7 @@ export async function registerChatRoutes(app: FastifyInstance) {
           error: { code: 'NOT_FOUND', message: 'Project not found' },
         });
       }
-      const now = new Date();
-      const updated = await prisma.chatReadState.upsert({
-        where: { roomId_userId: { roomId: projectId, userId } },
-        update: { lastReadAt: now },
-        create: {
-          roomId: projectId,
-          userId,
-          lastReadAt: now,
-        },
-        select: { lastReadAt: true },
-      });
-      return { lastReadAt: updated.lastReadAt.toISOString() };
+      return markChatAsRead({ roomId: projectId, userId });
     },
   );
 

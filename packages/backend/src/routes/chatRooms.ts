@@ -24,6 +24,10 @@ import {
   expandRoomMentionRecipients,
   resolveRoomAudienceUserIds,
 } from '../services/chatMentionRecipients.js';
+import {
+  getChatUnreadSummary,
+  markChatAsRead,
+} from '../services/chatReadState.js';
 import { resolveGroupCandidatesBySelector } from '../services/groupCandidates.js';
 import {
   getChatExternalLlmConfig,
@@ -2030,21 +2034,7 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
         accessLevel: 'read',
       });
       if (!access) return reply;
-      const state = await prisma.chatReadState.findUnique({
-        where: { roomId_userId: { roomId: access.room.id, userId } },
-        select: { lastReadAt: true },
-      });
-      const unreadCount = await prisma.chatMessage.count({
-        where: {
-          roomId: access.room.id,
-          deletedAt: null,
-          createdAt: state?.lastReadAt ? { gt: state.lastReadAt } : undefined,
-        },
-      });
-      return {
-        unreadCount,
-        lastReadAt: state?.lastReadAt ? state.lastReadAt.toISOString() : null,
-      };
+      return getChatUnreadSummary({ roomId: access.room.id, userId });
     },
   );
 
@@ -2064,18 +2054,7 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
         accessLevel: 'read',
       });
       if (!access) return reply;
-      const now = new Date();
-      const updated = await prisma.chatReadState.upsert({
-        where: { roomId_userId: { roomId: access.room.id, userId } },
-        update: { lastReadAt: now },
-        create: {
-          roomId: access.room.id,
-          userId,
-          lastReadAt: now,
-        },
-        select: { lastReadAt: true },
-      });
-      return { lastReadAt: updated.lastReadAt.toISOString() };
+      return markChatAsRead({ roomId: access.room.id, userId });
     },
   );
 
