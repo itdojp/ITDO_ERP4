@@ -86,8 +86,8 @@
 
 ## project chat
 
-- GET `/projects/:projectId/chat-messages?limit=&before=&tag=`
-- POST `/projects/:projectId/chat-messages` { body, tags? }
+- GET `/chat-rooms/:roomId/messages?limit=&before=&tag=`
+- POST `/chat-rooms/:roomId/messages` { body, tags? }
 - POST `/chat-messages/:id/reactions` { emoji }
 
 ## expenses

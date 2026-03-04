@@ -4,6 +4,7 @@ import {
   createProjectAndEstimate,
   submitAndFindApprovalInstance,
 } from './approval-e2e-helpers';
+import { resolveProjectRoomId } from './chat-room-e2e-helpers';
 
 const apiBase = process.env.E2E_API_BASE || 'http://localhost:3002';
 
@@ -357,8 +358,14 @@ async function createProjectChatMessage(
     };
   },
 ) {
+  const roomId = await resolveProjectRoomId({
+    request,
+    apiBase,
+    projectId,
+    headers: adminHeaders,
+  });
   const res = await request.post(
-    `${apiBase}/projects/${encodeURIComponent(projectId)}/chat-messages`,
+    `${apiBase}/chat-rooms/${encodeURIComponent(roomId)}/messages`,
     {
       data: {
         body,

@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { expect, test } from '@playwright/test';
+import { resolveProjectRoomId } from './chat-room-e2e-helpers';
 
 const apiBase = process.env.E2E_API_BASE || 'http://localhost:3002';
 const authHeaders = {
@@ -236,9 +237,15 @@ test('leave submit allows when chat evidence is attached @core', async ({
   });
   await ensureOk(projectRes);
   const project = await projectRes.json();
+  const projectRoomId = await resolveProjectRoomId({
+    request,
+    apiBase,
+    projectId: String(project.id),
+    headers: authHeaders,
+  });
 
   const messageRes = await request.post(
-    `${apiBase}/projects/${project.id}/chat-messages`,
+    `${apiBase}/chat-rooms/${encodeURIComponent(projectRoomId)}/messages`,
     {
       data: { body: `consult-${suffix}` },
       headers: authHeaders,

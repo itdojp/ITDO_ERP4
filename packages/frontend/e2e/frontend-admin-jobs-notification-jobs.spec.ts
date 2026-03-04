@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { expect, test, type Page } from '@playwright/test';
+import { resolveProjectRoomId } from './chat-room-e2e-helpers';
 
 const baseUrl = process.env.E2E_BASE_URL || 'http://localhost:5173';
 const apiBase = process.env.E2E_API_BASE || 'http://localhost:3002';
@@ -230,10 +231,16 @@ test('frontend admin jobs: chat ack reminder / leave upcoming run and dashboard 
 
   await clearUnreadNotifications(page, leaveUserHeaders);
   await clearUnreadNotifications(page, adminHeaders);
+  const defaultProjectRoomId = await resolveProjectRoomId({
+    request: page.request,
+    apiBase,
+    projectId: defaultProjectId,
+    headers: adminHeaders,
+  });
 
   const overdueDueAt = new Date(Date.now() - 60 * 60 * 1000).toISOString();
   const ackCreateRes = await page.request.post(
-    `${apiBase}/projects/${encodeURIComponent(defaultProjectId)}/chat-ack-requests`,
+    `${apiBase}/chat-rooms/${encodeURIComponent(defaultProjectRoomId)}/ack-requests`,
     {
       headers: adminHeaders,
       data: {
