@@ -86,7 +86,7 @@ function withTimePolicyEnv(fn) {
       DATABASE_URL: process.env.DATABASE_URL || MIN_DATABASE_URL,
       AUTH_MODE: 'header',
       ACTION_POLICY_ENFORCEMENT_PRESET: 'phase2_core',
-      ACTION_POLICY_REQUIRED_ACTIONS: 'time:submit,time:edit',
+      ACTION_POLICY_REQUIRED_ACTIONS: '',
       APPROVAL_EVIDENCE_REQUIRED_ACTIONS: '',
     },
     fn,

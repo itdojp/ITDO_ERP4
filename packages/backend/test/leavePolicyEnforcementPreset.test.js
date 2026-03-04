@@ -102,7 +102,7 @@ test('POST /leave-requests/:id/submit: phase2_core + required actions denies whe
       DATABASE_URL: process.env.DATABASE_URL || MIN_DATABASE_URL,
       AUTH_MODE: 'header',
       ACTION_POLICY_ENFORCEMENT_PRESET: 'phase2_core',
-      ACTION_POLICY_REQUIRED_ACTIONS: 'leave:submit',
+      ACTION_POLICY_REQUIRED_ACTIONS: '',
     },
     async () => {
       await withPrismaStubs(
@@ -138,7 +138,7 @@ test('POST /leave-requests/:id/submit: policy allow reaches downstream validatio
       DATABASE_URL: process.env.DATABASE_URL || MIN_DATABASE_URL,
       AUTH_MODE: 'header',
       ACTION_POLICY_ENFORCEMENT_PRESET: 'phase2_core',
-      ACTION_POLICY_REQUIRED_ACTIONS: 'leave:submit',
+      ACTION_POLICY_REQUIRED_ACTIONS: '',
     },
     async () => {
       await withPrismaStubs(
