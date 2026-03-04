@@ -221,11 +221,79 @@ async function resolveRule(
     },
     orderBy: [{ effectiveFrom: 'desc' }, { createdAt: 'desc' }],
   });
-  if (!rules.length) return null;
+  if (!rules.length) {
+    return {
+      rule: null,
+      fallbackReason: 'rule_not_found' as const,
+    };
+  }
   const matched = rules.find((r: { conditions?: unknown }) =>
     matchesRuleCondition(flowType, payload, r.conditions as ApprovalCondition),
   );
-  return matched || rules[0];
+  if (matched) {
+    return {
+      rule: matched,
+      fallbackReason: null,
+    };
+  }
+  return {
+    rule: rules[0],
+    fallbackReason: 'rule_condition_unmatched_first_rule' as const,
+  };
+}
+
+function approvalFallbackPayloadHints(payload: Record<string, unknown>) {
+  const pick = (key: string) => payload[key] ?? null;
+  return {
+    amount: pick('amount'),
+    totalAmount: pick('totalAmount'),
+    projectId: pick('projectId'),
+    projectType: pick('projectType'),
+    customerId: pick('customerId'),
+    orgUnitId: pick('orgUnitId'),
+  };
+}
+
+async function logApprovalRuleFallbackIfNeeded(options: {
+  client: any;
+  flowType: string;
+  targetTable: string;
+  targetId: string;
+  approvalInstanceId: string;
+  ruleId: string | null;
+  fallbackReasons: string[];
+  payload: Record<string, unknown>;
+  createdBy?: string;
+}) {
+  if (!options.fallbackReasons.length) return;
+  const metadata = {
+    flowType: options.flowType,
+    targetTable: options.targetTable,
+    targetId: options.targetId,
+    approvalInstanceId: options.approvalInstanceId,
+    selectedRuleId: options.ruleId,
+    fallbackReasons: options.fallbackReasons,
+    payloadHints: approvalFallbackPayloadHints(options.payload),
+  };
+  const baseData = {
+    action: 'approval_rule_fallback_used',
+    targetTable: options.targetTable,
+    targetId: options.targetId,
+    userId: options.createdBy,
+    source: 'system',
+    reasonCode: options.fallbackReasons[0],
+    metadata,
+  } as const;
+  try {
+    if (options.client && options.client !== prisma) {
+      if (typeof options.client.auditLog?.create !== 'function') return;
+      await options.client.auditLog.create({ data: baseData });
+      return;
+    }
+    await logAudit(baseData);
+  } catch (err) {
+    console.error('[approval fallback audit failed]', err);
+  }
 }
 
 async function createApprovalWithClient(
@@ -339,13 +407,21 @@ export async function createApprovalFor(
 ) {
   const client = options.client ?? prisma;
   const enrichedPayload = await enrichProjectFields(payload, client);
-  const rule = await resolveRule(
+  const ruleResolution = await resolveRule(
     flowType,
     enrichedPayload,
     client,
     options.now,
   );
+  const rule = ruleResolution.rule;
+  const fallbackReasons: string[] = [];
+  if (ruleResolution.fallbackReason) {
+    fallbackReasons.push(ruleResolution.fallbackReason);
+  }
   const normalized = normalizeRuleStepsWithPolicy(rule?.steps);
+  if (rule && !normalized) {
+    fallbackReasons.push('rule_invalid_steps');
+  }
   const steps =
     normalized?.steps ||
     computeApprovalSteps(
@@ -361,8 +437,26 @@ export async function createApprovalFor(
   const ruleVersion =
     typeof rule?.version === 'number' ? rule.version : undefined;
   const ruleSnapshot = buildRuleSnapshot(rule);
+  if (!rule) {
+    fallbackReasons.push('rule_id_auto_used');
+  }
+  let approval;
   if (client === prisma) {
-    return createApproval(
+    approval = await createApproval(
+      flowType,
+      targetTable,
+      targetId,
+      steps,
+      rule?.id || 'auto',
+      options.createdBy,
+      projectId,
+      stagePolicy,
+      ruleVersion,
+      ruleSnapshot,
+    );
+  } else {
+    approval = await createApprovalWithClient(
+      client,
       flowType,
       targetTable,
       targetId,
@@ -375,19 +469,18 @@ export async function createApprovalFor(
       ruleSnapshot,
     );
   }
-  return createApprovalWithClient(
+  await logApprovalRuleFallbackIfNeeded({
     client,
     flowType,
     targetTable,
     targetId,
-    steps,
-    rule?.id || 'auto',
-    options.createdBy,
-    projectId,
-    stagePolicy,
-    ruleVersion,
-    ruleSnapshot,
-  );
+    approvalInstanceId: approval.id,
+    ruleId: rule?.id ?? null,
+    fallbackReasons,
+    payload: enrichedPayload,
+    createdBy: options.createdBy,
+  });
+  return approval;
 }
 
 /**
