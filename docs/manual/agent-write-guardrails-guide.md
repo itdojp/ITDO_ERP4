@@ -40,6 +40,34 @@
 - 明示CSVを設定した場合は明示値を優先する。
 - `phase3_strict` は `ACTION_POLICY_REQUIRED_ACTIONS=*:*` 相当の fail-safe モードとして利用できる（段階移行後に適用）。
 
+## ActionPolicy fail-safe 運用手順（phase3_strict）
+
+### ポリシー追加（phase2_core から strict へ）
+
+1. まず `ACTION_POLICY_ENFORCEMENT_PRESET=phase2_core` で運用し、`action_policy_fallback_allowed` の発生キーを収束させる。
+2. `flowType:actionKey` ごとに ActionPolicy を追加し、`subjects/stateConstraints/guards` を最小セットで定義する。
+3. 収束判定後に `ACTION_POLICY_ENFORCEMENT_PRESET=phase3_strict` へ切り替える（`*:*` 相当）。
+
+### 例外運用（admin/mgmt override）
+
+1. 緊急時のみ `admin/mgmt` で override を実施する。
+2. 理由を必ず記録し、監査ログ（`action_policy_override`）で追跡可能にする。
+3. 例外は恒久化せず、恒久対応は ActionPolicy 追加で解消する。
+
+### ロールバック
+
+1. 業務影響が発生した場合は `phase3_strict` から `phase2_core` へ戻す。
+2. 必要なら `ACTION_POLICY_REQUIRED_ACTIONS` の明示CSVで対象操作のみ段階復旧する。
+3. 事象収束後に不足ポリシーを追加して再度 `phase3_strict` へ戻す。
+
+### 監査集計
+
+1. 日次で `action_policy_fallback_allowed` を集計する。
+2. コマンド:
+   - `make action-policy-fallback-report`
+   - `make action-policy-fallback-report-json`
+3. 集計キー（`flowType:actionKey:targetTable`）で未収束箇所を特定し、ポリシー追加に反映する。
+
 ## 実行フロー（請求送信の標準例）
 
 1. `POST /drafts` で送信文面ドラフトを生成

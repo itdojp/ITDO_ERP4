@@ -152,17 +152,27 @@ Phase 2 で先行する Draft は以下を対象とする。
 - まず `phase2_core` で監査ログ（`action_policy_fallback_allowed`）を収束させた後に `phase3_strict` へ移行する。
 - 緊急回避時は `ACTION_POLICY_REQUIRED_ACTIONS` の明示CSVで対象を限定し、ロールバック可能性を残す。
 
-## 7. テストカバレッジ（2026-02-24時点）
+## 7. テストカバレッジ（2026-03-04時点）
 
 | 観点                                  | テスト                                         |
 | ------------------------------------- | ---------------------------------------------- |
 | Draft作成/再生成/差分                 | `packages/backend/test/draftRoutes.test.js`    |
 | 送信系のpreset enforce（deny/approve） | `packages/backend/test/sendPolicyEnforcementPreset.test.js` |
 | 承認アクションのpreset enforce         | `packages/backend/test/approvalActionPolicyPreset.test.js` |
+| 工数submit/editのpreset enforce        | `packages/backend/test/timeEntriesPolicyEnforcementPreset.test.js` |
+| 休暇submitのpreset enforce             | `packages/backend/test/leavePolicyEnforcementPreset.test.js` |
 | Approval + Evidence gate              | `packages/backend/test/approvalEvidenceGate.test.js` |
 | denyコード正規化                      | `packages/backend/test/actionPolicyErrors.test.js` |
 
-## 8. 実装時チェックリスト（Phase 2）
+## 8. フォールバック可視化（運用）
+
+- 日次集計コマンド
+  - `make action-policy-fallback-report`
+  - `make action-policy-fallback-report-json`
+- 集計対象: `audit_logs.action='action_policy_fallback_allowed'`
+- 集計キー: `flowType:actionKey:targetTable`
+
+## 9. 実装時チェックリスト（Phase 2）
 
 - 対象APIの pre-action で ActionPolicy を評価している
 - 高リスクAPIは `ACTION_POLICY_REQUIRED_ACTIONS`（`flowType:actionKey` 形式）で段階的に「policy未定義時deny」へ切り替え可能
