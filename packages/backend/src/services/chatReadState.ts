@@ -19,7 +19,9 @@ type MarkChatAsReadInput = {
 export async function getChatUnreadSummary(options: GetChatUnreadSummaryInput) {
   const client = options.client ?? prisma;
   const state = await client.chatReadState.findUnique({
-    where: { roomId_userId: { roomId: options.roomId, userId: options.userId } },
+    where: {
+      roomId_userId: { roomId: options.roomId, userId: options.userId },
+    },
     select: { lastReadAt: true },
   });
   const unreadCount = await client.chatMessage.count({
@@ -39,7 +41,9 @@ export async function markChatAsRead(options: MarkChatAsReadInput) {
   const client = options.client ?? prisma;
   const now = options.at ?? new Date();
   const updated = await client.chatReadState.upsert({
-    where: { roomId_userId: { roomId: options.roomId, userId: options.userId } },
+    where: {
+      roomId_userId: { roomId: options.roomId, userId: options.userId },
+    },
     update: { lastReadAt: now },
     create: {
       roomId: options.roomId,
