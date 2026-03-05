@@ -27,6 +27,10 @@ import {
   type ApprovalStagePolicy,
   type ApprovalStep as Step,
 } from './approvalLogic.js';
+import {
+  APPROVAL_DEFAULT_RULE_EFFECTIVE_FROM_ISO,
+  defaultRuleSeedsForFlow,
+} from './approvalDefaultRules.js';
 
 export { matchApprovalSteps } from './approvalLogic.js';
 
@@ -116,50 +120,9 @@ const OPEN_APPROVAL_STATUSES = [
   DocStatusValue.pending_qa,
   DocStatusValue.pending_exec,
 ] as const;
-const DEFAULT_RULE_EFFECTIVE_FROM = new Date('2000-01-01T00:00:00.000Z');
-
-type DefaultRuleSeed = {
-  ruleKey: string;
-  conditions: ApprovalCondition;
-  steps: Step[];
-};
-
-function defaultRuleSeedsForFlow(flowType: string): DefaultRuleSeed[] {
-  if (
-    flowType === 'estimate' ||
-    flowType === 'invoice' ||
-    flowType === 'expense' ||
-    flowType === 'purchase_order' ||
-    flowType === 'vendor_invoice' ||
-    flowType === 'vendor_quote'
-  ) {
-    return [
-      {
-        ruleKey: `system-default:${flowType}:low`,
-        conditions: { amountMax: 99_999 },
-        steps: [{ approverGroupId: 'mgmt', stepOrder: 1 }],
-      },
-      {
-        ruleKey: `system-default:${flowType}:high`,
-        conditions: { amountMin: 100_000 },
-        steps: [
-          { approverGroupId: 'mgmt', stepOrder: 1 },
-          { approverGroupId: 'exec', stepOrder: 2 },
-        ],
-      },
-    ];
-  }
-  if (flowType === 'leave' || flowType === 'time') {
-    return [
-      {
-        ruleKey: `system-default:${flowType}`,
-        conditions: {},
-        steps: [{ approverGroupId: 'mgmt', stepOrder: 1 }],
-      },
-    ];
-  }
-  return [];
-}
+const DEFAULT_RULE_EFFECTIVE_FROM = new Date(
+  APPROVAL_DEFAULT_RULE_EFFECTIVE_FROM_ISO,
+);
 
 async function ensureDefaultRulesForFlow(flowType: string, client: any) {
   if (typeof client?.approvalRule?.create !== 'function') return;
