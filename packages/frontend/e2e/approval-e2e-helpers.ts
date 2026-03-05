@@ -8,6 +8,7 @@ type ApiResponse = {
 type ApiRequest = {
   get(url: string, options?: any): Promise<ApiResponse>;
   post(url: string, options?: any): Promise<ApiResponse>;
+  patch(url: string, options?: any): Promise<ApiResponse>;
 };
 
 type CreateProjectAndEstimateOptions = {
@@ -131,4 +132,30 @@ export async function submitAndFindApprovalInstance(
     currentStep?: number | null;
     status?: string;
   };
+}
+
+export async function deactivateApprovalRuleVersion(options: {
+  request: ApiRequest;
+  apiBase: string;
+  headers: Record<string, string>;
+  ruleId: string;
+}) {
+  const ruleId = String(options.ruleId || '').trim();
+  if (!ruleId) return;
+  const deactivateRes = await options.request.patch(
+    `${options.apiBase}/approval-rules/${encodeURIComponent(ruleId)}`,
+    {
+      headers: options.headers,
+      data: { isActive: false },
+    },
+  );
+  if (deactivateRes.ok()) return;
+  if (deactivateRes.status() === 409) {
+    const payload = await deactivateRes.json().catch(() => null);
+    if (payload?.error === 'stale_rule_version') return;
+  }
+  const body = await deactivateRes.text();
+  throw new Error(
+    `[e2e] api failed: ${deactivateRes.status()} ${body}`,
+  );
 }

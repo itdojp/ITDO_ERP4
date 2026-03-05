@@ -455,6 +455,19 @@ export async function registerApprovalRuleRoutes(app: FastifyInstance) {
     async (req, reply) => {
       const { id } = req.params as { id: string };
       const body = req.body as any;
+      if (body.version !== undefined) {
+        return reply.code(400).send({
+          error: 'invalid_version',
+          message: 'version cannot be modified via PATCH; omit this field.',
+        });
+      }
+      if (body.supersedesRuleId !== undefined) {
+        return reply.code(400).send({
+          error: 'invalid_supersedesRuleId',
+          message:
+            'supersedesRuleId cannot be modified via PATCH; omit this field.',
+        });
+      }
       const currentRule = await prisma.approvalRule.findUnique({
         where: { id },
         select: {
@@ -471,6 +484,15 @@ export async function registerApprovalRuleRoutes(app: FastifyInstance) {
       });
       if (!currentRule) {
         return reply.code(404).send({ error: 'not_found' });
+      }
+      if (
+        body.flowType !== undefined &&
+        String(body.flowType) !== String(currentRule.flowType)
+      ) {
+        return reply.code(400).send({
+          error: 'flow_type_immutable',
+          message: 'flowType cannot be changed for an existing rule series',
+        });
       }
       const patchKeys = Object.keys(body || {});
       const deactivateOnly = patchKeys.length === 1 && body.isActive === false;
@@ -564,6 +586,19 @@ export async function registerApprovalRuleRoutes(app: FastifyInstance) {
         try {
           transactionResult = await prisma.$transaction(async (tx) => {
             const before = await tx.approvalRule.findUnique({ where: { id } });
+            const latestRuleInSeries = await tx.approvalRule.findFirst({
+              where: { ruleKey: currentRule.ruleKey },
+              select: { id: true, version: true },
+              orderBy: [{ version: 'desc' }, { createdAt: 'desc' }],
+            });
+            if (
+              latestRuleInSeries &&
+              latestRuleInSeries.id !== currentRule.id
+            ) {
+              const staleError = new Error('stale_rule_version');
+              (staleError as any).code = 'STALE_RULE_VERSION';
+              throw staleError;
+            }
             const latestVersion = await tx.approvalRule.findFirst({
               where: { ruleKey: currentRule.ruleKey },
               select: { version: true },
@@ -627,6 +662,13 @@ export async function registerApprovalRuleRoutes(app: FastifyInstance) {
           });
           break;
         } catch (err: any) {
+          if (err?.code === 'STALE_RULE_VERSION') {
+            return reply.code(409).send({
+              error: 'stale_rule_version',
+              message:
+                'only the latest rule version in the series can be patched',
+            });
+          }
           if (err?.code === 'P2002' && attempt === 0) continue;
           throw err;
         }
