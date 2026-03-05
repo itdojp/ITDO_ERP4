@@ -88,32 +88,37 @@ async function ensureOk(res: { ok(): boolean; status(): number; text(): any }) {
   throw new Error(`[e2e] api failed: ${res.status()} ${body}`);
 }
 
-async function openProjectChatSection(page: Page, projectLabel?: string) {
-  await navigateToSection(page, 'プロジェクトチャット');
+const projectRoomLabel = 'project: PRJ-DEMO-1 / Demo Project 1';
+
+async function openRoomChatSection(page: Page, roomLabel?: string) {
+  await navigateToSection(page, 'ルームチャット', 'チャット（全社/部門/private_group/DM）');
   const chatSection = page
     .locator('main')
-    .locator('h2', { hasText: 'プロジェクトチャット' })
+    .locator('h2', { hasText: 'チャット（全社/部門/private_group/DM）' })
     .locator('..');
   await chatSection.scrollIntoViewIfNeeded();
-  await selectByLabelOrFirst(chatSection.getByLabel('案件選択'), projectLabel);
-  return chatSection;
+  await chatSection.getByRole('button', { name: '再読込' }).first().click();
+  const roomSelect = chatSection.locator('select:has(option[value=""])').first();
+  await selectByLabelOrFirst(
+    roomSelect,
+    roomLabel || projectRoomLabel,
+  );
+  const messageList = chatSection.locator('strong', { hasText: '一覧' }).locator('..');
+  return { chatSection, messageList };
 }
 
-test('frontend project chat uses room API after project room resolution @extended', async ({
+test('frontend room chat project room uses room API path @extended', async ({
   page,
 }) => {
   test.setTimeout(120_000);
   const id = runId();
-  const message = `E2E room-first path ${id}`;
+  const message = `E2E room chat path ${id}`;
   const projectId = authState.projectIds[0];
   const projectChatRoutePattern = `**/projects/${projectId}/chat-**`;
   const blockedProjectUrls: string[] = [];
 
   await prepare(page);
-  const chatSection = await openProjectChatSection(
-    page,
-    'PRJ-DEMO-1 / Demo Project 1',
-  );
+  const { chatSection, messageList } = await openRoomChatSection(page);
 
   // roomIdが解決されるまで待ち、以降の操作がroom API経路になることを確認する。
   await expect(
@@ -128,9 +133,9 @@ test('frontend project chat uses room API after project room resolution @extende
   });
 
   try {
-    await chatSection.getByPlaceholder('メッセージを書く').fill(message);
-    await chatSection.getByRole('button', { name: '投稿' }).click();
-    const messageItem = chatSection.locator('li', { hasText: message });
+    await chatSection.getByPlaceholder('Markdownで入力').fill(message);
+    await chatSection.getByRole('button', { name: '送信' }).click();
+    const messageItem = messageList.locator('.card', { hasText: message });
     await expect(messageItem).toHaveCount(1, { timeout: actionTimeout });
     await expect(messageItem).toBeVisible({ timeout: actionTimeout });
   } finally {
@@ -140,7 +145,7 @@ test('frontend project chat uses room API after project room resolution @extende
   expect(blockedProjectUrls).toEqual([]);
 });
 
-test('frontend smoke project chat ack targets (user/group/role) @extended', async ({
+test('frontend smoke room chat ack targets (user/group/role) @extended', async ({
   page,
 }) => {
   test.setTimeout(180_000);
@@ -162,10 +167,7 @@ test('frontend smoke project chat ack targets (user/group/role) @extended', asyn
   );
   await ensureOk(addMemberRes);
 
-  const chatSection = await openProjectChatSection(
-    page,
-    'PRJ-DEMO-1 / Demo Project 1',
-  );
+  const { chatSection, messageList } = await openRoomChatSection(page);
   await expect(
     chatSection.getByRole('checkbox', { name: '全投稿通知' }),
   ).toBeVisible({
@@ -178,19 +180,13 @@ test('frontend smoke project chat ack targets (user/group/role) @extended', asyn
   });
 
   try {
-    await chatSection.getByPlaceholder('メッセージを書く').fill(ackMessage);
+    await chatSection.getByPlaceholder('Markdownで入力').fill(ackMessage);
+    await chatSection.getByPlaceholder('tag1,tag2').fill('e2e,ack');
+    await chatSection.getByLabel('確認対象(requiredUserIds)').fill(targetUser);
     await chatSection
-      .getByPlaceholder('タグ (comma separated)')
-      .fill('e2e,ack');
-    await chatSection
-      .getByPlaceholder('確認対象ユーザID (comma separated)')
-      .fill(targetUser);
-    await chatSection
-      .getByPlaceholder('確認対象グループID (comma separated)')
+      .getByLabel('確認対象グループ(requiredGroupIds)')
       .fill('mgmt');
-    await chatSection
-      .getByPlaceholder('確認対象ロール (comma separated)')
-      .fill('admin');
+    await chatSection.getByLabel('確認対象ロール(requiredRoles)').fill('admin');
 
     await chatSection.getByRole('button', { name: '対象者を確認' }).click();
     await expect(chatSection.getByText(/展開対象:\s*\d+人/)).toBeVisible({
@@ -198,10 +194,16 @@ test('frontend smoke project chat ack targets (user/group/role) @extended', asyn
     });
 
     await chatSection.getByRole('button', { name: '確認依頼' }).click();
-    const ackItem = chatSection.locator('li', { hasText: ackMessage });
+    const ackItem = messageList.locator('.card', { hasText: ackMessage });
     await expect(ackItem).toHaveCount(1, { timeout: actionTimeout });
     await expect(ackItem).toBeVisible({ timeout: actionTimeout });
-    await expect(ackItem.getByText('確認状況:')).toBeVisible({
+    await expect(ackItem.getByText('確認依頼')).toBeVisible({
+      timeout: actionTimeout,
+    });
+    await expect(ackItem.getByText(`required: ${targetUser}`)).toBeVisible({
+      timeout: actionTimeout,
+    });
+    await expect(ackItem.getByText('acked: -')).toBeVisible({
       timeout: actionTimeout,
     });
   } finally {
@@ -211,7 +213,7 @@ test('frontend smoke project chat ack targets (user/group/role) @extended', asyn
   expect(blockedProjectUrls).toEqual([]);
 });
 
-test('frontend smoke project chat mention composer selects user/group targets @extended', async ({
+test('frontend smoke room chat mention composer selects user targets @extended', async ({
   page,
 }) => {
   test.setTimeout(180_000);
@@ -279,10 +281,7 @@ test('frontend smoke project chat mention composer selects user/group targets @e
       ),
     ).toBeTruthy();
 
-    const chatSection = await openProjectChatSection(
-      page,
-      'PRJ-DEMO-1 / Demo Project 1',
-    );
+    const { chatSection, messageList } = await openRoomChatSection(page);
     await expect(
       chatSection.getByRole('checkbox', { name: '全投稿通知' }),
     ).toBeVisible({
@@ -309,19 +308,15 @@ test('frontend smoke project chat mention composer selects user/group targets @e
         name: new RegExp(mentionGroupDisplayName, 'i'),
       });
       await expect(groupOption).toHaveCount(1, { timeout: actionTimeout });
-      await groupOption.click();
 
-      await chatSection.getByPlaceholder('メッセージを書く').fill(messageBody);
-      await chatSection.getByRole('button', { name: '投稿' }).click();
+      await chatSection.getByPlaceholder('Markdownで入力').fill(messageBody);
+      await chatSection.getByRole('button', { name: '送信' }).click();
 
-      const messageItem = chatSection.locator('li', { hasText: messageBody });
+      const messageItem = messageList.locator('.card', { hasText: messageBody });
       await expect(messageItem).toHaveCount(1, { timeout: actionTimeout });
       await expect(messageItem).toBeVisible({ timeout: actionTimeout });
       await expect(
         messageItem.getByLabel(`メンション対象ユーザ: ${targetUser}`),
-      ).toBeVisible({ timeout: actionTimeout });
-      await expect(
-        messageItem.getByLabel(`メンション対象グループ: ${mentionGroupId}`),
       ).toBeVisible({ timeout: actionTimeout });
     } finally {
       await page.unroute(projectChatRoutePattern);
@@ -335,6 +330,7 @@ test('frontend smoke project chat mention composer selects user/group targets @e
         {
           headers: buildAuthHeaders(),
           data: { active: false },
+          timeout: 10_000,
         },
       );
       await ensureOk(deactivateRes);

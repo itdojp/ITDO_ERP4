@@ -158,10 +158,6 @@ function formatRoomLabel(room: ChatRoom, currentUserId: string) {
 }
 
 function openChatTarget(message: ChatMessageResult) {
-  if (message.room.type === 'project' && message.room.projectId) {
-    navigateToOpen({ kind: 'project_chat', id: message.room.projectId });
-    return;
-  }
   navigateToOpen({ kind: 'room_chat', id: message.roomId });
 }
 

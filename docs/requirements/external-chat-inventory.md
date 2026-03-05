@@ -1,6 +1,7 @@
 # external_chat 利用箇所の棚卸し（現状）
 
 ## backend
+
 - chat系
   - `packages/backend/src/services/chatRoomAccess.ts`: room ACL（viewer/poster + member + allowExternalUsers）で制御
   - `packages/backend/src/routes/chat.ts`: chat API の allowedRoles に含む（ロールによる禁止は行わない）
@@ -11,18 +12,22 @@
   - `packages/backend/src/routes/notifications.ts`: 通知APIの allowedRoles に含む（閲覧自体は可）
 
 ## frontend
-- `packages/frontend/src/sections/RoomChat.tsx`: project room の表示/遷移は projectIds ベースで分岐
-- `packages/frontend/src/pages/App.tsx`: deep link は projectIds/ロールで project-chat / room-chat を切替
+
+- `packages/frontend/src/sections/RoomChat.tsx`: ルーム導線は room-chat に統一（`erp4_open_project_chat` は projectId→roomId 解決して room-chat へ正規化）
+- `packages/frontend/src/pages/App.tsx`: deep link は room-chat へ正規化（legacy `project-chat` セクションは保持しない）
 
 ## docs
+
 - `docs/requirements/access-control.md`, `docs/requirements/chat-rooms.md`, `docs/requirements/project-chat.md`, `docs/manual/*` は
   「チャット権限はグループACLで制御、external_chat は非チャット抑止の暫定用途」を前提
 
 ---
 
 ## 移行の含意
+
 - チャット領域は external_chat 依存を撤去し、グループACL（viewer/poster + member）へ統一済み。
 - 一方で external_chat は現状、search 等の「チャット以外の機能抑止」にも使っているため、完全廃止は棚卸し結果を踏まえて判断が必要。
 
 ## 暫定案（手戻り抑制）
+
 - chat の依存除去は完了。search 等の非チャット制限は当面 external_chat を残し、後続で「権限プロファイル（グループ/ポリシー）」へ移行する。

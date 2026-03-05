@@ -92,9 +92,7 @@
 
 ## 関連画面（証跡）
 
-![プロジェクトチャット](../test-results/2026-02-05-frontend-e2e-r1/12-project-chat.png)
-
-![ルームチャット](../test-results/2026-02-05-frontend-e2e-r1/14-room-chat.png)
+![ルームチャット（案件ルーム/全社/部門/private_group/DM）](../test-results/2026-02-05-frontend-e2e-r1/14-room-chat.png)
 
 ![監査閲覧](../test-results/2026-02-05-frontend-e2e-r1/24-chat-break-glass.png)
 

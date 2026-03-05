@@ -22,7 +22,6 @@ import { CurrentUser } from '../sections/CurrentUser';
 import { Reports } from '../sections/Reports';
 import { AdminSettings } from '../sections/AdminSettings';
 import { Approvals } from '../sections/Approvals';
-import { ProjectChat } from '../sections/ProjectChat';
 import { RoomChat } from '../sections/RoomChat';
 import { ChatBreakGlass } from '../sections/ChatBreakGlass';
 import { MasterData } from '../sections/MasterData';
@@ -49,6 +48,13 @@ type SectionGroup = {
 };
 
 const ACTIVE_SECTION_KEY = 'erp4_active_section';
+const LEGACY_SECTION_ALIASES: Record<string, string> = {
+  'project-chat': 'room-chat',
+};
+
+function normalizeSectionId(sectionId: string) {
+  return LEGACY_SECTION_ALIASES[sectionId] || sectionId;
+}
 
 type DeepLinkResolvedTarget = {
   sectionId: string;
@@ -67,7 +73,7 @@ function resolveDeepLinkTarget(
 ): DeepLinkResolvedTarget | null {
   switch (payload.kind) {
     case 'project_chat':
-      return { sectionId: 'project-chat', payload };
+      return { sectionId: 'room-chat', payload };
     case 'room_chat':
       return { sectionId: 'room-chat', payload };
     case 'chat_message':
@@ -275,15 +281,6 @@ export const App: React.FC = () => {
         title: 'チャット',
         items: [
           {
-            id: 'project-chat',
-            label: 'プロジェクトチャット',
-            render: () => (
-              <Card>
-                <ProjectChat />
-              </Card>
-            ),
-          },
-          {
             id: 'room-chat',
             label: 'ルームチャット',
             render: () => (
@@ -415,8 +412,11 @@ export const App: React.FC = () => {
     if (typeof window === 'undefined') return fallbackSectionId;
     const storedId = window.localStorage.getItem(ACTIVE_SECTION_KEY);
     if (!storedId) return fallbackSectionId;
-    const isValid = sections.some((section) => section.id === storedId);
-    return isValid ? storedId : fallbackSectionId;
+    const normalizedStoredId = normalizeSectionId(storedId);
+    const isValid = sections.some(
+      (section) => section.id === normalizedStoredId,
+    );
+    return isValid ? normalizedStoredId : fallbackSectionId;
   });
   const [pendingDeepLink, setPendingDeepLink] =
     useState<DeepLinkResolvedTarget | null>(null);
@@ -465,7 +465,11 @@ export const App: React.FC = () => {
           }
 
           const roomId =
-            typeof payload.roomId === 'string' ? payload.roomId : '';
+            typeof payload.roomId === 'string'
+              ? payload.roomId
+              : typeof payload.room?.id === 'string'
+                ? payload.room.id
+                : '';
           const createdAt =
             typeof payload.createdAt === 'string' ? payload.createdAt : '';
           const roomType =
@@ -486,10 +490,11 @@ export const App: React.FC = () => {
             roles.includes('mgmt') ||
             roles.includes('exec') ||
             (auth?.projectIds?.length ?? 0) > 0;
-          const sectionId =
+          const preferredSectionId =
             roomType === 'project' && projectId && canUseProjectChat
               ? 'project-chat'
               : 'room-chat';
+          const sectionId = normalizeSectionId(preferredSectionId);
 
           setPendingDeepLink({
             sectionId,
@@ -545,19 +550,11 @@ export const App: React.FC = () => {
       );
     } else if (kind === 'chat_message' && pendingDeepLink.chatMessage) {
       const chatMessage = pendingDeepLink.chatMessage;
-      if (chatMessage.roomType === 'project' && chatMessage.projectId) {
-        window.dispatchEvent(
-          new CustomEvent('erp4_open_project_chat', {
-            detail: { projectId: chatMessage.projectId },
-          }),
-        );
-      } else {
-        window.dispatchEvent(
-          new CustomEvent('erp4_open_room_chat', {
-            detail: { roomId: chatMessage.roomId },
-          }),
-        );
-      }
+      window.dispatchEvent(
+        new CustomEvent('erp4_open_room_chat', {
+          detail: { roomId: chatMessage.roomId },
+        }),
+      );
       window.dispatchEvent(
         new CustomEvent('erp4_open_chat_message', {
           detail: {
@@ -604,9 +601,10 @@ export const App: React.FC = () => {
   );
 
   const activateSection = useCallback((sectionId: string) => {
+    const normalizedSectionId = normalizeSectionId(sectionId);
     setDeepLinkError('');
     setPendingDeepLink(null);
-    setActiveSectionId(sectionId);
+    setActiveSectionId(normalizedSectionId);
     if (
       typeof window !== 'undefined' &&
       window.location.hash.startsWith('#/open')
