@@ -129,16 +129,15 @@ const APPROVAL_RULE_FALLBACK_MODES = new Set([
   'db_default_only',
   'strict',
 ] as const);
-export type ApprovalRuleFallbackMode =
-  | 'legacy'
-  | 'db_default_only'
-  | 'strict';
+export type ApprovalRuleFallbackMode = 'legacy' | 'db_default_only' | 'strict';
 
 export function resolveApprovalRuleFallbackMode(
   rawValue: string | undefined = process.env.APPROVAL_RULE_FALLBACK_MODE,
 ): ApprovalRuleFallbackMode {
   const normalized = (rawValue || '').trim().toLowerCase();
-  if (APPROVAL_RULE_FALLBACK_MODES.has(normalized as ApprovalRuleFallbackMode)) {
+  if (
+    APPROVAL_RULE_FALLBACK_MODES.has(normalized as ApprovalRuleFallbackMode)
+  ) {
     return normalized as ApprovalRuleFallbackMode;
   }
   return 'legacy';
