@@ -56,6 +56,13 @@ conditions/steps の例は [approval-alerts](../requirements/approval-alerts.md)
 
 経費の詳細手順は [expense-workflow-guide](expense-workflow-guide.md) を参照。
 
+## 8. エビデンスパック出力（監査提出）
+- API: `GET /approval-instances/:id/evidence-pack/export?format=json|pdf&version=&mask=`
+- `format=json` は `schemaVersion=evidence-pack/v2` として出力され、`workflowHistory`（承認step/イベント）と `attachments`（添付メタデータ + hash）を含む
+- `mask` 未指定時は `1`（PIIマスクあり）。`mask=0` は `admin/mgmt` のみ許可
+- 外部提出前に `integrity.digest`（SHA-256）を保存し、提出物との突合を可能にする
+- アーカイブ保存は `POST /approval-instances/:id/evidence-pack/archive` を使用する（監査ログ `evidence_pack_archived`）
+
 ## 関連画面（証跡）
 ![承認](../test-results/2026-02-05-frontend-e2e-r1/07-approvals.png)
 
