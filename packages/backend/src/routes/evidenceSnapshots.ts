@@ -236,6 +236,43 @@ const evidencePackJsonExportResponseSchema = {
   },
 } as const;
 
+const evidencePackArchiveResponseSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['archived', 'archive'],
+  properties: {
+    archived: { type: 'boolean' },
+    archive: {
+      type: 'object',
+      additionalProperties: false,
+      required: [
+        'provider',
+        'objectKey',
+        'metadataKey',
+        'archiveUri',
+        'checksumSha256',
+        'sizeBytes',
+        'archivedAt',
+        'digest',
+        'format',
+        'mask',
+      ],
+      properties: {
+        provider: { type: 'string', enum: ['local', 's3'] },
+        objectKey: { type: 'string' },
+        metadataKey: { type: 'string' },
+        archiveUri: { type: 'string' },
+        checksumSha256: { type: 'string' },
+        sizeBytes: { type: 'integer', minimum: 0 },
+        archivedAt: { type: 'string', format: 'date-time' },
+        digest: { type: 'string' },
+        format: { type: 'string', enum: ['json', 'pdf'] },
+        mask: { type: 'boolean' },
+      },
+    },
+  },
+} as const;
+
 const evidencePackCommonErrorResponses = {
   403: apiErrorResponseSchema,
   404: apiErrorResponseSchema,
@@ -246,6 +283,11 @@ const evidencePackArchiveResponses = {
   ...evidencePackCommonErrorResponses,
   200: {
     description: 'Default Response',
+    content: {
+      'application/json': {
+        schema: evidencePackArchiveResponseSchema,
+      },
+    },
   },
 } as const;
 
