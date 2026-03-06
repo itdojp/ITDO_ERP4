@@ -286,6 +286,14 @@ test('frontend smoke workflow evidence chat references @extended', async ({
     expenseAnnotationDrawer.locator('.badge', { hasText: 'room_chat' }),
   ).toBeVisible({ timeout: actionTimeout });
   await expenseAnnotationDrawer
+    .getByLabel('手動追加（deep link / kind:id）')
+    .fill(`/#/open?kind=project_chat&id=${projectId}`);
+  await expenseAnnotationDrawer
+    .getByRole('button', { name: '追加' })
+    .last()
+    .click();
+  await expect(roomChatReference).toHaveCount(1, { timeout: actionTimeout });
+  await expenseAnnotationDrawer
     .getByRole('button', { name: '参照状態を確認' })
     .click();
   await expect(expenseAnnotationDrawer.getByText('参照可能')).toBeVisible({
