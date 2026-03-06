@@ -100,9 +100,9 @@ test('POST /webhooks/sendgrid/events logs audit for delivered milestone', async 
       await withPrismaStubs(
         {
           'documentSendLog.findMany': async () => [baseSendLog()],
-          'documentSendEvent.create': async ({ data }) => {
-            createdEvents.push(data);
-            return { id: `event-${createdEvents.length}` };
+          'documentSendEvent.createMany': async ({ data }) => {
+            createdEvents.push(...data);
+            return { count: data.length };
           },
           'documentSendLog.updateMany': async ({ data, where }) => {
             updatedLogs.push({ data, where });
@@ -170,10 +170,14 @@ test('POST /webhooks/sendgrid/events does not write audit for open-only event', 
     async () => {
       const auditEntries = [];
       const updatedLogs = [];
+      const createdEvents = [];
       await withPrismaStubs(
         {
           'documentSendLog.findMany': async () => [baseSendLog()],
-          'documentSendEvent.create': async () => ({ id: 'event-1' }),
+          'documentSendEvent.createMany': async ({ data }) => {
+            createdEvents.push(...data);
+            return { count: data.length };
+          },
           'documentSendLog.updateMany': async ({ data }) => {
             updatedLogs.push(data);
             return { count: 1 };
@@ -205,6 +209,7 @@ test('POST /webhooks/sendgrid/events does not write audit for open-only event', 
         },
       );
 
+      assert.equal(createdEvents.length, 1);
       assert.equal(updatedLogs.length, 1);
       assert.equal(updatedLogs[0]?.status, 'opened');
       assert.equal(auditEntries.length, 0);
@@ -221,6 +226,7 @@ test('POST /webhooks/sendgrid/events logs audit for bounce resolved by sg_messag
     async () => {
       const auditEntries = [];
       const updatedLogs = [];
+      const createdEvents = [];
       await withPrismaStubs(
         {
           'documentSendLog.findMany': async () => [
@@ -230,7 +236,10 @@ test('POST /webhooks/sendgrid/events logs audit for bounce resolved by sg_messag
               providerMessageId: 'smtp:sg-message-2.filter',
             }),
           ],
-          'documentSendEvent.create': async () => ({ id: 'event-1' }),
+          'documentSendEvent.createMany': async ({ data }) => {
+            createdEvents.push(...data);
+            return { count: data.length };
+          },
           'documentSendLog.updateMany': async ({ data, where }) => {
             updatedLogs.push({ data, where });
             return { count: 1 };
@@ -263,6 +272,7 @@ test('POST /webhooks/sendgrid/events logs audit for bounce resolved by sg_messag
         },
       );
 
+      assert.equal(createdEvents.length, 1);
       assert.equal(updatedLogs.length, 1);
       assert.equal(updatedLogs[0]?.data?.status, 'bounced');
       assert.equal(updatedLogs[0]?.data?.error, 'sendgrid_bounce');
@@ -275,6 +285,68 @@ test('POST /webhooks/sendgrid/events logs audit for bounce resolved by sg_messag
         auditEntries[0]?.metadata?.providerMessageId,
         'smtp:sg-message-2.filter',
       );
+    },
+  );
+});
+
+test('POST /webhooks/sendgrid/events does not audit stale milestone when later open wins status', async () => {
+  await withEnv(
+    {
+      DATABASE_URL: process.env.DATABASE_URL || MIN_DATABASE_URL,
+      AUTH_MODE: 'header',
+    },
+    async () => {
+      const auditEntries = [];
+      const updatedLogs = [];
+      const createdEvents = [];
+      await withPrismaStubs(
+        {
+          'documentSendLog.findMany': async () => [baseSendLog()],
+          'documentSendEvent.createMany': async ({ data }) => {
+            createdEvents.push(...data);
+            return { count: data.length };
+          },
+          'documentSendLog.updateMany': async ({ data, where }) => {
+            updatedLogs.push({ data, where });
+            return { count: 1 };
+          },
+          'auditLog.create': async ({ data }) => {
+            auditEntries.push(data);
+            return { id: `audit-${auditEntries.length}` };
+          },
+          $transaction: createTransactionStub(),
+        },
+        async () => {
+          const server = await buildServer({ logger: false });
+          try {
+            const res = await server.inject({
+              method: 'POST',
+              url: '/webhooks/sendgrid/events',
+              payload: [
+                {
+                  event: 'delivered',
+                  timestamp: 1700000000,
+                  custom_args: { sendLogId: 'send-log-1' },
+                },
+                {
+                  event: 'open',
+                  timestamp: 1700000001,
+                  custom_args: { sendLogId: 'send-log-1' },
+                },
+              ],
+            });
+            assert.equal(res.statusCode, 200, res.body);
+            assert.deepEqual(JSON.parse(res.body), { received: 2, stored: 2 });
+          } finally {
+            await server.close();
+          }
+        },
+      );
+
+      assert.equal(createdEvents.length, 2);
+      assert.equal(updatedLogs.length, 1);
+      assert.equal(updatedLogs[0]?.data?.status, 'opened');
+      assert.equal(auditEntries.length, 0);
     },
   );
 });

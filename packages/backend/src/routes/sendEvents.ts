@@ -303,15 +303,15 @@ export async function registerSendEventRoutes(app: FastifyInstance) {
       }> = [];
       if (eventRecords.length > 0 || pendingUpdates.size > 0) {
         await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-          for (const eventRecord of eventRecords) {
-            await tx.documentSendEvent.create({
-              data: {
+          if (eventRecords.length > 0) {
+            await tx.documentSendEvent.createMany({
+              data: eventRecords.map((eventRecord) => ({
                 sendLogId: eventRecord.sendLogId,
                 provider: 'sendgrid',
                 eventType: eventRecord.eventType,
                 eventAt: eventRecord.eventAt,
                 payload: eventRecord.payload,
-              },
+              })),
             });
           }
           for (const [sendLogId, update] of pendingUpdates.entries()) {
@@ -330,14 +330,16 @@ export async function registerSendEventRoutes(app: FastifyInstance) {
                 error: update.error ?? (original?.error as string | undefined),
               },
             });
+            const pendingAudit = pendingAudits.get(sendLogId);
             if (
               result.count > 0 &&
-              pendingAudits.has(sendLogId) &&
+              pendingAudit &&
+              pendingAudit.status === update.status &&
               shouldUpdateStatus(update.originalStatus, update.status)
             ) {
               appliedAudits.push({
                 sendLogId,
-                update: pendingAudits.get(sendLogId) as PendingStatusUpdate,
+                update: pendingAudit,
               });
             }
           }
