@@ -159,6 +159,7 @@ test('frontend smoke workflow evidence chat references @extended', async ({
   test.setTimeout(180_000);
   const id = runId();
   const projectId = authState.projectIds[0];
+  const authHeaders = buildAuthHeaders();
   const evidenceMessage = `E2E evidence chat ${id}`;
   const evidenceNote = `E2E evidence note ${id}`;
   const evidenceUrl = `https://example.com/evidence/${id}`;
@@ -169,12 +170,17 @@ test('frontend smoke workflow evidence chat references @extended', async ({
     `(${expenseAmountLabel.replace(/,/g, ',?')}|${expenseAmount})\\s+JPY`,
   );
   await prepare(page);
-  const roomId = await resolveProjectRoomId({ projectId });
+  const roomId = await resolveProjectRoomId({
+    request: page.request,
+    apiBase,
+    projectId,
+    headers: authHeaders,
+  });
 
   const chatMessageRes = await page.request.post(
     `${apiBase}/chat-rooms/${encodeURIComponent(roomId)}/messages`,
     {
-      headers: buildAuthHeaders(),
+      headers: authHeaders,
       data: {
         body: evidenceMessage,
         tags: ['e2e', 'evidence'],
@@ -266,6 +272,20 @@ test('frontend smoke workflow evidence chat references @extended', async ({
     expenseAnnotationDrawer.getByLabel('メモ（Markdown）'),
   ).toHaveValue(new RegExp(messageId), { timeout: actionTimeout });
   await expenseAnnotationDrawer
+    .getByLabel('手動追加（deep link / kind:id）')
+    .fill(`project_chat:${projectId}`);
+  await expenseAnnotationDrawer
+    .getByRole('button', { name: '追加' })
+    .last()
+    .click();
+  const roomChatReference = expenseAnnotationDrawer.locator(
+    `a[href*=\"kind=room_chat\"][href*=\"${projectId}\"]`,
+  );
+  await expect(roomChatReference).toHaveCount(1, { timeout: actionTimeout });
+  await expect(
+    expenseAnnotationDrawer.locator('.badge', { hasText: 'room_chat' }),
+  ).toBeVisible({ timeout: actionTimeout });
+  await expenseAnnotationDrawer
     .getByRole('button', { name: '参照状態を確認' })
     .click();
   await expect(expenseAnnotationDrawer.getByText('参照可能')).toBeVisible({
@@ -278,10 +298,23 @@ test('frontend smoke workflow evidence chat references @extended', async ({
   await expenseAnnotationDrawer.getByRole('button', { name: '閉じる' }).click();
   await expect(expenseAnnotationDrawer).toBeHidden({ timeout: actionTimeout });
 
+  await expenseAnnotationButton.click();
+  await expect(expenseAnnotationDrawer).toBeVisible({ timeout: actionTimeout });
+  await expect(
+    expenseAnnotationDrawer.locator(
+      `a[href*=\"kind=room_chat\"][href*=\"${projectId}\"]`,
+    ),
+  ).toHaveCount(1, { timeout: actionTimeout });
+  await expect(
+    expenseAnnotationDrawer.locator('.badge', { hasText: 'room_chat' }),
+  ).toBeVisible({ timeout: actionTimeout });
+  await expenseAnnotationDrawer.getByRole('button', { name: '閉じる' }).click();
+  await expect(expenseAnnotationDrawer).toBeHidden({ timeout: actionTimeout });
+
   const estimateCreateRes = await page.request.post(
     `${apiBase}/projects/${encodeURIComponent(projectId)}/estimates`,
     {
-      headers: buildAuthHeaders(),
+      headers: authHeaders,
       data: {
         totalAmount: 120000,
         currency: 'JPY',
@@ -299,7 +332,7 @@ test('frontend smoke workflow evidence chat references @extended', async ({
   const patchAnnotationRes = await page.request.patch(
     `${apiBase}/annotations/estimate/${encodeURIComponent(estimateId)}`,
     {
-      headers: buildAuthHeaders(),
+      headers: authHeaders,
       data: {
         notes: evidenceNote,
         externalUrls: [evidenceUrl],
@@ -318,7 +351,7 @@ test('frontend smoke workflow evidence chat references @extended', async ({
   const estimateSubmitRes = await page.request.post(
     `${apiBase}/estimates/${encodeURIComponent(estimateId)}/submit`,
     {
-      headers: buildAuthHeaders(),
+      headers: authHeaders,
       data: { reasonText: 'e2e workflow evidence' },
     },
   );

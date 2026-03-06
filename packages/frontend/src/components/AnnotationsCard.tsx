@@ -163,6 +163,41 @@ const ALLOWED_INTERNAL_REF_KIND_SET = new Set<InternalRefKind>([
   'chat_message',
 ]);
 
+function normalizeInternalRefKind(value: unknown): InternalRefKind | null {
+  const kind = normalizeString(value) as InternalRefKind;
+  if (!kind || !ALLOWED_INTERNAL_REF_KIND_SET.has(kind)) return null;
+  if (kind === 'project_chat') return 'room_chat';
+  return kind;
+}
+
+function normalizeInternalRefItem(
+  value: Pick<InternalRef, 'kind' | 'id' | 'label'>,
+): InternalRef | null {
+  const kind = normalizeInternalRefKind(value.kind);
+  const id = normalizeString(value.id);
+  if (!kind || !id) return null;
+  const label = normalizeString(value.label);
+  return label ? { kind, id, label } : { kind, id };
+}
+
+function normalizeInternalRefs(value: unknown): InternalRef[] {
+  if (!Array.isArray(value)) return [];
+  const normalized: InternalRef[] = [];
+  const seen = new Set<string>();
+  for (const item of value) {
+    if (!item || typeof item !== 'object') continue;
+    const next = normalizeInternalRefItem(
+      item as Pick<InternalRef, 'kind' | 'id' | 'label'>,
+    );
+    if (!next) continue;
+    const key = buildRefKey(next);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    normalized.push(next);
+  }
+  return normalized;
+}
+
 const REF_PICKER_KINDS: RefCandidateKind[] = [
   'invoice',
   'estimate',
@@ -188,11 +223,11 @@ function parseInternalRefInput(
     try {
       const url = new URL(raw);
       const open = parseOpenHash(url.hash || '');
-      if (
-        open &&
-        ALLOWED_INTERNAL_REF_KIND_SET.has(open.kind as InternalRefKind)
-      ) {
-        return { kind: open.kind as InternalRefKind, id: open.id };
+      if (open) {
+        const kind = normalizeInternalRefKind(open.kind);
+        if (kind) {
+          return { kind, id: open.id };
+        }
       }
     } catch {
       // fall through
@@ -207,11 +242,11 @@ function parseInternalRefInput(
       : '';
   if (normalized) {
     const open = parseOpenHash(normalized);
-    if (
-      open &&
-      ALLOWED_INTERNAL_REF_KIND_SET.has(open.kind as InternalRefKind)
-    ) {
-      return { kind: open.kind as InternalRefKind, id: open.id };
+    if (open) {
+      const kind = normalizeInternalRefKind(open.kind);
+      if (kind) {
+        return { kind, id: open.id };
+      }
     }
   }
 
@@ -220,8 +255,9 @@ function parseInternalRefInput(
   if (sep > 0) {
     const kindRaw = raw.slice(0, sep).trim();
     const id = raw.slice(sep + 1).trim();
-    if (id && ALLOWED_INTERNAL_REF_KIND_SET.has(kindRaw as InternalRefKind)) {
-      return { kind: kindRaw as InternalRefKind, id };
+    const kind = normalizeInternalRefKind(kindRaw);
+    if (id && kind) {
+      return { kind, id };
     }
   }
 
@@ -366,9 +402,7 @@ export const AnnotationsCard: React.FC<AnnotationsCardProps> = ({
       setExternalUrls(
         Array.isArray(payload.externalUrls) ? payload.externalUrls : [],
       );
-      setInternalRefs(
-        Array.isArray(payload.internalRefs) ? payload.internalRefs : [],
-      );
+      setInternalRefs(normalizeInternalRefs(payload.internalRefs));
       setUpdatedAt(
         typeof payload.updatedAt === 'string' ? payload.updatedAt : null,
       );
@@ -449,9 +483,7 @@ export const AnnotationsCard: React.FC<AnnotationsCardProps> = ({
       setExternalUrls(
         Array.isArray(payload.externalUrls) ? payload.externalUrls : [],
       );
-      setInternalRefs(
-        Array.isArray(payload.internalRefs) ? payload.internalRefs : [],
-      );
+      setInternalRefs(normalizeInternalRefs(payload.internalRefs));
       setUpdatedAt(
         typeof payload.updatedAt === 'string' ? payload.updatedAt : null,
       );
@@ -501,10 +533,12 @@ export const AnnotationsCard: React.FC<AnnotationsCardProps> = ({
 
   const addInternalRef = useCallback(
     (ref: InternalRef) => {
-      const key = buildRefKey(ref);
+      const normalizedRef = normalizeInternalRefItem(ref);
+      if (!normalizedRef) return;
+      const key = buildRefKey(normalizedRef);
       const exists = internalRefs.some((item) => buildRefKey(item) === key);
       if (exists) return;
-      setInternalRefs((prev) => [...prev, ref]);
+      setInternalRefs((prev) => [...prev, normalizedRef]);
     },
     [internalRefs],
   );
@@ -704,8 +738,8 @@ export const AnnotationsCard: React.FC<AnnotationsCardProps> = ({
       const mapped: InternalRef[] = [];
       const seen = new Set<string>();
       for (const item of items) {
-        const kind = normalizeString(item.kind) as InternalRefKind;
-        if (!ALLOWED_INTERNAL_REF_KIND_SET.has(kind)) continue;
+        const kind = normalizeInternalRefKind(item.kind);
+        if (!kind) continue;
         if (!REF_PICKER_KIND_SET.has(kind as RefCandidateKind)) continue;
         const id = normalizeString(item.id);
         if (!id) continue;
