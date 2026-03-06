@@ -60,7 +60,11 @@ async function ensureOk(res: { ok(): boolean; status(): number; text(): any }) {
   throw new Error(`[e2e] api failed: ${res.status()} ${body}`);
 }
 
-async function prepare(page: Page, authState: AuthState) {
+async function prepare(
+  page: Page,
+  authState: AuthState,
+  options?: { activeSectionId?: string },
+) {
   if (page.listenerCount('pageerror') === 0) {
     page.on('pageerror', (error) => {
       console.error('[dashboard-notification-routing] pageerror:', error);
@@ -77,10 +81,14 @@ async function prepare(page: Page, authState: AuthState) {
     });
   }
 
-  await page.addInitScript((state) => {
+  await page.addInitScript(([state, activeSectionId]) => {
     window.localStorage.setItem('erp4_auth', JSON.stringify(state));
-    window.localStorage.removeItem('erp4_active_section');
-  }, authState);
+    if (typeof activeSectionId === 'string' && activeSectionId.length > 0) {
+      window.localStorage.setItem('erp4_active_section', activeSectionId);
+    } else {
+      window.localStorage.removeItem('erp4_active_section');
+    }
+  }, [authState, options?.activeSectionId ?? null]);
   await page.goto(baseUrl);
   await expect(page.getByRole('heading', { name: 'ERP4 MVP PoC' })).toBeVisible(
     {
@@ -648,6 +656,70 @@ test('legacy project_chat deep link opens room-chat section @extended', async ({
   });
   await expect(roomChatHeading).toBeVisible({ timeout: actionTimeout });
   await expectOpenEventRecorded(page, 'project_chat', defaultProjectId);
+  await expect.poll(() => page.evaluate(() => window.location.hash)).toBe('');
+});
+
+test('legacy project-chat stored section migrates to room-chat @extended', async ({
+  page,
+}) => {
+  const adminState: AuthState = {
+    userId: 'demo-user',
+    roles: ['admin', 'mgmt'],
+    projectIds: [defaultProjectId],
+    groupIds: ['mgmt', 'hr-group'],
+  };
+
+  await prepare(page, adminState, { activeSectionId: 'project-chat' });
+  const roomChatHeading = page.locator('main').getByRole('heading', {
+    name: 'チャット（全社/部門/private_group/DM）',
+    level: 2,
+    exact: true,
+  });
+  await expect(roomChatHeading).toBeVisible({ timeout: actionTimeout });
+  await expect
+    .poll(() =>
+      page.evaluate(() => window.localStorage.getItem('erp4_active_section')),
+    )
+    .toBe('room-chat');
+
+  await page.reload();
+  await expect(roomChatHeading).toBeVisible({ timeout: actionTimeout });
+  await expect
+    .poll(() =>
+      page.evaluate(() => window.localStorage.getItem('erp4_active_section')),
+    )
+    .toBe('room-chat');
+});
+
+test('room_chat deep link opens selected room and clears hash @extended', async ({
+  page,
+}) => {
+  const adminState: AuthState = {
+    userId: 'demo-user',
+    roles: ['admin', 'mgmt'],
+    projectIds: [defaultProjectId],
+    groupIds: ['mgmt', 'hr-group'],
+  };
+  const headers = buildHeaders(adminState);
+  const roomId = await findCompanyRoomId(page, headers);
+
+  await prepare(page, adminState);
+  await installOpenEventRecorder(page);
+  await resetOpenEventRecorder(page);
+  await openHash(page, 'room_chat', roomId);
+
+  await expect(
+    page.locator('main').getByRole('heading', {
+      name: 'チャット（全社/部門/private_group/DM）',
+      level: 2,
+      exact: true,
+    }),
+  ).toBeVisible({ timeout: actionTimeout });
+  await expectOpenEventRecorded(page, 'room_chat', roomId);
+  await expect(
+    page.locator('main').getByRole('combobox', { name: 'ルーム' }),
+  ).toHaveValue(roomId);
+  await expect.poll(() => page.evaluate(() => window.location.hash)).toBe('');
 });
 
 test('chat_message deep link resolves project room without legacy project chat API @extended', async ({
