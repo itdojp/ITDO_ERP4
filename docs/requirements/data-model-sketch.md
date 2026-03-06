@@ -25,9 +25,12 @@
 - **project_tasks**: project_id, parent_task_id, name, wbs_code, assignee_id, status, plan_start/end, actual_start/end, baseline_id
   - idx: (project_id), (assignee_id), (status)
 - **chat_rooms**: type (project/department/company/private_group/dm), name, project_id?, group_id?, viewer_group_ids?, poster_group_ids?, allow_external_users, allow_external_integrations
-  - idx: (type, project_id), (project_id, created_at)
+  - unique: (type, project_id) # project room の多重作成防止
+  - idx: (project_id, created_at)
+- **chat_room_members**: room_id, user_id, role (owner/member/guest)
+  - idx: (room_id, user_id), (user_id)
 - **chat_messages**: room_id, user_id, body, tags?, reactions?, mentions?, mentions_all
-  - idx: (room_id, created_at), (room_id, user_id, mentions_all, created_at)
+  - idx: (room_id, created_at), (room_id, user_id, mentions_all, created_at), (deleted_at, created_at)
 - **project_milestones**: project_id, name, amount, bill_upon (enum: date/acceptance/time), due_date, tax_rate, invoice_template_id
   - idx: (project_id), (due_date)
 - **project_members**: project_id, user_id, role (leader/member)

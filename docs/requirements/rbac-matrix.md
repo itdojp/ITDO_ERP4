@@ -22,7 +22,7 @@
 - leave_requests: user（自分）, mgmt/admin（全体）
 - daily_reports: user（自分）
 - wellbeing_entries: user（自分の登録）, hr（閲覧: 原則個人閲覧、匿名集計は5人以上）
-- chat_rooms / chat_messages: room member。project room は ProjectMember を room member へ同期し、ACL（viewer/poster）を適用
+- chat_rooms / chat_messages: project room は ProjectMember / プロジェクト権限（JWT の `projectIds` / `roles`, `hasProjectAccess`）でアクセス可。`allowExternalUsers=true` の project room や `private_group` / `dm` では外部ユーザに room member を要求し、ACL（viewer/poster）は追加制約として適用
 - alert-settings / approval-rules: admin, mgmt
 - approval-instances: admin/mgmt/exec + 申請者本人 + プロジェクトメンバー
 - alerts: admin, mgmt（全体）、user（自分関連のみを将来考慮）

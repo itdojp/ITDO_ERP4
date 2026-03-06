@@ -189,38 +189,70 @@ model ProjectTask {
 }
 
 model ChatRoom {
+  id                        String            @id @default(uuid())
+  type                      String            // project/department/company/private_group/dm
+  name                      String
+  isOfficial                Boolean           @default(true)
+  project                   Project?          @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  projectId                 String?
+  groupId                   String?
+  viewerGroupIds            Json?
+  posterGroupIds            Json?
+  allowExternalUsers        Boolean           @default(false)
+  allowExternalIntegrations Boolean           @default(false)
+  members                   ChatRoomMember[]
+  messages                  ChatMessage[]
+  createdAt                 DateTime          @default(now())
+  createdBy                 String?
+  updatedAt                 DateTime          @updatedAt
+  updatedBy                 String?
+  deletedAt                 DateTime?
+  deletedReason             String?
+
+  @@unique([type, projectId])
+  @@index([type, createdAt])
+  @@index([projectId, createdAt])
+  @@index([deletedAt])
+}
+
+model ChatRoomMember {
   id        String   @id @default(uuid())
-  type      String   // project/department/company/private_group/dm
-  name      String
-  projectId String?
-  groupId   String?
-  viewerGroupIds Json?
-  posterGroupIds Json?
-  allowExternalUsers Boolean @default(false)
-  allowExternalIntegrations Boolean @default(false)
+  room      ChatRoom @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  roomId    String
+  userId    String
+  role      String   @default("member")
   createdAt DateTime @default(now())
   createdBy String?
   updatedAt DateTime @updatedAt
   updatedBy String?
   deletedAt DateTime?
   deletedReason String?
+
+  @@unique([roomId, userId])
+  @@index([userId])
+  @@index([roomId])
 }
 
 model ChatMessage {
-  id        String   @id @default(uuid())
-  roomId    String
-  userId    String
-  body      String
-  tags      Json?
-  reactions Json?
-  mentions  Json?
-  mentionsAll Boolean @default(false)
-  createdAt DateTime @default(now())
-  createdBy String?
-  updatedAt DateTime @updatedAt
-  updatedBy String?
-  deletedAt DateTime?
+  id            String           @id @default(uuid())
+  room          ChatRoom         @relation(fields: [roomId], references: [id], onDelete: Restrict)
+  roomId        String
+  userId        String
+  body          String
+  tags          Json?
+  reactions     Json?
+  mentions      Json?
+  mentionsAll   Boolean          @default(false)
+  createdAt     DateTime         @default(now())
+  createdBy     String?
+  updatedAt     DateTime         @updatedAt
+  updatedBy     String?
+  deletedAt     DateTime?
   deletedReason String?
+
+  @@index([roomId, createdAt])
+  @@index([roomId, userId, mentionsAll, createdAt])
+  @@index([deletedAt, createdAt])
 }
 
 model ProjectMilestone {
