@@ -28,9 +28,12 @@
   - 参照: `packages/backend/test/approvalActionPolicyPreset.test.js`
 - [x] `ACTION_POLICY_REQUIRED_ACTIONS` 明示指定が preset より優先される
   - 参照: `packages/backend/test/sendPolicyEnforcementPreset.test.js`
+- [x] `phase2_core` で高リスク mutation route が policy 未定義拒否 / 定義許可を満たす
+  - 参照: `packages/backend/test/invoicePolicyEnforcementPreset.test.js`, `packages/backend/test/invoiceMarkPaidPolicyEnforcementPreset.test.js`, `packages/backend/test/purchaseOrderPolicyEnforcementPreset.test.js`, `packages/backend/test/expensePolicyEnforcementPreset.test.js`, `packages/backend/test/vendorInvoiceSubmitPolicyEnforcementPreset.test.js`, `packages/backend/test/vendorInvoiceEditPolicyEnforcementPreset.test.js`
 - [ ] `phase2_core` -> `phase3_strict` の切替後も主要操作が継続し、`action_policy_fallback_allowed` の新規発生がないことを確認する
   - 手順: `docs/manual/agent-write-guardrails-guide.md` の fail-safe 運用手順に従う
 - [ ] `make action-policy-fallback-report` / `make action-policy-fallback-report-json` で fallback 集計を確認し、高リスクキーが 0 件であることを確認する
+- [ ] `node scripts/report-action-policy-required-action-gaps.mjs --format=text` で `missing_static_callsites=0` / `stale_required_actions=0` / `dynamic_callsites=1` を確認する
 - [ ] 問題発生時に `phase3_strict` -> `phase2_core` のロールバックと、必要な `ACTION_POLICY_REQUIRED_ACTIONS` 明示指定での段階復旧を確認する
 
 ### チャット（確認依頼 ack required）

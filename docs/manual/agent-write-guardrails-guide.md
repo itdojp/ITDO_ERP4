@@ -48,6 +48,20 @@
 2. `flowType:actionKey` ごとに ActionPolicy を追加し、`subjects/stateConstraints/guards` を最小セットで定義する。
 3. 収束判定後に `ACTION_POLICY_ENFORCEMENT_PRESET=phase3_strict` へ切り替える（`*:*` 相当）。
 
+### 切替前の確認コマンド
+
+1. required actions の棚卸結果を確認する。
+   - `node scripts/report-action-policy-required-action-gaps.mjs --format=text`
+   - 期待値: `missing_static_callsites=0` / `stale_required_actions=0`
+2. fallback 発生キーを確認する。
+   - `make action-policy-fallback-report`
+   - `make action-policy-fallback-report-json`
+   - 期待値: 高リスクキー（`invoice` / `purchase_order` / `expense` / `vendor_invoice` / `approval`）が 0 件
+3. 高リスク route preset テストを確認する。
+   - `DATABASE_URL=postgresql://user:pass@localhost:5432/postgres node --test packages/backend/test/invoicePolicyEnforcementPreset.test.js packages/backend/test/invoiceMarkPaidPolicyEnforcementPreset.test.js packages/backend/test/purchaseOrderPolicyEnforcementPreset.test.js packages/backend/test/expensePolicyEnforcementPreset.test.js packages/backend/test/vendorInvoiceSubmitPolicyEnforcementPreset.test.js packages/backend/test/vendorInvoiceEditPolicyEnforcementPreset.test.js`
+4. 中リスク route preset テストを確認する。
+   - `DATABASE_URL=postgresql://user:pass@localhost:5432/postgres node --test packages/backend/test/estimatePolicyEnforcementPreset.test.js packages/backend/test/timeEntriesPolicyEnforcementPreset.test.js packages/backend/test/leavePolicyEnforcementPreset.test.js packages/backend/test/approvalActionPolicyPreset.test.js`
+
 ### 例外運用（admin/mgmt override）
 
 1. 緊急時のみ `admin/mgmt` で override を実施する。
@@ -114,6 +128,15 @@
 
 - `packages/backend/test/draftRoutes.test.js`
 - `packages/backend/test/sendPolicyEnforcementPreset.test.js`
+- `packages/backend/test/invoicePolicyEnforcementPreset.test.js`
+- `packages/backend/test/invoiceMarkPaidPolicyEnforcementPreset.test.js`
+- `packages/backend/test/purchaseOrderPolicyEnforcementPreset.test.js`
+- `packages/backend/test/expensePolicyEnforcementPreset.test.js`
+- `packages/backend/test/vendorInvoiceSubmitPolicyEnforcementPreset.test.js`
+- `packages/backend/test/vendorInvoiceEditPolicyEnforcementPreset.test.js`
+- `packages/backend/test/estimatePolicyEnforcementPreset.test.js`
+- `packages/backend/test/timeEntriesPolicyEnforcementPreset.test.js`
+- `packages/backend/test/leavePolicyEnforcementPreset.test.js`
 - `packages/backend/test/approvalActionPolicyPreset.test.js`
 - `packages/backend/test/approvalEvidenceGate.test.js`
 - `packages/backend/test/agentRunRecorder.test.js`
