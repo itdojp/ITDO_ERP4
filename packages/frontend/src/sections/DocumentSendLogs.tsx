@@ -133,12 +133,13 @@ export const DocumentSendLogs: React.FC = () => {
       setMessage({ text: '送信ログIDを入力してください', type: 'error' });
       return false;
     }
+    const encodedTarget = encodeURIComponent(normalizedTarget);
     try {
       setLogStatus('loading');
       setLogError('');
       setMessage(null);
       const res = await api<DocumentSendLog>(
-        `/document-send-logs/${normalizedTarget}`,
+        `/document-send-logs/${encodedTarget}`,
       );
       setLog(res);
       setLogStatus('success');
@@ -159,12 +160,13 @@ export const DocumentSendLogs: React.FC = () => {
       setMessage({ text: '送信ログIDを入力してください', type: 'error' });
       return false;
     }
+    const encodedTarget = encodeURIComponent(normalizedTarget);
     try {
       setEventsStatus('loading');
       setEventsError('');
       setMessage(null);
       const res = await api<{ items: DocumentSendEvent[] }>(
-        `/document-send-logs/${normalizedTarget}/events`,
+        `/document-send-logs/${encodedTarget}/events`,
       );
       setEvents(res.items || []);
       setEventsStatus('success');

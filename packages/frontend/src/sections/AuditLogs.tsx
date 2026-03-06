@@ -228,8 +228,6 @@ export const AuditLogs: React.FC = () => {
     ),
   });
 
-  const query = useMemo(() => buildQuery(filters), [filters]);
-
   const loadLogsWithFilters = useCallback(async (nextFilters: FilterState) => {
     try {
       setListStatus('loading');
