@@ -84,3 +84,9 @@
   - `packages/backend/src/services/approval.ts`
 - demo seed の ApprovalRule も空stepsを廃止し、既定ルール形へ更新
   - `scripts/seed-demo.sql`
+
+## 8. 実装メモ（2026-03-06）
+
+- `APPROVAL_RULE_FALLBACK_MODE=strict` では、`rule_not_found` / `rule_invalid_steps` を
+  `computeApprovalSteps` にフォールバックさせず `approval_rule_required` で拒否する。
+- ただし既存の open approval instance がある場合は、strict でも idempotency を優先して既存 instance を返す。
