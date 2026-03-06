@@ -383,10 +383,58 @@ test('frontend smoke reports masters settings @extended', async ({ page }) => {
   const approvalBlock = settingsSection
     .locator('strong', { hasText: '承認ルール（簡易モック）' })
     .locator('..');
-  await approvalBlock.getByRole('button', { name: '作成' }).click();
+  const approvalRuleMarker = `smoke-${id}`;
+  await approvalBlock
+    .getByLabel('conditions (JSON)')
+    .fill(`{"amountMin":0,"customerId":"${approvalRuleMarker}"}`);
+  await approvalBlock.getByTestId('approval-rule-submit').click();
   await expect(
     settingsSection.getByText('承認ルールを作成しました'),
   ).toBeVisible();
+  const createdApprovalRuleCard = approvalBlock
+    .locator('.list .card')
+    .filter({ hasText: approvalRuleMarker })
+    .first();
+  await expect(createdApprovalRuleCard).toBeVisible({
+    timeout: actionTimeout,
+  });
+  const createdApprovalRuleText = await createdApprovalRuleCard.textContent();
+  const createdSeriesMatch = createdApprovalRuleText?.match(
+    /series:\s*([^\s/]+)/,
+  );
+  expect(createdSeriesMatch?.[1]).toBeTruthy();
+  await createdApprovalRuleCard
+    .getByRole('button', { name: '新版作成' })
+    .click();
+  await approvalBlock
+    .getByLabel('conditions (JSON)')
+    .fill(
+      `{"amountMin":0,"customerId":"${approvalRuleMarker}","projectType":"phase2"}`,
+    );
+  await approvalBlock.getByTestId('approval-rule-submit').click();
+  await expect(
+    settingsSection.getByText(
+      '承認ルールの新版を作成しました。旧版は履歴として保持されます',
+    ),
+  ).toBeVisible();
+  const seriesRuleCards = approvalBlock
+    .locator('.list .card')
+    .filter({
+      hasText: new RegExp(
+        `series:\\s*${createdSeriesMatch?.[1]?.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')}`,
+      ),
+    });
+  await expect(seriesRuleCards).toHaveCount(2, { timeout: actionTimeout });
+  await expect(
+    seriesRuleCards.filter({ hasText: 'supersedesRuleId:' }).first(),
+  ).toBeVisible({
+    timeout: actionTimeout,
+  });
+  await expect(
+    seriesRuleCards.filter({ hasText: 'effectiveTo:' }).first(),
+  ).toBeVisible({
+    timeout: actionTimeout,
+  });
   await captureSection(approvalBlock, '11-approval-rules.png');
 
   const actionPolicyBlock = settingsSection
