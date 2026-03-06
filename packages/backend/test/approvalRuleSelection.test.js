@@ -407,6 +407,166 @@ test('createApprovalFor: db_default_only mode skips in-code default rule seeding
   ]);
 });
 
+test('createApprovalFor: strict mode rejects implicit fallback when no rule is found', async () => {
+  const prevMode = process.env.APPROVAL_RULE_FALLBACK_MODE;
+  process.env.APPROVAL_RULE_FALLBACK_MODE = 'strict';
+  let createCalled = false;
+  try {
+    const fakeClient = {
+      approvalRule: {
+        findMany: async () => [],
+      },
+      approvalInstance: {
+        findFirst: async () => null,
+        create: async () => {
+          createCalled = true;
+          return {
+            id: 'unexpected',
+            status: 'pending_qa',
+            currentStep: 1,
+            steps: [],
+          };
+        },
+      },
+    };
+
+    await assert.rejects(
+      () =>
+        createApprovalFor(
+          'invoice',
+          'invoices',
+          'inv-strict-no-rule',
+          { amount: 120000 },
+          { client: fakeClient, createdBy: 'u1' },
+        ),
+      (err) => {
+        assert.equal(err?.code, 'approval_rule_required');
+        assert.equal(err?.httpStatus, 409);
+        assert.equal(err?.details?.fallbackMode, 'strict');
+        assert.deepEqual(err?.details?.fallbackReasons, ['rule_not_found']);
+        return true;
+      },
+    );
+  } finally {
+    if (prevMode === undefined) {
+      delete process.env.APPROVAL_RULE_FALLBACK_MODE;
+    } else {
+      process.env.APPROVAL_RULE_FALLBACK_MODE = prevMode;
+    }
+  }
+
+  assert.equal(createCalled, false);
+});
+
+test('createApprovalFor: strict mode rejects implicit fallback when selected rule has invalid steps', async () => {
+  const prevMode = process.env.APPROVAL_RULE_FALLBACK_MODE;
+  process.env.APPROVAL_RULE_FALLBACK_MODE = 'strict';
+  let createCalled = false;
+  try {
+    const fakeClient = {
+      approvalRule: {
+        findMany: async () => [
+          {
+            id: 'r-strict-invalid',
+            flowType: 'invoice',
+            conditions: {},
+            steps: { invalid: true },
+          },
+        ],
+      },
+      approvalInstance: {
+        findFirst: async () => null,
+        create: async () => {
+          createCalled = true;
+          return {
+            id: 'unexpected',
+            status: 'pending_qa',
+            currentStep: 1,
+            steps: [],
+          };
+        },
+      },
+    };
+
+    await assert.rejects(
+      () =>
+        createApprovalFor(
+          'invoice',
+          'invoices',
+          'inv-strict-invalid-steps',
+          { amount: 120000 },
+          { client: fakeClient, createdBy: 'u1' },
+        ),
+      (err) => {
+        assert.equal(err?.code, 'approval_rule_required');
+        assert.equal(err?.httpStatus, 409);
+        assert.equal(err?.details?.fallbackMode, 'strict');
+        assert.deepEqual(err?.details?.fallbackReasons, ['rule_invalid_steps']);
+        return true;
+      },
+    );
+  } finally {
+    if (prevMode === undefined) {
+      delete process.env.APPROVAL_RULE_FALLBACK_MODE;
+    } else {
+      process.env.APPROVAL_RULE_FALLBACK_MODE = prevMode;
+    }
+  }
+
+  assert.equal(createCalled, false);
+});
+
+test('createApprovalFor: strict mode still returns an existing open approval instance', async () => {
+  const prevMode = process.env.APPROVAL_RULE_FALLBACK_MODE;
+  process.env.APPROVAL_RULE_FALLBACK_MODE = 'strict';
+  let createCalled = false;
+  const existing = {
+    id: 'a-strict-existing',
+    flowType: 'invoice',
+    targetTable: 'invoices',
+    targetId: 'inv-strict-existing',
+    status: 'pending_qa',
+    currentStep: 1,
+    steps: [],
+  };
+  try {
+    const fakeClient = {
+      approvalRule: {
+        findMany: async () => [],
+      },
+      approvalInstance: {
+        findFirst: async () => existing,
+        create: async () => {
+          createCalled = true;
+          return {
+            id: 'unexpected',
+            status: 'pending_qa',
+            currentStep: 1,
+            steps: [],
+          };
+        },
+      },
+    };
+
+    const approval = await createApprovalFor(
+      'invoice',
+      'invoices',
+      'inv-strict-existing',
+      { amount: 120000 },
+      { client: fakeClient, createdBy: 'u1' },
+    );
+    assert.equal(approval.id, existing.id);
+  } finally {
+    if (prevMode === undefined) {
+      delete process.env.APPROVAL_RULE_FALLBACK_MODE;
+    } else {
+      process.env.APPROVAL_RULE_FALLBACK_MODE = prevMode;
+    }
+  }
+
+  assert.equal(createCalled, false);
+});
+
 test('createApprovalFor: writes normalized fallback metadata in tx path', async () => {
   const auditLogs = [];
   const fakeClient = {

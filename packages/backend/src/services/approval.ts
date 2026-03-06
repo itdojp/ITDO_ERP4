@@ -3,6 +3,7 @@ import type { Prisma } from '@prisma/client';
 import { DocStatusValue } from '../types.js';
 import { prisma } from './db.js';
 import { buildAuditMetadata, logAudit, type AuditContext } from './audit.js';
+import { AppError } from './errors.js';
 import { createEvidenceSnapshotForApproval } from './evidenceSnapshot.js';
 import { logExpenseStateTransition } from './expenseStateTransitionLog.js';
 import { isExpenseQaChecklistComplete } from './expenseQaChecklist.js';
@@ -330,6 +331,16 @@ function approvalFallbackPayloadHints(
   };
 }
 
+function shouldDenyImplicitApprovalFallback(
+  fallbackMode: ApprovalRuleFallbackMode,
+  fallbackReasons: string[],
+) {
+  if (fallbackMode !== 'strict') return false;
+  return fallbackReasons.some(
+    (reason) => reason === 'rule_not_found' || reason === 'rule_invalid_steps',
+  );
+}
+
 async function logApprovalRuleFallbackIfNeeded(options: {
   client: any;
   flowType: string;
@@ -507,6 +518,31 @@ export async function createApprovalFor(
   const normalized = normalizeRuleStepsWithPolicy(rule?.steps);
   if (rule && !normalized) {
     fallbackReasons.push('rule_invalid_steps');
+  }
+  if (shouldDenyImplicitApprovalFallback(fallbackMode, fallbackReasons)) {
+    const existing = await findOpenApprovalInstance({
+      client,
+      flowType,
+      targetTable,
+      targetId,
+    });
+    if (existing) {
+      return existing;
+    }
+    throw new AppError({
+      code: 'approval_rule_required',
+      message:
+        'Active approval rule is required before submission in strict mode',
+      httpStatus: 409,
+      category: 'conflict',
+      details: {
+        flowType,
+        targetTable,
+        targetId,
+        fallbackMode,
+        fallbackReasons,
+      },
+    });
   }
   const steps =
     normalized?.steps ||
