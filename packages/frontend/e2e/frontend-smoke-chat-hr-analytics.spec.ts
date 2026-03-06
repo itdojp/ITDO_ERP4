@@ -300,7 +300,7 @@ test('frontend smoke room chat hr analytics @extended', async ({ page }) => {
   await expect(overdueDueLabel).toBeVisible();
   await expect(overdueDueLabel).toContainText('期限超過');
   await expect(overdueDueLabel).toHaveCSS('color', 'rgb(220, 38, 38)');
-  await captureSection(chatSection, '12-project-chat.png');
+  await captureSection(chatSection, '12-room-chat.png');
 
   await chatSection.getByRole('button', { name: '要約' }).click();
   const summaryBlock = chatSection.getByText('要約（スタブ）');
