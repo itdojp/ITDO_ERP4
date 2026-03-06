@@ -87,6 +87,7 @@
 
 ## 8. 実装メモ（2026-03-06）
 
-- `APPROVAL_RULE_FALLBACK_MODE=strict` では、`rule_not_found` / `rule_invalid_steps` を
-  `computeApprovalSteps` にフォールバックさせず `approval_rule_required` で拒否する。
+- `APPROVAL_RULE_FALLBACK_MODE=strict` では、`rule_not_found` / `rule_invalid_steps` /
+  `rule_condition_unmatched_first_rule` を `computeApprovalSteps` や先頭ルール採用へ
+  フォールバックさせず `approval_rule_required` で拒否する。
 - ただし既存の open approval instance がある場合は、strict でも idempotency を優先して既存 instance を返す。
