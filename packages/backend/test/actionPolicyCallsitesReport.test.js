@@ -41,6 +41,45 @@ async function run() {
   assert.equal(rows[0].risk, 'high');
 });
 
+test('collectCallsitesFromSource: expands wildcard static directive for dynamic approval actions', () => {
+  const source = `
+async function run(instance, body) {
+  // action-policy-static-callsites: *:approve,*:reject
+  return evaluateActionPolicyWithFallback({
+    flowType: instance.flowType,
+    actionKey: body.action,
+    targetTable: 'approval_instances',
+  });
+}
+`;
+  const rows = collectCallsitesFromSource(source, '/tmp/approvalRules.ts');
+  assert.deepEqual(
+    rows.map((row) => ({
+      flowType: row.flowType,
+      actionKey: row.actionKey,
+      flowTypeExpr: row.flowTypeExpr,
+      actionKeyExpr: row.actionKeyExpr,
+      risk: row.risk,
+    })),
+    [
+      {
+        flowType: '*',
+        actionKey: 'approve',
+        flowTypeExpr: "'*'",
+        actionKeyExpr: "'approve'",
+        risk: 'high',
+      },
+      {
+        flowType: '*',
+        actionKey: 'reject',
+        flowTypeExpr: "'*'",
+        actionKeyExpr: "'reject'",
+        risk: 'high',
+      },
+    ],
+  );
+});
+
 test('collectCallsites: scans backend route callsites', () => {
   const rootDir = parseOptionsFromArgv([]).root;
   const rows = collectCallsites(rootDir);
@@ -54,11 +93,12 @@ test('collectCallsites: scans backend route callsites', () => {
   );
   assert.ok(vendorSubmit);
 
-  const dynamicApprove = rows.find(
+  const wildcardApprove = rows.find(
     (row) =>
       row.file.endsWith('approvalRules.ts') &&
-      row.actionKeyExpr === 'body.action',
+      row.flowType === '*' &&
+      row.actionKey === 'approve',
   );
-  assert.ok(dynamicApprove);
-  assert.equal(dynamicApprove.risk, 'high');
+  assert.ok(wildcardApprove);
+  assert.equal(wildcardApprove.risk, 'high');
 });
