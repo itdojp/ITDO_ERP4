@@ -399,7 +399,9 @@ test('frontend smoke reports masters settings @extended', async ({ page }) => {
     timeout: actionTimeout,
   });
   const createdApprovalRuleText = await createdApprovalRuleCard.textContent();
-  const createdSeriesMatch = createdApprovalRuleText?.match(/series:([^\s/]+)/);
+  const createdSeriesMatch = createdApprovalRuleText?.match(
+    /series:\s*([^\s/]+)/,
+  );
   expect(createdSeriesMatch?.[1]).toBeTruthy();
   await createdApprovalRuleCard
     .getByRole('button', { name: '新版作成' })
@@ -417,7 +419,11 @@ test('frontend smoke reports masters settings @extended', async ({ page }) => {
   ).toBeVisible();
   const seriesRuleCards = approvalBlock
     .locator('.list .card')
-    .filter({ hasText: `series:${createdSeriesMatch?.[1]}` });
+    .filter({
+      hasText: new RegExp(
+        `series:\\s*${createdSeriesMatch?.[1]?.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')}`,
+      ),
+    });
   await expect(seriesRuleCards).toHaveCount(2, { timeout: actionTimeout });
   await expect(
     seriesRuleCards.filter({ hasText: 'supersedesRuleId:' }).first(),

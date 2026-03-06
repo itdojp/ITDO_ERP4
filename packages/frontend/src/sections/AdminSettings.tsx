@@ -2224,9 +2224,8 @@ export const AdminSettings: React.FC = () => {
                     }}
                   >
                     <div>
-                      <strong>{rule.flowType}</strong> / series:
-                      {rule.ruleKey ?? rule.id} / v{rule.version ?? 1} / id=
-                      {rule.id}
+                      <strong>{rule.flowType}</strong>
+                      {` / series:${rule.ruleKey ?? rule.id} / v${rule.version ?? 1} / id=${rule.id}`}
                     </div>
                     <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}>
                       <span className="badge">{statusLabel}</span>
