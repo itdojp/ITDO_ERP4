@@ -9,9 +9,16 @@ const MIN_DATABASE_URL = 'postgresql://user:pass@localhost:5432/postgres';
 function withPrismaStubs(stubs, fn) {
   const restores = [];
   for (const [path, stub] of Object.entries(stubs)) {
-    const [model, method] = path.split('.');
-    const target = prisma[model];
-    if (!target || typeof target[method] !== 'function') {
+    const segments = path.split('.');
+    const method = segments.pop();
+    if (!method) throw new Error(`invalid stub target: ${path}`);
+    let target = prisma;
+    for (const segment of segments) {
+      const next = target?.[segment];
+      if (!next) throw new Error(`invalid stub target: ${path}`);
+      target = next;
+    }
+    if (typeof target[method] !== 'function') {
       throw new Error(`invalid stub target: ${path}`);
     }
     const original = target[method];
@@ -75,14 +82,14 @@ test('POST /estimates/:id/submit: phase2_core required action denies when policy
       ACTION_POLICY_REQUIRED_ACTIONS: '',
     },
     async () => {
-      let updateCalled = 0;
+      let transactionCalled = 0;
       await withPrismaStubs(
         {
           'estimate.findUnique': async () => estimateDraft(),
           'actionPolicy.findMany': async () => [],
-          'estimate.update': async () => {
-            updateCalled += 1;
-            return { id: 'est-001', status: 'pending_qa' };
+          $transaction: async () => {
+            transactionCalled += 1;
+            throw new Error('unexpected transaction in deny path');
           },
         },
         async () => {
@@ -97,7 +104,7 @@ test('POST /estimates/:id/submit: phase2_core required action denies when policy
             assert.equal(res.statusCode, 403, res.body);
             const payload = JSON.parse(res.body);
             assert.equal(payload?.error?.code, 'ACTION_POLICY_DENIED');
-            assert.equal(updateCalled, 0);
+            assert.equal(transactionCalled, 0);
           } finally {
             await server.close();
           }
