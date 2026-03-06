@@ -68,7 +68,7 @@ function adminHeaders() {
 function expenseDraft(overrides = {}) {
   return {
     id: 'exp-001',
-    userId: '',
+    userId: 'user-001',
     projectId: 'proj-001',
     amount: 12000,
     currency: 'JPY',
@@ -230,6 +230,9 @@ test('POST /expenses/:id/submit: policy allow reaches downstream submit path (no
         'expenseStateTransitionLog.create': async () => ({
           id: 'transition-001',
         }),
+        'userNotificationPreference.findMany': async () => [],
+        'appNotification.findMany': async () => [],
+        'appNotification.createMany': async () => ({ count: 0 }),
         'actionPolicy.findMany': async () => allowPolicy('submit'),
         $transaction: async (callback) => {
           transactionCalled += 1;
@@ -315,6 +318,8 @@ test('POST /expenses/:id/mark-paid: policy allow reaches downstream update path 
         'expenseStateTransitionLog.create': async () => ({
           id: 'transition-002',
         }),
+        'userNotificationPreference.findMany': async () => [],
+        'appNotification.findFirst': async () => ({ id: 'notif-existing' }),
         'auditLog.create': async () => ({ id: 'audit-002' }),
       },
       async () => {
