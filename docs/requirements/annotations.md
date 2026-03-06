@@ -48,6 +48,7 @@
   - `kind` は許可リストのみ
   - `id` 必須
   - 同一 `kind:id` は重複排除
+  - legacy な `project_chat` は保存時に `room_chat` へ正規化する
 - `notes`
   - 文字数上限は設定値で制限
 
