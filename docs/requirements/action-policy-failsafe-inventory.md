@@ -1,6 +1,6 @@
 # ActionPolicy fail-safe 移行 棚卸（Issue #1312）
 
-更新日: 2026-03-04  
+更新日: 2026-03-06  
 関連Issue: #1312
 
 ## 1. 目的
@@ -41,7 +41,7 @@ node scripts/report-action-policy-required-action-gaps.mjs --format=text
 - static callsite と required actions の差分を検出
 - dynamic callsite（例: `instance.flowType/body.action`）を別枠で可視化
 
-## 3. 呼び出し箇所（2026-03-04時点）
+## 3. 呼び出し箇所（2026-03-06 時点）
 
 合計 19 callsites（routeのみ）。
 
@@ -61,6 +61,30 @@ node scripts/report-action-policy-required-action-gaps.mjs --format=text
 
 注記: 中リスク操作も最終的には `phase3_strict` で未定義拒否へ移行する。
 
+### 3.3 route callsite 一覧（script 出力を整理）
+
+| flowType            | actionKey            | targetTable          | risk   | file                                                |
+| ------------------- | -------------------- | -------------------- | ------ | --------------------------------------------------- |
+| `estimate`          | `send`               | `estimates`          | medium | `packages/backend/src/routes/send.ts:377`           |
+| `estimate`          | `submit`             | `estimates`          | medium | `packages/backend/src/routes/estimates.ts:138`      |
+| `expense`           | `mark_paid`          | `expenses`           | high   | `packages/backend/src/routes/expenses.ts:1185`      |
+| `expense`           | `submit`             | `expenses`           | high   | `packages/backend/src/routes/expenses.ts:1023`      |
+| `expense`           | `unmark_paid`        | `expenses`           | high   | `packages/backend/src/routes/expenses.ts:1342`      |
+| `instance.flowType` | `body.action`        | `approval_instances` | high   | `packages/backend/src/routes/approvalRules.ts:790`  |
+| `invoice`           | `mark_paid`          | `invoices`           | high   | `packages/backend/src/routes/invoices.ts:421`       |
+| `invoice`           | `send`               | `invoices`           | high   | `packages/backend/src/routes/send.ts:620`           |
+| `invoice`           | `submit`             | `invoices`           | high   | `packages/backend/src/routes/invoices.ts:525`       |
+| `leave`             | `submit`             | `leave_requests`     | medium | `packages/backend/src/routes/leave.ts:739`          |
+| `purchase_order`    | `send`               | `purchase_orders`    | high   | `packages/backend/src/routes/send.ts:863`           |
+| `purchase_order`    | `submit`             | `purchase_orders`    | high   | `packages/backend/src/routes/purchaseOrders.ts:112` |
+| `time`              | `edit`               | `time_entries`       | medium | `packages/backend/src/routes/timeEntries.ts:238`    |
+| `time`              | `submit`             | `time_entries`       | medium | `packages/backend/src/routes/timeEntries.ts:430`    |
+| `vendor_invoice`    | `link_po`            | `vendor_invoices`    | high   | `packages/backend/src/routes/vendorDocs.ts:1252`    |
+| `vendor_invoice`    | `submit`             | `vendor_invoices`    | high   | `packages/backend/src/routes/vendorDocs.ts:1544`    |
+| `vendor_invoice`    | `unlink_po`          | `vendor_invoices`    | high   | `packages/backend/src/routes/vendorDocs.ts:1420`    |
+| `vendor_invoice`    | `update_allocations` | `vendor_invoices`    | high   | `packages/backend/src/routes/vendorDocs.ts:435`     |
+| `vendor_invoice`    | `update_lines`       | `vendor_invoices`    | high   | `packages/backend/src/routes/vendorDocs.ts:789`     |
+
 ## 4. 最小ポリシーセット（現行）
 
 `ACTION_POLICY_ENFORCEMENT_PRESET=phase2_core` の既定 required actions:
@@ -78,18 +102,29 @@ node scripts/report-action-policy-required-action-gaps.mjs --format=text
 
 - `ACTION_POLICY_REQUIRED_ACTIONS=*:*`（未定義=拒否）
 
-### 4.1 flowType別の既定方針（A1時点）
+### 4.1 coverage 確認（2026-03-06）
 
-| flowType | 最低 actionKey | subjects 既定 | stateConstraints 既定 | guards 既定 |
-| --- | --- | --- | --- | --- |
-| `estimate` | `submit`, `send` | 案件スコープ一致（project） | `send` は承認済み状態のみ | `approval_open`（send系） |
-| `invoice` | `submit`, `mark_paid`, `send` | 案件/請求書主体一致 | `mark_paid` は未入金状態のみ、`send` は送信可能状態のみ | `approval_open`（send系） |
-| `purchase_order` | `submit`, `send` | 案件/発注主体一致 | 終端状態（cancelled/closed）では拒否 | `approval_open`（send系） |
-| `vendor_invoice` | `update_allocations`, `update_lines`, `link_po`, `unlink_po`, `submit` | 仕入請求書主体一致 | `paid` は原則変更不可、`pending_qa` 以降は管理者のみ変更可 | `approval_open`（submit）、必要時 `chat_ack_completed` |
-| `expense` | `submit`, `mark_paid`, `unmark_paid` | 本人申請 + 経理ロール | `mark_paid` は支払前のみ、`unmark_paid` は支払済みのみ | `approval_open`（submit） |
-| `time` | `edit`, `submit` | 本人/管理者（対象メンバー） | editableDays/期間ロックに従う | `editable_days`, `period_lock` |
-| `leave` | `submit` | 本人申請 | 期間ロックと重複申請制約に従う | `period_lock` |
-| `*` | `approve`, `reject` | 承認者一致 | 承認インスタンス有効時のみ | `approval_open` |
+- `node scripts/report-action-policy-required-action-gaps.mjs --format=text` の結果:
+  - `missing_static_callsites: 0`
+  - `stale_required_actions: 0`
+  - `dynamic_callsites: 1`
+- 残る dynamic callsite は `packages/backend/src/routes/approvalRules.ts:790`
+  - `flowTypeExpr=instance.flowType`
+  - `actionKeyExpr=body.action`
+- したがって、`phase2_core` の required actions は static route callsite を全て被覆済みで、残差は承認アクション共通 route の動的評価だけである。
+
+### 4.2 flowType別の既定方針（A1時点）
+
+| flowType         | 最低 actionKey                                                         | subjects 既定               | stateConstraints 既定                                      | guards 既定                                            |
+| ---------------- | ---------------------------------------------------------------------- | --------------------------- | ---------------------------------------------------------- | ------------------------------------------------------ |
+| `estimate`       | `submit`, `send`                                                       | 案件スコープ一致（project） | `send` は承認済み状態のみ                                  | `approval_open`（send系）                              |
+| `invoice`        | `submit`, `mark_paid`, `send`                                          | 案件/請求書主体一致         | `mark_paid` は未入金状態のみ、`send` は送信可能状態のみ    | `approval_open`（send系）                              |
+| `purchase_order` | `submit`, `send`                                                       | 案件/発注主体一致           | 終端状態（cancelled/closed）では拒否                       | `approval_open`（send系）                              |
+| `vendor_invoice` | `update_allocations`, `update_lines`, `link_po`, `unlink_po`, `submit` | 仕入請求書主体一致          | `paid` は原則変更不可、`pending_qa` 以降は管理者のみ変更可 | `approval_open`（submit）、必要時 `chat_ack_completed` |
+| `expense`        | `submit`, `mark_paid`, `unmark_paid`                                   | 本人申請 + 経理ロール       | `mark_paid` は支払前のみ、`unmark_paid` は支払済みのみ     | `approval_open`（submit）                              |
+| `time`           | `edit`, `submit`                                                       | 本人/管理者（対象メンバー） | editableDays/期間ロックに従う                              | `editable_days`, `period_lock`                         |
+| `leave`          | `submit`                                                               | 本人申請                    | 期間ロックと重複申請制約に従う                             | `period_lock`                                          |
+| `*`              | `approve`, `reject`                                                    | 承認者一致                  | 承認インスタンス有効時のみ                                 | `approval_open`                                        |
 
 注記:
 
