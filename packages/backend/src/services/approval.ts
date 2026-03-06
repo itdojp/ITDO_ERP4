@@ -337,7 +337,10 @@ function shouldDenyImplicitApprovalFallback(
 ) {
   if (fallbackMode !== 'strict') return false;
   return fallbackReasons.some(
-    (reason) => reason === 'rule_not_found' || reason === 'rule_invalid_steps',
+    (reason) =>
+      reason === 'rule_not_found' ||
+      reason === 'rule_invalid_steps' ||
+      reason === 'rule_condition_unmatched_first_rule',
   );
 }
 

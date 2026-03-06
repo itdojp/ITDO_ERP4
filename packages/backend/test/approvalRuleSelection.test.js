@@ -516,6 +516,66 @@ test('createApprovalFor: strict mode rejects implicit fallback when selected rul
   assert.equal(createCalled, false);
 });
 
+test('createApprovalFor: strict mode rejects implicit fallback when no rule condition matches', async () => {
+  const prevMode = process.env.APPROVAL_RULE_FALLBACK_MODE;
+  process.env.APPROVAL_RULE_FALLBACK_MODE = 'strict';
+  let createCalled = false;
+  try {
+    const fakeClient = {
+      approvalRule: {
+        findMany: async () => [
+          {
+            id: 'r-strict-unmatched',
+            flowType: 'invoice',
+            conditions: { amountMin: 999999 },
+            steps: [{ approverGroupId: 'mgmt', stepOrder: 1 }],
+          },
+        ],
+      },
+      approvalInstance: {
+        findFirst: async () => null,
+        create: async () => {
+          createCalled = true;
+          return {
+            id: 'unexpected',
+            status: 'pending_qa',
+            currentStep: 1,
+            steps: [],
+          };
+        },
+      },
+    };
+
+    await assert.rejects(
+      () =>
+        createApprovalFor(
+          'invoice',
+          'invoices',
+          'inv-strict-unmatched',
+          { amount: 120000 },
+          { client: fakeClient, createdBy: 'u1' },
+        ),
+      (err) => {
+        assert.equal(err?.code, 'approval_rule_required');
+        assert.equal(err?.httpStatus, 409);
+        assert.equal(err?.details?.fallbackMode, 'strict');
+        assert.deepEqual(err?.details?.fallbackReasons, [
+          'rule_condition_unmatched_first_rule',
+        ]);
+        return true;
+      },
+    );
+  } finally {
+    if (prevMode === undefined) {
+      delete process.env.APPROVAL_RULE_FALLBACK_MODE;
+    } else {
+      process.env.APPROVAL_RULE_FALLBACK_MODE = prevMode;
+    }
+  }
+
+  assert.equal(createCalled, false);
+});
+
 test('createApprovalFor: strict mode still returns an existing open approval instance', async () => {
   const prevMode = process.env.APPROVAL_RULE_FALLBACK_MODE;
   process.env.APPROVAL_RULE_FALLBACK_MODE = 'strict';
