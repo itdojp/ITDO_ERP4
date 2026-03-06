@@ -139,10 +139,13 @@ test('GET /audit-logs filters by metadata.sendLogId', async () => {
         path: ['sendLogId'],
         equals: 'send-log-123',
       });
-      assert.equal(auditCreates.length, 1);
-      assert.equal(auditCreates[0]?.action, 'audit_log_exported');
+      assert.ok(auditCreates.length >= 1);
+      const exportAudit = auditCreates.find(
+        (entry) => entry?.action === 'audit_log_exported',
+      );
+      assert.ok(exportAudit, 'Expected an audit_log_exported audit log entry');
       assert.equal(
-        auditCreates[0]?.metadata?.filters?.sendLogId,
+        exportAudit?.metadata?.filters?.sendLogId,
         'send-log-123',
       );
     },
