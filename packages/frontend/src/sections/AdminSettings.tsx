@@ -1887,11 +1887,15 @@ export const AdminSettings: React.FC = () => {
   };
 
   const startEditRule = (item: ApprovalRule) => {
+    const editableEffectiveFrom = parseDateTime(item.effectiveFrom);
     setEditingRuleId(item.id);
     setRuleForm({
       flowType: item.flowType,
       isActive: item.isActive ?? true,
-      effectiveFrom: item.effectiveFrom ?? '',
+      effectiveFrom:
+        editableEffectiveFrom && editableEffectiveFrom.getTime() > Date.now()
+          ? (item.effectiveFrom ?? '')
+          : '',
       conditionsJson: item.conditions
         ? JSON.stringify(item.conditions, null, 2)
         : '',
@@ -2165,10 +2169,18 @@ export const AdminSettings: React.FC = () => {
             </label>
           </div>
           <div className="row" style={{ marginTop: 8 }}>
-            <button className="button" onClick={submitApprovalRule}>
+            <button
+              className="button"
+              data-testid="approval-rule-submit"
+              onClick={submitApprovalRule}
+            >
               {editingRuleId ? '新版作成' : '作成'}
             </button>
-            <button className="button secondary" onClick={resetRuleForm}>
+            <button
+              className="button secondary"
+              data-testid="approval-rule-reset"
+              onClick={resetRuleForm}
+            >
               {editingRuleId ? '新版作成をやめる' : 'クリア'}
             </button>
             <button className="button secondary" onClick={loadApprovalRules}>

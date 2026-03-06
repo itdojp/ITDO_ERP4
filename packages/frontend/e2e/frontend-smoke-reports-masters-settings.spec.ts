@@ -387,7 +387,7 @@ test('frontend smoke reports masters settings @extended', async ({ page }) => {
   await approvalBlock
     .getByLabel('conditions (JSON)')
     .fill(`{"amountMin":0,"customerId":"${approvalRuleMarker}"}`);
-  await approvalBlock.getByRole('button', { name: '作成' }).click();
+  await approvalBlock.getByTestId('approval-rule-submit').click();
   await expect(
     settingsSection.getByText('承認ルールを作成しました'),
   ).toBeVisible();
@@ -409,7 +409,7 @@ test('frontend smoke reports masters settings @extended', async ({ page }) => {
     .fill(
       `{"amountMin":0,"customerId":"${approvalRuleMarker}","projectType":"phase2"}`,
     );
-  await approvalBlock.getByRole('button', { name: '新版作成' }).click();
+  await approvalBlock.getByTestId('approval-rule-submit').click();
   await expect(
     settingsSection.getByText(
       '承認ルールの新版を作成しました。旧版は履歴として保持されます',
