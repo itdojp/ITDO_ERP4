@@ -36,6 +36,7 @@
 - action は `document_send_requested` / `document_send_completed` / `document_send_failed` / `document_send_retried` を使用する。
 - `metadata.sendLogId` で `document_send_logs` と相互参照し、再送時は `metadata.retryOf` に元ログIDを保持する。
 - `GET /audit-logs?sendLogId=...` で送信監査を `sendLogId` 単位に絞り込めるようにする。
+- frontend では「ドキュメント送信ログ」画面から `sendLogId` を引き継いで「監査ログ」画面へ遷移できるようにする。
 - 送信結果の要約として `metadata.status` / `metadata.channel` / `metadata.providerMessageId` / `metadata.error` を保持する。
 - SendGrid webhook による配信結果の要約は `document_send_provider_status_updated` として記録し、`metadata.eventType` / `metadata.previousStatus` / `metadata.nextStatus` を保持する。
 
@@ -96,9 +97,10 @@
 1. `POST /invoices/:id/send` または `POST /purchase-orders/:id/send` を実行
 2. `GET /document-send-logs/:id` で `status` と `error` を確認
 3. `GET /document-send-logs/:id/events` でイベント紐付けを確認（SendGridの場合）
-4. `GET /audit-logs` で `metadata.sendLogId` を用いて送信監査が追跡できることを確認
-5. `GET /pdf-files/:filename` が 200 で返ることを確認（localの場合）
-6. `POST /document-send-logs/:id/retry` で再送が新しいログとして記録されることを確認
+4. frontend の「ドキュメント送信ログ」で `監査ログで開く` を押し、`sendLogId` が引き継がれた状態で監査が表示されることを確認
+5. `GET /audit-logs` で `metadata.sendLogId` を用いて送信監査が追跡できることを確認
+6. `GET /pdf-files/:filename` が 200 で返ることを確認（localの場合）
+7. `POST /document-send-logs/:id/retry` で再送が新しいログとして記録されることを確認
 
 ## 障害時の確認ポイント
 
