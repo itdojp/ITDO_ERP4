@@ -37,7 +37,7 @@
   - 参照: `packages/backend/test/sendPolicyEnforcementPreset.test.js`
 - [ ] `phase2_core` -> `phase3_strict` の切替後も主要操作が継続し、`action_policy_fallback_allowed` の新規発生がないことを確認する
   - 手順: `docs/manual/agent-write-guardrails-guide.md` の fail-safe 運用手順に従う
-  - 最低確認対象: `invoice.send`, `invoice.mark_paid`, `purchase_order.send`, `expense.submit`, `expense.mark_paid`, `vendor_invoice.submit`, `vendor_invoice.update_lines`, `vendor_invoice.update_allocations`, `approval approve/reject`
+  - 最低確認対象: `invoice:send`, `invoice:mark_paid`, `purchase_order:send`, `expense:submit`, `expense:mark_paid`, `vendor_invoice:submit`, `vendor_invoice:update_lines`, `vendor_invoice:update_allocations`, `*:approve`, `*:reject`
 - [ ] `make action-policy-fallback-report` / `make action-policy-fallback-report-json` で fallback 集計を確認し、高リスクキーが 0 件であることを確認する
   - 判定基準: `invoice:*`, `purchase_order:*`, `expense:*`, `vendor_invoice:*`, `*:approve`, `*:reject` が 0 件
 - [ ] 問題発生時に `phase3_strict` -> `phase2_core` のロールバックと、必要な `ACTION_POLICY_REQUIRED_ACTIONS` 明示指定での段階復旧を確認する
