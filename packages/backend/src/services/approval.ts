@@ -557,8 +557,24 @@ export async function createApprovalFor(
     typeof enrichedPayload.projectId === 'string'
       ? enrichedPayload.projectId
       : undefined;
+  if (!rule) {
+    throw new AppError({
+      code: 'approval_rule_required',
+      message: 'Active approval rule is required before submission',
+      httpStatus: 409,
+      category: 'conflict',
+      details: {
+        flowType,
+        targetTable,
+        targetId,
+        fallbackMode,
+        fallbackReasons: [...fallbackReasons, 'rule_missing_after_selection'],
+      },
+    });
+  }
+  const ruleId = rule.id;
   const ruleVersion =
-    typeof rule?.version === 'number' ? rule.version : undefined;
+    typeof rule.version === 'number' ? rule.version : undefined;
   const ruleSnapshot = buildRuleSnapshot(rule);
   let approvalResult;
   if (client === prisma) {
@@ -569,7 +585,7 @@ export async function createApprovalFor(
         targetTable,
         targetId,
         steps,
-        rule!.id,
+        ruleId,
         options.createdBy,
         projectId,
         stagePolicy,
@@ -584,7 +600,7 @@ export async function createApprovalFor(
       targetTable,
       targetId,
       steps,
-      rule!.id,
+      ruleId,
       options.createdBy,
       projectId,
       stagePolicy,
@@ -600,7 +616,7 @@ export async function createApprovalFor(
       targetTable,
       targetId,
       approvalInstanceId: approval.id,
-      ruleId: rule?.id ?? null,
+      ruleId,
       fallbackMode,
       fallbackReasons,
       payload: enrichedPayload,
