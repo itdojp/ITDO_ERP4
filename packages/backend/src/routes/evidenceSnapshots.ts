@@ -36,13 +36,277 @@ const apiErrorResponseSchema = {
   },
 } as const;
 
-const evidencePackErrorResponses = {
-  200: {
-    description: 'Default Response',
+const nullableStringSchema = {
+  anyOf: [{ type: 'string' }, { type: 'null' }],
+} as const;
+
+const nullableIntegerSchema = {
+  anyOf: [{ type: 'integer' }, { type: 'null' }],
+} as const;
+
+const evidencePackJsonExportResponseSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['format', 'payload', 'integrity'],
+  properties: {
+    format: { type: 'string', enum: ['json'] },
+    payload: {
+      type: 'object',
+      additionalProperties: false,
+      required: [
+        'schemaVersion',
+        'exportedAt',
+        'exportedBy',
+        'approval',
+        'snapshot',
+        'workflowHistory',
+        'attachments',
+      ],
+      properties: {
+        schemaVersion: { type: 'string', enum: ['evidence-pack/v2'] },
+        exportedAt: { type: 'string', format: 'date-time' },
+        exportedBy: nullableStringSchema,
+        approval: {
+          type: 'object',
+          additionalProperties: false,
+          required: [
+            'id',
+            'flowType',
+            'targetTable',
+            'targetId',
+            'status',
+            'currentStep',
+            'projectId',
+            'createdAt',
+            'createdBy',
+          ],
+          properties: {
+            id: { type: 'string' },
+            flowType: { type: 'string' },
+            targetTable: { type: 'string' },
+            targetId: { type: 'string' },
+            status: { type: 'string' },
+            currentStep: nullableIntegerSchema,
+            projectId: nullableStringSchema,
+            createdAt: { type: 'string', format: 'date-time' },
+            createdBy: nullableStringSchema,
+          },
+        },
+        snapshot: {
+          type: 'object',
+          additionalProperties: false,
+          required: [
+            'id',
+            'version',
+            'capturedAt',
+            'capturedBy',
+            'sourceAnnotationUpdatedAt',
+            'items',
+          ],
+          properties: {
+            id: { type: 'string' },
+            version: { type: 'integer', minimum: 1 },
+            capturedAt: { type: 'string', format: 'date-time' },
+            capturedBy: nullableStringSchema,
+            sourceAnnotationUpdatedAt: {
+              anyOf: [
+                { type: 'string', format: 'date-time' },
+                { type: 'null' },
+              ],
+            },
+            items: {},
+          },
+        },
+        workflowHistory: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['steps', 'events'],
+          properties: {
+            steps: {
+              type: 'array',
+              items: {
+                type: 'object',
+                additionalProperties: false,
+                required: [
+                  'id',
+                  'stepOrder',
+                  'approverGroupId',
+                  'approverUserId',
+                  'status',
+                  'actedBy',
+                  'actedAt',
+                  'createdAt',
+                ],
+                properties: {
+                  id: { type: 'string' },
+                  stepOrder: { type: 'integer', minimum: 1 },
+                  approverGroupId: nullableStringSchema,
+                  approverUserId: nullableStringSchema,
+                  status: { type: 'string' },
+                  actedBy: nullableStringSchema,
+                  actedAt: {
+                    anyOf: [
+                      { type: 'string', format: 'date-time' },
+                      { type: 'null' },
+                    ],
+                  },
+                  createdAt: { type: 'string', format: 'date-time' },
+                },
+              },
+            },
+            events: {
+              type: 'array',
+              items: {
+                type: 'object',
+                additionalProperties: false,
+                required: [
+                  'id',
+                  'action',
+                  'occurredAt',
+                  'targetTable',
+                  'targetId',
+                  'userId',
+                  'actorRole',
+                  'actorGroupId',
+                  'reasonText',
+                  'metadata',
+                ],
+                properties: {
+                  id: { type: 'string' },
+                  action: { type: 'string' },
+                  occurredAt: { type: 'string', format: 'date-time' },
+                  targetTable: nullableStringSchema,
+                  targetId: nullableStringSchema,
+                  userId: nullableStringSchema,
+                  actorRole: nullableStringSchema,
+                  actorGroupId: nullableStringSchema,
+                  reasonText: nullableStringSchema,
+                  metadata: {},
+                },
+              },
+            },
+          },
+        },
+        attachments: {
+          type: 'array',
+          items: {
+            type: 'object',
+            additionalProperties: false,
+            required: [
+              'kind',
+              'id',
+              'sourceTable',
+              'sourceId',
+              'filename',
+              'contentType',
+              'sizeBytes',
+              'sha256',
+            ],
+            properties: {
+              kind: {
+                type: 'string',
+                enum: ['expense_attachment', 'chat_attachment'],
+              },
+              id: { type: 'string' },
+              sourceTable: { type: 'string' },
+              sourceId: { type: 'string' },
+              filename: nullableStringSchema,
+              contentType: nullableStringSchema,
+              sizeBytes: nullableIntegerSchema,
+              sha256: nullableStringSchema,
+              hashRaw: nullableStringSchema,
+            },
+          },
+        },
+      },
+    },
+    integrity: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['algorithm', 'digest', 'canonicalization'],
+      properties: {
+        algorithm: { type: 'string', enum: ['sha256'] },
+        digest: { type: 'string' },
+        canonicalization: {
+          type: 'string',
+          enum: ['json-stable-sort-keys-v1'],
+        },
+      },
+    },
   },
+} as const;
+
+const evidencePackArchiveResponseSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['archived', 'archive'],
+  properties: {
+    archived: { type: 'boolean' },
+    archive: {
+      type: 'object',
+      additionalProperties: false,
+      required: [
+        'provider',
+        'objectKey',
+        'metadataKey',
+        'archiveUri',
+        'checksumSha256',
+        'sizeBytes',
+        'archivedAt',
+        'digest',
+        'format',
+        'mask',
+      ],
+      properties: {
+        provider: { type: 'string', enum: ['local', 's3'] },
+        objectKey: { type: 'string' },
+        metadataKey: { type: 'string' },
+        archiveUri: { type: 'string' },
+        checksumSha256: { type: 'string' },
+        sizeBytes: { type: 'integer', minimum: 0 },
+        archivedAt: { type: 'string', format: 'date-time' },
+        digest: { type: 'string' },
+        format: { type: 'string', enum: ['json', 'pdf'] },
+        mask: { type: 'boolean' },
+      },
+    },
+  },
+} as const;
+
+const evidencePackCommonErrorResponses = {
   403: apiErrorResponseSchema,
   404: apiErrorResponseSchema,
   500: apiErrorResponseSchema,
+} as const;
+
+const evidencePackArchiveResponses = {
+  ...evidencePackCommonErrorResponses,
+  200: {
+    description: 'Default Response',
+    content: {
+      'application/json': {
+        schema: evidencePackArchiveResponseSchema,
+      },
+    },
+  },
+} as const;
+
+const evidencePackExportResponses = {
+  ...evidencePackCommonErrorResponses,
+  200: {
+    description: 'Default Response',
+    content: {
+      'application/json': {
+        schema: evidencePackJsonExportResponseSchema,
+      },
+      'application/pdf': {
+        schema: {
+          type: 'string',
+          format: 'binary',
+        },
+      },
+    },
+  },
 } as const;
 
 function normalizeString(value: unknown) {
@@ -711,7 +975,7 @@ export async function registerEvidenceSnapshotRoutes(app: FastifyInstance) {
       preHandler: requireRole(['admin', 'mgmt']),
       schema: {
         ...evidencePackArchiveBodySchema,
-        response: evidencePackErrorResponses,
+        response: evidencePackArchiveResponses,
       },
       config: {
         rateLimit: {
@@ -924,7 +1188,7 @@ export async function registerEvidenceSnapshotRoutes(app: FastifyInstance) {
       preHandler: requireRole(['admin', 'mgmt', 'exec', 'user']),
       schema: {
         ...evidencePackExportQuerySchema,
-        response: evidencePackErrorResponses,
+        response: evidencePackExportResponses,
       },
       config: {
         rateLimit: {

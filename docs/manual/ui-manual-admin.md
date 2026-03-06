@@ -142,6 +142,13 @@
   3. `chat_message` は必要に応じて `プレビュー` を押し、抜粋と作成情報を画面内で確認する
   4. 参照不能エラー（権限不足/発言なし）が表示された場合は、申請者に差し替えを依頼する
 
+### エビデンスパック出力（API）
+
+- 現行UIには専用ボタンがないため、運用時は API で出力します（`GET /approval-instances/:id/evidence-pack/export`）
+- `format=json` では `schemaVersion=evidence-pack/v2` の JSON を返し、`workflowHistory` と `attachments` を同梱します
+- `format=pdf` は PDF バイナリを返します
+- `mask` 省略時は `mask=1`（マスクあり）です。`mask=0`（unmasked）は `admin/mgmt` のみ許可されます
+
 ### 入力項目/制約
 
 - `承認対象外` は現在の承認者/グループと一致しない場合に表示されます
