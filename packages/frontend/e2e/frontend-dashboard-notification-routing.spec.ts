@@ -63,7 +63,7 @@ async function ensureOk(res: { ok(): boolean; status(): number; text(): any }) {
 async function prepare(
   page: Page,
   authState: AuthState,
-  options?: { activeSectionId?: string },
+  options?: { activeSectionId?: string; preserveActiveSection?: boolean },
 ) {
   if (page.listenerCount('pageerror') === 0) {
     page.on('pageerror', (error) => {
@@ -81,14 +81,28 @@ async function prepare(
     });
   }
 
-  await page.addInitScript(([state, activeSectionId]) => {
+  await page.addInitScript(([state, config]) => {
     window.localStorage.setItem('erp4_auth', JSON.stringify(state));
+    const activeSectionId =
+      config && typeof config === 'object' ? config.activeSectionId : null;
     if (typeof activeSectionId === 'string' && activeSectionId.length > 0) {
       window.localStorage.setItem('erp4_active_section', activeSectionId);
-    } else {
+      return;
+    }
+    const preserveActiveSection =
+      config &&
+      typeof config === 'object' &&
+      config.preserveActiveSection === true;
+    if (!preserveActiveSection) {
       window.localStorage.removeItem('erp4_active_section');
     }
-  }, [authState, options?.activeSectionId ?? null]);
+  }, [
+    authState,
+    {
+      activeSectionId: options?.activeSectionId ?? null,
+      preserveActiveSection: options?.preserveActiveSection === true,
+    },
+  ]);
   await page.goto(baseUrl);
   await expect(page.getByRole('heading', { name: 'ERP4 MVP PoC' })).toBeVisible(
     {
@@ -669,7 +683,11 @@ test('legacy project-chat stored section migrates to room-chat @extended', async
     groupIds: ['mgmt', 'hr-group'],
   };
 
-  await prepare(page, adminState, { activeSectionId: 'project-chat' });
+  await prepare(page, adminState, { preserveActiveSection: true });
+  await page.evaluate(() => {
+    window.localStorage.setItem('erp4_active_section', 'project-chat');
+  });
+  await page.reload();
   const roomChatHeading = page.locator('main').getByRole('heading', {
     name: 'チャット（全社/部門/private_group/DM）',
     level: 2,
