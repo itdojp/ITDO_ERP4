@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { buildServer } from '../dist/server.js';
-import { prisma } from '../dist/services/db.js';
-
 const MIN_DATABASE_URL = 'postgresql://user:pass@localhost:5432/postgres';
+
+process.env.DATABASE_URL ||= MIN_DATABASE_URL;
+
+const { buildServer } = await import('../dist/server.js');
+const { prisma } = await import('../dist/services/db.js');
 
 function withPrismaStubs(stubs, fn) {
   const restores = [];
@@ -65,7 +67,7 @@ function adminHeaders() {
   };
 }
 
-function vendorInvoiceDraft() {
+function vendorInvoiceReceived() {
   return {
     id: 'vi-001',
     status: 'received',
@@ -90,7 +92,7 @@ test('POST /vendor-invoices/:id/submit: phase2_core required action denies when 
     let transactionCalled = 0;
     await withPrismaStubs(
       {
-        'vendorInvoice.findUnique': async () => vendorInvoiceDraft(),
+        'vendorInvoice.findUnique': async () => vendorInvoiceReceived(),
         'actionPolicy.findMany': async () => [],
         $transaction: async () => {
           transactionCalled += 1;
@@ -191,7 +193,7 @@ test('POST /vendor-invoices/:id/submit: policy allow reaches downstream submit p
 
     await withPrismaStubs(
       {
-        'vendorInvoice.findUnique': async () => vendorInvoiceDraft(),
+        'vendorInvoice.findUnique': async () => vendorInvoiceReceived(),
         'actionPolicy.findMany': async () => [
           {
             id: 'policy-vendor-invoice-submit-allow',
