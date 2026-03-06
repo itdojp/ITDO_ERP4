@@ -25,6 +25,12 @@
 - `document_send_logs` に送信履歴を保存。
 - `document_send_events` にプロバイダ通知イベントを保存。
 
+## 監査ログ
+- `AuditLog` には送信操作の要約イベントを保存する。
+- action は `document_send_requested` / `document_send_completed` / `document_send_failed` / `document_send_retried` を使用する。
+- `metadata.sendLogId` で `document_send_logs` と相互参照し、再送時は `metadata.retryOf` に元ログIDを保持する。
+- 送信結果の要約として `metadata.status` / `metadata.channel` / `metadata.providerMessageId` / `metadata.error` を保持する。
+
 ## SendGridイベント
 - `/webhooks/sendgrid/events` を追加。
 - `custom_args.sendLogId` があれば送信ログに紐付け。
@@ -72,8 +78,9 @@
 1. `POST /invoices/:id/send` または `POST /purchase-orders/:id/send` を実行
 2. `GET /document-send-logs/:id` で `status` と `error` を確認
 3. `GET /document-send-logs/:id/events` でイベント紐付けを確認（SendGridの場合）
-4. `GET /pdf-files/:filename` が 200 で返ることを確認（localの場合）
-5. `POST /document-send-logs/:id/retry` で再送が新しいログとして記録されることを確認
+4. `GET /audit-logs` で `metadata.sendLogId` を用いて送信監査が追跡できることを確認
+5. `GET /pdf-files/:filename` が 200 で返ることを確認（localの場合）
+6. `POST /document-send-logs/:id/retry` で再送が新しいログとして記録されることを確認
 
 ## 障害時の確認ポイント
 - `MAIL_TRANSPORT` と必須環境変数（`MAIL_FROM` / `SENDGRID_API_KEY` / `SMTP_HOST` など）の不足
