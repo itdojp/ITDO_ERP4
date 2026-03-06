@@ -53,18 +53,10 @@
 
 ## 3. 呼び出し元棚卸（frontend）
 
-## 3.1 project系呼び出し（互換フォールバック）
+## 3.1 project系呼び出し（互換alias）
 
-主呼び出し元: `packages/frontend/src/sections/ProjectChat.tsx`
-
-- `ProjectChat` は `projectRoomId` 解決後に room API を優先利用する。
-- `projectRoomId` が未解決の場合のみ、以下 project系 endpoint にフォールバックする。
-  - 一覧/投稿: `/projects/:projectId/chat-messages`
-  - 未読/既読: `/projects/:projectId/chat-unread`, `/projects/:projectId/chat-read`
-  - メンション候補: `/projects/:projectId/chat-mention-candidates`
-  - ack-required: `/projects/:projectId/chat-ack-candidates`, `/projects/:projectId/chat-ack-requests*`
-  - 要約: `/projects/:projectId/chat-summary`
-  - break-glass履歴: `/projects/:projectId/chat-break-glass-events`
+- frontend の mounted UI は `RoomChat` に一本化済みで、`ProjectChat.tsx` は廃止済み。
+- `/projects/:projectId/chat-*` は backend 互換alias として残しており、主用途は旧クライアント互換・deprecation確認・API境界テスト。
 
 ## 3.2 room系呼び出し
 
@@ -73,10 +65,10 @@
 - ルーム一覧/作成/設定/メンバー管理
 - 一覧/投稿: `/chat-rooms/:roomId/messages`
 - 未読/既読: `/chat-rooms/:roomId/unread`, `/chat-rooms/:roomId/read`
-- 通知設定: `/chat-rooms/:roomId/notification-setting`（`ProjectChat` 側も利用）
+- 通知設定: `/chat-rooms/:roomId/notification-setting`
 - ack-required: `/chat-rooms/:roomId/ack-*`
 - 要約: `/chat-rooms/:roomId/summary`, `/chat-rooms/:roomId/ai-summary`
-- `ProjectChat`（Phase 3）でも以下は room API 優先
+- frontend 正規経路
   - `/chat-rooms/:roomId/messages`
   - `/chat-rooms/:roomId/unread`, `/chat-rooms/:roomId/read`
   - `/chat-rooms/:roomId/mention-candidates`, `/chat-rooms/:roomId/ack-candidates`
@@ -93,14 +85,14 @@
 
 ## 4. 機能差分（現状）
 
-| 観点           | project系                   | room系                                                                                   | 統合時の注記                          |
-| -------------- | --------------------------- | ---------------------------------------------------------------------------------------- | ------------------------------------- |
-| 検索           | `q` 非対応                  | `q` 対応 + 横断検索あり                                                                  | room系に寄せると機能は強化される      |
-| メンション候補 | projectMember 中心          | project room時は `projectMember` + （`allowExternalUsers=true` 時のみ）room member/group | PR #1333 で候補不足差分を是正済み     |
-| 通知設定       | 専用APIなし                 | 専用APIあり                                                                              | 既に `ProjectChat` も room API を利用 |
-| アクセス制御   | `requireProjectAccess` 中心 | `ensureChatRoomContentAccess`（viewer/poster/member/group）                              | room正規化で 403 が増える可能性       |
-| ack-required   | あり                        | あり（`accessLevel:'post'` 強制）                                                        | room系に統一可能                      |
-| 添付/reaction  | 共通API                     | 共通API                                                                                  | 差分なし                              |
+| 観点           | project系                   | room系                                                                                   | 統合時の注記                      |
+| -------------- | --------------------------- | ---------------------------------------------------------------------------------------- | --------------------------------- |
+| 検索           | `q` 非対応                  | `q` 対応 + 横断検索あり                                                                  | room系に寄せると機能は強化される  |
+| メンション候補 | projectMember 中心          | project room時は `projectMember` + （`allowExternalUsers=true` 時のみ）room member/group | PR #1333 で候補不足差分を是正済み |
+| 通知設定       | 専用APIなし                 | 専用APIあり                                                                              | frontend は room API に統一済み   |
+| アクセス制御   | `requireProjectAccess` 中心 | `ensureChatRoomContentAccess`（viewer/poster/member/group）                              | room正規化で 403 が増える可能性   |
+| ack-required   | あり                        | あり（`accessLevel:'post'` 強制）                                                        | room系に統一可能                  |
+| 添付/reaction  | 共通API                     | 共通API                                                                                  | 差分なし                          |
 
 ## 5. 初期統合方針（TODO1）
 
@@ -138,7 +130,7 @@
    - 先行実装: mention-candidates の候補解決ロジックを `chatMentionCandidates` サービスへ共通化
    - 追補実装: project系 `chat-messages` / `chat-summary` / `chat-mention-candidates` / `chat-ack-candidates` / `chat-unread` / `chat-read` / `chat-ack-requests/preview` / `chat-ack-requests` の room 解決を `resolveActiveProjectRoom` に統一
 4. **Phase 3（frontend統合）**: `ProjectChat` 呼び出しを room API へ段階移行
-   - 実装済み: room API 優先 + project API フォールバック
+   - 実装済み: mounted UI を `RoomChat` に一本化
    - 実装済み: E2Eで room優先経路を追加検証
-   - 残課題: fallback利用率が 0 になった段階で frontend 側 fallback を除去
+   - 残課題: backend 互換alias の利用率監視と削除タイミング判断
 5. **Phase 4（deprecate）**: 旧project系経路の無通信確認後に削除

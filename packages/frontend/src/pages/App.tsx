@@ -483,18 +483,9 @@ export const App: React.FC = () => {
             return;
           }
 
-          const auth = getAuthState();
-          const roles = auth?.roles || [];
-          const canUseProjectChat =
-            roles.includes('admin') ||
-            roles.includes('mgmt') ||
-            roles.includes('exec') ||
-            (auth?.projectIds?.length ?? 0) > 0;
-          const preferredSectionId =
-            roomType === 'project' && projectId && canUseProjectChat
-              ? 'project-chat'
-              : 'room-chat';
-          const sectionId = normalizeSectionId(preferredSectionId);
+          const sectionId = normalizeSectionId(
+            roomType === 'project' && projectId ? 'project-chat' : 'room-chat',
+          );
 
           setPendingDeepLink({
             sectionId,

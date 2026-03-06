@@ -276,6 +276,21 @@ async function installOpenEventRecorder(page: Page) {
         id: typeof detail?.id === 'string' ? detail.id : undefined,
       });
     });
+    window.addEventListener('erp4_open_project_chat', (event) => {
+      const detail = (event as CustomEvent<{ projectId?: string }>).detail;
+      w.__e2eOpenEvents?.push({
+        kind: 'project_chat',
+        id:
+          typeof detail?.projectId === 'string' ? detail.projectId : undefined,
+      });
+    });
+    window.addEventListener('erp4_open_room_chat', (event) => {
+      const detail = (event as CustomEvent<{ roomId?: string }>).detail;
+      w.__e2eOpenEvents?.push({
+        kind: 'room_chat',
+        id: typeof detail?.roomId === 'string' ? detail.roomId : undefined,
+      });
+    });
     window.addEventListener('erp4_open_chat_message', (event) => {
       const detail = (event as CustomEvent<{ messageId?: string }>).detail;
       w.__e2eOpenEvents?.push({
@@ -318,6 +333,18 @@ async function expectOpenEventRecorded(page: Page, kind: string, id: string) {
       { timeout: actionTimeout },
     )
     .toBe(true);
+}
+
+async function openHash(page: Page, kind: string, id: string) {
+  await page.evaluate(
+    ([nextKind, nextId]) => {
+      const params = new URLSearchParams();
+      params.set('kind', nextKind);
+      params.set('id', nextId);
+      window.location.hash = `#/open?${params.toString()}`;
+    },
+    [kind, id],
+  );
 }
 
 async function waitForUnreadNotification(
@@ -597,6 +624,85 @@ test('dashboard notification cards route to chat/leave/expense targets @core', a
     timeout: actionTimeout,
   });
   await markNotificationRead(page, chatTargetHeaders, ackNotification.id);
+});
+
+test('legacy project_chat deep link opens room-chat section @extended', async ({
+  page,
+}) => {
+  const adminState: AuthState = {
+    userId: 'demo-user',
+    roles: ['admin', 'mgmt'],
+    projectIds: [defaultProjectId],
+    groupIds: ['mgmt', 'hr-group'],
+  };
+
+  await prepare(page, adminState);
+  await installOpenEventRecorder(page);
+  await resetOpenEventRecorder(page);
+  await openHash(page, 'project_chat', defaultProjectId);
+
+  const roomChatHeading = page.locator('main').getByRole('heading', {
+    name: 'チャット（全社/部門/private_group/DM）',
+    level: 2,
+    exact: true,
+  });
+  await expect(roomChatHeading).toBeVisible({ timeout: actionTimeout });
+  await expectOpenEventRecorded(page, 'project_chat', defaultProjectId);
+});
+
+test('chat_message deep link resolves project room without legacy project chat API @extended', async ({
+  page,
+}) => {
+  const run = runId();
+  const adminState: AuthState = {
+    userId: 'demo-user',
+    roles: ['admin', 'mgmt'],
+    projectIds: [defaultProjectId],
+    groupIds: ['mgmt', 'hr-group'],
+  };
+  const headers = buildHeaders(adminState);
+  const messageBody = `E2E deep link room ${run}`;
+  const createMessageRes = await page.request.post(
+    `${apiBase}/projects/${encodeURIComponent(defaultProjectId)}/chat-messages`,
+    {
+      headers,
+      data: { body: messageBody, tags: ['e2e', 'deeplink'] },
+    },
+  );
+  await ensureOk(createMessageRes);
+  const createdMessage = (await createMessageRes.json()) as { id?: string };
+  const messageId = String(createdMessage.id || '');
+  expect(messageId.length).toBeGreaterThan(0);
+
+  const blockedProjectUrls: string[] = [];
+  const projectChatRoutePattern = `**/projects/${defaultProjectId}/chat-**`;
+
+  await prepare(page, adminState);
+  await installOpenEventRecorder(page);
+  await page.route(projectChatRoutePattern, async (route) => {
+    blockedProjectUrls.push(route.request().url());
+    await route.abort();
+  });
+
+  try {
+    await resetOpenEventRecorder(page);
+    await openHash(page, 'chat_message', messageId);
+    await expect(
+      page.locator('main').getByRole('heading', {
+        name: 'チャット（全社/部門/private_group/DM）',
+        level: 2,
+        exact: true,
+      }),
+    ).toBeVisible({ timeout: actionTimeout });
+    await expectOpenEventRecorded(page, 'chat_message', messageId);
+    await expect(page.locator('main').getByText(messageBody)).toBeVisible({
+      timeout: actionTimeout,
+    });
+  } finally {
+    await page.unroute(projectChatRoutePattern);
+  }
+
+  expect(blockedProjectUrls).toEqual([]);
 });
 
 test('dashboard alert cards show latest5 and empty placeholder @extended', async ({
