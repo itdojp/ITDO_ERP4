@@ -46,6 +46,7 @@
   - 件数・長さ・合計長は設定値で制限
 - `internalRefs`
   - `kind` は許可リストのみ
+  - 互換入力として `project_chat` を受け付けるが、保存・表示時は `room_chat` に正規化する
   - `id` 必須
   - 同一 `kind:id` は重複排除
 - `notes`
