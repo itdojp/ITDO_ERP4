@@ -3,9 +3,11 @@
 目的: data-model-sketch を具体的な型/enum/制約に落としたラフ案。実装時は Prisma/DDL で整合させる。
 
 ## FK/削除ポリシー詳細（MVP）
+
 物理削除は原則禁止。以下はアプリ設計上の論理削除/参照の方針。
 
 ### Project 周辺
+
 - Project.parentId: ON DELETE RESTRICT。子が残る場合は親を論理削除できない
 - Project.customerId: ON DELETE RESTRICT。顧客は論理削除のみ、参照は保持
 - ProjectTask.projectId: ON DELETE RESTRICT。承認WF外で projectId の付け替えを許容
@@ -15,22 +17,26 @@
 - TimeEntry.projectId / Expense.projectId: ON DELETE RESTRICT（必須）
 
 ### 見積/請求
+
 - Estimate.projectId: ON DELETE RESTRICT
 - Invoice.projectId: ON DELETE RESTRICT
 - Invoice.estimateId / Invoice.milestoneId: ON DELETE SET NULL（見積なし請求/マイルストーン任意）
 - EstimateLine.taskId / BillingLine.taskId / PurchaseOrderLine.taskId / TimeEntry.taskId: ON DELETE SET NULL（履歴保全）
 
 ### 発注/仕入
+
 - PurchaseOrder.projectId / VendorQuote.projectId / VendorInvoice.projectId: ON DELETE RESTRICT
 - PurchaseOrder.vendorId / VendorQuote.vendorId / VendorInvoice.vendorId: ON DELETE RESTRICT
 
 ### 参照のみ（FKなし）
+
 - ApprovalInstance.targetId: polymorphic 参照のため FK を持たない
 - ApprovalInstance.projectId: 対象が案件に紐づく場合は projectId を保持（一覧/アラートの絞り込み用）
 - userId/ownerUserId/createdBy/updatedBy: 外部ID前提で FK なし
 - UserAccount/GroupAccount: SCIM同期のマスタとして保持（既存の userId 参照とは段階的に整合）
 
 ## NULL許容の整理（MVP）
+
 - Invoice.estimateId / milestoneId: NULL許容（見積なし請求/マイルストーン任意、FK は ON DELETE SET NULL）
 - Invoice.issueDate / dueDate, Estimate.validUntil: 起案時未確定のため NULL 許容
 - VendorQuote.quoteNo / VendorInvoice.vendorInvoiceNo: 書類番号が無いケースを許容して NULL 可
@@ -39,6 +45,7 @@
 - Project.parentId / ProjectTask.parentTaskId: 最上位は NULL
 
 ## createdBy / updatedBy の運用方針
+
 - API経由: 認証ヘッダの userId を createdBy/updatedBy に保存
 - バッチ/移行: `system` もしくは NULL（由来を metadata/audit_log に記録）
 - 論理削除時: deletedAt/deletedReason を更新し、updatedBy に操作ユーザを保存
@@ -181,14 +188,33 @@ model ProjectTask {
   deletedReason String?
 }
 
-model ProjectChatMessage {
-  id        String  @id @default(uuid())
-  project   Project @relation(fields: [projectId], references: [id], onDelete: Restrict)
-  projectId String
+model ChatRoom {
+  id        String   @id @default(uuid())
+  type      String   // project/department/company/private_group/dm
+  name      String
+  projectId String?
+  groupId   String?
+  viewerGroupIds Json?
+  posterGroupIds Json?
+  allowExternalUsers Boolean @default(false)
+  allowExternalIntegrations Boolean @default(false)
+  createdAt DateTime @default(now())
+  createdBy String?
+  updatedAt DateTime @updatedAt
+  updatedBy String?
+  deletedAt DateTime?
+  deletedReason String?
+}
+
+model ChatMessage {
+  id        String   @id @default(uuid())
+  roomId    String
   userId    String
   body      String
   tags      Json?
   reactions Json?
+  mentions  Json?
+  mentionsAll Boolean @default(false)
   createdAt DateTime @default(now())
   createdBy String?
   updatedAt DateTime @updatedAt
@@ -560,6 +586,7 @@ model NumberSequence {
 ```
 
 補足
+
 - enum は最終的に実データに合わせて整理する。DocStatus は用途により一部だけ使用。
 - 金額型は Decimal 前提。通貨は必須。
 - JSON を使っている部分はスキーマ確定後に正規化の有無を検討する。
