@@ -30,7 +30,7 @@
 
 ## 回帰テスト修正
 
-- `packages/frontend/e2e/frontend-smoke.spec.ts` を UI変更に追随して更新
+- `packages/frontend/e2e/frontend-smoke.spec.ts`（当時の統合 smoke 用 spec。現在は複数の `frontend-smoke-*.spec.ts` に分割済み）を UI変更に追随して更新
   - VendorDocuments の Tabs/SavedViewBar 構造への追随
   - AdminSettings の FormWizard 導線への追随
   - RoomChat 添付入力ロケータの追随

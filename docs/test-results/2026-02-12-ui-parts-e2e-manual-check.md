@@ -14,7 +14,7 @@
 ## 実施内容
 
 1. 既存 E2E とマニュアルを棚卸しし、未カバー箇所を特定
-2. `packages/frontend/e2e/frontend-smoke.spec.ts` に不足導線を追加
+2. `packages/frontend/e2e/frontend-smoke-*.spec.ts` の該当ファイルに不足導線を追加
    - 経費注釈 Drawer + EntityReferencePicker 保存/再表示
    - RoomChat の MentionComposer 候補選択
    - HR分析 / 監査ログ の DateRangePicker 入力
