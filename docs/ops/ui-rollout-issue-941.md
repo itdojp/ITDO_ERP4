@@ -11,7 +11,7 @@
 - `DateRangePicker` / `DateTimeRangePicker`
   - 適用済み: `AuditLogs`, `HRAnalytics`, `ChatBreakGlass`
 - `MentionComposer`
-  - 適用済み: `ProjectChat`, `RoomChat`
+  - 適用済み: `RoomChat`（room-first 移行により旧 `ProjectChat` UI は廃止）
 - `EntityReferencePicker`
   - 適用済み: `AnnotationsCard`（内部参照候補検索）
 - `Drawer`
