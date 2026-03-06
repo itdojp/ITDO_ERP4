@@ -113,6 +113,30 @@ node scripts/report-action-policy-required-action-gaps.mjs --format=text
   - `actionKeyExpr=body.action`
 - したがって、`phase2_core` の required actions は static route callsite を全て被覆済みで、残差は承認アクション共通 route の動的評価だけである。
 
+### 4.1.1 route preset テストの被覆
+
+- 高リスク:
+  - `invoice:submit` → `packages/backend/test/invoicePolicyEnforcementPreset.test.js`
+  - `invoice:mark_paid` → `packages/backend/test/invoiceMarkPaidPolicyEnforcementPreset.test.js`
+  - `invoice:send` → `packages/backend/test/sendPolicyEnforcementPreset.test.js`
+  - `purchase_order:submit` → `packages/backend/test/purchaseOrderPolicyEnforcementPreset.test.js`
+  - `purchase_order:send` → `packages/backend/test/sendPolicyEnforcementPreset.test.js`
+  - `expense:submit` / `expense:mark_paid` / `expense:unmark_paid` → `packages/backend/test/expensePolicyEnforcementPreset.test.js`
+  - `vendor_invoice:submit` → `packages/backend/test/vendorInvoiceSubmitPolicyEnforcementPreset.test.js`
+  - `vendor_invoice:update_allocations` / `vendor_invoice:update_lines` → `packages/backend/test/vendorInvoiceEditPolicyEnforcementPreset.test.js`
+  - `vendor_invoice:link_po` / `vendor_invoice:unlink_po` → `packages/backend/test/vendorInvoiceLinkPoRoutes.test.js`
+  - `*:approve` / `*:reject` → `packages/backend/test/approvalActionPolicyPreset.test.js`
+- 中リスク:
+  - `estimate:submit` → `packages/backend/test/estimatePolicyEnforcementPreset.test.js`
+  - `estimate:send` → `packages/backend/test/sendPolicyEnforcementPreset.test.js`
+  - `time:edit` / `time:submit` → `packages/backend/test/timeEntriesPolicyEnforcementPreset.test.js`
+  - `leave:submit` → `packages/backend/test/leavePolicyEnforcementPreset.test.js`
+
+補足:
+
+- vendor invoice edit 系は `vendorInvoiceEditPolicyEnforcementPreset.test.js` に収束させ、重複カバレッジは持たない運用とする。
+- 送信系の deny/allow は ActionPolicy preset に加えて、承認・証跡ゲートの回帰 (`approvalEvidenceGate.test.js`) と合わせて確認する。
+
 ### 4.2 flowType別の既定方針（A1時点）
 
 | flowType         | 最低 actionKey                                                         | subjects 既定               | stateConstraints 既定                                      | guards 既定                                            |
@@ -151,5 +175,5 @@ node scripts/report-action-policy-required-action-gaps.mjs --format=text
   - fallback発生キーが中リスクのみで、監査推移が減少しているなら継続可
 - `phase3_strict` 移行条件:
   - fallbackレポートで高リスクキー 0
-  - 主要業務の回帰テスト（send/vendor_invoice/time/leave）が green
+  - 主要業務の route preset / send preset（send + evidence gate）回帰テスト（invoice / purchase_order / expense / vendor_invoice / estimate / time / leave / approval）が green
   - required actions ギャップレポートで static callsite の missing 0
