@@ -33,7 +33,16 @@ test('createApprovalFor: falls back to existing when create hits unique violatio
   const existing = { id: 'a2', status: 'pending_exec', steps: [] };
   const calls = { create: 0, findFirst: 0 };
   const fakeClient = {
-    approvalRule: { findMany: async () => [] },
+    approvalRule: {
+      findMany: async () => [
+        {
+          id: 'r-idempotency',
+          flowType: 'invoice',
+          conditions: {},
+          steps: [{ approverGroupId: 'mgmt', stepOrder: 1 }],
+        },
+      ],
+    },
     project: { findUnique: async () => null },
     approvalInstance: {
       findFirst: async () => {
@@ -58,4 +67,3 @@ test('createApprovalFor: falls back to existing when create hits unique violatio
   assert.equal(calls.create, 1);
   assert.equal(calls.findFirst, 2);
 });
-

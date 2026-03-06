@@ -138,7 +138,17 @@ test('submitApprovalWithUpdate writes evidence_snapshot_created audit with appro
       findUnique: async () => null,
     },
     approvalRule: {
-      findMany: async () => [],
+      findMany: async () => [
+        {
+          id: 'rule-002',
+          flowType: 'invoice',
+          ruleKey: 'invoice-default',
+          version: 1,
+          isActive: true,
+          conditions: null,
+          steps: [{ approverGroupId: 'mgmt', stepOrder: 1 }],
+        },
+      ],
     },
     approvalInstance: {
       findFirst: async () => null,
