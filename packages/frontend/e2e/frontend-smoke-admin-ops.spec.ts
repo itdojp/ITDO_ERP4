@@ -230,10 +230,21 @@ test('frontend smoke admin ops @extended', async ({ page }) => {
     .getByLabel('from', { exact: true })
     .fill(auditRangeFrom);
   await auditLogSection.getByLabel('to', { exact: true }).fill(auditRangeTo);
+  if (sendLogId) {
+    await auditLogSection.getByLabel('sendLogId').fill(sendLogId);
+  }
   await safeClick(
     auditLogSection.getByRole('button', { name: '検索' }),
     'audit logs search',
   );
+  if (sendLogId) {
+    await expect(
+      auditLogSection
+        .getByRole('gridcell')
+        .filter({ hasText: sendLogId })
+        .first(),
+    ).toBeVisible({ timeout: actionTimeout });
+  }
   await captureSection(auditLogSection, '29-audit-logs.png');
 
   await navigateToSection(page, '期間締め');
