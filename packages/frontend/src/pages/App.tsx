@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { apiResponse, getAuthState } from '../api';
+import { apiResponse } from '../api';
 import {
   Alert,
   Button,
@@ -483,9 +483,7 @@ export const App: React.FC = () => {
             return;
           }
 
-          const sectionId = normalizeSectionId(
-            roomType === 'project' && projectId ? 'project-chat' : 'room-chat',
-          );
+          const sectionId = 'room-chat';
 
           setPendingDeepLink({
             sectionId,
