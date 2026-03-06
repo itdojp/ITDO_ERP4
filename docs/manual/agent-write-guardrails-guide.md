@@ -1,7 +1,7 @@
 # Agent Write ガードレール運用ガイド（Phase 2）
 
-更新日: 2026-02-24  
-関連Issue: #1206
+更新日: 2026-03-06  
+関連Issue: #1206, #1312
 
 ## 目的
 
@@ -48,6 +48,26 @@
 2. `flowType:actionKey` ごとに ActionPolicy を追加し、`subjects/stateConstraints/guards` を最小セットで定義する。
 3. 収束判定後に `ACTION_POLICY_ENFORCEMENT_PRESET=phase3_strict` へ切り替える（`*:*` 相当）。
 
+推奨確認コマンド:
+
+```bash
+make action-policy-fallback-report
+make action-policy-fallback-report-json
+```
+
+切替判定の最低条件:
+
+- 高リスクキー（`invoice:*`, `purchase_order:*`, `expense:*`, `vendor_invoice:*`, `*:approve`, `*:reject`）が fallback レポートで 0 件
+- preset route test が green
+  - `packages/backend/test/invoicePolicyEnforcementPreset.test.js`
+  - `packages/backend/test/invoiceMarkPaidPolicyEnforcementPreset.test.js`
+  - `packages/backend/test/purchaseOrderPolicyEnforcementPreset.test.js`
+  - `packages/backend/test/expensePolicyEnforcementPreset.test.js`
+  - `packages/backend/test/vendorInvoiceSubmitPolicyEnforcementPreset.test.js`
+  - `packages/backend/test/vendorInvoiceEditPolicyEnforcementPreset.test.js`
+  - `packages/backend/test/sendPolicyEnforcementPreset.test.js`
+  - `packages/backend/test/approvalActionPolicyPreset.test.js`
+
 ### 例外運用（admin/mgmt override）
 
 1. 緊急時のみ `admin/mgmt` で override を実施する。
@@ -59,6 +79,15 @@
 1. 業務影響が発生した場合は `phase3_strict` から `phase2_core` へ戻す。
 2. 必要なら `ACTION_POLICY_REQUIRED_ACTIONS` の明示CSVで対象操作のみ段階復旧する。
 3. 事象収束後に不足ポリシーを追加して再度 `phase3_strict` へ戻す。
+
+最低復旧確認:
+
+```bash
+make action-policy-fallback-report-json
+```
+
+- ロールバック直後は、明示的に復旧したキーだけが fallback レポートへ再出現することを確認する
+- 想定外の高リスクキーが出る場合は `ACTION_POLICY_REQUIRED_ACTIONS` の上書き対象を見直す
 
 ### 監査集計
 
@@ -116,5 +145,11 @@
 - `packages/backend/test/sendPolicyEnforcementPreset.test.js`
 - `packages/backend/test/approvalActionPolicyPreset.test.js`
 - `packages/backend/test/approvalEvidenceGate.test.js`
+- `packages/backend/test/invoicePolicyEnforcementPreset.test.js`
+- `packages/backend/test/invoiceMarkPaidPolicyEnforcementPreset.test.js`
+- `packages/backend/test/purchaseOrderPolicyEnforcementPreset.test.js`
+- `packages/backend/test/expensePolicyEnforcementPreset.test.js`
+- `packages/backend/test/vendorInvoiceSubmitPolicyEnforcementPreset.test.js`
+- `packages/backend/test/vendorInvoiceEditPolicyEnforcementPreset.test.js`
 - `packages/backend/test/agentRunRecorder.test.js`
 - `packages/frontend/e2e/frontend-smoke-audit-agent-run.spec.ts`

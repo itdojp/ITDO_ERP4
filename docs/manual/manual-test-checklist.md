@@ -22,6 +22,13 @@
 
 - [x] `ACTION_POLICY_ENFORCEMENT_PRESET=phase2_core` で send 系が policy 未定義時に拒否される（`ACTION_POLICY_DENIED`）
   - 参照: `packages/backend/test/sendPolicyEnforcementPreset.test.js`
+- [x] `ACTION_POLICY_ENFORCEMENT_PRESET=phase2_core` で高リスク mutation route が policy 未定義時に拒否され、allow policy 定義時に downstream path へ到達する
+  - 参照: `packages/backend/test/invoicePolicyEnforcementPreset.test.js`
+  - 参照: `packages/backend/test/invoiceMarkPaidPolicyEnforcementPreset.test.js`
+  - 参照: `packages/backend/test/purchaseOrderPolicyEnforcementPreset.test.js`
+  - 参照: `packages/backend/test/expensePolicyEnforcementPreset.test.js`
+  - 参照: `packages/backend/test/vendorInvoiceSubmitPolicyEnforcementPreset.test.js`
+  - 参照: `packages/backend/test/vendorInvoiceEditPolicyEnforcementPreset.test.js`
 - [x] send 系で承認不足/証跡不足が拒否される（`APPROVAL_REQUIRED` / `EVIDENCE_REQUIRED`）
   - 参照: `packages/backend/test/sendPolicyEnforcementPreset.test.js`, `packages/backend/test/approvalEvidenceGate.test.js`
 - [x] 承認アクション（`/approval-instances/:id/act`）で preset 強制時に policy 未定義拒否となる
@@ -30,8 +37,11 @@
   - 参照: `packages/backend/test/sendPolicyEnforcementPreset.test.js`
 - [ ] `phase2_core` -> `phase3_strict` の切替後も主要操作が継続し、`action_policy_fallback_allowed` の新規発生がないことを確認する
   - 手順: `docs/manual/agent-write-guardrails-guide.md` の fail-safe 運用手順に従う
+  - 最低確認対象: `invoice.send`, `invoice.mark_paid`, `purchase_order.send`, `expense.submit`, `expense.mark_paid`, `vendor_invoice.submit`, `vendor_invoice.update_lines`, `vendor_invoice.update_allocations`, `approval approve/reject`
 - [ ] `make action-policy-fallback-report` / `make action-policy-fallback-report-json` で fallback 集計を確認し、高リスクキーが 0 件であることを確認する
+  - 判定基準: `invoice:*`, `purchase_order:*`, `expense:*`, `vendor_invoice:*`, `*:approve`, `*:reject` が 0 件
 - [ ] 問題発生時に `phase3_strict` -> `phase2_core` のロールバックと、必要な `ACTION_POLICY_REQUIRED_ACTIONS` 明示指定での段階復旧を確認する
+  - ロールバック後は `make action-policy-fallback-report-json` で復旧対象キーのみが再出現していることを確認する
 
 ### チャット（確認依頼 ack required）
 

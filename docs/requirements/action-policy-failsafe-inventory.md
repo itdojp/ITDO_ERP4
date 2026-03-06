@@ -153,3 +153,32 @@ node scripts/report-action-policy-required-action-gaps.mjs --format=text
   - fallbackレポートで高リスクキー 0
   - 主要業務の回帰テスト（send/vendor_invoice/time/leave）が green
   - required actions ギャップレポートで static callsite の missing 0
+
+## 7. route-level ActionPolicy test coverage（2026-03-06 時点）
+
+高リスク callsite のうち、`phase2_core` または明示 required-actions 指定で「未定義=拒否」「allow policy あり=downstream 到達」を route test で確認済みのもの:
+
+| flowType         | actionKey            | test file                                                                  |
+| ---------------- | -------------------- | -------------------------------------------------------------------------- |
+| `estimate`       | `send`               | `packages/backend/test/sendPolicyEnforcementPreset.test.js`                |
+| `invoice`        | `submit`             | `packages/backend/test/invoicePolicyEnforcementPreset.test.js`             |
+| `invoice`        | `mark_paid`          | `packages/backend/test/invoiceMarkPaidPolicyEnforcementPreset.test.js`     |
+| `invoice`        | `send`               | `packages/backend/test/sendPolicyEnforcementPreset.test.js`                |
+| `purchase_order` | `submit`             | `packages/backend/test/purchaseOrderPolicyEnforcementPreset.test.js`       |
+| `purchase_order` | `send`               | `packages/backend/test/sendPolicyEnforcementPreset.test.js`                |
+| `expense`        | `submit`             | `packages/backend/test/expensePolicyEnforcementPreset.test.js`             |
+| `expense`        | `mark_paid`          | `packages/backend/test/expensePolicyEnforcementPreset.test.js`             |
+| `expense`        | `unmark_paid`        | `packages/backend/test/expensePolicyEnforcementPreset.test.js`             |
+| `vendor_invoice` | `submit`             | `packages/backend/test/vendorInvoiceSubmitPolicyEnforcementPreset.test.js` |
+| `vendor_invoice` | `update_allocations` | `packages/backend/test/vendorInvoiceEditPolicyEnforcementPreset.test.js`   |
+| `vendor_invoice` | `update_lines`       | `packages/backend/test/vendorInvoiceEditPolicyEnforcementPreset.test.js`   |
+| `vendor_invoice` | `link_po`            | `packages/backend/test/vendorInvoiceLinkPoRoutes.test.js`                  |
+| `vendor_invoice` | `unlink_po`          | `packages/backend/test/vendorInvoiceLinkPoRoutes.test.js`                  |
+| `*`              | `approve`            | `packages/backend/test/approvalActionPolicyPreset.test.js`                 |
+| `*`              | `reject`             | `packages/backend/test/approvalActionPolicyPreset.test.js`                 |
+
+補足:
+
+- `vendor_invoice link_po/unlink_po` は `phase2_core` preset 専用 test ではなく、required actions 指定時の deny/allow を `packages/backend/test/vendorInvoiceLinkPoRoutes.test.js` で確認している。
+- `time.submit/edit` と `leave.submit` は high risk ではないが、preset deny/allow は既存 test で確認済みである。
+- 残る主な未整理は、運用環境での `phase3_strict` 切替確認と fallback レポートの定常監視である。
