@@ -88,6 +88,11 @@ const ALLOWED_INTERNAL_REF_KINDS = new Set<InternalRefKind>([
   'chat_message',
 ]);
 
+function normalizeInternalRefKind(kind: InternalRefKind) {
+  if (kind === 'project_chat') return 'room_chat' as const;
+  return kind;
+}
+
 function normalizeString(value: unknown) {
   return typeof value === 'string' ? value.trim() : '';
 }
@@ -190,14 +195,15 @@ function normalizeInternalRefs(value: unknown): InternalRef[] {
     if (!entry || typeof entry !== 'object') {
       throw new Error('INVALID_INTERNAL_REF');
     }
-    const kind = normalizeString((entry as any).kind) as InternalRefKind;
+    const rawKind = normalizeString((entry as any).kind) as InternalRefKind;
     const id = normalizeString((entry as any).id);
     const labelRaw = (entry as any).label;
     const label =
       typeof labelRaw === 'string' && labelRaw.trim() ? labelRaw.trim() : '';
-    if (!kind || !ALLOWED_INTERNAL_REF_KINDS.has(kind)) {
+    if (!rawKind || !ALLOWED_INTERNAL_REF_KINDS.has(rawKind)) {
       throw new Error('INVALID_INTERNAL_REF_KIND');
     }
+    const kind = normalizeInternalRefKind(rawKind);
     if (!id) {
       throw new Error('INVALID_INTERNAL_REF_ID');
     }
