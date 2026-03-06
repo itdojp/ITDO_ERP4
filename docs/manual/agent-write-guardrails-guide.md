@@ -1,7 +1,7 @@
 # Agent Write ガードレール運用ガイド（Phase 2）
 
-更新日: 2026-02-24  
-関連Issue: #1206
+更新日: 2026-03-06  
+関連Issue: #1206, #1312
 
 ## 目的
 
@@ -52,15 +52,15 @@
 
 1. required actions の棚卸結果を確認する。
    - `node scripts/report-action-policy-required-action-gaps.mjs --format=text`
-   - 期待値: `missing_static_callsites=0` / `stale_required_actions=0`
+   - 期待値: `missing_static_callsites: 0` / `stale_required_actions: 0`
 2. fallback 発生キーを確認する。
    - `make action-policy-fallback-report`
    - `make action-policy-fallback-report-json`
-   - 期待値: 高リスクキー（`invoice` / `purchase_order` / `expense` / `vendor_invoice` / `approval`）が 0 件
-3. 高リスク route preset テストを確認する。
-   - `DATABASE_URL=postgresql://user:pass@localhost:5432/postgres node --test packages/backend/test/invoicePolicyEnforcementPreset.test.js packages/backend/test/invoiceMarkPaidPolicyEnforcementPreset.test.js packages/backend/test/purchaseOrderPolicyEnforcementPreset.test.js packages/backend/test/expensePolicyEnforcementPreset.test.js packages/backend/test/vendorInvoiceSubmitPolicyEnforcementPreset.test.js packages/backend/test/vendorInvoiceEditPolicyEnforcementPreset.test.js`
+   - 期待値: 高リスクキー（`invoice:*` / `purchase_order:*` / `expense:*` / `vendor_invoice:*` / `*:approve` / `*:reject`）が 0 件
+3. 高リスク route preset / send preset テストを確認する。
+   - `DATABASE_URL=postgresql://user:pass@localhost:5432/postgres node --test packages/backend/test/invoicePolicyEnforcementPreset.test.js packages/backend/test/invoiceMarkPaidPolicyEnforcementPreset.test.js packages/backend/test/purchaseOrderPolicyEnforcementPreset.test.js packages/backend/test/expensePolicyEnforcementPreset.test.js packages/backend/test/vendorInvoiceSubmitPolicyEnforcementPreset.test.js packages/backend/test/vendorInvoiceEditPolicyEnforcementPreset.test.js packages/backend/test/vendorInvoiceLinkPoRoutes.test.js packages/backend/test/sendPolicyEnforcementPreset.test.js packages/backend/test/approvalActionPolicyPreset.test.js packages/backend/test/approvalEvidenceGate.test.js`
 4. 中リスク route preset テストを確認する。
-   - `DATABASE_URL=postgresql://user:pass@localhost:5432/postgres node --test packages/backend/test/estimatePolicyEnforcementPreset.test.js packages/backend/test/timeEntriesPolicyEnforcementPreset.test.js packages/backend/test/leavePolicyEnforcementPreset.test.js packages/backend/test/approvalActionPolicyPreset.test.js`
+   - `DATABASE_URL=postgresql://user:pass@localhost:5432/postgres node --test packages/backend/test/estimatePolicyEnforcementPreset.test.js packages/backend/test/timeEntriesPolicyEnforcementPreset.test.js packages/backend/test/leavePolicyEnforcementPreset.test.js`
 
 ### 例外運用（admin/mgmt override）
 

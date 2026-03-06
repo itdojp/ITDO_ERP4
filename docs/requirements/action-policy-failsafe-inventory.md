@@ -175,5 +175,5 @@ node scripts/report-action-policy-required-action-gaps.mjs --format=text
   - fallback発生キーが中リスクのみで、監査推移が減少しているなら継続可
 - `phase3_strict` 移行条件:
   - fallbackレポートで高リスクキー 0
-  - 主要業務の route preset 回帰テスト（invoice / purchase_order / expense / vendor_invoice / estimate / time / leave / approval）が green
+  - 主要業務の route preset / send preset（send + evidence gate）回帰テスト（invoice / purchase_order / expense / vendor_invoice / estimate / time / leave / approval）が green
   - required actions ギャップレポートで static callsite の missing 0
