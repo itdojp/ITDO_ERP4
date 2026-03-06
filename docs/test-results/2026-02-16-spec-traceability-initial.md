@@ -38,10 +38,10 @@ Issue: #993
   - paid/admin例外（理由必須）と監査表示の E2E 不足
   - 数量整合の UI 経由検証不足
 
-### 4) chat / project-chat
+### 4) chat / room-chat
 
 - backend: `packages/backend/src/routes/chat.ts`, `packages/backend/src/routes/chatRooms.ts`, `packages/backend/src/services/chatAckNotifications.ts`, `packages/backend/src/services/chatMentionRecipients.ts`
-- frontend: `packages/frontend/src/sections/ProjectChat.tsx`, `packages/frontend/src/sections/RoomChat.tsx`
+- frontend: `packages/frontend/src/sections/RoomChat.tsx`, `packages/frontend/src/pages/App.tsx`（legacy alias 正規化）
 - tests: `packages/backend/test/chatAckReminders.test.js`, `packages/backend/test/chatMentionNotifications.test.js`, `packages/frontend/e2e/frontend-smoke.spec.ts`（room chat 系）
 - gap:
   - ack テンプレ/理由必須/期限超過系の画面検証が不足
