@@ -74,6 +74,14 @@
 2. 必要なら `ACTION_POLICY_REQUIRED_ACTIONS` の明示CSVで対象操作のみ段階復旧する。
 3. 事象収束後に不足ポリシーを追加して再度 `phase3_strict` へ戻す。
 
+最低復旧確認:
+
+```bash
+make action-policy-fallback-report-json
+```
+
+- ロールバック後は、明示的に復旧したキーのみが fallback レポートへ再出現していることを確認する
+
 ### 監査集計
 
 1. 日次で `action_policy_fallback_allowed` を集計する。
