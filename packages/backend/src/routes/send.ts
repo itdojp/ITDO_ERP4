@@ -21,6 +21,7 @@ import {
   logActionPolicyFallbackAllowedIfNeeded,
   logActionPolicyOverrideIfNeeded,
 } from '../services/actionPolicyAudit.js';
+import { auditContextFromRequest, logAudit } from '../services/audit.js';
 import { getRouteRateLimitOptions } from '../services/rateLimitOverrides.js';
 import { ensureApprovalEvidenceReady } from '../services/approvalEvidenceGate.js';
 
@@ -84,6 +85,27 @@ type SendLogClient = {
       };
     }) => Promise<unknown>;
   };
+};
+
+type SendAuditAction =
+  | 'document_send_requested'
+  | 'document_send_completed'
+  | 'document_send_failed'
+  | 'document_send_retried';
+
+type SendAuditInput = {
+  req: FastifyRequest;
+  action: SendAuditAction;
+  kind: PdfTemplate['kind'];
+  targetTable: string;
+  targetId: string;
+  sendLogId: string;
+  status: string;
+  templateId: string;
+  channel?: string;
+  error?: string;
+  providerMessageId?: string;
+  retryOf?: string;
 };
 
 const SUCCESS_NOTIFY_STATUSES = new Set(['stub', 'success']);
@@ -287,6 +309,34 @@ function extractTemplateSettingId(metadata: unknown) {
   return typeof value === 'string' ? value : undefined;
 }
 
+function buildSendAuditMetadata(
+  params: Omit<SendAuditInput, 'req' | 'action' | 'targetTable' | 'targetId'>,
+): Prisma.InputJsonObject {
+  const metadata: Record<string, Prisma.InputJsonValue> = {
+    sendLogId: params.sendLogId,
+    kind: params.kind,
+    channel: params.channel || 'email',
+    status: params.status,
+    templateId: params.templateId,
+  };
+  if (params.error) metadata.error = params.error;
+  if (params.providerMessageId) {
+    metadata.providerMessageId = params.providerMessageId;
+  }
+  if (params.retryOf) metadata.retryOf = params.retryOf;
+  return metadata;
+}
+
+async function logSendAudit(params: SendAuditInput) {
+  await logAudit({
+    ...auditContextFromRequest(params.req),
+    action: params.action,
+    targetTable: params.targetTable,
+    targetId: params.targetId,
+    metadata: buildSendAuditMetadata(params),
+  });
+}
+
 export async function registerSendRoutes(app: FastifyInstance) {
   const sendRouteRateLimit = getRouteRateLimitOptions('RATE_LIMIT_DOC_SEND', {
     max: 20,
@@ -420,7 +470,7 @@ export async function registerSendRoutes(app: FastifyInstance) {
       );
       const recipients = ['sales@example.com'];
       if (!pdf.filePath || !pdf.filename) {
-        await createSendLog(prisma, {
+        const failedSendLog = await createSendLog(prisma, {
           kind: 'estimate',
           targetTable: 'estimates',
           targetId: id,
@@ -431,6 +481,17 @@ export async function registerSendRoutes(app: FastifyInstance) {
           error: 'pdf_generation_failed',
           actorId: req.user?.userId,
           metadata: buildSendLogMetadata(template, resolved.setting),
+        });
+        await logSendAudit({
+          req,
+          action: 'document_send_failed',
+          kind: 'estimate',
+          targetTable: 'estimates',
+          targetId: id,
+          sendLogId: failedSendLog.id,
+          status: 'failed',
+          templateId: template.id,
+          error: 'pdf_generation_failed',
         });
         return reply.status(500).send({ error: 'pdf_generation_failed' });
       }
@@ -444,6 +505,16 @@ export async function registerSendRoutes(app: FastifyInstance) {
         status: 'requested',
         actorId: req.user?.userId,
         metadata: buildSendLogMetadata(template, resolved.setting),
+      });
+      await logSendAudit({
+        req,
+        action: 'document_send_requested',
+        kind: 'estimate',
+        targetTable: 'estimates',
+        targetId: id,
+        sendLogId: sendLog.id,
+        status: 'requested',
+        templateId: template.id,
       });
       const notifyResult = await sendEstimateEmail(
         recipients,
@@ -483,6 +554,21 @@ export async function registerSendRoutes(app: FastifyInstance) {
           return updatedEstimate;
         },
       );
+      await logSendAudit({
+        req,
+        action: shouldMarkSent(notifyResult)
+          ? 'document_send_completed'
+          : 'document_send_failed',
+        kind: 'estimate',
+        targetTable: 'estimates',
+        targetId: id,
+        sendLogId: sendLog.id,
+        status: notifyResult.status,
+        templateId: template.id,
+        channel: notifyResult.channel,
+        error: notifyResult.error,
+        providerMessageId: notifyResult.messageId,
+      });
       return updated;
     },
   );
@@ -627,7 +713,7 @@ export async function registerSendRoutes(app: FastifyInstance) {
       );
       const recipients = ['fin@example.com'];
       if (!pdf.filePath || !pdf.filename) {
-        await createSendLog(prisma, {
+        const failedSendLog = await createSendLog(prisma, {
           kind: 'invoice',
           targetTable: 'invoices',
           targetId: id,
@@ -638,6 +724,17 @@ export async function registerSendRoutes(app: FastifyInstance) {
           error: 'pdf_generation_failed',
           actorId: req.user?.userId,
           metadata: buildSendLogMetadata(template, resolved.setting),
+        });
+        await logSendAudit({
+          req,
+          action: 'document_send_failed',
+          kind: 'invoice',
+          targetTable: 'invoices',
+          targetId: id,
+          sendLogId: failedSendLog.id,
+          status: 'failed',
+          templateId: template.id,
+          error: 'pdf_generation_failed',
         });
         return reply.status(500).send({ error: 'pdf_generation_failed' });
       }
@@ -651,6 +748,16 @@ export async function registerSendRoutes(app: FastifyInstance) {
         status: 'requested',
         actorId: req.user?.userId,
         metadata: buildSendLogMetadata(template, resolved.setting),
+      });
+      await logSendAudit({
+        req,
+        action: 'document_send_requested',
+        kind: 'invoice',
+        targetTable: 'invoices',
+        targetId: id,
+        sendLogId: sendLog.id,
+        status: 'requested',
+        templateId: template.id,
       });
       const notifyResult = await sendInvoiceEmail(
         recipients,
@@ -690,6 +797,21 @@ export async function registerSendRoutes(app: FastifyInstance) {
           return updatedInvoice;
         },
       );
+      await logSendAudit({
+        req,
+        action: shouldMarkSent(notifyResult)
+          ? 'document_send_completed'
+          : 'document_send_failed',
+        kind: 'invoice',
+        targetTable: 'invoices',
+        targetId: id,
+        sendLogId: sendLog.id,
+        status: notifyResult.status,
+        templateId: template.id,
+        channel: notifyResult.channel,
+        error: notifyResult.error,
+        providerMessageId: notifyResult.messageId,
+      });
       return updated;
     },
   );
@@ -831,7 +953,7 @@ export async function registerSendRoutes(app: FastifyInstance) {
       );
       const recipients = ['vendor@example.com'];
       if (!pdf.filePath || !pdf.filename) {
-        await createSendLog(prisma, {
+        const failedSendLog = await createSendLog(prisma, {
           kind: 'purchase_order',
           targetTable: 'purchase_orders',
           targetId: id,
@@ -842,6 +964,17 @@ export async function registerSendRoutes(app: FastifyInstance) {
           error: 'pdf_generation_failed',
           actorId: req.user?.userId,
           metadata: buildSendLogMetadata(template, resolved.setting),
+        });
+        await logSendAudit({
+          req,
+          action: 'document_send_failed',
+          kind: 'purchase_order',
+          targetTable: 'purchase_orders',
+          targetId: id,
+          sendLogId: failedSendLog.id,
+          status: 'failed',
+          templateId: template.id,
+          error: 'pdf_generation_failed',
         });
         return reply.status(500).send({ error: 'pdf_generation_failed' });
       }
@@ -855,6 +988,16 @@ export async function registerSendRoutes(app: FastifyInstance) {
         status: 'requested',
         actorId: req.user?.userId,
         metadata: buildSendLogMetadata(template, resolved.setting),
+      });
+      await logSendAudit({
+        req,
+        action: 'document_send_requested',
+        kind: 'purchase_order',
+        targetTable: 'purchase_orders',
+        targetId: id,
+        sendLogId: sendLog.id,
+        status: 'requested',
+        templateId: template.id,
       });
       const notifyResult = await sendPurchaseOrderEmail(
         recipients,
@@ -890,6 +1033,21 @@ export async function registerSendRoutes(app: FastifyInstance) {
           return updatedPo;
         },
       );
+      await logSendAudit({
+        req,
+        action: shouldMarkSent(notifyResult)
+          ? 'document_send_completed'
+          : 'document_send_failed',
+        kind: 'purchase_order',
+        targetTable: 'purchase_orders',
+        targetId: id,
+        sendLogId: sendLog.id,
+        status: notifyResult.status,
+        templateId: template.id,
+        channel: notifyResult.channel,
+        error: notifyResult.error,
+        providerMessageId: notifyResult.messageId,
+      });
       return updated;
     },
   );
@@ -1007,7 +1165,7 @@ export async function registerSendRoutes(app: FastifyInstance) {
           buildPdfOptions(resolved.setting),
         );
         if (!pdf.filePath || !pdf.filename) {
-          await createSendLog(prisma, {
+          const failedRetryLog = await createSendLog(prisma, {
             kind: 'invoice',
             targetTable: 'invoices',
             targetId: sendLog.targetId,
@@ -1022,6 +1180,18 @@ export async function registerSendRoutes(app: FastifyInstance) {
             metadata: buildSendLogMetadata(template, resolved.setting, {
               retryOf: sendLog.id,
             }),
+          });
+          await logSendAudit({
+            req,
+            action: 'document_send_failed',
+            kind: 'invoice',
+            targetTable: 'invoices',
+            targetId: sendLog.targetId,
+            sendLogId: failedRetryLog.id,
+            status: 'failed',
+            templateId: template.id,
+            error: 'pdf_generation_failed',
+            retryOf: sendLog.id,
           });
           return reply.status(500).send({ error: 'pdf_generation_failed' });
         }
@@ -1040,6 +1210,17 @@ export async function registerSendRoutes(app: FastifyInstance) {
           metadata: buildSendLogMetadata(template, resolved.setting, {
             retryOf: sendLog.id,
           }),
+        });
+        await logSendAudit({
+          req,
+          action: 'document_send_retried',
+          kind: 'invoice',
+          targetTable: 'invoices',
+          targetId: sendLog.targetId,
+          sendLogId: retryLog.id,
+          status: 'requested',
+          templateId: template.id,
+          retryOf: sendLog.id,
         });
         const notifyResult = await sendInvoiceEmail(
           recipients,
@@ -1072,6 +1253,22 @@ export async function registerSendRoutes(app: FastifyInstance) {
             actorId: req.user?.userId,
           });
         });
+        await logSendAudit({
+          req,
+          action: shouldMarkSent(notifyResult)
+            ? 'document_send_completed'
+            : 'document_send_failed',
+          kind: 'invoice',
+          targetTable: 'invoices',
+          targetId: sendLog.targetId,
+          sendLogId: retryLog.id,
+          status: notifyResult.status,
+          templateId: template.id,
+          channel: notifyResult.channel,
+          error: notifyResult.error,
+          providerMessageId: notifyResult.messageId,
+          retryOf: sendLog.id,
+        });
         return { status: 'ok', retryLogId: retryLog.id };
       }
 
@@ -1099,7 +1296,7 @@ export async function registerSendRoutes(app: FastifyInstance) {
           buildPdfOptions(resolved.setting),
         );
         if (!pdf.filePath || !pdf.filename) {
-          await createSendLog(prisma, {
+          const failedRetryLog = await createSendLog(prisma, {
             kind: 'purchase_order',
             targetTable: 'purchase_orders',
             targetId: sendLog.targetId,
@@ -1114,6 +1311,18 @@ export async function registerSendRoutes(app: FastifyInstance) {
             metadata: buildSendLogMetadata(template, resolved.setting, {
               retryOf: sendLog.id,
             }),
+          });
+          await logSendAudit({
+            req,
+            action: 'document_send_failed',
+            kind: 'purchase_order',
+            targetTable: 'purchase_orders',
+            targetId: sendLog.targetId,
+            sendLogId: failedRetryLog.id,
+            status: 'failed',
+            templateId: template.id,
+            error: 'pdf_generation_failed',
+            retryOf: sendLog.id,
           });
           return reply.status(500).send({ error: 'pdf_generation_failed' });
         }
@@ -1132,6 +1341,17 @@ export async function registerSendRoutes(app: FastifyInstance) {
           metadata: buildSendLogMetadata(template, resolved.setting, {
             retryOf: sendLog.id,
           }),
+        });
+        await logSendAudit({
+          req,
+          action: 'document_send_retried',
+          kind: 'purchase_order',
+          targetTable: 'purchase_orders',
+          targetId: sendLog.targetId,
+          sendLogId: retryLog.id,
+          status: 'requested',
+          templateId: template.id,
+          retryOf: sendLog.id,
         });
         const notifyResult = await sendPurchaseOrderEmail(
           recipients,
@@ -1159,6 +1379,22 @@ export async function registerSendRoutes(app: FastifyInstance) {
             result: notifyResult,
             actorId: req.user?.userId,
           });
+        });
+        await logSendAudit({
+          req,
+          action: shouldMarkSent(notifyResult)
+            ? 'document_send_completed'
+            : 'document_send_failed',
+          kind: 'purchase_order',
+          targetTable: 'purchase_orders',
+          targetId: sendLog.targetId,
+          sendLogId: retryLog.id,
+          status: notifyResult.status,
+          templateId: template.id,
+          channel: notifyResult.channel,
+          error: notifyResult.error,
+          providerMessageId: notifyResult.messageId,
+          retryOf: sendLog.id,
         });
         return { status: 'ok', retryLogId: retryLog.id };
       }
