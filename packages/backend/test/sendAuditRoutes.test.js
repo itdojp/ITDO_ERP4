@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import nodemailer from 'nodemailer';
 
 import { buildServer } from '../dist/server.js';
 import { prisma } from '../dist/services/db.js';
@@ -13,12 +14,21 @@ function withPrismaStubs(stubs, fn) {
     let target;
     let method;
     if (parts.length === 1) {
+      const rootMethod = parts[0];
+      if (!rootMethod || !rootMethod.startsWith('$')) {
+        throw new Error(`invalid stub path: ${path}`);
+      }
       target = prisma;
-      method = parts[0];
-    } else {
+      method = rootMethod;
+    } else if (parts.length === 2) {
       const [model, member] = parts;
+      if (!model || !member) {
+        throw new Error(`invalid stub path: ${path}`);
+      }
       target = prisma[model];
       method = member;
+    } else {
+      throw new Error(`invalid stub path: ${path}`);
     }
     if (!target || typeof target[method] !== 'function') {
       throw new Error(`invalid stub target: ${path}`);
@@ -78,6 +88,16 @@ function invoiceDraft() {
 
 function createTransactionStub() {
   return async (callback) => callback(prisma);
+}
+
+function withSmtpTransportStub(stub, fn) {
+  const original = nodemailer.createTransport;
+  nodemailer.createTransport = () => stub;
+  return Promise.resolve()
+    .then(fn)
+    .finally(() => {
+      nodemailer.createTransport = original;
+    });
 }
 
 function auditByAction(entries, action) {
@@ -151,7 +171,10 @@ test('POST /invoices/:id/send logs requested/completed audit with sendLogId', as
           completed[0].metadata._request.id.length > 0,
       );
       assert.equal(completed[0]?.metadata?._request?.source, 'api');
-      assert.equal(completed[0]?.metadata?._auth?.principalUserId, 'admin-user');
+      assert.equal(
+        completed[0]?.metadata?._auth?.principalUserId,
+        'admin-user',
+      );
       assert.equal(completed[0]?.metadata?._auth?.actorUserId, 'admin-user');
     },
   );
@@ -174,37 +197,49 @@ test('POST /invoices/:id/send logs failed audit when mail delivery fails', async
     },
     async () => {
       const auditEntries = [];
-      await withPrismaStubs(
+      const forcedSendError = new Error('forced_send_failure');
+      await withSmtpTransportStub(
         {
-          'invoice.findUnique': async () => invoiceDraft(),
-          'invoice.update': async ({ data }) => ({
-            ...invoiceDraft(),
-            status: data.status,
-            pdfUrl: data.pdfUrl,
-            emailMessageId: data.emailMessageId,
-          }),
-          'actionPolicy.findMany': async () => [],
-          'docTemplateSetting.findFirst': async () => null,
-          'documentSendLog.create': async () => ({ id: 'send-log-1' }),
-          'documentSendLog.update': async () => ({}),
-          'auditLog.create': async ({ data }) => {
-            auditEntries.push(data);
-            return { id: `audit-${auditEntries.length}` };
+          verify: async () => true,
+          sendMail: async () => {
+            throw forcedSendError;
           },
-          $transaction: createTransactionStub(),
+          close: () => undefined,
         },
         async () => {
-          const server = await buildServer({ logger: false });
-          try {
-            const res = await server.inject({
-              method: 'POST',
-              url: '/invoices/inv-001/send',
-              headers: adminHeaders(),
-            });
-            assert.equal(res.statusCode, 200, res.body);
-          } finally {
-            await server.close();
-          }
+          await withPrismaStubs(
+            {
+              'invoice.findUnique': async () => invoiceDraft(),
+              'invoice.update': async ({ data }) => ({
+                ...invoiceDraft(),
+                status: data.status,
+                pdfUrl: data.pdfUrl,
+                emailMessageId: data.emailMessageId,
+              }),
+              'actionPolicy.findMany': async () => [],
+              'docTemplateSetting.findFirst': async () => null,
+              'documentSendLog.create': async () => ({ id: 'send-log-1' }),
+              'documentSendLog.update': async () => ({}),
+              'auditLog.create': async ({ data }) => {
+                auditEntries.push(data);
+                return { id: `audit-${auditEntries.length}` };
+              },
+              $transaction: createTransactionStub(),
+            },
+            async () => {
+              const server = await buildServer({ logger: false });
+              try {
+                const res = await server.inject({
+                  method: 'POST',
+                  url: '/invoices/inv-001/send',
+                  headers: adminHeaders(),
+                });
+                assert.equal(res.statusCode, 200, res.body);
+              } finally {
+                await server.close();
+              }
+            },
+          );
         },
       );
 
@@ -212,10 +247,7 @@ test('POST /invoices/:id/send logs failed audit when mail delivery fails', async
       assert.equal(failed.length, 1);
       assert.equal(failed[0]?.metadata?.sendLogId, 'send-log-1');
       assert.equal(failed[0]?.metadata?.status, 'failed');
-      assert.ok(
-        typeof failed[0]?.metadata?.error === 'string' &&
-          failed[0].metadata.error.length > 0,
-      );
+      assert.equal(failed[0]?.metadata?.error, 'forced_send_failure');
     },
   );
 });
