@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { buildServer } from '../dist/server.js';
-import { prisma } from '../dist/services/db.js';
-
 const MIN_DATABASE_URL = 'postgresql://user:pass@localhost:5432/postgres';
+
+process.env.DATABASE_URL ||= MIN_DATABASE_URL;
+
+const { buildServer } = await import('../dist/server.js');
+const { prisma } = await import('../dist/services/db.js');
 
 function withPrismaStubs(stubs, fn) {
   const restores = [];
