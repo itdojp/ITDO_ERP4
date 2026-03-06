@@ -43,9 +43,12 @@ type AlertSetting = {
 type ApprovalRule = {
   id: string;
   flowType: string;
+  ruleKey?: string | null;
   version?: number | null;
   isActive?: boolean | null;
   effectiveFrom?: string | null;
+  effectiveTo?: string | null;
+  supersedesRuleId?: string | null;
   conditions?: Record<string, unknown> | null;
   steps?: unknown | null;
   createdAt?: string | null;
@@ -328,6 +331,31 @@ function formatJson(value: unknown): string {
   }
 }
 
+function parseDateTime(value?: string | null): Date | null {
+  if (!value) return null;
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed;
+}
+
+function getApprovalRuleSeriesKey(
+  rule: Pick<ApprovalRule, 'flowType' | 'ruleKey' | 'id'>,
+): string {
+  return `${rule.flowType}::${rule.ruleKey || rule.id}`;
+}
+
+function compareApprovalRulesForSeries(
+  left: ApprovalRule,
+  right: ApprovalRule,
+): number {
+  const leftVersion = left.version ?? 1;
+  const rightVersion = right.version ?? 1;
+  if (leftVersion !== rightVersion) return rightVersion - leftVersion;
+  const leftCreatedAt = parseDateTime(left.createdAt)?.getTime() ?? 0;
+  const rightCreatedAt = parseDateTime(right.createdAt)?.getTime() ?? 0;
+  return rightCreatedAt - leftCreatedAt;
+}
+
 const createDefaultAlertForm = () => ({
   type: 'budget_overrun',
   threshold: '10',
@@ -352,7 +380,6 @@ type AlertFormDraftPayload = Omit<
 
 const createDefaultRuleForm = () => ({
   flowType: 'invoice',
-  version: '1',
   isActive: true,
   effectiveFrom: '',
   conditionsJson: '{"amountMin": 0}',
@@ -779,21 +806,70 @@ export const AdminSettings: React.FC = () => {
     () => new Map(pdfTemplates.map((template) => [template.id, template.name])),
     [pdfTemplates],
   );
+  const approvalRuleSeries = useMemo(() => {
+    const latestBySeries = new Map<string, ApprovalRule>();
+    const countsBySeries = new Map<string, number>();
+    const seriesCountByFlowType = new Map<string, number>();
+    for (const rule of ruleItems) {
+      const seriesKey = getApprovalRuleSeriesKey(rule);
+      if (!countsBySeries.has(seriesKey)) {
+        seriesCountByFlowType.set(
+          rule.flowType,
+          (seriesCountByFlowType.get(rule.flowType) ?? 0) + 1,
+        );
+      }
+      countsBySeries.set(seriesKey, (countsBySeries.get(seriesKey) ?? 0) + 1);
+      const currentLatest = latestBySeries.get(seriesKey);
+      if (!currentLatest) {
+        latestBySeries.set(seriesKey, rule);
+        continue;
+      }
+      const compareResult = compareApprovalRulesForSeries(currentLatest, rule);
+      if (compareResult > 0) {
+        latestBySeries.set(seriesKey, rule);
+        continue;
+      }
+    }
+    const latestRuleIds = new Set(
+      Array.from(latestBySeries.values()).map((rule) => rule.id),
+    );
+    const sortedRuleItems = [...ruleItems].sort((left, right) => {
+      if (left.flowType !== right.flowType) {
+        return left.flowType.localeCompare(right.flowType);
+      }
+      const leftRuleKey = left.ruleKey || left.id;
+      const rightRuleKey = right.ruleKey || right.id;
+      if (leftRuleKey !== rightRuleKey) {
+        return leftRuleKey.localeCompare(rightRuleKey);
+      }
+      const seriesCompare = compareApprovalRulesForSeries(left, right);
+      if (seriesCompare !== 0) return seriesCompare;
+      const updatedDiff =
+        (parseDateTime(right.updatedAt)?.getTime() ?? 0) -
+        (parseDateTime(left.updatedAt)?.getTime() ?? 0);
+      if (updatedDiff !== 0) return updatedDiff;
+      return right.id.localeCompare(left.id);
+    });
+    return {
+      countsBySeries,
+      latestRuleIds,
+      seriesCountByFlowType,
+      sortedRuleItems,
+    };
+  }, [ruleItems]);
+  const editingRule = useMemo(
+    () => ruleItems.find((item) => item.id === editingRuleId) ?? null,
+    [editingRuleId, ruleItems],
+  );
   const approvalRuleMonitoring = useMemo(() => {
     const now = new Date();
-    const parseDate = (value?: string | null) => {
-      if (!value) return null;
-      const parsed = new Date(value);
-      if (Number.isNaN(parsed.getTime())) return null;
-      return parsed;
-    };
     const compareByDateDesc = (
       left: ApprovalRule,
       right: ApprovalRule,
       field: keyof ApprovalRule,
     ) => {
-      const a = parseDate(left[field] as string | null);
-      const b = parseDate(right[field] as string | null);
+      const a = parseDateTime(left[field] as string | null);
+      const b = parseDateTime(right[field] as string | null);
       const aTime = a ? a.getTime() : 0;
       const bTime = b ? b.getTime() : 0;
       if (aTime !== bTime) return bTime - aTime;
@@ -823,8 +899,11 @@ export const AdminSettings: React.FC = () => {
         groups[flowType] = createGroup();
       }
       const isActive = rule.isActive ?? true;
-      const effectiveFrom = parseDate(rule.effectiveFrom ?? null);
-      if (!isActive) {
+      const effectiveFrom = parseDateTime(rule.effectiveFrom ?? null);
+      const effectiveTo = parseDateTime(rule.effectiveTo ?? null);
+      if (effectiveTo && effectiveTo.getTime() <= now.getTime()) {
+        groups[flowType].inactive.push(rule);
+      } else if (!isActive) {
         groups[flowType].inactive.push(rule);
       } else if (effectiveFrom && effectiveFrom.getTime() > now.getTime()) {
         groups[flowType].future.push(rule);
@@ -870,30 +949,55 @@ export const AdminSettings: React.FC = () => {
   }, [logError]);
 
   const loadApprovalRuleAuditLogs = useCallback(
-    async (ruleId: string) => {
+    async (rule: ApprovalRule) => {
+      const seriesKey = getApprovalRuleSeriesKey(rule);
+      const seriesRules = ruleItems.filter(
+        (item) => getApprovalRuleSeriesKey(item) === seriesKey,
+      );
       try {
-        setApprovalRuleAuditLoading((prev) => ({ ...prev, [ruleId]: true }));
-        const query = new URLSearchParams();
-        query.set('targetTable', 'approval_rules');
-        query.set('targetId', ruleId);
-        query.set('limit', '50');
-        query.set('format', 'json');
-        const res = await api<{ items: AuditLogItem[] }>(
-          `/audit-logs?${query.toString()}`,
+        setApprovalRuleAuditLoading((prev) => ({ ...prev, [seriesKey]: true }));
+        const responses = await Promise.all(
+          seriesRules.map(async (seriesRule) => {
+            const query = new URLSearchParams();
+            query.set('targetTable', 'approval_rules');
+            query.set('targetId', seriesRule.id);
+            query.set('limit', '50');
+            query.set('format', 'json');
+            const res = await api<{ items: AuditLogItem[] }>(
+              `/audit-logs?${query.toString()}`,
+            );
+            return res.items || [];
+          }),
+        );
+        const mergedLogs = Array.from(
+          new Map(
+            responses
+              .flat()
+              .sort((left, right) => {
+                const leftTime = parseDateTime(left.createdAt)?.getTime() ?? 0;
+                const rightTime =
+                  parseDateTime(right.createdAt)?.getTime() ?? 0;
+                return rightTime - leftTime;
+              })
+              .map((item) => [item.id, item]),
+          ).values(),
         );
         setApprovalRuleAuditLogs((prev) => ({
           ...prev,
-          [ruleId]: res.items || [],
+          [seriesKey]: mergedLogs,
         }));
       } catch (err) {
         logError('loadApprovalRuleAuditLogs failed', err);
-        setApprovalRuleAuditLogs((prev) => ({ ...prev, [ruleId]: [] }));
+        setApprovalRuleAuditLogs((prev) => ({ ...prev, [seriesKey]: [] }));
         setMessage('承認ルールの履歴取得に失敗しました');
       } finally {
-        setApprovalRuleAuditLoading((prev) => ({ ...prev, [ruleId]: false }));
+        setApprovalRuleAuditLoading((prev) => ({
+          ...prev,
+          [seriesKey]: false,
+        }));
       }
     },
-    [logError, setMessage],
+    [logError, ruleItems, setMessage],
   );
 
   const loadActionPolicies = useCallback(async () => {
@@ -1786,7 +1890,6 @@ export const AdminSettings: React.FC = () => {
     setEditingRuleId(item.id);
     setRuleForm({
       flowType: item.flowType,
-      version: String(item.version ?? 1),
       isActive: item.isActive ?? true,
       effectiveFrom: item.effectiveFrom ?? '',
       conditionsJson: item.conditions
@@ -1797,16 +1900,6 @@ export const AdminSettings: React.FC = () => {
   };
 
   const submitApprovalRule = async () => {
-    const versionRaw = ruleForm.version.trim();
-    let version: number | undefined;
-    if (versionRaw.length > 0) {
-      const parsed = Number(versionRaw);
-      if (!Number.isFinite(parsed) || !Number.isInteger(parsed) || parsed < 1) {
-        setMessage('version は1以上の整数で入力してください');
-        return;
-      }
-      version = parsed;
-    }
     const effectiveFrom = ruleForm.effectiveFrom.trim();
     const conditions = parseJson('conditions', ruleForm.conditionsJson);
     if (conditions === null) return;
@@ -1836,7 +1929,6 @@ export const AdminSettings: React.FC = () => {
     }
     const payload = {
       flowType: ruleForm.flowType,
-      version,
       isActive: ruleForm.isActive,
       ...(effectiveFrom ? { effectiveFrom } : {}),
       conditions: conditions || undefined,
@@ -1848,7 +1940,9 @@ export const AdminSettings: React.FC = () => {
           method: 'PATCH',
           body: JSON.stringify(payload),
         });
-        setMessage('承認ルールを更新しました');
+        setMessage(
+          '承認ルールの新版を作成しました。旧版は履歴として保持されます',
+        );
       } else {
         await api('/approval-rules', {
           method: 'POST',
@@ -1861,7 +1955,15 @@ export const AdminSettings: React.FC = () => {
     } catch (err) {
       logError('submitApprovalRule failed', err);
       if (editingRuleId) {
-        setMessage('更新に失敗しました。新規作成モードに戻しました');
+        const errorMessage =
+          err instanceof Error ? err.message : String(err ?? '');
+        if (errorMessage.includes('stale_rule_version')) {
+          setMessage(
+            '最新版が更新されたため新版作成に失敗しました。再読込してください',
+          );
+        } else {
+          setMessage('新版作成に失敗しました。新規作成モードに戻しました');
+        }
         resetRuleForm();
         return;
       }
@@ -1964,6 +2066,10 @@ export const AdminSettings: React.FC = () => {
                     >
                       <strong>{flowType}</strong>
                       <span className="badge">
+                        series:
+                        {approvalRuleSeries.seriesCountByFlowType.get(
+                          flowType,
+                        ) ?? 0}{' '}
                         effective:{group?.effective.length ?? 0} / future:
                         {group?.future.length ?? 0} / inactive:
                         {group?.inactive.length ?? 0}
@@ -1974,7 +2080,7 @@ export const AdminSettings: React.FC = () => {
                     >
                       fallback:{' '}
                       {fallback
-                        ? `v${fallback.version ?? 1} id=${fallback.id} effectiveFrom=${formatDateTime(
+                        ? `series=${fallback.ruleKey ?? fallback.id} v${fallback.version ?? 1} id=${fallback.id} effectiveFrom=${formatDateTime(
                             fallback.effectiveFrom,
                           )}`
                         : '-'}
@@ -1984,11 +2090,22 @@ export const AdminSettings: React.FC = () => {
               })}
             </div>
           </details>
+          {editingRule && (
+            <div
+              className="card"
+              style={{ marginTop: 8, padding: 10, fontSize: 12 }}
+            >
+              系列 `{editingRule.ruleKey ?? editingRule.id}` の v
+              {editingRule.version ?? 1} から新版を作成します。`flowType`
+              は同一系列で固定され、旧版は履歴として残ります。
+            </div>
+          )}
           <div className="row" style={{ marginTop: 8, flexWrap: 'wrap' }}>
             <label>
               flowType
               <select
                 value={ruleForm.flowType}
+                disabled={Boolean(editingRuleId)}
                 onChange={(e) =>
                   setRuleForm({ ...ruleForm, flowType: e.target.value })
                 }
@@ -1999,17 +2116,6 @@ export const AdminSettings: React.FC = () => {
                   </option>
                 ))}
               </select>
-            </label>
-            <label>
-              version
-              <input
-                type="number"
-                value={ruleForm.version}
-                onChange={(e) =>
-                  setRuleForm({ ...ruleForm, version: e.target.value })
-                }
-                min={1}
-              />
             </label>
             <label>
               effectiveFrom (任意, ISO date-time)
@@ -2060,10 +2166,10 @@ export const AdminSettings: React.FC = () => {
           </div>
           <div className="row" style={{ marginTop: 8 }}>
             <button className="button" onClick={submitApprovalRule}>
-              {editingRuleId ? '更新' : '作成'}
+              {editingRuleId ? '新版作成' : '作成'}
             </button>
             <button className="button secondary" onClick={resetRuleForm}>
-              {editingRuleId ? 'キャンセル' : 'クリア'}
+              {editingRuleId ? '新版作成をやめる' : 'クリア'}
             </button>
             <button className="button secondary" onClick={loadApprovalRules}>
               再読込
@@ -2074,25 +2180,27 @@ export const AdminSettings: React.FC = () => {
             style={{ display: 'grid', gap: 8, marginTop: 8 }}
           >
             {ruleItems.length === 0 && <div className="card">ルールなし</div>}
-            {ruleItems.map((rule) => {
+            {approvalRuleSeries.sortedRuleItems.map((rule) => {
               const isActive = rule.isActive ?? true;
-              const effectiveFrom = rule.effectiveFrom
-                ? new Date(rule.effectiveFrom)
-                : null;
-              const isEffectiveFromValid =
-                Boolean(effectiveFrom) &&
-                !Number.isNaN(effectiveFrom!.getTime());
+              const effectiveFrom = parseDateTime(rule.effectiveFrom ?? null);
+              const effectiveTo = parseDateTime(rule.effectiveTo ?? null);
               const now = approvalRuleMonitoring.now;
-              const statusLabel = !isActive
-                ? 'inactive'
-                : isEffectiveFromValid &&
-                    effectiveFrom!.getTime() > now.getTime()
-                  ? 'future'
-                  : 'effective';
-              const isHistoryOpen = approvalRuleAuditOpen[rule.id] ?? false;
+              const statusLabel =
+                effectiveTo && effectiveTo.getTime() <= now.getTime()
+                  ? 'superseded'
+                  : !isActive
+                    ? 'inactive'
+                    : effectiveFrom && effectiveFrom.getTime() > now.getTime()
+                      ? 'future'
+                      : 'effective';
+              const seriesKey = getApprovalRuleSeriesKey(rule);
+              const seriesRuleCount =
+                approvalRuleSeries.countsBySeries.get(seriesKey) ?? 1;
+              const isLatest = approvalRuleSeries.latestRuleIds.has(rule.id);
+              const isHistoryOpen = approvalRuleAuditOpen[seriesKey] ?? false;
               const isHistoryLoading =
-                approvalRuleAuditLoading[rule.id] ?? false;
-              const auditLogs = approvalRuleAuditLogs[rule.id] || [];
+                approvalRuleAuditLoading[seriesKey] ?? false;
+              const auditLogs = approvalRuleAuditLogs[seriesKey] || [];
               return (
                 <div key={rule.id} className="card" style={{ padding: 12 }}>
                   <div
@@ -2104,16 +2212,29 @@ export const AdminSettings: React.FC = () => {
                     }}
                   >
                     <div>
-                      <strong>{rule.flowType}</strong> (v{rule.version ?? 1}) /
-                      id={rule.id}
+                      <strong>{rule.flowType}</strong> / series:
+                      {rule.ruleKey ?? rule.id} / v{rule.version ?? 1} / id=
+                      {rule.id}
                     </div>
                     <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}>
                       <span className="badge">{statusLabel}</span>
+                      <span className="badge">
+                        latest: {isLatest ? 'true' : 'false'}
+                      </span>
+                      <span className="badge">
+                        series versions: {seriesRuleCount}
+                      </span>
                       <span className="badge">
                         isActive: {isActive ? 'true' : 'false'}
                       </span>
                       <span className="badge">
                         effectiveFrom: {formatDateTime(rule.effectiveFrom)}
+                      </span>
+                      <span className="badge">
+                        effectiveTo: {formatDateTime(rule.effectiveTo)}
+                      </span>
+                      <span className="badge">
+                        supersedesRuleId: {rule.supersedesRuleId ?? '-'}
                       </span>
                       <span className="badge">
                         updatedAt: {formatDateTime(rule.updatedAt)}
@@ -2147,6 +2268,12 @@ export const AdminSettings: React.FC = () => {
                   >
                     <button
                       className="button secondary"
+                      disabled={!isLatest}
+                      title={
+                        isLatest
+                          ? '最新版の有効化状態を変更します'
+                          : '最新版のみ状態変更できます'
+                      }
                       onClick={() =>
                         toggleApprovalRuleActive(rule.id, rule.isActive)
                       }
@@ -2155,9 +2282,15 @@ export const AdminSettings: React.FC = () => {
                     </button>
                     <button
                       className="button secondary"
+                      disabled={!isLatest}
+                      title={
+                        isLatest
+                          ? 'この版を元に新版を作成します'
+                          : '最新版のみ新版作成の起点にできます'
+                      }
                       onClick={() => startEditRule(rule)}
                     >
-                      編集
+                      新版作成
                     </button>
                     <button
                       className="button secondary"
@@ -2165,25 +2298,30 @@ export const AdminSettings: React.FC = () => {
                         const nextOpen = !isHistoryOpen;
                         setApprovalRuleAuditOpen((prev) => ({
                           ...prev,
-                          [rule.id]: nextOpen,
+                          [seriesKey]: nextOpen,
                         }));
                         if (
                           nextOpen &&
-                          approvalRuleAuditLogs[rule.id] === undefined
+                          approvalRuleAuditLogs[seriesKey] === undefined
                         ) {
-                          loadApprovalRuleAuditLogs(rule.id);
+                          loadApprovalRuleAuditLogs(rule);
                         }
                       }}
                     >
-                      {isHistoryOpen ? '履歴を閉じる' : '履歴を見る'}
+                      {isHistoryOpen ? '系列履歴を閉じる' : '系列履歴を見る'}
                     </button>
                     {isHistoryOpen && (
                       <button
                         className="button secondary"
-                        onClick={() => loadApprovalRuleAuditLogs(rule.id)}
+                        onClick={() => loadApprovalRuleAuditLogs(rule)}
                       >
-                        履歴を再読込
+                        系列履歴を再読込
                       </button>
+                    )}
+                    {!isLatest && (
+                      <span style={{ fontSize: 12, color: '#64748b' }}>
+                        この版は履歴です。操作は最新版から行ってください。
+                      </span>
                     )}
                   </div>
                   {isHistoryOpen && (
@@ -2204,11 +2342,11 @@ export const AdminSettings: React.FC = () => {
                       {!isHistoryLoading && (
                         <AuditHistoryPanel
                           logs={auditLogs}
-                          selectedLogId={approvalRuleAuditSelected[rule.id]}
+                          selectedLogId={approvalRuleAuditSelected[seriesKey]}
                           onSelectLog={(logId) => {
                             setApprovalRuleAuditSelected((prev) => ({
                               ...prev,
-                              [rule.id]: logId,
+                              [seriesKey]: logId,
                             }));
                           }}
                         />
