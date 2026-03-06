@@ -60,6 +60,7 @@ type FilterState = {
   to: string;
   userId: string;
   action: string;
+  sendLogId: string;
   targetTable: string;
   targetId: string;
   reasonCode: string;
@@ -79,6 +80,7 @@ const defaultFilters: FilterState = {
   to: '',
   userId: '',
   action: '',
+  sendLogId: '',
   targetTable: '',
   targetId: '',
   reasonCode: '',
@@ -96,6 +98,7 @@ const toSavedFilterPayload = (filters: FilterState): SavedFilterPayload => ({
   to: filters.to,
   userId: filters.userId,
   action: filters.action,
+  sendLogId: filters.sendLogId,
   targetTable: filters.targetTable,
   targetId: filters.targetId,
   reasonCode: filters.reasonCode,
@@ -113,6 +116,7 @@ const buildQuery = (filters: FilterState) => {
   if (filters.to) params.set('to', filters.to);
   if (filters.userId) params.set('userId', filters.userId);
   if (filters.action) params.set('action', filters.action);
+  if (filters.sendLogId) params.set('sendLogId', filters.sendLogId);
   if (filters.targetTable) params.set('targetTable', filters.targetTable);
   if (filters.targetId) params.set('targetId', filters.targetId);
   if (filters.reasonCode) params.set('reasonCode', filters.reasonCode);
@@ -541,6 +545,13 @@ export const AuditLogs: React.FC = () => {
                   value={filters.action}
                   onChange={(e) =>
                     setFilters({ ...filters, action: e.target.value })
+                  }
+                />
+                <Input
+                  label="sendLogId"
+                  value={filters.sendLogId}
+                  onChange={(e) =>
+                    setFilters({ ...filters, sendLogId: e.target.value })
                   }
                 />
                 <Input

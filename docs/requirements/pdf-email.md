@@ -35,6 +35,7 @@
 - `AuditLog` には送信操作の要約イベントを保存する。
 - action は `document_send_requested` / `document_send_completed` / `document_send_failed` / `document_send_retried` を使用する。
 - `metadata.sendLogId` で `document_send_logs` と相互参照し、再送時は `metadata.retryOf` に元ログIDを保持する。
+- `GET /audit-logs?sendLogId=...` で送信監査を `sendLogId` 単位に絞り込めるようにする。
 - 送信結果の要約として `metadata.status` / `metadata.channel` / `metadata.providerMessageId` / `metadata.error` を保持する。
 - SendGrid webhook による配信結果の要約は `document_send_provider_status_updated` として記録し、`metadata.eventType` / `metadata.previousStatus` / `metadata.nextStatus` を保持する。
 

@@ -175,6 +175,7 @@ export async function registerAuditLogRoutes(app: FastifyInstance) {
         to,
         userId,
         action,
+        sendLogId,
         targetTable,
         targetId,
         reasonCode,
@@ -191,6 +192,7 @@ export async function registerAuditLogRoutes(app: FastifyInstance) {
         to?: string;
         userId?: string;
         action?: string;
+        sendLogId?: string;
         targetTable?: string;
         targetId?: string;
         reasonCode?: string;
@@ -218,6 +220,12 @@ export async function registerAuditLogRoutes(app: FastifyInstance) {
       const where: Prisma.AuditLogWhereInput = {};
       if (userId) where.userId = String(userId);
       if (action) where.action = String(action);
+      if (sendLogId) {
+        where.metadata = {
+          path: ['sendLogId'],
+          equals: String(sendLogId),
+        };
+      }
       if (targetTable) where.targetTable = String(targetTable);
       if (targetId) where.targetId = String(targetId);
       if (reasonCode) where.reasonCode = String(reasonCode);
@@ -253,6 +261,7 @@ export async function registerAuditLogRoutes(app: FastifyInstance) {
             to,
             userId,
             action,
+            sendLogId,
             targetTable,
             targetId,
             reasonCode,
