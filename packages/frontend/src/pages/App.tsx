@@ -78,6 +78,10 @@ function resolveDeepLinkTarget(
       return { sectionId: 'room-chat', payload };
     case 'chat_message':
       return null;
+    case 'document_send_log':
+      return { sectionId: 'document-send-logs', payload };
+    case 'audit_logs':
+      return { sectionId: 'audit-logs', payload };
     case 'invoice':
       return { sectionId: 'invoices', payload };
     case 'estimate':
@@ -554,6 +558,18 @@ export const App: React.FC = () => {
             createdAt: chatMessage.createdAt,
             excerpt: chatMessage.excerpt,
           },
+        }),
+      );
+    } else if (kind === 'document_send_log') {
+      window.dispatchEvent(
+        new CustomEvent('erp4_open_document_send_log', {
+          detail: { sendLogId: id },
+        }),
+      );
+    } else if (kind === 'audit_logs') {
+      window.dispatchEvent(
+        new CustomEvent('erp4_open_audit_logs', {
+          detail: { sendLogId: id },
         }),
       );
     } else {

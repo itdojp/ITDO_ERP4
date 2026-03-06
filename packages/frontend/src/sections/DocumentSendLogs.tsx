@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { api, apiResponse } from '../api';
 import {
   Alert,
@@ -18,6 +18,7 @@ import {
 } from '../ui';
 import type { DataTableColumn, DataTableRow } from '../ui';
 import { formatDateForFilename, openResponseInNewTab } from '../utils/download';
+import { navigateToOpen } from '../utils/deepLink';
 
 type DocumentSendLog = {
   id: string;
@@ -125,6 +126,109 @@ export const DocumentSendLogs: React.FC = () => {
     ]);
     return !blocked.has(log.status);
   }, [log]);
+
+  const loadLogById = useCallback(async (targetLogId: string) => {
+    const normalizedTarget = targetLogId.trim();
+    if (!normalizedTarget) {
+      setMessage({ text: '送信ログIDを入力してください', type: 'error' });
+      return false;
+    }
+    try {
+      setLogStatus('loading');
+      setLogError('');
+      setMessage(null);
+      const res = await api<DocumentSendLog>(
+        `/document-send-logs/${normalizedTarget}`,
+      );
+      setLog(res);
+      setLogStatus('success');
+      return true;
+    } catch (err) {
+      setLog(null);
+      setLogStatus('error');
+      setLogError('送信ログの取得に失敗しました');
+      setMessage({ text: '送信ログの取得に失敗しました', type: 'error' });
+      console.error('Failed to load document send log.', err);
+      return false;
+    }
+  }, []);
+
+  const loadEventsById = useCallback(async (targetLogId: string) => {
+    const normalizedTarget = targetLogId.trim();
+    if (!normalizedTarget) {
+      setMessage({ text: '送信ログIDを入力してください', type: 'error' });
+      return false;
+    }
+    try {
+      setEventsStatus('loading');
+      setEventsError('');
+      setMessage(null);
+      const res = await api<{ items: DocumentSendEvent[] }>(
+        `/document-send-logs/${normalizedTarget}/events`,
+      );
+      setEvents(res.items || []);
+      setEventsStatus('success');
+      return true;
+    } catch (err) {
+      setEvents([]);
+      setEventsStatus('error');
+      setEventsError('送信イベントの取得に失敗しました');
+      setMessage({ text: '送信イベントの取得に失敗しました', type: 'error' });
+      console.error('Failed to load document send events.', err);
+      return false;
+    }
+  }, []);
+
+  const loadAllById = useCallback(
+    async (targetLogId: string) => {
+      const normalizedTarget = targetLogId.trim();
+      if (!normalizedTarget) {
+        setMessage({ text: '送信ログIDを入力してください', type: 'error' });
+        return;
+      }
+      setLogId(normalizedTarget);
+      await Promise.all([
+        loadLogById(normalizedTarget),
+        loadEventsById(normalizedTarget),
+      ]);
+    },
+    [loadEventsById, loadLogById],
+  );
+
+  const openAuditLogs = useCallback((targetLogId: string) => {
+    const normalizedTarget = targetLogId.trim();
+    if (!normalizedTarget) {
+      setMessage({ text: '送信ログIDを入力してください', type: 'error' });
+      return;
+    }
+    navigateToOpen({ kind: 'audit_logs', id: normalizedTarget });
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const handler = (event: Event) => {
+      const detail =
+        event instanceof CustomEvent &&
+        event.detail &&
+        typeof event.detail === 'object'
+          ? (event.detail as { sendLogId?: unknown })
+          : {};
+      const nextLogId =
+        typeof detail.sendLogId === 'string' ? detail.sendLogId.trim() : '';
+      if (!nextLogId) return;
+      loadAllById(nextLogId).catch(() => undefined);
+    };
+    window.addEventListener(
+      'erp4_open_document_send_log',
+      handler as EventListener,
+    );
+    return () => {
+      window.removeEventListener(
+        'erp4_open_document_send_log',
+        handler as EventListener,
+      );
+    };
+  }, [loadAllById]);
 
   const logRows = useMemo<DataTableRow[]>(
     () =>
@@ -244,59 +348,17 @@ export const DocumentSendLogs: React.FC = () => {
     [],
   );
 
-  const loadLog = async () => {
-    if (!trimmedLogId) {
-      setMessage({ text: '送信ログIDを入力してください', type: 'error' });
-      return;
-    }
-    try {
-      setLogStatus('loading');
-      setLogError('');
-      setMessage(null);
-      const res = await api<DocumentSendLog>(
-        `/document-send-logs/${trimmedLogId}`,
-      );
-      setLog(res);
-      setLogStatus('success');
-    } catch (err) {
-      setLog(null);
-      setLogStatus('error');
-      setLogError('送信ログの取得に失敗しました');
-      setMessage({ text: '送信ログの取得に失敗しました', type: 'error' });
-      console.error('Failed to load document send log.', err);
-    }
-  };
+  const loadLog = useCallback(async () => {
+    await loadLogById(trimmedLogId);
+  }, [loadLogById, trimmedLogId]);
 
-  const loadEvents = async () => {
-    if (!trimmedLogId) {
-      setMessage({ text: '送信ログIDを入力してください', type: 'error' });
-      return;
-    }
-    try {
-      setEventsStatus('loading');
-      setEventsError('');
-      setMessage(null);
-      const res = await api<{ items: DocumentSendEvent[] }>(
-        `/document-send-logs/${trimmedLogId}/events`,
-      );
-      setEvents(res.items || []);
-      setEventsStatus('success');
-    } catch (err) {
-      setEvents([]);
-      setEventsStatus('error');
-      setEventsError('送信イベントの取得に失敗しました');
-      setMessage({ text: '送信イベントの取得に失敗しました', type: 'error' });
-      console.error('Failed to load document send events.', err);
-    }
-  };
+  const loadEvents = useCallback(async () => {
+    await loadEventsById(trimmedLogId);
+  }, [loadEventsById, trimmedLogId]);
 
-  const loadAll = async () => {
-    if (!trimmedLogId) {
-      setMessage({ text: '送信ログIDを入力してください', type: 'error' });
-      return;
-    }
-    await Promise.all([loadLog(), loadEvents()]);
-  };
+  const loadAll = useCallback(async () => {
+    await loadAllById(trimmedLogId);
+  }, [loadAllById, trimmedLogId]);
 
   const retrySend = async (targetLogId: string) => {
     const normalizedTarget = targetLogId.trim();
@@ -396,6 +458,13 @@ export const DocumentSendLogs: React.FC = () => {
         columns={logColumns}
         rows={logRows}
         rowActions={[
+          {
+            key: 'open-audit-logs',
+            label: '監査ログで開く',
+            onSelect: (row) => {
+              openAuditLogs(String(row.id || ''));
+            },
+          },
           {
             key: 'open-pdf',
             label: 'PDFを開く',
@@ -548,6 +617,13 @@ export const DocumentSendLogs: React.FC = () => {
                 loading={logStatus === 'loading' || eventsStatus === 'loading'}
               >
                 まとめて取得
+              </Button>
+              <Button
+                variant="secondary"
+                onClick={() => openAuditLogs(trimmedLogId)}
+                disabled={!trimmedLogId}
+              >
+                監査ログで開く
               </Button>
             </div>
           }

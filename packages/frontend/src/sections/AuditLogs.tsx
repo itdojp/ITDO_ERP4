@@ -1,4 +1,10 @@
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { api, apiResponse } from '../api';
 import {
   Alert,
@@ -224,12 +230,14 @@ export const AuditLogs: React.FC = () => {
 
   const query = useMemo(() => buildQuery(filters), [filters]);
 
-  const loadLogs = async () => {
+  const loadLogsWithFilters = useCallback(async (nextFilters: FilterState) => {
     try {
       setListStatus('loading');
       setListError('');
       setMessage('');
-      const res = await api<{ items: AuditLogItem[] }>(`/audit-logs?${query}`);
+      const res = await api<{ items: AuditLogItem[] }>(
+        `/audit-logs?${buildQuery(nextFilters)}`,
+      );
       setItems(res.items || []);
       setListStatus('success');
     } catch (err) {
@@ -237,7 +245,40 @@ export const AuditLogs: React.FC = () => {
       setListStatus('error');
       setListError('監査ログの取得に失敗しました');
     }
-  };
+  }, []);
+
+  const loadLogs = useCallback(async () => {
+    await loadLogsWithFilters(filters);
+  }, [filters, loadLogsWithFilters]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const handler = (event: Event) => {
+      const detail =
+        event instanceof CustomEvent &&
+        event.detail &&
+        typeof event.detail === 'object'
+          ? (event.detail as { sendLogId?: unknown })
+          : {};
+      const nextSendLogId =
+        typeof detail.sendLogId === 'string' ? detail.sendLogId.trim() : '';
+      if (!nextSendLogId) return;
+      const nextFilters: FilterState = {
+        ...defaultFilters,
+        sendLogId: nextSendLogId,
+        format: 'json',
+      };
+      setFilters(nextFilters);
+      loadLogsWithFilters(nextFilters).catch(() => undefined);
+    };
+    window.addEventListener('erp4_open_audit_logs', handler as EventListener);
+    return () => {
+      window.removeEventListener(
+        'erp4_open_audit_logs',
+        handler as EventListener,
+      );
+    };
+  }, [loadLogsWithFilters]);
 
   const downloadCsv = async () => {
     try {

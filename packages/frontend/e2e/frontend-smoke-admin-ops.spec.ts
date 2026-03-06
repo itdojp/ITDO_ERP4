@@ -218,32 +218,52 @@ test('frontend smoke admin ops @extended', async ({ page }) => {
   });
   await captureSection(accessReviewSection, '28-access-reviews.png');
 
-  await navigateToSection(page, '監査ログ');
   const auditLogSection = page
     .locator('main')
     .getByRole('heading', { name: '監査ログ', level: 2, exact: true })
     .locator('..');
-  await auditLogSection.scrollIntoViewIfNeeded();
-  const auditRangeTo = toDateInputValue(new Date());
-  const auditRangeFrom = shiftDateKey(auditRangeTo, -7);
-  await auditLogSection
-    .getByLabel('from', { exact: true })
-    .fill(auditRangeFrom);
-  await auditLogSection.getByLabel('to', { exact: true }).fill(auditRangeTo);
   if (sendLogId) {
-    await auditLogSection.getByLabel('sendLogId').fill(sendLogId);
-  }
-  await safeClick(
-    auditLogSection.getByRole('button', { name: '検索' }),
-    'audit logs search',
-  );
-  if (sendLogId) {
+    await navigateToSection(page, '送信ログ', 'ドキュメント送信ログ');
+    await sendLogSection.getByLabel('sendLogId').fill(sendLogId);
+    await sendLogSection.getByRole('button', { name: '送信ログ取得' }).click();
+    await expect(sendLogSection.getByText(estimateId)).toBeVisible({
+      timeout: actionTimeout,
+    });
+    await sendLogSection
+      .getByLabel('Filters')
+      .getByRole('button', { name: '監査ログで開く' })
+      .click();
+    await expect(
+      page
+        .locator('main')
+        .getByRole('heading', { name: '監査ログ', level: 2, exact: true }),
+    ).toBeVisible({ timeout: actionTimeout });
+    await auditLogSection.scrollIntoViewIfNeeded();
+    await expect(auditLogSection.getByLabel('sendLogId')).toHaveValue(
+      sendLogId,
+      {
+        timeout: actionTimeout,
+      },
+    );
     await expect(
       auditLogSection
         .getByRole('gridcell')
         .filter({ hasText: sendLogId })
         .first(),
     ).toBeVisible({ timeout: actionTimeout });
+  } else {
+    await navigateToSection(page, '監査ログ');
+    await auditLogSection.scrollIntoViewIfNeeded();
+    const auditRangeTo = toDateInputValue(new Date());
+    const auditRangeFrom = shiftDateKey(auditRangeTo, -7);
+    await auditLogSection
+      .getByLabel('from', { exact: true })
+      .fill(auditRangeFrom);
+    await auditLogSection.getByLabel('to', { exact: true }).fill(auditRangeTo);
+    await safeClick(
+      auditLogSection.getByRole('button', { name: '検索' }),
+      'audit logs search',
+    );
   }
   await captureSection(auditLogSection, '29-audit-logs.png');
 
