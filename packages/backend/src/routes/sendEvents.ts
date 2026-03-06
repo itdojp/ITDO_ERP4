@@ -1,6 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import type { Prisma } from '@prisma/client';
 import { prisma } from '../services/db.js';
+import { auditContextFromRequest, logAudit } from '../services/audit.js';
 
 type SendGridEvent = {
   event?: string;
@@ -11,13 +12,42 @@ type SendGridEvent = {
 
 type SendLogRecord = {
   id: string;
+  kind: string;
+  targetTable: string;
+  targetId: string;
+  channel: string;
   providerMessageId?: string | null;
   status: string;
   error?: string | null;
 };
 
+type PendingStatusUpdate = {
+  status: string;
+  error?: string;
+  eventType: string;
+  providerMessageId?: string | null;
+  originalStatus: string;
+  kind: string;
+  targetTable: string;
+  targetId: string;
+  channel: string;
+};
+
+type PendingEventRecord = {
+  sendLogId: string;
+  eventType: string;
+  eventAt?: Date;
+  payload: SendGridEvent;
+};
+
 const FAILURE_EVENTS = new Set(['bounce', 'dropped', 'spamreport']);
 const FAILURE_STATUSES = new Set(['bounced', 'dropped', 'spamreport']);
+const AUDITED_PROVIDER_EVENTS = new Set([
+  'delivered',
+  'bounce',
+  'dropped',
+  'spamreport',
+]);
 const STATUS_RANK: Record<string, number> = {
   requested: 0,
   processed: 10,
@@ -79,6 +109,32 @@ function shouldUpdateStatus(current: string, next: string) {
   const currentRank = STATUS_RANK[current] ?? 0;
   const nextRank = STATUS_RANK[next] ?? 0;
   return nextRank > currentRank;
+}
+
+function shouldAuditProviderEvent(eventType: string) {
+  return AUDITED_PROVIDER_EVENTS.has(eventType);
+}
+
+function buildProviderAuditMetadata(
+  update: PendingStatusUpdate,
+  sendLogId: string,
+): Prisma.InputJsonObject {
+  const metadata: Record<string, Prisma.InputJsonValue> = {
+    sendLogId,
+    provider: 'sendgrid',
+    eventType: update.eventType,
+    previousStatus: update.originalStatus,
+    nextStatus: update.status,
+    kind: update.kind,
+    channel: update.channel,
+  };
+  if (update.providerMessageId) {
+    metadata.providerMessageId = update.providerMessageId;
+  }
+  if (update.error) {
+    metadata.error = update.error;
+  }
+  return metadata;
 }
 
 function toEventDate(timestamp?: number) {
@@ -191,11 +247,9 @@ export async function registerSendEventRoutes(app: FastifyInstance) {
       const { logsById, logsBySgId } = buildLogLookup(sendLogs, sgMessageIds);
 
       let stored = 0;
-      const txOps: Array<Prisma.PrismaPromise<unknown>> = [];
-      const pendingUpdates = new Map<
-        string,
-        { status: string; error?: string }
-      >();
+      const eventRecords: PendingEventRecord[] = [];
+      const pendingUpdates = new Map<string, PendingStatusUpdate>();
+      const pendingAudits = new Map<string, PendingStatusUpdate>();
 
       for (const event of events) {
         const sendLog = resolveSendLog(event, logsById, logsBySgId);
@@ -203,17 +257,12 @@ export async function registerSendEventRoutes(app: FastifyInstance) {
           continue;
         }
         const eventType = event.event || 'unknown';
-        txOps.push(
-          prisma.documentSendEvent.create({
-            data: {
-              sendLogId: sendLog.id as string,
-              provider: 'sendgrid',
-              eventType,
-              eventAt: toEventDate(event.timestamp),
-              payload: event,
-            },
-          }),
-        );
+        eventRecords.push({
+          sendLogId: sendLog.id as string,
+          eventType,
+          eventAt: toEventDate(event.timestamp),
+          payload: event,
+        });
         stored += 1;
 
         const nextStatus = normalizeSendLogStatus(eventType);
@@ -222,37 +271,86 @@ export async function registerSendEventRoutes(app: FastifyInstance) {
           pendingUpdates.get(sendLog.id as string)?.status ??
           (sendLog.status as string);
         if (shouldUpdateStatus(currentStatus, nextStatus)) {
-          pendingUpdates.set(sendLog.id as string, {
+          const nextUpdate: PendingStatusUpdate = {
             status: nextStatus,
+            eventType,
             error: FAILURE_EVENTS.has(eventType)
               ? `sendgrid_${eventType}`
               : undefined,
-          });
+            providerMessageId:
+              sendLog.providerMessageId ?? event.sg_message_id ?? undefined,
+            originalStatus: sendLog.status as string,
+            kind: sendLog.kind,
+            targetTable: sendLog.targetTable,
+            targetId: sendLog.targetId,
+            channel: sendLog.channel,
+          };
+          pendingUpdates.set(sendLog.id as string, nextUpdate);
+          if (shouldAuditProviderEvent(eventType)) {
+            const currentAuditedStatus =
+              pendingAudits.get(sendLog.id as string)?.status ??
+              (sendLog.status as string);
+            if (shouldUpdateStatus(currentAuditedStatus, nextStatus)) {
+              pendingAudits.set(sendLog.id as string, nextUpdate);
+            }
+          }
         }
       }
 
-      for (const [sendLogId, update] of pendingUpdates.entries()) {
-        const original = logsById.get(sendLogId);
-        const originalStatus =
-          original && typeof original.status === 'string'
-            ? original.status
-            : undefined;
-        txOps.push(
-          prisma.documentSendLog.updateMany({
-            where: {
-              id: sendLogId,
-              ...(originalStatus ? { status: originalStatus } : {}),
-            },
-            data: {
-              status: update.status,
-              error: update.error ?? (original?.error as string | undefined),
-            },
-          }),
-        );
+      const appliedAudits: Array<{
+        sendLogId: string;
+        update: PendingStatusUpdate;
+      }> = [];
+      if (eventRecords.length > 0 || pendingUpdates.size > 0) {
+        await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+          for (const eventRecord of eventRecords) {
+            await tx.documentSendEvent.create({
+              data: {
+                sendLogId: eventRecord.sendLogId,
+                provider: 'sendgrid',
+                eventType: eventRecord.eventType,
+                eventAt: eventRecord.eventAt,
+                payload: eventRecord.payload,
+              },
+            });
+          }
+          for (const [sendLogId, update] of pendingUpdates.entries()) {
+            const original = logsById.get(sendLogId);
+            const originalStatus =
+              original && typeof original.status === 'string'
+                ? original.status
+                : undefined;
+            const result = await tx.documentSendLog.updateMany({
+              where: {
+                id: sendLogId,
+                ...(originalStatus ? { status: originalStatus } : {}),
+              },
+              data: {
+                status: update.status,
+                error: update.error ?? (original?.error as string | undefined),
+              },
+            });
+            if (
+              result.count > 0 &&
+              pendingAudits.has(sendLogId) &&
+              shouldUpdateStatus(update.originalStatus, update.status)
+            ) {
+              appliedAudits.push({
+                sendLogId,
+                update: pendingAudits.get(sendLogId) as PendingStatusUpdate,
+              });
+            }
+          }
+        });
       }
-
-      if (txOps.length) {
-        await prisma.$transaction(txOps);
+      for (const { sendLogId, update } of appliedAudits) {
+        await logAudit({
+          ...auditContextFromRequest(req, { source: 'webhook' }),
+          action: 'document_send_provider_status_updated',
+          targetTable: update.targetTable,
+          targetId: update.targetId,
+          metadata: buildProviderAuditMetadata(update, sendLogId),
+        });
       }
       return { received: events.length, stored };
     },
