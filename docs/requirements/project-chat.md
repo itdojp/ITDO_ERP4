@@ -1,11 +1,13 @@
 # プロジェクトチャット仕様（統合）
 
 ## 目的/スコープ
+
 - ERPと統合されたチャット機能として、Slack/Chatwork代替を目指す
 - プロジェクト情報/タスク/承認などERPの情報と連動した利用を想定する
 - AIを取り込み、要約/アクション抽出などの支援を行う（詳細は決定待ち）
 
 ## 現状（実装済み）
+
 - プロジェクト単位の簡易グループチャット（room-based: `ChatRoom(type=project)` + `ChatMessage`）
 - 公式ルーム（全社/部門）+ ルーム設定（外部ユーザ許可/外部連携許可）
 - private_group/DM（room-based: `ChatRoom(type=private_group/dm)` + `ChatMessage`）
@@ -19,17 +21,20 @@
 - 外部要約（公式ルームのみ、外部連携ON時。監査ログ必須）: `docs/requirements/chat-external-llm.md`
 
 ## 未実装（後続）
+
 - 検索（チャットのみ/ERP横断）とインデックス
 - 通知チャネルの拡張（メール/Push/外部連携）
 - リアルタイム配信（WebSocket等）
 
 ## 役割/アクセス制御
+
 - 許可ロール: admin / mgmt / user / hr / exec（external_chat は認証通過用。チャット権限制御には使わない）
 - admin/mgmt は全プロジェクトにアクセス可能
 - それ以外のロールは `projectIds` に含まれる案件のみアクセス可能
 - チャット参加/閲覧は room の ACL（viewer/poster + member + allowExternalUsers）で制御する
 
 ## 決定事項（見直し反映）
+
 - 既読/未読状態を保持する
 - 自分の未読は自分のみが確認できる（未読件数/新着強調など）
 - 自分以外の未読/既読状態は表示しない（いわゆる既読表示はしない）
@@ -44,7 +49,9 @@
 - 外部連携（Webhook/外部通知など）は公式ルームのみ許可する
 
 ## 未決定/要設計（ベース方針）
+
 ### ベース（案）
+
 - チャット単位は「プロジェクト/部門/全社/DM」を含める
   - DM は管理者設定で無効化できる
 - 自分の未読は自分のみが全てわかる（未読件数/未読ハイライト）
@@ -59,6 +66,7 @@
 - 参加制御はルームACL（viewer/poster + member）で行う。DMの可否は設定で制御する
 
 ### 詳細検討（論点）
+
 - Markdown方言（CommonMark/GFMなど）とサニタイズ方針
 - 添付の保存先: Google Drive を候補として検討（権限制御/共有モデル/監査/容量/ウイルス対策）
   - Google側の「システムユーザのみが読み書きできる領域」を専用ストレージとして利用する案（Drive連携案に相当）
@@ -69,7 +77,9 @@
 - AIの実装方式（ローカル/外部LLM）、権限/監査（外部LLM送信は外部連携扱い）
 
 ## ガバナンス設計（案）
+
 ### ルームの種別
+
 - 公式ルーム（会社が把握・統制する前提）
   - 例: 案件ルーム（Project）、部門/全社ルーム（Group/Role）
   - 作成/管理: admin/mgmt（案件ルームについては project leader の限定操作を後続で追加検討）
@@ -83,6 +93,7 @@
     - DMのルーム管理者（owner）の扱いは要設計（例: 両参加者を owner とみなす）
 
 ### 「会社が認知する」範囲（決定: B）
+
 - 会社（admin/mgmt/exec/監査権限者）は、ルームの存在とメタ情報を把握できる（常時監視ではなく「把握できる」状態）
   - 例: roomId / 種別 / 表示名 / 作成者 / ルーム管理者 / メンバー数 / 最終発言時刻 / 外部連携の有無
   - メンバー一覧の閲覧を許可する（閲覧自体も監査ログ対象とする）
@@ -90,6 +101,7 @@
 - 監査目的の break-glass（理由+ログ+承認）により、必要時は内容も閲覧できる
 
 ### 私的グループの自治（案）
+
 - 私的グループは、ルーム管理者（room owner）を必須とする
   - 参加者の招待/退出、ルーム設定変更の責任を持つ
   - ルーム管理者が不在にならないように、退出時はルーム管理者移譲を必須にする
@@ -101,25 +113,31 @@
   - 会社側の強制措置（強制アーカイブ/凍結/退会など）が必要になる場合は、すべて理由必須 + 監査ログ必須
 
 ### 会社側の強制措置（案）
+
 - 想定アクション: ルーム凍結（read-only）/ 強制アーカイブ / 外部連携停止 / ルーム管理者再設定 / メンバー強制退会
 - すべて `reasonCode + reasonText` を必須とし、監査ログへ記録する
 - 原則としてルーム内にシステムメッセージを残す（強制措置が行われた事実が消えない）
 
 ### 外部連携（決定）
+
 - 外部連携できるのは公式ルームのみ
   - 私的ルームは、外部ユーザ招待や外部通知/Webhookを禁止する
   - AIが外部LLM等に送信する方式の場合は「外部連携」とみなし、公式ルームのみ許可（私的ルームはデフォルト無効）
 
 ## 監査目的 break-glass（案）
+
 ### 目的
+
 - 不正/ハラスメント/情報漏えい等の調査、監査対応のために、私的ルームを含むチャット内容へ例外的にアクセスできる仕組みを提供する
 
 ### 監査の原則（案）
+
 - 監査閲覧は「例外」であり、目的外利用を禁止する（申請理由と実施理由を監査ログで追えること）
 - 監査閲覧は read-only（投稿/リアクション/編集/削除などの操作は不可）
 - 監査閲覧で参照した範囲（ルーム、期間、添付の取得など）を監査ログに残す
 
 ### ワークフロー（案）
+
 1. 監査閲覧申請（request）
    - 申請者: mgmt/exec（MVP案。admin は申請者にしない）
    - 入力: reasonCode + reasonText（必須）、対象ルーム、対象期間（デフォルト例: 30日）、閲覧期間（TTL）、閲覧者（監査担当）
@@ -132,6 +150,7 @@
    - 実際に閲覧した事実（誰が/いつ/どの範囲）を監査ログへ記録
 
 ### reasonCode（案）
+
 - `harassment`（ハラスメント）
 - `fraud`（不正）
 - `security_incident`（情報漏えい/セキュリティ事故）
@@ -139,6 +158,7 @@
 - `other`（その他）
 
 ### 「事前に分かる」仕組み（案）
+
 - 監査閲覧が申請/承認された時点で、ルーム内にシステムメッセージ・バナーを表示して通知する
 - 少なくとも私的ルームのルーム管理者には必ず通知する（MVPは全メンバーにも表示）
 - 通知表示と閲覧権付与は同一トランザクションで確定し、通知が残らない状態での閲覧を不可能にする
@@ -148,6 +168,7 @@
 - 猶予時間（cooldown）を導入する場合は、公式/私的で別設定可能にする（MVPは cooldown=0 を想定）
 
 ### break-glass を使ったことが分かる仕組み（案）
+
 - 閲覧申請/承認/閲覧開始/閲覧終了のタイミングで「システムメッセージ」を残す
   - システムメッセージは削除不可（閲覧の事実が消えない）
   - 少なくともルーム管理者は必ず視認できる（MVPは全メンバーに表示）
@@ -156,11 +177,13 @@
   - reasonText の参照は mgmt/exec のみ（ルーム管理者は reasonCode まで）
 
 ### 改ざん・削除対策（案）
+
 - チャットはハードデリート禁止（後述）
 - break-glass の申請/承認/閲覧は削除不可の監査ログとして残す
 - 監査ログは既存の改ざん検知（ハッシュチェーン/外部保全方針）と整合させる
 
 ## 削除/編集/保持（案）
+
 - 投稿は原則「編集」ではなく「追記」を推奨（運用/UXは要検討）
 - 編集を許可する場合は revision を保持し、監査閲覧では改版履歴も閲覧できる
 - 削除は論理削除（表示上は「削除済み」に置換）とし、原文は監査上の追跡が可能な形で保持する
@@ -168,7 +191,9 @@
   - 削除理由を必須化し、用途別に扱えるようにする（例: `user_retract` / `admin_moderation` / `legal_hold` / `other`）
 
 ## データモデル
+
 ### 現行（room-based）
+
 - Prisma: `packages/backend/prisma/schema.prisma` を正とする
 - 主テーブル: `ChatRoom` / `ChatMessage` / `ChatAttachment` / `ChatReadState` / `ChatAckRequest` / `ChatAck`
 - break-glass: `ChatBreakGlassRequest` / `ChatBreakGlassAccessLog`
@@ -176,31 +201,41 @@
 - `ProjectChat*`（legacy）は Step 5 で削除済み（migration: `20260112030000_drop_legacy_project_chat`）
 
 ## データモデル（後続案）
+
 - ChatMention（メンションの正規化: `messageId`, `targetType`, `targetId`）
 - ChatMessageRevision（編集履歴）/ system message の正規化
 - 検索用インデックス（チャット単体/ERP横断）
 
 ## API
+
 ### 現行API
+
 ※ 正規経路は room-based（`/chat-rooms/:roomId/*`）。`/projects/:projectId/chat-*` は互換alias。
+
 ### GET `/chat-rooms/:roomId/messages`
+
 **Query**
+
 - `limit` (default 50, max 200)
 - `before` (ISO日時。これ以前のメッセージを取得)
 - `tag` (任意。タグが一致するメッセージのみ)
 
 **挙動**
+
 - `createdAt` 降順で取得
 - `tag` はトリム後の完全一致でフィルタ
 - `tag` が空/未指定の場合はフィルタなし
 
 **エラー**
+
 - `limit` が正数でない場合は 400
 - `before` が不正な日付の場合は 400
 - `tag` が 32 文字超の場合は 400
 
 ### POST `/chat-rooms/:roomId/messages`
+
 **Body**
+
 - `body` (1〜2000文字)
 - `tags` (任意: 0〜8件、各32文字まで)
 - `mentions` (任意)
@@ -209,6 +244,7 @@
   - `all` (任意: `true` の場合は @all 扱い)
 
 **挙動**
+
 - `userId` は認証情報から取得
 - 認証情報が不足する場合は `demo-user` をフォールバック（PoC向け）
   - 本番環境では無効化し、401/403 を返す前提
@@ -219,7 +255,9 @@
   - 超過時は 429 を返す
 
 ### POST `/chat-rooms/:roomId/ack-requests`
+
 **Body**
+
 - `body` (1〜2000文字)
 - `requiredUserIds` (1〜50件)
 - `dueAt` (任意: ISO日時)
@@ -230,65 +268,87 @@
   - `all` (任意: `true` の場合は @all 扱い)
 
 **挙動**
+
 - 通常メッセージ + `ChatAckRequest` を1トランザクションで作成する
 - `requiredUserIds` はトリムして重複排除する（API側で正規化）
 - `mentions.all=true` の場合は投稿回数制限（rate limit）を適用する（詳細は `POST /chat-messages` と同様）
 
 ### GET `/chat-rooms/:roomId/mention-candidates`
+
 **挙動**
+
 - UIでの補完選択用に、ユーザ候補（案件メンバー中心）とグループ候補（JWTの `group_ids`）を返す
 - `allowAll=false` の場合、UIは @all を選べない（例: ルーム/ポリシーで @all を無効化）
 
 ### POST `/chat-ack-requests/:id/ack`
+
 **Body**
+
 - なし
 
 **挙動**
+
 - `requiredUserIds` に含まれるユーザのみ OK/確認できる
 - 二重送信は冪等（同一ユーザは1回のみ記録される）
 
 ### POST `/chat-messages/:id/attachments`
+
 **Body**
+
 - `multipart/form-data` で `file` を送信
 
 **挙動**
+
 - `messageId` のメッセージに添付を追加する
 - provider は `CHAT_ATTACHMENT_PROVIDER` に従う（`local`/`gdrive`）
 - `CHAT_ATTACHMENT_MAX_BYTES` を超える場合は 413 を返す
 
 ### GET `/chat-attachments/:id`
+
 **挙動**
+
 - ERPの権限チェック（案件アクセス）を通過した場合のみダウンロード可能
 - 認証はヘッダベースのため、UI側は `fetch` で取得してダウンロードする（直リンクではない）
 
 ### GET `/chat-rooms/:roomId/unread`
+
 **挙動**
+
 - 自分の未読件数と `lastReadAt` を返す（他人の既読/未読は返さない）
 
 ### POST `/chat-rooms/:roomId/read`
+
 **挙動**
+
 - 自分の `lastReadAt` を `now()` に更新する（MVPは「読み込み」時点で更新する運用）
 
 ### POST `/chat-rooms/:roomId/summary`
+
 **Body**
+
 - `since` (任意: ISO日時)
 - `until` (任意: ISO日時)
 - `limit` (任意: 1〜200、デフォルト100)
 
 **挙動**
+
 - 直近メッセージを集計して「スタブ要約」を返す（外部LLM送信はしない）
 - 実行操作は監査ログ `chat_summary_generated` として記録する
 
 ### POST `/chat-messages/:id/reactions`
+
 **Body**
+
 - `emoji` (1〜16文字)
 
 **挙動**
+
 - 同一ユーザの同一emojiは1回のみ加算
 - 形式は `{ emoji: { count, userIds[] } }`
 - 既存データが数値の場合は互換扱いで更新する
 
 ### 拡張API（案）
+
 - `GET /chat-rooms`（参加可能なチャット一覧）
 - `POST /chat-rooms`（新規作成/設定）
 - `GET /chat-rooms/:id/messages`（メッセージ取得）
@@ -303,14 +363,14 @@
 - `GET /chat-break-glass/requests`（申請一覧/履歴）
 - `GET /chat-break-glass/requests/:id/messages`（監査閲覧: メッセージ取得）
 
-## UI（ProjectChat）
-- プロジェクト選択、読み込み、投稿、タグ表示、リアクション
-- Markdownプレビュー（投稿前）
-- タグ絞り込み入力（適用は「読み込み」ボタン）
-- 追加読み込み（`before` 使用）
-- 既定のリアクション候補: 👍/🎉/❤️/😂/🙏/👀
+## UI（現状）
+
+- frontend の mounted UI は `RoomChat` に一本化済み
+- project ルームも room UI 上で選択・閲覧・投稿する
+- 本ドキュメントの `ProjectChat` 記述は互換alias/移行経緯の参照用とする
 
 ## UI（拡張方針）
+
 - 未読/既読表示（設定に応じて表示方式を切替）
 - メンション入力支援
 - 部門/全社/DM を含む「ルーム一覧」と作成・参加フロー
@@ -320,16 +380,19 @@
 - 監査者向けの申請/承認/閲覧UI（管理画面または監査画面）
 
 ## バリデーション/制約
+
 - 本文: 1〜2000文字
 - タグ: 最大8件、各32文字
 - リアクションemoji: 1〜16文字
 
 ## テスト
+
 - E2Eスモークに「投稿/リアクション」含む
   - `packages/frontend/e2e/frontend-smoke-chat-hr-analytics.spec.ts`
   - `packages/frontend/e2e/frontend-smoke-room-chat.spec.ts`
 
 ## 未実装/後続スコープ
+
 - ルーム機能（部門/全社/DM/私的グループ）と管理者設定（DM無効化）
 - メッセージ編集/削除（論理削除API）
 - リアクションの取り消し（トグル）
@@ -342,6 +405,7 @@
 - 複数タグの AND/OR 検索
 
 ## 関連ドキュメント
+
 - `docs/requirements/data-model-sketch.md`
 - `docs/requirements/domain-api-draft.md`
 - `docs/requirements/frontend-api-wire.md`

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { apiResponse, getAuthState } from '../api';
+import { apiResponse } from '../api';
 import {
   Alert,
   Button,
@@ -483,18 +483,7 @@ export const App: React.FC = () => {
             return;
           }
 
-          const auth = getAuthState();
-          const roles = auth?.roles || [];
-          const canUseProjectChat =
-            roles.includes('admin') ||
-            roles.includes('mgmt') ||
-            roles.includes('exec') ||
-            (auth?.projectIds?.length ?? 0) > 0;
-          const preferredSectionId =
-            roomType === 'project' && projectId && canUseProjectChat
-              ? 'project-chat'
-              : 'room-chat';
-          const sectionId = normalizeSectionId(preferredSectionId);
+          const sectionId = 'room-chat';
 
           setPendingDeepLink({
             sectionId,

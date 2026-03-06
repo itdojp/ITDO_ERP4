@@ -84,7 +84,7 @@
 - POST `/vendor-invoices` { projectId, vendorId, vendor_invoice_no?, ... }
 - POST `/vendor-invoices/:id/submit`（承認フロー起動、後方互換: `/approve` も残す）
 
-## project chat
+## room chat
 
 - GET `/chat-rooms/:roomId/messages?limit=&before=&tag=`
 - POST `/chat-rooms/:roomId/messages` { body, tags? }

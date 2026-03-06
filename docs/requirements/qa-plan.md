@@ -1,6 +1,7 @@
 # QA 手順（ハッピーパス最小）
 
 ## バックエンド API
+
 - 起動: `cd packages/backend && npm run prisma:generate && npm run dev` (環境変数 `DATABASE_URL` で任意のローカルDB; 本番ビルド確認が必要なら `npm run build && node dist/index.js`)
 - ヘルス: GET /health → { ok: true }
 - プロジェクト作成: POST /projects { code,name } → 201
@@ -23,6 +24,7 @@
 - スモーク: scripts/smoke-backend.sh を実行してハッピーパスが通ることを確認
 
 ### 定期案件テンプレ投入例（手動）
+
 ```sql
 WITH monthly_project AS (
   INSERT INTO "Project" (id, code, name, status, currency, "createdAt", "updatedAt")
@@ -62,10 +64,12 @@ ON CONFLICT ("projectId") DO UPDATE
       "isActive" = EXCLUDED."isActive",
       "updatedAt" = now();
 ```
+
 実行後に `POST /jobs/recurring-projects/run` を叩き、同月内で二重作成されないことを確認。
 UUID生成関数は環境に合わせて置き換え（`gen_random_uuid()`/`uuid_generate_v4()` など）。
 
 ## フロント PoC
+
 - 起動: `cd packages/frontend && npm run dev`
 - ダッシュボード: アラート一覧が表示される（データが無ければ「なし」表示）
 - 日報+WB: Good/Not Good入力＋タグ/短文（Not Good時）→ 送信 → 成功メッセージ
@@ -85,13 +89,15 @@ UUID生成関数は環境に合わせて置き換え（`gen_random_uuid()`/`uuid
 - 整合チェック: scripts/checks/poc-integrity.sql を実行し、件数/合計が期待値と一致することを確認
 
 ## フロント自動テスト (E2E)
+
 - 実行: `scripts/e2e-frontend.sh`
 - 画面キャプチャの出力先: `docs/test-results/YYYY-MM-DD-frontend-e2e/`
-- 操作範囲: ダッシュボード、日報+WB、工数/経費/請求、仕入/発注、承認一覧、レポート、案件、顧客/業者マスタ、設定、プロジェクトチャット、匿名集計(HR)
+- 操作範囲: ダッシュボード、日報+WB、工数/経費/請求、仕入/発注、承認一覧、レポート、案件、顧客/業者マスタ、設定、ルームチャット（案件ルームを含む）、匿名集計(HR)
 - CI向け: `E2E_CAPTURE=0` で証跡保存をスキップ
 - 範囲切替: `E2E_SCOPE=core|extended|full`（未指定は full）
 
 ## 管理系
+
 - マスタ管理: /customers, /vendors の GET/POST/PATCH でCRUD動作
 - 連絡先管理: /contacts の GET/POST/PATCH でCRUD動作（customerId または vendorId のみ許可）
 - アラート設定: GET/POST/PATCH /alert-settings でCRUD動作
@@ -101,6 +107,7 @@ UUID生成関数は環境に合わせて置き換え（`gen_random_uuid()`/`uuid
 - PDF取得: /pdf-files/:filename が 200 で返る
 
 ## 既知リスク/欠落（PoC）
+
 - RBACは簡易、エラーハンドリング/バリデーションも基本のみ
 - PDFはローカル生成、メールはSMTP設定があれば実送信
 - データ永続先は環境構築次第

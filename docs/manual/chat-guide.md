@@ -23,6 +23,10 @@
 
 運用上の扱いは [chat-rooms](../requirements/chat-rooms.md) を優先します。
 
+- 利用者向けのチャットUIは `RoomChat` に一本化されています。
+- project ルームも同じ画面で扱い、`/projects/{projectId}/chat-*` は backend 互換alias としてのみ残しています。
+- 旧 `project_chat` / `chat_message` の deep link や通知導線も、画面上は `ルームチャット` に正規化されます。
+
 - `project`: 案件ルーム（案件に紐づく）
 - `department`: 部門/グループ
 - `company`: 全社（必要なら）
