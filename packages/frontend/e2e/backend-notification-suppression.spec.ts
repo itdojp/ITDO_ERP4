@@ -346,7 +346,7 @@ async function deactivateApprovalRule(
   await ensureOk(res);
 }
 
-async function createProjectChatMessage(
+async function createProjectRoomMessage(
   request: any,
   projectId: string,
   body: string,
@@ -685,7 +685,7 @@ test('chat_mention notifications: global mute and room mention settings suppress
   );
 
   try {
-    const baselineMessageId = await createProjectChatMessage(
+    const baselineMessageId = await createProjectRoomMessage(
       request,
       projectId,
       `E2E project mention baseline ${suffix}`,
@@ -708,7 +708,7 @@ test('chat_mention notifications: global mute and room mention settings suppress
     await patchNotificationPreference(request, recipientProjectHeaders, {
       muteAllUntil,
     });
-    const mutedByGlobalMessageId = await createProjectChatMessage(
+    const mutedByGlobalMessageId = await createProjectRoomMessage(
       request,
       projectId,
       `E2E project mention muted global ${suffix}`,
@@ -739,7 +739,7 @@ test('chat_mention notifications: global mute and room mention settings suppress
         muteUntil: null,
       },
     );
-    const mutedByNotifyMentionsFalseMessageId = await createProjectChatMessage(
+    const mutedByNotifyMentionsFalseMessageId = await createProjectRoomMessage(
       request,
       projectId,
       `E2E project mention muted room notifyMentions ${suffix}`,
@@ -768,7 +768,7 @@ test('chat_mention notifications: global mute and room mention settings suppress
         muteUntil: roomMuteUntil,
       },
     );
-    const mutedByRoomMuteMessageId = await createProjectChatMessage(
+    const mutedByRoomMuteMessageId = await createProjectRoomMessage(
       request,
       projectId,
       `E2E project mention muted room muteUntil ${suffix}`,
@@ -796,7 +796,7 @@ test('chat_mention notifications: global mute and room mention settings suppress
         muteUntil: null,
       },
     );
-    const recoveredMessageId = await createProjectChatMessage(
+    const recoveredMessageId = await createProjectRoomMessage(
       request,
       projectId,
       `E2E project mention recovered ${suffix}`,
@@ -861,10 +861,10 @@ test('chat_message notifications: notifyAllPosts and mute settings suppress deli
   );
 
   try {
-    const baselineMessageId = await createProjectChatMessage(
+    const baselineMessageId = await createProjectRoomMessage(
       request,
       projectId,
-      `E2E project chat baseline ${suffix}`,
+      `E2E room chat baseline ${suffix}`,
     );
     expect(
       (
@@ -883,10 +883,10 @@ test('chat_message notifications: notifyAllPosts and mute settings suppress deli
       projectId,
       { notifyAllPosts: false, muteUntil: null },
     );
-    const mutedByNotifyAllFalseMessageId = await createProjectChatMessage(
+    const mutedByNotifyAllFalseMessageId = await createProjectRoomMessage(
       request,
       projectId,
-      `E2E project chat muted notifyAll ${suffix}`,
+      `E2E room chat muted notifyAll ${suffix}`,
     );
     expect(
       (
@@ -906,10 +906,10 @@ test('chat_message notifications: notifyAllPosts and mute settings suppress deli
       projectId,
       { notifyAllPosts: true, muteUntil: roomMuteUntil },
     );
-    const mutedByRoomMuteMessageId = await createProjectChatMessage(
+    const mutedByRoomMuteMessageId = await createProjectRoomMessage(
       request,
       projectId,
-      `E2E project chat muted room ${suffix}`,
+      `E2E room chat muted room ${suffix}`,
     );
     expect(
       (
@@ -932,10 +932,10 @@ test('chat_message notifications: notifyAllPosts and mute settings suppress deli
     await patchNotificationPreference(request, recipientProjectHeaders, {
       muteAllUntil,
     });
-    const mutedByGlobalMessageId = await createProjectChatMessage(
+    const mutedByGlobalMessageId = await createProjectRoomMessage(
       request,
       projectId,
-      `E2E project chat muted global ${suffix}`,
+      `E2E room chat muted global ${suffix}`,
     );
     expect(
       (
@@ -951,10 +951,10 @@ test('chat_message notifications: notifyAllPosts and mute settings suppress deli
     await patchNotificationPreference(request, recipientProjectHeaders, {
       muteAllUntil: null,
     });
-    const recoveredMessageId = await createProjectChatMessage(
+    const recoveredMessageId = await createProjectRoomMessage(
       request,
       projectId,
-      `E2E project chat recovered ${suffix}`,
+      `E2E room chat recovered ${suffix}`,
     );
     expect(
       (
