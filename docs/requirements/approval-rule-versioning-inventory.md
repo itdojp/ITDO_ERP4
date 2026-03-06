@@ -78,7 +78,8 @@
 2. **系列操作API不足**
    - 専用の「履歴参照」「版比較」「activate 切替」APIが未整備。
 3. **未解決時の暫定ID依存**
-   - `ruleId='auto'` / `'manual'` を使う経路があり、実体 rule の運用前提が曖昧。
+   - 2026-03-06 時点で `ruleId='auto'` / `'manual'` 依存は撤去済み。
+   - `ApprovalInstance.ruleId` は実在する ApprovalRule を参照する前提に揃ったため、この項目は解消済み。
 4. **編集ガード不足（latest 指向）**
    - `PATCH` は新版作成化済みだが、最新版のみ編集可とするガードは未導入。
 
