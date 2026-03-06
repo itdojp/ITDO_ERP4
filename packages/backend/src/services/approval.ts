@@ -20,7 +20,6 @@ import { resolveLeaveRequestMinutesWithCalendar } from './leaveEntitlements.js';
 import { ensureLeaveSetting } from './leaveSettings.js';
 import {
   hasQaStageBeforeExec,
-  matchApprovalSteps as computeApprovalSteps,
   matchesRuleCondition,
   normalizeRuleStepsWithPolicy,
   resolvePendingStatus,
@@ -335,12 +334,16 @@ function shouldDenyImplicitApprovalFallback(
   fallbackMode: ApprovalRuleFallbackMode,
   fallbackReasons: string[],
 ) {
-  if (fallbackMode !== 'strict') return false;
+  if (fallbackMode === 'strict') {
+    return fallbackReasons.some(
+      (reason) =>
+        reason === 'rule_not_found' ||
+        reason === 'rule_invalid_steps' ||
+        reason === 'rule_condition_unmatched_first_rule',
+    );
+  }
   return fallbackReasons.some(
-    (reason) =>
-      reason === 'rule_not_found' ||
-      reason === 'rule_invalid_steps' ||
-      reason === 'rule_condition_unmatched_first_rule',
+    (reason) => reason === 'rule_not_found' || reason === 'rule_invalid_steps',
   );
 }
 
@@ -399,7 +402,7 @@ async function createApprovalWithClient(
   targetTable: string,
   targetId: string,
   steps: Step[],
-  ruleId = 'manual',
+  ruleId: string,
   createdBy?: string,
   projectId?: string,
   stagePolicy?: ApprovalStagePolicy,
@@ -471,7 +474,7 @@ export async function createApproval(
   targetTable: string,
   targetId: string,
   steps: Step[],
-  ruleId = 'manual',
+  ruleId: string,
   createdBy?: string,
   projectId?: string,
   stagePolicy?: ApprovalStagePolicy,
@@ -534,8 +537,9 @@ export async function createApprovalFor(
     }
     throw new AppError({
       code: 'approval_rule_required',
-      message:
-        'Active approval rule is required before submission in strict mode',
+      message: fallbackReasons.includes('rule_invalid_steps')
+        ? 'Active approval rule must define valid steps before submission'
+        : 'Active approval rule is required before submission',
       httpStatus: 409,
       category: 'conflict',
       details: {
@@ -547,13 +551,7 @@ export async function createApprovalFor(
       },
     });
   }
-  const steps =
-    normalized?.steps ||
-    computeApprovalSteps(
-      flowType,
-      enrichedPayload,
-      (rule?.conditions as ApprovalCondition) || undefined,
-    );
+  const steps = normalized?.steps ?? [];
   const stagePolicy = normalized?.stagePolicy;
   const projectId =
     typeof enrichedPayload.projectId === 'string'
@@ -562,9 +560,6 @@ export async function createApprovalFor(
   const ruleVersion =
     typeof rule?.version === 'number' ? rule.version : undefined;
   const ruleSnapshot = buildRuleSnapshot(rule);
-  if (!rule) {
-    fallbackReasons.push('rule_id_auto_used');
-  }
   let approvalResult;
   if (client === prisma) {
     approvalResult = await prisma.$transaction(async (tx: any) =>
@@ -574,7 +569,7 @@ export async function createApprovalFor(
         targetTable,
         targetId,
         steps,
-        rule?.id || 'auto',
+        rule!.id,
         options.createdBy,
         projectId,
         stagePolicy,
@@ -589,7 +584,7 @@ export async function createApprovalFor(
       targetTable,
       targetId,
       steps,
-      rule?.id || 'auto',
+      rule!.id,
       options.createdBy,
       projectId,
       stagePolicy,
