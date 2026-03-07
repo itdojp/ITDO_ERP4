@@ -94,8 +94,8 @@ for setting in alert_settings where is_enabled:
 ## レポート購読/配信ジョブ
 
 - 対象: report_subscriptions / report_deliveries。
-- `/jobs/report-subscriptions/run`: isEnabled=true の購読を順次実行して report_deliveries を作成。現状は schedule を判定しないため、運用の cron 側で頻度を制御する。
-- `/jobs/report-deliveries/retry`: status=failed かつ retryCount<REPORT_DELIVERY_RETRY_MAX, nextRetryAt<=now を再送。更新時に status=retrying で再送ロック。
+- `/jobs/report-subscriptions/run`: isEnabled=true の購読を順次実行して report_deliveries を作成。email はまず `status=pending` で永続化し、その後の即時処理または retry job が配送する。現状は schedule を判定しないため、運用の cron 側で頻度を制御する。
+- `/jobs/report-deliveries/retry`: `status=pending` の初回配送と、`status=failed` かつ retryCount<REPORT_DELIVERY_RETRY_MAX, nextRetryAt<=now の再送を処理する。更新時に `pending -> sending` / `failed -> retrying` で配送ロックする。
 - 失敗通知: failed_permanent は REPORT_DELIVERY_FAILURE_EMAILS 宛に通知（未設定ならスキップ）。
 - スケジュール案: subscriptions=日次/週次に合わせて cron で実行（例: 02:00 JST）、retry=15〜30分おき。
 - 注意: report-subscriptions/run は都度 delivery を作るため、過剰実行に注意（重複配信防止は cron 設定で担保）。
