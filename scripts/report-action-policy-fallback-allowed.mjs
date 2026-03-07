@@ -1,4 +1,4 @@
-import { pathToFileURL } from 'node:url';
+import { pathToFileURL } from "node:url";
 
 const DEFAULT_TAKE = 1000;
 
@@ -18,9 +18,9 @@ function parseIsoDate(name, value) {
 }
 
 function parseFormat(raw) {
-  if (!raw) return 'text';
-  if (raw === 'text' || raw === 'json') return raw;
-  throw new Error('format must be text or json');
+  if (!raw) return "text";
+  if (raw === "text" || raw === "json") return raw;
+  throw new Error("format must be text or json");
 }
 
 function parsePositiveInteger(name, raw, fallback) {
@@ -33,32 +33,36 @@ function parsePositiveInteger(name, raw, fallback) {
 }
 
 export function parseOptionsFromArgv(argv, now = new Date()) {
-  const toRaw = parseArgValue(argv, 'to');
-  const to = toRaw ? parseIsoDate('to', toRaw) : now;
-  const fromRaw = parseArgValue(argv, 'from');
+  const toRaw = parseArgValue(argv, "to");
+  const to = toRaw ? parseIsoDate("to", toRaw) : now;
+  const fromRaw = parseArgValue(argv, "from");
   const from = fromRaw
-    ? parseIsoDate('from', fromRaw)
+    ? parseIsoDate("from", fromRaw)
     : new Date(to.getTime() - 24 * 60 * 60 * 1000);
   if (from.getTime() >= to.getTime()) {
-    throw new Error('from must be earlier than to');
+    throw new Error("from must be earlier than to");
   }
   return {
     from,
     to,
-    format: parseFormat(parseArgValue(argv, 'format')),
-    take: parsePositiveInteger('take', parseArgValue(argv, 'take'), DEFAULT_TAKE),
+    format: parseFormat(parseArgValue(argv, "format")),
+    take: parsePositiveInteger(
+      "take",
+      parseArgValue(argv, "take"),
+      DEFAULT_TAKE,
+    ),
   };
 }
 
 function asRecord(value) {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
     return {};
   }
   return value;
 }
 
-function asString(value, fallback = 'unknown') {
-  if (typeof value !== 'string') return fallback;
+function asString(value, fallback = "unknown") {
+  if (typeof value !== "string") return fallback;
   const trimmed = value.trim();
   return trimmed.length ? trimmed : fallback;
 }
@@ -137,7 +141,7 @@ function cursorWhere(baseWhere, lastCreatedAt, lastId) {
 async function loadRows(prisma, options) {
   const rows = [];
   const baseWhere = {
-    action: 'action_policy_fallback_allowed',
+    action: "action_policy_fallback_allowed",
     createdAt: {
       gte: options.from,
       lt: options.to,
@@ -149,7 +153,7 @@ async function loadRows(prisma, options) {
   for (;;) {
     const page = await prisma.auditLog.findMany({
       where: cursorWhere(baseWhere, lastCreatedAt, lastId),
-      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
       take: options.take,
       select: {
         id: true,
@@ -171,15 +175,22 @@ async function loadRows(prisma, options) {
   return rows;
 }
 
+export async function buildFallbackReport(prisma, options) {
+  const rows = await loadRows(prisma, options);
+  return aggregateRows(rows);
+}
+
 function renderText(result, options) {
   const lines = [];
-  lines.push('action_policy_fallback_allowed report');
+  lines.push("action_policy_fallback_allowed report");
   lines.push(`from: ${options.from.toISOString()}`);
   lines.push(`to: ${options.to.toISOString()}`);
   lines.push(`events: ${result.totals.events}`);
   lines.push(`unique_keys: ${result.totals.uniqueKeys}`);
-  lines.push('');
-  lines.push('flowType,actionKey,targetTable,count,firstSeen,lastSeen,sampleTargetId');
+  lines.push("");
+  lines.push(
+    "flowType,actionKey,targetTable,count,firstSeen,lastSeen,sampleTargetId",
+  );
   for (const row of result.keys) {
     lines.push(
       [
@@ -189,11 +200,11 @@ function renderText(result, options) {
         row.count,
         row.firstSeen,
         row.lastSeen,
-        row.sampleTargetId || '',
-      ].join(','),
+        row.sampleTargetId || "",
+      ].join(","),
     );
   }
-  return `${lines.join('\n')}\n`;
+  return `${lines.join("\n")}\n`;
 }
 
 async function run() {
@@ -201,27 +212,28 @@ async function run() {
 
   let prisma;
   try {
-    ({ prisma } = await import('../packages/backend/dist/services/db.js'));
+    ({ prisma } = await import("../packages/backend/dist/services/db.js"));
   } catch (err) {
-    const code = err && typeof err === 'object' ? err.code : undefined;
+    const code = err && typeof err === "object" ? err.code : undefined;
     console.error(
-      '[report-action-policy-fallback-allowed] failed to import backend Prisma client',
+      "[report-action-policy-fallback-allowed] failed to import backend Prisma client",
     );
-    if (code === 'ERR_MODULE_NOT_FOUND') {
-      console.error('Run `npm run build --prefix packages/backend` before this script.');
+    if (code === "ERR_MODULE_NOT_FOUND") {
+      console.error(
+        "Run `npm run build --prefix packages/backend` before this script.",
+      );
     } else {
       console.error(
-        'Ensure backend build artifacts and required environment variables (for example, DATABASE_URL) are available.',
+        "Ensure backend build artifacts and required environment variables (for example, DATABASE_URL) are available.",
       );
     }
     throw err;
   }
 
   try {
-    const rows = await loadRows(prisma, options);
-    const result = aggregateRows(rows);
+    const result = await buildFallbackReport(prisma, options);
 
-    if (options.format === 'json') {
+    if (options.format === "json") {
       process.stdout.write(
         `${JSON.stringify(
           {
@@ -247,7 +259,7 @@ const runAsScript =
 
 if (runAsScript) {
   run().catch((err) => {
-    console.error('[report-action-policy-fallback-allowed] failed', err);
+    console.error("[report-action-policy-fallback-allowed] failed", err);
     process.exit(1);
   });
 }
