@@ -8,7 +8,11 @@ const MIN_DATABASE_URL = 'postgresql://user:pass@localhost:5432/postgres';
 
 function withPrismaStubs(stubs, fn) {
   const restores = [];
-  for (const [path, stub] of Object.entries(stubs)) {
+  const mergedStubs = {
+    'referenceLink.findMany': async () => [],
+    ...stubs,
+  };
+  for (const [path, stub] of Object.entries(mergedStubs)) {
     const [model, method] = path.split('.');
     const target = prisma[model];
     if (!target || typeof target[method] !== 'function') {
@@ -188,7 +192,10 @@ test('POST /leave-requests/:id/submit: policy allow reaches downstream validatio
             assert.equal(res.statusCode, 400, res.body);
             const payload = JSON.parse(res.body);
             assert.notEqual(payload?.error?.code, 'ACTION_POLICY_DENIED');
-            assert.equal(payload?.error?.code, 'NO_CONSULTATION_REASON_REQUIRED');
+            assert.equal(
+              payload?.error?.code,
+              'NO_CONSULTATION_REASON_REQUIRED',
+            );
           } finally {
             await server.close();
           }

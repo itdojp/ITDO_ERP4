@@ -1,11 +1,9 @@
 import { createHash } from 'node:crypto';
 import { Prisma } from '@prisma/client';
-
-type InternalRef = {
-  kind: string;
-  id: string;
-  label?: string;
-};
+import {
+  loadResolvedAnnotationReferenceState,
+  type AnnotationInternalRef as InternalRef,
+} from './annotationReferences.js';
 
 type SnapshotChatMessage = {
   id: string;
@@ -95,38 +93,6 @@ export function resolveEvidenceSnapshotTargetKind(targetTable: string) {
     default:
       return null;
   }
-}
-
-function normalizeInternalRefs(value: unknown): InternalRef[] {
-  if (!Array.isArray(value)) return [];
-  const refs: InternalRef[] = [];
-  const seen = new Set<string>();
-  for (const entry of value) {
-    if (!entry || typeof entry !== 'object') continue;
-    const record = entry as Record<string, unknown>;
-    const kind = normalizeString(record.kind);
-    const id = normalizeString(record.id);
-    if (!kind || !id) continue;
-    const key = `${kind}:${id}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    const label = normalizeString(record.label);
-    refs.push(label ? { kind, id, label } : { kind, id });
-  }
-  return refs;
-}
-
-function normalizeExternalUrls(value: unknown): string[] {
-  if (!Array.isArray(value)) return [];
-  const urls: string[] = [];
-  const seen = new Set<string>();
-  for (const entry of value) {
-    const url = normalizeString(entry);
-    if (!url || seen.has(url)) continue;
-    seen.add(url);
-    urls.push(url);
-  }
-  return urls;
 }
 
 function toExcerpt(body: string, maxLength = 120) {
@@ -317,29 +283,19 @@ export async function createEvidenceSnapshotForApproval(
     };
   }
 
-  const annotation = targetKind
-    ? await client.annotation.findUnique({
-        where: {
-          targetKind_targetId: {
-            targetKind,
-            targetId: input.targetId,
-          },
-        },
-        select: {
-          notes: true,
-          externalUrls: true,
-          internalRefs: true,
-          updatedAt: true,
-        },
-      })
+  const annotationState = targetKind
+    ? await loadResolvedAnnotationReferenceState(
+        client,
+        targetKind,
+        input.targetId,
+      )
     : null;
-
-  const internalRefs = normalizeInternalRefs(annotation?.internalRefs);
-  const externalUrls = normalizeExternalUrls(annotation?.externalUrls);
+  const internalRefs = annotationState?.internalRefs ?? [];
+  const externalUrls = annotationState?.externalUrls ?? [];
   const chatMessages = await buildSnapshotChatMessages(client, internalRefs);
   const items = {
     ...(subject ? { subject } : {}),
-    notes: annotation?.notes ?? null,
+    notes: annotationState?.notes ?? null,
     externalUrls,
     internalRefs,
     chatMessages,
@@ -351,7 +307,7 @@ export async function createEvidenceSnapshotForApproval(
       approvalInstanceId: input.approvalInstanceId,
       targetTable: input.targetTable,
       targetId: input.targetId,
-      sourceAnnotationUpdatedAt: annotation?.updatedAt ?? null,
+      sourceAnnotationUpdatedAt: annotationState?.updatedAt ?? null,
       capturedBy: input.capturedBy ?? null,
       version,
       items: items as Prisma.InputJsonValue,

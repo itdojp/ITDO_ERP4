@@ -1,5 +1,6 @@
 import { Prisma } from '@prisma/client';
 import { FastifyInstance } from 'fastify';
+import { loadResolvedAnnotationReferenceState } from '../services/annotationReferences.js';
 import { prisma } from '../services/db.js';
 import { requireUserContext } from '../services/authContext.js';
 import { auditContextFromRequest, logAudit } from '../services/audit.js';
@@ -392,18 +393,20 @@ export async function registerAnnotationRoutes(app: FastifyInstance) {
         }
       }
 
-      const current = await prisma.annotation.findUnique({
-        where: { targetKind_targetId: { targetKind: kind, targetId: id } },
-      });
+      const current = await loadResolvedAnnotationReferenceState(
+        prisma,
+        kind,
+        id,
+      );
 
       return {
         targetKind: kind,
         targetId: id,
-        notes: current?.notes ?? null,
-        externalUrls: normalizeJsonArray<string>(current?.externalUrls),
-        internalRefs: normalizeJsonArray<InternalRef>(current?.internalRefs),
-        updatedAt: current?.updatedAt ?? null,
-        updatedBy: current?.updatedBy ?? null,
+        notes: current.notes,
+        externalUrls: current.externalUrls,
+        internalRefs: current.internalRefs,
+        updatedAt: current.updatedAt,
+        updatedBy: current.updatedBy,
       };
     },
   );
