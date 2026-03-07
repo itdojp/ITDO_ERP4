@@ -107,11 +107,9 @@ node scripts/report-action-policy-required-action-gaps.mjs --format=text
 - `node scripts/report-action-policy-required-action-gaps.mjs --format=text` の結果:
   - `missing_static_callsites: 0`
   - `stale_required_actions: 0`
-  - `dynamic_callsites: 1`
-- 残る dynamic callsite は `packages/backend/src/routes/approvalRules.ts:790`
-  - `flowTypeExpr=instance.flowType`
-  - `actionKeyExpr=body.action`
-- したがって、`phase2_core` の required actions は static route callsite を全て被覆済みで、残差は承認アクション共通 route の動的評価だけである。
+  - `dynamic_callsites: 0`
+- `scripts/report-action-policy-callsites.mjs` は承認アクション共通 route を `*:approve` / `*:reject` に静的展開する。
+- したがって、`phase2_core` の required actions は現行の static route callsite を全て被覆済みである。
 
 ### 4.1.1 route preset テストの被覆
 
