@@ -41,6 +41,18 @@ node scripts/report-action-policy-required-action-gaps.mjs --format=text
 - static callsite と required actions の差分を検出
 - dynamic callsite（例: `instance.flowType/body.action`）を別枠で可視化
 
+### 2.4 phase3 readiness レポート
+
+```bash
+node scripts/report-action-policy-phase3-readiness.mjs --format=text
+```
+
+- required actions ギャップと fallback 集計を 1 回で確認する
+- `ready`, `blockers[]`, `fallbackSummary` を出力する
+- 実行前提は `packages/backend` build 済み、かつ `DATABASE_URL` が対象環境の監査ログを参照できること
+- 既定観測窓は直近 24 時間。切替判定では必要に応じて `--from/--to` を明示する
+- `phase3_strict` 切替前の go/no-go 判定に使う
+
 ## 3. 呼び出し箇所（2026-03-06 時点）
 
 合計 19 callsites（routeのみ）。
@@ -172,6 +184,7 @@ node scripts/report-action-policy-required-action-gaps.mjs --format=text
   - fallback発生キーが高リスクに含まれる場合は即時にActionPolicy追加
   - fallback発生キーが中リスクのみで、監査推移が減少しているなら継続可
 - `phase3_strict` 移行条件:
+  - fallbackレポートで `flowType:actionKey:targetTable` ベースの未収束キー 0
   - fallbackレポートで高リスクキー 0
   - 主要業務の route preset / send preset（send + evidence gate）回帰テスト（invoice / purchase_order / expense / vendor_invoice / estimate / time / leave / approval）が green
   - required actions ギャップレポートで static callsite の missing 0

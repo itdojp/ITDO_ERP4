@@ -46,9 +46,23 @@
 
 1. まず `ACTION_POLICY_ENFORCEMENT_PRESET=phase2_core` で運用し、`action_policy_fallback_allowed` の発生キーを収束させる。
 2. `flowType:actionKey` ごとに ActionPolicy を追加し、`subjects/stateConstraints/guards` を最小セットで定義する。
-3. 収束判定後に `ACTION_POLICY_ENFORCEMENT_PRESET=phase3_strict` へ切り替える（`*:*` 相当）。
+3. 切替前に `make action-policy-phase3-readiness` を実行し、以下を全て満たすことを確認する。
+   - `missing_static_callsites: 0`
+   - `stale_required_actions: 0`
+   - `dynamic_callsites: 0`
+   - `fallback_unique_keys: 0`
+   - `fallback_high_risk_keys: 0`
+   - `fallback_medium_risk_keys: 0`
+   - `fallback_unknown_risk_keys: 0`
+4. 収束判定後に `ACTION_POLICY_ENFORCEMENT_PRESET=phase3_strict` へ切り替える（`*:*` 相当）。
 
 ### 切替前の確認コマンド
+
+前提条件:
+
+- `npm run build --prefix packages/backend` 実行済みであること
+- `DATABASE_URL` が対象環境の監査ログを参照できる値であること
+- 既定の観測窓は `--to=now` / `--from=24h前` であること（必要に応じて明示指定する）
 
 1. required actions の棚卸結果を確認する。
    - `node scripts/report-action-policy-required-action-gaps.mjs --format=text`
@@ -56,7 +70,8 @@
 2. fallback 発生キーを確認する。
    - `make action-policy-fallback-report`
    - `make action-policy-fallback-report-json`
-   - 期待値: 高リスクキー（`invoice:*` / `purchase_order:*` / `expense:*` / `vendor_invoice:*` / `*:approve` / `*:reject`）が 0 件
+   - triage 期待値: 高リスクキー（`invoice:*` / `purchase_order:*` / `expense:*` / `vendor_invoice:*` / `*:approve` / `*:reject`）が 0 件
+   - readiness 期待値: `flowType:actionKey:targetTable` ベースの未収束キーが 0 件
 3. 高リスク route preset / send preset テストを確認する。
    - `DATABASE_URL=postgresql://user:pass@localhost:5432/postgres node --test packages/backend/test/invoicePolicyEnforcementPreset.test.js packages/backend/test/invoiceMarkPaidPolicyEnforcementPreset.test.js packages/backend/test/purchaseOrderPolicyEnforcementPreset.test.js packages/backend/test/expensePolicyEnforcementPreset.test.js packages/backend/test/vendorInvoiceSubmitPolicyEnforcementPreset.test.js packages/backend/test/vendorInvoiceEditPolicyEnforcementPreset.test.js packages/backend/test/vendorInvoiceLinkPoRoutes.test.js packages/backend/test/sendPolicyEnforcementPreset.test.js packages/backend/test/approvalActionPolicyPreset.test.js packages/backend/test/approvalEvidenceGate.test.js`
 4. 中リスク route preset テストを確認する。
@@ -84,11 +99,13 @@ make action-policy-fallback-report-json
 
 ### 監査集計
 
-1. 日次で `action_policy_fallback_allowed` を集計する。
+1. 日次で readiness report と `action_policy_fallback_allowed` 集計を確認する。
 2. コマンド:
+   - `make action-policy-phase3-readiness`
+   - `make action-policy-phase3-readiness-json`
    - `make action-policy-fallback-report`
    - `make action-policy-fallback-report-json`
-3. 集計キー（`flowType:actionKey:targetTable`）で未収束箇所を特定し、ポリシー追加に反映する。
+3. readiness report が `ready: no` の場合は `blockers` と `fallback keys` を起点に未収束箇所を特定し、ActionPolicy 追加に反映する。
 4. 補足: `action_policy_fallback_allowed` は実装上、`flowType/actionKey/targetTable` ごとにプロセス内で 1 回だけ記録されるため、レポートの `count` は実発生回数ではなくキー検出用の下限値として扱う。
 
 ## 実行フロー（請求送信の標準例）
