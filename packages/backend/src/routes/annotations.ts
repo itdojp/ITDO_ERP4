@@ -1,6 +1,9 @@
 import { Prisma } from '@prisma/client';
 import { FastifyInstance } from 'fastify';
-import { loadResolvedAnnotationReferenceState } from '../services/annotationReferences.js';
+import {
+  loadResolvedAnnotationReferenceState,
+  replaceReferenceLinks,
+} from '../services/annotationReferences.js';
 import { prisma } from '../services/db.js';
 import { requireUserContext } from '../services/authContext.js';
 import { auditContextFromRequest, logAudit } from '../services/audit.js';
@@ -605,11 +608,15 @@ export async function registerAnnotationRoutes(app: FastifyInstance) {
           const beforeRefs = normalizeJsonArray<InternalRef>(
             current?.internalRefs,
           );
+          const urlsChanged =
+            JSON.stringify(mergedExternalUrls) !== JSON.stringify(beforeUrls);
+          const refsChanged =
+            JSON.stringify(mergedInternalRefs) !== JSON.stringify(beforeRefs);
 
           const noEffectiveChange =
             mergedNotes === (current?.notes ?? null) &&
-            JSON.stringify(mergedExternalUrls) === JSON.stringify(beforeUrls) &&
-            JSON.stringify(mergedInternalRefs) === JSON.stringify(beforeRefs);
+            !urlsChanged &&
+            !refsChanged;
           if (noEffectiveChange && !reasonCode) {
             return {
               didWrite: false as const,
@@ -617,6 +624,8 @@ export async function registerAnnotationRoutes(app: FastifyInstance) {
               mergedNotes,
               mergedExternalUrls,
               mergedInternalRefs,
+              urlsChanged,
+              refsChanged,
             };
           }
 
@@ -666,6 +675,8 @@ export async function registerAnnotationRoutes(app: FastifyInstance) {
             mergedNotes,
             mergedExternalUrls,
             mergedInternalRefs,
+            urlsChanged,
+            refsChanged,
           };
         })
         .catch((err) => {
@@ -735,6 +746,17 @@ export async function registerAnnotationRoutes(app: FastifyInstance) {
         } as Prisma.InputJsonValue,
         ...auditContextFromRequest(req),
       });
+
+      if (result.urlsChanged || result.refsChanged) {
+        await replaceReferenceLinks(
+          prisma,
+          kind,
+          id,
+          result.mergedExternalUrls,
+          result.mergedInternalRefs,
+          userId,
+        );
+      }
 
       return {
         targetKind: kind,

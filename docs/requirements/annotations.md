@@ -38,7 +38,10 @@
     - `GET /annotations/:kind/:id`
     - 承認証跡スナップショット生成
     - 休暇申請 submit 時の証跡有無判定
-- write path は当面 `Annotation(JSON)` 正のままとし、`PATCH /annotations/:kind/:id` の挙動は変えない。
+- `PATCH /annotations/:kind/:id` は、`notes` を `Annotation` に保持しつつ、
+  `externalUrls` / `internalRefs` を `Annotation(JSON)` と `ReferenceLink` に dual-write する。
+  - migration 未適用環境では `ReferenceLink` 書き込みを自動的にスキップし、既存 `Annotation(JSON)` のみで継続できるようにする。
+  - read path / response 形式は従来と変えない。
 - `ReferenceLink` 側の `project_chat` 互換データは、read 時に `room_chat` として正規化する。
 
 ## アクセス制御

@@ -110,6 +110,8 @@ test('PATCH /annotations/:kind/:id normalizes project_chat refs into room_chat',
             annotationLogs.push(data);
             return { id: `annotation-log-${annotationLogs.length}` };
           },
+          'referenceLink.deleteMany': async () => ({ count: 0 }),
+          'referenceLink.createMany': async () => ({ count: 1 }),
           'auditLog.create': async ({ data }) => {
             auditEntries.push(data);
             return { id: `audit-${auditEntries.length}` };
@@ -177,6 +179,489 @@ test('PATCH /annotations/:kind/:id normalizes project_chat refs into room_chat',
       ]);
       assert.equal(auditEntries.length, 1);
       assert.equal(auditEntries[0]?.action, 'annotations_updated');
+    },
+  );
+});
+
+test('PATCH /annotations/:kind/:id dual-writes normalized links into reference_links', async () => {
+  await withEnv(
+    {
+      DATABASE_URL: process.env.DATABASE_URL || MIN_DATABASE_URL,
+      AUTH_MODE: 'header',
+    },
+    async () => {
+      const referenceDeletes = [];
+      const referenceCreates = [];
+      await withPrismaStubs(
+        {
+          'invoice.findUnique': async () => ({
+            id: 'inv-010',
+            projectId: 'proj-001',
+            status: 'draft',
+            deletedAt: null,
+          }),
+          'annotationSetting.findUnique': async () => null,
+          'annotation.findUnique': async () => ({
+            id: 'annotation-10',
+            targetKind: 'invoice',
+            targetId: 'inv-010',
+            notes: 'before',
+            externalUrls: ['https://before.example.com'],
+            internalRefs: [
+              { kind: 'project', id: 'proj-001', label: 'Before' },
+            ],
+            updatedAt: new Date('2026-03-06T00:00:00Z'),
+            updatedBy: 'author-1',
+          }),
+          'annotation.upsert': async ({ create, update }) => ({
+            id: 'annotation-10',
+            targetKind: 'invoice',
+            targetId: 'inv-010',
+            notes: update.notes ?? create.notes ?? null,
+            externalUrls: update.externalUrls ?? create.externalUrls ?? [],
+            internalRefs: update.internalRefs ?? create.internalRefs ?? [],
+            updatedAt: new Date('2026-03-07T00:00:00Z'),
+            updatedBy: 'admin-user',
+          }),
+          'annotationLog.create': async () => ({ id: 'annotation-log-1' }),
+          'referenceLink.deleteMany': async ({ where }) => {
+            referenceDeletes.push(where);
+            return { count: 2 };
+          },
+          'referenceLink.createMany': async ({ data }) => {
+            referenceCreates.push(...data);
+            return { count: data.length };
+          },
+          'auditLog.create': async () => ({ id: 'audit-1' }),
+          $transaction: createTransactionStub(),
+        },
+        async () => {
+          const server = await buildServer({ logger: false });
+          try {
+            const res = await server.inject({
+              method: 'PATCH',
+              url: '/annotations/invoice/inv-010',
+              headers: {
+                'x-user-id': 'admin-user',
+                'x-roles': 'admin,mgmt',
+                'content-type': 'application/json',
+              },
+              payload: {
+                notes: 'after',
+                externalUrls: [
+                  'https://example.com/a',
+                  'https://example.com/a',
+                  'https://example.com/b',
+                ],
+                internalRefs: [
+                  {
+                    kind: 'project_chat',
+                    id: 'room-010',
+                    label: 'Legacy room',
+                  },
+                  { kind: 'chat_message', id: 'msg-010', label: 'Message 10' },
+                ],
+              },
+            });
+            assert.equal(res.statusCode, 200, res.body);
+          } finally {
+            await server.close();
+          }
+        },
+      );
+
+      assert.deepEqual(referenceDeletes, [
+        {
+          targetKind: 'invoice',
+          targetId: 'inv-010',
+          linkKind: { in: ['external_url', 'internal_ref'] },
+        },
+      ]);
+      assert.deepEqual(referenceCreates, [
+        {
+          targetKind: 'invoice',
+          targetId: 'inv-010',
+          linkKind: 'external_url',
+          refKind: '',
+          value: 'https://example.com/a',
+          label: null,
+          sortOrder: 0,
+          createdBy: 'admin-user',
+          updatedBy: 'admin-user',
+        },
+        {
+          targetKind: 'invoice',
+          targetId: 'inv-010',
+          linkKind: 'external_url',
+          refKind: '',
+          value: 'https://example.com/b',
+          label: null,
+          sortOrder: 1,
+          createdBy: 'admin-user',
+          updatedBy: 'admin-user',
+        },
+        {
+          targetKind: 'invoice',
+          targetId: 'inv-010',
+          linkKind: 'internal_ref',
+          refKind: 'room_chat',
+          value: 'room-010',
+          label: 'Legacy room',
+          sortOrder: 0,
+          createdBy: 'admin-user',
+          updatedBy: 'admin-user',
+        },
+        {
+          targetKind: 'invoice',
+          targetId: 'inv-010',
+          linkKind: 'internal_ref',
+          refKind: 'chat_message',
+          value: 'msg-010',
+          label: 'Message 10',
+          sortOrder: 1,
+          createdBy: 'admin-user',
+          updatedBy: 'admin-user',
+        },
+      ]);
+    },
+  );
+});
+
+test('PATCH /annotations/:kind/:id continues when ReferenceLink table is not available yet', async () => {
+  await withEnv(
+    {
+      DATABASE_URL: process.env.DATABASE_URL || MIN_DATABASE_URL,
+      AUTH_MODE: 'header',
+    },
+    async () => {
+      let createManyCalled = false;
+      await withPrismaStubs(
+        {
+          'invoice.findUnique': async () => ({
+            id: 'inv-011',
+            projectId: 'proj-001',
+            status: 'draft',
+            deletedAt: null,
+          }),
+          'annotationSetting.findUnique': async () => null,
+          'annotation.findUnique': async () => null,
+          'annotation.upsert': async ({ create }) => ({
+            id: 'annotation-11',
+            targetKind: 'invoice',
+            targetId: 'inv-011',
+            notes: create.notes ?? null,
+            externalUrls: create.externalUrls ?? [],
+            internalRefs: create.internalRefs ?? [],
+            updatedAt: new Date('2026-03-07T00:00:00Z'),
+            updatedBy: 'admin-user',
+          }),
+          'annotationLog.create': async () => ({ id: 'annotation-log-1' }),
+          'referenceLink.deleteMany': async () => {
+            const error = new Error('relation "ReferenceLink" does not exist');
+            error.code = 'P2021';
+            throw error;
+          },
+          'referenceLink.createMany': async () => {
+            createManyCalled = true;
+            return { count: 0 };
+          },
+          'auditLog.create': async () => ({ id: 'audit-1' }),
+          $transaction: createTransactionStub(),
+        },
+        async () => {
+          const server = await buildServer({ logger: false });
+          try {
+            const res = await server.inject({
+              method: 'PATCH',
+              url: '/annotations/invoice/inv-011',
+              headers: {
+                'x-user-id': 'admin-user',
+                'x-roles': 'admin,mgmt',
+                'content-type': 'application/json',
+              },
+              payload: {
+                notes: null,
+                externalUrls: ['https://example.com/a'],
+                internalRefs: [{ kind: 'project', id: 'proj-001' }],
+              },
+            });
+            assert.equal(res.statusCode, 200, res.body);
+            const payload = JSON.parse(res.body);
+            assert.deepEqual(payload.externalUrls, ['https://example.com/a']);
+            assert.deepEqual(payload.internalRefs, [
+              { kind: 'project', id: 'proj-001' },
+            ]);
+          } finally {
+            await server.close();
+          }
+        },
+      );
+
+      assert.equal(createManyCalled, false);
+    },
+  );
+});
+
+test('PATCH /annotations/:kind/:id clears ReferenceLink rows when refs are removed', async () => {
+  await withEnv(
+    {
+      DATABASE_URL: process.env.DATABASE_URL || MIN_DATABASE_URL,
+      AUTH_MODE: 'header',
+    },
+    async () => {
+      const referenceDeletes = [];
+      let createManyCalled = false;
+      await withPrismaStubs(
+        {
+          'invoice.findUnique': async () => ({
+            id: 'inv-012',
+            projectId: 'proj-001',
+            status: 'draft',
+            deletedAt: null,
+          }),
+          'annotationSetting.findUnique': async () => null,
+          'annotation.findUnique': async () => ({
+            id: 'annotation-12',
+            targetKind: 'invoice',
+            targetId: 'inv-012',
+            notes: 'before',
+            externalUrls: ['https://example.com/a'],
+            internalRefs: [
+              { kind: 'project', id: 'proj-001', label: 'Project A' },
+            ],
+            updatedAt: new Date('2026-03-06T00:00:00Z'),
+            updatedBy: 'author-1',
+          }),
+          'annotation.upsert': async ({ update, create }) => ({
+            id: 'annotation-12',
+            targetKind: 'invoice',
+            targetId: 'inv-012',
+            notes: update.notes ?? create.notes ?? null,
+            externalUrls: update.externalUrls ?? create.externalUrls ?? [],
+            internalRefs: update.internalRefs ?? create.internalRefs ?? [],
+            updatedAt: new Date('2026-03-07T00:00:00Z'),
+            updatedBy: 'admin-user',
+          }),
+          'annotationLog.create': async () => ({ id: 'annotation-log-1' }),
+          'referenceLink.deleteMany': async ({ where }) => {
+            referenceDeletes.push(where);
+            return { count: 2 };
+          },
+          'referenceLink.createMany': async () => {
+            createManyCalled = true;
+            return { count: 0 };
+          },
+          'auditLog.create': async () => ({ id: 'audit-1' }),
+          $transaction: createTransactionStub(),
+        },
+        async () => {
+          const server = await buildServer({ logger: false });
+          try {
+            const res = await server.inject({
+              method: 'PATCH',
+              url: '/annotations/invoice/inv-012',
+              headers: {
+                'x-user-id': 'admin-user',
+                'x-roles': 'admin,mgmt',
+                'content-type': 'application/json',
+              },
+              payload: {
+                notes: 'after',
+                externalUrls: [],
+                internalRefs: [],
+              },
+            });
+            assert.equal(res.statusCode, 200, res.body);
+          } finally {
+            await server.close();
+          }
+        },
+      );
+
+      assert.deepEqual(referenceDeletes, [
+        {
+          targetKind: 'invoice',
+          targetId: 'inv-012',
+          linkKind: { in: ['external_url', 'internal_ref'] },
+        },
+      ]);
+      assert.equal(createManyCalled, false);
+    },
+  );
+});
+
+test('PATCH /annotations/:kind/:id skips ReferenceLink sync when there is no effective change', async () => {
+  await withEnv(
+    {
+      DATABASE_URL: process.env.DATABASE_URL || MIN_DATABASE_URL,
+      AUTH_MODE: 'header',
+    },
+    async () => {
+      let annotationUpsertCalled = false;
+      let annotationLogCalled = false;
+      let referenceDeleteCalled = false;
+      let referenceCreateCalled = false;
+      await withPrismaStubs(
+        {
+          'invoice.findUnique': async () => ({
+            id: 'inv-013',
+            projectId: 'proj-001',
+            status: 'draft',
+            deletedAt: null,
+          }),
+          'annotationSetting.findUnique': async () => null,
+          'annotation.findUnique': async () => ({
+            id: 'annotation-13',
+            targetKind: 'invoice',
+            targetId: 'inv-013',
+            notes: 'same',
+            externalUrls: ['https://example.com/a'],
+            internalRefs: [
+              { kind: 'room_chat', id: 'room-013', label: 'Room 13' },
+            ],
+            updatedAt: new Date('2026-03-06T00:00:00Z'),
+            updatedBy: 'author-1',
+          }),
+          'annotation.upsert': async () => {
+            annotationUpsertCalled = true;
+            throw new Error('annotation.upsert should not be called');
+          },
+          'annotationLog.create': async () => {
+            annotationLogCalled = true;
+            throw new Error('annotationLog.create should not be called');
+          },
+          'referenceLink.deleteMany': async () => {
+            referenceDeleteCalled = true;
+            return { count: 0 };
+          },
+          'referenceLink.createMany': async () => {
+            referenceCreateCalled = true;
+            return { count: 0 };
+          },
+          'auditLog.create': async () => ({ id: 'audit-1' }),
+          $transaction: createTransactionStub(),
+        },
+        async () => {
+          const server = await buildServer({ logger: false });
+          try {
+            const res = await server.inject({
+              method: 'PATCH',
+              url: '/annotations/invoice/inv-013',
+              headers: {
+                'x-user-id': 'admin-user',
+                'x-roles': 'admin,mgmt',
+                'content-type': 'application/json',
+              },
+              payload: {
+                notes: 'same',
+                externalUrls: ['https://example.com/a'],
+                internalRefs: [
+                  { kind: 'project_chat', id: 'room-013', label: 'Room 13' },
+                ],
+              },
+            });
+            assert.equal(res.statusCode, 200, res.body);
+            const payload = JSON.parse(res.body);
+            assert.deepEqual(payload.externalUrls, ['https://example.com/a']);
+            assert.deepEqual(payload.internalRefs, [
+              { kind: 'room_chat', id: 'room-013', label: 'Room 13' },
+            ]);
+          } finally {
+            await server.close();
+          }
+        },
+      );
+
+      assert.equal(annotationUpsertCalled, false);
+      assert.equal(annotationLogCalled, false);
+      assert.equal(referenceDeleteCalled, false);
+      assert.equal(referenceCreateCalled, false);
+    },
+  );
+});
+
+test('PATCH /annotations/:kind/:id does not rewrite ReferenceLink rows for notes-only changes', async () => {
+  await withEnv(
+    {
+      DATABASE_URL: process.env.DATABASE_URL || MIN_DATABASE_URL,
+      AUTH_MODE: 'header',
+    },
+    async () => {
+      let referenceDeleteCalled = false;
+      let referenceCreateCalled = false;
+      await withPrismaStubs(
+        {
+          'invoice.findUnique': async () => ({
+            id: 'inv-014',
+            projectId: 'proj-001',
+            status: 'draft',
+            deletedAt: null,
+          }),
+          'annotationSetting.findUnique': async () => null,
+          'annotation.findUnique': async () => ({
+            id: 'annotation-14',
+            targetKind: 'invoice',
+            targetId: 'inv-014',
+            notes: 'before',
+            externalUrls: ['https://example.com/a'],
+            internalRefs: [
+              { kind: 'room_chat', id: 'room-014', label: 'Room 14' },
+            ],
+            updatedAt: new Date('2026-03-06T00:00:00Z'),
+            updatedBy: 'author-1',
+          }),
+          'annotation.upsert': async ({ update, create }) => ({
+            id: 'annotation-14',
+            targetKind: 'invoice',
+            targetId: 'inv-014',
+            notes: update.notes ?? create.notes ?? null,
+            externalUrls: update.externalUrls ?? create.externalUrls ?? [],
+            internalRefs: update.internalRefs ?? create.internalRefs ?? [],
+            updatedAt: new Date('2026-03-07T00:00:00Z'),
+            updatedBy: 'admin-user',
+          }),
+          'annotationLog.create': async () => ({ id: 'annotation-log-1' }),
+          'referenceLink.deleteMany': async () => {
+            referenceDeleteCalled = true;
+            return { count: 1 };
+          },
+          'referenceLink.createMany': async () => {
+            referenceCreateCalled = true;
+            return { count: 1 };
+          },
+          'auditLog.create': async () => ({ id: 'audit-1' }),
+          $transaction: createTransactionStub(),
+        },
+        async () => {
+          const server = await buildServer({ logger: false });
+          try {
+            const res = await server.inject({
+              method: 'PATCH',
+              url: '/annotations/invoice/inv-014',
+              headers: {
+                'x-user-id': 'admin-user',
+                'x-roles': 'admin,mgmt',
+                'content-type': 'application/json',
+              },
+              payload: {
+                notes: 'after',
+              },
+            });
+            assert.equal(res.statusCode, 200, res.body);
+            const payload = JSON.parse(res.body);
+            assert.equal(payload.notes, 'after');
+            assert.deepEqual(payload.externalUrls, ['https://example.com/a']);
+            assert.deepEqual(payload.internalRefs, [
+              { kind: 'room_chat', id: 'room-014', label: 'Room 14' },
+            ]);
+          } finally {
+            await server.close();
+          }
+        },
+      );
+
+      assert.equal(referenceDeleteCalled, false);
+      assert.equal(referenceCreateCalled, false);
     },
   );
 });
