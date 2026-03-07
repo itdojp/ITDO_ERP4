@@ -277,6 +277,20 @@ export async function replaceReferenceLinks(
   }
 }
 
+export async function isReferenceLinkTableAvailable(client: any) {
+  if (typeof client.referenceLink?.findMany !== 'function') return false;
+  try {
+    await client.referenceLink.findMany({
+      take: 1,
+      select: { id: true },
+    });
+    return true;
+  } catch (error) {
+    if (!isReferenceLinkTableMissing(error)) throw error;
+    return false;
+  }
+}
+
 export async function backfillReferenceLinksFromAnnotations(
   client: any,
   options: ReferenceLinkBackfillOptions = {},
@@ -423,17 +437,20 @@ export async function loadResolvedAnnotationReferenceState(
   client: any,
   targetKind: string,
   targetId: string,
+  annotationOverride?: AnnotationRecord,
 ): Promise<ResolvedAnnotationReferenceState> {
-  const annotation = (await client.annotation?.findUnique?.({
-    where: { targetKind_targetId: { targetKind, targetId } },
-    select: {
-      notes: true,
-      externalUrls: true,
-      internalRefs: true,
-      updatedAt: true,
-      updatedBy: true,
-    },
-  })) as AnnotationRecord;
+  const annotation =
+    annotationOverride ??
+    ((await client.annotation?.findUnique?.({
+      where: { targetKind_targetId: { targetKind, targetId } },
+      select: {
+        notes: true,
+        externalUrls: true,
+        internalRefs: true,
+        updatedAt: true,
+        updatedBy: true,
+      },
+    })) as AnnotationRecord);
 
   let referenceLinks: ReferenceLinkRecord[] = [];
   if (typeof client.referenceLink?.findMany === 'function') {

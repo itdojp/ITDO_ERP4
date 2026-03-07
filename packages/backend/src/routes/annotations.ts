@@ -1,6 +1,7 @@
 import { Prisma } from '@prisma/client';
 import { FastifyInstance } from 'fastify';
 import {
+  isReferenceLinkTableAvailable,
   loadResolvedAnnotationReferenceState,
   replaceReferenceLinks,
 } from '../services/annotationReferences.js';
@@ -217,6 +218,16 @@ function normalizeInternalRefs(value: unknown): InternalRef[] {
     refs.push(label ? { kind, id, label } : { kind, id });
   }
   return refs;
+}
+
+function coerceResolvedInternalRefs(
+  value: { kind: string; id: string; label?: string }[],
+): InternalRef[] {
+  return value.map((ref) =>
+    ref.label
+      ? { kind: ref.kind as InternalRefKind, id: ref.id, label: ref.label }
+      : { kind: ref.kind as InternalRefKind, id: ref.id },
+  );
 }
 
 function normalizeNotes(
@@ -574,6 +585,8 @@ export async function registerAnnotationRoutes(app: FastifyInstance) {
       }
 
       const actorRole = resolveActorRole(roles);
+      const referenceLinkTableAvailable =
+        await isReferenceLinkTableAvailable(prisma);
 
       const sumLength = (values: string[]) =>
         values.reduce((acc, item) => acc + item.length, 0);
@@ -585,17 +598,23 @@ export async function registerAnnotationRoutes(app: FastifyInstance) {
           const current = await tx.annotation.findUnique({
             where: { targetKind_targetId: { targetKind: kind, targetId: id } },
           });
+          const currentState = await loadResolvedAnnotationReferenceState(
+            tx,
+            kind,
+            id,
+            current,
+          );
 
           const mergedNotes =
-            nextNotes !== undefined ? nextNotes : (current?.notes ?? null);
+            nextNotes !== undefined ? nextNotes : currentState.notes;
           const mergedExternalUrls =
             nextExternalUrls !== undefined
               ? nextExternalUrls
-              : normalizeJsonArray<string>(current?.externalUrls);
+              : currentState.externalUrls;
           const mergedInternalRefs =
             nextInternalRefs !== undefined
               ? nextInternalRefs
-              : normalizeJsonArray<InternalRef>(current?.internalRefs);
+              : coerceResolvedInternalRefs(currentState.internalRefs);
 
           if (
             mergedNotes !== null &&
@@ -604,9 +623,9 @@ export async function registerAnnotationRoutes(app: FastifyInstance) {
             throw new Error('NOTES_TOO_LONG');
           }
 
-          const beforeUrls = normalizeJsonArray<string>(current?.externalUrls);
-          const beforeRefs = normalizeJsonArray<InternalRef>(
-            current?.internalRefs,
+          const beforeUrls = currentState.externalUrls;
+          const beforeRefs = coerceResolvedInternalRefs(
+            currentState.internalRefs,
           );
           const urlsChanged =
             JSON.stringify(mergedExternalUrls) !== JSON.stringify(beforeUrls);
@@ -614,19 +633,34 @@ export async function registerAnnotationRoutes(app: FastifyInstance) {
             JSON.stringify(mergedInternalRefs) !== JSON.stringify(beforeRefs);
 
           const noEffectiveChange =
-            mergedNotes === (current?.notes ?? null) &&
-            !urlsChanged &&
-            !refsChanged;
+            mergedNotes === currentState.notes && !urlsChanged && !refsChanged;
           if (noEffectiveChange && !reasonCode) {
             return {
               didWrite: false as const,
-              current,
-              mergedNotes,
+              currentState,
+            };
+          }
+
+          let shadowExternalUrls = normalizeJsonArray<string>(
+            current?.externalUrls,
+          );
+          let shadowInternalRefs = normalizeJsonArray<InternalRef>(
+            current?.internalRefs,
+          );
+          if ((urlsChanged || refsChanged) && referenceLinkTableAvailable) {
+            const synced = await replaceReferenceLinks(
+              tx,
+              kind,
+              id,
               mergedExternalUrls,
               mergedInternalRefs,
-              urlsChanged,
-              refsChanged,
-            };
+              userId,
+            );
+            shadowExternalUrls = synced ? [] : mergedExternalUrls;
+            shadowInternalRefs = synced ? [] : mergedInternalRefs;
+          } else if (urlsChanged || refsChanged) {
+            shadowExternalUrls = mergedExternalUrls;
+            shadowInternalRefs = mergedInternalRefs;
           }
 
           const updated = await tx.annotation.upsert({
@@ -636,18 +670,18 @@ export async function registerAnnotationRoutes(app: FastifyInstance) {
               targetId: id,
               notes: mergedNotes,
               externalUrls:
-                mergedExternalUrls as unknown as Prisma.InputJsonValue,
+                shadowExternalUrls as unknown as Prisma.InputJsonValue,
               internalRefs:
-                mergedInternalRefs as unknown as Prisma.InputJsonValue,
+                shadowInternalRefs as unknown as Prisma.InputJsonValue,
               createdBy: userId,
               updatedBy: userId,
             },
             update: {
               notes: mergedNotes,
               externalUrls:
-                mergedExternalUrls as unknown as Prisma.InputJsonValue,
+                shadowExternalUrls as unknown as Prisma.InputJsonValue,
               internalRefs:
-                mergedInternalRefs as unknown as Prisma.InputJsonValue,
+                shadowInternalRefs as unknown as Prisma.InputJsonValue,
               updatedBy: userId,
             },
           });
@@ -671,12 +705,11 @@ export async function registerAnnotationRoutes(app: FastifyInstance) {
           return {
             didWrite: true as const,
             current,
+            currentState,
             updated,
             mergedNotes,
             mergedExternalUrls,
             mergedInternalRefs,
-            urlsChanged,
-            refsChanged,
           };
         })
         .catch((err) => {
@@ -695,27 +728,19 @@ export async function registerAnnotationRoutes(app: FastifyInstance) {
         return {
           targetKind: kind,
           targetId: id,
-          notes: result.current?.notes ?? null,
-          externalUrls: normalizeJsonArray<string>(
-            result.current?.externalUrls,
-          ),
-          internalRefs: normalizeJsonArray<InternalRef>(
-            result.current?.internalRefs,
-          ),
-          updatedAt: result.current?.updatedAt ?? null,
-          updatedBy: result.current?.updatedBy ?? null,
+          notes: result.currentState.notes,
+          externalUrls: result.currentState.externalUrls,
+          internalRefs: result.currentState.internalRefs,
+          updatedAt: result.currentState.updatedAt,
+          updatedBy: result.currentState.updatedBy,
         };
       }
 
       const beforeNotesLen = (result.current?.notes ?? '').length;
       const afterNotesLen = (result.mergedNotes ?? '').length;
-      const beforeUrls = normalizeJsonArray<string>(
-        result.current?.externalUrls,
-      );
+      const beforeUrls = result.currentState.externalUrls;
       const afterUrls = result.mergedExternalUrls;
-      const beforeRefs = normalizeJsonArray<InternalRef>(
-        result.current?.internalRefs,
-      );
+      const beforeRefs = result.currentState.internalRefs;
       const afterRefs = result.mergedInternalRefs;
 
       await logAudit({
@@ -747,25 +772,12 @@ export async function registerAnnotationRoutes(app: FastifyInstance) {
         ...auditContextFromRequest(req),
       });
 
-      if (result.urlsChanged || result.refsChanged) {
-        await replaceReferenceLinks(
-          prisma,
-          kind,
-          id,
-          result.mergedExternalUrls,
-          result.mergedInternalRefs,
-          userId,
-        );
-      }
-
       return {
         targetKind: kind,
         targetId: id,
         notes: result.updated.notes ?? null,
-        externalUrls: normalizeJsonArray<string>(result.updated.externalUrls),
-        internalRefs: normalizeJsonArray<InternalRef>(
-          result.updated.internalRefs,
-        ),
+        externalUrls: result.mergedExternalUrls,
+        internalRefs: result.mergedInternalRefs,
         updatedAt: result.updated.updatedAt,
         updatedBy: result.updated.updatedBy ?? null,
       };

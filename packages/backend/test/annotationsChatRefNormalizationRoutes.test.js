@@ -93,6 +93,7 @@ test('PATCH /annotations/:kind/:id normalizes project_chat refs into room_chat',
           }),
           'annotationSetting.findUnique': async () => null,
           'annotation.findUnique': async () => null,
+          'referenceLink.findMany': async () => [],
           'annotation.upsert': async ({ create, update }) => {
             upserts.push({ create, update });
             return {
@@ -101,7 +102,7 @@ test('PATCH /annotations/:kind/:id normalizes project_chat refs into room_chat',
               targetId: 'inv-001',
               notes: null,
               externalUrls: [],
-              internalRefs: create.internalRefs,
+              internalRefs: [],
               updatedAt: new Date('2026-03-06T00:00:00Z'),
               updatedBy: 'admin-user',
             };
@@ -162,13 +163,7 @@ test('PATCH /annotations/:kind/:id normalizes project_chat refs into room_chat',
       );
 
       assert.equal(upserts.length, 1);
-      assert.deepEqual(upserts[0]?.create?.internalRefs, [
-        {
-          kind: 'room_chat',
-          id: 'room-001',
-          label: 'Legacy project room',
-        },
-      ]);
+      assert.deepEqual(upserts[0]?.create?.internalRefs, []);
       assert.equal(annotationLogs.length, 1);
       assert.deepEqual(annotationLogs[0]?.internalRefs, [
         {
@@ -183,13 +178,14 @@ test('PATCH /annotations/:kind/:id normalizes project_chat refs into room_chat',
   );
 });
 
-test('PATCH /annotations/:kind/:id dual-writes normalized links into reference_links', async () => {
+test('PATCH /annotations/:kind/:id syncs normalized links into reference_links and shrinks annotation shadow', async () => {
   await withEnv(
     {
       DATABASE_URL: process.env.DATABASE_URL || MIN_DATABASE_URL,
       AUTH_MODE: 'header',
     },
     async () => {
+      const upserts = [];
       const referenceDeletes = [];
       const referenceCreates = [];
       await withPrismaStubs(
@@ -213,16 +209,20 @@ test('PATCH /annotations/:kind/:id dual-writes normalized links into reference_l
             updatedAt: new Date('2026-03-06T00:00:00Z'),
             updatedBy: 'author-1',
           }),
-          'annotation.upsert': async ({ create, update }) => ({
-            id: 'annotation-10',
-            targetKind: 'invoice',
-            targetId: 'inv-010',
-            notes: update.notes ?? create.notes ?? null,
-            externalUrls: update.externalUrls ?? create.externalUrls ?? [],
-            internalRefs: update.internalRefs ?? create.internalRefs ?? [],
-            updatedAt: new Date('2026-03-07T00:00:00Z'),
-            updatedBy: 'admin-user',
-          }),
+          'referenceLink.findMany': async () => [],
+          'annotation.upsert': async ({ create, update }) => {
+            upserts.push({ create, update });
+            return {
+              id: 'annotation-10',
+              targetKind: 'invoice',
+              targetId: 'inv-010',
+              notes: update.notes ?? create.notes ?? null,
+              externalUrls: [],
+              internalRefs: [],
+              updatedAt: new Date('2026-03-07T00:00:00Z'),
+              updatedBy: 'admin-user',
+            };
+          },
           'annotationLog.create': async () => ({ id: 'annotation-log-1' }),
           'referenceLink.deleteMany': async ({ where }) => {
             referenceDeletes.push(where);
@@ -264,12 +264,28 @@ test('PATCH /annotations/:kind/:id dual-writes normalized links into reference_l
               },
             });
             assert.equal(res.statusCode, 200, res.body);
+            const payload = JSON.parse(res.body);
+            assert.deepEqual(payload.externalUrls, [
+              'https://example.com/a',
+              'https://example.com/b',
+            ]);
+            assert.deepEqual(payload.internalRefs, [
+              {
+                kind: 'room_chat',
+                id: 'room-010',
+                label: 'Legacy room',
+              },
+              { kind: 'chat_message', id: 'msg-010', label: 'Message 10' },
+            ]);
           } finally {
             await server.close();
           }
         },
       );
 
+      assert.equal(upserts.length, 1);
+      assert.deepEqual(upserts[0]?.update?.externalUrls, []);
+      assert.deepEqual(upserts[0]?.update?.internalRefs, []);
       assert.deepEqual(referenceDeletes, [
         {
           targetKind: 'invoice',
@@ -345,6 +361,11 @@ test('PATCH /annotations/:kind/:id continues when ReferenceLink table is not ava
           }),
           'annotationSetting.findUnique': async () => null,
           'annotation.findUnique': async () => null,
+          'referenceLink.findMany': async () => {
+            const error = new Error('relation "ReferenceLink" does not exist');
+            error.code = 'P2021';
+            throw error;
+          },
           'annotation.upsert': async ({ create }) => ({
             id: 'annotation-11',
             targetKind: 'invoice',
@@ -411,6 +432,7 @@ test('PATCH /annotations/:kind/:id clears ReferenceLink rows when refs are remov
     async () => {
       const referenceDeletes = [];
       let createManyCalled = false;
+      const upserts = [];
       await withPrismaStubs(
         {
           'invoice.findUnique': async () => ({
@@ -432,16 +454,20 @@ test('PATCH /annotations/:kind/:id clears ReferenceLink rows when refs are remov
             updatedAt: new Date('2026-03-06T00:00:00Z'),
             updatedBy: 'author-1',
           }),
-          'annotation.upsert': async ({ update, create }) => ({
-            id: 'annotation-12',
-            targetKind: 'invoice',
-            targetId: 'inv-012',
-            notes: update.notes ?? create.notes ?? null,
-            externalUrls: update.externalUrls ?? create.externalUrls ?? [],
-            internalRefs: update.internalRefs ?? create.internalRefs ?? [],
-            updatedAt: new Date('2026-03-07T00:00:00Z'),
-            updatedBy: 'admin-user',
-          }),
+          'referenceLink.findMany': async () => [],
+          'annotation.upsert': async ({ update, create }) => {
+            upserts.push({ update, create });
+            return {
+              id: 'annotation-12',
+              targetKind: 'invoice',
+              targetId: 'inv-012',
+              notes: update.notes ?? create.notes ?? null,
+              externalUrls: [],
+              internalRefs: [],
+              updatedAt: new Date('2026-03-07T00:00:00Z'),
+              updatedBy: 'admin-user',
+            };
+          },
           'annotationLog.create': async () => ({ id: 'annotation-log-1' }),
           'referenceLink.deleteMany': async ({ where }) => {
             referenceDeletes.push(where);
@@ -485,6 +511,9 @@ test('PATCH /annotations/:kind/:id clears ReferenceLink rows when refs are remov
           linkKind: { in: ['external_url', 'internal_ref'] },
         },
       ]);
+      assert.equal(upserts.length, 1);
+      assert.deepEqual(upserts[0]?.update?.externalUrls, []);
+      assert.deepEqual(upserts[0]?.update?.internalRefs, []);
       assert.equal(createManyCalled, false);
     },
   );
@@ -515,13 +544,29 @@ test('PATCH /annotations/:kind/:id skips ReferenceLink sync when there is no eff
             targetKind: 'invoice',
             targetId: 'inv-013',
             notes: 'same',
-            externalUrls: ['https://example.com/a'],
-            internalRefs: [
-              { kind: 'room_chat', id: 'room-013', label: 'Room 13' },
-            ],
+            externalUrls: [],
+            internalRefs: [],
             updatedAt: new Date('2026-03-06T00:00:00Z'),
             updatedBy: 'author-1',
           }),
+          'referenceLink.findMany': async () => [
+            {
+              linkKind: 'external_url',
+              refKind: '',
+              value: 'https://example.com/a',
+              label: null,
+              updatedAt: new Date('2026-03-07T00:00:00Z'),
+              updatedBy: 'author-2',
+            },
+            {
+              linkKind: 'internal_ref',
+              refKind: 'room_chat',
+              value: 'room-013',
+              label: 'Room 13',
+              updatedAt: new Date('2026-03-07T00:00:00Z'),
+              updatedBy: 'author-2',
+            },
+          ],
           'annotation.upsert': async () => {
             annotationUpsertCalled = true;
             throw new Error('annotation.upsert should not be called');
@@ -566,6 +611,7 @@ test('PATCH /annotations/:kind/:id skips ReferenceLink sync when there is no eff
             assert.deepEqual(payload.internalRefs, [
               { kind: 'room_chat', id: 'room-013', label: 'Room 13' },
             ]);
+            assert.equal(payload.updatedBy, 'author-2');
           } finally {
             await server.close();
           }
@@ -587,6 +633,7 @@ test('PATCH /annotations/:kind/:id does not rewrite ReferenceLink rows for notes
       AUTH_MODE: 'header',
     },
     async () => {
+      const upserts = [];
       let referenceDeleteCalled = false;
       let referenceCreateCalled = false;
       await withPrismaStubs(
@@ -603,23 +650,42 @@ test('PATCH /annotations/:kind/:id does not rewrite ReferenceLink rows for notes
             targetKind: 'invoice',
             targetId: 'inv-014',
             notes: 'before',
-            externalUrls: ['https://example.com/a'],
-            internalRefs: [
-              { kind: 'room_chat', id: 'room-014', label: 'Room 14' },
-            ],
+            externalUrls: [],
+            internalRefs: [],
             updatedAt: new Date('2026-03-06T00:00:00Z'),
             updatedBy: 'author-1',
           }),
-          'annotation.upsert': async ({ update, create }) => ({
-            id: 'annotation-14',
-            targetKind: 'invoice',
-            targetId: 'inv-014',
-            notes: update.notes ?? create.notes ?? null,
-            externalUrls: update.externalUrls ?? create.externalUrls ?? [],
-            internalRefs: update.internalRefs ?? create.internalRefs ?? [],
-            updatedAt: new Date('2026-03-07T00:00:00Z'),
-            updatedBy: 'admin-user',
-          }),
+          'referenceLink.findMany': async () => [
+            {
+              linkKind: 'external_url',
+              refKind: '',
+              value: 'https://example.com/a',
+              label: null,
+              updatedAt: new Date('2026-03-07T00:00:00Z'),
+              updatedBy: 'author-2',
+            },
+            {
+              linkKind: 'internal_ref',
+              refKind: 'room_chat',
+              value: 'room-014',
+              label: 'Room 14',
+              updatedAt: new Date('2026-03-07T00:00:00Z'),
+              updatedBy: 'author-2',
+            },
+          ],
+          'annotation.upsert': async ({ update, create }) => {
+            upserts.push({ update, create });
+            return {
+              id: 'annotation-14',
+              targetKind: 'invoice',
+              targetId: 'inv-014',
+              notes: update.notes ?? create.notes ?? null,
+              externalUrls: update.externalUrls ?? create.externalUrls ?? [],
+              internalRefs: update.internalRefs ?? create.internalRefs ?? [],
+              updatedAt: new Date('2026-03-07T00:00:00Z'),
+              updatedBy: 'admin-user',
+            };
+          },
           'annotationLog.create': async () => ({ id: 'annotation-log-1' }),
           'referenceLink.deleteMany': async () => {
             referenceDeleteCalled = true;
@@ -660,6 +726,9 @@ test('PATCH /annotations/:kind/:id does not rewrite ReferenceLink rows for notes
         },
       );
 
+      assert.equal(upserts.length, 1);
+      assert.deepEqual(upserts[0]?.update?.externalUrls, []);
+      assert.deepEqual(upserts[0]?.update?.internalRefs, []);
       assert.equal(referenceDeleteCalled, false);
       assert.equal(referenceCreateCalled, false);
     },

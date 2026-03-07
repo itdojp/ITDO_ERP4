@@ -39,7 +39,8 @@
     - 承認証跡スナップショット生成
     - 休暇申請 submit 時の証跡有無判定
 - `PATCH /annotations/:kind/:id` は、`notes` を `Annotation` に保持しつつ、
-  `externalUrls` / `internalRefs` を `Annotation(JSON)` と `ReferenceLink` に dual-write する。
+  `externalUrls` / `internalRefs` の更新時は `ReferenceLink` を正本として同期する。
+  - `ReferenceLink` 書き込みに成功した更新では、`Annotation.externalUrls/internalRefs` は empty shadow に縮退する。
   - migration 未適用環境では `ReferenceLink` 書き込みを自動的にスキップし、既存 `Annotation(JSON)` のみで継続できるようにする。
   - read path / response 形式は従来と変えない。
 - バックフィルは `scripts/backfill-reference-links.mjs` で行う。
