@@ -1,13 +1,13 @@
-import fs from "node:fs";
-import path from "node:path";
-import { pathToFileURL } from "node:url";
+import fs from 'node:fs';
+import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 
-const CALL_NAME = "evaluateActionPolicyWithFallback";
+const CALL_NAME = 'evaluateActionPolicyWithFallback';
 
 function resolveDefaultRoot() {
   const candidates = [
-    path.resolve(process.cwd(), "packages/backend/src/routes"),
-    path.resolve(process.cwd(), "src/routes"),
+    path.resolve(process.cwd(), 'packages/backend/src/routes'),
+    path.resolve(process.cwd(), 'src/routes'),
   ];
   for (const candidate of candidates) {
     if (fs.existsSync(candidate)) return candidate;
@@ -25,16 +25,16 @@ function parseArgValue(argv, name) {
 }
 
 function parseFormat(raw) {
-  if (!raw) return "text";
-  if (raw === "text" || raw === "json") return raw;
-  throw new Error("format must be text or json");
+  if (!raw) return 'text';
+  if (raw === 'text' || raw === 'json') return raw;
+  throw new Error('format must be text or json');
 }
 
 export function parseOptionsFromArgv(argv) {
-  const root = parseArgValue(argv, "root") || DEFAULT_ROOT;
+  const root = parseArgValue(argv, 'root') || DEFAULT_ROOT;
   return {
     root: path.resolve(process.cwd(), root),
-    format: parseFormat(parseArgValue(argv, "format")),
+    format: parseFormat(parseArgValue(argv, 'format')),
   };
 }
 
@@ -50,7 +50,7 @@ function walkTsFiles(rootDir) {
         stack.push(fullPath);
         continue;
       }
-      if (entry.isFile() && entry.name.endsWith(".ts")) {
+      if (entry.isFile() && entry.name.endsWith('.ts')) {
         files.push(fullPath);
       }
     }
@@ -71,11 +71,11 @@ function findMatchingParen(source, openIndex) {
     const next = source[i + 1];
 
     if (lineComment) {
-      if (ch === "\n") lineComment = false;
+      if (ch === '\n') lineComment = false;
       continue;
     }
     if (blockComment) {
-      if (ch === "*" && next === "/") {
+      if (ch === '*' && next === '/') {
         blockComment = false;
         i += 1;
       }
@@ -86,7 +86,7 @@ function findMatchingParen(source, openIndex) {
         escaped = false;
         continue;
       }
-      if (ch === "\\") {
+      if (ch === '\\') {
         escaped = true;
         continue;
       }
@@ -96,25 +96,25 @@ function findMatchingParen(source, openIndex) {
       continue;
     }
 
-    if (ch === "/" && next === "/") {
+    if (ch === '/' && next === '/') {
       lineComment = true;
       i += 1;
       continue;
     }
-    if (ch === "/" && next === "*") {
+    if (ch === '/' && next === '*') {
       blockComment = true;
       i += 1;
       continue;
     }
-    if (ch === "'" || ch === '"' || ch === "`") {
+    if (ch === "'" || ch === '"' || ch === '`') {
       quote = ch;
       continue;
     }
-    if (ch === "(") {
+    if (ch === '(') {
       depth += 1;
       continue;
     }
-    if (ch === ")") {
+    if (ch === ')') {
       depth -= 1;
       if (depth === 0) return i;
       continue;
@@ -139,7 +139,7 @@ function extractFieldExpression(text, field) {
 }
 
 function normalizeQuoted(raw) {
-  if (!raw) return "unknown";
+  if (!raw) return 'unknown';
   const value = raw.trim();
   if (
     (value.startsWith("'") && value.endsWith("'")) ||
@@ -151,16 +151,16 @@ function normalizeQuoted(raw) {
 }
 
 function normalizeFlowType(raw) {
-  if (!raw) return "unknown";
+  if (!raw) return 'unknown';
   const value = raw.trim();
-  if (value.startsWith("FlowTypeValue.")) {
-    return value.slice("FlowTypeValue.".length);
+  if (value.startsWith('FlowTypeValue.')) {
+    return value.slice('FlowTypeValue.'.length);
   }
   return normalizeQuoted(value);
 }
 
 function normalizeActionKey(raw) {
-  if (!raw) return "unknown";
+  if (!raw) return 'unknown';
   return normalizeQuoted(raw);
 }
 
@@ -176,14 +176,14 @@ function extractStaticCallsiteDirective(source, start) {
   }
   if (!lastMatch) return [];
   return lastMatch[1]
-    .split(",")
+    .split(',')
     .map((token) => token.trim())
     .filter(Boolean);
 }
 
 function isStaticFlowTypeExpression(flowTypeExpr) {
   return (
-    flowTypeExpr.startsWith("FlowTypeValue.") ||
+    flowTypeExpr.startsWith('FlowTypeValue.') ||
     (flowTypeExpr.startsWith("'") && flowTypeExpr.endsWith("'")) ||
     (flowTypeExpr.startsWith('"') && flowTypeExpr.endsWith('"'))
   );
@@ -201,23 +201,23 @@ function classifyRisk(flowType, actionKey, flowTypeExpr, actionKeyExpr) {
     !isStaticFlowTypeExpression(flowTypeExpr) ||
     !isStaticActionKeyExpression(actionKeyExpr)
   ) {
-    return "high";
+    return 'high';
   }
-  if (actionKey === "approve" || actionKey === "reject") {
-    return "high";
+  if (actionKey === 'approve' || actionKey === 'reject') {
+    return 'high';
   }
   if (
-    flowType === "invoice" ||
-    flowType === "purchase_order" ||
-    flowType === "vendor_invoice" ||
-    flowType === "expense"
+    flowType === 'invoice' ||
+    flowType === 'purchase_order' ||
+    flowType === 'vendor_invoice' ||
+    flowType === 'expense'
   ) {
-    return "high";
+    return 'high';
   }
-  if (flowType === "time" || flowType === "leave" || flowType === "estimate") {
-    return "medium";
+  if (flowType === 'time' || flowType === 'leave' || flowType === 'estimate') {
+    return 'medium';
   }
-  return "medium";
+  return 'medium';
 }
 
 export function collectCallsitesFromSource(source, filePath) {
@@ -228,7 +228,7 @@ export function collectCallsitesFromSource(source, filePath) {
   for (;;) {
     const start = source.indexOf(marker, cursor);
     if (start < 0) break;
-    const openIndex = source.indexOf("(", start + CALL_NAME.length);
+    const openIndex = source.indexOf('(', start + CALL_NAME.length);
     const closeIndex = findMatchingParen(source, openIndex);
     if (openIndex < 0 || closeIndex < 0) {
       cursor = start + marker.length;
@@ -236,22 +236,22 @@ export function collectCallsitesFromSource(source, filePath) {
     }
     const argsText = source.slice(openIndex + 1, closeIndex);
     const flowTypeExpr =
-      extractFieldExpression(argsText, "flowType") || "unknown";
+      extractFieldExpression(argsText, 'flowType') || 'unknown';
     const actionKeyExpr =
-      extractFieldExpression(argsText, "actionKey") || "unknown";
+      extractFieldExpression(argsText, 'actionKey') || 'unknown';
     const targetTableExpr =
-      extractFieldExpression(argsText, "targetTable") || "unknown";
+      extractFieldExpression(argsText, 'targetTable') || 'unknown';
     const flowType = normalizeFlowType(flowTypeExpr);
     const actionKey = normalizeActionKey(actionKeyExpr);
     const targetTable = normalizeQuoted(targetTableExpr);
     const file = path
       .relative(process.cwd(), filePath)
-      .replaceAll(path.sep, "/");
+      .replaceAll(path.sep, '/');
     const line = countLine(source, start);
     const staticDirectiveKeys = extractStaticCallsiteDirective(source, start);
     if (staticDirectiveKeys.length) {
       for (const key of staticDirectiveKeys) {
-        const [directiveFlowType, directiveActionKey] = key.split(":");
+        const [directiveFlowType, directiveActionKey] = key.split(':');
         if (!directiveFlowType || !directiveActionKey) continue;
         rows.push({
           file,
@@ -294,7 +294,7 @@ export function collectCallsites(rootDir = DEFAULT_ROOT) {
   const files = walkTsFiles(rootDir);
   const rows = [];
   for (const filePath of files) {
-    const source = fs.readFileSync(filePath, "utf8");
+    const source = fs.readFileSync(filePath, 'utf8');
     rows.push(...collectCallsitesFromSource(source, filePath));
   }
   rows.sort((left, right) => {
@@ -310,17 +310,17 @@ export function collectCallsites(rootDir = DEFAULT_ROOT) {
 }
 
 function renderText(rows, options) {
-  const high = rows.filter((row) => row.risk === "high").length;
-  const medium = rows.filter((row) => row.risk === "medium").length;
+  const high = rows.filter((row) => row.risk === 'high').length;
+  const medium = rows.filter((row) => row.risk === 'medium').length;
   const lines = [];
-  lines.push("action policy callsites report");
+  lines.push('action policy callsites report');
   lines.push(`root: ${options.root}`);
   lines.push(`callsites: ${rows.length}`);
   lines.push(`risk_high: ${high}`);
   lines.push(`risk_medium: ${medium}`);
-  lines.push("");
+  lines.push('');
   lines.push(
-    "flowType,actionKey,targetTable,risk,file,line,flowTypeExpr,actionKeyExpr",
+    'flowType,actionKey,targetTable,risk,file,line,flowTypeExpr,actionKeyExpr',
   );
   for (const row of rows) {
     lines.push(
@@ -333,25 +333,25 @@ function renderText(rows, options) {
         row.line,
         row.flowTypeExpr,
         row.actionKeyExpr,
-      ].join(","),
+      ].join(','),
     );
   }
-  return `${lines.join("\n")}\n`;
+  return `${lines.join('\n')}\n`;
 }
 
 async function run() {
   const options = parseOptionsFromArgv(process.argv.slice(2));
   const rows = collectCallsites(options.root);
 
-  if (options.format === "json") {
+  if (options.format === 'json') {
     process.stdout.write(
       `${JSON.stringify(
         {
           root: options.root,
           totals: {
             callsites: rows.length,
-            high: rows.filter((row) => row.risk === "high").length,
-            medium: rows.filter((row) => row.risk === "medium").length,
+            high: rows.filter((row) => row.risk === 'high').length,
+            medium: rows.filter((row) => row.risk === 'medium').length,
           },
           callsites: rows,
         },
@@ -370,7 +370,7 @@ const runAsScript =
 
 if (runAsScript) {
   run().catch((err) => {
-    console.error("[report-action-policy-callsites] failed", err);
+    console.error('[report-action-policy-callsites] failed', err);
     process.exit(1);
   });
 }
