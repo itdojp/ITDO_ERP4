@@ -446,17 +446,16 @@ export async function shrinkAnnotationReferenceShadow(
   client: any,
   options: AnnotationShadowShrinkOptions = {},
 ): Promise<AnnotationShadowShrinkSummary> {
+  const dryRun = options.dryRun !== false;
   if (typeof client.annotation?.findMany !== 'function') {
     throw new Error('annotation_findMany_not_available');
   }
-  if (typeof client.annotation?.update !== 'function' && !options.dryRun) {
+  if (typeof client.annotation?.update !== 'function' && dryRun === false) {
     throw new Error('annotation_update_not_available');
   }
   if (typeof client.referenceLink?.findMany !== 'function') {
     throw new Error('referenceLink_findMany_not_available');
   }
-
-  const dryRun = options.dryRun !== false;
   const batchSize = normalizeBatchSize(options.batchSize);
   const limitTargets = normalizeLimitTargets(options.limitTargets);
   const summary: AnnotationShadowShrinkSummary = {
@@ -587,7 +586,7 @@ export async function shrinkAnnotationReferenceShadow(
         data: {
           externalUrls: [],
           internalRefs: [],
-          updatedBy: annotation.updatedBy ?? null,
+          updatedBy: null,
         },
       });
       summary.clearedTargets += 1;

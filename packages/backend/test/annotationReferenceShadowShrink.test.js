@@ -114,6 +114,34 @@ test('shrinkAnnotationReferenceShadow: dry-run counts only targets fully covered
   assert.equal(summary.skippedNoReferenceLinks, 0);
 });
 
+test('shrinkAnnotationReferenceShadow: omitted dryRun stays in dry-run mode without update', async () => {
+  const client = {
+    annotation: {
+      findMany: createPagedAnnotationFindMany([
+        createAnnotation({
+          id: 'ann-1',
+          targetKind: 'invoice',
+          targetId: 'inv-1',
+          externalUrls: ['https://example.com/a'],
+        }),
+      ]),
+    },
+    referenceLink: {
+      findMany: async () => [
+        createExternalLink('invoice', 'inv-1', 'https://example.com/a'),
+      ],
+    },
+  };
+
+  const summary = await shrinkAnnotationReferenceShadow(client, {
+    batchSize: 10,
+  });
+
+  assert.equal(summary.dryRun, true);
+  assert.equal(summary.candidateTargets, 1);
+  assert.equal(summary.clearedTargets, 0);
+});
+
 test('shrinkAnnotationReferenceShadow: apply clears shadow JSON when reference links are authoritative', async () => {
   const updates = [];
   const client = {
@@ -163,7 +191,7 @@ test('shrinkAnnotationReferenceShadow: apply clears shadow JSON when reference l
       data: {
         externalUrls: [],
         internalRefs: [],
-        updatedBy: 'author-1',
+        updatedBy: null,
       },
     },
   ]);
