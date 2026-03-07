@@ -56,6 +56,28 @@ export type ReferenceLinkBackfillSummary = {
   processedBatches: number;
 };
 
+export type AnnotationShadowShrinkOptions = {
+  dryRun?: boolean;
+  batchSize?: number;
+  limitTargets?: number;
+  targetKind?: string;
+  targetId?: string;
+};
+
+export type AnnotationShadowShrinkSummary = {
+  dryRun: boolean;
+  batchSize: number;
+  limitTargets: number | null;
+  scannedTargets: number;
+  candidateTargets: number;
+  clearedTargets: number;
+  clearedLinks: number;
+  skippedEmptyTargets: number;
+  skippedNoReferenceLinks: number;
+  skippedDivergedTargets: number;
+  processedBatches: number;
+};
+
 function normalizeString(value: unknown) {
   return typeof value === 'string' ? value.trim() : '';
 }
@@ -138,6 +160,10 @@ function mergeReferenceLinks(
   }
 
   return { externalUrls, internalRefs };
+}
+
+function buildReferenceLinkOnlyState(referenceLinks: ReferenceLinkRecord[]) {
+  return mergeReferenceLinks([], [], referenceLinks);
 }
 
 function isReferenceLinkTableMissing(error: unknown) {
@@ -411,6 +437,164 @@ export async function backfillReferenceLinksFromAnnotations(
     cursor = {
       id: normalizeString(last.id),
     };
+  }
+
+  return summary;
+}
+
+export async function shrinkAnnotationReferenceShadow(
+  client: any,
+  options: AnnotationShadowShrinkOptions = {},
+): Promise<AnnotationShadowShrinkSummary> {
+  const dryRun = options.dryRun !== false;
+  if (typeof client.annotation?.findMany !== 'function') {
+    throw new Error('annotation_findMany_not_available');
+  }
+  if (typeof client.annotation?.update !== 'function' && dryRun === false) {
+    throw new Error('annotation_update_not_available');
+  }
+  if (typeof client.referenceLink?.findMany !== 'function') {
+    throw new Error('referenceLink_findMany_not_available');
+  }
+  const batchSize = normalizeBatchSize(options.batchSize);
+  const limitTargets = normalizeLimitTargets(options.limitTargets);
+  const summary: AnnotationShadowShrinkSummary = {
+    dryRun,
+    batchSize,
+    limitTargets,
+    scannedTargets: 0,
+    candidateTargets: 0,
+    clearedTargets: 0,
+    clearedLinks: 0,
+    skippedEmptyTargets: 0,
+    skippedNoReferenceLinks: 0,
+    skippedDivergedTargets: 0,
+    processedBatches: 0,
+  };
+
+  let cursor: { id: string } | null = null;
+
+  while (true) {
+    const remaining =
+      limitTargets === null
+        ? batchSize
+        : Math.min(batchSize, limitTargets - summary.scannedTargets);
+    if (remaining <= 0) break;
+
+    const annotations = (await client.annotation.findMany({
+      where: buildAnnotationBackfillWhere(options, cursor),
+      orderBy: { id: 'asc' },
+      take: remaining,
+      select: {
+        id: true,
+        targetKind: true,
+        targetId: true,
+        notes: true,
+        externalUrls: true,
+        internalRefs: true,
+        updatedAt: true,
+        updatedBy: true,
+      },
+    })) as NonNullable<AnnotationRecord>[];
+
+    if (!annotations.length) break;
+    summary.processedBatches += 1;
+    summary.scannedTargets += annotations.length;
+
+    const targetPairs = annotations.map((annotation) => ({
+      targetKind: normalizeString(annotation.targetKind),
+      targetId: normalizeString(annotation.targetId),
+    }));
+    let referenceLinks: Array<
+      ReferenceLinkRecord & { targetKind: string; targetId: string }
+    > = [];
+    try {
+      referenceLinks = await client.referenceLink.findMany({
+        where: {
+          OR: targetPairs,
+          linkKind: { in: ['external_url', 'internal_ref'] },
+        },
+        orderBy: [
+          { targetKind: 'asc' },
+          { targetId: 'asc' },
+          { sortOrder: 'asc' },
+          { createdAt: 'asc' },
+        ],
+        select: {
+          targetKind: true,
+          targetId: true,
+          linkKind: true,
+          refKind: true,
+          value: true,
+          label: true,
+          updatedAt: true,
+          updatedBy: true,
+        },
+      });
+    } catch (error) {
+      if (!isReferenceLinkTableMissing(error)) throw error;
+      throw new Error('referenceLink_table_missing');
+    }
+
+    const linksByTarget = new Map<string, ReferenceLinkRecord[]>();
+    for (const link of referenceLinks) {
+      const key = `${link.targetKind}:${link.targetId}`;
+      const current = linksByTarget.get(key) ?? [];
+      current.push(link);
+      linksByTarget.set(key, current);
+    }
+
+    for (const annotation of annotations) {
+      const targetKind = normalizeString(annotation.targetKind);
+      const targetId = normalizeString(annotation.targetId);
+      const key = `${targetKind}:${targetId}`;
+      const shadowUrls = normalizeStoredExternalUrls(annotation.externalUrls);
+      const shadowRefs = normalizeStoredInternalRefs(annotation.internalRefs);
+      const shadowLinkCount = shadowUrls.length + shadowRefs.length;
+      if (shadowLinkCount === 0) {
+        summary.skippedEmptyTargets += 1;
+        continue;
+      }
+
+      const targetLinks = linksByTarget.get(key) ?? [];
+      if (targetLinks.length === 0) {
+        summary.skippedNoReferenceLinks += 1;
+        continue;
+      }
+
+      const mergedState = mergeReferenceLinks(
+        shadowUrls,
+        shadowRefs,
+        targetLinks,
+      );
+      const referenceOnlyState = buildReferenceLinkOnlyState(targetLinks);
+      const canClear =
+        JSON.stringify(mergedState.externalUrls) ===
+          JSON.stringify(referenceOnlyState.externalUrls) &&
+        JSON.stringify(mergedState.internalRefs) ===
+          JSON.stringify(referenceOnlyState.internalRefs);
+      if (!canClear) {
+        summary.skippedDivergedTargets += 1;
+        continue;
+      }
+
+      summary.candidateTargets += 1;
+      if (dryRun) continue;
+
+      await client.annotation.update({
+        where: { id: normalizeString(annotation.id) },
+        data: {
+          externalUrls: [],
+          internalRefs: [],
+          updatedBy: null,
+        },
+      });
+      summary.clearedTargets += 1;
+      summary.clearedLinks += shadowLinkCount;
+    }
+
+    const last = annotations[annotations.length - 1];
+    cursor = { id: normalizeString(last.id) };
   }
 
   return summary;

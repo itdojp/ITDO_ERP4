@@ -48,6 +48,10 @@
   - `--limit-targets` は 1 回の実行で走査する `Annotation` 件数の上限として扱う
   - `Annotation` の `createdAt/createdBy/updatedAt/updatedBy` を `ReferenceLink` へ引き継ぐ
   - 既存 `project_chat` は `room_chat` に正規化して投入する
+- shadow 縮退は `scripts/shrink-annotation-reference-shadow.mjs` で行う。
+  - `ReferenceLink` のみで構成した状態が、現在の `Annotation(JSON)` と `ReferenceLink` を合成した状態と一致する target だけを対象にする
+  - 参照が不足している target、または `Annotation(JSON)` 側にしか存在しない参照が残る target は skip する
+  - `--limit-targets` は 1 回の実行で走査する `Annotation` 件数の上限として扱う
 - `ReferenceLink` 側の `project_chat` 互換データは、read 時に `room_chat` として正規化する。
 
 ## アクセス制御
