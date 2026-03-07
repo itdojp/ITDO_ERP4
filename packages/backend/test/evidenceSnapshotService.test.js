@@ -423,6 +423,9 @@ test('createEvidenceSnapshotForApproval: captures subject snapshot for leave_req
     annotation: {
       findUnique: async () => null,
     },
+    referenceLink: {
+      findMany: async () => [],
+    },
     chatMessage: {
       findMany: async () => [],
     },
@@ -513,6 +516,9 @@ test('createEvidenceSnapshotForApproval: forceRegenerate creates next version', 
         internalRefs: [],
         updatedAt: null,
       }),
+    },
+    referenceLink: {
+      findMany: async () => [],
     },
     chatMessage: {
       findMany: async () => [],

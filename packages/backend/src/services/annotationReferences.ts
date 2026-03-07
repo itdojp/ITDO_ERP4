@@ -253,7 +253,14 @@ export async function replaceReferenceLinks(
   internalRefs: AnnotationInternalRef[],
   actorUserId: string | null,
 ) {
-  if (typeof client.referenceLink?.deleteMany !== 'function') return false;
+  if (typeof client.referenceLink?.deleteMany !== 'function') {
+    throw new Error('referenceLink_deleteMany_not_available');
+  }
+  const canCreateMany = typeof client.referenceLink.createMany === 'function';
+  const canCreate = typeof client.referenceLink.create === 'function';
+  if (!canCreateMany && !canCreate) {
+    throw new Error('referenceLink_writer_not_available');
+  }
 
   await client.referenceLink.deleteMany({
     where: {
@@ -287,11 +294,10 @@ export async function replaceReferenceLinks(
     })),
   ];
   if (data.length === 0) return true;
-  if (typeof client.referenceLink.createMany === 'function') {
+  if (canCreateMany) {
     await client.referenceLink.createMany({ data });
     return true;
   }
-  if (typeof client.referenceLink.create !== 'function') return true;
   for (const row of data) {
     await client.referenceLink.create({ data: row });
   }
@@ -617,21 +623,29 @@ export async function loadResolvedAnnotationReferenceState(
       },
     })) as AnnotationRecord);
 
-  const referenceLinks =
-    typeof client.referenceLink?.findMany === 'function'
-      ? ((await client.referenceLink.findMany({
-          where: { targetKind, targetId },
-          orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
-          select: {
-            linkKind: true,
-            refKind: true,
-            value: true,
-            label: true,
-            updatedAt: true,
-            updatedBy: true,
-          },
-        })) as ReferenceLinkRecord[])
-      : [];
+  if (typeof client.referenceLink?.findMany !== 'function') {
+    throw new Error('annotation_reference_links_unavailable');
+  }
+  let referenceLinks: ReferenceLinkRecord[];
+  try {
+    referenceLinks = (await client.referenceLink.findMany({
+      where: { targetKind, targetId },
+      orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+      select: {
+        linkKind: true,
+        refKind: true,
+        value: true,
+        label: true,
+        updatedAt: true,
+        updatedBy: true,
+      },
+    })) as ReferenceLinkRecord[];
+  } catch (error) {
+    if (isReferenceLinkTableMissing(error)) {
+      throw new Error('annotation_reference_links_unavailable');
+    }
+    throw error;
+  }
 
   const resolvedRefs = buildReferenceLinkOnlyState(referenceLinks);
   const meta = resolveUpdatedMeta(annotation, referenceLinks);
