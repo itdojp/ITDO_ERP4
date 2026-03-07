@@ -819,17 +819,33 @@ function isFailureStatus(status: string) {
   return status === 'failed' || status === 'failed_permanent';
 }
 
+function isQueuedStatus(status: string) {
+  return status === 'pending' || status === 'sending' || status === 'retrying';
+}
+
 function computeRunStatus(statuses: string[]) {
   if (statuses.length === 0) return 'skipped';
   const hasSuccess = statuses.some(isSuccessStatus);
   const hasFailure = statuses.some(isFailureStatus);
-  if (hasFailure && hasSuccess) return 'partial';
+  const hasQueued = statuses.some(isQueuedStatus);
+  if (hasFailure && (hasSuccess || hasQueued)) return 'partial';
   if (hasFailure) return 'failed';
+  if (hasQueued) return 'queued';
   if (hasSuccess) return 'success';
   return 'skipped';
 }
 
-async function sendReportDelivery(
+type ReportDeliveryQueueItem = {
+  id: string;
+  channel: string;
+  status: string;
+  payload: Prisma.JsonValue | null;
+  target: string | null;
+  retryCount: number;
+  nextRetryAt?: Date | null;
+};
+
+async function buildReportDeliveryData(
   channel: string,
   subscription: ReportSubscription,
   payload: ReportPayload,
@@ -859,80 +875,13 @@ async function sendReportDelivery(
         sentAt: now,
       };
     }
-    const attachments = [];
-    try {
-      if (payload.format === 'csv') {
-        const { attachment, filename } = await buildCsvAttachment(payload);
-        if (filename && payload.csvFilename !== filename) {
-          payloadToStore = { ...payloadToStore, csvFilename: filename };
-        }
-        attachments.push(attachment);
-      } else {
-        const { attachment, pdf } = await buildPdfAttachment(payload);
-        if (pdf && payload.pdf !== pdf) {
-          payloadToStore = { ...payloadToStore, pdf };
-        }
-        attachments.push(attachment);
-      }
-    } catch (err) {
-      const error = err instanceof Error ? err.message : 'missing_attachment';
-      await notifyPermanentFailure({
-        reportKey: subscription.reportKey,
-        channel,
-        target: emails.join(','),
-        error,
-      });
-      const baseData = buildBaseData();
-      return {
-        ...baseData,
-        status: 'failed_permanent',
-        error,
-        target: emails.join(','),
-        sentAt: now,
-        lastErrorAt: now,
-      };
-    }
     const baseData = buildBaseData(payloadToStore);
-    const emailResult = await sendEmail(
-      emails,
-      buildEmailSubject(subscription),
-      buildEmailBody(payloadToStore),
-      { attachments },
-    );
-    const error = emailResult.error;
-    const retryMax = resolveReportRetryMax();
-    const retryBase = resolveReportRetryBaseMinutes();
-    const retryable =
-      emailResult.status === 'failed' &&
-      isRetryableError(error) &&
-      retryMax > 0 &&
-      retryBase > 0;
-    const retryCount = 0;
-    const nextRetryAt = retryable
-      ? computeNextRetryAt(now, retryCount + 1, retryBase)
-      : null;
-    const status =
-      emailResult.status === 'failed' && !retryable
-        ? 'failed_permanent'
-        : emailResult.status;
-    if (status === 'failed_permanent') {
-      await notifyPermanentFailure({
-        reportKey: subscription.reportKey,
-        channel,
-        target: emailResult.target || emails.join(','),
-        error,
-      });
-    }
     return {
       ...baseData,
-      status,
-      error,
-      target: emailResult.target || emails.join(','),
-      sentAt: now,
-      retryCount,
-      nextRetryAt,
-      lastErrorAt:
-        status === 'failed' || status === 'failed_permanent' ? now : null,
+      status: 'pending',
+      target: emails.join(','),
+      retryCount: 0,
+      nextRetryAt: null,
     };
   }
 
@@ -973,6 +922,82 @@ async function sendReportDelivery(
   };
 }
 
+async function claimReportDelivery(
+  delivery: ReportDeliveryQueueItem,
+  now: Date,
+  dryRun: boolean,
+) {
+  if (dryRun) return 1;
+  const retryMax = resolveReportRetryMax();
+  if (delivery.status === 'pending') {
+    const claimed = await prisma.reportDelivery.updateMany({
+      where: {
+        id: delivery.id,
+        status: 'pending',
+      },
+      data: { status: 'sending' },
+    });
+    return claimed.count;
+  }
+  if (delivery.status === 'failed') {
+    const claimed = await prisma.reportDelivery.updateMany({
+      where: {
+        id: delivery.id,
+        status: 'failed',
+        retryCount: { lt: retryMax },
+        nextRetryAt: { lte: now },
+      },
+      data: { status: 'retrying' },
+    });
+    return claimed.count;
+  }
+  return 0;
+}
+
+async function persistUnexpectedDeliveryFailure(
+  delivery: ReportDeliveryQueueItem,
+  error: unknown,
+  now: Date,
+) {
+  const errorMessage =
+    error instanceof Error ? error.message : String(error || 'retry_failed');
+  const isRetry =
+    delivery.status === 'failed' || delivery.status === 'retrying';
+  const retryMax = resolveReportRetryMax();
+  const retryBase = resolveReportRetryBaseMinutes();
+  const nextRetryCount = isRetry
+    ? delivery.retryCount + 1
+    : delivery.retryCount;
+  const retryable =
+    isRetryableError(errorMessage) &&
+    retryBase > 0 &&
+    (isRetry ? nextRetryCount < retryMax : retryMax > 0);
+  const status = retryable ? 'failed' : 'failed_permanent';
+  const nextRetryAt = retryable
+    ? computeNextRetryAt(now, nextRetryCount + 1, retryBase)
+    : null;
+  const updated = await prisma.reportDelivery.update({
+    where: { id: delivery.id },
+    data: {
+      status,
+      error: errorMessage,
+      retryCount: nextRetryCount,
+      nextRetryAt,
+      lastErrorAt: now,
+      sentAt: now,
+    },
+  });
+  if (status === 'failed_permanent' && isReportPayload(delivery.payload)) {
+    await notifyPermanentFailure({
+      reportKey: delivery.payload.reportKey,
+      channel: delivery.channel,
+      target: delivery.target,
+      error: errorMessage,
+    });
+  }
+  return updated;
+}
+
 async function runSubscription(
   subscription: ReportSubscription,
   actorId: string | undefined,
@@ -994,7 +1019,7 @@ async function runSubscription(
   }
   const deliveries: Prisma.ReportDeliveryCreateInput[] = [];
   for (const channel of channels) {
-    const delivery = await sendReportDelivery(
+    const delivery = await buildReportDeliveryData(
       channel,
       subscription,
       payload,
@@ -1004,12 +1029,48 @@ async function runSubscription(
     deliveries.push(delivery);
   }
   const createdDeliveries = [];
+  const deliveryStatuses: string[] = [];
   for (const delivery of deliveries) {
-    createdDeliveries.push(
-      await prisma.reportDelivery.create({ data: delivery }),
-    );
+    const created = await prisma.reportDelivery.create({ data: delivery });
+    if (created.status === 'pending') {
+      const queuedItem: ReportDeliveryQueueItem = {
+        id: created.id,
+        channel: created.channel,
+        status: created.status,
+        payload: created.payload,
+        target: created.target,
+        retryCount: created.retryCount,
+        nextRetryAt: created.nextRetryAt,
+      };
+      const claimCount = await claimReportDelivery(
+        queuedItem,
+        new Date(),
+        false,
+      );
+      if (claimCount === 0) {
+        createdDeliveries.push(created);
+        deliveryStatuses.push(created.status);
+        continue;
+      }
+      try {
+        const result = await retryReportDelivery(queuedItem, false);
+        createdDeliveries.push(result);
+        deliveryStatuses.push(result.status);
+      } catch (error) {
+        const failedDelivery = await persistUnexpectedDeliveryFailure(
+          queuedItem,
+          error,
+          new Date(),
+        );
+        createdDeliveries.push(failedDelivery);
+        deliveryStatuses.push(failedDelivery.status);
+      }
+      continue;
+    }
+    createdDeliveries.push(created);
+    deliveryStatuses.push(created.status);
   }
-  const runStatus = computeRunStatus(deliveries.map((item) => item.status));
+  const runStatus = computeRunStatus(deliveryStatuses);
   await updateRunStatus(subscription.id, runStatus, actorId);
   return {
     payload,
@@ -1020,16 +1081,12 @@ async function runSubscription(
 }
 
 async function retryReportDelivery(
-  delivery: {
-    id: string;
-    channel: string;
-    payload: Prisma.JsonValue | null;
-    target: string | null;
-    retryCount: number;
-  },
+  delivery: ReportDeliveryQueueItem,
   dryRun: boolean,
 ) {
   const now = new Date();
+  const isRetry =
+    delivery.status === 'failed' || delivery.status === 'retrying';
   if (delivery.channel !== 'email') {
     return {
       id: delivery.id,
@@ -1039,7 +1096,7 @@ async function retryReportDelivery(
   }
   if (!isReportPayload(delivery.payload)) {
     if (!dryRun) {
-      await prisma.reportDelivery.update({
+      const updated = await prisma.reportDelivery.update({
         where: { id: delivery.id },
         data: {
           status: 'failed_permanent',
@@ -1055,6 +1112,7 @@ async function retryReportDelivery(
         target: delivery.target,
         error: 'invalid_payload',
       });
+      return updated;
     }
     return {
       id: delivery.id,
@@ -1067,7 +1125,7 @@ async function retryReportDelivery(
   const emails = parseTargetList(delivery.target);
   if (!emails.length) {
     if (!dryRun) {
-      await prisma.reportDelivery.update({
+      const updated = await prisma.reportDelivery.update({
         where: { id: delivery.id },
         data: {
           status: 'failed_permanent',
@@ -1083,6 +1141,7 @@ async function retryReportDelivery(
         target: delivery.target,
         error: 'missing_email',
       });
+      return updated;
     }
     return {
       id: delivery.id,
@@ -1108,7 +1167,7 @@ async function retryReportDelivery(
   } catch (err) {
     const error = err instanceof Error ? err.message : 'missing_attachment';
     if (!dryRun) {
-      await prisma.reportDelivery.update({
+      const updated = await prisma.reportDelivery.update({
         where: { id: delivery.id },
         data: {
           status: 'failed_permanent',
@@ -1124,6 +1183,7 @@ async function retryReportDelivery(
         target: delivery.target,
         error,
       });
+      return updated;
     }
     return {
       id: delivery.id,
@@ -1145,14 +1205,16 @@ async function retryReportDelivery(
     { attachments },
   );
   const error = emailResult.error;
-  const nextRetryCount = delivery.retryCount + 1;
   const retryMax = resolveReportRetryMax();
   const retryBase = resolveReportRetryBaseMinutes();
+  const nextRetryCount = isRetry
+    ? delivery.retryCount + 1
+    : delivery.retryCount;
   const retryable =
     emailResult.status === 'failed' &&
     isRetryableError(error) &&
     retryBase > 0 &&
-    nextRetryCount < retryMax;
+    (isRetry ? nextRetryCount < retryMax : retryMax > 0);
   const nextRetryAt = retryable
     ? computeNextRetryAt(now, nextRetryCount + 1, retryBase)
     : null;
@@ -1168,7 +1230,7 @@ async function retryReportDelivery(
       error,
     });
   }
-  await prisma.reportDelivery.update({
+  const updated = await prisma.reportDelivery.update({
     where: { id: delivery.id },
     data: {
       status,
@@ -1182,12 +1244,7 @@ async function retryReportDelivery(
       payload: payloadToStore as Prisma.InputJsonValue,
     },
   });
-  return {
-    id: delivery.id,
-    status,
-    error,
-    nextRetryAt,
-  };
+  return updated;
 }
 
 export async function registerReportSubscriptionRoutes(app: FastifyInstance) {
@@ -1419,64 +1476,54 @@ export async function registerReportSubscriptionRoutes(app: FastifyInstance) {
       const { dryRun } = (req.body || {}) as RunBody;
       const retryMax = resolveReportRetryMax();
       const now = new Date();
-      const items = await prisma.reportDelivery.findMany({
-        where: {
-          status: 'failed',
-          retryCount: { lt: retryMax },
-          nextRetryAt: { lte: now },
-        },
-        orderBy: { nextRetryAt: 'asc' },
+      const pendingItems = await prisma.reportDelivery.findMany({
+        where: { status: 'pending' },
+        orderBy: { createdAt: 'asc' },
         take: 100,
       });
-      const results = [];
-      for (const item of items) {
-        try {
-          if (!dryRun) {
-            const claim = await prisma.reportDelivery.updateMany({
+      const remaining = Math.max(0, 100 - pendingItems.length);
+      const failedItems =
+        remaining > 0
+          ? await prisma.reportDelivery.findMany({
               where: {
-                id: item.id,
                 status: 'failed',
                 retryCount: { lt: retryMax },
                 nextRetryAt: { lte: now },
               },
-              data: { status: 'retrying' },
+              orderBy: [{ nextRetryAt: 'asc' }, { createdAt: 'asc' }],
+              take: remaining,
+            })
+          : [];
+      const items = [...pendingItems, ...failedItems];
+      const results = [];
+      for (const item of items) {
+        try {
+          const claimCount = await claimReportDelivery(
+            item,
+            now,
+            Boolean(dryRun),
+          );
+          if (claimCount === 0) {
+            results.push({
+              id: item.id,
+              status: 'skipped',
+              error: 'already_claimed',
             });
-            if (claim.count === 0) {
-              results.push({
-                id: item.id,
-                status: 'skipped',
-                error: 'already_claimed',
-              });
-              continue;
-            }
+            continue;
           }
           const result = await retryReportDelivery(item, Boolean(dryRun));
           results.push(result);
         } catch (err) {
-          const error = err instanceof Error ? err.message : 'retry_failed';
           if (!dryRun) {
-            await prisma.reportDelivery.update({
-              where: { id: item.id },
-              data: {
-                status: 'failed_permanent',
-                error,
-                lastErrorAt: now,
-                nextRetryAt: null,
-              },
-            });
-            if (isReportPayload(item.payload)) {
-              await notifyPermanentFailure({
-                reportKey: item.payload.reportKey,
-                channel: item.channel,
-                target: item.target,
-                error,
-              });
-            }
+            results.push(
+              await persistUnexpectedDeliveryFailure(item, err, now),
+            );
+            continue;
           }
           results.push({
             id: item.id,
             status: 'failed_permanent',
-            error,
+            error: err instanceof Error ? err.message : 'retry_failed',
           });
         }
       }
