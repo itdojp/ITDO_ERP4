@@ -181,6 +181,9 @@ test('POST /purchase-orders/:id/submit: policy allow reaches downstream submit p
       annotation: {
         findUnique: async () => null,
       },
+      referenceLink: {
+        findMany: async () => [],
+      },
       chatMessage: {
         findMany: async () => [],
       },
