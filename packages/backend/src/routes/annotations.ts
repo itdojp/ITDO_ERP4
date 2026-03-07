@@ -1,6 +1,9 @@
 import { Prisma } from '@prisma/client';
 import { FastifyInstance } from 'fastify';
-import { loadResolvedAnnotationReferenceState } from '../services/annotationReferences.js';
+import {
+  loadResolvedAnnotationReferenceState,
+  replaceReferenceLinks,
+} from '../services/annotationReferences.js';
 import { prisma } from '../services/db.js';
 import { requireUserContext } from '../services/authContext.js';
 import { auditContextFromRequest, logAudit } from '../services/audit.js';
@@ -658,6 +661,15 @@ export async function registerAnnotationRoutes(app: FastifyInstance) {
               createdBy: userId,
             },
           });
+
+          await replaceReferenceLinks(
+            tx,
+            kind,
+            id,
+            mergedExternalUrls,
+            mergedInternalRefs,
+            userId,
+          );
 
           return {
             didWrite: true as const,

@@ -126,6 +126,64 @@ function isReferenceLinkTableMissing(error: unknown) {
   );
 }
 
+export async function replaceReferenceLinks(
+  client: any,
+  targetKind: string,
+  targetId: string,
+  externalUrls: string[],
+  internalRefs: AnnotationInternalRef[],
+  actorUserId: string | null,
+) {
+  if (typeof client.referenceLink?.deleteMany !== 'function') return false;
+
+  try {
+    await client.referenceLink.deleteMany({
+      where: {
+        targetKind,
+        targetId,
+        linkKind: { in: ['external_url', 'internal_ref'] },
+      },
+    });
+    const data = [
+      ...externalUrls.map((url, index) => ({
+        targetKind,
+        targetId,
+        linkKind: 'external_url',
+        refKind: '',
+        value: url,
+        label: null,
+        sortOrder: index,
+        createdBy: actorUserId,
+        updatedBy: actorUserId,
+      })),
+      ...internalRefs.map((ref, index) => ({
+        targetKind,
+        targetId,
+        linkKind: 'internal_ref',
+        refKind: normalizeInternalRefKind(ref.kind),
+        value: ref.id,
+        label: ref.label ?? null,
+        sortOrder: index,
+        createdBy: actorUserId,
+        updatedBy: actorUserId,
+      })),
+    ];
+    if (data.length === 0) return true;
+    if (typeof client.referenceLink.createMany === 'function') {
+      await client.referenceLink.createMany({ data });
+      return true;
+    }
+    if (typeof client.referenceLink.create !== 'function') return true;
+    for (const row of data) {
+      await client.referenceLink.create({ data: row });
+    }
+    return true;
+  } catch (error) {
+    if (!isReferenceLinkTableMissing(error)) throw error;
+    return false;
+  }
+}
+
 function resolveUpdatedMeta(
   annotation: AnnotationRecord,
   referenceLinks: ReferenceLinkRecord[],
