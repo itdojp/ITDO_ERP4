@@ -66,14 +66,17 @@ INPUT_DIR=tmp/migration/po INPUT_FORMAT=csv APPLY=1 RUN_INTEGRITY=1 \
   - 厳格モード調整: `PREFLIGHT_STRICT=0|1`
   - `RUN_PREFLIGHT=0` でも `ONLY` は事前検証される（不正スコープは実行前に失敗）。
   - `ONLY` の許容値: `users,customers,vendors,projects,tasks,milestones,estimates,invoices,purchase_orders,vendor_quotes,vendor_invoices,time_entries,expenses`
-  - preflight は「入力ファイルの存在確認」を行う（CSVヘッダ/JSON内容の妥当性までは検査しない）。
+  - preflight は入力ファイルの存在確認に加えて、形式の静的検査を行う。
+    - CSV: ヘッダ行の存在と必須列の有無
+    - JSON: `JSON.parse` 可否と root が配列であること
+  - 形式不正が 1 件でもある場合、`STRICT` に関係なく preflight は失敗する。
   - 実行結果は `preflight.log` に保存され、末尾に機械可読行を出力する。
-    - 例: `[po-migration-input-preflight] SUMMARY status=warn scopes=2 found=1 missing=1 format=csv strict=0 only=users,projects`
+    - 例: `[po-migration-input-preflight] SUMMARY status=fail scopes=2 found=2 missing=0 invalid=1 valid=1 format=csv strict=0 only=users,projects`
     - `status`: `pass|warn|fail`
 - 実行終了時に `rehearsal-report.md`（要約レポート）を自動生成する。
   - 無効化: `GENERATE_REPORT=0`
   - 出力先変更: `REPORT_FILE=/path/to/report.md`
-  - 自動生成レポートには `preflight` セクションが追加され、summary / `foundScopes` / `missingScopes` を記録する。
+  - 自動生成レポートには `preflight` セクションが追加され、summary / `foundScopes` / `missingScopes` / `invalidScopes` を記録する。
 - `scripts/record-po-migration-rehearsal.sh` で最新ログから `docs/test-results/YYYY-MM-DD-po-migration-rehearsal-rN.md` を生成できる。
   - 例: `make po-migration-record`
   - `DATE_STAMP` は `YYYY-MM-DD` の実在日付のみ許容。

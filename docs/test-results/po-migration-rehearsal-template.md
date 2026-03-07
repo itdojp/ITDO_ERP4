@@ -31,7 +31,8 @@ INPUT_DIR=tmp/migration/po-real INPUT_FORMAT=csv APPLY=1 RUN_INTEGRITY=1 \
 
 - `ONLY` 指定時の許容値: `users,customers,vendors,projects,tasks,milestones,estimates,invoices,purchase_orders,vendor_quotes,vendor_invoices,time_entries,expenses`
 - `RUN_PREFLIGHT=0` でも `ONLY` の妥当性検証は実行される（不正値は即失敗）
-- `preflight.log` の `SUMMARY` 行で `status/found/missing/only` を機械可読に確認できる
+- `preflight.log` の `SUMMARY` 行で `status/found/missing/invalid/valid/only` を機械可読に確認できる
+- 形式不正（CSV必須ヘッダ不足 / JSON root 非配列）がある場合、preflight は失敗する
 - 記録時の `DATE_STAMP` は実在日付必須、`RUN_LABEL` は `^[A-Za-z0-9][A-Za-z0-9._-]*$`
 - `RUN_LABEL` 指定時、同名ファイルが存在する場合は上書きせず失敗
 
@@ -45,7 +46,7 @@ INPUT_DIR=tmp/migration/po-real INPUT_FORMAT=csv APPLY=1 RUN_INTEGRITY=1 \
 
 ## 結果サマリ
 
-- preflight status / found / missing / only:
+- preflight status / found / missing / invalid / valid / only:
 - dry-run errors:
 - apply errors:
 - integrity check: pass/fail

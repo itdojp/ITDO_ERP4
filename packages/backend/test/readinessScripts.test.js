@@ -221,7 +221,10 @@ test('check-po-migration-input-readiness: ONLY=users is accepted', () => {
 
 test('check-po-migration-input-readiness: emits SUMMARY line for partial input', () => {
   withTempDir((dir) => {
-    writeFileSync(path.join(dir, 'users.csv'), 'id,name\nu-1,User One\n');
+    writeFileSync(
+      path.join(dir, 'users.csv'),
+      'legacyId,userId,userName\nlegacy-u-1,u-1,User One\n',
+    );
     const res = runScript('check-po-migration-input-readiness.sh', {
       INPUT_DIR: dir,
       INPUT_FORMAT: 'csv',
@@ -231,7 +234,7 @@ test('check-po-migration-input-readiness: emits SUMMARY line for partial input',
     assert.equal(res.status, 0, `${res.stderr}\n${res.stdout}`);
     assert.match(
       String(res.stdout),
-      /SUMMARY status=warn scopes=2 found=1 missing=1 format=csv strict=0 only=users,projects/,
+      /SUMMARY status=warn scopes=2 found=1 missing=1 invalid=0 valid=1 format=csv strict=0 only=users,projects/,
     );
   });
 });
@@ -249,6 +252,52 @@ test('check-po-migration-input-readiness: emits fail SUMMARY before strict exit'
     assert.match(
       String(res.stderr),
       /STRICT=1 and ONLY scopes contain missing files/,
+    );
+  });
+});
+
+test('check-po-migration-input-readiness: fails when csv headers miss required columns', () => {
+  withTempDir((dir) => {
+    writeFileSync(
+      path.join(dir, 'users.csv'),
+      'legacyId,userName\nu-1,User One\n',
+    );
+    const res = runScript('check-po-migration-input-readiness.sh', {
+      INPUT_DIR: dir,
+      INPUT_FORMAT: 'csv',
+      ONLY: 'users',
+      STRICT: '0',
+    });
+    assert.notEqual(res.status, 0);
+    assert.match(
+      String(res.stdout),
+      /SUMMARY status=fail scopes=1 found=1 missing=0 invalid=1 valid=0 format=csv strict=0 only=users/,
+    );
+    assert.match(
+      String(res.stderr),
+      /INVALID users -> .*missing required headers: userId/,
+    );
+    assert.match(String(res.stderr), /input format validation failed/);
+  });
+});
+
+test('check-po-migration-input-readiness: fails when json root is not an array', () => {
+  withTempDir((dir) => {
+    writeFileSync(path.join(dir, 'users.json'), '{"legacyId":"u-1"}\n');
+    const res = runScript('check-po-migration-input-readiness.sh', {
+      INPUT_DIR: dir,
+      INPUT_FORMAT: 'json',
+      ONLY: 'users',
+      STRICT: '0',
+    });
+    assert.notEqual(res.status, 0);
+    assert.match(
+      String(res.stdout),
+      /SUMMARY status=fail scopes=1 found=1 missing=0 invalid=1 valid=0 format=json strict=0 only=users/,
+    );
+    assert.match(
+      String(res.stderr),
+      /INVALID users -> .*JSON root must be an array/,
     );
   });
 });
@@ -646,8 +695,9 @@ test('generate-po-migration-report: includes preflight summary and scope lists',
       path.join(logDir, 'preflight.log'),
       [
         '[po-migration-input-preflight] FOUND  users -> /tmp/input/users.csv',
-        '[po-migration-input-preflight][WARN] MISSING projects -> /tmp/input/projects.csv',
-        '[po-migration-input-preflight] SUMMARY status=warn scopes=2 found=1 missing=1 format=csv strict=0 only=users,projects',
+        '[po-migration-input-preflight] FOUND  projects -> /tmp/input/projects.csv',
+        '[po-migration-input-preflight][WARN] INVALID projects -> /tmp/input/projects.csv (missing required headers: code)',
+        '[po-migration-input-preflight] SUMMARY status=fail scopes=2 found=2 missing=0 invalid=1 valid=1 format=csv strict=0 only=users,projects',
         '[po-migration-input-preflight] preflight completed',
       ].join('\n'),
     );
@@ -661,9 +711,13 @@ test('generate-po-migration-report: includes preflight summary and scope lists',
 
     const report = readFileSync(outputPath, 'utf8');
     assert.match(report, /## preflight/);
-    assert.match(report, /- status: warn/);
+    assert.match(report, /- status: fail/);
+    assert.match(report, /- invalid: 1/);
+    assert.match(report, /- valid: 1/);
     assert.match(report, /- foundScopes: users/);
-    assert.match(report, /- missingScopes: projects/);
+    assert.match(report, /- missingScopes: \(none\)/);
+    assert.match(report, /- invalidScopes: projects/);
+    assert.match(report, /- projects: missing required headers: code/);
   });
 });
 
