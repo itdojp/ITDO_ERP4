@@ -183,6 +183,9 @@ test('submitApprovalWithUpdate writes evidence_snapshot_created audit with appro
     annotation: {
       findUnique: async () => null,
     },
+    referenceLink: {
+      findMany: async () => [],
+    },
     chatMessage: {
       findMany: async () => [],
     },
