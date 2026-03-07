@@ -33,16 +33,18 @@
   - 主用途は `externalUrls` / `internalRefs` の正規化と、将来の検索・権限制御・監査拡張の土台作り
   - `notes` は引き続き `Annotation` に保持する
   - `external_url` の重複排除を DB 一意制約で扱うため、`ReferenceLink.refKind` は空文字既定値で保持する
-- 初期段階の read path は `Annotation(JSON)` と `ReferenceLink` の両方を合成して返す。
+- 現行の read path は `ReferenceLink` を正本とし、`externalUrls` / `internalRefs` は `ReferenceLink` だけから組み立てる。
   - 対象:
     - `GET /annotations/:kind/:id`
     - 承認証跡スナップショット生成
     - 休暇申請 submit 時の証跡有無判定
+  - `notes` は引き続き `Annotation` から返す。
+  - 旧 `Annotation(JSON)` にしか存在しない参照は返さないため、cutover 前に backfill + shadow 縮退を完了させる。
 - `PATCH /annotations/:kind/:id` は、`notes` を `Annotation` に保持しつつ、
   `externalUrls` / `internalRefs` の更新時は `ReferenceLink` を正本として同期する。
-  - `ReferenceLink` 書き込みに成功した更新では、`Annotation.externalUrls/internalRefs` は empty shadow に縮退する。
-  - migration 未適用環境では `ReferenceLink` 書き込みを自動的にスキップし、既存 `Annotation(JSON)` のみで継続できるようにする。
-  - read path / response 形式は従来と変えない。
+  - `ReferenceLink` 更新後、`Annotation.externalUrls/internalRefs` は empty shadow に縮退する。
+  - migration 未適用環境は非対応とし、`ReferenceLink` テーブルが前提となる。
+  - response 形式は従来と変えない。
 - バックフィルは `scripts/backfill-reference-links.mjs` で行う。
   - 既に `ReferenceLink` が存在する target は上書きせず skip する
   - `--limit-targets` は 1 回の実行で走査する `Annotation` 件数の上限として扱う
@@ -53,6 +55,7 @@
   - 参照が不足している target、または `Annotation(JSON)` 側にしか存在しない参照が残る target は skip する
   - `--limit-targets` は 1 回の実行で走査する `Annotation` 件数の上限として扱う
 - `ReferenceLink` 側の `project_chat` 互換データは、read 時に `room_chat` として正規化する。
+- cutover 後の運用順序は `backfill -> shrink -> read path cutover` とする。
 
 ## アクセス制御
 

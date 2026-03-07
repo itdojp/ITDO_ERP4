@@ -255,66 +255,47 @@ export async function replaceReferenceLinks(
 ) {
   if (typeof client.referenceLink?.deleteMany !== 'function') return false;
 
-  try {
-    await client.referenceLink.deleteMany({
-      where: {
-        targetKind,
-        targetId,
-        linkKind: { in: ['external_url', 'internal_ref'] },
-      },
-    });
-    const data = [
-      ...externalUrls.map((url, index) => ({
-        targetKind,
-        targetId,
-        linkKind: 'external_url',
-        refKind: '',
-        value: url,
-        label: null,
-        sortOrder: index,
-        createdBy: actorUserId,
-        updatedBy: actorUserId,
-      })),
-      ...internalRefs.map((ref, index) => ({
-        targetKind,
-        targetId,
-        linkKind: 'internal_ref',
-        refKind: normalizeInternalRefKind(ref.kind),
-        value: ref.id,
-        label: ref.label ?? null,
-        sortOrder: index,
-        createdBy: actorUserId,
-        updatedBy: actorUserId,
-      })),
-    ];
-    if (data.length === 0) return true;
-    if (typeof client.referenceLink.createMany === 'function') {
-      await client.referenceLink.createMany({ data });
-      return true;
-    }
-    if (typeof client.referenceLink.create !== 'function') return true;
-    for (const row of data) {
-      await client.referenceLink.create({ data: row });
-    }
+  await client.referenceLink.deleteMany({
+    where: {
+      targetKind,
+      targetId,
+      linkKind: { in: ['external_url', 'internal_ref'] },
+    },
+  });
+  const data = [
+    ...externalUrls.map((url, index) => ({
+      targetKind,
+      targetId,
+      linkKind: 'external_url',
+      refKind: '',
+      value: url,
+      label: null,
+      sortOrder: index,
+      createdBy: actorUserId,
+      updatedBy: actorUserId,
+    })),
+    ...internalRefs.map((ref, index) => ({
+      targetKind,
+      targetId,
+      linkKind: 'internal_ref',
+      refKind: normalizeInternalRefKind(ref.kind),
+      value: ref.id,
+      label: ref.label ?? null,
+      sortOrder: index,
+      createdBy: actorUserId,
+      updatedBy: actorUserId,
+    })),
+  ];
+  if (data.length === 0) return true;
+  if (typeof client.referenceLink.createMany === 'function') {
+    await client.referenceLink.createMany({ data });
     return true;
-  } catch (error) {
-    if (!isReferenceLinkTableMissing(error)) throw error;
-    return false;
   }
-}
-
-export async function isReferenceLinkTableAvailable(client: any) {
-  if (typeof client.referenceLink?.findMany !== 'function') return false;
-  try {
-    await client.referenceLink.findMany({
-      take: 1,
-      select: { id: true },
-    });
-    return true;
-  } catch (error) {
-    if (!isReferenceLinkTableMissing(error)) throw error;
-    return false;
+  if (typeof client.referenceLink.create !== 'function') return true;
+  for (const row of data) {
+    await client.referenceLink.create({ data: row });
   }
+  return true;
 }
 
 export async function backfillReferenceLinksFromAnnotations(
@@ -636,42 +617,28 @@ export async function loadResolvedAnnotationReferenceState(
       },
     })) as AnnotationRecord);
 
-  let referenceLinks: ReferenceLinkRecord[] = [];
-  if (typeof client.referenceLink?.findMany === 'function') {
-    try {
-      referenceLinks = (await client.referenceLink.findMany({
-        where: { targetKind, targetId },
-        orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
-        select: {
-          linkKind: true,
-          refKind: true,
-          value: true,
-          label: true,
-          updatedAt: true,
-          updatedBy: true,
-        },
-      })) as ReferenceLinkRecord[];
-    } catch (error) {
-      if (!isReferenceLinkTableMissing(error)) throw error;
-    }
-  }
+  const referenceLinks =
+    typeof client.referenceLink?.findMany === 'function'
+      ? ((await client.referenceLink.findMany({
+          where: { targetKind, targetId },
+          orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+          select: {
+            linkKind: true,
+            refKind: true,
+            value: true,
+            label: true,
+            updatedAt: true,
+            updatedBy: true,
+          },
+        })) as ReferenceLinkRecord[])
+      : [];
 
-  const baseExternalUrls = normalizeStoredExternalUrls(
-    annotation?.externalUrls,
-  );
-  const baseInternalRefs = normalizeStoredInternalRefs(
-    annotation?.internalRefs,
-  );
-  const merged = mergeReferenceLinks(
-    baseExternalUrls,
-    baseInternalRefs,
-    referenceLinks,
-  );
+  const resolvedRefs = buildReferenceLinkOnlyState(referenceLinks);
   const meta = resolveUpdatedMeta(annotation, referenceLinks);
   return {
     notes: annotation?.notes ?? null,
-    externalUrls: merged.externalUrls,
-    internalRefs: merged.internalRefs,
+    externalUrls: resolvedRefs.externalUrls,
+    internalRefs: resolvedRefs.internalRefs,
     updatedAt: meta.updatedAt,
     updatedBy: meta.updatedBy,
   };

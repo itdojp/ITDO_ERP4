@@ -139,6 +139,42 @@ test('createEvidenceSnapshotForApproval: normalizes annotation and captures chat
         updatedAt: new Date('2026-02-15T11:30:00.000Z'),
       }),
     },
+    referenceLink: {
+      findMany: async () => [
+        {
+          linkKind: 'external_url',
+          refKind: '',
+          value: 'https://example.com/a',
+          label: null,
+          updatedAt: new Date('2026-02-15T11:30:00.000Z'),
+          updatedBy: 'author-1',
+        },
+        {
+          linkKind: 'internal_ref',
+          refKind: 'chat_message',
+          value: 'm-1',
+          label: 'Thread A',
+          updatedAt: new Date('2026-02-15T11:30:00.000Z'),
+          updatedBy: 'author-1',
+        },
+        {
+          linkKind: 'internal_ref',
+          refKind: 'chat_message',
+          value: 'm-2',
+          label: null,
+          updatedAt: new Date('2026-02-15T11:30:00.000Z'),
+          updatedBy: 'author-1',
+        },
+        {
+          linkKind: 'internal_ref',
+          refKind: 'project',
+          value: 'prj-1',
+          label: 'Project 1',
+          updatedAt: new Date('2026-02-15T11:30:00.000Z'),
+          updatedBy: 'author-1',
+        },
+      ],
+    },
     chatMessage: {
       findMany: async ({ where }) => {
         assert.deepEqual(where, {
@@ -198,7 +234,7 @@ test('createEvidenceSnapshotForApproval: normalizes annotation and captures chat
   ]);
 });
 
-test('createEvidenceSnapshotForApproval: merges reference_links with annotation JSON', async () => {
+test('createEvidenceSnapshotForApproval: prefers reference_links over legacy annotation JSON refs', async () => {
   let createInput;
 
   const client = {
@@ -222,10 +258,9 @@ test('createEvidenceSnapshotForApproval: merges reference_links with annotation 
     annotation: {
       findUnique: async () => ({
         notes: 'reference link note',
-        externalUrls: ['https://example.com/a'],
+        externalUrls: ['https://legacy.example.com/only-json'],
         internalRefs: [
-          { kind: 'project', id: 'proj-001', label: 'Project A' },
-          { kind: 'room_chat', id: 'room-001', label: 'Old room label' },
+          { kind: 'project', id: 'proj-legacy', label: 'Legacy Project' },
         ],
         updatedAt: new Date('2026-03-06T00:00:00.000Z'),
         updatedBy: 'author-1',
@@ -236,8 +271,16 @@ test('createEvidenceSnapshotForApproval: merges reference_links with annotation 
         {
           linkKind: 'external_url',
           refKind: '',
-          value: 'https://example.com/b',
+          value: 'https://example.com/from-table',
           label: null,
+          updatedAt: new Date('2026-03-07T00:00:00.000Z'),
+          updatedBy: 'author-2',
+        },
+        {
+          linkKind: 'internal_ref',
+          refKind: 'project',
+          value: 'proj-001',
+          label: 'Project A',
           updatedAt: new Date('2026-03-07T00:00:00.000Z'),
           updatedBy: 'author-2',
         },
@@ -270,8 +313,7 @@ test('createEvidenceSnapshotForApproval: merges reference_links with annotation 
     '2026-03-07T00:00:00.000Z',
   );
   assert.deepEqual(createInput.items.externalUrls, [
-    'https://example.com/a',
-    'https://example.com/b',
+    'https://example.com/from-table',
   ]);
   assert.deepEqual(createInput.items.internalRefs, [
     { kind: 'project', id: 'proj-001', label: 'Project A' },

@@ -93,7 +93,24 @@ test('PATCH /annotations/:kind/:id normalizes project_chat refs into room_chat',
           }),
           'annotationSetting.findUnique': async () => null,
           'annotation.findUnique': async () => null,
-          'referenceLink.findMany': async () => [],
+          'referenceLink.findMany': async () => [
+            {
+              linkKind: 'external_url',
+              refKind: '',
+              value: 'https://example.com/a',
+              label: null,
+              updatedAt: new Date('2026-03-06T00:00:00Z'),
+              updatedBy: 'author-1',
+            },
+            {
+              linkKind: 'internal_ref',
+              refKind: 'project',
+              value: 'proj-001',
+              label: 'Project A',
+              updatedAt: new Date('2026-03-06T00:00:00Z'),
+              updatedBy: 'author-1',
+            },
+          ],
           'annotation.upsert': async ({ create, update }) => {
             upserts.push({ create, update });
             return {
@@ -209,7 +226,24 @@ test('PATCH /annotations/:kind/:id syncs normalized links into reference_links a
             updatedAt: new Date('2026-03-06T00:00:00Z'),
             updatedBy: 'author-1',
           }),
-          'referenceLink.findMany': async () => [],
+          'referenceLink.findMany': async () => [
+            {
+              linkKind: 'external_url',
+              refKind: '',
+              value: 'https://example.com/a',
+              label: null,
+              updatedAt: new Date('2026-03-06T00:00:00Z'),
+              updatedBy: 'author-1',
+            },
+            {
+              linkKind: 'internal_ref',
+              refKind: 'project',
+              value: 'proj-001',
+              label: 'Project A',
+              updatedAt: new Date('2026-03-06T00:00:00Z'),
+              updatedBy: 'author-1',
+            },
+          ],
           'annotation.upsert': async ({ create, update }) => {
             upserts.push({ create, update });
             return {
@@ -343,14 +377,16 @@ test('PATCH /annotations/:kind/:id syncs normalized links into reference_links a
   );
 });
 
-test('PATCH /annotations/:kind/:id continues when ReferenceLink table is not available yet', async () => {
+test('PATCH /annotations/:kind/:id ignores stale Annotation JSON shadow when ReferenceLink state already matches', async () => {
   await withEnv(
     {
       DATABASE_URL: process.env.DATABASE_URL || MIN_DATABASE_URL,
       AUTH_MODE: 'header',
     },
     async () => {
+      let deleteManyCalled = false;
       let createManyCalled = false;
+      let upsertCalled = false;
       await withPrismaStubs(
         {
           'invoice.findUnique': async () => ({
@@ -360,33 +396,52 @@ test('PATCH /annotations/:kind/:id continues when ReferenceLink table is not ava
             deletedAt: null,
           }),
           'annotationSetting.findUnique': async () => null,
-          'annotation.findUnique': async () => null,
-          'referenceLink.findMany': async () => {
-            const error = new Error('relation "ReferenceLink" does not exist');
-            error.code = 'P2021';
-            throw error;
-          },
-          'annotation.upsert': async ({ create }) => ({
+          'annotation.findUnique': async () => ({
             id: 'annotation-11',
             targetKind: 'invoice',
             targetId: 'inv-011',
-            notes: create.notes ?? null,
-            externalUrls: create.externalUrls ?? [],
-            internalRefs: create.internalRefs ?? [],
-            updatedAt: new Date('2026-03-07T00:00:00Z'),
-            updatedBy: 'admin-user',
+            notes: 'from-table',
+            externalUrls: ['https://legacy.example.com/only-json'],
+            internalRefs: [{ kind: 'project', id: 'proj-legacy' }],
+            updatedAt: new Date('2026-03-06T00:00:00Z'),
+            updatedBy: 'author-1',
           }),
-          'annotationLog.create': async () => ({ id: 'annotation-log-1' }),
+          'referenceLink.findMany': async () => [
+            {
+              linkKind: 'external_url',
+              refKind: '',
+              value: 'https://example.com/a',
+              label: null,
+              updatedAt: new Date('2026-03-07T00:00:00Z'),
+              updatedBy: 'admin-user',
+            },
+            {
+              linkKind: 'internal_ref',
+              refKind: 'project',
+              value: 'proj-001',
+              label: 'Project A',
+              updatedAt: new Date('2026-03-07T00:00:00Z'),
+              updatedBy: 'admin-user',
+            },
+          ],
+          'annotation.upsert': async () => {
+            upsertCalled = true;
+            throw new Error('unexpected_annotation_upsert');
+          },
+          'annotationLog.create': async () => {
+            throw new Error('unexpected_annotation_log');
+          },
           'referenceLink.deleteMany': async () => {
-            const error = new Error('relation "ReferenceLink" does not exist');
-            error.code = 'P2021';
-            throw error;
+            deleteManyCalled = true;
+            return { count: 0 };
           },
           'referenceLink.createMany': async () => {
             createManyCalled = true;
             return { count: 0 };
           },
-          'auditLog.create': async () => ({ id: 'audit-1' }),
+          'auditLog.create': async () => {
+            throw new Error('unexpected_audit_log');
+          },
           $transaction: createTransactionStub(),
         },
         async () => {
@@ -401,16 +456,19 @@ test('PATCH /annotations/:kind/:id continues when ReferenceLink table is not ava
                 'content-type': 'application/json',
               },
               payload: {
-                notes: null,
+                notes: 'from-table',
                 externalUrls: ['https://example.com/a'],
-                internalRefs: [{ kind: 'project', id: 'proj-001' }],
+                internalRefs: [
+                  { kind: 'project', id: 'proj-001', label: 'Project A' },
+                ],
               },
             });
             assert.equal(res.statusCode, 200, res.body);
             const payload = JSON.parse(res.body);
+            assert.equal(payload.notes, 'from-table');
             assert.deepEqual(payload.externalUrls, ['https://example.com/a']);
             assert.deepEqual(payload.internalRefs, [
-              { kind: 'project', id: 'proj-001' },
+              { kind: 'project', id: 'proj-001', label: 'Project A' },
             ]);
           } finally {
             await server.close();
@@ -418,7 +476,9 @@ test('PATCH /annotations/:kind/:id continues when ReferenceLink table is not ava
         },
       );
 
+      assert.equal(deleteManyCalled, false);
       assert.equal(createManyCalled, false);
+      assert.equal(upsertCalled, false);
     },
   );
 });
@@ -454,7 +514,24 @@ test('PATCH /annotations/:kind/:id clears ReferenceLink rows when refs are remov
             updatedAt: new Date('2026-03-06T00:00:00Z'),
             updatedBy: 'author-1',
           }),
-          'referenceLink.findMany': async () => [],
+          'referenceLink.findMany': async () => [
+            {
+              linkKind: 'external_url',
+              refKind: '',
+              value: 'https://example.com/a',
+              label: null,
+              updatedAt: new Date('2026-03-06T00:00:00Z'),
+              updatedBy: 'author-1',
+            },
+            {
+              linkKind: 'internal_ref',
+              refKind: 'project',
+              value: 'proj-001',
+              label: 'Project A',
+              updatedAt: new Date('2026-03-06T00:00:00Z'),
+              updatedBy: 'author-1',
+            },
+          ],
           'annotation.upsert': async ({ update, create }) => {
             upserts.push({ update, create });
             return {
@@ -779,6 +856,14 @@ test('GET /annotations/:kind/:id merges reference_links into normalized payload'
             },
             {
               linkKind: 'internal_ref',
+              refKind: 'project',
+              value: 'proj-001',
+              label: 'Project A',
+              updatedAt: new Date('2026-03-07T00:00:00Z'),
+              updatedBy: 'author-2',
+            },
+            {
+              linkKind: 'internal_ref',
               refKind: 'project_chat',
               value: 'room-001',
               label: 'Legacy room',
@@ -829,7 +914,7 @@ test('GET /annotations/:kind/:id merges reference_links into normalized payload'
   );
 });
 
-test('GET /annotations/:kind/:id falls back when ReferenceLink table is not available yet', async () => {
+test('GET /annotations/:kind/:id ignores legacy Annotation JSON refs after ReferenceLink cutover', async () => {
   await withEnv(
     {
       DATABASE_URL: process.env.DATABASE_URL || MIN_DATABASE_URL,
@@ -853,11 +938,24 @@ test('GET /annotations/:kind/:id falls back when ReferenceLink table is not avai
             updatedAt: new Date('2026-03-06T00:00:00Z'),
             updatedBy: 'author-1',
           }),
-          'referenceLink.findMany': async () => {
-            const error = new Error('relation "ReferenceLink" does not exist');
-            error.code = 'P2021';
-            throw error;
-          },
+          'referenceLink.findMany': async () => [
+            {
+              linkKind: 'external_url',
+              refKind: '',
+              value: 'https://example.com/from-table',
+              label: null,
+              updatedAt: new Date('2026-03-07T00:00:00Z'),
+              updatedBy: 'author-2',
+            },
+            {
+              linkKind: 'internal_ref',
+              refKind: 'room_chat',
+              value: 'room-003',
+              label: 'Room 003',
+              updatedAt: new Date('2026-03-07T00:00:00Z'),
+              updatedBy: 'author-2',
+            },
+          ],
         },
         async () => {
           const server = await buildServer({ logger: false });
@@ -873,12 +971,14 @@ test('GET /annotations/:kind/:id falls back when ReferenceLink table is not avai
             assert.equal(res.statusCode, 200, res.body);
             const payload = JSON.parse(res.body);
             assert.equal(payload.notes, 'annotation only');
-            assert.deepEqual(payload.externalUrls, ['https://example.com/a']);
-            assert.deepEqual(payload.internalRefs, [
-              { kind: 'project', id: 'proj-001', label: 'Project A' },
+            assert.deepEqual(payload.externalUrls, [
+              'https://example.com/from-table',
             ]);
-            assert.equal(payload.updatedBy, 'author-1');
-            assert.equal(payload.updatedAt, '2026-03-06T00:00:00.000Z');
+            assert.deepEqual(payload.internalRefs, [
+              { kind: 'room_chat', id: 'room-003', label: 'Room 003' },
+            ]);
+            assert.equal(payload.updatedBy, 'author-2');
+            assert.equal(payload.updatedAt, '2026-03-07T00:00:00.000Z');
           } finally {
             await server.close();
           }
