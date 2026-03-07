@@ -214,6 +214,9 @@ test('POST /expenses/:id/submit: policy allow reaches downstream submit path (no
       annotation: {
         findUnique: async () => null,
       },
+      referenceLink: {
+        findMany: async () => [],
+      },
       chatMessage: {
         findMany: async () => [],
       },

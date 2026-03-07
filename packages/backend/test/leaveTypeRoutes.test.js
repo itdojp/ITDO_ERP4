@@ -413,14 +413,15 @@ test('POST /leave-requests/:id/submit rejects required attachment when missing e
       'leaveRequest.count': async () => 0,
       'leaveRequest.findMany': async () => [],
       'annotation.findUnique': async () => ({
-        internalRefs: [],
-        externalUrls: [],
+        internalRefs: [{ kind: 'project', id: 'proj-legacy' }],
+        externalUrls: ['https://legacy.example.com/only-json'],
       }),
       'leaveType.findFirst': async () => ({
         code: 'special',
         attachmentPolicy: 'required',
         active: true,
       }),
+      'referenceLink.findMany': async () => [],
     },
     async () => {
       await withServer(async (server) => {
@@ -473,6 +474,16 @@ test('POST /leave-requests/:id/submit proceeds past attachment check when eviden
         internalRefs: [],
         externalUrls: ['https://example.com/evidence'],
       }),
+      'referenceLink.findMany': async () => [
+        {
+          linkKind: 'external_url',
+          refKind: '',
+          value: 'https://example.com/evidence',
+          label: null,
+          updatedAt: new Date('2026-03-07T00:00:00.000Z'),
+          updatedBy: 'user-1',
+        },
+      ],
       'leaveType.findFirst': async () => ({
         code: 'special',
         attachmentPolicy: 'required',
@@ -1155,6 +1166,16 @@ test('POST /leave-requests/:id/submit rejects compensatory leave when balance is
         internalRefs: [{ kind: 'chat_message', id: 'chat-msg-1' }],
         externalUrls: [],
       }),
+      'referenceLink.findMany': async () => [
+        {
+          linkKind: 'internal_ref',
+          refKind: 'chat_message',
+          value: 'chat-msg-1',
+          label: 'Consultation thread',
+          updatedAt: new Date('2026-03-11T00:00:00.000Z'),
+          updatedBy: 'normal-user',
+        },
+      ],
       'leaveType.findFirst': async () => ({
         code: 'compensatory',
         attachmentPolicy: 'none',

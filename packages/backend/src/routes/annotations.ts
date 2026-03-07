@@ -1,7 +1,6 @@
 import { Prisma } from '@prisma/client';
 import { FastifyInstance } from 'fastify';
 import {
-  isReferenceLinkTableAvailable,
   loadResolvedAnnotationReferenceState,
   replaceReferenceLinks,
 } from '../services/annotationReferences.js';
@@ -585,8 +584,6 @@ export async function registerAnnotationRoutes(app: FastifyInstance) {
       }
 
       const actorRole = resolveActorRole(roles);
-      const referenceLinkTableAvailable =
-        await isReferenceLinkTableAvailable(prisma);
 
       const sumLength = (values: string[]) =>
         values.reduce((acc, item) => acc + item.length, 0);
@@ -647,8 +644,8 @@ export async function registerAnnotationRoutes(app: FastifyInstance) {
           let shadowInternalRefs = normalizeJsonArray<InternalRef>(
             current?.internalRefs,
           );
-          if ((urlsChanged || refsChanged) && referenceLinkTableAvailable) {
-            const synced = await replaceReferenceLinks(
+          if (urlsChanged || refsChanged) {
+            await replaceReferenceLinks(
               tx,
               kind,
               id,
@@ -656,11 +653,8 @@ export async function registerAnnotationRoutes(app: FastifyInstance) {
               mergedInternalRefs,
               userId,
             );
-            shadowExternalUrls = synced ? [] : mergedExternalUrls;
-            shadowInternalRefs = synced ? [] : mergedInternalRefs;
-          } else if (urlsChanged || refsChanged) {
-            shadowExternalUrls = mergedExternalUrls;
-            shadowInternalRefs = mergedInternalRefs;
+            shadowExternalUrls = [];
+            shadowInternalRefs = [];
           }
 
           const updated = await tx.annotation.upsert({

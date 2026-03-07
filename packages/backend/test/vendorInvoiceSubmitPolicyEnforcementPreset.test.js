@@ -183,6 +183,9 @@ test('POST /vendor-invoices/:id/submit: policy allow reaches downstream submit p
       annotation: {
         findUnique: async () => null,
       },
+      referenceLink: {
+        findMany: async () => [],
+      },
       chatMessage: {
         findMany: async () => [],
       },
