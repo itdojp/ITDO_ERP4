@@ -1,7 +1,12 @@
 type AnnotationRecord = {
+  id?: string;
+  targetKind?: string;
+  targetId?: string;
   notes?: string | null;
   externalUrls?: unknown;
   internalRefs?: unknown;
+  createdAt?: Date | null;
+  createdBy?: string | null;
   updatedAt?: Date | null;
   updatedBy?: string | null;
 } | null;
@@ -27,6 +32,28 @@ export type ResolvedAnnotationReferenceState = {
   internalRefs: AnnotationInternalRef[];
   updatedAt: Date | null;
   updatedBy: string | null;
+};
+
+export type ReferenceLinkBackfillOptions = {
+  dryRun?: boolean;
+  batchSize?: number;
+  limitTargets?: number;
+  targetKind?: string;
+  targetId?: string;
+};
+
+export type ReferenceLinkBackfillSummary = {
+  dryRun: boolean;
+  batchSize: number;
+  limitTargets: number | null;
+  scannedTargets: number;
+  candidateTargets: number;
+  candidateLinks: number;
+  createdTargets: number;
+  createdLinks: number;
+  skippedExistingTargets: number;
+  skippedEmptyTargets: number;
+  processedBatches: number;
 };
 
 function normalizeString(value: unknown) {
@@ -126,6 +153,72 @@ function isReferenceLinkTableMissing(error: unknown) {
   );
 }
 
+function normalizeBatchSize(value?: number) {
+  if (!Number.isFinite(value)) return 200;
+  return Math.max(1, Math.min(1000, Math.floor(Number(value))));
+}
+
+function normalizeLimitTargets(value?: number) {
+  if (!Number.isFinite(value)) return null;
+  const normalized = Math.floor(Number(value));
+  return normalized > 0 ? normalized : null;
+}
+
+function buildReferenceLinkData(annotation: NonNullable<AnnotationRecord>) {
+  const targetKind = normalizeString(annotation.targetKind);
+  const targetId = normalizeString(annotation.targetId);
+  if (!targetKind || !targetId) return [];
+  const createdAt = annotation.createdAt ?? annotation.updatedAt ?? new Date();
+  const updatedAt = annotation.updatedAt ?? annotation.createdAt ?? createdAt;
+  const createdBy = annotation.createdBy ?? annotation.updatedBy ?? null;
+  const updatedBy = annotation.updatedBy ?? annotation.createdBy ?? null;
+  const externalUrls = normalizeStoredExternalUrls(annotation.externalUrls);
+  const internalRefs = normalizeStoredInternalRefs(annotation.internalRefs);
+  return [
+    ...externalUrls.map((url, index) => ({
+      targetKind,
+      targetId,
+      linkKind: 'external_url',
+      refKind: '',
+      value: url,
+      label: null,
+      sortOrder: index,
+      createdAt,
+      createdBy,
+      updatedAt,
+      updatedBy,
+    })),
+    ...internalRefs.map((ref, index) => ({
+      targetKind,
+      targetId,
+      linkKind: 'internal_ref',
+      refKind: normalizeInternalRefKind(ref.kind),
+      value: ref.id,
+      label: ref.label ?? null,
+      sortOrder: index,
+      createdAt,
+      createdBy,
+      updatedAt,
+      updatedBy,
+    })),
+  ];
+}
+
+function buildAnnotationBackfillWhere(
+  options: Pick<ReferenceLinkBackfillOptions, 'targetKind' | 'targetId'>,
+  cursor?: { id: string } | null,
+) {
+  const filters: Record<string, unknown>[] = [];
+  const targetKind = normalizeString(options.targetKind);
+  const targetId = normalizeString(options.targetId);
+  if (targetKind) filters.push({ targetKind });
+  if (targetId) filters.push({ targetId });
+  if (cursor) filters.push({ id: { gt: cursor.id } });
+  if (!filters.length) return undefined;
+  if (filters.length === 1) return filters[0];
+  return { AND: filters };
+}
+
 export async function replaceReferenceLinks(
   client: any,
   targetKind: string,
@@ -182,6 +275,131 @@ export async function replaceReferenceLinks(
     if (!isReferenceLinkTableMissing(error)) throw error;
     return false;
   }
+}
+
+export async function backfillReferenceLinksFromAnnotations(
+  client: any,
+  options: ReferenceLinkBackfillOptions = {},
+): Promise<ReferenceLinkBackfillSummary> {
+  if (typeof client.annotation?.findMany !== 'function') {
+    throw new Error('annotation_findMany_not_available');
+  }
+  if (typeof client.referenceLink?.findMany !== 'function') {
+    throw new Error('referenceLink_findMany_not_available');
+  }
+  const dryRun = options.dryRun !== false;
+  if (!dryRun && typeof client.referenceLink?.createMany !== 'function') {
+    throw new Error('referenceLink_createMany_not_available');
+  }
+
+  const batchSize = normalizeBatchSize(options.batchSize);
+  const limitTargets = normalizeLimitTargets(options.limitTargets);
+  const summary: ReferenceLinkBackfillSummary = {
+    dryRun,
+    batchSize,
+    limitTargets,
+    scannedTargets: 0,
+    candidateTargets: 0,
+    candidateLinks: 0,
+    createdTargets: 0,
+    createdLinks: 0,
+    skippedExistingTargets: 0,
+    skippedEmptyTargets: 0,
+    processedBatches: 0,
+  };
+
+  let cursor: { id: string } | null = null;
+
+  while (true) {
+    const remaining =
+      limitTargets === null
+        ? batchSize
+        : Math.min(batchSize, limitTargets - summary.scannedTargets);
+    if (remaining <= 0) break;
+
+    const annotations = (await client.annotation.findMany({
+      where: buildAnnotationBackfillWhere(options, cursor),
+      orderBy: { id: 'asc' },
+      take: remaining,
+      select: {
+        id: true,
+        targetKind: true,
+        targetId: true,
+        externalUrls: true,
+        internalRefs: true,
+        createdAt: true,
+        createdBy: true,
+        updatedAt: true,
+        updatedBy: true,
+      },
+    })) as NonNullable<AnnotationRecord>[];
+
+    if (!annotations.length) break;
+    summary.processedBatches += 1;
+    summary.scannedTargets += annotations.length;
+
+    const targetPairs = annotations.map((annotation) => ({
+      targetKind: normalizeString(annotation.targetKind),
+      targetId: normalizeString(annotation.targetId),
+    }));
+    let existingLinks: Array<{
+      targetKind: string;
+      targetId: string;
+    }> = [];
+    try {
+      existingLinks = await client.referenceLink.findMany({
+        where: {
+          OR: targetPairs,
+          linkKind: { in: ['external_url', 'internal_ref'] },
+        },
+        select: {
+          targetKind: true,
+          targetId: true,
+        },
+      });
+    } catch (error) {
+      if (!isReferenceLinkTableMissing(error)) throw error;
+      throw new Error('referenceLink_table_missing');
+    }
+    const existingKeys = new Set(
+      existingLinks.map((item) => `${item.targetKind}:${item.targetId}`),
+    );
+
+    const rowsToCreate: Array<Record<string, unknown>> = [];
+    let createdTargetsInBatch = 0;
+    for (const annotation of annotations) {
+      const key = `${normalizeString(annotation.targetKind)}:${normalizeString(annotation.targetId)}`;
+      const rows = buildReferenceLinkData(annotation);
+      if (rows.length === 0) {
+        summary.skippedEmptyTargets += 1;
+        continue;
+      }
+      if (existingKeys.has(key)) {
+        summary.skippedExistingTargets += 1;
+        continue;
+      }
+      summary.candidateTargets += 1;
+      summary.candidateLinks += rows.length;
+      rowsToCreate.push(...rows);
+      createdTargetsInBatch += 1;
+    }
+
+    if (!dryRun && rowsToCreate.length > 0) {
+      const result = await client.referenceLink.createMany({
+        data: rowsToCreate,
+        skipDuplicates: true,
+      });
+      summary.createdTargets += createdTargetsInBatch;
+      summary.createdLinks += result.count ?? rowsToCreate.length;
+    }
+
+    const last = annotations[annotations.length - 1];
+    cursor = {
+      id: normalizeString(last.id),
+    };
+  }
+
+  return summary;
 }
 
 function resolveUpdatedMeta(

@@ -42,6 +42,11 @@
   `externalUrls` / `internalRefs` を `Annotation(JSON)` と `ReferenceLink` に dual-write する。
   - migration 未適用環境では `ReferenceLink` 書き込みを自動的にスキップし、既存 `Annotation(JSON)` のみで継続できるようにする。
   - read path / response 形式は従来と変えない。
+- バックフィルは `scripts/backfill-reference-links.mjs` で行う。
+  - 既に `ReferenceLink` が存在する target は上書きせず skip する
+  - `--limit-targets` は 1 回の実行で走査する `Annotation` 件数の上限として扱う
+  - `Annotation` の `createdAt/createdBy/updatedAt/updatedBy` を `ReferenceLink` へ引き継ぐ
+  - 既存 `project_chat` は `room_chat` に正規化して投入する
 - `ReferenceLink` 側の `project_chat` 互換データは、read 時に `room_chat` として正規化する。
 
 ## アクセス制御
