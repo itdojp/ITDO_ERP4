@@ -34,9 +34,7 @@ export function parseOptionsFromArgv(argv, now = new Date()) {
     take: fallbackOptions.take,
     callsiteRoot: gapOptions.callsiteRoot,
     presetFile: gapOptions.presetFile,
-    format: parseFormat(
-      parseArgValue(argv, "format") || fallbackOptions.format,
-    ),
+    format: fallbackOptions.format,
   };
 }
 
