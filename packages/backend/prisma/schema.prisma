@@ -839,7 +839,7 @@ model ReferenceLink {
   targetKind String
   targetId   String
   linkKind   String
-  refKind    String?
+  refKind    String   @default("")
   value      String
   label      String?
   sortOrder  Int      @default(0)

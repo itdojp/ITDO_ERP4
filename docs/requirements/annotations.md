@@ -32,6 +32,7 @@
 - Phase B4 の初手では、`ReferenceLink` を独立テーブルとして追加する。
   - 主用途は `externalUrls` / `internalRefs` の正規化と、将来の検索・権限制御・監査拡張の土台作り
   - `notes` は引き続き `Annotation` に保持する
+  - `external_url` の重複排除を DB 一意制約で扱うため、`ReferenceLink.refKind` は空文字既定値で保持する
 - 初期段階の read path は `Annotation(JSON)` と `ReferenceLink` の両方を合成して返す。
   - 対象:
     - `GET /annotations/:kind/:id`

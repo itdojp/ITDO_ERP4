@@ -223,7 +223,10 @@ test('createEvidenceSnapshotForApproval: merges reference_links with annotation 
       findUnique: async () => ({
         notes: 'reference link note',
         externalUrls: ['https://example.com/a'],
-        internalRefs: [{ kind: 'project', id: 'proj-001', label: 'Project A' }],
+        internalRefs: [
+          { kind: 'project', id: 'proj-001', label: 'Project A' },
+          { kind: 'room_chat', id: 'room-001', label: 'Old room label' },
+        ],
         updatedAt: new Date('2026-03-06T00:00:00.000Z'),
         updatedBy: 'author-1',
       }),
@@ -232,7 +235,7 @@ test('createEvidenceSnapshotForApproval: merges reference_links with annotation 
       findMany: async () => [
         {
           linkKind: 'external_url',
-          refKind: null,
+          refKind: '',
           value: 'https://example.com/b',
           label: null,
           updatedAt: new Date('2026-03-07T00:00:00.000Z'),

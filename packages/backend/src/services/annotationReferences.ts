@@ -96,13 +96,34 @@ function mergeReferenceLinks(
     const id = normalizeString(link.value);
     if (!kind || !id) continue;
     const key = `${kind}:${id}`;
-    if (seenRefs.has(key)) continue;
-    seenRefs.add(key);
     const label = normalizeString(link.label);
+    if (seenRefs.has(key)) {
+      if (!label) continue;
+      const existingIndex = internalRefs.findIndex(
+        (ref) => ref.kind === kind && ref.id === id,
+      );
+      if (existingIndex === -1) continue;
+      internalRefs[existingIndex] = { ...internalRefs[existingIndex], label };
+      continue;
+    }
+    seenRefs.add(key);
     internalRefs.push(label ? { kind, id, label } : { kind, id });
   }
 
   return { externalUrls, internalRefs };
+}
+
+function isReferenceLinkTableMissing(error: unknown) {
+  const code =
+    error && typeof error === 'object' ? (error as { code?: string }).code : '';
+  if (code === 'P2021' || code === 'P2010') return true;
+  const message =
+    error && typeof error === 'object'
+      ? String((error as { message?: unknown }).message ?? '')
+      : '';
+  return (
+    message.includes('does not exist') || message.includes('no such table')
+  );
 }
 
 function resolveUpdatedMeta(
@@ -138,21 +159,25 @@ export async function loadResolvedAnnotationReferenceState(
     },
   })) as AnnotationRecord;
 
-  const referenceLinks =
-    typeof client.referenceLink?.findMany === 'function'
-      ? ((await client.referenceLink.findMany({
-          where: { targetKind, targetId },
-          orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
-          select: {
-            linkKind: true,
-            refKind: true,
-            value: true,
-            label: true,
-            updatedAt: true,
-            updatedBy: true,
-          },
-        })) as ReferenceLinkRecord[])
-      : [];
+  let referenceLinks: ReferenceLinkRecord[] = [];
+  if (typeof client.referenceLink?.findMany === 'function') {
+    try {
+      referenceLinks = (await client.referenceLink.findMany({
+        where: { targetKind, targetId },
+        orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+        select: {
+          linkKind: true,
+          refKind: true,
+          value: true,
+          label: true,
+          updatedAt: true,
+          updatedBy: true,
+        },
+      })) as ReferenceLinkRecord[];
+    } catch (error) {
+      if (!isReferenceLinkTableMissing(error)) throw error;
+    }
+  }
 
   const baseExternalUrls = normalizeStoredExternalUrls(
     annotation?.externalUrls,

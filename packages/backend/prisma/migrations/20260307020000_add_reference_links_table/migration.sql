@@ -4,7 +4,7 @@ CREATE TABLE "ReferenceLink" (
     "targetKind" TEXT NOT NULL,
     "targetId" TEXT NOT NULL,
     "linkKind" TEXT NOT NULL,
-    "refKind" TEXT,
+    "refKind" TEXT NOT NULL DEFAULT '',
     "value" TEXT NOT NULL,
     "label" TEXT,
     "sortOrder" INTEGER NOT NULL DEFAULT 0,
@@ -24,4 +24,3 @@ CREATE INDEX "ReferenceLink_targetKind_targetId_sortOrder_createdAt_idx" ON "Ref
 
 -- CreateIndex
 CREATE INDEX "ReferenceLink_targetKind_targetId_linkKind_idx" ON "ReferenceLink"("targetKind", "targetId", "linkKind");
-
