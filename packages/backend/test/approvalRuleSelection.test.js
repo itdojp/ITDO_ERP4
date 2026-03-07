@@ -310,8 +310,8 @@ test('createApprovalFor: seeds DB default rules when no active rule is found for
   assert.equal(auditLogs.length, 0);
 });
 
-test('createApprovalFor: logs fallback reasons when no active rule is found for unsupported flow', async () => {
-  const auditLogs = [];
+test('createApprovalFor: rejects unsupported flow when no active rule is found', async () => {
+  let createCalled = false;
   const fakeClient = {
     approvalRule: {
       findMany: async () => [],
@@ -319,42 +319,42 @@ test('createApprovalFor: logs fallback reasons when no active rule is found for 
     project: { findUnique: async () => null },
     approvalInstance: {
       findFirst: async () => null,
-      create: async () => ({
-        id: 'a-fallback-no-rule',
-        status: 'pending_qa',
-        currentStep: 1,
-        steps: [],
-      }),
-    },
-    auditLog: {
-      create: async ({ data }) => {
-        auditLogs.push(data);
-        return { id: 'audit-1' };
+      create: async () => {
+        createCalled = true;
+        return {
+          id: 'unexpected',
+          status: 'pending_qa',
+          currentStep: 1,
+          steps: [],
+        };
       },
     },
   };
 
-  await createApprovalFor(
-    'custom_flow',
-    'custom_docs',
-    'custom-no-rule',
-    { amount: 120000 },
-    { client: fakeClient, createdBy: 'u1' },
+  await assert.rejects(
+    () =>
+      createApprovalFor(
+        'custom_flow',
+        'custom_docs',
+        'custom-no-rule',
+        { amount: 120000 },
+        { client: fakeClient, createdBy: 'u1' },
+      ),
+    (err) => {
+      assert.equal(err?.code, 'approval_rule_required');
+      assert.equal(err?.httpStatus, 409);
+      assert.equal(err?.details?.fallbackMode, 'legacy');
+      assert.deepEqual(err?.details?.fallbackReasons, ['rule_not_found']);
+      return true;
+    },
   );
-
-  assert.equal(auditLogs.length, 1);
-  assert.equal(auditLogs[0].action, 'approval_rule_fallback_used');
-  assert.equal(auditLogs[0].reasonCode, 'rule_not_found');
-  assert.equal(auditLogs[0].metadata.fallbackMode, 'legacy');
-  assert.deepEqual(auditLogs[0].metadata.fallbackReasons, [
-    'rule_not_found',
-    'rule_id_auto_used',
-  ]);
+  assert.equal(createCalled, false);
 });
 
-test('createApprovalFor: db_default_only mode skips in-code default rule seeding', async () => {
+test('createApprovalFor: db_default_only mode rejects implicit fallback when no rule is found', async () => {
   const auditLogs = [];
   let createRuleCalls = 0;
+  let createCalled = false;
   const prevMode = process.env.APPROVAL_RULE_FALLBACK_MODE;
   process.env.APPROVAL_RULE_FALLBACK_MODE = 'db_default_only';
   try {
@@ -368,12 +368,15 @@ test('createApprovalFor: db_default_only mode skips in-code default rule seeding
       },
       approvalInstance: {
         findFirst: async () => null,
-        create: async () => ({
-          id: 'a-db-default-only',
-          status: 'pending_qa',
-          currentStep: 1,
-          steps: [],
-        }),
+        create: async () => {
+          createCalled = true;
+          return {
+            id: 'unexpected',
+            status: 'pending_qa',
+            currentStep: 1,
+            steps: [],
+          };
+        },
       },
       auditLog: {
         create: async ({ data }) => {
@@ -383,12 +386,21 @@ test('createApprovalFor: db_default_only mode skips in-code default rule seeding
       },
     };
 
-    await createApprovalFor(
-      'invoice',
-      'invoices',
-      'inv-db-default-only',
-      { amount: 120000 },
-      { client: fakeClient, createdBy: 'u1' },
+    await assert.rejects(
+      () =>
+        createApprovalFor(
+          'invoice',
+          'invoices',
+          'inv-db-default-only',
+          { amount: 120000 },
+          { client: fakeClient, createdBy: 'u1' },
+        ),
+      (err) => {
+        assert.equal(err?.code, 'approval_rule_required');
+        assert.equal(err?.details?.fallbackMode, 'db_default_only');
+        assert.deepEqual(err?.details?.fallbackReasons, ['rule_not_found']);
+        return true;
+      },
     );
   } finally {
     if (prevMode === undefined) {
@@ -399,12 +411,56 @@ test('createApprovalFor: db_default_only mode skips in-code default rule seeding
   }
 
   assert.equal(createRuleCalls, 0);
-  assert.equal(auditLogs.length, 1);
-  assert.equal(auditLogs[0].metadata.fallbackMode, 'db_default_only');
-  assert.deepEqual(auditLogs[0].metadata.fallbackReasons, [
-    'rule_not_found',
-    'rule_id_auto_used',
-  ]);
+  assert.equal(createCalled, false);
+  assert.equal(auditLogs.length, 0);
+});
+
+test('createApprovalFor: db_default_only mode still returns an existing open approval instance', async () => {
+  const prevMode = process.env.APPROVAL_RULE_FALLBACK_MODE;
+  process.env.APPROVAL_RULE_FALLBACK_MODE = 'db_default_only';
+  try {
+    const existing = {
+      id: 'a-db-default-existing',
+      flowType: 'invoice',
+      targetTable: 'invoices',
+      targetId: 'inv-db-default-existing',
+      status: 'pending_qa',
+      currentStep: 1,
+      steps: [],
+    };
+    const fakeClient = {
+      approvalRule: {
+        findMany: async () => [],
+      },
+      approvalInstance: {
+        findFirst: async () => existing,
+        create: async () => {
+          throw new Error('unexpected create');
+        },
+      },
+      auditLog: {
+        create: async () => {
+          throw new Error('unexpected audit');
+        },
+      },
+    };
+
+    const approval = await createApprovalFor(
+      'invoice',
+      'invoices',
+      'inv-db-default-existing',
+      { amount: 120000 },
+      { client: fakeClient, createdBy: 'u1' },
+    );
+
+    assert.equal(approval.id, existing.id);
+  } finally {
+    if (prevMode === undefined) {
+      delete process.env.APPROVAL_RULE_FALLBACK_MODE;
+    } else {
+      process.env.APPROVAL_RULE_FALLBACK_MODE = prevMode;
+    }
+  }
 });
 
 test('createApprovalFor: strict mode rejects implicit fallback when no rule is found', async () => {
@@ -499,6 +555,10 @@ test('createApprovalFor: strict mode rejects implicit fallback when selected rul
         ),
       (err) => {
         assert.equal(err?.code, 'approval_rule_required');
+        assert.equal(
+          err?.message,
+          'Active approval rule must define valid steps before submission',
+        );
         assert.equal(err?.httpStatus, 409);
         assert.equal(err?.details?.fallbackMode, 'strict');
         assert.deepEqual(err?.details?.fallbackReasons, ['rule_invalid_steps']);
@@ -557,6 +617,10 @@ test('createApprovalFor: strict mode rejects implicit fallback when no rule cond
         ),
       (err) => {
         assert.equal(err?.code, 'approval_rule_required');
+        assert.equal(
+          err?.message,
+          'No active approval rule matches the submission payload',
+        );
         assert.equal(err?.httpStatus, 409);
         assert.equal(err?.details?.fallbackMode, 'strict');
         assert.deepEqual(err?.details?.fallbackReasons, [
@@ -631,7 +695,14 @@ test('createApprovalFor: writes normalized fallback metadata in tx path', async 
   const auditLogs = [];
   const fakeClient = {
     approvalRule: {
-      findMany: async () => [],
+      findMany: async () => [
+        {
+          id: 'r-normalized-unmatched',
+          flowType: 'invoice',
+          conditions: { amountMin: 999999 },
+          steps: [{ approverGroupId: 'mgmt', stepOrder: 1 }],
+        },
+      ],
     },
     project: { findUnique: async () => null },
     approvalInstance: {
@@ -718,8 +789,8 @@ test('createApprovalFor: logs fallback reason when first rule is used without co
   assert.equal(auditLogs[0].metadata.selectedRuleId, 'r-unmatched');
 });
 
-test('createApprovalFor: logs fallback reason when selected rule has invalid steps', async () => {
-  const auditLogs = [];
+test('createApprovalFor: rejects invalid approval rule steps in legacy mode', async () => {
+  let createCalled = false;
   const fakeClient = {
     approvalRule: {
       findMany: async () => [
@@ -733,33 +804,36 @@ test('createApprovalFor: logs fallback reason when selected rule has invalid ste
     },
     approvalInstance: {
       findFirst: async () => null,
-      create: async () => ({
-        id: 'a-fallback-invalid-steps',
-        status: 'pending_qa',
-        currentStep: 1,
-        steps: [],
-      }),
-    },
-    auditLog: {
-      create: async ({ data }) => {
-        auditLogs.push(data);
-        return { id: 'audit-3' };
+      create: async () => {
+        createCalled = true;
+        return {
+          id: 'unexpected',
+          status: 'pending_qa',
+          currentStep: 1,
+          steps: [],
+        };
       },
     },
   };
 
-  await createApprovalFor(
-    'invoice',
-    'invoices',
-    'inv-invalid-steps',
-    { amount: 60000 },
-    { client: fakeClient, createdBy: 'u1' },
+  await assert.rejects(
+    () =>
+      createApprovalFor(
+        'invoice',
+        'invoices',
+        'inv-invalid-steps',
+        { amount: 60000 },
+        { client: fakeClient, createdBy: 'u1' },
+      ),
+    (err) => {
+      assert.equal(err?.code, 'approval_rule_required');
+      assert.equal(err?.httpStatus, 409);
+      assert.equal(err?.details?.fallbackMode, 'legacy');
+      assert.deepEqual(err?.details?.fallbackReasons, ['rule_invalid_steps']);
+      return true;
+    },
   );
-
-  assert.equal(auditLogs.length, 1);
-  assert.deepEqual(auditLogs[0].metadata.fallbackReasons, [
-    'rule_invalid_steps',
-  ]);
+  assert.equal(createCalled, false);
 });
 
 test('createApprovalFor: does not log fallback when open approval already exists', async () => {

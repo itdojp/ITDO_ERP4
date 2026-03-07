@@ -22,25 +22,27 @@
 
 共通経路: いずれも `submitApprovalWithUpdate` / `createApprovalFor` を経由。
 
-## 3. フォールバック経路（現行）
+## 3. フォールバック経路（更新前の棚卸）
 
 実装: `packages/backend/src/services/approval.ts`, `packages/backend/src/services/approvalLogic.ts`
 
 ### 3.1 ルール0件時の自動フォールバック
 
-- `resolveRule` が `null` を返した場合、`createApprovalFor` は `computeApprovalSteps` にフォールバックする。
-- 結果として、DB上に該当 ApprovalRule がなくても申請処理は成立する。
+- 2026-03-06 以前は、`resolveRule` が `null` を返した場合に `createApprovalFor` が `computeApprovalSteps` へフォールバックしていた。
+- 現在は `approval_rule_required` で拒否し、成立させる必要がある flow は DB 既定ルールで明示する。
 
 ### 3.2 ルール不備時の自動フォールバック
 
-- ルールは存在しても `steps` が無効/空の場合、`normalizeRuleStepsWithPolicy` が `null` となり、同様に `computeApprovalSteps` へフォールバックする。
+- 2026-03-06 以前は、`steps` が無効/空の場合に `normalizeRuleStepsWithPolicy` が `null` となり、`computeApprovalSteps` へフォールバックしていた。
+- 現在は `approval_rule_required` で拒否する。
 
 ### 3.3 ハードコード承認段生成
 
-- `computeApprovalSteps` はハードコード値で段を生成する。
+- `computeApprovalSteps` は従来、ハードコード値で段を生成していた。
   - `mgmt` 段
   - 条件付き `exec` 段
   - 金額閾値（例: `skipUnder=50000`, `execThreshold=100000`）
+- 現在の submit 経路では利用せず、DB 上の ApprovalRule / system default rule に一本化している。
 
 ### 3.4 条件不一致時の先頭ルール採用
 
@@ -49,9 +51,8 @@
 
 ### 3.5 ruleId の暫定固定値依存
 
-- `createApprovalFor` では、ルール未解決時に `rule?.id || 'auto'` として `ruleId='auto'` をフォールバックに使う。
-- 一方 `createApproval` / `createApprovalWithClient` はデフォルト `ruleId='manual'` を持ち、手動作成用途の経路として残っている。
-- `ApprovalInstance.ruleId` は必須 FK のため、`auto` / `manual` の実体管理が運用依存になりやすい。
+- 2026-03-06 以前は、`createApprovalFor` が `rule?.id || 'auto'`、`createApproval` / `createApprovalWithClient` が `ruleId='manual'` に依存していた。
+- 現在は実在する ApprovalRule の `id` を必須とし、暫定固定値依存を撤去した。
 
 ## 4. B2観点の主要論点
 
@@ -67,7 +68,7 @@
 - 「成立させるための fallback」はコード内ロジックではなく DB既定ルールとして明示する。
 - ルール未解決/ルール不備の挙動を段階的にエラー化し、運用期間中は監査ログで観測する。
 - 非金額フロー向け既定ルール（leave/time）を金額閾値ロジックから分離する。
-- `ruleId='auto'/'manual'` 依存は廃止し、実在する rule version のみ参照する。
+- `ruleId='auto'/'manual'` 依存は廃止済みで、実在する rule version のみ参照する。
 
 ## 6. 次アクション（#1316 TODO1 への入力）
 
@@ -87,7 +88,13 @@
 
 ## 8. 実装メモ（2026-03-06）
 
+- `APPROVAL_RULE_FALLBACK_MODE=db_default_only` では、default rule の runtime 自動投入は行わない。
+  また `rule_not_found` / `rule_invalid_steps` は `computeApprovalSteps` にフォールバックさせず
+  `approval_rule_required` で拒否する。
 - `APPROVAL_RULE_FALLBACK_MODE=strict` では、`rule_not_found` / `rule_invalid_steps` /
   `rule_condition_unmatched_first_rule` を `computeApprovalSteps` や先頭ルール採用へ
   フォールバックさせず `approval_rule_required` で拒否する。
-- ただし既存の open approval instance がある場合は、strict でも idempotency を優先して既存 instance を返す。
+- ただし既存の open approval instance がある場合は、`db_default_only` / `strict` でも
+  idempotency を優先して既存 instance を返す。
+- `createApprovalFor` / `createApproval` は実在する ApprovalRule の `id` を必須とし、
+  `ruleId='auto'/'manual'` 依存を撤去した。
