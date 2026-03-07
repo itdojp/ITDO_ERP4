@@ -164,6 +164,23 @@ function normalizeActionKey(raw) {
   return normalizeQuoted(raw);
 }
 
+function extractStaticCallsiteDirective(source, start) {
+  const windowStart = Math.max(0, start - 400);
+  const leadingText = source.slice(windowStart, start);
+  const pattern = /\/\/\s*action-policy-static-callsites:\s*(.+)$/gm;
+  let lastMatch = null;
+  for (;;) {
+    const match = pattern.exec(leadingText);
+    if (!match) break;
+    lastMatch = match;
+  }
+  if (!lastMatch) return [];
+  return lastMatch[1]
+    .split(',')
+    .map((token) => token.trim())
+    .filter(Boolean);
+}
+
 function isStaticFlowTypeExpression(flowTypeExpr) {
   return (
     flowTypeExpr.startsWith('FlowTypeValue.') ||
@@ -218,16 +235,46 @@ export function collectCallsitesFromSource(source, filePath) {
       continue;
     }
     const argsText = source.slice(openIndex + 1, closeIndex);
-    const flowTypeExpr = extractFieldExpression(argsText, 'flowType') || 'unknown';
-    const actionKeyExpr = extractFieldExpression(argsText, 'actionKey') || 'unknown';
-    const targetTableExpr = extractFieldExpression(argsText, 'targetTable') || 'unknown';
+    const flowTypeExpr =
+      extractFieldExpression(argsText, 'flowType') || 'unknown';
+    const actionKeyExpr =
+      extractFieldExpression(argsText, 'actionKey') || 'unknown';
+    const targetTableExpr =
+      extractFieldExpression(argsText, 'targetTable') || 'unknown';
     const flowType = normalizeFlowType(flowTypeExpr);
     const actionKey = normalizeActionKey(actionKeyExpr);
     const targetTable = normalizeQuoted(targetTableExpr);
-    const file = path.relative(process.cwd(), filePath).replaceAll(path.sep, '/');
+    const file = path
+      .relative(process.cwd(), filePath)
+      .replaceAll(path.sep, '/');
+    const line = countLine(source, start);
+    const staticDirectiveKeys = extractStaticCallsiteDirective(source, start);
+    if (staticDirectiveKeys.length) {
+      for (const key of staticDirectiveKeys) {
+        const [directiveFlowType, directiveActionKey] = key.split(':');
+        if (!directiveFlowType || !directiveActionKey) continue;
+        rows.push({
+          file,
+          line,
+          flowType: directiveFlowType,
+          actionKey: directiveActionKey,
+          targetTable,
+          flowTypeExpr: `'${directiveFlowType}'`,
+          actionKeyExpr: `'${directiveActionKey}'`,
+          risk: classifyRisk(
+            directiveFlowType,
+            directiveActionKey,
+            `'${directiveFlowType}'`,
+            `'${directiveActionKey}'`,
+          ),
+        });
+      }
+      cursor = closeIndex + 1;
+      continue;
+    }
     rows.push({
       file,
-      line: countLine(source, start),
+      line,
       flowType,
       actionKey,
       targetTable,
@@ -251,7 +298,8 @@ export function collectCallsites(rootDir = DEFAULT_ROOT) {
     rows.push(...collectCallsitesFromSource(source, filePath));
   }
   rows.sort((left, right) => {
-    if (left.flowType !== right.flowType) return left.flowType.localeCompare(right.flowType);
+    if (left.flowType !== right.flowType)
+      return left.flowType.localeCompare(right.flowType);
     if (left.actionKey !== right.actionKey) {
       return left.actionKey.localeCompare(right.actionKey);
     }

@@ -787,6 +787,7 @@ export async function registerApprovalRuleRoutes(app: FastifyInstance) {
             message: 'Approval instance not found',
           });
         }
+        // action-policy-static-callsites: *:approve,*:reject
         const policyRes = await evaluateActionPolicyWithFallback({
           flowType: instance.flowType,
           actionKey: body.action,

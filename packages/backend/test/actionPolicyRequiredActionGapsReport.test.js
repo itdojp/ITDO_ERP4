@@ -81,10 +81,16 @@ test('integration: phase2_core covers static route callsites without missing key
   const options = parseOptionsFromArgv([]);
   const presetFile = options.presetFile;
   const presetSource = fs.readFileSync(presetFile, 'utf8');
-  const requiredActions = parsePhase2CoreRequiredActionsFromSource(presetSource);
+  const requiredActions =
+    parsePhase2CoreRequiredActionsFromSource(presetSource);
   const callsites = collectCallsites(options.callsiteRoot);
-  const report = compareCallsitesAgainstRequiredActions(callsites, requiredActions);
+  const report = compareCallsitesAgainstRequiredActions(
+    callsites,
+    requiredActions,
+  );
 
   assert.equal(report.missingStaticCallsites.length, 0);
-  assert.ok(report.dynamicCallsites.length >= 1);
+  assert.equal(report.dynamicCallsites.length, 0);
+  assert.ok(report.uniqueStaticKeys.includes('*:approve'));
+  assert.ok(report.uniqueStaticKeys.includes('*:reject'));
 });
