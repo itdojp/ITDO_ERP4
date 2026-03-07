@@ -580,6 +580,92 @@ test('PATCH /annotations/:kind/:id skips ReferenceLink sync when there is no eff
   );
 });
 
+test('PATCH /annotations/:kind/:id does not rewrite ReferenceLink rows for notes-only changes', async () => {
+  await withEnv(
+    {
+      DATABASE_URL: process.env.DATABASE_URL || MIN_DATABASE_URL,
+      AUTH_MODE: 'header',
+    },
+    async () => {
+      let referenceDeleteCalled = false;
+      let referenceCreateCalled = false;
+      await withPrismaStubs(
+        {
+          'invoice.findUnique': async () => ({
+            id: 'inv-014',
+            projectId: 'proj-001',
+            status: 'draft',
+            deletedAt: null,
+          }),
+          'annotationSetting.findUnique': async () => null,
+          'annotation.findUnique': async () => ({
+            id: 'annotation-14',
+            targetKind: 'invoice',
+            targetId: 'inv-014',
+            notes: 'before',
+            externalUrls: ['https://example.com/a'],
+            internalRefs: [
+              { kind: 'room_chat', id: 'room-014', label: 'Room 14' },
+            ],
+            updatedAt: new Date('2026-03-06T00:00:00Z'),
+            updatedBy: 'author-1',
+          }),
+          'annotation.upsert': async ({ update, create }) => ({
+            id: 'annotation-14',
+            targetKind: 'invoice',
+            targetId: 'inv-014',
+            notes: update.notes ?? create.notes ?? null,
+            externalUrls: update.externalUrls ?? create.externalUrls ?? [],
+            internalRefs: update.internalRefs ?? create.internalRefs ?? [],
+            updatedAt: new Date('2026-03-07T00:00:00Z'),
+            updatedBy: 'admin-user',
+          }),
+          'annotationLog.create': async () => ({ id: 'annotation-log-1' }),
+          'referenceLink.deleteMany': async () => {
+            referenceDeleteCalled = true;
+            return { count: 1 };
+          },
+          'referenceLink.createMany': async () => {
+            referenceCreateCalled = true;
+            return { count: 1 };
+          },
+          'auditLog.create': async () => ({ id: 'audit-1' }),
+          $transaction: createTransactionStub(),
+        },
+        async () => {
+          const server = await buildServer({ logger: false });
+          try {
+            const res = await server.inject({
+              method: 'PATCH',
+              url: '/annotations/invoice/inv-014',
+              headers: {
+                'x-user-id': 'admin-user',
+                'x-roles': 'admin,mgmt',
+                'content-type': 'application/json',
+              },
+              payload: {
+                notes: 'after',
+              },
+            });
+            assert.equal(res.statusCode, 200, res.body);
+            const payload = JSON.parse(res.body);
+            assert.equal(payload.notes, 'after');
+            assert.deepEqual(payload.externalUrls, ['https://example.com/a']);
+            assert.deepEqual(payload.internalRefs, [
+              { kind: 'room_chat', id: 'room-014', label: 'Room 14' },
+            ]);
+          } finally {
+            await server.close();
+          }
+        },
+      );
+
+      assert.equal(referenceDeleteCalled, false);
+      assert.equal(referenceCreateCalled, false);
+    },
+  );
+});
+
 test('GET /annotations/:kind/:id merges reference_links into normalized payload', async () => {
   await withEnv(
     {
