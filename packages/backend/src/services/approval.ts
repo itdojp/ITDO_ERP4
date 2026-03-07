@@ -347,6 +347,16 @@ function shouldDenyImplicitApprovalFallback(
   );
 }
 
+function resolveApprovalRuleRequiredMessage(fallbackReasons: string[]) {
+  if (fallbackReasons.includes('rule_invalid_steps')) {
+    return 'Active approval rule must define valid steps before submission';
+  }
+  if (fallbackReasons.includes('rule_condition_unmatched_first_rule')) {
+    return 'No active approval rule matches the submission payload';
+  }
+  return 'Active approval rule is required before submission';
+}
+
 async function logApprovalRuleFallbackIfNeeded(options: {
   client: any;
   flowType: string;
@@ -537,9 +547,7 @@ export async function createApprovalFor(
     }
     throw new AppError({
       code: 'approval_rule_required',
-      message: fallbackReasons.includes('rule_invalid_steps')
-        ? 'Active approval rule must define valid steps before submission'
-        : 'Active approval rule is required before submission',
+      message: resolveApprovalRuleRequiredMessage(fallbackReasons),
       httpStatus: 409,
       category: 'conflict',
       details: {
@@ -557,24 +565,14 @@ export async function createApprovalFor(
     typeof enrichedPayload.projectId === 'string'
       ? enrichedPayload.projectId
       : undefined;
-  if (!rule) {
-    throw new AppError({
-      code: 'approval_rule_required',
-      message: 'Active approval rule is required before submission',
-      httpStatus: 409,
-      category: 'conflict',
-      details: {
-        flowType,
-        targetTable,
-        targetId,
-        fallbackMode,
-        fallbackReasons: [...fallbackReasons, 'rule_missing_after_selection'],
-      },
-    });
+  const ruleId = rule?.id;
+  if (!ruleId) {
+    throw new Error(
+      'approval rule resolution invariant violated: missing rule after fallback guard',
+    );
   }
-  const ruleId = rule.id;
   const ruleVersion =
-    typeof rule.version === 'number' ? rule.version : undefined;
+    typeof rule?.version === 'number' ? rule.version : undefined;
   const ruleSnapshot = buildRuleSnapshot(rule);
   let approvalResult;
   if (client === prisma) {

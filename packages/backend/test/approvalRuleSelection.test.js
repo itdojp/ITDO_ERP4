@@ -555,6 +555,10 @@ test('createApprovalFor: strict mode rejects implicit fallback when selected rul
         ),
       (err) => {
         assert.equal(err?.code, 'approval_rule_required');
+        assert.equal(
+          err?.message,
+          'Active approval rule must define valid steps before submission',
+        );
         assert.equal(err?.httpStatus, 409);
         assert.equal(err?.details?.fallbackMode, 'strict');
         assert.deepEqual(err?.details?.fallbackReasons, ['rule_invalid_steps']);
@@ -613,6 +617,10 @@ test('createApprovalFor: strict mode rejects implicit fallback when no rule cond
         ),
       (err) => {
         assert.equal(err?.code, 'approval_rule_required');
+        assert.equal(
+          err?.message,
+          'No active approval rule matches the submission payload',
+        );
         assert.equal(err?.httpStatus, 409);
         assert.equal(err?.details?.fallbackMode, 'strict');
         assert.deepEqual(err?.details?.fallbackReasons, [
