@@ -198,6 +198,7 @@ validate_input() {
 }
 
 run_preflight() {
+  local log_file="$1"
   local preflight_script="$ROOT_DIR/scripts/check-po-migration-input-readiness.sh"
   if [[ ! -f "$preflight_script" ]]; then
     die "preflight script not found: $preflight_script"
@@ -207,7 +208,7 @@ run_preflight() {
   INPUT_FORMAT="$INPUT_FORMAT" \
   ONLY="$ONLY" \
   STRICT="$PREFLIGHT_STRICT" \
-    "$preflight_script"
+    "$preflight_script" 2>&1 | tee "$log_file"
 }
 
 run_migration() {
@@ -301,12 +302,13 @@ main() {
   ensure_backend_build
 
   mkdir -p "$LOG_DIR"
+  local preflight_log="$LOG_DIR/preflight.log"
   local dry_log="$LOG_DIR/dry-run.log"
   local apply_log="$LOG_DIR/apply.log"
   local integrity_log="$LOG_DIR/integrity.log"
 
   if [[ "$RUN_PREFLIGHT" == "1" ]]; then
-    run_preflight
+    run_preflight "$preflight_log"
   fi
 
   run_migration dry-run "$dry_log"

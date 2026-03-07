@@ -56,6 +56,15 @@ die() {
   exit 1
 }
 
+emit_summary() {
+  local status="$1"
+  local scope_count="$2"
+  local found="$3"
+  local missing="$4"
+  local only_value="$5"
+  log "SUMMARY status=${status} scopes=${scope_count} found=${found} missing=${missing} format=${INPUT_FORMAT} strict=${STRICT} only=${only_value}"
+}
+
 normalize_input_dir() {
   if [[ "$INPUT_DIR" = /* ]]; then
     printf '%s\n' "$INPUT_DIR"
@@ -113,6 +122,14 @@ main() {
     scopes=("${ALL_SCOPES[@]}")
   fi
 
+  local only_value="all"
+  if [[ -n "$ONLY" ]]; then
+    only_value="$(
+      IFS=','
+      printf '%s' "${scopes[*]}"
+    )"
+  fi
+
   local found=0
   local missing=0
   local scope file
@@ -131,13 +148,20 @@ main() {
 
   if [[ "$STRICT" == "1" ]]; then
     if [[ -n "$ONLY" && "$missing" -gt 0 ]]; then
+      emit_summary fail "${#scopes[@]}" "$found" "$missing" "$only_value"
       die "STRICT=1 and ONLY scopes contain missing files"
     fi
     if [[ -z "$ONLY" && "$found" -eq 0 ]]; then
+      emit_summary fail "${#scopes[@]}" "$found" "$missing" "$only_value"
       die "STRICT=1 and no input files found"
     fi
   fi
 
+  if [[ "$missing" -gt 0 ]]; then
+    emit_summary warn "${#scopes[@]}" "$found" "$missing" "$only_value"
+  else
+    emit_summary pass "${#scopes[@]}" "$found" "$missing" "$only_value"
+  fi
   log "preflight completed"
 }
 
