@@ -27,8 +27,12 @@ import { prisma } from '../services/db.js';
 import { auditContextFromRequest, logAudit } from '../services/audit.js';
 import { logReassignment } from '../services/reassignmentLog.js';
 import { parseDateParam } from '../utils/date.js';
-import { findPeriodLock, toPeriodKey } from '../services/periodLock.js';
-import { evaluateActionPolicyWithFallback } from '../services/actionPolicy.js';
+import { toPeriodKey } from '../services/periodLock.js';
+import {
+  evaluateActionPolicyGuards,
+  evaluateActionPolicyWithFallback,
+  type ActionPolicyGuardFailure,
+} from '../services/actionPolicy.js';
 import { resolveActionPolicyDeniedCode } from '../services/actionPolicyErrors.js';
 import {
   logActionPolicyFallbackAllowedIfNeeded,
@@ -372,6 +376,39 @@ export function applyExpensePaidAtDateRangeFilter(
     paidAt.lt = paidToExclusive;
   }
   where.paidAt = paidAt;
+}
+
+function resolveExpenseReassignGuardReply(
+  failures: ActionPolicyGuardFailure[],
+) {
+  for (const failure of failures) {
+    if (
+      failure.type === 'approval_open' &&
+      failure.reason === 'approval_in_progress'
+    ) {
+      return {
+        statusCode: 400,
+        body: {
+          error: {
+            code: 'PENDING_APPROVAL',
+            message: 'Approval in progress',
+          },
+        },
+      };
+    }
+    if (failure.type === 'period_lock' && failure.reason === 'period_locked') {
+      return {
+        statusCode: 400,
+        body: {
+          error: {
+            code: 'PERIOD_LOCKED',
+            message: 'Period is locked',
+          },
+        },
+      };
+    }
+  }
+  return null;
 }
 
 export async function registerExpenseRoutes(app: FastifyInstance) {
@@ -1476,20 +1513,21 @@ export async function registerExpenseRoutes(app: FastifyInstance) {
           error: { code: 'INVALID_STATUS', message: 'Expense not editable' },
         });
       }
-      const pendingApproval = await prisma.approvalInstance.findFirst({
-        where: {
-          targetTable: 'expenses',
-          targetId: id,
-          status: {
-            in: [DocStatusValue.pending_qa, DocStatusValue.pending_exec],
+      const approvalGuardReply = resolveExpenseReassignGuardReply(
+        await evaluateActionPolicyGuards(
+          {
+            guards: [{ type: 'approval_open' }],
+            flowType: FlowTypeValue.expense,
+            targetTable: 'expenses',
+            targetId: id,
           },
-        },
-        select: { id: true },
-      });
-      if (pendingApproval) {
-        return reply.status(400).send({
-          error: { code: 'PENDING_APPROVAL', message: 'Approval in progress' },
-        });
+          { client: prisma },
+        ),
+      );
+      if (approvalGuardReply) {
+        return reply
+          .status(approvalGuardReply.statusCode)
+          .send(approvalGuardReply.body);
       }
       const targetProject = await prisma.project.findUnique({
         where: { id: body.toProjectId },
@@ -1500,20 +1538,27 @@ export async function registerExpenseRoutes(app: FastifyInstance) {
           error: { code: 'NOT_FOUND', message: 'Project not found' },
         });
       }
-      const periodKey = toPeriodKey(expense.incurredOn);
-      const fromLock = await findPeriodLock(periodKey, expense.projectId);
-      if (fromLock) {
-        return reply.status(400).send({
-          error: { code: 'PERIOD_LOCKED', message: 'Period is locked' },
-        });
-      }
+      const projectIds = [expense.projectId];
       if (body.toProjectId !== expense.projectId) {
-        const toLock = await findPeriodLock(periodKey, body.toProjectId);
-        if (toLock) {
-          return reply.status(400).send({
-            error: { code: 'PERIOD_LOCKED', message: 'Period is locked' },
-          });
-        }
+        projectIds.push(body.toProjectId);
+      }
+      const periodGuardReply = resolveExpenseReassignGuardReply(
+        await evaluateActionPolicyGuards(
+          {
+            guards: [{ type: 'period_lock' }],
+            flowType: FlowTypeValue.expense,
+            state: {
+              projectIds,
+              periodKey: toPeriodKey(expense.incurredOn),
+            },
+          },
+          { client: prisma },
+        ),
+      );
+      if (periodGuardReply) {
+        return reply
+          .status(periodGuardReply.statusCode)
+          .send(periodGuardReply.body);
       }
       const updated = await prisma.expense.update({
         where: { id },
