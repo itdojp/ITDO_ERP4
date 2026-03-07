@@ -954,6 +954,50 @@ async function claimReportDelivery(
   return 0;
 }
 
+async function persistUnexpectedDeliveryFailure(
+  delivery: ReportDeliveryQueueItem,
+  error: unknown,
+  now: Date,
+) {
+  const errorMessage =
+    error instanceof Error ? error.message : String(error || 'retry_failed');
+  const isRetry =
+    delivery.status === 'failed' || delivery.status === 'retrying';
+  const retryMax = resolveReportRetryMax();
+  const retryBase = resolveReportRetryBaseMinutes();
+  const nextRetryCount = isRetry
+    ? delivery.retryCount + 1
+    : delivery.retryCount;
+  const retryable =
+    isRetryableError(errorMessage) &&
+    retryBase > 0 &&
+    (isRetry ? nextRetryCount < retryMax : retryMax > 0);
+  const status = retryable ? 'failed' : 'failed_permanent';
+  const nextRetryAt = retryable
+    ? computeNextRetryAt(now, nextRetryCount + 1, retryBase)
+    : null;
+  const updated = await prisma.reportDelivery.update({
+    where: { id: delivery.id },
+    data: {
+      status,
+      error: errorMessage,
+      retryCount: nextRetryCount,
+      nextRetryAt,
+      lastErrorAt: now,
+      sentAt: now,
+    },
+  });
+  if (status === 'failed_permanent' && isReportPayload(delivery.payload)) {
+    await notifyPermanentFailure({
+      reportKey: delivery.payload.reportKey,
+      channel: delivery.channel,
+      target: delivery.target,
+      error: errorMessage,
+    });
+  }
+  return updated;
+}
+
 async function runSubscription(
   subscription: ReportSubscription,
   actorId: string | undefined,
@@ -1008,14 +1052,19 @@ async function runSubscription(
         deliveryStatuses.push(created.status);
         continue;
       }
-      const result = await retryReportDelivery(queuedItem, false);
-      createdDeliveries.push({
-        ...created,
-        status: result.status,
-        target: result.target ?? created.target,
-        error: result.error ?? null,
-      });
-      deliveryStatuses.push(result.status);
+      try {
+        const result = await retryReportDelivery(queuedItem, false);
+        createdDeliveries.push(result);
+        deliveryStatuses.push(result.status);
+      } catch (error) {
+        const failedDelivery = await persistUnexpectedDeliveryFailure(
+          queuedItem,
+          error,
+          new Date(),
+        );
+        createdDeliveries.push(failedDelivery);
+        deliveryStatuses.push(failedDelivery.status);
+      }
       continue;
     }
     createdDeliveries.push(created);
@@ -1047,7 +1096,7 @@ async function retryReportDelivery(
   }
   if (!isReportPayload(delivery.payload)) {
     if (!dryRun) {
-      await prisma.reportDelivery.update({
+      const updated = await prisma.reportDelivery.update({
         where: { id: delivery.id },
         data: {
           status: 'failed_permanent',
@@ -1063,6 +1112,7 @@ async function retryReportDelivery(
         target: delivery.target,
         error: 'invalid_payload',
       });
+      return updated;
     }
     return {
       id: delivery.id,
@@ -1075,7 +1125,7 @@ async function retryReportDelivery(
   const emails = parseTargetList(delivery.target);
   if (!emails.length) {
     if (!dryRun) {
-      await prisma.reportDelivery.update({
+      const updated = await prisma.reportDelivery.update({
         where: { id: delivery.id },
         data: {
           status: 'failed_permanent',
@@ -1091,6 +1141,7 @@ async function retryReportDelivery(
         target: delivery.target,
         error: 'missing_email',
       });
+      return updated;
     }
     return {
       id: delivery.id,
@@ -1116,7 +1167,7 @@ async function retryReportDelivery(
   } catch (err) {
     const error = err instanceof Error ? err.message : 'missing_attachment';
     if (!dryRun) {
-      await prisma.reportDelivery.update({
+      const updated = await prisma.reportDelivery.update({
         where: { id: delivery.id },
         data: {
           status: 'failed_permanent',
@@ -1132,6 +1183,7 @@ async function retryReportDelivery(
         target: delivery.target,
         error,
       });
+      return updated;
     }
     return {
       id: delivery.id,
@@ -1178,7 +1230,7 @@ async function retryReportDelivery(
       error,
     });
   }
-  await prisma.reportDelivery.update({
+  const updated = await prisma.reportDelivery.update({
     where: { id: delivery.id },
     data: {
       status,
@@ -1192,12 +1244,7 @@ async function retryReportDelivery(
       payload: payloadToStore as Prisma.InputJsonValue,
     },
   });
-  return {
-    id: delivery.id,
-    status,
-    error,
-    nextRetryAt,
-  };
+  return updated;
 }
 
 export async function registerReportSubscriptionRoutes(app: FastifyInstance) {
@@ -1429,20 +1476,25 @@ export async function registerReportSubscriptionRoutes(app: FastifyInstance) {
       const { dryRun } = (req.body || {}) as RunBody;
       const retryMax = resolveReportRetryMax();
       const now = new Date();
-      const items = await prisma.reportDelivery.findMany({
-        where: {
-          OR: [
-            { status: 'pending' },
-            {
-              status: 'failed',
-              retryCount: { lt: retryMax },
-              nextRetryAt: { lte: now },
-            },
-          ],
-        },
-        orderBy: [{ nextRetryAt: 'asc' }, { createdAt: 'asc' }],
+      const pendingItems = await prisma.reportDelivery.findMany({
+        where: { status: 'pending' },
+        orderBy: { createdAt: 'asc' },
         take: 100,
       });
+      const remaining = Math.max(0, 100 - pendingItems.length);
+      const failedItems =
+        remaining > 0
+          ? await prisma.reportDelivery.findMany({
+              where: {
+                status: 'failed',
+                retryCount: { lt: retryMax },
+                nextRetryAt: { lte: now },
+              },
+              orderBy: [{ nextRetryAt: 'asc' }, { createdAt: 'asc' }],
+              take: remaining,
+            })
+          : [];
+      const items = [...pendingItems, ...failedItems];
       const results = [];
       for (const item of items) {
         try {
@@ -1462,30 +1514,16 @@ export async function registerReportSubscriptionRoutes(app: FastifyInstance) {
           const result = await retryReportDelivery(item, Boolean(dryRun));
           results.push(result);
         } catch (err) {
-          const error = err instanceof Error ? err.message : 'retry_failed';
           if (!dryRun) {
-            await prisma.reportDelivery.update({
-              where: { id: item.id },
-              data: {
-                status: 'failed_permanent',
-                error,
-                lastErrorAt: now,
-                nextRetryAt: null,
-              },
-            });
-            if (isReportPayload(item.payload)) {
-              await notifyPermanentFailure({
-                reportKey: item.payload.reportKey,
-                channel: item.channel,
-                target: item.target,
-                error,
-              });
-            }
+            results.push(
+              await persistUnexpectedDeliveryFailure(item, err, now),
+            );
+            continue;
           }
           results.push({
             id: item.id,
             status: 'failed_permanent',
-            error,
+            error: err instanceof Error ? err.message : 'retry_failed',
           });
         }
       }
