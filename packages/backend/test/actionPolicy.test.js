@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import {
   evaluateActionPolicy,
+  evaluateActionPolicyGuards,
   evaluateActionPolicyWithFallback,
 } from '../dist/services/actionPolicy.js';
 
@@ -210,6 +211,35 @@ test('evaluateActionPolicy: approval_open guard can be bypassed by a lower polic
   assert.equal(calls.approvalFindFirst, 1);
   assert.equal(res.allowed, true);
   assert.equal(res.matchedPolicyId, 'p2');
+});
+
+test('evaluateActionPolicyGuards: approval_open guard returns failure for open approval', async () => {
+  const calls = { approvalFindFirst: 0 };
+  const failures = await evaluateActionPolicyGuards(
+    {
+      guards: [{ type: 'approval_open' }],
+      flowType: 'expense',
+      targetTable: 'expenses',
+      targetId: 'exp-001',
+    },
+    {
+      client: {
+        approvalInstance: {
+          findFirst: async (args) => {
+            calls.approvalFindFirst += 1;
+            assert.equal(args.where.flowType, 'expense');
+            assert.equal(args.where.targetTable, 'expenses');
+            assert.equal(args.where.targetId, 'exp-001');
+            return { id: 'approval-001', status: 'pending_qa' };
+          },
+        },
+      },
+    },
+  );
+  assert.equal(calls.approvalFindFirst, 1);
+  assert.equal(failures.length, 1);
+  assert.equal(failures[0].type, 'approval_open');
+  assert.equal(failures[0].reason, 'approval_in_progress');
 });
 
 test('evaluateActionPolicy: unknown guard type is fail-safe (guard_failed)', async () => {
@@ -447,6 +477,49 @@ test('evaluateActionPolicy: period_lock guard batches queries for multiple perio
   assert.equal(res.matchedPolicyId, 'p1');
   assert.equal(res.guardFailures[0].type, 'period_lock');
   assert.equal(res.guardFailures[0].reason, 'period_locked');
+});
+
+test('evaluateActionPolicyGuards: period_lock guard batches multiple project ids', async () => {
+  const calls = { findMany: 0 };
+  const failures = await evaluateActionPolicyGuards(
+    {
+      guards: [{ type: 'period_lock' }],
+      flowType: 'expense',
+      state: {
+        projectIds: ['p1', 'p2'],
+        periodKey: '2050-01',
+      },
+    },
+    {
+      client: {
+        periodLock: {
+          findFirst: async () => {
+            throw new Error('unexpected findFirst call');
+          },
+          findMany: async (args) => {
+            calls.findMany += 1;
+            assert.deepEqual(args.where.period.in, ['2050-01']);
+            assert.deepEqual(args.where.OR, [
+              { scope: 'global' },
+              { scope: 'project', projectId: { in: ['p1', 'p2'] } },
+            ]);
+            return [
+              {
+                id: 'lock-001',
+                scope: 'project',
+                projectId: 'p2',
+                period: '2050-01',
+              },
+            ];
+          },
+        },
+      },
+    },
+  );
+  assert.equal(calls.findMany, 1);
+  assert.equal(failures.length, 1);
+  assert.equal(failures[0].type, 'period_lock');
+  assert.equal(failures[0].reason, 'period_locked');
 });
 
 test('evaluateActionPolicy: editable_days guard rejects when outside editable window', async () => {

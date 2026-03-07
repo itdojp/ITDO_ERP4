@@ -619,6 +619,28 @@ async function evaluateGuards(guards: unknown, ctx: GuardEvalContext) {
   return { ok: true } as const;
 }
 
+export async function evaluateActionPolicyGuards(
+  input: {
+    guards: unknown;
+    flowType: FlowType;
+    state?: unknown;
+    targetTable?: string;
+    targetId?: string;
+  },
+  options?: { client?: any; now?: Date },
+): Promise<ActionPolicyGuardFailure[]> {
+  const client = options?.client ?? prisma;
+  const guardRes = await evaluateGuards(input.guards, {
+    client,
+    flowType: input.flowType,
+    state: input.state,
+    targetTable: input.targetTable,
+    targetId: input.targetId,
+    now: options?.now ?? new Date(),
+  });
+  return guardRes.ok ? [] : guardRes.failures;
+}
+
 export async function evaluateActionPolicy(
   input: EvaluateActionPolicyInput,
   options?: { client?: any },
