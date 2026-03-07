@@ -141,7 +141,10 @@ test('createEvidenceSnapshotForApproval: normalizes annotation and captures chat
     },
     chatMessage: {
       findMany: async ({ where }) => {
-        assert.deepEqual(where, { id: { in: ['m-1', 'm-2'] }, deletedAt: null });
+        assert.deepEqual(where, {
+          id: { in: ['m-1', 'm-2'] },
+          deletedAt: null,
+        });
         return [
           {
             id: 'm-1',
@@ -188,8 +191,91 @@ test('createEvidenceSnapshotForApproval: normalizes annotation and captures chat
       userId: 'user-1',
       createdAt: '2026-02-15T11:20:00.000Z',
       excerpt: 'Evidence message body',
-      bodyHash: createHash('sha256').update('Evidence message body').digest('hex'),
+      bodyHash: createHash('sha256')
+        .update('Evidence message body')
+        .digest('hex'),
     },
+  ]);
+});
+
+test('createEvidenceSnapshotForApproval: merges reference_links with annotation JSON', async () => {
+  let createInput;
+
+  const client = {
+    evidenceSnapshot: {
+      findFirst: async () => null,
+      create: async ({ data }) => {
+        createInput = data;
+        return {
+          id: 'snap-refs-1',
+          approvalInstanceId: data.approvalInstanceId,
+          targetTable: data.targetTable,
+          targetId: data.targetId,
+          sourceAnnotationUpdatedAt: data.sourceAnnotationUpdatedAt,
+          capturedAt: new Date('2026-03-07T00:00:00.000Z'),
+          capturedBy: data.capturedBy,
+          version: data.version,
+          items: data.items,
+        };
+      },
+    },
+    annotation: {
+      findUnique: async () => ({
+        notes: 'reference link note',
+        externalUrls: ['https://example.com/a'],
+        internalRefs: [
+          { kind: 'project', id: 'proj-001', label: 'Project A' },
+          { kind: 'room_chat', id: 'room-001', label: 'Old room label' },
+        ],
+        updatedAt: new Date('2026-03-06T00:00:00.000Z'),
+        updatedBy: 'author-1',
+      }),
+    },
+    referenceLink: {
+      findMany: async () => [
+        {
+          linkKind: 'external_url',
+          refKind: '',
+          value: 'https://example.com/b',
+          label: null,
+          updatedAt: new Date('2026-03-07T00:00:00.000Z'),
+          updatedBy: 'author-2',
+        },
+        {
+          linkKind: 'internal_ref',
+          refKind: 'project_chat',
+          value: 'room-001',
+          label: 'Legacy room',
+          updatedAt: new Date('2026-03-07T00:00:00.000Z'),
+          updatedBy: 'author-2',
+        },
+      ],
+    },
+    chatMessage: {
+      findMany: async () => [],
+    },
+  };
+
+  const result = await createEvidenceSnapshotForApproval(client, {
+    approvalInstanceId: 'ap-refs-1',
+    targetTable: 'invoices',
+    targetId: 'inv-refs-1',
+    capturedBy: 'actor-1',
+    forceRegenerate: false,
+  });
+
+  assert.equal(result.created, true);
+  assert.equal(
+    createInput.sourceAnnotationUpdatedAt.toISOString(),
+    '2026-03-07T00:00:00.000Z',
+  );
+  assert.deepEqual(createInput.items.externalUrls, [
+    'https://example.com/a',
+    'https://example.com/b',
+  ]);
+  assert.deepEqual(createInput.items.internalRefs, [
+    { kind: 'project', id: 'proj-001', label: 'Project A' },
+    { kind: 'room_chat', id: 'room-001', label: 'Legacy room' },
   ]);
 });
 

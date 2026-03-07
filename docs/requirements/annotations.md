@@ -27,6 +27,20 @@
   - `kind` は業務エンティティ種別（`invoice` / `project` / `chat_message` など）
 - 履歴は Prisma の `AnnotationLog` モデル（`prisma.annotationLog`）に保存し、更新時の `reasonCode` / `reasonText` / `actorRole` を保持する。
 
+## ReferenceLink 段階移行
+
+- Phase B4 の初手では、`ReferenceLink` を独立テーブルとして追加する。
+  - 主用途は `externalUrls` / `internalRefs` の正規化と、将来の検索・権限制御・監査拡張の土台作り
+  - `notes` は引き続き `Annotation` に保持する
+  - `external_url` の重複排除を DB 一意制約で扱うため、`ReferenceLink.refKind` は空文字既定値で保持する
+- 初期段階の read path は `Annotation(JSON)` と `ReferenceLink` の両方を合成して返す。
+  - 対象:
+    - `GET /annotations/:kind/:id`
+    - 承認証跡スナップショット生成
+    - 休暇申請 submit 時の証跡有無判定
+- write path は当面 `Annotation(JSON)` 正のままとし、`PATCH /annotations/:kind/:id` の挙動は変えない。
+- `ReferenceLink` 側の `project_chat` 互換データは、read 時に `room_chat` として正規化する。
+
 ## アクセス制御
 
 - 利用ロール: `admin` / `mgmt` / `user`

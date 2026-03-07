@@ -8,7 +8,11 @@ const MIN_DATABASE_URL = 'postgresql://user:pass@localhost:5432/postgres';
 
 function withPrismaStubs(stubs, fn) {
   const restores = [];
-  for (const [path, stub] of Object.entries(stubs)) {
+  const mergedStubs = {
+    'referenceLink.findMany': async () => [],
+    ...stubs,
+  };
+  for (const [path, stub] of Object.entries(mergedStubs)) {
     const [model, method] = path.split('.');
     if (!method) {
       if (typeof prisma[model] !== 'function') {
@@ -480,6 +484,73 @@ test('POST /leave-requests/:id/submit proceeds past attachment check when eviden
         const res = await server.inject({
           method: 'POST',
           url: '/leave-requests/leave-2/submit',
+          headers: userHeaders(),
+          payload: {},
+        });
+        assert.equal(res.statusCode, 400, res.body);
+        const body = JSON.parse(res.body);
+        assert.equal(body?.error?.code, 'NO_CONSULTATION_REASON_REQUIRED');
+      });
+    },
+  );
+});
+
+test('POST /leave-requests/:id/submit accepts attachment evidence from reference_links', async () => {
+  await withPrismaStubs(
+    {
+      'leaveType.findMany': async () => [
+        { code: 'paid' },
+        { code: 'special' },
+        { code: 'substitute' },
+        { code: 'compensatory' },
+        { code: 'unpaid' },
+      ],
+      'leaveRequest.findUnique': async () => ({
+        id: 'leave-2b',
+        userId: 'normal-user',
+        status: 'draft',
+        leaveType: 'special',
+        startDate: new Date('2026-03-01T00:00:00.000Z'),
+        endDate: new Date('2026-03-01T00:00:00.000Z'),
+        startTimeMinutes: null,
+        endTimeMinutes: null,
+        minutes: null,
+        hours: 8,
+      }),
+      'actionPolicy.findMany': async () => [],
+      'leaveSetting.upsert': async () => ({
+        id: 'default',
+        timeUnitMinutes: 10,
+        defaultWorkdayMinutes: 480,
+      }),
+      'timeEntry.count': async () => 0,
+      'leaveRequest.count': async () => 0,
+      'leaveRequest.findMany': async () => [],
+      'annotation.findUnique': async () => ({
+        internalRefs: [],
+        externalUrls: [],
+      }),
+      'referenceLink.findMany': async () => [
+        {
+          linkKind: 'external_url',
+          refKind: null,
+          value: 'https://example.com/evidence-from-table',
+          label: null,
+          updatedAt: new Date('2026-03-07T00:00:00.000Z'),
+          updatedBy: 'user-1',
+        },
+      ],
+      'leaveType.findFirst': async () => ({
+        code: 'special',
+        attachmentPolicy: 'required',
+        active: true,
+      }),
+    },
+    async () => {
+      await withServer(async (server) => {
+        const res = await server.inject({
+          method: 'POST',
+          url: '/leave-requests/leave-2b/submit',
           headers: userHeaders(),
           payload: {},
         });

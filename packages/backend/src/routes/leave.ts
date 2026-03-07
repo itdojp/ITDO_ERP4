@@ -19,6 +19,7 @@ import {
   logActionPolicyFallbackAllowedIfNeeded,
   logActionPolicyOverrideIfNeeded,
 } from '../services/actionPolicyAudit.js';
+import { loadResolvedAnnotationReferenceState } from '../services/annotationReferences.js';
 import { ensureLeaveSetting } from '../services/leaveSettings.js';
 import {
   computePaidLeaveBalance,
@@ -1032,30 +1033,18 @@ export async function registerLeaveRoutes(app: FastifyInstance) {
         }
       }
 
-      const annotation = await prisma.annotation.findUnique({
-        where: {
-          targetKind_targetId: { targetKind: 'leave_request', targetId: id },
-        },
-        select: { internalRefs: true, externalUrls: true },
-      });
-      const rawInternalRefs = Array.isArray(annotation?.internalRefs)
-        ? (annotation?.internalRefs as Array<Record<string, unknown>>)
-        : [];
-      const normalizedInternalRefs = rawInternalRefs.flatMap((ref) => {
-        if (!ref || typeof ref !== 'object') return [];
-        const kind = typeof ref.kind === 'string' ? ref.kind.trim() : '';
-        const refId = typeof ref.id === 'string' ? ref.id.trim() : '';
-        if (!kind || !refId) return [];
-        return [{ kind, refId }];
-      });
-      const externalUrls = Array.isArray(annotation?.externalUrls)
-        ? annotation.externalUrls
-            .filter(
-              (value): value is string =>
-                typeof value === 'string' && Boolean(value.trim()),
-            )
-            .map((value) => value.trim())
-        : [];
+      const annotationState = await loadResolvedAnnotationReferenceState(
+        prisma,
+        'leave_request',
+        id,
+      );
+      const normalizedInternalRefs = annotationState.internalRefs.map(
+        (ref) => ({
+          kind: ref.kind,
+          refId: ref.id,
+        }),
+      );
+      const externalUrls = annotationState.externalUrls;
       const hasAttachmentEvidence =
         externalUrls.length > 0 || normalizedInternalRefs.length > 0;
       if (
