@@ -29,7 +29,9 @@
 ### 2026-03-09
 
 - Podman smoke: docs/test-results/2026-03-09-podman-smoke.md
+- ActionPolicy phase3 strict Podman smoke r1: docs/test-results/2026-03-09-action-policy-phase3-strict-podman-smoke-r1.md
 - フロントE2E(core): docs/test-results/2026-03-09-frontend-e2e-core.md
+- ActionPolicy phase3 strict フロントE2E(core) r1: docs/test-results/2026-03-09-action-policy-phase3-strict-frontend-e2e-core-r1.md
 - フロントE2E(UIエビデンス r1): docs/test-results/2026-03-09-frontend-e2e-r1.md
 - 証跡: docs/test-results/2026-03-09-frontend-e2e-r1/
 

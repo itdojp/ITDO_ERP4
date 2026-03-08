@@ -131,6 +131,52 @@ async function fetchInvoiceById(page: Page, invoiceId: string) {
   return (await invoiceRes.json()) as InvoiceSnapshot;
 }
 
+async function findOpenApprovalInstance(
+  page: Page,
+  projectId: string,
+  invoiceId: string,
+  headers: Record<string, string>,
+) {
+  const res = await page.request.get(
+    `${apiBase}/approval-instances?flowType=invoice&projectId=${encodeURIComponent(projectId)}`,
+    { headers },
+  );
+  await ensureOk(res);
+  const payload = await res.json();
+  const matched = (payload?.items ?? []).find(
+    (item: any) =>
+      item?.targetTable === 'invoices' &&
+      item?.targetId === invoiceId &&
+      item?.status !== 'approved' &&
+      item?.status !== 'rejected' &&
+      item?.status !== 'cancelled',
+  );
+  expect(String(matched?.id || '')).toBeTruthy();
+  return matched as { id: string; status?: string };
+}
+
+async function approveUntilClosed(
+  page: Page,
+  approvalInstanceId: string,
+  headers: Record<string, string>,
+) {
+  let status = '';
+  for (let index = 0; index < 8; index += 1) {
+    const res = await page.request.post(
+      `${apiBase}/approval-instances/${encodeURIComponent(approvalInstanceId)}/act`,
+      {
+        headers,
+        data: { action: 'approve', reason: 'e2e invoice approve' },
+      },
+    );
+    await ensureOk(res);
+    const payload = await res.json();
+    status = String(payload?.status || '');
+    if (status !== 'pending_qa' && status !== 'pending_exec') break;
+  }
+  return status;
+}
+
 async function waitForInvoiceByAmount(
   page: Page,
   projectId: string,
@@ -268,9 +314,31 @@ test('invoice mark-paid action is hidden for non-admin roles @core', async ({
   const created = (await createRes.json()) as InvoiceSnapshot;
   expect(created.id).toBeTruthy();
 
+  const strictAdminHeaders = buildAuthHeaders({
+    roles: ['admin', 'mgmt', 'exec'],
+    groupIds: ['mgmt', 'exec'],
+  });
+  const submitRes = await page.request.post(
+    `${apiBase}/invoices/${encodeURIComponent(created.id)}/submit`,
+    { headers: strictAdminHeaders, data: {} },
+  );
+  await ensureOk(submitRes);
+  const approval = await findOpenApprovalInstance(
+    page,
+    projectId,
+    created.id,
+    strictAdminHeaders,
+  );
+  const approvedStatus = await approveUntilClosed(
+    page,
+    approval.id,
+    strictAdminHeaders,
+  );
+  expect(approvedStatus).toBe('approved');
+
   const sendRes = await page.request.post(
     `${apiBase}/invoices/${encodeURIComponent(created.id)}/send`,
-    { headers: buildAuthHeaders(), data: {} },
+    { headers: strictAdminHeaders, data: {} },
   );
   await ensureOk(sendRes);
 
@@ -305,7 +373,7 @@ test('invoice mark-paid action is hidden for non-admin roles @core', async ({
     hasText: String(sentInvoice.invoiceNo),
   });
   await expect(targetRow).toBeVisible({ timeout: actionTimeout });
-  await expect(
-    targetRow.getByRole('button', { name: '入金確認' }),
-  ).toHaveCount(0);
+  await expect(targetRow.getByRole('button', { name: '入金確認' })).toHaveCount(
+    0,
+  );
 });

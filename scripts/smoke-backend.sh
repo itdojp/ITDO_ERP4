@@ -5,6 +5,7 @@ BASE_URL="${BASE_URL:-http://localhost:3001}"
 USER_ID="${USER_ID:-demo-user}"
 ROLES="${ROLES:-admin,mgmt}"
 GROUP_IDS="${GROUP_IDS:-}"
+APPROVAL_GROUP_IDS="${APPROVAL_GROUP_IDS:-mgmt,exec}"
 PROJECT_CODE="SMOKE-$(date +%s)"
 
 json_get() {
@@ -71,6 +72,23 @@ post_json() {
     -X POST "$url" -d "$body"
 }
 
+post_json_with_groups() {
+  local url=$1
+  local body=$2
+  local group_ids=$3
+  local headers=(
+    -H "Content-Type: application/json"
+    -H "x-user-id: $USER_ID"
+    -H "x-roles: $ROLES"
+  )
+  if [[ -n "$group_ids" ]]; then
+    headers+=(-H "x-group-ids: $group_ids")
+  fi
+  curl -sSf \
+    "${headers[@]}" \
+    -X POST "$url" -d "$body"
+}
+
 get_json() {
   local url=$1
   local headers=(
@@ -81,6 +99,67 @@ get_json() {
     headers+=(-H "x-group-ids: $GROUP_IDS")
   fi
   curl -sSf "${headers[@]}" "$url"
+}
+
+find_approval_instance_json() {
+  local flow_type=$1
+  local target_id=$2
+  get_json "$BASE_URL/approval-instances?flowType=$flow_type&requesterId=$USER_ID" | \
+    python -c 'import json, sys
+target_id = sys.argv[1]
+items = (json.load(sys.stdin) or {}).get("items") or []
+for item in items:
+    if isinstance(item, dict) and item.get("targetId") == target_id:
+        print(json.dumps(item))
+        break
+' "$target_id"
+}
+
+wait_for_approval_instance_json() {
+  local flow_type=$1
+  local target_id=$2
+  local instance_json=""
+  for _ in $(seq 1 10); do
+    instance_json=$(find_approval_instance_json "$flow_type" "$target_id")
+    if [[ -n "$instance_json" ]]; then
+      echo "$instance_json"
+      return 0
+    fi
+    sleep 1
+  done
+  return 1
+}
+
+approve_instance_to_closed() {
+  local flow_type=$1
+  local target_id=$2
+  local instance_json
+  local instance_id
+  local status
+  instance_json=$(wait_for_approval_instance_json "$flow_type" "$target_id")
+  instance_id=$(echo "$instance_json" | json_get "id")
+  require_id "${flow_type}_approval_instance_id" "$instance_id"
+
+  for _ in $(seq 1 5); do
+    instance_json=$(find_approval_instance_json "$flow_type" "$target_id")
+    status=$(echo "$instance_json" | json_get "status")
+    if [[ "$status" == "approved" ]]; then
+      echo "$instance_id"
+      return 0
+    fi
+    post_json_with_groups \
+      "$BASE_URL/approval-instances/$instance_id/act" \
+      '{"action":"approve"}' \
+      "$APPROVAL_GROUP_IDS" >/dev/null
+  done
+
+  instance_json=$(find_approval_instance_json "$flow_type" "$target_id")
+  status=$(echo "$instance_json" | json_get "status")
+  if [[ "$status" != "approved" ]]; then
+    echo "Error: approval instance for $flow_type target $target_id did not reach approved (status=$status)" >&2
+    return 1
+  fi
+  echo "$instance_id"
 }
 
 echo "[1/9] create project"
@@ -107,6 +186,7 @@ invoice_resp=$(post_json "$BASE_URL/projects/$project_id/invoices" "{\"estimateI
 invoice_id=$(echo "$invoice_resp" | json_get "id")
 require_id "invoice_id" "$invoice_id"
 post_json "$BASE_URL/invoices/$invoice_id/submit" '{}' >/dev/null
+approve_instance_to_closed "invoice" "$invoice_id" >/dev/null
 post_json "$BASE_URL/invoices/$invoice_id/send" '{}' >/dev/null
 echo "invoice_id=$invoice_id"
 

@@ -11,6 +11,13 @@ type ApiRequest = {
   patch(url: string, options?: any): Promise<ApiResponse>;
 };
 
+type ActionPolicySummary = {
+  id: string;
+  flowType: string;
+  actionKey: string;
+  isEnabled: boolean;
+};
+
 type CreateProjectAndEstimateOptions = {
   request: ApiRequest;
   apiBase: string;
@@ -155,7 +162,90 @@ export async function deactivateApprovalRuleVersion(options: {
     if (payload?.error === 'stale_rule_version') return;
   }
   const body = await deactivateRes.text();
-  throw new Error(
-    `[e2e] api failed: ${deactivateRes.status()} ${body}`,
+  throw new Error(`[e2e] api failed: ${deactivateRes.status()} ${body}`);
+}
+
+export async function listActionPolicies(options: {
+  request: ApiRequest;
+  apiBase: string;
+  headers: Record<string, string>;
+  flowType: string;
+  actionKey: string;
+}) {
+  const params = new URLSearchParams({
+    flowType: options.flowType,
+    actionKey: options.actionKey,
+    isEnabled: 'true',
+  });
+  const res = await options.request.get(
+    `${options.apiBase}/action-policies?${params.toString()}`,
+    { headers: options.headers },
   );
+  await ensureOk(res);
+  const payload = await res.json();
+  return Array.isArray(payload?.items)
+    ? (payload.items as ActionPolicySummary[])
+    : [];
+}
+
+export async function patchActionPolicy(options: {
+  request: ApiRequest;
+  apiBase: string;
+  headers: Record<string, string>;
+  policyId: string;
+  patch: Record<string, unknown>;
+}) {
+  const res = await options.request.patch(
+    `${options.apiBase}/action-policies/${encodeURIComponent(options.policyId)}`,
+    {
+      headers: options.headers,
+      data: options.patch,
+    },
+  );
+  await ensureOk(res);
+  return res.json();
+}
+
+export async function withDisabledCompetingPolicies<T>(options: {
+  request: ApiRequest;
+  apiBase: string;
+  headers: Record<string, string>;
+  flowType: string;
+  actionKey: string;
+  keepIds: string[];
+  run: () => Promise<T>;
+}) {
+  const keepIds = new Set(
+    options.keepIds.map((value) => String(value || '').trim()).filter(Boolean),
+  );
+  const items = await listActionPolicies({
+    request: options.request,
+    apiBase: options.apiBase,
+    headers: options.headers,
+    flowType: options.flowType,
+    actionKey: options.actionKey,
+  });
+  const disabled = items.filter((item) => !keepIds.has(String(item.id)));
+  for (const item of disabled) {
+    await patchActionPolicy({
+      request: options.request,
+      apiBase: options.apiBase,
+      headers: options.headers,
+      policyId: item.id,
+      patch: { isEnabled: false },
+    });
+  }
+  try {
+    return await options.run();
+  } finally {
+    for (const item of disabled) {
+      await patchActionPolicy({
+        request: options.request,
+        apiBase: options.apiBase,
+        headers: options.headers,
+        policyId: item.id,
+        patch: { isEnabled: true },
+      });
+    }
+  }
 }

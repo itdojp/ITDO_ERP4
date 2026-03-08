@@ -1,6 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import { expect, test, type APIRequestContext } from '@playwright/test';
-import { ensureOk } from './approval-e2e-helpers';
+import {
+  ensureOk,
+  withDisabledCompetingPolicies,
+} from './approval-e2e-helpers';
 
 const apiBase = process.env.E2E_API_BASE || 'http://localhost:3002';
 const e2eAuthMode = (process.env.E2E_AUTH_MODE || 'header')
@@ -16,10 +19,8 @@ const jwtActorUsers = {
 const jwtTokenByUserId: Record<string, string | undefined> = {
   'demo-user': process.env.E2E_JWT_TOKEN_ADMIN,
   [jwtActorUsers.outsider]: process.env.E2E_JWT_TOKEN_OUTSIDER,
-  [jwtActorUsers.approvalRequired]:
-    process.env.E2E_JWT_TOKEN_APPROVAL_REQUIRED,
-  [jwtActorUsers.evidenceRequired]:
-    process.env.E2E_JWT_TOKEN_EVIDENCE_REQUIRED,
+  [jwtActorUsers.approvalRequired]: process.env.E2E_JWT_TOKEN_APPROVAL_REQUIRED,
+  [jwtActorUsers.evidenceRequired]: process.env.E2E_JWT_TOKEN_EVIDENCE_REQUIRED,
   [jwtActorUsers.reasonRequired]: process.env.E2E_JWT_TOKEN_REASON_REQUIRED,
 };
 
@@ -184,10 +185,13 @@ async function waitAuditEvent(
   };
 
   await expect
-    .poll(async () => {
-      const item = await fetchEvent();
-      return item ? 'ok' : null;
-    }, { timeout: 20_000, intervals: [250, 500, 1_000] })
+    .poll(
+      async () => {
+        const item = await fetchEvent();
+        return item ? 'ok' : null;
+      },
+      { timeout: 20_000, intervals: [250, 500, 1_000] },
+    )
     .toBe('ok');
 
   return fetchEvent();
@@ -247,28 +251,31 @@ async function resetEvidenceSnapshots(
   headers: Record<string, string>,
   approvalInstanceId: string,
 ) {
-  const res = await request.post(`${apiBase}/__test__/evidence-snapshots/reset`, {
-    headers,
-    data: { approvalInstanceId },
-  });
+  const res = await request.post(
+    `${apiBase}/__test__/evidence-snapshots/reset`,
+    {
+      headers,
+      data: { approvalInstanceId },
+    },
+  );
   await ensureOk(res);
   const payload = await res.json();
   return Number(payload?.deletedCount ?? 0);
 }
 
-async function seedAgentRunAudit(
-  request: APIRequestContext,
-  suffix: string,
-) {
+async function seedAgentRunAudit(request: APIRequestContext, suffix: string) {
   const action = `agent_run_seeded_${suffix}`;
-  const res = await request.post(`${apiBase}/__test__/agent-runs/seed-audit-log`, {
-    headers: adminHeaders,
-    data: {
-      action,
-      targetTable: 'invoices',
-      targetId: `inv-${suffix}`,
+  const res = await request.post(
+    `${apiBase}/__test__/agent-runs/seed-audit-log`,
+    {
+      headers: adminHeaders,
+      data: {
+        action,
+        targetTable: 'invoices',
+        targetId: `inv-${suffix}`,
+      },
     },
-  });
+  );
   await ensureOk(res);
   const payload = await res.json();
   const runId = String(payload?.runId || '').trim();
@@ -389,11 +396,10 @@ test('agent run api: detail閲覧は権限制御され、監査ログが記録�
   expect(Array.isArray(detail?.steps)).toBeTruthy();
   expect((detail?.steps ?? []).length).toBeGreaterThan(0);
   expect(
-    (detail?.steps ?? []).some(
-      (step: any) =>
-        (step?.decisions ?? []).some(
-          (decision: any) => decision?.decisionType === 'policy_override',
-        ),
+    (detail?.steps ?? []).some((step: any) =>
+      (step?.decisions ?? []).some(
+        (decision: any) => decision?.decisionType === 'policy_override',
+      ),
     ),
   ).toBeTruthy();
 
@@ -541,32 +547,42 @@ test('agent mvp guard: 承認未完了のsendはAPPROVAL_REQUIREDで拒否され
     },
   );
   await ensureOk(submitRes);
-  await createActionPolicy(request, actorHeaders, {
+  const guardedPolicyId = await createActionPolicy(request, actorHeaders, {
     actorUserId,
     requireReason: false,
     statusIn: ['pending_qa', 'pending_exec'],
     guards: [{ type: 'approval_open' }],
   });
 
-  const requestId = `e2e-send-approval-required-${suffix}`;
-  const sendRes = await request.post(
-    `${apiBase}/invoices/${encodeURIComponent(invoice.id)}/send`,
-    {
-      headers: { ...actorHeaders, 'x-request-id': requestId },
-    },
-  );
-  expect(sendRes.status()).toBe(403);
-  const sendPayload = await sendRes.json();
-  expect(sendPayload?.error?.code).toBe('APPROVAL_REQUIRED');
-  expect(sendPayload?.error?.details?.reason).toBe('guard_failed');
-  expect(sendPayload?.error?.details?.guardFailures?.[0]?.type).toBe(
-    'approval_open',
-  );
+  await withDisabledCompetingPolicies({
+    request,
+    apiBase,
+    headers: actorHeaders,
+    flowType: 'invoice',
+    actionKey: 'send',
+    keepIds: [guardedPolicyId],
+    run: async () => {
+      const requestId = `e2e-send-approval-required-${suffix}`;
+      const sendRes = await request.post(
+        `${apiBase}/invoices/${encodeURIComponent(invoice.id)}/send`,
+        {
+          headers: { ...actorHeaders, 'x-request-id': requestId },
+        },
+      );
+      expect(sendRes.status()).toBe(403);
+      const sendPayload = await sendRes.json();
+      expect(sendPayload?.error?.code).toBe('APPROVAL_REQUIRED');
+      expect(sendPayload?.error?.details?.reason).toBe('guard_failed');
+      expect(sendPayload?.error?.details?.guardFailures?.[0]?.type).toBe(
+        'approval_open',
+      );
 
-  const audits = await fetchAuditEventsByRequestId(request, requestId);
-  expect(
-    audits.some((item: any) => item?.action === 'action_policy_override'),
-  ).toBeFalsy();
+      const audits = await fetchAuditEventsByRequestId(request, requestId);
+      expect(
+        audits.some((item: any) => item?.action === 'action_policy_override'),
+      ).toBeFalsy();
+    },
+  });
 });
 
 test('agent mvp guard: 承認済みでも証跡欠落時はEVIDENCE_REQUIREDで拒否される @core', async ({
