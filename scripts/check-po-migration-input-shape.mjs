@@ -1,59 +1,35 @@
 #!/usr/bin/env node
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
-const REQUIRED_HEADERS = {
-  users: ["legacyId", "userId", "userName"],
-  customers: ["legacyId", "code", "name", "status"],
-  vendors: ["legacyId", "code", "name", "status"],
-  projects: ["legacyId", "code", "name"],
-  tasks: ["legacyId", "projectLegacyId", "name"],
-  milestones: ["legacyId", "projectLegacyId", "name", "amount"],
-  estimates: ["legacyId", "projectLegacyId", "totalAmount", "currency"],
-  invoices: ["legacyId", "projectLegacyId", "currency", "totalAmount"],
-  purchase_orders: [
-    "legacyId",
-    "projectLegacyId",
-    "vendorLegacyId",
-    "currency",
-    "totalAmount",
-  ],
-  vendor_quotes: [
-    "legacyId",
-    "projectLegacyId",
-    "vendorLegacyId",
-    "currency",
-    "totalAmount",
-  ],
-  vendor_invoices: [
-    "legacyId",
-    "projectLegacyId",
-    "vendorLegacyId",
-    "currency",
-    "totalAmount",
-  ],
-  time_entries: [
-    "legacyId",
-    "projectLegacyId",
-    "userId",
-    "workDate",
-    "minutes",
-  ],
-  expenses: [
-    "legacyId",
-    "projectLegacyId",
-    "userId",
-    "category",
-    "amount",
-    "currency",
-    "incurredOn",
-  ],
-};
+const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
+const INPUT_CONTRACT_PATH = path.join(
+  SCRIPT_DIR,
+  "po-migration-input-contract.json",
+);
 
 function die(message, code = 2) {
   console.error(message);
   process.exit(code);
 }
+
+function loadInputContract() {
+  const raw = fs.readFileSync(INPUT_CONTRACT_PATH, "utf8");
+  const parsed = JSON.parse(raw);
+  const requiredHeaders =
+    parsed && typeof parsed === "object" && parsed.requiredHeaders
+      ? parsed.requiredHeaders
+      : null;
+  if (!requiredHeaders || typeof requiredHeaders !== "object") {
+    throw new Error("invalid input contract: requiredHeaders is missing");
+  }
+  return {
+    requiredHeaders,
+  };
+}
+
+const INPUT_CONTRACT = loadInputContract();
 
 function parseArgs(argv) {
   const args = {
@@ -79,83 +55,92 @@ function parseArgs(argv) {
   if (!args.format || !["csv", "json"].includes(args.format)) {
     die("missing or invalid --format (expected: csv|json)");
   }
-  if (!Object.hasOwn(REQUIRED_HEADERS, args.scope)) {
+  if (!Object.hasOwn(INPUT_CONTRACT.requiredHeaders, args.scope)) {
     die(`unsupported scope: ${args.scope}`);
   }
   return args;
 }
 
-function parseCsvRaw(value) {
-  const rows = [];
+function readFirstCsvRecord(filePath) {
+  const fd = fs.openSync(filePath, "r");
+  const buffer = Buffer.alloc(4096);
   let currentRow = [];
   let currentField = "";
   let inQuotes = false;
+  let isFirstChar = true;
 
-  const input = value.replace(/^\uFEFF/, "");
-  for (let idx = 0; idx < input.length; idx += 1) {
-    const ch = input[idx];
-    if (inQuotes) {
-      if (ch === '"') {
-        const next = input[idx + 1];
-        if (next === '"') {
-          currentField += '"';
-          idx += 1;
+  try {
+    while (true) {
+      const bytesRead = fs.readSync(fd, buffer, 0, buffer.length, null);
+      if (bytesRead <= 0) break;
+      const chunk = buffer.toString("utf8", 0, bytesRead);
+      for (let idx = 0; idx < chunk.length; idx += 1) {
+        let ch = chunk[idx];
+        if (isFirstChar) {
+          isFirstChar = false;
+          if (ch === "\uFEFF") continue;
+        }
+
+        if (inQuotes) {
+          if (ch === '"') {
+            const next = chunk[idx + 1];
+            if (next === '"') {
+              currentField += '"';
+              idx += 1;
+              continue;
+            }
+            inQuotes = false;
+            continue;
+          }
+          currentField += ch;
           continue;
         }
-        inQuotes = false;
-        continue;
-      }
-      currentField += ch;
-      continue;
-    }
 
-    if (ch === '"') {
-      inQuotes = true;
-      continue;
-    }
-    if (ch === ",") {
-      currentRow.push(currentField);
-      currentField = "";
-      continue;
-    }
-    if (ch === "\n" || ch === "\r") {
-      if (ch === "\r" && input[idx + 1] === "\n") idx += 1;
-      currentRow.push(currentField);
-      currentField = "";
-      if (!currentRow.every((cell) => !String(cell ?? "").trim())) {
-        rows.push(currentRow);
+        if (ch === '"') {
+          inQuotes = true;
+          continue;
+        }
+        if (ch === ",") {
+          currentRow.push(currentField);
+          currentField = "";
+          continue;
+        }
+        if (ch === "\n" || ch === "\r") {
+          if (ch === "\r" && chunk[idx + 1] === "\n") idx += 1;
+          currentRow.push(currentField);
+          currentField = "";
+          if (!currentRow.every((cell) => !String(cell ?? "").trim())) {
+            return currentRow;
+          }
+          currentRow = [];
+          continue;
+        }
+        currentField += ch;
       }
-      currentRow = [];
-      continue;
     }
-    currentField += ch;
+  } finally {
+    fs.closeSync(fd);
   }
 
   currentRow.push(currentField);
   if (!currentRow.every((cell) => !String(cell ?? "").trim())) {
-    rows.push(currentRow);
+    return currentRow;
   }
-  return rows;
+  return [];
 }
 
 function validateCsv(scope, filePath, requiredHeaders) {
-  const raw = fs.readFileSync(filePath, "utf8");
-  if (!raw.trim()) {
+  const stat = fs.statSync(filePath);
+  if (stat.size === 0) {
     return {
       ok: false,
       message: `empty CSV file: ${path.basename(filePath)}`,
     };
   }
 
-  const rows = parseCsvRaw(raw);
-  if (!rows.length) {
-    return {
-      ok: false,
-      message: `empty CSV file: ${path.basename(filePath)}`,
-    };
-  }
-
-  const header = rows[0].map((cell) => String(cell ?? "").trim());
+  const header = readFirstCsvRecord(filePath).map((cell) =>
+    String(cell ?? "").trim(),
+  );
   if (!header.length || header.every((value) => !value)) {
     return {
       ok: false,
@@ -217,7 +202,7 @@ function main() {
     die(`file not found: ${filePath}`);
   }
 
-  const requiredHeaders = REQUIRED_HEADERS[scope];
+  const requiredHeaders = INPUT_CONTRACT.requiredHeaders[scope];
   const result =
     format === "csv"
       ? validateCsv(scope, filePath, requiredHeaders)
@@ -231,4 +216,11 @@ function main() {
   process.stdout.write(`${result.message}\n`);
 }
 
-main();
+try {
+  main();
+} catch (error) {
+  console.error(
+    error instanceof Error ? error.stack || error.message : String(error),
+  );
+  process.exit(2);
+}

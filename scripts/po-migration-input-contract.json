@@ -1,0 +1,64 @@
+{
+  "scopes": [
+    "users",
+    "customers",
+    "vendors",
+    "projects",
+    "tasks",
+    "milestones",
+    "estimates",
+    "invoices",
+    "purchase_orders",
+    "vendor_quotes",
+    "vendor_invoices",
+    "time_entries",
+    "expenses"
+  ],
+  "requiredHeaders": {
+    "users": ["legacyId", "userId", "userName"],
+    "customers": ["legacyId", "code", "name", "status"],
+    "vendors": ["legacyId", "code", "name", "status"],
+    "projects": ["legacyId", "code", "name"],
+    "tasks": ["legacyId", "projectLegacyId", "name"],
+    "milestones": ["legacyId", "projectLegacyId", "name", "amount"],
+    "estimates": ["legacyId", "projectLegacyId", "totalAmount", "currency"],
+    "invoices": ["legacyId", "projectLegacyId", "currency", "totalAmount"],
+    "purchase_orders": [
+      "legacyId",
+      "projectLegacyId",
+      "vendorLegacyId",
+      "currency",
+      "totalAmount"
+    ],
+    "vendor_quotes": [
+      "legacyId",
+      "projectLegacyId",
+      "vendorLegacyId",
+      "currency",
+      "totalAmount"
+    ],
+    "vendor_invoices": [
+      "legacyId",
+      "projectLegacyId",
+      "vendorLegacyId",
+      "currency",
+      "totalAmount"
+    ],
+    "time_entries": [
+      "legacyId",
+      "projectLegacyId",
+      "userId",
+      "workDate",
+      "minutes"
+    ],
+    "expenses": [
+      "legacyId",
+      "projectLegacyId",
+      "userId",
+      "category",
+      "amount",
+      "currency",
+      "incurredOn"
+    ]
+  }
+}
