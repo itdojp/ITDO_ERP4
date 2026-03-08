@@ -1,4 +1,4 @@
-.PHONY: lint format-check typecheck build test e2e ui-evidence mobile-regression-log frontend-dev-api podman-smoke pr-comments audit docs-image-links-check design-system-package-check eslint10-readiness-check dependabot-alerts-check dependabot-token-readiness-check backup-s3-readiness-check backup-s3-readiness-record po-migration-input-readiness-check po-migration-record po-migration-run-and-record av-staging-evidence av-staging-gate av-staging-readiness action-policy-fallback-report action-policy-fallback-report-json action-policy-phase3-readiness action-policy-phase3-readiness-json action-policy-phase3-readiness-record action-policy-phase3-cutover-record
+.PHONY: lint format-check typecheck build test e2e ui-evidence mobile-regression-log frontend-dev-api podman-smoke pr-comments audit docs-image-links-check design-system-package-check eslint10-readiness-check eslint10-readiness-record dependabot-alerts-check dependabot-alerts-record dependabot-token-readiness-check backup-s3-readiness-check backup-s3-readiness-record po-migration-input-readiness-check po-migration-record po-migration-run-and-record av-staging-evidence av-staging-gate av-staging-readiness action-policy-fallback-report action-policy-fallback-report-json action-policy-phase3-readiness action-policy-phase3-readiness-json action-policy-phase3-readiness-record action-policy-phase3-cutover-record
 
 lint:
 	npm run lint --prefix packages/backend
@@ -51,8 +51,14 @@ design-system-package-check:
 eslint10-readiness-check:
 	./scripts/check-eslint10-readiness.sh
 
+eslint10-readiness-record:
+	./scripts/record-eslint10-readiness.sh
+
 dependabot-alerts-check:
 	./scripts/check-dependabot-alerts.sh
+
+dependabot-alerts-record:
+	./scripts/record-dependabot-alerts.sh
 
 dependabot-token-readiness-check:
 	./scripts/check-dependabot-alerts-token.sh
