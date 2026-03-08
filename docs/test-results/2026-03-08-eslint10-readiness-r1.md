@@ -3,7 +3,7 @@
 - executedAt: 2026-03-08T06:56:38Z
 - branch: `ops/dependency-watch-records`
 - commit: `c5d7d83d`
-- sourceLog: `/home/devuser/work/CodeX/ITDO_ERP4_next-ops/tmp/eslint10-readiness/eslint10-readiness-20260308-155629.log`
+- sourceLog: `tmp/eslint10-readiness/eslint10-readiness-20260308-155629.log`
 - summaryStatus: fail
 - ready: false
 - checkExitCode: 2

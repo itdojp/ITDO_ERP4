@@ -3,7 +3,7 @@
 - executedAt: 2026-03-08T06:56:29Z
 - branch: `ops/dependency-watch-records`
 - commit: `c5d7d83d`
-- sourceLog: `/home/devuser/work/CodeX/ITDO_ERP4_next-ops/tmp/dependabot-alerts/dependabot-alerts-20260308-155627.log`
+- sourceLog: `tmp/dependabot-alerts/dependabot-alerts-20260308-155627.log`
 - summaryStatus: pass
 - actionRequired: false
 - checkExitCode: 0
