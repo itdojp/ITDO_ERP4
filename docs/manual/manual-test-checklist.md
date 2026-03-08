@@ -36,9 +36,11 @@
   - 記録: `make action-policy-phase3-readiness-record` で `docs/test-results/YYYY-MM-DD-action-policy-phase3-readiness-rN.md` を生成できる
   - 最低確認対象: `invoice:send`, `invoice:mark_paid`, `purchase_order:send`, `expense:submit`, `expense:mark_paid`, `vendor_invoice:submit`, `vendor_invoice:update_lines`, `vendor_invoice:update_allocations`, `*:approve`, `*:reject`
 - [ ] `phase2_core` -> `phase3_strict` の切替後も主要操作が継続し、`action_policy_fallback_allowed` の新規発生がないことを確認する
+  - 記録: `make action-policy-phase3-cutover-record`
 - [ ] `make action-policy-fallback-report` / `make action-policy-fallback-report-json` で fallback 集計を確認し、`flowType:actionKey:targetTable` ベースで未収束キーが 0 件であることを確認する
 - [ ] 問題発生時に `phase3_strict` -> `phase2_core` のロールバックと、必要な `ACTION_POLICY_REQUIRED_ACTIONS` 明示指定での段階復旧を確認する
   - ロールバック後は `make action-policy-phase3-readiness-json` と `make action-policy-fallback-report-json` で復旧対象キーのみが再出現していることを確認する
+  - 記録: `make action-policy-phase3-cutover-record`
 
 ### チャット（確認依頼 ack required）
 

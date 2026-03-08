@@ -740,6 +740,92 @@ test('record-action-policy-phase3-readiness: auto increments run suffix when RUN
   });
 });
 
+test('record-action-policy-phase3-cutover: writes report from readiness record', () => {
+  withTempDir((dir) => {
+    const readinessRecord = path.join(
+      dir,
+      '2026-03-08-action-policy-phase3-readiness-r1.md',
+    );
+    const outDir = path.join(dir, 'out');
+    writeFileSync(
+      readinessRecord,
+      [
+        '# ActionPolicy phase3 readiness 記録',
+        '',
+        '- ready: yes',
+        '- from/to: 2026-03-07T00:00:00.000Z -> 2026-03-08T00:00:00.000Z',
+        '- missing_static_callsites: 0',
+        '- stale_required_actions: 0',
+        '- dynamic_callsites: 0',
+        '- fallback_unique_keys: 0',
+        '- fallback_high_risk_keys: 0',
+        '- fallback_medium_risk_keys: 0',
+        '- fallback_unknown_risk_keys: 0',
+        '',
+      ].join('\n'),
+    );
+
+    const res = runScript('record-action-policy-phase3-cutover.sh', {
+      READINESS_RECORD_FILE: readinessRecord,
+      OUT_DIR: outDir,
+      DATE_STAMP: '2026-03-08',
+      RUN_LABEL: 'r1',
+    });
+    assert.equal(res.status, 0, `${res.stderr}\n${res.stdout}`);
+
+    const reportPath = path.join(
+      outDir,
+      '2026-03-08-action-policy-phase3-cutover-r1.md',
+    );
+    assert.equal(existsSync(reportPath), true);
+    const report = readFileSync(reportPath, 'utf8');
+    assert.match(report, /# ActionPolicy phase3 cutover 記録/);
+    assert.match(
+      report,
+      /- sourceReadinessRecord: `.*phase3-readiness-r1\.md`/,
+    );
+    assert.match(report, /- ready: yes/);
+    assert.match(
+      report,
+      /- from\/to: 2026-03-07T00:00:00\.000Z -> 2026-03-08T00:00:00\.000Z/,
+    );
+    assert.match(report, /- fromPreset: `phase2_core`/);
+    assert.match(report, /- toPreset: `phase3_strict`/);
+  });
+});
+
+test('record-action-policy-phase3-cutover: auto increments run suffix when RUN_LABEL is omitted', () => {
+  withTempDir((dir) => {
+    const readinessRecord = path.join(
+      dir,
+      '2026-03-08-action-policy-phase3-readiness-r1.md',
+    );
+    const outDir = path.join(dir, 'out');
+    mkdirSync(outDir, { recursive: true });
+    writeFileSync(
+      readinessRecord,
+      '# ActionPolicy phase3 readiness 記録\n- ready: yes\n',
+    );
+    writeFileSync(
+      path.join(outDir, '2026-03-08-action-policy-phase3-cutover-r1.md'),
+      '# existing report',
+    );
+
+    const res = runScript('record-action-policy-phase3-cutover.sh', {
+      READINESS_RECORD_FILE: readinessRecord,
+      OUT_DIR: outDir,
+      DATE_STAMP: '2026-03-08',
+    });
+    assert.equal(res.status, 0, `${res.stderr}\n${res.stdout}`);
+    assert.equal(
+      existsSync(
+        path.join(outDir, '2026-03-08-action-policy-phase3-cutover-r2.md'),
+      ),
+      true,
+    );
+  });
+});
+
 test('run-and-record-action-policy-phase3-readiness: captures outputs from report scripts', () => {
   withTempDir((dir) => {
     const readinessStub = path.join(dir, 'readiness-stub.mjs');
