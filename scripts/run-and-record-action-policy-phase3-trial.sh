@@ -110,6 +110,18 @@ resolve_run_label() {
   done
 }
 
+assert_output_pair_available() {
+  local run_label="$1"
+  local readiness_path="$OUT_DIR/${DATE_STAMP}-action-policy-phase3-readiness-${run_label}.md"
+  local cutover_path="$OUT_DIR/${DATE_STAMP}-action-policy-phase3-cutover-${run_label}.md"
+  if [[ -e "$readiness_path" ]]; then
+    die "readiness output file already exists: $readiness_path"
+  fi
+  if [[ -e "$cutover_path" ]]; then
+    die "cutover output file already exists: $cutover_path"
+  fi
+}
+
 main() {
   case "${1:-}" in
     -h|--help)
@@ -136,6 +148,7 @@ main() {
 
   local resolved_run_label
   resolved_run_label="$(resolve_run_label)"
+  assert_output_pair_available "$resolved_run_label"
   local readiness_record_file="$OUT_DIR/${DATE_STAMP}-action-policy-phase3-readiness-${resolved_run_label}.md"
 
   log "using run label: ${resolved_run_label}"

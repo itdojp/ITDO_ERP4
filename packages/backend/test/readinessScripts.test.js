@@ -1115,6 +1115,71 @@ test('run-and-record-action-policy-phase3-trial: passes explicit presets and run
   });
 });
 
+test('run-and-record-action-policy-phase3-trial: fails fast when explicit RUN_LABEL output already exists', () => {
+  withTempDir((dir) => {
+    const outDir = path.join(dir, 'out');
+    const readinessRunner = path.join(dir, 'readiness-runner.sh');
+    const cutoverRecorder = path.join(dir, 'cutover-recorder.sh');
+    mkdirSync(outDir, { recursive: true });
+
+    writeFileSync(
+      readinessRunner,
+      [
+        '#!/usr/bin/env bash',
+        'set -euo pipefail',
+        'printf runner-invoked > "$OUT_DIR/runner-marker.txt"',
+      ].join('\n'),
+    );
+    chmodSync(readinessRunner, 0o755);
+
+    writeFileSync(
+      cutoverRecorder,
+      [
+        '#!/usr/bin/env bash',
+        'set -euo pipefail',
+        'printf cutover-invoked > "$OUT_DIR/cutover-marker.txt"',
+      ].join('\n'),
+    );
+    chmodSync(cutoverRecorder, 0o755);
+
+    for (const [kind, expectedPattern] of [
+      ['readiness', /readiness output file already exists/],
+      ['cutover', /cutover output file already exists/],
+    ]) {
+      rmSync(path.join(outDir, 'runner-marker.txt'), { force: true });
+      rmSync(path.join(outDir, 'cutover-marker.txt'), { force: true });
+      rmSync(
+        path.join(
+          outDir,
+          '2026-03-08-action-policy-phase3-readiness-ops-run.md',
+        ),
+        { force: true },
+      );
+      rmSync(
+        path.join(outDir, '2026-03-08-action-policy-phase3-cutover-ops-run.md'),
+        { force: true },
+      );
+
+      writeFileSync(
+        path.join(outDir, `2026-03-08-action-policy-phase3-${kind}-ops-run.md`),
+        '# existing report',
+      );
+
+      const res = runScript('run-and-record-action-policy-phase3-trial.sh', {
+        OUT_DIR: outDir,
+        DATE_STAMP: '2026-03-08',
+        RUN_LABEL: 'ops-run',
+        READINESS_RUNNER: readinessRunner,
+        CUTOVER_RECORD_SCRIPT: cutoverRecorder,
+      });
+      assert.notEqual(res.status, 0);
+      assert.match(String(res.stderr), expectedPattern);
+      assert.equal(existsSync(path.join(outDir, 'runner-marker.txt')), false);
+      assert.equal(existsSync(path.join(outDir, 'cutover-marker.txt')), false);
+    }
+  });
+});
+
 test('generate-po-migration-report: includes preflight summary and scope lists', () => {
   withTempDir((dir) => {
     const logDir = path.join(dir, 'logs');
