@@ -80,12 +80,12 @@ function timeEntryForEdit() {
   };
 }
 
-function withTimePolicyEnv(fn) {
+function withTimePolicyEnv(preset, fn) {
   return withEnv(
     {
       DATABASE_URL: process.env.DATABASE_URL || MIN_DATABASE_URL,
       AUTH_MODE: 'header',
-      ACTION_POLICY_ENFORCEMENT_PRESET: 'phase2_core',
+      ACTION_POLICY_ENFORCEMENT_PRESET: preset,
       ACTION_POLICY_REQUIRED_ACTIONS: '',
       APPROVAL_EVIDENCE_REQUIRED_ACTIONS: '',
     },
@@ -93,165 +93,167 @@ function withTimePolicyEnv(fn) {
   );
 }
 
-test('POST /time-entries/:id/submit: phase2_core required action denies when policy is missing', async () => {
-  await withTimePolicyEnv(async () => {
-    let updateCalled = 0;
-    await withPrismaStubs(
-      {
-        'timeEntry.findUnique': async () => timeEntryForSubmit(),
-        'actionPolicy.findMany': async () => [],
-        'timeEntry.update': async () => {
-          updateCalled += 1;
-          return { id: 'time-001', status: 'submitted' };
-        },
-      },
-      async () => {
-        const server = await buildServer({ logger: false });
-        try {
-          const res = await server.inject({
-            method: 'POST',
-            url: '/time-entries/time-001/submit',
-            headers: adminHeaders(),
-          });
-          assert.equal(res.statusCode, 403, res.body);
-          const payload = JSON.parse(res.body);
-          assert.equal(payload?.error?.code, 'ACTION_POLICY_DENIED');
-          assert.equal(updateCalled, 0);
-        } finally {
-          await server.close();
-        }
-      },
-    );
-  });
-});
-
-test('POST /time-entries/:id/submit: policy allow reaches downstream processing (not ACTION_POLICY_DENIED)', async () => {
-  await withTimePolicyEnv(async () => {
-    let updateCalled = 0;
-    await withPrismaStubs(
-      {
-        'timeEntry.findUnique': async () => timeEntryForSubmit(),
-        'actionPolicy.findMany': async () => [
-          {
-            id: 'policy-time-submit-allow',
-            flowType: 'time',
-            actionKey: 'submit',
-            priority: 100,
-            isEnabled: true,
-            subjects: null,
-            stateConstraints: null,
-            guards: null,
-            requireReason: false,
+for (const preset of ['phase2_core', 'phase3_strict']) {
+  test(`POST /time-entries/:id/submit: ${preset} required action denies when policy is missing`, async () => {
+    await withTimePolicyEnv(preset, async () => {
+      let updateCalled = 0;
+      await withPrismaStubs(
+        {
+          'timeEntry.findUnique': async () => timeEntryForSubmit(),
+          'actionPolicy.findMany': async () => [],
+          'timeEntry.update': async () => {
+            updateCalled += 1;
+            return { id: 'time-001', status: 'submitted' };
           },
-        ],
-        'timeEntry.update': async ({ where, data }) => {
-          updateCalled += 1;
-          return {
-            id: where.id,
-            status: data.status,
-          };
         },
-      },
-      async () => {
-        const server = await buildServer({ logger: false });
-        try {
-          const res = await server.inject({
-            method: 'POST',
-            url: '/time-entries/time-001/submit',
-            headers: adminHeaders(),
-          });
-          assert.equal(res.statusCode, 200, res.body);
-          const payload = JSON.parse(res.body);
-          assert.equal(payload?.id, 'time-001');
-          assert.equal(payload?.status, 'submitted');
-          assert.equal(updateCalled, 1);
-        } finally {
-          await server.close();
-        }
-      },
-    );
-  });
-});
-
-test('PATCH /time-entries/:id: phase2_core required action denies when policy is missing', async () => {
-  await withTimePolicyEnv(async () => {
-    let updateCalled = 0;
-    await withPrismaStubs(
-      {
-        'timeEntry.findFirst': async () => timeEntryForEdit(),
-        'actionPolicy.findMany': async () => [],
-        'project.findMany': async () => [],
-        'worklogSetting.findUnique': async () => ({ editableDays: 30 }),
-        'timeEntry.update': async () => {
-          updateCalled += 1;
-          return { id: 'time-001' };
+        async () => {
+          const server = await buildServer({ logger: false });
+          try {
+            const res = await server.inject({
+              method: 'POST',
+              url: '/time-entries/time-001/submit',
+              headers: adminHeaders(),
+            });
+            assert.equal(res.statusCode, 403, res.body);
+            const payload = JSON.parse(res.body);
+            assert.equal(payload?.error?.code, 'ACTION_POLICY_DENIED');
+            assert.equal(updateCalled, 0);
+          } finally {
+            await server.close();
+          }
         },
-      },
-      async () => {
-        const server = await buildServer({ logger: false });
-        try {
-          const res = await server.inject({
-            method: 'PATCH',
-            url: '/time-entries/time-001',
-            headers: adminHeaders(),
-            payload: {},
-          });
-          assert.equal(res.statusCode, 403, res.body);
-          const payload = JSON.parse(res.body);
-          assert.equal(payload?.error?.code, 'ACTION_POLICY_DENIED');
-          assert.equal(updateCalled, 0);
-        } finally {
-          await server.close();
-        }
-      },
-    );
+      );
+    });
   });
-});
 
-test('PATCH /time-entries/:id: policy allow reaches downstream update (not ACTION_POLICY_DENIED)', async () => {
-  await withTimePolicyEnv(async () => {
-    let updateCalled = 0;
-    await withPrismaStubs(
-      {
-        'timeEntry.findFirst': async () => timeEntryForEdit(),
-        'actionPolicy.findMany': async () => [
-          {
-            id: 'policy-time-edit-allow',
-            flowType: 'time',
-            actionKey: 'edit',
-            priority: 100,
-            isEnabled: true,
-            subjects: null,
-            stateConstraints: null,
-            guards: null,
-            requireReason: false,
+  test(`POST /time-entries/:id/submit: ${preset} policy allow reaches downstream processing (not ACTION_POLICY_DENIED)`, async () => {
+    await withTimePolicyEnv(preset, async () => {
+      let updateCalled = 0;
+      await withPrismaStubs(
+        {
+          'timeEntry.findUnique': async () => timeEntryForSubmit(),
+          'actionPolicy.findMany': async () => [
+            {
+              id: 'policy-time-submit-allow',
+              flowType: 'time',
+              actionKey: 'submit',
+              priority: 100,
+              isEnabled: true,
+              subjects: null,
+              stateConstraints: null,
+              guards: null,
+              requireReason: false,
+            },
+          ],
+          'timeEntry.update': async ({ where, data }) => {
+            updateCalled += 1;
+            return {
+              id: where.id,
+              status: data.status,
+            };
           },
-        ],
-        'project.findMany': async () => [],
-        'worklogSetting.findUnique': async () => ({ editableDays: 30 }),
-        'timeEntry.update': async ({ where }) => {
-          updateCalled += 1;
-          return { id: where.id, status: 'submitted' };
         },
-      },
-      async () => {
-        const server = await buildServer({ logger: false });
-        try {
-          const res = await server.inject({
-            method: 'PATCH',
-            url: '/time-entries/time-001',
-            headers: adminHeaders(),
-            payload: {},
-          });
-          assert.equal(res.statusCode, 200, res.body);
-          const payload = JSON.parse(res.body);
-          assert.equal(payload?.id, 'time-001');
-          assert.equal(payload?.status, 'submitted');
-          assert.equal(updateCalled, 1);
-        } finally {
-          await server.close();
-        }
-      },
-    );
+        async () => {
+          const server = await buildServer({ logger: false });
+          try {
+            const res = await server.inject({
+              method: 'POST',
+              url: '/time-entries/time-001/submit',
+              headers: adminHeaders(),
+            });
+            assert.equal(res.statusCode, 200, res.body);
+            const payload = JSON.parse(res.body);
+            assert.equal(payload?.id, 'time-001');
+            assert.equal(payload?.status, 'submitted');
+            assert.equal(updateCalled, 1);
+          } finally {
+            await server.close();
+          }
+        },
+      );
+    });
   });
-});
+
+  test(`PATCH /time-entries/:id: ${preset} required action denies when policy is missing`, async () => {
+    await withTimePolicyEnv(preset, async () => {
+      let updateCalled = 0;
+      await withPrismaStubs(
+        {
+          'timeEntry.findFirst': async () => timeEntryForEdit(),
+          'actionPolicy.findMany': async () => [],
+          'project.findMany': async () => [],
+          'worklogSetting.findUnique': async () => ({ editableDays: 30 }),
+          'timeEntry.update': async () => {
+            updateCalled += 1;
+            return { id: 'time-001' };
+          },
+        },
+        async () => {
+          const server = await buildServer({ logger: false });
+          try {
+            const res = await server.inject({
+              method: 'PATCH',
+              url: '/time-entries/time-001',
+              headers: adminHeaders(),
+              payload: {},
+            });
+            assert.equal(res.statusCode, 403, res.body);
+            const payload = JSON.parse(res.body);
+            assert.equal(payload?.error?.code, 'ACTION_POLICY_DENIED');
+            assert.equal(updateCalled, 0);
+          } finally {
+            await server.close();
+          }
+        },
+      );
+    });
+  });
+
+  test(`PATCH /time-entries/:id: ${preset} policy allow reaches downstream update (not ACTION_POLICY_DENIED)`, async () => {
+    await withTimePolicyEnv(preset, async () => {
+      let updateCalled = 0;
+      await withPrismaStubs(
+        {
+          'timeEntry.findFirst': async () => timeEntryForEdit(),
+          'actionPolicy.findMany': async () => [
+            {
+              id: 'policy-time-edit-allow',
+              flowType: 'time',
+              actionKey: 'edit',
+              priority: 100,
+              isEnabled: true,
+              subjects: null,
+              stateConstraints: null,
+              guards: null,
+              requireReason: false,
+            },
+          ],
+          'project.findMany': async () => [],
+          'worklogSetting.findUnique': async () => ({ editableDays: 30 }),
+          'timeEntry.update': async ({ where }) => {
+            updateCalled += 1;
+            return { id: where.id, status: 'submitted' };
+          },
+        },
+        async () => {
+          const server = await buildServer({ logger: false });
+          try {
+            const res = await server.inject({
+              method: 'PATCH',
+              url: '/time-entries/time-001',
+              headers: adminHeaders(),
+              payload: {},
+            });
+            assert.equal(res.statusCode, 200, res.body);
+            const payload = JSON.parse(res.body);
+            assert.equal(payload?.id, 'time-001');
+            assert.equal(payload?.status, 'submitted');
+            assert.equal(updateCalled, 1);
+          } finally {
+            await server.close();
+          }
+        },
+      );
+    });
+  });
+}

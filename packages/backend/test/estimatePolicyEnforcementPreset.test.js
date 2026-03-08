@@ -73,15 +73,21 @@ function estimateDraft() {
   };
 }
 
-test('POST /estimates/:id/submit: phase2_core required action denies when policy is missing', async () => {
-  await withEnv(
+function withEstimatePolicyEnv(preset, fn) {
+  return withEnv(
     {
       DATABASE_URL: process.env.DATABASE_URL || MIN_DATABASE_URL,
       AUTH_MODE: 'header',
-      ACTION_POLICY_ENFORCEMENT_PRESET: 'phase2_core',
+      ACTION_POLICY_ENFORCEMENT_PRESET: preset,
       ACTION_POLICY_REQUIRED_ACTIONS: '',
     },
-    async () => {
+    fn,
+  );
+}
+
+for (const preset of ['phase2_core', 'phase3_strict']) {
+  test(`POST /estimates/:id/submit: ${preset} required action denies when policy is missing`, async () => {
+    await withEstimatePolicyEnv(preset, async () => {
       let transactionCalled = 0;
       await withPrismaStubs(
         {
@@ -110,6 +116,6 @@ test('POST /estimates/:id/submit: phase2_core required action denies when policy
           }
         },
       );
-    },
-  );
-});
+    });
+  });
+}
