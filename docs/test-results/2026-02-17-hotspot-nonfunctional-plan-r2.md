@@ -5,6 +5,7 @@
 ## 1. Lane D（ホットスポットリファクタ）
 
 ### 1-1. 現状計測
+
 - `packages/frontend/src/sections/VendorDocuments.tsx`: 3,774 lines
   - `useState`: 58
   - `useCallback`: 11
@@ -21,6 +22,7 @@
 ### 1-2. 分割/共通化の推奨設計
 
 #### A. `VendorDocuments.tsx` 分割案
+
 1. `VendorDocumentsPage.tsx`（コンテナ）
    - タブ状態・共通メッセージ・共通マスタ（project/vendor）を保持
 2. `vendor-documents/purchase-orders/*`
@@ -42,11 +44,13 @@
    - `useVendorInvoiceLineValidation`
 
 受け入れ条件:
+
 - 既存E2E（vendor documents系）が全緑
 - 既存API I/F（payload/endpoint）無変更
 - タブ切替/検索/保存済みビュー/ダイアログ遷移のUI挙動不変
 
 #### B. `AdminSettings.tsx` 分割案
+
 1. `AdminSettingsPage.tsx`（コンテナ）
 2. セクション単位のカード分割
    - `admin-settings/AlertSettingsCard`
@@ -63,11 +67,13 @@
    - `useAlertSettingsDraft`
 
 受け入れ条件:
+
 - 既存E2E（admin settings / alert settings / approval rules / chat settings）が全緑
 - JSON入力バリデーションの挙動不変
 - 監査履歴表示の差分なし
 
 #### C. backend chat routes 共通化案
+
 1. `packages/backend/src/routes/chat/shared/routeInput.ts`
    - `parseDateParam`
    - `parseLimit`
@@ -85,11 +91,13 @@
    - Step3: `chatBreakGlass.ts`, `chatAckTemplates.ts`, `chatAckLinks.ts` へ適用
 
 受け入れ条件:
+
 - backend test 全緑
 - 既存ルートのHTTPステータス/エラーコード不変
 - 監査ログ作成点（action/metadata）不変
 
 ### 1-3. 推奨実施順序（PR順）
+
 1. backend chat shared helpers 抽出（最小差分）
 2. `AdminSettings.tsx` の監査履歴パネル共通化
 3. `AdminSettings.tsx` セクション分割
@@ -97,6 +105,7 @@
 5. `VendorDocuments.tsx` タブ別セクション分割
 
 理由:
+
 - backend helper 抽出は依存範囲が狭く競合が少ない
 - `AdminSettings` は既に一部Card化済みで段階分割しやすい
 - `VendorDocuments` は業務ロジック密度が高く後段で実施した方が回帰管理しやすい
@@ -104,38 +113,49 @@
 ## 2. Lane E（非機能/運用）
 
 ### 2-1. low 脆弱性トリアージ（2026-02-17）
+
 実行コマンド:
+
 - `npm audit --prefix packages/backend --audit-level=low --json`
 - `npm audit --prefix packages/frontend --audit-level=low --json`
 
 結果:
+
 - frontend: 0 件
 - backend: low 1件 / moderate 7件
 
 low 1件の詳細:
+
 - package: `qs`
 - advisory: `GHSA-w7fw-mjwx-w883`
 - range: `>=6.7.0 <=6.14.1`
 - 依存経路: `googleapis -> googleapis-common -> qs@6.14.1`
 
 トリアージ判断:
+
 - low 1件は修正対象（`qs` を patched に引き上げ）
 - moderate 7件は `prisma` 系のメジャー更新を伴うため、別Issueで計画的に対応
 
 ### 2-2. #914 readiness 監視記録更新（2026-02-17）
+
 実行コマンド:
+
 - `make eslint10-readiness-check`
 
 結果:
+
 - `@typescript-eslint/eslint-plugin@8.56.0` peer: `^8.57.0 || ^9.0.0 || ^10.0.0`
 - `@typescript-eslint/parser@8.56.0` peer: `^8.57.0 || ^9.0.0 || ^10.0.0`
 - `ready: true`
 
 判断:
-- #914 の再開条件は充足済み
-- 次アクションは #914 の未完了TODO（ignore解除 + Dependabot再開）を実施
+
+- 2026-02-17 時点では `ready: true` と判断していた
+- 注記: 2026-03-08 時点の `scripts/check-eslint10-readiness.sh` は React 系 plugin の peer 条件も再確認対象にしており、現行 Issue #914 の判断は `ready: false`
+- この節は当時の記録として保持し、現行判断は #914 を正とする
 
 ## 3. 次アクション
+
 - [ ] low脆弱性（qs）修正PRを作成
 - [ ] #914 未完了TODOを実施するPRを作成
 - [ ] Lane D の実装PRを上記順序で着手
