@@ -45,10 +45,10 @@
   - `upstreamUpdated=true` または alert 状態変化を確認し、`#1153` の方針を見直す。
   - 新規対応が必要なら PR または issue を起票する。
 
-## ESLint v10 readiness
+### ESLint v10 readiness
 
 - `ready=true`
-  - `#914` の再開条件を満たす可能性がある。peer 制約と CI を再確認し、 Dependabot PR 再開を判断する。
+  - `#914` の再開条件を満たす可能性がある。peer 制約と CI を再確認し、Dependabot PR 再開を判断する。
 - `ready=false`
   - 現状維持。`#914` に確認日時と blocker を追記する。
 
