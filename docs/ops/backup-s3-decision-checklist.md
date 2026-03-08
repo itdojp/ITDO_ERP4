@@ -74,3 +74,12 @@ S3_BUCKET=... S3_REGION=... EXPECT_SSE=aws:kms SSE_KMS_KEY_ID=... \
 ## 未解決メモ
 
 -
+
+## 自動検証
+
+```bash
+make backup-s3-decision-check
+```
+
+- `decisionDate` / `environment` / bucket / region / lifecycle / IAM / 責任分界の必須項目を検証する。
+- `SSE-S3` を選ぶ場合のみ、KMS 固有項目は `N/A` を許容する。

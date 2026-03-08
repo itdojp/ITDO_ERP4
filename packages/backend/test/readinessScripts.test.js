@@ -309,6 +309,155 @@ test('check-backup-s3-readiness: emits machine-readable SUMMARY line', () => {
   });
 });
 
+test('check-backup-s3-decision-checklist: fails when placeholders remain', () => {
+  withTempDir((dir) => {
+    const checklistPath = path.join(dir, 'backup-s3-decision-checklist.md');
+    writeFileSync(
+      checklistPath,
+      [
+        '# Backup S3 設定決定シート',
+        '',
+        '- decisionDate: YYYY-MM-DD',
+        '- environment: prod',
+        '- owner: <name>',
+        '- reviewers: alice, bob',
+        '- relatedIssue: #544',
+        '- AWS account / project: prod-shared',
+        '- bucketName: erp4-backups',
+        '- region: ap-northeast-1',
+        '- s3Prefix: erp4/prod',
+        '- encryptionMode: SSE-KMS',
+        '- kmsKeyIdOrAlias: alias/erp4-backup',
+        '- kmsKeyAdmin: <name>',
+        '- kmsKeyUsagePrincipals: ops-backup-role',
+        '- versioning: Enabled',
+        '- lifecycleDailyDays: 14',
+        '- lifecycleWeeklyWeeks: 8',
+        '- lifecycleMonthlyMonths: 12',
+        '- replication / secondary copy: none',
+        '- publicAccessBlock: enabled',
+        '- writeRoleArn: arn:aws:iam::123456789012:role/erp4-backup-write',
+        '- readRoleArn: arn:aws:iam::123456789012:role/erp4-backup-read',
+        '- restoreRoleArn: arn:aws:iam::123456789012:role/erp4-backup-restore',
+        '- CI / automation principal: github-actions',
+        '- allowedNetworkBoundary: VPC endpoint',
+        '- bucketPolicyNotes: allow only backup principals',
+        '- restoreApprover: ops-manager',
+        '- restoreExecutor: platform-team',
+        '- auditLogLocation: cloudtrail://backup',
+        '- incidentEscalation: oncall-platform',
+      ].join('\n'),
+    );
+
+    const res = runNodeScript('check-backup-s3-decision-checklist.mjs', [
+      `--file=${checklistPath}`,
+    ]);
+    assert.equal(res.status, 1, `${res.stderr}\n${res.stdout}`);
+    assert.match(String(res.stdout), /field=decisionDate/);
+    assert.match(String(res.stdout), /field=owner/);
+    assert.match(String(res.stdout), /field=kmsKeyAdmin/);
+  });
+});
+
+test('check-backup-s3-decision-checklist: passes with populated SSE-KMS checklist', () => {
+  withTempDir((dir) => {
+    const checklistPath = path.join(dir, 'backup-s3-decision-checklist.md');
+    writeFileSync(
+      checklistPath,
+      [
+        '# Backup S3 設定決定シート',
+        '',
+        '- decisionDate: 2026-03-08',
+        '- environment: prod',
+        '- owner: platform-team',
+        '- reviewers: security-lead, finance-owner',
+        '- relatedIssue: #544',
+        '- AWS account / project: prod-shared',
+        '- bucketName: erp4-backups-prod',
+        '- region: ap-northeast-1',
+        '- s3Prefix: erp4/prod',
+        '- encryptionMode: SSE-KMS',
+        '- kmsKeyIdOrAlias: alias/erp4-backup',
+        '- kmsKeyAdmin: security-team',
+        '- kmsKeyUsagePrincipals: arn:aws:iam::123456789012:role/erp4-backup-write',
+        '- versioning: Enabled',
+        '- lifecycleDailyDays: 14',
+        '- lifecycleWeeklyWeeks: 8',
+        '- lifecycleMonthlyMonths: 12',
+        '- replication / secondary copy: cross-account vault',
+        '- publicAccessBlock: enabled',
+        '- writeRoleArn: arn:aws:iam::123456789012:role/erp4-backup-write',
+        '- readRoleArn: arn:aws:iam::123456789012:role/erp4-backup-read',
+        '- restoreRoleArn: arn:aws:iam::123456789012:role/erp4-backup-restore',
+        '- CI / automation principal: github-actions-prod',
+        '- allowedNetworkBoundary: VPC endpoint',
+        '- bucketPolicyNotes: write/read/restore roles only',
+        '- restoreApprover: finance-director',
+        '- restoreExecutor: sre-oncall',
+        '- auditLogLocation: cloudtrail://prod-backup-audit',
+        '- incidentEscalation: sev-1-oncall',
+      ].join('\n'),
+    );
+
+    const res = runNodeScript('check-backup-s3-decision-checklist.mjs', [
+      `--file=${checklistPath}`,
+      '--format=json',
+    ]);
+    assert.equal(res.status, 0, `${res.stderr}\n${res.stdout}`);
+    const payload = JSON.parse(String(res.stdout));
+    assert.equal(payload.status, 'pass');
+    assert.equal(payload.issueCount, 0);
+  });
+});
+
+test('check-backup-s3-decision-checklist: allows blank KMS fields for SSE-S3', () => {
+  withTempDir((dir) => {
+    const checklistPath = path.join(dir, 'backup-s3-decision-checklist.md');
+    writeFileSync(
+      checklistPath,
+      [
+        '# Backup S3 設定決定シート',
+        '',
+        '- decisionDate: 2026-03-08',
+        '- environment: staging',
+        '- owner: platform-team',
+        '- reviewers: security-lead, finance-owner',
+        '- relatedIssue: #544',
+        '- AWS account / project: staging-shared',
+        '- bucketName: erp4-backups-staging',
+        '- region: ap-northeast-1',
+        '- s3Prefix: erp4/staging',
+        '- encryptionMode: SSE-S3',
+        '- kmsKeyIdOrAlias: N/A',
+        '- kmsKeyAdmin: N/A',
+        '- kmsKeyUsagePrincipals: N/A',
+        '- versioning: Enabled',
+        '- lifecycleDailyDays: 7',
+        '- lifecycleWeeklyWeeks: 4',
+        '- lifecycleMonthlyMonths: 6',
+        '- replication / secondary copy: none',
+        '- publicAccessBlock: enabled',
+        '- writeRoleArn: arn:aws:iam::123456789012:role/erp4-staging-backup-write',
+        '- readRoleArn: arn:aws:iam::123456789012:role/erp4-staging-backup-read',
+        '- restoreRoleArn: arn:aws:iam::123456789012:role/erp4-staging-backup-restore',
+        '- CI / automation principal: github-actions-staging',
+        '- allowedNetworkBoundary: none',
+        '- bucketPolicyNotes: staging only',
+        '- restoreApprover: staging-manager',
+        '- restoreExecutor: platform-team',
+        '- auditLogLocation: cloudtrail://staging-backup-audit',
+        '- incidentEscalation: platform-oncall',
+      ].join('\n'),
+    );
+
+    const res = runNodeScript('check-backup-s3-decision-checklist.mjs', [
+      `--file=${checklistPath}`,
+    ]);
+    assert.equal(res.status, 0, `${res.stderr}\n${res.stdout}`);
+    assert.match(String(res.stdout), /status: pass/);
+  });
+});
+
 test('record-backup-s3-readiness: writes a report from an existing log file', () => {
   withTempDir((dir) => {
     const logPath = path.join(dir, 'backup-s3-readiness.log');

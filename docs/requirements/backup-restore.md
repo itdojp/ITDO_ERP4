@@ -131,6 +131,7 @@
 - IAM権限: 書き込み専用/読み取り専用のロール分離
 - バケットポリシー: 退避先のアクセス制限（IP制限やVPCエンドポイント）
 - 決定シート: `docs/ops/backup-s3-decision-checklist.md` を更新し、確定値と責任分界を明文化する
+  - 入力妥当性は `make backup-s3-decision-check` で検証する
 
 #### S3 事前検証コマンド
 
