@@ -188,3 +188,4 @@ node scripts/report-action-policy-phase3-readiness.mjs --format=text
   - fallbackレポートで高リスクキー 0
   - 主要業務の route preset / send preset（send + evidence gate）回帰テスト（invoice / purchase_order / expense / vendor_invoice / estimate / time / leave / approval）が green
   - required actions ギャップレポートで static callsite の missing 0
+  - 試験運用時は `make action-policy-phase3-readiness-record` で readiness / fallback 集計の証跡を `docs/test-results/` に保存する

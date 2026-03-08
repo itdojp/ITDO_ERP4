@@ -1,4 +1,4 @@
-.PHONY: lint format-check typecheck build test e2e ui-evidence mobile-regression-log frontend-dev-api podman-smoke pr-comments audit docs-image-links-check design-system-package-check eslint10-readiness-check dependabot-alerts-check dependabot-token-readiness-check backup-s3-readiness-check backup-s3-readiness-record po-migration-input-readiness-check po-migration-record po-migration-run-and-record av-staging-evidence av-staging-gate av-staging-readiness action-policy-fallback-report action-policy-fallback-report-json action-policy-phase3-readiness action-policy-phase3-readiness-json
+.PHONY: lint format-check typecheck build test e2e ui-evidence mobile-regression-log frontend-dev-api podman-smoke pr-comments audit docs-image-links-check design-system-package-check eslint10-readiness-check dependabot-alerts-check dependabot-token-readiness-check backup-s3-readiness-check backup-s3-readiness-record po-migration-input-readiness-check po-migration-record po-migration-run-and-record av-staging-evidence av-staging-gate av-staging-readiness action-policy-fallback-report action-policy-fallback-report-json action-policy-phase3-readiness action-policy-phase3-readiness-json action-policy-phase3-readiness-record
 
 lint:
 	npm run lint --prefix packages/backend
@@ -92,3 +92,6 @@ action-policy-phase3-readiness:
 
 action-policy-phase3-readiness-json:
 	node scripts/report-action-policy-phase3-readiness.mjs --format=json
+
+action-policy-phase3-readiness-record:
+	./scripts/run-and-record-action-policy-phase3-readiness.sh

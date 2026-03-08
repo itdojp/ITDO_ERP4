@@ -33,6 +33,7 @@
 - [ ] `make action-policy-phase3-readiness` / `make action-policy-phase3-readiness-json` を実行し、`ready: yes` かつ blockers が空であることを確認する
   - 手順: `docs/manual/agent-write-guardrails-guide.md` の fail-safe 運用手順に従う
   - 前提: `npm run build --prefix packages/backend` 実行済み、`DATABASE_URL` 設定済み
+  - 記録: `make action-policy-phase3-readiness-record` で `docs/test-results/YYYY-MM-DD-action-policy-phase3-readiness-rN.md` を生成できる
   - 最低確認対象: `invoice:send`, `invoice:mark_paid`, `purchase_order:send`, `expense:submit`, `expense:mark_paid`, `vendor_invoice:submit`, `vendor_invoice:update_lines`, `vendor_invoice:update_allocations`, `*:approve`, `*:reject`
 - [ ] `phase2_core` -> `phase3_strict` の切替後も主要操作が継続し、`action_policy_fallback_allowed` の新規発生がないことを確認する
 - [ ] `make action-policy-fallback-report` / `make action-policy-fallback-report-json` で fallback 集計を確認し、`flowType:actionKey:targetTable` ベースで未収束キーが 0 件であることを確認する
