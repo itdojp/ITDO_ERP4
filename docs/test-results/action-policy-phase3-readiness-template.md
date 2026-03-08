@@ -17,6 +17,8 @@ make action-policy-fallback-report-json
 ```bash
 # 推奨: 観測結果と docs/test-results 記録を一括生成
 make action-policy-phase3-readiness-record
+# readiness 記録から cutover 記録まで続けて開始する場合
+make action-policy-phase3-trial-record
 ```
 
 ## 前提
