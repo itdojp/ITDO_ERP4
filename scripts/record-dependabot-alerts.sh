@@ -211,10 +211,10 @@ write_report() {
 - upstreamUpdated: ${upstream_updated:-unknown}
 
 ## ログ
-\```text
-$(cat "$log_file")
-\```
 EOF2
+  printf '%s\n' '```text' >>"$output_file"
+  cat "$log_file" >>"$output_file"
+  printf '%s\n' '```' >>"$output_file"
 }
 
 main() {

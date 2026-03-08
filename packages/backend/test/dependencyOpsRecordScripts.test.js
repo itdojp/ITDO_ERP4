@@ -86,6 +86,8 @@ test('record-eslint10-readiness: writes a report from an existing log file', () 
     assert.match(report, /summaryStatus: fail/);
     assert.match(report, /ready: false/);
     assert.match(report, /reactPluginSupportsEslint10: false/);
+    assert.match(report, /## ログ\n```text\n/);
+    assert.doesNotMatch(report, /\\```text/);
   });
 });
 
@@ -229,6 +231,8 @@ test('record-dependabot-alerts: writes a report from an existing log file', () =
     assert.match(report, /summaryStatus: pass/);
     assert.match(report, /actionRequired: false/);
     assert.match(report, /qsPatched: true/);
+    assert.match(report, /## ログ\n```text\n/);
+    assert.doesNotMatch(report, /\\```text/);
   });
 });
 

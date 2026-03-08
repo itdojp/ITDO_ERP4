@@ -87,9 +87,9 @@
 - 補助:
   - `make e2e`（ローカルE2E）
   - `make dependabot-alerts-check`
-  - `make dependabot-alerts-record`
+  - `RUN_CHECK=1 make dependabot-alerts-record`（単独実行時は既存ログまたは `LOG_FILE` 指定が必要）
   - `make eslint10-readiness-check`
-  - `make eslint10-readiness-record`
+  - `RUN_CHECK=1 make eslint10-readiness-record`（単独実行時は既存ログまたは `LOG_FILE` 指定が必要）
   - `make pr-comments PR=<番号>`
 
 ## Artifact 方針（主要）
