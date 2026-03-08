@@ -96,8 +96,8 @@
 
 ## 関連画面（証跡）
 
-![ルームチャット（案件ルーム/全社/部門/private_group/DM）](../test-results/2026-02-05-frontend-e2e-r1/14-room-chat.png)
+![ルームチャット（案件ルーム/全社/部門/private_group/DM）](../test-results/2026-03-09-frontend-e2e-r1/14-room-chat.png)
 
-![監査閲覧](../test-results/2026-02-05-frontend-e2e-r1/24-chat-break-glass.png)
+![監査閲覧](../test-results/2026-03-09-frontend-e2e-r1/24-chat-break-glass.png)
 
-![管理設定](../test-results/2026-02-05-frontend-e2e-r1/11-admin-settings.png)
+![管理設定](../test-results/2026-03-09-frontend-e2e-r1/11-admin-settings.png)

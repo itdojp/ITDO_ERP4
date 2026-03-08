@@ -1,16 +1,20 @@
 # E2E（Playwright）と証跡（画面キャプチャ）取得手順
 
 ## 目的
+
 - 操作を伴うUIテストを自動化し、証跡（画面キャプチャ）を再現可能にする
 
 ## 参照
+
 - E2E 実行スクリプト: [scripts/e2e-frontend.sh](../../scripts/e2e-frontend.sh)
 - UI証跡（簡易手順）: [ui-evidence-quickstart](ui-evidence-quickstart.md)
 - 証跡保存先: [docs/test-results](../test-results/)
 - UI マニュアル（スクショ参照）: [ui-manual-user](ui-manual-user.md) / [ui-manual-admin](ui-manual-admin.md)
 
 ## 実行モード
+
 ### core / extended / full
+
 - `E2E_SCOPE=core`: PRの必須導線（短時間）
 - `E2E_SCOPE=extended`: 追加導線（任意）
 - `E2E_SCOPE=full`: 全体（main/schedule向け）
@@ -18,34 +22,41 @@
 CI では `E2E_CAPTURE=0`（証跡なし）で実行します。
 
 ## ローカルでの実行（証跡あり）
+
 ```bash
 # DBは既定で Podman を利用（E2E_DB_MODE=podman）
 E2E_CAPTURE=1 E2E_SCOPE=core ./scripts/e2e-frontend.sh
 ```
 
 簡易手順（UI証跡用）:
+
 ```bash
 ./scripts/e2e-ui-evidence.sh
 ```
 
 Makefile を使う場合:
+
 ```bash
 make ui-evidence
 ```
 
 モバイル回帰証跡ファイル（テンプレート）を作成する場合:
+
 ```bash
 make mobile-regression-log
 ```
 
 補足:
+
 - Podman DB のポート（既定: 55433）が使用中、または Podman の既存コンテナにより予約されている場合、`E2E_PODMAN_HOST_PORT` 未指定なら空きポートへ自動フォールバックします。
 - ポートを固定したい場合は `E2E_PODMAN_HOST_PORT=55435` のように明示指定します（競合時はエラーで停止）。
 
 保存先（既定）:
+
 - `docs/test-results/<YYYY-MM-DD>-frontend-e2e-rN/`（`scripts/e2e-ui-evidence.sh` 実行時）
 
 `scripts/e2e-ui-evidence.sh` の既定取得対象:
+
 - `frontend smoke core`
 - `frontend leave submit validation`
 - `frontend smoke workflow evidence chat references`
@@ -57,65 +68,90 @@ make mobile-regression-log
 - `pwa service worker cache refresh`
 
 任意で保存先を固定する場合:
+
 ```bash
 E2E_CAPTURE=1 E2E_SCOPE=core \
-E2E_EVIDENCE_DIR="$PWD/docs/test-results/2026-02-05-frontend-e2e-r1" \
+E2E_EVIDENCE_DIR="$PWD/docs/test-results/<YYYY-MM-DD>-frontend-e2e-rN" \
+./scripts/e2e-frontend.sh
+```
+
+UI マニュアルの desktop 画面を一括更新する場合は、既定の core subset に加えて以下の extended smoke を同じ `E2E_EVIDENCE_DIR` に追記します。
+
+```bash
+E2E_CAPTURE=1 \
+E2E_EVIDENCE_DIR="$PWD/docs/test-results/<YYYY-MM-DD>-frontend-e2e-rN" \
+E2E_GREP="frontend smoke additional sections|frontend smoke reports masters settings|frontend smoke vendor docs create|frontend smoke admin ops|frontend smoke room chat \\(private_group/dm\\)|frontend smoke room chat hr analytics" \
 ./scripts/e2e-frontend.sh
 ```
 
 ## 失敗ケースだけ再実行（E2E_GREP）
+
 例: vendor docs の smoke（extended）のみ再実行
+
 ```bash
 E2E_GREP="vendor docs create" E2E_CAPTURE=0 ./scripts/e2e-frontend.sh
 ```
 
 ## DB を direct で使う（E2E_DB_MODE=direct）
+
 `psql` が利用できるローカルDBがある場合:
+
 ```bash
 E2E_DB_MODE=direct DATABASE_URL="postgresql://..." \
 E2E_CAPTURE=0 E2E_SCOPE=core ./scripts/e2e-frontend.sh
 ```
 
 ## Playwright install をスキップ（任意）
+
 Playwright のブラウザが既にインストール済みであれば:
+
 ```bash
 E2E_SKIP_PLAYWRIGHT_INSTALL=1 E2E_CAPTURE=0 E2E_SCOPE=core ./scripts/e2e-frontend.sh
 ```
 
 ## タイムアウトを調整する（任意）
+
 CIやローカル環境が重い場合、E2E の UI 操作系の待ち時間（ms）を調整できます。
+
 ```bash
 E2E_ACTION_TIMEOUT_MS=30000 E2E_CAPTURE=0 E2E_SCOPE=core ./scripts/e2e-frontend.sh
 ```
 
 バックエンド/フロントの起動待機時間（秒）を調整する場合:
+
 ```bash
 E2E_SERVICE_READY_TIMEOUT_SEC=120 E2E_SERVICE_READY_INTERVAL_SEC=2 \
 E2E_CAPTURE=0 E2E_SCOPE=core ./scripts/e2e-frontend.sh
 ```
 
 補足:
+
 - `E2E_SERVICE_READY_INTERVAL_SEC` は `E2E_SERVICE_READY_TIMEOUT_SEC` 以下を指定してください。
 
 ## 失敗時の診断（最小）
+
 - 起動失敗やAPI例外は `tmp/e2e-backend.log` / `tmp/e2e-frontend.log` を確認
 - 該当ケースだけ再実行する場合は `E2E_GREP` で対象を絞る
 - 画面の証跡が必要な場合は `E2E_CAPTURE=1` で再実行し、`docs/test-results/` の画像を確認
 - API側の切り分けは `scripts/smoke-backend.sh` を併用（任意）
 
 ## 差分比較（最小）
+
 - 画面キャプチャは Git の差分で追跡する（更新時は PR で履歴を残す）
 - 重要導線（Dashboard/日報/工数/請求/承認/チャット）を優先して更新する
 
 ## PR記載ルール（UI変更時）
+
 - PR本文に、証跡ファイル（`docs/test-results/YYYY-MM-DD-*.md`）と証跡ディレクトリ（`docs/test-results/YYYY-MM-DD-*/`）のリンクを記載する
 - モバイル回帰を含む場合は `docs/test-results/mobile-regression-template.md` を基に記録し、対象画面（Invoices/VendorDocuments/AuditLogs/PeriodLocks/AdminJobs）の結果を添付する
 - モバイル回帰の記録ファイル作成は `./scripts/new-mobile-regression-log.sh`（または `make mobile-regression-log`）で自動化できる
 
 証跡更新要否の判断:
+
 - 更新必須: 画面の見た目/導線/文言の変更、新規UI追加、主要導線の挙動変更
 - 更新不要: UIに影響しない実装（例: API内部のみ、テストコードのみ）
 - 更新不要の場合も、PR本文に理由を明記する
 
 補足:
+
 - PR完了条件は `docs/quality/definition-of-done.md` の「UI変更PRにおける証跡更新の判断」を参照
