@@ -34,6 +34,11 @@
 
 - ISSUE #1299 初回実行証跡（Phase 1-3）: docs/test-results/2026-03-03-issue-1299-phase1.md
 
+### 2026-03-08
+
+- Dependabot alerts 監視記録 r1: docs/test-results/2026-03-08-dependabot-alerts-r1.md
+- ESLint10 readiness 記録 r1: docs/test-results/2026-03-08-eslint10-readiness-r1.md
+
 ### 2026-02-06
 
 - チャット添付AV（ClamAV/clamd）再検証 r2: docs/test-results/2026-02-06-chat-attachments-av-r2.md
