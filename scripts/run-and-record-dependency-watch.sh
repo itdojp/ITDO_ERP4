@@ -141,6 +141,7 @@ run_optional_token_check() {
     return 0
   fi
 
+  require_file "$TOKEN_CHECK_SCRIPT" "token check script"
   log "running token readiness check"
   STRICT="$TOKEN_STRICT" "$TOKEN_CHECK_SCRIPT"
 }
@@ -170,7 +171,6 @@ main() {
   ESLINT_LOG_DIR="$(resolve_absolute_path "$ESLINT_LOG_DIR")"
   mkdir -p "$OUT_DIR"
 
-  require_file "$TOKEN_CHECK_SCRIPT" "token check script"
   require_file "$DEPENDABOT_RECORD_SCRIPT" "dependabot record script"
   require_file "$ESLINT_RECORD_SCRIPT" "eslint record script"
 
@@ -209,11 +209,20 @@ main() {
 
   local dependabot_output="$OUT_DIR/${DATE_STAMP}-dependabot-alerts-${resolved_run_label}.md"
   local eslint_output="$OUT_DIR/${DATE_STAMP}-eslint10-readiness-${resolved_run_label}.md"
-  require_file "$dependabot_output" "generated dependabot record"
-  require_file "$eslint_output" "generated eslint record"
+  if [[ "$dependabot_status" == "0" && "$eslint_status" == "0" ]]; then
+    require_file "$dependabot_output" "generated dependabot record"
+    require_file "$eslint_output" "generated eslint record"
 
-  log "paired dependabot record: $dependabot_output"
-  log "paired eslint record: $eslint_output"
+    log "paired dependabot record: $dependabot_output"
+    log "paired eslint record: $eslint_output"
+  else
+    if [[ "$dependabot_status" != "0" && ! -f "$dependabot_output" ]]; then
+      log "dependabot recorder exited with status $dependabot_status and did not produce expected output: $dependabot_output"
+    fi
+    if [[ "$eslint_status" != "0" && ! -f "$eslint_output" ]]; then
+      log "eslint recorder exited with status $eslint_status and did not produce expected output: $eslint_output"
+    fi
+  fi
 
   if [[ "$dependabot_status" != "0" ]]; then
     return "$dependabot_status"

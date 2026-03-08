@@ -495,6 +495,54 @@ test('run-and-record-dependency-watch: token check failure prevents child script
   });
 });
 
+test('run-and-record-dependency-watch: skips token script validation when RUN_TOKEN_CHECK=0', () => {
+  withTempDir((dir) => {
+    const dependabotRecorder = path.join(dir, 'dependabot-record.sh');
+    const eslintRecorder = path.join(dir, 'eslint-record.sh');
+    const outDir = path.join(dir, 'out');
+
+    writeFileSync(
+      dependabotRecorder,
+      [
+        '#!/usr/bin/env bash',
+        'set -euo pipefail',
+        'mkdir -p "$OUT_DIR"',
+        'echo "# dependabot" > "$OUT_DIR/${DATE_STAMP}-dependabot-alerts-${RUN_LABEL}.md"',
+      ].join('\n'),
+    );
+    writeFileSync(
+      eslintRecorder,
+      [
+        '#!/usr/bin/env bash',
+        'set -euo pipefail',
+        'mkdir -p "$OUT_DIR"',
+        'echo "# eslint" > "$OUT_DIR/${DATE_STAMP}-eslint10-readiness-${RUN_LABEL}.md"',
+      ].join('\n'),
+    );
+    chmodSync(dependabotRecorder, 0o755);
+    chmodSync(eslintRecorder, 0o755);
+
+    const res = runScript('run-and-record-dependency-watch.sh', {
+      OUT_DIR: outDir,
+      DATE_STAMP: '2026-03-08',
+      RUN_LABEL: 'ops-run',
+      RUN_TOKEN_CHECK: '0',
+      TOKEN_CHECK_SCRIPT: path.join(dir, 'missing-token-check.sh'),
+      DEPENDABOT_RECORD_SCRIPT: dependabotRecorder,
+      ESLINT_RECORD_SCRIPT: eslintRecorder,
+    });
+    assert.equal(res.status, 0, `${res.stderr}\n${res.stdout}`);
+    assert.equal(
+      existsSync(path.join(outDir, '2026-03-08-dependabot-alerts-ops-run.md')),
+      true,
+    );
+    assert.equal(
+      existsSync(path.join(outDir, '2026-03-08-eslint10-readiness-ops-run.md')),
+      true,
+    );
+  });
+});
+
 test('run-and-record-dependency-watch: keeps eslint record generation even when dependabot record fails', () => {
   withTempDir((dir) => {
     const dependabotRecorder = path.join(dir, 'dependabot-record.sh');
@@ -534,6 +582,47 @@ test('run-and-record-dependency-watch: keeps eslint record generation even when 
     assert.equal(
       existsSync(path.join(outDir, '2026-03-08-dependabot-alerts-ops-run.md')),
       true,
+    );
+    assert.equal(
+      existsSync(path.join(outDir, '2026-03-08-eslint10-readiness-ops-run.md')),
+      true,
+    );
+  });
+});
+
+test('run-and-record-dependency-watch: preserves child exit code when output is missing', () => {
+  withTempDir((dir) => {
+    const dependabotRecorder = path.join(dir, 'dependabot-record.sh');
+    const eslintRecorder = path.join(dir, 'eslint-record.sh');
+    const outDir = path.join(dir, 'out');
+
+    writeFileSync(
+      dependabotRecorder,
+      ['#!/usr/bin/env bash', 'set -euo pipefail', 'exit 7'].join('\n'),
+    );
+    writeFileSync(
+      eslintRecorder,
+      [
+        '#!/usr/bin/env bash',
+        'set -euo pipefail',
+        'mkdir -p "$OUT_DIR"',
+        'echo "# eslint" > "$OUT_DIR/${DATE_STAMP}-eslint10-readiness-${RUN_LABEL}.md"',
+      ].join('\n'),
+    );
+    chmodSync(dependabotRecorder, 0o755);
+    chmodSync(eslintRecorder, 0o755);
+
+    const res = runScript('run-and-record-dependency-watch.sh', {
+      OUT_DIR: outDir,
+      DATE_STAMP: '2026-03-08',
+      RUN_LABEL: 'ops-run',
+      DEPENDABOT_RECORD_SCRIPT: dependabotRecorder,
+      ESLINT_RECORD_SCRIPT: eslintRecorder,
+    });
+    assert.equal(res.status, 7);
+    assert.match(
+      String(res.stdout),
+      /dependabot recorder exited with status 7 and did not produce expected output/,
     );
     assert.equal(
       existsSync(path.join(outDir, '2026-03-08-eslint10-readiness-ops-run.md')),
