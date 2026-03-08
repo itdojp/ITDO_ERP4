@@ -8,6 +8,9 @@
 ## 実行コマンド
 
 ```bash
+make action-policy-callsites-report
+make action-policy-required-action-gaps
+make action-policy-required-action-gaps-json
 make action-policy-phase3-readiness
 make action-policy-phase3-readiness-json
 make action-policy-fallback-report
@@ -23,12 +26,13 @@ make action-policy-phase3-trial-record
 
 ## 前提
 
-- `npm run build --prefix packages/backend` 実行済み
-- `DATABASE_URL` が対象環境の監査ログを参照できる値
+- `make action-policy-phase3-readiness*` / `make action-policy-fallback-report*` を実行する前に `npm run build --prefix packages/backend` 実行済み
+- `make action-policy-phase3-readiness*` / `make action-policy-fallback-report*` を実行する前に `DATABASE_URL` が対象環境の監査ログを参照できる値
 - 観測窓（既定は直近24時間）を必要に応じて明示指定
 
 ## 結果サマリ
 
+- callsites:
 - ready:
 - from/to:
 - missing_static_callsites:

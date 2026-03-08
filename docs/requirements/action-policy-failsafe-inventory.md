@@ -1,6 +1,6 @@
 # ActionPolicy fail-safe 移行 棚卸（Issue #1312）
 
-更新日: 2026-03-06  
+更新日: 2026-03-08
 関連Issue: #1312
 
 ## 1. 目的
@@ -13,7 +13,7 @@
 ### 2.1 呼び出し箇所レポート
 
 ```bash
-node scripts/report-action-policy-callsites.mjs --format=text
+make action-policy-callsites-report
 ```
 
 - 取得対象: `packages/backend/src/routes/**/*.ts`
@@ -25,7 +25,7 @@ node scripts/report-action-policy-callsites.mjs --format=text
 ### 2.2 fallback監査レポート
 
 ```bash
-node scripts/report-action-policy-fallback-allowed.mjs --format=text
+make action-policy-fallback-report
 ```
 
 - 監査ログ `action_policy_fallback_allowed` の発生キーを集計
@@ -34,17 +34,17 @@ node scripts/report-action-policy-fallback-allowed.mjs --format=text
 ### 2.3 required actions ギャップレポート
 
 ```bash
-node scripts/report-action-policy-required-action-gaps.mjs --format=text
+make action-policy-required-action-gaps
 ```
 
 - `policyEnforcementPreset.ts` の `PHASE2_CORE_ACTION_POLICY_REQUIRED_ACTIONS` を読み取り
 - static callsite と required actions の差分を検出
-- dynamic callsite（例: `instance.flowType/body.action`）を別枠で可視化
+- 現在は `approvalRules.ts` の承認アクションも `*:approve` / `*:reject` に静的展開しており、`dynamic_callsites: 0`
 
 ### 2.4 phase3 readiness レポート
 
 ```bash
-node scripts/report-action-policy-phase3-readiness.mjs --format=text
+make action-policy-phase3-readiness
 ```
 
 - required actions ギャップと fallback 集計を 1 回で確認する
@@ -53,9 +53,9 @@ node scripts/report-action-policy-phase3-readiness.mjs --format=text
 - 既定観測窓は直近 24 時間。切替判定では必要に応じて `--from/--to` を明示する
 - `phase3_strict` 切替前の go/no-go 判定に使う
 
-## 3. 呼び出し箇所（2026-03-06 時点）
+## 3. 呼び出し箇所（2026-03-08 時点）
 
-合計 19 callsites（routeのみ）。
+合計 20 callsites（routeのみ）。
 
 ### 3.1 高リスク（fallback残存不可）
 
@@ -63,7 +63,7 @@ node scripts/report-action-policy-phase3-readiness.mjs --format=text
 - `purchase_order:submit`, `purchase_order:send`
 - `expense:submit`, `expense:mark_paid`, `expense:unmark_paid`
 - `vendor_invoice:update_allocations`, `vendor_invoice:update_lines`, `vendor_invoice:link_po`, `vendor_invoice:unlink_po`, `vendor_invoice:submit`
-- `*:approve`, `*:reject`（`approvalRules.ts` は `instance.flowType` / `body.action` の動的評価）
+- `*:approve`, `*:reject`
 
 ### 3.2 中リスク（移行期間に限定してfallback許可を許容）
 
@@ -75,27 +75,28 @@ node scripts/report-action-policy-phase3-readiness.mjs --format=text
 
 ### 3.3 route callsite 一覧（script 出力を整理）
 
-| flowType            | actionKey            | targetTable          | risk   | file                                                |
-| ------------------- | -------------------- | -------------------- | ------ | --------------------------------------------------- |
-| `estimate`          | `send`               | `estimates`          | medium | `packages/backend/src/routes/send.ts:377`           |
-| `estimate`          | `submit`             | `estimates`          | medium | `packages/backend/src/routes/estimates.ts:138`      |
-| `expense`           | `mark_paid`          | `expenses`           | high   | `packages/backend/src/routes/expenses.ts:1185`      |
-| `expense`           | `submit`             | `expenses`           | high   | `packages/backend/src/routes/expenses.ts:1023`      |
-| `expense`           | `unmark_paid`        | `expenses`           | high   | `packages/backend/src/routes/expenses.ts:1342`      |
-| `instance.flowType` | `body.action`        | `approval_instances` | high   | `packages/backend/src/routes/approvalRules.ts:790`  |
-| `invoice`           | `mark_paid`          | `invoices`           | high   | `packages/backend/src/routes/invoices.ts:421`       |
-| `invoice`           | `send`               | `invoices`           | high   | `packages/backend/src/routes/send.ts:620`           |
-| `invoice`           | `submit`             | `invoices`           | high   | `packages/backend/src/routes/invoices.ts:525`       |
-| `leave`             | `submit`             | `leave_requests`     | medium | `packages/backend/src/routes/leave.ts:739`          |
-| `purchase_order`    | `send`               | `purchase_orders`    | high   | `packages/backend/src/routes/send.ts:863`           |
-| `purchase_order`    | `submit`             | `purchase_orders`    | high   | `packages/backend/src/routes/purchaseOrders.ts:112` |
-| `time`              | `edit`               | `time_entries`       | medium | `packages/backend/src/routes/timeEntries.ts:238`    |
-| `time`              | `submit`             | `time_entries`       | medium | `packages/backend/src/routes/timeEntries.ts:430`    |
-| `vendor_invoice`    | `link_po`            | `vendor_invoices`    | high   | `packages/backend/src/routes/vendorDocs.ts:1252`    |
-| `vendor_invoice`    | `submit`             | `vendor_invoices`    | high   | `packages/backend/src/routes/vendorDocs.ts:1544`    |
-| `vendor_invoice`    | `unlink_po`          | `vendor_invoices`    | high   | `packages/backend/src/routes/vendorDocs.ts:1420`    |
-| `vendor_invoice`    | `update_allocations` | `vendor_invoices`    | high   | `packages/backend/src/routes/vendorDocs.ts:435`     |
-| `vendor_invoice`    | `update_lines`       | `vendor_invoices`    | high   | `packages/backend/src/routes/vendorDocs.ts:789`     |
+| flowType         | actionKey            | targetTable          | risk   | file                                                |
+| ---------------- | -------------------- | -------------------- | ------ | --------------------------------------------------- |
+| `estimate`       | `send`               | `estimates`          | medium | `packages/backend/src/routes/send.ts:377`           |
+| `estimate`       | `submit`             | `estimates`          | medium | `packages/backend/src/routes/estimates.ts:138`      |
+| `expense`        | `mark_paid`          | `expenses`           | high   | `packages/backend/src/routes/expenses.ts:1185`      |
+| `expense`        | `submit`             | `expenses`           | high   | `packages/backend/src/routes/expenses.ts:1023`      |
+| `expense`        | `unmark_paid`        | `expenses`           | high   | `packages/backend/src/routes/expenses.ts:1342`      |
+| `*`              | `approve`            | `approval_instances` | high   | `packages/backend/src/routes/approvalRules.ts:791`  |
+| `*`              | `reject`             | `approval_instances` | high   | `packages/backend/src/routes/approvalRules.ts:791`  |
+| `invoice`        | `mark_paid`          | `invoices`           | high   | `packages/backend/src/routes/invoices.ts:421`       |
+| `invoice`        | `send`               | `invoices`           | high   | `packages/backend/src/routes/send.ts:620`           |
+| `invoice`        | `submit`             | `invoices`           | high   | `packages/backend/src/routes/invoices.ts:525`       |
+| `leave`          | `submit`             | `leave_requests`     | medium | `packages/backend/src/routes/leave.ts:739`          |
+| `purchase_order` | `send`               | `purchase_orders`    | high   | `packages/backend/src/routes/send.ts:863`           |
+| `purchase_order` | `submit`             | `purchase_orders`    | high   | `packages/backend/src/routes/purchaseOrders.ts:112` |
+| `time`           | `edit`               | `time_entries`       | medium | `packages/backend/src/routes/timeEntries.ts:238`    |
+| `time`           | `submit`             | `time_entries`       | medium | `packages/backend/src/routes/timeEntries.ts:430`    |
+| `vendor_invoice` | `link_po`            | `vendor_invoices`    | high   | `packages/backend/src/routes/vendorDocs.ts:1252`    |
+| `vendor_invoice` | `submit`             | `vendor_invoices`    | high   | `packages/backend/src/routes/vendorDocs.ts:1544`    |
+| `vendor_invoice` | `unlink_po`          | `vendor_invoices`    | high   | `packages/backend/src/routes/vendorDocs.ts:1420`    |
+| `vendor_invoice` | `update_allocations` | `vendor_invoices`    | high   | `packages/backend/src/routes/vendorDocs.ts:435`     |
+| `vendor_invoice` | `update_lines`       | `vendor_invoices`    | high   | `packages/backend/src/routes/vendorDocs.ts:789`     |
 
 ## 4. 最小ポリシーセット（現行）
 
