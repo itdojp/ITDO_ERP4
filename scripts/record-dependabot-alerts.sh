@@ -48,6 +48,18 @@ resolve_absolute_path() {
   fi
 }
 
+format_source_path() {
+  local input="$1"
+  case "$input" in
+    "$ROOT_DIR"/*)
+      printf '%s\n' "${input#"$ROOT_DIR"/}"
+      ;;
+    *)
+      printf '%s\n' "$input"
+      ;;
+  esac
+}
+
 validate_binary_flag() {
   local name="$1"
   local value="${!name}"
@@ -146,6 +158,8 @@ extract_scalar() {
 write_report() {
   local log_file="$1"
   local output_file="$2"
+  local source_log
+  source_log="$(format_source_path "$log_file")"
 
   local action_required summary_status check_exit executed_at branch_name commit_sha
   action_required="$(extract_scalar "$log_file" 'actionRequired')"
@@ -188,7 +202,7 @@ write_report() {
 - executedAt: ${executed_at}
 - branch: \`${branch_name}\`
 - commit: \`${commit_sha}\`
-- sourceLog: \`${log_file}\`
+- sourceLog: \`${source_log}\`
 - summaryStatus: ${summary_status}
 - actionRequired: ${action_required:-unknown}
 - checkExitCode: ${check_exit}

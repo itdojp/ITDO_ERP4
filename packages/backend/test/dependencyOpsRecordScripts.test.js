@@ -41,6 +41,17 @@ function withTempDir(fn) {
   }
 }
 
+function withRepoTempDir(fn) {
+  const baseDir = path.join(ROOT_DIR, 'tmp');
+  mkdirSync(baseDir, { recursive: true });
+  const dir = mkdtempSync(path.join(baseDir, 'erp4-ops-record-'));
+  try {
+    return fn(dir);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
 test('record-eslint10-readiness: writes a report from an existing log file', () => {
   withTempDir((dir) => {
     const logPath = path.join(dir, 'eslint10-readiness.log');
@@ -88,6 +99,33 @@ test('record-eslint10-readiness: writes a report from an existing log file', () 
     assert.match(report, /reactPluginSupportsEslint10: false/);
     assert.match(report, /## ログ\n```text\n/);
     assert.doesNotMatch(report, /\\```text/);
+  });
+});
+
+test('record-eslint10-readiness: writes repo-relative sourceLog for logs under ROOT_DIR', () => {
+  withRepoTempDir((dir) => {
+    const logPath = path.join(dir, 'eslint10-readiness.log');
+    const outDir = path.join(dir, 'out');
+    writeFileSync(logPath, 'ready: true\n');
+
+    const res = runScript('record-eslint10-readiness.sh', {
+      LOG_FILE: logPath,
+      OUT_DIR: outDir,
+      DATE_STAMP: '2026-03-08',
+      RUN_LABEL: 'r1',
+    });
+    assert.equal(res.status, 0, `${res.stderr}\n${res.stdout}`);
+
+    const report = readFileSync(
+      path.join(outDir, '2026-03-08-eslint10-readiness-r1.md'),
+      'utf8',
+    );
+    assert.equal(
+      report.includes(
+        `- sourceLog: \`tmp/${path.basename(dir)}/eslint10-readiness.log\``,
+      ),
+      true,
+    );
   });
 });
 
@@ -233,6 +271,33 @@ test('record-dependabot-alerts: writes a report from an existing log file', () =
     assert.match(report, /qsPatched: true/);
     assert.match(report, /## ログ\n```text\n/);
     assert.doesNotMatch(report, /\\```text/);
+  });
+});
+
+test('record-dependabot-alerts: writes repo-relative sourceLog for logs under ROOT_DIR', () => {
+  withRepoTempDir((dir) => {
+    const logPath = path.join(dir, 'dependabot-alerts.log');
+    const outDir = path.join(dir, 'out');
+    writeFileSync(logPath, 'actionRequired: false\n');
+
+    const res = runScript('record-dependabot-alerts.sh', {
+      LOG_FILE: logPath,
+      OUT_DIR: outDir,
+      DATE_STAMP: '2026-03-08',
+      RUN_LABEL: 'r1',
+    });
+    assert.equal(res.status, 0, `${res.stderr}\n${res.stdout}`);
+
+    const report = readFileSync(
+      path.join(outDir, '2026-03-08-dependabot-alerts-r1.md'),
+      'utf8',
+    );
+    assert.equal(
+      report.includes(
+        `- sourceLog: \`tmp/${path.basename(dir)}/dependabot-alerts.log\``,
+      ),
+      true,
+    );
   });
 });
 
