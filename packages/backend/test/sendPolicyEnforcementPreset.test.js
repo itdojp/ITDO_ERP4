@@ -92,16 +92,22 @@ function approvalInstanceApproved() {
   };
 }
 
-test('POST /invoices/:id/send: phase2_core preset denies when policy is missing', async () => {
-  await withEnv(
+function withSendPolicyEnv(preset, fn) {
+  return withEnv(
     {
       DATABASE_URL: process.env.DATABASE_URL || MIN_DATABASE_URL,
       AUTH_MODE: 'header',
-      ACTION_POLICY_ENFORCEMENT_PRESET: 'phase2_core',
+      ACTION_POLICY_ENFORCEMENT_PRESET: preset,
       ACTION_POLICY_REQUIRED_ACTIONS: '',
       APPROVAL_EVIDENCE_REQUIRED_ACTIONS: '',
     },
-    async () => {
+    fn,
+  );
+}
+
+for (const preset of ['phase2_core', 'phase3_strict']) {
+  test(`POST /invoices/:id/send: ${preset} preset denies when policy is missing`, async () => {
+    await withSendPolicyEnv(preset, async () => {
       await withPrismaStubs(
         {
           'invoice.findUnique': async () => invoiceDraft(),
@@ -123,55 +129,11 @@ test('POST /invoices/:id/send: phase2_core preset denies when policy is missing'
           }
         },
       );
-    },
-  );
-});
+    });
+  });
 
-test('POST /invoices/:id/send: preset off keeps legacy fallback behavior', async () => {
-  await withEnv(
-    {
-      DATABASE_URL: process.env.DATABASE_URL || MIN_DATABASE_URL,
-      AUTH_MODE: 'header',
-      ACTION_POLICY_ENFORCEMENT_PRESET: 'off',
-      ACTION_POLICY_REQUIRED_ACTIONS: '',
-      APPROVAL_EVIDENCE_REQUIRED_ACTIONS: '',
-    },
-    async () => {
-      await withPrismaStubs(
-        {
-          'invoice.findUnique': async () => invoiceDraft(),
-          'actionPolicy.findMany': async () => [],
-        },
-        async () => {
-          const server = await buildServer({ logger: false });
-          try {
-            const res = await server.inject({
-              method: 'POST',
-              url: '/invoices/inv-001/send?templateId=missing-template',
-              headers: adminHeaders(),
-            });
-            assert.equal(res.statusCode, 404, res.body);
-            const payload = JSON.parse(res.body);
-            assert.equal(payload?.error?.code, 'template_not_found');
-          } finally {
-            await server.close();
-          }
-        },
-      );
-    },
-  );
-});
-
-test('POST /invoices/:id/send: phase2_core requires approval+evidence after policy allow', async () => {
-  await withEnv(
-    {
-      DATABASE_URL: process.env.DATABASE_URL || MIN_DATABASE_URL,
-      AUTH_MODE: 'header',
-      ACTION_POLICY_ENFORCEMENT_PRESET: 'phase2_core',
-      ACTION_POLICY_REQUIRED_ACTIONS: '',
-      APPROVAL_EVIDENCE_REQUIRED_ACTIONS: '',
-    },
-    async () => {
+  test(`POST /invoices/:id/send: ${preset} requires approval+evidence after policy allow`, async () => {
+    await withSendPolicyEnv(preset, async () => {
       await withPrismaStubs(
         {
           'invoice.findUnique': async () => invoiceDraft(),
@@ -206,20 +168,11 @@ test('POST /invoices/:id/send: phase2_core requires approval+evidence after poli
           }
         },
       );
-    },
-  );
-});
+    });
+  });
 
-test('POST /invoices/:id/send: phase2_core returns EVIDENCE_REQUIRED when approval exists without snapshot', async () => {
-  await withEnv(
-    {
-      DATABASE_URL: process.env.DATABASE_URL || MIN_DATABASE_URL,
-      AUTH_MODE: 'header',
-      ACTION_POLICY_ENFORCEMENT_PRESET: 'phase2_core',
-      ACTION_POLICY_REQUIRED_ACTIONS: '',
-      APPROVAL_EVIDENCE_REQUIRED_ACTIONS: '',
-    },
-    async () => {
+  test(`POST /invoices/:id/send: ${preset} returns EVIDENCE_REQUIRED when approval exists without snapshot`, async () => {
+    await withSendPolicyEnv(preset, async () => {
       await withPrismaStubs(
         {
           'invoice.findUnique': async () => invoiceDraft(),
@@ -250,6 +203,41 @@ test('POST /invoices/:id/send: phase2_core returns EVIDENCE_REQUIRED when approv
             assert.equal(res.statusCode, 403, res.body);
             const payload = JSON.parse(res.body);
             assert.equal(payload?.error?.code, 'EVIDENCE_REQUIRED');
+          } finally {
+            await server.close();
+          }
+        },
+      );
+    });
+  });
+}
+
+test('POST /invoices/:id/send: preset off keeps legacy fallback behavior', async () => {
+  await withEnv(
+    {
+      DATABASE_URL: process.env.DATABASE_URL || MIN_DATABASE_URL,
+      AUTH_MODE: 'header',
+      ACTION_POLICY_ENFORCEMENT_PRESET: 'off',
+      ACTION_POLICY_REQUIRED_ACTIONS: '',
+      APPROVAL_EVIDENCE_REQUIRED_ACTIONS: '',
+    },
+    async () => {
+      await withPrismaStubs(
+        {
+          'invoice.findUnique': async () => invoiceDraft(),
+          'actionPolicy.findMany': async () => [],
+        },
+        async () => {
+          const server = await buildServer({ logger: false });
+          try {
+            const res = await server.inject({
+              method: 'POST',
+              url: '/invoices/inv-001/send?templateId=missing-template',
+              headers: adminHeaders(),
+            });
+            assert.equal(res.statusCode, 404, res.body);
+            const payload = JSON.parse(res.body);
+            assert.equal(payload?.error?.code, 'template_not_found');
           } finally {
             await server.close();
           }
@@ -303,7 +291,10 @@ test('POST /invoices/:id/send: e2e header override can enable evidence gate when
             assert.equal(res.statusCode, 403, res.body);
             const payload = JSON.parse(res.body);
             assert.equal(payload?.error?.code, 'EVIDENCE_REQUIRED');
-            assert.equal(payload?.error?.details?.approvalInstanceId, 'approval-001');
+            assert.equal(
+              payload?.error?.details?.approvalInstanceId,
+              'approval-001',
+            );
           } finally {
             await server.close();
           }
@@ -383,7 +374,10 @@ test('POST /invoices/:id/send: reason override writes action_policy_override aud
           overrideAudit.metadata._request.id.length > 0,
       );
       assert.equal(overrideAudit?.metadata?._request?.source, 'api');
-      assert.equal(overrideAudit?.metadata?._auth?.principalUserId, 'admin-user');
+      assert.equal(
+        overrideAudit?.metadata?._auth?.principalUserId,
+        'admin-user',
+      );
       assert.equal(overrideAudit?.metadata?._auth?.actorUserId, 'admin-user');
     },
   );

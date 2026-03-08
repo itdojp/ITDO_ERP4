@@ -68,15 +68,21 @@ function approvalInstanceDraft() {
   };
 }
 
-test('POST /approval-instances/:id/act approve: phase2_core preset denies when policy is missing', async () => {
-  await withEnv(
+function withApprovalPolicyEnv(preset, fn) {
+  return withEnv(
     {
       DATABASE_URL: process.env.DATABASE_URL || MIN_DATABASE_URL,
       AUTH_MODE: 'header',
-      ACTION_POLICY_ENFORCEMENT_PRESET: 'phase2_core',
+      ACTION_POLICY_ENFORCEMENT_PRESET: preset,
       ACTION_POLICY_REQUIRED_ACTIONS: '',
     },
-    async () => {
+    fn,
+  );
+}
+
+for (const preset of ['phase2_core', 'phase3_strict']) {
+  test(`POST /approval-instances/:id/act approve: ${preset} preset denies when policy is missing`, async () => {
+    await withApprovalPolicyEnv(preset, async () => {
       await withPrismaStubs(
         {
           'approvalInstance.findUnique': async () => approvalInstanceDraft(),
@@ -99,19 +105,11 @@ test('POST /approval-instances/:id/act approve: phase2_core preset denies when p
           }
         },
       );
-    },
-  );
-});
+    });
+  });
 
-test('POST /approval-instances/:id/act reject: phase2_core preset denies when policy is missing', async () => {
-  await withEnv(
-    {
-      DATABASE_URL: process.env.DATABASE_URL || MIN_DATABASE_URL,
-      AUTH_MODE: 'header',
-      ACTION_POLICY_ENFORCEMENT_PRESET: 'phase2_core',
-      ACTION_POLICY_REQUIRED_ACTIONS: '',
-    },
-    async () => {
+  test(`POST /approval-instances/:id/act reject: ${preset} preset denies when policy is missing`, async () => {
+    await withApprovalPolicyEnv(preset, async () => {
       await withPrismaStubs(
         {
           'approvalInstance.findUnique': async () => approvalInstanceDraft(),
@@ -134,19 +132,11 @@ test('POST /approval-instances/:id/act reject: phase2_core preset denies when po
           }
         },
       );
-    },
-  );
-});
+    });
+  });
 
-test('POST /approval-instances/:id/act approve: policy allow reaches act path (not ACTION_POLICY_DENIED)', async () => {
-  await withEnv(
-    {
-      DATABASE_URL: process.env.DATABASE_URL || MIN_DATABASE_URL,
-      AUTH_MODE: 'header',
-      ACTION_POLICY_ENFORCEMENT_PRESET: 'phase2_core',
-      ACTION_POLICY_REQUIRED_ACTIONS: '',
-    },
-    async () => {
+  test(`POST /approval-instances/:id/act approve: ${preset} policy allow reaches act path (not ACTION_POLICY_DENIED)`, async () => {
+    await withApprovalPolicyEnv(preset, async () => {
       const originalTransaction = prisma.$transaction;
       prisma.$transaction = async () => {
         throw new Error('mock-act-failure');
@@ -191,19 +181,11 @@ test('POST /approval-instances/:id/act approve: policy allow reaches act path (n
       } finally {
         prisma.$transaction = originalTransaction;
       }
-    },
-  );
-});
+    });
+  });
 
-test('POST /approval-instances/:id/act reject: policy allow reaches act path (not ACTION_POLICY_DENIED)', async () => {
-  await withEnv(
-    {
-      DATABASE_URL: process.env.DATABASE_URL || MIN_DATABASE_URL,
-      AUTH_MODE: 'header',
-      ACTION_POLICY_ENFORCEMENT_PRESET: 'phase2_core',
-      ACTION_POLICY_REQUIRED_ACTIONS: '',
-    },
-    async () => {
+  test(`POST /approval-instances/:id/act reject: ${preset} policy allow reaches act path (not ACTION_POLICY_DENIED)`, async () => {
+    await withApprovalPolicyEnv(preset, async () => {
       const originalTransaction = prisma.$transaction;
       prisma.$transaction = async () => {
         throw new Error('mock-act-failure');
@@ -248,9 +230,9 @@ test('POST /approval-instances/:id/act reject: policy allow reaches act path (no
       } finally {
         prisma.$transaction = originalTransaction;
       }
-    },
-  );
-});
+    });
+  });
+}
 
 test('POST /approval-instances/:id/act approve: reason required policy returns REASON_REQUIRED', async () => {
   await withEnv(
