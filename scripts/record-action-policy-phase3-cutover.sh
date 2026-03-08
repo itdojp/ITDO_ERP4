@@ -120,7 +120,7 @@ extract_scalar() {
   local key="$2"
   local value
   value="$(
-    grep -E "^- ${key}:" "$file_path" | tail -n 1 | sed "s/^- ${key}:[[:space:]]*//"
+    grep -E "^- ${key}:" "$file_path" | tail -n 1 | sed "s|^- ${key}:[[:space:]]*||"
   )"
   if [[ -z "$value" ]]; then
     printf 'unknown\n'

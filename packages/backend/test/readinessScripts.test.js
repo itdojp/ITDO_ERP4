@@ -785,6 +785,10 @@ test('record-action-policy-phase3-cutover: writes report from readiness record',
       /- sourceReadinessRecord: `.*phase3-readiness-r1\.md`/,
     );
     assert.match(report, /- ready: yes/);
+    assert.match(
+      report,
+      /- from\/to: 2026-03-07T00:00:00\.000Z -> 2026-03-08T00:00:00\.000Z/,
+    );
     assert.match(report, /- fromPreset: `phase2_core`/);
     assert.match(report, /- toPreset: `phase3_strict`/);
   });
