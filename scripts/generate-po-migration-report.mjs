@@ -1,39 +1,52 @@
 #!/usr/bin/env node
-import fs from 'node:fs';
-import path from 'node:path';
+import fs from "node:fs";
+import path from "node:path";
 
 function parseArgs(argv) {
   const args = {
-    logDir: '',
-    output: '',
+    logDir: "",
+    output: "",
     exitCode: null,
   };
   for (const arg of argv) {
-    if (arg.startsWith('--log-dir=')) {
-      args.logDir = arg.slice('--log-dir='.length);
+    if (arg.startsWith("--log-dir=")) {
+      args.logDir = arg.slice("--log-dir=".length);
       continue;
     }
-    if (arg.startsWith('--output=')) {
-      args.output = arg.slice('--output='.length);
+    if (arg.startsWith("--output=")) {
+      args.output = arg.slice("--output=".length);
       continue;
     }
-    if (arg.startsWith('--exit-code=')) {
-      const value = Number(arg.slice('--exit-code='.length));
+    if (arg.startsWith("--exit-code=")) {
+      const value = Number(arg.slice("--exit-code=".length));
       args.exitCode = Number.isFinite(value) ? value : null;
     }
   }
   if (!args.logDir) {
-    throw new Error('missing --log-dir');
+    throw new Error("missing --log-dir");
   }
   if (!args.output) {
-    throw new Error('missing --output');
+    throw new Error("missing --output");
   }
   return args;
 }
 
 function readIfExists(filePath) {
   if (!fs.existsSync(filePath)) return null;
-  return fs.readFileSync(filePath, 'utf8');
+  return fs.readFileSync(filePath, "utf8");
+}
+
+function parseKeyValueSummary(text) {
+  if (!text) return null;
+  const summary = {};
+  for (const token of text.trim().split(/\s+/)) {
+    const separator = token.indexOf("=");
+    if (separator <= 0) continue;
+    const key = token.slice(0, separator);
+    const value = token.slice(separator + 1);
+    summary[key] = value;
+  }
+  return Object.keys(summary).length ? summary : null;
 }
 
 function extractJsonBlock(text, marker) {
@@ -43,7 +56,7 @@ function extractJsonBlock(text, marker) {
   const startOffset = rest.search(/[{\[]/);
   if (startOffset < 0) return null;
   const open = rest[startOffset];
-  const close = open === '{' ? '}' : ']';
+  const close = open === "{" ? "}" : "]";
   let depth = 0;
   let inString = false;
   let escape = false;
@@ -52,7 +65,7 @@ function extractJsonBlock(text, marker) {
     if (inString) {
       if (escape) {
         escape = false;
-      } else if (ch === '\\') {
+      } else if (ch === "\\") {
         escape = true;
       } else if (ch === '"') {
         inString = false;
@@ -79,39 +92,64 @@ function extractJsonBlock(text, marker) {
   return null;
 }
 
+function parsePreflightLog(text) {
+  const summaryLine =
+    text.match(/\[po-migration-input-preflight\] SUMMARY ([^\n]+)$/m)?.[1] ||
+    null;
+  const foundScopes = Array.from(
+    text.matchAll(/\[po-migration-input-preflight\] FOUND\s+(\S+) ->/g),
+    (match) => match[1],
+  );
+  const missingScopes = Array.from(
+    text.matchAll(/\[po-migration-input-preflight\]\[WARN\] MISSING (\S+) ->/g),
+    (match) => match[1],
+  );
+  return {
+    summary: parseKeyValueSummary(summaryLine),
+    foundScopes,
+    missingScopes,
+    completed: text.includes(
+      "[po-migration-input-preflight] preflight completed",
+    ),
+    fatal:
+      text.match(/\[po-migration-input-preflight\]\[ERROR\]\s+(.+)$/m)?.[1] ||
+      null,
+  };
+}
+
 function parseLog(text) {
   return {
-    summary: extractJsonBlock(text, '[migration-po] summary:'),
-    errors: extractJsonBlock(text, '[migration-po] errors:'),
-    verifyErrors: extractJsonBlock(text, '[migration-po] verify errors:'),
-    integrityOk: text.includes('[migration-po] integrity ok'),
-    done: text.includes('[migration-po] done'),
+    summary: extractJsonBlock(text, "[migration-po] summary:"),
+    errors: extractJsonBlock(text, "[migration-po] errors:"),
+    verifyErrors: extractJsonBlock(text, "[migration-po] verify errors:"),
+    integrityOk: text.includes("[migration-po] integrity ok"),
+    done: text.includes("[migration-po] done"),
     fatal: (text.match(/\[migration-po\] fatal:\s*(.+)$/m) || [])[1] || null,
   };
 }
 
 function summarizeSummaryTable(summary) {
-  if (!summary || typeof summary !== 'object') {
-    return '- summary: 取得できませんでした';
+  if (!summary || typeof summary !== "object") {
+    return "- summary: 取得できませんでした";
   }
   const scopes = Object.entries(summary);
   if (scopes.length === 0) {
-    return '- summary: 空でした';
+    return "- summary: 空でした";
   }
   const lines = [
-    '| scope | total | created | updated |',
-    '| --- | ---: | ---: | ---: |',
+    "| scope | total | created | updated |",
+    "| --- | ---: | ---: | ---: |",
   ];
   for (const [scope, values] of scopes) {
     const row =
-      values && typeof values === 'object'
+      values && typeof values === "object"
         ? values
-        : { total: '-', created: '-', updated: '-' };
+        : { total: "-", created: "-", updated: "-" };
     lines.push(
-      `| ${scope} | ${row.total ?? '-'} | ${row.created ?? '-'} | ${row.updated ?? '-'} |`,
+      `| ${scope} | ${row.total ?? "-"} | ${row.created ?? "-"} | ${row.updated ?? "-"} |`,
     );
   }
-  return lines.join('\n');
+  return lines.join("\n");
 }
 
 function summarizeErrors(parsed) {
@@ -123,77 +161,119 @@ function summarizeErrors(parsed) {
   lines.push(`- errors(captured): ${errors.length}`);
   if (errors.length > 0) {
     lines.push(
-      `  - first: ${errors[0].scope ?? '-'} / ${errors[0].message ?? '-'}`,
+      `  - first: ${errors[0].scope ?? "-"} / ${errors[0].message ?? "-"}`,
     );
   }
   lines.push(`- verifyErrors(captured): ${verifyErrors.length}`);
   if (verifyErrors.length > 0) {
     lines.push(
-      `  - first: ${verifyErrors[0].scope ?? '-'} / ${verifyErrors[0].message ?? '-'}`,
+      `  - first: ${verifyErrors[0].scope ?? "-"} / ${verifyErrors[0].message ?? "-"}`,
     );
   }
-  lines.push(`- integrity ok marker: ${parsed.integrityOk ? 'yes' : 'no'}`);
-  lines.push(`- done marker: ${parsed.done ? 'yes' : 'no'}`);
+  lines.push(`- integrity ok marker: ${parsed.integrityOk ? "yes" : "no"}`);
+  lines.push(`- done marker: ${parsed.done ? "yes" : "no"}`);
   if (parsed.fatal) {
     lines.push(`- fatal: ${parsed.fatal}`);
   }
-  return lines.join('\n');
+  return lines.join("\n");
 }
 
 function buildSection(title, logPath, parsed, exists) {
   const lines = [`## ${title}`];
   if (!exists) {
-    lines.push('- log: なし');
-    return lines.join('\n');
+    lines.push("- log: なし");
+    return lines.join("\n");
   }
   lines.push(`- log: \`${logPath}\``);
   lines.push(summarizeErrors(parsed));
-  lines.push('');
+  lines.push("");
   lines.push(summarizeSummaryTable(parsed.summary));
-  return lines.join('\n');
+  return lines.join("\n");
+}
+
+function buildPreflightSection(logPath, parsed, exists) {
+  const lines = ["## preflight"];
+  if (!exists) {
+    lines.push("- log: なし");
+    return lines.join("\n");
+  }
+  lines.push(`- log: \`${logPath}\``);
+  if (!parsed.summary) {
+    lines.push("- summary: 取得できませんでした");
+  } else {
+    lines.push(`- status: ${parsed.summary.status ?? "unknown"}`);
+    lines.push(`- scopes: ${parsed.summary.scopes ?? "unknown"}`);
+    lines.push(`- found: ${parsed.summary.found ?? "unknown"}`);
+    lines.push(`- missing: ${parsed.summary.missing ?? "unknown"}`);
+    lines.push(`- format: ${parsed.summary.format ?? "unknown"}`);
+    lines.push(`- strict: ${parsed.summary.strict ?? "unknown"}`);
+    lines.push(`- only: ${parsed.summary.only ?? "unknown"}`);
+  }
+  lines.push(`- completed marker: ${parsed.completed ? "yes" : "no"}`);
+  if (parsed.fatal) {
+    lines.push(`- fatal: ${parsed.fatal}`);
+  }
+  lines.push(
+    `- foundScopes: ${parsed.foundScopes.length ? parsed.foundScopes.join(", ") : "(none)"}`,
+  );
+  lines.push(
+    `- missingScopes: ${parsed.missingScopes.length ? parsed.missingScopes.join(", ") : "(none)"}`,
+  );
+  return lines.join("\n");
 }
 
 function main() {
   const args = parseArgs(process.argv.slice(2));
   const logDir = path.resolve(args.logDir);
   const output = path.resolve(args.output);
-  const dryRunPath = path.join(logDir, 'dry-run.log');
-  const applyPath = path.join(logDir, 'apply.log');
-  const integrityPath = path.join(logDir, 'integrity.log');
+  const preflightPath = path.join(logDir, "preflight.log");
+  const dryRunPath = path.join(logDir, "dry-run.log");
+  const applyPath = path.join(logDir, "apply.log");
+  const integrityPath = path.join(logDir, "integrity.log");
 
+  const preflightText = readIfExists(preflightPath);
   const dryRunText = readIfExists(dryRunPath);
   const applyText = readIfExists(applyPath);
   const integrityText = readIfExists(integrityPath);
 
+  const preflightParsed = preflightText
+    ? parsePreflightLog(preflightText)
+    : null;
   const dryRunParsed = dryRunText ? parseLog(dryRunText) : null;
   const applyParsed = applyText ? parseLog(applyText) : null;
   const integrityParsed = integrityText ? parseLog(integrityText) : null;
 
   const reportLines = [
-    '# PO移行リハーサル実行レポート（自動生成）',
-    '',
+    "# PO移行リハーサル実行レポート（自動生成）",
+    "",
     `- generatedAt: ${new Date().toISOString()}`,
     `- logDir: \`${logDir}\``,
-    `- wrapperExitCode: ${args.exitCode != null ? args.exitCode : 'unknown'}`,
-    '',
-    buildSection('dry-run', dryRunPath, dryRunParsed ?? {}, !!dryRunText),
-    '',
-    buildSection('apply', applyPath, applyParsed ?? {}, !!applyText),
-    '',
+    `- wrapperExitCode: ${args.exitCode != null ? args.exitCode : "unknown"}`,
+    "",
+    buildPreflightSection(
+      preflightPath,
+      preflightParsed ?? {},
+      !!preflightText,
+    ),
+    "",
+    buildSection("dry-run", dryRunPath, dryRunParsed ?? {}, !!dryRunText),
+    "",
+    buildSection("apply", applyPath, applyParsed ?? {}, !!applyText),
+    "",
     buildSection(
-      'integrity',
+      "integrity",
       integrityPath,
       integrityParsed ?? {},
       !!integrityText,
     ),
-    '',
-    '## 次アクション（推奨）',
-    '- `docs/test-results/po-migration-rehearsal-template.md` に本レポートの結果を転記する',
-    '- errors/verifyErrors がある場合は #543 に「入力データ / マッピング / ツール」の分類で記録する',
+    "",
+    "## 次アクション（推奨）",
+    "- `docs/test-results/po-migration-rehearsal-template.md` に本レポートの結果を転記する",
+    "- errors/verifyErrors がある場合は #543 に「入力データ / マッピング / ツール」の分類で記録する",
   ];
 
   fs.mkdirSync(path.dirname(output), { recursive: true });
-  fs.writeFileSync(output, reportLines.join('\n') + '\n', 'utf8');
+  fs.writeFileSync(output, reportLines.join("\n") + "\n", "utf8");
   console.log(`[po-migration-report] wrote: ${output}`);
 }
 

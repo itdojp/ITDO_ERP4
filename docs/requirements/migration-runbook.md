@@ -3,18 +3,21 @@
 目的: Project-Open（PO）のデータを ERP4 に一方向移行する際に、**繰り返し・安全に実行**できる手順（リハーサル/本番手順の叩き台/ロールバック方針）を残す。
 
 関連ドキュメント
+
 - 入力仕様/実行オプション: `docs/requirements/migration-tool.md`
 - マッピング（ドラフト）: `docs/requirements/migration-mapping.md`
 - PoC（seed/check）: `docs/requirements/migration-poc.md`
 - バックアップ/リストア: `docs/requirements/backup-restore.md`
 
 ## 0. 前提（重要）
+
 - このRunbookは **PoC/検証環境** を想定（Podman + Postgres）。
 - **実行前に必ずバックアップ** を取る（ロールバックは基本的に「バックアップから復元」）。
 - 移行ツールは `--apply` 時に簡易整合チェックを実行し、問題がある場合は終了コードが非0になる。
 - 移行ツールは「決定的ID（legacyId→uuidv5相当）」＋ upsert なので、同じ入力で再実行しても重複しない。
 
 ## 1. 入力の準備
+
 入力ディレクトリは例として `tmp/migration/po/` を使用する。
 
 - JSON: `*.json`（配列）
@@ -23,21 +26,26 @@
 詳細は `docs/requirements/migration-tool.md` を参照。
 
 ## 2. DB（Podman）の準備
+
 `scripts/podman-poc.sh` を利用する。
 
 例: 専用コンテナで起動（ポートは適宜）
+
 ```bash
 CONTAINER_NAME=erp4-pg-po-migration HOST_PORT=55440 bash scripts/podman-poc.sh start
 CONTAINER_NAME=erp4-pg-po-migration HOST_PORT=55440 bash scripts/podman-poc.sh db-push
 ```
 
 接続先を設定:
+
 ```bash
 export DATABASE_URL='postgresql://postgres:postgres@localhost:55440/postgres?schema=public'
 ```
 
 ## 3. リハーサル手順（推奨）
+
 ### 3.0 ラッパースクリプト（ログ収集付き）
+
 `scripts/run-po-migration-rehearsal.sh` で dry-run/apply/integrity を一連で実行できる。
 
 ```bash
@@ -51,6 +59,7 @@ INPUT_DIR=tmp/migration/po INPUT_FORMAT=csv APPLY=1 RUN_INTEGRITY=1 \
 ```
 
 補足:
+
 - 実行ログは `tmp/migration/logs/po-real-<timestamp>/` に保存される。
 - 既定で入力ファイルのpreflight（`scripts/check-po-migration-input-readiness.sh`）を実行する。
   - 無効化: `RUN_PREFLIGHT=0`
@@ -58,9 +67,13 @@ INPUT_DIR=tmp/migration/po INPUT_FORMAT=csv APPLY=1 RUN_INTEGRITY=1 \
   - `RUN_PREFLIGHT=0` でも `ONLY` は事前検証される（不正スコープは実行前に失敗）。
   - `ONLY` の許容値: `users,customers,vendors,projects,tasks,milestones,estimates,invoices,purchase_orders,vendor_quotes,vendor_invoices,time_entries,expenses`
   - preflight は「入力ファイルの存在確認」を行う（CSVヘッダ/JSON内容の妥当性までは検査しない）。
+  - 実行結果は `preflight.log` に保存され、末尾に機械可読行を出力する。
+    - 例: `[po-migration-input-preflight] SUMMARY status=warn scopes=2 found=1 missing=1 format=csv strict=0 only=users,projects`
+    - `status`: `pass|warn|fail`
 - 実行終了時に `rehearsal-report.md`（要約レポート）を自動生成する。
   - 無効化: `GENERATE_REPORT=0`
   - 出力先変更: `REPORT_FILE=/path/to/report.md`
+  - 自動生成レポートには `preflight` セクションが追加され、summary / `foundScopes` / `missingScopes` を記録する。
 - `scripts/record-po-migration-rehearsal.sh` で最新ログから `docs/test-results/YYYY-MM-DD-po-migration-rehearsal-rN.md` を生成できる。
   - 例: `make po-migration-record`
   - `DATE_STAMP` は `YYYY-MM-DD` の実在日付のみ許容。
@@ -75,6 +88,7 @@ INPUT_DIR=tmp/migration/po INPUT_FORMAT=csv APPLY=1 RUN_INTEGRITY=1 \
 - 結果記録テンプレート: `docs/test-results/po-migration-rehearsal-template.md`
 
 ### 3.0.1 実行 + 記録を一括で行う（推奨）
+
 `scripts/run-and-record-po-migration-rehearsal.sh` は、リハーサル実行と `docs/test-results` への記録を一括で行う。
 
 ```bash
@@ -83,6 +97,7 @@ INPUT_DIR=tmp/migration/po INPUT_FORMAT=csv APPLY=1 RUN_INTEGRITY=1 \
 ```
 
 補足:
+
 - `RECORD_ON_FAIL=1`（既定）のため、実行失敗時も記録を残せる。
 - `RUN_LABEL=r1` / `DATE_STAMP=YYYY-MM-DD` / `OUT_DIR=...` で出力先を制御できる。
   - `RUN_LABEL` / `DATE_STAMP` の検証と、既存ファイル上書き防止は `record-po-migration-rehearsal.sh` と同一仕様。
@@ -91,6 +106,7 @@ INPUT_DIR=tmp/migration/po INPUT_FORMAT=csv APPLY=1 RUN_INTEGRITY=1 \
   - `INPUT_DIR=tmp/migration/po INPUT_FORMAT=csv APPLY=1 RUN_INTEGRITY=1 make po-migration-run-and-record`
 
 ### 3.1 dry-run（DBへ書き込まない）
+
 ```bash
 npx --prefix packages/backend ts-node --project packages/backend/tsconfig.json scripts/migrate-po.ts \
   --input-dir=tmp/migration/po \
@@ -101,6 +117,7 @@ npx --prefix packages/backend ts-node --project packages/backend/tsconfig.json s
 - `--only=projects,tasks,...` で対象を絞り、原因の切り分けを行う。
 
 ### 3.2 apply（DBへ書き込む）
+
 ```bash
 export MIGRATION_CONFIRM=1
 npx --prefix packages/backend ts-node --project packages/backend/tsconfig.json scripts/migrate-po.ts \
@@ -110,6 +127,7 @@ npx --prefix packages/backend ts-node --project packages/backend/tsconfig.json s
 ```
 
 ### 3.3 取込後チェック（DB側）
+
 移行後、SQLチェックを実行して参照整合/金額整合を確認する。
 
 ```bash
@@ -118,28 +136,32 @@ podman exec -e PGPASSWORD=postgres erp4-pg-po-migration \
 ```
 
 ## 4. 本実行（たたき台）
+
 前提: 本実行時は「書き込み停止（メンテナンスウィンドウ）」を設ける。
 
-1) バックアップを取得（復元可能な形で保管）  
-2) `db-push`/migrations の適用  
-3) `dry-run` → 入力/マッピングの最終確認  
-4) `--apply` 実行  
-5) `migration-po-integrity.sql` 等で検証  
-6) UI/APIでの確認（主要な一覧・集計）  
+1. バックアップを取得（復元可能な形で保管）
+2. `db-push`/migrations の適用
+3. `dry-run` → 入力/マッピングの最終確認
+4. `--apply` 実行
+5. `migration-po-integrity.sql` 等で検証
+6. UI/APIでの確認（主要な一覧・集計）
 
 ## 5. ロールバック方針（検証/本番共通の原則）
+
 原則: **DBバックアップからの復元** をロールバックとする。
 
 - 検証環境: DBを作り直して再実行する（例: コンテナをstop→start→db-push）。
 - 本番相当: バックアップ（+ 可能ならglobals）を復元し、移行前状態に戻す。
 
 `scripts/podman-poc.sh` の例:
+
 ```bash
 CONTAINER_NAME=erp4-pg-po-migration HOST_PORT=55440 bash scripts/podman-poc.sh backup
 RESTORE_CONFIRM=1 CONTAINER_NAME=erp4-pg-po-migration HOST_PORT=55440 bash scripts/podman-poc.sh restore
 ```
 
 ## 6. よくある失敗パターン（チェックポイント）
+
 - 参照切れ（project/task/milestone/estimate/vendor/expense の未投入）
   - `--only` で依存順に投入する（users → customers/vendors → projects → tasks/milestones → documents → time/expense）
 - ユーザID（`time_entries.userId` 等）の突合せが未確定

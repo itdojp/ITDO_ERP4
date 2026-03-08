@@ -34,6 +34,18 @@ function runScript(scriptName, env = {}) {
   return result;
 }
 
+function runNodeScript(scriptName, args = [], env = {}) {
+  const scriptPath = path.join(SCRIPTS_DIR, scriptName);
+  return spawnSync(process.execPath, [scriptPath, ...args], {
+    cwd: ROOT_DIR,
+    env: {
+      ...process.env,
+      ...env,
+    },
+    encoding: 'utf8',
+  });
+}
+
 function withTempDir(fn) {
   const dir = mkdtempSync(path.join(tmpdir(), 'erp4-readiness-'));
   try {
@@ -128,7 +140,9 @@ function makeDependabotGhStub(mode = 'highNotFound') {
     lines.push('JSON');
     lines.push('    ;;');
   } else {
-    lines.push('    echo "gh: No alert found for alert number 11 (HTTP 404)" >&2');
+    lines.push(
+      '    echo "gh: No alert found for alert number 11 (HTTP 404)" >&2',
+    );
     lines.push('    exit 1');
     lines.push('    ;;');
   }
@@ -202,6 +216,40 @@ test('check-po-migration-input-readiness: ONLY=users is accepted', () => {
     });
     assert.equal(res.status, 0, `${res.stderr}\n${res.stdout}`);
     assert.match(String(res.stdout), /preflight completed/);
+  });
+});
+
+test('check-po-migration-input-readiness: emits SUMMARY line for partial input', () => {
+  withTempDir((dir) => {
+    writeFileSync(path.join(dir, 'users.csv'), 'id,name\nu-1,User One\n');
+    const res = runScript('check-po-migration-input-readiness.sh', {
+      INPUT_DIR: dir,
+      INPUT_FORMAT: 'csv',
+      ONLY: 'users,projects',
+      STRICT: '0',
+    });
+    assert.equal(res.status, 0, `${res.stderr}\n${res.stdout}`);
+    assert.match(
+      String(res.stdout),
+      /SUMMARY status=warn scopes=2 found=1 missing=1 format=csv strict=0 only=users,projects/,
+    );
+  });
+});
+
+test('check-po-migration-input-readiness: emits fail SUMMARY before strict exit', () => {
+  withTempDir((dir) => {
+    const res = runScript('check-po-migration-input-readiness.sh', {
+      INPUT_DIR: dir,
+      INPUT_FORMAT: 'csv',
+      ONLY: 'users',
+      STRICT: '1',
+    });
+    assert.notEqual(res.status, 0);
+    assert.match(String(res.stdout), /SUMMARY status=fail/);
+    assert.match(
+      String(res.stderr),
+      /STRICT=1 and ONLY scopes contain missing files/,
+    );
   });
 });
 
@@ -392,10 +440,7 @@ test('record-backup-s3-readiness: validates DATE_STAMP as a calendar date', () =
       RUN_LABEL: 'r-date',
     });
     assert.notEqual(res.status, 0);
-    assert.match(
-      String(res.stderr),
-      /DATE_STAMP is not a valid calendar date/,
-    );
+    assert.match(String(res.stderr), /DATE_STAMP is not a valid calendar date/);
   });
 });
 
@@ -589,6 +634,36 @@ test('record-po-migration-rehearsal: fails when RUN_LABEL output already exists'
     });
     assert.notEqual(res.status, 0);
     assert.match(String(res.stderr), /output file already exists/);
+  });
+});
+
+test('generate-po-migration-report: includes preflight summary and scope lists', () => {
+  withTempDir((dir) => {
+    const logDir = path.join(dir, 'logs');
+    const outputPath = path.join(dir, 'rehearsal-report.md');
+    mkdirSync(logDir, { recursive: true });
+    writeFileSync(
+      path.join(logDir, 'preflight.log'),
+      [
+        '[po-migration-input-preflight] FOUND  users -> /tmp/input/users.csv',
+        '[po-migration-input-preflight][WARN] MISSING projects -> /tmp/input/projects.csv',
+        '[po-migration-input-preflight] SUMMARY status=warn scopes=2 found=1 missing=1 format=csv strict=0 only=users,projects',
+        '[po-migration-input-preflight] preflight completed',
+      ].join('\n'),
+    );
+
+    const res = runNodeScript('generate-po-migration-report.mjs', [
+      `--log-dir=${logDir}`,
+      `--output=${outputPath}`,
+      '--exit-code=0',
+    ]);
+    assert.equal(res.status, 0, `${res.stderr}\n${res.stdout}`);
+
+    const report = readFileSync(outputPath, 'utf8');
+    assert.match(report, /## preflight/);
+    assert.match(report, /- status: warn/);
+    assert.match(report, /- foundScopes: users/);
+    assert.match(report, /- missingScopes: projects/);
   });
 });
 
@@ -788,10 +863,7 @@ test('check-dependabot-alerts: exits with STRICT error when high alert is OPEN',
           PATH: `${binDir}:${process.env.PATH || ''}`,
         });
         assert.equal(res.status, 2, `${res.stderr}\n${res.stdout}`);
-        assert.match(
-          String(res.stderr),
-          /Dependabot alerts require follow-up/,
-        );
+        assert.match(String(res.stderr), /Dependabot alerts require follow-up/);
         assert.match(String(res.stdout), /alertHighState: OPEN/);
         assert.match(String(res.stdout), /actionRequired: true/);
       },
