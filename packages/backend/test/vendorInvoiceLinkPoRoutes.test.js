@@ -350,6 +350,59 @@ test('vendor invoice PO link/unlink: explicit required-actions deny when policy 
   );
 });
 
+test('vendor invoice PO link/unlink: phase3_strict denies when policy is missing', async () => {
+  await withEnv(
+    {
+      DATABASE_URL: process.env.DATABASE_URL || MIN_DATABASE_URL,
+      AUTH_MODE: 'header',
+      ACTION_POLICY_ENFORCEMENT_PRESET: 'phase3_strict',
+      ACTION_POLICY_REQUIRED_ACTIONS: '',
+      APPROVAL_EVIDENCE_REQUIRED_ACTIONS: '',
+    },
+    async () => {
+      await withPrismaStubs(
+        {
+          'actionPolicy.findMany': async () => [],
+          'vendorInvoice.findUnique': async () => ({
+            id: 'vi-001',
+            status: 'approved',
+            projectId: 'project-001',
+            vendorId: 'vendor-001',
+            purchaseOrderId: 'po-001',
+            deletedAt: null,
+          }),
+        },
+        async () => {
+          const server = await buildServer({ logger: false });
+          try {
+            const linkRes = await server.inject({
+              method: 'POST',
+              url: '/vendor-invoices/vi-001/link-po',
+              headers: adminHeaders(),
+              payload: { purchaseOrderId: 'po-002' },
+            });
+            assert.equal(linkRes.statusCode, 403, linkRes.body);
+            const linkBody = JSON.parse(linkRes.body);
+            assert.equal(linkBody?.error?.code, 'ACTION_POLICY_DENIED');
+
+            const unlinkRes = await server.inject({
+              method: 'POST',
+              url: '/vendor-invoices/vi-001/unlink-po',
+              headers: adminHeaders(),
+              payload: {},
+            });
+            assert.equal(unlinkRes.statusCode, 403, unlinkRes.body);
+            const unlinkBody = JSON.parse(unlinkRes.body);
+            assert.equal(unlinkBody?.error?.code, 'ACTION_POLICY_DENIED');
+          } finally {
+            await server.close();
+          }
+        },
+      );
+    },
+  );
+});
+
 test('POST /vendor-invoices/:id/unlink-po: explicit required-actions allows policy-defined path without fallback reason', async () => {
   await withEnv(
     {
@@ -358,6 +411,134 @@ test('POST /vendor-invoices/:id/unlink-po: explicit required-actions allows poli
       ACTION_POLICY_ENFORCEMENT_PRESET: 'off',
       ACTION_POLICY_REQUIRED_ACTIONS:
         'vendor_invoice:link_po,vendor_invoice:unlink_po',
+      APPROVAL_EVIDENCE_REQUIRED_ACTIONS: '',
+    },
+    async () => {
+      await withPrismaStubs(
+        {
+          'actionPolicy.findMany': async () => [
+            {
+              id: 'policy-allow-vi-unlink',
+              flowType: 'vendor_invoice',
+              actionKey: 'unlink_po',
+              priority: 100,
+              isEnabled: true,
+              subjects: null,
+              stateConstraints: null,
+              requireReason: false,
+              guards: null,
+            },
+          ],
+          'vendorInvoice.findUnique': async () => ({
+            id: 'vi-001',
+            status: 'approved',
+            projectId: 'project-001',
+            vendorId: 'vendor-001',
+            purchaseOrderId: 'po-001',
+            deletedAt: null,
+          }),
+          'vendorInvoice.update': async () => ({
+            id: 'vi-001',
+            purchaseOrderId: null,
+            purchaseOrder: null,
+          }),
+          'auditLog.create': async () => ({ id: 'audit-1' }),
+        },
+        async () => {
+          const server = await buildServer({ logger: false });
+          try {
+            const res = await server.inject({
+              method: 'POST',
+              url: '/vendor-invoices/vi-001/unlink-po',
+              headers: adminHeaders(),
+              payload: {},
+            });
+            assert.equal(res.statusCode, 200, res.body);
+            const body = JSON.parse(res.body);
+            assert.equal(body?.purchaseOrderId, null);
+          } finally {
+            await server.close();
+          }
+        },
+      );
+    },
+  );
+});
+
+test('POST /vendor-invoices/:id/link-po: phase3_strict allows policy-defined path without fallback reason', async () => {
+  await withEnv(
+    {
+      DATABASE_URL: process.env.DATABASE_URL || MIN_DATABASE_URL,
+      AUTH_MODE: 'header',
+      ACTION_POLICY_ENFORCEMENT_PRESET: 'phase3_strict',
+      ACTION_POLICY_REQUIRED_ACTIONS: '',
+      APPROVAL_EVIDENCE_REQUIRED_ACTIONS: '',
+    },
+    async () => {
+      await withPrismaStubs(
+        {
+          'actionPolicy.findMany': async () => [
+            {
+              id: 'policy-allow-vi-link',
+              flowType: 'vendor_invoice',
+              actionKey: 'link_po',
+              priority: 100,
+              isEnabled: true,
+              subjects: null,
+              stateConstraints: null,
+              requireReason: false,
+              guards: null,
+            },
+          ],
+          'vendorInvoice.findUnique': async () => ({
+            id: 'vi-001',
+            status: 'approved',
+            projectId: 'project-001',
+            vendorId: 'vendor-001',
+            purchaseOrderId: 'po-001',
+            deletedAt: null,
+          }),
+          'purchaseOrder.findUnique': async () => ({
+            id: 'po-002',
+            projectId: 'project-001',
+            vendorId: 'vendor-001',
+            deletedAt: null,
+          }),
+          'vendorInvoice.update': async () => ({
+            id: 'vi-001',
+            purchaseOrderId: 'po-002',
+            purchaseOrder: { id: 'po-002' },
+          }),
+          'auditLog.create': async () => ({ id: 'audit-1' }),
+        },
+        async () => {
+          const server = await buildServer({ logger: false });
+          try {
+            const res = await server.inject({
+              method: 'POST',
+              url: '/vendor-invoices/vi-001/link-po',
+              headers: adminHeaders(),
+              payload: { purchaseOrderId: 'po-002' },
+            });
+            assert.equal(res.statusCode, 200, res.body);
+            const body = JSON.parse(res.body);
+            assert.equal(body?.purchaseOrderId, 'po-002');
+          } finally {
+            await server.close();
+          }
+        },
+      );
+    },
+  );
+});
+
+test('POST /vendor-invoices/:id/unlink-po: phase3_strict allows policy-defined path without fallback reason', async () => {
+  await withEnv(
+    {
+      DATABASE_URL: process.env.DATABASE_URL || MIN_DATABASE_URL,
+      AUTH_MODE: 'header',
+      ACTION_POLICY_ENFORCEMENT_PRESET: 'phase3_strict',
+      ACTION_POLICY_REQUIRED_ACTIONS: '',
       APPROVAL_EVIDENCE_REQUIRED_ACTIONS: '',
     },
     async () => {
