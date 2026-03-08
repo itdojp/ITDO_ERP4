@@ -29,6 +29,11 @@ make action-policy-fallback-report
 make action-policy-fallback-report-json
 ```
 
+```bash
+# readiness と cutover 記録を同じ run label で開始する場合
+make action-policy-phase3-trial-record
+```
+
 - [ ] `phase3_strict` へ切替した
 - [ ] アプリ再起動 / 再デプロイを実施した
 
