@@ -1,21 +1,26 @@
 # PO→ERP4 データ移行ツール（PoC）
 
 ## 目的
+
 - Project-Open（PO）のデータを ERP4 に一方向移行するための「実行ツール」を用意する。
 - PoC/検証環境で繰り返し実行できる（再実行で重複しない・失敗箇所が分かる）ことを優先する。
 
 ## ツール
+
 - `scripts/migrate-po.ts`
 
 ## Runbook
+
 実行手順（リハーサル/ロールバック方針）は `docs/requirements/migration-runbook.md` を参照。
 
 ## 前提
+
 - DB 接続は `DATABASE_URL` を使用する
 - **書き込み実行**は `MIGRATION_CONFIRM=1` が必須
 - `--apply` の場合、簡易整合チェック（件数一致/明細合計/プロジェクト別合計/参照整合）を実行する
 
 ## 入力フォーマット
+
 - `--input-format=json|csv`（デフォルト: json）
 - `csv` は **ヘッダ付きCSV（UTF-8）** を想定
   - 列名は JSON のキー名と同一（例: `legacyId`, `projectLegacyId`）
@@ -24,8 +29,11 @@
   - 余分な列があっても無視される（既知キーのみ参照）
 
 ### CSV列定義（最小）
+
 以下は **必須列（最低限）**。追加列は任意（未指定は `null` 扱い）。
 
+- `users.csv`: `legacyId`, `userId`, `userName`
+  - `active` 列（任意）: `true/false/1/0/yes/no/y/n`
 - `customers.csv`: `legacyId`, `code`, `name`, `status`
 - `vendors.csv`: `legacyId`, `code`, `name`, `status`
 - `projects.csv`: `legacyId`, `code`, `name`
@@ -44,11 +52,13 @@
   - `isShared`（任意）: `true/false/1/0`（大小文字は不問）
 
 ## 入力ディレクトリ
+
 デフォルト: `tmp/migration/po`
 
 以下のファイルが存在する場合に取り込みます（存在しないファイルはスキップ）。
 
 - JSON: `*.json`
+  - `users.json`
   - `customers.json`
   - `vendors.json`
   - `projects.json`
@@ -62,6 +72,7 @@
   - `time_entries.json`
   - `expenses.json`
 - CSV: `*.csv`
+  - `users.csv`
   - `customers.csv`
   - `vendors.csv`
   - `projects.csv`
@@ -76,12 +87,15 @@
   - `expenses.csv`
 
 ## ID生成（決定的UUID）
+
 再実行で重複しないよう、`legacyId` から **決定的UUID（uuidv5相当）** を生成して `id` に採用します。
 
 - 例: `project` の `legacyId="im_projects:1001"` → `Project.id=uuidv5("erp4:po:project:im_projects:1001")`
 
 ## JSON スキーマ（最小）
+
 ### customers.json
+
 ```json
 [
   {
@@ -97,6 +111,7 @@
 ```
 
 ### vendors.json
+
 ```json
 [
   {
@@ -111,6 +126,7 @@
 ```
 
 ### projects.json
+
 ```json
 [
   {
@@ -130,6 +146,7 @@
 ```
 
 ### tasks.json
+
 ```json
 [
   {
@@ -146,6 +163,7 @@
 ```
 
 ### milestones.json
+
 ```json
 [
   {
@@ -161,6 +179,7 @@
 ```
 
 ### estimates.json
+
 ```json
 [
   {
@@ -188,6 +207,7 @@
 ```
 
 ### invoices.json
+
 ```json
 [
   {
@@ -215,6 +235,7 @@
 ```
 
 ### purchase_orders.json
+
 ```json
 [
   {
@@ -241,6 +262,7 @@
 ```
 
 ### vendor_quotes.json
+
 ```json
 [
   {
@@ -257,6 +279,7 @@
 ```
 
 ### vendor_invoices.json
+
 ```json
 [
   {
@@ -274,6 +297,7 @@
 ```
 
 ### time_entries.json
+
 ```json
 [
   {
@@ -289,6 +313,7 @@
 ```
 
 ### expenses.json
+
 ```json
 [
   {
@@ -305,47 +330,56 @@
 ```
 
 ## 実行方法
+
 ### dry-run（デフォルト）
+
 ```bash
 npx --prefix packages/backend ts-node --project packages/backend/tsconfig.json scripts/migrate-po.ts --input-dir=tmp/migration/po
 ```
 
 ### apply（DB書き込み）
+
 ```bash
 export MIGRATION_CONFIRM=1
 npx --prefix packages/backend ts-node --project packages/backend/tsconfig.json scripts/migrate-po.ts --input-dir=tmp/migration/po --apply
 ```
 
 ### apply（CSV入力でDB書き込み）
+
 ```bash
 export MIGRATION_CONFIRM=1
 npx --prefix packages/backend ts-node --project packages/backend/tsconfig.json scripts/migrate-po.ts --input-dir=tmp/migration/po --input-format=csv --apply
 ```
 
 ### 対象を絞る（例: projects と tasks のみ）
+
 ```bash
 export MIGRATION_CONFIRM=1
 npx --prefix packages/backend ts-node --project packages/backend/tsconfig.json scripts/migrate-po.ts --only=projects,tasks --apply
 ```
 
 ### 対象を絞る（例: users のみ）
+
 ```bash
 export MIGRATION_CONFIRM=1
 npx --prefix packages/backend ts-node --project packages/backend/tsconfig.json scripts/migrate-po.ts --only=users --apply
 ```
 
 ## 取込後の簡易整合チェック（apply時）
+
 - 件数一致: `id in (...)` で「入力で対象にしたID」が DB に存在することを確認
 - 明細合計: 見積/請求/発注の `lines` 合計が `totalAmount` と一致することを確認
 - プロジェクト別合計: 対象IDの `totalAmount/amount/minutes` をプロジェクト別に集計し入力と一致することを確認
 - 参照整合: `Invoice.estimateId/milestoneId` と `PurchaseOrderLine.expenseId` のプロジェクト整合を確認
 
 ## 移行後のDBチェック（SQL）
+
 `--apply` 後に、DB側で参照整合/金額整合を確認する場合は以下を実行する。
 
 - `scripts/checks/migration-po-integrity.sql`
 
 ## 既知の制約（最小実装）
+
 - `time_entries.userId` などのユーザIDの突合せは運用で決める必要がある
 - `users.csv` は PoC 向けに最小限の UserAccount を投入する用途（恒久運用は IDaaS/SCIM の方針に従う）
 - 簡易整合チェックは `id in (...)` / `groupBy` によるチェックのため、巨大データでは時間/SQL制限の調整が必要になる可能性がある

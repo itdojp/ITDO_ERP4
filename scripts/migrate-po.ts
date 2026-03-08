@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'url';
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-expect-error: dist JS module has no type declarations for ts-node
 import { prisma } from '../packages/backend/dist/services/db.js';
@@ -25,6 +26,42 @@ type ImportError = {
   legacyId?: string;
   message: string;
 };
+
+type InputContract = {
+  requiredHeaders: Record<string, string[]>;
+};
+
+const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
+const INPUT_CONTRACT_PATH = path.join(
+  SCRIPT_DIR,
+  'po-migration-input-contract.json',
+);
+
+function loadInputContract(): InputContract {
+  const raw = fs.readFileSync(INPUT_CONTRACT_PATH, 'utf8');
+  const parsed = JSON.parse(raw) as Partial<InputContract>;
+  if (!parsed.requiredHeaders || typeof parsed.requiredHeaders !== 'object') {
+    throw new Error('invalid po-migration input contract');
+  }
+  return {
+    requiredHeaders: Object.fromEntries(
+      Object.entries(parsed.requiredHeaders).map(([scope, headers]) => [
+        scope,
+        Array.isArray(headers) ? headers.map((header) => String(header)) : [],
+      ]),
+    ),
+  };
+}
+
+const INPUT_CONTRACT = loadInputContract();
+
+function requiredHeadersForScope(scope: string): string[] {
+  const headers = INPUT_CONTRACT.requiredHeaders[scope];
+  if (!Array.isArray(headers) || headers.length === 0) {
+    throw new Error(`missing required headers for scope: ${scope}`);
+  }
+  return headers;
+}
 
 const DOC_STATUS_VALUES = [
   'draft',
@@ -2200,41 +2237,51 @@ async function main() {
     return (json ?? []) as T[];
   }
 
-  const users = readInputArray<UserInput>('users', 'users', ['legacyId', 'userId', 'userName'], (item, record) => {
-    const parsed = parseCsvBoolean(record.active ?? null);
-    if (parsed != null) item.active = parsed;
-    else if (record.active != null) {
-      errors.push({
-        scope: 'users',
-        legacyId: record.legacyId ?? undefined,
-        message: 'invalid active (expected: true/false/1/0)',
-      });
-    }
-  });
-  const customers = readInputArray<CustomerInput>('customers', 'customers', [
-    'legacyId',
-    'code',
-    'name',
-    'status',
-  ]);
-  const vendors = readInputArray<VendorInput>('vendors', 'vendors', [
-    'legacyId',
-    'code',
-    'name',
-    'status',
-  ]);
-  const projects = readInputArray<ProjectInput>('projects', 'projects', ['legacyId', 'code', 'name']);
-  const tasks = readInputArray<TaskInput>('tasks', 'tasks', ['legacyId', 'projectLegacyId', 'name']);
-  const milestones = readInputArray<MilestoneInput>('milestones', 'milestones', [
-    'legacyId',
-    'projectLegacyId',
-    'name',
-    'amount',
-  ]);
+  const users = readInputArray<UserInput>(
+    'users',
+    'users',
+    requiredHeadersForScope('users'),
+    (item, record) => {
+      const parsed = parseCsvBoolean(record.active ?? null);
+      if (parsed != null) item.active = parsed;
+      else if (record.active != null) {
+        errors.push({
+          scope: 'users',
+          legacyId: record.legacyId ?? undefined,
+          message: 'invalid active (expected: true/false/1/0)',
+        });
+      }
+    },
+  );
+  const customers = readInputArray<CustomerInput>(
+    'customers',
+    'customers',
+    requiredHeadersForScope('customers'),
+  );
+  const vendors = readInputArray<VendorInput>(
+    'vendors',
+    'vendors',
+    requiredHeadersForScope('vendors'),
+  );
+  const projects = readInputArray<ProjectInput>(
+    'projects',
+    'projects',
+    requiredHeadersForScope('projects'),
+  );
+  const tasks = readInputArray<TaskInput>(
+    'tasks',
+    'tasks',
+    requiredHeadersForScope('tasks'),
+  );
+  const milestones = readInputArray<MilestoneInput>(
+    'milestones',
+    'milestones',
+    requiredHeadersForScope('milestones'),
+  );
   const estimates = readInputArray<EstimateInput>(
     'estimates',
     'estimates',
-    ['legacyId', 'projectLegacyId', 'totalAmount', 'currency'],
+    requiredHeadersForScope('estimates'),
     (item, record) => {
       if (record.lines != null) {
         item.lines = parseCsvJsonArray('estimates', record.legacyId ?? undefined, record.lines, errors) ?? null;
@@ -2244,7 +2291,7 @@ async function main() {
   const invoices = readInputArray<InvoiceInput>(
     'invoices',
     'invoices',
-    ['legacyId', 'projectLegacyId', 'currency', 'totalAmount'],
+    requiredHeadersForScope('invoices'),
     (item, record) => {
       if (record.lines != null) {
         item.lines = parseCsvJsonArray('invoices', record.legacyId ?? undefined, record.lines, errors) ?? null;
@@ -2254,7 +2301,7 @@ async function main() {
   const purchaseOrders = readInputArray<PurchaseOrderInput>(
     'purchase_orders',
     'purchase_orders',
-    ['legacyId', 'projectLegacyId', 'vendorLegacyId', 'currency', 'totalAmount'],
+    requiredHeadersForScope('purchase_orders'),
     (item, record) => {
       if (record.lines != null) {
         item.lines = parseCsvJsonArray('purchase_orders', record.legacyId ?? undefined, record.lines, errors) ?? null;
@@ -2264,22 +2311,22 @@ async function main() {
   const vendorQuotes = readInputArray<VendorQuoteInput>(
     'vendor_quotes',
     'vendor_quotes',
-    ['legacyId', 'projectLegacyId', 'vendorLegacyId', 'currency', 'totalAmount'],
+    requiredHeadersForScope('vendor_quotes'),
   );
   const vendorInvoices = readInputArray<VendorInvoiceInput>(
     'vendor_invoices',
     'vendor_invoices',
-    ['legacyId', 'projectLegacyId', 'vendorLegacyId', 'currency', 'totalAmount'],
+    requiredHeadersForScope('vendor_invoices'),
   );
   const timeEntries = readInputArray<TimeEntryInput>(
     'time_entries',
     'time_entries',
-    ['legacyId', 'projectLegacyId', 'userId', 'workDate', 'minutes'],
+    requiredHeadersForScope('time_entries'),
   );
   const expenses = readInputArray<ExpenseInput>(
     'expenses',
     'expenses',
-    ['legacyId', 'projectLegacyId', 'userId', 'category', 'amount', 'currency', 'incurredOn'],
+    requiredHeadersForScope('expenses'),
     (item, record) => {
       const parsed = parseCsvBoolean(record.isShared ?? null);
       if (parsed != null) item.isShared = parsed;

@@ -61,8 +61,10 @@ emit_summary() {
   local scope_count="$2"
   local found="$3"
   local missing="$4"
-  local only_value="$5"
-  log "SUMMARY status=${status} scopes=${scope_count} found=${found} missing=${missing} format=${INPUT_FORMAT} strict=${STRICT} only=${only_value}"
+  local invalid="$5"
+  local valid="$6"
+  local only_value="$7"
+  log "SUMMARY status=${status} scopes=${scope_count} found=${found} missing=${missing} invalid=${invalid} valid=${valid} format=${INPUT_FORMAT} strict=${STRICT} only=${only_value}"
 }
 
 normalize_input_dir() {
@@ -132,35 +134,64 @@ main() {
 
   local found=0
   local missing=0
-  local scope file
+  local invalid=0
+  local valid=0
+  local scope file validation_output validation_status
+  local shape_checker="$ROOT_DIR/scripts/check-po-migration-input-shape.mjs"
+  if [[ ! -f "$shape_checker" ]]; then
+    die "shape checker not found: $shape_checker"
+  fi
   for scope in "${scopes[@]}"; do
     file="$input_dir_resolved/${scope}.${INPUT_FORMAT}"
     if [[ -f "$file" ]]; then
       found=$((found + 1))
       log "FOUND  $scope -> $file"
+      set +e
+      validation_output="$(
+        node "$shape_checker" \
+          "--scope=$scope" \
+          "--file=$file" \
+          "--format=$INPUT_FORMAT" 2>&1
+      )"
+      validation_status=$?
+      set -e
+      if [[ "$validation_status" == "0" ]]; then
+        valid=$((valid + 1))
+        log "VALID  $scope -> $file (${validation_output})"
+      elif [[ "$validation_status" == "1" ]]; then
+        invalid=$((invalid + 1))
+        warn "INVALID $scope -> $file (${validation_output})"
+      else
+        die "shape validation failed for $scope: ${validation_output}"
+      fi
     else
       missing=$((missing + 1))
       warn "MISSING $scope -> $file"
     fi
   done
 
-  log "summary: scopes=${#scopes[@]} found=${found} missing=${missing} format=${INPUT_FORMAT}"
+  log "summary: scopes=${#scopes[@]} found=${found} missing=${missing} invalid=${invalid} valid=${valid} format=${INPUT_FORMAT}"
+
+  if [[ "$invalid" -gt 0 ]]; then
+    emit_summary fail "${#scopes[@]}" "$found" "$missing" "$invalid" "$valid" "$only_value"
+    die "input format validation failed"
+  fi
 
   if [[ "$STRICT" == "1" ]]; then
     if [[ -n "$ONLY" && "$missing" -gt 0 ]]; then
-      emit_summary fail "${#scopes[@]}" "$found" "$missing" "$only_value"
+      emit_summary fail "${#scopes[@]}" "$found" "$missing" "$invalid" "$valid" "$only_value"
       die "STRICT=1 and ONLY scopes contain missing files"
     fi
     if [[ -z "$ONLY" && "$found" -eq 0 ]]; then
-      emit_summary fail "${#scopes[@]}" "$found" "$missing" "$only_value"
+      emit_summary fail "${#scopes[@]}" "$found" "$missing" "$invalid" "$valid" "$only_value"
       die "STRICT=1 and no input files found"
     fi
   fi
 
   if [[ "$missing" -gt 0 ]]; then
-    emit_summary warn "${#scopes[@]}" "$found" "$missing" "$only_value"
+    emit_summary warn "${#scopes[@]}" "$found" "$missing" "$invalid" "$valid" "$only_value"
   else
-    emit_summary pass "${#scopes[@]}" "$found" "$missing" "$only_value"
+    emit_summary pass "${#scopes[@]}" "$found" "$missing" "$invalid" "$valid" "$only_value"
   fi
   log "preflight completed"
 }

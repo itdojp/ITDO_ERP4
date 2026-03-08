@@ -104,10 +104,20 @@ function parsePreflightLog(text) {
     text.matchAll(/\[po-migration-input-preflight\]\[WARN\] MISSING (\S+) ->/g),
     (match) => match[1],
   );
+  const invalidEntries = Array.from(
+    text.matchAll(
+      /\[po-migration-input-preflight\]\[WARN\] INVALID (\S+) -> .*?\((.+)\)$/gm,
+    ),
+    (match) => ({
+      scope: match[1],
+      message: match[2],
+    }),
+  );
   return {
     summary: parseKeyValueSummary(summaryLine),
     foundScopes,
     missingScopes,
+    invalidEntries,
     completed: text.includes(
       "[po-migration-input-preflight] preflight completed",
     ),
@@ -205,6 +215,8 @@ function buildPreflightSection(logPath, parsed, exists) {
     lines.push(`- scopes: ${parsed.summary.scopes ?? "unknown"}`);
     lines.push(`- found: ${parsed.summary.found ?? "unknown"}`);
     lines.push(`- missing: ${parsed.summary.missing ?? "unknown"}`);
+    lines.push(`- invalid: ${parsed.summary.invalid ?? "unknown"}`);
+    lines.push(`- valid: ${parsed.summary.valid ?? "unknown"}`);
     lines.push(`- format: ${parsed.summary.format ?? "unknown"}`);
     lines.push(`- strict: ${parsed.summary.strict ?? "unknown"}`);
     lines.push(`- only: ${parsed.summary.only ?? "unknown"}`);
@@ -219,6 +231,15 @@ function buildPreflightSection(logPath, parsed, exists) {
   lines.push(
     `- missingScopes: ${parsed.missingScopes.length ? parsed.missingScopes.join(", ") : "(none)"}`,
   );
+  lines.push(
+    `- invalidScopes: ${parsed.invalidEntries.length ? parsed.invalidEntries.map((entry) => entry.scope).join(", ") : "(none)"}`,
+  );
+  if (parsed.invalidEntries.length) {
+    lines.push("- invalidMessages:");
+    for (const entry of parsed.invalidEntries) {
+      lines.push(`  - ${entry.scope}: ${entry.message}`);
+    }
+  }
   return lines.join("\n");
 }
 
