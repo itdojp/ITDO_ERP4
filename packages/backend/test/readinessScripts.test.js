@@ -952,6 +952,234 @@ test('run-and-record-action-policy-phase3-readiness: pins a single report window
   });
 });
 
+test('run-and-record-action-policy-phase3-trial: generates paired readiness and cutover reports with the same auto label', () => {
+  withTempDir((dir) => {
+    const outDir = path.join(dir, 'out');
+    const readinessRunner = path.join(dir, 'readiness-runner.sh');
+    const cutoverRecorder = path.join(dir, 'cutover-recorder.sh');
+    mkdirSync(outDir, { recursive: true });
+
+    writeFileSync(
+      path.join(outDir, '2026-03-08-action-policy-phase3-readiness-r1.md'),
+      '# existing readiness',
+    );
+    writeFileSync(
+      path.join(outDir, '2026-03-08-action-policy-phase3-cutover-r2.md'),
+      '# existing cutover',
+    );
+
+    writeFileSync(
+      readinessRunner,
+      [
+        '#!/usr/bin/env bash',
+        'set -euo pipefail',
+        'printf "%s\\n" "$RUN_LABEL" > "$OUT_DIR/readiness-label.txt"',
+        'printf "%s\\n" "$REPORT_FROM" > "$OUT_DIR/readiness-from.txt"',
+        'printf "%s\\n" "$REPORT_TO" > "$OUT_DIR/readiness-to.txt"',
+        'cat > "$OUT_DIR/${DATE_STAMP}-action-policy-phase3-readiness-${RUN_LABEL}.md" <<EOF',
+        '# ActionPolicy phase3 readiness 記録',
+        '- ready: yes',
+        'EOF',
+      ].join('\n'),
+    );
+    chmodSync(readinessRunner, 0o755);
+
+    writeFileSync(
+      cutoverRecorder,
+      [
+        '#!/usr/bin/env bash',
+        'set -euo pipefail',
+        'printf "%s\\n" "$RUN_LABEL" > "$OUT_DIR/cutover-label.txt"',
+        'printf "%s\\n" "$READINESS_RECORD_FILE" > "$OUT_DIR/cutover-readiness-path.txt"',
+        'printf "%s\\n" "$FROM_PRESET" > "$OUT_DIR/cutover-from-preset.txt"',
+        'printf "%s\\n" "$TO_PRESET" > "$OUT_DIR/cutover-to-preset.txt"',
+        'cat > "$OUT_DIR/${DATE_STAMP}-action-policy-phase3-cutover-${RUN_LABEL}.md" <<EOF',
+        '# ActionPolicy phase3 cutover 記録',
+        '- ready: yes',
+        'EOF',
+      ].join('\n'),
+    );
+    chmodSync(cutoverRecorder, 0o755);
+
+    const res = runScript('run-and-record-action-policy-phase3-trial.sh', {
+      OUT_DIR: outDir,
+      DATE_STAMP: '2026-03-08',
+      REPORT_FROM: '2026-03-07T00:00:00.000Z',
+      REPORT_TO: '2026-03-08T00:00:00.000Z',
+      READINESS_RUNNER: readinessRunner,
+      CUTOVER_RECORD_SCRIPT: cutoverRecorder,
+    });
+    assert.equal(res.status, 0, `${res.stderr}\n${res.stdout}`);
+
+    assert.equal(
+      readFileSync(path.join(outDir, 'readiness-label.txt'), 'utf8').trim(),
+      'r3',
+    );
+    assert.equal(
+      readFileSync(path.join(outDir, 'cutover-label.txt'), 'utf8').trim(),
+      'r3',
+    );
+    assert.equal(
+      readFileSync(
+        path.join(outDir, 'cutover-readiness-path.txt'),
+        'utf8',
+      ).trim(),
+      path.join(outDir, '2026-03-08-action-policy-phase3-readiness-r3.md'),
+    );
+    assert.equal(
+      existsSync(
+        path.join(outDir, '2026-03-08-action-policy-phase3-readiness-r3.md'),
+      ),
+      true,
+    );
+    assert.equal(
+      existsSync(
+        path.join(outDir, '2026-03-08-action-policy-phase3-cutover-r3.md'),
+      ),
+      true,
+    );
+  });
+});
+
+test('run-and-record-action-policy-phase3-trial: passes explicit presets and run label through to child scripts', () => {
+  withTempDir((dir) => {
+    const outDir = path.join(dir, 'out');
+    const readinessRunner = path.join(dir, 'readiness-runner.sh');
+    const cutoverRecorder = path.join(dir, 'cutover-recorder.sh');
+    mkdirSync(outDir, { recursive: true });
+
+    writeFileSync(
+      readinessRunner,
+      [
+        '#!/usr/bin/env bash',
+        'set -euo pipefail',
+        'printf "%s\\n" "$RUN_LABEL" > "$OUT_DIR/readiness-label.txt"',
+        'printf "%s\\n" "$REPORT_FROM" > "$OUT_DIR/readiness-from.txt"',
+        'printf "%s\\n" "$REPORT_TO" > "$OUT_DIR/readiness-to.txt"',
+        'cat > "$OUT_DIR/${DATE_STAMP}-action-policy-phase3-readiness-${RUN_LABEL}.md" <<EOF',
+        '# ActionPolicy phase3 readiness 記録',
+        '- ready: yes',
+        'EOF',
+      ].join('\n'),
+    );
+    chmodSync(readinessRunner, 0o755);
+
+    writeFileSync(
+      cutoverRecorder,
+      [
+        '#!/usr/bin/env bash',
+        'set -euo pipefail',
+        'printf "%s\\n" "$RUN_LABEL" > "$OUT_DIR/cutover-label.txt"',
+        'printf "%s\\n" "$FROM_PRESET" > "$OUT_DIR/cutover-from-preset.txt"',
+        'printf "%s\\n" "$TO_PRESET" > "$OUT_DIR/cutover-to-preset.txt"',
+        'cat > "$OUT_DIR/${DATE_STAMP}-action-policy-phase3-cutover-${RUN_LABEL}.md" <<EOF',
+        '# ActionPolicy phase3 cutover 記録',
+        '- ready: yes',
+        'EOF',
+      ].join('\n'),
+    );
+    chmodSync(cutoverRecorder, 0o755);
+
+    const res = runScript('run-and-record-action-policy-phase3-trial.sh', {
+      OUT_DIR: outDir,
+      DATE_STAMP: '2026-03-08',
+      RUN_LABEL: 'ops-run',
+      REPORT_FROM: '2026-03-07T00:00:00.000Z',
+      REPORT_TO: '2026-03-08T00:00:00.000Z',
+      FROM_PRESET: 'phase2_core',
+      TO_PRESET: 'phase3_strict',
+      READINESS_RUNNER: readinessRunner,
+      CUTOVER_RECORD_SCRIPT: cutoverRecorder,
+    });
+    assert.equal(res.status, 0, `${res.stderr}\n${res.stdout}`);
+    assert.equal(
+      readFileSync(path.join(outDir, 'readiness-label.txt'), 'utf8').trim(),
+      'ops-run',
+    );
+    assert.equal(
+      readFileSync(path.join(outDir, 'readiness-from.txt'), 'utf8').trim(),
+      '2026-03-07T00:00:00.000Z',
+    );
+    assert.equal(
+      readFileSync(path.join(outDir, 'readiness-to.txt'), 'utf8').trim(),
+      '2026-03-08T00:00:00.000Z',
+    );
+    assert.equal(
+      readFileSync(path.join(outDir, 'cutover-from-preset.txt'), 'utf8').trim(),
+      'phase2_core',
+    );
+    assert.equal(
+      readFileSync(path.join(outDir, 'cutover-to-preset.txt'), 'utf8').trim(),
+      'phase3_strict',
+    );
+  });
+});
+
+test('run-and-record-action-policy-phase3-trial: fails fast when explicit RUN_LABEL output already exists', () => {
+  withTempDir((dir) => {
+    const outDir = path.join(dir, 'out');
+    const readinessRunner = path.join(dir, 'readiness-runner.sh');
+    const cutoverRecorder = path.join(dir, 'cutover-recorder.sh');
+    mkdirSync(outDir, { recursive: true });
+
+    writeFileSync(
+      readinessRunner,
+      [
+        '#!/usr/bin/env bash',
+        'set -euo pipefail',
+        'printf runner-invoked > "$OUT_DIR/runner-marker.txt"',
+      ].join('\n'),
+    );
+    chmodSync(readinessRunner, 0o755);
+
+    writeFileSync(
+      cutoverRecorder,
+      [
+        '#!/usr/bin/env bash',
+        'set -euo pipefail',
+        'printf cutover-invoked > "$OUT_DIR/cutover-marker.txt"',
+      ].join('\n'),
+    );
+    chmodSync(cutoverRecorder, 0o755);
+
+    for (const [kind, expectedPattern] of [
+      ['readiness', /readiness output file already exists/],
+      ['cutover', /cutover output file already exists/],
+    ]) {
+      rmSync(path.join(outDir, 'runner-marker.txt'), { force: true });
+      rmSync(path.join(outDir, 'cutover-marker.txt'), { force: true });
+      rmSync(
+        path.join(
+          outDir,
+          '2026-03-08-action-policy-phase3-readiness-ops-run.md',
+        ),
+        { force: true },
+      );
+      rmSync(
+        path.join(outDir, '2026-03-08-action-policy-phase3-cutover-ops-run.md'),
+        { force: true },
+      );
+
+      writeFileSync(
+        path.join(outDir, `2026-03-08-action-policy-phase3-${kind}-ops-run.md`),
+        '# existing report',
+      );
+
+      const res = runScript('run-and-record-action-policy-phase3-trial.sh', {
+        OUT_DIR: outDir,
+        DATE_STAMP: '2026-03-08',
+        RUN_LABEL: 'ops-run',
+        READINESS_RUNNER: readinessRunner,
+        CUTOVER_RECORD_SCRIPT: cutoverRecorder,
+      });
+      assert.notEqual(res.status, 0);
+      assert.match(String(res.stderr), expectedPattern);
+      assert.equal(existsSync(path.join(outDir, 'runner-marker.txt')), false);
+      assert.equal(existsSync(path.join(outDir, 'cutover-marker.txt')), false);
+    }
+  });
+});
+
 test('generate-po-migration-report: includes preflight summary and scope lists', () => {
   withTempDir((dir) => {
     const logDir = path.join(dir, 'logs');
