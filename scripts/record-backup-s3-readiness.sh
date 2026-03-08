@@ -49,6 +49,18 @@ resolve_absolute_path() {
   fi
 }
 
+format_source_path() {
+  local input="$1"
+  case "$input" in
+    "$ROOT_DIR"/*)
+      printf '%s\n' "${input#"$ROOT_DIR"/}"
+      ;;
+    *)
+      printf '%s\n' "$input"
+      ;;
+  esac
+}
+
 max_int() {
   local max=0
   local value
@@ -182,6 +194,8 @@ run_check_and_capture() {
 write_report() {
   local log_file="$1"
   local output_file="$2"
+  local source_log
+  source_log="$(format_source_path "$log_file")"
   local warnings errors summary_status summary_source
   local machine_summary_line machine_summary_status
   local machine_warning_count machine_error_count
@@ -250,7 +264,7 @@ write_report() {
     echo "# S3バックアップ Readiness 記録"
     echo
     echo "- generatedAt: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-    echo "- sourceLogFile: \`$log_file\`"
+    echo "- sourceLogFile: \`$source_log\`"
     echo "- summarySource: ${summary_source}"
     echo "- summaryStatus: ${summary_status}"
     echo "- warningCount: ${warnings}"

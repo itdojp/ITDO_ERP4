@@ -135,6 +135,7 @@
 #### S3 事前検証コマンド
 
 - `scripts/check-backup-s3-readiness.sh` で設定値とS3状態を検証できる
+  - 実行端末に `aws` CLI が必要
   - 入力値バリデーション:
     - `STRICT`: `0|1`（既定: `1`）
     - `CHECK_WRITE`: `0|1`（既定: `0`）

@@ -54,6 +54,8 @@ S3_BUCKET=... S3_REGION=... EXPECT_SSE=aws:kms SSE_KMS_KEY_ID=... \
   make backup-s3-readiness-check
 ```
 
+- 前提: 実行端末に `aws` CLI を導入していること
+
 ```bash
 RUN_CHECK=1 FAIL_ON_CHECK=1 \
 S3_BUCKET=... S3_REGION=... EXPECT_SSE=aws:kms SSE_KMS_KEY_ID=... \
