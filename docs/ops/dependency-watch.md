@@ -35,6 +35,18 @@
    RUN_CHECK=1 make eslint10-readiness-record
    ```
 
+4. 2 と 3 を同じ run label でまとめて記録したい場合は、以下を使う。
+
+   ```bash
+   make dependency-watch-record
+   ```
+
+   補足:
+   - `docs/test-results/YYYY-MM-DD-dependabot-alerts-rN.md`
+   - `docs/test-results/YYYY-MM-DD-eslint10-readiness-rN.md`
+     を同じ `rN` で生成する。
+   - token 前提まで fail-fast したい場合は `RUN_TOKEN_CHECK=1 make dependency-watch-record` を使う。
+
 ## 判定基準
 
 ### Dependabot alerts

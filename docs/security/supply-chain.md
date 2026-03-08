@@ -45,6 +45,7 @@
   - `make dependabot-alerts-check`
   - `RUN_CHECK=1 FAIL_ON_CHECK=1 make dependabot-alerts-record`
   - `make dependabot-token-readiness-check`（token設定/権限の事前確認）
+  - `make dependency-watch-record`（Dependabot alerts / ESLint10 readiness を同じ run label で記録）
 - 記録テンプレート:
   - `docs/test-results/dependabot-alerts-template.md`
 - API認証（任意）:
