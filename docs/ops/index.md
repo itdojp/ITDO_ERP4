@@ -54,6 +54,7 @@
 ### セキュリティ運用
 
 - [security](security.md)
+  - 依存監視手順: [dependency-watch](dependency-watch.md)
   - ベースライン: [docs/security/security-baseline.md](../security/security-baseline.md)
 
 ### 性能
