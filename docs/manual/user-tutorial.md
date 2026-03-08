@@ -10,7 +10,7 @@
 
 - 対象: `user` ロール（管理操作は対象外）
 - 所要時間: 15〜20分
-- 画面キャプチャ: `docs/test-results/2026-02-05-frontend-e2e-r1/`
+- 画面キャプチャ: `docs/test-results/2026-03-09-frontend-e2e-r1/`
 - 詳細仕様は `docs/manual/ui-manual-user.md` を参照
 
 ## チュートリアル（Step by Step）
@@ -25,7 +25,7 @@
 
 - 現在のログイン情報と通知設定を確認できる
 
-![Step1 現在のユーザー](../test-results/2026-02-05-frontend-e2e-r1/00-current-user.png)
+![Step1 現在のユーザー](../test-results/2026-03-09-frontend-e2e-r1/00-current-user.png)
 
 ### Step 2: ダッシュボードで当日の状況を把握する
 
@@ -37,7 +37,7 @@
 
 - 当日の優先タスク（承認待ち/通知）を把握できる
 
-![Step2 ダッシュボード](../test-results/2026-02-05-frontend-e2e-r1/01-core-dashboard.png)
+![Step2 ダッシュボード](../test-results/2026-03-09-frontend-e2e-r1/01-core-dashboard.png)
 
 ### Step 3: 日報を登録する
 
@@ -49,7 +49,7 @@
 
 - 日報が送信され、履歴に反映される
 
-![Step3 日報+WB](../test-results/2026-02-05-frontend-e2e-r1/02-core-daily-report.png)
+![Step3 日報+WB](../test-results/2026-03-09-frontend-e2e-r1/02-core-daily-report.png)
 
 ### Step 4: 工数を入力する
 
@@ -61,7 +61,7 @@
 
 - 工数が一覧に追加される
 
-![Step4 工数入力](../test-results/2026-02-05-frontend-e2e-r1/03-core-time-entries.png)
+![Step4 工数入力](../test-results/2026-03-09-frontend-e2e-r1/03-core-time-entries.png)
 
 ### Step 5: 経費を登録する
 
@@ -73,7 +73,7 @@
 
 - 経費が一覧に追加される
 
-![Step5 経費入力](../test-results/2026-02-05-frontend-e2e-r1/04-core-expenses.png)
+![Step5 経費入力](../test-results/2026-03-09-frontend-e2e-r1/04-core-expenses.png)
 
 ### Step 6: 見積と請求の基本フローを確認する
 
@@ -84,9 +84,9 @@
 
 - 見積・請求の作成〜送信導線を把握できる
 
-![Step6 見積](../test-results/2026-02-05-frontend-e2e-r1/05-core-estimates.png)
+![Step6 見積](../test-results/2026-03-09-frontend-e2e-r1/05-core-estimates.png)
 
-![Step6 請求](../test-results/2026-02-05-frontend-e2e-r1/06-core-invoices.png)
+![Step6 請求](../test-results/2026-03-09-frontend-e2e-r1/06-core-invoices.png)
 
 ### Step 7: チャットで業務連絡を行う
 
@@ -98,7 +98,7 @@
 
 - 案件ルームで投稿と確認ができる
 
-![Step7 ルームチャット（案件ルーム）](../test-results/2026-02-05-frontend-e2e-r1/14-room-chat.png)
+![Step7 ルームチャット（案件ルーム）](../test-results/2026-03-09-frontend-e2e-r1/14-room-chat.png)
 
 ### Step 8: 横断検索で必要情報を再取得する
 
@@ -110,7 +110,7 @@
 
 - 必要情報をUI横断で再取得できる
 
-![Step8 横断検索](../test-results/2026-02-05-frontend-e2e-r1/06-core-global-search.png)
+![Step8 横断検索](../test-results/2026-03-09-frontend-e2e-r1/06-core-global-search.png)
 
 ### Step 9: 休暇申請（終日/時間休）と相談証跡を確認する
 
@@ -124,7 +124,7 @@
 
 - 休暇申請の基本導線（作成→申請）と相談証跡要件を確認できる
 
-![Step9 休暇](../test-results/2026-02-05-frontend-e2e-r1/22-leave-requests.png)
+![Step9 休暇](../test-results/2026-03-09-frontend-e2e-r1/22-leave-requests.png)
 
 ## 次の参照先
 

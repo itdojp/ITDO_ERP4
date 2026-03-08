@@ -4,7 +4,7 @@
 
 - 本書は PoC 環境の UI 操作に関する詳細ガイドです。
 - 画面キャプチャは 2026-02-05 実行の E2E（r1）で取得しています。
-  - 証跡: `docs/test-results/2026-02-05-frontend-e2e-r1/`
+  - 証跡: `docs/test-results/2026-03-09-frontend-e2e-r1/`
 - UI証跡の再取得手順: [ui-evidence-quickstart](ui-evidence-quickstart.md)（詳細: [e2e-evidence-howto](e2e-evidence-howto.md)）
 - Push通知の証跡のみ `docs/test-results/2026-01-19-frontend-e2e-pwa-push/` で取得しています。
 - 画面の表示内容は demo seed に基づきます（データ差分あり）。
@@ -45,7 +45,7 @@
 - `VAPID_*`（backend）が未設定の場合、`テスト通知` は実配信ではなくローカル表示になります
 - 送信待ちキューはログイン済みの場合のみ処理できます
 
-![現在のユーザー](../test-results/2026-02-05-frontend-e2e-r1/00-current-user.png)
+![現在のユーザー](../test-results/2026-03-09-frontend-e2e-r1/00-current-user.png)
 
 ### Push通知（証跡）
 
@@ -73,7 +73,7 @@
 3. 「Alerts」で `すべて表示` / `最新のみ` を切り替える
 4. 「Insights」で件数・期間・根拠・ヒントを確認する（admin/mgmt/execのみ）
 
-![ダッシュボード](../test-results/2026-02-05-frontend-e2e-r1/01-core-dashboard.png)
+![ダッシュボード](../test-results/2026-03-09-frontend-e2e-r1/01-core-dashboard.png)
 
 ---
 
@@ -91,7 +91,7 @@
 4. チャット結果は `開く` で該当チャットを開く
 5. `クリア` で入力と結果を初期化する
 
-![ERP横断検索](../test-results/2026-02-05-frontend-e2e-r1/06-core-global-search.png)
+![ERP横断検索](../test-results/2026-03-09-frontend-e2e-r1/06-core-global-search.png)
 
 ---
 
@@ -153,7 +153,7 @@
 
 - `承認対象外` は現在の承認者/グループと一致しない場合に表示されます
 
-![承認](../test-results/2026-02-05-frontend-e2e-r1/07-approvals.png)
+![承認](../test-results/2026-03-09-frontend-e2e-r1/07-approvals.png)
 
 ### レポート
 
@@ -176,7 +176,7 @@
 - `from/to` は YYYY-MM-DD 形式
 - バーンダウンはベースラインが必須
 
-![レポート](../test-results/2026-02-05-frontend-e2e-r1/08-reports.png)
+![レポート](../test-results/2026-03-09-frontend-e2e-r1/08-reports.png)
 
 ### プロジェクト / メンバー管理
 
@@ -203,8 +203,8 @@
 - メンバー権限変更は admin/mgmt のみ
 - CSV 形式: `userId,role`（role は `member` / `leader`）
 
-![プロジェクト](../test-results/2026-02-05-frontend-e2e-r1/09-projects.png)
-![プロジェクトメンバー](../test-results/2026-02-05-frontend-e2e-r1/09-project-members.png)
+![プロジェクト](../test-results/2026-03-09-frontend-e2e-r1/09-projects.png)
+![プロジェクトメンバー](../test-results/2026-03-09-frontend-e2e-r1/09-project-members.png)
 
 ### 定期案件テンプレ（MVP）
 
@@ -237,7 +237,7 @@
 5. 一覧の `削除` で削除（理由入力が必須）
 6. 「未請求（納期範囲）レポート」で `from/to` を指定し `取得`
 
-![マイルストーン](../test-results/2026-02-05-frontend-e2e-r1/23-project-milestones.png)
+![マイルストーン](../test-results/2026-03-09-frontend-e2e-r1/23-project-milestones.png)
 
 ### マスタ管理
 
@@ -259,7 +259,7 @@
 - 連絡先は氏名が必須
 - 紐付け先を変更すると入力中の情報が破棄されます
 
-![マスタ管理](../test-results/2026-02-05-frontend-e2e-r1/10-master-data.png)
+![マスタ管理](../test-results/2026-03-09-frontend-e2e-r1/10-master-data.png)
 
 ### ベンダー書類（発注 / 仕入見積 / 仕入請求）
 
@@ -291,8 +291,8 @@
 - 差分解消が難しい場合は `配賦明細を開く` から配賦入力へ遷移し、理由を添えて調整する
 - 注釈の `内部参照` は `候補検索` で追加できます（案件スコープ: 同一案件・親子案件）
 
-![ベンダー書類一覧](../test-results/2026-02-05-frontend-e2e-r1/06-vendor-docs.png)
-![ベンダー書類作成](../test-results/2026-02-05-frontend-e2e-r1/06-vendor-docs-create.png)
+![ベンダー書類一覧](../test-results/2026-03-09-frontend-e2e-r1/06-vendor-docs.png)
+![ベンダー書類作成](../test-results/2026-03-09-frontend-e2e-r1/06-vendor-docs-create.png)
 
 ### 管理設定
 
@@ -305,7 +305,7 @@
 1. 「user/hr の private_group 作成を許可」「DM 作成を許可」を切り替える
 2. `保存` / `再読込` を実行する
 
-![チャット設定](../test-results/2026-02-05-frontend-e2e-r1/11-chat-settings.png)
+![チャット設定](../test-results/2026-03-09-frontend-e2e-r1/11-chat-settings.png)
 
 ### 詳細操作（チャットルーム設定）
 
@@ -314,7 +314,7 @@
 3. `保存` で反映する
 4. 参加者追加は userId を入力して `メンバー追加` を実行する
 
-![チャットルーム設定](../test-results/2026-02-05-frontend-e2e-r1/11-chat-room-settings.png)
+![チャットルーム設定](../test-results/2026-03-09-frontend-e2e-r1/11-chat-room-settings.png)
 
 ### 詳細操作（SCIM設定）
 
@@ -326,7 +326,7 @@
 
 - SCIM はバックエンド環境変数 `SCIM_BEARER_TOKEN` が未設定の場合、未設定として表示されます
 
-![SCIM プロビジョニング](../test-results/2026-02-05-frontend-e2e-r1/11-scim-provisioning.png)
+![SCIM プロビジョニング](../test-results/2026-03-09-frontend-e2e-r1/11-scim-provisioning.png)
 
 ### 詳細操作（単価）
 
@@ -334,7 +334,7 @@
 2. 追加フォームで role / workType / unitPrice / currency / validFrom / validTo を入力し `追加`
 3. 不要な単価は `無効化` する
 
-![単価（RateCard）](../test-results/2026-02-05-frontend-e2e-r1/11-rate-card.png)
+![単価（RateCard）](../test-results/2026-03-09-frontend-e2e-r1/11-rate-card.png)
 
 ### 詳細操作（アラート設定）
 
@@ -348,7 +348,7 @@
 - 下書きは自動保存され、画面再読み込み後に復元できます
 - 下書き復元後は `戻る` / `次へ` でステップ遷移しながら再編集できます
 
-![アラート設定（簡易モック）](../test-results/2026-02-05-frontend-e2e-r1/11-alert-settings.png)
+![アラート設定（簡易モック）](../test-results/2026-03-09-frontend-e2e-r1/11-alert-settings.png)
 
 ### 詳細操作（承認ルール）
 
@@ -357,7 +357,7 @@
 3. `作成` / `更新` / `再読込` を実行する
 4. `履歴表示` を開き、`AuditTimeline` でイベントを選択して `DiffViewer` の `before/after` を確認する（必要時は `patch` を展開）
 
-![承認ルール（簡易モック）](../test-results/2026-02-05-frontend-e2e-r1/11-approval-rules.png)
+![承認ルール（簡易モック）](../test-results/2026-03-09-frontend-e2e-r1/11-approval-rules.png)
 
 ### 詳細操作（ActionPolicy）
 
@@ -395,7 +395,7 @@
 3. `作成` / `更新` / `再読込` を実行する
 4. 一覧の `編集` / `デフォルト化` を実行する
 
-![テンプレ設定（見積/請求/発注）](../test-results/2026-02-05-frontend-e2e-r1/11-template-settings.png)
+![テンプレ設定（見積/請求/発注）](../test-results/2026-03-09-frontend-e2e-r1/11-template-settings.png)
 
 ### 詳細操作（レポート購読）
 
@@ -405,7 +405,7 @@
 4. 一覧の `実行` / `無効化` / `配信履歴` を実行する
 5. `一括実行` で全購読を実行する
 
-![レポート購読（配信設定）](../test-results/2026-02-05-frontend-e2e-r1/11-report-subscriptions.png)
+![レポート購読（配信設定）](../test-results/2026-03-09-frontend-e2e-r1/11-report-subscriptions.png)
 
 ### 詳細操作（外部連携設定）
 
@@ -413,14 +413,14 @@
 2. `config (JSON)` を入力し `作成` / `更新` を実行する
 3. 一覧の `実行` / `履歴表示` を実行する
 
-![外部連携設定（HR/CRM）](../test-results/2026-02-05-frontend-e2e-r1/11-integration-settings.png)
+![外部連携設定（HR/CRM）](../test-results/2026-03-09-frontend-e2e-r1/11-integration-settings.png)
 
 ### 入力項目/制約
 
 - JSON 入力が不正な場合は保存されません
 - チャットルーム設定は admin/mgmt のみ
 
-![管理設定](../test-results/2026-02-05-frontend-e2e-r1/11-admin-settings.png)
+![管理設定](../test-results/2026-03-09-frontend-e2e-r1/11-admin-settings.png)
 
 ### 休暇運用（休暇種別ルール / HR連携エクスポート）
 
@@ -480,7 +480,7 @@
 
 - 検索語とグループ絞り込みは保存ビューで保存/再利用できます
 
-![運用ジョブ](../test-results/2026-02-05-frontend-e2e-r1/25-admin-jobs.png)
+![運用ジョブ](../test-results/2026-03-09-frontend-e2e-r1/25-admin-jobs.png)
 
 ### ドキュメント送信ログ
 
@@ -503,7 +503,7 @@
 - `監査ログで開く` は `sendLogId` を引き継いで `監査ログ` 画面を開きます
 - `監査ログ` 画面でも `sendLogId` を指定すると、送信操作・再送・配信結果の監査を同じIDで追跡できます
 
-![ドキュメント送信ログ](../test-results/2026-02-05-frontend-e2e-r1/26-document-send-logs.png)
+![ドキュメント送信ログ](../test-results/2026-03-09-frontend-e2e-r1/26-document-send-logs.png)
 
 ### PDFファイル一覧
 
@@ -517,7 +517,7 @@
 2. `再読込` を押して一覧を取得する
 3. 対象行の `開く` を押してPDFを確認する
 
-![PDFファイル一覧](../test-results/2026-02-05-frontend-e2e-r1/27-pdf-files.png)
+![PDFファイル一覧](../test-results/2026-03-09-frontend-e2e-r1/27-pdf-files.png)
 
 ### アクセス棚卸し
 
@@ -531,7 +531,7 @@
 2. users/groups/memberships の件数と上位表示を確認する
 3. `CSV出力` で棚卸し用CSVを出力する
 
-![アクセス棚卸し](../test-results/2026-02-05-frontend-e2e-r1/28-access-reviews.png)
+![アクセス棚卸し](../test-results/2026-03-09-frontend-e2e-r1/28-access-reviews.png)
 
 ### 監査ログ
 
@@ -551,7 +551,7 @@
 
 - 監査ログのフィルタ条件は保存ビューで保存/再利用できます
 
-![監査ログ](../test-results/2026-02-05-frontend-e2e-r1/29-audit-logs.png)
+![監査ログ](../test-results/2026-03-09-frontend-e2e-r1/29-audit-logs.png)
 
 ### 期間締め
 
@@ -567,7 +567,7 @@
 4. 下部の検索条件を指定し `検索` で一覧を取得する
 5. 対象行の `解除` で締めを解除する
 
-![期間締め](../test-results/2026-02-05-frontend-e2e-r1/30-period-locks.png)
+![期間締め](../test-results/2026-03-09-frontend-e2e-r1/30-period-locks.png)
 
 ### 監査閲覧（Break-glass）
 
@@ -589,7 +589,7 @@
 - `ttlHours` は 1〜168
 - 監査閲覧は `approved` 状態のみ可能
 
-![監査閲覧](../test-results/2026-02-05-frontend-e2e-r1/24-chat-break-glass.png)
+![監査閲覧](../test-results/2026-03-09-frontend-e2e-r1/24-chat-break-glass.png)
 
 ### HR 分析（HR グループ向け）
 
@@ -607,7 +607,7 @@
 - 閾値未満のデータは匿名性確保のため非表示
 - 評価目的の利用は禁止
 
-![HR分析](../test-results/2026-02-05-frontend-e2e-r1/13-hr-analytics.png)
+![HR分析](../test-results/2026-03-09-frontend-e2e-r1/13-hr-analytics.png)
 
 ---
 
@@ -615,7 +615,7 @@
 
 - PWA のキャッシュ更新確認: サービスワーカー更新後の表示確認に利用します。
 
-![PWA キャッシュ更新](../test-results/2026-02-05-frontend-e2e-r1/20-sw-cache-refresh.png)
+![PWA キャッシュ更新](../test-results/2026-03-09-frontend-e2e-r1/20-sw-cache-refresh.png)
 
 - `pwa push subscribe flow` は `VITE_PUSH_PUBLIC_KEY` 未設定のため E2E ではスキップしています。
 - 画面デザインは `@itdo/design-system` 適用済みです（compact density）。

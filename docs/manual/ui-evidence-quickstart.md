@@ -1,33 +1,40 @@
 # UI証跡（スクショ）取得: 簡易手順
 
 ## 目的
+
 - UI マニュアルやレビューで参照する「画面キャプチャ（証跡）」を、1コマンドで再取得できるようにする
 
 ## 参照
+
 - 詳細手順: [e2e-evidence-howto](e2e-evidence-howto.md)
 - 証跡インデックス: [docs/test-results/README.md](../test-results/README.md)
 
 ## 実行（既定）
+
 ```bash
 ./scripts/e2e-ui-evidence.sh
 ```
 
 Makefile を使う場合:
+
 ```bash
 make ui-evidence
 ```
 
 モバイル回帰証跡ファイル（テンプレート）を作成する場合:
+
 ```bash
 make mobile-regression-log
 ```
 
 生成物:
+
 - `docs/test-results/<YYYY-MM-DD>-frontend-e2e-rN/`（証跡ディレクトリ）
 - `docs/test-results/<YYYY-MM-DD>-frontend-e2e-rN.md`（実行ログ）
 - `docs/test-results/<YYYY-MM-DD>-mobile-regression-rN.md`（モバイル回帰記録。`make mobile-regression-log` 実行時）
 
 既定で取得対象に含まれる主要導線:
+
 - core smoke（主要セクション横断）
 - 休暇 submit バリデーション（期限/重複）
 - ワークフローエビデンス（chat参照）
@@ -37,29 +44,37 @@ make mobile-regression-log
 - offline queue / pwa cache refresh
 
 ## 代表的なオプション
+
 同日に複数回実行する（run番号を固定）:
+
 ```bash
 E2E_RUN=r2 ./scripts/e2e-ui-evidence.sh
 ```
 
 対象テストを絞る（例: smokeのみ）:
+
 ```bash
 E2E_GREP="frontend smoke" ./scripts/e2e-ui-evidence.sh
 ```
 
 タイムアウトを伸ばす（環境が重い場合）:
+
 ```bash
 E2E_ACTION_TIMEOUT_MS=30000 make ui-evidence
 ```
 
 起動待機時間も調整する（バックエンド/フロントの立ち上がりが遅い場合）:
+
 ```bash
 E2E_SERVICE_READY_TIMEOUT_SEC=120 E2E_SERVICE_READY_INTERVAL_SEC=2 make ui-evidence
 ```
 
 補足:
+
 - `E2E_SERVICE_READY_INTERVAL_SEC` は `E2E_SERVICE_READY_TIMEOUT_SEC` 以下を指定してください。
+- `make ui-evidence` の既定は core subset です。`docs/manual/` の desktop 画面を全面更新する場合は、詳細手順の extended smoke 追記コマンドも同じ `E2E_EVIDENCE_DIR` に対して実行してください。
 
 ## 注意
+
 - 既存の証跡を上書きしない方針です（同名が存在する場合はエラーになります）
 - 取得した証跡を UI マニュアルに反映する場合は、`docs/manual/ui-manual-*.md` の参照先（画像パス）も更新してください

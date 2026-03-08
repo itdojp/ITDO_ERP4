@@ -34,6 +34,13 @@
 
 - ISSUE #1299 初回実行証跡（Phase 1-3）: docs/test-results/2026-03-03-issue-1299-phase1.md
 
+### 2026-03-09
+
+- Podman smoke: docs/test-results/2026-03-09-podman-smoke.md
+- フロントE2E(core): docs/test-results/2026-03-09-frontend-e2e-core.md
+- フロントE2E(UIエビデンス r1): docs/test-results/2026-03-09-frontend-e2e-r1.md
+- 証跡: docs/test-results/2026-03-09-frontend-e2e-r1/
+
 ### 2026-03-08
 
 - ActionPolicy phase3 readiness 記録 r1: docs/test-results/2026-03-08-action-policy-phase3-readiness-r1.md

@@ -275,19 +275,20 @@ test('frontend smoke core @core', async ({ page, request }) => {
   await timeSection.getByLabel('作業メモ').fill(timeNote);
   await timeSection.getByRole('button', { name: '追加' }).click();
   await expect(timeSection.getByText('保存しました')).toBeVisible();
-  await expect(timeSection.getByText(timeNote)).toBeVisible({
+  const timeEntryRow = timeSection.getByText(timeNote).locator('..');
+  await expect(timeEntryRow).toBeVisible({
     timeout: actionTimeout,
   });
-  await expect(timeSection.getByText(deepLinkDailyReportDate)).toBeVisible({
+  await expect(timeEntryRow.getByText(deepLinkDailyReportDate)).toBeVisible({
     timeout: actionTimeout,
   });
-  await expect(timeSection.getByText(`${timeMinutes}分`)).toBeVisible({
+  await expect(timeEntryRow.getByText(`${timeMinutes}分`)).toBeVisible({
     timeout: actionTimeout,
   });
-  await expect(timeSection.getByText(timeWorkType)).toBeVisible({
+  await expect(timeEntryRow.getByText(timeWorkType)).toBeVisible({
     timeout: actionTimeout,
   });
-  await expect(timeSection.getByText(timeLocation)).toBeVisible({
+  await expect(timeEntryRow.getByText(timeLocation)).toBeVisible({
     timeout: actionTimeout,
   });
   const timeListRes = await page.request.get(

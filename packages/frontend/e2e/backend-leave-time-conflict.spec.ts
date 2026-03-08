@@ -498,10 +498,10 @@ test('leave submit enforces lead days and retroactive policy by leave type @core
   const now = new Date();
   const tomorrow = new Date(now);
   tomorrow.setDate(now.getDate() + 1);
-  const yesterday = new Date(now);
-  yesterday.setDate(now.getDate() - 1);
+  const retroactiveDate = new Date(now);
+  retroactiveDate.setDate(now.getDate() - 7);
   const tomorrowStr = toDateInput(tomorrow);
-  const yesterdayStr = toDateInput(yesterday);
+  const retroactiveDateStr = toDateInput(retroactiveDate);
 
   const leaveTypeRes = await request.post(`${apiBase}/leave-types`, {
     data: {
@@ -550,8 +550,8 @@ test('leave submit enforces lead days and retroactive policy by leave type @core
     data: {
       userId: leaveUserId,
       leaveType: leaveTypeCode,
-      startDate: yesterdayStr,
-      endDate: yesterdayStr,
+      startDate: retroactiveDateStr,
+      endDate: retroactiveDateStr,
       hours: 8,
       notes: `window-retro-${suffix}`,
     },
