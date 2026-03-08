@@ -2,7 +2,9 @@
 
 - date: 2026-03-09
 - run: r1
-- startedAt(UTC): 2026-03-08T21:07:00Z
+- timezone: Asia/Tokyo
+- initialStartedAt(UTC): 2026-03-08T21:07:00Z
+- supplementalStartedAt(UTC): 2026-03-08T22:12:34Z
 - git: 8996d738
 - evidence: docs/test-results/2026-03-09-frontend-e2e-r1/
 
@@ -29,4 +31,5 @@ E2E_GREP="frontend smoke additional sections|frontend smoke reports masters sett
   - screenshots: 44 files
   - docs/manual/\* and docs/manual/screen-coverage.md were updated to this directory
 
-- finishedAt(UTC): 2026-03-08T21:08:15Z
+- initialFinishedAt(UTC): 2026-03-08T21:08:15Z
+- supplementalFinishedAt(UTC): 2026-03-08T22:14:03Z
