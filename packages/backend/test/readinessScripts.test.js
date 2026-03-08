@@ -637,6 +637,235 @@ test('record-po-migration-rehearsal: fails when RUN_LABEL output already exists'
   });
 });
 
+test('record-action-policy-phase3-readiness: writes report from provided source files', () => {
+  withTempDir((dir) => {
+    const logDir = path.join(dir, 'logs');
+    const outDir = path.join(dir, 'out');
+    mkdirSync(logDir, { recursive: true });
+
+    writeFileSync(
+      path.join(logDir, 'phase3-readiness.txt'),
+      [
+        'action policy phase3 readiness report',
+        'ready: yes',
+        'from: 2026-03-08T00:00:00.000Z',
+        'to: 2026-03-09T00:00:00.000Z',
+        'missing_static_callsites: 0',
+        'stale_required_actions: 0',
+        'dynamic_callsites: 0',
+        'fallback_unique_keys: 0',
+        'fallback_high_risk_keys: 0',
+        'fallback_medium_risk_keys: 0',
+        'fallback_unknown_risk_keys: 0',
+        '',
+        '## blockers',
+        '(none)',
+        '',
+        '## fallback keys',
+        '(none)',
+        '',
+      ].join('\n'),
+    );
+    writeFileSync(
+      path.join(logDir, 'phase3-readiness.json'),
+      '{"ready":true}\n',
+    );
+    writeFileSync(
+      path.join(logDir, 'fallback-report.txt'),
+      [
+        'action_policy_fallback_allowed report',
+        'from: 2026-03-08T00:00:00.000Z',
+        'to: 2026-03-09T00:00:00.000Z',
+        'events: 0',
+        'unique_keys: 0',
+        '',
+      ].join('\n'),
+    );
+    writeFileSync(
+      path.join(logDir, 'fallback-report.json'),
+      '{"totals":{"events":0,"uniqueKeys":0}}\n',
+    );
+
+    const res = runScript('record-action-policy-phase3-readiness.sh', {
+      LOG_DIR: logDir,
+      OUT_DIR: outDir,
+      DATE_STAMP: '2026-03-08',
+      RUN_LABEL: 'r1',
+    });
+    assert.equal(res.status, 0, `${res.stderr}\n${res.stdout}`);
+
+    const reportPath = path.join(
+      outDir,
+      '2026-03-08-action-policy-phase3-readiness-r1.md',
+    );
+    assert.equal(existsSync(reportPath), true);
+    const report = readFileSync(reportPath, 'utf8');
+    assert.match(report, /# ActionPolicy phase3 readiness 記録/);
+    assert.match(report, /- ready: yes/);
+    assert.match(report, /- fallback_unique_keys: 0/);
+    assert.match(report, /`.*phase3-readiness\.txt`/);
+  });
+});
+
+test('record-action-policy-phase3-readiness: auto increments run suffix when RUN_LABEL is omitted', () => {
+  withTempDir((dir) => {
+    const logDir = path.join(dir, 'logs');
+    const outDir = path.join(dir, 'out');
+    mkdirSync(logDir, { recursive: true });
+    mkdirSync(outDir, { recursive: true });
+    writeFileSync(
+      path.join(logDir, 'phase3-readiness.txt'),
+      'ready: yes\n## blockers\n(none)\n\n## fallback keys\n(none)\n',
+    );
+    writeFileSync(path.join(logDir, 'phase3-readiness.json'), '{}\n');
+    writeFileSync(path.join(logDir, 'fallback-report.txt'), 'unique_keys: 0\n');
+    writeFileSync(path.join(logDir, 'fallback-report.json'), '{}\n');
+    writeFileSync(
+      path.join(outDir, '2026-03-08-action-policy-phase3-readiness-r1.md'),
+      '# existing report',
+    );
+
+    const res = runScript('record-action-policy-phase3-readiness.sh', {
+      LOG_DIR: logDir,
+      OUT_DIR: outDir,
+      DATE_STAMP: '2026-03-08',
+    });
+    assert.equal(res.status, 0, `${res.stderr}\n${res.stdout}`);
+    assert.equal(
+      existsSync(
+        path.join(outDir, '2026-03-08-action-policy-phase3-readiness-r2.md'),
+      ),
+      true,
+    );
+  });
+});
+
+test('run-and-record-action-policy-phase3-readiness: captures outputs from report scripts', () => {
+  withTempDir((dir) => {
+    const readinessStub = path.join(dir, 'readiness-stub.mjs');
+    const fallbackStub = path.join(dir, 'fallback-stub.mjs');
+    const logDir = path.join(dir, 'logs');
+    const outDir = path.join(dir, 'out');
+
+    writeFileSync(
+      readinessStub,
+      [
+        "const format = process.argv.find((arg) => arg.startsWith('--format='))?.split('=')[1] || 'text';",
+        "if (format === 'json') {",
+        '  process.stdout.write(\'{"ready":true}\\n\');',
+        '} else {',
+        "  process.stdout.write(['action policy phase3 readiness report','ready: yes','from: 2026-03-08T00:00:00.000Z','to: 2026-03-09T00:00:00.000Z','missing_static_callsites: 0','stale_required_actions: 0','dynamic_callsites: 0','fallback_unique_keys: 0','fallback_high_risk_keys: 0','fallback_medium_risk_keys: 0','fallback_unknown_risk_keys: 0','','## blockers','(none)','','## fallback keys','(none)',''].join('\\n'));",
+        '}',
+      ].join('\n'),
+    );
+    writeFileSync(
+      fallbackStub,
+      [
+        "const format = process.argv.find((arg) => arg.startsWith('--format='))?.split('=')[1] || 'text';",
+        "if (format === 'json') {",
+        '  process.stdout.write(\'{"totals":{"events":0,"uniqueKeys":0}}\\n\');',
+        '} else {',
+        "  process.stdout.write(['action_policy_fallback_allowed report','from: 2026-03-08T00:00:00.000Z','to: 2026-03-09T00:00:00.000Z','events: 0','unique_keys: 0',''].join('\\n'));",
+        '}',
+      ].join('\n'),
+    );
+
+    const res = runScript('run-and-record-action-policy-phase3-readiness.sh', {
+      LOG_DIR: logDir,
+      OUT_DIR: outDir,
+      DATE_STAMP: '2026-03-08',
+      RUN_LABEL: 'r1',
+      READINESS_SCRIPT: readinessStub,
+      FALLBACK_SCRIPT: fallbackStub,
+    });
+    assert.equal(res.status, 0, `${res.stderr}\n${res.stdout}`);
+    assert.equal(existsSync(path.join(logDir, 'phase3-readiness.txt')), true);
+    assert.equal(existsSync(path.join(logDir, 'phase3-readiness.json')), true);
+    assert.equal(existsSync(path.join(logDir, 'fallback-report.txt')), true);
+    assert.equal(existsSync(path.join(logDir, 'fallback-report.json')), true);
+    assert.equal(
+      existsSync(
+        path.join(outDir, '2026-03-08-action-policy-phase3-readiness-r1.md'),
+      ),
+      true,
+    );
+  });
+});
+
+test('run-and-record-action-policy-phase3-readiness: pins a single report window for all outputs', () => {
+  withTempDir((dir) => {
+    const readinessStub = path.join(dir, 'readiness-stub.mjs');
+    const fallbackStub = path.join(dir, 'fallback-stub.mjs');
+    const logDir = path.join(dir, 'logs');
+    const outDir = path.join(dir, 'out');
+
+    writeFileSync(
+      readinessStub,
+      [
+        'const args = process.argv.slice(2);',
+        "const format = args.find((arg) => arg.startsWith('--format='))?.split('=')[1] || 'text';",
+        "const from = args.find((arg) => arg.startsWith('--from='))?.split('=')[1] || '';",
+        "const to = args.find((arg) => arg.startsWith('--to='))?.split('=')[1] || '';",
+        "if (format === 'json') {",
+        "  process.stdout.write(JSON.stringify({ ready: true, from, to }) + '\\n');",
+        '} else {',
+        "  process.stdout.write(['action policy phase3 readiness report',`ready: yes`,`from: ${from}`,`to: ${to}`,'missing_static_callsites: 0','stale_required_actions: 0','dynamic_callsites: 0','fallback_unique_keys: 0','fallback_high_risk_keys: 0','fallback_medium_risk_keys: 0','fallback_unknown_risk_keys: 0','','## blockers','(none)','','## fallback keys','(none)',''].join('\\n'));",
+        '}',
+      ].join('\n'),
+    );
+    writeFileSync(
+      fallbackStub,
+      [
+        'const args = process.argv.slice(2);',
+        "const format = args.find((arg) => arg.startsWith('--format='))?.split('=')[1] || 'text';",
+        "const from = args.find((arg) => arg.startsWith('--from='))?.split('=')[1] || '';",
+        "const to = args.find((arg) => arg.startsWith('--to='))?.split('=')[1] || '';",
+        "if (format === 'json') {",
+        "  process.stdout.write(JSON.stringify({ from, to, totals: { events: 0, uniqueKeys: 0 } }) + '\\n');",
+        '} else {',
+        "  process.stdout.write(['action_policy_fallback_allowed report',`from: ${from}`,`to: ${to}`,'events: 0','unique_keys: 0',''].join('\\n'));",
+        '}',
+      ].join('\n'),
+    );
+
+    const res = runScript('run-and-record-action-policy-phase3-readiness.sh', {
+      LOG_DIR: logDir,
+      OUT_DIR: outDir,
+      DATE_STAMP: '2026-03-08',
+      RUN_LABEL: 'r1',
+      REPORT_FROM: '2026-03-07T00:00:00.000Z',
+      REPORT_TO: '2026-03-08T00:00:00.000Z',
+      READINESS_SCRIPT: readinessStub,
+      FALLBACK_SCRIPT: fallbackStub,
+    });
+    assert.equal(res.status, 0, `${res.stderr}\n${res.stdout}`);
+
+    const readinessText = readFileSync(
+      path.join(logDir, 'phase3-readiness.txt'),
+      'utf8',
+    );
+    const fallbackText = readFileSync(
+      path.join(logDir, 'fallback-report.txt'),
+      'utf8',
+    );
+    const readinessJson = JSON.parse(
+      readFileSync(path.join(logDir, 'phase3-readiness.json'), 'utf8'),
+    );
+    const fallbackJson = JSON.parse(
+      readFileSync(path.join(logDir, 'fallback-report.json'), 'utf8'),
+    );
+
+    assert.match(readinessText, /from: 2026-03-07T00:00:00.000Z/);
+    assert.match(readinessText, /to: 2026-03-08T00:00:00.000Z/);
+    assert.match(fallbackText, /from: 2026-03-07T00:00:00.000Z/);
+    assert.match(fallbackText, /to: 2026-03-08T00:00:00.000Z/);
+    assert.equal(readinessJson.from, '2026-03-07T00:00:00.000Z');
+    assert.equal(readinessJson.to, '2026-03-08T00:00:00.000Z');
+    assert.equal(fallbackJson.from, '2026-03-07T00:00:00.000Z');
+    assert.equal(fallbackJson.to, '2026-03-08T00:00:00.000Z');
+  });
+});
+
 test('generate-po-migration-report: includes preflight summary and scope lists', () => {
   withTempDir((dir) => {
     const logDir = path.join(dir, 'logs');
