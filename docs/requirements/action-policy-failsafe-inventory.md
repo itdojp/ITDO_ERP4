@@ -189,3 +189,4 @@ node scripts/report-action-policy-phase3-readiness.mjs --format=text
   - 主要業務の route preset / send preset（send + evidence gate）回帰テスト（invoice / purchase_order / expense / vendor_invoice / estimate / time / leave / approval）が green
   - required actions ギャップレポートで static callsite の missing 0
   - 試験運用時は `make action-policy-phase3-readiness-record` で readiness / fallback 集計の証跡を `docs/test-results/` に保存する
+  - readiness 記録から cutover 記録までまとめて開始する場合は `make action-policy-phase3-trial-record` を使い、同じ run label の readiness / cutover 記録を一対で残す

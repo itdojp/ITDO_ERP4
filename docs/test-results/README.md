@@ -20,6 +20,8 @@
 - S3バックアップ readiness 記録テンプレート: docs/test-results/backup-s3-readiness-template.md
 - ESLint10 readiness 記録テンプレート: docs/test-results/eslint10-readiness-template.md
 - Dependabot alerts 監視記録テンプレート: docs/test-results/dependabot-alerts-template.md
+- ActionPolicy phase3 readiness 記録テンプレート: docs/test-results/action-policy-phase3-readiness-template.md
+- ActionPolicy phase3 cutover 記録テンプレート: docs/test-results/action-policy-phase3-cutover-template.md
 - チャット添付AV（Staging）検証テンプレート: docs/test-results/chat-attachments-av-staging-template.md
 - DRリストア運用検証テンプレート: docs/test-results/dr-restore-template.md
 - モバイル回帰証跡テンプレート: docs/test-results/mobile-regression-template.md
