@@ -748,6 +748,57 @@ test('record-action-policy-phase3-readiness: writes report from provided source 
   });
 });
 
+test('record-action-policy-phase3-readiness: uses repo-relative paths when files are under repo tmp', () => {
+  const repoTmpRoot = path.join(ROOT_DIR, 'tmp');
+  mkdirSync(repoTmpRoot, { recursive: true });
+  const repoTempDir = mkdtempSync(
+    path.join(repoTmpRoot, 'action-policy-phase3-readiness-test-'),
+  );
+  try {
+    const relativeLogDir = path.join(
+      'tmp',
+      path.basename(repoTempDir),
+      'run-1',
+    );
+    const logDir = path.join(ROOT_DIR, relativeLogDir);
+    const outDir = path.join(repoTempDir, 'out');
+    mkdirSync(logDir, { recursive: true });
+    writeFileSync(
+      path.join(logDir, 'phase3-readiness.txt'),
+      'ready: yes\n## blockers\n(none)\n\n## fallback keys\n(none)\n',
+    );
+    writeFileSync(path.join(logDir, 'phase3-readiness.json'), '{}\n');
+    writeFileSync(path.join(logDir, 'fallback-report.txt'), 'unique_keys: 0\n');
+    writeFileSync(path.join(logDir, 'fallback-report.json'), '{}\n');
+
+    const res = runScript('record-action-policy-phase3-readiness.sh', {
+      LOG_DIR: relativeLogDir,
+      OUT_DIR: outDir,
+      DATE_STAMP: '2026-03-08',
+      RUN_LABEL: 'r-relpath',
+    });
+    assert.equal(res.status, 0, `${res.stderr}\n${res.stdout}`);
+
+    const report = readFileSync(
+      path.join(
+        outDir,
+        '2026-03-08-action-policy-phase3-readiness-r-relpath.md',
+      ),
+      'utf8',
+    );
+    assert.match(
+      report,
+      /sourceLogDir: `tmp\/action-policy-phase3-readiness-test-[^/]+\/run-1`/,
+    );
+    assert.match(
+      report,
+      /readinessText: `tmp\/action-policy-phase3-readiness-test-[^/]+\/run-1\/phase3-readiness\.txt`/,
+    );
+  } finally {
+    rmSync(repoTempDir, { recursive: true, force: true });
+  }
+});
+
 test('record-action-policy-phase3-readiness: auto increments run suffix when RUN_LABEL is omitted', () => {
   withTempDir((dir) => {
     const logDir = path.join(dir, 'logs');
@@ -833,6 +884,57 @@ test('record-action-policy-phase3-cutover: writes report from readiness record',
     assert.match(report, /- fromPreset: `phase2_core`/);
     assert.match(report, /- toPreset: `phase3_strict`/);
   });
+});
+
+test('record-action-policy-phase3-cutover: uses repo-relative readiness record path when source is under repo', () => {
+  const repoResultsRoot = path.join(ROOT_DIR, 'docs/test-results');
+  mkdirSync(repoResultsRoot, { recursive: true });
+  const repoTempDir = mkdtempSync(
+    path.join(repoResultsRoot, 'action-policy-phase3-cutover-test-'),
+  );
+  try {
+    const readinessRecord = path.join(
+      repoTempDir,
+      '2026-03-08-action-policy-phase3-readiness-r1.md',
+    );
+    const outDir = path.join(repoTempDir, 'out');
+    writeFileSync(
+      readinessRecord,
+      [
+        '# ActionPolicy phase3 readiness 記録',
+        '',
+        '- ready: yes',
+        '- from/to: 2026-03-07T00:00:00.000Z -> 2026-03-08T00:00:00.000Z',
+        '- missing_static_callsites: 0',
+        '- stale_required_actions: 0',
+        '- dynamic_callsites: 0',
+        '- fallback_unique_keys: 0',
+        '- fallback_high_risk_keys: 0',
+        '- fallback_medium_risk_keys: 0',
+        '- fallback_unknown_risk_keys: 0',
+        '',
+      ].join('\n'),
+    );
+
+    const res = runScript('record-action-policy-phase3-cutover.sh', {
+      READINESS_RECORD_FILE: path.relative(ROOT_DIR, readinessRecord),
+      OUT_DIR: outDir,
+      DATE_STAMP: '2026-03-08',
+      RUN_LABEL: 'r-relpath',
+    });
+    assert.equal(res.status, 0, `${res.stderr}\n${res.stdout}`);
+
+    const report = readFileSync(
+      path.join(outDir, '2026-03-08-action-policy-phase3-cutover-r-relpath.md'),
+      'utf8',
+    );
+    assert.match(
+      report,
+      /sourceReadinessRecord: `docs\/test-results\/action-policy-phase3-cutover-test-[^/]+\/2026-03-08-action-policy-phase3-readiness-r1\.md`/,
+    );
+  } finally {
+    rmSync(repoTempDir, { recursive: true, force: true });
+  }
 });
 
 test('record-action-policy-phase3-cutover: auto increments run suffix when RUN_LABEL is omitted', () => {

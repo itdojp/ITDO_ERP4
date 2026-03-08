@@ -52,6 +52,18 @@ resolve_absolute_path() {
   fi
 }
 
+format_source_path() {
+  local input="$1"
+  case "$input" in
+    "$ROOT_DIR"/*)
+      printf '%s\n' "${input#"$ROOT_DIR"/}"
+      ;;
+    *)
+      printf '%s\n' "$input"
+      ;;
+  esac
+}
+
 validate_date_stamp() {
   if ! [[ "$DATE_STAMP" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
     die "DATE_STAMP must be YYYY-MM-DD"
@@ -188,6 +200,13 @@ main() {
   local output_file
   output_file="$(resolve_output_file)"
 
+  local source_log_dir source_readiness_text source_readiness_json source_fallback_text source_fallback_json
+  source_log_dir="$(format_source_path "$LOG_DIR")"
+  source_readiness_text="$(format_source_path "$READINESS_TEXT_FILE")"
+  source_readiness_json="$(format_source_path "$READINESS_JSON_FILE")"
+  source_fallback_text="$(format_source_path "$FALLBACK_TEXT_FILE")"
+  source_fallback_json="$(format_source_path "$FALLBACK_JSON_FILE")"
+
   local ready from to missing stale dynamic fallback_total fallback_high fallback_medium fallback_unknown
   ready="$(extract_scalar "$READINESS_TEXT_FILE" "ready")"
   from="$(extract_scalar "$READINESS_TEXT_FILE" "from")"
@@ -210,11 +229,11 @@ main() {
       echo "# ActionPolicy phase3 readiness 記録"
       echo
       echo "- generatedAt: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-      echo "- sourceLogDir: \`$LOG_DIR\`"
-      echo "- readinessText: \`$READINESS_TEXT_FILE\`"
-      echo "- readinessJson: \`$READINESS_JSON_FILE\`"
-      echo "- fallbackText: \`$FALLBACK_TEXT_FILE\`"
-      echo "- fallbackJson: \`$FALLBACK_JSON_FILE\`"
+      echo "- sourceLogDir: \`$source_log_dir\`"
+      echo "- readinessText: \`$source_readiness_text\`"
+      echo "- readinessJson: \`$source_readiness_json\`"
+      echo "- fallbackText: \`$source_fallback_text\`"
+      echo "- fallbackJson: \`$source_fallback_json\`"
       echo "- branch: $(git -C "$ROOT_DIR" branch --show-current)"
       echo "- commit: $(git -C "$ROOT_DIR" rev-parse --short HEAD)"
       echo
