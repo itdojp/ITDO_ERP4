@@ -74,103 +74,105 @@ function invoiceApproved() {
   };
 }
 
-function withInvoicePolicyEnv(fn) {
+function withInvoicePolicyEnv(preset, fn) {
   return withEnv(
     {
       DATABASE_URL: process.env.DATABASE_URL || MIN_DATABASE_URL,
       AUTH_MODE: 'header',
-      ACTION_POLICY_ENFORCEMENT_PRESET: 'phase2_core',
+      ACTION_POLICY_ENFORCEMENT_PRESET: preset,
       ACTION_POLICY_REQUIRED_ACTIONS: '',
     },
     fn,
   );
 }
 
-test('POST /invoices/:id/mark-paid: phase2_core required action denies when policy is missing', async () => {
-  await withInvoicePolicyEnv(async () => {
-    let updateCalled = 0;
-    await withPrismaStubs(
-      {
-        'invoice.findUnique': async () => invoiceApproved(),
-        'actionPolicy.findMany': async () => [],
-        'invoice.update': async () => {
-          updateCalled += 1;
-          return { id: 'inv-001' };
-        },
-      },
-      async () => {
-        const server = await buildServer({ logger: false });
-        try {
-          const res = await server.inject({
-            method: 'POST',
-            url: '/invoices/inv-001/mark-paid',
-            headers: adminHeaders(),
-            payload: {},
-          });
-          assert.equal(res.statusCode, 403, res.body);
-          const payload = JSON.parse(res.body);
-          assert.equal(payload?.error?.code, 'ACTION_POLICY_DENIED');
-          assert.equal(updateCalled, 0);
-        } finally {
-          await server.close();
-        }
-      },
-    );
-  });
-});
-
-test('POST /invoices/:id/mark-paid: policy allow reaches downstream update path (not ACTION_POLICY_DENIED)', async () => {
-  await withInvoicePolicyEnv(async () => {
-    let updateCalled = 0;
-    const paidAt = new Date('2026-02-01T00:00:00.000Z');
-    await withPrismaStubs(
-      {
-        'invoice.findUnique': async () => invoiceApproved(),
-        'actionPolicy.findMany': async () => [
-          {
-            id: 'policy-invoice-mark-paid-allow',
-            flowType: 'invoice',
-            actionKey: 'mark_paid',
-            priority: 100,
-            isEnabled: true,
-            subjects: null,
-            stateConstraints: null,
-            requireReason: false,
-            guards: null,
+for (const preset of ['phase2_core', 'phase3_strict']) {
+  test(`POST /invoices/:id/mark-paid: ${preset} required action denies when policy is missing`, async () => {
+    await withInvoicePolicyEnv(preset, async () => {
+      let updateCalled = 0;
+      await withPrismaStubs(
+        {
+          'invoice.findUnique': async () => invoiceApproved(),
+          'actionPolicy.findMany': async () => [],
+          'invoice.update': async () => {
+            updateCalled += 1;
+            return { id: 'inv-001' };
           },
-        ],
-        'invoice.update': async ({ where, data }) => {
-          updateCalled += 1;
-          return {
-            id: where.id,
-            status: 'paid',
-            paidAt: data.paidAt,
-            paidBy: data.paidBy,
-            updatedBy: data.updatedBy,
-            lines: [],
-          };
         },
-        'auditLog.create': async () => ({ id: 'audit-001' }),
-      },
-      async () => {
-        const server = await buildServer({ logger: false });
-        try {
-          const res = await server.inject({
-            method: 'POST',
-            url: '/invoices/inv-001/mark-paid',
-            headers: adminHeaders(),
-            payload: { paidAt: paidAt.toISOString() },
-          });
-          assert.equal(res.statusCode, 200, res.body);
-          const payload = JSON.parse(res.body);
-          assert.equal(payload?.id, 'inv-001');
-          assert.equal(payload?.status, 'paid');
-          assert.equal(payload?.paidBy, 'admin-user');
-          assert.equal(updateCalled, 1);
-        } finally {
-          await server.close();
-        }
-      },
-    );
+        async () => {
+          const server = await buildServer({ logger: false });
+          try {
+            const res = await server.inject({
+              method: 'POST',
+              url: '/invoices/inv-001/mark-paid',
+              headers: adminHeaders(),
+              payload: {},
+            });
+            assert.equal(res.statusCode, 403, res.body);
+            const payload = JSON.parse(res.body);
+            assert.equal(payload?.error?.code, 'ACTION_POLICY_DENIED');
+            assert.equal(updateCalled, 0);
+          } finally {
+            await server.close();
+          }
+        },
+      );
+    });
   });
-});
+
+  test(`POST /invoices/:id/mark-paid: ${preset} policy allow reaches downstream update path`, async () => {
+    await withInvoicePolicyEnv(preset, async () => {
+      const paidAt = new Date('2026-02-01T00:00:00.000Z');
+      let updateCalled = 0;
+      await withPrismaStubs(
+        {
+          'invoice.findUnique': async () => invoiceApproved(),
+          'actionPolicy.findMany': async () => [
+            {
+              id: 'policy-invoice-mark-paid-allow',
+              flowType: 'invoice',
+              actionKey: 'mark_paid',
+              priority: 100,
+              isEnabled: true,
+              subjects: null,
+              stateConstraints: null,
+              requireReason: false,
+              guards: null,
+            },
+          ],
+          'invoice.update': async ({ where, data }) => {
+            updateCalled += 1;
+            return {
+              id: where.id,
+              status: data.status,
+              paidAt: data.paidAt,
+              paidBy: data.paidBy,
+              updatedBy: data.updatedBy,
+              lines: [],
+            };
+          },
+          'auditLog.create': async () => ({ id: 'audit-001' }),
+        },
+        async () => {
+          const server = await buildServer({ logger: false });
+          try {
+            const res = await server.inject({
+              method: 'POST',
+              url: '/invoices/inv-001/mark-paid',
+              headers: adminHeaders(),
+              payload: { paidAt: paidAt.toISOString() },
+            });
+            assert.equal(res.statusCode, 200, res.body);
+            const payload = JSON.parse(res.body);
+            assert.equal(payload?.id, 'inv-001');
+            assert.equal(payload?.status, 'paid');
+            assert.equal(payload?.paidBy, 'admin-user');
+            assert.equal(updateCalled, 1);
+          } finally {
+            await server.close();
+          }
+        },
+      );
+    });
+  });
+}
