@@ -342,6 +342,45 @@ test('record-backup-s3-readiness: writes a report from an existing log file', ()
   });
 });
 
+test('record-backup-s3-readiness: uses repo-relative source log path when log is under repo tmp', () => {
+  const repoTempDir = mkdtempSync(
+    path.join(ROOT_DIR, 'tmp/backup-s3-readiness-test-'),
+  );
+  try {
+    const relativeLogPath = path.join(
+      'tmp',
+      path.basename(repoTempDir),
+      'backup-s3-readiness.log',
+    );
+    const logPath = path.join(ROOT_DIR, relativeLogPath);
+    const outDir = path.join(repoTempDir, 'out');
+    writeFileSync(
+      logPath,
+      '[backup-s3-preflight][ERROR] missing command: aws\n',
+    );
+
+    const res = runScript('record-backup-s3-readiness.sh', {
+      LOG_FILE: relativeLogPath,
+      OUT_DIR: outDir,
+      DATE_STAMP: '2026-02-24',
+      RUN_LABEL: 'r-relpath',
+    });
+    assert.equal(res.status, 0, `${res.stderr}\n${res.stdout}`);
+
+    const reportPath = path.join(
+      outDir,
+      '2026-02-24-backup-s3-readiness-r-relpath.md',
+    );
+    const report = readFileSync(reportPath, 'utf8');
+    assert.match(
+      report,
+      /sourceLogFile: `tmp\/backup-s3-readiness-test-[^/]+\/backup-s3-readiness\.log`/,
+    );
+  } finally {
+    rmSync(repoTempDir, { recursive: true, force: true });
+  }
+});
+
 test('record-backup-s3-readiness: auto increments run suffix when RUN_LABEL is omitted', () => {
   withTempDir((dir) => {
     const logPath = path.join(dir, 'backup-s3-readiness.log');
