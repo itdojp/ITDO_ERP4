@@ -343,8 +343,10 @@ test('record-backup-s3-readiness: writes a report from an existing log file', ()
 });
 
 test('record-backup-s3-readiness: uses repo-relative source log path when log is under repo tmp', () => {
+  const repoTmpRoot = path.join(ROOT_DIR, 'tmp');
+  mkdirSync(repoTmpRoot, { recursive: true });
   const repoTempDir = mkdtempSync(
-    path.join(ROOT_DIR, 'tmp/backup-s3-readiness-test-'),
+    path.join(repoTmpRoot, 'backup-s3-readiness-test-'),
   );
   try {
     const relativeLogPath = path.join(
