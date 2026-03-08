@@ -26,14 +26,6 @@
 - DRリストア運用検証テンプレート: docs/test-results/dr-restore-template.md
 - モバイル回帰証跡テンプレート: docs/test-results/mobile-regression-template.md
 
-### 2026-03-02
-
-- ISSUE #1293 品質強化証跡: docs/test-results/2026-03-02-issue-1293-leave-quality.md
-
-### 2026-03-03
-
-- ISSUE #1299 初回実行証跡（Phase 1-3）: docs/test-results/2026-03-03-issue-1299-phase1.md
-
 ### 2026-03-09
 
 - Podman smoke: docs/test-results/2026-03-09-podman-smoke.md
@@ -50,6 +42,14 @@
 - S3バックアップ readiness 記録 r1: docs/test-results/2026-03-08-backup-s3-readiness-r1.md
 - Dependabot alerts 監視記録 r1: docs/test-results/2026-03-08-dependabot-alerts-r1.md
 - ESLint10 readiness 記録 r1: docs/test-results/2026-03-08-eslint10-readiness-r1.md
+
+### 2026-03-03
+
+- ISSUE #1299 初回実行証跡（Phase 1-3）: docs/test-results/2026-03-03-issue-1299-phase1.md
+
+### 2026-03-02
+
+- ISSUE #1293 品質強化証跡: docs/test-results/2026-03-02-issue-1293-leave-quality.md
 
 ### 2026-02-06
 
