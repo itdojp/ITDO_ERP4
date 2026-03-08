@@ -36,6 +36,8 @@
 
 ### 2026-03-08
 
+- ActionPolicy phase3 readiness 記録 r1: docs/test-results/2026-03-08-action-policy-phase3-readiness-r1.md
+- ActionPolicy phase3 cutover 記録 r1: docs/test-results/2026-03-08-action-policy-phase3-cutover-r1.md
 - S3バックアップ readiness 記録 r1: docs/test-results/2026-03-08-backup-s3-readiness-r1.md
 - Dependabot alerts 監視記録 r1: docs/test-results/2026-03-08-dependabot-alerts-r1.md
 - ESLint10 readiness 記録 r1: docs/test-results/2026-03-08-eslint10-readiness-r1.md

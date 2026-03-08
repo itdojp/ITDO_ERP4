@@ -48,6 +48,18 @@ resolve_absolute_path() {
   fi
 }
 
+format_source_path() {
+  local input="$1"
+  case "$input" in
+    "$ROOT_DIR"/*)
+      printf '%s\n' "${input#"$ROOT_DIR"/}"
+      ;;
+    *)
+      printf '%s\n' "$input"
+      ;;
+  esac
+}
+
 validate_date_stamp() {
   if ! [[ "$DATE_STAMP" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
     die "DATE_STAMP must be YYYY-MM-DD"
@@ -145,6 +157,8 @@ main() {
 
   local output_file
   output_file="$(resolve_output_file)"
+  local source_readiness_record
+  source_readiness_record="$(format_source_path "$READINESS_RECORD_FILE")"
 
   local ready from_to missing stale dynamic fallback_total fallback_high fallback_medium fallback_unknown
   ready="$(extract_scalar "$READINESS_RECORD_FILE" "ready")"
@@ -163,7 +177,7 @@ main() {
       echo "# ActionPolicy phase3 cutover 記録"
       echo
       echo "- generatedAt: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-      echo "- sourceReadinessRecord: \`$READINESS_RECORD_FILE\`"
+      echo "- sourceReadinessRecord: \`$source_readiness_record\`"
       echo "- branch: $(git -C "$ROOT_DIR" branch --show-current)"
       echo "- commit: $(git -C "$ROOT_DIR" rev-parse --short HEAD)"
       echo "- fromPreset: \`$FROM_PRESET\`"
