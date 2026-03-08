@@ -55,6 +55,7 @@
    - `fallback_medium_risk_keys: 0`
    - `fallback_unknown_risk_keys: 0`
 4. 収束判定後に `ACTION_POLICY_ENFORCEMENT_PRESET=phase3_strict` へ切り替える（`*:*` 相当）。
+5. 切替記録は `make action-policy-phase3-cutover-record` で `docs/test-results/YYYY-MM-DD-action-policy-phase3-cutover-rN.md` として残す。
 
 ### 切替前の確認コマンド
 
@@ -104,11 +105,13 @@ make action-policy-fallback-report-json
    - `make action-policy-phase3-readiness`
    - `make action-policy-phase3-readiness-json`
    - `make action-policy-phase3-readiness-record`
+   - `make action-policy-phase3-cutover-record`
    - `make action-policy-fallback-report`
    - `make action-policy-fallback-report-json`
 3. readiness report が `ready: no` の場合は `blockers` と `fallback keys` を起点に未収束箇所を特定し、ActionPolicy 追加に反映する。
 4. 補足: `action_policy_fallback_allowed` は実装上、`flowType/actionKey/targetTable` ごとにプロセス内で 1 回だけ記録されるため、レポートの `count` は実発生回数ではなくキー検出用の下限値として扱う。
 5. `make action-policy-phase3-readiness-record` は `tmp/action-policy-phase3-readiness/run-*` に text/json の観測結果を保存し、`docs/test-results/YYYY-MM-DD-action-policy-phase3-readiness-rN.md` を生成する。
+6. `make action-policy-phase3-cutover-record` は直近の readiness 記録を参照し、切替・主要操作確認・ロールバック結果を記入するための `docs/test-results/YYYY-MM-DD-action-policy-phase3-cutover-rN.md` を生成する。
 
 ## 実行フロー（請求送信の標準例）
 
