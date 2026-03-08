@@ -34,7 +34,7 @@ DATABASE_URL='postgresql://postgres:postgres@localhost:55444/postgres?schema=pub
 
 補足:
 
-- この記録は PoC ローカル環境（Podman PostgreSQL / `localhost:55444`）での rehearshal。
+- この記録は PoC ローカル環境（Podman PostgreSQL / `localhost:55444`）での rehearsal。
 - `phase3_strict` の分岐自体は route preset test の `phase3_strict` ケースで確認した。
 - 実アプリ設定変更と再デプロイは、この local rehearsal では未実施。
 
