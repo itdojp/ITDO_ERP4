@@ -226,19 +226,21 @@ export async function withDisabledCompetingPolicies<T>(options: {
     actionKey: options.actionKey,
   });
   const disabled = items.filter((item) => !keepIds.has(String(item.id)));
-  for (const item of disabled) {
-    await patchActionPolicy({
-      request: options.request,
-      apiBase: options.apiBase,
-      headers: options.headers,
-      policyId: item.id,
-      patch: { isEnabled: false },
-    });
-  }
+  const successfullyDisabled: ActionPolicySummary[] = [];
   try {
+    for (const item of disabled) {
+      await patchActionPolicy({
+        request: options.request,
+        apiBase: options.apiBase,
+        headers: options.headers,
+        policyId: item.id,
+        patch: { isEnabled: false },
+      });
+      successfullyDisabled.push(item);
+    }
     return await options.run();
   } finally {
-    for (const item of disabled) {
+    for (const item of successfullyDisabled) {
       await patchActionPolicy({
         request: options.request,
         apiBase: options.apiBase,
