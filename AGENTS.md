@@ -1,13 +1,13 @@
 # リポジトリ運用ガイド（Codex/開発者向け）
 
 ## 目的
-- 変更前後の手順と最小限の品質チェックを統一する
+- repo 固有の前提条件と最小品質チェックだけを定義する
 
 ## 前提
 - Node.js / npm が利用可能であること
-- DB は PoC 環境で Podman を利用（E2Eスクリプト既定）
+- DB / E2E の既定環境は Podman であること
 
-## 最小コマンド（Makefile）
+## 基本コマンド
 ```bash
 make lint
 make format-check
@@ -18,65 +18,26 @@ make audit
 make e2e
 ```
 
-## 直接コマンド（Makefile未使用の場合）
-### Lint / Format
-```bash
-npm run lint --prefix packages/backend
-npm run format:check --prefix packages/backend
-npm run lint --prefix packages/frontend
-npm run format:check --prefix packages/frontend
-```
-
-### Typecheck / Build / Test
-```bash
-npm run typecheck --prefix packages/backend
-npm run typecheck --prefix packages/frontend
-npm run build --prefix packages/backend
-npm run build --prefix packages/frontend
-npm run test --prefix packages/backend
-```
-
-### Audit（npm audit）
-```bash
-npm audit --prefix packages/backend --audit-level=high
-npm audit --prefix packages/frontend --audit-level=high
-```
-
-### E2E（Playwright）
-```bash
-E2E_SCOPE=core E2E_CAPTURE=0 ./scripts/e2e-frontend.sh
-```
+## 補助コマンド
+- UI 証跡更新: `make ui-evidence`
+- フロントを API 接続で起動: `make frontend-dev-api`
+- Podman スモーク検証: `make podman-smoke`
+- PR レビューコメント一覧: `make pr-comments PR=123`
 
 補足:
-- Podman DBのポート（既定: 55433）が使用中の場合、`E2E_PODMAN_HOST_PORT` が未指定なら空きポートへ自動フォールバックします。
-- ポートを固定したい場合は `E2E_PODMAN_HOST_PORT=55435` のように明示指定してください（競合時はエラーで停止します）。
+- E2E を直接実行する場合は `E2E_SCOPE=core E2E_CAPTURE=0 ./scripts/e2e-frontend.sh`
+- `E2E_PODMAN_HOST_PORT` 未指定時は、既定ポート競合時に空きポートへ自動フォールバックする
 
-### UI証跡（スクショ）再取得（任意）
-```bash
-make ui-evidence
-```
+## PR レビュー運用
+- GitHub PR のレビュー確認は、グローバル skill `pr-review-completeness` を使う
+- 特定 review URL / review ID が与えられた場合は、その review 単位で確認する
+- review 本文、review comments、review threads、未解決 thread 数の整合が取れるまで「対応不要」と判断しない
 
-### フロントをAPI接続で起動（任意）
-```bash
-make frontend-dev-api
-```
+## 変更前後の最小確認
+- 変更内容に応じて `make lint`, `make format-check`, `make typecheck`, `make test` を通す
+- 依存更新がある場合は `make audit` を通す
+- UI 変更がある場合は `docs/manual/` と `docs/test-results/` の更新要否を確認する
+- 仕様変更がある場合は `docs/requirements/` を更新する
 
-### Podmanスモーク検証（任意）
-```bash
-make podman-smoke
-```
-
-### PRレビューコメント出力（任意）
-GraphQL互換問題（Projects classic等）で `gh pr view --comments` が失敗する場合の代替です。
-```bash
-make pr-comments PR=123
-```
-
-## PR作成前の最小チェック
-- lint / format / typecheck / test を通す
-- 依存更新がある場合、`make audit`（high/critical）を通す
-- UI変更がある場合、`docs/manual/` と `docs/test-results/` の更新要否を確認する
-
-## 作業規約（最小）
-- 新規依存追加は「理由・影響・ロールバック」をPR本文に記載
-- 仕様変更は `docs/requirements/` に反映する
+## 記録ルール
+- 新規依存追加時は、理由・影響・ロールバックを PR 本文に記載する
