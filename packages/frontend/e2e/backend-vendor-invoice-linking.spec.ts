@@ -131,6 +131,31 @@ async function submitVendorInvoice(
   return submitRes.json();
 }
 
+async function createVendorInvoiceRequireReasonPolicy(
+  request: APIRequestContext,
+  actionKey: 'link_po' | 'unlink_po' | 'update_allocations' | 'update_lines',
+) {
+  const policyRes = await request.post(`${apiBase}/action-policies`, {
+    headers: adminHeaders,
+    data: {
+      flowType: 'vendor_invoice',
+      actionKey,
+      priority: 999,
+      isEnabled: true,
+      subjects: { userIds: ['demo-user'] },
+      stateConstraints: {
+        statusIn: ['pending_qa', 'pending_exec', 'approved'],
+      },
+      requireReason: true,
+      guards: [],
+    },
+  });
+  await ensureOk(policyRes);
+  const payload = await policyRes.json();
+  expect(payload?.id).toBeTruthy();
+  return String(payload.id);
+}
+
 test('vendor invoice po linking: post-submit unlink requires reason @core', async ({
   request,
 }) => {
@@ -170,6 +195,7 @@ test('vendor invoice po linking: post-submit unlink requires reason @core', asyn
 
   const submitted = await submitVendorInvoice(request, fixture.vendorInvoiceId);
   expect(submitted.status).toBe('pending_qa');
+  await createVendorInvoiceRequireReasonPolicy(request, 'unlink_po');
 
   const unlinkNoReasonRes = await request.post(
     `${apiBase}/vendor-invoices/${encodeURIComponent(fixture.vendorInvoiceId)}/unlink-po`,
@@ -311,6 +337,7 @@ test('vendor invoice po linking: post-submit link requires reason @core', async 
 
   const submitted = await submitVendorInvoice(request, fixture.vendorInvoiceId);
   expect(submitted.status).toBe('pending_qa');
+  await createVendorInvoiceRequireReasonPolicy(request, 'link_po');
 
   const linkNoReasonRes = await request.post(
     `${apiBase}/vendor-invoices/${encodeURIComponent(fixture.vendorInvoiceId)}/link-po`,
@@ -345,6 +372,7 @@ test('vendor invoice allocations: post-submit update requires reason @core', asy
   const fixture = await setupVendorInvoiceFixture(request, suffix);
   const submitted = await submitVendorInvoice(request, fixture.vendorInvoiceId);
   expect(submitted.status).toBe('pending_qa');
+  await createVendorInvoiceRequireReasonPolicy(request, 'update_allocations');
 
   const updateNoReasonRes = await request.put(
     `${apiBase}/vendor-invoices/${encodeURIComponent(fixture.vendorInvoiceId)}/allocations`,
@@ -379,6 +407,7 @@ test('vendor invoice lines: post-submit update requires reason @core', async ({
   const fixture = await setupVendorInvoiceFixture(request, suffix);
   const submitted = await submitVendorInvoice(request, fixture.vendorInvoiceId);
   expect(submitted.status).toBe('pending_qa');
+  await createVendorInvoiceRequireReasonPolicy(request, 'update_lines');
 
   const updateNoReasonRes = await request.put(
     `${apiBase}/vendor-invoices/${encodeURIComponent(fixture.vendorInvoiceId)}/lines`,

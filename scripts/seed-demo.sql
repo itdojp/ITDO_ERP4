@@ -35,6 +35,43 @@ insert into "ApprovalRule" (id, "flowType", "ruleKey", version, "isActive", "eff
   ('50000000-0000-0000-0000-000000000014','time','system-default:time',1,true,'2000-01-01 00:00:00','{}','[{"approverGroupId":"mgmt","stepOrder":1}]', now(), now(), 'system')
 on conflict do nothing;
 
+insert into "ActionPolicy" (id, "flowType", "actionKey", priority, "isEnabled", subjects, "stateConstraints", "requireReason", guards, "createdAt", "updatedAt", "createdBy", "updatedBy") values
+  ('52000000-0000-0000-0000-000000000001','estimate','submit',0,true,null,null,false,null, now(), now(), 'system', 'system'),
+  ('52000000-0000-0000-0000-000000000002','estimate','send',0,true,null,null,false,null, now(), now(), 'system', 'system'),
+  ('52000000-0000-0000-0000-000000000003','invoice','submit',0,true,null,null,false,null, now(), now(), 'system', 'system'),
+  ('52000000-0000-0000-0000-000000000004','invoice','send',0,true,null,null,false,null, now(), now(), 'system', 'system'),
+  ('52000000-0000-0000-0000-000000000005','invoice','mark_paid',0,true,null,null,false,null, now(), now(), 'system', 'system'),
+  ('52000000-0000-0000-0000-000000000006','expense','submit',0,true,null,null,false,null, now(), now(), 'system', 'system'),
+  ('52000000-0000-0000-0000-000000000007','expense','mark_paid',0,true,null,null,false,null, now(), now(), 'system', 'system'),
+  ('52000000-0000-0000-0000-000000000008','expense','unmark_paid',0,true,null,null,false,null, now(), now(), 'system', 'system'),
+  ('52000000-0000-0000-0000-000000000009','leave','submit',0,true,null,null,false,null, now(), now(), 'system', 'system'),
+  ('52000000-0000-0000-0000-000000000010','time','edit',0,true,null,null,false,null, now(), now(), 'system', 'system'),
+  ('52000000-0000-0000-0000-000000000011','time','submit',0,true,null,null,false,null, now(), now(), 'system', 'system'),
+  ('52000000-0000-0000-0000-000000000012','purchase_order','submit',0,true,null,null,false,null, now(), now(), 'system', 'system'),
+  ('52000000-0000-0000-0000-000000000013','purchase_order','send',0,true,null,null,false,null, now(), now(), 'system', 'system'),
+  ('52000000-0000-0000-0000-000000000014','vendor_invoice','update_allocations',0,true,null,null,false,null, now(), now(), 'system', 'system'),
+  ('52000000-0000-0000-0000-000000000015','vendor_invoice','update_lines',0,true,null,null,false,null, now(), now(), 'system', 'system'),
+  ('52000000-0000-0000-0000-000000000016','vendor_invoice','link_po',0,true,null,null,false,null, now(), now(), 'system', 'system'),
+  ('52000000-0000-0000-0000-000000000017','vendor_invoice','unlink_po',0,true,null,null,false,null, now(), now(), 'system', 'system'),
+  ('52000000-0000-0000-0000-000000000018','vendor_invoice','submit',0,true,null,null,false,null, now(), now(), 'system', 'system'),
+  ('52000000-0000-0000-0000-000000000019','estimate','approve',0,true,null,null,false,null, now(), now(), 'system', 'system'),
+  ('52000000-0000-0000-0000-000000000020','estimate','reject',0,true,null,null,false,null, now(), now(), 'system', 'system'),
+  ('52000000-0000-0000-0000-000000000021','invoice','approve',0,true,null,null,false,null, now(), now(), 'system', 'system'),
+  ('52000000-0000-0000-0000-000000000022','invoice','reject',0,true,null,null,false,null, now(), now(), 'system', 'system'),
+  ('52000000-0000-0000-0000-000000000023','expense','approve',0,true,null,null,false,null, now(), now(), 'system', 'system'),
+  ('52000000-0000-0000-0000-000000000024','expense','reject',0,true,null,null,false,null, now(), now(), 'system', 'system'),
+  ('52000000-0000-0000-0000-000000000025','leave','approve',0,true,null,null,false,null, now(), now(), 'system', 'system'),
+  ('52000000-0000-0000-0000-000000000026','leave','reject',0,true,null,null,false,null, now(), now(), 'system', 'system'),
+  ('52000000-0000-0000-0000-000000000027','time','approve',0,true,null,null,false,null, now(), now(), 'system', 'system'),
+  ('52000000-0000-0000-0000-000000000028','time','reject',0,true,null,null,false,null, now(), now(), 'system', 'system'),
+  ('52000000-0000-0000-0000-000000000029','purchase_order','approve',0,true,null,null,false,null, now(), now(), 'system', 'system'),
+  ('52000000-0000-0000-0000-000000000030','purchase_order','reject',0,true,null,null,false,null, now(), now(), 'system', 'system'),
+  ('52000000-0000-0000-0000-000000000031','vendor_invoice','approve',0,true,null,null,false,null, now(), now(), 'system', 'system'),
+  ('52000000-0000-0000-0000-000000000032','vendor_invoice','reject',0,true,null,null,false,null, now(), now(), 'system', 'system'),
+  ('52000000-0000-0000-0000-000000000033','vendor_quote','approve',0,true,null,null,false,null, now(), now(), 'system', 'system'),
+  ('52000000-0000-0000-0000-000000000034','vendor_quote','reject',0,true,null,null,false,null, now(), now(), 'system', 'system')
+on conflict do nothing;
+
 insert into "Estimate" (id, "projectId", "estimateNo", version, "totalAmount", currency, status, "numberingSerial", "createdAt", "updatedAt")
 values ('10000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-000000000001','Q2025-11-0001',1,120000,'JPY','approved', 1, now(), now())
 on conflict do nothing;

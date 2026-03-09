@@ -3,6 +3,7 @@ import { expect, test } from '@playwright/test';
 import {
   createProjectAndEstimate,
   submitAndFindApprovalInstance,
+  withDisabledCompetingPolicies,
 } from './approval-e2e-helpers';
 
 const apiBase = process.env.E2E_API_BASE || 'http://localhost:3002';
@@ -62,7 +63,9 @@ async function createAckRequestForRoom(
     ackPayload?.id ??
     '') as string;
   if (!ackRequestId) {
-    throw new Error(`[e2e] ack request id missing: ${JSON.stringify(ackPayload)}`);
+    throw new Error(
+      `[e2e] ack request id missing: ${JSON.stringify(ackPayload)}`,
+    );
   }
   return ackRequestId;
 }
@@ -158,42 +161,61 @@ test('action policy chat_ack_completed: incomplete ack requires override reason 
     requiredUserId,
   );
   await createAckLink(request, actorHeaders, ackRequestId, approvalInstanceId);
-  await createApprovePolicy(request, actorHeaders, actorUserId);
-
-  const evaluateRes = await request.post(`${apiBase}/action-policies/evaluate`, {
-    data: {
-      flowType: 'estimate',
-      actionKey: 'approve',
-      actor: {
-        userId: actorUserId,
-        roles: ['admin', 'mgmt'],
-        groupIds: ['mgmt'],
-      },
-      state: {
-        status: 'pending_qa',
-        projectId,
-      },
-      targetTable: 'approval_instances',
-      targetId: approvalInstanceId,
-    },
-    headers: actorHeaders,
-  });
-  await ensureOk(evaluateRes);
-  const evaluatePayload = await evaluateRes.json();
-  expect(evaluatePayload?.allowed).toBe(false);
-  expect(evaluatePayload?.reason).toBe('guard_failed');
-  expect(evaluatePayload?.guardFailures?.[0]?.type).toBe('chat_ack_completed');
-
-  const approveWithoutReasonRes = await request.post(
-    `${apiBase}/approval-instances/${encodeURIComponent(approvalInstanceId)}/act`,
-    {
-      data: { action: 'approve' },
-      headers: actorHeaders,
-    },
+  const guardedPolicyId = await createApprovePolicy(
+    request,
+    actorHeaders,
+    actorUserId,
   );
-  expect(approveWithoutReasonRes.status()).toBe(400);
-  const approveWithoutReasonPayload = await approveWithoutReasonRes.json();
-  expect(approveWithoutReasonPayload?.error?.code).toBe('REASON_REQUIRED');
+
+  await withDisabledCompetingPolicies({
+    request,
+    apiBase,
+    headers: actorHeaders,
+    flowType: 'estimate',
+    actionKey: 'approve',
+    keepIds: [guardedPolicyId],
+    run: async () => {
+      const evaluateRes = await request.post(
+        `${apiBase}/action-policies/evaluate`,
+        {
+          data: {
+            flowType: 'estimate',
+            actionKey: 'approve',
+            actor: {
+              userId: actorUserId,
+              roles: ['admin', 'mgmt'],
+              groupIds: ['mgmt'],
+            },
+            state: {
+              status: 'pending_qa',
+              projectId,
+            },
+            targetTable: 'approval_instances',
+            targetId: approvalInstanceId,
+          },
+          headers: actorHeaders,
+        },
+      );
+      await ensureOk(evaluateRes);
+      const evaluatePayload = await evaluateRes.json();
+      expect(evaluatePayload?.allowed).toBe(false);
+      expect(evaluatePayload?.reason).toBe('guard_failed');
+      expect(evaluatePayload?.guardFailures?.[0]?.type).toBe(
+        'chat_ack_completed',
+      );
+
+      const approveWithoutReasonRes = await request.post(
+        `${apiBase}/approval-instances/${encodeURIComponent(approvalInstanceId)}/act`,
+        {
+          data: { action: 'approve' },
+          headers: actorHeaders,
+        },
+      );
+      expect(approveWithoutReasonRes.status()).toBe(400);
+      const approveWithoutReasonPayload = await approveWithoutReasonRes.json();
+      expect(approveWithoutReasonPayload?.error?.code).toBe('REASON_REQUIRED');
+    },
+  });
 });
 
 test('action policy chat_ack_completed: ack完了は理由不要、未完了は理由付きoverrideで承認可能 @core', async ({
@@ -213,7 +235,11 @@ test('action policy chat_ack_completed: ack完了は理由不要、未完了は�
     roles: ['user'],
   });
 
-  await createApprovePolicy(request, actorHeaders, actorUserId);
+  const guardedPolicyId = await createApprovePolicy(
+    request,
+    actorHeaders,
+    actorUserId,
+  );
   const companyRoomId = await findCompanyRoomId(request, actorHeaders);
 
   const setupApproval = async (label: string) => {
@@ -248,57 +274,72 @@ test('action policy chat_ack_completed: ack完了は理由不要、未完了は�
       setupSuffix,
       requiredUserId,
     );
-    await createAckLink(request, actorHeaders, ackRequestId, approvalInstance.id);
+    await createAckLink(
+      request,
+      actorHeaders,
+      ackRequestId,
+      approvalInstance.id,
+    );
     return { approvalInstanceId: approvalInstance.id, ackRequestId };
   };
 
-  const completed = await setupApproval('completed');
-  const ackRes = await request.post(
-    `${apiBase}/chat-ack-requests/${encodeURIComponent(completed.ackRequestId)}/ack`,
-    {
-      headers: requiredUserHeaders,
-    },
-  );
-  await ensureOk(ackRes);
+  await withDisabledCompetingPolicies({
+    request,
+    apiBase,
+    headers: actorHeaders,
+    flowType: 'estimate',
+    actionKey: 'approve',
+    keepIds: [guardedPolicyId],
+    run: async () => {
+      const completed = await setupApproval('completed');
+      const ackRes = await request.post(
+        `${apiBase}/chat-ack-requests/${encodeURIComponent(completed.ackRequestId)}/ack`,
+        {
+          headers: requiredUserHeaders,
+        },
+      );
+      await ensureOk(ackRes);
 
-  const approveCompletedRes = await request.post(
-    `${apiBase}/approval-instances/${encodeURIComponent(completed.approvalInstanceId)}/act`,
-    {
-      data: { action: 'approve' },
-      headers: actorHeaders,
-    },
-  );
-  await ensureOk(approveCompletedRes);
-  const approveCompletedPayload = await approveCompletedRes.json();
-  expect(typeof approveCompletedPayload?.status).toBe('string');
-  expect(approveCompletedPayload?.status).not.toBe('rejected');
+      const approveCompletedRes = await request.post(
+        `${apiBase}/approval-instances/${encodeURIComponent(completed.approvalInstanceId)}/act`,
+        {
+          data: { action: 'approve' },
+          headers: actorHeaders,
+        },
+      );
+      await ensureOk(approveCompletedRes);
+      const approveCompletedPayload = await approveCompletedRes.json();
+      expect(typeof approveCompletedPayload?.status).toBe('string');
+      expect(approveCompletedPayload?.status).not.toBe('rejected');
 
-  const incomplete = await setupApproval('incomplete');
-  const overrideReason = `e2e ack override ${suffix}`;
-  const approveOverrideRes = await request.post(
-    `${apiBase}/approval-instances/${encodeURIComponent(incomplete.approvalInstanceId)}/act`,
-    {
-      data: { action: 'approve', reason: overrideReason },
-      headers: actorHeaders,
-    },
-  );
-  await ensureOk(approveOverrideRes);
-  const approveOverridePayload = await approveOverrideRes.json();
-  expect(typeof approveOverridePayload?.status).toBe('string');
-  expect(approveOverridePayload?.status).not.toBe('rejected');
+      const incomplete = await setupApproval('incomplete');
+      const overrideReason = `e2e ack override ${suffix}`;
+      const approveOverrideRes = await request.post(
+        `${apiBase}/approval-instances/${encodeURIComponent(incomplete.approvalInstanceId)}/act`,
+        {
+          data: { action: 'approve', reason: overrideReason },
+          headers: actorHeaders,
+        },
+      );
+      await ensureOk(approveOverrideRes);
+      const approveOverridePayload = await approveOverrideRes.json();
+      expect(typeof approveOverridePayload?.status).toBe('string');
+      expect(approveOverridePayload?.status).not.toBe('rejected');
 
-  const overrideAuditRes = await request.get(
-    `${apiBase}/audit-logs?action=action_policy_override&targetTable=approval_instances&targetId=${encodeURIComponent(incomplete.approvalInstanceId)}&format=json&mask=0&limit=20`,
-    { headers: actorHeaders },
-  );
-  await ensureOk(overrideAuditRes);
-  const overrideAuditPayload = await overrideAuditRes.json();
-  expect(
-    (overrideAuditPayload?.items ?? []).some(
-      (item: any) =>
-        item?.action === 'action_policy_override' &&
-        item?.reasonText === overrideReason &&
-        item?.metadata?.guardOverride === true,
-    ),
-  ).toBeTruthy();
+      const overrideAuditRes = await request.get(
+        `${apiBase}/audit-logs?action=action_policy_override&targetTable=approval_instances&targetId=${encodeURIComponent(incomplete.approvalInstanceId)}&format=json&mask=0&limit=20`,
+        { headers: actorHeaders },
+      );
+      await ensureOk(overrideAuditRes);
+      const overrideAuditPayload = await overrideAuditRes.json();
+      expect(
+        (overrideAuditPayload?.items ?? []).some(
+          (item: any) =>
+            item?.action === 'action_policy_override' &&
+            item?.reasonText === overrideReason &&
+            item?.metadata?.guardOverride === true,
+        ),
+      ).toBeTruthy();
+    },
+  });
 });
