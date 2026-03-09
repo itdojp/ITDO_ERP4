@@ -9,7 +9,7 @@
 - 画面/運用（見積/請求/発注/仕入）: `docs/requirements/estimate-invoice-po-ui.md` / `docs/requirements/delivery-invoice-flow.md` / `docs/requirements/vendor-doc-linking.md` / `docs/requirements/document-template-variants.md`
 - 注釈/エビデンス（メモ/外部URL/内部参照）: `docs/requirements/annotations.md` / `docs/requirements/workflow-evidence-pack.md`
 - 承認/アラート/通知: `docs/requirements/approval-alerts.md` / `docs/requirements/approval-log.md` / `docs/requirements/alerts-notify.md` / `docs/requirements/alert-suppression.md` / `docs/requirements/notifications.md` / `docs/requirements/approval-ack-messages.md` / `docs/requirements/action-policy-high-risk-apis.md` / `docs/requirements/action-policy-failsafe-inventory.md`
-- 外部連携（給与/会計）: `docs/requirements/erp4-payroll-accounting-gap-analysis.md` / `docs/requirements/external-code-system-design.md` / `docs/requirements/external-csv-integration-common-spec.md` / `docs/requirements/hr-crm-integration.md`
+- 外部連携（給与/会計）: `docs/requirements/erp4-payroll-accounting-gap-analysis.md` / `docs/requirements/external-code-system-design.md` / `docs/requirements/external-csv-integration-common-spec.md` / `docs/requirements/hr-crm-integration.md` / `docs/requirements/payroll-rakuda-employee-master-csv.md` / `docs/requirements/payroll-rakuda-attendance-csv.md`
 - 仕様実装整合レビュー（2026-02）: `docs/requirements/spec-review-2026-02-10.md`
 - 案件/タスク/マイルストーン/定期案件:
   - `docs/requirements/project-task-milestone-flow.md`
