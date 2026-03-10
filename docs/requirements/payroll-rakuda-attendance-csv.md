@@ -101,7 +101,8 @@
 ### 既にできること
 
 - approved leave 明細を `attendance` / `payroll` target 付きで export できる
-- `updatedSince`, `limit`, `offset`, `idempotencyKey` を使った差分/再送管理ができる
+- `GET /integrations/hr/exports/leaves` で `updatedSince`, `limit`, `offset` を使った差分取得ができる
+- `POST /integrations/hr/exports/leaves/dispatch` の body で `idempotencyKey` を指定して再送管理付き dispatch ができる
 - `leaveTypeName`, `leaveTypeUnit`, `leaveTypeIsPaid`, `requestedMinutes` を含む
 
 ### 既存 leave export で足りないこと

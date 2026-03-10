@@ -124,16 +124,16 @@
 
 ### 既存 users export をそのまま使える部分
 
-| CSV 論理列       | 現行 export 値  | 備考                         |
-| ---------------- | --------------- | ---------------------------- |
-| loginId          | `userName`      | そのまま利用可能             |
-| displayName      | `displayName`   | null 時の補完が必要          |
-| familyName       | `familyName`    | null 許容ルール要確認        |
-| givenName        | `givenName`     | null 許容ルール要確認        |
-| activeFlag       | `active`        | 変換コードが必要な可能性あり |
-| departmentName   | `department`    | コード化は未対応             |
-| organizationName | `organization`  | コード化は未対応             |
-| managerReference | `managerUserId` | 社員コード化は未対応         |
+| CSV 論理列          | 現行 export 値  | 備考                         |
+| ------------------- | --------------- | ---------------------------- |
+| loginId             | `userName`      | そのまま利用可能             |
+| displayName         | `displayName`   | null 時の補完が必要          |
+| familyName          | `familyName`    | null 許容ルール要確認        |
+| givenName           | `givenName`     | null 許容ルール要確認        |
+| activeFlag          | `active`        | 変換コードが必要な可能性あり |
+| departmentName      | `department`    | コード化は未対応             |
+| organizationName    | `organization`  | コード化は未対応             |
+| managerEmployeeCode | `managerUserId` | 社員コード化は未対応         |
 
 ### 新設が必要なマスタ項目
 
