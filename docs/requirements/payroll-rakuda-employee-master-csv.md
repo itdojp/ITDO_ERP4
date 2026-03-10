@@ -13,6 +13,8 @@
 - 本書は 2026-03-10 時点の repository 実装に基づく初期案である。
 - 対象製品は、ユーザー申告ベースで `給与らくだプロ Version 26.00 Rev.10.31` とする。
 - 製品バージョンは確認できたが、現物 CSV 列定義と文字コード/必須列は未確定であり、`#1432` で確定する。
+- 現行運用では、給与らくだへの CSV import は未使用である。
+- ソフト内および公式サイト上では、社員台帳データ CSV の明示的なテンプレート配布は確認できていない。
 - 既存の `GET /integrations/hr/exports/users` は HR/ID 連携用 export であり、給与専用 CSV そのものではない。
 - `UserAccount.externalId` は IdP/SCIM 用の外部 ID であり、給与連携専用の社員コードとは責務を分ける前提とする。
 
@@ -179,6 +181,12 @@
 5. 差分出力が許容されるか、毎回全件出力が必要か
 6. active/inactive だけでなく入社日/退職日が必須か
 
+## 現時点で判明した運用事実
+
+- 現行業務では、給与らくだへ社員マスタ CSV を取り込む運用は行っていない。
+- 担当者確認ベースでは、社員台帳データ CSV の取込自体は可能と認識しているが、実テンプレートは未取得である。
+- 従って現段階では「ERP4 側でどの項目を供給できるか」の整理を先行し、実列仕様はテンプレート入手後に詰める進め方が必要である。
+
 ## 現時点の結論
 
 - 社員マスタ CSV の完全仕様を確定するには `#1431`, `#1432` が必須である。
@@ -193,3 +201,5 @@
 - `docs/requirements/hr-crm-integration.md`
 - `docs/requirements/erp4-payroll-accounting-gap-analysis.md`
 - `docs/requirements/external-code-system-design.md`
+- 給与らくだプロ公式 Q&A（ユーザー共有リンク）
+  - `https://site.bsl-jp.com/ssl/cgi-bin/bslkb.cgi?task=showqa&KB=KB002470&via=KBSearch`
