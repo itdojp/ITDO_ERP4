@@ -40,8 +40,27 @@ test('GET /integrations/hr/exports/users supports updatedSince and pagination', 
         return [
           {
             id: 'user-001',
+            employeeCode: 'E-001',
             userName: 'alice',
             displayName: 'Alice',
+            employmentType: 'full_time',
+            joinedAt: new Date('2024-04-01T00:00:00.000Z'),
+            leftAt: null,
+            payrollProfile: {
+              id: 'profile-001',
+              userId: 'user-001',
+              payrollType: 'monthly',
+              closingType: 'end_of_month',
+              paymentType: 'bank_transfer',
+              titleCode: 'TL01',
+              departmentCode: 'D001',
+              bankInfo: {
+                bankName: 'Main Bank',
+                branchName: 'Head Office',
+                accountType: 'ordinary',
+                accountNumber: '1234567',
+              },
+            },
             updatedAt: new Date('2026-02-23T00:00:00.000Z'),
           },
         ];
@@ -64,12 +83,16 @@ test('GET /integrations/hr/exports/users supports updatedSince and pagination', 
         assert.equal(body.offset, 2);
         assert.equal(Array.isArray(body.items), true);
         assert.equal(body.items.length, 1);
+        assert.equal(body.items[0].employeeCode, 'E-001');
+        assert.equal(body.items[0].employmentType, 'full_time');
+        assert.equal(body.items[0].payrollProfile?.departmentCode, 'D001');
       } finally {
         await server.close();
       }
     },
   );
 
+  assert.equal(capturedFindMany?.include?.payrollProfile, true);
   assert.equal(capturedFindMany?.take, 10);
   assert.equal(capturedFindMany?.skip, 2);
   assert.deepEqual(capturedFindMany?.orderBy, { createdAt: 'desc' });

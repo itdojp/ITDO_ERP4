@@ -157,50 +157,50 @@ model Contact {
 }
 
 model Project {
-  id                      String                    @id @default(uuid())
-  code                    String                    @unique
-  name                    String
-  status                  ProjectStatus             @default(draft)
-  projectType             String?
-  parent                  Project?                  @relation("ProjectToProject", fields: [parentId], references: [id], onDelete: Restrict)
-  parentId                String?
-  children                Project[]                 @relation("ProjectToProject")
-  customer                Customer?                 @relation(fields: [customerId], references: [id], onDelete: Restrict)
-  customerId              String?
-  ownerUserId             String?
-  orgUnitId               String?
-  startDate               DateTime?
-  endDate                 DateTime?
-  currency                String?
-  planHours               Decimal?
-  budgetCost              Decimal?
-  recurringTemplate       RecurringProjectTemplate?
-  recurringGenerationLogs RecurringGenerationLog[]
-  members                 ProjectMember[]
-  tasks                   ProjectTask[]
-  baselines               ProjectBaseline[]
-  milestones              ProjectMilestone[]
-  notifications           AppNotification[]
-  chatRooms               ChatRoom[]
-  estimates               Estimate[]
-  invoices                Invoice[]
-  timeEntries             TimeEntry[]
-  expenses                Expense[]
-  purchaseOrders          PurchaseOrder[]
-  vendorQuotes            VendorQuote[]
-  vendorInvoices          VendorInvoice[]
+  id                       String                    @id @default(uuid())
+  code                     String                    @unique
+  name                     String
+  status                   ProjectStatus             @default(draft)
+  projectType              String?
+  parent                   Project?                  @relation("ProjectToProject", fields: [parentId], references: [id], onDelete: Restrict)
+  parentId                 String?
+  children                 Project[]                 @relation("ProjectToProject")
+  customer                 Customer?                 @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  customerId               String?
+  ownerUserId              String?
+  orgUnitId                String?
+  startDate                DateTime?
+  endDate                  DateTime?
+  currency                 String?
+  planHours                Decimal?
+  budgetCost               Decimal?
+  recurringTemplate        RecurringProjectTemplate?
+  recurringGenerationLogs  RecurringGenerationLog[]
+  members                  ProjectMember[]
+  tasks                    ProjectTask[]
+  baselines                ProjectBaseline[]
+  milestones               ProjectMilestone[]
+  notifications            AppNotification[]
+  chatRooms                ChatRoom[]
+  estimates                Estimate[]
+  invoices                 Invoice[]
+  timeEntries              TimeEntry[]
+  expenses                 Expense[]
+  purchaseOrders           PurchaseOrder[]
+  vendorQuotes             VendorQuote[]
+  vendorInvoices           VendorInvoice[]
   vendorInvoiceAllocations VendorInvoiceAllocation[]
-  rateCards               RateCard[]
-  approvalInstances       ApprovalInstance[]
-  periodLocks             PeriodLock[]
-  createdAt               DateTime                  @default(now())
-  createdBy               String?
-  updatedAt               DateTime                  @updatedAt
-  updatedBy               String?
-  deletedAt               DateTime?
-  deletedReason           String?
-  ChatBreakGlassRequest   ChatBreakGlassRequest[]
-  ProjectTaskDependency   ProjectTaskDependency[]
+  rateCards                RateCard[]
+  approvalInstances        ApprovalInstance[]
+  periodLocks              PeriodLock[]
+  createdAt                DateTime                  @default(now())
+  createdBy                String?
+  updatedAt                DateTime                  @updatedAt
+  updatedBy                String?
+  deletedAt                DateTime?
+  deletedReason            String?
+  ChatBreakGlassRequest    ChatBreakGlassRequest[]
+  ProjectTaskDependency    ProjectTaskDependency[]
 
   @@index([status, deletedAt])
   @@index([customerId, deletedAt])
@@ -356,29 +356,29 @@ model AppNotificationDelivery {
 
 model UserNotificationPreference {
   /// NOTE: userId intentionally has no FK to support JWT/external users (consistent with AppNotification).
-  userId                     String   @id
-  emailMode                  String   @default("digest")
-  emailDigestIntervalMinutes Int      @default(10)
+  userId                     String    @id
+  emailMode                  String    @default("digest")
+  emailDigestIntervalMinutes Int       @default(10)
   muteAllUntil               DateTime?
-  createdAt                  DateTime @default(now())
+  createdAt                  DateTime  @default(now())
   createdBy                  String?
-  updatedAt                  DateTime @updatedAt
+  updatedAt                  DateTime  @updatedAt
   updatedBy                  String?
 }
 
 model ChatRoomNotificationSetting {
-  id               String   @id @default(uuid())
-  room             ChatRoom @relation(fields: [roomId], references: [id], onDelete: Cascade)
-  roomId           String
+  id             String    @id @default(uuid())
+  room           ChatRoom  @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  roomId         String
   /// NOTE: userId intentionally has no FK to support JWT/external users (consistent with AppNotification).
-  userId           String
-  notifyAllPosts   Boolean  @default(true)
-  notifyMentions   Boolean  @default(true)
-  muteUntil        DateTime?
-  createdAt        DateTime @default(now())
-  createdBy        String?
-  updatedAt        DateTime @updatedAt
-  updatedBy        String?
+  userId         String
+  notifyAllPosts Boolean   @default(true)
+  notifyMentions Boolean   @default(true)
+  muteUntil      DateTime?
+  createdAt      DateTime  @default(now())
+  createdBy      String?
+  updatedAt      DateTime  @updatedAt
+  updatedBy      String?
 
   @@unique([roomId, userId])
   @@index([userId])
@@ -386,20 +386,20 @@ model ChatRoomNotificationSetting {
 }
 
 model ChatRoom {
-  id                        String           @id @default(uuid())
+  id                        String                        @id @default(uuid())
   type                      String // project/department/company/private_group/dm
   name                      String
-  isOfficial                Boolean          @default(true)
-  project                   Project?         @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  isOfficial                Boolean                       @default(true)
+  project                   Project?                      @relation(fields: [projectId], references: [id], onDelete: Restrict)
   projectId                 String?
   groupId                   String?
   viewerGroupIds            Json?
   posterGroupIds            Json?
-  allowExternalUsers        Boolean          @default(false)
-  allowExternalIntegrations Boolean          @default(false)
-  createdAt                 DateTime         @default(now())
+  allowExternalUsers        Boolean                       @default(false)
+  allowExternalIntegrations Boolean                       @default(false)
+  createdAt                 DateTime                      @default(now())
   createdBy                 String?
-  updatedAt                 DateTime         @updatedAt
+  updatedAt                 DateTime                      @updatedAt
   updatedBy                 String?
   deletedAt                 DateTime?
   deletedReason             String?
@@ -459,35 +459,35 @@ model ChatMessage {
 }
 
 model ChatAckRequest {
-  id              String      @id @default(uuid())
-  message         ChatMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
-  messageId       String      @unique
-  room            ChatRoom    @relation(fields: [roomId], references: [id], onDelete: Restrict)
-  roomId          String
-  requiredUserIds Json
-  requestedUserIds Json?
-  requestedGroupIds Json?
-  requestedRoles  Json?
-  dueAt           DateTime?
-  remindIntervalHours Int?
+  id                   String           @id @default(uuid())
+  message              ChatMessage      @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  messageId            String           @unique
+  room                 ChatRoom         @relation(fields: [roomId], references: [id], onDelete: Restrict)
+  roomId               String
+  requiredUserIds      Json
+  requestedUserIds     Json?
+  requestedGroupIds    Json?
+  requestedRoles       Json?
+  dueAt                DateTime?
+  remindIntervalHours  Int?
   escalationAfterHours Int?
-  escalationUserIds Json?
-  escalationGroupIds Json?
-  escalationRoles Json?
-  template       ChatAckTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
-  templateId     String?
-  canceledAt      DateTime?
-  canceledBy      String?
-  createdAt       DateTime    @default(now())
-  createdBy       String?
-  acks            ChatAck[]
-  links           ChatAckLink[]
+  escalationUserIds    Json?
+  escalationGroupIds   Json?
+  escalationRoles      Json?
+  template             ChatAckTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  templateId           String?
+  canceledAt           DateTime?
+  canceledBy           String?
+  createdAt            DateTime         @default(now())
+  createdBy            String?
+  acks                 ChatAck[]
+  links                ChatAckLink[]
 
   @@index([roomId, createdAt])
 }
 
 model ChatAckTemplate {
-  id                   String   @id @default(uuid())
+  id                   String           @id @default(uuid())
   flowType             FlowType
   actionKey            String
   messageBody          String
@@ -500,10 +500,10 @@ model ChatAckTemplate {
   escalationUserIds    Json?
   escalationGroupIds   Json?
   escalationRoles      Json?
-  isEnabled            Boolean  @default(true)
-  createdAt            DateTime @default(now())
+  isEnabled            Boolean          @default(true)
+  createdAt            DateTime         @default(now())
   createdBy            String?
-  updatedAt            DateTime @updatedAt
+  updatedAt            DateTime         @updatedAt
   updatedBy            String?
   links                ChatAckLink[]
   ackRequests          ChatAckRequest[]
@@ -512,10 +512,10 @@ model ChatAckTemplate {
 }
 
 model ChatAckLink {
-  id           String         @id @default(uuid())
-  ackRequest   ChatAckRequest @relation(fields: [ackRequestId], references: [id], onDelete: Cascade)
+  id           String           @id @default(uuid())
+  ackRequest   ChatAckRequest   @relation(fields: [ackRequestId], references: [id], onDelete: Cascade)
   ackRequestId String
-  message      ChatMessage    @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  message      ChatMessage      @relation(fields: [messageId], references: [id], onDelete: Cascade)
   messageId    String
   template     ChatAckTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
   templateId   String?
@@ -523,9 +523,9 @@ model ChatAckLink {
   targetId     String
   flowType     String?
   actionKey    String?
-  createdAt    DateTime       @default(now())
+  createdAt    DateTime         @default(now())
   createdBy    String?
-  updatedAt    DateTime       @updatedAt
+  updatedAt    DateTime         @updatedAt
   updatedBy    String?
 
   @@unique([ackRequestId, targetTable, targetId])
@@ -651,37 +651,37 @@ model WorklogSetting {
 }
 
 model LeaveSetting {
-  id                    String   @id @default("default")
-  timeUnitMinutes       Int      @default(10)
-  defaultWorkdayMinutes Int      @default(480)
-  paidLeaveAdvanceMaxMinutes Int @default(480)
-  paidLeaveAdvanceRequireNextGrantWithinDays Int @default(60)
-  createdAt             DateTime @default(now())
-  createdBy             String?
-  updatedAt             DateTime @updatedAt
-  updatedBy             String?
+  id                                         String   @id @default("default")
+  timeUnitMinutes                            Int      @default(10)
+  defaultWorkdayMinutes                      Int      @default(480)
+  paidLeaveAdvanceMaxMinutes                 Int      @default(480)
+  paidLeaveAdvanceRequireNextGrantWithinDays Int      @default(60)
+  createdAt                                  DateTime @default(now())
+  createdBy                                  String?
+  updatedAt                                  DateTime @updatedAt
+  updatedBy                                  String?
 }
 
 model LeaveType {
-  id               String   @id @default(uuid())
-  code             String   @unique
-  name             String
-  description      String?
-  isPaid           Boolean  @default(false)
-  unit             String   @default("daily") // daily/hourly/mixed
-  requiresApproval Boolean  @default(true)
-  attachmentPolicy String   @default("optional") // required/optional/none
-  submitLeadDays   Int      @default(0) // minimum days before startDate required at submit
-  allowRetroactiveSubmit Boolean @default(true) // allow submit when startDate is in the past
-  retroactiveLimitDays Int? // max past days allowed at submit. null means unlimited when retroactive submit is allowed
-  applicableGroupIds Json? // target groupAccount ids. null/empty means applicable to all.
-  active           Boolean  @default(true)
-  displayOrder     Int      @default(100)
-  effectiveFrom    DateTime @default(now())
-  createdAt        DateTime @default(now())
-  createdBy        String?
-  updatedAt        DateTime @updatedAt
-  updatedBy        String?
+  id                     String   @id @default(uuid())
+  code                   String   @unique
+  name                   String
+  description            String?
+  isPaid                 Boolean  @default(false)
+  unit                   String   @default("daily") // daily/hourly/mixed
+  requiresApproval       Boolean  @default(true)
+  attachmentPolicy       String   @default("optional") // required/optional/none
+  submitLeadDays         Int      @default(0) // minimum days before startDate required at submit
+  allowRetroactiveSubmit Boolean  @default(true) // allow submit when startDate is in the past
+  retroactiveLimitDays   Int? // max past days allowed at submit. null means unlimited when retroactive submit is allowed
+  applicableGroupIds     Json? // target groupAccount ids. null/empty means applicable to all.
+  active                 Boolean  @default(true)
+  displayOrder           Int      @default(100)
+  effectiveFrom          DateTime @default(now())
+  createdAt              DateTime @default(now())
+  createdBy              String?
+  updatedAt              DateTime @updatedAt
+  updatedBy              String?
 
   @@index([active, displayOrder, code])
   @@index([effectiveFrom])
@@ -715,33 +715,33 @@ model LeaveWorkdayOverride {
 }
 
 model LeaveEntitlementProfile {
-  id                String      @id @default(uuid())
-  userId            String      @unique
+  id                String       @id @default(uuid())
+  userId            String       @unique
   paidLeaveBaseDate DateTime
   nextGrantDueDate  DateTime?
   grants            LeaveGrant[]
-  createdAt         DateTime    @default(now())
+  createdAt         DateTime     @default(now())
   createdBy         String?
-  updatedAt         DateTime    @updatedAt
+  updatedAt         DateTime     @updatedAt
   updatedBy         String?
 
   @@index([nextGrantDueDate])
 }
 
 model LeaveGrant {
-  id              String                  @id @default(uuid())
-  profile         LeaveEntitlementProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
-  profileId       String
-  userId          String
-  grantDate       DateTime
-  grantedMinutes  Int
-  expiresAt       DateTime?
-  reasonText      String
-  metadata        Json?
-  createdAt       DateTime                @default(now())
-  createdBy       String?
-  updatedAt       DateTime                @updatedAt
-  updatedBy       String?
+  id             String                  @id @default(uuid())
+  profile        LeaveEntitlementProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  profileId      String
+  userId         String
+  grantDate      DateTime
+  grantedMinutes Int
+  expiresAt      DateTime?
+  reasonText     String
+  metadata       Json?
+  createdAt      DateTime                @default(now())
+  createdBy      String?
+  updatedAt      DateTime                @updatedAt
+  updatedBy      String?
 
   @@index([profileId, grantDate])
   @@index([userId, grantDate])
@@ -749,26 +749,26 @@ model LeaveGrant {
 }
 
 model LeaveCompGrant {
-  id                String              @id @default(uuid())
-  userId            String
-  leaveType         String
-  sourceDate        DateTime
-  grantDate         DateTime
-  expiresAt         DateTime
-  grantedMinutes    Int
-  remainingMinutes  Int
-  status            LeaveCompGrantStatus @default(active)
-  reasonText        String?
+  id                 String                 @id @default(uuid())
+  userId             String
+  leaveType          String
+  sourceDate         DateTime
+  grantDate          DateTime
+  expiresAt          DateTime
+  grantedMinutes     Int
+  remainingMinutes   Int
+  status             LeaveCompGrantStatus   @default(active)
+  reasonText         String?
   sourceTimeEntryIds Json?
-  metadata          Json?
-  consumedAt        DateTime?
-  expiredAt         DateTime?
-  revokedAt         DateTime?
-  createdAt         DateTime            @default(now())
-  createdBy         String?
-  updatedAt         DateTime            @updatedAt
-  updatedBy         String?
-  consumptions      LeaveCompConsumption[]
+  metadata           Json?
+  consumedAt         DateTime?
+  expiredAt          DateTime?
+  revokedAt          DateTime?
+  createdAt          DateTime               @default(now())
+  createdBy          String?
+  updatedAt          DateTime               @updatedAt
+  updatedBy          String?
+  consumptions       LeaveCompConsumption[]
 
   @@index([userId, leaveType, status, expiresAt])
   @@index([status, expiresAt])
@@ -776,59 +776,59 @@ model LeaveCompGrant {
 }
 
 model LeaveCompConsumption {
-  id            String        @id @default(uuid())
-  grant         LeaveCompGrant @relation(fields: [grantId], references: [id], onDelete: Cascade)
-  grantId       String
-  leaveRequest  LeaveRequest   @relation(fields: [leaveRequestId], references: [id], onDelete: Cascade)
-  leaveRequestId String
+  id              String         @id @default(uuid())
+  grant           LeaveCompGrant @relation(fields: [grantId], references: [id], onDelete: Cascade)
+  grantId         String
+  leaveRequest    LeaveRequest   @relation(fields: [leaveRequestId], references: [id], onDelete: Cascade)
+  leaveRequestId  String
   consumedMinutes Int
-  consumedAt    DateTime      @default(now())
-  createdAt     DateTime      @default(now())
-  createdBy     String?
+  consumedAt      DateTime       @default(now())
+  createdAt       DateTime       @default(now())
+  createdBy       String?
 
-  @@index([leaveRequestId, consumedAt])
   @@unique([grantId, leaveRequestId])
+  @@index([leaveRequestId, consumedAt])
 }
 
 model AnnotationSetting {
-  id                       String   @id @default("default")
-  maxExternalUrlCount      Int      @default(20)
-  maxExternalUrlLength     Int      @default(2048)
-  maxExternalUrlTotalLength Int     @default(16384)
-  maxNotesLength           Int      @default(20000)
-  createdAt                DateTime @default(now())
-  createdBy                String?
-  updatedAt                DateTime @updatedAt
-  updatedBy                String?
+  id                        String   @id @default("default")
+  maxExternalUrlCount       Int      @default(20)
+  maxExternalUrlLength      Int      @default(2048)
+  maxExternalUrlTotalLength Int      @default(16384)
+  maxNotesLength            Int      @default(20000)
+  createdAt                 DateTime @default(now())
+  createdBy                 String?
+  updatedAt                 DateTime @updatedAt
+  updatedBy                 String?
 }
 
 model Annotation {
-  id          String   @id @default(uuid())
-  targetKind  String
-  targetId    String
-  notes       String?
+  id           String   @id @default(uuid())
+  targetKind   String
+  targetId     String
+  notes        String?
   externalUrls Json?
   internalRefs Json?
-  createdAt   DateTime @default(now())
-  createdBy   String?
-  updatedAt   DateTime @updatedAt
-  updatedBy   String?
+  createdAt    DateTime @default(now())
+  createdBy    String?
+  updatedAt    DateTime @updatedAt
+  updatedBy    String?
 
   @@unique([targetKind, targetId])
 }
 
 model AnnotationLog {
-  id          String   @id @default(uuid())
-  targetKind  String
-  targetId    String
-  notes       String?
+  id           String   @id @default(uuid())
+  targetKind   String
+  targetId     String
+  notes        String?
   externalUrls Json?
   internalRefs Json?
-  reasonCode  String?
-  reasonText  String?
-  actorRole   String?
-  createdAt   DateTime @default(now())
-  createdBy   String?
+  reasonCode   String?
+  reasonText   String?
+  actorRole    String?
+  createdAt    DateTime @default(now())
+  createdBy    String?
 
   @@index([createdAt])
   @@index([targetKind, targetId, createdAt(sort: Desc)])
@@ -1032,11 +1032,11 @@ model PurchaseOrder {
 }
 
 model PurchaseOrderLine {
-  id                       String                  @id @default(uuid())
-  purchaseOrder            PurchaseOrder           @relation(fields: [purchaseOrderId], references: [id])
+  id                       String                    @id @default(uuid())
+  purchaseOrder            PurchaseOrder             @relation(fields: [purchaseOrderId], references: [id])
   purchaseOrderId          String
   description              String
-  quantity                 Decimal                 @default(1)
+  quantity                 Decimal                   @default(1)
   unitPrice                Decimal
   taxRate                  Decimal?
   taskId                   String?
@@ -1070,12 +1070,12 @@ model VendorQuote {
 }
 
 model VendorInvoice {
-  id              String                  @id @default(uuid())
-  project         Project                 @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  id              String                    @id @default(uuid())
+  project         Project                   @relation(fields: [projectId], references: [id], onDelete: Restrict)
   projectId       String
-  vendor          Vendor                  @relation(fields: [vendorId], references: [id], onDelete: Restrict)
+  vendor          Vendor                    @relation(fields: [vendorId], references: [id], onDelete: Restrict)
   vendorId        String
-  purchaseOrder   PurchaseOrder?          @relation(fields: [purchaseOrderId], references: [id], onDelete: SetNull)
+  purchaseOrder   PurchaseOrder?            @relation(fields: [purchaseOrderId], references: [id], onDelete: SetNull)
   purchaseOrderId String?
   allocations     VendorInvoiceAllocation[]
   lines           VendorInvoiceLine[]
@@ -1084,12 +1084,12 @@ model VendorInvoice {
   dueDate         DateTime?
   currency        String
   totalAmount     Decimal
-  status          DocStatus               @default(received)
+  status          DocStatus                 @default(received)
   documentUrl     String?
   numberingSerial Int?
-  createdAt       DateTime                @default(now())
+  createdAt       DateTime                  @default(now())
   createdBy       String?
-  updatedAt       DateTime                @updatedAt
+  updatedAt       DateTime                  @updatedAt
   updatedBy       String?
   deletedAt       DateTime?
   deletedReason   String?
@@ -1102,19 +1102,19 @@ model VendorInvoice {
 }
 
 model VendorInvoiceAllocation {
-  id                  String    @id @default(uuid())
-  vendorInvoice       VendorInvoice @relation(fields: [vendorInvoiceId], references: [id], onDelete: Cascade)
+  id                  String             @id @default(uuid())
+  vendorInvoice       VendorInvoice      @relation(fields: [vendorInvoiceId], references: [id], onDelete: Cascade)
   vendorInvoiceId     String
-  project             Project   @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  project             Project            @relation(fields: [projectId], references: [id], onDelete: Restrict)
   projectId           String
   purchaseOrderLine   PurchaseOrderLine? @relation(fields: [purchaseOrderLineId], references: [id], onDelete: SetNull)
   purchaseOrderLineId String?
   amount              Decimal
   taxRate             Decimal?
   taxAmount           Decimal?
-  createdAt           DateTime  @default(now())
+  createdAt           DateTime           @default(now())
   createdBy           String?
-  updatedAt           DateTime  @updatedAt
+  updatedAt           DateTime           @updatedAt
   updatedBy           String?
 
   @@index([vendorInvoiceId])
@@ -1192,37 +1192,37 @@ model RateCard {
 }
 
 model Expense {
-  id            String    @id @default(uuid())
-  project       Project   @relation(fields: [projectId], references: [id], onDelete: Restrict)
-  projectId     String
-  userId        String
-  category      String
-  amount        Decimal
-  currency      String
-  incurredOn    DateTime
-  isShared      Boolean   @default(false)
-  status        DocStatus @default(draft)
-  settlementStatus ExpenseSettlementStatus @default(unpaid)
-  paidAt        DateTime?
-  paidBy        String?
-  receiptUrl    String?
-  budgetSnapshot Json?
-  budgetOverrunAmount Decimal?
-  budgetEscalationReason String?
-  budgetEscalationImpact String?
+  id                          String                      @id @default(uuid())
+  project                     Project                     @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  projectId                   String
+  userId                      String
+  category                    String
+  amount                      Decimal
+  currency                    String
+  incurredOn                  DateTime
+  isShared                    Boolean                     @default(false)
+  status                      DocStatus                   @default(draft)
+  settlementStatus            ExpenseSettlementStatus     @default(unpaid)
+  paidAt                      DateTime?
+  paidBy                      String?
+  receiptUrl                  String?
+  budgetSnapshot              Json?
+  budgetOverrunAmount         Decimal?
+  budgetEscalationReason      String?
+  budgetEscalationImpact      String?
   budgetEscalationAlternative String?
-  budgetEscalationUpdatedAt DateTime?
-  createdAt     DateTime  @default(now())
-  createdBy     String?
-  updatedAt     DateTime  @updatedAt
-  updatedBy     String?
-  deletedAt     DateTime?
-  deletedReason String?
-  lines         ExpenseLine[]
-  attachments   ExpenseAttachment[]
-  comments      ExpenseComment[]
-  stateTransitions ExpenseStateTransitionLog[]
-  qaChecklist   ExpenseQaChecklist?
+  budgetEscalationUpdatedAt   DateTime?
+  createdAt                   DateTime                    @default(now())
+  createdBy                   String?
+  updatedAt                   DateTime                    @updatedAt
+  updatedBy                   String?
+  deletedAt                   DateTime?
+  deletedReason               String?
+  lines                       ExpenseLine[]
+  attachments                 ExpenseAttachment[]
+  comments                    ExpenseComment[]
+  stateTransitions            ExpenseStateTransitionLog[]
+  qaChecklist                 ExpenseQaChecklist?
 
   @@index([projectId, deletedAt])
   @@index([userId, incurredOn])
@@ -1230,28 +1230,28 @@ model Expense {
 }
 
 model ExpenseQaChecklist {
-  id                String   @id @default(uuid())
-  expense           Expense  @relation(fields: [expenseId], references: [id], onDelete: Restrict)
-  expenseId         String   @unique
-  amountVerified    Boolean  @default(false)
-  receiptVerified   Boolean  @default(false)
-  journalPrepared   Boolean  @default(false)
-  projectLinked     Boolean  @default(false)
-  budgetChecked     Boolean  @default(false)
-  notes             String?
-  completedAt       DateTime?
-  completedBy       String?
-  createdAt         DateTime @default(now())
-  createdBy         String?
-  updatedAt         DateTime @updatedAt
-  updatedBy         String?
+  id              String    @id @default(uuid())
+  expense         Expense   @relation(fields: [expenseId], references: [id], onDelete: Restrict)
+  expenseId       String    @unique
+  amountVerified  Boolean   @default(false)
+  receiptVerified Boolean   @default(false)
+  journalPrepared Boolean   @default(false)
+  projectLinked   Boolean   @default(false)
+  budgetChecked   Boolean   @default(false)
+  notes           String?
+  completedAt     DateTime?
+  completedBy     String?
+  createdAt       DateTime  @default(now())
+  createdBy       String?
+  updatedAt       DateTime  @updatedAt
+  updatedBy       String?
 
   @@index([completedAt])
 }
 
 model ExpenseLine {
-  id          String   @id @default(uuid())
-  expense     Expense  @relation(fields: [expenseId], references: [id], onDelete: Restrict)
+  id          String    @id @default(uuid())
+  expense     Expense   @relation(fields: [expenseId], references: [id], onDelete: Restrict)
   expenseId   String
   lineNo      Int
   expenseDate DateTime?
@@ -1261,9 +1261,9 @@ model ExpenseLine {
   taxRate     Decimal?
   taxAmount   Decimal?
   currency    String
-  createdAt   DateTime @default(now())
+  createdAt   DateTime  @default(now())
   createdBy   String?
-  updatedAt   DateTime @updatedAt
+  updatedAt   DateTime  @updatedAt
   updatedBy   String?
 
   @@unique([expenseId, lineNo])
@@ -1301,8 +1301,8 @@ model ExpenseComment {
 }
 
 model ExpenseStateTransitionLog {
-  id                   String                  @id @default(uuid())
-  expense              Expense                 @relation(fields: [expenseId], references: [id], onDelete: Restrict)
+  id                   String                   @id @default(uuid())
+  expense              Expense                  @relation(fields: [expenseId], references: [id], onDelete: Restrict)
   expenseId            String
   fromStatus           DocStatus?
   toStatus             DocStatus
@@ -1311,87 +1311,87 @@ model ExpenseStateTransitionLog {
   actorUserId          String?
   reasonText           String?
   metadata             Json?
-  createdAt            DateTime                @default(now())
+  createdAt            DateTime                 @default(now())
 
   @@index([expenseId, createdAt])
 }
 
 model LeaveRequest {
-  id        String      @id @default(uuid())
-  userId    String
-  leaveType String
-  startDate DateTime
-  endDate   DateTime
-  hours     Int?
-  minutes   Int?
-  startTimeMinutes Int?
-  endTimeMinutes   Int?
+  id                      String                 @id @default(uuid())
+  userId                  String
+  leaveType               String
+  startDate               DateTime
+  endDate                 DateTime
+  hours                   Int?
+  minutes                 Int?
+  startTimeMinutes        Int?
+  endTimeMinutes          Int?
   noConsultationConfirmed Boolean?
   noConsultationReason    String?
-  status    LeaveStatus @default(draft)
-  notes     String?
-  createdAt DateTime    @default(now())
-  createdBy String?
-  updatedAt DateTime    @updatedAt
-  updatedBy String?
-  compConsumptions LeaveCompConsumption[]
+  status                  LeaveStatus            @default(draft)
+  notes                   String?
+  createdAt               DateTime               @default(now())
+  createdBy               String?
+  updatedAt               DateTime               @updatedAt
+  updatedBy               String?
+  compConsumptions        LeaveCompConsumption[]
 
   @@index([userId, startDate])
   @@index([status])
 }
 
 model ApprovalRule {
-  id            String             @id @default(uuid())
-  flowType      FlowType
+  id               String             @id @default(uuid())
+  flowType         FlowType
   // Stable key across appended versions.
-  ruleKey       String
-  conditions    Json // amountMin/amountMax/isRecurring/skipUnder/projectType/customerId/orgUnitId/flowFlags
-  steps         Json // [{stepOrder, approverGroupId?, approverUserId?, parallelKey?}]
+  ruleKey          String
+  conditions       Json // amountMin/amountMax/isRecurring/skipUnder/projectType/customerId/orgUnitId/flowFlags
+  steps            Json // [{stepOrder, approverGroupId?, approverUserId?, parallelKey?}]
   // Versioning/activation fields for rule selection.
-  version       Int                @default(1)
-  isActive      Boolean            @default(true)
-  effectiveFrom DateTime           @default(now())
-  effectiveTo   DateTime?
+  version          Int                @default(1)
+  isActive         Boolean            @default(true)
+  effectiveFrom    DateTime           @default(now())
+  effectiveTo      DateTime?
   supersedesRuleId String?
-  supersedesRule ApprovalRule?     @relation("ApprovalRuleSupersede", fields: [supersedesRuleId], references: [id], onDelete: SetNull)
-  supersededBy  ApprovalRule[]     @relation("ApprovalRuleSupersede")
-  instances     ApprovalInstance[]
-  createdAt     DateTime           @default(now())
-  createdBy     String?
-  updatedAt     DateTime           @updatedAt
-  updatedBy     String?
+  supersedesRule   ApprovalRule?      @relation("ApprovalRuleSupersede", fields: [supersedesRuleId], references: [id], onDelete: SetNull)
+  supersededBy     ApprovalRule[]     @relation("ApprovalRuleSupersede")
+  instances        ApprovalInstance[]
+  createdAt        DateTime           @default(now())
+  createdBy        String?
+  updatedAt        DateTime           @updatedAt
+  updatedBy        String?
 
+  @@unique([flowType, ruleKey, version])
   @@index([flowType])
   @@index([flowType, isActive, effectiveFrom])
-  @@unique([flowType, ruleKey, version])
   @@index([flowType, ruleKey, version])
   @@index([flowType, ruleKey, isActive, effectiveFrom])
   @@index([supersedesRuleId])
 }
 
 model ApprovalInstance {
-  id          String         @id @default(uuid())
-  flowType    FlowType
-  targetTable String
-  targetId    String
-  project     Project?       @relation(fields: [projectId], references: [id], onDelete: SetNull)
-  projectId   String?
-  status      DocStatus      @default(pending_qa)
-  currentStep Int?
+  id                String             @id @default(uuid())
+  flowType          FlowType
+  targetTable       String
+  targetId          String
+  project           Project?           @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  projectId         String?
+  status            DocStatus          @default(pending_qa)
+  currentStep       Int?
   // Snapshot of stage-level completion rules per stepOrder (e.g. all/any/quorum).
   // Keep this on the instance to avoid changing semantics mid-flight when rules are edited.
-  stagePolicy Json?
-  rule        ApprovalRule   @relation(fields: [ruleId], references: [id])
-  ruleId      String
-  ruleVersion Int?
+  stagePolicy       Json?
+  rule              ApprovalRule       @relation(fields: [ruleId], references: [id])
+  ruleId            String
+  ruleVersion       Int?
   // Immutable snapshot of the rule selected at submission time.
-  ruleSnapshot Json?
-  steps       ApprovalStep[]
+  ruleSnapshot      Json?
+  steps             ApprovalStep[]
   evidenceSnapshots EvidenceSnapshot[]
-  createdAt   DateTime       @default(now())
-  createdBy   String?
-  updatedAt   DateTime       @updatedAt
-  updatedBy   String?
+  createdAt         DateTime           @default(now())
+  createdBy         String?
+  updatedAt         DateTime           @updatedAt
+  updatedBy         String?
 
   @@index([projectId])
   @@index([status, createdAt])
@@ -1399,18 +1399,18 @@ model ApprovalInstance {
 }
 
 model EvidenceSnapshot {
-  id                      String           @id @default(uuid())
-  approvalInstance        ApprovalInstance @relation(fields: [approvalInstanceId], references: [id], onDelete: Restrict)
-  approvalInstanceId      String
-  targetTable             String
-  targetId                String
+  id                        String           @id @default(uuid())
+  approvalInstance          ApprovalInstance @relation(fields: [approvalInstanceId], references: [id], onDelete: Restrict)
+  approvalInstanceId        String
+  targetTable               String
+  targetId                  String
   sourceAnnotationUpdatedAt DateTime?
-  capturedAt              DateTime         @default(now())
-  capturedBy              String?
-  version                 Int              @default(1)
-  items                   Json?
-  createdAt               DateTime         @default(now())
-  updatedAt               DateTime         @updatedAt
+  capturedAt                DateTime         @default(now())
+  capturedBy                String?
+  version                   Int              @default(1)
+  items                     Json?
+  createdAt                 DateTime         @default(now())
+  updatedAt                 DateTime         @updatedAt
 
   @@unique([approvalInstanceId, version])
   @@index([approvalInstanceId, capturedAt(sort: Desc)])
@@ -1441,18 +1441,18 @@ model ApprovalStep {
 
 model ActionPolicy {
   id               String   @id @default(uuid())
-  flowType          FlowType
-  actionKey         String
-  priority          Int      @default(0)
-  isEnabled         Boolean  @default(true)
-  subjects          Json?
-  stateConstraints  Json?
-  requireReason     Boolean  @default(false)
-  guards            Json?
-  createdAt         DateTime @default(now())
-  createdBy         String?
-  updatedAt         DateTime @updatedAt
-  updatedBy         String?
+  flowType         FlowType
+  actionKey        String
+  priority         Int      @default(0)
+  isEnabled        Boolean  @default(true)
+  subjects         Json?
+  stateConstraints Json?
+  requireReason    Boolean  @default(false)
+  guards           Json?
+  createdAt        DateTime @default(now())
+  createdBy        String?
+  updatedAt        DateTime @updatedAt
+  updatedBy        String?
 
   @@index([flowType, actionKey])
   @@index([flowType, actionKey, isEnabled])
@@ -1623,46 +1623,46 @@ model AgentRun {
 }
 
 model AgentStep {
-  id           String        @id @default(uuid())
-  run          AgentRun      @relation(fields: [runId], references: [id], onDelete: Cascade)
-  runId        String
-  stepOrder    Int
-  kind         String
-  name         String?
-  status       String        @default("running")
-  errorCode    String?
-  input        Json?
-  output       Json?
-  metadata     Json?
-  startedAt    DateTime      @default(now())
-  finishedAt   DateTime?
-  createdAt    DateTime      @default(now())
-  decisions    DecisionRequest[]
+  id         String            @id @default(uuid())
+  run        AgentRun          @relation(fields: [runId], references: [id], onDelete: Cascade)
+  runId      String
+  stepOrder  Int
+  kind       String
+  name       String?
+  status     String            @default("running")
+  errorCode  String?
+  input      Json?
+  output     Json?
+  metadata   Json?
+  startedAt  DateTime          @default(now())
+  finishedAt DateTime?
+  createdAt  DateTime          @default(now())
+  decisions  DecisionRequest[]
 
   @@index([runId, stepOrder])
   @@index([runId, startedAt])
 }
 
 model DecisionRequest {
-  id             String    @id @default(uuid())
-  run            AgentRun  @relation(fields: [runId], references: [id], onDelete: Cascade)
+  id             String     @id @default(uuid())
+  run            AgentRun   @relation(fields: [runId], references: [id], onDelete: Cascade)
   runId          String
   // run-level decision requests keep stepId=null, step-level requests set stepId.
   step           AgentStep? @relation(fields: [stepId], references: [id], onDelete: SetNull)
   stepId         String?
   decisionType   String
-  status         String    @default("open")
+  status         String     @default("open")
   title          String?
   reasonText     String?
   targetTable    String?
   targetId       String?
   requestedBy    String?
-  requestedAt    DateTime  @default(now())
+  requestedAt    DateTime   @default(now())
   resolvedBy     String?
   resolvedAt     DateTime?
   resolutionNote String?
   metadata       Json?
-  createdAt      DateTime  @default(now())
+  createdAt      DateTime   @default(now())
 
   @@index([runId, requestedAt])
   @@index([stepId, requestedAt])
@@ -1753,32 +1753,32 @@ model ReportDelivery {
 }
 
 model DailyReport {
-  id               String   @id @default(uuid())
+  id               String                @id @default(uuid())
   userId           String
-  reportDate       DateTime @db.Date
+  reportDate       DateTime              @db.Date
   content          String
   linkedProjectIds Json?
   status           String?
   revisions        DailyReportRevision[]
-  createdAt        DateTime @default(now())
+  createdAt        DateTime              @default(now())
   createdBy        String?
-  updatedAt        DateTime @updatedAt
+  updatedAt        DateTime              @updatedAt
   updatedBy        String?
 
   @@unique([userId, reportDate])
 }
 
 model DailyReportRevision {
-  id            String   @id @default(uuid())
-  dailyReport   DailyReport @relation(fields: [dailyReportId], references: [id], onDelete: Cascade)
-  dailyReportId String
-  version       Int
-  content       String
+  id               String      @id @default(uuid())
+  dailyReport      DailyReport @relation(fields: [dailyReportId], references: [id], onDelete: Cascade)
+  dailyReportId    String
+  version          Int
+  content          String
   linkedProjectIds Json?
-  status        String?
-  reasonText    String?
-  createdAt     DateTime @default(now())
-  createdBy     String?
+  status           String?
+  reasonText       String?
+  createdAt        DateTime    @default(now())
+  createdBy        String?
 
   @@unique([dailyReportId, version])
   @@index([dailyReportId, createdAt])
@@ -1874,28 +1874,52 @@ model PeriodLock {
 }
 
 model UserAccount {
-  id            String      @id @default(uuid())
-  externalId    String?     @unique
-  userName      String      @unique
-  displayName   String?
-  givenName     String?
-  familyName    String?
-  active        Boolean     @default(true)
-  emails        Json?
-  phoneNumbers  Json?
-  department    String?
-  organization  String?
-  managerUserId String?
-  scimMeta      Json?
-  createdAt     DateTime    @default(now())
-  createdBy     String?
-  updatedAt     DateTime    @updatedAt
-  updatedBy     String?
-  deletedAt     DateTime?
-  deletedReason String?
-  memberships   UserGroup[]
+  id             String                  @id @default(uuid())
+  externalId     String?                 @unique
+  employeeCode   String?                 @unique
+  userName       String                  @unique
+  displayName    String?
+  givenName      String?
+  familyName     String?
+  active         Boolean                 @default(true)
+  emails         Json?
+  phoneNumbers   Json?
+  employmentType String?
+  joinedAt       DateTime?
+  leftAt         DateTime?
+  department     String?
+  organization   String?
+  managerUserId  String?
+  scimMeta       Json?
+  createdAt      DateTime                @default(now())
+  createdBy      String?
+  updatedAt      DateTime                @updatedAt
+  updatedBy      String?
+  deletedAt      DateTime?
+  deletedReason  String?
+  memberships    UserGroup[]
+  payrollProfile EmployeePayrollProfile?
 
   @@index([active])
+}
+
+model EmployeePayrollProfile {
+  id             String      @id @default(uuid())
+  user           UserAccount @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId         String      @unique
+  payrollType    String?
+  closingType    String?
+  paymentType    String?
+  titleCode      String?
+  departmentCode String?
+  bankInfo       Json?
+  createdAt      DateTime    @default(now())
+  createdBy      String?
+  updatedAt      DateTime    @updatedAt
+  updatedBy      String?
+
+  @@index([departmentCode])
+  @@index([titleCode])
 }
 
 model UserGroup {
