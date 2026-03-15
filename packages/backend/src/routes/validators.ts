@@ -1929,6 +1929,11 @@ const leaveExportTargetSchema = Type.Union([
   Type.Literal('payroll'),
 ]);
 
+const hrEmployeeMasterExportFormatSchema = Type.Union([
+  Type.Literal('json'),
+  Type.Literal('csv'),
+]);
+
 export const integrationHrLeaveExportQuerySchema = {
   querystring: Type.Object(
     {
@@ -1958,6 +1963,44 @@ export const integrationHrLeaveExportLogListQuerySchema = {
   querystring: Type.Object(
     {
       target: Type.Optional(leaveExportTargetSchema),
+      limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 1000 })),
+      offset: Type.Optional(Type.Integer({ minimum: 0, maximum: 100000 })),
+      idempotencyKey: Type.Optional(
+        Type.String({ minLength: 1, maxLength: 200 }),
+      ),
+    },
+    { additionalProperties: false },
+  ),
+};
+
+export const integrationHrEmployeeMasterExportQuerySchema = {
+  querystring: Type.Object(
+    {
+      format: Type.Optional(hrEmployeeMasterExportFormatSchema),
+      updatedSince: Type.Optional(Type.String({ format: 'date-time' })),
+      limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 2000 })),
+      offset: Type.Optional(Type.Integer({ minimum: 0, maximum: 100000 })),
+    },
+    { additionalProperties: false },
+  ),
+};
+
+export const integrationHrEmployeeMasterExportDispatchSchema = {
+  body: Type.Object(
+    {
+      format: Type.Optional(Type.Literal('csv')),
+      idempotencyKey: Type.String({ minLength: 1, maxLength: 200 }),
+      updatedSince: Type.Optional(Type.String({ format: 'date-time' })),
+      limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 2000 })),
+      offset: Type.Optional(Type.Integer({ minimum: 0, maximum: 100000 })),
+    },
+    { additionalProperties: false },
+  ),
+};
+
+export const integrationHrEmployeeMasterExportLogListQuerySchema = {
+  querystring: Type.Object(
+    {
       limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 1000 })),
       offset: Type.Optional(Type.Integer({ minimum: 0, maximum: 100000 })),
       idempotencyKey: Type.Optional(

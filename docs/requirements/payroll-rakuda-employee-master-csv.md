@@ -1,7 +1,7 @@
 # 給料らくだ連携: 社員マスタ CSV 仕様（repo ベース初期案）
 
-更新日: 2026-03-10  
-関連 Issue: `#1436`, `#1430`, `#1433`, `#1434`, `#1435`, `#1439`
+更新日: 2026-03-15
+関連 Issue: `#1436`, `#1430`, `#1433`, `#1434`, `#1435`, `#1439`, `#1442`
 
 ## 目的
 
@@ -17,6 +17,7 @@
 - ソフト内および公式サイト上では、社員台帳データ CSV の明示的なテンプレート配布は確認できていない。
 - 既存の `GET /integrations/hr/exports/users` は HR/ID 連携用 export であり、給与専用 CSV そのものではない。
 - `UserAccount.externalId` は IdP/SCIM 用の外部 ID であり、給与連携専用の社員コードとは責務を分ける前提とする。
+- `#1442` の初期実装として、社員マスタ CSV の canonical export / dispatch / dispatch log を追加する。
 
 ## 現在の ERP4 で供給可能なフィールド
 
@@ -110,6 +111,38 @@
 
 - 内部 canonical は `UTF-8 + LF`
 - 実ファイルは現物テンプレートに合わせて `Shift_JIS` / `CRLF` を許容
+
+## 現在の実装ベースライン
+
+- API
+  - `GET /integrations/hr/exports/users/employee-master`
+  - `POST /integrations/hr/exports/users/employee-master/dispatch`
+  - `GET /integrations/hr/exports/users/employee-master/dispatch-logs`
+- canonical CSV header
+  - `employeeCode`
+  - `loginId`
+  - `externalIdentityId`
+  - `displayName`
+  - `familyName`
+  - `givenName`
+  - `activeFlag`
+  - `employmentType`
+  - `joinDate`
+  - `leaveDate`
+  - `departmentName`
+  - `organizationName`
+  - `departmentCode`
+  - `payrollType`
+  - `closingType`
+  - `paymentType`
+  - `titleCode`
+  - `email`
+  - `phone`
+- 初期 validation
+  - `employeeCode` 未設定は `409 employee_master_employee_code_missing`
+- dispatch
+  - `idempotencyKey` による replay / conflict / in-progress 制御を持つ
+  - 実行履歴は `HrEmployeeMasterExportLog` に保持する
 
 ### 空値時挙動
 
