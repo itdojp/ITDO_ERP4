@@ -107,6 +107,20 @@ enum AttendanceClosingStatus {
   superseded
 }
 
+enum AccountingEventKind {
+  expense_approved
+  invoice_approved
+  vendor_invoice_approved
+}
+
+enum AccountingJournalStagingStatus {
+  pending_mapping
+  ready
+  blocked
+  exported
+  superseded
+}
+
 model Customer {
   id                    String    @id @default(uuid())
   code                  String    @unique
@@ -1634,6 +1648,64 @@ model IntegrationRun {
 
   @@index([settingId, startedAt])
   @@index([status, startedAt])
+}
+
+model AccountingEvent {
+  id             String                     @id @default(uuid())
+  sourceTable    String
+  sourceId       String
+  eventKind      AccountingEventKind
+  eventAt        DateTime
+  periodKey      String
+  currency       String
+  amount         Decimal
+  projectId      String?
+  projectCode    String?
+  customerCode   String?
+  vendorCode     String?
+  employeeCode   String?
+  departmentCode String?
+  externalRef    String?
+  description    String?
+  payload        Json?
+  stagingRows    AccountingJournalStaging[]
+  createdAt      DateTime                   @default(now())
+  createdBy      String?
+  updatedAt      DateTime                   @updatedAt
+  updatedBy      String?
+
+  @@unique([sourceTable, sourceId, eventKind])
+  @@index([eventKind, eventAt])
+  @@index([periodKey, eventKind])
+  @@index([projectId, eventAt])
+}
+
+model AccountingJournalStaging {
+  id                   String                         @id @default(uuid())
+  event                AccountingEvent                @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  eventId              String
+  lineNo               Int
+  entryDate            DateTime
+  status               AccountingJournalStagingStatus @default(pending_mapping)
+  currency             String
+  amount               Decimal
+  description          String?
+  mappingKey           String?
+  debitAccountCode     String?
+  debitSubaccountCode  String?
+  creditAccountCode    String?
+  creditSubaccountCode String?
+  departmentCode       String?
+  taxCode              String?
+  validationErrors     Json?
+  createdAt            DateTime                       @default(now())
+  createdBy            String?
+  updatedAt            DateTime                       @updatedAt
+  updatedBy            String?
+
+  @@unique([eventId, lineNo])
+  @@index([status, entryDate])
+  @@index([mappingKey, status])
 }
 
 model LeaveIntegrationExportLog {

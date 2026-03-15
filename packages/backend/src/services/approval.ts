@@ -5,6 +5,7 @@ import { prisma } from './db.js';
 import { buildAuditMetadata, logAudit, type AuditContext } from './audit.js';
 import { AppError } from './errors.js';
 import { createEvidenceSnapshotForApproval } from './evidenceSnapshot.js';
+import { stageAccountingEventForApproval } from './accountingEvents.js';
 import { logExpenseStateTransition } from './expenseStateTransitionLog.js';
 import { isExpenseQaChecklistComplete } from './expenseQaChecklist.js';
 import {
@@ -1061,6 +1062,16 @@ export async function act(
       newStatus,
       userId,
     );
+    if (newStatus === DocStatusValue.approved) {
+      await stageAccountingEventForApproval({
+        client: tx,
+        targetTable: instance.targetTable,
+        targetId: instance.targetId,
+        eventAt: now,
+        approvalInstanceId: instance.id,
+        actorUserId: userId,
+      });
+    }
     await logAudit({
       action: `approval_${action}`,
       targetTable: 'approval_instances',
