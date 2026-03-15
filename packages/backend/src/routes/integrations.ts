@@ -97,6 +97,11 @@ function parseBoundedNonNegativeInteger(
   return defaultValue;
 }
 
+function attendanceClosingStatusCode(code: string) {
+  if (code === 'invalid_period_key') return 400;
+  return 409;
+}
+
 function calculateDurationMetrics(durations: number[]) {
   if (!durations.length) {
     return { avgDurationMs: null, p95DurationMs: null };
@@ -1392,7 +1397,7 @@ export async function registerIntegrationRoutes(app: FastifyInstance) {
         };
       } catch (error) {
         if (error instanceof AttendanceClosingError) {
-          return reply.code(409).send({
+          return reply.code(attendanceClosingStatusCode(error.code)).send({
             error: error.code,
             message: error.message,
             details: error.details,

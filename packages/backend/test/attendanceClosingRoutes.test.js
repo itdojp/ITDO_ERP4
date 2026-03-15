@@ -2,6 +2,10 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { buildServer } from '../dist/server.js';
+import {
+  AttendanceClosingError,
+  closeAttendancePeriod,
+} from '../dist/services/attendanceClosings.js';
 import { prisma } from '../dist/services/db.js';
 
 const MIN_DATABASE_URL = 'postgresql://user:pass@localhost:5432/postgres';
@@ -161,6 +165,7 @@ test('POST /integrations/hr/attendance/closings returns 409 when period is alrea
         version: 1,
         status: 'closed',
       }),
+      $transaction: async (callback) => callback(prisma),
     },
     async () => {
       await withServer(async (server) => {
@@ -178,6 +183,68 @@ test('POST /integrations/hr/attendance/closings returns 409 when period is alrea
   );
 });
 
+test('POST /integrations/hr/attendance/closings reclose supersedes previous version', async () => {
+  let capturedUpdate = null;
+  let capturedCreate = null;
+  await withPrismaStubs(
+    {
+      'attendanceClosingPeriod.findFirst': async () => ({
+        id: 'close-001',
+        version: 1,
+        status: 'closed',
+      }),
+      'userAccount.findMany': async () => [
+        {
+          id: 'user-001',
+          employeeCode: 'E-001',
+          joinedAt: new Date('2026-03-01T00:00:00.000Z'),
+          leftAt: new Date('2026-03-31T00:00:00.000Z'),
+        },
+      ],
+      'timeEntry.findMany': async () => [],
+      'leaveRequest.findMany': async () => [],
+      'leaveType.findMany': async () => [],
+      'leaveSetting.upsert': async () => ({
+        id: 'default',
+        defaultWorkdayMinutes: 480,
+      }),
+      'leaveCompanyHoliday.findMany': async () => [],
+      'leaveWorkdayOverride.findMany': async () => [],
+      'auditLog.create': async () => ({ id: 'audit-001' }),
+      $transaction: async (callback) => callback(prisma),
+      'attendanceClosingPeriod.update': async (args) => {
+        capturedUpdate = args;
+        return { id: 'close-001', ...args.data };
+      },
+      'attendanceClosingPeriod.create': async (args) => {
+        capturedCreate = args;
+        return {
+          id: 'close-002',
+          ...args.data,
+        };
+      },
+      'attendanceMonthlySummary.createMany': async () => ({ count: 1 }),
+    },
+    async () => {
+      await withServer(async (server) => {
+        const res = await server.inject({
+          method: 'POST',
+          url: '/integrations/hr/attendance/closings',
+          headers: adminHeaders(),
+          payload: { periodKey: '2026-03', reclose: true },
+        });
+        assert.equal(res.statusCode, 200, res.body);
+        const body = JSON.parse(res.body);
+        assert.equal(body.closing.version, 2);
+      });
+    },
+  );
+
+  assert.equal(capturedUpdate?.where?.id, 'close-001');
+  assert.equal(capturedUpdate?.data?.status, 'superseded');
+  assert.equal(capturedCreate?.data?.version, 2);
+});
+
 test('POST /integrations/hr/attendance/closings returns 409 when employeeCode is missing', async () => {
   await withPrismaStubs(
     {
@@ -192,6 +259,7 @@ test('POST /integrations/hr/attendance/closings returns 409 when employeeCode is
       ],
       'timeEntry.findMany': async () => [],
       'leaveRequest.findMany': async () => [],
+      $transaction: async (callback) => callback(prisma),
     },
     async () => {
       await withServer(async (server) => {
@@ -228,6 +296,7 @@ test('POST /integrations/hr/attendance/closings returns 409 when unconfirmed rec
         return [{ id: 'time-pending-001' }];
       },
       'leaveRequest.findMany': async () => [],
+      $transaction: async (callback) => callback(prisma),
     },
     async () => {
       await withServer(async (server) => {
@@ -244,6 +313,137 @@ test('POST /integrations/hr/attendance/closings returns 409 when unconfirmed rec
           'time-pending-001',
         ]);
       });
+    },
+  );
+});
+
+test('POST /integrations/hr/attendance/closings returns 400 on invalid period key payload', async () => {
+  await withServer(async (server) => {
+    const res = await server.inject({
+      method: 'POST',
+      url: '/integrations/hr/attendance/closings',
+      headers: adminHeaders(),
+      payload: { periodKey: '2026-13' },
+    });
+    assert.equal(res.statusCode, 400, res.body);
+  });
+});
+
+test('POST /integrations/hr/attendance/closings returns 409 when leave type master is missing', async () => {
+  await withPrismaStubs(
+    {
+      'attendanceClosingPeriod.findFirst': async () => null,
+      'userAccount.findMany': async () => [
+        {
+          id: 'user-001',
+          employeeCode: 'E-001',
+          joinedAt: new Date('2026-03-01T00:00:00.000Z'),
+          leftAt: new Date('2026-03-31T00:00:00.000Z'),
+        },
+      ],
+      'timeEntry.findMany': async () => [],
+      'leaveRequest.findMany': async (args) => {
+        if (args.where?.status === 'approved') {
+          return [
+            {
+              id: 'leave-001',
+              userId: 'user-001',
+              leaveType: 'paid',
+              startDate: new Date('2026-03-01T00:00:00.000Z'),
+              endDate: new Date('2026-03-01T00:00:00.000Z'),
+              hours: null,
+              minutes: 120,
+              startTimeMinutes: 540,
+              endTimeMinutes: 660,
+            },
+          ];
+        }
+        return [];
+      },
+      'leaveType.findMany': async () => [],
+      'leaveSetting.upsert': async () => ({
+        id: 'default',
+        defaultWorkdayMinutes: 480,
+      }),
+      'leaveCompanyHoliday.findMany': async () => [],
+      'leaveWorkdayOverride.findMany': async () => [],
+      $transaction: async (callback) => callback(prisma),
+    },
+    async () => {
+      await withServer(async (server) => {
+        const res = await server.inject({
+          method: 'POST',
+          url: '/integrations/hr/attendance/closings',
+          headers: adminHeaders(),
+          payload: { periodKey: '2026-03' },
+        });
+        assert.equal(res.statusCode, 409, res.body);
+        const body = JSON.parse(res.body);
+        assert.equal(body.error, 'attendance_leave_type_unresolved');
+      });
+    },
+  );
+});
+
+test('closeAttendancePeriod returns deterministic conflict on concurrent version collision', async () => {
+  const tx = {
+    attendanceClosingPeriod: {
+      findFirst: async () => null,
+      create: async () => {
+        const error = new Error('unique violation');
+        error.code = 'P2002';
+        throw error;
+      },
+    },
+    userAccount: {
+      findMany: async () => [],
+    },
+    timeEntry: {
+      findMany: async () => [],
+    },
+    leaveRequest: {
+      findMany: async () => [],
+    },
+    leaveType: {
+      findMany: async () => [],
+    },
+    leaveSetting: {
+      upsert: async () => ({
+        id: 'default',
+        defaultWorkdayMinutes: 480,
+      }),
+    },
+    leaveCompanyHoliday: {
+      findMany: async () => [],
+    },
+    leaveWorkdayOverride: {
+      findMany: async () => [],
+    },
+    attendanceMonthlySummary: {
+      createMany: async () => ({ count: 0 }),
+    },
+  };
+
+  await assert.rejects(
+    closeAttendancePeriod({
+      periodKey: '2026-03',
+      client: tx,
+    }),
+    (error) => {
+      assert.ok(error instanceof AttendanceClosingError);
+      assert.equal(error.code, 'attendance_period_concurrent_close');
+      return true;
+    },
+  );
+});
+
+test('closeAttendancePeriod rejects invalid period key', async () => {
+  await assert.rejects(
+    closeAttendancePeriod({ periodKey: '2026-13' }),
+    (error) => {
+      assert.ok(error instanceof AttendanceClosingError);
+      assert.equal(error.code, 'invalid_period_key');
+      return true;
     },
   );
 });

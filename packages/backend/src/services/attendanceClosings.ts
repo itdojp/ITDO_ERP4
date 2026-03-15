@@ -3,7 +3,8 @@ import { prisma } from './db.js';
 import { ensureLeaveSetting } from './leaveSettings.js';
 import { resolveLeaveRequestMinutesWithCalendar } from './leaveEntitlements.js';
 import { normalizeLeaveTypeInput } from './leaveTypes.js';
-import { resolveUserWorkdayMinutesForDates } from './leaveWorkdayCalendar.js';
+import type { WorkdayMinutesSource } from './leaveWorkdayCalendar.js';
+import { normalizeWorkMinutes } from './leaveWorkdayCalendar.js';
 import { toDateOnly } from '../utils/date.js';
 
 const PERIOD_KEY_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/;
@@ -70,6 +71,12 @@ type AttendanceSummaryRow = {
   totalLeaveMinutes: number;
   sourceTimeEntryCount: number;
   sourceLeaveRequestCount: number;
+};
+
+type WorkdayCalendarRow = {
+  workMinutes: number;
+  source: WorkdayMinutesSource;
+  workDate: Date;
 };
 
 export function parseAttendancePeriodKey(periodKey: string) {
@@ -153,6 +160,116 @@ function buildEmploymentDates(user: UserRow, from: Date, toInclusive: Date) {
   return enumerateDates(effectiveFrom, effectiveTo);
 }
 
+function buildLeaveDates(leave: LeaveRow) {
+  return enumerateDates(toDateOnly(leave.startDate), toDateOnly(leave.endDate));
+}
+
+function buildWorkdayDateSetsByUser(options: {
+  users: UserRow[];
+  leavesByUser: Map<string, LeaveRow[]>;
+  from: Date;
+  toInclusive: Date;
+}) {
+  const targetDatesByUser = new Map<string, Map<string, Date>>();
+  for (const user of options.users) {
+    const targetDates = new Map<string, Date>();
+    for (const workDate of buildEmploymentDates(
+      user,
+      options.from,
+      options.toInclusive,
+    )) {
+      targetDates.set(toDateKey(workDate), workDate);
+    }
+    for (const leave of options.leavesByUser.get(user.id) ?? []) {
+      for (const workDate of buildLeaveDates(leave)) {
+        targetDates.set(toDateKey(workDate), workDate);
+      }
+    }
+    targetDatesByUser.set(user.id, targetDates);
+  }
+  return targetDatesByUser;
+}
+
+async function resolveUsersWorkdayMinutesForDateSets(options: {
+  users: UserRow[];
+  leavesByUser: Map<string, LeaveRow[]>;
+  from: Date;
+  toExclusive: Date;
+  toInclusive: Date;
+  defaultWorkdayMinutes: number;
+  client: AttendanceClosingClient;
+}) {
+  const defaultMinutes = normalizeWorkMinutes(
+    options.defaultWorkdayMinutes,
+    480,
+  );
+  const targetDatesByUser = buildWorkdayDateSetsByUser({
+    users: options.users,
+    leavesByUser: options.leavesByUser,
+    from: options.from,
+    toInclusive: options.toInclusive,
+  });
+  const resolvedByUser = new Map<string, Map<string, WorkdayCalendarRow>>();
+
+  for (const [userId, targetDates] of targetDatesByUser.entries()) {
+    const resolved = new Map<string, WorkdayCalendarRow>();
+    for (const [dateKey, workDate] of targetDates.entries()) {
+      resolved.set(dateKey, {
+        workMinutes: defaultMinutes,
+        source: 'default_setting',
+        workDate,
+      });
+    }
+    resolvedByUser.set(userId, resolved);
+  }
+
+  if (resolvedByUser.size === 0) {
+    return resolvedByUser;
+  }
+
+  const userIds = Array.from(resolvedByUser.keys());
+  const [holidays, overrides] = await Promise.all([
+    options.client.leaveCompanyHoliday.findMany({
+      where: { holidayDate: { gte: options.from, lt: options.toExclusive } },
+      select: { holidayDate: true },
+    }),
+    options.client.leaveWorkdayOverride.findMany({
+      where: {
+        userId: { in: userIds },
+        workDate: { gte: options.from, lt: options.toExclusive },
+      },
+      orderBy: [{ userId: 'asc' }, { createdAt: 'desc' }],
+      select: { userId: true, workDate: true, workMinutes: true },
+    }),
+  ]);
+
+  for (const holiday of holidays) {
+    const dateKey = toDateKey(holiday.holidayDate);
+    const holidayDate = toDateOnly(holiday.holidayDate);
+    for (const resolved of resolvedByUser.values()) {
+      if (!resolved.has(dateKey)) continue;
+      resolved.set(dateKey, {
+        workMinutes: 0,
+        source: 'company_holiday',
+        workDate: holidayDate,
+      });
+    }
+  }
+
+  for (const override of overrides) {
+    const resolved = resolvedByUser.get(override.userId);
+    const dateKey = toDateKey(override.workDate);
+    if (!resolved || !resolved.has(dateKey)) continue;
+    resolved.set(dateKey, {
+      workMinutes: normalizeWorkMinutes(override.workMinutes, defaultMinutes),
+      source: 'user_override',
+      workDate: toDateOnly(override.workDate),
+    });
+  }
+
+  return resolvedByUser;
+}
+
 async function buildAttendanceSummaries(options: {
   users: UserRow[];
   timeEntries: TimeEntryRow[];
@@ -185,6 +302,15 @@ async function buildAttendanceSummaries(options: {
     bucket.push(clipped);
     leavesByUser.set(leave.userId, bucket);
   }
+  const workdayMapsByUser = await resolveUsersWorkdayMinutesForDateSets({
+    users: options.users,
+    leavesByUser,
+    from: options.from,
+    toExclusive: new Date(options.toInclusive.getTime() + DAY_MS),
+    toInclusive: options.toInclusive,
+    defaultWorkdayMinutes: leaveSetting.defaultWorkdayMinutes,
+    client: options.client,
+  });
 
   const rows: AttendanceSummaryRow[] = [];
   for (const user of options.users) {
@@ -197,20 +323,16 @@ async function buildAttendanceSummaries(options: {
         },
       );
     }
-    const targetDates = buildEmploymentDates(
+    const workdayMap = workdayMapsByUser.get(user.id) ?? new Map();
+    let scheduledWorkMinutes = 0;
+    for (const employmentDate of buildEmploymentDates(
       user,
       options.from,
       options.toInclusive,
-    );
-    const workdayMap = await resolveUserWorkdayMinutesForDates({
-      userId: user.id,
-      targetDates,
-      defaultWorkdayMinutes: leaveSetting.defaultWorkdayMinutes,
-      client: options.client,
-    });
-    let scheduledWorkMinutes = 0;
-    for (const row of workdayMap.values()) {
-      scheduledWorkMinutes += row.workMinutes;
+    )) {
+      const row = workdayMap.get(toDateKey(employmentDate));
+      scheduledWorkMinutes +=
+        row?.workMinutes ?? leaveSetting.defaultWorkdayMinutes;
     }
 
     const approvedEntries = timeEntriesByUser.get(user.id) ?? [];
@@ -248,7 +370,19 @@ async function buildAttendanceSummaries(options: {
         workdayMinutesCache: leaveWorkdayCache,
       });
       const normalizedLeaveType = normalizeLeaveTypeInput(leave.leaveType);
-      if (leaveTypeMap.get(normalizedLeaveType) === false) {
+      const isPaidLeave = leaveTypeMap.get(normalizedLeaveType);
+      if (isPaidLeave === undefined) {
+        throw new AttendanceClosingError(
+          'attendance_leave_type_unresolved',
+          'leaveType master is required before closing attendance',
+          {
+            userId: user.id,
+            leaveRequestId: leave.id,
+            leaveType: normalizedLeaveType,
+          },
+        );
+      }
+      if (isPaidLeave === false) {
         unpaidLeaveMinutes += requestedMinutes;
       } else {
         paidLeaveMinutes += requestedMinutes;
@@ -305,163 +439,206 @@ function buildSummaryTotals(rows: AttendanceSummaryRow[]) {
   );
 }
 
+function isPrismaUniqueConstraintError(error: unknown) {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    error.code === 'P2002'
+  );
+}
+
+async function withAttendanceClosingTransaction<T>(
+  client: AttendanceClosingClient | undefined,
+  callback: (tx: Prisma.TransactionClient) => Promise<T>,
+) {
+  const host = client ?? prisma;
+  try {
+    if ('$transaction' in host && typeof host.$transaction === 'function') {
+      return await host.$transaction(async (tx: Prisma.TransactionClient) =>
+        callback(tx),
+      );
+    }
+    return await callback(host as Prisma.TransactionClient);
+  } catch (error) {
+    if (isPrismaUniqueConstraintError(error)) {
+      throw new AttendanceClosingError(
+        'attendance_period_concurrent_close',
+        'attendance period was closed concurrently',
+      );
+    }
+    throw error;
+  }
+}
+
 export async function closeAttendancePeriod(options: {
   periodKey: string;
   reclose?: boolean;
   actorId?: string | null;
   client?: AttendanceClosingClient;
 }) {
-  const client = options.client ?? prisma;
   const { periodKey, from, toExclusive, toInclusive } =
     parseAttendancePeriodKey(options.periodKey);
+  return withAttendanceClosingTransaction(options.client, async (tx) => {
+    const latestClose = await tx.attendanceClosingPeriod.findFirst({
+      where: { periodKey },
+      orderBy: [{ version: 'desc' }],
+      select: { id: true, version: true, status: true },
+    });
+    if (latestClose?.status === 'closed' && !options.reclose) {
+      throw new AttendanceClosingError(
+        'attendance_period_already_closed',
+        'attendance period already closed',
+        {
+          periodKey,
+          latestClosingId: latestClose.id,
+          latestVersion: latestClose.version,
+        },
+      );
+    }
 
-  const latestClose = await client.attendanceClosingPeriod.findFirst({
-    where: { periodKey },
-    orderBy: [{ version: 'desc' }],
-    select: { id: true, version: true, status: true },
-  });
-  if (latestClose?.status === 'closed' && !options.reclose) {
-    throw new AttendanceClosingError(
-      'attendance_period_already_closed',
-      'attendance period already closed',
-      {
-        periodKey,
-        latestClosingId: latestClose.id,
-        latestVersion: latestClose.version,
+    const users = await tx.userAccount.findMany({
+      where: {
+        deletedAt: null,
+        OR: [{ joinedAt: null }, { joinedAt: { lt: toExclusive } }],
+        AND: [{ OR: [{ leftAt: null }, { leftAt: { gte: from } }] }],
       },
-    );
-  }
-
-  const users = await client.userAccount.findMany({
-    where: {
-      deletedAt: null,
-      OR: [{ joinedAt: null }, { joinedAt: { lt: toExclusive } }],
-      AND: [{ OR: [{ leftAt: null }, { leftAt: { gte: from } }] }],
-    },
-    select: {
-      id: true,
-      employeeCode: true,
-      joinedAt: true,
-      leftAt: true,
-    },
-    orderBy: { createdAt: 'asc' },
-  });
-
-  const approvedTimeEntries = await client.timeEntry.findMany({
-    where: {
-      deletedAt: null,
-      status: 'approved',
-      workDate: { gte: from, lt: toExclusive },
-    },
-    select: { id: true, userId: true, workDate: true, minutes: true },
-  });
-  const approvedUserIds = new Set(
-    approvedTimeEntries.map((item) => item.userId),
-  );
-
-  const pendingTimeEntries = await client.timeEntry.findMany({
-    where: {
-      deletedAt: null,
-      status: { notIn: ['approved', 'rejected'] },
-      workDate: { gte: from, lt: toExclusive },
-    },
-    select: { id: true },
-    take: 20,
-  });
-
-  const approvedLeaves = await client.leaveRequest.findMany({
-    where: {
-      status: 'approved',
-      startDate: { lt: toExclusive },
-      endDate: { gte: from },
-    },
-    select: {
-      id: true,
-      userId: true,
-      leaveType: true,
-      startDate: true,
-      endDate: true,
-      hours: true,
-      minutes: true,
-      startTimeMinutes: true,
-      endTimeMinutes: true,
-    },
-    orderBy: [{ updatedAt: 'asc' }, { id: 'asc' }],
-  });
-  for (const leave of approvedLeaves) approvedUserIds.add(leave.userId);
-
-  const pendingLeaves = await client.leaveRequest.findMany({
-    where: {
-      status: { notIn: ['approved', 'rejected'] },
-      startDate: { lt: toExclusive },
-      endDate: { gte: from },
-    },
-    select: { id: true },
-    take: 20,
-  });
-
-  if (pendingTimeEntries.length || pendingLeaves.length) {
-    throw new AttendanceClosingError(
-      'attendance_period_unconfirmed',
-      'attendance period contains unconfirmed entries',
-      {
-        periodKey,
-        pendingTimeEntryIds: pendingTimeEntries.map((item) => item.id),
-        pendingLeaveRequestIds: pendingLeaves.map((item) => item.id),
+      select: {
+        id: true,
+        employeeCode: true,
+        joinedAt: true,
+        leftAt: true,
       },
-    );
-  }
+      orderBy: { createdAt: 'asc' },
+    });
 
-  const inScopeUsers = users.filter((user) => {
-    const hasEmploymentOverlap =
-      buildEmploymentDates(user, from, toInclusive).length > 0;
-    return hasEmploymentOverlap || approvedUserIds.has(user.id);
-  });
-  const missingEmployeeCode = inScopeUsers
-    .filter((user) => !user.employeeCode)
-    .map((user) => user.id)
-    .slice(0, 20);
-  if (missingEmployeeCode.length) {
-    throw new AttendanceClosingError(
-      'attendance_employee_code_missing',
-      'employeeCode is required before closing attendance',
-      {
-        periodKey,
-        userIds: missingEmployeeCode,
+    const approvedTimeEntries = await tx.timeEntry.findMany({
+      where: {
+        deletedAt: null,
+        status: 'approved',
+        workDate: { gte: from, lt: toExclusive },
       },
+      select: { id: true, userId: true, workDate: true, minutes: true },
+    });
+    const approvedUserIds = new Set(
+      approvedTimeEntries.map((item) => item.userId),
     );
-  }
 
-  const leaveTypeCodes = Array.from(
-    new Set(
-      approvedLeaves
-        .map((item) => normalizeLeaveTypeInput(item.leaveType))
-        .filter(Boolean),
-    ),
-  );
-  const leaveTypes = leaveTypeCodes.length
-    ? await client.leaveType.findMany({
-        where: { code: { in: leaveTypeCodes } },
-        select: { code: true, isPaid: true },
-      })
-    : [];
-  const rows = await buildAttendanceSummaries({
-    users: inScopeUsers,
-    timeEntries: approvedTimeEntries,
-    leaves: approvedLeaves,
-    leaveTypes,
-    from,
-    toInclusive,
-    client,
-  });
-  const totals = buildSummaryTotals(rows);
-  const version = (latestClose?.version ?? 0) + 1;
+    const pendingTimeEntries = await tx.timeEntry.findMany({
+      where: {
+        deletedAt: null,
+        status: { notIn: ['approved', 'rejected'] },
+        workDate: { gte: from, lt: toExclusive },
+      },
+      select: { id: true },
+      take: 20,
+    });
 
-  const transactionHost =
-    '$transaction' in client && typeof client.$transaction === 'function'
-      ? client
-      : prisma;
-  return transactionHost.$transaction(async (tx: Prisma.TransactionClient) => {
+    const approvedLeaves = await tx.leaveRequest.findMany({
+      where: {
+        status: 'approved',
+        startDate: { lt: toExclusive },
+        endDate: { gte: from },
+      },
+      select: {
+        id: true,
+        userId: true,
+        leaveType: true,
+        startDate: true,
+        endDate: true,
+        hours: true,
+        minutes: true,
+        startTimeMinutes: true,
+        endTimeMinutes: true,
+      },
+      orderBy: [{ updatedAt: 'asc' }, { id: 'asc' }],
+    });
+    for (const leave of approvedLeaves) approvedUserIds.add(leave.userId);
+
+    const pendingLeaves = await tx.leaveRequest.findMany({
+      where: {
+        status: { notIn: ['approved', 'rejected'] },
+        startDate: { lt: toExclusive },
+        endDate: { gte: from },
+      },
+      select: { id: true },
+      take: 20,
+    });
+
+    if (pendingTimeEntries.length || pendingLeaves.length) {
+      throw new AttendanceClosingError(
+        'attendance_period_unconfirmed',
+        'attendance period contains unconfirmed entries',
+        {
+          periodKey,
+          pendingTimeEntryIds: pendingTimeEntries.map((item) => item.id),
+          pendingLeaveRequestIds: pendingLeaves.map((item) => item.id),
+        },
+      );
+    }
+
+    const inScopeUsers = users.filter((user) => {
+      const hasEmploymentOverlap =
+        buildEmploymentDates(user, from, toInclusive).length > 0;
+      return hasEmploymentOverlap || approvedUserIds.has(user.id);
+    });
+    const missingEmployeeCode = inScopeUsers
+      .filter((user) => !user.employeeCode)
+      .map((user) => user.id)
+      .slice(0, 20);
+    if (missingEmployeeCode.length) {
+      throw new AttendanceClosingError(
+        'attendance_employee_code_missing',
+        'employeeCode is required before closing attendance',
+        {
+          periodKey,
+          userIds: missingEmployeeCode,
+        },
+      );
+    }
+
+    const leaveTypeCodes = Array.from(
+      new Set(
+        approvedLeaves
+          .map((item) => normalizeLeaveTypeInput(item.leaveType))
+          .filter(Boolean),
+      ),
+    );
+    const leaveTypes = leaveTypeCodes.length
+      ? await tx.leaveType.findMany({
+          where: { code: { in: leaveTypeCodes } },
+          select: { code: true, isPaid: true },
+        })
+      : [];
+    const resolvedLeaveTypeCodes = new Set(
+      leaveTypes.map((item) => normalizeLeaveTypeInput(item.code)),
+    );
+    const unresolvedLeaveTypeCodes = leaveTypeCodes.filter(
+      (code) => !resolvedLeaveTypeCodes.has(code),
+    );
+    if (unresolvedLeaveTypeCodes.length) {
+      throw new AttendanceClosingError(
+        'attendance_leave_type_unresolved',
+        'leaveType master is required before closing attendance',
+        {
+          periodKey,
+          leaveTypes: unresolvedLeaveTypeCodes,
+        },
+      );
+    }
+
+    const rows = await buildAttendanceSummaries({
+      users: inScopeUsers,
+      timeEntries: approvedTimeEntries,
+      leaves: approvedLeaves,
+      leaveTypes,
+      from,
+      toInclusive,
+      client: tx,
+    });
+    const totals = buildSummaryTotals(rows);
+    const version = (latestClose?.version ?? 0) + 1;
+
     if (latestClose?.status === 'closed') {
       await tx.attendanceClosingPeriod.update({
         where: { id: latestClose.id },
