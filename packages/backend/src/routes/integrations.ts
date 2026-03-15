@@ -1763,10 +1763,13 @@ export async function registerIntegrationRoutes(app: FastifyInstance) {
         offset: parsed.offset,
         format: 'csv',
       });
-      const existing = await prisma.hrEmployeeMasterExportLog.findUnique({
-        where: { idempotencyKey },
-      });
-      if (existing) {
+      const respondWithExistingEmployeeMasterDispatch = async (
+        existing: NonNullable<
+          Awaited<
+            ReturnType<typeof prisma.hrEmployeeMasterExportLog.findUnique>
+          >
+        >,
+      ) => {
         if (existing.requestHash !== requestHash) {
           await logAudit({
             ...auditContextFromRequest(req),
@@ -1803,20 +1806,44 @@ export async function registerIntegrationRoutes(app: FastifyInstance) {
           payload: existing.payload,
           log: buildHrEmployeeMasterExportLogResponse(existing),
         };
+      };
+      const existing = await prisma.hrEmployeeMasterExportLog.findUnique({
+        where: { idempotencyKey },
+      });
+      if (existing) {
+        return respondWithExistingEmployeeMasterDispatch(existing);
       }
 
       const startedAt = new Date();
-      const log = await prisma.hrEmployeeMasterExportLog.create({
-        data: {
-          idempotencyKey,
-          requestHash,
-          updatedSince: parsed.updatedSince ?? null,
-          exportedUntil: startedAt,
-          status: IntegrationRunStatus.running,
-          startedAt,
-          createdBy: req.user?.userId ?? null,
-        },
-      });
+      let log: Awaited<
+        ReturnType<typeof prisma.hrEmployeeMasterExportLog.create>
+      >;
+      try {
+        log = await prisma.hrEmployeeMasterExportLog.create({
+          data: {
+            idempotencyKey,
+            requestHash,
+            updatedSince: parsed.updatedSince ?? null,
+            exportedUntil: startedAt,
+            status: IntegrationRunStatus.running,
+            startedAt,
+            createdBy: req.user?.userId ?? null,
+          },
+        });
+      } catch (error) {
+        if (
+          error instanceof Prisma.PrismaClientKnownRequestError &&
+          error.code === 'P2002'
+        ) {
+          const concurrent = await prisma.hrEmployeeMasterExportLog.findUnique({
+            where: { idempotencyKey },
+          });
+          if (concurrent) {
+            return respondWithExistingEmployeeMasterDispatch(concurrent);
+          }
+        }
+        throw error;
+      }
 
       try {
         const payload = await buildHrEmployeeMasterExportPayload({

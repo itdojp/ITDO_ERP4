@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createHash } from 'node:crypto';
+import { Prisma } from '@prisma/client';
 
 import { buildServer } from '../dist/server.js';
 import { prisma } from '../dist/services/db.js';
@@ -485,6 +486,206 @@ test('POST /integrations/hr/exports/users/employee-master/dispatch replays previ
       }
     },
   );
+});
+
+test('POST /integrations/hr/exports/users/employee-master/dispatch returns 409 while same request is running', async () => {
+  process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
+  process.env.AUTH_MODE = 'header';
+
+  const requestHash = createHash('sha256')
+    .update(
+      JSON.stringify({
+        updatedSince: null,
+        limit: 5,
+        offset: 0,
+        format: 'csv',
+      }),
+      'utf8',
+    )
+    .digest('hex');
+  let createCalled = false;
+  let auditCreateCount = 0;
+  await withPrismaStubs(
+    {
+      'hrEmployeeMasterExportLog.findUnique': async () => ({
+        id: 'emp-export-log-002-running',
+        idempotencyKey: 'emp-export-key-002-running',
+        requestHash,
+        updatedSince: null,
+        exportedUntil: new Date('2026-03-15T00:00:00.000Z'),
+        status: 'running',
+        exportedCount: 0,
+        payload: null,
+        message: null,
+        startedAt: new Date('2026-03-15T00:00:00.000Z'),
+        finishedAt: null,
+      }),
+      'hrEmployeeMasterExportLog.create': async () => {
+        createCalled = true;
+        return { id: 'unexpected' };
+      },
+      'auditLog.create': async () => {
+        auditCreateCount += 1;
+        return { id: 'audit-running' };
+      },
+    },
+    async () => {
+      const server = await buildServer({ logger: false });
+      try {
+        const res = await server.inject({
+          method: 'POST',
+          url: '/integrations/hr/exports/users/employee-master/dispatch',
+          headers: {
+            'x-user-id': 'admin-user',
+            'x-roles': 'admin',
+          },
+          payload: {
+            idempotencyKey: 'emp-export-key-002-running',
+            limit: 5,
+            offset: 0,
+          },
+        });
+        assert.equal(res.statusCode, 409, res.body);
+        const body = JSON.parse(res.body);
+        assert.equal(body.error, 'dispatch_in_progress');
+        assert.equal(body.logId, 'emp-export-log-002-running');
+      } finally {
+        await server.close();
+      }
+    },
+  );
+
+  assert.equal(createCalled, false);
+  assert.equal(auditCreateCount, 0);
+});
+
+test('POST /integrations/hr/exports/users/employee-master/dispatch returns 409 on idempotency conflict', async () => {
+  process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
+  process.env.AUTH_MODE = 'header';
+
+  await withPrismaStubs(
+    {
+      'hrEmployeeMasterExportLog.findUnique': async () => ({
+        id: 'emp-export-log-003',
+        idempotencyKey: 'emp-export-key-003',
+        requestHash: 'different-hash',
+        updatedSince: null,
+        exportedUntil: new Date('2026-03-15T00:00:00.000Z'),
+        status: 'success',
+        exportedCount: 0,
+        payload: null,
+        message: null,
+        startedAt: new Date('2026-03-15T00:00:00.000Z'),
+        finishedAt: new Date('2026-03-15T00:01:00.000Z'),
+      }),
+      'auditLog.create': async () => ({ id: 'audit-003' }),
+    },
+    async () => {
+      const server = await buildServer({ logger: false });
+      try {
+        const res = await server.inject({
+          method: 'POST',
+          url: '/integrations/hr/exports/users/employee-master/dispatch',
+          headers: {
+            'x-user-id': 'admin-user',
+            'x-roles': 'admin',
+          },
+          payload: {
+            idempotencyKey: 'emp-export-key-003',
+            limit: 5,
+            offset: 0,
+          },
+        });
+        assert.equal(res.statusCode, 409, res.body);
+        const body = JSON.parse(res.body);
+        const errorCode =
+          typeof body.error === 'string' ? body.error : body?.error?.code;
+        assert.equal(errorCode, 'idempotency_conflict');
+      } finally {
+        await server.close();
+      }
+    },
+  );
+});
+
+test('POST /integrations/hr/exports/users/employee-master/dispatch handles concurrent create race as in-progress replay', async () => {
+  process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
+  process.env.AUTH_MODE = 'header';
+
+  const requestHash = createHash('sha256')
+    .update(
+      JSON.stringify({
+        updatedSince: null,
+        limit: 5,
+        offset: 0,
+        format: 'csv',
+      }),
+      'utf8',
+    )
+    .digest('hex');
+  let findUniqueCalls = 0;
+  let createCalls = 0;
+  await withPrismaStubs(
+    {
+      'hrEmployeeMasterExportLog.findUnique': async () => {
+        findUniqueCalls += 1;
+        if (findUniqueCalls === 1) {
+          return null;
+        }
+        return {
+          id: 'emp-export-log-race',
+          idempotencyKey: 'emp-export-key-race',
+          requestHash,
+          updatedSince: null,
+          exportedUntil: new Date('2026-03-15T00:00:00.000Z'),
+          status: 'running',
+          exportedCount: 0,
+          payload: null,
+          message: null,
+          startedAt: new Date('2026-03-15T00:00:00.000Z'),
+          finishedAt: null,
+        };
+      },
+      'hrEmployeeMasterExportLog.create': async () => {
+        createCalls += 1;
+        throw new Prisma.PrismaClientKnownRequestError(
+          'Unique constraint failed on the fields: (`idempotencyKey`)',
+          {
+            code: 'P2002',
+            clientVersion: 'test',
+          },
+        );
+      },
+      'auditLog.create': async () => ({ id: 'audit-race' }),
+    },
+    async () => {
+      const server = await buildServer({ logger: false });
+      try {
+        const res = await server.inject({
+          method: 'POST',
+          url: '/integrations/hr/exports/users/employee-master/dispatch',
+          headers: {
+            'x-user-id': 'admin-user',
+            'x-roles': 'admin',
+          },
+          payload: {
+            idempotencyKey: 'emp-export-key-race',
+            limit: 5,
+            offset: 0,
+          },
+        });
+        assert.equal(res.statusCode, 409, res.body);
+        const body = JSON.parse(res.body);
+        assert.equal(body.error, 'dispatch_in_progress');
+        assert.equal(body.logId, 'emp-export-log-race');
+      } finally {
+        await server.close();
+      }
+    },
+  );
+
+  assert.equal(createCalls, 1);
+  assert.equal(findUniqueCalls, 2);
 });
 
 test('GET /integrations/hr/exports/users/employee-master/dispatch-logs supports filters and pagination', async () => {
