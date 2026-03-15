@@ -102,6 +102,11 @@ enum IntegrationRunStatus {
   failed
 }
 
+enum AttendanceClosingStatus {
+  closed
+  superseded
+}
+
 model Customer {
   id                    String    @id @default(uuid())
   code                  String    @unique
@@ -1338,6 +1343,63 @@ model LeaveRequest {
 
   @@index([userId, startDate])
   @@index([status])
+}
+
+model AttendanceClosingPeriod {
+  id                        String                     @id @default(uuid())
+  periodKey                 String
+  version                   Int                        @default(1)
+  status                    AttendanceClosingStatus    @default(closed)
+  closedAt                  DateTime                   @default(now())
+  closedBy                  String?
+  supersededAt              DateTime?
+  supersededBy              String?
+  summaryCount              Int                        @default(0)
+  workedDayCountTotal       Int                        @default(0)
+  scheduledWorkMinutesTotal Int                        @default(0)
+  approvedWorkMinutesTotal  Int                        @default(0)
+  overtimeTotalMinutesTotal Int                        @default(0)
+  paidLeaveMinutesTotal     Int                        @default(0)
+  unpaidLeaveMinutesTotal   Int                        @default(0)
+  totalLeaveMinutesTotal    Int                        @default(0)
+  sourceTimeEntryCount      Int                        @default(0)
+  sourceLeaveRequestCount   Int                        @default(0)
+  createdAt                 DateTime                   @default(now())
+  createdBy                 String?
+  updatedAt                 DateTime                   @updatedAt
+  updatedBy                 String?
+  summaries                 AttendanceMonthlySummary[]
+
+  @@unique([periodKey, version])
+  @@index([periodKey, status, version])
+}
+
+model AttendanceMonthlySummary {
+  id                      String                  @id @default(uuid())
+  closingPeriod           AttendanceClosingPeriod @relation(fields: [closingPeriodId], references: [id], onDelete: Cascade)
+  closingPeriodId         String
+  periodKey               String
+  version                 Int
+  userId                  String
+  employeeCode            String
+  workedDayCount          Int                     @default(0)
+  scheduledWorkMinutes    Int                     @default(0)
+  approvedWorkMinutes     Int                     @default(0)
+  overtimeTotalMinutes    Int                     @default(0)
+  paidLeaveMinutes        Int                     @default(0)
+  unpaidLeaveMinutes      Int                     @default(0)
+  totalLeaveMinutes       Int                     @default(0)
+  sourceTimeEntryCount    Int                     @default(0)
+  sourceLeaveRequestCount Int                     @default(0)
+  createdAt               DateTime                @default(now())
+  createdBy               String?
+  updatedAt               DateTime                @updatedAt
+  updatedBy               String?
+
+  @@unique([closingPeriodId, userId])
+  @@index([periodKey, version])
+  @@index([employeeCode])
+  @@index([userId, periodKey])
 }
 
 model ApprovalRule {
