@@ -1322,7 +1322,25 @@ export async function registerIntegrationRoutes(app: FastifyInstance) {
       const take = parseLimit(limit, 500, 2000);
       const skip = parseOffset(offset);
       const items = await prisma.userAccount.findMany({
-        where: since ? { updatedAt: { gt: since } } : undefined,
+        where: since
+          ? {
+              OR: [
+                { updatedAt: { gt: since } },
+                { payrollProfile: { is: { updatedAt: { gt: since } } } },
+              ],
+            }
+          : undefined,
+        include: {
+          payrollProfile: {
+            select: {
+              payrollType: true,
+              closingType: true,
+              paymentType: true,
+              titleCode: true,
+              departmentCode: true,
+            },
+          },
+        },
         orderBy: { createdAt: 'desc' },
         take,
         skip,

@@ -45,28 +45,28 @@
 
 実 CSV 列名は `#1432` 後に確定する。ここでは ERP4 側の論理項目と供給可否を定義する。
 
-| 論理項目            | 想定用途               | ERP4 供給元                                     | 判定     | 備考                                      |
-| ------------------- | ---------------------- | ----------------------------------------------- | -------- | ----------------------------------------- |
-| employeeCode        | 給与システムの社員キー | なし                                            | 未実装   | `#1439` で追加が必要                      |
-| loginId             | 補助識別子             | `UserAccount.userName`                          | 供給可   | 変更可能運用のため主キーにはしない        |
-| externalIdentityId  | IdP/SCIM 外部 ID       | `UserAccount.externalId`                        | 供給可   | 給与キーではなく参考値                    |
-| displayName         | 氏名表示               | `UserAccount.displayName`                       | 供給可   | 未設定時の補完ルールが必要                |
-| familyName          | 姓                     | `UserAccount.familyName`                        | 供給可   | 未設定時は displayName 分解を行わない方針 |
-| givenName           | 名                     | `UserAccount.givenName`                         | 供給可   | 同上                                      |
-| activeFlag          | 在籍/無効              | `UserAccount.active`                            | 供給可   | 退職日ではなく現状態                      |
-| departmentName      | 部門表示名             | `UserAccount.department`                        | 条件付き | 表示名のみ。部門コードは未実装            |
-| organizationName    | 組織表示名             | `UserAccount.organization`                      | 条件付き | コード値未整備                            |
-| managerEmployeeCode | 上長社員コード         | `managerUserId` 由来                            | 未実装   | 上長社員コードへの変換が必要              |
-| email               | 連絡先                 | `UserAccount.emails`                            | 条件付き | 配列から primary 採用ルールが必要         |
-| phone               | 連絡先                 | `UserAccount.phoneNumbers`                      | 条件付き | 配列から primary 採用ルールが必要         |
-| employmentType      | 雇用区分               | なし                                            | 未実装   | 正社員/契約/パート等                      |
-| title               | 役職                   | なし                                            | 未実装   | 表示役職と給与上の役職の整理が必要        |
-| joinDate            | 入社日                 | なし                                            | 未実装   | 必須度は要確認                            |
-| leaveDate           | 退職日                 | なし                                            | 未実装   | active だけでは代替不可                   |
-| payrollGroup        | 給与体系/締め区分      | なし                                            | 未実装   | 月給/時給/日給、締め日等                  |
-| defaultWorkMinutes  | 所定労働時間           | `LeaveSetting.defaultWorkdayMinutes` を参照可能 | 条件付き | 個人別設定は未実装                        |
-| bankAccount         | 支払口座               | なし                                            | 未実装   | 要機微情報管理                            |
-| note                | 備考                   | 任意                                            | 未定     | 原則不要、必要なら専用項目を設ける        |
+| 論理項目            | 想定用途               | ERP4 供給元                                      | 判定     | 備考                                        |
+| ------------------- | ---------------------- | ------------------------------------------------ | -------- | ------------------------------------------- |
+| employeeCode        | 給与システムの社員キー | `UserAccount.employeeCode`                       | 供給可   | `#1439` 基盤追加                            |
+| loginId             | 補助識別子             | `UserAccount.userName`                           | 供給可   | 変更可能運用のため主キーにはしない          |
+| externalIdentityId  | IdP/SCIM 外部 ID       | `UserAccount.externalId`                         | 供給可   | 給与キーではなく参考値                      |
+| displayName         | 氏名表示               | `UserAccount.displayName`                        | 供給可   | 未設定時の補完ルールが必要                  |
+| familyName          | 姓                     | `UserAccount.familyName`                         | 供給可   | 未設定時は displayName 分解を行わない方針   |
+| givenName           | 名                     | `UserAccount.givenName`                          | 供給可   | 同上                                        |
+| activeFlag          | 在籍/無効              | `UserAccount.active`                             | 供給可   | 退職日ではなく現状態                        |
+| departmentName      | 部門表示名             | `UserAccount.department`                         | 条件付き | 表示名のみ。部門コードは未実装              |
+| organizationName    | 組織表示名             | `UserAccount.organization`                       | 条件付き | コード値未整備                              |
+| managerEmployeeCode | 上長社員コード         | `managerUserId` 由来                             | 未実装   | 上長社員コードへの変換が必要                |
+| email               | 連絡先                 | `UserAccount.emails`                             | 条件付き | 配列から primary 採用ルールが必要           |
+| phone               | 連絡先                 | `UserAccount.phoneNumbers`                       | 条件付き | 配列から primary 採用ルールが必要           |
+| employmentType      | 雇用区分               | `UserAccount.employmentType`                     | 供給可   | `#1439` 基盤追加                            |
+| title               | 役職                   | なし                                             | 未実装   | 表示役職と給与上の役職の整理が必要          |
+| joinDate            | 入社日                 | `UserAccount.joinedAt`                           | 供給可   | `#1439` 基盤追加                            |
+| leaveDate           | 退職日                 | `UserAccount.leftAt`                             | 供給可   | `#1439` 基盤追加                            |
+| payrollGroup        | 給与体系/締め区分      | `EmployeePayrollProfile.payrollType/closingType` | 条件付き | `#1439` 基盤追加、実 CSV 列との対応は要確認 |
+| defaultWorkMinutes  | 所定労働時間           | `LeaveSetting.defaultWorkdayMinutes` を参照可能  | 条件付き | 個人別設定は未実装                          |
+| bankAccount         | 支払口座               | `EmployeePayrollProfile.bankInfo`                | 条件付き | `#1439` 基盤追加、項目粒度は要確認          |
+| note                | 備考                   | 任意                                             | 未定     | 原則不要、必要なら専用項目を設ける          |
 
 ## 必須/任意/固定値の初期分類
 
@@ -78,8 +78,6 @@
 
 ### 給与運用上は必須と考えるが、ERP4 側が未実装のもの
 
-- `employeeCode`
-- `employmentType`
 - `payrollGroup`
 - `departmentCode` または給与集計に使う組織コード
 
@@ -107,7 +105,6 @@
 ### ソート順
 
 - 初期案: `employeeCode ASC`
-- `employeeCode` 未実装の間は正式決定しない
 
 ### 文字コード・改行
 
@@ -137,15 +134,15 @@
 
 ### 新設が必要なマスタ項目
 
-| CSV 論理列           | 推奨保持場所                                  | 理由                            |
-| -------------------- | --------------------------------------------- | ------------------------------- |
-| employeeCode         | `UserAccount` 拡張または専用 employee profile | `externalId` と責務分離が必要   |
-| employmentType       | 専用 employee profile                         | 給与区分は IdP 情報では足りない |
-| title                | 専用 employee profile                         | 役職表現を給与連携で使うため    |
-| payrollGroup         | 専用 employee profile                         | 締め区分・給与体系を持つ        |
-| bankAccount          | 専用 employee profile                         | 機微情報として分離管理したい    |
-| joinDate / leaveDate | 専用 employee profile                         | 雇用履歴管理が必要              |
-| departmentCode       | 組織/部門 master                              | 表示名とは別コードが必要        |
+| CSV 論理列           | 推奨保持場所                  | 理由                         |
+| -------------------- | ----------------------------- | ---------------------------- |
+| employeeCode         | `UserAccount.employeeCode`    | `externalId` と責務分離する  |
+| employmentType       | `UserAccount.employmentType`  | 基本属性として持つ           |
+| title                | 専用 employee profile         | 役職表現を給与連携で使うため |
+| payrollGroup         | `EmployeePayrollProfile`      | 締め区分・給与体系を持つ     |
+| bankAccount          | `EmployeePayrollProfile`      | 機微情報として分離管理したい |
+| joinDate / leaveDate | `UserAccount.joinedAt/leftAt` | 基本属性として持つ           |
+| departmentCode       | 組織/部門 master              | 表示名とは別コードが必要     |
 
 ## テスト観点（初期案）
 
@@ -175,7 +172,7 @@
 以下は repo 内だけでは確定できない。
 
 1. 給料らくだの社員マスタ CSV 実列名、列順、必須列
-2. 給与連携の主キーを `employeeCode` にするか、既存社員番号を流用するか
+2. `employeeCode` の桁数・文字種・採番ルール
 3. 役職・雇用区分・給与体系・締め区分の実コード体系
 4. 銀行口座を ERP4 で保持するか、別システム正本にするか
 5. 差分出力が許容されるか、毎回全件出力が必要か
@@ -190,7 +187,7 @@
 ## 現時点の結論
 
 - 社員マスタ CSV の完全仕様を確定するには `#1431`, `#1432` が必須である。
-- ただし ERP4 側の不足は既に明確であり、最優先は `employeeCode` と給与前提 master の追加設計である。
+- ただし実 CSV の列仕様とコード体系は未確定であり、次は `EmployeePayrollProfile` の列詳細をテンプレートに合わせて詰める必要がある。
 - したがって `#1436` は「repo ベース初期案」として本書を先行確定し、現物 CSV 入手後に列仕様を詰める進め方が妥当である。
 
 ## 根拠ファイル
