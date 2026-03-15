@@ -127,6 +127,9 @@
 ### HR コネクタ（実装済み）
 
 - `GET /integrations/hr/exports/users`
+- `GET /integrations/hr/exports/users/employee-master`
+- `POST /integrations/hr/exports/users/employee-master/dispatch`
+- `GET /integrations/hr/exports/users/employee-master/dispatch-logs`
 - `GET /integrations/hr/exports/wellbeing`
 - `GET /integrations/hr/exports/leaves`
 - `POST /integrations/hr/exports/leaves/dispatch`
@@ -141,6 +144,22 @@
 - 認可: `admin` / `mgmt`
 - `updatedSince` は `updatedAt > updatedSince` 判定
 - 不正な `updatedSince` は `400 invalid_updatedSince`
+
+社員マスタ CSV export 系 API（追加仕様）:
+
+- `GET /integrations/hr/exports/users/employee-master`
+  - query: `format?`（`json|csv`）、`updatedSince?`、`limit?`（1..2000）、`offset?`（0..100000）
+  - canonical header を返す。`format=csv` では `text/csv` でダウンロードする
+  - `employeeCode` 未設定の対象者がいる場合は `409 employee_master_employee_code_missing`
+- `POST /integrations/hr/exports/users/employee-master/dispatch`
+  - body: `idempotencyKey`（必須）、`updatedSince?`、`limit?`、`offset?`、`format?`（`csv` のみ）
+  - 応答: `replayed`、`payload`、`log`
+  - 冪等制御:
+    - 同一 `idempotencyKey` + 同一条件: 前回結果を再利用（`replayed=true`）
+    - 同一 `idempotencyKey` + 異なる条件: `409 idempotency_conflict`
+    - 同一 `idempotencyKey` の実行中再入: `409 dispatch_in_progress`
+- `GET /integrations/hr/exports/users/employee-master/dispatch-logs`
+  - query: `idempotencyKey?`、`limit?`（1..1000）、`offset?`（0..100000）
 
 休暇 export 系 API（追加仕様）:
 

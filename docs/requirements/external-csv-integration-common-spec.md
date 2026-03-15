@@ -81,6 +81,9 @@
 - 既存の leave dispatch
   - `LeaveIntegrationExportLog`
   - `idempotencyKey`, `requestHash`, `exportedUntil`, `exportedCount`
+- 社員マスタ dispatch
+  - `HrEmployeeMasterExportLog`
+  - `idempotencyKey`, `requestHash`, `exportedUntil`, `exportedCount`
 
 将来の共通 job model は、上記既存実装を包含する形で拡張する。
 
