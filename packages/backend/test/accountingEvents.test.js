@@ -92,7 +92,7 @@ test('stageAccountingEventForApproval blocks expense approval staging when emplo
         id: 'exp-001',
         projectId: 'proj-001',
         userId: 'user-001',
-        category: 'travel',
+        category: '交通費',
         amount: '12000',
         currency: 'JPY',
       }),
@@ -130,7 +130,7 @@ test('stageAccountingEventForApproval blocks expense approval staging when emplo
     { code: 'employee_code_missing' },
     {
       code: 'mapping_pending',
-      mappingKey: 'expense_approved:travel',
+      mappingKey: 'expense_approved:交通費',
       requiredFields: ['debitAccountCode', 'creditAccountCode', 'taxCode'],
     },
   ]);

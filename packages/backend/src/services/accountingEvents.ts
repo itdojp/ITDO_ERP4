@@ -42,9 +42,10 @@ function normalizeText(value: unknown) {
 
 function normalizeMappingKeyPart(value: unknown) {
   const normalized = normalizeText(value)
+    .normalize('NFKC')
     .toLowerCase()
     .replace(/\s+/g, '_')
-    .replace(/[^a-z0-9_-]/g, '');
+    .replace(/[^\p{L}\p{N}_-]/gu, '');
   return normalized || 'default';
 }
 
@@ -201,7 +202,7 @@ async function upsertAccountingEventWithStaging(
 
 export async function stageAccountingEventForApproval(options: {
   client?: AccountingClient;
-  targetTable: string;
+  targetTable: ApprovalTargetTable | string;
   targetId: string;
   eventAt?: Date;
   approvalInstanceId?: string | null;
