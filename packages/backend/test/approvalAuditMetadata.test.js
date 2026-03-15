@@ -67,6 +67,25 @@ test('approval act writes approval_step_approve/approval_approve audit with reas
     },
     invoice: {
       update: async ({ data }) => ({ id: 'inv-001', status: data.status }),
+      findUnique: async () => ({
+        id: 'inv-001',
+        projectId: 'proj-001',
+        invoiceNo: 'INV-001',
+        totalAmount: '10000',
+        currency: 'JPY',
+      }),
+    },
+    project: {
+      findUnique: async () => ({
+        code: 'PRJ-001',
+        customer: { code: 'CUST-001' },
+      }),
+    },
+    accountingEvent: {
+      upsert: async () => ({ id: 'acctevt-001' }),
+    },
+    accountingJournalStaging: {
+      upsert: async () => ({ id: 'acctstg-001' }),
     },
   };
 
