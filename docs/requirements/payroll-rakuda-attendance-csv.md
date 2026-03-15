@@ -1,6 +1,6 @@
 # 給料らくだ連携: 勤怠 CSV 仕様（repo ベース初期案）
 
-更新日: 2026-03-10  
+更新日: 2026-03-15
 関連 Issue: `#1437`, `#1430`, `#1433`, `#1435`, `#1440`
 
 ## 目的
@@ -17,7 +17,8 @@
 - 公式 Q&A ベースでは、勤怠データ CSV 取込時に従来のタイムカードではなく集計値ベースの簡略タイムカードへ移行する可能性がある。
 - 現在 ERP4 にある既存 export は `GET /integrations/hr/exports/leaves` のみで、対象は approved leave 明細である。
 - `TimeEntry` は案件工数/実績管理のモデルであり、給与向けの打刻・勤怠集計正本ではない。
-- 月次確定値、締め版、再出力再現に必要な snapshot モデルは未実装であり、`#1440` が主対象になる。
+- 月次確定値、締め版、再出力再現に必要な snapshot モデルは `AttendanceClosingPeriod` / `AttendanceMonthlySummary` として実装を開始した。
+- 初期実装では `POST /integrations/hr/attendance/closings` と `GET /integrations/hr/attendance/closings` 系で月次締め済み snapshot を作成・参照できる。
 
 ## 現在の ERP4 で供給可能な元データ
 
@@ -65,16 +66,16 @@
 
 ## 現在の ERP4 で不足しているもの
 
-| 論点                          | 現状                                      | 判定     | 備考                                     |
-| ----------------------------- | ----------------------------------------- | -------- | ---------------------------------------- |
-| 月次締め済み勤怠確定テーブル  | なし                                      | 未実装   | issue `#1440`                            |
-| 締め版（再締め/再出力の再現） | なし                                      | 未実装   | snapshot 不足                            |
-| 出勤日数                      | 保存なし                                  | 未実装   | 休暇と工数からの単純推定では不十分       |
-| 所定時間                      | 個人別値なし                              | 未実装   | `defaultWorkdayMinutes` は全体既定値のみ |
-| 法定内/法定外/深夜/休日残業   | 区分なし                                  | 未実装   | `TimeEntry.minutes` だけでは不足         |
-| 遅刻/早退/欠勤                | 区分なし                                  | 未実装   | 打刻・所定シフト情報がない               |
-| 勤怠締め状態                  | `PeriodLock` はあるが給与締め用途ではない | 条件付き | 給与用締めの責任分界が必要               |
-| 月次勤怠の社員別集計          | なし                                      | 未実装   | leave export は明細中心                  |
+| 論点                          | 現状                                        | 判定     | 備考                                     |
+| ----------------------------- | ------------------------------------------- | -------- | ---------------------------------------- |
+| 月次締め済み勤怠確定テーブル  | なし                                        | 未実装   | issue `#1440`                            |
+| 締め版（再締め/再出力の再現） | なし                                        | 未実装   | snapshot 不足                            |
+| 出勤日数                      | 保存なし                                    | 未実装   | 休暇と工数からの単純推定では不十分       |
+| 所定時間                      | 個人別値なし                                | 未実装   | `defaultWorkdayMinutes` は全体既定値のみ |
+| 法定内/法定外/深夜/休日残業   | 区分なし                                    | 未実装   | `TimeEntry.minutes` だけでは不足         |
+| 遅刻/早退/欠勤                | 区分なし                                    | 未実装   | 打刻・所定シフト情報がない               |
+| 勤怠締め状態                  | `AttendanceClosingPeriod.status` で初期対応 | 条件付き | `PeriodLock` 連動は後続                  |
+| 月次勤怠の社員別集計          | `AttendanceMonthlySummary` で初期対応       | 条件付き | 出勤日数/総残業/休暇集計まで             |
 
 ## 論理項目定義（初期案）
 
@@ -104,6 +105,8 @@
 - `GET /integrations/hr/exports/leaves` で `updatedSince`, `limit`, `offset` を使った差分取得ができる
 - `POST /integrations/hr/exports/leaves/dispatch` の body で `idempotencyKey` を指定して再送管理付き dispatch ができる
 - `leaveTypeName`, `leaveTypeUnit`, `leaveTypeIsPaid`, `requestedMinutes` を含む
+- `POST /integrations/hr/attendance/closings` で `periodKey` 単位の締め snapshot を作成できる
+- `GET /integrations/hr/attendance/closings` と `GET /integrations/hr/attendance/closings/:id/summaries` で締め済みデータを参照できる
 
 ### 既存 leave export で足りないこと
 
@@ -111,6 +114,8 @@
 - 出勤日数、所定時間、残業区分のような勤怠サマリを持っていない
 - 締め月・締め版・再出力再現の軸を持たない
 - approved leave の明細取得と、給与 CSV に必要な「確定勤怠」責任分界が分かれていない
+- `AttendanceMonthlySummary` は総残業と paid/unpaid leave までで、法定内/法定外/深夜/休日の区分は未実装
+- `AttendanceClosingPeriod` は給与向け snapshot 管理に特化しており、既存 `PeriodLock` との連動は未実装
 
 ## 締め処理条件の初期案
 
@@ -118,6 +123,7 @@
 
 - 給与向け CSV は「月次締め済み勤怠確定値」から出力する。
 - 締め前の `TimeEntry` / `LeaveRequest` 明細から直接 CSV を出力しない。
+- 初期実装では、未承認 `TimeEntry` / `LeaveRequest` が対象月に残っている場合は締めを拒否する。
 
 ### 締め対象
 
@@ -129,6 +135,7 @@
 
 - 締め後の明細修正が発生した場合は「再締め版」を作る
 - CSV は「どの締め版から生成したか」を必ず記録する
+- 初期実装では `reclose=true` で再締め版を追加作成し、前版は `superseded` に遷移する
 
 ## ERP4 -> CSV マッピングの初期案
 
@@ -227,8 +234,10 @@
 
 - `packages/backend/prisma/schema.prisma`
 - `packages/backend/src/routes/integrations.ts`
+- `packages/backend/src/services/attendanceClosings.ts`
 - `packages/backend/src/routes/timeEntries.ts`
 - `packages/backend/test/integrationExportRoutes.test.js`
+- `packages/backend/test/attendanceClosingRoutes.test.js`
 - `docs/requirements/hr-crm-integration.md`
 - `docs/requirements/erp4-payroll-accounting-gap-analysis.md`
 - `docs/requirements/external-csv-integration-common-spec.md`

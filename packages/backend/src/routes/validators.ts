@@ -1968,6 +1968,47 @@ export const integrationHrLeaveExportLogListQuerySchema = {
   ),
 };
 
+const attendanceClosingPeriodKeySchema = Type.String({
+  pattern: '^\\d{4}-(0[1-9]|1[0-2])$',
+});
+
+export const integrationHrAttendanceClosingCreateSchema = {
+  body: Type.Object(
+    {
+      periodKey: attendanceClosingPeriodKeySchema,
+      reclose: Type.Optional(Type.Boolean()),
+    },
+    { additionalProperties: false },
+  ),
+};
+
+export const integrationHrAttendanceClosingListQuerySchema = {
+  querystring: Type.Object(
+    {
+      periodKey: Type.Optional(attendanceClosingPeriodKeySchema),
+      limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 200 })),
+      offset: Type.Optional(Type.Integer({ minimum: 0, maximum: 100000 })),
+    },
+    { additionalProperties: false },
+  ),
+};
+
+export const integrationHrAttendanceClosingSummaryListSchema = {
+  params: Type.Object(
+    {
+      id: Type.String({ minLength: 1 }),
+    },
+    { additionalProperties: false },
+  ),
+  querystring: Type.Object(
+    {
+      limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 1000 })),
+      offset: Type.Optional(Type.Integer({ minimum: 0, maximum: 100000 })),
+    },
+    { additionalProperties: false },
+  ),
+};
+
 export const chatSettingPatchSchema = {
   body: Type.Object(
     {
