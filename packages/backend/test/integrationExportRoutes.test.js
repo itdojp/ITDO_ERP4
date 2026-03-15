@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createHash } from 'node:crypto';
+import { Prisma } from '@prisma/client';
 
 import { buildServer } from '../dist/server.js';
 import { prisma } from '../dist/services/db.js';
@@ -102,8 +103,8 @@ test('GET /integrations/hr/exports/users supports updatedSince and pagination', 
     true,
   );
   assert.equal(
-    capturedFindMany?.where?.OR?.[1]?.payrollProfile?.is?.updatedAt?.gt instanceof
-      Date,
+    capturedFindMany?.where?.OR?.[1]?.payrollProfile?.is?.updatedAt
+      ?.gt instanceof Date,
     true,
   );
 });
@@ -132,6 +133,612 @@ test('GET /integrations/hr/exports/users returns 400 for invalid updatedSince', 
       await server.close();
     }
   });
+});
+
+test('GET /integrations/hr/exports/users/employee-master returns canonical payload', async () => {
+  process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
+  process.env.AUTH_MODE = 'header';
+
+  let capturedFindMany = null;
+  await withPrismaStubs(
+    {
+      'userAccount.findMany': async (args) => {
+        capturedFindMany = args;
+        return [
+          {
+            id: 'user-001',
+            employeeCode: 'E-001',
+            externalId: 'ext-001',
+            userName: 'alice',
+            displayName: null,
+            familyName: '田中',
+            givenName: '花子',
+            active: true,
+            employmentType: 'full_time',
+            joinedAt: new Date('2024-04-01T00:00:00.000Z'),
+            leftAt: null,
+            department: '営業',
+            organization: '本社',
+            emails: [{ value: 'alice@example.com', primary: true }],
+            phoneNumbers: ['03-0000-0000'],
+            payrollProfile: {
+              payrollType: 'monthly',
+              closingType: 'end_of_month',
+              paymentType: 'bank_transfer',
+              titleCode: 'TL01',
+              departmentCode: 'D001',
+            },
+          },
+        ];
+      },
+    },
+    async () => {
+      const server = await buildServer({ logger: false });
+      try {
+        const res = await server.inject({
+          method: 'GET',
+          url: '/integrations/hr/exports/users/employee-master?updatedSince=2026-02-20T00:00:00.000Z&limit=10&offset=2',
+          headers: {
+            'x-user-id': 'admin-user',
+            'x-roles': 'admin',
+          },
+        });
+        assert.equal(res.statusCode, 200, res.body);
+        const body = JSON.parse(res.body);
+        assert.equal(body.schemaVersion, 'rakuda_employee_master_v0');
+        assert.equal(body.limit, 10);
+        assert.equal(body.offset, 2);
+        assert.equal(body.exportedCount, 1);
+        assert.equal(body.headers[0], 'employeeCode');
+        assert.equal(body.items[0].employeeCode, 'E-001');
+        assert.equal(body.items[0].displayName, '田中 花子');
+        assert.equal(body.items[0].departmentCode, 'D001');
+        assert.equal(body.items[0].email, 'alice@example.com');
+        assert.equal(body.items[0].phone, '03-0000-0000');
+      } finally {
+        await server.close();
+      }
+    },
+  );
+
+  assert.deepEqual(capturedFindMany?.orderBy, [
+    { employeeCode: 'asc' },
+    { id: 'asc' },
+  ]);
+  assert.equal(capturedFindMany?.take, 10);
+  assert.equal(capturedFindMany?.skip, 2);
+  assert.equal(
+    capturedFindMany?.where?.OR?.[1]?.payrollProfile?.is?.updatedAt
+      ?.gt instanceof Date,
+    true,
+  );
+});
+
+test('GET /integrations/hr/exports/users/employee-master returns csv when format=csv', async () => {
+  process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
+  process.env.AUTH_MODE = 'header';
+
+  await withPrismaStubs(
+    {
+      'userAccount.findMany': async () => [
+        {
+          id: 'user-001',
+          employeeCode: 'E-001',
+          externalId: 'ext-001',
+          userName: 'alice',
+          displayName: 'Alice',
+          familyName: '田中',
+          givenName: '花子',
+          active: true,
+          employmentType: 'full_time',
+          joinedAt: new Date('2024-04-01T00:00:00.000Z'),
+          leftAt: null,
+          department: '営業',
+          organization: '本社',
+          emails: [{ value: 'alice@example.com', primary: true }],
+          phoneNumbers: ['03-0000-0000'],
+          payrollProfile: {
+            payrollType: 'monthly',
+            closingType: 'end_of_month',
+            paymentType: 'bank_transfer',
+            titleCode: 'TL01',
+            departmentCode: 'D001',
+          },
+        },
+      ],
+    },
+    async () => {
+      const server = await buildServer({ logger: false });
+      try {
+        const res = await server.inject({
+          method: 'GET',
+          url: '/integrations/hr/exports/users/employee-master?format=csv',
+          headers: {
+            'x-user-id': 'admin-user',
+            'x-roles': 'admin',
+          },
+        });
+        assert.equal(res.statusCode, 200, res.body);
+        assert.match(
+          res.headers['content-type'] ?? '',
+          /text\/csv/i,
+          'content-type should be csv',
+        );
+        assert.match(
+          res.headers['content-disposition'] ?? '',
+          /rakuda-employee-master-/,
+        );
+        assert.match(res.body, /^employeeCode,loginId,externalIdentityId,/);
+        assert.match(res.body, /E-001,alice,ext-001,Alice,/);
+      } finally {
+        await server.close();
+      }
+    },
+  );
+});
+
+test('GET /integrations/hr/exports/users/employee-master returns 409 when employeeCode is missing', async () => {
+  process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
+  process.env.AUTH_MODE = 'header';
+
+  await withPrismaStubs(
+    {
+      'userAccount.findMany': async () => [
+        {
+          id: 'user-001',
+          employeeCode: null,
+          externalId: null,
+          userName: 'alice',
+          displayName: 'Alice',
+          familyName: null,
+          givenName: null,
+          active: true,
+          employmentType: null,
+          joinedAt: null,
+          leftAt: null,
+          department: null,
+          organization: null,
+          emails: null,
+          phoneNumbers: null,
+          payrollProfile: null,
+        },
+      ],
+    },
+    async () => {
+      const server = await buildServer({ logger: false });
+      try {
+        const res = await server.inject({
+          method: 'GET',
+          url: '/integrations/hr/exports/users/employee-master',
+          headers: {
+            'x-user-id': 'admin-user',
+            'x-roles': 'admin',
+          },
+        });
+        assert.equal(res.statusCode, 409, res.body);
+        const body = JSON.parse(res.body);
+        assert.equal(body.error, 'employee_master_employee_code_missing');
+      } finally {
+        await server.close();
+      }
+    },
+  );
+});
+
+test('POST /integrations/hr/exports/users/employee-master/dispatch creates export log and persists payload', async () => {
+  process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
+  process.env.AUTH_MODE = 'header';
+
+  let createCall = null;
+  let updateCall = null;
+  await withPrismaStubs(
+    {
+      'hrEmployeeMasterExportLog.findUnique': async () => null,
+      'hrEmployeeMasterExportLog.create': async (args) => {
+        createCall = args;
+        return {
+          id: 'emp-export-log-001',
+          idempotencyKey: args.data.idempotencyKey,
+          requestHash: args.data.requestHash,
+          updatedSince: args.data.updatedSince,
+          exportedUntil: args.data.exportedUntil,
+          status: args.data.status,
+          exportedCount: 0,
+          payload: null,
+          message: null,
+          startedAt: args.data.startedAt,
+          finishedAt: null,
+        };
+      },
+      'hrEmployeeMasterExportLog.update': async (args) => {
+        updateCall = args;
+        return {
+          id: 'emp-export-log-001',
+          idempotencyKey: 'emp-export-key-001',
+          status: args.data.status,
+          updatedSince: new Date('2026-02-20T00:00:00.000Z'),
+          exportedUntil: new Date('2026-03-15T00:00:00.000Z'),
+          exportedCount: args.data.exportedCount,
+          startedAt: new Date('2026-03-15T00:00:00.000Z'),
+          finishedAt: args.data.finishedAt,
+          message: args.data.message,
+          payload: args.data.payload,
+        };
+      },
+      'userAccount.findMany': async () => [
+        {
+          id: 'user-001',
+          employeeCode: 'E-001',
+          externalId: 'ext-001',
+          userName: 'alice',
+          displayName: 'Alice',
+          familyName: '田中',
+          givenName: '花子',
+          active: true,
+          employmentType: 'full_time',
+          joinedAt: new Date('2024-04-01T00:00:00.000Z'),
+          leftAt: null,
+          department: '営業',
+          organization: '本社',
+          emails: [{ value: 'alice@example.com', primary: true }],
+          phoneNumbers: ['03-0000-0000'],
+          payrollProfile: {
+            payrollType: 'monthly',
+            closingType: 'end_of_month',
+            paymentType: 'bank_transfer',
+            titleCode: 'TL01',
+            departmentCode: 'D001',
+          },
+        },
+      ],
+      'auditLog.create': async () => ({ id: 'audit-001' }),
+    },
+    async () => {
+      const server = await buildServer({ logger: false });
+      try {
+        const res = await server.inject({
+          method: 'POST',
+          url: '/integrations/hr/exports/users/employee-master/dispatch',
+          headers: {
+            'x-user-id': 'admin-user',
+            'x-roles': 'admin',
+          },
+          payload: {
+            idempotencyKey: 'emp-export-key-001',
+            updatedSince: '2026-02-20T00:00:00.000Z',
+            limit: 20,
+            offset: 1,
+          },
+        });
+        assert.equal(res.statusCode, 200, res.body);
+        const body = JSON.parse(res.body);
+        assert.equal(body.replayed, false);
+        assert.equal(body.payload.schemaVersion, 'rakuda_employee_master_v0');
+        assert.equal(body.payload.exportedCount, 1);
+        assert.equal(body.log.idempotencyKey, 'emp-export-key-001');
+      } finally {
+        await server.close();
+      }
+    },
+  );
+
+  assert.equal(createCall?.data?.idempotencyKey, 'emp-export-key-001');
+  assert.equal(updateCall?.data?.exportedCount, 1);
+  assert.equal(
+    updateCall?.data?.payload?.schemaVersion,
+    'rakuda_employee_master_v0',
+  );
+});
+
+test('POST /integrations/hr/exports/users/employee-master/dispatch replays previous success with same idempotency key', async () => {
+  process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
+  process.env.AUTH_MODE = 'header';
+
+  await withPrismaStubs(
+    {
+      'hrEmployeeMasterExportLog.findUnique': async () => ({
+        id: 'emp-export-log-002',
+        idempotencyKey: 'emp-export-key-002',
+        requestHash: createHash('sha256')
+          .update(
+            JSON.stringify({
+              updatedSince: '2026-02-20T00:00:00.000Z',
+              limit: 20,
+              offset: 0,
+              format: 'csv',
+            }),
+            'utf8',
+          )
+          .digest('hex'),
+        updatedSince: new Date('2026-02-20T00:00:00.000Z'),
+        exportedUntil: new Date('2026-03-15T00:00:00.000Z'),
+        status: 'success',
+        exportedCount: 1,
+        payload: { schemaVersion: 'rakuda_employee_master_v0' },
+        message: 'exported',
+        startedAt: new Date('2026-03-15T00:00:00.000Z'),
+        finishedAt: new Date('2026-03-15T00:01:00.000Z'),
+      }),
+      'auditLog.create': async () => ({ id: 'audit-002' }),
+    },
+    async () => {
+      const server = await buildServer({ logger: false });
+      try {
+        const res = await server.inject({
+          method: 'POST',
+          url: '/integrations/hr/exports/users/employee-master/dispatch',
+          headers: {
+            'x-user-id': 'admin-user',
+            'x-roles': 'admin',
+          },
+          payload: {
+            idempotencyKey: 'emp-export-key-002',
+            updatedSince: '2026-02-20T00:00:00.000Z',
+            limit: 20,
+          },
+        });
+        assert.equal(res.statusCode, 200, res.body);
+        const body = JSON.parse(res.body);
+        assert.equal(body.replayed, true);
+        assert.equal(body.log.id, 'emp-export-log-002');
+      } finally {
+        await server.close();
+      }
+    },
+  );
+});
+
+test('POST /integrations/hr/exports/users/employee-master/dispatch returns 409 while same request is running', async () => {
+  process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
+  process.env.AUTH_MODE = 'header';
+
+  const requestHash = createHash('sha256')
+    .update(
+      JSON.stringify({
+        updatedSince: null,
+        limit: 5,
+        offset: 0,
+        format: 'csv',
+      }),
+      'utf8',
+    )
+    .digest('hex');
+  let createCalled = false;
+  let auditCreateCount = 0;
+  await withPrismaStubs(
+    {
+      'hrEmployeeMasterExportLog.findUnique': async () => ({
+        id: 'emp-export-log-002-running',
+        idempotencyKey: 'emp-export-key-002-running',
+        requestHash,
+        updatedSince: null,
+        exportedUntil: new Date('2026-03-15T00:00:00.000Z'),
+        status: 'running',
+        exportedCount: 0,
+        payload: null,
+        message: null,
+        startedAt: new Date('2026-03-15T00:00:00.000Z'),
+        finishedAt: null,
+      }),
+      'hrEmployeeMasterExportLog.create': async () => {
+        createCalled = true;
+        return { id: 'unexpected' };
+      },
+      'auditLog.create': async () => {
+        auditCreateCount += 1;
+        return { id: 'audit-running' };
+      },
+    },
+    async () => {
+      const server = await buildServer({ logger: false });
+      try {
+        const res = await server.inject({
+          method: 'POST',
+          url: '/integrations/hr/exports/users/employee-master/dispatch',
+          headers: {
+            'x-user-id': 'admin-user',
+            'x-roles': 'admin',
+          },
+          payload: {
+            idempotencyKey: 'emp-export-key-002-running',
+            limit: 5,
+            offset: 0,
+          },
+        });
+        assert.equal(res.statusCode, 409, res.body);
+        const body = JSON.parse(res.body);
+        assert.equal(body.error, 'dispatch_in_progress');
+        assert.equal(body.logId, 'emp-export-log-002-running');
+      } finally {
+        await server.close();
+      }
+    },
+  );
+
+  assert.equal(createCalled, false);
+  assert.equal(auditCreateCount, 0);
+});
+
+test('POST /integrations/hr/exports/users/employee-master/dispatch returns 409 on idempotency conflict', async () => {
+  process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
+  process.env.AUTH_MODE = 'header';
+
+  await withPrismaStubs(
+    {
+      'hrEmployeeMasterExportLog.findUnique': async () => ({
+        id: 'emp-export-log-003',
+        idempotencyKey: 'emp-export-key-003',
+        requestHash: 'different-hash',
+        updatedSince: null,
+        exportedUntil: new Date('2026-03-15T00:00:00.000Z'),
+        status: 'success',
+        exportedCount: 0,
+        payload: null,
+        message: null,
+        startedAt: new Date('2026-03-15T00:00:00.000Z'),
+        finishedAt: new Date('2026-03-15T00:01:00.000Z'),
+      }),
+      'auditLog.create': async () => ({ id: 'audit-003' }),
+    },
+    async () => {
+      const server = await buildServer({ logger: false });
+      try {
+        const res = await server.inject({
+          method: 'POST',
+          url: '/integrations/hr/exports/users/employee-master/dispatch',
+          headers: {
+            'x-user-id': 'admin-user',
+            'x-roles': 'admin',
+          },
+          payload: {
+            idempotencyKey: 'emp-export-key-003',
+            limit: 5,
+            offset: 0,
+          },
+        });
+        assert.equal(res.statusCode, 409, res.body);
+        const body = JSON.parse(res.body);
+        const errorCode =
+          typeof body.error === 'string' ? body.error : body?.error?.code;
+        assert.equal(errorCode, 'idempotency_conflict');
+      } finally {
+        await server.close();
+      }
+    },
+  );
+});
+
+test('POST /integrations/hr/exports/users/employee-master/dispatch handles concurrent create race as in-progress replay', async () => {
+  process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
+  process.env.AUTH_MODE = 'header';
+
+  const requestHash = createHash('sha256')
+    .update(
+      JSON.stringify({
+        updatedSince: null,
+        limit: 5,
+        offset: 0,
+        format: 'csv',
+      }),
+      'utf8',
+    )
+    .digest('hex');
+  let findUniqueCalls = 0;
+  let createCalls = 0;
+  await withPrismaStubs(
+    {
+      'hrEmployeeMasterExportLog.findUnique': async () => {
+        findUniqueCalls += 1;
+        if (findUniqueCalls === 1) {
+          return null;
+        }
+        return {
+          id: 'emp-export-log-race',
+          idempotencyKey: 'emp-export-key-race',
+          requestHash,
+          updatedSince: null,
+          exportedUntil: new Date('2026-03-15T00:00:00.000Z'),
+          status: 'running',
+          exportedCount: 0,
+          payload: null,
+          message: null,
+          startedAt: new Date('2026-03-15T00:00:00.000Z'),
+          finishedAt: null,
+        };
+      },
+      'hrEmployeeMasterExportLog.create': async () => {
+        createCalls += 1;
+        throw new Prisma.PrismaClientKnownRequestError(
+          'Unique constraint failed on the fields: (`idempotencyKey`)',
+          {
+            code: 'P2002',
+            clientVersion: 'test',
+          },
+        );
+      },
+      'auditLog.create': async () => ({ id: 'audit-race' }),
+    },
+    async () => {
+      const server = await buildServer({ logger: false });
+      try {
+        const res = await server.inject({
+          method: 'POST',
+          url: '/integrations/hr/exports/users/employee-master/dispatch',
+          headers: {
+            'x-user-id': 'admin-user',
+            'x-roles': 'admin',
+          },
+          payload: {
+            idempotencyKey: 'emp-export-key-race',
+            limit: 5,
+            offset: 0,
+          },
+        });
+        assert.equal(res.statusCode, 409, res.body);
+        const body = JSON.parse(res.body);
+        assert.equal(body.error, 'dispatch_in_progress');
+        assert.equal(body.logId, 'emp-export-log-race');
+      } finally {
+        await server.close();
+      }
+    },
+  );
+
+  assert.equal(createCalls, 1);
+  assert.equal(findUniqueCalls, 2);
+});
+
+test('GET /integrations/hr/exports/users/employee-master/dispatch-logs supports filters and pagination', async () => {
+  process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
+  process.env.AUTH_MODE = 'header';
+
+  let capturedFindMany = null;
+  await withPrismaStubs(
+    {
+      'hrEmployeeMasterExportLog.findMany': async (args) => {
+        capturedFindMany = args;
+        return [
+          {
+            id: 'emp-export-log-004',
+            idempotencyKey: 'emp-export-key-004',
+            status: 'success',
+            updatedSince: new Date('2026-02-20T00:00:00.000Z'),
+            exportedUntil: new Date('2026-03-15T00:00:00.000Z'),
+            exportedCount: 3,
+            startedAt: new Date('2026-03-15T00:00:00.000Z'),
+            finishedAt: new Date('2026-03-15T00:01:00.000Z'),
+            message: 'exported',
+          },
+        ];
+      },
+    },
+    async () => {
+      const server = await buildServer({ logger: false });
+      try {
+        const res = await server.inject({
+          method: 'GET',
+          url: '/integrations/hr/exports/users/employee-master/dispatch-logs?idempotencyKey=emp-export-key-004&limit=5&offset=4',
+          headers: {
+            'x-user-id': 'admin-user',
+            'x-roles': 'admin',
+          },
+        });
+        assert.equal(res.statusCode, 200, res.body);
+        const body = JSON.parse(res.body);
+        assert.equal(body.limit, 5);
+        assert.equal(body.offset, 4);
+        assert.equal(body.items[0].idempotencyKey, 'emp-export-key-004');
+      } finally {
+        await server.close();
+      }
+    },
+  );
+
+  assert.deepEqual(capturedFindMany?.where, {
+    idempotencyKey: 'emp-export-key-004',
+  });
+  assert.equal(capturedFindMany?.take, 5);
+  assert.equal(capturedFindMany?.skip, 4);
 });
 
 test('GET /integrations/hr/exports/wellbeing returns data and enforces role', async () => {

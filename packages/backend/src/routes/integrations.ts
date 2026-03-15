@@ -17,11 +17,15 @@ import {
   AttendanceClosingError,
   closeAttendancePeriod,
 } from '../services/attendanceClosings.js';
+import { sendCsv, toCsv } from '../utils/csv.js';
 import { toDateOnly } from '../utils/date.js';
 import {
   integrationHrAttendanceClosingCreateSchema,
   integrationHrAttendanceClosingListQuerySchema,
   integrationHrAttendanceClosingSummaryListSchema,
+  integrationHrEmployeeMasterExportDispatchSchema,
+  integrationHrEmployeeMasterExportLogListQuerySchema,
+  integrationHrEmployeeMasterExportQuerySchema,
   integrationHrLeaveExportDispatchSchema,
   integrationHrLeaveExportLogListQuerySchema,
   integrationHrLeaveExportQuerySchema,
@@ -156,6 +160,328 @@ function parseUpdatedSince(raw?: string) {
   const parsed = new Date(raw);
   if (Number.isNaN(parsed.getTime())) return null;
   return parsed;
+}
+
+type HrEmployeeMasterExportFormat = 'json' | 'csv';
+
+const DEFAULT_EMPLOYEE_MASTER_EXPORT_LIMIT = 500;
+const MAX_EMPLOYEE_MASTER_EXPORT_LIMIT = 2000;
+const DEFAULT_EMPLOYEE_MASTER_EXPORT_LOG_LIMIT = 100;
+const MAX_EMPLOYEE_MASTER_EXPORT_LOG_LIMIT = 1000;
+const MAX_EMPLOYEE_MASTER_EXPORT_OFFSET = 100000;
+const HR_EMPLOYEE_MASTER_EXPORT_SCHEMA_VERSION = 'rakuda_employee_master_v0';
+const HR_EMPLOYEE_MASTER_EXPORT_HEADERS = [
+  'employeeCode',
+  'loginId',
+  'externalIdentityId',
+  'displayName',
+  'familyName',
+  'givenName',
+  'activeFlag',
+  'employmentType',
+  'joinDate',
+  'leaveDate',
+  'departmentName',
+  'organizationName',
+  'departmentCode',
+  'payrollType',
+  'closingType',
+  'paymentType',
+  'titleCode',
+  'email',
+  'phone',
+] as const;
+
+type HrEmployeeMasterExportItem = Record<
+  (typeof HR_EMPLOYEE_MASTER_EXPORT_HEADERS)[number],
+  string
+>;
+
+type HrEmployeeMasterExportPayload = {
+  schemaVersion: typeof HR_EMPLOYEE_MASTER_EXPORT_SCHEMA_VERSION;
+  exportedAt: string;
+  exportedUntil: string;
+  updatedSince: string | null;
+  limit: number;
+  offset: number;
+  exportedCount: number;
+  headers: string[];
+  items: HrEmployeeMasterExportItem[];
+};
+
+class HrEmployeeMasterExportError extends Error {
+  code: string;
+  details?: Prisma.InputJsonValue;
+
+  constructor(code: string, message: string, details?: Prisma.InputJsonValue) {
+    super(message);
+    this.name = 'HrEmployeeMasterExportError';
+    this.code = code;
+    this.details = details;
+  }
+}
+
+function normalizeHrEmployeeMasterFormat(
+  value: unknown,
+): HrEmployeeMasterExportFormat {
+  return value === 'csv' ? 'csv' : 'json';
+}
+
+function formatDateOnly(value: Date | null | undefined) {
+  return value ? value.toISOString().slice(0, 10) : '';
+}
+
+function normalizePlainText(value: unknown) {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function pickPrimaryMultiValue(value: Prisma.JsonValue | null | undefined) {
+  if (!Array.isArray(value)) return '';
+  const normalized = value
+    .map((item) => {
+      if (typeof item === 'string') {
+        return {
+          value: item.trim(),
+          primary: false,
+        };
+      }
+      if (
+        item &&
+        typeof item === 'object' &&
+        !Array.isArray(item) &&
+        typeof item.value === 'string'
+      ) {
+        return {
+          value: item.value.trim(),
+          primary: item.primary === true,
+        };
+      }
+      return null;
+    })
+    .filter((item): item is { value: string; primary: boolean } => !!item)
+    .filter((item) => item.value.length > 0);
+  if (!normalized.length) return '';
+  return normalized.find((item) => item.primary)?.value ?? normalized[0].value;
+}
+
+function buildEmployeeMasterDisplayName(input: {
+  displayName?: string | null;
+  familyName?: string | null;
+  givenName?: string | null;
+  userName: string;
+}) {
+  const displayName = normalizePlainText(input.displayName);
+  if (displayName) return displayName;
+  const familyName = normalizePlainText(input.familyName);
+  const givenName = normalizePlainText(input.givenName);
+  const joined = [familyName, givenName].filter((item) => item.length > 0);
+  if (joined.length > 0) {
+    return joined.join(' ');
+  }
+  return input.userName.trim();
+}
+
+function parseHrEmployeeMasterExportQuery(query: {
+  format?: HrEmployeeMasterExportFormat;
+  updatedSince?: string;
+  limit?: number | string;
+  offset?: number | string;
+}) {
+  const since = parseUpdatedSince(query.updatedSince);
+  if (since === null) {
+    return { ok: false as const };
+  }
+  return {
+    ok: true as const,
+    format: normalizeHrEmployeeMasterFormat(query.format),
+    updatedSince: since,
+    limit: parseBoundedInteger(
+      query.limit,
+      DEFAULT_EMPLOYEE_MASTER_EXPORT_LIMIT,
+      MAX_EMPLOYEE_MASTER_EXPORT_LIMIT,
+    ),
+    offset: parseBoundedNonNegativeInteger(
+      query.offset,
+      0,
+      MAX_EMPLOYEE_MASTER_EXPORT_OFFSET,
+    ),
+  };
+}
+
+function buildHrEmployeeMasterExportRequestHash(input: {
+  updatedSince: string | null;
+  limit: number;
+  offset: number;
+  format: 'csv';
+}) {
+  return createHash('sha256')
+    .update(JSON.stringify(input), 'utf8')
+    .digest('hex');
+}
+
+async function buildHrEmployeeMasterExportPayload(input: {
+  updatedSince?: Date;
+  exportedUntil?: Date;
+  limit: number;
+  offset: number;
+}): Promise<HrEmployeeMasterExportPayload> {
+  const exportedUntil = input.exportedUntil ?? new Date();
+  const users = await prisma.userAccount.findMany({
+    where: input.updatedSince
+      ? {
+          OR: [
+            {
+              updatedAt: {
+                gt: input.updatedSince,
+                lte: exportedUntil,
+              },
+            },
+            {
+              payrollProfile: {
+                is: {
+                  updatedAt: {
+                    gt: input.updatedSince,
+                    lte: exportedUntil,
+                  },
+                },
+              },
+            },
+          ],
+        }
+      : undefined,
+    select: {
+      id: true,
+      externalId: true,
+      employeeCode: true,
+      userName: true,
+      displayName: true,
+      familyName: true,
+      givenName: true,
+      active: true,
+      employmentType: true,
+      joinedAt: true,
+      leftAt: true,
+      department: true,
+      organization: true,
+      emails: true,
+      phoneNumbers: true,
+      payrollProfile: {
+        select: {
+          payrollType: true,
+          closingType: true,
+          paymentType: true,
+          titleCode: true,
+          departmentCode: true,
+        },
+      },
+    },
+    orderBy: [{ employeeCode: 'asc' }, { id: 'asc' }],
+    take: input.limit,
+    skip: input.offset,
+  });
+
+  const items = users.map((user) => {
+    const employeeCode = normalizePlainText(user.employeeCode);
+    if (!employeeCode) {
+      throw new HrEmployeeMasterExportError(
+        'employee_master_employee_code_missing',
+        'employeeCode is required for payroll employee master export',
+        {
+          userId: user.id,
+          userName: user.userName,
+        } as Prisma.InputJsonValue,
+      );
+    }
+    return {
+      employeeCode,
+      loginId: user.userName,
+      externalIdentityId: normalizePlainText(user.externalId),
+      displayName: buildEmployeeMasterDisplayName({
+        displayName: user.displayName,
+        familyName: user.familyName,
+        givenName: user.givenName,
+        userName: user.userName,
+      }),
+      familyName: normalizePlainText(user.familyName),
+      givenName: normalizePlainText(user.givenName),
+      activeFlag: user.active ? '1' : '0',
+      employmentType: normalizePlainText(user.employmentType),
+      joinDate: formatDateOnly(user.joinedAt),
+      leaveDate: formatDateOnly(user.leftAt),
+      departmentName: normalizePlainText(user.department),
+      organizationName: normalizePlainText(user.organization),
+      departmentCode: normalizePlainText(user.payrollProfile?.departmentCode),
+      payrollType: normalizePlainText(user.payrollProfile?.payrollType),
+      closingType: normalizePlainText(user.payrollProfile?.closingType),
+      paymentType: normalizePlainText(user.payrollProfile?.paymentType),
+      titleCode: normalizePlainText(user.payrollProfile?.titleCode),
+      email: pickPrimaryMultiValue(user.emails),
+      phone: pickPrimaryMultiValue(user.phoneNumbers),
+    } satisfies HrEmployeeMasterExportItem;
+  });
+
+  return {
+    schemaVersion: HR_EMPLOYEE_MASTER_EXPORT_SCHEMA_VERSION,
+    exportedAt: new Date().toISOString(),
+    exportedUntil: exportedUntil.toISOString(),
+    updatedSince: input.updatedSince?.toISOString() ?? null,
+    limit: input.limit,
+    offset: input.offset,
+    exportedCount: items.length,
+    headers: [...HR_EMPLOYEE_MASTER_EXPORT_HEADERS],
+    items,
+  };
+}
+
+function buildHrEmployeeMasterCsv(payload: HrEmployeeMasterExportPayload) {
+  return toCsv(
+    payload.headers,
+    payload.items.map((item) =>
+      payload.headers.map(
+        (header) => item[header as keyof HrEmployeeMasterExportItem] ?? '',
+      ),
+    ),
+  );
+}
+
+function buildHrEmployeeMasterCsvFilename(exportedUntil: string | Date) {
+  const iso =
+    exportedUntil instanceof Date ? exportedUntil.toISOString() : exportedUntil;
+  const compact = iso.replace(/[:]/g, '').replace(/\.\d{3}Z$/, 'Z');
+  return `rakuda-employee-master-${compact}.csv`;
+}
+
+function buildHrEmployeeMasterExportLogResponse(item: {
+  id: string;
+  idempotencyKey: string;
+  status: IntegrationRunStatus;
+  updatedSince: Date | null;
+  exportedUntil: Date;
+  exportedCount: number;
+  startedAt: Date;
+  finishedAt: Date | null;
+  message: string | null;
+}) {
+  return {
+    id: item.id,
+    idempotencyKey: item.idempotencyKey,
+    status: item.status,
+    updatedSince: item.updatedSince,
+    exportedUntil: item.exportedUntil,
+    exportedCount: item.exportedCount,
+    startedAt: item.startedAt,
+    finishedAt: item.finishedAt,
+    message: item.message,
+  };
+}
+
+function hrEmployeeMasterExportStatusCode(code: string) {
+  switch (code) {
+    case 'employee_master_employee_code_missing':
+      return 409;
+    default:
+      return 409;
+  }
 }
 
 type LeaveExportTarget = 'attendance' | 'payroll';
@@ -1358,6 +1684,286 @@ export async function registerIntegrationRoutes(app: FastifyInstance) {
         skip,
       });
       return { items, limit: take, offset: skip };
+    },
+  );
+
+  app.get(
+    '/integrations/hr/exports/users/employee-master',
+    {
+      preHandler: requireRole(['admin', 'mgmt']),
+      schema: integrationHrEmployeeMasterExportQuerySchema,
+    },
+    async (req, reply) => {
+      const parsed = parseHrEmployeeMasterExportQuery(
+        req.query as {
+          format?: HrEmployeeMasterExportFormat;
+          updatedSince?: string;
+          limit?: number | string;
+          offset?: number | string;
+        },
+      );
+      if (!parsed.ok) {
+        return reply.code(400).send({ error: 'invalid_updatedSince' });
+      }
+      try {
+        const payload = await buildHrEmployeeMasterExportPayload({
+          updatedSince: parsed.updatedSince,
+          limit: parsed.limit,
+          offset: parsed.offset,
+        });
+        if (parsed.format === 'csv') {
+          return sendCsv(
+            reply,
+            buildHrEmployeeMasterCsvFilename(payload.exportedUntil),
+            buildHrEmployeeMasterCsv(payload),
+          );
+        }
+        return payload;
+      } catch (error) {
+        if (error instanceof HrEmployeeMasterExportError) {
+          return reply.code(hrEmployeeMasterExportStatusCode(error.code)).send({
+            error: error.code,
+            message: error.message,
+            details: error.details,
+          });
+        }
+        throw error;
+      }
+    },
+  );
+
+  app.post(
+    '/integrations/hr/exports/users/employee-master/dispatch',
+    {
+      preHandler: requireRole(['admin', 'mgmt']),
+      schema: integrationHrEmployeeMasterExportDispatchSchema,
+    },
+    async (req, reply) => {
+      const parsed = parseHrEmployeeMasterExportQuery(
+        req.body as {
+          format?: HrEmployeeMasterExportFormat;
+          updatedSince?: string;
+          limit?: number | string;
+          offset?: number | string;
+        },
+      );
+      if (!parsed.ok) {
+        return reply.code(400).send({ error: 'invalid_updatedSince' });
+      }
+      const body = req.body as {
+        idempotencyKey: string;
+      };
+      const idempotencyKey = body.idempotencyKey.trim();
+      if (!idempotencyKey) {
+        return reply.code(400).send({ error: 'invalid_idempotencyKey' });
+      }
+      const requestHash = buildHrEmployeeMasterExportRequestHash({
+        updatedSince: parsed.updatedSince?.toISOString() ?? null,
+        limit: parsed.limit,
+        offset: parsed.offset,
+        format: 'csv',
+      });
+      const respondWithExistingEmployeeMasterDispatch = async (
+        existing: NonNullable<
+          Awaited<
+            ReturnType<typeof prisma.hrEmployeeMasterExportLog.findUnique>
+          >
+        >,
+      ) => {
+        if (existing.requestHash !== requestHash) {
+          await logAudit({
+            ...auditContextFromRequest(req),
+            action: 'integration_hr_employee_master_export_dispatch_conflict',
+            targetTable: 'HrEmployeeMasterExportLog',
+            targetId: existing.id,
+            metadata: {
+              idempotencyKey,
+              requestHash,
+              existingRequestHash: existing.requestHash,
+            } as Prisma.InputJsonValue,
+          });
+          return reply.code(409).send({ error: 'idempotency_conflict' });
+        }
+        if (existing.status === IntegrationRunStatus.running) {
+          return reply.code(409).send({
+            error: 'dispatch_in_progress',
+            logId: existing.id,
+          });
+        }
+        await logAudit({
+          ...auditContextFromRequest(req),
+          action: 'integration_hr_employee_master_export_dispatch_replayed',
+          targetTable: 'HrEmployeeMasterExportLog',
+          targetId: existing.id,
+          metadata: {
+            idempotencyKey,
+            status: existing.status,
+            exportedCount: existing.exportedCount,
+          } as Prisma.InputJsonValue,
+        });
+        return {
+          replayed: true,
+          payload: existing.payload,
+          log: buildHrEmployeeMasterExportLogResponse(existing),
+        };
+      };
+      const existing = await prisma.hrEmployeeMasterExportLog.findUnique({
+        where: { idempotencyKey },
+      });
+      if (existing) {
+        return respondWithExistingEmployeeMasterDispatch(existing);
+      }
+
+      const startedAt = new Date();
+      let log: Awaited<
+        ReturnType<typeof prisma.hrEmployeeMasterExportLog.create>
+      >;
+      try {
+        log = await prisma.hrEmployeeMasterExportLog.create({
+          data: {
+            idempotencyKey,
+            requestHash,
+            updatedSince: parsed.updatedSince ?? null,
+            exportedUntil: startedAt,
+            status: IntegrationRunStatus.running,
+            startedAt,
+            createdBy: req.user?.userId ?? null,
+          },
+        });
+      } catch (error) {
+        if (
+          error instanceof Prisma.PrismaClientKnownRequestError &&
+          error.code === 'P2002'
+        ) {
+          const concurrent = await prisma.hrEmployeeMasterExportLog.findUnique({
+            where: { idempotencyKey },
+          });
+          if (concurrent) {
+            return respondWithExistingEmployeeMasterDispatch(concurrent);
+          }
+        }
+        throw error;
+      }
+
+      try {
+        const payload = await buildHrEmployeeMasterExportPayload({
+          updatedSince: parsed.updatedSince,
+          exportedUntil: startedAt,
+          limit: parsed.limit,
+          offset: parsed.offset,
+        });
+        const finishedAt = new Date();
+        const updated = await prisma.hrEmployeeMasterExportLog.update({
+          where: { id: log.id },
+          data: {
+            status: IntegrationRunStatus.success,
+            exportedCount: payload.exportedCount,
+            payload: payload as Prisma.InputJsonValue,
+            message: payload.exportedCount ? 'exported' : 'no_changes',
+            finishedAt,
+          },
+        });
+        await logAudit({
+          ...auditContextFromRequest(req),
+          action: 'integration_hr_employee_master_export_dispatched',
+          targetTable: 'HrEmployeeMasterExportLog',
+          targetId: updated.id,
+          metadata: {
+            idempotencyKey,
+            exportedCount: payload.exportedCount,
+            format: 'csv',
+          } as Prisma.InputJsonValue,
+        });
+        return {
+          replayed: false,
+          payload,
+          log: buildHrEmployeeMasterExportLogResponse(updated),
+        };
+      } catch (error) {
+        const finishedAt = new Date();
+        const message = error instanceof Error ? error.message : String(error);
+        const failed = await prisma.hrEmployeeMasterExportLog.update({
+          where: { id: log.id },
+          data: {
+            status: IntegrationRunStatus.failed,
+            message,
+            finishedAt,
+          },
+        });
+        await logAudit({
+          ...auditContextFromRequest(req),
+          action: 'integration_hr_employee_master_export_dispatch_failed',
+          targetTable: 'HrEmployeeMasterExportLog',
+          targetId: failed.id,
+          metadata: {
+            idempotencyKey,
+            message: truncateForAudit(message),
+          } as Prisma.InputJsonValue,
+        });
+        if (error instanceof HrEmployeeMasterExportError) {
+          return reply.code(hrEmployeeMasterExportStatusCode(error.code)).send({
+            error: error.code,
+            message: error.message,
+            details: error.details,
+          });
+        }
+        throw error;
+      }
+    },
+  );
+
+  app.get(
+    '/integrations/hr/exports/users/employee-master/dispatch-logs',
+    {
+      preHandler: requireRole(['admin', 'mgmt']),
+      schema: integrationHrEmployeeMasterExportLogListQuerySchema,
+    },
+    async (req) => {
+      const query = req.query as {
+        limit?: number | string;
+        offset?: number | string;
+        idempotencyKey?: string;
+      };
+      const limit = parseBoundedInteger(
+        query.limit,
+        DEFAULT_EMPLOYEE_MASTER_EXPORT_LOG_LIMIT,
+        MAX_EMPLOYEE_MASTER_EXPORT_LOG_LIMIT,
+      );
+      const offset = parseBoundedNonNegativeInteger(
+        query.offset,
+        0,
+        MAX_EMPLOYEE_MASTER_EXPORT_OFFSET,
+      );
+      const idempotencyKey =
+        typeof query.idempotencyKey === 'string'
+          ? query.idempotencyKey.trim()
+          : '';
+      const items = await prisma.hrEmployeeMasterExportLog.findMany({
+        where: {
+          ...(idempotencyKey ? { idempotencyKey } : {}),
+        },
+        select: {
+          id: true,
+          idempotencyKey: true,
+          status: true,
+          updatedSince: true,
+          exportedUntil: true,
+          exportedCount: true,
+          startedAt: true,
+          finishedAt: true,
+          message: true,
+        },
+        orderBy: [{ startedAt: 'desc' }, { id: 'desc' }],
+        take: limit,
+        skip: offset,
+      });
+      return {
+        items: items.map((item) =>
+          buildHrEmployeeMasterExportLogResponse(item),
+        ),
+        limit,
+        offset,
+      };
     },
   );
 
