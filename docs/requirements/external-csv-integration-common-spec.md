@@ -92,6 +92,7 @@
 - 共通運用参照
   - `GET /integrations/jobs/exports`
   - 既存 3 系統の export log を横断一覧化して参照する
+  - 管理画面では `Settings` 内の「連携ジョブ一覧」カードから種別 / ステータス / limit / offset を指定して取得する
   - `POST /integrations/jobs/exports/:kind/:id/redispatch`
   - 既存の成功済み export payload を新しい log として再出力し、`reexportOfId` で元ジョブを追跡する
   - `GET /integrations/reconciliation/summary`

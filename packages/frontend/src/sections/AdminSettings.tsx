@@ -16,6 +16,10 @@ import {
   IntegrationReconciliationCard,
   type IntegrationReconciliationSummary,
 } from './admin-settings/IntegrationReconciliationCard';
+import {
+  IntegrationExportJobsCard,
+  type IntegrationExportJobItem,
+} from './admin-settings/IntegrationExportJobsCard';
 import { ReportSubscriptionsCard } from './admin-settings/ReportSubscriptionsCard';
 import { TemplateSettingsCard } from './admin-settings/TemplateSettingsCard';
 import { ChatSettingsCard } from './ChatSettingsCard';
@@ -469,6 +473,14 @@ const currentPeriodKey = () => {
   return `${year}-${month}`;
 };
 
+const createClientIdempotencyKey = (prefix: string) => {
+  const token =
+    typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  return `${prefix}-${token}`;
+};
+
 export const AdminSettings: React.FC = () => {
   const [alertItems, setAlertItems] = useState<AlertSetting[]>([]);
   const [ruleItems, setRuleItems] = useState<ApprovalRule[]>([]);
@@ -488,6 +500,25 @@ export const AdminSettings: React.FC = () => {
     useState<IntegrationRunMetrics | null>(null);
   const [integrationRunFilterId, setIntegrationRunFilterId] =
     useState<string>('');
+  const [integrationExportJobItems, setIntegrationExportJobItems] = useState<
+    IntegrationExportJobItem[]
+  >([]);
+  const [integrationExportJobKindFilter, setIntegrationExportJobKindFilter] =
+    useState<string>('');
+  const [
+    integrationExportJobStatusFilter,
+    setIntegrationExportJobStatusFilter,
+  ] = useState<string>('');
+  const [integrationExportJobLimit, setIntegrationExportJobLimit] =
+    useState<number>(20);
+  const [integrationExportJobOffset, setIntegrationExportJobOffset] =
+    useState<number>(0);
+  const [integrationExportJobLoading, setIntegrationExportJobLoading] =
+    useState<boolean>(false);
+  const [
+    integrationExportJobRedispatchingId,
+    setIntegrationExportJobRedispatchingId,
+  ] = useState<string | null>(null);
   const [
     integrationReconciliationPeriodKey,
     setIntegrationReconciliationPeriodKey,
@@ -1176,6 +1207,71 @@ export const AdminSettings: React.FC = () => {
       }
     },
     [logError],
+  );
+
+  const loadIntegrationExportJobs = useCallback(
+    async (options?: { suppressSuccessMessage?: boolean }) => {
+      const query = new URLSearchParams();
+      if (integrationExportJobKindFilter.trim()) {
+        query.set('kind', integrationExportJobKindFilter.trim());
+      }
+      if (integrationExportJobStatusFilter.trim()) {
+        query.set('status', integrationExportJobStatusFilter.trim());
+      }
+      query.set('limit', String(integrationExportJobLimit));
+      query.set('offset', String(integrationExportJobOffset));
+      setIntegrationExportJobLoading(true);
+      try {
+        const result = await api<{ items: IntegrationExportJobItem[] }>(
+          `/integrations/jobs/exports?${query.toString()}`,
+        );
+        setIntegrationExportJobItems(result.items || []);
+        if (!options?.suppressSuccessMessage) {
+          setMessage('連携ジョブ一覧を取得しました');
+        }
+      } catch (err) {
+        logError('loadIntegrationExportJobs failed', err);
+        setIntegrationExportJobItems([]);
+        setMessage('連携ジョブ一覧の取得に失敗しました');
+      } finally {
+        setIntegrationExportJobLoading(false);
+      }
+    },
+    [
+      integrationExportJobKindFilter,
+      integrationExportJobLimit,
+      integrationExportJobOffset,
+      integrationExportJobStatusFilter,
+      logError,
+    ],
+  );
+
+  const redispatchIntegrationExportJob = useCallback(
+    async (item: IntegrationExportJobItem) => {
+      const idempotencyKey = createClientIdempotencyKey(
+        `ui-redispatch-${item.kind}`,
+      );
+      setIntegrationExportJobRedispatchingId(item.id);
+      try {
+        await api(
+          `/integrations/jobs/exports/${item.kind}/${item.id}/redispatch`,
+          {
+            method: 'POST',
+            body: JSON.stringify({ idempotencyKey }),
+          },
+        );
+        await loadIntegrationExportJobs({ suppressSuccessMessage: true });
+        setMessage('連携ジョブを再出力しました');
+      } catch (err) {
+        logError('redispatchIntegrationExportJob failed', err);
+        setMessage('連携ジョブの再出力に失敗しました');
+      } finally {
+        setIntegrationExportJobRedispatchingId((current) =>
+          current === item.id ? null : current,
+        );
+      }
+    },
+    [loadIntegrationExportJobs, logError],
   );
 
   const loadIntegrationReconciliationSummary = useCallback(async () => {
@@ -2950,6 +3046,23 @@ export const AdminSettings: React.FC = () => {
           setPeriodKey={setIntegrationReconciliationPeriodKey}
           summary={integrationReconciliationSummary}
           onLoad={loadIntegrationReconciliationSummary}
+          formatDateTime={formatDateTime}
+        />
+
+        <IntegrationExportJobsCard
+          kindFilter={integrationExportJobKindFilter}
+          setKindFilter={setIntegrationExportJobKindFilter}
+          statusFilter={integrationExportJobStatusFilter}
+          setStatusFilter={setIntegrationExportJobStatusFilter}
+          limit={integrationExportJobLimit}
+          setLimit={setIntegrationExportJobLimit}
+          offset={integrationExportJobOffset}
+          setOffset={setIntegrationExportJobOffset}
+          items={integrationExportJobItems}
+          loading={integrationExportJobLoading}
+          redispatchingId={integrationExportJobRedispatchingId}
+          onLoad={loadIntegrationExportJobs}
+          onRedispatch={redispatchIntegrationExportJob}
           formatDateTime={formatDateTime}
         />
       </div>

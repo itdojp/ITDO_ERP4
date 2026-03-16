@@ -28,6 +28,8 @@
 
 ### 2026-03-16
 
+- フロントE2E(管理設定 連携ジョブ一覧 UI エビデンス r3): docs/test-results/2026-03-16-frontend-e2e-r3.md
+- 証跡: docs/test-results/2026-03-16-frontend-e2e-r3/
 - フロントE2E(管理設定/運用管理 UI エビデンス r1): docs/test-results/2026-03-16-frontend-e2e-r1.md
 - 証跡: docs/test-results/2026-03-16-frontend-e2e-r1/
 
