@@ -5,6 +5,8 @@
 - 本書は PoC 環境の UI 操作に関する詳細ガイドです。
 - 画面キャプチャは 2026-03-09 実行の E2E（r1）で取得しています。
   - 証跡: `docs/test-results/2026-03-09-frontend-e2e-r1/`
+- 連携照合サマリカードを含む管理設定の補足証跡は 2026-03-16 実行の E2E（r1）を参照します。
+  - 証跡: `docs/test-results/2026-03-16-frontend-e2e-r1/`
 - UI証跡の再取得手順: [ui-evidence-quickstart](ui-evidence-quickstart.md)（詳細: [e2e-evidence-howto](e2e-evidence-howto.md)）
 - Push通知の証跡のみ `docs/test-results/2026-01-19-frontend-e2e-pwa-push/` で取得しています。
 - 画面の表示内容は demo seed に基づきます（データ差分あり）。
@@ -418,7 +420,7 @@
 5. 給与連携照合の `comparisonStatus` と社員コード差分を確認する
 6. 会計連携照合の `comparisonStatus` と `ready / pending_mapping / blocked` を確認する
 
-![外部連携設定（HR/CRM）](../test-results/2026-03-09-frontend-e2e-r1/11-integration-settings.png)
+![外部連携設定（HR/CRM）](../test-results/2026-03-16-frontend-e2e-r1/11-admin-settings.png)
 
 ### 入力項目/制約
 
