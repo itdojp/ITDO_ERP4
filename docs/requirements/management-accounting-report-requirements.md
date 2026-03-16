@@ -144,7 +144,7 @@
   - `GET /reports/management-accounting/summary?from=YYYY-MM-DD&to=YYYY-MM-DD`
   - ERP4 内の売上、直接原価、粗利、納期未請求、残業、赤字案件件数を 1 API で返す
   - 複数通貨が混在する場合は、金額系 KPI の top-level 合算値は返さず、`currencyBreakdown[]` で通貨別内訳を返す
-  - UI は `Reports` セクションの管理会計サマリ表示を初期導線とする
+  - UI は `Reports` セクションの管理会計サマリ表示を初期導線とし、案件単位の確認には既存 `project-profit` を併用する
 
 ### R5. 管理部向け締め前照合レポート
 

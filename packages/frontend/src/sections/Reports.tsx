@@ -10,6 +10,22 @@ type ProjectEffort = {
   varianceMinutes?: number | null;
   totalExpenses: number;
 };
+type ProjectProfit = {
+  projectId: string;
+  currency?: string | null;
+  revenue: number;
+  budgetRevenue: number;
+  varianceRevenue: number;
+  directCost: number;
+  costBreakdown: {
+    vendorCost: number;
+    expenseCost: number;
+    laborCost: number;
+  };
+  grossProfit: number;
+  grossMargin: number;
+  totalMinutes: number;
+};
 type GroupEffort = { userId: string; totalMinutes: number };
 type Overtime = { userId: string; totalMinutes: number; dailyHours: number };
 
@@ -139,6 +155,8 @@ export const Reports: React.FC = () => {
   const [projectReport, setProjectReport] = useState<ProjectEffort | null>(
     null,
   );
+  const [projectProfitReport, setProjectProfitReport] =
+    useState<ProjectProfit | null>(null);
   const [groupReport, setGroupReport] = useState<GroupEffort[]>([]);
   const [overtimeReport, setOvertimeReport] = useState<Overtime | null>(null);
   const [burndownReport, setBurndownReport] = useState<BurndownReport | null>(
@@ -234,6 +252,10 @@ export const Reports: React.FC = () => {
   };
 
   const loadProject = async () => {
+    if (!projectId) {
+      setMessage('案件を選択してください');
+      return;
+    }
     try {
       const res = await api<ProjectEffort>(
         `/reports/project-effort/${projectId}${buildQuery(from, to)}`,
@@ -244,6 +266,8 @@ export const Reports: React.FC = () => {
       setMessage('取得に失敗しました');
     }
   };
+
+  const projectProfitCurrency = projectProfitReport?.currency || 'N/A';
 
   const loadGroup = async () => {
     try {
@@ -259,6 +283,23 @@ export const Reports: React.FC = () => {
       setGroupReport(res.items);
       setMessage('グループ別工数を取得しました');
     } catch (err) {
+      setMessage('取得に失敗しました');
+    }
+  };
+
+  const loadProjectProfit = async () => {
+    if (!projectId) {
+      setMessage('案件を選択してください');
+      return;
+    }
+    try {
+      const res = await api<ProjectProfit>(
+        `/reports/project-profit/${projectId}${buildQuery(from, to)}`,
+      );
+      setProjectProfitReport(res);
+      setMessage('PJ別採算を取得しました');
+    } catch (err) {
+      setProjectProfitReport(null);
       setMessage('取得に失敗しました');
     }
   };
@@ -329,6 +370,9 @@ export const Reports: React.FC = () => {
         </select>
         <button className="button" onClick={loadProject}>
           PJ別工数
+        </button>
+        <button className="button" onClick={loadProjectProfit}>
+          PJ別採算
         </button>
         <input
           type="text"
@@ -409,6 +453,37 @@ export const Reports: React.FC = () => {
             <div>
               Expenses: ¥
               {Number(projectReport.totalExpenses || 0).toLocaleString()}
+            </div>
+          </div>
+        )}
+        {projectProfitReport && (
+          <div className="card" style={{ padding: 12 }}>
+            <strong>PJ別採算</strong>
+            <div>Project: {renderProject(projectProfitReport.projectId)}</div>
+            <div>
+              Revenue ({projectProfitCurrency}):{' '}
+              {projectProfitReport.revenue.toLocaleString()} / Budget:{' '}
+              {projectProfitReport.budgetRevenue.toLocaleString()} / Variance:{' '}
+              {projectProfitReport.varianceRevenue.toLocaleString()}
+            </div>
+            <div>
+              Direct Cost ({projectProfitCurrency}):{' '}
+              {projectProfitReport.directCost.toLocaleString()} / Gross Profit:{' '}
+              {projectProfitReport.grossProfit.toLocaleString()}
+            </div>
+            <div>
+              Vendor:{' '}
+              {projectProfitReport.costBreakdown.vendorCost.toLocaleString()}
+              {' / '}
+              Expense:{' '}
+              {projectProfitReport.costBreakdown.expenseCost.toLocaleString()}
+              {' / '}
+              Labor:{' '}
+              {projectProfitReport.costBreakdown.laborCost.toLocaleString()}
+            </div>
+            <div>
+              Margin: {(projectProfitReport.grossMargin * 100).toFixed(2)}% /
+              Minutes: {projectProfitReport.totalMinutes}
             </div>
           </div>
         )}
@@ -609,6 +684,7 @@ export const Reports: React.FC = () => {
           </div>
         )}
         {!projectReport &&
+          !projectProfitReport &&
           groupReport.length === 0 &&
           !overtimeReport &&
           !managementReport &&

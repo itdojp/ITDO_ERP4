@@ -18,6 +18,7 @@
 ## 現状の主要レポート（UI: Reports）
 
 - プロジェクト別工数（from/to 指定）
+- PJ別採算（案件選択 + from/to 指定）
 - グループ別工数（userIds 指定 + from/to）
 - 個人別残業（userId 指定 + from/to）
 - 管理会計サマリ（from/to 指定）
