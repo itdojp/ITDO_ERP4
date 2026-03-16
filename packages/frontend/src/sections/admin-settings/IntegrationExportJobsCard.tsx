@@ -70,9 +70,16 @@ function formatScope(scope?: IntegrationExportJobItem['scope']) {
   return parts.length ? parts.join(' / ') : '-';
 }
 
-function normalizePositiveInteger(value: string, fallback: number) {
+function normalizePositiveInteger(
+  value: string,
+  fallback: number,
+  max?: number,
+) {
   const parsed = Number.parseInt(value, 10);
   if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+  if (typeof max === 'number') {
+    return Math.min(parsed, max);
+  }
   return parsed;
 }
 
@@ -147,7 +154,7 @@ export const IntegrationExportJobsCard = ({
           max={100}
           value={limit}
           onChange={(event) =>
-            setLimit(normalizePositiveInteger(event.target.value, 20))
+            setLimit(normalizePositiveInteger(event.target.value, limit, 100))
           }
           data-testid="integration-export-jobs-limit"
         />

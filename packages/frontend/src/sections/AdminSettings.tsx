@@ -1209,37 +1209,42 @@ export const AdminSettings: React.FC = () => {
     [logError],
   );
 
-  const loadIntegrationExportJobs = useCallback(async () => {
-    const query = new URLSearchParams();
-    if (integrationExportJobKindFilter.trim()) {
-      query.set('kind', integrationExportJobKindFilter.trim());
-    }
-    if (integrationExportJobStatusFilter.trim()) {
-      query.set('status', integrationExportJobStatusFilter.trim());
-    }
-    query.set('limit', String(integrationExportJobLimit));
-    query.set('offset', String(integrationExportJobOffset));
-    setIntegrationExportJobLoading(true);
-    try {
-      const result = await api<{ items: IntegrationExportJobItem[] }>(
-        `/integrations/jobs/exports?${query.toString()}`,
-      );
-      setIntegrationExportJobItems(result.items || []);
-      setMessage('連携ジョブ一覧を取得しました');
-    } catch (err) {
-      logError('loadIntegrationExportJobs failed', err);
-      setIntegrationExportJobItems([]);
-      setMessage('連携ジョブ一覧の取得に失敗しました');
-    } finally {
-      setIntegrationExportJobLoading(false);
-    }
-  }, [
-    integrationExportJobKindFilter,
-    integrationExportJobLimit,
-    integrationExportJobOffset,
-    integrationExportJobStatusFilter,
-    logError,
-  ]);
+  const loadIntegrationExportJobs = useCallback(
+    async (options?: { suppressSuccessMessage?: boolean }) => {
+      const query = new URLSearchParams();
+      if (integrationExportJobKindFilter.trim()) {
+        query.set('kind', integrationExportJobKindFilter.trim());
+      }
+      if (integrationExportJobStatusFilter.trim()) {
+        query.set('status', integrationExportJobStatusFilter.trim());
+      }
+      query.set('limit', String(integrationExportJobLimit));
+      query.set('offset', String(integrationExportJobOffset));
+      setIntegrationExportJobLoading(true);
+      try {
+        const result = await api<{ items: IntegrationExportJobItem[] }>(
+          `/integrations/jobs/exports?${query.toString()}`,
+        );
+        setIntegrationExportJobItems(result.items || []);
+        if (!options?.suppressSuccessMessage) {
+          setMessage('連携ジョブ一覧を取得しました');
+        }
+      } catch (err) {
+        logError('loadIntegrationExportJobs failed', err);
+        setIntegrationExportJobItems([]);
+        setMessage('連携ジョブ一覧の取得に失敗しました');
+      } finally {
+        setIntegrationExportJobLoading(false);
+      }
+    },
+    [
+      integrationExportJobKindFilter,
+      integrationExportJobLimit,
+      integrationExportJobOffset,
+      integrationExportJobStatusFilter,
+      logError,
+    ],
+  );
 
   const redispatchIntegrationExportJob = useCallback(
     async (item: IntegrationExportJobItem) => {
@@ -1255,8 +1260,8 @@ export const AdminSettings: React.FC = () => {
             body: JSON.stringify({ idempotencyKey }),
           },
         );
+        await loadIntegrationExportJobs({ suppressSuccessMessage: true });
         setMessage('連携ジョブを再出力しました');
-        await loadIntegrationExportJobs();
       } catch (err) {
         logError('redispatchIntegrationExportJob failed', err);
         setMessage('連携ジョブの再出力に失敗しました');
