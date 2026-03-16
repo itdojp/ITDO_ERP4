@@ -1,4 +1,4 @@
-import { IntegrationRunStatus, type Prisma } from '@prisma/client';
+import { IntegrationRunStatus, Prisma } from '@prisma/client';
 import { prisma } from './db.js';
 import { parseAttendancePeriodKey } from './attendanceClosings.js';
 
@@ -97,7 +97,51 @@ type ReconciliationSummary = {
   hasBlockingDifferences: boolean;
 };
 
+type ReconciliationBreakdownRow = {
+  key: string;
+  totalCount: number;
+  readyCount: number;
+  pendingMappingCount: number;
+  blockedCount: number;
+  invalidReadyCount: number;
+  readyAmountTotal: string;
+};
+
+type ReconciliationSampleRow = {
+  id: string;
+  eventId: string;
+  sourceTable: string;
+  sourceId: string;
+  status: string;
+  mappingKey: string | null;
+  description: string | null;
+  projectCode: string | null;
+  departmentCode: string | null;
+  debitAccountCode: string | null;
+  creditAccountCode: string | null;
+  taxCode: string | null;
+  amount: string;
+};
+
+type ReconciliationDetails = {
+  periodKey: string;
+  payroll: {
+    latestClosingId: string | null;
+    latestEmployeeMasterFullExportId: string | null;
+    attendanceOnlyEmployeeCodes: string[];
+    employeeMasterOnlyEmployeeCodes: string[];
+  };
+  accounting: {
+    byProject: ReconciliationBreakdownRow[];
+    byDepartment: ReconciliationBreakdownRow[];
+    pendingMappingSamples: ReconciliationSampleRow[];
+    blockedSamples: ReconciliationSampleRow[];
+    invalidReadySamples: ReconciliationSampleRow[];
+  };
+};
+
 const MAX_EMPLOYEE_CODE_SAMPLE = 20;
+const MAX_RECONCILIATION_DETAIL_SAMPLE = 20;
 
 function normalizeEmployeeCodeList(value: Prisma.JsonValue | null) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return [];
@@ -122,6 +166,80 @@ function toStringAmount(
 ) {
   if (value === null || value === undefined) return '0';
   return String(value);
+}
+
+function isReadyRowIncomplete(row: {
+  status: string;
+  debitAccountCode: string | null;
+  creditAccountCode: string | null;
+  taxCode: string | null;
+  amount: Prisma.Decimal | number | string | null;
+}) {
+  if (row.status !== 'ready') return false;
+  if (!row.debitAccountCode) return true;
+  if (!row.creditAccountCode) return true;
+  if (!row.taxCode) return true;
+  return new Prisma.Decimal(row.amount ?? 0).lte(0);
+}
+
+function normalizeBreakdownKey(value: string | null | undefined) {
+  const normalized = value?.trim();
+  return normalized && normalized.length > 0 ? normalized : '(unassigned)';
+}
+
+function ensureBreakdownRow(
+  map: Map<string, ReconciliationBreakdownRow>,
+  key: string,
+) {
+  let row = map.get(key);
+  if (!row) {
+    row = {
+      key,
+      totalCount: 0,
+      readyCount: 0,
+      pendingMappingCount: 0,
+      blockedCount: 0,
+      invalidReadyCount: 0,
+      readyAmountTotal: '0',
+    };
+    map.set(key, row);
+  }
+  return row;
+}
+
+function buildReconciliationSampleRow(row: {
+  id: string;
+  eventId: string;
+  status: string;
+  mappingKey: string | null;
+  description: string | null;
+  debitAccountCode: string | null;
+  creditAccountCode: string | null;
+  taxCode: string | null;
+  amount: Prisma.Decimal | number | string | null;
+  event: {
+    sourceTable: string;
+    sourceId: string;
+    projectCode: string | null;
+    departmentCode: string | null;
+  };
+  departmentCode: string | null;
+}): ReconciliationSampleRow {
+  return {
+    id: row.id,
+    eventId: row.eventId,
+    sourceTable: row.event.sourceTable,
+    sourceId: row.event.sourceId,
+    status: row.status,
+    mappingKey: row.mappingKey,
+    description: row.description,
+    projectCode: row.event.projectCode,
+    departmentCode: row.departmentCode ?? row.event.departmentCode,
+    debitAccountCode: row.debitAccountCode,
+    creditAccountCode: row.creditAccountCode,
+    taxCode: row.taxCode,
+    amount: toStringAmount(row.amount),
+  };
 }
 
 export async function buildIntegrationReconciliationSummary(options: {
@@ -367,5 +485,140 @@ export async function buildIntegrationReconciliationSummary(options: {
       },
     },
     hasBlockingDifferences,
+  };
+}
+
+export async function buildIntegrationReconciliationDetails(options: {
+  periodKey: string;
+  client?: ReconciliationClient;
+}): Promise<ReconciliationDetails> {
+  const client = options.client ?? prisma;
+  const summary = await buildIntegrationReconciliationSummary({
+    periodKey: options.periodKey,
+    client,
+  });
+
+  const [attendanceSummaries, stagingRows] = await Promise.all([
+    summary.attendance.latestClosing
+      ? client.attendanceMonthlySummary.findMany({
+          where: { closingPeriodId: summary.attendance.latestClosing.id },
+          select: { employeeCode: true },
+          orderBy: [{ employeeCode: 'asc' }, { id: 'asc' }],
+        })
+      : [],
+    client.accountingJournalStaging.findMany({
+      where: { event: { periodKey: summary.periodKey } },
+      orderBy: [{ entryDate: 'asc' }, { id: 'asc' }],
+      select: {
+        id: true,
+        eventId: true,
+        status: true,
+        mappingKey: true,
+        description: true,
+        debitAccountCode: true,
+        creditAccountCode: true,
+        taxCode: true,
+        amount: true,
+        departmentCode: true,
+        event: {
+          select: {
+            sourceTable: true,
+            sourceId: true,
+            projectCode: true,
+            departmentCode: true,
+          },
+        },
+      },
+    }),
+  ]);
+
+  const attendanceCodes = attendanceSummaries
+    .map((item) => item.employeeCode.trim())
+    .filter((item) => item.length > 0)
+    .sort((a, b) => a.localeCompare(b));
+  const employeeMasterCodes = normalizeEmployeeCodeList(
+    summary.payroll.latestEmployeeMasterFullExport?.payload ?? null,
+  );
+  const employeeMasterCodeSet = new Set(employeeMasterCodes);
+  const attendanceCodeSet = new Set(attendanceCodes);
+
+  const byProjectMap = new Map<string, ReconciliationBreakdownRow>();
+  const byDepartmentMap = new Map<string, ReconciliationBreakdownRow>();
+  const pendingMappingSamples: ReconciliationSampleRow[] = [];
+  const blockedSamples: ReconciliationSampleRow[] = [];
+  const invalidReadySamples: ReconciliationSampleRow[] = [];
+
+  for (const row of stagingRows) {
+    const projectKey = normalizeBreakdownKey(row.event.projectCode);
+    const departmentKey = normalizeBreakdownKey(
+      row.departmentCode ?? row.event.departmentCode,
+    );
+    const projectBreakdown = ensureBreakdownRow(byProjectMap, projectKey);
+    const departmentBreakdown = ensureBreakdownRow(
+      byDepartmentMap,
+      departmentKey,
+    );
+    const invalidReady = isReadyRowIncomplete(row);
+    const amount = new Prisma.Decimal(row.amount ?? 0);
+
+    for (const breakdown of [projectBreakdown, departmentBreakdown]) {
+      breakdown.totalCount += 1;
+      if (row.status === 'ready') {
+        breakdown.readyCount += 1;
+        breakdown.readyAmountTotal = new Prisma.Decimal(
+          breakdown.readyAmountTotal,
+        )
+          .plus(amount)
+          .toString();
+      }
+      if (row.status === 'pending_mapping') breakdown.pendingMappingCount += 1;
+      if (row.status === 'blocked') breakdown.blockedCount += 1;
+      if (invalidReady) breakdown.invalidReadyCount += 1;
+    }
+
+    if (
+      row.status === 'pending_mapping' &&
+      pendingMappingSamples.length < MAX_RECONCILIATION_DETAIL_SAMPLE
+    ) {
+      pendingMappingSamples.push(buildReconciliationSampleRow(row));
+    }
+    if (
+      row.status === 'blocked' &&
+      blockedSamples.length < MAX_RECONCILIATION_DETAIL_SAMPLE
+    ) {
+      blockedSamples.push(buildReconciliationSampleRow(row));
+    }
+    if (
+      invalidReady &&
+      invalidReadySamples.length < MAX_RECONCILIATION_DETAIL_SAMPLE
+    ) {
+      invalidReadySamples.push(buildReconciliationSampleRow(row));
+    }
+  }
+
+  return {
+    periodKey: summary.periodKey,
+    payroll: {
+      latestClosingId: summary.attendance.latestClosing?.id ?? null,
+      latestEmployeeMasterFullExportId:
+        summary.payroll.latestEmployeeMasterFullExport?.id ?? null,
+      attendanceOnlyEmployeeCodes: attendanceCodes.filter(
+        (code) => !employeeMasterCodeSet.has(code),
+      ),
+      employeeMasterOnlyEmployeeCodes: employeeMasterCodes.filter(
+        (code) => !attendanceCodeSet.has(code),
+      ),
+    },
+    accounting: {
+      byProject: [...byProjectMap.values()].sort((a, b) =>
+        a.key.localeCompare(b.key),
+      ),
+      byDepartment: [...byDepartmentMap.values()].sort((a, b) =>
+        a.key.localeCompare(b.key),
+      ),
+      pendingMappingSamples,
+      blockedSamples,
+      invalidReadySamples,
+    },
   };
 }

@@ -17,7 +17,10 @@ import {
   AttendanceClosingError,
   closeAttendancePeriod,
 } from '../services/attendanceClosings.js';
-import { buildIntegrationReconciliationSummary } from '../services/integrationReconciliation.js';
+import {
+  buildIntegrationReconciliationDetails,
+  buildIntegrationReconciliationSummary,
+} from '../services/integrationReconciliation.js';
 import {
   AccountingIcsExportError,
   type AccountingIcsExportPayload,
@@ -43,6 +46,7 @@ import {
   integrationHrLeaveExportDispatchSchema,
   integrationHrLeaveExportLogListQuerySchema,
   integrationHrLeaveExportQuerySchema,
+  integrationReconciliationDetailsQuerySchema,
   integrationReconciliationSummaryQuerySchema,
   integrationRunMetricsQuerySchema,
   integrationSettingPatchSchema,
@@ -3271,6 +3275,31 @@ export async function registerIntegrationRoutes(app: FastifyInstance) {
           },
           hasBlockingDifferences: summary.hasBlockingDifferences,
         };
+      } catch (error) {
+        if (error instanceof AttendanceClosingError) {
+          return reply.code(attendanceClosingStatusCode(error.code)).send({
+            error: error.code,
+            message: error.message,
+            details: error.details,
+          });
+        }
+        throw error;
+      }
+    },
+  );
+
+  app.get(
+    '/integrations/reconciliation/details',
+    {
+      preHandler: requireRole(['admin', 'mgmt']),
+      schema: integrationReconciliationDetailsQuerySchema,
+    },
+    async (req, reply) => {
+      const { periodKey } = req.query as {
+        periodKey: string;
+      };
+      try {
+        return await buildIntegrationReconciliationDetails({ periodKey });
       } catch (error) {
         if (error instanceof AttendanceClosingError) {
           return reply.code(attendanceClosingStatusCode(error.code)).send({
