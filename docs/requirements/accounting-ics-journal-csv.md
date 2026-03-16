@@ -41,6 +41,7 @@
 - 対象製品は、ユーザー申告ベースで `経理上手くんα Pro II Version 26.002` とする。
 - ローカルに配置された `21期_表形式入力フォーマット（ICS取込用）.CSV` を現物テンプレートとして参照する。
 - 仕様レビューと実装時の参照用として、ヘッダ行のみを抽出した `docs/requirements/samples/21ki_ics_journal_header_sample.csv` を同梱する。
+- 物理レイアウト確認用として、先頭 5 行を UTF-8 で再掲した `docs/requirements/samples/21ki_ics_journal_template_excerpt.csv` を同梱する。
 - 担当者ヒアリングでは、普段の取込時に主に入力している項目は以下である。
   - 日付
   - 借方コード / 貸方コード
@@ -62,7 +63,18 @@
 - 5 行目: ヘッダ
 - 実データ行: なし
 - repo には、レビューと実装参照用にヘッダ行だけを UTF-8 で再掲した `docs/requirements/samples/21ki_ics_journal_header_sample.csv` を置く
+- 併せて、先頭 5 行を UTF-8 で再掲した `docs/requirements/samples/21ki_ics_journal_template_excerpt.csv` を置く
 - 実装出力では、このテンプレートに合わせて `CP932 + CRLF` に変換する
+
+### 先頭 5 行の構造
+
+1. `"法人"`
+2. `"仕訳日記帳"`
+3. `会社コード,会社名`
+4. `対象期間（自/至/月分）`
+5. `30 列のヘッダ`
+
+初期実装の CSV writer は、5 行目の列順を正本とみなし、1〜4 行目はテンプレート由来の preamble として扱うのが妥当である。
 
 ### ヘッダ列（30 列）
 
@@ -201,6 +213,44 @@
 - CSV 上は「1 行 = 借貸 1 組」として出力する案を第一候補とする
 - 借貸が複数行に分かれる場合は、同一 `伝票番号` を共有する
 
+## baseline 実装時の CSV 出力方針
+
+- 文字コード: `CP932`
+- 改行: `CRLF`
+- 行構成:
+  - 1〜4 行目はテンプレート由来の preamble を固定出力
+  - 5 行目は現物テンプレートと同じ 30 列ヘッダを固定出力
+  - 6 行目以降に `AccountingJournalStaging.status='ready'` の行を periodKey 順で出力
+- 初期 baseline で値を埋める列:
+  - `日付`
+  - `借方ｺｰﾄﾞ`
+  - `借方名称`
+  - `借方枝番`
+  - `貸方ｺｰﾄﾞ`
+  - `貸方名称`
+  - `貸方枝番`
+  - `金額`
+  - `摘要`
+  - `税区分`
+  - `部門ｺｰﾄﾞ`（ある場合）
+- 初期 baseline で空値固定の列:
+  - `決修`
+  - `借方枝番摘要`
+  - `借方枝番ｶﾅ`
+  - `貸方枝番摘要`
+  - `貸方枝番ｶﾅ`
+  - `対価`
+  - `仕入区分`
+  - `売上業種区分`
+  - `仕訳区分`
+  - `ﾀﾞﾐｰ1`〜`ﾀﾞﾐｰ5`
+  - `手形番号`
+  - `手形期日`
+  - `付箋番号`
+  - `付箋コメント`
+
+この空値固定列は、現行運用での必須度が確定するまでの暫定方針である。
+
 ## エラーパターンの初期分類
 
 ### 出力停止
@@ -258,5 +308,7 @@
 
 - `21期_表形式入力フォーマット（ICS取込用）.CSV`
 - `docs/requirements/erp4-payroll-accounting-gap-analysis.md`
+- `docs/requirements/samples/21ki_ics_journal_header_sample.csv`
+- `docs/requirements/samples/21ki_ics_journal_template_excerpt.csv`
 - `docs/requirements/external-code-system-design.md`
 - `docs/requirements/external-csv-integration-common-spec.md`
