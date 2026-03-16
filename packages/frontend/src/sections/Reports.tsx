@@ -12,6 +12,7 @@ type ProjectEffort = {
 };
 type ProjectProfit = {
   projectId: string;
+  currency?: string | null;
   revenue: number;
   budgetRevenue: number;
   varianceRevenue: number;
@@ -251,6 +252,10 @@ export const Reports: React.FC = () => {
   };
 
   const loadProject = async () => {
+    if (!projectId) {
+      setMessage('案件を選択してください');
+      return;
+    }
     try {
       const res = await api<ProjectEffort>(
         `/reports/project-effort/${projectId}${buildQuery(from, to)}`,
@@ -261,6 +266,8 @@ export const Reports: React.FC = () => {
       setMessage('取得に失敗しました');
     }
   };
+
+  const projectProfitCurrency = projectProfitReport?.currency || 'N/A';
 
   const loadGroup = async () => {
     try {
@@ -454,13 +461,15 @@ export const Reports: React.FC = () => {
             <strong>PJ別採算</strong>
             <div>Project: {renderProject(projectProfitReport.projectId)}</div>
             <div>
-              Revenue: {projectProfitReport.revenue.toLocaleString()} / Budget:{' '}
+              Revenue ({projectProfitCurrency}):{' '}
+              {projectProfitReport.revenue.toLocaleString()} / Budget:{' '}
               {projectProfitReport.budgetRevenue.toLocaleString()} / Variance:{' '}
               {projectProfitReport.varianceRevenue.toLocaleString()}
             </div>
             <div>
-              Direct Cost: {projectProfitReport.directCost.toLocaleString()} /
-              Gross Profit: {projectProfitReport.grossProfit.toLocaleString()}
+              Direct Cost ({projectProfitCurrency}):{' '}
+              {projectProfitReport.directCost.toLocaleString()} / Gross Profit:{' '}
+              {projectProfitReport.grossProfit.toLocaleString()}
             </div>
             <div>
               Vendor:{' '}

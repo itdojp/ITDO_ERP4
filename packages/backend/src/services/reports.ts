@@ -890,6 +890,7 @@ export async function reportProjectProfit(
   const varianceRevenue = revenue - budgetRevenue;
   return {
     projectId,
+    currency,
     revenue,
     budgetRevenue,
     varianceRevenue,

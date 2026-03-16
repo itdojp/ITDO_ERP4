@@ -24,6 +24,7 @@ test('rate card affects profit report @core', async ({ request }) => {
       code: `E2E-RATE-${suffix}`,
       name: `E2E RateCard ${suffix}`,
       status: 'active',
+      currency: 'JPY',
     },
     headers: authHeaders,
   });
@@ -67,4 +68,5 @@ test('rate card affects profit report @core', async ({ request }) => {
   await ensureOk(profitRes);
   const profit = await profitRes.json();
   expect(Number(profit?.costBreakdown?.laborCost ?? 0)).toBeGreaterThan(0);
+  expect(profit?.currency).toBe('JPY');
 });

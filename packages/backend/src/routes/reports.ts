@@ -597,6 +597,7 @@ export async function registerReportRoutes(app: FastifyInstance) {
         const csv = toCsv(
           [
             'projectId',
+            'currency',
             'revenue',
             'budgetRevenue',
             'varianceRevenue',
@@ -611,6 +612,7 @@ export async function registerReportRoutes(app: FastifyInstance) {
           [
             [
               res.projectId,
+              res.currency,
               res.revenue,
               res.budgetRevenue,
               res.varianceRevenue,
