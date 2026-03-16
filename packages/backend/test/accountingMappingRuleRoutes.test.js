@@ -132,6 +132,37 @@ test('POST /integrations/accounting/mapping-rules creates rule', async () => {
   assert.equal(capturedCreate?.data?.createdBy, 'admin-user');
 });
 
+test('POST /integrations/accounting/mapping-rules rejects whitespace-only required fields', async () => {
+  process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
+  process.env.AUTH_MODE = 'header';
+
+  await withPrismaStubs({}, async () => {
+    const server = await buildServer({ logger: false });
+    try {
+      const res = await server.inject({
+        method: 'POST',
+        url: '/integrations/accounting/mapping-rules',
+        headers: {
+          'x-user-id': 'admin-user',
+          'x-roles': 'admin',
+        },
+        payload: {
+          mappingKey: '   ',
+          debitAccountCode: '1110',
+          creditAccountCode: '4110',
+          taxCode: 'TAX-001',
+        },
+      });
+      assert.equal(res.statusCode, 400, res.body);
+      const body = JSON.parse(res.body);
+      assert.equal(body.error, 'invalid_accounting_mapping_rule_payload');
+      assert.deepEqual(body.invalidFields, ['mappingKey']);
+    } finally {
+      await server.close();
+    }
+  });
+});
+
 test('PATCH /integrations/accounting/mapping-rules/:id updates rule', async () => {
   process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
   process.env.AUTH_MODE = 'header';
@@ -212,7 +243,7 @@ test('POST /integrations/accounting/mapping-rules/reapply reapplies pending rows
         {
           id: 'stg-001',
           mappingKey: 'invoice_approved:default',
-          departmentCode: null,
+          departmentCode: 'OLD-DEPT',
           validationErrors: [{ code: 'mapping_pending' }],
         },
       ],

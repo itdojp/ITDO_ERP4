@@ -89,6 +89,52 @@ function normalizeNullableText(value: unknown) {
   return normalized || null;
 }
 
+function normalizeAccountingMappingRuleInput(
+  input: Partial<AccountingMappingRuleInput>,
+  options: { partial: boolean },
+) {
+  const data: Partial<AccountingMappingRuleInput> = {};
+  const invalidFields: string[] = [];
+
+  const requiredFields = [
+    'mappingKey',
+    'debitAccountCode',
+    'creditAccountCode',
+    'taxCode',
+  ] as const;
+
+  for (const field of requiredFields) {
+    if (input[field] === undefined) {
+      if (!options.partial) invalidFields.push(field);
+      continue;
+    }
+    const normalized =
+      typeof input[field] === 'string' ? input[field].trim() : '';
+    if (!normalized) {
+      invalidFields.push(field);
+      continue;
+    }
+    data[field] = normalized;
+  }
+
+  if (input.debitSubaccountCode !== undefined) {
+    data.debitSubaccountCode = normalizeNullableText(input.debitSubaccountCode);
+  }
+  if (input.creditSubaccountCode !== undefined) {
+    data.creditSubaccountCode = normalizeNullableText(
+      input.creditSubaccountCode,
+    );
+  }
+  if (input.departmentCode !== undefined) {
+    data.departmentCode = normalizeNullableText(input.departmentCode);
+  }
+  if (typeof input.isActive === 'boolean') {
+    data.isActive = input.isActive;
+  }
+
+  return { data, invalidFields };
+}
+
 function parseLimit(
   raw: string | undefined,
   defaultValue: number,
@@ -2247,22 +2293,42 @@ export async function registerIntegrationRoutes(app: FastifyInstance) {
     },
     async (req, reply) => {
       const body = req.body as AccountingMappingRuleInput;
-      const created = await prisma.accountingMappingRule.create({
-        data: {
-          mappingKey: body.mappingKey.trim(),
-          debitAccountCode: body.debitAccountCode.trim(),
-          debitSubaccountCode: normalizeNullableText(body.debitSubaccountCode),
-          creditAccountCode: body.creditAccountCode.trim(),
-          creditSubaccountCode: normalizeNullableText(
-            body.creditSubaccountCode,
-          ),
-          departmentCode: normalizeNullableText(body.departmentCode),
-          taxCode: body.taxCode.trim(),
-          isActive: body.isActive ?? true,
-          createdBy: req.user?.userId ?? null,
-          updatedBy: req.user?.userId ?? null,
-        },
+      const normalized = normalizeAccountingMappingRuleInput(body, {
+        partial: false,
       });
+      if (normalized.invalidFields.length > 0) {
+        return reply.code(400).send({
+          error: 'invalid_accounting_mapping_rule_payload',
+          invalidFields: normalized.invalidFields,
+        });
+      }
+      let created;
+      try {
+        created = await prisma.accountingMappingRule.create({
+          data: {
+            mappingKey: normalized.data.mappingKey!,
+            debitAccountCode: normalized.data.debitAccountCode!,
+            debitSubaccountCode: normalized.data.debitSubaccountCode ?? null,
+            creditAccountCode: normalized.data.creditAccountCode!,
+            creditSubaccountCode: normalized.data.creditSubaccountCode ?? null,
+            departmentCode: normalized.data.departmentCode ?? null,
+            taxCode: normalized.data.taxCode!,
+            isActive: normalized.data.isActive ?? true,
+            createdBy: req.user?.userId ?? null,
+            updatedBy: req.user?.userId ?? null,
+          },
+        });
+      } catch (error) {
+        if (
+          error instanceof Prisma.PrismaClientKnownRequestError &&
+          error.code === 'P2002'
+        ) {
+          return reply
+            .code(409)
+            .send({ error: 'accounting_mapping_rule_exists' });
+        }
+        throw error;
+      }
       await logAudit({
         ...auditContextFromRequest(req),
         action: 'integration_accounting_mapping_rule_created',
@@ -2295,44 +2361,35 @@ export async function registerIntegrationRoutes(app: FastifyInstance) {
           .code(404)
           .send({ error: 'accounting_mapping_rule_not_found' });
       }
-      const updated = await prisma.accountingMappingRule.update({
-        where: { id },
-        data: {
-          ...(typeof body.mappingKey === 'string'
-            ? { mappingKey: body.mappingKey.trim() }
-            : {}),
-          ...(typeof body.debitAccountCode === 'string'
-            ? { debitAccountCode: body.debitAccountCode.trim() }
-            : {}),
-          ...(body.debitSubaccountCode !== undefined
-            ? {
-                debitSubaccountCode: normalizeNullableText(
-                  body.debitSubaccountCode,
-                ),
-              }
-            : {}),
-          ...(typeof body.creditAccountCode === 'string'
-            ? { creditAccountCode: body.creditAccountCode.trim() }
-            : {}),
-          ...(body.creditSubaccountCode !== undefined
-            ? {
-                creditSubaccountCode: normalizeNullableText(
-                  body.creditSubaccountCode,
-                ),
-              }
-            : {}),
-          ...(body.departmentCode !== undefined
-            ? { departmentCode: normalizeNullableText(body.departmentCode) }
-            : {}),
-          ...(typeof body.taxCode === 'string'
-            ? { taxCode: body.taxCode.trim() }
-            : {}),
-          ...(typeof body.isActive === 'boolean'
-            ? { isActive: body.isActive }
-            : {}),
-          updatedBy: req.user?.userId ?? null,
-        },
+      const normalized = normalizeAccountingMappingRuleInput(body, {
+        partial: true,
       });
+      if (normalized.invalidFields.length > 0) {
+        return reply.code(400).send({
+          error: 'invalid_accounting_mapping_rule_payload',
+          invalidFields: normalized.invalidFields,
+        });
+      }
+      let updated;
+      try {
+        updated = await prisma.accountingMappingRule.update({
+          where: { id },
+          data: {
+            ...normalized.data,
+            updatedBy: req.user?.userId ?? null,
+          },
+        });
+      } catch (error) {
+        if (
+          error instanceof Prisma.PrismaClientKnownRequestError &&
+          error.code === 'P2002'
+        ) {
+          return reply
+            .code(409)
+            .send({ error: 'accounting_mapping_rule_exists' });
+        }
+        throw error;
+      }
       await logAudit({
         ...auditContextFromRequest(req),
         action: 'integration_accounting_mapping_rule_updated',

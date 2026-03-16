@@ -2119,7 +2119,7 @@ export const integrationAccountingMappingRulePatchSchema = {
     },
     { additionalProperties: false },
   ),
-  body: Type.Partial(accountingMappingRuleBodySchema.body, {
+  body: Type.Partial(accountingMappingRuleBodySchema, {
     additionalProperties: false,
   }),
 };

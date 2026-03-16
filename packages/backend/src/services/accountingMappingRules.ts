@@ -78,6 +78,7 @@ export function buildAccountingStagingMappingResult(options: {
   blockingCodes?: string[];
   departmentCode?: string | null;
   rule?: AccountingMappingRuleRecord | null;
+  preferRuleDepartmentCode?: boolean;
 }): {
   status: AccountingJournalStagingStatus;
   debitAccountCode: string | null;
@@ -97,9 +98,11 @@ export function buildAccountingStagingMappingResult(options: {
   const creditSubaccountCode = normalizeText(
     options.rule?.creditSubaccountCode,
   );
-  const departmentCode =
-    normalizeText(options.departmentCode) ||
-    normalizeText(options.rule?.departmentCode);
+  const sourceDepartmentCode = normalizeText(options.departmentCode);
+  const ruleDepartmentCode = normalizeText(options.rule?.departmentCode);
+  const departmentCode = options.preferRuleDepartmentCode
+    ? ruleDepartmentCode || sourceDepartmentCode
+    : sourceDepartmentCode || ruleDepartmentCode;
   const taxCode = normalizeText(options.rule?.taxCode);
   const requiredFields: string[] = [];
   if (!debitAccountCode) requiredFields.push('debitAccountCode');
@@ -163,7 +166,7 @@ export async function reapplyAccountingMappingRules(options: {
       departmentCode: true,
       validationErrors: true,
     },
-    orderBy: [{ updatedAt: 'asc' }, { id: 'asc' }],
+    orderBy: [{ id: 'asc' }],
     take: options.limit,
     skip: options.offset,
   });
@@ -215,6 +218,7 @@ export async function reapplyAccountingMappingRules(options: {
       departmentCode: row.departmentCode,
       blockingCodes: normalizeBlockingCodes(row.validationErrors),
       rule,
+      preferRuleDepartmentCode: true,
     });
     await client.accountingJournalStaging.update({
       where: { id: row.id },
