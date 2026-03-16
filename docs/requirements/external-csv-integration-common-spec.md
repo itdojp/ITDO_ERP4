@@ -85,13 +85,15 @@
   - `idempotencyKey`, `requestHash`, `exportedUntil`, `exportedCount`
 - 社員マスタ dispatch
   - `HrEmployeeMasterExportLog`
-  - `idempotencyKey`, `requestHash`, `exportedUntil`, `exportedCount`
+  - `idempotencyKey`, `requestHash`, `reexportOfId`, `exportedUntil`, `exportedCount`
 - ICS 仕訳 dispatch
   - `AccountingIcsExportLog`
-  - `idempotencyKey`, `requestHash`, `periodKey`, `exportedUntil`, `exportedCount`
+  - `idempotencyKey`, `requestHash`, `reexportOfId`, `periodKey`, `exportedUntil`, `exportedCount`
 - 共通運用参照
   - `GET /integrations/jobs/exports`
   - 既存 3 系統の export log を横断一覧化して参照する
+  - `POST /integrations/jobs/exports/:kind/:id/redispatch`
+  - 既存の成功済み export payload を新しい log として再出力し、`reexportOfId` で元ジョブを追跡する
 
 将来の共通 job model は、上記既存実装を包含する形で拡張する。
 
@@ -111,8 +113,8 @@
 - 再出力時は以下を記録する
   - 元ジョブ ID
   - 実行者
-  - 実行理由
-  - 出力条件
+  - 新しい idempotencyKey
+  - 再出力対象 payload の版
   - 差分有無
 
 ## 6. 監査・履歴
@@ -126,6 +128,7 @@
 - 実行者
 - 実行日時
 - 再出力元ジョブ
+- 再出力先ジョブ
 - 成否
 - エラーコード / メッセージ
 

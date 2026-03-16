@@ -7339,6 +7339,80 @@
         }
       }
     },
+    "/integrations/jobs/exports/{kind}/{id}/redispatch": {
+      "post": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "hr_leave_export_attendance"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "enum": [
+                    "hr_leave_export_payroll"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "enum": [
+                    "hr_employee_master_export"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "enum": [
+                    "accounting_ics_export"
+                  ],
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "idempotencyKey": {
+                    "maxLength": 200,
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "idempotencyKey"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
     "/invoices": {
       "get": {
         "responses": {

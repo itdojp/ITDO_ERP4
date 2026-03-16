@@ -1259,6 +1259,7 @@ test('GET /integrations/hr/exports/leaves/dispatch-logs supports filters and pag
     id: true,
     target: true,
     idempotencyKey: true,
+    reexportOfId: true,
     status: true,
     updatedSince: true,
     exportedUntil: true,
