@@ -19,6 +19,7 @@ import {
 } from '../services/attendanceClosings.js';
 import {
   AccountingIcsExportError,
+  type AccountingIcsExportPayload,
   buildAccountingIcsCsv,
   buildAccountingIcsCsvFilename,
   buildAccountingIcsExportPayload,
@@ -2148,6 +2149,25 @@ export async function registerIntegrationRoutes(app: FastifyInstance) {
             logId: existing.id,
           });
         }
+        if (existing.status === IntegrationRunStatus.failed) {
+          await logAudit({
+            ...auditContextFromRequest(req),
+            action: 'integration_accounting_ics_export_dispatch_failed_retry_rejected',
+            targetTable: 'AccountingIcsExportLog',
+            targetId: existing.id,
+            metadata: {
+              idempotencyKey,
+              periodKey: existing.periodKey,
+              status: existing.status,
+              message: truncateForAudit(existing.message),
+            } as Prisma.InputJsonValue,
+          });
+          return reply.code(409).send({
+            error: 'dispatch_failed',
+            logId: existing.id,
+            message: existing.message,
+          });
+        }
         await logAudit({
           ...auditContextFromRequest(req),
           action: 'integration_accounting_ics_export_dispatch_replayed',
@@ -2174,6 +2194,25 @@ export async function registerIntegrationRoutes(app: FastifyInstance) {
       }
 
       const startedAt = new Date();
+      let payload: AccountingIcsExportPayload;
+      try {
+        payload = await buildAccountingIcsExportPayload({
+          periodKey: parsed.periodKey,
+          exportedUntil: startedAt,
+          limit: parsed.limit,
+          offset: parsed.offset,
+        });
+      } catch (error) {
+        if (error instanceof AccountingIcsExportError) {
+          return reply.code(accountingIcsExportStatusCode(error.code)).send({
+            error: error.code,
+            message: error.message,
+            details: error.details,
+          });
+        }
+        throw error;
+      }
+
       let log: Awaited<ReturnType<typeof prisma.accountingIcsExportLog.create>>;
       try {
         log = await prisma.accountingIcsExportLog.create({
@@ -2203,12 +2242,6 @@ export async function registerIntegrationRoutes(app: FastifyInstance) {
       }
 
       try {
-        const payload = await buildAccountingIcsExportPayload({
-          periodKey: parsed.periodKey,
-          exportedUntil: startedAt,
-          limit: parsed.limit,
-          offset: parsed.offset,
-        });
         const finishedAt = new Date();
         const updated = await prisma.accountingIcsExportLog.update({
           where: { id: log.id },

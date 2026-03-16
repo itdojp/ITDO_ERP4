@@ -377,6 +377,40 @@ test('POST /integrations/accounting/exports/journals/dispatch handles replay, in
     await withPrismaStubs(
       {
         'accountingIcsExportLog.findUnique': async () => ({
+          id: 'ics-log-002b',
+          idempotencyKey: 'ics-export-key-002b',
+          requestHash: sharedHash,
+          periodKey: '2026-02',
+          status: 'failed',
+          exportedUntil: new Date('2026-03-16T11:00:00.000Z'),
+          exportedCount: 0,
+          payload: null,
+          message: 'journal staging rows are not ready for export',
+          startedAt: new Date('2026-03-16T11:00:00.000Z'),
+          finishedAt: new Date('2026-03-16T11:01:00.000Z'),
+        }),
+        'auditLog.create': async () => ({ id: 'audit-001b' }),
+      },
+      async () => {
+        const res = await server.inject({
+          method: 'POST',
+          url: '/integrations/accounting/exports/journals/dispatch',
+          headers: { 'x-user-id': 'admin-user', 'x-roles': 'admin' },
+          payload: {
+            periodKey: '2026-02',
+            idempotencyKey: 'ics-export-key-002b',
+          },
+        });
+        assert.equal(res.statusCode, 409, res.body);
+        const body = JSON.parse(res.body);
+        assert.equal(body.error, 'dispatch_failed');
+        assert.equal(body.logId, 'ics-log-002b');
+      },
+    );
+
+    await withPrismaStubs(
+      {
+        'accountingIcsExportLog.findUnique': async () => ({
           id: 'ics-log-003',
           idempotencyKey: 'ics-export-key-003',
           requestHash: sharedHash,
@@ -440,6 +474,42 @@ test('POST /integrations/accounting/exports/journals/dispatch handles replay, in
   } finally {
     await server.close();
   }
+});
+
+test('POST /integrations/accounting/exports/journals/dispatch validates export payload before writing log', async () => {
+  process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
+  process.env.AUTH_MODE = 'header';
+
+  let createCalled = false;
+  await withPrismaStubs(
+    {
+      'accountingIcsExportLog.findUnique': async () => null,
+      'accountingIcsExportLog.create': async () => {
+        createCalled = true;
+        throw new Error('create should not be called');
+      },
+    },
+    async () => {
+      const server = await buildServer({ logger: false });
+      try {
+        const res = await server.inject({
+          method: 'POST',
+          url: '/integrations/accounting/exports/journals/dispatch',
+          headers: { 'x-user-id': 'admin-user', 'x-roles': 'admin' },
+          payload: {
+            periodKey: '2026-13',
+            idempotencyKey: 'ics-export-key-invalid-period',
+          },
+        });
+        assert.equal(res.statusCode, 400, res.body);
+        assert.equal(JSON.parse(res.body).error, 'invalid_period_key');
+      } finally {
+        await server.close();
+      }
+    },
+  );
+
+  assert.equal(createCalled, false);
 });
 
 test('POST /integrations/accounting/exports/journals/dispatch handles concurrent create race', async () => {
