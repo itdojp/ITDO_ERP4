@@ -166,3 +166,38 @@ test('GET /integrations/jobs/exports applies kind and status filters to the rele
   assert.deepEqual(employeeMasterArgs?.where, { status: 'success' });
   assert.equal(employeeMasterArgs?.take, 5);
 });
+
+test('GET /integrations/jobs/exports fetches offset + limit rows per source for merged pagination', async () => {
+  process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
+  process.env.AUTH_MODE = 'header';
+
+  let employeeMasterArgs = null;
+  await withPrismaStubs(
+    {
+      'leaveIntegrationExportLog.findMany': async () => [],
+      'hrEmployeeMasterExportLog.findMany': async (args) => {
+        employeeMasterArgs = args;
+        return [];
+      },
+      'accountingIcsExportLog.findMany': async () => [],
+    },
+    async () => {
+      const server = await buildServer({ logger: false });
+      try {
+        const res = await server.inject({
+          method: 'GET',
+          url: '/integrations/jobs/exports?kind=hr_employee_master_export&limit=100&offset=450',
+          headers: {
+            'x-user-id': 'admin-user',
+            'x-roles': 'admin',
+          },
+        });
+        assert.equal(res.statusCode, 200, res.body);
+      } finally {
+        await server.close();
+      }
+    },
+  );
+
+  assert.equal(employeeMasterArgs?.take, 550);
+});

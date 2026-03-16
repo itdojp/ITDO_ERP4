@@ -506,6 +506,8 @@ const MAX_ACCOUNTING_ICS_EXPORT_OFFSET = 100000;
 const DEFAULT_INTEGRATION_EXPORT_JOB_LIMIT = 100;
 const MAX_INTEGRATION_EXPORT_JOB_LIMIT = 500;
 const MAX_INTEGRATION_EXPORT_JOB_OFFSET = 1000;
+const MAX_INTEGRATION_EXPORT_JOB_FETCH =
+  MAX_INTEGRATION_EXPORT_JOB_LIMIT + MAX_INTEGRATION_EXPORT_JOB_OFFSET;
 
 type IntegrationExportJobKind =
   | 'hr_leave_export_attendance'
@@ -2468,7 +2470,7 @@ export async function registerIntegrationRoutes(app: FastifyInstance) {
         0,
         MAX_INTEGRATION_EXPORT_JOB_OFFSET,
       );
-      const take = Math.min(limit + offset, MAX_INTEGRATION_EXPORT_JOB_LIMIT);
+      const take = Math.min(limit + offset, MAX_INTEGRATION_EXPORT_JOB_FETCH);
 
       const shouldLoadLeave =
         !kind ||
