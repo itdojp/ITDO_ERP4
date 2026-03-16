@@ -132,8 +132,29 @@ export async function buildIntegrationReconciliationSummary(options: {
   const parsedPeriod = parseAttendancePeriodKey(options.periodKey);
   const periodKey = parsedPeriod.periodKey;
 
+  const latestClosing = await client.attendanceClosingPeriod.findFirst({
+    where: { periodKey, status: 'closed' },
+    select: {
+      id: true,
+      periodKey: true,
+      version: true,
+      status: true,
+      closedAt: true,
+      summaryCount: true,
+      workedDayCountTotal: true,
+      scheduledWorkMinutesTotal: true,
+      approvedWorkMinutesTotal: true,
+      overtimeTotalMinutesTotal: true,
+      paidLeaveMinutesTotal: true,
+      unpaidLeaveMinutesTotal: true,
+      totalLeaveMinutesTotal: true,
+      sourceTimeEntryCount: true,
+      sourceLeaveRequestCount: true,
+    },
+    orderBy: [{ version: 'desc' }, { closedAt: 'desc' }, { id: 'desc' }],
+  });
+
   const [
-    latestClosing,
     attendanceSummaries,
     latestEmployeeMasterExport,
     latestEmployeeMasterFullExport,
@@ -142,32 +163,13 @@ export async function buildIntegrationReconciliationSummary(options: {
     readyAmountAggregate,
     invalidReadyCount,
   ] = await Promise.all([
-    client.attendanceClosingPeriod.findFirst({
-      where: { periodKey, status: 'closed' },
-      select: {
-        id: true,
-        periodKey: true,
-        version: true,
-        status: true,
-        closedAt: true,
-        summaryCount: true,
-        workedDayCountTotal: true,
-        scheduledWorkMinutesTotal: true,
-        approvedWorkMinutesTotal: true,
-        overtimeTotalMinutesTotal: true,
-        paidLeaveMinutesTotal: true,
-        unpaidLeaveMinutesTotal: true,
-        totalLeaveMinutesTotal: true,
-        sourceTimeEntryCount: true,
-        sourceLeaveRequestCount: true,
-      },
-      orderBy: [{ version: 'desc' }, { closedAt: 'desc' }, { id: 'desc' }],
-    }),
-    client.attendanceMonthlySummary.findMany({
-      where: { periodKey },
-      select: { employeeCode: true },
-      orderBy: [{ employeeCode: 'asc' }, { id: 'asc' }],
-    }),
+    latestClosing
+      ? client.attendanceMonthlySummary.findMany({
+          where: { closingPeriodId: latestClosing.id },
+          select: { employeeCode: true },
+          orderBy: [{ employeeCode: 'asc' }, { id: 'asc' }],
+        })
+      : [],
     client.hrEmployeeMasterExportLog.findFirst({
       where: { status: 'success' },
       select: {
@@ -284,7 +286,10 @@ export async function buildIntegrationReconciliationSummary(options: {
   const readyCount = statusCountMap.get('ready') ?? 0;
   const pendingMappingCount = statusCountMap.get('pending_mapping') ?? 0;
   const blockedCount = statusCountMap.get('blocked') ?? 0;
-  const totalCount = readyCount + pendingMappingCount + blockedCount;
+  const totalCount = stagingCounts.reduce(
+    (sum, item) => sum + item._count._all,
+    0,
+  );
   const readyAmountTotal = toStringAmount(
     readyAmountAggregate._sum.amount ?? 0,
   );
@@ -310,10 +315,7 @@ export async function buildIntegrationReconciliationSummary(options: {
   }
 
   const hasBlockingDifferences =
-    payrollComparisonStatus === 'mismatch' ||
-    accountingComparisonStatus === 'mapping_incomplete' ||
-    accountingComparisonStatus === 'ready_row_incomplete' ||
-    accountingComparisonStatus === 'count_mismatch';
+    payrollComparisonStatus !== 'ok' || accountingComparisonStatus !== 'ok';
 
   return {
     periodKey,

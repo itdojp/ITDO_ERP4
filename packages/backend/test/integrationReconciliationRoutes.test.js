@@ -1,10 +1,13 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { buildServer } from '../dist/server.js';
-import { prisma } from '../dist/services/db.js';
-
 const MIN_DATABASE_URL = 'postgresql://user:pass@localhost:5432/postgres';
+
+process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
+process.env.AUTH_MODE = 'header';
+
+const { buildServer } = await import('../dist/server.js');
+const { prisma } = await import('../dist/services/db.js');
 
 function withPrismaStubs(stubs, fn) {
   const restores = [];
@@ -28,9 +31,6 @@ function withPrismaStubs(stubs, fn) {
 }
 
 test('GET /integrations/reconciliation/summary returns aggregate reconciliation summary', async () => {
-  process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
-  process.env.AUTH_MODE = 'header';
-
   await withPrismaStubs(
     {
       'attendanceClosingPeriod.findFirst': async () => ({
@@ -50,10 +50,10 @@ test('GET /integrations/reconciliation/summary returns aggregate reconciliation 
         sourceTimeEntryCount: 40,
         sourceLeaveRequestCount: 1,
       }),
-      'attendanceMonthlySummary.findMany': async () => [
-        { employeeCode: 'EMP-001' },
-        { employeeCode: 'EMP-002' },
-      ],
+      'attendanceMonthlySummary.findMany': async (args) => {
+        assert.equal(args?.where?.closingPeriodId, 'closing-001');
+        return [{ employeeCode: 'EMP-001' }, { employeeCode: 'EMP-002' }];
+      },
       'hrEmployeeMasterExportLog.findFirst': async (args) => {
         if (args?.where?.updatedSince === null) {
           return {
@@ -104,6 +104,7 @@ test('GET /integrations/reconciliation/summary returns aggregate reconciliation 
         { status: 'ready', _count: { _all: 3 } },
         { status: 'pending_mapping', _count: { _all: 1 } },
         { status: 'blocked', _count: { _all: 0 } },
+        { status: 'exported', _count: { _all: 2 } },
       ],
       'accountingJournalStaging.aggregate': async () => ({
         _sum: { amount: '12345' },
@@ -146,6 +147,7 @@ test('GET /integrations/reconciliation/summary returns aggregate reconciliation 
         assert.equal(body.accounting.latestIcsExport.id, 'ics-001');
         assert.equal(body.accounting.comparisonStatus, 'mapping_incomplete');
         assert.equal(body.accounting.mappingComplete, false);
+        assert.equal(body.accounting.staging.totalCount, 6);
         assert.equal(body.accounting.staging.readyCount, 3);
         assert.equal(body.accounting.staging.pendingMappingCount, 1);
         assert.equal(body.accounting.staging.readyAmountTotal, '12345');
@@ -161,9 +163,6 @@ test('GET /integrations/reconciliation/summary returns aggregate reconciliation 
 });
 
 test('GET /integrations/reconciliation/summary returns 400 for invalid periodKey', async () => {
-  process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
-  process.env.AUTH_MODE = 'header';
-
   const server = await buildServer({ logger: false });
   try {
     const res = await server.inject({
@@ -184,10 +183,45 @@ test('GET /integrations/reconciliation/summary returns 400 for invalid periodKey
   }
 });
 
-test('GET /integrations/reconciliation/summary reports missing full export and export mismatch', async () => {
-  process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
-  process.env.AUTH_MODE = 'header';
+test('GET /integrations/reconciliation/summary treats missing prerequisites as blocking differences', async () => {
+  await withPrismaStubs(
+    {
+      'attendanceClosingPeriod.findFirst': async () => null,
+      'hrEmployeeMasterExportLog.findFirst': async () => null,
+      'accountingIcsExportLog.findFirst': async () => null,
+      'accountingJournalStaging.groupBy': async () => [],
+      'accountingJournalStaging.aggregate': async () => ({
+        _sum: { amount: null },
+      }),
+      'accountingJournalStaging.count': async () => 0,
+    },
+    async () => {
+      const server = await buildServer({ logger: false });
+      try {
+        const res = await server.inject({
+          method: 'GET',
+          url: '/integrations/reconciliation/summary?periodKey=2026-05',
+          headers: {
+            'x-user-id': 'admin-user',
+            'x-roles': 'admin',
+          },
+        });
+        assert.equal(res.statusCode, 200, res.body);
+        const body = JSON.parse(res.body);
+        assert.equal(
+          body.payroll.comparisonStatus,
+          'attendance_closing_missing',
+        );
+        assert.equal(body.accounting.comparisonStatus, 'export_missing');
+        assert.equal(body.hasBlockingDifferences, true);
+      } finally {
+        await server.close();
+      }
+    },
+  );
+});
 
+test('GET /integrations/reconciliation/summary reports missing full export and export mismatch', async () => {
   await withPrismaStubs(
     {
       'attendanceClosingPeriod.findFirst': async () => ({
@@ -207,9 +241,10 @@ test('GET /integrations/reconciliation/summary reports missing full export and e
         sourceTimeEntryCount: 20,
         sourceLeaveRequestCount: 0,
       }),
-      'attendanceMonthlySummary.findMany': async () => [
-        { employeeCode: 'EMP-010' },
-      ],
+      'attendanceMonthlySummary.findMany': async (args) => {
+        assert.equal(args?.where?.closingPeriodId, 'closing-002');
+        return [{ employeeCode: 'EMP-010' }];
+      },
       'hrEmployeeMasterExportLog.findFirst': async (args) => {
         if (args?.where?.updatedSince === null) return null;
         return null;
