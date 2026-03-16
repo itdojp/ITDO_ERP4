@@ -17,9 +17,20 @@ import {
   AttendanceClosingError,
   closeAttendancePeriod,
 } from '../services/attendanceClosings.js';
+import {
+  AccountingIcsExportError,
+  type AccountingIcsExportPayload,
+  buildAccountingIcsCsv,
+  buildAccountingIcsCsvFilename,
+  buildAccountingIcsExportPayload,
+  buildAccountingIcsExportRequestHash,
+} from '../services/accountingIcsExport.js';
 import { sendCsv, toCsv } from '../utils/csv.js';
 import { toDateOnly } from '../utils/date.js';
 import {
+  integrationAccountingIcsExportDispatchSchema,
+  integrationAccountingIcsExportLogListQuerySchema,
+  integrationAccountingIcsExportQuerySchema,
   integrationHrAttendanceClosingCreateSchema,
   integrationHrAttendanceClosingListQuerySchema,
   integrationHrAttendanceClosingSummaryListSchema,
@@ -482,6 +493,78 @@ function hrEmployeeMasterExportStatusCode(code: string) {
     default:
       return 409;
   }
+}
+
+type AccountingIcsExportFormat = 'json' | 'csv';
+
+const DEFAULT_ACCOUNTING_ICS_EXPORT_LIMIT = 500;
+const MAX_ACCOUNTING_ICS_EXPORT_LIMIT = 2000;
+const DEFAULT_ACCOUNTING_ICS_EXPORT_LOG_LIMIT = 100;
+const MAX_ACCOUNTING_ICS_EXPORT_LOG_LIMIT = 1000;
+const MAX_ACCOUNTING_ICS_EXPORT_OFFSET = 100000;
+
+function normalizeAccountingIcsExportFormat(
+  value: unknown,
+): AccountingIcsExportFormat {
+  return value === 'csv' ? 'csv' : 'json';
+}
+
+function parseAccountingIcsExportQuery(query: {
+  format?: AccountingIcsExportFormat;
+  periodKey?: string;
+  limit?: number | string;
+  offset?: number | string;
+}) {
+  return {
+    format: normalizeAccountingIcsExportFormat(query.format),
+    periodKey:
+      typeof query.periodKey === 'string'
+        ? query.periodKey.trim() || null
+        : null,
+    limit: parseBoundedInteger(
+      query.limit,
+      DEFAULT_ACCOUNTING_ICS_EXPORT_LIMIT,
+      MAX_ACCOUNTING_ICS_EXPORT_LIMIT,
+    ),
+    offset: parseBoundedNonNegativeInteger(
+      query.offset,
+      0,
+      MAX_ACCOUNTING_ICS_EXPORT_OFFSET,
+    ),
+  };
+}
+
+function accountingIcsExportStatusCode(code: string) {
+  switch (code) {
+    case 'invalid_period_key':
+      return 400;
+    default:
+      return 409;
+  }
+}
+
+function buildAccountingIcsExportLogResponse(item: {
+  id: string;
+  idempotencyKey: string;
+  periodKey: string | null;
+  status: IntegrationRunStatus;
+  exportedUntil: Date;
+  exportedCount: number;
+  startedAt: Date;
+  finishedAt: Date | null;
+  message: string | null;
+}) {
+  return {
+    id: item.id,
+    idempotencyKey: item.idempotencyKey,
+    periodKey: item.periodKey,
+    status: item.status,
+    exportedUntil: item.exportedUntil,
+    exportedCount: item.exportedCount,
+    startedAt: item.startedAt,
+    finishedAt: item.finishedAt,
+    message: item.message,
+  };
 }
 
 type LeaveExportTarget = 'attendance' | 'payroll';
@@ -1961,6 +2044,326 @@ export async function registerIntegrationRoutes(app: FastifyInstance) {
         items: items.map((item) =>
           buildHrEmployeeMasterExportLogResponse(item),
         ),
+        limit,
+        offset,
+      };
+    },
+  );
+
+  app.get(
+    '/integrations/accounting/exports/journals',
+    {
+      preHandler: requireRole(['admin', 'mgmt']),
+      schema: integrationAccountingIcsExportQuerySchema,
+    },
+    async (req, reply) => {
+      const parsed = parseAccountingIcsExportQuery(
+        req.query as {
+          format?: AccountingIcsExportFormat;
+          periodKey?: string;
+          limit?: number | string;
+          offset?: number | string;
+        },
+      );
+      try {
+        const payload = await buildAccountingIcsExportPayload({
+          periodKey: parsed.periodKey,
+          limit: parsed.limit,
+          offset: parsed.offset,
+        });
+        if (parsed.format === 'csv') {
+          return reply
+            .header(
+              'Content-Disposition',
+              `attachment; filename="${buildAccountingIcsCsvFilename({
+                exportedUntil: payload.exportedUntil,
+                periodKey: payload.periodKey,
+              })}"`,
+            )
+            .type('text/csv; charset=shift_jis')
+            .send(buildAccountingIcsCsv(payload));
+        }
+        return payload;
+      } catch (error) {
+        if (error instanceof AccountingIcsExportError) {
+          return reply.code(accountingIcsExportStatusCode(error.code)).send({
+            error: error.code,
+            message: error.message,
+            details: error.details,
+          });
+        }
+        throw error;
+      }
+    },
+  );
+
+  app.post(
+    '/integrations/accounting/exports/journals/dispatch',
+    {
+      preHandler: requireRole(['admin', 'mgmt']),
+      schema: integrationAccountingIcsExportDispatchSchema,
+    },
+    async (req, reply) => {
+      const parsed = parseAccountingIcsExportQuery(
+        req.body as {
+          format?: AccountingIcsExportFormat;
+          periodKey?: string;
+          limit?: number | string;
+          offset?: number | string;
+        },
+      );
+      const body = req.body as { idempotencyKey: string };
+      const idempotencyKey = body.idempotencyKey.trim();
+      if (!idempotencyKey) {
+        return reply.code(400).send({ error: 'invalid_idempotencyKey' });
+      }
+      const requestHash = buildAccountingIcsExportRequestHash({
+        periodKey: parsed.periodKey,
+        limit: parsed.limit,
+        offset: parsed.offset,
+        format: 'csv',
+      });
+      const respondWithExistingAccountingIcsDispatch = async (
+        existing: NonNullable<
+          Awaited<ReturnType<typeof prisma.accountingIcsExportLog.findUnique>>
+        >,
+      ) => {
+        if (existing.requestHash !== requestHash) {
+          await logAudit({
+            ...auditContextFromRequest(req),
+            action: 'integration_accounting_ics_export_dispatch_conflict',
+            targetTable: 'AccountingIcsExportLog',
+            targetId: existing.id,
+            metadata: {
+              idempotencyKey,
+              periodKey: parsed.periodKey,
+              requestHash,
+              existingRequestHash: existing.requestHash,
+            } as Prisma.InputJsonValue,
+          });
+          return reply.code(409).send({ error: 'idempotency_conflict' });
+        }
+        if (existing.status === IntegrationRunStatus.running) {
+          return reply.code(409).send({
+            error: 'dispatch_in_progress',
+            logId: existing.id,
+          });
+        }
+        if (existing.status === IntegrationRunStatus.failed) {
+          await logAudit({
+            ...auditContextFromRequest(req),
+            action:
+              'integration_accounting_ics_export_dispatch_failed_retry_rejected',
+            targetTable: 'AccountingIcsExportLog',
+            targetId: existing.id,
+            metadata: {
+              idempotencyKey,
+              periodKey: existing.periodKey,
+              status: existing.status,
+              message: truncateForAudit(existing.message),
+            } as Prisma.InputJsonValue,
+          });
+          return reply.code(409).send({
+            error: 'dispatch_failed',
+            logId: existing.id,
+            message: existing.message,
+          });
+        }
+        await logAudit({
+          ...auditContextFromRequest(req),
+          action: 'integration_accounting_ics_export_dispatch_replayed',
+          targetTable: 'AccountingIcsExportLog',
+          targetId: existing.id,
+          metadata: {
+            idempotencyKey,
+            periodKey: existing.periodKey,
+            status: existing.status,
+            exportedCount: existing.exportedCount,
+          } as Prisma.InputJsonValue,
+        });
+        return {
+          replayed: true,
+          payload: existing.payload,
+          log: buildAccountingIcsExportLogResponse(existing),
+        };
+      };
+      const existing = await prisma.accountingIcsExportLog.findUnique({
+        where: { idempotencyKey },
+      });
+      if (existing) {
+        return respondWithExistingAccountingIcsDispatch(existing);
+      }
+
+      const startedAt = new Date();
+      let payload: AccountingIcsExportPayload;
+      try {
+        payload = await buildAccountingIcsExportPayload({
+          periodKey: parsed.periodKey,
+          exportedUntil: startedAt,
+          limit: parsed.limit,
+          offset: parsed.offset,
+        });
+      } catch (error) {
+        if (error instanceof AccountingIcsExportError) {
+          return reply.code(accountingIcsExportStatusCode(error.code)).send({
+            error: error.code,
+            message: error.message,
+            details: error.details,
+          });
+        }
+        throw error;
+      }
+
+      let log: Awaited<ReturnType<typeof prisma.accountingIcsExportLog.create>>;
+      try {
+        log = await prisma.accountingIcsExportLog.create({
+          data: {
+            idempotencyKey,
+            requestHash,
+            periodKey: parsed.periodKey,
+            exportedUntil: startedAt,
+            status: IntegrationRunStatus.running,
+            startedAt,
+            createdBy: req.user?.userId ?? null,
+          },
+        });
+      } catch (error) {
+        if (
+          error instanceof Prisma.PrismaClientKnownRequestError &&
+          error.code === 'P2002'
+        ) {
+          const concurrent = await prisma.accountingIcsExportLog.findUnique({
+            where: { idempotencyKey },
+          });
+          if (concurrent) {
+            return respondWithExistingAccountingIcsDispatch(concurrent);
+          }
+        }
+        throw error;
+      }
+
+      try {
+        const finishedAt = new Date();
+        const updated = await prisma.accountingIcsExportLog.update({
+          where: { id: log.id },
+          data: {
+            status: IntegrationRunStatus.success,
+            exportedCount: payload.exportedCount,
+            payload: payload as Prisma.InputJsonValue,
+            message: payload.exportedCount ? 'exported' : 'no_changes',
+            finishedAt,
+          },
+        });
+        await logAudit({
+          ...auditContextFromRequest(req),
+          action: 'integration_accounting_ics_export_dispatched',
+          targetTable: 'AccountingIcsExportLog',
+          targetId: updated.id,
+          metadata: {
+            idempotencyKey,
+            periodKey: parsed.periodKey,
+            exportedCount: payload.exportedCount,
+            format: 'csv',
+          } as Prisma.InputJsonValue,
+        });
+        return {
+          replayed: false,
+          payload,
+          log: buildAccountingIcsExportLogResponse(updated),
+        };
+      } catch (error) {
+        const finishedAt = new Date();
+        const message = error instanceof Error ? error.message : String(error);
+        const failed = await prisma.accountingIcsExportLog.update({
+          where: { id: log.id },
+          data: {
+            status: IntegrationRunStatus.failed,
+            message,
+            finishedAt,
+          },
+        });
+        await logAudit({
+          ...auditContextFromRequest(req),
+          action: 'integration_accounting_ics_export_dispatch_failed',
+          targetTable: 'AccountingIcsExportLog',
+          targetId: failed.id,
+          metadata: {
+            idempotencyKey,
+            periodKey: parsed.periodKey,
+            message: truncateForAudit(message),
+          } as Prisma.InputJsonValue,
+        });
+        if (error instanceof AccountingIcsExportError) {
+          return reply.code(accountingIcsExportStatusCode(error.code)).send({
+            error: error.code,
+            message: error.message,
+            details: error.details,
+          });
+        }
+        throw error;
+      }
+    },
+  );
+
+  app.get(
+    '/integrations/accounting/exports/journals/dispatch-logs',
+    {
+      preHandler: requireRole(['admin', 'mgmt']),
+      schema: integrationAccountingIcsExportLogListQuerySchema,
+    },
+    async (req) => {
+      const query = req.query as {
+        periodKey?: string;
+        status?: IntegrationRunStatus;
+        limit?: number | string;
+        offset?: number | string;
+        idempotencyKey?: string;
+      };
+      const limit = parseBoundedInteger(
+        query.limit,
+        DEFAULT_ACCOUNTING_ICS_EXPORT_LOG_LIMIT,
+        MAX_ACCOUNTING_ICS_EXPORT_LOG_LIMIT,
+      );
+      const offset = parseBoundedNonNegativeInteger(
+        query.offset,
+        0,
+        MAX_ACCOUNTING_ICS_EXPORT_OFFSET,
+      );
+      const idempotencyKey =
+        typeof query.idempotencyKey === 'string'
+          ? query.idempotencyKey.trim()
+          : '';
+      const periodKey =
+        typeof query.periodKey === 'string' ? query.periodKey.trim() : '';
+      const status =
+        query.status === IntegrationRunStatus.running ||
+        query.status === IntegrationRunStatus.success ||
+        query.status === IntegrationRunStatus.failed
+          ? query.status
+          : undefined;
+      const items = await prisma.accountingIcsExportLog.findMany({
+        where: {
+          ...(periodKey ? { periodKey } : {}),
+          ...(status ? { status } : {}),
+          ...(idempotencyKey ? { idempotencyKey } : {}),
+        },
+        select: {
+          id: true,
+          idempotencyKey: true,
+          periodKey: true,
+          status: true,
+          exportedUntil: true,
+          exportedCount: true,
+          startedAt: true,
+          finishedAt: true,
+          message: true,
+        },
+        orderBy: [{ startedAt: 'desc' }, { id: 'desc' }],
+        take: limit,
+        skip: offset,
+      });
+      return {
+        items: items.map((item) => buildAccountingIcsExportLogResponse(item)),
         limit,
         offset,
       };

@@ -6566,6 +6566,197 @@
         }
       }
     },
+    "/integrations/accounting/exports/journals": {
+      "get": {
+        "parameters": [
+          {
+            "in": "query",
+            "name": "format",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "json"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "enum": [
+                    "csv"
+                  ],
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "periodKey",
+            "required": false,
+            "schema": {
+              "maxLength": 7,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "maximum": 2000,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "maximum": 100000,
+              "minimum": 0,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/integrations/accounting/exports/journals/dispatch": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "format": {
+                    "enum": [
+                      "csv"
+                    ],
+                    "type": "string"
+                  },
+                  "idempotencyKey": {
+                    "maxLength": 200,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "limit": {
+                    "maximum": 2000,
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "offset": {
+                    "maximum": 100000,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "periodKey": {
+                    "maxLength": 7,
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "idempotencyKey"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/integrations/accounting/exports/journals/dispatch-logs": {
+      "get": {
+        "parameters": [
+          {
+            "in": "query",
+            "name": "periodKey",
+            "required": false,
+            "schema": {
+              "maxLength": 7,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "running"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "enum": [
+                    "success"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "enum": [
+                    "failed"
+                  ],
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "maximum": 1000,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "maximum": 100000,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "idempotencyKey",
+            "required": false,
+            "schema": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
     "/integrations/crm/exports/contacts": {
       "get": {
         "responses": {

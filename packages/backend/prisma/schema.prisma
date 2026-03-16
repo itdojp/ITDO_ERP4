@@ -1749,6 +1749,26 @@ model HrEmployeeMasterExportLog {
   @@index([status, startedAt])
 }
 
+model AccountingIcsExportLog {
+  id             String               @id @default(uuid())
+  idempotencyKey String               @unique
+  requestHash    String
+  periodKey      String?
+  exportedUntil  DateTime
+  status         IntegrationRunStatus @default(running)
+  exportedCount  Int                  @default(0)
+  payload        Json?
+  message        String?
+  startedAt      DateTime             @default(now())
+  finishedAt     DateTime?
+  createdAt      DateTime             @default(now())
+  createdBy      String?
+  updatedAt      DateTime             @updatedAt
+
+  @@index([periodKey, startedAt])
+  @@index([status, startedAt])
+}
+
 model AgentRun {
   id               String            @id @default(uuid())
   requestId        String?
