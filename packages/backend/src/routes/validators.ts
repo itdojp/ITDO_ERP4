@@ -1934,6 +1934,11 @@ const hrEmployeeMasterExportFormatSchema = Type.Union([
   Type.Literal('csv'),
 ]);
 
+const hrAttendanceExportFormatSchema = Type.Union([
+  Type.Literal('json'),
+  Type.Literal('csv'),
+]);
+
 const accountingIcsExportFormatSchema = Type.Union([
   Type.Literal('json'),
   Type.Literal('csv'),
@@ -2031,6 +2036,41 @@ export const integrationHrEmployeeMasterExportLogListQuerySchema = {
 const attendanceClosingPeriodKeySchema = Type.String({
   pattern: '^\\d{4}-(0[1-9]|1[0-2])$',
 });
+
+export const integrationHrAttendanceExportQuerySchema = {
+  querystring: Type.Object(
+    {
+      format: Type.Optional(hrAttendanceExportFormatSchema),
+      periodKey: attendanceClosingPeriodKeySchema,
+    },
+    { additionalProperties: false },
+  ),
+};
+
+export const integrationHrAttendanceExportDispatchSchema = {
+  body: Type.Object(
+    {
+      format: Type.Optional(Type.Literal('csv')),
+      periodKey: attendanceClosingPeriodKeySchema,
+      idempotencyKey: Type.String({ minLength: 1, maxLength: 200 }),
+    },
+    { additionalProperties: false },
+  ),
+};
+
+export const integrationHrAttendanceExportLogListQuerySchema = {
+  querystring: Type.Object(
+    {
+      periodKey: Type.Optional(attendanceClosingPeriodKeySchema),
+      limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 1000 })),
+      offset: Type.Optional(Type.Integer({ minimum: 0, maximum: 100000 })),
+      idempotencyKey: Type.Optional(
+        Type.String({ minLength: 1, maxLength: 200 }),
+      ),
+    },
+    { additionalProperties: false },
+  ),
+};
 
 export const integrationAccountingIcsExportQuerySchema = {
   querystring: Type.Object(
