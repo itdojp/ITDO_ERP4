@@ -491,6 +491,9 @@ const createDefaultAccountingMappingRuleForm =
     isActive: true,
   });
 
+const DEFAULT_ACCOUNTING_MAPPING_RULE_LIMIT = 20;
+const DEFAULT_ACCOUNTING_MAPPING_RULE_OFFSET = 0;
+
 const currentPeriodKey = () => {
   const now = new Date();
   const year = now.getFullYear();
@@ -572,9 +575,9 @@ export const AdminSettings: React.FC = () => {
     setAccountingMappingRuleFilterIsActive,
   ] = useState<string>('');
   const [accountingMappingRuleLimit, setAccountingMappingRuleLimit] =
-    useState<number>(20);
+    useState<number>(DEFAULT_ACCOUNTING_MAPPING_RULE_LIMIT);
   const [accountingMappingRuleOffset, setAccountingMappingRuleOffset] =
-    useState<number>(0);
+    useState<number>(DEFAULT_ACCOUNTING_MAPPING_RULE_OFFSET);
   const [accountingMappingRuleLoading, setAccountingMappingRuleLoading] =
     useState<boolean>(false);
   const [accountingMappingRuleForm, setAccountingMappingRuleForm] = useState(
@@ -1361,52 +1364,64 @@ export const AdminSettings: React.FC = () => {
     }
   }, [integrationReconciliationPeriodKey, logError]);
 
+  const loadAccountingMappingRulesWithQuery = useCallback(
+    async (options: {
+      mappingKey: string;
+      isActive: string;
+      limit: number;
+      offset: number;
+      suppressMessage?: boolean;
+    }) => {
+      const query = new URLSearchParams();
+      const mappingKey = options.mappingKey.trim();
+      const isActive = options.isActive.trim();
+      if (mappingKey) {
+        query.set('mappingKey', mappingKey);
+      }
+      if (isActive) {
+        query.set('isActive', isActive);
+      }
+      query.set('limit', String(options.limit));
+      query.set('offset', String(options.offset));
+      setAccountingMappingRuleLoading(true);
+      try {
+        const result = await api<{ items: AccountingMappingRuleItem[] }>(
+          `/integrations/accounting/mapping-rules?${query.toString()}`,
+        );
+        setAccountingMappingRuleItems(result.items || []);
+        if (!options.suppressMessage) {
+          setMessage('会計マッピングルールを取得しました');
+        }
+      } catch (err) {
+        logError('loadAccountingMappingRules failed', err);
+        setAccountingMappingRuleItems([]);
+        if (!options.suppressMessage) {
+          setMessage('会計マッピングルールの取得に失敗しました');
+        }
+      } finally {
+        setAccountingMappingRuleLoading(false);
+      }
+    },
+    [logError],
+  );
+
   const loadAccountingMappingRules = useCallback(async () => {
-    const query = new URLSearchParams();
-    if (accountingMappingRuleFilterMappingKey.trim()) {
-      query.set('mappingKey', accountingMappingRuleFilterMappingKey.trim());
-    }
-    if (accountingMappingRuleFilterIsActive.trim()) {
-      query.set('isActive', accountingMappingRuleFilterIsActive.trim());
-    }
-    query.set('limit', String(accountingMappingRuleLimit));
-    query.set('offset', String(accountingMappingRuleOffset));
-    setAccountingMappingRuleLoading(true);
-    try {
-      const result = await api<{ items: AccountingMappingRuleItem[] }>(
-        `/integrations/accounting/mapping-rules?${query.toString()}`,
-      );
-      setAccountingMappingRuleItems(result.items || []);
-      setMessage('会計マッピングルールを取得しました');
-    } catch (err) {
-      logError('loadAccountingMappingRules failed', err);
-      setAccountingMappingRuleItems([]);
-      setMessage('会計マッピングルールの取得に失敗しました');
-    } finally {
-      setAccountingMappingRuleLoading(false);
-    }
+    await loadAccountingMappingRulesWithQuery({
+      mappingKey: accountingMappingRuleFilterMappingKey,
+      isActive: accountingMappingRuleFilterIsActive,
+      limit: accountingMappingRuleLimit,
+      offset: accountingMappingRuleOffset,
+    });
   }, [
     accountingMappingRuleFilterIsActive,
     accountingMappingRuleFilterMappingKey,
     accountingMappingRuleLimit,
     accountingMappingRuleOffset,
-    logError,
+    loadAccountingMappingRulesWithQuery,
   ]);
 
-  const startEditAccountingMappingRule = useCallback(
-    (item: AccountingMappingRuleItem) => {
-      setEditingAccountingMappingRuleId(item.id);
-      setAccountingMappingRuleForm({
-        mappingKey: item.mappingKey,
-        debitAccountCode: item.debitAccountCode,
-        debitSubaccountCode: item.debitSubaccountCode || '',
-        creditAccountCode: item.creditAccountCode,
-        creditSubaccountCode: item.creditSubaccountCode || '',
-        departmentCode: item.departmentCode || '',
-        taxCode: item.taxCode,
-        isActive: item.isActive,
-      });
-    },
+  const normalizeNullableMappingField = useCallback(
+    (value: string) => value.trim() || null,
     [],
   );
 
@@ -1414,13 +1429,16 @@ export const AdminSettings: React.FC = () => {
     const payload = {
       mappingKey: accountingMappingRuleForm.mappingKey.trim(),
       debitAccountCode: accountingMappingRuleForm.debitAccountCode.trim(),
-      debitSubaccountCode:
-        accountingMappingRuleForm.debitSubaccountCode.trim() || undefined,
+      debitSubaccountCode: normalizeNullableMappingField(
+        accountingMappingRuleForm.debitSubaccountCode,
+      ),
       creditAccountCode: accountingMappingRuleForm.creditAccountCode.trim(),
-      creditSubaccountCode:
-        accountingMappingRuleForm.creditSubaccountCode.trim() || undefined,
-      departmentCode:
-        accountingMappingRuleForm.departmentCode.trim() || undefined,
+      creditSubaccountCode: normalizeNullableMappingField(
+        accountingMappingRuleForm.creditSubaccountCode,
+      ),
+      departmentCode: normalizeNullableMappingField(
+        accountingMappingRuleForm.departmentCode,
+      ),
       taxCode: accountingMappingRuleForm.taxCode.trim(),
       isActive: accountingMappingRuleForm.isActive,
     };
@@ -1463,11 +1481,29 @@ export const AdminSettings: React.FC = () => {
     editingAccountingMappingRuleId,
     loadAccountingMappingRules,
     logError,
+    normalizeNullableMappingField,
   ]);
+
+  const startEditAccountingMappingRule = useCallback(
+    (item: AccountingMappingRuleItem) => {
+      setEditingAccountingMappingRuleId(item.id);
+      setAccountingMappingRuleForm({
+        mappingKey: item.mappingKey,
+        debitAccountCode: item.debitAccountCode,
+        debitSubaccountCode: item.debitSubaccountCode || '',
+        creditAccountCode: item.creditAccountCode,
+        creditSubaccountCode: item.creditSubaccountCode || '',
+        departmentCode: item.departmentCode || '',
+        taxCode: item.taxCode,
+        isActive: item.isActive,
+      });
+    },
+    [],
+  );
 
   const reapplyAccountingMappingRules = useCallback(async () => {
     const periodKey = accountingMappingRuleReapplyForm.periodKey.trim();
-    if (periodKey && !/^\d{4}-\d{2}$/.test(periodKey)) {
+    if (periodKey && !/^\d{4}-(0[1-9]|1[0-2])$/.test(periodKey)) {
       setMessage('periodKey は YYYY-MM 形式で入力してください');
       return;
     }
@@ -1506,7 +1542,13 @@ export const AdminSettings: React.FC = () => {
     loadPdfTemplates();
     loadIntegrationSettings();
     loadReportSubscriptions();
-    loadAccountingMappingRules();
+    loadAccountingMappingRulesWithQuery({
+      mappingKey: '',
+      isActive: '',
+      limit: DEFAULT_ACCOUNTING_MAPPING_RULE_LIMIT,
+      offset: DEFAULT_ACCOUNTING_MAPPING_RULE_OFFSET,
+      suppressMessage: true,
+    });
   }, [
     loadAlertSettings,
     loadApprovalRules,
@@ -1516,7 +1558,7 @@ export const AdminSettings: React.FC = () => {
     loadPdfTemplates,
     loadIntegrationSettings,
     loadReportSubscriptions,
-    loadAccountingMappingRules,
+    loadAccountingMappingRulesWithQuery,
   ]);
 
   useEffect(() => {
