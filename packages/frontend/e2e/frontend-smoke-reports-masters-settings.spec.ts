@@ -111,6 +111,8 @@ test('frontend smoke reports masters settings @extended', async ({ page }) => {
     .locator('h2', { hasText: 'Reports' })
     .locator('..');
   await reportsSection.scrollIntoViewIfNeeded();
+  await reportsSection.getByPlaceholder('from (YYYY-MM-DD)').fill('2026-03-01');
+  await reportsSection.getByPlaceholder('to (YYYY-MM-DD)').fill('2026-03-31');
   await reportsSection.getByRole('button', { name: 'PJ別工数' }).click();
   await expect(
     reportsSection.getByText('プロジェクト別工数を取得しました'),
@@ -122,6 +124,10 @@ test('frontend smoke reports masters settings @extended', async ({ page }) => {
   await reportsSection.getByRole('button', { name: '個人別残業' }).click();
   await expect(
     reportsSection.getByText('個人別残業を取得しました'),
+  ).toBeVisible();
+  await reportsSection.getByRole('button', { name: '管理会計サマリ' }).click();
+  await expect(
+    reportsSection.getByText('管理会計サマリを取得しました'),
   ).toBeVisible();
   await captureSection(reportsSection, '08-reports.png');
 
@@ -399,9 +405,8 @@ test('frontend smoke reports masters settings @extended', async ({ page }) => {
     timeout: actionTimeout,
   });
   const createdApprovalRuleText = await createdApprovalRuleCard.textContent();
-  const createdSeriesMatch = createdApprovalRuleText?.match(
-    /series:\s*([^\s/]+)/,
-  );
+  const createdSeriesMatch =
+    createdApprovalRuleText?.match(/series:\s*([^\s/]+)/);
   expect(createdSeriesMatch?.[1]).toBeTruthy();
   await createdApprovalRuleCard
     .getByRole('button', { name: '新版作成' })
@@ -417,13 +422,11 @@ test('frontend smoke reports masters settings @extended', async ({ page }) => {
       '承認ルールの新版を作成しました。旧版は履歴として保持されます',
     ),
   ).toBeVisible();
-  const seriesRuleCards = approvalBlock
-    .locator('.list .card')
-    .filter({
-      hasText: new RegExp(
-        `series:\\s*${createdSeriesMatch?.[1]?.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')}`,
-      ),
-    });
+  const seriesRuleCards = approvalBlock.locator('.list .card').filter({
+    hasText: new RegExp(
+      `series:\\s*${createdSeriesMatch?.[1]?.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')}`,
+    ),
+  });
   await expect(seriesRuleCards).toHaveCount(2, { timeout: actionTimeout });
   await expect(
     seriesRuleCards.filter({ hasText: 'supersedesRuleId:' }).first(),

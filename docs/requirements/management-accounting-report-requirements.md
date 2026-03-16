@@ -140,6 +140,11 @@
 - 実装前提:
   - 既存レポート API の再利用を優先
   - KPI card / dashboard 表示は別 issue で設計
+- 初期実装:
+  - `GET /reports/management-accounting/summary?from=YYYY-MM-DD&to=YYYY-MM-DD`
+  - ERP4 内の売上、直接原価、粗利、納期未請求、残業、赤字案件件数を 1 API で返す
+  - 複数通貨が混在する場合は、金額系 KPI の top-level 合算値は返さず、`currencyBreakdown[]` で通貨別内訳を返す
+  - UI は `Reports` セクションの管理会計サマリ表示を初期導線とする
 
 ### R5. 管理部向け締め前照合レポート
 
@@ -165,7 +170,7 @@
 - 期間基準: `issueDate`
 - 補足:
   - 入金基準は初期範囲外
-  - 複数通貨は初期フェーズでは `Project.currency` と不一致のものを警告対象とする
+  - 複数通貨は初期フェーズでは通貨別に分離して返し、金額系の top-level 合算は行わない
 
 ### 原価
 

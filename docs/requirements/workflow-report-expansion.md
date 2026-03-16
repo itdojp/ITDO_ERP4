@@ -41,15 +41,16 @@
 
 レポート購読で利用する `reportKey` と想定パラメータ。
 
-| reportKey               | 用途                   | 必須パラメータ     | 任意パラメータ                      | 対応API                                           |
-| ----------------------- | ---------------------- | ------------------ | ----------------------------------- | ------------------------------------------------- |
-| project-effort          | 案件工数/経費          | projectId          | from, to, format, layout            | GET `/reports/project-effort/:projectId`          |
-| project-profit          | 案件損益（合計）       | projectId          | from, to, format, layout            | GET `/reports/project-profit/:projectId`          |
-| project-profit-by-user  | 案件損益（ユーザ別）   | projectId          | from, to, userIds, format, layout   | GET `/reports/project-profit/:projectId/by-user`  |
-| project-profit-by-group | 案件損益（グループ別） | projectId, userIds | from, to, label, format, layout     | GET `/reports/project-profit/:projectId/by-group` |
-| group-effort            | グループ工数           | userIds            | from, to, format, layout            | GET `/reports/group-effort`                       |
-| overtime                | 個人残業               | userId             | from, to, format, layout            | GET `/reports/overtime/:userId`                   |
-| delivery-due            | 納期未請求             | -                  | from, to, projectId, format, layout | GET `/reports/delivery-due`                       |
+| reportKey                     | 用途                   | 必須パラメータ     | 任意パラメータ                      | 対応API                                           |
+| ----------------------------- | ---------------------- | ------------------ | ----------------------------------- | ------------------------------------------------- |
+| project-effort                | 案件工数/経費          | projectId          | from, to, format, layout            | GET `/reports/project-effort/:projectId`          |
+| project-profit                | 案件損益（合計）       | projectId          | from, to, format, layout            | GET `/reports/project-profit/:projectId`          |
+| project-profit-by-user        | 案件損益（ユーザ別）   | projectId          | from, to, userIds, format, layout   | GET `/reports/project-profit/:projectId/by-user`  |
+| project-profit-by-group       | 案件損益（グループ別） | projectId, userIds | from, to, label, format, layout     | GET `/reports/project-profit/:projectId/by-group` |
+| group-effort                  | グループ工数           | userIds            | from, to, format, layout            | GET `/reports/group-effort`                       |
+| overtime                      | 個人残業               | userId             | from, to, format, layout            | GET `/reports/overtime/:userId`                   |
+| management-accounting-summary | 管理会計サマリ         | from, to           | -                                   | GET `/reports/management-accounting/summary`      |
+| delivery-due                  | 納期未請求             | -                  | from, to, projectId, format, layout | GET `/reports/delivery-due`                       |
 
 補足:
 

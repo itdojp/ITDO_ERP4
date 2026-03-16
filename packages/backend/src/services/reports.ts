@@ -2,6 +2,117 @@ import { prisma } from './db.js';
 import { calcTimeAmount, resolveRateCard } from './rateCard.js';
 import { dateKey, toNumber } from './utils.js';
 
+type ResolvedRateCard = Awaited<ReturnType<typeof resolveRateCard>>;
+type PrefetchedRateCard = NonNullable<ResolvedRateCard>;
+
+type ManagementAccountingProjectBucket = {
+  projectId: string;
+  projectCode?: string | null;
+  projectName?: string | null;
+  currency: string | null;
+  revenue: number;
+  directCost: number;
+  laborCost: number;
+  vendorCost: number;
+  expenseCost: number;
+  grossProfit: number;
+  grossMargin: number;
+  totalMinutes: number;
+};
+
+type ManagementAccountingCurrencyBreakdown = {
+  currency: string | null;
+  projectCount: number;
+  revenue: number;
+  directCost: number;
+  laborCost: number;
+  vendorCost: number;
+  expenseCost: number;
+  grossProfit: number;
+  grossMargin: number;
+  totalMinutes: number;
+  deliveryDueCount: number;
+  deliveryDueAmount: number;
+  redProjectCount: number;
+  topRedProjects: ManagementAccountingProjectBucket[];
+};
+
+function normalizeWorkType(workType?: string | null) {
+  const trimmed = workType?.trim();
+  return trimmed || null;
+}
+
+function buildProjectCurrencyKey(projectId: string, currency: string | null) {
+  return `${projectId}|${currency ?? ''}`;
+}
+
+function preloadRateCardKey(match: {
+  projectId?: string | null;
+  workDate: Date;
+  workType?: string | null;
+}) {
+  return `${match.projectId ?? ''}|${dateKey(match.workDate)}|${normalizeWorkType(match.workType) ?? ''}`;
+}
+
+async function preloadRateCardsForRange(
+  projectIds: string[],
+  entries: Array<{ workDate: Date; workType?: string | null }>,
+  from: Date,
+  to: Date,
+): Promise<PrefetchedRateCard[]> {
+  if (!entries.length) return [];
+  const workTypes = Array.from(
+    new Set(
+      entries
+        .map((entry) => normalizeWorkType(entry.workType))
+        .filter((value): value is string => Boolean(value)),
+    ),
+  );
+  return prisma.rateCard.findMany({
+    where: {
+      AND: [
+        { validFrom: { lte: to } },
+        { OR: [{ validTo: null }, { validTo: { gte: from } }] },
+        { OR: [{ projectId: null }, { projectId: { in: projectIds } }] },
+        workTypes.length
+          ? { OR: [{ workType: null }, { workType: { in: workTypes } }] }
+          : { workType: null },
+      ],
+    },
+    orderBy: [{ validFrom: 'desc' }, { id: 'asc' }],
+  });
+}
+
+function pickRateCardFromPrefetched(
+  items: PrefetchedRateCard[],
+  match: {
+    projectId?: string | null;
+    workDate: Date;
+    workType?: string | null;
+  },
+): PrefetchedRateCard | null {
+  if (!items.length) return null;
+  const workType = normalizeWorkType(match.workType);
+  let best: PrefetchedRateCard | null = null;
+  let bestScore = -1;
+  for (const item of items) {
+    if (item.validFrom.getTime() > match.workDate.getTime()) continue;
+    if (item.validTo && item.validTo.getTime() < match.workDate.getTime())
+      continue;
+    if (item.projectId && item.projectId !== match.projectId) continue;
+    const itemWorkType = normalizeWorkType(item.workType);
+    if (itemWorkType && itemWorkType !== workType) continue;
+    let score = 0;
+    if (match.projectId && item.projectId === match.projectId) score += 100;
+    if (workType && itemWorkType === workType) score += 10;
+    if (score > bestScore) {
+      best = item;
+      bestScore = score;
+    }
+  }
+  return best;
+}
+
 async function sumTimeCost(
   projectId: string,
   from?: Date,
@@ -270,6 +381,329 @@ export async function reportOvertime(userId: string, from?: Date, to?: Date) {
   return { userId, totalMinutes, dailyHours };
 }
 
+export async function reportManagementAccountingSummary(from: Date, to: Date) {
+  const projects = await prisma.project.findMany({
+    where: { deletedAt: null },
+    select: { id: true, code: true, name: true, currency: true },
+    orderBy: [{ code: 'asc' }, { id: 'asc' }],
+  });
+  const projectIds = projects.map((project) => project.id);
+  const projectIdSet = new Set(projectIds);
+  const projectById = new Map(projects.map((project) => [project.id, project]));
+
+  const [invoiceSums, vendorSums, expenseSums, timeEntries, deliveryDueItems] =
+    await Promise.all([
+      projectIds.length
+        ? prisma.invoice.groupBy({
+            by: ['projectId', 'currency'],
+            where: {
+              projectId: { in: projectIds },
+              deletedAt: null,
+              status: { in: ['approved', 'sent', 'paid'] },
+              issueDate: { gte: from, lte: to },
+            },
+            _sum: { totalAmount: true },
+          })
+        : [],
+      projectIds.length
+        ? prisma.vendorInvoice.groupBy({
+            by: ['projectId', 'currency'],
+            where: {
+              projectId: { in: projectIds },
+              deletedAt: null,
+              status: { in: ['received', 'approved', 'paid'] },
+              receivedDate: { gte: from, lte: to },
+            },
+            _sum: { totalAmount: true },
+          })
+        : [],
+      projectIds.length
+        ? prisma.expense.groupBy({
+            by: ['projectId', 'currency'],
+            where: {
+              projectId: { in: projectIds },
+              deletedAt: null,
+              status: 'approved',
+              incurredOn: { gte: from, lte: to },
+            },
+            _sum: { amount: true },
+          })
+        : [],
+      projectIds.length
+        ? prisma.timeEntry.findMany({
+            where: {
+              projectId: { in: projectIds },
+              deletedAt: null,
+              status: { in: ['submitted', 'approved'] },
+              workDate: { gte: from, lte: to },
+            },
+            select: {
+              projectId: true,
+              userId: true,
+              workDate: true,
+              workType: true,
+              minutes: true,
+            },
+          })
+        : [],
+      reportDeliveryDue(from, to),
+    ]);
+
+  const revenueByProjectCurrency = new Map<string, number>();
+  for (const item of invoiceSums) {
+    if (!item.projectId) continue;
+    const key = buildProjectCurrencyKey(item.projectId, item.currency ?? null);
+    revenueByProjectCurrency.set(
+      key,
+      (revenueByProjectCurrency.get(key) ?? 0) +
+        toNumber(item._sum.totalAmount),
+    );
+  }
+
+  const vendorCostByProjectCurrency = new Map<string, number>();
+  for (const item of vendorSums) {
+    if (!item.projectId) continue;
+    const key = buildProjectCurrencyKey(item.projectId, item.currency ?? null);
+    vendorCostByProjectCurrency.set(
+      key,
+      (vendorCostByProjectCurrency.get(key) ?? 0) +
+        toNumber(item._sum.totalAmount),
+    );
+  }
+
+  const expenseCostByProjectCurrency = new Map<string, number>();
+  for (const item of expenseSums) {
+    if (!item.projectId) continue;
+    const key = buildProjectCurrencyKey(item.projectId, item.currency ?? null);
+    expenseCostByProjectCurrency.set(
+      key,
+      (expenseCostByProjectCurrency.get(key) ?? 0) + toNumber(item._sum.amount),
+    );
+  }
+
+  const prefetchedRateCards = await preloadRateCardsForRange(
+    projectIds,
+    timeEntries,
+    from,
+    to,
+  );
+  const rateCardCache = new Map<string, PrefetchedRateCard | null>();
+  const laborCostByProjectCurrency = new Map<string, number>();
+  const minutesByProjectCurrency = new Map<string, number>();
+  const minutesByProject = new Map<string, number>();
+  const overtimeByUserDay = new Map<string, number>();
+  for (const entry of timeEntries) {
+    if (!projectIdSet.has(entry.projectId)) continue;
+    const rateKey = preloadRateCardKey(entry);
+    if (!rateCardCache.has(rateKey)) {
+      rateCardCache.set(
+        rateKey,
+        pickRateCardFromPrefetched(prefetchedRateCards, {
+          projectId: entry.projectId,
+          workDate: entry.workDate,
+          workType: entry.workType,
+        }),
+      );
+    }
+    const rateCard = rateCardCache.get(rateKey) ?? null;
+    const minutes = entry.minutes || 0;
+    minutesByProject.set(
+      entry.projectId,
+      (minutesByProject.get(entry.projectId) ?? 0) + minutes,
+    );
+    const laborCurrency =
+      rateCard?.currency ?? projectById.get(entry.projectId)?.currency ?? null;
+    const bucketKey = buildProjectCurrencyKey(entry.projectId, laborCurrency);
+    minutesByProjectCurrency.set(
+      bucketKey,
+      (minutesByProjectCurrency.get(bucketKey) ?? 0) + minutes,
+    );
+    if (rateCard) {
+      const cost = calcTimeAmount(minutes, toNumber(rateCard.unitPrice));
+      laborCostByProjectCurrency.set(
+        bucketKey,
+        (laborCostByProjectCurrency.get(bucketKey) ?? 0) + cost,
+      );
+    }
+    const overtimeKey = `${entry.userId}:${dateKey(entry.workDate)}`;
+    overtimeByUserDay.set(
+      overtimeKey,
+      (overtimeByUserDay.get(overtimeKey) ?? 0) + minutes,
+    );
+  }
+
+  let overtimeTotalMinutes = 0;
+  for (const totalMinutes of overtimeByUserDay.values()) {
+    overtimeTotalMinutes += Math.max(0, totalMinutes - 480);
+  }
+
+  const deliveryDueAmountByCurrency = new Map<string, number>();
+  const deliveryDueCountByCurrency = new Map<string, number>();
+  for (const item of deliveryDueItems) {
+    const projectCurrency = item.projectCurrency ?? null;
+    const key = projectCurrency ?? '';
+    deliveryDueAmountByCurrency.set(
+      key,
+      (deliveryDueAmountByCurrency.get(key) ?? 0) + toNumber(item.amount),
+    );
+    deliveryDueCountByCurrency.set(
+      key,
+      (deliveryDueCountByCurrency.get(key) ?? 0) + 1,
+    );
+  }
+
+  const projectCurrencyKeys = new Set<string>();
+  for (const key of revenueByProjectCurrency.keys())
+    projectCurrencyKeys.add(key);
+  for (const key of vendorCostByProjectCurrency.keys())
+    projectCurrencyKeys.add(key);
+  for (const key of expenseCostByProjectCurrency.keys())
+    projectCurrencyKeys.add(key);
+  for (const key of laborCostByProjectCurrency.keys())
+    projectCurrencyKeys.add(key);
+  for (const key of minutesByProjectCurrency.keys())
+    projectCurrencyKeys.add(key);
+
+  const items = Array.from(projectCurrencyKeys)
+    .map((key) => {
+      const [projectId, currencyValue] = key.split('|');
+      const project = projectById.get(projectId);
+      const currency = currencyValue || null;
+      const revenue = revenueByProjectCurrency.get(key) ?? 0;
+      const vendorCost = vendorCostByProjectCurrency.get(key) ?? 0;
+      const expenseCost = expenseCostByProjectCurrency.get(key) ?? 0;
+      const laborCost = laborCostByProjectCurrency.get(key) ?? 0;
+      const directCost = vendorCost + expenseCost + laborCost;
+      const grossProfit = revenue - directCost;
+      const grossMargin = revenue > 0 ? grossProfit / revenue : 0;
+      const totalMinutes = minutesByProjectCurrency.get(key) ?? 0;
+      return {
+        projectId,
+        projectCode: project?.code ?? null,
+        projectName: project?.name ?? null,
+        currency,
+        revenue,
+        directCost,
+        laborCost,
+        vendorCost,
+        expenseCost,
+        grossProfit,
+        grossMargin,
+        totalMinutes,
+      };
+    })
+    .filter(
+      (item) =>
+        item.revenue !== 0 || item.directCost !== 0 || item.totalMinutes !== 0,
+    );
+
+  const currencyBreakdownMap = new Map<
+    string,
+    ManagementAccountingCurrencyBreakdown
+  >();
+  for (const item of items) {
+    const key = item.currency ?? '';
+    if (!currencyBreakdownMap.has(key)) {
+      currencyBreakdownMap.set(key, {
+        currency: item.currency,
+        projectCount: 0,
+        revenue: 0,
+        directCost: 0,
+        laborCost: 0,
+        vendorCost: 0,
+        expenseCost: 0,
+        grossProfit: 0,
+        grossMargin: 0,
+        totalMinutes: 0,
+        deliveryDueCount: deliveryDueCountByCurrency.get(key) ?? 0,
+        deliveryDueAmount: deliveryDueAmountByCurrency.get(key) ?? 0,
+        redProjectCount: 0,
+        topRedProjects: [],
+      });
+    }
+    const bucket = currencyBreakdownMap.get(key);
+    if (!bucket) continue;
+    bucket.projectCount += 1;
+    bucket.revenue += item.revenue;
+    bucket.directCost += item.directCost;
+    bucket.laborCost += item.laborCost;
+    bucket.vendorCost += item.vendorCost;
+    bucket.expenseCost += item.expenseCost;
+    bucket.grossProfit += item.grossProfit;
+    bucket.totalMinutes += item.totalMinutes;
+    if (item.grossProfit < 0) bucket.redProjectCount += 1;
+    bucket.topRedProjects.push(item);
+  }
+
+  const currencyBreakdown = Array.from(currencyBreakdownMap.values())
+    .map((bucket) => ({
+      ...bucket,
+      grossMargin: bucket.revenue > 0 ? bucket.grossProfit / bucket.revenue : 0,
+      topRedProjects: bucket.topRedProjects
+        .filter((item) => item.grossProfit < 0)
+        .sort((a, b) => a.grossProfit - b.grossProfit)
+        .slice(0, 5),
+    }))
+    .sort((a, b) => (a.currency ?? '').localeCompare(b.currency ?? ''));
+
+  const totals = currencyBreakdown.reduce(
+    (acc, item) => {
+      acc.revenue += item.revenue;
+      acc.directCost += item.directCost;
+      acc.laborCost += item.laborCost;
+      acc.vendorCost += item.vendorCost;
+      acc.expenseCost += item.expenseCost;
+      acc.grossProfit += item.grossProfit;
+      acc.totalMinutes += item.totalMinutes;
+      acc.deliveryDueAmount += item.deliveryDueAmount;
+      return acc;
+    },
+    {
+      revenue: 0,
+      directCost: 0,
+      laborCost: 0,
+      vendorCost: 0,
+      expenseCost: 0,
+      grossProfit: 0,
+      totalMinutes: 0,
+      deliveryDueAmount: 0,
+    },
+  );
+  const mixedCurrency = currencyBreakdown.length > 1;
+  const singleCurrencyBucket =
+    currencyBreakdown.length === 1 ? currencyBreakdown[0] : null;
+  const redProjectCount = new Set(
+    items.filter((item) => item.grossProfit < 0).map((item) => item.projectId),
+  ).size;
+
+  return {
+    from: from.toISOString().slice(0, 10),
+    to: to.toISOString().slice(0, 10),
+    projectCount: new Set(items.map((item) => item.projectId)).size,
+    currency: singleCurrencyBucket?.currency ?? null,
+    mixedCurrency,
+    currencyBreakdown,
+    revenue: singleCurrencyBucket ? totals.revenue : null,
+    directCost: singleCurrencyBucket ? totals.directCost : null,
+    laborCost: singleCurrencyBucket ? totals.laborCost : null,
+    vendorCost: singleCurrencyBucket ? totals.vendorCost : null,
+    expenseCost: singleCurrencyBucket ? totals.expenseCost : null,
+    grossProfit: singleCurrencyBucket ? totals.grossProfit : null,
+    grossMargin:
+      singleCurrencyBucket && totals.revenue > 0
+        ? totals.grossProfit / totals.revenue
+        : null,
+    totalMinutes: totals.totalMinutes,
+    overtimeTotalMinutes,
+    deliveryDueCount: deliveryDueItems.length,
+    deliveryDueAmount: singleCurrencyBucket ? totals.deliveryDueAmount : null,
+    redProjectCount,
+    topRedProjects: singleCurrencyBucket
+      ? singleCurrencyBucket.topRedProjects
+      : [],
+  };
+}
+
 export async function reportDeliveryDue(
   from?: Date,
   to?: Date,
@@ -298,7 +732,11 @@ export async function reportDeliveryDue(
     name: string | null;
     amount: unknown;
     dueDate: Date | null;
-    project: { code: string | null; name: string | null } | null;
+    project: {
+      code: string | null;
+      name: string | null;
+      currency: string | null;
+    } | null;
     invoices: DeliveryDueInvoice[];
   };
 
@@ -313,7 +751,7 @@ export async function reportDeliveryDue(
       name: true,
       amount: true,
       dueDate: true,
-      project: { select: { code: true, name: true } },
+      project: { select: { code: true, name: true, currency: true } },
       invoices: {
         where: { deletedAt: null },
         select: { id: true, invoiceNo: true, status: true },
@@ -326,6 +764,7 @@ export async function reportDeliveryDue(
     projectId: item.projectId,
     projectCode: item.project?.code || null,
     projectName: item.project?.name || null,
+    projectCurrency: item.project?.currency || null,
     name: item.name,
     amount: item.amount,
     dueDate: item.dueDate,

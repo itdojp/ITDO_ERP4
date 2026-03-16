@@ -20,12 +20,14 @@
 - プロジェクト別工数（from/to 指定）
 - グループ別工数（userIds 指定 + from/to）
 - 個人別残業（userId 指定 + from/to）
+- 管理会計サマリ（from/to 指定）
 - バーンダウン（baselineId + from/to）
 - EVM（from/to）
 
 注意:
 
 - from/to は `YYYY-MM-DD` 形式で入力する（UI/Api仕様に合わせる）
+- 管理会計サマリで複数通貨が混在する場合、金額系 KPI は通貨別表示になる
 
 ## ダッシュボード（インサイト/アラート）
 
