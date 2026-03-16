@@ -58,24 +58,59 @@ type ManagementAccountingSummary = {
   from: string;
   to: string;
   projectCount: number;
-  revenue: number;
-  directCost: number;
-  laborCost: number;
-  vendorCost: number;
-  expenseCost: number;
-  grossProfit: number;
-  grossMargin: number;
+  currency?: string | null;
+  mixedCurrency: boolean;
+  currencyBreakdown: Array<{
+    currency?: string | null;
+    projectCount: number;
+    revenue: number;
+    directCost: number;
+    laborCost: number;
+    vendorCost: number;
+    expenseCost: number;
+    grossProfit: number;
+    grossMargin: number;
+    totalMinutes: number;
+    deliveryDueCount: number;
+    deliveryDueAmount: number;
+    redProjectCount: number;
+    topRedProjects: Array<{
+      projectId: string;
+      projectCode?: string | null;
+      projectName?: string | null;
+      currency?: string | null;
+      revenue: number;
+      directCost: number;
+      laborCost: number;
+      vendorCost: number;
+      expenseCost: number;
+      grossProfit: number;
+      grossMargin: number;
+      totalMinutes: number;
+    }>;
+  }>;
+  revenue: number | null;
+  directCost: number | null;
+  laborCost: number | null;
+  vendorCost: number | null;
+  expenseCost: number | null;
+  grossProfit: number | null;
+  grossMargin: number | null;
   totalMinutes: number;
   overtimeTotalMinutes: number;
   deliveryDueCount: number;
-  deliveryDueAmount: number;
+  deliveryDueAmount: number | null;
   redProjectCount: number;
   topRedProjects: Array<{
     projectId: string;
     projectCode?: string | null;
     projectName?: string | null;
+    currency?: string | null;
     revenue: number;
     directCost: number;
+    laborCost: number;
+    vendorCost: number;
+    expenseCost: number;
     grossProfit: number;
     grossMargin: number;
     totalMinutes: number;
@@ -446,26 +481,117 @@ export const Reports: React.FC = () => {
               Period: {managementReport.from}〜{managementReport.to}
             </div>
             <div>Projects: {managementReport.projectCount}</div>
-            <div>
-              Revenue: ¥{managementReport.revenue.toLocaleString()} / Direct
-              Cost: ¥{managementReport.directCost.toLocaleString()}
-            </div>
-            <div>
-              Gross Profit: ¥{managementReport.grossProfit.toLocaleString()} /
-              Margin: {(managementReport.grossMargin * 100).toFixed(2)}%
-            </div>
-            <div>
-              Labor: ¥{managementReport.laborCost.toLocaleString()} / Vendor: ¥
-              {managementReport.vendorCost.toLocaleString()} / Expense: ¥
-              {managementReport.expenseCost.toLocaleString()}
-            </div>
+            {managementReport.mixedCurrency ? (
+              <div style={{ marginTop: 8 }}>
+                <div>
+                  複数通貨を含むため、金額系 KPI は通貨別に表示しています。
+                </div>
+                <div style={{ marginTop: 8 }}>
+                  {managementReport.currencyBreakdown.map((item) => (
+                    <div
+                      key={item.currency || 'none'}
+                      style={{
+                        borderTop: '1px solid #e5e7eb',
+                        marginTop: 8,
+                        paddingTop: 8,
+                      }}
+                    >
+                      <div>
+                        Currency: {item.currency || '未設定'} / Projects:{' '}
+                        {item.projectCount}
+                      </div>
+                      <div>
+                        Revenue: {item.revenue.toLocaleString()} / Direct Cost:{' '}
+                        {item.directCost.toLocaleString()}
+                      </div>
+                      <div>
+                        Gross Profit: {item.grossProfit.toLocaleString()} /
+                        Margin: {(item.grossMargin * 100).toFixed(2)}%
+                      </div>
+                      <div>
+                        Labor: {item.laborCost.toLocaleString()} / Vendor:{' '}
+                        {item.vendorCost.toLocaleString()} / Expense:{' '}
+                        {item.expenseCost.toLocaleString()}
+                      </div>
+                      <div>
+                        Delivery due: {item.deliveryDueCount}件 /{' '}
+                        {item.deliveryDueAmount.toLocaleString()}
+                      </div>
+                      <div>Red projects: {item.redProjectCount}</div>
+                      {item.topRedProjects.length > 0 && (
+                        <div style={{ marginTop: 8 }}>
+                          {item.topRedProjects.map((project) => (
+                            <div
+                              key={`${item.currency || 'none'}:${project.projectId}`}
+                            >
+                              {(project.projectCode || project.projectId) +
+                                (project.projectName
+                                  ? ` / ${project.projectName}`
+                                  : '')}
+                              : {project.grossProfit.toLocaleString()} / Margin{' '}
+                              {(project.grossMargin * 100).toFixed(2)}%
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <>
+                <div>
+                  Revenue:{' '}
+                  {managementReport.revenue == null
+                    ? '-'
+                    : managementReport.revenue.toLocaleString()}
+                  {' / '}
+                  Direct Cost:{' '}
+                  {managementReport.directCost == null
+                    ? '-'
+                    : managementReport.directCost.toLocaleString()}
+                  {managementReport.currency
+                    ? ` ${managementReport.currency}`
+                    : ''}
+                </div>
+                <div>
+                  Gross Profit:{' '}
+                  {managementReport.grossProfit == null
+                    ? '-'
+                    : managementReport.grossProfit.toLocaleString()}
+                  {' / '}
+                  Margin:{' '}
+                  {managementReport.grossMargin == null
+                    ? '-'
+                    : `${(managementReport.grossMargin * 100).toFixed(2)}%`}
+                </div>
+                <div>
+                  Labor:{' '}
+                  {managementReport.laborCost == null
+                    ? '-'
+                    : managementReport.laborCost.toLocaleString()}
+                  {' / '}
+                  Vendor:{' '}
+                  {managementReport.vendorCost == null
+                    ? '-'
+                    : managementReport.vendorCost.toLocaleString()}
+                  {' / '}
+                  Expense:{' '}
+                  {managementReport.expenseCost == null
+                    ? '-'
+                    : managementReport.expenseCost.toLocaleString()}
+                </div>
+              </>
+            )}
             <div>
               Minutes: {managementReport.totalMinutes} / Overtime:{' '}
               {managementReport.overtimeTotalMinutes}
             </div>
             <div>
-              Delivery due: {managementReport.deliveryDueCount}件 / ¥
-              {managementReport.deliveryDueAmount.toLocaleString()}
+              Delivery due: {managementReport.deliveryDueCount}件 /{' '}
+              {managementReport.deliveryDueAmount == null
+                ? '通貨別表示を参照'
+                : managementReport.deliveryDueAmount.toLocaleString()}
             </div>
             <div>Red projects: {managementReport.redProjectCount}</div>
             {managementReport.topRedProjects.length > 0 && (

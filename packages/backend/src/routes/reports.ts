@@ -865,13 +865,21 @@ export async function registerReportRoutes(app: FastifyInstance) {
     { preHandler: requireRole(['admin', 'mgmt']) },
     async (req, reply) => {
       const { from, to } = req.query as { from?: string; to?: string };
+      if (!from || !to) {
+        return reply.status(400).send({
+          error: {
+            code: 'INVALID_DATE',
+            message: 'from/to are required',
+          },
+        });
+      }
       const fromDate = parseDateParam(from);
       const toDate = parseDateParam(to);
       if (!fromDate || !toDate) {
         return reply.status(400).send({
           error: {
             code: 'INVALID_DATE',
-            message: 'from/to are required',
+            message: 'from/to must be valid dates (YYYY-MM-DD)',
           },
         });
       }

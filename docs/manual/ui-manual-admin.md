@@ -176,6 +176,7 @@
 
 - `from/to` は YYYY-MM-DD 形式
 - バーンダウンはベースラインが必須
+- 管理会計サマリは複数通貨が混在する場合、金額系 KPI を通貨別表示に切り替える
 
 ![レポート](../test-results/2026-03-09-frontend-e2e-r1/08-reports.png)
 
