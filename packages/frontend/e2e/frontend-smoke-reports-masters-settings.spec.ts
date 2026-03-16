@@ -141,10 +141,20 @@ test('frontend smoke reports masters settings @extended', async ({ page }) => {
   await expect(
     reportsSection.getByText('個人別残業を取得しました'),
   ).toBeVisible();
-  await reportsSection.getByRole('button', { name: '管理会計サマリ' }).click();
+  await reportsSection
+    .getByRole('button', { name: '管理会計サマリ', exact: true })
+    .click();
   await expect(
     reportsSection.getByText('管理会計サマリを取得しました'),
   ).toBeVisible();
+  const managementCsvDownload = page.waitForEvent('download');
+  await reportsSection
+    .getByRole('button', { name: '管理会計サマリCSV', exact: true })
+    .click();
+  const managementCsv = await managementCsvDownload;
+  expect(await managementCsv.suggestedFilename()).toContain(
+    'management-accounting-summary-2026-03-01-to-2026-03-31',
+  );
   await captureSection(reportsSection, '08-reports.png');
 
   await navigateToSection(page, '案件');

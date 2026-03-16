@@ -17,6 +17,8 @@ import { requireRole } from '../services/rbac.js';
 import { parseDateParam } from '../utils/date.js';
 import { sendCsv, toCsv } from '../utils/csv.js';
 
+const DATE_ONLY_REGEX = /^\d{4}-\d{2}-\d{2}$/;
+
 function validateFormat(format: string | undefined, reply: any) {
   if (!format) return true;
   if (!['csv', 'pdf'].includes(format)) {
@@ -46,6 +48,115 @@ async function sendPdf(
   const { url } = await generatePdf(templateId, payload, reportName);
   return reply.send({ format: 'pdf', templateId, url });
 }
+
+function toNullableCsvNumber(value: number | null | undefined) {
+  return value == null ? '' : value;
+}
+
+function sanitizeCsvCell(value: string | null | undefined) {
+  if (!value) return '';
+  return /^[\t\r\n ]*[=+\-@]/.test(value) ? `'${value}` : value;
+}
+
+function parseIsoDateOnlyParam(value: string | undefined) {
+  if (!value || !DATE_ONLY_REGEX.test(value)) return null;
+  return parseDateParam(value);
+}
+
+function buildManagementAccountingSummaryCsv(
+  summary: Awaited<ReturnType<typeof reportManagementAccountingSummary>>,
+) {
+  const headers = [
+    'section',
+    'currency',
+    'projectId',
+    'projectCode',
+    'projectName',
+    'projectCount',
+    'revenue',
+    'directCost',
+    'laborCost',
+    'vendorCost',
+    'expenseCost',
+    'grossProfit',
+    'grossMargin',
+    'totalMinutes',
+    'overtimeTotalMinutes',
+    'deliveryDueCount',
+    'deliveryDueAmount',
+    'redProjectCount',
+  ];
+  const rows: Array<Array<string | number>> = [
+    [
+      'summary',
+      summary.currency ?? '',
+      '',
+      '',
+      '',
+      summary.projectCount,
+      toNullableCsvNumber(summary.revenue),
+      toNullableCsvNumber(summary.directCost),
+      toNullableCsvNumber(summary.laborCost),
+      toNullableCsvNumber(summary.vendorCost),
+      toNullableCsvNumber(summary.expenseCost),
+      toNullableCsvNumber(summary.grossProfit),
+      toNullableCsvNumber(summary.grossMargin),
+      summary.totalMinutes,
+      summary.overtimeTotalMinutes,
+      summary.deliveryDueCount,
+      toNullableCsvNumber(summary.deliveryDueAmount),
+      summary.redProjectCount,
+    ],
+  ];
+
+  for (const item of summary.currencyBreakdown) {
+    rows.push([
+      'currency_breakdown',
+      item.currency ?? '',
+      '',
+      '',
+      '',
+      item.projectCount,
+      item.revenue,
+      item.directCost,
+      item.laborCost,
+      item.vendorCost,
+      item.expenseCost,
+      item.grossProfit,
+      item.grossMargin,
+      item.totalMinutes,
+      '',
+      item.deliveryDueCount,
+      item.deliveryDueAmount,
+      item.redProjectCount,
+    ]);
+    for (const project of item.topRedProjects) {
+      rows.push([
+        'top_red_project',
+        sanitizeCsvCell(project.currency ?? item.currency ?? ''),
+        sanitizeCsvCell(project.projectId),
+        sanitizeCsvCell(project.projectCode ?? ''),
+        sanitizeCsvCell(project.projectName ?? ''),
+        '',
+        project.revenue,
+        project.directCost,
+        project.laborCost,
+        project.vendorCost,
+        project.expenseCost,
+        project.grossProfit,
+        project.grossMargin,
+        project.totalMinutes,
+        '',
+        '',
+        '',
+        '',
+      ]);
+    }
+  }
+
+  return toCsv(headers, rows);
+}
+
 export async function registerReportRoutes(app: FastifyInstance) {
   app.get(
     '/reports/project-effort/:projectId',
@@ -870,7 +981,13 @@ export async function registerReportRoutes(app: FastifyInstance) {
     '/reports/management-accounting/summary',
     { preHandler: requireRole(['admin', 'mgmt']) },
     async (req, reply) => {
-      const { from, to } = req.query as { from?: string; to?: string };
+      const { from, to, format, layout } = req.query as {
+        from?: string;
+        to?: string;
+        format?: string;
+        layout?: string;
+      };
+      if (!validateFormat(format, reply)) return;
       if (!from || !to) {
         return reply.status(400).send({
           error: {
@@ -879,8 +996,8 @@ export async function registerReportRoutes(app: FastifyInstance) {
           },
         });
       }
-      const fromDate = parseDateParam(from);
-      const toDate = parseDateParam(to);
+      const fromDate = parseIsoDateOnlyParam(from);
+      const toDate = parseIsoDateOnlyParam(to);
       if (!fromDate || !toDate) {
         return reply.status(400).send({
           error: {
@@ -897,7 +1014,20 @@ export async function registerReportRoutes(app: FastifyInstance) {
           },
         });
       }
-      return reportManagementAccountingSummary(fromDate, toDate);
+      const summary = await reportManagementAccountingSummary(fromDate, toDate);
+      if (format === 'csv') {
+        const safeFrom = fromDate.toISOString().slice(0, 10);
+        const safeTo = toDate.toISOString().slice(0, 10);
+        return sendCsv(
+          reply,
+          `management-accounting-summary-${safeFrom}-to-${safeTo}.csv`,
+          buildManagementAccountingSummaryCsv(summary),
+        );
+      }
+      if (format === 'pdf') {
+        return sendPdf(reply, 'management-accounting-summary', layout, summary);
+      }
+      return summary;
     },
   );
 

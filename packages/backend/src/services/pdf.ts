@@ -145,6 +145,23 @@ function buildPdfFilename(
   return `${safeTemplate}-${safeHint}-${safeId}-${timestamp}.pdf`;
 }
 
+export function resolvePdfOutputPath(storageDir: string, filename: string) {
+  if (!SAFE_FILENAME_REGEX.test(filename)) {
+    throw new Error('invalid_pdf_filename');
+  }
+  const resolvedStorageDir = path.resolve(storageDir);
+  const resolvedFilePath = path.resolve(resolvedStorageDir, filename);
+  const relativePath = path.relative(resolvedStorageDir, resolvedFilePath);
+  if (
+    relativePath.startsWith('..') ||
+    path.isAbsolute(relativePath) ||
+    relativePath === ''
+  ) {
+    throw new Error('invalid_pdf_output_path');
+  }
+  return resolvedFilePath;
+}
+
 function formatPdfValue(value: unknown) {
   if (value == null) return '';
   if (typeof value === 'string') return value;
@@ -396,7 +413,7 @@ export async function generatePdf(
     const storageDir = resolvePdfStorageDir();
     await fs.mkdir(storageDir, { recursive: true });
     const filename = buildPdfFilename(templateId, payload, hint);
-    const filePath = path.join(storageDir, filename);
+    const filePath = resolvePdfOutputPath(storageDir, filename);
     const layout = normalizeLayoutConfig(options?.layoutConfig);
     if (resolvePdfProvider() === 'external') {
       const externalPdf = await requestExternalPdf(

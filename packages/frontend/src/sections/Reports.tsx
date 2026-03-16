@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { api, getAuthState } from '../api';
+import { api, apiResponse, getAuthState } from '../api';
 import { useProjects } from '../hooks/useProjects';
+import { downloadResponseAsFile } from '../utils/download';
 
 type ProjectEffort = {
   projectId: string;
@@ -198,6 +199,10 @@ function parseUserIdsInput(value: string) {
     .filter(Boolean);
 }
 
+function buildManagementAccountingCsvFileName(from: string, to: string) {
+  return `management-accounting-summary-${from || 'from'}-to-${to || 'to'}.csv`;
+}
+
 export const Reports: React.FC = () => {
   const auth = getAuthState();
   const defaultProjectId = auth?.projectIds?.[0] || 'demo-project';
@@ -226,6 +231,8 @@ export const Reports: React.FC = () => {
   const [evmReport, setEvmReport] = useState<EvmReport | null>(null);
   const [managementReport, setManagementReport] =
     useState<ManagementAccountingSummary | null>(null);
+  const [managementCsvDownloading, setManagementCsvDownloading] =
+    useState(false);
   const [message, setMessage] = useState('');
 
   const { projects, projectMessage } = useProjects({
@@ -439,6 +446,33 @@ export const Reports: React.FC = () => {
     }
   };
 
+  const downloadManagementAccountingCsv = async () => {
+    if (!from || !to) {
+      setMessage('from/to を入力してください');
+      return;
+    }
+    try {
+      setManagementCsvDownloading(true);
+      const query = buildQuery(from, to);
+      const separator = query ? '&' : '?';
+      const res = await apiResponse(
+        `/reports/management-accounting/summary${query}${separator}format=csv`,
+      );
+      if (!res.ok) {
+        throw new Error(`Request failed: ${res.status}`);
+      }
+      await downloadResponseAsFile(
+        res,
+        buildManagementAccountingCsvFileName(from, to),
+      );
+      setMessage('管理会計サマリCSVを出力しました');
+    } catch (err) {
+      setMessage('管理会計サマリCSVの出力に失敗しました');
+    } finally {
+      setManagementCsvDownloading(false);
+    }
+  };
+
   const renderProject = (id: string) => {
     const project = projectMap.get(id);
     return project ? `${project.code} / ${project.name}` : id;
@@ -506,6 +540,15 @@ export const Reports: React.FC = () => {
         </button>
         <button className="button" onClick={loadManagementAccounting}>
           管理会計サマリ
+        </button>
+        <button
+          className="button secondary"
+          onClick={downloadManagementAccountingCsv}
+          disabled={managementCsvDownloading}
+        >
+          {managementCsvDownloading
+            ? '管理会計CSV出力中...'
+            : '管理会計サマリCSV'}
         </button>
       </div>
       <div className="row" style={{ gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
