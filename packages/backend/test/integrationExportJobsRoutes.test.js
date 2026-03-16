@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
+import { Prisma } from '@prisma/client';
+
 import { buildServer } from '../dist/server.js';
 import { prisma } from '../dist/services/db.js';
 
@@ -38,6 +40,7 @@ test('GET /integrations/jobs/exports merges export logs across adapters', async 
           id: 'leave-log-001',
           target: 'attendance',
           idempotencyKey: 'leave-key-001',
+          reexportOfId: null,
           status: 'success',
           updatedSince: new Date('2026-03-01T00:00:00.000Z'),
           exportedUntil: new Date('2026-03-14T00:00:00.000Z'),
@@ -51,6 +54,7 @@ test('GET /integrations/jobs/exports merges export logs across adapters', async 
         {
           id: 'employee-log-001',
           idempotencyKey: 'employee-key-001',
+          reexportOfId: 'employee-log-000',
           status: 'failed',
           updatedSince: null,
           exportedUntil: new Date('2026-03-15T00:00:00.000Z'),
@@ -64,6 +68,7 @@ test('GET /integrations/jobs/exports merges export logs across adapters', async 
         {
           id: 'accounting-log-001',
           idempotencyKey: 'accounting-key-001',
+          reexportOfId: null,
           periodKey: '2026-03',
           status: 'running',
           exportedUntil: new Date('2026-03-16T00:00:00.000Z'),
@@ -98,6 +103,7 @@ test('GET /integrations/jobs/exports merges export logs across adapters', async 
         );
         assert.equal(body.items[0].scope.periodKey, '2026-03');
         assert.equal(body.items[1].scope.updatedSince, null);
+        assert.equal(body.items[1].reexportOfId, 'employee-log-000');
         assert.equal(body.items[2].scope.target, 'attendance');
       } finally {
         await server.close();
@@ -200,4 +206,464 @@ test('GET /integrations/jobs/exports fetches offset + limit rows per source for 
   );
 
   assert.equal(employeeMasterArgs?.take, 550);
+});
+
+test('POST /integrations/jobs/exports/:kind/:id/redispatch creates a linked employee master rerun', async () => {
+  process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
+  process.env.AUTH_MODE = 'header';
+
+  const payload = {
+    schemaVersion: 'rakuda-employee-master.v1',
+    exportedAt: '2026-03-16T00:00:00.000Z',
+    exportedUntil: '2026-03-16T00:00:00.000Z',
+    updatedSince: null,
+    limit: 100,
+    offset: 0,
+    exportedCount: 1,
+    headers: ['employeeCode'],
+    items: [{ employeeCode: 'EMP-001' }],
+  };
+  let createArgs = null;
+
+  await withPrismaStubs(
+    {
+      'hrEmployeeMasterExportLog.findUnique': async (args) => {
+        if (args?.where?.id === 'employee-log-source') {
+          return {
+            id: 'employee-log-source',
+            idempotencyKey: 'employee-source-key',
+            requestHash: 'employee-request-hash',
+            reexportOfId: null,
+            updatedSince: null,
+            exportedUntil: new Date('2026-03-16T00:00:00.000Z'),
+            status: 'success',
+            exportedCount: 1,
+            payload,
+            message: 'exported',
+            startedAt: new Date('2026-03-16T00:00:00.000Z'),
+            finishedAt: new Date('2026-03-16T00:00:05.000Z'),
+          };
+        }
+        if (args?.where?.idempotencyKey === 'employee-redispatch-key') {
+          return null;
+        }
+        return null;
+      },
+      'hrEmployeeMasterExportLog.create': async (args) => {
+        createArgs = args;
+        return {
+          id: 'employee-log-rerun',
+          idempotencyKey: args.data.idempotencyKey,
+          requestHash: args.data.requestHash,
+          reexportOfId: args.data.reexportOfId,
+          updatedSince: args.data.updatedSince,
+          exportedUntil: args.data.exportedUntil,
+          status: args.data.status,
+          exportedCount: args.data.exportedCount,
+          payload: args.data.payload,
+          message: args.data.message,
+          startedAt: args.data.startedAt,
+          finishedAt: args.data.finishedAt,
+        };
+      },
+    },
+    async () => {
+      const server = await buildServer({ logger: false });
+      try {
+        const res = await server.inject({
+          method: 'POST',
+          url: '/integrations/jobs/exports/hr_employee_master_export/employee-log-source/redispatch',
+          headers: {
+            'x-user-id': 'admin-user',
+            'x-roles': 'admin',
+          },
+          payload: {
+            idempotencyKey: 'employee-redispatch-key',
+          },
+        });
+        assert.equal(res.statusCode, 200, res.body);
+        const body = JSON.parse(res.body);
+        assert.equal(body.replayed, false);
+        assert.equal(body.log.id, 'employee-log-rerun');
+        assert.equal(body.log.reexportOfId, 'employee-log-source');
+        assert.deepEqual(body.payload, payload);
+      } finally {
+        await server.close();
+      }
+    },
+  );
+
+  assert.equal(createArgs?.data?.reexportOfId, 'employee-log-source');
+  assert.equal(createArgs?.data?.message, 'redispatched');
+});
+
+test('POST /integrations/jobs/exports/:kind/:id/redispatch handles leave redispatch create races as replay', async () => {
+  process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
+  process.env.AUTH_MODE = 'header';
+
+  let findUniqueCalls = 0;
+  await withPrismaStubs(
+    {
+      'leaveIntegrationExportLog.findUnique': async (args) => {
+        if (args?.where?.id === 'leave-log-source') {
+          return {
+            id: 'leave-log-source',
+            target: 'attendance',
+            idempotencyKey: 'leave-source-key',
+            requestHash: 'leave-request-hash',
+            reexportOfId: null,
+            updatedSince: new Date('2026-03-01T00:00:00.000Z'),
+            exportedUntil: new Date('2026-03-15T00:00:00.000Z'),
+            status: 'success',
+            exportedCount: 2,
+            payload: { exportedCount: 2, items: [] },
+            message: 'exported',
+            startedAt: new Date('2026-03-15T00:00:00.000Z'),
+            finishedAt: new Date('2026-03-15T00:00:10.000Z'),
+          };
+        }
+        if (
+          args?.where?.target_idempotencyKey?.target === 'attendance' &&
+          args?.where?.target_idempotencyKey?.idempotencyKey ===
+            'leave-redispatch-race-key'
+        ) {
+          findUniqueCalls += 1;
+          if (findUniqueCalls === 1) {
+            return null;
+          }
+          return {
+            id: 'leave-log-rerun',
+            target: 'attendance',
+            idempotencyKey: 'leave-redispatch-race-key',
+            requestHash: 'leave-request-hash',
+            reexportOfId: 'leave-log-source',
+            updatedSince: new Date('2026-03-01T00:00:00.000Z'),
+            exportedUntil: new Date('2026-03-15T00:00:00.000Z'),
+            status: 'running',
+            exportedCount: 2,
+            payload: { exportedCount: 2, items: [] },
+            message: 'redispatched',
+            startedAt: new Date('2026-03-16T00:00:00.000Z'),
+            finishedAt: null,
+          };
+        }
+        return null;
+      },
+      'leaveIntegrationExportLog.create': async () => {
+        throw new Prisma.PrismaClientKnownRequestError(
+          'Unique constraint failed on the fields: (`target`,`idempotencyKey`)',
+          { code: 'P2002', clientVersion: 'test' },
+        );
+      },
+      'auditLog.create': async () => ({ id: 'audit-leave-race' }),
+    },
+    async () => {
+      const server = await buildServer({ logger: false });
+      try {
+        const res = await server.inject({
+          method: 'POST',
+          url: '/integrations/jobs/exports/hr_leave_export_attendance/leave-log-source/redispatch',
+          headers: {
+            'x-user-id': 'admin-user',
+            'x-roles': 'admin',
+          },
+          payload: {
+            idempotencyKey: 'leave-redispatch-race-key',
+          },
+        });
+        assert.equal(res.statusCode, 409, res.body);
+        assert.deepEqual(JSON.parse(res.body), {
+          error: 'dispatch_in_progress',
+          logId: 'leave-log-rerun',
+        });
+      } finally {
+        await server.close();
+      }
+    },
+  );
+});
+
+test('POST /integrations/jobs/exports/:kind/:id/redispatch replays existing leave rerun with same idempotency key', async () => {
+  process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
+  process.env.AUTH_MODE = 'header';
+
+  await withPrismaStubs(
+    {
+      'leaveIntegrationExportLog.findUnique': async (args) => {
+        if (args?.where?.id === 'leave-log-source') {
+          return {
+            id: 'leave-log-source',
+            target: 'attendance',
+            idempotencyKey: 'leave-source-key',
+            requestHash: 'leave-request-hash',
+            reexportOfId: null,
+            updatedSince: new Date('2026-03-01T00:00:00.000Z'),
+            exportedUntil: new Date('2026-03-15T00:00:00.000Z'),
+            status: 'success',
+            exportedCount: 2,
+            payload: { exportedCount: 2, items: [] },
+            message: 'exported',
+            startedAt: new Date('2026-03-15T00:00:00.000Z'),
+            finishedAt: new Date('2026-03-15T00:00:10.000Z'),
+          };
+        }
+        if (
+          args?.where?.target_idempotencyKey?.target === 'attendance' &&
+          args?.where?.target_idempotencyKey?.idempotencyKey ===
+            'leave-redispatch-key'
+        ) {
+          return {
+            id: 'leave-log-rerun',
+            target: 'attendance',
+            idempotencyKey: 'leave-redispatch-key',
+            requestHash: 'leave-request-hash',
+            reexportOfId: 'leave-log-source',
+            updatedSince: new Date('2026-03-01T00:00:00.000Z'),
+            exportedUntil: new Date('2026-03-15T00:00:00.000Z'),
+            status: 'success',
+            exportedCount: 2,
+            payload: { exportedCount: 2, items: [] },
+            message: 'redispatched',
+            startedAt: new Date('2026-03-16T00:00:00.000Z'),
+            finishedAt: new Date('2026-03-16T00:00:01.000Z'),
+          };
+        }
+        return null;
+      },
+    },
+    async () => {
+      const server = await buildServer({ logger: false });
+      try {
+        const res = await server.inject({
+          method: 'POST',
+          url: '/integrations/jobs/exports/hr_leave_export_attendance/leave-log-source/redispatch',
+          headers: {
+            'x-user-id': 'admin-user',
+            'x-roles': 'admin',
+          },
+          payload: {
+            idempotencyKey: 'leave-redispatch-key',
+          },
+        });
+        assert.equal(res.statusCode, 200, res.body);
+        const body = JSON.parse(res.body);
+        assert.equal(body.replayed, true);
+        assert.equal(body.log.reexportOfId, 'leave-log-source');
+      } finally {
+        await server.close();
+      }
+    },
+  );
+});
+
+test('POST /integrations/jobs/exports/:kind/:id/redispatch handles employee master redispatch create races as replay', async () => {
+  process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
+  process.env.AUTH_MODE = 'header';
+
+  let findUniqueCalls = 0;
+  await withPrismaStubs(
+    {
+      'hrEmployeeMasterExportLog.findUnique': async (args) => {
+        if (args?.where?.id === 'employee-log-source') {
+          return {
+            id: 'employee-log-source',
+            idempotencyKey: 'employee-source-key',
+            requestHash: 'employee-request-hash',
+            reexportOfId: null,
+            updatedSince: null,
+            exportedUntil: new Date('2026-03-16T00:00:00.000Z'),
+            status: 'success',
+            exportedCount: 1,
+            payload: { exportedCount: 1, items: [{ employeeCode: 'EMP-001' }] },
+            message: 'exported',
+            startedAt: new Date('2026-03-16T00:00:00.000Z'),
+            finishedAt: new Date('2026-03-16T00:00:05.000Z'),
+          };
+        }
+        if (args?.where?.idempotencyKey === 'employee-redispatch-race-key') {
+          findUniqueCalls += 1;
+          if (findUniqueCalls === 1) {
+            return null;
+          }
+          return {
+            id: 'employee-log-rerun',
+            idempotencyKey: 'employee-redispatch-race-key',
+            requestHash: 'employee-request-hash',
+            reexportOfId: 'employee-log-source',
+            updatedSince: null,
+            exportedUntil: new Date('2026-03-16T00:00:00.000Z'),
+            status: 'running',
+            exportedCount: 1,
+            payload: { exportedCount: 1, items: [{ employeeCode: 'EMP-001' }] },
+            message: 'redispatched',
+            startedAt: new Date('2026-03-16T00:00:06.000Z'),
+            finishedAt: null,
+          };
+        }
+        return null;
+      },
+      'hrEmployeeMasterExportLog.create': async () => {
+        throw new Prisma.PrismaClientKnownRequestError(
+          'Unique constraint failed on the fields: (`idempotencyKey`)',
+          { code: 'P2002', clientVersion: 'test' },
+        );
+      },
+      'auditLog.create': async () => ({ id: 'audit-employee-race' }),
+    },
+    async () => {
+      const server = await buildServer({ logger: false });
+      try {
+        const res = await server.inject({
+          method: 'POST',
+          url: '/integrations/jobs/exports/hr_employee_master_export/employee-log-source/redispatch',
+          headers: {
+            'x-user-id': 'admin-user',
+            'x-roles': 'admin',
+          },
+          payload: {
+            idempotencyKey: 'employee-redispatch-race-key',
+          },
+        });
+        assert.equal(res.statusCode, 409, res.body);
+        assert.deepEqual(JSON.parse(res.body), {
+          error: 'dispatch_in_progress',
+          logId: 'employee-log-rerun',
+        });
+      } finally {
+        await server.close();
+      }
+    },
+  );
+});
+
+test('POST /integrations/jobs/exports/:kind/:id/redispatch rejects failed accounting source logs', async () => {
+  process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
+  process.env.AUTH_MODE = 'header';
+
+  await withPrismaStubs(
+    {
+      'accountingIcsExportLog.findUnique': async (args) => {
+        if (args?.where?.id === 'accounting-log-source') {
+          return {
+            id: 'accounting-log-source',
+            idempotencyKey: 'accounting-source-key',
+            requestHash: 'accounting-request-hash',
+            reexportOfId: null,
+            periodKey: '2026-03',
+            exportedUntil: new Date('2026-03-16T00:00:00.000Z'),
+            status: 'failed',
+            exportedCount: 0,
+            payload: null,
+            message: 'mapping_incomplete',
+            startedAt: new Date('2026-03-16T00:00:00.000Z'),
+            finishedAt: new Date('2026-03-16T00:00:02.000Z'),
+          };
+        }
+        return null;
+      },
+    },
+    async () => {
+      const server = await buildServer({ logger: false });
+      try {
+        const res = await server.inject({
+          method: 'POST',
+          url: '/integrations/jobs/exports/accounting_ics_export/accounting-log-source/redispatch',
+          headers: {
+            'x-user-id': 'admin-user',
+            'x-roles': 'admin',
+          },
+          payload: {
+            idempotencyKey: 'accounting-redispatch-key',
+          },
+        });
+        assert.equal(res.statusCode, 409, res.body);
+        assert.deepEqual(JSON.parse(res.body), {
+          error: 'redispatch_source_not_exported',
+          logId: 'accounting-log-source',
+        });
+      } finally {
+        await server.close();
+      }
+    },
+  );
+});
+
+test('POST /integrations/jobs/exports/:kind/:id/redispatch handles accounting redispatch create races as replay', async () => {
+  process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
+  process.env.AUTH_MODE = 'header';
+
+  let findUniqueCalls = 0;
+  await withPrismaStubs(
+    {
+      'accountingIcsExportLog.findUnique': async (args) => {
+        if (args?.where?.id === 'accounting-log-source') {
+          return {
+            id: 'accounting-log-source',
+            idempotencyKey: 'accounting-source-key',
+            requestHash: 'accounting-request-hash',
+            reexportOfId: null,
+            periodKey: '2026-03',
+            exportedUntil: new Date('2026-03-16T00:00:00.000Z'),
+            status: 'success',
+            exportedCount: 2,
+            payload: { exportedCount: 2, rows: [] },
+            message: 'exported',
+            startedAt: new Date('2026-03-16T00:00:00.000Z'),
+            finishedAt: new Date('2026-03-16T00:00:02.000Z'),
+          };
+        }
+        if (args?.where?.idempotencyKey === 'accounting-redispatch-race-key') {
+          findUniqueCalls += 1;
+          if (findUniqueCalls === 1) {
+            return null;
+          }
+          return {
+            id: 'accounting-log-rerun',
+            idempotencyKey: 'accounting-redispatch-race-key',
+            requestHash: 'accounting-request-hash',
+            reexportOfId: 'accounting-log-source',
+            periodKey: '2026-03',
+            exportedUntil: new Date('2026-03-16T00:00:00.000Z'),
+            status: 'running',
+            exportedCount: 2,
+            payload: { exportedCount: 2, rows: [] },
+            message: 'redispatched',
+            startedAt: new Date('2026-03-16T00:00:03.000Z'),
+            finishedAt: null,
+          };
+        }
+        return null;
+      },
+      'accountingIcsExportLog.create': async () => {
+        throw new Prisma.PrismaClientKnownRequestError(
+          'Unique constraint failed on the fields: (`idempotencyKey`)',
+          { code: 'P2002', clientVersion: 'test' },
+        );
+      },
+      'auditLog.create': async () => ({ id: 'audit-accounting-race' }),
+    },
+    async () => {
+      const server = await buildServer({ logger: false });
+      try {
+        const res = await server.inject({
+          method: 'POST',
+          url: '/integrations/jobs/exports/accounting_ics_export/accounting-log-source/redispatch',
+          headers: {
+            'x-user-id': 'admin-user',
+            'x-roles': 'admin',
+          },
+          payload: {
+            idempotencyKey: 'accounting-redispatch-race-key',
+          },
+        });
+        assert.equal(res.statusCode, 409, res.body);
+        assert.deepEqual(JSON.parse(res.body), {
+          error: 'dispatch_in_progress',
+          logId: 'accounting-log-rerun',
+        });
+      } finally {
+        await server.close();
+      }
+    },
+  );
 });

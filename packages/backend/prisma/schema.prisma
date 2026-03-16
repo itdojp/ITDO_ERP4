@@ -1713,6 +1713,7 @@ model LeaveIntegrationExportLog {
   target         String
   idempotencyKey String
   requestHash    String
+  reexportOfId   String?
   updatedSince   DateTime?
   exportedUntil  DateTime
   status         IntegrationRunStatus @default(running)
@@ -1728,12 +1729,14 @@ model LeaveIntegrationExportLog {
   @@unique([target, idempotencyKey])
   @@index([target, startedAt])
   @@index([status, startedAt])
+  @@index([reexportOfId, startedAt])
 }
 
 model HrEmployeeMasterExportLog {
   id             String               @id @default(uuid())
   idempotencyKey String               @unique
   requestHash    String
+  reexportOfId   String?
   updatedSince   DateTime?
   exportedUntil  DateTime
   status         IntegrationRunStatus @default(running)
@@ -1747,12 +1750,14 @@ model HrEmployeeMasterExportLog {
   updatedAt      DateTime             @updatedAt
 
   @@index([status, startedAt])
+  @@index([reexportOfId, startedAt])
 }
 
 model AccountingIcsExportLog {
   id             String               @id @default(uuid())
   idempotencyKey String               @unique
   requestHash    String
+  reexportOfId   String?
   periodKey      String?
   exportedUntil  DateTime
   status         IntegrationRunStatus @default(running)
@@ -1767,6 +1772,7 @@ model AccountingIcsExportLog {
 
   @@index([periodKey, startedAt])
   @@index([status, startedAt])
+  @@index([reexportOfId, startedAt])
 }
 
 model AgentRun {

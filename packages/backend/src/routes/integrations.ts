@@ -32,6 +32,7 @@ import {
   integrationAccountingIcsExportLogListQuerySchema,
   integrationAccountingIcsExportQuerySchema,
   integrationExportJobListQuerySchema,
+  integrationExportJobRedispatchSchema,
   integrationHrAttendanceClosingCreateSchema,
   integrationHrAttendanceClosingListQuerySchema,
   integrationHrAttendanceClosingSummaryListSchema,
@@ -466,6 +467,7 @@ function buildHrEmployeeMasterCsvFilename(exportedUntil: string | Date) {
 function buildHrEmployeeMasterExportLogResponse(item: {
   id: string;
   idempotencyKey: string;
+  reexportOfId: string | null;
   status: IntegrationRunStatus;
   updatedSince: Date | null;
   exportedUntil: Date;
@@ -477,6 +479,7 @@ function buildHrEmployeeMasterExportLogResponse(item: {
   return {
     id: item.id,
     idempotencyKey: item.idempotencyKey,
+    reexportOfId: item.reexportOfId,
     status: item.status,
     updatedSince: item.updatedSince,
     exportedUntil: item.exportedUntil,
@@ -581,6 +584,7 @@ function accountingIcsExportStatusCode(code: string) {
 function buildAccountingIcsExportLogResponse(item: {
   id: string;
   idempotencyKey: string;
+  reexportOfId: string | null;
   periodKey: string | null;
   status: IntegrationRunStatus;
   exportedUntil: Date;
@@ -592,6 +596,7 @@ function buildAccountingIcsExportLogResponse(item: {
   return {
     id: item.id,
     idempotencyKey: item.idempotencyKey,
+    reexportOfId: item.reexportOfId,
     periodKey: item.periodKey,
     status: item.status,
     exportedUntil: item.exportedUntil,
@@ -620,6 +625,7 @@ function buildIntegrationExportJobResponse(
     kind: item.kind,
     id: item.id,
     idempotencyKey: item.idempotencyKey,
+    reexportOfId: item.reexportOfId,
     status: item.status,
     exportedCount: item.exportedCount,
     startedAt: item.startedAt,
@@ -635,6 +641,17 @@ function buildIntegrationExportJobResponse(
               updatedSince: item.updatedSince,
             },
   };
+}
+
+function integrationExportRedispatchStatusCode(error: string) {
+  switch (error) {
+    case 'integration_export_log_not_found':
+      return 404;
+    case 'invalid_idempotencyKey':
+      return 400;
+    default:
+      return 409;
+  }
 }
 
 type LeaveExportTarget = 'attendance' | 'payroll';
@@ -906,6 +923,7 @@ function buildLeaveExportLogResponse(item: {
   id: string;
   target: string;
   idempotencyKey: string;
+  reexportOfId: string | null;
   status: IntegrationRunStatus;
   updatedSince: Date | null;
   exportedUntil: Date;
@@ -918,6 +936,7 @@ function buildLeaveExportLogResponse(item: {
     id: item.id,
     target: item.target,
     idempotencyKey: item.idempotencyKey,
+    reexportOfId: item.reexportOfId,
     status: item.status,
     updatedSince: item.updatedSince,
     exportedUntil: item.exportedUntil,
@@ -2098,6 +2117,7 @@ export async function registerIntegrationRoutes(app: FastifyInstance) {
         select: {
           id: true,
           idempotencyKey: true,
+          reexportOfId: true,
           status: true,
           updatedSince: true,
           exportedUntil: true,
@@ -2420,6 +2440,7 @@ export async function registerIntegrationRoutes(app: FastifyInstance) {
         select: {
           id: true,
           idempotencyKey: true,
+          reexportOfId: true,
           periodKey: true,
           status: true,
           exportedUntil: true,
@@ -2497,6 +2518,7 @@ export async function registerIntegrationRoutes(app: FastifyInstance) {
                   id: true,
                   target: true,
                   idempotencyKey: true,
+                  reexportOfId: true,
                   status: true,
                   updatedSince: true,
                   exportedUntil: true,
@@ -2515,6 +2537,7 @@ export async function registerIntegrationRoutes(app: FastifyInstance) {
                 select: {
                   id: true,
                   idempotencyKey: true,
+                  reexportOfId: true,
                   status: true,
                   updatedSince: true,
                   exportedUntil: true,
@@ -2533,6 +2556,7 @@ export async function registerIntegrationRoutes(app: FastifyInstance) {
                 select: {
                   id: true,
                   idempotencyKey: true,
+                  reexportOfId: true,
                   periodKey: true,
                   status: true,
                   exportedUntil: true,
@@ -2581,6 +2605,465 @@ export async function registerIntegrationRoutes(app: FastifyInstance) {
         limit,
         offset,
       };
+    },
+  );
+
+  app.post(
+    '/integrations/jobs/exports/:kind/:id/redispatch',
+    {
+      preHandler: requireRole(['admin', 'mgmt']),
+      schema: integrationExportJobRedispatchSchema,
+    },
+    async (req, reply) => {
+      const { kind, id } = req.params as {
+        kind: IntegrationExportJobKind;
+        id: string;
+      };
+      const body = req.body as { idempotencyKey: string };
+      const idempotencyKey = body.idempotencyKey.trim();
+      if (!idempotencyKey) {
+        return reply.code(400).send({ error: 'invalid_idempotencyKey' });
+      }
+      const actorId = req.user?.userId ?? null;
+      const now = new Date();
+
+      switch (kind) {
+        case 'hr_leave_export_attendance':
+        case 'hr_leave_export_payroll': {
+          const target =
+            kind === 'hr_leave_export_payroll' ? 'payroll' : 'attendance';
+          const source = await prisma.leaveIntegrationExportLog.findUnique({
+            where: { id },
+          });
+          if (!source || source.target !== target) {
+            return reply
+              .code(
+                integrationExportRedispatchStatusCode(
+                  'integration_export_log_not_found',
+                ),
+              )
+              .send({ error: 'integration_export_log_not_found' });
+          }
+          if (source.status === IntegrationRunStatus.running) {
+            return reply.code(409).send({
+              error: 'dispatch_in_progress',
+              logId: source.id,
+            });
+          }
+          if (
+            !source.payload ||
+            source.status !== IntegrationRunStatus.success
+          ) {
+            return reply.code(409).send({
+              error: 'redispatch_source_not_exported',
+              logId: source.id,
+            });
+          }
+          const respondWithExistingLeaveRedispatch = async (
+            existing: NonNullable<
+              Awaited<
+                ReturnType<typeof prisma.leaveIntegrationExportLog.findUnique>
+              >
+            >,
+          ) => {
+            if (
+              existing.requestHash !== source.requestHash ||
+              existing.reexportOfId !== source.id
+            ) {
+              await logAudit({
+                ...auditContextFromRequest(req),
+                action: 'integration_hr_leave_export_redispatch_conflict',
+                targetTable: 'LeaveIntegrationExportLog',
+                targetId: existing.id,
+                metadata: {
+                  kind,
+                  sourceLogId: source.id,
+                  idempotencyKey,
+                  requestHash: source.requestHash,
+                  existingRequestHash: existing.requestHash,
+                  existingReexportOfId: existing.reexportOfId,
+                } as Prisma.InputJsonValue,
+              });
+              return reply.code(409).send({ error: 'idempotency_conflict' });
+            }
+            if (existing.status === IntegrationRunStatus.running) {
+              return reply.code(409).send({
+                error: 'dispatch_in_progress',
+                logId: existing.id,
+              });
+            }
+            await logAudit({
+              ...auditContextFromRequest(req),
+              action: 'integration_hr_leave_export_redispatch_replayed',
+              targetTable: 'LeaveIntegrationExportLog',
+              targetId: existing.id,
+              metadata: {
+                kind,
+                sourceLogId: source.id,
+                idempotencyKey,
+                status: existing.status,
+              } as Prisma.InputJsonValue,
+            });
+            return {
+              replayed: true,
+              payload: existing.payload,
+              log: buildLeaveExportLogResponse(existing),
+            };
+          };
+          const existing = await prisma.leaveIntegrationExportLog.findUnique({
+            where: {
+              target_idempotencyKey: {
+                target,
+                idempotencyKey,
+              },
+            },
+          });
+          if (existing) {
+            return respondWithExistingLeaveRedispatch(existing);
+          }
+          let created: Awaited<
+            ReturnType<typeof prisma.leaveIntegrationExportLog.create>
+          >;
+          try {
+            created = await prisma.leaveIntegrationExportLog.create({
+              data: {
+                target,
+                idempotencyKey,
+                requestHash: source.requestHash,
+                reexportOfId: source.id,
+                updatedSince: source.updatedSince,
+                exportedUntil: source.exportedUntil,
+                status: IntegrationRunStatus.success,
+                exportedCount: source.exportedCount,
+                payload: source.payload,
+                message: 'redispatched',
+                startedAt: now,
+                finishedAt: now,
+                createdBy: actorId,
+              },
+            });
+          } catch (error) {
+            if (
+              error instanceof Prisma.PrismaClientKnownRequestError &&
+              error.code === 'P2002'
+            ) {
+              const concurrent =
+                await prisma.leaveIntegrationExportLog.findUnique({
+                  where: {
+                    target_idempotencyKey: {
+                      target,
+                      idempotencyKey,
+                    },
+                  },
+                });
+              if (concurrent) {
+                return respondWithExistingLeaveRedispatch(concurrent);
+              }
+            }
+            throw error;
+          }
+          await logAudit({
+            ...auditContextFromRequest(req),
+            action: 'integration_hr_leave_export_redispatched',
+            targetTable: 'LeaveIntegrationExportLog',
+            targetId: created.id,
+            metadata: {
+              kind,
+              sourceLogId: source.id,
+              idempotencyKey,
+              exportedCount: created.exportedCount,
+            } as Prisma.InputJsonValue,
+          });
+          return {
+            replayed: false,
+            payload: created.payload,
+            log: buildLeaveExportLogResponse(created),
+          };
+        }
+        case 'hr_employee_master_export': {
+          const source = await prisma.hrEmployeeMasterExportLog.findUnique({
+            where: { id },
+          });
+          if (!source) {
+            return reply
+              .code(
+                integrationExportRedispatchStatusCode(
+                  'integration_export_log_not_found',
+                ),
+              )
+              .send({ error: 'integration_export_log_not_found' });
+          }
+          if (source.status === IntegrationRunStatus.running) {
+            return reply.code(409).send({
+              error: 'dispatch_in_progress',
+              logId: source.id,
+            });
+          }
+          if (
+            !source.payload ||
+            source.status !== IntegrationRunStatus.success
+          ) {
+            return reply.code(409).send({
+              error: 'redispatch_source_not_exported',
+              logId: source.id,
+            });
+          }
+          const respondWithExistingEmployeeMasterRedispatch = async (
+            existing: NonNullable<
+              Awaited<
+                ReturnType<typeof prisma.hrEmployeeMasterExportLog.findUnique>
+              >
+            >,
+          ) => {
+            if (
+              existing.requestHash !== source.requestHash ||
+              existing.reexportOfId !== source.id
+            ) {
+              await logAudit({
+                ...auditContextFromRequest(req),
+                action:
+                  'integration_hr_employee_master_export_redispatch_conflict',
+                targetTable: 'HrEmployeeMasterExportLog',
+                targetId: existing.id,
+                metadata: {
+                  sourceLogId: source.id,
+                  idempotencyKey,
+                  requestHash: source.requestHash,
+                  existingRequestHash: existing.requestHash,
+                  existingReexportOfId: existing.reexportOfId,
+                } as Prisma.InputJsonValue,
+              });
+              return reply.code(409).send({ error: 'idempotency_conflict' });
+            }
+            if (existing.status === IntegrationRunStatus.running) {
+              return reply.code(409).send({
+                error: 'dispatch_in_progress',
+                logId: existing.id,
+              });
+            }
+            await logAudit({
+              ...auditContextFromRequest(req),
+              action:
+                'integration_hr_employee_master_export_redispatch_replayed',
+              targetTable: 'HrEmployeeMasterExportLog',
+              targetId: existing.id,
+              metadata: {
+                sourceLogId: source.id,
+                idempotencyKey,
+                status: existing.status,
+              } as Prisma.InputJsonValue,
+            });
+            return {
+              replayed: true,
+              payload: existing.payload,
+              log: buildHrEmployeeMasterExportLogResponse(existing),
+            };
+          };
+          const existing = await prisma.hrEmployeeMasterExportLog.findUnique({
+            where: { idempotencyKey },
+          });
+          if (existing) {
+            return respondWithExistingEmployeeMasterRedispatch(existing);
+          }
+          let created: Awaited<
+            ReturnType<typeof prisma.hrEmployeeMasterExportLog.create>
+          >;
+          try {
+            created = await prisma.hrEmployeeMasterExportLog.create({
+              data: {
+                idempotencyKey,
+                requestHash: source.requestHash,
+                reexportOfId: source.id,
+                updatedSince: source.updatedSince,
+                exportedUntil: source.exportedUntil,
+                status: IntegrationRunStatus.success,
+                exportedCount: source.exportedCount,
+                payload: source.payload,
+                message: 'redispatched',
+                startedAt: now,
+                finishedAt: now,
+                createdBy: actorId,
+              },
+            });
+          } catch (error) {
+            if (
+              error instanceof Prisma.PrismaClientKnownRequestError &&
+              error.code === 'P2002'
+            ) {
+              const concurrent =
+                await prisma.hrEmployeeMasterExportLog.findUnique({
+                  where: { idempotencyKey },
+                });
+              if (concurrent) {
+                return respondWithExistingEmployeeMasterRedispatch(concurrent);
+              }
+            }
+            throw error;
+          }
+          await logAudit({
+            ...auditContextFromRequest(req),
+            action: 'integration_hr_employee_master_export_redispatched',
+            targetTable: 'HrEmployeeMasterExportLog',
+            targetId: created.id,
+            metadata: {
+              sourceLogId: source.id,
+              idempotencyKey,
+              exportedCount: created.exportedCount,
+            } as Prisma.InputJsonValue,
+          });
+          return {
+            replayed: false,
+            payload: created.payload,
+            log: buildHrEmployeeMasterExportLogResponse(created),
+          };
+        }
+        case 'accounting_ics_export': {
+          const source = await prisma.accountingIcsExportLog.findUnique({
+            where: { id },
+          });
+          if (!source) {
+            return reply
+              .code(
+                integrationExportRedispatchStatusCode(
+                  'integration_export_log_not_found',
+                ),
+              )
+              .send({ error: 'integration_export_log_not_found' });
+          }
+          if (source.status === IntegrationRunStatus.running) {
+            return reply.code(409).send({
+              error: 'dispatch_in_progress',
+              logId: source.id,
+            });
+          }
+          if (
+            !source.payload ||
+            source.status !== IntegrationRunStatus.success
+          ) {
+            return reply.code(409).send({
+              error: 'redispatch_source_not_exported',
+              logId: source.id,
+            });
+          }
+          const respondWithExistingAccountingIcsRedispatch = async (
+            existing: NonNullable<
+              Awaited<
+                ReturnType<typeof prisma.accountingIcsExportLog.findUnique>
+              >
+            >,
+          ) => {
+            if (
+              existing.requestHash !== source.requestHash ||
+              existing.reexportOfId !== source.id
+            ) {
+              await logAudit({
+                ...auditContextFromRequest(req),
+                action: 'integration_accounting_ics_export_redispatch_conflict',
+                targetTable: 'AccountingIcsExportLog',
+                targetId: existing.id,
+                metadata: {
+                  sourceLogId: source.id,
+                  idempotencyKey,
+                  requestHash: source.requestHash,
+                  existingRequestHash: existing.requestHash,
+                  existingReexportOfId: existing.reexportOfId,
+                } as Prisma.InputJsonValue,
+              });
+              return reply.code(409).send({ error: 'idempotency_conflict' });
+            }
+            if (existing.status === IntegrationRunStatus.running) {
+              return reply.code(409).send({
+                error: 'dispatch_in_progress',
+                logId: existing.id,
+              });
+            }
+            await logAudit({
+              ...auditContextFromRequest(req),
+              action: 'integration_accounting_ics_export_redispatch_replayed',
+              targetTable: 'AccountingIcsExportLog',
+              targetId: existing.id,
+              metadata: {
+                sourceLogId: source.id,
+                idempotencyKey,
+                status: existing.status,
+                periodKey: existing.periodKey,
+              } as Prisma.InputJsonValue,
+            });
+            return {
+              replayed: true,
+              payload: existing.payload,
+              log: buildAccountingIcsExportLogResponse(existing),
+            };
+          };
+          const existing = await prisma.accountingIcsExportLog.findUnique({
+            where: { idempotencyKey },
+          });
+          if (existing) {
+            return respondWithExistingAccountingIcsRedispatch(existing);
+          }
+          let created: Awaited<
+            ReturnType<typeof prisma.accountingIcsExportLog.create>
+          >;
+          try {
+            created = await prisma.accountingIcsExportLog.create({
+              data: {
+                idempotencyKey,
+                requestHash: source.requestHash,
+                reexportOfId: source.id,
+                periodKey: source.periodKey,
+                exportedUntil: source.exportedUntil,
+                status: IntegrationRunStatus.success,
+                exportedCount: source.exportedCount,
+                payload: source.payload,
+                message: 'redispatched',
+                startedAt: now,
+                finishedAt: now,
+                createdBy: actorId,
+              },
+            });
+          } catch (error) {
+            if (
+              error instanceof Prisma.PrismaClientKnownRequestError &&
+              error.code === 'P2002'
+            ) {
+              const concurrent = await prisma.accountingIcsExportLog.findUnique(
+                {
+                  where: { idempotencyKey },
+                },
+              );
+              if (concurrent) {
+                return respondWithExistingAccountingIcsRedispatch(concurrent);
+              }
+            }
+            throw error;
+          }
+          await logAudit({
+            ...auditContextFromRequest(req),
+            action: 'integration_accounting_ics_export_redispatched',
+            targetTable: 'AccountingIcsExportLog',
+            targetId: created.id,
+            metadata: {
+              sourceLogId: source.id,
+              idempotencyKey,
+              periodKey: created.periodKey,
+              exportedCount: created.exportedCount,
+            } as Prisma.InputJsonValue,
+          });
+          return {
+            replayed: false,
+            payload: created.payload,
+            log: buildAccountingIcsExportLogResponse(created),
+          };
+        }
+        default:
+          return reply
+            .code(
+              integrationExportRedispatchStatusCode(
+                'integration_export_log_not_found',
+              ),
+            )
+            .send({ error: 'integration_export_log_not_found' });
+      }
     },
   );
 
@@ -2962,6 +3445,7 @@ export async function registerIntegrationRoutes(app: FastifyInstance) {
           id: true,
           target: true,
           idempotencyKey: true,
+          reexportOfId: true,
           status: true,
           updatedSince: true,
           exportedUntil: true,

@@ -2096,6 +2096,22 @@ export const integrationExportJobListQuerySchema = {
   ),
 };
 
+export const integrationExportJobRedispatchSchema = {
+  params: Type.Object(
+    {
+      kind: integrationExportJobKindSchema,
+      id: Type.String({ minLength: 1 }),
+    },
+    { additionalProperties: false },
+  ),
+  body: Type.Object(
+    {
+      idempotencyKey: Type.String({ minLength: 1, maxLength: 200 }),
+    },
+    { additionalProperties: false },
+  ),
+};
+
 export const integrationHrAttendanceClosingCreateSchema = {
   body: Type.Object(
     {
