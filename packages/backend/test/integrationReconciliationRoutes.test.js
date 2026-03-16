@@ -120,6 +120,15 @@ test('GET /integrations/reconciliation/summary returns aggregate reconciliation 
         }
         return 0;
       },
+      $queryRaw: async (query) => {
+        const sql = Array.isArray(query?.strings)
+          ? query.strings.join(' ')
+          : String(query);
+        if (sql.includes('SELECT COUNT(*)::int AS "count"')) {
+          return [{ count: 0 }];
+        }
+        throw new Error(`unexpected $queryRaw: ${sql}`);
+      },
     },
     async () => {
       const server = await buildServer({ logger: false });
@@ -199,6 +208,15 @@ test('GET /integrations/reconciliation/summary treats missing prerequisites as b
         _sum: { amount: null },
       }),
       'accountingJournalStaging.count': async () => 0,
+      $queryRaw: async (query) => {
+        const sql = Array.isArray(query?.strings)
+          ? query.strings.join(' ')
+          : String(query);
+        if (sql.includes('SELECT COUNT(*)::int AS "count"')) {
+          return [{ count: 0 }];
+        }
+        throw new Error(`unexpected $queryRaw: ${sql}`);
+      },
     },
     async () => {
       const server = await buildServer({ logger: false });
@@ -273,6 +291,15 @@ test('GET /integrations/reconciliation/summary reports missing full export and e
         _sum: { amount: '2500' },
       }),
       'accountingJournalStaging.count': async () => 1,
+      $queryRaw: async (query) => {
+        const sql = Array.isArray(query?.strings)
+          ? query.strings.join(' ')
+          : String(query);
+        if (sql.includes('SELECT COUNT(*)::int AS "count"')) {
+          return [{ count: 1 }];
+        }
+        throw new Error(`unexpected $queryRaw: ${sql}`);
+      },
     },
     async () => {
       const server = await buildServer({ logger: false });
@@ -521,6 +548,8 @@ test('GET /integrations/reconciliation/details returns payroll diffs and account
           },
         ];
         return rows.filter((row) => {
+          const ids = args?.where?.id?.in;
+          if (Array.isArray(ids) && !ids.includes(row.id)) return false;
           const status = args?.where?.status;
           if (status && row.status !== status) return false;
           if (Array.isArray(args?.where?.OR)) {
