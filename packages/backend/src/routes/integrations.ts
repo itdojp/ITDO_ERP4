@@ -17,6 +17,7 @@ import {
   AttendanceClosingError,
   closeAttendancePeriod,
 } from '../services/attendanceClosings.js';
+import { buildIntegrationReconciliationSummary } from '../services/integrationReconciliation.js';
 import {
   AccountingIcsExportError,
   type AccountingIcsExportPayload,
@@ -42,6 +43,7 @@ import {
   integrationHrLeaveExportDispatchSchema,
   integrationHrLeaveExportLogListQuerySchema,
   integrationHrLeaveExportQuerySchema,
+  integrationReconciliationSummaryQuerySchema,
   integrationRunMetricsQuerySchema,
   integrationSettingPatchSchema,
   integrationSettingSchema,
@@ -3207,6 +3209,78 @@ export async function registerIntegrationRoutes(app: FastifyInstance) {
         },
       });
       return { closing, items, limit: take, offset: skip };
+    },
+  );
+
+  app.get(
+    '/integrations/reconciliation/summary',
+    {
+      preHandler: requireRole(['admin', 'mgmt']),
+      schema: integrationReconciliationSummaryQuerySchema,
+    },
+    async (req, reply) => {
+      const { periodKey } = req.query as {
+        periodKey: string;
+      };
+      try {
+        const summary = await buildIntegrationReconciliationSummary({
+          periodKey,
+        });
+        return {
+          periodKey: summary.periodKey,
+          attendance: {
+            latestClosing: summary.attendance.latestClosing,
+          },
+          payroll: {
+            latestEmployeeMasterExport: summary.payroll
+              .latestEmployeeMasterExport
+              ? buildHrEmployeeMasterExportLogResponse(
+                  summary.payroll.latestEmployeeMasterExport,
+                )
+              : null,
+            latestEmployeeMasterFullExport: summary.payroll
+              .latestEmployeeMasterFullExport
+              ? buildHrEmployeeMasterExportLogResponse(
+                  summary.payroll.latestEmployeeMasterFullExport,
+                )
+              : null,
+            comparisonStatus: summary.payroll.comparisonStatus,
+            attendanceEmployeeCount: summary.payroll.attendanceEmployeeCount,
+            employeeMasterExportCount:
+              summary.payroll.employeeMasterExportCount,
+            matchedEmployeeCount: summary.payroll.matchedEmployeeCount,
+            countsAligned: summary.payroll.countsAligned,
+            attendanceOnlyCount: summary.payroll.attendanceOnlyCount,
+            attendanceOnlyEmployeeCodes:
+              summary.payroll.attendanceOnlyEmployeeCodes,
+            employeeMasterOnlyCount: summary.payroll.employeeMasterOnlyCount,
+            employeeMasterOnlyEmployeeCodes:
+              summary.payroll.employeeMasterOnlyEmployeeCodes,
+          },
+          accounting: {
+            latestIcsExport: summary.accounting.latestIcsExport
+              ? buildAccountingIcsExportLogResponse(
+                  summary.accounting.latestIcsExport,
+                )
+              : null,
+            comparisonStatus: summary.accounting.comparisonStatus,
+            latestExportedCount: summary.accounting.latestExportedCount,
+            countsAligned: summary.accounting.countsAligned,
+            mappingComplete: summary.accounting.mappingComplete,
+            staging: summary.accounting.staging,
+          },
+          hasBlockingDifferences: summary.hasBlockingDifferences,
+        };
+      } catch (error) {
+        if (error instanceof AttendanceClosingError) {
+          return reply.code(attendanceClosingStatusCode(error.code)).send({
+            error: error.code,
+            message: error.message,
+            details: error.details,
+          });
+        }
+        throw error;
+      }
     },
   );
 
