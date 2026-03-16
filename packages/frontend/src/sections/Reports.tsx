@@ -191,6 +191,13 @@ function buildQuery(from?: string, to?: string) {
   return qs ? `?${qs}` : '';
 }
 
+function parseUserIdsInput(value: string) {
+  return value
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
+
 export const Reports: React.FC = () => {
   const auth = getAuthState();
   const defaultProjectId = auth?.projectIds?.[0] || 'demo-project';
@@ -198,7 +205,7 @@ export const Reports: React.FC = () => {
   const [projectId, setProjectId] = useState(defaultProjectId);
   const [baselines, setBaselines] = useState<ProjectBaseline[]>([]);
   const [baselineId, setBaselineId] = useState('');
-  const [groupUserIds, setGroupUserIds] = useState(defaultUserId);
+  const [userIdsInput, setUserIdsInput] = useState(defaultUserId);
   const [overtimeUserId, setOvertimeUserId] = useState(defaultUserId);
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
@@ -326,11 +333,7 @@ export const Reports: React.FC = () => {
   const loadGroup = async () => {
     try {
       const qs = buildQuery(from, to);
-      const joined = groupUserIds
-        .split(',')
-        .map((v) => v.trim())
-        .filter(Boolean)
-        .join(',');
+      const joined = parseUserIdsInput(userIdsInput).join(',');
       const res = await api<{ items: GroupEffort[] }>(
         `/reports/group-effort?userIds=${encodeURIComponent(joined)}${qs ? `&${qs.slice(1)}` : ''}`,
       );
@@ -364,11 +367,7 @@ export const Reports: React.FC = () => {
       return;
     }
     try {
-      const joined = groupUserIds
-        .split(',')
-        .map((value) => value.trim())
-        .filter(Boolean)
-        .join(',');
+      const joined = parseUserIdsInput(userIdsInput).join(',');
       const query = new URLSearchParams();
       if (from) query.set('from', from);
       if (to) query.set('to', to);
@@ -390,11 +389,7 @@ export const Reports: React.FC = () => {
       setMessage('案件を選択してください');
       return;
     }
-    const joined = groupUserIds
-      .split(',')
-      .map((value) => value.trim())
-      .filter(Boolean)
-      .join(',');
+    const joined = parseUserIdsInput(userIdsInput).join(',');
     if (!joined) {
       setMessage('userIds を入力してください');
       return;
@@ -493,8 +488,8 @@ export const Reports: React.FC = () => {
         </button>
         <input
           type="text"
-          value={groupUserIds}
-          onChange={(e) => setGroupUserIds(e.target.value)}
+          value={userIdsInput}
+          onChange={(e) => setUserIdsInput(e.target.value)}
           placeholder="userIds (a,b,c)"
         />
         <button className="button" onClick={loadGroup}>
