@@ -554,8 +554,6 @@ function normalizeHrAttendanceFormat(value: unknown): HrAttendanceExportFormat {
 
 function buildHrAttendanceExportRequestHash(input: {
   periodKey: string;
-  closingId: string;
-  closingVersion: number;
   format: 'csv';
 }) {
   return createHash('sha256')
@@ -565,8 +563,10 @@ function buildHrAttendanceExportRequestHash(input: {
 
 async function buildHrAttendanceExportPayload(input: {
   periodKey: string;
+  exportedUntil?: Date;
 }): Promise<HrAttendanceExportPayload> {
   const { periodKey } = parseAttendancePeriodKey(input.periodKey);
+  const exportedUntil = input.exportedUntil ?? new Date();
   const closing = await prisma.attendanceClosingPeriod.findFirst({
     where: {
       periodKey,
@@ -621,8 +621,8 @@ async function buildHrAttendanceExportPayload(input: {
 
   return {
     schemaVersion: HR_ATTENDANCE_EXPORT_SCHEMA_VERSION,
-    exportedAt: new Date().toISOString(),
-    exportedUntil: new Date().toISOString(),
+    exportedAt: exportedUntil.toISOString(),
+    exportedUntil: exportedUntil.toISOString(),
     periodKey: closing.periodKey,
     closingId: closing.id,
     closingVersion: closing.version,
@@ -3450,30 +3450,13 @@ export async function registerIntegrationRoutes(app: FastifyInstance) {
         periodKey: string;
         idempotencyKey: string;
       };
+      const periodKey = body.periodKey.trim();
       const idempotencyKey = body.idempotencyKey.trim();
       if (!idempotencyKey) {
         return reply.code(400).send({ error: 'invalid_idempotencyKey' });
       }
-      let payload: HrAttendanceExportPayload;
-      try {
-        payload = await buildHrAttendanceExportPayload({
-          periodKey: body.periodKey,
-        });
-      } catch (error) {
-        if (error instanceof AttendanceClosingError) {
-          return reply.code(hrAttendanceExportStatusCode(error.code)).send({
-            error: error.code,
-            message: error.message,
-            details: error.details,
-          });
-        }
-        throw error;
-      }
-
       const requestHash = buildHrAttendanceExportRequestHash({
-        periodKey: payload.periodKey,
-        closingId: payload.closingId,
-        closingVersion: payload.closingVersion,
+        periodKey,
         format: 'csv',
       });
       const respondWithExistingAttendanceDispatch = async (
@@ -3527,6 +3510,22 @@ export async function registerIntegrationRoutes(app: FastifyInstance) {
       }
 
       const startedAt = new Date();
+      let payload: HrAttendanceExportPayload;
+      try {
+        payload = await buildHrAttendanceExportPayload({
+          periodKey,
+          exportedUntil: startedAt,
+        });
+      } catch (error) {
+        if (error instanceof AttendanceClosingError) {
+          return reply.code(hrAttendanceExportStatusCode(error.code)).send({
+            error: error.code,
+            message: error.message,
+            details: error.details,
+          });
+        }
+        throw error;
+      }
       let log: Awaited<ReturnType<typeof prisma.hrAttendanceExportLog.create>>;
       try {
         log = await prisma.hrAttendanceExportLog.create({

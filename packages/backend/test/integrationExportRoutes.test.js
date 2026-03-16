@@ -951,6 +951,10 @@ test('POST /integrations/hr/exports/attendance/dispatch creates export log and p
   assert.equal(capturedCreate?.data?.periodKey, '2026-03');
   assert.equal(capturedCreate?.data?.closingPeriodId, 'attendance-close-003');
   assert.equal(capturedUpdate?.data?.exportedCount, 1);
+  assert.equal(
+    capturedUpdate?.data?.payload?.exportedUntil,
+    capturedCreate?.data?.exportedUntil?.toISOString(),
+  );
 });
 
 test('POST /integrations/hr/exports/attendance/dispatch replays previous success with same idempotency key', async () => {
@@ -961,8 +965,6 @@ test('POST /integrations/hr/exports/attendance/dispatch replays previous success
     .update(
       JSON.stringify({
         periodKey: '2026-03',
-        closingId: 'attendance-close-004',
-        closingVersion: 4,
         format: 'csv',
       }),
       'utf8',
