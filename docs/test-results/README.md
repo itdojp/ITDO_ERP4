@@ -26,6 +26,11 @@
 - DRリストア運用検証テンプレート: docs/test-results/dr-restore-template.md
 - モバイル回帰証跡テンプレート: docs/test-results/mobile-regression-template.md
 
+### 2026-03-16
+
+- フロントE2E(管理設定/運用管理 UI エビデンス r1): docs/test-results/2026-03-16-frontend-e2e-r1.md
+- 証跡: docs/test-results/2026-03-16-frontend-e2e-r1/
+
 ### 2026-03-09
 
 - Podman smoke: docs/test-results/2026-03-09-podman-smoke.md

@@ -278,4 +278,24 @@ test('frontend smoke admin ops @extended', async ({ page }) => {
     'period locks list',
   );
   await captureSection(periodLockSection, '30-period-locks.png');
+
+  await navigateToSection(page, '設定', 'Settings');
+  const adminSettingsSection = page
+    .locator('main')
+    .getByRole('heading', { name: 'Settings', level: 2, exact: true })
+    .locator('..');
+  await adminSettingsSection.scrollIntoViewIfNeeded();
+  await adminSettingsSection.getByLabel('照合対象月').fill(lockPeriod);
+  await adminSettingsSection
+    .getByRole('button', { name: '照合サマリ取得' })
+    .click();
+  await expect(
+    adminSettingsSection.getByText('連携照合サマリを取得しました'),
+  ).toBeVisible({ timeout: actionTimeout });
+  await expect(
+    adminSettingsSection
+      .getByText('comparisonStatus:', { exact: false })
+      .first(),
+  ).toBeVisible({ timeout: actionTimeout });
+  await captureSection(adminSettingsSection, '11-admin-settings.png');
 });
