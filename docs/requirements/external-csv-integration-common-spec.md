@@ -96,6 +96,8 @@
   - 既存の成功済み export payload を新しい log として再出力し、`reexportOfId` で元ジョブを追跡する
   - `GET /integrations/reconciliation/summary`
   - `periodKey` 単位で attendance closing / employee master export / accounting ICS export / journal staging の aggregate 差異を確認する
+  - `GET /integrations/reconciliation/details`
+  - `periodKey` 単位で社員コード差分の全件、会計 staging の `PJ別` / `部門別` breakdown、`pending_mapping` / `blocked` / `invalid ready` の sample 行を確認する
 
 将来の共通 job model は、上記既存実装を包含する形で拡張する。
 
@@ -193,7 +195,11 @@
   - accounting journal staging の `ready / pending_mapping / blocked`
   - ready 行の借貸一致フラグ
   - 最新 ICS export の件数と ready 件数の一致
-- 差異明細 drilldown や UI は後続段階に分離する
+- 次段では detail API を追加する
+  - `GET /integrations/reconciliation/details?periodKey=YYYY-MM`
+  - payroll: 社員コード差分の全件
+  - accounting: `PJ別` / `部門別` breakdown と `pending_mapping` / `blocked` / `invalid ready` の sample 行
+- UI への drilldown 表示は detail API の後続段階に分離する
 
 ## 10. 未確定事項
 

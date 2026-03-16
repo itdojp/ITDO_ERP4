@@ -2158,6 +2158,15 @@ export const integrationReconciliationSummaryQuerySchema = {
   ),
 };
 
+export const integrationReconciliationDetailsQuerySchema = {
+  querystring: Type.Object(
+    {
+      periodKey: attendanceClosingPeriodKeySchema,
+    },
+    { additionalProperties: false },
+  ),
+};
+
 export const chatSettingPatchSchema = {
   body: Type.Object(
     {
