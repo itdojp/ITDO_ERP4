@@ -30,6 +30,8 @@
 
 - フロントE2E(管理設定/運用管理 UI エビデンス r1): docs/test-results/2026-03-16-frontend-e2e-r1.md
 - 証跡: docs/test-results/2026-03-16-frontend-e2e-r1/
+- フロントE2E(管理会計 CSV UI エビデンス r4): docs/test-results/2026-03-16-frontend-e2e-r4.md
+- 証跡: docs/test-results/2026-03-16-frontend-e2e-r4/
 
 ### 2026-03-09
 

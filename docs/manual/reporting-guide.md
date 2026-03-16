@@ -22,7 +22,7 @@
 - PJ採算（担当者別 / グループ別、userIds + from/to 指定）
 - グループ別工数（userIds 指定 + from/to）
 - 個人別残業（userId 指定 + from/to）
-- 管理会計サマリ（from/to 指定）
+- 管理会計サマリ（from/to 指定、CSV 出力あり）
 - バーンダウン（baselineId + from/to）
 - EVM（from/to）
 
@@ -30,6 +30,7 @@
 
 - from/to は `YYYY-MM-DD` 形式で入力する（UI/Api仕様に合わせる）
 - 管理会計サマリで複数通貨が混在する場合、金額系 KPI は通貨別表示になる
+- 管理会計サマリ CSV は summary / currency_breakdown / top_red_project の各行で出力する
 
 ## ダッシュボード（インサイト/アラート）
 
@@ -54,6 +55,6 @@
 
 ## 関連画面（証跡）
 
-![レポート](../test-results/2026-03-16-frontend-e2e-r2/08-reports.png)
+![レポート](../test-results/2026-03-16-frontend-e2e-r4/08-reports.png)
 
 ![ダッシュボード](../test-results/2026-03-09-frontend-e2e-r1/01-core-dashboard.png)

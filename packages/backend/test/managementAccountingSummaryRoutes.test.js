@@ -159,6 +159,129 @@ test('GET /reports/management-accounting/summary returns aggregate management ac
   );
 });
 
+test('GET /reports/management-accounting/summary returns csv export', async () => {
+  await withPrismaStubs(
+    {
+      'project.findMany': async () => [
+        {
+          id: 'project-1',
+          code: 'PRJ-001',
+          name: 'Project 1',
+          currency: 'JPY',
+        },
+        {
+          id: 'project-2',
+          code: 'PRJ-002',
+          name: 'Project 2',
+          currency: 'JPY',
+        },
+      ],
+      'invoice.groupBy': async () => [
+        {
+          projectId: 'project-1',
+          currency: 'JPY',
+          _sum: { totalAmount: 10000 },
+        },
+        { projectId: 'project-2', currency: 'JPY', _sum: { totalAmount: 500 } },
+      ],
+      'vendorInvoice.groupBy': async () => [
+        {
+          projectId: 'project-1',
+          currency: 'JPY',
+          _sum: { totalAmount: 3000 },
+        },
+      ],
+      'expense.groupBy': async () => [
+        { projectId: 'project-1', currency: 'JPY', _sum: { amount: 500 } },
+        { projectId: 'project-2', currency: 'JPY', _sum: { amount: 700 } },
+      ],
+      'timeEntry.findMany': async () => [
+        {
+          projectId: 'project-1',
+          userId: 'user-1',
+          workDate: new Date('2026-03-10T00:00:00.000Z'),
+          workType: null,
+          minutes: 600,
+        },
+        {
+          projectId: 'project-2',
+          userId: 'user-1',
+          workDate: new Date('2026-03-10T00:00:00.000Z'),
+          workType: null,
+          minutes: 540,
+        },
+        {
+          projectId: 'project-2',
+          userId: 'user-2',
+          workDate: new Date('2026-03-11T00:00:00.000Z'),
+          workType: null,
+          minutes: 480,
+        },
+      ],
+      'rateCard.findMany': async () => [
+        {
+          id: 'rate-1',
+          projectId: 'project-1',
+          workType: null,
+          validFrom: new Date('2026-01-01T00:00:00.000Z'),
+          validTo: null,
+          unitPrice: 100,
+          currency: 'JPY',
+        },
+        {
+          id: 'rate-2',
+          projectId: 'project-2',
+          workType: null,
+          validFrom: new Date('2026-01-01T00:00:00.000Z'),
+          validTo: null,
+          unitPrice: 50,
+          currency: 'JPY',
+        },
+      ],
+      'projectMilestone.findMany': async () => [
+        {
+          id: 'milestone-1',
+          projectId: 'project-1',
+          name: '請求待ち',
+          amount: 2000,
+          dueDate: new Date('2026-03-20T00:00:00.000Z'),
+          project: { code: 'PRJ-001', name: 'Project 1', currency: 'JPY' },
+          invoices: [],
+        },
+      ],
+    },
+    async () => {
+      const server = await buildServer({ logger: false });
+      try {
+        const res = await server.inject({
+          method: 'GET',
+          url: '/reports/management-accounting/summary?from=2026-03-01&to=2026-03-31&format=csv',
+          headers: {
+            'x-user-id': 'admin-user',
+            'x-roles': 'admin',
+          },
+        });
+        assert.equal(res.statusCode, 200, res.body);
+        assert.match(
+          res.headers['content-disposition'],
+          /management-accounting-summary-2026-03-01-to-2026-03-31\.csv/,
+        );
+        assert.match(
+          res.body,
+          /^section,currency,projectId,projectCode,projectName,projectCount,revenue,directCost,laborCost,vendorCost,expenseCost,grossProfit,grossMargin,totalMinutes,overtimeTotalMinutes,deliveryDueCount,deliveryDueAmount,redProjectCount/m,
+        );
+        assert.match(res.body, /summary,JPY,,,/, res.body);
+        assert.match(
+          res.body,
+          /top_red_project,JPY,project-2,PRJ-002,Project 2/,
+        );
+      } finally {
+        await server.close();
+      }
+    },
+  );
+});
+
 test('GET /reports/management-accounting/summary returns currency breakdown when multiple currencies exist', async () => {
   await withPrismaStubs(
     {
