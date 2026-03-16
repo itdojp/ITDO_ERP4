@@ -5,8 +5,8 @@
 - 本書は PoC 環境の UI 操作に関する詳細ガイドです。
 - 画面キャプチャは 2026-03-09 実行の E2E（r1）で取得しています。
   - 証跡: `docs/test-results/2026-03-09-frontend-e2e-r1/`
-- 連携照合サマリカードと連携ジョブ一覧カードを含む管理設定の補足証跡は 2026-03-16 実行の E2E（r3）を参照します。
-  - 証跡: `docs/test-results/2026-03-16-frontend-e2e-r3/`
+- 連携照合サマリカード、連携ジョブ一覧カード、会計マッピングルールカードを含む管理設定の補足証跡は 2026-03-17 実行の E2E（r1）を参照します。
+  - 証跡: `docs/test-results/2026-03-17-frontend-e2e-r1/`
 - UI証跡の再取得手順: [ui-evidence-quickstart](ui-evidence-quickstart.md)（詳細: [e2e-evidence-howto](e2e-evidence-howto.md)）
 - Push通知の証跡のみ `docs/test-results/2026-01-19-frontend-e2e-pwa-push/` で取得しています。
 - 画面の表示内容は demo seed に基づきます（データ差分あり）。
@@ -426,16 +426,20 @@
 6. 会計連携照合の `comparisonStatus` と `ready / pending_mapping / blocked` を確認する
 7. `連携ジョブ一覧` で種別 / ステータス / limit / offset を設定し `連携ジョブ取得` を実行する
 8. 成功済みジョブは `再出力` で payload を再送し、`reexportOfId` で lineage を確認する
+9. `会計マッピングルール` で `mappingKey / debitAccountCode / creditAccountCode / taxCode` を入力し `作成` を実行する
+10. 一覧取得後に `編集` から `departmentCode` などの補助コードを更新する
+11. `再適用` で periodKey 単位の staging 行へ mapping rule を再適用し、`processed / updated / ready / pending_mapping / blocked` を確認する
 
-![外部連携設定（HR/CRM）](../test-results/2026-03-16-frontend-e2e-r3/11-admin-settings.png)
-![連携ジョブ一覧](../test-results/2026-03-16-frontend-e2e-r3/11-integration-export-jobs.png)
+![外部連携設定（HR/CRM）](../test-results/2026-03-17-frontend-e2e-r1/11-admin-settings.png)
+![連携ジョブ一覧](../test-results/2026-03-17-frontend-e2e-r1/11-integration-export-jobs.png)
+![会計マッピングルール](../test-results/2026-03-17-frontend-e2e-r1/11-accounting-mapping-rules.png)
 
 ### 入力項目/制約
 
 - JSON 入力が不正な場合は保存されません
 - チャットルーム設定は admin/mgmt のみ
 
-![管理設定](../test-results/2026-03-16-frontend-e2e-r3/11-admin-settings.png)
+![管理設定](../test-results/2026-03-17-frontend-e2e-r1/11-admin-settings.png)
 
 ### 休暇運用（休暇種別ルール / HR連携エクスポート）
 
