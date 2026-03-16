@@ -82,7 +82,7 @@
   - `running`, `success`, `failed`
 - 既存の leave dispatch
   - `LeaveIntegrationExportLog`
-  - `idempotencyKey`, `requestHash`, `exportedUntil`, `exportedCount`
+  - `idempotencyKey`, `requestHash`, `reexportOfId`, `exportedUntil`, `exportedCount`
 - 社員マスタ dispatch
   - `HrEmployeeMasterExportLog`
   - `idempotencyKey`, `requestHash`, `reexportOfId`, `exportedUntil`, `exportedCount`

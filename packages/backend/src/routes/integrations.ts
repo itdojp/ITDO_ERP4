@@ -2659,15 +2659,13 @@ export async function registerIntegrationRoutes(app: FastifyInstance) {
               logId: source.id,
             });
           }
-          const existing = await prisma.leaveIntegrationExportLog.findUnique({
-            where: {
-              target_idempotencyKey: {
-                target,
-                idempotencyKey,
-              },
-            },
-          });
-          if (existing) {
+          const respondWithExistingLeaveRedispatch = async (
+            existing: NonNullable<
+              Awaited<
+                ReturnType<typeof prisma.leaveIntegrationExportLog.findUnique>
+              >
+            >,
+          ) => {
             if (
               existing.requestHash !== source.requestHash ||
               existing.reexportOfId !== source.id
@@ -2711,24 +2709,59 @@ export async function registerIntegrationRoutes(app: FastifyInstance) {
               payload: existing.payload,
               log: buildLeaveExportLogResponse(existing),
             };
-          }
-          const created = await prisma.leaveIntegrationExportLog.create({
-            data: {
-              target,
-              idempotencyKey,
-              requestHash: source.requestHash,
-              reexportOfId: source.id,
-              updatedSince: source.updatedSince,
-              exportedUntil: source.exportedUntil,
-              status: IntegrationRunStatus.success,
-              exportedCount: source.exportedCount,
-              payload: source.payload,
-              message: 'redispatched',
-              startedAt: now,
-              finishedAt: now,
-              createdBy: actorId,
+          };
+          const existing = await prisma.leaveIntegrationExportLog.findUnique({
+            where: {
+              target_idempotencyKey: {
+                target,
+                idempotencyKey,
+              },
             },
           });
+          if (existing) {
+            return respondWithExistingLeaveRedispatch(existing);
+          }
+          let created: Awaited<
+            ReturnType<typeof prisma.leaveIntegrationExportLog.create>
+          >;
+          try {
+            created = await prisma.leaveIntegrationExportLog.create({
+              data: {
+                target,
+                idempotencyKey,
+                requestHash: source.requestHash,
+                reexportOfId: source.id,
+                updatedSince: source.updatedSince,
+                exportedUntil: source.exportedUntil,
+                status: IntegrationRunStatus.success,
+                exportedCount: source.exportedCount,
+                payload: source.payload,
+                message: 'redispatched',
+                startedAt: now,
+                finishedAt: now,
+                createdBy: actorId,
+              },
+            });
+          } catch (error) {
+            if (
+              error instanceof Prisma.PrismaClientKnownRequestError &&
+              error.code === 'P2002'
+            ) {
+              const concurrent =
+                await prisma.leaveIntegrationExportLog.findUnique({
+                  where: {
+                    target_idempotencyKey: {
+                      target,
+                      idempotencyKey,
+                    },
+                  },
+                });
+              if (concurrent) {
+                return respondWithExistingLeaveRedispatch(concurrent);
+              }
+            }
+            throw error;
+          }
           await logAudit({
             ...auditContextFromRequest(req),
             action: 'integration_hr_leave_export_redispatched',
@@ -2775,10 +2808,13 @@ export async function registerIntegrationRoutes(app: FastifyInstance) {
               logId: source.id,
             });
           }
-          const existing = await prisma.hrEmployeeMasterExportLog.findUnique({
-            where: { idempotencyKey },
-          });
-          if (existing) {
+          const respondWithExistingEmployeeMasterRedispatch = async (
+            existing: NonNullable<
+              Awaited<
+                ReturnType<typeof prisma.hrEmployeeMasterExportLog.findUnique>
+              >
+            >,
+          ) => {
             if (
               existing.requestHash !== source.requestHash ||
               existing.reexportOfId !== source.id
@@ -2822,23 +2858,48 @@ export async function registerIntegrationRoutes(app: FastifyInstance) {
               payload: existing.payload,
               log: buildHrEmployeeMasterExportLogResponse(existing),
             };
-          }
-          const created = await prisma.hrEmployeeMasterExportLog.create({
-            data: {
-              idempotencyKey,
-              requestHash: source.requestHash,
-              reexportOfId: source.id,
-              updatedSince: source.updatedSince,
-              exportedUntil: source.exportedUntil,
-              status: IntegrationRunStatus.success,
-              exportedCount: source.exportedCount,
-              payload: source.payload,
-              message: 'redispatched',
-              startedAt: now,
-              finishedAt: now,
-              createdBy: actorId,
-            },
+          };
+          const existing = await prisma.hrEmployeeMasterExportLog.findUnique({
+            where: { idempotencyKey },
           });
+          if (existing) {
+            return respondWithExistingEmployeeMasterRedispatch(existing);
+          }
+          let created: Awaited<
+            ReturnType<typeof prisma.hrEmployeeMasterExportLog.create>
+          >;
+          try {
+            created = await prisma.hrEmployeeMasterExportLog.create({
+              data: {
+                idempotencyKey,
+                requestHash: source.requestHash,
+                reexportOfId: source.id,
+                updatedSince: source.updatedSince,
+                exportedUntil: source.exportedUntil,
+                status: IntegrationRunStatus.success,
+                exportedCount: source.exportedCount,
+                payload: source.payload,
+                message: 'redispatched',
+                startedAt: now,
+                finishedAt: now,
+                createdBy: actorId,
+              },
+            });
+          } catch (error) {
+            if (
+              error instanceof Prisma.PrismaClientKnownRequestError &&
+              error.code === 'P2002'
+            ) {
+              const concurrent =
+                await prisma.hrEmployeeMasterExportLog.findUnique({
+                  where: { idempotencyKey },
+                });
+              if (concurrent) {
+                return respondWithExistingEmployeeMasterRedispatch(concurrent);
+              }
+            }
+            throw error;
+          }
           await logAudit({
             ...auditContextFromRequest(req),
             action: 'integration_hr_employee_master_export_redispatched',
@@ -2884,10 +2945,13 @@ export async function registerIntegrationRoutes(app: FastifyInstance) {
               logId: source.id,
             });
           }
-          const existing = await prisma.accountingIcsExportLog.findUnique({
-            where: { idempotencyKey },
-          });
-          if (existing) {
+          const respondWithExistingAccountingIcsRedispatch = async (
+            existing: NonNullable<
+              Awaited<
+                ReturnType<typeof prisma.accountingIcsExportLog.findUnique>
+              >
+            >,
+          ) => {
             if (
               existing.requestHash !== source.requestHash ||
               existing.reexportOfId !== source.id
@@ -2930,23 +2994,49 @@ export async function registerIntegrationRoutes(app: FastifyInstance) {
               payload: existing.payload,
               log: buildAccountingIcsExportLogResponse(existing),
             };
-          }
-          const created = await prisma.accountingIcsExportLog.create({
-            data: {
-              idempotencyKey,
-              requestHash: source.requestHash,
-              reexportOfId: source.id,
-              periodKey: source.periodKey,
-              exportedUntil: source.exportedUntil,
-              status: IntegrationRunStatus.success,
-              exportedCount: source.exportedCount,
-              payload: source.payload,
-              message: 'redispatched',
-              startedAt: now,
-              finishedAt: now,
-              createdBy: actorId,
-            },
+          };
+          const existing = await prisma.accountingIcsExportLog.findUnique({
+            where: { idempotencyKey },
           });
+          if (existing) {
+            return respondWithExistingAccountingIcsRedispatch(existing);
+          }
+          let created: Awaited<
+            ReturnType<typeof prisma.accountingIcsExportLog.create>
+          >;
+          try {
+            created = await prisma.accountingIcsExportLog.create({
+              data: {
+                idempotencyKey,
+                requestHash: source.requestHash,
+                reexportOfId: source.id,
+                periodKey: source.periodKey,
+                exportedUntil: source.exportedUntil,
+                status: IntegrationRunStatus.success,
+                exportedCount: source.exportedCount,
+                payload: source.payload,
+                message: 'redispatched',
+                startedAt: now,
+                finishedAt: now,
+                createdBy: actorId,
+              },
+            });
+          } catch (error) {
+            if (
+              error instanceof Prisma.PrismaClientKnownRequestError &&
+              error.code === 'P2002'
+            ) {
+              const concurrent = await prisma.accountingIcsExportLog.findUnique(
+                {
+                  where: { idempotencyKey },
+                },
+              );
+              if (concurrent) {
+                return respondWithExistingAccountingIcsRedispatch(concurrent);
+              }
+            }
+            throw error;
+          }
           await logAudit({
             ...auditContextFromRequest(req),
             action: 'integration_accounting_ics_export_redispatched',
