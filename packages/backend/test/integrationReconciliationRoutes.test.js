@@ -13,14 +13,15 @@ function withPrismaStubs(stubs, fn) {
   const restores = [];
   for (const [path, stub] of Object.entries(stubs)) {
     const [model, method] = path.split('.');
-    const target = prisma[model];
-    if (!target || typeof target[method] !== 'function') {
+    const target = method ? prisma[model] : prisma;
+    const key = method ?? model;
+    if (!target || typeof target[key] !== 'function') {
       throw new Error(`invalid stub target: ${path}`);
     }
-    const original = target[method];
-    target[method] = stub;
+    const original = target[key];
+    target[key] = stub;
     restores.push(() => {
-      target[method] = original;
+      target[key] = original;
     });
   }
   return Promise.resolve()
@@ -52,7 +53,11 @@ test('GET /integrations/reconciliation/summary returns aggregate reconciliation 
       }),
       'attendanceMonthlySummary.findMany': async (args) => {
         assert.equal(args?.where?.closingPeriodId, 'closing-001');
-        return [{ employeeCode: 'EMP-001' }, { employeeCode: 'EMP-002' }];
+        return [
+          { employeeCode: 'EMP-001' },
+          { employeeCode: 'EMP-001' },
+          { employeeCode: 'EMP-002' },
+        ];
       },
       'hrEmployeeMasterExportLog.findFirst': async (args) => {
         if (args?.where?.updatedSince === null) {
@@ -321,7 +326,11 @@ test('GET /integrations/reconciliation/details returns payroll diffs and account
       }),
       'attendanceMonthlySummary.findMany': async (args) => {
         if (args?.where?.closingPeriodId === 'closing-003') {
-          return [{ employeeCode: 'EMP-001' }, { employeeCode: 'EMP-002' }];
+          return [
+            { employeeCode: 'EMP-001' },
+            { employeeCode: 'EMP-001' },
+            { employeeCode: 'EMP-002' },
+          ];
         }
         throw new Error(
           `unexpected attendance summary query: ${JSON.stringify(args)}`,
@@ -368,80 +377,163 @@ test('GET /integrations/reconciliation/details returns payroll diffs and account
         _sum: { amount: '5000' },
       }),
       'accountingJournalStaging.count': async () => 1,
-      'accountingJournalStaging.findMany': async () => [
-        {
-          id: 'stg-001',
-          eventId: 'evt-001',
-          status: 'ready',
-          mappingKey: 'expense:travel',
-          description: 'travel expense',
-          debitAccountCode: '6000',
-          creditAccountCode: '2000',
-          taxCode: 'A01',
-          amount: '2000',
-          departmentCode: 'DEP-A',
-          event: {
-            sourceTable: 'expenses',
-            sourceId: 'exp-001',
-            projectCode: 'PRJ-001',
-            departmentCode: 'DEP-A',
+      $queryRaw: async (query) => {
+        const sql = Array.isArray(query?.strings)
+          ? query.strings.join(' ')
+          : String(query);
+        if (sql.includes('SELECT ajs."id"')) {
+          return [{ id: 'stg-004' }];
+        }
+        if (sql.includes('ae."projectCode"')) {
+          return [
+            {
+              key: '(unassigned)',
+              totalCount: 1,
+              readyCount: 1,
+              pendingMappingCount: 0,
+              blockedCount: 0,
+              invalidReadyCount: 1,
+              readyAmountTotal: '3000',
+            },
+            {
+              key: 'PRJ-001',
+              totalCount: 2,
+              readyCount: 1,
+              pendingMappingCount: 1,
+              blockedCount: 0,
+              invalidReadyCount: 0,
+              readyAmountTotal: '2000',
+            },
+            {
+              key: 'PRJ-002',
+              totalCount: 1,
+              readyCount: 0,
+              pendingMappingCount: 0,
+              blockedCount: 1,
+              invalidReadyCount: 0,
+              readyAmountTotal: '0',
+            },
+          ];
+        }
+        return [
+          {
+            key: '(unassigned)',
+            totalCount: 1,
+            readyCount: 0,
+            pendingMappingCount: 0,
+            blockedCount: 1,
+            invalidReadyCount: 0,
+            readyAmountTotal: '0',
           },
-        },
-        {
-          id: 'stg-002',
-          eventId: 'evt-002',
-          status: 'pending_mapping',
-          mappingKey: 'expense:meal',
-          description: 'meal',
-          debitAccountCode: null,
-          creditAccountCode: null,
-          taxCode: null,
-          amount: '1200',
-          departmentCode: 'DEP-A',
-          event: {
-            sourceTable: 'expenses',
-            sourceId: 'exp-002',
-            projectCode: 'PRJ-001',
-            departmentCode: 'DEP-A',
+          {
+            key: 'DEP-A',
+            totalCount: 2,
+            readyCount: 1,
+            pendingMappingCount: 1,
+            blockedCount: 0,
+            invalidReadyCount: 0,
+            readyAmountTotal: '2000',
           },
-        },
-        {
-          id: 'stg-003',
-          eventId: 'evt-003',
-          status: 'blocked',
-          mappingKey: 'invoice:service',
-          description: 'invoice',
-          debitAccountCode: null,
-          creditAccountCode: null,
-          taxCode: null,
-          amount: '1800',
-          departmentCode: null,
-          event: {
-            sourceTable: 'invoices',
-            sourceId: 'inv-001',
-            projectCode: 'PRJ-002',
+          {
+            key: 'DEP-B',
+            totalCount: 1,
+            readyCount: 1,
+            pendingMappingCount: 0,
+            blockedCount: 0,
+            invalidReadyCount: 1,
+            readyAmountTotal: '3000',
+          },
+        ];
+      },
+      'accountingJournalStaging.findMany': async (args) => {
+        const rows = [
+          {
+            id: 'stg-001',
+            eventId: 'evt-001',
+            status: 'ready',
+            mappingKey: 'expense:travel',
+            description: 'travel expense',
+            debitAccountCode: '6000',
+            creditAccountCode: '2000',
+            taxCode: 'A01',
+            amount: '2000',
+            departmentCode: 'DEP-A',
+            event: {
+              sourceTable: 'expenses',
+              sourceId: 'exp-001',
+              projectCode: 'PRJ-001',
+              departmentCode: 'DEP-A',
+            },
+          },
+          {
+            id: 'stg-002',
+            eventId: 'evt-002',
+            status: 'pending_mapping',
+            mappingKey: 'expense:meal',
+            description: 'meal',
+            debitAccountCode: null,
+            creditAccountCode: null,
+            taxCode: null,
+            amount: '1200',
+            departmentCode: 'DEP-A',
+            event: {
+              sourceTable: 'expenses',
+              sourceId: 'exp-002',
+              projectCode: 'PRJ-001',
+              departmentCode: 'DEP-A',
+            },
+          },
+          {
+            id: 'stg-003',
+            eventId: 'evt-003',
+            status: 'blocked',
+            mappingKey: 'invoice:service',
+            description: 'invoice',
+            debitAccountCode: null,
+            creditAccountCode: null,
+            taxCode: null,
+            amount: '1800',
             departmentCode: null,
+            event: {
+              sourceTable: 'invoices',
+              sourceId: 'inv-001',
+              projectCode: 'PRJ-002',
+              departmentCode: null,
+            },
           },
-        },
-        {
-          id: 'stg-004',
-          eventId: 'evt-004',
-          status: 'ready',
-          mappingKey: 'vendor_invoice:office',
-          description: 'office',
-          debitAccountCode: '',
-          creditAccountCode: '2100',
-          taxCode: 'A01',
-          amount: '3000',
-          departmentCode: 'DEP-B',
-          event: {
-            sourceTable: 'vendor_invoices',
-            sourceId: 'vin-001',
-            projectCode: null,
+          {
+            id: 'stg-004',
+            eventId: 'evt-004',
+            status: 'ready',
+            mappingKey: 'vendor_invoice:office',
+            description: 'office',
+            debitAccountCode: '',
+            creditAccountCode: '2100',
+            taxCode: 'A01',
+            amount: '3000',
             departmentCode: 'DEP-B',
+            event: {
+              sourceTable: 'vendor_invoices',
+              sourceId: 'vin-001',
+              projectCode: null,
+              departmentCode: 'DEP-B',
+            },
           },
-        },
-      ],
+        ];
+        return rows.filter((row) => {
+          const status = args?.where?.status;
+          if (status && row.status !== status) return false;
+          if (Array.isArray(args?.where?.OR)) {
+            return (
+              !row.debitAccountCode ||
+              !row.creditAccountCode ||
+              !row.taxCode ||
+              Number(row.amount) <= 0
+            );
+          }
+          return true;
+        });
+      },
     },
     async () => {
       const server = await buildServer({ logger: false });

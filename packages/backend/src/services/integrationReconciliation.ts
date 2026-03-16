@@ -49,6 +49,18 @@ type AccountingExportSnapshot = {
   message: string | null;
 };
 
+type ReconciliationBaseData = {
+  periodKey: string;
+  latestClosing: AttendanceClosingSnapshot | null;
+  attendanceEmployeeCodes: string[];
+  latestEmployeeMasterExport: EmployeeMasterExportSnapshot | null;
+  latestEmployeeMasterFullExport: EmployeeMasterExportSnapshot | null;
+  latestIcsExport: AccountingExportSnapshot | null;
+  stagingCounts: Array<{ status: string; _count: { _all: number } }>;
+  readyAmountTotal: string;
+  invalidReadyCount: number;
+};
+
 type ReconciliationSummary = {
   periodKey: string;
   attendance: {
@@ -161,50 +173,25 @@ function normalizeEmployeeCodeList(value: Prisma.JsonValue | null) {
   return codes.sort((a, b) => a.localeCompare(b));
 }
 
+function normalizeEmployeeCodesFromRows(
+  rows: Array<{ employeeCode: string | null | undefined }>,
+) {
+  const seen = new Set<string>();
+  const codes: string[] = [];
+  for (const row of rows) {
+    const normalized = row.employeeCode?.trim();
+    if (!normalized || seen.has(normalized)) continue;
+    seen.add(normalized);
+    codes.push(normalized);
+  }
+  return codes.sort((a, b) => a.localeCompare(b));
+}
+
 function toStringAmount(
   value: Prisma.Decimal | number | string | null | undefined,
 ) {
   if (value === null || value === undefined) return '0';
   return String(value);
-}
-
-function isReadyRowIncomplete(row: {
-  status: string;
-  debitAccountCode: string | null;
-  creditAccountCode: string | null;
-  taxCode: string | null;
-  amount: Prisma.Decimal | number | string | null;
-}) {
-  if (row.status !== 'ready') return false;
-  if (!row.debitAccountCode) return true;
-  if (!row.creditAccountCode) return true;
-  if (!row.taxCode) return true;
-  return new Prisma.Decimal(row.amount ?? 0).lte(0);
-}
-
-function normalizeBreakdownKey(value: string | null | undefined) {
-  const normalized = value?.trim();
-  return normalized && normalized.length > 0 ? normalized : '(unassigned)';
-}
-
-function ensureBreakdownRow(
-  map: Map<string, ReconciliationBreakdownRow>,
-  key: string,
-) {
-  let row = map.get(key);
-  if (!row) {
-    row = {
-      key,
-      totalCount: 0,
-      readyCount: 0,
-      pendingMappingCount: 0,
-      blockedCount: 0,
-      invalidReadyCount: 0,
-      readyAmountTotal: '0',
-    };
-    map.set(key, row);
-  }
-  return row;
 }
 
 function buildReconciliationSampleRow(row: {
@@ -242,13 +229,133 @@ function buildReconciliationSampleRow(row: {
   };
 }
 
-export async function buildIntegrationReconciliationSummary(options: {
+function buildIntegrationReconciliationSummaryFromBaseData(
+  base: ReconciliationBaseData,
+): ReconciliationSummary {
+  const employeeMasterCodes = normalizeEmployeeCodeList(
+    base.latestEmployeeMasterFullExport?.payload ?? null,
+  );
+  const employeeMasterCodeSet = new Set(employeeMasterCodes);
+  const attendanceCodeSet = new Set(base.attendanceEmployeeCodes);
+  const attendanceOnlyEmployeeCodes = base.attendanceEmployeeCodes.filter(
+    (code) => !employeeMasterCodeSet.has(code),
+  );
+  const employeeMasterOnlyEmployeeCodes = employeeMasterCodes.filter(
+    (code) => !attendanceCodeSet.has(code),
+  );
+  const matchedEmployeeCount = base.attendanceEmployeeCodes.filter((code) =>
+    employeeMasterCodeSet.has(code),
+  ).length;
+
+  let payrollComparisonStatus: ReconciliationSummary['payroll']['comparisonStatus'];
+  let payrollCountsAligned: boolean | null;
+  if (!base.latestClosing) {
+    payrollComparisonStatus = 'attendance_closing_missing';
+    payrollCountsAligned = null;
+  } else if (!base.latestEmployeeMasterFullExport) {
+    payrollComparisonStatus = 'employee_master_full_export_missing';
+    payrollCountsAligned = null;
+  } else {
+    payrollCountsAligned =
+      attendanceOnlyEmployeeCodes.length === 0 &&
+      employeeMasterOnlyEmployeeCodes.length === 0;
+    payrollComparisonStatus = payrollCountsAligned ? 'ok' : 'mismatch';
+  }
+
+  const statusCountMap = new Map(
+    base.stagingCounts.map((item) => [item.status, item._count._all]),
+  );
+  const readyCount = statusCountMap.get('ready') ?? 0;
+  const pendingMappingCount = statusCountMap.get('pending_mapping') ?? 0;
+  const blockedCount = statusCountMap.get('blocked') ?? 0;
+  const totalCount = base.stagingCounts.reduce(
+    (sum, item) => sum + item._count._all,
+    0,
+  );
+  const mappingComplete = pendingMappingCount === 0 && blockedCount === 0;
+  const debitCreditBalanced = base.invalidReadyCount === 0;
+
+  let accountingComparisonStatus: ReconciliationSummary['accounting']['comparisonStatus'];
+  let accountingCountsAligned: boolean | null;
+  if (!mappingComplete) {
+    accountingComparisonStatus = 'mapping_incomplete';
+    accountingCountsAligned = null;
+  } else if (base.invalidReadyCount > 0) {
+    accountingComparisonStatus = 'ready_row_incomplete';
+    accountingCountsAligned = false;
+  } else if (!base.latestIcsExport) {
+    accountingComparisonStatus = 'export_missing';
+    accountingCountsAligned = null;
+  } else {
+    accountingCountsAligned = base.latestIcsExport.exportedCount === readyCount;
+    accountingComparisonStatus = accountingCountsAligned
+      ? 'ok'
+      : 'count_mismatch';
+  }
+
+  const hasBlockingDifferences =
+    payrollComparisonStatus !== 'ok' || accountingComparisonStatus !== 'ok';
+
+  return {
+    periodKey: base.periodKey,
+    attendance: {
+      latestClosing: base.latestClosing,
+    },
+    payroll: {
+      latestEmployeeMasterExport: base.latestEmployeeMasterExport,
+      latestEmployeeMasterFullExport: base.latestEmployeeMasterFullExport,
+      comparisonStatus: payrollComparisonStatus,
+      attendanceEmployeeCount: base.latestClosing
+        ? base.attendanceEmployeeCodes.length
+        : null,
+      employeeMasterExportCount: base.latestEmployeeMasterFullExport
+        ? employeeMasterCodes.length
+        : null,
+      matchedEmployeeCount:
+        base.latestClosing && base.latestEmployeeMasterFullExport
+          ? matchedEmployeeCount
+          : null,
+      countsAligned: payrollCountsAligned,
+      attendanceOnlyCount: attendanceOnlyEmployeeCodes.length,
+      attendanceOnlyEmployeeCodes: attendanceOnlyEmployeeCodes.slice(
+        0,
+        MAX_EMPLOYEE_CODE_SAMPLE,
+      ),
+      employeeMasterOnlyCount: employeeMasterOnlyEmployeeCodes.length,
+      employeeMasterOnlyEmployeeCodes: employeeMasterOnlyEmployeeCodes.slice(
+        0,
+        MAX_EMPLOYEE_CODE_SAMPLE,
+      ),
+    },
+    accounting: {
+      latestIcsExport: base.latestIcsExport,
+      comparisonStatus: accountingComparisonStatus,
+      latestExportedCount: base.latestIcsExport?.exportedCount ?? null,
+      countsAligned: accountingCountsAligned,
+      mappingComplete,
+      staging: {
+        totalCount,
+        readyCount,
+        pendingMappingCount,
+        blockedCount,
+        invalidReadyCount: base.invalidReadyCount,
+        readyAmountTotal: base.readyAmountTotal,
+        readyDebitTotal: base.readyAmountTotal,
+        readyCreditTotal: base.readyAmountTotal,
+        debitCreditBalanced,
+      },
+    },
+    hasBlockingDifferences,
+  };
+}
+
+async function fetchIntegrationReconciliationBaseData(options: {
   periodKey: string;
-  client?: ReconciliationClient;
-}): Promise<ReconciliationSummary> {
-  const client = options.client ?? prisma;
+  client: ReconciliationClient;
+}): Promise<ReconciliationBaseData> {
   const parsedPeriod = parseAttendancePeriodKey(options.periodKey);
   const periodKey = parsedPeriod.periodKey;
+  const client = options.client;
 
   const latestClosing = await client.attendanceClosingPeriod.findFirst({
     where: { periodKey, status: 'closed' },
@@ -279,7 +386,7 @@ export async function buildIntegrationReconciliationSummary(options: {
     latestIcsExport,
     stagingCounts,
     readyAmountAggregate,
-    invalidReadyCount,
+    invalidReadyCountRows,
   ] = await Promise.all([
     latestClosing
       ? client.attendanceMonthlySummary.findMany({
@@ -347,145 +454,45 @@ export async function buildIntegrationReconciliationSummary(options: {
       where: { event: { periodKey }, status: 'ready' },
       _sum: { amount: true },
     }),
-    client.accountingJournalStaging.count({
-      where: {
-        event: { periodKey },
-        status: 'ready',
-        OR: [
-          { debitAccountCode: null },
-          { debitAccountCode: '' },
-          { creditAccountCode: null },
-          { creditAccountCode: '' },
-          { taxCode: null },
-          { taxCode: '' },
-          { amount: { lte: 0 } },
-        ],
-      },
-    }),
+    client.$queryRaw<Array<{ count: bigint | number }>>(Prisma.sql`
+      SELECT COUNT(*)::int AS "count"
+      FROM "AccountingJournalStaging" ajs
+      INNER JOIN "AccountingEvent" ae ON ae."id" = ajs."eventId"
+      WHERE ae."periodKey" = ${periodKey}
+        AND ajs."status" = 'ready'
+        AND (
+          ajs."debitAccountCode" IS NULL OR BTRIM(ajs."debitAccountCode") = ''
+          OR ajs."creditAccountCode" IS NULL OR BTRIM(ajs."creditAccountCode") = ''
+          OR ajs."taxCode" IS NULL OR BTRIM(ajs."taxCode") = ''
+          OR ajs."amount" <= 0
+        )
+    `),
   ]);
-
-  const attendanceEmployeeCodes = attendanceSummaries
-    .map((item) => item.employeeCode.trim())
-    .filter((item) => item.length > 0)
-    .sort((a, b) => a.localeCompare(b));
-  const employeeMasterCodes = normalizeEmployeeCodeList(
-    latestEmployeeMasterFullExport?.payload ?? null,
-  );
-  const employeeMasterCodeSet = new Set(employeeMasterCodes);
-  const attendanceCodeSet = new Set(attendanceEmployeeCodes);
-  const attendanceOnlyEmployeeCodes = attendanceEmployeeCodes.filter(
-    (code) => !employeeMasterCodeSet.has(code),
-  );
-  const employeeMasterOnlyEmployeeCodes = employeeMasterCodes.filter(
-    (code) => !attendanceCodeSet.has(code),
-  );
-  const matchedEmployeeCount = attendanceEmployeeCodes.filter((code) =>
-    employeeMasterCodeSet.has(code),
-  ).length;
-
-  let payrollComparisonStatus: ReconciliationSummary['payroll']['comparisonStatus'];
-  let payrollCountsAligned: boolean | null;
-  if (!latestClosing) {
-    payrollComparisonStatus = 'attendance_closing_missing';
-    payrollCountsAligned = null;
-  } else if (!latestEmployeeMasterFullExport) {
-    payrollComparisonStatus = 'employee_master_full_export_missing';
-    payrollCountsAligned = null;
-  } else {
-    payrollCountsAligned =
-      attendanceOnlyEmployeeCodes.length === 0 &&
-      employeeMasterOnlyEmployeeCodes.length === 0;
-    payrollComparisonStatus = payrollCountsAligned ? 'ok' : 'mismatch';
-  }
-
-  const statusCountMap = new Map(
-    stagingCounts.map((item) => [item.status, item._count._all]),
-  );
-  const readyCount = statusCountMap.get('ready') ?? 0;
-  const pendingMappingCount = statusCountMap.get('pending_mapping') ?? 0;
-  const blockedCount = statusCountMap.get('blocked') ?? 0;
-  const totalCount = stagingCounts.reduce(
-    (sum, item) => sum + item._count._all,
-    0,
-  );
-  const readyAmountTotal = toStringAmount(
-    readyAmountAggregate._sum.amount ?? 0,
-  );
-  const mappingComplete = pendingMappingCount === 0 && blockedCount === 0;
-  const debitCreditBalanced = invalidReadyCount === 0;
-
-  let accountingComparisonStatus: ReconciliationSummary['accounting']['comparisonStatus'];
-  let accountingCountsAligned: boolean | null;
-  if (!mappingComplete) {
-    accountingComparisonStatus = 'mapping_incomplete';
-    accountingCountsAligned = null;
-  } else if (invalidReadyCount > 0) {
-    accountingComparisonStatus = 'ready_row_incomplete';
-    accountingCountsAligned = false;
-  } else if (!latestIcsExport) {
-    accountingComparisonStatus = 'export_missing';
-    accountingCountsAligned = null;
-  } else {
-    accountingCountsAligned = latestIcsExport.exportedCount === readyCount;
-    accountingComparisonStatus = accountingCountsAligned
-      ? 'ok'
-      : 'count_mismatch';
-  }
-
-  const hasBlockingDifferences =
-    payrollComparisonStatus !== 'ok' || accountingComparisonStatus !== 'ok';
 
   return {
     periodKey,
-    attendance: {
-      latestClosing,
-    },
-    payroll: {
-      latestEmployeeMasterExport,
-      latestEmployeeMasterFullExport,
-      comparisonStatus: payrollComparisonStatus,
-      attendanceEmployeeCount: latestClosing
-        ? attendanceEmployeeCodes.length
-        : null,
-      employeeMasterExportCount: latestEmployeeMasterFullExport
-        ? employeeMasterCodes.length
-        : null,
-      matchedEmployeeCount:
-        latestClosing && latestEmployeeMasterFullExport
-          ? matchedEmployeeCount
-          : null,
-      countsAligned: payrollCountsAligned,
-      attendanceOnlyCount: attendanceOnlyEmployeeCodes.length,
-      attendanceOnlyEmployeeCodes: attendanceOnlyEmployeeCodes.slice(
-        0,
-        MAX_EMPLOYEE_CODE_SAMPLE,
-      ),
-      employeeMasterOnlyCount: employeeMasterOnlyEmployeeCodes.length,
-      employeeMasterOnlyEmployeeCodes: employeeMasterOnlyEmployeeCodes.slice(
-        0,
-        MAX_EMPLOYEE_CODE_SAMPLE,
-      ),
-    },
-    accounting: {
-      latestIcsExport,
-      comparisonStatus: accountingComparisonStatus,
-      latestExportedCount: latestIcsExport?.exportedCount ?? null,
-      countsAligned: accountingCountsAligned,
-      mappingComplete,
-      staging: {
-        totalCount,
-        readyCount,
-        pendingMappingCount,
-        blockedCount,
-        invalidReadyCount,
-        readyAmountTotal,
-        readyDebitTotal: readyAmountTotal,
-        readyCreditTotal: readyAmountTotal,
-        debitCreditBalanced,
-      },
-    },
-    hasBlockingDifferences,
+    latestClosing,
+    attendanceEmployeeCodes:
+      normalizeEmployeeCodesFromRows(attendanceSummaries),
+    latestEmployeeMasterExport,
+    latestEmployeeMasterFullExport,
+    latestIcsExport,
+    stagingCounts,
+    readyAmountTotal: toStringAmount(readyAmountAggregate._sum.amount ?? 0),
+    invalidReadyCount: Number(invalidReadyCountRows[0]?.count ?? 0),
   };
+}
+
+export async function buildIntegrationReconciliationSummary(options: {
+  periodKey: string;
+  client?: ReconciliationClient;
+}): Promise<ReconciliationSummary> {
+  const client = options.client ?? prisma;
+  const base = await fetchIntegrationReconciliationBaseData({
+    periodKey: options.periodKey,
+    client,
+  });
+  return buildIntegrationReconciliationSummaryFromBaseData(base);
 }
 
 export async function buildIntegrationReconciliationDetails(options: {
@@ -493,22 +500,83 @@ export async function buildIntegrationReconciliationDetails(options: {
   client?: ReconciliationClient;
 }): Promise<ReconciliationDetails> {
   const client = options.client ?? prisma;
-  const summary = await buildIntegrationReconciliationSummary({
+  const base = await fetchIntegrationReconciliationBaseData({
     periodKey: options.periodKey,
     client,
   });
+  const summary = buildIntegrationReconciliationSummaryFromBaseData(base);
+  const employeeMasterCodes = normalizeEmployeeCodeList(
+    base.latestEmployeeMasterFullExport?.payload ?? null,
+  );
+  const attendanceCodes = base.attendanceEmployeeCodes;
+  const employeeMasterCodeSet = new Set(employeeMasterCodes);
+  const attendanceCodeSet = new Set(attendanceCodes);
 
-  const [attendanceSummaries, stagingRows] = await Promise.all([
-    summary.attendance.latestClosing
-      ? client.attendanceMonthlySummary.findMany({
-          where: { closingPeriodId: summary.attendance.latestClosing.id },
-          select: { employeeCode: true },
-          orderBy: [{ employeeCode: 'asc' }, { id: 'asc' }],
-        })
-      : [],
+  const [
+    byProject,
+    byDepartment,
+    pendingMappingRows,
+    blockedRows,
+    invalidReadyIds,
+  ] = await Promise.all([
+    client.$queryRaw<Array<ReconciliationBreakdownRow>>(Prisma.sql`
+      SELECT
+        COALESCE(NULLIF(BTRIM(ae."projectCode"), ''), '(unassigned)') AS "key",
+        COUNT(*)::int AS "totalCount",
+        COUNT(*) FILTER (WHERE ajs."status" = 'ready')::int AS "readyCount",
+        COUNT(*) FILTER (WHERE ajs."status" = 'pending_mapping')::int AS "pendingMappingCount",
+        COUNT(*) FILTER (WHERE ajs."status" = 'blocked')::int AS "blockedCount",
+        COUNT(*) FILTER (
+          WHERE ajs."status" = 'ready'
+            AND (
+              ajs."debitAccountCode" IS NULL OR ajs."debitAccountCode" = ''
+              OR BTRIM(ajs."debitAccountCode") = ''
+              OR ajs."creditAccountCode" IS NULL OR BTRIM(ajs."creditAccountCode") = ''
+              OR ajs."taxCode" IS NULL OR BTRIM(ajs."taxCode") = ''
+              OR ajs."amount" <= 0
+            )
+        )::int AS "invalidReadyCount",
+        COALESCE(SUM(CASE WHEN ajs."status" = 'ready' THEN ajs."amount" ELSE 0 END), 0)::text AS "readyAmountTotal"
+      FROM "AccountingJournalStaging" ajs
+      INNER JOIN "AccountingEvent" ae ON ae."id" = ajs."eventId"
+      WHERE ae."periodKey" = ${summary.periodKey}
+      GROUP BY 1
+      ORDER BY 1 ASC
+    `),
+    client.$queryRaw<Array<ReconciliationBreakdownRow>>(Prisma.sql`
+      SELECT
+        COALESCE(
+          NULLIF(BTRIM(COALESCE(ajs."departmentCode", ae."departmentCode")), ''),
+          '(unassigned)'
+        ) AS "key",
+        COUNT(*)::int AS "totalCount",
+        COUNT(*) FILTER (WHERE ajs."status" = 'ready')::int AS "readyCount",
+        COUNT(*) FILTER (WHERE ajs."status" = 'pending_mapping')::int AS "pendingMappingCount",
+        COUNT(*) FILTER (WHERE ajs."status" = 'blocked')::int AS "blockedCount",
+        COUNT(*) FILTER (
+          WHERE ajs."status" = 'ready'
+            AND (
+              ajs."debitAccountCode" IS NULL OR ajs."debitAccountCode" = ''
+              OR BTRIM(ajs."debitAccountCode") = ''
+              OR ajs."creditAccountCode" IS NULL OR BTRIM(ajs."creditAccountCode") = ''
+              OR ajs."taxCode" IS NULL OR BTRIM(ajs."taxCode") = ''
+              OR ajs."amount" <= 0
+            )
+        )::int AS "invalidReadyCount",
+        COALESCE(SUM(CASE WHEN ajs."status" = 'ready' THEN ajs."amount" ELSE 0 END), 0)::text AS "readyAmountTotal"
+      FROM "AccountingJournalStaging" ajs
+      INNER JOIN "AccountingEvent" ae ON ae."id" = ajs."eventId"
+      WHERE ae."periodKey" = ${summary.periodKey}
+      GROUP BY 1
+      ORDER BY 1 ASC
+    `),
     client.accountingJournalStaging.findMany({
-      where: { event: { periodKey: summary.periodKey } },
+      where: {
+        event: { periodKey: summary.periodKey },
+        status: 'pending_mapping',
+      },
       orderBy: [{ entryDate: 'asc' }, { id: 'asc' }],
+      take: MAX_RECONCILIATION_DETAIL_SAMPLE,
       select: {
         id: true,
         eventId: true,
@@ -530,71 +598,75 @@ export async function buildIntegrationReconciliationDetails(options: {
         },
       },
     }),
+    client.accountingJournalStaging.findMany({
+      where: { event: { periodKey: summary.periodKey }, status: 'blocked' },
+      orderBy: [{ entryDate: 'asc' }, { id: 'asc' }],
+      take: MAX_RECONCILIATION_DETAIL_SAMPLE,
+      select: {
+        id: true,
+        eventId: true,
+        status: true,
+        mappingKey: true,
+        description: true,
+        debitAccountCode: true,
+        creditAccountCode: true,
+        taxCode: true,
+        amount: true,
+        departmentCode: true,
+        event: {
+          select: {
+            sourceTable: true,
+            sourceId: true,
+            projectCode: true,
+            departmentCode: true,
+          },
+        },
+      },
+    }),
+    client.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+      SELECT ajs."id"
+      FROM "AccountingJournalStaging" ajs
+      INNER JOIN "AccountingEvent" ae ON ae."id" = ajs."eventId"
+      WHERE ae."periodKey" = ${summary.periodKey}
+        AND ajs."status" = 'ready'
+        AND (
+          ajs."debitAccountCode" IS NULL OR BTRIM(ajs."debitAccountCode") = ''
+          OR ajs."creditAccountCode" IS NULL OR BTRIM(ajs."creditAccountCode") = ''
+          OR ajs."taxCode" IS NULL OR BTRIM(ajs."taxCode") = ''
+          OR ajs."amount" <= 0
+        )
+      ORDER BY ajs."entryDate" ASC, ajs."id" ASC
+      LIMIT ${MAX_RECONCILIATION_DETAIL_SAMPLE}
+    `),
   ]);
 
-  const attendanceCodes = attendanceSummaries
-    .map((item) => item.employeeCode.trim())
-    .filter((item) => item.length > 0)
-    .sort((a, b) => a.localeCompare(b));
-  const employeeMasterCodes = normalizeEmployeeCodeList(
-    summary.payroll.latestEmployeeMasterFullExport?.payload ?? null,
-  );
-  const employeeMasterCodeSet = new Set(employeeMasterCodes);
-  const attendanceCodeSet = new Set(attendanceCodes);
-
-  const byProjectMap = new Map<string, ReconciliationBreakdownRow>();
-  const byDepartmentMap = new Map<string, ReconciliationBreakdownRow>();
-  const pendingMappingSamples: ReconciliationSampleRow[] = [];
-  const blockedSamples: ReconciliationSampleRow[] = [];
-  const invalidReadySamples: ReconciliationSampleRow[] = [];
-
-  for (const row of stagingRows) {
-    const projectKey = normalizeBreakdownKey(row.event.projectCode);
-    const departmentKey = normalizeBreakdownKey(
-      row.departmentCode ?? row.event.departmentCode,
-    );
-    const projectBreakdown = ensureBreakdownRow(byProjectMap, projectKey);
-    const departmentBreakdown = ensureBreakdownRow(
-      byDepartmentMap,
-      departmentKey,
-    );
-    const invalidReady = isReadyRowIncomplete(row);
-    const amount = new Prisma.Decimal(row.amount ?? 0);
-
-    for (const breakdown of [projectBreakdown, departmentBreakdown]) {
-      breakdown.totalCount += 1;
-      if (row.status === 'ready') {
-        breakdown.readyCount += 1;
-        breakdown.readyAmountTotal = new Prisma.Decimal(
-          breakdown.readyAmountTotal,
-        )
-          .plus(amount)
-          .toString();
-      }
-      if (row.status === 'pending_mapping') breakdown.pendingMappingCount += 1;
-      if (row.status === 'blocked') breakdown.blockedCount += 1;
-      if (invalidReady) breakdown.invalidReadyCount += 1;
-    }
-
-    if (
-      row.status === 'pending_mapping' &&
-      pendingMappingSamples.length < MAX_RECONCILIATION_DETAIL_SAMPLE
-    ) {
-      pendingMappingSamples.push(buildReconciliationSampleRow(row));
-    }
-    if (
-      row.status === 'blocked' &&
-      blockedSamples.length < MAX_RECONCILIATION_DETAIL_SAMPLE
-    ) {
-      blockedSamples.push(buildReconciliationSampleRow(row));
-    }
-    if (
-      invalidReady &&
-      invalidReadySamples.length < MAX_RECONCILIATION_DETAIL_SAMPLE
-    ) {
-      invalidReadySamples.push(buildReconciliationSampleRow(row));
-    }
-  }
+  const invalidReadyRows =
+    invalidReadyIds.length === 0
+      ? []
+      : await client.accountingJournalStaging.findMany({
+          where: { id: { in: invalidReadyIds.map((item) => item.id) } },
+          orderBy: [{ entryDate: 'asc' }, { id: 'asc' }],
+          select: {
+            id: true,
+            eventId: true,
+            status: true,
+            mappingKey: true,
+            description: true,
+            debitAccountCode: true,
+            creditAccountCode: true,
+            taxCode: true,
+            amount: true,
+            departmentCode: true,
+            event: {
+              select: {
+                sourceTable: true,
+                sourceId: true,
+                projectCode: true,
+                departmentCode: true,
+              },
+            },
+          },
+        });
 
   return {
     periodKey: summary.periodKey,
@@ -610,15 +682,13 @@ export async function buildIntegrationReconciliationDetails(options: {
       ),
     },
     accounting: {
-      byProject: [...byProjectMap.values()].sort((a, b) =>
-        a.key.localeCompare(b.key),
+      byProject,
+      byDepartment,
+      pendingMappingSamples: pendingMappingRows.map(
+        buildReconciliationSampleRow,
       ),
-      byDepartment: [...byDepartmentMap.values()].sort((a, b) =>
-        a.key.localeCompare(b.key),
-      ),
-      pendingMappingSamples,
-      blockedSamples,
-      invalidReadySamples,
+      blockedSamples: blockedRows.map(buildReconciliationSampleRow),
+      invalidReadySamples: invalidReadyRows.map(buildReconciliationSampleRow),
     },
   };
 }
