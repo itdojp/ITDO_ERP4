@@ -27,6 +27,56 @@ type ProjectProfit = {
   totalMinutes: number;
 };
 type GroupEffort = { userId: string; totalMinutes: number };
+
+type ProjectProfitByUserItem = {
+  userId: string;
+  laborCost: number;
+  expenseCost: number;
+  allocatedVendorCost: number;
+  allocatedRevenue: number;
+  totalCost: number;
+  grossProfit: number;
+  grossMargin: number;
+  minutes: number;
+};
+
+type ProjectProfitByUserReport = {
+  projectId: string;
+  currency?: string | null;
+  revenue: number;
+  vendorCost: number;
+  laborCost: number;
+  expenseCost: number;
+  totalMinutes: number;
+  allocationMethod: string;
+  items: ProjectProfitByUserItem[];
+};
+
+type ProjectProfitByGroupReport = {
+  projectId: string;
+  currency?: string | null;
+  label?: string | null;
+  userIds: string[];
+  allocationMethod: string;
+  totals: {
+    revenue: number;
+    vendorCost: number;
+    laborCost: number;
+    expenseCost: number;
+    totalMinutes: number;
+  };
+  group: {
+    laborCost: number;
+    expenseCost: number;
+    allocatedVendorCost: number;
+    allocatedRevenue: number;
+    totalCost: number;
+    grossProfit: number;
+    grossMargin: number;
+    minutes: number;
+  };
+};
+
 type Overtime = { userId: string; totalMinutes: number; dailyHours: number };
 
 type ProjectBaseline = {
@@ -141,6 +191,13 @@ function buildQuery(from?: string, to?: string) {
   return qs ? `?${qs}` : '';
 }
 
+function parseUserIdsInput(value: string) {
+  return value
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
+
 export const Reports: React.FC = () => {
   const auth = getAuthState();
   const defaultProjectId = auth?.projectIds?.[0] || 'demo-project';
@@ -148,7 +205,7 @@ export const Reports: React.FC = () => {
   const [projectId, setProjectId] = useState(defaultProjectId);
   const [baselines, setBaselines] = useState<ProjectBaseline[]>([]);
   const [baselineId, setBaselineId] = useState('');
-  const [groupUserIds, setGroupUserIds] = useState(defaultUserId);
+  const [userIdsInput, setUserIdsInput] = useState(defaultUserId);
   const [overtimeUserId, setOvertimeUserId] = useState(defaultUserId);
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
@@ -157,6 +214,10 @@ export const Reports: React.FC = () => {
   );
   const [projectProfitReport, setProjectProfitReport] =
     useState<ProjectProfit | null>(null);
+  const [projectProfitByUserReport, setProjectProfitByUserReport] =
+    useState<ProjectProfitByUserReport | null>(null);
+  const [projectProfitByGroupReport, setProjectProfitByGroupReport] =
+    useState<ProjectProfitByGroupReport | null>(null);
   const [groupReport, setGroupReport] = useState<GroupEffort[]>([]);
   const [overtimeReport, setOvertimeReport] = useState<Overtime | null>(null);
   const [burndownReport, setBurndownReport] = useState<BurndownReport | null>(
@@ -272,11 +333,7 @@ export const Reports: React.FC = () => {
   const loadGroup = async () => {
     try {
       const qs = buildQuery(from, to);
-      const joined = groupUserIds
-        .split(',')
-        .map((v) => v.trim())
-        .filter(Boolean)
-        .join(',');
+      const joined = parseUserIdsInput(userIdsInput).join(',');
       const res = await api<{ items: GroupEffort[] }>(
         `/reports/group-effort?userIds=${encodeURIComponent(joined)}${qs ? `&${qs.slice(1)}` : ''}`,
       );
@@ -300,6 +357,55 @@ export const Reports: React.FC = () => {
       setMessage('PJ別採算を取得しました');
     } catch (err) {
       setProjectProfitReport(null);
+      setMessage('取得に失敗しました');
+    }
+  };
+
+  const loadProjectProfitByUser = async () => {
+    if (!projectId) {
+      setMessage('案件を選択してください');
+      return;
+    }
+    try {
+      const joined = parseUserIdsInput(userIdsInput).join(',');
+      const query = new URLSearchParams();
+      if (from) query.set('from', from);
+      if (to) query.set('to', to);
+      if (joined) query.set('userIds', joined);
+      const suffix = query.toString();
+      const res = await api<ProjectProfitByUserReport>(
+        `/reports/project-profit/${projectId}/by-user${suffix ? `?${suffix}` : ''}`,
+      );
+      setProjectProfitByUserReport(res);
+      setMessage('PJ採算（担当者別）を取得しました');
+    } catch (err) {
+      setProjectProfitByUserReport(null);
+      setMessage('取得に失敗しました');
+    }
+  };
+
+  const loadProjectProfitByGroup = async () => {
+    if (!projectId) {
+      setMessage('案件を選択してください');
+      return;
+    }
+    const joined = parseUserIdsInput(userIdsInput).join(',');
+    if (!joined) {
+      setMessage('userIds を入力してください');
+      return;
+    }
+    try {
+      const query = new URLSearchParams();
+      if (from) query.set('from', from);
+      if (to) query.set('to', to);
+      query.set('userIds', joined);
+      const res = await api<ProjectProfitByGroupReport>(
+        `/reports/project-profit/${projectId}/by-group?${query.toString()}`,
+      );
+      setProjectProfitByGroupReport(res);
+      setMessage('PJ採算（グループ別）を取得しました');
+    } catch (err) {
+      setProjectProfitByGroupReport(null);
       setMessage('取得に失敗しました');
     }
   };
@@ -374,10 +480,16 @@ export const Reports: React.FC = () => {
         <button className="button" onClick={loadProjectProfit}>
           PJ別採算
         </button>
+        <button className="button" onClick={loadProjectProfitByUser}>
+          PJ採算（担当者別）
+        </button>
+        <button className="button" onClick={loadProjectProfitByGroup}>
+          PJ採算（グループ別）
+        </button>
         <input
           type="text"
-          value={groupUserIds}
-          onChange={(e) => setGroupUserIds(e.target.value)}
+          value={userIdsInput}
+          onChange={(e) => setUserIdsInput(e.target.value)}
           placeholder="userIds (a,b,c)"
         />
         <button className="button" onClick={loadGroup}>
@@ -487,6 +599,66 @@ export const Reports: React.FC = () => {
             </div>
           </div>
         )}
+
+        {projectProfitByUserReport && (
+          <div className="card" style={{ padding: 12 }}>
+            <strong>PJ採算（担当者別）</strong>
+            <div>
+              Project: {renderProject(projectProfitByUserReport.projectId)}
+            </div>
+            <div>
+              Allocation: {projectProfitByUserReport.allocationMethod} /
+              Currency: {projectProfitByUserReport.currency || 'N/A'}
+            </div>
+            <div>
+              Revenue: {projectProfitByUserReport.revenue.toLocaleString()} /
+              Vendor: {projectProfitByUserReport.vendorCost.toLocaleString()} /
+              Labor: {projectProfitByUserReport.laborCost.toLocaleString()} /
+              Expense: {projectProfitByUserReport.expenseCost.toLocaleString()}
+            </div>
+            <div style={{ marginTop: 8 }}>
+              {projectProfitByUserReport.items.map((item) => (
+                <div key={item.userId}>
+                  {item.userId}: Revenue{' '}
+                  {item.allocatedRevenue.toLocaleString()} / Cost{' '}
+                  {item.totalCost.toLocaleString()} / Gross{' '}
+                  {item.grossProfit.toLocaleString()} / Margin{' '}
+                  {(item.grossMargin * 100).toFixed(2)}% / Minutes{' '}
+                  {item.minutes}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        {projectProfitByGroupReport && (
+          <div className="card" style={{ padding: 12 }}>
+            <strong>PJ採算（グループ別）</strong>
+            <div>
+              Project: {renderProject(projectProfitByGroupReport.projectId)}
+            </div>
+            <div>
+              Allocation: {projectProfitByGroupReport.allocationMethod} /
+              Currency: {projectProfitByGroupReport.currency || 'N/A'}
+            </div>
+            <div>
+              Users: {projectProfitByGroupReport.userIds.join(', ') || '-'}
+            </div>
+            <div>
+              Revenue:{' '}
+              {projectProfitByGroupReport.group.allocatedRevenue.toLocaleString()}{' '}
+              / Cost{' '}
+              {projectProfitByGroupReport.group.totalCost.toLocaleString()} /
+              Gross{' '}
+              {projectProfitByGroupReport.group.grossProfit.toLocaleString()}
+            </div>
+            <div>
+              Margin:{' '}
+              {(projectProfitByGroupReport.group.grossMargin * 100).toFixed(2)}%
+              / Minutes: {projectProfitByGroupReport.group.minutes}
+            </div>
+          </div>
+        )}
+
         {burndownReport && (
           <div className="card" style={{ padding: 12 }}>
             <strong>バーンダウン</strong>
@@ -687,6 +859,8 @@ export const Reports: React.FC = () => {
           !projectProfitReport &&
           groupReport.length === 0 &&
           !overtimeReport &&
+          !projectProfitByUserReport &&
+          !projectProfitByGroupReport &&
           !managementReport &&
           !burndownReport &&
           !evmReport && <div className="card">レポート未取得</div>}
