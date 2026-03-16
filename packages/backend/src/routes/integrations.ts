@@ -2152,7 +2152,8 @@ export async function registerIntegrationRoutes(app: FastifyInstance) {
         if (existing.status === IntegrationRunStatus.failed) {
           await logAudit({
             ...auditContextFromRequest(req),
-            action: 'integration_accounting_ics_export_dispatch_failed_retry_rejected',
+            action:
+              'integration_accounting_ics_export_dispatch_failed_retry_rejected',
             targetTable: 'AccountingIcsExportLog',
             targetId: existing.id,
             metadata: {
