@@ -674,6 +674,7 @@ export async function registerReportRoutes(app: FastifyInstance) {
         const headers = [
           'projectId',
           'allocationMethod',
+          'currency',
           'revenue',
           'vendorCost',
           'laborCost',
@@ -692,6 +693,7 @@ export async function registerReportRoutes(app: FastifyInstance) {
         const rows = res.items.map((item: any) => [
           res.projectId,
           res.allocationMethod,
+          res.currency,
           res.revenue,
           res.vendorCost,
           res.laborCost,
@@ -768,6 +770,7 @@ export async function registerReportRoutes(app: FastifyInstance) {
           'projectId',
           'label',
           'allocationMethod',
+          'currency',
           'revenue',
           'vendorCost',
           'laborCost',
@@ -787,6 +790,7 @@ export async function registerReportRoutes(app: FastifyInstance) {
           res.projectId,
           res.label,
           res.allocationMethod,
+          res.currency,
           res.totals.revenue,
           res.totals.vendorCost,
           res.totals.laborCost,

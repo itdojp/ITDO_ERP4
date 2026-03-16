@@ -121,6 +121,18 @@ test('frontend smoke reports masters settings @extended', async ({ page }) => {
   await expect(
     reportsSection.getByText('PJ別採算を取得しました'),
   ).toBeVisible();
+  await reportsSection
+    .getByRole('button', { name: 'PJ採算（担当者別）' })
+    .click();
+  await expect(
+    reportsSection.getByText('PJ採算（担当者別）を取得しました'),
+  ).toBeVisible();
+  await reportsSection
+    .getByRole('button', { name: 'PJ採算（グループ別）' })
+    .click();
+  await expect(
+    reportsSection.getByText('PJ採算（グループ別）を取得しました'),
+  ).toBeVisible();
   await reportsSection.getByRole('button', { name: 'グループ別工数' }).click();
   await expect(
     reportsSection.getByText('グループ別工数を取得しました'),

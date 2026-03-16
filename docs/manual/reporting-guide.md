@@ -19,6 +19,7 @@
 
 - プロジェクト別工数（from/to 指定）
 - PJ別採算（案件選択 + from/to 指定）
+- PJ採算（担当者別 / グループ別、userIds + from/to 指定）
 - グループ別工数（userIds 指定 + from/to）
 - 個人別残業（userId 指定 + from/to）
 - 管理会計サマリ（from/to 指定）
@@ -53,6 +54,6 @@
 
 ## 関連画面（証跡）
 
-![レポート](../test-results/2026-03-09-frontend-e2e-r1/08-reports.png)
+![レポート](../test-results/2026-03-16-frontend-e2e-r2/08-reports.png)
 
 ![ダッシュボード](../test-results/2026-03-09-frontend-e2e-r1/01-core-dashboard.png)

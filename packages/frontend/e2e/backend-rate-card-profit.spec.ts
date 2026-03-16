@@ -69,4 +69,23 @@ test('rate card affects profit report @core', async ({ request }) => {
   const profit = await profitRes.json();
   expect(Number(profit?.costBreakdown?.laborCost ?? 0)).toBeGreaterThan(0);
   expect(profit?.currency).toBe('JPY');
+
+  const profitByUserRes = await request.get(
+    `${apiBase}/reports/project-profit/${encodeURIComponent(project.id)}/by-user?from=${today}&to=${today}&userIds=demo-user`,
+    { headers: authHeaders },
+  );
+  await ensureOk(profitByUserRes);
+  const profitByUser = await profitByUserRes.json();
+  expect(profitByUser?.currency).toBe('JPY');
+  expect(Array.isArray(profitByUser?.items)).toBe(true);
+  expect(profitByUser?.items?.[0]?.userId).toBe('demo-user');
+
+  const profitByGroupRes = await request.get(
+    `${apiBase}/reports/project-profit/${encodeURIComponent(project.id)}/by-group?from=${today}&to=${today}&userIds=demo-user`,
+    { headers: authHeaders },
+  );
+  await ensureOk(profitByGroupRes);
+  const profitByGroup = await profitByGroupRes.json();
+  expect(profitByGroup?.currency).toBe('JPY');
+  expect(profitByGroup?.userIds).toContain('demo-user');
 });

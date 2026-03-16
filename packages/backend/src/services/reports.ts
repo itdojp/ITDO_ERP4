@@ -1126,6 +1126,7 @@ export async function reportProjectProfitByUser(
 
   return {
     projectId,
+    currency,
     revenue,
     vendorCost,
     laborCost: totalLaborCost,
@@ -1171,6 +1172,7 @@ export async function reportProjectProfitByGroup(
       : 0;
   return {
     projectId,
+    currency: res.currency ?? null,
     label: label ?? null,
     userIds,
     allocationMethod: res.allocationMethod,
