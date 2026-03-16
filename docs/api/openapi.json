@@ -7248,6 +7248,97 @@
         }
       }
     },
+    "/integrations/jobs/exports": {
+      "get": {
+        "parameters": [
+          {
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "hr_leave_export_attendance"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "enum": [
+                    "hr_leave_export_payroll"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "enum": [
+                    "hr_employee_master_export"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "enum": [
+                    "accounting_ics_export"
+                  ],
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "running"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "enum": [
+                    "success"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "enum": [
+                    "failed"
+                  ],
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "maximum": 500,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "maximum": 1000,
+              "minimum": 0,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
     "/invoices": {
       "get": {
         "responses": {

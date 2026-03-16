@@ -1944,6 +1944,13 @@ const accountingPeriodKeyLooseSchema = Type.String({
   maxLength: 7,
 });
 
+const integrationExportJobKindSchema = Type.Union([
+  Type.Literal('hr_leave_export_attendance'),
+  Type.Literal('hr_leave_export_payroll'),
+  Type.Literal('hr_employee_master_export'),
+  Type.Literal('accounting_ics_export'),
+]);
+
 export const integrationHrLeaveExportQuerySchema = {
   querystring: Type.Object(
     {
@@ -2066,6 +2073,24 @@ export const integrationAccountingIcsExportLogListQuerySchema = {
       idempotencyKey: Type.Optional(
         Type.String({ minLength: 1, maxLength: 200 }),
       ),
+    },
+    { additionalProperties: false },
+  ),
+};
+
+export const integrationExportJobListQuerySchema = {
+  querystring: Type.Object(
+    {
+      kind: Type.Optional(integrationExportJobKindSchema),
+      status: Type.Optional(
+        Type.Union([
+          Type.Literal('running'),
+          Type.Literal('success'),
+          Type.Literal('failed'),
+        ]),
+      ),
+      limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 500 })),
+      offset: Type.Optional(Type.Integer({ minimum: 0, maximum: 1000 })),
     },
     { additionalProperties: false },
   ),

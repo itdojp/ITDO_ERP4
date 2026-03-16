@@ -31,6 +31,7 @@ import {
   integrationAccountingIcsExportDispatchSchema,
   integrationAccountingIcsExportLogListQuerySchema,
   integrationAccountingIcsExportQuerySchema,
+  integrationExportJobListQuerySchema,
   integrationHrAttendanceClosingCreateSchema,
   integrationHrAttendanceClosingListQuerySchema,
   integrationHrAttendanceClosingSummaryListSchema,
@@ -502,6 +503,38 @@ const MAX_ACCOUNTING_ICS_EXPORT_LIMIT = 2000;
 const DEFAULT_ACCOUNTING_ICS_EXPORT_LOG_LIMIT = 100;
 const MAX_ACCOUNTING_ICS_EXPORT_LOG_LIMIT = 1000;
 const MAX_ACCOUNTING_ICS_EXPORT_OFFSET = 100000;
+const DEFAULT_INTEGRATION_EXPORT_JOB_LIMIT = 100;
+const MAX_INTEGRATION_EXPORT_JOB_LIMIT = 500;
+const MAX_INTEGRATION_EXPORT_JOB_OFFSET = 1000;
+
+type IntegrationExportJobKind =
+  | 'hr_leave_export_attendance'
+  | 'hr_leave_export_payroll'
+  | 'hr_employee_master_export'
+  | 'accounting_ics_export';
+
+function normalizeIntegrationExportJobKind(
+  value: unknown,
+): IntegrationExportJobKind | undefined {
+  switch (value) {
+    case 'hr_leave_export_attendance':
+    case 'hr_leave_export_payroll':
+    case 'hr_employee_master_export':
+    case 'accounting_ics_export':
+      return value;
+    default:
+      return undefined;
+  }
+}
+
+function compareStartedAtDesc(
+  left: { startedAt: Date; id: string },
+  right: { startedAt: Date; id: string },
+) {
+  const startedAtDiff = right.startedAt.getTime() - left.startedAt.getTime();
+  if (startedAtDiff !== 0) return startedAtDiff;
+  return right.id.localeCompare(left.id);
+}
 
 function normalizeAccountingIcsExportFormat(
   value: unknown,
@@ -564,6 +597,41 @@ function buildAccountingIcsExportLogResponse(item: {
     startedAt: item.startedAt,
     finishedAt: item.finishedAt,
     message: item.message,
+  };
+}
+
+function buildIntegrationExportJobResponse(
+  item:
+    | ({
+        kind: 'hr_leave_export_attendance' | 'hr_leave_export_payroll';
+        target: string;
+        updatedSince: Date | null;
+      } & ReturnType<typeof buildLeaveExportLogResponse>)
+    | ({
+        kind: 'hr_employee_master_export';
+      } & ReturnType<typeof buildHrEmployeeMasterExportLogResponse>)
+    | ({
+        kind: 'accounting_ics_export';
+      } & ReturnType<typeof buildAccountingIcsExportLogResponse>),
+) {
+  return {
+    kind: item.kind,
+    id: item.id,
+    idempotencyKey: item.idempotencyKey,
+    status: item.status,
+    exportedCount: item.exportedCount,
+    startedAt: item.startedAt,
+    finishedAt: item.finishedAt,
+    message: item.message,
+    scope:
+      item.kind === 'accounting_ics_export'
+        ? { periodKey: item.periodKey }
+        : item.kind === 'hr_employee_master_export'
+          ? { updatedSince: item.updatedSince }
+          : {
+              target: item.target,
+              updatedSince: item.updatedSince,
+            },
   };
 }
 
@@ -2364,6 +2432,150 @@ export async function registerIntegrationRoutes(app: FastifyInstance) {
       });
       return {
         items: items.map((item) => buildAccountingIcsExportLogResponse(item)),
+        limit,
+        offset,
+      };
+    },
+  );
+
+  app.get(
+    '/integrations/jobs/exports',
+    {
+      preHandler: requireRole(['admin', 'mgmt']),
+      schema: integrationExportJobListQuerySchema,
+    },
+    async (req) => {
+      const query = req.query as {
+        kind?: IntegrationExportJobKind;
+        status?: IntegrationRunStatus;
+        limit?: number | string;
+        offset?: number | string;
+      };
+      const kind = normalizeIntegrationExportJobKind(query.kind);
+      const status =
+        query.status === IntegrationRunStatus.running ||
+        query.status === IntegrationRunStatus.success ||
+        query.status === IntegrationRunStatus.failed
+          ? query.status
+          : undefined;
+      const limit = parseBoundedInteger(
+        query.limit,
+        DEFAULT_INTEGRATION_EXPORT_JOB_LIMIT,
+        MAX_INTEGRATION_EXPORT_JOB_LIMIT,
+      );
+      const offset = parseBoundedNonNegativeInteger(
+        query.offset,
+        0,
+        MAX_INTEGRATION_EXPORT_JOB_OFFSET,
+      );
+      const take = Math.min(limit + offset, MAX_INTEGRATION_EXPORT_JOB_LIMIT);
+
+      const shouldLoadLeave =
+        !kind ||
+        kind === 'hr_leave_export_attendance' ||
+        kind === 'hr_leave_export_payroll';
+      const shouldLoadEmployeeMaster =
+        !kind || kind === 'hr_employee_master_export';
+      const shouldLoadAccounting = !kind || kind === 'accounting_ics_export';
+
+      const [leaveLogs, employeeMasterLogs, accountingLogs] = await Promise.all(
+        [
+          shouldLoadLeave
+            ? prisma.leaveIntegrationExportLog.findMany({
+                where: {
+                  ...(status ? { status } : {}),
+                  ...(kind === 'hr_leave_export_attendance'
+                    ? { target: 'attendance' }
+                    : {}),
+                  ...(kind === 'hr_leave_export_payroll'
+                    ? { target: 'payroll' }
+                    : {}),
+                },
+                select: {
+                  id: true,
+                  target: true,
+                  idempotencyKey: true,
+                  status: true,
+                  updatedSince: true,
+                  exportedUntil: true,
+                  exportedCount: true,
+                  startedAt: true,
+                  finishedAt: true,
+                  message: true,
+                },
+                orderBy: [{ startedAt: 'desc' }, { id: 'desc' }],
+                take,
+              })
+            : Promise.resolve([]),
+          shouldLoadEmployeeMaster
+            ? prisma.hrEmployeeMasterExportLog.findMany({
+                where: status ? { status } : undefined,
+                select: {
+                  id: true,
+                  idempotencyKey: true,
+                  status: true,
+                  updatedSince: true,
+                  exportedUntil: true,
+                  exportedCount: true,
+                  startedAt: true,
+                  finishedAt: true,
+                  message: true,
+                },
+                orderBy: [{ startedAt: 'desc' }, { id: 'desc' }],
+                take,
+              })
+            : Promise.resolve([]),
+          shouldLoadAccounting
+            ? prisma.accountingIcsExportLog.findMany({
+                where: status ? { status } : undefined,
+                select: {
+                  id: true,
+                  idempotencyKey: true,
+                  periodKey: true,
+                  status: true,
+                  exportedUntil: true,
+                  exportedCount: true,
+                  startedAt: true,
+                  finishedAt: true,
+                  message: true,
+                },
+                orderBy: [{ startedAt: 'desc' }, { id: 'desc' }],
+                take,
+              })
+            : Promise.resolve([]),
+        ],
+      );
+
+      const items = [
+        ...leaveLogs.map((item) =>
+          buildIntegrationExportJobResponse({
+            kind:
+              item.target === 'payroll'
+                ? 'hr_leave_export_payroll'
+                : 'hr_leave_export_attendance',
+            ...buildLeaveExportLogResponse(item),
+            target: item.target,
+            updatedSince: item.updatedSince,
+          }),
+        ),
+        ...employeeMasterLogs.map((item) =>
+          buildIntegrationExportJobResponse({
+            kind: 'hr_employee_master_export',
+            ...buildHrEmployeeMasterExportLogResponse(item),
+          }),
+        ),
+        ...accountingLogs.map((item) =>
+          buildIntegrationExportJobResponse({
+            kind: 'accounting_ics_export',
+            ...buildAccountingIcsExportLogResponse(item),
+          }),
+        ),
+      ]
+        .sort(compareStartedAtDesc)
+        .slice(offset, offset + limit);
+
+      return {
+        items,
         limit,
         offset,
       };
