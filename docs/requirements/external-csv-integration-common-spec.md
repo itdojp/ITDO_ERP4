@@ -89,6 +89,9 @@
 - ICS 仕訳 dispatch
   - `AccountingIcsExportLog`
   - `idempotencyKey`, `requestHash`, `periodKey`, `exportedUntil`, `exportedCount`
+- 共通運用参照
+  - `GET /integrations/jobs/exports`
+  - 既存 3 系統の export log を横断一覧化して参照する
 
 将来の共通 job model は、上記既存実装を包含する形で拡張する。
 
