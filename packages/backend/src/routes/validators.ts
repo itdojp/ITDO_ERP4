@@ -1956,6 +1956,24 @@ const integrationExportJobKindSchema = Type.Union([
   Type.Literal('accounting_ics_export'),
 ]);
 
+const accountingMappingRuleBodySchema = Type.Object(
+  {
+    mappingKey: Type.String({ minLength: 1, maxLength: 200 }),
+    debitAccountCode: Type.String({ minLength: 1, maxLength: 100 }),
+    debitSubaccountCode: Type.Optional(
+      Type.Union([Type.String(), Type.Null()]),
+    ),
+    creditAccountCode: Type.String({ minLength: 1, maxLength: 100 }),
+    creditSubaccountCode: Type.Optional(
+      Type.Union([Type.String(), Type.Null()]),
+    ),
+    departmentCode: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+    taxCode: Type.String({ minLength: 1, maxLength: 100 }),
+    isActive: Type.Optional(Type.Boolean()),
+  },
+  { additionalProperties: false },
+);
+
 export const integrationHrLeaveExportQuerySchema = {
   querystring: Type.Object(
     {
@@ -2113,6 +2131,46 @@ export const integrationAccountingIcsExportLogListQuerySchema = {
       idempotencyKey: Type.Optional(
         Type.String({ minLength: 1, maxLength: 200 }),
       ),
+    },
+    { additionalProperties: false },
+  ),
+};
+
+export const integrationAccountingMappingRuleListQuerySchema = {
+  querystring: Type.Object(
+    {
+      mappingKey: Type.Optional(Type.String({ minLength: 1, maxLength: 200 })),
+      isActive: Type.Optional(booleanQuerySchema),
+      limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 500 })),
+      offset: Type.Optional(Type.Integer({ minimum: 0, maximum: 100000 })),
+    },
+    { additionalProperties: false },
+  ),
+};
+
+export const integrationAccountingMappingRuleCreateSchema = {
+  body: accountingMappingRuleBodySchema,
+};
+
+export const integrationAccountingMappingRulePatchSchema = {
+  params: Type.Object(
+    {
+      id: Type.String({ minLength: 1 }),
+    },
+    { additionalProperties: false },
+  ),
+  body: Type.Partial(accountingMappingRuleBodySchema, {
+    additionalProperties: false,
+  }),
+};
+
+export const integrationAccountingMappingRuleReapplySchema = {
+  body: Type.Object(
+    {
+      periodKey: Type.Optional(accountingPeriodKeyLooseSchema),
+      mappingKey: Type.Optional(Type.String({ minLength: 1, maxLength: 200 })),
+      limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 2000 })),
+      offset: Type.Optional(Type.Integer({ minimum: 0, maximum: 100000 })),
     },
     { additionalProperties: false },
   ),

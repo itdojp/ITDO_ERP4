@@ -87,6 +87,9 @@ test('approval act writes approval_step_approve/approval_approve audit with reas
     accountingJournalStaging: {
       upsert: async () => ({ id: 'acctstg-001' }),
     },
+    accountingMappingRule: {
+      findMany: async () => [],
+    },
   };
 
   await withPrismaStubs(

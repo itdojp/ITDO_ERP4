@@ -19,6 +19,14 @@
   - `idempotencyKey` 付きで export 実行結果を保存する
 - `GET /integrations/accounting/exports/journals/dispatch-logs`
   - dispatch 履歴を返す
+- `GET /integrations/accounting/mapping-rules`
+  - `mappingKey` ごとの会計 mapping rule 一覧を返す
+- `POST /integrations/accounting/mapping-rules`
+  - 勘定科目 / 枝番 / 税区分 / 部門コードの rule を登録する
+- `PATCH /integrations/accounting/mapping-rules/:id`
+  - rule を更新または無効化する
+- `POST /integrations/accounting/mapping-rules/reapply`
+  - `pending_mapping` / `blocked` の staging 行へ最新 rule を再適用する
 
 ### export 対象
 
@@ -185,6 +193,7 @@
 - 明細単位または配賦単位で複数仕訳行に展開できる設計にする
 - ERP4 では会計イベント staging を作り、その後 ICS CSV に変換する
 - 2026-03-16 時点の baseline では、`expenses` / `invoices` / `vendor_invoices` の承認完了時に `AccountingEvent` と `AccountingJournalStaging` を生成し、未マッピング状態を `pending_mapping` または `blocked` で保持する
+- 2026-03-17 時点の baseline では、`AccountingMappingRule` を `mappingKey` 単位で保持し、exact match または `<eventKind>:default` fallback で `debit/credit/tax/department` を自動適用する
 - `#1443` の baseline 実装では、`ready` 化された staging 行だけを CSV に変換する
 
 ### 最低限必要な mapping
@@ -211,6 +220,7 @@
 - 借貸不一致
 - 金額 0 または負値が業務ルールに合致しない
 - `pending_mapping` / `blocked` 行が scope に残っている
+- rule 更新後に `reapply` を実行していないため、既存 staging が古い mapping のまま残っている
 
 ### 警告
 

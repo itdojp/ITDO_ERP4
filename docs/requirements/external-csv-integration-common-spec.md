@@ -92,6 +92,13 @@
 - ICS 仕訳 dispatch
   - `AccountingIcsExportLog`
   - `idempotencyKey`, `requestHash`, `reexportOfId`, `periodKey`, `exportedUntil`, `exportedCount`
+- ICS 仕訳 mapping rule
+  - `AccountingMappingRule`
+  - `mappingKey`, `debitAccountCode`, `creditAccountCode`, `taxCode`, `departmentCode`, `isActive`
+  - `GET /integrations/accounting/mapping-rules`
+  - `POST /integrations/accounting/mapping-rules`
+  - `PATCH /integrations/accounting/mapping-rules/:id`
+  - `POST /integrations/accounting/mapping-rules/reapply`
 - 共通運用参照
   - `GET /integrations/jobs/exports`
   - 既存 3 系統の export log を横断一覧化して参照する

@@ -1,9 +1,9 @@
-import type {
-  AccountingEventKind,
-  AccountingJournalStagingStatus,
-  Prisma,
-} from '@prisma/client';
+import type { AccountingEventKind, Prisma } from '@prisma/client';
 import { prisma } from './db.js';
+import {
+  buildAccountingStagingMappingResult,
+  resolveAccountingMappingRule,
+} from './accountingMappingRules.js';
 import { toDateOnly } from '../utils/date.js';
 
 type AccountingClient = Prisma.TransactionClient | typeof prisma;
@@ -54,28 +54,6 @@ function toFiniteNumber(value: Prisma.Decimal | string | number) {
   return Number.isFinite(numeric) ? numeric : Number.NaN;
 }
 
-function buildValidationErrors(options: {
-  mappingKey: string;
-  blockingCodes?: string[];
-}) {
-  const errors: Prisma.InputJsonValue[] = [];
-  for (const code of options.blockingCodes ?? []) {
-    errors.push({ code });
-  }
-  errors.push({
-    code: 'mapping_pending',
-    mappingKey: options.mappingKey,
-    requiredFields: ['debitAccountCode', 'creditAccountCode', 'taxCode'],
-  });
-  return errors;
-}
-
-function resolveStagingStatus(blockingCodes: string[]) {
-  return (
-    blockingCodes.length > 0 ? 'blocked' : 'pending_mapping'
-  ) satisfies AccountingJournalStagingStatus;
-}
-
 async function loadProjectRefs(client: AccountingClient, projectId: string) {
   const project = await client.project.findUnique({
     where: { id: projectId },
@@ -107,6 +85,13 @@ async function upsertAccountingEventWithStaging(
   record: AccountingEventRecord,
   blockingCodes: string[],
 ) {
+  const rule = await resolveAccountingMappingRule(client, record.mappingKey);
+  const stagingMapping = buildAccountingStagingMappingResult({
+    mappingKey: record.mappingKey,
+    blockingCodes,
+    departmentCode: record.departmentCode ?? null,
+    rule,
+  });
   const event = await client.accountingEvent.upsert({
     where: {
       sourceTable_sourceId_eventKind: {
@@ -165,36 +150,35 @@ async function upsertAccountingEventWithStaging(
       eventId: event.id,
       lineNo: 1,
       entryDate: toDateOnly(record.eventAt),
-      status: resolveStagingStatus(blockingCodes),
+      status: stagingMapping.status,
       currency: record.currency,
       amount: record.amount,
       description: record.description ?? null,
       mappingKey: record.mappingKey,
-      departmentCode: record.departmentCode ?? null,
-      validationErrors: buildValidationErrors({
-        mappingKey: record.mappingKey,
-        blockingCodes,
-      }),
+      departmentCode: stagingMapping.departmentCode,
+      debitAccountCode: stagingMapping.debitAccountCode,
+      debitSubaccountCode: stagingMapping.debitSubaccountCode,
+      creditAccountCode: stagingMapping.creditAccountCode,
+      creditSubaccountCode: stagingMapping.creditSubaccountCode,
+      taxCode: stagingMapping.taxCode,
+      validationErrors: stagingMapping.validationErrors,
       createdBy: record.actorUserId ?? null,
       updatedBy: record.actorUserId ?? null,
     },
     update: {
       entryDate: toDateOnly(record.eventAt),
-      status: resolveStagingStatus(blockingCodes),
+      status: stagingMapping.status,
       currency: record.currency,
       amount: record.amount,
       description: record.description ?? null,
       mappingKey: record.mappingKey,
-      departmentCode: record.departmentCode ?? null,
-      debitAccountCode: null,
-      debitSubaccountCode: null,
-      creditAccountCode: null,
-      creditSubaccountCode: null,
-      taxCode: null,
-      validationErrors: buildValidationErrors({
-        mappingKey: record.mappingKey,
-        blockingCodes,
-      }),
+      departmentCode: stagingMapping.departmentCode,
+      debitAccountCode: stagingMapping.debitAccountCode,
+      debitSubaccountCode: stagingMapping.debitSubaccountCode,
+      creditAccountCode: stagingMapping.creditAccountCode,
+      creditSubaccountCode: stagingMapping.creditSubaccountCode,
+      taxCode: stagingMapping.taxCode,
+      validationErrors: stagingMapping.validationErrors,
       updatedBy: record.actorUserId ?? null,
     },
   });
