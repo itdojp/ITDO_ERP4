@@ -32,6 +32,7 @@
 - GET `/reports/project-profit/:projectId/by-group?from=YYYY-MM-DD&to=YYYY-MM-DD&userIds=a,b,c&label=groupA&format=csv|pdf?&layout=default?`
 - GET `/reports/group-effort?userIds=a,b,c&from=YYYY-MM-DD&to=YYYY-MM-DD&format=csv|pdf?&layout=default?`
 - GET `/reports/overtime/:userId?from=YYYY-MM-DD&to=YYYY-MM-DD&format=csv|pdf?&layout=default?`
+- GET `/reports/management-accounting/summary?from=YYYY-MM-DD&to=YYYY-MM-DD`
 
 ## report subscriptions
 

@@ -140,6 +140,10 @@
 - 実装前提:
   - 既存レポート API の再利用を優先
   - KPI card / dashboard 表示は別 issue で設計
+- 初期実装:
+  - `GET /reports/management-accounting/summary?from=YYYY-MM-DD&to=YYYY-MM-DD`
+  - ERP4 内の売上、直接原価、粗利、納期未請求、残業、赤字案件件数を 1 API で返す
+  - UI は `Reports` セクションの管理会計サマリ表示を初期導線とする
 
 ### R5. 管理部向け締め前照合レポート
 

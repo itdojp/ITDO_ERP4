@@ -11958,6 +11958,15 @@
         }
       }
     },
+    "/reports/management-accounting/summary": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
     "/reports/overtime/{userId}": {
       "get": {
         "parameters": [

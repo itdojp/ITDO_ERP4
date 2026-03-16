@@ -54,6 +54,34 @@ type EvmReport = {
   items: EvmItem[];
 };
 
+type ManagementAccountingSummary = {
+  from: string;
+  to: string;
+  projectCount: number;
+  revenue: number;
+  directCost: number;
+  laborCost: number;
+  vendorCost: number;
+  expenseCost: number;
+  grossProfit: number;
+  grossMargin: number;
+  totalMinutes: number;
+  overtimeTotalMinutes: number;
+  deliveryDueCount: number;
+  deliveryDueAmount: number;
+  redProjectCount: number;
+  topRedProjects: Array<{
+    projectId: string;
+    projectCode?: string | null;
+    projectName?: string | null;
+    revenue: number;
+    directCost: number;
+    grossProfit: number;
+    grossMargin: number;
+    totalMinutes: number;
+  }>;
+};
+
 function buildQuery(from?: string, to?: string) {
   const params = new URLSearchParams();
   if (from) params.set('from', from);
@@ -82,6 +110,8 @@ export const Reports: React.FC = () => {
     null,
   );
   const [evmReport, setEvmReport] = useState<EvmReport | null>(null);
+  const [managementReport, setManagementReport] =
+    useState<ManagementAccountingSummary | null>(null);
   const [message, setMessage] = useState('');
 
   const { projects, projectMessage } = useProjects({
@@ -210,6 +240,23 @@ export const Reports: React.FC = () => {
     }
   };
 
+  const loadManagementAccounting = async () => {
+    if (!from || !to) {
+      setMessage('from/to を入力してください');
+      return;
+    }
+    try {
+      const res = await api<ManagementAccountingSummary>(
+        `/reports/management-accounting/summary${buildQuery(from, to)}`,
+      );
+      setManagementReport(res);
+      setMessage('管理会計サマリを取得しました');
+    } catch (err) {
+      setManagementReport(null);
+      setMessage('取得に失敗しました');
+    }
+  };
+
   const renderProject = (id: string) => {
     const project = projectMap.get(id);
     return project ? `${project.code} / ${project.name}` : id;
@@ -265,6 +312,9 @@ export const Reports: React.FC = () => {
         />
         <button className="button" onClick={loadOvertime}>
           個人別残業
+        </button>
+        <button className="button" onClick={loadManagementAccounting}>
+          管理会計サマリ
         </button>
       </div>
       <div className="row" style={{ gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
@@ -389,9 +439,53 @@ export const Reports: React.FC = () => {
             <div>Hours (avg/day): {overtimeReport.dailyHours.toFixed(2)}</div>
           </div>
         )}
+        {managementReport && (
+          <div className="card" style={{ padding: 12 }}>
+            <strong>管理会計サマリ</strong>
+            <div>
+              Period: {managementReport.from}〜{managementReport.to}
+            </div>
+            <div>Projects: {managementReport.projectCount}</div>
+            <div>
+              Revenue: ¥{managementReport.revenue.toLocaleString()} / Direct
+              Cost: ¥{managementReport.directCost.toLocaleString()}
+            </div>
+            <div>
+              Gross Profit: ¥{managementReport.grossProfit.toLocaleString()} /
+              Margin: {(managementReport.grossMargin * 100).toFixed(2)}%
+            </div>
+            <div>
+              Labor: ¥{managementReport.laborCost.toLocaleString()} / Vendor: ¥
+              {managementReport.vendorCost.toLocaleString()} / Expense: ¥
+              {managementReport.expenseCost.toLocaleString()}
+            </div>
+            <div>
+              Minutes: {managementReport.totalMinutes} / Overtime:{' '}
+              {managementReport.overtimeTotalMinutes}
+            </div>
+            <div>
+              Delivery due: {managementReport.deliveryDueCount}件 / ¥
+              {managementReport.deliveryDueAmount.toLocaleString()}
+            </div>
+            <div>Red projects: {managementReport.redProjectCount}</div>
+            {managementReport.topRedProjects.length > 0 && (
+              <div style={{ marginTop: 8 }}>
+                {managementReport.topRedProjects.map((item) => (
+                  <div key={item.projectId}>
+                    {(item.projectCode || item.projectId) +
+                      (item.projectName ? ` / ${item.projectName}` : '')}
+                    : ¥{item.grossProfit.toLocaleString()} / Margin{' '}
+                    {(item.grossMargin * 100).toFixed(2)}%
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
         {!projectReport &&
           groupReport.length === 0 &&
           !overtimeReport &&
+          !managementReport &&
           !burndownReport &&
           !evmReport && <div className="card">レポート未取得</div>}
       </div>
