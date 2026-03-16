@@ -64,7 +64,7 @@
 - 実データ行: なし
 - repo には、レビューと実装参照用にヘッダ行だけを UTF-8 で再掲した `docs/requirements/samples/21ki_ics_journal_header_sample.csv` を置く
 - 併せて、先頭 5 行を UTF-8 で再掲した `docs/requirements/samples/21ki_ics_journal_template_excerpt.csv` を置く
-- 実装出力では、このテンプレートに合わせて `CP932 + CRLF` に変換する
+- 実装出力では、このテンプレートのヘッダ列順に合わせて `CP932 + CRLF` に変換する
 
 ### 先頭 5 行の構造
 
@@ -74,7 +74,7 @@
 4. `対象期間（自/至/月分）`
 5. `30 列のヘッダ`
 
-初期実装の CSV writer は、5 行目の列順を正本とみなし、1〜4 行目はテンプレート由来の preamble として扱うのが妥当である。
+受領テンプレートの物理レイアウト確認には有用だが、2026-03-16 時点の baseline 実装は 1〜4 行目の preamble を出力しない。現行の CSV writer は、5 行目の 30 列ヘッダだけを正本として出力する。
 
 ### ヘッダ列（30 列）
 
@@ -218,16 +218,17 @@
 - 文字コード: `CP932`
 - 改行: `CRLF`
 - 行構成:
-  - 1〜4 行目はテンプレート由来の preamble を固定出力
-  - 5 行目は現物テンプレートと同じ 30 列ヘッダを固定出力
-  - 6 行目以降に `AccountingJournalStaging.status='ready'` の行を periodKey 順で出力
+  - 1 行目に現物テンプレートと同じ 30 列ヘッダを出力
+  - 2 行目以降に `AccountingJournalStaging.status='ready'` の行を `entryDate asc, eventId asc, lineNo asc` 順で出力
+- 現行 baseline は、受領テンプレートの 1〜4 行目 preamble を出力しない
 - 初期 baseline で値を埋める列:
   - `日付`
+  - `伝票番号`
   - `借方ｺｰﾄﾞ`
-  - `借方名称`
+  - `借方名称`（現行 baseline は借方コードと同値）
   - `借方枝番`
   - `貸方ｺｰﾄﾞ`
-  - `貸方名称`
+  - `貸方名称`（現行 baseline は貸方コードと同値）
   - `貸方枝番`
   - `金額`
   - `摘要`
