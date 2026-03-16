@@ -186,6 +186,7 @@
 
 - 初手は aggregate summary API に限定する
   - `GET /integrations/reconciliation/summary?periodKey=YYYY-MM`
+- 管理画面では `Settings` 内の「連携照合サマリ」カードから対象月を指定して取得する
 - 初期比較項目
   - attendance closing の summary count / 各種 minutes 合計
   - full 社員マスタ export と attendance closing の社員コード差分

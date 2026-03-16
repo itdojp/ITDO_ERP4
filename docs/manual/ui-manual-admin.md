@@ -414,6 +414,9 @@
 1. 種別・名称・プロバイダ・ステータス・スケジュールを入力する
 2. `config (JSON)` を入力し `作成` / `更新` を実行する
 3. 一覧の `実行` / `履歴表示` を実行する
+4. `照合対象月` を入力し `照合サマリ取得` を実行する
+5. 給与連携照合の `comparisonStatus` と社員コード差分を確認する
+6. 会計連携照合の `comparisonStatus` と `ready / pending_mapping / blocked` を確認する
 
 ![外部連携設定（HR/CRM）](../test-results/2026-03-09-frontend-e2e-r1/11-integration-settings.png)
 

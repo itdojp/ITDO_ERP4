@@ -12,6 +12,10 @@ import {
   IntegrationSettingsCard,
   type IntegrationRunMetrics,
 } from './admin-settings/IntegrationSettingsCard';
+import {
+  IntegrationReconciliationCard,
+  type IntegrationReconciliationSummary,
+} from './admin-settings/IntegrationReconciliationCard';
 import { ReportSubscriptionsCard } from './admin-settings/ReportSubscriptionsCard';
 import { TemplateSettingsCard } from './admin-settings/TemplateSettingsCard';
 import { ChatSettingsCard } from './ChatSettingsCard';
@@ -458,6 +462,8 @@ const createDefaultReportForm = () => ({
   isEnabled: true,
 });
 
+const currentPeriodKey = () => new Date().toISOString().slice(0, 7);
+
 export const AdminSettings: React.FC = () => {
   const [alertItems, setAlertItems] = useState<AlertSetting[]>([]);
   const [ruleItems, setRuleItems] = useState<ApprovalRule[]>([]);
@@ -477,6 +483,14 @@ export const AdminSettings: React.FC = () => {
     useState<IntegrationRunMetrics | null>(null);
   const [integrationRunFilterId, setIntegrationRunFilterId] =
     useState<string>('');
+  const [
+    integrationReconciliationPeriodKey,
+    setIntegrationReconciliationPeriodKey,
+  ] = useState<string>(currentPeriodKey);
+  const [
+    integrationReconciliationSummary,
+    setIntegrationReconciliationSummary,
+  ] = useState<IntegrationReconciliationSummary | null>(null);
   const [reportItems, setReportItems] = useState<ReportSubscription[]>([]);
   const [reportDeliveries, setReportDeliveries] = useState<ReportDelivery[]>(
     [],
@@ -1158,6 +1172,26 @@ export const AdminSettings: React.FC = () => {
     },
     [logError],
   );
+
+  const loadIntegrationReconciliationSummary = useCallback(async () => {
+    const periodKey = integrationReconciliationPeriodKey.trim();
+    if (!/^\d{4}-\d{2}$/.test(periodKey)) {
+      setIntegrationReconciliationSummary(null);
+      setMessage('照合対象月は YYYY-MM 形式で入力してください');
+      return;
+    }
+    try {
+      const summary = await api<IntegrationReconciliationSummary>(
+        `/integrations/reconciliation/summary?periodKey=${encodeURIComponent(periodKey)}`,
+      );
+      setIntegrationReconciliationSummary(summary);
+      setMessage('連携照合サマリを取得しました');
+    } catch (err) {
+      logError('loadIntegrationReconciliationSummary failed', err);
+      setIntegrationReconciliationSummary(null);
+      setMessage('連携照合サマリの取得に失敗しました');
+    }
+  }, [integrationReconciliationPeriodKey, logError]);
 
   useEffect(() => {
     loadAlertSettings();
@@ -2903,6 +2937,14 @@ export const AdminSettings: React.FC = () => {
           onRun={runIntegrationSetting}
           runs={integrationRuns}
           metrics={integrationRunMetrics}
+          formatDateTime={formatDateTime}
+        />
+
+        <IntegrationReconciliationCard
+          periodKey={integrationReconciliationPeriodKey}
+          setPeriodKey={setIntegrationReconciliationPeriodKey}
+          summary={integrationReconciliationSummary}
+          onLoad={loadIntegrationReconciliationSummary}
           formatDateTime={formatDateTime}
         />
       </div>
