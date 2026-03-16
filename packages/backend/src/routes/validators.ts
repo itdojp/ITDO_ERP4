@@ -2149,6 +2149,15 @@ export const integrationHrAttendanceClosingSummaryListSchema = {
   ),
 };
 
+export const integrationReconciliationSummaryQuerySchema = {
+  querystring: Type.Object(
+    {
+      periodKey: attendanceClosingPeriodKeySchema,
+    },
+    { additionalProperties: false },
+  ),
+};
+
 export const chatSettingPatchSchema = {
   body: Type.Object(
     {

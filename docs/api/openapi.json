@@ -7413,6 +7413,26 @@
         }
       }
     },
+    "/integrations/reconciliation/summary": {
+      "get": {
+        "parameters": [
+          {
+            "in": "query",
+            "name": "periodKey",
+            "required": true,
+            "schema": {
+              "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
     "/invoices": {
       "get": {
         "responses": {
