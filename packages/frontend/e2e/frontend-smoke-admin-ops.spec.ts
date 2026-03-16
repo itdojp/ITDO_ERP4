@@ -187,6 +187,8 @@ test('frontend smoke admin ops @extended', async ({ page }) => {
     | undefined;
   expect(leaveExportLogId).toBeTruthy();
 
+  const mappingRuleKey = `invoice_approved:e2e-${run}`;
+
   await navigateToSection(page, 'ジョブ管理', '運用ジョブ');
   const adminJobsSection = page
     .locator('main')
@@ -337,6 +339,45 @@ test('frontend smoke admin ops @extended', async ({ page }) => {
   await expect(
     exportJobsCard.getByText(`reexportOfId: ${leaveExportLogId}`),
   ).toBeVisible({ timeout: actionTimeout });
+  const mappingRulesCard = adminSettingsSection.getByTestId(
+    'accounting-mapping-rules-card',
+  );
+  await mappingRulesCard.scrollIntoViewIfNeeded();
+  await mappingRulesCard
+    .getByLabel('会計ルールmappingKey')
+    .fill(mappingRuleKey);
+  await mappingRulesCard.getByLabel('会計ルール借方科目').fill('1110');
+  await mappingRulesCard.getByLabel('会計ルール貸方科目').fill('4110');
+  await mappingRulesCard.getByLabel('会計ルール税区分').fill('TAX-001');
+  await mappingRulesCard.getByRole('button', { name: '作成' }).click();
+  await mappingRulesCard
+    .getByLabel('会計ルール検索mappingKey')
+    .fill(mappingRuleKey);
+  await mappingRulesCard.getByRole('button', { name: '一覧取得' }).click();
+  await expect(mappingRulesCard.getByText(mappingRuleKey)).toBeVisible({
+    timeout: actionTimeout,
+  });
+  const mappingRuleCard = mappingRulesCard
+    .locator('[data-testid^="accounting-mapping-rule-"]')
+    .filter({ hasText: mappingRuleKey })
+    .first();
+  await mappingRuleCard.getByRole('button', { name: '編集' }).click();
+  await mappingRulesCard.getByLabel('会計ルール部門コード').fill('DEPT-001');
+  await mappingRulesCard.getByRole('button', { name: '更新' }).click();
+  await mappingRulesCard.getByRole('button', { name: '一覧取得' }).click();
+  await expect(mappingRuleCard.getByText('部門: DEPT-001')).toBeVisible({
+    timeout: actionTimeout,
+  });
+  await mappingRulesCard
+    .getByLabel('会計ルール再適用periodKey')
+    .fill(lockPeriod);
+  await mappingRulesCard.getByRole('button', { name: '再適用' }).click();
+  await expect(
+    mappingRulesCard.getByText('processed=', { exact: false }),
+  ).toBeVisible({
+    timeout: actionTimeout,
+  });
   await captureSection(adminSettingsSection, '11-admin-settings.png');
+  await captureSection(mappingRulesCard, '11-accounting-mapping-rules.png');
   await captureSection(exportJobsCard, '11-integration-export-jobs.png');
 });
