@@ -1934,6 +1934,16 @@ const hrEmployeeMasterExportFormatSchema = Type.Union([
   Type.Literal('csv'),
 ]);
 
+const accountingIcsExportFormatSchema = Type.Union([
+  Type.Literal('json'),
+  Type.Literal('csv'),
+]);
+
+const accountingPeriodKeyLooseSchema = Type.String({
+  minLength: 1,
+  maxLength: 7,
+});
+
 export const integrationHrLeaveExportQuerySchema = {
   querystring: Type.Object(
     {
@@ -2014,6 +2024,52 @@ export const integrationHrEmployeeMasterExportLogListQuerySchema = {
 const attendanceClosingPeriodKeySchema = Type.String({
   pattern: '^\\d{4}-(0[1-9]|1[0-2])$',
 });
+
+export const integrationAccountingIcsExportQuerySchema = {
+  querystring: Type.Object(
+    {
+      format: Type.Optional(accountingIcsExportFormatSchema),
+      periodKey: Type.Optional(accountingPeriodKeyLooseSchema),
+      limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 2000 })),
+      offset: Type.Optional(Type.Integer({ minimum: 0, maximum: 100000 })),
+    },
+    { additionalProperties: false },
+  ),
+};
+
+export const integrationAccountingIcsExportDispatchSchema = {
+  body: Type.Object(
+    {
+      format: Type.Optional(Type.Literal('csv')),
+      periodKey: Type.Optional(accountingPeriodKeyLooseSchema),
+      idempotencyKey: Type.String({ minLength: 1, maxLength: 200 }),
+      limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 2000 })),
+      offset: Type.Optional(Type.Integer({ minimum: 0, maximum: 100000 })),
+    },
+    { additionalProperties: false },
+  ),
+};
+
+export const integrationAccountingIcsExportLogListQuerySchema = {
+  querystring: Type.Object(
+    {
+      periodKey: Type.Optional(accountingPeriodKeyLooseSchema),
+      status: Type.Optional(
+        Type.Union([
+          Type.Literal('running'),
+          Type.Literal('success'),
+          Type.Literal('failed'),
+        ]),
+      ),
+      limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 1000 })),
+      offset: Type.Optional(Type.Integer({ minimum: 0, maximum: 100000 })),
+      idempotencyKey: Type.Optional(
+        Type.String({ minLength: 1, maxLength: 200 }),
+      ),
+    },
+    { additionalProperties: false },
+  ),
+};
 
 export const integrationHrAttendanceClosingCreateSchema = {
   body: Type.Object(

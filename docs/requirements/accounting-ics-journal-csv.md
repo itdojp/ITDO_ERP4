@@ -1,12 +1,40 @@
 # 経理上手くんα Pro II 連携: ICS 仕訳 CSV 仕様（repo ベース初期案）
 
-更新日: 2026-03-15
-関連 Issue: `#1438`, `#1430`, `#1433`, `#1434`, `#1435`, `#1441`
+更新日: 2026-03-16
+関連 Issue: `#1438`, `#1430`, `#1433`, `#1434`, `#1435`, `#1441`, `#1443`
 
 ## 目的
 
 - ERP4 から経理上手くんα Pro II へ出力する ICS 仕訳 CSV について、現物テンプレートと現行運用ヒアリングをもとに初期仕様を整理する。
 - ERP4 側で既に供給できる項目、追加の mapping master が必要な項目、未確定の取込ルールを分離する。
+- 2026-03-16 時点の baseline 実装として、`AccountingJournalStaging.status=ready` 行を ICS CSV へ出力する API と dispatch log の仕様を固定する。
+
+## 実装済み baseline
+
+- `GET /integrations/accounting/exports/journals`
+  - canonical JSON を返す
+- `GET /integrations/accounting/exports/journals?format=csv`
+  - `CP932 + CRLF` の ICS CSV を返す
+- `POST /integrations/accounting/exports/journals/dispatch`
+  - `idempotencyKey` 付きで export 実行結果を保存する
+- `GET /integrations/accounting/exports/journals/dispatch-logs`
+  - dispatch 履歴を返す
+
+### export 対象
+
+- `AccountingJournalStaging.status='ready'` の行だけを対象にする
+- 同一 scope 内に `pending_mapping` または `blocked` が残っている場合、export は `409 accounting_journal_mapping_incomplete` で停止する
+- ready 行でも以下が未設定なら `409 accounting_journal_ready_row_incomplete` で停止する
+  - `debitAccountCode`
+  - `creditAccountCode`
+  - `taxCode`
+  - 正の `amount`
+
+### scope
+
+- 現行 baseline の絞り込み軸は `periodKey` のみ
+- `periodKey` 未指定時は全期間を scope にする
+- `periodKey` は `YYYY-MM` 形式で、不正値は `400 invalid_period_key`
 
 ## 前提
 
@@ -34,6 +62,7 @@
 - 5 行目: ヘッダ
 - 実データ行: なし
 - repo には、レビューと実装参照用にヘッダ行だけを UTF-8 で再掲した `docs/requirements/samples/21ki_ics_journal_header_sample.csv` を置く
+- 実装出力では、このテンプレートに合わせて `CP932 + CRLF` に変換する
 
 ### ヘッダ列（30 列）
 
@@ -155,7 +184,8 @@
 - 1 文書 = 1 仕訳伝票とは限らない
 - 明細単位または配賦単位で複数仕訳行に展開できる設計にする
 - ERP4 では会計イベント staging を作り、その後 ICS CSV に変換する
-- 2026-03-15 時点の baseline では、`expenses` / `invoices` / `vendor_invoices` の承認完了時に `AccountingEvent` と `AccountingJournalStaging` を生成し、未マッピング状態を `pending_mapping` または `blocked` で保持する
+- 2026-03-16 時点の baseline では、`expenses` / `invoices` / `vendor_invoices` の承認完了時に `AccountingEvent` と `AccountingJournalStaging` を生成し、未マッピング状態を `pending_mapping` または `blocked` で保持する
+- `#1443` の baseline 実装では、`ready` 化された staging 行だけを CSV に変換する
 
 ### 最低限必要な mapping
 
@@ -180,6 +210,7 @@
 - 税区分未マッピング
 - 借貸不一致
 - 金額 0 または負値が業務ルールに合致しない
+- `pending_mapping` / `blocked` 行が scope に残っている
 
 ### 警告
 
@@ -218,9 +249,10 @@
 ## 現時点の結論
 
 - `#1438` は、現物テンプレートが得られたため「列一覧の棚卸し」段階から前進できる。
+- `#1443` の baseline として、ICS CSV export / dispatch / dispatch-log の API を実装した。
 - ただし現在確定できるのは「テンプレート列」と「主運用項目」までであり、必須度・固定値・コード体系はまだ未確定である。
 - 次の実務上の論点は、`決修`、部門コード、税区分、枝番、摘要制約の確定である。
-- 実装に進む前に、`#1434` と `#1441` の mapping master / 出力判定 / CSV 化ルールを合わせて確定する必要がある。
+- baseline 実装後も、`#1434` と `#1441` の mapping master / 出力判定 / CSV 化ルールを合わせて確定する必要がある。
 
 ## 根拠ファイル
 

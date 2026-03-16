@@ -1,6 +1,6 @@
 # 共通連携仕様（給与/会計 CSV 連携）
 
-更新日: 2026-03-10
+更新日: 2026-03-16
 関連ISSUE: #1435, #1430
 
 ## 目的
@@ -33,6 +33,8 @@
 - 例外
   - 実製品テンプレートが `Shift_JIS` / `CRLF` を要求する場合は、アダプタ出力で変換する
   - canonical な内部生成形式は `UTF-8 + LF` とする
+- 実装済み例外
+  - `#1443` の ICS 仕訳 CSV は、現物テンプレートに合わせて `CP932 + CRLF` で出力する
 
 ### 2.2 日付・時刻・数値
 
@@ -84,6 +86,9 @@
 - 社員マスタ dispatch
   - `HrEmployeeMasterExportLog`
   - `idempotencyKey`, `requestHash`, `exportedUntil`, `exportedCount`
+- ICS 仕訳 dispatch
+  - `AccountingIcsExportLog`
+  - `idempotencyKey`, `requestHash`, `periodKey`, `exportedUntil`, `exportedCount`
 
 将来の共通 job model は、上記既存実装を包含する形で拡張する。
 
