@@ -168,6 +168,25 @@ test('frontend smoke admin ops @extended', async ({ page }) => {
     throw new Error(`Failed to create period lock: ${lockRes.status()}`);
   }
 
+  const leaveExportDispatchRes = await page.request.post(
+    `${apiBase}/integrations/hr/exports/leaves/dispatch`,
+    {
+      headers: buildAuthHeaders(),
+      data: {
+        target: 'attendance',
+        idempotencyKey: `e2e-leave-export-${run}`,
+        limit: 100,
+        offset: 0,
+      },
+    },
+  );
+  await ensureOk(leaveExportDispatchRes);
+  const leaveExportDispatchPayload = await leaveExportDispatchRes.json();
+  const leaveExportLogId = leaveExportDispatchPayload?.log?.id as
+    | string
+    | undefined;
+  expect(leaveExportLogId).toBeTruthy();
+
   await navigateToSection(page, 'ジョブ管理', '運用ジョブ');
   const adminJobsSection = page
     .locator('main')
@@ -297,5 +316,27 @@ test('frontend smoke admin ops @extended', async ({ page }) => {
       .getByText('comparisonStatus:', { exact: false })
       .first(),
   ).toBeVisible({ timeout: actionTimeout });
+  const exportJobsCard = adminSettingsSection.getByTestId(
+    'integration-export-jobs-card',
+  );
+  await exportJobsCard.scrollIntoViewIfNeeded();
+  await exportJobsCard.getByLabel('連携ジョブ種別').selectOption({
+    value: 'hr_leave_export_attendance',
+  });
+  await exportJobsCard.getByRole('button', { name: '連携ジョブ取得' }).click();
+  await expect(exportJobsCard.getByText(leaveExportLogId!)).toBeVisible({
+    timeout: actionTimeout,
+  });
+  const sourceJobCard = exportJobsCard.getByTestId(
+    `integration-export-job-${leaveExportLogId}`,
+  );
+  await sourceJobCard.getByRole('button', { name: '再出力' }).click();
+  await expect(
+    adminSettingsSection.getByText('連携ジョブを再出力しました'),
+  ).toBeVisible({ timeout: actionTimeout });
+  await expect(
+    exportJobsCard.getByText(`reexportOfId: ${leaveExportLogId}`),
+  ).toBeVisible({ timeout: actionTimeout });
   await captureSection(adminSettingsSection, '11-admin-settings.png');
+  await captureSection(exportJobsCard, '11-integration-export-jobs.png');
 });
