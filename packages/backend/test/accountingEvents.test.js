@@ -28,6 +28,9 @@ function createAccountingClient(overrides = {}) {
     vendor: {
       findUnique: async () => null,
     },
+    accountingMappingRule: {
+      findMany: async () => [],
+    },
     accountingEvent: {
       upsert: async (args) => {
         eventCalls.push(args);
@@ -83,6 +86,56 @@ test('stageAccountingEventForApproval creates invoice approved staging with pend
   );
   assert.equal(stagingCalls[0]?.create?.status, 'pending_mapping');
   assert.equal(stagingCalls[0]?.create?.mappingKey, 'invoice_approved:default');
+});
+
+test('stageAccountingEventForApproval applies active mapping rule when available', async () => {
+  const { client, stagingCalls } = createAccountingClient({
+    invoice: {
+      findUnique: async () => ({
+        id: 'inv-002',
+        projectId: 'proj-001',
+        invoiceNo: 'INV-002',
+        totalAmount: '75000',
+        currency: 'JPY',
+      }),
+    },
+    project: {
+      findUnique: async () => ({
+        code: 'PRJ-001',
+        customer: { code: 'CUST-001' },
+      }),
+    },
+    accountingMappingRule: {
+      findMany: async () => [
+        {
+          id: 'rule-001',
+          mappingKey: 'invoice_approved:default',
+          debitAccountCode: '1110',
+          debitSubaccountCode: null,
+          creditAccountCode: '4110',
+          creditSubaccountCode: null,
+          departmentCode: 'DEPT-001',
+          taxCode: 'TAX-001',
+          isActive: true,
+        },
+      ],
+    },
+  });
+
+  const created = await stageAccountingEventForApproval({
+    client,
+    targetTable: 'invoices',
+    targetId: 'inv-002',
+    eventAt: new Date('2026-03-15T00:00:00.000Z'),
+  });
+
+  assert.equal(created, true);
+  assert.equal(stagingCalls[0]?.create?.status, 'ready');
+  assert.equal(stagingCalls[0]?.create?.debitAccountCode, '1110');
+  assert.equal(stagingCalls[0]?.create?.creditAccountCode, '4110');
+  assert.equal(stagingCalls[0]?.create?.taxCode, 'TAX-001');
+  assert.equal(stagingCalls[0]?.create?.departmentCode, 'DEPT-001');
+  assert.deepEqual(stagingCalls[0]?.create?.validationErrors, []);
 });
 
 test('stageAccountingEventForApproval blocks expense approval staging when employee code is missing', async () => {

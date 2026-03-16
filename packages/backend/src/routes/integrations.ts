@@ -29,11 +29,16 @@ import {
   buildAccountingIcsExportPayload,
   buildAccountingIcsExportRequestHash,
 } from '../services/accountingIcsExport.js';
+import { reapplyAccountingMappingRules } from '../services/accountingMappingRules.js';
 import { sendCsv, toCsv } from '../utils/csv.js';
 import { toDateOnly } from '../utils/date.js';
 import {
   integrationAccountingIcsExportDispatchSchema,
   integrationAccountingIcsExportLogListQuerySchema,
+  integrationAccountingMappingRuleCreateSchema,
+  integrationAccountingMappingRuleListQuerySchema,
+  integrationAccountingMappingRulePatchSchema,
+  integrationAccountingMappingRuleReapplySchema,
   integrationAccountingIcsExportQuerySchema,
   integrationExportJobListQuerySchema,
   integrationExportJobRedispatchSchema,
@@ -62,10 +67,26 @@ type IntegrationSettingBody = {
   config?: unknown;
 };
 
+type AccountingMappingRuleInput = {
+  mappingKey: string;
+  debitAccountCode: string;
+  debitSubaccountCode?: string | null;
+  creditAccountCode: string;
+  creditSubaccountCode?: string | null;
+  departmentCode?: string | null;
+  taxCode: string;
+  isActive?: boolean;
+};
+
 function normalizeConfig(value: unknown) {
   if (value === undefined) return undefined;
   if (value === null) return Prisma.JsonNull;
   return value as Prisma.InputJsonValue;
+}
+
+function normalizeNullableText(value: unknown) {
+  const normalized = typeof value === 'string' ? value.trim() : '';
+  return normalized || null;
 }
 
 function parseLimit(
@@ -610,6 +631,34 @@ function buildAccountingIcsExportLogResponse(item: {
     startedAt: item.startedAt,
     finishedAt: item.finishedAt,
     message: item.message,
+  };
+}
+
+function buildAccountingMappingRuleResponse(item: {
+  id: string;
+  mappingKey: string;
+  debitAccountCode: string;
+  debitSubaccountCode: string | null;
+  creditAccountCode: string;
+  creditSubaccountCode: string | null;
+  departmentCode: string | null;
+  taxCode: string;
+  isActive: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}) {
+  return {
+    id: item.id,
+    mappingKey: item.mappingKey,
+    debitAccountCode: item.debitAccountCode,
+    debitSubaccountCode: item.debitSubaccountCode,
+    creditAccountCode: item.creditAccountCode,
+    creditSubaccountCode: item.creditSubaccountCode,
+    departmentCode: item.departmentCode,
+    taxCode: item.taxCode,
+    isActive: item.isActive,
+    createdAt: item.createdAt,
+    updatedAt: item.updatedAt,
   };
 }
 
@@ -2143,6 +2192,214 @@ export async function registerIntegrationRoutes(app: FastifyInstance) {
         limit,
         offset,
       };
+    },
+  );
+
+  app.get(
+    '/integrations/accounting/mapping-rules',
+    {
+      preHandler: requireRole(['admin', 'mgmt']),
+      schema: integrationAccountingMappingRuleListQuerySchema,
+    },
+    async (req) => {
+      const query = req.query as {
+        mappingKey?: string;
+        isActive?: boolean | string;
+        limit?: number | string;
+        offset?: number | string;
+      };
+      const limit = parseBoundedInteger(query.limit, 100, 500);
+      const offset = parseBoundedNonNegativeInteger(query.offset, 0, 100000);
+      const mappingKey =
+        typeof query.mappingKey === 'string' ? query.mappingKey.trim() : '';
+      const isActive =
+        query.isActive === true ||
+        query.isActive === 'true' ||
+        query.isActive === '1'
+          ? true
+          : query.isActive === false ||
+              query.isActive === 'false' ||
+              query.isActive === '0'
+            ? false
+            : undefined;
+      const items = await prisma.accountingMappingRule.findMany({
+        where: {
+          ...(mappingKey ? { mappingKey: { contains: mappingKey } } : {}),
+          ...(isActive === undefined ? {} : { isActive }),
+        },
+        orderBy: [{ mappingKey: 'asc' }, { id: 'asc' }],
+        take: limit,
+        skip: offset,
+      });
+      return {
+        items: items.map(buildAccountingMappingRuleResponse),
+        limit,
+        offset,
+      };
+    },
+  );
+
+  app.post(
+    '/integrations/accounting/mapping-rules',
+    {
+      preHandler: requireRole(['admin', 'mgmt']),
+      schema: integrationAccountingMappingRuleCreateSchema,
+    },
+    async (req, reply) => {
+      const body = req.body as AccountingMappingRuleInput;
+      const created = await prisma.accountingMappingRule.create({
+        data: {
+          mappingKey: body.mappingKey.trim(),
+          debitAccountCode: body.debitAccountCode.trim(),
+          debitSubaccountCode: normalizeNullableText(body.debitSubaccountCode),
+          creditAccountCode: body.creditAccountCode.trim(),
+          creditSubaccountCode: normalizeNullableText(
+            body.creditSubaccountCode,
+          ),
+          departmentCode: normalizeNullableText(body.departmentCode),
+          taxCode: body.taxCode.trim(),
+          isActive: body.isActive ?? true,
+          createdBy: req.user?.userId ?? null,
+          updatedBy: req.user?.userId ?? null,
+        },
+      });
+      await logAudit({
+        ...auditContextFromRequest(req),
+        action: 'integration_accounting_mapping_rule_created',
+        targetTable: 'AccountingMappingRule',
+        targetId: created.id,
+        metadata: {
+          mappingKey: created.mappingKey,
+          isActive: created.isActive,
+        } as Prisma.InputJsonValue,
+      });
+      return reply.code(201).send(buildAccountingMappingRuleResponse(created));
+    },
+  );
+
+  app.patch(
+    '/integrations/accounting/mapping-rules/:id',
+    {
+      preHandler: requireRole(['admin', 'mgmt']),
+      schema: integrationAccountingMappingRulePatchSchema,
+    },
+    async (req, reply) => {
+      const params = req.params as { id: string };
+      const body = (req.body ?? {}) as Partial<AccountingMappingRuleInput>;
+      const id = params.id.trim();
+      const current = await prisma.accountingMappingRule.findUnique({
+        where: { id },
+      });
+      if (!current) {
+        return reply
+          .code(404)
+          .send({ error: 'accounting_mapping_rule_not_found' });
+      }
+      const updated = await prisma.accountingMappingRule.update({
+        where: { id },
+        data: {
+          ...(typeof body.mappingKey === 'string'
+            ? { mappingKey: body.mappingKey.trim() }
+            : {}),
+          ...(typeof body.debitAccountCode === 'string'
+            ? { debitAccountCode: body.debitAccountCode.trim() }
+            : {}),
+          ...(body.debitSubaccountCode !== undefined
+            ? {
+                debitSubaccountCode: normalizeNullableText(
+                  body.debitSubaccountCode,
+                ),
+              }
+            : {}),
+          ...(typeof body.creditAccountCode === 'string'
+            ? { creditAccountCode: body.creditAccountCode.trim() }
+            : {}),
+          ...(body.creditSubaccountCode !== undefined
+            ? {
+                creditSubaccountCode: normalizeNullableText(
+                  body.creditSubaccountCode,
+                ),
+              }
+            : {}),
+          ...(body.departmentCode !== undefined
+            ? { departmentCode: normalizeNullableText(body.departmentCode) }
+            : {}),
+          ...(typeof body.taxCode === 'string'
+            ? { taxCode: body.taxCode.trim() }
+            : {}),
+          ...(typeof body.isActive === 'boolean'
+            ? { isActive: body.isActive }
+            : {}),
+          updatedBy: req.user?.userId ?? null,
+        },
+      });
+      await logAudit({
+        ...auditContextFromRequest(req),
+        action: 'integration_accounting_mapping_rule_updated',
+        targetTable: 'AccountingMappingRule',
+        targetId: updated.id,
+        metadata: {
+          before: {
+            mappingKey: current.mappingKey,
+            isActive: current.isActive,
+          },
+          after: {
+            mappingKey: updated.mappingKey,
+            isActive: updated.isActive,
+          },
+        } as Prisma.InputJsonValue,
+      });
+      return buildAccountingMappingRuleResponse(updated);
+    },
+  );
+
+  app.post(
+    '/integrations/accounting/mapping-rules/reapply',
+    {
+      preHandler: requireRole(['admin', 'mgmt']),
+      schema: integrationAccountingMappingRuleReapplySchema,
+    },
+    async (req, reply) => {
+      const body = (req.body ?? {}) as {
+        periodKey?: string;
+        mappingKey?: string;
+        limit?: number | string;
+        offset?: number | string;
+      };
+      const periodKey =
+        typeof body.periodKey === 'string' ? body.periodKey.trim() : '';
+      if (periodKey && !/^\d{4}-(0[1-9]|1[0-2])$/.test(periodKey)) {
+        return reply.code(400).send({ error: 'invalid_period_key' });
+      }
+      const result = await reapplyAccountingMappingRules({
+        periodKey: periodKey || null,
+        mappingKey:
+          typeof body.mappingKey === 'string'
+            ? body.mappingKey.trim() || null
+            : null,
+        limit: parseBoundedInteger(body.limit, 500, 2000),
+        offset: parseBoundedNonNegativeInteger(body.offset, 0, 100000),
+        actorUserId: req.user?.userId ?? null,
+      });
+      await logAudit({
+        ...auditContextFromRequest(req),
+        action: 'integration_accounting_mapping_rule_reapplied',
+        targetTable: 'AccountingJournalStaging',
+        targetId: periodKey || 'all',
+        metadata: {
+          periodKey: periodKey || null,
+          mappingKey:
+            typeof body.mappingKey === 'string'
+              ? body.mappingKey.trim() || null
+              : null,
+          processedCount: result.processedCount,
+          updatedCount: result.updatedCount,
+          readyCount: result.readyCount,
+          pendingMappingCount: result.pendingMappingCount,
+          blockedCount: result.blockedCount,
+        } as Prisma.InputJsonValue,
+      });
+      return result;
     },
   );
 
