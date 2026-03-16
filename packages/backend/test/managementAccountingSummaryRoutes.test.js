@@ -42,8 +42,8 @@ test('GET /reports/management-accounting/summary returns aggregate management ac
         },
         {
           id: 'project-2',
-          code: 'PRJ-002',
-          name: 'Project 2',
+          code: '=PRJ-002',
+          name: '@Project 2',
           currency: 'JPY',
         },
       ],
@@ -171,8 +171,8 @@ test('GET /reports/management-accounting/summary returns csv export', async () =
         },
         {
           id: 'project-2',
-          code: 'PRJ-002',
-          name: 'Project 2',
+          code: '=PRJ-002',
+          name: '@Project 2',
           currency: 'JPY',
         },
       ],
@@ -273,7 +273,7 @@ test('GET /reports/management-accounting/summary returns csv export', async () =
         assert.match(res.body, /summary,JPY,,,/, res.body);
         assert.match(
           res.body,
-          /top_red_project,JPY,project-2,PRJ-002,Project 2/,
+          /top_red_project,JPY,project-2,'=PRJ-002,'@Project 2/,
         );
       } finally {
         await server.close();
@@ -431,6 +431,17 @@ test('GET /reports/management-accounting/summary returns 400 when from/to are in
       body.error?.message,
       'from/to must be valid dates (YYYY-MM-DD)',
     );
+    const whitespaceRes = await server.inject({
+      method: 'GET',
+      url: '/reports/management-accounting/summary?from=%202026-03-01%20&to=2026-03-31',
+      headers: {
+        'x-user-id': 'admin-user',
+        'x-roles': 'admin',
+      },
+    });
+    assert.equal(whitespaceRes.statusCode, 400, whitespaceRes.body);
+    const whitespaceBody = JSON.parse(whitespaceRes.body);
+    assert.equal(whitespaceBody.error?.code, 'INVALID_DATE');
   } finally {
     await server.close();
   }

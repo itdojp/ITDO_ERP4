@@ -17,6 +17,8 @@ import { requireRole } from '../services/rbac.js';
 import { parseDateParam } from '../utils/date.js';
 import { sendCsv, toCsv } from '../utils/csv.js';
 
+const DATE_ONLY_REGEX = /^\d{4}-\d{2}-\d{2}$/;
+
 function validateFormat(format: string | undefined, reply: any) {
   if (!format) return true;
   if (!['csv', 'pdf'].includes(format)) {
@@ -49,6 +51,16 @@ async function sendPdf(
 
 function toNullableCsvNumber(value: number | null | undefined) {
   return value == null ? '' : value;
+}
+
+function sanitizeCsvCell(value: string | null | undefined) {
+  if (!value) return '';
+  return /^[\t\r\n ]*[=+\-@]/.test(value) ? `'${value}` : value;
+}
+
+function parseIsoDateOnlyParam(value: string | undefined) {
+  if (!value || !DATE_ONLY_REGEX.test(value)) return null;
+  return parseDateParam(value);
 }
 
 function buildManagementAccountingSummaryCsv(
@@ -121,10 +133,10 @@ function buildManagementAccountingSummaryCsv(
     for (const project of item.topRedProjects) {
       rows.push([
         'top_red_project',
-        project.currency ?? item.currency ?? '',
-        project.projectId,
-        project.projectCode ?? '',
-        project.projectName ?? '',
+        sanitizeCsvCell(project.currency ?? item.currency ?? ''),
+        sanitizeCsvCell(project.projectId),
+        sanitizeCsvCell(project.projectCode ?? ''),
+        sanitizeCsvCell(project.projectName ?? ''),
         '',
         project.revenue,
         project.directCost,
@@ -984,8 +996,8 @@ export async function registerReportRoutes(app: FastifyInstance) {
           },
         });
       }
-      const fromDate = parseDateParam(from);
-      const toDate = parseDateParam(to);
+      const fromDate = parseIsoDateOnlyParam(from);
+      const toDate = parseIsoDateOnlyParam(to);
       if (!fromDate || !toDate) {
         return reply.status(400).send({
           error: {
@@ -1004,9 +1016,11 @@ export async function registerReportRoutes(app: FastifyInstance) {
       }
       const summary = await reportManagementAccountingSummary(fromDate, toDate);
       if (format === 'csv') {
+        const safeFrom = fromDate.toISOString().slice(0, 10);
+        const safeTo = toDate.toISOString().slice(0, 10);
         return sendCsv(
           reply,
-          `management-accounting-summary-${from}-to-${to}.csv`,
+          `management-accounting-summary-${safeFrom}-to-${safeTo}.csv`,
           buildManagementAccountingSummaryCsv(summary),
         );
       }
