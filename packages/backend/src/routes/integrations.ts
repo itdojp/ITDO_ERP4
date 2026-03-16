@@ -16,6 +16,7 @@ import { resolveUserWorkdayMinutesForDates } from '../services/leaveWorkdayCalen
 import {
   AttendanceClosingError,
   closeAttendancePeriod,
+  parseAttendancePeriodKey,
 } from '../services/attendanceClosings.js';
 import {
   buildIntegrationReconciliationDetails,
@@ -37,6 +38,9 @@ import {
   integrationAccountingIcsExportQuerySchema,
   integrationExportJobListQuerySchema,
   integrationExportJobRedispatchSchema,
+  integrationHrAttendanceExportDispatchSchema,
+  integrationHrAttendanceExportLogListQuerySchema,
+  integrationHrAttendanceExportQuerySchema,
   integrationHrAttendanceClosingCreateSchema,
   integrationHrAttendanceClosingListQuerySchema,
   integrationHrAttendanceClosingSummaryListSchema,
@@ -500,6 +504,189 @@ function hrEmployeeMasterExportStatusCode(code: string) {
   switch (code) {
     case 'employee_master_employee_code_missing':
       return 409;
+    default:
+      return 409;
+  }
+}
+
+type HrAttendanceExportFormat = 'json' | 'csv';
+
+const HR_ATTENDANCE_EXPORT_SCHEMA_VERSION = 'rakuda_attendance_v0';
+const DEFAULT_ATTENDANCE_EXPORT_LOG_LIMIT = 100;
+const MAX_ATTENDANCE_EXPORT_LOG_LIMIT = 1000;
+const MAX_ATTENDANCE_EXPORT_OFFSET = 100000;
+const HR_ATTENDANCE_EXPORT_HEADERS = [
+  'employeeCode',
+  'closingMonth',
+  'closingVersion',
+  'workedDayCount',
+  'scheduledWorkMinutes',
+  'approvedWorkMinutes',
+  'overtimeTotalMinutes',
+  'paidLeaveMinutes',
+  'unpaidLeaveMinutes',
+  'totalLeaveMinutes',
+  'sourceTimeEntryCount',
+  'sourceLeaveRequestCount',
+] as const;
+
+type HrAttendanceExportItem = Record<
+  (typeof HR_ATTENDANCE_EXPORT_HEADERS)[number],
+  string
+>;
+
+type HrAttendanceExportPayload = {
+  schemaVersion: typeof HR_ATTENDANCE_EXPORT_SCHEMA_VERSION;
+  exportedAt: string;
+  exportedUntil: string;
+  periodKey: string;
+  closingId: string;
+  closingVersion: number;
+  closedAt: string;
+  exportedCount: number;
+  headers: string[];
+  items: HrAttendanceExportItem[];
+};
+
+function normalizeHrAttendanceFormat(value: unknown): HrAttendanceExportFormat {
+  return value === 'csv' ? 'csv' : 'json';
+}
+
+function buildHrAttendanceExportRequestHash(input: {
+  periodKey: string;
+  closingId: string;
+  closingVersion: number;
+  format: 'csv';
+}) {
+  return createHash('sha256')
+    .update(JSON.stringify(input), 'utf8')
+    .digest('hex');
+}
+
+async function buildHrAttendanceExportPayload(input: {
+  periodKey: string;
+}): Promise<HrAttendanceExportPayload> {
+  const { periodKey } = parseAttendancePeriodKey(input.periodKey);
+  const closing = await prisma.attendanceClosingPeriod.findFirst({
+    where: {
+      periodKey,
+      status: 'closed',
+    },
+    orderBy: [{ version: 'desc' }, { closedAt: 'desc' }, { id: 'desc' }],
+    select: {
+      id: true,
+      periodKey: true,
+      version: true,
+      closedAt: true,
+    },
+  });
+  if (!closing) {
+    throw new AttendanceClosingError(
+      'attendance_closing_not_found',
+      'No closed attendance snapshot found for the requested period',
+      { periodKey } as Record<string, unknown>,
+    );
+  }
+  const summaries = await prisma.attendanceMonthlySummary.findMany({
+    where: { closingPeriodId: closing.id },
+    orderBy: [{ employeeCode: 'asc' }, { userId: 'asc' }],
+    select: {
+      employeeCode: true,
+      workedDayCount: true,
+      scheduledWorkMinutes: true,
+      approvedWorkMinutes: true,
+      overtimeTotalMinutes: true,
+      paidLeaveMinutes: true,
+      unpaidLeaveMinutes: true,
+      totalLeaveMinutes: true,
+      sourceTimeEntryCount: true,
+      sourceLeaveRequestCount: true,
+    },
+  });
+
+  const items = summaries.map((item) => ({
+    employeeCode: item.employeeCode,
+    closingMonth: closing.periodKey,
+    closingVersion: String(closing.version),
+    workedDayCount: String(item.workedDayCount),
+    scheduledWorkMinutes: String(item.scheduledWorkMinutes),
+    approvedWorkMinutes: String(item.approvedWorkMinutes),
+    overtimeTotalMinutes: String(item.overtimeTotalMinutes),
+    paidLeaveMinutes: String(item.paidLeaveMinutes),
+    unpaidLeaveMinutes: String(item.unpaidLeaveMinutes),
+    totalLeaveMinutes: String(item.totalLeaveMinutes),
+    sourceTimeEntryCount: String(item.sourceTimeEntryCount),
+    sourceLeaveRequestCount: String(item.sourceLeaveRequestCount),
+  }));
+
+  return {
+    schemaVersion: HR_ATTENDANCE_EXPORT_SCHEMA_VERSION,
+    exportedAt: new Date().toISOString(),
+    exportedUntil: new Date().toISOString(),
+    periodKey: closing.periodKey,
+    closingId: closing.id,
+    closingVersion: closing.version,
+    closedAt: closing.closedAt.toISOString(),
+    exportedCount: items.length,
+    headers: [...HR_ATTENDANCE_EXPORT_HEADERS],
+    items,
+  };
+}
+
+function buildHrAttendanceCsv(payload: HrAttendanceExportPayload) {
+  return toCsv(
+    payload.headers,
+    payload.items.map((item) =>
+      payload.headers.map(
+        (header) => item[header as keyof HrAttendanceExportItem] ?? '',
+      ),
+    ),
+  );
+}
+
+function buildHrAttendanceCsvFilename(payload: HrAttendanceExportPayload) {
+  const compact = payload.exportedUntil
+    .replace(/[:]/g, '')
+    .replace(/\.\d{3}Z$/, 'Z');
+  return `rakuda-attendance-${payload.periodKey}-v${payload.closingVersion}-${compact}.csv`;
+}
+
+function buildHrAttendanceExportLogResponse(item: {
+  id: string;
+  idempotencyKey: string;
+  reexportOfId: string | null;
+  periodKey: string;
+  closingPeriodId: string;
+  closingVersion: number;
+  status: IntegrationRunStatus;
+  exportedUntil: Date;
+  exportedCount: number;
+  startedAt: Date;
+  finishedAt: Date | null;
+  message: string | null;
+}) {
+  return {
+    id: item.id,
+    idempotencyKey: item.idempotencyKey,
+    reexportOfId: item.reexportOfId,
+    periodKey: item.periodKey,
+    closingPeriodId: item.closingPeriodId,
+    closingVersion: item.closingVersion,
+    status: item.status,
+    exportedUntil: item.exportedUntil,
+    exportedCount: item.exportedCount,
+    startedAt: item.startedAt,
+    finishedAt: item.finishedAt,
+    message: item.message,
+  };
+}
+
+function hrAttendanceExportStatusCode(code: string) {
+  switch (code) {
+    case 'invalid_period_key':
+      return 400;
+    case 'attendance_closing_not_found':
+      return 404;
     default:
       return 409;
   }
@@ -3213,6 +3400,279 @@ export async function registerIntegrationRoutes(app: FastifyInstance) {
         },
       });
       return { closing, items, limit: take, offset: skip };
+    },
+  );
+
+  app.get(
+    '/integrations/hr/exports/attendance',
+    {
+      preHandler: requireRole(['admin', 'mgmt']),
+      schema: integrationHrAttendanceExportQuerySchema,
+    },
+    async (req, reply) => {
+      const query = req.query as {
+        format?: HrAttendanceExportFormat;
+        periodKey: string;
+      };
+      try {
+        const payload = await buildHrAttendanceExportPayload({
+          periodKey: query.periodKey,
+        });
+        if (normalizeHrAttendanceFormat(query.format) === 'csv') {
+          return sendCsv(
+            reply,
+            buildHrAttendanceCsvFilename(payload),
+            buildHrAttendanceCsv(payload),
+          );
+        }
+        return payload;
+      } catch (error) {
+        if (error instanceof AttendanceClosingError) {
+          return reply.code(hrAttendanceExportStatusCode(error.code)).send({
+            error: error.code,
+            message: error.message,
+            details: error.details,
+          });
+        }
+        throw error;
+      }
+    },
+  );
+
+  app.post(
+    '/integrations/hr/exports/attendance/dispatch',
+    {
+      preHandler: requireRole(['admin', 'mgmt']),
+      schema: integrationHrAttendanceExportDispatchSchema,
+    },
+    async (req, reply) => {
+      const body = req.body as {
+        periodKey: string;
+        idempotencyKey: string;
+      };
+      const idempotencyKey = body.idempotencyKey.trim();
+      if (!idempotencyKey) {
+        return reply.code(400).send({ error: 'invalid_idempotencyKey' });
+      }
+      let payload: HrAttendanceExportPayload;
+      try {
+        payload = await buildHrAttendanceExportPayload({
+          periodKey: body.periodKey,
+        });
+      } catch (error) {
+        if (error instanceof AttendanceClosingError) {
+          return reply.code(hrAttendanceExportStatusCode(error.code)).send({
+            error: error.code,
+            message: error.message,
+            details: error.details,
+          });
+        }
+        throw error;
+      }
+
+      const requestHash = buildHrAttendanceExportRequestHash({
+        periodKey: payload.periodKey,
+        closingId: payload.closingId,
+        closingVersion: payload.closingVersion,
+        format: 'csv',
+      });
+      const respondWithExistingAttendanceDispatch = async (
+        existing: NonNullable<
+          Awaited<ReturnType<typeof prisma.hrAttendanceExportLog.findUnique>>
+        >,
+      ) => {
+        if (existing.requestHash !== requestHash) {
+          await logAudit({
+            ...auditContextFromRequest(req),
+            action: 'integration_hr_attendance_export_dispatch_conflict',
+            targetTable: 'HrAttendanceExportLog',
+            targetId: existing.id,
+            metadata: {
+              idempotencyKey,
+              requestHash,
+              existingRequestHash: existing.requestHash,
+            } as Prisma.InputJsonValue,
+          });
+          return reply.code(409).send({ error: 'idempotency_conflict' });
+        }
+        if (existing.status === IntegrationRunStatus.running) {
+          return reply.code(409).send({
+            error: 'dispatch_in_progress',
+            logId: existing.id,
+          });
+        }
+        await logAudit({
+          ...auditContextFromRequest(req),
+          action: 'integration_hr_attendance_export_dispatch_replayed',
+          targetTable: 'HrAttendanceExportLog',
+          targetId: existing.id,
+          metadata: {
+            idempotencyKey,
+            status: existing.status,
+            exportedCount: existing.exportedCount,
+          } as Prisma.InputJsonValue,
+        });
+        return {
+          replayed: true,
+          payload: existing.payload,
+          log: buildHrAttendanceExportLogResponse(existing),
+        };
+      };
+
+      const existing = await prisma.hrAttendanceExportLog.findUnique({
+        where: { idempotencyKey },
+      });
+      if (existing) {
+        return respondWithExistingAttendanceDispatch(existing);
+      }
+
+      const startedAt = new Date();
+      let log: Awaited<ReturnType<typeof prisma.hrAttendanceExportLog.create>>;
+      try {
+        log = await prisma.hrAttendanceExportLog.create({
+          data: {
+            idempotencyKey,
+            requestHash,
+            periodKey: payload.periodKey,
+            closingPeriodId: payload.closingId,
+            closingVersion: payload.closingVersion,
+            exportedUntil: startedAt,
+            status: IntegrationRunStatus.running,
+            startedAt,
+            createdBy: req.user?.userId ?? null,
+          },
+        });
+      } catch (error) {
+        if (
+          error instanceof Prisma.PrismaClientKnownRequestError &&
+          error.code === 'P2002'
+        ) {
+          const concurrent = await prisma.hrAttendanceExportLog.findUnique({
+            where: { idempotencyKey },
+          });
+          if (concurrent) {
+            return respondWithExistingAttendanceDispatch(concurrent);
+          }
+        }
+        throw error;
+      }
+
+      try {
+        const finishedAt = new Date();
+        const updated = await prisma.hrAttendanceExportLog.update({
+          where: { id: log.id },
+          data: {
+            status: IntegrationRunStatus.success,
+            periodKey: payload.periodKey,
+            closingPeriodId: payload.closingId,
+            closingVersion: payload.closingVersion,
+            exportedCount: payload.exportedCount,
+            payload: payload as Prisma.InputJsonValue,
+            message: payload.exportedCount ? 'exported' : 'no_changes',
+            finishedAt,
+          },
+        });
+        await logAudit({
+          ...auditContextFromRequest(req),
+          action: 'integration_hr_attendance_export_dispatched',
+          targetTable: 'HrAttendanceExportLog',
+          targetId: updated.id,
+          metadata: {
+            idempotencyKey,
+            periodKey: payload.periodKey,
+            closingPeriodId: payload.closingId,
+            closingVersion: payload.closingVersion,
+            exportedCount: payload.exportedCount,
+            format: 'csv',
+          } as Prisma.InputJsonValue,
+        });
+        return {
+          replayed: false,
+          payload,
+          log: buildHrAttendanceExportLogResponse(updated),
+        };
+      } catch (error) {
+        const finishedAt = new Date();
+        const message = error instanceof Error ? error.message : String(error);
+        const failed = await prisma.hrAttendanceExportLog.update({
+          where: { id: log.id },
+          data: {
+            status: IntegrationRunStatus.failed,
+            message,
+            finishedAt,
+          },
+        });
+        await logAudit({
+          ...auditContextFromRequest(req),
+          action: 'integration_hr_attendance_export_dispatch_failed',
+          targetTable: 'HrAttendanceExportLog',
+          targetId: failed.id,
+          metadata: {
+            idempotencyKey,
+            message: truncateForAudit(message),
+          } as Prisma.InputJsonValue,
+        });
+        throw error;
+      }
+    },
+  );
+
+  app.get(
+    '/integrations/hr/exports/attendance/dispatch-logs',
+    {
+      preHandler: requireRole(['admin', 'mgmt']),
+      schema: integrationHrAttendanceExportLogListQuerySchema,
+    },
+    async (req) => {
+      const query = req.query as {
+        periodKey?: string;
+        limit?: number | string;
+        offset?: number | string;
+        idempotencyKey?: string;
+      };
+      const limit = parseBoundedInteger(
+        query.limit,
+        DEFAULT_ATTENDANCE_EXPORT_LOG_LIMIT,
+        MAX_ATTENDANCE_EXPORT_LOG_LIMIT,
+      );
+      const offset = parseBoundedNonNegativeInteger(
+        query.offset,
+        0,
+        MAX_ATTENDANCE_EXPORT_OFFSET,
+      );
+      const items = await prisma.hrAttendanceExportLog.findMany({
+        where: {
+          ...(typeof query.periodKey === 'string' && query.periodKey.trim()
+            ? { periodKey: query.periodKey.trim() }
+            : {}),
+          ...(typeof query.idempotencyKey === 'string' &&
+          query.idempotencyKey.trim()
+            ? { idempotencyKey: query.idempotencyKey.trim() }
+            : {}),
+        },
+        select: {
+          id: true,
+          idempotencyKey: true,
+          reexportOfId: true,
+          periodKey: true,
+          closingPeriodId: true,
+          closingVersion: true,
+          status: true,
+          exportedUntil: true,
+          exportedCount: true,
+          startedAt: true,
+          finishedAt: true,
+          message: true,
+        },
+        orderBy: [{ startedAt: 'desc' }, { id: 'desc' }],
+        take: limit,
+        skip: offset,
+      });
+      return {
+        items: items.map((item) => buildHrAttendanceExportLogResponse(item)),
+        limit,
+        offset,
+      };
     },
   );
 

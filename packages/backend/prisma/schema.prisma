@@ -1753,6 +1753,31 @@ model HrEmployeeMasterExportLog {
   @@index([reexportOfId, startedAt])
 }
 
+model HrAttendanceExportLog {
+  id              String               @id @default(uuid())
+  idempotencyKey  String               @unique
+  requestHash     String
+  reexportOfId    String?
+  periodKey       String
+  closingPeriodId String
+  closingVersion  Int
+  exportedUntil   DateTime
+  status          IntegrationRunStatus @default(running)
+  exportedCount   Int                  @default(0)
+  payload         Json?
+  message         String?
+  startedAt       DateTime             @default(now())
+  finishedAt      DateTime?
+  createdAt       DateTime             @default(now())
+  createdBy       String?
+  updatedAt       DateTime             @updatedAt
+
+  @@index([periodKey, startedAt])
+  @@index([closingPeriodId, startedAt])
+  @@index([status, startedAt])
+  @@index([reexportOfId, startedAt])
+}
+
 model AccountingIcsExportLog {
   id             String               @id @default(uuid())
   idempotencyKey String               @unique

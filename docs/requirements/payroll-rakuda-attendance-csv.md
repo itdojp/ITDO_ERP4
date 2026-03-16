@@ -19,6 +19,7 @@
 - `TimeEntry` は案件工数/実績管理のモデルであり、給与向けの打刻・勤怠集計正本ではない。
 - 月次確定値、締め版、再出力再現に必要な snapshot モデルは `AttendanceClosingPeriod` / `AttendanceMonthlySummary` として実装を開始した。
 - 初期実装では `POST /integrations/hr/attendance/closings` と `GET /integrations/hr/attendance/closings` 系で月次締め済み snapshot を作成・参照できる。
+- `#1442` の現時点 baseline として、最新の締め snapshot を canonical 勤怠 CSV として出力する API と dispatch log を追加する。
 
 ## 現在の ERP4 で供給可能な元データ
 
@@ -107,6 +108,10 @@
 - `leaveTypeName`, `leaveTypeUnit`, `leaveTypeIsPaid`, `requestedMinutes` を含む
 - `POST /integrations/hr/attendance/closings` で `periodKey` 単位の締め snapshot を作成できる
 - `GET /integrations/hr/attendance/closings` と `GET /integrations/hr/attendance/closings/:id/summaries` で締め済みデータを参照できる
+- `GET /integrations/hr/exports/attendance`
+- `POST /integrations/hr/exports/attendance/dispatch`
+- `GET /integrations/hr/exports/attendance/dispatch-logs`
+  により、最新の closed snapshot から canonical 勤怠 CSV を出力し、履歴を保持できる
 
 ### 既存 leave export で足りないこと
 
@@ -228,7 +233,8 @@
 
 - 勤怠 CSV の完全仕様を確定するには `#1432` の現物テンプレートと、`#1440` の月次勤怠確定モデル設計が必須である。
 - 現行 repo で再利用できるのは leave export と time entry 明細であり、給与向け月次確定値そのものは未実装である。
-- したがって `#1437` は本書を初期要件として先行確定し、締めロジックと CSV 列定義は後続で詳細化する進め方が妥当である。
+- ただし現時点の baseline として、`AttendanceMonthlySummary` を元に canonical 勤怠 CSV を出力・dispatch する API は実装済みである。
+- したがって `#1437` は本書を初期要件として先行確定し、列の最終確定、残業区分拡張、運用切替判断を後続で詳細化する進め方が妥当である。
 
 ## 根拠ファイル
 

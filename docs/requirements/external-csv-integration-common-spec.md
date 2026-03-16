@@ -86,6 +86,9 @@
 - 社員マスタ dispatch
   - `HrEmployeeMasterExportLog`
   - `idempotencyKey`, `requestHash`, `reexportOfId`, `exportedUntil`, `exportedCount`
+- 勤怠 CSV dispatch
+  - `HrAttendanceExportLog`
+  - `idempotencyKey`, `requestHash`, `reexportOfId`, `periodKey`, `closingPeriodId`, `closingVersion`, `exportedUntil`, `exportedCount`
 - ICS 仕訳 dispatch
   - `AccountingIcsExportLog`
   - `idempotencyKey`, `requestHash`, `reexportOfId`, `periodKey`, `exportedUntil`, `exportedCount`

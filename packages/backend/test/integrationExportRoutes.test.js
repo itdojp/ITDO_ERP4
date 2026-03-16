@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
-import test from 'node:test';
 import { createHash } from 'node:crypto';
+import test from 'node:test';
 import { Prisma } from '@prisma/client';
 
 import { buildServer } from '../dist/server.js';
@@ -736,6 +736,370 @@ test('GET /integrations/hr/exports/users/employee-master/dispatch-logs supports 
 
   assert.deepEqual(capturedFindMany?.where, {
     idempotencyKey: 'emp-export-key-004',
+  });
+  assert.equal(capturedFindMany?.take, 5);
+  assert.equal(capturedFindMany?.skip, 4);
+});
+
+test('GET /integrations/hr/exports/attendance returns latest closing payload', async () => {
+  process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
+  process.env.AUTH_MODE = 'header';
+
+  await withPrismaStubs(
+    {
+      'attendanceClosingPeriod.findFirst': async () => ({
+        id: 'attendance-close-001',
+        periodKey: '2026-03',
+        version: 2,
+        closedAt: new Date('2026-03-31T15:00:00.000Z'),
+      }),
+      'attendanceMonthlySummary.findMany': async () => [
+        {
+          employeeCode: 'EMP-001',
+          workedDayCount: 20,
+          scheduledWorkMinutes: 9600,
+          approvedWorkMinutes: 9780,
+          overtimeTotalMinutes: 180,
+          paidLeaveMinutes: 120,
+          unpaidLeaveMinutes: 0,
+          totalLeaveMinutes: 120,
+          sourceTimeEntryCount: 22,
+          sourceLeaveRequestCount: 1,
+        },
+      ],
+    },
+    async () => {
+      const server = await buildServer({ logger: false });
+      try {
+        const res = await server.inject({
+          method: 'GET',
+          url: '/integrations/hr/exports/attendance?periodKey=2026-03',
+          headers: {
+            'x-user-id': 'admin-user',
+            'x-roles': 'admin',
+          },
+        });
+        assert.equal(res.statusCode, 200, res.body);
+        const body = JSON.parse(res.body);
+        assert.equal(body.periodKey, '2026-03');
+        assert.equal(body.closingId, 'attendance-close-001');
+        assert.equal(body.closingVersion, 2);
+        assert.equal(body.exportedCount, 1);
+        assert.equal(body.items[0].employeeCode, 'EMP-001');
+        assert.equal(body.items[0].overtimeTotalMinutes, '180');
+      } finally {
+        await server.close();
+      }
+    },
+  );
+});
+
+test('GET /integrations/hr/exports/attendance returns csv when format=csv', async () => {
+  process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
+  process.env.AUTH_MODE = 'header';
+
+  await withPrismaStubs(
+    {
+      'attendanceClosingPeriod.findFirst': async () => ({
+        id: 'attendance-close-002',
+        periodKey: '2026-03',
+        version: 1,
+        closedAt: new Date('2026-03-31T15:00:00.000Z'),
+      }),
+      'attendanceMonthlySummary.findMany': async () => [
+        {
+          employeeCode: 'EMP-002',
+          workedDayCount: 19,
+          scheduledWorkMinutes: 9120,
+          approvedWorkMinutes: 9300,
+          overtimeTotalMinutes: 180,
+          paidLeaveMinutes: 0,
+          unpaidLeaveMinutes: 60,
+          totalLeaveMinutes: 60,
+          sourceTimeEntryCount: 21,
+          sourceLeaveRequestCount: 1,
+        },
+      ],
+    },
+    async () => {
+      const server = await buildServer({ logger: false });
+      try {
+        const res = await server.inject({
+          method: 'GET',
+          url: '/integrations/hr/exports/attendance?periodKey=2026-03&format=csv',
+          headers: {
+            'x-user-id': 'admin-user',
+            'x-roles': 'admin',
+          },
+        });
+        assert.equal(res.statusCode, 200, res.body);
+        assert.match(
+          res.headers['content-disposition'],
+          /rakuda-attendance-2026-03-v1-/,
+        );
+        assert.match(res.body, /employeeCode,closingMonth,closingVersion/);
+        assert.match(res.body, /EMP-002,2026-03,1/);
+      } finally {
+        await server.close();
+      }
+    },
+  );
+});
+
+test('GET /integrations/hr/exports/attendance returns 404 when no closed snapshot exists', async () => {
+  process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
+  process.env.AUTH_MODE = 'header';
+
+  await withPrismaStubs(
+    {
+      'attendanceClosingPeriod.findFirst': async () => null,
+    },
+    async () => {
+      const server = await buildServer({ logger: false });
+      try {
+        const res = await server.inject({
+          method: 'GET',
+          url: '/integrations/hr/exports/attendance?periodKey=2026-03',
+          headers: {
+            'x-user-id': 'admin-user',
+            'x-roles': 'admin',
+          },
+        });
+        assert.equal(res.statusCode, 404, res.body);
+        const body = JSON.parse(res.body);
+        assert.equal(body.error, 'attendance_closing_not_found');
+      } finally {
+        await server.close();
+      }
+    },
+  );
+});
+
+test('POST /integrations/hr/exports/attendance/dispatch creates export log and persists payload', async () => {
+  process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
+  process.env.AUTH_MODE = 'header';
+
+  let capturedCreate = null;
+  let capturedUpdate = null;
+  await withPrismaStubs(
+    {
+      'attendanceClosingPeriod.findFirst': async () => ({
+        id: 'attendance-close-003',
+        periodKey: '2026-03',
+        version: 3,
+        closedAt: new Date('2026-03-31T15:00:00.000Z'),
+      }),
+      'attendanceMonthlySummary.findMany': async () => [
+        {
+          employeeCode: 'EMP-003',
+          workedDayCount: 20,
+          scheduledWorkMinutes: 9600,
+          approvedWorkMinutes: 9600,
+          overtimeTotalMinutes: 0,
+          paidLeaveMinutes: 0,
+          unpaidLeaveMinutes: 0,
+          totalLeaveMinutes: 0,
+          sourceTimeEntryCount: 20,
+          sourceLeaveRequestCount: 0,
+        },
+      ],
+      'hrAttendanceExportLog.findUnique': async () => null,
+      'hrAttendanceExportLog.create': async (args) => {
+        capturedCreate = args;
+        return {
+          id: 'attendance-export-log-001',
+          ...args.data,
+        };
+      },
+      'hrAttendanceExportLog.update': async (args) => {
+        capturedUpdate = args;
+        return {
+          id: 'attendance-export-log-001',
+          ...args.data,
+        };
+      },
+      'auditLog.create': async () => ({ id: 'audit-001' }),
+    },
+    async () => {
+      const server = await buildServer({ logger: false });
+      try {
+        const res = await server.inject({
+          method: 'POST',
+          url: '/integrations/hr/exports/attendance/dispatch',
+          headers: {
+            'x-user-id': 'admin-user',
+            'x-roles': 'admin',
+          },
+          payload: {
+            periodKey: '2026-03',
+            idempotencyKey: 'attendance-export-key-001',
+          },
+        });
+        assert.equal(res.statusCode, 200, res.body);
+        const body = JSON.parse(res.body);
+        assert.equal(body.replayed, false);
+        assert.equal(body.log.id, 'attendance-export-log-001');
+        assert.equal(body.log.periodKey, '2026-03');
+        assert.equal(body.log.closingVersion, 3);
+        assert.equal(body.payload.exportedCount, 1);
+      } finally {
+        await server.close();
+      }
+    },
+  );
+
+  assert.equal(capturedCreate?.data?.periodKey, '2026-03');
+  assert.equal(capturedCreate?.data?.closingPeriodId, 'attendance-close-003');
+  assert.equal(capturedUpdate?.data?.exportedCount, 1);
+});
+
+test('POST /integrations/hr/exports/attendance/dispatch replays previous success with same idempotency key', async () => {
+  process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
+  process.env.AUTH_MODE = 'header';
+
+  const requestHash = createHash('sha256')
+    .update(
+      JSON.stringify({
+        periodKey: '2026-03',
+        closingId: 'attendance-close-004',
+        closingVersion: 4,
+        format: 'csv',
+      }),
+      'utf8',
+    )
+    .digest('hex');
+  const payload = {
+    schemaVersion: 'rakuda_attendance_v0',
+    exportedAt: '2026-03-17T00:00:00.000Z',
+    exportedUntil: '2026-03-17T00:00:00.000Z',
+    periodKey: '2026-03',
+    closingId: 'attendance-close-004',
+    closingVersion: 4,
+    closedAt: '2026-03-31T15:00:00.000Z',
+    exportedCount: 1,
+    headers: ['employeeCode'],
+    items: [{ employeeCode: 'EMP-004' }],
+  };
+  await withPrismaStubs(
+    {
+      'attendanceClosingPeriod.findFirst': async () => ({
+        id: 'attendance-close-004',
+        periodKey: '2026-03',
+        version: 4,
+        closedAt: new Date('2026-03-31T15:00:00.000Z'),
+      }),
+      'attendanceMonthlySummary.findMany': async () => [
+        {
+          employeeCode: 'EMP-004',
+          workedDayCount: 20,
+          scheduledWorkMinutes: 9600,
+          approvedWorkMinutes: 9600,
+          overtimeTotalMinutes: 0,
+          paidLeaveMinutes: 0,
+          unpaidLeaveMinutes: 0,
+          totalLeaveMinutes: 0,
+          sourceTimeEntryCount: 20,
+          sourceLeaveRequestCount: 0,
+        },
+      ],
+      'hrAttendanceExportLog.findUnique': async () => ({
+        id: 'attendance-export-log-002',
+        idempotencyKey: 'attendance-export-key-002',
+        requestHash,
+        reexportOfId: null,
+        periodKey: '2026-03',
+        closingPeriodId: 'attendance-close-004',
+        closingVersion: 4,
+        exportedUntil: new Date('2026-03-17T00:00:00.000Z'),
+        status: 'success',
+        exportedCount: 1,
+        payload,
+        message: 'exported',
+        startedAt: new Date('2026-03-17T00:00:00.000Z'),
+        finishedAt: new Date('2026-03-17T00:00:10.000Z'),
+      }),
+      'auditLog.create': async () => ({ id: 'audit-002' }),
+    },
+    async () => {
+      const server = await buildServer({ logger: false });
+      try {
+        const res = await server.inject({
+          method: 'POST',
+          url: '/integrations/hr/exports/attendance/dispatch',
+          headers: {
+            'x-user-id': 'admin-user',
+            'x-roles': 'admin',
+          },
+          payload: {
+            periodKey: '2026-03',
+            idempotencyKey: 'attendance-export-key-002',
+          },
+        });
+        assert.equal(res.statusCode, 200, res.body);
+        const body = JSON.parse(res.body);
+        assert.equal(body.replayed, true);
+        assert.equal(body.log.id, 'attendance-export-log-002');
+        assert.deepEqual(body.payload, payload);
+      } finally {
+        await server.close();
+      }
+    },
+  );
+});
+
+test('GET /integrations/hr/exports/attendance/dispatch-logs supports filters and pagination', async () => {
+  process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
+  process.env.AUTH_MODE = 'header';
+
+  let capturedFindMany = null;
+  await withPrismaStubs(
+    {
+      'hrAttendanceExportLog.findMany': async (args) => {
+        capturedFindMany = args;
+        return [
+          {
+            id: 'attendance-export-log-003',
+            idempotencyKey: 'attendance-export-key-003',
+            reexportOfId: null,
+            periodKey: '2026-03',
+            closingPeriodId: 'attendance-close-005',
+            closingVersion: 1,
+            status: 'success',
+            exportedUntil: new Date('2026-03-17T00:00:00.000Z'),
+            exportedCount: 12,
+            startedAt: new Date('2026-03-17T00:00:00.000Z'),
+            finishedAt: new Date('2026-03-17T00:01:00.000Z'),
+            message: 'exported',
+          },
+        ];
+      },
+    },
+    async () => {
+      const server = await buildServer({ logger: false });
+      try {
+        const res = await server.inject({
+          method: 'GET',
+          url: '/integrations/hr/exports/attendance/dispatch-logs?periodKey=2026-03&idempotencyKey=attendance-export-key-003&limit=5&offset=4',
+          headers: {
+            'x-user-id': 'admin-user',
+            'x-roles': 'admin',
+          },
+        });
+        assert.equal(res.statusCode, 200, res.body);
+        const body = JSON.parse(res.body);
+        assert.equal(body.limit, 5);
+        assert.equal(body.offset, 4);
+        assert.equal(body.items[0].idempotencyKey, 'attendance-export-key-003');
+        assert.equal(body.items[0].closingVersion, 1);
+      } finally {
+        await server.close();
+      }
+    },
+  );
+
+  assert.deepEqual(capturedFindMany?.where, {
+    periodKey: '2026-03',
+    idempotencyKey: 'attendance-export-key-003',
   });
   assert.equal(capturedFindMany?.take, 5);
   assert.equal(capturedFindMany?.skip, 4);
