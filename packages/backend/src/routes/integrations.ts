@@ -578,7 +578,7 @@ function hrEmployeeMasterExportStatusCode(code: string) {
 
 type HrAttendanceExportFormat = 'json' | 'csv';
 
-const HR_ATTENDANCE_EXPORT_SCHEMA_VERSION = 'rakuda_attendance_v0';
+const HR_ATTENDANCE_EXPORT_SCHEMA_VERSION = 'rakuda_attendance_v1';
 const DEFAULT_ATTENDANCE_EXPORT_LOG_LIMIT = 100;
 const MAX_ATTENDANCE_EXPORT_LOG_LIMIT = 1000;
 const MAX_ATTENDANCE_EXPORT_OFFSET = 100000;

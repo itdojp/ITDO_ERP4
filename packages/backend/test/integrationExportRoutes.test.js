@@ -986,7 +986,7 @@ test('POST /integrations/hr/exports/attendance/dispatch replays previous success
     )
     .digest('hex');
   const payload = {
-    schemaVersion: 'rakuda_attendance_v0',
+    schemaVersion: 'rakuda_attendance_v1',
     exportedAt: '2026-03-17T00:00:00.000Z',
     exportedUntil: '2026-03-17T00:00:00.000Z',
     periodKey: '2026-03',

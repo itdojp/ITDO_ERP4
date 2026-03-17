@@ -116,6 +116,7 @@
 - `POST /integrations/hr/exports/attendance/dispatch`
 - `GET /integrations/hr/exports/attendance/dispatch-logs`
   により、最新の closed snapshot から canonical 勤怠 CSV を出力し、履歴を保持できる
+- 上記 export の `schemaVersion` は、残業内訳列追加に伴い `rakuda_attendance_v1` を返す
 
 ### 既存 leave export で足りないこと
 
