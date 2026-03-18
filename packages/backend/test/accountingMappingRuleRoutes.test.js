@@ -42,9 +42,12 @@ test('GET /integrations/accounting/mapping-rules supports filters and pagination
             mappingKey: 'invoice_approved:default',
             debitAccountCode: '1110',
             debitSubaccountCode: null,
+            requireDebitSubaccountCode: false,
             creditAccountCode: '4110',
             creditSubaccountCode: null,
+            requireCreditSubaccountCode: false,
             departmentCode: null,
+            requireDepartmentCode: false,
             taxCode: 'TAX-001',
             isActive: true,
             createdAt: new Date('2026-03-17T00:00:00.000Z'),
@@ -114,6 +117,7 @@ test('POST /integrations/accounting/mapping-rules creates rule', async () => {
             mappingKey: 'expense_approved:交通費',
             debitAccountCode: '7110',
             creditAccountCode: '1110',
+            requireDepartmentCode: true,
             taxCode: 'TAX-EXP',
             departmentCode: 'DEPT-001',
           },
@@ -122,6 +126,7 @@ test('POST /integrations/accounting/mapping-rules creates rule', async () => {
         const body = JSON.parse(res.body);
         assert.equal(body.mappingKey, 'expense_approved:交通費');
         assert.equal(body.debitAccountCode, '7110');
+        assert.equal(body.requireDepartmentCode, true);
       } finally {
         await server.close();
       }
@@ -129,6 +134,7 @@ test('POST /integrations/accounting/mapping-rules creates rule', async () => {
   );
 
   assert.equal(capturedCreate?.data?.mappingKey, 'expense_approved:交通費');
+  assert.equal(capturedCreate?.data?.requireDepartmentCode, true);
   assert.equal(capturedCreate?.data?.createdBy, 'admin-user');
 });
 
@@ -175,9 +181,12 @@ test('PATCH /integrations/accounting/mapping-rules/:id updates rule', async () =
         mappingKey: 'invoice_approved:default',
         debitAccountCode: '1110',
         debitSubaccountCode: null,
+        requireDebitSubaccountCode: false,
         creditAccountCode: '4110',
         creditSubaccountCode: null,
+        requireCreditSubaccountCode: false,
         departmentCode: null,
+        requireDepartmentCode: false,
         taxCode: 'TAX-001',
         isActive: true,
         createdAt: new Date('2026-03-17T00:00:00.000Z'),
@@ -190,9 +199,12 @@ test('PATCH /integrations/accounting/mapping-rules/:id updates rule', async () =
           mappingKey: 'invoice_approved:default',
           debitAccountCode: '1111',
           debitSubaccountCode: null,
+          requireDebitSubaccountCode: true,
           creditAccountCode: '4110',
           creditSubaccountCode: null,
+          requireCreditSubaccountCode: false,
           departmentCode: 'D001',
+          requireDepartmentCode: true,
           taxCode: 'TAX-001',
           isActive: false,
           createdAt: new Date('2026-03-17T00:00:00.000Z'),
@@ -213,7 +225,9 @@ test('PATCH /integrations/accounting/mapping-rules/:id updates rule', async () =
           },
           payload: {
             debitAccountCode: '1111',
+            requireDebitSubaccountCode: true,
             departmentCode: 'D001',
+            requireDepartmentCode: true,
             isActive: false,
           },
         });
@@ -221,6 +235,8 @@ test('PATCH /integrations/accounting/mapping-rules/:id updates rule', async () =
         const body = JSON.parse(res.body);
         assert.equal(body.debitAccountCode, '1111');
         assert.equal(body.departmentCode, 'D001');
+        assert.equal(body.requireDebitSubaccountCode, true);
+        assert.equal(body.requireDepartmentCode, true);
         assert.equal(body.isActive, false);
       } finally {
         await server.close();
@@ -253,9 +269,12 @@ test('POST /integrations/accounting/mapping-rules/reapply reapplies pending rows
           mappingKey: 'invoice_approved:default',
           debitAccountCode: '1110',
           debitSubaccountCode: null,
+          requireDebitSubaccountCode: true,
           creditAccountCode: '4110',
           creditSubaccountCode: null,
+          requireCreditSubaccountCode: false,
           departmentCode: 'D001',
+          requireDepartmentCode: false,
           taxCode: 'TAX-001',
           isActive: true,
         },
@@ -285,7 +304,8 @@ test('POST /integrations/accounting/mapping-rules/reapply reapplies pending rows
         assert.equal(res.statusCode, 200, res.body);
         const body = JSON.parse(res.body);
         assert.equal(body.processedCount, 1);
-        assert.equal(body.readyCount, 1);
+        assert.equal(body.readyCount, 0);
+        assert.equal(body.pendingMappingCount, 1);
       } finally {
         await server.close();
       }
@@ -293,6 +313,13 @@ test('POST /integrations/accounting/mapping-rules/reapply reapplies pending rows
   );
 
   assert.equal(updateCalls.length, 1);
-  assert.equal(updateCalls[0]?.data?.status, 'ready');
+  assert.equal(updateCalls[0]?.data?.status, 'pending_mapping');
   assert.equal(updateCalls[0]?.data?.departmentCode, 'D001');
+  assert.deepEqual(updateCalls[0]?.data?.validationErrors, [
+    {
+      code: 'mapping_pending',
+      mappingKey: 'invoice_approved:default',
+      requiredFields: ['debitSubaccountCode'],
+    },
+  ]);
 });

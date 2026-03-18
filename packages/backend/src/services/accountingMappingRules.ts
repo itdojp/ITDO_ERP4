@@ -8,9 +8,12 @@ type AccountingMappingRuleRecord = {
   mappingKey: string;
   debitAccountCode: string;
   debitSubaccountCode: string | null;
+  requireDebitSubaccountCode: boolean;
   creditAccountCode: string;
   creditSubaccountCode: string | null;
+  requireCreditSubaccountCode: boolean;
   departmentCode: string | null;
+  requireDepartmentCode: boolean;
   taxCode: string;
   isActive: boolean;
 };
@@ -61,9 +64,12 @@ export async function resolveAccountingMappingRule(
       mappingKey: true,
       debitAccountCode: true,
       debitSubaccountCode: true,
+      requireDebitSubaccountCode: true,
       creditAccountCode: true,
       creditSubaccountCode: true,
+      requireCreditSubaccountCode: true,
       departmentCode: true,
+      requireDepartmentCode: true,
       taxCode: true,
       isActive: true,
     },
@@ -94,12 +100,19 @@ export function buildAccountingStagingMappingResult(options: {
     .filter((code, index, values) => code && values.indexOf(code) === index);
   const debitAccountCode = normalizeText(options.rule?.debitAccountCode);
   const debitSubaccountCode = normalizeText(options.rule?.debitSubaccountCode);
+  const requireDebitSubaccountCode = Boolean(
+    options.rule?.requireDebitSubaccountCode,
+  );
   const creditAccountCode = normalizeText(options.rule?.creditAccountCode);
   const creditSubaccountCode = normalizeText(
     options.rule?.creditSubaccountCode,
   );
+  const requireCreditSubaccountCode = Boolean(
+    options.rule?.requireCreditSubaccountCode,
+  );
   const sourceDepartmentCode = normalizeText(options.departmentCode);
   const ruleDepartmentCode = normalizeText(options.rule?.departmentCode);
+  const requireDepartmentCode = Boolean(options.rule?.requireDepartmentCode);
   const departmentCode = options.preferRuleDepartmentCode
     ? ruleDepartmentCode || sourceDepartmentCode
     : sourceDepartmentCode || ruleDepartmentCode;
@@ -107,6 +120,15 @@ export function buildAccountingStagingMappingResult(options: {
   const requiredFields: string[] = [];
   if (!debitAccountCode) requiredFields.push('debitAccountCode');
   if (!creditAccountCode) requiredFields.push('creditAccountCode');
+  if (requireDebitSubaccountCode && !debitSubaccountCode) {
+    requiredFields.push('debitSubaccountCode');
+  }
+  if (requireCreditSubaccountCode && !creditSubaccountCode) {
+    requiredFields.push('creditSubaccountCode');
+  }
+  if (requireDepartmentCode && !departmentCode) {
+    requiredFields.push('departmentCode');
+  }
   if (!taxCode) requiredFields.push('taxCode');
 
   const validationErrors: Prisma.InputJsonValue[] = blockingCodes.map(
@@ -192,9 +214,12 @@ export async function reapplyAccountingMappingRules(options: {
           mappingKey: true,
           debitAccountCode: true,
           debitSubaccountCode: true,
+          requireDebitSubaccountCode: true,
           creditAccountCode: true,
           creditSubaccountCode: true,
+          requireCreditSubaccountCode: true,
           departmentCode: true,
+          requireDepartmentCode: true,
           taxCode: true,
           isActive: true,
         },

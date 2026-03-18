@@ -75,9 +75,12 @@ type AccountingMappingRuleInput = {
   mappingKey: string;
   debitAccountCode: string;
   debitSubaccountCode?: string | null;
+  requireDebitSubaccountCode?: boolean;
   creditAccountCode: string;
   creditSubaccountCode?: string | null;
+  requireCreditSubaccountCode?: boolean;
   departmentCode?: string | null;
+  requireDepartmentCode?: boolean;
   taxCode: string;
   isActive?: boolean;
 };
@@ -124,13 +127,22 @@ function normalizeAccountingMappingRuleInput(
   if (input.debitSubaccountCode !== undefined) {
     data.debitSubaccountCode = normalizeNullableText(input.debitSubaccountCode);
   }
+  if (typeof input.requireDebitSubaccountCode === 'boolean') {
+    data.requireDebitSubaccountCode = input.requireDebitSubaccountCode;
+  }
   if (input.creditSubaccountCode !== undefined) {
     data.creditSubaccountCode = normalizeNullableText(
       input.creditSubaccountCode,
     );
   }
+  if (typeof input.requireCreditSubaccountCode === 'boolean') {
+    data.requireCreditSubaccountCode = input.requireCreditSubaccountCode;
+  }
   if (input.departmentCode !== undefined) {
     data.departmentCode = normalizeNullableText(input.departmentCode);
+  }
+  if (typeof input.requireDepartmentCode === 'boolean') {
+    data.requireDepartmentCode = input.requireDepartmentCode;
   }
   if (typeof input.isActive === 'boolean') {
     data.isActive = input.isActive;
@@ -872,9 +884,12 @@ function buildAccountingMappingRuleResponse(item: {
   mappingKey: string;
   debitAccountCode: string;
   debitSubaccountCode: string | null;
+  requireDebitSubaccountCode: boolean;
   creditAccountCode: string;
   creditSubaccountCode: string | null;
+  requireCreditSubaccountCode: boolean;
   departmentCode: string | null;
+  requireDepartmentCode: boolean;
   taxCode: string;
   isActive: boolean;
   createdAt: Date;
@@ -885,9 +900,12 @@ function buildAccountingMappingRuleResponse(item: {
     mappingKey: item.mappingKey,
     debitAccountCode: item.debitAccountCode,
     debitSubaccountCode: item.debitSubaccountCode,
+    requireDebitSubaccountCode: item.requireDebitSubaccountCode,
     creditAccountCode: item.creditAccountCode,
     creditSubaccountCode: item.creditSubaccountCode,
+    requireCreditSubaccountCode: item.requireCreditSubaccountCode,
     departmentCode: item.departmentCode,
+    requireDepartmentCode: item.requireDepartmentCode,
     taxCode: item.taxCode,
     isActive: item.isActive,
     createdAt: item.createdAt,
@@ -2496,9 +2514,15 @@ export async function registerIntegrationRoutes(app: FastifyInstance) {
             mappingKey: normalized.data.mappingKey!,
             debitAccountCode: normalized.data.debitAccountCode!,
             debitSubaccountCode: normalized.data.debitSubaccountCode ?? null,
+            requireDebitSubaccountCode:
+              normalized.data.requireDebitSubaccountCode ?? false,
             creditAccountCode: normalized.data.creditAccountCode!,
             creditSubaccountCode: normalized.data.creditSubaccountCode ?? null,
+            requireCreditSubaccountCode:
+              normalized.data.requireCreditSubaccountCode ?? false,
             departmentCode: normalized.data.departmentCode ?? null,
+            requireDepartmentCode:
+              normalized.data.requireDepartmentCode ?? false,
             taxCode: normalized.data.taxCode!,
             isActive: normalized.data.isActive ?? true,
             createdBy: req.user?.userId ?? null,

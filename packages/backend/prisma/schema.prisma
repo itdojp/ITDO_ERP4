@@ -1713,9 +1713,12 @@ model AccountingMappingRule {
   mappingKey           String   @unique
   debitAccountCode     String
   debitSubaccountCode  String?
+  requireDebitSubaccountCode  Boolean  @default(false)
   creditAccountCode    String
   creditSubaccountCode String?
+  requireCreditSubaccountCode Boolean  @default(false)
   departmentCode       String?
+  requireDepartmentCode       Boolean  @default(false)
   taxCode              String
   isActive             Boolean  @default(true)
   createdAt            DateTime @default(now())
