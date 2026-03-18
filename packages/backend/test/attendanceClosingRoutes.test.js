@@ -145,6 +145,9 @@ test('POST /integrations/hr/attendance/closings closes a period and stores summa
         assert.equal(body.summaries[0].employeeCode, 'E-001');
         assert.equal(body.summaries[0].approvedWorkMinutes, 540);
         assert.equal(body.summaries[0].overtimeTotalMinutes, 60);
+        assert.equal(body.summaries[0].overtimeWithinStatutoryMinutes, 0);
+        assert.equal(body.summaries[0].overtimeOverStatutoryMinutes, 60);
+        assert.equal(body.summaries[0].holidayWorkMinutes, 0);
         assert.equal(body.summaries[0].paidLeaveMinutes, 120);
       });
     },
@@ -152,9 +155,93 @@ test('POST /integrations/hr/attendance/closings closes a period and stores summa
 
   assert.equal(capturedCreate?.data?.approvedWorkMinutesTotal, 540);
   assert.equal(capturedCreate?.data?.overtimeTotalMinutesTotal, 60);
+  assert.equal(capturedCreate?.data?.overtimeWithinStatutoryMinutesTotal, 0);
+  assert.equal(capturedCreate?.data?.overtimeOverStatutoryMinutesTotal, 60);
+  assert.equal(capturedCreate?.data?.holidayWorkMinutesTotal, 0);
   assert.equal(capturedCreateMany?.data?.length, 1);
   assert.equal(capturedCreateMany?.data?.[0]?.scheduledWorkMinutes, 480);
   assert.equal(capturedCreateMany?.data?.[0]?.workedDayCount, 1);
+  assert.equal(
+    capturedCreateMany?.data?.[0]?.overtimeWithinStatutoryMinutes,
+    0,
+  );
+  assert.equal(capturedCreateMany?.data?.[0]?.overtimeOverStatutoryMinutes, 60);
+  assert.equal(capturedCreateMany?.data?.[0]?.holidayWorkMinutes, 0);
+});
+
+test('POST /integrations/hr/attendance/closings classifies within-statutory and holiday overtime', async () => {
+  await withPrismaStubs(
+    {
+      'attendanceClosingPeriod.findFirst': async () => null,
+      'userAccount.findMany': async () => [
+        {
+          id: 'user-001',
+          employeeCode: 'E-001',
+          joinedAt: new Date('2026-03-01T00:00:00.000Z'),
+          leftAt: new Date('2026-03-31T00:00:00.000Z'),
+        },
+      ],
+      'timeEntry.findMany': async (args) => {
+        if (args.where?.status === 'approved') {
+          return [
+            {
+              id: 'time-001',
+              userId: 'user-001',
+              workDate: new Date('2026-03-03T00:00:00.000Z'),
+              minutes: 450,
+            },
+            {
+              id: 'time-002',
+              userId: 'user-001',
+              workDate: new Date('2026-03-04T00:00:00.000Z'),
+              minutes: 240,
+            },
+          ];
+        }
+        return [];
+      },
+      'leaveRequest.findMany': async () => [],
+      'leaveType.findMany': async () => [],
+      'leaveSetting.upsert': async () => ({
+        id: 'default',
+        defaultWorkdayMinutes: 480,
+      }),
+      'leaveCompanyHoliday.findMany': async () => [
+        { holidayDate: new Date('2026-03-04T00:00:00.000Z') },
+      ],
+      'leaveWorkdayOverride.findMany': async () => [
+        {
+          userId: 'user-001',
+          workDate: new Date('2026-03-03T00:00:00.000Z'),
+          workMinutes: 360,
+        },
+      ],
+      'auditLog.create': async () => ({ id: 'audit-001' }),
+      $transaction: async (callback) => callback(prisma),
+      'attendanceClosingPeriod.create': async (args) => ({
+        id: 'close-001',
+        ...args.data,
+      }),
+      'attendanceMonthlySummary.createMany': async () => ({ count: 1 }),
+    },
+    async () => {
+      await withServer(async (server) => {
+        const res = await server.inject({
+          method: 'POST',
+          url: '/integrations/hr/attendance/closings',
+          headers: adminHeaders(),
+          payload: { periodKey: '2026-03' },
+        });
+        assert.equal(res.statusCode, 200, res.body);
+        const body = JSON.parse(res.body);
+        assert.equal(body.summaries[0].approvedWorkMinutes, 690);
+        assert.equal(body.summaries[0].overtimeTotalMinutes, 330);
+        assert.equal(body.summaries[0].overtimeWithinStatutoryMinutes, 90);
+        assert.equal(body.summaries[0].overtimeOverStatutoryMinutes, 0);
+        assert.equal(body.summaries[0].holidayWorkMinutes, 240);
+      });
+    },
+  );
 });
 
 test('POST /integrations/hr/attendance/closings returns 409 when period is already closed', async () => {
@@ -466,6 +553,9 @@ test('GET /integrations/hr/attendance/closings and summaries return stored recor
           scheduledWorkMinutesTotal: 9600,
           approvedWorkMinutesTotal: 9300,
           overtimeTotalMinutesTotal: 180,
+          overtimeWithinStatutoryMinutesTotal: 60,
+          overtimeOverStatutoryMinutesTotal: 120,
+          holidayWorkMinutesTotal: 0,
           paidLeaveMinutesTotal: 480,
           unpaidLeaveMinutesTotal: 0,
           totalLeaveMinutesTotal: 480,
@@ -490,6 +580,9 @@ test('GET /integrations/hr/attendance/closings and summaries return stored recor
           scheduledWorkMinutes: 9600,
           approvedWorkMinutes: 9300,
           overtimeTotalMinutes: 180,
+          overtimeWithinStatutoryMinutes: 60,
+          overtimeOverStatutoryMinutes: 120,
+          holidayWorkMinutes: 0,
           paidLeaveMinutes: 480,
           unpaidLeaveMinutes: 0,
           totalLeaveMinutes: 480,
@@ -509,6 +602,9 @@ test('GET /integrations/hr/attendance/closings and summaries return stored recor
         const listBody = JSON.parse(list.body);
         assert.equal(listBody.items.length, 1);
         assert.equal(listBody.items[0].version, 2);
+        assert.equal(listBody.items[0].overtimeWithinStatutoryMinutesTotal, 60);
+        assert.equal(listBody.items[0].overtimeOverStatutoryMinutesTotal, 120);
+        assert.equal(listBody.items[0].holidayWorkMinutesTotal, 0);
 
         const summary = await server.inject({
           method: 'GET',
@@ -520,6 +616,9 @@ test('GET /integrations/hr/attendance/closings and summaries return stored recor
         assert.equal(summaryBody.closing.id, 'close-001');
         assert.equal(summaryBody.items.length, 1);
         assert.equal(summaryBody.items[0].employeeCode, 'E-001');
+        assert.equal(summaryBody.items[0].overtimeWithinStatutoryMinutes, 60);
+        assert.equal(summaryBody.items[0].overtimeOverStatutoryMinutes, 120);
+        assert.equal(summaryBody.items[0].holidayWorkMinutes, 0);
       });
     },
   );

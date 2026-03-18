@@ -67,36 +67,40 @@
 
 ## 現在の ERP4 で不足しているもの
 
-| 論点                          | 現状                                        | 判定     | 備考                                     |
-| ----------------------------- | ------------------------------------------- | -------- | ---------------------------------------- |
-| 月次締め済み勤怠確定テーブル  | なし                                        | 未実装   | issue `#1440`                            |
-| 締め版（再締め/再出力の再現） | なし                                        | 未実装   | snapshot 不足                            |
-| 出勤日数                      | 保存なし                                    | 未実装   | 休暇と工数からの単純推定では不十分       |
-| 所定時間                      | 個人別値なし                                | 未実装   | `defaultWorkdayMinutes` は全体既定値のみ |
-| 法定内/法定外/深夜/休日残業   | 区分なし                                    | 未実装   | `TimeEntry.minutes` だけでは不足         |
-| 遅刻/早退/欠勤                | 区分なし                                    | 未実装   | 打刻・所定シフト情報がない               |
-| 勤怠締め状態                  | `AttendanceClosingPeriod.status` で初期対応 | 条件付き | `PeriodLock` 連動は後続                  |
-| 月次勤怠の社員別集計          | `AttendanceMonthlySummary` で初期対応       | 条件付き | 出勤日数/総残業/休暇集計まで             |
+| 論点                          | 現状                                        | 判定     | 備考                                         |
+| ----------------------------- | ------------------------------------------- | -------- | -------------------------------------------- |
+| 月次締め済み勤怠確定テーブル  | なし                                        | 未実装   | issue `#1440`                                |
+| 締め版（再締め/再出力の再現） | なし                                        | 未実装   | snapshot 不足                                |
+| 出勤日数                      | 保存なし                                    | 未実装   | 休暇と工数からの単純推定では不十分           |
+| 所定時間                      | 個人別値なし                                | 未実装   | `defaultWorkdayMinutes` は全体既定値のみ     |
+| 法定内/法定外/深夜/休日残業   | 法定内/法定外/休日は初期対応、深夜は未対応  | 条件付き | 深夜は勤務時刻 source がなく算出不可         |
+| 遅刻/早退/欠勤                | 区分なし                                    | 未実装   | 打刻・所定シフト情報がない                   |
+| 勤怠締め状態                  | `AttendanceClosingPeriod.status` で初期対応 | 条件付き | `PeriodLock` 連動は後続                      |
+| 月次勤怠の社員別集計          | `AttendanceMonthlySummary` で初期対応       | 条件付き | 出勤日数/残業内訳/休暇集計まで。深夜は未対応 |
 
 ## 論理項目定義（初期案）
 
 実 CSV 列名は未確定のため、ERP4 側の論理項目として整理する。
 
-| 論理項目                 | 想定内容     | ERP4 供給元                                 | 判定     | 備考                                 |
-| ------------------------ | ------------ | ------------------------------------------- | -------- | ------------------------------------ |
-| employeeCode             | 社員キー     | なし                                        | 未実装   | `#1436` と同じ社員コード基盤に依存   |
-| closingMonth             | 対象月       | なし                                        | 未実装   | 締めモデルが必要                     |
-| workingDays              | 出勤日数     | なし                                        | 未実装   | 打刻正本がない                       |
-| scheduledMinutes         | 所定時間     | `LeaveSetting.defaultWorkdayMinutes` 参照可 | 条件付き | 個人別値ではない                     |
-| actualMinutes            | 実労働時間   | `TimeEntry.minutes` から推定可              | 条件付き | 工数入力ベースであり勤怠正本ではない |
-| overtimeMinutes          | 残業時間     | 既存 `reportOvertime` では単純合計のみ      | 条件付き | 法定内外区分なし                     |
-| paidLeaveMinutes         | 有休取得時間 | `LeaveRequest` + `LeaveType.isPaid`         | 供給可   | 月次確定集計ロジックは未実装         |
-| unpaidLeaveMinutes       | 無給休暇時間 | `LeaveRequest` + `LeaveType.isPaid=false`   | 供給可   | 同上                                 |
-| compensatoryLeaveMinutes | 代休/振休    | `LeaveType` / comp grant 系                 | 条件付き | どの分類で出すか未確定               |
-| tardinessMinutes         | 遅刻         | なし                                        | 未実装   | 打刻が必要                           |
-| earlyLeaveMinutes        | 早退         | なし                                        | 未実装   | 同上                                 |
-| absenceDays              | 欠勤日数     | なし                                        | 未実装   | 打刻/所定カレンダ不足                |
-| note                     | 備考         | `LeaveRequest.notes` はある                 | 条件付き | 給与 CSV へ流すか要確認              |
+| 論理項目                       | 想定内容     | ERP4 供給元                                               | 判定     | 備考                                 |
+| ------------------------------ | ------------ | --------------------------------------------------------- | -------- | ------------------------------------ |
+| employeeCode                   | 社員キー     | なし                                                      | 未実装   | `#1436` と同じ社員コード基盤に依存   |
+| closingMonth                   | 対象月       | なし                                                      | 未実装   | 締めモデルが必要                     |
+| workingDays                    | 出勤日数     | なし                                                      | 未実装   | 打刻正本がない                       |
+| scheduledMinutes               | 所定時間     | `LeaveSetting.defaultWorkdayMinutes` 参照可               | 条件付き | 個人別値ではない                     |
+| actualMinutes                  | 実労働時間   | `TimeEntry.minutes` から推定可                            | 条件付き | 工数入力ベースであり勤怠正本ではない |
+| overtimeMinutes                | 残業時間     | `AttendanceMonthlySummary.overtimeTotalMinutes`           | 初期充足 | 総残業は安定供給可                   |
+| overtimeWithinStatutoryMinutes | 法定内残業   | `AttendanceMonthlySummary.overtimeWithinStatutoryMinutes` | 初期充足 | 所定時間と 8h 基準の差分で算出       |
+| overtimeOverStatutoryMinutes   | 法定外残業   | `AttendanceMonthlySummary.overtimeOverStatutoryMinutes`   | 初期充足 | 法定内残業を超える残業分             |
+| holidayWorkMinutes             | 休日労働     | `AttendanceMonthlySummary.holidayWorkMinutes`             | 初期充足 | 所定 0 分日の approved work を計上   |
+| lateNightMinutes               | 深夜労働     | なし                                                      | 未実装   | `TimeEntry` に勤務時刻がなく算出不可 |
+| paidLeaveMinutes               | 有休取得時間 | `LeaveRequest` + `LeaveType.isPaid`                       | 供給可   | 月次確定集計ロジックは未実装         |
+| unpaidLeaveMinutes             | 無給休暇時間 | `LeaveRequest` + `LeaveType.isPaid=false`                 | 供給可   | 同上                                 |
+| compensatoryLeaveMinutes       | 代休/振休    | `LeaveType` / comp grant 系                               | 条件付き | どの分類で出すか未確定               |
+| tardinessMinutes               | 遅刻         | なし                                                      | 未実装   | 打刻が必要                           |
+| earlyLeaveMinutes              | 早退         | なし                                                      | 未実装   | 同上                                 |
+| absenceDays                    | 欠勤日数     | なし                                                      | 未実装   | 打刻/所定カレンダ不足                |
+| note                           | 備考         | `LeaveRequest.notes` はある                               | 条件付き | 給与 CSV へ流すか要確認              |
 
 ## 既存 leave export の位置付け
 
@@ -112,6 +116,7 @@
 - `POST /integrations/hr/exports/attendance/dispatch`
 - `GET /integrations/hr/exports/attendance/dispatch-logs`
   により、最新の closed snapshot から canonical 勤怠 CSV を出力し、履歴を保持できる
+- 上記 export の `schemaVersion` は、残業内訳列追加に伴い `rakuda_attendance_v1` を返す
 
 ### 既存 leave export で足りないこと
 
@@ -119,7 +124,8 @@
 - 出勤日数、所定時間、残業区分のような勤怠サマリを持っていない
 - 締め月・締め版・再出力再現の軸を持たない
 - approved leave の明細取得と、給与 CSV に必要な「確定勤怠」責任分界が分かれていない
-- `AttendanceMonthlySummary` は総残業と paid/unpaid leave までで、法定内/法定外/深夜/休日の区分は未実装
+- `AttendanceMonthlySummary` は総残業に加え、法定内/法定外/休日労働の区分まで保持する
+- 深夜労働は `TimeEntry` に勤務時刻がないため未実装のまま残る
 - `AttendanceClosingPeriod` は給与向け snapshot 管理に特化しており、既存 `PeriodLock` との連動は未実装
 
 ## 締め処理条件の初期案
@@ -155,14 +161,14 @@
 
 ### 既存データだけでは作れない項目
 
-| CSV 論理列                           | 理由                               |
-| ------------------------------------ | ---------------------------------- |
-| workingDays                          | 出勤判定基準がない                 |
-| scheduledMinutes                     | 個人別勤務体系がない               |
-| overtimeMinutesByType                | 法定内外/深夜/休日区分がない       |
-| tardinessMinutes / earlyLeaveMinutes | 打刻がない                         |
-| absenceDays                          | 所定勤務と実績の差分判定ができない |
-| closingMonth / closingVersion        | 締めモデルがない                   |
+| CSV 論理列                           | 理由                                             |
+| ------------------------------------ | ------------------------------------------------ |
+| workingDays                          | 出勤判定基準がない                               |
+| scheduledMinutes                     | 個人別勤務体系がない                             |
+| overtimeMinutesByType                | 深夜労働は勤務時刻 source がないため算出できない |
+| tardinessMinutes / earlyLeaveMinutes | 打刻がない                                       |
+| absenceDays                          | 所定勤務と実績の差分判定ができない               |
+| closingMonth / closingVersion        | 締めモデルがない                                 |
 
 ## 端数処理の初期方針
 

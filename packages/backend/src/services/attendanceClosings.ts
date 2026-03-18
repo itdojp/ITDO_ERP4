@@ -9,6 +9,7 @@ import { toDateOnly } from '../utils/date.js';
 
 const PERIOD_KEY_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/;
 const DAY_MS = 24 * 60 * 60 * 1000;
+const STATUTORY_DAILY_WORK_MINUTES = 480;
 
 export class AttendanceClosingError extends Error {
   code: string;
@@ -66,6 +67,9 @@ type AttendanceSummaryRow = {
   scheduledWorkMinutes: number;
   approvedWorkMinutes: number;
   overtimeTotalMinutes: number;
+  overtimeWithinStatutoryMinutes: number;
+  overtimeOverStatutoryMinutes: number;
+  holidayWorkMinutes: number;
   paidLeaveMinutes: number;
   unpaidLeaveMinutes: number;
   totalLeaveMinutes: number;
@@ -347,11 +351,33 @@ async function buildAttendanceSummaries(options: {
       (value) => value > 0,
     ).length;
     let overtimeTotalMinutes = 0;
+    let overtimeWithinStatutoryMinutes = 0;
+    let overtimeOverStatutoryMinutes = 0;
+    let holidayWorkMinutes = 0;
     for (const [dateKey, totalMinutes] of dailyTotals.entries()) {
       const scheduled =
         workdayMap.get(dateKey)?.workMinutes ??
         leaveSetting.defaultWorkdayMinutes;
-      overtimeTotalMinutes += Math.max(0, totalMinutes - scheduled);
+      if (scheduled <= 0) {
+        holidayWorkMinutes += totalMinutes;
+        overtimeTotalMinutes += totalMinutes;
+        continue;
+      }
+      const overtimeMinutes = Math.max(0, totalMinutes - scheduled);
+      const overtimeWithinMinutes = Math.max(
+        0,
+        Math.min(totalMinutes, STATUTORY_DAILY_WORK_MINUTES) -
+          Math.min(scheduled, STATUTORY_DAILY_WORK_MINUTES),
+      );
+      overtimeTotalMinutes += overtimeMinutes;
+      overtimeWithinStatutoryMinutes += Math.min(
+        overtimeMinutes,
+        overtimeWithinMinutes,
+      );
+      overtimeOverStatutoryMinutes += Math.max(
+        0,
+        overtimeMinutes - overtimeWithinMinutes,
+      );
     }
 
     const approvedLeaves = leavesByUser.get(user.id) ?? [];
@@ -396,6 +422,9 @@ async function buildAttendanceSummaries(options: {
       scheduledWorkMinutes,
       approvedWorkMinutes,
       overtimeTotalMinutes,
+      overtimeWithinStatutoryMinutes,
+      overtimeOverStatutoryMinutes,
+      holidayWorkMinutes,
       paidLeaveMinutes,
       unpaidLeaveMinutes,
       totalLeaveMinutes: paidLeaveMinutes + unpaidLeaveMinutes,
@@ -417,6 +446,10 @@ function buildSummaryTotals(rows: AttendanceSummaryRow[]) {
       acc.scheduledWorkMinutesTotal += row.scheduledWorkMinutes;
       acc.approvedWorkMinutesTotal += row.approvedWorkMinutes;
       acc.overtimeTotalMinutesTotal += row.overtimeTotalMinutes;
+      acc.overtimeWithinStatutoryMinutesTotal +=
+        row.overtimeWithinStatutoryMinutes;
+      acc.overtimeOverStatutoryMinutesTotal += row.overtimeOverStatutoryMinutes;
+      acc.holidayWorkMinutesTotal += row.holidayWorkMinutes;
       acc.paidLeaveMinutesTotal += row.paidLeaveMinutes;
       acc.unpaidLeaveMinutesTotal += row.unpaidLeaveMinutes;
       acc.totalLeaveMinutesTotal += row.totalLeaveMinutes;
@@ -430,6 +463,9 @@ function buildSummaryTotals(rows: AttendanceSummaryRow[]) {
       scheduledWorkMinutesTotal: 0,
       approvedWorkMinutesTotal: 0,
       overtimeTotalMinutesTotal: 0,
+      overtimeWithinStatutoryMinutesTotal: 0,
+      overtimeOverStatutoryMinutesTotal: 0,
+      holidayWorkMinutesTotal: 0,
       paidLeaveMinutesTotal: 0,
       unpaidLeaveMinutesTotal: 0,
       totalLeaveMinutesTotal: 0,
@@ -674,6 +710,9 @@ export async function closeAttendancePeriod(options: {
         scheduledWorkMinutesTotal: true,
         approvedWorkMinutesTotal: true,
         overtimeTotalMinutesTotal: true,
+        overtimeWithinStatutoryMinutesTotal: true,
+        overtimeOverStatutoryMinutesTotal: true,
+        holidayWorkMinutesTotal: true,
         paidLeaveMinutesTotal: true,
         unpaidLeaveMinutesTotal: true,
         totalLeaveMinutesTotal: true,
@@ -694,6 +733,9 @@ export async function closeAttendancePeriod(options: {
           scheduledWorkMinutes: row.scheduledWorkMinutes,
           approvedWorkMinutes: row.approvedWorkMinutes,
           overtimeTotalMinutes: row.overtimeTotalMinutes,
+          overtimeWithinStatutoryMinutes: row.overtimeWithinStatutoryMinutes,
+          overtimeOverStatutoryMinutes: row.overtimeOverStatutoryMinutes,
+          holidayWorkMinutes: row.holidayWorkMinutes,
           paidLeaveMinutes: row.paidLeaveMinutes,
           unpaidLeaveMinutes: row.unpaidLeaveMinutes,
           totalLeaveMinutes: row.totalLeaveMinutes,

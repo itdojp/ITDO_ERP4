@@ -760,6 +760,9 @@ test('GET /integrations/hr/exports/attendance returns latest closing payload', a
           scheduledWorkMinutes: 9600,
           approvedWorkMinutes: 9780,
           overtimeTotalMinutes: 180,
+          overtimeWithinStatutoryMinutes: 60,
+          overtimeOverStatutoryMinutes: 120,
+          holidayWorkMinutes: 0,
           paidLeaveMinutes: 120,
           unpaidLeaveMinutes: 0,
           totalLeaveMinutes: 120,
@@ -787,6 +790,9 @@ test('GET /integrations/hr/exports/attendance returns latest closing payload', a
         assert.equal(body.exportedCount, 1);
         assert.equal(body.items[0].employeeCode, 'EMP-001');
         assert.equal(body.items[0].overtimeTotalMinutes, '180');
+        assert.equal(body.items[0].overtimeWithinStatutoryMinutes, '60');
+        assert.equal(body.items[0].overtimeOverStatutoryMinutes, '120');
+        assert.equal(body.items[0].holidayWorkMinutes, '0');
       } finally {
         await server.close();
       }
@@ -813,6 +819,9 @@ test('GET /integrations/hr/exports/attendance returns csv when format=csv', asyn
           scheduledWorkMinutes: 9120,
           approvedWorkMinutes: 9300,
           overtimeTotalMinutes: 180,
+          overtimeWithinStatutoryMinutes: 0,
+          overtimeOverStatutoryMinutes: 120,
+          holidayWorkMinutes: 60,
           paidLeaveMinutes: 0,
           unpaidLeaveMinutes: 60,
           totalLeaveMinutes: 60,
@@ -837,7 +846,10 @@ test('GET /integrations/hr/exports/attendance returns csv when format=csv', asyn
           res.headers['content-disposition'],
           /rakuda-attendance-2026-03-v1-/,
         );
-        assert.match(res.body, /employeeCode,closingMonth,closingVersion/);
+        assert.match(
+          res.body,
+          /employeeCode,closingMonth,closingVersion,workedDayCount,scheduledWorkMinutes,approvedWorkMinutes,overtimeTotalMinutes,overtimeWithinStatutoryMinutes,overtimeOverStatutoryMinutes,holidayWorkMinutes/,
+        );
         assert.match(res.body, /EMP-002,2026-03,1/);
       } finally {
         await server.close();
@@ -896,6 +908,9 @@ test('POST /integrations/hr/exports/attendance/dispatch creates export log and p
           scheduledWorkMinutes: 9600,
           approvedWorkMinutes: 9600,
           overtimeTotalMinutes: 0,
+          overtimeWithinStatutoryMinutes: 0,
+          overtimeOverStatutoryMinutes: 0,
+          holidayWorkMinutes: 0,
           paidLeaveMinutes: 0,
           unpaidLeaveMinutes: 0,
           totalLeaveMinutes: 0,
@@ -971,7 +986,7 @@ test('POST /integrations/hr/exports/attendance/dispatch replays previous success
     )
     .digest('hex');
   const payload = {
-    schemaVersion: 'rakuda_attendance_v0',
+    schemaVersion: 'rakuda_attendance_v1',
     exportedAt: '2026-03-17T00:00:00.000Z',
     exportedUntil: '2026-03-17T00:00:00.000Z',
     periodKey: '2026-03',
@@ -997,6 +1012,9 @@ test('POST /integrations/hr/exports/attendance/dispatch replays previous success
           scheduledWorkMinutes: 9600,
           approvedWorkMinutes: 9600,
           overtimeTotalMinutes: 0,
+          overtimeWithinStatutoryMinutes: 0,
+          overtimeOverStatutoryMinutes: 0,
+          holidayWorkMinutes: 0,
           paidLeaveMinutes: 0,
           unpaidLeaveMinutes: 0,
           totalLeaveMinutes: 0,
