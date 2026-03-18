@@ -323,3 +323,78 @@ test('POST /integrations/accounting/mapping-rules/reapply reapplies pending rows
     },
   ]);
 });
+
+test('POST /integrations/accounting/mapping-rules/reapply revalidates ready rows against new required fields', async () => {
+  process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
+  process.env.AUTH_MODE = 'header';
+
+  const updateCalls = [];
+  await withPrismaStubs(
+    {
+      'accountingJournalStaging.findMany': async () => [
+        {
+          id: 'stg-002',
+          mappingKey: 'invoice_approved:default',
+          departmentCode: '',
+          validationErrors: [],
+        },
+      ],
+      'accountingMappingRule.findMany': async () => [
+        {
+          id: 'rule-001',
+          mappingKey: 'invoice_approved:default',
+          debitAccountCode: '1110',
+          debitSubaccountCode: null,
+          requireDebitSubaccountCode: false,
+          creditAccountCode: '4110',
+          creditSubaccountCode: null,
+          requireCreditSubaccountCode: false,
+          departmentCode: null,
+          requireDepartmentCode: true,
+          taxCode: 'TAX-001',
+          isActive: true,
+        },
+      ],
+      'accountingJournalStaging.update': async (args) => {
+        updateCalls.push(args);
+        return { id: 'stg-002' };
+      },
+      'auditLog.create': async () => ({ id: 'audit-004' }),
+    },
+    async () => {
+      const server = await buildServer({ logger: false });
+      try {
+        const res = await server.inject({
+          method: 'POST',
+          url: '/integrations/accounting/mapping-rules/reapply',
+          headers: {
+            'x-user-id': 'admin-user',
+            'x-roles': 'admin',
+          },
+          payload: {
+            periodKey: '2026-03',
+            limit: 50,
+            offset: 0,
+          },
+        });
+        assert.equal(res.statusCode, 200, res.body);
+        const body = JSON.parse(res.body);
+        assert.equal(body.processedCount, 1);
+        assert.equal(body.readyCount, 0);
+        assert.equal(body.pendingMappingCount, 1);
+      } finally {
+        await server.close();
+      }
+    },
+  );
+
+  assert.equal(updateCalls.length, 1);
+  assert.equal(updateCalls[0]?.data?.status, 'pending_mapping');
+  assert.deepEqual(updateCalls[0]?.data?.validationErrors, [
+    {
+      code: 'mapping_pending',
+      mappingKey: 'invoice_approved:default',
+      requiredFields: ['departmentCode'],
+    },
+  ]);
+});

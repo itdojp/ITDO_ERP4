@@ -177,7 +177,7 @@ export async function reapplyAccountingMappingRules(options: {
   const rows = await client.accountingJournalStaging.findMany({
     where: {
       status: {
-        in: ['pending_mapping', 'blocked'],
+        in: ['pending_mapping', 'blocked', 'ready'],
       },
       ...(mappingKeyFilter ? { mappingKey: mappingKeyFilter } : {}),
       ...(periodKey ? { event: { periodKey } } : {}),

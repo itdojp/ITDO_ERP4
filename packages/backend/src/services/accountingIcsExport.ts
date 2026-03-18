@@ -162,6 +162,7 @@ function validateDescription(
       {
         stagingId: context.stagingId,
         eventId: context.eventId,
+        reason: 'cp932_byte_limit_exceeded',
         maxBytes: ACCOUNTING_ICS_DESCRIPTION_MAX_BYTES,
         actualBytes: encoded.byteLength,
       } as Prisma.InputJsonValue,

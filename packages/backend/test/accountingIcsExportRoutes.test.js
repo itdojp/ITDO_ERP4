@@ -230,7 +230,7 @@ test('GET /integrations/accounting/exports/journals returns 409 when mappings ar
   );
 });
 
-test('GET /integrations/accounting/exports/journals returns 409 for invalid description bytes', async () => {
+test('GET /integrations/accounting/exports/journals returns 409 for description control characters', async () => {
   process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
   process.env.AUTH_MODE = 'header';
 
@@ -277,6 +277,115 @@ test('GET /integrations/accounting/exports/journals returns 409 for invalid desc
         const body = JSON.parse(res.body);
         assert.equal(body.error, 'accounting_journal_description_invalid');
         assert.equal(body.details.reason, 'control_characters');
+      } finally {
+        await server.close();
+      }
+    },
+  );
+});
+
+test('GET /integrations/accounting/exports/journals returns 409 for CP932-unencodable description', async () => {
+  process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
+  process.env.AUTH_MODE = 'header';
+
+  await withPrismaStubs(
+    {
+      'accountingJournalStaging.count': async () => 0,
+      'accountingJournalStaging.findMany': async () => [
+        {
+          id: 'stg-005',
+          eventId: 'evt-005',
+          lineNo: 1,
+          entryDate: new Date('2026-02-28T00:00:00.000Z'),
+          amount: '33000',
+          description: 'emoji😀摘要',
+          debitAccountCode: '6001',
+          debitSubaccountCode: '',
+          creditAccountCode: '1110',
+          creditSubaccountCode: '',
+          departmentCode: 'D001',
+          taxCode: 'T10',
+          event: {
+            id: 'evt-005',
+            sourceTable: 'expenses',
+            sourceId: 'exp-005',
+            periodKey: '2026-02',
+            externalRef: 'EXP-005',
+            description: null,
+          },
+        },
+      ],
+    },
+    async () => {
+      const server = await buildServer({ logger: false });
+      try {
+        const res = await server.inject({
+          method: 'GET',
+          url: '/integrations/accounting/exports/journals?periodKey=2026-02',
+          headers: {
+            'x-user-id': 'admin-user',
+            'x-roles': 'admin',
+          },
+        });
+        assert.equal(res.statusCode, 409, res.body);
+        const body = JSON.parse(res.body);
+        assert.equal(body.error, 'accounting_journal_description_invalid');
+        assert.equal(body.details.reason, 'cp932_unencodable');
+      } finally {
+        await server.close();
+      }
+    },
+  );
+});
+
+test('GET /integrations/accounting/exports/journals returns 409 for description byte limit', async () => {
+  process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
+  process.env.AUTH_MODE = 'header';
+
+  await withPrismaStubs(
+    {
+      'accountingJournalStaging.count': async () => 0,
+      'accountingJournalStaging.findMany': async () => [
+        {
+          id: 'stg-006',
+          eventId: 'evt-006',
+          lineNo: 1,
+          entryDate: new Date('2026-02-28T00:00:00.000Z'),
+          amount: '33000',
+          description: '摘要'.repeat(40),
+          debitAccountCode: '6001',
+          debitSubaccountCode: '',
+          creditAccountCode: '1110',
+          creditSubaccountCode: '',
+          departmentCode: 'D001',
+          taxCode: 'T10',
+          event: {
+            id: 'evt-006',
+            sourceTable: 'expenses',
+            sourceId: 'exp-006',
+            periodKey: '2026-02',
+            externalRef: 'EXP-006',
+            description: null,
+          },
+        },
+      ],
+    },
+    async () => {
+      const server = await buildServer({ logger: false });
+      try {
+        const res = await server.inject({
+          method: 'GET',
+          url: '/integrations/accounting/exports/journals?periodKey=2026-02',
+          headers: {
+            'x-user-id': 'admin-user',
+            'x-roles': 'admin',
+          },
+        });
+        assert.equal(res.statusCode, 409, res.body);
+        const body = JSON.parse(res.body);
+        assert.equal(body.error, 'accounting_journal_description_invalid');
+        assert.equal(body.details.reason, 'cp932_byte_limit_exceeded');
+        assert.equal(body.details.maxBytes, 120);
       } finally {
         await server.close();
       }
