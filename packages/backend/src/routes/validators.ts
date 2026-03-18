@@ -1942,6 +1942,7 @@ const hrAttendanceExportFormatSchema = Type.Union([
 const accountingIcsExportFormatSchema = Type.Union([
   Type.Literal('json'),
   Type.Literal('csv'),
+  Type.Literal('ics_template'),
 ]);
 
 const accountingPeriodKeyLooseSchema = Type.String({
@@ -2098,6 +2099,11 @@ export const integrationAccountingIcsExportQuerySchema = {
     {
       format: Type.Optional(accountingIcsExportFormatSchema),
       periodKey: Type.Optional(accountingPeriodKeyLooseSchema),
+      companyCode: Type.Optional(Type.String({ minLength: 1, maxLength: 50 })),
+      companyName: Type.Optional(Type.String({ minLength: 1, maxLength: 200 })),
+      fiscalYearStartMonth: Type.Optional(
+        Type.Integer({ minimum: 1, maximum: 12 }),
+      ),
       limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 2000 })),
       offset: Type.Optional(Type.Integer({ minimum: 0, maximum: 100000 })),
     },
@@ -2108,8 +2114,15 @@ export const integrationAccountingIcsExportQuerySchema = {
 export const integrationAccountingIcsExportDispatchSchema = {
   body: Type.Object(
     {
-      format: Type.Optional(Type.Literal('csv')),
+      format: Type.Optional(
+        Type.Union([Type.Literal('csv'), Type.Literal('ics_template')]),
+      ),
       periodKey: Type.Optional(accountingPeriodKeyLooseSchema),
+      companyCode: Type.Optional(Type.String({ minLength: 1, maxLength: 50 })),
+      companyName: Type.Optional(Type.String({ minLength: 1, maxLength: 200 })),
+      fiscalYearStartMonth: Type.Optional(
+        Type.Integer({ minimum: 1, maximum: 12 }),
+      ),
       idempotencyKey: Type.String({ minLength: 1, maxLength: 200 }),
       limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 2000 })),
       offset: Type.Optional(Type.Integer({ minimum: 0, maximum: 100000 })),

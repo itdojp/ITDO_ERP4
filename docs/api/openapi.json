@@ -6586,6 +6586,12 @@
                     "csv"
                   ],
                   "type": "string"
+                },
+                {
+                  "enum": [
+                    "ics_template"
+                  ],
+                  "type": "string"
                 }
               ]
             }
@@ -6598,6 +6604,36 @@
               "maxLength": 7,
               "minLength": 1,
               "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "companyCode",
+            "required": false,
+            "schema": {
+              "maxLength": 50,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "companyName",
+            "required": false,
+            "schema": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "fiscalYearStartMonth",
+            "required": false,
+            "schema": {
+              "maximum": 12,
+              "minimum": 1,
+              "type": "integer"
             }
           },
           {
@@ -6636,11 +6672,36 @@
               "schema": {
                 "additionalProperties": false,
                 "properties": {
-                  "format": {
-                    "enum": [
-                      "csv"
-                    ],
+                  "companyCode": {
+                    "maxLength": 50,
+                    "minLength": 1,
                     "type": "string"
+                  },
+                  "companyName": {
+                    "maxLength": 200,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "fiscalYearStartMonth": {
+                    "maximum": 12,
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "format": {
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "csv"
+                        ],
+                        "type": "string"
+                      },
+                      {
+                        "enum": [
+                          "ics_template"
+                        ],
+                        "type": "string"
+                      }
+                    ]
                   },
                   "idempotencyKey": {
                     "maxLength": 200,

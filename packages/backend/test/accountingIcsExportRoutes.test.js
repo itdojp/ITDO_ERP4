@@ -177,6 +177,70 @@ test('GET /integrations/accounting/exports/journals returns CP932 csv', async ()
   );
 });
 
+test('GET /integrations/accounting/exports/journals returns ICS template csv with preamble', async () => {
+  process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
+  process.env.AUTH_MODE = 'header';
+
+  await withPrismaStubs(
+    {
+      'accountingJournalStaging.count': async () => 0,
+      'accountingJournalStaging.findMany': async () => [
+        {
+          id: 'stg-002b',
+          eventId: 'evt-002b',
+          lineNo: 1,
+          entryDate: new Date('2026-02-28T00:00:00.000Z'),
+          amount: '33000',
+          description: '交通費',
+          debitAccountCode: '6001',
+          debitSubaccountCode: '',
+          creditAccountCode: '1110',
+          creditSubaccountCode: '',
+          departmentCode: '',
+          taxCode: 'T10',
+          event: {
+            id: 'evt-002b',
+            sourceTable: 'expenses',
+            sourceId: 'exp-002b',
+            periodKey: '2026-02',
+            externalRef: 'EXP-002B',
+            description: null,
+          },
+        },
+      ],
+    },
+    async () => {
+      const server = await buildServer({ logger: false });
+      try {
+        const res = await server.inject({
+          method: 'GET',
+          url: '/integrations/accounting/exports/journals?periodKey=2026-02&format=ics_template&companyCode=00000080&companyName=%E6%A0%AA%E5%BC%8F%E4%BC%9A%E7%A4%BE%E3%80%80%E3%82%A2%E3%82%A4%E3%83%86%E3%82%A3%E3%83%BC%E3%83%89%E3%82%A5&fiscalYearStartMonth=10',
+          headers: {
+            'x-user-id': 'admin-user',
+            'x-roles': 'admin',
+          },
+        });
+        assert.equal(res.statusCode, 200, res.body);
+        assert.match(
+          res.headers['content-disposition'] ?? '',
+          /ics-journals-template-2026-02\.csv/,
+        );
+        const raw = res.rawPayload ?? Buffer.from(res.body, 'binary');
+        const decoded = iconv.decode(raw, 'cp932');
+        const lines = decoded.split('\r\n');
+        assert.equal(lines[0], '法人');
+        assert.equal(lines[1], '仕訳日記帳');
+        assert.equal(lines[2], '00000080,株式会社　アイティードゥ');
+        assert.equal(lines[3], '自 7年10月1日,至 8年9月30日,月分');
+        assert.match(lines[4] ?? '', /^日付,決修,伝票番号,部門ｺｰﾄﾞ/);
+        assert.match(decoded, /EXP-002B/);
+      } finally {
+        await server.close();
+      }
+    },
+  );
+});
+
 test('GET /integrations/accounting/exports/journals returns 400 for invalid periodKey', async () => {
   process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
   process.env.AUTH_MODE = 'header';
@@ -194,6 +258,32 @@ test('GET /integrations/accounting/exports/journals returns 400 for invalid peri
       });
       assert.equal(res.statusCode, 400, res.body);
       assert.equal(JSON.parse(res.body).error, 'invalid_period_key');
+    } finally {
+      await server.close();
+    }
+  });
+});
+
+test('GET /integrations/accounting/exports/journals returns 400 when ICS template metadata is missing', async () => {
+  process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
+  process.env.AUTH_MODE = 'header';
+
+  await withPrismaStubs({}, async () => {
+    const server = await buildServer({ logger: false });
+    try {
+      const res = await server.inject({
+        method: 'GET',
+        url: '/integrations/accounting/exports/journals?periodKey=2026-02&format=ics_template',
+        headers: {
+          'x-user-id': 'admin-user',
+          'x-roles': 'admin',
+        },
+      });
+      assert.equal(res.statusCode, 400, res.body);
+      assert.equal(
+        JSON.parse(res.body).error,
+        'accounting_ics_template_metadata_required',
+      );
     } finally {
       await server.close();
     }
@@ -493,6 +583,85 @@ test('POST /integrations/accounting/exports/journals/dispatch creates export log
   assert.equal(updateCall?.data?.payload?.exportedCount, 1);
 });
 
+test('POST /integrations/accounting/exports/journals/dispatch includes ICS template metadata in request hash', async () => {
+  process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
+  process.env.AUTH_MODE = 'header';
+
+  let createCall = null;
+  await withPrismaStubs(
+    {
+      'accountingIcsExportLog.findUnique': async () => null,
+      'accountingIcsExportLog.create': async (args) => {
+        createCall = args;
+        return {
+          id: 'ics-log-template-001',
+          idempotencyKey: args.data.idempotencyKey,
+          requestHash: args.data.requestHash,
+          periodKey: args.data.periodKey ?? null,
+          exportedUntil: args.data.exportedUntil,
+          status: 'running',
+          exportedCount: 0,
+          payload: null,
+          message: null,
+          startedAt: args.data.startedAt,
+          finishedAt: null,
+        };
+      },
+      'accountingJournalStaging.count': async () => 0,
+      'accountingJournalStaging.findMany': async () => [],
+      'accountingIcsExportLog.update': async (args) => ({
+        id: 'ics-log-template-001',
+        idempotencyKey: 'ics-template-export-key-001',
+        periodKey: '2026-02',
+        status: args.data.status,
+        exportedUntil: new Date('2026-03-18T10:00:00.000Z'),
+        exportedCount: args.data.exportedCount ?? 0,
+        startedAt: new Date('2026-03-18T10:00:00.000Z'),
+        finishedAt: args.data.finishedAt ?? null,
+        message: args.data.message ?? null,
+      }),
+      'auditLog.create': async () => ({ id: 'audit-template-001' }),
+    },
+    async () => {
+      const server = await buildServer({ logger: false });
+      try {
+        const res = await server.inject({
+          method: 'POST',
+          url: '/integrations/accounting/exports/journals/dispatch',
+          headers: {
+            'x-user-id': 'admin-user',
+            'x-roles': 'admin',
+          },
+          payload: {
+            format: 'ics_template',
+            periodKey: '2026-02',
+            companyCode: '00000080',
+            companyName: '株式会社 アイティードゥ',
+            fiscalYearStartMonth: 10,
+            idempotencyKey: 'ics-template-export-key-001',
+          },
+        });
+        assert.equal(res.statusCode, 200, res.body);
+      } finally {
+        await server.close();
+      }
+    },
+  );
+
+  assert.equal(
+    createCall?.data?.requestHash,
+    buildRequestHash({
+      periodKey: '2026-02',
+      limit: 500,
+      offset: 0,
+      format: 'ics_template',
+      companyCode: '00000080',
+      companyName: '株式会社 アイティードゥ',
+      fiscalYearStartMonth: 10,
+    }),
+  );
+});
+
 test('POST /integrations/accounting/exports/journals/dispatch handles replay, in-progress, and conflict', async () => {
   process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
   process.env.AUTH_MODE = 'header';
@@ -501,6 +670,9 @@ test('POST /integrations/accounting/exports/journals/dispatch handles replay, in
     limit: 500,
     offset: 0,
     format: 'csv',
+    companyCode: null,
+    companyName: null,
+    fiscalYearStartMonth: null,
   });
 
   const server = await buildServer({ logger: false });
@@ -683,6 +855,9 @@ test('POST /integrations/accounting/exports/journals/dispatch handles concurrent
     limit: 500,
     offset: 0,
     format: 'csv',
+    companyCode: null,
+    companyName: null,
+    fiscalYearStartMonth: null,
   });
 
   await withPrismaStubs(

@@ -98,6 +98,13 @@ export type AccountingIcsExportPayload = {
   items: AccountingIcsExportItem[];
 };
 
+export type AccountingIcsTemplateOptions = {
+  periodKey: string;
+  companyCode: string;
+  companyName: string;
+  fiscalYearStartMonth: number;
+};
+
 export class AccountingIcsExportError extends Error {
   code: string;
   details?: Prisma.InputJsonValue;
@@ -241,6 +248,85 @@ function toAccountingIcsCsv(rows: AccountingIcsExportItem[]) {
   return iconv.encode(`${lines.join('\r\n')}\r\n`, 'cp932');
 }
 
+function formatJapaneseEraYear(date: Date) {
+  const formatter = new Intl.DateTimeFormat('ja-JP-u-ca-japanese', {
+    year: 'numeric',
+    timeZone: 'UTC',
+  });
+  const parts = formatter.formatToParts(date);
+  const year = parts.find((part) => part.type === 'year')?.value;
+  return year ?? String(date.getUTCFullYear());
+}
+
+function buildAccountingIcsTemplatePeriodLine(options: {
+  periodKey: string;
+  fiscalYearStartMonth: number;
+}) {
+  const [yearText, monthText] = options.periodKey.split('-');
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const startYear = month >= options.fiscalYearStartMonth ? year : year - 1;
+  const startMonthIndex = options.fiscalYearStartMonth - 1;
+  const startDate = new Date(Date.UTC(startYear, startMonthIndex, 1));
+  const endDate = new Date(Date.UTC(startYear + 1, startMonthIndex, 0));
+  const fromLabel = `自 ${formatJapaneseEraYear(startDate)}年${startDate.getUTCMonth() + 1}月${startDate.getUTCDate()}日`;
+  const toLabel = `至 ${formatJapaneseEraYear(endDate)}年${endDate.getUTCMonth() + 1}月${endDate.getUTCDate()}日`;
+  return [fromLabel, toLabel, '月分'].map(formatCsvValue).join(',');
+}
+
+function toAccountingIcsTemplateCsv(
+  rows: AccountingIcsExportItem[],
+  options: AccountingIcsTemplateOptions,
+) {
+  const headerLine = ACCOUNTING_ICS_CSV_HEADERS.map(formatCsvValue).join(',');
+  const lines = [
+    formatCsvValue('法人'),
+    formatCsvValue('仕訳日記帳'),
+    [options.companyCode, options.companyName].map(formatCsvValue).join(','),
+    buildAccountingIcsTemplatePeriodLine(options),
+    headerLine,
+  ];
+  for (const item of rows) {
+    lines.push(
+      [
+        item.entryDate,
+        item.closingMarker,
+        item.voucherNo,
+        item.departmentCode,
+        item.debitAccountCode,
+        item.debitAccountName,
+        item.debitSubaccountCode,
+        item.debitSubaccountSummary,
+        item.debitSubaccountKana,
+        item.creditAccountCode,
+        item.creditAccountName,
+        item.creditSubaccountCode,
+        item.creditSubaccountSummary,
+        item.creditSubaccountKana,
+        item.amount,
+        item.description,
+        item.taxCode,
+        item.consideration,
+        item.purchaseCategory,
+        item.salesIndustryCategory,
+        item.journalType,
+        item.dummy1,
+        item.dummy2,
+        item.dummy3,
+        item.dummy4,
+        item.dummy5,
+        item.noteNumber,
+        item.noteDueDate,
+        item.stickyNoteNumber,
+        item.stickyNoteComment,
+      ]
+        .map(formatCsvValue)
+        .join(','),
+    );
+  }
+  return iconv.encode(`${lines.join('\r\n')}\r\n`, 'cp932');
+}
+
 function validateReadyRow(row: {
   id: string;
   eventId: string;
@@ -280,7 +366,10 @@ export function buildAccountingIcsExportRequestHash(input: {
   periodKey: string | null;
   limit: number;
   offset: number;
-  format: 'csv';
+  format: 'csv' | 'ics_template';
+  companyCode?: string | null;
+  companyName?: string | null;
+  fiscalYearStartMonth?: number | null;
 }) {
   return createHash('sha256')
     .update(JSON.stringify(input), 'utf8')
@@ -437,12 +526,24 @@ export function buildAccountingIcsCsv(payload: AccountingIcsExportPayload) {
   return toAccountingIcsCsv(payload.items);
 }
 
+export function buildAccountingIcsTemplateCsv(
+  payload: AccountingIcsExportPayload,
+  options: AccountingIcsTemplateOptions,
+) {
+  return toAccountingIcsTemplateCsv(payload.items, options);
+}
+
 export function buildAccountingIcsCsvFilename(options: {
   exportedUntil: string | Date;
   periodKey?: string | null;
+  format?: 'csv' | 'ics_template';
 }) {
   if (options.periodKey) {
-    return `ics-journals-${options.periodKey}.csv`;
+    const prefix =
+      options.format === 'ics_template'
+        ? 'ics-journals-template'
+        : 'ics-journals';
+    return `${prefix}-${options.periodKey}.csv`;
   }
   const iso =
     options.exportedUntil instanceof Date
