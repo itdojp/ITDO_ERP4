@@ -86,7 +86,8 @@ sudo fallocate -l 4G /swapfile
 sudo chmod 600 /swapfile
 sudo mkswap /swapfile
 sudo swapon /swapfile
-echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+grep -q '^/swapfile none swap sw 0 0$' /etc/fstab || \
+  echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
 free -h
 swapon --show
 ```
@@ -153,14 +154,14 @@ JWT_JWKS_URL=https://www.googleapis.com/oauth2/v3/certs
 JWT_ISSUER=https://accounts.google.com
 JWT_AUDIENCE=REPLACE_WITH_GOOGLE_OAUTH_CLIENT_ID
 JWT_ALGS=RS256
-ALLOWED_ORIGINS=https://app.example.com
+ALLOWED_ORIGINS=https://app.example.com,http://<host>:4173
 ```
 
 補足:
 
-- `AUTH_MODE=jwt` では `JWT_ISSUER`、`JWT_AUDIENCE`、`JWT_JWKS_URL` または `JWT_PUBLIC_KEY` が必須。
+- `AUTH_MODE=jwt` では `JWT_ISSUER`、`JWT_AUDIENCE`、`JWT_JWKS_URL` または `JWT_PUBLIC_KEY` が実行時必須。`.env.example` は空欄プレースホルダのため、VPS 用 `.env.vps` では実値を必ず設定する。
 - `AUTH_MODE=header` はインターネット公開環境では非推奨。どうしても使う場合は、信頼できる reverse proxy 配下に限定し、`AUTH_ALLOW_HEADER_FALLBACK_IN_PROD=true` を明示する。
-- `ALLOWED_ORIGINS` は frontend の実アクセス元だけを指定する。`vite preview` を直接公開する場合でも HTTPS の実 URL を優先し、HTTP の一時 URL は試験用に限定する。
+- `ALLOWED_ORIGINS` は frontend の実アクセス元を列挙する。`vite preview` を `--host 0.0.0.0 --port 4173` で直接公開する場合は `http://<host>:4173` を含める。reverse proxy 経由で `https://app.example.com` のみを公開する場合は HTTP 側エントリを外す。
 
 ### 5-2. build と起動
 
@@ -215,7 +216,7 @@ make podman-smoke
 再起動後の自動復帰が必要な場合は systemd user service を設定する。
 
 ```bash
-loginctl enable-linger "$(id -un)"
+sudo loginctl enable-linger "$(id -un)"
 mkdir -p ~/.config/systemd/user
 ```
 
