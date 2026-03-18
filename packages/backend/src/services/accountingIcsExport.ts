@@ -10,6 +10,7 @@ const ACCOUNTING_ICS_INCOMPLETE_STATUSES = [
   'blocked',
 ] as const;
 const PERIOD_KEY_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/;
+const ACCOUNTING_ICS_DESCRIPTION_MAX_BYTES = 120;
 
 type AccountingIcsClient = Prisma.TransactionClient | typeof prisma;
 
@@ -122,6 +123,51 @@ function formatDateSlash(value: Date) {
 
 function formatAmount(value: Prisma.Decimal | string | number) {
   return String(value ?? '').trim();
+}
+
+function validateDescription(
+  value: string,
+  context: {
+    stagingId: string;
+    eventId: string;
+  },
+) {
+  if (/[\r\n\t]/.test(value)) {
+    throw new AccountingIcsExportError(
+      'accounting_journal_description_invalid',
+      'description contains unsupported control characters',
+      {
+        stagingId: context.stagingId,
+        eventId: context.eventId,
+        reason: 'control_characters',
+      } as Prisma.InputJsonValue,
+    );
+  }
+  const encoded = iconv.encode(value, 'cp932');
+  if (iconv.decode(encoded, 'cp932') !== value) {
+    throw new AccountingIcsExportError(
+      'accounting_journal_description_invalid',
+      'description contains characters that cannot be encoded in CP932',
+      {
+        stagingId: context.stagingId,
+        eventId: context.eventId,
+        reason: 'cp932_unencodable',
+      } as Prisma.InputJsonValue,
+    );
+  }
+  if (encoded.byteLength > ACCOUNTING_ICS_DESCRIPTION_MAX_BYTES) {
+    throw new AccountingIcsExportError(
+      'accounting_journal_description_invalid',
+      'description exceeds CP932 byte limit',
+      {
+        stagingId: context.stagingId,
+        eventId: context.eventId,
+        reason: 'cp932_byte_limit_exceeded',
+        maxBytes: ACCOUNTING_ICS_DESCRIPTION_MAX_BYTES,
+        actualBytes: encoded.byteLength,
+      } as Prisma.InputJsonValue,
+    );
+  }
 }
 
 function buildVoucherNo(input: {
@@ -326,6 +372,10 @@ export async function buildAccountingIcsExportPayload(input: {
         sourceTable: row.event.sourceTable,
         sourceId: row.event.sourceId,
       });
+    validateDescription(description, {
+      stagingId: row.id,
+      eventId: row.event.id,
+    });
     return {
       stagingId: row.id,
       eventId: row.event.id,

@@ -6870,6 +6870,15 @@
                     "minLength": 1,
                     "type": "string"
                   },
+                  "requireCreditSubaccountCode": {
+                    "type": "boolean"
+                  },
+                  "requireDebitSubaccountCode": {
+                    "type": "boolean"
+                  },
+                  "requireDepartmentCode": {
+                    "type": "boolean"
+                  },
                   "taxCode": {
                     "maxLength": 100,
                     "minLength": 1,
@@ -6943,6 +6952,15 @@
                     "maxLength": 200,
                     "minLength": 1,
                     "type": "string"
+                  },
+                  "requireCreditSubaccountCode": {
+                    "type": "boolean"
+                  },
+                  "requireDebitSubaccountCode": {
+                    "type": "boolean"
+                  },
+                  "requireDepartmentCode": {
+                    "type": "boolean"
                   },
                   "taxCode": {
                     "maxLength": 100,
