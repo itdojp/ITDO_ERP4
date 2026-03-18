@@ -1,0 +1,2 @@
+employeeCode,closingMonth,closingVersion,workedDayCount,scheduledWorkMinutes,approvedWorkMinutes,overtimeTotalMinutes,overtimeWithinStatutoryMinutes,overtimeOverStatutoryMinutes,holidayWorkMinutes,paidLeaveMinutes,unpaidLeaveMinutes,totalLeaveMinutes,sourceTimeEntryCount,sourceLeaveRequestCount
+E-001,2026-03,2,20,9600,9870,270,60,210,0,480,0,480,20,1
