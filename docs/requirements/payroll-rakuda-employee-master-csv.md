@@ -18,6 +18,9 @@
 - 既存の `GET /integrations/hr/exports/users` は HR/ID 連携用 export であり、給与専用 CSV そのものではない。
 - `UserAccount.externalId` は IdP/SCIM 用の外部 ID であり、給与連携専用の社員コードとは責務を分ける前提とする。
 - `#1442` の初期実装として、社員マスタ CSV の canonical export / dispatch / dispatch log を追加する。
+- 現物テンプレート未回収のため、repo 内には canonical sample のみを置く。
+  - `docs/requirements/samples/rakuda_employee_master_canonical_sample.csv`
+  - artifact 全体の管理は `docs/requirements/external-csv-artifact-inventory.md` を正とする。
 
 ## 現在の ERP4 で供給可能なフィールド
 
@@ -138,6 +141,8 @@
   - `titleCode`
   - `email`
   - `phone`
+- canonical sample
+  - `docs/requirements/samples/rakuda_employee_master_canonical_sample.csv`
 - 初期 validation
   - `employeeCode` 未設定は `409 employee_master_employee_code_missing`
 - dispatch

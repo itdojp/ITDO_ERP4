@@ -20,6 +20,9 @@
 - 月次確定値、締め版、再出力再現に必要な snapshot モデルは `AttendanceClosingPeriod` / `AttendanceMonthlySummary` として実装を開始した。
 - 初期実装では `POST /integrations/hr/attendance/closings` と `GET /integrations/hr/attendance/closings` 系で月次締め済み snapshot を作成・参照できる。
 - `#1442` の現時点 baseline として、最新の締め snapshot を canonical 勤怠 CSV として出力する API と dispatch log を追加する。
+- 現物テンプレート未回収のため、repo 内には canonical sample のみを置く。
+  - `docs/requirements/samples/rakuda_attendance_canonical_sample.csv`
+  - artifact 全体の管理は `docs/requirements/external-csv-artifact-inventory.md` を正とする。
 
 ## 現在の ERP4 で供給可能な元データ
 
@@ -117,6 +120,8 @@
 - `GET /integrations/hr/exports/attendance/dispatch-logs`
   により、最新の closed snapshot から canonical 勤怠 CSV を出力し、履歴を保持できる
 - 上記 export の `schemaVersion` は、残業内訳列追加に伴い `rakuda_attendance_v1` を返す
+- canonical sample
+  - `docs/requirements/samples/rakuda_attendance_canonical_sample.csv`
 
 ### 既存 leave export で足りないこと
 
