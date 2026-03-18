@@ -363,11 +363,18 @@ test('frontend smoke admin ops @extended', async ({ page }) => {
     .first();
   await mappingRuleCard.getByRole('button', { name: '編集' }).click();
   await mappingRulesCard.getByLabel('会計ルール部門コード').fill('DEPT-001');
+  await mappingRulesCard.getByLabel('借方枝番必須').check();
+  await mappingRulesCard.getByLabel('部門コード必須').check();
   await mappingRulesCard.getByRole('button', { name: '更新' }).click();
   await mappingRulesCard.getByRole('button', { name: '一覧取得' }).click();
   await expect(mappingRuleCard.getByText('部門: DEPT-001')).toBeVisible({
     timeout: actionTimeout,
   });
+  await expect(
+    mappingRuleCard.getByText(
+      'flags: debitSubaccount=required / creditSubaccount=optional / department=required',
+    ),
+  ).toBeVisible({ timeout: actionTimeout });
   await mappingRulesCard
     .getByLabel('会計ルール再適用periodKey')
     .fill(lockPeriod);

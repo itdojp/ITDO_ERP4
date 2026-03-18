@@ -427,19 +427,20 @@
 7. `連携ジョブ一覧` で種別 / ステータス / limit / offset を設定し `連携ジョブ取得` を実行する
 8. 成功済みジョブは `再出力` で payload を再送し、`reexportOfId` で lineage を確認する
 9. `会計マッピングルール` で `mappingKey / debitAccountCode / creditAccountCode / taxCode` を入力し `作成` を実行する
-10. 一覧取得後に `編集` から `departmentCode` などの補助コードを更新する
-11. `再適用` で periodKey 単位の staging 行へ mapping rule を再適用し、`processed / updated / ready / pending_mapping / blocked` を確認する
+10. 必要に応じて `借方枝番必須 / 貸方枝番必須 / 部門コード必須` を切り替える
+11. 一覧取得後に `編集` から `departmentCode` などの補助コードを更新する
+12. `再適用` で periodKey 単位の staging 行へ mapping rule を再適用し、`processed / updated / ready / pending_mapping / blocked` を確認する
 
-![外部連携設定（HR/CRM）](../test-results/2026-03-17-frontend-e2e-r1/11-admin-settings.png)
-![連携ジョブ一覧](../test-results/2026-03-17-frontend-e2e-r1/11-integration-export-jobs.png)
-![会計マッピングルール](../test-results/2026-03-17-frontend-e2e-r1/11-accounting-mapping-rules.png)
+![外部連携設定（HR/CRM）](../test-results/2026-03-19-frontend-e2e/11-admin-settings.png)
+![連携ジョブ一覧](../test-results/2026-03-19-frontend-e2e/11-integration-export-jobs.png)
+![会計マッピングルール](../test-results/2026-03-19-frontend-e2e/11-accounting-mapping-rules.png)
 
 ### 入力項目/制約
 
 - JSON 入力が不正な場合は保存されません
 - チャットルーム設定は admin/mgmt のみ
 
-![管理設定](../test-results/2026-03-17-frontend-e2e-r1/11-admin-settings.png)
+![管理設定](../test-results/2026-03-19-frontend-e2e/11-admin-settings.png)
 
 ### 休暇運用（休暇種別ルール / HR連携エクスポート）
 
