@@ -18,11 +18,11 @@
 
 ## 実物回収済み artifact
 
-| 対象                 | 種別                     | 配置/参照                                                         | 備考                               |
-| -------------------- | ------------------------ | ----------------------------------------------------------------- | ---------------------------------- |
-| 経理上手くんα Pro II | ICS 取込テンプレート原本 | リポジトリ直下 `21期_表形式入力フォーマット（ICS取込用）.CSV`     | ローカル受領ファイル。現物回収済み |
-| 経理上手くんα Pro II | 先頭 5 行抜粋            | `docs/requirements/samples/21ki_ics_journal_template_excerpt.csv` | 現物テンプレートの構造説明用       |
-| 経理上手くんα Pro II | 30 列ヘッダ sample       | `docs/requirements/samples/21ki_ics_journal_header_sample.csv`    | repo 内参照用 UTF-8 再掲           |
+| 対象                 | 種別                     | 配置/参照                                                         | 備考                                                      |
+| -------------------- | ------------------------ | ----------------------------------------------------------------- | --------------------------------------------------------- |
+| 経理上手くんα Pro II | ICS 取込テンプレート原本 | repo 外保管（受領済みの非コミット原本）                           | 現物回収済み。repo には原本を置かず、抜粋 sample のみ管理 |
+| 経理上手くんα Pro II | 先頭 5 行抜粋            | `docs/requirements/samples/21ki_ics_journal_template_excerpt.csv` | 現物テンプレートの構造説明用                              |
+| 経理上手くんα Pro II | 30 列ヘッダ sample       | `docs/requirements/samples/21ki_ics_journal_header_sample.csv`    | repo 内参照用 UTF-8 再掲                                  |
 
 ## repo 内 canonical sample
 
