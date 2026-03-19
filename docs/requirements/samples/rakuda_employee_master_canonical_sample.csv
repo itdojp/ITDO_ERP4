@@ -1,2 +1,2 @@
-employeeCode,loginId,externalIdentityId,displayName,familyName,givenName,activeFlag,employmentType,joinDate,leaveDate,departmentName,organizationName,departmentCode,payrollType,closingType,paymentType,titleCode,email,phone
-E-001,taro.yamada,scim-001,山田 太郎,山田,太郎,1,full_time,2024-04-01,,営業部,東京本社,D001,monthly,end_of_month,bank_transfer,MGR,taro@example.com,090-0000-0001
+employeeCode,loginId,externalIdentityId,displayName,familyName,givenName,activeFlag,employmentType,joinDate,leaveDate,departmentName,organizationName,managerEmployeeCode,departmentCode,payrollType,closingType,paymentType,titleCode,email,phone
+E-001,taro.yamada,scim-001,山田 太郎,山田,太郎,1,full_time,2024-04-01,,営業部,東京本社,E-900,D001,monthly,end_of_month,bank_transfer,MGR,taro@example.com,090-0000-0001

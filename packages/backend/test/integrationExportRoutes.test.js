@@ -139,11 +139,19 @@ test('GET /integrations/hr/exports/users/employee-master returns canonical paylo
   process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
   process.env.AUTH_MODE = 'header';
 
-  let capturedFindMany = null;
+  const capturedFindManyCalls = [];
   await withPrismaStubs(
     {
       'userAccount.findMany': async (args) => {
-        capturedFindMany = args;
+        capturedFindManyCalls.push(args);
+        if (args?.where?.id?.in) {
+          return [
+            {
+              id: 'manager-001',
+              employeeCode: 'M-001',
+            },
+          ];
+        }
         return [
           {
             id: 'user-001',
@@ -159,6 +167,7 @@ test('GET /integrations/hr/exports/users/employee-master returns canonical paylo
             leftAt: null,
             department: '営業',
             organization: '本社',
+            managerUserId: 'manager-001',
             emails: [{ value: 'alice@example.com', primary: true }],
             phoneNumbers: ['03-0000-0000'],
             payrollProfile: {
@@ -185,13 +194,14 @@ test('GET /integrations/hr/exports/users/employee-master returns canonical paylo
         });
         assert.equal(res.statusCode, 200, res.body);
         const body = JSON.parse(res.body);
-        assert.equal(body.schemaVersion, 'rakuda_employee_master_v0');
+        assert.equal(body.schemaVersion, 'rakuda_employee_master_v1');
         assert.equal(body.limit, 10);
         assert.equal(body.offset, 2);
         assert.equal(body.exportedCount, 1);
         assert.equal(body.headers[0], 'employeeCode');
         assert.equal(body.items[0].employeeCode, 'E-001');
         assert.equal(body.items[0].displayName, '田中 花子');
+        assert.equal(body.items[0].managerEmployeeCode, 'M-001');
         assert.equal(body.items[0].departmentCode, 'D001');
         assert.equal(body.items[0].email, 'alice@example.com');
         assert.equal(body.items[0].phone, '03-0000-0000');
@@ -201,6 +211,9 @@ test('GET /integrations/hr/exports/users/employee-master returns canonical paylo
     },
   );
 
+  const capturedFindMany = capturedFindManyCalls.find(
+    (args) => Array.isArray(args?.orderBy) && args.orderBy[0]?.employeeCode === 'asc',
+  );
   assert.deepEqual(capturedFindMany?.orderBy, [
     { employeeCode: 'asc' },
     { id: 'asc' },
@@ -220,32 +233,43 @@ test('GET /integrations/hr/exports/users/employee-master returns csv when format
 
   await withPrismaStubs(
     {
-      'userAccount.findMany': async () => [
-        {
-          id: 'user-001',
-          employeeCode: 'E-001',
-          externalId: 'ext-001',
-          userName: 'alice',
-          displayName: 'Alice',
-          familyName: '田中',
-          givenName: '花子',
-          active: true,
-          employmentType: 'full_time',
-          joinedAt: new Date('2024-04-01T00:00:00.000Z'),
-          leftAt: null,
-          department: '営業',
-          organization: '本社',
-          emails: [{ value: 'alice@example.com', primary: true }],
-          phoneNumbers: ['03-0000-0000'],
-          payrollProfile: {
-            payrollType: 'monthly',
-            closingType: 'end_of_month',
-            paymentType: 'bank_transfer',
-            titleCode: 'TL01',
-            departmentCode: 'D001',
+      'userAccount.findMany': async (args) => {
+        if (args?.where?.id?.in) {
+          return [
+            {
+              id: 'manager-001',
+              employeeCode: 'M-001',
+            },
+          ];
+        }
+        return [
+          {
+            id: 'user-001',
+            employeeCode: 'E-001',
+            externalId: 'ext-001',
+            userName: 'alice',
+            displayName: 'Alice',
+            familyName: '田中',
+            givenName: '花子',
+            active: true,
+            employmentType: 'full_time',
+            joinedAt: new Date('2024-04-01T00:00:00.000Z'),
+            leftAt: null,
+            department: '営業',
+            organization: '本社',
+            managerUserId: 'manager-001',
+            emails: [{ value: 'alice@example.com', primary: true }],
+            phoneNumbers: ['03-0000-0000'],
+            payrollProfile: {
+              payrollType: 'monthly',
+              closingType: 'end_of_month',
+              paymentType: 'bank_transfer',
+              titleCode: 'TL01',
+              departmentCode: 'D001',
+            },
           },
-        },
-      ],
+        ];
+      },
     },
     async () => {
       const server = await buildServer({ logger: false });
@@ -269,7 +293,7 @@ test('GET /integrations/hr/exports/users/employee-master returns csv when format
           /rakuda-employee-master-/,
         );
         assert.match(res.body, /^employeeCode,loginId,externalIdentityId,/);
-        assert.match(res.body, /E-001,alice,ext-001,Alice,/);
+        assert.match(res.body, /E-001,alice,ext-001,Alice,田中,花子,1,full_time,2024-04-01,,営業,本社,M-001,/);
       } finally {
         await server.close();
       }
@@ -325,6 +349,60 @@ test('GET /integrations/hr/exports/users/employee-master returns 409 when employ
   );
 });
 
+test('GET /integrations/hr/exports/users/employee-master returns 409 when managerEmployeeCode cannot be resolved', async () => {
+  process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
+  process.env.AUTH_MODE = 'header';
+
+  await withPrismaStubs(
+    {
+      'userAccount.findMany': async (args) => {
+        if (args?.where?.id?.in) {
+          return [];
+        }
+        return [
+          {
+            id: 'user-001',
+            employeeCode: 'E-001',
+            externalId: null,
+            userName: 'alice',
+            displayName: 'Alice',
+            familyName: null,
+            givenName: null,
+            active: true,
+            employmentType: 'full_time',
+            joinedAt: null,
+            leftAt: null,
+            department: null,
+            organization: null,
+            managerUserId: 'manager-404',
+            emails: null,
+            phoneNumbers: null,
+            payrollProfile: null,
+          },
+        ];
+      },
+    },
+    async () => {
+      const server = await buildServer({ logger: false });
+      try {
+        const res = await server.inject({
+          method: 'GET',
+          url: '/integrations/hr/exports/users/employee-master',
+          headers: {
+            'x-user-id': 'admin-user',
+            'x-roles': 'admin',
+          },
+        });
+        assert.equal(res.statusCode, 409, res.body);
+        const body = JSON.parse(res.body);
+        assert.equal(body.error, 'employee_master_manager_employee_code_missing');
+      } finally {
+        await server.close();
+      }
+    },
+  );
+});
+
 test('POST /integrations/hr/exports/users/employee-master/dispatch creates export log and persists payload', async () => {
   process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
   process.env.AUTH_MODE = 'header';
@@ -365,32 +443,43 @@ test('POST /integrations/hr/exports/users/employee-master/dispatch creates expor
           payload: args.data.payload,
         };
       },
-      'userAccount.findMany': async () => [
-        {
-          id: 'user-001',
-          employeeCode: 'E-001',
-          externalId: 'ext-001',
-          userName: 'alice',
-          displayName: 'Alice',
-          familyName: '田中',
-          givenName: '花子',
-          active: true,
-          employmentType: 'full_time',
-          joinedAt: new Date('2024-04-01T00:00:00.000Z'),
-          leftAt: null,
-          department: '営業',
-          organization: '本社',
-          emails: [{ value: 'alice@example.com', primary: true }],
-          phoneNumbers: ['03-0000-0000'],
-          payrollProfile: {
-            payrollType: 'monthly',
-            closingType: 'end_of_month',
-            paymentType: 'bank_transfer',
-            titleCode: 'TL01',
-            departmentCode: 'D001',
+      'userAccount.findMany': async (args) => {
+        if (args?.where?.id?.in) {
+          return [
+            {
+              id: 'manager-001',
+              employeeCode: 'M-001',
+            },
+          ];
+        }
+        return [
+          {
+            id: 'user-001',
+            employeeCode: 'E-001',
+            externalId: 'ext-001',
+            userName: 'alice',
+            displayName: 'Alice',
+            familyName: '田中',
+            givenName: '花子',
+            active: true,
+            employmentType: 'full_time',
+            joinedAt: new Date('2024-04-01T00:00:00.000Z'),
+            leftAt: null,
+            department: '営業',
+            organization: '本社',
+            managerUserId: 'manager-001',
+            emails: [{ value: 'alice@example.com', primary: true }],
+            phoneNumbers: ['03-0000-0000'],
+            payrollProfile: {
+              payrollType: 'monthly',
+              closingType: 'end_of_month',
+              paymentType: 'bank_transfer',
+              titleCode: 'TL01',
+              departmentCode: 'D001',
+            },
           },
-        },
-      ],
+        ];
+      },
       'auditLog.create': async () => ({ id: 'audit-001' }),
     },
     async () => {
@@ -413,7 +502,7 @@ test('POST /integrations/hr/exports/users/employee-master/dispatch creates expor
         assert.equal(res.statusCode, 200, res.body);
         const body = JSON.parse(res.body);
         assert.equal(body.replayed, false);
-        assert.equal(body.payload.schemaVersion, 'rakuda_employee_master_v0');
+        assert.equal(body.payload.schemaVersion, 'rakuda_employee_master_v1');
         assert.equal(body.payload.exportedCount, 1);
         assert.equal(body.log.idempotencyKey, 'emp-export-key-001');
       } finally {
@@ -426,7 +515,7 @@ test('POST /integrations/hr/exports/users/employee-master/dispatch creates expor
   assert.equal(updateCall?.data?.exportedCount, 1);
   assert.equal(
     updateCall?.data?.payload?.schemaVersion,
-    'rakuda_employee_master_v0',
+    'rakuda_employee_master_v1',
   );
 });
 
@@ -454,7 +543,7 @@ test('POST /integrations/hr/exports/users/employee-master/dispatch replays previ
         exportedUntil: new Date('2026-03-15T00:00:00.000Z'),
         status: 'success',
         exportedCount: 1,
-        payload: { schemaVersion: 'rakuda_employee_master_v0' },
+        payload: { schemaVersion: 'rakuda_employee_master_v1' },
         message: 'exported',
         startedAt: new Date('2026-03-15T00:00:00.000Z'),
         finishedAt: new Date('2026-03-15T00:01:00.000Z'),

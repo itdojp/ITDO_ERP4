@@ -271,7 +271,7 @@ const MAX_EMPLOYEE_MASTER_EXPORT_LIMIT = 2000;
 const DEFAULT_EMPLOYEE_MASTER_EXPORT_LOG_LIMIT = 100;
 const MAX_EMPLOYEE_MASTER_EXPORT_LOG_LIMIT = 1000;
 const MAX_EMPLOYEE_MASTER_EXPORT_OFFSET = 100000;
-const HR_EMPLOYEE_MASTER_EXPORT_SCHEMA_VERSION = 'rakuda_employee_master_v0';
+const HR_EMPLOYEE_MASTER_EXPORT_SCHEMA_VERSION = 'rakuda_employee_master_v1';
 const HR_EMPLOYEE_MASTER_EXPORT_HEADERS = [
   'employeeCode',
   'loginId',
@@ -285,6 +285,7 @@ const HR_EMPLOYEE_MASTER_EXPORT_HEADERS = [
   'leaveDate',
   'departmentName',
   'organizationName',
+  'managerEmployeeCode',
   'departmentCode',
   'payrollType',
   'closingType',
@@ -428,29 +429,52 @@ async function buildHrEmployeeMasterExportPayload(input: {
   offset: number;
 }): Promise<HrEmployeeMasterExportPayload> {
   const exportedUntil = input.exportedUntil ?? new Date();
-  const users = await prisma.userAccount.findMany({
-    where: input.updatedSince
-      ? {
-          OR: [
-            {
-              updatedAt: {
-                gt: input.updatedSince,
-                lte: exportedUntil,
-              },
+  const managerIdsUpdatedSince = input.updatedSince
+    ? await prisma.userAccount.findMany({
+        where: {
+          updatedAt: {
+            gt: input.updatedSince,
+            lte: exportedUntil,
+          },
+        },
+        select: {
+          id: true,
+        },
+      })
+    : [];
+  const userWhere = input.updatedSince
+    ? {
+        OR: [
+          {
+            updatedAt: {
+              gt: input.updatedSince,
+              lte: exportedUntil,
             },
-            {
-              payrollProfile: {
-                is: {
-                  updatedAt: {
-                    gt: input.updatedSince,
-                    lte: exportedUntil,
-                  },
+          },
+          {
+            payrollProfile: {
+              is: {
+                updatedAt: {
+                  gt: input.updatedSince,
+                  lte: exportedUntil,
                 },
               },
             },
-          ],
-        }
-      : undefined,
+          },
+          ...(managerIdsUpdatedSince.length > 0
+            ? [
+                {
+                  managerUserId: {
+                    in: managerIdsUpdatedSince.map((item) => item.id),
+                  },
+                },
+              ]
+            : []),
+        ],
+      }
+    : undefined;
+  const users = await prisma.userAccount.findMany({
+    where: userWhere,
     select: {
       id: true,
       externalId: true,
@@ -465,6 +489,7 @@ async function buildHrEmployeeMasterExportPayload(input: {
       leftAt: true,
       department: true,
       organization: true,
+      managerUserId: true,
       emails: true,
       phoneNumbers: true,
       payrollProfile: {
@@ -481,6 +506,32 @@ async function buildHrEmployeeMasterExportPayload(input: {
     take: input.limit,
     skip: input.offset,
   });
+  const managerIds = Array.from(
+    new Set(
+      users
+        .map((user) => normalizePlainText(user.managerUserId))
+        .filter((item) => item.length > 0),
+    ),
+  );
+  const managers = managerIds.length
+    ? await prisma.userAccount.findMany({
+        where: {
+          id: {
+            in: managerIds,
+          },
+        },
+        select: {
+          id: true,
+          employeeCode: true,
+        },
+      })
+    : [];
+  const managerEmployeeCodeById = new Map(
+    managers.map((manager) => [
+      manager.id,
+      normalizePlainText(manager.employeeCode),
+    ]),
+  );
 
   const items = users.map((user) => {
     const employeeCode = normalizePlainText(user.employeeCode);
@@ -491,6 +542,21 @@ async function buildHrEmployeeMasterExportPayload(input: {
         {
           userId: user.id,
           userName: user.userName,
+        } as Prisma.InputJsonValue,
+      );
+    }
+    const managerUserId = normalizePlainText(user.managerUserId);
+    const managerEmployeeCode = managerUserId
+      ? managerEmployeeCodeById.get(managerUserId) ?? ''
+      : '';
+    if (managerUserId && !managerEmployeeCode) {
+      throw new HrEmployeeMasterExportError(
+        'employee_master_manager_employee_code_missing',
+        'managerEmployeeCode is required when managerUserId is set for payroll employee master export',
+        {
+          userId: user.id,
+          userName: user.userName,
+          managerUserId,
         } as Prisma.InputJsonValue,
       );
     }
@@ -512,6 +578,7 @@ async function buildHrEmployeeMasterExportPayload(input: {
       leaveDate: formatDateOnly(user.leftAt),
       departmentName: normalizePlainText(user.department),
       organizationName: normalizePlainText(user.organization),
+      managerEmployeeCode,
       departmentCode: normalizePlainText(user.payrollProfile?.departmentCode),
       payrollType: normalizePlainText(user.payrollProfile?.payrollType),
       closingType: normalizePlainText(user.payrollProfile?.closingType),
@@ -582,6 +649,7 @@ function buildHrEmployeeMasterExportLogResponse(item: {
 function hrEmployeeMasterExportStatusCode(code: string) {
   switch (code) {
     case 'employee_master_employee_code_missing':
+    case 'employee_master_manager_employee_code_missing':
       return 409;
     default:
       return 409;
