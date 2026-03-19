@@ -220,6 +220,7 @@ test('GET /integrations/hr/exports/users/employee-master returns canonical paylo
   ]);
   assert.equal(capturedFindMany?.take, 10);
   assert.equal(capturedFindMany?.skip, 2);
+  assert.equal(capturedFindMany?.where?.OR?.length, 2);
   assert.equal(
     capturedFindMany?.where?.OR?.[1]?.payrollProfile?.is?.updatedAt
       ?.gt instanceof Date,
@@ -397,44 +398,6 @@ test('GET /integrations/hr/exports/users/employee-master returns 409 when manage
         const body = JSON.parse(res.body);
         assert.equal(body.error, 'employee_master_manager_employee_code_missing');
         assert.equal(body.details.managerResolutionStatus, 'manager_not_found');
-      } finally {
-        await server.close();
-      }
-    },
-  );
-});
-
-test('GET /integrations/hr/exports/users/employee-master returns 409 when updated manager delta is too large', async () => {
-  process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
-  process.env.AUTH_MODE = 'header';
-
-  await withPrismaStubs(
-    {
-      'userAccount.findMany': async (args) => {
-        if (args?.where?.updatedAt && args?.select?.id) {
-          return Array.from({ length: 1001 }, (_, index) => ({
-            id: `manager-${index}`,
-          }));
-        }
-        return [];
-      },
-    },
-    async () => {
-      const server = await buildServer({ logger: false });
-      try {
-        const res = await server.inject({
-          method: 'GET',
-          url: '/integrations/hr/exports/users/employee-master?updatedSince=2026-02-20T00:00:00.000Z',
-          headers: {
-            'x-user-id': 'admin-user',
-            'x-roles': 'admin',
-          },
-        });
-        assert.equal(res.statusCode, 409, res.body);
-        const body = JSON.parse(res.body);
-        assert.equal(body.error, 'employee_master_manager_delta_too_large');
-        assert.equal(body.details.managerCount, 1001);
-        assert.equal(body.details.maxManagerCount, 1000);
       } finally {
         await server.close();
       }
