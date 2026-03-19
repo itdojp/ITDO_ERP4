@@ -214,7 +214,7 @@ test('GET /integrations/accounting/exports/journals returns ICS template csv wit
       try {
         const res = await server.inject({
           method: 'GET',
-          url: '/integrations/accounting/exports/journals?periodKey=2026-02&format=ics_template&companyCode=00000080&companyName=%E6%A0%AA%E5%BC%8F%E4%BC%9A%E7%A4%BE%E3%80%80%E3%82%A2%E3%82%A4%E3%83%86%E3%82%A3%E3%83%BC%E3%83%89%E3%82%A5&fiscalYearStartMonth=10',
+          url: '/integrations/accounting/exports/journals?periodKey=2026-02&format=ics_template&companyCode=%3D00000080&companyName=%40%E6%A0%AA%E5%BC%8F%E4%BC%9A%E7%A4%BE%E3%80%80%E3%82%A2%E3%82%A4%E3%83%86%E3%82%A3%E3%83%BC%E3%83%89%E3%82%A5&fiscalYearStartMonth=10',
           headers: {
             'x-user-id': 'admin-user',
             'x-roles': 'admin',
@@ -230,7 +230,7 @@ test('GET /integrations/accounting/exports/journals returns ICS template csv wit
         const lines = decoded.split('\r\n');
         assert.equal(lines[0], '法人');
         assert.equal(lines[1], '仕訳日記帳');
-        assert.equal(lines[2], '00000080,株式会社　アイティードゥ');
+        assert.equal(lines[2], "'=00000080,'@株式会社　アイティードゥ");
         assert.equal(lines[3], '自 7年10月1日,至 8年9月30日,月分');
         assert.match(lines[4] ?? '', /^日付,決修,伝票番号,部門ｺｰﾄﾞ/);
         assert.match(decoded, /EXP-002B/);
@@ -670,9 +670,6 @@ test('POST /integrations/accounting/exports/journals/dispatch handles replay, in
     limit: 500,
     offset: 0,
     format: 'csv',
-    companyCode: null,
-    companyName: null,
-    fiscalYearStartMonth: null,
   });
 
   const server = await buildServer({ logger: false });
@@ -855,9 +852,6 @@ test('POST /integrations/accounting/exports/journals/dispatch handles concurrent
     limit: 500,
     offset: 0,
     format: 'csv',
-    companyCode: null,
-    companyName: null,
-    fiscalYearStartMonth: null,
   });
 
   await withPrismaStubs(

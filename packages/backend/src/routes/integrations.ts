@@ -2818,10 +2818,13 @@ export async function registerIntegrationRoutes(app: FastifyInstance) {
         limit: parsed.limit,
         offset: parsed.offset,
         format: parsed.format === 'ics_template' ? 'ics_template' : 'csv',
-        companyCode: parsed.companyCode,
-        companyName: parsed.companyName,
-        fiscalYearStartMonth:
-          parsed.format === 'ics_template' ? parsed.fiscalYearStartMonth : null,
+        ...(parsed.format === 'ics_template'
+          ? {
+              companyCode: parsed.companyCode,
+              companyName: parsed.companyName,
+              fiscalYearStartMonth: parsed.fiscalYearStartMonth,
+            }
+          : {}),
       });
       const respondWithExistingAccountingIcsDispatch = async (
         existing: NonNullable<

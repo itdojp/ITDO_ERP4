@@ -132,6 +132,10 @@ function formatAmount(value: Prisma.Decimal | string | number) {
   return String(value ?? '').trim();
 }
 
+function sanitizeSpreadsheetCell(value: string) {
+  return /^[=+\-@]/.test(value) ? `'${value}` : value;
+}
+
 function validateDescription(
   value: string,
   context: {
@@ -205,8 +209,8 @@ function resolvePeriodBounds(periodKey?: string | null) {
   };
 }
 
-function toAccountingIcsCsv(rows: AccountingIcsExportItem[]) {
-  const lines = [ACCOUNTING_ICS_CSV_HEADERS.map(formatCsvValue).join(',')];
+function buildAccountingIcsCsvDataLines(rows: AccountingIcsExportItem[]) {
+  const lines: string[] = [];
   for (const item of rows) {
     lines.push(
       [
@@ -245,6 +249,14 @@ function toAccountingIcsCsv(rows: AccountingIcsExportItem[]) {
         .join(','),
     );
   }
+  return lines;
+}
+
+function toAccountingIcsCsv(rows: AccountingIcsExportItem[]) {
+  const lines = [
+    ACCOUNTING_ICS_CSV_HEADERS.map(formatCsvValue).join(','),
+    ...buildAccountingIcsCsvDataLines(rows),
+  ];
   return iconv.encode(`${lines.join('\r\n')}\r\n`, 'cp932');
 }
 
@@ -278,52 +290,17 @@ function toAccountingIcsTemplateCsv(
   rows: AccountingIcsExportItem[],
   options: AccountingIcsTemplateOptions,
 ) {
-  const headerLine = ACCOUNTING_ICS_CSV_HEADERS.map(formatCsvValue).join(',');
   const lines = [
     formatCsvValue('法人'),
     formatCsvValue('仕訳日記帳'),
-    [options.companyCode, options.companyName].map(formatCsvValue).join(','),
+    [options.companyCode, options.companyName]
+      .map((value) => sanitizeSpreadsheetCell(value))
+      .map(formatCsvValue)
+      .join(','),
     buildAccountingIcsTemplatePeriodLine(options),
-    headerLine,
+    ACCOUNTING_ICS_CSV_HEADERS.map(formatCsvValue).join(','),
+    ...buildAccountingIcsCsvDataLines(rows),
   ];
-  for (const item of rows) {
-    lines.push(
-      [
-        item.entryDate,
-        item.closingMarker,
-        item.voucherNo,
-        item.departmentCode,
-        item.debitAccountCode,
-        item.debitAccountName,
-        item.debitSubaccountCode,
-        item.debitSubaccountSummary,
-        item.debitSubaccountKana,
-        item.creditAccountCode,
-        item.creditAccountName,
-        item.creditSubaccountCode,
-        item.creditSubaccountSummary,
-        item.creditSubaccountKana,
-        item.amount,
-        item.description,
-        item.taxCode,
-        item.consideration,
-        item.purchaseCategory,
-        item.salesIndustryCategory,
-        item.journalType,
-        item.dummy1,
-        item.dummy2,
-        item.dummy3,
-        item.dummy4,
-        item.dummy5,
-        item.noteNumber,
-        item.noteDueDate,
-        item.stickyNoteNumber,
-        item.stickyNoteComment,
-      ]
-        .map(formatCsvValue)
-        .join(','),
-    );
-  }
   return iconv.encode(`${lines.join('\r\n')}\r\n`, 'cp932');
 }
 
