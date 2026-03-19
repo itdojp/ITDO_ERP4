@@ -513,12 +513,35 @@ export const AccountingMappingRulesCard = ({
                 部門: {item.departmentCode || '-'} / 税区分: {item.taxCode}
               </div>
               <div style={{ fontSize: 12, color: '#475569', marginTop: 4 }}>
-                flags: debitSubaccount=
-                {item.requireDebitSubaccountCode ? 'required' : 'optional'} /
-                creditSubaccount=
-                {item.requireCreditSubaccountCode ? 'required' : 'optional'} /
-                department=
-                {item.requireDepartmentCode ? 'required' : 'optional'}
+                <div
+                  className="row"
+                  style={{
+                    gap: 6,
+                    flexWrap: 'wrap',
+                    justifyContent: 'flex-start',
+                  }}
+                >
+                  <span
+                    className="badge"
+                    data-testid="accounting-mapping-rule-require-debit-subaccount"
+                  >
+                    借方枝番:{' '}
+                    {item.requireDebitSubaccountCode ? '必須' : '任意'}
+                  </span>
+                  <span
+                    className="badge"
+                    data-testid="accounting-mapping-rule-require-credit-subaccount"
+                  >
+                    貸方枝番:{' '}
+                    {item.requireCreditSubaccountCode ? '必須' : '任意'}
+                  </span>
+                  <span
+                    className="badge"
+                    data-testid="accounting-mapping-rule-require-department"
+                  >
+                    部門コード: {item.requireDepartmentCode ? '必須' : '任意'}
+                  </span>
+                </div>
               </div>
               <div style={{ fontSize: 12, color: '#475569', marginTop: 4 }}>
                 createdAt: {formatDateTime(item.createdAt)} / updatedAt:{' '}

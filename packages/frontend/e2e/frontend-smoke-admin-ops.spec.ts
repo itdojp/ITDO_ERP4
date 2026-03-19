@@ -362,6 +362,7 @@ test('frontend smoke admin ops @extended', async ({ page }) => {
     .filter({ hasText: mappingRuleKey })
     .first();
   await mappingRuleCard.getByRole('button', { name: '編集' }).click();
+  await mappingRulesCard.getByLabel('会計ルール借方枝番').fill('SUB-001');
   await mappingRulesCard.getByLabel('会計ルール部門コード').fill('DEPT-001');
   await mappingRulesCard.getByLabel('借方枝番必須').check();
   await mappingRulesCard.getByLabel('部門コード必須').check();
@@ -371,8 +372,25 @@ test('frontend smoke admin ops @extended', async ({ page }) => {
     timeout: actionTimeout,
   });
   await expect(
-    mappingRuleCard.getByText(
-      'flags: debitSubaccount=required / creditSubaccount=optional / department=required',
+    mappingRuleCard.getByTestId(
+      'accounting-mapping-rule-require-debit-subaccount',
+    ),
+  ).toHaveText('借方枝番: 必須', { timeout: actionTimeout });
+  await expect(
+    mappingRuleCard.getByTestId(
+      'accounting-mapping-rule-require-credit-subaccount',
+    ),
+  ).toHaveText('貸方枝番: 任意', { timeout: actionTimeout });
+  await expect(
+    mappingRuleCard.getByTestId('accounting-mapping-rule-require-department'),
+  ).toHaveText('部門コード: 必須', { timeout: actionTimeout });
+
+  await mappingRuleCard.getByRole('button', { name: '編集' }).click();
+  await mappingRulesCard.getByLabel('会計ルール借方枝番').fill('');
+  await mappingRulesCard.getByRole('button', { name: '更新' }).click();
+  await expect(
+    adminSettingsSection.getByText(
+      '借方枝番必須を有効にする場合は借方枝番を入力してください',
     ),
   ).toBeVisible({ timeout: actionTimeout });
   await mappingRulesCard

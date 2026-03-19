@@ -1461,6 +1461,20 @@ export const AdminSettings: React.FC = () => {
       );
       return;
     }
+    if (payload.requireDebitSubaccountCode && !payload.debitSubaccountCode) {
+      setMessage('借方枝番必須を有効にする場合は借方枝番を入力してください');
+      return;
+    }
+    if (payload.requireCreditSubaccountCode && !payload.creditSubaccountCode) {
+      setMessage('貸方枝番必須を有効にする場合は貸方枝番を入力してください');
+      return;
+    }
+    if (payload.requireDepartmentCode && !payload.departmentCode) {
+      setMessage(
+        '部門コード必須を有効にする場合は部門コードを入力してください',
+      );
+      return;
+    }
     try {
       if (editingAccountingMappingRuleId) {
         await api(
