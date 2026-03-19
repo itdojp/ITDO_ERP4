@@ -429,6 +429,7 @@ async function buildHrEmployeeMasterExportPayload(input: {
   offset: number;
 }): Promise<HrEmployeeMasterExportPayload> {
   const exportedUntil = input.exportedUntil ?? new Date();
+  const MAX_MANAGER_UPDATED_SINCE_IDS = 1000;
   const managerIdsUpdatedSince = input.updatedSince
     ? await prisma.userAccount.findMany({
         where: {
@@ -442,6 +443,18 @@ async function buildHrEmployeeMasterExportPayload(input: {
         },
       })
     : [];
+  if (managerIdsUpdatedSince.length > MAX_MANAGER_UPDATED_SINCE_IDS) {
+    throw new HrEmployeeMasterExportError(
+      'employee_master_manager_delta_too_large',
+      'manager delta set is too large to expand safely for payroll employee master export',
+      {
+        updatedSince: input.updatedSince?.toISOString() ?? null,
+        exportedUntil: exportedUntil.toISOString(),
+        managerCount: managerIdsUpdatedSince.length,
+        maxManagerCount: MAX_MANAGER_UPDATED_SINCE_IDS,
+      } as Prisma.InputJsonValue,
+    );
+  }
   const userWhere = input.updatedSince
     ? {
         OR: [
@@ -550,13 +563,17 @@ async function buildHrEmployeeMasterExportPayload(input: {
       ? managerEmployeeCodeById.get(managerUserId) ?? ''
       : '';
     if (managerUserId && !managerEmployeeCode) {
+      const managerResolutionStatus = managerEmployeeCodeById.has(managerUserId)
+        ? 'employee_code_missing'
+        : 'manager_not_found';
       throw new HrEmployeeMasterExportError(
         'employee_master_manager_employee_code_missing',
-        'managerEmployeeCode is required when managerUserId is set for payroll employee master export',
+        'managerEmployeeCode could not be resolved when managerUserId is set for payroll employee master export',
         {
           userId: user.id,
           userName: user.userName,
           managerUserId,
+          managerResolutionStatus,
         } as Prisma.InputJsonValue,
       );
     }
@@ -650,6 +667,7 @@ function hrEmployeeMasterExportStatusCode(code: string) {
   switch (code) {
     case 'employee_master_employee_code_missing':
     case 'employee_master_manager_employee_code_missing':
+    case 'employee_master_manager_delta_too_large':
       return 409;
     default:
       return 409;
