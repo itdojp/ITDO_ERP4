@@ -1,6 +1,6 @@
 # 給料らくだ連携: 勤怠 CSV 仕様（repo ベース初期案）
 
-更新日: 2026-03-15
+更新日: 2026-03-20
 関連 Issue: `#1437`, `#1430`, `#1433`, `#1435`, `#1440`
 
 ## 目的
@@ -23,6 +23,8 @@
 - 現物テンプレート未回収のため、repo 内には canonical sample のみを置く。
   - `docs/requirements/samples/rakuda_attendance_canonical_sample.csv`
   - artifact 全体の管理は `docs/requirements/external-csv-artifact-inventory.md` を正とする。
+- canonical 勤怠 export の `schemaVersion` は `rakuda_attendance_v1` を正とする。
+- `rakuda_attendance_v1` は「給与らくだ実テンプレート互換」ではなく、「ERP4 内部で安定再現できる canonical 月次締め集計」を意味する。
 
 ## 現在の ERP4 で供給可能な元データ
 
@@ -104,6 +106,49 @@
 | earlyLeaveMinutes              | 早退         | なし                                                      | 未実装   | 同上                                 |
 | absenceDays                    | 欠勤日数     | なし                                                      | 未実装   | 打刻/所定カレンダ不足                |
 | note                           | 備考         | `LeaveRequest.notes` はある                               | 条件付き | 給与 CSV へ流すか要確認              |
+
+## canonical v1 の出力範囲
+
+`rakuda_attendance_v1` で実際に出力・dispatch する項目は以下に限定する。
+
+| canonical 列                   | 出力有無 | source                                                    | 備考                     |
+| ------------------------------ | -------- | --------------------------------------------------------- | ------------------------ |
+| employeeCode                   | 出力     | `AttendanceMonthlySummary.employeeCode`                   | `#1436` の社員コード前提 |
+| closingMonth                   | 出力     | `AttendanceClosingPeriod.periodKey`                       | `YYYY-MM`                |
+| closingVersion                 | 出力     | `AttendanceClosingPeriod.version`                         | 再締め版を識別           |
+| workedDayCount                 | 出力     | `AttendanceMonthlySummary.workedDayCount`                 | 勤務判定済み日数         |
+| scheduledWorkMinutes           | 出力     | `AttendanceMonthlySummary.scheduledWorkMinutes`           | 所定分数                 |
+| approvedWorkMinutes            | 出力     | `AttendanceMonthlySummary.approvedWorkMinutes`            | 承認済み実績分数         |
+| overtimeTotalMinutes           | 出力     | `AttendanceMonthlySummary.overtimeTotalMinutes`           | 総残業分数               |
+| overtimeWithinStatutoryMinutes | 出力     | `AttendanceMonthlySummary.overtimeWithinStatutoryMinutes` | 法定内残業               |
+| overtimeOverStatutoryMinutes   | 出力     | `AttendanceMonthlySummary.overtimeOverStatutoryMinutes`   | 法定外残業               |
+| holidayWorkMinutes             | 出力     | `AttendanceMonthlySummary.holidayWorkMinutes`             | 休日労働                 |
+| paidLeaveMinutes               | 出力     | `AttendanceMonthlySummary.paidLeaveMinutes`               | 有給系合計               |
+| unpaidLeaveMinutes             | 出力     | `AttendanceMonthlySummary.unpaidLeaveMinutes`             | 無給系合計               |
+| totalLeaveMinutes              | 出力     | `AttendanceMonthlySummary.totalLeaveMinutes`              | 休暇合計                 |
+| schemaVersion                  | 出力     | 固定値                                                    | `rakuda_attendance_v1`   |
+
+## canonical v1 で未対応の項目
+
+以下は現時点の ERP4 source だけでは安定算出できないため、`rakuda_attendance_v1` では出力対象に含めない。
+
+| 項目              | 未対応理由                                       | 後続論点              |
+| ----------------- | ------------------------------------------------ | --------------------- |
+| deepNightMinutes  | `TimeEntry` に勤務時刻 source がなく深夜判定不可 | 打刻/勤怠 source 追加 |
+| tardinessMinutes  | 遅刻判定に必要な始業時刻・所定シフト情報がない   | 勤務体系/シフト整備   |
+| earlyLeaveMinutes | 早退判定に必要な終業時刻・所定シフト情報がない   | 同上                  |
+| absenceDays       | 欠勤判定に必要な所定出勤日と打刻正本が不足       | 勤怠正本モデル拡張    |
+| leave type 内訳   | 現在は paid/unpaid 合計のみ canonical へ反映     | 実テンプレート確認後  |
+
+## canonical v1 の運用判断
+
+- `rakuda_attendance_v1` は、給与らくだの実 import 列順を確定する前の内部 canonical として扱う。
+- 実テンプレート未回収のため、`rakuda_attendance_v1` をそのまま給与らくだ import に用いる前提ではない。
+- 実運用へ進める条件は以下とする。
+  1. 勤怠集計 CSV テンプレート原本回収
+  2. 必須列 / 文字コード / 時間単位 / 残業区分の確定
+  3. CSV import 採用時に簡略タイムカード運用へ変わる影響確認
+  4. 深夜 / 遅刻 / 早退の要否判断
 
 ## 既存 leave export の位置付け
 
