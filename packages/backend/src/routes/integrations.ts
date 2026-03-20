@@ -525,7 +525,7 @@ async function buildHrEmployeeMasterExportPayload(input: {
     }
     const managerUserId = normalizePlainText(user.managerUserId);
     const managerEmployeeCode = managerUserId
-      ? managerEmployeeCodeById.get(managerUserId) ?? ''
+      ? (managerEmployeeCodeById.get(managerUserId) ?? '')
       : '';
     if (managerUserId && !managerEmployeeCode) {
       const managerResolutionStatus = managerEmployeeCodeById.has(managerUserId)
