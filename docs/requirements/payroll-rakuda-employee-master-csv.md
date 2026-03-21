@@ -1,6 +1,6 @@
 # 給料らくだ連携: 社員マスタ CSV 仕様（repo ベース初期案）
 
-更新日: 2026-03-15
+更新日: 2026-03-20
 関連 Issue: `#1436`, `#1430`, `#1433`, `#1434`, `#1435`, `#1439`, `#1442`
 
 ## 目的
@@ -60,7 +60,7 @@
 | activeFlag          | 在籍/無効              | `UserAccount.active`                             | 供給可   | 退職日ではなく現状態                        |
 | departmentName      | 部門表示名             | `UserAccount.department`                         | 条件付き | 表示名のみ。部門コードは未実装              |
 | organizationName    | 組織表示名             | `UserAccount.organization`                       | 条件付き | コード値未整備                              |
-| managerEmployeeCode | 上長社員コード         | `managerUserId` 由来                             | 未実装   | 上長社員コードへの変換が必要                |
+| managerEmployeeCode | 上長社員コード         | `managerUserId` -> 上長 `employeeCode`           | 供給可   | 上長 `employeeCode` 未設定時は export 停止  |
 | email               | 連絡先                 | `UserAccount.emails`                             | 条件付き | 配列から primary 採用ルールが必要           |
 | phone               | 連絡先                 | `UserAccount.phoneNumbers`                       | 条件付き | 配列から primary 採用ルールが必要           |
 | employmentType      | 雇用区分               | `UserAccount.employmentType`                     | 供給可   | `#1439` 基盤追加                            |
@@ -134,6 +134,7 @@
   - `leaveDate`
   - `departmentName`
   - `organizationName`
+  - `managerEmployeeCode`
   - `departmentCode`
   - `payrollType`
   - `closingType`
@@ -159,16 +160,16 @@
 
 ### 既存 users export をそのまま使える部分
 
-| CSV 論理列          | 現行 export 値  | 備考                         |
-| ------------------- | --------------- | ---------------------------- |
-| loginId             | `userName`      | そのまま利用可能             |
-| displayName         | `displayName`   | null 時の補完が必要          |
-| familyName          | `familyName`    | null 許容ルール要確認        |
-| givenName           | `givenName`     | null 許容ルール要確認        |
-| activeFlag          | `active`        | 変換コードが必要な可能性あり |
-| departmentName      | `department`    | コード化は未対応             |
-| organizationName    | `organization`  | コード化は未対応             |
-| managerEmployeeCode | `managerUserId` | 社員コード化は未対応         |
+| CSV 論理列          | 現行 export 値  | 備考                           |
+| ------------------- | --------------- | ------------------------------ |
+| loginId             | `userName`      | そのまま利用可能               |
+| displayName         | `displayName`   | null 時の補完が必要            |
+| familyName          | `familyName`    | null 許容ルール要確認          |
+| givenName           | `givenName`     | null 許容ルール要確認          |
+| activeFlag          | `active`        | 変換コードが必要な可能性あり   |
+| departmentName      | `department`    | コード化は未対応               |
+| organizationName    | `organization`  | コード化は未対応               |
+| managerEmployeeCode | `managerUserId` | 上長 `employeeCode` に変換済み |
 
 ### 新設が必要なマスタ項目
 
@@ -194,7 +195,7 @@
 
 - `employeeCode` 未設定で出力停止
 - 必須コード変換未設定で出力停止
-- `managerUserId` は存在するが上長社員コードへ変換できず警告/停止
+- `managerUserId` が存在するが上長 `employeeCode` を解決できず出力停止
 - `emails` / `phoneNumbers` が複数あり primary 解決できない
 
 ### 監査
@@ -225,7 +226,7 @@
 ## 現時点の結論
 
 - 社員マスタ CSV の完全仕様を確定するには `#1431`, `#1432` が必須である。
-- ただし実 CSV の列仕様とコード体系は未確定であり、次は `EmployeePayrollProfile` の列詳細をテンプレートに合わせて詰める必要がある。
+- ただし実 CSV の列仕様とコード体系は未確定であり、次は `EmployeePayrollProfile` の列詳細と給与らくだ実テンプレートとの差分をテンプレートに合わせて詰める必要がある。
 - したがって `#1436` は「repo ベース初期案」として本書を先行確定し、現物 CSV 入手後に列仕様を詰める進め方が妥当である。
 
 ## 根拠ファイル
