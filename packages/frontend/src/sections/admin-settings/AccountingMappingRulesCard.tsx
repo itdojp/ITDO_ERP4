@@ -5,9 +5,12 @@ export type AccountingMappingRuleItem = {
   mappingKey: string;
   debitAccountCode: string;
   debitSubaccountCode?: string | null;
+  requireDebitSubaccountCode?: boolean;
   creditAccountCode: string;
   creditSubaccountCode?: string | null;
+  requireCreditSubaccountCode?: boolean;
   departmentCode?: string | null;
+  requireDepartmentCode?: boolean;
   taxCode: string;
   isActive: boolean;
   createdAt?: string | null;
@@ -18,9 +21,12 @@ export type AccountingMappingRuleFormState = {
   mappingKey: string;
   debitAccountCode: string;
   debitSubaccountCode: string;
+  requireDebitSubaccountCode: boolean;
   creditAccountCode: string;
   creditSubaccountCode: string;
+  requireCreditSubaccountCode: boolean;
   departmentCode: string;
+  requireDepartmentCode: boolean;
   taxCode: string;
   isActive: boolean;
 };
@@ -179,6 +185,20 @@ export const AccountingMappingRulesCard = ({
               }
             />
           </label>
+          <label className="badge" style={{ alignSelf: 'end' }}>
+            <input
+              type="checkbox"
+              checked={form.requireDebitSubaccountCode}
+              onChange={(event) =>
+                setForm((current) => ({
+                  ...current,
+                  requireDebitSubaccountCode: event.target.checked,
+                }))
+              }
+              style={{ marginRight: 6 }}
+            />
+            借方枝番必須
+          </label>
           <label>
             creditAccountCode
             <input
@@ -209,6 +229,20 @@ export const AccountingMappingRulesCard = ({
               }
             />
           </label>
+          <label className="badge" style={{ alignSelf: 'end' }}>
+            <input
+              type="checkbox"
+              checked={form.requireCreditSubaccountCode}
+              onChange={(event) =>
+                setForm((current) => ({
+                  ...current,
+                  requireCreditSubaccountCode: event.target.checked,
+                }))
+              }
+              style={{ marginRight: 6 }}
+            />
+            貸方枝番必須
+          </label>
           <label>
             departmentCode
             <input
@@ -223,6 +257,20 @@ export const AccountingMappingRulesCard = ({
                 }))
               }
             />
+          </label>
+          <label className="badge" style={{ alignSelf: 'end' }}>
+            <input
+              type="checkbox"
+              checked={form.requireDepartmentCode}
+              onChange={(event) =>
+                setForm((current) => ({
+                  ...current,
+                  requireDepartmentCode: event.target.checked,
+                }))
+              }
+              style={{ marginRight: 6 }}
+            />
+            部門コード必須
           </label>
           <label>
             taxCode
@@ -463,6 +511,37 @@ export const AccountingMappingRulesCard = ({
               </div>
               <div style={{ fontSize: 12, color: '#475569', marginTop: 4 }}>
                 部門: {item.departmentCode || '-'} / 税区分: {item.taxCode}
+              </div>
+              <div style={{ fontSize: 12, color: '#475569', marginTop: 4 }}>
+                <div
+                  className="row"
+                  style={{
+                    gap: 6,
+                    flexWrap: 'wrap',
+                    justifyContent: 'flex-start',
+                  }}
+                >
+                  <span
+                    className="badge"
+                    data-testid="accounting-mapping-rule-require-debit-subaccount"
+                  >
+                    借方枝番:{' '}
+                    {item.requireDebitSubaccountCode ? '必須' : '任意'}
+                  </span>
+                  <span
+                    className="badge"
+                    data-testid="accounting-mapping-rule-require-credit-subaccount"
+                  >
+                    貸方枝番:{' '}
+                    {item.requireCreditSubaccountCode ? '必須' : '任意'}
+                  </span>
+                  <span
+                    className="badge"
+                    data-testid="accounting-mapping-rule-require-department"
+                  >
+                    部門コード: {item.requireDepartmentCode ? '必須' : '任意'}
+                  </span>
+                </div>
               </div>
               <div style={{ fontSize: 12, color: '#475569', marginTop: 4 }}>
                 createdAt: {formatDateTime(item.createdAt)} / updatedAt:{' '}

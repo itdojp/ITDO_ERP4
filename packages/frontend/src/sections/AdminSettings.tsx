@@ -484,9 +484,12 @@ const createDefaultAccountingMappingRuleForm =
     mappingKey: '',
     debitAccountCode: '',
     debitSubaccountCode: '',
+    requireDebitSubaccountCode: false,
     creditAccountCode: '',
     creditSubaccountCode: '',
+    requireCreditSubaccountCode: false,
     departmentCode: '',
+    requireDepartmentCode: false,
     taxCode: '',
     isActive: true,
   });
@@ -1432,13 +1435,18 @@ export const AdminSettings: React.FC = () => {
       debitSubaccountCode: normalizeNullableMappingField(
         accountingMappingRuleForm.debitSubaccountCode,
       ),
+      requireDebitSubaccountCode:
+        accountingMappingRuleForm.requireDebitSubaccountCode,
       creditAccountCode: accountingMappingRuleForm.creditAccountCode.trim(),
       creditSubaccountCode: normalizeNullableMappingField(
         accountingMappingRuleForm.creditSubaccountCode,
       ),
+      requireCreditSubaccountCode:
+        accountingMappingRuleForm.requireCreditSubaccountCode,
       departmentCode: normalizeNullableMappingField(
         accountingMappingRuleForm.departmentCode,
       ),
+      requireDepartmentCode: accountingMappingRuleForm.requireDepartmentCode,
       taxCode: accountingMappingRuleForm.taxCode.trim(),
       isActive: accountingMappingRuleForm.isActive,
     };
@@ -1450,6 +1458,20 @@ export const AdminSettings: React.FC = () => {
     ) {
       setMessage(
         'mappingKey / debitAccountCode / creditAccountCode / taxCode を入力してください',
+      );
+      return;
+    }
+    if (payload.requireDebitSubaccountCode && !payload.debitSubaccountCode) {
+      setMessage('借方枝番必須を有効にする場合は借方枝番を入力してください');
+      return;
+    }
+    if (payload.requireCreditSubaccountCode && !payload.creditSubaccountCode) {
+      setMessage('貸方枝番必須を有効にする場合は貸方枝番を入力してください');
+      return;
+    }
+    if (payload.requireDepartmentCode && !payload.departmentCode) {
+      setMessage(
+        '部門コード必須を有効にする場合は部門コードを入力してください',
       );
       return;
     }
@@ -1491,9 +1513,12 @@ export const AdminSettings: React.FC = () => {
         mappingKey: item.mappingKey,
         debitAccountCode: item.debitAccountCode,
         debitSubaccountCode: item.debitSubaccountCode || '',
+        requireDebitSubaccountCode: Boolean(item.requireDebitSubaccountCode),
         creditAccountCode: item.creditAccountCode,
         creditSubaccountCode: item.creditSubaccountCode || '',
+        requireCreditSubaccountCode: Boolean(item.requireCreditSubaccountCode),
         departmentCode: item.departmentCode || '',
+        requireDepartmentCode: Boolean(item.requireDepartmentCode),
         taxCode: item.taxCode,
         isActive: item.isActive,
       });
