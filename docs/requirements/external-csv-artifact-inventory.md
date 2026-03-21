@@ -1,11 +1,12 @@
 # 外部 CSV 連携 artifact inventory
 
-更新日: 2026-03-18
+更新日: 2026-03-21
 関連 Issue: `#1432`, `#1436`, `#1437`, `#1438`, `#1430`
 
 ## 目的
 
 - 外部連携で使用する現物テンプレート、repo 内サンプル、未回収 artifact を 1 箇所で管理する。
+- 現行システム担当へ依頼する際の標準テンプレートは `docs/requirements/external-csv-artifact-request-checklist.md` を正とする。
 - 「実運用テンプレート」と「repo 内 canonical sample」を混同しないようにする。
 
 ## 分類
@@ -48,3 +49,4 @@
 - 会計連携は、ICS テンプレート原本が 1 本回収済みで、baseline 実装と仕様書を前進できる状態にある。
 - 給与連携は、社員マスタ / 勤怠ともに実テンプレート未回収のため、repo 内 canonical sample を基準に初期設計までに留める。
 - 給与らくだの実運用仕様を確定するには、未回収 artifact の提供が前提である。
+- 実テンプレート回収依頼は `docs/requirements/external-csv-artifact-request-checklist.md` を用いて行う。
