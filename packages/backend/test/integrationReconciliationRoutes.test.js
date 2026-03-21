@@ -602,3 +602,69 @@ test('GET /integrations/reconciliation/details returns payroll diffs and account
     },
   );
 });
+
+test('GET /integrations/reconciliation/details returns 400 for invalid periodKey', async () => {
+  const server = await buildServer({ logger: false });
+  try {
+    const res = await server.inject({
+      method: 'GET',
+      url: '/integrations/reconciliation/details?periodKey=2026-13',
+      headers: {
+        'x-user-id': 'admin-user',
+        'x-roles': 'admin',
+      },
+    });
+    assert.equal(res.statusCode, 400, res.body);
+    const body = JSON.parse(res.body);
+    assert.equal(body.error?.code, 'VALIDATION_ERROR');
+    assert.equal(body.error?.category, 'validation');
+    assert.match(body.error?.details?.[0]?.message ?? '', /must match pattern/);
+  } finally {
+    await server.close();
+  }
+});
+
+test('GET /integrations/reconciliation/details returns empty details when prerequisites are missing', async () => {
+  await withPrismaStubs(
+    {
+      'attendanceClosingPeriod.findFirst': async () => null,
+      'hrEmployeeMasterExportLog.findFirst': async () => null,
+      'accountingIcsExportLog.findFirst': async () => null,
+      'attendanceMonthlySummary.findMany': async () => [],
+      'accountingJournalStaging.groupBy': async () => [],
+      'accountingJournalStaging.aggregate': async () => ({
+        _sum: { amount: null },
+      }),
+      'accountingJournalStaging.count': async () => 0,
+      'accountingJournalStaging.findMany': async () => [],
+      $queryRaw: async () => [],
+    },
+    async () => {
+      const server = await buildServer({ logger: false });
+      try {
+        const res = await server.inject({
+          method: 'GET',
+          url: '/integrations/reconciliation/details?periodKey=2026-07',
+          headers: {
+            'x-user-id': 'admin-user',
+            'x-roles': 'admin',
+          },
+        });
+        assert.equal(res.statusCode, 200, res.body);
+        const body = JSON.parse(res.body);
+        assert.equal(body.periodKey, '2026-07');
+        assert.equal(body.payroll.latestClosingId, null);
+        assert.equal(body.payroll.latestEmployeeMasterFullExportId, null);
+        assert.deepEqual(body.payroll.attendanceOnlyEmployeeCodes, []);
+        assert.deepEqual(body.payroll.employeeMasterOnlyEmployeeCodes, []);
+        assert.deepEqual(body.accounting.byProject, []);
+        assert.deepEqual(body.accounting.byDepartment, []);
+        assert.deepEqual(body.accounting.pendingMappingSamples, []);
+        assert.deepEqual(body.accounting.blockedSamples, []);
+        assert.deepEqual(body.accounting.invalidReadySamples, []);
+      } finally {
+        await server.close();
+      }
+    },
+  );
+});
