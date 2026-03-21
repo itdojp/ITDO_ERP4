@@ -281,9 +281,11 @@ test('POST /integrations/accounting/mapping-rules/reapply reapplies pending rows
           id: 'rule-001',
           mappingKey: 'invoice_approved:default',
           debitAccountCode: '1110',
+          debitAccountName: '売掛金',
           debitSubaccountCode: null,
           requireDebitSubaccountCode: true,
           creditAccountCode: '4110',
+          creditAccountName: '売上高',
           creditSubaccountCode: null,
           requireCreditSubaccountCode: false,
           departmentCode: 'D001',
@@ -328,6 +330,8 @@ test('POST /integrations/accounting/mapping-rules/reapply reapplies pending rows
   assert.equal(updateCalls.length, 1);
   assert.equal(updateCalls[0]?.data?.status, 'pending_mapping');
   assert.equal(updateCalls[0]?.data?.departmentCode, 'D001');
+  assert.equal(updateCalls[0]?.data?.debitAccountName, '売掛金');
+  assert.equal(updateCalls[0]?.data?.creditAccountName, '売上高');
   assert.deepEqual(updateCalls[0]?.data?.validationErrors, [
     {
       code: 'mapping_pending',

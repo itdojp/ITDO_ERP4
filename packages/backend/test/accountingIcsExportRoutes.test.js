@@ -48,13 +48,6 @@ test('GET /integrations/accounting/exports/journals returns canonical payload', 
         capturedCount = args;
         return 0;
       },
-      'accountingMappingRule.findMany': async () => [
-        {
-          mappingKey: 'expense_approved:travel',
-          debitAccountName: '旅費交通費',
-          creditAccountName: '普通預金',
-        },
-      ],
       'accountingJournalStaging.findMany': async (args) => {
         capturedFindMany = args;
         return [
@@ -67,8 +60,10 @@ test('GET /integrations/accounting/exports/journals returns canonical payload', 
             amount: '12000',
             description: '交通費精算',
             debitAccountCode: '6001',
+            debitAccountName: '旅費交通費',
             debitSubaccountCode: '001',
             creditAccountCode: '1110',
+            creditAccountName: '普通預金',
             creditSubaccountCode: '000',
             departmentCode: 'D001',
             taxCode: 'T10',
@@ -119,6 +114,123 @@ test('GET /integrations/accounting/exports/journals returns canonical payload', 
   assert.equal(capturedFindMany?.skip, 2);
   assert.equal(capturedFindMany?.where?.status, 'ready');
   assert.equal(capturedFindMany?.where?.entryDate?.gte instanceof Date, true);
+});
+
+test('GET /integrations/accounting/exports/journals falls back to account codes when staged names are blank', async () => {
+  process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
+  process.env.AUTH_MODE = 'header';
+
+  await withPrismaStubs(
+    {
+      'accountingJournalStaging.count': async () => 0,
+      'accountingJournalStaging.findMany': async () => [
+        {
+          id: 'stg-001b',
+          eventId: 'evt-001b',
+          mappingKey: 'expense_approved:travel',
+          lineNo: 1,
+          entryDate: new Date('2026-02-14T00:00:00.000Z'),
+          amount: '12000',
+          description: '交通費精算',
+          debitAccountCode: '6001',
+          debitAccountName: '   ',
+          debitSubaccountCode: '001',
+          creditAccountCode: '1110',
+          creditAccountName: null,
+          creditSubaccountCode: '000',
+          departmentCode: 'D001',
+          taxCode: 'T10',
+          event: {
+            id: 'evt-001b',
+            sourceTable: 'expenses',
+            sourceId: 'exp-001b',
+            periodKey: '2026-02',
+            externalRef: 'EXP-202602-001B',
+            description: '交通費',
+          },
+        },
+      ],
+    },
+    async () => {
+      const server = await buildServer({ logger: false });
+      try {
+        const res = await server.inject({
+          method: 'GET',
+          url: '/integrations/accounting/exports/journals?periodKey=2026-02&limit=10&offset=0',
+          headers: {
+            'x-user-id': 'admin-user',
+            'x-roles': 'admin',
+          },
+        });
+        assert.equal(res.statusCode, 200, res.body);
+        const body = JSON.parse(res.body);
+        assert.equal(body.items[0].debitAccountName, '6001');
+        assert.equal(body.items[0].creditAccountName, '1110');
+      } finally {
+        await server.close();
+      }
+    },
+  );
+});
+
+test('GET /integrations/accounting/exports/journals uses staged account names without live rule lookup', async () => {
+  process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
+  process.env.AUTH_MODE = 'header';
+
+  await withPrismaStubs(
+    {
+      'accountingJournalStaging.count': async () => 0,
+      'accountingMappingRule.findMany': async () => {
+        throw new Error('should not resolve live mapping rules during export');
+      },
+      'accountingJournalStaging.findMany': async () => [
+        {
+          id: 'stg-001c',
+          eventId: 'evt-001c',
+          mappingKey: 'expense_approved:travel',
+          lineNo: 1,
+          entryDate: new Date('2026-02-14T00:00:00.000Z'),
+          amount: '12000',
+          description: '交通費精算',
+          debitAccountCode: '6001',
+          debitAccountName: '旅費交通費',
+          debitSubaccountCode: '001',
+          creditAccountCode: '1110',
+          creditAccountName: '普通預金',
+          creditSubaccountCode: '000',
+          departmentCode: 'D001',
+          taxCode: 'T10',
+          event: {
+            id: 'evt-001c',
+            sourceTable: 'expenses',
+            sourceId: 'exp-001c',
+            periodKey: '2026-02',
+            externalRef: 'EXP-202602-001C',
+            description: '交通費',
+          },
+        },
+      ],
+    },
+    async () => {
+      const server = await buildServer({ logger: false });
+      try {
+        const res = await server.inject({
+          method: 'GET',
+          url: '/integrations/accounting/exports/journals?periodKey=2026-02&limit=10&offset=0',
+          headers: {
+            'x-user-id': 'admin-user',
+            'x-roles': 'admin',
+          },
+        });
+        assert.equal(res.statusCode, 200, res.body);
+        const body = JSON.parse(res.body);
+        assert.equal(body.items[0].debitAccountName, '旅費交通費');
+        assert.equal(body.items[0].creditAccountName, '普通預金');
+      } finally {
+        await server.close();
+      }
+    },
+  );
 });
 
 test('GET /integrations/accounting/exports/journals returns CP932 csv', async () => {

@@ -95,6 +95,7 @@
 - ICS 仕訳 mapping rule
   - `AccountingMappingRule`
   - `mappingKey`, `debitAccountCode`, `debitAccountName`, `debitSubaccountCode`, `creditAccountCode`, `creditAccountName`, `creditSubaccountCode`, `taxCode`, `departmentCode`, `requireDepartmentCode`, `requireDebitSubaccountCode`, `requireCreditSubaccountCode`, `isActive`
+  - `AccountingJournalStaging` には rule 適用時点の `debitAccountName` / `creditAccountName` を snapshot し、export 時は live rule を再参照しない
   - `GET /integrations/accounting/mapping-rules`
   - `POST /integrations/accounting/mapping-rules`
   - `PATCH /integrations/accounting/mapping-rules/:id`

@@ -214,7 +214,7 @@
 - 2026-03-16 時点の baseline では、`expenses` / `invoices` / `vendor_invoices` の承認完了時に `AccountingEvent` と `AccountingJournalStaging` を生成し、未マッピング状態を `pending_mapping` または `blocked` で保持する
 - 2026-03-17 時点の baseline では、`AccountingMappingRule` を `mappingKey` 単位で保持し、exact match または `<eventKind>:default` fallback で `debit/credit/tax/department` を自動適用する
 - 2026-03-18 時点の拡張では、`AccountingMappingRule` に `requireDepartmentCode` / `requireDebitSubaccountCode` / `requireCreditSubaccountCode` を持たせ、条件付き必須を rule 側で判定する
-- 2026-03-21 時点の拡張では、`AccountingMappingRule` に `debitAccountName` / `creditAccountName` を持たせ、ICS CSV の名称列へ反映する
+- 2026-03-21 時点の拡張では、`AccountingMappingRule` に `debitAccountName` / `creditAccountName` を持たせ、staging 行へ snapshot した名称を ICS CSV の名称列へ反映する
 - `#1443` の baseline 実装では、`ready` 化された staging 行だけを CSV に変換する
 
 ### 最低限必要な mapping

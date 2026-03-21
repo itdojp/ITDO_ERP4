@@ -1698,8 +1698,10 @@ model AccountingJournalStaging {
   description          String?
   mappingKey           String?
   debitAccountCode     String?
+  debitAccountName     String?
   debitSubaccountCode  String?
   creditAccountCode    String?
+  creditAccountName    String?
   creditSubaccountCode String?
   departmentCode       String?
   taxCode              String?

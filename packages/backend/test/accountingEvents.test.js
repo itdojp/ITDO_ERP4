@@ -111,10 +111,15 @@ test('stageAccountingEventForApproval applies active mapping rule when available
           id: 'rule-001',
           mappingKey: 'invoice_approved:default',
           debitAccountCode: '1110',
+          debitAccountName: '売掛金',
           debitSubaccountCode: null,
+          requireDebitSubaccountCode: false,
           creditAccountCode: '4110',
+          creditAccountName: '売上高',
           creditSubaccountCode: null,
+          requireCreditSubaccountCode: false,
           departmentCode: 'DEPT-001',
+          requireDepartmentCode: false,
           taxCode: 'TAX-001',
           isActive: true,
         },
@@ -132,7 +137,9 @@ test('stageAccountingEventForApproval applies active mapping rule when available
   assert.equal(created, true);
   assert.equal(stagingCalls[0]?.create?.status, 'ready');
   assert.equal(stagingCalls[0]?.create?.debitAccountCode, '1110');
+  assert.equal(stagingCalls[0]?.create?.debitAccountName, '売掛金');
   assert.equal(stagingCalls[0]?.create?.creditAccountCode, '4110');
+  assert.equal(stagingCalls[0]?.create?.creditAccountName, '売上高');
   assert.equal(stagingCalls[0]?.create?.taxCode, 'TAX-001');
   assert.equal(stagingCalls[0]?.create?.departmentCode, 'DEPT-001');
   assert.deepEqual(stagingCalls[0]?.create?.validationErrors, []);

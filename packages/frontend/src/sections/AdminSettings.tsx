@@ -483,9 +483,11 @@ const createDefaultAccountingMappingRuleForm =
   (): AccountingMappingRuleFormState => ({
     mappingKey: '',
     debitAccountCode: '',
+    debitAccountName: '',
     debitSubaccountCode: '',
     requireDebitSubaccountCode: false,
     creditAccountCode: '',
+    creditAccountName: '',
     creditSubaccountCode: '',
     requireCreditSubaccountCode: false,
     departmentCode: '',
@@ -1432,12 +1434,18 @@ export const AdminSettings: React.FC = () => {
     const payload = {
       mappingKey: accountingMappingRuleForm.mappingKey.trim(),
       debitAccountCode: accountingMappingRuleForm.debitAccountCode.trim(),
+      debitAccountName: normalizeNullableMappingField(
+        accountingMappingRuleForm.debitAccountName,
+      ),
       debitSubaccountCode: normalizeNullableMappingField(
         accountingMappingRuleForm.debitSubaccountCode,
       ),
       requireDebitSubaccountCode:
         accountingMappingRuleForm.requireDebitSubaccountCode,
       creditAccountCode: accountingMappingRuleForm.creditAccountCode.trim(),
+      creditAccountName: normalizeNullableMappingField(
+        accountingMappingRuleForm.creditAccountName,
+      ),
       creditSubaccountCode: normalizeNullableMappingField(
         accountingMappingRuleForm.creditSubaccountCode,
       ),
@@ -1512,9 +1520,11 @@ export const AdminSettings: React.FC = () => {
       setAccountingMappingRuleForm({
         mappingKey: item.mappingKey,
         debitAccountCode: item.debitAccountCode,
+        debitAccountName: item.debitAccountName || '',
         debitSubaccountCode: item.debitSubaccountCode || '',
         requireDebitSubaccountCode: Boolean(item.requireDebitSubaccountCode),
         creditAccountCode: item.creditAccountCode,
+        creditAccountName: item.creditAccountName || '',
         creditSubaccountCode: item.creditSubaccountCode || '',
         requireCreditSubaccountCode: Boolean(item.requireCreditSubaccountCode),
         departmentCode: item.departmentCode || '',
