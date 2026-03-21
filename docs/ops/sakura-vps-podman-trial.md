@@ -1,10 +1,12 @@
 # さくらVPS（Ubuntu単体）+ Podman 試験動作手順書
 
 ## 目的
+
 - ITDO_ERP4 を「さくらVPS 1台（Ubuntu）」で試験動作させる。
 - DB は Podman 上の PostgreSQL を利用し、backend/frontend を同一VPSで起動する。
 
 ## 想定バージョン / 前提
+
 - OS: Ubuntu 24.04 LTS（22.04 でも同等手順）
 - Node.js: 20.19.0（CIと同一）
 - Podman: Ubuntu標準パッケージ（24.04時点で 4.9 系）
@@ -14,21 +16,24 @@
 ## 1. OS初期セットアップ
 
 ### 1-1. 基本更新と共通ツール
+
 ```bash
 sudo apt update
 sudo apt -y upgrade
-sudo apt -y install git curl jq make ca-certificates unzip
+sudo apt -y install git curl jq make ca-certificates unzip dbus-user-session
 ```
 
 ### 1-2. Podman関連パッケージ
+
 ```bash
 sudo apt -y install podman uidmap slirp4netns passt fuse-overlayfs
 podman --version
 ```
 
 ### 1-3. Node.js 20.19.0 導入（nvm例）
+
 ```bash
-curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.4/install.sh | bash
 source ~/.nvm/nvm.sh
 nvm install 20.19.0
 nvm alias default 20.19.0
@@ -39,6 +44,7 @@ npm -v
 ## 2. rootless Podman 前提確認
 
 ### 2-1. subuid/subgid
+
 ```bash
 id -un
 grep "^$(id -un):" /etc/subuid /etc/subgid
@@ -52,6 +58,7 @@ echo "deploy:100000:65536" | sudo tee -a /etc/subgid
 ```
 
 ### 2-2. 動作確認
+
 ```bash
 podman info
 podman run --rm docker.io/library/hello-world
@@ -68,6 +75,27 @@ cd ITDO_ERP4
 
 npm ci --prefix packages/backend
 npm ci --prefix packages/frontend
+```
+
+## 3-1. 低メモリ VPS の build 前提
+
+RAM 2GiB 級の VPS では backend の TypeScript build が OOM で失敗しやすい。事前に swap を追加する。
+
+```bash
+sudo fallocate -l 4G /swapfile
+sudo chmod 600 /swapfile
+sudo mkswap /swapfile
+sudo swapon /swapfile
+grep -q '^/swapfile none swap sw 0 0$' /etc/fstab || \
+  echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+free -h
+swapon --show
+```
+
+backend build は以下で実行する。
+
+```bash
+NODE_OPTIONS="--max-old-space-size=3072" npm run build --prefix packages/backend
 ```
 
 ## 4. DB（PostgreSQL）起動
@@ -87,18 +115,14 @@ DB_USER=erp4 DB_PASSWORD='REPLACE_WITH_STRONG_PASSWORD' \
 
 再起動後も DB コンテナを自動復帰させる場合（任意・rootless想定）:
 
-1. コンテナに `--restart=always` を設定する:
-```bash
-podman update --restart=always erp4-pg-trial
-```
+`podman update --restart=always` は Ubuntu 24.04 同梱の Podman 4.9 系では利用できないため、systemd user service で復帰させる。
 
-2. rootless では boot 時に `systemd --user` から Podman を起動する設定が必要:
 ```bash
 sudo loginctl enable-linger "$(id -un)"
 mkdir -p ~/.config/systemd/user
 cd /opt/itdo/ITDO_ERP4
 
-podman generate systemd --name erp4-pg-trial --files --new
+podman generate systemd --name --files --restart-policy=always erp4-pg-trial
 mv container-erp4-pg-trial.service ~/.config/systemd/user/
 
 systemctl --user daemon-reload
@@ -107,40 +131,51 @@ systemctl --user status container-erp4-pg-trial.service
 ```
 
 接続先（backend用）:
+
 - `DATABASE_URL=postgresql://erp4:REPLACE_WITH_STRONG_PASSWORD@localhost:55432/postgres?schema=public`
 
 ## 5. backend 起動
 
 ### 5-1. 環境変数ファイル作成
+
 ```bash
 cd /opt/itdo/ITDO_ERP4
 cp packages/backend/.env.example packages/backend/.env.vps
 ```
 
 `packages/backend/.env.vps` の最小設定例:
+
 ```dotenv
 DATABASE_URL=postgresql://erp4:REPLACE_WITH_STRONG_PASSWORD@localhost:55432/postgres?schema=public
 PORT=3001
 NODE_ENV=production
 AUTH_MODE=jwt
+JWT_JWKS_URL=https://www.googleapis.com/oauth2/v3/certs
+JWT_ISSUER=https://accounts.google.com
+JWT_AUDIENCE=REPLACE_WITH_GOOGLE_OAUTH_CLIENT_ID
+JWT_ALGS=RS256
 ALLOWED_ORIGINS=https://app.example.com,http://<host>:4173
 ```
 
 補足:
+
+- `AUTH_MODE=jwt` では `JWT_ISSUER`、`JWT_AUDIENCE`、`JWT_JWKS_URL` または `JWT_PUBLIC_KEY` が実行時必須。`.env.example` は空欄プレースホルダのため、VPS 用 `.env.vps` では実値を必ず設定する。
 - `AUTH_MODE=header` はインターネット公開環境では非推奨。どうしても使う場合は、信頼できる reverse proxy 配下に限定し、`AUTH_ALLOW_HEADER_FALLBACK_IN_PROD=true` を明示する。
-- `ALLOWED_ORIGINS` は frontend の実アクセス元（`vite preview` を使う場合は `http://<host>:4173`）を必ず含める。
+- `ALLOWED_ORIGINS` は frontend の実アクセス元を列挙する。`vite preview` を `--host 0.0.0.0 --port 4173` で直接公開する場合は `http://<host>:4173` を含める。reverse proxy 経由で `https://app.example.com` のみを公開する場合は HTTP 側エントリを外す。
 
 ### 5-2. build と起動
+
 ```bash
 cd /opt/itdo/ITDO_ERP4
 set -a; source packages/backend/.env.vps; set +a
 
 npm run prisma:generate --prefix packages/backend
-npm run build --prefix packages/backend
+NODE_OPTIONS="--max-old-space-size=3072" npm run build --prefix packages/backend
 node packages/backend/dist/index.js
 ```
 
 疎通確認:
+
 ```bash
 curl -fsS http://127.0.0.1:3001/healthz
 curl -fsS http://127.0.0.1:3001/readyz
@@ -148,11 +183,13 @@ curl -fsS http://127.0.0.1:3001/readyz
 
 ## 6. frontend 起動
 
-`VITE_API_BASE` は backend 公開URLに合わせる（例: `https://api.example.com`）。
+`VITE_API_BASE` は backend 公開URLに合わせる。Google ログインを表示する場合は `VITE_GOOGLE_CLIENT_ID` も必要。
 
 ```bash
 cd /opt/itdo/ITDO_ERP4
-VITE_API_BASE=https://api.example.com npm run build --prefix packages/frontend
+VITE_API_BASE=https://api.example.com \
+VITE_GOOGLE_CLIENT_ID=REPLACE_WITH_GOOGLE_OAUTH_CLIENT_ID \
+npm run build --prefix packages/frontend
 npm run preview --prefix packages/frontend -- --host 0.0.0.0 --port 4173
 ```
 
@@ -169,6 +206,7 @@ make audit
 ```
 
 Podman連携の簡易確認（初期構築時のみ）:
+
 ```bash
 make podman-smoke
 ```
@@ -178,12 +216,14 @@ make podman-smoke
 再起動後の自動復帰が必要な場合は systemd user service を設定する。
 
 ```bash
-loginctl enable-linger "$(id -un)"
+sudo loginctl enable-linger "$(id -un)"
 mkdir -p ~/.config/systemd/user
 ```
 
 ### 8-1. backend service（例）
+
 `~/.config/systemd/user/erp4-backend.service`
+
 ```ini
 [Unit]
 Description=ERP4 Backend
@@ -203,6 +243,7 @@ WantedBy=default.target
 ```
 
 反映:
+
 ```bash
 systemctl --user daemon-reload
 systemctl --user enable --now erp4-backend.service
@@ -210,7 +251,9 @@ systemctl --user status erp4-backend.service
 ```
 
 ### 8-2. frontend service（例）
+
 `~/.config/systemd/user/erp4-frontend.service`
+
 ```ini
 [Unit]
 Description=ERP4 Frontend (Vite Preview)
@@ -229,6 +272,7 @@ WantedBy=default.target
 ```
 
 反映:
+
 ```bash
 systemctl --user daemon-reload
 systemctl --user enable --now erp4-frontend.service
@@ -236,6 +280,7 @@ systemctl --user status erp4-frontend.service
 ```
 
 ## 9. 運用上の注意
+
 - 単一VPS構成はSPOFであり、本番可用性要件は満たさない。
 - `scripts/podman-poc.sh reset` はDB初期化を伴うため、試験データ運用中は実行しない。
 - 公開時は reverse proxy（TLS終端）とFW（許可ポート最小化）を必須にする。
