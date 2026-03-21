@@ -5,6 +5,7 @@ import { resolveLeaveRequestMinutesWithCalendar } from './leaveEntitlements.js';
 import { normalizeLeaveTypeInput } from './leaveTypes.js';
 import type { WorkdayMinutesSource } from './leaveWorkdayCalendar.js';
 import { normalizeWorkMinutes } from './leaveWorkdayCalendar.js';
+import { findPeriodLock } from './periodLock.js';
 import { toDateOnly } from '../utils/date.js';
 
 const PERIOD_KEY_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/;
@@ -516,6 +517,15 @@ export async function closeAttendancePeriod(options: {
   const { periodKey, from, toExclusive, toInclusive } =
     parseAttendancePeriodKey(options.periodKey);
   return withAttendanceClosingTransaction(options.client, async (tx) => {
+    const periodLock = await findPeriodLock(periodKey, undefined, tx);
+    if (!periodLock) {
+      throw new AttendanceClosingError(
+        'attendance_period_lock_required',
+        'global period lock is required before closing attendance',
+        { periodKey },
+      );
+    }
+
     const latestClose = await tx.attendanceClosingPeriod.findFirst({
       where: { periodKey },
       orderBy: [{ version: 'desc' }],
