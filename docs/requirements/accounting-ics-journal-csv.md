@@ -1,6 +1,6 @@
 # 経理上手くんα Pro II 連携: ICS 仕訳 CSV 仕様（repo ベース初期案）
 
-更新日: 2026-03-19
+更新日: 2026-03-21
 関連 Issue: `#1438`, `#1430`, `#1433`, `#1434`, `#1435`, `#1441`, `#1443`
 
 ## 目的
@@ -55,6 +55,9 @@
 - ローカルに配置された `21期_表形式入力フォーマット（ICS取込用）.CSV` を現物テンプレートとして参照する。
 - 仕様レビューと実装時の参照用として、ヘッダ行のみを抽出した `docs/requirements/samples/21ki_ics_journal_header_sample.csv` を同梱する。
 - 物理レイアウト確認用として、先頭 5 行を UTF-8 で再掲した `docs/requirements/samples/21ki_ics_journal_template_excerpt.csv` を同梱する。
+- ERP4 実装が実際に返す v1 出力例として、以下の sample を同梱する。
+  - `docs/requirements/samples/ics_journal_canonical_sample.csv`
+  - `docs/requirements/samples/ics_journal_template_sample.csv`
 - 担当者ヒアリングでは、普段の取込時に主に入力している項目は以下である。
   - 日付
   - 借方コード / 貸方コード
@@ -285,6 +288,31 @@
 - `CP932 120 bytes` を超える摘要は不可
 - 超過や不正文字は切り捨てず、export error として停止する
 
+## v1 変換ルール表
+
+| 論点                           | v1 の確定ルール                                                                                                                 | 根拠                                                        |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
+| `日付`                         | `AccountingJournalStaging.entryDate` を `YYYY/MM/DD` で出力                                                                     | `formatDateSlash()`                                         |
+| `伝票番号`                     | `event.externalRef` を優先し、未設定時は `sourceTable-sourceId`                                                                 | `buildVoucherNo()`                                          |
+| `借方名称` / `貸方名称`        | `AccountingJournalStaging` に snapshot した名称を採用し、blank/null の場合のみコードへ fallback                                 | `#1487` 実装                                                |
+| `部門ｺｰﾄﾞ`                     | `departmentCode` をそのまま出力し、required rule があるのに未設定なら `pending_mapping` に留める                                | `AccountingMappingRule.requireDepartmentCode`               |
+| `借方枝番` / `貸方枝番`        | staging 上の枝番を出力し、required rule があるのに未設定なら `pending_mapping` に留める                                         | `requireDebitSubaccountCode`, `requireCreditSubaccountCode` |
+| `金額`                         | `AccountingJournalStaging.amount` を正の値としてそのまま文字列化                                                                | `validateReadyRow()`                                        |
+| `摘要`                         | `description` をそのまま出力し、`CP932` 非対応・改行/タブ・120 bytes 超過は export 停止                                         | `validateDescription()`                                     |
+| `税区分`                       | `taxCode` 必須。未設定の ready 行は export 停止                                                                                 | `validateReadyRow()`                                        |
+| canonical/template 切替        | `format=csv` は 30 列ヘッダ + ready 行のみ（preamble なし）、`format=ics_template` は 1〜4 行 preamble + 30 列ヘッダ + ready 行 | `toAccountingIcsCsv()`, `toAccountingIcsTemplateCsv()`      |
+| template preamble sanitization | `companyCode` / `companyName` は `=`, `+`, `-`, `@` で始まる場合に先頭へ `'` を付与する                                         | `sanitizeSpreadsheetCell()`                                 |
+
+## sample fixture
+
+- `docs/requirements/samples/ics_journal_canonical_sample.csv`
+  - canonical (`format=csv`) の 30 列ヘッダ + 1 行 sample
+- `docs/requirements/samples/ics_journal_template_sample.csv`
+  - `format=ics_template` の preamble 1〜4 行 + 30 列ヘッダ + 1 行 sample
+- いずれも ERP4 実装の v1 契約を説明するための fixture であり、受領した原本テンプレートそのものではない
+- 原本テンプレート断片との対応確認は `21ki_ics_journal_header_sample.csv` と `21ki_ics_journal_template_excerpt.csv` を使う
+- 上記 fixture CSV はリポジトリ上では `UTF-8 + LF` で保存している。一方、API レスポンスの ICS CSV は `CP932 + CRLF` であるため、バイト列レベルで diff を取る場合はエンコーディングと改行コードを揃えること
+
 ## エラーパターンの初期分類
 
 ### 出力停止
@@ -324,6 +352,21 @@
 - 必須枝番未設定で失敗
 - 摘要制約違反で失敗
 
+## テストケース一覧（v1）
+
+| ID     | 観点                       | 条件                                                             | 期待結果                                                        |
+| ------ | -------------------------- | ---------------------------------------------------------------- | --------------------------------------------------------------- |
+| ICS-01 | canonical export           | `ready` 行のみ、`periodKey=YYYY-MM`                              | 30 列ヘッダ + CSV 行を `CP932 + CRLF` で返す                    |
+| ICS-02 | template export            | `format=ics_template` + `periodKey/companyCode/companyName` 指定 | preamble 1〜4 行 + 30 列ヘッダ + CSV 行を `CP932 + CRLF` で返す |
+| ICS-03 | invalid period             | `periodKey=2026-13`                                              | `400 invalid_period_key`                                        |
+| ICS-04 | template metadata missing  | `format=ics_template` で `companyCode` または `companyName` 欠落 | `400 accounting_ics_template_metadata_required`                 |
+| ICS-05 | incomplete scope           | `pending_mapping` または `blocked` 行が scope に残る             | `409 accounting_journal_mapping_incomplete`                     |
+| ICS-06 | incomplete ready row       | `debit/credit/taxCode/amount` のいずれか不足                     | `409 accounting_journal_ready_row_incomplete`                   |
+| ICS-07 | invalid description        | 改行・タブ・`CP932` 非対応文字・120 bytes 超過                   | `409 accounting_journal_description_invalid`                    |
+| ICS-08 | idempotent dispatch replay | 同一 `idempotencyKey` + 同一条件で再実行                         | 既存成功 log を replay                                          |
+| ICS-09 | redispatch                 | 成功済み export log を指定                                       | 新規 log を作成し `reexportOfId` を保持                         |
+| ICS-10 | live rule drift 防止       | rule 名称変更後も staging snapshot が残る                        | export 結果は staging 時点の名称を維持                          |
+
 ## 2026-03-18 時点の推奨仕様
 
 1. `決修` は空値固定
@@ -347,6 +390,7 @@
 - `#1438` は、現物テンプレートが得られたため「列一覧の棚卸し」段階から前進できる。
 - `#1443` の baseline として、ICS CSV export / dispatch / dispatch-log の API を実装した。
 - 2026-03-18 時点で、`決修`、部門コード、税区分、枝番、摘要制約の推奨仕様は決定した。
+- 2026-03-21 時点で、名称列の snapshot 方針、template preamble 付き export、canonical/template sample、v1 テストケース一覧まで repo 内で固定できた。
 - 次の実務上の論点は、`名称列の扱い`、template preamble の厳密書式、補助列の実値要否の確認である。
 - baseline 実装後も、`#1434` と `#1441` の mapping master / 出力判定 / CSV 化ルールを合わせて確定する必要がある。
 
@@ -356,5 +400,7 @@
 - `docs/requirements/erp4-payroll-accounting-gap-analysis.md`
 - `docs/requirements/samples/21ki_ics_journal_header_sample.csv`
 - `docs/requirements/samples/21ki_ics_journal_template_excerpt.csv`
+- `docs/requirements/samples/ics_journal_canonical_sample.csv`
+- `docs/requirements/samples/ics_journal_template_sample.csv`
 - `docs/requirements/external-code-system-design.md`
 - `docs/requirements/external-csv-integration-common-spec.md`
