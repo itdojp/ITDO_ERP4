@@ -1,6 +1,6 @@
 # 給料らくだ連携: 社員マスタ CSV 仕様（repo ベース初期案）
 
-更新日: 2026-03-20
+更新日: 2026-03-21
 関連 Issue: `#1436`, `#1430`, `#1433`, `#1434`, `#1435`, `#1439`, `#1442`
 
 ## 目的
@@ -21,6 +21,8 @@
 - 現物テンプレート未回収のため、repo 内には canonical sample のみを置く。
   - `docs/requirements/samples/rakuda_employee_master_canonical_sample.csv`
   - artifact 全体の管理は `docs/requirements/external-csv-artifact-inventory.md` を正とする。
+- canonical 社員マスタ export の `schemaVersion` は `rakuda_employee_master_v1` を正とする。
+- `rakuda_employee_master_v1` は「給与らくだ実テンプレート互換」ではなく、「ERP4 内部で安定再現できる canonical 社員マスタ export」を意味する。
 
 ## 現在の ERP4 で供給可能なフィールド
 
@@ -105,6 +107,7 @@
 
 - 初期は全件出力を原則とする。
 - `updatedSince` を使った差分抽出は既存 users export にあるが、給与側の master import で差分が安全かは未確認のため、差分出力は後続で判断する。
+- canonical export の `updatedSince` は内部連携・監査向けの技術仕様であり、実テンプレート import の差分運用を保証するものではない。
 
 ### ソート順
 
@@ -149,6 +152,73 @@
 - dispatch
   - `idempotencyKey` による replay / conflict / in-progress 制御を持つ
   - 実行履歴は `HrEmployeeMasterExportLog` に保持する
+
+### 実装済みエラーコード
+
+- `invalid_updatedSince`
+  - `updatedSince` が ISO-8601 datetime として不正
+- `employee_master_employee_code_missing`
+  - 対象社員の `employeeCode` が未設定
+- `employee_master_manager_employee_code_missing`
+  - `managerUserId` はあるが、上長 `employeeCode` を解決できない
+- `dispatch_in_progress`
+  - 同一 `idempotencyKey` の export が実行中
+- `idempotency_conflict`
+  - 同一 `idempotencyKey` に対して request hash が不一致
+
+## canonical v1 の出力範囲
+
+`rakuda_employee_master_v1` は、現物テンプレート未回収の段階で ERP4 側が安定供給できる列だけを固定した canonical export である。
+
+| 列名                | 出力 | source                                                | 備考                                                             |
+| ------------------- | ---- | ----------------------------------------------------- | ---------------------------------------------------------------- |
+| employeeCode        | 出力 | `UserAccount.employeeCode`                            | 未設定時は `409 employee_master_employee_code_missing`           |
+| loginId             | 出力 | `UserAccount.userName`                                | 補助識別子。給与キーではない                                     |
+| externalIdentityId  | 出力 | `UserAccount.externalId`                              | IdP/SCIM 用。給与専用キーではない                                |
+| displayName         | 出力 | `displayName` 優先、未設定時は `familyName+givenName` | 氏名分解は逆算しない                                             |
+| familyName          | 出力 | `UserAccount.familyName`                              | 未設定時は空値                                                   |
+| givenName           | 出力 | `UserAccount.givenName`                               | 未設定時は空値                                                   |
+| activeFlag          | 出力 | `UserAccount.active`                                  | `1` / `0` に正規化                                               |
+| employmentType      | 出力 | `UserAccount.employmentType`                          | `#1439` で追加済み                                               |
+| joinDate            | 出力 | `UserAccount.joinedAt`                                | `YYYY-MM-DD`                                                     |
+| leaveDate           | 出力 | `UserAccount.leftAt`                                  | `YYYY-MM-DD`                                                     |
+| departmentName      | 出力 | `UserAccount.department`                              | 表示名のみ。コード体系は別論点                                   |
+| organizationName    | 出力 | `UserAccount.organization`                            | 表示名のみ。コード体系は別論点                                   |
+| managerEmployeeCode | 出力 | `managerUserId` -> 上長 `employeeCode`                | 解決不能時は `409 employee_master_manager_employee_code_missing` |
+| departmentCode      | 出力 | `EmployeePayrollProfile.departmentCode`               | 未設定時は空値                                                   |
+| payrollType         | 出力 | `EmployeePayrollProfile.payrollType`                  | 実コード体系は未確定                                             |
+| closingType         | 出力 | `EmployeePayrollProfile.closingType`                  | 実コード体系は未確定                                             |
+| paymentType         | 出力 | `EmployeePayrollProfile.paymentType`                  | 実コード体系は未確定                                             |
+| titleCode           | 出力 | `EmployeePayrollProfile.titleCode`                    | 名称ではなく code を出す                                         |
+| email               | 出力 | `UserAccount.emails`                                  | primary 優先                                                     |
+| phone               | 出力 | `UserAccount.phoneNumbers`                            | primary 優先                                                     |
+
+`schemaVersion` は CSV 列としては出力せず、JSON payload のメタ情報として `rakuda_employee_master_v1` を返す。CSV ファイル内では暗黙の前提として扱う。
+
+## canonical v1 で未対応または未確定の項目
+
+以下は ERP4 側で未実装、または現物テンプレート未回収のため `rakuda_employee_master_v1` には含めていない。
+
+| 項目                             | 現状                                                    | 後続論点                                   |
+| -------------------------------- | ------------------------------------------------------- | ------------------------------------------ |
+| 銀行口座の列分割                 | `EmployeePayrollProfile.bankInfo` は保持するが未出力    | 支店名/口座種別/口座番号の実列仕様確定     |
+| 役職名                           | `titleCode` のみ出力                                    | 名称列が必要か、code のみで足りるかの確認  |
+| 部門コードの必須度               | `departmentCode` は空値許容                             | 実テンプレート上で必須か任意かの確認       |
+| 組織コード/所属コード体系        | 表示名のみ出力                                          | `#1434` の code system 確定後に反映        |
+| 所定勤務時間/給与基準日数        | canonical v1 には含めない                               | 給与計算前提マスタとして別列が必要かの確認 |
+| 差分 import の安全性             | `updatedSince` 付き export は可能だが import 方針未確定 | 全件/差分 import の運用判断                |
+| 給与らくだ実列名/列順/文字コード | 未回収                                                  | `#1432` でテンプレート原本回収             |
+
+## canonical v1 の運用判断
+
+- `rakuda_employee_master_v1` は、給与らくだの実 import テンプレートを確定する前の内部 canonical として扱う。
+- 現物テンプレート未回収のため、`rakuda_employee_master_v1` をそのまま給与らくだ import に用いる前提ではない。
+- 実運用へ進める条件は以下とする。
+  1. 社員台帳 CSV テンプレート原本の回収
+  2. 列順、必須列、文字コード、空値時挙動の確定
+  3. `employeeCode` 桁数・採番ルールの確定
+  4. `payrollType` / `closingType` / `paymentType` / `titleCode` の実コード体系確定
+  5. 銀行口座を ERP4 正本で持つか、外部正本参照に留めるかの運用判断
 
 ### 空値時挙動
 
