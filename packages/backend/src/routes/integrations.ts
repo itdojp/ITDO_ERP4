@@ -24,11 +24,13 @@ import {
 } from '../services/integrationReconciliation.js';
 import {
   AccountingIcsExportError,
+  type AccountingIcsTemplateOptions,
   type AccountingIcsExportPayload,
   buildAccountingIcsCsv,
   buildAccountingIcsCsvFilename,
   buildAccountingIcsExportPayload,
   buildAccountingIcsExportRequestHash,
+  buildAccountingIcsTemplateCsv,
 } from '../services/accountingIcsExport.js';
 import { reapplyAccountingMappingRules } from '../services/accountingMappingRules.js';
 import { sendCsv, toCsv } from '../utils/csv.js';
@@ -780,7 +782,7 @@ function hrAttendanceExportStatusCode(code: string) {
   }
 }
 
-type AccountingIcsExportFormat = 'json' | 'csv';
+type AccountingIcsExportFormat = 'json' | 'csv' | 'ics_template';
 
 const DEFAULT_ACCOUNTING_ICS_EXPORT_LIMIT = 500;
 const MAX_ACCOUNTING_ICS_EXPORT_LIMIT = 2000;
@@ -825,12 +827,17 @@ function compareStartedAtDesc(
 function normalizeAccountingIcsExportFormat(
   value: unknown,
 ): AccountingIcsExportFormat {
-  return value === 'csv' ? 'csv' : 'json';
+  if (value === 'csv') return 'csv';
+  if (value === 'ics_template') return 'ics_template';
+  return 'json';
 }
 
 function parseAccountingIcsExportQuery(query: {
   format?: AccountingIcsExportFormat;
   periodKey?: string;
+  companyCode?: string;
+  companyName?: string;
+  fiscalYearStartMonth?: number | string;
   limit?: number | string;
   offset?: number | string;
 }) {
@@ -840,6 +847,19 @@ function parseAccountingIcsExportQuery(query: {
       typeof query.periodKey === 'string'
         ? query.periodKey.trim() || null
         : null,
+    companyCode:
+      typeof query.companyCode === 'string'
+        ? query.companyCode.trim() || null
+        : null,
+    companyName:
+      typeof query.companyName === 'string'
+        ? query.companyName.trim() || null
+        : null,
+    fiscalYearStartMonth: parseBoundedInteger(
+      query.fiscalYearStartMonth,
+      1,
+      12,
+    ),
     limit: parseBoundedInteger(
       query.limit,
       DEFAULT_ACCOUNTING_ICS_EXPORT_LIMIT,
@@ -853,9 +873,43 @@ function parseAccountingIcsExportQuery(query: {
   };
 }
 
+function resolveAccountingIcsTemplateOptions(input: {
+  format: AccountingIcsExportFormat;
+  periodKey: string | null;
+  companyCode: string | null;
+  companyName: string | null;
+  fiscalYearStartMonth: number;
+}): AccountingIcsTemplateOptions | null {
+  if (input.format !== 'ics_template') return null;
+  if (!input.periodKey) {
+    throw new AccountingIcsExportError(
+      'accounting_ics_template_period_key_required',
+      'periodKey is required for ICS template export',
+    );
+  }
+  if (!input.companyCode || !input.companyName) {
+    throw new AccountingIcsExportError(
+      'accounting_ics_template_metadata_required',
+      'companyCode and companyName are required for ICS template export',
+      {
+        companyCode: input.companyCode,
+        companyName: input.companyName,
+      } as Prisma.InputJsonValue,
+    );
+  }
+  return {
+    periodKey: input.periodKey,
+    companyCode: input.companyCode,
+    companyName: input.companyName,
+    fiscalYearStartMonth: input.fiscalYearStartMonth,
+  };
+}
+
 function accountingIcsExportStatusCode(code: string) {
   switch (code) {
     case 'invalid_period_key':
+    case 'accounting_ics_template_period_key_required':
+    case 'accounting_ics_template_metadata_required':
       return 400;
     default:
       return 409;
@@ -2691,27 +2745,36 @@ export async function registerIntegrationRoutes(app: FastifyInstance) {
         req.query as {
           format?: AccountingIcsExportFormat;
           periodKey?: string;
+          companyCode?: string;
+          companyName?: string;
+          fiscalYearStartMonth?: number | string;
           limit?: number | string;
           offset?: number | string;
         },
       );
       try {
+        const templateOptions = resolveAccountingIcsTemplateOptions(parsed);
         const payload = await buildAccountingIcsExportPayload({
           periodKey: parsed.periodKey,
           limit: parsed.limit,
           offset: parsed.offset,
         });
-        if (parsed.format === 'csv') {
+        if (parsed.format === 'csv' || parsed.format === 'ics_template') {
           return reply
             .header(
               'Content-Disposition',
               `attachment; filename="${buildAccountingIcsCsvFilename({
                 exportedUntil: payload.exportedUntil,
                 periodKey: payload.periodKey,
+                format: parsed.format,
               })}"`,
             )
             .type('text/csv; charset=shift_jis')
-            .send(buildAccountingIcsCsv(payload));
+            .send(
+              parsed.format === 'ics_template' && templateOptions
+                ? buildAccountingIcsTemplateCsv(payload, templateOptions)
+                : buildAccountingIcsCsv(payload),
+            );
         }
         return payload;
       } catch (error) {
@@ -2738,6 +2801,9 @@ export async function registerIntegrationRoutes(app: FastifyInstance) {
         req.body as {
           format?: AccountingIcsExportFormat;
           periodKey?: string;
+          companyCode?: string;
+          companyName?: string;
+          fiscalYearStartMonth?: number | string;
           limit?: number | string;
           offset?: number | string;
         },
@@ -2751,7 +2817,14 @@ export async function registerIntegrationRoutes(app: FastifyInstance) {
         periodKey: parsed.periodKey,
         limit: parsed.limit,
         offset: parsed.offset,
-        format: 'csv',
+        format: parsed.format === 'ics_template' ? 'ics_template' : 'csv',
+        ...(parsed.format === 'ics_template'
+          ? {
+              companyCode: parsed.companyCode,
+              companyName: parsed.companyName,
+              fiscalYearStartMonth: parsed.fiscalYearStartMonth,
+            }
+          : {}),
       });
       const respondWithExistingAccountingIcsDispatch = async (
         existing: NonNullable<
@@ -2827,6 +2900,7 @@ export async function registerIntegrationRoutes(app: FastifyInstance) {
       const startedAt = new Date();
       let payload: AccountingIcsExportPayload;
       try {
+        resolveAccountingIcsTemplateOptions(parsed);
         payload = await buildAccountingIcsExportPayload({
           periodKey: parsed.periodKey,
           exportedUntil: startedAt,
@@ -2893,7 +2967,7 @@ export async function registerIntegrationRoutes(app: FastifyInstance) {
             idempotencyKey,
             periodKey: parsed.periodKey,
             exportedCount: payload.exportedCount,
-            format: 'csv',
+            format: parsed.format === 'ics_template' ? 'ics_template' : 'csv',
           } as Prisma.InputJsonValue,
         });
         return {

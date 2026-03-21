@@ -1,6 +1,6 @@
 # 経理上手くんα Pro II 連携: ICS 仕訳 CSV 仕様（repo ベース初期案）
 
-更新日: 2026-03-18
+更新日: 2026-03-19
 関連 Issue: `#1438`, `#1430`, `#1433`, `#1434`, `#1435`, `#1441`, `#1443`
 
 ## 目的
@@ -15,8 +15,13 @@
   - canonical JSON を返す
 - `GET /integrations/accounting/exports/journals?format=csv`
   - `CP932 + CRLF` の ICS CSV を返す
+- `GET /integrations/accounting/exports/journals?format=ics_template`
+  - 受領テンプレート互換の preamble 1〜4 行を含む CSV を返す
+  - `periodKey`, `companyCode`, `companyName` が必須
+  - `fiscalYearStartMonth` は省略時 `1`
 - `POST /integrations/accounting/exports/journals/dispatch`
   - `idempotencyKey` 付きで export 実行結果を保存する
+  - `format=ics_template` 指定時は request hash に template metadata を含める
 - `GET /integrations/accounting/exports/journals/dispatch-logs`
   - dispatch 履歴を返す
 - `GET /integrations/accounting/mapping-rules`
@@ -82,7 +87,7 @@
 4. `対象期間（自/至/月分）`
 5. `30 列のヘッダ`
 
-受領テンプレートの物理レイアウト確認には有用だが、2026-03-16 時点の baseline 実装は 1〜4 行目の preamble を出力しない。現行の CSV writer は、5 行目の 30 列ヘッダだけを正本として出力する。
+受領テンプレートの物理レイアウト確認には有用であり、2026-03-19 時点では `format=ics_template` 指定時に 1〜4 行目の preamble を含む CSV を返せる。既定の canonical CSV は、5 行目の 30 列ヘッダだけを正本として出力する。
 
 ### ヘッダ列（30 列）
 
@@ -230,10 +235,17 @@
 - 文字コード: `CP932`
 - 改行: `CRLF`
 - 行構成:
-  - 1 行目に現物テンプレートと同じ 30 列ヘッダを出力
-  - 2 行目以降に `AccountingJournalStaging.status='ready'` の行を `entryDate asc, eventId asc, lineNo asc` 順で出力
-- 現行 baseline は、受領テンプレートの 1〜4 行目 preamble を出力しない
-- 運用推奨は `template layout` 対応を追加し、対外出力では preamble を含めること
+  - canonical (`format=csv`)
+    - 1 行目に現物テンプレートと同じ 30 列ヘッダを出力
+    - 2 行目以降に `AccountingJournalStaging.status='ready'` の行を `entryDate asc, eventId asc, lineNo asc` 順で出力
+  - template (`format=ics_template`)
+    - 1 行目: `法人`
+    - 2 行目: `仕訳日記帳`
+    - 3 行目: `companyCode, companyName`
+    - 4 行目: 会計年度開始月から導出した `自/至/月分`
+    - 5 行目: 30 列ヘッダ
+    - 6 行目以降: `AccountingJournalStaging.status='ready'` の行を `entryDate asc, eventId asc, lineNo asc` 順で出力
+- 対外出力の既定は `format=ics_template` を推奨し、内部確認・回帰テストでは canonical CSV を継続利用する
 - 初期 baseline で値を埋める列:
   - `日付`
   - `伝票番号`
@@ -319,12 +331,12 @@
 4. `税区分` は必須、`対価/仕入区分/売上業種区分/仕訳区分` は空値固定
 5. `借方枝番/貸方枝番` は勘定科目ごとの条件付き必須
 6. `摘要` は `CP932 120 bytes`、改行/タブ禁止
-7. 対外出力は将来的に preamble を含む `template layout` を正とし、内部 canonical CSV は継続利用する
+7. 対外出力は `format=ics_template` を正とし、内部 canonical CSV は継続利用する
 
 ## 実データ確認が必要な事項
 
 1. `借方名称` / `貸方名称` はコードと一致必須か、任意補助表示か
-2. `template layout` の preamble 1〜4 行が import 必須か
+2. `template layout` の preamble 1〜4 行で、会社コード/会社名/期間書式の厳密一致が必要か
 3. `CP932 + CRLF` が実運用上必須か
 4. `対価`, `仕入区分`, `売上業種区分`, `仕訳区分` に実値が必要か
 5. `摘要` の製品上限値が `120 bytes` より厳しいか
@@ -334,7 +346,7 @@
 - `#1438` は、現物テンプレートが得られたため「列一覧の棚卸し」段階から前進できる。
 - `#1443` の baseline として、ICS CSV export / dispatch / dispatch-log の API を実装した。
 - 2026-03-18 時点で、`決修`、部門コード、税区分、枝番、摘要制約の推奨仕様は決定した。
-- 次の実務上の論点は、`名称列の扱い`、`template layout` の preamble 必須性、補助列の実値要否の確認である。
+- 次の実務上の論点は、`名称列の扱い`、template preamble の厳密書式、補助列の実値要否の確認である。
 - baseline 実装後も、`#1434` と `#1441` の mapping master / 出力判定 / CSV 化ルールを合わせて確定する必要がある。
 
 ## 根拠ファイル
