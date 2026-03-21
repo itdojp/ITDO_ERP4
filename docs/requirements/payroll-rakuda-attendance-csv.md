@@ -80,7 +80,7 @@
 | 所定時間                      | 個人別値なし                                | 未実装   | `defaultWorkdayMinutes` は全体既定値のみ     |
 | 法定内/法定外/深夜/休日残業   | 法定内/法定外/休日は初期対応、深夜は未対応  | 条件付き | 深夜は勤務時刻 source がなく算出不可         |
 | 遅刻/早退/欠勤                | 区分なし                                    | 未実装   | 打刻・所定シフト情報がない                   |
-| 勤怠締め状態                  | `AttendanceClosingPeriod.status` で初期対応 | 条件付き | `PeriodLock` 連動は後続                      |
+| 勤怠締め状態                  | `AttendanceClosingPeriod.status` で初期対応 | 条件付き | global `PeriodLock` 存在を締め前提にする     |
 | 月次勤怠の社員別集計          | `AttendanceMonthlySummary` で初期対応       | 条件付き | 出勤日数/残業内訳/休暇集計まで。深夜は未対応 |
 
 ## 論理項目定義（初期案）
@@ -179,7 +179,8 @@
 - approved leave の明細取得と、給与 CSV に必要な「確定勤怠」責任分界が分かれていない
 - `AttendanceMonthlySummary` は総残業に加え、法定内/法定外/休日労働の区分まで保持する
 - 深夜労働は `TimeEntry` に勤務時刻がないため未実装のまま残る
-- `AttendanceClosingPeriod` は給与向け snapshot 管理に特化しており、既存 `PeriodLock` との連動は未実装
+- `AttendanceClosingPeriod` は給与向け snapshot 管理に特化し、締め実行時は同一 `periodKey` の global `PeriodLock` を必須とする
+- `PeriodLock` 自体の作成/解除は既存 `/period-locks` route で管理し、勤怠締め route 側では自動作成しない
 
 ## 締め処理条件の初期案
 

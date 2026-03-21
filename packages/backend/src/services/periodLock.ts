@@ -1,3 +1,4 @@
+import type { Prisma } from '@prisma/client';
 import { prisma } from './db.js';
 
 export function toPeriodKey(value: Date) {
@@ -9,7 +10,7 @@ export function toPeriodKey(value: Date) {
 export async function findPeriodLock(
   period: string,
   projectId?: string,
-  client = prisma,
+  client: Pick<Prisma.TransactionClient, 'periodLock'> = prisma,
 ) {
   if (!projectId) {
     return client.periodLock.findFirst({

@@ -11,8 +11,16 @@ import { prisma } from '../dist/services/db.js';
 const MIN_DATABASE_URL = 'postgresql://user:pass@localhost:5432/postgres';
 
 function withPrismaStubs(stubs, fn) {
+  const effectiveStubs = {
+    'periodLock.findFirst': async () => ({
+      id: 'lock-001',
+      scope: 'global',
+      projectId: null,
+    }),
+    ...stubs,
+  };
   const restores = [];
-  for (const [path, stub] of Object.entries(stubs)) {
+  for (const [path, stub] of Object.entries(effectiveStubs)) {
     const segments = path.split('.');
     const method = segments.pop();
     if (!method) throw new Error(`invalid stub target: ${path}`);
@@ -270,6 +278,28 @@ test('POST /integrations/hr/attendance/closings returns 409 when period is alrea
   );
 });
 
+test('POST /integrations/hr/attendance/closings returns 409 when period lock is missing', async () => {
+  await withPrismaStubs(
+    {
+      'periodLock.findFirst': async () => null,
+      $transaction: async (callback) => callback(prisma),
+    },
+    async () => {
+      await withServer(async (server) => {
+        const res = await server.inject({
+          method: 'POST',
+          url: '/integrations/hr/attendance/closings',
+          headers: adminHeaders(),
+          payload: { periodKey: '2026-03' },
+        });
+        assert.equal(res.statusCode, 409, res.body);
+        const body = JSON.parse(res.body);
+        assert.equal(body.error, 'attendance_period_lock_required');
+      });
+    },
+  );
+});
+
 test('POST /integrations/hr/attendance/closings reclose supersedes previous version', async () => {
   let capturedUpdate = null;
   let capturedCreate = null;
@@ -474,6 +504,13 @@ test('POST /integrations/hr/attendance/closings returns 409 when leave type mast
 
 test('closeAttendancePeriod returns deterministic conflict on concurrent version collision', async () => {
   const tx = {
+    periodLock: {
+      findFirst: async () => ({
+        id: 'lock-001',
+        scope: 'global',
+        projectId: null,
+      }),
+    },
     attendanceClosingPeriod: {
       findFirst: async () => null,
       create: async () => {
