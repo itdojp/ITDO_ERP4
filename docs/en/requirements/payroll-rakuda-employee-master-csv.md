@@ -1,6 +1,6 @@
 # Payroll Rakuda Integration: Employee Master CSV Specification (Initial Repo-Based Draft)
 
-Updated: 2026-03-15
+Updated: 2026-03-21
 Related issues: `#1436`, `#1430`, `#1433`, `#1434`, `#1435`, `#1439`, `#1442`
 
 ## Purpose
@@ -18,6 +18,8 @@ Related issues: `#1436`, `#1430`, `#1433`, `#1434`, `#1435`, `#1439`, `#1442`
 - The existing `GET /integrations/hr/exports/users` endpoint is an HR/ID integration export, not the payroll-specific CSV itself.
 - `UserAccount.externalId` is reserved for IdP/SCIM and must not double as the payroll employee key.
 - The initial `#1442` implementation adds canonical employee-master export, dispatch, and dispatch logs.
+- The canonical employee-master export schema version is `rakuda_employee_master_v1`.
+- `rakuda_employee_master_v1` means an internally stable ERP4-side canonical export, not a final Payroll Rakuda template-compatible layout.
 
 ## Fields currently available in ERP4
 
@@ -46,28 +48,28 @@ Related issues: `#1436`, `#1430`, `#1433`, `#1434`, `#1435`, `#1439`, `#1442`
 
 The actual CSV column names will be finalized after `#1432`. This section defines the logical fields on the ERP4 side.
 
-| Logical field       | Intended use                   | ERP4 source                                          | Status          | Notes                                            |
-| ------------------- | ------------------------------ | ---------------------------------------------------- | --------------- | ------------------------------------------------ |
-| employeeCode        | Payroll-system employee key    | `UserAccount.employeeCode`                           | Available       | Added by `#1439` foundation work                 |
-| loginId             | Secondary identifier           | `UserAccount.userName`                               | Available       | Not a primary key because login IDs may change   |
-| externalIdentityId  | IdP/SCIM external identity     | `UserAccount.externalId`                             | Available       | Informational only                               |
-| displayName         | Display name                   | `UserAccount.displayName`                            | Available       | Fallback rule is required when missing           |
-| familyName          | Family name                    | `UserAccount.familyName`                             | Available       | No automatic split from `displayName` is planned |
-| givenName           | Given name                     | `UserAccount.givenName`                              | Available       | Same as above                                    |
-| activeFlag          | Active/inactive state          | `UserAccount.active`                                 | Available       | Current state, not termination date              |
-| departmentName      | Department display name        | `UserAccount.department`                             | Conditional     | Name only; code is not implemented               |
-| organizationName    | Organization display name      | `UserAccount.organization`                           | Conditional     | Code system not implemented                      |
-| managerEmployeeCode | Manager employee code          | derived from `managerUserId`                         | Not implemented | Requires manager-to-employee-code conversion     |
-| email               | Contact email                  | `UserAccount.emails`                                 | Conditional     | Primary-selection rule is required               |
-| phone               | Contact phone                  | `UserAccount.phoneNumbers`                           | Conditional     | Primary-selection rule is required               |
-| employmentType      | Employment classification      | `UserAccount.employmentType`                         | Available       | Added by `#1439` foundation work                 |
-| title               | Job title                      | none                                                 | Not implemented | Payroll title vs display title needs design      |
-| joinDate            | Hire date                      | `UserAccount.joinedAt`                               | Available       | Added by `#1439` foundation work                 |
-| leaveDate           | Separation date                | `UserAccount.leftAt`                                 | Available       | Added by `#1439` foundation work                 |
-| payrollGroup        | Payroll/closing scheme         | `EmployeePayrollProfile.payrollType` / `closingType` | Conditional     | Actual CSV mapping still needs confirmation      |
-| defaultWorkMinutes  | Default scheduled work minutes | `LeaveSetting.defaultWorkdayMinutes`                 | Conditional     | Only global default exists today                 |
-| bankAccount         | Payment account                | `EmployeePayrollProfile.bankInfo`                    | Conditional     | Granularity must be confirmed                    |
-| note                | Free note                      | optional                                             | Undecided       | Prefer not to use unless required                |
+| Logical field       | Intended use                   | ERP4 source                                          | Status          | Notes                                                          |
+| ------------------- | ------------------------------ | ---------------------------------------------------- | --------------- | -------------------------------------------------------------- |
+| employeeCode        | Payroll-system employee key    | `UserAccount.employeeCode`                           | Available       | Added by `#1439` foundation work                               |
+| loginId             | Secondary identifier           | `UserAccount.userName`                               | Available       | Not a primary key because login IDs may change                 |
+| externalIdentityId  | IdP/SCIM external identity     | `UserAccount.externalId`                             | Available       | Informational only                                             |
+| displayName         | Display name                   | `UserAccount.displayName`                            | Available       | Fallback rule is required when missing                         |
+| familyName          | Family name                    | `UserAccount.familyName`                             | Available       | No automatic split from `displayName` is planned               |
+| givenName           | Given name                     | `UserAccount.givenName`                              | Available       | Same as above                                                  |
+| activeFlag          | Active/inactive state          | `UserAccount.active`                                 | Available       | Current state, not termination date                            |
+| departmentName      | Department display name        | `UserAccount.department`                             | Conditional     | Name only; code is not implemented                             |
+| organizationName    | Organization display name      | `UserAccount.organization`                           | Conditional     | Code system not implemented                                    |
+| managerEmployeeCode | Manager employee code          | `managerUserId` -> manager `employeeCode`            | Available       | Export stops when the manager employee code cannot be resolved |
+| email               | Contact email                  | `UserAccount.emails`                                 | Conditional     | Primary-selection rule is required                             |
+| phone               | Contact phone                  | `UserAccount.phoneNumbers`                           | Conditional     | Primary-selection rule is required                             |
+| employmentType      | Employment classification      | `UserAccount.employmentType`                         | Available       | Added by `#1439` foundation work                               |
+| title               | Job title                      | none                                                 | Not implemented | Payroll title vs display title needs design                    |
+| joinDate            | Hire date                      | `UserAccount.joinedAt`                               | Available       | Added by `#1439` foundation work                               |
+| leaveDate           | Separation date                | `UserAccount.leftAt`                                 | Available       | Added by `#1439` foundation work                               |
+| payrollGroup        | Payroll/closing scheme         | `EmployeePayrollProfile.payrollType` / `closingType` | Conditional     | Actual CSV mapping still needs confirmation                    |
+| defaultWorkMinutes  | Default scheduled work minutes | `LeaveSetting.defaultWorkdayMinutes`                 | Conditional     | Only global default exists today                               |
+| bankAccount         | Payment account                | `EmployeePayrollProfile.bankInfo`                    | Conditional     | Granularity must be confirmed                                  |
+| note                | Free note                      | optional                                             | Undecided       | Prefer not to use unless required                              |
 
 ## Initial classification of required, optional, and fixed-value fields
 
@@ -105,6 +107,7 @@ The actual CSV column names will be finalized after `#1432`. This section define
 
 - Full export is the initial default.
 - The existing users export supports `updatedSince`, but whether Payroll Rakuda safely accepts differential master import is still unknown.
+- In other words, `updatedSince` is an internal technical contract and does not by itself prove that delta import is operationally safe.
 
 ### Sort order
 
@@ -134,6 +137,7 @@ The actual CSV column names will be finalized after `#1432`. This section define
   - `leaveDate`
   - `departmentName`
   - `organizationName`
+  - `managerEmployeeCode`
   - `departmentCode`
   - `payrollType`
   - `closingType`
@@ -143,6 +147,8 @@ The actual CSV column names will be finalized after `#1432`. This section define
   - `phone`
 - Initial validation
   - Missing `employeeCode` returns `409 employee_master_employee_code_missing`
+  - Unresolved `managerEmployeeCode` returns `409 employee_master_manager_employee_code_missing`
+  - Blank `idempotencyKey` returns `400 invalid_idempotencyKey`
 - Dispatch behavior
   - Supports `idempotencyKey` replay / conflict / in-progress handling
   - Execution history is stored in `HrEmployeeMasterExportLog`
@@ -157,16 +163,16 @@ The actual CSV column names will be finalized after `#1432`. This section define
 
 ### Parts that can already be reused from the existing users export
 
-| CSV logical column  | Current export value | Notes                               |
-| ------------------- | -------------------- | ----------------------------------- |
-| loginId             | `userName`           | Reusable as-is                      |
-| displayName         | `displayName`        | Fallback rule needed when null      |
-| familyName          | `familyName`         | Null handling must be confirmed     |
-| givenName           | `givenName`          | Null handling must be confirmed     |
-| activeFlag          | `active`             | May require code conversion         |
-| departmentName      | `department`         | Name only; code mapping is separate |
-| organizationName    | `organization`       | Same as above                       |
-| managerEmployeeCode | `managerUserId`      | Requires employee-code conversion   |
+| CSV logical column  | Current export value                   | Notes                                                                                                                   |
+| ------------------- | -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| loginId             | `userName`                             | Reusable as-is                                                                                                          |
+| displayName         | `displayName` or fallback display name | `displayName` is preferred; if blank, use `familyName + " " + givenName`, and if both are blank fall back to `userName` |
+| familyName          | `familyName`                           | Null handling must be confirmed                                                                                         |
+| givenName           | `givenName`                            | Null handling must be confirmed                                                                                         |
+| activeFlag          | `active`                               | May require code conversion                                                                                             |
+| departmentName      | `department`                           | Name only; code mapping is separate                                                                                     |
+| organizationName    | `organization`                         | Same as above                                                                                                           |
+| managerEmployeeCode | `managerUserId`                        | Converted to the manager employee code before export                                                                    |
 
 ### Master data that still needs dedicated implementation
 
@@ -185,7 +191,7 @@ The actual CSV column names will be finalized after `#1432`. This section define
 ### Positive cases
 
 - An active employee is exported as one row.
-- `displayName`, `familyName`, and `givenName` follow the documented fallback rule.
+- `displayName`, `familyName`, `givenName`, and `userName` follow the documented fallback rule.
 - `updatedSince` correctly narrows the candidate set.
 
 ### Negative cases

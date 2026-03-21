@@ -156,7 +156,7 @@
 ### 実装済みエラーコード
 
 - `invalid_updatedSince`
-  - `updatedSince` が ISO-8601 datetime として不正
+  - `updatedSince` が RFC 3339 `date-time` 形式の日時文字列として不正
 - `employee_master_employee_code_missing`
   - 対象社員の `employeeCode` が未設定
 - `employee_master_manager_employee_code_missing`
@@ -165,33 +165,35 @@
   - 同一 `idempotencyKey` の export が実行中
 - `idempotency_conflict`
   - 同一 `idempotencyKey` に対して request hash が不一致
+- `invalid_idempotencyKey`
+  - `idempotencyKey` が trim 後に空文字のときの 400
 
 ## canonical v1 の出力範囲
 
 `rakuda_employee_master_v1` は、現物テンプレート未回収の段階で ERP4 側が安定供給できる列だけを固定した canonical export である。
 
-| 列名                | 出力 | source                                                | 備考                                                             |
-| ------------------- | ---- | ----------------------------------------------------- | ---------------------------------------------------------------- |
-| employeeCode        | 出力 | `UserAccount.employeeCode`                            | 未設定時は `409 employee_master_employee_code_missing`           |
-| loginId             | 出力 | `UserAccount.userName`                                | 補助識別子。給与キーではない                                     |
-| externalIdentityId  | 出力 | `UserAccount.externalId`                              | IdP/SCIM 用。給与専用キーではない                                |
-| displayName         | 出力 | `displayName` 優先、未設定時は `familyName+givenName` | 氏名分解は逆算しない                                             |
-| familyName          | 出力 | `UserAccount.familyName`                              | 未設定時は空値                                                   |
-| givenName           | 出力 | `UserAccount.givenName`                               | 未設定時は空値                                                   |
-| activeFlag          | 出力 | `UserAccount.active`                                  | `1` / `0` に正規化                                               |
-| employmentType      | 出力 | `UserAccount.employmentType`                          | `#1439` で追加済み                                               |
-| joinDate            | 出力 | `UserAccount.joinedAt`                                | `YYYY-MM-DD`                                                     |
-| leaveDate           | 出力 | `UserAccount.leftAt`                                  | `YYYY-MM-DD`                                                     |
-| departmentName      | 出力 | `UserAccount.department`                              | 表示名のみ。コード体系は別論点                                   |
-| organizationName    | 出力 | `UserAccount.organization`                            | 表示名のみ。コード体系は別論点                                   |
-| managerEmployeeCode | 出力 | `managerUserId` -> 上長 `employeeCode`                | 解決不能時は `409 employee_master_manager_employee_code_missing` |
-| departmentCode      | 出力 | `EmployeePayrollProfile.departmentCode`               | 未設定時は空値                                                   |
-| payrollType         | 出力 | `EmployeePayrollProfile.payrollType`                  | 実コード体系は未確定                                             |
-| closingType         | 出力 | `EmployeePayrollProfile.closingType`                  | 実コード体系は未確定                                             |
-| paymentType         | 出力 | `EmployeePayrollProfile.paymentType`                  | 実コード体系は未確定                                             |
-| titleCode           | 出力 | `EmployeePayrollProfile.titleCode`                    | 名称ではなく code を出す                                         |
-| email               | 出力 | `UserAccount.emails`                                  | primary 優先                                                     |
-| phone               | 出力 | `UserAccount.phoneNumbers`                            | primary 優先                                                     |
+| 列名                | 出力 | source                                                                                   | 備考                                                             |
+| ------------------- | ---- | ---------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| employeeCode        | 出力 | `UserAccount.employeeCode`                                                               | 未設定時は `409 employee_master_employee_code_missing`           |
+| loginId             | 出力 | `UserAccount.userName`                                                                   | 補助識別子。給与キーではない                                     |
+| externalIdentityId  | 出力 | `UserAccount.externalId`                                                                 | IdP/SCIM 用。給与専用キーではない                                |
+| displayName         | 出力 | `displayName` を優先し、空の場合は `familyName + " " + givenName`、両方空なら `userName` | 氏名分解は逆算しない                                             |
+| familyName          | 出力 | `UserAccount.familyName`                                                                 | 未設定時は空値                                                   |
+| givenName           | 出力 | `UserAccount.givenName`                                                                  | 未設定時は空値                                                   |
+| activeFlag          | 出力 | `UserAccount.active`                                                                     | `1` / `0` に正規化                                               |
+| employmentType      | 出力 | `UserAccount.employmentType`                                                             | `#1439` で追加済み                                               |
+| joinDate            | 出力 | `UserAccount.joinedAt`                                                                   | `YYYY-MM-DD`                                                     |
+| leaveDate           | 出力 | `UserAccount.leftAt`                                                                     | `YYYY-MM-DD`                                                     |
+| departmentName      | 出力 | `UserAccount.department`                                                                 | 表示名のみ。コード体系は別論点                                   |
+| organizationName    | 出力 | `UserAccount.organization`                                                               | 表示名のみ。コード体系は別論点                                   |
+| managerEmployeeCode | 出力 | `managerUserId` -> 上長 `employeeCode`                                                   | 解決不能時は `409 employee_master_manager_employee_code_missing` |
+| departmentCode      | 出力 | `EmployeePayrollProfile.departmentCode`                                                  | 未設定時は空値                                                   |
+| payrollType         | 出力 | `EmployeePayrollProfile.payrollType`                                                     | 実コード体系は未確定                                             |
+| closingType         | 出力 | `EmployeePayrollProfile.closingType`                                                     | 実コード体系は未確定                                             |
+| paymentType         | 出力 | `EmployeePayrollProfile.paymentType`                                                     | 実コード体系は未確定                                             |
+| titleCode           | 出力 | `EmployeePayrollProfile.titleCode`                                                       | 名称ではなく code を出す                                         |
+| email               | 出力 | `UserAccount.emails`                                                                     | primary 優先                                                     |
+| phone               | 出力 | `UserAccount.phoneNumbers`                                                               | primary 優先                                                     |
 
 `schemaVersion` は CSV 列としては出力せず、JSON payload のメタ情報として `rakuda_employee_master_v1` を返す。CSV ファイル内では暗黙の前提として扱う。
 
