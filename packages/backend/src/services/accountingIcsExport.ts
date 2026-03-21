@@ -191,6 +191,13 @@ function buildVoucherNo(input: {
   return `${input.sourceTable}-${input.sourceId}`;
 }
 
+function defaultMappingKey(mappingKey: string) {
+  const normalized = normalizeText(mappingKey);
+  const separatorIndex = normalized.indexOf(':');
+  if (separatorIndex <= 0) return normalized;
+  return `${normalized.slice(0, separatorIndex)}:default`;
+}
+
 function resolvePeriodBounds(periodKey?: string | null) {
   if (!periodKey) return null;
   if (!PERIOD_KEY_PATTERN.test(periodKey)) {
@@ -400,6 +407,7 @@ export async function buildAccountingIcsExportPayload(input: {
     select: {
       id: true,
       eventId: true,
+      mappingKey: true,
       lineNo: true,
       entryDate: true,
       amount: true,
@@ -426,10 +434,42 @@ export async function buildAccountingIcsExportPayload(input: {
     skip: input.offset,
   });
 
+  const ruleKeys = [
+    ...new Set(
+      rows.flatMap((row) => {
+        const mappingKey = normalizeText(row.mappingKey);
+        if (!mappingKey) return [];
+        const fallbackKey = defaultMappingKey(mappingKey);
+        return fallbackKey && fallbackKey !== mappingKey
+          ? [mappingKey, fallbackKey]
+          : [mappingKey];
+      }),
+    ),
+  ];
+  const rules = ruleKeys.length
+    ? await client.accountingMappingRule.findMany({
+        where: {
+          mappingKey: { in: ruleKeys },
+          isActive: true,
+        },
+        select: {
+          mappingKey: true,
+          debitAccountName: true,
+          creditAccountName: true,
+        },
+      })
+    : [];
+  const ruleMap = new Map(rules.map((rule) => [rule.mappingKey, rule]));
+
   const items = rows.map((row) => {
     validateReadyRow(row);
     const debitAccountCode = normalizeText(row.debitAccountCode);
     const creditAccountCode = normalizeText(row.creditAccountCode);
+    const mappingKey = normalizeText(row.mappingKey);
+    const rule =
+      ruleMap.get(mappingKey) ??
+      ruleMap.get(defaultMappingKey(mappingKey)) ??
+      null;
     const description =
       normalizeText(row.description) ||
       normalizeText(row.event.description) ||
@@ -458,12 +498,14 @@ export async function buildAccountingIcsExportPayload(input: {
       }),
       departmentCode: normalizeText(row.departmentCode),
       debitAccountCode,
-      debitAccountName: debitAccountCode,
+      debitAccountName:
+        normalizeText(rule?.debitAccountName) || debitAccountCode,
       debitSubaccountCode: normalizeText(row.debitSubaccountCode),
       debitSubaccountSummary: '',
       debitSubaccountKana: '',
       creditAccountCode,
-      creditAccountName: creditAccountCode,
+      creditAccountName:
+        normalizeText(rule?.creditAccountName) || creditAccountCode,
       creditSubaccountCode: normalizeText(row.creditSubaccountCode),
       creditSubaccountSummary: '',
       creditSubaccountKana: '',

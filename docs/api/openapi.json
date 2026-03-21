@@ -6906,6 +6906,10 @@
                     "minLength": 1,
                     "type": "string"
                   },
+                  "creditAccountName": {
+                    "nullable": true,
+                    "type": "string"
+                  },
                   "creditSubaccountCode": {
                     "nullable": true,
                     "type": "string"
@@ -6913,6 +6917,10 @@
                   "debitAccountCode": {
                     "maxLength": 100,
                     "minLength": 1,
+                    "type": "string"
+                  },
+                  "debitAccountName": {
+                    "nullable": true,
                     "type": "string"
                   },
                   "debitSubaccountCode": {
@@ -6989,6 +6997,10 @@
                     "minLength": 1,
                     "type": "string"
                   },
+                  "creditAccountName": {
+                    "nullable": true,
+                    "type": "string"
+                  },
                   "creditSubaccountCode": {
                     "nullable": true,
                     "type": "string"
@@ -6996,6 +7008,10 @@
                   "debitAccountCode": {
                     "maxLength": 100,
                     "minLength": 1,
+                    "type": "string"
+                  },
+                  "debitAccountName": {
+                    "nullable": true,
                     "type": "string"
                   },
                   "debitSubaccountCode": {

@@ -7,9 +7,11 @@ type AccountingMappingRuleRecord = {
   id: string;
   mappingKey: string;
   debitAccountCode: string;
+  debitAccountName: string | null;
   debitSubaccountCode: string | null;
   requireDebitSubaccountCode: boolean;
   creditAccountCode: string;
+  creditAccountName: string | null;
   creditSubaccountCode: string | null;
   requireCreditSubaccountCode: boolean;
   departmentCode: string | null;
@@ -63,9 +65,11 @@ export async function resolveAccountingMappingRule(
       id: true,
       mappingKey: true,
       debitAccountCode: true,
+      debitAccountName: true,
       debitSubaccountCode: true,
       requireDebitSubaccountCode: true,
       creditAccountCode: true,
+      creditAccountName: true,
       creditSubaccountCode: true,
       requireCreditSubaccountCode: true,
       departmentCode: true,
@@ -213,9 +217,11 @@ export async function reapplyAccountingMappingRules(options: {
           id: true,
           mappingKey: true,
           debitAccountCode: true,
+          debitAccountName: true,
           debitSubaccountCode: true,
           requireDebitSubaccountCode: true,
           creditAccountCode: true,
+          creditAccountName: true,
           creditSubaccountCode: true,
           requireCreditSubaccountCode: true,
           departmentCode: true,

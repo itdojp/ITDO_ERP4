@@ -94,7 +94,7 @@
   - `idempotencyKey`, `requestHash`, `reexportOfId`, `periodKey`, `exportedUntil`, `exportedCount`
 - ICS 仕訳 mapping rule
   - `AccountingMappingRule`
-  - `mappingKey`, `debitAccountCode`, `debitSubaccountCode`, `creditAccountCode`, `creditSubaccountCode`, `taxCode`, `departmentCode`, `requireDepartmentCode`, `requireDebitSubaccountCode`, `requireCreditSubaccountCode`, `isActive`
+  - `mappingKey`, `debitAccountCode`, `debitAccountName`, `debitSubaccountCode`, `creditAccountCode`, `creditAccountName`, `creditSubaccountCode`, `taxCode`, `departmentCode`, `requireDepartmentCode`, `requireDebitSubaccountCode`, `requireCreditSubaccountCode`, `isActive`
   - `GET /integrations/accounting/mapping-rules`
   - `POST /integrations/accounting/mapping-rules`
   - `PATCH /integrations/accounting/mapping-rules/:id`

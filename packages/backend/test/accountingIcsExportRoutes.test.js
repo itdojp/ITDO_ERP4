@@ -48,12 +48,20 @@ test('GET /integrations/accounting/exports/journals returns canonical payload', 
         capturedCount = args;
         return 0;
       },
+      'accountingMappingRule.findMany': async () => [
+        {
+          mappingKey: 'expense_approved:travel',
+          debitAccountName: '旅費交通費',
+          creditAccountName: '普通預金',
+        },
+      ],
       'accountingJournalStaging.findMany': async (args) => {
         capturedFindMany = args;
         return [
           {
             id: 'stg-001',
             eventId: 'evt-001',
+            mappingKey: 'expense_approved:travel',
             lineNo: 1,
             entryDate: new Date('2026-02-14T00:00:00.000Z'),
             amount: '12000',
@@ -95,7 +103,8 @@ test('GET /integrations/accounting/exports/journals returns canonical payload', 
         assert.equal(body.exportedCount, 1);
         assert.equal(body.items[0].voucherNo, 'EXP-202602-001');
         assert.equal(body.items[0].entryDate, '2026/02/14');
-        assert.equal(body.items[0].debitAccountName, '6001');
+        assert.equal(body.items[0].debitAccountName, '旅費交通費');
+        assert.equal(body.items[0].creditAccountName, '普通預金');
       } finally {
         await server.close();
       }
