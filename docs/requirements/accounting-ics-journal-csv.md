@@ -1,6 +1,6 @@
 # 経理上手くんα Pro II 連携: ICS 仕訳 CSV 仕様（repo ベース初期案）
 
-更新日: 2026-03-19
+更新日: 2026-03-21
 関連 Issue: `#1438`, `#1430`, `#1433`, `#1434`, `#1435`, `#1441`, `#1443`
 
 ## 目的
@@ -290,17 +290,18 @@
 
 ## v1 変換ルール表
 
-| 論点                    | v1 の確定ルール                                                                                  | 根拠                                                        |
-| ----------------------- | ------------------------------------------------------------------------------------------------ | ----------------------------------------------------------- |
-| `日付`                  | `AccountingJournalStaging.entryDate` を `YYYY/MM/DD` で出力                                      | `formatDateSlash()`                                         |
-| `伝票番号`              | `event.externalRef` を優先し、未設定時は `sourceTable-sourceId`                                  | `buildVoucherNo()`                                          |
-| `借方名称` / `貸方名称` | `AccountingJournalStaging` に snapshot した名称を採用し、blank/null の場合のみコードへ fallback  | `#1487` 実装                                                |
-| `部門ｺｰﾄﾞ`              | `departmentCode` をそのまま出力し、required rule があるのに未設定なら `pending_mapping` に留める | `AccountingMappingRule.requireDepartmentCode`               |
-| `借方枝番` / `貸方枝番` | staging 上の枝番を出力し、required rule があるのに未設定なら `pending_mapping` に留める          | `requireDebitSubaccountCode`, `requireCreditSubaccountCode` |
-| `金額`                  | `AccountingJournalStaging.amount` を正の値としてそのまま文字列化                                 | `validateReadyRow()`                                        |
-| `摘要`                  | `description` をそのまま出力し、`CP932` 非対応・改行/タブ・120 bytes 超過は export 停止          | `validateDescription()`                                     |
-| `税区分`                | `taxCode` 必須。未設定の ready 行は export 停止                                                  | `validateReadyRow()`                                        |
-| canonical/template 切替 | `format=csv` は header-only、`format=ics_template` は 1〜4 行 preamble 付き                      | `toAccountingIcsCsv()`, `toAccountingIcsTemplateCsv()`      |
+| 論点                           | v1 の確定ルール                                                                                                                 | 根拠                                                        |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
+| `日付`                         | `AccountingJournalStaging.entryDate` を `YYYY/MM/DD` で出力                                                                     | `formatDateSlash()`                                         |
+| `伝票番号`                     | `event.externalRef` を優先し、未設定時は `sourceTable-sourceId`                                                                 | `buildVoucherNo()`                                          |
+| `借方名称` / `貸方名称`        | `AccountingJournalStaging` に snapshot した名称を採用し、blank/null の場合のみコードへ fallback                                 | `#1487` 実装                                                |
+| `部門ｺｰﾄﾞ`                     | `departmentCode` をそのまま出力し、required rule があるのに未設定なら `pending_mapping` に留める                                | `AccountingMappingRule.requireDepartmentCode`               |
+| `借方枝番` / `貸方枝番`        | staging 上の枝番を出力し、required rule があるのに未設定なら `pending_mapping` に留める                                         | `requireDebitSubaccountCode`, `requireCreditSubaccountCode` |
+| `金額`                         | `AccountingJournalStaging.amount` を正の値としてそのまま文字列化                                                                | `validateReadyRow()`                                        |
+| `摘要`                         | `description` をそのまま出力し、`CP932` 非対応・改行/タブ・120 bytes 超過は export 停止                                         | `validateDescription()`                                     |
+| `税区分`                       | `taxCode` 必須。未設定の ready 行は export 停止                                                                                 | `validateReadyRow()`                                        |
+| canonical/template 切替        | `format=csv` は 30 列ヘッダ + ready 行のみ（preamble なし）、`format=ics_template` は 1〜4 行 preamble + 30 列ヘッダ + ready 行 | `toAccountingIcsCsv()`, `toAccountingIcsTemplateCsv()`      |
+| template preamble sanitization | `companyCode` / `companyName` は `=`, `+`, `-`, `@` で始まる場合に先頭へ `'` を付与する                                         | `sanitizeSpreadsheetCell()`                                 |
 
 ## sample fixture
 
@@ -310,6 +311,7 @@
   - `format=ics_template` の preamble 1〜4 行 + 30 列ヘッダ + 1 行 sample
 - いずれも ERP4 実装の v1 契約を説明するための fixture であり、受領した原本テンプレートそのものではない
 - 原本テンプレート断片との対応確認は `21ki_ics_journal_header_sample.csv` と `21ki_ics_journal_template_excerpt.csv` を使う
+- 上記 fixture CSV はリポジトリ上では `UTF-8 + LF` で保存している。一方、API レスポンスの ICS CSV は `CP932 + CRLF` であるため、バイト列レベルで diff を取る場合はエンコーディングと改行コードを揃えること
 
 ## エラーパターンの初期分類
 
@@ -352,18 +354,18 @@
 
 ## テストケース一覧（v1）
 
-| ID     | 観点                       | 条件                                                             | 期待結果                                        |
-| ------ | -------------------------- | ---------------------------------------------------------------- | ----------------------------------------------- |
-| ICS-01 | canonical export           | `ready` 行のみ、`periodKey=YYYY-MM`                              | 30 列ヘッダ + CSV 行を `CP932 + CRLF` で返す    |
-| ICS-02 | template export            | `format=ics_template` + `periodKey/companyCode/companyName` 指定 | preamble 1〜4 行 + 30 列ヘッダ + CSV 行を返す   |
-| ICS-03 | invalid period             | `periodKey=2026-13`                                              | `400 invalid_period_key`                        |
-| ICS-04 | template metadata missing  | `format=ics_template` で `companyCode` または `companyName` 欠落 | `400 accounting_ics_template_metadata_required` |
-| ICS-05 | incomplete scope           | `pending_mapping` または `blocked` 行が scope に残る             | `409 accounting_journal_mapping_incomplete`     |
-| ICS-06 | incomplete ready row       | `debit/credit/taxCode/amount` のいずれか不足                     | `409 accounting_journal_ready_row_incomplete`   |
-| ICS-07 | invalid description        | 改行・タブ・`CP932` 非対応文字・120 bytes 超過                   | `409 accounting_journal_description_invalid`    |
-| ICS-08 | idempotent dispatch replay | 同一 `idempotencyKey` + 同一条件で再実行                         | 既存成功 log を replay                          |
-| ICS-09 | redispatch                 | 成功済み export log を指定                                       | 新規 log を作成し `reexportOfId` を保持         |
-| ICS-10 | live rule drift 防止       | rule 名称変更後も staging snapshot が残る                        | export 結果は staging 時点の名称を維持          |
+| ID     | 観点                       | 条件                                                             | 期待結果                                                        |
+| ------ | -------------------------- | ---------------------------------------------------------------- | --------------------------------------------------------------- |
+| ICS-01 | canonical export           | `ready` 行のみ、`periodKey=YYYY-MM`                              | 30 列ヘッダ + CSV 行を `CP932 + CRLF` で返す                    |
+| ICS-02 | template export            | `format=ics_template` + `periodKey/companyCode/companyName` 指定 | preamble 1〜4 行 + 30 列ヘッダ + CSV 行を `CP932 + CRLF` で返す |
+| ICS-03 | invalid period             | `periodKey=2026-13`                                              | `400 invalid_period_key`                                        |
+| ICS-04 | template metadata missing  | `format=ics_template` で `companyCode` または `companyName` 欠落 | `400 accounting_ics_template_metadata_required`                 |
+| ICS-05 | incomplete scope           | `pending_mapping` または `blocked` 行が scope に残る             | `409 accounting_journal_mapping_incomplete`                     |
+| ICS-06 | incomplete ready row       | `debit/credit/taxCode/amount` のいずれか不足                     | `409 accounting_journal_ready_row_incomplete`                   |
+| ICS-07 | invalid description        | 改行・タブ・`CP932` 非対応文字・120 bytes 超過                   | `409 accounting_journal_description_invalid`                    |
+| ICS-08 | idempotent dispatch replay | 同一 `idempotencyKey` + 同一条件で再実行                         | 既存成功 log を replay                                          |
+| ICS-09 | redispatch                 | 成功済み export log を指定                                       | 新規 log を作成し `reexportOfId` を保持                         |
+| ICS-10 | live rule drift 防止       | rule 名称変更後も staging snapshot が残る                        | export 結果は staging 時点の名称を維持                          |
 
 ## 2026-03-18 時点の推奨仕様
 
