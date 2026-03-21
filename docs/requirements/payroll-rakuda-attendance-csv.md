@@ -126,7 +126,10 @@
 | paidLeaveMinutes               | 出力     | `AttendanceMonthlySummary.paidLeaveMinutes`               | 有給系合計               |
 | unpaidLeaveMinutes             | 出力     | `AttendanceMonthlySummary.unpaidLeaveMinutes`             | 無給系合計               |
 | totalLeaveMinutes              | 出力     | `AttendanceMonthlySummary.totalLeaveMinutes`              | 休暇合計                 |
-| schemaVersion                  | 出力     | 固定値                                                    | `rakuda_attendance_v1`   |
+| sourceTimeEntryCount           | 出力     | `AttendanceMonthlySummary.sourceTimeEntryCount`           | 元 `TimeEntry` 件数      |
+| sourceLeaveRequestCount        | 出力     | `AttendanceMonthlySummary.sourceLeaveRequestCount`        | 元 `LeaveRequest` 件数   |
+
+本 CSV のスキーマバージョン（`schemaVersion`）は列としては出力せず、API の JSON payload のメタ情報として固定値 `rakuda_attendance_v1` を返す。CSV ファイル内では暗黙の前提として扱う。
 
 ## canonical v1 で未対応の項目
 
@@ -134,7 +137,7 @@
 
 | 項目              | 未対応理由                                       | 後続論点              |
 | ----------------- | ------------------------------------------------ | --------------------- |
-| deepNightMinutes  | `TimeEntry` に勤務時刻 source がなく深夜判定不可 | 打刻/勤怠 source 追加 |
+| lateNightMinutes  | `TimeEntry` に勤務時刻 source がなく深夜判定不可 | 打刻/勤怠 source 追加 |
 | tardinessMinutes  | 遅刻判定に必要な始業時刻・所定シフト情報がない   | 勤務体系/シフト整備   |
 | earlyLeaveMinutes | 早退判定に必要な終業時刻・所定シフト情報がない   | 同上                  |
 | absenceDays       | 欠勤判定に必要な所定出勤日と打刻正本が不足       | 勤怠正本モデル拡張    |
