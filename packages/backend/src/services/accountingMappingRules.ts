@@ -7,9 +7,11 @@ type AccountingMappingRuleRecord = {
   id: string;
   mappingKey: string;
   debitAccountCode: string;
+  debitAccountName: string | null;
   debitSubaccountCode: string | null;
   requireDebitSubaccountCode: boolean;
   creditAccountCode: string;
+  creditAccountName: string | null;
   creditSubaccountCode: string | null;
   requireCreditSubaccountCode: boolean;
   departmentCode: string | null;
@@ -22,7 +24,7 @@ function normalizeText(value: unknown) {
   return typeof value === 'string' ? value.trim() : '';
 }
 
-function defaultMappingKey(mappingKey: string) {
+export function defaultMappingKey(mappingKey: string) {
   const normalized = normalizeText(mappingKey);
   const separatorIndex = normalized.indexOf(':');
   if (separatorIndex <= 0) return normalized;
@@ -63,9 +65,11 @@ export async function resolveAccountingMappingRule(
       id: true,
       mappingKey: true,
       debitAccountCode: true,
+      debitAccountName: true,
       debitSubaccountCode: true,
       requireDebitSubaccountCode: true,
       creditAccountCode: true,
+      creditAccountName: true,
       creditSubaccountCode: true,
       requireCreditSubaccountCode: true,
       departmentCode: true,
@@ -88,8 +92,10 @@ export function buildAccountingStagingMappingResult(options: {
 }): {
   status: AccountingJournalStagingStatus;
   debitAccountCode: string | null;
+  debitAccountName: string | null;
   debitSubaccountCode: string | null;
   creditAccountCode: string | null;
+  creditAccountName: string | null;
   creditSubaccountCode: string | null;
   departmentCode: string | null;
   taxCode: string | null;
@@ -99,11 +105,13 @@ export function buildAccountingStagingMappingResult(options: {
     .map((code) => normalizeText(code))
     .filter((code, index, values) => code && values.indexOf(code) === index);
   const debitAccountCode = normalizeText(options.rule?.debitAccountCode);
+  const debitAccountName = normalizeText(options.rule?.debitAccountName);
   const debitSubaccountCode = normalizeText(options.rule?.debitSubaccountCode);
   const requireDebitSubaccountCode = Boolean(
     options.rule?.requireDebitSubaccountCode,
   );
   const creditAccountCode = normalizeText(options.rule?.creditAccountCode);
+  const creditAccountName = normalizeText(options.rule?.creditAccountName);
   const creditSubaccountCode = normalizeText(
     options.rule?.creditSubaccountCode,
   );
@@ -154,8 +162,10 @@ export function buildAccountingStagingMappingResult(options: {
   return {
     status,
     debitAccountCode: debitAccountCode || null,
+    debitAccountName: debitAccountName || null,
     debitSubaccountCode: debitSubaccountCode || null,
     creditAccountCode: creditAccountCode || null,
+    creditAccountName: creditAccountName || null,
     creditSubaccountCode: creditSubaccountCode || null,
     departmentCode: departmentCode || null,
     taxCode: taxCode || null,
@@ -213,9 +223,11 @@ export async function reapplyAccountingMappingRules(options: {
           id: true,
           mappingKey: true,
           debitAccountCode: true,
+          debitAccountName: true,
           debitSubaccountCode: true,
           requireDebitSubaccountCode: true,
           creditAccountCode: true,
+          creditAccountName: true,
           creditSubaccountCode: true,
           requireCreditSubaccountCode: true,
           departmentCode: true,
@@ -250,8 +262,10 @@ export async function reapplyAccountingMappingRules(options: {
       data: {
         status: next.status,
         debitAccountCode: next.debitAccountCode,
+        debitAccountName: next.debitAccountName,
         debitSubaccountCode: next.debitSubaccountCode,
         creditAccountCode: next.creditAccountCode,
+        creditAccountName: next.creditAccountName,
         creditSubaccountCode: next.creditSubaccountCode,
         departmentCode: next.departmentCode,
         taxCode: next.taxCode,

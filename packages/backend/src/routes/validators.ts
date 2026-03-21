@@ -1961,11 +1961,13 @@ const accountingMappingRuleBodySchema = Type.Object(
   {
     mappingKey: Type.String({ minLength: 1, maxLength: 200 }),
     debitAccountCode: Type.String({ minLength: 1, maxLength: 100 }),
+    debitAccountName: Type.Optional(Type.Union([Type.String(), Type.Null()])),
     debitSubaccountCode: Type.Optional(
       Type.Union([Type.String(), Type.Null()]),
     ),
     requireDebitSubaccountCode: Type.Optional(Type.Boolean()),
     creditAccountCode: Type.String({ minLength: 1, maxLength: 100 }),
+    creditAccountName: Type.Optional(Type.Union([Type.String(), Type.Null()])),
     creditSubaccountCode: Type.Optional(
       Type.Union([Type.String(), Type.Null()]),
     ),

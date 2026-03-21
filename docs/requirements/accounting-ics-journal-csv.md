@@ -144,13 +144,13 @@
 | 決修         | 決算/修正区分       | 空値固定                                    | 実装済み | 通常取込の baseline は空値固定               |
 | 伝票番号     | 伝票識別子          | `externalRef` または `sourceTable-sourceId` | 実装済み | 再出力でも不変の値を使う                     |
 | 部門ｺｰﾄﾞ     | 部門軸              | project/customer/vendor/employee 由来       | 条件付き | 共通部門コードか mapping 必須                |
-| 借方ｺｰﾄﾞ     | 借方勘定科目        | 会計 mapping master                         | 未実装   | `#1441` 依存                                 |
-| 借方名称     | 借方科目名          | mapping master または固定名称               | 未実装   | コードと対で管理したい                       |
+| 借方ｺｰﾄﾞ     | 借方勘定科目        | 会計 mapping master                         | 実装済み | `#1441` / `#1443` で export 済み             |
+| 借方名称     | 借方科目名          | mapping master (`debitAccountName`)         | 実装済み | 未設定時は借方コードへ fallback              |
 | 借方枝番     | 借方補助科目        | 会計 mapping master                         | 条件付き | 勘定科目ごとの必須フラグで判定               |
 | 借方枝番摘要 | 借方補助摘要        | 取引先/案件名等                             | 条件付き | 用途未確定                                   |
 | 借方枝番ｶﾅ   | 借方補助カナ        | マスタ側で保持                              | 未実装   | 現行 ERP4 には保持なし                       |
-| 貸方ｺｰﾄﾞ     | 貸方勘定科目        | 会計 mapping master                         | 未実装   | `#1441` 依存                                 |
-| 貸方名称     | 貸方科目名          | mapping master または固定名称               | 未実装   | 同上                                         |
+| 貸方ｺｰﾄﾞ     | 貸方勘定科目        | 会計 mapping master                         | 実装済み | `#1441` / `#1443` で export 済み             |
+| 貸方名称     | 貸方科目名          | mapping master (`creditAccountName`)        | 実装済み | 未設定時は貸方コードへ fallback              |
 | 貸方枝番     | 貸方補助科目        | 会計 mapping master                         | 条件付き | 同上                                         |
 | 貸方枝番摘要 | 貸方補助摘要        | 取引先/案件名等                             | 条件付き | 用途未確定                                   |
 | 貸方枝番ｶﾅ   | 貸方補助カナ        | マスタ側で保持                              | 未実装   | 現行 ERP4 には保持なし                       |
@@ -214,6 +214,7 @@
 - 2026-03-16 時点の baseline では、`expenses` / `invoices` / `vendor_invoices` の承認完了時に `AccountingEvent` と `AccountingJournalStaging` を生成し、未マッピング状態を `pending_mapping` または `blocked` で保持する
 - 2026-03-17 時点の baseline では、`AccountingMappingRule` を `mappingKey` 単位で保持し、exact match または `<eventKind>:default` fallback で `debit/credit/tax/department` を自動適用する
 - 2026-03-18 時点の拡張では、`AccountingMappingRule` に `requireDepartmentCode` / `requireDebitSubaccountCode` / `requireCreditSubaccountCode` を持たせ、条件付き必須を rule 側で判定する
+- 2026-03-21 時点の拡張では、`AccountingMappingRule` に `debitAccountName` / `creditAccountName` を持たせ、staging 行へ snapshot した名称を ICS CSV の名称列へ反映する
 - `#1443` の baseline 実装では、`ready` 化された staging 行だけを CSV に変換する
 
 ### 最低限必要な mapping
@@ -250,10 +251,10 @@
   - `日付`
   - `伝票番号`
   - `借方ｺｰﾄﾞ`
-  - `借方名称`（現行 baseline は借方コードと同値）
+  - `借方名称`（`debitAccountName` があれば採用し、未設定時は借方コードへ fallback）
   - `借方枝番`
   - `貸方ｺｰﾄﾞ`
-  - `貸方名称`（現行 baseline は貸方コードと同値）
+  - `貸方名称`（`creditAccountName` があれば採用し、未設定時は貸方コードへ fallback）
   - `貸方枝番`
   - `金額`
   - `摘要`
@@ -335,7 +336,7 @@
 
 ## 実データ確認が必要な事項
 
-1. `借方名称` / `貸方名称` はコードと一致必須か、任意補助表示か
+1. `借方名称` / `貸方名称` の正式値源を会計事務所運用と一致させる必要があるか
 2. `template layout` の preamble 1〜4 行で、会社コード/会社名/期間書式の厳密一致が必要か
 3. `CP932 + CRLF` が実運用上必須か
 4. `対価`, `仕入区分`, `売上業種区分`, `仕訳区分` に実値が必要か

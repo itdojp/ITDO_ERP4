@@ -347,7 +347,9 @@ test('frontend smoke admin ops @extended', async ({ page }) => {
     .getByLabel('会計ルールmappingKey')
     .fill(mappingRuleKey);
   await mappingRulesCard.getByLabel('会計ルール借方科目').fill('1110');
+  await mappingRulesCard.getByLabel('会計ルール借方名称').fill('売掛金');
   await mappingRulesCard.getByLabel('会計ルール貸方科目').fill('4110');
+  await mappingRulesCard.getByLabel('会計ルール貸方名称').fill('売上高');
   await mappingRulesCard.getByLabel('会計ルール税区分').fill('TAX-001');
   await mappingRulesCard.getByRole('button', { name: '作成' }).click();
   await mappingRulesCard
@@ -369,6 +371,12 @@ test('frontend smoke admin ops @extended', async ({ page }) => {
   await mappingRulesCard.getByRole('button', { name: '更新' }).click();
   await mappingRulesCard.getByRole('button', { name: '一覧取得' }).click();
   await expect(mappingRuleCard.getByText('部門: DEPT-001')).toBeVisible({
+    timeout: actionTimeout,
+  });
+  await expect(mappingRuleCard.getByText('1110 (売掛金)')).toBeVisible({
+    timeout: actionTimeout,
+  });
+  await expect(mappingRuleCard.getByText('4110 (売上高)')).toBeVisible({
     timeout: actionTimeout,
   });
   await expect(

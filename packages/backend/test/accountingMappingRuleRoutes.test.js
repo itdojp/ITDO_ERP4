@@ -41,9 +41,11 @@ test('GET /integrations/accounting/mapping-rules supports filters and pagination
             id: 'rule-001',
             mappingKey: 'invoice_approved:default',
             debitAccountCode: '1110',
+            debitAccountName: '売掛金',
             debitSubaccountCode: null,
             requireDebitSubaccountCode: false,
             creditAccountCode: '4110',
+            creditAccountName: '売上高',
             creditSubaccountCode: null,
             requireCreditSubaccountCode: false,
             departmentCode: null,
@@ -73,6 +75,7 @@ test('GET /integrations/accounting/mapping-rules supports filters and pagination
         assert.equal(body.offset, 2);
         assert.equal(body.items.length, 1);
         assert.equal(body.items[0].mappingKey, 'invoice_approved:default');
+        assert.equal(body.items[0].debitAccountName, '売掛金');
       } finally {
         await server.close();
       }
@@ -116,7 +119,9 @@ test('POST /integrations/accounting/mapping-rules creates rule', async () => {
           payload: {
             mappingKey: 'expense_approved:交通費',
             debitAccountCode: '7110',
+            debitAccountName: '旅費交通費',
             creditAccountCode: '1110',
+            creditAccountName: '普通預金',
             requireDepartmentCode: true,
             taxCode: 'TAX-EXP',
             departmentCode: 'DEPT-001',
@@ -126,6 +131,7 @@ test('POST /integrations/accounting/mapping-rules creates rule', async () => {
         const body = JSON.parse(res.body);
         assert.equal(body.mappingKey, 'expense_approved:交通費');
         assert.equal(body.debitAccountCode, '7110');
+        assert.equal(body.debitAccountName, '旅費交通費');
         assert.equal(body.requireDepartmentCode, true);
       } finally {
         await server.close();
@@ -134,6 +140,7 @@ test('POST /integrations/accounting/mapping-rules creates rule', async () => {
   );
 
   assert.equal(capturedCreate?.data?.mappingKey, 'expense_approved:交通費');
+  assert.equal(capturedCreate?.data?.creditAccountName, '普通預金');
   assert.equal(capturedCreate?.data?.requireDepartmentCode, true);
   assert.equal(capturedCreate?.data?.createdBy, 'admin-user');
 });
@@ -180,9 +187,11 @@ test('PATCH /integrations/accounting/mapping-rules/:id updates rule', async () =
         id: 'rule-001',
         mappingKey: 'invoice_approved:default',
         debitAccountCode: '1110',
+        debitAccountName: '売掛金',
         debitSubaccountCode: null,
         requireDebitSubaccountCode: false,
         creditAccountCode: '4110',
+        creditAccountName: '売上高',
         creditSubaccountCode: null,
         requireCreditSubaccountCode: false,
         departmentCode: null,
@@ -198,9 +207,11 @@ test('PATCH /integrations/accounting/mapping-rules/:id updates rule', async () =
           id: 'rule-001',
           mappingKey: 'invoice_approved:default',
           debitAccountCode: '1111',
+          debitAccountName: '未収入金',
           debitSubaccountCode: null,
           requireDebitSubaccountCode: true,
           creditAccountCode: '4110',
+          creditAccountName: '売上高',
           creditSubaccountCode: null,
           requireCreditSubaccountCode: false,
           departmentCode: 'D001',
@@ -225,6 +236,7 @@ test('PATCH /integrations/accounting/mapping-rules/:id updates rule', async () =
           },
           payload: {
             debitAccountCode: '1111',
+            debitAccountName: '未収入金',
             requireDebitSubaccountCode: true,
             departmentCode: 'D001',
             requireDepartmentCode: true,
@@ -234,6 +246,7 @@ test('PATCH /integrations/accounting/mapping-rules/:id updates rule', async () =
         assert.equal(res.statusCode, 200, res.body);
         const body = JSON.parse(res.body);
         assert.equal(body.debitAccountCode, '1111');
+        assert.equal(body.debitAccountName, '未収入金');
         assert.equal(body.departmentCode, 'D001');
         assert.equal(body.requireDebitSubaccountCode, true);
         assert.equal(body.requireDepartmentCode, true);
@@ -268,9 +281,11 @@ test('POST /integrations/accounting/mapping-rules/reapply reapplies pending rows
           id: 'rule-001',
           mappingKey: 'invoice_approved:default',
           debitAccountCode: '1110',
+          debitAccountName: '売掛金',
           debitSubaccountCode: null,
           requireDebitSubaccountCode: true,
           creditAccountCode: '4110',
+          creditAccountName: '売上高',
           creditSubaccountCode: null,
           requireCreditSubaccountCode: false,
           departmentCode: 'D001',
@@ -315,6 +330,8 @@ test('POST /integrations/accounting/mapping-rules/reapply reapplies pending rows
   assert.equal(updateCalls.length, 1);
   assert.equal(updateCalls[0]?.data?.status, 'pending_mapping');
   assert.equal(updateCalls[0]?.data?.departmentCode, 'D001');
+  assert.equal(updateCalls[0]?.data?.debitAccountName, '売掛金');
+  assert.equal(updateCalls[0]?.data?.creditAccountName, '売上高');
   assert.deepEqual(updateCalls[0]?.data?.validationErrors, [
     {
       code: 'mapping_pending',

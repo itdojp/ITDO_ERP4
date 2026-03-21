@@ -76,9 +76,11 @@ type IntegrationSettingBody = {
 type AccountingMappingRuleInput = {
   mappingKey: string;
   debitAccountCode: string;
+  debitAccountName?: string | null;
   debitSubaccountCode?: string | null;
   requireDebitSubaccountCode?: boolean;
   creditAccountCode: string;
+  creditAccountName?: string | null;
   creditSubaccountCode?: string | null;
   requireCreditSubaccountCode?: boolean;
   departmentCode?: string | null;
@@ -129,8 +131,14 @@ function normalizeAccountingMappingRuleInput(
   if (input.debitSubaccountCode !== undefined) {
     data.debitSubaccountCode = normalizeNullableText(input.debitSubaccountCode);
   }
+  if (input.debitAccountName !== undefined) {
+    data.debitAccountName = normalizeNullableText(input.debitAccountName);
+  }
   if (typeof input.requireDebitSubaccountCode === 'boolean') {
     data.requireDebitSubaccountCode = input.requireDebitSubaccountCode;
+  }
+  if (input.creditAccountName !== undefined) {
+    data.creditAccountName = normalizeNullableText(input.creditAccountName);
   }
   if (input.creditSubaccountCode !== undefined) {
     data.creditSubaccountCode = normalizeNullableText(
@@ -996,9 +1004,11 @@ function buildAccountingMappingRuleResponse(item: {
   id: string;
   mappingKey: string;
   debitAccountCode: string;
+  debitAccountName: string | null;
   debitSubaccountCode: string | null;
   requireDebitSubaccountCode: boolean;
   creditAccountCode: string;
+  creditAccountName: string | null;
   creditSubaccountCode: string | null;
   requireCreditSubaccountCode: boolean;
   departmentCode: string | null;
@@ -1012,9 +1022,11 @@ function buildAccountingMappingRuleResponse(item: {
     id: item.id,
     mappingKey: item.mappingKey,
     debitAccountCode: item.debitAccountCode,
+    debitAccountName: item.debitAccountName,
     debitSubaccountCode: item.debitSubaccountCode,
     requireDebitSubaccountCode: item.requireDebitSubaccountCode,
     creditAccountCode: item.creditAccountCode,
+    creditAccountName: item.creditAccountName,
     creditSubaccountCode: item.creditSubaccountCode,
     requireCreditSubaccountCode: item.requireCreditSubaccountCode,
     departmentCode: item.departmentCode,
@@ -2626,10 +2638,12 @@ export async function registerIntegrationRoutes(app: FastifyInstance) {
           data: {
             mappingKey: normalized.data.mappingKey!,
             debitAccountCode: normalized.data.debitAccountCode!,
+            debitAccountName: normalized.data.debitAccountName ?? null,
             debitSubaccountCode: normalized.data.debitSubaccountCode ?? null,
             requireDebitSubaccountCode:
               normalized.data.requireDebitSubaccountCode ?? false,
             creditAccountCode: normalized.data.creditAccountCode!,
+            creditAccountName: normalized.data.creditAccountName ?? null,
             creditSubaccountCode: normalized.data.creditSubaccountCode ?? null,
             requireCreditSubaccountCode:
               normalized.data.requireCreditSubaccountCode ?? false,

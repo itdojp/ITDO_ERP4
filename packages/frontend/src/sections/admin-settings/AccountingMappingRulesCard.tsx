@@ -4,9 +4,11 @@ export type AccountingMappingRuleItem = {
   id: string;
   mappingKey: string;
   debitAccountCode: string;
+  debitAccountName?: string | null;
   debitSubaccountCode?: string | null;
   requireDebitSubaccountCode?: boolean;
   creditAccountCode: string;
+  creditAccountName?: string | null;
   creditSubaccountCode?: string | null;
   requireCreditSubaccountCode?: boolean;
   departmentCode?: string | null;
@@ -20,9 +22,11 @@ export type AccountingMappingRuleItem = {
 export type AccountingMappingRuleFormState = {
   mappingKey: string;
   debitAccountCode: string;
+  debitAccountName: string;
   debitSubaccountCode: string;
   requireDebitSubaccountCode: boolean;
   creditAccountCode: string;
+  creditAccountName: string;
   creditSubaccountCode: string;
   requireCreditSubaccountCode: boolean;
   departmentCode: string;
@@ -171,6 +175,21 @@ export const AccountingMappingRulesCard = ({
             />
           </label>
           <label>
+            debitAccountName
+            <input
+              aria-label="会計ルール借方名称"
+              data-testid="accounting-mapping-rule-debit-account-name"
+              type="text"
+              value={form.debitAccountName}
+              onChange={(event) =>
+                setForm((current) => ({
+                  ...current,
+                  debitAccountName: event.target.value,
+                }))
+              }
+            />
+          </label>
+          <label>
             debitSubaccountCode
             <input
               aria-label="会計ルール借方枝番"
@@ -210,6 +229,21 @@ export const AccountingMappingRulesCard = ({
                 setForm((current) => ({
                   ...current,
                   creditAccountCode: event.target.value,
+                }))
+              }
+            />
+          </label>
+          <label>
+            creditAccountName
+            <input
+              aria-label="会計ルール貸方名称"
+              data-testid="accounting-mapping-rule-credit-account-name"
+              type="text"
+              value={form.creditAccountName}
+              onChange={(event) =>
+                setForm((current) => ({
+                  ...current,
+                  creditAccountName: event.target.value,
                 }))
               }
             />
@@ -501,10 +535,12 @@ export const AccountingMappingRulesCard = ({
               </div>
               <div style={{ fontSize: 12, color: '#475569', marginTop: 4 }}>
                 借方: {item.debitAccountCode}
+                {item.debitAccountName ? ` (${item.debitAccountName})` : ''}
                 {item.debitSubaccountCode
                   ? `-${item.debitSubaccountCode}`
                   : ''}{' '}
                 / 貸方: {item.creditAccountCode}
+                {item.creditAccountName ? ` (${item.creditAccountName})` : ''}
                 {item.creditSubaccountCode
                   ? `-${item.creditSubaccountCode}`
                   : ''}

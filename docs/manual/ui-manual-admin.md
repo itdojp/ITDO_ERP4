@@ -426,9 +426,9 @@
 6. 会計連携照合の `comparisonStatus` と `ready / pending_mapping / blocked` を確認する
 7. `連携ジョブ一覧` で種別 / ステータス / limit / offset を設定し `連携ジョブ取得` を実行する
 8. 成功済みジョブは `再出力` で payload を再送し、`reexportOfId` で lineage を確認する
-9. `会計マッピングルール` で `mappingKey / debitAccountCode / creditAccountCode / taxCode` を入力し `作成` を実行する
+9. `会計マッピングルール` で `mappingKey / debitAccountCode / debitAccountName / creditAccountCode / creditAccountName / taxCode` を入力し `作成` を実行する
 10. 必要に応じて `借方枝番必須 / 貸方枝番必須 / 部門コード必須` を切り替える
-11. 一覧取得後に `編集` から `departmentCode` などの補助コードを更新する
+11. 一覧取得後に `編集` から `departmentCode` や科目名称などの補助項目を更新する
 12. `再適用` で periodKey 単位の staging 行へ mapping rule を再適用し、`processed / updated / ready / pending_mapping / blocked` を確認する
 
 ![外部連携設定（HR/CRM）](../test-results/2026-03-19-frontend-e2e/11-admin-settings.png)
