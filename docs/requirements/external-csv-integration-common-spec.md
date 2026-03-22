@@ -1,6 +1,6 @@
 # 共通連携仕様（給与/会計 CSV 連携）
 
-更新日: 2026-03-16
+更新日: 2026-03-22
 関連ISSUE: #1435, #1430
 
 ## 目的
@@ -196,22 +196,24 @@
 - `#1444` で共通ジョブ管理・再出力
 - `#1445` で照合レポート
 
-## 9.1 `#1445` の初期実装範囲
+## 9.1 `#1445` の現行実装範囲
 
-- 初手は aggregate summary API に限定する
+- aggregate summary API
   - `GET /integrations/reconciliation/summary?periodKey=YYYY-MM`
-- 管理画面では `Settings` 内の「連携照合サマリ」カードから対象月を指定して取得する
-- 初期比較項目
+- detail API
+  - `GET /integrations/reconciliation/details?periodKey=YYYY-MM`
+- 管理画面では `Settings` 内の「連携照合サマリ」カードから aggregate summary を取得する
+- 現在の summary 比較項目
   - attendance closing の summary count / 各種 minutes 合計
   - full 社員マスタ export と attendance closing の社員コード差分
   - accounting journal staging の `ready / pending_mapping / blocked`
   - ready 行の借貸一致フラグ
   - 最新 ICS export の件数と ready 件数の一致
-- 次段では detail API を追加する
-  - `GET /integrations/reconciliation/details?periodKey=YYYY-MM`
+- 現在の details 比較項目
   - payroll: 社員コード差分の全件
-  - accounting: `PJ別` / `部門別` breakdown と `pending_mapping` / `blocked` / `invalid ready` の sample 行
-- UI への drilldown 表示は detail API の後続段階に分離する
+  - accounting: `PJ別` / `部門別` breakdown
+  - accounting: `pending_mapping` / `blocked` / `invalid ready` の sample 行
+- UI への drilldown 表示は未実装で、details は OpenAPI または HTTP クライアントで参照する
 
 ## 10. 未確定事項
 
