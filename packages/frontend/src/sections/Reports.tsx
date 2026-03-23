@@ -245,6 +245,26 @@ export const Reports: React.FC = () => {
   );
 
   useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const syncFromAuth = () => {
+      const nextAuth = getAuthState();
+      const nextUserId = nextAuth?.userId || 'demo-user';
+      const nextProjectId = nextAuth?.projectIds?.[0] || '';
+      setUserIdsInput((prev) =>
+        !prev || prev === defaultUserId ? nextUserId : prev,
+      );
+      setOvertimeUserId((prev) =>
+        !prev || prev === defaultUserId ? nextUserId : prev,
+      );
+      setProjectId((prev) =>
+        !prev || prev === defaultProjectId ? nextProjectId || prev : prev,
+      );
+    };
+    window.addEventListener('erp4:auth-updated', syncFromAuth);
+    return () => window.removeEventListener('erp4:auth-updated', syncFromAuth);
+  }, [defaultProjectId, defaultUserId]);
+
+  useEffect(() => {
     if (!projectId) {
       setBaselines([]);
       setBaselineId('');

@@ -1,8 +1,11 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   api,
+  apiResponse,
   AuthState,
+  buildApiUrl,
   getAuthState,
+  isBffAuthMode,
   refreshAuthStateFromServer,
   setAuthState,
 } from '../api';
@@ -158,6 +161,7 @@ function resolveJwtUserId(
 }
 
 export const CurrentUser: React.FC = () => {
+  const bffAuthMode = isBffAuthMode();
   const googleClientId = (import.meta.env.VITE_GOOGLE_CLIENT_ID || '').trim();
   const [me, setMe] = useState<MeResponse['user'] | null>(null);
   const [error, setError] = useState('');
@@ -221,17 +225,32 @@ export const CurrentUser: React.FC = () => {
     }
   };
   useEffect(() => {
+    if (bffAuthMode) {
+      refreshAuthStateFromServer()
+        .then((next) => {
+          setAuth(next);
+          if (!next) {
+            setMe(null);
+            setError('');
+          }
+        })
+        .catch(() => undefined);
+    }
+  }, [bffAuthMode]);
+
+  useEffect(() => {
     if (!auth) {
       setMe(null);
       return;
     }
-    api<MeResponse>('/me')
+    const endpoint = bffAuthMode ? '/auth/session' : '/me';
+    api<MeResponse>(endpoint)
       .then((res) => {
         setMe(res.user);
         setError('');
       })
       .catch(() => setError('取得に失敗'));
-  }, [auth]);
+  }, [auth, bffAuthMode]);
 
   const loadQueueItems = useCallback(async () => {
     try {
@@ -409,7 +428,7 @@ export const CurrentUser: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    if (!googleClientId || auth?.token) return;
+    if (bffAuthMode || !googleClientId || auth?.token) return;
     let cancelled = false;
     loadGoogleIdentityScript()
       .then(() => {
@@ -441,7 +460,7 @@ export const CurrentUser: React.FC = () => {
     return () => {
       cancelled = true;
     };
-  }, [applyTokenLogin, auth?.token, googleClientId]);
+  }, [applyTokenLogin, auth?.token, bffAuthMode, googleClientId]);
 
   useEffect(() => {
     if (!auth?.token) {
@@ -450,7 +469,13 @@ export const CurrentUser: React.FC = () => {
   }, [auth?.token]);
 
   useEffect(() => {
-    if (!googleReady || auth?.token || googleButtonRendered.current) return;
+    if (
+      bffAuthMode ||
+      !googleReady ||
+      auth?.token ||
+      googleButtonRendered.current
+    )
+      return;
     const google = (window as { google?: GoogleIdentity }).google;
     if (!google?.accounts?.id || !googleButtonRef.current) return;
     google.accounts.id.renderButton(googleButtonRef.current, {
@@ -459,7 +484,20 @@ export const CurrentUser: React.FC = () => {
       text: 'signin_with',
     });
     googleButtonRendered.current = true;
-  }, [auth?.token, googleReady]);
+  }, [auth?.token, bffAuthMode, googleReady]);
+
+  const startBffGoogleLogin = useCallback(() => {
+    if (typeof window === 'undefined') return;
+    const returnTo =
+      `${window.location.pathname}${window.location.search}${window.location.hash}` ||
+      '/';
+    const url = new URL(
+      buildApiUrl('/auth/google/start'),
+      window.location.origin,
+    );
+    url.searchParams.set('returnTo', returnTo);
+    window.location.assign(url.toString());
+  }, []);
 
   const ensureRegistration = async () => {
     if (!pushSupported) {
@@ -704,6 +742,25 @@ export const CurrentUser: React.FC = () => {
   };
 
   const logout = () => {
+    if (bffAuthMode) {
+      apiResponse('/auth/logout', { method: 'POST' })
+        .then((res) => {
+          if (!res.ok) {
+            throw new Error(`logout_failed:${res.status}`);
+          }
+          setAuthState(null);
+          setAuth(null);
+          setMe(null);
+          setError('');
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new Event('erp4:auth-updated'));
+          }
+        })
+        .catch(() => {
+          setError('ログアウトに失敗');
+        });
+      return;
+    }
     setAuthState(null);
     setAuth(null);
     setMe(null);
@@ -724,47 +781,66 @@ export const CurrentUser: React.FC = () => {
       {!auth && (
         <div style={{ fontSize: 14, marginTop: 8 }}>
           <div>未ログイン</div>
-          {googleClientId && (
+          {bffAuthMode ? (
             <div style={{ marginTop: 8 }}>
-              <div ref={googleButtonRef} />
-              {googleError && (
-                <div style={{ color: '#dc2626', marginTop: 4 }}>
-                  {googleError}
-                </div>
-              )}
+              <button className="button" onClick={startBffGoogleLogin}>
+                Googleでログイン
+              </button>
+              <div style={{ fontSize: 12, color: '#6b7280', marginTop: 6 }}>
+                backend の Auth Gateway へ遷移して Google 認証を開始します。
+              </div>
             </div>
+          ) : (
+            googleClientId && (
+              <div style={{ marginTop: 8 }}>
+                <div ref={googleButtonRef} />
+                {googleError && (
+                  <div style={{ color: '#dc2626', marginTop: 4 }}>
+                    {googleError}
+                  </div>
+                )}
+              </div>
+            )
           )}
-          <div className="row" style={{ gap: 8, marginTop: 8 }}>
-            <input
-              type="text"
-              value={form.userId}
-              onChange={(e) => setForm({ ...form, userId: e.target.value })}
-              placeholder="userId"
-            />
-            <input
-              type="text"
-              value={form.roles}
-              onChange={(e) => setForm({ ...form, roles: e.target.value })}
-              placeholder="roles (admin,mgmt)"
-            />
-            <button className="button" onClick={login}>
-              簡易ログイン
-            </button>
-          </div>
-          <div className="row" style={{ gap: 8, marginTop: 8 }}>
-            <input
-              type="text"
-              value={form.projectIds}
-              onChange={(e) => setForm({ ...form, projectIds: e.target.value })}
-              placeholder="projectIds (optional)"
-            />
-            <input
-              type="text"
-              value={form.groupIds}
-              onChange={(e) => setForm({ ...form, groupIds: e.target.value })}
-              placeholder="groupIds (optional)"
-            />
-          </div>
+          {!bffAuthMode && (
+            <>
+              <div className="row" style={{ gap: 8, marginTop: 8 }}>
+                <input
+                  type="text"
+                  value={form.userId}
+                  onChange={(e) => setForm({ ...form, userId: e.target.value })}
+                  placeholder="userId"
+                />
+                <input
+                  type="text"
+                  value={form.roles}
+                  onChange={(e) => setForm({ ...form, roles: e.target.value })}
+                  placeholder="roles (admin,mgmt)"
+                />
+                <button className="button" onClick={login}>
+                  簡易ログイン
+                </button>
+              </div>
+              <div className="row" style={{ gap: 8, marginTop: 8 }}>
+                <input
+                  type="text"
+                  value={form.projectIds}
+                  onChange={(e) =>
+                    setForm({ ...form, projectIds: e.target.value })
+                  }
+                  placeholder="projectIds (optional)"
+                />
+                <input
+                  type="text"
+                  value={form.groupIds}
+                  onChange={(e) =>
+                    setForm({ ...form, groupIds: e.target.value })
+                  }
+                  placeholder="groupIds (optional)"
+                />
+              </div>
+            </>
+          )}
         </div>
       )}
       {auth && (
