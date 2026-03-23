@@ -114,6 +114,8 @@
   - JWT_ROLE_CLAIM / JWT_GROUP_CLAIM / JWT_PROJECT_CLAIM / JWT_ORG_CLAIM
 - roles が無い場合は AUTH_DEFAULT_ROLE を適用
 - JWT認証時、`UserAccount.userName == userId` のユーザが存在すればDB側のグループ所属を `groupIds` にマージし、ロールも補完する
+- `UserIdentity(providerType=google_oidc, issuer, providerSubject=sub)` が存在する場合は、そちらを優先して対応する `UserAccount` を解決する
+- `UserIdentity` 未導入の既存データに対しては、移行期間の互換層として `userName` / `externalId` lookup を継続する
   - `admin` → role `admin`
   - `mgmt` → role `mgmt`
   - `exec` → role `exec`

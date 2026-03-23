@@ -1360,61 +1360,61 @@ model LeaveRequest {
 }
 
 model AttendanceClosingPeriod {
-  id                        String                     @id @default(uuid())
-  periodKey                 String
-  version                   Int                        @default(1)
-  status                    AttendanceClosingStatus    @default(closed)
-  closedAt                  DateTime                   @default(now())
-  closedBy                  String?
-  supersededAt              DateTime?
-  supersededBy              String?
-  summaryCount              Int                        @default(0)
-  workedDayCountTotal       Int                        @default(0)
-  scheduledWorkMinutesTotal Int                        @default(0)
-  approvedWorkMinutesTotal  Int                        @default(0)
-  overtimeTotalMinutesTotal Int                        @default(0)
-  overtimeWithinStatutoryMinutesTotal Int              @default(0)
-  overtimeOverStatutoryMinutesTotal Int                @default(0)
-  holidayWorkMinutesTotal   Int                        @default(0)
-  paidLeaveMinutesTotal     Int                        @default(0)
-  unpaidLeaveMinutesTotal   Int                        @default(0)
-  totalLeaveMinutesTotal    Int                        @default(0)
-  sourceTimeEntryCount      Int                        @default(0)
-  sourceLeaveRequestCount   Int                        @default(0)
-  createdAt                 DateTime                   @default(now())
-  createdBy                 String?
-  updatedAt                 DateTime                   @updatedAt
-  updatedBy                 String?
-  summaries                 AttendanceMonthlySummary[]
+  id                                  String                     @id @default(uuid())
+  periodKey                           String
+  version                             Int                        @default(1)
+  status                              AttendanceClosingStatus    @default(closed)
+  closedAt                            DateTime                   @default(now())
+  closedBy                            String?
+  supersededAt                        DateTime?
+  supersededBy                        String?
+  summaryCount                        Int                        @default(0)
+  workedDayCountTotal                 Int                        @default(0)
+  scheduledWorkMinutesTotal           Int                        @default(0)
+  approvedWorkMinutesTotal            Int                        @default(0)
+  overtimeTotalMinutesTotal           Int                        @default(0)
+  overtimeWithinStatutoryMinutesTotal Int                        @default(0)
+  overtimeOverStatutoryMinutesTotal   Int                        @default(0)
+  holidayWorkMinutesTotal             Int                        @default(0)
+  paidLeaveMinutesTotal               Int                        @default(0)
+  unpaidLeaveMinutesTotal             Int                        @default(0)
+  totalLeaveMinutesTotal              Int                        @default(0)
+  sourceTimeEntryCount                Int                        @default(0)
+  sourceLeaveRequestCount             Int                        @default(0)
+  createdAt                           DateTime                   @default(now())
+  createdBy                           String?
+  updatedAt                           DateTime                   @updatedAt
+  updatedBy                           String?
+  summaries                           AttendanceMonthlySummary[]
 
   @@unique([periodKey, version])
   @@index([periodKey, status, version])
 }
 
 model AttendanceMonthlySummary {
-  id                      String                  @id @default(uuid())
-  closingPeriod           AttendanceClosingPeriod @relation(fields: [closingPeriodId], references: [id], onDelete: Cascade)
-  closingPeriodId         String
-  periodKey               String
-  version                 Int
-  userId                  String
-  employeeCode            String
-  workedDayCount          Int                     @default(0)
-  scheduledWorkMinutes    Int                     @default(0)
-  approvedWorkMinutes     Int                     @default(0)
-  overtimeTotalMinutes    Int                     @default(0)
-  overtimeWithinStatutoryMinutes Int              @default(0)
-  overtimeOverStatutoryMinutes Int                @default(0)
-  holidayWorkMinutes      Int                     @default(0)
-  paidLeaveMinutes        Int                     @default(0)
-  unpaidLeaveMinutes      Int                     @default(0)
-  totalLeaveMinutes       Int                     @default(0)
-  sourceTimeEntryCount    Int                     @default(0)
-  sourceLeaveRequestCount Int                     @default(0)
-  createdAt               DateTime                @default(now())
-  createdBy               String?
-  updatedAt               DateTime                @updatedAt
-  updatedBy               String?
+  id                             String                  @id @default(uuid())
+  closingPeriod                  AttendanceClosingPeriod @relation(fields: [closingPeriodId], references: [id], onDelete: Cascade)
+  closingPeriodId                String
+  periodKey                      String
+  version                        Int
+  userId                         String
+  employeeCode                   String
+  workedDayCount                 Int                     @default(0)
+  scheduledWorkMinutes           Int                     @default(0)
+  approvedWorkMinutes            Int                     @default(0)
+  overtimeTotalMinutes           Int                     @default(0)
+  overtimeWithinStatutoryMinutes Int                     @default(0)
+  overtimeOverStatutoryMinutes   Int                     @default(0)
+  holidayWorkMinutes             Int                     @default(0)
+  paidLeaveMinutes               Int                     @default(0)
+  unpaidLeaveMinutes             Int                     @default(0)
+  totalLeaveMinutes              Int                     @default(0)
+  sourceTimeEntryCount           Int                     @default(0)
+  sourceLeaveRequestCount        Int                     @default(0)
+  createdAt                      DateTime                @default(now())
+  createdBy                      String?
+  updatedAt                      DateTime                @updatedAt
+  updatedBy                      String?
 
   @@unique([closingPeriodId, userId])
   @@index([periodKey, version])
@@ -1717,24 +1717,24 @@ model AccountingJournalStaging {
 }
 
 model AccountingMappingRule {
-  id                   String   @id @default(uuid())
-  mappingKey           String   @unique
-  debitAccountCode     String
-  debitAccountName     String?
-  debitSubaccountCode  String?
+  id                          String   @id @default(uuid())
+  mappingKey                  String   @unique
+  debitAccountCode            String
+  debitAccountName            String?
+  debitSubaccountCode         String?
   requireDebitSubaccountCode  Boolean  @default(false)
-  creditAccountCode    String
-  creditAccountName    String?
-  creditSubaccountCode String?
+  creditAccountCode           String
+  creditAccountName           String?
+  creditSubaccountCode        String?
   requireCreditSubaccountCode Boolean  @default(false)
-  departmentCode       String?
+  departmentCode              String?
   requireDepartmentCode       Boolean  @default(false)
-  taxCode              String
-  isActive             Boolean  @default(true)
-  createdAt            DateTime @default(now())
-  createdBy            String?
-  updatedAt            DateTime @updatedAt
-  updatedBy            String?
+  taxCode                     String
+  isActive                    Boolean  @default(true)
+  createdAt                   DateTime @default(now())
+  createdBy                   String?
+  updatedAt                   DateTime @updatedAt
+  updatedBy                   String?
 
   @@index([isActive, mappingKey])
 }
@@ -2133,9 +2133,51 @@ model UserAccount {
   deletedAt      DateTime?
   deletedReason  String?
   memberships    UserGroup[]
+  identities     UserIdentity[]
   payrollProfile EmployeePayrollProfile?
 
   @@index([active])
+}
+
+model UserIdentity {
+  id                  String           @id @default(uuid())
+  userAccount         UserAccount      @relation(fields: [userAccountId], references: [id], onDelete: Cascade)
+  userAccountId       String
+  providerType        String
+  providerSubject     String
+  issuer              String
+  emailSnapshot       String?
+  status              String           @default("active")
+  lastAuthenticatedAt DateTime?
+  linkedAt            DateTime         @default(now())
+  createdAt           DateTime         @default(now())
+  createdBy           String?
+  updatedAt           DateTime         @updatedAt
+  updatedBy           String?
+  localCredential     LocalCredential?
+
+  @@unique([providerType, issuer, providerSubject])
+  @@index([userAccountId, providerType, status])
+  @@index([providerType, issuer, providerSubject, status])
+}
+
+model LocalCredential {
+  id                String       @id @default(uuid())
+  userIdentity      UserIdentity @relation(fields: [userIdentityId], references: [id], onDelete: Cascade)
+  userIdentityId    String       @unique
+  loginId           String       @unique
+  passwordHash      String
+  passwordAlgo      String       @default("argon2id")
+  mfaRequired       Boolean      @default(true)
+  mfaSecretRef      String?
+  failedAttempts    Int          @default(0)
+  lockedUntil       DateTime?
+  passwordChangedAt DateTime?
+  recoveryCodesHash Json?
+  createdAt         DateTime     @default(now())
+  createdBy         String?
+  updatedAt         DateTime     @updatedAt
+  updatedBy         String?
 }
 
 model EmployeePayrollProfile {
