@@ -69,25 +69,6 @@ const localCredentialAdminFlexibleLimiter = new RateLimiterMemory({
   ),
 });
 
-async function enforceLocalCredentialAdminRateLimit(
-  req: { ip: string },
-  reply: FastifyReply,
-) {
-  try {
-    await localCredentialAdminFlexibleLimiter.consume(req.ip);
-  } catch {
-    return reply
-      .code(429)
-      .send(
-        createApiErrorResponse(
-          'local_credential_rate_limited',
-          'Too many local credential admin requests',
-          { category: 'rate_limit' },
-        ),
-      );
-  }
-}
-
 function normalizeOptionalString(value: unknown) {
   return typeof value === 'string' ? value.trim() : '';
 }
@@ -335,11 +316,19 @@ export async function registerAuthRoutes(app: FastifyInstance) {
       config: { rateLimit: localCredentialAdminRateLimit },
     },
     async (req, reply) => {
-      const rateLimited = await enforceLocalCredentialAdminRateLimit(
-        req,
-        reply,
-      );
-      if (rateLimited) return rateLimited;
+      try {
+        await localCredentialAdminFlexibleLimiter.consume(req.ip);
+      } catch {
+        return reply
+          .code(429)
+          .send(
+            createApiErrorResponse(
+              'local_credential_rate_limited',
+              'Too many local credential admin requests',
+              { category: 'rate_limit' },
+            ),
+          );
+      }
       const actorId = req.user?.userId;
       if (!actorId) {
         return reply.code(400).send(
@@ -545,11 +534,19 @@ export async function registerAuthRoutes(app: FastifyInstance) {
       config: { rateLimit: localCredentialAdminRateLimit },
     },
     async (req, reply) => {
-      const rateLimited = await enforceLocalCredentialAdminRateLimit(
-        req,
-        reply,
-      );
-      if (rateLimited) return rateLimited;
+      try {
+        await localCredentialAdminFlexibleLimiter.consume(req.ip);
+      } catch {
+        return reply
+          .code(429)
+          .send(
+            createApiErrorResponse(
+              'local_credential_rate_limited',
+              'Too many local credential admin requests',
+              { category: 'rate_limit' },
+            ),
+          );
+      }
       const actorId = req.user?.userId;
       if (!actorId) {
         return reply.code(400).send(
