@@ -33,17 +33,19 @@
 - [ ] `make action-policy-callsites-report` / `make action-policy-required-action-gaps` / `make action-policy-required-action-gaps-json` を実行し、route callsite 棚卸と required actions ギャップが収束していることを確認する
   - 期待値: `missing_static_callsites: 0` / `stale_required_actions: 0` / `dynamic_callsites: 0`
 - [ ] `make action-policy-phase3-readiness` / `make action-policy-phase3-readiness-json` を実行し、`ready: yes` かつ blockers が空であることを確認する
-  - 手順: `docs/manual/agent-write-guardrails-guide.md` の fail-safe 運用手順に従う
+  - 手順: `docs/ops/action-policy-phase3-strict-rollout.md` の事前確認に従う
   - 前提: `npm run build --prefix packages/backend` 実行済み、`DATABASE_URL` 設定済み
   - 記録: `make action-policy-phase3-readiness-record` で `docs/test-results/YYYY-MM-DD-action-policy-phase3-readiness-rN.md` を生成できる
   - 連続実行する場合: `make action-policy-phase3-trial-record`
   - 最低確認対象: `invoice:send`, `invoice:mark_paid`, `purchase_order:send`, `expense:submit`, `expense:mark_paid`, `vendor_invoice:submit`, `vendor_invoice:update_lines`, `vendor_invoice:update_allocations`, `*:approve`, `*:reject`
 - [ ] `phase2_core` -> `phase3_strict` の切替後も主要操作が継続し、`action_policy_fallback_allowed` の新規発生がないことを確認する
+  - 手順: `docs/ops/action-policy-phase3-strict-rollout.md` の Cutover 手順に従う
   - 記録: `make action-policy-phase3-cutover-record`
   - 連続実行する場合: `make action-policy-phase3-trial-record`
   - 主要操作の確認前に `make action-policy-callsites-report` と `make action-policy-required-action-gaps` の結果を cutover 記録へ転記する
 - [ ] `make action-policy-fallback-report` / `make action-policy-fallback-report-json` で fallback 集計を確認し、`flowType:actionKey:targetTable` ベースで未収束キーが 0 件であることを確認する
 - [ ] 問題発生時に `phase3_strict` -> `phase2_core` のロールバックと、必要な `ACTION_POLICY_REQUIRED_ACTIONS` 明示指定での段階復旧を確認する
+  - 手順: `docs/ops/action-policy-phase3-strict-rollout.md` の Rollback 手順に従う
   - ロールバック後は `make action-policy-phase3-readiness-json` と `make action-policy-fallback-report-json` で復旧対象キーのみが再出現していることを確認する
   - 記録: `make action-policy-phase3-cutover-record`
 
