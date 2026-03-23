@@ -133,13 +133,32 @@ function isMutatingMethod(method: string | undefined) {
   return !['GET', 'HEAD', 'OPTIONS'].includes(normalized);
 }
 
+function getApiBasePathname() {
+  if (!API_BASE_VALID || !API_BASE) return '';
+  try {
+    const pathname = new URL(API_BASE).pathname.replace(/\/$/, '');
+    return pathname === '/' ? '' : pathname;
+  } catch {
+    return '';
+  }
+}
+
 function isAuthRoute(url: string) {
   if (typeof window === 'undefined') {
     return url.startsWith('/auth/') || url === '/auth';
   }
   try {
     const target = new URL(url, window.location.origin);
-    return target.pathname === '/auth' || target.pathname.startsWith('/auth/');
+    const authPaths = ['/auth'];
+    const apiBasePathname = getApiBasePathname();
+    if (apiBasePathname) {
+      authPaths.push(`${apiBasePathname}/auth`);
+    }
+    return authPaths.some(
+      (authPath) =>
+        target.pathname === authPath ||
+        target.pathname.startsWith(`${authPath}/`),
+    );
   } catch {
     return false;
   }

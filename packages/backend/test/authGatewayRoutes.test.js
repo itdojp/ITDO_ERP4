@@ -399,7 +399,7 @@ test('GET /auth/csrf returns token and sets csrf cookie', async () => {
   });
 });
 
-test('POST /auth/logout returns invalid_csrf_token when csrf header is missing', async () => {
+test('POST /auth/logout returns invalid_csrf_token when csrf header mismatches cookie', async () => {
   await withEnv(baseBffEnv(), async () => {
     await withPrismaStubs(
       {
@@ -428,6 +428,7 @@ test('POST /auth/logout returns invalid_csrf_token when csrf header is missing',
             headers: {
               cookie:
                 'erp4_session=session-token-001; erp4_csrf=csrf-token-001',
+              'x-csrf-token': 'csrf-token-002',
             },
           });
           assert.equal(res.statusCode, 403, res.body);

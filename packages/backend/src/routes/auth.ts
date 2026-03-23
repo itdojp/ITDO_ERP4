@@ -456,6 +456,13 @@ const authCsrfResponseSchema = Type.Object(
   { additionalProperties: false },
 );
 
+const authCsrfHeadersSchema = Type.Object(
+  {
+    'x-csrf-token': Type.String({ minLength: 1 }),
+  },
+  { additionalProperties: true },
+);
+
 const managedAuthSessionSchema = Type.Object(
   {
     sessionId: Type.String(),
@@ -1165,6 +1172,7 @@ export async function registerAuthRoutes(app: FastifyInstance) {
     {
       schema: {
         ...authSessionRevokeSchema,
+        headers: authCsrfHeadersSchema,
         tags: ['auth'],
         summary: 'Revoke an active authenticated session for current user',
         response: {
@@ -1249,6 +1257,7 @@ export async function registerAuthRoutes(app: FastifyInstance) {
     '/auth/logout',
     {
       schema: {
+        headers: authCsrfHeadersSchema,
         tags: ['auth'],
         summary: 'Revoke current authenticated session',
         response: {
@@ -1295,6 +1304,7 @@ export async function registerAuthRoutes(app: FastifyInstance) {
     {
       schema: {
         ...localLoginSchema,
+        headers: authCsrfHeadersSchema,
         tags: ['auth'],
         summary: 'Authenticate with local credentials and create BFF session',
         response: {
@@ -1570,6 +1580,7 @@ export async function registerAuthRoutes(app: FastifyInstance) {
     {
       schema: {
         ...localPasswordRotateSchema,
+        headers: authCsrfHeadersSchema,
         tags: ['auth'],
         summary: 'Rotate bootstrap local password before MFA-enabled login',
         response: {
@@ -1840,6 +1851,7 @@ export async function registerAuthRoutes(app: FastifyInstance) {
       preHandler: [requireSystemAdmin],
       schema: {
         ...userIdentityGoogleLinkSchema,
+        headers: authCsrfHeadersSchema,
         tags: ['auth'],
         summary: 'Link Google identity to existing user account',
         response: {
@@ -2052,6 +2064,7 @@ export async function registerAuthRoutes(app: FastifyInstance) {
       preHandler: [requireSystemAdmin],
       schema: {
         ...userIdentityLocalLinkSchema,
+        headers: authCsrfHeadersSchema,
         tags: ['auth'],
         summary: 'Link local identity to existing user account',
         response: {
@@ -2296,6 +2309,7 @@ export async function registerAuthRoutes(app: FastifyInstance) {
       preHandler: [requireSystemAdmin],
       schema: {
         ...userIdentityPatchSchema,
+        headers: authCsrfHeadersSchema,
         tags: ['auth'],
         summary: 'Update user identity state',
         response: {
@@ -2606,6 +2620,7 @@ export async function registerAuthRoutes(app: FastifyInstance) {
       preHandler: [requireSystemAdmin],
       schema: {
         ...localCredentialCreateSchema,
+        headers: authCsrfHeadersSchema,
         tags: ['auth'],
         summary: 'Create local credential',
         response: {
@@ -2818,6 +2833,7 @@ export async function registerAuthRoutes(app: FastifyInstance) {
       preHandler: [requireSystemAdmin],
       schema: {
         ...localCredentialPatchSchema,
+        headers: authCsrfHeadersSchema,
         tags: ['auth'],
         summary: 'Update local credential',
         response: {
