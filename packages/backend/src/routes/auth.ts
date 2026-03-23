@@ -29,10 +29,13 @@ import {
   LOCAL_IDENTITY_ISSUER,
   LOCAL_IDENTITY_PROVIDER,
   buildLocalProviderSubject,
+  computeLocalCredentialLockUntil,
   hashLocalPassword,
+  isLocalCredentialLocked,
   normalizeLocalLoginId,
   serializeLocalCredentialIdentity,
   validateLocalPassword,
+  verifyLocalPassword,
 } from '../services/localCredentials.js';
 import {
   authGoogleCallbackSchema,
@@ -41,7 +44,9 @@ import {
   authSessionRevokeSchema,
   localCredentialCreateSchema,
   localCredentialListSchema,
+  localLoginSchema,
   localCredentialPatchSchema,
+  localPasswordRotateSchema,
   userIdentityGoogleLinkSchema,
   userIdentityListSchema,
   userIdentityLocalLinkSchema,
@@ -70,6 +75,10 @@ const authGatewayRateLimit = getRouteRateLimitOptions(
     timeWindow: '1 minute',
   },
 );
+const localLoginRateLimit = getRouteRateLimitOptions('RATE_LIMIT_LOCAL_LOGIN', {
+  max: 10,
+  timeWindow: '1 minute',
+});
 const AUTH_MODE = (process.env.AUTH_MODE || 'header').trim().toLowerCase();
 
 function parseRateLimitWindowSeconds(value: string) {
@@ -104,6 +113,10 @@ const localCredentialAdminFlexibleLimiter = new RateLimiterMemory({
 const authGatewayFlexibleLimiter = new RateLimiterMemory({
   points: authGatewayRateLimit.max,
   duration: parseRateLimitWindowSeconds(authGatewayRateLimit.timeWindow),
+});
+const localLoginFlexibleLimiter = new RateLimiterMemory({
+  points: localLoginRateLimit.max,
+  duration: parseRateLimitWindowSeconds(localLoginRateLimit.timeWindow),
 });
 
 async function enforceAuthGatewayRateLimit(
@@ -197,6 +210,20 @@ function respondValidationError(reply: FastifyReply, invalidFields: string[]) {
         details: { invalidFields },
       },
     ),
+  );
+}
+
+function respondLocalAuthValidationError(
+  reply: FastifyReply,
+  code: string,
+  message: string,
+  invalidFields: string[],
+) {
+  return reply.code(400).send(
+    createApiErrorResponse(code, message, {
+      category: 'validation',
+      details: { invalidFields },
+    }),
   );
 }
 
@@ -517,6 +544,41 @@ function buildLocalCredentialSelect() {
   } as const;
 }
 
+function buildLocalCredentialAuthSelect() {
+  return {
+    id: true,
+    userAccountId: true,
+    providerType: true,
+    providerSubject: true,
+    issuer: true,
+    status: true,
+    effectiveUntil: true,
+    userAccount: {
+      select: {
+        id: true,
+        userName: true,
+        displayName: true,
+        active: true,
+        deletedAt: true,
+      },
+    },
+    localCredential: {
+      select: {
+        id: true,
+        loginId: true,
+        passwordHash: true,
+        passwordAlgo: true,
+        mfaRequired: true,
+        mfaSecretRef: true,
+        mustRotatePassword: true,
+        failedAttempts: true,
+        lockedUntil: true,
+        passwordChangedAt: true,
+      },
+    },
+  } as const;
+}
+
 function buildUserIdentitySelect() {
   return {
     id: true,
@@ -559,6 +621,10 @@ function buildUserIdentitySelect() {
 
 type UserIdentityRecord = Prisma.UserIdentityGetPayload<{
   select: ReturnType<typeof buildUserIdentitySelect>;
+}>;
+
+type LocalCredentialAuthRecord = Prisma.UserIdentityGetPayload<{
+  select: ReturnType<typeof buildLocalCredentialAuthSelect>;
 }>;
 
 function serializeUserIdentity(identity: UserIdentityRecord) {
@@ -640,6 +706,87 @@ function serializeManagedAuthSession(
     revokedReason: session.revokedReason,
     current: session.id === currentSessionId,
   };
+}
+
+function isLocalCredentialUsable(identity: LocalCredentialAuthRecord | null) {
+  if (!identity || !identity.localCredential) return false;
+  if (!isIdentityEffectivelyActive(identity)) return false;
+  if (!identity.userAccount?.active || identity.userAccount.deletedAt) {
+    return false;
+  }
+  return true;
+}
+
+function respondLocalLoginFailed(
+  reply: FastifyReply,
+  reason = 'invalid_credentials',
+) {
+  return reply.code(401).send(
+    createApiErrorResponse(
+      'local_login_failed',
+      'Invalid local login credentials',
+      {
+        category: 'auth',
+        details: { reason },
+      },
+    ),
+  );
+}
+
+async function incrementLocalCredentialFailure(
+  credentialId: string,
+  updatedBy: string,
+) {
+  const updated = await prisma.localCredential.update({
+    where: { id: credentialId },
+    data: {
+      failedAttempts: { increment: 1 },
+      updatedBy,
+    },
+    select: {
+      failedAttempts: true,
+      lockedUntil: true,
+    },
+  });
+  const nextLockedUntil = computeLocalCredentialLockUntil(
+    updated.failedAttempts,
+  );
+  if (
+    nextLockedUntil &&
+    (!updated.lockedUntil ||
+      updated.lockedUntil.getTime() < nextLockedUntil.getTime())
+  ) {
+    return prisma.localCredential.update({
+      where: { id: credentialId },
+      data: {
+        lockedUntil: nextLockedUntil,
+        updatedBy,
+      },
+      select: {
+        failedAttempts: true,
+        lockedUntil: true,
+      },
+    });
+  }
+  return updated;
+}
+
+async function resetLocalCredentialFailures(
+  credentialId: string,
+  updatedBy: string,
+) {
+  return prisma.localCredential.update({
+    where: { id: credentialId },
+    data: {
+      failedAttempts: 0,
+      lockedUntil: null,
+      updatedBy,
+    },
+    select: {
+      failedAttempts: true,
+      lockedUntil: true,
+    },
+  });
 }
 
 export async function registerAuthRoutes(app: FastifyInstance) {
@@ -1052,6 +1199,498 @@ export async function registerAuthRoutes(app: FastifyInstance) {
         });
       }
       reply.header('set-cookie', buildAuthSessionClearCookie());
+      return reply.code(204).send();
+    },
+  );
+
+  app.post(
+    '/auth/local/login',
+    {
+      schema: {
+        ...localLoginSchema,
+        tags: ['auth'],
+        summary: 'Authenticate with local credentials and create BFF session',
+        response: {
+          204: Type.Null(),
+          400: authGatewayErrorResponseSchema,
+          401: authGatewayErrorResponseSchema,
+          404: authGatewayErrorResponseSchema,
+          409: authGatewayErrorResponseSchema,
+          423: authGatewayErrorResponseSchema,
+          429: authGatewayErrorResponseSchema,
+        },
+      },
+    },
+    async (req, reply) => {
+      if (!isJwtBffAuthMode()) {
+        return respondAuthGatewayDisabled(reply);
+      }
+      try {
+        await localLoginFlexibleLimiter.consume(req.ip || 'unknown');
+      } catch {
+        return reply
+          .code(429)
+          .send(
+            createApiErrorResponse(
+              'local_login_rate_limited',
+              'Too many local login requests',
+              { category: 'rate_limit' },
+            ),
+          );
+      }
+
+      const body = (req.body || {}) as { loginId: string; password: string };
+      const loginId = normalizeLocalLoginId(body.loginId);
+      const password = typeof body.password === 'string' ? body.password : '';
+      const invalidFields: string[] = [];
+      if (!loginId) invalidFields.push('loginId');
+      if (!password) invalidFields.push('password');
+      if (invalidFields.length) {
+        return respondLocalAuthValidationError(
+          reply,
+          'invalid_local_login_payload',
+          'Invalid local login payload',
+          invalidFields,
+        );
+      }
+
+      const identity = await prisma.userIdentity.findFirst({
+        where: {
+          providerType: LOCAL_IDENTITY_PROVIDER,
+          issuer: LOCAL_IDENTITY_ISSUER,
+          localCredential: {
+            is: {
+              loginId,
+            },
+          },
+        },
+        select: buildLocalCredentialAuthSelect(),
+      });
+      if (
+        !identity ||
+        !identity.localCredential ||
+        !isLocalCredentialUsable(identity)
+      ) {
+        await logAudit({
+          action: 'local_login_failed',
+          targetTable: 'LocalCredential',
+          reasonCode: 'invalid_credentials',
+          metadata: {
+            loginId,
+          },
+          ...auditContextFromRequest(req),
+        });
+        return respondLocalLoginFailed(reply);
+      }
+
+      const credential = identity.localCredential;
+      if (isLocalCredentialLocked(credential.lockedUntil)) {
+        await logAudit({
+          action: 'local_login_failed',
+          targetTable: 'LocalCredential',
+          targetId: credential.id,
+          reasonCode: 'credential_locked',
+          metadata: {
+            loginId,
+            userAccountId: identity.userAccountId,
+            identityId: identity.id,
+            lockedUntil: credential.lockedUntil?.toISOString() ?? null,
+          },
+          ...auditContextFromRequest(req),
+        });
+        return reply.code(423).send(
+          createApiErrorResponse(
+            'local_credential_locked',
+            'Local credential is temporarily locked',
+            {
+              category: 'auth',
+              details: {
+                lockedUntil: credential.lockedUntil?.toISOString() ?? null,
+              },
+            },
+          ),
+        );
+      }
+
+      let passwordMatched = false;
+      try {
+        passwordMatched = await verifyLocalPassword(
+          credential.passwordHash,
+          password,
+        );
+      } catch (err) {
+        await logAudit({
+          action: 'local_login_failed',
+          targetTable: 'LocalCredential',
+          targetId: credential.id,
+          reasonCode: 'credential_verification_error',
+          metadata: {
+            loginId,
+            userAccountId: identity.userAccountId,
+            identityId: identity.id,
+            errorMessage: err instanceof Error ? err.message : String(err),
+          },
+          ...auditContextFromRequest(req),
+        });
+        return respondLocalLoginFailed(reply, 'credential_verification_error');
+      }
+      if (!passwordMatched) {
+        const failedCredential = await incrementLocalCredentialFailure(
+          credential.id,
+          identity.providerSubject,
+        );
+        await logAudit({
+          action: 'local_login_failed',
+          targetTable: 'LocalCredential',
+          targetId: credential.id,
+          reasonCode: failedCredential.lockedUntil
+            ? 'locked_after_failed_attempts'
+            : 'invalid_credentials',
+          metadata: {
+            loginId,
+            userAccountId: identity.userAccountId,
+            identityId: identity.id,
+            failedAttempts: failedCredential.failedAttempts,
+            lockedUntil: failedCredential.lockedUntil?.toISOString() ?? null,
+          },
+          ...auditContextFromRequest(req),
+        });
+        return respondLocalLoginFailed(reply);
+      }
+
+      await resetLocalCredentialFailures(
+        credential.id,
+        identity.providerSubject,
+      );
+
+      if (credential.mustRotatePassword) {
+        await logAudit({
+          action: 'local_login_blocked',
+          targetTable: 'LocalCredential',
+          targetId: credential.id,
+          reasonCode: 'password_rotation_required',
+          metadata: {
+            loginId,
+            userAccountId: identity.userAccountId,
+            identityId: identity.id,
+          },
+          ...auditContextFromRequest(req),
+        });
+        return reply.code(409).send(
+          createApiErrorResponse(
+            'local_password_rotation_required',
+            'Local password rotation is required before login',
+            {
+              category: 'auth',
+              details: { reason: 'password_rotation_required' },
+            },
+          ),
+        );
+      }
+
+      if (credential.mfaRequired && !credential.mfaSecretRef) {
+        await logAudit({
+          action: 'local_login_blocked',
+          targetTable: 'LocalCredential',
+          targetId: credential.id,
+          reasonCode: 'mfa_setup_required',
+          metadata: {
+            loginId,
+            userAccountId: identity.userAccountId,
+            identityId: identity.id,
+          },
+          ...auditContextFromRequest(req),
+        });
+        return reply.code(409).send(
+          createApiErrorResponse(
+            'local_mfa_setup_required',
+            'Local MFA setup is required before login',
+            {
+              category: 'auth',
+              details: { reason: 'mfa_setup_required' },
+            },
+          ),
+        );
+      }
+
+      if (credential.mfaRequired) {
+        await logAudit({
+          action: 'local_login_blocked',
+          targetTable: 'LocalCredential',
+          targetId: credential.id,
+          reasonCode: 'mfa_challenge_required',
+          metadata: {
+            loginId,
+            userAccountId: identity.userAccountId,
+            identityId: identity.id,
+          },
+          ...auditContextFromRequest(req),
+        });
+        return reply.code(409).send(
+          createApiErrorResponse(
+            'local_mfa_challenge_required',
+            'Local MFA challenge is required before login',
+            {
+              category: 'auth',
+              details: { reason: 'mfa_challenge_required' },
+            },
+          ),
+        );
+      }
+
+      const now = new Date();
+      await prisma.userIdentity.update({
+        where: { id: identity.id },
+        data: {
+          lastAuthenticatedAt: now,
+          updatedBy: identity.providerSubject,
+        },
+      });
+      const { session, setCookie } = await createAuthSession(prisma, {
+        userAccountId: identity.userAccountId,
+        userIdentityId: identity.id,
+        providerType: identity.providerType,
+        issuer: identity.issuer,
+        providerSubject: identity.providerSubject,
+        sourceIp: req.ip,
+        userAgent:
+          typeof req.headers['user-agent'] === 'string'
+            ? req.headers['user-agent']
+            : undefined,
+      });
+      await logAudit({
+        action: 'local_login_succeeded',
+        targetTable: 'AuthSession',
+        targetId: session.id,
+        metadata: {
+          loginId,
+          userAccountId: identity.userAccountId,
+          identityId: identity.id,
+          sessionId: session.id,
+        },
+        ...auditContextFromRequest(req),
+      });
+      reply.header('set-cookie', setCookie);
+      return reply.code(204).send();
+    },
+  );
+
+  app.post(
+    '/auth/local/password/rotate',
+    {
+      schema: {
+        ...localPasswordRotateSchema,
+        tags: ['auth'],
+        summary: 'Rotate bootstrap local password before MFA-enabled login',
+        response: {
+          204: Type.Null(),
+          400: authGatewayErrorResponseSchema,
+          401: authGatewayErrorResponseSchema,
+          404: authGatewayErrorResponseSchema,
+          409: authGatewayErrorResponseSchema,
+          423: authGatewayErrorResponseSchema,
+          429: authGatewayErrorResponseSchema,
+        },
+      },
+    },
+    async (req, reply) => {
+      if (!isJwtBffAuthMode()) {
+        return respondAuthGatewayDisabled(reply);
+      }
+      try {
+        await localLoginFlexibleLimiter.consume(req.ip || 'unknown');
+      } catch {
+        return reply
+          .code(429)
+          .send(
+            createApiErrorResponse(
+              'local_login_rate_limited',
+              'Too many local login requests',
+              { category: 'rate_limit' },
+            ),
+          );
+      }
+
+      const body = (req.body || {}) as {
+        loginId: string;
+        currentPassword: string;
+        newPassword: string;
+      };
+      const loginId = normalizeLocalLoginId(body.loginId);
+      const currentPassword =
+        typeof body.currentPassword === 'string' ? body.currentPassword : '';
+      const { password: newPassword, invalidFields: passwordInvalidFields } =
+        validateLocalPassword(body.newPassword);
+      const invalidFields = [...passwordInvalidFields];
+      if (!loginId) invalidFields.push('loginId');
+      if (!currentPassword) invalidFields.push('currentPassword');
+      if (invalidFields.length) {
+        return respondLocalAuthValidationError(
+          reply,
+          'invalid_local_password_rotation_payload',
+          'Invalid local password rotation payload',
+          Array.from(new Set(invalidFields)),
+        );
+      }
+
+      const identity = await prisma.userIdentity.findFirst({
+        where: {
+          providerType: LOCAL_IDENTITY_PROVIDER,
+          issuer: LOCAL_IDENTITY_ISSUER,
+          localCredential: {
+            is: {
+              loginId,
+            },
+          },
+        },
+        select: buildLocalCredentialAuthSelect(),
+      });
+      if (
+        !identity ||
+        !identity.localCredential ||
+        !isLocalCredentialUsable(identity)
+      ) {
+        await logAudit({
+          action: 'local_password_rotation_failed',
+          targetTable: 'LocalCredential',
+          reasonCode: 'invalid_credentials',
+          metadata: {
+            loginId,
+          },
+          ...auditContextFromRequest(req),
+        });
+        return respondLocalLoginFailed(reply);
+      }
+
+      const credential = identity.localCredential;
+      if (isLocalCredentialLocked(credential.lockedUntil)) {
+        await logAudit({
+          action: 'local_password_rotation_failed',
+          targetTable: 'LocalCredential',
+          targetId: credential.id,
+          reasonCode: 'credential_locked',
+          metadata: {
+            loginId,
+            userAccountId: identity.userAccountId,
+            identityId: identity.id,
+            lockedUntil: credential.lockedUntil?.toISOString() ?? null,
+          },
+          ...auditContextFromRequest(req),
+        });
+        return reply.code(423).send(
+          createApiErrorResponse(
+            'local_credential_locked',
+            'Local credential is temporarily locked',
+            {
+              category: 'auth',
+              details: {
+                lockedUntil: credential.lockedUntil?.toISOString() ?? null,
+              },
+            },
+          ),
+        );
+      }
+
+      let passwordMatched = false;
+      try {
+        passwordMatched = await verifyLocalPassword(
+          credential.passwordHash,
+          currentPassword,
+        );
+      } catch (err) {
+        await logAudit({
+          action: 'local_password_rotation_failed',
+          targetTable: 'LocalCredential',
+          targetId: credential.id,
+          reasonCode: 'credential_verification_error',
+          metadata: {
+            loginId,
+            userAccountId: identity.userAccountId,
+            identityId: identity.id,
+            errorMessage: err instanceof Error ? err.message : String(err),
+          },
+          ...auditContextFromRequest(req),
+        });
+        return respondLocalLoginFailed(reply, 'credential_verification_error');
+      }
+      if (!passwordMatched) {
+        const failedCredential = await incrementLocalCredentialFailure(
+          credential.id,
+          identity.providerSubject,
+        );
+        await logAudit({
+          action: 'local_password_rotation_failed',
+          targetTable: 'LocalCredential',
+          targetId: credential.id,
+          reasonCode: failedCredential.lockedUntil
+            ? 'locked_after_failed_attempts'
+            : 'invalid_credentials',
+          metadata: {
+            loginId,
+            userAccountId: identity.userAccountId,
+            identityId: identity.id,
+            failedAttempts: failedCredential.failedAttempts,
+            lockedUntil: failedCredential.lockedUntil?.toISOString() ?? null,
+          },
+          ...auditContextFromRequest(req),
+        });
+        return respondLocalLoginFailed(reply);
+      }
+
+      await resetLocalCredentialFailures(
+        credential.id,
+        identity.providerSubject,
+      );
+
+      if (!credential.mustRotatePassword) {
+        return reply.code(409).send(
+          createApiErrorResponse(
+            'local_password_rotation_not_required',
+            'Local password rotation is not required',
+            {
+              category: 'conflict',
+              details: { reason: 'password_rotation_not_required' },
+            },
+          ),
+        );
+      }
+
+      const currentAndNextSame = await verifyLocalPassword(
+        credential.passwordHash,
+        newPassword,
+      );
+      if (currentAndNextSame) {
+        return respondLocalAuthValidationError(
+          reply,
+          'invalid_local_password_rotation_payload',
+          'Invalid local password rotation payload',
+          ['newPassword'],
+        );
+      }
+
+      await prisma.localCredential.update({
+        where: { id: credential.id },
+        data: {
+          passwordHash: await hashLocalPassword(newPassword),
+          passwordAlgo: 'argon2id',
+          mustRotatePassword: false,
+          failedAttempts: 0,
+          lockedUntil: null,
+          passwordChangedAt: new Date(),
+          updatedBy: identity.providerSubject,
+        },
+      });
+      await logAudit({
+        action: 'local_password_rotated',
+        targetTable: 'LocalCredential',
+        targetId: credential.id,
+        metadata: {
+          loginId,
+          userAccountId: identity.userAccountId,
+          identityId: identity.id,
+        },
+        ...auditContextFromRequest(req),
+      });
       return reply.code(204).send();
     },
   );
@@ -1483,7 +2122,7 @@ export async function registerAuthRoutes(app: FastifyInstance) {
                 loginId,
                 passwordHash,
                 passwordAlgo: 'argon2id',
-                mfaRequired: true,
+                mfaRequired: false,
                 mustRotatePassword: true,
                 failedAttempts: 0,
                 passwordChangedAt: now,
@@ -2002,7 +2641,7 @@ export async function registerAuthRoutes(app: FastifyInstance) {
                 loginId,
                 passwordHash,
                 passwordAlgo: 'argon2id',
-                mfaRequired: body.mfaRequired ?? true,
+                mfaRequired: body.mfaRequired ?? false,
                 mustRotatePassword: true,
                 failedAttempts: 0,
                 passwordChangedAt: now,

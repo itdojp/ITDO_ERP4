@@ -3,6 +3,8 @@ import argon2 from 'argon2';
 
 export const LOCAL_IDENTITY_PROVIDER = 'local_password';
 export const LOCAL_IDENTITY_ISSUER = 'erp4_local';
+export const LOCAL_LOGIN_MAX_FAILED_ATTEMPTS = 5;
+export const LOCAL_LOGIN_LOCKOUT_MINUTES = 15;
 
 const LOCAL_PASSWORD_MIN_LENGTH = 12;
 const LOCAL_PASSWORD_MAX_LENGTH = 128;
@@ -76,6 +78,30 @@ export async function hashLocalPassword(password: string) {
     timeCost: 2,
     parallelism: 1,
   });
+}
+
+export async function verifyLocalPassword(
+  passwordHash: string,
+  password: string,
+) {
+  return argon2.verify(passwordHash, password);
+}
+
+export function isLocalCredentialLocked(
+  lockedUntil: Date | null,
+  now = new Date(),
+) {
+  return Boolean(lockedUntil && lockedUntil.getTime() > now.getTime());
+}
+
+export function computeLocalCredentialLockUntil(
+  failedAttempts: number,
+  now = new Date(),
+) {
+  if (failedAttempts < LOCAL_LOGIN_MAX_FAILED_ATTEMPTS) {
+    return null;
+  }
+  return new Date(now.getTime() + LOCAL_LOGIN_LOCKOUT_MINUTES * 60 * 1000);
 }
 
 export function serializeLocalCredentialIdentity(identity: UserIdentityRecord) {

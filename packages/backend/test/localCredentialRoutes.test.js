@@ -209,7 +209,7 @@ test('POST /auth/local-credentials creates local credential and writes audit log
         const body = JSON.parse(res.body);
         assert.equal(body.loginId, 'local.user@example.com');
         assert.equal(body.status, 'active');
-        assert.equal(body.mfaRequired, true);
+        assert.equal(body.mfaRequired, false);
       } finally {
         await server.close();
       }
@@ -222,6 +222,10 @@ test('POST /auth/local-credentials creates local credential and writes audit log
   assert.equal(
     capturedCreate?.data?.localCredential?.create?.loginId,
     'local.user@example.com',
+  );
+  assert.equal(
+    capturedCreate?.data?.localCredential?.create?.mfaRequired,
+    false,
   );
   assert.equal(typeof hash, 'string');
   assert.equal(await argon2.verify(hash, 'LocalPassword123'), true);

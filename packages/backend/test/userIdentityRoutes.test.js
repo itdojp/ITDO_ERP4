@@ -346,7 +346,7 @@ test('POST /auth/user-identities/local-link creates local identity with bootstra
         const body = JSON.parse(res.body);
         assert.equal(body.providerType, 'local_password');
         assert.equal(body.localCredential.loginId, 'local.user@example.com');
-        assert.equal(body.localCredential.mfaRequired, true);
+        assert.equal(body.localCredential.mfaRequired, false);
         assert.equal(body.localCredential.mustRotatePassword, true);
       } finally {
         await server.close();
@@ -359,7 +359,7 @@ test('POST /auth/user-identities/local-link creates local identity with bootstra
   assert.equal(capturedCreate?.data?.providerType, 'local_password');
   assert.equal(
     capturedCreate?.data?.localCredential?.create?.mfaRequired,
-    true,
+    false,
   );
   assert.equal(
     capturedCreate?.data?.localCredential?.create?.mustRotatePassword,

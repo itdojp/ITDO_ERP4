@@ -39,7 +39,9 @@
 - 制約
   - MFA 完了前は高権限ロールを付与しない
   - ローカル化を理由に権限を拡張しない
-  - `mfaRequired` は caller が変更できない。`local_password` は常に MFA 必須で発行する
+  - Phase 1 では `mfaRequired` は caller が変更できない。`local_password` は既定で `mfaRequired=false` として発行する
+    - MFA setup / challenge 経路が未実装のため、`true` 既定だと bootstrap password 回転後もログイン不能になる
+    - Phase 2 で MFA 実行経路を実装した時点で、既定値を `true` へ切り替える
   - 管理者発行の初期パスワードは bootstrap secret とし、初回ログイン時に必ず再設定させる
 
 ### 3.3 併用期間管理
@@ -93,7 +95,7 @@
   - `local_password` identity 作成
   - `LocalCredential` 作成
   - パスワードは `argon2id`
-  - `mfaRequired=true` を system が強制設定
+  - Phase 1 では `mfaRequired=false` を system が既定設定
   - `mustRotatePassword=true` を system が設定する
   - 初回ログイン後の再設定強制は、ローカル認証実行経路の導入時に有効化する
   - `effectiveFrom` は作成時刻を system が設定する
