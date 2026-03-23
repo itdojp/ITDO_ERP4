@@ -43,7 +43,9 @@
   - 監査/運用ガイドの本番切替手順
 - 完了条件
   - ブラウザ本番経路が BFF 経由のみで成立
+  - `NODE_ENV=production` では `AUTH_MODE=jwt_bff` 以外で起動できない
   - API 直 Bearer 前提の PoC 経路を本番無効化
+  - delegated JWT と route-level machine auth は継続動作する
 
 ### 3. ローカル認証の導入
 

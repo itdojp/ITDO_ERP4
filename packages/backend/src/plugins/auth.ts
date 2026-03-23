@@ -817,6 +817,24 @@ function isPublicAuthGatewayRoute(req: any) {
   );
 }
 
+function isRouteLevelMachineAuthRoute(req: any) {
+  const url = typeof req.url === 'string' ? req.url : '';
+  const headers = (req.headers || {}) as Record<string, unknown>;
+  const authorization =
+    typeof headers.authorization === 'string' ? headers.authorization : '';
+  const recurringToken = headers['x-recurring-jobs-token'];
+  const webhookKey = headers['x-erp4-webhook-key'];
+  return (
+    (url.startsWith('/scim/v2/') && authorization.startsWith('Bearer ')) ||
+    (url.startsWith('/webhooks/sendgrid/events') &&
+      typeof webhookKey === 'string' &&
+      webhookKey.length > 0) ||
+    (url.startsWith('/jobs/recurring-projects/run') &&
+      typeof recurringToken === 'string' &&
+      recurringToken.length > 0)
+  );
+}
+
 async function enforceAuthSessionRateLimit(req: any, reply: any) {
   try {
     await authSessionFlexibleLimiter.consume(req.ip || 'unknown');
@@ -828,6 +846,18 @@ async function enforceAuthSessionRateLimit(req: any, reply: any) {
       }),
     );
   }
+}
+
+function handleAuthGuardError(req: any, reply: any, err: unknown) {
+  const message = err instanceof Error ? err.message : 'invalid_token';
+  if (message === 'auth_guard_rate_limited') {
+    return reply.code(429).send(
+      createApiErrorResponse('auth_guard_rate_limited', 'Too many requests', {
+        category: 'rate_limit',
+      }),
+    );
+  }
+  return respondUnauthorized(req, reply, message);
 }
 
 async function authPlugin(fastify: any) {
@@ -851,6 +881,9 @@ async function authPlugin(fastify: any) {
     if (isPublicAuthGatewayRoute(req)) {
       return;
     }
+    if (isRouteLevelMachineAuthRoute(req)) {
+      return;
+    }
     const mode = RESOLVED_AUTH_MODE;
     if (mode === 'header') {
       await applyHeaderAuth(req, req.ip || 'unknown');
@@ -858,6 +891,22 @@ async function authPlugin(fastify: any) {
       return;
     }
     if (mode === 'jwt_bff') {
+      const token = parseBearerToken(req);
+      if (token) {
+        try {
+          req.user = await authenticateJwt(token, req.ip || 'unknown');
+          if (!req.user?.auth?.delegated) {
+            return respondUnauthorized(req, reply, 'missing_session');
+          }
+          if (!(await validateAndEnrichUserContext(req, reply))) return;
+          const scopeDenied = enforceDelegatedScope(req, reply);
+          if (scopeDenied) return scopeDenied;
+          await ensureProjectIds(req);
+          return;
+        } catch (err) {
+          return handleAuthGuardError(req, reply, err);
+        }
+      }
       const rateLimited = await enforceAuthSessionRateLimit(req, reply);
       if (rateLimited) return rateLimited;
       const session = await resolveAuthSession(prisma, req.headers?.cookie);
@@ -889,19 +938,7 @@ async function authPlugin(fastify: any) {
       if (scopeDenied) return scopeDenied;
       await ensureProjectIds(req);
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'invalid_token';
-      if (message === 'auth_guard_rate_limited') {
-        return reply.code(429).send(
-          createApiErrorResponse(
-            'auth_guard_rate_limited',
-            'Too many requests',
-            {
-              category: 'rate_limit',
-            },
-          ),
-        );
-      }
-      return respondUnauthorized(req, reply, message);
+      return handleAuthGuardError(req, reply, err);
     }
   });
 }

@@ -148,9 +148,15 @@ test('test hook route is disabled in production even when E2E_ENABLE_TEST_HOOKS=
   await withEnv(
     {
       DATABASE_URL: process.env.DATABASE_URL || MIN_DATABASE_URL,
-      AUTH_MODE: 'header',
-      AUTH_ALLOW_HEADER_FALLBACK_IN_PROD: 'true',
+      AUTH_MODE: 'jwt_bff',
       NODE_ENV: 'production',
+      JWT_ISSUER: 'https://accounts.google.com',
+      JWT_AUDIENCE: 'client-id.apps.googleusercontent.com',
+      JWT_JWKS_URL: 'https://www.googleapis.com/oauth2/v3/certs',
+      GOOGLE_OIDC_CLIENT_SECRET: 'client-secret',
+      GOOGLE_OIDC_REDIRECT_URI: 'https://app.example.com/auth/google/callback',
+      AUTH_FRONTEND_ORIGIN: 'https://app.example.com',
+      AUTH_COOKIE_SECRET: '0123456789abcdef0123456789abcdef',
       E2E_ENABLE_TEST_HOOKS: '1',
     },
     async () => {
@@ -159,7 +165,6 @@ test('test hook route is disabled in production even when E2E_ENABLE_TEST_HOOKS=
         const res = await server.inject({
           method: 'POST',
           url: '/__test__/evidence-snapshots/reset',
-          headers: adminHeaders(),
           payload: { approvalInstanceId: 'approval-001' },
         });
         assert.equal(res.statusCode, 404);
