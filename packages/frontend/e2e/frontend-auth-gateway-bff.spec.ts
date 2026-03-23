@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { expect, test } from '@playwright/test';
-import type { Locator } from '@playwright/test';
+import type { Locator, Page } from '@playwright/test';
 
 const dateTag = new Date().toISOString().slice(0, 10);
 const rootDir = process.env.E2E_ROOT_DIR || process.cwd();
@@ -36,6 +36,16 @@ async function captureSection(locator: Locator, filename: string) {
       // UI 証跡取得失敗でテスト自体は落とさない。
     }
   }
+}
+
+async function mockAuthCsrf(page: Page) {
+  await page.route('**/auth/csrf', async (route) => {
+    await route.fulfill({
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ csrfToken: 'csrf-token-001' }),
+    });
+  });
 }
 
 test('frontend auth gateway bff smoke @extended', async ({ page }) => {
@@ -91,6 +101,7 @@ test('frontend auth gateway bff local login smoke @extended', async ({
     window.localStorage.removeItem('erp4_auth');
     window.localStorage.setItem('erp4_active_section', 'reports');
   });
+  await mockAuthCsrf(page);
 
   await page.route('**/auth/session', async (route) => {
     if (sessionState === 'authenticated') {
@@ -187,6 +198,7 @@ test('frontend auth gateway bff local bootstrap password rotation @extended', as
     window.localStorage.removeItem('erp4_auth');
     window.localStorage.setItem('erp4_active_section', 'reports');
   });
+  await mockAuthCsrf(page);
 
   await page.route('**/auth/session', async (route) => {
     await route.fulfill({
@@ -275,6 +287,7 @@ test('frontend auth gateway bff session management smoke @extended', async ({
     window.localStorage.removeItem('erp4_auth');
     window.localStorage.setItem('erp4_active_section', 'reports');
   });
+  await mockAuthCsrf(page);
 
   await page.route('**/auth/session', async (route) => {
     await route.fulfill({

@@ -359,17 +359,41 @@ test('POST /auth/logout clears current session cookie', async () => {
             method: 'POST',
             url: '/auth/logout',
             headers: {
-              cookie: 'erp4_session=session-token-001',
+              cookie:
+                'erp4_session=session-token-001; erp4_csrf=csrf-token-001',
+              'x-csrf-token': 'csrf-token-001',
             },
           });
           assert.equal(res.statusCode, 204, res.body);
           assert.equal(revokedId, 'sess-001');
           assert.match(String(res.headers['set-cookie']), /erp4_session=;/);
+          assert.match(String(res.headers['set-cookie']), /erp4_csrf=;/);
         } finally {
           await server.close();
         }
       },
     );
+  });
+});
+
+test('GET /auth/csrf returns token and sets csrf cookie', async () => {
+  await withEnv(baseBffEnv(), async () => {
+    await withPrismaStubs({}, async () => {
+      const { buildServer } = await loadBackendModules();
+      const server = await buildServer({ logger: false });
+      try {
+        const res = await server.inject({
+          method: 'GET',
+          url: '/auth/csrf',
+        });
+        assert.equal(res.statusCode, 200, res.body);
+        const body = JSON.parse(res.body);
+        assert.ok(typeof body.csrfToken === 'string' && body.csrfToken.length);
+        assert.match(String(res.headers['set-cookie']), /erp4_csrf=/);
+      } finally {
+        await server.close();
+      }
+    });
   });
 });
 
@@ -593,13 +617,16 @@ test('POST /auth/sessions/:sessionId/revoke revokes current-user session and cle
             method: 'POST',
             url: '/auth/sessions/sess-current/revoke',
             headers: {
-              cookie: 'erp4_session=session-token-001',
+              cookie:
+                'erp4_session=session-token-001; erp4_csrf=csrf-token-001',
+              'x-csrf-token': 'csrf-token-001',
             },
           });
           assert.equal(res.statusCode, 200, res.body);
           assert.equal(revokedId, 'sess-current');
           assert.equal(auditAction, 'auth_session_revoked');
           assert.match(String(res.headers['set-cookie']), /erp4_session=;/);
+          assert.match(String(res.headers['set-cookie']), /erp4_csrf=;/);
           const body = JSON.parse(res.body);
           assert.equal(body.sessionId, 'sess-current');
           assert.equal(body.revokedReason, 'user_requested');

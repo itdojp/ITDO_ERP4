@@ -810,6 +810,7 @@ function isPublicAuthGatewayRoute(req: any) {
   return (
     url.startsWith('/auth/google/start') ||
     url.startsWith('/auth/google/callback') ||
+    url.startsWith('/auth/csrf') ||
     url.startsWith('/auth/local/login') ||
     url.startsWith('/auth/local/password/rotate') ||
     url.startsWith('/auth/logout')

@@ -3,6 +3,10 @@ import test from 'node:test';
 import argon2 from 'argon2';
 
 const MIN_DATABASE_URL = 'postgresql://user:pass@localhost:5432/postgres';
+const LOCAL_CSRF_HEADERS = {
+  cookie: 'erp4_csrf=csrf-token-001',
+  'x-csrf-token': 'csrf-token-001',
+};
 let backendModulesCacheBust = `${Date.now()}-bootstrap`;
 let backendModulesPromise = null;
 
@@ -183,6 +187,7 @@ test('POST /auth/local/login creates session for local credential without MFA', 
             method: 'POST',
             url: '/auth/local/login',
             headers: {
+              ...LOCAL_CSRF_HEADERS,
               'user-agent': 'local-login-test',
             },
             payload: {
@@ -235,6 +240,7 @@ test('POST /auth/local/login requires bootstrap password rotation before session
           const res = await server.inject({
             method: 'POST',
             url: '/auth/local/login',
+            headers: LOCAL_CSRF_HEADERS,
             payload: {
               loginId: 'local.user@example.com',
               password: 'LocalPassword123',
@@ -292,6 +298,7 @@ test('POST /auth/local/login increments failedAttempts and locks local credentia
           const res = await server.inject({
             method: 'POST',
             url: '/auth/local/login',
+            headers: LOCAL_CSRF_HEADERS,
             payload: {
               loginId: 'local.user@example.com',
               password: 'WrongPassword123',
@@ -320,6 +327,7 @@ test('POST /auth/local/login returns local login validation error for invalid pa
         const res = await server.inject({
           method: 'POST',
           url: '/auth/local/login',
+          headers: LOCAL_CSRF_HEADERS,
           payload: {
             loginId: '   ',
             password: 'LocalPassword123',
@@ -359,6 +367,7 @@ test('POST /auth/local/login blocks when MFA setup is still required', async () 
           const res = await server.inject({
             method: 'POST',
             url: '/auth/local/login',
+            headers: LOCAL_CSRF_HEADERS,
             payload: {
               loginId: 'local.user@example.com',
               password: 'LocalPassword123',
@@ -399,6 +408,7 @@ test('POST /auth/local/login treats password verification errors as auth failure
           const res = await server.inject({
             method: 'POST',
             url: '/auth/local/login',
+            headers: LOCAL_CSRF_HEADERS,
             payload: {
               loginId: 'local.user@example.com',
               password: 'LocalPassword123',
@@ -451,6 +461,7 @@ test('POST /auth/local/password/rotate clears bootstrap flag and updates passwor
           const res = await server.inject({
             method: 'POST',
             url: '/auth/local/password/rotate',
+            headers: LOCAL_CSRF_HEADERS,
             payload: {
               loginId: 'local.user@example.com',
               currentPassword: 'LocalPassword123',
@@ -488,6 +499,7 @@ test('POST /auth/local/password/rotate returns dedicated validation error code',
         const res = await server.inject({
           method: 'POST',
           url: '/auth/local/password/rotate',
+          headers: LOCAL_CSRF_HEADERS,
           payload: {
             loginId: '   ',
             currentPassword: 'LocalPassword123',

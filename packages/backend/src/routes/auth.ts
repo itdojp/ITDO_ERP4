@@ -12,6 +12,7 @@ import { auditContextFromRequest, logAudit } from '../services/audit.js';
 import { requireRole } from '../services/rbac.js';
 import { getRouteRateLimitOptions } from '../services/rateLimitOverrides.js';
 import {
+  buildAuthCsrfClearCookie,
   buildAuthFlowClearCookie,
   buildAuthSessionClearCookie,
   buildAuthSessionResponse,
@@ -19,8 +20,10 @@ import {
   consumeGoogleAuthFlow,
   createAuthSession,
   createGoogleAuthFlow,
+  ensureAuthCsrfToken,
   exchangeGoogleAuthorizationCode,
   isIdentityUsable,
+  readAuthCsrfToken,
   resolveGoogleUserIdentity,
   revokeAuthSession,
   verifyGoogleIdToken,
@@ -145,6 +148,42 @@ function respondAuthGatewayDisabled(reply: FastifyReply) {
       category: 'not_found',
     }),
   );
+}
+
+function readCsrfHeader(req: {
+  headers?: Record<string, string | string[] | undefined>;
+}) {
+  const raw = req.headers?.['x-csrf-token'];
+  if (Array.isArray(raw)) {
+    const first = raw.find(
+      (value): value is string =>
+        typeof value === 'string' && value.trim().length > 0,
+    );
+    return first?.trim() || '';
+  }
+  return typeof raw === 'string' ? raw.trim() : '';
+}
+
+function enforceAuthCsrf(
+  req: {
+    headers: {
+      cookie?: string;
+      'x-csrf-token'?: string | string[];
+    };
+  },
+  reply: FastifyReply,
+) {
+  if (!isJwtBffAuthMode()) return null;
+  const cookieToken = readAuthCsrfToken(req.headers.cookie);
+  const headerToken = readCsrfHeader(req);
+  if (!cookieToken || !headerToken || cookieToken !== headerToken) {
+    return reply.code(403).send(
+      createApiErrorResponse('invalid_csrf_token', 'Invalid CSRF token', {
+        category: 'auth',
+      }),
+    );
+  }
+  return null;
 }
 
 function normalizeOptionalString(value: unknown) {
@@ -406,6 +445,13 @@ const authSessionResponseSchema = Type.Object(
       { additionalProperties: true },
     ),
     session: authSessionSchema,
+  },
+  { additionalProperties: false },
+);
+
+const authCsrfResponseSchema = Type.Object(
+  {
+    csrfToken: Type.String(),
   },
   { additionalProperties: false },
 );
@@ -1031,6 +1077,33 @@ export async function registerAuthRoutes(app: FastifyInstance) {
   );
 
   app.get(
+    '/auth/csrf',
+    {
+      schema: {
+        tags: ['auth'],
+        summary: 'Return CSRF token for BFF authenticated routes',
+        response: {
+          200: authCsrfResponseSchema,
+          404: authGatewayErrorResponseSchema,
+          429: authGatewayErrorResponseSchema,
+        },
+      },
+    },
+    async (req, reply) => {
+      if (!isJwtBffAuthMode()) {
+        return respondAuthGatewayDisabled(reply);
+      }
+      const rateLimited = await enforceAuthGatewayRateLimit(req, reply);
+      if (rateLimited) return rateLimited;
+      const { csrfToken, setCookie } = ensureAuthCsrfToken(req.headers.cookie);
+      if (setCookie) {
+        reply.header('set-cookie', setCookie);
+      }
+      return { csrfToken };
+    },
+  );
+
+  app.get(
     '/auth/sessions',
     {
       schema: {
@@ -1094,6 +1167,7 @@ export async function registerAuthRoutes(app: FastifyInstance) {
         summary: 'Revoke an active authenticated session for current user',
         response: {
           200: managedAuthSessionSchema,
+          403: authGatewayErrorResponseSchema,
           401: authGatewayErrorResponseSchema,
           404: authGatewayErrorResponseSchema,
           429: authGatewayErrorResponseSchema,
@@ -1106,6 +1180,8 @@ export async function registerAuthRoutes(app: FastifyInstance) {
       }
       const rateLimited = await enforceAuthGatewayRateLimit(req, reply);
       if (rateLimited) return rateLimited;
+      const csrfError = enforceAuthCsrf(req, reply);
+      if (csrfError) return csrfError;
       const currentSession = req.authSession;
       if (!currentSession) {
         return reply.code(401).send(
@@ -1158,7 +1234,10 @@ export async function registerAuthRoutes(app: FastifyInstance) {
         ...auditContextFromRequest(req),
       });
       if (revoked.id === currentSession.id) {
-        reply.header('set-cookie', buildAuthSessionClearCookie());
+        reply.header('set-cookie', [
+          buildAuthSessionClearCookie(),
+          buildAuthCsrfClearCookie(),
+        ]);
       }
       return serializeManagedAuthSession(revoked, currentSession.id);
     },
@@ -1172,6 +1251,7 @@ export async function registerAuthRoutes(app: FastifyInstance) {
         summary: 'Revoke current authenticated session',
         response: {
           204: Type.Null(),
+          403: authGatewayErrorResponseSchema,
           404: authGatewayErrorResponseSchema,
           429: authGatewayErrorResponseSchema,
         },
@@ -1183,6 +1263,8 @@ export async function registerAuthRoutes(app: FastifyInstance) {
       }
       const rateLimited = await enforceAuthGatewayRateLimit(req, reply);
       if (rateLimited) return rateLimited;
+      const csrfError = enforceAuthCsrf(req, reply);
+      if (csrfError) return csrfError;
       const revoked = await revokeAuthSession(prisma, req.headers.cookie);
       if (revoked) {
         await logAudit({
@@ -1198,7 +1280,10 @@ export async function registerAuthRoutes(app: FastifyInstance) {
           ...auditContextFromRequest(req),
         });
       }
-      reply.header('set-cookie', buildAuthSessionClearCookie());
+      reply.header('set-cookie', [
+        buildAuthSessionClearCookie(),
+        buildAuthCsrfClearCookie(),
+      ]);
       return reply.code(204).send();
     },
   );
@@ -1213,6 +1298,7 @@ export async function registerAuthRoutes(app: FastifyInstance) {
         response: {
           204: Type.Null(),
           400: authGatewayErrorResponseSchema,
+          403: authGatewayErrorResponseSchema,
           401: authGatewayErrorResponseSchema,
           404: authGatewayErrorResponseSchema,
           409: authGatewayErrorResponseSchema,
@@ -1238,6 +1324,8 @@ export async function registerAuthRoutes(app: FastifyInstance) {
             ),
           );
       }
+      const csrfError = enforceAuthCsrf(req, reply);
+      if (csrfError) return csrfError;
 
       const body = (req.body || {}) as { loginId: string; password: string };
       const loginId = normalizeLocalLoginId(body.loginId);
@@ -1485,6 +1573,7 @@ export async function registerAuthRoutes(app: FastifyInstance) {
         response: {
           204: Type.Null(),
           400: authGatewayErrorResponseSchema,
+          403: authGatewayErrorResponseSchema,
           401: authGatewayErrorResponseSchema,
           404: authGatewayErrorResponseSchema,
           409: authGatewayErrorResponseSchema,
@@ -1510,6 +1599,8 @@ export async function registerAuthRoutes(app: FastifyInstance) {
             ),
           );
       }
+      const csrfError = enforceAuthCsrf(req, reply);
+      if (csrfError) return csrfError;
 
       const body = (req.body || {}) as {
         loginId: string;
@@ -1752,6 +1843,7 @@ export async function registerAuthRoutes(app: FastifyInstance) {
         response: {
           201: userIdentitySchema,
           400: localCredentialErrorResponseSchema,
+          403: localCredentialErrorResponseSchema,
           404: localCredentialErrorResponseSchema,
           409: localCredentialErrorResponseSchema,
           429: localCredentialErrorResponseSchema,
@@ -1772,6 +1864,8 @@ export async function registerAuthRoutes(app: FastifyInstance) {
             ),
           );
       }
+      const csrfError = enforceAuthCsrf(req, reply);
+      if (csrfError) return csrfError;
       const actorId = requireActorUserId(req, reply);
       if (!actorId) return;
 
@@ -1961,6 +2055,7 @@ export async function registerAuthRoutes(app: FastifyInstance) {
         response: {
           201: userIdentitySchema,
           400: localCredentialErrorResponseSchema,
+          403: localCredentialErrorResponseSchema,
           404: localCredentialErrorResponseSchema,
           409: localCredentialErrorResponseSchema,
           429: localCredentialErrorResponseSchema,
@@ -1981,6 +2076,8 @@ export async function registerAuthRoutes(app: FastifyInstance) {
             ),
           );
       }
+      const csrfError = enforceAuthCsrf(req, reply);
+      if (csrfError) return csrfError;
       const actorId = requireActorUserId(req, reply);
       if (!actorId) return;
 
@@ -2202,6 +2299,7 @@ export async function registerAuthRoutes(app: FastifyInstance) {
         response: {
           200: userIdentitySchema,
           400: localCredentialErrorResponseSchema,
+          403: localCredentialErrorResponseSchema,
           404: localCredentialErrorResponseSchema,
           409: localCredentialErrorResponseSchema,
           429: localCredentialErrorResponseSchema,
@@ -2222,6 +2320,8 @@ export async function registerAuthRoutes(app: FastifyInstance) {
             ),
           );
       }
+      const csrfError = enforceAuthCsrf(req, reply);
+      if (csrfError) return csrfError;
       const actorId = requireActorUserId(req, reply);
       if (!actorId) return;
 
@@ -2509,6 +2609,7 @@ export async function registerAuthRoutes(app: FastifyInstance) {
         response: {
           201: localCredentialIdentitySchema,
           400: localCredentialErrorResponseSchema,
+          403: localCredentialErrorResponseSchema,
           404: localCredentialErrorResponseSchema,
           409: localCredentialErrorResponseSchema,
           429: localCredentialErrorResponseSchema,
@@ -2529,6 +2630,8 @@ export async function registerAuthRoutes(app: FastifyInstance) {
             ),
           );
       }
+      const csrfError = enforceAuthCsrf(req, reply);
+      if (csrfError) return csrfError;
       const actorId = requireActorUserId(req, reply);
       if (!actorId) return;
       const body = req.body as {
@@ -2718,6 +2821,7 @@ export async function registerAuthRoutes(app: FastifyInstance) {
         response: {
           200: localCredentialIdentitySchema,
           400: localCredentialErrorResponseSchema,
+          403: localCredentialErrorResponseSchema,
           404: localCredentialErrorResponseSchema,
           409: localCredentialErrorResponseSchema,
           429: localCredentialErrorResponseSchema,
@@ -2738,6 +2842,8 @@ export async function registerAuthRoutes(app: FastifyInstance) {
             ),
           );
       }
+      const csrfError = enforceAuthCsrf(req, reply);
+      if (csrfError) return csrfError;
       const actorId = requireActorUserId(req, reply);
       if (!actorId) return;
       const { identityId } = req.params as { identityId: string };

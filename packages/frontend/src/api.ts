@@ -27,6 +27,7 @@ const AUTH_MODE = (import.meta.env.VITE_AUTH_MODE || 'header')
   .toLowerCase();
 const API_BASE_VALID = API_BASE === '' || /^https?:\/\//i.test(API_BASE);
 let warnedInvalidBase = false;
+let authCsrfTokenCache: string | null = null;
 
 export function isBffAuthMode() {
   return AUTH_MODE === 'jwt_bff';
@@ -46,6 +47,7 @@ export function getAuthState(): AuthState | null {
 export function setAuthState(state: AuthState | null) {
   if (typeof window === 'undefined') return;
   if (!state) {
+    authCsrfTokenCache = null;
     window.localStorage.removeItem(AUTH_STORAGE_KEY);
     return;
   }
@@ -126,6 +128,62 @@ function shouldIncludeCredentials(url: string) {
   }
 }
 
+function isMutatingMethod(method: string | undefined) {
+  const normalized = (method || 'GET').trim().toUpperCase();
+  return !['GET', 'HEAD', 'OPTIONS'].includes(normalized);
+}
+
+function isAuthRoute(url: string) {
+  if (typeof window === 'undefined') {
+    return url.startsWith('/auth/') || url === '/auth';
+  }
+  try {
+    const target = new URL(url, window.location.origin);
+    return target.pathname === '/auth' || target.pathname.startsWith('/auth/');
+  } catch {
+    return false;
+  }
+}
+
+function shouldAttachAuthCsrf(url: string, options: RequestInit) {
+  return (
+    isBffAuthMode() &&
+    isMutatingMethod(options.method) &&
+    isAuthRoute(url) &&
+    !url.endsWith('/auth/csrf')
+  );
+}
+
+async function readInvalidCsrfResponse(res: Response) {
+  try {
+    const body = (await res.clone().json()) as {
+      error?: { code?: string };
+    };
+    return body?.error?.code === 'invalid_csrf_token';
+  } catch {
+    return false;
+  }
+}
+
+async function fetchAuthCsrfToken() {
+  const csrfUrl = resolveApiPath('/auth/csrf');
+  const res = await fetch(csrfUrl, {
+    method: 'GET',
+    credentials: shouldIncludeCredentials(csrfUrl) ? 'include' : 'same-origin',
+  });
+  if (!res.ok) {
+    throw new Error(`Request failed: ${csrfUrl} (${res.status})`);
+  }
+  const body = (await res.json()) as { csrfToken?: string };
+  const csrfToken =
+    typeof body?.csrfToken === 'string' ? body.csrfToken.trim() : '';
+  if (!csrfToken) {
+    throw new Error(`Request failed: ${csrfUrl} (missing csrfToken)`);
+  }
+  authCsrfTokenCache = csrfToken;
+  return csrfToken;
+}
+
 async function handleResponse<T>(res: Response, path: string): Promise<T> {
   if (res.ok) {
     try {
@@ -149,15 +207,35 @@ export async function apiResponse(
   options: RequestInit = {},
 ): Promise<Response> {
   const url = resolveApiPath(path);
-  const res = await fetch(url, {
-    ...options,
-    credentials: shouldIncludeCredentials(url)
-      ? 'include'
-      : options.credentials,
-    headers: mergeHeaders(options.headers, {
-      json: shouldSetJsonHeader(options.body),
-    }),
+  const withCredentials = shouldIncludeCredentials(url)
+    ? 'include'
+    : options.credentials;
+  const baseHeaders = mergeHeaders(options.headers, {
+    json: shouldSetJsonHeader(options.body),
   });
+  const useCsrf = shouldAttachAuthCsrf(url, options);
+  const requestHeaders = { ...baseHeaders };
+  if (useCsrf) {
+    requestHeaders['x-csrf-token'] =
+      authCsrfTokenCache || (await fetchAuthCsrfToken());
+  }
+  let res = await fetch(url, {
+    ...options,
+    credentials: withCredentials,
+    headers: requestHeaders,
+  });
+  if (useCsrf && res.status === 403 && (await readInvalidCsrfResponse(res))) {
+    authCsrfTokenCache = null;
+    const retryHeaders = {
+      ...baseHeaders,
+      'x-csrf-token': await fetchAuthCsrfToken(),
+    };
+    res = await fetch(url, {
+      ...options,
+      credentials: withCredentials,
+      headers: retryHeaders,
+    });
+  }
   return res;
 }
 
