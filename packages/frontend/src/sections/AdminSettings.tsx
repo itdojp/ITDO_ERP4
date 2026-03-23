@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { api } from '../api';
+import { api, getAuthState } from '../api';
 import {
   PolicyFormBuilder,
   createLocalStorageDraftAutosaveAdapter,
@@ -524,6 +524,7 @@ const createClientIdempotencyKey = (prefix: string) => {
 };
 
 export const AdminSettings: React.FC = () => {
+  const hasSystemAdminRole = getAuthState()?.roles?.includes('system_admin');
   const [alertItems, setAlertItems] = useState<AlertSetting[]>([]);
   const [ruleItems, setRuleItems] = useState<ApprovalRule[]>([]);
   const [actionPolicyItems, setActionPolicyItems] = useState<ActionPolicy[]>(
@@ -3409,7 +3410,16 @@ export const AdminSettings: React.FC = () => {
           formatDateTime={formatDateTime}
         />
 
-        <AuthIdentityMigrationCard formatDateTime={formatDateTime} />
+        {hasSystemAdminRole ? (
+          <AuthIdentityMigrationCard formatDateTime={formatDateTime} />
+        ) : (
+          <div className="card" style={{ padding: 12 }}>
+            <strong>認証方式移行</strong>
+            <p style={{ marginTop: 8 }}>
+              この設定は system_admin ロールを持つユーザーのみが操作できます。
+            </p>
+          </div>
+        )}
       </div>
     </div>
   );

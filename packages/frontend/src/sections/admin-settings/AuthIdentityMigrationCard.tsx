@@ -159,6 +159,12 @@ function normalizeOffset(value: string, fallback: number) {
 export const AuthIdentityMigrationCard = ({
   formatDateTime,
 }: AuthIdentityMigrationCardProps) => {
+  const initialQueryString = useMemo(() => {
+    const params = new URLSearchParams();
+    params.set('limit', '20');
+    params.set('offset', '0');
+    return params.toString();
+  }, []);
   const [userAccountIdFilter, setUserAccountIdFilter] = useState('');
   const [providerTypeFilter, setProviderTypeFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
@@ -188,12 +194,12 @@ export const AuthIdentityMigrationCard = ({
     return params.toString();
   }, [limit, offset, providerTypeFilter, statusFilter, userAccountIdFilter]);
 
-  const loadItems = useCallback(async () => {
+  const loadItems = useCallback(async (targetQueryString: string) => {
     setLoading(true);
     setError('');
     try {
       const response = await api<UserIdentityListResponse>(
-        `/auth/user-identities?${queryString}`,
+        `/auth/user-identities?${targetQueryString}`,
       );
       setItems(Array.isArray(response.items) ? response.items : []);
       setMessage('認証主体一覧を取得しました');
@@ -202,11 +208,11 @@ export const AuthIdentityMigrationCard = ({
     } finally {
       setLoading(false);
     }
-  }, [queryString]);
+  }, []);
 
   useEffect(() => {
-    void loadItems();
-  }, [loadItems]);
+    void loadItems(initialQueryString);
+  }, [initialQueryString, loadItems]);
 
   const submitGoogleLink = useCallback(async () => {
     setSubmitting(true);
@@ -237,16 +243,15 @@ export const AuthIdentityMigrationCard = ({
         );
         return;
       }
-      const created = (await res.json()) as UserIdentityItem;
       setGoogleLinkForm(defaultGoogleLinkForm());
-      setItems((current) => [created, ...current]);
+      await loadItems(queryString);
       setMessage('Google 認証主体を追加しました');
     } catch (err) {
       setError('Google 認証主体の追加に失敗しました');
     } finally {
       setSubmitting(false);
     }
-  }, [googleLinkForm]);
+  }, [googleLinkForm, loadItems, queryString]);
 
   const submitLocalLink = useCallback(async () => {
     setSubmitting(true);
@@ -276,16 +281,15 @@ export const AuthIdentityMigrationCard = ({
         );
         return;
       }
-      const created = (await res.json()) as UserIdentityItem;
       setLocalLinkForm(defaultLocalLinkForm());
-      setItems((current) => [created, ...current]);
+      await loadItems(queryString);
       setMessage('ローカル認証主体を追加しました');
     } catch (err) {
       setError('ローカル認証主体の追加に失敗しました');
     } finally {
       setSubmitting(false);
     }
-  }, [localLinkForm]);
+  }, [localLinkForm, loadItems, queryString]);
 
   const startEdit = useCallback((item: UserIdentityItem) => {
     setEditingIdentity(item);
@@ -325,11 +329,7 @@ export const AuthIdentityMigrationCard = ({
         return;
       }
       const updated = (await res.json()) as UserIdentityItem;
-      setItems((current) =>
-        current.map((item) =>
-          item.identityId === updated.identityId ? updated : item,
-        ),
-      );
+      await loadItems(queryString);
       setEditingIdentity(updated);
       setIdentityUpdateForm(defaultIdentityUpdateForm(updated));
       setMessage('認証主体を更新しました');
@@ -338,15 +338,15 @@ export const AuthIdentityMigrationCard = ({
     } finally {
       setSubmitting(false);
     }
-  }, [editingIdentity, identityUpdateForm]);
+  }, [editingIdentity, identityUpdateForm, loadItems, queryString]);
 
   const providerOptions = [
-    { value: '', label: 'all' },
+    { value: '', label: 'すべて' },
     { value: 'google_oidc', label: 'google_oidc' },
     { value: 'local_password', label: 'local_password' },
   ];
   const statusOptions = [
-    { value: '', label: 'all' },
+    { value: '', label: 'すべて' },
     { value: 'active', label: 'active' },
     { value: 'disabled', label: 'disabled' },
   ];
@@ -443,9 +443,9 @@ export const AuthIdentityMigrationCard = ({
               className="button"
               data-testid="auth-identities-load"
               onClick={() => {
-                void loadItems();
+                void loadItems(queryString);
               }}
-              disabled={loading}
+              disabled={loading || submitting}
             >
               認証主体一覧を取得
             </button>
