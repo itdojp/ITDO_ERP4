@@ -24,7 +24,8 @@
 - ERP4 側に Google 管理権限を広く持たせない。特に Domain-wide Delegation を要する常時接続は初期構成に入れない。
 - 高権限ロール付与は Google グループ自動同期だけに依存させず、ERP4 側の承認可能なマッピング設定と監査ログを必須にする。
 - ローカル認証ユーザは利用範囲を限定し、社内 Google ユーザと同等の権限付与を既定にしない。
-- 本番での `AUTH_MODE` は `jwt_bff` のみ許可する。`header` / `hybrid` / `jwt` は PoC・開発・限定運用に閉じる。
+- 本番でのブラウザ認証 `AUTH_MODE` は `jwt_bff` のみ許可する。`header` / `hybrid` / `jwt` は PoC・開発・限定運用に閉じる。
+- ただし、SCIM / webhook / 定期ジョブ用の route-level 認証と delegated JWT は機械連携経路として維持する。
 
 ## 4. 構成要素
 

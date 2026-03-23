@@ -59,6 +59,43 @@ function runCurrentUserRequest(overrides = {}, headers = {}) {
   });
 }
 
+function runInjectedRequest({
+  overrides = {},
+  method = 'GET',
+  url = '/me',
+  headers = {},
+  payload,
+}) {
+  const script = `
+    import { buildServer } from './dist/server.js';
+    const server = await buildServer({ logger: false });
+    try {
+      const payload = process.env.TEST_PAYLOAD
+        ? JSON.parse(process.env.TEST_PAYLOAD)
+        : undefined;
+      const res = await server.inject({
+        method: process.env.TEST_METHOD || 'GET',
+        url: process.env.TEST_URL || '/me',
+        headers: process.env.TEST_HEADERS ? JSON.parse(process.env.TEST_HEADERS) : {},
+        payload,
+      });
+      process.stdout.write(JSON.stringify({
+        statusCode: res.statusCode,
+        body: res.body,
+      }));
+    } finally {
+      await server.close();
+    }
+  `;
+  return runNodeScript(script, {
+    ...overrides,
+    TEST_METHOD: method,
+    TEST_URL: url,
+    TEST_HEADERS: JSON.stringify(headers),
+    TEST_PAYLOAD: payload === undefined ? '' : JSON.stringify(payload),
+  });
+}
+
 function runDelegatedJwtRequest({
   overrides = {},
   payload = {},
@@ -147,7 +184,7 @@ function runDelegatedJwtRequest({
   `;
   return runNodeScript(script, {
     ...overrides,
-    AUTH_MODE: 'jwt',
+    AUTH_MODE: overrides.AUTH_MODE || 'jwt',
     JWT_ISSUER: overrides.JWT_ISSUER || 'test-issuer',
     JWT_AUDIENCE: overrides.JWT_AUDIENCE || 'test-audience',
     TEST_JWT_PAYLOAD: JSON.stringify(payload),
@@ -211,7 +248,6 @@ test('envValidation: production + AUTH_MODE=jwt_bff is allowed with required set
     GOOGLE_OIDC_CLIENT_SECRET: 'secret',
     GOOGLE_OIDC_REDIRECT_URI: 'https://app.example.com/auth/google/callback',
     AUTH_FRONTEND_ORIGIN: 'https://app.example.com',
-    AUTH_COOKIE_SECRET: '0123456789abcdef0123456789abcdef',
   });
 
   assert.equal(result.status, 0);
@@ -365,6 +401,112 @@ test('auth plugin: production + AUTH_MODE=hybrid fails startup via env validatio
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /AUTH_MODE/);
   assert.match(result.stderr, /jwt_bff/);
+});
+
+test('auth plugin: production + AUTH_MODE=jwt_bff still allows delegated JWT auth', () => {
+  const result = runDelegatedJwtRequest({
+    overrides: {
+      NODE_ENV: 'production',
+      AUTH_MODE: 'jwt_bff',
+      GOOGLE_OIDC_CLIENT_SECRET: 'secret',
+      GOOGLE_OIDC_REDIRECT_URI: 'https://app.example.com/auth/google/callback',
+      AUTH_FRONTEND_ORIGIN: 'https://app.example.com',
+    },
+    payload: {
+      sub: 'principal-user',
+      act: { sub: 'agent-bot' },
+      scp: ['read-only'],
+      roles: ['user'],
+      jti: 'tok-delegated-jwt-bff',
+    },
+    method: 'GET',
+    url: '/project-360',
+    stubDb: true,
+    stubAgent360: true,
+  });
+
+  assert.equal(result.status, 0);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.statusCode, 200);
+});
+
+test('auth plugin: production + AUTH_MODE=jwt_bff rejects direct non-delegated bearer auth', () => {
+  const result = runDelegatedJwtRequest({
+    overrides: {
+      NODE_ENV: 'production',
+      AUTH_MODE: 'jwt_bff',
+      GOOGLE_OIDC_CLIENT_SECRET: 'secret',
+      GOOGLE_OIDC_REDIRECT_URI: 'https://app.example.com/auth/google/callback',
+      AUTH_FRONTEND_ORIGIN: 'https://app.example.com',
+    },
+    payload: {
+      sub: 'principal-user',
+      roles: ['user'],
+      jti: 'tok-direct-jwt-bff',
+    },
+    method: 'GET',
+    url: '/me',
+    stubDb: true,
+  });
+
+  assert.equal(result.status, 0);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.statusCode, 401);
+  const body = JSON.parse(payload.body);
+  assert.equal(body.error?.details?.reason, 'missing_session');
+});
+
+test('auth plugin: production + AUTH_MODE=jwt_bff allows SCIM route-level bearer auth', () => {
+  const result = runInjectedRequest({
+    overrides: {
+      NODE_ENV: 'production',
+      AUTH_MODE: 'jwt_bff',
+      JWT_ISSUER: 'https://accounts.google.com',
+      JWT_AUDIENCE: 'client-id.apps.googleusercontent.com',
+      JWT_PUBLIC_KEY: 'dummy-public-key',
+      GOOGLE_OIDC_CLIENT_SECRET: 'secret',
+      GOOGLE_OIDC_REDIRECT_URI: 'https://app.example.com/auth/google/callback',
+      AUTH_FRONTEND_ORIGIN: 'https://app.example.com',
+      SCIM_BEARER_TOKEN: 'scim-test-token',
+    },
+    method: 'GET',
+    url: '/scim/v2/ServiceProviderConfig',
+    headers: {
+      authorization: 'Bearer scim-test-token',
+    },
+  });
+
+  assert.equal(result.status, 0);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.statusCode, 200);
+});
+
+test('auth plugin: production + AUTH_MODE=jwt_bff allows SendGrid webhook route-level auth', () => {
+  const result = runInjectedRequest({
+    overrides: {
+      NODE_ENV: 'production',
+      AUTH_MODE: 'jwt_bff',
+      JWT_ISSUER: 'https://accounts.google.com',
+      JWT_AUDIENCE: 'client-id.apps.googleusercontent.com',
+      JWT_PUBLIC_KEY: 'dummy-public-key',
+      GOOGLE_OIDC_CLIENT_SECRET: 'secret',
+      GOOGLE_OIDC_REDIRECT_URI: 'https://app.example.com/auth/google/callback',
+      AUTH_FRONTEND_ORIGIN: 'https://app.example.com',
+      SENDGRID_EVENT_WEBHOOK_SECRET: 'sendgrid-secret',
+    },
+    method: 'POST',
+    url: '/webhooks/sendgrid/events',
+    headers: {
+      'x-erp4-webhook-key': 'sendgrid-secret',
+    },
+    payload: [],
+  });
+
+  assert.equal(result.status, 0);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.statusCode, 400);
+  const body = JSON.parse(payload.body);
+  assert.equal(body.error?.code, 'empty_payload');
 });
 
 test('auth plugin: production + AUTH_MODE=header fails startup even with explicit fallback flag', () => {

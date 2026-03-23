@@ -11,6 +11,7 @@
 - Google Workspace 側で OAuth クライアントを発行済みであること
 - reverse proxy で TLS 終端すること
 - 本番で `AUTH_MODE=jwt_bff` 以外を使わないこと
+- SCIM / webhook / 定期ジョブ用の route-level 認証と delegated JWT は例外経路として維持されること
 
 ## Google Workspace 側の設定
 
@@ -118,6 +119,7 @@ VITE_AUTH_MODE=jwt_bff VITE_API_BASE=https://api.example.com npm run build --pre
 - frontend から `このセッションを失効` を実行すると一覧が再読込される
 - `POST /auth/logout` で Cookie が破棄される
 - `NODE_ENV=production` では `AUTH_MODE=jwt_bff` 以外で backend が起動時検証に失敗する
+- delegated JWT、SCIM bearer、SendGrid webhook、定期ジョブ token の経路は継続動作する
 
 ## ロールバック
 

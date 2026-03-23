@@ -214,8 +214,6 @@ export function assertValidBackendEnv() {
   const allowHeaderFallbackRaw = normalizeString(
     process.env.AUTH_ALLOW_HEADER_FALLBACK_IN_PROD,
   );
-  const allowHeaderFallback =
-    parseBoolean(process.env.AUTH_ALLOW_HEADER_FALLBACK_IN_PROD) === true;
   if (
     allowHeaderFallbackRaw &&
     parseBoolean(process.env.AUTH_ALLOW_HEADER_FALLBACK_IN_PROD) === undefined
