@@ -446,9 +446,12 @@ test('auth plugin: jwt resolves DB context via UserIdentity before externalId fa
     stubDb: true,
     stubIdentity: {
       id: 'identity-1',
+      status: 'active',
       userAccountId: 'user-account-1',
       userAccount: {
         id: 'user-account-1',
+        userName: 'legacy-user-1',
+        externalId: 'legacy-external-1',
         active: true,
         deletedAt: null,
         organization: 'org-from-identity',
@@ -472,11 +475,13 @@ test('auth plugin: jwt resolves DB context via UserIdentity before externalId fa
   assert.equal(body.user?.orgId, 'org-from-identity');
   assert.deepEqual(body.user?.groupIds, ['general_affairs']);
   assert.deepEqual(body.user?.groupAccountIds, ['group-account-1']);
+  assert.equal(body.user?.userId, 'legacy-external-1');
+  assert.equal(body.user?.auth?.principalUserId, 'google-sub-001');
   assert.equal(body.user?.auth?.userAccountId, 'user-account-1');
   assert.equal(body.user?.auth?.identityId, 'identity-1');
 });
 
-test('auth plugin: jwt uses linked UserAccount id for project lookup when UserIdentity resolves', () => {
+test('auth plugin: jwt uses linked legacy user key for project lookup when UserIdentity resolves', () => {
   const result = runDelegatedJwtRequest({
     payload: {
       sub: 'google-sub-002',
@@ -486,21 +491,54 @@ test('auth plugin: jwt uses linked UserAccount id for project lookup when UserId
     stubDb: true,
     stubIdentity: {
       id: 'identity-2',
+      status: 'active',
       userAccountId: 'user-account-2',
       userAccount: {
         id: 'user-account-2',
+        userName: 'legacy-user-2',
+        externalId: null,
         active: true,
         deletedAt: null,
         organization: null,
         memberships: [],
       },
     },
-    expectProjectLookupUserId: 'user-account-2',
+    expectProjectLookupUserId: 'legacy-user-2',
   });
 
   assert.equal(result.status, 0);
   const payload = JSON.parse(result.stdout);
   assert.equal(payload.statusCode, 200);
   const body = JSON.parse(payload.body);
+  assert.equal(body.user?.userId, 'legacy-user-2');
   assert.deepEqual(body.user?.ownerProjects, ['proj-identity-1']);
+});
+
+test('auth plugin: jwt rejects disabled UserIdentity before legacy fallback', () => {
+  const result = runDelegatedJwtRequest({
+    payload: {
+      sub: 'google-sub-disabled',
+      roles: ['user'],
+      jti: 'tok-identity-disabled',
+    },
+    stubDb: true,
+    stubIdentity: {
+      id: 'identity-disabled',
+      status: 'disabled',
+      userAccountId: 'user-account-disabled',
+      userAccount: {
+        id: 'user-account-disabled',
+        userName: 'legacy-user-disabled',
+        externalId: 'google-sub-disabled',
+        active: true,
+        deletedAt: null,
+        organization: null,
+        memberships: [],
+      },
+    },
+  });
+
+  assert.equal(result.status, 0);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.statusCode, 401);
 });

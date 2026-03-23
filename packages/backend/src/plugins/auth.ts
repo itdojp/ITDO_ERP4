@@ -250,6 +250,7 @@ type UserDbContext =
       blocked: false;
       userAccountId: string;
       identityId?: string;
+      legacyUserId: string;
       orgId?: string;
       groupIds: string[];
       groupAccountIds: string[];
@@ -258,6 +259,8 @@ type UserDbContext =
 function mapResolvedUserContext(
   user: {
     id?: string;
+    userName?: string;
+    externalId?: string | null;
     active: boolean;
     deletedAt: Date | null;
     organization: string | null;
@@ -280,10 +283,15 @@ function mapResolvedUserContext(
     .map((membership) => membership.group.displayName)
     .map((value) => value.trim())
     .filter(Boolean);
+  const legacyUserId = (user.externalId ?? user.userName ?? '').trim();
+  if (!legacyUserId) {
+    return { blocked: true as const };
+  }
   return {
     blocked: false as const,
     userAccountId: options.userAccountId,
     identityId: options.identityId,
+    legacyUserId,
     orgId: user.organization ?? undefined,
     groupIds,
     groupAccountIds,
@@ -297,6 +305,8 @@ async function resolveUserGroupsFromDb(
     id: true,
     active: true,
     deletedAt: true,
+    userName: true,
+    externalId: true,
     organization: true,
     memberships: {
       include: {
@@ -314,20 +324,25 @@ async function resolveUserGroupsFromDb(
       where: {
         providerType: user.auth.providerType,
         issuer: user.auth.issuer,
-        providerSubject: user.userId,
-        status: 'active',
+        providerSubject: user.auth.principalUserId,
       },
       select: {
         id: true,
+        status: true,
         userAccountId: true,
         userAccount: { select },
       },
     });
-    if (identity?.userAccount) {
-      return mapResolvedUserContext(identity.userAccount, {
-        userAccountId: identity.userAccountId,
-        identityId: identity.id,
-      });
+    if (identity) {
+      if (identity.status !== 'active') {
+        return { blocked: true as const };
+      }
+      if (identity.userAccount) {
+        return mapResolvedUserContext(identity.userAccount, {
+          userAccountId: identity.userAccountId,
+          identityId: identity.id,
+        });
+      }
     }
   }
   const userAccount =
@@ -436,6 +451,9 @@ async function validateAndEnrichUserContext(req: any, reply: any) {
     if (user.auth && resolved.identityId && !user.auth.identityId) {
       user.auth.identityId = resolved.identityId;
     }
+    if (resolved.legacyUserId && user.userId !== resolved.legacyUserId) {
+      user.userId = resolved.legacyUserId;
+    }
   } catch (err) {
     if (req.log && typeof req.log.warn === 'function') {
       req.log.warn({ err }, 'Failed to resolve groupIds from DB');
@@ -452,9 +470,7 @@ async function ensureProjectIds(req: any) {
   if (user.roles.includes('admin') || user.roles.includes('mgmt')) return;
   const fallback = Array.isArray(user.projectIds) ? user.projectIds : [];
   try {
-    const fromDb = await resolveProjectIdsFromDb(
-      user.auth?.userAccountId ?? user.userId,
-    );
+    const fromDb = await resolveProjectIdsFromDb(user.userId);
     if (fromDb.length) {
       user.projectIds = fromDb;
     } else if (!fallback.length) {
