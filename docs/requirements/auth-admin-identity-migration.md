@@ -94,7 +94,8 @@
   - `LocalCredential` 作成
   - パスワードは `argon2id`
   - `mfaRequired=true` を system が強制設定
-  - `mustRotatePassword=true` を system が設定し、初回ログイン後の継続利用前に再設定を必須化
+  - `mustRotatePassword=true` を system が設定する
+  - 初回ログイン後の再設定強制は、ローカル認証実行経路の導入時に有効化する
   - `effectiveFrom` は作成時刻を system が設定する
   - `effectiveUntil` / `rollbackWindowUntil` は任意入力として受け付ける
 
@@ -127,6 +128,19 @@
   - Google -> ローカル移行で発行した bootstrap password は rollback 後に無効化する
 - 制約
   - `rollbackWindowUntil` を超過した操作は rollback 不可
+
+## 4.x 実装フェーズ整理
+
+- Phase 1 実装済み
+  - `GET /auth/user-identities`
+  - `POST /auth/user-identities/google-link`
+  - `POST /auth/user-identities/local-link`
+  - `PATCH /auth/user-identities/:identityId`
+  - `effectiveUntil` 超過 identity の認証拒否
+- Phase 2 実装予定
+  - `POST /auth/user-identities/:identityId/rollback`
+  - bootstrap password の初回ログイン再設定強制
+  - 管理 UI
 
 ## 5. UI 要件
 

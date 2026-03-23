@@ -3934,6 +3934,1401 @@
         ]
       }
     },
+    "/auth/user-identities": {
+      "get": {
+        "parameters": [
+          {
+            "in": "query",
+            "name": "userAccountId",
+            "required": false,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "providerType",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "google_oidc"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "enum": [
+                    "local_password"
+                  ],
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "active"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "enum": [
+                    "disabled"
+                  ],
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "maximum": 100,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "maximum": 10000,
+              "minimum": 0,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "items": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "createdAt": {
+                            "format": "date-time",
+                            "type": "string"
+                          },
+                          "displayName": {
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "effectiveUntil": {
+                            "format": "date-time",
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "emailSnapshot": {
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "identityId": {
+                            "type": "string"
+                          },
+                          "issuer": {
+                            "type": "string"
+                          },
+                          "lastAuthenticatedAt": {
+                            "format": "date-time",
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "linkedAt": {
+                            "format": "date-time",
+                            "type": "string"
+                          },
+                          "localCredential": {
+                            "additionalProperties": false,
+                            "nullable": true,
+                            "properties": {
+                              "failedAttempts": {
+                                "type": "integer"
+                              },
+                              "lockedUntil": {
+                                "format": "date-time",
+                                "nullable": true,
+                                "type": "string"
+                              },
+                              "loginId": {
+                                "type": "string"
+                              },
+                              "mfaRequired": {
+                                "type": "boolean"
+                              },
+                              "mfaSecretConfigured": {
+                                "type": "boolean"
+                              },
+                              "mustRotatePassword": {
+                                "type": "boolean"
+                              },
+                              "passwordAlgo": {
+                                "type": "string"
+                              },
+                              "passwordChangedAt": {
+                                "format": "date-time",
+                                "nullable": true,
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "loginId",
+                              "passwordAlgo",
+                              "mfaRequired",
+                              "mfaSecretConfigured",
+                              "mustRotatePassword",
+                              "failedAttempts",
+                              "lockedUntil",
+                              "passwordChangedAt"
+                            ],
+                            "type": "object"
+                          },
+                          "note": {
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "providerSubject": {
+                            "type": "string"
+                          },
+                          "providerType": {
+                            "type": "string"
+                          },
+                          "rollbackWindowUntil": {
+                            "format": "date-time",
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "status": {
+                            "type": "string"
+                          },
+                          "updatedAt": {
+                            "format": "date-time",
+                            "type": "string"
+                          },
+                          "userAccountId": {
+                            "type": "string"
+                          },
+                          "userActive": {
+                            "type": "boolean"
+                          },
+                          "userDeletedAt": {
+                            "format": "date-time",
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "userName": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "identityId",
+                          "userAccountId",
+                          "displayName",
+                          "userActive",
+                          "userDeletedAt",
+                          "providerType",
+                          "issuer",
+                          "providerSubject",
+                          "emailSnapshot",
+                          "status",
+                          "lastAuthenticatedAt",
+                          "linkedAt",
+                          "effectiveUntil",
+                          "rollbackWindowUntil",
+                          "note",
+                          "createdAt",
+                          "updatedAt",
+                          "localCredential"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
+                    "limit": {
+                      "type": "integer"
+                    },
+                    "offset": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "limit",
+                    "offset",
+                    "items"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "category": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "List user identities",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/auth/user-identities/{identityId}": {
+      "patch": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "identityId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "effectiveUntil": {
+                    "format": "date-time",
+                    "nullable": true,
+                    "type": "string"
+                  },
+                  "note": {
+                    "maxLength": 2000,
+                    "minLength": 1,
+                    "nullable": true,
+                    "type": "string"
+                  },
+                  "reasonCode": {
+                    "maxLength": 64,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "reasonText": {
+                    "maxLength": 2000,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "rollbackWindowUntil": {
+                    "format": "date-time",
+                    "nullable": true,
+                    "type": "string"
+                  },
+                  "status": {
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "active"
+                        ],
+                        "type": "string"
+                      },
+                      {
+                        "enum": [
+                          "disabled"
+                        ],
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "ticketId": {
+                    "maxLength": 128,
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "ticketId",
+                  "reasonCode"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "createdAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "displayName": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "effectiveUntil": {
+                      "format": "date-time",
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "emailSnapshot": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "identityId": {
+                      "type": "string"
+                    },
+                    "issuer": {
+                      "type": "string"
+                    },
+                    "lastAuthenticatedAt": {
+                      "format": "date-time",
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "linkedAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "localCredential": {
+                      "additionalProperties": false,
+                      "nullable": true,
+                      "properties": {
+                        "failedAttempts": {
+                          "type": "integer"
+                        },
+                        "lockedUntil": {
+                          "format": "date-time",
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "loginId": {
+                          "type": "string"
+                        },
+                        "mfaRequired": {
+                          "type": "boolean"
+                        },
+                        "mfaSecretConfigured": {
+                          "type": "boolean"
+                        },
+                        "mustRotatePassword": {
+                          "type": "boolean"
+                        },
+                        "passwordAlgo": {
+                          "type": "string"
+                        },
+                        "passwordChangedAt": {
+                          "format": "date-time",
+                          "nullable": true,
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "loginId",
+                        "passwordAlgo",
+                        "mfaRequired",
+                        "mfaSecretConfigured",
+                        "mustRotatePassword",
+                        "failedAttempts",
+                        "lockedUntil",
+                        "passwordChangedAt"
+                      ],
+                      "type": "object"
+                    },
+                    "note": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "providerSubject": {
+                      "type": "string"
+                    },
+                    "providerType": {
+                      "type": "string"
+                    },
+                    "rollbackWindowUntil": {
+                      "format": "date-time",
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "userAccountId": {
+                      "type": "string"
+                    },
+                    "userActive": {
+                      "type": "boolean"
+                    },
+                    "userDeletedAt": {
+                      "format": "date-time",
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "userName": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "identityId",
+                    "userAccountId",
+                    "displayName",
+                    "userActive",
+                    "userDeletedAt",
+                    "providerType",
+                    "issuer",
+                    "providerSubject",
+                    "emailSnapshot",
+                    "status",
+                    "lastAuthenticatedAt",
+                    "linkedAt",
+                    "effectiveUntil",
+                    "rollbackWindowUntil",
+                    "note",
+                    "createdAt",
+                    "updatedAt",
+                    "localCredential"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "category": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "category": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "category": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "category": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Update user identity state",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/auth/user-identities/google-link": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "effectiveUntil": {
+                    "format": "date-time",
+                    "nullable": true,
+                    "type": "string"
+                  },
+                  "emailSnapshot": {
+                    "maxLength": 255,
+                    "minLength": 1,
+                    "nullable": true,
+                    "type": "string"
+                  },
+                  "issuer": {
+                    "maxLength": 255,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "note": {
+                    "maxLength": 2000,
+                    "minLength": 1,
+                    "nullable": true,
+                    "type": "string"
+                  },
+                  "providerSubject": {
+                    "maxLength": 255,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "reasonCode": {
+                    "maxLength": 64,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "reasonText": {
+                    "maxLength": 2000,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "rollbackWindowUntil": {
+                    "format": "date-time",
+                    "nullable": true,
+                    "type": "string"
+                  },
+                  "ticketId": {
+                    "maxLength": 128,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "userAccountId": {
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "userAccountId",
+                  "issuer",
+                  "providerSubject",
+                  "ticketId",
+                  "reasonCode"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "createdAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "displayName": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "effectiveUntil": {
+                      "format": "date-time",
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "emailSnapshot": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "identityId": {
+                      "type": "string"
+                    },
+                    "issuer": {
+                      "type": "string"
+                    },
+                    "lastAuthenticatedAt": {
+                      "format": "date-time",
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "linkedAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "localCredential": {
+                      "additionalProperties": false,
+                      "nullable": true,
+                      "properties": {
+                        "failedAttempts": {
+                          "type": "integer"
+                        },
+                        "lockedUntil": {
+                          "format": "date-time",
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "loginId": {
+                          "type": "string"
+                        },
+                        "mfaRequired": {
+                          "type": "boolean"
+                        },
+                        "mfaSecretConfigured": {
+                          "type": "boolean"
+                        },
+                        "mustRotatePassword": {
+                          "type": "boolean"
+                        },
+                        "passwordAlgo": {
+                          "type": "string"
+                        },
+                        "passwordChangedAt": {
+                          "format": "date-time",
+                          "nullable": true,
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "loginId",
+                        "passwordAlgo",
+                        "mfaRequired",
+                        "mfaSecretConfigured",
+                        "mustRotatePassword",
+                        "failedAttempts",
+                        "lockedUntil",
+                        "passwordChangedAt"
+                      ],
+                      "type": "object"
+                    },
+                    "note": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "providerSubject": {
+                      "type": "string"
+                    },
+                    "providerType": {
+                      "type": "string"
+                    },
+                    "rollbackWindowUntil": {
+                      "format": "date-time",
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "userAccountId": {
+                      "type": "string"
+                    },
+                    "userActive": {
+                      "type": "boolean"
+                    },
+                    "userDeletedAt": {
+                      "format": "date-time",
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "userName": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "identityId",
+                    "userAccountId",
+                    "displayName",
+                    "userActive",
+                    "userDeletedAt",
+                    "providerType",
+                    "issuer",
+                    "providerSubject",
+                    "emailSnapshot",
+                    "status",
+                    "lastAuthenticatedAt",
+                    "linkedAt",
+                    "effectiveUntil",
+                    "rollbackWindowUntil",
+                    "note",
+                    "createdAt",
+                    "updatedAt",
+                    "localCredential"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "category": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "category": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "category": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "category": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Link Google identity to existing user account",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/auth/user-identities/local-link": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "effectiveUntil": {
+                    "format": "date-time",
+                    "nullable": true,
+                    "type": "string"
+                  },
+                  "loginId": {
+                    "maxLength": 255,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "note": {
+                    "maxLength": 2000,
+                    "minLength": 1,
+                    "nullable": true,
+                    "type": "string"
+                  },
+                  "password": {
+                    "maxLength": 128,
+                    "minLength": 12,
+                    "type": "string"
+                  },
+                  "reasonCode": {
+                    "maxLength": 64,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "reasonText": {
+                    "maxLength": 2000,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "rollbackWindowUntil": {
+                    "format": "date-time",
+                    "nullable": true,
+                    "type": "string"
+                  },
+                  "ticketId": {
+                    "maxLength": 128,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "userAccountId": {
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "userAccountId",
+                  "loginId",
+                  "password",
+                  "ticketId",
+                  "reasonCode"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "createdAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "displayName": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "effectiveUntil": {
+                      "format": "date-time",
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "emailSnapshot": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "identityId": {
+                      "type": "string"
+                    },
+                    "issuer": {
+                      "type": "string"
+                    },
+                    "lastAuthenticatedAt": {
+                      "format": "date-time",
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "linkedAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "localCredential": {
+                      "additionalProperties": false,
+                      "nullable": true,
+                      "properties": {
+                        "failedAttempts": {
+                          "type": "integer"
+                        },
+                        "lockedUntil": {
+                          "format": "date-time",
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "loginId": {
+                          "type": "string"
+                        },
+                        "mfaRequired": {
+                          "type": "boolean"
+                        },
+                        "mfaSecretConfigured": {
+                          "type": "boolean"
+                        },
+                        "mustRotatePassword": {
+                          "type": "boolean"
+                        },
+                        "passwordAlgo": {
+                          "type": "string"
+                        },
+                        "passwordChangedAt": {
+                          "format": "date-time",
+                          "nullable": true,
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "loginId",
+                        "passwordAlgo",
+                        "mfaRequired",
+                        "mfaSecretConfigured",
+                        "mustRotatePassword",
+                        "failedAttempts",
+                        "lockedUntil",
+                        "passwordChangedAt"
+                      ],
+                      "type": "object"
+                    },
+                    "note": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "providerSubject": {
+                      "type": "string"
+                    },
+                    "providerType": {
+                      "type": "string"
+                    },
+                    "rollbackWindowUntil": {
+                      "format": "date-time",
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "userAccountId": {
+                      "type": "string"
+                    },
+                    "userActive": {
+                      "type": "boolean"
+                    },
+                    "userDeletedAt": {
+                      "format": "date-time",
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "userName": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "identityId",
+                    "userAccountId",
+                    "displayName",
+                    "userActive",
+                    "userDeletedAt",
+                    "providerType",
+                    "issuer",
+                    "providerSubject",
+                    "emailSnapshot",
+                    "status",
+                    "lastAuthenticatedAt",
+                    "linkedAt",
+                    "effectiveUntil",
+                    "rollbackWindowUntil",
+                    "note",
+                    "createdAt",
+                    "updatedAt",
+                    "localCredential"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "category": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "category": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "category": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "category": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Link local identity to existing user account",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
     "/billing-360": {
       "get": {
         "parameters": [

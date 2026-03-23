@@ -2150,6 +2150,9 @@ model UserIdentity {
   status              String           @default("active")
   lastAuthenticatedAt DateTime?
   linkedAt            DateTime         @default(now())
+  effectiveUntil      DateTime?
+  rollbackWindowUntil DateTime?
+  note                String?
   createdAt           DateTime         @default(now())
   createdBy           String?
   updatedAt           DateTime         @updatedAt
@@ -2157,7 +2160,7 @@ model UserIdentity {
   localCredential     LocalCredential?
 
   @@unique([providerType, issuer, providerSubject])
-  @@unique([userAccountId, providerType, issuer])
+  @@unique([userAccountId, providerType])
   @@index([userAccountId, providerType, status])
   @@index([providerType, issuer, providerSubject, status])
 }
@@ -2171,6 +2174,7 @@ model LocalCredential {
   passwordAlgo      String       @default("argon2id")
   mfaRequired       Boolean      @default(true)
   mfaSecretRef      String?
+  mustRotatePassword Boolean     @default(false)
   failedAttempts    Int          @default(0)
   lockedUntil       DateTime?
   passwordChangedAt DateTime?

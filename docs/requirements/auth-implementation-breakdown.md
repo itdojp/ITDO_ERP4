@@ -55,6 +55,16 @@
   - 併用期間の制御
   - `effectiveUntil` 超過 identity の認証拒否
   - bootstrap password の初回ログイン再設定強制
+- Phase 1 実装
+  - `GET /auth/user-identities`
+  - `POST /auth/user-identities/google-link`
+  - `POST /auth/user-identities/local-link`
+  - `PATCH /auth/user-identities/:identityId`
+  - `effectiveUntil` 超過 identity の認証拒否
+- Phase 2 実装
+  - rollback API
+  - 管理 UI
+  - bootstrap password の初回ログイン再設定強制
 - 完了条件
   - 同一 `UserAccount` に対して identity 追加・無効化が可能
   - ユーザ本人による切替 UI が存在しない
