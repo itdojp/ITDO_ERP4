@@ -304,11 +304,17 @@ test('GET /auth/google/callback writes audit log on callback validation failure'
             const body = JSON.parse(res.body);
             assert.equal(body.error.code, 'google_auth_callback_failed');
             assert.equal(capturedAudit?.action, 'google_oidc_login_failed');
+            assert.equal(capturedAudit?.targetTable, 'AuthOidcFlow');
             assert.equal(
               capturedAudit?.reasonCode,
               'callback_validation_failed',
             );
             assert.equal(capturedAudit?.metadata?.state, 'state-001');
+            assert.match(
+              String(capturedAudit?.metadata?.error || ''),
+              /^google_token_exchange_failed:400:/,
+            );
+            assert.equal(capturedAudit?.userAgent, 'test-agent');
           } finally {
             await server.close();
           }
@@ -389,7 +395,7 @@ test('jwt_bff mode authenticates /me via session cookie', async () => {
 test('POST /auth/logout clears current session cookie', async () => {
   await withEnv(baseBffEnv(), async () => {
     let revokedId = null;
-    let auditAction = null;
+    let capturedAudit = null;
     await withPrismaStubs(
       {
         'authSession.findUnique': async () => ({
@@ -416,7 +422,7 @@ test('POST /auth/logout clears current session cookie', async () => {
           };
         },
         'auditLog.create': async ({ data }) => {
-          auditAction = data.action;
+          capturedAudit = data;
           return { id: 'audit-logout' };
         },
       },
@@ -431,11 +437,25 @@ test('POST /auth/logout clears current session cookie', async () => {
               cookie:
                 'erp4_session=session-token-001; erp4_csrf=csrf-token-001',
               'x-csrf-token': 'csrf-token-001',
+              'user-agent': 'test-agent',
             },
           });
           assert.equal(res.statusCode, 204, res.body);
           assert.equal(revokedId, 'sess-001');
-          assert.equal(auditAction, 'auth_session_logout');
+          assert.equal(capturedAudit?.action, 'auth_session_logout');
+          assert.equal(capturedAudit?.targetTable, 'AuthSession');
+          assert.equal(capturedAudit?.targetId, 'sess-001');
+          assert.equal(capturedAudit?.metadata?.userAccountId, 'user-001');
+          assert.equal(capturedAudit?.metadata?.identityId, 'identity-001');
+          assert.equal(
+            capturedAudit?.metadata?.issuer,
+            'https://accounts.google.com',
+          );
+          assert.equal(
+            capturedAudit?.metadata?.providerSubject,
+            'google-sub-001',
+          );
+          assert.equal(capturedAudit?.userAgent, 'test-agent');
           assert.match(String(res.headers['set-cookie']), /erp4_session=;/);
           assert.match(String(res.headers['set-cookie']), /erp4_csrf=;/);
         } finally {
@@ -632,7 +652,7 @@ test('GET /auth/sessions lists active sessions for current user', async () => {
 test('POST /auth/sessions/:sessionId/revoke revokes current-user session and clears cookie when current session is targeted', async () => {
   await withEnv(baseBffEnv(), async () => {
     let revokedId = null;
-    let auditAction = null;
+    let capturedAudit = null;
     let capturedFindFirstArgs = null;
     await withPrismaStubs(
       {
@@ -720,7 +740,7 @@ test('POST /auth/sessions/:sessionId/revoke revokes current-user session and cle
         }),
         'projectMember.findMany': async () => [{ projectId: 'proj-001' }],
         'auditLog.create': async ({ data }) => {
-          auditAction = data.action;
+          capturedAudit = data;
           return { id: 'audit-session-revoke' };
         },
       },
@@ -735,11 +755,29 @@ test('POST /auth/sessions/:sessionId/revoke revokes current-user session and cle
               cookie:
                 'erp4_session=session-token-001; erp4_csrf=csrf-token-001',
               'x-csrf-token': 'csrf-token-001',
+              'user-agent': 'test-agent',
             },
           });
           assert.equal(res.statusCode, 200, res.body);
           assert.equal(revokedId, 'sess-current');
-          assert.equal(auditAction, 'auth_session_revoked');
+          assert.equal(capturedAudit?.action, 'auth_session_revoked');
+          assert.equal(capturedAudit?.targetTable, 'AuthSession');
+          assert.equal(capturedAudit?.targetId, 'sess-current');
+          assert.equal(capturedAudit?.metadata?.userAccountId, 'user-001');
+          assert.equal(capturedAudit?.metadata?.identityId, 'identity-001');
+          assert.equal(
+            capturedAudit?.metadata?.issuer,
+            'https://accounts.google.com',
+          );
+          assert.equal(
+            capturedAudit?.metadata?.providerSubject,
+            'google-sub-001',
+          );
+          assert.equal(
+            capturedAudit?.metadata?.revokedBySessionId,
+            'sess-current',
+          );
+          assert.equal(capturedAudit?.userAgent, 'test-agent');
           assert.match(String(res.headers['set-cookie']), /erp4_session=;/);
           assert.match(String(res.headers['set-cookie']), /erp4_csrf=;/);
           const body = JSON.parse(res.body);

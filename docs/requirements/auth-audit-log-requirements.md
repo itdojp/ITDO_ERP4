@@ -22,12 +22,12 @@
 
 ### Google OIDC
 
-| action                        | 契機                                                 | targetTable                          | 必須 metadata                                                                    |
-| ----------------------------- | ---------------------------------------------------- | ------------------------------------ | -------------------------------------------------------------------------------- |
-| `google_oidc_login_succeeded` | Google callback 成功後に `AuthSession` を発行        | `AuthSession`                        | `userAccountId`, `identityId`, `issuer`, `providerSubject`                       |
-| `google_oidc_login_failed`    | flow 不正、ID token 検証失敗、identity 未リンク/無効 | `AuthOidcFlow` または `UserIdentity` | `reasonCode`, `state` または `issuer`/`providerSubject`, `error`                 |
-| `auth_session_logout`         | current session の logout                            | `AuthSession`                        | `userAccountId`, `identityId`, `issuer`, `providerSubject`                       |
-| `auth_session_revoked`        | session 一覧から任意 session を revoke               | `AuthSession`                        | `userAccountId`, `identityId`, `issuer`, `providerSubject`, `revokedBySessionId` |
+| action                        | 契機                                                 | targetTable                          | 必須 metadata                                                                                                      |
+| ----------------------------- | ---------------------------------------------------- | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------ |
+| `google_oidc_login_succeeded` | Google callback 成功後に `AuthSession` を発行        | `AuthSession`                        | `userAccountId`, `identityId`, `issuer`, `providerSubject`                                                         |
+| `google_oidc_login_failed`    | flow 不正、ID token 検証失敗、identity 未リンク/無効 | `AuthOidcFlow` または `UserIdentity` | `reasonCode` と、`state` または `issuer`/`providerSubject`。`error` は `callback_validation_failed` の場合のみ必須 |
+| `auth_session_logout`         | current session の logout                            | `AuthSession`                        | `userAccountId`, `identityId`, `issuer`, `providerSubject`                                                         |
+| `auth_session_revoked`        | session 一覧から任意 session を revoke               | `AuthSession`                        | `userAccountId`, `identityId`, `issuer`, `providerSubject`, `revokedBySessionId`                                   |
 
 ### ローカル認証
 
@@ -52,15 +52,17 @@
 ## 3. 共通要件
 
 - 監査ログは `auditLog.create` を経由し、`auditContextFromRequest(req)` を必ず付与する。
-- `source`, `actorType`, `actorUserId`, `ip`, `userAgent`, `requestId` は既存監査文脈に従う。
+- 共通文脈は既存監査スキーマ名に合わせて `source`, `actorRole`, `actorGroupId`, `ipAddress`, `userAgent`, `requestId` を使う。
+- 認証成立済みリクエストでは `metadata._auth.principalUserId` と `metadata._auth.actorUserId` を監査文脈として保持する。
 - 認証失敗系イベントは、認証成立前でも可能な範囲で `state`, `issuer`, `providerSubject`, `loginId` を残す。
 - email を主体識別子として監査ログの一次キーに使わない。
 - 高権限操作の追跡に必要な `ticketId` / `reasonCode` は、管理者 API で必須とする。
 
 ## 4. 保持・削除
 
-- `AuthSession` / `AuthOidcFlow` は調査目的で即時物理削除しない。
-- Cookie 破棄や session revoke 後も、監査ログと DB レコードで事後追跡できることを優先する。
+- `AuthSession` は revoke / logout 後も DB と監査ログで追跡できることを優先する。
+- `AuthOidcFlow` は callback 消費時に物理削除されるため、flow 自体の長期保持は前提にしない。
+- `AuthOidcFlow` を削除する場合でも、監査ログ側の `reasonCode`, `state`, `issuer`, `providerSubject`, `error` で事後追跡できることを要件とする。
 
 ## 5. テスト要件
 
@@ -72,4 +74,4 @@
   - `local_login_succeeded`
   - `local_login_failed`
   - `local_password_rotated`
-- 監査 action 名だけでなく、主要 metadata の有無も確認する。
+- 監査 action 名だけでなく、`targetTable`, `targetId`, `reasonCode`, 主要 metadata の有無も確認する。
