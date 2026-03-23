@@ -2134,6 +2134,7 @@ model UserAccount {
   deletedReason  String?
   memberships    UserGroup[]
   identities     UserIdentity[]
+  authSessions   AuthSession[]
   payrollProfile EmployeePayrollProfile?
 
   @@index([active])
@@ -2158,6 +2159,7 @@ model UserIdentity {
   updatedAt           DateTime         @updatedAt
   updatedBy           String?
   localCredential     LocalCredential?
+  authSessions        AuthSession[]
 
   @@unique([providerType, issuer, providerSubject])
   @@unique([userAccountId, providerType])
@@ -2183,6 +2185,44 @@ model LocalCredential {
   createdBy         String?
   updatedAt         DateTime     @updatedAt
   updatedBy         String?
+}
+
+model AuthSession {
+  id              String       @id @default(uuid())
+  sessionTokenHash String      @unique
+  userAccount     UserAccount  @relation(fields: [userAccountId], references: [id], onDelete: Cascade)
+  userAccountId   String
+  userIdentity    UserIdentity @relation(fields: [userIdentityId], references: [id], onDelete: Cascade)
+  userIdentityId  String
+  providerType    String
+  issuer          String
+  providerSubject String
+  sourceIp        String?
+  userAgent       String?
+  createdAt       DateTime     @default(now())
+  lastSeenAt      DateTime     @default(now())
+  expiresAt       DateTime
+  idleExpiresAt   DateTime
+  revokedAt       DateTime?
+  revokedReason   String?
+
+  @@index([userAccountId, revokedAt])
+  @@index([userIdentityId, revokedAt])
+  @@index([providerType, issuer, providerSubject, revokedAt])
+}
+
+model AuthOidcFlow {
+  id            String   @id @default(uuid())
+  providerType  String
+  flowTokenHash String   @unique
+  state         String   @unique
+  nonce         String
+  codeVerifier  String
+  returnTo      String?
+  createdAt     DateTime @default(now())
+  expiresAt     DateTime
+
+  @@index([providerType, expiresAt])
 }
 
 model EmployeePayrollProfile {

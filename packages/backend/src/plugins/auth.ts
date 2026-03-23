@@ -3,6 +3,10 @@ import { createRemoteJWKSet, importSPKI, jwtVerify } from 'jose';
 import type { CryptoKey, JWTPayload, JWTVerifyGetKey } from 'jose';
 import { prisma } from '../services/db.js';
 import { createApiErrorResponse } from '../services/errors.js';
+import {
+  buildSessionUserContext,
+  resolveAuthSession,
+} from '../services/authGateway.js';
 import { parseGroupToRoleMap } from '../utils/authGroupToRoleMap.js';
 
 export type UserContext = {
@@ -29,6 +33,7 @@ export type DelegatedAuthContext = {
   issuer?: string;
   userAccountId?: string;
   identityId?: string;
+  sessionBased?: boolean;
 };
 
 export type DelegatedScopeDecision = {
@@ -42,11 +47,13 @@ declare module 'fastify' {
   }
 }
 
-type AuthMode = 'header' | 'jwt' | 'hybrid';
+type AuthMode = 'header' | 'jwt' | 'hybrid' | 'jwt_bff';
 
 const AUTH_MODE_RAW = (process.env.AUTH_MODE || 'header').trim().toLowerCase();
 const RESOLVED_AUTH_MODE: AuthMode =
-  AUTH_MODE_RAW === 'jwt' || AUTH_MODE_RAW === 'hybrid'
+  AUTH_MODE_RAW === 'jwt' ||
+  AUTH_MODE_RAW === 'hybrid' ||
+  AUTH_MODE_RAW === 'jwt_bff'
     ? AUTH_MODE_RAW
     : 'header';
 const NODE_ENV_RAW = (process.env.NODE_ENV || '').trim().toLowerCase();
@@ -698,6 +705,15 @@ function assertRuntimeAuthConfig() {
   }
 }
 
+function isPublicAuthGatewayRoute(req: any) {
+  const url = typeof req.url === 'string' ? req.url : '';
+  return (
+    url.startsWith('/auth/google/start') ||
+    url.startsWith('/auth/google/callback') ||
+    url.startsWith('/auth/logout')
+  );
+}
+
 async function authPlugin(fastify: any) {
   assertRuntimeAuthConfig();
   fastify.addHook('onRequest', async (req: any, reply: any) => {
@@ -707,9 +723,22 @@ async function authPlugin(fastify: any) {
     ) {
       return;
     }
+    if (isPublicAuthGatewayRoute(req)) {
+      return;
+    }
     const mode = RESOLVED_AUTH_MODE;
     if (mode === 'header') {
       applyHeaderAuth(req);
+      await ensureProjectIds(req);
+      return;
+    }
+    if (mode === 'jwt_bff') {
+      const session = await resolveAuthSession(prisma, req.headers?.cookie);
+      if (!session) {
+        return respondUnauthorized(req, reply, 'missing_session');
+      }
+      req.user = buildSessionUserContext(session);
+      if (!(await validateAndEnrichUserContext(req, reply))) return;
       await ensureProjectIds(req);
       return;
     }
