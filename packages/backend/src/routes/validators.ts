@@ -2525,3 +2525,22 @@ export const userIdentityPatchSchema = {
     { additionalProperties: false },
   ),
 };
+
+export const authGoogleStartSchema = {
+  querystring: Type.Object(
+    {
+      returnTo: Type.Optional(Type.String({ minLength: 1, maxLength: 2048 })),
+    },
+    { additionalProperties: false },
+  ),
+};
+
+export const authGoogleCallbackSchema = {
+  querystring: Type.Object(
+    {
+      code: Type.String({ minLength: 1, maxLength: 4096 }),
+      state: Type.String({ minLength: 1, maxLength: 1024 }),
+    },
+    { additionalProperties: false },
+  ),
+};

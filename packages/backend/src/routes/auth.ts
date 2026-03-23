@@ -12,6 +12,20 @@ import { auditContextFromRequest, logAudit } from '../services/audit.js';
 import { requireRole } from '../services/rbac.js';
 import { getRouteRateLimitOptions } from '../services/rateLimitOverrides.js';
 import {
+  buildAuthFlowClearCookie,
+  buildAuthSessionClearCookie,
+  buildAuthSessionResponse,
+  buildSessionRedirectUrl,
+  consumeGoogleAuthFlow,
+  createAuthSession,
+  createGoogleAuthFlow,
+  exchangeGoogleAuthorizationCode,
+  isIdentityUsable,
+  resolveGoogleUserIdentity,
+  revokeAuthSession,
+  verifyGoogleIdToken,
+} from '../services/authGateway.js';
+import {
   LOCAL_IDENTITY_ISSUER,
   LOCAL_IDENTITY_PROVIDER,
   buildLocalProviderSubject,
@@ -21,6 +35,8 @@ import {
   validateLocalPassword,
 } from '../services/localCredentials.js';
 import {
+  authGoogleCallbackSchema,
+  authGoogleStartSchema,
   localCredentialCreateSchema,
   localCredentialListSchema,
   localCredentialPatchSchema,
@@ -45,6 +61,14 @@ const localCredentialAdminRateLimit = getRouteRateLimitOptions(
     timeWindow: '1 minute',
   },
 );
+const authGatewayRateLimit = getRouteRateLimitOptions(
+  'RATE_LIMIT_AUTH_GATEWAY',
+  {
+    max: 60,
+    timeWindow: '1 minute',
+  },
+);
+const AUTH_MODE = (process.env.AUTH_MODE || 'header').trim().toLowerCase();
 
 function parseRateLimitWindowSeconds(value: string) {
   const normalized = value.trim().toLowerCase();
@@ -75,6 +99,38 @@ const localCredentialAdminFlexibleLimiter = new RateLimiterMemory({
     localCredentialAdminRateLimit.timeWindow,
   ),
 });
+const authGatewayFlexibleLimiter = new RateLimiterMemory({
+  points: authGatewayRateLimit.max,
+  duration: parseRateLimitWindowSeconds(authGatewayRateLimit.timeWindow),
+});
+
+async function enforceAuthGatewayRateLimit(
+  req: { ip?: string },
+  reply: FastifyReply,
+) {
+  try {
+    await authGatewayFlexibleLimiter.consume(req.ip || 'unknown');
+    return null;
+  } catch {
+    return reply.code(429).send(
+      createApiErrorResponse('auth_gateway_rate_limited', 'Too many requests', {
+        category: 'rate_limit',
+      }),
+    );
+  }
+}
+
+function isJwtBffAuthMode() {
+  return AUTH_MODE === 'jwt_bff';
+}
+
+function respondAuthGatewayDisabled(reply: FastifyReply) {
+  return reply.code(404).send(
+    createApiErrorResponse('not_found', 'Not Found', {
+      category: 'not_found',
+    }),
+  );
+}
 
 function normalizeOptionalString(value: unknown) {
   return typeof value === 'string' ? value.trim() : '';
@@ -291,6 +347,40 @@ const localCredentialErrorResponseSchema = Type.Object(
   { additionalProperties: false },
 );
 
+const authGatewayErrorResponseSchema = localCredentialErrorResponseSchema;
+
+const authSessionSchema = Type.Object(
+  {
+    sessionId: Type.String(),
+    providerType: Type.String(),
+    issuer: Type.String(),
+    userAccountId: Type.String(),
+    userIdentityId: Type.String(),
+    expiresAt: Type.String({ format: 'date-time' }),
+    idleExpiresAt: Type.String({ format: 'date-time' }),
+  },
+  { additionalProperties: false },
+);
+
+const authSessionResponseSchema = Type.Object(
+  {
+    user: Type.Object(
+      {
+        userId: Type.String(),
+        roles: Type.Array(Type.String()),
+        orgId: Type.Optional(Type.String()),
+        projectIds: Type.Optional(Type.Array(Type.String())),
+        groupIds: Type.Optional(Type.Array(Type.String())),
+        groupAccountIds: Type.Optional(Type.Array(Type.String())),
+        auth: Type.Optional(Type.Any()),
+      },
+      { additionalProperties: true },
+    ),
+    session: authSessionSchema,
+  },
+  { additionalProperties: false },
+);
+
 const userIdentitySchema = Type.Object(
   {
     identityId: Type.String(),
@@ -498,6 +588,272 @@ export async function registerAuthRoutes(app: FastifyInstance) {
       : user.orgId || demoUser.orgId;
     return { user: { ...user, ownerOrgId, ownerProjects } };
   });
+
+  app.get(
+    '/auth/google/start',
+    {
+      schema: {
+        ...authGoogleStartSchema,
+        tags: ['auth'],
+        summary: 'Start Google OIDC authorization code flow',
+        response: {
+          400: authGatewayErrorResponseSchema,
+          404: authGatewayErrorResponseSchema,
+          429: authGatewayErrorResponseSchema,
+          302: Type.Null(),
+        },
+      },
+    },
+    async (req, reply) => {
+      if (!isJwtBffAuthMode()) {
+        return respondAuthGatewayDisabled(reply);
+      }
+      const rateLimited = await enforceAuthGatewayRateLimit(req, reply);
+      if (rateLimited) return rateLimited;
+      const query = (req.query || {}) as { returnTo?: string };
+      try {
+        const { redirectUrl, setCookie } = await createGoogleAuthFlow(prisma, {
+          returnTo: query.returnTo,
+        });
+        reply.header('set-cookie', setCookie);
+        return reply.redirect(redirectUrl, 302);
+      } catch (err) {
+        req.log?.warn?.({ err }, 'google_auth_start_failed');
+        return reply
+          .code(400)
+          .send(
+            createApiErrorResponse(
+              'google_auth_start_failed',
+              'Failed to initialize Google authentication flow',
+              { category: 'auth' },
+            ),
+          );
+      }
+    },
+  );
+
+  app.get(
+    '/auth/google/callback',
+    {
+      schema: {
+        ...authGoogleCallbackSchema,
+        tags: ['auth'],
+        summary: 'Complete Google OIDC authorization code flow',
+        response: {
+          302: Type.Null(),
+          400: authGatewayErrorResponseSchema,
+          401: authGatewayErrorResponseSchema,
+          403: authGatewayErrorResponseSchema,
+          404: authGatewayErrorResponseSchema,
+          429: authGatewayErrorResponseSchema,
+        },
+      },
+    },
+    async (req, reply) => {
+      if (!isJwtBffAuthMode()) {
+        return respondAuthGatewayDisabled(reply);
+      }
+      const rateLimited = await enforceAuthGatewayRateLimit(req, reply);
+      if (rateLimited) return rateLimited;
+      const query = (req.query || {}) as { code: string; state: string };
+      const flow = await consumeGoogleAuthFlow(prisma, {
+        cookieHeader: req.headers.cookie,
+        state: query.state,
+      });
+      if (!flow) {
+        await logAudit({
+          action: 'google_oidc_login_failed',
+          targetTable: 'AuthOidcFlow',
+          reasonCode: 'invalid_flow',
+          metadata: { state: query.state },
+          ...auditContextFromRequest(req),
+        });
+        reply.header('set-cookie', buildAuthFlowClearCookie());
+        return reply
+          .code(400)
+          .send(
+            createApiErrorResponse(
+              'google_auth_flow_invalid',
+              'Google authentication flow is invalid or expired',
+              { category: 'auth' },
+            ),
+          );
+      }
+
+      try {
+        const tokenResponse = await exchangeGoogleAuthorizationCode(
+          query.code,
+          flow.codeVerifier,
+        );
+        if (!tokenResponse.id_token) {
+          throw new Error('google_id_token_missing');
+        }
+        const verified = await verifyGoogleIdToken(
+          tokenResponse.id_token,
+          flow.nonce,
+        );
+        const identity = await resolveGoogleUserIdentity(prisma, {
+          issuer: verified.issuer,
+          providerSubject: verified.providerSubject,
+        });
+        if (!identity || !isIdentityUsable(identity)) {
+          await logAudit({
+            action: 'google_oidc_login_failed',
+            targetTable: 'UserIdentity',
+            targetId: identity?.id,
+            reasonCode: 'identity_unavailable',
+            metadata: {
+              issuer: verified.issuer,
+              providerSubject: verified.providerSubject,
+            },
+            ...auditContextFromRequest(req),
+          });
+          reply.header('set-cookie', buildAuthFlowClearCookie());
+          return reply
+            .code(403)
+            .send(
+              createApiErrorResponse(
+                'google_identity_unavailable',
+                'Google identity is not linked to an active ERP4 account',
+                { category: 'auth' },
+              ),
+            );
+        }
+
+        const { session, setCookie } = await createAuthSession(prisma, {
+          userAccountId: identity.userAccountId,
+          userIdentityId: identity.id,
+          providerType: identity.providerType,
+          issuer: identity.issuer,
+          providerSubject: identity.providerSubject,
+          sourceIp: req.ip,
+          userAgent:
+            typeof req.headers['user-agent'] === 'string'
+              ? req.headers['user-agent']
+              : undefined,
+        });
+
+        await logAudit({
+          action: 'google_oidc_login_succeeded',
+          targetTable: 'AuthSession',
+          targetId: session.id,
+          metadata: {
+            userAccountId: identity.userAccountId,
+            identityId: identity.id,
+            issuer: identity.issuer,
+            providerSubject: identity.providerSubject,
+          },
+          ...auditContextFromRequest(req),
+        });
+
+        reply.header('set-cookie', [setCookie, buildAuthFlowClearCookie()]);
+        return reply.redirect(
+          buildSessionRedirectUrl(flow.returnTo || '/'),
+          302,
+        );
+      } catch (err) {
+        req.log?.warn?.({ err }, 'google_auth_callback_failed');
+        await logAudit({
+          action: 'google_oidc_login_failed',
+          targetTable: 'AuthOidcFlow',
+          reasonCode: 'callback_validation_failed',
+          metadata: {
+            state: query.state,
+            error: err instanceof Error ? err.message : String(err),
+          },
+          ...auditContextFromRequest(req),
+        });
+        reply.header('set-cookie', buildAuthFlowClearCookie());
+        return reply.code(401).send(
+          createApiErrorResponse(
+            'google_auth_callback_failed',
+            'Google authentication callback validation failed',
+            {
+              category: 'auth',
+              details: {
+                reason: 'callback_validation_failed',
+              },
+            },
+          ),
+        );
+      }
+    },
+  );
+
+  app.get(
+    '/auth/session',
+    {
+      schema: {
+        tags: ['auth'],
+        summary: 'Return current authenticated BFF session',
+        response: {
+          200: authSessionResponseSchema,
+          401: authGatewayErrorResponseSchema,
+          404: authGatewayErrorResponseSchema,
+          429: authGatewayErrorResponseSchema,
+        },
+      },
+    },
+    async (req, reply) => {
+      if (!isJwtBffAuthMode()) {
+        return respondAuthGatewayDisabled(reply);
+      }
+      const rateLimited = await enforceAuthGatewayRateLimit(req, reply);
+      if (rateLimited) return rateLimited;
+      const session = req.authSession;
+      if (!session || !req.user) {
+        return reply.code(401).send(
+          createApiErrorResponse('unauthorized', 'Unauthorized', {
+            category: 'auth',
+            details: { reason: 'missing_session' },
+          }),
+        );
+      }
+      return {
+        user: req.user,
+        session: buildAuthSessionResponse(session),
+      };
+    },
+  );
+
+  app.post(
+    '/auth/logout',
+    {
+      schema: {
+        tags: ['auth'],
+        summary: 'Revoke current authenticated session',
+        response: {
+          204: Type.Null(),
+          404: authGatewayErrorResponseSchema,
+          429: authGatewayErrorResponseSchema,
+        },
+      },
+    },
+    async (req, reply) => {
+      if (!isJwtBffAuthMode()) {
+        return respondAuthGatewayDisabled(reply);
+      }
+      const rateLimited = await enforceAuthGatewayRateLimit(req, reply);
+      if (rateLimited) return rateLimited;
+      const revoked = await revokeAuthSession(prisma, req.headers.cookie);
+      if (revoked) {
+        await logAudit({
+          action: 'auth_session_logout',
+          targetTable: 'AuthSession',
+          targetId: revoked.id,
+          metadata: {
+            userAccountId: revoked.userAccountId,
+            identityId: revoked.userIdentityId,
+            issuer: revoked.issuer,
+            providerSubject: revoked.providerSubject,
+          },
+          ...auditContextFromRequest(req),
+        });
+      }
+      reply.header('set-cookie', buildAuthSessionClearCookie());
+      return reply.code(204).send();
+    },
+  );
 
   app.get(
     '/auth/user-identities',

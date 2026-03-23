@@ -162,12 +162,12 @@ export function assertValidBackendEnv() {
   assertPositiveIntegerEnv(issues, 'RATE_LIMIT_DOC_SEND_RETRY_MAX');
 
   const authMode = (process.env.AUTH_MODE || 'header').trim().toLowerCase();
-  const allowedAuthModes = new Set(['header', 'jwt', 'hybrid']);
+  const allowedAuthModes = new Set(['header', 'jwt', 'hybrid', 'jwt_bff']);
   if (!allowedAuthModes.has(authMode)) {
     addIssue(
       issues,
       'AUTH_MODE',
-      'header|jwt|hybrid のいずれかを指定してください',
+      'header|jwt|hybrid|jwt_bff のいずれかを指定してください',
     );
   }
   const actionPolicyPresetRaw = normalizeString(
@@ -238,7 +238,7 @@ export function assertValidBackendEnv() {
     );
   }
 
-  if (authMode === 'jwt' || authMode === 'hybrid') {
+  if (authMode === 'jwt' || authMode === 'hybrid' || authMode === 'jwt_bff') {
     assertRequired(issues, 'JWT_ISSUER', process.env.JWT_ISSUER);
     assertRequired(issues, 'JWT_AUDIENCE', process.env.JWT_AUDIENCE);
 
@@ -254,6 +254,56 @@ export function assertValidBackendEnv() {
     if (jwksUrl && !isHttpUrl(jwksUrl)) {
       addIssue(issues, 'JWT_JWKS_URL', 'http(s) URL を指定してください');
     }
+  }
+
+  if (authMode === 'jwt_bff') {
+    assertRequired(
+      issues,
+      'GOOGLE_OIDC_CLIENT_SECRET',
+      process.env.GOOGLE_OIDC_CLIENT_SECRET,
+    );
+    assertRequired(
+      issues,
+      'GOOGLE_OIDC_REDIRECT_URI',
+      process.env.GOOGLE_OIDC_REDIRECT_URI,
+    );
+    assertRequired(
+      issues,
+      'AUTH_FRONTEND_ORIGIN',
+      process.env.AUTH_FRONTEND_ORIGIN,
+    );
+    const redirectUri = normalizeString(process.env.GOOGLE_OIDC_REDIRECT_URI);
+    if (redirectUri && !isHttpUrl(redirectUri)) {
+      addIssue(
+        issues,
+        'GOOGLE_OIDC_REDIRECT_URI',
+        'http(s) URL を指定してください',
+      );
+    }
+    const frontendOrigin = normalizeString(process.env.AUTH_FRONTEND_ORIGIN);
+    if (frontendOrigin && !isHttpUrl(frontendOrigin)) {
+      addIssue(
+        issues,
+        'AUTH_FRONTEND_ORIGIN',
+        'http(s) URL を指定してください',
+      );
+    }
+    const cookieSecureRaw = normalizeString(
+      process.env.AUTH_SESSION_COOKIE_SECURE,
+    );
+    if (
+      cookieSecureRaw &&
+      parseBoolean(process.env.AUTH_SESSION_COOKIE_SECURE) === undefined
+    ) {
+      addIssue(
+        issues,
+        'AUTH_SESSION_COOKIE_SECURE',
+        'true|false|1|0 のいずれかを指定してください',
+      );
+    }
+    assertPositiveIntegerEnv(issues, 'AUTH_SESSION_ABSOLUTE_TTL_HOURS');
+    assertPositiveIntegerEnv(issues, 'AUTH_SESSION_IDLE_TTL_MINUTES');
+    assertPositiveIntegerEnv(issues, 'AUTH_SESSION_FLOW_TTL_MINUTES');
   }
 
   const attachmentProvider = (process.env.CHAT_ATTACHMENT_PROVIDER || 'local')

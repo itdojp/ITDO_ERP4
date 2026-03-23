@@ -27,6 +27,19 @@
   - Authorization Code + PKCE
   - BFF/Auth Gateway 導入
   - サーバセッション化
+- Phase 1 実装
+  - `AUTH_MODE=jwt_bff`
+  - `AuthSession` / `AuthOidcFlow`
+  - `GET /auth/google/start`
+  - `GET /auth/google/callback`
+  - `GET /auth/session`
+  - `POST /auth/logout`
+  - `AuthSession -> UserIdentity -> UserAccount` による API 認証解決
+- Phase 2 実装
+  - frontend の Bearer 直送経路廃止
+  - BFF 向け CSRF token 配布
+  - セッション一覧/失効 UI
+  - 監査/運用ガイドの本番切替手順
 - 完了条件
   - ブラウザ本番経路が BFF 経由のみで成立
   - API 直 Bearer 前提の PoC 経路を本番無効化
