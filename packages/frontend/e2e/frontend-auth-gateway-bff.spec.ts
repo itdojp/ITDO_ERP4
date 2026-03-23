@@ -5,12 +5,22 @@ const apiBase = process.env.E2E_API_BASE || 'http://localhost:3002';
 const isBffMode =
   (process.env.E2E_AUTH_MODE || '').trim().toLowerCase() === 'jwt_bff';
 
+const futureIso = (daysFromNow: number) =>
+  new Date(Date.now() + daysFromNow * 24 * 60 * 60 * 1000).toISOString();
+
 test('frontend auth gateway bff smoke @extended', async ({ page }) => {
   test.skip(!isBffMode, 'jwt_bff build only');
 
   await page.addInitScript(() => {
     window.localStorage.removeItem('erp4_auth');
     window.localStorage.setItem('erp4_active_section', 'reports');
+  });
+
+  await page.route('**/auth/google/start*', async (route) => {
+    await route.fulfill({
+      status: 204,
+      body: '',
+    });
   });
 
   await page.route('**/auth/session', async (route) => {
@@ -30,10 +40,12 @@ test('frontend auth gateway bff smoke @extended', async ({ page }) => {
     0,
   );
 
+  const loginRequestPromise = page.waitForRequest('**/auth/google/start*');
   await page.getByRole('button', { name: 'Googleでログイン' }).click();
-  await page.waitForURL('**/auth/google/start*');
-  expect(page.url()).toContain('/auth/google/start');
-  expect(new URL(page.url()).searchParams.get('returnTo')).toBe('/');
+  const loginRequest = await loginRequestPromise;
+  const loginUrl = new URL(loginRequest.url());
+  expect(loginUrl.pathname).toBe('/auth/google/start');
+  expect(loginUrl.searchParams.get('returnTo')).toBe('/');
 });
 
 test('frontend auth gateway bff local login smoke @extended', async ({
@@ -67,8 +79,8 @@ test('frontend auth gateway bff local login smoke @extended', async ({
             issuer: 'erp4_local',
             userAccountId: 'user-local-1',
             userIdentityId: 'identity-local-1',
-            expiresAt: '2026-03-24T00:00:00.000Z',
-            idleExpiresAt: '2026-03-23T12:00:00.000Z',
+            expiresAt: futureIso(7),
+            idleExpiresAt: futureIso(1),
           },
         }),
       });

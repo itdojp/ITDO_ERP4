@@ -578,9 +578,6 @@ export const CurrentUser: React.FC = () => {
   const syncBffAuthState = useCallback(async () => {
     const next = await refreshAuthStateFromServer();
     setAuth(next);
-    if (!next) {
-      setError('セッション状態の同期に失敗しました');
-    }
     return next;
   }, []);
 
@@ -610,6 +607,10 @@ export const CurrentUser: React.FC = () => {
             password: '',
             newPassword: '',
           });
+        } else {
+          setLocalLoginMessage(
+            'ログインは成功しました。セッション同期に失敗したため、画面を再読込してください',
+          );
         }
         return;
       }
