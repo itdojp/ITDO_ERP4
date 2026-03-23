@@ -5,6 +5,19 @@ import { exportSPKI, generateKeyPair, SignJWT } from 'jose';
 const MIN_DATABASE_URL = 'postgresql://user:pass@localhost:5432/postgres';
 let backendModulesCacheBust = `${Date.now()}-bootstrap`;
 let backendModulesPromise = null;
+let googleOidcTestKeyPromise = null;
+
+async function getGoogleOidcTestKey() {
+  if (!googleOidcTestKeyPromise) {
+    googleOidcTestKeyPromise = generateKeyPair('RS256').then(
+      async ({ privateKey, publicKey }) => ({
+        privateKey,
+        publicKeyPem: await exportSPKI(publicKey),
+      }),
+    );
+  }
+  return googleOidcTestKeyPromise;
+}
 
 function resetBackendModules() {
   backendModulesCacheBust = `${Date.now()}-${Math.random()
@@ -130,9 +143,55 @@ test('GET /auth/google/start redirects to Google and sets auth flow cookie', asy
   });
 });
 
+test('GET /auth/google/callback returns invalid flow for mismatched state or expired cookie', async () => {
+  await withEnv(baseBffEnv(), async () => {
+    let auditRecord = null;
+    await withPrismaStubs(
+      {
+        'authOidcFlow.findUnique': async () => ({
+          id: 'flow-001',
+          providerType: 'google_oidc',
+          state: 'state-expected',
+          nonce: 'nonce-001',
+          codeVerifier: 'verifier',
+          returnTo: '/dashboard',
+          expiresAt: new Date(Date.now() + 60_000),
+        }),
+        'authOidcFlow.delete': async () => {
+          throw new Error('authOidcFlow.delete should not be called');
+        },
+        'auditLog.create': async ({ data }) => {
+          auditRecord = data;
+          return { id: 'audit-invalid-flow' };
+        },
+      },
+      async () => {
+        const { buildServer } = await loadBackendModules();
+        const server = await buildServer({ logger: false });
+        try {
+          const res = await server.inject({
+            method: 'GET',
+            url: '/auth/google/callback?code=auth-code&state=state-actual',
+            headers: {
+              cookie: 'erp4_auth_flow=flow-token-001',
+            },
+          });
+          assert.equal(res.statusCode, 400, res.body);
+          const body = JSON.parse(res.body);
+          assert.equal(body.error.code, 'google_auth_flow_invalid');
+          assert.match(String(res.headers['set-cookie']), /erp4_auth_flow=;/);
+        } finally {
+          await server.close();
+        }
+      },
+    );
+    assert.equal(auditRecord?.action, 'google_oidc_login_failed');
+    assert.equal(auditRecord?.reasonCode, 'invalid_flow');
+  });
+});
+
 test('GET /auth/google/callback creates session and redirects to frontend', async () => {
-  const { privateKey, publicKey } = await generateKeyPair('RS256');
-  const publicKeyPem = await exportSPKI(publicKey);
+  const { privateKey, publicKeyPem } = await getGoogleOidcTestKey();
   const idToken = await new SignJWT({
     sub: 'google-sub-001',
     email: 'user@example.com',
@@ -321,6 +380,178 @@ test('GET /auth/google/callback writes audit log on callback validation failure'
         },
       );
     });
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test('GET /auth/google/callback returns identity unavailable when Google identity is not linked', async () => {
+  const { privateKey, publicKeyPem } = await getGoogleOidcTestKey();
+  const idToken = await new SignJWT({
+    sub: 'google-sub-001',
+    email: 'user@example.com',
+    nonce: 'nonce-001',
+  })
+    .setProtectedHeader({ alg: 'RS256' })
+    .setIssuer('https://accounts.google.com')
+    .setAudience('client-id.apps.googleusercontent.com')
+    .setIssuedAt()
+    .setExpirationTime('10m')
+    .sign(privateKey);
+
+  const originalFetch = global.fetch;
+  global.fetch = async () =>
+    new Response(JSON.stringify({ id_token: idToken }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+
+  try {
+    await withEnv(
+      {
+        ...baseBffEnv(),
+        JWT_PUBLIC_KEY: publicKeyPem,
+        JWT_JWKS_URL: undefined,
+      },
+      async () => {
+        let auditRecord = null;
+        await withPrismaStubs(
+          {
+            'authOidcFlow.findUnique': async () => ({
+              id: 'flow-001',
+              providerType: 'google_oidc',
+              state: 'state-001',
+              nonce: 'nonce-001',
+              codeVerifier: 'verifier',
+              returnTo: '/dashboard',
+              expiresAt: new Date(Date.now() + 60_000),
+            }),
+            'authOidcFlow.delete': async ({ where }) => ({ id: where.id }),
+            'userIdentity.findFirst': async () => null,
+            'authSession.create': async () => {
+              throw new Error('authSession.create should not be called');
+            },
+            'auditLog.create': async ({ data }) => {
+              auditRecord = data;
+              return { id: 'audit-identity-unavailable' };
+            },
+          },
+          async () => {
+            const { buildServer } = await loadBackendModules();
+            const server = await buildServer({ logger: false });
+            try {
+              const res = await server.inject({
+                method: 'GET',
+                url: '/auth/google/callback?code=auth-code&state=state-001',
+                headers: {
+                  cookie: 'erp4_auth_flow=flow-token-001',
+                },
+              });
+              assert.equal(res.statusCode, 403, res.body);
+              const body = JSON.parse(res.body);
+              assert.equal(body.error.code, 'google_identity_unavailable');
+              assert.match(
+                String(res.headers['set-cookie']),
+                /erp4_auth_flow=;/,
+              );
+            } finally {
+              await server.close();
+            }
+          },
+        );
+        assert.equal(auditRecord?.action, 'google_oidc_login_failed');
+        assert.equal(auditRecord?.reasonCode, 'identity_unavailable');
+      },
+    );
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test('GET /auth/google/callback returns callback validation error when nonce verification fails', async () => {
+  const { privateKey, publicKeyPem } = await getGoogleOidcTestKey();
+  const idToken = await new SignJWT({
+    sub: 'google-sub-001',
+    email: 'user@example.com',
+    nonce: 'nonce-mismatch',
+  })
+    .setProtectedHeader({ alg: 'RS256' })
+    .setIssuer('https://accounts.google.com')
+    .setAudience('client-id.apps.googleusercontent.com')
+    .setIssuedAt()
+    .setExpirationTime('10m')
+    .sign(privateKey);
+
+  const originalFetch = global.fetch;
+  global.fetch = async () =>
+    new Response(JSON.stringify({ id_token: idToken }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+
+  try {
+    await withEnv(
+      {
+        ...baseBffEnv(),
+        JWT_PUBLIC_KEY: publicKeyPem,
+        JWT_JWKS_URL: undefined,
+      },
+      async () => {
+        let auditRecord = null;
+        await withPrismaStubs(
+          {
+            'authOidcFlow.findUnique': async () => ({
+              id: 'flow-001',
+              providerType: 'google_oidc',
+              state: 'state-001',
+              nonce: 'nonce-001',
+              codeVerifier: 'verifier',
+              returnTo: '/dashboard',
+              expiresAt: new Date(Date.now() + 60_000),
+            }),
+            'authOidcFlow.delete': async ({ where }) => ({ id: where.id }),
+            'userIdentity.findFirst': async () => {
+              throw new Error('userIdentity.findFirst should not be called');
+            },
+            'authSession.create': async () => {
+              throw new Error('authSession.create should not be called');
+            },
+            'auditLog.create': async ({ data }) => {
+              auditRecord = data;
+              return { id: 'audit-callback-failed' };
+            },
+          },
+          async () => {
+            const { buildServer } = await loadBackendModules();
+            const server = await buildServer({ logger: false });
+            try {
+              const res = await server.inject({
+                method: 'GET',
+                url: '/auth/google/callback?code=auth-code&state=state-001',
+                headers: {
+                  cookie: 'erp4_auth_flow=flow-token-001',
+                },
+              });
+              assert.equal(res.statusCode, 401, res.body);
+              const body = JSON.parse(res.body);
+              assert.equal(body.error.code, 'google_auth_callback_failed');
+              assert.match(
+                String(res.headers['set-cookie']),
+                /erp4_auth_flow=;/,
+              );
+            } finally {
+              await server.close();
+            }
+          },
+        );
+        assert.equal(auditRecord?.action, 'google_oidc_login_failed');
+        assert.equal(auditRecord?.reasonCode, 'callback_validation_failed');
+        assert.match(
+          String(auditRecord?.metadata?.error ?? ''),
+          /google_nonce_mismatch/,
+        );
+      },
+    );
   } finally {
     global.fetch = originalFetch;
   }
@@ -529,6 +760,82 @@ test('POST /auth/logout returns invalid_csrf_token when csrf header mismatches c
         }
       },
     );
+  });
+});
+
+test('POST /auth/sessions/:sessionId/revoke returns invalid_csrf_token when csrf header mismatches cookie', async () => {
+  await withEnv(baseBffEnv(), async () => {
+    let findFirstCalled = false;
+    await withPrismaStubs(
+      {
+        'authSession.findUnique': async () => ({
+          id: 'sess-current',
+          userAccountId: 'user-001',
+          userIdentityId: 'identity-001',
+          providerType: 'google_oidc',
+          issuer: 'https://accounts.google.com',
+          providerSubject: 'google-sub-001',
+          expiresAt: new Date(Date.now() + 60_000),
+          idleExpiresAt: new Date(Date.now() + 60_000),
+          revokedAt: null,
+        }),
+        'authSession.update': async ({ where, data }) => ({
+          id: where.id,
+          userAccountId: 'user-001',
+          userIdentityId: 'identity-001',
+          providerType: 'google_oidc',
+          issuer: 'https://accounts.google.com',
+          providerSubject: 'google-sub-001',
+          expiresAt: new Date(Date.now() + 60_000),
+          idleExpiresAt: data.idleExpiresAt ?? new Date(Date.now() + 60_000),
+          revokedAt: null,
+        }),
+        'authSession.findFirst': async () => {
+          findFirstCalled = true;
+          return null;
+        },
+        'userIdentity.findUnique': async () => ({
+          id: 'identity-001',
+          status: 'active',
+          effectiveUntil: null,
+          userAccountId: 'user-001',
+          userAccount: {
+            id: 'user-001',
+            active: true,
+            deletedAt: null,
+            userName: 'legacy-user',
+            externalId: null,
+            organization: 'org-001',
+            memberships: [],
+          },
+        }),
+        'projectMember.findMany': async () => [{ projectId: 'proj-001' }],
+        'auditLog.create': async () => {
+          throw new Error('auditLog.create should not be called');
+        },
+      },
+      async () => {
+        const { buildServer } = await loadBackendModules();
+        const server = await buildServer({ logger: false });
+        try {
+          const res = await server.inject({
+            method: 'POST',
+            url: '/auth/sessions/sess-current/revoke',
+            headers: {
+              cookie:
+                'erp4_session=session-token-001; erp4_csrf=csrf-token-001',
+              'x-csrf-token': 'csrf-token-002',
+            },
+          });
+          assert.equal(res.statusCode, 403, res.body);
+          const body = JSON.parse(res.body);
+          assert.equal(body.error.code, 'invalid_csrf_token');
+        } finally {
+          await server.close();
+        }
+      },
+    );
+    assert.equal(findFirstCalled, false);
   });
 });
 
