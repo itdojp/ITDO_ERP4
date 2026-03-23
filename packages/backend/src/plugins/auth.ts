@@ -818,19 +818,6 @@ async function enforceAuthSessionRateLimit(req: any, reply: any) {
   }
 }
 
-async function enforceAuthGuardRateLimit(req: any, reply: any) {
-  try {
-    await authGuardFlexibleLimiter.consume(req.ip || 'unknown');
-    return null;
-  } catch {
-    return reply.code(429).send(
-      createApiErrorResponse('auth_guard_rate_limited', 'Too many requests', {
-        category: 'rate_limit',
-      }),
-    );
-  }
-}
-
 async function authPlugin(fastify: any) {
   assertRuntimeAuthConfig();
   fastify.addHook('onRequest', async (req: any, reply: any) => {
@@ -843,8 +830,15 @@ async function authPlugin(fastify: any) {
     if (isPublicAuthGatewayRoute(req)) {
       return;
     }
-    const authGuardRateLimited = await enforceAuthGuardRateLimit(req, reply);
-    if (authGuardRateLimited) return authGuardRateLimited;
+    try {
+      await authGuardFlexibleLimiter.consume(req.ip || 'unknown');
+    } catch {
+      return reply.code(429).send(
+        createApiErrorResponse('auth_guard_rate_limited', 'Too many requests', {
+          category: 'rate_limit',
+        }),
+      );
+    }
     const mode = RESOLVED_AUTH_MODE;
     if (mode === 'header') {
       applyHeaderAuth(req);
