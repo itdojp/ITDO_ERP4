@@ -52,13 +52,27 @@
   - Google を利用できない例外ユーザに限定したローカル認証を提供する。
 - 主な変更
   - `system_admin` に限定したローカル credential lifecycle API
+  - `POST /auth/local/login`
+  - `POST /auth/local/password/rotate`
   - 管理者によるローカルアカウント発行
   - Argon2id パスワード
   - MFA 必須化
   - lockout / password reset
+- Phase 1 実装
+  - local credential lifecycle API
+  - `POST /auth/local/login`
+  - `POST /auth/local/password/rotate`
+  - failed attempt count / temporary lockout
+  - bootstrap password の初回再設定
+  - `mfaRequired=false` の credential に限る BFF session 発行
+- Phase 2 実装
+  - MFA challenge / setup 実行経路
+  - recovery code
+  - local login UI
 - 完了条件
   - 本人自己登録なし
   - system_admin のみ発行・失効可能
+  - MFA 未完了の credential が session を作成しない
 
 ### 4. 認証方式移行フロー
 

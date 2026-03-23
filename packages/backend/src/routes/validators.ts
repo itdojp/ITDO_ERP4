@@ -2443,6 +2443,27 @@ export const localCredentialPatchSchema = {
   ),
 };
 
+export const localLoginSchema = {
+  body: Type.Object(
+    {
+      loginId: Type.String({ minLength: 1, maxLength: 255 }),
+      password: Type.String({ minLength: 1, maxLength: 512 }),
+    },
+    { additionalProperties: false },
+  ),
+};
+
+export const localPasswordRotateSchema = {
+  body: Type.Object(
+    {
+      loginId: Type.String({ minLength: 1, maxLength: 255 }),
+      currentPassword: Type.String({ minLength: 1, maxLength: 512 }),
+      newPassword: Type.String({ minLength: 12, maxLength: 128 }),
+    },
+    { additionalProperties: false },
+  ),
+};
+
 export const userIdentityListSchema = {
   querystring: Type.Object(
     {

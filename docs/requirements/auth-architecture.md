@@ -83,6 +83,15 @@
   - パスワード強度ポリシー
   - ログイン試行回数制限
   - 管理者による発行・失効
+- Phase 1 backend では次を提供する。
+  - `POST /auth/local/login`
+  - `POST /auth/local/password/rotate`
+  - failed attempt 5 回で 15 分 lockout
+  - `mustRotatePassword=true` の bootstrap credential に対する初回再設定
+- Phase 1 backend では、以下の credential は session を発行しない。
+  - `mustRotatePassword=true`
+  - `mfaRequired=true` かつ `mfaSecretRef` 未設定
+  - `mfaRequired=true` かつ MFA challenge 経路が未実装
 - ローカル認証ユーザには、既定で `admin` / `mgmt` / `exec` を割り当てない。
 - 初期実装では、`system_admin` 限定の管理 API で以下を実行できるようにする。
   - local credential 発行
