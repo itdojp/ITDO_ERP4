@@ -24,6 +24,7 @@
 - 主な操作: 簡易ログイン/ログアウト、認証セッション確認/失効、Push同意、オフライン再送
 - 補足: `VITE_AUTH_MODE=jwt_bff` の場合は backend の Auth Gateway へ遷移する `Googleでログイン` ボタンと、例外ユーザ向けのローカル認証フォームを表示します
 - 補足: `VITE_AUTH_MODE` 未設定時は、`VITE_GOOGLE_CLIENT_ID` 設定時のみ Google Identity Services のボタンを表示します
+- 証跡: `docs/test-results/2026-03-23-frontend-e2e-r2/00-current-user-auth-sessions.png`
 
 ### 詳細操作
 

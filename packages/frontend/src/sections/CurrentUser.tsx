@@ -336,6 +336,7 @@ export const CurrentUser: React.FC = () => {
   const [authSessionRevokingId, setAuthSessionRevokingId] = useState<
     string | null
   >(null);
+  const authSessionsRequestSeq = useRef(0);
   const googleButtonRef = useRef<HTMLDivElement | null>(null);
   const [googleReady, setGoogleReady] = useState(false);
   const googleButtonRendered = useRef(false);
@@ -350,7 +351,9 @@ export const CurrentUser: React.FC = () => {
     setMe(null);
     setError('');
     setAuthSessions([]);
+    setAuthSessionsLoading(false);
     setAuthSessionsError('');
+    setAuthSessionsMessage('');
     setAuthSessionRevokingId(null);
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new Event('erp4:auth-updated'));
@@ -654,17 +657,25 @@ export const CurrentUser: React.FC = () => {
       setAuthSessions([]);
       return;
     }
+    const requestSeq = authSessionsRequestSeq.current + 1;
+    authSessionsRequestSeq.current = requestSeq;
     setAuthSessionsLoading(true);
     setAuthSessionsError('');
     try {
       const res = await api<AuthSessionListResponse>(
         '/auth/sessions?limit=20&offset=0',
       );
-      setAuthSessions(res.items);
+      if (authSessionsRequestSeq.current === requestSeq) {
+        setAuthSessions(res.items);
+      }
     } catch {
-      setAuthSessionsError('認証セッションの取得に失敗しました');
+      if (authSessionsRequestSeq.current === requestSeq) {
+        setAuthSessionsError('認証セッションの取得に失敗しました');
+      }
     } finally {
-      setAuthSessionsLoading(false);
+      if (authSessionsRequestSeq.current === requestSeq) {
+        setAuthSessionsLoading(false);
+      }
     }
   }, [auth, bffAuthMode]);
 
@@ -672,6 +683,7 @@ export const CurrentUser: React.FC = () => {
     if (!bffAuthMode || !auth) {
       setAuthSessions([]);
       setAuthSessionsError('');
+      setAuthSessionsMessage('');
       setAuthSessionsLoading(false);
       setAuthSessionRevokingId(null);
       return;
@@ -1345,7 +1357,10 @@ export const CurrentUser: React.FC = () => {
                           onClick={() => {
                             void revokeAuthSession(session.sessionId);
                           }}
-                          disabled={authSessionRevokingId !== null}
+                          disabled={
+                            authSessionsLoading ||
+                            authSessionRevokingId !== null
+                          }
                         >
                           {authSessionRevokingId === session.sessionId
                             ? '失効中...'
