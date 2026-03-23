@@ -1,6 +1,7 @@
 import { FastifyInstance, FastifyReply } from 'fastify';
 import { Prisma } from '@prisma/client';
 import { Type } from '@sinclair/typebox';
+import { RateLimiterMemory } from 'rate-limiter-flexible';
 import { invalidateUserDbContextCache } from '../plugins/auth.js';
 import { prisma } from '../services/db.js';
 import { createApiErrorResponse } from '../services/errors.js';
@@ -37,6 +38,55 @@ const localCredentialAdminRateLimit = getRouteRateLimitOptions(
     timeWindow: '1 minute',
   },
 );
+
+function parseRateLimitWindowSeconds(value: string) {
+  const normalized = value.trim().toLowerCase();
+  const match = normalized.match(
+    /^(\d+)\s*(second|seconds|minute|minutes|hour|hours)$/,
+  );
+  if (!match) return 60;
+  const amount = Number(match[1]);
+  if (!Number.isFinite(amount) || amount <= 0) return 60;
+  switch (match[2]) {
+    case 'second':
+    case 'seconds':
+      return amount;
+    case 'minute':
+    case 'minutes':
+      return amount * 60;
+    case 'hour':
+    case 'hours':
+      return amount * 60 * 60;
+    default:
+      return 60;
+  }
+}
+
+const localCredentialAdminFlexibleLimiter = new RateLimiterMemory({
+  points: localCredentialAdminRateLimit.max,
+  duration: parseRateLimitWindowSeconds(
+    localCredentialAdminRateLimit.timeWindow,
+  ),
+});
+
+async function enforceLocalCredentialAdminRateLimit(
+  req: { ip: string },
+  reply: FastifyReply,
+) {
+  try {
+    await localCredentialAdminFlexibleLimiter.consume(req.ip);
+  } catch {
+    return reply
+      .code(429)
+      .send(
+        createApiErrorResponse(
+          'local_credential_rate_limited',
+          'Too many local credential admin requests',
+          { category: 'rate_limit' },
+        ),
+      );
+  }
+}
 
 function normalizeOptionalString(value: unknown) {
   return typeof value === 'string' ? value.trim() : '';
@@ -227,6 +277,7 @@ export async function registerAuthRoutes(app: FastifyInstance) {
         summary: 'List local credentials',
         response: {
           200: localCredentialListResponseSchema,
+          429: localCredentialErrorResponseSchema,
         },
       },
       config: { rateLimit: localCredentialAdminRateLimit },
@@ -266,6 +317,7 @@ export async function registerAuthRoutes(app: FastifyInstance) {
     '/auth/local-credentials',
     {
       preHandler: [
+        enforceLocalCredentialAdminRateLimit,
         app.rateLimit(localCredentialAdminRateLimit),
         requireSystemAdmin,
       ],
@@ -278,6 +330,7 @@ export async function registerAuthRoutes(app: FastifyInstance) {
           400: localCredentialErrorResponseSchema,
           404: localCredentialErrorResponseSchema,
           409: localCredentialErrorResponseSchema,
+          429: localCredentialErrorResponseSchema,
         },
       },
       config: { rateLimit: localCredentialAdminRateLimit },
@@ -470,6 +523,7 @@ export async function registerAuthRoutes(app: FastifyInstance) {
     '/auth/local-credentials/:identityId',
     {
       preHandler: [
+        enforceLocalCredentialAdminRateLimit,
         app.rateLimit(localCredentialAdminRateLimit),
         requireSystemAdmin,
       ],
@@ -482,6 +536,7 @@ export async function registerAuthRoutes(app: FastifyInstance) {
           400: localCredentialErrorResponseSchema,
           404: localCredentialErrorResponseSchema,
           409: localCredentialErrorResponseSchema,
+          429: localCredentialErrorResponseSchema,
         },
       },
       config: { rateLimit: localCredentialAdminRateLimit },
