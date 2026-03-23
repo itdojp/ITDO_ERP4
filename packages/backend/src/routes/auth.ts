@@ -317,7 +317,6 @@ export async function registerAuthRoutes(app: FastifyInstance) {
     '/auth/local-credentials',
     {
       preHandler: [
-        enforceLocalCredentialAdminRateLimit,
         app.rateLimit(localCredentialAdminRateLimit),
         requireSystemAdmin,
       ],
@@ -336,6 +335,11 @@ export async function registerAuthRoutes(app: FastifyInstance) {
       config: { rateLimit: localCredentialAdminRateLimit },
     },
     async (req, reply) => {
+      const rateLimited = await enforceLocalCredentialAdminRateLimit(
+        req,
+        reply,
+      );
+      if (rateLimited) return rateLimited;
       const actorId = req.user?.userId;
       if (!actorId) {
         return reply.code(400).send(
@@ -523,7 +527,6 @@ export async function registerAuthRoutes(app: FastifyInstance) {
     '/auth/local-credentials/:identityId',
     {
       preHandler: [
-        enforceLocalCredentialAdminRateLimit,
         app.rateLimit(localCredentialAdminRateLimit),
         requireSystemAdmin,
       ],
@@ -542,6 +545,11 @@ export async function registerAuthRoutes(app: FastifyInstance) {
       config: { rateLimit: localCredentialAdminRateLimit },
     },
     async (req, reply) => {
+      const rateLimited = await enforceLocalCredentialAdminRateLimit(
+        req,
+        reply,
+      );
+      if (rateLimited) return rateLimited;
       const actorId = req.user?.userId;
       if (!actorId) {
         return reply.code(400).send(
