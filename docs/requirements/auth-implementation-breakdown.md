@@ -33,6 +33,8 @@
   - `GET /auth/google/start`
   - `GET /auth/google/callback`
   - `GET /auth/session`
+  - `GET /auth/sessions`
+  - `POST /auth/sessions/:sessionId/revoke`
   - `POST /auth/logout`
   - `AuthSession -> UserIdentity -> UserAccount` による API 認証解決
 - Phase 2 実装
