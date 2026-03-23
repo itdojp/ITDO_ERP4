@@ -23,7 +23,7 @@
 
 - 目的: 現在のログイン情報と通知/オフラインキューの状態確認
 - 主な操作: 簡易ログイン/ログアウト、Push同意、オフライン再送
-- 補足: `VITE_AUTH_MODE=jwt_bff` の場合は backend の Auth Gateway へ遷移する `Googleでログイン` ボタンを表示します
+- 補足: `VITE_AUTH_MODE=jwt_bff` の場合は backend の Auth Gateway へ遷移する `Googleでログイン` ボタンと、例外ユーザ向けのローカル認証フォームを表示します
 - 補足: `VITE_AUTH_MODE` 未設定時は、`VITE_GOOGLE_CLIENT_ID` 設定時のみ Google Identity Services のボタンを表示します
 
 ### 詳細操作
@@ -36,11 +36,16 @@
 6. 「オフライン送信キュー」で `再送` もしくは `再読込` を実行する
 7. キュー明細で `再送` / `破棄` を選択する
 8. 「Push通知」で配信条件を選択し、同意チェック後に `購読登録` / `購読解除` / `テスト通知` を実行する
-9. `ログアウト` を押してローカル認証情報を破棄する
+9. `VITE_AUTH_MODE=jwt_bff` では、必要に応じて `ローカル認証 loginId` / `password` を入力し `ローカルログイン` を実行する
+10. 初期パスワード更新が要求された場合は `ローカル認証 new password` を入力し `初期パスワードを更新` を実行する
+11. `ログアウト` を押してローカル認証情報を破棄する
 
 ### 入力項目/制約
 
-- `VITE_AUTH_MODE=jwt_bff` の場合、未ログイン時は簡易ログインを表示せず、backend の Auth Gateway 経由で認証します
+- `VITE_AUTH_MODE=jwt_bff` の場合、未ログイン時は簡易ログインを表示せず、backend の Auth Gateway 経由の Google 認証と、例外ユーザ向けローカル認証フォームを表示します
+- ローカル認証フォームは例外ユーザ専用です。Google を利用できるユーザは Google 認証を優先します
+- 初期パスワードの更新が必要な credential では、`初期パスワードを更新` 完了後に新しいパスワードで再度ログインします
+- `mfaRequired=true` の credential は、MFA 実行経路が未実装のため session を発行しません
 - `VITE_AUTH_MODE` 未設定時の Googleログインは `VITE_GOOGLE_CLIENT_ID` が未設定の場合は表示されません
 - メール通知は `digest` の場合、配信間隔（分）が必要です
 - メール通知の既定は `digest` / 10分です

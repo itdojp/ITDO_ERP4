@@ -80,7 +80,12 @@
 
 現時点で「PoCの主要セクション（上表）」は証跡取得済みです。追加で網羅したい場合、以下を候補とします。
 
-- Googleログイン（ボタン表示/成功フロー）
-  - `VITE_AUTH_MODE=jwt_bff` では backend Auth Gateway へ遷移するボタン表示のみ
+- BFF 認証の専用証跡
+  - `VITE_AUTH_MODE=jwt_bff` では `Googleでログイン` に加えて例外ユーザ向けローカル認証フォームを表示します
+  - `packages/frontend/e2e/frontend-auth-gateway-bff.spec.ts` で以下を確認済みです
+    - Google 認証開始導線
+    - ローカル認証 login 成功
+    - 初期パスワード更新要求時の rotate 導線
+  - 画面キャプチャの正本は次回 `ui-evidence` 再取得時に追加します
+- Google Identity Services ボタン
   - `VITE_AUTH_MODE` 未設定時は `VITE_GOOGLE_CLIENT_ID` 未設定だと Google Identity Services ボタンが表示されません
-  - 設定値が揃った時点で、証跡用のE2E（または手動キャプチャ）を追加します。

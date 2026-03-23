@@ -28,6 +28,14 @@ type NotificationPreference = {
   muteAllUntil: string | null;
 };
 
+type ApiErrorResponse = {
+  error?: {
+    code?: string;
+    message?: string;
+    details?: Record<string, unknown>;
+  };
+};
+
 const pushPublicKey = (import.meta.env.VITE_PUSH_PUBLIC_KEY || '').trim();
 const PUSH_TOPIC_KEY = 'erp4_push_topics';
 const PUSH_CONSENT_KEY = 'erp4_push_consent';
@@ -160,6 +168,52 @@ function resolveJwtUserId(
   return null;
 }
 
+async function readApiErrorResponse(res: Response): Promise<ApiErrorResponse> {
+  try {
+    return (await res.json()) as ApiErrorResponse;
+  } catch {
+    return {};
+  }
+}
+
+function buildLocalLoginErrorMessage(payload: ApiErrorResponse) {
+  switch (payload.error?.code) {
+    case 'invalid_local_login_payload':
+      return 'ログインIDとパスワードを確認してください';
+    case 'local_login_failed':
+      return 'ログインIDまたはパスワードが正しくありません';
+    case 'local_credential_locked':
+      return 'ローカル認証は一時ロックされています';
+    case 'local_password_rotation_required':
+      return '初期パスワードの更新が必要です';
+    case 'local_mfa_setup_required':
+      return 'MFA 設定が必要です。system_admin に依頼してください';
+    case 'local_mfa_challenge_required':
+      return 'MFA challenge は未実装です。system_admin に依頼してください';
+    case 'local_login_rate_limited':
+      return 'ローカル認証の試行回数が上限に達しました';
+    default:
+      return 'ローカル認証に失敗しました';
+  }
+}
+
+function buildLocalPasswordRotateErrorMessage(payload: ApiErrorResponse) {
+  switch (payload.error?.code) {
+    case 'invalid_local_password_rotation_payload':
+      return 'ログインID・現在のパスワード・新しいパスワードを確認してください';
+    case 'local_login_failed':
+      return 'ログインIDまたは現在のパスワードが正しくありません';
+    case 'local_credential_locked':
+      return 'ローカル認証は一時ロックされています';
+    case 'local_password_rotation_not_required':
+      return '初期パスワード更新は不要です';
+    case 'local_login_rate_limited':
+      return 'ローカル認証の試行回数が上限に達しました';
+    default:
+      return '初期パスワード更新に失敗しました';
+  }
+}
+
 export const CurrentUser: React.FC = () => {
   const bffAuthMode = isBffAuthMode();
   const googleClientId = (import.meta.env.VITE_GOOGLE_CLIENT_ID || '').trim();
@@ -216,6 +270,16 @@ export const CurrentUser: React.FC = () => {
   const [isOnline, setIsOnline] = useState(
     typeof navigator !== 'undefined' ? navigator.onLine : true,
   );
+  const [localLoginForm, setLocalLoginForm] = useState({
+    loginId: '',
+    password: '',
+    newPassword: '',
+  });
+  const [localLoginLoading, setLocalLoginLoading] = useState(false);
+  const [localLoginError, setLocalLoginError] = useState('');
+  const [localLoginMessage, setLocalLoginMessage] = useState('');
+  const [localPasswordRotationRequired, setLocalPasswordRotationRequired] =
+    useState(false);
   const googleButtonRef = useRef<HTMLDivElement | null>(null);
   const [googleReady, setGoogleReady] = useState(false);
   const googleButtonRendered = useRef(false);
@@ -251,6 +315,18 @@ export const CurrentUser: React.FC = () => {
       })
       .catch(() => setError('取得に失敗'));
   }, [auth, bffAuthMode]);
+
+  useEffect(() => {
+    if (!auth) return;
+    setLocalPasswordRotationRequired(false);
+    setLocalLoginError('');
+    setLocalLoginMessage('');
+    setLocalLoginForm({
+      loginId: '',
+      password: '',
+      newPassword: '',
+    });
+  }, [auth]);
 
   const loadQueueItems = useCallback(async () => {
     try {
@@ -498,6 +574,97 @@ export const CurrentUser: React.FC = () => {
     url.searchParams.set('returnTo', returnTo);
     window.location.assign(url.toString());
   }, []);
+
+  const syncBffAuthState = useCallback(async () => {
+    const next = await refreshAuthStateFromServer();
+    setAuth(next);
+    if (!next) {
+      setError('セッション状態の同期に失敗しました');
+    }
+    return next;
+  }, []);
+
+  const submitLocalLogin = useCallback(async () => {
+    setLocalLoginError('');
+    setLocalLoginMessage('');
+    const loginId = localLoginForm.loginId.trim();
+    if (!loginId || !localLoginForm.password) {
+      setLocalLoginError('ログインIDとパスワードを確認してください');
+      return;
+    }
+    setLocalLoginLoading(true);
+    try {
+      const res = await apiResponse('/auth/local/login', {
+        method: 'POST',
+        body: JSON.stringify({
+          loginId,
+          password: localLoginForm.password,
+        }),
+      });
+      if (res.status === 204) {
+        const next = await syncBffAuthState();
+        if (next) {
+          setLocalPasswordRotationRequired(false);
+          setLocalLoginForm({
+            loginId: '',
+            password: '',
+            newPassword: '',
+          });
+        }
+        return;
+      }
+      const payload = await readApiErrorResponse(res);
+      if (payload.error?.code === 'local_password_rotation_required') {
+        setLocalPasswordRotationRequired(true);
+      }
+      setLocalLoginError(buildLocalLoginErrorMessage(payload));
+    } catch {
+      setLocalLoginError('ローカル認証に失敗しました');
+    } finally {
+      setLocalLoginLoading(false);
+    }
+  }, [localLoginForm, syncBffAuthState]);
+
+  const submitLocalPasswordRotate = useCallback(async () => {
+    setLocalLoginError('');
+    setLocalLoginMessage('');
+    const loginId = localLoginForm.loginId.trim();
+    if (!loginId || !localLoginForm.password || !localLoginForm.newPassword) {
+      setLocalLoginError(
+        'ログインID・現在のパスワード・新しいパスワードを確認してください',
+      );
+      return;
+    }
+    setLocalLoginLoading(true);
+    try {
+      const res = await apiResponse('/auth/local/password/rotate', {
+        method: 'POST',
+        body: JSON.stringify({
+          loginId,
+          currentPassword: localLoginForm.password,
+          newPassword: localLoginForm.newPassword,
+        }),
+      });
+      if (res.status === 204) {
+        setLocalPasswordRotationRequired(false);
+        setLocalLoginForm((current) => ({
+          loginId: current.loginId,
+          password: '',
+          newPassword: '',
+        }));
+        setLocalLoginMessage(
+          '初期パスワードを更新しました。新しいパスワードで再度ログインしてください',
+        );
+        return;
+      }
+      const payload = await readApiErrorResponse(res);
+      setLocalLoginError(buildLocalPasswordRotateErrorMessage(payload));
+    } catch {
+      setLocalLoginError('初期パスワード更新に失敗しました');
+    } finally {
+      setLocalLoginLoading(false);
+    }
+  }, [localLoginForm]);
 
   const ensureRegistration = async () => {
     if (!pushSupported) {
@@ -782,12 +949,124 @@ export const CurrentUser: React.FC = () => {
         <div style={{ fontSize: 14, marginTop: 8 }}>
           <div>未ログイン</div>
           {bffAuthMode ? (
-            <div style={{ marginTop: 8 }}>
-              <button className="button" onClick={startBffGoogleLogin}>
-                Googleでログイン
-              </button>
-              <div style={{ fontSize: 12, color: '#6b7280', marginTop: 6 }}>
-                backend の Auth Gateway へ遷移して Google 認証を開始します。
+            <div style={{ marginTop: 8, display: 'grid', gap: 12 }}>
+              <div>
+                <button className="button" onClick={startBffGoogleLogin}>
+                  Googleでログイン
+                </button>
+                <div style={{ fontSize: 12, color: '#6b7280', marginTop: 6 }}>
+                  backend の Auth Gateway へ遷移して Google 認証を開始します。
+                </div>
+              </div>
+              <div
+                style={{
+                  borderTop: '1px solid #e5e7eb',
+                  paddingTop: 12,
+                  display: 'grid',
+                  gap: 8,
+                }}
+              >
+                <div style={{ fontWeight: 600 }}>
+                  例外ユーザ向けローカル認証
+                </div>
+                <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+                  <input
+                    type="text"
+                    value={localLoginForm.loginId}
+                    onChange={(e) =>
+                      setLocalLoginForm((current) => ({
+                        ...current,
+                        loginId: e.target.value,
+                      }))
+                    }
+                    placeholder="loginId"
+                    aria-label="ローカル認証 loginId"
+                    autoComplete="username"
+                  />
+                  <input
+                    type="password"
+                    value={localLoginForm.password}
+                    onChange={(e) =>
+                      setLocalLoginForm((current) => ({
+                        ...current,
+                        password: e.target.value,
+                      }))
+                    }
+                    placeholder={
+                      localPasswordRotationRequired
+                        ? 'current password'
+                        : 'password'
+                    }
+                    aria-label={
+                      localPasswordRotationRequired
+                        ? 'ローカル認証 current password'
+                        : 'ローカル認証 password'
+                    }
+                    autoComplete={
+                      localPasswordRotationRequired
+                        ? 'current-password'
+                        : 'current-password'
+                    }
+                  />
+                </div>
+                {localPasswordRotationRequired && (
+                  <input
+                    type="password"
+                    value={localLoginForm.newPassword}
+                    onChange={(e) =>
+                      setLocalLoginForm((current) => ({
+                        ...current,
+                        newPassword: e.target.value,
+                      }))
+                    }
+                    placeholder="new password"
+                    aria-label="ローカル認証 new password"
+                    autoComplete="new-password"
+                  />
+                )}
+                <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+                  <button
+                    className="button"
+                    onClick={
+                      localPasswordRotationRequired
+                        ? submitLocalPasswordRotate
+                        : submitLocalLogin
+                    }
+                    disabled={localLoginLoading}
+                  >
+                    {localPasswordRotationRequired
+                      ? '初期パスワードを更新'
+                      : 'ローカルログイン'}
+                  </button>
+                  {localPasswordRotationRequired && (
+                    <button
+                      className="button secondary"
+                      onClick={() => {
+                        setLocalPasswordRotationRequired(false);
+                        setLocalLoginError('');
+                        setLocalLoginMessage('');
+                        setLocalLoginForm((current) => ({
+                          loginId: current.loginId,
+                          password: '',
+                          newPassword: '',
+                        }));
+                      }}
+                      disabled={localLoginLoading}
+                    >
+                      更新をやめる
+                    </button>
+                  )}
+                </div>
+                {localLoginMessage && (
+                  <div style={{ color: '#16a34a' }}>{localLoginMessage}</div>
+                )}
+                {localLoginError && (
+                  <div style={{ color: '#dc2626' }}>{localLoginError}</div>
+                )}
+                <div style={{ fontSize: 12, color: '#6b7280' }}>
+                  Google を利用できない例外ユーザ向けです。MFA 必須 credential
+                  は MFA 実行経路の導入完了まで session を発行しません。
+                </div>
               </div>
             </div>
           ) : (
