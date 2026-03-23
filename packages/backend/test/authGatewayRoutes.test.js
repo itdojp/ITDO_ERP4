@@ -390,10 +390,54 @@ test('GET /auth/csrf returns token and sets csrf cookie', async () => {
         const body = JSON.parse(res.body);
         assert.ok(typeof body.csrfToken === 'string' && body.csrfToken.length);
         assert.match(String(res.headers['set-cookie']), /erp4_csrf=/);
+        assert.equal(res.headers['cache-control'], 'no-store');
+        assert.equal(res.headers.pragma, 'no-cache');
       } finally {
         await server.close();
       }
     });
+  });
+});
+
+test('POST /auth/logout returns invalid_csrf_token when csrf header is missing', async () => {
+  await withEnv(baseBffEnv(), async () => {
+    await withPrismaStubs(
+      {
+        'authSession.findUnique': async () => ({
+          id: 'sess-001',
+          userAccountId: 'user-001',
+          userIdentityId: 'identity-001',
+          providerType: 'google_oidc',
+          issuer: 'https://accounts.google.com',
+          providerSubject: 'google-sub-001',
+          expiresAt: new Date(Date.now() + 60_000),
+          idleExpiresAt: new Date(Date.now() + 60_000),
+          revokedAt: null,
+        }),
+        'authSession.update': async () => {
+          throw new Error('authSession.update should not be called');
+        },
+      },
+      async () => {
+        const { buildServer } = await loadBackendModules();
+        const server = await buildServer({ logger: false });
+        try {
+          const res = await server.inject({
+            method: 'POST',
+            url: '/auth/logout',
+            headers: {
+              cookie:
+                'erp4_session=session-token-001; erp4_csrf=csrf-token-001',
+            },
+          });
+          assert.equal(res.statusCode, 403, res.body);
+          const body = JSON.parse(res.body);
+          assert.equal(body.error.code, 'invalid_csrf_token');
+        } finally {
+          await server.close();
+        }
+      },
+    );
   });
 });
 

@@ -42,7 +42,11 @@ async function mockAuthCsrf(page: Page) {
   await page.route('**/auth/csrf', async (route) => {
     await route.fulfill({
       status: 200,
-      headers: { 'content-type': 'application/json' },
+      headers: {
+        'content-type': 'application/json',
+        'set-cookie':
+          'erp4_csrf=csrf-token-001; Path=/; HttpOnly; SameSite=Strict',
+      },
       body: JSON.stringify({ csrfToken: 'csrf-token-001' }),
     });
   });
@@ -137,6 +141,9 @@ test('frontend auth gateway bff local login smoke @extended', async ({
   });
 
   await page.route('**/auth/local/login', async (route) => {
+    const headers = route.request().headers();
+    expect(headers['x-csrf-token']).toBe('csrf-token-001');
+    expect(headers.cookie || '').toContain('erp4_csrf=csrf-token-001');
     sessionState = 'authenticated';
     await route.fulfill({ status: 204, body: '' });
   });
@@ -219,6 +226,9 @@ test('frontend auth gateway bff local bootstrap password rotation @extended', as
   });
 
   await page.route('**/auth/local/password/rotate', async (route) => {
+    const headers = route.request().headers();
+    expect(headers['x-csrf-token']).toBe('csrf-token-001');
+    expect(headers.cookie || '').toContain('erp4_csrf=csrf-token-001');
     await route.fulfill({ status: 204, body: '' });
   });
 
@@ -327,6 +337,9 @@ test('frontend auth gateway bff session management smoke @extended', async ({
   });
 
   await page.route('**/auth/sessions/sess-other/revoke', async (route) => {
+    const headers = route.request().headers();
+    expect(headers['x-csrf-token']).toBe('csrf-token-001');
+    expect(headers.cookie || '').toContain('erp4_csrf=csrf-token-001');
     sessionItems = sessionItems.filter(
       (item) => item.sessionId !== 'sess-other',
     );

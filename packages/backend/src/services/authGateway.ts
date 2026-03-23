@@ -239,7 +239,7 @@ export function ensureAuthCsrfToken(cookieHeader: string | undefined) {
   }
   const csrfToken = randomToken(24);
   const setCookie = buildSetCookie(csrfCookieName, csrfToken, {
-    httpOnly: false,
+    httpOnly: true,
     secure: secureCookie,
     sameSite: 'Strict',
     path: '/',

@@ -1096,6 +1096,8 @@ export async function registerAuthRoutes(app: FastifyInstance) {
       const rateLimited = await enforceAuthGatewayRateLimit(req, reply);
       if (rateLimited) return rateLimited;
       const { csrfToken, setCookie } = ensureAuthCsrfToken(req.headers.cookie);
+      reply.header('cache-control', 'no-store');
+      reply.header('pragma', 'no-cache');
       if (setCookie) {
         reply.header('set-cookie', setCookie);
       }
