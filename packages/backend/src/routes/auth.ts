@@ -21,7 +21,6 @@ import {
   createGoogleAuthFlow,
   exchangeGoogleAuthorizationCode,
   isIdentityUsable,
-  resolveAuthSession,
   resolveGoogleUserIdentity,
   revokeAuthSession,
   verifyGoogleIdToken,
@@ -69,6 +68,7 @@ const authGatewayRateLimit = getRouteRateLimitOptions(
     timeWindow: '1 minute',
   },
 );
+const AUTH_MODE = (process.env.AUTH_MODE || 'header').trim().toLowerCase();
 
 function parseRateLimitWindowSeconds(value: string) {
   const normalized = value.trim().toLowerCase();
@@ -118,6 +118,18 @@ async function enforceAuthGatewayRateLimit(
       }),
     );
   }
+}
+
+function isJwtBffAuthMode() {
+  return AUTH_MODE === 'jwt_bff';
+}
+
+function respondAuthGatewayDisabled(reply: FastifyReply) {
+  return reply.code(404).send(
+    createApiErrorResponse('not_found', 'Not Found', {
+      category: 'not_found',
+    }),
+  );
 }
 
 function normalizeOptionalString(value: unknown) {
@@ -586,12 +598,16 @@ export async function registerAuthRoutes(app: FastifyInstance) {
         summary: 'Start Google OIDC authorization code flow',
         response: {
           400: authGatewayErrorResponseSchema,
+          404: authGatewayErrorResponseSchema,
           429: authGatewayErrorResponseSchema,
           302: Type.Null(),
         },
       },
     },
     async (req, reply) => {
+      if (!isJwtBffAuthMode()) {
+        return respondAuthGatewayDisabled(reply);
+      }
       const rateLimited = await enforceAuthGatewayRateLimit(req, reply);
       if (rateLimited) return rateLimited;
       const query = (req.query || {}) as { returnTo?: string };
@@ -628,11 +644,15 @@ export async function registerAuthRoutes(app: FastifyInstance) {
           400: authGatewayErrorResponseSchema,
           401: authGatewayErrorResponseSchema,
           403: authGatewayErrorResponseSchema,
+          404: authGatewayErrorResponseSchema,
           429: authGatewayErrorResponseSchema,
         },
       },
     },
     async (req, reply) => {
+      if (!isJwtBffAuthMode()) {
+        return respondAuthGatewayDisabled(reply);
+      }
       const rateLimited = await enforceAuthGatewayRateLimit(req, reply);
       if (rateLimited) return rateLimited;
       const query = (req.query || {}) as { code: string; state: string };
@@ -661,7 +681,10 @@ export async function registerAuthRoutes(app: FastifyInstance) {
       }
 
       try {
-        const tokenResponse = await exchangeGoogleAuthorizationCode(query.code);
+        const tokenResponse = await exchangeGoogleAuthorizationCode(
+          query.code,
+          flow.codeVerifier,
+        );
         if (!tokenResponse.id_token) {
           throw new Error('google_id_token_missing');
         }
@@ -743,15 +766,15 @@ export async function registerAuthRoutes(app: FastifyInstance) {
         reply.header('set-cookie', buildAuthFlowClearCookie());
         return reply.code(401).send(
           createApiErrorResponse(
-            'google_auth_callback_failed',
-            'Google authentication callback validation failed',
-            {
-              category: 'auth',
-              details: {
-                reason: err instanceof Error ? err.message : 'unknown',
+              'google_auth_callback_failed',
+              'Google authentication callback validation failed',
+              {
+                category: 'auth',
+                details: {
+                  reason: 'callback_validation_failed',
+                },
               },
-            },
-          ),
+            ),
         );
       }
     },
@@ -766,14 +789,18 @@ export async function registerAuthRoutes(app: FastifyInstance) {
         response: {
           200: authSessionResponseSchema,
           401: authGatewayErrorResponseSchema,
+          404: authGatewayErrorResponseSchema,
           429: authGatewayErrorResponseSchema,
         },
       },
     },
     async (req, reply) => {
+      if (!isJwtBffAuthMode()) {
+        return respondAuthGatewayDisabled(reply);
+      }
       const rateLimited = await enforceAuthGatewayRateLimit(req, reply);
       if (rateLimited) return rateLimited;
-      const session = await resolveAuthSession(prisma, req.headers.cookie);
+      const session = req.authSession;
       if (!session || !req.user) {
         return reply.code(401).send(
           createApiErrorResponse('unauthorized', 'Unauthorized', {
@@ -797,11 +824,15 @@ export async function registerAuthRoutes(app: FastifyInstance) {
         summary: 'Revoke current authenticated session',
         response: {
           204: Type.Null(),
+          404: authGatewayErrorResponseSchema,
           429: authGatewayErrorResponseSchema,
         },
       },
     },
     async (req, reply) => {
+      if (!isJwtBffAuthMode()) {
+        return respondAuthGatewayDisabled(reply);
+      }
       const rateLimited = await enforceAuthGatewayRateLimit(req, reply);
       if (rateLimited) return rateLimited;
       const revoked = await revokeAuthSession(prisma, req.headers.cookie);

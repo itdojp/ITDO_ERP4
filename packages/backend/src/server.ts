@@ -382,6 +382,8 @@ export async function buildServer(
   await server.register(cors, {
     origin:
       allowedOrigins && allowedOrigins.length > 0 ? allowedOrigins : false,
+    credentials:
+      (process.env.AUTH_MODE || '').trim().toLowerCase() === 'jwt_bff',
     maxAge: 86400,
     methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   });

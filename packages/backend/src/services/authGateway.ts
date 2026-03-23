@@ -72,7 +72,11 @@ function parseCookieHeader(header: string | undefined, name: string) {
   for (const part of parts) {
     const [rawName, ...rawValue] = part.trim().split('=');
     if (rawName !== name) continue;
-    return decodeURIComponent(rawValue.join('='));
+    try {
+      return decodeURIComponent(rawValue.join('='));
+    } catch {
+      return null;
+    }
   }
   return null;
 }
@@ -271,16 +275,20 @@ export async function consumeGoogleAuthFlow(
     where: { flowTokenHash: sha256Hex(flowToken) },
   });
   if (!flow) return null;
-  await db.authOidcFlow.delete({ where: { id: flow.id } });
   if (flow.state !== input.state) return null;
   if (flow.expiresAt.getTime() <= Date.now()) return null;
+  await db.authOidcFlow.delete({ where: { id: flow.id } });
   return flow;
 }
 
-export async function exchangeGoogleAuthorizationCode(code: string) {
+export async function exchangeGoogleAuthorizationCode(
+  code: string,
+  codeVerifier: string,
+) {
   const config = getRuntimeConfig();
   const body = new URLSearchParams({
     code,
+    code_verifier: codeVerifier,
     client_id: config.clientId,
     client_secret: config.clientSecret,
     redirect_uri: config.redirectUri,
@@ -402,7 +410,12 @@ export async function resolveAuthSession(db: DbClient, cookieHeader?: string) {
   ) {
     return null;
   }
-  const nextIdleExpiresAt = new Date(now + sessionIdleTtlMinutes * 60 * 1000);
+  const nextIdleExpiresAt = new Date(
+    Math.min(
+      session.expiresAt.getTime(),
+      now + sessionIdleTtlMinutes * 60 * 1000,
+    ),
+  );
   const updated = await db.authSession.update({
     where: { id: session.id },
     data: {

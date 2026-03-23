@@ -3,6 +3,15 @@ import test from 'node:test';
 import { exportSPKI, generateKeyPair, SignJWT } from 'jose';
 
 const MIN_DATABASE_URL = 'postgresql://user:pass@localhost:5432/postgres';
+let backendModulesCacheBust = `${Date.now()}-bootstrap`;
+let backendModulesPromise = null;
+
+function resetBackendModules() {
+  backendModulesCacheBust = `${Date.now()}-${Math.random()
+    .toString(36)
+    .slice(2)}`;
+  backendModulesPromise = null;
+}
 
 function withEnv(overrides, fn) {
   const previous = new Map();
@@ -14,6 +23,7 @@ function withEnv(overrides, fn) {
       process.env[key] = value;
     }
   }
+  resetBackendModules();
   return Promise.resolve()
     .then(fn)
     .finally(() => {
@@ -25,11 +35,18 @@ function withEnv(overrides, fn) {
 }
 
 async function loadBackendModules() {
-  const [{ buildServer }, { prisma }] = await Promise.all([
-    import('../dist/server.js'),
-    import('../dist/services/db.js'),
-  ]);
-  return { buildServer, prisma };
+  if (!backendModulesPromise) {
+    backendModulesPromise = Promise.all([
+      import(
+        new URL(
+          `../dist/server.js?bust=${backendModulesCacheBust}`,
+          import.meta.url,
+        ).href
+      ),
+      import('../dist/services/db.js'),
+    ]).then(([{ buildServer }, { prisma }]) => ({ buildServer, prisma }));
+  }
+  return backendModulesPromise;
 }
 
 async function withPrismaStubs(stubs, fn) {
@@ -129,8 +146,10 @@ test('GET /auth/google/callback creates session and redirects to frontend', asyn
     .sign(privateKey);
 
   const originalFetch = global.fetch;
-  global.fetch = async () =>
-    new Response(
+  let tokenExchangeBody = '';
+  global.fetch = async (_input, init) => {
+    tokenExchangeBody = String(init?.body ?? '');
+    return new Response(
       JSON.stringify({
         id_token: idToken,
         access_token: 'access-token',
@@ -142,94 +161,98 @@ test('GET /auth/google/callback creates session and redirects to frontend', asyn
         headers: { 'content-type': 'application/json' },
       },
     );
+  };
 
-  await withEnv(
-    {
-      ...baseBffEnv(),
-      JWT_PUBLIC_KEY: publicKeyPem,
-      JWT_JWKS_URL: undefined,
-    },
-    async () => {
-      let deletedFlowId = null;
-      let createdSession = null;
-      let auditActions = [];
-      await withPrismaStubs(
-        {
-          'authOidcFlow.findUnique': async () => ({
-            id: 'flow-001',
-            providerType: 'google_oidc',
-            state: 'state-001',
-            nonce: 'nonce-001',
-            codeVerifier: 'verifier',
-            returnTo: '/dashboard',
-            expiresAt: new Date(Date.now() + 60_000),
-          }),
-          'authOidcFlow.delete': async ({ where }) => {
-            deletedFlowId = where.id;
-            return { id: where.id };
-          },
-          'userIdentity.findFirst': async () => ({
-            id: 'identity-001',
-            userAccountId: 'user-001',
-            issuer: 'https://accounts.google.com',
-            providerSubject: 'google-sub-001',
-            providerType: 'google_oidc',
-            status: 'active',
-            effectiveUntil: null,
-            userAccount: {
-              id: 'user-001',
-              active: true,
-              deletedAt: null,
-              userName: 'legacy-user',
-              displayName: 'Legacy User',
+  try {
+    await withEnv(
+      {
+        ...baseBffEnv(),
+        JWT_PUBLIC_KEY: publicKeyPem,
+        JWT_JWKS_URL: undefined,
+      },
+      async () => {
+        let deletedFlowId = null;
+        let createdSession = null;
+        let auditActions = [];
+        await withPrismaStubs(
+          {
+            'authOidcFlow.findUnique': async () => ({
+              id: 'flow-001',
+              providerType: 'google_oidc',
+              state: 'state-001',
+              nonce: 'nonce-001',
+              codeVerifier: 'verifier',
+              returnTo: '/dashboard',
+              expiresAt: new Date(Date.now() + 60_000),
+            }),
+            'authOidcFlow.delete': async ({ where }) => {
+              deletedFlowId = where.id;
+              return { id: where.id };
             },
-          }),
-          'authSession.create': async ({ data }) => {
-            createdSession = data;
-            return {
-              id: 'sess-001',
-              ...data,
-              createdAt: new Date('2026-03-23T00:00:00.000Z'),
-              lastSeenAt: new Date('2026-03-23T00:00:00.000Z'),
-              revokedAt: null,
-              revokedReason: null,
-            };
-          },
-          'auditLog.create': async ({ data }) => {
-            auditActions.push(data.action);
-            return { id: `audit-${auditActions.length}` };
-          },
-        },
-        async () => {
-          const { buildServer } = await loadBackendModules();
-          const server = await buildServer({ logger: false });
-          try {
-            const res = await server.inject({
-              method: 'GET',
-              url: '/auth/google/callback?code=auth-code&state=state-001',
-              headers: {
-                cookie: 'erp4_auth_flow=flow-token-001',
-                'user-agent': 'test-agent',
+            'userIdentity.findFirst': async () => ({
+              id: 'identity-001',
+              userAccountId: 'user-001',
+              issuer: 'https://accounts.google.com',
+              providerSubject: 'google-sub-001',
+              providerType: 'google_oidc',
+              status: 'active',
+              effectiveUntil: null,
+              userAccount: {
+                id: 'user-001',
+                active: true,
+                deletedAt: null,
+                userName: 'legacy-user',
+                displayName: 'Legacy User',
               },
-            });
-            assert.equal(res.statusCode, 302, res.body);
-            assert.equal(
-              res.headers.location,
-              'http://localhost:4173/dashboard',
-            );
-            assert.equal(deletedFlowId, 'flow-001');
-            assert.equal(createdSession?.providerSubject, 'google-sub-001');
-            assert.ok(auditActions.includes('google_oidc_login_succeeded'));
-            assert.match(String(res.headers['set-cookie']), /erp4_session=/);
-          } finally {
-            await server.close();
-          }
-        },
-      );
-    },
-  );
-
-  global.fetch = originalFetch;
+            }),
+            'authSession.create': async ({ data }) => {
+              createdSession = data;
+              return {
+                id: 'sess-001',
+                ...data,
+                createdAt: new Date('2026-03-23T00:00:00.000Z'),
+                lastSeenAt: new Date('2026-03-23T00:00:00.000Z'),
+                revokedAt: null,
+                revokedReason: null,
+              };
+            },
+            'auditLog.create': async ({ data }) => {
+              auditActions.push(data.action);
+              return { id: `audit-${auditActions.length}` };
+            },
+          },
+          async () => {
+            const { buildServer } = await loadBackendModules();
+            const server = await buildServer({ logger: false });
+            try {
+              const res = await server.inject({
+                method: 'GET',
+                url: '/auth/google/callback?code=auth-code&state=state-001',
+                headers: {
+                  cookie: 'erp4_auth_flow=flow-token-001',
+                  'user-agent': 'test-agent',
+                },
+              });
+              assert.equal(res.statusCode, 302, res.body);
+              assert.equal(
+                res.headers.location,
+                'http://localhost:4173/dashboard',
+              );
+              assert.equal(deletedFlowId, 'flow-001');
+              assert.equal(createdSession?.providerSubject, 'google-sub-001');
+              assert.ok(auditActions.includes('google_oidc_login_succeeded'));
+              assert.match(String(res.headers['set-cookie']), /erp4_session=/);
+              assert.match(tokenExchangeBody, /code_verifier=verifier/);
+            } finally {
+              await server.close();
+            }
+          },
+        );
+      },
+    );
+  } finally {
+    global.fetch = originalFetch;
+  }
 });
 
 test('jwt_bff mode authenticates /me via session cookie', async () => {
@@ -258,7 +281,7 @@ test('jwt_bff mode authenticates /me via session cookie', async () => {
           idleExpiresAt: data.idleExpiresAt,
           revokedAt: null,
         }),
-        'userIdentity.findFirst': async () => ({
+        'userIdentity.findUnique': async () => ({
           id: 'identity-001',
           status: 'active',
           effectiveUntil: null,

@@ -46,6 +46,17 @@ export type DelegatedScopeDecision = {
 declare module 'fastify' {
   interface FastifyRequest {
     user?: UserContext;
+    authSession?: {
+      id: string;
+      userAccountId: string;
+      userIdentityId: string;
+      providerType: string;
+      issuer: string;
+      providerSubject: string;
+      expiresAt: Date;
+      idleExpiresAt: Date;
+      revokedAt: Date | null;
+    };
   }
 }
 
@@ -378,6 +389,36 @@ async function resolveUserGroupsFromDb(
       },
     },
   } as const;
+
+  if (
+    user.auth?.sessionBased &&
+    user.auth.identityId &&
+    user.auth.userAccountId
+  ) {
+    const identity = await prisma.userIdentity.findUnique({
+      where: { id: user.auth.identityId },
+      select: {
+        id: true,
+        status: true,
+        effectiveUntil: true,
+        userAccountId: true,
+        userAccount: { select },
+      },
+    });
+    if (!identity || identity.userAccountId !== user.auth.userAccountId) {
+      return { blocked: true as const };
+    }
+    if (!isIdentityCurrentlyUsable(identity)) {
+      return { blocked: true as const };
+    }
+    if (!identity.userAccount) {
+      return { blocked: true as const };
+    }
+    return mapResolvedUserContext(identity.userAccount, {
+      userAccountId: identity.userAccountId,
+      identityId: identity.id,
+    });
+  }
 
   if (
     user.auth?.providerType &&
@@ -791,6 +832,7 @@ async function authPlugin(fastify: any) {
       if (!session) {
         return respondUnauthorized(req, reply, 'missing_session');
       }
+      req.authSession = session;
       req.user = buildSessionUserContext(session);
       if (!(await validateAndEnrichUserContext(req, reply))) return;
       await ensureProjectIds(req);
