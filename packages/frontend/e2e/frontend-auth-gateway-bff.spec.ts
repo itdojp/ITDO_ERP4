@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { expect, test } from '@playwright/test';
-import type { Locator } from '@playwright/test';
+import type { Locator, Page } from '@playwright/test';
 
 const dateTag = new Date().toISOString().slice(0, 10);
 const rootDir = process.env.E2E_ROOT_DIR || process.cwd();
@@ -13,6 +13,14 @@ const baseUrl = process.env.E2E_BASE_URL || 'http://localhost:5173';
 const apiBase = process.env.E2E_API_BASE || 'http://localhost:3002';
 const isBffMode =
   (process.env.E2E_AUTH_MODE || '').trim().toLowerCase() === 'jwt_bff';
+const apiBasePathPrefix = (() => {
+  try {
+    const pathname = new URL(apiBase).pathname.replace(/\/$/, '');
+    return pathname === '/' ? '' : pathname;
+  } catch {
+    return '';
+  }
+})();
 
 const futureIso = (daysFromNow: number) =>
   new Date(Date.now() + daysFromNow * 24 * 60 * 60 * 1000).toISOString();
@@ -36,6 +44,25 @@ async function captureSection(locator: Locator, filename: string) {
       // UI 証跡取得失敗でテスト自体は落とさない。
     }
   }
+}
+
+function expectApiPath(url: string, pathSuffix: string) {
+  expect(new URL(url).pathname).toBe(`${apiBasePathPrefix}${pathSuffix}`);
+}
+
+async function mockAuthCsrf(page: Page) {
+  await page.route('**/auth/csrf', async (route) => {
+    expectApiPath(route.request().url(), '/auth/csrf');
+    await route.fulfill({
+      status: 200,
+      headers: {
+        'content-type': 'application/json',
+        'set-cookie':
+          'erp4_csrf=csrf-token-001; Path=/; HttpOnly; SameSite=Strict',
+      },
+      body: JSON.stringify({ csrfToken: 'csrf-token-001' }),
+    });
+  });
 }
 
 test('frontend auth gateway bff smoke @extended', async ({ page }) => {
@@ -75,7 +102,7 @@ test('frontend auth gateway bff smoke @extended', async ({ page }) => {
   await page.getByRole('button', { name: 'Googleでログイン' }).click();
   const loginRequest = await loginRequestPromise;
   const loginUrl = new URL(loginRequest.url());
-  expect(loginUrl.pathname).toBe('/auth/google/start');
+  expectApiPath(loginRequest.url(), '/auth/google/start');
   expect(loginUrl.searchParams.get('returnTo')).toBe('/');
 });
 
@@ -91,6 +118,7 @@ test('frontend auth gateway bff local login smoke @extended', async ({
     window.localStorage.removeItem('erp4_auth');
     window.localStorage.setItem('erp4_active_section', 'reports');
   });
+  await mockAuthCsrf(page);
 
   await page.route('**/auth/session', async (route) => {
     if (sessionState === 'authenticated') {
@@ -126,6 +154,10 @@ test('frontend auth gateway bff local login smoke @extended', async ({
   });
 
   await page.route('**/auth/local/login', async (route) => {
+    expectApiPath(route.request().url(), '/auth/local/login');
+    const headers = route.request().headers();
+    expect(headers['x-csrf-token']).toBe('csrf-token-001');
+    expect(headers.cookie || '').toContain('erp4_csrf=csrf-token-001');
     sessionState = 'authenticated';
     await route.fulfill({ status: 204, body: '' });
   });
@@ -187,6 +219,7 @@ test('frontend auth gateway bff local bootstrap password rotation @extended', as
     window.localStorage.removeItem('erp4_auth');
     window.localStorage.setItem('erp4_active_section', 'reports');
   });
+  await mockAuthCsrf(page);
 
   await page.route('**/auth/session', async (route) => {
     await route.fulfill({
@@ -207,6 +240,10 @@ test('frontend auth gateway bff local bootstrap password rotation @extended', as
   });
 
   await page.route('**/auth/local/password/rotate', async (route) => {
+    expectApiPath(route.request().url(), '/auth/local/password/rotate');
+    const headers = route.request().headers();
+    expect(headers['x-csrf-token']).toBe('csrf-token-001');
+    expect(headers.cookie || '').toContain('erp4_csrf=csrf-token-001');
     await route.fulfill({ status: 204, body: '' });
   });
 
@@ -275,6 +312,7 @@ test('frontend auth gateway bff session management smoke @extended', async ({
     window.localStorage.removeItem('erp4_auth');
     window.localStorage.setItem('erp4_active_section', 'reports');
   });
+  await mockAuthCsrf(page);
 
   await page.route('**/auth/session', async (route) => {
     await route.fulfill({
@@ -314,6 +352,10 @@ test('frontend auth gateway bff session management smoke @extended', async ({
   });
 
   await page.route('**/auth/sessions/sess-other/revoke', async (route) => {
+    expectApiPath(route.request().url(), '/auth/sessions/sess-other/revoke');
+    const headers = route.request().headers();
+    expect(headers['x-csrf-token']).toBe('csrf-token-001');
+    expect(headers.cookie || '').toContain('erp4_csrf=csrf-token-001');
     sessionItems = sessionItems.filter(
       (item) => item.sessionId !== 'sess-other',
     );

@@ -33,13 +33,13 @@
   - `GET /auth/google/start`
   - `GET /auth/google/callback`
   - `GET /auth/session`
+  - `GET /auth/csrf`
   - `GET /auth/sessions`
   - `POST /auth/sessions/:sessionId/revoke`
   - `POST /auth/logout`
   - `AuthSession -> UserIdentity -> UserAccount` による API 認証解決
 - Phase 2 実装
   - frontend の Bearer 直送経路廃止
-  - BFF 向け CSRF token 配布
   - 監査/運用ガイドの本番切替手順
 - 完了条件
   - ブラウザ本番経路が BFF 経由のみで成立

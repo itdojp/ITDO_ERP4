@@ -8,6 +8,7 @@ const GOOGLE_OIDC_AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
 const GOOGLE_OIDC_TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const DEFAULT_SESSION_COOKIE_NAME = 'erp4_session';
 const DEFAULT_FLOW_COOKIE_NAME = 'erp4_auth_flow';
+const DEFAULT_CSRF_COOKIE_NAME = 'erp4_csrf';
 const DEFAULT_ABSOLUTE_TTL_HOURS = 12;
 const DEFAULT_IDLE_TTL_MINUTES = 120;
 const DEFAULT_FLOW_TTL_MINUTES = 10;
@@ -198,6 +199,9 @@ export function buildAuthCookieHeaders() {
   return {
     sessionCookieName: config.sessionCookieName,
     flowCookieName: config.flowCookieName,
+    csrfCookieName:
+      normalizeString(process.env.AUTH_CSRF_COOKIE_NAME) ??
+      DEFAULT_CSRF_COOKIE_NAME,
     secureCookie: config.secureCookie,
   };
 }
@@ -207,14 +211,40 @@ export function readAuthSessionToken(header: string | undefined) {
   return parseCookieHeader(header, sessionCookieName);
 }
 
+export function readAuthCsrfToken(header: string | undefined) {
+  const { csrfCookieName } = buildAuthCookieHeaders();
+  return parseCookieHeader(header, csrfCookieName);
+}
+
 export function buildAuthSessionClearCookie() {
   const { sessionCookieName } = buildAuthCookieHeaders();
   return buildClearedCookie(sessionCookieName);
 }
 
+export function buildAuthCsrfClearCookie() {
+  const { csrfCookieName } = buildAuthCookieHeaders();
+  return buildClearedCookie(csrfCookieName);
+}
+
 export function buildAuthFlowClearCookie() {
   const { flowCookieName } = buildAuthCookieHeaders();
   return buildClearedCookie(flowCookieName, '/auth/google');
+}
+
+export function ensureAuthCsrfToken(cookieHeader: string | undefined) {
+  const { csrfCookieName, secureCookie } = buildAuthCookieHeaders();
+  const existing = readAuthCsrfToken(cookieHeader);
+  if (existing) {
+    return { csrfToken: existing, setCookie: null };
+  }
+  const csrfToken = randomToken(24);
+  const setCookie = buildSetCookie(csrfCookieName, csrfToken, {
+    httpOnly: true,
+    secure: secureCookie,
+    sameSite: 'Strict',
+    path: '/',
+  });
+  return { csrfToken, setCookie };
 }
 
 export async function createGoogleAuthFlow(

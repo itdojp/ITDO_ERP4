@@ -59,15 +59,18 @@
   - `GET /auth/google/start`
   - `GET /auth/google/callback`
   - `GET /auth/session`
+  - `GET /auth/csrf`
   - `GET /auth/sessions`
   - `POST /auth/sessions/:sessionId/revoke`
   - `POST /auth/logout`
+  - `POST /auth/local/login`
+  - `POST /auth/local/password/rotate`
 - OIDC 認可フローの一時状態は `AuthOidcFlow`、ERP4 セッションは `AuthSession` に保持する。
 - 認証済み API 呼び出しでは `AuthSession -> UserIdentity -> UserAccount` の順に解決し、既存 RBAC と `project_members` 解決へ接続する。
+- `jwt_bff` の state-changing `/auth/*` route は Cookie の CSRF token と `x-csrf-token` header の一致を必須とする。
 - 互換期間中は legacy lookup を残すが、主経路は `UserIdentity` へ移す。
 - 現時点の未実装項目は以下とする。
   - frontend/BFF 完全切替
-  - CSRF token の明示配布
   - refresh 相当のセッション再発行ポリシー
 
 ### 5.2 ローカル認証ユーザ

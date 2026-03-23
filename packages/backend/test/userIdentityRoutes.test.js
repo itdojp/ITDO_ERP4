@@ -3,6 +3,10 @@ import test from 'node:test';
 import argon2 from 'argon2';
 
 const MIN_DATABASE_URL = 'postgresql://user:pass@localhost:5432/postgres';
+const IDENTITY_CSRF_HEADERS = {
+  cookie: 'erp4_csrf=csrf-token-001',
+  'x-csrf-token': 'csrf-token-001',
+};
 process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
 
 const { buildServer } = await import('../dist/server.js');
@@ -116,6 +120,7 @@ test('GET /auth/user-identities lists identities with filters', async () => {
           headers: {
             'x-user-id': 'sys-admin',
             'x-roles': 'system_admin',
+            ...IDENTITY_CSRF_HEADERS,
           },
         });
         assert.equal(res.statusCode, 200, res.body);
@@ -195,6 +200,7 @@ test('POST /auth/user-identities/google-link creates Google identity and writes 
           headers: {
             'x-user-id': 'sys-admin',
             'x-roles': 'system_admin',
+            ...IDENTITY_CSRF_HEADERS,
           },
           payload: {
             userAccountId: 'user-001',
@@ -247,6 +253,7 @@ test('POST /auth/user-identities/google-link rejects a second Google identity re
           headers: {
             'x-user-id': 'sys-admin',
             'x-roles': 'system_admin',
+            ...IDENTITY_CSRF_HEADERS,
           },
           payload: {
             userAccountId: 'user-001',
@@ -332,6 +339,7 @@ test('POST /auth/user-identities/local-link creates local identity with bootstra
           headers: {
             'x-user-id': 'sys-admin',
             'x-roles': 'system_admin',
+            ...IDENTITY_CSRF_HEADERS,
           },
           payload: {
             userAccountId: 'user-001',
@@ -444,6 +452,7 @@ test('PATCH /auth/user-identities/:identityId updates status and windows', async
           headers: {
             'x-user-id': 'sys-admin',
             'x-roles': 'system_admin',
+            ...IDENTITY_CSRF_HEADERS,
           },
           payload: {
             status: 'disabled',
@@ -513,6 +522,7 @@ test('PATCH /auth/user-identities/:identityId rejects disabling the last active 
           headers: {
             'x-user-id': 'sys-admin',
             'x-roles': 'system_admin',
+            ...IDENTITY_CSRF_HEADERS,
           },
           payload: {
             status: 'disabled',
