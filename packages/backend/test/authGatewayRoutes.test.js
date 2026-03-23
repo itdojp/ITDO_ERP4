@@ -798,3 +798,118 @@ test('POST /auth/sessions/:sessionId/revoke revokes current-user session and cle
     );
   });
 });
+
+test('POST /auth/sessions/:sessionId/revoke keeps current cookie when another session is targeted', async () => {
+  await withEnv(baseBffEnv(), async () => {
+    let revokedId = null;
+    await withPrismaStubs(
+      {
+        'authSession.findUnique': async () => ({
+          id: 'sess-current',
+          userAccountId: 'user-001',
+          userIdentityId: 'identity-001',
+          providerType: 'google_oidc',
+          issuer: 'https://accounts.google.com',
+          providerSubject: 'google-sub-001',
+          expiresAt: new Date(Date.now() + 60_000),
+          idleExpiresAt: new Date(Date.now() + 60_000),
+          revokedAt: null,
+        }),
+        'authSession.update': async ({ where, data }) => {
+          if (where.id === 'sess-current' && data.idleExpiresAt) {
+            return {
+              id: where.id,
+              userAccountId: 'user-001',
+              userIdentityId: 'identity-001',
+              providerType: 'google_oidc',
+              issuer: 'https://accounts.google.com',
+              providerSubject: 'google-sub-001',
+              createdAt: new Date('2026-03-23T00:00:00.000Z'),
+              lastSeenAt: new Date('2026-03-23T00:05:00.000Z'),
+              expiresAt: new Date(Date.now() + 60_000),
+              idleExpiresAt: data.idleExpiresAt,
+              revokedAt: null,
+              revokedReason: null,
+              sourceIp: '127.0.0.1',
+              userAgent: 'test-agent',
+            };
+          }
+          revokedId = where.id;
+          return {
+            id: where.id,
+            userAccountId: 'user-001',
+            userIdentityId: 'identity-002',
+            providerType: 'local_password',
+            issuer: 'erp4_local',
+            providerSubject: 'local-sub-001',
+            createdAt: new Date('2026-03-23T00:00:00.000Z'),
+            lastSeenAt: new Date('2026-03-23T00:05:00.000Z'),
+            expiresAt: new Date(Date.now() + 60_000),
+            idleExpiresAt: new Date(Date.now() + 60_000),
+            revokedAt: new Date('2026-03-23T00:06:00.000Z'),
+            revokedReason: data.revokedReason,
+            sourceIp: '127.0.0.2',
+            userAgent: 'other-agent',
+          };
+        },
+        'authSession.findFirst': async () => ({
+          id: 'sess-other',
+          userAccountId: 'user-001',
+          userIdentityId: 'identity-002',
+          providerType: 'local_password',
+          issuer: 'erp4_local',
+          providerSubject: 'local-sub-001',
+          createdAt: new Date('2026-03-23T00:00:00.000Z'),
+          lastSeenAt: new Date('2026-03-23T00:05:00.000Z'),
+          expiresAt: new Date(Date.now() + 60_000),
+          idleExpiresAt: new Date(Date.now() + 60_000),
+          revokedAt: null,
+          revokedReason: null,
+          sourceIp: '127.0.0.2',
+          userAgent: 'other-agent',
+        }),
+        'userIdentity.findUnique': async () => ({
+          id: 'identity-001',
+          status: 'active',
+          effectiveUntil: null,
+          userAccountId: 'user-001',
+          userAccount: {
+            id: 'user-001',
+            active: true,
+            deletedAt: null,
+            userName: 'legacy-user',
+            externalId: null,
+            organization: 'org-001',
+            memberships: [],
+          },
+        }),
+        'projectMember.findMany': async () => [{ projectId: 'proj-001' }],
+        'auditLog.create': async () => ({ id: 'audit-session-revoke-other' }),
+      },
+      async () => {
+        const { buildServer } = await loadBackendModules();
+        const server = await buildServer({ logger: false });
+        try {
+          const res = await server.inject({
+            method: 'POST',
+            url: '/auth/sessions/sess-other/revoke',
+            headers: {
+              cookie:
+                'erp4_session=session-token-001; erp4_csrf=csrf-token-001',
+              'x-csrf-token': 'csrf-token-001',
+            },
+          });
+          assert.equal(res.statusCode, 200, res.body);
+          assert.equal(revokedId, 'sess-other');
+          assert.equal(res.headers['set-cookie'], undefined);
+          const body = JSON.parse(res.body);
+          assert.equal(body.sessionId, 'sess-other');
+          assert.equal(body.current, false);
+          assert.equal(body.revokedReason, 'user_requested');
+        } finally {
+          await server.close();
+        }
+      },
+    );
+  });
+});
