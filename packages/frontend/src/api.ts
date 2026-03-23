@@ -109,6 +109,23 @@ function resolveApiPath(path: string): string {
   return `${base}${suffix}`;
 }
 
+function shouldIncludeCredentials(url: string) {
+  if (!isBffAuthMode()) return false;
+  if (typeof window === 'undefined') return true;
+  try {
+    const requestOrigin = new URL(url, window.location.origin).origin;
+    const apiOrigin =
+      API_BASE_VALID && API_BASE
+        ? new URL(API_BASE).origin
+        : window.location.origin;
+    return (
+      requestOrigin === window.location.origin || requestOrigin === apiOrigin
+    );
+  } catch {
+    return false;
+  }
+}
+
 async function handleResponse<T>(res: Response, path: string): Promise<T> {
   if (res.ok) {
     try {
@@ -134,7 +151,9 @@ export async function apiResponse(
   const url = resolveApiPath(path);
   const res = await fetch(url, {
     ...options,
-    credentials: isBffAuthMode() ? 'include' : options.credentials,
+    credentials: shouldIncludeCredentials(url)
+      ? 'include'
+      : options.credentials,
     headers: mergeHeaders(options.headers, {
       json: shouldSetJsonHeader(options.body),
     }),

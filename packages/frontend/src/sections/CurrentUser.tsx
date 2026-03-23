@@ -744,8 +744,10 @@ export const CurrentUser: React.FC = () => {
   const logout = () => {
     if (bffAuthMode) {
       apiResponse('/auth/logout', { method: 'POST' })
-        .catch(() => undefined)
-        .finally(() => {
+        .then((res) => {
+          if (!res.ok) {
+            throw new Error(`logout_failed:${res.status}`);
+          }
           setAuthState(null);
           setAuth(null);
           setMe(null);
@@ -753,6 +755,9 @@ export const CurrentUser: React.FC = () => {
           if (typeof window !== 'undefined') {
             window.dispatchEvent(new Event('erp4:auth-updated'));
           }
+        })
+        .catch(() => {
+          setError('ログアウトに失敗');
         });
       return;
     }
