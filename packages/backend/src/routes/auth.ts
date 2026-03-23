@@ -142,26 +142,6 @@ function respondValidationError(reply: FastifyReply, invalidFields: string[]) {
   );
 }
 
-async function consumeLocalCredentialAdminRateLimit(
-  req: { ip: string },
-  reply: FastifyReply,
-) {
-  try {
-    await localCredentialAdminFlexibleLimiter.consume(req.ip);
-    return null;
-  } catch {
-    return reply
-      .code(429)
-      .send(
-        createApiErrorResponse(
-          'local_credential_rate_limited',
-          'Too many local credential admin requests',
-          { category: 'rate_limit' },
-        ),
-      );
-  }
-}
-
 function requireActorUserId(
   req: { user?: { userId?: string } },
   reply: FastifyReply,
@@ -599,8 +579,19 @@ export async function registerAuthRoutes(app: FastifyInstance) {
       config: { rateLimit: localCredentialAdminRateLimit },
     },
     async (req, reply) => {
-      const limited = await consumeLocalCredentialAdminRateLimit(req, reply);
-      if (limited) return limited;
+      try {
+        await localCredentialAdminFlexibleLimiter.consume(req.ip);
+      } catch {
+        return reply
+          .code(429)
+          .send(
+            createApiErrorResponse(
+              'local_credential_rate_limited',
+              'Too many local credential admin requests',
+              { category: 'rate_limit' },
+            ),
+          );
+      }
       const actorId = requireActorUserId(req, reply);
       if (!actorId) return;
 
@@ -801,8 +792,19 @@ export async function registerAuthRoutes(app: FastifyInstance) {
       config: { rateLimit: localCredentialAdminRateLimit },
     },
     async (req, reply) => {
-      const limited = await consumeLocalCredentialAdminRateLimit(req, reply);
-      if (limited) return limited;
+      try {
+        await localCredentialAdminFlexibleLimiter.consume(req.ip);
+      } catch {
+        return reply
+          .code(429)
+          .send(
+            createApiErrorResponse(
+              'local_credential_rate_limited',
+              'Too many local credential admin requests',
+              { category: 'rate_limit' },
+            ),
+          );
+      }
       const actorId = requireActorUserId(req, reply);
       if (!actorId) return;
 
@@ -1035,8 +1037,19 @@ export async function registerAuthRoutes(app: FastifyInstance) {
       config: { rateLimit: localCredentialAdminRateLimit },
     },
     async (req, reply) => {
-      const limited = await consumeLocalCredentialAdminRateLimit(req, reply);
-      if (limited) return limited;
+      try {
+        await localCredentialAdminFlexibleLimiter.consume(req.ip);
+      } catch {
+        return reply
+          .code(429)
+          .send(
+            createApiErrorResponse(
+              'local_credential_rate_limited',
+              'Too many local credential admin requests',
+              { category: 'rate_limit' },
+            ),
+          );
+      }
       const actorId = requireActorUserId(req, reply);
       if (!actorId) return;
 
@@ -1270,8 +1283,19 @@ export async function registerAuthRoutes(app: FastifyInstance) {
       config: { rateLimit: localCredentialAdminRateLimit },
     },
     async (req, reply) => {
-      const limited = await consumeLocalCredentialAdminRateLimit(req, reply);
-      if (limited) return limited;
+      try {
+        await localCredentialAdminFlexibleLimiter.consume(req.ip);
+      } catch {
+        return reply
+          .code(429)
+          .send(
+            createApiErrorResponse(
+              'local_credential_rate_limited',
+              'Too many local credential admin requests',
+              { category: 'rate_limit' },
+            ),
+          );
+      }
       const actorId = requireActorUserId(req, reply);
       if (!actorId) return;
       const body = req.body as {
@@ -1471,8 +1495,19 @@ export async function registerAuthRoutes(app: FastifyInstance) {
       config: { rateLimit: localCredentialAdminRateLimit },
     },
     async (req, reply) => {
-      const limited = await consumeLocalCredentialAdminRateLimit(req, reply);
-      if (limited) return limited;
+      try {
+        await localCredentialAdminFlexibleLimiter.consume(req.ip);
+      } catch {
+        return reply
+          .code(429)
+          .send(
+            createApiErrorResponse(
+              'local_credential_rate_limited',
+              'Too many local credential admin requests',
+              { category: 'rate_limit' },
+            ),
+          );
+      }
       const actorId = requireActorUserId(req, reply);
       if (!actorId) return;
       const { identityId } = req.params as { identityId: string };
