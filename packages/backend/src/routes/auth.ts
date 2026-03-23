@@ -201,6 +201,11 @@ function buildLocalCredentialSelect() {
 }
 
 export async function registerAuthRoutes(app: FastifyInstance) {
+  const localCredentialAdminPreHandler =
+    typeof app.rateLimit === 'function'
+      ? [app.rateLimit(localCredentialAdminRateLimit), requireSystemAdmin]
+      : requireSystemAdmin;
+
   app.get('/me', async (req) => {
     const user = req.user || demoUser;
     const isPrivileged =
@@ -217,7 +222,7 @@ export async function registerAuthRoutes(app: FastifyInstance) {
   app.get(
     '/auth/local-credentials',
     {
-      preHandler: requireSystemAdmin,
+      preHandler: localCredentialAdminPreHandler,
       schema: {
         ...localCredentialListSchema,
         tags: ['auth'],
@@ -262,7 +267,7 @@ export async function registerAuthRoutes(app: FastifyInstance) {
   app.post(
     '/auth/local-credentials',
     {
-      preHandler: requireSystemAdmin,
+      preHandler: localCredentialAdminPreHandler,
       schema: {
         ...localCredentialCreateSchema,
         tags: ['auth'],
@@ -463,7 +468,7 @@ export async function registerAuthRoutes(app: FastifyInstance) {
   app.patch(
     '/auth/local-credentials/:identityId',
     {
-      preHandler: requireSystemAdmin,
+      preHandler: localCredentialAdminPreHandler,
       schema: {
         ...localCredentialPatchSchema,
         tags: ['auth'],
