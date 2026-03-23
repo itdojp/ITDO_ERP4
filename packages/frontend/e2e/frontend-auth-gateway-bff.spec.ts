@@ -446,6 +446,7 @@ test('frontend auth gateway bff retries session revoke after invalid csrf token 
   });
 
   await page.route('**/auth/csrf', async (route) => {
+    expectApiPath(route.request().url(), '/auth/csrf');
     csrfFetchCount += 1;
     const csrfToken = `csrf-token-${csrfFetchCount}`;
     await route.fulfill({
@@ -459,6 +460,7 @@ test('frontend auth gateway bff retries session revoke after invalid csrf token 
   });
 
   await page.route('**/auth/session', async (route) => {
+    expectApiPath(route.request().url(), '/auth/session');
     await route.fulfill({
       status: 200,
       headers: { 'content-type': 'application/json' },
@@ -484,6 +486,7 @@ test('frontend auth gateway bff retries session revoke after invalid csrf token 
   });
 
   await page.route('**/auth/sessions?*', async (route) => {
+    expectApiPath(route.request().url(), '/auth/sessions');
     await route.fulfill({
       status: 200,
       headers: { 'content-type': 'application/json' },
@@ -496,10 +499,12 @@ test('frontend auth gateway bff retries session revoke after invalid csrf token 
   });
 
   await page.route('**/auth/sessions/sess-other/revoke', async (route) => {
+    expectApiPath(route.request().url(), '/auth/sessions/sess-other/revoke');
     revokeAttemptCount += 1;
     const headers = route.request().headers();
     if (revokeAttemptCount === 1) {
       expect(headers['x-csrf-token']).toBe('csrf-token-1');
+      expect(headers.cookie || '').toContain('erp4_csrf=csrf-token-1');
       await route.fulfill({
         status: 403,
         headers: { 'content-type': 'application/json' },
@@ -509,6 +514,7 @@ test('frontend auth gateway bff retries session revoke after invalid csrf token 
     }
 
     expect(headers['x-csrf-token']).toBe('csrf-token-2');
+    expect(headers.cookie || '').toContain('erp4_csrf=csrf-token-2');
     sessionItems = sessionItems.filter((item) => item.sessionId !== 'sess-other');
     await route.fulfill({
       status: 200,
