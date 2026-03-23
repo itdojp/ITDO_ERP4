@@ -67,6 +67,8 @@
 - 完了条件
   - Google グループを使わない構成でも本番運用可能
   - 使う場合も失敗時に権限不足側へ倒れる
+- 参照
+  - `docs/requirements/google-workspace-group-usage-policy.md`
 
 ## 推奨実装順
 

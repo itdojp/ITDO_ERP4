@@ -13,7 +13,7 @@
 - 本番のブラウザ認証は Authorization Code Flow + PKCE を前提とし、ERP4 は BFF/Auth Gateway でセッションを管理する。
 - Google Workspace のパスワード、Passkey、MFA は Google 側で管理し、ERP4 は保持しない。
 - ローカル認証は例外運用とし、自己登録は禁止、管理者による発行・無効化のみを許可する。
-- Google グループは初期状態では権限制御の一次ソースにしない。利用する場合も read-only・粗い権限マッピングに限定する。
+- Google グループは初期状態では権限制御の一次ソースにしない。利用する場合も read-only・粗い権限マッピングに限定する。詳細条件は `docs/requirements/google-workspace-group-usage-policy.md` を参照する。
 - email は連絡用属性であり、Google ユーザとローカルユーザの自動リンクキーには使わない。
 - ERP4 の業務ユーザ本体は `UserAccount` とし、認証主体は別概念として管理する。
 
