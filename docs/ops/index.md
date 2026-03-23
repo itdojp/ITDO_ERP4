@@ -57,6 +57,7 @@
 - [security](security.md)
   - 依存監視手順: [dependency-watch](dependency-watch.md)
   - ベースライン: [docs/security/security-baseline.md](../security/security-baseline.md)
+  - ActionPolicy `phase3_strict` trial / cutover / rollback: [action-policy-phase3-strict-rollout](action-policy-phase3-strict-rollout.md)
 
 ### 性能
 
