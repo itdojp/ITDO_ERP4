@@ -7,6 +7,10 @@ import { buildServer } from '../dist/server.js';
 import { prisma } from '../dist/services/db.js';
 
 const MIN_DATABASE_URL = 'postgresql://user:pass@localhost:5432/postgres';
+const LOCAL_CSRF_HEADERS = {
+  cookie: 'erp4_csrf=csrf-token-001',
+  'x-csrf-token': 'csrf-token-001',
+};
 
 function withPrismaStubs(stubs, fn) {
   const restores = [];
@@ -107,6 +111,7 @@ test('GET /auth/local-credentials lists local credentials with filters', async (
           headers: {
             'x-user-id': 'sys-admin',
             'x-roles': 'system_admin',
+            ...LOCAL_CSRF_HEADERS,
           },
         });
         assert.equal(res.statusCode, 200, res.body);
@@ -195,6 +200,7 @@ test('POST /auth/local-credentials creates local credential and writes audit log
           headers: {
             'x-user-id': 'sys-admin',
             'x-roles': 'system_admin',
+            ...LOCAL_CSRF_HEADERS,
           },
           payload: {
             userAccountId: 'user-001',
@@ -263,6 +269,7 @@ test('POST /auth/local-credentials rejects duplicate local credential', async ()
           headers: {
             'x-user-id': 'sys-admin',
             'x-roles': 'system_admin',
+            ...LOCAL_CSRF_HEADERS,
           },
           payload: {
             userAccountId: 'user-001',
@@ -316,6 +323,7 @@ test('POST /auth/local-credentials maps atomic user credential conflicts to loca
           headers: {
             'x-user-id': 'sys-admin',
             'x-roles': 'system_admin',
+            ...LOCAL_CSRF_HEADERS,
           },
           payload: {
             userAccountId: 'user-001',
@@ -425,6 +433,7 @@ test('PATCH /auth/local-credentials/:identityId updates password, lock state and
           headers: {
             'x-user-id': 'sys-admin',
             'x-roles': 'system_admin',
+            ...LOCAL_CSRF_HEADERS,
           },
           payload: {
             loginId: 'reset-user@example.com',
@@ -517,6 +526,7 @@ test('PATCH /auth/local-credentials/:identityId returns current representation o
           headers: {
             'x-user-id': 'sys-admin',
             'x-roles': 'system_admin',
+            ...LOCAL_CSRF_HEADERS,
           },
           payload: {
             lockedUntil: null,
@@ -594,6 +604,7 @@ test('PATCH /auth/local-credentials/:identityId maps loginId conflicts to local_
           headers: {
             'x-user-id': 'sys-admin',
             'x-roles': 'system_admin',
+            ...LOCAL_CSRF_HEADERS,
           },
           payload: {
             loginId: 'other-user@example.com',
