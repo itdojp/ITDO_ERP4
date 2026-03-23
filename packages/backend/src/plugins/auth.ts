@@ -819,10 +819,19 @@ function isPublicAuthGatewayRoute(req: any) {
 
 function isRouteLevelMachineAuthRoute(req: any) {
   const url = typeof req.url === 'string' ? req.url : '';
+  const headers = (req.headers || {}) as Record<string, unknown>;
+  const authorization =
+    typeof headers.authorization === 'string' ? headers.authorization : '';
+  const recurringToken = headers['x-recurring-jobs-token'];
+  const webhookKey = headers['x-erp4-webhook-key'];
   return (
-    url.startsWith('/scim/v2/') ||
-    url.startsWith('/webhooks/sendgrid/events') ||
-    url.startsWith('/jobs/recurring-projects/run')
+    (url.startsWith('/scim/v2/') && authorization.startsWith('Bearer ')) ||
+    (url.startsWith('/webhooks/sendgrid/events') &&
+      typeof webhookKey === 'string' &&
+      webhookKey.length > 0) ||
+    (url.startsWith('/jobs/recurring-projects/run') &&
+      typeof recurringToken === 'string' &&
+      recurringToken.length > 0)
   );
 }
 
