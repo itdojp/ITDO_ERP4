@@ -2382,3 +2382,53 @@ export const annotationPatchSchema = {
     { additionalProperties: false },
   ),
 };
+
+const localCredentialStatusSchema = Type.Union([
+  Type.Literal('active'),
+  Type.Literal('disabled'),
+]);
+
+export const localCredentialListSchema = {
+  querystring: Type.Object(
+    {
+      userAccountId: Type.Optional(Type.String({ minLength: 1 })),
+      status: Type.Optional(localCredentialStatusSchema),
+      limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 100 })),
+      offset: Type.Optional(Type.Integer({ minimum: 0, maximum: 10000 })),
+    },
+    { additionalProperties: false },
+  ),
+};
+
+export const localCredentialCreateSchema = {
+  body: Type.Object(
+    {
+      userAccountId: Type.String({ minLength: 1 }),
+      loginId: Type.String({ minLength: 1, maxLength: 255 }),
+      password: Type.String({ minLength: 12, maxLength: 128 }),
+      mfaRequired: Type.Optional(Type.Boolean()),
+      ticketId: Type.String({ minLength: 1, maxLength: 128 }),
+      reasonCode: Type.String({ minLength: 1, maxLength: 64 }),
+      reasonText: Type.Optional(Type.String({ minLength: 1, maxLength: 2000 })),
+    },
+    { additionalProperties: false },
+  ),
+};
+
+export const localCredentialPatchSchema = {
+  body: Type.Object(
+    {
+      loginId: Type.Optional(Type.String({ minLength: 1, maxLength: 255 })),
+      password: Type.Optional(Type.String({ minLength: 12, maxLength: 128 })),
+      mfaRequired: Type.Optional(Type.Boolean()),
+      lockedUntil: Type.Optional(
+        Type.Union([Type.String({ format: 'date-time' }), Type.Null()]),
+      ),
+      status: Type.Optional(localCredentialStatusSchema),
+      ticketId: Type.String({ minLength: 1, maxLength: 128 }),
+      reasonCode: Type.String({ minLength: 1, maxLength: 64 }),
+      reasonText: Type.Optional(Type.String({ minLength: 1, maxLength: 2000 })),
+    },
+    { additionalProperties: false },
+  ),
+};

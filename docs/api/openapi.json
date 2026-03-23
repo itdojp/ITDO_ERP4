@@ -3052,6 +3052,223 @@
         }
       }
     },
+    "/auth/local-credentials": {
+      "get": {
+        "parameters": [
+          {
+            "in": "query",
+            "name": "userAccountId",
+            "required": false,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "active"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "enum": [
+                    "disabled"
+                  ],
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "maximum": 100,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "maximum": 10000,
+              "minimum": 0,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "summary": "List local credentials",
+        "tags": [
+          "auth"
+        ]
+      },
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "loginId": {
+                    "maxLength": 255,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "mfaRequired": {
+                    "type": "boolean"
+                  },
+                  "password": {
+                    "maxLength": 128,
+                    "minLength": 12,
+                    "type": "string"
+                  },
+                  "reasonCode": {
+                    "maxLength": 64,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "reasonText": {
+                    "maxLength": 2000,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "ticketId": {
+                    "maxLength": 128,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "userAccountId": {
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "userAccountId",
+                  "loginId",
+                  "password",
+                  "ticketId",
+                  "reasonCode"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "summary": "Create local credential",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/auth/local-credentials/{identityId}": {
+      "patch": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "identityId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "lockedUntil": {
+                    "format": "date-time",
+                    "nullable": true,
+                    "type": "string"
+                  },
+                  "loginId": {
+                    "maxLength": 255,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "mfaRequired": {
+                    "type": "boolean"
+                  },
+                  "password": {
+                    "maxLength": 128,
+                    "minLength": 12,
+                    "type": "string"
+                  },
+                  "reasonCode": {
+                    "maxLength": 64,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "reasonText": {
+                    "maxLength": 2000,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "status": {
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "active"
+                        ],
+                        "type": "string"
+                      },
+                      {
+                        "enum": [
+                          "disabled"
+                        ],
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "ticketId": {
+                    "maxLength": 128,
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "ticketId",
+                  "reasonCode"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        },
+        "summary": "Update local credential",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
     "/billing-360": {
       "get": {
         "parameters": [

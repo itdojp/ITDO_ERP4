@@ -36,6 +36,7 @@
 - 目的
   - Google を利用できない例外ユーザに限定したローカル認証を提供する。
 - 主な変更
+  - `system_admin` に限定したローカル credential lifecycle API
   - 管理者によるローカルアカウント発行
   - Argon2id パスワード
   - MFA 必須化
