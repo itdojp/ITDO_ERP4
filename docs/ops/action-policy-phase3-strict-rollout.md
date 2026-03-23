@@ -77,6 +77,14 @@ make action-policy-phase3-trial-record
 
 対象環境で以下を反映する。
 
+まず cutover 観測開始時刻を固定する。
+
+```bash
+export CUTOVER_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+```
+
+その後、以下を反映する。
+
 ```dotenv
 ACTION_POLICY_ENFORCEMENT_PRESET=phase3_strict
 ```
@@ -104,16 +112,24 @@ ACTION_POLICY_ENFORCEMENT_PRESET=phase3_strict
 
 ### 4. Fallback 確認
 
-cutover 後に以下を実行する。
+cutover 後に、cutover 以降の観測窓に限定して以下を実行する。
 
 ```bash
-make action-policy-fallback-report-json
+node scripts/report-action-policy-fallback-allowed.mjs \
+  --format=json \
+  --from="$CUTOVER_AT" \
+  --to="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+node scripts/report-action-policy-phase3-readiness.mjs \
+  --format=json \
+  --from="$CUTOVER_AT" \
+  --to="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 ```
 
 判定基準:
 
-- 新規 fallback key が 0 件
-- 高リスク key が 0 件
+- fallback report で新規 fallback key が 0 件
+- readiness report の `fallback_high_risk_keys` が `0`
 
 ### 5. Cutover 記録
 
@@ -134,6 +150,14 @@ make action-policy-phase3-cutover-record
 
 ### 1. 設定を戻す
 
+まず rollback 観測開始時刻を固定する。
+
+```bash
+export ROLLBACK_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+```
+
+その後、以下へ戻す。
+
 ```dotenv
 ACTION_POLICY_ENFORCEMENT_PRESET=phase2_core
 ```
@@ -147,8 +171,15 @@ ACTION_POLICY_ENFORCEMENT_PRESET=phase2_core
 ### 3. 復旧確認
 
 ```bash
-make action-policy-phase3-readiness-json
-make action-policy-fallback-report-json
+node scripts/report-action-policy-phase3-readiness.mjs \
+  --format=json \
+  --from="$ROLLBACK_AT" \
+  --to="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+node scripts/report-action-policy-fallback-allowed.mjs \
+  --format=json \
+  --from="$ROLLBACK_AT" \
+  --to="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 ```
 
 確認観点:
@@ -161,8 +192,7 @@ make action-policy-fallback-report-json
 trial 完了後は以下を `docs/test-results/` に追加する。
 
 - readiness record
-- cutover record
-- rollback 実施時は rollback 記録
+- cutover / rollback 結果を含む cutover record
 - 必要なら対象環境での操作ログ / 監査ログ抜粋
 
 最低限、`#1426` のチェックリストに対応する evidence へリンクを残す。
@@ -188,7 +218,7 @@ trial 完了後は以下を `docs/test-results/` に追加する。
 
 確認:
 
-- `GET /approval-instances/:id`
+- 対象インスタンスへ絞り込んだ `GET /approval-instances` または承認一覧 UI
 - `GET /agent-runs/:id`
 - 監査ログの `metadata._agent.runId`
 
