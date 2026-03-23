@@ -111,6 +111,8 @@ VITE_AUTH_MODE=jwt_bff VITE_API_BASE=https://api.example.com npm run build --pre
 - `/auth/google/start` で Google 認証画面へ遷移する
 - callback 後に `erp4_session` Cookie が発行される
 - `GET /auth/session` が 200 を返し、`UserIdentity -> UserAccount` 解決ができる
+- `GET /auth/sessions` が 200 を返し、現行ユーザの active session 一覧を返す
+- `POST /auth/sessions/:sessionId/revoke` で対象 session を失効できる
 - `POST /auth/logout` で Cookie が破棄される
 - `AUTH_MODE=jwt_bff` 以外では BFF route が `404` を返す
 

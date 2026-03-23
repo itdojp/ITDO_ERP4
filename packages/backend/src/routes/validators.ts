@@ -2544,3 +2544,22 @@ export const authGoogleCallbackSchema = {
     { additionalProperties: false },
   ),
 };
+
+export const authSessionListSchema = {
+  querystring: Type.Object(
+    {
+      limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 100 })),
+      offset: Type.Optional(Type.Integer({ minimum: 0, maximum: 10000 })),
+    },
+    { additionalProperties: false },
+  ),
+};
+
+export const authSessionRevokeSchema = {
+  params: Type.Object(
+    {
+      sessionId: Type.String({ minLength: 1, maxLength: 128 }),
+    },
+    { additionalProperties: false },
+  ),
+};
