@@ -255,6 +255,71 @@ test('GET /auth/google/callback creates session and redirects to frontend', asyn
   }
 });
 
+test('GET /auth/google/callback writes audit log on callback validation failure', async () => {
+  const originalFetch = global.fetch;
+  global.fetch = async () =>
+    new Response(
+      JSON.stringify({
+        error: 'invalid_grant',
+      }),
+      {
+        status: 400,
+        headers: { 'content-type': 'application/json' },
+      },
+    );
+
+  try {
+    await withEnv(baseBffEnv(), async () => {
+      let capturedAudit = null;
+      await withPrismaStubs(
+        {
+          'authOidcFlow.findUnique': async () => ({
+            id: 'flow-001',
+            providerType: 'google_oidc',
+            state: 'state-001',
+            nonce: 'nonce-001',
+            codeVerifier: 'verifier',
+            returnTo: '/dashboard',
+            expiresAt: new Date(Date.now() + 60_000),
+          }),
+          'authOidcFlow.delete': async ({ where }) => ({ id: where.id }),
+          'auditLog.create': async ({ data }) => {
+            capturedAudit = data;
+            return { id: 'audit-001' };
+          },
+        },
+        async () => {
+          const { buildServer } = await loadBackendModules();
+          const server = await buildServer({ logger: false });
+          try {
+            const res = await server.inject({
+              method: 'GET',
+              url: '/auth/google/callback?code=bad-code&state=state-001',
+              headers: {
+                cookie: 'erp4_auth_flow=flow-token-001',
+                'user-agent': 'test-agent',
+              },
+            });
+            assert.equal(res.statusCode, 401, res.body);
+            const body = JSON.parse(res.body);
+            assert.equal(body.error.code, 'google_auth_callback_failed');
+            assert.equal(capturedAudit?.action, 'google_oidc_login_failed');
+            assert.equal(
+              capturedAudit?.reasonCode,
+              'callback_validation_failed',
+            );
+            assert.equal(capturedAudit?.metadata?.state, 'state-001');
+          } finally {
+            await server.close();
+          }
+        },
+      );
+    });
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
 test('jwt_bff mode authenticates /me via session cookie', async () => {
   await withEnv(baseBffEnv(), async () => {
     await withPrismaStubs(
@@ -324,6 +389,7 @@ test('jwt_bff mode authenticates /me via session cookie', async () => {
 test('POST /auth/logout clears current session cookie', async () => {
   await withEnv(baseBffEnv(), async () => {
     let revokedId = null;
+    let auditAction = null;
     await withPrismaStubs(
       {
         'authSession.findUnique': async () => ({
@@ -349,7 +415,10 @@ test('POST /auth/logout clears current session cookie', async () => {
             revokedAt: new Date(),
           };
         },
-        'auditLog.create': async () => ({ id: 'audit-logout' }),
+        'auditLog.create': async ({ data }) => {
+          auditAction = data.action;
+          return { id: 'audit-logout' };
+        },
       },
       async () => {
         const { buildServer } = await loadBackendModules();
@@ -366,6 +435,7 @@ test('POST /auth/logout clears current session cookie', async () => {
           });
           assert.equal(res.statusCode, 204, res.body);
           assert.equal(revokedId, 'sess-001');
+          assert.equal(auditAction, 'auth_session_logout');
           assert.match(String(res.headers['set-cookie']), /erp4_session=;/);
           assert.match(String(res.headers['set-cookie']), /erp4_csrf=;/);
         } finally {
