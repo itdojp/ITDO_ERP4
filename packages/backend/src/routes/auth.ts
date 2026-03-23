@@ -247,7 +247,6 @@ const localCredentialIdentitySchema = Type.Object(
     passwordAlgo: Type.String(),
     mfaRequired: Type.Boolean(),
     mfaSecretConfigured: Type.Boolean(),
-    mustRotatePassword: Type.Boolean(),
     failedAttempts: Type.Integer(),
     lockedUntil: Type.Union([
       Type.String({ format: 'date-time' }),
@@ -262,15 +261,6 @@ const localCredentialIdentitySchema = Type.Object(
       Type.Null(),
     ]),
     linkedAt: Type.String({ format: 'date-time' }),
-    effectiveUntil: Type.Union([
-      Type.String({ format: 'date-time' }),
-      Type.Null(),
-    ]),
-    rollbackWindowUntil: Type.Union([
-      Type.String({ format: 'date-time' }),
-      Type.Null(),
-    ]),
-    note: Type.Union([Type.String(), Type.Null()]),
     createdAt: Type.String({ format: 'date-time' }),
     updatedAt: Type.String({ format: 'date-time' }),
   },
@@ -375,13 +365,9 @@ function buildLocalCredentialSelect() {
     providerType: true,
     providerSubject: true,
     issuer: true,
-    emailSnapshot: true,
     status: true,
     lastAuthenticatedAt: true,
     linkedAt: true,
-    effectiveUntil: true,
-    rollbackWindowUntil: true,
-    note: true,
     createdAt: true,
     updatedAt: true,
     userAccount: {
@@ -400,7 +386,6 @@ function buildLocalCredentialSelect() {
         passwordAlgo: true,
         mfaRequired: true,
         mfaSecretRef: true,
-        mustRotatePassword: true,
         failedAttempts: true,
         lockedUntil: true,
         passwordChangedAt: true,
@@ -1354,6 +1339,7 @@ export async function registerAuthRoutes(app: FastifyInstance) {
         userAccountId: string;
         loginId: string;
         password: string;
+        mfaRequired?: boolean;
         ticketId: string;
         reasonCode: string;
         reasonText?: string;
@@ -1459,7 +1445,7 @@ export async function registerAuthRoutes(app: FastifyInstance) {
                 loginId,
                 passwordHash,
                 passwordAlgo: 'argon2id',
-                mfaRequired: true,
+                mfaRequired: body.mfaRequired ?? true,
                 mustRotatePassword: true,
                 failedAttempts: 0,
                 passwordChangedAt: now,

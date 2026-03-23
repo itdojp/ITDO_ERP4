@@ -3125,11 +3125,6 @@
                             "nullable": true,
                             "type": "string"
                           },
-                          "effectiveUntil": {
-                            "format": "date-time",
-                            "nullable": true,
-                            "type": "string"
-                          },
                           "failedAttempts": {
                             "type": "integer"
                           },
@@ -3162,13 +3157,6 @@
                           "mfaSecretConfigured": {
                             "type": "boolean"
                           },
-                          "mustRotatePassword": {
-                            "type": "boolean"
-                          },
-                          "note": {
-                            "nullable": true,
-                            "type": "string"
-                          },
                           "passwordAlgo": {
                             "type": "string"
                           },
@@ -3181,11 +3169,6 @@
                             "type": "string"
                           },
                           "providerType": {
-                            "type": "string"
-                          },
-                          "rollbackWindowUntil": {
-                            "format": "date-time",
-                            "nullable": true,
                             "type": "string"
                           },
                           "status": {
@@ -3224,15 +3207,11 @@
                           "passwordAlgo",
                           "mfaRequired",
                           "mfaSecretConfigured",
-                          "mustRotatePassword",
                           "failedAttempts",
                           "lockedUntil",
                           "passwordChangedAt",
                           "lastAuthenticatedAt",
                           "linkedAt",
-                          "effectiveUntil",
-                          "rollbackWindowUntil",
-                          "note",
                           "createdAt",
                           "updatedAt"
                         ],
@@ -3312,6 +3291,9 @@
                     "minLength": 1,
                     "type": "string"
                   },
+                  "mfaRequired": {
+                    "type": "boolean"
+                  },
                   "password": {
                     "maxLength": 128,
                     "minLength": 12,
@@ -3365,11 +3347,6 @@
                       "nullable": true,
                       "type": "string"
                     },
-                    "effectiveUntil": {
-                      "format": "date-time",
-                      "nullable": true,
-                      "type": "string"
-                    },
                     "failedAttempts": {
                       "type": "integer"
                     },
@@ -3402,13 +3379,6 @@
                     "mfaSecretConfigured": {
                       "type": "boolean"
                     },
-                    "mustRotatePassword": {
-                      "type": "boolean"
-                    },
-                    "note": {
-                      "nullable": true,
-                      "type": "string"
-                    },
                     "passwordAlgo": {
                       "type": "string"
                     },
@@ -3421,11 +3391,6 @@
                       "type": "string"
                     },
                     "providerType": {
-                      "type": "string"
-                    },
-                    "rollbackWindowUntil": {
-                      "format": "date-time",
-                      "nullable": true,
                       "type": "string"
                     },
                     "status": {
@@ -3464,15 +3429,11 @@
                     "passwordAlgo",
                     "mfaRequired",
                     "mfaSecretConfigured",
-                    "mustRotatePassword",
                     "failedAttempts",
                     "lockedUntil",
                     "passwordChangedAt",
                     "lastAuthenticatedAt",
                     "linkedAt",
-                    "effectiveUntil",
-                    "rollbackWindowUntil",
-                    "note",
                     "createdAt",
                     "updatedAt"
                   ],
@@ -3726,11 +3687,6 @@
                       "nullable": true,
                       "type": "string"
                     },
-                    "effectiveUntil": {
-                      "format": "date-time",
-                      "nullable": true,
-                      "type": "string"
-                    },
                     "failedAttempts": {
                       "type": "integer"
                     },
@@ -3763,13 +3719,6 @@
                     "mfaSecretConfigured": {
                       "type": "boolean"
                     },
-                    "mustRotatePassword": {
-                      "type": "boolean"
-                    },
-                    "note": {
-                      "nullable": true,
-                      "type": "string"
-                    },
                     "passwordAlgo": {
                       "type": "string"
                     },
@@ -3782,11 +3731,6 @@
                       "type": "string"
                     },
                     "providerType": {
-                      "type": "string"
-                    },
-                    "rollbackWindowUntil": {
-                      "format": "date-time",
-                      "nullable": true,
                       "type": "string"
                     },
                     "status": {
@@ -3825,15 +3769,11 @@
                     "passwordAlgo",
                     "mfaRequired",
                     "mfaSecretConfigured",
-                    "mustRotatePassword",
                     "failedAttempts",
                     "lockedUntil",
                     "passwordChangedAt",
                     "lastAuthenticatedAt",
                     "linkedAt",
-                    "effectiveUntil",
-                    "rollbackWindowUntil",
-                    "note",
                     "createdAt",
                     "updatedAt"
                   ],

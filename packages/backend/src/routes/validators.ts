@@ -2416,6 +2416,7 @@ export const localCredentialCreateSchema = {
       userAccountId: Type.String({ minLength: 1 }),
       loginId: Type.String({ minLength: 1, maxLength: 255 }),
       password: Type.String({ minLength: 12, maxLength: 128 }),
+      mfaRequired: Type.Optional(Type.Boolean()),
       ticketId: Type.String({ minLength: 1, maxLength: 128 }),
       reasonCode: Type.String({ minLength: 1, maxLength: 64 }),
       reasonText: Type.Optional(Type.String({ minLength: 1, maxLength: 2000 })),
