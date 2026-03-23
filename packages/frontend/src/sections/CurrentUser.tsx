@@ -28,6 +28,29 @@ type NotificationPreference = {
   muteAllUntil: string | null;
 };
 
+type ManagedAuthSession = {
+  sessionId: string;
+  providerType: string;
+  issuer: string;
+  userAccountId: string;
+  userIdentityId: string;
+  sourceIp: string | null;
+  userAgent: string | null;
+  createdAt: string;
+  lastSeenAt: string;
+  expiresAt: string;
+  idleExpiresAt: string;
+  revokedAt: string | null;
+  revokedReason: string | null;
+  current: boolean;
+};
+
+type AuthSessionListResponse = {
+  limit: number;
+  offset: number;
+  items: ManagedAuthSession[];
+};
+
 type ApiErrorResponse = {
   error?: {
     code?: string;
@@ -214,6 +237,32 @@ function buildLocalPasswordRotateErrorMessage(payload: ApiErrorResponse) {
   }
 }
 
+function buildAuthSessionErrorMessage(payload: ApiErrorResponse) {
+  switch (payload.error?.code) {
+    case 'auth_session_not_found':
+      return '対象の認証セッションが見つかりません';
+    case 'auth_guard_rate_limited':
+      return '認証セッション操作の試行回数が上限に達しました';
+    default:
+      return '認証セッション操作に失敗しました';
+  }
+}
+
+function formatDateTime(value: string | null | undefined) {
+  if (!value) return '-';
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return parsed.toLocaleString('ja-JP', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  });
+}
+
 export const CurrentUser: React.FC = () => {
   const bffAuthMode = isBffAuthMode();
   const googleClientId = (import.meta.env.VITE_GOOGLE_CLIENT_ID || '').trim();
@@ -280,6 +329,14 @@ export const CurrentUser: React.FC = () => {
   const [localLoginMessage, setLocalLoginMessage] = useState('');
   const [localPasswordRotationRequired, setLocalPasswordRotationRequired] =
     useState(false);
+  const [authSessions, setAuthSessions] = useState<ManagedAuthSession[]>([]);
+  const [authSessionsLoading, setAuthSessionsLoading] = useState(false);
+  const [authSessionsError, setAuthSessionsError] = useState('');
+  const [authSessionsMessage, setAuthSessionsMessage] = useState('');
+  const [authSessionRevokingId, setAuthSessionRevokingId] = useState<
+    string | null
+  >(null);
+  const authSessionsRequestSeq = useRef(0);
   const googleButtonRef = useRef<HTMLDivElement | null>(null);
   const [googleReady, setGoogleReady] = useState(false);
   const googleButtonRendered = useRef(false);
@@ -288,6 +345,20 @@ export const CurrentUser: React.FC = () => {
       console.error(`[push] ${label}`, err);
     }
   };
+  const clearClientAuthState = useCallback(() => {
+    setAuthState(null);
+    setAuth(null);
+    setMe(null);
+    setError('');
+    setAuthSessions([]);
+    setAuthSessionsLoading(false);
+    setAuthSessionsError('');
+    setAuthSessionsMessage('');
+    setAuthSessionRevokingId(null);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('erp4:auth-updated'));
+    }
+  }, []);
   useEffect(() => {
     if (bffAuthMode) {
       refreshAuthStateFromServer()
@@ -580,6 +651,81 @@ export const CurrentUser: React.FC = () => {
     setAuth(next);
     return next;
   }, []);
+
+  const loadAuthSessions = useCallback(async () => {
+    if (!bffAuthMode || !auth) {
+      setAuthSessions([]);
+      return;
+    }
+    const requestSeq = authSessionsRequestSeq.current + 1;
+    authSessionsRequestSeq.current = requestSeq;
+    setAuthSessionsLoading(true);
+    setAuthSessionsError('');
+    try {
+      const res = await api<AuthSessionListResponse>(
+        '/auth/sessions?limit=20&offset=0',
+      );
+      if (authSessionsRequestSeq.current === requestSeq) {
+        setAuthSessions(res.items);
+      }
+    } catch {
+      if (authSessionsRequestSeq.current === requestSeq) {
+        setAuthSessionsError('認証セッションの取得に失敗しました');
+      }
+    } finally {
+      if (authSessionsRequestSeq.current === requestSeq) {
+        setAuthSessionsLoading(false);
+      }
+    }
+  }, [auth, bffAuthMode]);
+
+  useEffect(() => {
+    if (!bffAuthMode || !auth) {
+      setAuthSessions([]);
+      setAuthSessionsError('');
+      setAuthSessionsMessage('');
+      setAuthSessionsLoading(false);
+      setAuthSessionRevokingId(null);
+      return;
+    }
+    void loadAuthSessions();
+  }, [auth, bffAuthMode, loadAuthSessions]);
+
+  const revokeAuthSession = useCallback(
+    async (sessionId: string) => {
+      setAuthSessionsError('');
+      setAuthSessionsMessage('');
+      setAuthSessionRevokingId(sessionId);
+      try {
+        const res = await apiResponse(
+          `/auth/sessions/${encodeURIComponent(sessionId)}/revoke`,
+          {
+            method: 'POST',
+          },
+        );
+        if (!res.ok) {
+          const payload = await readApiErrorResponse(res);
+          setAuthSessionsError(buildAuthSessionErrorMessage(payload));
+          return;
+        }
+        const revoked = (await res.json()) as ManagedAuthSession;
+        if (revoked.current) {
+          setAuthSessionsMessage(
+            '現在の認証セッションを終了しました。再度ログインしてください',
+          );
+          clearClientAuthState();
+          return;
+        }
+        setAuthSessionsMessage('認証セッションを失効しました');
+        await loadAuthSessions();
+      } catch {
+        setAuthSessionsError('認証セッション操作に失敗しました');
+      } finally {
+        setAuthSessionRevokingId(null);
+      }
+    },
+    [clearClientAuthState, loadAuthSessions],
+  );
 
   const submitLocalLogin = useCallback(async () => {
     setLocalLoginError('');
@@ -916,13 +1062,7 @@ export const CurrentUser: React.FC = () => {
           if (!res.ok) {
             throw new Error(`logout_failed:${res.status}`);
           }
-          setAuthState(null);
-          setAuth(null);
-          setMe(null);
-          setError('');
-          if (typeof window !== 'undefined') {
-            window.dispatchEvent(new Event('erp4:auth-updated'));
-          }
+          clearClientAuthState();
         })
         .catch(() => {
           setError('ログアウトに失敗');
@@ -946,6 +1086,16 @@ export const CurrentUser: React.FC = () => {
           <span style={{ color: '#dc2626', marginLeft: 8 }}>{error}</span>
         )}
       </div>
+      {authSessionsMessage && (
+        <div style={{ color: '#16a34a', marginTop: 8 }}>
+          {authSessionsMessage}
+        </div>
+      )}
+      {authSessionsError && (
+        <div style={{ color: '#dc2626', marginTop: 8 }}>
+          {authSessionsError}
+        </div>
+      )}
       {!auth && (
         <div style={{ fontSize: 14, marginTop: 8 }}>
           <div>未ログイン</div>
@@ -1139,6 +1289,90 @@ export const CurrentUser: React.FC = () => {
             </>
           ) : (
             !error && <div>読み込み中...</div>
+          )}
+          {bffAuthMode && (
+            <div style={{ marginTop: 12 }}>
+              <strong>認証セッション</strong>
+              <div style={{ fontSize: 12, color: '#6b7280', marginTop: 6 }}>
+                現在のブラウザセッションと、同一ユーザーの他セッションを確認できます。
+              </div>
+              <div className="row" style={{ gap: 8, marginTop: 8 }}>
+                <button
+                  className="button secondary"
+                  onClick={() => {
+                    void loadAuthSessions();
+                  }}
+                  disabled={
+                    authSessionsLoading || authSessionRevokingId !== null
+                  }
+                >
+                  セッション一覧を再読込
+                </button>
+              </div>
+              <div
+                className="list"
+                style={{ display: 'grid', gap: 8, marginTop: 8 }}
+              >
+                {authSessionsLoading && <div>認証セッションを取得中...</div>}
+                {!authSessionsLoading && authSessions.length === 0 && (
+                  <div>有効な認証セッションはありません</div>
+                )}
+                {!authSessionsLoading &&
+                  authSessions.map((session) => (
+                    <div
+                      key={session.sessionId}
+                      className="card"
+                      style={{ padding: 12, display: 'grid', gap: 6 }}
+                    >
+                      <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+                        <strong>
+                          {session.current
+                            ? '現在のセッション'
+                            : '他のセッション'}
+                        </strong>
+                        <span>{session.providerType}</span>
+                        <span style={{ color: '#6b7280' }}>
+                          {session.issuer}
+                        </span>
+                      </div>
+                      <div>Session ID: {session.sessionId}</div>
+                      <div>
+                        最終アクセス: {formatDateTime(session.lastSeenAt)}
+                      </div>
+                      <div>有効期限: {formatDateTime(session.expiresAt)}</div>
+                      <div>
+                        アイドル期限: {formatDateTime(session.idleExpiresAt)}
+                      </div>
+                      <div>
+                        接続元 IP:{' '}
+                        {session.sourceIp?.trim() ? session.sourceIp : '-'}
+                      </div>
+                      <div>
+                        User-Agent:{' '}
+                        {session.userAgent?.trim() ? session.userAgent : '-'}
+                      </div>
+                      <div className="row" style={{ gap: 8, marginTop: 4 }}>
+                        <button
+                          className="button secondary"
+                          onClick={() => {
+                            void revokeAuthSession(session.sessionId);
+                          }}
+                          disabled={
+                            authSessionsLoading ||
+                            authSessionRevokingId !== null
+                          }
+                        >
+                          {authSessionRevokingId === session.sessionId
+                            ? '失効中...'
+                            : session.current
+                              ? 'このセッションを終了'
+                              : 'このセッションを失効'}
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+              </div>
+            </div>
           )}
           <div style={{ marginTop: 12 }}>
             <strong>オフライン送信キュー</strong>
