@@ -88,6 +88,9 @@
   - `POST /auth/local/password/rotate`
   - failed attempt 5 回で 15 分 lockout
   - `mustRotatePassword=true` の bootstrap credential に対する初回再設定
+  - local credential 発行時の既定値は `mfaRequired=false` とする
+    - 理由は MFA setup / challenge 経路が未実装であり、`true` 既定だと初回再設定後もログイン不能になるため
+    - system_admin は例外的に `mfaRequired=true` を指定できるが、その credential は MFA 実装完了まで session を発行しない
 - Phase 1 backend では、以下の credential は session を発行しない。
   - `mustRotatePassword=true`
   - `mfaRequired=true` かつ `mfaSecretRef` 未設定

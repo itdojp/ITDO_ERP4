@@ -213,6 +213,20 @@ function respondValidationError(reply: FastifyReply, invalidFields: string[]) {
   );
 }
 
+function respondLocalAuthValidationError(
+  reply: FastifyReply,
+  code: string,
+  message: string,
+  invalidFields: string[],
+) {
+  return reply.code(400).send(
+    createApiErrorResponse(code, message, {
+      category: 'validation',
+      details: { invalidFields },
+    }),
+  );
+}
+
 function requireActorUserId(
   req: { user?: { userId?: string } },
   reply: FastifyReply,
@@ -719,6 +733,62 @@ function respondLocalLoginFailed(
   );
 }
 
+async function incrementLocalCredentialFailure(
+  credentialId: string,
+  updatedBy: string,
+) {
+  const updated = await prisma.localCredential.update({
+    where: { id: credentialId },
+    data: {
+      failedAttempts: { increment: 1 },
+      updatedBy,
+    },
+    select: {
+      failedAttempts: true,
+      lockedUntil: true,
+    },
+  });
+  const nextLockedUntil = computeLocalCredentialLockUntil(
+    updated.failedAttempts,
+  );
+  if (
+    nextLockedUntil &&
+    (!updated.lockedUntil ||
+      updated.lockedUntil.getTime() < nextLockedUntil.getTime())
+  ) {
+    return prisma.localCredential.update({
+      where: { id: credentialId },
+      data: {
+        lockedUntil: nextLockedUntil,
+        updatedBy,
+      },
+      select: {
+        failedAttempts: true,
+        lockedUntil: true,
+      },
+    });
+  }
+  return updated;
+}
+
+async function resetLocalCredentialFailures(
+  credentialId: string,
+  updatedBy: string,
+) {
+  return prisma.localCredential.update({
+    where: { id: credentialId },
+    data: {
+      failedAttempts: 0,
+      lockedUntil: null,
+      updatedBy,
+    },
+    select: {
+      failedAttempts: true,
+      lockedUntil: true,
+    },
+  });
+}
+
 export async function registerAuthRoutes(app: FastifyInstance) {
   app.get('/me', async (req) => {
     const user = req.user || demoUser;
@@ -1136,7 +1206,6 @@ export async function registerAuthRoutes(app: FastifyInstance) {
   app.post(
     '/auth/local/login',
     {
-      preHandler: [app.rateLimit(localLoginRateLimit)],
       schema: {
         ...localLoginSchema,
         tags: ['auth'],
@@ -1173,8 +1242,16 @@ export async function registerAuthRoutes(app: FastifyInstance) {
       const body = (req.body || {}) as { loginId: string; password: string };
       const loginId = normalizeLocalLoginId(body.loginId);
       const password = typeof body.password === 'string' ? body.password : '';
-      if (!loginId || !password) {
-        return respondValidationError(reply, ['loginId', 'password']);
+      const invalidFields: string[] = [];
+      if (!loginId) invalidFields.push('loginId');
+      if (!password) invalidFields.push('password');
+      if (invalidFields.length) {
+        return respondLocalAuthValidationError(
+          reply,
+          'invalid_local_login_payload',
+          'Invalid local login payload',
+          invalidFields,
+        );
       }
 
       const identity = await prisma.userIdentity.findFirst({
@@ -1235,48 +1312,56 @@ export async function registerAuthRoutes(app: FastifyInstance) {
         );
       }
 
-      const passwordMatched = await verifyLocalPassword(
-        credential.passwordHash,
-        password,
-      );
-      if (!passwordMatched) {
-        const nextFailedAttempts = credential.failedAttempts + 1;
-        const lockedUntil = computeLocalCredentialLockUntil(nextFailedAttempts);
-        await prisma.localCredential.update({
-          where: { id: credential.id },
-          data: {
-            failedAttempts: nextFailedAttempts,
-            lockedUntil,
-            updatedBy: identity.providerSubject,
-          },
-        });
+      let passwordMatched = false;
+      try {
+        passwordMatched = await verifyLocalPassword(
+          credential.passwordHash,
+          password,
+        );
+      } catch (err) {
         await logAudit({
           action: 'local_login_failed',
           targetTable: 'LocalCredential',
           targetId: credential.id,
-          reasonCode: lockedUntil
+          reasonCode: 'credential_verification_error',
+          metadata: {
+            loginId,
+            userAccountId: identity.userAccountId,
+            identityId: identity.id,
+            errorMessage: err instanceof Error ? err.message : String(err),
+          },
+          ...auditContextFromRequest(req),
+        });
+        return respondLocalLoginFailed(reply, 'credential_verification_error');
+      }
+      if (!passwordMatched) {
+        const failedCredential = await incrementLocalCredentialFailure(
+          credential.id,
+          identity.providerSubject,
+        );
+        await logAudit({
+          action: 'local_login_failed',
+          targetTable: 'LocalCredential',
+          targetId: credential.id,
+          reasonCode: failedCredential.lockedUntil
             ? 'locked_after_failed_attempts'
             : 'invalid_credentials',
           metadata: {
             loginId,
             userAccountId: identity.userAccountId,
             identityId: identity.id,
-            failedAttempts: nextFailedAttempts,
-            lockedUntil: lockedUntil?.toISOString() ?? null,
+            failedAttempts: failedCredential.failedAttempts,
+            lockedUntil: failedCredential.lockedUntil?.toISOString() ?? null,
           },
           ...auditContextFromRequest(req),
         });
         return respondLocalLoginFailed(reply);
       }
 
-      await prisma.localCredential.update({
-        where: { id: credential.id },
-        data: {
-          failedAttempts: 0,
-          lockedUntil: null,
-          updatedBy: identity.providerSubject,
-        },
-      });
+      await resetLocalCredentialFailures(
+        credential.id,
+        identity.providerSubject,
+      );
 
       if (credential.mustRotatePassword) {
         await logAudit({
@@ -1393,7 +1478,6 @@ export async function registerAuthRoutes(app: FastifyInstance) {
   app.post(
     '/auth/local/password/rotate',
     {
-      preHandler: [app.rateLimit(localLoginRateLimit)],
       schema: {
         ...localPasswordRotateSchema,
         tags: ['auth'],
@@ -1441,8 +1525,10 @@ export async function registerAuthRoutes(app: FastifyInstance) {
       if (!loginId) invalidFields.push('loginId');
       if (!currentPassword) invalidFields.push('currentPassword');
       if (invalidFields.length) {
-        return respondValidationError(
+        return respondLocalAuthValidationError(
           reply,
+          'invalid_local_password_rotation_payload',
+          'Invalid local password rotation payload',
           Array.from(new Set(invalidFields)),
         );
       }
@@ -1505,39 +1591,56 @@ export async function registerAuthRoutes(app: FastifyInstance) {
         );
       }
 
-      const passwordMatched = await verifyLocalPassword(
-        credential.passwordHash,
-        currentPassword,
-      );
-      if (!passwordMatched) {
-        const nextFailedAttempts = credential.failedAttempts + 1;
-        const lockedUntil = computeLocalCredentialLockUntil(nextFailedAttempts);
-        await prisma.localCredential.update({
-          where: { id: credential.id },
-          data: {
-            failedAttempts: nextFailedAttempts,
-            lockedUntil,
-            updatedBy: identity.providerSubject,
-          },
-        });
+      let passwordMatched = false;
+      try {
+        passwordMatched = await verifyLocalPassword(
+          credential.passwordHash,
+          currentPassword,
+        );
+      } catch (err) {
         await logAudit({
           action: 'local_password_rotation_failed',
           targetTable: 'LocalCredential',
           targetId: credential.id,
-          reasonCode: lockedUntil
+          reasonCode: 'credential_verification_error',
+          metadata: {
+            loginId,
+            userAccountId: identity.userAccountId,
+            identityId: identity.id,
+            errorMessage: err instanceof Error ? err.message : String(err),
+          },
+          ...auditContextFromRequest(req),
+        });
+        return respondLocalLoginFailed(reply, 'credential_verification_error');
+      }
+      if (!passwordMatched) {
+        const failedCredential = await incrementLocalCredentialFailure(
+          credential.id,
+          identity.providerSubject,
+        );
+        await logAudit({
+          action: 'local_password_rotation_failed',
+          targetTable: 'LocalCredential',
+          targetId: credential.id,
+          reasonCode: failedCredential.lockedUntil
             ? 'locked_after_failed_attempts'
             : 'invalid_credentials',
           metadata: {
             loginId,
             userAccountId: identity.userAccountId,
             identityId: identity.id,
-            failedAttempts: nextFailedAttempts,
-            lockedUntil: lockedUntil?.toISOString() ?? null,
+            failedAttempts: failedCredential.failedAttempts,
+            lockedUntil: failedCredential.lockedUntil?.toISOString() ?? null,
           },
           ...auditContextFromRequest(req),
         });
         return respondLocalLoginFailed(reply);
       }
+
+      await resetLocalCredentialFailures(
+        credential.id,
+        identity.providerSubject,
+      );
 
       if (!credential.mustRotatePassword) {
         return reply.code(409).send(
@@ -1557,7 +1660,12 @@ export async function registerAuthRoutes(app: FastifyInstance) {
         newPassword,
       );
       if (currentAndNextSame) {
-        return respondValidationError(reply, ['newPassword']);
+        return respondLocalAuthValidationError(
+          reply,
+          'invalid_local_password_rotation_payload',
+          'Invalid local password rotation payload',
+          ['newPassword'],
+        );
       }
 
       await prisma.localCredential.update({
@@ -2014,7 +2122,7 @@ export async function registerAuthRoutes(app: FastifyInstance) {
                 loginId,
                 passwordHash,
                 passwordAlgo: 'argon2id',
-                mfaRequired: true,
+                mfaRequired: false,
                 mustRotatePassword: true,
                 failedAttempts: 0,
                 passwordChangedAt: now,
@@ -2533,7 +2641,7 @@ export async function registerAuthRoutes(app: FastifyInstance) {
                 loginId,
                 passwordHash,
                 passwordAlgo: 'argon2id',
-                mfaRequired: body.mfaRequired ?? true,
+                mfaRequired: body.mfaRequired ?? false,
                 mustRotatePassword: true,
                 failedAttempts: 0,
                 passwordChangedAt: now,

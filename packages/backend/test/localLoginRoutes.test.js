@@ -260,14 +260,28 @@ test('POST /auth/local/login increments failedAttempts and locks local credentia
         failedAttempts: 4,
       },
     });
-    let updatedCredential = null;
+    const updates = [];
+    let failedAttempts = 4;
+    let lockedUntil = null;
 
     await withPrismaStubs(
       {
         'userIdentity.findFirst': async () => identity,
         'localCredential.update': async ({ data }) => {
-          updatedCredential = data;
-          return { id: identity.localCredential.id };
+          updates.push(data);
+          if (data.failedAttempts?.increment) {
+            failedAttempts += data.failedAttempts.increment;
+          } else if (typeof data.failedAttempts === 'number') {
+            failedAttempts = data.failedAttempts;
+          }
+          if (data.lockedUntil !== undefined) {
+            lockedUntil = data.lockedUntil;
+          }
+          return {
+            id: identity.localCredential.id,
+            failedAttempts,
+            lockedUntil,
+          };
         },
         'auditLog.create': async () => ({ id: 'audit-001' }),
       },
@@ -292,8 +306,32 @@ test('POST /auth/local/login increments failedAttempts and locks local credentia
       },
     );
 
-    assert.equal(updatedCredential?.failedAttempts, 5);
-    assert.ok(updatedCredential?.lockedUntil instanceof Date);
+    assert.equal(updates[0]?.failedAttempts?.increment, 1);
+    assert.ok(updates[1]?.lockedUntil instanceof Date);
+  });
+});
+
+test('POST /auth/local/login returns local login validation error for invalid payload', async () => {
+  await withEnv(baseBffEnv(), async () => {
+    await withPrismaStubs({}, async () => {
+      const { buildServer } = await loadBackendModules();
+      const server = await buildServer({ logger: false });
+      try {
+        const res = await server.inject({
+          method: 'POST',
+          url: '/auth/local/login',
+          payload: {
+            loginId: '   ',
+            password: 'LocalPassword123',
+          },
+        });
+        assert.equal(res.statusCode, 400, res.body);
+        const body = JSON.parse(res.body);
+        assert.equal(body.error.code, 'invalid_local_login_payload');
+      } finally {
+        await server.close();
+      }
+    });
   });
 });
 
@@ -334,6 +372,52 @@ test('POST /auth/local/login blocks when MFA setup is still required', async () 
         }
       },
     );
+  });
+});
+
+test('POST /auth/local/login treats password verification errors as auth failures', async () => {
+  await withEnv(baseBffEnv(), async () => {
+    const identity = await buildLocalIdentity({
+      localCredential: {
+        passwordHash: 'invalid-hash',
+      },
+    });
+    const auditReasonCodes = [];
+
+    await withPrismaStubs(
+      {
+        'userIdentity.findFirst': async () => identity,
+        'auditLog.create': async ({ data }) => {
+          auditReasonCodes.push(data.reasonCode);
+          return { id: `audit-${auditReasonCodes.length}` };
+        },
+      },
+      async () => {
+        const { buildServer } = await loadBackendModules();
+        const server = await buildServer({ logger: false });
+        try {
+          const res = await server.inject({
+            method: 'POST',
+            url: '/auth/local/login',
+            payload: {
+              loginId: 'local.user@example.com',
+              password: 'LocalPassword123',
+            },
+          });
+          assert.equal(res.statusCode, 401, res.body);
+          const body = JSON.parse(res.body);
+          assert.equal(body.error.code, 'local_login_failed');
+          assert.equal(
+            body.error.details?.reason,
+            'credential_verification_error',
+          );
+        } finally {
+          await server.close();
+        }
+      },
+    );
+
+    assert.ok(auditReasonCodes.includes('credential_verification_error'));
   });
 });
 
@@ -392,5 +476,33 @@ test('POST /auth/local/password/rotate clears bootstrap flag and updates passwor
       true,
     );
     assert.ok(auditActions.includes('local_password_rotated'));
+  });
+});
+
+test('POST /auth/local/password/rotate returns dedicated validation error code', async () => {
+  await withEnv(baseBffEnv(), async () => {
+    await withPrismaStubs({}, async () => {
+      const { buildServer } = await loadBackendModules();
+      const server = await buildServer({ logger: false });
+      try {
+        const res = await server.inject({
+          method: 'POST',
+          url: '/auth/local/password/rotate',
+          payload: {
+            loginId: '   ',
+            currentPassword: 'LocalPassword123',
+            newPassword: 'NewLocalPassword123',
+          },
+        });
+        assert.equal(res.statusCode, 400, res.body);
+        const body = JSON.parse(res.body);
+        assert.equal(
+          body.error.code,
+          'invalid_local_password_rotation_payload',
+        );
+      } finally {
+        await server.close();
+      }
+    });
   });
 });

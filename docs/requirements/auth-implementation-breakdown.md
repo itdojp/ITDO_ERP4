@@ -64,6 +64,7 @@
   - `POST /auth/local/password/rotate`
   - failed attempt count / temporary lockout
   - bootstrap password の初回再設定
+  - local credential 発行既定値は `mfaRequired=false`
   - `mfaRequired=false` の credential に限る BFF session 発行
 - Phase 2 実装
   - MFA challenge / setup 実行経路
