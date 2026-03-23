@@ -916,10 +916,13 @@ export async function registerAuthRoutes(app: FastifyInstance) {
       const query = (req.query || {}) as { limit?: number; offset?: number };
       const limit = Math.min(Math.max(query.limit ?? 20, 1), 100);
       const offset = Math.max(query.offset ?? 0, 0);
+      const now = new Date();
       const items = await prisma.authSession.findMany({
         where: {
           userAccountId: session.userAccountId,
           revokedAt: null,
+          expiresAt: { gt: now },
+          idleExpiresAt: { gt: now },
         },
         orderBy: [{ lastSeenAt: 'desc' }, { createdAt: 'desc' }],
         skip: offset,
@@ -966,13 +969,17 @@ export async function registerAuthRoutes(app: FastifyInstance) {
         );
       }
       const { sessionId } = (req.params || {}) as { sessionId: string };
+      const now = new Date();
       const target = await prisma.authSession.findFirst({
         where: {
           id: sessionId,
           userAccountId: currentSession.userAccountId,
+          revokedAt: null,
+          expiresAt: { gt: now },
+          idleExpiresAt: { gt: now },
         },
       });
-      if (!target || target.revokedAt) {
+      if (!target) {
         return reply.code(404).send(
           createApiErrorResponse(
             'auth_session_not_found',
