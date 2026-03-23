@@ -57,8 +57,13 @@ GOOGLE_OIDC_POST_LOGIN_REDIRECT_URL=https://app.example.com/
 補足:
 
 - `GOOGLE_OIDC_CLIENT_SECRET` はシークレットストアで管理する
+- `GOOGLE_OIDC_JWKS_URL` は backend 実装に合わせた `jwks_uri` を設定する。固定値運用では Google の OpenID Provider Configuration (`https://accounts.google.com/.well-known/openid-configuration`) を確認し、その時点の `jwks_uri` を採用する
 - `GOOGLE_OIDC_HOSTED_DOMAIN` を設定し、社外 Google アカウントを既定で拒否する
 - `ALLOWED_ORIGINS` には frontend の公開 origin のみを列挙する
+- `ALLOWED_ORIGINS` にワイルドカードは使わない。複数 origin を許可する場合は backend 実装に合わせてカンマ区切りで列挙する
+- `jwt_bff` では frontend 側が `credentials: 'include'` で API を呼び出す前提のため、backend の `Access-Control-Allow-Credentials` と origin 設定を厳密に一致させる
+- `GOOGLE_OIDC_CLIENT_SECRET` のローテーションは、Google Workspace 側で新 secret を発行 → シークレットストア更新 → backend ロールアウト → 動作確認後に旧 secret を失効、の順で行う
+- `GOOGLE_OIDC_CLIENT_SECRET` の漏洩が疑われる場合は、直ちに secret を失効または再発行し、必要に応じて `AuthSession` を全削除して強制再ログインさせる
 
 ## frontend 環境変数
 
@@ -78,7 +83,9 @@ VITE_API_BASE=https://api.example.com
 - `Set-Cookie` を書き換えず透過する
 - `X-Forwarded-Proto=https` を backend へ渡す
 - backend の OIDC callback を proxy で遮断しない
-- Cookie は `Secure`, `HttpOnly`, `SameSite=Lax` を前提に運用する
+- Cookie は少なくとも `Secure`, `HttpOnly` を必須とし、`SameSite` は site 構成に応じて設定する
+  - frontend / backend が同一 site 構成の場合: `SameSite=Lax` を推奨
+  - クロスサイトになる構成で OIDC ログインや BFF + Cookie 認証を行う場合: `SameSite=None; Secure` を必須とする
 
 ## 起動確認
 
@@ -86,7 +93,7 @@ VITE_API_BASE=https://api.example.com
 
 ```bash
 npm ci --prefix packages/backend
-DATABASE_URL=postgresql://user:pass@localhost:5432/postgres npx prisma generate --schema packages/backend/prisma/schema.prisma
+npx prisma generate --schema packages/backend/prisma/schema.prisma
 npm run build --prefix packages/backend
 node packages/backend/dist/index.js
 ```
