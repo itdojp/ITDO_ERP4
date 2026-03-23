@@ -10,7 +10,7 @@
 - frontend は `PR #1504` 相当の `VITE_AUTH_MODE=jwt_bff` 実装を含むこと
 - Google Workspace 側で OAuth クライアントを発行済みであること
 - reverse proxy で TLS 終端すること
-- 本番で `AUTH_MODE=header` を使わないこと
+- 本番で `AUTH_MODE=jwt_bff` 以外を使わないこと
 
 ## Google Workspace 側の設定
 
@@ -117,7 +117,7 @@ VITE_AUTH_MODE=jwt_bff VITE_API_BASE=https://api.example.com npm run build --pre
 - frontend の `現在のユーザー` カードで `認証セッション` 一覧を表示できる
 - frontend から `このセッションを失効` を実行すると一覧が再読込される
 - `POST /auth/logout` で Cookie が破棄される
-- `AUTH_MODE=jwt_bff` 以外では BFF route が `404` を返す
+- `NODE_ENV=production` では `AUTH_MODE=jwt_bff` 以外で backend が起動時検証に失敗する
 
 ## ロールバック
 

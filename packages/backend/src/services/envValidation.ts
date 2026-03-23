@@ -226,15 +226,11 @@ export function assertValidBackendEnv() {
       'true|false|1|0 のいずれかを指定してください',
     );
   }
-  if (
-    nodeEnv === 'production' &&
-    authMode === 'header' &&
-    !allowHeaderFallback
-  ) {
+  if (nodeEnv === 'production' && authMode !== 'jwt_bff') {
     addIssue(
       issues,
       'AUTH_MODE',
-      'production では AUTH_MODE=header は使用できません（必要時のみ AUTH_ALLOW_HEADER_FALLBACK_IN_PROD=true で明示的に許可）',
+      'production では AUTH_MODE=jwt_bff のみ使用できます',
     );
   }
 

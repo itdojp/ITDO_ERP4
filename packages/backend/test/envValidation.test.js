@@ -160,7 +160,7 @@ function runDelegatedJwtRequest({
   });
 }
 
-test('envValidation: production + AUTH_MODE=header is rejected by default', () => {
+test('envValidation: production + AUTH_MODE=header is rejected', () => {
   const result = runEnvValidation({
     NODE_ENV: 'production',
     AUTH_MODE: 'header',
@@ -169,13 +169,49 @@ test('envValidation: production + AUTH_MODE=header is rejected by default', () =
 
   assert.notEqual(result.status, 0);
   assert.match(result.stderr.toString(), /AUTH_MODE/);
+  assert.match(result.stderr.toString(), /jwt_bff/);
 });
 
-test('envValidation: production + AUTH_MODE=header is allowed with explicit flag', () => {
+test('envValidation: production + AUTH_MODE=hybrid is rejected even with explicit fallback flag', () => {
   const result = runEnvValidation({
     NODE_ENV: 'production',
-    AUTH_MODE: 'header',
+    AUTH_MODE: 'hybrid',
     AUTH_ALLOW_HEADER_FALLBACK_IN_PROD: 'true',
+    JWT_ISSUER: 'test-issuer',
+    JWT_AUDIENCE: 'test-audience',
+    JWT_PUBLIC_KEY: 'dummy-public-key',
+  });
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr.toString(), /AUTH_MODE/);
+  assert.match(result.stderr.toString(), /jwt_bff/);
+});
+
+test('envValidation: production + AUTH_MODE=jwt is rejected', () => {
+  const result = runEnvValidation({
+    NODE_ENV: 'production',
+    AUTH_MODE: 'jwt',
+    JWT_ISSUER: 'test-issuer',
+    JWT_AUDIENCE: 'test-audience',
+    JWT_PUBLIC_KEY: 'dummy-public-key',
+  });
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr.toString(), /AUTH_MODE/);
+  assert.match(result.stderr.toString(), /jwt_bff/);
+});
+
+test('envValidation: production + AUTH_MODE=jwt_bff is allowed with required settings', () => {
+  const result = runEnvValidation({
+    NODE_ENV: 'production',
+    AUTH_MODE: 'jwt_bff',
+    JWT_ISSUER: 'https://accounts.google.com',
+    JWT_AUDIENCE: 'client-id.apps.googleusercontent.com',
+    JWT_JWKS_URL: 'https://www.googleapis.com/oauth2/v3/certs',
+    GOOGLE_OIDC_CLIENT_SECRET: 'secret',
+    GOOGLE_OIDC_REDIRECT_URI: 'https://app.example.com/auth/google/callback',
+    AUTH_FRONTEND_ORIGIN: 'https://app.example.com',
+    AUTH_COOKIE_SECRET: '0123456789abcdef0123456789abcdef',
   });
 
   assert.equal(result.status, 0);
@@ -310,7 +346,7 @@ test('envValidation: APPROVAL_RULE_FALLBACK_MODE accepts db_default_only', () =>
   assert.equal(result.stdout, 'OK');
 });
 
-test('auth plugin: production + AUTH_MODE=hybrid rejects missing bearer token by default', () => {
+test('auth plugin: production + AUTH_MODE=hybrid fails startup via env validation', () => {
   const result = runCurrentUserRequest(
     {
       NODE_ENV: 'production',
@@ -326,20 +362,17 @@ test('auth plugin: production + AUTH_MODE=hybrid rejects missing bearer token by
     },
   );
 
-  assert.equal(result.status, 0);
-  const payload = JSON.parse(result.stdout);
-  assert.equal(payload.statusCode, 401);
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /AUTH_MODE/);
+  assert.match(result.stderr, /jwt_bff/);
 });
 
-test('auth plugin: production + AUTH_MODE=hybrid allows header fallback with explicit flag', () => {
+test('auth plugin: production + AUTH_MODE=header fails startup even with explicit fallback flag', () => {
   const result = runCurrentUserRequest(
     {
       NODE_ENV: 'production',
-      AUTH_MODE: 'hybrid',
+      AUTH_MODE: 'header',
       AUTH_ALLOW_HEADER_FALLBACK_IN_PROD: 'true',
-      JWT_ISSUER: 'test-issuer',
-      JWT_AUDIENCE: 'test-audience',
-      JWT_PUBLIC_KEY: 'dummy-public-key',
     },
     {
       'x-user-id': 'header-user',
@@ -347,11 +380,9 @@ test('auth plugin: production + AUTH_MODE=hybrid allows header fallback with exp
     },
   );
 
-  assert.equal(result.status, 0);
-  const payload = JSON.parse(result.stdout);
-  assert.equal(payload.statusCode, 200);
-  const body = JSON.parse(payload.body);
-  assert.equal(body.user?.userId, 'header-user');
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /AUTH_MODE/);
+  assert.match(result.stderr, /jwt_bff/);
 });
 
 test('auth plugin: jwt with revoked jti is rejected', () => {
