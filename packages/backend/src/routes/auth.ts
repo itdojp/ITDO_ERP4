@@ -766,15 +766,15 @@ export async function registerAuthRoutes(app: FastifyInstance) {
         reply.header('set-cookie', buildAuthFlowClearCookie());
         return reply.code(401).send(
           createApiErrorResponse(
-              'google_auth_callback_failed',
-              'Google authentication callback validation failed',
-              {
-                category: 'auth',
-                details: {
-                  reason: 'callback_validation_failed',
-                },
+            'google_auth_callback_failed',
+            'Google authentication callback validation failed',
+            {
+              category: 'auth',
+              details: {
+                reason: 'callback_validation_failed',
               },
-            ),
+            },
+          ),
         );
       }
     },
