@@ -62,6 +62,13 @@ const localCredentialAdminRateLimit = getRouteRateLimitOptions(
     timeWindow: '1 minute',
   },
 );
+const authGatewayRateLimit = getRouteRateLimitOptions(
+  'RATE_LIMIT_AUTH_GATEWAY',
+  {
+    max: 60,
+    timeWindow: '1 minute',
+  },
+);
 
 function parseRateLimitWindowSeconds(value: string) {
   const normalized = value.trim().toLowerCase();
@@ -92,6 +99,26 @@ const localCredentialAdminFlexibleLimiter = new RateLimiterMemory({
     localCredentialAdminRateLimit.timeWindow,
   ),
 });
+const authGatewayFlexibleLimiter = new RateLimiterMemory({
+  points: authGatewayRateLimit.max,
+  duration: parseRateLimitWindowSeconds(authGatewayRateLimit.timeWindow),
+});
+
+async function enforceAuthGatewayRateLimit(
+  req: { ip?: string },
+  reply: FastifyReply,
+) {
+  try {
+    await authGatewayFlexibleLimiter.consume(req.ip || 'unknown');
+    return null;
+  } catch {
+    return reply.code(429).send(
+      createApiErrorResponse('auth_gateway_rate_limited', 'Too many requests', {
+        category: 'rate_limit',
+      }),
+    );
+  }
+}
 
 function normalizeOptionalString(value: unknown) {
   return typeof value === 'string' ? value.trim() : '';
@@ -559,11 +586,14 @@ export async function registerAuthRoutes(app: FastifyInstance) {
         summary: 'Start Google OIDC authorization code flow',
         response: {
           400: authGatewayErrorResponseSchema,
+          429: authGatewayErrorResponseSchema,
           302: Type.Null(),
         },
       },
     },
     async (req, reply) => {
+      const rateLimited = await enforceAuthGatewayRateLimit(req, reply);
+      if (rateLimited) return rateLimited;
       const query = (req.query || {}) as { returnTo?: string };
       try {
         const { redirectUrl, setCookie } = await createGoogleAuthFlow(prisma, {
@@ -598,10 +628,13 @@ export async function registerAuthRoutes(app: FastifyInstance) {
           400: authGatewayErrorResponseSchema,
           401: authGatewayErrorResponseSchema,
           403: authGatewayErrorResponseSchema,
+          429: authGatewayErrorResponseSchema,
         },
       },
     },
     async (req, reply) => {
+      const rateLimited = await enforceAuthGatewayRateLimit(req, reply);
+      if (rateLimited) return rateLimited;
       const query = (req.query || {}) as { code: string; state: string };
       const flow = await consumeGoogleAuthFlow(prisma, {
         cookieHeader: req.headers.cookie,
@@ -733,10 +766,13 @@ export async function registerAuthRoutes(app: FastifyInstance) {
         response: {
           200: authSessionResponseSchema,
           401: authGatewayErrorResponseSchema,
+          429: authGatewayErrorResponseSchema,
         },
       },
     },
     async (req, reply) => {
+      const rateLimited = await enforceAuthGatewayRateLimit(req, reply);
+      if (rateLimited) return rateLimited;
       const session = await resolveAuthSession(prisma, req.headers.cookie);
       if (!session || !req.user) {
         return reply.code(401).send(
@@ -761,10 +797,13 @@ export async function registerAuthRoutes(app: FastifyInstance) {
         summary: 'Revoke current authenticated session',
         response: {
           204: Type.Null(),
+          429: authGatewayErrorResponseSchema,
         },
       },
     },
     async (req, reply) => {
+      const rateLimited = await enforceAuthGatewayRateLimit(req, reply);
+      if (rateLimited) return rateLimited;
       const revoked = await revokeAuthSession(prisma, req.headers.cookie);
       if (revoked) {
         await logAudit({

@@ -1,12 +1,14 @@
 import fp from 'fastify-plugin';
 import { createRemoteJWKSet, importSPKI, jwtVerify } from 'jose';
 import type { CryptoKey, JWTPayload, JWTVerifyGetKey } from 'jose';
+import { RateLimiterMemory } from 'rate-limiter-flexible';
 import { prisma } from '../services/db.js';
 import { createApiErrorResponse } from '../services/errors.js';
 import {
   buildSessionUserContext,
   resolveAuthSession,
 } from '../services/authGateway.js';
+import { getRouteRateLimitOptions } from '../services/rateLimitOverrides.js';
 import { parseGroupToRoleMap } from '../utils/authGroupToRoleMap.js';
 
 export type UserContext = {
@@ -78,6 +80,13 @@ const JWT_SCOPE_CLAIM = process.env.JWT_SCOPE_CLAIM || 'scp';
 const JWT_ACTOR_SUB_CLAIM = process.env.JWT_ACTOR_SUB_CLAIM || 'act.sub';
 const JWT_TOKEN_ID_CLAIM = process.env.JWT_TOKEN_ID_CLAIM || 'jti';
 const AUTH_DEFAULT_ROLE = process.env.AUTH_DEFAULT_ROLE || 'user';
+const AUTH_SESSION_ROUTE_RATE_LIMIT = getRouteRateLimitOptions(
+  'RATE_LIMIT_AUTH_SESSION',
+  {
+    max: 120,
+    timeWindow: '1 minute',
+  },
+);
 const USER_ROLE_ALIASES = new Set(['project_lead', 'employee', 'probationary']);
 const AUTH_GROUP_TO_ROLE_MAP_RAW = process.env.AUTH_GROUP_TO_ROLE_MAP || '';
 const AUTH_DB_USER_CONTEXT_CACHE_TTL_SECONDS = Number(
@@ -134,6 +143,36 @@ if (typeof JWT_JWKS_URL === 'string' && JWT_JWKS_URL.trim() !== '') {
     throw new Error(`Invalid JWT_JWKS_URL configuration: ${JWT_JWKS_URL}`);
   }
 }
+
+function parseRateLimitWindowSeconds(value: string) {
+  const normalized = value.trim().toLowerCase();
+  const match = normalized.match(
+    /^(\d+)\s*(second|seconds|minute|minutes|hour|hours)$/,
+  );
+  if (!match) return 60;
+  const amount = Number(match[1]);
+  if (!Number.isFinite(amount) || amount <= 0) return 60;
+  switch (match[2]) {
+    case 'second':
+    case 'seconds':
+      return amount;
+    case 'minute':
+    case 'minutes':
+      return amount * 60;
+    case 'hour':
+    case 'hours':
+      return amount * 60 * 60;
+    default:
+      return 60;
+  }
+}
+
+const authSessionFlexibleLimiter = new RateLimiterMemory({
+  points: AUTH_SESSION_ROUTE_RATE_LIMIT.max,
+  duration: parseRateLimitWindowSeconds(
+    AUTH_SESSION_ROUTE_RATE_LIMIT.timeWindow,
+  ),
+});
 
 function parseBearerToken(req: any): string | null {
   const authHeader = req.headers?.authorization;
@@ -714,6 +753,19 @@ function isPublicAuthGatewayRoute(req: any) {
   );
 }
 
+async function enforceAuthSessionRateLimit(req: any, reply: any) {
+  try {
+    await authSessionFlexibleLimiter.consume(req.ip || 'unknown');
+    return null;
+  } catch {
+    return reply.code(429).send(
+      createApiErrorResponse('auth_session_rate_limited', 'Too many requests', {
+        category: 'rate_limit',
+      }),
+    );
+  }
+}
+
 async function authPlugin(fastify: any) {
   assertRuntimeAuthConfig();
   fastify.addHook('onRequest', async (req: any, reply: any) => {
@@ -733,6 +785,8 @@ async function authPlugin(fastify: any) {
       return;
     }
     if (mode === 'jwt_bff') {
+      const rateLimited = await enforceAuthSessionRateLimit(req, reply);
+      if (rateLimited) return rateLimited;
       const session = await resolveAuthSession(prisma, req.headers?.cookie);
       if (!session) {
         return respondUnauthorized(req, reply, 'missing_session');
