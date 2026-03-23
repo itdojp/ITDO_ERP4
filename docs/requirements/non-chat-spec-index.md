@@ -23,7 +23,7 @@
   - 日報未提出: `docs/requirements/daily-report-missing.md`
 - 損益/予実/単価: `docs/requirements/profit-and-variance.md` / `docs/requirements/rate-card.md`
 - 管理会計/経営レポート: `docs/requirements/management-accounting-report-requirements.md`
-- 認証/ID/アクセス制御: `docs/requirements/id-management.md` / `docs/requirements/access-control.md` / `docs/requirements/rbac-matrix.md`
+- 認証/ID/アクセス制御: `docs/requirements/auth-architecture.md` / `docs/requirements/auth-implementation-breakdown.md` / `docs/requirements/id-management.md` / `docs/requirements/access-control.md` / `docs/requirements/rbac-matrix.md`
 - 運用（バックアップ/監視/ジョブ）: `docs/requirements/backup-restore.md` / `docs/requirements/batch-jobs.md` / `docs/requirements/ops-monitoring.md`
 - データ移行: `docs/requirements/migration-mapping.md` / `docs/requirements/migration-tool.md` / `docs/requirements/db-migration.md` / `docs/requirements/migration-poc.md`
 - QA/テスト: `docs/requirements/qa-plan.md` / `docs/manual/manual-test-checklist.md` / `docs/test-results/README.md`
