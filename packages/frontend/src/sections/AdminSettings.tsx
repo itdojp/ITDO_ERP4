@@ -26,6 +26,7 @@ import {
   type AccountingMappingRuleItem,
   type AccountingMappingRuleReapplyResult,
 } from './admin-settings/AccountingMappingRulesCard';
+import { AuthIdentityMigrationCard } from './admin-settings/AuthIdentityMigrationCard';
 import { ReportSubscriptionsCard } from './admin-settings/ReportSubscriptionsCard';
 import { TemplateSettingsCard } from './admin-settings/TemplateSettingsCard';
 import { ChatSettingsCard } from './ChatSettingsCard';
@@ -3407,6 +3408,8 @@ export const AdminSettings: React.FC = () => {
           onRedispatch={redispatchIntegrationExportJob}
           formatDateTime={formatDateTime}
         />
+
+        <AuthIdentityMigrationCard formatDateTime={formatDateTime} />
       </div>
     </div>
   );

@@ -75,6 +75,7 @@
 - `docs/test-results/2026-03-09-frontend-e2e-r1/11-integration-settings.png`
 - `docs/test-results/2026-03-19-frontend-e2e/11-integration-export-jobs.png`
 - `docs/test-results/2026-03-19-frontend-e2e/11-accounting-mapping-rules.png`
+- `docs/test-results/2026-03-23-frontend-e2e-r1/11-auth-identity-migration.png`
 
 ## 未カバー（追加候補）
 

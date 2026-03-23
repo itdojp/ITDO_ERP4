@@ -433,10 +433,15 @@
 11. 必要に応じて `借方枝番必須 / 貸方枝番必須 / 部門コード必須` を切り替える
 12. 一覧取得後に `編集` から `departmentCode` や科目名称などの補助項目を更新する
 13. `再適用` で periodKey 単位の staging 行へ mapping rule を再適用し、`processed / updated / ready / pending_mapping / blocked` を確認する
+14. `認証方式移行` で `userAccountId / providerType / status` を指定し `認証主体一覧を取得` を実行する
+15. `Google 認証主体追加` では `userAccountId / issuer / providerSubject / ticketId / reasonCode` を入力し `Google 認証主体を追加` を実行する
+16. `ローカル認証主体追加` では `userAccountId / loginId / password / ticketId / reasonCode` を入力し `ローカル認証主体を追加` を実行する
+17. 一覧の `編集` から `status / effectiveUntil / rollbackWindowUntil / note` を更新し、`認証主体を更新` を実行する
 
-![外部連携設定（HR/CRM）](../test-results/2026-03-19-frontend-e2e/11-admin-settings.png)
+![外部連携設定（HR/CRM）](../test-results/2026-03-23-frontend-e2e-r1/11-admin-settings.png)
 ![連携ジョブ一覧](../test-results/2026-03-19-frontend-e2e/11-integration-export-jobs.png)
 ![会計マッピングルール](../test-results/2026-03-19-frontend-e2e/11-accounting-mapping-rules.png)
+![認証方式移行](../test-results/2026-03-23-frontend-e2e-r1/11-auth-identity-migration.png)
 
 ### 入力項目/制約
 
@@ -444,8 +449,10 @@
 - チャットルーム設定は admin/mgmt のみ
 - `連携照合サマリ` カードは aggregate summary のみ表示します
 - `照合詳細` は現時点では UI 未実装のため、`GET /integrations/reconciliation/details` を OpenAPI または HTTP クライアントで参照します
+- `認証方式移行` は `system_admin` 専用です
+- rollback API は未実装のため、UI からの rollback 実行はできません
 
-![管理設定](../test-results/2026-03-19-frontend-e2e/11-admin-settings.png)
+![管理設定](../test-results/2026-03-23-frontend-e2e-r1/11-admin-settings.png)
 
 ### 休暇運用（休暇種別ルール / HR連携エクスポート）
 
