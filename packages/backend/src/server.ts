@@ -447,6 +447,10 @@ export async function buildServer(
         return typeof url === 'string' && url.startsWith('/health');
       },
     });
+  } else {
+    // Keep route-level rate limit hooks callable in tests and local dev even
+    // when the real plugin is disabled.
+    server.decorate('rateLimit', () => async () => {});
   }
 
   const chatAttachmentMaxBytes = Number(
