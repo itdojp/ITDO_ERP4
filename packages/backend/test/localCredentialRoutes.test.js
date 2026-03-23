@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import argon2 from 'argon2';
+import { Prisma } from '@prisma/client';
 
 import { buildServer } from '../dist/server.js';
 import { prisma } from '../dist/services/db.js';
@@ -276,6 +277,59 @@ test('POST /auth/local-credentials rejects duplicate local credential', async ()
   );
 });
 
+test('POST /auth/local-credentials maps atomic user credential conflicts to local_credential_exists', async () => {
+  process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
+  process.env.AUTH_MODE = 'header';
+
+  await withPrismaStubs(
+    {
+      'userAccount.findUnique': async () => ({
+        id: 'user-001',
+        userName: 'legacy-user',
+        displayName: 'Legacy User',
+        active: true,
+        deletedAt: null,
+        identities: [],
+      }),
+      'localCredential.findUnique': async () => null,
+      'userIdentity.create': async () => {
+        throw new Prisma.PrismaClientKnownRequestError('unique conflict', {
+          code: 'P2002',
+          clientVersion: 'test',
+          meta: {
+            target: ['userAccountId', 'providerType', 'issuer'],
+          },
+        });
+      },
+    },
+    async () => {
+      const server = await buildServer({ logger: false });
+      try {
+        const res = await server.inject({
+          method: 'POST',
+          url: '/auth/local-credentials',
+          headers: {
+            'x-user-id': 'sys-admin',
+            'x-roles': 'system_admin',
+          },
+          payload: {
+            userAccountId: 'user-001',
+            loginId: 'local-user@example.com',
+            password: 'LocalPassword123',
+            ticketId: 'AUTH-002A',
+            reasonCode: 'admin_issue',
+          },
+        });
+        assert.equal(res.statusCode, 409, res.body);
+        const body = JSON.parse(res.body);
+        assert.equal(body.error.code, 'local_credential_exists');
+      } finally {
+        await server.close();
+      }
+    },
+  );
+});
+
 test('PATCH /auth/local-credentials/:identityId updates password, lock state and status', async () => {
   process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
   process.env.AUTH_MODE = 'header';
@@ -397,11 +451,154 @@ test('PATCH /auth/local-credentials/:identityId updates password, lock state and
     await argon2.verify(updatedCredential?.passwordHash, 'ResetPassword123'),
     true,
   );
-  assert.deepEqual(capturedAudit?.data?.metadata?.changedFields, [
-    'loginId',
-    'password',
-    'mfaRequired',
-    'lockedUntil',
-    'status',
-  ]);
+  assert.deepEqual(
+    [...(capturedAudit?.data?.metadata?.changedFields ?? [])].sort(),
+    ['lockedUntil', 'loginId', 'mfaRequired', 'password', 'status'].sort(),
+  );
+});
+
+test('PATCH /auth/local-credentials/:identityId returns current representation on no-op updates', async () => {
+  process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
+  process.env.AUTH_MODE = 'header';
+
+  let updateCalled = false;
+  await withPrismaStubs(
+    {
+      'userIdentity.findUnique': async () => ({
+        id: 'identity-001',
+        userAccountId: 'user-001',
+        providerType: 'local_password',
+        providerSubject: 'local-subject-001',
+        issuer: 'erp4_local',
+        status: 'active',
+        lastAuthenticatedAt: null,
+        linkedAt: new Date('2026-03-23T00:00:00.000Z'),
+        createdAt: new Date('2026-03-23T00:00:00.000Z'),
+        updatedAt: new Date('2026-03-23T00:00:00.000Z'),
+        userAccount: {
+          id: 'user-001',
+          userName: 'legacy-user',
+          displayName: 'Legacy User',
+          active: true,
+          deletedAt: null,
+        },
+        localCredential: {
+          id: 'cred-001',
+          loginId: 'local-user@example.com',
+          passwordAlgo: 'argon2id',
+          mfaRequired: true,
+          mfaSecretRef: null,
+          failedAttempts: 0,
+          lockedUntil: null,
+          passwordChangedAt: new Date('2026-03-23T00:00:00.000Z'),
+          createdAt: new Date('2026-03-23T00:00:00.000Z'),
+          updatedAt: new Date('2026-03-23T00:00:00.000Z'),
+        },
+      }),
+      'userIdentity.update': async () => {
+        updateCalled = true;
+        throw new Error('update should not be called for no-op patch');
+      },
+    },
+    async () => {
+      const server = await buildServer({ logger: false });
+      try {
+        const res = await server.inject({
+          method: 'PATCH',
+          url: '/auth/local-credentials/identity-001',
+          headers: {
+            'x-user-id': 'sys-admin',
+            'x-roles': 'system_admin',
+          },
+          payload: {
+            mfaRequired: true,
+            lockedUntil: null,
+            status: 'active',
+            ticketId: 'AUTH-004',
+            reasonCode: 'noop_check',
+          },
+        });
+        assert.equal(res.statusCode, 200, res.body);
+        const body = JSON.parse(res.body);
+        assert.equal(body.identityId, 'identity-001');
+        assert.equal(body.status, 'active');
+        assert.equal(body.lockedUntil, null);
+      } finally {
+        await server.close();
+      }
+    },
+  );
+
+  assert.equal(updateCalled, false);
+});
+
+test('PATCH /auth/local-credentials/:identityId maps loginId conflicts to local_login_id_exists', async () => {
+  process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
+  process.env.AUTH_MODE = 'header';
+
+  await withPrismaStubs(
+    {
+      'userIdentity.findUnique': async () => ({
+        id: 'identity-001',
+        userAccountId: 'user-001',
+        providerType: 'local_password',
+        providerSubject: 'local-subject-001',
+        issuer: 'erp4_local',
+        status: 'active',
+        lastAuthenticatedAt: null,
+        linkedAt: new Date('2026-03-23T00:00:00.000Z'),
+        createdAt: new Date('2026-03-23T00:00:00.000Z'),
+        updatedAt: new Date('2026-03-23T00:00:00.000Z'),
+        userAccount: {
+          id: 'user-001',
+          userName: 'legacy-user',
+          displayName: 'Legacy User',
+          active: true,
+          deletedAt: null,
+        },
+        localCredential: {
+          id: 'cred-001',
+          loginId: 'local-user@example.com',
+          passwordAlgo: 'argon2id',
+          mfaRequired: true,
+          mfaSecretRef: null,
+          failedAttempts: 0,
+          lockedUntil: null,
+          passwordChangedAt: new Date('2026-03-23T00:00:00.000Z'),
+          createdAt: new Date('2026-03-23T00:00:00.000Z'),
+          updatedAt: new Date('2026-03-23T00:00:00.000Z'),
+        },
+      }),
+      'userIdentity.update': async () => {
+        throw new Prisma.PrismaClientKnownRequestError('unique conflict', {
+          code: 'P2002',
+          clientVersion: 'test',
+          meta: { target: ['loginId'] },
+        });
+      },
+    },
+    async () => {
+      const server = await buildServer({ logger: false });
+      try {
+        const res = await server.inject({
+          method: 'PATCH',
+          url: '/auth/local-credentials/identity-001',
+          headers: {
+            'x-user-id': 'sys-admin',
+            'x-roles': 'system_admin',
+          },
+          payload: {
+            loginId: 'other-user@example.com',
+            ticketId: 'AUTH-005',
+            reasonCode: 'rename',
+          },
+        });
+        assert.equal(res.statusCode, 409, res.body);
+        const body = JSON.parse(res.body);
+        assert.equal(body.error.code, 'local_login_id_exists');
+      } finally {
+        await server.close();
+      }
+    },
+  );
 });

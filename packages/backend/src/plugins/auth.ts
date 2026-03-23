@@ -365,6 +365,17 @@ type CachedUserDbContext = {
 
 const userDbContextCache = new Map<string, CachedUserDbContext>();
 
+export function invalidateUserDbContextCache(
+  user: Pick<UserContext, 'userId' | 'auth'>,
+) {
+  const cacheKey = buildUserDbContextCacheKey(user as UserContext);
+  userDbContextCache.delete(cacheKey);
+}
+
+export function clearUserDbContextCache() {
+  userDbContextCache.clear();
+}
+
 function resolveDbCacheTtlMs() {
   if (!Number.isFinite(AUTH_DB_USER_CONTEXT_CACHE_TTL_SECONDS)) return 0;
   if (AUTH_DB_USER_CONTEXT_CACHE_TTL_SECONDS <= 0) return 0;

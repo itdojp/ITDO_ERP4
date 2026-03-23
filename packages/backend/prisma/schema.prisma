@@ -2157,6 +2157,7 @@ model UserIdentity {
   localCredential     LocalCredential?
 
   @@unique([providerType, issuer, providerSubject])
+  @@unique([userAccountId, providerType, issuer])
   @@index([userAccountId, providerType, status])
   @@index([providerType, issuer, providerSubject, status])
 }

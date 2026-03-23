@@ -1,9 +1,12 @@
 import { FastifyInstance, FastifyReply } from 'fastify';
 import { Prisma } from '@prisma/client';
+import { Type } from '@sinclair/typebox';
+import { invalidateUserDbContextCache } from '../plugins/auth.js';
 import { prisma } from '../services/db.js';
 import { createApiErrorResponse } from '../services/errors.js';
 import { auditContextFromRequest, logAudit } from '../services/audit.js';
 import { requireRole } from '../services/rbac.js';
+import { getRouteRateLimitOptions } from '../services/rateLimitOverrides.js';
 import {
   LOCAL_IDENTITY_ISSUER,
   LOCAL_IDENTITY_PROVIDER,
@@ -27,6 +30,13 @@ const demoUser = {
 };
 
 const requireSystemAdmin = requireRole(['system_admin']);
+const localCredentialAdminRateLimit = getRouteRateLimitOptions(
+  'RATE_LIMIT_LOCAL_CREDENTIAL_ADMIN',
+  {
+    max: 20,
+    timeWindow: '1 minute',
+  },
+);
 
 function normalizeOptionalString(value: unknown) {
   return typeof value === 'string' ? value.trim() : '';
@@ -65,7 +75,7 @@ function respondValidationError(reply: FastifyReply, invalidFields: string[]) {
   );
 }
 
-function buildAuditMetadata(
+function buildLocalCredentialAuditMetadata(
   actorId: string,
   payload: {
     ticketId: string;
@@ -88,6 +98,69 @@ function buildAuditMetadata(
     mfaRequired: payload.mfaRequired,
   } as Prisma.InputJsonValue;
 }
+
+const localCredentialIdentitySchema = Type.Object(
+  {
+    identityId: Type.String(),
+    userAccountId: Type.String(),
+    userName: Type.Optional(Type.String()),
+    displayName: Type.Union([Type.String(), Type.Null()]),
+    userActive: Type.Boolean(),
+    userDeletedAt: Type.Union([
+      Type.String({ format: 'date-time' }),
+      Type.Null(),
+    ]),
+    providerType: Type.String(),
+    issuer: Type.String(),
+    providerSubject: Type.String(),
+    status: Type.String(),
+    loginId: Type.String(),
+    passwordAlgo: Type.String(),
+    mfaRequired: Type.Boolean(),
+    mfaSecretConfigured: Type.Boolean(),
+    failedAttempts: Type.Integer(),
+    lockedUntil: Type.Union([
+      Type.String({ format: 'date-time' }),
+      Type.Null(),
+    ]),
+    passwordChangedAt: Type.Union([
+      Type.String({ format: 'date-time' }),
+      Type.Null(),
+    ]),
+    lastAuthenticatedAt: Type.Union([
+      Type.String({ format: 'date-time' }),
+      Type.Null(),
+    ]),
+    linkedAt: Type.String({ format: 'date-time' }),
+    createdAt: Type.String({ format: 'date-time' }),
+    updatedAt: Type.String({ format: 'date-time' }),
+  },
+  { additionalProperties: false },
+);
+
+const localCredentialListResponseSchema = Type.Object(
+  {
+    limit: Type.Integer(),
+    offset: Type.Integer(),
+    items: Type.Array(localCredentialIdentitySchema),
+  },
+  { additionalProperties: false },
+);
+
+const localCredentialErrorResponseSchema = Type.Object(
+  {
+    error: Type.Object(
+      {
+        code: Type.String(),
+        message: Type.String(),
+        category: Type.Optional(Type.String()),
+        details: Type.Optional(Type.Any()),
+      },
+      { additionalProperties: true },
+    ),
+  },
+  { additionalProperties: false },
+);
 
 function buildLocalCredentialSelect() {
   return {
@@ -149,7 +222,11 @@ export async function registerAuthRoutes(app: FastifyInstance) {
         ...localCredentialListSchema,
         tags: ['auth'],
         summary: 'List local credentials',
+        response: {
+          200: localCredentialListResponseSchema,
+        },
       },
+      config: { rateLimit: localCredentialAdminRateLimit },
     },
     async (req) => {
       const query = (req.query || {}) as {
@@ -190,7 +267,14 @@ export async function registerAuthRoutes(app: FastifyInstance) {
         ...localCredentialCreateSchema,
         tags: ['auth'],
         summary: 'Create local credential',
+        response: {
+          201: localCredentialIdentitySchema,
+          400: localCredentialErrorResponseSchema,
+          404: localCredentialErrorResponseSchema,
+          409: localCredentialErrorResponseSchema,
+        },
       },
+      config: { rateLimit: localCredentialAdminRateLimit },
     },
     async (req, reply) => {
       const actorId = req.user?.userId;
@@ -327,7 +411,7 @@ export async function registerAuthRoutes(app: FastifyInstance) {
           targetId: created.localCredential?.id,
           reasonCode,
           reasonText,
-          metadata: buildAuditMetadata(actorId, {
+          metadata: buildLocalCredentialAuditMetadata(actorId, {
             ticketId,
             loginId,
             status: created.status,
@@ -337,16 +421,35 @@ export async function registerAuthRoutes(app: FastifyInstance) {
           }),
           ...auditContextFromRequest(req),
         });
+        invalidateUserDbContextCache({
+          userId: created.providerSubject,
+          auth: {
+            principalUserId: created.providerSubject,
+            actorUserId: created.providerSubject,
+            scopes: [],
+            delegated: false,
+            providerType: 'local_password',
+            issuer: created.issuer,
+          },
+        });
         return reply.code(201).send(serializeLocalCredentialIdentity(created));
       } catch (err) {
         if (err instanceof Prisma.PrismaClientKnownRequestError) {
           if (err.code === 'P2002') {
+            const targets = Array.isArray(err.meta?.target)
+              ? err.meta.target.map(String)
+              : [];
+            const conflictCode = targets.includes('loginId')
+              ? 'local_login_id_exists'
+              : 'local_credential_exists';
             return reply
               .code(409)
               .send(
                 createApiErrorResponse(
-                  'local_credential_conflict',
-                  'Local credential creation conflict',
+                  conflictCode,
+                  conflictCode === 'local_login_id_exists'
+                    ? 'loginId already exists'
+                    : 'Local credential already exists for user account',
                   { category: 'conflict' },
                 ),
               );
@@ -365,7 +468,14 @@ export async function registerAuthRoutes(app: FastifyInstance) {
         ...localCredentialPatchSchema,
         tags: ['auth'],
         summary: 'Update local credential',
+        response: {
+          200: localCredentialIdentitySchema,
+          400: localCredentialErrorResponseSchema,
+          404: localCredentialErrorResponseSchema,
+          409: localCredentialErrorResponseSchema,
+        },
       },
+      config: { rateLimit: localCredentialAdminRateLimit },
     },
     async (req, reply) => {
       const actorId = req.user?.userId;
@@ -438,14 +548,6 @@ export async function registerAuthRoutes(app: FastifyInstance) {
         updateCredentialData.loginId = loginId;
         changedFields.push('loginId');
       }
-      if (password !== undefined) {
-        updateCredentialData.passwordHash = await hashLocalPassword(password);
-        updateCredentialData.passwordAlgo = 'argon2id';
-        updateCredentialData.passwordChangedAt = new Date();
-        updateCredentialData.failedAttempts = 0;
-        updateCredentialData.lockedUntil = null;
-        changedFields.push('password');
-      }
       if (
         body.mfaRequired !== undefined &&
         body.mfaRequired !== current.localCredential.mfaRequired
@@ -472,17 +574,16 @@ export async function registerAuthRoutes(app: FastifyInstance) {
           Array.from(new Set(invalidFields)),
         );
       }
+      if (password !== undefined) {
+        updateCredentialData.passwordHash = await hashLocalPassword(password);
+        updateCredentialData.passwordAlgo = 'argon2id';
+        updateCredentialData.passwordChangedAt = new Date();
+        updateCredentialData.failedAttempts = 0;
+        updateCredentialData.lockedUntil = null;
+        changedFields.push('password');
+      }
       if (!changedFields.length) {
-        return reply.code(400).send(
-          createApiErrorResponse(
-            'invalid_local_credential_payload',
-            'No mutable fields were provided',
-            {
-              category: 'validation',
-              details: { invalidFields: ['payload'] },
-            },
-          ),
-        );
+        return serializeLocalCredentialIdentity(current);
       }
       try {
         const updated = await prisma.userIdentity.update({
@@ -501,7 +602,7 @@ export async function registerAuthRoutes(app: FastifyInstance) {
           targetId: updated.localCredential?.id,
           reasonCode,
           reasonText,
-          metadata: buildAuditMetadata(actorId, {
+          metadata: buildLocalCredentialAuditMetadata(actorId, {
             ticketId,
             loginId: updated.localCredential?.loginId,
             changedFields,
@@ -512,16 +613,35 @@ export async function registerAuthRoutes(app: FastifyInstance) {
           }),
           ...auditContextFromRequest(req),
         });
+        invalidateUserDbContextCache({
+          userId: updated.providerSubject,
+          auth: {
+            principalUserId: updated.providerSubject,
+            actorUserId: updated.providerSubject,
+            scopes: [],
+            delegated: false,
+            providerType: 'local_password',
+            issuer: updated.issuer,
+          },
+        });
         return serializeLocalCredentialIdentity(updated);
       } catch (err) {
         if (err instanceof Prisma.PrismaClientKnownRequestError) {
           if (err.code === 'P2002') {
+            const targets = Array.isArray(err.meta?.target)
+              ? err.meta.target.map(String)
+              : [];
+            const conflictCode = targets.includes('loginId')
+              ? 'local_login_id_exists'
+              : 'local_credential_exists';
             return reply
               .code(409)
               .send(
                 createApiErrorResponse(
-                  'local_credential_conflict',
-                  'Local credential update conflict',
+                  conflictCode,
+                  conflictCode === 'local_login_id_exists'
+                    ? 'loginId already exists'
+                    : 'Local credential already exists for user account',
                   { category: 'conflict' },
                 ),
               );

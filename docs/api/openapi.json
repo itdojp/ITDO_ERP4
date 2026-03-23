@@ -3108,6 +3108,133 @@
         ],
         "responses": {
           "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "items": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "createdAt": {
+                            "format": "date-time",
+                            "type": "string"
+                          },
+                          "displayName": {
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "failedAttempts": {
+                            "type": "integer"
+                          },
+                          "identityId": {
+                            "type": "string"
+                          },
+                          "issuer": {
+                            "type": "string"
+                          },
+                          "lastAuthenticatedAt": {
+                            "format": "date-time",
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "linkedAt": {
+                            "format": "date-time",
+                            "type": "string"
+                          },
+                          "lockedUntil": {
+                            "format": "date-time",
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "loginId": {
+                            "type": "string"
+                          },
+                          "mfaRequired": {
+                            "type": "boolean"
+                          },
+                          "mfaSecretConfigured": {
+                            "type": "boolean"
+                          },
+                          "passwordAlgo": {
+                            "type": "string"
+                          },
+                          "passwordChangedAt": {
+                            "format": "date-time",
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "providerSubject": {
+                            "type": "string"
+                          },
+                          "providerType": {
+                            "type": "string"
+                          },
+                          "status": {
+                            "type": "string"
+                          },
+                          "updatedAt": {
+                            "format": "date-time",
+                            "type": "string"
+                          },
+                          "userAccountId": {
+                            "type": "string"
+                          },
+                          "userActive": {
+                            "type": "boolean"
+                          },
+                          "userDeletedAt": {
+                            "format": "date-time",
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "userName": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "identityId",
+                          "userAccountId",
+                          "displayName",
+                          "userActive",
+                          "userDeletedAt",
+                          "providerType",
+                          "issuer",
+                          "providerSubject",
+                          "status",
+                          "loginId",
+                          "passwordAlgo",
+                          "mfaRequired",
+                          "mfaSecretConfigured",
+                          "failedAttempts",
+                          "lockedUntil",
+                          "passwordChangedAt",
+                          "lastAuthenticatedAt",
+                          "linkedAt",
+                          "createdAt",
+                          "updatedAt"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
+                    "limit": {
+                      "type": "integer"
+                    },
+                    "offset": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "limit",
+                    "offset",
+                    "items"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
             "description": "Default Response"
           }
         },
@@ -3170,7 +3297,222 @@
           "required": true
         },
         "responses": {
-          "200": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "createdAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "displayName": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "failedAttempts": {
+                      "type": "integer"
+                    },
+                    "identityId": {
+                      "type": "string"
+                    },
+                    "issuer": {
+                      "type": "string"
+                    },
+                    "lastAuthenticatedAt": {
+                      "format": "date-time",
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "linkedAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "lockedUntil": {
+                      "format": "date-time",
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "loginId": {
+                      "type": "string"
+                    },
+                    "mfaRequired": {
+                      "type": "boolean"
+                    },
+                    "mfaSecretConfigured": {
+                      "type": "boolean"
+                    },
+                    "passwordAlgo": {
+                      "type": "string"
+                    },
+                    "passwordChangedAt": {
+                      "format": "date-time",
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "providerSubject": {
+                      "type": "string"
+                    },
+                    "providerType": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "userAccountId": {
+                      "type": "string"
+                    },
+                    "userActive": {
+                      "type": "boolean"
+                    },
+                    "userDeletedAt": {
+                      "format": "date-time",
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "userName": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "identityId",
+                    "userAccountId",
+                    "displayName",
+                    "userActive",
+                    "userDeletedAt",
+                    "providerType",
+                    "issuer",
+                    "providerSubject",
+                    "status",
+                    "loginId",
+                    "passwordAlgo",
+                    "mfaRequired",
+                    "mfaSecretConfigured",
+                    "failedAttempts",
+                    "lockedUntil",
+                    "passwordChangedAt",
+                    "lastAuthenticatedAt",
+                    "linkedAt",
+                    "createdAt",
+                    "updatedAt"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "category": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "category": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "category": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
             "description": "Default Response"
           }
         },
@@ -3260,6 +3602,221 @@
         },
         "responses": {
           "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "createdAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "displayName": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "failedAttempts": {
+                      "type": "integer"
+                    },
+                    "identityId": {
+                      "type": "string"
+                    },
+                    "issuer": {
+                      "type": "string"
+                    },
+                    "lastAuthenticatedAt": {
+                      "format": "date-time",
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "linkedAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "lockedUntil": {
+                      "format": "date-time",
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "loginId": {
+                      "type": "string"
+                    },
+                    "mfaRequired": {
+                      "type": "boolean"
+                    },
+                    "mfaSecretConfigured": {
+                      "type": "boolean"
+                    },
+                    "passwordAlgo": {
+                      "type": "string"
+                    },
+                    "passwordChangedAt": {
+                      "format": "date-time",
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "providerSubject": {
+                      "type": "string"
+                    },
+                    "providerType": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "userAccountId": {
+                      "type": "string"
+                    },
+                    "userActive": {
+                      "type": "boolean"
+                    },
+                    "userDeletedAt": {
+                      "format": "date-time",
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "userName": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "identityId",
+                    "userAccountId",
+                    "displayName",
+                    "userActive",
+                    "userDeletedAt",
+                    "providerType",
+                    "issuer",
+                    "providerSubject",
+                    "status",
+                    "loginId",
+                    "passwordAlgo",
+                    "mfaRequired",
+                    "mfaSecretConfigured",
+                    "failedAttempts",
+                    "lockedUntil",
+                    "passwordChangedAt",
+                    "lastAuthenticatedAt",
+                    "linkedAt",
+                    "createdAt",
+                    "updatedAt"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "category": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "category": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "category": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
             "description": "Default Response"
           }
         },
