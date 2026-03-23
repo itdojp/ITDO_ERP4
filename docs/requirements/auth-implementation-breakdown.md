@@ -53,9 +53,13 @@
   - admin API / UI
   - 監査ログ拡張
   - 併用期間の制御
+  - `effectiveUntil` 超過 identity の認証拒否
+  - bootstrap password の初回ログイン再設定強制
 - 完了条件
   - 同一 `UserAccount` に対して identity 追加・無効化が可能
   - ユーザ本人による切替 UI が存在しない
+- 参照
+  - `docs/requirements/auth-admin-identity-migration.md`
 
 ### 5. 権限/グループの安全な取り込み
 
