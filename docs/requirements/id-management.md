@@ -1,4 +1,4 @@
-# ID管理/Google連携方針（たたき台）
+# ID管理/Google連携方針（方針・補足資料）
 
 補足: 正式な認証方式と移行方針は `docs/requirements/auth-architecture.md` を一次ソースとする。
 
@@ -28,7 +28,7 @@
 - email は連絡用として扱い、自動リンクはしない
 - Google を利用できない例外ユーザに限り、ERP4 ローカル認証を許容する
 - `g.itdo.jp` と `itdo.jp` は別メールとして扱い、自動正規化しない
-- Google グループは初期状態では権限制御の一次ソースにしない
+- Google グループは初期状態では権限制御・組織配賦・案件配賦の一次ソースにしない
 - Google グループを使う場合も read-only・粗いロールマッピングに限定する
 - Admin SDK Directory API / Domain-wide Delegation を要する常時接続は初期構成に入れない
 
@@ -40,13 +40,13 @@
 - email/name は同期可能な属性として保持するが、自動リンクキーには使わない
 - 組織/部門/グループはERP側の権限制御に利用する
   - Google連携ユーザ: `UserIdentity(providerType=google_oidc, issuer, sub)` を一次識別子とし、email は連絡用
-  - ローカルユーザ: `UserIdentity(providerType=local_password, loginId)` を一次識別子とする
+  - ローカルユーザ: `UserIdentity(providerType=local_password, issuer=erp4_local, providerSubject=<immutable local subject>)` を一次識別子とし、`loginId` は `LocalCredential` 側で管理する
 
 ### 例（論理モデル）
 
 - user_accounts: id, email, name, orgUnitId, status, roleCodes, groupIds
 - user_identities: id, userAccountId, providerType, providerSubject, issuer, emailSnapshot, status
-- local_credentials: userIdentityId, passwordHash, mfaRequired, failedAttempts, lockedUntil
+- local_credentials: userIdentityId, loginId, passwordHash, mfaRequired, failedAttempts, lockedUntil
 - user_profiles: employmentType, managerUserId, joinedAt（任意）
 
 ## ユーザ属性（決定）
@@ -78,7 +78,7 @@
 ## リンク規約（暫定）
 
 - Google 連携ユーザは `UserIdentity(providerType=google_oidc, issuer, sub)` を一次キーとし、email では自動リンクしない
-- ローカル認証ユーザは `UserIdentity(providerType=local_password, loginId)` を一次キーとする
+- ローカル認証ユーザは `UserIdentity(providerType=local_password, issuer=erp4_local, providerSubject=<immutable local subject>)` を一次キーとし、`loginId` は credential 属性として扱う
 - Google ID とローカル ID のリンク・解除は system_admin のみ許可する
 - ユーザ本人による認証方式の追加・切替・解除は許可しない
 - `g.itdo.jp` / `itdo.jp` の衝突は自動解決せず、連絡用emailの重複は許容する
