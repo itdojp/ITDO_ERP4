@@ -184,6 +184,14 @@ const authSessionFlexibleLimiter = new RateLimiterMemory({
     AUTH_SESSION_ROUTE_RATE_LIMIT.timeWindow,
   ),
 });
+const authJwtFlexibleLimiter = new RateLimiterMemory({
+  points: 1800,
+  duration: 60,
+});
+const authHeaderFlexibleLimiter = new RateLimiterMemory({
+  points: 1800,
+  duration: 60,
+});
 function parseBearerToken(req: any): string | null {
   const authHeader = req.headers?.authorization;
   if (!authHeader || typeof authHeader !== 'string') return null;
@@ -679,7 +687,15 @@ async function resolveJwtKey(): Promise<CryptoKey | JWTVerifyGetKey | null> {
   return null;
 }
 
-async function authenticateJwt(token: string): Promise<UserContext> {
+async function authenticateJwt(
+  token: string,
+  rateLimitKey: string,
+): Promise<UserContext> {
+  try {
+    await authJwtFlexibleLimiter.consume(rateLimitKey);
+  } catch {
+    throw new Error('auth_guard_rate_limited');
+  }
   const key = await resolveJwtKey();
   if (!key) {
     throw new Error('jwt_key_missing');
@@ -707,7 +723,12 @@ async function authenticateJwt(token: string): Promise<UserContext> {
   return context;
 }
 
-function applyHeaderAuth(req: any) {
+async function applyHeaderAuth(req: any, rateLimitKey: string) {
+  try {
+    await authHeaderFlexibleLimiter.consume(rateLimitKey);
+  } catch {
+    throw new Error('auth_guard_rate_limited');
+  }
   const userId = (req.headers['x-user-id'] as string) || 'demo-user';
   const rolesHeader = (req.headers['x-roles'] as string) || 'user';
   const roles = expandRoles(
@@ -829,7 +850,7 @@ async function authPlugin(fastify: any) {
     }
     const mode = RESOLVED_AUTH_MODE;
     if (mode === 'header') {
-      applyHeaderAuth(req);
+      await applyHeaderAuth(req, req.ip || 'unknown');
       await ensureProjectIds(req);
       return;
     }
@@ -854,18 +875,29 @@ async function authPlugin(fastify: any) {
       if (IS_PRODUCTION && !AUTH_ALLOW_HEADER_FALLBACK_IN_PROD) {
         return respondUnauthorized(req, reply, 'missing_token');
       }
-      applyHeaderAuth(req);
+      await applyHeaderAuth(req, req.ip || 'unknown');
       await ensureProjectIds(req);
       return;
     }
     try {
-      req.user = await authenticateJwt(token);
+      req.user = await authenticateJwt(token, req.ip || 'unknown');
       if (!(await validateAndEnrichUserContext(req, reply))) return;
       const scopeDenied = enforceDelegatedScope(req, reply);
       if (scopeDenied) return scopeDenied;
       await ensureProjectIds(req);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'invalid_token';
+      if (message === 'auth_guard_rate_limited') {
+        return reply.code(429).send(
+          createApiErrorResponse(
+            'auth_guard_rate_limited',
+            'Too many requests',
+            {
+              category: 'rate_limit',
+            },
+          ),
+        );
+      }
       return respondUnauthorized(req, reply, message);
     }
   });
