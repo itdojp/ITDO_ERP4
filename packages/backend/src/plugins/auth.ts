@@ -98,6 +98,13 @@ const AUTH_SESSION_ROUTE_RATE_LIMIT = getRouteRateLimitOptions(
     timeWindow: '1 minute',
   },
 );
+const AUTH_GUARD_ROUTE_RATE_LIMIT = getRouteRateLimitOptions(
+  'RATE_LIMIT_AUTH_GUARD',
+  {
+    max: 1800,
+    timeWindow: '1 minute',
+  },
+);
 const USER_ROLE_ALIASES = new Set(['project_lead', 'employee', 'probationary']);
 const AUTH_GROUP_TO_ROLE_MAP_RAW = process.env.AUTH_GROUP_TO_ROLE_MAP || '';
 const AUTH_DB_USER_CONTEXT_CACHE_TTL_SECONDS = Number(
@@ -183,6 +190,10 @@ const authSessionFlexibleLimiter = new RateLimiterMemory({
   duration: parseRateLimitWindowSeconds(
     AUTH_SESSION_ROUTE_RATE_LIMIT.timeWindow,
   ),
+});
+const authGuardFlexibleLimiter = new RateLimiterMemory({
+  points: AUTH_GUARD_ROUTE_RATE_LIMIT.max,
+  duration: parseRateLimitWindowSeconds(AUTH_GUARD_ROUTE_RATE_LIMIT.timeWindow),
 });
 
 function parseBearerToken(req: any): string | null {
@@ -807,6 +818,19 @@ async function enforceAuthSessionRateLimit(req: any, reply: any) {
   }
 }
 
+async function enforceAuthGuardRateLimit(req: any, reply: any) {
+  try {
+    await authGuardFlexibleLimiter.consume(req.ip || 'unknown');
+    return null;
+  } catch {
+    return reply.code(429).send(
+      createApiErrorResponse('auth_guard_rate_limited', 'Too many requests', {
+        category: 'rate_limit',
+      }),
+    );
+  }
+}
+
 async function authPlugin(fastify: any) {
   assertRuntimeAuthConfig();
   fastify.addHook('onRequest', async (req: any, reply: any) => {
@@ -819,6 +843,8 @@ async function authPlugin(fastify: any) {
     if (isPublicAuthGatewayRoute(req)) {
       return;
     }
+    const authGuardRateLimited = await enforceAuthGuardRateLimit(req, reply);
+    if (authGuardRateLimited) return authGuardRateLimited;
     const mode = RESOLVED_AUTH_MODE;
     if (mode === 'header') {
       applyHeaderAuth(req);
