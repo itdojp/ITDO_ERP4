@@ -542,3 +542,33 @@ test('auth plugin: jwt rejects disabled UserIdentity before legacy fallback', ()
   const payload = JSON.parse(result.stdout);
   assert.equal(payload.statusCode, 401);
 });
+
+test('auth plugin: jwt rejects expired UserIdentity before legacy fallback', () => {
+  const result = runDelegatedJwtRequest({
+    payload: {
+      sub: 'google-sub-expired',
+      roles: ['user'],
+      jti: 'tok-identity-expired',
+    },
+    stubDb: true,
+    stubIdentity: {
+      id: 'identity-expired',
+      status: 'active',
+      effectiveUntil: '2026-03-22T00:00:00.000Z',
+      userAccountId: 'user-account-expired',
+      userAccount: {
+        id: 'user-account-expired',
+        userName: 'legacy-user-expired',
+        externalId: 'google-sub-expired',
+        active: true,
+        deletedAt: null,
+        organization: null,
+        memberships: [],
+      },
+    },
+  });
+
+  assert.equal(result.status, 0);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.statusCode, 401);
+});

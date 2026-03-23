@@ -2,7 +2,10 @@ import { FastifyInstance, FastifyReply } from 'fastify';
 import { Prisma } from '@prisma/client';
 import { Type } from '@sinclair/typebox';
 import { RateLimiterMemory } from 'rate-limiter-flexible';
-import { invalidateUserDbContextCache } from '../plugins/auth.js';
+import {
+  clearUserDbContextCache,
+  invalidateUserDbContextCache,
+} from '../plugins/auth.js';
 import { prisma } from '../services/db.js';
 import { createApiErrorResponse } from '../services/errors.js';
 import { auditContextFromRequest, logAudit } from '../services/audit.js';
@@ -21,6 +24,10 @@ import {
   localCredentialCreateSchema,
   localCredentialListSchema,
   localCredentialPatchSchema,
+  userIdentityGoogleLinkSchema,
+  userIdentityListSchema,
+  userIdentityLocalLinkSchema,
+  userIdentityPatchSchema,
 } from './validators.js';
 
 const demoUser = {
@@ -93,6 +100,35 @@ function parseLockedUntil(value: unknown) {
   return { provided: true as const, value: parsed };
 }
 
+function parseIdentityWindow(value: unknown, fieldName: string) {
+  if (value === undefined) {
+    return {
+      provided: false as const,
+      value: undefined as Date | null | undefined,
+      invalidField: null as string | null,
+    };
+  }
+  if (value === null) {
+    return { provided: true as const, value: null, invalidField: null };
+  }
+  if (typeof value !== 'string') {
+    return {
+      provided: true as const,
+      value: undefined,
+      invalidField: fieldName,
+    };
+  }
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return {
+      provided: true as const,
+      value: undefined,
+      invalidField: fieldName,
+    };
+  }
+  return { provided: true as const, value: parsed, invalidField: null };
+}
+
 function respondValidationError(reply: FastifyReply, invalidFields: string[]) {
   return reply.code(400).send(
     createApiErrorResponse(
@@ -104,6 +140,40 @@ function respondValidationError(reply: FastifyReply, invalidFields: string[]) {
       },
     ),
   );
+}
+
+async function consumeLocalCredentialAdminRateLimit(
+  req: { ip: string },
+  reply: FastifyReply,
+) {
+  try {
+    await localCredentialAdminFlexibleLimiter.consume(req.ip);
+    return null;
+  } catch {
+    return reply
+      .code(429)
+      .send(
+        createApiErrorResponse(
+          'local_credential_rate_limited',
+          'Too many local credential admin requests',
+          { category: 'rate_limit' },
+        ),
+      );
+  }
+}
+
+function requireActorUserId(
+  req: { user?: { userId?: string } },
+  reply: FastifyReply,
+) {
+  const actorId = req.user?.userId;
+  if (actorId) return actorId;
+  reply.code(400).send(
+    createApiErrorResponse('missing_user_id', 'user id is required', {
+      category: 'validation',
+    }),
+  );
+  return null;
 }
 
 function buildLocalCredentialAuditMetadata(
@@ -130,6 +200,54 @@ function buildLocalCredentialAuditMetadata(
   } as Prisma.InputJsonValue;
 }
 
+function buildIdentityAuditMetadata(
+  actorId: string,
+  payload: {
+    ticketId: string;
+    targetUserAccountId: string;
+    targetIdentityId?: string;
+    providerType?: string;
+    issuer?: string;
+    providerSubject?: string;
+    changedFields?: string[];
+    beforeState?: Record<
+      string,
+      Prisma.InputJsonValue | null | undefined
+    > | null;
+    afterState?: Record<
+      string,
+      Prisma.InputJsonValue | null | undefined
+    > | null;
+  },
+) {
+  return {
+    actorAdminUserId: actorId,
+    targetUserAccountId: payload.targetUserAccountId,
+    targetIdentityId: payload.targetIdentityId,
+    ticketId: payload.ticketId,
+    providerType: payload.providerType,
+    issuer: payload.issuer,
+    providerSubject: payload.providerSubject,
+    changedFields: payload.changedFields,
+    beforeState: payload.beforeState ?? null,
+    afterState: payload.afterState ?? null,
+  } as Prisma.InputJsonValue;
+}
+
+function snapshotIdentityState(identity: {
+  status: string;
+  effectiveUntil?: Date | null;
+  rollbackWindowUntil?: Date | null;
+  note?: string | null;
+}) {
+  return {
+    status: identity.status,
+    effectiveUntil: identity.effectiveUntil?.toISOString() ?? null,
+    rollbackWindowUntil: identity.rollbackWindowUntil?.toISOString() ?? null,
+    note: identity.note ?? null,
+  };
+}
+
 const localCredentialIdentitySchema = Type.Object(
   {
     identityId: Type.String(),
@@ -149,6 +267,7 @@ const localCredentialIdentitySchema = Type.Object(
     passwordAlgo: Type.String(),
     mfaRequired: Type.Boolean(),
     mfaSecretConfigured: Type.Boolean(),
+    mustRotatePassword: Type.Boolean(),
     failedAttempts: Type.Integer(),
     lockedUntil: Type.Union([
       Type.String({ format: 'date-time' }),
@@ -163,6 +282,15 @@ const localCredentialIdentitySchema = Type.Object(
       Type.Null(),
     ]),
     linkedAt: Type.String({ format: 'date-time' }),
+    effectiveUntil: Type.Union([
+      Type.String({ format: 'date-time' }),
+      Type.Null(),
+    ]),
+    rollbackWindowUntil: Type.Union([
+      Type.String({ format: 'date-time' }),
+      Type.Null(),
+    ]),
+    note: Type.Union([Type.String(), Type.Null()]),
     createdAt: Type.String({ format: 'date-time' }),
     updatedAt: Type.String({ format: 'date-time' }),
   },
@@ -193,6 +321,73 @@ const localCredentialErrorResponseSchema = Type.Object(
   { additionalProperties: false },
 );
 
+const userIdentitySchema = Type.Object(
+  {
+    identityId: Type.String(),
+    userAccountId: Type.String(),
+    userName: Type.Optional(Type.String()),
+    displayName: Type.Union([Type.String(), Type.Null()]),
+    userActive: Type.Boolean(),
+    userDeletedAt: Type.Union([
+      Type.String({ format: 'date-time' }),
+      Type.Null(),
+    ]),
+    providerType: Type.String(),
+    issuer: Type.String(),
+    providerSubject: Type.String(),
+    emailSnapshot: Type.Union([Type.String(), Type.Null()]),
+    status: Type.String(),
+    lastAuthenticatedAt: Type.Union([
+      Type.String({ format: 'date-time' }),
+      Type.Null(),
+    ]),
+    linkedAt: Type.String({ format: 'date-time' }),
+    effectiveUntil: Type.Union([
+      Type.String({ format: 'date-time' }),
+      Type.Null(),
+    ]),
+    rollbackWindowUntil: Type.Union([
+      Type.String({ format: 'date-time' }),
+      Type.Null(),
+    ]),
+    note: Type.Union([Type.String(), Type.Null()]),
+    createdAt: Type.String({ format: 'date-time' }),
+    updatedAt: Type.String({ format: 'date-time' }),
+    localCredential: Type.Union([
+      Type.Object(
+        {
+          loginId: Type.String(),
+          passwordAlgo: Type.String(),
+          mfaRequired: Type.Boolean(),
+          mfaSecretConfigured: Type.Boolean(),
+          mustRotatePassword: Type.Boolean(),
+          failedAttempts: Type.Integer(),
+          lockedUntil: Type.Union([
+            Type.String({ format: 'date-time' }),
+            Type.Null(),
+          ]),
+          passwordChangedAt: Type.Union([
+            Type.String({ format: 'date-time' }),
+            Type.Null(),
+          ]),
+        },
+        { additionalProperties: false },
+      ),
+      Type.Null(),
+    ]),
+  },
+  { additionalProperties: false },
+);
+
+const userIdentityListResponseSchema = Type.Object(
+  {
+    limit: Type.Integer(),
+    offset: Type.Integer(),
+    items: Type.Array(userIdentitySchema),
+  },
+  { additionalProperties: false },
+);
+
 function buildLocalCredentialSelect() {
   return {
     id: true,
@@ -200,9 +395,13 @@ function buildLocalCredentialSelect() {
     providerType: true,
     providerSubject: true,
     issuer: true,
+    emailSnapshot: true,
     status: true,
     lastAuthenticatedAt: true,
     linkedAt: true,
+    effectiveUntil: true,
+    rollbackWindowUntil: true,
+    note: true,
     createdAt: true,
     updatedAt: true,
     userAccount: {
@@ -221,6 +420,7 @@ function buildLocalCredentialSelect() {
         passwordAlgo: true,
         mfaRequired: true,
         mfaSecretRef: true,
+        mustRotatePassword: true,
         failedAttempts: true,
         lockedUntil: true,
         passwordChangedAt: true,
@@ -229,6 +429,91 @@ function buildLocalCredentialSelect() {
       },
     },
   } as const;
+}
+
+function buildUserIdentitySelect() {
+  return {
+    id: true,
+    userAccountId: true,
+    providerType: true,
+    providerSubject: true,
+    issuer: true,
+    emailSnapshot: true,
+    status: true,
+    lastAuthenticatedAt: true,
+    linkedAt: true,
+    effectiveUntil: true,
+    rollbackWindowUntil: true,
+    note: true,
+    createdAt: true,
+    updatedAt: true,
+    userAccount: {
+      select: {
+        id: true,
+        userName: true,
+        displayName: true,
+        active: true,
+        deletedAt: true,
+      },
+    },
+    localCredential: {
+      select: {
+        loginId: true,
+        passwordAlgo: true,
+        mfaRequired: true,
+        mfaSecretRef: true,
+        mustRotatePassword: true,
+        failedAttempts: true,
+        lockedUntil: true,
+        passwordChangedAt: true,
+      },
+    },
+  } as const;
+}
+
+function serializeUserIdentity(identity: any) {
+  return {
+    identityId: identity.id,
+    userAccountId: identity.userAccountId,
+    userName: identity.userAccount?.userName,
+    displayName: identity.userAccount?.displayName ?? null,
+    userActive: identity.userAccount?.active ?? true,
+    userDeletedAt: identity.userAccount?.deletedAt ?? null,
+    providerType: identity.providerType,
+    issuer: identity.issuer,
+    providerSubject: identity.providerSubject,
+    emailSnapshot: identity.emailSnapshot ?? null,
+    status: identity.status,
+    lastAuthenticatedAt: identity.lastAuthenticatedAt,
+    linkedAt: identity.linkedAt,
+    effectiveUntil: identity.effectiveUntil ?? null,
+    rollbackWindowUntil: identity.rollbackWindowUntil ?? null,
+    note: identity.note ?? null,
+    createdAt: identity.createdAt,
+    updatedAt: identity.updatedAt,
+    localCredential: identity.localCredential
+      ? {
+          loginId: identity.localCredential.loginId,
+          passwordAlgo: identity.localCredential.passwordAlgo,
+          mfaRequired: identity.localCredential.mfaRequired,
+          mfaSecretConfigured: Boolean(identity.localCredential.mfaSecretRef),
+          mustRotatePassword: identity.localCredential.mustRotatePassword,
+          failedAttempts: identity.localCredential.failedAttempts,
+          lockedUntil: identity.localCredential.lockedUntil,
+          passwordChangedAt: identity.localCredential.passwordChangedAt,
+        }
+      : null,
+  };
+}
+
+function isIdentityEffectivelyActive(identity: {
+  status: string;
+  effectiveUntil?: Date | null;
+}) {
+  return (
+    identity.status === 'active' &&
+    (!identity.effectiveUntil || identity.effectiveUntil.getTime() > Date.now())
+  );
 }
 
 export async function registerAuthRoutes(app: FastifyInstance) {
@@ -244,6 +529,675 @@ export async function registerAuthRoutes(app: FastifyInstance) {
       : user.orgId || demoUser.orgId;
     return { user: { ...user, ownerOrgId, ownerProjects } };
   });
+
+  app.get(
+    '/auth/user-identities',
+    {
+      preHandler: [
+        app.rateLimit(localCredentialAdminRateLimit),
+        requireSystemAdmin,
+      ],
+      schema: {
+        ...userIdentityListSchema,
+        tags: ['auth'],
+        summary: 'List user identities',
+        response: {
+          200: userIdentityListResponseSchema,
+          429: localCredentialErrorResponseSchema,
+        },
+      },
+      config: { rateLimit: localCredentialAdminRateLimit },
+    },
+    async (req) => {
+      const query = (req.query || {}) as {
+        userAccountId?: string;
+        providerType?: string;
+        status?: string;
+        limit?: number;
+        offset?: number;
+      };
+      const where: Prisma.UserIdentityWhereInput = {};
+      if (query.userAccountId) where.userAccountId = query.userAccountId;
+      if (query.providerType) where.providerType = query.providerType;
+      if (query.status) where.status = query.status;
+      const limit = query.limit ?? 50;
+      const offset = query.offset ?? 0;
+      const items = await prisma.userIdentity.findMany({
+        where,
+        select: buildUserIdentitySelect(),
+        orderBy: [{ createdAt: 'desc' }],
+        take: limit,
+        skip: offset,
+      });
+      return {
+        limit,
+        offset,
+        items: items.map((item) => serializeUserIdentity(item)),
+      };
+    },
+  );
+
+  app.post(
+    '/auth/user-identities/google-link',
+    {
+      preHandler: [
+        app.rateLimit(localCredentialAdminRateLimit),
+        requireSystemAdmin,
+      ],
+      schema: {
+        ...userIdentityGoogleLinkSchema,
+        tags: ['auth'],
+        summary: 'Link Google identity to existing user account',
+        response: {
+          201: userIdentitySchema,
+          400: localCredentialErrorResponseSchema,
+          404: localCredentialErrorResponseSchema,
+          409: localCredentialErrorResponseSchema,
+          429: localCredentialErrorResponseSchema,
+        },
+      },
+      config: { rateLimit: localCredentialAdminRateLimit },
+    },
+    async (req, reply) => {
+      const limited = await consumeLocalCredentialAdminRateLimit(req, reply);
+      if (limited) return limited;
+      const actorId = requireActorUserId(req, reply);
+      if (!actorId) return;
+
+      const body = req.body as {
+        userAccountId: string;
+        issuer: string;
+        providerSubject: string;
+        emailSnapshot?: string | null;
+        effectiveUntil?: string | null;
+        rollbackWindowUntil?: string | null;
+        note?: string | null;
+        ticketId: string;
+        reasonCode: string;
+        reasonText?: string;
+      };
+      const userAccountId = normalizeOptionalString(body.userAccountId);
+      const issuer = normalizeOptionalString(body.issuer);
+      const providerSubject = normalizeOptionalString(body.providerSubject);
+      const emailSnapshot =
+        body.emailSnapshot === null
+          ? null
+          : normalizeOptionalString(body.emailSnapshot) || null;
+      const note =
+        body.note === null ? null : normalizeOptionalString(body.note) || null;
+      const ticketId = normalizeOptionalString(body.ticketId);
+      const reasonCode = normalizeOptionalString(body.reasonCode);
+      const reasonText = normalizeOptionalString(body.reasonText) || undefined;
+      const effectiveUntil = parseIdentityWindow(
+        body.effectiveUntil,
+        'effectiveUntil',
+      );
+      const rollbackWindowUntil = parseIdentityWindow(
+        body.rollbackWindowUntil,
+        'rollbackWindowUntil',
+      );
+      const invalidFields: string[] = [];
+      if (!userAccountId) invalidFields.push('userAccountId');
+      if (!issuer) invalidFields.push('issuer');
+      if (!providerSubject) invalidFields.push('providerSubject');
+      if (!ticketId) invalidFields.push('ticketId');
+      if (!reasonCode) invalidFields.push('reasonCode');
+      if (effectiveUntil.invalidField)
+        invalidFields.push(effectiveUntil.invalidField);
+      if (rollbackWindowUntil.invalidField) {
+        invalidFields.push(rollbackWindowUntil.invalidField);
+      }
+      if (
+        rollbackWindowUntil.value &&
+        rollbackWindowUntil.value.getTime() <= Date.now()
+      ) {
+        invalidFields.push('rollbackWindowUntil');
+      }
+      if (invalidFields.length) {
+        return respondValidationError(
+          reply,
+          Array.from(new Set(invalidFields)),
+        );
+      }
+
+      const userAccount = await prisma.userAccount.findUnique({
+        where: { id: userAccountId },
+        select: {
+          id: true,
+          active: true,
+          deletedAt: true,
+          identities: {
+            where: { providerType: 'google_oidc', issuer },
+            select: { id: true },
+          },
+        },
+      });
+      if (!userAccount) {
+        return reply.code(404).send(
+          createApiErrorResponse(
+            'user_account_not_found',
+            'User account not found',
+            {
+              category: 'not_found',
+            },
+          ),
+        );
+      }
+      if (!userAccount.active || userAccount.deletedAt) {
+        return reply
+          .code(409)
+          .send(
+            createApiErrorResponse(
+              'user_identity_user_inactive',
+              'Inactive or deleted user cannot receive identities',
+              { category: 'conflict' },
+            ),
+          );
+      }
+      if (userAccount.identities.length > 0) {
+        return reply
+          .code(409)
+          .send(
+            createApiErrorResponse(
+              'google_identity_exists_for_issuer',
+              'Google identity already exists for issuer',
+              { category: 'conflict' },
+            ),
+          );
+      }
+
+      try {
+        const created = await prisma.userIdentity.create({
+          data: {
+            userAccountId,
+            providerType: 'google_oidc',
+            issuer,
+            providerSubject,
+            emailSnapshot,
+            status: 'active',
+            effectiveUntil: effectiveUntil.value,
+            rollbackWindowUntil: rollbackWindowUntil.value,
+            note,
+            createdBy: actorId,
+            updatedBy: actorId,
+          },
+          select: buildUserIdentitySelect(),
+        });
+        await logAudit({
+          action: 'user_identity_google_linked',
+          targetTable: 'UserIdentity',
+          targetId: created.id,
+          reasonCode,
+          reasonText,
+          metadata: buildIdentityAuditMetadata(actorId, {
+            ticketId,
+            targetUserAccountId: userAccountId,
+            targetIdentityId: created.id,
+            providerType: created.providerType,
+            issuer: created.issuer,
+            providerSubject: created.providerSubject,
+            changedFields: [
+              'providerType',
+              'issuer',
+              'providerSubject',
+              'effectiveUntil',
+              'rollbackWindowUntil',
+              'note',
+            ],
+            beforeState: null,
+            afterState: snapshotIdentityState(created),
+          }),
+          ...auditContextFromRequest(req),
+        });
+        clearUserDbContextCache();
+        return reply.code(201).send(serializeUserIdentity(created));
+      } catch (err) {
+        if (
+          err instanceof Prisma.PrismaClientKnownRequestError &&
+          err.code === 'P2002'
+        ) {
+          const targets = Array.isArray(err.meta?.target)
+            ? err.meta.target.map(String)
+            : [];
+          const errorCode = targets.includes('providerSubject')
+            ? 'google_identity_subject_exists'
+            : 'google_identity_exists_for_issuer';
+          return reply
+            .code(409)
+            .send(
+              createApiErrorResponse(
+                errorCode,
+                errorCode === 'google_identity_subject_exists'
+                  ? 'Google identity subject already exists'
+                  : 'Google identity already exists for issuer',
+                { category: 'conflict' },
+              ),
+            );
+        }
+        throw err;
+      }
+    },
+  );
+
+  app.post(
+    '/auth/user-identities/local-link',
+    {
+      preHandler: [
+        app.rateLimit(localCredentialAdminRateLimit),
+        requireSystemAdmin,
+      ],
+      schema: {
+        ...userIdentityLocalLinkSchema,
+        tags: ['auth'],
+        summary: 'Link local identity to existing user account',
+        response: {
+          201: userIdentitySchema,
+          400: localCredentialErrorResponseSchema,
+          404: localCredentialErrorResponseSchema,
+          409: localCredentialErrorResponseSchema,
+          429: localCredentialErrorResponseSchema,
+        },
+      },
+      config: { rateLimit: localCredentialAdminRateLimit },
+    },
+    async (req, reply) => {
+      const limited = await consumeLocalCredentialAdminRateLimit(req, reply);
+      if (limited) return limited;
+      const actorId = requireActorUserId(req, reply);
+      if (!actorId) return;
+
+      const body = req.body as {
+        userAccountId: string;
+        loginId: string;
+        password: string;
+        effectiveUntil?: string | null;
+        rollbackWindowUntil?: string | null;
+        note?: string | null;
+        ticketId: string;
+        reasonCode: string;
+        reasonText?: string;
+      };
+      const userAccountId = normalizeOptionalString(body.userAccountId);
+      const loginId = normalizeLocalLoginId(body.loginId);
+      const note =
+        body.note === null ? null : normalizeOptionalString(body.note) || null;
+      const ticketId = normalizeOptionalString(body.ticketId);
+      const reasonCode = normalizeOptionalString(body.reasonCode);
+      const reasonText = normalizeOptionalString(body.reasonText) || undefined;
+      const effectiveUntil = parseIdentityWindow(
+        body.effectiveUntil,
+        'effectiveUntil',
+      );
+      const rollbackWindowUntil = parseIdentityWindow(
+        body.rollbackWindowUntil,
+        'rollbackWindowUntil',
+      );
+      const { password, invalidFields: passwordInvalidFields } =
+        validateLocalPassword(body.password);
+      const invalidFields = [...passwordInvalidFields];
+      if (!userAccountId) invalidFields.push('userAccountId');
+      if (!loginId) invalidFields.push('loginId');
+      if (!ticketId) invalidFields.push('ticketId');
+      if (!reasonCode) invalidFields.push('reasonCode');
+      if (effectiveUntil.invalidField)
+        invalidFields.push(effectiveUntil.invalidField);
+      if (rollbackWindowUntil.invalidField) {
+        invalidFields.push(rollbackWindowUntil.invalidField);
+      }
+      if (
+        rollbackWindowUntil.value &&
+        rollbackWindowUntil.value.getTime() <= Date.now()
+      ) {
+        invalidFields.push('rollbackWindowUntil');
+      }
+      if (invalidFields.length) {
+        return respondValidationError(
+          reply,
+          Array.from(new Set(invalidFields)),
+        );
+      }
+
+      const userAccount = await prisma.userAccount.findUnique({
+        where: { id: userAccountId },
+        select: {
+          id: true,
+          userName: true,
+          displayName: true,
+          active: true,
+          deletedAt: true,
+          identities: {
+            where: {
+              providerType: LOCAL_IDENTITY_PROVIDER,
+              issuer: LOCAL_IDENTITY_ISSUER,
+            },
+            select: { id: true },
+          },
+        },
+      });
+      if (!userAccount) {
+        return reply.code(404).send(
+          createApiErrorResponse(
+            'user_account_not_found',
+            'User account not found',
+            {
+              category: 'not_found',
+            },
+          ),
+        );
+      }
+      if (!userAccount.active || userAccount.deletedAt) {
+        return reply
+          .code(409)
+          .send(
+            createApiErrorResponse(
+              'local_credential_user_inactive',
+              'Inactive or deleted user cannot receive local credentials',
+              { category: 'conflict' },
+            ),
+          );
+      }
+      if (userAccount.identities.length > 0) {
+        return reply
+          .code(409)
+          .send(
+            createApiErrorResponse(
+              'local_credential_exists',
+              'Local credential already exists for user account',
+              { category: 'conflict' },
+            ),
+          );
+      }
+      const existingLogin = await prisma.localCredential.findUnique({
+        where: { loginId },
+        select: { id: true },
+      });
+      if (existingLogin) {
+        return reply
+          .code(409)
+          .send(
+            createApiErrorResponse(
+              'local_login_id_exists',
+              'loginId already exists',
+              { category: 'conflict' },
+            ),
+          );
+      }
+
+      const now = new Date();
+      const passwordHash = await hashLocalPassword(password);
+      try {
+        const created = await prisma.userIdentity.create({
+          data: {
+            userAccountId,
+            providerType: LOCAL_IDENTITY_PROVIDER,
+            issuer: LOCAL_IDENTITY_ISSUER,
+            providerSubject: buildLocalProviderSubject(),
+            emailSnapshot: null,
+            status: 'active',
+            effectiveUntil: effectiveUntil.value,
+            rollbackWindowUntil: rollbackWindowUntil.value,
+            note,
+            createdBy: actorId,
+            updatedBy: actorId,
+            localCredential: {
+              create: {
+                loginId,
+                passwordHash,
+                passwordAlgo: 'argon2id',
+                mfaRequired: true,
+                mustRotatePassword: true,
+                failedAttempts: 0,
+                passwordChangedAt: now,
+                createdBy: actorId,
+                updatedBy: actorId,
+              },
+            },
+          },
+          select: buildUserIdentitySelect(),
+        });
+        await logAudit({
+          action: 'user_identity_local_linked',
+          targetTable: 'UserIdentity',
+          targetId: created.id,
+          reasonCode,
+          reasonText,
+          metadata: buildIdentityAuditMetadata(actorId, {
+            ticketId,
+            targetUserAccountId: userAccountId,
+            targetIdentityId: created.id,
+            providerType: created.providerType,
+            issuer: created.issuer,
+            providerSubject: created.providerSubject,
+            changedFields: [
+              'providerType',
+              'issuer',
+              'providerSubject',
+              'loginId',
+              'effectiveUntil',
+              'rollbackWindowUntil',
+              'note',
+              'mustRotatePassword',
+            ],
+            beforeState: null,
+            afterState: snapshotIdentityState(created),
+          }),
+          ...auditContextFromRequest(req),
+        });
+        clearUserDbContextCache();
+        return reply.code(201).send(serializeUserIdentity(created));
+      } catch (err) {
+        if (
+          err instanceof Prisma.PrismaClientKnownRequestError &&
+          err.code === 'P2002'
+        ) {
+          const targets = Array.isArray(err.meta?.target)
+            ? err.meta.target.map(String)
+            : [];
+          const errorCode = targets.includes('loginId')
+            ? 'local_login_id_exists'
+            : 'local_credential_exists';
+          return reply
+            .code(409)
+            .send(
+              createApiErrorResponse(
+                errorCode,
+                errorCode === 'local_login_id_exists'
+                  ? 'loginId already exists'
+                  : 'Local credential already exists for user account',
+                { category: 'conflict' },
+              ),
+            );
+        }
+        throw err;
+      }
+    },
+  );
+
+  app.patch(
+    '/auth/user-identities/:identityId',
+    {
+      preHandler: [
+        app.rateLimit(localCredentialAdminRateLimit),
+        requireSystemAdmin,
+      ],
+      schema: {
+        ...userIdentityPatchSchema,
+        tags: ['auth'],
+        summary: 'Update user identity state',
+        response: {
+          200: userIdentitySchema,
+          400: localCredentialErrorResponseSchema,
+          404: localCredentialErrorResponseSchema,
+          409: localCredentialErrorResponseSchema,
+          429: localCredentialErrorResponseSchema,
+        },
+      },
+      config: { rateLimit: localCredentialAdminRateLimit },
+    },
+    async (req, reply) => {
+      const limited = await consumeLocalCredentialAdminRateLimit(req, reply);
+      if (limited) return limited;
+      const actorId = requireActorUserId(req, reply);
+      if (!actorId) return;
+
+      const { identityId } = req.params as { identityId: string };
+      const body = req.body as {
+        status?: 'active' | 'disabled';
+        effectiveUntil?: string | null;
+        rollbackWindowUntil?: string | null;
+        note?: string | null;
+        ticketId: string;
+        reasonCode: string;
+        reasonText?: string;
+      };
+      const ticketId = normalizeOptionalString(body.ticketId);
+      const reasonCode = normalizeOptionalString(body.reasonCode);
+      const reasonText = normalizeOptionalString(body.reasonText) || undefined;
+      const effectiveUntil = parseIdentityWindow(
+        body.effectiveUntil,
+        'effectiveUntil',
+      );
+      const rollbackWindowUntil = parseIdentityWindow(
+        body.rollbackWindowUntil,
+        'rollbackWindowUntil',
+      );
+      const note =
+        body.note === undefined
+          ? undefined
+          : body.note === null
+            ? null
+            : normalizeOptionalString(body.note) || null;
+      const invalidFields: string[] = [];
+      if (!ticketId) invalidFields.push('ticketId');
+      if (!reasonCode) invalidFields.push('reasonCode');
+      if (effectiveUntil.invalidField)
+        invalidFields.push(effectiveUntil.invalidField);
+      if (rollbackWindowUntil.invalidField) {
+        invalidFields.push(rollbackWindowUntil.invalidField);
+      }
+      if (
+        rollbackWindowUntil.value &&
+        rollbackWindowUntil.value.getTime() <= Date.now()
+      ) {
+        invalidFields.push('rollbackWindowUntil');
+      }
+      if (invalidFields.length) {
+        return respondValidationError(
+          reply,
+          Array.from(new Set(invalidFields)),
+        );
+      }
+
+      const current = await prisma.userIdentity.findUnique({
+        where: { id: identityId },
+        select: buildUserIdentitySelect(),
+      });
+      if (!current) {
+        return reply.code(404).send(
+          createApiErrorResponse(
+            'user_identity_not_found',
+            'User identity not found',
+            {
+              category: 'not_found',
+            },
+          ),
+        );
+      }
+
+      const updateData: Prisma.UserIdentityUpdateInput = {
+        updatedBy: actorId,
+      };
+      const changedFields: string[] = [];
+      if (body.status && body.status !== current.status) {
+        updateData.status = body.status;
+        changedFields.push('status');
+      }
+      if (effectiveUntil.provided) {
+        const nextIso = effectiveUntil.value?.toISOString() ?? null;
+        const currentIso = current.effectiveUntil?.toISOString() ?? null;
+        if (nextIso !== currentIso) {
+          updateData.effectiveUntil = effectiveUntil.value;
+          changedFields.push('effectiveUntil');
+        }
+      }
+      if (rollbackWindowUntil.provided) {
+        const nextIso = rollbackWindowUntil.value?.toISOString() ?? null;
+        const currentIso = current.rollbackWindowUntil?.toISOString() ?? null;
+        if (nextIso !== currentIso) {
+          updateData.rollbackWindowUntil = rollbackWindowUntil.value;
+          changedFields.push('rollbackWindowUntil');
+        }
+      }
+      if (note !== undefined && note !== (current.note ?? null)) {
+        updateData.note = note;
+        changedFields.push('note');
+      }
+      if (!changedFields.length) {
+        return serializeUserIdentity(current);
+      }
+
+      const resultingStatus =
+        (updateData.status as string | undefined) ?? current.status;
+      const resultingEffectiveUntil = effectiveUntil.provided
+        ? (effectiveUntil.value ?? null)
+        : current.effectiveUntil;
+      const willRemainUsable =
+        resultingStatus === 'active' &&
+        (!resultingEffectiveUntil ||
+          resultingEffectiveUntil.getTime() > Date.now());
+      if (!willRemainUsable && isIdentityEffectivelyActive(current)) {
+        const alternativeActiveCount = await prisma.userIdentity.count({
+          where: {
+            userAccountId: current.userAccountId,
+            id: { not: current.id },
+            status: 'active',
+            OR: [
+              { effectiveUntil: null },
+              { effectiveUntil: { gt: new Date() } },
+            ],
+          },
+        });
+        if (alternativeActiveCount === 0) {
+          return reply
+            .code(409)
+            .send(
+              createApiErrorResponse(
+                'identity_last_active_conflict',
+                'Cannot disable the last active identity',
+                { category: 'conflict' },
+              ),
+            );
+        }
+      }
+
+      const updated = await prisma.userIdentity.update({
+        where: { id: identityId },
+        data: updateData,
+        select: buildUserIdentitySelect(),
+      });
+      await logAudit({
+        action: 'user_identity_updated',
+        targetTable: 'UserIdentity',
+        targetId: updated.id,
+        reasonCode,
+        reasonText,
+        metadata: buildIdentityAuditMetadata(actorId, {
+          ticketId,
+          targetUserAccountId: updated.userAccountId,
+          targetIdentityId: updated.id,
+          providerType: updated.providerType,
+          issuer: updated.issuer,
+          providerSubject: updated.providerSubject,
+          changedFields,
+          beforeState: snapshotIdentityState(current),
+          afterState: snapshotIdentityState(updated),
+        }),
+        ...auditContextFromRequest(req),
+      });
+      clearUserDbContextCache();
+      return serializeUserIdentity(updated);
+    },
+  );
 
   app.get(
     '/auth/local-credentials',
@@ -316,32 +1270,14 @@ export async function registerAuthRoutes(app: FastifyInstance) {
       config: { rateLimit: localCredentialAdminRateLimit },
     },
     async (req, reply) => {
-      try {
-        await localCredentialAdminFlexibleLimiter.consume(req.ip);
-      } catch {
-        return reply
-          .code(429)
-          .send(
-            createApiErrorResponse(
-              'local_credential_rate_limited',
-              'Too many local credential admin requests',
-              { category: 'rate_limit' },
-            ),
-          );
-      }
-      const actorId = req.user?.userId;
-      if (!actorId) {
-        return reply.code(400).send(
-          createApiErrorResponse('missing_user_id', 'user id is required', {
-            category: 'validation',
-          }),
-        );
-      }
+      const limited = await consumeLocalCredentialAdminRateLimit(req, reply);
+      if (limited) return limited;
+      const actorId = requireActorUserId(req, reply);
+      if (!actorId) return;
       const body = req.body as {
         userAccountId: string;
         loginId: string;
         password: string;
-        mfaRequired?: boolean;
         ticketId: string;
         reasonCode: string;
         reasonText?: string;
@@ -447,7 +1383,8 @@ export async function registerAuthRoutes(app: FastifyInstance) {
                 loginId,
                 passwordHash,
                 passwordAlgo: 'argon2id',
-                mfaRequired: body.mfaRequired ?? true,
+                mfaRequired: true,
+                mustRotatePassword: true,
                 failedAttempts: 0,
                 passwordChangedAt: now,
                 createdBy: actorId,
@@ -534,27 +1471,10 @@ export async function registerAuthRoutes(app: FastifyInstance) {
       config: { rateLimit: localCredentialAdminRateLimit },
     },
     async (req, reply) => {
-      try {
-        await localCredentialAdminFlexibleLimiter.consume(req.ip);
-      } catch {
-        return reply
-          .code(429)
-          .send(
-            createApiErrorResponse(
-              'local_credential_rate_limited',
-              'Too many local credential admin requests',
-              { category: 'rate_limit' },
-            ),
-          );
-      }
-      const actorId = req.user?.userId;
-      if (!actorId) {
-        return reply.code(400).send(
-          createApiErrorResponse('missing_user_id', 'user id is required', {
-            category: 'validation',
-          }),
-        );
-      }
+      const limited = await consumeLocalCredentialAdminRateLimit(req, reply);
+      if (limited) return limited;
+      const actorId = requireActorUserId(req, reply);
+      if (!actorId) return;
       const { identityId } = req.params as { identityId: string };
       const body = req.body as {
         loginId?: string;
@@ -647,6 +1567,7 @@ export async function registerAuthRoutes(app: FastifyInstance) {
         updateCredentialData.passwordHash = await hashLocalPassword(password);
         updateCredentialData.passwordAlgo = 'argon2id';
         updateCredentialData.passwordChangedAt = new Date();
+        updateCredentialData.mustRotatePassword = true;
         updateCredentialData.failedAttempts = 0;
         updateCredentialData.lockedUntil = null;
         changedFields.push('password');

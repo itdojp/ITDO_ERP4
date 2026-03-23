@@ -298,6 +298,24 @@ function mapResolvedUserContext(
   };
 }
 
+function isIdentityCurrentlyUsable(identity: {
+  status: string;
+  effectiveUntil?: Date | string | null;
+}) {
+  if (identity.status !== 'active') return false;
+  const effectiveUntilRaw = identity.effectiveUntil;
+  if (!effectiveUntilRaw) return true;
+  const effectiveUntil =
+    effectiveUntilRaw instanceof Date
+      ? effectiveUntilRaw
+      : new Date(effectiveUntilRaw);
+  if (Number.isNaN(effectiveUntil.getTime())) return false;
+  if (effectiveUntil.getTime() <= Date.now()) {
+    return false;
+  }
+  return true;
+}
+
 async function resolveUserGroupsFromDb(
   user: UserContext,
 ): Promise<UserDbContext> {
@@ -329,12 +347,13 @@ async function resolveUserGroupsFromDb(
       select: {
         id: true,
         status: true,
+        effectiveUntil: true,
         userAccountId: true,
         userAccount: { select },
       },
     });
     if (identity) {
-      if (identity.status !== 'active') {
+      if (!isIdentityCurrentlyUsable(identity)) {
         return { blocked: true as const };
       }
       if (identity.userAccount) {

@@ -13,6 +13,7 @@ type LocalCredentialRecord = {
   passwordAlgo: string;
   mfaRequired: boolean;
   mfaSecretRef: string | null;
+  mustRotatePassword: boolean;
   failedAttempts: number;
   lockedUntil: Date | null;
   passwordChangedAt: Date | null;
@@ -37,6 +38,9 @@ type UserIdentityRecord = {
   status: string;
   lastAuthenticatedAt: Date | null;
   linkedAt: Date;
+  effectiveUntil?: Date | null;
+  rollbackWindowUntil?: Date | null;
+  note?: string | null;
   createdAt: Date;
   updatedAt: Date;
   localCredential: LocalCredentialRecord | null;
@@ -102,11 +106,15 @@ export function serializeLocalCredentialIdentity(identity: UserIdentityRecord) {
     passwordAlgo: credential.passwordAlgo,
     mfaRequired: credential.mfaRequired,
     mfaSecretConfigured: Boolean(credential.mfaSecretRef),
+    mustRotatePassword: credential.mustRotatePassword,
     failedAttempts: credential.failedAttempts,
     lockedUntil: credential.lockedUntil,
     passwordChangedAt: credential.passwordChangedAt,
     lastAuthenticatedAt: identity.lastAuthenticatedAt,
     linkedAt: identity.linkedAt,
+    effectiveUntil: identity.effectiveUntil ?? null,
+    rollbackWindowUntil: identity.rollbackWindowUntil ?? null,
+    note: identity.note ?? null,
     createdAt: identity.createdAt,
     updatedAt,
   };
