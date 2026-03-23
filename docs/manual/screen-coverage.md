@@ -80,5 +80,7 @@
 
 現時点で「PoCの主要セクション（上表）」は証跡取得済みです。追加で網羅したい場合、以下を候補とします。
 
-- Googleログイン（ボタン表示/成功フロー）: `VITE_GOOGLE_CLIENT_ID` 未設定だと UI に表示されません。
+- Googleログイン（ボタン表示/成功フロー）
+  - `VITE_AUTH_MODE=jwt_bff` では backend Auth Gateway へ遷移するボタン表示のみ
+  - `VITE_AUTH_MODE` 未設定時は `VITE_GOOGLE_CLIENT_ID` 未設定だと Google Identity Services ボタンが表示されません
   - 設定値が揃った時点で、証跡用のE2E（または手動キャプチャ）を追加します。

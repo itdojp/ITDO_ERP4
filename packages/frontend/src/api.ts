@@ -7,10 +7,30 @@ export type AuthState = {
   token?: string;
 };
 
+type SessionResponse = {
+  user?: Partial<AuthState> & { userId?: string };
+  session?: {
+    sessionId: string;
+    providerType: string;
+    issuer: string;
+    userAccountId: string;
+    userIdentityId: string;
+    expiresAt: string;
+    idleExpiresAt: string;
+  };
+};
+
 const AUTH_STORAGE_KEY = 'erp4_auth';
 const API_BASE = (import.meta.env.VITE_API_BASE || '').trim();
+const AUTH_MODE = (import.meta.env.VITE_AUTH_MODE || 'header')
+  .trim()
+  .toLowerCase();
 const API_BASE_VALID = API_BASE === '' || /^https?:\/\//i.test(API_BASE);
 let warnedInvalidBase = false;
+
+export function isBffAuthMode() {
+  return AUTH_MODE === 'jwt_bff';
+}
 
 export function getAuthState(): AuthState | null {
   if (typeof window === 'undefined') return null;
@@ -35,6 +55,7 @@ export function setAuthState(state: AuthState | null) {
 function buildAuthHeaders(): Record<string, string> {
   const auth = getAuthState();
   if (!auth) return {};
+  if (isBffAuthMode()) return {};
   const headers: Record<string, string> = {};
   if (auth.userId) headers['x-user-id'] = auth.userId;
   if (auth.roles?.length) headers['x-roles'] = auth.roles.join(',');
@@ -113,6 +134,7 @@ export async function apiResponse(
   const url = resolveApiPath(path);
   const res = await fetch(url, {
     ...options,
+    credentials: isBffAuthMode() ? 'include' : options.credentials,
     headers: mergeHeaders(options.headers, {
       json: shouldSetJsonHeader(options.body),
     }),
@@ -144,13 +166,19 @@ export async function apiWithAuth<T>(
 
 export async function refreshAuthStateFromServer() {
   const current = getAuthState();
-  if (!current) return null;
   try {
-    const res = await api<{ user?: Partial<AuthState> & { userId?: string } }>(
-      '/me',
-    );
+    const res = isBffAuthMode()
+      ? await api<SessionResponse>('/auth/session')
+      : await api<{ user?: Partial<AuthState> & { userId?: string } }>('/me');
     const user = res.user;
     if (!user || typeof user.userId !== 'string' || !user.userId.trim()) {
+      if (isBffAuthMode()) {
+        setAuthState(null);
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new Event('erp4:auth-updated'));
+        }
+        return null;
+      }
       return current;
     }
     const next: AuthState = {
@@ -168,7 +196,7 @@ export async function refreshAuthStateFromServer() {
         Array.isArray(user.groupAccountIds) && user.groupAccountIds.length
           ? user.groupAccountIds
           : undefined,
-      token: current.token,
+      token: isBffAuthMode() ? undefined : current?.token,
     };
     setAuthState(next);
     if (typeof window !== 'undefined') {
@@ -176,6 +204,17 @@ export async function refreshAuthStateFromServer() {
     }
     return next;
   } catch (err) {
+    if (isBffAuthMode()) {
+      setAuthState(null);
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new Event('erp4:auth-updated'));
+      }
+      return null;
+    }
     return current;
   }
+}
+
+export function buildApiUrl(path: string) {
+  return resolveApiPath(path);
 }

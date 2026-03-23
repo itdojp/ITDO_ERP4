@@ -23,7 +23,8 @@
 
 - 目的: 現在のログイン情報と通知/オフラインキューの状態確認
 - 主な操作: 簡易ログイン/ログアウト、Push同意、オフライン再送
-- 補足: Googleログインボタンは `VITE_GOOGLE_CLIENT_ID` 設定時のみ表示されます
+- 補足: `VITE_AUTH_MODE=jwt_bff` の場合は backend の Auth Gateway へ遷移する `Googleでログイン` ボタンを表示します
+- 補足: `VITE_AUTH_MODE` 未設定時は、`VITE_GOOGLE_CLIENT_ID` 設定時のみ Google Identity Services のボタンを表示します
 
 ### 詳細操作
 
@@ -39,7 +40,8 @@
 
 ### 入力項目/制約
 
-- Googleログインは `VITE_GOOGLE_CLIENT_ID` が未設定の場合は表示されません
+- `VITE_AUTH_MODE=jwt_bff` の場合、未ログイン時は簡易ログインを表示せず、backend の Auth Gateway 経由で認証します
+- `VITE_AUTH_MODE` 未設定時の Googleログインは `VITE_GOOGLE_CLIENT_ID` が未設定の場合は表示されません
 - メール通知は `digest` の場合、配信間隔（分）が必要です
 - メール通知の既定は `digest` / 10分です
 - Push 通知は `VITE_PUSH_PUBLIC_KEY` 未設定だと購読登録に失敗します
