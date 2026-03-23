@@ -372,3 +372,249 @@ test('POST /auth/logout clears current session cookie', async () => {
     );
   });
 });
+
+test('GET /auth/sessions lists active sessions for current user', async () => {
+  await withEnv(baseBffEnv(), async () => {
+    let capturedFindManyArgs = null;
+    await withPrismaStubs(
+      {
+        'authSession.findUnique': async () => ({
+          id: 'sess-current',
+          userAccountId: 'user-001',
+          userIdentityId: 'identity-001',
+          providerType: 'google_oidc',
+          issuer: 'https://accounts.google.com',
+          providerSubject: 'google-sub-001',
+          expiresAt: new Date(Date.now() + 60_000),
+          idleExpiresAt: new Date(Date.now() + 60_000),
+          revokedAt: null,
+        }),
+        'authSession.update': async ({ where, data }) => ({
+          id: where.id,
+          userAccountId: 'user-001',
+          userIdentityId: 'identity-001',
+          providerType: 'google_oidc',
+          issuer: 'https://accounts.google.com',
+          providerSubject: 'google-sub-001',
+          createdAt: new Date('2026-03-23T00:00:00.000Z'),
+          lastSeenAt: new Date('2026-03-23T00:05:00.000Z'),
+          expiresAt: new Date(Date.now() + 60_000),
+          idleExpiresAt: data.idleExpiresAt ?? new Date(Date.now() + 60_000),
+          revokedAt: null,
+          revokedReason: null,
+          sourceIp: '127.0.0.1',
+          userAgent: 'test-agent',
+        }),
+        'userIdentity.findUnique': async () => ({
+          id: 'identity-001',
+          status: 'active',
+          effectiveUntil: null,
+          userAccountId: 'user-001',
+          userAccount: {
+            id: 'user-001',
+            active: true,
+            deletedAt: null,
+            userName: 'legacy-user',
+            externalId: null,
+            organization: 'org-001',
+            memberships: [],
+          },
+        }),
+        'projectMember.findMany': async () => [{ projectId: 'proj-001' }],
+        'authSession.findMany': async (args) => {
+          capturedFindManyArgs = args;
+          return [
+            {
+              id: 'sess-current',
+              userAccountId: 'user-001',
+              userIdentityId: 'identity-001',
+              providerType: 'google_oidc',
+              issuer: 'https://accounts.google.com',
+              providerSubject: 'google-sub-001',
+              sourceIp: '127.0.0.1',
+              userAgent: 'test-agent',
+              createdAt: new Date('2026-03-23T00:00:00.000Z'),
+              lastSeenAt: new Date('2026-03-23T00:05:00.000Z'),
+              expiresAt: new Date('2026-03-23T12:00:00.000Z'),
+              idleExpiresAt: new Date('2026-03-23T02:00:00.000Z'),
+              revokedAt: null,
+              revokedReason: null,
+            },
+            {
+              id: 'sess-other',
+              userAccountId: 'user-001',
+              userIdentityId: 'identity-002',
+              providerType: 'local_password',
+              issuer: 'erp4_local',
+              providerSubject: 'local-sub-001',
+              sourceIp: '127.0.0.2',
+              userAgent: 'test-agent-2',
+              createdAt: new Date('2026-03-22T20:00:00.000Z'),
+              lastSeenAt: new Date('2026-03-23T00:03:00.000Z'),
+              expiresAt: new Date('2026-03-23T12:00:00.000Z'),
+              idleExpiresAt: new Date('2026-03-23T02:00:00.000Z'),
+              revokedAt: null,
+              revokedReason: null,
+            },
+          ];
+        },
+      },
+      async () => {
+        const { buildServer } = await loadBackendModules();
+        const server = await buildServer({ logger: false });
+        try {
+          const res = await server.inject({
+            method: 'GET',
+            url: '/auth/sessions?limit=10&offset=0',
+            headers: {
+              cookie: 'erp4_session=session-token-001',
+            },
+          });
+          assert.equal(res.statusCode, 200, res.body);
+          const body = JSON.parse(res.body);
+          assert.equal(body.items.length, 2);
+          assert.equal(body.items[0].sessionId, 'sess-current');
+          assert.equal(body.items[0].current, true);
+          assert.equal(body.items[1].sessionId, 'sess-other');
+          assert.equal(body.items[1].current, false);
+          assert.equal(capturedFindManyArgs?.where?.revokedAt, null);
+          assert.ok(capturedFindManyArgs?.where?.expiresAt?.gt instanceof Date);
+          assert.ok(
+            capturedFindManyArgs?.where?.idleExpiresAt?.gt instanceof Date,
+          );
+        } finally {
+          await server.close();
+        }
+      },
+    );
+  });
+});
+
+test('POST /auth/sessions/:sessionId/revoke revokes current-user session and clears cookie when current session is targeted', async () => {
+  await withEnv(baseBffEnv(), async () => {
+    let revokedId = null;
+    let auditAction = null;
+    let capturedFindFirstArgs = null;
+    await withPrismaStubs(
+      {
+        'authSession.findUnique': async () => ({
+          id: 'sess-current',
+          userAccountId: 'user-001',
+          userIdentityId: 'identity-001',
+          providerType: 'google_oidc',
+          issuer: 'https://accounts.google.com',
+          providerSubject: 'google-sub-001',
+          expiresAt: new Date(Date.now() + 60_000),
+          idleExpiresAt: new Date(Date.now() + 60_000),
+          revokedAt: null,
+        }),
+        'authSession.update': async ({ where, data }) => {
+          if (where.id === 'sess-current' && data.idleExpiresAt) {
+            return {
+              id: where.id,
+              userAccountId: 'user-001',
+              userIdentityId: 'identity-001',
+              providerType: 'google_oidc',
+              issuer: 'https://accounts.google.com',
+              providerSubject: 'google-sub-001',
+              createdAt: new Date('2026-03-23T00:00:00.000Z'),
+              lastSeenAt: new Date('2026-03-23T00:05:00.000Z'),
+              expiresAt: new Date(Date.now() + 60_000),
+              idleExpiresAt: data.idleExpiresAt,
+              revokedAt: null,
+              revokedReason: null,
+              sourceIp: '127.0.0.1',
+              userAgent: 'test-agent',
+            };
+          }
+          revokedId = where.id;
+          return {
+            id: where.id,
+            userAccountId: 'user-001',
+            userIdentityId: 'identity-001',
+            providerType: 'google_oidc',
+            issuer: 'https://accounts.google.com',
+            providerSubject: 'google-sub-001',
+            createdAt: new Date('2026-03-23T00:00:00.000Z'),
+            lastSeenAt: new Date('2026-03-23T00:05:00.000Z'),
+            expiresAt: new Date(Date.now() + 60_000),
+            idleExpiresAt: new Date(Date.now() + 60_000),
+            revokedAt: new Date('2026-03-23T00:06:00.000Z'),
+            revokedReason: data.revokedReason,
+            sourceIp: '127.0.0.1',
+            userAgent: 'test-agent',
+          };
+        },
+        'authSession.findFirst': async (args) => {
+          capturedFindFirstArgs = args;
+          return {
+            id: 'sess-current',
+            userAccountId: 'user-001',
+            userIdentityId: 'identity-001',
+            providerType: 'google_oidc',
+            issuer: 'https://accounts.google.com',
+            providerSubject: 'google-sub-001',
+            createdAt: new Date('2026-03-23T00:00:00.000Z'),
+            lastSeenAt: new Date('2026-03-23T00:05:00.000Z'),
+            expiresAt: new Date(Date.now() + 60_000),
+            idleExpiresAt: new Date(Date.now() + 60_000),
+            revokedAt: null,
+            revokedReason: null,
+            sourceIp: '127.0.0.1',
+            userAgent: 'test-agent',
+          };
+        },
+        'userIdentity.findUnique': async () => ({
+          id: 'identity-001',
+          status: 'active',
+          effectiveUntil: null,
+          userAccountId: 'user-001',
+          userAccount: {
+            id: 'user-001',
+            active: true,
+            deletedAt: null,
+            userName: 'legacy-user',
+            externalId: null,
+            organization: 'org-001',
+            memberships: [],
+          },
+        }),
+        'projectMember.findMany': async () => [{ projectId: 'proj-001' }],
+        'auditLog.create': async ({ data }) => {
+          auditAction = data.action;
+          return { id: 'audit-session-revoke' };
+        },
+      },
+      async () => {
+        const { buildServer } = await loadBackendModules();
+        const server = await buildServer({ logger: false });
+        try {
+          const res = await server.inject({
+            method: 'POST',
+            url: '/auth/sessions/sess-current/revoke',
+            headers: {
+              cookie: 'erp4_session=session-token-001',
+            },
+          });
+          assert.equal(res.statusCode, 200, res.body);
+          assert.equal(revokedId, 'sess-current');
+          assert.equal(auditAction, 'auth_session_revoked');
+          assert.match(String(res.headers['set-cookie']), /erp4_session=;/);
+          const body = JSON.parse(res.body);
+          assert.equal(body.sessionId, 'sess-current');
+          assert.equal(body.revokedReason, 'user_requested');
+          assert.equal(body.current, true);
+          assert.equal(capturedFindFirstArgs?.where?.revokedAt, null);
+          assert.ok(
+            capturedFindFirstArgs?.where?.expiresAt?.gt instanceof Date,
+          );
+          assert.ok(
+            capturedFindFirstArgs?.where?.idleExpiresAt?.gt instanceof Date,
+          );
+        } finally {
+          await server.close();
+        }
+      },
+    );
+  });
+});

@@ -37,6 +37,8 @@ import {
 import {
   authGoogleCallbackSchema,
   authGoogleStartSchema,
+  authSessionListSchema,
+  authSessionRevokeSchema,
   localCredentialCreateSchema,
   localCredentialListSchema,
   localCredentialPatchSchema,
@@ -381,6 +383,35 @@ const authSessionResponseSchema = Type.Object(
   { additionalProperties: false },
 );
 
+const managedAuthSessionSchema = Type.Object(
+  {
+    sessionId: Type.String(),
+    providerType: Type.String(),
+    issuer: Type.String(),
+    userAccountId: Type.String(),
+    userIdentityId: Type.String(),
+    sourceIp: Type.Union([Type.String(), Type.Null()]),
+    userAgent: Type.Union([Type.String(), Type.Null()]),
+    createdAt: Type.String({ format: 'date-time' }),
+    lastSeenAt: Type.String({ format: 'date-time' }),
+    expiresAt: Type.String({ format: 'date-time' }),
+    idleExpiresAt: Type.String({ format: 'date-time' }),
+    revokedAt: Type.Union([Type.String({ format: 'date-time' }), Type.Null()]),
+    revokedReason: Type.Union([Type.String(), Type.Null()]),
+    current: Type.Boolean(),
+  },
+  { additionalProperties: false },
+);
+
+const authSessionListResponseSchema = Type.Object(
+  {
+    limit: Type.Integer(),
+    offset: Type.Integer(),
+    items: Type.Array(managedAuthSessionSchema),
+  },
+  { additionalProperties: false },
+);
+
 const userIdentitySchema = Type.Object(
   {
     identityId: Type.String(),
@@ -573,6 +604,42 @@ function isIdentityEffectivelyActive(identity: {
     identity.status === 'active' &&
     (!identity.effectiveUntil || identity.effectiveUntil.getTime() > Date.now())
   );
+}
+
+function serializeManagedAuthSession(
+  session: {
+    id: string;
+    providerType: string;
+    issuer: string;
+    userAccountId: string;
+    userIdentityId: string;
+    sourceIp: string | null;
+    userAgent: string | null;
+    createdAt: Date;
+    lastSeenAt: Date;
+    expiresAt: Date;
+    idleExpiresAt: Date;
+    revokedAt: Date | null;
+    revokedReason: string | null;
+  },
+  currentSessionId?: string,
+) {
+  return {
+    sessionId: session.id,
+    providerType: session.providerType,
+    issuer: session.issuer,
+    userAccountId: session.userAccountId,
+    userIdentityId: session.userIdentityId,
+    sourceIp: session.sourceIp,
+    userAgent: session.userAgent,
+    createdAt: session.createdAt.toISOString(),
+    lastSeenAt: session.lastSeenAt.toISOString(),
+    expiresAt: session.expiresAt.toISOString(),
+    idleExpiresAt: session.idleExpiresAt.toISOString(),
+    revokedAt: session.revokedAt?.toISOString() ?? null,
+    revokedReason: session.revokedReason,
+    current: session.id === currentSessionId,
+  };
 }
 
 export async function registerAuthRoutes(app: FastifyInstance) {
@@ -813,6 +880,140 @@ export async function registerAuthRoutes(app: FastifyInstance) {
         user: req.user,
         session: buildAuthSessionResponse(session),
       };
+    },
+  );
+
+  app.get(
+    '/auth/sessions',
+    {
+      schema: {
+        ...authSessionListSchema,
+        tags: ['auth'],
+        summary: 'List active authenticated sessions for current user',
+        response: {
+          200: authSessionListResponseSchema,
+          401: authGatewayErrorResponseSchema,
+          404: authGatewayErrorResponseSchema,
+          429: authGatewayErrorResponseSchema,
+        },
+      },
+    },
+    async (req, reply) => {
+      if (!isJwtBffAuthMode()) {
+        return respondAuthGatewayDisabled(reply);
+      }
+      const rateLimited = await enforceAuthGatewayRateLimit(req, reply);
+      if (rateLimited) return rateLimited;
+      const session = req.authSession;
+      if (!session) {
+        return reply.code(401).send(
+          createApiErrorResponse('unauthorized', 'Unauthorized', {
+            category: 'auth',
+            details: { reason: 'missing_session' },
+          }),
+        );
+      }
+      const query = (req.query || {}) as { limit?: number; offset?: number };
+      const limit = Math.min(Math.max(query.limit ?? 20, 1), 100);
+      const offset = Math.max(query.offset ?? 0, 0);
+      const now = new Date();
+      const items = await prisma.authSession.findMany({
+        where: {
+          userAccountId: session.userAccountId,
+          revokedAt: null,
+          expiresAt: { gt: now },
+          idleExpiresAt: { gt: now },
+        },
+        orderBy: [{ lastSeenAt: 'desc' }, { createdAt: 'desc' }],
+        skip: offset,
+        take: limit,
+      });
+      return {
+        limit,
+        offset,
+        items: items.map((item) =>
+          serializeManagedAuthSession(item, session.id),
+        ),
+      };
+    },
+  );
+
+  app.post(
+    '/auth/sessions/:sessionId/revoke',
+    {
+      schema: {
+        ...authSessionRevokeSchema,
+        tags: ['auth'],
+        summary: 'Revoke an active authenticated session for current user',
+        response: {
+          200: managedAuthSessionSchema,
+          401: authGatewayErrorResponseSchema,
+          404: authGatewayErrorResponseSchema,
+          429: authGatewayErrorResponseSchema,
+        },
+      },
+    },
+    async (req, reply) => {
+      if (!isJwtBffAuthMode()) {
+        return respondAuthGatewayDisabled(reply);
+      }
+      const rateLimited = await enforceAuthGatewayRateLimit(req, reply);
+      if (rateLimited) return rateLimited;
+      const currentSession = req.authSession;
+      if (!currentSession) {
+        return reply.code(401).send(
+          createApiErrorResponse('unauthorized', 'Unauthorized', {
+            category: 'auth',
+            details: { reason: 'missing_session' },
+          }),
+        );
+      }
+      const { sessionId } = (req.params || {}) as { sessionId: string };
+      const now = new Date();
+      const target = await prisma.authSession.findFirst({
+        where: {
+          id: sessionId,
+          userAccountId: currentSession.userAccountId,
+          revokedAt: null,
+          expiresAt: { gt: now },
+          idleExpiresAt: { gt: now },
+        },
+      });
+      if (!target) {
+        return reply.code(404).send(
+          createApiErrorResponse(
+            'auth_session_not_found',
+            'Auth session not found',
+            {
+              category: 'not_found',
+            },
+          ),
+        );
+      }
+      const revoked = await prisma.authSession.update({
+        where: { id: target.id },
+        data: {
+          revokedAt: new Date(),
+          revokedReason: 'user_requested',
+        },
+      });
+      await logAudit({
+        action: 'auth_session_revoked',
+        targetTable: 'AuthSession',
+        targetId: revoked.id,
+        metadata: {
+          userAccountId: revoked.userAccountId,
+          identityId: revoked.userIdentityId,
+          issuer: revoked.issuer,
+          providerSubject: revoked.providerSubject,
+          revokedBySessionId: currentSession.id,
+        },
+        ...auditContextFromRequest(req),
+      });
+      if (revoked.id === currentSession.id) {
+        reply.header('set-cookie', buildAuthSessionClearCookie());
+      }
+      return serializeManagedAuthSession(revoked, currentSession.id);
     },
   );
 

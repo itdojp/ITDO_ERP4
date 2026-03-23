@@ -59,6 +59,8 @@
   - `GET /auth/google/start`
   - `GET /auth/google/callback`
   - `GET /auth/session`
+  - `GET /auth/sessions`
+  - `POST /auth/sessions/:sessionId/revoke`
   - `POST /auth/logout`
 - OIDC 認可フローの一時状態は `AuthOidcFlow`、ERP4 セッションは `AuthSession` に保持する。
 - 認証済み API 呼び出しでは `AuthSession -> UserIdentity -> UserAccount` の順に解決し、既存 RBAC と `project_members` 解決へ接続する。
@@ -67,7 +69,7 @@
   - frontend/BFF 完全切替
   - CSRF token の明示配布
   - refresh 相当のセッション再発行ポリシー
-  - セッション一覧/強制失効の管理 UI
+  - セッション一覧/失効の UI
 
 ### 5.2 ローカル認証ユーザ
 
