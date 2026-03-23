@@ -451,7 +451,11 @@ function buildUserIdentitySelect() {
   } as const;
 }
 
-function serializeUserIdentity(identity: any) {
+type UserIdentityRecord = Prisma.UserIdentityGetPayload<{
+  select: ReturnType<typeof buildUserIdentitySelect>;
+}>;
+
+function serializeUserIdentity(identity: UserIdentityRecord) {
   return {
     identityId: identity.id,
     userAccountId: identity.userAccountId,
@@ -526,7 +530,6 @@ export async function registerAuthRoutes(app: FastifyInstance) {
           429: localCredentialErrorResponseSchema,
         },
       },
-      config: { rateLimit: localCredentialAdminRateLimit },
     },
     async (req) => {
       const query = (req.query || {}) as {
@@ -560,10 +563,7 @@ export async function registerAuthRoutes(app: FastifyInstance) {
   app.post(
     '/auth/user-identities/google-link',
     {
-      preHandler: [
-        app.rateLimit(localCredentialAdminRateLimit),
-        requireSystemAdmin,
-      ],
+      preHandler: [requireSystemAdmin],
       schema: {
         ...userIdentityGoogleLinkSchema,
         tags: ['auth'],
@@ -576,7 +576,6 @@ export async function registerAuthRoutes(app: FastifyInstance) {
           429: localCredentialErrorResponseSchema,
         },
       },
-      config: { rateLimit: localCredentialAdminRateLimit },
     },
     async (req, reply) => {
       try {
@@ -658,7 +657,7 @@ export async function registerAuthRoutes(app: FastifyInstance) {
           active: true,
           deletedAt: true,
           identities: {
-            where: { providerType: 'google_oidc', issuer },
+            where: { providerType: 'google_oidc' },
             select: { id: true },
           },
         },
@@ -690,8 +689,8 @@ export async function registerAuthRoutes(app: FastifyInstance) {
           .code(409)
           .send(
             createApiErrorResponse(
-              'google_identity_exists_for_issuer',
-              'Google identity already exists for issuer',
+              'google_identity_exists_for_account',
+              'Google identity already exists for user account',
               { category: 'conflict' },
             ),
           );
@@ -752,7 +751,7 @@ export async function registerAuthRoutes(app: FastifyInstance) {
             : [];
           const errorCode = targets.includes('providerSubject')
             ? 'google_identity_subject_exists'
-            : 'google_identity_exists_for_issuer';
+            : 'google_identity_exists_for_account';
           return reply
             .code(409)
             .send(
@@ -760,7 +759,7 @@ export async function registerAuthRoutes(app: FastifyInstance) {
                 errorCode,
                 errorCode === 'google_identity_subject_exists'
                   ? 'Google identity subject already exists'
-                  : 'Google identity already exists for issuer',
+                  : 'Google identity already exists for user account',
                 { category: 'conflict' },
               ),
             );
@@ -773,10 +772,7 @@ export async function registerAuthRoutes(app: FastifyInstance) {
   app.post(
     '/auth/user-identities/local-link',
     {
-      preHandler: [
-        app.rateLimit(localCredentialAdminRateLimit),
-        requireSystemAdmin,
-      ],
+      preHandler: [requireSystemAdmin],
       schema: {
         ...userIdentityLocalLinkSchema,
         tags: ['auth'],
@@ -789,7 +785,6 @@ export async function registerAuthRoutes(app: FastifyInstance) {
           429: localCredentialErrorResponseSchema,
         },
       },
-      config: { rateLimit: localCredentialAdminRateLimit },
     },
     async (req, reply) => {
       try {
@@ -1018,10 +1013,7 @@ export async function registerAuthRoutes(app: FastifyInstance) {
   app.patch(
     '/auth/user-identities/:identityId',
     {
-      preHandler: [
-        app.rateLimit(localCredentialAdminRateLimit),
-        requireSystemAdmin,
-      ],
+      preHandler: [requireSystemAdmin],
       schema: {
         ...userIdentityPatchSchema,
         tags: ['auth'],
@@ -1034,7 +1026,6 @@ export async function registerAuthRoutes(app: FastifyInstance) {
           429: localCredentialErrorResponseSchema,
         },
       },
-      config: { rateLimit: localCredentialAdminRateLimit },
     },
     async (req, reply) => {
       try {
@@ -1101,76 +1092,121 @@ export async function registerAuthRoutes(app: FastifyInstance) {
         );
       }
 
-      const current = await prisma.userIdentity.findUnique({
-        where: { id: identityId },
-        select: buildUserIdentitySelect(),
-      });
-      if (!current) {
-        return reply.code(404).send(
-          createApiErrorResponse(
-            'user_identity_not_found',
-            'User identity not found',
-            {
-              category: 'not_found',
-            },
-          ),
-        );
-      }
+      let current: UserIdentityRecord | null = null;
+      let updated: UserIdentityRecord | null = null;
+      let changedFields: string[] = [];
 
-      const updateData: Prisma.UserIdentityUpdateInput = {
-        updatedBy: actorId,
-      };
-      const changedFields: string[] = [];
-      if (body.status && body.status !== current.status) {
-        updateData.status = body.status;
-        changedFields.push('status');
-      }
-      if (effectiveUntil.provided) {
-        const nextIso = effectiveUntil.value?.toISOString() ?? null;
-        const currentIso = current.effectiveUntil?.toISOString() ?? null;
-        if (nextIso !== currentIso) {
-          updateData.effectiveUntil = effectiveUntil.value;
-          changedFields.push('effectiveUntil');
-        }
-      }
-      if (rollbackWindowUntil.provided) {
-        const nextIso = rollbackWindowUntil.value?.toISOString() ?? null;
-        const currentIso = current.rollbackWindowUntil?.toISOString() ?? null;
-        if (nextIso !== currentIso) {
-          updateData.rollbackWindowUntil = rollbackWindowUntil.value;
-          changedFields.push('rollbackWindowUntil');
-        }
-      }
-      if (note !== undefined && note !== (current.note ?? null)) {
-        updateData.note = note;
-        changedFields.push('note');
-      }
-      if (!changedFields.length) {
-        return serializeUserIdentity(current);
-      }
+      try {
+        const transactionResult = await prisma.$transaction(
+          async (tx) => {
+            const currentIdentity = await tx.userIdentity.findUnique({
+              where: { id: identityId },
+              select: buildUserIdentitySelect(),
+            });
+            if (!currentIdentity) {
+              return {
+                kind: 'not_found' as const,
+              };
+            }
 
-      const resultingStatus =
-        (updateData.status as string | undefined) ?? current.status;
-      const resultingEffectiveUntil = effectiveUntil.provided
-        ? (effectiveUntil.value ?? null)
-        : current.effectiveUntil;
-      const willRemainUsable =
-        resultingStatus === 'active' &&
-        (!resultingEffectiveUntil ||
-          resultingEffectiveUntil.getTime() > Date.now());
-      if (!willRemainUsable && isIdentityEffectivelyActive(current)) {
-        const alternativeActiveCount = await prisma.userIdentity.count({
-          where: {
-            userAccountId: current.userAccountId,
-            id: { not: current.id },
-            status: 'active',
-            OR: [
-              { effectiveUntil: null },
-              { effectiveUntil: { gt: new Date() } },
-            ],
+            const updateData: Prisma.UserIdentityUpdateInput = {
+              updatedBy: actorId,
+            };
+            const transactionChangedFields: string[] = [];
+            if (body.status && body.status !== currentIdentity.status) {
+              updateData.status = body.status;
+              transactionChangedFields.push('status');
+            }
+            if (effectiveUntil.provided) {
+              const nextIso = effectiveUntil.value?.toISOString() ?? null;
+              const currentIso =
+                currentIdentity.effectiveUntil?.toISOString() ?? null;
+              if (nextIso !== currentIso) {
+                updateData.effectiveUntil = effectiveUntil.value;
+                transactionChangedFields.push('effectiveUntil');
+              }
+            }
+            if (rollbackWindowUntil.provided) {
+              const nextIso = rollbackWindowUntil.value?.toISOString() ?? null;
+              const currentIso =
+                currentIdentity.rollbackWindowUntil?.toISOString() ?? null;
+              if (nextIso !== currentIso) {
+                updateData.rollbackWindowUntil = rollbackWindowUntil.value;
+                transactionChangedFields.push('rollbackWindowUntil');
+              }
+            }
+            if (note !== undefined && note !== (currentIdentity.note ?? null)) {
+              updateData.note = note;
+              transactionChangedFields.push('note');
+            }
+            if (!transactionChangedFields.length) {
+              return {
+                kind: 'noop' as const,
+                currentIdentity,
+              };
+            }
+
+            const resultingStatus =
+              (updateData.status as string | undefined) ??
+              currentIdentity.status;
+            const resultingEffectiveUntil = effectiveUntil.provided
+              ? (effectiveUntil.value ?? null)
+              : currentIdentity.effectiveUntil;
+            const willRemainUsable =
+              resultingStatus === 'active' &&
+              (!resultingEffectiveUntil ||
+                resultingEffectiveUntil.getTime() > Date.now());
+            if (
+              !willRemainUsable &&
+              isIdentityEffectivelyActive(currentIdentity)
+            ) {
+              const alternativeActiveCount = await tx.userIdentity.count({
+                where: {
+                  userAccountId: currentIdentity.userAccountId,
+                  id: { not: currentIdentity.id },
+                  status: 'active',
+                  OR: [
+                    { effectiveUntil: null },
+                    { effectiveUntil: { gt: new Date() } },
+                  ],
+                },
+              });
+              if (alternativeActiveCount === 0) {
+                return {
+                  kind: 'last_active_conflict' as const,
+                };
+              }
+            }
+
+            const updatedIdentity = await tx.userIdentity.update({
+              where: { id: identityId },
+              data: updateData,
+              select: buildUserIdentitySelect(),
+            });
+            return {
+              kind: 'updated' as const,
+              currentIdentity,
+              updatedIdentity,
+              transactionChangedFields,
+            };
           },
-        });
-        if (alternativeActiveCount === 0) {
+          {
+            isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+          },
+        );
+
+        if (transactionResult.kind === 'not_found') {
+          return reply.code(404).send(
+            createApiErrorResponse(
+              'user_identity_not_found',
+              'User identity not found',
+              {
+                category: 'not_found',
+              },
+            ),
+          );
+        }
+        if (transactionResult.kind === 'last_active_conflict') {
           return reply
             .code(409)
             .send(
@@ -1181,13 +1217,34 @@ export async function registerAuthRoutes(app: FastifyInstance) {
               ),
             );
         }
+        if (transactionResult.kind === 'noop') {
+          return serializeUserIdentity(transactionResult.currentIdentity);
+        }
+
+        current = transactionResult.currentIdentity;
+        updated = transactionResult.updatedIdentity;
+        changedFields = transactionResult.transactionChangedFields;
+      } catch (err) {
+        if (
+          err instanceof Prisma.PrismaClientKnownRequestError &&
+          err.code === 'P2034'
+        ) {
+          return reply
+            .code(409)
+            .send(
+              createApiErrorResponse(
+                'identity_update_conflict',
+                'Concurrent identity update detected',
+                { category: 'conflict' },
+              ),
+            );
+        }
+        throw err;
       }
 
-      const updated = await prisma.userIdentity.update({
-        where: { id: identityId },
-        data: updateData,
-        select: buildUserIdentitySelect(),
-      });
+      if (!current || !updated) {
+        throw new Error('identity update transaction returned no result');
+      }
       await logAudit({
         action: 'user_identity_updated',
         targetTable: 'UserIdentity',
@@ -1228,7 +1285,6 @@ export async function registerAuthRoutes(app: FastifyInstance) {
           429: localCredentialErrorResponseSchema,
         },
       },
-      config: { rateLimit: localCredentialAdminRateLimit },
     },
     async (req) => {
       const query = (req.query || {}) as {
@@ -1264,10 +1320,7 @@ export async function registerAuthRoutes(app: FastifyInstance) {
   app.post(
     '/auth/local-credentials',
     {
-      preHandler: [
-        app.rateLimit(localCredentialAdminRateLimit),
-        requireSystemAdmin,
-      ],
+      preHandler: [requireSystemAdmin],
       schema: {
         ...localCredentialCreateSchema,
         tags: ['auth'],
@@ -1280,7 +1333,6 @@ export async function registerAuthRoutes(app: FastifyInstance) {
           429: localCredentialErrorResponseSchema,
         },
       },
-      config: { rateLimit: localCredentialAdminRateLimit },
     },
     async (req, reply) => {
       try {
@@ -1476,10 +1528,7 @@ export async function registerAuthRoutes(app: FastifyInstance) {
   app.patch(
     '/auth/local-credentials/:identityId',
     {
-      preHandler: [
-        app.rateLimit(localCredentialAdminRateLimit),
-        requireSystemAdmin,
-      ],
+      preHandler: [requireSystemAdmin],
       schema: {
         ...localCredentialPatchSchema,
         tags: ['auth'],
@@ -1492,7 +1541,6 @@ export async function registerAuthRoutes(app: FastifyInstance) {
           429: localCredentialErrorResponseSchema,
         },
       },
-      config: { rateLimit: localCredentialAdminRateLimit },
     },
     async (req, reply) => {
       try {

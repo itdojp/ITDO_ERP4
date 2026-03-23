@@ -2,10 +2,15 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import argon2 from 'argon2';
 
-import { buildServer } from '../dist/server.js';
-import { prisma } from '../dist/services/db.js';
-
 const MIN_DATABASE_URL = 'postgresql://user:pass@localhost:5432/postgres';
+process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
+
+const { buildServer } = await import('../dist/server.js');
+const { prisma } = await import('../dist/services/db.js');
+
+function futureIso(daysAhead) {
+  return new Date(Date.now() + daysAhead * 24 * 60 * 60 * 1000).toISOString();
+}
 
 function withPrismaStubs(stubs, fn) {
   const restores = [];
@@ -19,6 +24,18 @@ function withPrismaStubs(stubs, fn) {
     target[method] = stub;
     restores.push(() => {
       target[method] = original;
+    });
+  }
+  if (!Object.prototype.hasOwnProperty.call(stubs, '$transaction')) {
+    const originalTransaction = prisma.$transaction;
+    prisma.$transaction = async (arg, ...rest) => {
+      if (typeof arg === 'function') {
+        return arg(prisma, ...rest);
+      }
+      return originalTransaction.call(prisma, arg, ...rest);
+    };
+    restores.push(() => {
+      prisma.$transaction = originalTransaction;
     });
   }
   return Promise.resolve()
@@ -55,6 +72,7 @@ test('GET /auth/user-identities requires system_admin role', async () => {
 test('GET /auth/user-identities lists identities with filters', async () => {
   process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
   process.env.AUTH_MODE = 'header';
+  const rollbackWindowUntil = futureIso(7);
 
   let capturedFindMany = null;
   await withPrismaStubs(
@@ -73,7 +91,7 @@ test('GET /auth/user-identities lists identities with filters', async () => {
             lastAuthenticatedAt: new Date('2026-03-23T01:00:00.000Z'),
             linkedAt: new Date('2026-03-23T00:00:00.000Z'),
             effectiveUntil: null,
-            rollbackWindowUntil: new Date('2026-03-30T00:00:00.000Z'),
+            rollbackWindowUntil: new Date(rollbackWindowUntil),
             note: 'migration window',
             createdAt: new Date('2026-03-23T00:00:00.000Z'),
             updatedAt: new Date('2026-03-23T00:00:00.000Z'),
@@ -106,10 +124,7 @@ test('GET /auth/user-identities lists identities with filters', async () => {
         assert.equal(body.offset, 5);
         assert.equal(body.items.length, 1);
         assert.equal(body.items[0].providerType, 'google_oidc');
-        assert.equal(
-          body.items[0].rollbackWindowUntil,
-          '2026-03-30T00:00:00.000Z',
-        );
+        assert.equal(body.items[0].rollbackWindowUntil, rollbackWindowUntil);
       } finally {
         await server.close();
       }
@@ -126,6 +141,8 @@ test('GET /auth/user-identities lists identities with filters', async () => {
 test('POST /auth/user-identities/google-link creates Google identity and writes audit log', async () => {
   process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
   process.env.AUTH_MODE = 'header';
+  const effectiveUntil = futureIso(8);
+  const rollbackWindowUntil = futureIso(2);
 
   let capturedCreate = null;
   let capturedAudit = null;
@@ -184,8 +201,8 @@ test('POST /auth/user-identities/google-link creates Google identity and writes 
             issuer: 'https://accounts.google.com',
             providerSubject: 'google-sub-001',
             emailSnapshot: 'user@example.com',
-            effectiveUntil: '2026-03-31T00:00:00.000Z',
-            rollbackWindowUntil: '2026-03-25T00:00:00.000Z',
+            effectiveUntil,
+            rollbackWindowUntil,
             note: 'approved migration',
             ticketId: 'AUTH-MIG-001',
             reasonCode: 'google_link',
@@ -208,9 +225,51 @@ test('POST /auth/user-identities/google-link creates Google identity and writes 
   assert.equal(capturedAudit?.data?.metadata?.ticketId, 'AUTH-MIG-001');
 });
 
+test('POST /auth/user-identities/google-link rejects a second Google identity regardless of issuer', async () => {
+  process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
+  process.env.AUTH_MODE = 'header';
+
+  await withPrismaStubs(
+    {
+      'userAccount.findUnique': async () => ({
+        id: 'user-001',
+        active: true,
+        deletedAt: null,
+        identities: [{ id: 'identity-google-legacy' }],
+      }),
+    },
+    async () => {
+      const server = await buildServer({ logger: false });
+      try {
+        const res = await server.inject({
+          method: 'POST',
+          url: '/auth/user-identities/google-link',
+          headers: {
+            'x-user-id': 'sys-admin',
+            'x-roles': 'system_admin',
+          },
+          payload: {
+            userAccountId: 'user-001',
+            issuer: 'https://issuer.example.com',
+            providerSubject: 'google-sub-002',
+            ticketId: 'AUTH-MIG-001A',
+            reasonCode: 'google_link',
+          },
+        });
+        assert.equal(res.statusCode, 409, res.body);
+        const body = JSON.parse(res.body);
+        assert.equal(body.error.code, 'google_identity_exists_for_account');
+      } finally {
+        await server.close();
+      }
+    },
+  );
+});
+
 test('POST /auth/user-identities/local-link creates local identity with bootstrap password rotation', async () => {
   process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
   process.env.AUTH_MODE = 'header';
+  const rollbackWindowUntil = futureIso(2);
 
   let capturedCreate = null;
   await withPrismaStubs(
@@ -278,7 +337,7 @@ test('POST /auth/user-identities/local-link creates local identity with bootstra
             userAccountId: 'user-001',
             loginId: 'Local.User@example.com ',
             password: 'LocalPassword123',
-            rollbackWindowUntil: '2026-03-25T00:00:00.000Z',
+            rollbackWindowUntil,
             ticketId: 'AUTH-MIG-002',
             reasonCode: 'local_link',
           },
@@ -312,6 +371,8 @@ test('POST /auth/user-identities/local-link creates local identity with bootstra
 test('PATCH /auth/user-identities/:identityId updates status and windows', async () => {
   process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
   process.env.AUTH_MODE = 'header';
+  const effectiveUntil = futureIso(1);
+  const rollbackWindowUntil = futureIso(2);
 
   let capturedUpdate = null;
   let capturedAudit = null;
@@ -386,8 +447,8 @@ test('PATCH /auth/user-identities/:identityId updates status and windows', async
           },
           payload: {
             status: 'disabled',
-            effectiveUntil: '2026-03-24T00:00:00.000Z',
-            rollbackWindowUntil: '2026-03-25T00:00:00.000Z',
+            effectiveUntil,
+            rollbackWindowUntil,
             note: 'cutover complete',
             ticketId: 'AUTH-MIG-003',
             reasonCode: 'google_disable',

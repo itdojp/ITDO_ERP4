@@ -2160,7 +2160,7 @@ model UserIdentity {
   localCredential     LocalCredential?
 
   @@unique([providerType, issuer, providerSubject])
-  @@unique([userAccountId, providerType, issuer])
+  @@unique([userAccountId, providerType])
   @@index([userAccountId, providerType, status])
   @@index([providerType, issuer, providerSubject, status])
 }
@@ -2174,7 +2174,7 @@ model LocalCredential {
   passwordAlgo      String       @default("argon2id")
   mfaRequired       Boolean      @default(true)
   mfaSecretRef      String?
-  mustRotatePassword Boolean     @default(true)
+  mustRotatePassword Boolean     @default(false)
   failedAttempts    Int          @default(0)
   lockedUntil       DateTime?
   passwordChangedAt DateTime?

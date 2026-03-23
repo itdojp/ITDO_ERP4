@@ -4,4 +4,4 @@ ALTER TABLE "UserIdentity"
   ADD COLUMN "note" TEXT;
 
 ALTER TABLE "LocalCredential"
-  ADD COLUMN "mustRotatePassword" BOOLEAN NOT NULL DEFAULT true;
+  ADD COLUMN "mustRotatePassword" BOOLEAN NOT NULL DEFAULT false;
