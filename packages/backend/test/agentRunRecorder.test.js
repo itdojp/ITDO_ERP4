@@ -35,6 +35,7 @@ function runRecorderCheck(options = {}) {
     const { prisma } = await import('./dist/services/db.js');
     const capture = {};
 
+    prisma.userIdentity.findFirst = async () => null;
     prisma.userAccount.findUnique = async () => null;
     prisma.projectMember.findMany = async () => [];
     if (scenario === 'readSuccess') {

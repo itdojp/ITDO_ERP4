@@ -25,6 +25,10 @@ export type DelegatedAuthContext = {
   audience?: string[];
   expiresAt?: number;
   delegated: boolean;
+  providerType?: 'google_oidc' | 'local_password' | 'header';
+  issuer?: string;
+  userAccountId?: string;
+  identityId?: string;
 };
 
 export type DelegatedScopeDecision = {
@@ -239,28 +243,33 @@ async function resolveProjectIdsFromDb(userId: string) {
   return members.map((member) => member.projectId);
 }
 
-async function resolveUserGroupsFromDb(userId: string) {
-  const select = {
-    active: true,
-    deletedAt: true,
-    organization: true,
-    memberships: {
-      include: {
-        group: { select: { id: true, displayName: true, active: true } },
-      },
-    },
-  } as const;
+type UserDbContext =
+  | null
+  | { blocked: true }
+  | {
+      blocked: false;
+      userAccountId: string;
+      identityId?: string;
+      legacyUserId: string;
+      orgId?: string;
+      groupIds: string[];
+      groupAccountIds: string[];
+    };
 
-  const user =
-    (await prisma.userAccount.findUnique({
-      where: { userName: userId },
-      select,
-    })) ||
-    (await prisma.userAccount.findUnique({
-      where: { externalId: userId },
-      select,
-    }));
-  if (!user) return null;
+function mapResolvedUserContext(
+  user: {
+    id?: string;
+    userName?: string;
+    externalId?: string | null;
+    active: boolean;
+    deletedAt: Date | null;
+    organization: string | null;
+    memberships: Array<{
+      group: { id: string; displayName: string; active: boolean };
+    }>;
+  },
+  options: { userAccountId: string; identityId?: string },
+): UserDbContext {
   if (!user.active || user.deletedAt) {
     return { blocked: true as const };
   }
@@ -274,23 +283,80 @@ async function resolveUserGroupsFromDb(userId: string) {
     .map((membership) => membership.group.displayName)
     .map((value) => value.trim())
     .filter(Boolean);
+  const legacyUserId = (user.externalId ?? user.userName ?? '').trim();
+  if (!legacyUserId) {
+    return { blocked: true as const };
+  }
   return {
     blocked: false as const,
+    userAccountId: options.userAccountId,
+    identityId: options.identityId,
+    legacyUserId,
     orgId: user.organization ?? undefined,
     groupIds,
     groupAccountIds,
   };
 }
 
-type UserDbContext =
-  | null
-  | { blocked: true }
-  | {
-      blocked: false;
-      orgId?: string;
-      groupIds: string[];
-      groupAccountIds: string[];
-    };
+async function resolveUserGroupsFromDb(
+  user: UserContext,
+): Promise<UserDbContext> {
+  const select = {
+    id: true,
+    active: true,
+    deletedAt: true,
+    userName: true,
+    externalId: true,
+    organization: true,
+    memberships: {
+      include: {
+        group: { select: { id: true, displayName: true, active: true } },
+      },
+    },
+  } as const;
+
+  if (
+    user.auth?.providerType &&
+    user.auth.providerType !== 'header' &&
+    user.auth.issuer
+  ) {
+    const identity = await prisma.userIdentity.findFirst({
+      where: {
+        providerType: user.auth.providerType,
+        issuer: user.auth.issuer,
+        providerSubject: user.auth.principalUserId,
+      },
+      select: {
+        id: true,
+        status: true,
+        userAccountId: true,
+        userAccount: { select },
+      },
+    });
+    if (identity) {
+      if (identity.status !== 'active') {
+        return { blocked: true as const };
+      }
+      if (identity.userAccount) {
+        return mapResolvedUserContext(identity.userAccount, {
+          userAccountId: identity.userAccountId,
+          identityId: identity.id,
+        });
+      }
+    }
+  }
+  const userAccount =
+    (await prisma.userAccount.findUnique({
+      where: { userName: user.userId },
+      select,
+    })) ||
+    (await prisma.userAccount.findUnique({
+      where: { externalId: user.userId },
+      select,
+    }));
+  if (!userAccount) return null;
+  return mapResolvedUserContext(userAccount, { userAccountId: userAccount.id });
+}
 
 type CachedUserDbContext = {
   expiresAt: number;
@@ -308,18 +374,27 @@ function resolveDbCacheTtlMs() {
   );
 }
 
-async function resolveUserDbContext(userId: string): Promise<UserDbContext> {
+function buildUserDbContextCacheKey(user: UserContext) {
+  return [
+    user.auth?.providerType ?? 'legacy',
+    user.auth?.issuer ?? '',
+    user.userId,
+  ].join('\u0001');
+}
+
+async function resolveUserDbContext(user: UserContext): Promise<UserDbContext> {
   const ttlMs = resolveDbCacheTtlMs();
+  const cacheKey = buildUserDbContextCacheKey(user);
   if (ttlMs <= 0) {
-    return resolveUserGroupsFromDb(userId);
+    return resolveUserGroupsFromDb(user);
   }
-  const cached = userDbContextCache.get(userId);
+  const cached = userDbContextCache.get(cacheKey);
   const now = Date.now();
   if (cached && cached.expiresAt > now) {
     return cached.value;
   }
-  const value = await resolveUserGroupsFromDb(userId);
-  userDbContextCache.set(userId, { expiresAt: now + ttlMs, value });
+  const value = await resolveUserGroupsFromDb(user);
+  userDbContextCache.set(cacheKey, { expiresAt: now + ttlMs, value });
   return value;
 }
 
@@ -349,7 +424,7 @@ async function validateAndEnrichUserContext(req: any, reply: any) {
   const user = req.user;
   if (!user) return true;
   try {
-    const resolved = await resolveUserDbContext(user.userId);
+    const resolved = await resolveUserDbContext(user);
     if (!resolved) return true;
     if (resolved.blocked) {
       respondUnauthorized(req, reply, 'user_inactive');
@@ -369,6 +444,15 @@ async function validateAndEnrichUserContext(req: any, reply: any) {
     user.roles = mergedRoles;
     if (!user.orgId && resolved.orgId) {
       user.orgId = resolved.orgId;
+    }
+    if (user.auth && resolved.userAccountId && !user.auth.userAccountId) {
+      user.auth.userAccountId = resolved.userAccountId;
+    }
+    if (user.auth && resolved.identityId && !user.auth.identityId) {
+      user.auth.identityId = resolved.identityId;
+    }
+    if (resolved.legacyUserId && user.userId !== resolved.legacyUserId) {
+      user.userId = resolved.legacyUserId;
     }
   } catch (err) {
     if (req.log && typeof req.log.warn === 'function') {
@@ -419,6 +503,7 @@ function buildUserContext(payload: JWTPayload): UserContext | null {
   const audience = normalizeAudience(resolveClaim(payload, 'aud'));
   const expiresAt = normalizeExpiresAt(resolveClaim(payload, 'exp'));
   const delegated = actorUserId !== principalUserId || scopes.length > 0;
+  const tokenIssuer = resolveClaim(payload, 'iss');
   const roles = expandRoles(
     normalizeList(resolveClaim(payload, JWT_ROLE_CLAIM)),
   );
@@ -444,6 +529,11 @@ function buildUserContext(payload: JWTPayload): UserContext | null {
       audience: audience.length ? audience : undefined,
       expiresAt,
       delegated,
+      providerType: 'google_oidc',
+      issuer:
+        typeof tokenIssuer === 'string' && tokenIssuer.trim()
+          ? tokenIssuer.trim()
+          : undefined,
     },
   };
 }
@@ -539,6 +629,7 @@ function applyHeaderAuth(req: any) {
       actorUserId: userId,
       scopes: [],
       delegated: false,
+      providerType: 'header',
     },
   };
 }
