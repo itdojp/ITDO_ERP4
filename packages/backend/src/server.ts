@@ -403,10 +403,6 @@ export async function buildServer(
     },
   });
 
-  await server.register(authPlugin);
-  await server.register(agentRunPlugin);
-  await registerOpenApiIfEnabled(server);
-
   const rateLimitEnabled =
     process.env.RATE_LIMIT_ENABLED === '1' ||
     process.env.NODE_ENV === 'production';
@@ -454,6 +450,10 @@ export async function buildServer(
     // when the real plugin is disabled.
     server.decorate('rateLimit', () => async () => {});
   }
+
+  await server.register(authPlugin);
+  await server.register(agentRunPlugin);
+  await registerOpenApiIfEnabled(server);
 
   const chatAttachmentMaxBytes = Number(
     process.env.CHAT_ATTACHMENT_MAX_BYTES || 10 * 1024 * 1024,
