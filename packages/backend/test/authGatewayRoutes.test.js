@@ -143,7 +143,7 @@ test('GET /auth/google/start redirects to Google and sets auth flow cookie', asy
   });
 });
 
-test('GET /auth/google/callback returns invalid flow for mismatched state or expired cookie', async () => {
+test('GET /auth/google/callback returns invalid flow for mismatched state', async () => {
   await withEnv(baseBffEnv(), async () => {
     let auditRecord = null;
     await withPrismaStubs(

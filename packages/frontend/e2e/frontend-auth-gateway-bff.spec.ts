@@ -213,6 +213,7 @@ test('frontend auth gateway bff local login shows MFA challenge required guidanc
   page,
 }) => {
   test.skip(!isBffMode, 'jwt_bff build only');
+  ensureEvidenceDir();
 
   await page.addInitScript(() => {
     window.localStorage.removeItem('erp4_auth');
