@@ -113,6 +113,8 @@ VITE_AUTH_MODE=jwt_bff VITE_API_BASE=https://api.example.com npm run build --pre
 - `GET /auth/session` が 200 を返し、`UserIdentity -> UserAccount` 解決ができる
 - `GET /auth/sessions` が 200 を返し、現行ユーザの active session 一覧を返す
 - `POST /auth/sessions/:sessionId/revoke` で対象 session を失効できる
+- frontend の `現在のユーザー` カードで `認証セッション` 一覧を表示できる
+- frontend から `このセッションを失効` を実行すると一覧が再読込される
 - `POST /auth/logout` で Cookie が破棄される
 - `AUTH_MODE=jwt_bff` 以外では BFF route が `404` を返す
 

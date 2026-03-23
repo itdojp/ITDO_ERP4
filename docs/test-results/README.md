@@ -28,6 +28,8 @@
 
 ### 2026-03-23
 
+- フロントE2E(Auth Gateway CurrentUser/認証セッション UI エビデンス r2): docs/test-results/2026-03-23-frontend-e2e-r2.md
+- 証跡: docs/test-results/2026-03-23-frontend-e2e-r2/
 - フロントE2E(管理設定 認証方式移行 UI エビデンス r1): docs/test-results/2026-03-23-frontend-e2e-r1.md
 - 証跡: docs/test-results/2026-03-23-frontend-e2e-r1/
 

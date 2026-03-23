@@ -40,7 +40,6 @@
 - Phase 2 実装
   - frontend の Bearer 直送経路廃止
   - BFF 向け CSRF token 配布
-  - セッション一覧/失効 UI
   - 監査/運用ガイドの本番切替手順
 - 完了条件
   - ブラウザ本番経路が BFF 経由のみで成立
