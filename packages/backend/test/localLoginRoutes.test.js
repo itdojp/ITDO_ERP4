@@ -9,6 +9,7 @@ const LOCAL_CSRF_HEADERS = {
 };
 let backendModulesCacheBust = `${Date.now()}-bootstrap`;
 let backendModulesPromise = null;
+let injectIpCounter = 0;
 
 function resetBackendModules() {
   backendModulesCacheBust = `${Date.now()}-${Math.random()
@@ -36,6 +37,11 @@ function withEnv(overrides, fn) {
         else process.env[key] = value;
       }
     });
+}
+
+function nextRemoteAddress() {
+  injectIpCounter += 1;
+  return `198.51.100.${injectIpCounter}`;
 }
 
 async function loadBackendModules() {
@@ -184,6 +190,7 @@ test('POST /auth/local/login creates session for local credential without MFA', 
         const server = await buildServer({ logger: false });
         try {
           const res = await server.inject({
+            remoteAddress: nextRemoteAddress(),
             method: 'POST',
             url: '/auth/local/login',
             headers: {
@@ -227,6 +234,7 @@ test('POST /auth/local/login returns invalid_csrf_token when csrf header mismatc
         const server = await buildServer({ logger: false });
         try {
           const res = await server.inject({
+            remoteAddress: nextRemoteAddress(),
             method: 'POST',
             url: '/auth/local/login',
             headers: {
@@ -247,6 +255,60 @@ test('POST /auth/local/login returns invalid_csrf_token when csrf header mismatc
       },
     );
     assert.equal(lookedUpIdentity, false);
+  });
+});
+
+test('POST /auth/local/login returns locked when local credential is already locked', async () => {
+  await withEnv(baseBffEnv(), async () => {
+    const identity = await buildLocalIdentity({
+      localCredential: {
+        lockedUntil: new Date('2099-03-23T00:15:00.000Z'),
+      },
+    });
+    let createdSession = false;
+    const auditReasonCodes = [];
+
+    await withPrismaStubs(
+      {
+        'userIdentity.findFirst': async () => identity,
+        'authSession.create': async () => {
+          createdSession = true;
+          throw new Error('authSession.create should not be called');
+        },
+        'auditLog.create': async ({ data }) => {
+          auditReasonCodes.push(data.reasonCode);
+          return { id: `audit-${auditReasonCodes.length}` };
+        },
+      },
+      async () => {
+        const { buildServer } = await loadBackendModules();
+        const server = await buildServer({ logger: false });
+        try {
+          const res = await server.inject({
+            remoteAddress: nextRemoteAddress(),
+            method: 'POST',
+            url: '/auth/local/login',
+            headers: LOCAL_CSRF_HEADERS,
+            payload: {
+              loginId: 'local.user@example.com',
+              password: 'LocalPassword123',
+            },
+          });
+          assert.equal(res.statusCode, 423, res.body);
+          const body = JSON.parse(res.body);
+          assert.equal(body.error.code, 'local_credential_locked');
+          assert.equal(
+            body.error.details?.lockedUntil,
+            '2099-03-23T00:15:00.000Z',
+          );
+        } finally {
+          await server.close();
+        }
+      },
+    );
+
+    assert.equal(createdSession, false);
+    assert.ok(auditReasonCodes.includes('credential_locked'));
   });
 });
 
@@ -276,6 +338,7 @@ test('POST /auth/local/login requires bootstrap password rotation before session
         const server = await buildServer({ logger: false });
         try {
           const res = await server.inject({
+            remoteAddress: nextRemoteAddress(),
             method: 'POST',
             url: '/auth/local/login',
             headers: LOCAL_CSRF_HEADERS,
@@ -334,6 +397,7 @@ test('POST /auth/local/login increments failedAttempts and locks local credentia
         const server = await buildServer({ logger: false });
         try {
           const res = await server.inject({
+            remoteAddress: nextRemoteAddress(),
             method: 'POST',
             url: '/auth/local/login',
             headers: LOCAL_CSRF_HEADERS,
@@ -363,6 +427,7 @@ test('POST /auth/local/login returns local login validation error for invalid pa
       const server = await buildServer({ logger: false });
       try {
         const res = await server.inject({
+          remoteAddress: nextRemoteAddress(),
           method: 'POST',
           url: '/auth/local/login',
           headers: LOCAL_CSRF_HEADERS,
@@ -403,6 +468,7 @@ test('POST /auth/local/login blocks when MFA setup is still required', async () 
         const server = await buildServer({ logger: false });
         try {
           const res = await server.inject({
+            remoteAddress: nextRemoteAddress(),
             method: 'POST',
             url: '/auth/local/login',
             headers: LOCAL_CSRF_HEADERS,
@@ -444,6 +510,7 @@ test('POST /auth/local/login treats password verification errors as auth failure
         const server = await buildServer({ logger: false });
         try {
           const res = await server.inject({
+            remoteAddress: nextRemoteAddress(),
             method: 'POST',
             url: '/auth/local/login',
             headers: LOCAL_CSRF_HEADERS,
@@ -497,6 +564,7 @@ test('POST /auth/local/password/rotate clears bootstrap flag and updates passwor
         const server = await buildServer({ logger: false });
         try {
           const res = await server.inject({
+            remoteAddress: nextRemoteAddress(),
             method: 'POST',
             url: '/auth/local/password/rotate',
             headers: LOCAL_CSRF_HEADERS,
@@ -528,6 +596,46 @@ test('POST /auth/local/password/rotate clears bootstrap flag and updates passwor
   });
 });
 
+test('POST /auth/local/password/rotate returns invalid_csrf_token when csrf header mismatches cookie', async () => {
+  await withEnv(baseBffEnv(), async () => {
+    let lookedUpIdentity = false;
+    await withPrismaStubs(
+      {
+        'userIdentity.findFirst': async () => {
+          lookedUpIdentity = true;
+          return null;
+        },
+      },
+      async () => {
+        const { buildServer } = await loadBackendModules();
+        const server = await buildServer({ logger: false });
+        try {
+          const res = await server.inject({
+            remoteAddress: nextRemoteAddress(),
+            method: 'POST',
+            url: '/auth/local/password/rotate',
+            headers: {
+              cookie: 'erp4_csrf=csrf-token-001',
+              'x-csrf-token': 'csrf-token-002',
+            },
+            payload: {
+              loginId: 'local.user@example.com',
+              currentPassword: 'LocalPassword123',
+              newPassword: 'NewLocalPassword123',
+            },
+          });
+          assert.equal(res.statusCode, 403, res.body);
+          const body = JSON.parse(res.body);
+          assert.equal(body.error.code, 'invalid_csrf_token');
+        } finally {
+          await server.close();
+        }
+      },
+    );
+    assert.equal(lookedUpIdentity, false);
+  });
+});
+
 test('POST /auth/local/password/rotate returns conflict when rotation is not required', async () => {
   await withEnv(baseBffEnv(), async () => {
     const identity = await buildLocalIdentity({
@@ -552,6 +660,7 @@ test('POST /auth/local/password/rotate returns conflict when rotation is not req
         const server = await buildServer({ logger: false });
         try {
           const res = await server.inject({
+            remoteAddress: nextRemoteAddress(),
             method: 'POST',
             url: '/auth/local/password/rotate',
             headers: LOCAL_CSRF_HEADERS,
@@ -575,6 +684,119 @@ test('POST /auth/local/password/rotate returns conflict when rotation is not req
   });
 });
 
+test('POST /auth/local/password/rotate increments failedAttempts and locks credential when current password is wrong', async () => {
+  await withEnv(baseBffEnv(), async () => {
+    const identity = await buildLocalIdentity({
+      localCredential: {
+        mustRotatePassword: true,
+        failedAttempts: 4,
+      },
+    });
+    const updates = [];
+    let failedAttempts = 4;
+    let lockedUntil = null;
+
+    await withPrismaStubs(
+      {
+        'userIdentity.findFirst': async () => identity,
+        'localCredential.update': async ({ data }) => {
+          updates.push(data);
+          if (data.failedAttempts?.increment) {
+            failedAttempts += data.failedAttempts.increment;
+          } else if (typeof data.failedAttempts === 'number') {
+            failedAttempts = data.failedAttempts;
+          }
+          if (data.lockedUntil !== undefined) {
+            lockedUntil = data.lockedUntil;
+          }
+          return {
+            id: identity.localCredential.id,
+            failedAttempts,
+            lockedUntil,
+          };
+        },
+        'auditLog.create': async () => ({ id: 'audit-001' }),
+      },
+      async () => {
+        const { buildServer } = await loadBackendModules();
+        const server = await buildServer({ logger: false });
+        try {
+          const res = await server.inject({
+            remoteAddress: nextRemoteAddress(),
+            method: 'POST',
+            url: '/auth/local/password/rotate',
+            headers: LOCAL_CSRF_HEADERS,
+            payload: {
+              loginId: 'local.user@example.com',
+              currentPassword: 'WrongPassword123',
+              newPassword: 'NewLocalPassword123',
+            },
+          });
+          assert.equal(res.statusCode, 401, res.body);
+          const body = JSON.parse(res.body);
+          assert.equal(body.error.code, 'local_login_failed');
+        } finally {
+          await server.close();
+        }
+      },
+    );
+
+    assert.equal(updates[0]?.failedAttempts?.increment, 1);
+    assert.ok(updates[1]?.lockedUntil instanceof Date);
+  });
+});
+
+test('POST /auth/local/password/rotate rejects reusing the current password', async () => {
+  await withEnv(baseBffEnv(), async () => {
+    const identity = await buildLocalIdentity({
+      localCredential: {
+        mustRotatePassword: true,
+      },
+    });
+    const updates = [];
+
+    await withPrismaStubs(
+      {
+        'userIdentity.findFirst': async () => identity,
+        'localCredential.update': async ({ data }) => {
+          updates.push(data);
+          return { id: identity.localCredential.id };
+        },
+        'auditLog.create': async () => ({ id: 'audit-001' }),
+      },
+      async () => {
+        const { buildServer } = await loadBackendModules();
+        const server = await buildServer({ logger: false });
+        try {
+          const res = await server.inject({
+            remoteAddress: nextRemoteAddress(),
+            method: 'POST',
+            url: '/auth/local/password/rotate',
+            headers: LOCAL_CSRF_HEADERS,
+            payload: {
+              loginId: 'local.user@example.com',
+              currentPassword: 'LocalPassword123',
+              newPassword: 'LocalPassword123',
+            },
+          });
+          assert.equal(res.statusCode, 400, res.body);
+          const body = JSON.parse(res.body);
+          assert.equal(
+            body.error.code,
+            'invalid_local_password_rotation_payload',
+          );
+        } finally {
+          await server.close();
+        }
+      },
+    );
+
+    assert.equal(updates.length, 1);
+    assert.equal(updates[0]?.failedAttempts, 0);
+    assert.equal(updates[0]?.lockedUntil, null);
+  });
+});
+
 test('POST /auth/local/password/rotate returns dedicated validation error code', async () => {
   await withEnv(baseBffEnv(), async () => {
     await withPrismaStubs({}, async () => {
@@ -582,6 +804,7 @@ test('POST /auth/local/password/rotate returns dedicated validation error code',
       const server = await buildServer({ logger: false });
       try {
         const res = await server.inject({
+          remoteAddress: nextRemoteAddress(),
           method: 'POST',
           url: '/auth/local/password/rotate',
           headers: LOCAL_CSRF_HEADERS,
