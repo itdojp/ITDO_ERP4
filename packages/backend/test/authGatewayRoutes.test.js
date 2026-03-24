@@ -88,7 +88,7 @@ async function withPrismaStubs(stubs, fn) {
 async function withRateLimiterFailure(ip, fn) {
   const originalConsume = RateLimiterMemory.prototype.consume;
   RateLimiterMemory.prototype.consume = async function patchedConsume(key) {
-    if (key == ip) {
+    if (key === ip) {
       throw new Error('rate_limited_for_test');
     }
     return originalConsume.call(this, key);
