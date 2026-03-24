@@ -63,6 +63,18 @@ async function withPrismaStubs(stubs, fn) {
       target[method] = original;
     });
   }
+  if (!Object.prototype.hasOwnProperty.call(stubs, '$transaction')) {
+    const originalTransaction = prisma.$transaction;
+    prisma.$transaction = async (arg, ...rest) => {
+      if (typeof arg === 'function') {
+        return arg(prisma, ...rest);
+      }
+      return originalTransaction.call(prisma, arg, ...rest);
+    };
+    restores.push(() => {
+      prisma.$transaction = originalTransaction;
+    });
+  }
   try {
     await fn();
   } finally {
