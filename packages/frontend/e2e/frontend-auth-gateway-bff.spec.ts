@@ -301,6 +301,94 @@ test('frontend auth gateway bff local login shows MFA setup required guidance @e
   ).toBeVisible();
 });
 
+test('frontend auth gateway bff local login shows locked guidance @extended', async ({
+  page,
+}) => {
+  test.skip(!isBffMode, 'jwt_bff build only');
+  ensureEvidenceDir();
+
+  await page.addInitScript(() => {
+    window.localStorage.removeItem('erp4_auth');
+    window.localStorage.setItem('erp4_active_section', 'reports');
+  });
+  await mockAuthCsrf(page);
+
+  await page.route('**/auth/session', async (route) => {
+    expectApiPath(route.request().url(), '/auth/session');
+    await route.fulfill({
+      status: 401,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ error: { code: 'unauthorized' } }),
+    });
+  });
+
+  await page.route('**/auth/local/login', async (route) => {
+    expectApiPath(route.request().url(), '/auth/local/login');
+    const headers = route.request().headers();
+    expect(headers['x-csrf-token']).toBe('csrf-token-001');
+    expect(headers.cookie || '').toContain('erp4_csrf=csrf-token-001');
+    await route.fulfill({
+      status: 423,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        error: { code: 'local_credential_locked' },
+      }),
+    });
+  });
+
+  await page.goto(baseUrl);
+  await page.getByLabel('ローカル認証 loginId').fill('local-user');
+  await page.getByLabel('ローカル認証 password').fill('TempPassw0rd!');
+  await page.getByRole('button', { name: 'ローカルログイン' }).click();
+
+  await expect(page.getByText('ローカル認証は一時ロックされています')).toBeVisible();
+});
+
+test('frontend auth gateway bff local login shows rate limit guidance @extended', async ({
+  page,
+}) => {
+  test.skip(!isBffMode, 'jwt_bff build only');
+  ensureEvidenceDir();
+
+  await page.addInitScript(() => {
+    window.localStorage.removeItem('erp4_auth');
+    window.localStorage.setItem('erp4_active_section', 'reports');
+  });
+  await mockAuthCsrf(page);
+
+  await page.route('**/auth/session', async (route) => {
+    expectApiPath(route.request().url(), '/auth/session');
+    await route.fulfill({
+      status: 401,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ error: { code: 'unauthorized' } }),
+    });
+  });
+
+  await page.route('**/auth/local/login', async (route) => {
+    expectApiPath(route.request().url(), '/auth/local/login');
+    const headers = route.request().headers();
+    expect(headers['x-csrf-token']).toBe('csrf-token-001');
+    expect(headers.cookie || '').toContain('erp4_csrf=csrf-token-001');
+    await route.fulfill({
+      status: 429,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        error: { code: 'local_login_rate_limited' },
+      }),
+    });
+  });
+
+  await page.goto(baseUrl);
+  await page.getByLabel('ローカル認証 loginId').fill('local-user');
+  await page.getByLabel('ローカル認証 password').fill('TempPassw0rd!');
+  await page.getByRole('button', { name: 'ローカルログイン' }).click();
+
+  await expect(
+    page.getByText('ローカル認証の試行回数が上限に達しました'),
+  ).toBeVisible();
+});
+
 test('frontend auth gateway bff local bootstrap password rotation @extended', async ({
   page,
 }) => {
