@@ -279,6 +279,8 @@ test('POST /auth/user-identities/google-link rejects blank audit fields after tr
         });
         assert.equal(res.statusCode, 400, res.body);
         const body = JSON.parse(res.body);
+        // NOTE: /auth/user-identities/* currently reuses the shared
+        // local-credential validation error contract for blank audit fields.
         assert.equal(body.error.code, 'invalid_local_credential_payload');
         assert.deepEqual(body.error.details?.invalidFields, [
           'ticketId',
@@ -528,6 +530,8 @@ test('POST /auth/user-identities/local-link rejects blank audit fields after tri
         });
         assert.equal(res.statusCode, 400, res.body);
         const body = JSON.parse(res.body);
+        // NOTE: /auth/user-identities/* currently reuses the shared
+        // local-credential validation error contract for blank audit fields.
         assert.equal(body.error.code, 'invalid_local_credential_payload');
         assert.deepEqual(body.error.details?.invalidFields, [
           'ticketId',
