@@ -171,7 +171,6 @@ function buildNonAdminIdentity() {
 function buildDisabledIdentity() {
   return {
     ...buildAdminIdentity(),
-    id: 'identity-admin-disabled-001',
     status: 'disabled',
   };
 }
@@ -179,8 +178,7 @@ function buildDisabledIdentity() {
 function buildExpiredIdentity() {
   return {
     ...buildAdminIdentity(),
-    id: 'identity-admin-expired-001',
-    effectiveUntil: new Date('2026-03-20T00:00:00.000Z'),
+    effectiveUntil: new Date(Date.now() - 60 * 60 * 1000),
   };
 }
 
