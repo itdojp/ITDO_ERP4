@@ -567,6 +567,126 @@ test('frontend auth gateway bff shows message when current password is invalid d
   ).toBeVisible();
 });
 
+test('frontend auth gateway bff shows locked guidance during rotation @extended', async ({
+  page,
+}) => {
+  test.skip(!isBffMode, 'jwt_bff build only');
+
+  await page.addInitScript(() => {
+    window.localStorage.removeItem('erp4_auth');
+    window.localStorage.setItem('erp4_active_section', 'reports');
+  });
+  await mockAuthCsrf(page);
+
+  await page.route('**/auth/session', async (route) => {
+    await route.fulfill({
+      status: 401,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ error: { code: 'unauthorized' } }),
+    });
+  });
+
+  await page.route('**/auth/local/login', async (route) => {
+    await route.fulfill({
+      status: 409,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        error: { code: 'local_password_rotation_required' },
+      }),
+    });
+  });
+
+  await page.route('**/auth/local/password/rotate', async (route) => {
+    expectApiPath(route.request().url(), '/auth/local/password/rotate');
+    const headers = route.request().headers();
+    expect(headers['x-csrf-token']).toBe('csrf-token-001');
+    expect(headers.cookie || '').toContain('erp4_csrf=csrf-token-001');
+    await route.fulfill({
+      status: 423,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        error: { code: 'local_credential_locked' },
+      }),
+    });
+  });
+
+  await page.goto(baseUrl);
+  await expect(page.getByRole('heading', { name: 'Reports' })).toBeVisible();
+
+  await page.getByLabel('ローカル認証 loginId').fill('bootstrap-user');
+  await page.getByLabel('ローカル認証 password').fill('TempPassw0rd!');
+  await page.getByRole('button', { name: 'ローカルログイン' }).click();
+
+  await expect(
+    page.getByRole('button', { name: '初期パスワードを更新' }),
+  ).toBeVisible();
+  await page.getByLabel('ローカル認証 new password').fill('NewPassw0rd!');
+  await page.getByRole('button', { name: '初期パスワードを更新' }).click();
+
+  await expect(page.getByText('ローカル認証は一時ロックされています')).toBeVisible();
+});
+
+test('frontend auth gateway bff shows rate limit guidance during rotation @extended', async ({
+  page,
+}) => {
+  test.skip(!isBffMode, 'jwt_bff build only');
+
+  await page.addInitScript(() => {
+    window.localStorage.removeItem('erp4_auth');
+    window.localStorage.setItem('erp4_active_section', 'reports');
+  });
+  await mockAuthCsrf(page);
+
+  await page.route('**/auth/session', async (route) => {
+    await route.fulfill({
+      status: 401,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ error: { code: 'unauthorized' } }),
+    });
+  });
+
+  await page.route('**/auth/local/login', async (route) => {
+    await route.fulfill({
+      status: 409,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        error: { code: 'local_password_rotation_required' },
+      }),
+    });
+  });
+
+  await page.route('**/auth/local/password/rotate', async (route) => {
+    expectApiPath(route.request().url(), '/auth/local/password/rotate');
+    const headers = route.request().headers();
+    expect(headers['x-csrf-token']).toBe('csrf-token-001');
+    expect(headers.cookie || '').toContain('erp4_csrf=csrf-token-001');
+    await route.fulfill({
+      status: 429,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        error: { code: 'local_login_rate_limited' },
+      }),
+    });
+  });
+
+  await page.goto(baseUrl);
+  await expect(page.getByRole('heading', { name: 'Reports' })).toBeVisible();
+
+  await page.getByLabel('ローカル認証 loginId').fill('bootstrap-user');
+  await page.getByLabel('ローカル認証 password').fill('TempPassw0rd!');
+  await page.getByRole('button', { name: 'ローカルログイン' }).click();
+
+  await expect(
+    page.getByRole('button', { name: '初期パスワードを更新' }),
+  ).toBeVisible();
+  await page.getByLabel('ローカル認証 new password').fill('NewPassw0rd!');
+  await page.getByRole('button', { name: '初期パスワードを更新' }).click();
+
+  await expect(
+    page.getByText('ローカル認証の試行回数が上限に達しました'),
+  ).toBeVisible();
+});
+
 test('frontend auth gateway bff session management smoke @extended', async ({
   page,
 }) => {
