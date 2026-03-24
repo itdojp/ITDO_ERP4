@@ -63,6 +63,18 @@ async function withPrismaStubs(stubs, fn) {
       target[method] = original;
     });
   }
+  if (!Object.prototype.hasOwnProperty.call(stubs, '$transaction')) {
+    const originalTransaction = prisma.$transaction;
+    prisma.$transaction = async (arg, ...rest) => {
+      if (typeof arg === 'function') {
+        return arg(prisma, ...rest);
+      }
+      return originalTransaction.call(prisma, arg, ...rest);
+    };
+    restores.push(() => {
+      prisma.$transaction = originalTransaction;
+    });
+  }
   try {
     await fn();
   } finally {
@@ -541,5 +553,166 @@ test('POST /auth/local-credentials returns invalid_csrf_token for jwt_bff admin 
         }
       },
     );
+  });
+});
+
+test('POST /auth/local-credentials returns forbidden for jwt_bff session without system_admin role', async () => {
+  await withEnv(baseBffEnv(), async () => {
+    let createCalled = false;
+    await withPrismaStubs(
+      {
+        'authSession.findUnique': async () => ({
+          ...buildSessionRecord(),
+          userAccountId: 'user-regular-001',
+          userIdentityId: 'identity-user-001',
+          providerSubject: 'google-sub-user-001',
+        }),
+        'authSession.update': async ({ data }) => ({
+          ...buildSessionRecord(),
+          userAccountId: 'user-regular-001',
+          userIdentityId: 'identity-user-001',
+          providerSubject: 'google-sub-user-001',
+          lastSeenAt: data.lastSeenAt,
+          idleExpiresAt: data.idleExpiresAt,
+        }),
+        'userIdentity.findUnique': async () => buildNonAdminIdentity(),
+        'projectMember.findMany': async () => [],
+        'userIdentity.create': async () => {
+          createCalled = true;
+          throw new Error('userIdentity.create should not be called');
+        },
+      },
+      async () => {
+        const { buildServer } = await loadBackendModules();
+        const server = await buildServer({ logger: false });
+        try {
+          const res = await server.inject({
+            remoteAddress: nextRemoteAddress(),
+            method: 'POST',
+            url: '/auth/local-credentials',
+            headers: buildSessionHeaders(),
+            payload: {
+              userAccountId: 'user-target-001',
+              loginId: 'target.user@example.com',
+              password: 'LocalPassword123',
+              ticketId: 'AUTH-LOCAL-202',
+              reasonCode: 'admin_issue',
+            },
+          });
+          assert.equal(res.statusCode, 403, res.body);
+          const body = JSON.parse(res.body);
+          assert.equal(body.error.code, 'forbidden');
+        } finally {
+          await server.close();
+        }
+      },
+    );
+    assert.equal(createCalled, false);
+  });
+});
+
+test('PATCH /auth/user-identities/:identityId returns forbidden for jwt_bff session without system_admin role', async () => {
+  await withEnv(baseBffEnv(), async () => {
+    let updateCalled = false;
+    await withPrismaStubs(
+      {
+        'authSession.findUnique': async () => ({
+          ...buildSessionRecord(),
+          userAccountId: 'user-regular-001',
+          userIdentityId: 'identity-user-001',
+          providerSubject: 'google-sub-user-001',
+        }),
+        'authSession.update': async ({ data }) => ({
+          ...buildSessionRecord(),
+          userAccountId: 'user-regular-001',
+          userIdentityId: 'identity-user-001',
+          providerSubject: 'google-sub-user-001',
+          lastSeenAt: data.lastSeenAt,
+          idleExpiresAt: data.idleExpiresAt,
+        }),
+        'userIdentity.findUnique': async () => buildNonAdminIdentity(),
+        'projectMember.findMany': async () => [],
+        'userIdentity.update': async () => {
+          updateCalled = true;
+          throw new Error('userIdentity.update should not be called');
+        },
+      },
+      async () => {
+        const { buildServer } = await loadBackendModules();
+        const server = await buildServer({ logger: false });
+        try {
+          const res = await server.inject({
+            remoteAddress: nextRemoteAddress(),
+            method: 'PATCH',
+            url: '/auth/user-identities/identity-google-001',
+            headers: buildSessionHeaders(),
+            payload: {
+              status: 'disabled',
+              ticketId: 'AUTH-MIG-203',
+              reasonCode: 'google_disable',
+            },
+          });
+          assert.equal(res.statusCode, 403, res.body);
+          const body = JSON.parse(res.body);
+          assert.equal(body.error.code, 'forbidden');
+        } finally {
+          await server.close();
+        }
+      },
+    );
+    assert.equal(updateCalled, false);
+  });
+});
+
+test('PATCH /auth/local-credentials/:identityId returns forbidden for jwt_bff session without system_admin role', async () => {
+  await withEnv(baseBffEnv(), async () => {
+    let updateCalled = false;
+    await withPrismaStubs(
+      {
+        'authSession.findUnique': async () => ({
+          ...buildSessionRecord(),
+          userAccountId: 'user-regular-001',
+          userIdentityId: 'identity-user-001',
+          providerSubject: 'google-sub-user-001',
+        }),
+        'authSession.update': async ({ data }) => ({
+          ...buildSessionRecord(),
+          userAccountId: 'user-regular-001',
+          userIdentityId: 'identity-user-001',
+          providerSubject: 'google-sub-user-001',
+          lastSeenAt: data.lastSeenAt,
+          idleExpiresAt: data.idleExpiresAt,
+        }),
+        'userIdentity.findUnique': async () => buildNonAdminIdentity(),
+        'projectMember.findMany': async () => [],
+        'userIdentity.update': async () => {
+          updateCalled = true;
+          throw new Error('userIdentity.update should not be called');
+        },
+      },
+      async () => {
+        const { buildServer } = await loadBackendModules();
+        const server = await buildServer({ logger: false });
+        try {
+          const res = await server.inject({
+            remoteAddress: nextRemoteAddress(),
+            method: 'PATCH',
+            url: '/auth/local-credentials/identity-local-001',
+            headers: buildSessionHeaders(),
+            payload: {
+              status: 'disabled',
+              ticketId: 'AUTH-LOCAL-203',
+              reasonCode: 'admin_disable',
+            },
+          });
+          assert.equal(res.statusCode, 403, res.body);
+          const body = JSON.parse(res.body);
+          assert.equal(body.error.code, 'forbidden');
+        } finally {
+          await server.close();
+        }
+      },
+    );
+    assert.equal(updateCalled, false);
   });
 });
