@@ -138,6 +138,24 @@ function buildAdminIdentity() {
   };
 }
 
+function buildNonAdminIdentity() {
+  return {
+    id: 'identity-user-001',
+    status: 'active',
+    effectiveUntil: new Date(Date.now() + 60 * 60 * 1000),
+    userAccountId: 'user-regular-001',
+    userAccount: {
+      id: 'user-regular-001',
+      active: true,
+      deletedAt: null,
+      userName: 'regular.user@example.com',
+      externalId: null,
+      organization: 'org-001',
+      memberships: [],
+    },
+  };
+}
+
 function buildSessionHeaders(csrfToken = 'csrf-token-001') {
   return {
     cookie: `erp4_session=session-token-001; erp4_csrf=${csrfToken}`,
@@ -217,6 +235,54 @@ test('GET /auth/user-identities lists identities for jwt_bff system_admin sessio
   });
 });
 
+test('GET /auth/user-identities returns forbidden for jwt_bff session without system_admin role', async () => {
+  await withEnv(baseBffEnv(), async () => {
+    let findManyCalled = false;
+    await withPrismaStubs(
+      {
+        'authSession.findUnique': async () => ({
+          ...buildSessionRecord(),
+          userAccountId: 'user-regular-001',
+          userIdentityId: 'identity-user-001',
+          providerSubject: 'google-sub-user-001',
+        }),
+        'authSession.update': async ({ data }) => ({
+          ...buildSessionRecord(),
+          userAccountId: 'user-regular-001',
+          userIdentityId: 'identity-user-001',
+          providerSubject: 'google-sub-user-001',
+          lastSeenAt: data.lastSeenAt,
+          idleExpiresAt: data.idleExpiresAt,
+        }),
+        'userIdentity.findUnique': async () => buildNonAdminIdentity(),
+        'projectMember.findMany': async () => [],
+        'userIdentity.findMany': async () => {
+          findManyCalled = true;
+          return [];
+        },
+      },
+      async () => {
+        const { buildServer } = await loadBackendModules();
+        const server = await buildServer({ logger: false });
+        try {
+          const res = await server.inject({
+            remoteAddress: nextRemoteAddress(),
+            method: 'GET',
+            url: '/auth/user-identities',
+            headers: buildSessionHeaders(),
+          });
+          assert.equal(res.statusCode, 403, res.body);
+          const body = JSON.parse(res.body);
+          assert.equal(body.error.code, 'forbidden');
+        } finally {
+          await server.close();
+        }
+      },
+    );
+    assert.equal(findManyCalled, false);
+  });
+});
+
 test('GET /auth/local-credentials lists credentials for jwt_bff system_admin session', async () => {
   await withEnv(baseBffEnv(), async () => {
     await withPrismaStubs(
@@ -287,6 +353,54 @@ test('GET /auth/local-credentials lists credentials for jwt_bff system_admin ses
   });
 });
 
+test('GET /auth/local-credentials returns forbidden for jwt_bff session without system_admin role', async () => {
+  await withEnv(baseBffEnv(), async () => {
+    let findManyCalled = false;
+    await withPrismaStubs(
+      {
+        'authSession.findUnique': async () => ({
+          ...buildSessionRecord(),
+          userAccountId: 'user-regular-001',
+          userIdentityId: 'identity-user-001',
+          providerSubject: 'google-sub-user-001',
+        }),
+        'authSession.update': async ({ data }) => ({
+          ...buildSessionRecord(),
+          userAccountId: 'user-regular-001',
+          userIdentityId: 'identity-user-001',
+          providerSubject: 'google-sub-user-001',
+          lastSeenAt: data.lastSeenAt,
+          idleExpiresAt: data.idleExpiresAt,
+        }),
+        'userIdentity.findUnique': async () => buildNonAdminIdentity(),
+        'projectMember.findMany': async () => [],
+        'userIdentity.findMany': async () => {
+          findManyCalled = true;
+          return [];
+        },
+      },
+      async () => {
+        const { buildServer } = await loadBackendModules();
+        const server = await buildServer({ logger: false });
+        try {
+          const res = await server.inject({
+            remoteAddress: nextRemoteAddress(),
+            method: 'GET',
+            url: '/auth/local-credentials',
+            headers: buildSessionHeaders(),
+          });
+          assert.equal(res.statusCode, 403, res.body);
+          const body = JSON.parse(res.body);
+          assert.equal(body.error.code, 'forbidden');
+        } finally {
+          await server.close();
+        }
+      },
+    );
+    assert.equal(findManyCalled, false);
+  });
+});
+
 test('POST /auth/user-identities/google-link returns invalid_csrf_token for jwt_bff admin session mismatch', async () => {
   await withEnv(baseBffEnv(), async () => {
     await withPrismaStubs(
@@ -328,6 +442,61 @@ test('POST /auth/user-identities/google-link returns invalid_csrf_token for jwt_
         }
       },
     );
+  });
+});
+
+test('POST /auth/user-identities/google-link returns forbidden for jwt_bff session without system_admin role', async () => {
+  await withEnv(baseBffEnv(), async () => {
+    let createCalled = false;
+    await withPrismaStubs(
+      {
+        'authSession.findUnique': async () => ({
+          ...buildSessionRecord(),
+          userAccountId: 'user-regular-001',
+          userIdentityId: 'identity-user-001',
+          providerSubject: 'google-sub-user-001',
+        }),
+        'authSession.update': async ({ data }) => ({
+          ...buildSessionRecord(),
+          userAccountId: 'user-regular-001',
+          userIdentityId: 'identity-user-001',
+          providerSubject: 'google-sub-user-001',
+          lastSeenAt: data.lastSeenAt,
+          idleExpiresAt: data.idleExpiresAt,
+        }),
+        'userIdentity.findUnique': async () => buildNonAdminIdentity(),
+        'projectMember.findMany': async () => [],
+        'userIdentity.create': async () => {
+          createCalled = true;
+          throw new Error('userIdentity.create should not be called');
+        },
+      },
+      async () => {
+        const { buildServer } = await loadBackendModules();
+        const server = await buildServer({ logger: false });
+        try {
+          const res = await server.inject({
+            remoteAddress: nextRemoteAddress(),
+            method: 'POST',
+            url: '/auth/user-identities/google-link',
+            headers: buildSessionHeaders(),
+            payload: {
+              userAccountId: 'user-target-001',
+              issuer: 'https://accounts.google.com',
+              providerSubject: 'google-sub-001',
+              ticketId: 'AUTH-MIG-202',
+              reasonCode: 'google_link',
+            },
+          });
+          assert.equal(res.statusCode, 403, res.body);
+          const body = JSON.parse(res.body);
+          assert.equal(body.error.code, 'forbidden');
+        } finally {
+          await server.close();
+        }
+      },
+    );
+    assert.equal(createCalled, false);
   });
 });
 
