@@ -395,3 +395,44 @@ test('frontend auth identity migration settings smoke @extended', async ({
   await captureSection(adminSettingsSection, '11-admin-settings.png');
   await captureSection(card, '11-auth-identity-migration.png');
 });
+
+
+test('frontend auth identity migration remains hidden without system_admin @extended', async ({
+  page,
+}) => {
+  ensureEvidenceDir();
+  let userIdentitiesRequested = false;
+
+  await page.addInitScript((state) => {
+    window.localStorage.setItem('erp4_auth', JSON.stringify(state));
+    window.localStorage.setItem('erp4_active_section', 'admin-settings');
+  }, {
+    ...authState,
+    userId: 'demo-admin-only',
+    roles: ['admin'],
+  });
+
+  await page.route(`${apiBase}/auth/user-identities*`, async (route) => {
+    userIdentitiesRequested = true;
+    await route.abort();
+    throw new Error('unexpected auth identity request to /auth/user-identities');
+  });
+
+  await page.goto(baseUrl);
+  await expect(
+    page.getByRole('heading', { name: 'ERP4 MVP PoC' }),
+  ).toBeVisible();
+  await page.getByRole('button', { name: '設定', exact: true }).click();
+  await expect(
+    page.locator('main').getByRole('heading', { name: 'Settings', level: 2 }),
+  ).toBeVisible();
+
+  await expect(page.getByTestId('auth-identity-migration-card')).toHaveCount(0);
+  await expect(page.getByText('認証方式移行')).toBeVisible();
+  await expect(
+    page.getByText(
+      'この設定は system_admin ロールを持つユーザーのみが操作できます。',
+    ),
+  ).toBeVisible();
+  expect(userIdentitiesRequested).toBe(false);
+});
