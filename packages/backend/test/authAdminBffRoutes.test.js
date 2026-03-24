@@ -168,6 +168,20 @@ function buildNonAdminIdentity() {
   };
 }
 
+function buildDisabledIdentity() {
+  return {
+    ...buildAdminIdentity(),
+    status: 'disabled',
+  };
+}
+
+function buildExpiredIdentity() {
+  return {
+    ...buildAdminIdentity(),
+    effectiveUntil: new Date(Date.now() - 60 * 60 * 1000),
+  };
+}
+
 function buildSessionHeaders(csrfToken = 'csrf-token-001') {
   return {
     cookie: `erp4_session=session-token-001; erp4_csrf=${csrfToken}`,
@@ -813,5 +827,123 @@ test('PATCH /auth/local-credentials/:identityId returns forbidden for jwt_bff se
       },
     );
     assert.equal(updateCalled, false);
+  });
+});
+
+test('GET /auth/user-identities returns unauthorized for jwt_bff request without session cookie', async () => {
+  await withEnv(baseBffEnv(), async () => {
+    let findManyCalled = false;
+    await withPrismaStubs(
+      {
+        'userIdentity.findMany': async () => {
+          findManyCalled = true;
+          return [];
+        },
+      },
+      async () => {
+        const { buildServer } = await loadBackendModules();
+        const server = await buildServer({ logger: false });
+        try {
+          const res = await server.inject({
+            remoteAddress: nextRemoteAddress(),
+            method: 'GET',
+            url: '/auth/user-identities',
+          });
+          assert.equal(res.statusCode, 401, res.body);
+          const body = JSON.parse(res.body);
+          assert.equal(body.error.code, 'unauthorized');
+        } finally {
+          await server.close();
+        }
+      },
+    );
+    assert.equal(findManyCalled, false);
+  });
+});
+
+test('GET /auth/local-credentials returns unauthorized for jwt_bff session with disabled identity', async () => {
+  await withEnv(baseBffEnv(), async () => {
+    let findManyCalled = false;
+    await withPrismaStubs(
+      {
+        'authSession.findUnique': async () => buildSessionRecord(),
+        'authSession.update': async ({ data }) => ({
+          ...buildSessionRecord(),
+          lastSeenAt: data.lastSeenAt,
+          idleExpiresAt: data.idleExpiresAt,
+        }),
+        'userIdentity.findUnique': async () => buildDisabledIdentity(),
+        'projectMember.findMany': async () => [],
+        'userIdentity.findMany': async () => {
+          findManyCalled = true;
+          return [];
+        },
+      },
+      async () => {
+        const { buildServer } = await loadBackendModules();
+        const server = await buildServer({ logger: false });
+        try {
+          const res = await server.inject({
+            remoteAddress: nextRemoteAddress(),
+            method: 'GET',
+            url: '/auth/local-credentials',
+            headers: buildSessionHeaders(),
+          });
+          assert.equal(res.statusCode, 401, res.body);
+          const body = JSON.parse(res.body);
+          assert.equal(body.error.code, 'unauthorized');
+        } finally {
+          await server.close();
+        }
+      },
+    );
+    assert.equal(findManyCalled, false);
+  });
+});
+
+test('POST /auth/local-credentials returns unauthorized for jwt_bff session with expired identity', async () => {
+  await withEnv(baseBffEnv(), async () => {
+    let createCalled = false;
+    await withPrismaStubs(
+      {
+        'authSession.findUnique': async () => buildSessionRecord(),
+        'authSession.update': async ({ data }) => ({
+          ...buildSessionRecord(),
+          lastSeenAt: data.lastSeenAt,
+          idleExpiresAt: data.idleExpiresAt,
+        }),
+        'userIdentity.findUnique': async () => buildExpiredIdentity(),
+        'projectMember.findMany': async () => [],
+        'userIdentity.create': async () => {
+          createCalled = true;
+          throw new Error('userIdentity.create should not be called');
+        },
+      },
+      async () => {
+        const { buildServer } = await loadBackendModules();
+        const server = await buildServer({ logger: false });
+        try {
+          const res = await server.inject({
+            remoteAddress: nextRemoteAddress(),
+            method: 'POST',
+            url: '/auth/local-credentials',
+            headers: buildSessionHeaders(),
+            payload: {
+              userAccountId: 'user-target-001',
+              loginId: 'target.user@example.com',
+              password: 'LocalPassword123',
+              ticketId: 'AUTH-LOCAL-401',
+              reasonCode: 'admin_issue',
+            },
+          });
+          assert.equal(res.statusCode, 401, res.body);
+          const body = JSON.parse(res.body);
+          assert.equal(body.error.code, 'unauthorized');
+        } finally {
+          await server.close();
+        }
+      },
+    );
+    assert.equal(createCalled, false);
   });
 });
