@@ -623,6 +623,106 @@ test('jwt_bff mode authenticates /me via session cookie', async () => {
   });
 });
 
+test('GET /auth/session returns current authenticated session in jwt_bff mode', async () => {
+  await withEnv(baseBffEnv(), async () => {
+    await withPrismaStubs(
+      {
+        'authSession.findUnique': async () => ({
+          id: 'sess-001',
+          userAccountId: 'user-001',
+          userIdentityId: 'identity-001',
+          providerType: 'google_oidc',
+          issuer: 'https://accounts.google.com',
+          providerSubject: 'google-sub-001',
+          createdAt: new Date('2026-03-23T00:00:00.000Z'),
+          lastSeenAt: new Date('2026-03-23T00:05:00.000Z'),
+          expiresAt: new Date(Date.now() + 60_000),
+          idleExpiresAt: new Date(Date.now() + 60_000),
+          revokedAt: null,
+          revokedReason: null,
+          sourceIp: '127.0.0.1',
+          userAgent: 'test-agent',
+        }),
+        'authSession.update': async ({ data }) => ({
+          id: 'sess-001',
+          userAccountId: 'user-001',
+          userIdentityId: 'identity-001',
+          providerType: 'google_oidc',
+          issuer: 'https://accounts.google.com',
+          providerSubject: 'google-sub-001',
+          createdAt: new Date('2026-03-23T00:00:00.000Z'),
+          lastSeenAt: data.lastSeenAt,
+          expiresAt: new Date(Date.now() + 60_000),
+          idleExpiresAt: data.idleExpiresAt,
+          revokedAt: null,
+          revokedReason: null,
+          sourceIp: '127.0.0.1',
+          userAgent: 'test-agent',
+        }),
+        'userIdentity.findUnique': async () => ({
+          id: 'identity-001',
+          status: 'active',
+          effectiveUntil: null,
+          userAccountId: 'user-001',
+          userAccount: {
+            id: 'user-001',
+            active: true,
+            deletedAt: null,
+            userName: 'legacy-user',
+            externalId: null,
+            organization: 'org-001',
+            memberships: [],
+          },
+        }),
+        'projectMember.findMany': async () => [{ projectId: 'proj-001' }],
+      },
+      async () => {
+        const { buildServer } = await loadBackendModules();
+        const server = await buildServer({ logger: false });
+        try {
+          const res = await server.inject({
+            method: 'GET',
+            url: '/auth/session',
+            headers: {
+              cookie: 'erp4_session=session-token-001',
+            },
+          });
+          assert.equal(res.statusCode, 200, res.body);
+          const body = JSON.parse(res.body);
+          assert.equal(body.user.userId, 'legacy-user');
+          assert.equal(body.user.auth.sessionBased, true);
+          assert.equal(body.session.sessionId, 'sess-001');
+          assert.equal(body.session.userAccountId, 'user-001');
+          assert.equal(body.session.userIdentityId, 'identity-001');
+        } finally {
+          await server.close();
+        }
+      },
+    );
+  });
+});
+
+test('GET /auth/session returns unauthorized when session cookie is missing', async () => {
+  await withEnv(baseBffEnv(), async () => {
+    await withPrismaStubs({}, async () => {
+      const { buildServer } = await loadBackendModules();
+      const server = await buildServer({ logger: false });
+      try {
+        const res = await server.inject({
+          method: 'GET',
+          url: '/auth/session',
+        });
+        assert.equal(res.statusCode, 401, res.body);
+        const body = JSON.parse(res.body);
+        assert.equal(body.error.code, 'unauthorized');
+        assert.equal(body.error.details.reason, 'missing_session');
+      } finally {
+        await server.close();
+      }
+    });
+  });
+});
+
 test('POST /auth/logout clears current session cookie', async () => {
   await withEnv(baseBffEnv(), async () => {
     let revokedId = null;
@@ -720,6 +820,32 @@ test('GET /auth/csrf returns token and sets csrf cookie', async () => {
   });
 });
 
+test('GET /auth/csrf reuses csrf cookie token without rotating it', async () => {
+  await withEnv(baseBffEnv(), async () => {
+    await withPrismaStubs({}, async () => {
+      const { buildServer } = await loadBackendModules();
+      const server = await buildServer({ logger: false });
+      try {
+        const res = await server.inject({
+          method: 'GET',
+          url: '/auth/csrf',
+          headers: {
+            cookie: 'erp4_csrf=csrf-token-existing',
+          },
+        });
+        assert.equal(res.statusCode, 200, res.body);
+        const body = JSON.parse(res.body);
+        assert.equal(body.csrfToken, 'csrf-token-existing');
+        assert.equal(res.headers['set-cookie'], undefined);
+        assert.equal(res.headers['cache-control'], 'no-store');
+        assert.equal(res.headers.pragma, 'no-cache');
+      } finally {
+        await server.close();
+      }
+    });
+  });
+});
+
 test('POST /auth/logout returns invalid_csrf_token when csrf header mismatches cookie', async () => {
   await withEnv(baseBffEnv(), async () => {
     await withPrismaStubs(
@@ -760,6 +886,27 @@ test('POST /auth/logout returns invalid_csrf_token when csrf header mismatches c
         }
       },
     );
+  });
+});
+
+test('GET /auth/sessions returns unauthorized when session cookie is missing', async () => {
+  await withEnv(baseBffEnv(), async () => {
+    await withPrismaStubs({}, async () => {
+      const { buildServer } = await loadBackendModules();
+      const server = await buildServer({ logger: false });
+      try {
+        const res = await server.inject({
+          method: 'GET',
+          url: '/auth/sessions',
+        });
+        assert.equal(res.statusCode, 401, res.body);
+        const body = JSON.parse(res.body);
+        assert.equal(body.error.code, 'unauthorized');
+        assert.equal(body.error.details.reason, 'missing_session');
+      } finally {
+        await server.close();
+      }
+    });
   });
 });
 
@@ -836,6 +983,82 @@ test('POST /auth/sessions/:sessionId/revoke returns invalid_csrf_token when csrf
       },
     );
     assert.equal(findFirstCalled, false);
+  });
+});
+
+test('POST /auth/sessions/:sessionId/revoke returns not_found when target session is missing', async () => {
+  await withEnv(baseBffEnv(), async () => {
+    await withPrismaStubs(
+      {
+        'authSession.findUnique': async () => ({
+          id: 'sess-current',
+          userAccountId: 'user-001',
+          userIdentityId: 'identity-001',
+          providerType: 'google_oidc',
+          issuer: 'https://accounts.google.com',
+          providerSubject: 'google-sub-001',
+          expiresAt: new Date(Date.now() + 60_000),
+          idleExpiresAt: new Date(Date.now() + 60_000),
+          revokedAt: null,
+        }),
+        'authSession.update': async ({ where, data }) => ({
+          id: where.id,
+          userAccountId: 'user-001',
+          userIdentityId: 'identity-001',
+          providerType: 'google_oidc',
+          issuer: 'https://accounts.google.com',
+          providerSubject: 'google-sub-001',
+          createdAt: new Date('2026-03-23T00:00:00.000Z'),
+          lastSeenAt: data.lastSeenAt ?? new Date('2026-03-23T00:05:00.000Z'),
+          expiresAt: new Date(Date.now() + 60_000),
+          idleExpiresAt: data.idleExpiresAt ?? new Date(Date.now() + 60_000),
+          revokedAt: null,
+          revokedReason: null,
+          sourceIp: '127.0.0.1',
+          userAgent: 'test-agent',
+        }),
+        'authSession.findFirst': async () => null,
+        'userIdentity.findUnique': async () => ({
+          id: 'identity-001',
+          status: 'active',
+          effectiveUntil: null,
+          userAccountId: 'user-001',
+          userAccount: {
+            id: 'user-001',
+            active: true,
+            deletedAt: null,
+            userName: 'legacy-user',
+            externalId: null,
+            organization: 'org-001',
+            memberships: [],
+          },
+        }),
+        'projectMember.findMany': async () => [{ projectId: 'proj-001' }],
+        'auditLog.create': async () => {
+          throw new Error('auditLog.create should not be called');
+        },
+      },
+      async () => {
+        const { buildServer } = await loadBackendModules();
+        const server = await buildServer({ logger: false });
+        try {
+          const res = await server.inject({
+            method: 'POST',
+            url: '/auth/sessions/sess-missing/revoke',
+            headers: {
+              cookie:
+                'erp4_session=session-token-001; erp4_csrf=csrf-token-001',
+              'x-csrf-token': 'csrf-token-001',
+            },
+          });
+          assert.equal(res.statusCode, 404, res.body);
+          const body = JSON.parse(res.body);
+          assert.equal(body.error.code, 'auth_session_not_found');
+        } finally {
+          await server.close();
+        }
+      },
+    );
   });
 });
 
