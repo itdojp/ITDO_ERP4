@@ -390,6 +390,9 @@ test('frontend auth gateway bff shows message when password rotation is not requ
 
   await page.route('**/auth/local/password/rotate', async (route) => {
     expectApiPath(route.request().url(), '/auth/local/password/rotate');
+    const headers = route.request().headers();
+    expect(headers['x-csrf-token']).toBe('csrf-token-001');
+    expect(headers.cookie || '').toContain('erp4_csrf=csrf-token-001');
     await route.fulfill({
       status: 409,
       headers: { 'content-type': 'application/json' },
@@ -446,6 +449,9 @@ test('frontend auth gateway bff shows message when current password is invalid d
 
   await page.route('**/auth/local/password/rotate', async (route) => {
     expectApiPath(route.request().url(), '/auth/local/password/rotate');
+    const headers = route.request().headers();
+    expect(headers['x-csrf-token']).toBe('csrf-token-001');
+    expect(headers.cookie || '').toContain('erp4_csrf=csrf-token-001');
     await route.fulfill({
       status: 401,
       headers: { 'content-type': 'application/json' },
