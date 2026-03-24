@@ -718,7 +718,7 @@ test('GET /auth/session returns current authenticated session in jwt_bff mode', 
   });
 });
 
-test('GET /auth/session returns auth_gateway_rate_limited before session lookup', async () => {
+test('GET /auth/session returns auth_session_rate_limited before session lookup', async () => {
   await withEnv(baseBffEnv(), async () => {
     const ip = '198.51.100.202';
     await withRateLimiterFailure(ip, async () => {
@@ -937,7 +937,7 @@ test('POST /auth/logout returns invalid_csrf_token when csrf header mismatches c
   });
 });
 
-test('GET /auth/sessions returns auth_gateway_rate_limited before session lookup', async () => {
+test('GET /auth/sessions returns auth_session_rate_limited before session lookup', async () => {
   await withEnv(baseBffEnv(), async () => {
     let authSessionListCalled = false;
     const ip = '198.51.100.203';
@@ -1573,7 +1573,10 @@ test('POST /auth/logout returns auth_gateway_rate_limited before session revoke'
     await withRateLimiterFailure(ip, async () => {
       await withPrismaStubs(
         {
-          'authSession.findUnique': async () => null,
+          'authSession.findUnique': async () => {
+            authSessionLookupCalled = true;
+            return null;
+          },
           'auditLog.create': async () => {
             auditCalled = true;
             return { id: 'audit-unexpected' };
