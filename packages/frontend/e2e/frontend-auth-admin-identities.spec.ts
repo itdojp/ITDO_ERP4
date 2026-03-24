@@ -407,26 +407,15 @@ test('frontend auth identity migration remains hidden without system_admin @exte
     window.localStorage.setItem('erp4_auth', JSON.stringify(state));
     window.localStorage.setItem('erp4_active_section', 'admin-settings');
   }, {
+    ...authState,
     userId: 'demo-admin-only',
     roles: ['admin'],
-    projectIds: ['00000000-0000-0000-0000-000000000001'],
-    groupIds: ['admins'],
   });
 
   await page.route(`${apiBase}/auth/user-identities*`, async (route) => {
     userIdentitiesRequested = true;
-    await route.fulfill({
-      status: 500,
-      headers: {
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({
-        error: {
-          code: 'unexpected_call',
-          message: 'unexpected auth identity request',
-        },
-      }),
-    });
+    await route.abort();
+    throw new Error('unexpected auth identity request to /auth/user-identities');
   });
 
   await page.goto(baseUrl);
