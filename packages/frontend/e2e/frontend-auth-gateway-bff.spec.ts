@@ -818,6 +818,217 @@ test('frontend auth gateway bff session management smoke @extended', async ({
   );
 });
 
+
+test('frontend auth gateway bff shows session not found guidance on revoke @extended', async ({
+  page,
+}) => {
+  test.skip(!isBffMode, 'jwt_bff build only');
+
+  await page.addInitScript(() => {
+    window.localStorage.removeItem('erp4_auth');
+    window.localStorage.setItem('erp4_active_section', 'reports');
+  });
+  await mockAuthCsrf(page);
+
+  await page.route('**/auth/session', async (route) => {
+    expectApiPath(route.request().url(), '/auth/session');
+    await route.fulfill({
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        user: {
+          userId: 'bff-user',
+          roles: ['user'],
+          groupIds: [],
+          projectIds: [],
+          groupAccountIds: [],
+        },
+        session: {
+          sessionId: 'sess-current',
+          providerType: 'google_oidc',
+          issuer: 'https://accounts.google.com',
+          userAccountId: 'user-current-1',
+          userIdentityId: 'identity-google-1',
+          expiresAt: futureIso(7),
+          idleExpiresAt: futureIso(1),
+        },
+      }),
+    });
+  });
+
+  await page.route('**/auth/sessions?*', async (route) => {
+    expectApiPath(route.request().url(), '/auth/sessions');
+    await route.fulfill({
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        limit: 20,
+        offset: 0,
+        items: [
+          {
+            sessionId: 'sess-current',
+            providerType: 'google_oidc',
+            issuer: 'https://accounts.google.com',
+            userAccountId: 'user-current-1',
+            userIdentityId: 'identity-google-1',
+            sourceIp: '203.0.113.10',
+            userAgent: 'Mozilla/5.0 Current Session',
+            createdAt: futureIso(0),
+            lastSeenAt: futureIso(0),
+            expiresAt: futureIso(7),
+            idleExpiresAt: futureIso(1),
+            revokedAt: null,
+            revokedReason: null,
+            current: true,
+          },
+          {
+            sessionId: 'sess-other',
+            providerType: 'google_oidc',
+            issuer: 'https://accounts.google.com',
+            userAccountId: 'user-current-1',
+            userIdentityId: 'identity-google-1',
+            sourceIp: '203.0.113.20',
+            userAgent: 'Mozilla/5.0 Other Session',
+            createdAt: futureIso(0),
+            lastSeenAt: futureIso(0),
+            expiresAt: futureIso(7),
+            idleExpiresAt: futureIso(1),
+            revokedAt: null,
+            revokedReason: null,
+            current: false,
+          },
+        ],
+      }),
+    });
+  });
+
+  await page.route('**/auth/sessions/sess-other/revoke', async (route) => {
+    expectApiPath(route.request().url(), '/auth/sessions/sess-other/revoke');
+    const headers = route.request().headers();
+    expect(headers['x-csrf-token']).toBe('csrf-token-001');
+    expect(headers.cookie || '').toContain('erp4_csrf=csrf-token-001');
+    await route.fulfill({
+      status: 404,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ error: { code: 'auth_session_not_found' } }),
+    });
+  });
+
+  await page.goto(baseUrl);
+  await expect(page.getByText('Session ID: sess-other')).toBeVisible();
+
+  await page.getByRole('button', { name: 'このセッションを失効' }).click();
+
+  await expect(page.getByText('対象の認証セッションが見つかりません')).toBeVisible();
+  await expect(page.getByText('Session ID: sess-other')).toBeVisible();
+});
+
+test('frontend auth gateway bff shows rate limit guidance on revoke @extended', async ({
+  page,
+}) => {
+  test.skip(!isBffMode, 'jwt_bff build only');
+
+  await page.addInitScript(() => {
+    window.localStorage.removeItem('erp4_auth');
+    window.localStorage.setItem('erp4_active_section', 'reports');
+  });
+  await mockAuthCsrf(page);
+
+  await page.route('**/auth/session', async (route) => {
+    expectApiPath(route.request().url(), '/auth/session');
+    await route.fulfill({
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        user: {
+          userId: 'bff-user',
+          roles: ['user'],
+          groupIds: [],
+          projectIds: [],
+          groupAccountIds: [],
+        },
+        session: {
+          sessionId: 'sess-current',
+          providerType: 'google_oidc',
+          issuer: 'https://accounts.google.com',
+          userAccountId: 'user-current-1',
+          userIdentityId: 'identity-google-1',
+          expiresAt: futureIso(7),
+          idleExpiresAt: futureIso(1),
+        },
+      }),
+    });
+  });
+
+  await page.route('**/auth/sessions?*', async (route) => {
+    expectApiPath(route.request().url(), '/auth/sessions');
+    await route.fulfill({
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        limit: 20,
+        offset: 0,
+        items: [
+          {
+            sessionId: 'sess-current',
+            providerType: 'google_oidc',
+            issuer: 'https://accounts.google.com',
+            userAccountId: 'user-current-1',
+            userIdentityId: 'identity-google-1',
+            sourceIp: '203.0.113.10',
+            userAgent: 'Mozilla/5.0 Current Session',
+            createdAt: futureIso(0),
+            lastSeenAt: futureIso(0),
+            expiresAt: futureIso(7),
+            idleExpiresAt: futureIso(1),
+            revokedAt: null,
+            revokedReason: null,
+            current: true,
+          },
+          {
+            sessionId: 'sess-other',
+            providerType: 'google_oidc',
+            issuer: 'https://accounts.google.com',
+            userAccountId: 'user-current-1',
+            userIdentityId: 'identity-google-1',
+            sourceIp: '203.0.113.20',
+            userAgent: 'Mozilla/5.0 Other Session',
+            createdAt: futureIso(0),
+            lastSeenAt: futureIso(0),
+            expiresAt: futureIso(7),
+            idleExpiresAt: futureIso(1),
+            revokedAt: null,
+            revokedReason: null,
+            current: false,
+          },
+        ],
+      }),
+    });
+  });
+
+  await page.route('**/auth/sessions/sess-other/revoke', async (route) => {
+    expectApiPath(route.request().url(), '/auth/sessions/sess-other/revoke');
+    const headers = route.request().headers();
+    expect(headers['x-csrf-token']).toBe('csrf-token-001');
+    expect(headers.cookie || '').toContain('erp4_csrf=csrf-token-001');
+    await route.fulfill({
+      status: 429,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ error: { code: 'auth_guard_rate_limited' } }),
+    });
+  });
+
+  await page.goto(baseUrl);
+  await expect(page.getByText('Session ID: sess-other')).toBeVisible();
+
+  await page.getByRole('button', { name: 'このセッションを失効' }).click();
+
+  await expect(
+    page.getByText('認証セッション操作の試行回数が上限に達しました'),
+  ).toBeVisible();
+  await expect(page.getByText('Session ID: sess-other')).toBeVisible();
+});
+
 test('frontend auth gateway bff retries session revoke after invalid csrf token @extended', async ({
   page,
 }) => {
