@@ -718,6 +718,38 @@ test('GET /auth/session returns current authenticated session in jwt_bff mode', 
   });
 });
 
+test('GET /auth/session returns auth_gateway_rate_limited before session lookup', async () => {
+  await withEnv(baseBffEnv(), async () => {
+    const ip = '198.51.100.202';
+    await withRateLimiterFailure(ip, async () => {
+      await withPrismaStubs(
+        {
+          'authSession.findUnique': async () => null,
+        },
+        async () => {
+          const { buildServer } = await loadBackendModules();
+          const server = await buildServer({ logger: false });
+          try {
+            const res = await server.inject({
+              method: 'GET',
+              url: '/auth/session',
+              headers: {
+                cookie: 'erp4_session=session-token-001',
+              },
+              remoteAddress: ip,
+            });
+            assert.equal(res.statusCode, 429, res.body);
+            const body = JSON.parse(res.body);
+            assert.equal(body.error.code, 'auth_session_rate_limited');
+          } finally {
+            await server.close();
+          }
+        },
+      );
+    });
+  });
+});
+
 test('GET /auth/session returns unauthorized when session cookie is missing', async () => {
   await withEnv(baseBffEnv(), async () => {
     await withPrismaStubs({}, async () => {
@@ -902,6 +934,44 @@ test('POST /auth/logout returns invalid_csrf_token when csrf header mismatches c
         }
       },
     );
+  });
+});
+
+test('GET /auth/sessions returns auth_gateway_rate_limited before session lookup', async () => {
+  await withEnv(baseBffEnv(), async () => {
+    let authSessionListCalled = false;
+    const ip = '198.51.100.203';
+    await withRateLimiterFailure(ip, async () => {
+      await withPrismaStubs(
+        {
+          'authSession.findUnique': async () => null,
+          'authSession.findMany': async () => {
+            authSessionListCalled = true;
+            return [];
+          },
+        },
+        async () => {
+          const { buildServer } = await loadBackendModules();
+          const server = await buildServer({ logger: false });
+          try {
+            const res = await server.inject({
+              method: 'GET',
+              url: '/auth/sessions?limit=20&offset=0',
+              headers: {
+                cookie: 'erp4_session=session-token-001',
+              },
+              remoteAddress: ip,
+            });
+            assert.equal(res.statusCode, 429, res.body);
+            const body = JSON.parse(res.body);
+            assert.equal(body.error.code, 'auth_session_rate_limited');
+          } finally {
+            await server.close();
+          }
+        },
+      );
+    });
+    assert.equal(authSessionListCalled, false);
   });
 });
 
@@ -1503,10 +1573,7 @@ test('POST /auth/logout returns auth_gateway_rate_limited before session revoke'
     await withRateLimiterFailure(ip, async () => {
       await withPrismaStubs(
         {
-          'authSession.findUnique': async () => {
-            authSessionLookupCalled = true;
-            return null;
-          },
+          'authSession.findUnique': async () => null,
           'auditLog.create': async () => {
             auditCalled = true;
             return { id: 'audit-unexpected' };
