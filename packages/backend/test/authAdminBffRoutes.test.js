@@ -512,6 +512,105 @@ test('POST /auth/user-identities/google-link returns forbidden for jwt_bff sessi
   });
 });
 
+test('POST /auth/user-identities/local-link returns invalid_csrf_token for jwt_bff admin session mismatch', async () => {
+  await withEnv(baseBffEnv(), async () => {
+    await withPrismaStubs(
+      {
+        'authSession.findUnique': async () => buildSessionRecord(),
+        'authSession.update': async ({ data }) => ({
+          ...buildSessionRecord(),
+          lastSeenAt: data.lastSeenAt,
+          idleExpiresAt: data.idleExpiresAt,
+        }),
+        'userIdentity.findUnique': async () => buildAdminIdentity(),
+        'projectMember.findMany': async () => [],
+      },
+      async () => {
+        const { buildServer } = await loadBackendModules();
+        const server = await buildServer({ logger: false });
+        try {
+          const res = await server.inject({
+            remoteAddress: nextRemoteAddress(),
+            method: 'POST',
+            url: '/auth/user-identities/local-link',
+            headers: {
+              ...buildSessionHeaders('csrf-cookie-003'),
+              'x-csrf-token': 'csrf-header-003',
+            },
+            payload: {
+              userAccountId: 'user-target-001',
+              loginId: 'target.user@example.com',
+              password: 'LocalPassword123',
+              ticketId: 'AUTH-MIG-301',
+              reasonCode: 'local_link',
+            },
+          });
+          assert.equal(res.statusCode, 403, res.body);
+          const body = JSON.parse(res.body);
+          assert.equal(body.error.code, 'invalid_csrf_token');
+        } finally {
+          await server.close();
+        }
+      },
+    );
+  });
+});
+
+test('POST /auth/user-identities/local-link returns forbidden for jwt_bff session without system_admin role', async () => {
+  await withEnv(baseBffEnv(), async () => {
+    let createCalled = false;
+    await withPrismaStubs(
+      {
+        'authSession.findUnique': async () => ({
+          ...buildSessionRecord(),
+          userAccountId: 'user-regular-001',
+          userIdentityId: 'identity-user-001',
+          providerSubject: 'google-sub-user-001',
+        }),
+        'authSession.update': async ({ data }) => ({
+          ...buildSessionRecord(),
+          userAccountId: 'user-regular-001',
+          userIdentityId: 'identity-user-001',
+          providerSubject: 'google-sub-user-001',
+          lastSeenAt: data.lastSeenAt,
+          idleExpiresAt: data.idleExpiresAt,
+        }),
+        'userIdentity.findUnique': async () => buildNonAdminIdentity(),
+        'projectMember.findMany': async () => [],
+        'userIdentity.create': async () => {
+          createCalled = true;
+          throw new Error('userIdentity.create should not be called');
+        },
+      },
+      async () => {
+        const { buildServer } = await loadBackendModules();
+        const server = await buildServer({ logger: false });
+        try {
+          const res = await server.inject({
+            remoteAddress: nextRemoteAddress(),
+            method: 'POST',
+            url: '/auth/user-identities/local-link',
+            headers: buildSessionHeaders(),
+            payload: {
+              userAccountId: 'user-target-001',
+              loginId: 'target.user@example.com',
+              password: 'LocalPassword123',
+              ticketId: 'AUTH-MIG-302',
+              reasonCode: 'local_link',
+            },
+          });
+          assert.equal(res.statusCode, 403, res.body);
+          const body = JSON.parse(res.body);
+          assert.equal(body.error.code, 'forbidden');
+        } finally {
+          await server.close();
+        }
+      },
+    );
+    assert.equal(createCalled, false);
+  });
+});
+
 test('POST /auth/local-credentials returns invalid_csrf_token for jwt_bff admin session mismatch', async () => {
   await withEnv(baseBffEnv(), async () => {
     await withPrismaStubs(
