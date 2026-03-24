@@ -275,6 +275,7 @@ test('frontend auth gateway bff logout success clears local session state @exten
   page,
 }) => {
   test.skip(!isBffMode, 'jwt_bff build only');
+  ensureEvidenceDir();
 
   let sessionState: 'unauthorized' | 'authenticated' = 'unauthorized';
 
@@ -327,35 +328,24 @@ test('frontend auth gateway bff logout success clears local session state @exten
     await route.fulfill({ status: 204, body: '' });
   });
 
-  await page.route('**/auth/sessions?*', async (route) => {
-    expectApiPath(route.request().url(), '/auth/sessions');
-    await route.fulfill({
-      status: 200,
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        limit: 20,
-        offset: 0,
-        items: [
-          {
-            sessionId: 'sess-local-1',
-            providerType: 'local_password',
-            issuer: 'erp4_local',
-            userAccountId: 'user-local-1',
-            userIdentityId: 'identity-local-1',
-            sourceIp: '203.0.113.10',
-            userAgent: 'Mozilla/5.0 Local Session',
-            createdAt: futureIso(0),
-            lastSeenAt: futureIso(0),
-            expiresAt: futureIso(7),
-            idleExpiresAt: futureIso(1),
-            revokedAt: null,
-            revokedReason: null,
-            current: true,
-          },
-        ],
-      }),
-    });
-  });
+  await mockAuthSessionList(page, [
+    {
+      sessionId: 'sess-local-1',
+      providerType: 'local_password',
+      issuer: 'erp4_local',
+      userAccountId: 'user-local-1',
+      userIdentityId: 'identity-local-1',
+      sourceIp: '203.0.113.10',
+      userAgent: 'Mozilla/5.0 Local Session',
+      createdAt: futureIso(0),
+      lastSeenAt: futureIso(0),
+      expiresAt: futureIso(7),
+      idleExpiresAt: futureIso(1),
+      revokedAt: null,
+      revokedReason: null,
+      current: true,
+    },
+  ]);
 
   await page.route('**/auth/logout', async (route) => {
     expectApiPath(route.request().url(), '/auth/logout');
@@ -388,6 +378,7 @@ test('frontend auth gateway bff shows logout failure guidance @extended', async 
   page,
 }) => {
   test.skip(!isBffMode, 'jwt_bff build only');
+  ensureEvidenceDir();
 
   let sessionState: 'unauthorized' | 'authenticated' = 'unauthorized';
 
@@ -440,18 +431,7 @@ test('frontend auth gateway bff shows logout failure guidance @extended', async 
     await route.fulfill({ status: 204, body: '' });
   });
 
-  await page.route('**/auth/sessions?*', async (route) => {
-    expectApiPath(route.request().url(), '/auth/sessions');
-    await route.fulfill({
-      status: 200,
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        limit: 20,
-        offset: 0,
-        items: [],
-      }),
-    });
-  });
+  await mockAuthSessionList(page, []);
 
   await page.route('**/auth/logout', async (route) => {
     expectApiPath(route.request().url(), '/auth/logout');
