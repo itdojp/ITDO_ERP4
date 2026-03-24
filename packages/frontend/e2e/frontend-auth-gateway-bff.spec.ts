@@ -65,6 +65,67 @@ async function mockAuthCsrf(page: Page) {
   });
 }
 
+
+type AuthSessionStub = {
+  sessionId: string;
+  providerType: string;
+  issuer: string;
+  userAccountId: string;
+  userIdentityId: string;
+  sourceIp: string | null;
+  userAgent: string | null;
+  createdAt: string;
+  lastSeenAt: string;
+  expiresAt: string;
+  idleExpiresAt: string;
+  revokedAt: string | null;
+  revokedReason: string | null;
+  current: boolean;
+};
+
+async function mockAuthenticatedCurrentUser(page: Page) {
+  await page.route('**/auth/session', async (route) => {
+    expectApiPath(route.request().url(), '/auth/session');
+    await route.fulfill({
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        user: {
+          userId: 'bff-user',
+          roles: ['user'],
+          groupIds: [],
+          projectIds: [],
+          groupAccountIds: [],
+        },
+        session: {
+          sessionId: 'sess-current',
+          providerType: 'google_oidc',
+          issuer: 'https://accounts.google.com',
+          userAccountId: 'user-current-1',
+          userIdentityId: 'identity-google-1',
+          expiresAt: futureIso(7),
+          idleExpiresAt: futureIso(1),
+        },
+      }),
+    });
+  });
+}
+
+async function mockAuthSessionList(page: Page, items: AuthSessionStub[]) {
+  await page.route('**/auth/sessions?*', async (route) => {
+    expectApiPath(route.request().url(), '/auth/sessions');
+    await route.fulfill({
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        limit: 20,
+        offset: 0,
+        items,
+      }),
+    });
+  });
+}
+
 test('frontend auth gateway bff smoke @extended', async ({ page }) => {
   test.skip(!isBffMode, 'jwt_bff build only');
   ensureEvidenceDir();
@@ -773,6 +834,7 @@ test('frontend auth gateway bff session management smoke @extended', async ({
 
   await page.route('**/auth/sessions/sess-other/revoke', async (route) => {
     expectApiPath(route.request().url(), '/auth/sessions/sess-other/revoke');
+    expect(route.request().method()).toBe('POST');
     const headers = route.request().headers();
     expect(headers['x-csrf-token']).toBe('csrf-token-001');
     expect(headers.cookie || '').toContain('erp4_csrf=csrf-token-001');
@@ -830,80 +892,45 @@ test('frontend auth gateway bff shows session not found guidance on revoke @exte
   });
   await mockAuthCsrf(page);
 
-  await page.route('**/auth/session', async (route) => {
-    expectApiPath(route.request().url(), '/auth/session');
-    await route.fulfill({
-      status: 200,
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        user: {
-          userId: 'bff-user',
-          roles: ['user'],
-          groupIds: [],
-          projectIds: [],
-          groupAccountIds: [],
-        },
-        session: {
-          sessionId: 'sess-current',
-          providerType: 'google_oidc',
-          issuer: 'https://accounts.google.com',
-          userAccountId: 'user-current-1',
-          userIdentityId: 'identity-google-1',
-          expiresAt: futureIso(7),
-          idleExpiresAt: futureIso(1),
-        },
-      }),
-    });
-  });
-
-  await page.route('**/auth/sessions?*', async (route) => {
-    expectApiPath(route.request().url(), '/auth/sessions');
-    await route.fulfill({
-      status: 200,
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        limit: 20,
-        offset: 0,
-        items: [
-          {
-            sessionId: 'sess-current',
-            providerType: 'google_oidc',
-            issuer: 'https://accounts.google.com',
-            userAccountId: 'user-current-1',
-            userIdentityId: 'identity-google-1',
-            sourceIp: '203.0.113.10',
-            userAgent: 'Mozilla/5.0 Current Session',
-            createdAt: futureIso(0),
-            lastSeenAt: futureIso(0),
-            expiresAt: futureIso(7),
-            idleExpiresAt: futureIso(1),
-            revokedAt: null,
-            revokedReason: null,
-            current: true,
-          },
-          {
-            sessionId: 'sess-other',
-            providerType: 'google_oidc',
-            issuer: 'https://accounts.google.com',
-            userAccountId: 'user-current-1',
-            userIdentityId: 'identity-google-1',
-            sourceIp: '203.0.113.20',
-            userAgent: 'Mozilla/5.0 Other Session',
-            createdAt: futureIso(0),
-            lastSeenAt: futureIso(0),
-            expiresAt: futureIso(7),
-            idleExpiresAt: futureIso(1),
-            revokedAt: null,
-            revokedReason: null,
-            current: false,
-          },
-        ],
-      }),
-    });
-  });
+  await mockAuthenticatedCurrentUser(page);
+  await mockAuthSessionList(page, [
+    {
+      sessionId: 'sess-current',
+      providerType: 'google_oidc',
+      issuer: 'https://accounts.google.com',
+      userAccountId: 'user-current-1',
+      userIdentityId: 'identity-google-1',
+      sourceIp: '203.0.113.10',
+      userAgent: 'Mozilla/5.0 Current Session',
+      createdAt: futureIso(0),
+      lastSeenAt: futureIso(0),
+      expiresAt: futureIso(7),
+      idleExpiresAt: futureIso(1),
+      revokedAt: null,
+      revokedReason: null,
+      current: true,
+    },
+    {
+      sessionId: 'sess-other',
+      providerType: 'google_oidc',
+      issuer: 'https://accounts.google.com',
+      userAccountId: 'user-current-1',
+      userIdentityId: 'identity-google-1',
+      sourceIp: '203.0.113.20',
+      userAgent: 'Mozilla/5.0 Other Session',
+      createdAt: futureIso(0),
+      lastSeenAt: futureIso(0),
+      expiresAt: futureIso(7),
+      idleExpiresAt: futureIso(1),
+      revokedAt: null,
+      revokedReason: null,
+      current: false,
+    },
+  ]);
 
   await page.route('**/auth/sessions/sess-other/revoke', async (route) => {
     expectApiPath(route.request().url(), '/auth/sessions/sess-other/revoke');
+    expect(route.request().method()).toBe('POST');
     const headers = route.request().headers();
     expect(headers['x-csrf-token']).toBe('csrf-token-001');
     expect(headers.cookie || '').toContain('erp4_csrf=csrf-token-001');
@@ -934,80 +961,45 @@ test('frontend auth gateway bff shows rate limit guidance on revoke @extended', 
   });
   await mockAuthCsrf(page);
 
-  await page.route('**/auth/session', async (route) => {
-    expectApiPath(route.request().url(), '/auth/session');
-    await route.fulfill({
-      status: 200,
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        user: {
-          userId: 'bff-user',
-          roles: ['user'],
-          groupIds: [],
-          projectIds: [],
-          groupAccountIds: [],
-        },
-        session: {
-          sessionId: 'sess-current',
-          providerType: 'google_oidc',
-          issuer: 'https://accounts.google.com',
-          userAccountId: 'user-current-1',
-          userIdentityId: 'identity-google-1',
-          expiresAt: futureIso(7),
-          idleExpiresAt: futureIso(1),
-        },
-      }),
-    });
-  });
-
-  await page.route('**/auth/sessions?*', async (route) => {
-    expectApiPath(route.request().url(), '/auth/sessions');
-    await route.fulfill({
-      status: 200,
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        limit: 20,
-        offset: 0,
-        items: [
-          {
-            sessionId: 'sess-current',
-            providerType: 'google_oidc',
-            issuer: 'https://accounts.google.com',
-            userAccountId: 'user-current-1',
-            userIdentityId: 'identity-google-1',
-            sourceIp: '203.0.113.10',
-            userAgent: 'Mozilla/5.0 Current Session',
-            createdAt: futureIso(0),
-            lastSeenAt: futureIso(0),
-            expiresAt: futureIso(7),
-            idleExpiresAt: futureIso(1),
-            revokedAt: null,
-            revokedReason: null,
-            current: true,
-          },
-          {
-            sessionId: 'sess-other',
-            providerType: 'google_oidc',
-            issuer: 'https://accounts.google.com',
-            userAccountId: 'user-current-1',
-            userIdentityId: 'identity-google-1',
-            sourceIp: '203.0.113.20',
-            userAgent: 'Mozilla/5.0 Other Session',
-            createdAt: futureIso(0),
-            lastSeenAt: futureIso(0),
-            expiresAt: futureIso(7),
-            idleExpiresAt: futureIso(1),
-            revokedAt: null,
-            revokedReason: null,
-            current: false,
-          },
-        ],
-      }),
-    });
-  });
+  await mockAuthenticatedCurrentUser(page);
+  await mockAuthSessionList(page, [
+    {
+      sessionId: 'sess-current',
+      providerType: 'google_oidc',
+      issuer: 'https://accounts.google.com',
+      userAccountId: 'user-current-1',
+      userIdentityId: 'identity-google-1',
+      sourceIp: '203.0.113.10',
+      userAgent: 'Mozilla/5.0 Current Session',
+      createdAt: futureIso(0),
+      lastSeenAt: futureIso(0),
+      expiresAt: futureIso(7),
+      idleExpiresAt: futureIso(1),
+      revokedAt: null,
+      revokedReason: null,
+      current: true,
+    },
+    {
+      sessionId: 'sess-other',
+      providerType: 'google_oidc',
+      issuer: 'https://accounts.google.com',
+      userAccountId: 'user-current-1',
+      userIdentityId: 'identity-google-1',
+      sourceIp: '203.0.113.20',
+      userAgent: 'Mozilla/5.0 Other Session',
+      createdAt: futureIso(0),
+      lastSeenAt: futureIso(0),
+      expiresAt: futureIso(7),
+      idleExpiresAt: futureIso(1),
+      revokedAt: null,
+      revokedReason: null,
+      current: false,
+    },
+  ]);
 
   await page.route('**/auth/sessions/sess-other/revoke', async (route) => {
     expectApiPath(route.request().url(), '/auth/sessions/sess-other/revoke');
+    expect(route.request().method()).toBe('POST');
     const headers = route.request().headers();
     expect(headers['x-csrf-token']).toBe('csrf-token-001');
     expect(headers.cookie || '').toContain('erp4_csrf=csrf-token-001');
