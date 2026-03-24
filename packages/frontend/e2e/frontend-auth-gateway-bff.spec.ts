@@ -1068,6 +1068,86 @@ test('frontend auth gateway bff session management smoke @extended', async ({
   );
 });
 
+test('frontend auth gateway bff shows empty session state @extended', async ({
+  page,
+}) => {
+  test.skip(!isBffMode, 'jwt_bff build only');
+
+  await page.addInitScript(() => {
+    window.localStorage.removeItem('erp4_auth');
+    window.localStorage.setItem('erp4_active_section', 'reports');
+  });
+  await mockAuthCsrf(page);
+  await mockAuthenticatedCurrentUser(page);
+  await mockAuthSessionList(page, []);
+
+  await page.goto(baseUrl);
+
+  await expect(page.getByText('有効な認証セッションはありません')).toBeVisible();
+  await expect(page.getByText('現在のセッション')).toHaveCount(0);
+  await expect(page.getByText('他のセッション')).toHaveCount(0);
+});
+
+test('frontend auth gateway bff reloads session list after fetch failure @extended', async ({
+  page,
+}) => {
+  test.skip(!isBffMode, 'jwt_bff build only');
+
+  let sessionListRequestCount = 0;
+
+  await page.addInitScript(() => {
+    window.localStorage.removeItem('erp4_auth');
+    window.localStorage.setItem('erp4_active_section', 'reports');
+  });
+  await mockAuthCsrf(page);
+  await mockAuthenticatedCurrentUser(page);
+
+  await page.route('**/auth/sessions?*', async (route) => {
+    expectApiPath(route.request().url(), '/auth/sessions');
+    sessionListRequestCount += 1;
+    if (sessionListRequestCount === 1) {
+      await route.fulfill({
+        status: 500,
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ error: { code: 'internal_error' } }),
+      });
+      return;
+    }
+    await route.fulfill({
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        limit: 20,
+        offset: 0,
+        items: [
+          {
+            sessionId: 'sess-current',
+            providerType: 'google_oidc',
+            issuer: 'https://accounts.google.com',
+            userAccountId: 'user-current-1',
+            userIdentityId: 'identity-google-1',
+            sourceIp: '203.0.113.10',
+            userAgent: 'Mozilla/5.0 Current Session',
+            createdAt: futureIso(0),
+            lastSeenAt: futureIso(0),
+            expiresAt: futureIso(7),
+            idleExpiresAt: futureIso(1),
+            revokedAt: null,
+            revokedReason: null,
+            current: true,
+          },
+        ],
+      }),
+    });
+  });
+
+  await page.goto(baseUrl);
+
+  await expect(page.getByText('認証セッションの取得に失敗しました')).toBeVisible();
+  await page.getByRole('button', { name: 'セッション一覧を再読込' }).click();
+  await expect(page.getByText('認証セッションの取得に失敗しました')).toHaveCount(0);
+  await expect(page.getByText('Session ID: sess-current')).toBeVisible();
+});
 
 test('frontend auth gateway bff shows session not found guidance on revoke @extended', async ({
   page,
