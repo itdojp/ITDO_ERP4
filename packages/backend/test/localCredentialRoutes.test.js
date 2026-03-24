@@ -239,6 +239,59 @@ test('POST /auth/local-credentials creates local credential and writes audit log
   assert.equal(capturedAudit?.data?.metadata?.ticketId, 'AUTH-001');
 });
 
+test('POST /auth/local-credentials rejects blank audit fields after trimming', async () => {
+  process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
+  process.env.AUTH_MODE = 'header';
+
+  let lookupCalled = false;
+  let createCalled = false;
+  await withPrismaStubs(
+    {
+      'userAccount.findUnique': async () => {
+        lookupCalled = true;
+        return null;
+      },
+      'userIdentity.create': async () => {
+        createCalled = true;
+        throw new Error('should not create credential');
+      },
+    },
+    async () => {
+      const server = await buildServer({ logger: false });
+      try {
+        const res = await server.inject({
+          method: 'POST',
+          url: '/auth/local-credentials',
+          headers: {
+            'x-user-id': 'sys-admin',
+            'x-roles': 'system_admin',
+            ...LOCAL_CSRF_HEADERS,
+          },
+          payload: {
+            userAccountId: 'user-001',
+            loginId: 'local-user@example.com',
+            password: 'LocalPassword123',
+            ticketId: '   ',
+            reasonCode: '   ',
+          },
+        });
+        assert.equal(res.statusCode, 400, res.body);
+        const body = JSON.parse(res.body);
+        assert.equal(body.error.code, 'invalid_local_credential_payload');
+        assert.deepEqual(body.error.details?.invalidFields, [
+          'ticketId',
+          'reasonCode',
+        ]);
+      } finally {
+        await server.close();
+      }
+    },
+  );
+
+  assert.equal(lookupCalled, false);
+  assert.equal(createCalled, false);
+});
+
 test('POST /auth/local-credentials rejects duplicate local credential', async () => {
   process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
   process.env.AUTH_MODE = 'header';
@@ -620,4 +673,84 @@ test('PATCH /auth/local-credentials/:identityId maps loginId conflicts to local_
       }
     },
   );
+});
+
+test('PATCH /auth/local-credentials/:identityId rejects blank audit fields after trimming', async () => {
+  process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
+  process.env.AUTH_MODE = 'header';
+
+  let updateCalled = false;
+  await withPrismaStubs(
+    {
+      'userIdentity.findUnique': async () => ({
+        id: 'identity-001',
+        userAccountId: 'user-001',
+        providerType: 'local_password',
+        providerSubject: 'local-subject-001',
+        issuer: 'erp4_local',
+        status: 'active',
+        lastAuthenticatedAt: null,
+        linkedAt: new Date('2026-03-23T00:00:00.000Z'),
+        effectiveUntil: null,
+        rollbackWindowUntil: null,
+        note: null,
+        createdAt: new Date('2026-03-23T00:00:00.000Z'),
+        updatedAt: new Date('2026-03-23T00:00:00.000Z'),
+        userAccount: {
+          id: 'user-001',
+          userName: 'legacy-user',
+          displayName: 'Legacy User',
+          active: true,
+          deletedAt: null,
+        },
+        localCredential: {
+          id: 'cred-001',
+          loginId: 'local-user@example.com',
+          passwordAlgo: 'argon2id',
+          mfaRequired: false,
+          mfaSecretRef: null,
+          mustRotatePassword: true,
+          failedAttempts: 0,
+          lockedUntil: null,
+          passwordChangedAt: new Date('2026-03-23T00:00:00.000Z'),
+          createdAt: new Date('2026-03-23T00:00:00.000Z'),
+          updatedAt: new Date('2026-03-23T00:00:00.000Z'),
+        },
+      }),
+      'userIdentity.update': async () => {
+        updateCalled = true;
+        throw new Error('should not update credential');
+      },
+    },
+    async () => {
+      const server = await buildServer({ logger: false });
+      try {
+        const res = await server.inject({
+          method: 'PATCH',
+          url: '/auth/local-credentials/identity-001',
+          headers: {
+            'x-user-id': 'sys-admin',
+            'x-roles': 'system_admin',
+            ...LOCAL_CSRF_HEADERS,
+          },
+          payload: {
+            loginId: 'other-user@example.com',
+            ticketId: '   ',
+            reasonCode: '   ',
+          },
+        });
+        assert.equal(res.statusCode, 400, res.body);
+        const body = JSON.parse(res.body);
+        assert.equal(body.error.code, 'invalid_local_credential_payload');
+        assert.deepEqual(body.error.details?.invalidFields, [
+          'ticketId',
+          'reasonCode',
+        ]);
+      } finally {
+        await server.close();
+      }
+    },
+  );
+
+  assert.equal(updateCalled, false);
 });

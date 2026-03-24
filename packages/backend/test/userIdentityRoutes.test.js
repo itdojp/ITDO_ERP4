@@ -240,6 +240,62 @@ test('POST /auth/user-identities/google-link creates Google identity and writes 
   assert.equal(capturedAudit?.data?.metadata?.ticketId, 'AUTH-MIG-001');
 });
 
+test('POST /auth/user-identities/google-link rejects blank audit fields after trimming', async () => {
+  process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
+  process.env.AUTH_MODE = 'header';
+
+  let lookupCalled = false;
+  let createCalled = false;
+  await withPrismaStubs(
+    {
+      'userAccount.findUnique': async () => {
+        lookupCalled = true;
+        return null;
+      },
+      'userIdentity.create': async () => {
+        createCalled = true;
+        throw new Error('should not create identity');
+      },
+    },
+    async () => {
+      const server = await buildServer({ logger: false });
+      try {
+        const res = await server.inject({
+          remoteAddress: nextRemoteAddress(),
+          method: 'POST',
+          url: '/auth/user-identities/google-link',
+          headers: {
+            'x-user-id': 'sys-admin',
+            'x-roles': 'system_admin',
+            ...IDENTITY_CSRF_HEADERS,
+          },
+          payload: {
+            userAccountId: 'user-001',
+            issuer: 'https://accounts.google.com',
+            providerSubject: 'google-sub-001',
+            ticketId: '   ',
+            reasonCode: '   ',
+          },
+        });
+        assert.equal(res.statusCode, 400, res.body);
+        const body = JSON.parse(res.body);
+        // NOTE: /auth/user-identities/* currently reuses the shared
+        // local-credential validation error contract for blank audit fields.
+        assert.equal(body.error.code, 'invalid_local_credential_payload');
+        assert.deepEqual(body.error.details?.invalidFields, [
+          'ticketId',
+          'reasonCode',
+        ]);
+      } finally {
+        await server.close();
+      }
+    },
+  );
+
+  assert.equal(lookupCalled, false);
+  assert.equal(createCalled, false);
+});
+
 test('POST /auth/user-identities/google-link rejects a second Google identity regardless of issuer', async () => {
   process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
   process.env.AUTH_MODE = 'header';
@@ -433,6 +489,62 @@ test('POST /auth/user-identities/local-link creates local identity with bootstra
     true,
   );
   assert.equal(await argon2.verify(passwordHash, 'LocalPassword123'), true);
+});
+
+test('POST /auth/user-identities/local-link rejects blank audit fields after trimming', async () => {
+  process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
+  process.env.AUTH_MODE = 'header';
+
+  let lookupCalled = false;
+  let createCalled = false;
+  await withPrismaStubs(
+    {
+      'userAccount.findUnique': async () => {
+        lookupCalled = true;
+        return null;
+      },
+      'userIdentity.create': async () => {
+        createCalled = true;
+        throw new Error('should not create local identity');
+      },
+    },
+    async () => {
+      const server = await buildServer({ logger: false });
+      try {
+        const res = await server.inject({
+          remoteAddress: nextRemoteAddress(),
+          method: 'POST',
+          url: '/auth/user-identities/local-link',
+          headers: {
+            'x-user-id': 'sys-admin',
+            'x-roles': 'system_admin',
+            ...IDENTITY_CSRF_HEADERS,
+          },
+          payload: {
+            userAccountId: 'user-001',
+            loginId: 'local.user@example.com',
+            password: 'LocalPassword123',
+            ticketId: '   ',
+            reasonCode: '   ',
+          },
+        });
+        assert.equal(res.statusCode, 400, res.body);
+        const body = JSON.parse(res.body);
+        // NOTE: /auth/user-identities/* currently reuses the shared
+        // local-credential validation error contract for blank audit fields.
+        assert.equal(body.error.code, 'invalid_local_credential_payload');
+        assert.deepEqual(body.error.details?.invalidFields, [
+          'ticketId',
+          'reasonCode',
+        ]);
+      } finally {
+        await server.close();
+      }
+    },
+  );
+
+  assert.equal(lookupCalled, false);
+  assert.equal(createCalled, false);
 });
 
 test('POST /auth/user-identities/local-link rejects past rollback window', async () => {
