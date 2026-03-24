@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { RateLimiterMemory } from 'rate-limiter-flexible';
 import { exportSPKI, generateKeyPair, SignJWT } from 'jose';
 
 const MIN_DATABASE_URL = 'postgresql://user:pass@localhost:5432/postgres';
@@ -81,6 +82,21 @@ async function withPrismaStubs(stubs, fn) {
     await fn();
   } finally {
     for (const restore of restores.reverse()) restore();
+  }
+}
+
+async function withRateLimiterFailure(ip, fn) {
+  const originalConsume = RateLimiterMemory.prototype.consume;
+  RateLimiterMemory.prototype.consume = async function patchedConsume(key) {
+    if (key == ip) {
+      throw new Error('rate_limited_for_test');
+    }
+    return originalConsume.call(this, key);
+  };
+  try {
+    await fn();
+  } finally {
+    RateLimiterMemory.prototype.consume = originalConsume;
   }
 }
 
@@ -1441,5 +1457,84 @@ test('POST /auth/sessions/:sessionId/revoke keeps current cookie when another se
         }
       },
     );
+  });
+});
+
+test('POST /auth/logout clears cookies without audit when session cookie is missing', async () => {
+  await withEnv(baseBffEnv(), async () => {
+    let auditCalled = false;
+    await withPrismaStubs(
+      {
+        'authSession.findUnique': async () => null,
+        'auditLog.create': async () => {
+          auditCalled = true;
+          return { id: 'audit-unexpected' };
+        },
+      },
+      async () => {
+        const { buildServer } = await loadBackendModules();
+        const server = await buildServer({ logger: false });
+        try {
+          const res = await server.inject({
+            method: 'POST',
+            url: '/auth/logout',
+            headers: {
+              cookie: 'erp4_csrf=csrf-token-001',
+              'x-csrf-token': 'csrf-token-001',
+            },
+          });
+          assert.equal(res.statusCode, 204, res.body);
+          assert.equal(auditCalled, false);
+          assert.match(String(res.headers['set-cookie']), /erp4_session=;/);
+          assert.match(String(res.headers['set-cookie']), /erp4_csrf=;/);
+        } finally {
+          await server.close();
+        }
+      },
+    );
+  });
+});
+
+test('POST /auth/logout returns auth_gateway_rate_limited before session revoke', async () => {
+  await withEnv(baseBffEnv(), async () => {
+    let authSessionLookupCalled = false;
+    let auditCalled = false;
+    const ip = '198.51.100.201';
+    await withRateLimiterFailure(ip, async () => {
+      await withPrismaStubs(
+        {
+          'authSession.findUnique': async () => {
+            authSessionLookupCalled = true;
+            return null;
+          },
+          'auditLog.create': async () => {
+            auditCalled = true;
+            return { id: 'audit-unexpected' };
+          },
+        },
+        async () => {
+          const { buildServer } = await loadBackendModules();
+          const server = await buildServer({ logger: false });
+          try {
+            const res = await server.inject({
+              method: 'POST',
+              url: '/auth/logout',
+              headers: {
+                cookie: 'erp4_csrf=csrf-token-001',
+                'x-csrf-token': 'csrf-token-001',
+              },
+              remoteAddress: ip,
+            });
+            assert.equal(res.statusCode, 429, res.body);
+            const body = JSON.parse(res.body);
+            assert.equal(body.error.code, 'auth_gateway_rate_limited');
+          } finally {
+            await server.close();
+          }
+        },
+      );
+    });
+    assert.equal(authSessionLookupCalled, false);
+    assert.equal(auditCalled, false);
   });
 });
