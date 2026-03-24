@@ -359,6 +359,120 @@ test('frontend auth gateway bff local bootstrap password rotation @extended', as
   ).toBeVisible();
 });
 
+test('frontend auth gateway bff shows message when password rotation is not required @extended', async ({
+  page,
+}) => {
+  test.skip(!isBffMode, 'jwt_bff build only');
+
+  await page.addInitScript(() => {
+    window.localStorage.removeItem('erp4_auth');
+    window.localStorage.setItem('erp4_active_section', 'reports');
+  });
+  await mockAuthCsrf(page);
+
+  await page.route('**/auth/session', async (route) => {
+    await route.fulfill({
+      status: 401,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ error: { code: 'unauthorized' } }),
+    });
+  });
+
+  await page.route('**/auth/local/login', async (route) => {
+    await route.fulfill({
+      status: 409,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        error: { code: 'local_password_rotation_required' },
+      }),
+    });
+  });
+
+  await page.route('**/auth/local/password/rotate', async (route) => {
+    expectApiPath(route.request().url(), '/auth/local/password/rotate');
+    await route.fulfill({
+      status: 409,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        error: { code: 'local_password_rotation_not_required' },
+      }),
+    });
+  });
+
+  await page.goto(baseUrl);
+  await expect(page.getByRole('heading', { name: 'Reports' })).toBeVisible();
+
+  await page.getByLabel('ローカル認証 loginId').fill('bootstrap-user');
+  await page.getByLabel('ローカル認証 password').fill('TempPassw0rd!');
+  await page.getByRole('button', { name: 'ローカルログイン' }).click();
+
+  await expect(
+    page.getByRole('button', { name: '初期パスワードを更新' }),
+  ).toBeVisible();
+  await page.getByLabel('ローカル認証 new password').fill('NewPassw0rd!');
+  await page.getByRole('button', { name: '初期パスワードを更新' }).click();
+
+  await expect(page.getByText('初期パスワード更新は不要です')).toBeVisible();
+});
+
+test('frontend auth gateway bff shows message when current password is invalid during rotation @extended', async ({
+  page,
+}) => {
+  test.skip(!isBffMode, 'jwt_bff build only');
+
+  await page.addInitScript(() => {
+    window.localStorage.removeItem('erp4_auth');
+    window.localStorage.setItem('erp4_active_section', 'reports');
+  });
+  await mockAuthCsrf(page);
+
+  await page.route('**/auth/session', async (route) => {
+    await route.fulfill({
+      status: 401,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ error: { code: 'unauthorized' } }),
+    });
+  });
+
+  await page.route('**/auth/local/login', async (route) => {
+    await route.fulfill({
+      status: 409,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        error: { code: 'local_password_rotation_required' },
+      }),
+    });
+  });
+
+  await page.route('**/auth/local/password/rotate', async (route) => {
+    expectApiPath(route.request().url(), '/auth/local/password/rotate');
+    await route.fulfill({
+      status: 401,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        error: { code: 'local_login_failed' },
+      }),
+    });
+  });
+
+  await page.goto(baseUrl);
+  await expect(page.getByRole('heading', { name: 'Reports' })).toBeVisible();
+
+  await page.getByLabel('ローカル認証 loginId').fill('bootstrap-user');
+  await page.getByLabel('ローカル認証 password').fill('TempPassw0rd!');
+  await page.getByRole('button', { name: 'ローカルログイン' }).click();
+
+  await expect(
+    page.getByRole('button', { name: '初期パスワードを更新' }),
+  ).toBeVisible();
+  await page.getByLabel('ローカル認証 new password').fill('NewPassw0rd!');
+  await page.getByRole('button', { name: '初期パスワードを更新' }).click();
+
+  await expect(
+    page.getByText('ログインIDまたは現在のパスワードが正しくありません'),
+  ).toBeVisible();
+});
+
 test('frontend auth gateway bff session management smoke @extended', async ({
   page,
 }) => {
