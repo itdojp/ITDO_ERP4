@@ -270,6 +270,194 @@ test('frontend auth gateway bff local login smoke @extended', async ({
   await expect(page.getByText('Session ID: sess-local-1')).toBeVisible();
 });
 
+
+test('frontend auth gateway bff logout success clears local session state @extended', async ({
+  page,
+}) => {
+  test.skip(!isBffMode, 'jwt_bff build only');
+  ensureEvidenceDir();
+
+  let sessionState: 'unauthorized' | 'authenticated' = 'unauthorized';
+
+  await page.addInitScript(() => {
+    window.localStorage.removeItem('erp4_auth');
+    window.localStorage.setItem('erp4_active_section', 'reports');
+  });
+  await mockAuthCsrf(page);
+
+  await page.route('**/auth/session', async (route) => {
+    expectApiPath(route.request().url(), '/auth/session');
+    if (sessionState === 'authenticated') {
+      await route.fulfill({
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          user: {
+            userId: 'local-user',
+            roles: ['user'],
+            groupIds: [],
+            projectIds: [],
+            groupAccountIds: [],
+          },
+          session: {
+            sessionId: 'sess-local-1',
+            providerType: 'local_password',
+            issuer: 'erp4_local',
+            userAccountId: 'user-local-1',
+            userIdentityId: 'identity-local-1',
+            expiresAt: futureIso(7),
+            idleExpiresAt: futureIso(1),
+          },
+        }),
+      });
+      return;
+    }
+    await route.fulfill({
+      status: 401,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ error: { code: 'unauthorized' } }),
+    });
+  });
+
+  await page.route('**/auth/local/login', async (route) => {
+    expectApiPath(route.request().url(), '/auth/local/login');
+    const headers = route.request().headers();
+    expect(headers['x-csrf-token']).toBe('csrf-token-001');
+    expect(headers.cookie || '').toContain('erp4_csrf=csrf-token-001');
+    sessionState = 'authenticated';
+    await route.fulfill({ status: 204, body: '' });
+  });
+
+  await mockAuthSessionList(page, [
+    {
+      sessionId: 'sess-local-1',
+      providerType: 'local_password',
+      issuer: 'erp4_local',
+      userAccountId: 'user-local-1',
+      userIdentityId: 'identity-local-1',
+      sourceIp: '203.0.113.10',
+      userAgent: 'Mozilla/5.0 Local Session',
+      createdAt: futureIso(0),
+      lastSeenAt: futureIso(0),
+      expiresAt: futureIso(7),
+      idleExpiresAt: futureIso(1),
+      revokedAt: null,
+      revokedReason: null,
+      current: true,
+    },
+  ]);
+
+  await page.route('**/auth/logout', async (route) => {
+    expectApiPath(route.request().url(), '/auth/logout');
+    expect(route.request().method()).toBe('POST');
+    const headers = route.request().headers();
+    expect(headers['x-csrf-token']).toBe('csrf-token-001');
+    expect(headers.cookie || '').toContain('erp4_csrf=csrf-token-001');
+    sessionState = 'unauthorized';
+    await route.fulfill({ status: 204, body: '' });
+  });
+
+  await page.goto(baseUrl);
+  await page.getByLabel('ローカル認証 loginId').fill('local-user');
+  await page.getByLabel('ローカル認証 password').fill('TempPassw0rd!');
+  await page.getByRole('button', { name: 'ローカルログイン' }).click();
+  await expect(page.getByText('ID: local-user')).toBeVisible();
+
+  await page.getByRole('button', { name: 'ログアウト' }).click();
+
+  await expect(page.getByText('ID: local-user')).toHaveCount(0);
+  await expect(
+    page.getByRole('button', { name: 'Googleでログイン' }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole('button', { name: 'ローカルログイン' }),
+  ).toBeVisible();
+});
+
+test('frontend auth gateway bff shows logout failure guidance @extended', async ({
+  page,
+}) => {
+  test.skip(!isBffMode, 'jwt_bff build only');
+  ensureEvidenceDir();
+
+  let sessionState: 'unauthorized' | 'authenticated' = 'unauthorized';
+
+  await page.addInitScript(() => {
+    window.localStorage.removeItem('erp4_auth');
+    window.localStorage.setItem('erp4_active_section', 'reports');
+  });
+  await mockAuthCsrf(page);
+
+  await page.route('**/auth/session', async (route) => {
+    expectApiPath(route.request().url(), '/auth/session');
+    if (sessionState === 'authenticated') {
+      await route.fulfill({
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          user: {
+            userId: 'local-user',
+            roles: ['user'],
+            groupIds: [],
+            projectIds: [],
+            groupAccountIds: [],
+          },
+          session: {
+            sessionId: 'sess-local-1',
+            providerType: 'local_password',
+            issuer: 'erp4_local',
+            userAccountId: 'user-local-1',
+            userIdentityId: 'identity-local-1',
+            expiresAt: futureIso(7),
+            idleExpiresAt: futureIso(1),
+          },
+        }),
+      });
+      return;
+    }
+    await route.fulfill({
+      status: 401,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ error: { code: 'unauthorized' } }),
+    });
+  });
+
+  await page.route('**/auth/local/login', async (route) => {
+    expectApiPath(route.request().url(), '/auth/local/login');
+    const headers = route.request().headers();
+    expect(headers['x-csrf-token']).toBe('csrf-token-001');
+    expect(headers.cookie || '').toContain('erp4_csrf=csrf-token-001');
+    sessionState = 'authenticated';
+    await route.fulfill({ status: 204, body: '' });
+  });
+
+  await mockAuthSessionList(page, []);
+
+  await page.route('**/auth/logout', async (route) => {
+    expectApiPath(route.request().url(), '/auth/logout');
+    expect(route.request().method()).toBe('POST');
+    const headers = route.request().headers();
+    expect(headers['x-csrf-token']).toBe('csrf-token-001');
+    expect(headers.cookie || '').toContain('erp4_csrf=csrf-token-001');
+    await route.fulfill({
+      status: 500,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ error: { code: 'logout_failed' } }),
+    });
+  });
+
+  await page.goto(baseUrl);
+  await page.getByLabel('ローカル認証 loginId').fill('local-user');
+  await page.getByLabel('ローカル認証 password').fill('TempPassw0rd!');
+  await page.getByRole('button', { name: 'ローカルログイン' }).click();
+  await expect(page.getByText('ID: local-user')).toBeVisible();
+
+  await page.getByRole('button', { name: 'ログアウト' }).click();
+
+  await expect(page.getByText('ログアウトに失敗')).toBeVisible();
+  await expect(page.getByText('ID: local-user')).toBeVisible();
+});
+
 test('frontend auth gateway bff local login shows MFA challenge required guidance @extended', async ({
   page,
 }) => {
