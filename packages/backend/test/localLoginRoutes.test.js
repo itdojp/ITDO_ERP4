@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import argon2 from 'argon2';
+import { RateLimiterMemory } from 'rate-limiter-flexible';
 
 const MIN_DATABASE_URL = 'postgresql://user:pass@localhost:5432/postgres';
 const LOCAL_CSRF_HEADERS = {
@@ -78,6 +79,21 @@ async function withPrismaStubs(stubs, fn) {
     await fn();
   } finally {
     for (const restore of restores.reverse()) restore();
+  }
+}
+
+async function withRateLimiterFailure(ip, fn) {
+  const originalConsume = RateLimiterMemory.prototype.consume;
+  RateLimiterMemory.prototype.consume = async function patchedConsume(key) {
+    if (key === ip) {
+      throw new Error('rate_limited_for_test');
+    }
+    return originalConsume.call(this, key);
+  };
+  try {
+    await fn();
+  } finally {
+    RateLimiterMemory.prototype.consume = originalConsume;
   }
 }
 
@@ -255,6 +271,44 @@ test('POST /auth/local/login returns invalid_csrf_token when csrf header mismatc
       },
     );
     assert.equal(lookedUpIdentity, false);
+  });
+});
+
+test('POST /auth/local/login returns local_login_rate_limited before credential lookup', async () => {
+  await withEnv(baseBffEnv(), async () => {
+    await withRateLimiterFailure('198.51.100.200', async () => {
+      let lookedUpIdentity = false;
+      await withPrismaStubs(
+        {
+          'userIdentity.findFirst': async () => {
+            lookedUpIdentity = true;
+            return null;
+          },
+        },
+        async () => {
+          const { buildServer } = await loadBackendModules();
+          const server = await buildServer({ logger: false });
+          try {
+            const res = await server.inject({
+              remoteAddress: '198.51.100.200',
+              method: 'POST',
+              url: '/auth/local/login',
+              headers: LOCAL_CSRF_HEADERS,
+              payload: {
+                loginId: 'local.user@example.com',
+                password: 'LocalPassword123',
+              },
+            });
+            assert.equal(res.statusCode, 429, res.body);
+            const body = JSON.parse(res.body);
+            assert.equal(body.error.code, 'local_login_rate_limited');
+          } finally {
+            await server.close();
+          }
+        },
+      );
+      assert.equal(lookedUpIdentity, false);
+    });
   });
 });
 
@@ -633,6 +687,45 @@ test('POST /auth/local/password/rotate returns invalid_csrf_token when csrf head
       },
     );
     assert.equal(lookedUpIdentity, false);
+  });
+});
+
+test('POST /auth/local/password/rotate returns local_login_rate_limited before credential lookup', async () => {
+  await withEnv(baseBffEnv(), async () => {
+    await withRateLimiterFailure('198.51.100.201', async () => {
+      let lookedUpIdentity = false;
+      await withPrismaStubs(
+        {
+          'userIdentity.findFirst': async () => {
+            lookedUpIdentity = true;
+            return null;
+          },
+        },
+        async () => {
+          const { buildServer } = await loadBackendModules();
+          const server = await buildServer({ logger: false });
+          try {
+            const res = await server.inject({
+              remoteAddress: '198.51.100.201',
+              method: 'POST',
+              url: '/auth/local/password/rotate',
+              headers: LOCAL_CSRF_HEADERS,
+              payload: {
+                loginId: 'local.user@example.com',
+                currentPassword: 'LocalPassword123',
+                newPassword: 'NewLocalPassword123',
+              },
+            });
+            assert.equal(res.statusCode, 429, res.body);
+            const body = JSON.parse(res.body);
+            assert.equal(body.error.code, 'local_login_rate_limited');
+          } finally {
+            await server.close();
+          }
+        },
+      );
+      assert.equal(lookedUpIdentity, false);
+    });
   });
 });
 
