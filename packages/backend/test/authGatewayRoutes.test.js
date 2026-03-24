@@ -986,7 +986,7 @@ test('POST /auth/sessions/:sessionId/revoke returns invalid_csrf_token when csrf
   });
 });
 
-test('POST /auth/sessions/:sessionId/revoke returns not_found when target session is missing', async () => {
+test('POST /auth/sessions/:sessionId/revoke returns auth_session_not_found when target session is missing', async () => {
   await withEnv(baseBffEnv(), async () => {
     await withPrismaStubs(
       {
