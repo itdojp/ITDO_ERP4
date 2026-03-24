@@ -7,6 +7,7 @@ const IDENTITY_CSRF_HEADERS = {
   cookie: 'erp4_csrf=csrf-token-001',
   'x-csrf-token': 'csrf-token-001',
 };
+let injectIpCounter = 0;
 process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
 
 const { buildServer } = await import('../dist/server.js');
@@ -14,6 +15,11 @@ const { prisma } = await import('../dist/services/db.js');
 
 function futureIso(daysAhead) {
   return new Date(Date.now() + daysAhead * 24 * 60 * 60 * 1000).toISOString();
+}
+
+function nextRemoteAddress() {
+  injectIpCounter += 1;
+  return `198.51.100.${injectIpCounter}`;
 }
 
 function withPrismaStubs(stubs, fn) {
@@ -57,6 +63,7 @@ test('GET /auth/user-identities requires system_admin role', async () => {
     const server = await buildServer({ logger: false });
     try {
       const res = await server.inject({
+        remoteAddress: nextRemoteAddress(),
         method: 'GET',
         url: '/auth/user-identities',
         headers: {
@@ -115,6 +122,7 @@ test('GET /auth/user-identities lists identities with filters', async () => {
       const server = await buildServer({ logger: false });
       try {
         const res = await server.inject({
+          remoteAddress: nextRemoteAddress(),
           method: 'GET',
           url: '/auth/user-identities?userAccountId=user-001&providerType=google_oidc&status=active&limit=10&offset=5',
           headers: {
@@ -195,6 +203,7 @@ test('POST /auth/user-identities/google-link creates Google identity and writes 
       const server = await buildServer({ logger: false });
       try {
         const res = await server.inject({
+          remoteAddress: nextRemoteAddress(),
           method: 'POST',
           url: '/auth/user-identities/google-link',
           headers: {
@@ -248,6 +257,7 @@ test('POST /auth/user-identities/google-link rejects a second Google identity re
       const server = await buildServer({ logger: false });
       try {
         const res = await server.inject({
+          remoteAddress: nextRemoteAddress(),
           method: 'POST',
           url: '/auth/user-identities/google-link',
           headers: {
@@ -271,6 +281,54 @@ test('POST /auth/user-identities/google-link rejects a second Google identity re
       }
     },
   );
+});
+
+test('POST /auth/user-identities/google-link rejects past rollback window', async () => {
+  process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
+  process.env.AUTH_MODE = 'header';
+
+  let lookedUpUser = false;
+  await withPrismaStubs(
+    {
+      'userAccount.findUnique': async () => {
+        lookedUpUser = true;
+        return null;
+      },
+    },
+    async () => {
+      const server = await buildServer({ logger: false });
+      try {
+        const res = await server.inject({
+          remoteAddress: nextRemoteAddress(),
+          method: 'POST',
+          url: '/auth/user-identities/google-link',
+          headers: {
+            'x-user-id': 'sys-admin',
+            'x-roles': 'system_admin',
+            ...IDENTITY_CSRF_HEADERS,
+          },
+          payload: {
+            userAccountId: 'user-001',
+            issuer: 'https://accounts.google.com',
+            providerSubject: 'google-sub-001',
+            rollbackWindowUntil: '2000-01-01T00:00:00.000Z',
+            ticketId: 'AUTH-MIG-001B',
+            reasonCode: 'google_link',
+          },
+        });
+        assert.equal(res.statusCode, 400, res.body);
+        const body = JSON.parse(res.body);
+        assert.equal(body.error.code, 'invalid_local_credential_payload');
+        assert.deepEqual(body.error.details?.invalidFields, [
+          'rollbackWindowUntil',
+        ]);
+      } finally {
+        await server.close();
+      }
+    },
+  );
+
+  assert.equal(lookedUpUser, false);
 });
 
 test('POST /auth/user-identities/local-link creates local identity with bootstrap password rotation', async () => {
@@ -334,6 +392,7 @@ test('POST /auth/user-identities/local-link creates local identity with bootstra
       const server = await buildServer({ logger: false });
       try {
         const res = await server.inject({
+          remoteAddress: nextRemoteAddress(),
           method: 'POST',
           url: '/auth/user-identities/local-link',
           headers: {
@@ -374,6 +433,54 @@ test('POST /auth/user-identities/local-link creates local identity with bootstra
     true,
   );
   assert.equal(await argon2.verify(passwordHash, 'LocalPassword123'), true);
+});
+
+test('POST /auth/user-identities/local-link rejects past rollback window', async () => {
+  process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
+  process.env.AUTH_MODE = 'header';
+
+  let lookedUpUser = false;
+  await withPrismaStubs(
+    {
+      'userAccount.findUnique': async () => {
+        lookedUpUser = true;
+        return null;
+      },
+    },
+    async () => {
+      const server = await buildServer({ logger: false });
+      try {
+        const res = await server.inject({
+          remoteAddress: nextRemoteAddress(),
+          method: 'POST',
+          url: '/auth/user-identities/local-link',
+          headers: {
+            'x-user-id': 'sys-admin',
+            'x-roles': 'system_admin',
+            ...IDENTITY_CSRF_HEADERS,
+          },
+          payload: {
+            userAccountId: 'user-001',
+            loginId: 'local.user@example.com',
+            password: 'LocalPassword123',
+            rollbackWindowUntil: '2000-01-01T00:00:00.000Z',
+            ticketId: 'AUTH-MIG-002A',
+            reasonCode: 'local_link',
+          },
+        });
+        assert.equal(res.statusCode, 400, res.body);
+        const body = JSON.parse(res.body);
+        assert.equal(body.error.code, 'invalid_local_credential_payload');
+        assert.deepEqual(body.error.details?.invalidFields, [
+          'rollbackWindowUntil',
+        ]);
+      } finally {
+        await server.close();
+      }
+    },
+  );
+
+  assert.equal(lookedUpUser, false);
 });
 
 test('PATCH /auth/user-identities/:identityId updates status and windows', async () => {
@@ -447,6 +554,7 @@ test('PATCH /auth/user-identities/:identityId updates status and windows', async
       const server = await buildServer({ logger: false });
       try {
         const res = await server.inject({
+          remoteAddress: nextRemoteAddress(),
           method: 'PATCH',
           url: '/auth/user-identities/identity-google-001',
           headers: {
@@ -479,6 +587,74 @@ test('PATCH /auth/user-identities/:identityId updates status and windows', async
     [...(capturedAudit?.data?.metadata?.changedFields ?? [])].sort(),
     ['effectiveUntil', 'note', 'rollbackWindowUntil', 'status'].sort(),
   );
+});
+
+test('PATCH /auth/user-identities/:identityId returns current representation on no-op updates', async () => {
+  process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
+  process.env.AUTH_MODE = 'header';
+
+  let updateCalled = false;
+  await withPrismaStubs(
+    {
+      'userIdentity.findUnique': async () => ({
+        id: 'identity-google-001',
+        userAccountId: 'user-001',
+        providerType: 'google_oidc',
+        providerSubject: 'google-sub-001',
+        issuer: 'https://accounts.google.com',
+        emailSnapshot: 'user@example.com',
+        status: 'active',
+        lastAuthenticatedAt: null,
+        linkedAt: new Date('2026-03-23T00:00:00.000Z'),
+        effectiveUntil: null,
+        rollbackWindowUntil: null,
+        note: null,
+        createdAt: new Date('2026-03-23T00:00:00.000Z'),
+        updatedAt: new Date('2026-03-23T00:00:00.000Z'),
+        userAccount: {
+          id: 'user-001',
+          userName: 'legacy-user',
+          displayName: 'Legacy User',
+          active: true,
+          deletedAt: null,
+        },
+        localCredential: null,
+      }),
+      'userIdentity.update': async () => {
+        updateCalled = true;
+        throw new Error('userIdentity.update should not be called');
+      },
+      'auditLog.create': async () => ({ id: 'audit-noop-001' }),
+    },
+    async () => {
+      const server = await buildServer({ logger: false });
+      try {
+        const res = await server.inject({
+          remoteAddress: nextRemoteAddress(),
+          method: 'PATCH',
+          url: '/auth/user-identities/identity-google-001',
+          headers: {
+            'x-user-id': 'sys-admin',
+            'x-roles': 'system_admin',
+            ...IDENTITY_CSRF_HEADERS,
+          },
+          payload: {
+            status: 'active',
+            ticketId: 'AUTH-MIG-003A',
+            reasonCode: 'noop_check',
+          },
+        });
+        assert.equal(res.statusCode, 200, res.body);
+        const body = JSON.parse(res.body);
+        assert.equal(body.status, 'active');
+        assert.equal(body.identityId, 'identity-google-001');
+      } finally {
+        await server.close();
+      }
+    },
+  );
+
+  assert.equal(updateCalled, false);
 });
 
 test('PATCH /auth/user-identities/:identityId rejects disabling the last active identity', async () => {
@@ -517,6 +693,7 @@ test('PATCH /auth/user-identities/:identityId rejects disabling the last active 
       const server = await buildServer({ logger: false });
       try {
         const res = await server.inject({
+          remoteAddress: nextRemoteAddress(),
           method: 'PATCH',
           url: '/auth/user-identities/identity-google-001',
           headers: {
@@ -538,4 +715,50 @@ test('PATCH /auth/user-identities/:identityId rejects disabling the last active 
       }
     },
   );
+});
+
+test('PATCH /auth/user-identities/:identityId rejects past rollback window', async () => {
+  process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
+  process.env.AUTH_MODE = 'header';
+
+  let lookedUpIdentity = false;
+  await withPrismaStubs(
+    {
+      'userIdentity.findUnique': async () => {
+        lookedUpIdentity = true;
+        return null;
+      },
+    },
+    async () => {
+      const server = await buildServer({ logger: false });
+      try {
+        const res = await server.inject({
+          remoteAddress: nextRemoteAddress(),
+          method: 'PATCH',
+          url: '/auth/user-identities/identity-google-001',
+          headers: {
+            'x-user-id': 'sys-admin',
+            'x-roles': 'system_admin',
+            ...IDENTITY_CSRF_HEADERS,
+          },
+          payload: {
+            status: 'disabled',
+            rollbackWindowUntil: '2000-01-01T00:00:00.000Z',
+            ticketId: 'AUTH-MIG-004A',
+            reasonCode: 'google_disable',
+          },
+        });
+        assert.equal(res.statusCode, 400, res.body);
+        const body = JSON.parse(res.body);
+        assert.equal(body.error.code, 'invalid_local_credential_payload');
+        assert.deepEqual(body.error.details?.invalidFields, [
+          'rollbackWindowUntil',
+        ]);
+      } finally {
+        await server.close();
+      }
+    },
+  );
+
+  assert.equal(lookedUpIdentity, false);
 });
