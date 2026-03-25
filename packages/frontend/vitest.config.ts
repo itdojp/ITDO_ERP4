@@ -14,6 +14,7 @@ const coreCoverageInclude = [
   'src/sections/vendor-documents/vendorDocumentsShared.ts',
   'src/sections/vendor-documents/useVendorDocumentsLookups.ts',
   'src/sections/vendor-documents/useVendorDocumentsTableData.tsx',
+  'src/sections/vendor-documents/VendorInvoiceSavedViewBar.tsx',
   'src/sections/vendor-documents/VendorInvoicePoLinkDialog.tsx',
   'src/sections/vendor-documents/useVendorInvoiceDialogs.ts',
   'src/sections/vendor-documents/useVendorInvoiceSavedViews.ts',
