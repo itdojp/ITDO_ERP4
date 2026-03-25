@@ -39,6 +39,9 @@ afterEach(() => {
   cleanup();
 });
 
+const formatForTest = (amount: number, currency: string) =>
+  `${new Intl.NumberFormat('en-US').format(amount)} ${currency}`;
+
 function createProps(
   overrides: Partial<
     React.ComponentProps<typeof VendorInvoicePoLinkDialog>
@@ -93,7 +96,7 @@ function createProps(
     }),
     formatAmount: vi.fn((value: number | string, currency: string) => {
       const amount = typeof value === 'number' ? value : Number(value);
-      return `${amount.toLocaleString()} ${currency}`;
+      return `${new Intl.NumberFormat('en-US').format(amount)} ${currency}`;
     }),
     ...overrides,
   };
@@ -179,13 +182,19 @@ describe('VendorInvoicePoLinkDialog', () => {
 
     expect(screen.getByText('番号未設定')).toBeInTheDocument();
     expect(screen.getByPlaceholderText('変更理由（任意）')).toBeInTheDocument();
-    expect(screen.getByText('PO合計: 100,000 JPY')).toBeInTheDocument();
-    expect(screen.getByText('仕入請求合計: 120,000 JPY')).toBeInTheDocument();
-    expect(screen.getByText('合計差分: 20,000 JPY')).toBeInTheDocument();
+    expect(
+      screen.getByText(`PO合計: ${formatForTest(100000, 'JPY')}`),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(`仕入請求合計: ${formatForTest(120000, 'JPY')}`),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(`合計差分: ${formatForTest(20000, 'JPY')}`),
+    ).toBeInTheDocument();
     expect(screen.getByText('発注書明細（read-only）')).toBeInTheDocument();
     expect(screen.getByText('明細A')).toBeInTheDocument();
     expect(screen.getByText('明細B')).toBeInTheDocument();
-    expect(screen.getByText('30,000 JPY')).toBeInTheDocument();
+    expect(screen.getByText(formatForTest(30000, 'JPY'))).toBeInTheDocument();
     expect(screen.getByText('-')).toBeInTheDocument();
     expect(screen.getByText('保存しました')).toBeInTheDocument();
   });
