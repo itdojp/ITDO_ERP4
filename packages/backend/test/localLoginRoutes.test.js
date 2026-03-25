@@ -278,11 +278,16 @@ test('POST /auth/local/login returns local_login_rate_limited before credential 
   await withEnv(baseBffEnv(), async () => {
     await withRateLimiterFailure('198.51.100.200', async () => {
       let lookedUpIdentity = false;
+      let auditCalled = false;
       await withPrismaStubs(
         {
           'userIdentity.findFirst': async () => {
             lookedUpIdentity = true;
             return null;
+          },
+          'auditLog.create': async () => {
+            auditCalled = true;
+            return { id: 'audit-unexpected' };
           },
         },
         async () => {
@@ -308,6 +313,7 @@ test('POST /auth/local/login returns local_login_rate_limited before credential 
         },
       );
       assert.equal(lookedUpIdentity, false);
+      assert.equal(auditCalled, false);
     });
   });
 });
@@ -694,11 +700,16 @@ test('POST /auth/local/password/rotate returns local_login_rate_limited before c
   await withEnv(baseBffEnv(), async () => {
     await withRateLimiterFailure('198.51.100.201', async () => {
       let lookedUpIdentity = false;
+      let auditCalled = false;
       await withPrismaStubs(
         {
           'userIdentity.findFirst': async () => {
             lookedUpIdentity = true;
             return null;
+          },
+          'auditLog.create': async () => {
+            auditCalled = true;
+            return { id: 'audit-unexpected' };
           },
         },
         async () => {
@@ -725,6 +736,7 @@ test('POST /auth/local/password/rotate returns local_login_rate_limited before c
         },
       );
       assert.equal(lookedUpIdentity, false);
+      assert.equal(auditCalled, false);
     });
   });
 });
