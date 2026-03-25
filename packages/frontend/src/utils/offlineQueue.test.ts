@@ -77,6 +77,11 @@ describe('offlineQueue', () => {
         'onLine',
         originalNavigatorOnLineDescriptor,
       );
+    } else {
+      Reflect.deleteProperty(
+        navigatorPrototype as Navigator & { onLine?: unknown },
+        'onLine',
+      );
     }
   });
 
