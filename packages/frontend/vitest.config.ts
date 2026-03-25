@@ -9,6 +9,7 @@ const coreCoverageInclude = [
   'src/utils/download.ts',
   'src/ui/statusDictionary.ts',
   'src/ui/listStatePanel.tsx',
+  'src/sections/vendor-documents/vendorInvoiceLinePayload.ts',
   'src/sections/vendor-documents/vendorDocumentsShared.ts',
 ];
 
