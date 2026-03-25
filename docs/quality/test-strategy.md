@@ -109,7 +109,7 @@
 
 - 現在の定量 coverage は backend を対象に `c8` で計測する
 - 実行前提として `DATABASE_URL` が設定され、`prisma generate` が成功することを要求する
-- backend build 時に TypeScript source map を出力し、coverage は `src/**/*.ts` に remap する
+- coverage 実行時のみ `tsconfig.coverage.json` で TypeScript source map を出力し、`src/**/*.ts` に remap する
 - 出力先
   - backend 全体: `packages/backend/coverage/full`
   - auth 関連 subset: `packages/backend/coverage/auth`

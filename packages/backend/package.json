@@ -12,8 +12,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "npm run build && node scripts/run-tests.js",
     "test:ci": "node scripts/run-tests.js",
-    "coverage": "npm run prisma:generate && npm run build && c8 --all --src src --report-dir coverage/full --temp-directory .nyc_output/full --reporter text-summary --reporter json-summary --reporter lcov node scripts/run-tests.js",
-    "coverage:auth": "npm run prisma:generate && npm run build && c8 --all --src src --report-dir coverage/auth --temp-directory .nyc_output/auth --reporter text-summary --reporter json-summary --reporter lcov node scripts/run-tests.js test/authGatewayRoutes.test.js test/localLoginRoutes.test.js test/authAdminBffRoutes.test.js test/userIdentityRoutes.test.js test/localCredentialRoutes.test.js test/envValidation.test.js",
+    "coverage": "npm run prisma:generate && tsc -p tsconfig.coverage.json && c8 --all --src src --report-dir coverage/full --temp-directory .nyc_output/full --reporter text-summary --reporter json-summary --reporter lcov node scripts/run-tests.js",
+    "coverage:auth": "npm run prisma:generate && tsc -p tsconfig.coverage.json && c8 --all --src src --report-dir coverage/auth --temp-directory .nyc_output/auth --reporter text-summary --reporter json-summary --reporter lcov node scripts/run-tests.js test/authGatewayRoutes.test.js test/localLoginRoutes.test.js test/authAdminBffRoutes.test.js test/userIdentityRoutes.test.js test/localCredentialRoutes.test.js test/envValidation.test.js",
     "lint": "eslint \"src/**/*.{ts,tsx}\"",
     "format:check": "prettier --check \"src/**/*.{ts,tsx,js,jsx,json,md}\"",
     "prisma:generate": "prisma generate"
