@@ -12,6 +12,8 @@ const coreCoverageInclude = [
   'src/ui/listStatePanel.tsx',
   'src/sections/vendor-documents/vendorInvoiceLinePayload.ts',
   'src/sections/vendor-documents/vendorDocumentsShared.ts',
+  'src/sections/vendor-documents/useVendorDocumentsLookups.ts',
+  'src/sections/vendor-documents/useVendorInvoiceSavedViews.ts',
 ];
 
 const coverageInclude =
