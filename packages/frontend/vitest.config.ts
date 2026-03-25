@@ -2,11 +2,14 @@ import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
 
 const coreCoverageInclude = [
+  'src/utils/attachments.ts',
+  'src/utils/clipboard.ts',
   'src/utils/datetime.ts',
   'src/utils/deepLink.ts',
   'src/utils/download.ts',
   'src/ui/statusDictionary.ts',
   'src/ui/listStatePanel.tsx',
+  'src/sections/vendor-documents/vendorDocumentsShared.ts',
 ];
 
 const coverageInclude =
