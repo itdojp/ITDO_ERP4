@@ -44,7 +44,7 @@ describe('drafts', () => {
     );
   });
 
-  it('falls back to an in-memory session id when sessionStorage throws', () => {
+  it('returns a generated session id when sessionStorage throws', () => {
     vi.spyOn(window.sessionStorage, 'getItem').mockImplementation(() => {
       throw new Error('blocked');
     });
