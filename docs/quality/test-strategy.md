@@ -100,5 +100,19 @@
 詳細は `docs/quality/quality-gates.md` を参照。
 
 - unit: `npm run test --prefix packages/backend`
+- coverage（backend 全体）: `npm run coverage --prefix packages/backend`
+- coverage（auth 関連 subset）: `npm run coverage:auth --prefix packages/backend`
 - e2e: `scripts/e2e-frontend.sh`
 - smoke（任意）: `scripts/smoke-backend.sh` / `scripts/smoke-chat-attachments-av.sh`
+
+## カバレッジ計測
+
+- 現在の定量 coverage は backend を対象に `c8` で計測する
+- 実行前提として `DATABASE_URL` が設定され、`prisma generate` が成功することを要求する
+- backend build 時に TypeScript source map を出力し、coverage は `src/**/*.ts` に remap する
+- 出力先
+  - backend 全体: `packages/backend/coverage/full`
+  - auth 関連 subset: `packages/backend/coverage/auth`
+- summary はそれぞれ `coverage/**/coverage-summary.json` と text-summary に出力される
+- frontend は現時点では Playwright E2E を主系としており、数値 coverage は未導入
+  - そのため frontend の回帰状況は E2E の scenario 数と証跡で追跡する
