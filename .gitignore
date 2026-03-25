@@ -14,6 +14,7 @@ packages/frontend/.env
 /packages/frontend/playwright-report
 /packages/backend/coverage
 /packages/backend/.nyc_output
+/packages/frontend/coverage
 data/audit-exports
 pg_dump*.sql
 pg_dump*.sql:Zone.Identifier
