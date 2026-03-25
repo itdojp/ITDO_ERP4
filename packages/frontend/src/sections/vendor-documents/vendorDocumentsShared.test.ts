@@ -1,9 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
-  defaultPurchaseOrderForm,
-  defaultVendorInvoiceForm,
-  defaultVendorQuoteForm,
   formatAmount,
   formatDate,
   isDocumentTabId,
@@ -13,6 +10,11 @@ import {
 } from './vendorDocumentsShared';
 
 describe('vendorDocumentsShared', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.resetModules();
+  });
+
   it('validates document tab ids', () => {
     expect(isDocumentTabId('purchase-orders')).toBe(true);
     expect(isDocumentTabId('vendor-quotes')).toBe(true);
@@ -36,14 +38,23 @@ describe('vendorDocumentsShared', () => {
   });
 
   it('formats amounts and detects pdf urls', () => {
-    expect(formatAmount('12345', 'JPY')).toBe('12,345 JPY');
+    expect(formatAmount('12345', 'JPY')).toBe(
+      `${(12345).toLocaleString()} JPY`,
+    );
     expect(formatAmount('abc', 'JPY')).toBe('- JPY');
     expect(isPdfUrl('https://example.com/file.pdf')).toBe(true);
     expect(isPdfUrl('https://example.com/file.PDF?download=1')).toBe(true);
     expect(isPdfUrl('https://example.com/file.txt')).toBe(false);
   });
 
-  it('exposes default document forms', () => {
+  it('exposes default document forms', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-03-25T00:00:00.000Z'));
+    const {
+      defaultPurchaseOrderForm,
+      defaultVendorInvoiceForm,
+      defaultVendorQuoteForm,
+    } = await import('./vendorDocumentsShared');
     const today = new Date().toISOString().slice(0, 10);
 
     expect(defaultPurchaseOrderForm.currency).toBe('JPY');

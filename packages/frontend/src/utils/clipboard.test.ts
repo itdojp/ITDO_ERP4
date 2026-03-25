@@ -2,10 +2,45 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { copyToClipboard } from './clipboard';
 
+const originalNavigatorClipboardDescriptor = Object.getOwnPropertyDescriptor(
+  navigator,
+  'clipboard',
+);
+const originalDocumentExecCommandDescriptor = Object.getOwnPropertyDescriptor(
+  document,
+  'execCommand',
+);
+
 describe('copyToClipboard', () => {
   afterEach(() => {
     vi.restoreAllMocks();
     document.body.innerHTML = '';
+
+    if (originalNavigatorClipboardDescriptor) {
+      Object.defineProperty(
+        navigator,
+        'clipboard',
+        originalNavigatorClipboardDescriptor,
+      );
+    } else {
+      Reflect.deleteProperty(
+        navigator as Navigator & { clipboard?: unknown },
+        'clipboard',
+      );
+    }
+
+    if (originalDocumentExecCommandDescriptor) {
+      Object.defineProperty(
+        document,
+        'execCommand',
+        originalDocumentExecCommandDescriptor,
+      );
+    } else {
+      Reflect.deleteProperty(
+        document as Document & { execCommand?: unknown },
+        'execCommand',
+      );
+    }
   });
 
   it('returns false for empty values', async () => {
