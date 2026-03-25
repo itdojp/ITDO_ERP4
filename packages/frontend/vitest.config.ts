@@ -7,6 +7,7 @@ const coreCoverageInclude = [
   'src/utils/datetime.ts',
   'src/utils/deepLink.ts',
   'src/utils/download.ts',
+  'src/utils/offlineQueue.ts',
   'src/ui/statusDictionary.ts',
   'src/ui/listStatePanel.tsx',
   'src/sections/vendor-documents/vendorDocumentsShared.ts',
