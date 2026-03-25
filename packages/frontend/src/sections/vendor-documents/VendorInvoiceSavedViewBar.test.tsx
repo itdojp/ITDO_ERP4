@@ -84,6 +84,8 @@ function createSavedViews(): SavedViewsProp {
         id: 'view-1',
         name: '承認済み',
         payload: { search: 'alpha', status: 'approved' },
+        createdAt: '2026-03-01T00:00:00.000Z',
+        updatedAt: '2026-03-01T00:00:00.000Z',
       },
     ],
     activeViewId: 'default',
@@ -93,6 +95,7 @@ function createSavedViews(): SavedViewsProp {
     duplicateView: vi.fn(),
     toggleShared: vi.fn(),
     deleteView: vi.fn(),
+    getShareLink: vi.fn((viewId: string) => `/saved-views/${viewId}`),
   };
 }
 
