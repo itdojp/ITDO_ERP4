@@ -1068,6 +1068,77 @@ test('frontend auth gateway bff session management smoke @extended', async ({
   );
 });
 
+test('frontend auth gateway bff clears local auth state when current session is revoked @extended', async ({
+  page,
+}) => {
+  test.skip(!isBffMode, 'jwt_bff build only');
+
+  await page.addInitScript(() => {
+    window.localStorage.removeItem('erp4_auth');
+    window.localStorage.setItem('erp4_active_section', 'reports');
+  });
+  await mockAuthCsrf(page);
+  await mockAuthenticatedCurrentUser(page);
+  await mockAuthSessionList(page, [
+    {
+      sessionId: 'sess-current',
+      providerType: 'google_oidc',
+      issuer: 'https://accounts.google.com',
+      userAccountId: 'user-current-1',
+      userIdentityId: 'identity-google-1',
+      sourceIp: '203.0.113.10',
+      userAgent: 'Mozilla/5.0 Current Session',
+      createdAt: futureIso(0),
+      lastSeenAt: futureIso(0),
+      expiresAt: futureIso(7),
+      idleExpiresAt: futureIso(1),
+      revokedAt: null,
+      revokedReason: null,
+      current: true,
+    },
+  ]);
+
+  await page.route('**/auth/sessions/sess-current/revoke', async (route) => {
+    expectApiPath(route.request().url(), '/auth/sessions/sess-current/revoke');
+    expect(route.request().method()).toBe('POST');
+    const headers = route.request().headers();
+    expect(headers['x-csrf-token']).toBe('csrf-token-001');
+    expect(headers.cookie || '').toContain('erp4_csrf=csrf-token-001');
+    await route.fulfill({
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        sessionId: 'sess-current',
+        providerType: 'google_oidc',
+        issuer: 'https://accounts.google.com',
+        userAccountId: 'user-current-1',
+        userIdentityId: 'identity-google-1',
+        sourceIp: '203.0.113.10',
+        userAgent: 'Mozilla/5.0 Current Session',
+        createdAt: futureIso(0),
+        lastSeenAt: futureIso(0),
+        expiresAt: futureIso(7),
+        idleExpiresAt: futureIso(1),
+        revokedAt: futureIso(0),
+        revokedReason: 'user_requested',
+        current: true,
+      }),
+    });
+  });
+
+  await page.goto(baseUrl);
+  await expect(page.getByText('Session ID: sess-current')).toBeVisible();
+
+  await page.getByRole('button', { name: 'このセッションを終了' }).click();
+
+  await expect(page.getByText('ID: bff-user')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Googleでログイン' })).toBeVisible();
+  await expect(page.getByText('認証セッション')).toHaveCount(0);
+  await expect(
+    page.getByText('現在の認証セッションを終了しました。再度ログインしてください'),
+  ).toHaveCount(0);
+});
+
 test('frontend auth gateway bff shows empty session state @extended', async ({
   page,
 }) => {
