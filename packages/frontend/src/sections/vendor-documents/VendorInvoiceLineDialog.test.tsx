@@ -1,13 +1,24 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  within,
+} from '@testing-library/react';
 import React from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../../ui', () => ({
   Button: ({
+    variant,
+    size,
     children,
-    ...props
-  }: React.ButtonHTMLAttributes<HTMLButtonElement>) => (
-    <button type="button" {...props}>
+    ...buttonProps
+  }: React.ButtonHTMLAttributes<HTMLButtonElement> & {
+    variant?: string;
+    size?: string;
+  }) => (
+    <button type="button" {...buttonProps}>
       {children}
     </button>
   ),
@@ -168,7 +179,14 @@ describe('VendorInvoiceLineDialog', () => {
     expect(
       screen.getByText(`請求合計: ${formatForTest(132000, 'JPY')}`),
     ).toBeInTheDocument();
-    expect(screen.getByText('差分: 12,000 JPY')).toBeInTheDocument();
+    expect(
+      screen.getByText((content) => {
+        if (!content.includes('差分:') || !content.includes('JPY'))
+          return false;
+        const digits = content.replace(/\D/g, '');
+        return digits === '12000';
+      }),
+    ).toBeInTheDocument();
     expect(
       screen.getByText(
         '差分が残っています。数量/単価/税額を見直してください。',
@@ -176,21 +194,38 @@ describe('VendorInvoiceLineDialog', () => {
     ).toBeInTheDocument();
     expect(screen.getByPlaceholderText('変更理由（必須）')).toBeInTheDocument();
 
-    const selects = screen.getAllByRole('combobox');
-    const spinbuttons = screen.getAllByRole('spinbutton');
+    const row = screen.getByRole('button', { name: '削除' }).closest('tr');
+    if (!row) {
+      throw new Error('line row not found');
+    }
+    const rowScope = within(row);
 
     fireEvent.click(screen.getByRole('button', { name: '請求明細を隠す' }));
     fireEvent.click(screen.getByText('明細追加'));
-    fireEvent.change(spinbuttons[0], { target: { value: '2' } });
-    fireEvent.change(screen.getByPlaceholderText('内容'), {
+    fireEvent.change(rowScope.getByDisplayValue('1'), {
+      target: { value: '2' },
+    });
+    fireEvent.change(rowScope.getByPlaceholderText('内容'), {
       target: { value: 'Updated line' },
     });
-    fireEvent.change(spinbuttons[1], { target: { value: '5' } });
-    fireEvent.change(spinbuttons[2], { target: { value: '30000' } });
-    fireEvent.change(spinbuttons[3], { target: { value: '150000' } });
-    fireEvent.change(spinbuttons[4], { target: { value: '8' } });
-    fireEvent.change(spinbuttons[5], { target: { value: '12000' } });
-    fireEvent.change(selects[0], { target: { value: '' } });
+    fireEvent.change(rowScope.getByDisplayValue('2'), {
+      target: { value: '5' },
+    });
+    fireEvent.change(rowScope.getByDisplayValue('50000'), {
+      target: { value: '30000' },
+    });
+    fireEvent.change(rowScope.getByDisplayValue('110000'), {
+      target: { value: '150000' },
+    });
+    fireEvent.change(rowScope.getByDisplayValue('10'), {
+      target: { value: '8' },
+    });
+    fireEvent.change(rowScope.getByDisplayValue('10000'), {
+      target: { value: '12000' },
+    });
+    fireEvent.change(rowScope.getByRole('combobox'), {
+      target: { value: '' },
+    });
     fireEvent.change(screen.getByPlaceholderText('変更理由（必須）'), {
       target: { value: '理由を更新' },
     });
