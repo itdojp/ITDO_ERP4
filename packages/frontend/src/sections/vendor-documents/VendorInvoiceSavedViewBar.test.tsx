@@ -70,9 +70,14 @@ import { VendorInvoiceSavedViewBar } from './VendorInvoiceSavedViewBar';
 
 afterEach(() => {
   cleanup();
+  savedViewBarSpy.mockClear();
 });
 
-function createSavedViews() {
+type SavedViewsProp = React.ComponentProps<
+  typeof VendorInvoiceSavedViewBar
+>['savedViews'];
+
+function createSavedViews(): SavedViewsProp {
   return {
     views: [
       {
@@ -105,7 +110,7 @@ function renderComponent(
 
   render(
     <VendorInvoiceSavedViewBar
-      savedViews={savedViews as never}
+      savedViews={savedViews}
       invoiceSearch="needle"
       invoiceStatusFilter="draft"
       invoiceStatusOptions={['all', 'draft', 'approved']}
