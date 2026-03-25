@@ -102,6 +102,8 @@
 - unit: `npm run test --prefix packages/backend`
 - coverage（backend 全体）: `npm run coverage --prefix packages/backend`
 - coverage（auth 関連 subset）: `npm run coverage:auth --prefix packages/backend`
+- coverage（frontend 全体）: `npm run coverage --prefix packages/frontend`
+- coverage（frontend 非auth core）: `npm run coverage:ui-core --prefix packages/frontend`
 - e2e: `scripts/e2e-frontend.sh`
 - smoke（任意）: `scripts/smoke-backend.sh` / `scripts/smoke-chat-attachments-av.sh`
 
@@ -114,5 +116,10 @@
   - backend 全体: `packages/backend/coverage/full`
   - auth 関連 subset: `packages/backend/coverage/auth`
 - summary はそれぞれ `coverage/**/coverage-summary.json` と text-summary に出力される
-- frontend は現時点では Playwright E2E を主系としており、数値 coverage は未導入
-  - そのため frontend の回帰状況は E2E の scenario 数と証跡で追跡する
+- frontend の定量 coverage は `vitest` + `@vitest/coverage-v8` で計測する
+- 出力先
+  - frontend 全体: `packages/frontend/coverage/full`
+  - frontend 非auth core: `packages/frontend/coverage/ui-core`
+- `coverage` は frontend 全体を対象にする
+- `coverage:ui-core` は auth 以外の utility / UI 共通部品を対象にする
+- 画面導線の回帰保証は引き続き Playwright E2E を主系とする

@@ -12,6 +12,9 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "preview": "vite preview",
     "postinstall": "node ./scripts/build-design-system.cjs",
+    "test": "vitest run",
+    "coverage": "vitest run --coverage",
+    "coverage:ui-core": "FRONTEND_COVERAGE_SCOPE=ui-core vitest run --coverage",
     "e2e": "playwright test",
     "e2e:install": "playwright install chromium",
     "lint": "eslint \"src/**/*.{ts,tsx,jsx,js}\"",
@@ -30,17 +33,22 @@
   "devDependencies": {
     "@eslint/js": "^9.39.4",
     "@playwright/test": "^1.58.2",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@typescript-eslint/eslint-plugin": "^8.57.1",
     "@typescript-eslint/parser": "^8.56.0",
     "@vitejs/plugin-react": "^6.0.1",
+    "@vitest/coverage-v8": "^4.1.1",
     "eslint": "^9.39.4",
     "eslint-plugin-react": "^7.36.1",
     "eslint-plugin-react-hooks": "^7.0.1",
+    "jsdom": "^29.0.1",
     "prettier": "^3.8.1",
     "typescript": "^5.3.3",
-    "vite": "^8.0.1"
+    "vite": "^8.0.1",
+    "vitest": "^4.1.1"
   },
   "overrides": {
     "minimatch": "^10.2.4",
