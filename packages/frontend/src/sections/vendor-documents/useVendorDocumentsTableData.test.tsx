@@ -146,6 +146,7 @@ const renderVendor = (vendorId: string) =>
 
 describe('useVendorDocumentsTableData', () => {
   it('builds status options, row summaries, and column definitions', () => {
+    const expectedTotalAmount = `${(100000).toLocaleString()} JPY`;
     const { result } = renderHook(() =>
       useVendorDocumentsTableData({
         purchaseOrders,
@@ -179,7 +180,7 @@ describe('useVendorDocumentsTableData', () => {
         poNo: 'PO-001',
         project: 'P001 / Project One',
         vendor: 'V001 / Vendor One',
-        totalAmount: '100,000 JPY',
+        totalAmount: expectedTotalAmount,
         schedule: '発行 2026-03-01 / 納期 2026-03-10',
         linkedInvoices: '4件 (INV-001, INV-002, INV-003 他1件)',
       }),
