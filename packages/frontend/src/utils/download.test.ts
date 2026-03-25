@@ -42,6 +42,7 @@ describe('download utils', () => {
   });
 
   it('downloads response as file with resolved filename', async () => {
+    vi.useFakeTimers();
     const objectUrlSpy = vi
       .spyOn(URL, 'createObjectURL')
       .mockReturnValue('blob:download');
@@ -62,10 +63,19 @@ describe('download utils', () => {
     expect(objectUrlSpy).toHaveBeenCalled();
     expect(revokeSpy).not.toHaveBeenCalled();
     expect(document.querySelector('a')).toBeNull();
+    vi.runOnlyPendingTimers();
+    expect(revokeSpy).toHaveBeenCalledWith('blob:download');
+    vi.useRealTimers();
   });
 
   it('falls back to download when window.open is blocked', async () => {
+    vi.useFakeTimers();
     vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:open');
+    const revokeSpy = vi
+      .spyOn(URL, 'revokeObjectURL')
+      .mockImplementation(() => {
+        return undefined;
+      });
     const clickSpy = vi
       .spyOn(HTMLAnchorElement.prototype, 'click')
       .mockImplementation(() => {});
@@ -76,5 +86,9 @@ describe('download utils', () => {
     await openResponseInNewTab(res, 'fallback.pdf');
 
     expect(clickSpy).toHaveBeenCalled();
+    expect(revokeSpy).not.toHaveBeenCalled();
+    vi.runOnlyPendingTimers();
+    expect(revokeSpy).toHaveBeenCalledWith('blob:open');
+    vi.useRealTimers();
   });
 });
