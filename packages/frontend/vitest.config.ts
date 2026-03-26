@@ -33,6 +33,7 @@ const coreCoverageInclude = [
   'src/sections/GroupManagementCard.tsx',
   'src/sections/RateCardSettingsCard.tsx',
   'src/sections/admin-settings/AlertSettingsCard.tsx',
+  'src/sections/admin-settings/IntegrationSettingsCard.tsx',
   'src/sections/admin-settings/TemplateSettingsCard.tsx',
 ];
 
