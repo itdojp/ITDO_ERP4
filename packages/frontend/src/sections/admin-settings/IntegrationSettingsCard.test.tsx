@@ -1,4 +1,10 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  within,
+} from '@testing-library/react';
 import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -96,18 +102,6 @@ const metrics: IntegrationRunMetrics = {
   ],
 };
 
-function getStrongText(text: string) {
-  return screen.getByText(
-    (_, node) => node?.tagName === 'STRONG' && node.textContent === text,
-  );
-}
-
-function getDivText(text: string) {
-  return screen.getByText(
-    (_, node) => node?.tagName === 'DIV' && node.textContent === text,
-  );
-}
-
 function renderCard(
   overrides: Partial<React.ComponentProps<typeof IntegrationSettingsCard>> = {},
 ) {
@@ -135,13 +129,12 @@ function renderCard(
   render(<IntegrationSettingsCard {...props} />);
   return props;
 }
+beforeEach(() => {
+  formatDateTime.mockClear();
+});
 
 afterEach(() => {
   cleanup();
-});
-
-beforeEach(() => {
-  formatDateTime.mockClear();
 });
 
 describe('IntegrationSettingsCard', () => {
@@ -259,21 +252,42 @@ describe('IntegrationSettingsCard', () => {
       onRun,
     });
 
-    expect(getDivText('hr / HRIS')).toBeInTheDocument();
-    expect(getStrongText('crm')).toBeInTheDocument();
+    const editButtons = screen.getAllByRole('button', { name: '編集' });
+    const firstItemCard = editButtons[0].closest('.card');
+    const secondItemCard = editButtons[1].closest('.card');
+
+    expect(firstItemCard).not.toBeNull();
+    expect(secondItemCard).not.toBeNull();
+
     expect(
-      screen.getByText('provider: azure_ad / schedule: 0 3 * * *'),
+      within(firstItemCard as HTMLElement).getByText('hr'),
     ).toBeInTheDocument();
-    expect(screen.getByText('provider: - / schedule: -')).toBeInTheDocument();
     expect(
-      screen.getByText(
+      within(firstItemCard as HTMLElement).getByText(/\/ HRIS$/),
+    ).toBeInTheDocument();
+    expect(
+      within(firstItemCard as HTMLElement).getByText(
+        'provider: azure_ad / schedule: 0 3 * * *',
+      ),
+    ).toBeInTheDocument();
+    expect(
+      within(firstItemCard as HTMLElement).getByText(
         (_, node) =>
           node?.textContent ===
           'lastRun: dt:2026-03-25T00:00:00Z / status: success',
       ),
     ).toBeInTheDocument();
+
     expect(
-      screen.getByText(
+      within(secondItemCard as HTMLElement).getByText('crm'),
+    ).toBeInTheDocument();
+    expect(
+      within(secondItemCard as HTMLElement).getByText(
+        'provider: - / schedule: -',
+      ),
+    ).toBeInTheDocument();
+    expect(
+      within(secondItemCard as HTMLElement).getByText(
         (_, node) => node?.textContent === 'lastRun: - / status: -',
       ),
     ).toBeInTheDocument();
@@ -314,7 +328,6 @@ describe('IntegrationSettingsCard', () => {
     expect(screen.getByText('message: -')).toBeInTheDocument();
     expect(screen.getByText('setting: setting-2')).toBeInTheDocument();
 
-    const editButtons = screen.getAllByRole('button', { name: '編集' });
     fireEvent.click(editButtons[0]);
     expect(onEdit).toHaveBeenCalledWith(items[0]);
 
