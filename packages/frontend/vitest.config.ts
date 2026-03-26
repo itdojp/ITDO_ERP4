@@ -40,6 +40,7 @@ const coreCoverageInclude = [
   'src/sections/PdfFiles.tsx',
   'src/sections/AccessReviews.tsx',
   'src/sections/AuditLogs.tsx',
+  'src/sections/Reports.tsx',
 ];
 
 const coverageInclude =
