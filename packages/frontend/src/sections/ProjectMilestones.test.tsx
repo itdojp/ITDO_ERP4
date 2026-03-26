@@ -175,64 +175,67 @@ describe('ProjectMilestones', () => {
       .mockResolvedValueOnce({});
 
     const promptSpy = vi.spyOn(window, 'prompt');
+    try {
+      render(<ProjectMilestones />);
+      fireEvent.click(screen.getByRole('button', { name: '読み込み' }));
+      await screen.findByText(/中間金/);
 
-    render(<ProjectMilestones />);
-    fireEvent.click(screen.getByRole('button', { name: '読み込み' }));
-    await screen.findByText(/中間金/);
+      fireEvent.click(screen.getByRole('button', { name: '編集' }));
+      fireEvent.change(screen.getByLabelText('名称'), {
+        target: { value: '中間金(更新)' },
+      });
+      fireEvent.change(screen.getByLabelText('金額'), {
+        target: { value: '95000' },
+      });
+      fireEvent.change(screen.getByLabelText('請求タイミング'), {
+        target: { value: 'time' },
+      });
+      fireEvent.change(screen.getByLabelText('納期'), {
+        target: { value: '2026-05-10' },
+      });
+      fireEvent.change(screen.getByLabelText('税率'), {
+        target: { value: '0.08' },
+      });
+      fireEvent.click(screen.getByRole('button', { name: '更新' }));
 
-    fireEvent.click(screen.getByRole('button', { name: '編集' }));
-    fireEvent.change(screen.getByLabelText('名称'), {
-      target: { value: '中間金(更新)' },
-    });
-    fireEvent.change(screen.getByLabelText('金額'), {
-      target: { value: '95000' },
-    });
-    fireEvent.change(screen.getByLabelText('請求タイミング'), {
-      target: { value: 'time' },
-    });
-    fireEvent.change(screen.getByLabelText('納期'), {
-      target: { value: '2026-05-10' },
-    });
-    fireEvent.change(screen.getByLabelText('税率'), {
-      target: { value: '0.08' },
-    });
-    fireEvent.click(screen.getByRole('button', { name: '更新' }));
+      await waitFor(() => {
+        expect(api).toHaveBeenCalledWith(
+          '/projects/project-1/milestones/milestone-3',
+          {
+            method: 'PATCH',
+            body: JSON.stringify({
+              name: '中間金(更新)',
+              amount: 95000,
+              billUpon: 'time',
+              dueDate: '2026-05-10',
+              taxRate: 0.08,
+            }),
+          },
+        );
+      });
+      expect(screen.getByText('更新しました')).toBeInTheDocument();
 
-    await waitFor(() => {
-      expect(api).toHaveBeenCalledWith(
-        '/projects/project-1/milestones/milestone-3',
-        {
-          method: 'PATCH',
-          body: JSON.stringify({
-            name: '中間金(更新)',
-            amount: 95000,
-            billUpon: 'time',
-            dueDate: '2026-05-10',
-            taxRate: 0.08,
-          }),
-        },
-      );
-    });
-    expect(screen.getByText('更新しました')).toBeInTheDocument();
+      promptSpy.mockReturnValueOnce('   ');
+      fireEvent.click(screen.getByRole('button', { name: '削除' }));
+      expect(screen.getByText('削除理由は必須です')).toBeInTheDocument();
 
-    promptSpy.mockReturnValueOnce('   ');
-    fireEvent.click(screen.getByRole('button', { name: '削除' }));
-    expect(screen.getByText('削除理由は必須です')).toBeInTheDocument();
+      promptSpy.mockReturnValueOnce('重複登録');
+      fireEvent.click(screen.getByRole('button', { name: '削除' }));
 
-    promptSpy.mockReturnValueOnce('重複登録');
-    fireEvent.click(screen.getByRole('button', { name: '削除' }));
-
-    await waitFor(() => {
-      expect(api).toHaveBeenCalledWith(
-        '/projects/project-1/milestones/milestone-3/delete',
-        {
-          method: 'POST',
-          body: JSON.stringify({ reason: '重複登録' }),
-        },
-      );
-    });
-    expect(screen.getByText('削除しました')).toBeInTheDocument();
-    expect(screen.getByText('データなし')).toBeInTheDocument();
+      await waitFor(() => {
+        expect(api).toHaveBeenCalledWith(
+          '/projects/project-1/milestones/milestone-3/delete',
+          {
+            method: 'POST',
+            body: JSON.stringify({ reason: '重複登録' }),
+          },
+        );
+      });
+      expect(screen.getByText('削除しました')).toBeInTheDocument();
+      expect(screen.getByText('データなし')).toBeInTheDocument();
+    } finally {
+      promptSpy.mockRestore();
+    }
   });
 
   it('loads delivery due report with filters and shows errors on failure', async () => {
