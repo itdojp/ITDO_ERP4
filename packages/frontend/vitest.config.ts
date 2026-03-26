@@ -24,6 +24,7 @@ const coreCoverageInclude = [
   'src/sections/vendor-documents/VendorDocumentsVendorQuotesSection.tsx',
   'src/sections/vendor-documents/useVendorInvoiceDialogs.ts',
   'src/sections/vendor-documents/useVendorInvoiceSavedViews.ts',
+  'src/sections/PeriodLocks.tsx',
 ];
 
 const coverageInclude =
