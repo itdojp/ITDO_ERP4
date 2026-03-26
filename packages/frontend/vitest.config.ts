@@ -47,6 +47,7 @@ const coreCoverageInclude = [
   'src/sections/Estimates.tsx',
   'src/sections/ChatBreakGlass.tsx',
   'src/sections/Dashboard.tsx',
+  'src/sections/Invoices.tsx',
 ];
 
 const coverageInclude =
