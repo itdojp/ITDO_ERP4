@@ -115,7 +115,7 @@ describe('IntegrationExportJobsCard', () => {
     expect(onLoad).toHaveBeenCalledTimes(1);
   });
 
-  it('falls back to current numeric values for invalid limit and offset input', () => {
+  it('falls back to current limit and zero offset for invalid numeric input', () => {
     const { setLimit, setOffset } = renderCard({ limit: 20, offset: 7 });
 
     fireEvent.change(screen.getByLabelText('連携ジョブlimit'), {
