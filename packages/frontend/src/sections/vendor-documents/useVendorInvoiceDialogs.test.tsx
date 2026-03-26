@@ -237,7 +237,7 @@ describe('useVendorInvoiceDialogs', () => {
     expect(api).toHaveBeenCalledTimes(1);
   });
 
-  it('handles allocation load failure and resets dialog state', async () => {
+  it('shows allocation load failure and allows manual dialog reset', async () => {
     const params = createParams();
     vi.mocked(api).mockRejectedValueOnce(new Error('allocation load failed'));
 
@@ -315,22 +315,25 @@ describe('useVendorInvoiceDialogs', () => {
     expect(vi.mocked(api)).toHaveBeenNthCalledWith(
       2,
       '/vendor-invoices/inv-1/allocations',
-      {
+      expect.objectContaining({
         method: 'PUT',
-        body: JSON.stringify({
-          allocations: [
-            {
-              projectId: 'proj-2',
-              amount: 140,
-              taxRate: 10,
-              taxAmount: 14,
-              purchaseOrderLineId: 'po-line-1',
-            },
-          ],
-          reasonText: '差分調整',
-        }),
-      },
+        body: expect.any(String),
+      }),
     );
+
+    const secondCallOptions = vi.mocked(api).mock.calls[1]?.[1];
+    expect(JSON.parse(String(secondCallOptions?.body))).toEqual({
+      allocations: [
+        {
+          projectId: 'proj-2',
+          amount: 140,
+          taxRate: 10,
+          taxAmount: 14,
+          purchaseOrderLineId: 'po-line-1',
+        },
+      ],
+      reasonText: '差分調整',
+    });
     expect(params.loadVendorInvoices).toHaveBeenCalledTimes(1);
     expect(result.current.invoiceAllocationSaving).toBe(false);
     expect(result.current.invoiceAllocationMessage).toEqual({
