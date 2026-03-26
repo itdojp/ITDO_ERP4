@@ -97,8 +97,9 @@ describe('ChatRoomSettingsCard', () => {
       'department: Finance (group-fin)',
       'project: P001 / Alpha Project',
     ]);
-    expect(screen.getByText('roomId:')).toBeInTheDocument();
-    expect(screen.getByText('room-dept')).toBeInTheDocument();
+    expect(
+      screen.getByText('room-dept', { selector: 'code' }),
+    ).toBeInTheDocument();
     expect(
       screen.getByRole('checkbox', { name: '外部ユーザ参加を許可' }),
     ).not.toBeChecked();
@@ -156,6 +157,7 @@ describe('ChatRoomSettingsCard', () => {
     fireEvent.change(screen.getByLabelText('投稿グループ'), {
       target: { value: ' group-3 ' },
     });
+    const loadCountBeforeSave = loadCount;
     fireEvent.click(screen.getByRole('button', { name: '保存' }));
 
     await waitFor(() => {
@@ -168,9 +170,9 @@ describe('ChatRoomSettingsCard', () => {
           posterGroupIds: ['group-3'],
         }),
       });
+      expect(loadCount).toBe(loadCountBeforeSave + 1);
     });
 
-    expect(loadCount).toBeGreaterThanOrEqual(3);
     expect(screen.getByText('保存しました')).toBeInTheDocument();
   });
 
