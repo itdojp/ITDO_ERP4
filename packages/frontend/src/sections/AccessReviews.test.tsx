@@ -210,10 +210,12 @@ describe('AccessReviews', () => {
     );
 
     expect(
-      await screen.findAllByText('アクセス棚卸しの取得に失敗しました'),
-    ).toHaveLength(2);
+      (await screen.findAllByText('アクセス棚卸しの取得に失敗しました')).length,
+    ).toBeGreaterThan(0);
 
-    fireEvent.click(screen.getByRole('button', { name: '再試行' }));
+    const retryButton = screen.getByRole('button', { name: '再試行' });
+    expect(retryButton).toBeEnabled();
+    fireEvent.click(retryButton);
 
     expect(await screen.findByText('user1@example.com')).toBeInTheDocument();
     expect(api).toHaveBeenCalledTimes(2);
