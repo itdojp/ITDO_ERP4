@@ -32,6 +32,7 @@ const coreCoverageInclude = [
   'src/sections/ChatRoomSettingsCard.tsx',
   'src/sections/GroupManagementCard.tsx',
   'src/sections/RateCardSettingsCard.tsx',
+  'src/sections/admin-settings/AlertSettingsCard.tsx',
 ];
 
 const coverageInclude =
