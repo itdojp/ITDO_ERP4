@@ -25,9 +25,17 @@ vi.mock('../components/AnnotationsCard', () => ({
 vi.mock('../ui', () => ({
   Button: ({
     children,
+    variant: _variant,
+    loading: _loading,
+    type = 'button',
     ...props
-  }: React.ButtonHTMLAttributes<HTMLButtonElement>) => (
-    <button {...props}>{children}</button>
+  }: React.ButtonHTMLAttributes<HTMLButtonElement> & {
+    variant?: string;
+    loading?: boolean;
+  }) => (
+    <button type={type} {...props}>
+      {children}
+    </button>
   ),
   Dialog: ({
     open,
@@ -228,7 +236,13 @@ describe('Estimates', () => {
       expect(screen.queryByTestId('dialog')).not.toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getAllByRole('button', { name: '送信 (Stub)' })[1]);
+    const targetItem = screen.getByText(/EST-002/).closest('li');
+    expect(targetItem).not.toBeNull();
+    fireEvent.click(
+      within(targetItem as HTMLLIElement).getByRole('button', {
+        name: '送信 (Stub)',
+      }),
+    );
     expect(await screen.findByText('送信しました')).toBeInTheDocument();
     expect(api).toHaveBeenNthCalledWith(4, '/estimates/estimate-2/send', {
       method: 'POST',
