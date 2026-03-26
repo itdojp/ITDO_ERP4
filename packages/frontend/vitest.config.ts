@@ -32,6 +32,7 @@ const coreCoverageInclude = [
   'src/sections/ChatRoomSettingsCard.tsx',
   'src/sections/admin-settings/IntegrationExportJobsCard.tsx',
   'src/sections/admin-settings/IntegrationReconciliationCard.tsx',
+  'src/sections/admin-settings/AuditHistoryPanel.tsx',
 ];
 
 const coverageInclude =
