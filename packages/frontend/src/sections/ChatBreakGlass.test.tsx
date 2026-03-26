@@ -3,7 +3,6 @@ import {
   fireEvent,
   render,
   screen,
-  waitFor,
   within,
 } from '@testing-library/react';
 import React from 'react';
@@ -234,6 +233,8 @@ describe('ChatBreakGlass', () => {
   });
 
   it('validates request payload before submit', async () => {
+    api.mockResolvedValueOnce({ items: [] });
+
     render(<ChatBreakGlass />);
 
     fireEvent.change(screen.getByLabelText('breakglass-projectId'), {
