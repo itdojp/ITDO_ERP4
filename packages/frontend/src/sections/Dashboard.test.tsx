@@ -165,7 +165,7 @@ describe('Dashboard', () => {
 
     expect(await screen.findByText('Unread 2')).toBeInTheDocument();
     expect(
-      screen.getByText('承認待ち: 2件 / 自分の承認待ち: 1件'),
+      screen.getByText(/承認待ち:\s*2\s*件\s*\/\s*自分の承認待ち:\s*1\s*件/),
     ).toBeInTheDocument();
     expect(screen.getByText('予算超過の兆候')).toBeInTheDocument();
 
