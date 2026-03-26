@@ -121,6 +121,8 @@ const createApiMock = (options?: {
 };
 
 beforeEach(() => {
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(new Date('2026-03-26T12:00:00+09:00'));
   vi.clearAllMocks();
   vi.mocked(getAuthState).mockReturnValue({ userId: 'user-1', roles: [] });
   vi.mocked(getDraftOwnerId).mockImplementation((userId?: string) =>
@@ -135,6 +137,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
 });
 
 describe('DailyReport', () => {
