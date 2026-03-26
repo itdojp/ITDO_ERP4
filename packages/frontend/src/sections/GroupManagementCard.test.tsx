@@ -264,14 +264,11 @@ beforeEach(() => {
 describe('GroupManagementCard', () => {
   it('shows a read-only message for users without admin or mgmt', async () => {
     getAuthState.mockReturnValue({ userId: 'user-1', roles: ['user'] });
-    api.mockResolvedValue({ items: [] });
 
     render(<GroupManagementCard />);
 
     expect(screen.getByText('admin/mgmt のみ操作できます')).toBeInTheDocument();
-    await waitFor(() => {
-      expect(api).toHaveBeenCalledWith('/groups');
-    });
+    expect(api).not.toHaveBeenCalled();
   });
 
   it('loads groups, members, and disables manual edits for SCIM groups', async () => {

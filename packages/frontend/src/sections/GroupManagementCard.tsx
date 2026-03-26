@@ -203,15 +203,16 @@ export const GroupManagementCard: React.FC = () => {
   }, [groupId, loadMembers, removeMembers]);
 
   useEffect(() => {
+    if (!canManage) return;
     loadGroups().catch(() => undefined);
-  }, [loadGroups]);
+  }, [canManage, loadGroups]);
 
   useEffect(() => {
-    if (!selectedGroup) return;
+    if (!canManage || !selectedGroup) return;
     setEditName(selectedGroup.displayName);
     setEditActive(selectedGroup.active !== false);
     loadMembers(selectedGroup.id).catch(() => undefined);
-  }, [loadMembers, selectedGroup]);
+  }, [canManage, loadMembers, selectedGroup]);
 
   if (!canManage) {
     return (
