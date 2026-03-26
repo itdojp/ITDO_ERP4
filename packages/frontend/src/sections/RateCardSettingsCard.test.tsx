@@ -151,12 +151,11 @@ describe('RateCardSettingsCard', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: '取得' }));
 
-    await waitFor(() => {
-      expect(api).toHaveBeenCalledWith(
-        '/rate-cards?projectId=project-1&includeGlobal=0&active=0&workType=Consulting',
-      );
-    });
+    await screen.findByText('分析 / 10000 JPY / 2026-01-01〜-');
 
+    expect(api).toHaveBeenCalledWith(
+      '/rate-cards?projectId=project-1&includeGlobal=0&active=0&workType=Consulting',
+    );
     expectMessage('取得しました');
     expect(getBadge('P001 / Alpha')).toBeInTheDocument();
     expect(getBadge('(global)')).toBeInTheDocument();
@@ -245,25 +244,24 @@ describe('RateCardSettingsCard', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: '追加' }));
 
-    await waitFor(() => {
-      expect(
-        hasCall(
-          '/rate-cards',
-          'POST',
-          JSON.stringify({
-            projectId: null,
-            role: 'analyst',
-            workType: null,
-            unitPrice: 7500,
-            currency: 'JPY',
-            validFrom: '2026-03-01',
-            validTo: null,
-          }),
-        ),
-      ).toBe(true);
-      expect(api).toHaveBeenCalledWith('/rate-cards?includeGlobal=1&active=1');
-    });
+    await screen.findByText('(default) / 7500 JPY / 2026-03-01〜-');
 
+    expect(
+      hasCall(
+        '/rate-cards',
+        'POST',
+        JSON.stringify({
+          projectId: null,
+          role: 'analyst',
+          workType: null,
+          unitPrice: 7500,
+          currency: 'JPY',
+          validFrom: '2026-03-01',
+          validTo: null,
+        }),
+      ),
+    ).toBe(true);
+    expect(api).toHaveBeenCalledWith('/rate-cards?includeGlobal=1&active=1');
     expectMessage('取得しました');
     expect(getBadge('(global)')).toBeInTheDocument();
     expect(
