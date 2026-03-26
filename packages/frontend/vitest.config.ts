@@ -35,6 +35,7 @@ const coreCoverageInclude = [
   'src/sections/admin-settings/AuditHistoryPanel.tsx',
   'src/sections/admin-settings/AccountingMappingRulesCard.tsx',
   'src/sections/PdfFiles.tsx',
+  'src/sections/AccessReviews.tsx',
 ];
 
 const coverageInclude =
