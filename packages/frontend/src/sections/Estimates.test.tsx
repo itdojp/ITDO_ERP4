@@ -25,18 +25,23 @@ vi.mock('../components/AnnotationsCard', () => ({
 vi.mock('../ui', () => ({
   Button: ({
     children,
-    variant: _variant,
-    loading: _loading,
-    type = 'button',
-    ...props
+    ...inputProps
   }: React.ButtonHTMLAttributes<HTMLButtonElement> & {
     variant?: string;
     loading?: boolean;
-  }) => (
-    <button type={type} {...props}>
-      {children}
-    </button>
-  ),
+  }) => {
+    const {
+      variant: _variant,
+      loading: _loading,
+      type = 'button',
+      ...props
+    } = inputProps;
+    return (
+      <button type={type} {...props}>
+        {children}
+      </button>
+    );
+  },
   Dialog: ({
     open,
     children,
@@ -236,8 +241,10 @@ describe('Estimates', () => {
       expect(screen.queryByTestId('dialog')).not.toBeInTheDocument();
     });
 
-    const targetItem = screen.getByText(/EST-002/).closest('li');
-    expect(targetItem).not.toBeNull();
+    const targetItem = screen.getByText(
+      (_, element) =>
+        element?.tagName === 'LI' && element.textContent?.includes('EST-002'),
+    );
     fireEvent.click(
       within(targetItem as HTMLLIElement).getByRole('button', {
         name: '送信 (Stub)',
