@@ -4,6 +4,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from '@testing-library/react';
 import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -53,7 +54,7 @@ afterEach(() => {
 });
 
 beforeEach(() => {
-  vi.resetAllMocks();
+  vi.mocked(api).mockReset();
   vi.spyOn(console, 'error').mockImplementation(() => {});
 });
 
@@ -118,6 +119,24 @@ function findMonthlyRow(label: string) {
   });
 }
 
+function getGroupUpdateButton() {
+  const groupControls = screen
+    .getByLabelText('閾値')
+    .closest('label')?.parentElement;
+  if (!groupControls) {
+    throw new Error('group controls not found');
+  }
+  return within(groupControls).getByRole('button', { name: '更新' });
+}
+
+function getMonthlyUpdateButton() {
+  const monthlyControls = screen.getByText('時系列').parentElement;
+  if (!monthlyControls) {
+    throw new Error('monthly controls not found');
+  }
+  return within(monthlyControls).getByRole('button', { name: '更新' });
+}
+
 describe('HRAnalytics', () => {
   it('loads group and monthly analytics on initial render', async () => {
     mockAnalyticsApi();
@@ -155,7 +174,7 @@ describe('HRAnalytics', () => {
     fireEvent.change(screen.getByLabelText('終了日'), {
       target: { value: '2026-03-01' },
     });
-    fireEvent.click(screen.getAllByRole('button', { name: '更新' })[0]);
+    fireEvent.click(getGroupUpdateButton());
 
     expect(
       await screen.findByText('開始日は終了日以前にしてください'),
@@ -164,7 +183,6 @@ describe('HRAnalytics', () => {
   });
 
   it('normalizes the minimum user threshold to 1 before reloading', async () => {
-    mockAnalyticsApi();
     vi.mocked(api).mockImplementation(async (path: string) => {
       if (path === '/wellbeing-analytics?minUsers=5&groupBy=group') {
         return { items: [] } as never;
@@ -183,7 +201,7 @@ describe('HRAnalytics', () => {
     fireEvent.change(screen.getByLabelText('閾値'), {
       target: { value: '0' },
     });
-    fireEvent.click(screen.getAllByRole('button', { name: '更新' })[0]);
+    fireEvent.click(getGroupUpdateButton());
 
     await waitFor(() => {
       expect(api).toHaveBeenCalledWith(
@@ -217,7 +235,7 @@ describe('HRAnalytics', () => {
       await screen.findByText('匿名集計の取得に失敗しました'),
     ).toBeInTheDocument();
 
-    fireEvent.click(screen.getAllByRole('button', { name: '更新' })[0]);
+    fireEvent.click(getGroupUpdateButton());
     await waitFor(() => {
       expect(findGroupRow('sales')).toHaveTextContent('15.0%');
     });
@@ -225,7 +243,7 @@ describe('HRAnalytics', () => {
       await screen.findByText('時系列集計の取得に失敗しました'),
     ).toBeInTheDocument();
 
-    fireEvent.click(screen.getAllByRole('button', { name: '更新' })[1]);
+    fireEvent.click(getMonthlyUpdateButton());
     expect(await screen.findByText('表示可能なデータなし')).toBeInTheDocument();
   });
 });
