@@ -31,6 +31,7 @@ const coreCoverageInclude = [
   'src/sections/WorklogSettingsCard.tsx',
   'src/sections/ChatRoomSettingsCard.tsx',
   'src/sections/DocumentSendLogs.tsx',
+  'src/sections/ProjectMilestones.tsx',
   'src/sections/admin-settings/IntegrationExportJobsCard.tsx',
   'src/sections/admin-settings/IntegrationReconciliationCard.tsx',
   'src/sections/admin-settings/AuditHistoryPanel.tsx',
