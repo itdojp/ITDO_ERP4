@@ -121,7 +121,10 @@ describe('MasterData', () => {
 
     render(<MasterData />);
 
-    await screen.findAllByText('データなし');
+    await waitFor(() => {
+      expect(api).toHaveBeenCalledWith('/customers');
+      expect(api).toHaveBeenCalledWith('/vendors');
+    });
     fireEvent.click(
       within(getCustomerSection()).getByRole('button', { name: '追加' }),
     );
@@ -149,7 +152,10 @@ describe('MasterData', () => {
 
     render(<MasterData />);
 
-    await screen.findAllByText('データなし');
+    await waitFor(() => {
+      expect(api).toHaveBeenCalledWith('/customers');
+      expect(api).toHaveBeenCalledWith('/vendors');
+    });
     fireEvent.change(screen.getByLabelText('顧客コード'), {
       target: { value: 'C001' },
     });
