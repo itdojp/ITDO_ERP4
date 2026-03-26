@@ -41,6 +41,7 @@ const coreCoverageInclude = [
   'src/sections/AccessReviews.tsx',
   'src/sections/AuditLogs.tsx',
   'src/sections/Reports.tsx',
+  'src/sections/DailyReport.tsx',
 ];
 
 const coverageInclude =
