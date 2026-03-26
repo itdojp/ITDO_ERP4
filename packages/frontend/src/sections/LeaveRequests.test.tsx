@@ -4,6 +4,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from '@testing-library/react';
 import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -212,6 +213,22 @@ describe('LeaveRequests', () => {
   });
 
   it('creates a leave request and prepends it to the list', async () => {
+    mockApiImplementation({
+      leaveRequests: {
+        items: [
+          {
+            id: 'leave-existing',
+            userId: 'user-1',
+            leaveType: 'paid',
+            startDate: '2026-03-20',
+            endDate: '2026-03-20',
+            hours: 4,
+            status: 'draft',
+            notes: 'existing',
+          },
+        ],
+      },
+    });
     render(<LeaveRequests />);
 
     await screen.findByText('有給休暇 (paid)');
@@ -224,9 +241,15 @@ describe('LeaveRequests', () => {
     fireEvent.click(screen.getByRole('button', { name: '作成' }));
 
     expect(await screen.findByText('作成しました')).toBeInTheDocument();
-    expect(
-      (await screen.findAllByText(/有給休暇 \(paid\)/)).length,
-    ).toBeGreaterThan(0);
+    const requestRows = screen
+      .getAllByRole('listitem')
+      .filter((item) => within(item).queryByRole('button', { name: '申請' }));
+    expect(requestRows).toHaveLength(2);
+    expect(requestRows[0]).toHaveTextContent('有給休暇 (paid)');
+    expect(requestRows[0]).toHaveTextContent('2026-03-27〜2026-03-27');
+    expect(requestRows[0]).toHaveTextContent('8h');
+    expect(requestRows[1]).toHaveTextContent('2026-03-20〜2026-03-20');
+    expect(requestRows[1]).toHaveTextContent('4h');
     expect(vi.mocked(api)).toHaveBeenCalledWith(
       '/leave-requests',
       expect.objectContaining({ method: 'POST' }),
