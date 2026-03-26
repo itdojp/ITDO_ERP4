@@ -252,14 +252,12 @@ describe('AdminJobs', () => {
       screen.getByRole('button', { name: '実行:reportSubscriptions' }),
     );
 
-    await waitFor(() => {
-      expect(api).toHaveBeenCalledWith('/jobs/report-subscriptions/run', {
-        method: 'POST',
-        body: JSON.stringify({ dryRun: true }),
-      });
-    });
+    await screen.findByText('{"delivered":3,"skipped":1}');
 
-    expect(screen.getByText('{"delivered":3,"skipped":1}')).toBeInTheDocument();
+    expect(api).toHaveBeenCalledWith('/jobs/report-subscriptions/run', {
+      method: 'POST',
+      body: JSON.stringify({ dryRun: true }),
+    });
 
     fireEvent.click(
       screen.getByRole('button', { name: '詳細:reportSubscriptions' }),
