@@ -236,4 +236,190 @@ describe('useVendorInvoiceDialogs', () => {
     });
     expect(api).toHaveBeenCalledTimes(1);
   });
+
+  it('handles allocation load failure and resets dialog state', async () => {
+    const params = createParams();
+    vi.mocked(api).mockRejectedValueOnce(new Error('allocation load failed'));
+
+    const { result } = renderHook(() => useVendorInvoiceDialogs(params));
+
+    await act(async () => {
+      await result.current.openVendorInvoiceAllocationDialog(invoice);
+    });
+
+    expect(result.current.invoiceAllocationDialog).toEqual({ invoice });
+    expect(result.current.invoiceAllocationLoading).toBe(false);
+    expect(result.current.invoiceAllocations).toEqual([]);
+    expect(result.current.invoiceAllocationMessage).toEqual({
+      text: '配賦明細の取得に失敗しました',
+      type: 'error',
+    });
+
+    act(() => {
+      result.current.toggleInvoiceAllocationExpanded();
+      result.current.closeVendorInvoiceAllocationDialog();
+    });
+
+    expect(result.current.invoiceAllocationExpanded).toBe(true);
+    expect(result.current.invoiceAllocationDialog).toBeNull();
+  });
+
+  it('saves allocation updates and reloads invoices', async () => {
+    const params = createParams();
+    vi.mocked(api)
+      .mockResolvedValueOnce({
+        invoice,
+        items: [
+          {
+            projectId: 'proj-1',
+            amount: 100,
+            taxRate: 10,
+            taxAmount: 10,
+            purchaseOrderLineId: 'po-line-1',
+          },
+        ],
+      })
+      .mockResolvedValueOnce({ ok: true })
+      .mockResolvedValueOnce({
+        invoice,
+        items: [
+          {
+            projectId: 'proj-2',
+            amount: 140,
+            taxRate: 10,
+            taxAmount: 14,
+            purchaseOrderLineId: 'po-line-1',
+          },
+        ],
+      });
+
+    const { result } = renderHook(() => useVendorInvoiceDialogs(params));
+
+    await act(async () => {
+      await result.current.openVendorInvoiceAllocationDialog(invoice);
+    });
+
+    act(() => {
+      result.current.updateVendorInvoiceAllocation(0, {
+        projectId: 'proj-2',
+        amount: 140,
+        taxAmount: 14,
+      });
+      result.current.setInvoiceAllocationReason('差分調整');
+    });
+
+    await act(async () => {
+      await result.current.saveVendorInvoiceAllocations();
+    });
+
+    expect(vi.mocked(api)).toHaveBeenNthCalledWith(
+      2,
+      '/vendor-invoices/inv-1/allocations',
+      {
+        method: 'PUT',
+        body: JSON.stringify({
+          allocations: [
+            {
+              projectId: 'proj-2',
+              amount: 140,
+              taxRate: 10,
+              taxAmount: 14,
+              purchaseOrderLineId: 'po-line-1',
+            },
+          ],
+          reasonText: '差分調整',
+        }),
+      },
+    );
+    expect(params.loadVendorInvoices).toHaveBeenCalledTimes(1);
+    expect(result.current.invoiceAllocationSaving).toBe(false);
+    expect(result.current.invoiceAllocationMessage).toEqual({
+      text: '配賦明細を更新しました',
+      type: 'success',
+    });
+    expect(result.current.invoiceAllocations).toEqual([
+      expect.objectContaining({ projectId: 'proj-2', amount: 140 }),
+    ]);
+  });
+
+  it('maps invoice line save API failures to guidance messages', async () => {
+    const params = createParams();
+    vi.mocked(api).mockResolvedValueOnce({
+      invoice: { ...invoice, totalAmount: 110 },
+      items: [
+        {
+          lineNo: 1,
+          description: '既存明細',
+          quantity: 2,
+          unitPrice: 50,
+          amount: 100,
+          taxRate: 10,
+          taxAmount: 10,
+          purchaseOrderLineId: 'po-line-1',
+        },
+      ],
+      poLineUsage: [],
+    });
+
+    const { result } = renderHook(() => useVendorInvoiceDialogs(params));
+
+    await act(async () => {
+      await result.current.openVendorInvoiceLineDialog({
+        ...invoice,
+        totalAmount: 110,
+      });
+    });
+
+    act(() => {
+      result.current.setInvoiceLineReason('数量調整');
+      result.current.toggleInvoiceLineExpanded();
+    });
+
+    vi.mocked(api).mockRejectedValueOnce(
+      new Error('PO_LINE_QUANTITY_EXCEEDED'),
+    );
+    await act(async () => {
+      await result.current.saveVendorInvoiceLines();
+    });
+    expect(result.current.invoiceLineMessage).toEqual({
+      text: 'PO明細の数量上限を超えています（数量を見直してください）',
+      type: 'error',
+    });
+
+    vi.mocked(api).mockRejectedValueOnce(new Error('LINE_TOTAL_MISMATCH'));
+    await act(async () => {
+      await result.current.saveVendorInvoiceLines();
+    });
+    expect(result.current.invoiceLineMessage).toEqual({
+      text: '請求合計との差分が解消されていません',
+      type: 'error',
+    });
+
+    vi.mocked(api).mockRejectedValueOnce(
+      new Error('INVALID_PURCHASE_ORDER_LINE'),
+    );
+    await act(async () => {
+      await result.current.saveVendorInvoiceLines();
+    });
+    expect(result.current.invoiceLineMessage).toEqual({
+      text: '選択したPO明細が関連POに属していません',
+      type: 'error',
+    });
+
+    vi.mocked(api).mockRejectedValueOnce(new Error('unexpected'));
+    await act(async () => {
+      await result.current.saveVendorInvoiceLines();
+    });
+    expect(result.current.invoiceLineExpanded).toBe(true);
+    expect(result.current.invoiceLineSaving).toBe(false);
+    expect(result.current.invoiceLineMessage).toEqual({
+      text: '請求明細の更新に失敗しました',
+      type: 'error',
+    });
+
+    act(() => {
+      result.current.closeVendorInvoiceLineDialog();
+    });
+    expect(result.current.invoiceLineDialog).toBeNull();
+  });
 });
