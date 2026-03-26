@@ -15,7 +15,7 @@ vi.mock('../api', () => ({ api }));
 import { InvoiceDetail } from './InvoiceDetail';
 
 beforeEach(() => {
-  vi.clearAllMocks();
+  vi.resetAllMocks();
 });
 
 afterEach(() => {
@@ -54,15 +54,21 @@ describe('InvoiceDetail', () => {
       />,
     );
 
-    await waitFor(() => {
-      expect(api).toHaveBeenCalledWith('/invoices/invoice-1/send-logs');
-    });
+    expect(await screen.findByText('email')).toBeInTheDocument();
+
+    expect(api).toHaveBeenCalledWith('/invoices/invoice-1/send-logs');
 
     expect(
       screen.getByText((_, element) => element?.textContent === 'No: INV-001'),
     ).toBeInTheDocument();
     expect(screen.getByText('基本料')).toBeInTheDocument();
-    expect(screen.getByText('¥20,000')).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        (_, element) =>
+          element?.tagName === 'TD' &&
+          element.textContent?.replace(/[^\d]/g, '') === '20000',
+      ),
+    ).toBeInTheDocument();
     expect(screen.getByText('承認 2/3 : pending')).toBeInTheDocument();
     expect(screen.getByText('email')).toBeInTheDocument();
     expect(screen.getByText(/sent/)).toBeInTheDocument();
