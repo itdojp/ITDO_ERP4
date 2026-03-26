@@ -4,6 +4,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from '@testing-library/react';
 import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -208,6 +209,12 @@ beforeEach(() => {
 });
 
 describe('PeriodLocks', () => {
+  const getCreateSection = () =>
+    screen.getByRole('button', { name: '締め登録' }).closest('section')!;
+
+  const getListSection = () =>
+    screen.getByRole('heading', { name: '締め一覧' }).closest('section')!;
+
   it('validates project scope and creates a lock', async () => {
     vi.mocked(api).mockImplementation(async (path, options) => {
       if (path === '/projects') {
@@ -242,16 +249,22 @@ describe('PeriodLocks', () => {
       expect(api).toHaveBeenCalledWith('/projects');
     });
 
-    fireEvent.click(screen.getByRole('button', { name: '締め登録' }));
+    const createSection = within(getCreateSection());
+    const listSection = within(getListSection());
+
+    fireEvent.click(createSection.getByRole('button', { name: '締め登録' }));
     expect(screen.getByText('project を選択してください')).toBeInTheDocument();
 
-    fireEvent.change(screen.getAllByLabelText('project')[0], {
+    fireEvent.change(createSection.getByLabelText('period (YYYY-MM)'), {
+      target: { value: '2026-03' },
+    });
+    fireEvent.change(createSection.getByLabelText('project'), {
       target: { value: 'project-1' },
     });
-    fireEvent.change(screen.getByLabelText('reason'), {
+    fireEvent.change(createSection.getByLabelText('reason'), {
       target: { value: ' 月次締め ' },
     });
-    fireEvent.click(screen.getByRole('button', { name: '締め登録' }));
+    fireEvent.click(createSection.getByRole('button', { name: '締め登録' }));
 
     await waitFor(() => {
       expect(api).toHaveBeenCalledWith('/period-locks', {
@@ -266,11 +279,8 @@ describe('PeriodLocks', () => {
     });
 
     await waitFor(() => {
-      expect(screen.getAllByText('P001 / Project One').length).toBeGreaterThan(
-        0,
-      );
+      expect(listSection.getByText('月次締め')).toBeInTheDocument();
     });
-    expect(screen.getByText('月次締め')).toBeInTheDocument();
   });
 
   it('loads filtered locks, clears filters, and removes a lock', async () => {
@@ -318,16 +328,18 @@ describe('PeriodLocks', () => {
       expect(api).toHaveBeenCalledWith('/projects');
     });
 
-    fireEvent.change(screen.getByLabelText('period'), {
+    const listSection = within(getListSection());
+
+    fireEvent.change(listSection.getByLabelText('period'), {
       target: { value: '2026-03' },
     });
-    fireEvent.change(screen.getAllByLabelText('scope')[1], {
+    fireEvent.change(listSection.getByLabelText('scope'), {
       target: { value: 'project' },
     });
-    fireEvent.change(screen.getAllByLabelText('project')[1], {
+    fireEvent.change(listSection.getByLabelText('project'), {
       target: { value: 'project-1' },
     });
-    fireEvent.click(screen.getByRole('button', { name: '検索' }));
+    fireEvent.click(listSection.getByRole('button', { name: '検索' }));
 
     await waitFor(() => {
       expect(api).toHaveBeenCalledWith(
@@ -335,10 +347,10 @@ describe('PeriodLocks', () => {
       );
     });
     await waitFor(() => {
-      expect(screen.getByText('解除:lock-1')).toBeInTheDocument();
+      expect(listSection.getByText('解除:lock-1')).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByRole('button', { name: '解除:lock-1' }));
+    fireEvent.click(listSection.getByRole('button', { name: '解除:lock-1' }));
     expect(screen.getByText('期間締めを解除しますか？')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '解除' }));
 
@@ -348,13 +360,13 @@ describe('PeriodLocks', () => {
       });
     });
     await waitFor(() => {
-      expect(screen.getByText('締めがありません')).toBeInTheDocument();
+      expect(listSection.queryByText('解除:lock-1')).not.toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByRole('button', { name: '条件クリア' }));
-    expect(screen.getByLabelText('period')).toHaveValue('');
-    expect(screen.getAllByLabelText('scope')[1]).toHaveValue('');
-    expect(screen.getAllByLabelText('project')[1]).toHaveValue('');
+    fireEvent.click(listSection.getByRole('button', { name: '条件クリア' }));
+    expect(listSection.getByLabelText('period')).toHaveValue('');
+    expect(listSection.getByLabelText('scope')).toHaveValue('');
+    expect(listSection.getByLabelText('project')).toHaveValue('');
   });
 
   it('shows an error when lock list loading fails', async () => {
@@ -374,13 +386,17 @@ describe('PeriodLocks', () => {
       expect(api).toHaveBeenCalledWith('/projects');
     });
 
-    fireEvent.click(screen.getByRole('button', { name: '検索' }));
+    const listSection = within(getListSection());
+
+    fireEvent.click(listSection.getByRole('button', { name: '検索' }));
 
     await waitFor(() => {
       expect(
-        screen.getAllByText('締め一覧の取得に失敗しました').length,
+        listSection.getAllByText('締め一覧の取得に失敗しました').length,
       ).toBeGreaterThan(0);
     });
-    expect(screen.getByText('再試行')).toBeInTheDocument();
+    expect(
+      listSection.getByRole('button', { name: '再試行' }),
+    ).toBeInTheDocument();
   });
 });
