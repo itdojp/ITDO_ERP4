@@ -33,6 +33,7 @@ const coreCoverageInclude = [
   'src/sections/admin-settings/IntegrationExportJobsCard.tsx',
   'src/sections/admin-settings/IntegrationReconciliationCard.tsx',
   'src/sections/admin-settings/AuditHistoryPanel.tsx',
+  'src/sections/admin-settings/AccountingMappingRulesCard.tsx',
 ];
 
 const coverageInclude =
