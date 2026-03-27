@@ -187,6 +187,18 @@ beforeEach(() => {
 });
 
 describe('GroupManagementCard', () => {
+  function getCreateSection() {
+    return within(
+      screen.getByText('新規グループ').parentElement as HTMLElement,
+    );
+  }
+
+  function getExistingSection() {
+    return within(
+      screen.getByText('既存グループ').parentElement as HTMLElement,
+    );
+  }
+
   it('shows a read-only message for non-admin users', async () => {
     getAuthState.mockReturnValue({ userId: 'user-1', roles: ['user'] });
     setupApi();
@@ -249,7 +261,7 @@ describe('GroupManagementCard', () => {
     fireEvent.click(screen.getByRole('button', { name: '作成' }));
     expect(screen.getByText('表示名を入力してください')).toBeInTheDocument();
 
-    fireEvent.change(screen.getAllByLabelText('表示名')[0], {
+    fireEvent.change(getCreateSection().getByLabelText('表示名'), {
       target: { value: ' Accounting Ops ' },
     });
     fireEvent.change(screen.getByLabelText('初期メンバー（userId, 区切り）'), {
@@ -267,7 +279,7 @@ describe('GroupManagementCard', () => {
       expect(screen.getByLabelText('グループ')).toHaveValue('group-3');
     });
 
-    expect(screen.getAllByLabelText('表示名')[0]).toHaveValue('');
+    expect(getCreateSection().getByLabelText('表示名')).toHaveValue('');
     expect(screen.getByLabelText('初期メンバー（userId, 区切り）')).toHaveValue(
       '',
     );
@@ -285,11 +297,13 @@ describe('GroupManagementCard', () => {
       expect(screen.getByLabelText('グループ')).toHaveValue('group-1');
     });
 
-    fireEvent.change(screen.getAllByLabelText('表示名')[1], {
+    const existingSection = getExistingSection();
+
+    fireEvent.change(existingSection.getByLabelText('表示名'), {
       target: { value: 'Finance Ops' },
     });
-    fireEvent.click(screen.getAllByLabelText('有効')[1]);
-    fireEvent.click(screen.getByRole('button', { name: '更新' }));
+    fireEvent.click(existingSection.getByLabelText('有効'));
+    fireEvent.click(existingSection.getByRole('button', { name: '更新' }));
 
     await waitFor(() => {
       expect(onUpdate).toHaveBeenCalledWith({
@@ -326,7 +340,7 @@ describe('GroupManagementCard', () => {
     expect(rows.some((row) => within(row).queryByText('user-b'))).toBe(false);
   });
 
-  it('shows group or member load errors', async () => {
+  it('shows a group load error', async () => {
     setupApi({ failGroups: true });
 
     render(<GroupManagementCard />);
@@ -336,9 +350,9 @@ describe('GroupManagementCard', () => {
         screen.getByText('グループ一覧の取得に失敗しました'),
       ).toBeInTheDocument();
     });
+  });
 
-    cleanup();
-    api.mockReset();
+  it('shows a member load error', async () => {
     setupApi({ failMembers: true });
 
     render(<GroupManagementCard />);
