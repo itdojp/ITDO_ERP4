@@ -404,12 +404,13 @@ describe('Projects', () => {
       );
     });
 
-    await within(memberPanel as HTMLDivElement).findByText('Alice');
-    fireEvent.click(
-      within(memberPanel as HTMLDivElement).getByRole('button', {
+    const selectButton = await within(memberPanel as HTMLDivElement).findByRole(
+      'button',
+      {
         name: '選択',
-      }),
+      },
     );
+    fireEvent.click(selectButton);
     expect(
       within(memberPanel as HTMLDivElement).getByLabelText(
         '案件メンバーのユーザID',
