@@ -55,6 +55,7 @@ const coreCoverageInclude = [
   'src/sections/MasterData.tsx',
   'src/sections/ProjectTasks.tsx',
   'src/sections/Projects.tsx',
+  'src/sections/Approvals.tsx',
 ];
 
 const coverageInclude =
