@@ -188,6 +188,17 @@ describe('ReportSubscriptionsCard', () => {
     expect(onShowDeliveries).toHaveBeenNthCalledWith(2, undefined);
   });
 
+  it('calls onShowDeliveries with filter id when provided', () => {
+    const { onShowDeliveries } = renderCard({
+      reportDeliveryFilterId: 'sub-1',
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: '表示' }));
+
+    expect(onShowDeliveries).toHaveBeenCalledTimes(1);
+    expect(onShowDeliveries).toHaveBeenCalledWith('sub-1');
+  });
+
   it('renders items and deliveries and delegates item actions', () => {
     const enabledItem = createItem();
     const disabledItem = createItem({
