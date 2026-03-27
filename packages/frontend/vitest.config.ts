@@ -42,6 +42,7 @@ const coreCoverageInclude = [
   'src/sections/admin-settings/AlertSettingsCard.tsx',
   'src/sections/admin-settings/ReportSubscriptionsCard.tsx',
   'src/sections/admin-settings/TemplateSettingsCard.tsx',
+  'src/sections/admin-settings/AuthIdentityMigrationCard.tsx',
   'src/sections/PdfFiles.tsx',
   'src/sections/AccessReviews.tsx',
   'src/sections/InvoiceDetail.tsx',
