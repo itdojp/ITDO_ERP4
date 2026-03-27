@@ -126,11 +126,11 @@ function renderCard(
     ...overrides,
   };
 
-  render(<IntegrationSettingsCard {...props} />);
-  return props;
+  const renderResult = render(<IntegrationSettingsCard {...props} />);
+  return { props, ...renderResult };
 }
 beforeEach(() => {
-  formatDateTime.mockClear();
+  vi.clearAllMocks();
 });
 
 afterEach(() => {
@@ -153,7 +153,6 @@ describe('IntegrationSettingsCard', () => {
       onReload,
       onShowRuns,
       setIntegrationRunFilterId,
-      integrationRunFilterId: '   ',
       items,
     });
 
@@ -213,15 +212,44 @@ describe('IntegrationSettingsCard', () => {
     fireEvent.click(screen.getByRole('button', { name: '作成' }));
     fireEvent.click(screen.getByRole('button', { name: 'クリア' }));
     fireEvent.click(screen.getByRole('button', { name: '再読込' }));
-    fireEvent.click(screen.getByRole('button', { name: '履歴表示' }));
 
     expect(onSubmit).toHaveBeenCalledTimes(1);
     expect(onReset).toHaveBeenCalledTimes(1);
     expect(onReload).toHaveBeenCalledTimes(1);
-    expect(onShowRuns).toHaveBeenCalledWith(undefined);
+    expect(onShowRuns).not.toHaveBeenCalled();
   });
 
-  it('switches labels in edit mode and trims valid run filters', () => {
+  it('selects a run filter and passes the selected value to onShowRuns', () => {
+    const onShowRuns = vi.fn();
+    const setIntegrationRunFilterId = vi.fn();
+
+    const { rerender, props } = renderCard({
+      onShowRuns,
+      setIntegrationRunFilterId,
+      integrationRunFilterId: '',
+      items,
+    });
+
+    fireEvent.change(screen.getByLabelText('履歴フィルタ'), {
+      target: { value: 'setting-1' },
+    });
+    expect(setIntegrationRunFilterId).toHaveBeenCalledWith('setting-1');
+
+    rerender(
+      <IntegrationSettingsCard
+        {...props}
+        onShowRuns={onShowRuns}
+        setIntegrationRunFilterId={setIntegrationRunFilterId}
+        integrationRunFilterId="setting-1"
+        items={items}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '履歴表示' }));
+    expect(onShowRuns).toHaveBeenCalledWith('setting-1');
+  });
+
+  it('switches labels in edit mode and shows the current run filter', () => {
     const onShowRuns = vi.fn();
 
     renderCard({

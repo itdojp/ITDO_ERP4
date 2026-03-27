@@ -33,10 +33,11 @@ const coreCoverageInclude = [
   'src/sections/DocumentSendLogs.tsx',
   'src/sections/ProjectMilestones.tsx',
   'src/sections/AdminJobs.tsx',
+  'src/sections/admin-settings/AccountingMappingRulesCard.tsx',
+  'src/sections/admin-settings/AuditHistoryPanel.tsx',
   'src/sections/admin-settings/IntegrationExportJobsCard.tsx',
   'src/sections/admin-settings/IntegrationReconciliationCard.tsx',
-  'src/sections/admin-settings/AuditHistoryPanel.tsx',
-  'src/sections/admin-settings/AccountingMappingRulesCard.tsx',
+  'src/sections/admin-settings/IntegrationSettingsCard.tsx',
   'src/sections/PdfFiles.tsx',
   'src/sections/AccessReviews.tsx',
   'src/sections/InvoiceDetail.tsx',
@@ -56,7 +57,6 @@ const coreCoverageInclude = [
   'src/sections/ProjectTasks.tsx',
   'src/sections/Projects.tsx',
   'src/sections/Approvals.tsx',
-  'src/sections/admin-settings/IntegrationSettingsCard.tsx',
 ];
 
 const coverageInclude =
