@@ -1,4 +1,3 @@
-/* eslint-disable react/prop-types */
 import {
   cleanup,
   fireEvent,
@@ -49,24 +48,32 @@ vi.mock('../utils/offlineQueue', () => ({
   isOfflineError,
 }));
 vi.mock('../utils/deepLink', () => ({ navigateToOpen }));
+
+const originalMatchMediaDescriptor = Object.getOwnPropertyDescriptor(
+  window,
+  'matchMedia',
+);
+
 vi.mock('../ui', () => ({
   Alert: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  /* eslint-disable react/prop-types */
   Button: (
     props: React.ButtonHTMLAttributes<HTMLButtonElement> & {
       loading?: boolean;
     },
   ) => {
-    const { children, loading: _loading, ...rest } = props;
+    const { children, disabled, loading, ...rest } = props;
     return (
       <button
         type="button"
-        disabled={Boolean(props.disabled) || Boolean(props.loading)}
         {...rest}
+        disabled={Boolean(disabled) || Boolean(loading)}
       >
         {children}
       </button>
     );
   },
+  /* eslint-enable react/prop-types */
   Card: ({ children }: { children: React.ReactNode }) => (
     <section>{children}</section>
   ),
@@ -180,11 +187,19 @@ import { TimeEntries } from './TimeEntries';
 
 afterEach(() => {
   cleanup();
+  if (originalMatchMediaDescriptor) {
+    Object.defineProperty(window, 'matchMedia', originalMatchMediaDescriptor);
+  } else {
+    // JSDOM does not always define matchMedia; remove the injected mock cleanly.
+    // @ts-expect-error test-only cleanup for missing descriptor
+    delete window.matchMedia;
+  }
 });
 
 beforeEach(() => {
   vi.resetAllMocks();
   Object.defineProperty(window, 'matchMedia', {
+    configurable: true,
     writable: true,
     value: vi.fn().mockImplementation(() => ({
       matches: false,
@@ -226,7 +241,7 @@ beforeEach(() => {
 
 describe('TimeEntries', () => {
   it('loads entries and opens the daily report for the selected date', async () => {
-    vi.mocked(api).mockResolvedValue({
+    vi.mocked(api).mockImplementation(async () => ({
       items: [
         {
           id: 'entry-1',
@@ -239,11 +254,11 @@ describe('TimeEntries', () => {
           notes: 'monthly close',
         },
       ],
-    } as never);
+    }));
 
     render(<TimeEntries />);
 
-    expect(await screen.findByText(/PRJ \/ Demo Project/)).toBeInTheDocument();
+    expect(await screen.findByText(/monthly close/)).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText('日付'), {
       target: { value: '2026-03-31' },
@@ -257,7 +272,7 @@ describe('TimeEntries', () => {
   });
 
   it('restores a saved draft including the deferred project selection', async () => {
-    vi.mocked(api).mockResolvedValue({ items: [] } as never);
+    vi.mocked(api).mockImplementation(async () => ({ items: [] }));
     vi.mocked(loadDraft).mockResolvedValue({
       projectId: 'project-2',
       taskId: 'task-2',
@@ -280,7 +295,7 @@ describe('TimeEntries', () => {
   });
 
   it('shows validation and hook error messages when the form is invalid', async () => {
-    vi.mocked(api).mockResolvedValue({ items: [] } as never);
+    vi.mocked(api).mockImplementation(async () => ({ items: [] }));
     vi.mocked(useProjects).mockReturnValue({
       projects: [{ id: 'demo-project', code: 'PRJ', name: 'Demo Project' }],
       projectMessage: '案件一覧の取得に失敗しました',
@@ -313,10 +328,10 @@ describe('TimeEntries', () => {
     vi.mocked(api).mockImplementation(
       async (path: string, init?: RequestInit) => {
         if (path === '/time-entries' && !init) {
-          return { items: [] } as never;
+          return { items: [] };
         }
         if (path === '/time-entries' && init?.method === 'POST') {
-          return { id: 'saved-entry' } as never;
+          return { id: 'saved-entry' };
         }
         throw new Error(`Unhandled api call: ${path}`);
       },
@@ -391,7 +406,7 @@ describe('TimeEntries', () => {
             status: 'draft',
           },
         ],
-      } as never;
+      };
     });
 
     render(<TimeEntries />);
@@ -409,7 +424,7 @@ describe('TimeEntries', () => {
     vi.mocked(api).mockImplementation(
       async (path: string, init?: RequestInit) => {
         if (path === '/time-entries' && !init) {
-          return { items: [] } as never;
+          return { items: [] };
         }
         if (path === '/time-entries' && init?.method === 'POST') {
           throw new Error('offline');
