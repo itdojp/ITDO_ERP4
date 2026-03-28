@@ -50,6 +50,10 @@ vi.mock('../utils/offlineQueue', () => ({
 
 import { CurrentUser } from './CurrentUser';
 
+type NavigatorWithOptionalOnLine = Omit<Navigator, 'onLine'> & {
+  onLine?: boolean;
+};
+
 type AuthStateLike = {
   userId: string;
   roles: string[];
@@ -196,7 +200,7 @@ afterEach(() => {
       originalNavigatorOnLineDescriptor,
     );
   } else {
-    delete (window.navigator as any).onLine;
+    delete (window.navigator as NavigatorWithOptionalOnLine).onLine;
   }
 });
 
