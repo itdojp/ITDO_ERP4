@@ -119,27 +119,38 @@ describe('AnnotationsCard', () => {
   });
 
   it('saves annotations and reflects the server response', async () => {
-    vi.mocked(apiResponse)
-      .mockResolvedValueOnce(makeLoadResponse())
-      .mockResolvedValueOnce(
-        jsonResponse({
-          targetKind: 'project',
-          targetId: 'project-1',
-          notes: 'saved note',
-          externalUrls: [
-            'https://safe.example/path',
-            'javascript:alert(1)',
-            'https://new.example/path',
-          ],
-          internalRefs: [
-            { kind: 'room_chat', id: 'room-1', label: 'Room One' },
-            { kind: 'chat_message', id: 'msg-1', label: 'Chat One' },
-            { kind: 'room_chat', id: 'room-2', label: 'Room Two' },
-          ],
-          updatedAt: '2026-03-28T01:00:00.000Z',
-          updatedBy: 'admin-1',
-        }),
-      );
+    const savedResponse = jsonResponse({
+      targetKind: 'project',
+      targetId: 'project-1',
+      notes: 'saved note',
+      externalUrls: [
+        'https://safe.example/path',
+        'javascript:alert(1)',
+        'https://new.example/path',
+      ],
+      internalRefs: [
+        { kind: 'room_chat', id: 'room-1', label: 'Room One' },
+        { kind: 'chat_message', id: 'msg-1', label: 'Chat One' },
+        { kind: 'room_chat', id: 'room-2', label: 'Room Two' },
+      ],
+      updatedAt: '2026-03-28T01:00:00.000Z',
+      updatedBy: 'admin-1',
+    });
+    vi.mocked(apiResponse).mockImplementation(async (path: string, init) => {
+      if (path === '/chat-messages/msg-1') {
+        return jsonResponse({ id: 'msg-1' });
+      }
+      if (
+        path === '/annotations/project/project-1' &&
+        init?.method === 'PATCH'
+      ) {
+        return savedResponse;
+      }
+      if (path === '/annotations/project/project-1') {
+        return makeLoadResponse();
+      }
+      throw new Error(`Unhandled api path: ${path}`);
+    });
 
     renderCard();
 
@@ -153,9 +164,9 @@ describe('AnnotationsCard', () => {
     fireEvent.change(screen.getByLabelText('追加（スペース区切りで複数可）'), {
       target: { value: 'https://new.example/path' },
     });
-    const externalUrlControls = screen
-      .getByLabelText('追加（スペース区切りで複数可）')
-      .closest('.itdo-form-field')?.parentElement;
+    const externalUrlInput =
+      screen.getByLabelText('追加（スペース区切りで複数可）');
+    const externalUrlControls = externalUrlInput.parentElement?.parentElement;
     expect(externalUrlControls).not.toBeNull();
     fireEvent.click(
       within(externalUrlControls as HTMLElement).getByRole('button', {
@@ -280,9 +291,8 @@ describe('AnnotationsCard', () => {
       expect(screen.getByText('履歴の取得に失敗しました')).toBeInTheDocument(),
     );
 
-    const historyCard = screen
-      .getByText('履歴（監査ログ）')
-      .closest('.itdo-card');
+    const historyHeading = screen.getByText('履歴（監査ログ）');
+    const historyCard = historyHeading.parentElement?.parentElement;
     expect(historyCard).not.toBeNull();
     fireEvent.click(
       within(historyCard as HTMLElement).getByRole('button', {
