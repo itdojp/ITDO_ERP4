@@ -14,11 +14,11 @@ vi.mock('../api', () => ({ api }));
 
 import { WorklogSettingsCard } from './WorklogSettingsCard';
 
-let consoleErrorSpy: ReturnType<typeof vi.spyOn>;
+let consoleErrorSpy: ReturnType<typeof vi.spyOn> | undefined;
 
 afterEach(() => {
   cleanup();
-  consoleErrorSpy.mockRestore();
+  consoleErrorSpy?.mockRestore();
 });
 
 beforeEach(() => {
@@ -108,6 +108,48 @@ describe('WorklogSettingsCard', () => {
       ).toBeInTheDocument();
     });
 
+    expect(api).toHaveBeenCalledTimes(1);
+  });
+
+  it('retries loading when 再読込 is clicked', async () => {
+    api
+      .mockRejectedValueOnce(new Error('load failed'))
+      .mockResolvedValueOnce({ id: 'worklog-setting-1', editableDays: 21 });
+
+    render(<WorklogSettingsCard />);
+
+    await waitFor(() => {
+      expect(
+        screen.getByText('日報/工数設定の取得に失敗しました'),
+      ).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: '再読込' }));
+
+    const input = screen.getByRole('spinbutton', { name: '期間（日）' });
+    await waitFor(() => {
+      expect(input).toHaveValue(21);
+    });
+
+    expect(api).toHaveBeenCalledTimes(2);
+  });
+
+  it('validates invalid input without issuing PATCH', async () => {
+    api.mockResolvedValueOnce({ id: 'worklog-setting-1', editableDays: 14 });
+
+    render(<WorklogSettingsCard />);
+
+    const input = screen.getByRole('spinbutton', { name: '期間（日）' });
+    await waitFor(() => {
+      expect(input).toHaveValue(14);
+    });
+
+    fireEvent.change(input, { target: { value: '' } });
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+
+    expect(
+      await screen.findByText('1〜365 の数値を入力してください'),
+    ).toBeInTheDocument();
     expect(api).toHaveBeenCalledTimes(1);
   });
 
