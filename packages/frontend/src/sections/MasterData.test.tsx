@@ -88,6 +88,11 @@ function getCustomerSection() {
     .parentElement as HTMLElement;
 }
 
+function getVendorSection() {
+  return screen.getByRole('heading', { name: '業者' })
+    .parentElement as HTMLElement;
+}
+
 function getContactSection() {
   return screen.getByRole('heading', { name: '連絡先' })
     .parentElement as HTMLElement;
@@ -253,5 +258,168 @@ describe('MasterData', () => {
         'この連絡先には紐づく顧客または業者がありません。管理者にお問い合わせください。',
       ),
     ).toBeInTheDocument();
+  });
+
+  it('creates a vendor and reloads the list', async () => {
+    let vendorLoads = 0;
+    vi.mocked(api).mockImplementation(
+      async (path: string, init?: RequestInit) => {
+        if (path === '/customers') return { items: [] } as never;
+        if (path === '/vendors' && !init?.method) {
+          vendorLoads += 1;
+          return vendorLoads > 1
+            ? ({ items: [vendor] } as never)
+            : ({ items: [] } as never);
+        }
+        if (path === '/vendors' && init?.method === 'POST') {
+          return vendor as never;
+        }
+        throw new Error(`Unhandled api path: ${path}`);
+      },
+    );
+
+    render(<MasterData />);
+
+    await waitFor(() => {
+      expect(api).toHaveBeenCalledWith('/customers');
+      expect(api).toHaveBeenCalledWith('/vendors');
+    });
+    fireEvent.change(screen.getByLabelText('業者コード'), {
+      target: { value: 'V001' },
+    });
+    fireEvent.change(screen.getByLabelText('業者名称'), {
+      target: { value: 'Vendor One' },
+    });
+    fireEvent.change(screen.getByLabelText('業者振込情報'), {
+      target: { value: 'Bank Account' },
+    });
+    fireEvent.click(
+      within(getVendorSection()).getByRole('button', { name: '追加' }),
+    );
+
+    await waitFor(() => {
+      expect(api).toHaveBeenCalledWith('/vendors', {
+        method: 'POST',
+        body: JSON.stringify({
+          code: 'V001',
+          name: 'Vendor One',
+          status: 'active',
+          bankInfo: 'Bank Account',
+          taxRegion: undefined,
+          externalSource: undefined,
+          externalId: undefined,
+        }),
+      });
+    });
+
+    expect(screen.getByText('業者を追加しました')).toBeInTheDocument();
+    expect(
+      await within(getVendorSection()).findByText(
+        (content, element) =>
+          element?.tagName === 'LI' && content.includes('V001 / Vendor One'),
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it('creates a vendor contact and reloads vendor contacts', async () => {
+    let contactLoads = 0;
+    vi.mocked(api).mockImplementation(
+      async (path: string, init?: RequestInit) => {
+        if (path === '/customers') return { items: [customer] } as never;
+        if (path === '/vendors') return { items: [vendor] } as never;
+        if (path === '/contacts?vendorId=vendor-1' && !init?.method) {
+          contactLoads += 1;
+          return contactLoads > 1
+            ? ({
+                items: [
+                  {
+                    id: 'contact-1',
+                    customerId: null,
+                    vendorId: 'vendor-1',
+                    name: 'Vendor Contact',
+                    email: 'vendor@example.com',
+                    isPrimary: false,
+                  },
+                ],
+              } as never)
+            : ({ items: [] } as never);
+        }
+        if (path === '/contacts' && init?.method === 'POST') {
+          return {
+            id: 'contact-1',
+            vendorId: 'vendor-1',
+            name: 'Vendor Contact',
+          } as never;
+        }
+        throw new Error(`Unhandled api path: ${path}`);
+      },
+    );
+
+    render(<MasterData />);
+
+    fireEvent.change(screen.getByLabelText('連絡先の紐付け種別'), {
+      target: { value: 'vendor' },
+    });
+    await within(getContactSection()).findByRole('option', {
+      name: 'V001 / Vendor One',
+    });
+    fireEvent.change(screen.getByLabelText('連絡先の紐付け先'), {
+      target: { value: 'vendor-1' },
+    });
+    await waitFor(() => {
+      expect(api).toHaveBeenCalledWith('/contacts?vendorId=vendor-1');
+    });
+    fireEvent.change(screen.getByLabelText('連絡先氏名'), {
+      target: { value: 'Vendor Contact' },
+    });
+    fireEvent.change(screen.getByLabelText('連絡先メール'), {
+      target: { value: 'vendor@example.com' },
+    });
+    fireEvent.click(
+      within(getContactSection()).getByRole('button', { name: '追加' }),
+    );
+
+    await waitFor(() => {
+      expect(api).toHaveBeenCalledWith('/contacts', {
+        method: 'POST',
+        body: JSON.stringify({
+          name: 'Vendor Contact',
+          email: 'vendor@example.com',
+          phone: undefined,
+          role: undefined,
+          isPrimary: false,
+          vendorId: 'vendor-1',
+        }),
+      });
+    });
+
+    expect(screen.getByText('連絡先を追加しました')).toBeInTheDocument();
+    expect(
+      await within(getContactSection()).findByText(
+        (content, element) =>
+          element?.tagName === 'LI' &&
+          content.includes('Vendor Contact / vendor@example.com'),
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it('opens the vendor annotation dialog', async () => {
+    vi.mocked(api).mockImplementation(async (path: string) => {
+      if (path === '/customers') return { items: [customer] } as never;
+      if (path === '/vendors') return { items: [vendor] } as never;
+      throw new Error(`Unhandled api path: ${path}`);
+    });
+
+    render(<MasterData />);
+
+    const button = await screen.findByRole('button', {
+      name: '注釈（業者）: V001 / Vendor One',
+    });
+    fireEvent.click(button);
+
+    expect(
+      screen.getByRole('heading', { name: '業者: V001 / Vendor One' }),
+    ).toBeInTheDocument();
+    expect(screen.getByText('annotations:vendor-1')).toBeInTheDocument();
   });
 });
