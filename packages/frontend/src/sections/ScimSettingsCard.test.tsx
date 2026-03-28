@@ -31,6 +31,7 @@ import { ScimSettingsCard } from './ScimSettingsCard';
 
 afterEach(() => {
   cleanup();
+  vi.unstubAllGlobals();
 });
 
 beforeEach(() => {
@@ -83,5 +84,25 @@ describe('ScimSettingsCard', () => {
         'SCIM_BEARER_TOKEN を設定し、バックエンドを再起動してください。',
       ),
     ).toBeInTheDocument();
+  });
+
+  it('falls back to a relative base URL when URL resolution fails', async () => {
+    vi.stubGlobal(
+      'URL',
+      class BrokenURL {
+        constructor() {
+          throw new Error('URL resolution failed');
+        }
+      } as unknown as typeof URL,
+    );
+    api.mockResolvedValueOnce({ configured: false, pageMax: 25 });
+
+    render(<ScimSettingsCard />);
+
+    await waitFor(() => {
+      expect(screen.getByText('未設定')).toBeInTheDocument();
+    });
+
+    expect(screen.getByText('/scim/v2')).toBeInTheDocument();
   });
 });
