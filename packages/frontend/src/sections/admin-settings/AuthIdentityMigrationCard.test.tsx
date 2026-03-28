@@ -128,7 +128,11 @@ describe('AuthIdentityMigrationCard', () => {
 
     renderCard();
 
-    expect(api).toHaveBeenCalledWith('/auth/user-identities?limit=20&offset=0');
+    await waitFor(() => {
+      expect(api).toHaveBeenCalledWith(
+        '/auth/user-identities?limit=20&offset=0',
+      );
+    });
 
     const googleItem = await screen.findByTestId(
       'auth-identity-item-identity-google',
