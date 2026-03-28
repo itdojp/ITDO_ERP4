@@ -214,7 +214,7 @@ describe('ChatEvidencePicker', () => {
     expect(apiResponse).toHaveBeenCalledTimes(1);
   });
 
-  it('normalizes candidate fallback fields when the API omits metadata', async () => {
+  it('normalizes candidate fallback fields when metadata values are empty', async () => {
     const onAddCandidate = vi.fn();
 
     vi.mocked(apiResponse).mockResolvedValueOnce(
