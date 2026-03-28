@@ -1,5 +1,5 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useChatRooms, type ChatRoomOption } from './useChatRooms';
 
 const { api } = vi.hoisted(() => ({
@@ -20,8 +20,17 @@ function makeRoom(overrides: Partial<ChatRoomOption> = {}): ChatRoomOption {
 }
 
 describe('useChatRooms', () => {
+  let consoleErrorSpy: ReturnType<typeof vi.spyOn> | undefined;
+
   beforeEach(() => {
     api.mockReset();
+    consoleErrorSpy = vi
+      .spyOn(console, 'error')
+      .mockImplementation(() => undefined);
+  });
+
+  afterEach(() => {
+    consoleErrorSpy?.mockRestore();
   });
 
   it('keeps only project rooms and falls back to the first project', async () => {
@@ -76,7 +85,6 @@ describe('useChatRooms', () => {
     );
 
     await waitFor(() => expect(result.current.rooms).toEqual(projectRooms));
-    await new Promise((resolve) => setTimeout(resolve, 0));
     expect(onSelect).not.toHaveBeenCalled();
   });
 
@@ -109,10 +117,15 @@ describe('useChatRooms', () => {
     );
 
     await waitFor(() => expect(result.current.rooms).toEqual(firstRooms));
+    expect(onSelect).not.toHaveBeenCalled();
+
     await act(async () => {
       await result.current.loadRooms();
     });
+
     await waitFor(() => expect(result.current.rooms).toEqual(nextRooms));
+    await waitFor(() => expect(onSelect).toHaveBeenCalledWith('proj-2'));
+    expect(onSelect).toHaveBeenCalledTimes(1);
     expect(api).toHaveBeenCalledTimes(2);
   });
 });
