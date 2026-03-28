@@ -67,6 +67,7 @@ const coreCoverageInclude = [
   'src/sections/AdminSettings.tsx',
   'src/sections/VendorDocuments.tsx',
   'src/sections/CurrentUser.tsx',
+  'src/sections/RoomChat.tsx',
 ];
 
 const uiCoreCoverageInclude = [
