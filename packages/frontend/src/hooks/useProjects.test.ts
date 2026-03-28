@@ -55,13 +55,8 @@ describe('useProjects', () => {
     const nextProjects: ProjectOption[] = [
       { id: 'proj-3', code: 'P003', name: 'Project Three' },
     ];
-    let callCount = 0;
-    vi.mocked(api).mockImplementation(async () => {
-      callCount += 1;
-      return {
-        items: callCount <= 2 ? projects : nextProjects,
-      } as never;
-    });
+    vi.mocked(api).mockResolvedValueOnce({ items: projects });
+    vi.mocked(api).mockResolvedValue({ items: nextProjects });
     const onSelect = vi.fn();
 
     const { result } = renderHook(() =>

@@ -59,16 +59,13 @@ describe('useProjectTasks', () => {
   });
 
   it('reloads tasks only when the matching project id is broadcast', async () => {
-    let callCount = 0;
-    vi.mocked(api).mockImplementation(async () => {
-      callCount += 1;
-      return {
-        items:
-          callCount <= 2
-            ? [{ id: 'task-1', name: 'Task One' }]
-            : [{ id: 'task-2', name: 'Task Two' }],
-      } as never;
-    });
+    vi.mocked(api)
+      .mockResolvedValueOnce({
+        items: [{ id: 'task-1', name: 'Task One' }],
+      } as never)
+      .mockResolvedValue({
+        items: [{ id: 'task-2', name: 'Task Two' }],
+      } as never);
 
     const { result } = renderHook(() =>
       useProjectTasks({ projectId: 'proj-1' }),
@@ -89,7 +86,6 @@ describe('useProjectTasks', () => {
         }),
       );
     });
-    await new Promise((resolve) => setTimeout(resolve, 0));
     expect(vi.mocked(api).mock.calls.length).toBe(initialCallCount);
 
     act(() => {
