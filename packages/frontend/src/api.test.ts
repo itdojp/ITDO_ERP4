@@ -12,12 +12,12 @@ type AuthStateSeed = {
 };
 
 function jsonResponse(body: unknown, init: ResponseInit = {}) {
+  const headers = new Headers(init.headers);
+  headers.set('Content-Type', 'application/json');
+
   return new Response(JSON.stringify(body), {
     ...init,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(init.headers as Record<string, string> | undefined),
-    },
+    headers,
     status: init.status ?? 200,
   });
 }
