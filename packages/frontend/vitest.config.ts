@@ -70,6 +70,7 @@ const coreCoverageInclude = [
   'src/sections/RoomChat.tsx',
   'src/hooks/useProjects.ts',
   'src/hooks/useProjectTasks.ts',
+  'src/hooks/useChatRooms.ts',
 ];
 
 const uiCoreCoverageInclude = [
