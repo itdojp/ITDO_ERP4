@@ -299,6 +299,13 @@ describe('GroupManagementCard', () => {
 
     const existingSection = getExistingSection();
 
+    await waitFor(() => {
+      expect(
+        existingSection.getByRole('button', { name: '更新' }),
+      ).toBeEnabled();
+      expect(screen.getByText('メンバー数: 2')).toBeInTheDocument();
+    });
+
     fireEvent.change(existingSection.getByLabelText('表示名'), {
       target: { value: 'Finance Ops' },
     });
@@ -313,6 +320,9 @@ describe('GroupManagementCard', () => {
       expect(screen.getByText('グループを更新しました')).toBeInTheDocument();
     });
 
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: '追加' })).toBeEnabled();
+    });
     fireEvent.change(screen.getByLabelText('追加（userId, 区切り）'), {
       target: { value: ' user-c, user-d ' },
     });
@@ -323,8 +333,12 @@ describe('GroupManagementCard', () => {
         userIds: ['user-c', 'user-d'],
       });
       expect(screen.getByText('メンバーを追加しました')).toBeInTheDocument();
+      expect(screen.getByLabelText('追加（userId, 区切り）')).toHaveValue('');
     });
 
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: '削除' })).toBeEnabled();
+    });
     fireEvent.change(screen.getByLabelText('削除（userId, 区切り）'), {
       target: { value: ' user-b ' },
     });

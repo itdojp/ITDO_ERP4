@@ -65,6 +65,7 @@ const coreCoverageInclude = [
   'src/sections/TimeEntries.tsx',
   'src/sections/GroupManagementCard.tsx',
   'src/sections/AdminSettings.tsx',
+  'src/sections/VendorDocuments.tsx',
 ];
 
 const coverageInclude =
