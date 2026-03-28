@@ -27,6 +27,7 @@ const coreCoverageInclude = [
   'src/sections/PeriodLocks.tsx',
   'src/sections/HelpModal.tsx',
   'src/sections/ChatSettingsCard.tsx',
+  'src/components/AnnotationsCard.tsx',
   // SCIM settings card coverage for the new unit test.
   'src/sections/ScimSettingsCard.tsx',
   'src/sections/ChatRoomSettingsCard.tsx',
