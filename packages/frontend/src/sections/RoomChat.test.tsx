@@ -1,0 +1,397 @@
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from '@testing-library/react';
+import React from 'react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+type ChatRoom = {
+  id: string;
+  type: string;
+  name: string;
+  allowExternalIntegrations?: boolean | null;
+  isMember?: boolean | null;
+  isOfficial?: boolean | null;
+  projectCode?: string | null;
+  projectName?: string | null;
+};
+
+type ChatMessage = {
+  id: string;
+  roomId: string;
+  userId: string;
+  body: string;
+  createdAt: string;
+};
+
+const { api, apiResponse, getAuthState } = vi.hoisted(() => ({
+  api: vi.fn(),
+  apiResponse: vi.fn(),
+  getAuthState: vi.fn(),
+}));
+
+vi.mock('../api', () => ({
+  api,
+  apiResponse,
+  getAuthState,
+}));
+
+vi.mock('../ui', () => ({
+  AttachmentField: () => null,
+  Combobox: ({
+    placeholder,
+    value,
+    onChange,
+    inputProps,
+  }: {
+    placeholder?: string;
+    value?: string;
+    onChange?: (value: string) => void;
+    inputProps?: React.InputHTMLAttributes<HTMLInputElement>;
+  }) => (
+    <input
+      {...inputProps}
+      placeholder={placeholder}
+      value={value ?? ''}
+      onChange={(event) => onChange?.(event.target.value)}
+    />
+  ),
+  MentionComposer: ({
+    body,
+    onBodyChange,
+    placeholder,
+    submitLabel,
+    cancelLabel,
+    onSubmit,
+    onCancel,
+    disabled,
+  }: {
+    body: string;
+    onBodyChange?: (value: string) => void;
+    placeholder?: string;
+    submitLabel: string;
+    cancelLabel: string;
+    onSubmit?: () => void;
+    onCancel?: () => void;
+    disabled?: boolean;
+  }) => (
+    <div>
+      <textarea
+        aria-label={placeholder}
+        placeholder={placeholder}
+        value={body}
+        onChange={(event) => onBodyChange?.(event.target.value)}
+        disabled={disabled}
+      />
+      <button type="button" onClick={onSubmit} disabled={disabled}>
+        {submitLabel}
+      </button>
+      <button type="button" onClick={onCancel} disabled={disabled}>
+        {cancelLabel}
+      </button>
+    </div>
+  ),
+  UndoToast: () => null,
+}));
+
+import { RoomChat } from './RoomChat';
+
+function makeRoom(overrides: Partial<ChatRoom>): ChatRoom {
+  return {
+    id: 'room-1',
+    type: 'project',
+    name: 'room-1',
+    allowExternalIntegrations: false,
+    isMember: true,
+    isOfficial: false,
+    projectCode: 'PRJ-1',
+    projectName: 'Alpha',
+    ...overrides,
+  };
+}
+
+function makeMessage(overrides: Partial<ChatMessage>): ChatMessage {
+  return {
+    id: 'message-1',
+    roomId: 'room-1',
+    userId: 'alice',
+    body: 'initial message',
+    createdAt: '2026-03-28T00:00:00.000Z',
+    ...overrides,
+  };
+}
+
+function installApiMock(options: {
+  rooms: ChatRoom[];
+  messagesByRoom: Record<string, ChatMessage[]>;
+  unreadByRoom?: Record<
+    string,
+    { unreadCount?: number; lastReadAt?: string | null }
+  >;
+  notificationSettingsByRoom?: Record<
+    string,
+    {
+      notifyAllPosts?: boolean;
+      notifyMentions?: boolean;
+      muteUntil?: string | null;
+    }
+  >;
+  mentionCandidatesByRoom?: Record<string, unknown>;
+  failOnSearch?: string[];
+  searchResultsByQuery?: Record<string, ChatMessage[]>;
+}) {
+  const failOnSearch = new Set(options.failOnSearch ?? []);
+
+  vi.mocked(api).mockImplementation(
+    async (path: string, init?: RequestInit) => {
+      const url = new URL(path, 'http://localhost');
+      const method = (init?.method ?? 'GET').toUpperCase();
+
+      if (url.pathname === '/chat-rooms' && method === 'GET') {
+        return { items: options.rooms } as never;
+      }
+
+      const roomMatch = url.pathname.match(
+        /^\/chat-rooms\/([^/]+)\/(notification-setting|messages|mention-candidates|unread|read)$/,
+      );
+      if (roomMatch) {
+        const [, roomId, resource] = roomMatch;
+        if (resource === 'notification-setting' && method === 'GET') {
+          return (options.notificationSettingsByRoom?.[roomId] ?? {
+            notifyAllPosts: true,
+            notifyMentions: true,
+            muteUntil: null,
+          }) as never;
+        }
+        if (resource === 'mention-candidates' && method === 'GET') {
+          return (options.mentionCandidatesByRoom?.[roomId] ?? {}) as never;
+        }
+        if (resource === 'unread' && method === 'GET') {
+          return (options.unreadByRoom?.[roomId] ?? {
+            unreadCount: 0,
+            lastReadAt: null,
+          }) as never;
+        }
+        if (resource === 'read' && method === 'POST') {
+          return {} as never;
+        }
+        if (resource === 'messages' && method === 'GET') {
+          const query = url.searchParams.get('q') ?? '';
+          if (failOnSearch.has(query)) {
+            throw new Error(`messages failed for query: ${query}`);
+          }
+          const searchKey = `${roomId}|${query}`;
+          const items =
+            options.searchResultsByQuery?.[searchKey] ??
+            options.messagesByRoom[roomId] ??
+            [];
+          return { items } as never;
+        }
+      }
+
+      throw new Error(`Unhandled api path: ${path}`);
+    },
+  );
+}
+
+beforeEach(() => {
+  vi.resetAllMocks();
+  vi.mocked(getAuthState).mockReturnValue({
+    userId: 'demo-user',
+    roles: ['member'],
+    groupIds: ['general_affairs'],
+  });
+  vi.mocked(apiResponse).mockReset();
+});
+
+afterEach(() => {
+  cleanup();
+});
+
+describe('RoomChat', () => {
+  it('loads the first room on mount and switches to another room', async () => {
+    installApiMock({
+      rooms: [
+        makeRoom({
+          id: 'room-1',
+          projectCode: 'PRJ-1',
+          projectName: 'Alpha',
+          allowExternalIntegrations: true,
+        }),
+        makeRoom({
+          id: 'room-2',
+          type: 'dm',
+          name: 'dm:demo-user:partner-user',
+          allowExternalIntegrations: false,
+        }),
+      ],
+      messagesByRoom: {
+        'room-1': [
+          makeMessage({
+            id: 'message-1',
+            roomId: 'room-1',
+            body: 'room-1 first message',
+            userId: 'alice',
+          }),
+        ],
+        'room-2': [
+          makeMessage({
+            id: 'message-2',
+            roomId: 'room-2',
+            body: 'room-2 first message',
+            userId: 'bob',
+          }),
+        ],
+      },
+      unreadByRoom: {
+        'room-1': { unreadCount: 2, lastReadAt: '2026-03-27T00:00:00.000Z' },
+        'room-2': { unreadCount: 0, lastReadAt: '2026-03-28T00:00:00.000Z' },
+      },
+    });
+
+    render(<RoomChat />);
+
+    expect(await screen.findByText('room-1 first message')).toBeInTheDocument();
+    expect(
+      screen.getByRole('combobox', { name: '表示範囲' }),
+    ).toBeInTheDocument();
+    expect(screen.getByText('Unread 2')).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: '外部要約' }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: 'ルーム' })).toHaveValue(
+      'room-1',
+    );
+
+    fireEvent.change(screen.getByRole('combobox', { name: 'ルーム' }), {
+      target: { value: 'room-2' },
+    });
+
+    expect(await screen.findByText('room-2 first message')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(
+        screen.queryByRole('button', { name: '外部要約' }),
+      ).not.toBeInTheDocument();
+    });
+    expect(screen.queryByText('room-1 first message')).not.toBeInTheDocument();
+  });
+
+  it('shows validation errors before posting or creating an ack request', async () => {
+    installApiMock({
+      rooms: [makeRoom({ id: 'room-1' })],
+      messagesByRoom: {
+        'room-1': [],
+      },
+    });
+
+    render(<RoomChat />);
+
+    await waitFor(() => {
+      expect(screen.getByRole('combobox', { name: 'ルーム' })).toHaveValue(
+        'room-1',
+      );
+    });
+    expect(screen.getByText('メッセージなし')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: '送信' }));
+    expect(
+      await screen.findByText('本文を入力してください'),
+    ).toBeInTheDocument();
+
+    fireEvent.change(screen.getByPlaceholderText('Markdownで入力'), {
+      target: { value: '確認依頼本文' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '確認依頼' }));
+    expect(
+      await screen.findByText(
+        '確認対象（ユーザID/グループ/ロール）を入力してください',
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it('applies message search filters and validates short queries', async () => {
+    installApiMock({
+      rooms: [makeRoom({ id: 'room-1' })],
+      messagesByRoom: {
+        'room-1': [
+          makeMessage({
+            id: 'message-1',
+            roomId: 'room-1',
+            body: 'alpha message',
+            userId: 'alice',
+          }),
+          makeMessage({
+            id: 'message-2',
+            roomId: 'room-1',
+            body: 'beta message',
+            userId: 'bob',
+          }),
+        ],
+      },
+      searchResultsByQuery: {
+        'room-1|beta': [
+          makeMessage({
+            id: 'message-2',
+            roomId: 'room-1',
+            body: 'beta message',
+            userId: 'bob',
+          }),
+        ],
+      },
+    });
+
+    render(<RoomChat />);
+
+    expect(await screen.findByText('alpha message')).toBeInTheDocument();
+    expect(screen.getByText('beta message')).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText('検索（本文）'), {
+      target: { value: 'a' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '適用' }));
+    expect(
+      await screen.findByText('検索語は2文字以上で入力してください'),
+    ).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText('検索（本文）'), {
+      target: { value: 'beta' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '適用' }));
+
+    expect(await screen.findByText('beta message')).toBeInTheDocument();
+    expect(screen.queryByText('alpha message')).not.toBeInTheDocument();
+  });
+
+  it('shows a failure message when message loading fails', async () => {
+    installApiMock({
+      rooms: [makeRoom({ id: 'room-1' })],
+      messagesByRoom: {
+        'room-1': [
+          makeMessage({
+            id: 'message-1',
+            roomId: 'room-1',
+            body: 'alpha message',
+            userId: 'alice',
+          }),
+        ],
+      },
+      failOnSearch: ['fail'],
+    });
+
+    render(<RoomChat />);
+
+    expect(await screen.findByText('alpha message')).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText('検索（本文）'), {
+      target: { value: 'fail' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '適用' }));
+
+    expect(
+      await screen.findByText('メッセージの取得に失敗しました'),
+    ).toBeInTheDocument();
+  });
+});
