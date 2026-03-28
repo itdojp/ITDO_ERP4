@@ -71,6 +71,7 @@ const coreCoverageInclude = [
   'src/hooks/useProjects.ts',
   'src/hooks/useProjectTasks.ts',
   'src/hooks/useChatRooms.ts',
+  'src/components/ChatEvidencePicker.tsx',
 ];
 
 const uiCoreCoverageInclude = [
