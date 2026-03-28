@@ -244,6 +244,157 @@ describe('AnnotationsCard', () => {
     expect(copyToClipboard).toHaveBeenCalledWith('https://safe.example/path');
   });
 
+  it('copies internal ref markdown links and shows success feedback', async () => {
+    vi.mocked(apiResponse).mockResolvedValueOnce(makeLoadResponse());
+    vi.mocked(copyToClipboard).mockResolvedValue(true);
+
+    renderCard();
+
+    await waitFor(() =>
+      expect(screen.getByText('initial note')).toBeInTheDocument(),
+    );
+
+    const roomLink = screen.getByRole('link', { name: 'Room One' });
+    const roomRow = roomLink.closest('div');
+    expect(roomRow).not.toBeNull();
+
+    await act(async () => {
+      fireEvent.click(
+        within(roomRow as HTMLElement).getByRole('button', {
+          name: 'Markdown',
+        }),
+      );
+    });
+
+    await waitFor(() =>
+      expect(
+        screen.getByText('Markdownリンクをコピーしました'),
+      ).toBeInTheDocument(),
+    );
+    expect(copyToClipboard).toHaveBeenCalledWith(
+      '[Room One](/#/open?kind=room_chat&id=room-1)',
+    );
+  });
+
+  it('shows a save error message when the patch request fails', async () => {
+    vi.mocked(apiResponse).mockImplementation(async (path: string, init) => {
+      if (path === '/chat-messages/msg-1') {
+        return jsonResponse({ id: 'msg-1' });
+      }
+      if (
+        path === '/annotations/project/project-1' &&
+        init?.method === 'PATCH'
+      ) {
+        throw new Error('patch_failed');
+      }
+      if (path === '/annotations/project/project-1') {
+        return makeLoadResponse();
+      }
+      throw new Error(`Unhandled api path: ${path}`);
+    });
+
+    renderCard();
+
+    await waitFor(() =>
+      expect(screen.getByDisplayValue('initial note')).toBeInTheDocument(),
+    );
+
+    fireEvent.change(screen.getByLabelText('メモ（Markdown）'), {
+      target: { value: 'broken note' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+
+    await waitFor(() =>
+      expect(screen.getByText('保存に失敗しました')).toBeInTheDocument(),
+    );
+    expect(screen.getByDisplayValue('broken note')).toBeInTheDocument();
+  });
+
+  it('requires an admin reason and sends it on retry', async () => {
+    const savedResponse = jsonResponse({
+      targetKind: 'project',
+      targetId: 'project-1',
+      notes: 'saved note with reason',
+      externalUrls: ['https://safe.example/path', 'javascript:alert(1)'],
+      internalRefs: [
+        { kind: 'room_chat', id: 'room-1', label: 'Room One' },
+        { kind: 'chat_message', id: 'msg-1', label: 'Chat One' },
+      ],
+      updatedAt: '2026-03-28T03:00:00.000Z',
+      updatedBy: 'admin-1',
+    });
+    let patchCount = 0;
+    vi.mocked(getAuthState).mockReturnValue({
+      userId: 'admin-1',
+      roles: ['admin'],
+    });
+    vi.mocked(apiResponse).mockImplementation(async (path: string, init) => {
+      if (path === '/chat-messages/msg-1') {
+        return jsonResponse({ id: 'msg-1' });
+      }
+      if (
+        path === '/annotations/project/project-1' &&
+        init?.method === 'PATCH'
+      ) {
+        patchCount += 1;
+        if (patchCount === 1) {
+          return jsonResponse(
+            { error: 'reason_required' },
+            { ok: false, status: 400 },
+          );
+        }
+        return savedResponse;
+      }
+      if (path === '/annotations/project/project-1') {
+        return makeLoadResponse();
+      }
+      throw new Error(`Unhandled api path: ${path}`);
+    });
+
+    renderCard();
+
+    await waitFor(() =>
+      expect(screen.getByDisplayValue('initial note')).toBeInTheDocument(),
+    );
+
+    fireEvent.change(screen.getByLabelText('メモ（Markdown）'), {
+      target: { value: 'updated note with reason' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+
+    await waitFor(() =>
+      expect(
+        screen.getByText('管理者更新のため理由の入力が必要です'),
+      ).toBeInTheDocument(),
+    );
+
+    const reasonInput = screen.getByLabelText('管理者更新理由（必須）');
+    fireEvent.change(reasonInput, {
+      target: { value: '承認後に補足情報を追記するため' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+
+    await waitFor(() =>
+      expect(screen.getByText('保存しました')).toBeInTheDocument(),
+    );
+    expect(
+      screen.queryByLabelText('管理者更新理由（必須）'),
+    ).not.toBeInTheDocument();
+
+    const patchCalls = vi
+      .mocked(apiResponse)
+      .mock.calls.filter(
+        ([path, init]) =>
+          path === '/annotations/project/project-1' && init?.method === 'PATCH',
+      );
+    expect(patchCalls).toHaveLength(2);
+    const secondBody = JSON.parse(String(patchCalls[1]?.[1]?.body));
+    expect(secondBody).toMatchObject({
+      notes: 'updated note with reason',
+      reasonText: '承認後に補足情報を追記するため',
+    });
+  });
+
   it('shows history load failures and allows retrying the load', async () => {
     let historyCallCount = 0;
     vi.mocked(apiResponse).mockImplementation(async (path: string) => {
@@ -309,5 +460,32 @@ describe('AnnotationsCard', () => {
         (_, node) => !!node?.textContent && node.textContent.includes('修正'),
       )[0],
     ).toBeInTheDocument();
+  });
+
+  it('shows an empty history state when the server returns no entries', async () => {
+    vi.mocked(apiResponse).mockImplementation(async (path: string) => {
+      if (path === '/annotations/project/project-1') {
+        return makeLoadResponse();
+      }
+      if (path === '/chat-messages/msg-1') {
+        return jsonResponse({ id: 'msg-1' });
+      }
+      if (path === '/annotations/project/project-1/history?limit=50') {
+        return jsonResponse({ items: [] });
+      }
+      throw new Error(`Unhandled api path: ${path}`);
+    });
+
+    renderCard();
+
+    await waitFor(() =>
+      expect(screen.getByText('initial note')).toBeInTheDocument(),
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '履歴を表示' }));
+
+    await waitFor(() =>
+      expect(screen.getByText('履歴はありません')).toBeInTheDocument(),
+    );
   });
 });
