@@ -670,15 +670,16 @@ describe('VendorDocuments', () => {
       expect(screen.getByTestId('po-form-project')).toHaveTextContent(
         'project-1',
       );
+      expect(screen.getByTestId('po-form-vendor')).toHaveTextContent(
+        'vendor-1',
+      );
+      expect(screen.getByTestId('quote-form-project')).toHaveTextContent(
+        'project-1',
+      );
+      expect(screen.getByTestId('invoice-form-vendor')).toHaveTextContent(
+        'vendor-1',
+      );
     });
-
-    expect(screen.getByTestId('po-form-vendor')).toHaveTextContent('vendor-1');
-    expect(screen.getByTestId('quote-form-project')).toHaveTextContent(
-      'project-1',
-    );
-    expect(screen.getByTestId('invoice-form-vendor')).toHaveTextContent(
-      'vendor-1',
-    );
     expect(screen.getByTestId('tab-purchase-orders')).toHaveTextContent(
       '発注書 (1)',
     );
@@ -699,10 +700,10 @@ describe('VendorDocuments', () => {
       expect(
         screen.getByText('案件一覧の取得に失敗しました'),
       ).toBeInTheDocument();
+      expect(
+        screen.getByText('業者一覧の取得に失敗しました'),
+      ).toBeInTheDocument();
     });
-    expect(
-      screen.getByText('業者一覧の取得に失敗しました'),
-    ).toBeInTheDocument();
 
     expect(screen.getByTestId('active-tab')).toHaveTextContent(
       'purchase-orders',
