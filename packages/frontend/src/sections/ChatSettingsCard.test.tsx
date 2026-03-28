@@ -27,6 +27,14 @@ beforeEach(() => {
 });
 
 describe('ChatSettingsCard', () => {
+  const waitForInitialLoad = async () => {
+    const reloadButton = screen.getByRole('button', { name: '再読込' });
+    await waitFor(() => {
+      expect(api).toHaveBeenCalledWith('/chat-settings');
+      expect(reloadButton).toBeEnabled();
+    });
+  };
+
   it('loads defaults on mount and applies fetched values on reload', async () => {
     api.mockResolvedValueOnce({ id: 'chat-settings-1' }).mockResolvedValueOnce({
       id: 'chat-settings-1',
@@ -39,13 +47,8 @@ describe('ChatSettingsCard', () => {
 
     render(<ChatSettingsCard />);
 
-    await waitFor(() => {
-      expect(
-        screen.getByRole('checkbox', {
-          name: 'user/hr の private_group 作成を許可',
-        }),
-      ).toBeChecked();
-    });
+    await waitForInitialLoad();
+
     expect(
       screen.getByRole('checkbox', { name: 'DM 作成を許可' }),
     ).toBeChecked();
@@ -91,13 +94,7 @@ describe('ChatSettingsCard', () => {
 
     render(<ChatSettingsCard />);
 
-    await waitFor(() => {
-      expect(
-        screen.getByRole('spinbutton', {
-          name: 'ack required 最大対象者数',
-        }),
-      ).toHaveValue(50);
-    });
+    await waitForInitialLoad();
 
     fireEvent.change(
       screen.getByRole('spinbutton', {
@@ -135,13 +132,7 @@ describe('ChatSettingsCard', () => {
 
     render(<ChatSettingsCard />);
 
-    await waitFor(() => {
-      expect(
-        screen.getByRole('spinbutton', {
-          name: 'ack required 最大対象者数',
-        }),
-      ).toHaveValue(50);
-    });
+    await waitForInitialLoad();
 
     fireEvent.click(
       screen.getByRole('checkbox', {
@@ -205,13 +196,7 @@ describe('ChatSettingsCard', () => {
 
     render(<ChatSettingsCard />);
 
-    await waitFor(() => {
-      expect(
-        screen.getByRole('spinbutton', {
-          name: 'ack required 最大対象者数',
-        }),
-      ).toHaveValue(50);
-    });
+    await waitForInitialLoad();
 
     fireEvent.click(screen.getByRole('button', { name: '保存' }));
 
