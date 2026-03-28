@@ -336,6 +336,142 @@ describe('CurrentUser', () => {
     ).not.toBeInTheDocument();
   });
 
+  it.each([
+    ['auth_session_not_found', '対象の認証セッションが見つかりません'],
+    [
+      'auth_guard_rate_limited',
+      '認証セッション操作の試行回数が上限に達しました',
+    ],
+  ])(
+    'shows auth session revoke errors for %s',
+    async (errorCode, expectedMessage) => {
+      const authState: AuthStateLike = {
+        userId: 'bff-user',
+        roles: ['member'],
+      };
+      vi.mocked(isBffAuthMode).mockReturnValue(true);
+      vi.mocked(getAuthState).mockReturnValue(authState);
+      vi.mocked(refreshAuthStateFromServer).mockResolvedValue(authState);
+      installApiMock({
+        bffSessionUser: {
+          userId: 'bff-user',
+          roles: ['member'],
+          ownerProjects: ['pj-1'],
+        },
+        authSessions: [
+          defaultAuthSession,
+          {
+            ...defaultAuthSession,
+            sessionId: 'sess-other',
+            current: false,
+          },
+        ],
+      });
+      vi.mocked(apiResponse).mockImplementation(async (path: string) => {
+        if (path === '/auth/sessions/sess-other/revoke') {
+          return makeJsonResponse({
+            ok: false,
+            status: errorCode === 'auth_session_not_found' ? 404 : 429,
+            payload: {
+              error: {
+                code: errorCode,
+              },
+            },
+          });
+        }
+        throw new Error(`Unhandled apiResponse path: ${path}`);
+      });
+
+      render(<CurrentUser />);
+
+      const sessionCard = await screen.findByText('Session ID: sess-other');
+      fireEvent.click(
+        within(sessionCard.closest('.card') as HTMLElement).getByRole(
+          'button',
+          {
+            name: 'このセッションを失効',
+          },
+        ),
+      );
+
+      expect(await screen.findByText(expectedMessage)).toBeInTheDocument();
+      expect(
+        screen.queryByText('認証セッションを失効しました'),
+      ).not.toBeInTheDocument();
+    },
+  );
+
+  it('prompts for password rotation when local login requires it', async () => {
+    vi.mocked(isBffAuthMode).mockReturnValue(true);
+    vi.mocked(getAuthState).mockReturnValue(null);
+    installApiMock();
+    vi.mocked(apiResponse).mockImplementation(async (path: string) => {
+      if (path === '/auth/local/login') {
+        return makeJsonResponse({
+          ok: false,
+          status: 409,
+          payload: {
+            error: {
+              code: 'local_password_rotation_required',
+            },
+          },
+        });
+      }
+      throw new Error(`Unhandled apiResponse path: ${path}`);
+    });
+
+    render(<CurrentUser />);
+
+    fireEvent.change(screen.getByLabelText('ローカル認証 loginId'), {
+      target: { value: 'local-user' },
+    });
+    fireEvent.change(screen.getByLabelText('ローカル認証 password'), {
+      target: { value: 'old-password' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'ローカルログイン' }));
+
+    expect(
+      await screen.findByText('初期パスワードの更新が必要です'),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: '初期パスワードを更新' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByLabelText('ローカル認証 new password'),
+    ).toBeInTheDocument();
+  });
+
+  it('shows a failure message when logout fails', async () => {
+    const authState: AuthStateLike = {
+      userId: 'bff-user',
+      roles: ['member'],
+    };
+    vi.mocked(isBffAuthMode).mockReturnValue(true);
+    vi.mocked(getAuthState).mockReturnValue(authState);
+    vi.mocked(refreshAuthStateFromServer).mockResolvedValue(authState);
+    installApiMock({
+      bffSessionUser: {
+        userId: 'bff-user',
+        roles: ['member'],
+        ownerProjects: ['pj-1'],
+      },
+      authSessions: [defaultAuthSession],
+    });
+    vi.mocked(apiResponse).mockImplementation(async (path: string) => {
+      if (path === '/auth/logout') {
+        return makeJsonResponse({ ok: false, status: 500 });
+      }
+      throw new Error(`Unhandled apiResponse path: ${path}`);
+    });
+
+    render(<CurrentUser />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'ログアウト' }));
+
+    expect(await screen.findByText('ログアウトに失敗')).toBeInTheDocument();
+    expect(vi.mocked(setAuthState)).not.toHaveBeenCalledWith(null);
+  });
+
   it('validates notification preference input and keeps the edited value on save failure', async () => {
     const authState: AuthStateLike = {
       userId: 'user-1',
