@@ -33,6 +33,9 @@ const { api, apiResponse, getAuthState } = vi.hoisted(() => ({
   getAuthState: vi.fn(),
 }));
 
+let consoleErrorSpy: ReturnType<typeof vi.spyOn> | undefined;
+let consoleWarnSpy: ReturnType<typeof vi.spyOn> | undefined;
+
 vi.mock('../api', () => ({
   api,
   apiResponse,
@@ -205,10 +208,18 @@ beforeEach(() => {
     groupIds: ['general_affairs'],
   });
   vi.mocked(apiResponse).mockReset();
+  consoleErrorSpy = vi
+    .spyOn(console, 'error')
+    .mockImplementation(() => undefined);
+  consoleWarnSpy = vi
+    .spyOn(console, 'warn')
+    .mockImplementation(() => undefined);
 });
 
 afterEach(() => {
   cleanup();
+  consoleErrorSpy?.mockRestore();
+  consoleWarnSpy?.mockRestore();
 });
 
 describe('RoomChat', () => {
