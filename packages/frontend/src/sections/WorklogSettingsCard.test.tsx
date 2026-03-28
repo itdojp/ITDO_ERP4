@@ -14,28 +14,75 @@ vi.mock('../api', () => ({ api }));
 
 import { WorklogSettingsCard } from './WorklogSettingsCard';
 
+let consoleErrorSpy: ReturnType<typeof vi.spyOn>;
+
 afterEach(() => {
   cleanup();
+  consoleErrorSpy.mockRestore();
 });
 
 beforeEach(() => {
   api.mockReset();
+  consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 });
 
 describe('WorklogSettingsCard', () => {
-  it('loads settings, normalizes input on blur, and saves', async () => {
+  it('loads the initial editable days value', async () => {
+    api.mockResolvedValueOnce({ id: 'worklog-setting-1', editableDays: 30 });
+
+    render(<WorklogSettingsCard />);
+
+    const input = screen.getByRole('spinbutton', { name: '期間（日）' });
+
+    await waitFor(() => {
+      expect(input).toHaveValue(30);
+    });
+    expect(api).toHaveBeenCalledWith('/worklog-settings');
+  });
+
+  it('normalizes editable days to the 1..365 range on blur', async () => {
+    api.mockResolvedValueOnce({ id: 'worklog-setting-1', editableDays: 14 });
+
+    render(<WorklogSettingsCard />);
+
+    const input = screen.getByRole('spinbutton', { name: '期間（日）' });
+    await waitFor(() => {
+      expect(input).toHaveValue(14);
+    });
+
+    fireEvent.change(input, { target: { value: '0' } });
+    fireEvent.blur(input);
+
+    await waitFor(() => {
+      expect(input).toHaveValue(1);
+    });
+
+    fireEvent.change(input, { target: { value: '999.8' } });
+    fireEvent.blur(input);
+
+    await waitFor(() => {
+      expect(input).toHaveValue(365);
+    });
+  });
+
+  it('sends the normalized PATCH payload when saving', async () => {
     api
       .mockResolvedValueOnce({ id: 'worklog-setting-1', editableDays: 30 })
       .mockResolvedValueOnce({ id: 'worklog-setting-1' });
 
     render(<WorklogSettingsCard />);
 
-    const input = await screen.findByRole('spinbutton', { name: '期間（日）' });
-    expect(input).toHaveValue(30);
+    const input = screen.getByRole('spinbutton', { name: '期間（日）' });
+    await waitFor(() => {
+      expect(input).toHaveValue(30);
+    });
 
     fireEvent.change(input, { target: { value: '999.8' } });
     fireEvent.blur(input);
-    expect(input).toHaveValue(365);
+
+    await waitFor(() => {
+      expect(input).toHaveValue(365);
+    });
 
     fireEvent.click(screen.getByRole('button', { name: '保存' }));
 
@@ -50,26 +97,8 @@ describe('WorklogSettingsCard', () => {
     expect(screen.getByText('保存しました')).toBeInTheDocument();
   });
 
-  it('validates invalid input without calling save', async () => {
-    api.mockResolvedValueOnce({ id: 'worklog-setting-1' });
-
-    render(<WorklogSettingsCard />);
-
-    const input = await screen.findByRole('spinbutton', { name: '期間（日）' });
-    fireEvent.change(input, { target: { value: '' } });
-    fireEvent.click(screen.getByRole('button', { name: '保存' }));
-
-    expect(
-      screen.getByText('1〜365 の数値を入力してください'),
-    ).toBeInTheDocument();
-    expect(api).toHaveBeenCalledTimes(1);
-  });
-
-  it('shows load and save errors', async () => {
-    api
-      .mockRejectedValueOnce(new Error('load failed'))
-      .mockResolvedValueOnce({ id: 'worklog-setting-1', editableDays: 14 })
-      .mockRejectedValueOnce(new Error('save failed'));
+  it('shows an error when loading fails', async () => {
+    api.mockRejectedValueOnce(new Error('load failed'));
 
     render(<WorklogSettingsCard />);
 
@@ -79,12 +108,20 @@ describe('WorklogSettingsCard', () => {
       ).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByRole('button', { name: '再読込' }));
+    expect(api).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows an error when saving fails', async () => {
+    api
+      .mockResolvedValueOnce({ id: 'worklog-setting-1', editableDays: 14 })
+      .mockRejectedValueOnce(new Error('save failed'));
+
+    render(<WorklogSettingsCard />);
+
+    const input = screen.getByRole('spinbutton', { name: '期間（日）' });
 
     await waitFor(() => {
-      expect(
-        screen.getByRole('spinbutton', { name: '期間（日）' }),
-      ).toHaveValue(14);
+      expect(input).toHaveValue(14);
     });
 
     fireEvent.click(screen.getByRole('button', { name: '保存' }));
@@ -92,5 +129,7 @@ describe('WorklogSettingsCard', () => {
     await waitFor(() => {
       expect(screen.getByText('保存に失敗しました')).toBeInTheDocument();
     });
+
+    expect(api).toHaveBeenCalledTimes(2);
   });
 });

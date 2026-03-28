@@ -28,7 +28,6 @@ const coreCoverageInclude = [
   'src/sections/HelpModal.tsx',
   'src/sections/ChatSettingsCard.tsx',
   'src/sections/ScimSettingsCard.tsx',
-  'src/sections/WorklogSettingsCard.tsx',
   'src/sections/ChatRoomSettingsCard.tsx',
   'src/sections/RateCardSettingsCard.tsx',
   'src/sections/DocumentSendLogs.tsx',
@@ -69,9 +68,14 @@ const coreCoverageInclude = [
   'src/sections/CurrentUser.tsx',
 ];
 
+const uiCoreCoverageInclude = [
+  ...coreCoverageInclude,
+  'src/sections/WorklogSettingsCard.tsx',
+];
+
 const coverageInclude =
   process.env.FRONTEND_COVERAGE_SCOPE === 'ui-core'
-    ? coreCoverageInclude
+    ? uiCoreCoverageInclude
     : ['src/**/*.{ts,tsx}'];
 const coverageReportsDirectory =
   process.env.FRONTEND_COVERAGE_SCOPE === 'ui-core'
