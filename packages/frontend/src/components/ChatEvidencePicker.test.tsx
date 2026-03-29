@@ -213,4 +213,56 @@ describe('ChatEvidencePicker', () => {
     await waitFor(() => expect(screen.getByText(message)).toBeInTheDocument());
     expect(apiResponse).toHaveBeenCalledTimes(1);
   });
+
+  it('normalizes candidate fallback fields when metadata values are empty', async () => {
+    const onAddCandidate = vi.fn();
+
+    vi.mocked(apiResponse).mockResolvedValueOnce(
+      jsonResponse({
+        items: [
+          {
+            kind: 'chat_message',
+            id: 'chat-2',
+            label: '',
+            url: 'https://example.test/open?kind=chat_message&id=chat-2',
+            projectLabel: '',
+            meta: {},
+          },
+        ],
+      }),
+    );
+
+    renderPicker({ projectId: 'project-1', onAddCandidate });
+
+    fireEvent.change(screen.getByLabelText('キーワード'), {
+      target: { value: '確認' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '検索' }));
+
+    await waitFor(() => {
+      expect(screen.getByText('案件未設定 / -')).toBeInTheDocument();
+    });
+
+    expect(
+      screen.getByText(
+        (_, element) => element?.textContent === '投稿日時: - / 投稿者: -',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByText('(本文なし)')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: '追加' }));
+
+    expect(onAddCandidate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 'chat-2',
+        label: 'chat_message:chat-2',
+        url: '/#/open?kind=chat_message&id=chat-2',
+        roomId: '',
+        roomName: '',
+        userId: '',
+        createdAt: '',
+        excerpt: '',
+      }),
+    );
+  });
 });
