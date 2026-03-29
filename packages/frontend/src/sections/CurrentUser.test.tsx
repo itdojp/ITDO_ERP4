@@ -401,6 +401,45 @@ describe('CurrentUser', () => {
     },
   );
 
+  it('shows an MFA setup guidance message when local login requires setup', async () => {
+    vi.mocked(isBffAuthMode).mockReturnValue(true);
+    vi.mocked(getAuthState).mockReturnValue(null);
+    installApiMock();
+    vi.mocked(apiResponse).mockImplementation(async (path: string) => {
+      if (path === '/auth/local/login') {
+        return makeJsonResponse({
+          ok: false,
+          status: 409,
+          payload: {
+            error: {
+              code: 'local_mfa_setup_required',
+            },
+          },
+        });
+      }
+      throw new Error(`Unhandled apiResponse path: ${path}`);
+    });
+
+    render(<CurrentUser />);
+
+    fireEvent.change(screen.getByLabelText('ローカル認証 loginId'), {
+      target: { value: 'local-user' },
+    });
+    fireEvent.change(screen.getByLabelText('ローカル認証 password'), {
+      target: { value: 'old-password' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'ローカルログイン' }));
+
+    expect(
+      await screen.findByText(
+        'MFA 設定が必要です。system_admin に依頼してください',
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: '初期パスワードを更新' }),
+    ).not.toBeInTheDocument();
+  });
+
   it('prompts for password rotation when local login requires it', async () => {
     vi.mocked(isBffAuthMode).mockReturnValue(true);
     vi.mocked(getAuthState).mockReturnValue(null);
@@ -439,6 +478,46 @@ describe('CurrentUser', () => {
     expect(
       screen.getByLabelText('ローカル認証 new password'),
     ).toBeInTheDocument();
+  });
+
+  it('clears client auth state when logout succeeds in bff mode', async () => {
+    const authState: AuthStateLike = {
+      userId: 'bff-user',
+      roles: ['member'],
+    };
+    const dispatchEventSpy = vi.spyOn(window, 'dispatchEvent');
+    vi.mocked(isBffAuthMode).mockReturnValue(true);
+    vi.mocked(getAuthState).mockReturnValue(authState);
+    vi.mocked(refreshAuthStateFromServer).mockResolvedValue(authState);
+    installApiMock({
+      bffSessionUser: {
+        userId: 'bff-user',
+        roles: ['member'],
+        ownerProjects: ['pj-1'],
+      },
+      authSessions: [defaultAuthSession],
+    });
+    vi.mocked(apiResponse).mockImplementation(async (path: string) => {
+      if (path === '/auth/logout') {
+        return makeJsonResponse();
+      }
+      throw new Error(`Unhandled apiResponse path: ${path}`);
+    });
+
+    render(<CurrentUser />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'ログアウト' }));
+
+    await waitFor(() => {
+      expect(vi.mocked(setAuthState)).toHaveBeenCalledWith(null);
+    });
+    expect(
+      screen.getByRole('button', { name: 'Googleでログイン' }),
+    ).toBeInTheDocument();
+    expect(dispatchEventSpy).toHaveBeenCalledWith(expect.any(Event));
+    expect(screen.queryByText('ログアウトに失敗')).not.toBeInTheDocument();
+
+    dispatchEventSpy.mockRestore();
   });
 
   it('shows a failure message when logout fails', async () => {
