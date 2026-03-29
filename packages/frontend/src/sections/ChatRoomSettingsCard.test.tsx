@@ -176,6 +176,44 @@ describe('ChatRoomSettingsCard', () => {
     expect(screen.getByText('保存しました')).toBeInTheDocument();
   });
 
+  it('sends empty arrays when group inputs are cleared before saving', async () => {
+    api.mockImplementation((path: string) => {
+      if (path === '/chat-rooms') {
+        return Promise.resolve({ items: [ROOMS_RESPONSE.items[0]] });
+      }
+      if (path === '/chat-rooms/room-project') {
+        return Promise.resolve({});
+      }
+      throw new Error(`unexpected path: ${path}`);
+    });
+
+    render(<ChatRoomSettingsCard />);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('ルーム')).toHaveValue('room-project');
+    });
+
+    fireEvent.change(screen.getByLabelText('閲覧グループ'), {
+      target: { value: '   ' },
+    });
+    fireEvent.change(screen.getByLabelText('投稿グループ'), {
+      target: { value: '' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+
+    await waitFor(() => {
+      expect(api).toHaveBeenCalledWith('/chat-rooms/room-project', {
+        method: 'PATCH',
+        body: JSON.stringify({
+          allowExternalUsers: true,
+          allowExternalIntegrations: false,
+          viewerGroupIds: [],
+          posterGroupIds: [],
+        }),
+      });
+    });
+  });
+
   it('validates member input and adds members when user ids are provided', async () => {
     api.mockImplementation((path: string) => {
       if (path === '/chat-rooms') {
@@ -213,6 +251,37 @@ describe('ChatRoomSettingsCard', () => {
 
     expect(memberInput).toHaveValue('');
     expect(screen.getByText('メンバーを追加しました')).toBeInTheDocument();
+  });
+
+  it('shows an error and keeps the member input when member add fails', async () => {
+    api.mockImplementation((path: string) => {
+      if (path === '/chat-rooms') {
+        return Promise.resolve({ items: [ROOMS_RESPONSE.items[0]] });
+      }
+      if (path === '/chat-rooms/room-project/members') {
+        return Promise.reject(new Error('member add failed'));
+      }
+      throw new Error(`unexpected path: ${path}`);
+    });
+
+    render(<ChatRoomSettingsCard />);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('ルーム')).toHaveValue('room-project');
+    });
+
+    const memberInput = screen.getByLabelText('userId（comma separated）');
+    fireEvent.change(memberInput, {
+      target: { value: ' user-c ' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'メンバー追加' }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByText('メンバー追加に失敗しました'),
+      ).toBeInTheDocument();
+    });
+    expect(memberInput).toHaveValue(' user-c ');
   });
 
   it('shows load and save errors', async () => {
