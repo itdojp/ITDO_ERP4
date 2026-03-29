@@ -486,38 +486,42 @@ describe('CurrentUser', () => {
       roles: ['member'],
     };
     const dispatchEventSpy = vi.spyOn(window, 'dispatchEvent');
-    vi.mocked(isBffAuthMode).mockReturnValue(true);
-    vi.mocked(getAuthState).mockReturnValue(authState);
-    vi.mocked(refreshAuthStateFromServer).mockResolvedValue(authState);
-    installApiMock({
-      bffSessionUser: {
-        userId: 'bff-user',
-        roles: ['member'],
-        ownerProjects: ['pj-1'],
-      },
-      authSessions: [defaultAuthSession],
-    });
-    vi.mocked(apiResponse).mockImplementation(async (path: string) => {
-      if (path === '/auth/logout') {
-        return makeJsonResponse();
-      }
-      throw new Error(`Unhandled apiResponse path: ${path}`);
-    });
+    try {
+      vi.mocked(isBffAuthMode).mockReturnValue(true);
+      vi.mocked(getAuthState).mockReturnValue(authState);
+      vi.mocked(refreshAuthStateFromServer).mockResolvedValue(authState);
+      installApiMock({
+        bffSessionUser: {
+          userId: 'bff-user',
+          roles: ['member'],
+          ownerProjects: ['pj-1'],
+        },
+        authSessions: [defaultAuthSession],
+      });
+      vi.mocked(apiResponse).mockImplementation(async (path: string) => {
+        if (path === '/auth/logout') {
+          return makeJsonResponse();
+        }
+        throw new Error(`Unhandled apiResponse path: ${path}`);
+      });
 
-    render(<CurrentUser />);
+      render(<CurrentUser />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'ログアウト' }));
+      fireEvent.click(screen.getByRole('button', { name: 'ログアウト' }));
 
-    await waitFor(() => {
-      expect(vi.mocked(setAuthState)).toHaveBeenCalledWith(null);
-    });
-    expect(
-      screen.getByRole('button', { name: 'Googleでログイン' }),
-    ).toBeInTheDocument();
-    expect(dispatchEventSpy).toHaveBeenCalledWith(expect.any(Event));
-    expect(screen.queryByText('ログアウトに失敗')).not.toBeInTheDocument();
-
-    dispatchEventSpy.mockRestore();
+      await waitFor(() => {
+        expect(vi.mocked(setAuthState)).toHaveBeenCalledWith(null);
+      });
+      expect(
+        screen.getByRole('button', { name: 'Googleでログイン' }),
+      ).toBeInTheDocument();
+      expect(dispatchEventSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'erp4:auth-updated' }),
+      );
+      expect(screen.queryByText('ログアウトに失敗')).not.toBeInTheDocument();
+    } finally {
+      dispatchEventSpy.mockRestore();
+    }
   });
 
   it('shows a failure message when logout fails', async () => {
