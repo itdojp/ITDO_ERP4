@@ -203,12 +203,15 @@ describe('ChatRoomSettingsCard', () => {
       (screen.getByLabelText('投稿グループ') as HTMLInputElement).value,
     ).toBe('poster-a');
 
-    fireEvent.change(screen.getByLabelText('外部ユーザ参加を許可'), {
-      target: { checked: false },
-    });
-    fireEvent.change(screen.getByLabelText('外部連携を許可'), {
-      target: { checked: true },
-    });
+    fireEvent.click(screen.getByLabelText('外部ユーザ参加を許可'));
+    fireEvent.click(screen.getByLabelText('外部連携を許可'));
+    expect(
+      (screen.getByLabelText('外部ユーザ参加を許可') as HTMLInputElement)
+        .checked,
+    ).toBe(false);
+    expect(
+      (screen.getByLabelText('外部連携を許可') as HTMLInputElement).checked,
+    ).toBe(true);
     fireEvent.change(screen.getByLabelText('閲覧グループ'), {
       target: { value: 'viewer-x, viewer-y' },
     });
@@ -223,8 +226,8 @@ describe('ChatRoomSettingsCard', () => {
         expect.objectContaining({
           method: 'PATCH',
           body: JSON.stringify({
-            allowExternalUsers: true,
-            allowExternalIntegrations: false,
+            allowExternalUsers: false,
+            allowExternalIntegrations: true,
             viewerGroupIds: ['viewer-x', 'viewer-y'],
             posterGroupIds: ['poster-x', 'poster-y'],
           }),
@@ -236,8 +239,8 @@ describe('ChatRoomSettingsCard', () => {
       expect(screen.getByText('保存しました')).not.toBeNull();
     });
     expect(state.getRooms()[0]).toMatchObject({
-      allowExternalUsers: true,
-      allowExternalIntegrations: false,
+      allowExternalUsers: false,
+      allowExternalIntegrations: true,
       viewerGroupIds: ['viewer-x', 'viewer-y'],
       posterGroupIds: ['poster-x', 'poster-y'],
     });
@@ -368,6 +371,9 @@ describe('ChatRoomSettingsCard', () => {
 
   it('メンバー追加後の再読込失敗では失敗メッセージを表示する', async () => {
     getAuthState.mockReturnValue({ userId: 'user-1', roles: ['mgmt'] });
+    const consoleErrorSpy = vi
+      .spyOn(console, 'error')
+      .mockImplementation(() => undefined);
 
     let loadCount = 0;
     vi.mocked(api).mockImplementation(
@@ -399,20 +405,40 @@ describe('ChatRoomSettingsCard', () => {
       },
     );
 
-    render(<ChatRoomSettingsCard />);
+    try {
+      render(<ChatRoomSettingsCard />);
 
-    await screen.findByText('room-1');
+      await screen.findByText('room-1');
+      await waitFor(() => {
+        expect(
+          screen.getByRole('button', { name: 'メンバー追加' }),
+        ).toBeEnabled();
+      });
 
-    fireEvent.change(screen.getByLabelText('userId（comma separated）'), {
-      target: { value: ' external-1@example.com , external-2@example.com ' },
-    });
-    fireEvent.click(screen.getByRole('button', { name: 'メンバー追加' }));
+      fireEvent.change(screen.getByLabelText('userId（comma separated）'), {
+        target: { value: ' external-1@example.com , external-2@example.com ' },
+      });
+      fireEvent.click(screen.getByRole('button', { name: 'メンバー追加' }));
 
-    await screen.findByText('ルーム一覧の取得に失敗しました');
-    expect(
-      (screen.getByLabelText('userId（comma separated）') as HTMLInputElement)
-        .value,
-    ).toBe('');
+      await waitFor(() => {
+        expect(api).toHaveBeenCalledWith(
+          '/chat-rooms/room-1/members',
+          expect.objectContaining({
+            method: 'POST',
+            body: JSON.stringify({
+              userIds: ['external-1@example.com', 'external-2@example.com'],
+            }),
+          }),
+        );
+      });
+      await screen.findByText('ルーム一覧の取得に失敗しました');
+      expect(
+        (screen.getByLabelText('userId（comma separated）') as HTMLInputElement)
+          .value,
+      ).toBe('');
+    } finally {
+      consoleErrorSpy.mockRestore();
+    }
   });
 
   it('空のグループは空欄で表示され、空のメンバー追加は入力を促す', async () => {
