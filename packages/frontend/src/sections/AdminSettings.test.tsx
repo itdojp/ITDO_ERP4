@@ -402,7 +402,7 @@ describe('AdminSettings', () => {
     });
   });
 
-  it('preserves a still-valid template selection when the kind changes', async () => {
+  it('auto-selects the first valid template when the previous selection becomes invalid on kind change', async () => {
     render(<AdminSettings />);
 
     await waitFor(() => {
@@ -432,6 +432,10 @@ describe('AdminSettings', () => {
       expect(screen.getByTestId('template-current-id')).toHaveTextContent(
         'pdf-invoice',
       );
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('template-item-count')).toHaveTextContent('1');
     });
 
     fireEvent.click(screen.getByTestId('template-start-edit'));
@@ -520,6 +524,9 @@ describe('AdminSettings', () => {
     render(<AdminSettings />);
 
     await screen.findByTestId('alert-settings-card');
+    await waitFor(() => {
+      expect(screen.getByTestId('alert-items-count')).toHaveTextContent('1');
+    });
     expect(screen.getByTestId('alert-cancel-label')).toHaveTextContent(
       'クリア',
     );
