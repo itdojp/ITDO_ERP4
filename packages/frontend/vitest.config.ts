@@ -69,6 +69,7 @@ const coreCoverageInclude = [
   'src/sections/VendorDocuments.tsx',
   'src/sections/CurrentUser.tsx',
   'src/sections/RoomChat.tsx',
+  'src/pages/App.tsx',
   'src/hooks/useProjects.ts',
   'src/hooks/useProjectTasks.ts',
   'src/hooks/useChatRooms.ts',
