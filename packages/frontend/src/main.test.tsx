@@ -24,14 +24,10 @@ type MainLoadOptions = {
 };
 
 const navigatorPrototype = Object.getPrototypeOf(navigator) as Navigator;
-const originalNavigatorServiceWorkerDescriptor = Object.getOwnPropertyDescriptor(
-  navigator,
-  'serviceWorker',
-);
-const originalPrototypeServiceWorkerDescriptor = Object.getOwnPropertyDescriptor(
-  navigatorPrototype,
-  'serviceWorker',
-);
+const originalNavigatorServiceWorkerDescriptor =
+  Object.getOwnPropertyDescriptor(navigator, 'serviceWorker');
+const originalPrototypeServiceWorkerDescriptor =
+  Object.getOwnPropertyDescriptor(navigatorPrototype, 'serviceWorker');
 
 function restoreServiceWorker() {
   if (originalNavigatorServiceWorkerDescriptor) {
@@ -43,7 +39,7 @@ function restoreServiceWorker() {
     return;
   }
 
-  delete (navigator as Navigator & { serviceWorker?: unknown }).serviceWorker;
+  delete (navigator as { serviceWorker?: unknown }).serviceWorker;
 
   if (originalPrototypeServiceWorkerDescriptor) {
     Object.defineProperty(
@@ -52,8 +48,7 @@ function restoreServiceWorker() {
       originalPrototypeServiceWorkerDescriptor,
     );
   } else {
-    delete (navigatorPrototype as Navigator & { serviceWorker?: unknown })
-      .serviceWorker;
+    delete (navigatorPrototype as { serviceWorker?: unknown }).serviceWorker;
   }
 }
 
@@ -67,13 +62,14 @@ async function loadMain(options: MainLoadOptions = {}) {
   document.body.innerHTML = '<div id="root"></div>';
 
   let loadListener: EventListener | undefined;
-  vi.spyOn(window, 'addEventListener').mockImplementation((
-    (type: string, listener: EventListenerOrEventListenerObject | null) => {
-      if (type === 'load' && typeof listener === 'function') {
-        loadListener = listener;
-      }
+  vi.spyOn(window, 'addEventListener').mockImplementation(((
+    type: string,
+    listener: EventListenerOrEventListenerObject | null,
+  ) => {
+    if (type === 'load' && typeof listener === 'function') {
+      loadListener = listener;
     }
-  ) as typeof window.addEventListener);
+  }) as typeof window.addEventListener);
 
   const registerMock = vi.fn(
     options.registerImpl ?? (() => Promise.resolve(undefined)),
