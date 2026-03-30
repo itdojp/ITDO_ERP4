@@ -74,6 +74,7 @@ const coreCoverageInclude = [
   'src/hooks/useProjectTasks.ts',
   'src/hooks/useChatRooms.ts',
   'src/components/ChatEvidencePicker.tsx',
+  'src/main.tsx',
 ];
 
 const uiCoreCoverageInclude = [
@@ -101,12 +102,7 @@ export default defineConfig({
       reportsDirectory: coverageReportsDirectory,
       reporter: ['text-summary', 'json-summary', 'lcov'],
       include: coverageInclude,
-      exclude: [
-        'src/**/*.test.{ts,tsx}',
-        'src/main.tsx',
-        'src/vite-env.d.ts',
-        'src/test/**',
-      ],
+      exclude: ['src/**/*.test.{ts,tsx}', 'src/vite-env.d.ts', 'src/test/**'],
     },
   },
 });
