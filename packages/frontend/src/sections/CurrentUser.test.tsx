@@ -440,6 +440,50 @@ describe('CurrentUser', () => {
     ).not.toBeInTheDocument();
   });
 
+  it.each([
+    [
+      'local_mfa_challenge_required',
+      'MFA challenge は未実装です。system_admin に依頼してください',
+    ],
+    ['local_login_rate_limited', 'ローカル認証の試行回数が上限に達しました'],
+  ])(
+    'shows local login guidance for %s',
+    async (errorCode, expectedMessage) => {
+      vi.mocked(isBffAuthMode).mockReturnValue(true);
+      vi.mocked(getAuthState).mockReturnValue(null);
+      installApiMock();
+      vi.mocked(apiResponse).mockImplementation(async (path: string) => {
+        if (path === '/auth/local/login') {
+          return makeJsonResponse({
+            ok: false,
+            status: errorCode === 'local_login_rate_limited' ? 429 : 409,
+            payload: {
+              error: {
+                code: errorCode,
+              },
+            },
+          });
+        }
+        throw new Error(`Unhandled apiResponse path: ${path}`);
+      });
+
+      render(<CurrentUser />);
+
+      fireEvent.change(screen.getByLabelText('ローカル認証 loginId'), {
+        target: { value: 'local-user' },
+      });
+      fireEvent.change(screen.getByLabelText('ローカル認証 password'), {
+        target: { value: 'old-password' },
+      });
+      fireEvent.click(screen.getByRole('button', { name: 'ローカルログイン' }));
+
+      expect(await screen.findByText(expectedMessage)).toBeInTheDocument();
+      expect(
+        screen.queryByRole('button', { name: '初期パスワードを更新' }),
+      ).not.toBeInTheDocument();
+    },
+  );
+
   it('prompts for password rotation when local login requires it', async () => {
     vi.mocked(isBffAuthMode).mockReturnValue(true);
     vi.mocked(getAuthState).mockReturnValue(null);
@@ -660,5 +704,57 @@ describe('CurrentUser', () => {
       expect(screen.getByText('送信待ちはありません')).toBeInTheDocument();
     });
     expect(vi.mocked(removeOfflineItem)).toHaveBeenCalledWith('queue-1');
+  });
+
+  it('shows an offline hold message when bulk retry stops by offline', async () => {
+    const authState: AuthStateLike = {
+      userId: 'user-1',
+      roles: ['member'],
+      token: 'token-1',
+    };
+    vi.mocked(getAuthState).mockReturnValue(authState);
+    installApiMock();
+    vi.mocked(listOfflineItems).mockResolvedValue([
+      {
+        id: 'queue-1',
+        kind: 'expense',
+        label: '交通費申請',
+        requests: [
+          { path: '/expenses', method: 'POST', body: { amount: 1200 } },
+        ],
+        cursor: 0,
+        status: 'failed',
+        retryCount: 1,
+        lastError: 'network error',
+        createdAt: '2026-03-28T00:00:00.000Z',
+        updatedAt: '2026-03-28T00:05:00.000Z',
+        order: 1,
+      },
+    ]);
+    vi.mocked(processOfflineQueue).mockResolvedValue({
+      processed: 0,
+      stoppedBy: 'offline',
+    });
+
+    render(<CurrentUser />);
+
+    expect(await screen.findByText('交通費申請')).toBeInTheDocument();
+
+    const queueSection = screen.getByText('オフライン送信キュー').parentElement;
+    expect(queueSection).not.toBeNull();
+    const bulkRetryRow = within(queueSection as HTMLElement)
+      .getByRole('button', { name: '再読込' })
+      .closest('.row');
+    expect(bulkRetryRow).not.toBeNull();
+    fireEvent.click(
+      within(bulkRetryRow as HTMLElement).getByRole('button', { name: '再送' }),
+    );
+
+    expect(
+      await screen.findByText('オフラインのため送信を保留しました'),
+    ).toBeInTheDocument();
+    expect(vi.mocked(processOfflineQueue)).toHaveBeenCalledWith({
+      includeFailed: true,
+    });
   });
 });
