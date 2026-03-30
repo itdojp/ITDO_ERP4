@@ -706,7 +706,7 @@ describe('CurrentUser', () => {
     expect(vi.mocked(removeOfflineItem)).toHaveBeenCalledWith('queue-1');
   });
 
-  it('shows an offline hold message when bulk retry stops by offline', async () => {
+  it('shows an offline hold message when bulk retry stops due to offline', async () => {
     const authState: AuthStateLike = {
       userId: 'user-1',
       roles: ['member'],
@@ -731,14 +731,24 @@ describe('CurrentUser', () => {
         order: 1,
       },
     ]);
-    vi.mocked(processOfflineQueue).mockResolvedValue({
-      processed: 0,
-      stoppedBy: 'offline',
+    vi.mocked(processOfflineQueue).mockImplementation(async (options) => {
+      if (options?.includeFailed) {
+        return {
+          processed: 0,
+          stoppedBy: 'offline',
+        };
+      }
+      return {
+        processed: 0,
+      };
     });
 
     render(<CurrentUser />);
 
     expect(await screen.findByText('交通費申請')).toBeInTheDocument();
+    expect(
+      screen.queryByText('オフラインのため送信を保留しました'),
+    ).not.toBeInTheDocument();
 
     const queueSection = screen.getByText('オフライン送信キュー').parentElement;
     expect(queueSection).not.toBeNull();
