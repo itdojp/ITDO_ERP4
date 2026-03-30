@@ -32,8 +32,12 @@ vi.mock('../api', () => ({ api, getAuthState }));
 
 type AlertCardProps = {
   items: unknown[];
-  wizard: { onCancel: () => void };
+  wizard: {
+    labels: { cancel: string };
+    onCancel: () => void;
+  };
   onReload: () => void | Promise<void>;
+  onEdit: (item: unknown) => void;
 };
 
 type TemplateCardProps = {
@@ -42,6 +46,7 @@ type TemplateCardProps = {
   setTemplateForm: React.Dispatch<
     React.SetStateAction<{ kind: string; templateId: string }>
   >;
+  onEdit: (item: unknown) => void;
 };
 
 type ReportSubscriptionsCardProps = {
@@ -92,11 +97,24 @@ vi.mock('./admin-settings/AlertSettingsCard', () => ({
   AlertSettingsCard: (props: AlertCardProps) => (
     <div data-testid="alert-settings-card">
       <div data-testid="alert-items-count">{props.items.length}</div>
+      <div data-testid="alert-cancel-label">{props.wizard.labels.cancel}</div>
       <button
         data-testid="alert-cancel"
         onClick={() => props.wizard.onCancel()}
       >
         cancel-alert
+      </button>
+      <button
+        data-testid="alert-edit"
+        onClick={() => {
+          const firstItem = props.items[0];
+          if (firstItem) {
+            // 編集モード遷移を検証するための最小モック。
+            props.onEdit(firstItem);
+          }
+        }}
+      >
+        edit-alert
       </button>
       <button data-testid="alert-reload" onClick={props.onReload}>
         reload-alert
@@ -110,6 +128,7 @@ vi.mock('./admin-settings/TemplateSettingsCard', () => ({
       <div data-testid="template-current-id">
         {props.templateForm.templateId || '-'}
       </div>
+      <div data-testid="template-current-kind">{props.templateForm.kind}</div>
       <div data-testid="template-item-count">{props.items.length}</div>
       <button
         data-testid="template-kind-estimate"
@@ -122,6 +141,41 @@ vi.mock('./admin-settings/TemplateSettingsCard', () => ({
         }
       >
         estimate
+      </button>
+      <button
+        data-testid="template-kind-estimate-keep"
+        onClick={() =>
+          props.setTemplateForm((prev) => ({
+            ...prev,
+            kind: 'estimate',
+            templateId: 'pdf-estimate',
+          }))
+        }
+      >
+        estimate-keep
+      </button>
+      <button
+        data-testid="template-kind-estimate-preserve-current"
+        onClick={() =>
+          props.setTemplateForm((prev) => ({
+            ...prev,
+            kind: 'estimate',
+            templateId: prev.templateId,
+          }))
+        }
+      >
+        estimate-preserve-current
+      </button>
+      <button
+        data-testid="template-start-edit"
+        onClick={() => {
+          const firstItem = props.items[0];
+          if (firstItem) {
+            props.onEdit(firstItem);
+          }
+        }}
+      >
+        edit-template
       </button>
     </div>
   ),
@@ -142,6 +196,12 @@ vi.mock('./admin-settings/ReportSubscriptionsCard', () => ({
         }}
       >
         load-deliveries
+      </button>
+      <button
+        data-testid="report-show-all-deliveries"
+        onClick={() => void props.onShowDeliveries()}
+      >
+        load-all-deliveries
       </button>
     </div>
   ),
@@ -165,6 +225,12 @@ vi.mock('./admin-settings/IntegrationSettingsCard', () => ({
         }}
       >
         load-runs
+      </button>
+      <button
+        data-testid="integration-show-all-runs"
+        onClick={() => void props.onShowRuns()}
+      >
+        load-all-runs
       </button>
     </div>
   ),
@@ -247,9 +313,17 @@ function mockApiRoute(path: string) {
       items: [{ id: 'delivery-1', subscriptionId: 'sub-1', status: 'sent' }],
     });
   }
+  if (path === '/report-deliveries') {
+    return Promise.resolve({ items: [] });
+  }
   if (path === '/integration-runs?settingId=setting-1&limit=50') {
     return Promise.resolve({
       items: [{ id: 'run-1', settingId: 'setting-1', status: 'success' }],
+    });
+  }
+  if (path === '/integration-runs?limit=50') {
+    return Promise.resolve({
+      items: [{ id: 'run-2', settingId: 'setting-2', status: 'queued' }],
     });
   }
   if (path === '/integration-runs/metrics?settingId=setting-1&days=30') {
@@ -259,6 +333,15 @@ function mockApiRoute(path: string) {
       avgDurationMs: 1200,
       lastSuccessAt: '2026-03-28T00:00:00.000Z',
       lastFailureAt: null,
+    });
+  }
+  if (path === '/integration-runs/metrics?days=30') {
+    return Promise.resolve({
+      successCount: 2,
+      failedCount: 1,
+      avgDurationMs: 900,
+      lastSuccessAt: '2026-03-29T00:00:00.000Z',
+      lastFailureAt: '2026-03-29T12:00:00.000Z',
     });
   }
   return Promise.resolve({ items: [] });
@@ -319,6 +402,60 @@ describe('AdminSettings', () => {
     });
   });
 
+  it('preserves a still-valid template selection when the kind changes', async () => {
+    render(<AdminSettings />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('template-current-id')).toHaveTextContent(
+        'pdf-invoice',
+      );
+    });
+
+    fireEvent.click(
+      screen.getByTestId('template-kind-estimate-preserve-current'),
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('template-current-kind')).toHaveTextContent(
+        'estimate',
+      );
+      expect(screen.getByTestId('template-current-id')).toHaveTextContent(
+        'pdf-estimate',
+      );
+    });
+  });
+
+  it('skips template auto-selection while editing an existing template', async () => {
+    render(<AdminSettings />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('template-current-id')).toHaveTextContent(
+        'pdf-invoice',
+      );
+    });
+
+    fireEvent.click(screen.getByTestId('template-start-edit'));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('template-current-id')).toHaveTextContent(
+        'pdf-invoice',
+      );
+    });
+
+    fireEvent.click(
+      screen.getByTestId('template-kind-estimate-preserve-current'),
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('template-current-kind')).toHaveTextContent(
+        'estimate',
+      );
+      expect(screen.getByTestId('template-current-id')).toHaveTextContent(
+        'pdf-invoice',
+      );
+    });
+  });
+
   it('loads report deliveries and integration runs through child callbacks', async () => {
     render(<AdminSettings />);
 
@@ -354,14 +491,54 @@ describe('AdminSettings', () => {
     );
   });
 
-  it('clears the alert autosave draft when the alert wizard is cancelled', async () => {
+  it('reloads report deliveries and integration runs without an identifier', async () => {
+    render(<AdminSettings />);
+
+    await screen.findByTestId('report-subscriptions-card');
+
+    fireEvent.click(screen.getByTestId('report-show-all-deliveries'));
+    fireEvent.click(screen.getByTestId('integration-show-all-runs'));
+
+    await waitFor(() => {
+      expect(api).toHaveBeenCalledWith('/report-deliveries');
+      expect(api).toHaveBeenCalledWith('/integration-runs?limit=50');
+      expect(api).toHaveBeenCalledWith('/integration-runs/metrics?days=30');
+    });
+
+    expect(screen.getByTestId('report-delivery-filter')).toHaveTextContent('-');
+    expect(screen.getByTestId('report-deliveries-count')).toHaveTextContent(
+      '0',
+    );
+    expect(screen.getByTestId('integration-filter')).toHaveTextContent('-');
+    expect(screen.getByTestId('integration-runs-count')).toHaveTextContent('1');
+    expect(screen.getByTestId('integration-metrics-present')).toHaveTextContent(
+      'yes',
+    );
+  });
+
+  it('updates the alert cancel label in edit mode and clears the draft on cancel', async () => {
     render(<AdminSettings />);
 
     await screen.findByTestId('alert-settings-card');
+    expect(screen.getByTestId('alert-cancel-label')).toHaveTextContent(
+      'クリア',
+    );
+
+    fireEvent.click(screen.getByTestId('alert-edit'));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('alert-cancel-label')).toHaveTextContent(
+        'キャンセル',
+      );
+    });
+
     fireEvent.click(screen.getByTestId('alert-cancel'));
 
     await waitFor(() => {
       expect(alertDraftState.clearDraft).toHaveBeenCalledTimes(1);
+      expect(screen.getByTestId('alert-cancel-label')).toHaveTextContent(
+        'クリア',
+      );
     });
   });
 });
