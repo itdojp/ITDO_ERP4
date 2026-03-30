@@ -3,6 +3,7 @@ import {
   fireEvent,
   render,
   screen,
+  within,
   waitFor,
 } from '@testing-library/react';
 import React from 'react';
@@ -34,6 +35,71 @@ vi.mock('../ui', () => ({
 
 import { Dashboard } from './Dashboard';
 
+type NotificationFixture = {
+  id: string;
+  userId?: string;
+  kind: string;
+  projectId?: string | null;
+  messageId?: string | null;
+  payload?: unknown;
+  createdAt: string;
+  project?: {
+    id: string;
+    code: string;
+    name: string;
+    deletedAt?: string | null;
+  } | null;
+};
+
+const setupDashboard = ({
+  notifications,
+  roomMuteFailure = false,
+}: {
+  notifications: NotificationFixture[];
+  roomMuteFailure?: boolean;
+}) => {
+  getAuthState.mockReturnValue({
+    userId: 'user-1',
+    roles: [],
+    groupIds: [],
+    groupAccountIds: [],
+  });
+  api.mockImplementation(
+    (path: string, options?: { method?: string; body?: string }) => {
+      if (path === '/alerts') {
+        return Promise.resolve({ items: [] });
+      }
+      if (path === '/notifications/unread-count') {
+        return Promise.resolve({ unreadCount: notifications.length });
+      }
+      if (path === '/notifications?unread=1&limit=5') {
+        return Promise.resolve({ items: notifications });
+      }
+      if (path === '/notification-preferences') {
+        return Promise.resolve({ muteAllUntil: null });
+      }
+      if (path === '/approval-instances?status=pending_qa') {
+        return Promise.resolve({ items: [] });
+      }
+      if (path === '/approval-instances?status=pending_exec') {
+        return Promise.resolve({ items: [] });
+      }
+      if (
+        path.startsWith('/chat-rooms/') &&
+        path.endsWith('/notification-setting')
+      ) {
+        return roomMuteFailure
+          ? Promise.reject(new Error('room mute failed'))
+          : Promise.resolve({});
+      }
+      if (path === '/insights') {
+        return Promise.resolve({ items: [] });
+      }
+      throw new Error(`unexpected api call: ${path}`);
+    },
+  );
+};
+
 beforeEach(() => {
   api.mockReset();
   getAuthState.mockReset();
@@ -54,6 +120,274 @@ afterEach(() => {
 });
 
 describe('Dashboard', () => {
+  it('renders additional notification kinds and opens their linked targets', async () => {
+    setupDashboard({
+      notifications: [
+        {
+          id: 'notif-1',
+          userId: 'user-1',
+          kind: 'daily_report_submitted',
+          projectId: 'project-1',
+          payload: { reportDate: '2026-03-26' },
+          createdAt: '2026-03-27T00:00:00.000Z',
+        },
+        {
+          id: 'notif-2',
+          userId: 'user-1',
+          kind: 'leave_upcoming',
+          projectId: 'project-2',
+          messageId: 'leave-1',
+          payload: {
+            leaveRequestId: 'leave-1',
+            startDate: '2026-04-01',
+            endDate: '2026-04-03',
+            leaveType: '有給',
+          },
+          createdAt: '2026-03-27T00:10:00.000Z',
+        },
+        {
+          id: 'notif-3',
+          userId: 'user-1',
+          kind: 'expense_mark_paid',
+          projectId: 'project-3',
+          messageId: 'expense-1',
+          payload: { expenseId: 'expense-1', amount: 1200, currency: 'JPY' },
+          createdAt: '2026-03-27T00:20:00.000Z',
+        },
+        {
+          id: 'notif-4',
+          userId: 'user-1',
+          kind: 'approval_pending',
+          projectId: 'project-4',
+          payload: { fromUserId: 'approver-1', flowType: 'invoice' },
+          createdAt: '2026-03-27T00:30:00.000Z',
+        },
+        {
+          id: 'notif-5',
+          userId: 'user-1',
+          kind: 'approval_approved',
+          projectId: 'project-5',
+          payload: {
+            fromUserId: 'approver-2',
+            flowType: 'vendor_invoice',
+            targetTable: 'vendor_invoices',
+            targetId: 'vi-1',
+          },
+          createdAt: '2026-03-27T00:40:00.000Z',
+        },
+        {
+          id: 'notif-6',
+          userId: 'user-1',
+          kind: 'approval_rejected',
+          projectId: 'project-6',
+          payload: { fromUserId: 'approver-3', flowType: 'purchase_order' },
+          createdAt: '2026-03-27T00:50:00.000Z',
+        },
+        {
+          id: 'notif-7',
+          userId: 'user-1',
+          kind: 'project_status_changed',
+          projectId: 'project-7',
+          payload: {
+            fromUserId: 'pm-1',
+            beforeStatus: 'draft',
+            afterStatus: 'active',
+          },
+          createdAt: '2026-03-27T00:55:00.000Z',
+        },
+      ],
+    });
+
+    render(<Dashboard />);
+
+    expect(
+      await screen.findByText('日報提出 (2026-03-26)'),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText('休暇予定 (2026-04-01〜2026-04-03)'),
+    ).toBeInTheDocument();
+    expect(screen.getByText('経費支払完了 (1200 JPY)')).toBeInTheDocument();
+    expect(
+      screen.getByText('approver-1 から請求の承認依頼'),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText('approver-2 により仕入請求が承認されました'),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText('approver-3 により発注が差戻しとなりました'),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText('pm-1 が案件ステータスを更新しました (起案中 → 進行中)'),
+    ).toBeInTheDocument();
+
+    const dailyReportCard = within(
+      screen
+        .getByText('日報提出 (2026-03-26)')
+        .closest('section') as HTMLElement,
+    );
+    fireEvent.click(dailyReportCard.getByRole('button', { name: '開く' }));
+
+    const leaveCard = within(
+      screen
+        .getByText('休暇予定 (2026-04-01〜2026-04-03)')
+        .closest('section') as HTMLElement,
+    );
+    fireEvent.click(leaveCard.getByRole('button', { name: '開く' }));
+
+    const expenseCard = within(
+      screen
+        .getByText('経費支払完了 (1200 JPY)')
+        .closest('section') as HTMLElement,
+    );
+    fireEvent.click(expenseCard.getByRole('button', { name: '開く' }));
+
+    const approvalPendingCard = within(
+      screen
+        .getByText('approver-1 から請求の承認依頼')
+        .closest('section') as HTMLElement,
+    );
+    fireEvent.click(approvalPendingCard.getByRole('button', { name: '開く' }));
+
+    const approvalApprovedCard = within(
+      screen
+        .getByText('approver-2 により仕入請求が承認されました')
+        .closest('section') as HTMLElement,
+    );
+    fireEvent.click(approvalApprovedCard.getByRole('button', { name: '開く' }));
+
+    const approvalRejectedCard = within(
+      screen
+        .getByText('approver-3 により発注が差戻しとなりました')
+        .closest('section') as HTMLElement,
+    );
+    fireEvent.click(approvalRejectedCard.getByRole('button', { name: '開く' }));
+
+    const projectCard = within(
+      screen
+        .getByText('pm-1 が案件ステータスを更新しました (起案中 → 進行中)')
+        .closest('section') as HTMLElement,
+    );
+    fireEvent.click(projectCard.getByRole('button', { name: '開く' }));
+
+    expect(navigateToOpen).toHaveBeenNthCalledWith(1, {
+      kind: 'daily_report',
+      id: '2026-03-26',
+    });
+    expect(navigateToOpen).toHaveBeenNthCalledWith(2, {
+      kind: 'leave_request',
+      id: 'leave-1',
+    });
+    expect(navigateToOpen).toHaveBeenNthCalledWith(3, {
+      kind: 'expense',
+      id: 'expense-1',
+    });
+    expect(navigateToOpen).toHaveBeenNthCalledWith(4, {
+      kind: 'approvals',
+      id: 'inbox',
+    });
+    expect(navigateToOpen).toHaveBeenNthCalledWith(5, {
+      kind: 'vendor_invoice',
+      id: 'vi-1',
+    });
+    expect(navigateToOpen).toHaveBeenNthCalledWith(6, {
+      kind: 'approvals',
+      id: 'inbox',
+    });
+    expect(navigateToOpen).toHaveBeenNthCalledWith(7, {
+      kind: 'project',
+      id: 'project-7',
+    });
+  });
+
+  it('mutes a room notification successfully', async () => {
+    setupDashboard({
+      notifications: [
+        {
+          id: 'notif-room-1',
+          userId: 'user-1',
+          kind: 'chat_ack_escalation',
+          projectId: 'project-1',
+          messageId: 'message-1',
+          payload: {
+            fromUserId: 'room-user',
+            roomId: 'room-1',
+            dueAt: '2026-03-27T02:00:00.000Z',
+          },
+          createdAt: '2026-03-27T00:00:00.000Z',
+        },
+      ],
+    });
+
+    render(<Dashboard />);
+
+    expect(
+      await screen.findByText('room-user から確認依頼（エスカレーション）'),
+    ).toBeInTheDocument();
+
+    const roomCard = within(
+      screen
+        .getByText('room-user から確認依頼（エスカレーション）')
+        .closest('section') as HTMLElement,
+    );
+    fireEvent.click(roomCard.getByRole('button', { name: '10分' }));
+
+    await waitFor(() => {
+      expect(api).toHaveBeenCalledWith(
+        '/chat-rooms/room-1/notification-setting',
+        {
+          method: 'PATCH',
+          body: JSON.stringify({ muteUntil: '2026-03-27T01:10:00.000Z' }),
+        },
+      );
+    });
+    expect(
+      await screen.findByText('ルーム通知をミュートしました'),
+    ).toBeInTheDocument();
+  });
+
+  it('shows a room mute failure message when the patch request fails', async () => {
+    setupDashboard({
+      notifications: [
+        {
+          id: 'notif-room-2',
+          userId: 'user-1',
+          kind: 'chat_message',
+          projectId: 'project-1',
+          messageId: 'message-2',
+          payload: {
+            fromUserId: 'room-user',
+            roomId: 'room-2',
+            excerpt: '確認してください',
+          },
+          createdAt: '2026-03-27T00:00:00.000Z',
+        },
+      ],
+      roomMuteFailure: true,
+    });
+
+    render(<Dashboard />);
+
+    expect(await screen.findByText('room-user から投稿')).toBeInTheDocument();
+
+    const roomCard = within(
+      screen.getByText('room-user から投稿').closest('section') as HTMLElement,
+    );
+    fireEvent.click(roomCard.getByRole('button', { name: '10分' }));
+
+    await waitFor(() => {
+      expect(api).toHaveBeenCalledWith(
+        '/chat-rooms/room-2/notification-setting',
+        {
+          method: 'PATCH',
+          body: JSON.stringify({ muteUntil: '2026-03-27T01:10:00.000Z' }),
+        },
+      );
+    });
+    expect(
+      await screen.findByText('ルーム通知ミュートの更新に失敗しました'),
+    ).toBeInTheDocument();
+  });
+
   it('loads dashboard summaries and supports opening and muting notifications', async () => {
     api.mockImplementation(
       (path: string, options?: { method?: string; body?: string }) => {
