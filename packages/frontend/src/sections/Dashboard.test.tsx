@@ -341,7 +341,7 @@ describe('Dashboard', () => {
       );
     });
     expect(
-      screen.getByText('ルーム通知をミュートしました'),
+      await screen.findByText('ルーム通知をミュートしました'),
     ).toBeInTheDocument();
   });
 
