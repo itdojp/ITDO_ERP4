@@ -117,6 +117,7 @@ describe('GlobalSearch', () => {
     expect(screen.getByText('Projects 1')).toBeInTheDocument();
     expect(screen.getByText('Chat 1')).toBeInTheDocument();
     expect(screen.getByText('user-b')).toBeInTheDocument();
+    expect(screen.queryByText('dm:user-a:user-b')).not.toBeInTheDocument();
     expect(screen.getByText('pj-2')).toBeInTheDocument();
 
     expect(vi.mocked(api)).toHaveBeenNthCalledWith(1, '/search?q=AB&limit=12');
@@ -130,6 +131,31 @@ describe('GlobalSearch', () => {
       kind: 'room_chat',
       id: 'room-1',
     });
+  });
+
+  it('clears the query, message, and existing results', async () => {
+    vi.mocked(api)
+      .mockResolvedValueOnce(successfulErpResult)
+      .mockResolvedValueOnce(successfulChatResult);
+
+    render(<GlobalSearch />);
+
+    fireEvent.change(screen.getByLabelText('検索語'), {
+      target: { value: 'AB' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '検索' }));
+
+    await screen.findByText('PJ-001 / Alpha');
+    expect(screen.getByText('Projects 1')).toBeInTheDocument();
+    expect(screen.getByText('Chat 1')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'クリア' }));
+
+    expect(screen.getByLabelText('検索語')).toHaveValue('');
+    expect(screen.queryByText('PJ-001 / Alpha')).not.toBeInTheDocument();
+    expect(screen.getByText('Projects 0')).toBeInTheDocument();
+    expect(screen.getByText('Chat 0')).toBeInTheDocument();
+    expect(screen.queryByText('検索に失敗しました')).not.toBeInTheDocument();
   });
 
   it('clears existing results when ERP search fails after a successful search', async () => {
