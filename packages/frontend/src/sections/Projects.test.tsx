@@ -52,6 +52,7 @@ function createProjectsApiMock(options?: {
   members?: Array<Record<string, unknown>>;
   candidates?: Array<Record<string, unknown>>;
   recurringTemplatePosts?: Array<Record<string, unknown>>;
+  recurringLogLoads?: string[];
 }) {
   let projects = [...(options?.projects ?? defaultProjects)];
   const customers = [...(options?.customers ?? defaultCustomers)];
@@ -69,7 +70,8 @@ function createProjectsApiMock(options?: {
       },
     ]),
   ];
-  const recurringTemplatePosts = options?.recurringTemplatePosts ?? [];
+  const recurringTemplatePosts = options?.recurringTemplatePosts;
+  const recurringLogLoads = options?.recurringLogLoads ?? [];
 
   vi.mocked(api).mockImplementation(
     async (path: string, init?: RequestInit) => {
@@ -136,6 +138,9 @@ function createProjectsApiMock(options?: {
         path === '/projects/project-1/recurring-template' &&
         init?.method === 'POST'
       ) {
+        if (!recurringTemplatePosts) {
+          throw new Error(`Unhandled api call: ${path} ${init.method}`);
+        }
         const body = JSON.parse(String(init.body || '{}')) as Record<
           string,
           unknown
@@ -163,6 +168,7 @@ function createProjectsApiMock(options?: {
         path === '/projects/project-1/recurring-generation-logs?limit=50' &&
         !init?.method
       ) {
+        recurringLogLoads.push(path);
         return { items: [] };
       }
       if (
@@ -629,7 +635,8 @@ describe('Projects', () => {
 
   it('validates recurring due date offset and saves recurring template for admins', async () => {
     const recurringTemplatePosts: Array<Record<string, unknown>> = [];
-    createProjectsApiMock({ recurringTemplatePosts });
+    const recurringLogLoads: string[] = [];
+    createProjectsApiMock({ recurringTemplatePosts, recurringLogLoads });
     vi.mocked(getAuthState).mockReturnValue({ roles: ['admin'] });
 
     render(<Projects />);
@@ -643,6 +650,7 @@ describe('Projects', () => {
       expect(
         screen.getByText('templateId: recurring-template-1'),
       ).toBeInTheDocument();
+      expect(recurringLogLoads).toHaveLength(1);
     });
 
     fireEvent.change(screen.getByLabelText('定期デフォルト金額'), {
@@ -684,6 +692,7 @@ describe('Projects', () => {
           timezone: 'Asia/Tokyo',
         },
       ]);
+      expect(recurringLogLoads).toHaveLength(2);
     });
     expect(
       await screen.findByText('生成ログを更新しました'),
