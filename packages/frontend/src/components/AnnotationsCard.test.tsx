@@ -75,6 +75,15 @@ function renderCard() {
   );
 }
 
+function getManualRefAddButton() {
+  const manualInput = screen.getByLabelText('手動追加（deep link / kind:id）');
+  const manualControls = manualInput.parentElement?.parentElement;
+  expect(manualControls).not.toBeNull();
+  return within(manualControls as HTMLElement).getByRole('button', {
+    name: '追加',
+  });
+}
+
 beforeEach(() => {
   vi.mocked(apiResponse).mockReset();
   vi.mocked(apiResponse).mockImplementation(async (path: string) => {
@@ -273,6 +282,140 @@ describe('AnnotationsCard', () => {
     );
     expect(copyToClipboard).toHaveBeenCalledWith(
       '[Room One](/#/open?kind=room_chat&id=room-1)',
+    );
+  });
+
+  it('shows an error when the manual internal ref is invalid', async () => {
+    vi.mocked(apiResponse).mockImplementation(async (path: string) => {
+      if (path === '/annotations/project/project-1') {
+        return makeLoadResponse();
+      }
+      if (path === '/chat-messages/msg-1') {
+        return jsonResponse({ id: 'msg-1' });
+      }
+      throw new Error(`Unhandled api path: ${path}`);
+    });
+
+    renderCard();
+
+    await waitFor(() =>
+      expect(screen.getByDisplayValue('initial note')).toBeInTheDocument(),
+    );
+
+    fireEvent.change(screen.getByLabelText('手動追加（deep link / kind:id）'), {
+      target: { value: 'invalid-ref' },
+    });
+    fireEvent.click(getManualRefAddButton());
+
+    await waitFor(() =>
+      expect(
+        screen.getByText('内部参照が不正です（deep link / kind:id）'),
+      ).toBeInTheDocument(),
+    );
+  });
+
+  it('rejects forbidden manual chat_message refs', async () => {
+    vi.mocked(apiResponse).mockImplementation(async (path: string) => {
+      if (path === '/annotations/project/project-1') {
+        return makeLoadResponse();
+      }
+      if (path === '/chat-messages/msg-1') {
+        return jsonResponse({ id: 'msg-1' });
+      }
+      if (path === '/chat-messages/msg-forbidden') {
+        return jsonResponse(
+          { error: { code: 'FORBIDDEN_ROOM_MEMBER' } },
+          { ok: false, status: 403 },
+        );
+      }
+      throw new Error(`Unhandled api path: ${path}`);
+    });
+
+    renderCard();
+
+    await waitFor(() =>
+      expect(screen.getByDisplayValue('initial note')).toBeInTheDocument(),
+    );
+
+    fireEvent.change(screen.getByLabelText('手動追加（deep link / kind:id）'), {
+      target: { value: 'chat_message:msg-forbidden' },
+    });
+    fireEvent.click(getManualRefAddButton());
+
+    await waitFor(() =>
+      expect(
+        screen.getByText('この発言は権限不足のため追加できません'),
+      ).toBeInTheDocument(),
+    );
+    expect(
+      screen.queryByRole('link', { name: 'chat_message:msg-forbidden' }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('normalizes project_chat manual refs into room_chat links', async () => {
+    vi.mocked(apiResponse).mockImplementation(async (path: string) => {
+      if (path === '/annotations/project/project-1') {
+        return makeLoadResponse();
+      }
+      if (path === '/chat-messages/msg-1') {
+        return jsonResponse({ id: 'msg-1' });
+      }
+      throw new Error(`Unhandled api path: ${path}`);
+    });
+
+    renderCard();
+
+    await waitFor(() =>
+      expect(screen.getByDisplayValue('initial note')).toBeInTheDocument(),
+    );
+
+    fireEvent.change(screen.getByLabelText('手動追加（deep link / kind:id）'), {
+      target: { value: 'project_chat:room-2' },
+    });
+    fireEvent.click(getManualRefAddButton());
+
+    await waitFor(() =>
+      expect(screen.getByText('内部参照を追加しました')).toBeInTheDocument(),
+    );
+    const roomLink = screen.getByRole('link', { name: 'room_chat:room-2' });
+    expect(roomLink).toHaveAttribute(
+      'href',
+      '/#/open?kind=room_chat&id=room-2',
+    );
+  });
+
+  it('shows a copy failure message when copying an external url fails', async () => {
+    vi.mocked(apiResponse).mockImplementation(async (path: string) => {
+      if (path === '/annotations/project/project-1') {
+        return makeLoadResponse();
+      }
+      if (path === '/chat-messages/msg-1') {
+        return jsonResponse({ id: 'msg-1' });
+      }
+      throw new Error(`Unhandled api path: ${path}`);
+    });
+    vi.mocked(copyToClipboard).mockResolvedValue(false);
+
+    renderCard();
+
+    await waitFor(() =>
+      expect(screen.getByText('initial note')).toBeInTheDocument(),
+    );
+
+    const externalRow = screen
+      .getByText('https://safe.example/path')
+      .closest('div');
+    expect(externalRow).not.toBeNull();
+    await act(async () => {
+      fireEvent.click(
+        within(externalRow as HTMLElement).getByRole('button', {
+          name: 'コピー',
+        }),
+      );
+    });
+
+    await waitFor(() =>
+      expect(screen.getByText('コピーに失敗しました')).toBeInTheDocument(),
     );
   });
 
