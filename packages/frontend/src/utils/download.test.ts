@@ -16,7 +16,9 @@ function createMockResponse(
     headers: {
       get: (name: string) =>
         name.toLowerCase() === 'content-disposition'
-          ? (disposition ?? `attachment; filename="${filename}"`)
+          ? disposition !== undefined
+            ? disposition
+            : `attachment; filename="${filename}"`
           : null,
     } as Headers,
   } as unknown as Response;
@@ -24,6 +26,7 @@ function createMockResponse(
 
 describe('download utils', () => {
   afterEach(() => {
+    vi.useRealTimers();
     vi.restoreAllMocks();
     document.body.innerHTML = '';
   });
@@ -68,7 +71,6 @@ describe('download utils', () => {
     expect(document.querySelector('a')).toBeNull();
     vi.runOnlyPendingTimers();
     expect(revokeSpy).toHaveBeenCalledWith('blob:download');
-    vi.useRealTimers();
   });
 
   it('falls back to download when window.open is blocked', async () => {
@@ -92,7 +94,6 @@ describe('download utils', () => {
     expect(revokeSpy).not.toHaveBeenCalled();
     vi.runOnlyPendingTimers();
     expect(revokeSpy).toHaveBeenCalledWith('blob:open');
-    vi.useRealTimers();
   });
 
   it('keeps encoded filename text when filename* decoding fails', () => {
@@ -136,6 +137,5 @@ describe('download utils', () => {
     expect(revokeSpy).not.toHaveBeenCalled();
     vi.runOnlyPendingTimers();
     expect(revokeSpy).toHaveBeenCalledWith('blob:opened');
-    vi.useRealTimers();
   });
 });
