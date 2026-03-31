@@ -7,13 +7,16 @@ import {
   resolveFilename,
 } from './download';
 
-function createMockResponse(filename: string): Response {
+function createMockResponse(
+  filename: string,
+  disposition?: string | null,
+): Response {
   return {
     blob: vi.fn().mockResolvedValue(new Blob(['payload'])),
     headers: {
       get: (name: string) =>
         name.toLowerCase() === 'content-disposition'
-          ? `attachment; filename="${filename}"`
+          ? (disposition ?? `attachment; filename="${filename}"`)
           : null,
     } as Headers,
   } as unknown as Response;
@@ -89,6 +92,50 @@ describe('download utils', () => {
     expect(revokeSpy).not.toHaveBeenCalled();
     vi.runOnlyPendingTimers();
     expect(revokeSpy).toHaveBeenCalledWith('blob:open');
+    vi.useRealTimers();
+  });
+
+  it('keeps encoded filename text when filename* decoding fails', () => {
+    expect(
+      resolveFilename(
+        "attachment; filename*=UTF-8''broken%ZZname.csv",
+        'x.csv',
+      ),
+    ).toBe('broken%ZZname.csv');
+  });
+
+  it('trims raw filenames from content-disposition headers', () => {
+    expect(
+      resolveFilename('attachment; filename= raw-report.csv ', 'x.csv'),
+    ).toBe('raw-report.csv');
+  });
+
+  it('opens the blob in a new tab without using the download fallback when window.open succeeds', async () => {
+    vi.useFakeTimers();
+    vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:opened');
+    const revokeSpy = vi
+      .spyOn(URL, 'revokeObjectURL')
+      .mockImplementation(() => undefined);
+    const clickSpy = vi
+      .spyOn(HTMLAnchorElement.prototype, 'click')
+      .mockImplementation(() => {});
+    const windowOpenSpy = vi
+      .spyOn(window, 'open')
+      .mockReturnValue({} as Window);
+
+    const res = createMockResponse('report.pdf');
+
+    await openResponseInNewTab(res, 'fallback.pdf');
+
+    expect(windowOpenSpy).toHaveBeenCalledWith(
+      'blob:opened',
+      '_blank',
+      'noopener,noreferrer',
+    );
+    expect(clickSpy).not.toHaveBeenCalled();
+    expect(revokeSpy).not.toHaveBeenCalled();
+    vi.runOnlyPendingTimers();
+    expect(revokeSpy).toHaveBeenCalledWith('blob:opened');
     vi.useRealTimers();
   });
 });
