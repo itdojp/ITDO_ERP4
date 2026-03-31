@@ -120,6 +120,21 @@ function createProjectsApiMock(options?: {
       if (path === '/projects/project-1/members' && !init?.method) {
         return { items: members };
       }
+      if (path === '/projects/project-1/recurring-template' && !init?.method) {
+        return {
+          projectId: 'project-1',
+          frequency: 'monthly',
+          currency: 'JPY',
+          generateInvoice: true,
+          enabled: true,
+        };
+      }
+      if (
+        path === '/projects/project-1/recurring-generation-logs?limit=50' &&
+        !init?.method
+      ) {
+        return { items: [] };
+      }
       if (
         path === '/projects/project-1/member-candidates?q=ali' &&
         !init?.method
@@ -416,5 +431,156 @@ describe('Projects', () => {
         '案件メンバーのユーザID',
       ),
     ).toHaveValue('alice@example.com');
+  });
+
+  it('short-circuits member role updates when the role is unchanged', async () => {
+    createProjectsApiMock();
+    vi.mocked(getAuthState).mockReturnValue({ roles: ['admin'] });
+
+    render(<Projects />);
+
+    const row = await screen.findByText(
+      (_, element) =>
+        element?.tagName === 'LI' &&
+        element.textContent?.includes('P001 / Parent Project'),
+    );
+    fireEvent.click(
+      within(row.closest('li') as HTMLLIElement).getByRole('button', {
+        name: 'メンバー管理',
+      }),
+    );
+
+    await waitFor(() => {
+      expect(api).toHaveBeenCalledWith('/projects/project-1/members');
+    });
+
+    const memberPanel = screen
+      .getByRole('heading', { name: 'メンバー管理' })
+      .closest('div');
+    expect(memberPanel).not.toBeNull();
+
+    const memberRow = within(memberPanel as HTMLDivElement)
+      .getByText('leader@example.com')
+      .closest('li');
+    expect(memberRow).not.toBeNull();
+
+    fireEvent.click(
+      within(memberRow as HTMLLIElement).getByRole('button', {
+        name: '権限更新',
+      }),
+    );
+
+    expect(screen.getByText('変更がありません')).toBeInTheDocument();
+    expect(api).not.toHaveBeenCalledWith(
+      '/projects/project-1/members',
+      expect.objectContaining({ method: 'POST' }),
+    );
+  });
+
+  it('updates a member role and reloads the member list for admins', async () => {
+    createProjectsApiMock();
+    vi.mocked(getAuthState).mockReturnValue({ roles: ['admin'] });
+
+    render(<Projects />);
+
+    const row = await screen.findByText(
+      (_, element) =>
+        element?.tagName === 'LI' &&
+        element.textContent?.includes('P001 / Parent Project'),
+    );
+    fireEvent.click(
+      within(row.closest('li') as HTMLLIElement).getByRole('button', {
+        name: 'メンバー管理',
+      }),
+    );
+
+    await waitFor(() => {
+      expect(api).toHaveBeenCalledWith('/projects/project-1/members');
+    });
+
+    const memberPanel = screen
+      .getByRole('heading', { name: 'メンバー管理' })
+      .closest('div');
+    expect(memberPanel).not.toBeNull();
+
+    const memberRow = within(memberPanel as HTMLDivElement)
+      .getByText('leader@example.com')
+      .closest('li');
+    expect(memberRow).not.toBeNull();
+
+    fireEvent.change(
+      within(memberRow as HTMLLIElement).getByLabelText('案件メンバーの権限'),
+      {
+        target: { value: 'member' },
+      },
+    );
+    fireEvent.click(
+      within(memberRow as HTMLLIElement).getByRole('button', {
+        name: '権限更新',
+      }),
+    );
+
+    await waitFor(() => {
+      expect(api).toHaveBeenCalledWith('/projects/project-1/members', {
+        method: 'POST',
+        body: JSON.stringify({ userId: 'leader@example.com', role: 'member' }),
+      });
+    });
+    expect(
+      await within(memberPanel as HTMLDivElement).findByText(
+        (_, element) =>
+          element?.tagName === 'LI' &&
+          element.textContent?.includes('member') &&
+          element.textContent?.includes('leader@example.com'),
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it('removes a member and reloads the member list for admins', async () => {
+    createProjectsApiMock();
+    vi.mocked(getAuthState).mockReturnValue({ roles: ['admin'] });
+
+    render(<Projects />);
+
+    const row = await screen.findByText(
+      (_, element) =>
+        element?.tagName === 'LI' &&
+        element.textContent?.includes('P001 / Parent Project'),
+    );
+    fireEvent.click(
+      within(row.closest('li') as HTMLLIElement).getByRole('button', {
+        name: 'メンバー管理',
+      }),
+    );
+
+    await waitFor(() => {
+      expect(api).toHaveBeenCalledWith('/projects/project-1/members');
+    });
+
+    const memberPanel = screen
+      .getByRole('heading', { name: 'メンバー管理' })
+      .closest('div');
+    expect(memberPanel).not.toBeNull();
+
+    const memberRow = within(memberPanel as HTMLDivElement)
+      .getByText('leader@example.com')
+      .closest('li');
+    expect(memberRow).not.toBeNull();
+
+    fireEvent.click(
+      within(memberRow as HTMLLIElement).getByRole('button', {
+        name: '削除',
+      }),
+    );
+
+    await waitFor(() => {
+      expect(api).toHaveBeenCalledWith(
+        '/projects/project-1/members/leader%40example.com',
+        { method: 'DELETE' },
+      );
+    });
+    expect(
+      await within(memberPanel as HTMLDivElement).findByText('メンバーなし'),
+    ).toBeInTheDocument();
   });
 });
