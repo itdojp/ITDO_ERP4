@@ -4,6 +4,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from '@testing-library/react';
 import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -539,7 +540,7 @@ describe('RoomChat', () => {
       makeSearchItem({
         id: `search-${index + 1}`,
         body: `beta result ${index + 1}`,
-        createdAt: `2026-03-28T00:${String(index).padStart(2, '0')}:00.000Z`,
+        createdAt: `2026-03-28T00:${String(49 - index).padStart(2, '0')}:00.000Z`,
         room: makeRoom({
           id: 'room-1',
           projectCode: 'PRJ-1',
@@ -617,10 +618,18 @@ describe('RoomChat', () => {
     fireEvent.click(screen.getByRole('button', { name: 'さらに読み込む' }));
 
     const secondPageCard = await screen.findByText('beta page2 result');
+    let secondPageContainer: HTMLElement | null = secondPageCard.parentElement;
+    while (
+      secondPageContainer &&
+      !within(secondPageContainer).queryByRole('button', { name: '開く' })
+    ) {
+      secondPageContainer = secondPageContainer.parentElement;
+    }
+    if (!secondPageContainer) {
+      throw new Error('search result container not found');
+    }
     fireEvent.click(
-      secondPageCard
-        .closest('.card')!
-        .querySelector('button') as HTMLButtonElement,
+      within(secondPageContainer).getByRole('button', { name: '開く' }),
     );
 
     await waitFor(() => {
