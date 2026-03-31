@@ -453,6 +453,86 @@ describe('AnnotationsCard', () => {
     expect(screen.getByDisplayValue('broken note')).toBeInTheDocument();
   });
 
+  it.each([
+    {
+      mode: 'forbidden',
+      expectedMessage: 'この発言は権限不足のため追加できません',
+      validationResponseFactory: () =>
+        jsonResponse(
+          { error: { code: 'FORBIDDEN_PROJECT' } },
+          { ok: false, status: 403 },
+        ),
+    },
+    {
+      mode: 'not_found',
+      expectedMessage: 'この発言は見つからないため追加できません',
+      validationResponseFactory: () =>
+        jsonResponse(
+          { error: { code: 'NOT_FOUND' } },
+          { ok: false, status: 404 },
+        ),
+    },
+    {
+      mode: 'generic error',
+      expectedMessage: '発言の参照状態確認に失敗したため追加できません',
+      validationResponseFactory: () =>
+        jsonResponse(
+          { error: { code: 'INTERNAL_ERROR' } },
+          { ok: false, status: 500 },
+        ),
+    },
+  ] as const)(
+    'chat_message の手動追加で $mode エラー時は保存せずにエラーを表示する',
+    async ({ expectedMessage, validationResponseFactory }) => {
+      vi.mocked(apiResponse).mockImplementation(async (path: string) => {
+        if (path === '/chat-messages/msg-1') {
+          return jsonResponse({ id: 'msg-1' });
+        }
+        if (path === '/chat-messages/msg-2') {
+          return validationResponseFactory!();
+        }
+        if (path === '/annotations/project/project-1') {
+          return makeLoadResponse();
+        }
+        throw new Error(`Unhandled api path: ${path}`);
+      });
+
+      renderCard();
+
+      await waitFor(() =>
+        expect(screen.getByDisplayValue('initial note')).toBeInTheDocument(),
+      );
+
+      const manualRefInput = screen.getByLabelText(
+        '手動追加（deep link / kind:id）',
+      );
+      fireEvent.change(manualRefInput, {
+        target: { value: 'chat_message:msg-2' },
+      });
+      const manualRefControls = manualRefInput.parentElement?.parentElement;
+      expect(manualRefControls).not.toBeNull();
+      fireEvent.click(
+        within(manualRefControls as HTMLElement).getByRole('button', {
+          name: '追加',
+        }),
+      );
+
+      await waitFor(() =>
+        expect(screen.getByText(expectedMessage)).toBeInTheDocument(),
+      );
+      expect(screen.queryByText('chat_message:msg-2')).not.toBeInTheDocument();
+      expect(
+        vi
+          .mocked(apiResponse)
+          .mock.calls.filter(
+            ([path, init]) =>
+              path === '/annotations/project/project-1' &&
+              init?.method === 'PATCH',
+          ),
+      ).toHaveLength(0);
+    },
+  );
+
   it('requires an admin reason and sends it on retry', async () => {
     const savedResponse = jsonResponse({
       targetKind: 'project',
