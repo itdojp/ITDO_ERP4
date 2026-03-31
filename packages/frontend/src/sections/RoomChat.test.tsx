@@ -4,6 +4,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from '@testing-library/react';
 import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -25,6 +26,14 @@ type ChatMessage = {
   userId: string;
   body: string;
   createdAt: string;
+};
+
+type ChatSearchItem = {
+  id: string;
+  userId: string;
+  body: string;
+  createdAt: string;
+  room: ChatRoom;
 };
 
 const { api, apiResponse, getAuthState } = vi.hoisted(() => ({
@@ -127,6 +136,17 @@ function makeMessage(overrides: Partial<ChatMessage>): ChatMessage {
   };
 }
 
+function makeSearchItem(overrides: Partial<ChatSearchItem>): ChatSearchItem {
+  return {
+    id: 'search-1',
+    userId: 'alice',
+    body: 'search result',
+    createdAt: '2026-03-28T00:00:00.000Z',
+    room: makeRoom({ id: 'room-1' }),
+    ...overrides,
+  };
+}
+
 function installApiMock(options: {
   rooms: ChatRoom[];
   messagesByRoom: Record<string, ChatMessage[]>;
@@ -145,8 +165,29 @@ function installApiMock(options: {
   mentionCandidatesByRoom?: Record<string, unknown>;
   failOnSearch?: string[];
   searchResultsByQuery?: Record<string, ChatMessage[]>;
+  failOnGlobalSearch?: string[];
+  globalSearchResultsByQuery?: Record<string, ChatSearchItem[]>;
+  notificationSettingPatchBodies?: Array<{
+    roomId: string;
+    body: {
+      notifyAllPosts?: boolean;
+      notifyMentions?: boolean;
+      muteUntil?: string | null;
+    };
+  }>;
+  notificationSettingsSaveResponseByRoom?: Record<
+    string,
+    {
+      notifyAllPosts?: boolean;
+      notifyMentions?: boolean;
+      muteUntil?: string | null;
+    }
+  >;
+  failOnNotificationSave?: string[];
 }) {
   const failOnSearch = new Set(options.failOnSearch ?? []);
+  const failOnGlobalSearch = new Set(options.failOnGlobalSearch ?? []);
+  const failOnNotificationSave = new Set(options.failOnNotificationSave ?? []);
 
   vi.mocked(api).mockImplementation(
     async (path: string, init?: RequestInit) => {
@@ -155,6 +196,18 @@ function installApiMock(options: {
 
       if (url.pathname === '/chat-rooms' && method === 'GET') {
         return { items: options.rooms } as never;
+      }
+
+      if (url.pathname === '/chat-messages/search' && method === 'GET') {
+        const query = url.searchParams.get('q') ?? '';
+        const before = url.searchParams.get('before') ?? '';
+        if (failOnGlobalSearch.has(`${query}|${before}`)) {
+          throw new Error(`global search failed for query: ${query}`);
+        }
+        return {
+          items:
+            options.globalSearchResultsByQuery?.[`${query}|${before}`] ?? [],
+        } as never;
       }
 
       const roomMatch = url.pathname.match(
@@ -168,6 +221,19 @@ function installApiMock(options: {
             notifyMentions: true,
             muteUntil: null,
           }) as never;
+        }
+        if (resource === 'notification-setting' && method === 'PATCH') {
+          const body = JSON.parse(String(init?.body ?? '{}')) as {
+            notifyAllPosts?: boolean;
+            notifyMentions?: boolean;
+            muteUntil?: string | null;
+          };
+          options.notificationSettingPatchBodies?.push({ roomId, body });
+          if (failOnNotificationSave.has(roomId)) {
+            throw new Error(`notification save failed for room: ${roomId}`);
+          }
+          return (options.notificationSettingsSaveResponseByRoom?.[roomId] ??
+            body) as never;
         }
         if (resource === 'mention-candidates' && method === 'GET') {
           return (options.mentionCandidatesByRoom?.[roomId] ?? {}) as never;
@@ -404,5 +470,182 @@ describe('RoomChat', () => {
     expect(
       await screen.findByText('メッセージの取得に失敗しました'),
     ).toBeInTheDocument();
+  });
+
+  it('saves notification settings and keeps local changes on save failure', async () => {
+    const notificationSettingPatchBodies: Array<{
+      roomId: string;
+      body: {
+        notifyAllPosts?: boolean;
+        notifyMentions?: boolean;
+        muteUntil?: string | null;
+      };
+    }> = [];
+
+    installApiMock({
+      rooms: [makeRoom({ id: 'room-1' })],
+      messagesByRoom: {
+        'room-1': [],
+      },
+      notificationSettingsByRoom: {
+        'room-1': {
+          notifyAllPosts: false,
+          notifyMentions: true,
+          muteUntil: '2026-03-28T01:00:00.000Z',
+        },
+      },
+      notificationSettingPatchBodies,
+      failOnNotificationSave: ['room-1'],
+    });
+
+    render(<RoomChat />);
+
+    const notifyAllPosts = await screen.findByRole('checkbox', {
+      name: '全投稿通知',
+    });
+    const notifyMentions = screen.getByRole('checkbox', {
+      name: 'メンション通知',
+    });
+    const muteUntil = screen.getByLabelText('ミュート期限（任意）');
+
+    expect(notifyAllPosts).not.toBeChecked();
+    expect(notifyMentions).toBeChecked();
+    expect(muteUntil).not.toHaveValue('');
+
+    fireEvent.click(notifyAllPosts);
+    fireEvent.click(notifyMentions);
+    fireEvent.click(screen.getByRole('button', { name: '解除' }));
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+
+    expect(
+      await screen.findByText('通知設定の保存に失敗しました'),
+    ).toBeInTheDocument();
+    expect(notificationSettingPatchBodies).toEqual([
+      {
+        roomId: 'room-1',
+        body: {
+          notifyAllPosts: true,
+          notifyMentions: false,
+          muteUntil: null,
+        },
+      },
+    ]);
+    expect(notifyAllPosts).toBeChecked();
+    expect(notifyMentions).not.toBeChecked();
+    expect(muteUntil).toHaveValue('');
+  });
+
+  it('loads more global search results, opens a result, and clears prior results on failure', async () => {
+    const firstPage = Array.from({ length: 50 }, (_, index) =>
+      makeSearchItem({
+        id: `search-${index + 1}`,
+        body: `beta result ${index + 1}`,
+        createdAt: `2026-03-28T00:${String(49 - index).padStart(2, '0')}:00.000Z`,
+        room: makeRoom({
+          id: 'room-1',
+          projectCode: 'PRJ-1',
+          projectName: 'Alpha',
+        }),
+      }),
+    );
+    const secondPageItem = makeSearchItem({
+      id: 'search-51',
+      body: 'beta page2 result',
+      createdAt: '2026-03-27T23:59:00.000Z',
+      room: makeRoom({
+        id: 'room-2',
+        type: 'dm',
+        name: 'dm:demo-user:partner-user',
+        allowExternalIntegrations: false,
+      }),
+    });
+
+    installApiMock({
+      rooms: [
+        makeRoom({
+          id: 'room-1',
+          projectCode: 'PRJ-1',
+          projectName: 'Alpha',
+        }),
+        makeRoom({
+          id: 'room-2',
+          type: 'dm',
+          name: 'dm:demo-user:partner-user',
+          allowExternalIntegrations: false,
+        }),
+      ],
+      messagesByRoom: {
+        'room-1': [
+          makeMessage({
+            id: 'message-1',
+            roomId: 'room-1',
+            body: 'room-1 first message',
+            userId: 'alice',
+          }),
+        ],
+        'room-2': [
+          makeMessage({
+            id: 'message-2',
+            roomId: 'room-2',
+            body: 'room-2 first message',
+            userId: 'bob',
+          }),
+        ],
+      },
+      globalSearchResultsByQuery: {
+        'beta|': firstPage,
+        [`beta|${firstPage[firstPage.length - 1]?.createdAt ?? ''}`]: [
+          secondPageItem,
+        ],
+      },
+      failOnGlobalSearch: ['error|'],
+    });
+
+    render(<RoomChat />);
+
+    expect(await screen.findByText('room-1 first message')).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText('横断検索（本文）'), {
+      target: { value: 'beta' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '検索' }));
+
+    expect(await screen.findByText('beta result 1')).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'さらに読み込む' }),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'さらに読み込む' }));
+
+    const secondPageCard = await screen.findByText('beta page2 result');
+    let secondPageContainer: HTMLElement | null = secondPageCard.parentElement;
+    while (
+      secondPageContainer &&
+      !within(secondPageContainer).queryByRole('button', { name: '開く' })
+    ) {
+      secondPageContainer = secondPageContainer.parentElement;
+    }
+    if (!secondPageContainer) {
+      throw new Error('search result container not found');
+    }
+    fireEvent.click(
+      within(secondPageContainer).getByRole('button', { name: '開く' }),
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole('combobox', { name: 'ルーム' })).toHaveValue(
+        'room-2',
+      );
+    });
+    expect(await screen.findByText('room-2 first message')).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText('横断検索（本文）'), {
+      target: { value: 'error' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '検索' }));
+
+    expect(await screen.findByText('検索に失敗しました')).toBeInTheDocument();
+    expect(screen.queryByText('beta result 1')).not.toBeInTheDocument();
+    expect(screen.queryByText('beta page2 result')).not.toBeInTheDocument();
   });
 });
