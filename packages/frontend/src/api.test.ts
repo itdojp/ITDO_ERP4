@@ -286,4 +286,117 @@ describe('api helpers', () => {
     expect(dispatchSpy.mock.calls[0]?.[0]?.type).toBe('erp4:auth-updated');
     expect(dispatchSpy.mock.calls[1]?.[0]?.type).toBe('erp4:auth-updated');
   });
+
+  it('falls back to relative paths and warns once when VITE_API_BASE is invalid', async () => {
+    const warnSpy = vi
+      .spyOn(console, 'warn')
+      .mockImplementation(() => undefined);
+
+    const { buildApiUrl } = await loadApi({
+      apiBase: 'api.example.test/erp4',
+      authMode: 'jwt_bff',
+    });
+
+    expect(buildApiUrl('/projects')).toBe('/projects');
+    expect(buildApiUrl('/auth/session')).toBe('/auth/session');
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(warnSpy).toHaveBeenCalledWith(
+      '[api] VITE_API_BASE should include http:// or https://',
+    );
+  });
+
+  it('overrides the stored bearer token in apiWithAuth', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ ok: true }));
+    vi.stubGlobal('fetch', fetchMock);
+    seedAuthState({
+      userId: 'u-101',
+      roles: ['manager'],
+      projectIds: ['p-101'],
+      token: 'stored-token',
+    });
+
+    const { apiWithAuth } = await loadApi({ authMode: 'header' });
+
+    await apiWithAuth('/projects', 'override-token', {
+      headers: { 'x-request-id': 'req-override' },
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith('/projects', {
+      credentials: undefined,
+      headers: {
+        'x-user-id': 'u-101',
+        'x-roles': 'manager',
+        'x-project-ids': 'p-101',
+        Authorization: 'Bearer override-token',
+        'x-request-id': 'req-override',
+      },
+    });
+  });
+
+  it('keeps the current auth state in header mode when /me does not return a userId', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse({
+        user: {
+          roles: ['user'],
+          projectIds: ['p-404'],
+        },
+      }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const dispatchSpy = vi.spyOn(window, 'dispatchEvent');
+    seedAuthState({
+      userId: 'u-keep',
+      roles: ['admin'],
+      projectIds: ['p-keep'],
+      token: 'keep-token',
+    });
+
+    const { refreshAuthStateFromServer } = await loadApi({
+      apiBase: 'https://api.example.test/erp4',
+      authMode: 'header',
+    });
+
+    const next = await refreshAuthStateFromServer();
+
+    expect(next).toEqual({
+      userId: 'u-keep',
+      roles: ['admin'],
+      projectIds: ['p-keep'],
+      token: 'keep-token',
+    });
+    expect(
+      JSON.parse(window.localStorage.getItem(AUTH_STORAGE_KEY) ?? '{}'),
+    ).toEqual(next);
+    expect(dispatchSpy).not.toHaveBeenCalled();
+  });
+
+  it('does not prefetch csrf or set a json content type for FormData on /auth/csrf', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(jsonResponse({ csrfToken: 'csrf-direct' }));
+    vi.stubGlobal('fetch', fetchMock);
+    const body = new FormData();
+    body.set('reason', 'manual-refresh');
+
+    const { apiResponse } = await loadApi({
+      apiBase: 'https://api.example.test/erp4',
+      authMode: 'jwt_bff',
+    });
+
+    await apiResponse('/auth/csrf', {
+      method: 'POST',
+      body,
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://api.example.test/erp4/auth/csrf',
+      {
+        method: 'POST',
+        body,
+        credentials: 'include',
+        headers: {},
+      },
+    );
+  });
 });
