@@ -342,12 +342,9 @@ describe('AdminJobs', () => {
     );
 
     expect(
-      screen.getAllByText('limit は 1-500 で入力してください').length,
+      screen.queryAllByText('limit は 1-500 で入力してください').length,
     ).toBeGreaterThan(0);
-    expect(api).not.toHaveBeenCalledWith(
-      '/jobs/chat-ack-reminders/run',
-      expect.anything(),
-    );
+    expect(api).not.toHaveBeenCalled();
   });
 
   it('blocks acl alerts when limit is out of range', () => {
@@ -361,8 +358,8 @@ describe('AdminJobs', () => {
     );
 
     expect(
-      screen.getAllByText('limit は 1-500 で入力してください').length,
-    ).toBeGreaterThan(0);
+      screen.getByText('limit は 1-500 で入力してください'),
+    ).toBeInTheDocument();
     expect(api).not.toHaveBeenCalled();
   });
 
