@@ -548,4 +548,91 @@ describe('AdminSettings', () => {
       );
     });
   });
+
+  it('shows system_admin-only guidance when the current user lacks the role', async () => {
+    vi.mocked(getAuthState).mockReturnValue({ roles: ['member'] });
+
+    render(<AdminSettings />);
+
+    expect(
+      await screen.findByText(
+        'この設定は system_admin ロールを持つユーザーのみが操作できます。',
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it('keeps integration runs when metrics loading fails', async () => {
+    const consoleErrorSpy = vi
+      .spyOn(console, 'error')
+      .mockImplementation(() => undefined);
+
+    vi.mocked(api).mockImplementation((path: string) => {
+      if (path === '/integration-runs/metrics?settingId=setting-1&days=30') {
+        return Promise.reject(new Error('metrics failed'));
+      }
+      return mockApiRoute(path);
+    });
+
+    try {
+      render(<AdminSettings />);
+
+      await screen.findByTestId('integration-settings-card');
+
+      fireEvent.click(screen.getByTestId('integration-show-runs'));
+
+      await waitFor(() => {
+        expect(api).toHaveBeenCalledWith(
+          '/integration-runs?settingId=setting-1&limit=50',
+        );
+        expect(api).toHaveBeenCalledWith(
+          '/integration-runs/metrics?settingId=setting-1&days=30',
+        );
+      });
+
+      expect(screen.getByTestId('integration-runs-count')).toHaveTextContent(
+        '1',
+      );
+      expect(
+        screen.getByTestId('integration-metrics-present'),
+      ).toHaveTextContent('no');
+    } finally {
+      consoleErrorSpy.mockRestore();
+    }
+  });
+
+  it('clears report deliveries when delivery loading fails', async () => {
+    const consoleErrorSpy = vi
+      .spyOn(console, 'error')
+      .mockImplementation(() => undefined);
+
+    vi.mocked(api).mockImplementation((path: string) => {
+      if (path === '/report-deliveries?subscriptionId=sub-1') {
+        return Promise.reject(new Error('deliveries failed'));
+      }
+      return mockApiRoute(path);
+    });
+
+    try {
+      render(<AdminSettings />);
+
+      await screen.findByTestId('report-subscriptions-card');
+
+      fireEvent.click(screen.getByTestId('report-show-deliveries'));
+
+      await waitFor(() => {
+        expect(api).toHaveBeenCalledWith(
+          '/report-deliveries?subscriptionId=sub-1',
+        );
+      });
+
+      expect(screen.getByTestId('report-delivery-filter')).toHaveTextContent(
+        'sub-1',
+      );
+      expect(screen.getByTestId('report-deliveries-count')).toHaveTextContent(
+        '0',
+      );
+    } finally {
+      consoleErrorSpy.mockRestore();
+    }
+  });
 });
