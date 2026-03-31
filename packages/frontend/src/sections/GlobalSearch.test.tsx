@@ -19,9 +19,55 @@ vi.mock('../utils/deepLink', () => ({ navigateToOpen }));
 
 import { GlobalSearch } from './GlobalSearch';
 
-afterEach(() => {
-  cleanup();
-});
+const successfulErpResult = {
+  query: 'AB',
+  projects: [{ id: 'pj-1', code: 'PJ-001', name: 'Alpha', status: 'active' }],
+  invoices: [
+    {
+      id: 'inv-1',
+      invoiceNo: 'INV-001',
+      status: 'draft',
+      totalAmount: 120000,
+      currency: 'JPY',
+      projectId: 'pj-1',
+      project: { code: 'PJ-001', name: 'Alpha' },
+    },
+  ],
+  estimates: [
+    {
+      id: 'est-1',
+      estimateNo: null,
+      status: 'sent',
+      totalAmount: 50000,
+      currency: 'JPY',
+      projectId: 'pj-2',
+      notes: 'note '.repeat(50),
+      project: null,
+    },
+  ],
+  expenses: [],
+  timeEntries: [],
+  purchaseOrders: [],
+  vendorQuotes: [],
+  vendorInvoices: [],
+};
+
+const successfulChatResult = {
+  items: [
+    {
+      id: 'msg-1',
+      roomId: 'room-1',
+      userId: 'user-b',
+      body: 'message body '.repeat(20),
+      createdAt: '2026-03-26T10:00:00.000Z',
+      room: {
+        id: 'room-1',
+        type: 'dm',
+        name: 'dm:user-a:user-b',
+      },
+    },
+  ],
+};
 
 beforeEach(() => {
   vi.resetAllMocks();
@@ -30,6 +76,10 @@ beforeEach(() => {
     userId: 'user-a',
     roles: ['member'],
   });
+});
+
+afterEach(() => {
+  cleanup();
 });
 
 describe('GlobalSearch', () => {
@@ -49,56 +99,8 @@ describe('GlobalSearch', () => {
 
   it('loads ERP and chat results and opens the selected chat room', async () => {
     vi.mocked(api)
-      .mockResolvedValueOnce({
-        query: 'AB',
-        projects: [
-          { id: 'pj-1', code: 'PJ-001', name: 'Alpha', status: 'active' },
-        ],
-        invoices: [
-          {
-            id: 'inv-1',
-            invoiceNo: 'INV-001',
-            status: 'draft',
-            totalAmount: 120000,
-            currency: 'JPY',
-            projectId: 'pj-1',
-            project: { code: 'PJ-001', name: 'Alpha' },
-          },
-        ],
-        estimates: [
-          {
-            id: 'est-1',
-            estimateNo: null,
-            status: 'sent',
-            totalAmount: 50000,
-            currency: 'JPY',
-            projectId: 'pj-2',
-            notes: 'note '.repeat(50),
-            project: null,
-          },
-        ],
-        expenses: [],
-        timeEntries: [],
-        purchaseOrders: [],
-        vendorQuotes: [],
-        vendorInvoices: [],
-      })
-      .mockResolvedValueOnce({
-        items: [
-          {
-            id: 'msg-1',
-            roomId: 'room-1',
-            userId: 'user-b',
-            body: 'message body '.repeat(20),
-            createdAt: '2026-03-26T10:00:00.000Z',
-            room: {
-              id: 'room-1',
-              type: 'dm',
-              name: 'dm:user-a:user-b',
-            },
-          },
-        ],
-      });
+      .mockResolvedValueOnce(successfulErpResult)
+      .mockResolvedValueOnce(successfulChatResult);
 
     render(<GlobalSearch />);
 
@@ -115,6 +117,7 @@ describe('GlobalSearch', () => {
     expect(screen.getByText('Projects 1')).toBeInTheDocument();
     expect(screen.getByText('Chat 1')).toBeInTheDocument();
     expect(screen.getByText('user-b')).toBeInTheDocument();
+    expect(screen.queryByText('dm:user-a:user-b')).not.toBeInTheDocument();
     expect(screen.getByText('pj-2')).toBeInTheDocument();
 
     expect(vi.mocked(api)).toHaveBeenNthCalledWith(1, '/search?q=AB&limit=12');
@@ -130,22 +133,10 @@ describe('GlobalSearch', () => {
     });
   });
 
-  it('clears results and message', async () => {
+  it('clears the query, message, and existing results', async () => {
     vi.mocked(api)
-      .mockResolvedValueOnce({
-        query: 'AB',
-        projects: [
-          { id: 'pj-1', code: 'PJ-001', name: 'Alpha', status: 'active' },
-        ],
-        invoices: [],
-        estimates: [],
-        expenses: [],
-        timeEntries: [],
-        purchaseOrders: [],
-        vendorQuotes: [],
-        vendorInvoices: [],
-      })
-      .mockResolvedValueOnce({ items: [] });
+      .mockResolvedValueOnce(successfulErpResult)
+      .mockResolvedValueOnce(successfulChatResult);
 
     render(<GlobalSearch />);
 
@@ -155,18 +146,22 @@ describe('GlobalSearch', () => {
     fireEvent.click(screen.getByRole('button', { name: '検索' }));
 
     await screen.findByText('PJ-001 / Alpha');
+    expect(screen.getByText('Projects 1')).toBeInTheDocument();
+    expect(screen.getByText('Chat 1')).toBeInTheDocument();
+
     fireEvent.click(screen.getByRole('button', { name: 'クリア' }));
 
-    await waitFor(() => {
-      expect(screen.getByLabelText('検索語')).toHaveValue('');
-    });
+    expect(screen.getByLabelText('検索語')).toHaveValue('');
     expect(screen.queryByText('PJ-001 / Alpha')).not.toBeInTheDocument();
     expect(screen.getByText('Projects 0')).toBeInTheDocument();
     expect(screen.getByText('Chat 0')).toBeInTheDocument();
+    expect(screen.queryByText('検索に失敗しました')).not.toBeInTheDocument();
   });
 
-  it('shows failure message when ERP search fails', async () => {
+  it('clears existing results when ERP search fails after a successful search', async () => {
     vi.mocked(api)
+      .mockResolvedValueOnce(successfulErpResult)
+      .mockResolvedValueOnce(successfulChatResult)
       .mockRejectedValueOnce(new Error('boom'))
       .mockResolvedValueOnce({ items: [] });
 
@@ -177,24 +172,23 @@ describe('GlobalSearch', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: '検索' }));
 
+    await screen.findByText('PJ-001 / Alpha');
+    expect(screen.getByText('Projects 1')).toBeInTheDocument();
+    expect(screen.getByText('Chat 1')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: '検索' }));
+
     expect(await screen.findByText('検索に失敗しました')).toBeInTheDocument();
+    expect(screen.queryByText('PJ-001 / Alpha')).not.toBeInTheDocument();
     expect(screen.getByText('Projects 0')).toBeInTheDocument();
     expect(screen.getByText('Chat 0')).toBeInTheDocument();
   });
 
-  it('shows failure message when chat search fails', async () => {
+  it('clears existing results when chat search fails after a successful search', async () => {
     vi.mocked(api)
-      .mockResolvedValueOnce({
-        query: 'AB',
-        projects: [],
-        invoices: [],
-        estimates: [],
-        expenses: [],
-        timeEntries: [],
-        purchaseOrders: [],
-        vendorQuotes: [],
-        vendorInvoices: [],
-      })
+      .mockResolvedValueOnce(successfulErpResult)
+      .mockResolvedValueOnce(successfulChatResult)
+      .mockResolvedValueOnce(successfulErpResult)
       .mockRejectedValueOnce(new Error('boom'));
 
     render(<GlobalSearch />);
@@ -204,7 +198,14 @@ describe('GlobalSearch', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: '検索' }));
 
+    await screen.findByText('PJ-001 / Alpha');
+    expect(screen.getByText('Projects 1')).toBeInTheDocument();
+    expect(screen.getByText('Chat 1')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: '検索' }));
+
     expect(await screen.findByText('検索に失敗しました')).toBeInTheDocument();
+    expect(screen.queryByText('PJ-001 / Alpha')).not.toBeInTheDocument();
     expect(screen.getByText('Projects 0')).toBeInTheDocument();
     expect(screen.getByText('Chat 0')).toBeInTheDocument();
   });
