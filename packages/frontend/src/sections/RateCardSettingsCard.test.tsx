@@ -84,7 +84,9 @@ function setupApi(options?: {
   projectItems?: ProjectOption[];
   rateCardResponses?: Array<RateCard[] | Error>;
   createResult?: Record<string, unknown>;
+  createError?: Error;
   disableResult?: Record<string, unknown>;
+  disableError?: Error;
 }) {
   const calls: Array<{ path: string; options?: RequestInit }> = [];
   const rateCardResponses = options?.rateCardResponses ?? [[]];
@@ -110,6 +112,9 @@ function setupApi(options?: {
     }
 
     if (path === '/rate-cards' && requestOptions.method === 'POST') {
+      if (options?.createError) {
+        throw options.createError;
+      }
       return options?.createResult ?? { id: 'rate-card-created' };
     }
 
@@ -117,6 +122,9 @@ function setupApi(options?: {
       path === '/rate-cards/rate-card-1/disable' &&
       requestOptions.method === 'POST'
     ) {
+      if (options?.disableError) {
+        throw options.disableError;
+      }
       return options?.disableResult ?? { ok: true };
     }
 
@@ -262,6 +270,108 @@ describe('RateCardSettingsCard', () => {
     expect(calls.map((call) => call.path)).toContain(
       '/rate-cards?includeGlobal=1&active=1',
     );
+  });
+
+  it('applies all filters to the rate card query', async () => {
+    const calls = setupApi({ rateCardResponses: [[rateCardItem]] });
+
+    render(<RateCardSettingsCard />);
+
+    await waitFor(() => {
+      expect(
+        screen.getAllByRole('option', { name: 'PRJ-2 / Project Two' }),
+      ).toHaveLength(2);
+    });
+
+    fireEvent.change(screen.getByLabelText('案件フィルタ'), {
+      target: { value: 'project-2' },
+    });
+    fireEvent.click(screen.getByLabelText('global を含む'));
+    fireEvent.click(screen.getByLabelText('有効のみ'));
+    fireEvent.change(screen.getByLabelText('workTypeフィルタ'), {
+      target: { value: '設計' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '取得' }));
+
+    await waitFor(() => {
+      expect(calls.map((call) => call.path)).toContain(
+        '/rate-cards?projectId=project-2&includeGlobal=0&active=0&workType=%E8%A8%AD%E8%A8%88',
+      );
+    });
+  });
+
+  it('falls back to the raw project id when the project option is missing', async () => {
+    setupApi({
+      rateCardResponses: [[{ ...rateCardItem, projectId: 'project-missing' }]],
+    });
+
+    render(<RateCardSettingsCard />);
+    fireEvent.click(screen.getByRole('button', { name: '取得' }));
+
+    await waitFor(() => {
+      const list = screen.getByRole('list');
+      expect(within(list).getByText('project-missing')).toBeInTheDocument();
+    });
+  });
+
+  it('closes the disable dialog without posting when the user cancels', async () => {
+    const calls = setupApi({ rateCardResponses: [[rateCardItem]] });
+
+    render(<RateCardSettingsCard />);
+    fireEvent.click(screen.getByRole('button', { name: '取得' }));
+
+    const list = await screen.findByRole('list');
+    fireEvent.click(within(list).getByRole('button', { name: '無効化' }));
+
+    const dialog = screen.getByText('この単価を無効化しますか？')
+      .parentElement as HTMLElement;
+    fireEvent.click(within(dialog).getByRole('button', { name: 'キャンセル' }));
+
+    expect(
+      screen.queryByText('この単価を無効化しますか？'),
+    ).not.toBeInTheDocument();
+    expect(calls).not.toContainEqual(
+      expect.objectContaining({
+        path: '/rate-cards/rate-card-1/disable',
+      }),
+    );
+  });
+
+  it('shows a disable failure message and keeps the item when disable fails', async () => {
+    const consoleErrorSpy = vi
+      .spyOn(console, 'error')
+      .mockImplementation(() => {});
+    const calls = setupApi({
+      rateCardResponses: [[rateCardItem]],
+      disableError: new Error('boom'),
+    });
+
+    try {
+      render(<RateCardSettingsCard />);
+      fireEvent.click(screen.getByRole('button', { name: '取得' }));
+
+      const list = await screen.findByRole('list');
+      fireEvent.click(within(list).getByRole('button', { name: '無効化' }));
+
+      const dialog = screen.getByText('この単価を無効化しますか？')
+        .parentElement as HTMLElement;
+      fireEvent.click(within(dialog).getByRole('button', { name: '無効化' }));
+
+      await waitFor(() => {
+        expect(screen.getByText('無効化に失敗しました')).toBeInTheDocument();
+        expect(calls).toContainEqual(
+          expect.objectContaining({
+            path: '/rate-cards/rate-card-1/disable',
+            options: expect.objectContaining({ method: 'POST' }),
+          }),
+        );
+        expect(
+          within(screen.getByRole('list')).getByText('PRJ-1 / Project One'),
+        ).toBeInTheDocument();
+      });
+    } finally {
+      consoleErrorSpy.mockRestore();
+    }
   });
 
   it('opens disable confirmation and disables the selected item', async () => {
