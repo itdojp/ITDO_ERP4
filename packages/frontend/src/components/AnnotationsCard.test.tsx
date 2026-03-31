@@ -377,6 +377,10 @@ describe('AnnotationsCard', () => {
       await waitFor(() =>
         expect(screen.getByText(expectedMessage)).toBeInTheDocument(),
       );
+      expect(manualRefInput).toHaveValue('chat_message:msg-2');
+      expect(
+        screen.queryByText('内部参照を追加しました'),
+      ).not.toBeInTheDocument();
       expect(screen.queryByText('chat_message:msg-2')).not.toBeInTheDocument();
       expect(
         vi
