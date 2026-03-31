@@ -284,6 +284,86 @@ describe('AdminJobs', () => {
     expect(api).not.toHaveBeenCalled();
   });
 
+  it('runs leave upcoming job with target date and dryRun', async () => {
+    vi.mocked(api).mockResolvedValueOnce({ notified: 2 });
+
+    render(<AdminJobs />);
+
+    fireEvent.click(
+      screen.getByRole('checkbox', { name: '休暇予定通知 dryRun' }),
+    );
+    fireEvent.change(screen.getByPlaceholderText('休暇対象日 YYYY-MM-DD'), {
+      target: { value: '2026-04-01' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '実行:leaveUpcoming' }));
+
+    await waitFor(() => {
+      expect(api).toHaveBeenCalledWith(
+        '/jobs/leave-upcoming/run',
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({
+            targetDate: '2026-04-01',
+            dryRun: true,
+          }),
+        }),
+      );
+    });
+  });
+
+  it('runs chat ack reminders without limit when the input is blank', async () => {
+    vi.mocked(api).mockResolvedValueOnce({ reminded: 1 });
+
+    render(<AdminJobs />);
+
+    fireEvent.change(screen.getByLabelText('ack limit'), {
+      target: { value: '' },
+    });
+    fireEvent.click(
+      screen.getByRole('button', { name: '実行:chatAckReminders' }),
+    );
+
+    await waitFor(() => {
+      expect(api).toHaveBeenCalledWith('/jobs/chat-ack-reminders/run', {
+        method: 'POST',
+        body: JSON.stringify({ dryRun: false }),
+      });
+    });
+  });
+
+  it('blocks acl alerts when limit is out of range', () => {
+    render(<AdminJobs />);
+
+    fireEvent.change(screen.getByLabelText('acl limit'), {
+      target: { value: '501' },
+    });
+    fireEvent.click(
+      screen.getByRole('button', { name: '実行:chatRoomAclAlerts' }),
+    );
+
+    expect(
+      screen.getByText('limit は 1-500 で入力してください'),
+    ).toBeInTheDocument();
+    expect(api).not.toHaveBeenCalled();
+  });
+
+  it('shows failed state and detail when job execution fails', async () => {
+    vi.mocked(api).mockRejectedValueOnce(new Error('boom'));
+
+    render(<AdminJobs />);
+
+    fireEvent.click(screen.getByRole('button', { name: '実行:alerts' }));
+
+    await screen.findByText('ジョブ実行に失敗しました');
+    expect(screen.getByText('failed')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: '詳細:alerts' }));
+    expect(screen.getByText('ジョブ結果: アラート計算')).toBeInTheDocument();
+    expect(
+      screen.getAllByText('ジョブ実行に失敗しました').length,
+    ).toBeGreaterThan(0);
+  });
+
   it('shows empty detail state for never-run jobs', () => {
     render(<AdminJobs />);
 
