@@ -214,6 +214,148 @@ describe('ChatEvidencePicker', () => {
     expect(apiResponse).toHaveBeenCalledTimes(1);
   });
 
+  it('omits optional actions when insert and copy callbacks are not provided', async () => {
+    vi.mocked(apiResponse).mockResolvedValueOnce(
+      jsonResponse({
+        items: [
+          {
+            kind: 'chat_message',
+            id: candidate.id,
+            label: candidate.label,
+            url: '',
+            projectLabel: candidate.projectLabel,
+            meta: {
+              roomId: candidate.roomId,
+              roomName: candidate.roomName,
+              userId: candidate.userId,
+              createdAt: candidate.createdAt,
+              excerpt: candidate.excerpt,
+            },
+          },
+        ],
+      }),
+    );
+
+    renderPicker({
+      onInsertCandidate: undefined,
+      onCopyCandidate: undefined,
+    });
+
+    fireEvent.change(screen.getByLabelText('キーワード'), {
+      target: { value: '仕様' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '検索' }));
+
+    await waitFor(() =>
+      expect(screen.getByText('案件A / ルームA')).toBeInTheDocument(),
+    );
+
+    expect(screen.getByRole('button', { name: '追加' })).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'メモへ挿入' }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'URLコピー' }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Markdownコピー' }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('keeps internal hash urls and normalizes bare hash urls', async () => {
+    const onAddCandidate = vi.fn();
+
+    vi.mocked(apiResponse).mockResolvedValueOnce(
+      jsonResponse({
+        items: [
+          {
+            kind: 'chat_message',
+            id: 'chat-keep',
+            label: 'chat_message:chat-keep',
+            url: '/#/open?kind=chat_message&id=chat-keep',
+            projectLabel: '案件A',
+            meta: {
+              roomId: 'room-keep',
+              roomName: 'ルームkeep',
+              userId: 'user-keep',
+              createdAt: '2026-03-31T08:30:00.000Z',
+              excerpt: '内部リンク維持',
+            },
+          },
+          {
+            kind: 'chat_message',
+            id: 'chat-hash',
+            label: 'chat_message:chat-hash',
+            url: '#/open?kind=chat_message&id=chat-hash',
+            projectLabel: '案件B',
+            meta: {
+              roomId: 'room-hash',
+              roomName: 'ルームhash',
+              userId: 'user-hash',
+              createdAt: '2026-03-31T09:30:00.000Z',
+              excerpt: 'ハッシュリンク正規化',
+            },
+          },
+        ],
+      }),
+    );
+
+    renderPicker({
+      onAddCandidate,
+      onInsertCandidate: undefined,
+      onCopyCandidate: undefined,
+    });
+
+    fireEvent.change(screen.getByLabelText('キーワード'), {
+      target: { value: '内部' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '検索' }));
+
+    await waitFor(() =>
+      expect(screen.getByText('案件A / ルームkeep')).toBeInTheDocument(),
+    );
+
+    fireEvent.click(screen.getAllByRole('button', { name: '追加' })[0]);
+    fireEvent.click(screen.getAllByRole('button', { name: '追加' })[1]);
+
+    expect(onAddCandidate).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        id: 'chat-keep',
+        url: '/#/open?kind=chat_message&id=chat-keep',
+      }),
+    );
+    expect(onAddCandidate).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        id: 'chat-hash',
+        url: '/#/open?kind=chat_message&id=chat-hash',
+      }),
+    );
+  });
+
+  it('shows a generic error when the candidate request throws', async () => {
+    const consoleErrorSpy = vi
+      .spyOn(console, 'error')
+      .mockImplementation(() => undefined);
+    vi.mocked(apiResponse).mockRejectedValueOnce(new Error('network down'));
+
+    renderPicker();
+
+    fireEvent.change(screen.getByLabelText('キーワード'), {
+      target: { value: '仕様' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '検索' }));
+
+    await waitFor(() =>
+      expect(screen.getByText('候補の取得に失敗しました')).toBeInTheDocument(),
+    );
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      'Failed to load chat evidence candidates',
+      expect.any(Error),
+    );
+  });
+
   it('normalizes candidate fallback fields when metadata values are empty', async () => {
     const onAddCandidate = vi.fn();
 
