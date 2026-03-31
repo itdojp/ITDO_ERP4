@@ -331,6 +331,25 @@ describe('AdminJobs', () => {
     });
   });
 
+  it('blocks chat ack reminders when limit is invalid', () => {
+    render(<AdminJobs />);
+
+    fireEvent.change(screen.getByLabelText('ack limit'), {
+      target: { value: '0' },
+    });
+    fireEvent.click(
+      screen.getByRole('button', { name: '実行:chatAckReminders' }),
+    );
+
+    expect(
+      screen.getAllByText('limit は 1-500 で入力してください').length,
+    ).toBeGreaterThan(0);
+    expect(api).not.toHaveBeenCalledWith(
+      '/jobs/chat-ack-reminders/run',
+      expect.anything(),
+    );
+  });
+
   it('blocks acl alerts when limit is out of range', () => {
     render(<AdminJobs />);
 
@@ -342,9 +361,30 @@ describe('AdminJobs', () => {
     );
 
     expect(
-      screen.getByText('limit は 1-500 で入力してください'),
-    ).toBeInTheDocument();
+      screen.getAllByText('limit は 1-500 で入力してください').length,
+    ).toBeGreaterThan(0);
     expect(api).not.toHaveBeenCalled();
+  });
+
+  it('shows failed state and detail when notification delivery job fails', async () => {
+    vi.mocked(api).mockRejectedValueOnce(new Error('boom'));
+
+    render(<AdminJobs />);
+
+    fireEvent.click(
+      screen.getByRole('button', { name: '実行:notificationDeliveries' }),
+    );
+
+    await screen.findByText('ジョブ実行に失敗しました');
+    expect(screen.getByText('failed')).toBeInTheDocument();
+
+    fireEvent.click(
+      screen.getByRole('button', { name: '詳細:notificationDeliveries' }),
+    );
+    expect(screen.getByText('ジョブ結果: 通知配信')).toBeInTheDocument();
+    expect(
+      screen.getAllByText('ジョブ実行に失敗しました').length,
+    ).toBeGreaterThan(0);
   });
 
   it('shows failed state and detail when job execution fails', async () => {
