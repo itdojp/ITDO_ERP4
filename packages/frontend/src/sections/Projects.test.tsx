@@ -122,11 +122,12 @@ function createProjectsApiMock(options?: {
       }
       if (path === '/projects/project-1/recurring-template' && !init?.method) {
         return {
+          id: 'recurring-template-1',
           projectId: 'project-1',
           frequency: 'monthly',
-          currency: 'JPY',
-          generateInvoice: true,
-          enabled: true,
+          defaultCurrency: 'JPY',
+          shouldGenerateInvoice: true,
+          isActive: true,
         };
       }
       if (
