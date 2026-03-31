@@ -297,4 +297,161 @@ describe('App', () => {
       );
     });
   });
+
+  it('dispatches document send log deep links to the document send log section event', async () => {
+    const listener = vi.fn();
+    window.addEventListener(
+      'erp4_open_document_send_log',
+      listener as EventListener,
+    );
+    window.location.hash = '#/open?kind=document_send_log&id=LOG-100';
+
+    try {
+      render(<App />);
+
+      await waitFor(() => {
+        expect(listener).toHaveBeenCalledTimes(1);
+      });
+      expect(
+        screen.getByTestId('section-document-send-logs'),
+      ).toBeInTheDocument();
+      expect((listener.mock.calls[0]?.[0] as CustomEvent).detail).toEqual({
+        sendLogId: 'LOG-100',
+      });
+    } finally {
+      window.removeEventListener(
+        'erp4_open_document_send_log',
+        listener as EventListener,
+      );
+    }
+  });
+
+  it('dispatches audit log deep links to the audit log section event', async () => {
+    const listener = vi.fn();
+    window.addEventListener('erp4_open_audit_logs', listener as EventListener);
+    window.location.hash = '#/open?kind=audit_logs&id=LOG-200';
+
+    try {
+      render(<App />);
+
+      await waitFor(() => {
+        expect(listener).toHaveBeenCalledTimes(1);
+      });
+      expect(screen.getByTestId('section-audit-logs')).toBeInTheDocument();
+      expect((listener.mock.calls[0]?.[0] as CustomEvent).detail).toEqual({
+        sendLogId: 'LOG-200',
+      });
+    } finally {
+      window.removeEventListener(
+        'erp4_open_audit_logs',
+        listener as EventListener,
+      );
+    }
+  });
+
+  it('dispatches room and message events when chat_message deep link resolution succeeds', async () => {
+    const roomListener = vi.fn();
+    const messageListener = vi.fn();
+    vi.mocked(apiResponse).mockResolvedValue(
+      makeJsonResponse({
+        ok: true,
+        payload: {
+          roomId: 'room-10',
+          createdAt: '2026-03-31T10:00:00.000Z',
+          excerpt: '確認本文',
+          room: {
+            id: 'room-10',
+            type: 'project',
+            projectId: 'PJ-100',
+          },
+        },
+      }),
+    );
+    window.addEventListener(
+      'erp4_open_room_chat',
+      roomListener as EventListener,
+    );
+    window.addEventListener(
+      'erp4_open_chat_message',
+      messageListener as EventListener,
+    );
+    window.location.hash = '#/open?kind=chat_message&id=MSG-100';
+
+    try {
+      render(<App />);
+
+      await waitFor(() => {
+        expect(apiResponse).toHaveBeenCalledWith('/chat-messages/MSG-100');
+        expect(roomListener).toHaveBeenCalled();
+        expect(messageListener).toHaveBeenCalled();
+      });
+      expect(screen.getByTestId('section-room-chat')).toBeInTheDocument();
+      expect(
+        (
+          roomListener.mock.calls[roomListener.mock.calls.length - 1]?.[0] as
+            | CustomEvent
+            | undefined
+        )?.detail,
+      ).toEqual({
+        roomId: 'room-10',
+      });
+      expect(
+        (messageListener.mock.calls[0]?.[0] as CustomEvent).detail,
+      ).toEqual({
+        messageId: 'MSG-100',
+        roomId: 'room-10',
+        roomType: 'project',
+        projectId: 'PJ-100',
+        createdAt: '2026-03-31T10:00:00.000Z',
+        excerpt: '確認本文',
+      });
+    } finally {
+      window.removeEventListener(
+        'erp4_open_room_chat',
+        roomListener as EventListener,
+      );
+      window.removeEventListener(
+        'erp4_open_chat_message',
+        messageListener as EventListener,
+      );
+    }
+  });
+
+  it('shows a room membership warning for forbidden chat_message deep links', async () => {
+    vi.mocked(apiResponse).mockResolvedValue(
+      makeJsonResponse({
+        ok: false,
+        status: 403,
+        payload: { error: { code: 'FORBIDDEN_ROOM_MEMBER' } },
+      }),
+    );
+    window.location.hash = '#/open?kind=chat_message&id=MSG-403';
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByRole('alert')).toHaveTextContent(
+        'アクセス不可: ルームのメンバーではありません',
+      );
+    });
+  });
+
+  it('clears an unsupported deep link warning after the hash is removed', async () => {
+    window.location.hash = '#/open?kind=unsupported_kind&id=XYZ-1';
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByRole('alert')).toHaveTextContent(
+        'deep link の kind が未対応です: unsupported_kind',
+      );
+    });
+
+    window.location.hash = '';
+    window.dispatchEvent(new HashChangeEvent('hashchange'));
+
+    await waitFor(() => {
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    });
+  });
 });
