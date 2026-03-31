@@ -245,10 +245,89 @@ describe('App', () => {
     }
   });
 
-  it('dispatches generic entity deep links to section-level handlers', async () => {
+  it.each([
+    [
+      'dispatches project deep links to the projects section handler',
+      '#/open?kind=project&id=PJ-789',
+      'section-projects',
+      { kind: 'project', id: 'PJ-789' },
+    ],
+    [
+      'dispatches invoice deep links to the invoices section handler',
+      '#/open?kind=invoice&id=INV-789',
+      'section-invoices',
+      { kind: 'invoice', id: 'INV-789' },
+    ],
+    [
+      'dispatches estimate deep links to the estimates section handler',
+      '#/open?kind=estimate&id=EST-789',
+      'section-estimates',
+      { kind: 'estimate', id: 'EST-789' },
+    ],
+    [
+      'dispatches expense deep links to the expenses section handler',
+      '#/open?kind=expense&id=EXP-789',
+      'section-expenses',
+      { kind: 'expense', id: 'EXP-789' },
+    ],
+    [
+      'dispatches daily report deep links to the daily report section handler',
+      '#/open?kind=daily_report&id=DR-2024-01-02',
+      'section-daily-report',
+      { kind: 'daily_report', id: 'DR-2024-01-02' },
+    ],
+    [
+      'dispatches leave request deep links to the leave requests section handler',
+      '#/open?kind=leave_request&id=LR-789',
+      'section-leave-requests',
+      { kind: 'leave_request', id: 'LR-789' },
+    ],
+    [
+      'dispatches time entry deep links to the time entries section handler',
+      '#/open?kind=time_entry&id=TE-789',
+      'section-time-entries',
+      { kind: 'time_entry', id: 'TE-789' },
+    ],
+    [
+      'dispatches approvals deep links to the approvals section handler',
+      '#/open?kind=approvals&id=APR-789',
+      'section-approvals',
+      { kind: 'approvals', id: 'APR-789' },
+    ],
+    [
+      'dispatches customer deep links to the master data section handler',
+      '#/open?kind=customer&id=CUST-789',
+      'section-master-data',
+      { kind: 'customer', id: 'CUST-789' },
+    ],
+    [
+      'dispatches vendor deep links to the master data section handler',
+      '#/open?kind=vendor&id=VEND-789',
+      'section-master-data',
+      { kind: 'vendor', id: 'VEND-789' },
+    ],
+    [
+      'dispatches purchase order deep links to the vendor documents section handler',
+      '#/open?kind=purchase_order&id=PO-789',
+      'section-vendor-documents',
+      { kind: 'purchase_order', id: 'PO-789' },
+    ],
+    [
+      'dispatches vendor quote deep links to the vendor documents section handler',
+      '#/open?kind=vendor_quote&id=VQ-789',
+      'section-vendor-documents',
+      { kind: 'vendor_quote', id: 'VQ-789' },
+    ],
+    [
+      'dispatches vendor invoice deep links to the vendor documents section handler',
+      '#/open?kind=vendor_invoice&id=VI-789',
+      'section-vendor-documents',
+      { kind: 'vendor_invoice', id: 'VI-789' },
+    ],
+  ] as const)('%s', async (_label, hash, sectionTestId, expectedDetail) => {
     const listener = vi.fn();
     window.addEventListener('erp4_open_entity', listener as EventListener);
-    window.location.hash = '#/open?kind=project&id=PJ-789';
+    window.location.hash = hash;
 
     try {
       render(<App />);
@@ -256,11 +335,10 @@ describe('App', () => {
       await waitFor(() => {
         expect(listener).toHaveBeenCalledTimes(1);
       });
-      expect(screen.getByTestId('section-projects')).toBeInTheDocument();
-      expect((listener.mock.calls[0]?.[0] as CustomEvent).detail).toEqual({
-        kind: 'project',
-        id: 'PJ-789',
-      });
+      expect(screen.getByTestId(sectionTestId)).toBeInTheDocument();
+      expect((listener.mock.calls[0]?.[0] as CustomEvent).detail).toEqual(
+        expectedDetail,
+      );
     } finally {
       window.removeEventListener('erp4_open_entity', listener as EventListener);
     }
