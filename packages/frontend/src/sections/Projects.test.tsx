@@ -51,6 +51,7 @@ function createProjectsApiMock(options?: {
   customers?: Array<Record<string, unknown>>;
   members?: Array<Record<string, unknown>>;
   candidates?: Array<Record<string, unknown>>;
+  recurringTemplatePosts?: Array<Record<string, unknown>>;
 }) {
   let projects = [...(options?.projects ?? defaultProjects)];
   const customers = [...(options?.customers ?? defaultCustomers)];
@@ -68,6 +69,7 @@ function createProjectsApiMock(options?: {
       },
     ]),
   ];
+  const recurringTemplatePosts = options?.recurringTemplatePosts ?? [];
 
   vi.mocked(api).mockImplementation(
     async (path: string, init?: RequestInit) => {
@@ -128,6 +130,33 @@ function createProjectsApiMock(options?: {
           defaultCurrency: 'JPY',
           shouldGenerateInvoice: true,
           isActive: true,
+        };
+      }
+      if (
+        path === '/projects/project-1/recurring-template' &&
+        init?.method === 'POST'
+      ) {
+        const body = JSON.parse(String(init.body || '{}')) as Record<
+          string,
+          unknown
+        >;
+        recurringTemplatePosts.push(body);
+        return {
+          id: 'recurring-template-1',
+          projectId: 'project-1',
+          frequency: body.frequency ?? 'monthly',
+          defaultAmount: body.defaultAmount ?? null,
+          defaultCurrency: body.defaultCurrency ?? 'JPY',
+          defaultTaxRate: body.defaultTaxRate ?? null,
+          defaultTerms: body.defaultTerms ?? '',
+          defaultMilestoneName: body.defaultMilestoneName ?? '',
+          billUpon: body.billUpon ?? 'date',
+          dueDateRule: body.dueDateRule ?? null,
+          shouldGenerateEstimate: body.shouldGenerateEstimate ?? false,
+          shouldGenerateInvoice: body.shouldGenerateInvoice ?? true,
+          isActive: body.isActive ?? true,
+          nextRunAt: body.nextRunAt ?? null,
+          timezone: body.timezone ?? '',
         };
       }
       if (
@@ -582,6 +611,85 @@ describe('Projects', () => {
     });
     expect(
       await within(memberPanel as HTMLDivElement).findByText('メンバーなし'),
+    ).toBeInTheDocument();
+  });
+
+  it('shows recurring template admin guidance for non-privileged users', async () => {
+    createProjectsApiMock();
+
+    render(<Projects />);
+
+    expect(
+      await screen.findByText('管理者/管理部（admin/mgmt）のみ利用できます。'),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('combobox', { name: '定期テンプレ案件選択' }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('validates recurring due date offset and saves recurring template for admins', async () => {
+    const recurringTemplatePosts: Array<Record<string, unknown>> = [];
+    createProjectsApiMock({ recurringTemplatePosts });
+    vi.mocked(getAuthState).mockReturnValue({ roles: ['admin'] });
+
+    render(<Projects />);
+
+    const recurringProjectSelect = await screen.findByRole('combobox', {
+      name: '定期テンプレ案件選択',
+    });
+
+    await waitFor(() => {
+      expect(recurringProjectSelect).toHaveValue('project-1');
+      expect(
+        screen.getByText('templateId: recurring-template-1'),
+      ).toBeInTheDocument();
+    });
+
+    fireEvent.change(screen.getByLabelText('定期デフォルト金額'), {
+      target: { value: '1000' },
+    });
+    fireEvent.change(screen.getByLabelText('定期納期オフセット'), {
+      target: { value: '366' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+
+    expect(
+      screen.getByText('納期ルール(offsetDays)は0〜365で入力してください'),
+    ).toBeInTheDocument();
+    expect(recurringTemplatePosts).toHaveLength(0);
+
+    fireEvent.change(screen.getByLabelText('定期納期オフセット'), {
+      target: { value: '30' },
+    });
+    fireEvent.change(screen.getByLabelText('定期タイムゾーン'), {
+      target: { value: 'Asia/Tokyo' },
+    });
+    fireEvent.change(screen.getByLabelText('定期デフォルト文面'), {
+      target: { value: '  毎月請求  ' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+
+    await waitFor(() => {
+      expect(recurringTemplatePosts).toEqual([
+        {
+          frequency: 'monthly',
+          defaultAmount: 1000,
+          defaultCurrency: 'JPY',
+          billUpon: 'date',
+          shouldGenerateEstimate: false,
+          shouldGenerateInvoice: true,
+          isActive: true,
+          dueDateRule: { type: 'periodEndPlusOffset', offsetDays: 30 },
+          defaultTerms: '毎月請求',
+          timezone: 'Asia/Tokyo',
+        },
+      ]);
+    });
+    expect(
+      await screen.findByText('生成ログを更新しました'),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText('templateId: recurring-template-1'),
     ).toBeInTheDocument();
   });
 });
