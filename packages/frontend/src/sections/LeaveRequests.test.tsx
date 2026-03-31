@@ -294,6 +294,76 @@ describe('LeaveRequests', () => {
     ).toBeInTheDocument();
   });
 
+  it('shows submit conflict summary when time entries exceed working hours', async () => {
+    mockApiImplementation({
+      leaveRequests: {
+        items: [
+          {
+            id: 'leave-1',
+            userId: 'user-1',
+            leaveType: 'paid',
+            startDate: '2026-03-27',
+            endDate: '2026-03-27',
+            hours: 8,
+            status: 'draft',
+          },
+        ],
+      },
+    });
+    mockApiResponseImplementation({
+      submitResponse: {
+        ok: false,
+        status: 400,
+        payload: {
+          error: {
+            code: 'TIME_ENTRY_OVERBOOKED',
+            existingMinutes: 240,
+            requestedLeaveMinutes: 480,
+            totalMinutes: 720,
+            defaultWorkdayMinutes: 480,
+            conflicts: [
+              {
+                id: 'work-1',
+                projectId: 'pj-1',
+                workDate: '2026-03-27',
+                minutes: 120,
+              },
+            ],
+          },
+        },
+      },
+    });
+
+    render(<LeaveRequests />);
+
+    await screen.findByText('有給休暇 (paid)');
+    fireEvent.click(await screen.findByRole('button', { name: '申請' }));
+
+    expect(
+      await screen.findByText('工数と時間休の合計が所定労働時間を超過します'),
+    ).toBeInTheDocument();
+    expect(screen.getByText('工数と時間休の合計超過')).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        '所定労働時間を超えています。工数または時間休を調整してください。',
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText('既存工数: 240min / 申請時間休: 480min'),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText('合計: 720min / 所定労働時間: 480min'),
+    ).toBeInTheDocument();
+    expect(screen.getByText('超過: 240min')).toBeInTheDocument();
+    expect(
+      screen.getByText('2026-03-27 / 120min / project:pj-1'),
+    ).toBeInTheDocument();
+    expect(vi.mocked(apiResponse)).toHaveBeenCalledWith(
+      '/leave-requests/leave-1/submit',
+      expect.objectContaining({ method: 'POST' }),
+    );
+  });
+
   it('opens personal general affairs room when lookup succeeds', async () => {
     mockApiImplementation({
       leaveRequests: {
