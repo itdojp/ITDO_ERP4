@@ -589,12 +589,14 @@ describe('AdminSettings', () => {
         );
       });
 
-      expect(screen.getByTestId('integration-runs-count')).toHaveTextContent(
-        '1',
-      );
-      expect(
-        screen.getByTestId('integration-metrics-present'),
-      ).toHaveTextContent('no');
+      await waitFor(() => {
+        expect(screen.getByTestId('integration-runs-count')).toHaveTextContent(
+          '1',
+        );
+        expect(
+          screen.getByTestId('integration-metrics-present'),
+        ).toHaveTextContent('no');
+      });
     } finally {
       consoleErrorSpy.mockRestore();
     }
@@ -604,10 +606,14 @@ describe('AdminSettings', () => {
     const consoleErrorSpy = vi
       .spyOn(console, 'error')
       .mockImplementation(() => undefined);
+    let deliveryLoadCount = 0;
 
     vi.mocked(api).mockImplementation((path: string) => {
       if (path === '/report-deliveries?subscriptionId=sub-1') {
-        return Promise.reject(new Error('deliveries failed'));
+        deliveryLoadCount += 1;
+        if (deliveryLoadCount >= 2) {
+          return Promise.reject(new Error('deliveries failed'));
+        }
       }
       return mockApiRoute(path);
     });
@@ -620,17 +626,24 @@ describe('AdminSettings', () => {
       fireEvent.click(screen.getByTestId('report-show-deliveries'));
 
       await waitFor(() => {
-        expect(api).toHaveBeenCalledWith(
-          '/report-deliveries?subscriptionId=sub-1',
+        expect(screen.getByTestId('report-delivery-filter')).toHaveTextContent(
+          'sub-1',
+        );
+        expect(screen.getByTestId('report-deliveries-count')).toHaveTextContent(
+          '1',
         );
       });
 
-      expect(screen.getByTestId('report-delivery-filter')).toHaveTextContent(
-        'sub-1',
-      );
-      expect(screen.getByTestId('report-deliveries-count')).toHaveTextContent(
-        '0',
-      );
+      fireEvent.click(screen.getByTestId('report-show-deliveries'));
+
+      await waitFor(() => {
+        expect(api).toHaveBeenCalledWith(
+          '/report-deliveries?subscriptionId=sub-1',
+        );
+        expect(screen.getByTestId('report-deliveries-count')).toHaveTextContent(
+          '0',
+        );
+      });
     } finally {
       consoleErrorSpy.mockRestore();
     }
