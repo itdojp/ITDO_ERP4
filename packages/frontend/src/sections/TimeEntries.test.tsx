@@ -522,14 +522,24 @@ describe('TimeEntries', () => {
     );
   });
 
-  it('clears the selected task when the task list no longer contains it', async () => {
-    vi.mocked(api).mockImplementation(async () => ({ items: [] }));
+  it('omits the task from the payload when the selected task no longer exists for the project', async () => {
+    vi.mocked(api).mockImplementation(
+      async (path: string, init?: RequestInit) => {
+        if (path === '/time-entries' && !init) {
+          return { items: [] };
+        }
+        if (path === '/time-entries' && init?.method === 'POST') {
+          return { id: 'saved-entry' };
+        }
+        throw new Error(`Unhandled api call: ${path}`);
+      },
+    );
     vi.mocked(useProjectTasks).mockImplementation(
       ({ projectId }: { projectId: string }) => ({
         tasks:
           projectId === 'demo-project'
             ? [{ id: 'task-1', name: 'Implementation' }]
-            : [],
+            : [{ id: 'task-2', name: 'Review' }],
         taskMessage: '',
         isLoading: false,
       }),
@@ -548,9 +558,22 @@ describe('TimeEntries', () => {
     });
 
     await waitFor(() => {
-      expect(
-        (screen.getByLabelText('タスク選択') as HTMLSelectElement).value,
-      ).toBe('');
+      expect(screen.getByLabelText('タスク選択')).toHaveValue('task-2');
     });
+
+    fireEvent.click(screen.getByRole('button', { name: '追加' }));
+
+    const postCall = await waitFor(() => {
+      const call = vi
+        .mocked(api)
+        .mock.calls.find(
+          ([path, init]) => path === '/time-entries' && init?.method === 'POST',
+        );
+      expect(call).toBeDefined();
+      return call;
+    });
+    const body = JSON.parse(String(postCall?.[1]?.body));
+    expect(body).toMatchObject({ projectId: 'project-2' });
+    expect(body.taskId).toBeUndefined();
   });
 });
