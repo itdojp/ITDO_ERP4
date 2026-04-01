@@ -693,6 +693,9 @@ describe('AdminSettings', () => {
     render(<AdminSettings />);
 
     await screen.findByText('承認ルール（簡易モック）');
+    await waitFor(() => {
+      expect(api).toHaveBeenCalledWith('/approval-rules');
+    });
     const approvalRuleCallsBefore = vi
       .mocked(api)
       .mock.calls.filter(([path]) => path === '/approval-rules').length;
@@ -717,6 +720,9 @@ describe('AdminSettings', () => {
     render(<AdminSettings />);
 
     await screen.findByText('承認ルール（簡易モック）');
+    await waitFor(() => {
+      expect(api).toHaveBeenCalledWith('/approval-rules');
+    });
     const approvalRuleCallsBefore = vi
       .mocked(api)
       .mock.calls.filter(([path]) => path === '/approval-rules').length;
@@ -753,6 +759,23 @@ describe('AdminSettings', () => {
         expect.objectContaining({ method: 'POST' }),
       );
       expect(screen.getByText('承認ルールを作成しました')).toBeInTheDocument();
+    });
+
+    const approvalRulePostCall = vi
+      .mocked(api)
+      .mock.calls.find(
+        ([path, options]) =>
+          path === '/approval-rules' &&
+          (options as { method?: string } | undefined)?.method === 'POST',
+      ) as [string, { body?: string }] | undefined;
+    expect(approvalRulePostCall).toBeDefined();
+    if (!approvalRulePostCall)
+      throw new Error('approval rule post call not found');
+
+    const [, options] = approvalRulePostCall;
+    const body = options.body ? JSON.parse(options.body) : {};
+    expect(body.steps).toEqual({
+      stages: [{ approverGroupId: 'mgmt', stepOrder: 1 }],
     });
   });
 });
