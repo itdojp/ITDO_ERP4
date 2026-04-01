@@ -221,7 +221,7 @@ function installApiMock(options: {
       }
 
       const roomMatch = url.pathname.match(
-        /^\/chat-rooms\/([^/]+)\/(notification-setting|messages|mention-candidates|unread|read)$/,
+        /^\/chat-rooms\/([^/]+)\/(notification-setting|messages|mention-candidates|unread|read|ai-summary)$/,
       );
       if (roomMatch) {
         const [, roomId, resource] = roomMatch;
