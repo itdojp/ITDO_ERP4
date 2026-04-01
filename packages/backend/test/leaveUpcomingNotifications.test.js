@@ -54,6 +54,7 @@ function createClient({
 }
 
 test('runLeaveUpcomingNotifications: global mute suppresses leave_upcoming for non-bypass kind', async () => {
+  const muteAllUntil = new Date(Date.now() + 24 * 60 * 60 * 1000);
   const { client, createdNotifications } = createClient({
     leaveRequests: [
       {
@@ -68,7 +69,7 @@ test('runLeaveUpcomingNotifications: global mute suppresses leave_upcoming for n
     userPreferences: [
       {
         userId: 'employee-1',
-        muteAllUntil: new Date('2026-04-01T00:00:00.000Z'),
+        muteAllUntil,
       },
     ],
   });
