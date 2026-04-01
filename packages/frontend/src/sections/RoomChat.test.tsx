@@ -526,35 +526,40 @@ describe('RoomChat', () => {
       .mockResolvedValueOnce(false);
     const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
 
-    render(<RoomChat />);
+    try {
+      render(<RoomChat />);
 
-    const roomSelect = screen.getByRole('combobox', { name: 'ルーム' });
-    fireEvent.change(roomSelect, { target: { value: 'room-1' } });
-    expect(await screen.findByText('copy target')).toBeInTheDocument();
-    fireEvent.click(
-      screen.getByRole('button', { name: '発言リンクURLをコピー' }),
-    );
-    expect(
-      await screen.findByText('リンクURLをコピーしました'),
-    ).toBeInTheDocument();
-    expect(vi.mocked(copyToClipboard)).toHaveBeenCalledWith(
-      '/#/open?kind=chat_message&id=message-1',
-    );
+      const roomSelect = screen.getByRole('combobox', { name: 'ルーム' });
+      fireEvent.change(roomSelect, { target: { value: 'room-1' } });
+      expect(await screen.findByText('copy target')).toBeInTheDocument();
+      fireEvent.click(
+        screen.getByRole('button', { name: '発言リンクURLをコピー' }),
+      );
+      expect(
+        await screen.findByText('リンクURLをコピーしました'),
+      ).toBeInTheDocument();
+      expect(vi.mocked(copyToClipboard)).toHaveBeenCalledWith(
+        '/#/open?kind=chat_message&id=message-1',
+      );
 
-    fireEvent.click(
-      screen.getByRole('button', { name: '発言リンクMarkdownをコピー' }),
-    );
-    expect(await screen.findByText('コピーに失敗しました')).toBeInTheDocument();
-    expect(vi.mocked(copyToClipboard)).toHaveBeenLastCalledWith(
-      expect.stringContaining('#/open?kind=chat_message&id=message-1'),
-    );
+      fireEvent.click(
+        screen.getByRole('button', { name: '発言リンクMarkdownをコピー' }),
+      );
+      expect(
+        await screen.findByText('コピーに失敗しました'),
+      ).toBeInTheDocument();
+      expect(vi.mocked(copyToClipboard)).toHaveBeenLastCalledWith(
+        expect.stringContaining('#/open?kind=chat_message&id=message-1'),
+      );
 
-    fireEvent.click(screen.getByRole('button', { name: '外部要約' }));
-    expect(confirmSpy).toHaveBeenCalled();
-    expect(
-      await screen.findByText('外部要約の生成に失敗しました'),
-    ).toBeInTheDocument();
-    confirmSpy.mockRestore();
+      fireEvent.click(screen.getByRole('button', { name: '外部要約' }));
+      expect(confirmSpy).toHaveBeenCalled();
+      expect(
+        await screen.findByText('外部要約の生成に失敗しました'),
+      ).toBeInTheDocument();
+    } finally {
+      confirmSpy.mockRestore();
+    }
   });
 
   it('applies message search filters and validates short queries', async () => {
