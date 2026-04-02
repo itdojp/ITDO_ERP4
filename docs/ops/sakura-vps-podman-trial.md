@@ -214,11 +214,10 @@ cd /opt/itdo/ITDO_ERP4
 git fetch origin
 git checkout main
 git pull --ff-only
-./scripts/quadlet/build-images.sh
-systemctl --user restart erp4-migrate.service
-systemctl --user restart erp4-backend.service
-systemctl --user restart erp4-frontend.service
+./scripts/quadlet/update-stack.sh
 ```
+
+`update-stack.sh` は `build-images.sh` の実行後に `erp4-migrate.service` / `erp4-backend.service` / `erp4-frontend.service` を順に再起動し、必要なら `--include-proxy` で `erp4-caddy.service` も再起動します。`--skip-build` と `--skip-stack-check` を付けると、イメージ再ビルドや post-update 確認を個別に省略できます。`BUILD_IMAGES` / `CHECK_STACK` / `SYSTEMCTL` を環境変数で差し替えると、ローカル検証や運用フローの置き換えがしやすくなります。
 
 DB migration を伴う更新では、`erp4-migrate.service` 完了を確認してから backend を再起動します。
 
