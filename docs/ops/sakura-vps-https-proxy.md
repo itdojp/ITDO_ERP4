@@ -112,10 +112,17 @@ systemctl --user restart erp4-frontend.service
 systemctl --user enable --now erp4-caddy.service
 ```
 
+proxy 設定だけ変更した場合は、proxy だけ再読込します。
+
+```bash
+./scripts/quadlet/reload-proxy.sh
+```
+
 ## 4. 確認
 
 ```bash
 ./scripts/quadlet/check-proxy.sh
+./scripts/quadlet/reload-proxy.sh
 systemctl --user status erp4-caddy.service --no-pager
 curl -I https://app.example.com
 curl -fsS https://api.example.com/healthz
