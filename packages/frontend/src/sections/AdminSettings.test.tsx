@@ -34,6 +34,10 @@ type AlertCardProps = {
   items: unknown[];
   wizard: {
     labels: { cancel: string };
+    autosave: {
+      onRestoreDraft?: () => void;
+      onRetrySave: () => void;
+    };
     onCancel: () => void;
   };
   onReload: () => void | Promise<void>;
@@ -118,6 +122,20 @@ vi.mock('./admin-settings/AlertSettingsCard', () => ({
       </button>
       <button data-testid="alert-reload" onClick={props.onReload}>
         reload-alert
+      </button>
+      {props.wizard.autosave.onRestoreDraft && (
+        <button
+          data-testid="alert-restore-draft"
+          onClick={() => props.wizard.autosave.onRestoreDraft?.()}
+        >
+          restore-alert
+        </button>
+      )}
+      <button
+        data-testid="alert-retry-save"
+        onClick={() => props.wizard.autosave.onRetrySave()}
+      >
+        retry-save-alert
       </button>
     </div>
   ),
@@ -352,6 +370,11 @@ describe('AdminSettings', () => {
     vi.clearAllMocks();
     vi.mocked(api).mockImplementation((path: string) => mockApiRoute(path));
     vi.mocked(getAuthState).mockReturnValue({ roles: ['system_admin'] });
+    alertDraftState.isDirty = false;
+    alertDraftState.status = 'idle';
+    alertDraftState.lastSavedAt = null;
+    alertDraftState.errorMessage = '';
+    alertDraftState.hasRestorableDraft = false;
   });
 
   afterEach(() => {
@@ -549,6 +572,23 @@ describe('AdminSettings', () => {
     });
   });
 
+  it('restores the alert draft when a restorable draft exists and retries save from autosave controls', async () => {
+    alertDraftState.hasRestorableDraft = true;
+
+    render(<AdminSettings />);
+
+    await screen.findByTestId('alert-settings-card');
+
+    expect(screen.getByTestId('alert-restore-draft')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('alert-restore-draft'));
+    fireEvent.click(screen.getByTestId('alert-retry-save'));
+
+    await waitFor(() => {
+      expect(alertDraftState.restoreDraft).toHaveBeenCalledTimes(1);
+      expect(alertDraftState.saveNow).toHaveBeenCalledTimes(1);
+    });
+  });
+
   it('shows system_admin-only guidance when the current user lacks the role', async () => {
     vi.mocked(getAuthState).mockReturnValue({ roles: ['member'] });
 
@@ -647,5 +687,95 @@ describe('AdminSettings', () => {
     } finally {
       consoleErrorSpy.mockRestore();
     }
+  });
+
+  it('rejects invalid approval rule conditions before submit', async () => {
+    render(<AdminSettings />);
+
+    await screen.findByText('承認ルール（簡易モック）');
+    await waitFor(() => {
+      expect(api).toHaveBeenCalledWith('/approval-rules');
+    });
+    const approvalRuleCallsBefore = vi
+      .mocked(api)
+      .mock.calls.filter(([path]) => path === '/approval-rules').length;
+
+    fireEvent.change(screen.getByLabelText('conditions (JSON)'), {
+      target: { value: '{invalid json' },
+    });
+    fireEvent.click(screen.getByTestId('approval-rule-submit'));
+
+    await waitFor(() => {
+      expect(
+        screen.getByText('conditions のJSONが不正です'),
+      ).toBeInTheDocument();
+      expect(
+        vi.mocked(api).mock.calls.filter(([path]) => path === '/approval-rules')
+          .length,
+      ).toBe(approvalRuleCallsBefore);
+    });
+  });
+
+  it('rejects empty approval rule steps before submit', async () => {
+    render(<AdminSettings />);
+
+    await screen.findByText('承認ルール（簡易モック）');
+    await waitFor(() => {
+      expect(api).toHaveBeenCalledWith('/approval-rules');
+    });
+    const approvalRuleCallsBefore = vi
+      .mocked(api)
+      .mock.calls.filter(([path]) => path === '/approval-rules').length;
+
+    fireEvent.change(screen.getByLabelText('steps (JSON)'), {
+      target: { value: '[]' },
+    });
+    fireEvent.click(screen.getByTestId('approval-rule-submit'));
+
+    await waitFor(() => {
+      expect(screen.getByText('steps は1件以上必要です')).toBeInTheDocument();
+      expect(
+        vi.mocked(api).mock.calls.filter(([path]) => path === '/approval-rules')
+          .length,
+      ).toBe(approvalRuleCallsBefore);
+    });
+  });
+
+  it('creates an approval rule with a stages object payload', async () => {
+    render(<AdminSettings />);
+
+    await screen.findByText('承認ルール（簡易モック）');
+
+    fireEvent.change(screen.getByLabelText('steps (JSON)'), {
+      target: {
+        value: '{"stages":[{"approverGroupId":"mgmt","stepOrder":1}]}',
+      },
+    });
+    fireEvent.click(screen.getByTestId('approval-rule-submit'));
+
+    await waitFor(() => {
+      expect(api).toHaveBeenCalledWith(
+        '/approval-rules',
+        expect.objectContaining({ method: 'POST' }),
+      );
+      expect(screen.getByText('承認ルールを作成しました')).toBeInTheDocument();
+    });
+
+    const approvalRulePostCall = vi
+      .mocked(api)
+      .mock.calls.find(
+        ([path, options]) =>
+          path === '/approval-rules' &&
+          (options as { method?: string } | undefined)?.method === 'POST',
+      ) as [string, { body?: string }] | undefined;
+    expect(approvalRulePostCall).toBeDefined();
+    if (!approvalRulePostCall)
+      throw new Error('approval rule post call not found');
+
+    const [, options] = approvalRulePostCall;
+    const body = options.body ? JSON.parse(options.body) : {};
+    expect(body.steps).toEqual({
+      stages: [{ approverGroupId: 'mgmt', stepOrder: 1 }],
+    });
   });
 });
