@@ -10,6 +10,19 @@ warn() {
   printf 'WARN: %s\n' "$*" >&2
 }
 
+run_daemon_reload() {
+  local output
+  if output="$(systemctl --user daemon-reload 2>&1)"; then
+    return 0
+  fi
+  if grep -Fq 'Failed to connect to bus' <<<"$output"; then
+    warn "systemctl --user daemon-reload skipped; user systemd bus is not available in this session"
+    return 0
+  fi
+  printf '%s\n' "$output" >&2
+  return 1
+}
+
 mkdir -p "$TARGET_DIR"
 shopt -s nullglob
 
@@ -32,16 +45,20 @@ done
 for example in "$SRC_DIR"/env/*.example "$SRC_DIR"/config/*.example; do
   local_name="$(basename "$example" .example)"
   if [[ ! -f "$TARGET_DIR/$local_name" ]]; then
-    install -m 0600 "$example" "$TARGET_DIR/$local_name"
+    mode=0600
+    case "$example" in
+      "$SRC_DIR"/config/*)
+        mode=0644
+        ;;
+    esac
+    install -m "$mode" "$example" "$TARGET_DIR/$local_name"
   fi
 done
 
 shopt -u nullglob
 
 if command -v systemctl >/dev/null 2>&1; then
-  if ! systemctl --user daemon-reload; then
-    warn "systemctl --user daemon-reload skipped; user systemd bus is not available in this session"
-  fi
+  run_daemon_reload
 else
   warn "systemctl not found; skipped daemon-reload"
 fi

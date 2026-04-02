@@ -77,10 +77,11 @@ ACME_EMAIL=ops@example.com
 	encode zstd gzip
 	reverse_proxy http://erp4-backend:3001 {
 		header_up X-Forwarded-Proto https
-		header_up X-Forwarded-Host {host}
 	}
 }
 ```
+
+frontend unit は `deploy/quadlet/erp4-frontend.container` で `erp4.network` へ参加させる前提です。これにより Caddy から `erp4-frontend:8080` を直接解決できます。
 
 ## 3. 起動
 

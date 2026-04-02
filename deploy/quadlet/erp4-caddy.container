@@ -6,7 +6,7 @@ After=erp4-backend.service erp4-frontend.service
 [Container]
 Image=docker.io/library/caddy:2.9-alpine
 ContainerName=erp4-caddy
-Network=erp4
+Network=erp4.network
 EnvironmentFile=%h/.config/containers/systemd/erp4-caddy.env
 PublishPort=0.0.0.0:80:80
 PublishPort=0.0.0.0:443:443
