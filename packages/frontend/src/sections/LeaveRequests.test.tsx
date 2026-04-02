@@ -356,12 +356,77 @@ describe('LeaveRequests', () => {
     ).toBeInTheDocument();
     expect(screen.getByText('超過: 240min')).toBeInTheDocument();
     expect(
-      screen.getByText('2026-03-27 / 120min / project:pj-1'),
+      screen.getByText(/2026-03-27 \/ 120min \/ project:\s*pj-1/),
     ).toBeInTheDocument();
     expect(vi.mocked(apiResponse)).toHaveBeenCalledWith(
       '/leave-requests/leave-1/submit',
       expect.objectContaining({ method: 'POST' }),
     );
+  });
+
+  it('shows submit conflict details when time entries already exist in the leave period', async () => {
+    mockApiImplementation({
+      leaveRequests: {
+        items: [
+          {
+            id: 'leave-1',
+            userId: 'user-1',
+            leaveType: 'paid',
+            startDate: '2026-03-27',
+            endDate: '2026-03-27',
+            hours: 8,
+            status: 'draft',
+          },
+        ],
+      },
+    });
+    mockApiResponseImplementation({
+      submitResponse: {
+        ok: false,
+        status: 409,
+        payload: {
+          error: {
+            code: 'TIME_ENTRY_CONFLICT',
+            conflictCount: 2,
+            conflicts: [
+              {
+                id: 'work-1',
+                projectId: 'pj-1',
+                workDate: '2026-03-27',
+                minutes: 120,
+              },
+              {
+                id: 'work-2',
+                projectId: 'pj-2',
+                workDate: '2026-03-28',
+                minutes: 60,
+              },
+            ],
+          },
+        },
+      },
+    });
+
+    render(<LeaveRequests />);
+
+    await screen.findByText('有給休暇 (paid)');
+    fireEvent.click(await screen.findByRole('button', { name: '申請' }));
+
+    expect(
+      await screen.findByText('休暇期間に工数が存在します（2件）'),
+    ).toBeInTheDocument();
+    expect(screen.getByText('工数の重複')).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        '休暇期間に工数が登録されています。工数を修正/削除してから再申請してください。',
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/2026-03-27 \/ 120min \/ project:\s*pj-1/),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/2026-03-28 \/ 60min \/ project:\s*pj-2/),
+    ).toBeInTheDocument();
   });
 
   it('opens personal general affairs room when lookup succeeds', async () => {
