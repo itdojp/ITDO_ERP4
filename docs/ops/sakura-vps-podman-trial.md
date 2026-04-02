@@ -157,6 +157,11 @@ runtime env を編集したら、unit 起動前に検証します。
 ## 5. 起動順
 
 ```bash
+./scripts/quadlet/start-stack.sh
+```
+
+手動で分ける場合:
+```bash
 systemctl --user daemon-reload
 systemctl --user enable --now erp4-postgres.service
 systemctl --user enable --now erp4-migrate.service
@@ -166,6 +171,7 @@ systemctl --user enable --now erp4-frontend.service
 
 まとめて確認:
 ```bash
+./scripts/quadlet/check-stack.sh
 systemctl --user status erp4-postgres.service erp4-migrate.service erp4-backend.service erp4-frontend.service
 ```
 
@@ -222,13 +228,15 @@ podman logs erp4-postgres
 
 よくある原因:
 - `erp4-migrate.service` 失敗: `DATABASE_URL` / Prisma schema 差分 / DB 接続不可
-- `erp4-backend.service` 失敗: `AUTH_MODE=jwt` に対して `JWT_*` が不足
+- `erp4-backend.service` 失敗: `AUTH_MODE=jwt_bff` に対して `JWT_PUBLIC_KEY` または `JWT_JWKS_URL`、`GOOGLE_OIDC_*`、`AUTH_FRONTEND_ORIGIN` が不足
 - frontend だけ起動して API 呼び出しが失敗: `VITE_API_BASE` と `ALLOWED_ORIGINS` の不整合
 
 ローカル smoke:
 ```bash
 ./scripts/quadlet/smoke-stack.sh
 ```
+
+`smoke-stack.sh` は内部で `scripts/quadlet/check-stack.sh --skip-systemd` を呼び、backend/frontend/postgres の到達性まで検証します。
 
 ## 9. 品質確認
 
