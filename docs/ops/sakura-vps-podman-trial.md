@@ -184,6 +184,11 @@ systemctl --user status erp4-postgres.service erp4-migrate.service erp4-backend.
 ./scripts/quadlet/stop-stack.sh
 ```
 
+再起動:
+```bash
+./scripts/quadlet/restart-stack.sh
+```
+
 ## 6. 疎通確認
 
 backend:
