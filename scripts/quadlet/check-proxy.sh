@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 TARGET_DIR="${QUADLET_TARGET_DIR:-$HOME/.config/containers/systemd}"
 CADDY_ENV="${CADDY_ENV_FILE:-$TARGET_DIR/erp4-caddy.env}"
 CADDYFILE="${CADDYFILE_PATH:-$TARGET_DIR/erp4-caddy.Caddyfile}"
@@ -27,10 +26,11 @@ absolute_path() {
 usage() {
   cat <<USAGE
 Usage: $(basename "$0") [options]
-  --target-dir DIR
-  --caddy-env FILE
-  --caddyfile FILE
-  --skip-runtime
+  -h, --help         Show this help message and exit
+  --target-dir DIR   Set the target directory for generated quadlet files
+  --caddy-env FILE   Path to the Caddy environment file
+  --caddyfile FILE   Path to the Caddyfile configuration
+  --skip-runtime     Skip runtime validation via containerized caddy validate
 USAGE
 }
 
@@ -63,7 +63,7 @@ require_env_key() {
   local key="$2"
   local value
   value="$(read_env_value "$file" "$key")"
-  [[ -n "$value" ]] || fail "$file is missing required key: $key"
+  [[ -n "$value" ]] || fail "$file has missing or empty required key: $key"
 }
 
 while [[ $# -gt 0 ]]; do
