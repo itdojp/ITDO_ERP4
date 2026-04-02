@@ -202,7 +202,7 @@ systemctl --user status erp4-postgres.service erp4-migrate.service erp4-backend.
 ./scripts/quadlet/restart-stack.sh --include-proxy
 ```
 
-`restart-stack.sh` は `stop-stack.sh` と `start-stack.sh` を直列実行します。`--include-proxy` を付けると `erp4-caddy.service` も再起動し、post-start 確認として `status-stack.sh --include-proxy` まで実行します。`--skip-env-check` と `--skip-stack-check` は `start-stack.sh` に透過的に渡されます。
+`restart-stack.sh` は `stop-stack.sh` と `start-stack.sh` を直列実行します。`--include-proxy` を付けると `erp4-caddy.service` も再起動対象に含まれます。さらに `--skip-stack-check` を指定していない場合のみ、post-start 確認として `status-stack.sh --include-proxy` まで実行します。`--skip-env-check` と `--skip-stack-check` は `start-stack.sh` に透過的に渡されるため、`--skip-stack-check` 指定時は proxy を含む post-start の状態確認も省略されます。
 
 ## 6. 疎通確認
 

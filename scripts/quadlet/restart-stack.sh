@@ -15,7 +15,7 @@ usage() {
 Usage: $(basename "$0") [options]
   --skip-env-check        Pass through to start-stack.sh
   --skip-build-env-check  Deprecated alias for --skip-env-check
-  --skip-stack-check      Pass through to start-stack.sh
+  --skip-stack-check      Pass through to start-stack.sh; also skip post-restart status verification
   --include-proxy         Stop/start erp4-caddy.service and verify proxy status
   -h, --help              Show this help message and exit
 USAGE
@@ -89,7 +89,7 @@ fi
 "$START_STACK" "${start_args[@]}"
 
 if [[ "$INCLUDE_PROXY" -eq 1 ]]; then
-  run_systemctl_user enable --now erp4-caddy.service
+  run_systemctl_user restart erp4-caddy.service
   if [[ "$SKIP_STACK_CHECK" -eq 0 ]]; then
     "$STATUS_STACK" --include-proxy
   fi
