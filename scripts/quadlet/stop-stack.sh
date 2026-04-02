@@ -29,7 +29,7 @@ command -v systemctl >/dev/null 2>&1 || fail 'required command not found: system
 
 systemctl --user stop erp4-frontend.service
 systemctl --user stop erp4-backend.service
-systemctl --user stop erp4-migrate.service || true
+systemctl --user stop erp4-migrate.service
 systemctl --user stop erp4-postgres.service
 
 printf 'OK: Quadlet stack stopped\n'
