@@ -52,13 +52,19 @@ done
 command -v "$SYSTEMCTL" >/dev/null 2>&1 || fail "required command not found: $SYSTEMCTL"
 
 if [[ "$INCLUDE_PROXY" -eq 1 ]]; then
-  run_systemctl_user disable --now erp4-caddy.service
+  run_systemctl_user disable erp4-caddy.service
+  run_systemctl_user stop erp4-caddy.service
 fi
 
-run_systemctl_user disable --now \
+run_systemctl_user disable \
   erp4-frontend.service \
   erp4-backend.service \
   erp4-migrate.service \
   erp4-postgres.service
+
+run_systemctl_user stop erp4-frontend.service
+run_systemctl_user stop erp4-backend.service
+run_systemctl_user stop erp4-migrate.service
+run_systemctl_user stop erp4-postgres.service
 
 printf 'OK: Quadlet stack disabled and stopped\n'
