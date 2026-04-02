@@ -16,11 +16,21 @@ describe('deepLink utils', () => {
     });
   });
 
+  it('parses values without a leading hash and strips trailing fragments', () => {
+    expect(parseOpenHash('/open?kind=project&id=PJ-001#details')).toEqual({
+      kind: 'project',
+      id: 'PJ-001',
+    });
+  });
+
   it('returns null for unsupported or incomplete hashes', () => {
     expect(parseOpenHash('')).toBeNull();
+    expect(parseOpenHash('#/open')).toBeNull();
     expect(parseOpenHash('#/other?kind=project&id=PJ-001')).toBeNull();
     expect(parseOpenHash('#/open?kind=project')).toBeNull();
     expect(parseOpenHash('#/open?id=PJ-001')).toBeNull();
+    expect(parseOpenHash('#/open?kind=%20&id=PJ-001')).toBeNull();
+    expect(parseOpenHash('#/open?kind=project&id=%20')).toBeNull();
   });
 
   it('updates location hash when navigating', () => {
