@@ -3,12 +3,14 @@ set -euo pipefail
 
 LINES=100
 FOLLOW=0
-SERVICES=(erp4-postgres.service erp4-migrate.service erp4-backend.service erp4-frontend.service)
+INCLUDE_PROXY=0
+DEFAULT_SERVICES=(erp4-postgres.service erp4-migrate.service erp4-backend.service erp4-frontend.service)
+SERVICES=("${DEFAULT_SERVICES[@]}")
 
 usage() {
   cat <<USAGE
 Usage: $(basename "$0") [options]
-  --lines N          Show the last N log lines per service (default: 100)
+  --lines N          Show the last N log lines total across selected services (default: 100)
   --follow           Follow logs after printing recent entries
   --include-proxy    Include erp4-caddy.service
   --service UNIT     Restrict output to a specific user unit (repeatable)
@@ -26,6 +28,17 @@ ensure_positive_integer() {
   [[ "$value" =~ ^[1-9][0-9]*$ ]] || fail "$name must be a positive integer"
 }
 
+append_service_if_missing() {
+  local service="$1"
+  local existing
+  for existing in "${SERVICES[@]}"; do
+    if [[ "$existing" == "$service" ]]; then
+      return 0
+    fi
+  done
+  SERVICES+=("$service")
+}
+
 CUSTOM_SERVICES=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -39,7 +52,7 @@ while [[ $# -gt 0 ]]; do
       shift
       ;;
     --include-proxy)
-      SERVICES+=(erp4-caddy.service)
+      INCLUDE_PROXY=1
       shift
       ;;
     --service)
@@ -62,6 +75,10 @@ ensure_positive_integer "$LINES" '--lines'
 
 if [[ ${#CUSTOM_SERVICES[@]} -gt 0 ]]; then
   SERVICES=("${CUSTOM_SERVICES[@]}")
+fi
+
+if [[ "$INCLUDE_PROXY" -eq 1 ]]; then
+  append_service_if_missing erp4-caddy.service
 fi
 
 args=(--user --no-pager)
