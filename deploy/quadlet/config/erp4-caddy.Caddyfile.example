@@ -1,0 +1,18 @@
+{
+	email {$ACME_EMAIL}
+	servers {
+		trusted_proxies static private_ranges
+	}
+}
+
+{$APP_DOMAIN} {
+	encode zstd gzip
+	reverse_proxy http://erp4-frontend:8080
+}
+
+{$API_DOMAIN} {
+	encode zstd gzip
+	reverse_proxy http://erp4-backend:3001 {
+		header_up X-Forwarded-Proto https
+	}
+}

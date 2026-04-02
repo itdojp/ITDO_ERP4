@@ -6,7 +6,25 @@ SRC_DIR="$ROOT_DIR/deploy/quadlet"
 TARGET_DIR="${QUADLET_TARGET_DIR:-$HOME/.config/containers/systemd}"
 MODE="${QUADLET_INSTALL_MODE:-link}"
 
+warn() {
+  printf 'WARN: %s\n' "$*" >&2
+}
+
+run_daemon_reload() {
+  local output
+  if output="$(systemctl --user daemon-reload 2>&1)"; then
+    return 0
+  fi
+  if grep -Fq 'Failed to connect to bus' <<<"$output"; then
+    warn "systemctl --user daemon-reload skipped; user systemd bus is not available in this session"
+    return 0
+  fi
+  printf '%s\n' "$output" >&2
+  return 1
+}
+
 mkdir -p "$TARGET_DIR"
+shopt -s nullglob
 
 install_unit() {
   local src="$1"
@@ -24,15 +42,30 @@ for unit in "$SRC_DIR"/*.network "$SRC_DIR"/*.volume "$SRC_DIR"/*.container "$SR
   install_unit "$unit"
 done
 
-for example in "$SRC_DIR"/env/*.example; do
+for example in "$SRC_DIR"/env/*.example "$SRC_DIR"/config/*.example; do
   local_name="$(basename "$example" .example)"
   if [[ ! -f "$TARGET_DIR/$local_name" ]]; then
-    install -m 0600 "$example" "$TARGET_DIR/$local_name"
+    mode=0600
+    case "$example" in
+      "$SRC_DIR"/config/*)
+        mode=0644
+        ;;
+    esac
+    install -m "$mode" "$example" "$TARGET_DIR/$local_name"
   fi
 done
 
-systemctl --user daemon-reload
+shopt -u nullglob
+
+if command -v systemctl >/dev/null 2>&1; then
+  run_daemon_reload
+else
+  warn "systemctl not found; skipped daemon-reload"
+fi
+
 printf 'installed units into %s\n' "$TARGET_DIR"
 printf 'next: edit %s/erp4-postgres.env and %s/erp4-backend.env, then run:\n' "$TARGET_DIR" "$TARGET_DIR"
 printf '  systemctl --user enable --now erp4-postgres.service erp4-migrate.service erp4-backend.service erp4-frontend.service\n'
+printf 'optional HTTPS proxy: edit %s/erp4-caddy.env and %s/erp4-caddy.Caddyfile, then run:\n' "$TARGET_DIR" "$TARGET_DIR"
+printf '  systemctl --user enable --now erp4-caddy.service\n'
 printf 'note: rootless auto-start requires sudo loginctl enable-linger %s\n' "$(id -un)"

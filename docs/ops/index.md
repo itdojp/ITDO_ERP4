@@ -10,6 +10,7 @@
 
 - ローカル/PoC 起動: [deploy-start](deploy-start.md)
 - さくらVPS（Ubuntu）+ Podman + Quadlet: [sakura-vps-podman-trial](sakura-vps-podman-trial.md)
+- さくらVPS HTTPS reverse proxy: [sakura-vps-https-proxy](sakura-vps-https-proxy.md)
 - Google Workspace OIDC + Auth Gateway 導入: [google-oidc-auth-gateway-rollout](google-oidc-auth-gateway-rollout.md)
 - 設定（環境変数/シークレット）: [configuration](configuration.md)
 - Secrets/アクセス権限: [secrets-and-access](secrets-and-access.md)
