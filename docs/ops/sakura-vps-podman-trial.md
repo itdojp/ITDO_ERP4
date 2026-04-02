@@ -166,8 +166,11 @@ systemctl --user enable --now erp4-frontend.service
 
 まとめて確認:
 ```bash
+./scripts/quadlet/check-stack.sh
 systemctl --user status erp4-postgres.service erp4-migrate.service erp4-backend.service erp4-frontend.service
 ```
+
+`check-stack.sh` は backend health/readiness、frontend、PostgreSQL、および user systemd service を最大 60 秒・2 秒間隔で再試行しながら検証します。HTTP probe には残り時間ベースの timeout をかけているため、到達不能時でも無制限に待機しません。起動直後の偽陰性を避けたい場合は、個別 `curl` / `pg_isready` よりこちらを優先してください。
 
 ## 6. 疎通確認
 
@@ -228,6 +231,11 @@ podman logs erp4-postgres
 ローカル smoke:
 ```bash
 ./scripts/quadlet/smoke-stack.sh
+```
+
+起動済み stack を手動確認する場合:
+```bash
+./scripts/quadlet/check-stack.sh --skip-systemd
 ```
 
 ## 9. 品質確認
