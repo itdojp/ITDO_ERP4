@@ -2,9 +2,9 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 BUILD_IMAGES="${BUILD_IMAGES:-$SCRIPT_DIR/build-images.sh}"
 CHECK_STACK="${CHECK_STACK:-$SCRIPT_DIR/check-stack.sh}"
+STATUS_STACK="${STATUS_STACK:-$SCRIPT_DIR/status-stack.sh}"
 SYSTEMCTL="${SYSTEMCTL:-systemctl}"
 SKIP_BUILD=0
 SKIP_STACK_CHECK=0
@@ -24,6 +24,22 @@ fail() {
   exit 1
 }
 
+run_systemctl_user() {
+  local output
+
+  if output="$("$SYSTEMCTL" --user "$@" 2>&1)"; then
+    [[ -n "$output" ]] && printf '%s\n' "$output"
+    return 0
+  fi
+
+  if grep -Fq 'Failed to connect to bus' <<<"$output"; then
+    fail "systemctl --user failed because the user bus is unavailable; rerun with a user session or run 'sudo loginctl enable-linger $(id -un)'"
+  fi
+
+  printf '%s\n' "$output" >&2
+  return 1
+}
+
 run_build_images() {
   if [[ "$SKIP_BUILD" -eq 1 ]]; then
     return 0
@@ -37,16 +53,16 @@ run_stack_check() {
     return 0
   fi
 
+  "$CHECK_STACK"
+
   if [[ "$INCLUDE_PROXY" -eq 1 ]]; then
-    "$CHECK_STACK" --include-proxy
-  else
-    "$CHECK_STACK"
+    "$STATUS_STACK" --include-proxy
   fi
 }
 
 restart_unit() {
   local unit="$1"
-  "$SYSTEMCTL" --user restart "$unit"
+  run_systemctl_user restart "$unit"
 }
 
 while [[ $# -gt 0 ]]; do
@@ -74,8 +90,15 @@ while [[ $# -gt 0 ]]; do
 done
 
 command -v "$SYSTEMCTL" >/dev/null 2>&1 || fail "required command not found: $SYSTEMCTL"
-[[ -x "$BUILD_IMAGES" ]] || fail "build command is not executable: $BUILD_IMAGES"
-[[ -x "$CHECK_STACK" ]] || fail "check command is not executable: $CHECK_STACK"
+if [[ "$SKIP_BUILD" -eq 0 ]]; then
+  [[ -x "$BUILD_IMAGES" ]] || fail "build command is not executable: $BUILD_IMAGES"
+fi
+if [[ "$SKIP_STACK_CHECK" -eq 0 ]]; then
+  [[ -x "$CHECK_STACK" ]] || fail "check command is not executable: $CHECK_STACK"
+fi
+if [[ "$SKIP_STACK_CHECK" -eq 0 && "$INCLUDE_PROXY" -eq 1 ]]; then
+  [[ -x "$STATUS_STACK" ]] || fail "status command is not executable: $STATUS_STACK"
+fi
 
 run_build_images
 
