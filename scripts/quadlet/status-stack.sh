@@ -48,6 +48,15 @@ check_service_status() {
   fi
 
   output="${output//$'\n'/ }"
+  if [[ "$output" == *"Failed to connect to bus"* ]]; then
+    printf 'systemd %-24s unavailable\n' 'user bus'
+    printf 'hint    %-24s %s\n' \
+      'systemd user bus' \
+      "rerun with --skip-systemd or run sudo loginctl enable-linger $(id -un)"
+    FAILED=1
+    return 2
+  fi
+
   printf 'service %-24s %s\n' "$service" "${output:-unknown}"
   FAILED=1
   return 1
@@ -144,7 +153,11 @@ if [[ "$SKIP_SYSTEMD" -eq 0 ]]; then
   command -v systemctl >/dev/null 2>&1 || fail 'required command not found: systemctl'
   printf '[systemd]\n'
   for service in "${SERVICES[@]}"; do
-    check_service_status "$service" || true
+    status=0
+    check_service_status "$service" || status=$?
+    if [[ "$status" -eq 2 ]]; then
+      break
+    fi
   done
   printf '\n'
 fi
