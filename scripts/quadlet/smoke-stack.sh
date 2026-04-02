@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+
 BACKEND_IMAGE="${BACKEND_IMAGE:-localhost/erp4-backend:latest}"
 FRONTEND_IMAGE="${FRONTEND_IMAGE:-localhost/erp4-frontend:latest}"
 NETWORK_NAME="${NETWORK_NAME:-erp4-quadlet-smoke}"
@@ -103,7 +105,6 @@ for _ in $(seq 1 60); do
   fi
   sleep 1
 done
-curl -fsS "http://127.0.0.1:${BACKEND_HOST_PORT}/healthz"
 
 podman run -d \
   --name "$FRONTEND_CONTAINER" \
@@ -116,4 +117,11 @@ for _ in $(seq 1 30); do
   fi
   sleep 1
 done
-curl -fsSI "http://127.0.0.1:${FRONTEND_HOST_PORT}/" | sed -n '1,5p'
+
+"$ROOT_DIR/scripts/quadlet/check-stack.sh" \
+  --skip-systemd \
+  --backend-health-url "http://127.0.0.1:${BACKEND_HOST_PORT}/healthz" \
+  --backend-ready-url "http://127.0.0.1:${BACKEND_HOST_PORT}/readyz" \
+  --frontend-url "http://127.0.0.1:${FRONTEND_HOST_PORT}/" \
+  --postgres-container "$POSTGRES_CONTAINER" \
+  --postgres-user erp4
