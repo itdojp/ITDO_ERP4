@@ -1,0 +1,14 @@
+[Unit]
+Description=ERP4 Prisma migrate deploy
+Requires=erp4-postgres.service
+After=erp4-postgres.service
+Before=erp4-backend.service
+
+[Service]
+Type=oneshot
+EnvironmentFile=%h/.config/containers/systemd/erp4-backend.env
+ExecStart=/usr/bin/podman run --rm --name erp4-migrate --network erp4 --env-file %h/.config/containers/systemd/erp4-backend.env localhost/erp4-backend:latest npx --prefix packages/backend prisma migrate deploy --config packages/backend/prisma.config.ts
+RemainAfterExit=yes
+
+[Install]
+WantedBy=default.target

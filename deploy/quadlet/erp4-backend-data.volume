@@ -1,0 +1,5 @@
+[Unit]
+Description=ERP4 backend local storage volume
+
+[Volume]
+VolumeName=erp4-backend-data

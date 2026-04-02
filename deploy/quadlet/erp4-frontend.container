@@ -1,0 +1,17 @@
+[Unit]
+Description=ERP4 frontend container
+Wants=network-online.target
+After=network-online.target erp4-backend.service
+
+[Container]
+Image=localhost/erp4-frontend:latest
+Pull=never
+ContainerName=erp4-frontend
+PublishPort=8080:8080
+
+[Service]
+Restart=always
+TimeoutStartSec=120
+
+[Install]
+WantedBy=default.target

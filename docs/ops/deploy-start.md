@@ -38,7 +38,7 @@
 1. DB（PostgreSQL）
 2. マイグレーション（`prisma migrate deploy`）
 3. backend（Fastify）
-4. frontend（静的配信 or Vite build成果物）
+4. frontend（静的配信。さくらVPS では Quadlet + nginx コンテナを推奨）
 
 ### ヘルスチェック
 
@@ -50,3 +50,5 @@
 - TLS は reverse proxy 側で終端する前提（アプリ単体でのTLS終端は扱わない）
 - `ALLOWED_ORIGINS` を本番の配信元に合わせる（未設定/空の場合は CORS 全拒否）
 - 複数インスタンス運用時は `RATE_LIMIT_REDIS_URL` を設定し、レート制限を分散ストアで共有する
+
+- コンテナ smoke 確認: `scripts/quadlet/smoke-stack.sh`

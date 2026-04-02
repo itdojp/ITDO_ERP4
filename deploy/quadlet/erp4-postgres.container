@@ -1,0 +1,20 @@
+[Unit]
+Description=ERP4 PostgreSQL container
+Wants=network-online.target
+After=network-online.target
+
+[Container]
+Image=docker.io/library/postgres:15
+ContainerName=erp4-postgres
+Network=erp4.network
+Volume=erp4-postgres.volume:/var/lib/postgresql/data:Z
+EnvironmentFile=%h/.config/containers/systemd/erp4-postgres.env
+Environment=PGDATA=/var/lib/postgresql/data/pgdata
+PublishPort=127.0.0.1:55432:5432
+
+[Service]
+Restart=always
+TimeoutStartSec=120
+
+[Install]
+WantedBy=default.target
