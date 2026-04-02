@@ -11,6 +11,19 @@
 - `deploy/quadlet/erp4-frontend.container`
 - `AUTH_MODE=jwt_bff`
 
+ホスト側の前提は `check-host-prereqs.sh` で先に確認できます。
+
+```bash
+./scripts/quadlet/check-host-prereqs.sh
+./scripts/quadlet/check-host-prereqs.sh --skip-port-check
+```
+
+このチェックは以下を検証します。
+- `loginctl show-user $(id -un)` の linger 有効化
+- `net.ipv4.ip_unprivileged_port_start` が 80 以下
+- `podman` / `systemctl` / `loginctl` の存在
+- 必要に応じて `ss` または `netstat` で `80/443` の利用状況
+
 ## 前提条件
 
 - `app.example.com` と `api.example.com` が VPS のグローバル IP を向いていること
