@@ -11,6 +11,7 @@ TIMEOUT_SECONDS="${TIMEOUT_SECONDS:-60}"
 INTERVAL_SECONDS="${INTERVAL_SECONDS:-2}"
 SERVICES=(erp4-postgres.service erp4-migrate.service erp4-backend.service erp4-frontend.service)
 LAST_ERROR=""
+DEADLINE=0
 
 usage() {
   cat <<USAGE
@@ -37,32 +38,73 @@ ensure_positive_integer() {
   [[ "$value" =~ ^[1-9][0-9]*$ ]] || fail "$name must be a positive integer"
 }
 
+remaining_seconds() {
+  local remaining=$((DEADLINE - SECONDS))
+  if (( remaining <= 0 )); then
+    return 1
+  fi
+  printf '%s\n' "$remaining"
+}
+
+curl_probe() {
+  local label="$1"
+  local url="$2"
+  local method="$3"
+  local remaining connect_timeout curl_output
+
+  remaining="$(remaining_seconds)" || {
+    LAST_ERROR="${label} timed out before probe could start: $url"
+    return 1
+  }
+
+  connect_timeout="$remaining"
+  if (( connect_timeout > INTERVAL_SECONDS )); then
+    connect_timeout="$INTERVAL_SECONDS"
+  fi
+
+  if [[ "$method" == "HEAD" ]]; then
+    if ! curl_output="$(curl -fsS -I -o /dev/null --connect-timeout "$connect_timeout" --max-time "$remaining" "$url" 2>&1)"; then
+      curl_output="${curl_output//$'\n'/ }"
+      LAST_ERROR="${label} failed: $url (${curl_output:-unknown curl error})"
+      return 1
+    fi
+    return 0
+  fi
+
+  if ! curl_output="$(curl -fsS -o /dev/null --connect-timeout "$connect_timeout" --max-time "$remaining" "$url" 2>&1)"; then
+    curl_output="${curl_output//$'\n'/ }"
+    LAST_ERROR="${label} failed: $url (${curl_output:-unknown curl error})"
+    return 1
+  fi
+}
+
 check_once() {
   if [[ "$SKIP_SYSTEMD" -eq 0 ]]; then
     for service in "${SERVICES[@]}"; do
-      if ! systemctl --user is-active --quiet "$service"; then
-        LAST_ERROR="$service is not active yet"
+      local status_output
+      if ! status_output="$(systemctl --user is-active "$service" 2>&1)"; then
+        status_output="${status_output//$'\n'/ }"
+        if [[ "$status_output" == *"Failed to connect to bus"* ]]; then
+          LAST_ERROR="failed to connect to systemd user bus while checking $service; consider --skip-systemd"
+        else
+          LAST_ERROR="$service is not active (${status_output:-unknown systemctl error})"
+        fi
         return 1
       fi
     done
   fi
 
-  if ! curl -fsS "$BACKEND_HEALTH_URL" >/dev/null; then
-    LAST_ERROR="backend health check failed: $BACKEND_HEALTH_URL"
-    return 1
-  fi
+  curl_probe 'backend health check' "$BACKEND_HEALTH_URL" GET || return 1
+  curl_probe 'backend ready check' "$BACKEND_READY_URL" GET || return 1
+  curl_probe 'frontend check' "$FRONTEND_URL" HEAD || return 1
 
-  if ! curl -fsS "$BACKEND_READY_URL" >/dev/null; then
-    LAST_ERROR="backend ready check failed: $BACKEND_READY_URL"
+  local remaining
+  remaining="$(remaining_seconds)" || {
+    LAST_ERROR="postgres readiness check timed out before probe could start: $POSTGRES_CONTAINER"
     return 1
-  fi
+  }
 
-  if ! curl -fsSI "$FRONTEND_URL" >/dev/null; then
-    LAST_ERROR="frontend check failed: $FRONTEND_URL"
-    return 1
-  fi
-
-  if ! podman exec "$POSTGRES_CONTAINER" pg_isready -U "$POSTGRES_USER" >/dev/null; then
+  if ! podman exec "$POSTGRES_CONTAINER" pg_isready -U "$POSTGRES_USER" -t "$remaining" >/dev/null; then
     LAST_ERROR="postgres readiness check failed: $POSTGRES_CONTAINER"
     return 1
   fi
@@ -139,13 +181,13 @@ if [[ "$SKIP_SYSTEMD" -eq 0 ]]; then
   command -v systemctl >/dev/null 2>&1 || fail 'required command not found: systemctl'
 fi
 
-deadline=$((SECONDS + TIMEOUT_SECONDS))
+DEADLINE=$((SECONDS + TIMEOUT_SECONDS))
 while true; do
   if check_once; then
     break
   fi
 
-  if (( SECONDS >= deadline )); then
+  if (( SECONDS >= DEADLINE )); then
     dump_systemd_logs
     fail "$LAST_ERROR"
   fi
