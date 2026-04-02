@@ -51,6 +51,14 @@ vi.mock('../api', () => ({
   getAuthState,
 }));
 
+const { copyToClipboard } = vi.hoisted(() => ({
+  copyToClipboard: vi.fn(),
+}));
+
+vi.mock('../utils/clipboard', () => ({
+  copyToClipboard,
+}));
+
 vi.mock('../ui', () => ({
   AttachmentField: () => null,
   Combobox: ({
@@ -167,6 +175,7 @@ function installApiMock(options: {
   searchResultsByQuery?: Record<string, ChatMessage[]>;
   failOnGlobalSearch?: string[];
   globalSearchResultsByQuery?: Record<string, ChatSearchItem[]>;
+  failOnExternalSummary?: string[];
   notificationSettingPatchBodies?: Array<{
     roomId: string;
     body: {
@@ -187,6 +196,7 @@ function installApiMock(options: {
 }) {
   const failOnSearch = new Set(options.failOnSearch ?? []);
   const failOnGlobalSearch = new Set(options.failOnGlobalSearch ?? []);
+  const failOnExternalSummary = new Set(options.failOnExternalSummary ?? []);
   const failOnNotificationSave = new Set(options.failOnNotificationSave ?? []);
 
   vi.mocked(api).mockImplementation(
@@ -211,7 +221,7 @@ function installApiMock(options: {
       }
 
       const roomMatch = url.pathname.match(
-        /^\/chat-rooms\/([^/]+)\/(notification-setting|messages|mention-candidates|unread|read)$/,
+        /^\/chat-rooms\/([^/]+)\/(notification-setting|messages|mention-candidates|unread|read|ai-summary)$/,
       );
       if (roomMatch) {
         const [, roomId, resource] = roomMatch;
@@ -258,6 +268,16 @@ function installApiMock(options: {
             options.messagesByRoom[roomId] ??
             [];
           return { items } as never;
+        }
+        if (resource === 'ai-summary' && method === 'POST') {
+          if (failOnExternalSummary.has(roomId)) {
+            throw new Error(`external summary failed for room: ${roomId}`);
+          }
+          return {
+            summary: 'external summary',
+            provider: 'stub',
+            model: 'stub-model',
+          } as never;
         }
       }
 
@@ -366,10 +386,10 @@ describe('RoomChat', () => {
 
     render(<RoomChat />);
 
+    const roomSelect = screen.getByRole('combobox', { name: 'ルーム' });
+    fireEvent.change(roomSelect, { target: { value: 'room-1' } });
     await waitFor(() => {
-      expect(screen.getByRole('combobox', { name: 'ルーム' })).toHaveValue(
-        'room-1',
-      );
+      expect(roomSelect).toHaveValue('room-1');
     });
     expect(screen.getByText('メッセージなし')).toBeInTheDocument();
 
@@ -387,6 +407,159 @@ describe('RoomChat', () => {
         '確認対象（ユーザID/グループ/ロール）を入力してください',
       ),
     ).toBeInTheDocument();
+  });
+
+  it('hides the general-affairs scope switch when the user is not authorized', async () => {
+    vi.mocked(getAuthState).mockReturnValue({
+      userId: 'demo-user',
+      roles: ['member'],
+      groupIds: ['sales'],
+    });
+    installApiMock({
+      rooms: [makeRoom({ id: 'room-1' })],
+      messagesByRoom: {
+        'room-1': [makeMessage({ id: 'message-1', roomId: 'room-1' })],
+      },
+    });
+
+    render(<RoomChat />);
+
+    expect(await screen.findByText('initial message')).toBeInTheDocument();
+    expect(
+      screen.queryByRole('combobox', { name: '表示範囲' }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('filters the room list to general-affairs private groups', async () => {
+    installApiMock({
+      rooms: [
+        makeRoom({
+          id: 'room-1',
+          type: 'project',
+          projectCode: 'PRJ-1',
+          projectName: 'Alpha',
+        }),
+        makeRoom({
+          id: 'pga_1',
+          type: 'private_group',
+          isOfficial: true,
+          name: 'pga_1',
+        }),
+        makeRoom({
+          id: 'room-2',
+          type: 'dm',
+          name: 'dm:demo-user:partner-user',
+          allowExternalIntegrations: false,
+        }),
+      ],
+      messagesByRoom: {
+        'room-1': [
+          makeMessage({
+            id: 'message-1',
+            roomId: 'room-1',
+            body: 'project room message',
+          }),
+        ],
+        pga_1: [
+          makeMessage({
+            id: 'message-2',
+            roomId: 'pga_1',
+            body: 'general affairs room message',
+          }),
+        ],
+      },
+    });
+
+    render(<RoomChat />);
+
+    const roomSelect = screen.getByRole('combobox', { name: 'ルーム' });
+    fireEvent.change(roomSelect, { target: { value: 'room-1' } });
+    expect(await screen.findByText('project room message')).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: '表示範囲' })).toHaveValue(
+      'all',
+    );
+
+    fireEvent.change(screen.getByRole('combobox', { name: '表示範囲' }), {
+      target: { value: 'ga_personal' },
+    });
+
+    const filteredRoomSelect = screen.getByRole('combobox', { name: 'ルーム' });
+    expect(
+      screen.queryByText('project: PRJ-1 / Alpha'),
+    ).not.toBeInTheDocument();
+    fireEvent.change(filteredRoomSelect, { target: { value: 'pga_1' } });
+
+    expect(
+      await screen.findByText('general affairs room message'),
+    ).toBeInTheDocument();
+    expect(screen.queryByText('project room message')).not.toBeInTheDocument();
+    expect(filteredRoomSelect).toHaveValue('pga_1');
+    expect(
+      screen.queryByText('project: PRJ-1 / Alpha'),
+    ).not.toBeInTheDocument();
+  });
+
+  it('copies room links and reports external summary failure', async () => {
+    installApiMock({
+      rooms: [
+        makeRoom({
+          id: 'room-1',
+          projectCode: 'PRJ-1',
+          projectName: 'Alpha',
+          allowExternalIntegrations: true,
+        }),
+      ],
+      messagesByRoom: {
+        'room-1': [
+          makeMessage({
+            id: 'message-1',
+            roomId: 'room-1',
+            body: 'copy target',
+            userId: 'alice',
+          }),
+        ],
+      },
+      failOnExternalSummary: ['room-1'],
+    });
+    vi.mocked(copyToClipboard)
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(false);
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+
+    try {
+      render(<RoomChat />);
+
+      const roomSelect = screen.getByRole('combobox', { name: 'ルーム' });
+      fireEvent.change(roomSelect, { target: { value: 'room-1' } });
+      expect(await screen.findByText('copy target')).toBeInTheDocument();
+      fireEvent.click(
+        screen.getByRole('button', { name: '発言リンクURLをコピー' }),
+      );
+      expect(
+        await screen.findByText('リンクURLをコピーしました'),
+      ).toBeInTheDocument();
+      expect(vi.mocked(copyToClipboard)).toHaveBeenCalledWith(
+        '/#/open?kind=chat_message&id=message-1',
+      );
+
+      fireEvent.click(
+        screen.getByRole('button', { name: '発言リンクMarkdownをコピー' }),
+      );
+      expect(
+        await screen.findByText('コピーに失敗しました'),
+      ).toBeInTheDocument();
+      expect(vi.mocked(copyToClipboard)).toHaveBeenLastCalledWith(
+        expect.stringContaining('#/open?kind=chat_message&id=message-1'),
+      );
+
+      fireEvent.click(screen.getByRole('button', { name: '外部要約' }));
+      expect(confirmSpy).toHaveBeenCalled();
+      expect(
+        await screen.findByText('外部要約の生成に失敗しました'),
+      ).toBeInTheDocument();
+    } finally {
+      confirmSpy.mockRestore();
+    }
   });
 
   it('applies message search filters and validates short queries', async () => {
