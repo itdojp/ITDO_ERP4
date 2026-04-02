@@ -271,6 +271,22 @@ describe('TimeEntries', () => {
     });
   });
 
+  it('keeps the daily report action disabled when the work date is blank', async () => {
+    vi.mocked(api).mockImplementation(async () => ({ items: [] }));
+
+    render(<TimeEntries />);
+
+    await screen.findByText('工数がありません');
+    fireEvent.change(screen.getByLabelText('日付'), {
+      target: { value: '' },
+    });
+
+    const openButton = screen.getByRole('button', { name: '日報を開く' });
+    expect(openButton).toBeDisabled();
+    fireEvent.click(openButton);
+    expect(vi.mocked(navigateToOpen)).not.toHaveBeenCalled();
+  });
+
   it('restores a saved draft including the deferred project selection', async () => {
     vi.mocked(api).mockImplementation(async () => ({ items: [] }));
     vi.mocked(loadDraft).mockResolvedValue({
@@ -386,6 +402,42 @@ describe('TimeEntries', () => {
     expect(screen.getByLabelText('作業メモ')).toHaveValue('');
   });
 
+  it('shows a save error and keeps the form values when the submission fails online', async () => {
+    vi.mocked(api).mockImplementation(
+      async (path: string, init?: RequestInit) => {
+        if (path === '/time-entries' && !init) {
+          return { items: [] };
+        }
+        if (path === '/time-entries' && init?.method === 'POST') {
+          throw new Error('server error');
+        }
+        throw new Error(`Unhandled api call: ${path}`);
+      },
+    );
+
+    render(<TimeEntries />);
+
+    await screen.findByText('工数がありません');
+    fireEvent.change(screen.getByLabelText('日付'), {
+      target: { value: '2026-03-28' },
+    });
+    fireEvent.change(screen.getByLabelText('工数 (分)'), {
+      target: { value: '120' },
+    });
+    fireEvent.change(screen.getByLabelText('作業メモ'), {
+      target: { value: 'retain me' },
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: '追加' }));
+
+    expect(await screen.findByText('保存に失敗しました')).toBeInTheDocument();
+    expect(screen.getByLabelText('日付')).toHaveValue('2026-03-28');
+    expect(screen.getByLabelText('工数 (分)')).toHaveValue(120);
+    expect(screen.getByLabelText('作業メモ')).toHaveValue('retain me');
+    expect(vi.mocked(clearDraft)).not.toHaveBeenCalled();
+    expect(vi.mocked(enqueueOfflineItem)).not.toHaveBeenCalled();
+  });
+
   it('shows a fetch error and reloads the list when retry succeeds', async () => {
     let attempts = 0;
     vi.mocked(api).mockImplementation(async (path: string) => {
@@ -468,5 +520,60 @@ describe('TimeEntries', () => {
     expect(vi.mocked(clearDraft)).toHaveBeenCalledWith(
       'time-entry:draft-owner',
     );
+  });
+
+  it('omits the task from the payload when the selected task no longer exists for the project', async () => {
+    vi.mocked(api).mockImplementation(
+      async (path: string, init?: RequestInit) => {
+        if (path === '/time-entries' && !init) {
+          return { items: [] };
+        }
+        if (path === '/time-entries' && init?.method === 'POST') {
+          return { id: 'saved-entry' };
+        }
+        throw new Error(`Unhandled api call: ${path}`);
+      },
+    );
+    vi.mocked(useProjectTasks).mockImplementation(
+      ({ projectId }: { projectId: string }) => ({
+        tasks:
+          projectId === 'demo-project'
+            ? [{ id: 'task-1', name: 'Implementation' }]
+            : [{ id: 'task-2', name: 'Review' }],
+        taskMessage: '',
+        isLoading: false,
+      }),
+    );
+
+    render(<TimeEntries />);
+
+    await screen.findByText('工数がありません');
+    fireEvent.change(screen.getByLabelText('タスク選択'), {
+      target: { value: 'task-1' },
+    });
+    expect(screen.getByLabelText('タスク選択')).toHaveValue('task-1');
+
+    fireEvent.change(screen.getByLabelText('案件選択'), {
+      target: { value: 'project-2' },
+    });
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('タスク選択')).toHaveValue('task-2');
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: '追加' }));
+
+    const postCall = await waitFor(() => {
+      const call = vi
+        .mocked(api)
+        .mock.calls.find(
+          ([path, init]) => path === '/time-entries' && init?.method === 'POST',
+        );
+      expect(call).toBeDefined();
+      return call;
+    });
+    const body = JSON.parse(String(postCall?.[1]?.body));
+    expect(body).toMatchObject({ projectId: 'project-2' });
+    expect(body.taskId).toBeUndefined();
   });
 });
