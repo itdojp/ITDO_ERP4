@@ -10,10 +10,11 @@ SERVICES=("${DEFAULT_SERVICES[@]}")
 usage() {
   cat <<USAGE
 Usage: $(basename "$0") [options]
-  --lines N          Show the last N log lines total across selected services (default: 100)
+  --lines N          Show the last N log lines total across selected services (default: 100; 0 allowed)
   --follow           Follow logs after printing recent entries
   --include-proxy    Include erp4-caddy.service
   --service UNIT     Restrict output to a specific user unit (repeatable)
+  -h, --help         Show this help message and exit
 USAGE
 }
 
@@ -22,10 +23,10 @@ fail() {
   exit 1
 }
 
-ensure_positive_integer() {
+ensure_non_negative_integer() {
   local value="$1"
   local name="$2"
-  [[ "$value" =~ ^[1-9][0-9]*$ ]] || fail "$name must be a positive integer"
+  [[ "$value" =~ ^[0-9]+$ ]] || fail "$name must be a non-negative integer"
 }
 
 append_service_if_missing() {
@@ -71,7 +72,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 command -v journalctl >/dev/null 2>&1 || fail 'required command not found: journalctl'
-ensure_positive_integer "$LINES" '--lines'
+ensure_non_negative_integer "$LINES" '--lines'
 
 if [[ ${#CUSTOM_SERVICES[@]} -gt 0 ]]; then
   SERVICES=("${CUSTOM_SERVICES[@]}")
