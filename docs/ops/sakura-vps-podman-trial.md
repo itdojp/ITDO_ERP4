@@ -230,6 +230,17 @@ journalctl --user -u erp4-backend.service -f
 journalctl --user -u erp4-frontend.service -f
 ```
 
+まとめて確認する場合:
+```bash
+./scripts/quadlet/logs-stack.sh --follow
+```
+
+個別 unit や proxy を見る場合:
+```bash
+./scripts/quadlet/logs-stack.sh --service erp4-backend.service --lines 200
+./scripts/quadlet/logs-stack.sh --service erp4-backend.service --include-proxy --follow
+```
+
 Podman 側:
 ```bash
 podman ps
