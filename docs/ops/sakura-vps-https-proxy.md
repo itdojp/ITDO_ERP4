@@ -90,6 +90,7 @@ backend / frontend の env を更新した後に build / reload します。
 ```bash
 cd /opt/itdo/ITDO_ERP4
 ./scripts/quadlet/check-env.sh
+./scripts/quadlet/check-proxy.sh
 ./scripts/quadlet/build-images.sh
 systemctl --user daemon-reload
 systemctl --user restart erp4-migrate.service
@@ -101,6 +102,7 @@ systemctl --user enable --now erp4-caddy.service
 ## 4. 確認
 
 ```bash
+./scripts/quadlet/check-proxy.sh
 systemctl --user status erp4-caddy.service --no-pager
 curl -I https://app.example.com
 curl -fsS https://api.example.com/healthz
