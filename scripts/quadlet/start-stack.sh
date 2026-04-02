@@ -4,14 +4,14 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 CHECK_ENV="$ROOT_DIR/scripts/quadlet/check-env.sh"
 CHECK_STACK="$ROOT_DIR/scripts/quadlet/check-stack.sh"
-TARGET_DIR="${QUADLET_TARGET_DIR:-$HOME/.config/containers/systemd}"
+TARGET_DIR="$HOME/.config/containers/systemd"
 SKIP_BUILD_ENV_CHECK=0
 SKIP_STACK_CHECK=0
 
 usage() {
   cat <<USAGE
 Usage: $(basename "$0") [options]
-  --skip-build-env-check
+  --skip-build-env-check  Skip all environment validation performed by check-env.sh
   --skip-stack-check
 USAGE
 }
@@ -38,7 +38,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ "$SKIP_BUILD_ENV_CHECK" -eq 0 ]]; then
-  "$CHECK_ENV"
+  "$CHECK_ENV" --target-dir "$TARGET_DIR"
 fi
 
 systemctl --user daemon-reload

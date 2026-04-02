@@ -175,6 +175,8 @@ systemctl --user enable --now erp4-frontend.service
 systemctl --user status erp4-postgres.service erp4-migrate.service erp4-backend.service erp4-frontend.service
 ```
 
+`check-stack.sh` は既定で最大 60 秒、2 秒間隔で readiness を再試行します。低速な VPS で直後に `systemctl --user enable --now ...` を実行しても、起動完了まで待機します。
+
 ## 6. 疎通確認
 
 backend:
