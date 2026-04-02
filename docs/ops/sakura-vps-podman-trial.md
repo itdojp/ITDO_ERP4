@@ -188,6 +188,14 @@ systemctl --user status erp4-postgres.service erp4-migrate.service erp4-backend.
 
 `status-stack.sh` は定常監視や切り分け向けの即時確認コマンドです。`erp4-postgres.service` / `erp4-migrate.service` / `erp4-backend.service` / `erp4-frontend.service` の active 状態を一覧し、必要に応じて `erp4-caddy.service` も含められます。あわせて backend health/readiness、frontend の HTTP HEAD、PostgreSQL の `pg_isready` を 1 回ずつ実行して結果を表示します。`--skip-systemd` を付けると user systemd 依存を外して runtime probe のみ確認できます。
 
+停止する場合:
+```bash
+./scripts/quadlet/stop-stack.sh
+./scripts/quadlet/stop-stack.sh --include-proxy
+```
+
+`stop-stack.sh` は依存の逆順で `erp4-frontend.service` / `erp4-backend.service` / `erp4-migrate.service` / `erp4-postgres.service` を停止します。`--include-proxy` を付けると `erp4-caddy.service` も先に停止します。`systemctl --user` の user bus が利用できない場合は、`sudo loginctl enable-linger <user>` を含む対処メッセージを返します。
+
 ## 6. 疎通確認
 
 backend:
