@@ -22,14 +22,19 @@ require_command() {
 }
 
 require_loginctl_linger() {
-  local user linger
+  local user linger output
   user="$(id -un)"
-  linger="$(loginctl show-user "$user" --property=Linger --value 2>/dev/null || true)"
+  if ! output="$(loginctl show-user "$user" --property=Linger --value 2>&1)"; then
+    output="${output//$'\n'/ }"
+    fail "failed to query linger state for user $user via loginctl (${output:-unknown loginctl error})"
+  fi
+  linger="${output//$'\n'/ }"
   [[ "$linger" == "yes" ]] || fail "loginctl enable-linger $user is not enabled"
 }
 
 require_unprivileged_port_start() {
   local value
+  require_command sysctl
   value="$(sysctl -n net.ipv4.ip_unprivileged_port_start 2>/dev/null || true)"
   [[ "$value" =~ ^[0-9]+$ ]] || fail "failed to read net.ipv4.ip_unprivileged_port_start"
   if (( value > 80 )); then
@@ -45,14 +50,23 @@ port_report() {
   if command -v ss >/dev/null 2>&1; then
     output="$(ss -ltnH "( sport = :$port )" 2>/dev/null || true)"
   elif command -v netstat >/dev/null 2>&1; then
-    output="$(netstat -ltn 2>/dev/null | awk -v port=":$port" '$4 ~ port { print }' || true)"
+    output="$(netstat -ltn 2>/dev/null | awk -v port="$port" '
+      NR > 2 {
+        local_address = $4
+        local_port = local_address
+        sub(/^.*:/, "", local_port)
+        if (local_port == port) {
+          print
+        }
+      }
+    ' || true)"
   else
     fail "required command not found: ss or netstat"
   fi
 
   if [[ -n "$output" ]]; then
-    printf 'WARN: TCP %s is already bound\n' "$port"
-    printf '%s\n' "$output"
+    printf 'ERROR: TCP %s is already bound\n' "$port" >&2
+    printf '%s\n' "$output" >&2
     return 1
   fi
 
