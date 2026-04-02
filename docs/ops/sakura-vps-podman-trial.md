@@ -204,6 +204,14 @@ systemctl --user status erp4-postgres.service erp4-migrate.service erp4-backend.
 
 `restart-stack.sh` は `stop-stack.sh` と `start-stack.sh` を直列実行します。`--include-proxy` を付けると `erp4-caddy.service` も再起動対象に含まれます。さらに `--skip-stack-check` を指定していない場合のみ、post-start 確認として `status-stack.sh --include-proxy` まで実行します。`--skip-env-check` と `--skip-stack-check` は `start-stack.sh` に透過的に渡されるため、`--skip-stack-check` 指定時は proxy を含む post-start の状態確認も省略されます。
 
+自動起動設定ごと停止する場合:
+```bash
+./scripts/quadlet/disable-stack.sh
+./scripts/quadlet/disable-stack.sh --include-proxy
+```
+
+`disable-stack.sh` は stack を停止したうえで、対象 unit の user systemd 自動起動設定も解除します。`--include-proxy` を付けると `erp4-caddy.service` も `disable --now` 対象に含めます。メンテナンス期間中に reboot 後の自動復帰を止めたい場合はこちらを使い、再開時は `start-stack.sh` を実行します。
+
 ## 6. 疎通確認
 
 backend:
