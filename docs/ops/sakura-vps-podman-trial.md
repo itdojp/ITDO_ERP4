@@ -210,7 +210,7 @@ systemctl --user status erp4-postgres.service erp4-migrate.service erp4-backend.
 ./scripts/quadlet/disable-stack.sh --include-proxy
 ```
 
-`disable-stack.sh` は stack を停止したうえで、対象 unit の user systemd 自動起動設定も解除します。`--include-proxy` を付けると `erp4-caddy.service` も `disable --now` 対象に含めます。メンテナンス期間中に reboot 後の自動復帰を止めたい場合はこちらを使い、再開時は `start-stack.sh` を実行します。
+`disable-stack.sh` は stack を停止したうえで、対象 unit の user systemd 自動起動設定も解除します。`--include-proxy` を付けると `erp4-caddy.service` も対象に含め、disable 後に明示停止します。メンテナンス期間中に reboot 後の自動復帰を止めたい場合はこちらを使います。再開時は `start-stack.sh` を実行し、proxy も無効化していた場合は追加で `systemctl --user enable --now erp4-caddy.service` を実行してください。
 
 ## 6. 疎通確認
 
