@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 TARGET_DIR="${QUADLET_TARGET_DIR:-$HOME/.config/containers/systemd}"
 FRONTEND_BUILD_ENV="${FRONTEND_BUILD_ENV_FILE:-$ROOT_DIR/deploy/quadlet/env/erp4-frontend-build.env}"
+FRONTEND_BUILD_ENV_EXPLICIT=0
 SKIP_RUNTIME=0
 
 fail() {
@@ -13,10 +14,6 @@ fail() {
 
 warn() {
   printf 'WARN: %s\n' "$*" >&2
-}
-
-require_cmd() {
-  command -v "$1" >/dev/null 2>&1 || fail "required command not found: $1"
 }
 
 require_file() {
@@ -32,15 +29,25 @@ USAGE
 read_env_value() {
   local file="$1"
   local key="$2"
-  awk -F= -v key="$key" '
+  awk -v key="$key" '
     $0 ~ /^[[:space:]]*#/ { next }
     $0 ~ /^[[:space:]]*$/ { next }
-    $1 == key {
-      sub(/^[[:space:]]+/, "", $2)
-      sub(/[[:space:]]+$/, "", $2)
-      gsub(/^"|"$/, "", $2)
-      print $2
-      exit
+    {
+      pos = index($0, "=")
+      if (pos == 0) {
+        next
+      }
+      k = substr($0, 1, pos - 1)
+      sub(/^[[:space:]]+/, "", k)
+      sub(/[[:space:]]+$/, "", k)
+      if (k == key) {
+        v = substr($0, pos + 1)
+        sub(/^[[:space:]]+/, "", v)
+        sub(/[[:space:]]+$/, "", v)
+        gsub(/^"|"$/, "", v)
+        print v
+        exit
+      }
     }
   ' "$file"
 }
@@ -76,13 +83,28 @@ check_linger() {
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --target-dir)
-      TARGET_DIR="$2"
-      shift 2
+    --target-dir|--target-dir=*)
+      if [[ "$1" == "--target-dir" ]]; then
+        [[ $# -ge 2 ]] || fail "--target-dir requires a directory path argument"
+        TARGET_DIR="$2"
+        shift 2
+      else
+        TARGET_DIR="${1#--target-dir=}"
+        [[ -n "$TARGET_DIR" ]] || fail "--target-dir requires a directory path argument"
+        shift
+      fi
       ;;
-    --frontend-build-env)
-      FRONTEND_BUILD_ENV="$2"
-      shift 2
+    --frontend-build-env|--frontend-build-env=*)
+      FRONTEND_BUILD_ENV_EXPLICIT=1
+      if [[ "$1" == "--frontend-build-env" ]]; then
+        [[ $# -ge 2 ]] || fail "--frontend-build-env requires a file path argument"
+        FRONTEND_BUILD_ENV="$2"
+        shift 2
+      else
+        FRONTEND_BUILD_ENV="${1#--frontend-build-env=}"
+        [[ -n "$FRONTEND_BUILD_ENV" ]] || fail "--frontend-build-env requires a file path argument"
+        shift
+      fi
       ;;
     --skip-runtime)
       SKIP_RUNTIME=1
@@ -100,9 +122,6 @@ done
 
 POSTGRES_ENV="$TARGET_DIR/erp4-postgres.env"
 BACKEND_ENV="$TARGET_DIR/erp4-backend.env"
-
-require_cmd podman
-require_cmd systemctl
 
 if [[ "$SKIP_RUNTIME" -eq 0 ]]; then
   require_file "$POSTGRES_ENV"
@@ -132,6 +151,10 @@ if [[ "$SKIP_RUNTIME" -eq 0 ]]; then
 
   check_http_cookie_flag
   check_linger
+fi
+
+if [[ "$FRONTEND_BUILD_ENV_EXPLICIT" -eq 1 || "$SKIP_RUNTIME" -eq 1 ]]; then
+  require_file "$FRONTEND_BUILD_ENV"
 fi
 
 if [[ -f "$FRONTEND_BUILD_ENV" ]]; then
