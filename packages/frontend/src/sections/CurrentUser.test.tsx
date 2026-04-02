@@ -75,6 +75,12 @@ type NotificationPreferenceResponse = {
   muteAllUntil: string | null;
 };
 
+type CurrentUserMe = {
+  userId: string;
+  roles: string[];
+  ownerProjects?: string[] | string;
+};
+
 const defaultNotificationPreference: NotificationPreferenceResponse = {
   userId: 'user-1',
   emailMode: 'digest',
@@ -82,7 +88,7 @@ const defaultNotificationPreference: NotificationPreferenceResponse = {
   muteAllUntil: null,
 };
 
-const defaultMeResponse = {
+const defaultMeResponse: { user: CurrentUserMe } = {
   user: {
     userId: 'user-1',
     roles: ['member'],
@@ -122,8 +128,8 @@ function makeJsonResponse(options?: JsonResponseOptions) {
 }
 
 function installApiMock(options?: {
-  bffSessionUser?: typeof defaultMeResponse.user;
-  meUser?: typeof defaultMeResponse.user;
+  bffSessionUser?: CurrentUserMe;
+  meUser?: CurrentUserMe;
   notificationPreference?: NotificationPreferenceResponse;
   authSessions?: (typeof defaultAuthSession)[];
   authSessionsThrowCount?: number;
@@ -205,6 +211,50 @@ afterEach(() => {
 });
 
 describe('CurrentUser', () => {
+  it('fills simple login defaults when the inputs are cleared', async () => {
+    const dispatchEventSpy = vi.spyOn(window, 'dispatchEvent');
+    try {
+      installApiMock({
+        meUser: {
+          userId: 'demo-user',
+          roles: ['user'],
+          ownerProjects: 'owner-a',
+        },
+      });
+
+      render(<CurrentUser />);
+
+      fireEvent.change(screen.getByPlaceholderText('userId'), {
+        target: { value: '' },
+      });
+      fireEvent.change(screen.getByPlaceholderText('roles (admin,mgmt)'), {
+        target: { value: '' },
+      });
+      fireEvent.change(screen.getByPlaceholderText('projectIds (optional)'), {
+        target: { value: '' },
+      });
+      fireEvent.change(screen.getByPlaceholderText('groupIds (optional)'), {
+        target: { value: '' },
+      });
+
+      fireEvent.click(screen.getByRole('button', { name: '簡易ログイン' }));
+
+      expect(vi.mocked(setAuthState)).toHaveBeenCalledWith({
+        userId: 'demo-user',
+        roles: ['user'],
+        projectIds: undefined,
+        groupIds: undefined,
+      });
+      expect(await screen.findByText('ID: demo-user')).toBeInTheDocument();
+      expect(screen.getByText('OwnerProjects: owner-a')).toBeInTheDocument();
+      expect(dispatchEventSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'erp4:auth-updated' }),
+      );
+    } finally {
+      dispatchEventSpy.mockRestore();
+    }
+  });
+
   it('sanitizes simple login input and dispatches an auth update', async () => {
     const dispatchEventSpy = vi.spyOn(window, 'dispatchEvent');
     installApiMock({
@@ -247,6 +297,45 @@ describe('CurrentUser', () => {
     ).toBe(true);
 
     dispatchEventSpy.mockRestore();
+  });
+
+  it('shows ownerProjects arrays and returns to the signed-out view after logout', async () => {
+    const authState: AuthStateLike = {
+      userId: 'user-1',
+      roles: ['member'],
+      groupIds: ['grp-1'],
+    };
+    const dispatchEventSpy = vi.spyOn(window, 'dispatchEvent');
+    try {
+      vi.mocked(getAuthState).mockReturnValue(authState);
+      installApiMock({
+        meUser: {
+          userId: 'user-1',
+          roles: ['member'],
+          ownerProjects: ['proj-1', 'proj-2'],
+        },
+      });
+
+      render(<CurrentUser />);
+
+      expect(
+        await screen.findByText('OwnerProjects: proj-1, proj-2'),
+      ).toBeInTheDocument();
+      expect(screen.getByText('Groups: grp-1')).toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole('button', { name: 'ログアウト' }));
+
+      await screen.findByText('未ログイン');
+      expect(
+        screen.getByRole('button', { name: '簡易ログイン' }),
+      ).toBeInTheDocument();
+      expect(vi.mocked(setAuthState)).toHaveBeenCalledWith(null);
+      expect(dispatchEventSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'erp4:auth-updated' }),
+      );
+    } finally {
+      dispatchEventSpy.mockRestore();
+    }
   });
 
   it('reloads auth sessions after an initial fetch failure', async () => {
