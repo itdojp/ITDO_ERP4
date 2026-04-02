@@ -157,6 +157,11 @@ runtime env を編集したら、unit 起動前に検証します。
 ## 5. 起動順
 
 ```bash
+./scripts/quadlet/start-stack.sh
+```
+
+手動で分ける場合:
+```bash
 systemctl --user daemon-reload
 systemctl --user enable --now erp4-postgres.service
 systemctl --user enable --now erp4-migrate.service
@@ -169,6 +174,8 @@ systemctl --user enable --now erp4-frontend.service
 ./scripts/quadlet/check-stack.sh
 systemctl --user status erp4-postgres.service erp4-migrate.service erp4-backend.service erp4-frontend.service
 ```
+
+`start-stack.sh` は `check-env.sh` による runtime env 検証、user systemd unit の有効化・起動、`check-stack.sh` による post-start 検証を直列で実行します。`QUADLET_TARGET_DIR` を設定している場合はその配下を検証対象に使います。手動の `systemctl --user enable --now ...` 群はトラブルシュート用の fallback として残しています。
 
 `check-stack.sh` は backend health/readiness、frontend、PostgreSQL、および user systemd service を最大 60 秒・2 秒間隔で再試行しながら検証します。HTTP probe には残り時間ベースの timeout をかけているため、到達不能時でも無制限に待機しません。起動直後の偽陰性を避けたい場合は、個別 `curl` / `pg_isready` よりこちらを優先してください。
 
