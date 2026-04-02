@@ -1,0 +1,12 @@
+.git
+.gitignore
+.worktrees
+node_modules
+packages/backend/node_modules
+packages/frontend/node_modules
+packages/backend/dist
+packages/frontend/dist
+packages/backend/coverage
+packages/frontend/coverage
+tmp
+deploy/quadlet/env/*.env

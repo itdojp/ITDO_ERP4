@@ -103,13 +103,14 @@ npm run test
 ## Auth (JWT/OIDC)
 
 - env:
-  - AUTH_MODE=jwt|hybrid|header
+  - AUTH_MODE=jwt|hybrid|jwt_bff|header
   - JWT_JWKS_URL or JWT_PUBLIC_KEY
   - JWT_ISSUER / JWT_AUDIENCE / JWT_ALGS
   - JWT\_\*\_CLAIM (roles/group_ids/project_ids/org_id)
   - AUTH_DEFAULT_ROLE (rolesが無い場合のデフォルト)
+  - AUTH_MODE=jwt_bff の場合は `GOOGLE_OIDC_CLIENT_SECRET` / `GOOGLE_OIDC_REDIRECT_URI` / `AUTH_FRONTEND_ORIGIN` / `AUTH_SESSION_COOKIE_SECURE`
 - 補足: hybridはAuthorizationが無い場合にヘッダ認証へフォールバックする。
-- 注意: headerは開発用のモック。インターネット公開環境では使用しない。
+- 注意: production は `AUTH_MODE=jwt_bff` 前提。headerは開発用のモック。
 
 ## SCIM (Provisioning)
 

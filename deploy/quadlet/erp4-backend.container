@@ -1,0 +1,22 @@
+[Unit]
+Description=ERP4 backend container
+Requires=erp4-postgres.service erp4-migrate.service
+After=erp4-postgres.service erp4-migrate.service
+Wants=network-online.target
+After=network-online.target
+
+[Container]
+Image=localhost/erp4-backend:latest
+Pull=never
+ContainerName=erp4-backend
+Network=erp4.network
+Volume=erp4-backend-data.volume:/var/lib/erp4:Z
+EnvironmentFile=%h/.config/containers/systemd/erp4-backend.env
+PublishPort=3001:3001
+
+[Service]
+Restart=always
+TimeoutStartSec=120
+
+[Install]
+WantedBy=default.target

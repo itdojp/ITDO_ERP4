@@ -1,0 +1,5 @@
+[Unit]
+Description=ERP4 PostgreSQL data volume
+
+[Volume]
+VolumeName=erp4-postgres
