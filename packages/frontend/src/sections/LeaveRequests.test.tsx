@@ -356,7 +356,7 @@ describe('LeaveRequests', () => {
     ).toBeInTheDocument();
     expect(screen.getByText('超過: 240min')).toBeInTheDocument();
     expect(
-      screen.getByText('2026-03-27 / 120min / project:pj-1'),
+      screen.getByText(/2026-03-27 \/ 120min \/ project:\s*pj-1/),
     ).toBeInTheDocument();
     expect(vi.mocked(apiResponse)).toHaveBeenCalledWith(
       '/leave-requests/leave-1/submit',
@@ -422,10 +422,10 @@ describe('LeaveRequests', () => {
       ),
     ).toBeInTheDocument();
     expect(
-      screen.getByText('2026-03-27 / 120min / project:pj-1'),
+      screen.getByText(/2026-03-27 \/ 120min \/ project:\s*pj-1/),
     ).toBeInTheDocument();
     expect(
-      screen.getByText('2026-03-28 / 60min / project:pj-2'),
+      screen.getByText(/2026-03-28 \/ 60min \/ project:\s*pj-2/),
     ).toBeInTheDocument();
   });
 
