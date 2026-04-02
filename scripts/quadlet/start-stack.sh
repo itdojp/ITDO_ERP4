@@ -4,14 +4,15 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 CHECK_ENV="$ROOT_DIR/scripts/quadlet/check-env.sh"
 CHECK_STACK="$ROOT_DIR/scripts/quadlet/check-stack.sh"
-TARGET_DIR="$HOME/.config/containers/systemd"
-SKIP_BUILD_ENV_CHECK=0
+TARGET_DIR="${QUADLET_TARGET_DIR:-$HOME/.config/containers/systemd}"
+SKIP_ENV_CHECK=0
 SKIP_STACK_CHECK=0
 
 usage() {
   cat <<USAGE
 Usage: $(basename "$0") [options]
-  --skip-build-env-check  Skip environment validation performed by check-env.sh
+  --skip-env-check        Skip environment validation performed by check-env.sh
+  --skip-build-env-check  Deprecated alias for --skip-env-check
   --skip-stack-check      Skip post-start validation performed by check-stack.sh
 USAGE
 }
@@ -21,10 +22,22 @@ fail() {
   exit 1
 }
 
+run_systemctl_user() {
+  local output
+  if output="$(systemctl --user "$@" 2>&1)"; then
+    return 0
+  fi
+  if grep -Fq 'Failed to connect to bus' <<<"$output"; then
+    fail "systemctl --user failed because the user bus is unavailable; log in with a user session or run 'sudo loginctl enable-linger $(id -un)'"
+  fi
+  printf '%s\n' "$output" >&2
+  return 1
+}
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --skip-build-env-check)
-      SKIP_BUILD_ENV_CHECK=1
+    --skip-env-check|--skip-build-env-check)
+      SKIP_ENV_CHECK=1
       shift
       ;;
     --skip-stack-check)
@@ -43,15 +56,16 @@ done
 
 command -v systemctl >/dev/null 2>&1 || fail 'required command not found: systemctl'
 
-if [[ "$SKIP_BUILD_ENV_CHECK" -eq 0 ]]; then
+if [[ "$SKIP_ENV_CHECK" -eq 0 ]]; then
   "$CHECK_ENV" --target-dir "$TARGET_DIR"
 fi
 
-systemctl --user daemon-reload
-systemctl --user enable --now erp4-postgres.service
-systemctl --user enable --now erp4-migrate.service
-systemctl --user enable --now erp4-backend.service
-systemctl --user enable --now erp4-frontend.service
+run_systemctl_user daemon-reload
+run_systemctl_user enable --now \
+  erp4-postgres.service \
+  erp4-migrate.service \
+  erp4-backend.service \
+  erp4-frontend.service
 
 if [[ "$SKIP_STACK_CHECK" -eq 0 ]]; then
   "$CHECK_STACK"
