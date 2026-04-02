@@ -9,3 +9,4 @@ packages/frontend/dist
 packages/backend/coverage
 packages/frontend/coverage
 tmp
+deploy/quadlet/env/*.env

@@ -9,26 +9,27 @@ BACKEND_VOLUME="${BACKEND_VOLUME:-erp4-quadlet-smoke-data}"
 POSTGRES_CONTAINER="${POSTGRES_CONTAINER:-erp4-quadlet-smoke-pg}"
 BACKEND_CONTAINER="${BACKEND_CONTAINER:-erp4-quadlet-smoke-backend}"
 FRONTEND_CONTAINER="${FRONTEND_CONTAINER:-erp4-quadlet-smoke-frontend}"
+MIGRATE_CONTAINER="${MIGRATE_CONTAINER:-erp4-quadlet-smoke-migrate}"
 BACKEND_HOST_PORT="${BACKEND_HOST_PORT:-3007}"
 FRONTEND_HOST_PORT="${FRONTEND_HOST_PORT:-8087}"
 POSTGRES_HOST_PORT="${POSTGRES_HOST_PORT:-55437}"
 TMP_DIR="$(mktemp -d)"
 
 cleanup() {
-  podman rm -f "$FRONTEND_CONTAINER" "$BACKEND_CONTAINER" "$POSTGRES_CONTAINER" >/dev/null 2>&1 || true
+  podman rm -f "$FRONTEND_CONTAINER" "$BACKEND_CONTAINER" "$POSTGRES_CONTAINER" "$MIGRATE_CONTAINER" >/dev/null 2>&1 || true
   podman network rm "$NETWORK_NAME" >/dev/null 2>&1 || true
   podman volume rm "$POSTGRES_VOLUME" "$BACKEND_VOLUME" >/dev/null 2>&1 || true
   rm -rf "$TMP_DIR"
 }
 trap cleanup EXIT
 
-podman rm -f "$FRONTEND_CONTAINER" "$BACKEND_CONTAINER" "$POSTGRES_CONTAINER" >/dev/null 2>&1 || true
+podman rm -f "$FRONTEND_CONTAINER" "$BACKEND_CONTAINER" "$POSTGRES_CONTAINER" "$MIGRATE_CONTAINER" >/dev/null 2>&1 || true
 podman network rm "$NETWORK_NAME" >/dev/null 2>&1 || true
 podman volume rm "$POSTGRES_VOLUME" "$BACKEND_VOLUME" >/dev/null 2>&1 || true
 
 openssl genrsa -out "$TMP_DIR/jwt-private.pem" 2048 >/dev/null 2>&1
 openssl rsa -in "$TMP_DIR/jwt-private.pem" -pubout -out "$TMP_DIR/jwt-public.pem" >/dev/null 2>&1
-JWT_PUBLIC_KEY="$(python -c 'from pathlib import Path; import sys; print(Path(sys.argv[1]).read_text().strip().replace("\n", "\\n"))' "$TMP_DIR/jwt-public.pem")"
+JWT_PUBLIC_KEY="$(awk 'BEGIN { ORS="\\n" } { print }' "$TMP_DIR/jwt-public.pem" | sed 's/\\n$//')"
 
 cat > "$TMP_DIR/postgres.env" <<POSTGRES
 POSTGRES_USER=erp4
@@ -81,8 +82,8 @@ for _ in $(seq 1 60); do
 done
 podman exec "$POSTGRES_CONTAINER" pg_isready -U erp4 >/dev/null
 
-podman run --rm \
-  --name erp4-quadlet-smoke-migrate \
+podman run --rm --replace \
+  --name "$MIGRATE_CONTAINER" \
   --network "$NETWORK_NAME" \
   --env-file "$TMP_DIR/backend.env" \
   "$BACKEND_IMAGE" \

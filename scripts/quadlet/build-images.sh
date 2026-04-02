@@ -24,7 +24,7 @@ fi
 
 podman build \
   --build-arg NODE_IMAGE="$NODE_IMAGE" \
-  --build-arg DATABASE_URL="$BACKEND_BUILD_DATABASE_URL" \
+  --build-arg BACKEND_BUILD_DATABASE_URL="$BACKEND_BUILD_DATABASE_URL" \
   --file "$ROOT_DIR/deploy/containers/backend.Containerfile" \
   --tag "$BACKEND_IMAGE" \
   "$ROOT_DIR"

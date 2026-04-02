@@ -7,14 +7,13 @@ RUN apt-get update \
 
 WORKDIR /app
 
-ARG DATABASE_URL=postgresql://user:password@localhost:5432/postgres?schema=public
-ENV DATABASE_URL=${DATABASE_URL}
+ARG BACKEND_BUILD_DATABASE_URL=postgresql://user:password@localhost:5432/postgres?schema=public
 
 COPY packages/backend/package.json packages/backend/package-lock.json ./packages/backend/
 RUN npm ci --prefix packages/backend
 
 COPY packages/backend ./packages/backend
-RUN npm run prisma:generate --prefix packages/backend \
+RUN DATABASE_URL="${BACKEND_BUILD_DATABASE_URL}" npm run prisma:generate --prefix packages/backend \
  && npm run build --prefix packages/backend \
  && npm cache clean --force
 
