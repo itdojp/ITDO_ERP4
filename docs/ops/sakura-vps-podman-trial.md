@@ -84,6 +84,11 @@ vi deploy/quadlet/env/erp4-frontend-build.env
 - `VITE_GOOGLE_CLIENT_ID`（Google OIDC を使う場合）
 - `VITE_PUSH_PUBLIC_KEY`（Push 通知を使う場合）
 
+build 前に frontend build 用 env だけ検証します。
+```bash
+./scripts/quadlet/check-env.sh --skip-runtime --frontend-build-env deploy/quadlet/env/erp4-frontend-build.env
+```
+
 build:
 ```bash
 ./scripts/quadlet/build-images.sh
@@ -143,6 +148,11 @@ REPORT_STORAGE_DIR=/var/lib/erp4/reports
 - `DATABASE_URL` の host は `localhost` ではなく Podman network 上の `erp4-postgres` です。
 - `ALLOWED_ORIGINS` には frontend の公開 origin を必ず含めます。
 - backend は `erp4-backend-data.volume` を `/var/lib/erp4` へ mount します。PDF・Evidence archive・添付・report 出力先はこの配下に寄せます。
+
+runtime env を編集したら、unit 起動前に検証します。
+```bash
+./scripts/quadlet/check-env.sh
+```
 
 ## 5. 起動順
 
