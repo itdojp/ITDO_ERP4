@@ -67,8 +67,14 @@ command -v stat >/dev/null 2>&1 || fail 'required command not found: stat'
 if [[ -n "$KEEP_COUNT" ]] && ! is_non_negative_integer "$KEEP_COUNT"; then
   fail "--keep-count must be a non-negative integer: $KEEP_COUNT"
 fi
+if [[ -n "$KEEP_COUNT" ]]; then
+  KEEP_COUNT=$((10#$KEEP_COUNT))
+fi
 if [[ -n "$KEEP_DAYS" ]] && ! is_non_negative_integer "$KEEP_DAYS"; then
   fail "--keep-days must be a non-negative integer: $KEEP_DAYS"
+fi
+if [[ -n "$KEEP_DAYS" ]]; then
+  KEEP_DAYS=$((10#$KEEP_DAYS))
 fi
 
 shopt -s nullglob
