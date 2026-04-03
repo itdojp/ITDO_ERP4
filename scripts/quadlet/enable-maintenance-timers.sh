@@ -4,7 +4,7 @@ set -euo pipefail
 SYSTEMCTL="${SYSTEMCTL:-systemctl}"
 TARGET_DIR="${QUADLET_TARGET_DIR:-$HOME/.config/containers/systemd}"
 SKIP_STATUS=0
-SERVICES=(erp4-config-backup.timer erp4-config-prune.timer)
+TIMERS=(erp4-config-backup.timer erp4-config-prune.timer)
 
 usage() {
   cat <<USAGE
@@ -22,7 +22,7 @@ fail() {
 
 run_systemctl_user() {
   local output
-  if output="$($SYSTEMCTL --user "$@" 2>&1)"; then
+  if output="$("$SYSTEMCTL" --user "$@" 2>&1)"; then
     printf '%s' "$output"
     return 0
   fi
@@ -58,13 +58,15 @@ command -v "$SYSTEMCTL" >/dev/null 2>&1 || fail "required command not found: $SY
 [[ -f "$TARGET_DIR/erp4-maintenance.env" ]] || fail "required file not found: $TARGET_DIR/erp4-maintenance.env"
 [[ -f "$TARGET_DIR/erp4-config-backup.timer" ]] || fail "required file not found: $TARGET_DIR/erp4-config-backup.timer"
 [[ -f "$TARGET_DIR/erp4-config-prune.timer" ]] || fail "required file not found: $TARGET_DIR/erp4-config-prune.timer"
+[[ -f "$TARGET_DIR/erp4-config-backup.service" ]] || fail "required file not found: $TARGET_DIR/erp4-config-backup.service"
+[[ -f "$TARGET_DIR/erp4-config-prune.service" ]] || fail "required file not found: $TARGET_DIR/erp4-config-prune.service"
 
 run_systemctl_user daemon-reload >/dev/null
-run_systemctl_user enable --now "${SERVICES[@]}" >/dev/null
-printf 'OK: enabled %s\n' "${SERVICES[*]}"
+run_systemctl_user enable --now "${TIMERS[@]}" >/dev/null
+printf 'OK: enabled %s\n' "${TIMERS[*]}"
 
 if [[ "$SKIP_STATUS" -eq 1 ]]; then
   exit 0
 fi
 
-run_systemctl_user list-timers "${SERVICES[@]}"
+run_systemctl_user list-timers "${TIMERS[@]}"
