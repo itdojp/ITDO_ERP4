@@ -112,10 +112,11 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-command -v "$SYSTEMCTL" >/dev/null 2>&1 || fail "required command not found: $SYSTEMCTL"
 if [[ "$BACKUP_BEFORE_UPDATE" -eq 1 ]]; then
   [[ -x "$BACKUP_AND_CHECK" ]] || fail "backup command is not executable: $BACKUP_AND_CHECK"
+  run_backup
 fi
+command -v "$SYSTEMCTL" >/dev/null 2>&1 || fail "required command not found: $SYSTEMCTL"
 if [[ "$SKIP_BUILD" -eq 0 ]]; then
   [[ -x "$BUILD_IMAGES" ]] || fail "build command is not executable: $BUILD_IMAGES"
 fi
@@ -126,7 +127,6 @@ if [[ "$SKIP_STACK_CHECK" -eq 0 && "$INCLUDE_PROXY" -eq 1 ]]; then
   [[ -x "$STATUS_STACK" ]] || fail "status command is not executable: $STATUS_STACK"
 fi
 
-run_backup
 run_build_images
 
 restart_unit erp4-migrate.service
