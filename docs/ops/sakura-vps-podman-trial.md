@@ -245,6 +245,9 @@ stack の更新や uninstall 前に、`~/.config/containers/systemd/` 配下の 
 ./scripts/quadlet/restore-config.sh --archive ~/.local/share/erp4/quadlet-backups/erp4-quadlet-config-YYYYMMDD-HHMMSS.tar.gz --list
 ./scripts/quadlet/restore-config.sh --archive ~/.local/share/erp4/quadlet-backups/erp4-quadlet-config-YYYYMMDD-HHMMSS.tar.gz
 ./scripts/quadlet/restore-config.sh --archive ~/.local/share/erp4/quadlet-backups/erp4-quadlet-config-YYYYMMDD-HHMMSS.tar.gz --overwrite
+./scripts/quadlet/restore-latest.sh --list --print-archive
+./scripts/quadlet/restore-latest.sh --print-archive
+./scripts/quadlet/restore-latest.sh --overwrite --print-archive
 ```
 
 バックアップ archive が増えた場合は、`prune-backups.sh` で保持数または保持日数に合わせて削除できます。`--keep-count` と `--keep-days` は併用でき、その場合はいずれかの条件を満たす archive を保持します。削除対象を先に確認したい場合は `--dry-run` を使ってください。
