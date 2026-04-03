@@ -250,6 +250,9 @@ stack の更新や uninstall 前に、`~/.config/containers/systemd/` 配下の 
 バックアップ archive が増えた場合は、`prune-backups.sh` で保持数または保持日数に合わせて削除できます。`--keep-count` と `--keep-days` は併用でき、その場合はいずれかの条件を満たす archive を保持します。削除対象を先に確認したい場合は `--dry-run` を使ってください。
 
 ```bash
+./scripts/quadlet/list-backups.sh
+./scripts/quadlet/list-backups.sh --latest
+./scripts/quadlet/list-backups.sh --limit 5
 ./scripts/quadlet/prune-backups.sh --keep-count 10 --dry-run
 ./scripts/quadlet/prune-backups.sh --keep-count 10
 ./scripts/quadlet/prune-backups.sh --keep-count 7 --keep-days 30
