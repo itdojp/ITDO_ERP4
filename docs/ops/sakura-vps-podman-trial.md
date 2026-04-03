@@ -253,6 +253,8 @@ stack の更新や uninstall 前に、`~/.config/containers/systemd/` 配下の 
 ./scripts/quadlet/list-backups.sh
 ./scripts/quadlet/list-backups.sh --latest
 ./scripts/quadlet/list-backups.sh --limit 5
+./scripts/quadlet/check-backup.sh --archive ~/.local/share/erp4/quadlet-backups/erp4-quadlet-config-YYYYMMDD-HHMMSS.tar.gz
+./scripts/quadlet/check-backup.sh --archive ~/.local/share/erp4/quadlet-backups/erp4-quadlet-config-YYYYMMDD-HHMMSS.tar.gz --list
 ./scripts/quadlet/prune-backups.sh --keep-count 10 --dry-run
 ./scripts/quadlet/prune-backups.sh --keep-count 10
 ./scripts/quadlet/prune-backups.sh --keep-count 7 --keep-days 30
