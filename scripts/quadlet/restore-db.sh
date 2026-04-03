@@ -4,12 +4,13 @@ set -euo pipefail
 TARGET_DIR="${QUADLET_TARGET_DIR:-$HOME/.config/containers/systemd}"
 ENV_FILE="${POSTGRES_ENV_FILE:-$TARGET_DIR/erp4-postgres.env}"
 ENV_FILE_EXPLICIT=0
-CONTAINER_NAME="${POSTGRES_CONTAINER_NAME:-erp4-postgres}"
+CONTAINER_NAME="${POSTGRES_CONTAINER_NAME:-${POSTGRES_CONTAINER:-erp4-postgres}}"
 BACKUP_PREFIX=""
 DB_FILE=""
 GLOBALS_FILE=""
 SKIP_GLOBALS=0
 CLEAN_PUBLIC_SCHEMA=0
+PODMAN_EXEC_ENV_FILE=""
 
 usage() {
   cat <<USAGE
@@ -17,12 +18,12 @@ Usage: RESTORE_CONFIRM=1 $(basename "$0") [options]
   -h, --help             Show this help message and exit
   --target-dir DIR       Quadlet config directory (default: ~/.config/containers/systemd)
   --env-file PATH        PostgreSQL env file path (default: <target-dir>/erp4-postgres.env)
-  --container NAME       PostgreSQL container name (default: erp4-postgres)
-  --backup-prefix PATH   Backup prefix without .dump / -globals.sql suffix
-  --db-file PATH         Database dump file (.dump)
+  --container NAME       PostgreSQL container name (default: POSTGRES_CONTAINER/POSTGRES_CONTAINER_NAME/erp4-postgres)
+  --backup-prefix PATH   Backup prefix without .dump / -db.dump / -globals.sql suffix
+  --db-file PATH         Database dump file (.dump or -db.dump)
   --globals-file PATH    Globals SQL file
   --skip-globals         Skip globals restore even if globals file exists
-  --clean-public-schema  Drop and recreate public schema before restore
+  --clean-public-schema  Drop/recreate public schema and restore default schema grants before restore
 USAGE
 }
 
@@ -33,6 +34,10 @@ fail() {
 
 warn() {
   printf 'WARN: %s\n' "$*" >&2
+}
+
+cleanup() {
+  [[ -n "$PODMAN_EXEC_ENV_FILE" ]] && rm -f -- "$PODMAN_EXEC_ENV_FILE"
 }
 
 require_cmd() {
@@ -63,6 +68,21 @@ read_env_value() {
       }
     }
   ' "$file"
+}
+
+derive_globals_file() {
+  local db_file="$1"
+  case "$db_file" in
+    *-db.dump)
+      printf '%s-globals.sql\n' "${db_file%-db.dump}"
+      ;;
+    *.dump)
+      printf '%s-globals.sql\n' "${db_file%.dump}"
+      ;;
+    *)
+      return 1
+      ;;
+  esac
 }
 
 while [[ $# -gt 0 ]]; do
@@ -119,6 +139,8 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+trap cleanup EXIT
+require_cmd mktemp
 require_cmd podman
 [[ "${RESTORE_CONFIRM:-}" == "1" ]] || fail 'RESTORE_CONFIRM=1 is required for restore'
 [[ -f "$ENV_FILE" ]] || fail "PostgreSQL env file not found: $ENV_FILE"
@@ -130,8 +152,23 @@ if [[ -n "$BACKUP_PREFIX" && -n "$GLOBALS_FILE" ]]; then
   fail '--backup-prefix and --globals-file cannot be used together'
 fi
 if [[ -n "$BACKUP_PREFIX" ]]; then
-  DB_FILE="${BACKUP_PREFIX}.dump"
+  if [[ -f "${BACKUP_PREFIX}.dump" ]]; then
+    DB_FILE="${BACKUP_PREFIX}.dump"
+  elif [[ -f "${BACKUP_PREFIX}-db.dump" ]]; then
+    DB_FILE="${BACKUP_PREFIX}-db.dump"
+  else
+    fail "database backup file not found for prefix: ${BACKUP_PREFIX}.dump or ${BACKUP_PREFIX}-db.dump"
+  fi
   GLOBALS_FILE="${BACKUP_PREFIX}-globals.sql"
+fi
+
+if [[ -n "$DB_FILE" && -z "$GLOBALS_FILE" && "$SKIP_GLOBALS" -eq 0 ]]; then
+  if derived_globals_file="$(derive_globals_file "$DB_FILE")" && [[ -f "$derived_globals_file" ]]; then
+    GLOBALS_FILE="$derived_globals_file"
+  else
+    warn 'globals file not provided or not found; skipping globals restore'
+    SKIP_GLOBALS=1
+  fi
 fi
 
 [[ -f "$DB_FILE" ]] || fail "database backup file not found: $DB_FILE"
@@ -148,21 +185,28 @@ POSTGRES_DB="$(read_env_value "$ENV_FILE" POSTGRES_DB)"
 [[ -n "$POSTGRES_PASSWORD" ]] || fail "missing or empty required key in $ENV_FILE: POSTGRES_PASSWORD"
 [[ -n "$POSTGRES_DB" ]] || fail "missing or empty required key in $ENV_FILE: POSTGRES_DB"
 
+PODMAN_EXEC_ENV_FILE="$(mktemp)"
+chmod 600 "$PODMAN_EXEC_ENV_FILE"
+printf 'PGPASSWORD=%s\n' "$POSTGRES_PASSWORD" > "$PODMAN_EXEC_ENV_FILE"
+
 if [[ "$CLEAN_PUBLIC_SCHEMA" -eq 1 ]]; then
-  podman exec -e PGPASSWORD="$POSTGRES_PASSWORD" "$CONTAINER_NAME" \
+  podman exec --env-file "$PODMAN_EXEC_ENV_FILE" "$CONTAINER_NAME" \
     psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
-    -c 'DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public;'
-  printf 'OK: recreated public schema in %s\n' "$POSTGRES_DB"
+    -c 'DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public;' \
+    -c "GRANT ALL ON SCHEMA public TO \"$POSTGRES_USER\";" \
+    -c 'DO $$ BEGIN IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '\''pg_database_owner'\'') THEN GRANT ALL ON SCHEMA public TO pg_database_owner; END IF; END $$;' \
+    -c 'GRANT USAGE ON SCHEMA public TO PUBLIC;'
+  printf 'OK: recreated public schema and restored default schema grants in %s\n' "$POSTGRES_DB"
 fi
 
 if [[ "$SKIP_GLOBALS" -eq 0 ]]; then
-  podman exec -i -e PGPASSWORD="$POSTGRES_PASSWORD" "$CONTAINER_NAME" \
+  podman exec -i --env-file "$PODMAN_EXEC_ENV_FILE" "$CONTAINER_NAME" \
     psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" postgres < "$GLOBALS_FILE"
   printf 'OK: restored globals from %s\n' "$GLOBALS_FILE"
 else
   warn 'skipping globals restore'
 fi
 
-podman exec -i -e PGPASSWORD="$POSTGRES_PASSWORD" "$CONTAINER_NAME" \
-  pg_restore --clean --if-exists --no-owner --no-privileges -U "$POSTGRES_USER" -d "$POSTGRES_DB" < "$DB_FILE"
+podman exec -i --env-file "$PODMAN_EXEC_ENV_FILE" "$CONTAINER_NAME" \
+  pg_restore --clean --if-exists --exit-on-error --no-owner --no-privileges -U "$POSTGRES_USER" -d "$POSTGRES_DB" < "$DB_FILE"
 printf 'OK: restored database from %s\n' "$DB_FILE"
