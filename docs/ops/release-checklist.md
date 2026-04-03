@@ -4,7 +4,10 @@
 - [x] CI が green（`CI` / `Link Check`）
 - [x] `security-audit` が許容範囲（High/Critical なし、または例外が Issue 化済み）
 - [x] DB migration 有無を確認（`packages/backend/prisma/migrations/`）
-- [ ] バックアップ手順を実施可能（`docs/ops/backup-restore.md`）
+- [ ] 直近の backup/restore 証跡を確認（`docs/ops/backup-restore.md`）
+- [ ] restore verification の成功日時を記録
+- [ ] 使用した backup archive と log の参照先を記録
+- [ ] 実施者と対象環境を記録
 
 ## 試験稼働 Go/No-Go（2026-02-26 時点）
 - [x] `main` の `CI` が2連続成功（run [22430055698](https://github.com/itdojp/ITDO_ERP4/actions/runs/22430055698) の attempt 1/2 ともに成功）

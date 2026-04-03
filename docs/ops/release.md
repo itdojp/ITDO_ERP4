@@ -9,7 +9,7 @@
 
 - CI が green（`CI` / `Link Check` / `security-audit`）
 - DB マイグレーション有無の確認（`packages/backend/prisma/migrations/`）
-- バックアップ手順が実施可能であることの確認（`docs/ops/backup-restore.md`）
+- 直近の backup/restore 証跡を確認（実施日時・実施者・使用した archive/log を含む、`docs/ops/backup-restore.md`）
 
 ## 実施
 
