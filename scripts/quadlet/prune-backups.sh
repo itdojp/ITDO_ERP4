@@ -76,7 +76,11 @@ archives=("$BACKUP_DIR"/erp4-quadlet-config-*.tar.gz)
 shopt -u nullglob
 [[ ${#archives[@]} -gt 0 ]] || fail "no backup archives found in $BACKUP_DIR"
 
-mapfile -t archives < <(printf '%s\n' "${archives[@]}" | sort)
+mapfile -t archives < <(
+  for archive in "${archives[@]}"; do
+    printf '%s\t%s\n' "$(stat -c %Y "$archive")" "$archive"
+  done | sort -n | cut -f2-
+)
 declare -A keep=()
 
 if [[ -n "$KEEP_COUNT" ]]; then
