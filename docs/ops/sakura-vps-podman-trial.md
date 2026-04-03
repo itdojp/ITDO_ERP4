@@ -235,6 +235,8 @@ stack の更新や uninstall 前に、`~/.config/containers/systemd/` 配下の 
 ./scripts/quadlet/backup-config.sh
 ./scripts/quadlet/backup-config.sh --include-proxy
 ./scripts/quadlet/backup-config.sh --include-proxy --include-units --output-dir ~/backups/erp4
+./scripts/quadlet/backup-and-check.sh --print-archive
+./scripts/quadlet/backup-and-check.sh --include-proxy --include-units --list --print-archive
 ```
 
 生成される tar.gz には DB 接続情報や JWT secret などの機微情報が含まれる可能性があるため、保存先は第三者から見えない場所を選んでください。`backup-config.sh` は出力先ディレクトリを `0700`、archive を `0600` に寄せますが、外部へコピーする場合も同等の権限制御を前提にしてください。
