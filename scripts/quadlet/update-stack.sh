@@ -2,10 +2,12 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BACKUP_AND_CHECK="${BACKUP_AND_CHECK:-$SCRIPT_DIR/backup-and-check.sh}"
 BUILD_IMAGES="${BUILD_IMAGES:-$SCRIPT_DIR/build-images.sh}"
 CHECK_STACK="${CHECK_STACK:-$SCRIPT_DIR/check-stack.sh}"
 STATUS_STACK="${STATUS_STACK:-$SCRIPT_DIR/status-stack.sh}"
 SYSTEMCTL="${SYSTEMCTL:-systemctl}"
+BACKUP_BEFORE_UPDATE=0
 SKIP_BUILD=0
 SKIP_STACK_CHECK=0
 INCLUDE_PROXY=0
@@ -13,6 +15,7 @@ INCLUDE_PROXY=0
 usage() {
   cat <<USAGE
 Usage: $(basename "$0") [options]
+  --backup-before-update
   --skip-build
   --skip-stack-check
   --include-proxy
@@ -48,6 +51,22 @@ run_build_images() {
   "$BUILD_IMAGES"
 }
 
+run_backup() {
+  local backup_args=(
+    --include-units
+  )
+
+  if [[ "$BACKUP_BEFORE_UPDATE" -eq 0 ]]; then
+    return 0
+  fi
+
+  if [[ "$INCLUDE_PROXY" -eq 1 ]]; then
+    backup_args+=(--include-proxy)
+  fi
+
+  "$BACKUP_AND_CHECK" "${backup_args[@]}"
+}
+
 run_stack_check() {
   if [[ "$SKIP_STACK_CHECK" -eq 1 ]]; then
     return 0
@@ -67,6 +86,10 @@ restart_unit() {
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --backup-before-update)
+      BACKUP_BEFORE_UPDATE=1
+      shift
+      ;;
     --skip-build)
       SKIP_BUILD=1
       shift
@@ -90,6 +113,9 @@ while [[ $# -gt 0 ]]; do
 done
 
 command -v "$SYSTEMCTL" >/dev/null 2>&1 || fail "required command not found: $SYSTEMCTL"
+if [[ "$BACKUP_BEFORE_UPDATE" -eq 1 ]]; then
+  [[ -x "$BACKUP_AND_CHECK" ]] || fail "backup command is not executable: $BACKUP_AND_CHECK"
+fi
 if [[ "$SKIP_BUILD" -eq 0 ]]; then
   [[ -x "$BUILD_IMAGES" ]] || fail "build command is not executable: $BUILD_IMAGES"
 fi
@@ -100,6 +126,7 @@ if [[ "$SKIP_STACK_CHECK" -eq 0 && "$INCLUDE_PROXY" -eq 1 ]]; then
   [[ -x "$STATUS_STACK" ]] || fail "status command is not executable: $STATUS_STACK"
 fi
 
+run_backup
 run_build_images
 
 restart_unit erp4-migrate.service
