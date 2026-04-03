@@ -4,10 +4,12 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 CHECK_PROXY="${CHECK_PROXY:-$ROOT_DIR/scripts/quadlet/check-proxy.sh}"
 STATUS_STACK="${STATUS_STACK:-$ROOT_DIR/scripts/quadlet/status-stack.sh}"
+SYSTEMCTL="${SYSTEMCTL:-systemctl}"
 TARGET_DIR="${QUADLET_TARGET_DIR:-$HOME/.config/containers/systemd}"
 CADDY_ENV="${CADDY_ENV_FILE:-$TARGET_DIR/erp4-caddy.env}"
 CADDYFILE="${CADDYFILE_PATH:-$TARGET_DIR/erp4-caddy.Caddyfile}"
 SKIP_PROXY_CHECK=0
+SKIP_RUNTIME=0
 SKIP_STATUS=0
 
 usage() {
@@ -18,6 +20,7 @@ Usage: $(basename "$0") [options]
   --caddy-env FILE    Path to the Caddy environment file
   --caddyfile FILE    Path to the Caddyfile configuration
   --skip-proxy-check  Skip config validation performed by check-proxy.sh
+  --skip-runtime      Forward --skip-runtime to check-proxy.sh
   --skip-status       Skip post-reload validation performed by status-stack.sh --include-proxy
 USAGE
 }
@@ -29,7 +32,7 @@ fail() {
 
 run_systemctl_user() {
   local output
-  if output="$(systemctl --user "$@" 2>&1)"; then
+  if output="$("$SYSTEMCTL" --user "$@" 2>&1)"; then
     return 0
   fi
   if grep -Fq 'Failed to connect to bus' <<<"$output"; then
@@ -66,6 +69,10 @@ while [[ $# -gt 0 ]]; do
       SKIP_STATUS=1
       shift
       ;;
+    --skip-runtime)
+      SKIP_RUNTIME=1
+      shift
+      ;;
     -h|--help)
       usage
       exit 0
@@ -76,13 +83,15 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-command -v systemctl >/dev/null 2>&1 || fail 'required command not found: systemctl'
+command -v "$SYSTEMCTL" >/dev/null 2>&1 || fail "required command not found: $SYSTEMCTL"
 
 if [[ "$SKIP_PROXY_CHECK" -eq 0 ]]; then
   [[ -x "$CHECK_PROXY" ]] || fail "required executable not found: $CHECK_PROXY"
-  "$CHECK_PROXY" \
-    --caddy-env "$CADDY_ENV" \
-    --caddyfile "$CADDYFILE"
+  check_proxy_args=(--caddy-env "$CADDY_ENV" --caddyfile "$CADDYFILE")
+  if [[ "$SKIP_RUNTIME" -eq 1 ]]; then
+    check_proxy_args+=(--skip-runtime)
+  fi
+  "$CHECK_PROXY" "${check_proxy_args[@]}"
 fi
 
 run_systemctl_user restart erp4-caddy.service
