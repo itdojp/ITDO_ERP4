@@ -72,12 +72,10 @@ done
 [[ -f "$BACKUP_CONFIG_SCRIPT" ]] || fail "helper script not found: $BACKUP_CONFIG_SCRIPT"
 [[ -f "$CHECK_BACKUP_SCRIPT" ]] || fail "helper script not found: $CHECK_BACKUP_SCRIPT"
 
-stamp="$(date +%Y%m%d-%H%M%S)"
-archive="$OUTPUT_DIR/erp4-quadlet-config-$stamp.tar.gz"
-
 backup_args=(
   --target-dir "$TARGET_DIR"
   --output-dir "$OUTPUT_DIR"
+  --print-archive
 )
 if [[ "$INCLUDE_PROXY" -eq 1 ]]; then
   backup_args+=(--include-proxy)
@@ -86,7 +84,10 @@ if [[ "$INCLUDE_UNITS" -eq 1 ]]; then
   backup_args+=(--include-units)
 fi
 
-STAMP_OVERRIDE="$stamp" "$BASH_BIN" "$BACKUP_CONFIG_SCRIPT" "${backup_args[@]}"
+archive="$("$BASH_BIN" "$BACKUP_CONFIG_SCRIPT" "${backup_args[@]}")"
+archive="${archive//$'\r'/}"
+archive="${archive%$'\n'}"
+[[ -n "$archive" ]] || fail 'backup helper did not return an archive path'
 [[ -f "$archive" ]] || fail "expected backup archive was not created: $archive"
 
 if [[ "$PRINT_ARCHIVE" -eq 1 ]]; then

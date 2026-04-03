@@ -239,7 +239,7 @@ stack の更新や uninstall 前に、`~/.config/containers/systemd/` 配下の 
 ./scripts/quadlet/backup-and-check.sh --include-proxy --include-units --list --print-archive
 ```
 
-生成される tar.gz には DB 接続情報や JWT secret などの機微情報が含まれる可能性があるため、保存先は第三者から見えない場所を選んでください。`backup-config.sh` は出力先ディレクトリを `0700`、archive を `0600` に寄せますが、外部へコピーする場合も同等の権限制御を前提にしてください。
+`backup-and-check.sh` は `backup-config.sh` で archive を生成した直後に、同じ archive を `check-backup.sh` で検証します。生成される tar.gz には DB 接続情報や JWT secret などの機微情報が含まれる可能性があるため、保存先は第三者から見えない場所を選んでください。`backup-config.sh` は出力先ディレクトリを `0700`、archive を `0600` に寄せますが、外部へコピーする場合も同等の権限制御を前提にしてください。
 
 復元する場合は、archive 内容を確認したうえで `restore-config.sh` を使います。既存ファイルがある場合は既定で停止するため、上書きが必要な場合だけ `--overwrite` を付けてください。unit 定義を含む archive を戻すときは、既定で `systemctl --user daemon-reload` まで実行します。
 
