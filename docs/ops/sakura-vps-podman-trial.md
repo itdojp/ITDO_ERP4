@@ -225,7 +225,7 @@ Quadlet の unit 定義ファイル自体を取り除く場合:
 ./scripts/quadlet/uninstall-stack.sh --include-proxy --purge-config
 ```
 
-`uninstall-stack.sh` は `disable-stack.sh` を先に実行したうえで、`~/.config/containers/systemd/` 配下の Quadlet unit 定義を削除します。既定では `erp4-postgres.env` / `erp4-backend.env` / `erp4-caddy.env` / `erp4-caddy.Caddyfile` は保持します。secret やドメイン設定も消したい場合だけ `--purge-config` を使ってください。Podman volume やイメージ、アプリケーションデータ自体は削除しません。
+`uninstall-stack.sh` は `disable-stack.sh` を先に実行したうえで、`~/.config/containers/systemd/` 配下の Quadlet unit 定義を削除し、最後に `systemctl --user daemon-reload` で user manager の定義キャッシュを更新します。既定では `erp4-postgres.env` / `erp4-backend.env` / `erp4-caddy.env` / `erp4-caddy.Caddyfile` / `erp4-frontend-build.env` は保持します。secret やドメイン設定、frontend build 用 env も消したい場合だけ `--purge-config` を使ってください。Podman volume やイメージ、アプリケーションデータ自体は削除しません。
 
 ## 6. 疎通確認
 
