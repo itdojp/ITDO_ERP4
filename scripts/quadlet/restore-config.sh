@@ -75,9 +75,15 @@ done
 [[ -f "$ARCHIVE" ]] || fail "archive not found: $ARCHIVE"
 command -v tar >/dev/null 2>&1 || fail 'required command not found: tar'
 
-mapfile -t entries < <(tar -tzf "$ARCHIVE")
+if ! entries_output="$(tar -tzf "$ARCHIVE")"; then
+  fail "archive could not be listed: $ARCHIVE"
+fi
+mapfile -t entries <<<"$entries_output"
 [[ ${#entries[@]} -gt 0 ]] || fail "archive is empty: $ARCHIVE"
-mapfile -t entry_details < <(tar -tvzf "$ARCHIVE")
+if ! entry_details_output="$(tar -tvzf "$ARCHIVE")"; then
+  fail "archive metadata could not be verified: $ARCHIVE"
+fi
+mapfile -t entry_details <<<"$entry_details_output"
 [[ ${#entry_details[@]} -eq ${#entries[@]} ]] || fail "archive metadata could not be verified: $ARCHIVE"
 
 requires_daemon_reload=0
@@ -116,10 +122,13 @@ if [[ "$OVERWRITE" -eq 0 ]]; then
   fi
 fi
 
+if [[ "$SKIP_DAEMON_RELOAD" -eq 0 && "$requires_daemon_reload" -eq 1 ]]; then
+  command -v "$SYSTEMCTL" >/dev/null 2>&1 || fail "required command not found: $SYSTEMCTL"
+fi
+
 tar -C "$TARGET_DIR" --no-same-owner --no-same-permissions -xzf "$ARCHIVE"
 
 if [[ "$SKIP_DAEMON_RELOAD" -eq 0 && "$requires_daemon_reload" -eq 1 ]]; then
-  command -v "$SYSTEMCTL" >/dev/null 2>&1 || fail "required command not found: $SYSTEMCTL"
   run_daemon_reload
 fi
 
