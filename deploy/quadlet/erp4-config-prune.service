@@ -1,0 +1,7 @@
+[Unit]
+Description=ERP4 Quadlet config backup prune
+
+[Service]
+Type=oneshot
+EnvironmentFile=%h/.config/containers/systemd/erp4-maintenance.env
+ExecStart=/usr/bin/bash -c 'set -euo pipefail; cd "$ERP4_REPO_DIR"; QUADLET_BACKUP_DIR="${QUADLET_BACKUP_DIR:-$HOME/.local/share/erp4/quadlet-backups}" ./scripts/quadlet/prune-backups.sh --keep-count "${ERP4_BACKUP_KEEP_COUNT:-14}" --keep-days "${ERP4_BACKUP_KEEP_DAYS:-30}"'

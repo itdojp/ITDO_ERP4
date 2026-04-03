@@ -1,0 +1,10 @@
+[Unit]
+Description=Run ERP4 Quadlet config backup prune nightly
+
+[Timer]
+OnCalendar=*-*-* 03:45:00
+Persistent=true
+Unit=erp4-config-prune.service
+
+[Install]
+WantedBy=timers.target
