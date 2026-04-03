@@ -19,3 +19,27 @@ RESTORE_CONFIRM=1 ./scripts/podman-poc.sh restore
 
 - リストアは破壊的操作になり得るため `RESTORE_CONFIRM=1` が必要
 - 必要に応じて `RESTORE_CLEAN=1` でスキーマの作り直しを行う
+
+
+## さくらVPS / Quadlet（PostgreSQL container）
+`erp4-postgres` を rootless Podman + Quadlet で運用している場合は、manual backup helper を使います。
+
+```bash
+./scripts/quadlet/backup-db.sh --print-prefix
+```
+
+前提:
+- `~/.config/containers/systemd/erp4-postgres.env` に `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` があること
+- `erp4-postgres` container が起動済みであること
+
+既定の出力先:
+- `~/.local/share/erp4/db-backups/erp4-postgres-<UTC timestamp>.dump`
+- `~/.local/share/erp4/db-backups/erp4-postgres-<UTC timestamp>-globals.sql`
+
+主な option:
+- `--target-dir DIR`: Quadlet env 配置先を切り替える
+- `--env-file PATH`: PostgreSQL env file を直接指定する
+- `--backup-dir DIR`: 出力先を切り替える
+- `--container NAME`: PostgreSQL container 名を切り替える
+- `--skip-globals`: `pg_dumpall --globals-only` を省略する
+- `--print-prefix`: 生成した backup prefix を標準出力へ返す
