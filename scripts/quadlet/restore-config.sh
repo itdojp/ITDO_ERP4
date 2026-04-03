@@ -27,7 +27,7 @@ fail() {
 
 run_daemon_reload() {
   local output
-  if output="$($SYSTEMCTL --user daemon-reload 2>&1)"; then
+  if output="$("$SYSTEMCTL" --user daemon-reload 2>&1)"; then
     return 0
   fi
   if grep -Fq 'Failed to connect to bus' <<<"$output"; then
@@ -77,13 +77,18 @@ command -v tar >/dev/null 2>&1 || fail 'required command not found: tar'
 
 mapfile -t entries < <(tar -tzf "$ARCHIVE")
 [[ ${#entries[@]} -gt 0 ]] || fail "archive is empty: $ARCHIVE"
+mapfile -t entry_details < <(tar -tvzf "$ARCHIVE")
+[[ ${#entry_details[@]} -eq ${#entries[@]} ]] || fail "archive metadata could not be verified: $ARCHIVE"
 
 requires_daemon_reload=0
-for entry in "${entries[@]}"; do
+for i in "${!entries[@]}"; do
+  entry="${entries[$i]}"
+  detail="${entry_details[$i]}"
   [[ -n "$entry" ]] || fail "archive contains an empty entry: $ARCHIVE"
   [[ "$entry" != /* ]] || fail "archive contains an absolute path: $entry"
   [[ "$entry" != *'/'* ]] || fail "archive contains nested paths: $entry"
   [[ "$entry" != '.' && "$entry" != '..' ]] || fail "archive contains an invalid entry: $entry"
+  [[ "${detail:0:1}" == "-" ]] || fail "archive contains a non-regular entry: $entry"
   if [[ "$entry" =~ \.(container|service|volume|network)$ ]]; then
     requires_daemon_reload=1
   fi
@@ -111,7 +116,7 @@ if [[ "$OVERWRITE" -eq 0 ]]; then
   fi
 fi
 
-tar -C "$TARGET_DIR" -xzf "$ARCHIVE"
+tar -C "$TARGET_DIR" --no-same-owner --no-same-permissions -xzf "$ARCHIVE"
 
 if [[ "$SKIP_DAEMON_RELOAD" -eq 0 && "$requires_daemon_reload" -eq 1 ]]; then
   command -v "$SYSTEMCTL" >/dev/null 2>&1 || fail "required command not found: $SYSTEMCTL"
