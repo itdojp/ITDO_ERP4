@@ -24,6 +24,7 @@ Usage: $(basename "$0") [options]
   --skip-daemon-reload   Pass through to restore-latest.sh
   --skip-restart         Restore config only; do not restart the stack
   --skip-env-check       Pass through to restart-stack.sh
+  --skip-build-env-check Deprecated alias for --skip-env-check
   --skip-stack-check     Pass through to restart-stack.sh
 USAGE
 }
@@ -61,7 +62,7 @@ while [[ $# -gt 0 ]]; do
       SKIP_RESTART=1
       shift
       ;;
-    --skip-env-check)
+    --skip-env-check|--skip-build-env-check)
       SKIP_ENV_CHECK=1
       shift
       ;;
@@ -80,7 +81,6 @@ while [[ $# -gt 0 ]]; do
 done
 
 [[ -x "$RESTORE_LATEST" ]] || fail "restore command is not executable: $RESTORE_LATEST"
-[[ -x "$RESTART_STACK" ]] || fail "restart command is not executable: $RESTART_STACK"
 
 restore_args=(
   --backup-dir "$BACKUP_DIR"
@@ -100,6 +100,8 @@ if [[ "$SKIP_RESTART" -eq 1 ]]; then
   printf 'OK: latest backup restored without restarting the stack\n'
   exit 0
 fi
+
+[[ -x "$RESTART_STACK" ]] || fail "restart command is not executable: $RESTART_STACK"
 
 restart_args=()
 if [[ "$INCLUDE_PROXY" -eq 1 ]]; then
