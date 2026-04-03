@@ -19,6 +19,7 @@
 ### バックアップ/リストア
 
 - [backup-restore](backup-restore.md)
+  - Quadlet DB backup/restore 補助: [quadlet-db-backup-restore](quadlet-db-backup-restore.md)
   - DR計画（RTO/RPO/復元演習）: [dr-plan](dr-plan.md)
   - 詳細: [docs/requirements/backup-restore.md](../requirements/backup-restore.md)
   - S3決定シート: [backup-s3-decision-checklist](backup-s3-decision-checklist.md)
