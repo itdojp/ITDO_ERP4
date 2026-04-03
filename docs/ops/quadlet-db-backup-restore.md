@@ -30,6 +30,19 @@
 ./scripts/quadlet/backup-db.sh --print-prefix
 ```
 
+## 最新 backup の健全性確認
+最新 DB backup と globals dump の組を確認する場合は次を使います。
+
+```bash
+./scripts/quadlet/check-db-backup.sh --max-age-hours 24 --print-prefix
+```
+
+latest dump のみ確認し、globals dump を必須にしない場合:
+
+```bash
+./scripts/quadlet/check-db-backup.sh --skip-globals --max-age-hours 24
+```
+
 globals dump を作らない場合:
 ```bash
 ./scripts/quadlet/backup-db.sh --skip-globals --print-prefix
