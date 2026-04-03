@@ -229,6 +229,13 @@ backup / prune timer の状態を確認する場合:
 ./scripts/quadlet/status-maintenance-timers.sh
 ```
 
+backup / prune を手動で 1 回実行する場合:
+```bash
+./scripts/quadlet/run-maintenance-now.sh --include-units
+```
+
+`run-maintenance-now.sh` は `ERP4_BACKUP_INCLUDE_PROXY=1` が設定されている場合、明示指定しなくても proxy 設定を backup 対象に含めます。`--include-proxy` を付けると環境変数設定が無い場合でも強制的に proxy 設定を含めます。`--skip-backup` で prune だけを実行する場合も、backup archive が 1 件も無ければ no-op 成功で終了します。
+
 既定では毎日 03:45 に `erp4-config-prune.service` が実行され、`prune-backups.sh --keep-count "${ERP4_BACKUP_KEEP_COUNT:-14}" --keep-days "${ERP4_BACKUP_KEEP_DAYS:-30}"` 相当の整理を行います。保持本数と保持日数は `erp4-maintenance.env` の `ERP4_BACKUP_KEEP_COUNT` / `ERP4_BACKUP_KEEP_DAYS` で上書きできます。backup archive が 1 件も無い場合は no-op 成功として扱い、timer を失敗状態にしません。
 
 `check-stack.sh` は backend health/readiness、frontend、PostgreSQL、および user systemd service を最大 60 秒・2 秒間隔で再試行しながら検証します。HTTP probe には残り時間ベースの timeout をかけているため、到達不能時でも無制限に待機しません。起動直後の偽陰性を避けたい場合は、個別 `curl` / `pg_isready` よりこちらを優先してください。
