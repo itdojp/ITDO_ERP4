@@ -6,6 +6,7 @@ OUTPUT_DIR="${QUADLET_BACKUP_DIR:-$HOME/.local/share/erp4/quadlet-backups}"
 STAMP="${STAMP_OVERRIDE:-$(date +%Y%m%d-%H%M%S)}"
 INCLUDE_PROXY=0
 INCLUDE_UNITS=0
+PRINT_ARCHIVE=0
 
 usage() {
   cat <<USAGE
@@ -15,6 +16,7 @@ Usage: $(basename "$0") [options]
   --output-dir DIR     Directory to write the backup archive into
   --include-proxy      Include caddy env/Caddyfile in the backup set
   --include-units      Include Quadlet unit definitions as well
+  --print-archive      Print only the generated archive path
 USAGE
 }
 
@@ -41,6 +43,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --include-units)
       INCLUDE_UNITS=1
+      shift
+      ;;
+    --print-archive)
+      PRINT_ARCHIVE=1
       shift
       ;;
     -h|--help)
@@ -99,6 +105,11 @@ done
 archive="$OUTPUT_DIR/erp4-quadlet-config-$STAMP.tar.gz"
 tar -C "$TARGET_DIR" -czf "$archive" "${staged[@]}"
 chmod 600 "$archive"
+
+if [[ "$PRINT_ARCHIVE" -eq 1 ]]; then
+  printf '%s\n' "$archive"
+  exit 0
+fi
 
 printf 'OK: backup written to %s\n' "$archive"
 printf 'Included files:\n'
