@@ -155,14 +155,16 @@ runtime env を編集したら、unit 起動前に検証します。
 ./scripts/quadlet/check-env.sh
 ```
 
-任意で config backup 用の maintenance env を編集します。
+任意で backup / prune / DB backup 用の maintenance env を編集します。
 `erp4-maintenance.env` の例:
 ```dotenv
 ERP4_REPO_DIR=/opt/itdo/ITDO_ERP4
 QUADLET_BACKUP_DIR=/home/YOUR_USER/.local/share/erp4/quadlet-backups
+QUADLET_DB_BACKUP_DIR=/home/YOUR_USER/.local/share/erp4/db-backups
 ERP4_BACKUP_INCLUDE_PROXY=1
 ERP4_BACKUP_KEEP_COUNT=14
 ERP4_BACKUP_KEEP_DAYS=30
+ERP4_DB_BACKUP_SKIP_GLOBALS=0
 ```
 
 ## 5. 起動順
@@ -206,7 +208,15 @@ systemctl --user enable --now erp4-config-backup.timer
 systemctl --user list-timers erp4-config-backup.timer
 ```
 
-既定では毎日 03:15 に `erp4-config-backup.service` が実行され、`backup-and-check.sh --include-units` が呼ばれます。`ERP4_BACKUP_INCLUDE_PROXY=1` のときだけ proxy 設定も backup に含めます。backup 対象には `erp4-maintenance.env` も含まれ、`--include-units` を付けた実行では `erp4-config-backup.service` / `erp4-config-backup.timer` / `erp4-config-prune.service` / `erp4-config-prune.timer` も archive に含まれます。
+既定では毎日 03:15 に `erp4-config-backup.service` が実行され、`backup-and-check.sh --include-units` が呼ばれます。`ERP4_BACKUP_INCLUDE_PROXY=1` のときだけ proxy 設定も backup に含めます。backup 対象には `erp4-maintenance.env` も含まれ、`--include-units` を付けた実行では `erp4-config-backup.service` / `erp4-config-backup.timer` / `erp4-db-backup.service` / `erp4-db-backup.timer` / `erp4-config-prune.service` / `erp4-config-prune.timer` も archive に含まれます。
+
+定期 DB backup を有効化する場合:
+```bash
+systemctl --user enable --now erp4-db-backup.timer
+systemctl --user list-timers erp4-db-backup.timer
+```
+
+既定では毎日 04:15 に `erp4-db-backup.service` が実行され、`backup-db.sh` が PostgreSQL dump と globals dump を取得します。出力先は `erp4-maintenance.env` の `QUADLET_DB_BACKUP_DIR` で上書きでき、`ERP4_DB_BACKUP_SKIP_GLOBALS=1` を付けると globals dump を省略できます。globals dump にはロール/権限に加えてパスワードハッシュ等の機微情報が含まれる可能性があるため、`QUADLET_DB_BACKUP_DIR` は `0700` などの厳しい権限で管理し、保管/転送時は暗号化とアクセス制御を前提にしてください。現時点では DB backup 用の自動 prune は提供していないため、`enable-maintenance-timers.sh` の既定対象には含めていません。`erp4-db-backup.timer` を有効化する場合は、保持本数/保持日数を別途運用で決め、手動削除または外部ローテーションを併用してください。
 
 定期 prune を有効化する場合:
 ```bash

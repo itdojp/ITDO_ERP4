@@ -1,0 +1,10 @@
+[Unit]
+Description=Run ERP4 PostgreSQL logical backup nightly
+
+[Timer]
+OnCalendar=*-*-* 04:15:00
+Persistent=true
+Unit=erp4-db-backup.service
+
+[Install]
+WantedBy=timers.target
