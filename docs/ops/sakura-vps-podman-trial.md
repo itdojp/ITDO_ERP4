@@ -227,6 +227,18 @@ Quadlet の unit 定義ファイル自体を取り除く場合:
 
 `uninstall-stack.sh` は `disable-stack.sh` を先に実行したうえで、`~/.config/containers/systemd/` 配下の Quadlet unit 定義を削除し、最後に `systemctl --user daemon-reload` で user manager の定義キャッシュを更新します。既定では `erp4-postgres.env` / `erp4-backend.env` / `erp4-caddy.env` / `erp4-caddy.Caddyfile` / `erp4-frontend-build.env` は保持します。secret やドメイン設定、frontend build 用 env も消したい場合だけ `--purge-config` を使ってください。Podman volume やイメージ、アプリケーションデータ自体は削除しません。
 
+## 5.1 設定バックアップ
+
+stack の更新や uninstall 前に、`~/.config/containers/systemd/` 配下の env/config を tar.gz で退避できます。既定では backend/frontend/postgres 用の env を対象にし、`--include-proxy` で Caddy 設定、`--include-units` で Quadlet 定義も含めます。既定の出力先は `~/.local/share/erp4/quadlet-backups/` です。
+
+```bash
+./scripts/quadlet/backup-config.sh
+./scripts/quadlet/backup-config.sh --include-proxy
+./scripts/quadlet/backup-config.sh --include-proxy --include-units --output-dir ~/backups/erp4
+```
+
+生成される tar.gz には DB 接続情報や JWT secret などの機微情報が含まれる可能性があるため、保存先は第三者から見えない場所を選んでください。`backup-config.sh` は出力先ディレクトリを `0700`、archive を `0600` に寄せますが、外部へコピーする場合も同等の権限制御を前提にしてください。
+
 ## 6. 疎通確認
 
 backend:
