@@ -218,6 +218,15 @@ systemctl --user status erp4-postgres.service erp4-migrate.service erp4-backend.
 
 `disable-stack.sh` は stack を停止したうえで、対象 unit の user systemd 自動起動設定も解除します。`--include-proxy` を付けると `erp4-caddy.service` も対象に含め、disable 後に明示停止します。メンテナンス期間中に reboot 後の自動復帰を止めたい場合はこちらを使います。再開時は `start-stack.sh` を実行し、proxy も無効化していた場合は `start-stack.sh --include-proxy` を使ってください。
 
+Quadlet の unit 定義ファイル自体を取り除く場合:
+```bash
+./scripts/quadlet/uninstall-stack.sh
+./scripts/quadlet/uninstall-stack.sh --include-proxy
+./scripts/quadlet/uninstall-stack.sh --include-proxy --purge-config
+```
+
+`uninstall-stack.sh` は `disable-stack.sh` を先に実行したうえで、`~/.config/containers/systemd/` 配下の Quadlet unit 定義を削除します。既定では `erp4-postgres.env` / `erp4-backend.env` / `erp4-caddy.env` / `erp4-caddy.Caddyfile` は保持します。secret やドメイン設定も消したい場合だけ `--purge-config` を使ってください。Podman volume やイメージ、アプリケーションデータ自体は削除しません。
+
 ## 6. 疎通確認
 
 backend:
