@@ -21,6 +21,7 @@ Usage: $(basename "$0") [options]
   --app-path PATH       HTTPS path to probe on APP_DOMAIN (default: /)
   --api-path PATH       HTTPS path to probe on API_DOMAIN (default: /healthz)
   --resolve-ip ADDR     Pass curl --resolve for APP_DOMAIN/API_DOMAIN:443:ADDR
+                        IPv6 addresses are accepted; brackets are added automatically when missing
   --timeout-seconds N   Per-request timeout in seconds (default: 15)
   --skip-app            Skip APP_DOMAIN probe
   --skip-api            Skip API_DOMAIN probe
@@ -70,11 +71,37 @@ require_env_key() {
   printf '%s\n' "$value"
 }
 
+normalize_https_path() {
+  local path="${1:-}"
+  if [[ -z "$path" ]]; then
+    printf '/\n'
+  elif [[ "$path" == /* ]]; then
+    printf '%s\n' "$path"
+  else
+    printf '/%s\n' "$path"
+  fi
+}
+
+normalize_resolve_ip() {
+  local addr="${1:-}"
+  if [[ -z "$addr" ]]; then
+    printf '\n'
+  elif [[ "$addr" == \[*\] ]]; then
+    printf '%s\n' "$addr"
+  elif [[ "$addr" == *:* ]]; then
+    printf '[%s]\n' "$addr"
+  else
+    printf '%s\n' "$addr"
+  fi
+}
+
 probe_url() {
   local label="$1"
   local domain="$2"
   local path="$3"
   local expect_mode="$4"
+  local resolve_addr=""
+  path="$(normalize_https_path "$path")"
   local url="https://${domain}${path}"
   local -a args
   local status
@@ -83,7 +110,8 @@ probe_url() {
     args+=(-k)
   fi
   if [[ -n "$RESOLVE_IP" ]]; then
-    args+=(--resolve "${domain}:443:${RESOLVE_IP}")
+    resolve_addr="$(normalize_resolve_ip "$RESOLVE_IP")"
+    args+=(--resolve "${domain}:443:${resolve_addr}")
   fi
   status="$($CURL_BIN "${args[@]}" "$url")" || fail "$label probe failed: $url"
   case "$expect_mode" in
