@@ -208,5 +208,5 @@ else
 fi
 
 podman exec -i --env-file "$PODMAN_EXEC_ENV_FILE" "$CONTAINER_NAME" \
-  pg_restore --clean --if-exists --exit-on-error --no-owner --no-privileges -U "$POSTGRES_USER" -d "$POSTGRES_DB" < "$DB_FILE"
+  pg_restore --clean --if-exists --exit-on-error -U "$POSTGRES_USER" -d "$POSTGRES_DB" < "$DB_FILE"
 printf 'OK: restored database from %s\n' "$DB_FILE"

@@ -20,6 +20,45 @@ RESTORE_CONFIRM=1 ./scripts/podman-poc.sh restore
 - リストアは破壊的操作になり得るため `RESTORE_CONFIRM=1` が必要
 - 必要に応じて `RESTORE_CLEAN=1` でスキーマの作り直しを行う
 
+## Quadlet PostgreSQL backup/restore
+
+手動 DB backup:
+
+```bash
+./scripts/quadlet/backup-db.sh --print-prefix
+```
+
+生成物:
+- `erp4-postgres-<timestamp>.dump`
+- `erp4-postgres-<timestamp>-globals.sql`
+
+成功条件:
+- `OK: db backup created: ...` が出力される
+- globals を有効化している場合は `OK: globals backup created: ...` も出力される
+
+最新 backup の確認:
+
+```bash
+./scripts/quadlet/restore-db-latest.sh --print-prefix
+```
+
+指定 prefix から restore:
+
+```bash
+RESTORE_CONFIRM=1 ./scripts/quadlet/restore-db.sh --backup-prefix /path/to/erp4-postgres-<timestamp>
+```
+
+最新 backup から restore:
+
+```bash
+RESTORE_CONFIRM=1 ./scripts/quadlet/restore-db-latest.sh --clean-public-schema
+```
+
+補足:
+- 最新 backup の選択基準は `.dump` ファイルの mtime 降順
+- globals を復元しない場合は `--skip-globals` を付与
+- `restore-db.sh` / `restore-db-latest.sh` は `erp4-postgres.env` を参照し、既定では `erp4-postgres` コンテナへ `pg_restore` / `psql` を実行する
+
 
 ## さくらVPS / Quadlet（PostgreSQL container）
 `erp4-postgres` を rootless Podman + Quadlet で運用している場合は、manual backup helper を使います。
