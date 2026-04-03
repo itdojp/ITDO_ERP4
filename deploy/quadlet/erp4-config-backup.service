@@ -4,4 +4,4 @@ Description=ERP4 Quadlet config backup
 [Service]
 Type=oneshot
 EnvironmentFile=%h/.config/containers/systemd/erp4-maintenance.env
-ExecStart=/usr/bin/bash -lc 'cd "$ERP4_REPO_DIR" && QUADLET_TARGET_DIR="${QUADLET_TARGET_DIR:-$HOME/.config/containers/systemd}" QUADLET_BACKUP_DIR="${QUADLET_BACKUP_DIR:-$HOME/.local/share/erp4/quadlet-backups}" ./scripts/quadlet/backup-and-check.sh --include-units ${ERP4_BACKUP_INCLUDE_PROXY:+--include-proxy}'
+ExecStart=/usr/bin/bash -c 'set -euo pipefail; cd "$ERP4_REPO_DIR"; backup_proxy_flag=(); if [[ "${ERP4_BACKUP_INCLUDE_PROXY:-0}" == "1" ]]; then backup_proxy_flag+=(--include-proxy); fi; QUADLET_TARGET_DIR="${QUADLET_TARGET_DIR:-$HOME/.config/containers/systemd}" QUADLET_BACKUP_DIR="${QUADLET_BACKUP_DIR:-$HOME/.local/share/erp4/quadlet-backups}" ./scripts/quadlet/backup-and-check.sh --include-units "${backup_proxy_flag[@]}"'

@@ -204,7 +204,7 @@ systemctl --user enable --now erp4-config-backup.timer
 systemctl --user list-timers erp4-config-backup.timer
 ```
 
-既定では毎日 03:15 に `erp4-config-backup.service` が実行され、`backup-and-check.sh --include-units` が呼ばれます。proxy 設定も含めたい場合は `erp4-maintenance.env` で `ERP4_BACKUP_INCLUDE_PROXY=1` を設定してください。
+既定では毎日 03:15 に `erp4-config-backup.service` が実行され、`backup-and-check.sh --include-units` が呼ばれます。`ERP4_BACKUP_INCLUDE_PROXY=1` のときだけ proxy 設定も backup に含めます。backup 対象には `erp4-maintenance.env` も含まれ、`--include-units` を付けた実行では `erp4-config-backup.service` / `erp4-config-backup.timer` も archive に含まれます。
 
 `check-stack.sh` は backend health/readiness、frontend、PostgreSQL、および user systemd service を最大 60 秒・2 秒間隔で再試行しながら検証します。HTTP probe には残り時間ベースの timeout をかけているため、到達不能時でも無制限に待機しません。起動直後の偽陰性を避けたい場合は、個別 `curl` / `pg_isready` よりこちらを優先してください。
 
