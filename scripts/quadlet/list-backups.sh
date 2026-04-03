@@ -63,25 +63,29 @@ archives=("$BACKUP_DIR"/erp4-quadlet-config-*.tar.gz)
 shopt -u nullglob
 [[ ${#archives[@]} -gt 0 ]] || fail "no backup archives found in $BACKUP_DIR"
 
-mapfile -t sorted < <(
-  for archive in "${archives[@]}"; do
-    printf '%s\t%s\n' "$(stat -c %Y "$archive")" "$archive"
-  done | sort -rn | cut -f2-
-)
+metadata_lines=()
+for archive in "${archives[@]}"; do
+  if ! stat_output="$(stat -c '%Y	%s	%y	%n' "$archive")"; then
+    fail "failed to read archive metadata: $archive"
+  fi
+  metadata_lines+=("$stat_output")
+done
+
+mapfile -t sorted < <(printf '%s\n' "${metadata_lines[@]}" | sort -rn -k1,1)
 
 if [[ "$LATEST_ONLY" -eq 1 ]]; then
-  printf '%s\n' "${sorted[0]}"
+  IFS=$'\t' read -r _ _ _ latest_path <<<"${sorted[0]}"
+  printf '%s\n' "$latest_path"
   exit 0
 fi
 
 count=0
-for archive in "${sorted[@]}"; do
+for line in "${sorted[@]}"; do
   if [[ -n "$LIMIT" && "$count" -ge "$LIMIT" ]]; then
     break
   fi
-  size="$(stat -c %s "$archive")"
-  mtime_epoch="$(stat -c %Y "$archive")"
-  mtime="$(date -d "@$mtime_epoch" '+%Y-%m-%d %H:%M:%S %z')"
+  IFS=$'\t' read -r _ size raw_mtime archive <<<"$line"
+  mtime="${raw_mtime:0:19} ${raw_mtime: -5}"
   printf '%s\t%s\t%s\n' "$mtime" "$size" "$archive"
   count=$((count + 1))
 done
