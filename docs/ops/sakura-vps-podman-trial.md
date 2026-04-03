@@ -156,8 +156,14 @@ runtime env を編集したら、unit 起動前に検証します。
 
 ## 5. 起動順
 
+通常起動:
 ```bash
 ./scripts/quadlet/start-stack.sh
+```
+
+proxy も起動する場合:
+```bash
+./scripts/quadlet/start-stack.sh --include-proxy
 ```
 
 手動で分ける場合:
@@ -181,12 +187,36 @@ systemctl --user status erp4-postgres.service erp4-migrate.service erp4-backend.
 ./scripts/quadlet/status-stack.sh --include-proxy
 ```
 
-`start-stack.sh` は `check-env.sh` による runtime env 検証、user systemd unit の有効化・起動、`check-stack.sh` による post-start 検証を直列で実行します。`QUADLET_TARGET_DIR` を設定している場合はその配下を検証対象に使います。手動の `systemctl --user enable --now ...` 群はトラブルシュート用の fallback として残しています。
+`start-stack.sh` は `check-env.sh` による runtime env 検証、user systemd unit の有効化・起動、`check-stack.sh` による post-start 検証を直列で実行します。`--include-proxy` を付け、かつ `--skip-env-check` を付けていない場合は、`check-proxy.sh` による Caddy 設定検証も追加で行ったうえで `erp4-caddy.service` を有効化・起動します。さらに `--skip-stack-check` を付けていない場合は、`status-stack.sh --include-proxy` による `erp4-caddy.service` を含む状態確認まで実行します。公開ドメイン経由の疎通まで確認したい場合は、`check-proxy.sh` または外部からの `curl` probe を別途実行してください。`QUADLET_TARGET_DIR` を設定している場合はその配下を検証対象に使います。手動の `systemctl --user enable --now ...` 群はトラブルシュート用の fallback として残しています。
 
 `check-stack.sh` は backend health/readiness、frontend、PostgreSQL、および user systemd service を最大 60 秒・2 秒間隔で再試行しながら検証します。HTTP probe には残り時間ベースの timeout をかけているため、到達不能時でも無制限に待機しません。起動直後の偽陰性を避けたい場合は、個別 `curl` / `pg_isready` よりこちらを優先してください。
 
 
 `status-stack.sh` は定常監視や切り分け向けの即時確認コマンドです。`erp4-postgres.service` / `erp4-migrate.service` / `erp4-backend.service` / `erp4-frontend.service` の active 状態を一覧し、必要に応じて `erp4-caddy.service` も含められます。あわせて backend health/readiness、frontend の HTTP HEAD、PostgreSQL の `pg_isready` を 1 回ずつ実行して結果を表示します。`--skip-systemd` を付けると user systemd 依存を外して runtime probe のみ確認できます。
+
+停止する場合:
+```bash
+./scripts/quadlet/stop-stack.sh
+./scripts/quadlet/stop-stack.sh --include-proxy
+```
+
+`stop-stack.sh` は依存の逆順で `erp4-frontend.service` / `erp4-backend.service` / `erp4-migrate.service` / `erp4-postgres.service` を停止します。`--include-proxy` を付けると `erp4-caddy.service` も先に停止します。`systemctl --user` の user bus が利用できない場合は、`sudo loginctl enable-linger <user>` を含む対処メッセージを返します。
+
+再起動する場合:
+```bash
+./scripts/quadlet/restart-stack.sh
+./scripts/quadlet/restart-stack.sh --include-proxy
+```
+
+`restart-stack.sh` は `stop-stack.sh` と `start-stack.sh` を直列実行します。`--include-proxy` を付けると `erp4-caddy.service` も再起動対象に含まれます。さらに `--skip-stack-check` を指定していない場合のみ、post-start 確認として `status-stack.sh --include-proxy` まで実行します。`--skip-env-check` と `--skip-stack-check` は `start-stack.sh` に透過的に渡されるため、`--skip-stack-check` 指定時は proxy を含む post-start の状態確認も省略されます。
+
+自動起動設定ごと停止する場合:
+```bash
+./scripts/quadlet/disable-stack.sh
+./scripts/quadlet/disable-stack.sh --include-proxy
+```
+
+`disable-stack.sh` は stack を停止したうえで、対象 unit の user systemd 自動起動設定も解除します。`--include-proxy` を付けると `erp4-caddy.service` も対象に含め、disable 後に明示停止します。メンテナンス期間中に reboot 後の自動復帰を止めたい場合はこちらを使います。再開時は `start-stack.sh` を実行し、proxy も無効化していた場合は `start-stack.sh --include-proxy` を使ってください。
 
 ## 6. 疎通確認
 

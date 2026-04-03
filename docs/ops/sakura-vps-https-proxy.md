@@ -112,7 +112,25 @@ systemctl --user restart erp4-frontend.service
 systemctl --user enable --now erp4-caddy.service
 ```
 
-## 4. 確認
+## 4. proxy 設定だけを再読込する
+
+Caddyfile または `erp4-caddy.env` だけを更新した場合は、stack 全体を再起動せずに proxy のみ再検証・再読込できます。
+
+```bash
+./scripts/quadlet/reload-proxy.sh
+```
+
+追加の確認を省略したい場合は以下を使います。
+
+```bash
+./scripts/quadlet/reload-proxy.sh --skip-status
+./scripts/quadlet/reload-proxy.sh --skip-runtime
+./scripts/quadlet/reload-proxy.sh --skip-proxy-check
+```
+
+`--skip-runtime` は `podman` を使う runtime validate を省略します。`--skip-proxy-check` を使う場合でも、変更後に `./scripts/quadlet/check-proxy.sh` を個別実行して設定妥当性を確認してください。
+
+## 5. 確認
 
 ```bash
 ./scripts/quadlet/check-proxy.sh
@@ -124,7 +142,7 @@ podman logs erp4-caddy
 
 Google OIDC を使う場合は、Google Cloud Console 側の redirect URI も `https://api.example.com/auth/google/callback` へ揃えます。
 
-## 5. 障害切り分け
+## 6. 障害切り分け
 
 - `erp4-caddy.service` が起動しない
   - `80/443` を別プロセスが占有していないか確認
