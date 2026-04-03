@@ -86,6 +86,8 @@ if [[ "$INCLUDE_UNITS" -eq 1 ]]; then
     erp4-frontend.container
     erp4-config-backup.service
     erp4-config-backup.timer
+    erp4-db-backup.service
+    erp4-db-backup.timer
     erp4-config-prune.service
     erp4-config-prune.timer
   )

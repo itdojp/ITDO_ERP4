@@ -1,0 +1,7 @@
+[Unit]
+Description=ERP4 PostgreSQL logical backup
+
+[Service]
+Type=oneshot
+EnvironmentFile=%h/.config/containers/systemd/erp4-maintenance.env
+ExecStart=/usr/bin/bash -c 'set -euo pipefail; cd "$ERP4_REPO_DIR"; backup_globals_flag=(); if [[ "${ERP4_DB_BACKUP_SKIP_GLOBALS:-0}" == "1" ]]; then backup_globals_flag+=(--skip-globals); fi; QUADLET_TARGET_DIR="${QUADLET_TARGET_DIR:-$HOME/.config/containers/systemd}" QUADLET_DB_BACKUP_DIR="${QUADLET_DB_BACKUP_DIR:-$HOME/.local/share/erp4/db-backups}" ./scripts/quadlet/backup-db.sh "${backup_globals_flag[@]}"'
