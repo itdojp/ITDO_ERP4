@@ -291,6 +291,7 @@ cd /opt/itdo/ITDO_ERP4
 git fetch origin
 git checkout main
 git pull --ff-only
+# 次のいずれか 1 つを選んで実行
 ./scripts/quadlet/update-stack.sh
 ./scripts/quadlet/update-stack.sh --backup-before-update
 ./scripts/quadlet/update-stack.sh --backup-before-update --include-proxy
