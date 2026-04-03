@@ -68,6 +68,7 @@ files=(
   erp4-postgres.env
   erp4-backend.env
   erp4-frontend-build.env
+  erp4-maintenance.env
 )
 
 if [[ "$INCLUDE_PROXY" -eq 1 ]]; then
@@ -83,6 +84,8 @@ if [[ "$INCLUDE_UNITS" -eq 1 ]]; then
     erp4-migrate.service
     erp4-backend.container
     erp4-frontend.container
+    erp4-config-backup.service
+    erp4-config-backup.timer
   )
   if [[ "$INCLUDE_PROXY" -eq 1 ]]; then
     files+=(

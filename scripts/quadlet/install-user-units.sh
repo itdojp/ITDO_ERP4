@@ -38,7 +38,7 @@ install_unit() {
   fi
 }
 
-for unit in "$SRC_DIR"/*.network "$SRC_DIR"/*.volume "$SRC_DIR"/*.container "$SRC_DIR"/*.service; do
+for unit in "$SRC_DIR"/*.network "$SRC_DIR"/*.volume "$SRC_DIR"/*.container "$SRC_DIR"/*.service "$SRC_DIR"/*.timer; do
   install_unit "$unit"
 done
 
@@ -68,4 +68,6 @@ printf 'next: edit %s/erp4-postgres.env and %s/erp4-backend.env, then run:\n' "$
 printf '  systemctl --user enable --now erp4-postgres.service erp4-migrate.service erp4-backend.service erp4-frontend.service\n'
 printf 'optional HTTPS proxy: edit %s/erp4-caddy.env and %s/erp4-caddy.Caddyfile, then run:\n' "$TARGET_DIR" "$TARGET_DIR"
 printf '  systemctl --user enable --now erp4-caddy.service\n'
+printf 'optional scheduled config backups: edit %s/erp4-maintenance.env, then run:\n' "$TARGET_DIR"
+printf '  systemctl --user enable --now erp4-config-backup.timer\n'
 printf 'note: rootless auto-start requires sudo loginctl enable-linger %s\n' "$(id -un)"
