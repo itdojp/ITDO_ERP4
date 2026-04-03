@@ -10,6 +10,7 @@ SKIP_DAEMON_RELOAD=0
 PRINT_ARCHIVE=0
 LIST_BACKUPS_SCRIPT="${LIST_BACKUPS_SCRIPT:-$SCRIPT_DIR/list-backups.sh}"
 RESTORE_CONFIG_SCRIPT="${RESTORE_CONFIG_SCRIPT:-$SCRIPT_DIR/restore-config.sh}"
+BASH_BIN="${BASH:-/bin/bash}"
 
 usage() {
   cat <<USAGE
@@ -67,11 +68,11 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-command -v bash >/dev/null 2>&1 || fail 'required command not found: bash'
+[[ -x "$BASH_BIN" ]] || fail "bash interpreter not found or not executable: $BASH_BIN"
 [[ -f "$LIST_BACKUPS_SCRIPT" ]] || fail "helper script not found: $LIST_BACKUPS_SCRIPT"
 [[ -f "$RESTORE_CONFIG_SCRIPT" ]] || fail "helper script not found: $RESTORE_CONFIG_SCRIPT"
 
-if ! latest_archive="$(bash "$LIST_BACKUPS_SCRIPT" --backup-dir "$BACKUP_DIR" --latest)"; then
+if ! latest_archive="$("$BASH_BIN" "$LIST_BACKUPS_SCRIPT" --backup-dir "$BACKUP_DIR" --latest)"; then
   fail "could not determine latest backup archive from $BACKUP_DIR"
 fi
 [[ -n "$latest_archive" ]] || fail "latest backup archive path is empty: $BACKUP_DIR"
@@ -95,4 +96,4 @@ if [[ "$SKIP_DAEMON_RELOAD" -eq 1 ]]; then
   restore_args+=(--skip-daemon-reload)
 fi
 
-exec bash "$RESTORE_CONFIG_SCRIPT" "${restore_args[@]}"
+exec "$BASH_BIN" "$RESTORE_CONFIG_SCRIPT" "${restore_args[@]}"
