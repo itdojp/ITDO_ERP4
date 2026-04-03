@@ -7,7 +7,7 @@ TARGET_DIR="${QUADLET_TARGET_DIR:-$HOME/.config/containers/systemd}"
 ENV_FILE="${POSTGRES_ENV_FILE:-$TARGET_DIR/erp4-postgres.env}"
 ENV_FILE_EXPLICIT=0
 BACKUP_DIR="${QUADLET_DB_BACKUP_DIR:-$HOME/.local/share/erp4/db-backups}"
-CONTAINER_NAME="${POSTGRES_CONTAINER_NAME:-erp4-postgres}"
+CONTAINER_NAME="${POSTGRES_CONTAINER_NAME:-${POSTGRES_CONTAINER:-erp4-postgres}}"
 SKIP_GLOBALS=0
 CLEAN_PUBLIC_SCHEMA=0
 PRINT_PREFIX=0
@@ -19,7 +19,7 @@ Usage: RESTORE_CONFIRM=1 $(basename "$0") [options]
   --target-dir DIR       Quadlet config directory (default: ~/.config/containers/systemd)
   --env-file PATH        PostgreSQL env file path (default: <target-dir>/erp4-postgres.env)
   --backup-dir DIR       Directory containing db backups (default: ~/.local/share/erp4/db-backups)
-  --container NAME       PostgreSQL container name (default: erp4-postgres)
+  --container NAME       PostgreSQL container name (default: POSTGRES_CONTAINER/POSTGRES_CONTAINER_NAME/erp4-postgres)
   --skip-globals         Skip globals restore even if latest globals file exists
   --clean-public-schema  Drop and recreate public schema before restore
   --print-prefix         Print selected latest backup prefix and exit without restore
@@ -82,7 +82,9 @@ done
 command -v "$RESTORE_DB" >/dev/null 2>&1 || [[ -x "$RESTORE_DB" ]] || fail "required helper not found: $RESTORE_DB"
 [[ -d "$BACKUP_DIR" ]] || fail "backup directory not found: $BACKUP_DIR"
 
-latest_db_file="$({ find "$BACKUP_DIR" -maxdepth 1 -type f -name 'erp4-postgres-*.dump' -printf '%T@ %p\n' 2>/dev/null || true; } | sort -nr | head -n1 | cut -d' ' -f2-)"
+if ! latest_db_file="$(find "$BACKUP_DIR" -maxdepth 1 -type f -name 'erp4-postgres-*.dump' -printf '%T@ %p\n' | sort -nr | head -n1 | cut -d' ' -f2-)"; then
+  fail "failed to scan backup directory: $BACKUP_DIR"
+fi
 [[ -n "$latest_db_file" ]] || fail "no database backup found in $BACKUP_DIR"
 latest_prefix="${latest_db_file%.dump}"
 latest_globals_file="${latest_prefix}-globals.sql"

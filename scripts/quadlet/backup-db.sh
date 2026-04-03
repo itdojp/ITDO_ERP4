@@ -148,14 +148,18 @@ fi
 podman exec -e PGPASSWORD="$POSTGRES_PASSWORD" "$CONTAINER_NAME" \
   pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc > "$DB_TMP_FILE"
 chmod 600 "$DB_TMP_FILE"
-mv -- "$DB_TMP_FILE" "$db_file"
-DB_TMP_FILE=""
-printf 'OK: db backup created: %s\n' "$db_file"
 
 if [[ "$SKIP_GLOBALS" -eq 0 ]]; then
   podman exec -e PGPASSWORD="$POSTGRES_PASSWORD" "$CONTAINER_NAME" \
     pg_dumpall --globals-only -U "$POSTGRES_USER" > "$GLOBALS_TMP_FILE"
   chmod 600 "$GLOBALS_TMP_FILE"
+fi
+
+mv -- "$DB_TMP_FILE" "$db_file"
+DB_TMP_FILE=""
+printf 'OK: db backup created: %s\n' "$db_file"
+
+if [[ "$SKIP_GLOBALS" -eq 0 ]]; then
   mv -- "$GLOBALS_TMP_FILE" "$globals_file"
   GLOBALS_TMP_FILE=""
   printf 'OK: globals backup created: %s\n' "$globals_file"
