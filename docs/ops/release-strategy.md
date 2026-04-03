@@ -24,7 +24,7 @@
 - CI が green（`CI` / `Link Check`）
 - 依存脆弱性チェックが許容範囲（`security-audit`）
 - DB マイグレーション有無の確認（`packages/backend/prisma/migrations/`）
-- バックアップ手順が実施可能であることの確認（`docs/ops/backup-restore.md`）
+- 過去30日以内に成功した backup と restore verification の証跡を確認（`docs/ops/backup-restore.md` / `docs/test-results/YYYY-MM-DD-backup-restore.md`）
 
 ## リリース実施（推奨手順）
 ### 1) リリース候補を確定
