@@ -161,6 +161,8 @@ runtime env を編集したら、unit 起動前に検証します。
 ERP4_REPO_DIR=/opt/itdo/ITDO_ERP4
 QUADLET_BACKUP_DIR=/home/YOUR_USER/.local/share/erp4/quadlet-backups
 ERP4_BACKUP_INCLUDE_PROXY=1
+ERP4_BACKUP_KEEP_COUNT=14
+ERP4_BACKUP_KEEP_DAYS=30
 ```
 
 ## 5. 起動順
@@ -204,7 +206,15 @@ systemctl --user enable --now erp4-config-backup.timer
 systemctl --user list-timers erp4-config-backup.timer
 ```
 
-既定では毎日 03:15 に `erp4-config-backup.service` が実行され、`backup-and-check.sh --include-units` が呼ばれます。`ERP4_BACKUP_INCLUDE_PROXY=1` のときだけ proxy 設定も backup に含めます。backup 対象には `erp4-maintenance.env` も含まれ、`--include-units` を付けた実行では `erp4-config-backup.service` / `erp4-config-backup.timer` も archive に含まれます。
+既定では毎日 03:15 に `erp4-config-backup.service` が実行され、`backup-and-check.sh --include-units` が呼ばれます。`ERP4_BACKUP_INCLUDE_PROXY=1` のときだけ proxy 設定も backup に含めます。backup 対象には `erp4-maintenance.env` も含まれ、`--include-units` を付けた実行では `erp4-config-backup.service` / `erp4-config-backup.timer` / `erp4-config-prune.service` / `erp4-config-prune.timer` も archive に含まれます。
+
+定期 prune を有効化する場合:
+```bash
+systemctl --user enable --now erp4-config-prune.timer
+systemctl --user list-timers erp4-config-prune.timer
+```
+
+既定では毎日 03:45 に `erp4-config-prune.service` が実行され、`prune-backups.sh --keep-count "${ERP4_BACKUP_KEEP_COUNT:-14}" --keep-days "${ERP4_BACKUP_KEEP_DAYS:-30}"` 相当の整理を行います。保持本数と保持日数は `erp4-maintenance.env` の `ERP4_BACKUP_KEEP_COUNT` / `ERP4_BACKUP_KEEP_DAYS` で上書きできます。backup archive が 1 件も無い場合は no-op 成功として扱い、timer を失敗状態にしません。
 
 `check-stack.sh` は backend health/readiness、frontend、PostgreSQL、および user systemd service を最大 60 秒・2 秒間隔で再試行しながら検証します。HTTP probe には残り時間ベースの timeout をかけているため、到達不能時でも無制限に待機しません。起動直後の偽陰性を避けたい場合は、個別 `curl` / `pg_isready` よりこちらを優先してください。
 

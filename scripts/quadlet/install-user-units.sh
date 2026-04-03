@@ -70,4 +70,6 @@ printf 'optional HTTPS proxy: edit %s/erp4-caddy.env and %s/erp4-caddy.Caddyfile
 printf '  systemctl --user enable --now erp4-caddy.service\n'
 printf 'optional scheduled config backups: edit %s/erp4-maintenance.env, then run:\n' "$TARGET_DIR"
 printf '  systemctl --user enable --now erp4-config-backup.timer\n'
+printf 'optional scheduled backup pruning: edit %s/erp4-maintenance.env, then run:\n' "$TARGET_DIR"
+printf '  systemctl --user enable --now erp4-config-prune.timer\n'
 printf 'note: rootless auto-start requires sudo loginctl enable-linger %s\n' "$(id -un)"
