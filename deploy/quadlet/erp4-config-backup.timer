@@ -1,0 +1,10 @@
+[Unit]
+Description=Run ERP4 Quadlet config backup nightly
+
+[Timer]
+OnCalendar=*-*-* 03:15:00
+Persistent=true
+Unit=erp4-config-backup.service
+
+[Install]
+WantedBy=timers.target

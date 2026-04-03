@@ -109,6 +109,7 @@ build:
 - `~/.config/containers/systemd/*.network`
 - `~/.config/containers/systemd/*.volume`
 - `~/.config/containers/systemd/*.service`
+- `~/.config/containers/systemd/*.timer`
 - `~/.config/containers/systemd/erp4-postgres.env`
 - `~/.config/containers/systemd/erp4-backend.env`
 
@@ -154,6 +155,14 @@ runtime env を編集したら、unit 起動前に検証します。
 ./scripts/quadlet/check-env.sh
 ```
 
+任意で config backup 用の maintenance env を編集します。
+`erp4-maintenance.env` の例:
+```dotenv
+ERP4_REPO_DIR=/opt/itdo/ITDO_ERP4
+QUADLET_BACKUP_DIR=/home/YOUR_USER/.local/share/erp4/quadlet-backups
+ERP4_BACKUP_INCLUDE_PROXY=1
+```
+
 ## 5. 起動順
 
 通常起動:
@@ -188,6 +197,14 @@ systemctl --user status erp4-postgres.service erp4-migrate.service erp4-backend.
 ```
 
 `start-stack.sh` は `check-env.sh` による runtime env 検証、user systemd unit の有効化・起動、`check-stack.sh` による post-start 検証を直列で実行します。`--include-proxy` を付け、かつ `--skip-env-check` を付けていない場合は、`check-proxy.sh` による Caddy 設定検証も追加で行ったうえで `erp4-caddy.service` を有効化・起動します。さらに `--skip-stack-check` を付けていない場合は、`status-stack.sh --include-proxy` による `erp4-caddy.service` を含む状態確認まで実行します。公開ドメイン経由の疎通まで確認したい場合は、`check-proxy.sh` または外部からの `curl` probe を別途実行してください。`QUADLET_TARGET_DIR` を設定している場合はその配下を検証対象に使います。手動の `systemctl --user enable --now ...` 群はトラブルシュート用の fallback として残しています。
+
+定期 backup を有効化する場合:
+```bash
+systemctl --user enable --now erp4-config-backup.timer
+systemctl --user list-timers erp4-config-backup.timer
+```
+
+既定では毎日 03:15 に `erp4-config-backup.service` が実行され、`backup-and-check.sh --include-units` が呼ばれます。proxy 設定も含めたい場合は `erp4-maintenance.env` で `ERP4_BACKUP_INCLUDE_PROXY=1` を設定してください。
 
 `check-stack.sh` は backend health/readiness、frontend、PostgreSQL、および user systemd service を最大 60 秒・2 秒間隔で再試行しながら検証します。HTTP probe には残り時間ベースの timeout をかけているため、到達不能時でも無制限に待機しません。起動直後の偽陰性を避けたい場合は、個別 `curl` / `pg_isready` よりこちらを優先してください。
 
