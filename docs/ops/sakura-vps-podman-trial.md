@@ -250,6 +250,8 @@ stack の更新や uninstall 前に、`~/.config/containers/systemd/` 配下の 
 ./scripts/quadlet/restore-latest.sh --list --print-archive
 ./scripts/quadlet/restore-latest.sh --print-archive
 ./scripts/quadlet/restore-latest.sh --overwrite --print-archive
+./scripts/quadlet/rollback-latest.sh --print-archive --skip-restart
+./scripts/quadlet/rollback-latest.sh --include-proxy --skip-env-check
 ```
 
 バックアップ archive が増えた場合は、`prune-backups.sh` で保持数または保持日数に合わせて削除できます。`--keep-count` と `--keep-days` は併用でき、その場合はいずれかの条件を満たす archive を保持します。削除対象を先に確認したい場合は `--dry-run` を使ってください。
