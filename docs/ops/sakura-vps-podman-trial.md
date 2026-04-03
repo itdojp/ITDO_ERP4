@@ -216,7 +216,7 @@ systemctl --user enable --now erp4-db-backup.timer
 systemctl --user list-timers erp4-db-backup.timer
 ```
 
-既定では毎日 04:15 に `erp4-db-backup.service` が実行され、`backup-db.sh` が PostgreSQL dump と globals dump を取得します。出力先は `erp4-maintenance.env` の `QUADLET_DB_BACKUP_DIR` で上書きでき、`ERP4_DB_BACKUP_SKIP_GLOBALS=1` を付けると globals dump を省略できます。
+既定では毎日 04:15 に `erp4-db-backup.service` が実行され、`backup-db.sh` が PostgreSQL dump と globals dump を取得します。出力先は `erp4-maintenance.env` の `QUADLET_DB_BACKUP_DIR` で上書きでき、`ERP4_DB_BACKUP_SKIP_GLOBALS=1` を付けると globals dump を省略できます。globals dump にはロール/権限に加えてパスワードハッシュ等の機微情報が含まれる可能性があるため、`QUADLET_DB_BACKUP_DIR` は `0700` などの厳しい権限で管理し、保管/転送時は暗号化とアクセス制御を前提にしてください。現時点では DB backup 用の自動 prune は提供していないため、`enable-maintenance-timers.sh` の既定対象には含めていません。`erp4-db-backup.timer` を有効化する場合は、保持本数/保持日数を別途運用で決め、手動削除または外部ローテーションを併用してください。
 
 定期 prune を有効化する場合:
 ```bash
@@ -224,17 +224,17 @@ systemctl --user enable --now erp4-config-prune.timer
 systemctl --user list-timers erp4-config-prune.timer
 ```
 
-backup / DB backup / prune timer をまとめて有効化する場合:
+backup / prune timer をまとめて有効化する場合:
 ```bash
 ./scripts/quadlet/enable-maintenance-timers.sh
 ```
 
-backup / DB backup / prune timer をまとめて無効化する場合:
+backup / prune timer をまとめて無効化する場合:
 ```bash
 ./scripts/quadlet/disable-maintenance-timers.sh
 ```
 
-backup / DB backup / prune timer の状態を確認する場合:
+backup / prune timer の状態を確認する場合:
 ```bash
 ./scripts/quadlet/status-maintenance-timers.sh
 ```

@@ -4,7 +4,7 @@ set -euo pipefail
 SYSTEMCTL="${SYSTEMCTL:-systemctl}"
 TARGET_DIR="${QUADLET_TARGET_DIR:-$HOME/.config/containers/systemd}"
 SKIP_STATUS=0
-TIMERS=(erp4-config-backup.timer erp4-db-backup.timer erp4-config-prune.timer)
+TIMERS=(erp4-config-backup.timer erp4-config-prune.timer)
 
 usage() {
   cat <<USAGE
@@ -57,10 +57,8 @@ done
 command -v "$SYSTEMCTL" >/dev/null 2>&1 || fail "required command not found: $SYSTEMCTL"
 [[ -f "$TARGET_DIR/erp4-maintenance.env" ]] || fail "required file not found: $TARGET_DIR/erp4-maintenance.env"
 [[ -f "$TARGET_DIR/erp4-config-backup.timer" ]] || fail "required file not found: $TARGET_DIR/erp4-config-backup.timer"
-[[ -f "$TARGET_DIR/erp4-db-backup.timer" ]] || fail "required file not found: $TARGET_DIR/erp4-db-backup.timer"
 [[ -f "$TARGET_DIR/erp4-config-prune.timer" ]] || fail "required file not found: $TARGET_DIR/erp4-config-prune.timer"
 [[ -f "$TARGET_DIR/erp4-config-backup.service" ]] || fail "required file not found: $TARGET_DIR/erp4-config-backup.service"
-[[ -f "$TARGET_DIR/erp4-db-backup.service" ]] || fail "required file not found: $TARGET_DIR/erp4-db-backup.service"
 [[ -f "$TARGET_DIR/erp4-config-prune.service" ]] || fail "required file not found: $TARGET_DIR/erp4-config-prune.service"
 
 run_systemctl_user daemon-reload >/dev/null

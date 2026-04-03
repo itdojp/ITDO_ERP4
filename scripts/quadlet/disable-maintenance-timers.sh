@@ -3,7 +3,7 @@ set -euo pipefail
 
 SYSTEMCTL="${SYSTEMCTL:-systemctl}"
 SKIP_STATUS=0
-TIMERS=(erp4-config-backup.timer erp4-db-backup.timer erp4-config-prune.timer)
+TIMERS=(erp4-config-backup.timer erp4-config-prune.timer)
 
 usage() {
   cat <<USAGE
