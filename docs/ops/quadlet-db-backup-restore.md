@@ -1,6 +1,6 @@
 # Quadlet DB バックアップ/リストア（補助 Runbook）
 
-`scripts/quadlet/backup-db.sh` / `restore-db.sh` / `restore-db-latest.sh` は、Quadlet で運用している PostgreSQL コンテナ向けの manual helper です。ここでは日次運用で使う最小手順だけを整理します。
+`scripts/quadlet/backup-db.sh` / `restore-db.sh` / `list-db-backups.sh` は、Quadlet で運用している PostgreSQL コンテナ向けの manual helper です。ここでは日次運用で使う最小手順だけを整理します。
 
 ## 対象
 - PostgreSQL container: `erp4-postgres`
@@ -37,12 +37,14 @@ globals dump を作らない場合:
 
 ## 最新 backup からの restore
 ```bash
-RESTORE_CONFIRM=1 ./scripts/quadlet/restore-db-latest.sh
+latest_prefix="$(./scripts/quadlet/list-db-backups.sh --latest --print-prefix)"
+RESTORE_CONFIRM=1 ./scripts/quadlet/restore-db.sh --backup-prefix "$latest_prefix"
 ```
 
 public schema を作り直してから restore する場合:
 ```bash
-RESTORE_CONFIRM=1 ./scripts/quadlet/restore-db-latest.sh --clean-public-schema
+latest_prefix="$(./scripts/quadlet/list-db-backups.sh --latest --print-prefix)"
+RESTORE_CONFIRM=1 ./scripts/quadlet/restore-db.sh --backup-prefix "$latest_prefix" --clean-public-schema
 ```
 
 ## 注意
