@@ -2,7 +2,7 @@
 set -euo pipefail
 
 TARGET_DIR="${QUADLET_TARGET_DIR:-$HOME/.config/containers/systemd}"
-OUTPUT_DIR="${QUADLET_BACKUP_DIR:-$PWD/.quadlet-backups}"
+OUTPUT_DIR="${QUADLET_BACKUP_DIR:-$HOME/.local/share/erp4/quadlet-backups}"
 STAMP="${STAMP_OVERRIDE:-$(date +%Y%m%d-%H%M%S)}"
 INCLUDE_PROXY=0
 INCLUDE_UNITS=0
@@ -54,7 +54,9 @@ while [[ $# -gt 0 ]]; do
 done
 
 [[ -d "$TARGET_DIR" ]] || fail "target directory not found: $TARGET_DIR"
-mkdir -p "$OUTPUT_DIR"
+command -v tar >/dev/null 2>&1 || fail 'required command not found: tar'
+umask 077
+mkdir -p -m 700 "$OUTPUT_DIR"
 
 files=(
   erp4-postgres.env
@@ -96,6 +98,7 @@ done
 
 archive="$OUTPUT_DIR/erp4-quadlet-config-$STAMP.tar.gz"
 tar -C "$TARGET_DIR" -czf "$archive" "${staged[@]}"
+chmod 600 "$archive"
 
 printf 'OK: backup written to %s\n' "$archive"
 printf 'Included files:\n'
