@@ -25,6 +25,7 @@
 - 依存脆弱性チェックが許容範囲（`security-audit`）
 - DB マイグレーション有無の確認（`packages/backend/prisma/migrations/`）
 - 過去30日以内に成功した backup と restore verification の証跡を確認（`docs/ops/backup-restore.md` / `docs/test-results/YYYY-MM-DD-backup-restore.md`）
+- DB 変更を含む場合は、対象環境に応じた backup 健全性コマンドを実行して記録する（例: `./scripts/quadlet/check-db-backup.sh --max-age-hours 24 --print-prefix` / `make backup-s3-readiness-check`）
 
 ## リリース実施（推奨手順）
 ### 1) リリース候補を確定

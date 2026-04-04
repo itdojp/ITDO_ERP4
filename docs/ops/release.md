@@ -10,6 +10,7 @@
 - CI が green（`CI` / `Link Check` / `security-audit`）
 - DB マイグレーション有無の確認（`packages/backend/prisma/migrations/`）
 - 過去30日以内の backup/restore 証跡を確認（`docs/test-results/YYYY-MM-DD-backup-restore.md` を推奨、実施日時・実施者・使用した archive/log を含む、`docs/ops/backup-restore.md`）
+- DB 変更を含む場合は、対象環境に応じて backup 健全性コマンドを実行して結果を証跡へ記録する（例: `./scripts/quadlet/check-db-backup.sh --max-age-hours 24 --print-prefix` / `make backup-s3-readiness-check`）
 
 ## 実施
 
