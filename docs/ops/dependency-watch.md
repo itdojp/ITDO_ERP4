@@ -22,8 +22,8 @@
    ```
 
    記録方針:
-   - `ready: true/false` と `resultReason` を Issue #1176 または運用Issueに転記する
-   - release 証跡へ流用する場合は、同日の Dependabot alerts 記録へ結果を併記する
+   - `ready: true/false` と `resultReason` は、必ず Issue #1176 または同日の運用Issueへ転記する
+   - release 証跡へ流用する場合は、Dependabot alerts 記録へ値を複写せず、該当 Issue / comment の参照を追記する
 
 2. Dependabot alerts の現況を確認する。
 
@@ -70,7 +70,7 @@
 
 ## 記録先
 
-- Dependabot token readiness: `docs/test-results/YYYY-MM-DD-dependabot-alerts-rN.md` に併記、または Issue #1176 / 運用Issueへ転記
+- Dependabot token readiness: Issue #1176 または同日の運用Issue（必須）
 - Dependabot alerts: `docs/test-results/YYYY-MM-DD-dependabot-alerts-rN.md`
 - ESLint10 readiness: `docs/test-results/YYYY-MM-DD-eslint10-readiness-rN.md`
 
