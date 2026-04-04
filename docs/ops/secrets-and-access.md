@@ -14,6 +14,7 @@
 - JWT 検証キー/公開鍵（JWKS URL を含む）
 - Webhook 署名シークレット
 - VAPID 鍵（Push 通知）
+- GitHub API token（`DEPENDABOT_ALERTS_TOKEN` 等）
 
 ## 保管場所（推奨）
 
@@ -62,6 +63,7 @@
 | API key | `CHAT_EXTERNAL_LLM_OPENAI_API_KEY`       | chat summary     | GitHub Secrets / 実行環境 | Platform/Ops | 四半期ごと + 事象発生時 | 2026-02-19   | 未記録                    | OpenAI console で旧 key revoke → 新 key 作成                              |
 | JWT     | `JWT_PUBLIC_KEY` / `JWT_JWKS_URL`        | 認証             | GitHub Secrets / 実行環境 | Platform/Ops | 半年ごと + 事象発生時   | 2026-02-19   | 未記録                    | 新鍵を配備し、旧鍵を無効化（重複期間を短期で設定）                        |
 | Push    | `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` | Web Push         | GitHub Secrets / 実行環境 | Platform/Ops | 半年ごと + 事象発生時   | 2026-02-19   | 未記録                    | 新鍵ペア配備後に旧鍵での送信を停止                                        |
+| GitHub  | `DEPENDABOT_ALERTS_TOKEN`                | Dependabot watch | GitHub Actions Secrets    | Platform/Ops | 四半期ごと + 事象発生時 | 2026-04-05   | 未記録                    | Fine-grained PAT を失効し、新 token を再発行して secret を更新            |
 
 - `未記録` の項目は次回の実ローテーション実施時に日付を追記する。
 
@@ -95,6 +97,13 @@
 3. notifier / external LLM の疎通を確認する
 4. 旧 key を revoke し、Issue に記録する
 
+### 5) GitHub（`DEPENDABOT_ALERTS_TOKEN`）
+
+1. Dependabot alerts 読み取り専用の Fine-grained PAT を再発行する
+2. repository secret `DEPENDABOT_ALERTS_TOKEN` を更新する
+3. `make dependabot-token-readiness-check` を実行し、`ready: true` を確認する
+4. `.github/workflows/dependabot-alert-watch.yml` の直近 run を確認し、旧 token を失効して Issue に記録する
+
 ## ローテーション後のスモーク確認（最小）
 
 - backend 基本疎通:
@@ -103,6 +112,7 @@
   - `npm run build --prefix packages/backend`
   - `npx ts-node --project packages/backend/tsconfig.json scripts/smoke-email.ts`
 - 実施結果は `docs/test-results/` の記録と運用Issueに残す（成功/失敗と原因）。
+- Dependabot token は `make dependabot-token-readiness-check` の結果も併記する。
 
 ## 演習記録
 
