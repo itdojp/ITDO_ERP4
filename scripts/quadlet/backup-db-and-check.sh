@@ -4,6 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TARGET_DIR="${QUADLET_TARGET_DIR:-$HOME/.config/containers/systemd}"
 ENV_FILE="${POSTGRES_ENV_FILE:-$TARGET_DIR/erp4-postgres.env}"
+ENV_FILE_EXPLICIT=0
 BACKUP_DIR="${QUADLET_DB_BACKUP_DIR:-$HOME/.local/share/erp4/db-backups}"
 CONTAINER_NAME="${POSTGRES_CONTAINER_NAME:-erp4-postgres}"
 TIMESTAMP="${BACKUP_TIMESTAMP:-}"
@@ -39,12 +40,15 @@ while [[ $# -gt 0 ]]; do
     --target-dir)
       [[ $# -ge 2 ]] || fail 'missing argument for --target-dir'
       TARGET_DIR="$2"
-      ENV_FILE="$TARGET_DIR/erp4-postgres.env"
+      if [[ "$ENV_FILE_EXPLICIT" -eq 0 ]]; then
+        ENV_FILE="$TARGET_DIR/erp4-postgres.env"
+      fi
       shift 2
       ;;
     --env-file)
       [[ $# -ge 2 ]] || fail 'missing argument for --env-file'
       ENV_FILE="$2"
+      ENV_FILE_EXPLICIT=1
       shift 2
       ;;
     --backup-dir)
@@ -115,15 +119,18 @@ if [[ "$SKIP_GLOBALS" -eq 0 ]]; then
   [[ -f "${prefix}-globals.sql" ]] || fail "expected globals file was not created: ${prefix}-globals.sql"
 fi
 
-check_args=(--backup-dir "$(dirname "$prefix")")
+check_args=(
+  --backup-dir "$BACKUP_DIR"
+  --dump-file "${prefix}.dump"
+)
 if [[ -n "$MAX_AGE_HOURS" ]]; then
   check_args+=(--max-age-hours "$MAX_AGE_HOURS")
 fi
 if [[ "$SKIP_GLOBALS" -eq 1 ]]; then
   check_args+=(--skip-globals)
 fi
-if [[ "$PRINT_PREFIX" -eq 1 ]]; then
-  check_args+=(--print-prefix)
-fi
 
-exec "$BASH_BIN" "$CHECK_DB_BACKUP_SCRIPT" "${check_args[@]}"
+"$BASH_BIN" "$CHECK_DB_BACKUP_SCRIPT" "${check_args[@]}"
+if [[ "$PRINT_PREFIX" -eq 1 ]]; then
+  printf '%s\n' "$prefix"
+fi
