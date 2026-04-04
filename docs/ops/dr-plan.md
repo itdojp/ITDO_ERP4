@@ -60,6 +60,7 @@
 ### 記録（テンプレ）
 - `docs/test-results/dr-restore-template.md` をコピーし、`docs/test-results/YYYY-MM-DD-dr-restore-rN.md` または `docs/test-results/YYYY-MM-DD-dr-restore-<RUN_LABEL>.md` として保存する
 - 補助: `scripts/record-dr-restore.sh` で最新 `tmp/erp4-dr-verify-*.log` から記録ファイルを生成できる
+- 過去30日以内の成功記録は release 判定の restore verification 証跡として参照してよい
 
 ## 関連
 - バックアップ/リストア（Runbook）: `docs/ops/backup-restore.md`
