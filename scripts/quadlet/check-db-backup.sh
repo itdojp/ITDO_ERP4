@@ -26,6 +26,21 @@ is_non_negative_integer() {
   [[ "$1" =~ ^[0-9]+$ ]]
 }
 
+derive_globals_file() {
+  local dump_file="$1"
+  case "$dump_file" in
+    *-db.dump)
+      printf '%s-globals.sql\n' "${dump_file%-db.dump}"
+      ;;
+    *.dump)
+      printf '%s-globals.sql\n' "${dump_file%.dump}"
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --backup-dir)
@@ -82,7 +97,7 @@ done
 mapfile -t sorted < <(printf '%s\n' "${metadata_lines[@]}" | sort -rn -k1,1)
 IFS=$'\t' read -r latest_mtime latest_dump <<<"${sorted[0]}"
 latest_prefix="${latest_dump%.dump}"
-latest_globals="${latest_prefix}-globals.sql"
+latest_globals="$(derive_globals_file "$latest_dump")"
 
 if [[ "$REQUIRE_GLOBALS" -eq 1 && ! -f "$latest_globals" ]]; then
   fail "matching globals backup not found for latest dump: $latest_globals"
@@ -90,6 +105,9 @@ fi
 
 if [[ -n "$MAX_AGE_HOURS" ]]; then
   now_epoch=$(date +%s)
+  if (( latest_mtime > now_epoch )); then
+    fail "latest db backup mtime is in the future: $latest_dump"
+  fi
   age_seconds=$(( now_epoch - latest_mtime ))
   max_age_seconds=$(( MAX_AGE_HOURS * 3600 ))
   if (( age_seconds > max_age_seconds )); then
@@ -97,10 +115,16 @@ if [[ -n "$MAX_AGE_HOURS" ]]; then
   fi
 fi
 
+if [[ "$PRINT_PREFIX" -eq 1 ]]; then
+  printf 'OK: latest db backup: %s\n' "$latest_dump" >&2
+  if [[ "$REQUIRE_GLOBALS" -eq 1 ]]; then
+    printf 'OK: latest globals backup: %s\n' "$latest_globals" >&2
+  fi
+  printf '%s\n' "$latest_prefix"
+  exit 0
+fi
+
 printf 'OK: latest db backup: %s\n' "$latest_dump"
 if [[ "$REQUIRE_GLOBALS" -eq 1 ]]; then
   printf 'OK: latest globals backup: %s\n' "$latest_globals"
-fi
-if [[ "$PRINT_PREFIX" -eq 1 ]]; then
-  printf '%s\n' "$latest_prefix"
 fi
