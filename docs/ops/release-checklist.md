@@ -6,10 +6,11 @@
 - [x] DB migration 有無を確認（`packages/backend/prisma/migrations/`）
 - [ ] 過去30日以内に成功した backup と restore verification の証跡を確認（`docs/ops/backup-restore.md`）
 - [ ] restore verification の成功日時を記録（過去30日以内であること）
-- [ ] 証跡を `docs/test-results/YYYY-MM-DD-backup-restore.md` に記録（命名規則は `docs/test-results/README.md` に従う）
+- [ ] 証跡を `docs/test-results/YYYY-MM-DD-backup-restore.md` または `docs/test-results/YYYY-MM-DD-dr-restore-rN.md` または `docs/test-results/YYYY-MM-DD-dr-restore-<RUN_LABEL>.md` に記録（命名規則は `docs/test-results/README.md` に従う）
 - [ ] 上記ファイルに使用した backup archive / log の参照先、実施者、対象環境を記録
 - [ ] DB 変更を含む場合は対象環境に応じた backup 健全性コマンド結果を記録（例: `./scripts/quadlet/check-db-backup.sh --max-age-hours 24 --print-prefix` または `make backup-s3-readiness-check`）
-- [ ] restore verification は `scripts/restore-verify.sh` の実行ログまたは同等の復元演習ログを参照できる形で記録
+- [ ] `--print-prefix` の出力値または同等の backup identifier を release 証跡へ転記
+- [ ] restore verification は `scripts/restore-verify.sh` の実行ログまたは `scripts/record-dr-restore.sh` で生成した記録ファイルを参照できる形で記録
 - [ ] Issue / PR コメントや Runbook には証跡本文を分散させず、証跡ファイルへのリンクのみを記載
 
 ## 試験稼働 Go/No-Go（2026-02-26 時点）
