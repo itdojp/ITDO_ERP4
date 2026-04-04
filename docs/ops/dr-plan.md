@@ -59,6 +59,7 @@
 
 ### 記録（テンプレ）
 - `docs/test-results/dr-restore-template.md` をコピーし、`docs/test-results/YYYY-MM-DD-dr-restore.md` として保存する
+- 補助: `scripts/record-dr-restore.sh` で最新 `tmp/erp4-dr-verify-*.log` から記録ファイルを生成できる
 
 ## 関連
 - バックアップ/リストア（Runbook）: `docs/ops/backup-restore.md`
