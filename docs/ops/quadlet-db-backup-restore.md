@@ -35,6 +35,21 @@ globals dump を作らない場合:
 ./scripts/quadlet/backup-db.sh --skip-globals --print-prefix
 ```
 
+## 古い DB backup の整理
+手動で古い DB backup を整理する場合は次を使います。
+
+```bash
+./scripts/quadlet/prune-db-backups.sh --keep-count 14 --keep-days 30 --dry-run
+```
+
+確認後に実削除する場合:
+
+```bash
+./scripts/quadlet/prune-db-backups.sh --keep-count 14 --keep-days 30
+```
+
+`*.dump` を削除する場合は、対応する `-globals.sql` も一緒に削除します。
+
 ## 最新 backup からの restore
 ```bash
 latest_prefix="$(./scripts/quadlet/list-db-backups.sh --latest --print-prefix)"
