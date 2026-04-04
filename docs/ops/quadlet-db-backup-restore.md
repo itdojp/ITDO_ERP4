@@ -30,6 +30,12 @@
 ./scripts/quadlet/backup-db.sh --print-prefix
 ```
 
+backup 直後に最新 dump / globals の整合までまとめて確認する場合:
+
+```bash
+./scripts/quadlet/backup-db-and-check.sh --max-age-hours 24 --print-prefix
+```
+
 ## 最新 backup の健全性確認
 最新 DB backup と globals dump の組を確認する場合は次を使います。
 
