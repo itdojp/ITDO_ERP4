@@ -20,7 +20,7 @@
 - S3バックアップ readiness 記録テンプレート: docs/test-results/backup-s3-readiness-template.md
 - DBバックアップ健全性確認テンプレート: docs/test-results/db-backup-health-template.md
 - ESLint10 readiness 記録テンプレート: docs/test-results/eslint10-readiness-template.md
-- Dependabot alerts 監視記録テンプレート: docs/test-results/dependabot-alerts-template.md
+- Dependabot alerts / token readiness 記録テンプレート: docs/test-results/dependabot-alerts-template.md
 - ActionPolicy phase3 readiness 記録テンプレート: docs/test-results/action-policy-phase3-readiness-template.md
 - ActionPolicy phase3 cutover 記録テンプレート: docs/test-results/action-policy-phase3-cutover-template.md
 - チャット添付AV（Staging）検証テンプレート: docs/test-results/chat-attachments-av-staging-template.md
@@ -64,7 +64,7 @@
 - ActionPolicy phase3 readiness 記録 r2: docs/test-results/2026-03-08-action-policy-phase3-readiness-r2.md
 - ActionPolicy phase3 cutover 記録 r2: docs/test-results/2026-03-08-action-policy-phase3-cutover-r2.md
 - S3バックアップ readiness 記録 r1: docs/test-results/2026-03-08-backup-s3-readiness-r1.md
-- Dependabot alerts 監視記録 r1: docs/test-results/2026-03-08-dependabot-alerts-r1.md
+- Dependabot alerts / token readiness 記録 r1: docs/test-results/2026-03-08-dependabot-alerts-r1.md
 - ESLint10 readiness 記録 r1: docs/test-results/2026-03-08-eslint10-readiness-r1.md
 
 ### 2026-03-03

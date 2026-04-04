@@ -21,6 +21,10 @@
    make dependabot-token-readiness-check
    ```
 
+   記録方針:
+   - `ready: true/false` と `resultReason` を Issue #1176 または運用Issueに転記する
+   - release 証跡へ流用する場合は、同日の Dependabot alerts 記録へ結果を併記する
+
 2. Dependabot alerts の現況を確認する。
 
    ```bash
@@ -66,6 +70,7 @@
 
 ## 記録先
 
+- Dependabot token readiness: `docs/test-results/YYYY-MM-DD-dependabot-alerts-rN.md` に併記、または Issue #1176 / 運用Issueへ転記
 - Dependabot alerts: `docs/test-results/YYYY-MM-DD-dependabot-alerts-rN.md`
 - ESLint10 readiness: `docs/test-results/YYYY-MM-DD-eslint10-readiness-rN.md`
 
