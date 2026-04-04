@@ -58,7 +58,7 @@
 - 本番相当は、実行環境が用意できた時点で定期化（nightly/weekly）
 
 ### 記録（テンプレ）
-- `docs/test-results/dr-restore-template.md` をコピーし、`docs/test-results/YYYY-MM-DD-dr-restore.md` として保存する
+- `docs/test-results/dr-restore-template.md` をコピーし、`docs/test-results/YYYY-MM-DD-dr-restore-rN.md` または `docs/test-results/YYYY-MM-DD-dr-restore-<RUN_LABEL>.md` として保存する
 - 補助: `scripts/record-dr-restore.sh` で最新 `tmp/erp4-dr-verify-*.log` から記録ファイルを生成できる
 
 ## 関連

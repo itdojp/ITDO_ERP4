@@ -50,6 +50,26 @@ resolve_absolute_path() {
   fi
 }
 
+normalize_report_path() {
+  local input="${1:-}"
+  if [[ -z "$input" ]]; then
+    printf '%s\n' ""
+    return
+  fi
+  local resolved="$input"
+  if [[ "$resolved" != /* ]]; then
+    resolved="$ROOT_DIR/$resolved"
+  fi
+  case "$resolved" in
+    "$ROOT_DIR"/*)
+      printf '%s\n' "${resolved#$ROOT_DIR/}"
+      ;;
+    *)
+      printf '%s\n' "$input"
+      ;;
+  esac
+}
+
 validate_date_stamp() {
   if ! [[ "$DATE_STAMP" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
     die "DATE_STAMP must be YYYY-MM-DD"
@@ -126,6 +146,7 @@ main() {
   [[ -f "$LOG_FILE" ]] || die "log file not found: $LOG_FILE"
 
   local started completed duration backup_db backup_globals output_file git_branch git_ref success_label
+  local report_log_file report_backup_db report_backup_globals
   started="$(extract_first_match '^\[restore-verify\] started: (.+)$' "$LOG_FILE")"
   completed="$(extract_first_match '^\[restore-verify\] completed: (.+)$' "$LOG_FILE")"
   duration="$(extract_first_match '^\[restore-verify\] success \(duration: ([0-9]+s)\)$' "$LOG_FILE")"
@@ -139,12 +160,15 @@ main() {
   fi
 
   output_file="$(resolve_output_file)"
+  report_log_file="$(normalize_report_path "$LOG_FILE")"
+  report_backup_db="$(normalize_report_path "$backup_db")"
+  report_backup_globals="$(normalize_report_path "$backup_globals")"
   git_branch="$(git -C "$ROOT_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)"
   git_ref="$(git -C "$ROOT_DIR" rev-parse --short HEAD 2>/dev/null || echo unknown)"
 
   python3 - "$TEMPLATE_PATH" "$output_file" <<'PY'
 import pathlib, sys
-src = pathlib.Path(sys.argv[1]).read_text()
+src = pathlib.Path(sys.argv[1]).read_text(encoding='utf-8')
 out = pathlib.Path(sys.argv[2])
 replacements = {
     '- 実施日: YYYY-MM-DD': '- 実施日: `__DATE__`',
@@ -160,13 +184,19 @@ replacements = {
 }
 for old, new in replacements.items():
     src = src.replace(old, new)
-out.write_text(src)
+try:
+    with out.open('x', encoding='utf-8') as fh:
+        fh.write(src)
+except FileExistsError:
+    raise SystemExit(f"output file already exists: {out}")
 PY
 
-  python3 - "$output_file" "$DATE_STAMP" "$ENV_NAME" "$OPERATOR_NAME" "$TARGET_NAME" "$backup_db" "$backup_globals" "$LOG_FILE" "$duration" "$success_label" "$started" "$completed" "$git_branch" "$git_ref" <<'PY'
+  python3 - "$output_file" "$DATE_STAMP" "$ENV_NAME" "$OPERATOR_NAME" "$TARGET_NAME" "$report_backup_db" "$report_backup_globals" "$report_log_file" "$duration" "$success_label" "$started" "$completed" "$git_branch" "$git_ref" <<'PY'
 import pathlib, sys
+from datetime import datetime, timezone
+
 p = pathlib.Path(sys.argv[1])
-text = p.read_text()
+text = p.read_text(encoding='utf-8')
 vals = {
     '__DATE__': sys.argv[2],
     '__ENV__': sys.argv[3] or '-',
@@ -180,9 +210,8 @@ vals = {
 }
 for k, v in vals.items():
     text = text.replace(k, v)
-from datetime import UTC, datetime
-text += f"\n## メタデータ\n- generatedAt: `{datetime.now(UTC).strftime('%Y-%m-%dT%H:%M:%SZ')}`\n- sourceLogStartedAt: `{sys.argv[11] or '-'}`\n- sourceLogCompletedAt: `{sys.argv[12] or '-'}`\n- branch: `{sys.argv[13]}`\n- commit: `{sys.argv[14]}`\n"
-p.write_text(text)
+text += f"\n## メタデータ\n- generatedAt: `{datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')}`\n- sourceLogStartedAt: `{sys.argv[11] or '-'}`\n- sourceLogCompletedAt: `{sys.argv[12] or '-'}`\n- branch: `{sys.argv[13]}`\n- commit: `{sys.argv[14]}`\n"
+p.write_text(text, encoding='utf-8')
 PY
 
   log "wrote: $output_file"
