@@ -49,8 +49,8 @@
 - 記録テンプレート:
   - `docs/test-results/dependabot-alerts-template.md`
 - API認証（任意）:
-- `DEPENDABOT_ALERTS_TOKEN` は repository secret として扱い、所有者・ローテーション・失効手順は `docs/ops/secrets-and-access.md` の inventory に記録する
-- 推奨権限は Dependabot alerts / security-events の読み取り専用とし、個人用の広権限 token は常用しない
+  - `DEPENDABOT_ALERTS_TOKEN` は repository secret として扱い、所有者・ローテーション・失効手順は `docs/ops/secrets-and-access.md` の inventory に記録する
+  - 推奨権限は Dependabot alerts / security-events の読み取り専用とし、個人用の広権限 token は常用しない
   - `DEPENDABOT_ALERTS_TOKEN`（repo secret）を設定すると、workflow が Dependabot Alert API を安定取得できる
   - 未設定時は `github.token` を使用し、APIアクセス不可の場合は `script status != 0` となる
   - 推奨は「Dependabot alerts/security-events 読み取り専用の token」を発行して設定する
