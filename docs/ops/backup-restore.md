@@ -36,6 +36,8 @@ RESTORE_CONFIRM=1 ./scripts/podman-poc.sh restore
 - `OK: db backup created: ...` が出力される
 - globals を有効化している場合は `OK: globals backup created: ...` も出力される
 
+証跡は `docs/test-results/db-backup-health-template.md` を利用して記録する。
+
 最新 backup の確認:
 
 ```bash

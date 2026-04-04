@@ -18,6 +18,7 @@
 
 - PO移行リハーサル記録テンプレート: docs/test-results/po-migration-rehearsal-template.md
 - S3バックアップ readiness 記録テンプレート: docs/test-results/backup-s3-readiness-template.md
+- DBバックアップ健全性確認テンプレート: docs/test-results/db-backup-health-template.md
 - ESLint10 readiness 記録テンプレート: docs/test-results/eslint10-readiness-template.md
 - Dependabot alerts 監視記録テンプレート: docs/test-results/dependabot-alerts-template.md
 - ActionPolicy phase3 readiness 記録テンプレート: docs/test-results/action-policy-phase3-readiness-template.md
