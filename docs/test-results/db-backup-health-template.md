@@ -11,7 +11,7 @@
   ```bash
   ./scripts/quadlet/check-db-backup.sh --max-age-hours 24 --print-prefix
   ```
-- DB backup list:
+- Latest DB backup:
   ```bash
   ./scripts/quadlet/list-db-backups.sh --latest --print-prefix
   ```
