@@ -21,6 +21,16 @@ RESTORE_CONFIRM=1 ./scripts/podman-poc.sh restore
 - リストアは破壊的操作になり得るため `RESTORE_CONFIRM=1` が必要
 - 必要に応じて `RESTORE_CLEAN=1` でスキーマの作り直しを行う
 
+### 復元後の最小確認
+1. backend の `/healthz` と `/readyz` を確認する
+2. `./scripts/podman-poc.sh check` を実行し、主要件数と整合性を確認する
+3. 主要 API / 主要導線のスモークを実施する
+4. 実行ログ、バックアップファイル名、確認結果を `docs/test-results/` に記録する
+
+### 記録先
+- DR/復元演習の記録は `docs/test-results/dr-restore-template.md` を起点に残す
+- release 判定の証跡に流用する場合は `docs/test-results/release-backup-evidence-template.md` も併記する
+
 ## Quadlet PostgreSQL backup/restore
 
 手動 DB backup:
