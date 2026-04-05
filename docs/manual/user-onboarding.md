@@ -6,8 +6,9 @@
 
 ## 対象読者
 
-- 利用者（`user`）
+- 利用者（`user` / 外部チャットユーザ）
 - 管理者（`admin/mgmt/exec/hr`）
+- 案件リーダー（ProjectMember: `leader`）
 
 ## 前提
 
@@ -25,6 +26,7 @@
 ## まず最初に読むガイド（利用者向け）
 
 - 15〜20分で主要導線を確認する場合は、`docs/manual/user-tutorial.md` を先に参照してください。
+- 外部チャットユーザを含むチャット中心の運用は `docs/manual/chat-guide.md` も併せて参照してください。
 - 詳細操作や入力制約は `docs/manual/ui-manual-user.md` を参照してください。
 
 ## まず最初に読むガイド（管理者向け）
@@ -55,6 +57,7 @@ PoC の E2E 実行時に取得した画面キャプチャです。
 
 - 利用者: [ui-manual-user](ui-manual-user.md)
 - 管理者: [ui-manual-admin](ui-manual-admin.md)
+- 案件リーダー: [project-leader-guide](project-leader-guide.md)
 
 ## よくある運用ルール（推奨）
 
