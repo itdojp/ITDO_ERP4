@@ -1,7 +1,7 @@
 # リリースチェックリスト（短縮版）
 
 ## 事前（必須）
-- [ ] CI が green（`CI` / リンクチェック / `security-audit`）
+- [ ] CI が green（`CI` / リンクチェック）
 - [ ] `security-audit` が許容範囲（High/Critical なし、または例外が Issue 化済み）
 - [ ] DB migration 有無を確認（`packages/backend/prisma/migrations/`）
 - [ ] 過去30日以内に成功した backup と restore verification の証跡を確認（`docs/ops/backup-restore.md`）
