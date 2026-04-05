@@ -1,9 +1,9 @@
 # リリースチェックリスト（短縮版）
 
 ## 事前（必須）
-- [x] CI が green（`CI` / `Link Check`）
-- [x] `security-audit` が許容範囲（High/Critical なし、または例外が Issue 化済み）
-- [x] DB migration 有無を確認（`packages/backend/prisma/migrations/`）
+- [ ] CI が green（`CI` / リンクチェック）
+- [ ] `security-audit` が許容範囲（High/Critical なし、または例外が Issue 化済み）
+- [ ] DB migration 有無を確認（`packages/backend/prisma/migrations/`）
 - [ ] 過去30日以内に成功した backup と restore verification の証跡を確認（`docs/ops/backup-restore.md`）
 - [ ] restore verification の成功日時を記録（過去30日以内であること）
 - [ ] 証跡を `docs/test-results/YYYY-MM-DD-backup-restore.md` または `docs/test-results/YYYY-MM-DD-dr-restore-rN.md` または `docs/test-results/YYYY-MM-DD-dr-restore-<RUN_LABEL>.md` に記録（命名規則は `docs/test-results/README.md` に従う）
@@ -13,12 +13,12 @@
 - [ ] restore verification は `scripts/restore-verify.sh` の実行ログまたは `scripts/record-dr-restore.sh` で生成した記録ファイルを参照できる形で記録
 - [ ] Issue / PR コメントや Runbook には証跡本文を分散させず、証跡ファイルへのリンクのみを記載
 
-## 試験稼働 Go/No-Go（2026-02-26 時点）
-- [x] `main` の `CI` が2連続成功（run [22430055698](https://github.com/itdojp/ITDO_ERP4/actions/runs/22430055698) の attempt 1/2 ともに成功）
-- [x] `Link Check` は直近5実行で成功（例: [22425842966](https://github.com/itdojp/ITDO_ERP4/actions/runs/22425842966)）
-- [x] `security-audit` は最新実行で成功（[22425842948](https://github.com/itdojp/ITDO_ERP4/actions/runs/22425842948) の `security-audit` job）
-- [ ] 既知の運用残課題を解消または受容判断（#543 #544 #914 #1153）
-- [x] Go/No-Go 判定ログを #1260 に集約
+## Go/No-Go 判定（記録必須）
+- [ ] `main` の required CI が release 対象コミットで成功している
+- [ ] リンクチェック（現行 job: `lychee`）が成功している
+- [ ] `security-audit` が最新実行で成功、または例外が Issue / 運用記録に明記されている
+- [ ] 既知の運用残課題を解消、または受容判断を記録している
+- [ ] Go/No-Go 判定ログを当日の release Issue または change record に集約している
 
 ## 実施
 - [ ] タグ付け（`vX.Y.Z`）
