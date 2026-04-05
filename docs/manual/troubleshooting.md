@@ -17,7 +17,9 @@
 
 ## 2. 画面が表示されない/通信できない
 - フロントが `VITE_API_BASE` を参照できているか確認
-- backend の `/health` が 200 で応答するか確認
+- backend の `/healthz` が `200` で応答するか確認
+- backend の `/readyz` が `200` で応答するか確認（`503` は依存障害の可能性）
+- ブラウザ開発者ツールで失敗した API を開き、Response Headers の `x-request-id` を控える（CORS や通信断時は取得できない場合あり）
 
 ## 3. E2E が落ちる（Playwright）
 チェックポイント:
@@ -41,3 +43,19 @@
 - `CHAT_ATTACHMENT_PROVIDER` を確認（local/gdrive）
 - gdrive の場合は `CHAT_ATTACHMENT_GDRIVE_*` が揃っているか確認
 - 疎通チェック: [scripts/check-chat-gdrive.ts](../../scripts/check-chat-gdrive.ts)
+
+## 5. 運用へエスカレーションする条件
+PoC/検証の一次切り分けで止めず、[incident-response](../ops/incident-response.md) に切り替える条件を明示する。
+
+- `/healthz` が `200` でない、または `/readyz` が `503` を返す
+- 同一事象が複数ユーザ、複数導線、または主要導線で再現する
+- `x-request-id` を採取できており、アプリ側ログ確認が必要な段階に入った
+- 認証情報、権限逸脱、外部公開設定、秘密情報露出の疑いがある
+- `security-audit`、通知送信、定期レポートなどの重要ジョブが連続失敗している
+
+### エスカレーション時に引き継ぐ情報
+- 発生時刻と再現手順
+- 影響範囲（誰が、どの画面/APIで失敗したか）
+- `/healthz` / `/readyz` の結果
+- `x-request-id`、エラーメッセージ、スクリーンショット
+- 直近の設定変更、デプロイ、secret rotation の有無
