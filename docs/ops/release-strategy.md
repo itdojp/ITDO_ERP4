@@ -24,8 +24,9 @@
 - CI が green（`CI` / `Link Check`）
 - 依存脆弱性チェックが許容範囲（`security-audit`）
 - DB マイグレーション有無の確認（`packages/backend/prisma/migrations/`）
-- 過去30日以内に成功した backup と restore verification の証跡を確認（`docs/ops/backup-restore.md` / `docs/test-results/YYYY-MM-DD-backup-restore.md`）
+- 過去30日以内に成功した backup と restore verification の証跡を確認する。短縮版チェックリストを含む release 手順では、`docs/ops/backup-restore.md` / `docs/test-results/YYYY-MM-DD-backup-restore.md` / `docs/test-results/YYYY-MM-DD-dr-restore-rN.md` / `docs/test-results/YYYY-MM-DD-dr-restore-<RUN_LABEL>.md` を同じ restore verification 証跡として扱う
 - DB 変更を含む場合は、対象環境に応じた backup 健全性コマンドを実行して記録する（例: `./scripts/quadlet/check-db-backup.sh --max-age-hours 24 --print-prefix` / `make backup-s3-readiness-check`）
+- `scripts/record-dr-restore.sh` で生成した DR 記録を restore verification として参照する場合は、対象環境・実施者・使用 backup archive / log が追跡できることを確認する
 
 ## リリース実施（推奨手順）
 ### 1) リリース候補を確定
