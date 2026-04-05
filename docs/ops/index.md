@@ -46,7 +46,7 @@
 - 一次切り分け（Runbook）: [incident-response](incident-response.md)
   - SEV 判断、初動、症状別 triage、対応中の記録を確認するときの入口
 - Postmortem テンプレ: [postmortem-template](postmortem-template.md)
-  - 復旧後の振り返り記録を残すときのテンプレート
+  - 復旧後の振り返り記録を残すときのテンプレ
 - ゲームデイ（演習計画）: [game-day](game-day.md)
   - 既存資料: [docs/requirements/ops-monitoring.md](../requirements/ops-monitoring.md)
 
