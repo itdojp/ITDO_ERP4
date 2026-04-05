@@ -5,6 +5,7 @@
 詳細は `docs/requirements/backup-restore.md` を参照。
 DR計画（RTO/RPO/復元演習）は `docs/ops/dr-plan.md` を参照。
 S3 の確定値は `docs/ops/backup-s3-decision-checklist.md` に記録する。
+release 判定へ流用する backup/restore 証跡を新規作成する場合は `docs/test-results/release-backup-evidence-template.md` を利用する。
 
 ## PoC/検証（Podman DB）
 
