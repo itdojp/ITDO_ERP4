@@ -73,10 +73,12 @@ RESTORE_CONFIRM=1 ./scripts/quadlet/restore-db-latest.sh --clean-public-schema
 - `restore-db.sh` / `restore-db-latest.sh` は `erp4-postgres.env` を参照し、既定では `erp4-postgres` コンテナへ `pg_restore` / `psql` を実行する
 
 ### 日次運用で使う補助コマンド
+この Runbook では日次運用で使う代表コマンドだけを示し、詳細 option は各 helper の `--help` を優先する。
+
 最新 backup を作成して直後に検証する場合:
 
 ```bash
-./scripts/quadlet/backup-db-and-check.sh --print-prefix
+./scripts/quadlet/backup-db-and-check.sh --max-age-hours 24 --print-prefix
 ```
 
 最新 backup の鮮度確認だけ行う場合:
@@ -94,7 +96,7 @@ RESTORE_CONFIRM=1 ./scripts/quadlet/restore-db-latest.sh --clean-public-schema
 古い backup を整理する場合（まず dry-run）:
 
 ```bash
-./scripts/quadlet/prune-db-backups.sh --keep-count 7 --keep-days 30 --dry-run
+./scripts/quadlet/prune-db-backups.sh --keep-count 14 --keep-days 30 --dry-run
 ```
 
 世代整理時の注意:
