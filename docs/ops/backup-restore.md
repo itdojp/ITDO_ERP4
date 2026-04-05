@@ -72,6 +72,34 @@ RESTORE_CONFIRM=1 ./scripts/quadlet/restore-db-latest.sh --clean-public-schema
 - globals を復元しない場合は `--skip-globals` を付与
 - `restore-db.sh` / `restore-db-latest.sh` は `erp4-postgres.env` を参照し、既定では `erp4-postgres` コンテナへ `pg_restore` / `psql` を実行する
 
+### 日次運用で使う補助コマンド
+最新 backup を作成して直後に検証する場合:
+
+```bash
+./scripts/quadlet/backup-db-and-check.sh --print-prefix
+```
+
+最新 backup の鮮度確認だけ行う場合:
+
+```bash
+./scripts/quadlet/check-db-backup.sh --max-age-hours 24 --print-prefix
+```
+
+直近の backup 一覧を確認する場合:
+
+```bash
+./scripts/quadlet/list-db-backups.sh --limit 5 --print-prefix
+```
+
+古い backup を整理する場合（まず dry-run）:
+
+```bash
+./scripts/quadlet/prune-db-backups.sh --keep-count 7 --keep-days 30 --dry-run
+```
+
+世代整理時の注意:
+- `prune-db-backups.sh` は対象の `.dump` と対応する `-globals.sql` を同時に削除する
+- `--keep-count` と `--keep-days` はどちらか一方でも使えるが、併用して保持条件を広めに取る方が安全
 
 ## さくらVPS / Quadlet（PostgreSQL container）
 `erp4-postgres` を rootless Podman + Quadlet で運用している場合は、manual backup helper を使います。
