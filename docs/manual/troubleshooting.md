@@ -36,6 +36,9 @@
   - `psql` が必要です（未導入の場合は `E2E_DB_MODE=podman` を利用）。
 - Playwright のインストール:
   - 既にインストール済みであれば `E2E_SKIP_PLAYWRIGHT_INSTALL=1` でスキップできます。
+- 実行ログの確認:
+  - backend は `tmp/e2e-backend.log`、frontend は `tmp/e2e-frontend.log` を確認します。
+  - `x-request-id` を採取できた場合は、該当ログを採取した `x-request-id` の値で検索します。
 
 ローカル実行手順は [e2e-evidence-howto](e2e-evidence-howto.md) を参照。
 
