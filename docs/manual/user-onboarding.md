@@ -1,4 +1,4 @@
-# 初回利用・共通操作ガイド（利用者/管理者）
+# 初回利用・共通操作ガイド（利用者/管理者/案件リーダー）
 
 ## 目的
 
@@ -6,8 +6,9 @@
 
 ## 対象読者
 
-- 利用者（`user`）
+- 利用者（`user` / 外部チャットユーザ）
 - 管理者（`admin/mgmt/exec/hr`）
+- 案件リーダー（ProjectMember: `leader`）
 
 ## 前提
 
@@ -24,18 +25,19 @@
 
 ## まず最初に読むガイド（利用者向け）
 
-- 15〜20分で主要導線を確認する場合は、`docs/manual/user-tutorial.md` を先に参照してください。
-- 詳細操作や入力制約は `docs/manual/ui-manual-user.md` を参照してください。
+- 15〜20分で主要導線を確認する場合は、[user-tutorial](user-tutorial.md) を先に参照してください。
+- 外部チャットユーザを含むチャット中心の運用は [chat-guide](chat-guide.md) も併せて参照してください。
+- 詳細操作や入力制約は [ui-manual-user](ui-manual-user.md) を参照してください。
 
 ## まず最初に読むガイド（管理者向け）
 
-- 20〜30分で管理操作の主要導線を確認する場合は、`docs/manual/admin-tutorial.md` を先に参照してください。
-- 詳細操作や入力制約は `docs/manual/ui-manual-admin.md` を参照してください。
+- 20〜30分で管理操作の主要導線を確認する場合は、[admin-tutorial](admin-tutorial.md) を先に参照してください。
+- 詳細操作や入力制約は [ui-manual-admin](ui-manual-admin.md) を参照してください。
 
 ## まず最初に読むガイド（案件リーダー向け）
 
-- 15〜25分で案件運用の主要導線を確認する場合は、`docs/manual/project-leader-tutorial.md` を先に参照してください。
-- 運用ルールや監査観点は `docs/manual/project-leader-guide.md` を参照してください。
+- 15〜25分で案件運用の主要導線を確認する場合は、[project-leader-tutorial](project-leader-tutorial.md) を先に参照してください。
+- 運用ルールや監査観点は [project-leader-guide](project-leader-guide.md) を参照してください。
 
 ## 画面キャプチャ（証跡）
 
@@ -55,6 +57,7 @@ PoC の E2E 実行時に取得した画面キャプチャです。
 
 - 利用者: [ui-manual-user](ui-manual-user.md)
 - 管理者: [ui-manual-admin](ui-manual-admin.md)
+- 案件リーダー: [project-leader-guide](project-leader-guide.md)
 
 ## よくある運用ルール（推奨）
 
