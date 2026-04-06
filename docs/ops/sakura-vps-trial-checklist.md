@@ -7,6 +7,8 @@
 ## 前提
 - 作業ユーザーは `deploy` を想定する。
 - リポジトリは `/opt/itdo/ITDO_ERP4` に配置済みで、`origin/main` と対象 PR の差分が反映済みであること。
+- build-time / runtime / proxy / maintenance の設定値は [sakura-vps-env-checklist](sakura-vps-env-checklist.md) を見ながら確認する。
+- 試験稼働の証跡は [../test-results/sakura-vps-trial-template.md](../test-results/sakura-vps-trial-template.md) に記録する。
 - build-time 用の `deploy/quadlet/env/erp4-frontend-build.env` を準備済みであること。
 - runtime 用の `erp4-postgres.env` / `erp4-backend.env` は `~/.config/containers/systemd/`（`QUADLET_TARGET_DIR` を変える場合はそのディレクトリ）に配置済み、または `install-user-units.sh` 実行後に編集可能なこと。
 - proxy を使う場合の `erp4-caddy.env` / `erp4-caddy.Caddyfile` も `~/.config/containers/systemd/` 配下に配置済み、または `install-user-units.sh` 実行後に編集可能なこと。

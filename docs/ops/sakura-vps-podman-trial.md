@@ -6,6 +6,10 @@
 
 試験稼働の Go/No-Go 判定だけを短時間で回したい場合は、別紙の [sakura-vps-trial-checklist](sakura-vps-trial-checklist.md) を使う。
 
+関連資料:
+- env チェックリスト: [sakura-vps-env-checklist](sakura-vps-env-checklist.md)
+- 試験稼働記録テンプレート: [../test-results/sakura-vps-trial-template.md](../test-results/sakura-vps-trial-template.md)
+
 ## 想定バージョン / 前提
 - OS: Ubuntu 24.04 LTS
 - Podman: 4.9 系
