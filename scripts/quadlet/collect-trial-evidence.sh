@@ -14,6 +14,7 @@ CHECK_HTTPS="${CHECK_HTTPS:-$ROOT_DIR/scripts/quadlet/check-https.sh}"
 SYSTEMCTL="${SYSTEMCTL:-systemctl}"
 TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
 OUTPUT_DIR=""
+FAILED=0
 
 usage() {
   cat <<USAGE
@@ -39,10 +40,21 @@ ensure_non_negative_integer() {
 }
 
 run_and_capture() {
-  local file="$1"
-  shift
+  local label="$1"
+  local file="$2"
+  shift 2
+  local status=0
+
   printf '==> %s\n' "$*"
-  "$@" >"$file" 2>&1
+  if "$@" >"$file" 2>&1; then
+    status=0
+  else
+    status=$?
+    FAILED=1
+  fi
+
+  printf 'exit_code=%s\n' "$status" >>"$file"
+  printf '%s_exit=%s\n' "$label" "$status" >>"$META_FILE"
 }
 
 while [[ $# -gt 0 ]]; do
@@ -121,9 +133,9 @@ if [[ "$INCLUDE_PROXY" -eq 1 ]]; then
   status_cmd+=(--include-proxy)
   logs_cmd+=(--include-proxy)
 fi
-run_and_capture "$STATUS_FILE" "${status_cmd[@]}"
-run_and_capture "$LOGS_FILE" "${logs_cmd[@]}"
-run_and_capture "$TIMERS_FILE" "$SYSTEMCTL" --user list-timers 'erp4-*'
+run_and_capture status_stack "$STATUS_FILE" "${status_cmd[@]}"
+run_and_capture logs_stack "$LOGS_FILE" "${logs_cmd[@]}"
+run_and_capture list_timers "$TIMERS_FILE" "$SYSTEMCTL" --user list-timers 'erp4-*'
 
 if [[ "$INCLUDE_PROXY" -eq 1 && "$SKIP_HTTPS" -eq 0 ]]; then
   https_cmd=("$CHECK_HTTPS")
@@ -133,7 +145,12 @@ if [[ "$INCLUDE_PROXY" -eq 1 && "$SKIP_HTTPS" -eq 0 ]]; then
   if [[ "$INSECURE" -eq 1 ]]; then
     https_cmd+=(--insecure)
   fi
-  run_and_capture "$HTTPS_FILE" "${https_cmd[@]}"
+  run_and_capture check_https "$HTTPS_FILE" "${https_cmd[@]}"
+fi
+
+if [[ "$FAILED" -ne 0 ]]; then
+  printf 'ERROR: trial evidence collected with one or more failing probes under %s\n' "$OUTPUT_DIR" >&2
+  exit 1
 fi
 
 printf 'OK: trial evidence collected under %s\n' "$OUTPUT_DIR"
