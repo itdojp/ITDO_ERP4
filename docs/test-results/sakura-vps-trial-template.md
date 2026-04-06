@@ -1,5 +1,7 @@
 # さくらVPS 試験稼働記録テンプレート
 
+- このテンプレートは `./scripts/record-sakura-vps-trial.sh` でたたき台を生成できる。
+
 - 実施日: YYYY-MM-DD
 - 実施者:
 - 対象ホスト名:

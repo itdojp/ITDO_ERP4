@@ -224,6 +224,11 @@ systemctl --user status erp4-postgres.service erp4-migrate.service erp4-backend.
 
 `collect-trial-evidence.sh` は `status-stack.sh` / `logs-stack.sh` / `systemctl --user list-timers 'erp4-*'` を timestamp 付きディレクトリへ保存し、`--include-proxy` 指定時だけ `check-https.sh` の結果も追加します。`status-stack.sh` や `check-https.sh` が失敗しても採取自体は継続し、最後に non-zero で終了します。
 
+試験稼働記録のたたき台を生成する場合:
+```bash
+./scripts/record-sakura-vps-trial.sh
+```
+
 定期 backup を有効化する場合:
 ```bash
 systemctl --user enable --now erp4-config-backup.timer
