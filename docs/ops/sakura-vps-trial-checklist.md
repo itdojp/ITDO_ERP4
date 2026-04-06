@@ -105,6 +105,11 @@ proxy を含める場合:
 ./scripts/quadlet/collect-trial-evidence.sh --include-proxy --resolve-ip <VPS_IP>
 ```
 
+記録ファイルのたたき台を生成する場合:
+```bash
+./scripts/record-sakura-vps-trial.sh
+```
+
 個別に採取する場合:
 ```bash
 ./scripts/quadlet/status-stack.sh
