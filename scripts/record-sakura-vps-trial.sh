@@ -151,6 +151,11 @@ main() {
       usage
       exit 0
       ;;
+    "")
+      ;;
+    *)
+      die "unknown argument: $1"
+      ;;
   esac
 
   validate_date_stamp
@@ -236,7 +241,7 @@ PY
     format_exit_summary 'status-stack.sh' "$status_exit"
     format_exit_summary 'logs-stack.sh' "$logs_exit"
     format_exit_summary "systemctl --user list-timers 'erp4-*'" "$timers_exit"
-    if [[ -f "$https_file" || -n "$https_exit" || "$include_proxy" == "1" ]]; then
+    if [[ -f "$https_file" || -n "$https_exit" ]]; then
       format_exit_summary 'check-https.sh' "$https_exit"
     fi
     printf '\n## 8. 自動採取ファイル\n'
