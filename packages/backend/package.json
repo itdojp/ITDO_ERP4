@@ -48,7 +48,7 @@
     "@eslint/js": "^9.39.4",
     "@fastify/swagger": "^9.7.0",
     "@types/node": "^25.5.2",
-    "@types/nodemailer": "^7.0.11",
+    "@types/nodemailer": "^8.0.0",
     "@types/pdfkit": "^0.17.5",
     "@types/pg": "^8.20.0",
     "@typescript-eslint/eslint-plugin": "^8.58.0",
