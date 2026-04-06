@@ -95,13 +95,24 @@ proxy / 公開ドメイン仮確認を含める場合:
 - 既に DNS が切り替わっている場合は `--resolve-ip` を省略し、必要なら `check-https.sh` を単独実行する。
 
 ### 8. 稼働証跡の採取
+通常:
+```bash
+./scripts/quadlet/collect-trial-evidence.sh --lines 100
+```
+
+proxy を含める場合:
+```bash
+./scripts/quadlet/collect-trial-evidence.sh --include-proxy --resolve-ip <VPS_IP>
+```
+
+個別に採取する場合:
 ```bash
 ./scripts/quadlet/status-stack.sh
 ./scripts/quadlet/logs-stack.sh --lines 100
 systemctl --user list-timers 'erp4-*'
 ```
 
-proxy を含める場合:
+proxy を含める個別採取:
 ```bash
 ./scripts/quadlet/status-stack.sh --include-proxy
 ./scripts/quadlet/logs-stack.sh --include-proxy --lines 100
