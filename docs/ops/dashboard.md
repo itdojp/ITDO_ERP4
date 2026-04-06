@@ -29,6 +29,16 @@
 3. 直近デプロイSHA/tag は何か
 4. request-id を起点にログでトレース（`docs/ops/observability.md`）
 5. DB接続/スロークエリの兆候があるか
+6. 重要ジョブ失敗が起点なら、`docs/ops/incident-response.md` の「重要ジョブ失敗」の一次切り分けに沿ってジョブ名 / 失敗回数 / 直近成功時刻 / 外部依存を確認する
+
+## 障害時に最低限残す証跡
+`docs/ops/incident-response.md` の「対応中の記録（推奨）」に準拠し、この Runbook ではダッシュボード起点で最低限必要な項目だけを抜粋する。
+
+- 暫定 SEV と、その判断に使ったアラート名 / 条件
+- `/healthz` / `/readyz` の結果
+- 代表的な `x-request-id` または ジョブ名
+- 直近デプロイ SHA / tag
+- 影響範囲と次のエスカレーション先
 
 ## 関連
 - SLO: `docs/ops/slo.md`
