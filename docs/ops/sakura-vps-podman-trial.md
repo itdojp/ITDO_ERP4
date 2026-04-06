@@ -4,6 +4,8 @@
 - ITDO_ERP4 を 1 台のさくらVPS 上で rootless Podman + Quadlet により常駐運用する。
 - PostgreSQL / backend / frontend を user systemd 管理へ寄せ、再起動後も自動復帰できる状態にする。
 
+試験稼働の Go/No-Go 判定だけを短時間で回したい場合は、別紙の [sakura-vps-trial-checklist](sakura-vps-trial-checklist.md) を使う。
+
 ## 想定バージョン / 前提
 - OS: Ubuntu 24.04 LTS
 - Podman: 4.9 系
