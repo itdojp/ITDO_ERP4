@@ -202,6 +202,14 @@ systemctl --user status erp4-postgres.service erp4-migrate.service erp4-backend.
 
 `start-stack.sh` は `check-env.sh` による runtime env 検証、user systemd unit の有効化・起動、`check-stack.sh` による post-start 検証を直列で実行します。`--include-proxy` を付け、かつ `--skip-env-check` を付けていない場合は、`check-proxy.sh` による Caddy 設定検証も追加で行ったうえで `erp4-caddy.service` を有効化・起動します。さらに `--skip-stack-check` を付けていない場合は、`status-stack.sh --include-proxy` による `erp4-caddy.service` を含む状態確認まで実行します。公開ドメイン経由の疎通まで確認したい場合は、`check-proxy.sh` または外部からの `curl` probe を別途実行してください。`QUADLET_TARGET_DIR` を設定している場合はその配下を検証対象に使います。手動の `systemctl --user enable --now ...` 群はトラブルシュート用の fallback として残しています。
 
+試験稼働の受入確認を 1 コマンドで回す場合は、次を使います。
+```bash
+./scripts/quadlet/check-trial-readiness.sh
+./scripts/quadlet/check-trial-readiness.sh --include-proxy --resolve-ip <VPS_IP>
+```
+
+`check-trial-readiness.sh` は `check-host-prereqs.sh` → `check-env.sh` → `check-stack.sh` を順に実行し、`--include-proxy` 指定時だけ `check-https.sh` を追加します。DNS 切替前に公開ドメイン疎通を仮確認したい場合は `--resolve-ip` を使います。
+
 定期 backup を有効化する場合:
 ```bash
 systemctl --user enable --now erp4-config-backup.timer
