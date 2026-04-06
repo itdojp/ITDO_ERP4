@@ -216,6 +216,14 @@ systemctl --user status erp4-postgres.service erp4-migrate.service erp4-backend.
 
 `check-trial-readiness.sh` は `check-host-prereqs.sh` → `check-env.sh` → `check-stack.sh` を順に実行し、`--include-proxy` 指定時だけ `check-https.sh` を追加します。DNS 切替前に公開ドメイン疎通を仮確認したい場合は `--resolve-ip` を使います。
 
+試験稼働の証跡をまとめて採取する場合:
+```bash
+./scripts/quadlet/collect-trial-evidence.sh --lines 100
+./scripts/quadlet/collect-trial-evidence.sh --include-proxy --resolve-ip <VPS_IP>
+```
+
+`collect-trial-evidence.sh` は `status-stack.sh` / `logs-stack.sh` / `systemctl --user list-timers 'erp4-*'` を timestamp 付きディレクトリへ保存し、`--include-proxy` 指定時だけ `check-https.sh` の結果も追加します。
+
 定期 backup を有効化する場合:
 ```bash
 systemctl --user enable --now erp4-config-backup.timer

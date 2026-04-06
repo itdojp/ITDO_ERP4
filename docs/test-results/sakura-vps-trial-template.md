@@ -40,12 +40,14 @@
   - 結果:
 
 ## 4. 採取した証跡
-- `./scripts/quadlet/logs-stack.sh --lines 100`
+- `./scripts/quadlet/collect-trial-evidence.sh --lines 100`
   - 保存先:
-- 必要時 `./scripts/quadlet/logs-stack.sh --include-proxy --lines 100`
+- 必要時 `./scripts/quadlet/collect-trial-evidence.sh --include-proxy --resolve-ip <VPS_IP>`
   - 保存先:
-- `systemctl --user list-timers 'erp4-*'`
-  - 保存先:
+- 個別採取した場合の保存先:
+  - `./scripts/quadlet/logs-stack.sh --lines 100`
+  - 必要時 `./scripts/quadlet/logs-stack.sh --include-proxy --lines 100`
+  - `systemctl --user list-timers 'erp4-*'`
 - `/healthz`:
 - `/readyz`:
 - frontend HTTP probe:
