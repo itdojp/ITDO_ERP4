@@ -49,7 +49,7 @@
 - `/healthz`:
 - `/readyz`:
 - frontend HTTP probe:
-- 必要時 `check-https.sh`:
+- 必要時 `./scripts/quadlet/check-https.sh`:
 
 ## 5. 判定
 - Go / No-Go:
