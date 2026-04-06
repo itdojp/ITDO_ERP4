@@ -26,6 +26,7 @@
 - ActionPolicy phase3 cutover 記録テンプレート: docs/test-results/action-policy-phase3-cutover-template.md
 - チャット添付AV（Staging）検証テンプレート: docs/test-results/chat-attachments-av-staging-template.md
 - DRリストア運用検証テンプレート: docs/test-results/dr-restore-template.md
+- さくらVPS試験稼働記録テンプレート: docs/test-results/sakura-vps-trial-template.md
 - モバイル回帰証跡テンプレート: docs/test-results/mobile-regression-template.md
 
 ### 2026-03-23
