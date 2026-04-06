@@ -7,7 +7,9 @@
 ## 前提
 - 作業ユーザーは `deploy` を想定する。
 - リポジトリは `/opt/itdo/ITDO_ERP4` に配置済みで、`origin/main` と対象 PR の差分が反映済みであること。
-- `deploy/quadlet/env/erp4-postgres.env`、`deploy/quadlet/env/erp4-backend.env`、`deploy/quadlet/env/erp4-frontend-build.env`、必要時は `deploy/quadlet/env/erp4-caddy.env` を準備済みであること。
+- build-time 用の `deploy/quadlet/env/erp4-frontend-build.env` を準備済みであること。
+- runtime 用の `erp4-postgres.env` / `erp4-backend.env` は `~/.config/containers/systemd/`（`QUADLET_TARGET_DIR` を変える場合はそのディレクトリ）に配置済み、または `install-user-units.sh` 実行後に編集可能なこと。
+- proxy を使う場合の `erp4-caddy.env` / `erp4-caddy.Caddyfile` も `~/.config/containers/systemd/` 配下に配置済み、または `install-user-units.sh` 実行後に編集可能なこと。
 - 公開ドメインを使う確認は、`erp4-caddy.service` を起動する場合だけ実施する。
 
 ## Go/No-Go 手順
@@ -19,20 +21,14 @@ cd /opt/itdo/ITDO_ERP4
 ```
 
 確認観点:
-- `subuid` / `subgid`
 - `loginctl enable-linger`
 - Podman / systemd / `sysctl`
-- 80/443 の占有有無
+- 80/443 の bind 可否 / 占有有無
+- `subuid` / `subgid` はこのスクリプトでは検証しないため、別途手動確認する
 
-### 2. build-time / runtime env 検証
+### 2. build-time env 検証
 ```bash
 ./scripts/quadlet/check-env.sh --skip-runtime --frontend-build-env deploy/quadlet/env/erp4-frontend-build.env
-./scripts/quadlet/check-env.sh
-```
-
-公開ドメイン確認まで含める場合:
-```bash
-./scripts/quadlet/check-proxy.sh
 ```
 
 ### 3. イメージ build
@@ -58,7 +54,19 @@ cd /opt/itdo/ITDO_ERP4
   - `~/.config/containers/systemd/erp4-config-backup.timer`
   - `~/.config/containers/systemd/erp4-db-backup.timer`
 
-### 5. stack 起動
+### 5. runtime env / proxy 設定の編集と検証
+`install-user-units.sh` 実行後に、`~/.config/containers/systemd/` 配下の runtime env と必要時の proxy 設定を編集してから検証する。
+
+```bash
+./scripts/quadlet/check-env.sh
+```
+
+公開ドメイン確認まで含める場合:
+```bash
+./scripts/quadlet/check-proxy.sh
+```
+
+### 6. stack 起動
 通常:
 ```bash
 ./scripts/quadlet/start-stack.sh
@@ -69,7 +77,7 @@ proxy も起動する場合:
 ./scripts/quadlet/start-stack.sh --include-proxy
 ```
 
-### 6. 受入確認
+### 7. 受入確認
 通常:
 ```bash
 ./scripts/quadlet/check-trial-readiness.sh
@@ -84,7 +92,7 @@ proxy / 公開ドメイン仮確認を含める場合:
 - `--resolve-ip` と `--insecure` は `--include-proxy` 指定時のみ使える。
 - 既に DNS が切り替わっている場合は `--resolve-ip` を省略し、必要なら `check-https.sh` を単独実行する。
 
-### 7. 稼働証跡の採取
+### 8. 稼働証跡の採取
 ```bash
 ./scripts/quadlet/status-stack.sh
 ./scripts/quadlet/logs-stack.sh --lines 100
