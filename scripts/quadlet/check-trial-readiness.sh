@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 TARGET_DIR="${QUADLET_TARGET_DIR:-$HOME/.config/containers/systemd}"
 FRONTEND_BUILD_ENV="${FRONTEND_BUILD_ENV_FILE:-$ROOT_DIR/deploy/quadlet/env/erp4-frontend-build.env}"
+FRONTEND_BUILD_ENV_EXPLICIT=0
 CHECK_HOST="${CHECK_HOST:-$ROOT_DIR/scripts/quadlet/check-host-prereqs.sh}"
 CHECK_ENV="${CHECK_ENV:-$ROOT_DIR/scripts/quadlet/check-env.sh}"
 CHECK_STACK="${CHECK_STACK:-$ROOT_DIR/scripts/quadlet/check-stack.sh}"
@@ -50,6 +51,7 @@ while [[ $# -gt 0 ]]; do
     --frontend-build-env)
       [[ $# -ge 2 ]] || fail 'missing argument for --frontend-build-env'
       FRONTEND_BUILD_ENV="$2"
+      FRONTEND_BUILD_ENV_EXPLICIT=1
       shift 2
       ;;
     --include-proxy)
@@ -87,9 +89,19 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-[[ -x "$CHECK_HOST" ]] || fail "helper is not executable: $CHECK_HOST"
-[[ -x "$CHECK_ENV" ]] || fail "helper is not executable: $CHECK_ENV"
-[[ -x "$CHECK_STACK" ]] || fail "helper is not executable: $CHECK_STACK"
+if [[ "$INCLUDE_PROXY" -eq 0 && ( -n "$RESOLVE_IP" || "$INSECURE" -eq 1 ) ]]; then
+  fail '--resolve-ip and --insecure require --include-proxy'
+fi
+
+if [[ "$SKIP_HOST_CHECK" -eq 0 ]]; then
+  [[ -x "$CHECK_HOST" ]] || fail "helper is not executable: $CHECK_HOST"
+fi
+if [[ "$SKIP_ENV_CHECK" -eq 0 ]]; then
+  [[ -x "$CHECK_ENV" ]] || fail "helper is not executable: $CHECK_ENV"
+fi
+if [[ "$SKIP_STACK_CHECK" -eq 0 ]]; then
+  [[ -x "$CHECK_STACK" ]] || fail "helper is not executable: $CHECK_STACK"
+fi
 if [[ "$INCLUDE_PROXY" -eq 1 ]]; then
   [[ -x "$CHECK_HTTPS" ]] || fail "helper is not executable: $CHECK_HTTPS"
 fi
@@ -99,7 +111,11 @@ if [[ "$SKIP_HOST_CHECK" -eq 0 ]]; then
 fi
 
 if [[ "$SKIP_ENV_CHECK" -eq 0 ]]; then
-  run "$CHECK_ENV" --target-dir "$TARGET_DIR" --frontend-build-env "$FRONTEND_BUILD_ENV"
+  cmd=("$CHECK_ENV" --target-dir "$TARGET_DIR")
+  if [[ "$FRONTEND_BUILD_ENV_EXPLICIT" -eq 1 ]]; then
+    cmd+=(--frontend-build-env "$FRONTEND_BUILD_ENV")
+  fi
+  run "${cmd[@]}"
 fi
 
 if [[ "$SKIP_STACK_CHECK" -eq 0 ]]; then
