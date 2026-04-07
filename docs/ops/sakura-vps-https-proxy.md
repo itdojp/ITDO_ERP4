@@ -146,7 +146,7 @@ podman logs erp4-caddy
 
 `check-https.sh` は `erp4-caddy.env` から `APP_DOMAIN` / `API_DOMAIN` を読み取り、`https://<APP_DOMAIN>/` と `https://<API_DOMAIN>/healthz` を probe します。DNS 切替前に VPS 上で仮確認したい場合は `--resolve-ip <vps_global_ip>` を付け、名前解決を一時的に固定してください。`--app-path` / `--api-path` に先頭 `/` が無い場合は自動補正します。`--resolve-ip` は IPv4/IPv6 のどちらも扱え、IPv6 は括弧無しで渡しても自動的に bracket します。証明書更新直後などで chain の確認を一時的に緩めたい場合だけ `--insecure` を使います。
 
-Google OIDC を使う場合は、Google Cloud Console 側の redirect URI も `https://api.example.com/auth/google/callback` へ揃えます。
+Google OIDC を使う場合は、Google Cloud Console 側の redirect URI も `https://api.example.com/auth/google/callback` へ揃えます。Google 側の詳細手順は [google-oidc-google-cloud-console](google-oidc-google-cloud-console.md) を参照してください。
 
 ## 6. 障害切り分け
 
