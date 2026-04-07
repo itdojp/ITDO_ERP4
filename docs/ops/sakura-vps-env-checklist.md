@@ -15,13 +15,15 @@
 
 必要時に設定するキー:
 - `VITE_PUSH_PUBLIC_KEY`
-- `VITE_GOOGLE_CLIENT_ID`
+- `VITE_GOOGLE_CLIENT_ID`（frontend が Google Identity Services を直接使う場合のみ）
 - `VITE_FEATURE_TIMESHEET_GRID`
 
 確認コマンド:
 ```bash
 ./scripts/quadlet/check-env.sh --skip-runtime --frontend-build-env deploy/quadlet/env/erp4-frontend-build.env
 ```
+
+Google OIDC をさくらVPS 実機で使う場合は FQDN + HTTPS の origin / redirect URI が前提です。Google 側の作業は [google-oidc-google-cloud-console](google-oidc-google-cloud-console.md) を参照してください。
 
 ## runtime
 ### `~/.config/containers/systemd/erp4-postgres.env`
@@ -46,6 +48,7 @@
 - `JWT_JWKS_URL` または `JWT_PUBLIC_KEY`
 - `JWT_ISSUER`
 - `JWT_AUDIENCE`
+- `GOOGLE_OIDC_CLIENT_ID`（任意。明示する場合は `JWT_AUDIENCE` と同値を推奨。未設定時は `JWT_AUDIENCE` を client ID として扱う実装）
 - `GOOGLE_OIDC_CLIENT_SECRET`
 - `GOOGLE_OIDC_REDIRECT_URI`
 - `AUTH_FRONTEND_ORIGIN`

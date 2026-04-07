@@ -13,22 +13,21 @@
 - 本番で `AUTH_MODE=jwt_bff` 以外を使わないこと
 - SCIM / webhook / 定期ジョブ用の route-level 認証と delegated JWT は例外経路として維持されること
 
-## Google Workspace 側の設定
+## Google Workspace / Google Cloud Console 側の設定
 
-### OAuth クライアント
+Google 側の詳細手順は別紙の [google-oidc-google-cloud-console](google-oidc-google-cloud-console.md) を参照する。
 
-- 種別: Web application
-- 必須設定
-  - `Authorized JavaScript origins`
-    - `https://<frontend-origin>`
-  - `Authorized redirect URIs`
-    - `https://<backend-origin>/auth/google/callback`
+最小要件:
+- OAuth client 種別は `Web application`
+- `Authorized redirect URIs` に `https://<backend-origin>/auth/google/callback` を登録する
+- `Authorized JavaScript origins` は frontend が Google Identity Services を直接使う場合だけ登録する
+- さくらVPS 実機で Google OIDC を使う場合、Google 側登録値は raw IP ではなく FQDN + HTTPS にする
 
-### 運用判断
-
+運用判断:
 - 初期本番では Google グループを一次ソースにしない
 - Google 側の MFA / Passkey / 端末制御を有効化する
 - ERP4 は Google パスワードや refresh token を保持しない
+- Workspace 内限定にしたい場合は Google Auth Platform の `Audience=Internal` を主手段にする
 
 ## backend 環境変数
 
@@ -42,12 +41,9 @@ ALLOWED_ORIGINS=https://app.example.com
 GOOGLE_OIDC_CLIENT_ID=xxxxxxxxxxxx-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx.apps.googleusercontent.com
 GOOGLE_OIDC_CLIENT_SECRET=replace-me
 GOOGLE_OIDC_REDIRECT_URI=https://api.example.com/auth/google/callback
-GOOGLE_OIDC_AUTH_URL=https://accounts.google.com/o/oauth2/v2/auth
-GOOGLE_OIDC_TOKEN_URL=https://oauth2.googleapis.com/token
-GOOGLE_OIDC_JWKS_URL=https://www.googleapis.com/oauth2/v3/certs
-GOOGLE_OIDC_ISSUER=https://accounts.google.com
-GOOGLE_OIDC_SCOPES=openid email profile
-GOOGLE_OIDC_HOSTED_DOMAIN=example.com
+JWT_JWKS_URL=https://www.googleapis.com/oauth2/v3/certs
+JWT_ISSUER=https://accounts.google.com
+JWT_AUDIENCE=xxxxxxxxxxxx-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx.apps.googleusercontent.com
 GOOGLE_OIDC_SESSION_COOKIE_NAME=erp4_session
 GOOGLE_OIDC_SESSION_TTL_MINUTES=480
 GOOGLE_OIDC_SESSION_IDLE_TTL_MINUTES=60
@@ -58,8 +54,8 @@ GOOGLE_OIDC_POST_LOGIN_REDIRECT_URL=https://app.example.com/
 補足:
 
 - `GOOGLE_OIDC_CLIENT_SECRET` はシークレットストアで管理する
-- `GOOGLE_OIDC_JWKS_URL` は backend 実装に合わせた `jwks_uri` を設定する。固定値運用では Google の OpenID Provider Configuration (`https://accounts.google.com/.well-known/openid-configuration`) を確認し、その時点の `jwks_uri` を採用する
-- `GOOGLE_OIDC_HOSTED_DOMAIN` を設定し、社外 Google アカウントを既定で拒否する
+- `JWT_JWKS_URL` は Google の `jwks_uri` を設定する。固定値運用では OpenID Provider Configuration (`https://accounts.google.com/.well-known/openid-configuration`) の `jwks_uri` を確認する
+- `GOOGLE_OIDC_CLIENT_ID` と `JWT_AUDIENCE` は同じ OAuth client ID を設定する
 - `ALLOWED_ORIGINS` には frontend の公開 origin のみを列挙する
 - `ALLOWED_ORIGINS` にワイルドカードは使わない。複数 origin を許可する場合は backend 実装に合わせてカンマ区切りで列挙する
 - `jwt_bff` では frontend 側が `credentials: 'include'` で API を呼び出す前提のため、backend の `Access-Control-Allow-Credentials` と origin 設定を厳密に一致させる
@@ -77,6 +73,7 @@ VITE_API_BASE=https://api.example.com
 
 - `jwt_bff` では frontend から Bearer token を保持しない
 - API 呼び出しは Cookie ベースになるため、frontend / backend は TLS 前提とする
+- `VITE_GOOGLE_CLIENT_ID` は frontend が Google Identity Services を直接使う場合だけ設定する。`jwt_bff` の backend redirect フローだけなら不要
 
 ## reverse proxy 要件
 

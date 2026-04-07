@@ -15,6 +15,7 @@
   - 試験稼働記録テンプレート: [../test-results/sakura-vps-trial-template.md](../test-results/sakura-vps-trial-template.md)
 - さくらVPS HTTPS reverse proxy: [sakura-vps-https-proxy](sakura-vps-https-proxy.md)
 - Google Workspace OIDC + Auth Gateway 導入: [google-oidc-auth-gateway-rollout](google-oidc-auth-gateway-rollout.md)
+  - Google Cloud Console 側設定: [google-oidc-google-cloud-console](google-oidc-google-cloud-console.md)
 - 設定（環境変数/シークレット）: [configuration](configuration.md)
 - Secrets/アクセス権限: [secrets-and-access](secrets-and-access.md)
   - DBユーザ最小権限（ロール分離）: [db-roles](db-roles.md)
