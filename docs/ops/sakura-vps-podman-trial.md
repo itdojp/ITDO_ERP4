@@ -86,11 +86,15 @@ vi deploy/quadlet/env/erp4-frontend-build.env
 ```
 
 最低限修正する値:
-- `VITE_API_BASE=http://YOUR_VPS_HOST:3001` または `https://api.example.com`
+- `VITE_API_BASE`
+  - plain HTTP の stack smoke のみ: `http://YOUR_VPS_HOST:3001`
+  - Google OIDC を含む受入確認: `https://api.example.com`
 - `VITE_GOOGLE_CLIENT_ID`（frontend が Google Identity Services を直接使う場合のみ。`AUTH_MODE=jwt_bff` の backend redirect フローだけなら不要）
 - `VITE_PUSH_PUBLIC_KEY`（Push 通知を使う場合）
 
 Google OIDC をさくらVPS 実機で使う場合、Google 側へ登録する origin / redirect URI は FQDN + HTTPS 前提です。`http://<VPS_IP>:3001/auth/google/callback` や raw IP origin は Google Auth Platform に登録できません。先に [sakura-vps-https-proxy](sakura-vps-https-proxy.md) と [google-oidc-google-cloud-console](google-oidc-google-cloud-console.md) を確認してください。
+
+plain HTTP の `8080/3001` 構成は Podman stack 自体の smoke 確認用です。Google OIDC の実 login / session 維持 / CORS 確認は、HTTPS reverse proxy 導入後の `app.example.com` / `api.example.com` で実施してください。
 
 build 前に frontend build 用 env だけ検証します。
 ```bash
@@ -128,7 +132,7 @@ POSTGRES_PASSWORD=REPLACE_WITH_STRONG_PASSWORD
 POSTGRES_DB=postgres
 ```
 
-`erp4-backend.env` の最低限:
+`erp4-backend.env` の最低限（Google OIDC + HTTPS reverse proxy を使う場合の例）:
 ```dotenv
 DATABASE_URL=postgresql://erp4:REPLACE_WITH_STRONG_PASSWORD@erp4-postgres:5432/postgres?schema=public
 PORT=3001
@@ -158,6 +162,7 @@ REPORT_STORAGE_DIR=/var/lib/erp4/reports
 - `DATABASE_URL` の host は `localhost` ではなく Podman network 上の `erp4-postgres` です。
 - `ALLOWED_ORIGINS` には frontend の公開 origin を必ず含めます。
 - backend は `erp4-backend-data.volume` を `/var/lib/erp4` へ mount します。PDF・Evidence archive・添付・report 出力先はこの配下に寄せます。
+- plain HTTP の stack smoke では、この例をそのまま使わず、Google OIDC を伴う受入確認まで行う場合だけ HTTPS/FQDN 前提の値へ切り替えます。
 
 runtime env を編集したら、unit 起動前に検証します。
 ```bash

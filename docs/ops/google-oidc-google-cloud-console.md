@@ -22,10 +22,10 @@
 
 ## 事前に決める値
 
-| 項目 | 例 | ERP4 側の対応 |
+| 項目 | 例 | ERP4 側の対応（設定先） |
 | --- | --- | --- |
 | frontend origin | `https://app.example.com` | `AUTH_FRONTEND_ORIGIN`, `ALLOWED_ORIGINS` |
-| backend origin | `https://api.example.com` | `VITE_API_BASE` |
+| frontend から見た backend base URL | `https://api.example.com` | `VITE_API_BASE`（frontend build env） |
 | redirect URI | `https://api.example.com/auth/google/callback` | `GOOGLE_OIDC_REDIRECT_URI` |
 | OAuth client name | `erp4-prod-web` | 管理用名称 |
 | Google Workspace ドメイン | `example.com` | Audience=Internal の判断材料 |
