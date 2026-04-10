@@ -3,6 +3,10 @@ import test from 'node:test';
 
 import { runLeaveEntitlementReminders } from '../dist/services/leaveEntitlementReminders.js';
 
+function futureMuteDate() {
+  return new Date(Date.now() + 24 * 60 * 60 * 1000);
+}
+
 function createClient({
   profiles = [],
   existingNotifications = [],
@@ -103,7 +107,7 @@ test('runLeaveEntitlementReminders: skips existing recipients and honors global 
     userPreferences: [
       {
         userId: 'ga-user-2',
-        muteAllUntil: new Date('2026-04-03T00:00:00.000Z'),
+        muteAllUntil: futureMuteDate(),
       },
     ],
   });
