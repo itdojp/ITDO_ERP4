@@ -22,7 +22,7 @@
     "schema": "./prisma/schema.prisma"
   },
   "dependencies": {
-    "@aws-sdk/client-s3": "^3.1030.0",
+    "@aws-sdk/client-s3": "^3.1032.0",
     "@fastify/cors": "^11.2.0",
     "@fastify/helmet": "^13.0.2",
     "@fastify/multipart": "^10.0.0",
@@ -32,7 +32,7 @@
     "@sinclair/typebox": "^0.34.49",
     "@types/web-push": "^3.6.4",
     "argon2": "^0.44.0",
-    "fastify": "^5.8.2",
+    "fastify": "^5.8.5",
     "fastify-plugin": "^5.1.0",
     "googleapis": "^171.4.0",
     "iconv-lite": "^0.7.2",
@@ -41,7 +41,7 @@
     "nodemailer": "^8.0.5",
     "pdfkit": "^0.18.0",
     "pg": "^8.20.0",
-    "rate-limiter-flexible": "^11.0.0",
+    "rate-limiter-flexible": "^11.0.1",
     "web-push": "^3.6.7"
   },
   "devDependencies": {
@@ -49,7 +49,7 @@
     "@fastify/swagger": "^9.7.0",
     "@types/node": "^25.6.0",
     "@types/nodemailer": "^8.0.0",
-    "@types/pdfkit": "^0.17.5",
+    "@types/pdfkit": "^0.17.6",
     "@types/pg": "^8.20.0",
     "@typescript-eslint/eslint-plugin": "^8.58.2",
     "@typescript-eslint/parser": "^8.58.2",
@@ -57,10 +57,10 @@
     "dotenv": "^17.4.2",
     "eslint": "^9.39.4",
     "openapi-diff": "^0.24.1",
-    "prettier": "^3.8.2",
+    "prettier": "^3.8.3",
     "prisma": "^7.7.0",
     "ts-node-dev": "^2.0.0",
-    "typescript": "^6.0.2"
+    "typescript": "^6.0.3"
   },
   "overrides": {
     "@mrleebo/prisma-ast": "^0.14.0",
