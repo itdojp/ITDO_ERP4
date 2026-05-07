@@ -93,9 +93,11 @@ export const DailyReport: React.FC = () => {
   const userId = auth?.userId || 'demo-user';
   const isPrivileged =
     auth?.roles?.includes('admin') || auth?.roles?.includes('mgmt');
-  const todayKey = useMemo(() => toLocalDateKey(new Date()), []);
   const draftOwnerId = getDraftOwnerId(auth?.userId);
-  const [reportDate, setReportDate] = useState(todayKey);
+  const [reportDate, setReportDate] = useState(() =>
+    toLocalDateKey(new Date()),
+  );
+  const maxReportDate = toLocalDateKey(new Date());
   const draftKey = `daily-report:${draftOwnerId}:${reportDate}`;
 
   useEffect(() => {
@@ -513,7 +515,7 @@ export const DailyReport: React.FC = () => {
           type="date"
           value={reportDate}
           onChange={(e) => setReportDate(e.target.value)}
-          max={todayKey}
+          max={maxReportDate}
         />
         <Button
           variant="secondary"
