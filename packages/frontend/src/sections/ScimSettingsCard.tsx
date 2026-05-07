@@ -21,7 +21,7 @@ export const ScimSettingsCard: React.FC = () => {
   const [message, setMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
-  const baseUrl = useMemo(resolveScimBaseUrl, []);
+  const baseUrl = useMemo(() => resolveScimBaseUrl(), []);
 
   const loadStatus = useCallback(async () => {
     try {

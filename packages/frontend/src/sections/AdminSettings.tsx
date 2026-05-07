@@ -1432,6 +1432,11 @@ export const AdminSettings: React.FC = () => {
     [],
   );
 
+  const resetAccountingMappingRuleForm = useCallback(() => {
+    setAccountingMappingRuleForm(createDefaultAccountingMappingRuleForm());
+    setEditingAccountingMappingRuleId(null);
+  }, []);
+
   const submitAccountingMappingRule = useCallback(async () => {
     const payload = {
       mappingKey: accountingMappingRuleForm.mappingKey.trim(),
@@ -1514,6 +1519,7 @@ export const AdminSettings: React.FC = () => {
     loadAccountingMappingRules,
     logError,
     normalizeNullableMappingField,
+    resetAccountingMappingRuleForm,
   ]);
 
   const startEditAccountingMappingRule = useCallback(
@@ -1697,11 +1703,6 @@ export const AdminSettings: React.FC = () => {
       isDefault: true,
     });
     setEditingTemplateId(null);
-  };
-
-  const resetAccountingMappingRuleForm = () => {
-    setAccountingMappingRuleForm(createDefaultAccountingMappingRuleForm());
-    setEditingAccountingMappingRuleId(null);
   };
 
   const resetIntegrationForm = () => {
