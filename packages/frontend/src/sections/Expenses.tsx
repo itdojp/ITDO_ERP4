@@ -141,7 +141,7 @@ export const Expenses: React.FC = () => {
     } catch {
       setItems([]);
     }
-  }, []);
+  }, [setItems]);
 
   useEffect(() => {
     void loadItems();

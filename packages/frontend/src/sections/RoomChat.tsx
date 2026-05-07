@@ -220,20 +220,56 @@ function formatRoomLabel(room: ChatRoom, currentUserId: string) {
   return room.name;
 }
 
+function filterVisibleRoomsForUser(
+  sourceRooms: ChatRoom[],
+  canSeeAllMeta: boolean,
+) {
+  return canSeeAllMeta
+    ? sourceRooms.filter((room) => room.isMember !== false)
+    : sourceRooms;
+}
+
+function buildDisplayedRooms(
+  rooms: ChatRoom[],
+  currentUserId: string,
+  roomListScope: 'all' | 'ga_personal',
+  roomListQuery: string,
+) {
+  const keyword = roomListQuery.trim().toLowerCase();
+  return rooms
+    .filter((room) => {
+      if (roomListScope !== 'ga_personal') return true;
+      return (
+        room.type === 'private_group' &&
+        room.isOfficial === true &&
+        room.id.startsWith('pga_')
+      );
+    })
+    .filter((room) => {
+      if (!keyword) return true;
+      const label = formatRoomLabel(room, currentUserId).toLowerCase();
+      return (
+        label.includes(keyword) ||
+        room.name.toLowerCase().includes(keyword) ||
+        room.type.toLowerCase().includes(keyword)
+      );
+    })
+    .map((room) => ({
+      ...room,
+      label: `${room.type}: ${formatRoomLabel(room, currentUserId)}`,
+    }));
+}
+
 export const RoomChat: React.FC = () => {
   const auth = getAuthState();
   const roles = auth?.roles || [];
-  const authGroupIds = useMemo(
-    () =>
-      new Set(
-        [
-          ...(Array.isArray(auth?.groupIds) ? auth.groupIds : []),
-          ...(Array.isArray(auth?.groupAccountIds) ? auth.groupAccountIds : []),
-        ]
-          .map((value) => value.trim())
-          .filter(Boolean),
-      ),
-    [auth?.groupAccountIds, auth?.groupIds],
+  const authGroupIds = new Set(
+    [
+      ...(Array.isArray(auth?.groupIds) ? auth.groupIds : []),
+      ...(Array.isArray(auth?.groupAccountIds) ? auth.groupAccountIds : []),
+    ]
+      .map((value) => value.trim())
+      .filter(Boolean),
   );
   const currentUserId = auth?.userId || 'demo-user';
   const canUseGeneralAffairsInbox = authGroupIds.has('general_affairs');
@@ -244,6 +280,15 @@ export const RoomChat: React.FC = () => {
   const [roomId, setRoomId] = useState('');
   const [roomMessage, setRoomMessage] = useState('');
   const [postWarning, setPostWarning] = useState('');
+  const [roomListScope, setRoomListScope] = useState<'all' | 'ga_personal'>(
+    'all',
+  );
+  const [roomListQuery, setRoomListQuery] = useState('');
+  const [pendingOpenMessage, setPendingOpenMessage] = useState<{
+    roomId: string;
+    messageId: string;
+    createdAt: string;
+  } | null>(null);
   const currentRoomIdRef = useRef('');
   const skipNextRoomAutoLoadRef = useRef(false);
 
@@ -605,11 +650,6 @@ export const RoomChat: React.FC = () => {
 
   const [unreadCount, setUnreadCount] = useState(0);
   const [highlightSince, setHighlightSince] = useState<Date | null>(null);
-  const [pendingOpenMessage, setPendingOpenMessage] = useState<{
-    roomId: string;
-    messageId: string;
-    createdAt: string;
-  } | null>(null);
   const [pendingScrollMessageId, setPendingScrollMessageId] = useState('');
   const [highlightMessageId, setHighlightMessageId] = useState('');
 
@@ -628,60 +668,12 @@ export const RoomChat: React.FC = () => {
   const [createPrivateMembers, setCreatePrivateMembers] = useState('');
   const [createDmPartner, setCreateDmPartner] = useState('');
   const [inviteMembers, setInviteMembers] = useState('');
-  const [roomListScope, setRoomListScope] = useState<'all' | 'ga_personal'>(
-    'all',
-  );
-  const [roomListQuery, setRoomListQuery] = useState('');
-  const filterVisibleRooms = useCallback(
-    (sourceRooms: ChatRoom[]) =>
-      canSeeAllMeta
-        ? sourceRooms.filter((room) => room.isMember !== false)
-        : sourceRooms,
-    [canSeeAllMeta],
-  );
-  const resolveProjectRoom = useCallback(
-    async (projectId: string) => {
-      const existingRoom = rooms.find(
-        (room) => room.type === 'project' && room.projectId === projectId,
-      );
-      if (existingRoom) {
-        setRoomListScope('all');
-        setRoomListQuery('');
-        setRoomId(existingRoom.id);
-        setRoomMessage('');
-        setMessage('');
-        return;
-      }
-      try {
-        const res = await api<{ items?: ChatRoom[] }>('/chat-rooms');
-        const items = Array.isArray(res.items) ? res.items : [];
-        const visibleRooms = filterVisibleRooms(items);
-        setRooms(visibleRooms);
-        const nextRoom = visibleRooms.find(
-          (room) => room.type === 'project' && room.projectId === projectId,
-        );
-        if (nextRoom) {
-          setRoomListScope('all');
-          setRoomListQuery('');
-          setRoomId(nextRoom.id);
-          setRoomMessage('');
-          setMessage('');
-          return;
-        }
-        setRoomMessage('指定された案件ルームが見つかりません');
-      } catch (err) {
-        console.error('Failed to resolve project room.', err);
-        setRoomMessage('指定された案件ルームの解決に失敗しました');
-      }
-    },
-    [filterVisibleRooms, rooms],
-  );
 
   const loadRooms = async () => {
     try {
       const res = await api<{ items?: ChatRoom[] }>('/chat-rooms');
       const items = Array.isArray(res.items) ? res.items : [];
-      const joinedRooms = filterVisibleRooms(items);
+      const joinedRooms = filterVisibleRoomsForUser(items, canSeeAllMeta);
       setRooms(joinedRooms);
       setRoomMessage('');
       setRoomId((currentRoomId) => {
@@ -704,6 +696,41 @@ export const RoomChat: React.FC = () => {
   };
 
   useEffect(() => {
+    const resolveProjectRoom = async (projectId: string) => {
+      const existingRoom = rooms.find(
+        (room) => room.type === 'project' && room.projectId === projectId,
+      );
+      if (existingRoom) {
+        setRoomListScope('all');
+        setRoomListQuery('');
+        setRoomId(existingRoom.id);
+        setRoomMessage('');
+        setMessage('');
+        return;
+      }
+      try {
+        const res = await api<{ items?: ChatRoom[] }>('/chat-rooms');
+        const items = Array.isArray(res.items) ? res.items : [];
+        const visibleRooms = filterVisibleRoomsForUser(items, canSeeAllMeta);
+        setRooms(visibleRooms);
+        const nextRoom = visibleRooms.find(
+          (room) => room.type === 'project' && room.projectId === projectId,
+        );
+        if (nextRoom) {
+          setRoomListScope('all');
+          setRoomListQuery('');
+          setRoomId(nextRoom.id);
+          setRoomMessage('');
+          setMessage('');
+          return;
+        }
+        setRoomMessage('指定された案件ルームが見つかりません');
+      } catch (err) {
+        console.error('Failed to resolve project room.', err);
+        setRoomMessage('指定された案件ルームの解決に失敗しました');
+      }
+    };
+
     const handler = (event: Event) => {
       const detail = (event as CustomEvent<{ projectId?: unknown }>).detail;
       const projectId =
@@ -718,7 +745,7 @@ export const RoomChat: React.FC = () => {
         handler as EventListener,
       );
     };
-  }, [resolveProjectRoom]);
+  }, [canSeeAllMeta, rooms]);
 
   const loadNotificationSetting = useCallback(async (targetRoomId: string) => {
     setIsNotificationSettingLoading(true);
@@ -1664,52 +1691,39 @@ export const RoomChat: React.FC = () => {
     };
   }, [roomId, ackCandidateQuery]);
 
-  const displayedRooms = useMemo(() => {
-    const keyword = roomListQuery.trim().toLowerCase();
-    return rooms
-      .filter((room) => {
-        if (roomListScope !== 'ga_personal') return true;
-        return (
-          room.type === 'private_group' &&
-          room.isOfficial === true &&
-          room.id.startsWith('pga_')
-        );
-      })
-      .filter((room) => {
-        if (!keyword) return true;
-        const label = formatRoomLabel(room, currentUserId).toLowerCase();
-        return (
-          label.includes(keyword) ||
-          room.name.toLowerCase().includes(keyword) ||
-          room.type.toLowerCase().includes(keyword)
-        );
-      })
-      .map((room) => ({
-        ...room,
-        label: `${room.type}: ${formatRoomLabel(room, currentUserId)}`,
-      }));
-  }, [rooms, currentUserId, roomListScope, roomListQuery]);
+  const displayedRooms = buildDisplayedRooms(
+    rooms,
+    currentUserId,
+    roomListScope,
+    roomListQuery,
+  );
 
   useEffect(() => {
     if (!rooms.length) {
       return;
     }
+    const nextDisplayedRooms = buildDisplayedRooms(
+      rooms,
+      currentUserId,
+      roomListScope,
+      roomListQuery,
+    );
     if (!roomId) {
-      if (displayedRooms.length) {
-        setRoomId(displayedRooms[0].id);
+      if (nextDisplayedRooms.length) {
+        setRoomId(nextDisplayedRooms[0].id);
       }
       return;
     }
 
     const existsInAllRooms = rooms.some((room) => room.id === roomId);
     if (!existsInAllRooms) {
-      if (displayedRooms.length) {
-        setRoomId(displayedRooms[0].id);
+      if (nextDisplayedRooms.length) {
+        setRoomId(nextDisplayedRooms[0].id);
       } else {
         setRoomId('');
       }
     }
-  }, [displayedRooms, roomId, rooms]);
+  }, [currentUserId, roomId, roomListQuery, roomListScope, rooms]);
 
   const renderMessageBody = (text: string) => (
     <ReactMarkdown
