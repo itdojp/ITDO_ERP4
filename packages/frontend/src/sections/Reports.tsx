@@ -133,6 +133,8 @@ type ManagementAccountingSummary = {
     revenue: number;
     directCost: number;
     laborCost: number;
+    payrollConfirmedLaborCost?: number | null;
+    laborCostVariance?: number | null;
     vendorCost: number;
     expenseCost: number;
     grossProfit: number;
@@ -153,6 +155,8 @@ type ManagementAccountingSummary = {
       revenue: number;
       directCost: number;
       laborCost: number;
+      payrollConfirmedLaborCost?: number | null;
+      laborCostVariance?: number | null;
       vendorCost: number;
       expenseCost: number;
       grossProfit: number;
@@ -170,6 +174,8 @@ type ManagementAccountingSummary = {
     revenue: number;
     directCost: number;
     laborCost: number;
+    payrollConfirmedLaborCost?: number | null;
+    laborCostVariance?: number | null;
     vendorCost: number;
     expenseCost: number;
     grossProfit: number;
@@ -180,6 +186,11 @@ type ManagementAccountingSummary = {
   revenue: number | null;
   directCost: number | null;
   laborCost: number | null;
+  payrollConfirmedLaborCost?: number | null;
+  laborCostVariance?: number | null;
+  payrollConfirmedStatus?: 'confirmed' | 'partial' | 'missing';
+  payrollConfirmedPeriodKeys?: string[];
+  payrollMissingPeriodKeys?: string[];
   vendorCost: number | null;
   expenseCost: number | null;
   grossProfit: number | null;
@@ -201,6 +212,8 @@ type ManagementAccountingSummary = {
     revenue: number;
     directCost: number;
     laborCost: number;
+    payrollConfirmedLaborCost?: number | null;
+    laborCostVariance?: number | null;
     vendorCost: number;
     expenseCost: number;
     grossProfit: number;
@@ -225,6 +238,14 @@ function formatDepartmentLabel(item: {
     return `${item.departmentName} (${item.departmentKey})`;
   }
   return item.departmentName || item.departmentKey || '未設定';
+}
+
+function formatNullableNumber(value?: number | null) {
+  return value == null ? '-' : value.toLocaleString();
+}
+
+function formatPeriodKeys(keys?: string[]) {
+  return keys && keys.length > 0 ? keys.join(',') : '-';
 }
 
 function parseUserIdsInput(value: string) {
@@ -859,6 +880,12 @@ export const Reports: React.FC = () => {
                         {item.expenseCost.toLocaleString()}
                       </div>
                       <div>
+                        Payroll confirmed:{' '}
+                        {formatNullableNumber(item.payrollConfirmedLaborCost)} /
+                        Labor variance:{' '}
+                        {formatNullableNumber(item.laborCostVariance)}
+                      </div>
+                      <div>
                         Delivery due: {item.deliveryDueCount}件 /{' '}
                         {item.deliveryDueAmount.toLocaleString()}
                       </div>
@@ -926,8 +953,25 @@ export const Reports: React.FC = () => {
                     ? '-'
                     : managementReport.expenseCost.toLocaleString()}
                 </div>
+                <div>
+                  Payroll confirmed:{' '}
+                  {formatNullableNumber(
+                    managementReport.payrollConfirmedLaborCost,
+                  )}
+                  {' / '}
+                  Labor variance:{' '}
+                  {formatNullableNumber(managementReport.laborCostVariance)}
+                </div>
               </>
             )}
+            <div>
+              Payroll confirmed status:{' '}
+              {managementReport.payrollConfirmedStatus || 'missing'} / Confirmed
+              periods:{' '}
+              {formatPeriodKeys(managementReport.payrollConfirmedPeriodKeys)} /
+              Missing periods:{' '}
+              {formatPeriodKeys(managementReport.payrollMissingPeriodKeys)}
+            </div>
             {managementReport.departmentBreakdown &&
               managementReport.departmentBreakdown.length > 0 && (
                 <div style={{ marginTop: 8 }}>
@@ -942,8 +986,11 @@ export const Reports: React.FC = () => {
                       {item.currency || '未設定'} / Projects:{' '}
                       {item.projectCount} / Revenue:{' '}
                       {item.revenue.toLocaleString()} / Direct Cost:{' '}
-                      {item.directCost.toLocaleString()} / Gross Profit:{' '}
-                      {item.grossProfit.toLocaleString()} / Margin:{' '}
+                      {item.directCost.toLocaleString()} / Payroll confirmed:{' '}
+                      {formatNullableNumber(item.payrollConfirmedLaborCost)} /
+                      Labor variance:{' '}
+                      {formatNullableNumber(item.laborCostVariance)} / Gross
+                      Profit: {item.grossProfit.toLocaleString()} / Margin:{' '}
                       {(item.grossMargin * 100).toFixed(2)}% / Red projects:{' '}
                       {item.redProjectCount}
                     </div>
