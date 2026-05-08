@@ -30,7 +30,8 @@
 
 - from/to は `YYYY-MM-DD` 形式で入力する（UI/Api仕様に合わせる）
 - 管理会計サマリで複数通貨が混在する場合、金額系 KPI は通貨別表示になる
-- 管理会計サマリ CSV は summary / currency_breakdown / top_red_project の各行で出力する
+- 管理会計サマリは `Project.orgUnitId` を暫定部門キーにした部門別損益を表示する
+- 管理会計サマリ CSV は summary / currency_breakdown / department_breakdown / top_red_project の各行で出力する
 
 ## ダッシュボード（インサイト/アラート）
 

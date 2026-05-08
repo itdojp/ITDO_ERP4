@@ -69,6 +69,7 @@ function buildManagementAccountingSummaryCsv(
   const headers = [
     'section',
     'currency',
+    'departmentKey',
     'projectId',
     'projectCode',
     'projectName',
@@ -90,6 +91,7 @@ function buildManagementAccountingSummaryCsv(
     [
       'summary',
       summary.currency ?? '',
+      '',
       '',
       '',
       '',
@@ -116,6 +118,7 @@ function buildManagementAccountingSummaryCsv(
       '',
       '',
       '',
+      '',
       item.projectCount,
       item.revenue,
       item.directCost,
@@ -130,10 +133,38 @@ function buildManagementAccountingSummaryCsv(
       item.deliveryDueAmount,
       item.redProjectCount,
     ]);
+  }
+
+  for (const item of summary.departmentBreakdown) {
+    rows.push([
+      'department_breakdown',
+      item.currency ?? '',
+      sanitizeCsvCell(item.departmentKey ?? ''),
+      '',
+      '',
+      '',
+      item.projectCount,
+      item.revenue,
+      item.directCost,
+      item.laborCost,
+      item.vendorCost,
+      item.expenseCost,
+      item.grossProfit,
+      item.grossMargin,
+      item.totalMinutes,
+      '',
+      '',
+      '',
+      item.redProjectCount,
+    ]);
+  }
+
+  for (const item of summary.currencyBreakdown) {
     for (const project of item.topRedProjects) {
       rows.push([
         'top_red_project',
         sanitizeCsvCell(project.currency ?? item.currency ?? ''),
+        sanitizeCsvCell(project.departmentKey ?? ''),
         sanitizeCsvCell(project.projectId),
         sanitizeCsvCell(project.projectCode ?? ''),
         sanitizeCsvCell(project.projectName ?? ''),

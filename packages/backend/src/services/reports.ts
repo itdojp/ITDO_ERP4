@@ -9,6 +9,7 @@ type ManagementAccountingProjectBucket = {
   projectId: string;
   projectCode?: string | null;
   projectName?: string | null;
+  departmentKey?: string | null;
   currency: string | null;
   revenue: number;
   directCost: number;
@@ -37,13 +38,40 @@ type ManagementAccountingCurrencyBreakdown = {
   topRedProjects: ManagementAccountingProjectBucket[];
 };
 
+type ManagementAccountingDepartmentBreakdown = {
+  departmentKey: string | null;
+  currency: string | null;
+  projectCount: number;
+  revenue: number;
+  directCost: number;
+  laborCost: number;
+  vendorCost: number;
+  expenseCost: number;
+  grossProfit: number;
+  grossMargin: number;
+  totalMinutes: number;
+  redProjectCount: number;
+};
+
 function normalizeWorkType(workType?: string | null) {
   const trimmed = workType?.trim();
   return trimmed || null;
 }
 
+function normalizeReportingKey(value?: string | null) {
+  const trimmed = value?.trim();
+  return trimmed || null;
+}
+
 function buildProjectCurrencyKey(projectId: string, currency: string | null) {
   return `${projectId}|${currency ?? ''}`;
+}
+
+function buildDepartmentCurrencyKey(
+  departmentKey: string | null,
+  currency: string | null,
+) {
+  return `${departmentKey ?? ''}|${currency ?? ''}`;
 }
 
 function preloadRateCardKey(match: {
@@ -384,7 +412,13 @@ export async function reportOvertime(userId: string, from?: Date, to?: Date) {
 export async function reportManagementAccountingSummary(from: Date, to: Date) {
   const projects = await prisma.project.findMany({
     where: { deletedAt: null },
-    select: { id: true, code: true, name: true, currency: true },
+    select: {
+      id: true,
+      code: true,
+      name: true,
+      currency: true,
+      orgUnitId: true,
+    },
     orderBy: [{ code: 'asc' }, { id: 'asc' }],
   });
   const projectIds = projects.map((project) => project.id);
@@ -581,6 +615,7 @@ export async function reportManagementAccountingSummary(from: Date, to: Date) {
         projectId,
         projectCode: project?.code ?? null,
         projectName: project?.name ?? null,
+        departmentKey: normalizeReportingKey(project?.orgUnitId),
         currency,
         revenue,
         directCost,
@@ -646,6 +681,58 @@ export async function reportManagementAccountingSummary(from: Date, to: Date) {
     }))
     .sort((a, b) => (a.currency ?? '').localeCompare(b.currency ?? ''));
 
+  const departmentBreakdownMap = new Map<
+    string,
+    ManagementAccountingDepartmentBreakdown
+  >();
+  for (const item of items) {
+    const key = buildDepartmentCurrencyKey(
+      item.departmentKey ?? null,
+      item.currency,
+    );
+    if (!departmentBreakdownMap.has(key)) {
+      departmentBreakdownMap.set(key, {
+        departmentKey: item.departmentKey ?? null,
+        currency: item.currency,
+        projectCount: 0,
+        revenue: 0,
+        directCost: 0,
+        laborCost: 0,
+        vendorCost: 0,
+        expenseCost: 0,
+        grossProfit: 0,
+        grossMargin: 0,
+        totalMinutes: 0,
+        redProjectCount: 0,
+      });
+    }
+    const bucket = departmentBreakdownMap.get(key);
+    if (!bucket) continue;
+    bucket.projectCount += 1;
+    bucket.revenue += item.revenue;
+    bucket.directCost += item.directCost;
+    bucket.laborCost += item.laborCost;
+    bucket.vendorCost += item.vendorCost;
+    bucket.expenseCost += item.expenseCost;
+    bucket.grossProfit += item.grossProfit;
+    bucket.totalMinutes += item.totalMinutes;
+    if (item.grossProfit < 0) bucket.redProjectCount += 1;
+  }
+
+  const departmentBreakdown = Array.from(departmentBreakdownMap.values())
+    .map((bucket) => ({
+      ...bucket,
+      grossMargin: bucket.revenue > 0 ? bucket.grossProfit / bucket.revenue : 0,
+    }))
+    .sort((a, b) => {
+      const departmentCompare = (a.departmentKey ?? '').localeCompare(
+        b.departmentKey ?? '',
+      );
+      return departmentCompare !== 0
+        ? departmentCompare
+        : (a.currency ?? '').localeCompare(b.currency ?? '');
+    });
+
   const totals = currencyBreakdown.reduce(
     (acc, item) => {
       acc.revenue += item.revenue;
@@ -683,6 +770,7 @@ export async function reportManagementAccountingSummary(from: Date, to: Date) {
     currency: singleCurrencyBucket?.currency ?? null,
     mixedCurrency,
     currencyBreakdown,
+    departmentBreakdown,
     revenue: singleCurrencyBucket ? totals.revenue : null,
     directCost: singleCurrencyBucket ? totals.directCost : null,
     laborCost: singleCurrencyBucket ? totals.laborCost : null,
