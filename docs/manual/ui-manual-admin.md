@@ -431,7 +431,7 @@
 4. `照合対象月` を入力し `照合サマリ取得` を実行する
 5. 給与連携照合の `comparisonStatus` と社員コード差分を確認する
 6. 会計連携照合の `comparisonStatus` と `ready / pending_mapping / blocked` を確認する
-7. 差分の全件確認が必要な場合は `GET /integrations/reconciliation/details?periodKey=YYYY-MM` を OpenAPI または HTTP クライアントで実行し、社員コード差分全件と `PJ別 / 部門別` breakdown、`pending_mapping / blocked / invalid ready` の sample 行を確認する
+7. 差分の全件確認が必要な場合は同カードの `照合詳細取得` を実行し、社員コード差分全件と `PJ別 / 部門別` breakdown、`pending_mapping / blocked / invalid ready` の sample 行を確認する
 8. `連携ジョブ一覧` で種別 / ステータス / limit / offset を設定し `連携ジョブ取得` を実行する
 9. 成功済みジョブは `再出力` で payload を再送し、`reexportOfId` で lineage を確認する
 10. `会計マッピングルール` で `mappingKey / debitAccountCode / debitAccountName / creditAccountCode / creditAccountName / taxCode` を入力し `作成` を実行する
@@ -452,8 +452,8 @@
 
 - JSON 入力が不正な場合は保存されません
 - チャットルーム設定は admin/mgmt のみ
-- `連携照合サマリ` カードは aggregate summary のみ表示します
-- `照合詳細` は現時点では UI 未実装のため、`GET /integrations/reconciliation/details` を OpenAPI または HTTP クライアントで参照します
+- `連携照合サマリ` カードは aggregate summary と `照合詳細取得` による drilldown を表示します
+- `照合詳細` では給与連携の社員コード差分、会計連携の `PJ別 / 部門別` breakdown、`pending_mapping / blocked / invalid ready` sample 行を確認します
 - `認証方式移行` は `system_admin` 専用です
 - rollback API は未実装のため、UI からの rollback 実行はできません
 

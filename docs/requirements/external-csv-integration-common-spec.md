@@ -202,7 +202,7 @@
   - `GET /integrations/reconciliation/summary?periodKey=YYYY-MM`
 - detail API
   - `GET /integrations/reconciliation/details?periodKey=YYYY-MM`
-- 管理画面では `Settings` 内の「連携照合サマリ」カードから aggregate summary を取得する
+- 管理画面では `Settings` 内の「連携照合サマリ」カードから aggregate summary と details drilldown を取得する
 - 現在の summary 比較項目
   - attendance closing の summary count / 各種 minutes 合計
   - full 社員マスタ export と attendance closing の社員コード差分
@@ -213,7 +213,7 @@
   - payroll: 社員コード差分の全件
   - accounting: `PJ別` / `部門別` breakdown
   - accounting: `pending_mapping` / `blocked` / `invalid ready` の sample 行
-- UI への drilldown 表示は未実装で、details は OpenAPI または HTTP クライアントで参照する
+- UI では同カードの `照合詳細取得` により details drilldown を表示し、loading / empty / error 分岐も扱う
 
 ## 10. 未確定事項
 

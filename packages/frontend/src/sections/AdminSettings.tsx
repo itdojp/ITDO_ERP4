@@ -1,4 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { api, getAuthState } from '../api';
 import {
   PolicyFormBuilder,
@@ -14,6 +20,7 @@ import {
 } from './admin-settings/IntegrationSettingsCard';
 import {
   IntegrationReconciliationCard,
+  type IntegrationReconciliationDetails,
   type IntegrationReconciliationSummary,
 } from './admin-settings/IntegrationReconciliationCard';
 import {
@@ -499,6 +506,7 @@ const createDefaultAccountingMappingRuleForm =
 
 const DEFAULT_ACCOUNTING_MAPPING_RULE_LIMIT = 20;
 const DEFAULT_ACCOUNTING_MAPPING_RULE_OFFSET = 0;
+const RECONCILIATION_PERIOD_KEY_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/;
 
 const currentPeriodKey = () => {
   const now = new Date();
@@ -570,6 +578,19 @@ export const AdminSettings: React.FC = () => {
     integrationReconciliationSummary,
     setIntegrationReconciliationSummary,
   ] = useState<IntegrationReconciliationSummary | null>(null);
+  const [
+    integrationReconciliationDetails,
+    setIntegrationReconciliationDetails,
+  ] = useState<IntegrationReconciliationDetails | null>(null);
+  const [
+    integrationReconciliationDetailsLoading,
+    setIntegrationReconciliationDetailsLoading,
+  ] = useState<boolean>(false);
+  const [
+    integrationReconciliationDetailsError,
+    setIntegrationReconciliationDetailsError,
+  ] = useState<string | null>(null);
+  const integrationReconciliationDetailsRequestId = useRef<number>(0);
   const [accountingMappingRuleItems, setAccountingMappingRuleItems] = useState<
     AccountingMappingRuleItem[]
   >([]);
@@ -1351,10 +1372,26 @@ export const AdminSettings: React.FC = () => {
     [loadIntegrationExportJobs, logError],
   );
 
+  const updateIntegrationReconciliationPeriodKey = useCallback(
+    (value: string) => {
+      integrationReconciliationDetailsRequestId.current += 1;
+      setIntegrationReconciliationPeriodKey(value);
+      setIntegrationReconciliationSummary(null);
+      setIntegrationReconciliationDetails(null);
+      setIntegrationReconciliationDetailsLoading(false);
+      setIntegrationReconciliationDetailsError(null);
+    },
+    [],
+  );
+
   const loadIntegrationReconciliationSummary = useCallback(async () => {
     const periodKey = integrationReconciliationPeriodKey.trim();
-    if (!/^\d{4}-\d{2}$/.test(periodKey)) {
+    if (!RECONCILIATION_PERIOD_KEY_PATTERN.test(periodKey)) {
+      integrationReconciliationDetailsRequestId.current += 1;
       setIntegrationReconciliationSummary(null);
+      setIntegrationReconciliationDetails(null);
+      setIntegrationReconciliationDetailsLoading(false);
+      setIntegrationReconciliationDetailsError(null);
       setMessage('照合対象月は YYYY-MM 形式で入力してください');
       return;
     }
@@ -1362,12 +1399,68 @@ export const AdminSettings: React.FC = () => {
       const summary = await api<IntegrationReconciliationSummary>(
         `/integrations/reconciliation/summary?periodKey=${encodeURIComponent(periodKey)}`,
       );
+      integrationReconciliationDetailsRequestId.current += 1;
       setIntegrationReconciliationSummary(summary);
+      setIntegrationReconciliationDetails(null);
+      setIntegrationReconciliationDetailsLoading(false);
+      setIntegrationReconciliationDetailsError(null);
       setMessage('連携照合サマリを取得しました');
     } catch (err) {
       logError('loadIntegrationReconciliationSummary failed', err);
+      integrationReconciliationDetailsRequestId.current += 1;
       setIntegrationReconciliationSummary(null);
+      setIntegrationReconciliationDetails(null);
+      setIntegrationReconciliationDetailsLoading(false);
+      setIntegrationReconciliationDetailsError(null);
       setMessage('連携照合サマリの取得に失敗しました');
+    }
+  }, [integrationReconciliationPeriodKey, logError]);
+
+  const loadIntegrationReconciliationDetails = useCallback(async () => {
+    const periodKey = integrationReconciliationPeriodKey.trim();
+    if (!RECONCILIATION_PERIOD_KEY_PATTERN.test(periodKey)) {
+      setIntegrationReconciliationDetails(null);
+      setIntegrationReconciliationDetailsError(
+        '照合対象月は YYYY-MM 形式で入力してください',
+      );
+      setMessage('照合対象月は YYYY-MM 形式で入力してください');
+      return;
+    }
+    const requestId = integrationReconciliationDetailsRequestId.current + 1;
+    integrationReconciliationDetailsRequestId.current = requestId;
+    setIntegrationReconciliationDetailsLoading(true);
+    setIntegrationReconciliationDetailsError(null);
+    try {
+      const details = await api<IntegrationReconciliationDetails>(
+        `/integrations/reconciliation/details?periodKey=${encodeURIComponent(periodKey)}`,
+      );
+      if (integrationReconciliationDetailsRequestId.current !== requestId) {
+        return;
+      }
+      if (details.periodKey !== periodKey) {
+        setIntegrationReconciliationDetails(null);
+        setIntegrationReconciliationDetailsError(
+          '連携照合詳細の対象月がリクエストと一致しません',
+        );
+        setMessage('連携照合詳細の対象月がリクエストと一致しません');
+        return;
+      }
+      setIntegrationReconciliationDetails(details);
+      setMessage('連携照合詳細を取得しました');
+    } catch (err) {
+      if (integrationReconciliationDetailsRequestId.current !== requestId) {
+        return;
+      }
+      logError('loadIntegrationReconciliationDetails failed', err);
+      setIntegrationReconciliationDetails(null);
+      setIntegrationReconciliationDetailsError(
+        '連携照合詳細の取得に失敗しました',
+      );
+      setMessage('連携照合詳細の取得に失敗しました');
+    } finally {
+      if (integrationReconciliationDetailsRequestId.current === requestId) {
+        setIntegrationReconciliationDetailsLoading(false);
+      }
     }
   }, [integrationReconciliationPeriodKey, logError]);
 
@@ -3333,9 +3426,13 @@ export const AdminSettings: React.FC = () => {
 
         <IntegrationReconciliationCard
           periodKey={integrationReconciliationPeriodKey}
-          setPeriodKey={setIntegrationReconciliationPeriodKey}
+          setPeriodKey={updateIntegrationReconciliationPeriodKey}
           summary={integrationReconciliationSummary}
+          details={integrationReconciliationDetails}
+          detailsLoading={integrationReconciliationDetailsLoading}
+          detailsError={integrationReconciliationDetailsError}
           onLoad={loadIntegrationReconciliationSummary}
+          onLoadDetails={loadIntegrationReconciliationDetails}
           formatDateTime={formatDateTime}
         />
 
