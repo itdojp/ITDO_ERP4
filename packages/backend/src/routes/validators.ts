@@ -1954,6 +1954,7 @@ const integrationExportJobKindSchema = Type.Union([
   Type.Literal('hr_leave_export_attendance'),
   Type.Literal('hr_leave_export_payroll'),
   Type.Literal('hr_employee_master_export'),
+  Type.Literal('hr_attendance_export'),
   Type.Literal('accounting_ics_export'),
 ]);
 

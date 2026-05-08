@@ -91,10 +91,14 @@ describe('IntegrationExportJobsCard', () => {
     expect(screen.getByText('ジョブなし')).toBeInTheDocument();
     expect(screen.getByText('ready')).toBeInTheDocument();
 
+    expect(
+      screen.getByRole('option', { name: '勤怠確定CSV' }),
+    ).toBeInTheDocument();
+
     fireEvent.change(screen.getByLabelText('連携ジョブ種別'), {
-      target: { value: 'accounting_ics_export' },
+      target: { value: 'hr_attendance_export' },
     });
-    expect(setKindFilter).toHaveBeenCalledWith('accounting_ics_export');
+    expect(setKindFilter).toHaveBeenCalledWith('hr_attendance_export');
 
     fireEvent.change(screen.getByLabelText('連携ジョブステータス'), {
       target: { value: 'failed' },
@@ -144,8 +148,17 @@ describe('IntegrationExportJobsCard', () => {
         updatedSince: '2026-03-01T00:00:00.000Z',
       },
     });
+    const thirdItem = createItem({
+      id: 'job-3',
+      kind: 'hr_attendance_export',
+      scope: {
+        periodKey: '2026-03',
+        closingVersion: 4,
+        closingPeriodId: 'attendance-close-004',
+      },
+    });
     const { onRedispatch, formatDateTime } = renderCard({
-      items: [firstItem, secondItem],
+      items: [firstItem, secondItem, thirdItem],
       redispatchingId: 'job-2',
     });
 
@@ -172,6 +185,16 @@ describe('IntegrationExportJobsCard', () => {
     expect(
       secondCard.getByRole('button', { name: '再出力中...' }),
     ).toBeDisabled();
+
+    const thirdCard = within(
+      screen.getByTestId('integration-export-job-job-3'),
+    );
+    expect(thirdCard.getByText('勤怠確定CSV')).toBeInTheDocument();
+    expect(
+      thirdCard.getByText(
+        /scope: periodKey=2026-03 \/ closingVersion=4 \/ closingPeriodId=attendance-close-004/,
+      ),
+    ).toBeInTheDocument();
 
     expect(formatDateTime).toHaveBeenCalledWith('2026-03-26T00:00:00.000Z');
     expect(formatDateTime).toHaveBeenCalledWith('2026-03-26T01:00:00.000Z');
