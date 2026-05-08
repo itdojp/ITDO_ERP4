@@ -857,6 +857,7 @@ type IntegrationExportJobKind =
   | 'hr_leave_export_attendance'
   | 'hr_leave_export_payroll'
   | 'hr_employee_master_export'
+  | 'hr_attendance_export'
   | 'accounting_ics_export';
 
 function normalizeIntegrationExportJobKind(
@@ -866,6 +867,7 @@ function normalizeIntegrationExportJobKind(
     case 'hr_leave_export_attendance':
     case 'hr_leave_export_payroll':
     case 'hr_employee_master_export':
+    case 'hr_attendance_export':
     case 'accounting_ics_export':
       return value;
     default:
@@ -1049,6 +1051,9 @@ function buildIntegrationExportJobResponse(
         kind: 'hr_employee_master_export';
       } & ReturnType<typeof buildHrEmployeeMasterExportLogResponse>)
     | ({
+        kind: 'hr_attendance_export';
+      } & ReturnType<typeof buildHrAttendanceExportLogResponse>)
+    | ({
         kind: 'accounting_ics_export';
       } & ReturnType<typeof buildAccountingIcsExportLogResponse>),
 ) {
@@ -1065,12 +1070,18 @@ function buildIntegrationExportJobResponse(
     scope:
       item.kind === 'accounting_ics_export'
         ? { periodKey: item.periodKey }
-        : item.kind === 'hr_employee_master_export'
-          ? { updatedSince: item.updatedSince }
-          : {
-              target: item.target,
-              updatedSince: item.updatedSince,
-            },
+        : item.kind === 'hr_attendance_export'
+          ? {
+              periodKey: item.periodKey,
+              closingPeriodId: item.closingPeriodId,
+              closingVersion: item.closingVersion,
+            }
+          : item.kind === 'hr_employee_master_export'
+            ? { updatedSince: item.updatedSince }
+            : {
+                target: item.target,
+                updatedSince: item.updatedSince,
+              },
   };
 }
 
@@ -3177,10 +3188,11 @@ export async function registerIntegrationRoutes(app: FastifyInstance) {
         kind === 'hr_leave_export_payroll';
       const shouldLoadEmployeeMaster =
         !kind || kind === 'hr_employee_master_export';
+      const shouldLoadHrAttendance = !kind || kind === 'hr_attendance_export';
       const shouldLoadAccounting = !kind || kind === 'accounting_ics_export';
 
-      const [leaveLogs, employeeMasterLogs, accountingLogs] = await Promise.all(
-        [
+      const [leaveLogs, employeeMasterLogs, hrAttendanceLogs, accountingLogs] =
+        await Promise.all([
           shouldLoadLeave
             ? prisma.leaveIntegrationExportLog.findMany({
                 where: {
@@ -3228,6 +3240,27 @@ export async function registerIntegrationRoutes(app: FastifyInstance) {
                 take,
               })
             : Promise.resolve([]),
+          shouldLoadHrAttendance
+            ? prisma.hrAttendanceExportLog.findMany({
+                where: status ? { status } : undefined,
+                select: {
+                  id: true,
+                  idempotencyKey: true,
+                  reexportOfId: true,
+                  periodKey: true,
+                  closingPeriodId: true,
+                  closingVersion: true,
+                  status: true,
+                  exportedUntil: true,
+                  exportedCount: true,
+                  startedAt: true,
+                  finishedAt: true,
+                  message: true,
+                },
+                orderBy: [{ startedAt: 'desc' }, { id: 'desc' }],
+                take,
+              })
+            : Promise.resolve([]),
           shouldLoadAccounting
             ? prisma.accountingIcsExportLog.findMany({
                 where: status ? { status } : undefined,
@@ -3247,8 +3280,7 @@ export async function registerIntegrationRoutes(app: FastifyInstance) {
                 take,
               })
             : Promise.resolve([]),
-        ],
-      );
+        ]);
 
       const items = [
         ...leaveLogs.map((item) =>
@@ -3266,6 +3298,12 @@ export async function registerIntegrationRoutes(app: FastifyInstance) {
           buildIntegrationExportJobResponse({
             kind: 'hr_employee_master_export',
             ...buildHrEmployeeMasterExportLogResponse(item),
+          }),
+        ),
+        ...hrAttendanceLogs.map((item) =>
+          buildIntegrationExportJobResponse({
+            kind: 'hr_attendance_export',
+            ...buildHrAttendanceExportLogResponse(item),
           }),
         ),
         ...accountingLogs.map((item) =>
@@ -3593,6 +3631,146 @@ export async function registerIntegrationRoutes(app: FastifyInstance) {
             replayed: false,
             payload: created.payload,
             log: buildHrEmployeeMasterExportLogResponse(created),
+          };
+        }
+        case 'hr_attendance_export': {
+          const source = await prisma.hrAttendanceExportLog.findUnique({
+            where: { id },
+          });
+          if (!source) {
+            return reply
+              .code(
+                integrationExportRedispatchStatusCode(
+                  'integration_export_log_not_found',
+                ),
+              )
+              .send({ error: 'integration_export_log_not_found' });
+          }
+          if (source.status === IntegrationRunStatus.running) {
+            return reply.code(409).send({
+              error: 'dispatch_in_progress',
+              logId: source.id,
+            });
+          }
+          if (
+            !source.payload ||
+            source.status !== IntegrationRunStatus.success
+          ) {
+            return reply.code(409).send({
+              error: 'redispatch_source_not_exported',
+              logId: source.id,
+            });
+          }
+          const respondWithExistingHrAttendanceRedispatch = async (
+            existing: NonNullable<
+              Awaited<
+                ReturnType<typeof prisma.hrAttendanceExportLog.findUnique>
+              >
+            >,
+          ) => {
+            if (
+              existing.requestHash !== source.requestHash ||
+              existing.reexportOfId !== source.id
+            ) {
+              await logAudit({
+                ...auditContextFromRequest(req),
+                action: 'integration_hr_attendance_export_redispatch_conflict',
+                targetTable: 'HrAttendanceExportLog',
+                targetId: existing.id,
+                metadata: {
+                  sourceLogId: source.id,
+                  idempotencyKey,
+                  requestHash: source.requestHash,
+                  existingRequestHash: existing.requestHash,
+                  existingReexportOfId: existing.reexportOfId,
+                } as Prisma.InputJsonValue,
+              });
+              return reply.code(409).send({ error: 'idempotency_conflict' });
+            }
+            if (existing.status === IntegrationRunStatus.running) {
+              return reply.code(409).send({
+                error: 'dispatch_in_progress',
+                logId: existing.id,
+              });
+            }
+            await logAudit({
+              ...auditContextFromRequest(req),
+              action: 'integration_hr_attendance_export_redispatch_replayed',
+              targetTable: 'HrAttendanceExportLog',
+              targetId: existing.id,
+              metadata: {
+                sourceLogId: source.id,
+                idempotencyKey,
+                status: existing.status,
+                periodKey: existing.periodKey,
+              } as Prisma.InputJsonValue,
+            });
+            return {
+              replayed: true,
+              payload: existing.payload,
+              log: buildHrAttendanceExportLogResponse(existing),
+            };
+          };
+          const existing = await prisma.hrAttendanceExportLog.findUnique({
+            where: { idempotencyKey },
+          });
+          if (existing) {
+            return respondWithExistingHrAttendanceRedispatch(existing);
+          }
+          let created: Awaited<
+            ReturnType<typeof prisma.hrAttendanceExportLog.create>
+          >;
+          try {
+            created = await prisma.hrAttendanceExportLog.create({
+              data: {
+                idempotencyKey,
+                requestHash: source.requestHash,
+                reexportOfId: source.id,
+                periodKey: source.periodKey,
+                closingPeriodId: source.closingPeriodId,
+                closingVersion: source.closingVersion,
+                exportedUntil: source.exportedUntil,
+                status: IntegrationRunStatus.success,
+                exportedCount: source.exportedCount,
+                payload: source.payload,
+                message: 'redispatched',
+                startedAt: now,
+                finishedAt: now,
+                createdBy: actorId,
+              },
+            });
+          } catch (error) {
+            if (
+              error instanceof Prisma.PrismaClientKnownRequestError &&
+              error.code === 'P2002'
+            ) {
+              const concurrent = await prisma.hrAttendanceExportLog.findUnique({
+                where: { idempotencyKey },
+              });
+              if (concurrent) {
+                return respondWithExistingHrAttendanceRedispatch(concurrent);
+              }
+            }
+            throw error;
+          }
+          await logAudit({
+            ...auditContextFromRequest(req),
+            action: 'integration_hr_attendance_export_redispatched',
+            targetTable: 'HrAttendanceExportLog',
+            targetId: created.id,
+            metadata: {
+              sourceLogId: source.id,
+              idempotencyKey,
+              periodKey: created.periodKey,
+              closingPeriodId: created.closingPeriodId,
+              closingVersion: created.closingVersion,
+              exportedCount: created.exportedCount,
+            } as Prisma.InputJsonValue,
+          });
+          return {
+            replayed: false,
+            payload: created.payload,
+            log: buildHrAttendanceExportLogResponse(created),
           };
         }
         case 'accounting_ics_export': {

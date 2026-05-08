@@ -12162,6 +12162,12 @@
                 },
                 {
                   "enum": [
+                    "hr_attendance_export"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "enum": [
                     "accounting_ics_export"
                   ],
                   "type": "string"
@@ -12248,6 +12254,12 @@
                 {
                   "enum": [
                     "hr_employee_master_export"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "enum": [
+                    "hr_attendance_export"
                   ],
                   "type": "string"
                 },

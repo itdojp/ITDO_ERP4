@@ -4,6 +4,7 @@ export type IntegrationExportJobKind =
   | 'hr_leave_export_attendance'
   | 'hr_leave_export_payroll'
   | 'hr_employee_master_export'
+  | 'hr_attendance_export'
   | 'accounting_ics_export';
 
 export type IntegrationExportJobStatus = 'running' | 'success' | 'failed';
@@ -22,6 +23,8 @@ export type IntegrationExportJobItem = {
     target?: string | null;
     updatedSince?: string | null;
     periodKey?: string | null;
+    closingPeriodId?: string | null;
+    closingVersion?: number | null;
   } | null;
 };
 
@@ -47,6 +50,7 @@ const kindOptions: Array<{ value: string; label: string }> = [
   { value: 'hr_leave_export_attendance', label: '休暇CSV（勤怠）' },
   { value: 'hr_leave_export_payroll', label: '休暇CSV（給与）' },
   { value: 'hr_employee_master_export', label: '社員マスタCSV' },
+  { value: 'hr_attendance_export', label: '勤怠確定CSV' },
   { value: 'accounting_ics_export', label: 'ICS仕訳CSV' },
 ];
 
@@ -63,7 +67,16 @@ function formatKindLabel(kind: IntegrationExportJobKind) {
 
 function formatScope(scope?: IntegrationExportJobItem['scope']) {
   if (!scope) return '-';
-  if (scope.periodKey) return `periodKey=${scope.periodKey}`;
+  if (scope.periodKey) {
+    const parts = [`periodKey=${scope.periodKey}`];
+    if (scope.closingVersion !== undefined && scope.closingVersion !== null) {
+      parts.push(`closingVersion=${scope.closingVersion}`);
+    }
+    if (scope.closingPeriodId) {
+      parts.push(`closingPeriodId=${scope.closingPeriodId}`);
+    }
+    return parts.join(' / ');
+  }
   const parts = [];
   if (scope.target) parts.push(`target=${scope.target}`);
   if (scope.updatedSince) parts.push(`updatedSince=${scope.updatedSince}`);

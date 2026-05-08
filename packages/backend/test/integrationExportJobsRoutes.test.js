@@ -64,6 +64,22 @@ test('GET /integrations/jobs/exports merges export logs across adapters', async 
           message: 'employee_master_employee_code_missing',
         },
       ],
+      'hrAttendanceExportLog.findMany': async () => [
+        {
+          id: 'attendance-log-001',
+          idempotencyKey: 'attendance-key-001',
+          reexportOfId: null,
+          periodKey: '2026-03',
+          closingPeriodId: 'attendance-close-001',
+          closingVersion: 4,
+          status: 'success',
+          exportedUntil: new Date('2026-03-15T11:00:00.000Z'),
+          exportedCount: 8,
+          startedAt: new Date('2026-03-15T11:00:00.000Z'),
+          finishedAt: new Date('2026-03-15T11:01:00.000Z'),
+          message: 'exported',
+        },
+      ],
       'accountingIcsExportLog.findMany': async () => [
         {
           id: 'accounting-log-001',
@@ -92,19 +108,26 @@ test('GET /integrations/jobs/exports merges export logs across adapters', async 
         });
         assert.equal(res.statusCode, 200, res.body);
         const body = JSON.parse(res.body);
-        assert.equal(body.items.length, 3);
+        assert.equal(body.items.length, 4);
         assert.deepEqual(
           body.items.map((item) => item.kind),
           [
             'accounting_ics_export',
+            'hr_attendance_export',
             'hr_employee_master_export',
             'hr_leave_export_attendance',
           ],
         );
         assert.equal(body.items[0].scope.periodKey, '2026-03');
-        assert.equal(body.items[1].scope.updatedSince, null);
-        assert.equal(body.items[1].reexportOfId, 'employee-log-000');
-        assert.equal(body.items[2].scope.target, 'attendance');
+        assert.equal(body.items[1].scope.periodKey, '2026-03');
+        assert.equal(body.items[1].scope.closingVersion, 4);
+        assert.equal(
+          body.items[1].scope.closingPeriodId,
+          'attendance-close-001',
+        );
+        assert.equal(body.items[2].scope.updatedSince, null);
+        assert.equal(body.items[2].reexportOfId, 'employee-log-000');
+        assert.equal(body.items[3].scope.target, 'attendance');
       } finally {
         await server.close();
       }
@@ -118,6 +141,7 @@ test('GET /integrations/jobs/exports applies kind and status filters to the rele
 
   let employeeMasterArgs = null;
   let leaveCalled = false;
+  let hrAttendanceCalled = false;
   let accountingCalled = false;
   await withPrismaStubs(
     {
@@ -145,6 +169,10 @@ test('GET /integrations/jobs/exports applies kind and status filters to the rele
         accountingCalled = true;
         return [];
       },
+      'hrAttendanceExportLog.findMany': async () => {
+        hrAttendanceCalled = true;
+        return [];
+      },
     },
     async () => {
       const server = await buildServer({ logger: false });
@@ -168,9 +196,82 @@ test('GET /integrations/jobs/exports applies kind and status filters to the rele
   );
 
   assert.equal(leaveCalled, false);
+  assert.equal(hrAttendanceCalled, false);
   assert.equal(accountingCalled, false);
   assert.deepEqual(employeeMasterArgs?.where, { status: 'success' });
   assert.equal(employeeMasterArgs?.take, 5);
+});
+
+test('GET /integrations/jobs/exports applies kind and status filters to HR attendance exports', async () => {
+  process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
+  process.env.AUTH_MODE = 'header';
+
+  let hrAttendanceArgs = null;
+  let leaveCalled = false;
+  let employeeCalled = false;
+  let accountingCalled = false;
+  await withPrismaStubs(
+    {
+      'leaveIntegrationExportLog.findMany': async () => {
+        leaveCalled = true;
+        return [];
+      },
+      'hrEmployeeMasterExportLog.findMany': async () => {
+        employeeCalled = true;
+        return [];
+      },
+      'hrAttendanceExportLog.findMany': async (args) => {
+        hrAttendanceArgs = args;
+        return [
+          {
+            id: 'attendance-log-002',
+            idempotencyKey: 'attendance-key-002',
+            reexportOfId: null,
+            periodKey: '2026-03',
+            closingPeriodId: 'attendance-close-002',
+            closingVersion: 2,
+            status: 'success',
+            exportedUntil: new Date('2026-03-16T00:00:00.000Z'),
+            exportedCount: 12,
+            startedAt: new Date('2026-03-16T12:00:00.000Z'),
+            finishedAt: new Date('2026-03-16T12:01:00.000Z'),
+            message: 'exported',
+          },
+        ];
+      },
+      'accountingIcsExportLog.findMany': async () => {
+        accountingCalled = true;
+        return [];
+      },
+    },
+    async () => {
+      const server = await buildServer({ logger: false });
+      try {
+        const res = await server.inject({
+          method: 'GET',
+          url: '/integrations/jobs/exports?kind=hr_attendance_export&status=success&limit=5&offset=0',
+          headers: {
+            'x-user-id': 'admin-user',
+            'x-roles': 'admin',
+          },
+        });
+        assert.equal(res.statusCode, 200, res.body);
+        const body = JSON.parse(res.body);
+        assert.equal(body.items.length, 1);
+        assert.equal(body.items[0].kind, 'hr_attendance_export');
+        assert.equal(body.items[0].scope.periodKey, '2026-03');
+        assert.equal(body.items[0].scope.closingVersion, 2);
+      } finally {
+        await server.close();
+      }
+    },
+  );
+
+  assert.equal(leaveCalled, false);
+  assert.equal(employeeCalled, false);
+  assert.equal(accountingCalled, false);
+  assert.deepEqual(hrAttendanceArgs?.where, { status: 'success' });
+  assert.equal(hrAttendanceArgs?.take, 5);
 });
 
 test('GET /integrations/jobs/exports fetches offset + limit rows per source for merged pagination', async () => {
@@ -185,6 +286,7 @@ test('GET /integrations/jobs/exports fetches offset + limit rows per source for 
         employeeMasterArgs = args;
         return [];
       },
+      'hrAttendanceExportLog.findMany': async () => [],
       'accountingIcsExportLog.findMany': async () => [],
     },
     async () => {
@@ -294,6 +396,104 @@ test('POST /integrations/jobs/exports/:kind/:id/redispatch creates a linked empl
   );
 
   assert.equal(createArgs?.data?.reexportOfId, 'employee-log-source');
+  assert.equal(createArgs?.data?.message, 'redispatched');
+});
+
+test('POST /integrations/jobs/exports/:kind/:id/redispatch creates a linked HR attendance rerun', async () => {
+  process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
+  process.env.AUTH_MODE = 'header';
+
+  const payload = {
+    schemaVersion: 'rakuda_attendance_v1',
+    exportedAt: '2026-03-17T00:00:00.000Z',
+    exportedUntil: '2026-03-17T00:00:00.000Z',
+    periodKey: '2026-03',
+    closingId: 'attendance-close-source',
+    closingVersion: 4,
+    exportedCount: 1,
+    headers: ['employeeCode'],
+    items: [{ employeeCode: 'EMP-001' }],
+  };
+  let createArgs = null;
+
+  await withPrismaStubs(
+    {
+      'hrAttendanceExportLog.findUnique': async (args) => {
+        if (args?.where?.id === 'attendance-log-source') {
+          return {
+            id: 'attendance-log-source',
+            idempotencyKey: 'attendance-source-key',
+            requestHash: 'attendance-request-hash',
+            reexportOfId: null,
+            periodKey: '2026-03',
+            closingPeriodId: 'attendance-close-source',
+            closingVersion: 4,
+            exportedUntil: new Date('2026-03-17T00:00:00.000Z'),
+            status: 'success',
+            exportedCount: 1,
+            payload,
+            message: 'exported',
+            startedAt: new Date('2026-03-17T00:00:00.000Z'),
+            finishedAt: new Date('2026-03-17T00:00:05.000Z'),
+          };
+        }
+        if (args?.where?.idempotencyKey === 'attendance-redispatch-key') {
+          return null;
+        }
+        return null;
+      },
+      'hrAttendanceExportLog.create': async (args) => {
+        createArgs = args;
+        return {
+          id: 'attendance-log-rerun',
+          idempotencyKey: args.data.idempotencyKey,
+          requestHash: args.data.requestHash,
+          reexportOfId: args.data.reexportOfId,
+          periodKey: args.data.periodKey,
+          closingPeriodId: args.data.closingPeriodId,
+          closingVersion: args.data.closingVersion,
+          exportedUntil: args.data.exportedUntil,
+          status: args.data.status,
+          exportedCount: args.data.exportedCount,
+          payload: args.data.payload,
+          message: args.data.message,
+          startedAt: args.data.startedAt,
+          finishedAt: args.data.finishedAt,
+        };
+      },
+    },
+    async () => {
+      const server = await buildServer({ logger: false });
+      try {
+        const res = await server.inject({
+          method: 'POST',
+          url: '/integrations/jobs/exports/hr_attendance_export/attendance-log-source/redispatch',
+          headers: {
+            'x-user-id': 'admin-user',
+            'x-roles': 'admin',
+          },
+          payload: {
+            idempotencyKey: 'attendance-redispatch-key',
+          },
+        });
+        assert.equal(res.statusCode, 200, res.body);
+        const body = JSON.parse(res.body);
+        assert.equal(body.replayed, false);
+        assert.equal(body.log.id, 'attendance-log-rerun');
+        assert.equal(body.log.reexportOfId, 'attendance-log-source');
+        assert.equal(body.log.periodKey, '2026-03');
+        assert.equal(body.log.closingVersion, 4);
+        assert.deepEqual(body.payload, payload);
+      } finally {
+        await server.close();
+      }
+    },
+  );
+
+  assert.equal(createArgs?.data?.reexportOfId, 'attendance-log-source');
+  assert.equal(createArgs?.data?.periodKey, '2026-03');
+  assert.equal(createArgs?.data?.closingPeriodId, 'attendance-close-source');
+  assert.equal(createArgs?.data?.closingVersion, 4);
   assert.equal(createArgs?.data?.message, 'redispatched');
 });
 

@@ -102,7 +102,7 @@
   - `POST /integrations/accounting/mapping-rules/reapply`
 - 共通運用参照
   - `GET /integrations/jobs/exports`
-  - 既存 3 系統の export log を横断一覧化して参照する
+  - 既存 4 系統の export log（休暇 CSV、社員マスタ CSV、勤怠確定 CSV、ICS 仕訳 CSV）を横断一覧化して参照する
   - 管理画面では `Settings` 内の「連携ジョブ一覧」カードから種別 / ステータス / limit / offset を指定して取得する
   - `POST /integrations/jobs/exports/:kind/:id/redispatch`
   - 既存の成功済み export payload を新しい log として再出力し、`reexportOfId` で元ジョブを追跡する
