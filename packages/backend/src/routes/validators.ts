@@ -1945,6 +1945,11 @@ const accountingIcsExportFormatSchema = Type.Union([
   Type.Literal('ics_template'),
 ]);
 
+const integrationReconciliationDetailsFormatSchema = Type.Union([
+  Type.Literal('json'),
+  Type.Literal('csv'),
+]);
+
 const accountingPeriodKeyLooseSchema = Type.String({
   minLength: 1,
   maxLength: 7,
@@ -1977,6 +1982,32 @@ const accountingMappingRuleBodySchema = Type.Object(
     requireDepartmentCode: Type.Optional(Type.Boolean()),
     taxCode: Type.String({ minLength: 1, maxLength: 100 }),
     isActive: Type.Optional(Type.Boolean()),
+  },
+  { additionalProperties: false },
+);
+
+const statutoryAccountingActualAmountTypeSchema = Type.Union([
+  Type.Literal('revenue'),
+  Type.Literal('direct_cost'),
+  Type.Literal('labor_cost'),
+  Type.Literal('vendor_cost'),
+  Type.Literal('expense_cost'),
+]);
+
+const statutoryAccountingActualImportRowSchema = Type.Object(
+  {
+    rowNo: Type.Optional(Type.Integer({ minimum: 1, maximum: 100000 })),
+    sourceRef: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+    projectCode: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+    departmentCode: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+    accountCode: Type.String({ minLength: 1, maxLength: 100 }),
+    accountName: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+    amountType: statutoryAccountingActualAmountTypeSchema,
+    currency: Type.String({ pattern: '^[A-Z]{3}$' }),
+    amount: Type.Union([
+      Type.Number({ exclusiveMinimum: 0 }),
+      Type.String({ minLength: 1, maxLength: 100 }),
+    ]),
   },
   { additionalProperties: false },
 );
@@ -2195,6 +2226,26 @@ export const integrationAccountingMappingRuleReapplySchema = {
   ),
 };
 
+export const integrationStatutoryAccountingActualImportSchema = {
+  body: Type.Object(
+    {
+      periodKey: attendanceClosingPeriodKeySchema,
+      importBatchKey: Type.String({ minLength: 1, maxLength: 200 }),
+      accountingSystem: Type.Optional(
+        Type.Union([
+          Type.String({ minLength: 1, maxLength: 100 }),
+          Type.Null(),
+        ]),
+      ),
+      rows: Type.Array(statutoryAccountingActualImportRowSchema, {
+        minItems: 1,
+        maxItems: 1000,
+      }),
+    },
+    { additionalProperties: false },
+  ),
+};
+
 export const integrationExportJobListQuerySchema = {
   querystring: Type.Object(
     {
@@ -2279,6 +2330,7 @@ export const integrationReconciliationDetailsQuerySchema = {
   querystring: Type.Object(
     {
       periodKey: attendanceClosingPeriodKeySchema,
+      format: Type.Optional(integrationReconciliationDetailsFormatSchema),
     },
     { additionalProperties: false },
   ),

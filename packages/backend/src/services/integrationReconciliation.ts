@@ -61,6 +61,13 @@ type ReconciliationBaseData = {
   readyDebitTotal: string;
   readyCreditTotal: string;
   invalidReadyCount: number;
+  latestStatutoryActualImport: {
+    importBatchKey: string;
+    accountingSystem: string;
+    importedAt: Date;
+  } | null;
+  statutoryActualImportedCount: number;
+  statutoryActualAmountTotal: string;
 };
 
 type ReconciliationSummary = {
@@ -108,6 +115,16 @@ type ReconciliationSummary = {
       readyCreditTotal: string;
       debitCreditBalanced: boolean;
     };
+    statutoryActuals: {
+      latestImportBatchKey: string | null;
+      latestAccountingSystem: string | null;
+      latestImportedAt: Date | null;
+      importedCount: number;
+      amountTotal: string;
+      internalReadyDebitTotal: string;
+      varianceAmount: string | null;
+      comparisonStatus: 'not_imported' | 'ok' | 'amount_mismatch';
+    };
   };
   hasBlockingDifferences: boolean;
 };
@@ -120,6 +137,8 @@ type ReconciliationBreakdownRow = {
   blockedCount: number;
   invalidReadyCount: number;
   readyAmountTotal: string;
+  statutoryActualAmountTotal: string;
+  varianceAmount: string;
 };
 
 type ReconciliationSampleRow = {
@@ -205,6 +224,110 @@ function areAmountsEqual(left: string, right: string) {
   }
 }
 
+function addAmounts(left: string, right: string) {
+  try {
+    return new Prisma.Decimal(left).plus(new Prisma.Decimal(right)).toString();
+  } catch {
+    return String(Number(left || 0) + Number(right || 0));
+  }
+}
+
+function subtractAmounts(left: string, right: string) {
+  try {
+    return new Prisma.Decimal(left).minus(new Prisma.Decimal(right)).toString();
+  } catch {
+    return String(Number(left || 0) - Number(right || 0));
+  }
+}
+
+function normalizeBreakdownKey(value: string | null | undefined) {
+  const normalized = value?.trim();
+  return normalized || '(unassigned)';
+}
+
+function withStatutoryActualBreakdownDefaults(
+  row: Omit<
+    ReconciliationBreakdownRow,
+    'statutoryActualAmountTotal' | 'varianceAmount'
+  > &
+    Partial<
+      Pick<
+        ReconciliationBreakdownRow,
+        'statutoryActualAmountTotal' | 'varianceAmount'
+      >
+    >,
+): ReconciliationBreakdownRow {
+  const statutoryActualAmountTotal = row.statutoryActualAmountTotal ?? '0';
+  return {
+    key: row.key,
+    totalCount: Number(row.totalCount ?? 0),
+    readyCount: Number(row.readyCount ?? 0),
+    pendingMappingCount: Number(row.pendingMappingCount ?? 0),
+    blockedCount: Number(row.blockedCount ?? 0),
+    invalidReadyCount: Number(row.invalidReadyCount ?? 0),
+    readyAmountTotal: toStringAmount(row.readyAmountTotal),
+    statutoryActualAmountTotal,
+    varianceAmount:
+      row.varianceAmount ??
+      subtractAmounts(
+        statutoryActualAmountTotal,
+        toStringAmount(row.readyAmountTotal),
+      ),
+  };
+}
+
+function buildActualBreakdownRows(
+  internalRows: Array<
+    Omit<
+      ReconciliationBreakdownRow,
+      'statutoryActualAmountTotal' | 'varianceAmount'
+    > &
+      Partial<
+        Pick<
+          ReconciliationBreakdownRow,
+          'statutoryActualAmountTotal' | 'varianceAmount'
+        >
+      >
+  >,
+  actualRows: Array<{
+    key: string;
+    amountTotal: string;
+  }>,
+) {
+  const rowsByKey = new Map<string, ReconciliationBreakdownRow>();
+  for (const row of internalRows) {
+    rowsByKey.set(row.key, withStatutoryActualBreakdownDefaults(row));
+  }
+
+  for (const actual of actualRows) {
+    const key = normalizeBreakdownKey(actual.key);
+    const existing =
+      rowsByKey.get(key) ??
+      withStatutoryActualBreakdownDefaults({
+        key,
+        totalCount: 0,
+        readyCount: 0,
+        pendingMappingCount: 0,
+        blockedCount: 0,
+        invalidReadyCount: 0,
+        readyAmountTotal: '0',
+      });
+    existing.statutoryActualAmountTotal = addAmounts(
+      existing.statutoryActualAmountTotal,
+      actual.amountTotal,
+    );
+    existing.varianceAmount = subtractAmounts(
+      existing.statutoryActualAmountTotal,
+      existing.readyAmountTotal,
+    );
+    rowsByKey.set(key, existing);
+  }
+
+  return Array.from(rowsByKey.values()).sort((left, right) =>
+    left.key.localeCompare(right.key),
+  );
+}
+
 function buildReconciliationSampleRow(row: {
   id: string;
   eventId: string;
@@ -287,6 +410,16 @@ function buildIntegrationReconciliationSummaryFromBaseData(
   const debitCreditBalanced =
     base.invalidReadyCount === 0 &&
     areAmountsEqual(base.readyDebitTotal, base.readyCreditTotal);
+  const statutoryActualComparisonStatus =
+    base.statutoryActualImportedCount === 0
+      ? 'not_imported'
+      : areAmountsEqual(base.statutoryActualAmountTotal, base.readyDebitTotal)
+        ? 'ok'
+        : 'amount_mismatch';
+  const statutoryActualVariance =
+    base.statutoryActualImportedCount === 0
+      ? null
+      : subtractAmounts(base.statutoryActualAmountTotal, base.readyDebitTotal);
 
   let accountingComparisonStatus: ReconciliationSummary['accounting']['comparisonStatus'];
   let accountingCountsAligned: boolean | null;
@@ -310,7 +443,9 @@ function buildIntegrationReconciliationSummaryFromBaseData(
   }
 
   const hasBlockingDifferences =
-    payrollComparisonStatus !== 'ok' || accountingComparisonStatus !== 'ok';
+    payrollComparisonStatus !== 'ok' ||
+    accountingComparisonStatus !== 'ok' ||
+    statutoryActualComparisonStatus !== 'ok';
 
   return {
     periodKey: base.periodKey,
@@ -360,6 +495,18 @@ function buildIntegrationReconciliationSummaryFromBaseData(
         readyCreditTotal: base.readyCreditTotal,
         debitCreditBalanced,
       },
+      statutoryActuals: {
+        latestImportBatchKey:
+          base.latestStatutoryActualImport?.importBatchKey ?? null,
+        latestAccountingSystem:
+          base.latestStatutoryActualImport?.accountingSystem ?? null,
+        latestImportedAt: base.latestStatutoryActualImport?.importedAt ?? null,
+        importedCount: base.statutoryActualImportedCount,
+        amountTotal: base.statutoryActualAmountTotal,
+        internalReadyDebitTotal: base.readyDebitTotal,
+        varianceAmount: statutoryActualVariance,
+        comparisonStatus: statutoryActualComparisonStatus,
+      },
     },
     hasBlockingDifferences,
   };
@@ -403,6 +550,8 @@ async function fetchIntegrationReconciliationBaseData(options: {
     stagingCounts,
     readyTotalsRows,
     invalidReadyCountRows,
+    statutoryActualTotals,
+    latestStatutoryActualImport,
   ] = await Promise.all([
     latestClosing
       ? client.attendanceMonthlySummary.findMany({
@@ -512,6 +661,20 @@ async function fetchIntegrationReconciliationBaseData(options: {
           OR ajs."amount" <= 0
         )
     `),
+    client.statutoryAccountingActual.aggregate({
+      where: { periodKey },
+      _count: { _all: true },
+      _sum: { amount: true },
+    }),
+    client.statutoryAccountingActual.findFirst({
+      where: { periodKey },
+      select: {
+        importBatchKey: true,
+        accountingSystem: true,
+        importedAt: true,
+      },
+      orderBy: [{ importedAt: 'desc' }, { id: 'desc' }],
+    }),
   ]);
 
   return {
@@ -527,6 +690,13 @@ async function fetchIntegrationReconciliationBaseData(options: {
     readyDebitTotal: toStringAmount(readyTotalsRows[0]?.readyDebitTotal),
     readyCreditTotal: toStringAmount(readyTotalsRows[0]?.readyCreditTotal),
     invalidReadyCount: Number(invalidReadyCountRows[0]?.count ?? 0),
+    latestStatutoryActualImport,
+    statutoryActualImportedCount: Number(
+      statutoryActualTotals._count._all ?? 0,
+    ),
+    statutoryActualAmountTotal: toStringAmount(
+      statutoryActualTotals._sum.amount,
+    ),
   };
 }
 
@@ -565,6 +735,8 @@ export async function buildIntegrationReconciliationDetails(options: {
     pendingMappingRows,
     blockedRows,
     invalidReadyIds,
+    statutoryActualsByProject,
+    statutoryActualsByDepartment,
   ] = await Promise.all([
     client.$queryRaw<Array<ReconciliationBreakdownRow>>(Prisma.sql`
       SELECT
@@ -689,6 +861,20 @@ export async function buildIntegrationReconciliationDetails(options: {
       ORDER BY ajs."entryDate" ASC, ajs."id" ASC
       LIMIT ${MAX_RECONCILIATION_DETAIL_SAMPLE}
     `),
+    client.statutoryAccountingActual.groupBy({
+      by: ['projectCode'],
+      where: { periodKey: summary.periodKey },
+      _sum: { amount: true },
+      _count: { _all: true },
+      orderBy: { projectCode: 'asc' },
+    }),
+    client.statutoryAccountingActual.groupBy({
+      by: ['departmentCode'],
+      where: { periodKey: summary.periodKey },
+      _sum: { amount: true },
+      _count: { _all: true },
+      orderBy: { departmentCode: 'asc' },
+    }),
   ]);
 
   const invalidReadyRows =
@@ -733,8 +919,20 @@ export async function buildIntegrationReconciliationDetails(options: {
       ),
     },
     accounting: {
-      byProject,
-      byDepartment,
+      byProject: buildActualBreakdownRows(
+        byProject,
+        statutoryActualsByProject.map((row) => ({
+          key: row.projectCode ?? '(unassigned)',
+          amountTotal: toStringAmount(row._sum.amount),
+        })),
+      ),
+      byDepartment: buildActualBreakdownRows(
+        byDepartment,
+        statutoryActualsByDepartment.map((row) => ({
+          key: row.departmentCode ?? '(unassigned)',
+          amountTotal: toStringAmount(row._sum.amount),
+        })),
+      ),
       pendingMappingSamples: pendingMappingRows.map(
         buildReconciliationSampleRow,
       ),
