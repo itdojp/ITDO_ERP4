@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   IntegrationReconciliationCard,
+  type IntegrationReconciliationDetails,
   type IntegrationReconciliationSummary,
 } from './IntegrationReconciliationCard';
 
@@ -83,6 +84,96 @@ function createSummary(
   };
 }
 
+function createDetails(
+  overrides: Partial<IntegrationReconciliationDetails> = {},
+): IntegrationReconciliationDetails {
+  return {
+    periodKey: '2026-03',
+    payroll: {
+      latestClosingId: 'closing-1',
+      latestEmployeeMasterFullExportId: 'payroll-full-1',
+      attendanceOnlyEmployeeCodes: ['E001', 'E002'],
+      employeeMasterOnlyEmployeeCodes: ['E010'],
+    },
+    accounting: {
+      byProject: [
+        {
+          key: 'PRJ-001',
+          totalCount: 3,
+          readyCount: 1,
+          pendingMappingCount: 1,
+          blockedCount: 1,
+          invalidReadyCount: 0,
+          readyAmountTotal: '2000',
+        },
+      ],
+      byDepartment: [
+        {
+          key: 'DEP-A',
+          totalCount: 2,
+          readyCount: 1,
+          pendingMappingCount: 1,
+          blockedCount: 0,
+          invalidReadyCount: 0,
+          readyAmountTotal: '2000',
+        },
+      ],
+      pendingMappingSamples: [
+        {
+          id: 'stg-001',
+          eventId: 'evt-001',
+          sourceTable: 'expenses',
+          sourceId: 'exp-001',
+          status: 'pending_mapping',
+          mappingKey: 'expense:meal',
+          description: 'meal',
+          projectCode: 'PRJ-001',
+          departmentCode: 'DEP-A',
+          debitAccountCode: null,
+          creditAccountCode: null,
+          taxCode: null,
+          amount: '1200',
+        },
+      ],
+      blockedSamples: [
+        {
+          id: 'stg-002',
+          eventId: 'evt-002',
+          sourceTable: 'invoices',
+          sourceId: 'inv-001',
+          status: 'blocked',
+          mappingKey: 'invoice:service',
+          description: 'invoice',
+          projectCode: 'PRJ-002',
+          departmentCode: null,
+          debitAccountCode: null,
+          creditAccountCode: null,
+          taxCode: null,
+          amount: '1800',
+        },
+      ],
+      invalidReadySamples: [
+        {
+          id: 'stg-003',
+          eventId: 'evt-003',
+          sourceTable: 'vendor_invoices',
+          sourceId: 'vin-001',
+          status: 'ready',
+          mappingKey: 'vendor_invoice:office',
+          description: 'office',
+          projectCode: null,
+          departmentCode: 'DEP-B',
+          debitAccountCode: '',
+          creditAccountCode: '2100',
+          taxCode: 'A01',
+          amount: '3000',
+        },
+      ],
+    },
+    ...overrides,
+  };
+}
+
 function getByTextContent(text: string) {
   return screen.getByText((_, element) => element?.textContent === text);
 }
@@ -94,6 +185,7 @@ function renderCard(
 ) {
   const setPeriodKey = vi.fn();
   const onLoad = vi.fn();
+  const onLoadDetails = vi.fn();
   const formatDateTime = vi.fn((value?: string | null) =>
     value ? `fmt:${value}` : '-',
   );
@@ -103,18 +195,22 @@ function renderCard(
       periodKey="2026-03"
       setPeriodKey={setPeriodKey}
       summary={null}
+      details={null}
+      detailsLoading={false}
+      detailsError={null}
       onLoad={onLoad}
+      onLoadDetails={onLoadDetails}
       formatDateTime={formatDateTime}
       {...overrides}
     />,
   );
 
-  return { setPeriodKey, onLoad, formatDateTime };
+  return { setPeriodKey, onLoad, onLoadDetails, formatDateTime };
 }
 
 describe('IntegrationReconciliationCard', () => {
   it('renders empty state and delegates period filter/load actions', () => {
-    const { setPeriodKey, onLoad } = renderCard();
+    const { setPeriodKey, onLoad, onLoadDetails } = renderCard();
 
     expect(screen.getByText('連携照合サマリ')).toBeInTheDocument();
     expect(screen.getAllByText('未取得')).toHaveLength(2);
@@ -126,6 +222,9 @@ describe('IntegrationReconciliationCard', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '照合サマリ取得' }));
     expect(onLoad).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByRole('button', { name: '照合詳細取得' }));
+    expect(onLoadDetails).toHaveBeenCalledTimes(1);
   });
 
   it('renders summary details and blocking badge', () => {
@@ -241,5 +340,117 @@ describe('IntegrationReconciliationCard', () => {
     ).toBeInTheDocument();
 
     expect(formatDateTime).toHaveBeenCalledWith(null);
+  });
+
+  it('renders reconciliation details drilldown tables and samples', () => {
+    const summary = createSummary();
+    const details = createDetails();
+    renderCard({ summary, details });
+
+    expect(
+      screen.getByTestId('integration-reconciliation-details-panel'),
+    ).toBeInTheDocument();
+    expect(screen.getByText('loaded')).toBeInTheDocument();
+    expect(screen.getByText('給与連携詳細')).toBeInTheDocument();
+    expect(screen.getAllByText('periodKey: 2026-03')).toHaveLength(2);
+    expect(screen.getByText('latestClosingId: closing-1')).toBeInTheDocument();
+    expect(
+      screen.getByText('latestEmployeeMasterFullExportId: payroll-full-1'),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText('attendanceOnly (2): E001, E002'),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText('employeeMasterOnly (1): E010'),
+    ).toBeInTheDocument();
+    expect(screen.getByText('PJ別 breakdown')).toBeInTheDocument();
+    expect(screen.getByText('部門別 breakdown')).toBeInTheDocument();
+    expect(screen.getByText('PRJ-001')).toBeInTheDocument();
+    expect(screen.getByText('DEP-A')).toBeInTheDocument();
+    expect(screen.getByText('pending_mapping サンプル')).toBeInTheDocument();
+    expect(screen.getByText('blocked サンプル')).toBeInTheDocument();
+    expect(screen.getByText('invalid ready サンプル')).toBeInTheDocument();
+    expect(
+      screen.getByTestId(
+        'integration-reconciliation-pending-mapping-sample-stg-001',
+      ),
+    ).toHaveTextContent('mappingKey: expense:meal / amount: 1200');
+    expect(
+      screen.getByTestId('integration-reconciliation-blocked-sample-stg-002'),
+    ).toHaveTextContent('source: invoices/inv-001 / eventId: evt-002');
+    expect(
+      screen.getByTestId(
+        'integration-reconciliation-invalid-ready-sample-stg-003',
+      ),
+    ).toHaveTextContent('debit: - / credit: 2100 / tax: A01');
+  });
+
+  it('renders details loading, empty, and error branches', () => {
+    const { rerender } = render(
+      <IntegrationReconciliationCard
+        periodKey="2026-03"
+        setPeriodKey={vi.fn()}
+        summary={createSummary()}
+        details={null}
+        detailsLoading={true}
+        detailsError={null}
+        onLoad={vi.fn()}
+        onLoadDetails={vi.fn()}
+        formatDateTime={(value?: string | null) => value || '-'}
+      />,
+    );
+
+    expect(
+      screen.getByRole('button', { name: '照合詳細取得中...' }),
+    ).toBeDisabled();
+    expect(screen.getByText('照合詳細を取得中...')).toBeInTheDocument();
+
+    rerender(
+      <IntegrationReconciliationCard
+        periodKey="2026-03"
+        setPeriodKey={vi.fn()}
+        summary={createSummary()}
+        details={createDetails({
+          payroll: {
+            latestClosingId: null,
+            latestEmployeeMasterFullExportId: null,
+            attendanceOnlyEmployeeCodes: [],
+            employeeMasterOnlyEmployeeCodes: [],
+          },
+          accounting: {
+            byProject: [],
+            byDepartment: [],
+            pendingMappingSamples: [],
+            blockedSamples: [],
+            invalidReadySamples: [],
+          },
+        })}
+        detailsLoading={false}
+        detailsError={null}
+        onLoad={vi.fn()}
+        onLoadDetails={vi.fn()}
+        formatDateTime={(value?: string | null) => value || '-'}
+      />,
+    );
+    expect(screen.getByText('照合詳細差異なし')).toBeInTheDocument();
+    expect(screen.getAllByText('集計なし')).toHaveLength(2);
+    expect(screen.getAllByText('サンプルなし')).toHaveLength(3);
+
+    rerender(
+      <IntegrationReconciliationCard
+        periodKey="2026-03"
+        setPeriodKey={vi.fn()}
+        summary={null}
+        details={null}
+        detailsLoading={false}
+        detailsError="連携照合詳細の取得に失敗しました"
+        onLoad={vi.fn()}
+        onLoadDetails={vi.fn()}
+        formatDateTime={(value?: string | null) => value || '-'}
+      />,
+    );
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      '連携照合詳細の取得に失敗しました',
+    );
   });
 });
