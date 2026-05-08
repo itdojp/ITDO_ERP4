@@ -83,9 +83,17 @@ function createSummary(
         latestAccountingSystem: 'keiri-jokun-alpha',
         latestImportedAt: '2026-04-01T00:00:00.000Z',
         importedCount: 3,
+        currency: 'JPY',
+        currencyCount: 1,
         amountTotal: '650',
         internalReadyDebitTotal: '600',
         varianceAmount: '50',
+        actualTotalsByCurrency: [
+          { currency: 'JPY', amountTotal: '650', count: 3 },
+        ],
+        readyDebitTotalsByCurrency: [
+          { currency: 'JPY', amountTotal: '600', count: 2 },
+        ],
         comparisonStatus: 'amount_mismatch',
       },
     },
@@ -109,6 +117,7 @@ function createDetails(
       byProject: [
         {
           key: 'PRJ-001',
+          currency: 'JPY',
           totalCount: 3,
           readyCount: 1,
           pendingMappingCount: 1,
@@ -122,6 +131,7 @@ function createDetails(
       byDepartment: [
         {
           key: 'DEP-A',
+          currency: 'JPY',
           totalCount: 2,
           readyCount: 1,
           pendingMappingCount: 1,
@@ -293,7 +303,7 @@ describe('IntegrationReconciliationCard', () => {
     ).toBeInTheDocument();
     expect(
       getByTextContent(
-        'statutoryActuals: status=amount_mismatch / imported=3 / amount=650 / variance=50',
+        'statutoryActuals: status=amount_mismatch / imported=3 / currency=JPY / amount=650 / variance=50',
       ),
     ).toBeInTheDocument();
     expect(
@@ -365,7 +375,7 @@ describe('IntegrationReconciliationCard', () => {
     ).toBeInTheDocument();
     expect(
       getByTextContent(
-        'statutoryActuals: status=not_imported / imported=0 / amount=0 / variance=-',
+        'statutoryActuals: status=not_imported / imported=0 / currency=- / amount=0 / variance=-',
       ),
     ).toBeInTheDocument();
     expect(screen.getByText('latestStatutoryImport: -')).toBeInTheDocument();

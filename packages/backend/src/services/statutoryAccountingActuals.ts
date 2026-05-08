@@ -228,19 +228,40 @@ export async function importStatutoryAccountingActuals(options: {
     );
   }
 
-  const existingBatch = await client.statutoryAccountingActual.findFirst({
-    where: { importBatchKey },
-    select: { id: true },
-  });
-  if (existingBatch) {
-    throw new StatutoryAccountingActualImportError(
-      'statutory_accounting_actual_import_batch_conflict',
-      'importBatchKey already exists',
-      { importBatchKey },
-    );
-  }
+  const persist = async (tx: StatutoryAccountingActualClient) => {
+    await tx.statutoryAccountingActualImportBatch.create({
+      data: {
+        importBatchKey,
+        periodKey,
+        accountingSystem,
+        importedAt,
+        importedCount: data.length,
+        createdBy: options.actorUserId ?? null,
+        updatedBy: options.actorUserId ?? null,
+      },
+    });
+    await tx.statutoryAccountingActual.createMany({ data });
+  };
 
-  await client.statutoryAccountingActual.createMany({ data });
+  try {
+    if (options.client) {
+      await persist(client);
+    } else {
+      await prisma.$transaction((tx) => persist(tx));
+    }
+  } catch (error) {
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === 'P2002'
+    ) {
+      throw new StatutoryAccountingActualImportError(
+        'statutory_accounting_actual_import_batch_conflict',
+        'importBatchKey already exists',
+        { importBatchKey },
+      );
+    }
+    throw error;
+  }
 
   return {
     periodKey,

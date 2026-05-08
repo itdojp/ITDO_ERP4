@@ -49,6 +49,12 @@ type AccountingExportSnapshot = {
   message: string | null;
 };
 
+type AmountByCurrency = {
+  currency: string;
+  amountTotal: string;
+  count: number;
+};
+
 type ReconciliationBaseData = {
   periodKey: string;
   latestClosing: AttendanceClosingSnapshot | null;
@@ -60,6 +66,7 @@ type ReconciliationBaseData = {
   readyAmountTotal: string;
   readyDebitTotal: string;
   readyCreditTotal: string;
+  readyDebitTotalsByCurrency: AmountByCurrency[];
   invalidReadyCount: number;
   latestStatutoryActualImport: {
     importBatchKey: string;
@@ -67,7 +74,7 @@ type ReconciliationBaseData = {
     importedAt: Date;
   } | null;
   statutoryActualImportedCount: number;
-  statutoryActualAmountTotal: string;
+  statutoryActualTotalsByCurrency: AmountByCurrency[];
 };
 
 type ReconciliationSummary = {
@@ -120,23 +127,35 @@ type ReconciliationSummary = {
       latestAccountingSystem: string | null;
       latestImportedAt: Date | null;
       importedCount: number;
+      currency: string | null;
+      currencyCount: number;
       amountTotal: string;
       internalReadyDebitTotal: string;
       varianceAmount: string | null;
-      comparisonStatus: 'not_imported' | 'ok' | 'amount_mismatch';
+      actualTotalsByCurrency: AmountByCurrency[];
+      readyDebitTotalsByCurrency: AmountByCurrency[];
+      comparisonStatus:
+        | 'not_imported'
+        | 'ok'
+        | 'amount_mismatch'
+        | 'currency_mixed';
     };
   };
   hasBlockingDifferences: boolean;
 };
 
-type ReconciliationBreakdownRow = {
+type InternalReconciliationBreakdownRow = {
   key: string;
+  currency: string;
   totalCount: number;
   readyCount: number;
   pendingMappingCount: number;
   blockedCount: number;
   invalidReadyCount: number;
   readyAmountTotal: string;
+};
+
+type ReconciliationBreakdownRow = InternalReconciliationBreakdownRow & {
   statutoryActualAmountTotal: string;
   varianceAmount: string;
 };
@@ -246,16 +265,8 @@ function normalizeBreakdownKey(value: string | null | undefined) {
 }
 
 function withStatutoryActualBreakdownDefaults(
-  row: Omit<
-    ReconciliationBreakdownRow,
-    'statutoryActualAmountTotal' | 'varianceAmount'
-  > &
-    Partial<
-      Pick<
-        ReconciliationBreakdownRow,
-        'statutoryActualAmountTotal' | 'varianceAmount'
-      >
-    >,
+  row: InternalReconciliationBreakdownRow &
+    Partial<Pick<ReconciliationBreakdownRow, 'statutoryActualAmountTotal'>>,
 ): ReconciliationBreakdownRow {
   const statutoryActualAmountTotal = row.statutoryActualAmountTotal ?? '0';
   return {
@@ -265,46 +276,40 @@ function withStatutoryActualBreakdownDefaults(
     pendingMappingCount: Number(row.pendingMappingCount ?? 0),
     blockedCount: Number(row.blockedCount ?? 0),
     invalidReadyCount: Number(row.invalidReadyCount ?? 0),
+    currency: row.currency,
     readyAmountTotal: toStringAmount(row.readyAmountTotal),
     statutoryActualAmountTotal,
-    varianceAmount:
-      row.varianceAmount ??
-      subtractAmounts(
-        statutoryActualAmountTotal,
-        toStringAmount(row.readyAmountTotal),
-      ),
+    varianceAmount: subtractAmounts(
+      statutoryActualAmountTotal,
+      toStringAmount(row.readyAmountTotal),
+    ),
   };
 }
 
 function buildActualBreakdownRows(
-  internalRows: Array<
-    Omit<
-      ReconciliationBreakdownRow,
-      'statutoryActualAmountTotal' | 'varianceAmount'
-    > &
-      Partial<
-        Pick<
-          ReconciliationBreakdownRow,
-          'statutoryActualAmountTotal' | 'varianceAmount'
-        >
-      >
-  >,
+  internalRows: InternalReconciliationBreakdownRow[],
   actualRows: Array<{
     key: string;
+    currency: string;
     amountTotal: string;
   }>,
 ) {
   const rowsByKey = new Map<string, ReconciliationBreakdownRow>();
   for (const row of internalRows) {
-    rowsByKey.set(row.key, withStatutoryActualBreakdownDefaults(row));
+    rowsByKey.set(
+      `${row.key}\0${row.currency}`,
+      withStatutoryActualBreakdownDefaults(row),
+    );
   }
 
   for (const actual of actualRows) {
     const key = normalizeBreakdownKey(actual.key);
+    const mapKey = `${key}\0${actual.currency}`;
     const existing =
-      rowsByKey.get(key) ??
+      rowsByKey.get(mapKey) ??
       withStatutoryActualBreakdownDefaults({
         key,
+        currency: actual.currency,
         totalCount: 0,
         readyCount: 0,
         pendingMappingCount: 0,
@@ -320,11 +325,13 @@ function buildActualBreakdownRows(
       existing.statutoryActualAmountTotal,
       existing.readyAmountTotal,
     );
-    rowsByKey.set(key, existing);
+    rowsByKey.set(mapKey, existing);
   }
 
-  return Array.from(rowsByKey.values()).sort((left, right) =>
-    left.key.localeCompare(right.key),
+  return Array.from(rowsByKey.values()).sort(
+    (left, right) =>
+      left.key.localeCompare(right.key) ||
+      left.currency.localeCompare(right.currency),
   );
 }
 
@@ -410,16 +417,34 @@ function buildIntegrationReconciliationSummaryFromBaseData(
   const debitCreditBalanced =
     base.invalidReadyCount === 0 &&
     areAmountsEqual(base.readyDebitTotal, base.readyCreditTotal);
+  const statutoryActualCurrencyCount =
+    base.statutoryActualTotalsByCurrency.length;
+  const statutoryActualCurrency =
+    statutoryActualCurrencyCount === 1
+      ? base.statutoryActualTotalsByCurrency[0].currency
+      : null;
+  const statutoryActualAmountTotal = statutoryActualCurrency
+    ? base.statutoryActualTotalsByCurrency[0].amountTotal
+    : '0';
+  const statutoryReadyDebitTotal = statutoryActualCurrency
+    ? (base.readyDebitTotalsByCurrency.find(
+        (item) => item.currency === statutoryActualCurrency,
+      )?.amountTotal ?? '0')
+    : '0';
   const statutoryActualComparisonStatus =
     base.statutoryActualImportedCount === 0
       ? 'not_imported'
-      : areAmountsEqual(base.statutoryActualAmountTotal, base.readyDebitTotal)
-        ? 'ok'
-        : 'amount_mismatch';
+      : statutoryActualCurrencyCount !== 1
+        ? 'currency_mixed'
+        : areAmountsEqual(statutoryActualAmountTotal, statutoryReadyDebitTotal)
+          ? 'ok'
+          : 'amount_mismatch';
   const statutoryActualVariance =
     base.statutoryActualImportedCount === 0
       ? null
-      : subtractAmounts(base.statutoryActualAmountTotal, base.readyDebitTotal);
+      : statutoryActualCurrencyCount !== 1
+        ? null
+        : subtractAmounts(statutoryActualAmountTotal, statutoryReadyDebitTotal);
 
   let accountingComparisonStatus: ReconciliationSummary['accounting']['comparisonStatus'];
   let accountingCountsAligned: boolean | null;
@@ -445,7 +470,8 @@ function buildIntegrationReconciliationSummaryFromBaseData(
   const hasBlockingDifferences =
     payrollComparisonStatus !== 'ok' ||
     accountingComparisonStatus !== 'ok' ||
-    statutoryActualComparisonStatus !== 'ok';
+    statutoryActualComparisonStatus === 'amount_mismatch' ||
+    statutoryActualComparisonStatus === 'currency_mixed';
 
   return {
     periodKey: base.periodKey,
@@ -502,9 +528,13 @@ function buildIntegrationReconciliationSummaryFromBaseData(
           base.latestStatutoryActualImport?.accountingSystem ?? null,
         latestImportedAt: base.latestStatutoryActualImport?.importedAt ?? null,
         importedCount: base.statutoryActualImportedCount,
-        amountTotal: base.statutoryActualAmountTotal,
-        internalReadyDebitTotal: base.readyDebitTotal,
+        currency: statutoryActualCurrency,
+        currencyCount: statutoryActualCurrencyCount,
+        amountTotal: statutoryActualAmountTotal,
+        internalReadyDebitTotal: statutoryReadyDebitTotal,
         varianceAmount: statutoryActualVariance,
+        actualTotalsByCurrency: base.statutoryActualTotalsByCurrency,
+        readyDebitTotalsByCurrency: base.readyDebitTotalsByCurrency,
         comparisonStatus: statutoryActualComparisonStatus,
       },
     },
@@ -549,8 +579,9 @@ async function fetchIntegrationReconciliationBaseData(options: {
     latestIcsExport,
     stagingCounts,
     readyTotalsRows,
+    readyDebitCurrencyRows,
     invalidReadyCountRows,
-    statutoryActualTotals,
+    statutoryActualTotalsByCurrency,
     latestStatutoryActualImport,
   ] = await Promise.all([
     latestClosing
@@ -646,6 +677,35 @@ async function fetchIntegrationReconciliationBaseData(options: {
       INNER JOIN "AccountingEvent" ae ON ae."id" = ajs."eventId"
       WHERE ae."periodKey" = ${periodKey}
     `),
+    client.$queryRaw<
+      Array<{
+        currency: string;
+        count: bigint | number;
+        amountTotal: string | Prisma.Decimal | number | null;
+      }>
+    >(Prisma.sql`
+      SELECT
+        ajs."currency" AS "currency",
+        COUNT(*) FILTER (
+          WHERE ajs."status" = 'ready'
+            AND ajs."debitAccountCode" IS NOT NULL
+            AND BTRIM(ajs."debitAccountCode") <> ''
+        )::int AS "count",
+        COALESCE(SUM(
+          CASE
+            WHEN ajs."status" = 'ready'
+              AND ajs."debitAccountCode" IS NOT NULL
+              AND BTRIM(ajs."debitAccountCode") <> ''
+            THEN ajs."amount"
+            ELSE 0
+          END
+        ), 0)::text AS "amountTotal"
+      FROM "AccountingJournalStaging" ajs
+      INNER JOIN "AccountingEvent" ae ON ae."id" = ajs."eventId"
+      WHERE ae."periodKey" = ${periodKey}
+      GROUP BY ajs."currency"
+      ORDER BY ajs."currency" ASC
+    `),
     client.$queryRaw<Array<{ count: bigint | number }>>(Prisma.sql`
       SELECT COUNT(*)::int AS "count"
       FROM "AccountingJournalStaging" ajs
@@ -661,19 +721,21 @@ async function fetchIntegrationReconciliationBaseData(options: {
           OR ajs."amount" <= 0
         )
     `),
-    client.statutoryAccountingActual.aggregate({
+    client.statutoryAccountingActual.groupBy({
+      by: ['currency'],
       where: { periodKey },
       _count: { _all: true },
       _sum: { amount: true },
+      orderBy: { currency: 'asc' },
     }),
-    client.statutoryAccountingActual.findFirst({
+    client.statutoryAccountingActualImportBatch.findFirst({
       where: { periodKey },
       select: {
         importBatchKey: true,
         accountingSystem: true,
         importedAt: true,
       },
-      orderBy: [{ importedAt: 'desc' }, { id: 'desc' }],
+      orderBy: [{ importedAt: 'desc' }, { importBatchKey: 'desc' }],
     }),
   ]);
 
@@ -689,13 +751,23 @@ async function fetchIntegrationReconciliationBaseData(options: {
     readyAmountTotal: toStringAmount(readyTotalsRows[0]?.readyAmountTotal),
     readyDebitTotal: toStringAmount(readyTotalsRows[0]?.readyDebitTotal),
     readyCreditTotal: toStringAmount(readyTotalsRows[0]?.readyCreditTotal),
+    readyDebitTotalsByCurrency: readyDebitCurrencyRows.map((row) => ({
+      currency: row.currency,
+      amountTotal: toStringAmount(row.amountTotal),
+      count: Number(row.count ?? 0),
+    })),
     invalidReadyCount: Number(invalidReadyCountRows[0]?.count ?? 0),
     latestStatutoryActualImport,
-    statutoryActualImportedCount: Number(
-      statutoryActualTotals._count._all ?? 0,
+    statutoryActualImportedCount: statutoryActualTotalsByCurrency.reduce(
+      (sum, row) => sum + Number(row._count._all ?? 0),
+      0,
     ),
-    statutoryActualAmountTotal: toStringAmount(
-      statutoryActualTotals._sum.amount,
+    statutoryActualTotalsByCurrency: statutoryActualTotalsByCurrency.map(
+      (row) => ({
+        currency: row.currency,
+        amountTotal: toStringAmount(row._sum.amount),
+        count: Number(row._count._all ?? 0),
+      }),
     ),
   };
 }
@@ -738,9 +810,10 @@ export async function buildIntegrationReconciliationDetails(options: {
     statutoryActualsByProject,
     statutoryActualsByDepartment,
   ] = await Promise.all([
-    client.$queryRaw<Array<ReconciliationBreakdownRow>>(Prisma.sql`
+    client.$queryRaw<Array<InternalReconciliationBreakdownRow>>(Prisma.sql`
       SELECT
         COALESCE(NULLIF(BTRIM(ae."projectCode"), ''), '(unassigned)') AS "key",
+        ajs."currency" AS "currency",
         COUNT(*)::int AS "totalCount",
         COUNT(*) FILTER (WHERE ajs."status" = 'ready')::int AS "readyCount",
         COUNT(*) FILTER (WHERE ajs."status" = 'pending_mapping')::int AS "pendingMappingCount",
@@ -760,15 +833,16 @@ export async function buildIntegrationReconciliationDetails(options: {
       FROM "AccountingJournalStaging" ajs
       INNER JOIN "AccountingEvent" ae ON ae."id" = ajs."eventId"
       WHERE ae."periodKey" = ${summary.periodKey}
-      GROUP BY 1
-      ORDER BY 1 ASC
+      GROUP BY 1, 2
+      ORDER BY 1 ASC, 2 ASC
     `),
-    client.$queryRaw<Array<ReconciliationBreakdownRow>>(Prisma.sql`
+    client.$queryRaw<Array<InternalReconciliationBreakdownRow>>(Prisma.sql`
       SELECT
         COALESCE(
           NULLIF(BTRIM(COALESCE(ajs."departmentCode", ae."departmentCode")), ''),
           '(unassigned)'
         ) AS "key",
+        ajs."currency" AS "currency",
         COUNT(*)::int AS "totalCount",
         COUNT(*) FILTER (WHERE ajs."status" = 'ready')::int AS "readyCount",
         COUNT(*) FILTER (WHERE ajs."status" = 'pending_mapping')::int AS "pendingMappingCount",
@@ -788,8 +862,8 @@ export async function buildIntegrationReconciliationDetails(options: {
       FROM "AccountingJournalStaging" ajs
       INNER JOIN "AccountingEvent" ae ON ae."id" = ajs."eventId"
       WHERE ae."periodKey" = ${summary.periodKey}
-      GROUP BY 1
-      ORDER BY 1 ASC
+      GROUP BY 1, 2
+      ORDER BY 1 ASC, 2 ASC
     `),
     client.accountingJournalStaging.findMany({
       where: {
@@ -862,18 +936,18 @@ export async function buildIntegrationReconciliationDetails(options: {
       LIMIT ${MAX_RECONCILIATION_DETAIL_SAMPLE}
     `),
     client.statutoryAccountingActual.groupBy({
-      by: ['projectCode'],
+      by: ['projectCode', 'currency'],
       where: { periodKey: summary.periodKey },
       _sum: { amount: true },
       _count: { _all: true },
-      orderBy: { projectCode: 'asc' },
+      orderBy: [{ projectCode: 'asc' }, { currency: 'asc' }],
     }),
     client.statutoryAccountingActual.groupBy({
-      by: ['departmentCode'],
+      by: ['departmentCode', 'currency'],
       where: { periodKey: summary.periodKey },
       _sum: { amount: true },
       _count: { _all: true },
-      orderBy: { departmentCode: 'asc' },
+      orderBy: [{ departmentCode: 'asc' }, { currency: 'asc' }],
     }),
   ]);
 
@@ -923,6 +997,7 @@ export async function buildIntegrationReconciliationDetails(options: {
         byProject,
         statutoryActualsByProject.map((row) => ({
           key: row.projectCode ?? '(unassigned)',
+          currency: row.currency,
           amountTotal: toStringAmount(row._sum.amount),
         })),
       ),
@@ -930,6 +1005,7 @@ export async function buildIntegrationReconciliationDetails(options: {
         byDepartment,
         statutoryActualsByDepartment.map((row) => ({
           key: row.departmentCode ?? '(unassigned)',
+          currency: row.currency,
           amountTotal: toStringAmount(row._sum.amount),
         })),
       ),

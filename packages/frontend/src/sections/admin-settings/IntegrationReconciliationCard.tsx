@@ -60,9 +60,21 @@ export type IntegrationReconciliationSummary = {
       latestAccountingSystem?: string | null;
       latestImportedAt?: string | null;
       importedCount: number;
+      currency?: string | null;
+      currencyCount?: number;
       amountTotal: string;
       internalReadyDebitTotal: string;
       varianceAmount?: string | null;
+      actualTotalsByCurrency?: Array<{
+        currency: string;
+        amountTotal: string;
+        count: number;
+      }>;
+      readyDebitTotalsByCurrency?: Array<{
+        currency: string;
+        amountTotal: string;
+        count: number;
+      }>;
       comparisonStatus: string;
     } | null;
   };
@@ -71,6 +83,7 @@ export type IntegrationReconciliationSummary = {
 
 export type IntegrationReconciliationBreakdownRow = {
   key: string;
+  currency: string;
   totalCount: number;
   readyCount: number;
   pendingMappingCount: number;
@@ -181,6 +194,7 @@ function renderBreakdownTable(
             <thead>
               <tr>
                 <th style={{ textAlign: 'left' }}>key</th>
+                <th style={{ textAlign: 'left' }}>currency</th>
                 <th style={numericCellStyle}>total</th>
                 <th style={numericCellStyle}>ready</th>
                 <th style={numericCellStyle}>pending_mapping</th>
@@ -193,8 +207,9 @@ function renderBreakdownTable(
             </thead>
             <tbody>
               {rows.map((row) => (
-                <tr key={`${testId}:${row.key}`}>
+                <tr key={`${testId}:${row.key}:${row.currency}`}>
                   <td>{row.key}</td>
+                  <td>{row.currency}</td>
                   <td style={numericCellStyle}>{row.totalCount}</td>
                   <td style={numericCellStyle}>{row.readyCount}</td>
                   <td style={numericCellStyle}>{row.pendingMappingCount}</td>
@@ -435,6 +450,8 @@ export const IntegrationReconciliationCard = ({
                 'not_imported'
               } / imported=${
                 summary.accounting.statutoryActuals?.importedCount ?? 0
+              } / currency=${
+                summary.accounting.statutoryActuals?.currency ?? '-'
               } / amount=${
                 summary.accounting.statutoryActuals?.amountTotal ?? '0'
               } / variance=${

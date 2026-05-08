@@ -12,7 +12,8 @@ const { prisma } = await import('../dist/services/db.js');
 function withPrismaStubs(stubs, fn) {
   const restores = [];
   const defaultStubs = {
-    'statutoryAccountingActual.findFirst': async () => null,
+    'statutoryAccountingActualImportBatch.findFirst': async () => null,
+    'statutoryAccountingActualImportBatch.create': async () => ({}),
     'statutoryAccountingActual.aggregate': async () => ({
       _count: { _all: 0 },
       _sum: { amount: null },
@@ -21,6 +22,7 @@ function withPrismaStubs(stubs, fn) {
     'statutoryAccountingActual.createMany': async (args) => ({
       count: Array.isArray(args?.data) ? args.data.length : 0,
     }),
+    $transaction: async (fn) => fn(prisma),
   };
   for (const [path, stub] of Object.entries({ ...defaultStubs, ...stubs })) {
     const [model, method] = path.split('.');
@@ -144,6 +146,9 @@ test('GET /integrations/reconciliation/summary returns aggregate reconciliation 
             },
           ];
         }
+        if (sql.includes('GROUP BY ajs."currency"')) {
+          return [{ currency: 'JPY', count: 3, amountTotal: '12345' }];
+        }
         if (sql.includes('SELECT COUNT(*)::int AS "count"')) {
           return [{ count: 0 }];
         }
@@ -241,6 +246,9 @@ test('GET /integrations/reconciliation/summary treats missing prerequisites as b
             },
           ];
         }
+        if (sql.includes('GROUP BY ajs."currency"')) {
+          return [];
+        }
         if (sql.includes('SELECT COUNT(*)::int AS "count"')) {
           return [{ count: 0 }];
         }
@@ -333,6 +341,9 @@ test('GET /integrations/reconciliation/summary reports missing full export and e
             },
           ];
         }
+        if (sql.includes('GROUP BY ajs."currency"')) {
+          return [{ currency: 'JPY', count: 2, amountTotal: '2500' }];
+        }
         if (sql.includes('SELECT COUNT(*)::int AS "count"')) {
           return [{ count: 1 }];
         }
@@ -403,6 +414,9 @@ test('GET /integrations/reconciliation/summary reports true debit and credit tot
               readyCreditTotal: '2500',
             },
           ];
+        }
+        if (sql.includes('GROUP BY ajs."currency"')) {
+          return [{ currency: 'JPY', count: 1, amountTotal: '3000' }];
         }
         if (sql.includes('SELECT COUNT(*)::int AS "count"')) {
           return [{ count: 0 }];
@@ -493,11 +507,19 @@ test('GET /integrations/reconciliation/summary compares statutory actuals with i
       'accountingJournalStaging.groupBy': async () => [
         { status: 'ready', _count: { _all: 1 } },
       ],
-      'statutoryAccountingActual.aggregate': async () => ({
-        _count: { _all: 2 },
-        _sum: { amount: '5300' },
-      }),
-      'statutoryAccountingActual.findFirst': async () => ({
+      'statutoryAccountingActual.groupBy': async (args) => {
+        if (args?.by?.includes('currency')) {
+          return [
+            {
+              currency: 'JPY',
+              _count: { _all: 2 },
+              _sum: { amount: '5300' },
+            },
+          ];
+        }
+        return [];
+      },
+      'statutoryAccountingActualImportBatch.findFirst': async () => ({
         importBatchKey: 'statutory-actual-2026-06-v1',
         accountingSystem: 'keiri-jokun-alpha',
         importedAt: new Date('2026-07-01T01:00:00.000Z'),
@@ -514,6 +536,9 @@ test('GET /integrations/reconciliation/summary compares statutory actuals with i
               readyCreditTotal: '5000',
             },
           ];
+        }
+        if (sql.includes('GROUP BY ajs."currency"')) {
+          return [{ currency: 'JPY', count: 1, amountTotal: '5000' }];
         }
         if (sql.includes('SELECT COUNT(*)::int AS "count"')) {
           return [{ count: 0 }];
@@ -540,6 +565,7 @@ test('GET /integrations/reconciliation/summary compares statutory actuals with i
           'amount_mismatch',
         );
         assert.equal(body.accounting.statutoryActuals.importedCount, 2);
+        assert.equal(body.accounting.statutoryActuals.currency, 'JPY');
         assert.equal(body.accounting.statutoryActuals.amountTotal, '5300');
         assert.equal(
           body.accounting.statutoryActuals.internalReadyDebitTotal,
@@ -551,6 +577,108 @@ test('GET /integrations/reconciliation/summary compares statutory actuals with i
           'statutory-actual-2026-06-v1',
         );
         assert.equal(body.hasBlockingDifferences, true);
+      } finally {
+        await server.close();
+      }
+    },
+  );
+});
+
+test('GET /integrations/reconciliation/summary treats missing statutory actuals as non-blocking when other checks pass', async () => {
+  await withPrismaStubs(
+    {
+      'attendanceClosingPeriod.findFirst': async () => ({
+        id: 'closing-no-statutory',
+        periodKey: '2026-09',
+        version: 1,
+        status: 'closed',
+        closedAt: new Date('2026-09-30T15:00:00.000Z'),
+        summaryCount: 1,
+        workedDayCountTotal: 20,
+        scheduledWorkMinutesTotal: 9600,
+        approvedWorkMinutesTotal: 9600,
+        overtimeTotalMinutesTotal: 0,
+        paidLeaveMinutesTotal: 0,
+        unpaidLeaveMinutesTotal: 0,
+        totalLeaveMinutesTotal: 0,
+        sourceTimeEntryCount: 20,
+        sourceLeaveRequestCount: 0,
+      }),
+      'attendanceMonthlySummary.findMany': async () => [
+        { employeeCode: 'EMP-090' },
+      ],
+      'hrEmployeeMasterExportLog.findFirst': async () => ({
+        id: 'emp-full-no-statutory',
+        idempotencyKey: 'emp-full-no-statutory-key',
+        reexportOfId: null,
+        status: 'success',
+        updatedSince: null,
+        exportedUntil: new Date('2026-09-30T15:10:00.000Z'),
+        exportedCount: 1,
+        startedAt: new Date('2026-09-30T15:10:00.000Z'),
+        finishedAt: new Date('2026-09-30T15:10:05.000Z'),
+        message: 'exported',
+        payload: {
+          items: [{ employeeCode: 'EMP-090' }],
+        },
+      }),
+      'accountingIcsExportLog.findFirst': async () => ({
+        id: 'ics-no-statutory',
+        idempotencyKey: 'ics-no-statutory-key',
+        reexportOfId: null,
+        periodKey: '2026-09',
+        status: 'success',
+        exportedUntil: new Date('2026-09-30T15:30:00.000Z'),
+        exportedCount: 1,
+        startedAt: new Date('2026-09-30T15:30:00.000Z'),
+        finishedAt: new Date('2026-09-30T15:30:05.000Z'),
+        message: 'exported',
+      }),
+      'accountingJournalStaging.groupBy': async () => [
+        { status: 'ready', _count: { _all: 1 } },
+      ],
+      $queryRaw: async (query) => {
+        const sql = Array.isArray(query?.strings)
+          ? query.strings.join(' ')
+          : String(query);
+        if (sql.includes('"readyDebitTotal"')) {
+          return [
+            {
+              readyAmountTotal: '1000',
+              readyDebitTotal: '1000',
+              readyCreditTotal: '1000',
+            },
+          ];
+        }
+        if (sql.includes('GROUP BY ajs."currency"')) {
+          return [{ currency: 'JPY', count: 1, amountTotal: '1000' }];
+        }
+        if (sql.includes('SELECT COUNT(*)::int AS "count"')) {
+          return [{ count: 0 }];
+        }
+        throw new Error(`unexpected $queryRaw: ${sql}`);
+      },
+    },
+    async () => {
+      const server = await buildServer({ logger: false });
+      try {
+        const res = await server.inject({
+          method: 'GET',
+          url: '/integrations/reconciliation/summary?periodKey=2026-09',
+          headers: {
+            'x-user-id': 'admin-user',
+            'x-roles': 'admin',
+          },
+        });
+        assert.equal(res.statusCode, 200, res.body);
+        const body = JSON.parse(res.body);
+        assert.equal(body.payroll.comparisonStatus, 'ok');
+        assert.equal(body.accounting.comparisonStatus, 'ok');
+        assert.equal(
+          body.accounting.statutoryActuals.comparisonStatus,
+          'not_imported',
+        );
+        assert.equal(body.hasBlockingDifferences, false);
       } finally {
         await server.close();
       }
@@ -632,11 +760,13 @@ test('GET /integrations/reconciliation/details returns payroll diffs and account
           return [
             {
               projectCode: 'PRJ-001',
+              currency: 'JPY',
               _count: { _all: 1 },
               _sum: { amount: '2100' },
             },
             {
               projectCode: 'PRJ-003',
+              currency: 'JPY',
               _count: { _all: 1 },
               _sum: { amount: '500' },
             },
@@ -646,11 +776,13 @@ test('GET /integrations/reconciliation/details returns payroll diffs and account
           return [
             {
               departmentCode: 'DEP-A',
+              currency: 'JPY',
               _count: { _all: 1 },
               _sum: { amount: '1800' },
             },
             {
               departmentCode: 'DEP-C',
+              currency: 'JPY',
               _count: { _all: 1 },
               _sum: { amount: '750' },
             },
@@ -675,6 +807,9 @@ test('GET /integrations/reconciliation/details returns payroll diffs and account
             },
           ];
         }
+        if (sql.includes('GROUP BY ajs."currency"')) {
+          return [{ currency: 'JPY', count: 2, amountTotal: '5000' }];
+        }
         if (sql.includes('SELECT ajs."id"')) {
           return [{ id: 'stg-004' }];
         }
@@ -682,6 +817,7 @@ test('GET /integrations/reconciliation/details returns payroll diffs and account
           return [
             {
               key: '(unassigned)',
+              currency: 'JPY',
               totalCount: 1,
               readyCount: 1,
               pendingMappingCount: 0,
@@ -691,6 +827,7 @@ test('GET /integrations/reconciliation/details returns payroll diffs and account
             },
             {
               key: 'PRJ-001',
+              currency: 'JPY',
               totalCount: 2,
               readyCount: 1,
               pendingMappingCount: 1,
@@ -700,6 +837,7 @@ test('GET /integrations/reconciliation/details returns payroll diffs and account
             },
             {
               key: 'PRJ-002',
+              currency: 'JPY',
               totalCount: 1,
               readyCount: 0,
               pendingMappingCount: 0,
@@ -712,6 +850,7 @@ test('GET /integrations/reconciliation/details returns payroll diffs and account
         return [
           {
             key: '(unassigned)',
+            currency: 'JPY',
             totalCount: 1,
             readyCount: 0,
             pendingMappingCount: 0,
@@ -721,6 +860,7 @@ test('GET /integrations/reconciliation/details returns payroll diffs and account
           },
           {
             key: 'DEP-A',
+            currency: 'JPY',
             totalCount: 2,
             readyCount: 1,
             pendingMappingCount: 1,
@@ -730,6 +870,7 @@ test('GET /integrations/reconciliation/details returns payroll diffs and account
           },
           {
             key: 'DEP-B',
+            currency: 'JPY',
             totalCount: 1,
             readyCount: 1,
             pendingMappingCount: 0,
@@ -969,7 +1110,8 @@ test('GET /integrations/reconciliation/details exports statutory actual reconcil
         if (args?.by?.includes('projectCode')) {
           return [
             {
-              projectCode: 'PRJ-CSV',
+              projectCode: '=PRJ-CSV',
+              currency: 'JPY',
               _count: { _all: 1 },
               _sum: { amount: '123' },
             },
@@ -979,6 +1121,7 @@ test('GET /integrations/reconciliation/details exports statutory actual reconcil
           return [
             {
               departmentCode: 'DEP-CSV',
+              currency: 'JPY',
               _count: { _all: 1 },
               _sum: { amount: '456' },
             },
@@ -998,6 +1141,9 @@ test('GET /integrations/reconciliation/details exports statutory actual reconcil
               readyCreditTotal: '0',
             },
           ];
+        }
+        if (sql.includes('GROUP BY ajs."currency"')) {
+          return [];
         }
         if (
           sql.includes('SELECT COUNT(*)::int AS "count"') ||
@@ -1031,10 +1177,10 @@ test('GET /integrations/reconciliation/details exports statutory actual reconcil
         );
         assert.match(
           res.body,
-          /section,key,totalCount,readyCount,pendingMappingCount,blockedCount,invalidReadyCount,readyAmountTotal,statutoryActualAmountTotal,varianceAmount/,
+          /section,key,currency,totalCount,readyCount,pendingMappingCount,blockedCount,invalidReadyCount,readyAmountTotal,statutoryActualAmountTotal,varianceAmount/,
         );
-        assert.match(res.body, /project,PRJ-CSV,0,0,0,0,0,0,123,123/);
-        assert.match(res.body, /department,DEP-CSV,0,0,0,0,0,0,456,456/);
+        assert.match(res.body, /project,'=PRJ-CSV,JPY,0,0,0,0,0,0,123,123/);
+        assert.match(res.body, /department,DEP-CSV,JPY,0,0,0,0,0,0,456,456/);
       } finally {
         await server.close();
       }
@@ -1045,12 +1191,14 @@ test('GET /integrations/reconciliation/details exports statutory actual reconcil
 test('POST /integrations/accounting/statutory-actuals/import validates and persists rows', async () => {
   await withPrismaStubs(
     {
-      'statutoryAccountingActual.findFirst': async (args) => {
-        assert.equal(
-          args?.where?.importBatchKey,
-          'statutory-actual-2026-06-v1',
-        );
-        return null;
+      'statutoryAccountingActualImportBatch.create': async (args) => {
+        assert.equal(args?.data?.importBatchKey, 'statutory-actual-2026-06-v1');
+        assert.equal(args.data.periodKey, '2026-06');
+        assert.equal(args.data.accountingSystem, 'keiri-jokun-alpha');
+        assert.equal(args.data.importedCount, 2);
+        assert.equal(args.data.createdBy, 'admin-user');
+        assert.equal(args.data.updatedBy, 'admin-user');
+        return {};
       },
       'statutoryAccountingActual.createMany': async (args) => {
         assert.equal(args?.data?.length, 2);

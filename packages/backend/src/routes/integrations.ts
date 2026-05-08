@@ -993,6 +993,12 @@ function statutoryAccountingActualImportStatusCode(code: string) {
   }
 }
 
+function sanitizeSpreadsheetCsvCell(value: unknown) {
+  if (value === null || value === undefined) return '';
+  const text = String(value);
+  return /^[=+\-@]/.test(text) ? `'${text}` : text;
+}
+
 function buildAccountingIcsExportLogResponse(item: {
   id: string;
   idempotencyKey: string;
@@ -1029,6 +1035,7 @@ function buildIntegrationReconciliationDetailsCsv(
   const headers = [
     'section',
     'key',
+    'currency',
     'totalCount',
     'readyCount',
     'pendingMappingCount',
@@ -1041,7 +1048,8 @@ function buildIntegrationReconciliationDetailsCsv(
   const rows = [
     ...details.accounting.byProject.map((row) => [
       'project',
-      row.key,
+      sanitizeSpreadsheetCsvCell(row.key),
+      sanitizeSpreadsheetCsvCell(row.currency),
       row.totalCount,
       row.readyCount,
       row.pendingMappingCount,
@@ -1053,7 +1061,8 @@ function buildIntegrationReconciliationDetailsCsv(
     ]),
     ...details.accounting.byDepartment.map((row) => [
       'department',
-      row.key,
+      sanitizeSpreadsheetCsvCell(row.key),
+      sanitizeSpreadsheetCsvCell(row.currency),
       row.totalCount,
       row.readyCount,
       row.pendingMappingCount,

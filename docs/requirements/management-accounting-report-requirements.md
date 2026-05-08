@@ -157,8 +157,8 @@
   - 未設定の `Project.orgUnitId` は `departmentKey: null` / `departmentSource: unassigned`、正規部門マスタに未照合の旧データは `departmentSource: legacy_org_unit` として旧 `Project.orgUnitId` を `departmentKey` に保持する
   - CSV は `summary` / `currency_breakdown` / `department_breakdown` / `top_red_project` の 4 section で flatten し、部門列として `departmentKey` / `departmentName` / `departmentExternalCode` / `departmentSource`、給与確定値列として `payrollConfirmedLaborCost` / `laborCostVariance` / `payrollConfirmedStatus` を出力する
   - 制度会計実績戻しは `StatutoryAccountingActual` に月次 `periodKey` / import batch / 会計システム / PJ / 部門 / 勘定科目 / amount type / 通貨 / 金額の粒度で取り込み、`POST /integrations/accounting/statutory-actuals/import` で最大 1,000 行単位の JSON import を受け付ける。`importBatchKey + rowNo` を一意キーとし、同一 batch の再投入は 409 とする
-  - `GET /integrations/reconciliation/summary` は制度会計実績合計と ERP4 内部の ready debit total を照合し、`statutoryActuals.comparisonStatus`（`not_imported` / `ok` / `amount_mismatch`）と `varianceAmount` を返す
-  - `GET /integrations/reconciliation/details?periodKey=YYYY-MM&format=csv` は PJ別 / 部門別 breakdown に `statutoryActualAmountTotal` と `varianceAmount` を含め、管理会計側の ready amount と制度会計実績戻しとの差異を CSV で再現できるようにする
+  - `GET /integrations/reconciliation/summary` は制度会計実績合計と ERP4 内部の ready debit total を通貨単位で照合し、`statutoryActuals.comparisonStatus`（`not_imported` / `ok` / `amount_mismatch` / `currency_mixed`）と `currency` / `varianceAmount` を返す。制度会計実績が未取込の `not_imported` は警告情報として扱い、金額不一致または複数通貨混在時のみ blocking とする
+  - `GET /integrations/reconciliation/details?periodKey=YYYY-MM&format=csv` は PJ別 / 部門別 / 通貨別 breakdown に `statutoryActualAmountTotal` と `varianceAmount` を含め、管理会計側の ready amount と制度会計実績戻しとの差異を CSV で再現できるようにする
   - UI は `Reports` セクションの管理会計サマリ表示、部門別損益の初期表示、CSV 出力を初期導線とし、案件単位の確認には既存 `project-profit` を併用する
 
 ### R5. 管理部向け締め前照合レポート
@@ -294,7 +294,7 @@
 - 現行 summary report のデータソースは `Invoice`（売上）、`VendorInvoice` / `Expense` / `TimeEntry * RateCard`（直接原価）、`ProjectMilestone`（納期未請求）、`TimeEntry`（残業・工数）である。
 - 部門別損益の最小実装単位は、既存 `Project.orgUnitId` を暫定部門キーとして summary API / CSV / Reports UI に `departmentBreakdown` を追加することとする。
 - 給与確定値ベース原価は、`#1749` で月次 `PayrollConfirmedLaborCost` を管理単価ベース `laborCost` と併記し、`laborCostVariance` と `payrollConfirmedStatus` で差分・未締め月を検知する。
-- 制度会計実績戻しは、`#1750` で `StatutoryAccountingActual` を月次・PJ・部門・勘定科目・amount type・通貨・金額の import/staging とし、summary の `statutoryActuals` と details/CSV の `statutoryActualAmountTotal` / `varianceAmount` で差分照合する。
+- 制度会計実績戻しは、`#1750` で `StatutoryAccountingActual` を月次・PJ・部門・勘定科目・amount type・通貨・金額の import/staging とし、`StatutoryAccountingActualImportBatch` で import batch 単位の一意性を担保する。summary の `statutoryActuals` と details/CSV の通貨別 `statutoryActualAmountTotal` / `varianceAmount` で差分照合する。
 - 最小実装のテスト方針:
   - backend route test で `departmentBreakdown[]` の集計、赤字案件数、CSV `department_breakdown` section を検証する。
   - frontend test で Reports 画面の部門別損益表示を検証する。
