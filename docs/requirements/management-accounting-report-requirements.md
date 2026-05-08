@@ -148,6 +148,8 @@
   - ERP4 内の売上、直接原価、粗利、納期未請求、残業、赤字案件件数を 1 API で返す
   - 複数通貨が混在する場合は、金額系 KPI の top-level 合算値は返さず、`currencyBreakdown[]` で通貨別内訳を返す
   - `departmentBreakdown[]` は正規部門マスタ照合後の `departmentKey`（`DepartmentMaster.code`）、`departmentName`、`departmentExternalCode`、`departmentSource` と通貨単位で、売上・直接原価・労務原価・外注/仕入・経費・粗利・粗利率・工数・赤字案件数を返す
+  - 過去期間の再現性を優先し、非アクティブ化された `DepartmentMaster` も既存 `Project.orgUnitId` の照合対象に含める
+  - `Project.orgUnitId` が複数の照合候補に一致する場合は `DepartmentMaster.id`、`DepartmentMaster.code`、`DepartmentMaster.externalCode` の順で決定する
   - 未設定の `Project.orgUnitId` は `departmentKey: null` / `departmentSource: unassigned`、正規部門マスタに未照合の旧データは `departmentSource: legacy_org_unit` として旧 `Project.orgUnitId` を `departmentKey` に保持する
   - CSV は `summary` / `currency_breakdown` / `department_breakdown` / `top_red_project` の 4 section で flatten し、部門列として `departmentKey` / `departmentName` / `departmentExternalCode` / `departmentSource` を出力する
   - UI は `Reports` セクションの管理会計サマリ表示、部門別損益の初期表示、CSV 出力を初期導線とし、案件単位の確認には既存 `project-profit` を併用する

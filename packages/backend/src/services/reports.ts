@@ -71,6 +71,12 @@ type ManagementAccountingDepartmentReference = {
   departmentSource: ManagementAccountingDepartmentSource;
 };
 
+type ManagementAccountingDepartmentLookup = {
+  byId: Map<string, ManagementAccountingDepartmentReference>;
+  byCode: Map<string, ManagementAccountingDepartmentReference>;
+  byExternalCode: Map<string, ManagementAccountingDepartmentReference>;
+};
+
 function normalizeWorkType(workType?: string | null) {
   const trimmed = workType?.trim();
   return trimmed || null;
@@ -100,7 +106,11 @@ function buildDepartmentMasterLookup(
     externalCode?: string | null;
   }>,
 ) {
-  const lookup = new Map<string, ManagementAccountingDepartmentReference>();
+  const lookup: ManagementAccountingDepartmentLookup = {
+    byId: new Map(),
+    byCode: new Map(),
+    byExternalCode: new Map(),
+  };
   for (const department of departments) {
     const reference: ManagementAccountingDepartmentReference = {
       departmentKey: normalizeReportingKey(department.code),
@@ -108,21 +118,19 @@ function buildDepartmentMasterLookup(
       departmentExternalCode: normalizeReportingKey(department.externalCode),
       departmentSource: 'department_master',
     };
-    for (const candidate of [
-      department.id,
-      department.code,
-      department.externalCode,
-    ]) {
-      const key = normalizeReportingKey(candidate);
-      if (key && !lookup.has(key)) lookup.set(key, reference);
-    }
+    const idKey = normalizeReportingKey(department.id);
+    const codeKey = normalizeReportingKey(department.code);
+    const externalCodeKey = normalizeReportingKey(department.externalCode);
+    if (idKey) lookup.byId.set(idKey, reference);
+    if (codeKey) lookup.byCode.set(codeKey, reference);
+    if (externalCodeKey) lookup.byExternalCode.set(externalCodeKey, reference);
   }
   return lookup;
 }
 
 function resolveProjectDepartmentReference(
   orgUnitId: string | null | undefined,
-  departmentLookup: Map<string, ManagementAccountingDepartmentReference>,
+  departmentLookup: ManagementAccountingDepartmentLookup,
 ): ManagementAccountingDepartmentReference {
   const normalizedOrgUnitId = normalizeReportingKey(orgUnitId);
   if (!normalizedOrgUnitId) {
@@ -134,7 +142,9 @@ function resolveProjectDepartmentReference(
     };
   }
   return (
-    departmentLookup.get(normalizedOrgUnitId) ?? {
+    departmentLookup.byId.get(normalizedOrgUnitId) ??
+    departmentLookup.byCode.get(normalizedOrgUnitId) ??
+    departmentLookup.byExternalCode.get(normalizedOrgUnitId) ?? {
       departmentKey: normalizedOrgUnitId,
       departmentName: null,
       departmentExternalCode: null,
@@ -503,7 +513,6 @@ export async function reportManagementAccountingSummary(from: Date, to: Date) {
   const departmentMasters = projectDepartmentKeys.length
     ? await prisma.departmentMaster.findMany({
         where: {
-          active: true,
           OR: [
             { id: { in: projectDepartmentKeys } },
             { code: { in: projectDepartmentKeys } },

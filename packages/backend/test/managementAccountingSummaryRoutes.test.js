@@ -39,7 +39,7 @@ test('GET /reports/management-accounting/summary returns aggregate management ac
           code: 'PRJ-001',
           name: 'Project 1',
           currency: 'JPY',
-          orgUnitId: 'OU-D001',
+          orgUnitId: 'D001',
         },
         {
           id: 'project-2',
@@ -56,14 +56,24 @@ test('GET /reports/management-accounting/summary returns aggregate management ac
           orgUnitId: null,
         },
       ],
-      'departmentMaster.findMany': async () => [
-        {
-          id: 'department-master-1',
-          code: 'D001',
-          name: '営業部',
-          externalCode: 'OU-D001',
-        },
-      ],
+      'departmentMaster.findMany': async (args) => {
+        assert.equal(Object.hasOwn(args.where, 'active'), false);
+        assert.ok(args.where.OR.some((condition) => condition.externalCode));
+        return [
+          {
+            id: 'department-master-collision',
+            code: 'A001',
+            name: '外部コード衝突部',
+            externalCode: 'D001',
+          },
+          {
+            id: 'department-master-1',
+            code: 'D001',
+            name: '営業部',
+            externalCode: 'OU-D001',
+          },
+        ];
+      },
       'invoice.groupBy': async () => [
         {
           projectId: 'project-1',
@@ -213,7 +223,7 @@ test('GET /reports/management-accounting/summary returns csv export', async () =
           code: 'PRJ-001',
           name: 'Project 1',
           currency: '=JPY',
-          orgUnitId: 'OU-D001',
+          orgUnitId: 'D001',
         },
         {
           id: 'project-2',
@@ -230,14 +240,24 @@ test('GET /reports/management-accounting/summary returns csv export', async () =
           orgUnitId: null,
         },
       ],
-      'departmentMaster.findMany': async () => [
-        {
-          id: 'department-master-1',
-          code: 'D001',
-          name: '営業部',
-          externalCode: 'OU-D001',
-        },
-      ],
+      'departmentMaster.findMany': async (args) => {
+        assert.equal(Object.hasOwn(args.where, 'active'), false);
+        assert.ok(args.where.OR.some((condition) => condition.externalCode));
+        return [
+          {
+            id: 'department-master-collision',
+            code: 'A001',
+            name: '外部コード衝突部',
+            externalCode: 'D001',
+          },
+          {
+            id: 'department-master-1',
+            code: 'D001',
+            name: '営業部',
+            externalCode: 'OU-D001',
+          },
+        ];
+      },
       'invoice.groupBy': async () => [
         {
           projectId: 'project-1',
