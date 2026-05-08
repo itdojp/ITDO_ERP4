@@ -1,4 +1,5 @@
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -777,5 +778,118 @@ describe('AdminSettings', () => {
     expect(body.steps).toEqual({
       stages: [{ approverGroupId: 'mgmt', stepOrder: 1 }],
     });
+  });
+
+  it('ignores stale reconciliation details responses after period changes', async () => {
+    let resolveStaleDetails:
+      | ((value: {
+          periodKey: string;
+          payroll: {
+            latestClosingId: string | null;
+            latestEmployeeMasterFullExportId: string | null;
+            attendanceOnlyEmployeeCodes: string[];
+            employeeMasterOnlyEmployeeCodes: string[];
+          };
+          accounting: {
+            byProject: unknown[];
+            byDepartment: unknown[];
+            pendingMappingSamples: Array<{
+              id: string;
+              eventId: string;
+              sourceTable: string;
+              sourceId: string;
+              status: string;
+              mappingKey: string;
+              description: string;
+              projectCode: string;
+              departmentCode: string;
+              debitAccountCode: string | null;
+              creditAccountCode: string | null;
+              taxCode: string | null;
+              amount: string;
+            }>;
+            blockedSamples: unknown[];
+            invalidReadySamples: unknown[];
+          };
+        }) => void)
+      | undefined;
+
+    vi.mocked(api).mockImplementation((path: string) => {
+      if (path === '/integrations/reconciliation/details?periodKey=2026-03') {
+        return new Promise((resolve) => {
+          resolveStaleDetails = resolve;
+        });
+      }
+      return mockApiRoute(path);
+    });
+
+    render(<AdminSettings />);
+
+    await screen.findByTestId('integration-reconciliation-card');
+    fireEvent.change(screen.getByLabelText('照合対象月'), {
+      target: { value: '2026-03' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '照合詳細取得' }));
+
+    await waitFor(() => {
+      expect(api).toHaveBeenCalledWith(
+        '/integrations/reconciliation/details?periodKey=2026-03',
+      );
+    });
+
+    fireEvent.change(screen.getByLabelText('照合対象月'), {
+      target: { value: '2026-04' },
+    });
+
+    if (!resolveStaleDetails) {
+      throw new Error('stale details resolver was not registered');
+    }
+    const resolveDetails = resolveStaleDetails;
+    await act(async () => {
+      resolveDetails({
+        periodKey: '2026-03',
+        payroll: {
+          latestClosingId: 'closing-stale',
+          latestEmployeeMasterFullExportId: 'payroll-stale',
+          attendanceOnlyEmployeeCodes: ['STALE-001'],
+          employeeMasterOnlyEmployeeCodes: [],
+        },
+        accounting: {
+          byProject: [],
+          byDepartment: [],
+          pendingMappingSamples: [
+            {
+              id: 'stg-stale',
+              eventId: 'evt-stale',
+              sourceTable: 'expenses',
+              sourceId: 'exp-stale',
+              status: 'pending_mapping',
+              mappingKey: 'stale:mapping',
+              description: 'stale row',
+              projectCode: 'PRJ-STALE',
+              departmentCode: 'DEP-STALE',
+              debitAccountCode: null,
+              creditAccountCode: null,
+              taxCode: null,
+              amount: '999',
+            },
+          ],
+          blockedSamples: [],
+          invalidReadySamples: [],
+        },
+      });
+    });
+
+    await waitFor(() => {
+      expect(
+        screen.getByTestId('integration-reconciliation-period-key'),
+      ).toHaveValue('2026-04');
+      expect(
+        screen.getByRole('button', { name: '照合詳細取得' }),
+      ).not.toBeDisabled();
+    });
+    expect(screen.queryByText('stg-stale')).not.toBeInTheDocument();
+    expect(screen.queryByText('STALE-001')).not.toBeInTheDocument();
+    expect(screen.queryByText('periodKey: 2026-03')).not.toBeInTheDocument();
   });
 });

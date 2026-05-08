@@ -1,4 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { api, getAuthState } from '../api';
 import {
   PolicyFormBuilder,
@@ -583,6 +589,7 @@ export const AdminSettings: React.FC = () => {
     integrationReconciliationDetailsError,
     setIntegrationReconciliationDetailsError,
   ] = useState<string | null>(null);
+  const integrationReconciliationDetailsRequestId = useRef<number>(0);
   const [accountingMappingRuleItems, setAccountingMappingRuleItems] = useState<
     AccountingMappingRuleItem[]
   >([]);
@@ -1366,9 +1373,11 @@ export const AdminSettings: React.FC = () => {
 
   const updateIntegrationReconciliationPeriodKey = useCallback(
     (value: string) => {
+      integrationReconciliationDetailsRequestId.current += 1;
       setIntegrationReconciliationPeriodKey(value);
       setIntegrationReconciliationSummary(null);
       setIntegrationReconciliationDetails(null);
+      setIntegrationReconciliationDetailsLoading(false);
       setIntegrationReconciliationDetailsError(null);
     },
     [],
@@ -1377,8 +1386,10 @@ export const AdminSettings: React.FC = () => {
   const loadIntegrationReconciliationSummary = useCallback(async () => {
     const periodKey = integrationReconciliationPeriodKey.trim();
     if (!/^\d{4}-\d{2}$/.test(periodKey)) {
+      integrationReconciliationDetailsRequestId.current += 1;
       setIntegrationReconciliationSummary(null);
       setIntegrationReconciliationDetails(null);
+      setIntegrationReconciliationDetailsLoading(false);
       setIntegrationReconciliationDetailsError(null);
       setMessage('照合対象月は YYYY-MM 形式で入力してください');
       return;
@@ -1387,14 +1398,18 @@ export const AdminSettings: React.FC = () => {
       const summary = await api<IntegrationReconciliationSummary>(
         `/integrations/reconciliation/summary?periodKey=${encodeURIComponent(periodKey)}`,
       );
+      integrationReconciliationDetailsRequestId.current += 1;
       setIntegrationReconciliationSummary(summary);
       setIntegrationReconciliationDetails(null);
+      setIntegrationReconciliationDetailsLoading(false);
       setIntegrationReconciliationDetailsError(null);
       setMessage('連携照合サマリを取得しました');
     } catch (err) {
       logError('loadIntegrationReconciliationSummary failed', err);
+      integrationReconciliationDetailsRequestId.current += 1;
       setIntegrationReconciliationSummary(null);
       setIntegrationReconciliationDetails(null);
+      setIntegrationReconciliationDetailsLoading(false);
       setIntegrationReconciliationDetailsError(null);
       setMessage('連携照合サマリの取得に失敗しました');
     }
@@ -1410,15 +1425,31 @@ export const AdminSettings: React.FC = () => {
       setMessage('照合対象月は YYYY-MM 形式で入力してください');
       return;
     }
+    const requestId = integrationReconciliationDetailsRequestId.current + 1;
+    integrationReconciliationDetailsRequestId.current = requestId;
     setIntegrationReconciliationDetailsLoading(true);
     setIntegrationReconciliationDetailsError(null);
     try {
       const details = await api<IntegrationReconciliationDetails>(
         `/integrations/reconciliation/details?periodKey=${encodeURIComponent(periodKey)}`,
       );
+      if (integrationReconciliationDetailsRequestId.current !== requestId) {
+        return;
+      }
+      if (details.periodKey !== periodKey) {
+        setIntegrationReconciliationDetails(null);
+        setIntegrationReconciliationDetailsError(
+          '連携照合詳細の対象月がリクエストと一致しません',
+        );
+        setMessage('連携照合詳細の対象月がリクエストと一致しません');
+        return;
+      }
       setIntegrationReconciliationDetails(details);
       setMessage('連携照合詳細を取得しました');
     } catch (err) {
+      if (integrationReconciliationDetailsRequestId.current !== requestId) {
+        return;
+      }
       logError('loadIntegrationReconciliationDetails failed', err);
       setIntegrationReconciliationDetails(null);
       setIntegrationReconciliationDetailsError(
@@ -1426,7 +1457,9 @@ export const AdminSettings: React.FC = () => {
       );
       setMessage('連携照合詳細の取得に失敗しました');
     } finally {
-      setIntegrationReconciliationDetailsLoading(false);
+      if (integrationReconciliationDetailsRequestId.current === requestId) {
+        setIntegrationReconciliationDetailsLoading(false);
+      }
     }
   }, [integrationReconciliationPeriodKey, logError]);
 
