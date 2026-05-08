@@ -117,8 +117,9 @@
   - `department code` と `project -> department` の正規ルールが必要
   - `#1434`, `#1439`, `#1441` に依存
 - フェーズ:
-  - 初期フェーズでは要件定義のみ
-  - 実装は後続
+  - `#1744` の最小実装では `Project.orgUnitId` を暫定部門キーとして `management-accounting/summary` に `departmentBreakdown[]` を追加する
+  - 正規部門マスタ/外部連携コードとの接続は `#1748` で扱う
+  - `UserAccount.department` の自由入力値は暫定集計の正本にはしない
 
 ### R4. 月次 KPI ダッシュボード
 
@@ -146,8 +147,9 @@
   - `GET /reports/management-accounting/summary?from=YYYY-MM-DD&to=YYYY-MM-DD&format=csv`
   - ERP4 内の売上、直接原価、粗利、納期未請求、残業、赤字案件件数を 1 API で返す
   - 複数通貨が混在する場合は、金額系 KPI の top-level 合算値は返さず、`currencyBreakdown[]` で通貨別内訳を返す
-  - CSV は `summary` / `currency_breakdown` / `top_red_project` の 3 section で flatten して出力する
-  - UI は `Reports` セクションの管理会計サマリ表示と CSV 出力を初期導線とし、案件単位の確認には既存 `project-profit` を併用する
+  - `departmentBreakdown[]` は暫定部門キー（初期は `Project.orgUnitId`、未設定は `null`）と通貨単位で、売上・直接原価・労務原価・外注/仕入・経費・粗利・粗利率・工数・赤字案件数を返す
+  - CSV は `summary` / `currency_breakdown` / `department_breakdown` / `top_red_project` の 4 section で flatten して出力する
+  - UI は `Reports` セクションの管理会計サマリ表示、部門別損益の初期表示、CSV 出力を初期導線とし、案件単位の確認には既存 `project-profit` を併用する
 
 ### R5. 管理部向け締め前照合レポート
 
@@ -183,6 +185,7 @@
 - 補足:
   - 労務原価は給与原価ではなく、管理単価ベース
   - 給与連携完成後は「給与確定値ベース原価」と「管理単価ベース原価」を併存させる可能性がある
+  - 給与確定値ベース原価の反映は `#1749` で、締め条件・配賦・表示切替を含めて扱う
 
 ### 部門
 
@@ -242,6 +245,7 @@
 | 残業時間       | `reportOvertime` の時間合計           | `overtime`                        | 実装済みだが定義見直し余地あり |
 | 納期未請求件数 | `delivery-due` 件数                   | `delivery-due`                    | 実装済み                       |
 | 赤字案件数     | 粗利 < 0 の案件数                     | `project-profit` の横断集計が必要 | 未実装                         |
+| 部門別損益     | 暫定部門キーごとの売上・原価・粗利    | `management-accounting/summary`   | 初期実装済み                   |
 
 ## 初期フェーズの境界
 
@@ -251,14 +255,15 @@
 - 案件別採算のユーザ別 / グループ別内訳
 - 工数予実、納期未請求、残業
 - 管理会計ダッシュボードに必要な KPI 要件定義
+- `Project.orgUnitId` 暫定キーによる部門別損益の初期表示
 
 ### 初期フェーズで要件化のみ行い、実装を後続に回す
 
-- 部門別損益
 - 給与確定値ベースの人件費
 - 勘定科目別集計
 - 間接費の全社配賦
 - 月次締めスナップショット
+- 制度会計実績戻し import と管理会計照合（`#1750`）
 
 ## 後続 issue への接続
 
@@ -269,10 +274,24 @@
 - `#1440`: 勤怠確定データ整備
 - `#1441`: 会計イベント・仕訳変換ルール整備
 - `#1447`: 本書で定義した初期レポートの実装
+- `#1748`: 管理会計 `departmentBreakdown` の正規部門マスタ連携
+- `#1749`: 給与確定値ベース労務原価の管理会計反映
+- `#1750`: 制度会計実績戻し import と管理会計照合
+
+## `#1744` での再確認結果とテスト方針
+
+- 現行 summary report のデータソースは `Invoice`（売上）、`VendorInvoice` / `Expense` / `TimeEntry * RateCard`（直接原価）、`ProjectMilestone`（納期未請求）、`TimeEntry`（残業・工数）である。
+- 部門別損益の最小実装単位は、既存 `Project.orgUnitId` を暫定部門キーとして summary API / CSV / Reports UI に `departmentBreakdown` を追加することとする。
+- 給与確定値ベース原価は、勤怠締め・給与確定値の正本と月次配賦ルールが未確定のため、`#1749` で管理単価ベース原価との併存仕様を定義してから実装する。
+- 制度会計実績戻しは、取り込み方式と粒度（部門・勘定科目・PJ）が未確定のため、`#1750` で import/staging と差分照合を設計する。
+- 最小実装のテスト方針:
+  - backend route test で `departmentBreakdown[]` の集計、赤字案件数、CSV `department_breakdown` section を検証する。
+  - frontend test で Reports 画面の部門別損益表示を検証する。
+  - 正規部門マスタ連携、給与確定値原価、制度会計実績戻しは各子 Issue で API / CSV / UI / import validation の回帰テストを追加する。
 
 ## repo ベースで判明している未決事項
 
-- 部門別損益の `department` 正本を `Project` 起点に持つか、`User` / `Group` 起点に持つか
+- 部門別損益の初期表示は `Project.orgUnitId` 起点とするが、正規部門マスタ/外部連携コードとしての正本化は未完了
 - 労務原価を管理単価ベースと給与確定ベースのどちらで表示するか
 - PM 向け閲覧権限を route / dashboard / subscription でどう分けるか
 - 月次締め後の再現性を `PeriodLock` のみで足りるとみなすか、snapshot を追加するか

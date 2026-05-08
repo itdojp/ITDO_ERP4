@@ -181,16 +181,17 @@
 7. `グループ別工数` では userIds を指定して取得する
 8. `個人別残業` では userId を指定して取得する
 9. `管理会計サマリ` で全社KPIの初期値を取得する
-10. `管理会計サマリCSV` で summary / currency_breakdown / top_red_project を CSV 出力する
-11. ベースラインを選択し `バーンダウン` を取得する
-12. `EVM` を取得する
+10. 管理会計サマリ内の `部門別損益` で、暫定部門キー（初期は `Project.orgUnitId`）別の売上・原価・粗利を確認する
+11. `管理会計サマリCSV` で summary / currency_breakdown / department_breakdown / top_red_project を CSV 出力する
+12. ベースラインを選択し `バーンダウン` を取得する
+13. `EVM` を取得する
 
 ### 入力項目/制約
 
 - `from/to` は YYYY-MM-DD 形式
 - バーンダウンはベースラインが必須
 - 管理会計サマリは複数通貨が混在する場合、金額系 KPI を通貨別表示に切り替える
-- 管理会計サマリ CSV は複数通貨時でも通貨別 breakdown を行単位で出力する
+- 管理会計サマリ CSV は複数通貨時でも通貨別 breakdown と部門別 breakdown を行単位で出力する
 
 ![レポート](../test-results/2026-03-16-frontend-e2e-r4/08-reports.png)
 

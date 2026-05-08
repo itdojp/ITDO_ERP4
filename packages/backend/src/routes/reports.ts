@@ -69,6 +69,7 @@ function buildManagementAccountingSummaryCsv(
   const headers = [
     'section',
     'currency',
+    'departmentKey',
     'projectId',
     'projectCode',
     'projectName',
@@ -89,7 +90,8 @@ function buildManagementAccountingSummaryCsv(
   const rows: Array<Array<string | number>> = [
     [
       'summary',
-      summary.currency ?? '',
+      sanitizeCsvCell(summary.currency ?? ''),
+      '',
       '',
       '',
       '',
@@ -112,7 +114,8 @@ function buildManagementAccountingSummaryCsv(
   for (const item of summary.currencyBreakdown) {
     rows.push([
       'currency_breakdown',
-      item.currency ?? '',
+      sanitizeCsvCell(item.currency ?? ''),
+      '',
       '',
       '',
       '',
@@ -130,10 +133,38 @@ function buildManagementAccountingSummaryCsv(
       item.deliveryDueAmount,
       item.redProjectCount,
     ]);
+  }
+
+  for (const item of summary.departmentBreakdown) {
+    rows.push([
+      'department_breakdown',
+      sanitizeCsvCell(item.currency ?? ''),
+      sanitizeCsvCell(item.departmentKey ?? ''),
+      '',
+      '',
+      '',
+      item.projectCount,
+      item.revenue,
+      item.directCost,
+      item.laborCost,
+      item.vendorCost,
+      item.expenseCost,
+      item.grossProfit,
+      item.grossMargin,
+      item.totalMinutes,
+      '',
+      '',
+      '',
+      item.redProjectCount,
+    ]);
+  }
+
+  for (const item of summary.currencyBreakdown) {
     for (const project of item.topRedProjects) {
       rows.push([
         'top_red_project',
         sanitizeCsvCell(project.currency ?? item.currency ?? ''),
+        sanitizeCsvCell(project.departmentKey ?? ''),
         sanitizeCsvCell(project.projectId),
         sanitizeCsvCell(project.projectCode ?? ''),
         sanitizeCsvCell(project.projectName ?? ''),

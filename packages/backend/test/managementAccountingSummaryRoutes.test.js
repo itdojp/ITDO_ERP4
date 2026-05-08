@@ -39,12 +39,14 @@ test('GET /reports/management-accounting/summary returns aggregate management ac
           code: 'PRJ-001',
           name: 'Project 1',
           currency: 'JPY',
+          orgUnitId: 'D001',
         },
         {
           id: 'project-2',
           code: '=PRJ-002',
           name: '@Project 2',
           currency: 'JPY',
+          orgUnitId: 'D002',
         },
       ],
       'invoice.groupBy': async () => [
@@ -152,6 +154,19 @@ test('GET /reports/management-accounting/summary returns aggregate management ac
         assert.equal(body.topRedProjects.length, 1);
         assert.equal(body.topRedProjects[0].projectId, 'project-2');
         assert.equal(body.topRedProjects[0].grossProfit, -1050);
+        assert.equal(body.departmentBreakdown.length, 2);
+        const departmentD001 = body.departmentBreakdown.find(
+          (item) => item.departmentKey === 'D001',
+        );
+        const departmentD002 = body.departmentBreakdown.find(
+          (item) => item.departmentKey === 'D002',
+        );
+        assert.ok(departmentD001);
+        assert.ok(departmentD002);
+        assert.equal(departmentD001.revenue, 10000);
+        assert.equal(departmentD001.directCost, 4500);
+        assert.equal(departmentD001.grossProfit, 5500);
+        assert.equal(departmentD002.redProjectCount, 1);
       } finally {
         await server.close();
       }
@@ -167,33 +182,39 @@ test('GET /reports/management-accounting/summary returns csv export', async () =
           id: 'project-1',
           code: 'PRJ-001',
           name: 'Project 1',
-          currency: 'JPY',
+          currency: '=JPY',
+          orgUnitId: 'D001',
         },
         {
           id: 'project-2',
           code: '=PRJ-002',
           name: '@Project 2',
-          currency: 'JPY',
+          currency: '=JPY',
+          orgUnitId: 'D002',
         },
       ],
       'invoice.groupBy': async () => [
         {
           projectId: 'project-1',
-          currency: 'JPY',
+          currency: '=JPY',
           _sum: { totalAmount: 10000 },
         },
-        { projectId: 'project-2', currency: 'JPY', _sum: { totalAmount: 500 } },
+        {
+          projectId: 'project-2',
+          currency: '=JPY',
+          _sum: { totalAmount: 500 },
+        },
       ],
       'vendorInvoice.groupBy': async () => [
         {
           projectId: 'project-1',
-          currency: 'JPY',
+          currency: '=JPY',
           _sum: { totalAmount: 3000 },
         },
       ],
       'expense.groupBy': async () => [
-        { projectId: 'project-1', currency: 'JPY', _sum: { amount: 500 } },
-        { projectId: 'project-2', currency: 'JPY', _sum: { amount: 700 } },
+        { projectId: 'project-1', currency: '=JPY', _sum: { amount: 500 } },
+        { projectId: 'project-2', currency: '=JPY', _sum: { amount: 700 } },
       ],
       'timeEntry.findMany': async () => [
         {
@@ -226,7 +247,7 @@ test('GET /reports/management-accounting/summary returns csv export', async () =
           validFrom: new Date('2026-01-01T00:00:00.000Z'),
           validTo: null,
           unitPrice: 100,
-          currency: 'JPY',
+          currency: '=JPY',
         },
         {
           id: 'rate-2',
@@ -235,7 +256,7 @@ test('GET /reports/management-accounting/summary returns csv export', async () =
           validFrom: new Date('2026-01-01T00:00:00.000Z'),
           validTo: null,
           unitPrice: 50,
-          currency: 'JPY',
+          currency: '=JPY',
         },
       ],
       'projectMilestone.findMany': async () => [
@@ -245,7 +266,7 @@ test('GET /reports/management-accounting/summary returns csv export', async () =
           name: '請求待ち',
           amount: 2000,
           dueDate: new Date('2026-03-20T00:00:00.000Z'),
-          project: { code: 'PRJ-001', name: 'Project 1', currency: 'JPY' },
+          project: { code: 'PRJ-001', name: 'Project 1', currency: '=JPY' },
           invoices: [],
         },
       ],
@@ -268,12 +289,17 @@ test('GET /reports/management-accounting/summary returns csv export', async () =
         );
         assert.match(
           res.body,
-          /^section,currency,projectId,projectCode,projectName,projectCount,revenue,directCost,laborCost,vendorCost,expenseCost,grossProfit,grossMargin,totalMinutes,overtimeTotalMinutes,deliveryDueCount,deliveryDueAmount,redProjectCount/m,
+          /^section,currency,departmentKey,projectId,projectCode,projectName,projectCount,revenue,directCost,laborCost,vendorCost,expenseCost,grossProfit,grossMargin,totalMinutes,overtimeTotalMinutes,deliveryDueCount,deliveryDueAmount,redProjectCount/m,
         );
-        assert.match(res.body, /summary,JPY,,,/, res.body);
+        assert.match(res.body, /summary,'=JPY,,,,/, res.body);
+        assert.match(res.body, /currency_breakdown,'=JPY,,,,,2,10500,6050/);
         assert.match(
           res.body,
-          /top_red_project,JPY,project-2,'=PRJ-002,'@Project 2/,
+          /department_breakdown,'=JPY,D001,,,,1,10000,4500/,
+        );
+        assert.match(
+          res.body,
+          /top_red_project,'=JPY,D002,project-2,'=PRJ-002,'@Project 2/,
         );
       } finally {
         await server.close();

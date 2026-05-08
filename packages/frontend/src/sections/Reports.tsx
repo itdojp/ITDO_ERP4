@@ -145,6 +145,7 @@ type ManagementAccountingSummary = {
       projectId: string;
       projectCode?: string | null;
       projectName?: string | null;
+      departmentKey?: string | null;
       currency?: string | null;
       revenue: number;
       directCost: number;
@@ -155,6 +156,20 @@ type ManagementAccountingSummary = {
       grossMargin: number;
       totalMinutes: number;
     }>;
+  }>;
+  departmentBreakdown?: Array<{
+    departmentKey?: string | null;
+    currency?: string | null;
+    projectCount: number;
+    revenue: number;
+    directCost: number;
+    laborCost: number;
+    vendorCost: number;
+    expenseCost: number;
+    grossProfit: number;
+    grossMargin: number;
+    totalMinutes: number;
+    redProjectCount: number;
   }>;
   revenue: number | null;
   directCost: number | null;
@@ -172,6 +187,7 @@ type ManagementAccountingSummary = {
     projectId: string;
     projectCode?: string | null;
     projectName?: string | null;
+    departmentKey?: string | null;
     currency?: string | null;
     revenue: number;
     directCost: number;
@@ -893,6 +909,26 @@ export const Reports: React.FC = () => {
                 </div>
               </>
             )}
+            {managementReport.departmentBreakdown &&
+              managementReport.departmentBreakdown.length > 0 && (
+                <div style={{ marginTop: 8 }}>
+                  <strong>部門別損益</strong>
+                  {managementReport.departmentBreakdown.map((item) => (
+                    <div
+                      key={`${item.departmentKey || 'unassigned'}:${item.currency || 'none'}`}
+                    >
+                      Department: {item.departmentKey || '未設定'} / Currency:{' '}
+                      {item.currency || '未設定'} / Projects:{' '}
+                      {item.projectCount} / Revenue:{' '}
+                      {item.revenue.toLocaleString()} / Direct Cost:{' '}
+                      {item.directCost.toLocaleString()} / Gross Profit:{' '}
+                      {item.grossProfit.toLocaleString()} / Margin:{' '}
+                      {(item.grossMargin * 100).toFixed(2)}% / Red projects:{' '}
+                      {item.redProjectCount}
+                    </div>
+                  ))}
+                </div>
+              )}
             <div>
               Minutes: {managementReport.totalMinutes} / Overtime:{' '}
               {managementReport.overtimeTotalMinutes}

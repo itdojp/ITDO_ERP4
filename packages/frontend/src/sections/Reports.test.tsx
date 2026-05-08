@@ -238,10 +238,27 @@ describe('Reports', () => {
                   projectId: 'proj-1',
                   projectCode: 'P001',
                   projectName: 'Project One',
+                  departmentKey: 'D001',
                   grossProfit: -500,
                   grossMargin: -0.05,
                 },
               ],
+            },
+          ],
+          departmentBreakdown: [
+            {
+              departmentKey: 'D001',
+              currency: 'JPY',
+              projectCount: 1,
+              revenue: 10000,
+              directCost: 3000,
+              laborCost: 1200,
+              vendorCost: 1000,
+              expenseCost: 800,
+              grossProfit: 7000,
+              grossMargin: 0.7,
+              totalMinutes: 400,
+              redProjectCount: 1,
             },
           ],
           revenue: null,
@@ -288,6 +305,14 @@ describe('Reports', () => {
     expect(screen.getAllByText(/P001 \/ Project One/).length).toBeGreaterThan(
       0,
     );
+    expect(screen.getByText('部門別損益')).toBeInTheDocument();
+    const expectedDepartmentLine =
+      `Department: D001 / Currency: JPY / Projects: 1 / ` +
+      `Revenue: ${(10000).toLocaleString()} / ` +
+      `Direct Cost: ${(3000).toLocaleString()} / ` +
+      `Gross Profit: ${(7000).toLocaleString()} / ` +
+      `Margin: ${(0.7 * 100).toFixed(2)}% / Red projects: 1`;
+    expect(screen.getByText(expectedDepartmentLine)).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: '管理会計サマリCSV' }));
 
