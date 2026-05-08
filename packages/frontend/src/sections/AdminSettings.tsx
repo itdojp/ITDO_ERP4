@@ -506,6 +506,7 @@ const createDefaultAccountingMappingRuleForm =
 
 const DEFAULT_ACCOUNTING_MAPPING_RULE_LIMIT = 20;
 const DEFAULT_ACCOUNTING_MAPPING_RULE_OFFSET = 0;
+const RECONCILIATION_PERIOD_KEY_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/;
 
 const currentPeriodKey = () => {
   const now = new Date();
@@ -1385,7 +1386,7 @@ export const AdminSettings: React.FC = () => {
 
   const loadIntegrationReconciliationSummary = useCallback(async () => {
     const periodKey = integrationReconciliationPeriodKey.trim();
-    if (!/^\d{4}-\d{2}$/.test(periodKey)) {
+    if (!RECONCILIATION_PERIOD_KEY_PATTERN.test(periodKey)) {
       integrationReconciliationDetailsRequestId.current += 1;
       setIntegrationReconciliationSummary(null);
       setIntegrationReconciliationDetails(null);
@@ -1417,7 +1418,7 @@ export const AdminSettings: React.FC = () => {
 
   const loadIntegrationReconciliationDetails = useCallback(async () => {
     const periodKey = integrationReconciliationPeriodKey.trim();
-    if (!/^\d{4}-\d{2}$/.test(periodKey)) {
+    if (!RECONCILIATION_PERIOD_KEY_PATTERN.test(periodKey)) {
       setIntegrationReconciliationDetails(null);
       setIntegrationReconciliationDetailsError(
         '照合対象月は YYYY-MM 形式で入力してください',

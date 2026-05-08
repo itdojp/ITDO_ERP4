@@ -892,4 +892,47 @@ describe('AdminSettings', () => {
     expect(screen.queryByText('STALE-001')).not.toBeInTheDocument();
     expect(screen.queryByText('periodKey: 2026-03')).not.toBeInTheDocument();
   });
+
+  it('rejects invalid reconciliation months before summary and details API calls', async () => {
+    render(<AdminSettings />);
+
+    await screen.findByTestId('integration-reconciliation-card');
+    const summaryCallsBefore = vi
+      .mocked(api)
+      .mock.calls.filter(([path]) =>
+        String(path).startsWith('/integrations/reconciliation/summary'),
+      ).length;
+    const detailsCallsBefore = vi
+      .mocked(api)
+      .mock.calls.filter(([path]) =>
+        String(path).startsWith('/integrations/reconciliation/details'),
+      ).length;
+
+    fireEvent.change(screen.getByLabelText('照合対象月'), {
+      target: { value: '2026-13' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '照合サマリ取得' }));
+    fireEvent.click(screen.getByRole('button', { name: '照合詳細取得' }));
+
+    await waitFor(() => {
+      expect(
+        screen.getAllByText('照合対象月は YYYY-MM 形式で入力してください')
+          .length,
+      ).toBeGreaterThan(0);
+    });
+    expect(
+      vi
+        .mocked(api)
+        .mock.calls.filter(([path]) =>
+          String(path).startsWith('/integrations/reconciliation/summary'),
+        ),
+    ).toHaveLength(summaryCallsBefore);
+    expect(
+      vi
+        .mocked(api)
+        .mock.calls.filter(([path]) =>
+          String(path).startsWith('/integrations/reconciliation/details'),
+        ),
+    ).toHaveLength(detailsCallsBefore);
+  });
 });
