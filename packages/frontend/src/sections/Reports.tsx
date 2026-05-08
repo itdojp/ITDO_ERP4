@@ -146,6 +146,9 @@ type ManagementAccountingSummary = {
       projectCode?: string | null;
       projectName?: string | null;
       departmentKey?: string | null;
+      departmentName?: string | null;
+      departmentExternalCode?: string | null;
+      departmentSource?: string | null;
       currency?: string | null;
       revenue: number;
       directCost: number;
@@ -159,6 +162,9 @@ type ManagementAccountingSummary = {
   }>;
   departmentBreakdown?: Array<{
     departmentKey?: string | null;
+    departmentName?: string | null;
+    departmentExternalCode?: string | null;
+    departmentSource?: string | null;
     currency?: string | null;
     projectCount: number;
     revenue: number;
@@ -188,6 +194,9 @@ type ManagementAccountingSummary = {
     projectCode?: string | null;
     projectName?: string | null;
     departmentKey?: string | null;
+    departmentName?: string | null;
+    departmentExternalCode?: string | null;
+    departmentSource?: string | null;
     currency?: string | null;
     revenue: number;
     directCost: number;
@@ -206,6 +215,16 @@ function buildQuery(from?: string, to?: string) {
   if (to) params.set('to', to);
   const qs = params.toString();
   return qs ? `?${qs}` : '';
+}
+
+function formatDepartmentLabel(item: {
+  departmentKey?: string | null;
+  departmentName?: string | null;
+}) {
+  if (item.departmentName && item.departmentKey) {
+    return `${item.departmentName} (${item.departmentKey})`;
+  }
+  return item.departmentName || item.departmentKey || '未設定';
 }
 
 function parseUserIdsInput(value: string) {
@@ -917,7 +936,9 @@ export const Reports: React.FC = () => {
                     <div
                       key={`${item.departmentKey || 'unassigned'}:${item.currency || 'none'}`}
                     >
-                      Department: {item.departmentKey || '未設定'} / Currency:{' '}
+                      Department: {formatDepartmentLabel(item)} / External:{' '}
+                      {item.departmentExternalCode || '-'} / Source:{' '}
+                      {item.departmentSource || 'unknown'} / Currency:{' '}
                       {item.currency || '未設定'} / Projects:{' '}
                       {item.projectCount} / Revenue:{' '}
                       {item.revenue.toLocaleString()} / Direct Cost:{' '}
@@ -946,7 +967,8 @@ export const Reports: React.FC = () => {
                   <div key={item.projectId}>
                     {(item.projectCode || item.projectId) +
                       (item.projectName ? ` / ${item.projectName}` : '')}
-                    : ¥{item.grossProfit.toLocaleString()} / Margin{' '}
+                    : ¥{item.grossProfit.toLocaleString()} / Department:{' '}
+                    {formatDepartmentLabel(item)} / Margin{' '}
                     {(item.grossMargin * 100).toFixed(2)}%
                   </div>
                 ))}

@@ -118,7 +118,7 @@
   - `#1434`, `#1439`, `#1441` に依存
 - フェーズ:
   - `#1744` の最小実装では `Project.orgUnitId` を暫定部門キーとして `management-accounting/summary` に `departmentBreakdown[]` を追加する
-  - 正規部門マスタ/外部連携コードとの接続は `#1748` で扱う
+  - `#1748` で `DepartmentMaster`（`code` / `name` / `externalCode`）を正規部門マスタとして追加し、`Project.orgUnitId` を `DepartmentMaster.id` / `code` / `externalCode` のいずれかへ照合する
   - `UserAccount.department` の自由入力値は暫定集計の正本にはしない
 
 ### R4. 月次 KPI ダッシュボード
@@ -147,8 +147,9 @@
   - `GET /reports/management-accounting/summary?from=YYYY-MM-DD&to=YYYY-MM-DD&format=csv`
   - ERP4 内の売上、直接原価、粗利、納期未請求、残業、赤字案件件数を 1 API で返す
   - 複数通貨が混在する場合は、金額系 KPI の top-level 合算値は返さず、`currencyBreakdown[]` で通貨別内訳を返す
-  - `departmentBreakdown[]` は暫定部門キー（初期は `Project.orgUnitId`、未設定は `null`）と通貨単位で、売上・直接原価・労務原価・外注/仕入・経費・粗利・粗利率・工数・赤字案件数を返す
-  - CSV は `summary` / `currency_breakdown` / `department_breakdown` / `top_red_project` の 4 section で flatten して出力する
+  - `departmentBreakdown[]` は正規部門マスタ照合後の `departmentKey`（`DepartmentMaster.code`）、`departmentName`、`departmentExternalCode`、`departmentSource` と通貨単位で、売上・直接原価・労務原価・外注/仕入・経費・粗利・粗利率・工数・赤字案件数を返す
+  - 未設定の `Project.orgUnitId` は `departmentKey: null` / `departmentSource: unassigned`、正規部門マスタに未照合の旧データは `departmentSource: legacy_org_unit` として旧 `Project.orgUnitId` を `departmentKey` に保持する
+  - CSV は `summary` / `currency_breakdown` / `department_breakdown` / `top_red_project` の 4 section で flatten し、部門列として `departmentKey` / `departmentName` / `departmentExternalCode` / `departmentSource` を出力する
   - UI は `Reports` セクションの管理会計サマリ表示、部門別損益の初期表示、CSV 出力を初期導線とし、案件単位の確認には既存 `project-profit` を併用する
 
 ### R5. 管理部向け締め前照合レポート
@@ -235,17 +236,17 @@
 
 ## KPI 一覧（初期案）
 
-| KPI            | 定義                                  | 既存実装ソース                    | 実装状態                       |
-| -------------- | ------------------------------------- | --------------------------------- | ------------------------------ |
-| 月次売上       | 対象月の `Invoice.totalAmount` 合計   | `project-profit` 集計ロジック     | 一部流用可                     |
-| 月次直接原価   | `VendorInvoice + Expense + laborCost` | `project-profit` 集計ロジック     | 一部流用可                     |
-| 月次粗利       | 売上 - 直接原価                       | `project-profit` 集計ロジック     | 一部流用可                     |
-| 粗利率         | 粗利 / 売上                           | `project-profit` 集計ロジック     | 一部流用可                     |
-| 工数実績       | `TimeEntry.minutes` 合計              | `project-effort`, `group-effort`  | 実装済み                       |
-| 残業時間       | `reportOvertime` の時間合計           | `overtime`                        | 実装済みだが定義見直し余地あり |
-| 納期未請求件数 | `delivery-due` 件数                   | `delivery-due`                    | 実装済み                       |
-| 赤字案件数     | 粗利 < 0 の案件数                     | `project-profit` の横断集計が必要 | 未実装                         |
-| 部門別損益     | 暫定部門キーごとの売上・原価・粗利    | `management-accounting/summary`   | 初期実装済み                   |
+| KPI            | 定義                                             | 既存実装ソース                    | 実装状態                       |
+| -------------- | ------------------------------------------------ | --------------------------------- | ------------------------------ |
+| 月次売上       | 対象月の `Invoice.totalAmount` 合計              | `project-profit` 集計ロジック     | 一部流用可                     |
+| 月次直接原価   | `VendorInvoice + Expense + laborCost`            | `project-profit` 集計ロジック     | 一部流用可                     |
+| 月次粗利       | 売上 - 直接原価                                  | `project-profit` 集計ロジック     | 一部流用可                     |
+| 粗利率         | 粗利 / 売上                                      | `project-profit` 集計ロジック     | 一部流用可                     |
+| 工数実績       | `TimeEntry.minutes` 合計                         | `project-effort`, `group-effort`  | 実装済み                       |
+| 残業時間       | `reportOvertime` の時間合計                      | `overtime`                        | 実装済みだが定義見直し余地あり |
+| 納期未請求件数 | `delivery-due` 件数                              | `delivery-due`                    | 実装済み                       |
+| 赤字案件数     | 粗利 < 0 の案件数                                | `project-profit` の横断集計が必要 | 未実装                         |
+| 部門別損益     | 正規部門マスタ照合後の部門ごとの売上・原価・粗利 | `management-accounting/summary`   | `#1748` で正本化済み           |
 
 ## 初期フェーズの境界
 
@@ -274,7 +275,7 @@
 - `#1440`: 勤怠確定データ整備
 - `#1441`: 会計イベント・仕訳変換ルール整備
 - `#1447`: 本書で定義した初期レポートの実装
-- `#1748`: 管理会計 `departmentBreakdown` の正規部門マスタ連携
+- `#1748`: 管理会計 `departmentBreakdown` の正規部門マスタ連携（`DepartmentMaster` 照合）
 - `#1749`: 給与確定値ベース労務原価の管理会計反映
 - `#1750`: 制度会計実績戻し import と管理会計照合
 
@@ -291,7 +292,7 @@
 
 ## repo ベースで判明している未決事項
 
-- 部門別損益の初期表示は `Project.orgUnitId` 起点とするが、正規部門マスタ/外部連携コードとしての正本化は未完了
+- 部門別損益の部門軸は `DepartmentMaster` を正規マスタとし、`Project.orgUnitId` は `DepartmentMaster.id` / `code` / `externalCode` へ照合する。未照合の旧データは `legacy_org_unit` として区別する
 - 労務原価を管理単価ベースと給与確定ベースのどちらで表示するか
 - PM 向け閲覧権限を route / dashboard / subscription でどう分けるか
 - 月次締め後の再現性を `PeriodLock` のみで足りるとみなすか、snapshot を追加するか

@@ -181,8 +181,8 @@
 7. `グループ別工数` では userIds を指定して取得する
 8. `個人別残業` では userId を指定して取得する
 9. `管理会計サマリ` で全社KPIの初期値を取得する
-10. 管理会計サマリ内の `部門別損益` で、暫定部門キー（初期は `Project.orgUnitId`）別の売上・原価・粗利を確認する
-11. `管理会計サマリCSV` で summary / currency_breakdown / department_breakdown / top_red_project を CSV 出力する
+10. 管理会計サマリ内の `部門別損益` で、正規部門マスタ照合後の部門名・部門コード・外部連携コード別に売上・原価・粗利を確認する
+11. `管理会計サマリCSV` で summary / currency_breakdown / department_breakdown / top_red_project を CSV 出力する。部門列には `departmentKey` / `departmentName` / `departmentExternalCode` / `departmentSource` が含まれる
 12. ベースラインを選択し `バーンダウン` を取得する
 13. `EVM` を取得する
 
