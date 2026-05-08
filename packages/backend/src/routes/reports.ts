@@ -90,7 +90,7 @@ function buildManagementAccountingSummaryCsv(
   const rows: Array<Array<string | number>> = [
     [
       'summary',
-      summary.currency ?? '',
+      sanitizeCsvCell(summary.currency ?? ''),
       '',
       '',
       '',
@@ -114,7 +114,7 @@ function buildManagementAccountingSummaryCsv(
   for (const item of summary.currencyBreakdown) {
     rows.push([
       'currency_breakdown',
-      item.currency ?? '',
+      sanitizeCsvCell(item.currency ?? ''),
       '',
       '',
       '',
@@ -138,7 +138,7 @@ function buildManagementAccountingSummaryCsv(
   for (const item of summary.departmentBreakdown) {
     rows.push([
       'department_breakdown',
-      item.currency ?? '',
+      sanitizeCsvCell(item.currency ?? ''),
       sanitizeCsvCell(item.departmentKey ?? ''),
       '',
       '',

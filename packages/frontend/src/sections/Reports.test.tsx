@@ -306,11 +306,13 @@ describe('Reports', () => {
       0,
     );
     expect(screen.getByText('部門別損益')).toBeInTheDocument();
-    expect(
-      screen.getByText(
-        /Department: D001 \/ Currency: JPY \/ Projects: 1 \/ Revenue: 10,000 \/ Direct Cost: 3,000 \/ Gross Profit: 7,000 \/ Margin: 70\.00% \/ Red projects: 1/,
-      ),
-    ).toBeInTheDocument();
+    const expectedDepartmentLine =
+      `Department: D001 / Currency: JPY / Projects: 1 / ` +
+      `Revenue: ${(10000).toLocaleString()} / ` +
+      `Direct Cost: ${(3000).toLocaleString()} / ` +
+      `Gross Profit: ${(7000).toLocaleString()} / ` +
+      `Margin: ${(0.7 * 100).toFixed(2)}% / Red projects: 1`;
+    expect(screen.getByText(expectedDepartmentLine)).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: '管理会計サマリCSV' }));
 
